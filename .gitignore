@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Node / Next / Turbo
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+.vercel/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+.vault-key
+secrets/
+
+# Banco SQLite local (estado, não vai pro git)
+*.db
+*.db-shm
+*.db-wal
+apps/api/db/grupo_borges.db*
+
+# Logs
+*.log
+logs/
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Tmp
+tmp/
+temp/
+*.bak
+*.tmp

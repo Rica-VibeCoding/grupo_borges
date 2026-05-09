@@ -1,0 +1,119 @@
+# Frota do grupo_borges — 6 agentes do escritório central
+# Renomeação 4/5 concluída em 2026-05-09 (Lucas, commit 5d1fc13).
+# `lucas/` ainda pendente — usar `lucas_marketing/` até confirmar.
+# Sessões tmux na VPS continuam com nome antigo até Pavan VPS renascer.
+
+version: 1
+
+agents:
+  - slug: pavan
+    name: José Pavan
+    role: Consigliere  # a confirmar
+    emoji: "🛠️"
+    origin: italiano (Vêneto)
+    tmux_session: ze_auxiliar  # nome antigo até Pavan VPS renascer
+    workspace_path: /home/clawd/repos/ze_claude/pavan
+    cli_default: claude_code
+    model_default: claude-opus-4-7
+    capabilities:
+      - meta-orquestracao
+      - palavra-final
+      - claude-code-guru
+      - coordenacao-multi-ze
+
+  - slug: daniel
+    name: Daniel Singh
+    role: Dev sênior — Líder de área
+    emoji: "🚀"
+    origin: indiano sikh ("leão")
+    tmux_session: daniel
+    workspace_path: /home/clawd/repos/ze_claude/daniel
+    cli_default: claude_code
+    model_default: claude-opus-4-7
+    capabilities:
+      - dev-fullstack
+      - fluyt
+      - code-review
+      - refactor
+      - portfolio-software
+
+  - slug: lucas
+    name: Lucas Marchetti
+    role: Diretor de Marketing — Líder de área
+    emoji: "🎯"
+    origin: italiano (Vêneto/Lombardia)
+    tmux_session: lucas_marketing  # mudar pra "lucas" após renomeação Lucas
+    workspace_path: /home/clawd/repos/ze_claude/lucas_marketing  # idem
+    cli_default: claude_code
+    model_default: claude-opus-4-7
+    capabilities:
+      - marketing-multi-marca
+      - conecta
+      - woodpro
+      - fluyt-content
+
+  - slug: vinicius
+    name: Vinicius Zanella
+    aka: Vini
+    role: Especialista — futuro líder
+    origin: italiano (Vêneto)
+    tmux_session: ze_central_movelmar  # nome antigo até Pavan VPS renascer
+    workspace_path: /home/clawd/repos/ze_claude/vinicius
+    cli_default: claude_code
+    model_default: claude-opus-4-7
+    capabilities:
+      - movelmar
+      - lojistas-conecta
+      - crm
+
+  - slug: felipe
+    name: Felipe Conti
+    aka: Fe
+    role: Especialista — futuro líder
+    origin: italiano (norte)
+    tmux_session: ze_woodpro  # nome antigo até Pavan VPS renascer
+    workspace_path: /home/clawd/repos/ze_claude/felipe
+    cli_default: claude_code
+    model_default: claude-opus-4-7
+    capabilities:
+      - comercial-fluyt-b2b
+      - woodpro
+
+  - slug: barsi
+    name: Luiz Barsi
+    role: Especialista — futuro líder
+    origin: italiano (Emilia-Romagna)
+    tmux_session: ze_monitor_financeiro  # nome antigo até Pavan VPS renascer
+    workspace_path: /home/clawd/repos/ze_claude/barsi
+    cli_default: claude_code
+    model_default: claude-opus-4-7
+    capabilities:
+      - cfo-read-only
+      - monitor-financeiro
+
+# Modelos disponíveis (escolhível por instância no card da UI)
+available_models:
+  - id: claude-opus-4-7
+    label: Opus 4.7
+    cli: claude_code
+    cost_tier: high
+  - id: claude-sonnet-4-6
+    label: Sonnet 4.6
+    cli: claude_code
+    cost_tier: medium
+  - id: claude-haiku-4-5
+    label: Haiku 4.5
+    cli: claude_code
+    cost_tier: low
+  - id: gpt-5-5
+    label: Codex GPT-5.5
+    cli: codex
+    cost_tier: medium
+
+# Auth (regra dura)
+auth_mode: oauth_only  # NUNCA api_key
+
+# Fora do escopo do cockpit
+out_of_scope:
+  - slug: miga_dani
+    reason: Esposa do Rica, persona independente, USER separado
