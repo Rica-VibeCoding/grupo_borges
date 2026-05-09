@@ -3,7 +3,7 @@ FastAPI app do cockpit grupo_borges.
 
 Backend roda na VPS atrás de Tailscale Serve (HTTPS via cert da tailnet).
 Auth: identity headers do Tailscale (sem senha custom — tailnet basta).
-Em dev local: env GB_DEV_BYPASS_AUTH=1 + host loopback bypassa o middleware.
+Em dev local: GB_DEV_BYPASS_AUTH=1 + host loopback bypassa o middleware.
 
 Rodar dev:
     uv sync
@@ -14,7 +14,6 @@ Rodar prod (VPS, atrás do tailscale serve):
 """
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,35 +22,46 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 
+from config import get_settings
 from db.store import GrupoBorgesDB
+from orchestrator.jsonl_watcher import JsonlWatcher
+from orchestrator.tmux_driver import TmuxDriver
 from routers import agents as agents_router
 from routers import hooks as hooks_router
 from routers import stream as stream_router
 
-# ----- agents.yaml (raiz do repo, 2 níveis acima de apps/api/) -----
-AGENTS_YAML = Path(__file__).resolve().parents[2] / "agents.yaml"
 
-
-def load_agents_config() -> dict:
-    with AGENTS_YAML.open("r", encoding="utf-8") as f:
+def load_agents_config(yaml_path: str) -> dict:
+    with Path(yaml_path).open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-# ----- lifecycle -----
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup
-    config = load_agents_config()
+    settings = get_settings()
+    app.state.settings = settings
+
+    config = load_agents_config(settings.agents_yaml)
     app.state.agents_config = config
 
-    db = GrupoBorgesDB()
+    db = GrupoBorgesDB(settings.db_path)
     await db.startup()
-    app.state.db = db
     await db.sync_agents_from_yaml(config["agents"])
+    app.state.db = db
+
+    app.state.tmux = TmuxDriver()
+
+    watcher = JsonlWatcher(
+        claude_projects_dir=settings.claude_projects_dir,
+        agents=config["agents"],
+        db=db,
+    )
+    await watcher.start()
+    app.state.watcher = watcher
 
     yield
 
-    # shutdown
+    await watcher.stop()
     await db.shutdown()
 
 
@@ -62,7 +72,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS pro front Vercel
+# CORS antes do middleware Tailscale: preflight responde sem exigir identity header
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -75,17 +85,15 @@ app.add_middleware(
 )
 
 
-# ----- middleware Tailscale identity -----
 @app.middleware("http")
 async def tailscale_identity(request: Request, call_next):
     """
-    Valida que a request veio pela tailnet via header Tailscale-User-Login.
-    Em dev (localhost loopback) bypass é permitido com env GB_DEV_BYPASS_AUTH=1.
+    Valida Tailscale-User-Login. Em dev (loopback + GB_DEV_BYPASS_AUTH=1), bypassa.
     """
     is_loopback = request.client and request.client.host in ("127.0.0.1", "::1", "localhost")
-    bypass_dev = os.environ.get("GB_DEV_BYPASS_AUTH") == "1" and is_loopback
+    settings = getattr(app.state, "settings", None)
+    bypass_dev = bool(settings and settings.dev_bypass_auth and is_loopback)
 
-    # Health check libera sem auth (probe Tailscale Serve)
     if request.url.path == "/health":
         return await call_next(request)
 
@@ -101,13 +109,11 @@ async def tailscale_identity(request: Request, call_next):
     return await call_next(request)
 
 
-# ----- health -----
 @app.get("/health", tags=["meta"])
 async def health() -> dict:
     return {"status": "ok", "service": "grupo_borges-api", "version": "0.1.0"}
 
 
-# ----- routers -----
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
