@@ -4,17 +4,21 @@ POST /hooks/{event_kind} — receptor de hooks do Claude Code.
 Cada agente configura `.claude/settings.json` apontando hooks para
 http://<vps>:8000/hooks/<EventName>. CC posta JSON com payload do evento.
 
-MVP: registra TODOS os 27 eventos crus em task_events. Lógica especial
-fica reservada para 5 críticos (UserPromptSubmit, PostToolUse,
-SubagentStart, SubagentStop, Stop) — por enquanto só sinalizamos via flag
-no response.
+Schema oficial (https://code.claude.com/docs/en/hooks) — campos top-level
+sempre presentes: session_id, transcript_path, cwd, hook_event_name. Por
+evento: tool_name/tool_input/tool_result, prompt, agent_id/agent_type, etc.
+
+MVP: registra TODOS os 27 eventos crus em task_events. Lógica especial fica
+reservada pra 5 críticos (UserPromptSubmit, PostToolUse, SubagentStart,
+SubagentStop, Stop) — por enquanto só sinalizamos via flag no response.
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+
+from util import parse_dict_or_none
 
 router = APIRouter()
 
@@ -30,9 +34,11 @@ CRITICAL_EVENTS = {
 def _slug_from_cwd(cwd: str | None, agents_config: list[dict]) -> str | None:
     if not cwd:
         return None
-    cwd_norm = cwd.rstrip("/").rstrip("\\")
+    # Hook payload `cwd` em sessões Windows vem com '\\' literal. Normalizamos
+    # ambos os lados pra '/' antes do prefix-match.
+    cwd_norm = cwd.replace("\\", "/").rstrip("/")
     for a in agents_config:
-        wp = a["workspace_path"].rstrip("/").rstrip("\\")
+        wp = a["workspace_path"].replace("\\", "/").rstrip("/")
         if cwd_norm == wp or cwd_norm.startswith(wp + "/"):
             return a["slug"]
     return None
@@ -44,21 +50,32 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
     agents_config = request.app.state.agents_config["agents"]
 
     raw_body = await request.body()
-    payload: dict | None
-    try:
-        parsed = json.loads(raw_body) if raw_body else None
-        payload = parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        payload = None
+    payload = parse_dict_or_none(raw_body)
 
-    cwd = (payload or {}).get("cwd")
+    # Schema mínimo do CC: session_id + hook_event_name. Se faltar, é typo de
+    # config no `.claude/settings.json` do agente — fail-loud com 400 pra que o
+    # CC não considere o hook OK silenciosamente. Mesmo assim registramos em
+    # task_events pra audit.
+    raw_text = raw_body.decode("utf-8", errors="replace") if raw_body else None
+    if payload is None or "session_id" not in payload or "hook_event_name" not in payload:
+        await db.insert_task_event(
+            kind=f"hook:{event_kind}:invalid",
+            payload=payload,
+            raw_jsonl=raw_text,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Payload inválido: esperado JSON com session_id e hook_event_name",
+        )
+
+    cwd = payload.get("cwd")
     slug = _slug_from_cwd(cwd, agents_config)
 
     event_id = await db.insert_task_event(
         kind=f"hook:{event_kind}",
         agent_slug=slug,
         payload=payload,
-        raw_jsonl=raw_body.decode("utf-8", errors="replace") if raw_body else None,
+        raw_jsonl=raw_text,
     )
 
     if slug is not None:

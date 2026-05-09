@@ -14,6 +14,7 @@ Rodar prod (VPS, atrás do tailscale serve):
 """
 from __future__ import annotations
 
+import ipaddress
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -31,17 +32,13 @@ from routers import hooks as hooks_router
 from routers import stream as stream_router
 
 
-def load_agents_config(yaml_path: str) -> dict:
-    with Path(yaml_path).open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.settings = settings
 
-    config = load_agents_config(settings.agents_yaml)
+    with Path(settings.agents_yaml).open("r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
     app.state.agents_config = config
 
     db = GrupoBorgesDB(settings.db_path)
@@ -72,7 +69,49 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS antes do middleware Tailscale: preflight responde sem exigir identity header
+
+def _is_loopback(host: str | None) -> bool:
+    if not host:
+        return False
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+@app.middleware("http")
+async def tailscale_identity(request: Request, call_next):
+    """Valida Tailscale-User-Login. Bypassa health, OPTIONS preflight e dev loopback."""
+    # Health check sempre livre (probe Tailscale Serve)
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    # CORS preflight: navegadores não enviam headers custom em OPTIONS — deixa
+    # passar pra que o CORSMiddleware (mais interno na stack) responda.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    # Dev: GB_DEV_BYPASS_AUTH=1 + cliente em loopback bypassa identity
+    settings = getattr(app.state, "settings", None)
+    if settings and settings.dev_bypass_auth:
+        host = request.client.host if request.client else None
+        if _is_loopback(host):
+            return await call_next(request)
+
+    user = request.headers.get("Tailscale-User-Login")
+    if not user:
+        return JSONResponse(
+            {"error": "Unauthorized — Tailscale identity header missing"},
+            status_code=401,
+        )
+    request.state.tailscale_user = user
+    return await call_next(request)
+
+
+# CORS: adicionado APÓS o middleware Tailscale pra ficar mais interno na stack
+# (Starlette: último adicionado é o mais externo, primeiro a executar). Assim
+# o tailscale_identity tem chance de fazer bypass de OPTIONS antes do CORS,
+# e o CORS responde os preflights legítimos sem ser barrado por auth.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -83,30 +122,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def tailscale_identity(request: Request, call_next):
-    """
-    Valida Tailscale-User-Login. Em dev (loopback + GB_DEV_BYPASS_AUTH=1), bypassa.
-    """
-    is_loopback = request.client and request.client.host in ("127.0.0.1", "::1", "localhost")
-    settings = getattr(app.state, "settings", None)
-    bypass_dev = bool(settings and settings.dev_bypass_auth and is_loopback)
-
-    if request.url.path == "/health":
-        return await call_next(request)
-
-    if not bypass_dev:
-        user = request.headers.get("Tailscale-User-Login")
-        if not user:
-            return JSONResponse(
-                {"error": "Unauthorized — Tailscale identity header missing"},
-                status_code=401,
-            )
-        request.state.tailscale_user = user
-
-    return await call_next(request)
 
 
 @app.get("/health", tags=["meta"])
