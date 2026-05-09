@@ -17,11 +17,18 @@ Cockpit web que orquestra 6 agentes Claude Code do Rica. 1 tela: cards de agente
 
 ## Padrões adotados (após pesquisa Context7+comunidade)
 
-- **Multi-agent handoff:** `langgraph-swarm` com `Command(goto=..., graph=Command.PARENT)` — agente pinga outro autonomamente
-- **Controle tmux:** `libtmux` (`capture_pane(escape_sequences=True, join_wrapped=True)` + `send_keys(enter=False)`)
-- **Watch JSONL do CC:** `watchfiles` em `~/.claude/projects/<encoded>/<uuid>.jsonl` + `subagents/agent-{id}.jsonl`
-- **Markdown @include resolver:** helper Python custom (regex `^@(.+\.md)$`) + `markdown-it-py` pro preview
-- **Multi-instância:** 3 subagents do mesmo agente principal com `isolation: worktree` (cada instância em git worktree temporário, sem merge hell). Fallback: 3 sessões CC separadas pra missões longas
+- **Observabilidade dos agentes — HÍBRIDO**:
+  - **Primário: Hooks HTTP** (`PostToolUse`, `UserPromptSubmit`, `SubagentStart`, `SubagentStop`, `Stop`, `SessionStart`) POSTam direto pro backend FastAPI via Tailscale. Determinístico, real-time, sem polling. Cada Zé configura 1 vez em `~/.claude/settings.json`.
+  - **Fallback: `jsonl_watcher`** com `watchfiles` em `~/.claude/projects/<encoded>/<uuid>.jsonl` + `subagents/agent-{id}.jsonl`. Reconstrução histórica + auditoria + cobertura quando hook falha.
+- **Multi-agent handoff:**
+  - **Curto prazo (Fase 3):** `tmux send-keys` direto via `libtmux` quando agente A precisa pingar agente B. Backend orquestra (subagent não pode spawnar subagent).
+  - **Longo prazo (avaliar Fase 3+):** **MCP server "cockpit"** na VPS expondo tools `assign_task`, `record_handoff`, `get_active_missions`. Cada Zé adiciona via `claude mcp add`. **Plus: MCP channels** empurram missão pra sessão CC sem tmux.
+  - LangGraph swarm como referência de padrão `Command(goto=...)` se virar complexo.
+- **Multi-instância:** detectada via `SubagentStart`/`SubagentStop` hooks (não inferida de parsing JSONL). 3 subagents do mesmo agente principal com `isolation: worktree` (worktree temporário, sem merge hell). Fallback: 3 sessões CC separadas pra missões longas.
+- **Skills (live detection):** instalar = criar pasta + SKILL.md basta, agente vê na próxima invocação. Shared = symlink pra `ze-shared/.claude/skills/`. Local = arquivo no workspace. UI bloqueia edit em path resolvido pra `ze-shared/` (regra dura: editar só na fonte).
+- **JSONL parser defensivo:** Anthropic não publica schema. Try/except em parse, skip + log em `type` desconhecido, tolerar linha incompleta, encoded-cwd diferente por OS.
+- **Controle tmux:** `libtmux` (`capture_pane(escape_sequences=True, join_wrapped=True)` + `send_keys(enter=False)` + `enter()`).
+- **Markdown @include resolver:** helper Python custom (regex `^@(.+\.md)$`) + `markdown-it-py` pro preview.
 
 ## UI
 
