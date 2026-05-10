@@ -30,6 +30,7 @@ from orchestrator.tmux_driver import TmuxDriver
 from routers import agents as agents_router
 from routers import hooks as hooks_router
 from routers import stream as stream_router
+from routers import tasks as tasks_router
 
 
 @asynccontextmanager
@@ -130,5 +131,6 @@ async def health() -> dict:
 
 
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
+app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])

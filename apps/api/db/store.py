@@ -259,3 +259,152 @@ class GrupoBorgesDB:
             return conn.execute(
                 "SELECT COALESCE(MAX(id), 0) FROM task_events"
             ).fetchone()[0]
+
+    # ---------- tasks ----------
+
+    TASK_STATUSES = {"backlog", "ready", "running", "review", "blocked", "done"}
+    TASK_UPDATABLE_COLUMNS = {
+        "title", "body", "assignee", "instance_id",
+        "skill_hint", "status", "priority",
+    }
+
+    async def create_task(
+        self,
+        *,
+        id: str,
+        title: str,
+        assignee: str,
+        body: str | None = None,
+        instance_id: str | None = None,
+        origin_agent: str | None = None,
+        skill_hint: str | None = None,
+        status: str = "backlog",
+        priority: int = 0,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self._create_task,
+            id=id, title=title, assignee=assignee, body=body,
+            instance_id=instance_id, origin_agent=origin_agent,
+            skill_hint=skill_hint, status=status, priority=priority,
+            idempotency_key=idempotency_key,
+        )
+
+    def _create_task(
+        self, *, id, title, assignee, body, instance_id, origin_agent,
+        skill_hint, status, priority, idempotency_key,
+    ) -> dict[str, Any]:
+        now = int(time.time())
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (id, title, body, assignee, instance_id, origin_agent,
+                                   skill_hint, status, priority, created_at, idempotency_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (id, title, body, assignee, instance_id, origin_agent,
+                 skill_hint, status, priority, now, idempotency_key),
+            )
+        task = self._get_task(id)
+        assert task is not None  # acabou de ser inserida
+        return task
+
+    async def list_tasks(
+        self,
+        *,
+        assignee: str | None = None,
+        status: str | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._list_tasks, assignee, status, limit)
+
+    def _list_tasks(
+        self, assignee: str | None, status: str | None, limit: int,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if assignee:
+            clauses.append("assignee = ?")
+            params.append(assignee)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                SELECT * FROM tasks
+                {where}
+                ORDER BY priority DESC, created_at ASC
+                LIMIT ?
+                """,
+                params,
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+    async def get_task(self, task_id: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_task, task_id)
+
+    def _get_task(self, task_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            cur = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+            row = cur.fetchone()
+            return dict(row) if row is not None else None
+
+    async def get_task_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_task_by_idempotency_key, key)
+
+    def _get_task_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            cur = conn.execute("SELECT * FROM tasks WHERE idempotency_key = ?", (key,))
+            row = cur.fetchone()
+            return dict(row) if row is not None else None
+
+    async def update_task(
+        self, task_id: str, fields: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        # `fields` carrega só os campos enviados pelo cliente (model_dump exclude_unset);
+        # whitelist em TASK_UPDATABLE_COLUMNS impede coluna inválida virar SQL.
+        return await asyncio.to_thread(self._update_task, task_id, fields)
+
+    def _update_task(
+        self, task_id: str, fields: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        sets: list[str] = []
+        params: list[Any] = []
+        for col, val in fields.items():
+            if col not in self.TASK_UPDATABLE_COLUMNS:
+                continue
+            sets.append(f"{col} = ?")
+            params.append(val)
+
+        # started_at/completed_at derivados da transição de status (semântica unidirecional).
+        new_status = fields.get("status")
+        if new_status == "running":
+            sets.append("started_at = COALESCE(started_at, ?)")
+            params.append(int(time.time()))
+        if new_status == "done":
+            sets.append("completed_at = ?")
+            params.append(int(time.time()))
+
+        if not sets:
+            return self._get_task(task_id)
+
+        params.append(task_id)
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            if cur.rowcount == 0:
+                return None
+        return self._get_task(task_id)
+
+    async def delete_task(self, task_id: str) -> bool:
+        return await asyncio.to_thread(self._delete_task, task_id)
+
+    def _delete_task(self, task_id: str) -> bool:
+        with self._connect() as conn, conn:
+            cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            return cur.rowcount > 0
