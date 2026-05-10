@@ -408,3 +408,39 @@ class GrupoBorgesDB:
         with self._connect() as conn, conn:
             cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
             return cur.rowcount > 0
+
+    # ---------- agent_instances ----------
+
+    async def list_agent_instances(
+        self,
+        agent_slug: str,
+        *,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._list_agent_instances, agent_slug, status)
+
+    def _list_agent_instances(
+        self, agent_slug: str, status: str | None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["agent_slug = ?"]
+        params: list[Any] = [agent_slug]
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                SELECT * FROM agent_instances
+                WHERE {' AND '.join(clauses)}
+                ORDER BY instance_num ASC
+                """,
+                params,
+            )
+            return [self._row_to_instance(row) for row in cur.fetchall()]
+
+    @staticmethod
+    def _row_to_instance(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        # SQLite armazena bool como INTEGER 0/1 — converter pra UI consumir direto.
+        d["is_subagent"] = bool(d["is_subagent"])
+        return d
