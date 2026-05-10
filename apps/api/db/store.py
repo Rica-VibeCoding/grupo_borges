@@ -26,6 +26,10 @@ from typing import Any
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
+# Formato canônico do bucket horário usado pela sparkline. Compartilhado entre
+# a SQL agregada (strftime) e o gap fill no router — single source of truth.
+HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
+
 
 class GrupoBorgesDB:
     def __init__(self, db_path: str):
@@ -444,3 +448,37 @@ class GrupoBorgesDB:
         # SQLite armazena bool como INTEGER 0/1 — converter pra UI consumir direto.
         d["is_subagent"] = bool(d["is_subagent"])
         return d
+
+    # ---------- task_events: sparkline ----------
+
+    async def event_counts_per_hour(
+        self,
+        agent_slug: str,
+        *,
+        since_unix: int,
+    ) -> dict[str, int]:
+        """COUNT por hora UTC pros eventos de um agente desde `since_unix`.
+
+        Retorna dict ISO `YYYY-MM-DDTHH:00:00Z` → contagem. Buckets vazios NÃO
+        entram no dict — gap filling é responsabilidade do caller.
+        """
+        return await asyncio.to_thread(self._event_counts_per_hour, agent_slug, since_unix)
+
+    def _event_counts_per_hour(
+        self, agent_slug: str, since_unix: int,
+    ) -> dict[str, int]:
+        # strftime aqui é parametrizado pra forçar match exato com o formato que
+        # o caller usa no gap fill — divergência viraria contagem 0 silenciosa.
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT
+                    strftime(?, created_at, 'unixepoch') AS hour_bucket,
+                    COUNT(*) AS cnt
+                FROM task_events
+                WHERE agent_slug = ? AND created_at >= ?
+                GROUP BY hour_bucket
+                """,
+                (HOUR_BUCKET_FMT, agent_slug, since_unix),
+            )
+            return {row["hour_bucket"]: row["cnt"] for row in cur.fetchall()}
