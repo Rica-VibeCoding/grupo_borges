@@ -1,7 +1,6 @@
 # Frota do grupo_borges — 6 agentes do escritório central
-# Renomeação 4/5 concluída em 2026-05-09 (Lucas, commit 5d1fc13).
-# `lucas/` ainda pendente — usar `lucas_marketing/` até confirmar.
-# Sessões tmux na VPS continuam com nome antigo até Pavan VPS renascer.
+# Renomeação completa concluída em 2026-05-09: pastas + sessões tmux + auto-memory coerentes (PC + VPS).
+# tmux_session = slug em todos os 6.
 
 version: 1
 
@@ -11,7 +10,7 @@ agents:
     role: Consigliere  # a confirmar
     emoji: "🛠️"
     origin: italiano (Vêneto)
-    tmux_session: ze_auxiliar  # nome antigo até Pavan VPS renascer
+    tmux_session: pavan
     workspace_path: /home/clawd/repos/ze_claude/pavan
     cli_default: claude_code
     model_default: claude-opus-4-7
@@ -42,8 +41,8 @@ agents:
     role: Diretor de Marketing — Líder de área
     emoji: "🎯"
     origin: italiano (Vêneto/Lombardia)
-    tmux_session: lucas_marketing  # mudar pra "lucas" após renomeação Lucas
-    workspace_path: /home/clawd/repos/ze_claude/lucas_marketing  # idem
+    tmux_session: lucas
+    workspace_path: /home/clawd/repos/ze_claude/lucas
     cli_default: claude_code
     model_default: claude-opus-4-7
     capabilities:
@@ -57,7 +56,7 @@ agents:
     aka: Vini
     role: Especialista — futuro líder
     origin: italiano (Vêneto)
-    tmux_session: ze_central_movelmar  # nome antigo até Pavan VPS renascer
+    tmux_session: vinicius
     workspace_path: /home/clawd/repos/ze_claude/vinicius
     cli_default: claude_code
     model_default: claude-opus-4-7
@@ -71,7 +70,7 @@ agents:
     aka: Fe
     role: Especialista — futuro líder
     origin: italiano (norte)
-    tmux_session: ze_woodpro  # nome antigo até Pavan VPS renascer
+    tmux_session: felipe
     workspace_path: /home/clawd/repos/ze_claude/felipe
     cli_default: claude_code
     model_default: claude-opus-4-7
@@ -83,7 +82,7 @@ agents:
     name: Luiz Barsi
     role: Especialista — futuro líder
     origin: italiano (Emilia-Romagna)
-    tmux_session: ze_monitor_financeiro  # nome antigo até Pavan VPS renascer
+    tmux_session: barsi
     workspace_path: /home/clawd/repos/ze_claude/barsi
     cli_default: claude_code
     model_default: claude-opus-4-7
