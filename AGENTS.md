@@ -100,3 +100,55 @@ Context7 obrigatório em:
 - sse-starlette padrões
 - shadcn CLI (`shadcn@latest`)
 - LangGraph swarm handoff
+
+## Workflow obrigatório antes de codar (REGRA DURA — firmada pelo Rica 2026-05-10)
+
+Toda implementação de escala neste repo passa por 8 passos em ordem. Documentado originalmente em `ze_claude/daniel/memory/2026-05-10-cockpit-3-endpoints.md`:
+
+1. **Ultrathink** — mapear escopo, edge cases, antecipar achados de review antes de escrever 1 linha
+2. **Context7** — `mcp__context7_global__query-docs` na stack tocada (Next 16, Tailwind 4, Radix, libtmux, etc) pra forma atual; nunca confiar só em treino
+3. **Implementar** + **smoke test verde** (`pnpm dev` / `curl /health` / typecheck — o que couber)
+4. **2 agents em paralelo:** `code-simplifier:code-simplifier` + `general-purpose` (com prompt explícito de code review)
+5. **Validar in loco** — convergências aplicam; discordâncias descartam *com argumento técnico*, não silêncio
+6. **Aplicar cirurgicamente** — só os fixes acordados; sem refator profundo de oportunidade
+7. **Re-smoke** + commit (conventional + scope) + push
+8. **Atualizar `daniel/cockpit-bridge.md`** com tech-debt nova ou estado da fase
+
+## Fase B — apps/web/ (corrente, 2026-05-10)
+
+Bundle do Claude Designer chegou em `/tmp/cockpit-bundle/cockpit-grupo-borges-spec-padr-es/`:
+- `README.md` — instruções do Designer pro coding agent
+- `chats/chat[1-6].md` — transcript da iteração (chat6 = última)
+- `project/Cockpit · Polish v1.html` (67KB) — **arquivo PRIMÁRIO** (cockpit completo + 5 estados: live / loading / sse-off / reduced-motion / toast)
+- `project/Cockpit · Agent Modal v1.html` (57KB) — modal 4-tabs
+- `project/kanban-tweaks.jsx`, `project/tweaks-panel.jsx` — componentes JSX prontos
+- `project/uploads/` — referências históricas (NÃO usar como template)
+
+**Refactor incremental (firmado por Daniel-PC):**
+1. Plantar `Polish v1.html` quase ipsis litteris em `apps/web/app/page.tsx` (HTML + CSS inline). Validar `pnpm dev`.
+2. Extrair componentes mantendo CSS: `agent-card`, `kanban-board`, `kpi-strip`, `filter-bar`, `agent-modal`, `sse-banner`, `toast-stack`
+3. Plugar SSE real **só depois da estrutura nascer**: `lib/api.ts` → `/api/fleet` + `EventSource('/api/stream')`, troca mock por dados reais
+
+## Backend vivo — endpoints disponíveis (`:8000` localhost, Tailscale-only em prod)
+
+- `GET /health` — probe
+- `GET /api/agents` — lista 6 agentes
+- `GET /api/agents/{slug}` — detalhe
+- `GET /api/agents/{slug}/instances` — instâncias (paralelismo)
+- `GET /api/agents/{slug}/sparkline` — série horária 24h
+- `GET /api/fleet` — **agregado num único shot** (6 agents + instances + sparklines + KPIs + health) — preferir este pro hydration inicial
+- `GET /api/tasks` — CRUD completo
+- `GET /api/stream` — SSE de eventos
+- `POST /hooks/{event_kind}` — interno (hooks Claude Code postam aqui), não chamar do front
+
+Schema canônico em `apps/api/db/schema.sql`. Status enum: `Literal["idle","running","blocked","done","offline"]`. tmux session: `<slug>` ou `<slug>-N`.
+
+## Tara Kaur — parceira Codex (gpt-5.5)
+
+Codex CLI rodando neste repo a partir de 2026-05-10. Nome: **Tara Kaur** (sânscrito *estrela* + sikh *princesa/leoa*, par com Daniel Singh).
+
+- Coordenação: Daniel-VPS (Opus 4.7) pensa/decide/revisa; Tara executa código (refactor mecânico, plant de bundle, scaffolding, testes, fix pontual).
+- Ela **só lê `AGENTS.md`**, não `CLAUDE.md` nem `OPS.md`. Tudo que precisa pra codar com excelência mora aqui.
+- Prompt curto (≤25 linhas, regra firmada). Stacked instructions degradam output.
+- Em paralelo é OK *desde que tarefas sejam disjuntas* (arquivos/áreas diferentes). Edit concorrente no mesmo arquivo → não.
+- Diff revisado por Daniel-VPS antes de commit. Tara não commita sem aval explícito.
