@@ -6,6 +6,8 @@ Lido pelo Codex CLI E pelos Claude Codes que mexem neste repo.
 
 Cockpit web multi-agente. Front Next.js → Vercel. Backend FastAPI → VPS (Tailscale-only). SQLite WAL local. SSE pra streaming. Sem senha custom — Tailscale identity headers.
 
+**Estado atual (2026-05-10):** Fase 1 (backend) ✅ entregue e smoke verde. Frontend (`apps/web/`) é skeleton, aguardando Fase 2.
+
 ## Antes de codar (regra dura)
 
 1. `git pull --rebase`

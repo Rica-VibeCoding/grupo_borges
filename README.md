@@ -16,7 +16,11 @@ Web app que orquestra 6 agentes (Pavan, Daniel, Lucas, Vinicius, Felipe, Barsi),
 
 ## Status
 
-MVP em construção. Plano completo + 5 fases em [`PLANO.md`](./PLANO.md). Manual de implementação em [`AGENTS.md`](./AGENTS.md).
+**Fase 1 (Bootstrap backend) ✅ entregue 2026-05-09 — smoke test verde 2026-05-10.**
+
+Backend FastAPI rodando em `127.0.0.1:8000` na VPS, capturando JSONL em tempo real via `watchfiles` (1857+ eventos no DB ao final do smoke). Próximo passo: prompt do Designer pra Fase 2 (UI).
+
+Plano completo + 5 fases em [`PLANO.md`](./PLANO.md). Manual de implementação em [`AGENTS.md`](./AGENTS.md).
 
 Frota viva em [`agents.yaml`](./agents.yaml).
 
@@ -38,7 +42,26 @@ grupo_borges/
 
 ## Pra começar
 
-(em construção — ainda sem código rodando, só estrutura inicial e plano. Fase 1 do `PLANO.md`)
+Backend (VPS):
+
+```bash
+cd apps/api
+uv sync
+cp .env.example .env  # ajustar paths se não for VPS
+uv run uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Smoke checks:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/agents       # lista os 6 agentes
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"session_id":"x","hook_event_name":"PostToolUse","cwd":"/home/clawd/repos/ze_claude/daniel","transcript_path":"/dev/null"}' \
+  http://127.0.0.1:8000/hooks/PostToolUse
+```
+
+Frontend ainda no esqueleto (`apps/web/`) — aguardando handoff do Claude Designer (Fase 2).
 
 ## License
 

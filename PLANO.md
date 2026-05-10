@@ -72,15 +72,17 @@ GET  /api/stream                    → SSE com eventos em tempo real
 
 ## 5 Fases
 
-### Fase 1 — Bootstrap backend
-- ✅ Criar repo `Rica-VibeCoding/grupo_borges` (público) — em curso
-- ⏳ Monorepo Turbo + pnpm — `apps/web/` + `apps/api/` + `packages/shared-types/`
-- ⏳ `apps/api/`: FastAPI app + middleware Tailscale + db schema + `tmux_driver.py` + `jsonl_watcher.py` + `/api/agents` (read state) + `/api/stream` SSE
-- ⏳ systemd unit + Tailscale Serve config
-- ⏳ Validar contra tmux real da VPS via SSH
+### Fase 1 — Bootstrap backend ✅ (entregue 2026-05-09 · smoke verde 2026-05-10)
+- ✅ Repo `Rica-VibeCoding/grupo_borges` criado e pushed (6 commits em `main`)
+- ✅ Monorepo Turbo + pnpm — `apps/web/` (skeleton) + `apps/api/` + `packages/shared-types/`
+- ✅ `apps/api/`: FastAPI app + middleware Tailscale + db schema + `tmux_driver.py` + `jsonl_watcher.py` + routers (`/api/agents`, `/api/stream` SSE, `/hooks/{event_kind}`)
+- ✅ Validado contra tmux real da VPS — JSONL watcher capturando 6 sessões em tempo real (1857+ eventos no DB)
+- ✅ `daniel-research` subagent formalizado em `.claude/agents/`
+- ⏳ systemd unit + Tailscale Serve config (postergado pra após Fase 2 — backend roda em foreground OK)
+- ⏳ Hooks HTTP nos 6 workspaces apontando pra `:8000/hooks/<event>` (opcional — JSONL watcher já cobre, hooks só adicionam baixa latência)
 
-### Fase 2 — UI no Claude Designer (em paralelo, com prompt do Daniel)
-- ⏳ Daniel entrega prompt detalhado (telas, cards, modal, kanban horizontal, paleta, fontes, mock data via `agents.yaml`)
+### Fase 2 — UI no Claude Designer (próxima — em paralelo, com prompt do Daniel)
+- ⏳ Daniel entrega prompt detalhado (telas, cards, modal, kanban horizontal, paleta, fontes, mock data via `/api/agents` real)
 - ⏳ Designer gera Next.js 16 + Tailwind 4 + shadcn/ui
 - ⏳ Mock conectado, design polido
 - ⏳ SSE plugado no backend
