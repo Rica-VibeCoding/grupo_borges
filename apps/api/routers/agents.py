@@ -6,12 +6,11 @@ GET /api/agents/{slug}/sparkline    — eventos por hora (mini-chart de atividad
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from db.store import HOUR_BUCKET_FMT, GrupoBorgesDB
+from db.store import GrupoBorgesDB, build_hour_series, hour_window
 
 router = APIRouter()
 
@@ -61,12 +60,6 @@ async def get_agent_sparkline(
     if await db.get_agent(slug) is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
 
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    start = now - timedelta(hours=hours - 1)
-    counts = await db.event_counts_per_hour(slug, since_unix=int(start.timestamp()))
-
-    series: list[dict[str, Any]] = []
-    for i in range(hours):
-        bucket = (start + timedelta(hours=i)).strftime(HOUR_BUCKET_FMT)
-        series.append({"bucket": bucket, "count": counts.get(bucket, 0)})
-    return series
+    start_dt, _ = hour_window(hours)
+    counts = await db.event_counts_per_hour(slug, since_unix=int(start_dt.timestamp()))
+    return build_hour_series(counts, start_dt, hours)

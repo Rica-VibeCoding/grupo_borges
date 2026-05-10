@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS agent_instances (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS tasks (
     id              TEXT PRIMARY KEY,                       -- uuid
+    human_id        TEXT UNIQUE,                            -- "DS-12" — legível, gerado por agente (NULL em rows antigos)
     title           TEXT NOT NULL,
     body            TEXT,
     assignee        TEXT NOT NULL REFERENCES agents(slug),
@@ -75,6 +76,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     started_at      INTEGER,
     completed_at    INTEGER,
     idempotency_key TEXT UNIQUE                             -- evita duplicação cross-handoff
+);
+
+-- ============================================================
+-- human_id_counters — sequência por agente pra gerar IDs humanos legíveis
+-- prefix: 2 letras (iniciais do nome). next_seq: próximo número a usar.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS human_id_counters (
+    agent_slug TEXT PRIMARY KEY REFERENCES agents(slug) ON DELETE CASCADE,
+    prefix     TEXT NOT NULL,                               -- "DS" pro Daniel, "JP" pro Pavan, etc
+    next_seq   INTEGER NOT NULL DEFAULT 1
 );
 
 -- ============================================================

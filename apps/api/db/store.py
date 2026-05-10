@@ -21,6 +21,8 @@ import contextlib
 import json
 import sqlite3
 import time
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +31,76 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 # Formato canônico do bucket horário usado pela sparkline. Compartilhado entre
 # a SQL agregada (strftime) e o gap fill no router — single source of truth.
 HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
+
+# Janela de tolerância pra considerar um agente "online" baseado no último heartbeat.
+# Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
+OFFLINE_THRESHOLD_SECONDS = 300
+
+
+def hour_window(hours: int) -> tuple[datetime, int]:
+    """Janela de `hours` buckets alinhada à hora corrente UTC.
+
+    Retorna `(start_dt, hours)` onde start_dt = hora-corrente-UTC menos (hours-1).
+    A série cobre `[start_dt, hora_corrente]` inclusive, totalizando `hours` itens.
+    Compartilhado entre `/api/agents/{slug}/sparkline` e `/api/fleet` pra evitar
+    janela deslocada quando UI consome os dois lado a lado.
+    """
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    return now - timedelta(hours=hours - 1), hours
+
+
+def build_hour_series(
+    counts: dict[str, int], start_dt: datetime, hours: int,
+) -> list[dict[str, Any]]:
+    """Preenche horas vazias com 0 — UI recebe array contíguo de `hours` itens."""
+    out: list[dict[str, Any]] = []
+    for i in range(hours):
+        key = (start_dt + timedelta(hours=i)).strftime(HOUR_BUCKET_FMT)
+        out.append({"bucket": key, "count": counts.get(key, 0)})
+    return out
+
+
+def derive_prefix(name: str) -> str:
+    """Iniciais do primeiro nome + sobrenome ('Daniel Singh' → 'DS')."""
+    parts = [p for p in name.split() if p]
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    if parts:
+        return parts[0][:2].upper()
+    return "??"
+
+
+def derive_agent_status(
+    last_seen: int | None,
+    instances: list[dict[str, Any]] | None,
+    *,
+    now: int | None = None,
+) -> str:
+    """Deriva status do agente a partir do heartbeat + status das instâncias.
+
+    Single source of truth pra UI: 5 estados (running, blocked, done, idle, offline).
+    UI Designer assume essa derivação — não duplicar lógica no frontend.
+
+    Ordem de precedência:
+      1) sem heartbeat ou heartbeat > 5min → offline
+      2) qualquer instance running → running
+      3) qualquer instance blocked → blocked
+      4) todas as instances done → done
+      5) caso contrário → idle (inclui agente vivo sem instances)
+    """
+    now = now if now is not None else int(time.time())
+    if last_seen is None or (now - last_seen) > OFFLINE_THRESHOLD_SECONDS:
+        return "offline"
+    if not instances:
+        return "idle"
+    statuses = {i["status"] for i in instances}
+    if "running" in statuses:
+        return "running"
+    if "blocked" in statuses:
+        return "blocked"
+    if statuses == {"done"}:
+        return "done"
+    return "idle"
 
 
 class GrupoBorgesDB:
@@ -58,6 +130,22 @@ class GrupoBorgesDB:
         with self._connect() as conn:
             with SCHEMA_PATH.open("r", encoding="utf-8") as f:
                 conn.executescript(f.read())
+            # Migração idempotente: coluna `human_id` adicionada após o schema
+            # original (CREATE TABLE IF NOT EXISTS não altera tabela existente).
+            # `executescript` faz commit implícito → o ALTER abaixo roda em autocommit;
+            # capturamos "duplicate column" caso dois startups concorrentes (ex: dev
+            # reload) racem pra adicionar a mesma coluna.
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+            if "human_id" not in existing:
+                try:
+                    conn.execute("ALTER TABLE tasks ADD COLUMN human_id TEXT")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_human_id "
+                    "ON tasks(human_id) WHERE human_id IS NOT NULL"
+                )
 
     async def shutdown(self) -> None:
         # No-op: connection-per-call não mantém estado pra fechar
@@ -109,6 +197,16 @@ class GrupoBorgesDB:
                     ON CONFLICT(slug) DO NOTHING
                     """,
                     (a["slug"],),
+                )
+                # Bootstrap do counter de human_id (prefix imutável após primeira gravação
+                # pra não invalidar IDs já emitidos — DO NOTHING preserva o existente).
+                conn.execute(
+                    """
+                    INSERT INTO human_id_counters (agent_slug, prefix, next_seq)
+                    VALUES (?, ?, 1)
+                    ON CONFLICT(agent_slug) DO NOTHING
+                    """,
+                    (a["slug"], derive_prefix(a["name"])),
                 )
 
     async def list_agents(self) -> list[dict[str, Any]]:
@@ -300,18 +398,51 @@ class GrupoBorgesDB:
     ) -> dict[str, Any]:
         now = int(time.time())
         with self._connect() as conn, conn:
+            # human_id e INSERT na mesma transação: UPDATE...RETURNING serializa
+            # writers no SQLite, então a sequência por agente nunca duplica.
+            # NOTA: idempotency_key duplicado causa rollback e queima 1 número
+            # do counter (gap "DS-12, DS-14") — aceitável; humano não estranha gap.
+            human_id = self._next_human_id(conn, assignee)
             conn.execute(
                 """
-                INSERT INTO tasks (id, title, body, assignee, instance_id, origin_agent,
+                INSERT INTO tasks (id, human_id, title, body, assignee, instance_id, origin_agent,
                                    skill_hint, status, priority, created_at, idempotency_key)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (id, title, body, assignee, instance_id, origin_agent,
+                (id, human_id, title, body, assignee, instance_id, origin_agent,
                  skill_hint, status, priority, now, idempotency_key),
             )
         task = self._get_task(id)
         assert task is not None  # acabou de ser inserida
         return task
+
+    @staticmethod
+    def _next_human_id(conn: sqlite3.Connection, agent_slug: str) -> str:
+        """Incrementa o counter e retorna o ID consumido (`DS-12`).
+
+        Atomicidade: UPDATE...RETURNING numa única statement. Sem race entre
+        leitura e increment. Requer SQLite 3.35+ (RETURNING) — Python 3.11
+        embarca 3.40+.
+
+        Levanta `RuntimeError` se o counter do agente não existe — invariante de
+        bootstrap (sync_agents_from_yaml insere row pra todo agente conhecido).
+        """
+        cur = conn.execute(
+            """
+            UPDATE human_id_counters
+            SET next_seq = next_seq + 1
+            WHERE agent_slug = ?
+            RETURNING prefix, next_seq - 1 AS used_seq
+            """,
+            (agent_slug,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError(
+                f"human_id_counter ausente pra agent_slug={agent_slug!r}; "
+                "rodou sync_agents_from_yaml?"
+            )
+        return f"{row['prefix']}-{row['used_seq']}"
 
     async def list_tasks(
         self,
@@ -482,3 +613,104 @@ class GrupoBorgesDB:
                 (HOUR_BUCKET_FMT, agent_slug, since_unix),
             )
             return {row["hour_bucket"]: row["cnt"] for row in cur.fetchall()}
+
+    # ---------- fleet snapshot (agregado pra UI) ----------
+
+    async def fleet_snapshot(
+        self, *, sparkline_hours: int = 24,
+    ) -> dict[str, Any]:
+        """Snapshot atômico da frota: 6 agents + state + instances + sparkline + KPIs.
+
+        Implementação prefere ler tudo numa única conexão (4 queries) a expor
+        N+1 pro caller. Resposta serve a /api/fleet sem mais round-trips.
+        """
+        return await asyncio.to_thread(self._fleet_snapshot, sparkline_hours)
+
+    def _fleet_snapshot(self, sparkline_hours: int) -> dict[str, Any]:
+        now = int(time.time())
+        start_dt, _ = hour_window(sparkline_hours)
+        since_unix = int(start_dt.timestamp())
+        with self._connect() as conn:
+            agent_rows = conn.execute(
+                """
+                SELECT a.*, s.cli AS state_cli, s.model AS state_model,
+                       s.current_task_id, s.last_seen, s.pane_excerpt, s.instance_count
+                FROM agents a
+                LEFT JOIN agent_state s ON s.slug = a.slug
+                ORDER BY a.slug
+                """
+            ).fetchall()
+            agents = [self._row_to_agent(r) for r in agent_rows]
+
+            instance_rows = conn.execute(
+                """
+                SELECT * FROM agent_instances
+                WHERE ended_at IS NULL
+                ORDER BY agent_slug, instance_num
+                """
+            ).fetchall()
+            by_slug: dict[str, list[dict[str, Any]]] = {}
+            for row in instance_rows:
+                inst = self._row_to_instance(row)
+                by_slug.setdefault(inst["agent_slug"], []).append(inst)
+
+            spark_rows = conn.execute(
+                """
+                SELECT agent_slug,
+                       strftime(?, created_at, 'unixepoch') AS hour_bucket,
+                       COUNT(*) AS cnt
+                FROM task_events
+                WHERE agent_slug IS NOT NULL AND created_at >= ?
+                GROUP BY agent_slug, hour_bucket
+                """,
+                (HOUR_BUCKET_FMT, since_unix),
+            ).fetchall()
+            spark_by_slug: dict[str, dict[str, int]] = {}
+            for row in spark_rows:
+                spark_by_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
+
+            task_counts = {
+                row["status"]: row["cnt"]
+                for row in conn.execute(
+                    "SELECT status, COUNT(*) AS cnt FROM tasks GROUP BY status"
+                ).fetchall()
+            }
+
+        # Hidrata cada agente com instances ativas, status derivado e buckets gap-filled.
+        for agent in agents:
+            slug = agent["slug"]
+            agent_instances = by_slug.get(slug, [])
+            agent["instances"] = agent_instances
+            agent["status"] = derive_agent_status(
+                agent["last_seen"], agent_instances, now=now,
+            )
+            agent["sparkline"] = build_hour_series(
+                spark_by_slug.get(slug, {}), start_dt, sparkline_hours,
+            )
+
+        status_counts = Counter(a["status"] for a in agents)
+        kpis = {
+            "total": len(agents),
+            "running": status_counts.get("running", 0),
+            "blocked": status_counts.get("blocked", 0),
+            "idle": status_counts.get("idle", 0),
+            "done": status_counts.get("done", 0),
+            "offline": status_counts.get("offline", 0),
+            "tasks_active": sum(
+                task_counts.get(s, 0)
+                for s in ("backlog", "ready", "running", "review", "blocked")
+            ),
+            "tasks_running": task_counts.get("running", 0),
+            "tasks_blocked": task_counts.get("blocked", 0),
+            "tasks_done": task_counts.get("done", 0),
+        }
+        last_sync = max((a["last_seen"] for a in agents if a["last_seen"]), default=None)
+        return {
+            "agents": agents,
+            "kpis": kpis,
+            "health": {
+                "last_sync": last_sync,
+                "server_now": now,
+                "offline_threshold_seconds": OFFLINE_THRESHOLD_SECONDS,
+            },
+        }
