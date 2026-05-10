@@ -38,7 +38,7 @@ Cockpit web que orquestra 6 agentes Claude Code do Rica. 1 tela: cards de agente
 - Embaixo: kanban horizontal — cada linha é "1 worker × 1 missão" com badge de status
 
 ### Visual escolhido (2026-05-09): Console Moderno
-- Tipografia: Inter Sans (UI) + JetBrains Mono (IDs, timestamps, paths)
+- Tipografia: **Geist Sans** (UI) + JetBrains Mono (IDs, timestamps, paths) — NUNCA Inter/Roboto/Helvetica (fontes "AI default")
 - Paleta: Grafite `#0e0e10` · Off-white `#f5f3ee` · Accent bronze `#b87332`
 - Cantos `rounded-md` (4-6px), bordas 1px hairline
 - Ícones: Lucide
