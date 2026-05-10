@@ -1,0 +1,57 @@
+@import "tailwindcss";
+@import "augmented-ui/augmented-ui.min.css";
+
+:root[data-theme="dark"] {
+  --bg:#060b18; --panel:#0d1b2a; --card:#112240; --card-2:#153258;
+  --border:#1a3a5c; --border-subtle:#142d4a;
+  --text:#e0f7fa; --muted:#5d9bb8;
+  --accent:#00f0ff; --accent-active:#00e5ff; --accent-secondary:#00b8d4;
+  --accent-subtle:rgba(0,240,255,0.08); --accent-border:rgba(0,240,255,0.25);
+  --status-running:#00f0ff; --status-idle:#5d9bb8; --status-blocked:#ff6b35;
+  --status-done:#64ffda; --status-offline:#4a5666;
+  --health-down:#ff5252; --health-down-soft:rgba(255,82,82,0.08);
+  --glow-card:0 0 1px rgba(0,240,255,0.08);
+  --glow-hover:0 0 8px rgba(0,240,255,0.30);
+  --focus-ring-glow:0 0 0 3px rgba(0,240,255,0.10), 0 0 8px rgba(0,240,255,0.30);
+  --grid-line:rgba(0,240,255,0.025); --hud-mark:rgba(0,240,255,0.32);
+}
+
+:root[data-theme="light"] {
+  --bg:#eef1f5; --panel:#e8ecf2; --card:#f4f6f9; --card-2:#e0e4ea;
+  --border:#c4cdd8; --border-subtle:#d4dbe4;
+  --text:#0a1628; --muted:#5a6a7e;
+  --accent:#0097a7; --accent-active:#00838f; --accent-secondary:#00bcd4;
+  --accent-subtle:rgba(0,151,167,0.08); --accent-border:rgba(0,151,167,0.25);
+  --status-running:#0097a7; --status-idle:#5a6a7e; --status-blocked:#c45000;
+  --status-done:#2e7d52; --status-offline:#98a4b3;
+  --health-down:#c4001f; --health-down-soft:rgba(196,0,31,0.10);
+  --glow-card:0 1px 2px rgba(10,22,40,0.06);
+  --glow-hover:0 0 6px rgba(0,151,167,0.25);
+  --focus-ring-glow:0 0 0 3px rgba(0,151,167,0.14), 0 0 6px rgba(0,151,167,0.45);
+  --grid-line:rgba(10,22,40,0.04); --hud-mark:rgba(0,151,167,0.45);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-active: var(--accent-active);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-border: var(--accent-border);
+  --color-status-running: var(--status-running);
+  --color-status-idle: var(--status-idle);
+  --color-status-blocked: var(--status-blocked);
+  --color-status-done: var(--status-done);
+  --color-status-offline: var(--status-offline);
+  --color-health-down: var(--health-down);
+  --color-health-down-soft: var(--health-down-soft);
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
