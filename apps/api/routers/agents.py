@@ -27,11 +27,9 @@ log = logging.getLogger(__name__)
 
 InstanceStatus = Literal["idle", "running", "blocked", "done"]
 AgentCli = Literal["claude_code", "codex"]
-ALLOWED_MODELS = {
-    "claude-opus-4-7",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "codex-gpt-5-5",
+MODELS_BY_CLI: dict[AgentCli, set[str]] = {
+    "claude_code": {"claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"},
+    "codex": {"codex-gpt-5-5"},
 }
 
 
@@ -76,10 +74,10 @@ async def create_agent_instance(
     agent = await db.get_agent(slug)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
-    if payload.model not in ALLOWED_MODELS:
+    if payload.model not in MODELS_BY_CLI[payload.cli]:
         raise HTTPException(
             status_code=400,
-            detail=f"model inválido: {payload.model}",
+            detail=f"combinação cli={payload.cli} + model={payload.model} inválida",
         )
 
     try:

@@ -38,12 +38,10 @@ const CLI_OPTIONS: Array<{ value: AgentCli; label: string }> = [
   { value: 'codex', label: 'Codex' },
 ];
 
-const MODELS: AgentModel[] = [
-  'claude-opus-4-7',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5',
-  'codex-gpt-5-5',
-];
+const MODELS_BY_CLI: Record<AgentCli, AgentModel[]> = {
+  claude_code: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
+  codex: ['codex-gpt-5-5'],
+};
 
 function WifiOffIcon() {
   return (
@@ -207,10 +205,22 @@ function NewInstanceForm({
   onClose: () => void;
 }) {
   const [cli, setCli] = useState<AgentCli>((agent.cli_default as AgentCli) || 'claude_code');
-  const [model, setModel] = useState<AgentModel>((agent.model_default as AgentModel) || 'claude-haiku-4-5');
+  const [model, setModel] = useState<AgentModel>(
+    () => {
+      const def = (agent.model_default as AgentModel) || 'claude-haiku-4-5';
+      const initialCli = (agent.cli_default as AgentCli) || 'claude_code';
+      return MODELS_BY_CLI[initialCli].includes(def) ? def : MODELS_BY_CLI[initialCli][0];
+    },
+  );
   const [isSubagent, setIsSubagent] = useState(false);
   const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
+
+  const availableModels = MODELS_BY_CLI[cli];
+  function onCliChange(next: AgentCli) {
+    setCli(next);
+    if (!MODELS_BY_CLI[next].includes(model)) setModel(MODELS_BY_CLI[next][0]);
+  }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -233,12 +243,12 @@ function NewInstanceForm({
 
   return (
     <form className="instance-form" onSubmit={submit}>
-      <SelectField<AgentCli> label="CLI" value={cli} onValueChange={setCli} options={CLI_OPTIONS} />
+      <SelectField<AgentCli> label="CLI" value={cli} onValueChange={onCliChange} options={CLI_OPTIONS} />
       <SelectField<AgentModel>
         label="Modelo"
         value={model}
         onValueChange={setModel}
-        options={MODELS.map((v) => ({ value: v, label: v }))}
+        options={availableModels.map((v) => ({ value: v, label: v }))}
       />
       <label className="check-row">
         <input
