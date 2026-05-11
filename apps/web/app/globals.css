@@ -349,6 +349,21 @@
 
 .missao-caps { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
 .missao-key { color: var(--muted); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+.missao-stdout { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.missao-stdout pre {
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .missao-caps-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .missao-caps-list li {
   font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text);

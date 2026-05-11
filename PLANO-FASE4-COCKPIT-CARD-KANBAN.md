@@ -13,7 +13,7 @@ Nao criar um novo Kanban agora. Primeiro abastecer os campos que ja existem.
 ## Status de execucao — 2026-05-11
 
 - [x] Issue 1 — card do agente mostra tarefa atual derivada de tasks ativas.
-- [ ] Issue 2 — stdout curto real da sessao no card/modal.
+- [x] Issue 2 — stdout curto real da sessao no card/modal.
 - [ ] Issue 3 — consolidar CLI/modelo/status efetivo pela instancia ativa.
 - [x] Issue 4 — UI minima para criar nova tarefa no Kanban.
 - [x] Issue 5 — detalhe real de tarefa no Kanban.
@@ -74,17 +74,36 @@ Observacao importante:
 
 Objetivo: fazer o cockpit enxergar trabalho real, nao so status.
 
-- [ ] Capturar ultimas linhas uteis da sessao tmux do agente.
-- [ ] Hidratar `agent_state.pane_excerpt` ou devolver `pane_excerpt` no snapshot `/api/fleet`.
-- [ ] Mostrar stdout curto no card do agente.
-- [ ] Mostrar stdout curto no detalhe/modal quando fizer sentido.
-- [ ] Limitar tamanho do excerpt para proteger UI e banco.
-- [ ] Manter fallback limpo para agente sem sessao/sem saida.
+- [x] Capturar ultimas linhas uteis da sessao tmux do agente.
+- [x] Hidratar `pane_excerpt` no snapshot `/api/fleet` sem gravar no banco.
+- [x] Mostrar stdout curto no card do agente.
+- [x] Mostrar stdout curto no detalhe/modal.
+- [x] Limitar tamanho do excerpt para proteger UI e payload.
+- [x] Manter fallback limpo para agente sem sessao/sem saida.
 
 Aceite:
 
 - Card do agente deixa de mostrar apenas `— nenhuma saída capturada —` quando ha sessao tmux ativa com output.
 - `/api/fleet` nao trava se uma sessao tmux estiver lenta ou ausente.
+
+Status: **entregue e validado em 2026-05-11**.
+
+Decisao tecnica:
+
+- `apps/api/services/tmux_driver.py` ganhou `capture_pane_excerpt()`.
+- A captura usa `libtmux` `pane.capture_pane(start=-N, end='-', escape_sequences=True, join_wrapped=True)`.
+- A chamada roda via `asyncio.to_thread` + `asyncio.wait_for`, com timeout curto.
+- Sessao/pane ausente ou timeout retornam `None`; UI mostra fallback.
+- `/api/fleet` hidrata o excerpt fora da transacao SQLite e nao grava `agent_state.pane_excerpt` nesta fase.
+- Excerpt maximo: 1200 chars.
+
+Validacao:
+
+- `python3 -m compileall apps/api/services apps/api/routers` verde.
+- `corepack pnpm type-check` verde.
+- `corepack pnpm build` verde.
+- `/api/fleet` retornou stdout real para sessoes tmux ativas e `None` para agentes sem sessao/output.
+- Playwright em `:3007/:8000`: cards de `daniel`, `pavan`, `lucas`, `barsi` e `vinicius` exibiram stdout real; modal do agente exibiu `STDOUT · PANE`; desktop 1440px sem scroll horizontal.
 
 ### Fase 4.3 — Claim/lock atomico de dispatch
 

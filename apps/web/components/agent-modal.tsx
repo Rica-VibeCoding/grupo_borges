@@ -225,6 +225,10 @@ function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) 
       <KV k="TAREFA" v={agent.current_task_id ?? '—'} />
       <KV k="INSTÂNCIAS" v={String(agent.instance_count)} />
       <KV k="EVENTOS · 24H" v={String(totalEvents)} />
+      <div className="missao-stdout">
+        <span className="missao-key">STDOUT · PANE</span>
+        <pre>{agent.pane_excerpt ?? '— nenhuma saída capturada —'}</pre>
+      </div>
       <div className="missao-caps">
         <span className="missao-key">CAPACIDADES</span>
         {agent.capabilities.length === 0 ? (

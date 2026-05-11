@@ -15,10 +15,14 @@ AgentCli = Literal["claude_code", "codex"]
 
 _BOOTSTRAP_TIMEOUT_S = 15.0
 _BOOTSTRAP_POLL_INTERVAL_S = 0.25
+_PANE_EXCERPT_TIMEOUT_S = 0.5
+_PANE_EXCERPT_LINES = 12
+_PANE_EXCERPT_MAX_CHARS = 1200
 _REPOS_ROOT = Path("/home/clawd/repos").resolve()
 _UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
 _MODEL_PATTERN = re.compile(r"[a-z0-9.\-]{1,80}")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
     "claude_code": re.compile(r"╭|Claude Code v\d"),
     "codex": re.compile("›"),
@@ -105,6 +109,66 @@ async def bootstrap_cli_in_session(
     return await asyncio.to_thread(
         _bootstrap_cli_in_session_sync, session, workspace_path, cli, model
     )
+
+
+def _clean_pane_lines(lines: list[str], *, max_chars: int) -> str | None:
+    cleaned: list[str] = []
+    for line in lines:
+        text = _CONTROL_CHARS.sub("", _ANSI_ESCAPE.sub("", line)).rstrip()
+        if text.strip():
+            cleaned.append(text)
+    if not cleaned:
+        return None
+    excerpt = "\n".join(cleaned)
+    if len(excerpt) > max_chars:
+        excerpt = "..." + excerpt[-(max_chars - 3):]
+    return excerpt
+
+
+def _capture_pane_excerpt_sync(
+    session_name: str,
+    *,
+    line_limit: int,
+    max_chars: int,
+) -> str | None:
+    server = libtmux.Server()
+    if not server.has_session(session_name):
+        return None
+    session = server.sessions.get(session_name=session_name)
+    pane = session.active_pane
+    lines = pane.capture_pane(
+        start=-line_limit,
+        end="-",
+        escape_sequences=True,
+        join_wrapped=True,
+    )
+    return _clean_pane_lines(lines, max_chars=max_chars)
+
+
+async def capture_pane_excerpt(
+    session_name: str,
+    *,
+    line_limit: int = _PANE_EXCERPT_LINES,
+    max_chars: int = _PANE_EXCERPT_MAX_CHARS,
+    timeout_s: float = _PANE_EXCERPT_TIMEOUT_S,
+) -> str | None:
+    """Retorna um excerpt curto do pane ativo sem deixar /api/fleet travar.
+
+    Falhas comuns de tmux (sessão ausente, pane inválido, timeout) viram None:
+    o cockpit deve mostrar fallback limpo em vez de quebrar o snapshot.
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(
+                _capture_pane_excerpt_sync,
+                session_name,
+                line_limit=line_limit,
+                max_chars=max_chars,
+            ),
+            timeout=timeout_s,
+        )
+    except (TimeoutError, libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return None
 
 
 def _kill_session_if_exists_sync(session_name: str) -> bool:

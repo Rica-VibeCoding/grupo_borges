@@ -7,12 +7,14 @@ quando `last_seen` excede o threshold), pra UI não precisar replicar regra.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB
+from services import tmux_driver
 
 router = APIRouter()
 
@@ -91,10 +93,25 @@ class FleetSnapshot(BaseModel):
     health: FleetHealth
 
 
+async def _hydrate_pane_excerpts(agents: list[dict]) -> None:
+    async def capture(agent: dict) -> tuple[str, str | None]:
+        session_name = agent.get("tmux_session")
+        if not session_name:
+            return agent["slug"], None
+        return agent["slug"], await tmux_driver.capture_pane_excerpt(session_name)
+
+    results = await asyncio.gather(*(capture(agent) for agent in agents))
+    by_slug = dict(results)
+    for agent in agents:
+        agent["pane_excerpt"] = by_slug.get(agent["slug"])
+
+
 @router.get("", response_model=FleetSnapshot)
 async def get_fleet(
     request: Request,
     sparkline_hours: int = Query(default=24, ge=1, le=168),
 ):
     db: GrupoBorgesDB = request.app.state.db
-    return await db.fleet_snapshot(sparkline_hours=sparkline_hours)
+    snapshot = await db.fleet_snapshot(sparkline_hours=sparkline_hours)
+    await _hydrate_pane_excerpts(snapshot["agents"])
+    return snapshot
