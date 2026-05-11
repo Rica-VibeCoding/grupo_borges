@@ -73,7 +73,8 @@ async def create_agent_instance(
     slug: str, payload: AgentInstanceCreate, request: Request
 ) -> dict[str, Any]:
     db: GrupoBorgesDB = request.app.state.db
-    if await db.get_agent(slug) is None:
+    agent = await db.get_agent(slug)
+    if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     if payload.model not in ALLOWED_MODELS:
         raise HTTPException(
@@ -97,6 +98,10 @@ async def create_agent_instance(
 
     tmux_created = False
     session_error: str | None = None
+    bootstrap_result = {
+        "bootstrap_attempted": False,
+        "bootstrap_confirmed": False,
+    }
     tmux_session = instance.get("tmux_session")
     if tmux_session:
         try:
@@ -106,9 +111,25 @@ async def create_agent_instance(
             log.warning("Falha ao criar tmux session %s: %s", tmux_session, e)
             session_error = str(e)
 
+        if tmux_created and not payload.is_subagent:
+            try:
+                bootstrap = await tmux_driver.bootstrap_cli_in_session(
+                    tmux_session,
+                    agent["workspace_path"],
+                    payload.cli,
+                    payload.model,
+                )
+                bootstrap_result = {
+                    f"bootstrap_{k}": v for k, v in bootstrap.items()
+                }
+            except (libtmux_exc.LibTmuxException, ValueError) as e:
+                log.warning("Falha ao bootar CLI em %s: %s", tmux_session, e)
+                session_error = str(e)
+
     response: dict[str, Any] = {
         "instance": instance,
         "tmux_created": tmux_created,
+        **bootstrap_result,
     }
     if session_error:
         response["session_error"] = session_error

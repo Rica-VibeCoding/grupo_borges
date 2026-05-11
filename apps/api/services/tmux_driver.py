@@ -2,9 +2,31 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+import re
+import shlex
+import time
+from typing import Literal
 
 import libtmux
 from libtmux import exc as libtmux_exc
+
+AgentCli = Literal["claude_code", "codex"]
+
+_BOOTSTRAP_TIMEOUT_S = 15.0
+_BOOTSTRAP_POLL_INTERVAL_S = 0.25
+_REPOS_ROOT = Path("/home/clawd/repos").resolve()
+_UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
+_MODEL_PATTERN = re.compile(r"[a-z0-9.\-]{1,80}")
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
+    "claude_code": re.compile(r"╭|Claude Code v\d"),
+    "codex": re.compile("›"),
+}
+_CLI_COMMANDS = {
+    "claude_code": lambda m: f"claude --dangerously-skip-permissions --model {shlex.quote(m)}",
+    "codex": lambda _: "codex",
+}
 
 
 def _create_empty_session_sync(session_name: str) -> None:
@@ -18,6 +40,54 @@ def _create_empty_session_sync(session_name: str) -> None:
 async def create_empty_session(session_name: str) -> None:
     """Cria uma sessão tmux vazia, sem bootar CLI dentro dela."""
     await asyncio.to_thread(_create_empty_session_sync, session_name)
+
+
+def _bootstrap_cli_in_session_sync(
+    session_name: str, workspace_path: str, cli: AgentCli, model: str
+) -> dict[str, bool]:
+    if not _MODEL_PATTERN.fullmatch(model):
+        raise ValueError(f"model inválido: {model}")
+    if _UNSAFE_WORKSPACE_CHARS.search(workspace_path):
+        raise libtmux_exc.LibTmuxException("workspace_path contém caracteres inseguros")
+    resolved_workspace = Path(workspace_path).resolve()
+    if not resolved_workspace.is_relative_to(_REPOS_ROOT):
+        raise ValueError(f"workspace_path fora de {_REPOS_ROOT}: {workspace_path}")
+
+    server = libtmux.Server()
+    if not server.has_session(session_name):
+        return {"attempted": False, "confirmed": False}
+
+    session = server.sessions.get(session_name=session_name)
+    pane = session.active_pane
+    # defense-in-depth pre-shlex
+    pane.send_keys(f"cd {shlex.quote(str(resolved_workspace))}")
+
+    try:
+        command = _CLI_COMMANDS[cli](model)
+    except KeyError as e:
+        raise libtmux_exc.LibTmuxException(f"cli inválido: {cli}") from e
+
+    pane.send_keys(command)
+    pattern = _BANNER_PATTERNS[cli]
+    deadline = time.monotonic() + _BOOTSTRAP_TIMEOUT_S
+    while time.monotonic() < deadline:
+        output = "\n".join(
+            pane.capture_pane(escape_sequences=True, join_wrapped=True)
+        )
+        if pattern.search(_ANSI_ESCAPE.sub("", output)):
+            return {"attempted": True, "confirmed": True}
+        time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
+
+    return {"attempted": True, "confirmed": False}
+
+
+async def bootstrap_cli_in_session(
+    session: str, workspace_path: str, cli: AgentCli, model: str
+) -> dict[str, bool]:
+    """Booteia Claude Code/Codex no pane ativo e confirma readiness por banner."""
+    return await asyncio.to_thread(
+        _bootstrap_cli_in_session_sync, session, workspace_path, cli, model
+    )
 
 
 def _kill_session_if_exists_sync(session_name: str) -> bool:
