@@ -15,11 +15,7 @@ export function CockpitLive() {
         <span className="rule" />
         <span className="endcap">ordem: status · executando primeiro</span>
       </div>
-      <AgentCards
-        agents={fleet.agents}
-        serverNow={fleet.health.server_now}
-        staleThresholdSeconds={fleet.health.stale_threshold_seconds}
-      />
+      <AgentCards agents={fleet.agents} serverNow={fleet.health.server_now} />
       <div className="section-label" aria-hidden="true">
         <span className="num-tag">04</span>
         <span>KANBAN · FLUXO DE TAREFAS</span>

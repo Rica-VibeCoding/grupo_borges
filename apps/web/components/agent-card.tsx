@@ -58,11 +58,9 @@ function WifiOffIcon() {
 export function AgentCard({
   agent,
   serverNow,
-  staleThresholdSeconds,
 }: {
   agent: Agent;
   serverNow: number;
-  staleThresholdSeconds: number;
 }) {
   const { mutate } = useFleet();
   const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
@@ -70,9 +68,6 @@ export function AgentCard({
   const initials = deriveInitials(agent.name);
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
   const task = agent.current_task_id ?? null;
-  const taskHeartbeatFmt = formatLastSeen(agent.current_task_last_heartbeat, serverNow);
-  const taskHeartbeatAge = agent.current_task_last_heartbeat === null ? null : serverNow - agent.current_task_last_heartbeat;
-  const taskHeartbeatStale = taskHeartbeatAge !== null && taskHeartbeatAge > staleThresholdSeconds;
   const cli = agent.state_cli ?? agent.cli_default;
   const model = agent.state_model ?? agent.model_default;
   const sessionStarted = agent.instances[0]?.started_at ?? null;
@@ -135,14 +130,8 @@ export function AgentCard({
           </span>
         </div>
         <div className="meta-strip" aria-hidden="true">
-          <span><span className="m-key">VISTO·EM</span><span className="m-val lseen-val">{lastSeenFmt}</span></span>
+          <span className="m-val lseen-val">{lastSeenFmt}</span>
           <span><span className="m-key">TAREFA</span><span className="m-val">{task ?? '—'}</span></span>
-          {task && (
-            <span data-stale={taskHeartbeatStale ? 'true' : 'false'}>
-              <span className="m-key">RUN·HB</span>
-              <span className="m-val">{taskHeartbeatFmt}</span>
-            </span>
-          )}
           <span className="card-actions" onClick={(e) => e.stopPropagation()}>
             {agent.instances.length > 1 && (
               <button
@@ -285,15 +274,7 @@ function NewInstanceForm({
   );
 }
 
-export function AgentCards({
-  agents,
-  serverNow,
-  staleThresholdSeconds,
-}: {
-  agents: Agent[];
-  serverNow: number;
-  staleThresholdSeconds: number;
-}) {
+export function AgentCards({ agents, serverNow }: { agents: Agent[]; serverNow: number }) {
   const sorted = [...agents].sort((a, b) => {
     const da = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
     return da !== 0 ? da : a.name.localeCompare(b.name);
@@ -301,12 +282,7 @@ export function AgentCards({
   return (
     <div className="grid" id="cards" role="list" aria-label="Agentes">
       {sorted.map((agent) => (
-        <AgentCard
-          key={agent.slug}
-          agent={agent}
-          serverNow={serverNow}
-          staleThresholdSeconds={staleThresholdSeconds}
-        />
+        <AgentCard key={agent.slug} agent={agent} serverNow={serverNow} />
       ))}
     </div>
   );
