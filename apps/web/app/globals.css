@@ -259,4 +259,27 @@
   .grid { grid-template-columns: 1fr !important; }
   .kpi-strip { grid-template-columns: 1fr 1fr !important; gap:8px !important; }
   .kpi-strip > .kpi-tile:last-child { grid-column: 1 / -1; }
+  .viewport { padding:12px 12px 0 !important; gap:12px !important; }
+  .brand-sub, .h-meta, .h-cmd .kbd, .fb-label, .fb-drops, .fb-clear, .fb-search .kbd { display:none !important; }
+  .h-brand { padding:10px 12px !important; gap:8px !important; }
+  .h-cmd { padding:0 12px !important; font-size:0 !important; min-width:44px !important; }
+  .h-cmd::after { content:"⌕"; font-size:16px; color:var(--muted); }
+  .h-clock { padding:0 8px !important; }
+  .h-clock > span:last-child { display:none !important; }
+  .theme-toggle button { padding:0 10px !important; font-size:10px !important; }
+  .h-icon { padding:0 10px !important; }
+  .fb-search { min-width:0 !important; max-width:none !important; flex:1 !important; border-right:0 !important; }
+  .agent-card { min-width:0 !important; }
+  .sse-banner { flex-wrap:wrap !important; }
+  .sse-banner .sb-stat, .sse-banner .sb-ts, .sse-banner .spacer { display:none !important; }
+  .sse-banner .sb-msg { padding:0 12px !important; gap:8px !important; font-size:10px !important; }
+  .sse-banner .sb-retry { padding:0 12px !important; }
+  .kanban-topline { flex-wrap:wrap !important; gap:6px 0 !important; padding:8px 12px !important; }
+  .kanban-topline .right { display:none !important; }
+  .kanban-mobile-tabs { flex-wrap:wrap !important; }
+  .kanban-mobile-tab { flex:1 1 0 !important; min-width:0 !important; padding:10px 4px !important; min-height:44px !important; font-size:10px !important; }
+  .footer .grp { flex-wrap:wrap !important; }
+  .footer .sb-item { padding:6px 8px !important; font-size:9px !important; }
+  .toast-stack { right:8px !important; bottom:auto !important; top:8px !important; max-width:calc(100vw - 16px) !important; }
+  .toast { min-width:0 !important; }
 }
