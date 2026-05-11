@@ -187,9 +187,6 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
                     onCreated={mutate}
                     onClose={() => setInstanceDialogOpen(false)}
                   />
-                  <Dialog.Close asChild>
-                    <button type="button" className="agent-modal-close instance-dialog-close" aria-label="Fechar">✕</button>
-                  </Dialog.Close>
                 </Dialog.Content>
               </Dialog.Portal>
             </Dialog.Root>
@@ -267,6 +264,9 @@ function NewInstanceForm({
       {message && <p className="form-note" data-kind={state === 'error' ? 'error' : 'info'}>{message}</p>}
       <button type="submit" className="form-submit" disabled={state === 'saving'}>
         {state === 'saving' ? 'CRIANDO…' : 'CRIAR'}
+      </button>
+      <button type="button" className="form-cancel" onClick={onClose} disabled={state === 'saving'}>
+        FECHAR
       </button>
     </form>
   );

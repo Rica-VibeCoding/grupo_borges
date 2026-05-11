@@ -109,6 +109,7 @@
 
 .handoff-toggle,
 .form-submit,
+.form-cancel,
 .instance-add,
 .instance-pill {
   background: transparent;
@@ -120,7 +121,8 @@
 }
 
 .handoff-toggle,
-.form-submit {
+.form-submit,
+.form-cancel {
   min-height: 30px;
   padding: 0 12px;
   font-size: 10px;
@@ -131,6 +133,7 @@
 .handoff-toggle:hover,
 .handoff-toggle[aria-expanded="true"],
 .form-submit:hover:not(:disabled),
+.form-cancel:hover:not(:disabled),
 .instance-add:hover,
 .instance-pill:hover,
 .instance-pill[aria-pressed="true"] {
@@ -139,7 +142,8 @@
   background: var(--accent-subtle);
 }
 
-.form-submit:disabled {
+.form-submit:disabled,
+.form-cancel:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -307,12 +311,6 @@
   font-family: 'Geist', sans-serif;
   font-size: 15px;
   font-weight: 600;
-}
-
-.instance-dialog-close {
-  position: absolute;
-  top: 12px;
-  right: 12px;
 }
 
 .instance-form {
