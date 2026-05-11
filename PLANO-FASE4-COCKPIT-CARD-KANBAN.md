@@ -146,7 +146,7 @@ Objetivo: saber se uma task `running` ainda esta viva.
 - [x] Atualizar `task_runs.last_heartbeat` a partir de hooks/eventos reais.
 - [x] Detectar run sem heartbeat recente.
 - [x] Marcar stale/crash como `blocked` na task e `timed_out` no run.
-- [x] Mostrar heartbeat/stale no card/modal.
+- [x] Mostrar heartbeat/stale no detalhe da task.
 - [x] Registrar evento auditavel de stale/crash.
 
 Aceite:
@@ -163,7 +163,8 @@ Decisao tecnica:
 - Quando expira, o run vira `timed_out`, a task vira `blocked`, `agent_state.current_task_id` e limpo e entra evento `run.stale`.
 - `GET /api/tasks` e `GET /api/tasks/{id}` passaram a incluir dados do run atual: id, status, heartbeat, started/ended e outcome.
 - `/api/fleet.health` expoe `stale_threshold_seconds`.
-- Card do agente mostra `RUN·HB`; detalhe da task mostra dados do run e alerta quando o heartbeat esta vencido.
+- O card do agente ficou simples: tempo de vida do agente (`ha Xmin`), tarefa atual e botoes de instancia rente a direita.
+- O detalhe da task mostra dados do run e alerta quando o heartbeat esta vencido.
 
 Validacao:
 
@@ -173,7 +174,7 @@ Validacao:
 - `git diff --check` verde.
 - Backend normal `:8000` e web normal `:3007` reiniciados com codigo novo.
 - Smoke real: task temporaria criada e despachada, hook `PostToolUse` atualizou `last_heartbeat`, heartbeat antigo forcado virou `run.stale`, task ficou `blocked`, run ficou `timed_out`, e task de smoke foi deletada.
-- Smoke Playwright em `:3007/:8000`: UI carregou e exibiu `RUN·HB` nos cards.
+- Smoke Playwright em `:3007/:8000`: UI carregou e confirmou que `RUN·HB` nao aparece mais nos cards; o campo tecnico fica no detalhe da task.
 
 ### Fase 4.5 — Dispatcher automatico opcional
 
