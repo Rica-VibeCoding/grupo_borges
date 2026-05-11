@@ -274,6 +274,7 @@
   .sse-banner .sb-stat, .sse-banner .sb-ts, .sse-banner .spacer { display:none !important; }
   .sse-banner .sb-msg { padding:0 12px !important; gap:8px !important; font-size:10px !important; }
   .sse-banner .sb-retry { padding:0 12px !important; }
+  .sse-banner .sep { display:none !important; }
   .kanban-topline { flex-wrap:wrap !important; gap:6px 0 !important; padding:8px 12px !important; }
   .kanban-topline .right { display:none !important; }
   .kanban-mobile-tabs { flex-wrap:wrap !important; }
@@ -281,5 +282,10 @@
   .footer .grp { flex-wrap:wrap !important; }
   .footer .sb-item { padding:6px 8px !important; font-size:9px !important; }
   .toast-stack { right:8px !important; bottom:auto !important; top:8px !important; max-width:calc(100vw - 16px) !important; }
+  body:has(.sse-banner[data-on="true"]) .toast-stack { top:56px !important; }
   .toast { min-width:0 !important; }
+  .meta-strip { padding:6px 12px !important; font-size:9px !important; gap:4px 8px !important; }
+  .fb-mobile-trigger { display:flex !important; align-items:center !important; }
 }
+/* Blindagem: Tailwind 4 sm:hidden não compilou em arquivo novo (cache JIT); regra explícita garante hide em desktop. */
+.fb-mobile-trigger { display:none; }
