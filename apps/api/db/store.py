@@ -740,7 +740,7 @@ class GrupoBorgesDB:
             )
             instance_num = int(cur.fetchone()["next_num"])
             tmux_session = None
-            if not is_subagent and cli == "claude_code":
+            if not is_subagent and cli in {"claude_code", "codex"}:
                 tmux_session = f"{agent_slug}-{instance_num}"
             conn.execute(
                 """

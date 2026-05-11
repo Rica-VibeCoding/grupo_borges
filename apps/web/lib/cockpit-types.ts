@@ -24,7 +24,11 @@ export type AgentModel =
   | 'claude-opus-4-7'
   | 'claude-sonnet-4-6'
   | 'claude-haiku-4-5'
-  | 'codex-gpt-5-5';
+  | 'codex-gpt-5-5'
+  | 'codex-gpt-5-4'
+  | 'codex-gpt-5-4-mini'
+  | 'codex-gpt-5-3-codex'
+  | 'codex-gpt-5-2';
 
 export type AgentInstanceCreate = {
   cli: AgentCli;

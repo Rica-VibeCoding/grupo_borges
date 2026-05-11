@@ -23,9 +23,26 @@ _BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
     "claude_code": re.compile(r"╭|Claude Code v\d"),
     "codex": re.compile("›"),
 }
+
+_CODEX_MODEL_MAP = {
+    "codex-gpt-5-5": "gpt-5.5",
+    "codex-gpt-5-4": "gpt-5.4",
+    "codex-gpt-5-4-mini": "gpt-5.4-mini",
+    "codex-gpt-5-3-codex": "gpt-5.3-codex",
+    "codex-gpt-5-2": "gpt-5.2",
+}
+
+
+def _codex_command(model: str) -> str:
+    raw_model = _CODEX_MODEL_MAP.get(model)
+    if raw_model is None:
+        raw_model = model.removeprefix("codex-").replace("-", ".")
+    return f"codex -m {shlex.quote(raw_model)}"
+
+
 _CLI_COMMANDS = {
     "claude_code": lambda m: f"claude --dangerously-skip-permissions --model {shlex.quote(m)}",
-    "codex": lambda _: "codex",
+    "codex": _codex_command,
 }
 
 
