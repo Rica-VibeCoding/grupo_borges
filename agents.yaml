@@ -19,6 +19,8 @@ agents:
       - palavra-final
       - claude-code-guru
       - coordenacao-multi-ze
+    domain_tables:
+      - { name: ze_backlog, db: ze, description: "Meta-backlog dos agentes (persona, skills, MCPs)" }
 
   - slug: daniel
     name: Daniel Singh
@@ -35,6 +37,11 @@ agents:
       - code-review
       - refactor
       - portfolio-software
+    domain_tables:
+      - { name: fc_backlog, db: ze, description: "Backlog Fluyt (bugs, features, melhorias)" }
+      - { name: fc_changelog, db: ze, description: "Histórico de entregas Fluyt" }
+      - { name: fc_reunioes, db: ze, description: "Reuniões e feedbacks com usuários Fluyt" }
+      - { name: email_historico_log, db: ze, description: "Log de emails enviados pelos agentes" }
 
   - slug: lucas
     name: Lucas Marchetti
@@ -50,6 +57,8 @@ agents:
       - conecta
       - woodpro
       - fluyt-content
+    domain_tables:
+      - { name: cncta_contatos, db: ze, description: "CRM Conecta (read-only — usado pra circular, campanhas)" }
 
   - slug: vinicius
     name: Vinicius Zanella
@@ -64,6 +73,11 @@ agents:
       - movelmar
       - lojistas-conecta
       - crm
+    domain_tables:
+      - { name: cncta_contatos, db: ze, description: "Lojistas Conecta (representação Movelmar)" }
+      - { name: mvmr_lojistas, db: ze, description: "Cadastro de lojistas Movelmar" }
+      - { name: mvmr_assistencias, db: ze, description: "Assistências técnicas Movelmar" }
+      - { name: mvmr_cores, db: ze, description: "Catálogo de cores Movelmar (painel 18/25, tamburato 42)" }
 
   - slug: felipe
     name: Felipe Conti
@@ -77,6 +91,11 @@ agents:
     capabilities:
       - comercial-fluyt-b2b
       - woodpro
+    domain_tables:
+      - { name: r_contatos, db: geral, description: "Cadastro de clientes WoodPro+ (CRM)" }
+      - { name: cm_orcamentos, db: geral, description: "Orçamentos / negociações Fluyt" }
+      - { name: cm_ambientes, db: geral, description: "Ambientes (produtos) dentro de cada orçamento" }
+      - { name: cm_orcamentos_pagamentos, db: geral, description: "Pagamentos vinculados aos orçamentos" }
 
   - slug: barsi
     name: Luiz Barsi
@@ -89,6 +108,11 @@ agents:
     capabilities:
       - cfo-read-only
       - monitor-financeiro
+    domain_tables:
+      - { name: fin_transacoes, db: ze, description: "Transações financeiras (OFX importado, categorias)" }
+      - { name: fin_contas, db: ze, description: "Contas bancárias e cartões" }
+      - { name: fin_categorias, db: ze, description: "Categorias de classificação financeira" }
+      - { name: fin_fornecedores, db: ze, description: "Fornecedores e recebedores" }
 
 # Modelos disponíveis (escolhível por instância no card da UI)
 available_models:

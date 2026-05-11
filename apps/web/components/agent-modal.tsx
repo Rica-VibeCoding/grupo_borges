@@ -1,12 +1,21 @@
 'use client';
 
+import { useEffect, useState, type ReactElement } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
 import { useIsMobile } from '../lib/use-is-mobile';
-import type { Agent, AgentStatus } from '../lib/cockpit-types';
+import type {
+  Agent,
+  AgentDocMeta,
+  AgentDocResolved,
+  AgentSkill,
+  AgentStatus,
+  AgentTable,
+} from '../lib/cockpit-types';
 import { formatLastSeen } from '../lib/cockpit-types';
+import { fetchAgentDoc, fetchAgentDocs, fetchAgentSkills, fetchAgentTables } from '../lib/api';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
   running: 'EXECUTANDO',
@@ -67,13 +76,13 @@ export function AgentModal() {
                   <MissaoPanel agent={agent} serverNow={fleet.health.server_now} />
                 </Tabs.Content>
                 <Tabs.Content value="skills" className="agent-modal-panel">
-                  <Placeholder label="Skills do workspace serão listadas aqui via /api/agents/{slug}/skills (Fase 3)." />
+                  <SkillsPanel slug={agent.slug} />
                 </Tabs.Content>
                 <Tabs.Content value="docs" className="agent-modal-panel">
-                  <Placeholder label="Docs do workspace via @include resolver — Fase 3." />
+                  <DocsPanel slug={agent.slug} />
                 </Tabs.Content>
                 <Tabs.Content value="tabelas" className="agent-modal-panel">
-                  <Placeholder label="Tabelas Supabase do domínio do agente — Fase 3." />
+                  <TablesPanel slug={agent.slug} />
                 </Tabs.Content>
               </Tabs.Root>
             </>
@@ -147,4 +156,142 @@ function Sparkline({ buckets }: { buckets: { bucket: string; count: number }[] }
 
 function Placeholder({ label }: { label: string }) {
   return <p className="muted" style={{ padding: '12px 0' }}>{label}</p>;
+}
+
+// ----- Skills / Docs / Tables panels --------------------------------------
+
+type LoadState<T> =
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: T }
+  | { kind: 'error'; message: string };
+
+function useAbortableFetch<T>(
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  deps: ReadonlyArray<unknown>,
+): LoadState<T> {
+  const [state, setState] = useState<LoadState<T>>({ kind: 'loading' });
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setState({ kind: 'loading' });
+    fetcher(ctrl.signal)
+      .then((data) => setState({ kind: 'ready', data }))
+      .catch((err) => {
+        if (ctrl.signal.aborted) return;
+        setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+      });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return state;
+}
+
+function muted(text: string): ReactElement {
+  return <p className="muted" style={{ padding: '12px 0' }}>{text}</p>;
+}
+
+function SkillsPanel({ slug }: { slug: string }) {
+  const state = useAbortableFetch(
+    (signal) => fetchAgentSkills(slug, signal).then((res) => res.skills),
+    [slug],
+  );
+
+  if (state.kind === 'loading') return muted('carregando skills…');
+  if (state.kind === 'error') return muted(`erro: ${state.message}`);
+  if (state.data.length === 0) return muted('nenhuma skill instalada neste workspace.');
+
+  return (
+    <ul className="agent-modal-list">
+      {state.data.map((s) => (
+        <li key={s.name} className="agent-modal-item">
+          <div className="agent-modal-item-head">
+            <span className="agent-modal-item-name">{s.name}</span>
+            {s.is_symlink && s.shared_from && (
+              <span className="agent-modal-item-badge" title={`symlink → ${s.shared_from}`}>shared</span>
+            )}
+          </div>
+          {s.description && <p className="agent-modal-item-desc">{s.description}</p>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DocsPanel({ slug }: { slug: string }) {
+  const listState = useAbortableFetch<AgentDocMeta[]>(
+    (signal) => fetchAgentDocs(slug, signal).then((res) => res.docs),
+    [slug],
+  );
+  const [selected, setSelected] = useState<string | null>(null);
+
+  // Reset seleção + auto-seleciona primeiro doc quando a lista chega
+  useEffect(() => {
+    if (listState.kind === 'ready') {
+      setSelected(listState.data[0]?.filename ?? null);
+    } else {
+      setSelected(null);
+    }
+  }, [listState]);
+
+  const docState = useAbortableFetch<AgentDocResolved | null>(
+    (signal) => (selected ? fetchAgentDoc(slug, selected, signal) : Promise.resolve(null)),
+    [slug, selected],
+  );
+
+  if (listState.kind === 'loading') return muted('carregando docs…');
+  if (listState.kind === 'error') return muted(`erro: ${listState.message}`);
+  if (listState.data.length === 0) return muted('nenhum doc neste workspace.');
+
+  return (
+    <div className="agent-modal-docs">
+      <nav className="agent-modal-docs-nav" aria-label="Arquivos de documentação do agente">
+        {listState.data.map((d) => (
+          <button
+            key={d.filename}
+            type="button"
+            className={`agent-modal-docs-nav-btn${selected === d.filename ? ' is-active' : ''}`}
+            onClick={() => setSelected(d.filename)}
+          >
+            {d.filename}
+          </button>
+        ))}
+      </nav>
+      <div className="agent-modal-docs-body">
+        {docState.kind === 'loading' && <p className="muted">carregando…</p>}
+        {docState.kind === 'error' && <p className="muted">erro: {docState.message}</p>}
+        {docState.kind === 'ready' && docState.data && (
+          <>
+            {docState.data.truncated && (
+              <p className="muted" style={{ marginBottom: 8 }}>⚠ resposta truncada em 256KB</p>
+            )}
+            <pre className="agent-modal-docs-pre"><code>{docState.data.content_md}</code></pre>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TablesPanel({ slug }: { slug: string }) {
+  const state = useAbortableFetch(
+    (signal) => fetchAgentTables(slug, signal).then((res) => res.tables),
+    [slug],
+  );
+
+  if (state.kind === 'loading') return muted('carregando tabelas…');
+  if (state.kind === 'error') return muted(`erro: ${state.message}`);
+  if (state.data.length === 0) return muted('nenhuma tabela de domínio configurada no agents.yaml.');
+
+  return (
+    <ul className="agent-modal-list">
+      {state.data.map((t) => (
+        <li key={`${t.db}.${t.name}`} className="agent-modal-item">
+          <div className="agent-modal-item-head">
+            <span className="agent-modal-item-name">{t.name}</span>
+            <span className="agent-modal-item-badge">{t.db}</span>
+          </div>
+          {t.description && <p className="agent-modal-item-desc">{t.description}</p>}
+        </li>
+      ))}
+    </ul>
+  );
 }

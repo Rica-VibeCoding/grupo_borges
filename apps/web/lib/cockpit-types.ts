@@ -102,6 +102,56 @@ export type TaskEvent = {
   created_at: number;
 };
 
+// ----- Agent modal (Fase 3): skills / docs / tables ------------------------
+
+export type AgentSkill = {
+  name: string;
+  description: string;
+  path: string;
+  is_symlink: boolean;
+  shared_from: string | null;
+  size_bytes: number;
+  updated_at: number;
+};
+
+export type AgentSkillsResponse = {
+  slug: string;
+  skills: AgentSkill[];
+  count: number;
+};
+
+export type AgentDocMeta = {
+  filename: string;
+  title: string | null;
+  size_bytes: number;
+  updated_at: number;
+};
+
+export type AgentDocsResponse = {
+  slug: string;
+  docs: AgentDocMeta[];
+  count: number;
+};
+
+export type AgentDocResolved = {
+  slug: string;
+  filename: string;
+  content_md: string;
+  truncated: boolean;
+};
+
+export type AgentTable = {
+  name: string;
+  db: string;
+  description?: string;
+};
+
+export type AgentTablesResponse = {
+  slug: string;
+  tables: AgentTable[];
+  count: number;
+};
+
 export function deriveInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '??';
