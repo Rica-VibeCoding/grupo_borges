@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { Agent, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
-import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, shortModelName } from '../lib/cockpit-types';
+import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, parseModelFromPane, shortModelName } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
@@ -78,6 +78,7 @@ export function AgentCard({
   const sessionStarted = agent.instances[0]?.started_at ?? null;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = parseContextPct(agent.pane_excerpt);
+  const paneModel = parseModelFromPane(agent.pane_excerpt);
   const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
@@ -184,7 +185,7 @@ export function AgentCard({
           </span>
         </div>
         <div className="pane pane-session" aria-hidden="true">
-          <span className="ps-model">{shortModelName(model)}</span>
+          <span className="ps-model">{paneModel ?? shortModelName(model)}</span>
           <span className="ps-sep">·</span>
           <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
           <span className="ps-sep">·</span>

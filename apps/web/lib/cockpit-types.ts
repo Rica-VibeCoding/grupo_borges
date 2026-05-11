@@ -236,3 +236,10 @@ export function parseContextPct(excerpt: string | null): number | null {
   const m = excerpt.match(/(\d+)%/);
   return m ? parseInt(m[1]!, 10) : null;
 }
+
+export function parseModelFromPane(excerpt: string | null): string | null {
+  if (!excerpt) return null;
+  // CC status line: "Sonnet 4.6 (200k context) - [███░] 81%"
+  const m = excerpt.match(/([A-Z][a-z]+ \d+\.\d+)\s*\(/);
+  return m ? m[1]! : null;
+}
