@@ -289,3 +289,6 @@
 }
 /* Blindagem: Tailwind 4 sm:hidden não compilou em arquivo novo (cache JIT); regra explícita garante hide em desktop. */
 .fb-mobile-trigger { display:none; }
+
+/* Logo no header: imagem ocupa 100% do glyph 28x28 sem deformar. */
+.brand-glyph img { display:block; width:100%; height:100%; object-fit:contain; }

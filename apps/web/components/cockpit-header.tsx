@@ -10,7 +10,9 @@ export function CockpitHeader() {
   return (
     <header className="header mono" role="banner">
       <div className="h-brand">
-        <span className="brand-glyph" aria-hidden="true">gb</span>
+        <span className="brand-glyph" aria-hidden="true">
+          <img src="/icon.png" alt="" width={28} height={28} />
+        </span>
         <div className="brand-stack">
           <span className="brand-title">cockpit</span>
           <span className="brand-sub">grupo_borges · ops da frota</span>
