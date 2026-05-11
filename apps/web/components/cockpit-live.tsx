@@ -10,16 +10,16 @@ export function CockpitLive() {
     <>
       <div className="section-label" aria-hidden="true">
         <span className="num-tag">03</span>
-        <span>FLEET · {String(fleet.agents.length).padStart(2, '0')} AGENTS · LIVE</span>
+        <span>FROTA · {String(fleet.agents.length).padStart(2, '0')} AGENTES · AO VIVO</span>
         <span className="rule" />
-        <span className="endcap">order: status · running first</span>
+        <span className="endcap">ordem: status · executando primeiro</span>
       </div>
       <AgentCards agents={fleet.agents} serverNow={fleet.health.server_now} />
       <div className="section-label" aria-hidden="true">
         <span className="num-tag">04</span>
-        <span>KANBAN · TASK STREAM</span>
+        <span>KANBAN · FLUXO DE TAREFAS</span>
         <span className="rule" />
-        <span className="endcap">aria-live: polite</span>
+        <span className="endcap">aria-live: educado</span>
       </div>
       <KanbanBoard tasks={tasks} serverNow={fleet.health.server_now} />
     </>

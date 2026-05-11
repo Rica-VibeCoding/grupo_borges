@@ -8,9 +8,9 @@ export function FilterBar() {
 
   return (
     <div className="filterbar mono" role="search">
-      <div className="fb-label" aria-hidden="true"><span className="num">02</span><span>FILTER</span></div>
+      <div className="fb-label" aria-hidden="true"><span className="num">02</span><span>FILTRO</span></div>
       <div className="fb-search">
-        <input id="fbSearch" type="text" placeholder="search agent · slug · task · path" autoComplete="off" aria-label="Search agents and tasks" suppressHydrationWarning />
+        <input id="fbSearch" type="text" placeholder="buscar agente · slug · tarefa · caminho" autoComplete="off" aria-label="Buscar agentes e tarefas" suppressHydrationWarning />
         <span className="kbd" aria-hidden="true">/</span>
       </div>
       <button
@@ -26,12 +26,12 @@ export function FilterBar() {
       </button>
       <FilterDrawer open={filterDrawerOpen} onOpenChange={setFilterDrawerOpen} />
       <div className="fb-drops">
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Status filter: all"><span className="dk">STATUS</span><span className="dv">all</span><span className="caret">▾</span></button>
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Model filter: all"><span className="dk">MDL</span><span className="dv">all</span><span className="caret">▾</span></button>
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="CLI filter: all"><span className="dk">CLI</span><span className="dv">all</span><span className="caret">▾</span></button>
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Window: 24h"><span className="dk">WIN</span><span className="dv">24h</span><span className="caret">▾</span></button>
+        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Filtro de status: todos"><span className="dk">STATUS</span><span className="dv">todos</span><span className="caret">▾</span></button>
+        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Filtro de modelo: todos"><span className="dk">MDL</span><span className="dv">todos</span><span className="caret">▾</span></button>
+        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Filtro de CLI: todos"><span className="dk">CLI</span><span className="dv">todos</span><span className="caret">▾</span></button>
+        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Janela: 24h"><span className="dk">WIN</span><span className="dv">24h</span><span className="caret">▾</span></button>
       </div>
-      <button className="fb-clear" type="button" disabled aria-label="Clear filters">RESET ✕</button>
+      <button className="fb-clear" type="button" disabled aria-label="Limpar filtros">LIMPAR ✕</button>
     </div>
   );
 }

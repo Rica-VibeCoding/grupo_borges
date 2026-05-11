@@ -30,7 +30,7 @@ export function ToastStack() {
           <button
             type="button"
             className="tx"
-            aria-label="Dismiss toast"
+            aria-label="Dispensar aviso"
             onClick={(e) => {
               e.stopPropagation();
               dismiss(t.id);

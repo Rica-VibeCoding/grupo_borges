@@ -6,17 +6,17 @@ import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
 import { useSelectedAgent } from '../lib/selected-agent-context';
 
 const stateLabel: Record<AgentStatus, string> = {
-  running: 'RUNNING',
-  idle: 'IDLE',
-  blocked: 'BLOCKED',
-  done: 'DONE',
+  running: 'EXECUTANDO',
+  idle: 'OCIOSO',
+  blocked: 'BLOQUEADO',
+  done: 'CONCLUÍDO',
   offline: 'OFFLINE',
 };
 
 const paneLabel: Record<AgentStatus, string> = {
   running: 'STDOUT // PANE.001',
-  idle: 'STDOUT // idle',
-  blocked: 'STDIN // AWAIT.HUMAN',
+  idle: 'STDOUT // ocioso',
+  blocked: 'STDIN // AGUARDA.HUMANO',
   done: 'STDOUT // EXIT.0',
   offline: 'STDOUT // OFFLINE',
 };
@@ -49,7 +49,7 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
   const model = agent.state_model ?? agent.model_default;
-  const label = `Agent ${agent.name}, ${stateLabel[agent.status]}${task ? `, task ${task}` : ''}`;
+  const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
   const onKey = useCallback(
@@ -76,8 +76,8 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
     >
       <div className="scan" aria-hidden="true" />
       <div className="card-skel">
-        <span className="lbl">CONNECTING</span>
-        <span className="ph">▸ no data // fetching</span>
+        <span className="lbl">CONECTANDO</span>
+        <span className="ph">▸ sem dados // buscando</span>
       </div>
       <div className="rail" aria-hidden="true" />
       <div className="card-body">
@@ -87,7 +87,7 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
             <div className="head-toprow">
               <span className="agent-name">
                 {agent.name}
-                <span className="wifi-off" title="SSE disconnected" aria-hidden="true">
+                <span className="wifi-off" title="SSE desconectado" aria-hidden="true">
                   <WifiOffIcon />
                 </span>
               </span>
@@ -103,7 +103,7 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
         <div className="meta-strip" aria-hidden="true">
           <span><span className="m-key">MDL</span><span className="m-val">{model}</span></span>
           <span><span className="m-key">CLI</span><span className="m-val">{cli}</span></span>
-          <span><span className="m-key">TASK</span><span className="m-val">{task ?? '—'}</span></span>
+          <span><span className="m-key">TAREFA</span><span className="m-val">{task ?? '—'}</span></span>
         </div>
         <div className="pane">
           <div
@@ -117,10 +117,10 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
           >
             {paneLabel[agent.status]}
           </div>
-          <span>{agent.pane_excerpt ?? '— no output captured —'}</span>
+          <span>{agent.pane_excerpt ?? '— nenhuma saída capturada —'}</span>
         </div>
         <div className="card-foot">
-          <span>LAST·SEEN <span className="lseen-val">{lastSeenFmt}</span></span>
+          <span>VISTO·EM <span className="lseen-val">{lastSeenFmt}</span></span>
           <span>{cli.toUpperCase()} · {model}</span>
         </div>
       </div>
@@ -134,7 +134,7 @@ export function AgentCards({ agents, serverNow }: { agents: Agent[]; serverNow: 
     return da !== 0 ? da : a.name.localeCompare(b.name);
   });
   return (
-    <div className="grid" id="cards" role="list" aria-label="Agents">
+    <div className="grid" id="cards" role="list" aria-label="Agentes">
       {sorted.map((agent) => (
         <AgentCard key={agent.slug} agent={agent} serverNow={serverNow} />
       ))}

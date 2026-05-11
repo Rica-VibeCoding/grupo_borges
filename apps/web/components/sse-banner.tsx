@@ -47,7 +47,7 @@ export function SseBanner() {
       className="sse-banner"
       data-on={offline ? 'true' : 'false'}
       role="status"
-      aria-label="SSE connection status"
+      aria-label="Status da conexão SSE"
     >
       <div className="sb-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24">
@@ -62,7 +62,7 @@ export function SseBanner() {
         <span className="attempt" aria-hidden="true">tentativa {String(retryCount).padStart(2, '0')} / ∞</span>
       </div>
       <div className="sep" />
-      <div className="sb-stat" aria-hidden="true"><span>last ping</span><span className="v warn">{pingDelta}</span></div>
+      <div className="sb-stat" aria-hidden="true"><span>último ping</span><span className="v warn">{pingDelta}</span></div>
       <div className="sep" />
       <div className="sb-stat" aria-hidden="true"><span>backoff</span><span className="v">{formatBackoff(retryCount)}</span></div>
       <div className="spacer" />
@@ -71,7 +71,7 @@ export function SseBanner() {
       <button
         type="button"
         className="sb-retry"
-        aria-label="Reconnect SSE now"
+        aria-label="Reconectar SSE agora"
         onClick={() => window.location.reload()}
       >
         [ REINTENTAR ]

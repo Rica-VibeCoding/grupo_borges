@@ -8,10 +8,10 @@ type FilterDrawerProps = {
 };
 
 const filters = [
-  { key: 'STATUS', value: 'all', label: 'Status filter: all' },
-  { key: 'MDL', value: 'all', label: 'Model filter: all' },
-  { key: 'CLI', value: 'all', label: 'CLI filter: all' },
-  { key: 'WIN', value: '24h', label: 'Window: 24h' },
+  { key: 'STATUS', value: 'todos', label: 'Filtro de status: todos' },
+  { key: 'MDL', value: 'todos', label: 'Filtro de modelo: todos' },
+  { key: 'CLI', value: 'todos', label: 'Filtro de CLI: todos' },
+  { key: 'WIN', value: '24h', label: 'Janela: 24h' },
 ];
 
 export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
@@ -63,7 +63,7 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
     >
       <div className="flex h-full justify-end">
         <section
-          aria-label="Mobile filters"
+          aria-label="Filtros móveis"
           className={`h-full w-80 max-w-[85vw] border-l p-4 transition-transform duration-200 ease-out ${
             panelOpen ? 'translate-x-0' : 'translate-x-full'
           }`}
@@ -80,7 +80,7 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
             <h2 id="filter-drawer-title" className="text-[12px] font-semibold uppercase tracking-[0.2em]">Filtros</h2>
             <button
               type="button"
-              aria-label="Close filters"
+              aria-label="Fechar filtros"
               className="inline-flex h-9 w-9 items-center justify-center border text-xl leading-none"
               style={{ borderColor: 'var(--border)', color: 'var(--accent)' }}
               onClick={() => onOpenChange(false)}
@@ -110,10 +110,10 @@ export function FilterDrawer({ open, onOpenChange }: FilterDrawerProps) {
             className="mt-4 min-h-11 w-full border px-4 text-[10px] uppercase tracking-[0.14em] opacity-35"
             type="button"
             disabled
-            aria-label="Clear filters"
+            aria-label="Limpar filtros"
             style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
           >
-            RESET ✕
+            LIMPAR ✕
           </button>
         </section>
       </div>

@@ -9,10 +9,10 @@ import type { Agent, AgentStatus } from '../lib/cockpit-types';
 import { formatLastSeen } from '../lib/cockpit-types';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
-  running: 'RUNNING',
-  idle: 'IDLE',
-  blocked: 'BLOCKED',
-  done: 'DONE',
+  running: 'EXECUTANDO',
+  idle: 'OCIOSO',
+  blocked: 'BLOQUEADO',
+  done: 'CONCLUÍDO',
   offline: 'OFFLINE',
 };
 
@@ -52,12 +52,12 @@ export function AgentModal() {
                     {STATUS_LABEL[agent.status]}
                   </span>
                   <Dialog.Close asChild>
-                    <button type="button" className="agent-modal-close" aria-label="Close modal">✕</button>
+                    <button type="button" className="agent-modal-close" aria-label="Fechar modal">✕</button>
                   </Dialog.Close>
                 </div>
               </header>
               <Tabs.Root defaultValue="missao" className="agent-modal-tabs">
-                <Tabs.List className="agent-modal-tablist" aria-label="Agent detail tabs">
+                <Tabs.List className="agent-modal-tablist" aria-label="Abas de detalhes do agente">
                   <Tabs.Trigger value="missao" className="agent-modal-tab">MISSÃO</Tabs.Trigger>
                   <Tabs.Trigger value="skills" className="agent-modal-tab">SKILLS</Tabs.Trigger>
                   <Tabs.Trigger value="docs" className="agent-modal-tab">DOCS</Tabs.Trigger>
@@ -91,15 +91,15 @@ function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) 
       <KV k="WORKSPACE" v={agent.workspace_path} />
       <KV k="TMUX" v={agent.tmux_session} />
       <KV k="CLI" v={agent.state_cli ?? agent.cli_default} />
-      <KV k="MODEL" v={agent.state_model ?? agent.model_default} />
+      <KV k="MODELO" v={agent.state_model ?? agent.model_default} />
       <KV k="STATUS" v={STATUS_LABEL[agent.status]} />
-      <KV k="LAST SEEN" v={formatLastSeen(agent.last_seen, serverNow)} />
-      <KV k="LAST SEEN ABS" v={formatUnixDateTime(agent.last_seen)} />
-      <KV k="TASK" v={agent.current_task_id ?? '—'} />
-      <KV k="INSTANCES" v={String(agent.instance_count)} />
-      <KV k="EVENTS · 24H" v={String(totalEvents)} />
+      <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} />
+      <KV k="VISTO EM ABS" v={formatUnixDateTime(agent.last_seen)} />
+      <KV k="TAREFA" v={agent.current_task_id ?? '—'} />
+      <KV k="INSTÂNCIAS" v={String(agent.instance_count)} />
+      <KV k="EVENTOS · 24H" v={String(totalEvents)} />
       <div className="missao-caps">
-        <span className="missao-key">CAPABILITIES</span>
+        <span className="missao-key">CAPACIDADES</span>
         {agent.capabilities.length === 0 ? (
           <span className="muted">—</span>
         ) : (
@@ -125,7 +125,7 @@ function KV({ k, v }: { k: string; v: string }) {
 function Sparkline({ buckets }: { buckets: { bucket: string; count: number }[] }) {
   const max = Math.max(1, ...buckets.map((b) => b.count));
   return (
-    <div className="sparkline" aria-label="Events last 24 hours">
+    <div className="sparkline" aria-label="Eventos das últimas 24 horas">
       <span className="missao-key">SPARKLINE · 24H</span>
       <div className="sparkline-bars" role="img" aria-hidden="true">
         {buckets.map((b) => {

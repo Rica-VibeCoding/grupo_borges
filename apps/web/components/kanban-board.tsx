@@ -6,11 +6,11 @@ import { useToast } from '../lib/toast-context';
 import { useIsMobile } from '../lib/use-is-mobile';
 
 const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatus[] }[] = [
-  { id: 'queue', name: 'QUEUE', sourceStatuses: ['backlog'] },
-  { id: 'running', name: 'RUNNING', sourceStatuses: ['running'] },
-  { id: 'blocked', name: 'BLOCKED', sourceStatuses: ['blocked'] },
-  { id: 'review', name: 'REVIEW', sourceStatuses: ['review'] },
-  { id: 'done', name: 'DONE', sourceStatuses: ['done'] },
+  { id: 'queue', name: 'FILA', sourceStatuses: ['backlog'] },
+  { id: 'running', name: 'EXECUTANDO', sourceStatuses: ['running'] },
+  { id: 'blocked', name: 'BLOQUEADO', sourceStatuses: ['blocked'] },
+  { id: 'review', name: 'REVISÃO', sourceStatuses: ['review'] },
+  { id: 'done', name: 'CONCLUÍDO', sourceStatuses: ['done'] },
 ];
 
 function formatRelativeShort(deltaSec: number): string {
@@ -63,7 +63,7 @@ function KanbanRowView({ task, columnId, serverNow }: { task: Task; columnId: Ka
   const age = taskAgeLabel(task, serverNow);
   const { fire } = useToast();
   const open = useCallback(
-    () => fire({ kind: 'info', msg: `TASK · ${displayId}`, sub: 'OPEN DETAIL · WIP' }),
+    () => fire({ kind: 'info', msg: `TAREFA · ${displayId}`, sub: 'ABRIR DETALHE · WIP' }),
     [fire, displayId],
   );
   const onKey = useCallback(
@@ -81,7 +81,7 @@ function KanbanRowView({ task, columnId, serverNow }: { task: Task; columnId: Ka
       data-st={columnStatusAttr(columnId)}
       tabIndex={0}
       role="button"
-      aria-label={`Task ${displayId}, owner ${owner}, ${age}`}
+      aria-label={`Tarefa ${displayId}, responsável ${owner}, ${age}`}
       onClick={open}
       onKeyDown={onKey}
     >
@@ -101,10 +101,10 @@ function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverN
       data-col={column.id}
       tabIndex={0}
       role="group"
-      aria-label={`${column.name} column, ${column.tasks.length} tasks`}
+      aria-label={`Coluna ${column.name}, ${column.tasks.length} tarefas`}
     >
       <div className="scan" aria-hidden="true" />
-      <div className="kcol-skel"><span className="lbl">CONNECTING</span></div>
+      <div className="kcol-skel"><span className="lbl">CONECTANDO</span></div>
       <div className="kcol-head">
         <span className="name"><span className="dot" aria-hidden="true" />{column.name}</span>
         <span className="cnt">
@@ -134,7 +134,7 @@ function KanbanMobileView({ columns, serverNow }: { columns: KanbanColumn[]; ser
 
   return (
     <div className="kanban-mobile">
-      <div className="kanban-mobile-tabs" role="group" aria-label="Task status">
+      <div className="kanban-mobile-tabs" role="group" aria-label="Status da tarefa">
         {columns.map((column) => {
           const pressed = column.id === displayColumn.id;
           return (
@@ -153,7 +153,7 @@ function KanbanMobileView({ columns, serverNow }: { columns: KanbanColumn[]; ser
           );
         })}
       </div>
-      <div className="kanban-mobile-panel" data-status={displayColumn.id} role="group" aria-label={`${displayColumn.name} tasks`}>
+      <div className="kanban-mobile-panel" data-status={displayColumn.id} role="group" aria-label={`Tarefas em ${displayColumn.name}`}>
         <div className="kcol-head">
           <span className="name"><span className="dot" aria-hidden="true" />{displayColumn.name}</span>
           <span className="cnt">
@@ -181,22 +181,22 @@ export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: nu
   const pad = (n: number) => String(n).padStart(2, '0');
 
   return (
-    <div className="kanban-wrap scan-host" aria-label="Task kanban" role="region" aria-live="polite">
+    <div className="kanban-wrap scan-host" aria-label="Kanban de tarefas" role="region" aria-live="polite">
       <div className="scan" aria-hidden="true" />
       <div className="kanban-topline">
         <div className="lead">
           <span className="num-tag">04</span>
-          <span>KANBAN · TASK STREAM</span>
-          <span className="live" id="kbLive">LIVE · SSE</span>
+          <span>KANBAN · FLUXO DE TAREFAS</span>
+          <span className="live" id="kbLive">AO VIVO · SSE</span>
         </div>
         <div className="right">
-          <span className="it"><span className="k">QUEUE</span><span className="v">{pad(counts.queue)}</span></span>
-          <span className="it"><span className="k">RUN</span><span className="v cy">{pad(counts.running)}</span></span>
+          <span className="it"><span className="k">FILA</span><span className="v">{pad(counts.queue)}</span></span>
+          <span className="it"><span className="k">EXEC</span><span className="v cy">{pad(counts.running)}</span></span>
           <span className="it">
-            <span className="k">BLK</span>
+            <span className="k">BLQ</span>
             <span className="v" style={{ color: 'var(--status-blocked)' }}>{pad(counts.blocked)}</span>
           </span>
-          <span className="it"><span className="k">DONE</span><span className="v">{pad(counts.done)}</span></span>
+          <span className="it"><span className="k">OK</span><span className="v">{pad(counts.done)}</span></span>
         </div>
       </div>
       {isMobile ? (
