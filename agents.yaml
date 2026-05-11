@@ -114,6 +114,22 @@ agents:
       - { name: fin_categorias, db: ze, description: "Categorias de classificação financeira" }
       - { name: fin_fornecedores, db: ze, description: "Fornecedores e recebedores" }
 
+  - slug: tara
+    name: Tara Kaur
+    role: Executora pareada — Codex CLI
+    emoji: "⭐"
+    origin: sikh ("estrela")
+    tmux_session: tara
+    workspace_path: /tmp/tara
+    cli_default: codex
+    model_default: codex-gpt-5-5
+    kind: executor
+    capabilities:
+      - codex-exec
+      - refactor-mecânico
+      - smoke-e2e
+      - executora-pareada-daniel
+
 # Modelos disponíveis (escolhível por instância no card da UI)
 available_models:
   - id: claude-opus-4-7

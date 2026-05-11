@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# tara-codex — wrapper de observabilidade pra `codex exec`.
+#
+# Executa `codex exec --json` e relaya cada linha JSONL pra
+# POST /api/codex-events do cockpit. Emite eventos de lifecycle
+# (started/completed/failed) antes/depois do exec.
+#
+# Uso (substitui `nohup codex exec ... &` no workflow do Daniel):
+#   tara-codex --delegator daniel -C /home/clawd/repos/grupo_borges "<prompt>"
+#
+# Args extras (após `--`) passam direto pro `codex exec`.
+# Flags lidas pelo wrapper: --delegator <slug>, --cockpit-url <url>.
+#
+# Defaults:
+#   COCKPIT_URL=http://127.0.0.1:8000
+#   DELEGATOR=daniel (se -d/--delegator não passado)
+#
+# NÃO commitar prompts com segredos — payload passa por scrub no backend
+# mas evita expor no log local.
+
+set -euo pipefail
+
+COCKPIT_URL="${COCKPIT_URL:-http://127.0.0.1:8000}"
+DELEGATOR="${TARA_DELEGATOR:-daniel}"
+CODEX_BIN="${CODEX_BIN:-codex}"
+
+CODEX_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d|--delegator)
+      DELEGATOR="$2"; shift 2 ;;
+    --cockpit-url)
+      COCKPIT_URL="$2"; shift 2 ;;
+    --)
+      shift; CODEX_ARGS+=("$@"); break ;;
+    *)
+      CODEX_ARGS+=("$1"); shift ;;
+  esac
+done
+
+if [[ ${#CODEX_ARGS[@]} -eq 0 ]]; then
+  echo "uso: tara-codex [--delegator <slug>] -- <args do codex exec>" >&2
+  echo "ou:  tara-codex [--delegator <slug>] <args do codex exec>" >&2
+  exit 2
+fi
+
+post_event() {
+  local kind="$1"
+  local body="$2"
+  curl -sS -m 4 -X POST "${COCKPIT_URL}/api/codex-events" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -nc \
+      --arg kind "$kind" \
+      --arg delegator "$DELEGATOR" \
+      --arg body "$body" \
+      '{kind: $kind, delegator_agent_slug: $delegator, target_agent_slug: "tara", payload: ($body | fromjson? // {note: $body})}')" \
+    > /dev/null || true
+}
+
+post_raw_jsonl() {
+  local raw="$1"
+  local kind
+  kind=$(echo "$raw" | jq -r '.type // empty' 2>/dev/null || true)
+  if [[ -z "$kind" ]]; then return; fi
+  curl -sS -m 4 -X POST "${COCKPIT_URL}/api/codex-events" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -nc \
+      --arg kind "codex.$kind" \
+      --arg delegator "$DELEGATOR" \
+      --arg raw "$raw" \
+      '{kind: $kind, delegator_agent_slug: $delegator, target_agent_slug: "tara", raw_jsonl: $raw, payload: ($raw | fromjson)}')" \
+    > /dev/null || true
+}
+
+started_at=$(date +%s)
+post_event "tara.exec.started" "{\"started_at\":$started_at,\"argv\":$(printf '%s\n' "${CODEX_ARGS[@]}" | jq -R . | jq -sc .)}"
+
+set +e
+"$CODEX_BIN" exec --json "${CODEX_ARGS[@]}" | tee /dev/stderr | while IFS= read -r line; do
+  post_raw_jsonl "$line"
+done
+exit_code=${PIPESTATUS[0]}
+set -e
+
+finished_at=$(date +%s)
+duration=$((finished_at - started_at))
+
+if [[ "$exit_code" -eq 0 ]]; then
+  post_event "tara.exec.completed" "{\"exit_code\":0,\"duration_s\":$duration}"
+else
+  post_event "tara.exec.failed" "{\"exit_code\":$exit_code,\"duration_s\":$duration}"
+fi
+
+exit "$exit_code"
