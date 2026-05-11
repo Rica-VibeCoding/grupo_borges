@@ -25,7 +25,14 @@ async def _event_generator(request: Request) -> AsyncGenerator[dict, None]:
     settings = request.app.state.settings
     poll_seconds = settings.poll_interval_ms / 1000.0
 
-    last_id = await db.max_event_id()
+    # Honra Last-Event-ID do EventSource pra reconnect sem gap.
+    last_id_header = request.headers.get("last-event-id")
+    try:
+        last_id = int(last_id_header) if last_id_header is not None else 0
+    except ValueError:
+        last_id = 0
+    if last_id <= 0:
+        last_id = await db.max_event_id()
 
     while True:
         if await request.is_disconnected():
