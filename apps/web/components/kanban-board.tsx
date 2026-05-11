@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { KanbanColumn, KanbanColumnId, Task, TaskStatus } from '../lib/cockpit-types';
 import { useToast } from '../lib/toast-context';
+import { useIsMobile } from '../lib/use-is-mobile';
 
 const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatus[] }[] = [
   { id: 'queue', name: 'QUEUE', sourceStatuses: ['backlog'] },
@@ -123,7 +124,58 @@ function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverN
   );
 }
 
+function KanbanMobileView({ columns, serverNow }: { columns: KanbanColumn[]; serverNow: number }) {
+  const [activeStatus, setActiveStatus] = useState<KanbanColumnId>('running');
+  const activeColumn = columns.find((column) => column.id === activeStatus) ?? columns[0]!;
+  const displayColumn =
+    activeStatus === 'running' && activeColumn.tasks.length === 0
+      ? (columns.find((column) => column.id === 'queue') ?? activeColumn)
+      : activeColumn;
+
+  return (
+    <div className="kanban-mobile">
+      <div className="kanban-mobile-tabs" role="group" aria-label="Task status">
+        {columns.map((column) => {
+          const pressed = column.id === displayColumn.id;
+          return (
+            <button
+              key={column.id}
+              type="button"
+              className="kanban-mobile-tab"
+              data-status={column.id}
+              aria-pressed={pressed}
+              onClick={() => setActiveStatus(column.id)}
+            >
+              <span className="dot" aria-hidden="true" />
+              <span className="label">{column.name}</span>
+              <span className="count">({column.tasks.length})</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="kanban-mobile-panel" data-status={displayColumn.id} role="group" aria-label={`${displayColumn.name} tasks`}>
+        <div className="kcol-head">
+          <span className="name"><span className="dot" aria-hidden="true" />{displayColumn.name}</span>
+          <span className="cnt">
+            <span className="num">{String(displayColumn.tasks.length).padStart(2, '0')}</span> / ∞
+          </span>
+        </div>
+        <div className="kcol-body">
+          {displayColumn.tasks.length === 0 ? (
+            <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
+          ) : (
+            displayColumn.tasks.map((task) => (
+              <KanbanRowView key={task.id} task={task} columnId={displayColumn.id} serverNow={serverNow} />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: number }) {
+  const isMobile = useIsMobile();
   const columns = buildColumns(tasks, serverNow);
   const counts = Object.fromEntries(columns.map((c) => [c.id, c.tasks.length])) as Record<KanbanColumnId, number>;
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -147,11 +199,15 @@ export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: nu
           <span className="it"><span className="k">DONE</span><span className="v">{pad(counts.done)}</span></span>
         </div>
       </div>
-      <div className="kanban-cols" id="kbcols">
-        {columns.map((column) => (
-          <KanbanColumnView key={column.id} column={column} serverNow={serverNow} />
-        ))}
-      </div>
+      {isMobile ? (
+        <KanbanMobileView columns={columns} serverNow={serverNow} />
+      ) : (
+        <div className="kanban-cols" id="kbcols">
+          {columns.map((column) => (
+            <KanbanColumnView key={column.id} column={column} serverNow={serverNow} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

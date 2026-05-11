@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
+import { useIsMobile } from '../lib/use-is-mobile';
 import type { Agent, AgentStatus } from '../lib/cockpit-types';
 import { formatLastSeen } from '../lib/cockpit-types';
 
@@ -25,6 +26,7 @@ function formatUnixDateTime(unixSec: number | null): string {
 export function AgentModal() {
   const { selectedSlug, close } = useSelectedAgent();
   const { fleet } = useFleet();
+  const isMobile = useIsMobile();
   const agent: Agent | null = selectedSlug
     ? fleet.agents.find((a) => a.slug === selectedSlug) ?? null
     : null;
@@ -34,7 +36,7 @@ export function AgentModal() {
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) close(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="agent-modal-overlay" />
-        <Dialog.Content className="agent-modal-frame mono" aria-describedby={undefined}>
+        <Dialog.Content className={`agent-modal-frame mono${isMobile ? ' agent-modal-frame-mobile' : ''}`} aria-describedby={undefined}>
           {agent && (
             <>
               <header className="agent-modal-head">
