@@ -164,16 +164,27 @@ async def dispatch_task(
     task = await db.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
-    if task["status"] == "done":
-        raise HTTPException(status_code=400, detail="task já concluída")
-    if task["status"] == "running":
-        raise HTTPException(status_code=409, detail="task já está em execução")
-
     agent = await _ensure_agent_has_tmux(db, task["assignee"])
-    dispatch_text = _format_dispatch_message(task=task, note=payload.note)
+
+    try:
+        claimed = await db.claim_task_dispatch(task_id, note=payload.note)
+    except ValueError as e:
+        status_code = 409 if "execução" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
+    if claimed is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+
+    run_id = claimed["run_id"]
+    dispatch_text = _format_dispatch_message(task=claimed["task"], note=payload.note)
     try:
         tmux_delivered = await tmux_driver.send_message(agent["tmux_session"], dispatch_text)
     except Exception as e:
+        await db.record_task_dispatch_failed(
+            task_id,
+            run_id=run_id,
+            tmux_session=agent["tmux_session"],
+            reason="tmux_exception",
+        )
         log.warning(
             "Falha ao despachar task %s para tmux session %s: %s",
             task_id,
@@ -182,20 +193,23 @@ async def dispatch_task(
         )
         raise HTTPException(status_code=502, detail="falha ao enviar mensagem para tmux") from e
     if not tmux_delivered:
+        await db.record_task_dispatch_failed(
+            task_id,
+            run_id=run_id,
+            tmux_session=agent["tmux_session"],
+            reason="tmux_session_not_found",
+        )
         raise HTTPException(
             status_code=409,
             detail=f"tmux session {agent['tmux_session']!r} não encontrada",
         )
 
-    try:
-        dispatched = await db.dispatch_task(
-            task_id,
-            tmux_session=agent["tmux_session"],
-            note=payload.note,
-        )
-    except ValueError as e:
-        status_code = 409 if "execução" in str(e) else 400
-        raise HTTPException(status_code=status_code, detail=str(e)) from e
+    dispatched = await db.record_task_dispatch_delivered(
+        task_id,
+        run_id=run_id,
+        tmux_session=agent["tmux_session"],
+        note=payload.note,
+    )
     if dispatched is None:
         raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
 

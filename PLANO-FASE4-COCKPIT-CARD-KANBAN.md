@@ -26,7 +26,7 @@ Complementos Hermes-like aplicados neste ciclo:
 - [x] Ao mudar para `done`, `blocked` ou `review`, fecha `task_runs` abertos com `ended_at` e `outcome`.
 - [x] Re-dispatch simples de task `running` bloqueado na API e no botao do modal.
 - [x] Timeline basica no detalhe da task usando `task_events` do buffer SSE/poll.
-- [ ] Claim/lock atomico de dispatch concorrente.
+- [x] Claim/lock atomico de dispatch concorrente.
 - [ ] Heartbeat do run.
 - [ ] Crash/stale detection.
 
@@ -36,7 +36,7 @@ Complementos Hermes-like aplicados neste ciclo:
 
 Objetivo: transformar o Kanban manual em fluxo real minimo, sem automatizar ainda.
 
-Status: **em validacao final**.
+Status: **entregue e validado em 2026-05-11**.
 
 - [x] Criar task pela UI.
 - [x] Abrir detalhe real da task.
@@ -51,7 +51,7 @@ Status: **em validacao final**.
 - [x] Timeline basica no detalhe com criacao + eventos.
 - [x] Reiniciar backend normal `:8000` com este codigo e validar no fluxo padrao `:3007/:8000`.
 - [x] Limpar todas as tasks de teste.
-- [ ] Commitar bloco atual depois da validacao final.
+- [x] Commitar bloco atual depois da validacao final.
 
 Validacao real executada:
 
@@ -109,15 +109,35 @@ Validacao:
 
 Objetivo: impedir corrida real de dispatch.
 
-- [ ] Criar claim transacional antes do envio para tmux.
-- [ ] Garantir que duas chamadas concorrentes nao criem dois `task_runs`.
-- [ ] Definir estado intermediario se necessario (`dispatching`) ou contrato equivalente.
-- [ ] Se tmux falhar depois do claim, reverter para estado seguro ou marcar `blocked`.
-- [ ] Expor erro claro na UI.
+- [x] Criar claim transacional antes do envio para tmux.
+- [x] Garantir que duas chamadas concorrentes nao criem dois `task_runs`.
+- [x] Definir contrato equivalente sem novo estado: claim muda para `running` dentro de transacao SQLite `BEGIN IMMEDIATE`.
+- [x] Se tmux falhar depois do claim, marcar task/run como `blocked` com evento `dispatch.failed`.
+- [x] Expor erro claro na UI/API (`409 task ja esta em execucao`).
 
 Aceite:
 
 - Dois cliques/processos concorrentes na mesma task resultam em no maximo um dispatch real.
+
+Status: **entregue e validado em 2026-05-11**.
+
+Decisao tecnica:
+
+- `dispatch` agora faz `claim_task_dispatch()` antes de enviar mensagem para tmux.
+- O claim cria o `task_run`, muda a task para `running` e atualiza `agent_state.current_task_id` na mesma transacao.
+- Se a task ja estiver `running`, a API retorna `409`; a UI usa o `detail` do backend em vez de mensagem generica.
+- O evento `dispatch` so e gravado depois da entrega ao tmux.
+- Falha de sessao tmux depois do claim fecha o run como `blocked`, limpa `current_task_id` e grava `dispatch.failed`.
+
+Validacao:
+
+- Context7 consultado para FastAPI, Next.js 16/React e libtmux antes da implementacao.
+- `python3 -m compileall apps/api/db apps/api/routers apps/api/services` verde.
+- `corepack pnpm type-check` verde.
+- `corepack pnpm build` verde.
+- `git diff --check` verde.
+- Teste concorrente real: duas chamadas simultaneas para a mesma task geraram 1 resposta `202`, 1 resposta `409`, exatamente 1 `task_run` aberto e exatamente 1 evento `dispatch`.
+- Smoke Playwright no fluxo normal `:3007/:8000`: task temporaria criada pela UI, despachada para Barsi, botao ficou `EM EXECUCAO`, segundo dispatch via API retornou `409 task ja esta em execucao`, evento `dispatch` confirmado e task de smoke deletada no cleanup.
 
 ### Fase 4.4 — Heartbeat e stale/crash detection
 

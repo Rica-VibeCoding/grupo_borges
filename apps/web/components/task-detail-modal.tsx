@@ -39,6 +39,7 @@ function Field({ label, value }: { label: string; value: string | number | null 
 
 function eventTitle(event: TaskEvent): string {
   if (event.kind === 'dispatch') return 'dispatch enviado';
+  if (event.kind === 'dispatch.failed') return 'dispatch falhou';
   if (event.kind === 'status.changed') return 'status alterado';
   if (event.kind === 'handoff') return 'handoff criado';
   return event.kind;
@@ -50,6 +51,11 @@ function eventSummary(event: TaskEvent): string {
     const tmux = typeof payload.tmux_session === 'string' ? payload.tmux_session : 'tmux';
     const run = typeof payload.run_id === 'number' ? ` · run #${payload.run_id}` : '';
     return `${tmux}${run}`;
+  }
+  if (event.kind === 'dispatch.failed') {
+    const reason = typeof payload.reason === 'string' ? payload.reason : 'falha desconhecida';
+    const run = typeof payload.run_id === 'number' ? ` · run #${payload.run_id}` : '';
+    return `${reason}${run}`;
   }
   if (event.kind === 'status.changed') {
     const fromStatus = typeof payload.from_status === 'string' ? payload.from_status : '?';

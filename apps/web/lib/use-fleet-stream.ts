@@ -168,6 +168,7 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
       'Stop',
       'SessionStart',
       'dispatch',
+      'dispatch.failed',
       'status.changed',
       'handoff',
     ] as const;

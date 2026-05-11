@@ -657,6 +657,210 @@ class GrupoBorgesDB:
             row = cur.fetchone()
             return dict(row) if row is not None else None
 
+    async def claim_task_dispatch(
+        self,
+        task_id: str,
+        *,
+        note: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._claim_task_dispatch, task_id, note=note)
+
+    def _claim_task_dispatch(
+        self,
+        task_id: str,
+        *,
+        note: str | None,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        clean_note = note.strip() if isinstance(note, str) and note.strip() else None
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                task_row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+                task = dict(task_row)
+                if task["status"] == "done":
+                    raise ValueError("task já concluída")
+                if task["status"] == "running":
+                    raise ValueError("task já está em execução")
+
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'running',
+                        started_at = COALESCE(started_at, ?)
+                    WHERE id = ?
+                    """,
+                    (now, task_id),
+                )
+                run_cur = conn.execute(
+                    """
+                    INSERT INTO task_runs (
+                        task_id, instance_id, status, last_heartbeat,
+                        started_at, output_excerpt
+                    )
+                    VALUES (?, ?, 'running', ?, ?, ?)
+                    """,
+                    (task_id, task["instance_id"], now, now, clean_note),
+                )
+                conn.execute(
+                    """
+                    UPDATE agent_state
+                    SET current_task_id = ?, last_seen = ?
+                    WHERE slug = ?
+                    """,
+                    (task_id, now, task["assignee"]),
+                )
+                updated = self._get_task_from_conn(conn, task_id)
+                assert updated is not None
+                conn.commit()
+                return {
+                    "task": updated,
+                    "run_id": run_cur.lastrowid,
+                    "note": clean_note,
+                }
+            except Exception:
+                conn.rollback()
+                raise
+
+    async def record_task_dispatch_delivered(
+        self,
+        task_id: str,
+        *,
+        run_id: int,
+        tmux_session: str,
+        note: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._record_task_dispatch_delivered,
+            task_id,
+            run_id=run_id,
+            tmux_session=tmux_session,
+            note=note,
+        )
+
+    def _record_task_dispatch_delivered(
+        self,
+        task_id: str,
+        *,
+        run_id: int,
+        tmux_session: str,
+        note: str | None,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        clean_note = note.strip() if isinstance(note, str) and note.strip() else None
+        with self._connect() as conn, conn:
+            task = self._get_task_from_conn(conn, task_id)
+            if task is None:
+                return None
+            payload = {
+                "task_id": task_id,
+                "human_id": task.get("human_id"),
+                "assignee": task["assignee"],
+                "tmux_session": tmux_session,
+                "note": clean_note,
+                "run_id": run_id,
+            }
+            event_cur = conn.execute(
+                """
+                INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
+                VALUES (?, ?, ?, 'dispatch', ?, ?)
+                """,
+                (
+                    task_id,
+                    task["assignee"],
+                    task["instance_id"],
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                ),
+            )
+            return {
+                "task": task,
+                "run_id": run_id,
+                "event_id": event_cur.lastrowid,
+                "payload": payload,
+            }
+
+    async def record_task_dispatch_failed(
+        self,
+        task_id: str,
+        *,
+        run_id: int,
+        tmux_session: str,
+        reason: str,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._record_task_dispatch_failed,
+            task_id,
+            run_id=run_id,
+            tmux_session=tmux_session,
+            reason=reason,
+        )
+
+    def _record_task_dispatch_failed(
+        self,
+        task_id: str,
+        *,
+        run_id: int,
+        tmux_session: str,
+        reason: str,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        with self._connect() as conn, conn:
+            task = self._get_task_from_conn(conn, task_id)
+            if task is None:
+                return None
+            conn.execute(
+                """
+                UPDATE task_runs
+                SET status = 'blocked',
+                    ended_at = COALESCE(ended_at, ?),
+                    outcome = COALESCE(outcome, 'dispatch_failed')
+                WHERE id = ? AND task_id = ?
+                """,
+                (now, run_id, task_id),
+            )
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'blocked'
+                WHERE id = ?
+                """,
+                (task_id,),
+            )
+            conn.execute(
+                """
+                UPDATE agent_state
+                SET current_task_id = NULL, last_seen = ?
+                WHERE slug = ? AND current_task_id = ?
+                """,
+                (now, task["assignee"], task_id),
+            )
+            payload = {
+                "task_id": task_id,
+                "human_id": task.get("human_id"),
+                "assignee": task["assignee"],
+                "tmux_session": tmux_session,
+                "run_id": run_id,
+                "reason": reason,
+            }
+            conn.execute(
+                """
+                INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
+                VALUES (?, ?, ?, 'dispatch.failed', ?, ?)
+                """,
+                (
+                    task_id,
+                    task["assignee"],
+                    task["instance_id"],
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                ),
+            )
+            return self._get_task_from_conn(conn, task_id)
+
     async def dispatch_task(
         self,
         task_id: str,

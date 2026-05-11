@@ -33,6 +33,16 @@ export type TaskDispatchResponse = {
   tmux_delivered: boolean;
 };
 
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === 'string') return body.detail;
+  } catch {
+    // Keep the original fallback when the backend did not return JSON.
+  }
+  return fallback;
+}
+
 export async function fetchFleet(): Promise<FleetResponse> {
   const res = await fetch(`${SERVER_API_BASE}/api/fleet`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`fetchFleet failed: ${res.status}`);
@@ -77,7 +87,7 @@ export async function dispatchTask(taskId: string, note?: string | null): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ note: note?.trim() || null }),
   });
-  if (!res.ok) throw new Error(`dispatchTask failed: ${res.status}`);
+  if (!res.ok) throw new Error(await errorDetail(res, `dispatchTask failed: ${res.status}`));
   return res.json();
 }
 
