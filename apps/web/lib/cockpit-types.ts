@@ -240,7 +240,14 @@ export function parseContextPct(excerpt: string | null): number | null {
 
 export function parseModelFromPane(excerpt: string | null): string | null {
   if (!excerpt) return null;
-  // CC status line: "Sonnet 4.6 (200k context) - [███░] 81%"
-  const m = excerpt.match(/([A-Z][a-z]+ \d+\.\d+)\s*\(/);
-  return m ? m[1]! : null;
+  // CC statusline aparece em dois formatos:
+  //   "Sonnet 4.6 - 40:26:47 - [███░] 32%"
+  //   "Sonnet 4.6 (200k context) - [███░] 81%"
+  // Pega o último match — statusline fica no fim do pane.
+  const re = /\b(Opus|Sonnet|Haiku)\s+(\d+\.\d+)\b/g;
+  let last: RegExpExecArray | null = null;
+  for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
+    last = m;
+  }
+  return last ? `${last[1]} ${last[2]}` : null;
 }
