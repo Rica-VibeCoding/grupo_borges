@@ -18,7 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from util import parse_dict_or_none
+from util import parse_dict_or_none, redact_payload
 
 router = APIRouter()
 
@@ -71,11 +71,16 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
     cwd = payload.get("cwd")
     slug = _slug_from_cwd(cwd, agents_config)
 
+    # Mascara secrets e trunca strings > 8KB antes de gravar (util.redact_payload).
+    # raw_text também passa pelo scrub — é o JSON bruto, mesmo risco.
+    safe_payload = redact_payload(payload)
+    safe_raw = redact_payload(raw_text) if raw_text else None
+
     event_id = await db.insert_task_event(
         kind=f"hook:{event_kind}",
         agent_slug=slug,
-        payload=payload,
-        raw_jsonl=raw_text,
+        payload=safe_payload,
+        raw_jsonl=safe_raw,
     )
 
     if slug is not None:
