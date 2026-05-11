@@ -8,6 +8,7 @@ quando `last_seen` excede o threshold), pra UI não precisar replicar regra.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
@@ -60,6 +61,7 @@ class FleetAgent(BaseModel):
     current_task_last_heartbeat: int | None = None
     last_seen: int | None
     pane_excerpt: str | None
+    pane_session_started_at: int | None = None
     instance_count: int
     # campos derivados/hidratados pelo snapshot
     status: AgentStatus
@@ -104,8 +106,14 @@ async def _hydrate_pane_excerpts(agents: list[dict]) -> None:
 
     results = await asyncio.gather(*(capture(agent) for agent in agents))
     by_slug = dict(results)
+    now = int(time.time())
     for agent in agents:
-        agent["pane_excerpt"] = by_slug.get(agent["slug"])
+        excerpt = by_slug.get(agent["slug"])
+        agent["pane_excerpt"] = excerpt
+        elapsed = tmux_driver.parse_session_elapsed_from_pane(excerpt)
+        # statusline do CLI é mais fresco que agent_instances quando o usuário
+        # fez /clear ou reiniciou o claude dentro da mesma tmux session.
+        agent["pane_session_started_at"] = now - elapsed if elapsed is not None else None
 
 
 @router.get("", response_model=FleetSnapshot)

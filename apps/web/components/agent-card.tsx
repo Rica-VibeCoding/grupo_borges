@@ -70,7 +70,7 @@ export function AgentCard({
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
   const model = agent.state_model ?? agent.model_default;
-  const sessionStarted = agent.instances[0]?.started_at ?? null;
+  const sessionStarted = agent.instances[0]?.started_at ?? agent.pane_session_started_at ?? null;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
