@@ -161,7 +161,16 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
     // 5 listeners distintos por design — sse-starlette emite event types específicos.
     // Cada um faz o mesmo trabalho (ingest + debounced refetch), mas precisa ser
     // registrado por nome pra capturar o `event:` SSE corretamente.
-    const SSE_EVENT_KINDS = ['message', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart'] as const;
+    const SSE_EVENT_KINDS = [
+      'message',
+      'PostToolUse',
+      'UserPromptSubmit',
+      'Stop',
+      'SessionStart',
+      'dispatch',
+      'status.changed',
+      'handoff',
+    ] as const;
     const sseHandlers: Array<[string, EventListener]> = SSE_EVENT_KINDS.map((kind) => [
       kind,
       ((e: MessageEvent) => {

@@ -2,8 +2,9 @@
 
 import { useCallback, useState } from 'react';
 import type { KanbanColumn, KanbanColumnId, Task, TaskStatus } from '../lib/cockpit-types';
-import { useToast } from '../lib/toast-context';
 import { useIsMobile } from '../lib/use-is-mobile';
+import { NewTaskModal } from './new-task-modal';
+import { TaskDetailModal } from './task-detail-modal';
 
 const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatus[] }[] = [
   { id: 'queue', name: 'FILA', sourceStatuses: ['backlog'] },
@@ -57,15 +58,21 @@ function columnStatusAttr(id: KanbanColumnId): string {
   return id === 'queue' ? 'queue' : id;
 }
 
-function KanbanRowView({ task, columnId, serverNow }: { task: Task; columnId: KanbanColumnId; serverNow: number }) {
+function KanbanRowView({
+  task,
+  columnId,
+  serverNow,
+  onOpen,
+}: {
+  task: Task;
+  columnId: KanbanColumnId;
+  serverNow: number;
+  onOpen: (task: Task) => void;
+}) {
   const displayId = taskDisplayId(task);
   const owner = task.assignee ?? '—';
   const age = taskAgeLabel(task, serverNow);
-  const { fire } = useToast();
-  const open = useCallback(
-    () => fire({ kind: 'info', msg: `TAREFA · ${displayId}`, sub: 'ABRIR DETALHE · WIP' }),
-    [fire, displayId],
-  );
+  const open = useCallback(() => onOpen(task), [onOpen, task]);
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -94,7 +101,15 @@ function KanbanRowView({ task, columnId, serverNow }: { task: Task; columnId: Ka
   );
 }
 
-function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverNow: number }) {
+function KanbanColumnView({
+  column,
+  serverNow,
+  onOpenTask,
+}: {
+  column: KanbanColumn;
+  serverNow: number;
+  onOpenTask: (task: Task) => void;
+}) {
   return (
     <div
       className="kcol scan-host"
@@ -116,7 +131,7 @@ function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverN
           <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
         ) : (
           column.tasks.map((task) => (
-            <KanbanRowView key={task.id} task={task} columnId={column.id} serverNow={serverNow} />
+            <KanbanRowView key={task.id} task={task} columnId={column.id} serverNow={serverNow} onOpen={onOpenTask} />
           ))
         )}
       </div>
@@ -124,7 +139,15 @@ function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverN
   );
 }
 
-function KanbanMobileView({ columns, serverNow }: { columns: KanbanColumn[]; serverNow: number }) {
+function KanbanMobileView({
+  columns,
+  serverNow,
+  onOpenTask,
+}: {
+  columns: KanbanColumn[];
+  serverNow: number;
+  onOpenTask: (task: Task) => void;
+}) {
   const [activeStatus, setActiveStatus] = useState<KanbanColumnId>('running');
   const activeColumn = columns.find((column) => column.id === activeStatus) ?? columns[0]!;
   const displayColumn =
@@ -165,7 +188,7 @@ function KanbanMobileView({ columns, serverNow }: { columns: KanbanColumn[]; ser
             <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
           ) : (
             displayColumn.tasks.map((task) => (
-              <KanbanRowView key={task.id} task={task} columnId={displayColumn.id} serverNow={serverNow} />
+              <KanbanRowView key={task.id} task={task} columnId={displayColumn.id} serverNow={serverNow} onOpen={onOpenTask} />
             ))
           )}
         </div>
@@ -176,6 +199,8 @@ function KanbanMobileView({ columns, serverNow }: { columns: KanbanColumn[]; ser
 
 export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: number }) {
   const isMobile = useIsMobile();
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const columns = buildColumns(tasks, serverNow);
   const counts = Object.fromEntries(columns.map((c) => [c.id, c.tasks.length])) as Record<KanbanColumnId, number>;
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -190,6 +215,9 @@ export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: nu
           <span className="live" id="kbLive">AO VIVO · SSE</span>
         </div>
         <div className="right">
+          <button type="button" className="kanban-new-task" onClick={() => setNewTaskOpen(true)}>
+            + NOVA
+          </button>
           <span className="it"><span className="k">FILA</span><span className="v">{pad(counts.queue)}</span></span>
           <span className="it"><span className="k">EXEC</span><span className="v cy">{pad(counts.running)}</span></span>
           <span className="it">
@@ -200,14 +228,16 @@ export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: nu
         </div>
       </div>
       {isMobile ? (
-        <KanbanMobileView columns={columns} serverNow={serverNow} />
+        <KanbanMobileView columns={columns} serverNow={serverNow} onOpenTask={setSelectedTask} />
       ) : (
         <div className="kanban-cols" id="kbcols">
           {columns.map((column) => (
-            <KanbanColumnView key={column.id} column={column} serverNow={serverNow} />
+            <KanbanColumnView key={column.id} column={column} serverNow={serverNow} onOpenTask={setSelectedTask} />
           ))}
         </div>
       )}
+      <NewTaskModal open={newTaskOpen} onOpenChange={setNewTaskOpen} />
+      <TaskDetailModal task={selectedTask} onOpenChange={(open) => { if (!open) setSelectedTask(null); }} />
     </div>
   );
 }

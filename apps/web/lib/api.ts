@@ -10,9 +10,28 @@ import type {
   Task,
   TaskHandoffResponse,
   TaskEvent,
+  TaskStatus,
 } from './cockpit-types';
 
 const SERVER_API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
+
+export type TaskPatchStatus = Exclude<TaskStatus, 'archived'>;
+
+export type TaskCreatePayload = {
+  title: string;
+  assignee: string;
+  body?: string | null;
+  status?: TaskPatchStatus;
+  priority?: number;
+  idempotency_key?: string | null;
+};
+
+export type TaskDispatchResponse = {
+  task: Task;
+  run_id: number;
+  event_id: number;
+  tmux_delivered: boolean;
+};
 
 export async function fetchFleet(): Promise<FleetResponse> {
   const res = await fetch(`${SERVER_API_BASE}/api/fleet`, { cache: 'no-store' });
@@ -23,6 +42,42 @@ export async function fetchFleet(): Promise<FleetResponse> {
 export async function fetchTasks(): Promise<Task[]> {
   const res = await fetch(`${SERVER_API_BASE}/api/tasks`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`fetchTasks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTask(taskId: string, signal?: AbortSignal): Promise<Task> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(`fetchTask failed: ${res.status}`);
+  return res.json();
+}
+
+export async function patchTaskStatus(taskId: string, status: TaskPatchStatus): Promise<Task> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(`patchTaskStatus failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTask(payload: TaskCreatePayload): Promise<Task> {
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`createTask failed: ${res.status}`);
+  return res.json();
+}
+
+export async function dispatchTask(taskId: string, note?: string | null): Promise<TaskDispatchResponse> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/dispatch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: note?.trim() || null }),
+  });
+  if (!res.ok) throw new Error(`dispatchTask failed: ${res.status}`);
   return res.json();
 }
 

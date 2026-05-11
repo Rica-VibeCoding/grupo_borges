@@ -657,6 +657,96 @@ class GrupoBorgesDB:
             row = cur.fetchone()
             return dict(row) if row is not None else None
 
+    async def dispatch_task(
+        self,
+        task_id: str,
+        *,
+        tmux_session: str,
+        note: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._dispatch_task,
+            task_id,
+            tmux_session=tmux_session,
+            note=note,
+        )
+
+    def _dispatch_task(
+        self,
+        task_id: str,
+        *,
+        tmux_session: str,
+        note: str | None,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        clean_note = note.strip() if isinstance(note, str) and note.strip() else None
+        with self._connect() as conn, conn:
+            task_row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if task_row is None:
+                return None
+            task = dict(task_row)
+            if task["status"] == "done":
+                raise ValueError("task já concluída")
+            if task["status"] == "running":
+                raise ValueError("task já está em execução")
+
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'running',
+                    started_at = COALESCE(started_at, ?)
+                WHERE id = ?
+                """,
+                (now, task_id),
+            )
+            run_cur = conn.execute(
+                """
+                INSERT INTO task_runs (
+                    task_id, instance_id, status, last_heartbeat,
+                    started_at, output_excerpt
+                )
+                VALUES (?, ?, 'running', ?, ?, ?)
+                """,
+                (task_id, task["instance_id"], now, now, clean_note),
+            )
+            payload = {
+                "task_id": task_id,
+                "human_id": task.get("human_id"),
+                "assignee": task["assignee"],
+                "tmux_session": tmux_session,
+                "note": clean_note,
+                "run_id": run_cur.lastrowid,
+            }
+            event_cur = conn.execute(
+                """
+                INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
+                VALUES (?, ?, ?, 'dispatch', ?, ?)
+                """,
+                (
+                    task_id,
+                    task["assignee"],
+                    task["instance_id"],
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE agent_state
+                SET current_task_id = ?, last_seen = ?
+                WHERE slug = ?
+                """,
+                (task_id, now, task["assignee"]),
+            )
+            updated = self._get_task_from_conn(conn, task_id)
+            assert updated is not None
+            return {
+                "task": updated,
+                "run_id": run_cur.lastrowid,
+                "event_id": event_cur.lastrowid,
+                "payload": payload,
+            }
+
     async def update_task(
         self, task_id: str, fields: dict[str, Any],
     ) -> dict[str, Any] | None:
@@ -667,6 +757,7 @@ class GrupoBorgesDB:
     def _update_task(
         self, task_id: str, fields: dict[str, Any],
     ) -> dict[str, Any] | None:
+        now = int(time.time())
         sets: list[str] = []
         params: list[Any] = []
         for col, val in fields.items():
@@ -679,23 +770,92 @@ class GrupoBorgesDB:
         new_status = fields.get("status")
         if new_status == "running":
             sets.append("started_at = COALESCE(started_at, ?)")
-            params.append(int(time.time()))
+            params.append(now)
         if new_status == "done":
             sets.append("completed_at = ?")
-            params.append(int(time.time()))
+            params.append(now)
 
         if not sets:
             return self._get_task(task_id)
 
         params.append(task_id)
         with self._connect() as conn, conn:
+            before_row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if before_row is None:
+                return None
+            before = dict(before_row)
             cur = conn.execute(
                 f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
                 params,
             )
             if cur.rowcount == 0:
                 return None
-        return self._get_task(task_id)
+            updated = self._get_task_from_conn(conn, task_id)
+            if updated is None:
+                return None
+            if new_status and new_status != before["status"]:
+                closed_runs = self._close_open_runs_for_status(
+                    conn,
+                    task_id=task_id,
+                    task_status=new_status,
+                    ended_at=now,
+                )
+                if new_status in {"review", "blocked", "done"}:
+                    conn.execute(
+                        """
+                        UPDATE agent_state
+                        SET current_task_id = NULL, last_seen = ?
+                        WHERE slug = ? AND current_task_id = ?
+                        """,
+                        (now, before["assignee"], task_id),
+                    )
+                payload = {
+                    "task_id": task_id,
+                    "human_id": updated.get("human_id"),
+                    "from_status": before["status"],
+                    "to_status": new_status,
+                    "closed_runs": closed_runs,
+                }
+                conn.execute(
+                    """
+                    INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
+                    VALUES (?, ?, ?, 'status.changed', ?, ?)
+                    """,
+                    (
+                        task_id,
+                        updated["assignee"],
+                        updated["instance_id"],
+                        json.dumps(payload, ensure_ascii=False),
+                        now,
+                    ),
+                )
+            return updated
+
+    @staticmethod
+    def _close_open_runs_for_status(
+        conn: sqlite3.Connection,
+        *,
+        task_id: str,
+        task_status: str,
+        ended_at: int,
+    ) -> int:
+        if task_status not in {"review", "blocked", "done"}:
+            return 0
+        run_status = "blocked" if task_status == "blocked" else "done"
+        outcome = task_status
+        cur = conn.execute(
+            """
+            UPDATE task_runs
+            SET status = ?,
+                ended_at = COALESCE(ended_at, ?),
+                outcome = COALESCE(outcome, ?)
+            WHERE task_id = ?
+              AND ended_at IS NULL
+              AND status = 'running'
+            """,
+            (run_status, ended_at, outcome, task_id),
+        )
+        return cur.rowcount
 
     async def delete_task(self, task_id: str) -> bool:
         return await asyncio.to_thread(self._delete_task, task_id)
@@ -966,11 +1126,35 @@ class GrupoBorgesDB:
                     "SELECT status, COUNT(*) AS cnt FROM tasks GROUP BY status"
                 ).fetchall()
             }
+            active_task_rows = conn.execute(
+                """
+                SELECT assignee,
+                       COALESCE(human_id, id) AS display_id,
+                       status,
+                       priority,
+                       COALESCE(started_at, created_at) AS activity_at
+                FROM tasks
+                WHERE status IN ('running', 'ready', 'backlog')
+                ORDER BY
+                    CASE status
+                        WHEN 'running' THEN 0
+                        WHEN 'ready' THEN 1
+                        WHEN 'backlog' THEN 2
+                        ELSE 3
+                    END,
+                    priority DESC,
+                    activity_at DESC
+                """
+            ).fetchall()
+            current_task_by_agent: dict[str, str] = {}
+            for row in active_task_rows:
+                current_task_by_agent.setdefault(row["assignee"], row["display_id"])
 
         # Hidrata cada agente com instances ativas, status derivado e buckets gap-filled.
         for agent in agents:
             slug = agent["slug"]
             agent_instances = by_slug.get(slug, [])
+            agent["current_task_id"] = current_task_by_agent.get(slug)
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"], agent_instances, now=now,

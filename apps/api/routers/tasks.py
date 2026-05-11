@@ -51,6 +51,10 @@ class TaskHandoff(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class TaskDispatch(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+
 async def _ensure_agent_exists(db: GrupoBorgesDB, slug: str) -> None:
     if await db.get_agent(slug) is None:
         raise HTTPException(status_code=400, detail=f"assignee {slug!r} não existe em agents")
@@ -152,6 +156,57 @@ async def patch_task(task_id: str, payload: TaskPatch, request: Request) -> dict
     return updated
 
 
+@router.post("/{task_id}/dispatch", status_code=status.HTTP_202_ACCEPTED)
+async def dispatch_task(
+    task_id: str, payload: TaskDispatch, request: Request
+) -> dict[str, Any]:
+    db: GrupoBorgesDB = request.app.state.db
+    task = await db.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+    if task["status"] == "done":
+        raise HTTPException(status_code=400, detail="task já concluída")
+    if task["status"] == "running":
+        raise HTTPException(status_code=409, detail="task já está em execução")
+
+    agent = await _ensure_agent_has_tmux(db, task["assignee"])
+    dispatch_text = _format_dispatch_message(task=task, note=payload.note)
+    try:
+        tmux_delivered = await tmux_driver.send_message(agent["tmux_session"], dispatch_text)
+    except Exception as e:
+        log.warning(
+            "Falha ao despachar task %s para tmux session %s: %s",
+            task_id,
+            agent["tmux_session"],
+            e,
+        )
+        raise HTTPException(status_code=502, detail="falha ao enviar mensagem para tmux") from e
+    if not tmux_delivered:
+        raise HTTPException(
+            status_code=409,
+            detail=f"tmux session {agent['tmux_session']!r} não encontrada",
+        )
+
+    try:
+        dispatched = await db.dispatch_task(
+            task_id,
+            tmux_session=agent["tmux_session"],
+            note=payload.note,
+        )
+    except ValueError as e:
+        status_code = 409 if "execução" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
+    if dispatched is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+
+    return {
+        "task": dispatched["task"],
+        "run_id": dispatched["run_id"],
+        "event_id": dispatched["event_id"],
+        "tmux_delivered": True,
+    }
+
+
 @router.post("/{task_id}/handoff", status_code=status.HTTP_201_CREATED)
 async def handoff_task(
     task_id: str, payload: TaskHandoff, request: Request
@@ -231,6 +286,23 @@ def _format_handoff_message(
     ]
     if note_text:
         lines.append(f"Nota: {note_text}")
+    return "\n".join(lines)
+
+
+def _format_dispatch_message(*, task: dict[str, Any], note: str | None) -> str:
+    note_text = (note or "").strip()
+    display_id = task.get("human_id") or task["id"]
+    lines = [
+        "Nova missão via cockpit",
+        f"Task: {display_id} ({task['id']})",
+        f"Título: {task['title']}",
+    ]
+    body = (task.get("body") or "").strip()
+    if body:
+        lines.append(f"Body: {body}")
+    if note_text:
+        lines.append(f"Nota: {note_text}")
+    lines.append("Ao iniciar, mantenha esta task como referência no retorno.")
     return "\n".join(lines)
 
 
