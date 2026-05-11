@@ -1,5 +1,6 @@
 'use client';
 
+import { ActivityFeed } from './activity-feed';
 import { AgentCards } from './agent-card';
 import { KanbanBoard } from './kanban-board';
 import { useFleet } from '../lib/fleet-context';
@@ -22,6 +23,13 @@ export function CockpitLive() {
         <span className="endcap">aria-live: educado</span>
       </div>
       <KanbanBoard tasks={tasks} serverNow={fleet.health.server_now} />
+      <div className="section-label" aria-hidden="true">
+        <span className="num-tag">05</span>
+        <span>ATIVIDADE · AO VIVO</span>
+        <span className="rule" />
+        <span className="endcap">últimos 40 eventos · SSE</span>
+      </div>
+      <ActivityFeed />
     </>
   );
 }

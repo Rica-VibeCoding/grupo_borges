@@ -1,12 +1,13 @@
 'use client';
 
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
-import type { FleetResponse, Task } from './cockpit-types';
+import type { FleetResponse, Task, TaskEvent } from './cockpit-types';
 import { useFleetStream, type FleetState, type SseStatus } from './use-fleet-stream';
 
 type FleetContextValue = {
   fleet: FleetResponse;
   tasks: Task[];
+  events: TaskEvent[];
   sseStatus: SseStatus;
   reconnect: () => void;
 };

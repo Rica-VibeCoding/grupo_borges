@@ -1,4 +1,4 @@
-import type { FleetResponse, Task } from './cockpit-types';
+import type { FleetResponse, Task, TaskEvent } from './cockpit-types';
 
 export const EMPTY_FLEET: FleetResponse = {
   agents: [],
@@ -22,3 +22,5 @@ export const EMPTY_FLEET: FleetResponse = {
 };
 
 export const EMPTY_TASKS: Task[] = [];
+
+export const EMPTY_EVENTS: TaskEvent[] = [];

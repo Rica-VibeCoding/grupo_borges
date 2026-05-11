@@ -92,6 +92,16 @@ export type KanbanColumn = {
   tasks: Task[];
 };
 
+export type TaskEvent = {
+  id: number;
+  task_id: string | null;
+  agent_slug: string | null;
+  instance_id: string | null;
+  kind: string;
+  payload: Record<string, unknown> | null;
+  created_at: number;
+};
+
 export function deriveInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '??';

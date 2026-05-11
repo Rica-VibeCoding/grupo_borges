@@ -28,6 +28,7 @@ from db.store import GrupoBorgesDB
 from orchestrator.jsonl_watcher import JsonlWatcher
 from orchestrator.tmux_driver import TmuxDriver
 from routers import agents as agents_router
+from routers import events as events_router
 from routers import fleet as fleet_router
 from routers import hooks as hooks_router
 from routers import stream as stream_router
@@ -134,5 +135,6 @@ async def health() -> dict:
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(fleet_router.router, prefix="/api/fleet", tags=["fleet"])
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(events_router.router, prefix="/api/events", tags=["events"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])

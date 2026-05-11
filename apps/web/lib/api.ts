@@ -1,4 +1,4 @@
-import type { FleetResponse, Task } from './cockpit-types';
+import type { FleetResponse, Task, TaskEvent } from './cockpit-types';
 
 const SERVER_API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
 
@@ -11,5 +11,11 @@ export async function fetchFleet(): Promise<FleetResponse> {
 export async function fetchTasks(): Promise<Task[]> {
   const res = await fetch(`${SERVER_API_BASE}/api/tasks`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`fetchTasks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEvents(limit = 50): Promise<TaskEvent[]> {
+  const res = await fetch(`${SERVER_API_BASE}/api/events?limit=${limit}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`fetchEvents failed: ${res.status}`);
   return res.json();
 }

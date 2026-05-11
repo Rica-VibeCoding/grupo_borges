@@ -362,6 +362,37 @@ class GrupoBorgesDB:
                 "SELECT COALESCE(MAX(id), 0) FROM task_events"
             ).fetchone()[0]
 
+    async def list_events_latest(
+        self, limit: int = 50, before_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._list_events_latest, limit, before_id)
+
+    def _list_events_latest(
+        self, limit: int, before_id: int | None
+    ) -> list[dict[str, Any]]:
+        base_sql = (
+            "SELECT id, task_id, agent_slug, instance_id, kind, payload, created_at "
+            "FROM task_events"
+        )
+        if before_id is None:
+            sql = f"{base_sql} ORDER BY id DESC LIMIT ?"
+            params: tuple[Any, ...] = (limit,)
+        else:
+            sql = f"{base_sql} WHERE id < ? ORDER BY id DESC LIMIT ?"
+            params = (before_id, limit)
+
+        with self._connect() as conn:
+            result: list[dict[str, Any]] = []
+            for row in conn.execute(sql, params).fetchall():
+                d = dict(row)
+                if d.get("payload"):
+                    try:
+                        d["payload"] = json.loads(d["payload"])
+                    except json.JSONDecodeError:
+                        pass
+                result.append(d)
+            return result
+
     # ---------- tasks ----------
 
     TASK_STATUSES = {"backlog", "ready", "running", "review", "blocked", "done"}

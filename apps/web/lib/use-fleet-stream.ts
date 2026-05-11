@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FleetResponse, Task } from './cockpit-types';
+import type { FleetResponse, Task, TaskEvent } from './cockpit-types';
 
 export type SseStatus = 'connecting' | 'open' | 'closed';
 
 export type FleetState = {
   fleet: FleetResponse;
   tasks: Task[];
+  events: TaskEvent[];
   sseStatus: SseStatus;
 };
 
@@ -18,16 +19,32 @@ export type FleetStreamState = FleetState & {
 const REFETCH_INTERVAL_MS = 5_000;
 const SSE_TRIGGERED_REFETCH_DEBOUNCE_MS = 250;
 const SSE_MAX_BACKOFF_SECONDS = 60;
+const EVENT_BUFFER_CAP = 200;
+const INITIAL_EVENT_FETCH_LIMIT = 50;
 
-async function fetchSnapshot(): Promise<{ fleet: FleetResponse; tasks: Task[] }> {
-  const [fleetRes, tasksRes] = await Promise.all([
+function mergeEvents(a: TaskEvent[], b: TaskEvent[]): TaskEvent[] {
+  const seen = new Set<number>();
+  const merged: TaskEvent[] = [];
+  for (const ev of [...a, ...b]) {
+    if (seen.has(ev.id)) continue;
+    seen.add(ev.id);
+    merged.push(ev);
+  }
+  merged.sort((x, y) => y.id - x.id);
+  return merged.slice(0, EVENT_BUFFER_CAP);
+}
+
+async function fetchSnapshot(): Promise<{ fleet: FleetResponse; tasks: Task[]; events: TaskEvent[] }> {
+  const [fleetRes, tasksRes, eventsRes] = await Promise.all([
     fetch('/api/fleet', { cache: 'no-store' }),
     fetch('/api/tasks', { cache: 'no-store' }),
+    fetch(`/api/events?limit=${INITIAL_EVENT_FETCH_LIMIT}`, { cache: 'no-store' }),
   ]);
   if (!fleetRes.ok) throw new Error(`/api/fleet ${fleetRes.status}`);
   if (!tasksRes.ok) throw new Error(`/api/tasks ${tasksRes.status}`);
-  const [fleet, tasks] = await Promise.all([fleetRes.json(), tasksRes.json()]);
-  return { fleet, tasks };
+  if (!eventsRes.ok) throw new Error(`/api/events ${eventsRes.status}`);
+  const [fleet, tasks, events] = await Promise.all([fleetRes.json(), tasksRes.json(), eventsRes.json()]);
+  return { fleet, tasks, events };
 }
 
 function getReconnectDelay(attempt: number): number {
@@ -55,11 +72,42 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
       try {
         const snapshot = await fetchSnapshot();
         if (!alive || mySeq !== reqSeq.current) return;
-        setState((prev) => ({ ...snapshot, sseStatus: prev.sseStatus }));
+        setState((prev) => ({
+          fleet: snapshot.fleet,
+          tasks: snapshot.tasks,
+          events: mergeEvents(prev.events, snapshot.events),
+          sseStatus: prev.sseStatus,
+        }));
       } catch {
         if (!alive || mySeq !== reqSeq.current) return;
         setState((prev) => ({ ...prev, sseStatus: 'closed' }));
       }
+    };
+
+    const ingestEvent = (raw: string, kind: string) => {
+      let obj: Partial<TaskEvent> & { id?: number };
+      try {
+        obj = JSON.parse(raw) as Partial<TaskEvent> & { id?: number };
+      } catch {
+        return;
+      }
+      if (typeof obj.id !== 'number') return;
+      const ev: TaskEvent = {
+        id: obj.id,
+        task_id: obj.task_id ?? null,
+        agent_slug: obj.agent_slug ?? null,
+        instance_id: obj.instance_id ?? null,
+        kind: typeof obj.kind === 'string' ? obj.kind : kind,
+        payload: (obj.payload as Record<string, unknown> | null | undefined) ?? null,
+        created_at: typeof obj.created_at === 'number'
+          ? obj.created_at
+          : Math.floor(Date.now() / 1000),
+      };
+      setState((prev) => {
+        if (prev.events.length && prev.events[0]!.id === ev.id) return prev;
+        const next = [ev, ...prev.events.filter((e) => e.id !== ev.id)].slice(0, EVENT_BUFFER_CAP);
+        return { ...prev, events: next };
+      });
     };
 
     const schedulePoll = () => {
@@ -83,16 +131,23 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
       clearReconnectTimer();
       setState((prev) => ({ ...prev, sseStatus: 'open' }));
     };
-    const onAnyEvent = () => triggerRefetchDebounced();
+
+    // 5 listeners distintos por design — sse-starlette emite event types específicos.
+    // Cada um faz o mesmo trabalho (ingest + debounced refetch), mas precisa ser
+    // registrado por nome pra capturar o `event:` SSE corretamente.
+    const SSE_EVENT_KINDS = ['message', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart'] as const;
+    const sseHandlers: Array<[string, EventListener]> = SSE_EVENT_KINDS.map((kind) => [
+      kind,
+      ((e: MessageEvent) => {
+        ingestEvent(e.data, kind);
+        triggerRefetchDebounced();
+      }) as EventListener,
+    ]);
 
     const removeEventListeners = (es: EventSource) => {
       es.removeEventListener('open', onOpen);
       es.removeEventListener('error', onError);
-      es.removeEventListener('message', onAnyEvent);
-      es.removeEventListener('PostToolUse', onAnyEvent);
-      es.removeEventListener('UserPromptSubmit', onAnyEvent);
-      es.removeEventListener('Stop', onAnyEvent);
-      es.removeEventListener('SessionStart', onAnyEvent);
+      for (const [kind, handler] of sseHandlers) es.removeEventListener(kind, handler);
     };
 
     const closeEventSource = () => {
@@ -117,11 +172,7 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
       eventSource.current = es;
       es.addEventListener('open', onOpen);
       es.addEventListener('error', onError);
-      es.addEventListener('message', onAnyEvent);
-      es.addEventListener('PostToolUse', onAnyEvent);
-      es.addEventListener('UserPromptSubmit', onAnyEvent);
-      es.addEventListener('Stop', onAnyEvent);
-      es.addEventListener('SessionStart', onAnyEvent);
+      for (const [kind, handler] of sseHandlers) es.addEventListener(kind, handler);
     };
 
     const scheduleReconnect = () => {
