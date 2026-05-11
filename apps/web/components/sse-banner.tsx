@@ -15,7 +15,7 @@ function formatBackoff(retryCount: number): string {
 }
 
 export function SseBanner() {
-  const { sseStatus, fleet } = useFleet();
+  const { sseStatus, fleet, reconnect } = useFleet();
   const offline = sseStatus === 'closed';
   const [retryCount, setRetryCount] = useState(0);
   const lastSeenSyncRef = useRef<number | null>(null);
@@ -67,12 +67,11 @@ export function SseBanner() {
       <div className="sb-stat" aria-hidden="true"><span>backoff</span><span className="v">{formatBackoff(retryCount)}</span></div>
       <div className="spacer" />
       <span className="sb-ts" aria-hidden="true">{formatClock(fleet.health.server_now)}</span>
-      {/* TODO(etapa-5b/6): expor reconnect() no useFleetStream e remover reload */}
       <button
         type="button"
         className="sb-retry"
         aria-label="Reconectar SSE agora"
-        onClick={() => window.location.reload()}
+        onClick={reconnect}
       >
         [ REINTENTAR ]
       </button>

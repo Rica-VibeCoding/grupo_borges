@@ -8,6 +8,7 @@ type FleetContextValue = {
   fleet: FleetResponse;
   tasks: Task[];
   sseStatus: SseStatus;
+  reconnect: () => void;
 };
 
 const FleetContext = createContext<FleetContextValue | null>(null);
