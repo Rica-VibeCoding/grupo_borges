@@ -2,12 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useFleet } from '../lib/fleet-context';
-
-function formatClock(unixSec: number): string {
-  const d = new Date(unixSec * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} -03:00`;
-}
+import { formatClock } from '../lib/format-time';
 
 function formatBackoff(retryCount: number): string {
   const seconds = Math.min(2 ** Math.max(0, retryCount - 1), 60);

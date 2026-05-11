@@ -1,12 +1,7 @@
 'use client';
 
 import { useToast } from '../lib/toast-context';
-
-function formatTime(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
+import { formatTimeMs as formatTime } from '../lib/format-time';
 
 export function ToastStack() {
   const { toasts, dismiss } = useToast();

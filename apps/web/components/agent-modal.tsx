@@ -17,6 +17,7 @@ import type {
   Task,
 } from '../lib/cockpit-types';
 import { formatLastSeen } from '../lib/cockpit-types';
+import { formatDateTime } from '../lib/format-time';
 import {
   fetchAgentDoc,
   fetchAgentDocs,
@@ -43,9 +44,7 @@ function safeUUID(): string {
 
 function formatUnixDateTime(unixSec: number | null): string {
   if (unixSec === null) return '—';
-  const d = new Date(unixSec * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return formatDateTime(unixSec);
 }
 
 export function AgentModal() {

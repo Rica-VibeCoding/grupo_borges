@@ -7,6 +7,7 @@ import { dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
+import { formatDateTime } from '../lib/format-time';
 
 const STATUS_OPTIONS: Array<{ value: TaskPatchStatus; label: string }> = [
   { value: 'backlog', label: 'FILA' },
@@ -23,9 +24,7 @@ function taskDisplayId(task: Task): string {
 
 function formatUnixDateTime(unixSec: number | null): string {
   if (unixSec === null) return '—';
-  const d = new Date(unixSec * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return formatDateTime(unixSec);
 }
 
 function Field({ label, value }: { label: string; value: string | number | null }) {
