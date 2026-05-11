@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { FilterDrawer } from './filter-drawer';
+import { COCKPIT_FILTERS } from '../lib/cockpit-filters';
 
 export function FilterBar() {
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
@@ -26,10 +27,9 @@ export function FilterBar() {
       </button>
       <FilterDrawer open={filterDrawerOpen} onOpenChange={setFilterDrawerOpen} />
       <div className="fb-drops">
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Filtro de status: todos"><span className="dk">STATUS</span><span className="dv">todos</span><span className="caret">▾</span></button>
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Filtro de modelo: todos"><span className="dk">MDL</span><span className="dv">todos</span><span className="caret">▾</span></button>
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Filtro de CLI: todos"><span className="dk">CLI</span><span className="dv">todos</span><span className="caret">▾</span></button>
-        <button className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Janela: 24h"><span className="dk">WIN</span><span className="dv">24h</span><span className="caret">▾</span></button>
+        {COCKPIT_FILTERS.map((filter) => (
+          <button key={filter.key} className="fb-drop" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label={filter.label}><span className="dk">{filter.key}</span><span className="dv">{filter.value}</span><span className="caret">▾</span></button>
+        ))}
       </div>
       <button className="fb-clear" type="button" disabled aria-label="Limpar filtros">LIMPAR ✕</button>
     </div>
