@@ -1,4 +1,21 @@
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'Grupo Borges — Cockpit',
+  description: 'Cockpit operacional do Grupo Borges',
+  appleWebApp: {
+    capable: true,
+    title: 'Cockpit',
+    statusBarStyle: 'black-translucent',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0A1628',
+  width: 'device-width',
+  initialScale: 1,
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
