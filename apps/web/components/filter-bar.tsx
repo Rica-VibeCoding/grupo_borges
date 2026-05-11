@@ -3,7 +3,7 @@ export function FilterBar() {
     <div className="filterbar mono" role="search">
       <div className="fb-label" aria-hidden="true"><span className="num">02</span><span>FILTER</span></div>
       <div className="fb-search">
-        <input id="fbSearch" type="text" placeholder="search agent · slug · task · path" autoComplete="off" aria-label="Search agents and tasks" />
+        <input id="fbSearch" type="text" placeholder="search agent · slug · task · path" autoComplete="off" aria-label="Search agents and tasks" suppressHydrationWarning />
         <span className="kbd" aria-hidden="true">/</span>
       </div>
       <div className="fb-drops">
