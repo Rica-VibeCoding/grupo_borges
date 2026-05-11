@@ -10,16 +10,35 @@ GET /api/agents/{slug}/tables       — tabelas do domínio do agente (de agents
 from __future__ import annotations
 
 import asyncio
+import logging
+import sqlite3
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from libtmux import exc as libtmux_exc
+from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
+from services import tmux_driver
 from services import workspace_reader
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 InstanceStatus = Literal["idle", "running", "blocked", "done"]
+AgentCli = Literal["claude_code", "codex"]
+ALLOWED_MODELS = {
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "codex-gpt-5-5",
+}
+
+
+class AgentInstanceCreate(BaseModel):
+    cli: AgentCli
+    model: str = Field(min_length=1, max_length=80)
+    is_subagent: bool = False
 
 
 @router.get("")
@@ -47,6 +66,72 @@ async def list_agent_instances(
     if await db.get_agent(slug) is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     return await db.list_agent_instances(slug, status=status)
+
+
+@router.post("/{slug}/instances", status_code=status.HTTP_201_CREATED)
+async def create_agent_instance(
+    slug: str, payload: AgentInstanceCreate, request: Request
+) -> dict[str, Any]:
+    db: GrupoBorgesDB = request.app.state.db
+    if await db.get_agent(slug) is None:
+        raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
+    if payload.model not in ALLOWED_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"model inválido: {payload.model}",
+        )
+
+    try:
+        instance = await db.create_agent_instance(
+            agent_slug=slug,
+            cli=payload.cli,
+            model=payload.model,
+            is_subagent=payload.is_subagent,
+        )
+    except sqlite3.IntegrityError as e:
+        log.warning("IntegrityError ao criar instância de %s: %s", slug, e)
+        raise HTTPException(
+            status_code=409,
+            detail="colisão ao alocar instance_num; tente novamente",
+        ) from e
+
+    tmux_created = False
+    session_error: str | None = None
+    tmux_session = instance.get("tmux_session")
+    if tmux_session:
+        try:
+            await tmux_driver.create_empty_session(tmux_session)
+            tmux_created = True
+        except libtmux_exc.LibTmuxException as e:
+            log.warning("Falha ao criar tmux session %s: %s", tmux_session, e)
+            session_error = str(e)
+
+    response: dict[str, Any] = {
+        "instance": instance,
+        "tmux_created": tmux_created,
+    }
+    if session_error:
+        response["session_error"] = session_error
+    return response
+
+
+@router.delete("/{slug}/instances/{instance_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent_instance(slug: str, instance_id: str, request: Request) -> Response:
+    db: GrupoBorgesDB = request.app.state.db
+    if await db.get_agent(slug) is None:
+        raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
+
+    instance = await db.end_agent_instance(agent_slug=slug, instance_id=instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instância {instance_id} não encontrada")
+
+    tmux_session = instance.get("tmux_session")
+    if tmux_session:
+        try:
+            await tmux_driver.kill_session_if_exists(tmux_session)
+        except libtmux_exc.LibTmuxException as e:
+            log.warning("Falha ao matar tmux session %s: %s", tmux_session, e)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{slug}/sparkline")

@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from 'react';
 import type { FleetResponse, Task, TaskEvent } from './cockpit-types';
 
 export type SseStatus = 'connecting' | 'open' | 'closed';
@@ -14,6 +22,7 @@ export type FleetState = {
 
 export type FleetStreamState = FleetState & {
   reconnect: () => void;
+  mutate: () => Promise<void>;
 };
 
 const REFETCH_INTERVAL_MS = 5_000;
@@ -21,6 +30,8 @@ const SSE_TRIGGERED_REFETCH_DEBOUNCE_MS = 250;
 const SSE_MAX_BACKOFF_SECONDS = 60;
 const EVENT_BUFFER_CAP = 200;
 const INITIAL_EVENT_FETCH_LIMIT = 50;
+
+type Snapshot = { fleet: FleetResponse; tasks: Task[]; events: TaskEvent[] };
 
 function mergeEvents(a: TaskEvent[], b: TaskEvent[]): TaskEvent[] {
   const seen = new Set<number>();
@@ -34,7 +45,7 @@ function mergeEvents(a: TaskEvent[], b: TaskEvent[]): TaskEvent[] {
   return merged.slice(0, EVENT_BUFFER_CAP);
 }
 
-async function fetchSnapshot(): Promise<{ fleet: FleetResponse; tasks: Task[]; events: TaskEvent[] }> {
+async function fetchSnapshot(): Promise<Snapshot> {
   const [fleetRes, tasksRes, eventsRes] = await Promise.all([
     fetch('/api/fleet', { cache: 'no-store' }),
     fetch('/api/tasks', { cache: 'no-store' }),
@@ -45,6 +56,21 @@ async function fetchSnapshot(): Promise<{ fleet: FleetResponse; tasks: Task[]; e
   if (!eventsRes.ok) throw new Error(`/api/events ${eventsRes.status}`);
   const [fleet, tasks, events] = await Promise.all([fleetRes.json(), tasksRes.json(), eventsRes.json()]);
   return { fleet, tasks, events };
+}
+
+function applySnapshot(
+  snapshot: Snapshot,
+  mySeq: number,
+  setState: Dispatch<SetStateAction<FleetState>>,
+  reqSeqRef: MutableRefObject<number>,
+) {
+  if (mySeq !== reqSeqRef.current) return;
+  setState((prev) => ({
+    fleet: snapshot.fleet,
+    tasks: snapshot.tasks,
+    events: mergeEvents(prev.events, snapshot.events),
+    sseStatus: prev.sseStatus,
+  }));
 }
 
 function getReconnectDelay(attempt: number): number {
@@ -62,6 +88,11 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
   const reconnectRef = useRef<() => void>(() => {});
   const reqSeq = useRef(0);
   const reconnect = useCallback(() => reconnectRef.current(), []);
+  const mutate = useCallback(async () => {
+    const mySeq = ++reqSeq.current;
+    const snapshot = await fetchSnapshot();
+    applySnapshot(snapshot, mySeq, setState, reqSeq);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -71,13 +102,8 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
       const mySeq = ++reqSeq.current;
       try {
         const snapshot = await fetchSnapshot();
-        if (!alive || mySeq !== reqSeq.current) return;
-        setState((prev) => ({
-          fleet: snapshot.fleet,
-          tasks: snapshot.tasks,
-          events: mergeEvents(prev.events, snapshot.events),
-          sseStatus: prev.sseStatus,
-        }));
+        if (!alive) return;
+        applySnapshot(snapshot, mySeq, setState, reqSeq);
       } catch {
         if (!alive || mySeq !== reqSeq.current) return;
         setState((prev) => ({ ...prev, sseStatus: 'closed' }));
@@ -213,5 +239,5 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
     };
   }, []);
 
-  return { ...state, reconnect };
+  return { ...state, reconnect, mutate };
 }

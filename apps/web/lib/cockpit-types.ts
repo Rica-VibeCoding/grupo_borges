@@ -6,6 +6,7 @@ export type SparklineBucket = {
 };
 
 export type AgentInstance = {
+  id: string;
   agent_slug: string;
   instance_num: number;
   tmux_session: string | null;
@@ -15,6 +16,26 @@ export type AgentInstance = {
   status: AgentStatus;
   created_at: number;
   updated_at: number;
+};
+
+export type AgentCli = 'claude_code' | 'codex';
+
+export type AgentModel =
+  | 'claude-opus-4-7'
+  | 'claude-sonnet-4-6'
+  | 'claude-haiku-4-5'
+  | 'codex-gpt-5-5';
+
+export type AgentInstanceCreate = {
+  cli: AgentCli;
+  model: AgentModel;
+  is_subagent: boolean;
+};
+
+export type AgentInstanceCreateResponse = {
+  instance: AgentInstance;
+  tmux_created: boolean;
+  session_error?: string;
 };
 
 export type Agent = {
@@ -65,7 +86,9 @@ export type FleetResponse = {
   health: FleetHealth;
 };
 
-export type TaskStatus = 'backlog' | 'running' | 'review' | 'blocked' | 'done' | 'archived';
+export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'blocked' | 'done' | 'archived';
+
+export type ActiveTaskStatus = 'backlog' | 'ready' | 'running';
 
 export type Task = {
   id: string;
@@ -100,6 +123,12 @@ export type TaskEvent = {
   kind: string;
   payload: Record<string, unknown> | null;
   created_at: number;
+};
+
+export type TaskHandoffResponse = {
+  parent_id: string;
+  child_id: string;
+  tmux_delivered: boolean;
 };
 
 // ----- Agent modal (Fase 3): skills / docs / tables ------------------------

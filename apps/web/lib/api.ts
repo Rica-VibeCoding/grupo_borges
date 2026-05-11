@@ -1,10 +1,14 @@
 import type {
+  ActiveTaskStatus,
   AgentDocResolved,
   AgentDocsResponse,
+  AgentInstanceCreate,
+  AgentInstanceCreateResponse,
   AgentSkillsResponse,
   AgentTablesResponse,
   FleetResponse,
   Task,
+  TaskHandoffResponse,
   TaskEvent,
 } from './cockpit-types';
 
@@ -51,5 +55,53 @@ export async function fetchAgentDoc(slug: string, filename: string, signal?: Abo
 export async function fetchAgentTables(slug: string, signal?: AbortSignal): Promise<AgentTablesResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/tables`, { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`fetchAgentTables failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createAgentInstance(
+  slug: string,
+  payload: AgentInstanceCreate,
+): Promise<AgentInstanceCreateResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/instances`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`createAgentInstance failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteAgentInstance(slug: string, instanceId: string): Promise<void> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(slug)}/instances/${encodeURIComponent(instanceId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error(`deleteAgentInstance failed: ${res.status}`);
+}
+
+export async function listAgentTasks(
+  slug: string,
+  statuses: ActiveTaskStatus[] = ['running', 'ready', 'backlog'],
+  signal?: AbortSignal,
+): Promise<Task[]> {
+  const qs = new URLSearchParams({
+    assignee: slug,
+    status: statuses.join(','),
+  });
+  const res = await fetch(`/api/tasks?${qs.toString()}`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(`listAgentTasks failed: ${res.status}`);
+  return res.json();
+}
+
+export async function postTaskHandoff(
+  taskId: string,
+  payload: { to_agent: string; note?: string | null; idempotency_key: string },
+): Promise<TaskHandoffResponse> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/handoff`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`postTaskHandoff failed: ${res.status}`);
   return res.json();
 }

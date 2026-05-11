@@ -10,6 +10,7 @@ type FleetContextValue = {
   events: TaskEvent[];
   sseStatus: SseStatus;
   reconnect: () => void;
+  mutate: () => Promise<void>;
 };
 
 const FleetContext = createContext<FleetContextValue | null>(null);

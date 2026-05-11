@@ -14,7 +14,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from db.store import GrupoBorgesDB
+from db.store import GrupoBorgesDB, _parse_csv_statuses
 from services import tmux_driver
 
 router = APIRouter()
@@ -69,10 +69,17 @@ async def _ensure_agent_has_tmux(db: GrupoBorgesDB, slug: str) -> dict[str, Any]
 async def list_tasks(
     request: Request,
     assignee: str | None = Query(default=None),
-    status: TaskStatus | None = Query(default=None),
+    status: str | None = Query(default=None),
     limit: int = Query(default=500, ge=1, le=2000),
 ) -> list[dict[str, Any]]:
     db: GrupoBorgesDB = request.app.state.db
+    if status:
+        invalid = [
+            s for s in _parse_csv_statuses(status)
+            if s not in GrupoBorgesDB.TASK_STATUSES
+        ]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"status inválido: {', '.join(invalid)}")
     return await db.list_tasks(assignee=assignee, status=status, limit=limit)
 
 

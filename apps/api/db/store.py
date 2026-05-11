@@ -21,6 +21,7 @@ import contextlib
 import json
 import sqlite3
 import time
+import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,6 +36,12 @@ HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
 # Janela de tolerância pra considerar um agente "online" baseado no último heartbeat.
 # Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
 OFFLINE_THRESHOLD_SECONDS = 300
+
+
+def _parse_csv_statuses(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [s.strip() for s in raw.split(",") if s.strip()]
 
 
 def hour_window(hours: int) -> tuple[datetime, int]:
@@ -604,8 +611,14 @@ class GrupoBorgesDB:
             clauses.append("assignee = ?")
             params.append(assignee)
         if status:
-            clauses.append("status = ?")
-            params.append(status)
+            statuses = _parse_csv_statuses(status)
+            if len(statuses) == 1:
+                clauses.append("status = ?")
+                params.append(statuses[0])
+            elif statuses:
+                placeholders = ", ".join("?" for _ in statuses)
+                clauses.append(f"status IN ({placeholders})")
+                params.extend(statuses)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self._connect() as conn:
@@ -694,6 +707,133 @@ class GrupoBorgesDB:
 
     # ---------- agent_instances ----------
 
+    async def create_agent_instance(
+        self,
+        *,
+        agent_slug: str,
+        cli: str,
+        model: str,
+        is_subagent: bool,
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self._create_agent_instance,
+            agent_slug=agent_slug,
+            cli=cli,
+            model=model,
+            is_subagent=is_subagent,
+        )
+
+    def _create_agent_instance(
+        self, *, agent_slug: str, cli: str, model: str, is_subagent: bool
+    ) -> dict[str, Any]:
+        now = int(time.time())
+        instance_id = str(uuid.uuid4())
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                """
+                SELECT COALESCE(MAX(instance_num), 0) + 1 AS next_num
+                FROM agent_instances
+                WHERE agent_slug = ?
+                """,
+                (agent_slug,),
+            )
+            instance_num = int(cur.fetchone()["next_num"])
+            tmux_session = None
+            if not is_subagent and cli == "claude_code":
+                tmux_session = f"{agent_slug}-{instance_num}"
+            conn.execute(
+                """
+                INSERT INTO agent_instances (
+                    id, agent_slug, instance_num, tmux_session, cli, model,
+                    is_subagent, status, started_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'idle', ?)
+                """,
+                (
+                    instance_id,
+                    agent_slug,
+                    instance_num,
+                    tmux_session,
+                    cli,
+                    model,
+                    1 if is_subagent else 0,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE agent_state
+                SET instance_count = (
+                    SELECT COUNT(*) FROM agent_instances
+                    WHERE agent_slug = ? AND ended_at IS NULL
+                )
+                WHERE slug = ?
+                """,
+                (agent_slug, agent_slug),
+            )
+            conn.commit()
+
+        instance = self._get_agent_instance(instance_id)
+        assert instance is not None
+        return instance
+
+    async def end_agent_instance(
+        self, *, agent_slug: str, instance_id: str
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._end_agent_instance, agent_slug=agent_slug, instance_id=instance_id
+        )
+
+    def _end_agent_instance(
+        self, *, agent_slug: str, instance_id: str
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM agent_instances WHERE id = ? AND agent_slug = ?",
+                (instance_id, agent_slug),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+            conn.execute(
+                """
+                UPDATE agent_instances
+                SET status = 'done', ended_at = COALESCE(ended_at, ?)
+                WHERE id = ? AND agent_slug = ?
+                """,
+                (now, instance_id, agent_slug),
+            )
+            conn.execute(
+                """
+                UPDATE agent_state
+                SET instance_count = (
+                    SELECT COUNT(*) FROM agent_instances
+                    WHERE agent_slug = ? AND ended_at IS NULL
+                )
+                WHERE slug = ?
+                """,
+                (agent_slug, agent_slug),
+            )
+            conn.commit()
+            row_dict = dict(row)
+            row_dict["status"] = "done"
+            row_dict["ended_at"] = row_dict["ended_at"] or now
+            return self._row_to_instance_dict(row_dict)
+
+    async def get_agent_instance(self, instance_id: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_agent_instance, instance_id)
+
+    def _get_agent_instance(self, instance_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_instances WHERE id = ?",
+                (instance_id,),
+            ).fetchone()
+            return self._row_to_instance(row) if row is not None else None
+
     async def list_agent_instances(
         self,
         agent_slug: str,
@@ -723,7 +863,10 @@ class GrupoBorgesDB:
 
     @staticmethod
     def _row_to_instance(row: sqlite3.Row) -> dict[str, Any]:
-        d = dict(row)
+        return GrupoBorgesDB._row_to_instance_dict(dict(row))
+
+    @staticmethod
+    def _row_to_instance_dict(d: dict[str, Any]) -> dict[str, Any]:
         # SQLite armazena bool como INTEGER 0/1 — converter pra UI consumir direto.
         d["is_subagent"] = bool(d["is_subagent"])
         return d

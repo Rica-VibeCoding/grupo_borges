@@ -1,9 +1,13 @@
 'use client';
 
-import { useCallback } from 'react';
-import type { Agent, AgentStatus } from '../lib/cockpit-types';
+import { useCallback, useEffect, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import type { Agent, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
+import { createAgentInstance } from '../lib/api';
+import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
+import { SelectField } from './select-field';
 
 const stateLabel: Record<AgentStatus, string> = {
   running: 'EXECUTANDO',
@@ -29,6 +33,18 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
   offline: 4,
 };
 
+const CLI_OPTIONS: Array<{ value: AgentCli; label: string }> = [
+  { value: 'claude_code', label: 'Claude Code' },
+  { value: 'codex', label: 'Codex' },
+];
+
+const MODELS: AgentModel[] = [
+  'claude-opus-4-7',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5',
+  'codex-gpt-5-5',
+];
+
 function WifiOffIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -44,6 +60,9 @@ function WifiOffIcon() {
 }
 
 export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: number }) {
+  const { mutate } = useFleet();
+  const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
+  const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
   const task = agent.current_task_id ?? null;
@@ -52,6 +71,9 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
   const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
+  useEffect(() => {
+    if (agent.instances.length <= 1) setInstanceFocus(false);
+  }, [agent.instances.length]);
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -67,6 +89,7 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
       className="agent-card scan-host"
       data-state={agent.status}
       data-slug={agent.slug}
+      data-instance-focus={instanceFocus ? 'true' : 'false'}
       tabIndex={0}
       role="button"
       aria-haspopup="dialog"
@@ -121,10 +144,115 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
         </div>
         <div className="card-foot">
           <span>VISTO·EM <span className="lseen-val">{lastSeenFmt}</span></span>
-          <span>{cli.toUpperCase()} · {model}</span>
+          <span className="card-actions">
+            {agent.instances.length > 1 && (
+              <button
+                type="button"
+                className="instance-pill"
+                aria-pressed={instanceFocus}
+                title="Destacar instâncias deste agente"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setInstanceFocus((v) => !v);
+                }}
+              >
+                +{agent.instances.length}
+              </button>
+            )}
+            <Dialog.Root open={instanceDialogOpen} onOpenChange={setInstanceDialogOpen}>
+              <Dialog.Trigger asChild>
+                <button
+                  type="button"
+                  className="instance-add"
+                  aria-label={`Criar nova instância de ${agent.name}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ＋
+                </button>
+              </Dialog.Trigger>
+              <Dialog.Portal>
+                <Dialog.Overlay className="agent-modal-overlay" />
+                <Dialog.Content
+                  className="instance-dialog mono"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-describedby={undefined}
+                >
+                  <Dialog.Title className="instance-dialog-title">Nova instância</Dialog.Title>
+                  <NewInstanceForm
+                    agent={agent}
+                    onCreated={mutate}
+                    onClose={() => setInstanceDialogOpen(false)}
+                  />
+                  <Dialog.Close asChild>
+                    <button type="button" className="agent-modal-close instance-dialog-close" aria-label="Fechar">✕</button>
+                  </Dialog.Close>
+                </Dialog.Content>
+              </Dialog.Portal>
+            </Dialog.Root>
+            <span>{cli.toUpperCase()} · {model}</span>
+          </span>
         </div>
       </div>
     </article>
+  );
+}
+
+function NewInstanceForm({
+  agent,
+  onCreated,
+  onClose,
+}: {
+  agent: Agent;
+  onCreated: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [cli, setCli] = useState<AgentCli>((agent.cli_default as AgentCli) || 'claude_code');
+  const [model, setModel] = useState<AgentModel>((agent.model_default as AgentModel) || 'claude-haiku-4-5');
+  const [isSubagent, setIsSubagent] = useState(false);
+  const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setState('saving');
+    setMessage(null);
+    try {
+      const result = await createAgentInstance(agent.slug, { cli, model, is_subagent: isSubagent });
+      await onCreated();
+      if (result.session_error) {
+        setMessage(`instância criada; tmux falhou: ${result.session_error}`);
+      } else {
+        onClose();
+      }
+      setState('idle');
+    } catch (err) {
+      setState('error');
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <form className="instance-form" onSubmit={submit}>
+      <SelectField<AgentCli> label="CLI" value={cli} onValueChange={setCli} options={CLI_OPTIONS} />
+      <SelectField<AgentModel>
+        label="Modelo"
+        value={model}
+        onValueChange={setModel}
+        options={MODELS.map((v) => ({ value: v, label: v }))}
+      />
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={isSubagent}
+          onChange={(e) => setIsSubagent(e.currentTarget.checked)}
+        />
+        <span>is_subagent</span>
+      </label>
+      {message && <p className="form-note" data-kind={state === 'error' ? 'error' : 'info'}>{message}</p>}
+      <button type="submit" className="form-submit" disabled={state === 'saving'}>
+        {state === 'saving' ? 'CRIANDO…' : 'CRIAR'}
+      </button>
+    </form>
   );
 }
 

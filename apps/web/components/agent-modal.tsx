@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useFleet } from '../lib/fleet-context';
@@ -13,9 +13,19 @@ import type {
   AgentSkill,
   AgentStatus,
   AgentTable,
+  ActiveTaskStatus,
+  Task,
 } from '../lib/cockpit-types';
 import { formatLastSeen } from '../lib/cockpit-types';
-import { fetchAgentDoc, fetchAgentDocs, fetchAgentSkills, fetchAgentTables } from '../lib/api';
+import {
+  fetchAgentDoc,
+  fetchAgentDocs,
+  fetchAgentSkills,
+  fetchAgentTables,
+  listAgentTasks,
+  postTaskHandoff,
+} from '../lib/api';
+import { SelectField } from './select-field';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
   running: 'EXECUTANDO',
@@ -24,6 +34,12 @@ const STATUS_LABEL: Record<AgentStatus, string> = {
   done: 'CONCLUÍDO',
   offline: 'OFFLINE',
 };
+
+const HANDOFF_STATUSES: ActiveTaskStatus[] = ['running', 'ready', 'backlog'];
+
+function safeUUID(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function formatUnixDateTime(unixSec: number | null): string {
   if (unixSec === null) return '—';
@@ -36,10 +52,15 @@ export function AgentModal() {
   const { selectedSlug, close } = useSelectedAgent();
   const { fleet } = useFleet();
   const isMobile = useIsMobile();
+  const [handoffOpen, setHandoffOpen] = useState(false);
   const agent: Agent | null = selectedSlug
     ? fleet.agents.find((a) => a.slug === selectedSlug) ?? null
     : null;
   const open = agent !== null;
+
+  useEffect(() => {
+    if (!open) setHandoffOpen(false);
+  }, [open]);
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) close(); }}>
@@ -85,11 +106,108 @@ export function AgentModal() {
                   <TablesPanel slug={agent.slug} />
                 </Tabs.Content>
               </Tabs.Root>
+              <footer className="agent-modal-footer">
+                <button
+                  type="button"
+                  className="handoff-toggle"
+                  aria-expanded={handoffOpen}
+                  onClick={() => setHandoffOpen((v) => !v)}
+                >
+                  Handoff →
+                </button>
+                {handoffOpen && <HandoffPanel agent={agent} />}
+              </footer>
             </>
           )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function HandoffPanel({ agent }: { agent: Agent }) {
+  const { fleet, mutate } = useFleet();
+  const otherAgents = useMemo(
+    () => fleet.agents.filter((a) => a.slug !== agent.slug),
+    [fleet.agents, agent.slug],
+  );
+  const firstOtherAgentSlug = otherAgents[0]?.slug;
+  const [selectedTask, setSelectedTask] = useState<string>('');
+  const [toAgent, setToAgent] = useState<string>(firstOtherAgentSlug ?? '');
+  const [note, setNote] = useState('');
+  const [submitState, setSubmitState] = useState<'idle' | 'saving' | 'sent' | 'error'>('idle');
+  const [message, setMessage] = useState<string | null>(null);
+  const [taskRefreshSeq, setTaskRefreshSeq] = useState(0);
+  const tasksState = useAbortableFetch<Task[]>(
+    (signal) => listAgentTasks(agent.slug, HANDOFF_STATUSES, signal),
+    [agent.slug, taskRefreshSeq],
+  );
+
+  useEffect(() => {
+    if (tasksState.kind === 'ready') setSelectedTask(tasksState.data[0]?.id ?? '');
+  }, [tasksState]);
+
+  useEffect(() => {
+    setToAgent(firstOtherAgentSlug ?? '');
+  }, [firstOtherAgentSlug]);
+
+  if (otherAgents.length === 0) {
+    return <div className="handoff-panel"><p className="muted">Sem agentes disponíveis pra handoff</p></div>;
+  }
+
+  if (tasksState.kind === 'loading') return <div className="handoff-panel">{muted('carregando missões…')}</div>;
+  if (tasksState.kind === 'error') return <div className="handoff-panel">{muted(`erro: ${tasksState.message}`)}</div>;
+  if (tasksState.data.length === 0) {
+    return <div className="handoff-panel"><p className="muted">sem missões ativas pra encaminhar.</p></div>;
+  }
+
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!selectedTask || !toAgent) return;
+    setSubmitState('saving');
+    setMessage(null);
+    try {
+      const result = await postTaskHandoff(selectedTask, {
+        to_agent: toAgent,
+        note: note.trim() || null,
+        idempotency_key: safeUUID(),
+      });
+      setTaskRefreshSeq((seq) => seq + 1);
+      await mutate();
+      setSubmitState('sent');
+      setMessage(result.tmux_delivered ? 'handoff enviado.' : 'handoff criado; tmux não entregou.');
+    } catch (err) {
+      setSubmitState('error');
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <form className="handoff-panel" onSubmit={submit}>
+      <SelectField<string>
+        label="Missão"
+        value={selectedTask}
+        onValueChange={setSelectedTask}
+        options={tasksState.data.map((task) => ({
+          value: task.id,
+          label: `${task.human_id ?? task.id.slice(0, 8)} · ${task.title}`,
+        }))}
+      />
+      <SelectField<string>
+        label="Destino"
+        value={toAgent}
+        onValueChange={setToAgent}
+        options={otherAgents.map((a) => ({ value: a.slug, label: a.name }))}
+      />
+      <label className="handoff-note">
+        <span>Nota</span>
+        <textarea value={note} onChange={(e) => setNote(e.currentTarget.value)} maxLength={1000} />
+      </label>
+      {message && <p className="form-note" data-kind={submitState === 'error' ? 'error' : 'info'}>{message}</p>}
+      <button type="submit" className="form-submit" disabled={submitState === 'saving' || !toAgent}>
+        {submitState === 'saving' ? 'ENVIANDO…' : 'ENVIAR'}
+      </button>
+    </form>
   );
 }
 
