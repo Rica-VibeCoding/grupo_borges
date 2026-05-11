@@ -40,6 +40,7 @@ function Field({ label, value }: { label: string; value: string | number | null 
 function eventTitle(event: TaskEvent): string {
   if (event.kind === 'dispatch') return 'dispatch enviado';
   if (event.kind === 'dispatch.failed') return 'dispatch falhou';
+  if (event.kind === 'run.stale') return 'run sem sinal';
   if (event.kind === 'status.changed') return 'status alterado';
   if (event.kind === 'handoff') return 'handoff criado';
   return event.kind;
@@ -56,6 +57,11 @@ function eventSummary(event: TaskEvent): string {
     const reason = typeof payload.reason === 'string' ? payload.reason : 'falha desconhecida';
     const run = typeof payload.run_id === 'number' ? ` · run #${payload.run_id}` : '';
     return `${reason}${run}`;
+  }
+  if (event.kind === 'run.stale') {
+    const threshold = typeof payload.threshold_seconds === 'number' ? ` · limite ${payload.threshold_seconds}s` : '';
+    const run = typeof payload.run_id === 'number' ? `run #${payload.run_id}` : 'run';
+    return `${run} · heartbeat expirado${threshold}`;
   }
   if (event.kind === 'status.changed') {
     const fromStatus = typeof payload.from_status === 'string' ? payload.from_status : '?';
@@ -77,7 +83,7 @@ export function TaskDetailModal({
   task: Task | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { events, mutate } = useFleet();
+  const { events, fleet, mutate } = useFleet();
   const { fire } = useToast();
   const [freshTask, setFreshTask] = useState<Task | null>(null);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -93,6 +99,10 @@ export function TaskDetailModal({
     () => (effectiveTask?.status === 'archived' ? 'done' : (effectiveTask?.status ?? 'backlog')),
     [effectiveTask?.status],
   );
+  const runHeartbeatAge = effectiveTask?.current_run_last_heartbeat
+    ? fleet.health.server_now - effectiveTask.current_run_last_heartbeat
+    : null;
+  const runHeartbeatStale = runHeartbeatAge !== null && runHeartbeatAge > fleet.health.stale_threshold_seconds;
 
   useEffect(() => {
     if (!task) {
@@ -223,6 +233,16 @@ export function TaskDetailModal({
                   <Field label="PRIORIDADE" value={effectiveTask.priority} />
                   <Field label="ORIGEM" value={effectiveTask.origin_agent} />
                   <Field label="INSTÂNCIA" value={effectiveTask.instance_id} />
+                  <Field label="RUN" value={effectiveTask.current_run_id ?? null} />
+                  <Field label="RUN STATUS" value={effectiveTask.current_run_status} />
+                  <Field
+                    label="RUN HB"
+                    value={
+                      effectiveTask.current_run_last_heartbeat
+                        ? formatUnixDateTime(effectiveTask.current_run_last_heartbeat)
+                        : null
+                    }
+                  />
                   <Field label="CRIADA" value={formatUnixDateTime(effectiveTask.created_at)} />
                   <Field label="INICIADA" value={formatUnixDateTime(effectiveTask.started_at)} />
                   <Field label="CONCLUÍDA" value={formatUnixDateTime(effectiveTask.completed_at)} />
@@ -253,6 +273,7 @@ export function TaskDetailModal({
               <footer className="agent-modal-footer task-detail-footer">
                 <div className="task-detail-footer-info">
                   <span>{loadState === 'loading' ? 'carregando detalhe fresco...' : 'snapshot sincronizado'}</span>
+                  {runHeartbeatStale && <span className="task-detail-error">run sem heartbeat recente</span>}
                   {saving && <span>salvando status...</span>}
                   {dispatching && <span>enviando para sessão...</span>}
                   {message && <span className="task-detail-error">{message}</span>}

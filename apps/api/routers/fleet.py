@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from db.store import GrupoBorgesDB
+from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
 from services import tmux_driver
 
 router = APIRouter()
@@ -57,6 +57,7 @@ class FleetAgent(BaseModel):
     state_cli: str | None
     state_model: str | None
     current_task_id: str | None
+    current_task_last_heartbeat: int | None = None
     last_seen: int | None
     pane_excerpt: str | None
     instance_count: int
@@ -85,6 +86,7 @@ class FleetHealth(BaseModel):
     )
     server_now: int = Field(description="unix ts do servidor — UI calcula 'há Xs' contra isso")
     offline_threshold_seconds: int
+    stale_threshold_seconds: int
 
 
 class FleetSnapshot(BaseModel):
@@ -112,6 +114,8 @@ async def get_fleet(
     sparkline_hours: int = Query(default=24, ge=1, le=168),
 ):
     db: GrupoBorgesDB = request.app.state.db
+    await db.mark_stale_runs()
     snapshot = await db.fleet_snapshot(sparkline_hours=sparkline_hours)
+    snapshot["health"]["stale_threshold_seconds"] = RUN_STALE_THRESHOLD_SECONDS
     await _hydrate_pane_excerpts(snapshot["agents"])
     return snapshot

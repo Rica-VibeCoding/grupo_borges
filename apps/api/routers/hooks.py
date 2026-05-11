@@ -85,6 +85,7 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
 
     if slug is not None:
         await db.upsert_agent_state(slug)
+        await db.touch_agent_run_heartbeat(slug, source_kind=f"hook:{event_kind}")
 
     return {
         "received": True,

@@ -18,6 +18,7 @@ export const EMPTY_FLEET: FleetResponse = {
     last_sync: null,
     server_now: Math.floor(Date.now() / 1000),
     offline_threshold_seconds: 300,
+    stale_threshold_seconds: 600,
   },
 };
 

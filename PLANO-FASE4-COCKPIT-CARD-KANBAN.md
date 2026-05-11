@@ -27,8 +27,8 @@ Complementos Hermes-like aplicados neste ciclo:
 - [x] Re-dispatch simples de task `running` bloqueado na API e no botao do modal.
 - [x] Timeline basica no detalhe da task usando `task_events` do buffer SSE/poll.
 - [x] Claim/lock atomico de dispatch concorrente.
-- [ ] Heartbeat do run.
-- [ ] Crash/stale detection.
+- [x] Heartbeat do run.
+- [x] Crash/stale detection.
 
 ## Fases de evolucao a partir daqui
 
@@ -143,15 +143,37 @@ Validacao:
 
 Objetivo: saber se uma task `running` ainda esta viva.
 
-- [ ] Atualizar `task_runs.last_heartbeat` a partir de hooks/eventos reais.
-- [ ] Detectar run sem heartbeat recente.
-- [ ] Marcar stale/crash como `blocked`, `timed_out` ou estado definido.
-- [ ] Mostrar alerta no card/modal.
-- [ ] Registrar evento auditavel de stale/crash.
+- [x] Atualizar `task_runs.last_heartbeat` a partir de hooks/eventos reais.
+- [x] Detectar run sem heartbeat recente.
+- [x] Marcar stale/crash como `blocked` na task e `timed_out` no run.
+- [x] Mostrar heartbeat/stale no card/modal.
+- [x] Registrar evento auditavel de stale/crash.
 
 Aceite:
 
 - Uma task `running` sem sinal por tempo demais nao fica eternamente verde.
+
+Status: **entregue e validado em 2026-05-11**.
+
+Decisao tecnica:
+
+- `task_runs.last_heartbeat` e atualizado quando chegam hooks Claude Code ou eventos Codex para o agente que possui task `running`.
+- O snapshot/listagem chama `mark_stale_runs()` antes de devolver dados para a UI.
+- Threshold inicial: 600s (`RUN_STALE_THRESHOLD_SECONDS`), maior que o offline do agente para reduzir falso positivo.
+- Quando expira, o run vira `timed_out`, a task vira `blocked`, `agent_state.current_task_id` e limpo e entra evento `run.stale`.
+- `GET /api/tasks` e `GET /api/tasks/{id}` passaram a incluir dados do run atual: id, status, heartbeat, started/ended e outcome.
+- `/api/fleet.health` expoe `stale_threshold_seconds`.
+- Card do agente mostra `RUN·HB`; detalhe da task mostra dados do run e alerta quando o heartbeat esta vencido.
+
+Validacao:
+
+- `python3 -m compileall apps/api/db apps/api/routers apps/api/services` verde.
+- `corepack pnpm type-check` verde.
+- `corepack pnpm build` verde.
+- `git diff --check` verde.
+- Backend normal `:8000` e web normal `:3007` reiniciados com codigo novo.
+- Smoke real: task temporaria criada e despachada, hook `PostToolUse` atualizou `last_heartbeat`, heartbeat antigo forcado virou `run.stale`, task ficou `blocked`, run ficou `timed_out`, e task de smoke foi deletada.
+- Smoke Playwright em `:3007/:8000`: UI carregou e exibiu `RUN·HB` nos cards.
 
 ### Fase 4.5 — Dispatcher automatico opcional
 

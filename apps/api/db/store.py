@@ -37,6 +37,10 @@ HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
 # Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
 OFFLINE_THRESHOLD_SECONDS = 300
 
+# Uma task em execução sem hook/jsonl por 10 minutos deixa de ser "verde".
+# A margem é maior que o offline do agente para evitar falso positivo em ações longas.
+RUN_STALE_THRESHOLD_SECONDS = 600
+
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
     if not raw:
@@ -608,25 +612,42 @@ class GrupoBorgesDB:
         clauses: list[str] = []
         params: list[Any] = []
         if assignee:
-            clauses.append("assignee = ?")
+            clauses.append("t.assignee = ?")
             params.append(assignee)
         if status:
             statuses = _parse_csv_statuses(status)
             if len(statuses) == 1:
-                clauses.append("status = ?")
+                clauses.append("t.status = ?")
                 params.append(statuses[0])
             elif statuses:
                 placeholders = ", ".join("?" for _ in statuses)
-                clauses.append(f"status IN ({placeholders})")
+                clauses.append(f"t.status IN ({placeholders})")
                 params.extend(statuses)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self._connect() as conn:
             cur = conn.execute(
                 f"""
-                SELECT * FROM tasks
+                SELECT t.*,
+                       r.id AS current_run_id,
+                       r.status AS current_run_status,
+                       r.last_heartbeat AS current_run_last_heartbeat,
+                       r.started_at AS current_run_started_at,
+                       r.ended_at AS current_run_ended_at,
+                       r.outcome AS current_run_outcome
+                FROM tasks t
+                LEFT JOIN task_runs r ON r.id = (
+                    SELECT id
+                    FROM task_runs
+                    WHERE task_id = t.id
+                    ORDER BY
+                        CASE WHEN ended_at IS NULL THEN 0 ELSE 1 END,
+                        started_at DESC,
+                        id DESC
+                    LIMIT 1
+                )
                 {where}
-                ORDER BY priority DESC, created_at ASC
+                ORDER BY t.priority DESC, t.created_at ASC
                 LIMIT ?
                 """,
                 params,
@@ -644,9 +665,209 @@ class GrupoBorgesDB:
     def _get_task_from_conn(
         conn: sqlite3.Connection, task_id: str
     ) -> dict[str, Any] | None:
-        cur = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        cur = conn.execute(
+            """
+            SELECT t.*,
+                   r.id AS current_run_id,
+                   r.status AS current_run_status,
+                   r.last_heartbeat AS current_run_last_heartbeat,
+                   r.started_at AS current_run_started_at,
+                   r.ended_at AS current_run_ended_at,
+                   r.outcome AS current_run_outcome
+            FROM tasks t
+            LEFT JOIN task_runs r ON r.id = (
+                SELECT id
+                FROM task_runs
+                WHERE task_id = t.id
+                ORDER BY
+                    CASE WHEN ended_at IS NULL THEN 0 ELSE 1 END,
+                    started_at DESC,
+                    id DESC
+                LIMIT 1
+            )
+            WHERE t.id = ?
+            """,
+            (task_id,),
+        )
         row = cur.fetchone()
         return dict(row) if row is not None else None
+
+    async def touch_agent_run_heartbeat(
+        self,
+        agent_slug: str,
+        *,
+        source_kind: str,
+        task_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._touch_agent_run_heartbeat,
+            agent_slug,
+            source_kind=source_kind,
+            task_id=task_id,
+        )
+
+    def _touch_agent_run_heartbeat(
+        self,
+        agent_slug: str,
+        *,
+        source_kind: str,
+        task_id: str | None,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        with self._connect() as conn, conn:
+            conn.execute(
+                "UPDATE agent_state SET last_seen = ? WHERE slug = ?",
+                (now, agent_slug),
+            )
+            resolved_task_id = task_id
+            if resolved_task_id is None:
+                state_row = conn.execute(
+                    "SELECT current_task_id FROM agent_state WHERE slug = ?",
+                    (agent_slug,),
+                ).fetchone()
+                if state_row is not None:
+                    resolved_task_id = state_row["current_task_id"]
+            if resolved_task_id is None:
+                task_row = conn.execute(
+                    """
+                    SELECT id
+                    FROM tasks
+                    WHERE assignee = ? AND status = 'running'
+                    ORDER BY COALESCE(started_at, created_at) DESC
+                    LIMIT 1
+                    """,
+                    (agent_slug,),
+                ).fetchone()
+                if task_row is not None:
+                    resolved_task_id = task_row["id"]
+            if resolved_task_id is None:
+                return None
+
+            run_row = conn.execute(
+                """
+                SELECT id
+                FROM task_runs
+                WHERE task_id = ?
+                  AND status = 'running'
+                  AND ended_at IS NULL
+                ORDER BY started_at DESC, id DESC
+                LIMIT 1
+                """,
+                (resolved_task_id,),
+            ).fetchone()
+            if run_row is None:
+                return None
+
+            conn.execute(
+                """
+                UPDATE task_runs
+                SET last_heartbeat = ?
+                WHERE id = ?
+                """,
+                (now, run_row["id"]),
+            )
+            return {
+                "task_id": resolved_task_id,
+                "run_id": run_row["id"],
+                "agent_slug": agent_slug,
+                "last_heartbeat": now,
+                "source_kind": source_kind,
+            }
+
+    async def mark_stale_runs(
+        self,
+        *,
+        threshold_seconds: int = RUN_STALE_THRESHOLD_SECONDS,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(
+            self._mark_stale_runs,
+            threshold_seconds=threshold_seconds,
+        )
+
+    def _mark_stale_runs(self, *, threshold_seconds: int) -> list[dict[str, Any]]:
+        now = int(time.time())
+        cutoff = now - threshold_seconds
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                stale_rows = conn.execute(
+                    """
+                    SELECT
+                        r.id AS run_id,
+                        r.task_id,
+                        r.last_heartbeat,
+                        r.started_at AS run_started_at,
+                        t.human_id,
+                        t.assignee,
+                        t.instance_id
+                    FROM task_runs r
+                    JOIN tasks t ON t.id = r.task_id
+                    WHERE r.status = 'running'
+                      AND r.ended_at IS NULL
+                      AND t.status = 'running'
+                      AND COALESCE(r.last_heartbeat, r.started_at) < ?
+                    ORDER BY COALESCE(r.last_heartbeat, r.started_at) ASC
+                    """,
+                    (cutoff,),
+                ).fetchall()
+                marked: list[dict[str, Any]] = []
+                for row in stale_rows:
+                    payload = {
+                        "task_id": row["task_id"],
+                        "human_id": row["human_id"],
+                        "assignee": row["assignee"],
+                        "run_id": row["run_id"],
+                        "last_heartbeat": row["last_heartbeat"],
+                        "threshold_seconds": threshold_seconds,
+                        "reason": "heartbeat_stale",
+                    }
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'timed_out',
+                            ended_at = COALESCE(ended_at, ?),
+                            outcome = COALESCE(outcome, 'timed_out')
+                        WHERE id = ?
+                          AND status = 'running'
+                          AND ended_at IS NULL
+                        """,
+                        (now, row["run_id"]),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'blocked'
+                        WHERE id = ? AND status = 'running'
+                        """,
+                        (row["task_id"],),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE agent_state
+                        SET current_task_id = NULL, last_seen = ?
+                        WHERE slug = ? AND current_task_id = ?
+                        """,
+                        (now, row["assignee"], row["task_id"]),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
+                        VALUES (?, ?, ?, 'run.stale', ?, ?)
+                        """,
+                        (
+                            row["task_id"],
+                            row["assignee"],
+                            row["instance_id"],
+                            json.dumps(payload, ensure_ascii=False),
+                            now,
+                        ),
+                    )
+                    marked.append(payload)
+                conn.commit()
+                return marked
+            except Exception:
+                conn.rollback()
+                raise
 
     async def get_task_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
         return await asyncio.to_thread(self._get_task_by_idempotency_key, key)
@@ -1033,6 +1254,8 @@ class GrupoBorgesDB:
                         now,
                     ),
                 )
+                refreshed = self._get_task_from_conn(conn, task_id)
+                return refreshed if refreshed is not None else updated
             return updated
 
     @staticmethod
@@ -1336,7 +1559,17 @@ class GrupoBorgesDB:
                        COALESCE(human_id, id) AS display_id,
                        status,
                        priority,
-                       COALESCE(started_at, created_at) AS activity_at
+                       COALESCE(started_at, created_at) AS activity_at,
+                       (
+                           SELECT last_heartbeat
+                           FROM task_runs
+                           WHERE task_id = tasks.id
+                           ORDER BY
+                               CASE WHEN ended_at IS NULL THEN 0 ELSE 1 END,
+                               started_at DESC,
+                               id DESC
+                           LIMIT 1
+                       ) AS run_last_heartbeat
                 FROM tasks
                 WHERE status IN ('running', 'ready', 'backlog')
                 ORDER BY
@@ -1350,15 +1583,25 @@ class GrupoBorgesDB:
                     activity_at DESC
                 """
             ).fetchall()
-            current_task_by_agent: dict[str, str] = {}
+            current_task_by_agent: dict[str, dict[str, Any]] = {}
             for row in active_task_rows:
-                current_task_by_agent.setdefault(row["assignee"], row["display_id"])
+                current_task_by_agent.setdefault(
+                    row["assignee"],
+                    {
+                        "display_id": row["display_id"],
+                        "last_heartbeat": row["run_last_heartbeat"],
+                    },
+                )
 
         # Hidrata cada agente com instances ativas, status derivado e buckets gap-filled.
         for agent in agents:
             slug = agent["slug"]
             agent_instances = by_slug.get(slug, [])
-            agent["current_task_id"] = current_task_by_agent.get(slug)
+            current_task = current_task_by_agent.get(slug)
+            agent["current_task_id"] = current_task["display_id"] if current_task else None
+            agent["current_task_last_heartbeat"] = (
+                current_task["last_heartbeat"] if current_task else None
+            )
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"], agent_instances, now=now,
@@ -1391,5 +1634,6 @@ class GrupoBorgesDB:
                 "last_sync": last_sync,
                 "server_now": now,
                 "offline_threshold_seconds": OFFLINE_THRESHOLD_SECONDS,
+                "stale_threshold_seconds": RUN_STALE_THRESHOLD_SECONDS,
             },
         }

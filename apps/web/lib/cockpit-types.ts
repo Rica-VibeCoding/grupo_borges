@@ -13,9 +13,10 @@ export type AgentInstance = {
   cli: string | null;
   model: string | null;
   is_subagent: boolean;
+  parent_session_id: string | null;
   status: AgentStatus;
-  created_at: number;
-  updated_at: number;
+  started_at: number;
+  ended_at: number | null;
 };
 
 export type AgentCli = 'claude_code' | 'codex';

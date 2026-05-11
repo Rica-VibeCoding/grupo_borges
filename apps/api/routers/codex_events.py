@@ -82,5 +82,9 @@ async def receive_codex_event(payload: CodexEventCreate, request: Request) -> di
         "codex.item.completed",
     }:
         await db.upsert_agent_state(payload.target_agent_slug)
+    await db.touch_agent_run_heartbeat(
+        payload.target_agent_slug,
+        source_kind=payload.kind,
+    )
 
     return {"received": True, "event_id": event_id}

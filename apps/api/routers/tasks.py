@@ -77,6 +77,7 @@ async def list_tasks(
     limit: int = Query(default=500, ge=1, le=2000),
 ) -> list[dict[str, Any]]:
     db: GrupoBorgesDB = request.app.state.db
+    await db.mark_stale_runs()
     if status:
         invalid = [
             s for s in _parse_csv_statuses(status)
@@ -90,6 +91,7 @@ async def list_tasks(
 @router.get("/{task_id}")
 async def get_task(task_id: str, request: Request) -> dict[str, Any]:
     db: GrupoBorgesDB = request.app.state.db
+    await db.mark_stale_runs()
     task = await db.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
