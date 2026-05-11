@@ -401,6 +401,117 @@ class GrupoBorgesDB:
         "skill_hint", "status", "priority",
     }
 
+    async def create_task_handoff(
+        self,
+        *,
+        parent_id: str,
+        child_id: str,
+        to_agent: str,
+        note: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._create_task_handoff,
+            parent_id=parent_id,
+            child_id=child_id,
+            to_agent=to_agent,
+            note=note,
+            idempotency_key=idempotency_key,
+        )
+
+    def _create_task_handoff(
+        self, *, parent_id, child_id, to_agent, note, idempotency_key
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        clean_note = note.strip() if isinstance(note, str) else None
+        with self._connect() as conn, conn:
+            if idempotency_key:
+                existing = self._handoff_by_idempotency_key(conn, idempotency_key)
+                if existing is not None:
+                    return {
+                        "idempotency_collision": True,
+                        "existing": {
+                            "parent_id": existing["link_parent_id"],
+                            "child_id": existing["id"],
+                        },
+                    }
+
+            parent_row = conn.execute(
+                "SELECT * FROM tasks WHERE id = ?",
+                (parent_id,),
+            ).fetchone()
+            if parent_row is None:
+                return None
+
+            parent = dict(parent_row)
+            child_title = f"↳ {clean_note or parent['title']}"
+            child_human_id = self._next_human_id(conn, to_agent)
+            conn.execute(
+                """
+                INSERT INTO tasks (id, human_id, title, body, assignee, origin_agent,
+                                   status, priority, created_at, idempotency_key)
+                VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?)
+                """,
+                (
+                    child_id,
+                    child_human_id,
+                    child_title,
+                    clean_note,
+                    to_agent,
+                    parent["assignee"],
+                    parent["priority"],
+                    now,
+                    idempotency_key,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO task_links (parent_id, child_id, link_kind, created_at)
+                VALUES (?, ?, 'handoff', ?)
+                """,
+                (parent_id, child_id, now),
+            )
+            payload = {
+                "parent": parent_id,
+                "child": child_id,
+                "from": parent["assignee"],
+                "to": to_agent,
+                "note": clean_note,
+            }
+            cur = conn.execute(
+                """
+                INSERT INTO task_events (task_id, agent_slug, kind, payload, created_at)
+                VALUES (?, ?, 'handoff', ?, ?)
+                """,
+                (
+                    parent_id,
+                    parent["assignee"],
+                    json.dumps(payload, ensure_ascii=False),
+                    now,
+                ),
+            )
+            child = self._get_task_from_conn(conn, child_id)
+            assert child is not None
+            return {
+                "idempotency_collision": False,
+                "parent": parent,
+                "child": child,
+                "event_id": cur.lastrowid,
+                "payload": payload,
+            }
+
+    def _handoff_by_idempotency_key(
+        self, conn: sqlite3.Connection, key: str
+    ) -> dict[str, Any] | None:
+        row = conn.execute(
+            "SELECT t.*, l.parent_id AS link_parent_id "
+            "FROM tasks t LEFT JOIN task_links l "
+            "ON l.child_id = t.id AND l.link_kind='handoff' "
+            "WHERE t.idempotency_key = ?",
+            (key,),
+        ).fetchone()
+        return dict(row) if row else None
+
     async def create_task(
         self,
         *,
@@ -514,9 +625,15 @@ class GrupoBorgesDB:
 
     def _get_task(self, task_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
-            cur = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-            row = cur.fetchone()
-            return dict(row) if row is not None else None
+            return self._get_task_from_conn(conn, task_id)
+
+    @staticmethod
+    def _get_task_from_conn(
+        conn: sqlite3.Connection, task_id: str
+    ) -> dict[str, Any] | None:
+        cur = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        row = cur.fetchone()
+        return dict(row) if row is not None else None
 
     async def get_task_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
         return await asyncio.to_thread(self._get_task_by_idempotency_key, key)
