@@ -11,7 +11,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body data-sse="on" data-load="off">{children}</body>
+      <body data-sse="on" data-load="off">
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('cockpit-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}",
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

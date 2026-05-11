@@ -1,5 +1,9 @@
+'use client';
+
+import { useCallback } from 'react';
 import type { Agent, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
+import { useSelectedAgent } from '../lib/selected-agent-context';
 
 const stateLabel: Record<AgentStatus, string> = {
   running: 'RUNNING',
@@ -46,6 +50,17 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
   const cli = agent.state_cli ?? agent.cli_default;
   const model = agent.state_model ?? agent.model_default;
   const label = `Agent ${agent.name}, ${stateLabel[agent.status]}${task ? `, task ${task}` : ''}`;
+  const { select } = useSelectedAgent();
+  const open = useCallback(() => select(agent.slug), [select, agent.slug]);
+  const onKey = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    },
+    [open],
+  );
 
   return (
     <article
@@ -56,6 +71,8 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
       role="button"
       aria-haspopup="dialog"
       aria-label={label}
+      onClick={open}
+      onKeyDown={onKey}
     >
       <div className="scan" aria-hidden="true" />
       <div className="card-skel">

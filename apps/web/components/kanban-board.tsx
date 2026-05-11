@@ -1,4 +1,8 @@
+'use client';
+
+import { useCallback } from 'react';
 import type { KanbanColumn, KanbanColumnId, Task, TaskStatus } from '../lib/cockpit-types';
+import { useToast } from '../lib/toast-context';
 
 const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatus[] }[] = [
   { id: 'queue', name: 'QUEUE', sourceStatuses: ['backlog'] },
@@ -52,6 +56,43 @@ function columnStatusAttr(id: KanbanColumnId): string {
   return id === 'queue' ? 'queue' : id;
 }
 
+function KanbanRowView({ task, columnId, serverNow }: { task: Task; columnId: KanbanColumnId; serverNow: number }) {
+  const displayId = taskDisplayId(task);
+  const owner = task.assignee ?? '—';
+  const age = taskAgeLabel(task, serverNow);
+  const { fire } = useToast();
+  const open = useCallback(
+    () => fire({ kind: 'info', msg: `TASK · ${displayId}`, sub: 'OPEN DETAIL · WIP' }),
+    [fire, displayId],
+  );
+  const onKey = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    },
+    [open],
+  );
+  return (
+    <div
+      className="krow"
+      data-st={columnStatusAttr(columnId)}
+      tabIndex={0}
+      role="button"
+      aria-label={`Task ${displayId}, owner ${owner}, ${age}`}
+      onClick={open}
+      onKeyDown={onKey}
+    >
+      <span className="sdot" aria-hidden="true" />
+      <span className="id mono">{displayId}</span>
+      <span className="owner mono">@{owner}</span>
+      <span className="time mono">{age}</span>
+      <span className="caret" aria-hidden="true">›</span>
+    </div>
+  );
+}
+
 function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverNow: number }) {
   return (
     <div
@@ -73,27 +114,9 @@ function KanbanColumnView({ column, serverNow }: { column: KanbanColumn; serverN
         {column.tasks.length === 0 ? (
           <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
         ) : (
-          column.tasks.map((task) => {
-            const displayId = taskDisplayId(task);
-            const owner = task.assignee ?? '—';
-            const age = taskAgeLabel(task, serverNow);
-            return (
-              <div
-                key={task.id}
-                className="krow"
-                data-st={columnStatusAttr(column.id)}
-                tabIndex={0}
-                role="button"
-                aria-label={`Task ${displayId}, owner ${owner}, ${age}`}
-              >
-                <span className="sdot" aria-hidden="true" />
-                <span className="id mono">{displayId}</span>
-                <span className="owner mono">@{owner}</span>
-                <span className="time mono">{age}</span>
-                <span className="caret" aria-hidden="true">›</span>
-              </div>
-            );
-          })
+          column.tasks.map((task) => (
+            <KanbanRowView key={task.id} task={task} columnId={column.id} serverNow={serverNow} />
+          ))
         )}
       </div>
     </div>
