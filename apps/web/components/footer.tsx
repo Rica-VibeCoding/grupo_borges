@@ -1,4 +1,19 @@
+'use client';
+
+import { useFleet } from '../lib/fleet-context';
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
 export function Footer() {
+  const { fleet, sseStatus } = useFleet();
+  const { kpis, health } = fleet;
+  const offline = sseStatus === 'closed';
+  const fastapiLabel = offline ? 'DROP' : '200';
+  const fastapiClass = offline ? 'v danger' : 'v ok';
+  const heartbeat = offline ? '— —' : `${health.offline_threshold_seconds}s`;
+
   return (
     <footer className="footer" role="contentinfo">
       <div className="grp">
@@ -10,21 +25,17 @@ export function Footer() {
       </div>
       <span className="spacer" />
       <div className="grp">
-        <span className="sb-item sb-fastapi"><span className="heartbeat-dot" aria-hidden="true" /><span className="k">FASTAPI</span><span className="v ok" id="fbFastapi">200</span></span>
+        <span className="sb-item sb-fastapi">
+          <span className="heartbeat-dot" aria-hidden="true" />
+          <span className="k">FASTAPI</span>
+          <span className={fastapiClass}>{fastapiLabel}</span>
+        </span>
         <span className="sep" />
-        <span className="sb-item"><span className="k">RUN</span><span className="v cy">03</span></span>
+        <span className="sb-item"><span className="k">RUN</span><span className="v cy">{pad2(kpis.tasks_running)}</span></span>
         <span className="sep" />
-        <span className="sb-item"><span className="k">BLK</span><span className="v warn">01</span></span>
+        <span className="sb-item"><span className="k">BLK</span><span className="v warn">{pad2(kpis.tasks_blocked)}</span></span>
         <span className="sep" />
-        <span className="sb-item"><span className="k">HB</span><span className="v" id="fbHb">1.2s</span></span>
-      </div>
-      <div className="demo-strip mono" role="group" aria-label="Polish demo controls">
-        <span className="dlabel">demo</span>
-        <button type="button" className="demo-btn" data-mode="live" aria-pressed="true" aria-label="Live mode"><span className="dd" />LIVE</button>
-        <button type="button" className="demo-btn" data-mode="loading" aria-pressed="false" aria-label="Loading scan mode"><span className="dd" />LOADING</button>
-        <button type="button" className="demo-btn" data-mode="sse-off" aria-pressed="false" aria-label="SSE disconnected mode"><span className="dd" />SSE OFF</button>
-        <button type="button" className="demo-fire" id="fireToast" aria-label="Fire reconnect toast">FIRE TOAST</button>
-        <span className="demo-prm" aria-live="polite"><span>reduced-motion:</span><span className="v" id="prmFlag">off</span></span>
+        <span className="sb-item"><span className="k">HB</span><span className="v">{heartbeat}</span></span>
       </div>
     </footer>
   );

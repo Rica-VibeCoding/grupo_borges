@@ -1,17 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
 import { AgentCards } from './agent-card';
 import { KanbanBoard } from './kanban-board';
-import { useFleetStream, type FleetState } from '../lib/use-fleet-stream';
+import { useFleet } from '../lib/fleet-context';
 
-export function CockpitLive({ initial }: { initial: FleetState }) {
-  const { fleet, tasks, sseStatus } = useFleetStream(initial);
-
-  useEffect(() => {
-    document.body.dataset.sse = sseStatus === 'open' ? 'on' : 'off';
-  }, [sseStatus]);
-
+export function CockpitLive() {
+  const { fleet, tasks } = useFleet();
   return (
     <>
       <div className="section-label" aria-hidden="true">
