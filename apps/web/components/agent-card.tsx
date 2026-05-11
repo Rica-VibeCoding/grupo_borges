@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { Agent, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
-import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
+import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, shortModelName } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
@@ -15,14 +15,6 @@ const stateLabel: Record<AgentStatus, string> = {
   blocked: 'BLOQUEADO',
   done: 'CONCLUÍDO',
   offline: 'OFFLINE',
-};
-
-const paneLabel: Record<AgentStatus, string> = {
-  running: 'STDOUT // PANE.001',
-  idle: 'STDOUT // ocioso',
-  blocked: 'STDIN // AGUARDA.HUMANO',
-  done: 'STDOUT // EXIT.0',
-  offline: 'STDOUT // OFFLINE',
 };
 
 const STATUS_ORDER: Record<AgentStatus, number> = {
@@ -63,15 +55,29 @@ function WifiOffIcon() {
   );
 }
 
-export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: number }) {
+export function AgentCard({
+  agent,
+  serverNow,
+  staleThresholdSeconds,
+}: {
+  agent: Agent;
+  serverNow: number;
+  staleThresholdSeconds: number;
+}) {
   const { mutate } = useFleet();
   const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
   const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
   const task = agent.current_task_id ?? null;
+  const taskHeartbeatFmt = formatLastSeen(agent.current_task_last_heartbeat, serverNow);
+  const taskHeartbeatAge = agent.current_task_last_heartbeat === null ? null : serverNow - agent.current_task_last_heartbeat;
+  const taskHeartbeatStale = taskHeartbeatAge !== null && taskHeartbeatAge > staleThresholdSeconds;
   const cli = agent.state_cli ?? agent.cli_default;
   const model = agent.state_model ?? agent.model_default;
+  const sessionStarted = agent.instances[0]?.started_at ?? null;
+  const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
+  const contextPct = parseContextPct(agent.pane_excerpt);
   const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
@@ -128,37 +134,22 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
           </span>
         </div>
         <div className="meta-strip" aria-hidden="true">
-          <span><span className="m-key">MDL</span><span className="m-val">{model}</span></span>
-          <span><span className="m-key">CLI</span><span className="m-val">{cli}</span></span>
+          <span><span className="m-key">VISTO·EM</span><span className="m-val lseen-val">{lastSeenFmt}</span></span>
           <span><span className="m-key">TAREFA</span><span className="m-val">{task ?? '—'}</span></span>
-        </div>
-        <div className="pane">
-          <div
-            style={{
-              opacity: 0.55,
-              fontSize: '9px',
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              marginBottom: '3px',
-            }}
-          >
-            {paneLabel[agent.status]}
-          </div>
-          <span>{agent.pane_excerpt ?? '— nenhuma saída capturada —'}</span>
-        </div>
-        <div className="card-foot">
-          <span>VISTO·EM <span className="lseen-val">{lastSeenFmt}</span></span>
-          <span className="card-actions">
+          {task && (
+            <span data-stale={taskHeartbeatStale ? 'true' : 'false'}>
+              <span className="m-key">RUN·HB</span>
+              <span className="m-val">{taskHeartbeatFmt}</span>
+            </span>
+          )}
+          <span className="card-actions" onClick={(e) => e.stopPropagation()}>
             {agent.instances.length > 1 && (
               <button
                 type="button"
                 className="instance-pill"
                 aria-pressed={instanceFocus}
                 title="Destacar instâncias deste agente"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setInstanceFocus((v) => !v);
-                }}
+                onClick={(e) => { e.stopPropagation(); setInstanceFocus((v) => !v); }}
               >
                 +{agent.instances.length}
               </button>
@@ -190,7 +181,23 @@ export function AgentCard({ agent, serverNow }: { agent: Agent; serverNow: numbe
                 </Dialog.Content>
               </Dialog.Portal>
             </Dialog.Root>
-            <span>{cli.toUpperCase()} · {model}</span>
+          </span>
+        </div>
+        <div className="pane pane-session" aria-hidden="true">
+          <span className="ps-model">{shortModelName(model)}</span>
+          <span className="ps-sep">·</span>
+          <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
+          <span className="ps-sep">·</span>
+          <span className="ps-ctx">
+            {contextPct !== null ? (
+              <>
+                <span className="ps-bar">
+                  {'█'.repeat(Math.round(contextPct / 10))}
+                  {'░'.repeat(10 - Math.round(contextPct / 10))}
+                </span>
+                {' '}{contextPct}%
+              </>
+            ) : '— %'}
           </span>
         </div>
       </div>
@@ -272,7 +279,15 @@ function NewInstanceForm({
   );
 }
 
-export function AgentCards({ agents, serverNow }: { agents: Agent[]; serverNow: number }) {
+export function AgentCards({
+  agents,
+  serverNow,
+  staleThresholdSeconds,
+}: {
+  agents: Agent[];
+  serverNow: number;
+  staleThresholdSeconds: number;
+}) {
   const sorted = [...agents].sort((a, b) => {
     const da = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
     return da !== 0 ? da : a.name.localeCompare(b.name);
@@ -280,7 +295,12 @@ export function AgentCards({ agents, serverNow }: { agents: Agent[]; serverNow: 
   return (
     <div className="grid" id="cards" role="list" aria-label="Agentes">
       {sorted.map((agent) => (
-        <AgentCard key={agent.slug} agent={agent} serverNow={serverNow} />
+        <AgentCard
+          key={agent.slug}
+          agent={agent}
+          serverNow={serverNow}
+          staleThresholdSeconds={staleThresholdSeconds}
+        />
       ))}
     </div>
   );

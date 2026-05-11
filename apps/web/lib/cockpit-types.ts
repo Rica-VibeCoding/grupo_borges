@@ -57,6 +57,7 @@ export type Agent = {
   state_cli: string | null;
   state_model: string | null;
   current_task_id: string | null;
+  current_task_last_heartbeat: number | null;
   last_seen: number | null;
   pane_excerpt: string | null;
   instance_count: number;
@@ -82,6 +83,7 @@ export type FleetHealth = {
   last_sync: number | null;
   server_now: number;
   offline_threshold_seconds: number;
+  stale_threshold_seconds: number;
 };
 
 export type FleetResponse = {
@@ -109,6 +111,12 @@ export type Task = {
   started_at: number | null;
   completed_at: number | null;
   idempotency_key: string | null;
+  current_run_id: number | null;
+  current_run_status: string | null;
+  current_run_last_heartbeat: number | null;
+  current_run_started_at: number | null;
+  current_run_ended_at: number | null;
+  current_run_outcome: string | null;
 };
 
 export type KanbanColumnId = 'queue' | 'running' | 'blocked' | 'review' | 'done';
@@ -201,4 +209,30 @@ export function formatLastSeen(lastSeen: number | null, serverNow: number): stri
   const h = Math.floor(m / 60);
   const rem = m % 60;
   return rem === 0 ? `há ${h}h` : `há ${h}h${String(rem).padStart(2, '0')}`;
+}
+
+export function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+export function shortModelName(model: string): string {
+  const map: Record<string, string> = {
+    'claude-opus-4-7':    'Opus 4.7',
+    'claude-opus-4-5':    'Opus 4.5',
+    'claude-sonnet-4-6':  'Sonnet 4.6',
+    'claude-haiku-4-5':   'Haiku 4.5',
+    'codex-gpt-5-5':      'GPT-5.5',
+    'codex-gpt-5-4':      'GPT-5.4',
+    'codex-gpt-5-4-mini': 'GPT-5.4m',
+  };
+  return map[model] ?? model;
+}
+
+export function parseContextPct(excerpt: string | null): number | null {
+  if (!excerpt) return null;
+  const m = excerpt.match(/(\d+)%/);
+  return m ? parseInt(m[1]!, 10) : null;
 }
