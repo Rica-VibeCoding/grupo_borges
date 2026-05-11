@@ -192,9 +192,14 @@ export function AgentCard({
           <span className="ps-ctx">
             {contextPct !== null ? (
               <>
-                <span className="ps-bar">
-                  {'█'.repeat(Math.round(contextPct / 10))}
-                  {'░'.repeat(10 - Math.round(contextPct / 10))}
+                <span className="ps-bar" aria-hidden="true">
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <span
+                      key={i}
+                      className="psb-cell"
+                      data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
+                    />
+                  ))}
                 </span>
                 {' '}{contextPct}%
               </>
