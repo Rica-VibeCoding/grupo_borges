@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS agents (
     cli_default     TEXT NOT NULL DEFAULT 'claude_code',
     model_default   TEXT NOT NULL,
     capabilities    TEXT,                                   -- JSON array
+    can_review      TEXT,                                   -- JSON array de slugs que este agente pode revisar
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
 );
@@ -75,6 +76,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     origin_agent    TEXT REFERENCES agents(slug),           -- quem plantou (NULL = Rica direto)
     skill_hint      TEXT,                                   -- skill recomendada pelo originador
     status          TEXT NOT NULL,                          -- backlog | ready | running | review | blocked | done
+    reviewer_assignee TEXT REFERENCES agents(slug),
+    review_mode     TEXT NOT NULL DEFAULT 'human' CHECK (review_mode IN ('human', 'agent_advisory', 'agent_autonomous')),
+    tags            TEXT,                                   -- JSON array
     priority        INTEGER NOT NULL DEFAULT 0,
     created_at      INTEGER NOT NULL,
     started_at      INTEGER,

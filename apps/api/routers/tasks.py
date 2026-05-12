@@ -7,21 +7,29 @@ existente, sem reinserir.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
+
+REVIEWER_SLUG_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 
 from db.store import GrupoBorgesDB, _parse_csv_statuses
 from orchestrator.checkpoint_parser import checkpoint_hash
+from services.evidence_refs import validate_evidence_refs
+from services.review_policy import assert_can_review, is_autonomous_allowed
 from services import tmux_driver
 
 router = APIRouter()
+reviews_router = APIRouter()
 log = logging.getLogger(__name__)
 
 TaskStatus = Literal["backlog", "ready", "running", "review", "blocked", "done"]
+ReviewMode = Literal["human", "agent_advisory", "agent_autonomous"]
+ReviewAction = Literal["accept", "reject", "requeue"]
 
 
 class TaskCreate(BaseModel):
@@ -34,6 +42,9 @@ class TaskCreate(BaseModel):
     status: TaskStatus = "backlog"
     priority: int = 0
     idempotency_key: str | None = None
+    review_mode: ReviewMode | None = None
+    reviewer_assignee: str | None = None
+    tags: list[str] | None = None
 
 
 class TaskPatch(BaseModel):
@@ -44,6 +55,34 @@ class TaskPatch(BaseModel):
     skill_hint: str | None = None
     status: TaskStatus | None = None
     priority: int | None = None
+    review_mode: ReviewMode | None = None
+    reviewer_assignee: str | None = None
+    tags: list[str] | None = None
+
+
+class _TaskReviewBase(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+    criteria_results: dict[str, Any] | None = None
+    evidence_refs: list[str] | None = None
+    content_hash: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class TaskReviewAccept(_TaskReviewBase):
+    action: Literal["accept"]
+
+
+class TaskReviewReject(_TaskReviewBase):
+    action: Literal["reject"]
+
+
+class TaskReviewRequeue(_TaskReviewBase):
+    action: Literal["requeue"]
+
+
+TaskReviewBody = Annotated[
+    Union[TaskReviewAccept, TaskReviewReject, TaskReviewRequeue],
+    Field(discriminator="action"),
+]
 
 
 class TaskHandoff(BaseModel):
@@ -82,6 +121,29 @@ async def _ensure_agent_has_tmux(db: GrupoBorgesDB, slug: str) -> dict[str, Any]
     return agent
 
 
+async def _ensure_optional_agent_exists(db: GrupoBorgesDB, slug: str | None) -> None:
+    if slug:
+        await _ensure_agent_exists(db, slug)
+
+
+async def _apply_review_fields(
+    db: GrupoBorgesDB,
+    task_id: str,
+    fields: dict[str, Any],
+) -> dict[str, Any] | None:
+    review_fields = {
+        key: fields.pop(key)
+        for key in ("review_mode", "reviewer_assignee", "tags")
+        if key in fields
+    }
+    if not review_fields:
+        return None
+    try:
+        return await db.update_task_review_fields(task_id, **review_fields)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
 @router.get("")
 async def list_tasks(
     request: Request,
@@ -115,6 +177,7 @@ async def get_task(task_id: str, request: Request) -> dict[str, Any]:
 async def create_task(payload: TaskCreate, request: Request) -> dict[str, Any]:
     db: GrupoBorgesDB = request.app.state.db
     await _ensure_agent_exists(db, payload.assignee)
+    await _ensure_optional_agent_exists(db, payload.reviewer_assignee)
     if payload.origin_agent:
         await _ensure_agent_exists(db, payload.origin_agent)
 
@@ -128,7 +191,7 @@ async def create_task(payload: TaskCreate, request: Request) -> dict[str, Any]:
 
     task_id = str(uuid.uuid4())
     try:
-        return await db.create_task(
+        created = await db.create_task(
             id=task_id,
             title=payload.title,
             assignee=payload.assignee,
@@ -140,6 +203,12 @@ async def create_task(payload: TaskCreate, request: Request) -> dict[str, Any]:
             priority=payload.priority,
             idempotency_key=payload.idempotency_key,
         )
+        review_fields = payload.model_dump(
+            include={"review_mode", "reviewer_assignee", "tags"},
+            exclude_unset=True,
+        )
+        updated = await _apply_review_fields(db, task_id, review_fields)
+        return updated or created
     except sqlite3.IntegrityError as e:
         # Race com outro POST mesma idempotency_key, ou FK em instance_id que não validamos
         # antes (tabela `agent_instances` não tem ainda checagem dedicada). Loga server-side
@@ -157,8 +226,11 @@ async def patch_task(task_id: str, payload: TaskPatch, request: Request) -> dict
     fields = payload.model_dump(exclude_unset=True)
     if "assignee" in fields:
         await _ensure_agent_exists(db, fields["assignee"])
+    if "reviewer_assignee" in fields:
+        await _ensure_optional_agent_exists(db, fields["reviewer_assignee"])
 
     try:
+        review_updated = await _apply_review_fields(db, task_id, fields)
         updated = await db.update_task(task_id, fields)
     except sqlite3.IntegrityError as e:
         log.warning("IntegrityError ao atualizar task %s: %s", task_id, e)
@@ -167,8 +239,97 @@ async def patch_task(task_id: str, payload: TaskPatch, request: Request) -> dict
             detail="violação de integridade — verifique assignee/instance_id",
         )
     if updated is None:
-        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+        if review_updated is None:
+            raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+        return review_updated
     return updated
+
+
+@router.post("/{task_id}/review")
+async def review_task(
+    task_id: str,
+    payload: TaskReviewBody,
+    request: Request,
+    reviewer_slug: Annotated[str | None, Header(alias="X-Reviewer-Slug")] = None,
+) -> dict[str, Any]:
+    db: GrupoBorgesDB = request.app.state.db
+    task = await db.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+
+    reviewer = (reviewer_slug or "rica").strip().lower()
+    if not REVIEWER_SLUG_RE.match(reviewer):
+        raise HTTPException(
+            status_code=400,
+            detail="X-Reviewer-Slug inválido (use [a-z0-9_-]{1,64})",
+        )
+    evidence_refs = payload.evidence_refs or []
+    if payload.action == "accept" and task.get("review_mode") == "agent_autonomous":
+        allowed, reason = is_autonomous_allowed(task)
+        if not allowed:
+            raise HTTPException(status_code=422, detail=reason or "review autonomous vetado")
+
+        agents = await db.list_agents()
+        agents_db = {agent["slug"]: agent for agent in agents}
+        assignee_agent = agents_db.get(task["assignee"])
+        if assignee_agent is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"assignee {task['assignee']!r} não está em agents.yaml",
+            )
+        try:
+            assert_can_review(reviewer, task["assignee"], agents_db)
+        except (KeyError, ValueError) as e:
+            raise HTTPException(status_code=403, detail=str(e)) from e
+
+        if not evidence_refs:
+            raise HTTPException(status_code=422, detail="evidence_refs obrigatório para accept autonomous")
+
+        workspace = assignee_agent["workspace_path"]
+        repo_aliases = {agent["slug"]: agent["workspace_path"] for agent in agents}
+        try:
+            evidence_results = validate_evidence_refs(evidence_refs, workspace, repo_aliases)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        invalid = [item for item in evidence_results if not item.get("valid")]
+        if invalid:
+            raise HTTPException(status_code=422, detail={"invalid_evidence_refs": invalid})
+
+    review_payload = payload.model_dump(exclude_none=True, exclude={"content_hash"})
+    result = await db.record_review_action(
+        task_id,
+        payload.action,
+        reviewer,
+        review_payload,
+        payload.content_hash,
+    )
+    if result is None:
+        raise HTTPException(status_code=409, detail="review duplicado ou não gravado")
+    task_result = result.get("task") or {}
+    return {
+        "event_id": result["event_id"],
+        "new_status": task_result.get("status"),
+        "content_hash": payload.content_hash,
+    }
+
+
+@reviews_router.get("")
+async def list_reviews(
+    request: Request,
+    reviewer: str | None = Query(default=None, min_length=1),
+    since_id: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict[str, Any]:
+    db: GrupoBorgesDB = request.app.state.db
+    events = await db.list_review_events(
+        reviewer_slug=reviewer,
+        since_id=since_id,
+        limit=limit,
+    )
+    return {
+        "events": events,
+        "next_since_id": max((event["id"] for event in events), default=since_id),
+    }
 
 
 @router.post("/{task_id}/dispatch", status_code=status.HTTP_202_ACCEPTED)

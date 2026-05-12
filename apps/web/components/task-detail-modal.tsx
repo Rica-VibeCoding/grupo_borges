@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { Task, TaskEvent } from '../lib/cockpit-types';
+import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
 import { dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
+import { TaskReviewActions } from './task-review-actions';
 import { formatDateTime } from '../lib/format-time';
 
 type UiTaskStatus = Exclude<TaskPatchStatus, 'ready'>;
@@ -18,6 +19,12 @@ const STATUS_OPTIONS: Array<{ value: UiTaskStatus; label: string }> = [
   { value: 'blocked', label: 'BLOQUEADO' },
   { value: 'done', label: 'CONCLUÍDO' },
 ];
+
+const REVIEW_ACTION_TOAST_LABEL: Record<ReviewAction, string> = {
+  accept: 'ACEITA',
+  reject: 'REJEITADA',
+  requeue: 'REENFILEIRADA',
+};
 
 function uiStatus(status: TaskPatchStatus | 'archived' | undefined): UiTaskStatus {
   if (status === 'archived' || status === 'done') return 'done';
@@ -254,6 +261,27 @@ export function TaskDetailModal({
                   <Field label="CONCLUÍDA" value={formatUnixDateTime(effectiveTask.completed_at)} />
                 </aside>
               </div>
+
+              {effectiveTask.status === 'review' && (
+                <TaskReviewActions
+                  task={effectiveTask}
+                  onResolved={(newStatus) => {
+                    setFreshTask((prev) => (prev ? { ...prev, status: newStatus } : prev));
+                    void mutate();
+                  }}
+                  onError={(msg) => {
+                    setMessage(msg);
+                    fire({ kind: 'warn', msg: 'REVIEW NÃO APLICADA', sub: msg });
+                  }}
+                  onSuccess={(action) => {
+                    fire({
+                      kind: 'success',
+                      msg: `REVIEW · ${taskDisplayId(effectiveTask)}`,
+                      sub: REVIEW_ACTION_TOAST_LABEL[action],
+                    });
+                  }}
+                />
+              )}
 
               <section className="task-timeline">
                 <div className="task-timeline-head">

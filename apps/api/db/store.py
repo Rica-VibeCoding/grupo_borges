@@ -41,6 +41,17 @@ OFFLINE_THRESHOLD_SECONDS = 300
 # A margem é maior que o offline do agente para evitar falso positivo em ações longas.
 RUN_STALE_THRESHOLD_SECONDS = 600
 
+REVIEW_MODES = {"human", "agent_advisory", "agent_autonomous"}
+REVIEW_ACTIONS = {
+    "accept": ("review.accepted", "done"),
+    "accepted": ("review.accepted", "done"),
+    "reject": ("review.rejected", "running"),
+    "rejected": ("review.rejected", "running"),
+    "requeue": ("review.requeued", "ready"),
+    "requeued": ("review.requeued", "ready"),
+}
+_UNSET = object()
+
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
     if not raw:
@@ -79,6 +90,12 @@ def derive_prefix(name: str) -> str:
     if parts:
         return parts[0][:2].upper()
     return "??"
+
+
+def _json_array_or_none(value: list[Any] | tuple[Any, ...] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(list(value), ensure_ascii=False)
 
 
 def derive_agent_status(
@@ -231,68 +248,55 @@ class GrupoBorgesDB:
         with self._connect() as conn:
             with SCHEMA_PATH.open("r", encoding="utf-8") as f:
                 conn.executescript(f.read())
-            # Migração idempotente: coluna `human_id` adicionada após o schema
-            # original (CREATE TABLE IF NOT EXISTS não altera tabela existente).
-            # `executescript` faz commit implícito → o ALTER abaixo roda em autocommit;
-            # capturamos "duplicate column" caso dois startups concorrentes (ex: dev
-            # reload) racem pra adicionar a mesma coluna.
-            existing = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
-            if "human_id" not in existing:
-                try:
-                    conn.execute("ALTER TABLE tasks ADD COLUMN human_id TEXT")
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
+            # Migrações idempotentes: `executescript` fez commit implícito → ALTERs abaixo
+            # rodam em autocommit. `_add_column_if_missing` engole "duplicate column" caso
+            # dois startups concorrentes (ex: dev reload) racem na mesma coluna.
+            if self._add_column_if_missing(conn, "tasks", "human_id", "TEXT"):
                 conn.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_human_id "
                     "ON tasks(human_id) WHERE human_id IS NOT NULL"
                 )
-            agent_state_cols = {
-                row["name"] for row in conn.execute("PRAGMA table_info(agent_state)")
-            }
-            for col, ddl in {
-                "lifecycle_status": "ALTER TABLE agent_state ADD COLUMN lifecycle_status TEXT",
-                "lifecycle_detail": "ALTER TABLE agent_state ADD COLUMN lifecycle_detail TEXT",
-                "lifecycle_event": "ALTER TABLE agent_state ADD COLUMN lifecycle_event TEXT",
-                "lifecycle_updated_at": (
-                    "ALTER TABLE agent_state ADD COLUMN lifecycle_updated_at INTEGER"
-                ),
-            }.items():
-                if col in agent_state_cols:
-                    continue
-                try:
-                    conn.execute(ddl)
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
+            for col, definition in (
+                ("lifecycle_status", "TEXT"),
+                ("lifecycle_detail", "TEXT"),
+                ("lifecycle_event", "TEXT"),
+                ("lifecycle_updated_at", "INTEGER"),
+            ):
+                self._add_column_if_missing(conn, "agent_state", col, definition)
 
-            # S2: colunas de watchdog/checkpoint
-            task_cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
-            for col, ddl in {
-                "heartbeat_timeout_seconds": (
-                    "ALTER TABLE tasks ADD COLUMN heartbeat_timeout_seconds INTEGER DEFAULT 900"
-                ),
-                "max_hops": "ALTER TABLE tasks ADD COLUMN max_hops INTEGER DEFAULT 5",
-            }.items():
-                if col in task_cols:
-                    continue
-                try:
-                    conn.execute(ddl)
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
+            # S2: colunas de watchdog/checkpoint/review
+            for col, definition in (
+                ("heartbeat_timeout_seconds", "INTEGER DEFAULT 900"),
+                ("max_hops", "INTEGER DEFAULT 5"),
+                ("reviewer_assignee", "TEXT"),
+                ("review_mode", "TEXT NOT NULL DEFAULT 'human'"),
+                ("tags", "TEXT"),
+            ):
+                self._add_column_if_missing(conn, "tasks", col, definition)
 
-            event_cols = {row["name"] for row in conn.execute("PRAGMA table_info(task_events)")}
-            if "content_hash" not in event_cols:
-                try:
-                    conn.execute("ALTER TABLE task_events ADD COLUMN content_hash TEXT")
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
+            self._add_column_if_missing(conn, "agents", "can_review", "TEXT")
+
+            if self._add_column_if_missing(conn, "task_events", "content_hash", "TEXT"):
                 conn.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency "
                     "ON task_events(task_id, content_hash) WHERE content_hash IS NOT NULL"
                 )
+
+    @staticmethod
+    def _add_column_if_missing(
+        conn: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> bool:
+        """ALTER TABLE idempotente. Retorna True se a coluna foi adicionada agora."""
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column in existing:
+            return False
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+            return False
+        return True
 
     async def shutdown(self) -> None:
         # No-op: connection-per-call não mantém estado pra fechar
@@ -310,8 +314,9 @@ class GrupoBorgesDB:
                 conn.execute(
                     """
                     INSERT INTO agents (slug, name, role, emoji, tmux_session, workspace_path,
-                                        cli_default, model_default, capabilities, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        cli_default, model_default, capabilities, can_review,
+                                        created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(slug) DO UPDATE SET
                         name           = excluded.name,
                         role           = excluded.role,
@@ -321,6 +326,7 @@ class GrupoBorgesDB:
                         cli_default    = excluded.cli_default,
                         model_default  = excluded.model_default,
                         capabilities   = excluded.capabilities,
+                        can_review     = excluded.can_review,
                         updated_at     = excluded.updated_at
                     """,
                     (
@@ -333,6 +339,7 @@ class GrupoBorgesDB:
                         a.get("cli_default", "claude_code"),
                         a["model_default"],
                         json.dumps(a.get("capabilities", []), ensure_ascii=False),
+                        json.dumps(a.get("can_review", []), ensure_ascii=False),
                         now,
                         now,
                     ),
@@ -398,6 +405,7 @@ class GrupoBorgesDB:
     def _row_to_agent(row: sqlite3.Row) -> dict[str, Any]:
         d = dict(row)
         d["capabilities"] = json.loads(d["capabilities"] or "[]")
+        d["can_review"] = json.loads(d["can_review"] or "[]")
         return d
 
     # ---------- agent_state ----------
@@ -545,6 +553,167 @@ class GrupoBorgesDB:
                     ),
                 )
                 return cur.lastrowid
+
+    async def record_review_action(
+        self,
+        task_id: str,
+        action: str,
+        reviewer: str,
+        payload: dict[str, Any] | None,
+        content_hash: str | None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._record_review_action,
+            task_id,
+            action,
+            reviewer,
+            payload,
+            content_hash,
+        )
+
+    def _record_review_action(
+        self,
+        task_id: str,
+        action: str,
+        reviewer: str,
+        payload: dict[str, Any] | None,
+        content_hash: str | None,
+    ) -> dict[str, Any] | None:
+        action_key = action.strip().lower()
+        if action_key not in REVIEW_ACTIONS:
+            raise ValueError(f"review action invalida: {action!r}")
+        event_kind, next_status = REVIEW_ACTIONS[action_key]
+        now = int(time.time())
+        event_payload = dict(payload or {})
+        event_payload.update(
+            {
+                "action": action_key,
+                "reviewer": reviewer,
+                "to_status": next_status,
+            }
+        )
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                task_row = conn.execute(
+                    "SELECT * FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+                task = dict(task_row)
+                event_payload["from_status"] = task["status"]
+
+                # task_events.agent_slug é FK pra agents(slug). Reviewer humano (Rica)
+                # ou slug não-registrado vai pro payload, agent_slug fica NULL.
+                agent_exists = conn.execute(
+                    "SELECT 1 FROM agents WHERE slug = ?",
+                    (reviewer,),
+                ).fetchone()
+                event_agent_slug = reviewer if agent_exists else None
+
+                if content_hash is not None:
+                    cur = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO task_events
+                            (task_id, agent_slug, instance_id, kind, payload, content_hash, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            task_id,
+                            event_agent_slug,
+                            task.get("instance_id"),
+                            event_kind,
+                            json.dumps(event_payload, ensure_ascii=False),
+                            content_hash,
+                            now,
+                        ),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return None
+                    event_id = cur.lastrowid
+                else:
+                    cur = conn.execute(
+                        """
+                        INSERT INTO task_events
+                            (task_id, agent_slug, instance_id, kind, payload, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            task_id,
+                            event_agent_slug,
+                            task.get("instance_id"),
+                            event_kind,
+                            json.dumps(event_payload, ensure_ascii=False),
+                            now,
+                        ),
+                    )
+                    event_id = cur.lastrowid
+
+                if next_status == "done":
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'done', completed_at = ?
+                        WHERE id = ?
+                        """,
+                        (now, task_id),
+                    )
+                    self._close_open_runs_for_status(
+                        conn, task_id=task_id, task_status="done", ended_at=now,
+                    )
+                    conn.execute(
+                        """
+                        UPDATE agent_state
+                        SET current_task_id = NULL, last_seen = ?
+                        WHERE slug = ? AND current_task_id = ?
+                        """,
+                        (now, task["assignee"], task_id),
+                    )
+                elif next_status == "running":
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'running',
+                            started_at = COALESCE(started_at, ?),
+                            completed_at = NULL
+                        WHERE id = ?
+                        """,
+                        (now, task_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'ready',
+                            instance_id = NULL,
+                            completed_at = NULL
+                        WHERE id = ?
+                        """,
+                        (task_id,),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE agent_state
+                        SET current_task_id = NULL, last_seen = ?
+                        WHERE slug = ? AND current_task_id = ?
+                        """,
+                        (now, task["assignee"], task_id),
+                    )
+
+                updated = self._get_task_from_conn(conn, task_id)
+                conn.commit()
+                return {
+                    "event_id": event_id,
+                    "task": updated,
+                    "payload": event_payload,
+                }
+            except Exception:
+                conn.rollback()
+                raise
 
     async def record_checkpoint(
         self,
@@ -778,6 +947,67 @@ class GrupoBorgesDB:
                         d["payload"] = json.loads(d["payload"])
                     except json.JSONDecodeError:
                         pass
+                result.append(d)
+            return result
+
+    async def list_review_events(
+        self,
+        reviewer_slug: str | None = None,
+        limit: int = 100,
+        since_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(
+            self._list_review_events,
+            reviewer_slug,
+            limit,
+            since_id,
+        )
+
+    def _list_review_events(
+        self,
+        reviewer_slug: str | None,
+        limit: int,
+        since_id: int | None,
+    ) -> list[dict[str, Any]]:
+        clauses = [
+            "e.kind IN ('review.accepted', 'review.rejected', 'review.requeued')",
+        ]
+        params: list[Any] = []
+        if reviewer_slug:
+            clauses.append(
+                "(e.agent_slug = ? OR t.reviewer_assignee = ? "
+                "OR json_extract(e.payload, '$.reviewer') = ?)"
+            )
+            params.extend([reviewer_slug, reviewer_slug, reviewer_slug])
+        if since_id is not None:
+            clauses.append("e.id > ?")
+            params.append(since_id)
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT e.id, e.task_id, e.agent_slug, e.instance_id, e.kind,
+                       e.payload, e.created_at,
+                       t.human_id, t.title, t.status, t.assignee,
+                       t.reviewer_assignee, t.review_mode, t.tags
+                FROM task_events e
+                LEFT JOIN tasks t ON t.id = e.task_id
+                WHERE {" AND ".join(clauses)}
+                ORDER BY e.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                d = dict(row)
+                for key in ("payload", "tags"):
+                    if d.get(key):
+                        try:
+                            d[key] = json.loads(d[key])
+                        except json.JSONDecodeError:
+                            pass
                 result.append(d)
             return result
 
@@ -1898,6 +2128,59 @@ class GrupoBorgesDB:
                 refreshed = self._get_task_from_conn(conn, task_id)
                 return refreshed if refreshed is not None else updated
             return updated
+
+    async def update_task_review_fields(
+        self,
+        task_id: str,
+        review_mode: str | object = _UNSET,
+        reviewer_assignee: str | None | object = _UNSET,
+        tags: list[Any] | tuple[Any, ...] | None | object = _UNSET,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._update_task_review_fields,
+            task_id,
+            review_mode,
+            reviewer_assignee,
+            tags,
+        )
+
+    def _update_task_review_fields(
+        self,
+        task_id: str,
+        review_mode: str | object,
+        reviewer_assignee: str | None | object,
+        tags: list[Any] | tuple[Any, ...] | None | object,
+    ) -> dict[str, Any] | None:
+        sets: list[str] = []
+        params: list[Any] = []
+        if review_mode is not _UNSET:
+            if not isinstance(review_mode, str) or review_mode not in REVIEW_MODES:
+                raise ValueError(f"review_mode invalido: {review_mode!r}")
+            sets.append("review_mode = ?")
+            params.append(review_mode)
+        if reviewer_assignee is not _UNSET:
+            if reviewer_assignee is not None and not isinstance(reviewer_assignee, str):
+                raise ValueError("reviewer_assignee deve ser string ou None")
+            sets.append("reviewer_assignee = ?")
+            params.append(reviewer_assignee)
+        if tags is not _UNSET:
+            if tags is not None and not isinstance(tags, (list, tuple)):
+                raise ValueError("tags deve ser lista, tupla ou None")
+            sets.append("tags = ?")
+            params.append(_json_array_or_none(tags))
+
+        if not sets:
+            return self._get_task(task_id)
+
+        params.append(task_id)
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            if cur.rowcount == 0:
+                return None
+            return self._get_task_from_conn(conn, task_id)
 
     @staticmethod
     def _close_open_runs_for_status(

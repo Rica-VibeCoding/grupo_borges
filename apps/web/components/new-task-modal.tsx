@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { createTask, type TaskPatchStatus } from '../lib/api';
+import type { ReviewMode } from '../lib/cockpit-types';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
@@ -14,6 +15,37 @@ const STATUS_OPTIONS: Array<{ value: UiTaskStatus; label: string }> = [
   { value: 'running', label: 'EXECUTANDO' },
   { value: 'review', label: 'REVISÃO' },
   { value: 'blocked', label: 'BLOQUEADO' },
+];
+
+const VETOED_TAGS = new Set([
+  'deploy_prod',
+  'db_migration',
+  'customer_email',
+  'customer_whatsapp',
+  'financial_op',
+  'send_external',
+]);
+
+const REVIEW_MODE_OPTIONS: Array<{
+  value: ReviewMode;
+  label: string;
+  desc: string;
+}> = [
+  {
+    value: 'human',
+    label: 'HUMANA',
+    desc: 'default — Rica revisa manualmente',
+  },
+  {
+    value: 'agent_advisory',
+    label: 'ADVISORY',
+    desc: 'agente dá parecer, Rica confirma',
+  },
+  {
+    value: 'agent_autonomous',
+    label: 'AUTONOMOUS',
+    desc: 'agente decide e segue (exige Success Criteria + evidence_refs)',
+  },
 ];
 
 function safeUUID(): string {
@@ -40,8 +72,18 @@ export function NewTaskModal({
   const [body, setBody] = useState('');
   const [status, setStatus] = useState<UiTaskStatus>('backlog');
   const [priority, setPriority] = useState('0');
+  const [reviewMode, setReviewMode] = useState<ReviewMode>('human');
+  const [reviewerAssignee, setReviewerAssignee] = useState<string>('');
+  const [tagsInput, setTagsInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const reviewerOptions = useMemo(
+    () => [
+      { value: '', label: '— Rica (humano) —' },
+      ...fleet.agents.map((a) => ({ value: a.slug, label: `${a.name} · ${a.slug}` })),
+    ],
+    [fleet.agents],
+  );
 
   useEffect(() => {
     if (!assignee && firstAgent) setAssignee(firstAgent);
@@ -53,6 +95,9 @@ export function NewTaskModal({
       setBody('');
       setStatus('backlog');
       setPriority('0');
+      setReviewMode('human');
+      setReviewerAssignee('');
+      setTagsInput('');
       setSaving(false);
       setMessage(null);
     }
@@ -65,6 +110,10 @@ export function NewTaskModal({
 
     setSaving(true);
     setMessage(null);
+    const tags = tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
     try {
       const created = await createTask({
         title: trimmedTitle,
@@ -73,6 +122,9 @@ export function NewTaskModal({
         status,
         priority: Number.parseInt(priority, 10) || 0,
         idempotency_key: safeUUID(),
+        review_mode: reviewMode,
+        reviewer_assignee: reviewerAssignee || null,
+        tags: tags.length > 0 ? tags : null,
       });
       await mutate();
       fire({
@@ -155,6 +207,72 @@ export function NewTaskModal({
               <span>Body</span>
               <textarea value={body} onChange={(e) => setBody(e.currentTarget.value)} />
             </label>
+
+            <fieldset className="new-task-review">
+              <legend>Modo de revisão</legend>
+              <div className="review-mode-radios" role="radiogroup" aria-label="Modo de revisão">
+                {REVIEW_MODE_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="review-mode-option"
+                    data-checked={reviewMode === opt.value}
+                  >
+                    <input
+                      type="radio"
+                      name="review_mode"
+                      value={opt.value}
+                      checked={reviewMode === opt.value}
+                      onChange={() => setReviewMode(opt.value)}
+                      disabled={saving}
+                    />
+                    <span className="review-mode-label">{opt.label}</span>
+                    <span className="review-mode-desc">{opt.desc}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="new-task-row">
+                <SelectField<string>
+                  label="Revisor"
+                  value={reviewerAssignee}
+                  onValueChange={setReviewerAssignee}
+                  options={reviewerOptions}
+                  disabled={saving || reviewMode === 'human'}
+                />
+                <label className="new-task-field">
+                  <span>Tags (vírgula)</span>
+                  <input
+                    value={tagsInput}
+                    onChange={(e) => setTagsInput(e.currentTarget.value)}
+                    placeholder="deploy_prod, db_migration"
+                    disabled={saving}
+                  />
+                </label>
+              </div>
+
+              {reviewMode === 'agent_autonomous' && (() => {
+                const inlineTags = tagsInput
+                  .split(',')
+                  .map((t) => t.trim())
+                  .filter(Boolean);
+                const conflicts = inlineTags.filter((t) => VETOED_TAGS.has(t));
+                return (
+                  <>
+                    <p className="form-note" data-kind="warn">
+                      Modo autonomous é OPT-IN. Tasks com tag vetada (deploy_prod, db_migration,
+                      customer_email, customer_whatsapp, financial_op, send_external) são recusadas
+                      pelo backend.
+                    </p>
+                    {conflicts.length > 0 && (
+                      <p className="form-note" data-kind="error">
+                        ⚠️ tag vetada para autonomous: <strong>{conflicts.join(', ')}</strong>.
+                        Mude pra <code>human</code>/<code>agent_advisory</code> ou remova a tag.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </fieldset>
 
             {message && <p className="form-note" data-kind="error">{message}</p>}
 

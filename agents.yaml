@@ -19,6 +19,12 @@ agents:
       - palavra-final
       - claude-code-guru
       - coordenacao-multi-ze
+    can_review:
+      - daniel
+      - felipe
+      - lucas
+      - vinicius
+      - barsi
     domain_tables:
       - { name: ze_backlog, db: ze, description: "Meta-backlog dos agentes (persona, skills, MCPs)" }
 
@@ -37,6 +43,9 @@ agents:
       - code-review
       - refactor
       - portfolio-software
+    can_review:
+      - daniel
+      - tara
     domain_tables:
       - { name: fc_backlog, db: ze, description: "Backlog Fluyt (bugs, features, melhorias)" }
       - { name: fc_changelog, db: ze, description: "Histórico de entregas Fluyt" }
@@ -57,6 +66,7 @@ agents:
       - conecta
       - woodpro
       - fluyt-content
+    can_review: []
     domain_tables:
       - { name: cncta_contatos, db: ze, description: "CRM Conecta (read-only — usado pra circular, campanhas)" }
 
@@ -73,6 +83,7 @@ agents:
       - movelmar
       - lojistas-conecta
       - crm
+    can_review: []
     domain_tables:
       - { name: cncta_contatos, db: ze, description: "Lojistas Conecta (representação Movelmar)" }
       - { name: mvmr_lojistas, db: ze, description: "Cadastro de lojistas Movelmar" }
@@ -91,6 +102,7 @@ agents:
     capabilities:
       - comercial-fluyt-b2b
       - woodpro
+    can_review: []
     domain_tables:
       - { name: r_contatos, db: geral, description: "Cadastro de clientes WoodPro+ (CRM)" }
       - { name: cm_orcamentos, db: geral, description: "Orçamentos / negociações Fluyt" }
@@ -108,6 +120,7 @@ agents:
     capabilities:
       - cfo-read-only
       - monitor-financeiro
+    can_review: []
     domain_tables:
       - { name: fin_transacoes, db: ze, description: "Transações financeiras (OFX importado, categorias)" }
       - { name: fin_contas, db: ze, description: "Contas bancárias e cartões" }
@@ -119,7 +132,7 @@ agents:
     role: Executora pareada — Codex CLI
     emoji: "⭐"
     origin: sikh ("estrela")
-    tmux_session: tara
+    tmux_session: tara-1
     workspace_path: /tmp/tara
     cli_default: codex
     model_default: codex-gpt-5-5
@@ -129,6 +142,16 @@ agents:
       - refactor-mecânico
       - smoke-e2e
       - executora-pareada-daniel
+    can_review:
+      - daniel
+
+repo_aliases:
+  fluyt: /home/clawd/repos/fluyt
+  grupo_borges: /home/clawd/repos/grupo_borges
+  ze_claude: /home/clawd/repos/ze_claude
+  central_movelmar: /home/clawd/repos/central_movelmar
+  dashboard-conciliacao-ofra: /home/clawd/repos/dashboard-conciliacao-ofra
+  ofra-pos-obra: /home/clawd/repos/ofra-pos-obra
 
 # Modelos disponíveis (escolhível por instância no card da UI)
 available_models:
