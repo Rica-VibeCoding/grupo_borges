@@ -28,6 +28,7 @@ from db.store import GrupoBorgesDB
 from orchestrator.auto_dispatcher import AutoDispatcher
 from orchestrator.jsonl_watcher import JsonlWatcher
 from orchestrator.tmux_driver import TmuxDriver
+from orchestrator.watchdog import Watchdog
 from routers import agents as agents_router
 from routers import codex_events as codex_events_router
 from routers import events as events_router
@@ -71,8 +72,19 @@ async def lifespan(app: FastAPI):
         await auto_dispatcher.start()
     app.state.auto_dispatcher = auto_dispatcher
 
+    watchdog = None
+    if settings.watchdog_enabled:
+        watchdog = Watchdog(
+            db=db,
+            interval_seconds=settings.watchdog_interval_seconds,
+        )
+        await watchdog.start()
+    app.state.watchdog = watchdog
+
     yield
 
+    if watchdog is not None:
+        await watchdog.stop()
     if auto_dispatcher is not None:
         await auto_dispatcher.stop()
     await watcher.stop()

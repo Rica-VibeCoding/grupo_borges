@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, _parse_csv_statuses
+from orchestrator.checkpoint_parser import checkpoint_hash
 from services import tmux_driver
 
 router = APIRouter()
@@ -53,6 +54,18 @@ class TaskHandoff(BaseModel):
 
 class TaskDispatch(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
+
+
+CheckpointState = Literal["DONE", "BLOCKED", "NEEDS_INPUT", "HANDOFF", "IN_PROGRESS"]
+
+
+class TaskCheckpoint(BaseModel):
+    state: CheckpointState
+    summary: str | None = Field(default=None, max_length=500)
+    files_changed: str | None = Field(default=None, max_length=1000)
+    next_step: str | None = Field(default=None, max_length=500)
+    handoff_to: str | None = Field(default=None, max_length=100)
+    content_hash: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 async def _ensure_agent_exists(db: GrupoBorgesDB, slug: str) -> None:
@@ -264,29 +277,32 @@ async def handoff_task(
             },
         )
 
-    handoff_text = _format_handoff_message(
-        parent=result["parent"],
-        child=result["child"],
-        note=payload.note,
-    )
+    hop_limited = result.get("hop_limit_blocked", False)
     tmux_delivered = False
-    try:
-        tmux_delivered = await tmux_driver.send_message(
-            to_agent_row["tmux_session"], handoff_text
+    if not hop_limited:
+        handoff_text = _format_handoff_message(
+            parent=result["parent"],
+            child=result["child"],
+            note=payload.note,
         )
-    except Exception as e:
-        log.warning(
-            "Falha ao entregar handoff %s -> %s via tmux session %s: %s",
-            task_id,
-            result["child"]["id"],
-            to_agent_row["tmux_session"],
-            e,
-        )
+        try:
+            tmux_delivered = await tmux_driver.send_message(
+                to_agent_row["tmux_session"], handoff_text
+            )
+        except Exception as e:
+            log.warning(
+                "Falha ao entregar handoff %s -> %s via tmux session %s: %s",
+                task_id,
+                result["child"]["id"],
+                to_agent_row["tmux_session"],
+                e,
+            )
 
     return {
         "parent_id": task_id,
         "child_id": result["child"]["id"],
         "tmux_delivered": tmux_delivered,
+        "hop_limit_blocked": hop_limited,
     }
 
 
@@ -320,6 +336,59 @@ def _format_dispatch_message(*, task: dict[str, Any], note: str | None) -> str:
         lines.append(f"Nota: {note_text}")
     lines.append("Ao iniciar, mantenha esta task como referência no retorno.")
     return "\n".join(lines)
+
+
+@router.post("/{task_id}/checkpoint")
+async def checkpoint_task(
+    task_id: str, payload: TaskCheckpoint, request: Request
+) -> dict[str, Any]:
+    """Registra um checkpoint do agente e transita o status da task no kanban.
+
+    Idempotente: se content_hash for omitido, é calculado automaticamente.
+    Chamadas duplicadas (mesmo content_hash) retornam 200 sem re-processar.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+
+    task = await db.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+
+    # Calcula content_hash se não veio no body
+    chash = payload.content_hash or checkpoint_hash(
+        state=payload.state,
+        summary=payload.summary,
+        files_changed=payload.files_changed,
+        next_step=payload.next_step,
+    )
+
+    result = await db.record_checkpoint(
+        task_id=task_id,
+        agent_slug=task.get("assignee"),
+        state=payload.state,
+        summary=payload.summary,
+        files_changed=payload.files_changed,
+        next_step=payload.next_step,
+        handoff_to=payload.handoff_to,
+        content_hash=chash,
+        source="api",
+    )
+
+    if result is None:
+        return {
+            "duplicate": True,
+            "task_id": task_id,
+            "state": payload.state,
+            "content_hash": chash,
+        }
+
+    return {
+        "duplicate": False,
+        "event_id": result["event_id"],
+        "task_id": task_id,
+        "state": payload.state,
+        "new_task_status": result["new_task_status"],
+        "content_hash": chash,
+    }
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)

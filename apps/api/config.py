@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     auto_dispatch_interval_seconds: float = 5.0
     auto_dispatch_batch_size: int = 1
 
+    # watchdog (timeout + capture-pane checkpoint detection)
+    watchdog_enabled: bool = True
+    watchdog_interval_seconds: float = 30.0
+
 
 def get_settings() -> Settings:
     return Settings()

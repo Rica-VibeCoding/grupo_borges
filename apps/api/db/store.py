@@ -85,6 +85,9 @@ def derive_agent_status(
     last_seen: int | None,
     instances: list[dict[str, Any]] | None,
     *,
+    lifecycle_status: str | None = None,
+    lifecycle_updated_at: int | None = None,
+    current_task_id: str | None = None,
     now: int | None = None,
 ) -> str:
     """Deriva status do agente a partir do heartbeat + status das instâncias.
@@ -100,10 +103,25 @@ def derive_agent_status(
       5) caso contrário → idle (inclui agente vivo sem instances)
     """
     now = now if now is not None else int(time.time())
+    lifecycle_is_fresh = (
+        lifecycle_updated_at is not None
+        and now - lifecycle_updated_at <= OFFLINE_THRESHOLD_SECONDS
+    )
     if last_seen is None or (now - last_seen) > OFFLINE_THRESHOLD_SECONDS:
         return "offline"
+    if lifecycle_status == "error":
+        return "blocked"
+    if lifecycle_is_fresh and lifecycle_status in {
+        "session",
+        "prompt",
+        "tool",
+        "tool_done",
+        "subagent",
+        "subagent_done",
+    }:
+        return "running"
     if not instances:
-        return "idle"
+        return "running" if current_task_id else "idle"
     statuses = {i["status"] for i in instances}
     if "running" in statuses:
         return "running"
@@ -247,6 +265,34 @@ class GrupoBorgesDB:
                 except sqlite3.OperationalError as exc:
                     if "duplicate column" not in str(exc).lower():
                         raise
+
+            # S2: colunas de watchdog/checkpoint
+            task_cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+            for col, ddl in {
+                "heartbeat_timeout_seconds": (
+                    "ALTER TABLE tasks ADD COLUMN heartbeat_timeout_seconds INTEGER DEFAULT 900"
+                ),
+                "max_hops": "ALTER TABLE tasks ADD COLUMN max_hops INTEGER DEFAULT 5",
+            }.items():
+                if col in task_cols:
+                    continue
+                try:
+                    conn.execute(ddl)
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
+
+            event_cols = {row["name"] for row in conn.execute("PRAGMA table_info(task_events)")}
+            if "content_hash" not in event_cols:
+                try:
+                    conn.execute("ALTER TABLE task_events ADD COLUMN content_hash TEXT")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency "
+                    "ON task_events(task_id, content_hash) WHERE content_hash IS NOT NULL"
+                )
 
     async def shutdown(self) -> None:
         # No-op: connection-per-call não mantém estado pra fechar
@@ -449,32 +495,225 @@ class GrupoBorgesDB:
         instance_id: str | None = None,
         payload: dict[str, Any] | None = None,
         raw_jsonl: str | None = None,
-    ) -> int:
+        content_hash: str | None = None,
+    ) -> int | None:
         return await asyncio.to_thread(
             self._insert_task_event,
-            kind, task_id, agent_slug, instance_id, payload, raw_jsonl,
+            kind, task_id, agent_slug, instance_id, payload, raw_jsonl, content_hash,
         )
 
     def _insert_task_event(
-        self, kind, task_id, agent_slug, instance_id, payload, raw_jsonl
-    ) -> int:
+        self, kind, task_id, agent_slug, instance_id, payload, raw_jsonl, content_hash=None
+    ) -> int | None:
         with self._connect() as conn, conn:
-            cur = conn.execute(
-                """
-                INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    agent_slug,
-                    instance_id,
-                    kind,
-                    json.dumps(payload, ensure_ascii=False) if payload is not None else None,
-                    raw_jsonl,
-                    int(time.time()),
-                ),
-            )
-            return cur.lastrowid
+            if content_hash is not None:
+                # INSERT OR IGNORE funciona com índice parcial UNIQUE WHERE content_hash IS NOT NULL.
+                # Verifica via rowcount (0 = ignorado, nada inserido).
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO task_events
+                        (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, content_hash, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        agent_slug,
+                        instance_id,
+                        kind,
+                        json.dumps(payload, ensure_ascii=False) if payload is not None else None,
+                        raw_jsonl,
+                        content_hash,
+                        int(time.time()),
+                    ),
+                )
+                return cur.lastrowid if cur.rowcount > 0 else None
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO task_events
+                        (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        agent_slug,
+                        instance_id,
+                        kind,
+                        json.dumps(payload, ensure_ascii=False) if payload is not None else None,
+                        raw_jsonl,
+                        int(time.time()),
+                    ),
+                )
+                return cur.lastrowid
+
+    async def record_checkpoint(
+        self,
+        *,
+        task_id: str,
+        agent_slug: str | None,
+        state: str,
+        summary: str | None = None,
+        files_changed: str | None = None,
+        next_step: str | None = None,
+        handoff_to: str | None = None,
+        content_hash: str | None = None,
+        source: str = "unknown",
+    ) -> dict[str, Any] | None:
+        """Grava um checkpoint de agente e transita o status da task.
+
+        Retorna None se o checkpoint já foi gravado (idempotência via content_hash).
+        """
+        return await asyncio.to_thread(
+            self._record_checkpoint,
+            task_id=task_id,
+            agent_slug=agent_slug,
+            state=state,
+            summary=summary,
+            files_changed=files_changed,
+            next_step=next_step,
+            handoff_to=handoff_to,
+            content_hash=content_hash,
+            source=source,
+        )
+
+    def _record_checkpoint(
+        self,
+        *,
+        task_id: str,
+        agent_slug: str | None,
+        state: str,
+        summary: str | None,
+        files_changed: str | None,
+        next_step: str | None,
+        handoff_to: str | None,
+        content_hash: str | None,
+        source: str,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        payload = {
+            "state": state,
+            "summary": summary,
+            "files_changed": files_changed,
+            "next_step": next_step,
+            "handoff_to": handoff_to,
+            "source": source,
+        }
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Inserção idempotente via INSERT OR IGNORE (funciona com índice parcial)
+                if content_hash is not None:
+                    cur = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO task_events
+                            (task_id, agent_slug, kind, payload, content_hash, created_at)
+                        VALUES (?, ?, 'checkpoint', ?, ?, ?)
+                        """,
+                        (
+                            task_id,
+                            agent_slug,
+                            json.dumps(payload, ensure_ascii=False),
+                            content_hash,
+                            now,
+                        ),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return None  # duplicata — já processado
+                    event_id = cur.lastrowid
+                else:
+                    cur = conn.execute(
+                        """
+                        INSERT INTO task_events
+                            (task_id, agent_slug, kind, payload, created_at)
+                        VALUES (?, ?, 'checkpoint', ?, ?)
+                        """,
+                        (
+                            task_id,
+                            agent_slug,
+                            json.dumps(payload, ensure_ascii=False),
+                            now,
+                        ),
+                    )
+                    event_id = cur.lastrowid
+
+                # Busca task atual pra validar que existe e está running
+                task_row = conn.execute(
+                    "SELECT id, status, assignee FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+
+                task_status = task_row["status"]
+
+                # Atualiza heartbeat do run ativo (se existir)
+                conn.execute(
+                    """
+                    UPDATE task_runs
+                    SET last_heartbeat = ?
+                    WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                    """,
+                    (now, task_id),
+                )
+
+                new_task_status: str | None = None
+                if state == "DONE" and task_status not in ("done", "blocked"):
+                    new_task_status = "review"
+                    conn.execute(
+                        "UPDATE tasks SET status = 'review', completed_at = ? WHERE id = ?",
+                        (now, task_id),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'done', ended_at = ?, outcome = 'completed'
+                        WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                        """,
+                        (now, task_id),
+                    )
+                elif state in ("BLOCKED", "NEEDS_INPUT") and task_status not in ("blocked", "done", "review"):
+                    new_task_status = "blocked"
+                    conn.execute(
+                        "UPDATE tasks SET status = 'blocked' WHERE id = ?",
+                        (task_id,),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'blocked', ended_at = ?, outcome = ?
+                        WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                        """,
+                        (now, state.lower(), task_id),
+                    )
+                elif state == "HANDOFF" and task_status not in ("blocked", "done", "review"):
+                    # Handoff: task pai fica blocked (aguarda filho completar)
+                    new_task_status = "blocked"
+                    conn.execute(
+                        "UPDATE tasks SET status = 'blocked' WHERE id = ?",
+                        (task_id,),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'blocked', ended_at = ?, outcome = 'handoff_pending'
+                        WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                        """,
+                        (now, task_id),
+                    )
+                # IN_PROGRESS: só heartbeat, sem transição de status
+
+                conn.commit()
+                return {
+                    "event_id": event_id,
+                    "task_id": task_id,
+                    "state": state,
+                    "new_task_status": new_task_status or task_status,
+                }
+            except Exception:
+                conn.rollback()
+                raise
 
     async def list_events_after(self, after_id: int, limit: int = 200) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._list_events_after, after_id, limit)
@@ -595,11 +834,18 @@ class GrupoBorgesDB:
             parent = dict(parent_row)
             child_title = f"↳ {clean_note or parent['title']}"
             child_human_id = self._next_human_id(conn, to_agent)
+
+            # MAX_HOPS: filho herda parent.max_hops - 1. Se chegar em 0, bloqueia.
+            parent_hops = parent.get("max_hops") if parent.get("max_hops") is not None else 5
+            child_hops = max(0, int(parent_hops) - 1)
+            child_status = "blocked" if child_hops == 0 else "ready"
+
             conn.execute(
                 """
                 INSERT INTO tasks (id, human_id, title, body, assignee, origin_agent,
-                                   status, priority, created_at, idempotency_key)
-                VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?)
+                                   status, priority, created_at, idempotency_key,
+                                   heartbeat_timeout_seconds, max_hops)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     child_id,
@@ -608,9 +854,12 @@ class GrupoBorgesDB:
                     clean_note,
                     to_agent,
                     parent["assignee"],
+                    child_status,
                     parent["priority"],
                     now,
                     idempotency_key,
+                    parent.get("heartbeat_timeout_seconds") or 900,
+                    child_hops,
                 ),
             )
             conn.execute(
@@ -626,6 +875,7 @@ class GrupoBorgesDB:
                 "from": parent["assignee"],
                 "to": to_agent,
                 "note": clean_note,
+                "child_max_hops": child_hops,
             }
             cur = conn.execute(
                 """
@@ -639,6 +889,20 @@ class GrupoBorgesDB:
                     now,
                 ),
             )
+            if child_hops == 0:
+                # Filho bloqueado imediatamente por hop_limit
+                conn.execute(
+                    """
+                    INSERT INTO task_events (task_id, agent_slug, kind, payload, created_at)
+                    VALUES (?, ?, 'hop_limit', ?, ?)
+                    """,
+                    (
+                        child_id,
+                        to_agent,
+                        json.dumps({"reason": "hop_limit", "parent": parent_id}, ensure_ascii=False),
+                        now,
+                    ),
+                )
             child = self._get_task_from_conn(conn, child_id)
             assert child is not None
             return {
@@ -647,6 +911,7 @@ class GrupoBorgesDB:
                 "child": child,
                 "event_id": cur.lastrowid,
                 "payload": payload,
+                "hop_limit_blocked": child_hops == 0,
             }
 
     def _handoff_by_idempotency_key(
@@ -1066,22 +1331,16 @@ class GrupoBorgesDB:
                 conn.rollback()
                 raise
 
-    async def mark_stale_runs(
-        self,
-        *,
-        threshold_seconds: int = RUN_STALE_THRESHOLD_SECONDS,
-    ) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(
-            self._mark_stale_runs,
-            threshold_seconds=threshold_seconds,
-        )
+    async def mark_stale_runs(self) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._mark_stale_runs)
 
-    def _mark_stale_runs(self, *, threshold_seconds: int) -> list[dict[str, Any]]:
+    def _mark_stale_runs(self) -> list[dict[str, Any]]:
         now = int(time.time())
-        cutoff = now - threshold_seconds
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
+                # Usa heartbeat_timeout_seconds por-task (default 900s).
+                # Cada row tem seu próprio cutoff: now - COALESCE(t.heartbeat_timeout_seconds, 900)
                 stale_rows = conn.execute(
                     """
                     SELECT
@@ -1091,16 +1350,17 @@ class GrupoBorgesDB:
                         r.started_at AS run_started_at,
                         t.human_id,
                         t.assignee,
-                        t.instance_id
+                        t.instance_id,
+                        COALESCE(t.heartbeat_timeout_seconds, 900) AS timeout_s
                     FROM task_runs r
                     JOIN tasks t ON t.id = r.task_id
                     WHERE r.status = 'running'
                       AND r.ended_at IS NULL
                       AND t.status = 'running'
-                      AND COALESCE(r.last_heartbeat, r.started_at) < ?
+                      AND COALESCE(r.last_heartbeat, r.started_at) < (? - COALESCE(t.heartbeat_timeout_seconds, 900))
                     ORDER BY COALESCE(r.last_heartbeat, r.started_at) ASC
                     """,
-                    (cutoff,),
+                    (now,),
                 ).fetchall()
                 marked: list[dict[str, Any]] = []
                 for row in stale_rows:
@@ -1110,8 +1370,8 @@ class GrupoBorgesDB:
                         "assignee": row["assignee"],
                         "run_id": row["run_id"],
                         "last_heartbeat": row["last_heartbeat"],
-                        "threshold_seconds": threshold_seconds,
-                        "reason": "heartbeat_stale",
+                        "timeout_seconds": row["timeout_s"],
+                        "reason": "timed_out",
                     }
                     conn.execute(
                         """
@@ -1144,7 +1404,7 @@ class GrupoBorgesDB:
                     conn.execute(
                         """
                         INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
-                        VALUES (?, ?, ?, 'run.stale', ?, ?)
+                        VALUES (?, ?, ?, 'run.timed_out', ?, ?)
                         """,
                         (
                             row["task_id"],
@@ -2026,7 +2286,12 @@ class GrupoBorgesDB:
                     agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
-                agent["last_seen"], agent_instances, now=now,
+                agent["last_seen"],
+                agent_instances,
+                lifecycle_status=agent.get("lifecycle_status"),
+                lifecycle_updated_at=agent.get("lifecycle_updated_at"),
+                current_task_id=agent.get("current_task_id"),
+                now=now,
             )
             agent["sparkline"] = build_hour_series(
                 spark_by_slug.get(slug, {}), start_dt, sparkline_hours,

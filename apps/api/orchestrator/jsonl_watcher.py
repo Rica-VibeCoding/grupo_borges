@@ -31,6 +31,7 @@ from pathlib import Path
 
 from watchfiles import Change, awatch
 
+from orchestrator.checkpoint_parser import checkpoint_hash, parse_checkpoint
 from util import parse_dict_or_none
 
 logger = logging.getLogger(__name__)
@@ -51,20 +52,41 @@ def _short_text(value: object, *, limit: int = 80) -> str | None:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
-def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str, str | None]:
+def _content_blocks(payload: dict) -> list[dict]:
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return []
+    content = message.get("content")
+    if isinstance(content, list):
+        return [block for block in content if isinstance(block, dict)]
+    return []
+
+
+def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None, str | None]:
     if not payload:
-        return "event", event_type
+        return None, None
     if event_type == "user":
-        return "prompt", "mensagem do usuario"
+        blocks = _content_blocks(payload)
+        if blocks and any(block.get("type") == "tool_result" for block in blocks):
+            has_error = any(block.get("is_error") is True for block in blocks)
+            return ("error", "tool falhou") if has_error else ("tool_done", "tool concluida")
+        message = payload.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return "prompt", "mensagem do usuario"
+            if any(block.get("type") == "text" for block in blocks):
+                return "prompt", "mensagem do usuario"
+        return None, None
     if event_type == "summary":
-        return "event", "compactacao"
+        return None, None
     if event_type == "result":
         outcome = _short_text(payload.get("outcome"), limit=80)
         return "idle", outcome or "sessao finalizada"
     if event_type == "assistant":
         message = payload.get("message")
         if not isinstance(message, dict):
-            return "event", "assistant"
+            return None, None
         content = message.get("content")
         if isinstance(content, list):
             tools = [
@@ -78,8 +100,10 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str, str | 
         stop_reason = _short_text(message.get("stop_reason"), limit=40)
         if stop_reason == "end_turn":
             return "idle", "turno finalizado"
-        return "event", stop_reason or "assistant"
-    return "event", event_type
+        return None, None
+    if event_type == "system" and payload.get("subtype") == "turn_duration":
+        return "idle", "turno finalizado"
+    return None, None
 
 
 class JsonlWatcher:
@@ -202,23 +226,77 @@ class JsonlWatcher:
                 raw_jsonl=line,
             )
             lifecycle_status, lifecycle_detail = _jsonl_lifecycle(payload, event_type)
-            await self._db.update_agent_lifecycle(
-                slug,
-                status=lifecycle_status,
-                detail=lifecycle_detail,
-                event=f"jsonl:{event_type}",
-            )
+            if lifecycle_status is not None:
+                await self._db.update_agent_lifecycle(
+                    slug,
+                    status=lifecycle_status,
+                    detail=lifecycle_detail,
+                    event=f"jsonl:{event_type}",
+                )
             await self._db.touch_agent_run_heartbeat(
                 slug,
                 source_kind=f"jsonl:{event_type}",
             )
-            await self._db.advance_task_from_lifecycle(
-                slug,
-                lifecycle_status=lifecycle_status,
-                source_event=f"jsonl:{event_type}",
-            )
+            if lifecycle_status is not None:
+                await self._db.advance_task_from_lifecycle(
+                    slug,
+                    lifecycle_status=lifecycle_status,
+                    source_event=f"jsonl:{event_type}",
+                )
+            # Fonte 3 (JSONL lossless): detectar STATE: em texto de mensagens assistant
+            if event_type == "assistant" and payload:
+                await self._try_detect_checkpoint(slug, payload)
 
         await self._db.upsert_agent_state(slug, jsonl_path=str(path))
+
+    async def _try_detect_checkpoint(self, slug: str, payload: dict) -> None:
+        """Detecta STATE: no texto de mensagem assistant e aciona record_checkpoint."""
+        text = _extract_assistant_text(payload)
+        if not text:
+            return
+        cp = parse_checkpoint(text)
+        if cp is None:
+            return
+        # Busca a task running mais recente deste agente como target
+        running_tasks = await self._db.list_tasks(assignee=slug, status="running", limit=1)
+        if not running_tasks:
+            return
+        task_id = running_tasks[0]["id"]
+        chash = checkpoint_hash(
+            state=cp["state"],
+            summary=cp.get("summary"),
+            files_changed=cp.get("files_changed"),
+            next_step=cp.get("next_step"),
+        )
+        await self._db.record_checkpoint(
+            task_id=task_id,
+            agent_slug=slug,
+            state=cp["state"],
+            summary=cp.get("summary"),
+            files_changed=cp.get("files_changed"),
+            next_step=cp.get("next_step"),
+            handoff_to=cp.get("handoff_to"),
+            content_hash=chash,
+            source="jsonl_watcher",
+        )
+
+
+def _extract_assistant_text(payload: dict) -> str | None:
+    """Extrai texto de um evento JSONL assistant. Retorna None se não tiver texto."""
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        return content or None
+    if isinstance(content, list):
+        parts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "\n".join(p for p in parts if p) or None
+    return None
 
 
 def _read_appended(path: Path, offset: int) -> tuple[list[str], int]:
