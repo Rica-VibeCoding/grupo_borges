@@ -53,10 +53,16 @@ const v2Css = `
 }
 .v2-sidebar .agent-card .card-head { gap: 9px; align-items: center; }
 .v2-sidebar .agent-card .avatar { width: 30px; height: 30px; font-size: 11px; }
+.v2-sidebar .agent-card .avatar::before,
+.v2-sidebar .agent-card .avatar::after {
+  display: none;
+}
 .v2-sidebar .agent-card .head-text { gap: 1px; }
 .v2-sidebar .agent-card .agent-name { font-size: 12px; }
-.v2-sidebar .agent-card .agent-slug { font-size: 9.5px; }
-.v2-sidebar .agent-card .agent-role { font-size: 10px; line-height: 1.25; }
+.v2-sidebar .agent-card .agent-slug,
+.v2-sidebar .agent-card .agent-role {
+  display: none;
+}
 .v2-sidebar .agent-card .status-bar { font-size: 8.5px; padding: 2px 5px; gap: 5px; }
 .v2-sidebar .agent-card .status-bar .sdot { width: 5px; height: 5px; }
 .v2-sidebar .agent-card .meta-strip {
@@ -64,7 +70,14 @@ const v2Css = `
   padding: 4px 0;
   gap: 3px 8px;
 }
-.v2-sidebar .agent-card .meta-strip .m-key { font-size: 7.5px; }
+.v2-sidebar .agent-card .meta-strip .m-key {
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 1px 4px;
+  font-size: 7.5px;
+  line-height: 1.2;
+}
 .v2-sidebar .agent-card .pane-session {
   font-size: 10px;
   padding: 6px 8px;
@@ -80,7 +93,9 @@ const v2Css = `
 .v2-sidebar .agent-card[data-state="offline"] .pane-session {
   display: none;
 }
-.v2-sidebar .agent-card[data-state="offline"] .card-body { padding-bottom: 9px; gap: 0; }
+.v2-sidebar .agent-card[data-state="offline"] .card-body { padding: 4px 8px; gap: 0; }
+.v2-sidebar .agent-card[data-state="offline"] .card-head { min-height: 26px; }
+.v2-sidebar .agent-card[data-state="offline"] .avatar { width: 24px; height: 24px; font-size: 9px; }
 .v2-sidebar .agent-card[data-state="offline"] .avatar { filter: grayscale(0.6); opacity: 0.8; }
 /* Botão de criar instância e pílula +N continuam clicáveis */
 .v2-sidebar .agent-card .instance-add,
@@ -96,6 +111,18 @@ const v2Css = `
 
 /* Kanban respira no centro */
 .v2-main .kcol-body { max-height: 460px; }
+.v2-main .section-label:has(+ .activity-feed),
+.v2-main .activity-feed {
+  display: none;
+}
+.v2-main .kanban-new-task {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  line-height: 1;
+}
 
 /* Responsivo: laptop pequeno colapsa sidebar pra topo (fallback simples) */
 @media (max-width: 1100px) {
