@@ -145,10 +145,13 @@ def _capture_pane_excerpt_sync(
     return _clean_pane_lines(lines, max_chars=max_chars)
 
 
-# Statusline do Claude Code: "Sonnet 4.6 - 40:26:47 - [████░] 32%"
-# O HH:MM:SS é o tempo desde o /init da sessão atual do CLI dentro da tmux.
+# Statusline do Claude Code, variações observadas:
+#   "Sonnet 4.6 - 40:26:47 - [████░] 32%"
+#   "Opus 4.7 (1M context) - 20:14:19 - [...] 7%"  ← janela 1M insere parêntese
+#   "Opus 4.7 (1M context) - 05:42 - [...] 9%"     ← sessão < 1h emite só MM:SS
 _CC_SESSION_TIME = re.compile(
-    r"\b(?:Opus|Sonnet|Haiku)\s+\d+\.\d+\s+[-–]\s+(\d+):(\d{2}):(\d{2})\b",
+    r"\b(?:Opus|Sonnet|Haiku)\s+\d+\.\d+(?:\s+\([^)]*\))?\s+[-–]\s+"
+    r"(?:(\d+):)?(\d+):(\d{2})\b",
 )
 
 
@@ -164,7 +167,7 @@ def parse_session_elapsed_from_pane(excerpt: str | None) -> int | None:
     if not matches:
         return None
     h, m, s = matches[-1].groups()
-    return int(h) * 3600 + int(m) * 60 + int(s)
+    return (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
 
 
 async def capture_pane_excerpt(
