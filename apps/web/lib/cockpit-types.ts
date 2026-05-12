@@ -1,5 +1,16 @@
 export type AgentStatus = 'running' | 'idle' | 'blocked' | 'done' | 'offline';
 
+export type AgentLifecycleStatus =
+  | 'session'
+  | 'prompt'
+  | 'tool'
+  | 'tool_done'
+  | 'subagent'
+  | 'subagent_done'
+  | 'idle'
+  | 'error'
+  | 'event';
+
 export type SparklineBucket = {
   bucket: string;
   count: number;
@@ -61,7 +72,7 @@ export type Agent = {
   current_task_last_heartbeat: number | null;
   last_seen: number | null;
   pane_excerpt: string | null;
-  lifecycle_status: string | null;
+  lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
   lifecycle_event: string | null;
   lifecycle_updated_at: number | null;

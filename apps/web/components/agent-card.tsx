@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { Agent, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
+import type { Agent, AgentCli, AgentLifecycleStatus, AgentModel, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, parseModelFromPane, shortModelName } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
@@ -26,7 +26,7 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
   offline: 4,
 };
 
-const lifecycleLabel: Record<string, string> = {
+const lifecycleLabel: Record<AgentLifecycleStatus, string> = {
   session: 'SESSÃO',
   prompt: 'PROMPT',
   tool: 'TOOL',
@@ -40,7 +40,7 @@ const lifecycleLabel: Record<string, string> = {
 
 type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
 
-const PROMPT_ACTIVE_WINDOW_SECONDS = 90;
+const LIFECYCLE_FRESHNESS_WINDOW_SECONDS = 90;
 
 const activityLabel: Record<AgentActivityState, string> = {
   thinking: 'PENSANDO',
@@ -56,12 +56,9 @@ function deriveActivityState(agent: Agent, serverNow: number): AgentActivityStat
   if (agent.status === 'offline') return 'offline';
   if (agent.status === 'blocked' || agent.lifecycle_status === 'error') return 'blocked';
   if (agent.status === 'done') return 'done';
-  const lifecycleAge =
-    agent.lifecycle_updated_at !== null
-      ? Math.max(0, serverNow - agent.lifecycle_updated_at)
-      : null;
   const isFresh =
-    lifecycleAge !== null && lifecycleAge <= PROMPT_ACTIVE_WINDOW_SECONDS;
+    agent.lifecycle_updated_at !== null &&
+    serverNow - agent.lifecycle_updated_at <= LIFECYCLE_FRESHNESS_WINDOW_SECONDS;
   const isActive = agent.status === 'running' || isFresh;
 
   switch (agent.lifecycle_status) {
