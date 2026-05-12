@@ -38,6 +38,40 @@ const lifecycleLabel: Record<string, string> = {
   event: 'EVENTO',
 };
 
+type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
+
+const activityLabel: Record<AgentActivityState, string> = {
+  thinking: 'PENSANDO',
+  tool: 'TOOL',
+  subagent: 'SUBAGENTE',
+  blocked: 'BLOQUEADO',
+  idle: 'OCIOSO',
+  offline: 'OFFLINE',
+  done: 'CONCLUÍDO',
+};
+
+function deriveActivityState(agent: Agent): AgentActivityState {
+  if (agent.status === 'offline') return 'offline';
+  if (agent.status === 'blocked' || agent.lifecycle_status === 'error') return 'blocked';
+  if (agent.status === 'done') return 'done';
+
+  switch (agent.lifecycle_status) {
+    case 'tool':
+      return 'tool';
+    case 'subagent':
+      return 'subagent';
+    case 'prompt':
+    case 'session':
+    case 'tool_done':
+    case 'subagent_done':
+      return 'thinking';
+    case 'idle':
+      return agent.status === 'running' ? 'thinking' : 'idle';
+    default:
+      return agent.status === 'running' ? 'thinking' : 'idle';
+  }
+}
+
 function formatLifecycle(agent: Agent): string {
   if (!agent.lifecycle_status && !agent.lifecycle_detail) return '—';
   const label = agent.lifecycle_status
@@ -96,9 +130,10 @@ export function AgentCard({
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
+  const activityState = deriveActivityState(agent);
   const lastEvent = events.find((e) => e.agent_slug === agent.slug);
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
-  const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
+  const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
   useEffect(() => {
@@ -118,6 +153,7 @@ export function AgentCard({
     <article
       className="agent-card scan-host"
       data-state={agent.status}
+      data-activity-state={activityState}
       data-slug={agent.slug}
       data-instance-focus={instanceFocus ? 'true' : 'false'}
       tabIndex={0}
@@ -165,7 +201,7 @@ export function AgentCard({
           </div>
           <span className="status-bar" aria-hidden="true">
             <span className="sdot" />
-            {stateLabel[agent.status]}
+            {activityLabel[activityState]}
           </span>
         </div>
         <div className="meta-strip" aria-hidden="true">
@@ -214,7 +250,7 @@ export function AgentCard({
         </div>
         {lastEvent && (
           <div className="last-action mono" aria-hidden="true">
-            <span className="la-spark" aria-hidden>✦</span>
+            <span className="la-spark" aria-hidden>•</span>
             <span className="la-text">{summarize(lastEvent)}</span>
             <span className="la-sep">·</span>
             <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
