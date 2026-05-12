@@ -6,6 +6,7 @@ import { SseBanner } from '../../components/sse-banner';
 import { ToastStack } from '../../components/toast-stack';
 import { CockpitLiveV2 } from '../../components/v2/cockpit-live-v2';
 import { fetchEvents, fetchFleet, fetchTasks } from '../../lib/api';
+import { cockpitCss } from '../../lib/cockpit-css';
 import { EMPTY_EVENTS, EMPTY_FLEET, EMPTY_TASKS } from '../../lib/cockpit-mock';
 import { FleetProvider } from '../../lib/fleet-context';
 import { SelectedAgentProvider } from '../../lib/selected-agent-context';
@@ -129,7 +130,12 @@ export default async function PageV2() {
   const initial = await loadInitial();
   return (
     <>
+      <style dangerouslySetInnerHTML={{ __html: cockpitCss }} />
       <style dangerouslySetInnerHTML={{ __html: v2Css }} />
+      <div className="corner-mark tl" />
+      <div className="corner-mark tr" />
+      <div className="corner-mark bl" />
+      <div className="corner-mark br" />
       <FleetProvider initial={initial}>
         <ToastProvider>
           <SelectedAgentProvider>
