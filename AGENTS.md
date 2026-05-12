@@ -152,3 +152,11 @@ Codex CLI rodando neste repo a partir de 2026-05-10. Nome: **Tara Kaur** (sânsc
 - Prompt curto (≤25 linhas, regra firmada). Stacked instructions degradam output.
 - Em paralelo é OK *desde que tarefas sejam disjuntas* (arquivos/áreas diferentes). Edit concorrente no mesmo arquivo → não.
 - Diff revisado por Daniel-VPS antes de commit. Tara não commita sem aval explícito.
+
+## Comunicação com Rica
+
+- Respostas finais devem ser listas simples, curtas e objetivas.
+- Começar pela conclusão, sem contexto longo.
+- Evitar relatórios verbosos; no máximo 3-5 bullets quando possível.
+- Separar claramente: feito, pendente, próximo passo.
+- Output confuso ou prolixo é inaceitável.

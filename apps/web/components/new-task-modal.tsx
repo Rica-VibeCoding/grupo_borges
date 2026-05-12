@@ -10,7 +10,7 @@ import { SelectField } from './select-field';
 type UiTaskStatus = Exclude<TaskPatchStatus, 'ready'>;
 
 const STATUS_OPTIONS: Array<{ value: UiTaskStatus; label: string }> = [
-  { value: 'backlog', label: 'FILA' },
+  { value: 'backlog', label: 'BACKLOG' },
   { value: 'running', label: 'EXECUTANDO' },
   { value: 'review', label: 'REVISÃO' },
   { value: 'blocked', label: 'BLOQUEADO' },

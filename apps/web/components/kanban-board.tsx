@@ -7,7 +7,7 @@ import { NewTaskModal } from './new-task-modal';
 import { TaskDetailModal } from './task-detail-modal';
 
 const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatus[] }[] = [
-  { id: 'queue', name: 'FILA', sourceStatuses: ['backlog', 'ready'] },
+  { id: 'queue', name: 'BACKLOG', sourceStatuses: ['backlog', 'ready'] },
   { id: 'running', name: 'EXECUTANDO', sourceStatuses: ['running'] },
   { id: 'blocked', name: 'BLOQUEADO', sourceStatuses: ['blocked'] },
   { id: 'review', name: 'REVISÃO', sourceStatuses: ['review'] },
@@ -218,7 +218,7 @@ export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: nu
           <button type="button" className="kanban-new-task" onClick={() => setNewTaskOpen(true)}>
             + NOVA
           </button>
-          <span className="it"><span className="k">FILA</span><span className="v">{pad(counts.queue)}</span></span>
+          <span className="it"><span className="k">BACKLOG</span><span className="v">{pad(counts.queue)}</span></span>
           <span className="it"><span className="k">EXEC</span><span className="v cy">{pad(counts.running)}</span></span>
           <span className="it">
             <span className="k">BLQ</span>
