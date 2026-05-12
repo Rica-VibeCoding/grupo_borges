@@ -946,6 +946,87 @@ class GrupoBorgesDB:
                 conn.rollback()
                 raise
 
+    async def claim_next_ready_dispatch(
+        self,
+        *,
+        note: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._claim_next_ready_dispatch, note=note)
+
+    def _claim_next_ready_dispatch(
+        self,
+        *,
+        note: str | None,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        clean_note = note.strip() if isinstance(note, str) and note.strip() else None
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                task_row = conn.execute(
+                    """
+                    SELECT t.*, a.tmux_session
+                    FROM tasks t
+                    JOIN agents a ON a.slug = t.assignee
+                    WHERE t.status = 'ready'
+                      AND a.tmux_session IS NOT NULL
+                      AND a.tmux_session != ''
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM tasks active
+                          WHERE active.assignee = t.assignee
+                            AND active.status = 'running'
+                      )
+                    ORDER BY t.priority DESC, t.created_at ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+                task = dict(task_row)
+                task_id = task["id"]
+
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'running',
+                        started_at = COALESCE(started_at, ?)
+                    WHERE id = ? AND status = 'ready'
+                    """,
+                    (now, task_id),
+                )
+                run_cur = conn.execute(
+                    """
+                    INSERT INTO task_runs (
+                        task_id, instance_id, status, last_heartbeat,
+                        started_at, output_excerpt
+                    )
+                    VALUES (?, ?, 'running', ?, ?, ?)
+                    """,
+                    (task_id, task["instance_id"], now, now, clean_note),
+                )
+                conn.execute(
+                    """
+                    UPDATE agent_state
+                    SET current_task_id = ?, last_seen = ?
+                    WHERE slug = ?
+                    """,
+                    (task_id, now, task["assignee"]),
+                )
+                updated = self._get_task_from_conn(conn, task_id)
+                assert updated is not None
+                conn.commit()
+                return {
+                    "task": updated,
+                    "run_id": run_cur.lastrowid,
+                    "note": clean_note,
+                    "tmux_session": task["tmux_session"],
+                }
+            except Exception:
+                conn.rollback()
+                raise
+
     async def record_task_dispatch_delivered(
         self,
         task_id: str,
@@ -953,6 +1034,7 @@ class GrupoBorgesDB:
         run_id: int,
         tmux_session: str,
         note: str | None = None,
+        source: str = "manual",
     ) -> dict[str, Any] | None:
         return await asyncio.to_thread(
             self._record_task_dispatch_delivered,
@@ -960,6 +1042,7 @@ class GrupoBorgesDB:
             run_id=run_id,
             tmux_session=tmux_session,
             note=note,
+            source=source,
         )
 
     def _record_task_dispatch_delivered(
@@ -969,6 +1052,7 @@ class GrupoBorgesDB:
         run_id: int,
         tmux_session: str,
         note: str | None,
+        source: str,
     ) -> dict[str, Any] | None:
         now = int(time.time())
         clean_note = note.strip() if isinstance(note, str) and note.strip() else None
@@ -983,6 +1067,7 @@ class GrupoBorgesDB:
                 "tmux_session": tmux_session,
                 "note": clean_note,
                 "run_id": run_id,
+                "source": source,
             }
             event_cur = conn.execute(
                 """
@@ -1011,6 +1096,7 @@ class GrupoBorgesDB:
         run_id: int,
         tmux_session: str,
         reason: str,
+        source: str = "manual",
     ) -> dict[str, Any] | None:
         return await asyncio.to_thread(
             self._record_task_dispatch_failed,
@@ -1018,6 +1104,7 @@ class GrupoBorgesDB:
             run_id=run_id,
             tmux_session=tmux_session,
             reason=reason,
+            source=source,
         )
 
     def _record_task_dispatch_failed(
@@ -1027,6 +1114,7 @@ class GrupoBorgesDB:
         run_id: int,
         tmux_session: str,
         reason: str,
+        source: str,
     ) -> dict[str, Any] | None:
         now = int(time.time())
         with self._connect() as conn, conn:
@@ -1066,6 +1154,7 @@ class GrupoBorgesDB:
                 "tmux_session": tmux_session,
                 "run_id": run_id,
                 "reason": reason,
+                "source": source,
             }
             conn.execute(
                 """

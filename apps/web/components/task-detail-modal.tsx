@@ -9,14 +9,21 @@ import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
 import { formatDateTime } from '../lib/format-time';
 
-const STATUS_OPTIONS: Array<{ value: TaskPatchStatus; label: string }> = [
+type UiTaskStatus = Exclude<TaskPatchStatus, 'ready'>;
+
+const STATUS_OPTIONS: Array<{ value: UiTaskStatus; label: string }> = [
   { value: 'backlog', label: 'FILA' },
-  { value: 'ready', label: 'PRONTA' },
   { value: 'running', label: 'EXECUTANDO' },
   { value: 'review', label: 'REVISÃO' },
   { value: 'blocked', label: 'BLOQUEADO' },
   { value: 'done', label: 'CONCLUÍDO' },
 ];
+
+function uiStatus(status: TaskPatchStatus | 'archived' | undefined): UiTaskStatus {
+  if (status === 'archived' || status === 'done') return 'done';
+  if (status === 'ready' || status === undefined) return 'backlog';
+  return status;
+}
 
 function taskDisplayId(task: Task): string {
   return task.human_id || task.id.slice(0, 8);
@@ -94,8 +101,8 @@ export function TaskDetailModal({
     () => events.filter((event) => event.task_id === effectiveTask?.id).slice(0, 12),
     [events, effectiveTask?.id],
   );
-  const selectedStatus = useMemo<TaskPatchStatus>(
-    () => (effectiveTask?.status === 'archived' ? 'done' : (effectiveTask?.status ?? 'backlog')),
+  const selectedStatus = useMemo<UiTaskStatus>(
+    () => uiStatus(effectiveTask?.status),
     [effectiveTask?.status],
   );
   const runHeartbeatAge = effectiveTask?.current_run_last_heartbeat
@@ -132,7 +139,7 @@ export function TaskDetailModal({
     return () => ctrl.abort();
   }, [task]);
 
-  async function changeStatus(next: TaskPatchStatus) {
+  async function changeStatus(next: UiTaskStatus) {
     if (!effectiveTask || next === effectiveTask.status || saving) return;
     setSaving(true);
     setMessage(null);
@@ -199,7 +206,7 @@ export function TaskDetailModal({
                   <span className="agent-modal-role">DETALHE DA TAREFA</span>
                 </div>
                 <div className="head-right">
-                  <span className="status-bar" data-state={selectedStatus === 'backlog' || selectedStatus === 'ready' ? 'idle' : selectedStatus}>
+                  <span className="status-bar" data-state={selectedStatus === 'backlog' ? 'idle' : selectedStatus}>
                     <span className="sdot" />
                     {STATUS_OPTIONS.find((s) => s.value === selectedStatus)?.label ?? selectedStatus}
                   </span>
@@ -221,7 +228,7 @@ export function TaskDetailModal({
                 </section>
 
                 <aside className="task-detail-side">
-                  <SelectField<TaskPatchStatus>
+                  <SelectField<UiTaskStatus>
                     label="Status"
                     value={selectedStatus}
                     onValueChange={changeStatus}

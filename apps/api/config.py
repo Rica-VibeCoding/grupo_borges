@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     poll_interval_ms: int = 250
     keepalive_seconds: int = 15
 
+    # dispatcher automatico (opt-in)
+    auto_dispatch_enabled: bool = False
+    auto_dispatch_interval_seconds: float = 5.0
+    auto_dispatch_batch_size: int = 1
+
 
 def get_settings() -> Settings:
     return Settings()

@@ -25,6 +25,7 @@ from starlette.responses import JSONResponse
 
 from config import get_settings
 from db.store import GrupoBorgesDB
+from orchestrator.auto_dispatcher import AutoDispatcher
 from orchestrator.jsonl_watcher import JsonlWatcher
 from orchestrator.tmux_driver import TmuxDriver
 from routers import agents as agents_router
@@ -60,8 +61,20 @@ async def lifespan(app: FastAPI):
     await watcher.start()
     app.state.watcher = watcher
 
+    auto_dispatcher = None
+    if settings.auto_dispatch_enabled:
+        auto_dispatcher = AutoDispatcher(
+            db=db,
+            interval_seconds=settings.auto_dispatch_interval_seconds,
+            batch_size=settings.auto_dispatch_batch_size,
+        )
+        await auto_dispatcher.start()
+    app.state.auto_dispatcher = auto_dispatcher
+
     yield
 
+    if auto_dispatcher is not None:
+        await auto_dispatcher.stop()
     await watcher.stop()
     await db.shutdown()
 

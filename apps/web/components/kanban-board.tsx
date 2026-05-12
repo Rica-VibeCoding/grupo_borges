@@ -7,7 +7,7 @@ import { NewTaskModal } from './new-task-modal';
 import { TaskDetailModal } from './task-detail-modal';
 
 const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatus[] }[] = [
-  { id: 'queue', name: 'FILA', sourceStatuses: ['backlog'] },
+  { id: 'queue', name: 'FILA', sourceStatuses: ['backlog', 'ready'] },
   { id: 'running', name: 'EXECUTANDO', sourceStatuses: ['running'] },
   { id: 'blocked', name: 'BLOQUEADO', sourceStatuses: ['blocked'] },
   { id: 'review', name: 'REVISÃO', sourceStatuses: ['review'] },

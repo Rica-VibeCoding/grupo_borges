@@ -7,9 +7,10 @@ import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
 
-const STATUS_OPTIONS: Array<{ value: TaskPatchStatus; label: string }> = [
+type UiTaskStatus = Exclude<TaskPatchStatus, 'ready'>;
+
+const STATUS_OPTIONS: Array<{ value: UiTaskStatus; label: string }> = [
   { value: 'backlog', label: 'FILA' },
-  { value: 'ready', label: 'PRONTA' },
   { value: 'running', label: 'EXECUTANDO' },
   { value: 'review', label: 'REVISÃO' },
   { value: 'blocked', label: 'BLOQUEADO' },
@@ -37,7 +38,7 @@ export function NewTaskModal({
   const [title, setTitle] = useState('');
   const [assignee, setAssignee] = useState(firstAgent);
   const [body, setBody] = useState('');
-  const [status, setStatus] = useState<TaskPatchStatus>('backlog');
+  const [status, setStatus] = useState<UiTaskStatus>('backlog');
   const [priority, setPriority] = useState('0');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -132,7 +133,7 @@ export function NewTaskModal({
             />
 
             <div className="new-task-row">
-              <SelectField<TaskPatchStatus>
+              <SelectField<UiTaskStatus>
                 label="Status"
                 value={status}
                 onValueChange={setStatus}

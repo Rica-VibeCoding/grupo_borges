@@ -180,15 +180,41 @@ Validacao:
 
 Objetivo: aproximar do Hermes completo, mas so depois do manual estar auditavel.
 
-- [ ] Loop opcional pega tasks `ready`.
-- [ ] Aplica claim/lock.
-- [ ] Despacha para a sessao correta.
-- [ ] Respeita override manual.
-- [ ] Registra eventos auditaveis.
+- [x] Definir contrato de `ready`: somente tasks `status='ready'` entram no loop automatico.
+- [x] Preservar `backlog` como controle manual/rascunho; o loop nunca consome backlog.
+- [x] Loop opcional pega tasks `ready`.
+- [x] Aplica claim/lock atomico (`BEGIN IMMEDIATE`) antes de enviar para tmux.
+- [x] Despacha para a sessao correta.
+- [x] Respeita override manual: nao claimar agente que ja tem task `running`.
+- [x] Registra eventos auditaveis com `payload.source='auto'`.
 
 Aceite:
 
 - O cockpit consegue mover trabalho de `ready` para execucao sem o Rica clicar, mas mantendo trilha auditavel e controle manual.
+
+Status: **implementado e validado localmente em 2026-05-12**.
+
+Decisao tecnica:
+
+- O dispatcher automatico e opt-in via `GB_AUTO_DISPATCH_ENABLED=1`; default desligado.
+- Settings novas: `GB_AUTO_DISPATCH_INTERVAL_SECONDS` e `GB_AUTO_DISPATCH_BATCH_SIZE`.
+- `AutoDispatcher` roda no lifespan do FastAPI apenas quando habilitado, chama `mark_stale_runs()` antes do ciclo e consome no maximo `batch_size` claims por tick.
+- `claim_next_ready_dispatch()` seleciona a proxima task `ready` por `priority DESC, created_at ASC`, ignora agentes ja ocupados com task `running`, muda a task para `running`, cria `task_run` e atualiza `agent_state.current_task_id` na mesma transacao.
+- Falha de tmux apos claim usa o mesmo caminho auditavel do dispatch manual: task/run viram `blocked` e entra `dispatch.failed` com `payload.source='auto'`.
+
+Validacao:
+
+- Context7 consultado para FastAPI lifespan antes da implementacao.
+- Smoke isolado com SQLite temporario confirmou:
+  - task `backlog` nao e consumida;
+  - task `ready` vira `running`;
+  - `task_run` e evento `dispatch` sao criados;
+  - evento `dispatch` recebe `payload.source='auto'`;
+  - uma segunda task `ready` do mesmo agente nao e claimada enquanto ha task `running`.
+- `python -m compileall apps/api/db apps/api/routers apps/api/orchestrator apps/api/services apps/api/main.py apps/api/config.py` verde.
+- `corepack pnpm type-check` verde.
+- `API_BACKEND_URL=http://127.0.0.1:8000 corepack pnpm build` verde.
+- `git diff --check` verde.
 
 ## Retomada rapida apos reinicio
 
