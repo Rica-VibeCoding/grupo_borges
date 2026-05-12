@@ -6,7 +6,7 @@ import { useFleet } from '../lib/fleet-context';
 
 const FEED_LIMIT = 40;
 
-function formatRelativeShort(deltaSec: number): string {
+export function formatRelativeShort(deltaSec: number): string {
   if (deltaSec < 60) return `${deltaSec}s`;
   const m = Math.floor(deltaSec / 60);
   if (m < 60) return `${m}m`;
@@ -27,7 +27,7 @@ function pickToolTarget(toolInput: Record<string, unknown>): string | null {
   return null;
 }
 
-function summarize(ev: TaskEvent): string {
+export function summarize(ev: TaskEvent): string {
   const payload = (ev.payload ?? {}) as Record<string, unknown>;
 
   // hook:* events vindo do PostToolUse

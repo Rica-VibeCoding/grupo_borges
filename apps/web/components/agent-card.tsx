@@ -7,6 +7,7 @@ import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, parseM
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
+import { formatRelativeShort, summarize } from './activity-feed';
 import { SelectField } from './select-field';
 
 const stateLabel: Record<AgentStatus, string> = {
@@ -82,7 +83,7 @@ export function AgentCard({
   agent: Agent;
   serverNow: number;
 }) {
-  const { mutate } = useFleet();
+  const { events, mutate } = useFleet();
   const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
   const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
@@ -95,6 +96,8 @@ export function AgentCard({
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
+  const lastEvent = events.find((e) => e.agent_slug === agent.slug);
+  const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
   const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
@@ -209,6 +212,14 @@ export function AgentCard({
             </Dialog.Root>
           </span>
         </div>
+        {lastEvent && (
+          <div className="last-action mono" aria-hidden="true">
+            <span className="la-spark" aria-hidden>✦</span>
+            <span className="la-text">{summarize(lastEvent)}</span>
+            <span className="la-sep">·</span>
+            <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
+          </div>
+        )}
         <div className="pane pane-session" aria-hidden="true">
           <span className="ps-model">{paneModel ?? shortModelName(model)}</span>
           <span className="ps-sep">·</span>
