@@ -60,8 +60,9 @@ function deriveActivityState(agent: Agent, serverNow: number): AgentActivityStat
     agent.lifecycle_updated_at !== null
       ? Math.max(0, serverNow - agent.lifecycle_updated_at)
       : null;
-  const promptIsFresh =
+  const isFresh =
     lifecycleAge !== null && lifecycleAge <= PROMPT_ACTIVE_WINDOW_SECONDS;
+  const isActive = agent.status === 'running' || isFresh;
 
   switch (agent.lifecycle_status) {
     case 'tool':
@@ -70,14 +71,13 @@ function deriveActivityState(agent: Agent, serverNow: number): AgentActivityStat
       return 'subagent';
     case 'prompt':
     case 'session':
-      return agent.status === 'running' || promptIsFresh ? 'thinking' : 'idle';
     case 'tool_done':
     case 'subagent_done':
-      return agent.status === 'running' ? 'thinking' : 'idle';
+      return isActive ? 'thinking' : 'idle';
     case 'idle':
       return agent.status === 'running' ? 'thinking' : 'idle';
     default:
-      return agent.status === 'running' ? 'thinking' : 'idle';
+      return isActive ? 'thinking' : 'idle';
   }
 }
 
