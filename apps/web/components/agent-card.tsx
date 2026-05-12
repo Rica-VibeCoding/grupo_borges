@@ -40,6 +40,8 @@ const lifecycleLabel: Record<string, string> = {
 
 type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
 
+const PROMPT_ACTIVE_WINDOW_SECONDS = 90;
+
 const activityLabel: Record<AgentActivityState, string> = {
   thinking: 'PENSANDO',
   tool: 'TOOL',
@@ -50,10 +52,16 @@ const activityLabel: Record<AgentActivityState, string> = {
   done: 'CONCLUÍDO',
 };
 
-function deriveActivityState(agent: Agent): AgentActivityState {
+function deriveActivityState(agent: Agent, serverNow: number): AgentActivityState {
   if (agent.status === 'offline') return 'offline';
   if (agent.status === 'blocked' || agent.lifecycle_status === 'error') return 'blocked';
   if (agent.status === 'done') return 'done';
+  const lifecycleAge =
+    agent.lifecycle_updated_at !== null
+      ? Math.max(0, serverNow - agent.lifecycle_updated_at)
+      : null;
+  const promptIsFresh =
+    lifecycleAge !== null && lifecycleAge <= PROMPT_ACTIVE_WINDOW_SECONDS;
 
   switch (agent.lifecycle_status) {
     case 'tool':
@@ -62,9 +70,10 @@ function deriveActivityState(agent: Agent): AgentActivityState {
       return 'subagent';
     case 'prompt':
     case 'session':
+      return agent.status === 'running' || promptIsFresh ? 'thinking' : 'idle';
     case 'tool_done':
     case 'subagent_done':
-      return 'thinking';
+      return agent.status === 'running' ? 'thinking' : 'idle';
     case 'idle':
       return agent.status === 'running' ? 'thinking' : 'idle';
     default:
@@ -130,7 +139,7 @@ export function AgentCard({
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
-  const activityState = deriveActivityState(agent);
+  const activityState = deriveActivityState(agent, serverNow);
   const lastEvent = events.find((e) => e.agent_slug === agent.slug);
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
