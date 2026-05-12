@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS agent_state (
     last_seen         INTEGER,                              -- unix timestamp do último heartbeat
     jsonl_path        TEXT,                                 -- arquivo JSONL ativo
     pane_excerpt      TEXT,                                 -- últimos N chars do tmux capture-pane
+    lifecycle_status  TEXT,                                 -- microestado: session | prompt | tool | subagent | idle | error | event
+    lifecycle_detail  TEXT,                                 -- detalhe curto pra UI (tool, subagent, outcome)
+    lifecycle_event   TEXT,                                 -- último evento bruto que alimentou lifecycle
+    lifecycle_updated_at INTEGER,                           -- unix timestamp do último microestado
     instance_count    INTEGER NOT NULL DEFAULT 0            -- nº de instâncias ativas (subagents incluídos)
 );
 

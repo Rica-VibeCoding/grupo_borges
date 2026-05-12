@@ -67,6 +67,10 @@ function summarize(ev: TaskEvent): string {
       return 'turno finalizado';
     case 'PostToolUse':
       return typeof payload.tool_name === 'string' ? payload.tool_name : 'tool executada';
+    case 'lifecycle.review':
+      return 'task enviada para revisão';
+    case 'lifecycle.blocked':
+      return 'task bloqueada por falha';
     default:
       return ev.kind;
   }

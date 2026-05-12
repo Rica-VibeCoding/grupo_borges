@@ -24,9 +24,11 @@ router = APIRouter()
 
 CRITICAL_EVENTS = {
     "UserPromptSubmit",
+    "PreToolUse",
     "PostToolUse",
     "SubagentStart",
     "SubagentStop",
+    "SessionStart",
     "Stop",
 }
 
@@ -42,6 +44,44 @@ def _slug_from_cwd(cwd: str | None, agents_config: list[dict]) -> str | None:
         if cwd_norm == wp or cwd_norm.startswith(wp + "/"):
             return a["slug"]
     return None
+
+
+def _short_text(value: Any, *, limit: int = 80) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.split())
+    if not text:
+        return None
+    return text if len(text) <= limit else f"{text[: limit - 3]}..."
+
+
+def _hook_lifecycle(event_kind: str, payload: dict[str, Any]) -> tuple[str, str | None]:
+    tool_name = _short_text(payload.get("tool_name"), limit=64)
+    agent_type = _short_text(payload.get("agent_type"), limit=64)
+    matcher = _short_text(payload.get("matcher"), limit=64)
+
+    if event_kind == "SessionStart":
+        source = _short_text(payload.get("source"), limit=40)
+        return "session", source or "sessao iniciada"
+    if event_kind == "UserPromptSubmit":
+        prompt = _short_text(payload.get("prompt"), limit=80)
+        return "prompt", prompt or "prompt recebido"
+    if event_kind == "PreToolUse":
+        return "tool", tool_name or matcher or "tool em execucao"
+    if event_kind == "PostToolUse":
+        return "tool_done", tool_name or matcher or "tool concluida"
+    if event_kind == "PostToolUseFailure":
+        return "error", tool_name or matcher or "tool falhou"
+    if event_kind == "SubagentStart":
+        return "subagent", agent_type or "subagent iniciado"
+    if event_kind == "SubagentStop":
+        return "subagent_done", agent_type or "subagent finalizado"
+    if event_kind == "Stop":
+        return "idle", "turno finalizado"
+    if event_kind == "StopFailure":
+        reason = _short_text(payload.get("reason"), limit=80)
+        return "error", reason or "turno falhou"
+    return "event", event_kind
 
 
 @router.post("/{event_kind}")
@@ -85,7 +125,19 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
 
     if slug is not None:
         await db.upsert_agent_state(slug)
+        lifecycle_status, lifecycle_detail = _hook_lifecycle(event_kind, payload)
+        await db.update_agent_lifecycle(
+            slug,
+            status=lifecycle_status,
+            detail=lifecycle_detail,
+            event=f"hook:{event_kind}",
+        )
         await db.touch_agent_run_heartbeat(slug, source_kind=f"hook:{event_kind}")
+        await db.advance_task_from_lifecycle(
+            slug,
+            lifecycle_status=lifecycle_status,
+            source_event=f"hook:{event_kind}",
+        )
 
     return {
         "received": True,

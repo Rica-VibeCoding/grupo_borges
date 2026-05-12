@@ -25,6 +25,26 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
   offline: 4,
 };
 
+const lifecycleLabel: Record<string, string> = {
+  session: 'SESSÃO',
+  prompt: 'PROMPT',
+  tool: 'TOOL',
+  tool_done: 'TOOL OK',
+  subagent: 'SUBAGENT',
+  subagent_done: 'SUB OK',
+  idle: 'IDLE',
+  error: 'ERRO',
+  event: 'EVENTO',
+};
+
+function formatLifecycle(agent: Agent): string {
+  if (!agent.lifecycle_status && !agent.lifecycle_detail) return '—';
+  const label = agent.lifecycle_status
+    ? (lifecycleLabel[agent.lifecycle_status] ?? agent.lifecycle_status.toUpperCase())
+    : 'EVENTO';
+  return agent.lifecycle_detail ? `${label} · ${agent.lifecycle_detail}` : label;
+}
+
 const CLI_OPTIONS: Array<{ value: AgentCli; label: string }> = [
   { value: 'claude_code', label: 'Claude Code' },
   { value: 'codex', label: 'Codex' },
@@ -74,6 +94,7 @@ export function AgentCard({
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
+  const lifecycle = formatLifecycle(agent);
   const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
@@ -121,8 +142,23 @@ export function AgentCard({
                 </span>
               </span>
             </div>
-            <span className="agent-slug">{agent.slug}</span>
-            <span className="agent-role">{agent.role}</span>
+            <span className="agent-role">
+              <span className="agent-slug">{agent.slug}</span>
+              <span aria-hidden="true"> | </span>
+              <span
+                style={{
+                  color: 'var(--muted)',
+                  fontSize: '8.5px',
+                  letterSpacing: '0.18em',
+                  marginRight: 4,
+                  opacity: 0.55,
+                  textTransform: 'uppercase',
+                }}
+              >
+                MICRO
+              </span>
+              <span>{lifecycle}</span>
+            </span>
           </div>
           <span className="status-bar" aria-hidden="true">
             <span className="sdot" />

@@ -42,6 +42,46 @@ def encoded_cwd(workspace_path: str) -> str:
     return _NON_ENCODED_CHAR.sub("-", workspace_path)
 
 
+def _short_text(value: object, *, limit: int = 80) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.split())
+    if not text:
+        return None
+    return text if len(text) <= limit else f"{text[: limit - 3]}..."
+
+
+def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str, str | None]:
+    if not payload:
+        return "event", event_type
+    if event_type == "user":
+        return "prompt", "mensagem do usuario"
+    if event_type == "summary":
+        return "event", "compactacao"
+    if event_type == "result":
+        outcome = _short_text(payload.get("outcome"), limit=80)
+        return "idle", outcome or "sessao finalizada"
+    if event_type == "assistant":
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return "event", "assistant"
+        content = message.get("content")
+        if isinstance(content, list):
+            tools = [
+                _short_text(block.get("name"), limit=64)
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "tool_use"
+            ]
+            tools = [tool for tool in tools if tool]
+            if tools:
+                return "tool", ", ".join(tools[:2])
+        stop_reason = _short_text(message.get("stop_reason"), limit=40)
+        if stop_reason == "end_turn":
+            return "idle", "turno finalizado"
+        return "event", stop_reason or "assistant"
+    return "event", event_type
+
+
 class JsonlWatcher:
     def __init__(
         self,
@@ -154,12 +194,28 @@ class JsonlWatcher:
 
         for line in new_lines:
             payload = parse_dict_or_none(line)
-            event_type = (payload or {}).get("type") or "unknown"
+            event_type = str((payload or {}).get("type") or "unknown")
             await self._db.insert_task_event(
                 kind=f"jsonl:{event_type}",
                 agent_slug=slug,
                 payload=payload,
                 raw_jsonl=line,
+            )
+            lifecycle_status, lifecycle_detail = _jsonl_lifecycle(payload, event_type)
+            await self._db.update_agent_lifecycle(
+                slug,
+                status=lifecycle_status,
+                detail=lifecycle_detail,
+                event=f"jsonl:{event_type}",
+            )
+            await self._db.touch_agent_run_heartbeat(
+                slug,
+                source_kind=f"jsonl:{event_type}",
+            )
+            await self._db.advance_task_from_lifecycle(
+                slug,
+                lifecycle_status=lifecycle_status,
+                source_event=f"jsonl:{event_type}",
             )
 
         await self._db.upsert_agent_state(slug, jsonl_path=str(path))

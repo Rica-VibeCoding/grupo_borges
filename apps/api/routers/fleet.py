@@ -61,6 +61,10 @@ class FleetAgent(BaseModel):
     current_task_last_heartbeat: int | None = None
     last_seen: int | None
     pane_excerpt: str | None
+    lifecycle_status: str | None = None
+    lifecycle_detail: str | None = None
+    lifecycle_event: str | None = None
+    lifecycle_updated_at: int | None = None
     pane_session_started_at: int | None = None
     instance_count: int
     # campos derivados/hidratados pelo snapshot

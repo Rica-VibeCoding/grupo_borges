@@ -61,6 +61,10 @@ export type Agent = {
   current_task_last_heartbeat: number | null;
   last_seen: number | null;
   pane_excerpt: string | null;
+  lifecycle_status: string | null;
+  lifecycle_detail: string | null;
+  lifecycle_event: string | null;
+  lifecycle_updated_at: number | null;
   pane_session_started_at: number | null;
   instance_count: number;
   status: AgentStatus;

@@ -114,6 +114,78 @@ def derive_agent_status(
     return "idle"
 
 
+def derive_lifecycle_from_event(
+    kind: str | None,
+    payload: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    """Microestado defensivo a partir do último evento salvo.
+
+    Usado como fallback para bancos já populados antes das colunas lifecycle.
+    Os routers continuam gravando o estado explícito para eventos novos.
+    """
+    if not kind:
+        return None, None
+    clean_kind = kind.removeprefix("hook:")
+    data = payload or {}
+
+    if clean_kind == "SessionStart":
+        return "session", "sessao iniciada"
+    if clean_kind == "UserPromptSubmit":
+        return "prompt", "prompt recebido"
+    if clean_kind == "PreToolUse":
+        return "tool", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
+    if clean_kind == "PostToolUse":
+        return "tool_done", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
+    if clean_kind == "PostToolUseFailure":
+        return "error", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
+    if clean_kind == "SubagentStart":
+        return "subagent", data.get("agent_type") if isinstance(data.get("agent_type"), str) else None
+    if clean_kind == "SubagentStop":
+        return "subagent_done", data.get("agent_type") if isinstance(data.get("agent_type"), str) else None
+    if clean_kind == "Stop":
+        return "idle", "turno finalizado"
+    if clean_kind == "StopFailure":
+        return "error", "turno falhou"
+
+    if kind == "tara.exec.started":
+        return "session", "tara-codex iniciado"
+    if kind == "tara.exec.completed":
+        return "idle", "tara-codex concluido"
+    if kind == "tara.exec.failed":
+        return "error", "tara-codex falhou"
+    if kind == "codex.turn.started":
+        return "prompt", "turno iniciado"
+    if kind in {"codex.item.started", "codex.item.updated"}:
+        body = data.get("body") if isinstance(data.get("body"), dict) else data
+        detail = body.get("label") or body.get("name") or body.get("type")
+        return "tool", detail if isinstance(detail, str) else "item em execucao"
+    if kind == "codex.item.completed":
+        return "tool_done", "item concluido"
+    if kind == "codex.turn.completed":
+        return "idle", "turno concluido"
+    if kind in {"codex.turn.failed", "codex.error"}:
+        return "error", "erro codex"
+
+    if kind == "jsonl:user":
+        return "prompt", "mensagem do usuario"
+    if kind == "jsonl:assistant":
+        message = data.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        name = block.get("name")
+                        return "tool", name if isinstance(name, str) else "tool em execucao"
+            if message.get("stop_reason") == "end_turn":
+                return "idle", "turno finalizado"
+        return "event", "assistant"
+    if kind == "jsonl:result":
+        return "idle", "sessao finalizada"
+
+    return "event", clean_kind
+
+
 class GrupoBorgesDB:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -157,6 +229,24 @@ class GrupoBorgesDB:
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_human_id "
                     "ON tasks(human_id) WHERE human_id IS NOT NULL"
                 )
+            agent_state_cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(agent_state)")
+            }
+            for col, ddl in {
+                "lifecycle_status": "ALTER TABLE agent_state ADD COLUMN lifecycle_status TEXT",
+                "lifecycle_detail": "ALTER TABLE agent_state ADD COLUMN lifecycle_detail TEXT",
+                "lifecycle_event": "ALTER TABLE agent_state ADD COLUMN lifecycle_event TEXT",
+                "lifecycle_updated_at": (
+                    "ALTER TABLE agent_state ADD COLUMN lifecycle_updated_at INTEGER"
+                ),
+            }.items():
+                if col in agent_state_cols:
+                    continue
+                try:
+                    conn.execute(ddl)
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
 
     async def shutdown(self) -> None:
         # No-op: connection-per-call não mantém estado pra fechar
@@ -228,7 +318,9 @@ class GrupoBorgesDB:
             cur = conn.execute(
                 """
                 SELECT a.*, s.cli AS state_cli, s.model AS state_model,
-                       s.current_task_id, s.last_seen, s.pane_excerpt, s.instance_count
+                       s.current_task_id, s.last_seen, s.pane_excerpt,
+                       s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
+                       s.lifecycle_updated_at, s.instance_count
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
                 ORDER BY a.slug
@@ -244,7 +336,9 @@ class GrupoBorgesDB:
             cur = conn.execute(
                 """
                 SELECT a.*, s.cli AS state_cli, s.model AS state_model,
-                       s.current_task_id, s.last_seen, s.pane_excerpt, s.instance_count
+                       s.current_task_id, s.last_seen, s.pane_excerpt,
+                       s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
+                       s.lifecycle_updated_at, s.instance_count
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
                 WHERE a.slug = ?
@@ -298,6 +392,50 @@ class GrupoBorgesDB:
                 WHERE slug = ?
                 """,
                 (now, cli, model, current_task_id, jsonl_path, pane_excerpt, slug),
+            )
+
+    async def update_agent_lifecycle(
+        self,
+        slug: str,
+        *,
+        status: str,
+        detail: str | None,
+        event: str,
+    ) -> None:
+        await asyncio.to_thread(
+            self._update_agent_lifecycle,
+            slug,
+            status=status,
+            detail=detail,
+            event=event,
+        )
+
+    def _update_agent_lifecycle(
+        self,
+        slug: str,
+        *,
+        status: str,
+        detail: str | None,
+        event: str,
+    ) -> None:
+        now = int(time.time())
+        clean_detail = detail.strip() if isinstance(detail, str) else None
+        if clean_detail == "":
+            clean_detail = None
+        if clean_detail is not None and len(clean_detail) > 160:
+            clean_detail = f"{clean_detail[:157]}..."
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                UPDATE agent_state
+                SET last_seen = ?,
+                    lifecycle_status = ?,
+                    lifecycle_detail = ?,
+                    lifecycle_event = ?,
+                    lifecycle_updated_at = ?
+                WHERE slug = ?
+                """,
+                (now, status, clean_detail, event, now, slug),
             )
 
     # ---------- task_events ----------
@@ -773,6 +911,160 @@ class GrupoBorgesDB:
                 "last_heartbeat": now,
                 "source_kind": source_kind,
             }
+
+    async def advance_task_from_lifecycle(
+        self,
+        agent_slug: str,
+        *,
+        lifecycle_status: str,
+        source_event: str,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._advance_task_from_lifecycle,
+            agent_slug,
+            lifecycle_status=lifecycle_status,
+            source_event=source_event,
+        )
+
+    def _advance_task_from_lifecycle(
+        self,
+        agent_slug: str,
+        *,
+        lifecycle_status: str,
+        source_event: str,
+    ) -> dict[str, Any] | None:
+        if source_event in {
+            "hook:Stop",
+            "jsonl:assistant",
+            "jsonl:result",
+            "tara.exec.completed",
+            "codex.turn.completed",
+        }:
+            next_status = "review"
+            run_status = "done"
+            outcome = "awaiting_review"
+            event_kind = "lifecycle.review"
+        elif source_event in {
+            "hook:StopFailure",
+            "tara.exec.failed",
+            "codex.turn.failed",
+            "codex.error",
+        }:
+            next_status = "blocked"
+            run_status = "blocked"
+            outcome = "lifecycle_failed"
+            event_kind = "lifecycle.blocked"
+        else:
+            return None
+
+        if next_status == "review" and lifecycle_status != "idle":
+            return None
+        if next_status == "blocked" and lifecycle_status != "error":
+            return None
+
+        now = int(time.time())
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                task_row = conn.execute(
+                    """
+                    SELECT t.*
+                    FROM tasks t
+                    LEFT JOIN agent_state s ON s.slug = t.assignee
+                    WHERE t.assignee = ?
+                      AND t.status = 'running'
+                      AND (s.current_task_id = t.id OR s.current_task_id IS NULL)
+                    ORDER BY
+                        CASE WHEN s.current_task_id = t.id THEN 0 ELSE 1 END,
+                        COALESCE(t.started_at, t.created_at) DESC
+                    LIMIT 1
+                    """,
+                    (agent_slug,),
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+                task = dict(task_row)
+                task_id = task["id"]
+
+                run_cur = conn.execute(
+                    """
+                    UPDATE task_runs
+                    SET status = ?,
+                        ended_at = COALESCE(ended_at, ?),
+                        outcome = COALESCE(outcome, ?),
+                        last_heartbeat = COALESCE(last_heartbeat, ?)
+                    WHERE task_id = ?
+                      AND status = 'running'
+                      AND ended_at IS NULL
+                    """,
+                    (run_status, now, outcome, now, task_id),
+                )
+                if run_cur.rowcount == 0:
+                    conn.rollback()
+                    return None
+
+                if next_status == "review":
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = ?
+                        WHERE id = ? AND status = 'running'
+                        """,
+                        (next_status, task_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = ?, completed_at = NULL
+                        WHERE id = ? AND status = 'running'
+                        """,
+                        (next_status, task_id),
+                    )
+                conn.execute(
+                    """
+                    UPDATE agent_state
+                    SET current_task_id = NULL, last_seen = ?
+                    WHERE slug = ? AND current_task_id = ?
+                    """,
+                    (now, agent_slug, task_id),
+                )
+
+                payload = {
+                    "task_id": task_id,
+                    "human_id": task.get("human_id"),
+                    "assignee": agent_slug,
+                    "from_status": "running",
+                    "to_status": next_status,
+                    "source_event": source_event,
+                    "closed_runs": run_cur.rowcount,
+                    "outcome": outcome,
+                }
+                event_cur = conn.execute(
+                    """
+                    INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        agent_slug,
+                        task.get("instance_id"),
+                        event_kind,
+                        json.dumps(payload, ensure_ascii=False),
+                        now,
+                    ),
+                )
+                updated = self._get_task_from_conn(conn, task_id)
+                conn.commit()
+                return {
+                    "task": updated,
+                    "event_id": event_cur.lastrowid,
+                    "payload": payload,
+                }
+            except Exception:
+                conn.rollback()
+                raise
 
     async def mark_stale_runs(
         self,
@@ -1601,7 +1893,9 @@ class GrupoBorgesDB:
             agent_rows = conn.execute(
                 """
                 SELECT a.*, s.cli AS state_cli, s.model AS state_model,
-                       s.current_task_id, s.last_seen, s.pane_excerpt, s.instance_count
+                       s.current_task_id, s.last_seen, s.pane_excerpt,
+                       s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
+                       s.lifecycle_updated_at, s.instance_count
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
                 ORDER BY a.slug
@@ -1635,6 +1929,38 @@ class GrupoBorgesDB:
             spark_by_slug: dict[str, dict[str, int]] = {}
             for row in spark_rows:
                 spark_by_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
+
+            latest_event_rows = conn.execute(
+                """
+                SELECT e.agent_slug, e.kind, e.payload, e.created_at
+                FROM task_events e
+                JOIN (
+                    SELECT agent_slug, MAX(id) AS max_id
+                    FROM task_events
+                    WHERE agent_slug IS NOT NULL
+                    GROUP BY agent_slug
+                ) latest
+                  ON latest.agent_slug = e.agent_slug
+                 AND latest.max_id = e.id
+                """
+            ).fetchall()
+            latest_lifecycle_by_slug: dict[str, dict[str, Any]] = {}
+            for row in latest_event_rows:
+                payload = None
+                if row["payload"]:
+                    try:
+                        payload = json.loads(row["payload"])
+                    except json.JSONDecodeError:
+                        payload = None
+                status, detail = derive_lifecycle_from_event(row["kind"], payload)
+                if status is None and detail is None:
+                    continue
+                latest_lifecycle_by_slug[row["agent_slug"]] = {
+                    "status": status,
+                    "detail": detail,
+                    "event": row["kind"],
+                    "updated_at": row["created_at"],
+                }
 
             task_counts = {
                 row["status"]: row["cnt"]
@@ -1691,6 +2017,13 @@ class GrupoBorgesDB:
             agent["current_task_last_heartbeat"] = (
                 current_task["last_heartbeat"] if current_task else None
             )
+            if agent.get("lifecycle_status") is None:
+                latest_lifecycle = latest_lifecycle_by_slug.get(slug)
+                if latest_lifecycle is not None:
+                    agent["lifecycle_status"] = latest_lifecycle["status"]
+                    agent["lifecycle_detail"] = latest_lifecycle["detail"]
+                    agent["lifecycle_event"] = latest_lifecycle["event"]
+                    agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"], agent_instances, now=now,

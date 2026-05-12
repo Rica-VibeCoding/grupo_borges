@@ -216,6 +216,92 @@ Validacao:
 - `API_BACKEND_URL=http://127.0.0.1:8000 corepack pnpm build` verde.
 - `git diff --check` verde.
 
+### Fase 4.6 — Lifecycle e microestado do agente
+
+Objetivo: mostrar no card o ultimo microestado real do agente, alimentado por
+hooks/JSONL/Codex, sem depender apenas de heartbeat generico.
+
+- [x] Persistir microestado em `agent_state`.
+- [x] Derivar microestado de hooks Claude Code (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStart/Stop`, `Stop`).
+- [x] Derivar microestado de JSONL watcher como fallback.
+- [x] Derivar microestado de eventos Tara/Codex.
+- [x] Expor microestado no `/api/fleet`.
+- [x] Renderizar `MICRO` na linha do slug (`// agente | MICRO ...`), sem usar a linha de cargo.
+- [x] Registrar listeners SSE para `hook:*`, `tara.*` e `codex.*`.
+- [x] Usar fallback pelo ultimo `task_event` quando o banco ainda nao tem lifecycle persistido.
+
+Aceite:
+
+- Quando chega um hook de tool, o card passa a indicar a ferramenta recente.
+- Quando chega `Stop`/turno concluido, o microestado volta para idle.
+- O frontend consome o snapshot do backend sem reimplementar regra de negocio.
+
+Status: **implementado e validado localmente em 2026-05-12**.
+
+Decisao tecnica:
+
+- `agent_state` ganhou `lifecycle_status`, `lifecycle_detail`, `lifecycle_event` e `lifecycle_updated_at`.
+- O backend grava detalhes curtos e truncados para proteger UI/banco.
+- `PreToolUse` representa ferramenta em execucao; `PostToolUse` representa ferramenta concluida; `Stop` representa idle.
+- JSONL continua sendo fallback defensivo quando hook HTTP falha.
+- O card renderiza apenas `MICRO`, mantendo `status` macro (`running/idle/offline`) como decisao do backend.
+- A linha de cargo do agente saiu do card para abrir espaco ao microestado.
+
+Validacao:
+
+- Context7 consultado para FastAPI lifespan/SSE antes da implementacao.
+- `python3 -m compileall apps/api/db apps/api/routers apps/api/orchestrator apps/api/services apps/api/main.py apps/api/config.py` verde.
+- `corepack pnpm type-check` verde.
+- `API_BACKEND_URL=http://127.0.0.1:8000 corepack pnpm build` verde.
+- `git diff --check` verde.
+- Smoke isolado SQLite temporario confirmou persistencia e retorno no `fleet_snapshot`.
+- Smoke isolado SQLite temporario confirmou fallback por ultimo evento (`hook:PreToolUse` -> `tool/Bash`).
+- Smoke FastAPI `TestClient` confirmou `POST /hooks/PreToolUse` atualizando `/api/fleet` com `lifecycle_status='tool'`, `lifecycle_detail='Bash'`, `lifecycle_event='hook:PreToolUse'`.
+
+### Fase 4.7 — Lifecycle move task para review/blocked
+
+Objetivo: fazer o Kanban acompanhar o fim real de uma execucao, sem marcar
+automaticamente como concluido.
+
+- [x] `Stop`, `jsonl:assistant` com `end_turn`, `jsonl:result`, `tara.exec.completed` e `codex.turn.completed` fecham run aberto e movem task `running` para `review`.
+- [x] `StopFailure`, `tara.exec.failed`, `codex.turn.failed` e `codex.error` fecham run aberto e movem task `running` para `blocked`.
+- [x] Falha isolada de tool (`PostToolUseFailure`) nao bloqueia a task automaticamente.
+- [x] Cada transicao gera evento auditavel: `lifecycle.review` ou `lifecycle.blocked`.
+- [x] SSE frontend escuta `lifecycle.review` e `lifecycle.blocked` para refetch.
+- [x] Activity feed resume esses eventos em linguagem simples.
+
+Aceite:
+
+- Quando um agente termina uma task em execucao, ela sai de `running` e entra em `review`.
+- Quando uma falha terminal acontece, ela sai de `running` e entra em `blocked`.
+- Nada vira `done` sem decisao humana.
+
+Status: **implementado e validado localmente em 2026-05-12**.
+
+Decisao tecnica:
+
+- O fechamento por lifecycle usa `agent_state.current_task_id` quando existe; se nao existir, escolhe a task `running` mais recente do agente.
+- `review` fecha o `task_run` como `done` com `outcome='awaiting_review'`.
+- `blocked` fecha o `task_run` como `blocked` com `outcome='lifecycle_failed'`.
+- `agent_state.current_task_id` e limpo ao sair de `running`.
+- O evento de lifecycle inclui `source_event`, `closed_runs` e `outcome` no payload.
+
+Divida registrada:
+
+- Hoje `Stop` significa “turno terminou”, nao “entrega aprovada”. Por isso o destino e `review`, nao `done`.
+- Ainda falta amarrar conclusao semantica real por protocolo de entrega do agente (ex: marcador explicito no output, comentario no cockpit ou botao humano de aprovar).
+- Em agentes com mais de uma task `running` e sem `current_task_id`, o fallback escolhe a mais recente; precisa evoluir para vinculo session/instance/task antes de paralelismo pesado.
+
+Validacao:
+
+- `python3 -m compileall apps/api/db apps/api/routers apps/api/orchestrator apps/api/services apps/api/main.py apps/api/config.py` verde.
+- `corepack pnpm type-check` verde.
+- `API_BACKEND_URL=http://127.0.0.1:8000 corepack pnpm build` verde.
+- `git diff --check` verde.
+- Smoke SQLite temporario confirmou `hook:Stop` -> task `review`, run `done`, outcome `awaiting_review`.
+- Smoke SQLite temporario confirmou `hook:StopFailure` -> task `blocked`, run `blocked`, outcome `lifecycle_failed`.
+- Smoke FastAPI `TestClient` confirmou `POST /hooks/Stop` gerando evento `lifecycle.review`.
+
 ## Retomada rapida apos reinicio
 
 1. Ler este arquivo.
@@ -229,12 +315,13 @@ Validacao:
 
 ## Estado atual confirmado
 
-- `name`, `slug`, `role`, `cli_default`, `model_default` vem de `agents.yaml`, sincronizado na tabela `agents`.
+- `name`, `slug`, `role`, `cli_default`, `model_default` vem de `agents.yaml`, sincronizado na tabela `agents` (`role` nao aparece mais no card).
 - `last_seen`, `current_task_id`, `pane_excerpt`, `state_cli`, `state_model` vem de `agent_state`.
+- `lifecycle_status`, `lifecycle_detail`, `lifecycle_event`, `lifecycle_updated_at` vem de hooks/JSONL/Codex normalizados em `agent_state`.
 - `instances` vem de `agent_instances` pelo snapshot `/api/fleet`.
 - O card usa `/api/fleet` e mostra:
   - `agent.name`
-  - `agent.slug`
+  - `agent.slug` + `agent.lifecycle_status/detail` como `// slug | MICRO ...`
   - `agent.state_model ?? agent.model_default`
   - `agent.state_cli ?? agent.cli_default`
   - `agent.current_task_id ?? '—'`
