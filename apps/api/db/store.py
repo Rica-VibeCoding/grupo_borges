@@ -37,10 +37,13 @@ HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
 # Janela de tolerância pra considerar um agente "online" baseado no último heartbeat.
 # Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
 OFFLINE_THRESHOLD_SECONDS = 300
+LIFECYCLE_HOLD_SECONDS = 8
 
 # Uma task em execução sem hook/jsonl por 10 minutos deixa de ser "verde".
 # A margem é maior que o offline do agente para evitar falso positivo em ações longas.
 RUN_STALE_THRESHOLD_SECONDS = 600
+
+GRANULAR = {"reading", "writing", "executing", "searching", "handoff"}
 
 REVIEW_MODES = {"human", "agent_advisory", "agent_autonomous"}
 REVIEW_ACTIONS = {
@@ -538,6 +541,37 @@ class GrupoBorgesDB:
         if clean_detail is not None and len(clean_detail) > 160:
             clean_detail = f"{clean_detail[:157]}..."
         with self._connect() as conn, conn:
+            current = conn.execute(
+                """
+                SELECT lifecycle_status, lifecycle_updated_at
+                FROM agent_state
+                WHERE slug = ?
+                """,
+                (slug,),
+            ).fetchone()
+            suppress_downgrade = False
+            if (
+                status in {"tool_done", "subagent_done"}
+                and current is not None
+                and current["lifecycle_status"] in GRANULAR
+                and current["lifecycle_updated_at"] is not None
+            ):
+                suppress_downgrade = (
+                    now - current["lifecycle_updated_at"] < LIFECYCLE_HOLD_SECONDS
+                )
+
+            if suppress_downgrade:
+                conn.execute(
+                    """
+                    UPDATE agent_state
+                    SET last_seen = ?,
+                        lifecycle_event = ?
+                    WHERE slug = ?
+                    """,
+                    (now, event, slug),
+                )
+                return
+
             conn.execute(
                 """
                 UPDATE agent_state
@@ -2622,6 +2656,13 @@ class GrupoBorgesDB:
                     agent["lifecycle_detail"] = latest_lifecycle["detail"]
                     agent["lifecycle_event"] = latest_lifecycle["event"]
                     agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
+            if (
+                agent.get("lifecycle_status") in GRANULAR
+                and agent.get("lifecycle_updated_at") is not None
+                and now - agent["lifecycle_updated_at"] >= LIFECYCLE_HOLD_SECONDS
+            ):
+                agent["lifecycle_status"] = None
+                agent["lifecycle_detail"] = None
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"],
