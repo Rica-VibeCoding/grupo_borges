@@ -22,85 +22,118 @@ function shortPath(p: string): string {
 
 function pickToolTarget(toolInput: Record<string, unknown>): string | null {
   if (typeof toolInput.file_path === 'string') return shortPath(toolInput.file_path);
-  if (typeof toolInput.command === 'string') return toolInput.command.slice(0, 60);
+  if (typeof toolInput.notebook_path === 'string') return shortPath(toolInput.notebook_path);
+  if (typeof toolInput.command === 'string') return truncate(toolInput.command, 60);
   if (typeof toolInput.pattern === 'string') return toolInput.pattern;
+  if (typeof toolInput.query === 'string') return toolInput.query;
+  if (typeof toolInput.url === 'string') return toolInput.url;
+  if (typeof toolInput.prompt === 'string') return truncate(toolInput.prompt, 60);
   return null;
 }
 
-export function summarize(ev: TaskEvent): string {
-  const payload = (ev.payload ?? {}) as Record<string, unknown>;
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
 
-  const summarizeToolUse = (toolName: string): string => {
-    if (toolName === 'Bash') return 'rodou comando';
-    if (toolName === 'Read') return 'leu arquivo';
-    if (toolName === 'Edit') return 'editou arquivo';
-    if (toolName === 'Write') return 'escreveu arquivo';
-    if (toolName === 'Grep') return 'buscou no código';
-    if (toolName.startsWith('mcp__')) return 'usou ferramenta externa';
-    return toolName;
+function tick(value: string): string {
+  return `\`${value}\``;
+}
+
+function hasUserText(payload: Record<string, unknown>): boolean {
+  const message = (payload.message ?? {}) as Record<string, unknown>;
+  const content = message.content;
+  if (typeof content === 'string') return content.trim().length >= 3;
+  if (!Array.isArray(content)) return false;
+  return content.some((item) => {
+    const part = item as Record<string, unknown>;
+    return part.type === 'text' && typeof part.text === 'string' && part.text.trim().length >= 3;
+  });
+}
+
+export function toolPhrase(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  tense: 'pre' | 'post',
+): string {
+  const target = pickToolTarget(toolInput);
+  const withTarget = (pre: string, post: string) => {
+    const verb = tense === 'pre' ? pre : post;
+    return target ? `${verb} ${tick(target)}` : verb;
   };
 
-  if (ev.kind === 'hook:StopFailure') return 'erro ao parar';
-
-  // hook:* events vindo do PostToolUse
-  if (ev.kind.startsWith('hook:')) {
-    const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : null;
-    const toolInput = (payload.tool_input ?? {}) as Record<string, unknown>;
-    const target = pickToolTarget(toolInput);
-    return target ? `${toolName ?? ev.kind} · ${target}` : (toolName ?? ev.kind);
+  switch (toolName) {
+    case 'Read':
+      return withTarget('lendo', 'leu');
+    case 'Write':
+    case 'Edit':
+    case 'NotebookEdit':
+      return withTarget('escrevendo', 'escreveu');
+    case 'Bash':
+      return withTarget('rodando', 'rodou');
+    case 'Grep':
+      return withTarget('buscando', 'buscou');
+    case 'WebFetch':
+    case 'WebSearch':
+      return withTarget('pesquisando', 'pesquisou');
+    case 'Task':
+      return tense === 'pre' ? 'chamando subagente' : 'subagente terminou';
+    case 'TodoWrite':
+    case 'TaskUpdate':
+      return tense === 'pre' ? 'atualizando plano' : 'atualizou plano';
+    default:
+      if (toolName.startsWith('mcp__')) {
+        return tense === 'pre' ? 'usando ferramenta externa' : 'usou ferramenta externa';
+      }
+      return tense === 'pre' ? `usando ${tick(toolName)}` : `usou ${tick(toolName)}`;
   }
+}
+
+export function summarize(ev: TaskEvent): string | null {
+  const payload = (ev.payload ?? {}) as Record<string, unknown>;
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : null;
+  const toolInput = (payload.tool_input ?? {}) as Record<string, unknown>;
 
   switch (ev.kind) {
-    case 'jsonl:attachment': {
-      const att = (payload.attachment ?? {}) as Record<string, unknown>;
-      const hook = typeof att.hookName === 'string' ? att.hookName : null;
-      if (!hook) return 'attachment';
-      let cmd: string | null = null;
-      if (typeof att.command === 'string') {
-        try {
-          cmd = new URL(att.command, 'http://x').pathname;
-        } catch {
-          cmd = att.command.split(/\s+/)[0] ?? null;
-        }
-      }
-      return cmd ? `${hook} → ${cmd}` : hook;
-    }
-    case 'jsonl:user':
-      return 'mensagem do usuário';
-    case 'jsonl:assistant':
-      return 'resposta do assistente';
-    case 'jsonl:system':
-      return 'atualizou contexto';
-    case 'jsonl:summary':
-      return typeof payload.summary === 'string' ? payload.summary.slice(0, 80) : 'summary';
-    case 'UserPromptSubmit':
-      return 'prompt submetido';
-    case 'SessionStart':
-      return 'sessão iniciada';
-    case 'Stop':
-      return 'turno finalizado';
-    case 'PostToolUse':
-      return typeof payload.tool_name === 'string' ? summarizeToolUse(payload.tool_name) : 'tool executada';
-    case 'tara.exec.started':
-      return 'tara iniciada';
-    case 'tara.exec.completed':
-      return 'tara terminou';
-    case 'tara.exec.failed':
-      return 'tara falhou';
+    case 'hook:PreToolUse':
+      return toolName ? toolPhrase(toolName, toolInput, 'pre') : null;
+    case 'hook:PostToolUse':
+      return toolName ? toolPhrase(toolName, toolInput, 'post') : null;
+    case 'hook:Stop':
+      return 'passou a bola';
+    case 'hook:SubagentStop':
+      return 'subagente terminou';
     case 'hook:StopFailure':
       return 'erro ao parar';
     case 'lifecycle.review':
       return 'task enviada para revisão';
     case 'lifecycle.blocked':
-      return 'task bloqueada por falha';
+      return 'task bloqueada';
     case 'lifecycle.done':
       return 'concluído';
     case 'lifecycle.running':
       return 'rodando';
     case 'lifecycle.failed':
       return 'falhou';
+    case 'tara.exec.started':
+      return 'Tara iniciada';
+    case 'tara.exec.completed':
+      return 'Tara terminou';
+    case 'tara.exec.failed':
+      return 'Tara falhou';
+    case 'codex.turn.started':
+      return 'turno iniciado';
+    case 'codex.turn.completed':
+      return 'turno concluído';
+    case 'jsonl:user':
+      return hasUserText(payload) ? 'mensagem do usuário' : null;
+    case 'jsonl:assistant':
+      return 'resposta do assistente';
+    case 'UserPromptSubmit':
+      return 'prompt submetido';
+    case 'SessionStart':
+      return 'sessão iniciada';
     default:
-      return ev.kind;
+      return null;
   }
 }
 
@@ -119,7 +152,7 @@ export function ActivityFeed() {
     return () => clearInterval(t);
   }, []);
 
-  const rows = events.slice(0, FEED_LIMIT);
+  const rows = events.slice(0, FEED_LIMIT).filter((ev) => summarize(ev) !== null);
 
   return (
     <div className="activity-feed" aria-live="off">
@@ -131,6 +164,7 @@ export function ActivityFeed() {
       ) : (
         rows.map((ev) => {
           const delta = Math.max(0, now - ev.created_at);
+          const summary = summarize(ev);
           return (
             <div className="af-row" key={ev.id} data-kind={ev.kind}>
               <span className="af-time mono num" suppressHydrationWarning>há {formatRelativeShort(delta)}</span>
@@ -139,7 +173,7 @@ export function ActivityFeed() {
                 <span className="af-slug mono">{ev.agent_slug ?? '—'}</span>
               </span>
               <span className="af-kind mono">{ev.kind}</span>
-              <span className="af-summary">{summarize(ev)}</span>
+              <span className="af-summary">{summary}</span>
             </div>
           );
         })

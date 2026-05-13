@@ -186,6 +186,7 @@ export function AgentCard({
   const activityState = activityOverride?.state ?? deriveActivityState(agent, serverNow);
   const lastEvent = events.find((e) => e.agent_slug === agent.slug);
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
+  const lastEventSummary = lastEvent ? summarize(lastEvent) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
@@ -289,10 +290,10 @@ export function AgentCard({
             </Dialog.Root>
           </span>
         </div>
-        {lastEvent && (
+        {lastEvent && lastEventSummary && (
           <div className="last-action mono" aria-hidden="true">
             <span className="la-spark" aria-hidden>•</span>
-            <span className="la-text">{summarize(lastEvent)}</span>
+            <span className="la-text">{lastEventSummary}</span>
             <span className="la-sep">·</span>
             <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
           </div>
