@@ -262,9 +262,25 @@ export function TaskDetailModal({
                         <span className="task-detail-key">BODY</span>
                         <p className="task-detail-value">{effectiveTask.body?.trim() || '—'}</p>
                       </div>
-                      {(effectiveTask.tags?.length ?? 0) > 0 && (
-                        <Field label="TAGS" value={(effectiveTask.tags ?? []).join(', ')} />
-                      )}
+                      {(() => {
+                        // Defensivo: backend pode retornar tags como string JSON
+                        // bruta em algumas rotas (bug residual). Normaliza aqui
+                        // pra evitar TypeError no .join.
+                        const raw = effectiveTask.tags;
+                        let list: string[] = [];
+                        if (Array.isArray(raw)) list = raw;
+                        else if (typeof raw === 'string' && raw) {
+                          try {
+                            const p = JSON.parse(raw);
+                            if (Array.isArray(p)) list = p;
+                          } catch {
+                            // ignore
+                          }
+                        }
+                        return list.length > 0 ? (
+                          <Field label="TAGS" value={list.join(', ')} />
+                        ) : null;
+                      })()}
                       {effectiveTask.review_mode && effectiveTask.review_mode !== 'human' && (
                         <Field label="MODO REVISÃO" value={effectiveTask.review_mode} />
                       )}

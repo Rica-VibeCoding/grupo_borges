@@ -1323,7 +1323,21 @@ class GrupoBorgesDB:
             (task_id,),
         )
         row = cur.fetchone()
-        return dict(row) if row is not None else None
+        if row is None:
+            return None
+        task = dict(row)
+        # tags é armazenado como TEXT (JSON). Retorna como list[str] pro
+        # consumidor (UI espera array). Falhas silenciosas preservam string
+        # bruta — frontend tem fallback defensivo.
+        raw_tags = task.get("tags")
+        if raw_tags:
+            try:
+                parsed = json.loads(raw_tags)
+                if isinstance(parsed, list):
+                    task["tags"] = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return task
 
     async def touch_agent_run_heartbeat(
         self,
