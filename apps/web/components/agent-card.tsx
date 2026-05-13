@@ -90,9 +90,14 @@ export function AgentCard({
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent);
-  const lastEvent = events.find((e) => e.agent_slug === agent.slug && summarize(e) !== null);
+  let lastEvent: typeof events[number] | null = null;
+  let lastEventSummary: string | null = null;
+  for (const e of events) {
+    if (e.agent_slug !== agent.slug) continue;
+    const s = summarize(e);
+    if (s !== null) { lastEvent = e; lastEventSummary = s; break; }
+  }
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
-  const lastEventSummary = lastEvent ? summarize(lastEvent) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
