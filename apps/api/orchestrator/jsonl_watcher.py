@@ -99,10 +99,10 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
                 return "tool", ", ".join(tools[:2])
         stop_reason = _short_text(message.get("stop_reason"), limit=40)
         if stop_reason == "end_turn":
-            return "idle", "turno finalizado"
+            return "idle", "passou a bola"
         return None, None
     if event_type == "system" and payload.get("subtype") == "turn_duration":
-        return "idle", "turno finalizado"
+        return "idle", "passou a bola"
     return None, None
 
 

@@ -272,7 +272,7 @@ def derive_lifecycle_from_event(
                         name = block.get("name")
                         return "tool", name if isinstance(name, str) else "tool em execucao"
             if message.get("stop_reason") == "end_turn":
-                return "idle", "turno finalizado"
+                return "idle", "passou a bola"
         return "event", "assistant"
     if kind == "jsonl:result":
         return "idle", "sessao finalizada"

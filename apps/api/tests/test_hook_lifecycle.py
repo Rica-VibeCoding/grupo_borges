@@ -62,3 +62,12 @@ def test_pre_tool_lifecycle_tmux_handoff_regex_vs_generic_bash() -> None:
 
     assert handoff == ("handoff", "vinicius")
     assert generic == ("executing", "printf x && pytest -q")
+
+
+def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:
+    from db.store import derive_lifecycle_from_event
+
+    payload = {"message": {"stop_reason": "end_turn", "content": []}}
+    status, detail = derive_lifecycle_from_event("jsonl:assistant", payload)
+    assert status == "idle"
+    assert detail == "passou a bola"
