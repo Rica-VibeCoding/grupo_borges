@@ -39,6 +39,25 @@ function tick(value: string): string {
   return `\`${value}\``;
 }
 
+function codexItemPhrase(payload: Record<string, unknown>, tense: 'pre' | 'post'): string {
+  const body = (payload.body ?? {}) as Record<string, unknown>;
+  const item = (body.item ?? {}) as Record<string, unknown>;
+  const itemType = typeof item.type === 'string' ? item.type : null;
+  const command = typeof item.command === 'string' ? item.command : null;
+  const text = typeof item.text === 'string' ? item.text : null;
+
+  if (itemType === 'command_execution' && command) {
+    return tense === 'pre' ? `rodando ${tick(truncate(command, 60))}` : `rodou ${tick(truncate(command, 60))}`;
+  }
+  if (itemType === 'agent_message' && text) {
+    return tense === 'pre' ? 'respondendo' : 'respondeu';
+  }
+  if (itemType === 'reasoning') {
+    return tense === 'pre' ? 'pensando' : 'pensou';
+  }
+  return tense === 'pre' ? 'executando item' : 'executou item';
+}
+
 function hasUserText(payload: Record<string, unknown>): boolean {
   const message = (payload.message ?? {}) as Record<string, unknown>;
   const content = message.content;
@@ -124,6 +143,10 @@ export function summarize(ev: TaskEvent): string | null {
       return 'turno iniciado';
     case 'codex.turn.completed':
       return 'turno concluído';
+    case 'codex.item.started':
+      return codexItemPhrase(payload, 'pre');
+    case 'codex.item.completed':
+      return codexItemPhrase(payload, 'post');
     case 'jsonl:user':
       return hasUserText(payload) ? 'mensagem do usuário' : null;
     case 'jsonl:assistant':
