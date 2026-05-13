@@ -92,6 +92,23 @@ def derive_prefix(name: str) -> str:
     return "??"
 
 
+def _normalize_task_row(task: dict[str, Any]) -> dict[str, Any]:
+    """Parseia campos JSON-TEXT da row de `tasks` pra forma utilizável.
+
+    Hoje só `tags` precisa (TEXT JSON list[str]). Falhas silenciosas
+    preservam o valor bruto; o frontend tem fallback defensivo.
+    """
+    raw_tags = task.get("tags")
+    if raw_tags and isinstance(raw_tags, str):
+        try:
+            parsed = json.loads(raw_tags)
+            if isinstance(parsed, list):
+                task["tags"] = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return task
+
+
 def _json_array_or_none(value: list[Any] | tuple[Any, ...] | None) -> str | None:
     if value is None:
         return None
@@ -1285,7 +1302,7 @@ class GrupoBorgesDB:
                 """,
                 params,
             )
-            return [dict(row) for row in cur.fetchall()]
+            return [_normalize_task_row(dict(row)) for row in cur.fetchall()]
 
     async def get_task(self, task_id: str) -> dict[str, Any] | None:
         return await asyncio.to_thread(self._get_task, task_id)
@@ -1325,19 +1342,7 @@ class GrupoBorgesDB:
         row = cur.fetchone()
         if row is None:
             return None
-        task = dict(row)
-        # tags é armazenado como TEXT (JSON). Retorna como list[str] pro
-        # consumidor (UI espera array). Falhas silenciosas preservam string
-        # bruta — frontend tem fallback defensivo.
-        raw_tags = task.get("tags")
-        if raw_tags:
-            try:
-                parsed = json.loads(raw_tags)
-                if isinstance(parsed, list):
-                    task["tags"] = parsed
-            except (json.JSONDecodeError, TypeError):
-                pass
-        return task
+        return _normalize_task_row(dict(row))
 
     async def touch_agent_run_heartbeat(
         self,
