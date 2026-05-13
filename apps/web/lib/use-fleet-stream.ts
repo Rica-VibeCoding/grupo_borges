@@ -9,7 +9,7 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react';
-import type { FleetResponse, Task, TaskEvent } from './cockpit-types';
+import type { AgentActivityOverride, AgentActivityState, FleetResponse, Task, TaskEvent } from './cockpit-types';
 
 export type SseStatus = 'connecting' | 'open' | 'closed';
 
@@ -17,6 +17,7 @@ export type FleetState = {
   fleet: FleetResponse;
   tasks: Task[];
   events: TaskEvent[];
+  activityOverrides: Record<string, AgentActivityOverride>;
   sseStatus: SseStatus;
 };
 
@@ -30,6 +31,20 @@ const SSE_TRIGGERED_REFETCH_DEBOUNCE_MS = 250;
 const SSE_MAX_BACKOFF_SECONDS = 60;
 const EVENT_BUFFER_CAP = 200;
 const INITIAL_EVENT_FETCH_LIMIT = 50;
+const ACTIVITY_MIN_VISIBLE_MS: Record<AgentActivityState, number> = {
+  thinking: 2_500,
+  reading: 2_500,
+  writing: 3_500,
+  executing: 3_500,
+  handoff: 3_500,
+  searching: 3_500,
+  tool: 3_500,
+  subagent: 3_500,
+  blocked: 4_000,
+  idle: 1_200,
+  offline: 1_200,
+  done: 2_000,
+};
 
 type Snapshot = { fleet: FleetResponse; tasks: Task[]; events: TaskEvent[] };
 
@@ -69,8 +84,115 @@ function applySnapshot(
     fleet: snapshot.fleet,
     tasks: snapshot.tasks,
     events: mergeEvents(prev.events, snapshot.events),
+    activityOverrides: pruneActivityOverrides(prev.activityOverrides),
     sseStatus: prev.sseStatus,
   }));
+}
+
+function pruneActivityOverrides(
+  overrides: Record<string, AgentActivityOverride>,
+  nowMs = Date.now(),
+): Record<string, AgentActivityOverride> {
+  const next = Object.fromEntries(
+    Object.entries(overrides).filter(([, override]) => override.visible_until_ms > nowMs),
+  );
+  return Object.keys(next).length === Object.keys(overrides).length ? overrides : next;
+}
+
+function payloadBody(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  const body = payload?.body;
+  return body && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : payload;
+}
+
+function eventDetail(ev: TaskEvent): string | null {
+  const body = payloadBody(ev.payload);
+  const item = body?.item;
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const itemRecord = item as Record<string, unknown>;
+    const command = itemRecord.command;
+    const text = itemRecord.text;
+    const type = itemRecord.type;
+    if (typeof command === 'string') return command;
+    if (typeof text === 'string') return text;
+    if (typeof type === 'string') return type;
+  }
+  const toolName = body?.tool_name;
+  const matcher = body?.matcher;
+  if (typeof toolName === 'string') return toolName;
+  if (typeof matcher === 'string') return matcher;
+  return ev.kind;
+}
+
+function activityFromEvent(ev: TaskEvent): AgentActivityState | null {
+  const kind = ev.kind;
+  if (
+    kind === 'hook:PostToolUseFailure' ||
+    kind === 'hook:StopFailure' ||
+    kind === 'codex.turn.failed' ||
+    kind === 'codex.error' ||
+    kind === 'tara.exec.failed' ||
+    kind === 'lifecycle.blocked'
+  ) return 'blocked';
+  if (kind === 'hook:PreToolUse') {
+    // Discrimina micro-estado por tool_name no payload (mesma lógica do backend
+    // _pre_tool_lifecycle em apps/api/routers/hooks.py). Default cai em 'tool'
+    // genérico se payload não tiver tool_name reconhecido.
+    const body = payloadBody(ev.payload);
+    const toolName = typeof body?.tool_name === 'string' ? body.tool_name : null;
+    const toolInput =
+      body?.tool_input && typeof body.tool_input === 'object' && !Array.isArray(body.tool_input)
+        ? (body.tool_input as Record<string, unknown>)
+        : null;
+    if (toolName === 'Read') return 'reading';
+    if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') return 'writing';
+    if (toolName === 'Bash') {
+      const cmd = typeof toolInput?.command === 'string' ? toolInput.command : '';
+      return /\btmux send-keys -t [\"']?[\w-]+/.test(cmd) ? 'handoff' : 'executing';
+    }
+    if (toolName === 'WebFetch' || toolName === 'WebSearch') return 'searching';
+    if (toolName === 'Task') return 'subagent';
+    return 'tool';
+  }
+  if (kind === 'codex.item.started' || kind === 'codex.item.updated') {
+    return 'tool';
+  }
+  if (kind === 'hook:SubagentStart') return 'subagent';
+  if (
+    kind === 'hook:UserPromptSubmit' ||
+    kind === 'hook:SessionStart' ||
+    kind === 'UserPromptSubmit' ||
+    kind === 'SessionStart' ||
+    kind === 'tara.exec.started' ||
+    kind === 'codex.turn.started' ||
+    kind === 'hook:PostToolUse' ||
+    kind === 'hook:SubagentStop' ||
+    kind === 'codex.item.completed'
+  ) return 'thinking';
+  if (
+    kind === 'hook:Stop' ||
+    kind === 'Stop' ||
+    kind === 'tara.exec.completed' ||
+    kind === 'codex.turn.completed' ||
+    kind === 'lifecycle.review'
+  ) return 'idle';
+  return null;
+}
+
+const ACTIVE_STATES: AgentActivityState[] = [
+  'thinking',
+  'reading',
+  'writing',
+  'executing',
+  'handoff',
+  'searching',
+  'tool',
+  'subagent',
+];
+
+function isDowngrade(from: AgentActivityState, to: AgentActivityState): boolean {
+  return ACTIVE_STATES.includes(from) && ['idle', 'done'].includes(to);
 }
 
 function getReconnectDelay(attempt: number): number {
@@ -129,10 +251,41 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
           ? obj.created_at
           : Math.floor(Date.now() / 1000),
       };
+      const activity = ev.agent_slug ? activityFromEvent(ev) : null;
       setState((prev) => {
         if (prev.events.length && prev.events[0]!.id === ev.id) return prev;
         const next = [ev, ...prev.events.filter((e) => e.id !== ev.id)].slice(0, EVENT_BUFFER_CAP);
-        return { ...prev, events: next };
+        if (!ev.agent_slug || !activity) {
+          return { ...prev, events: next, activityOverrides: pruneActivityOverrides(prev.activityOverrides) };
+        }
+        const nowMs = Date.now();
+        const existing = prev.activityOverrides[ev.agent_slug];
+        if (existing && existing.visible_until_ms > nowMs && isDowngrade(existing.state, activity)) {
+          return {
+            ...prev,
+            events: next,
+            activityOverrides: {
+              ...pruneActivityOverrides(prev.activityOverrides, nowMs),
+              [ev.agent_slug]: existing,
+            },
+          };
+        }
+        const visibleUntil = Math.max(
+          existing?.visible_until_ms ?? 0,
+          nowMs + ACTIVITY_MIN_VISIBLE_MS[activity],
+        );
+        return {
+          ...prev,
+          events: next,
+          activityOverrides: {
+            ...pruneActivityOverrides(prev.activityOverrides, nowMs),
+            [ev.agent_slug]: {
+              state: activity,
+              visible_until_ms: visibleUntil,
+              detail: eventDetail(ev),
+            },
+          },
+        };
       });
     };
 

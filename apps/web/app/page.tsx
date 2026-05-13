@@ -103,6 +103,104 @@ const v2Css = `
   box-shadow: 0 0 7px var(--status-blocked);
   animation: dot-pulse 1.1s ease-in-out infinite;
 }
+/* Microestados granulares (S5 Bloco 2). Cores seguem semântica:
+   reading=azul rápido · writing=laranja pulsado · executing=laranja sólido
+   handoff=verde sólido · searching=amarelo pulsado */
+.v2-sidebar .agent-card[data-activity-state="reading"] {
+  border-color: rgba(0, 240, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.12), 0 0 22px rgba(0, 240, 255, 0.22);
+  animation: card-breathe 2.1s ease-in-out infinite;
+}
+.v2-sidebar .agent-card[data-activity-state="reading"] .rail {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.65);
+}
+.v2-sidebar .agent-card[data-activity-state="reading"] .status-bar {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+.v2-sidebar .agent-card[data-activity-state="reading"] .status-bar .sdot {
+  background: var(--accent);
+  box-shadow: 0 0 7px var(--accent);
+  animation: dot-pulse-fast 0.55s ease-in-out infinite;
+}
+.v2-sidebar .agent-card[data-activity-state="writing"] {
+  border-color: rgba(255, 107, 53, 0.50);
+  box-shadow: 0 0 0 1px rgba(255, 107, 53, 0.10), 0 0 20px rgba(255, 107, 53, 0.20);
+  animation: tool-breathe 1.6s ease-in-out infinite;
+}
+.v2-sidebar .agent-card[data-activity-state="writing"] .rail {
+  background: var(--status-blocked);
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.60);
+}
+.v2-sidebar .agent-card[data-activity-state="writing"] .status-bar {
+  color: var(--status-blocked);
+  border-color: rgba(255, 107, 53, 0.40);
+  background: rgba(255, 107, 53, 0.10);
+}
+.v2-sidebar .agent-card[data-activity-state="writing"] .status-bar .sdot {
+  background: var(--status-blocked);
+  box-shadow: 0 0 7px var(--status-blocked);
+  animation: dot-pulse-soft 0.8s ease-in-out infinite;
+}
+.v2-sidebar .agent-card[data-activity-state="executing"] {
+  border-color: rgba(255, 107, 53, 0.42);
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.12);
+  animation: none;
+}
+.v2-sidebar .agent-card[data-activity-state="executing"] .rail {
+  background: var(--status-blocked);
+  box-shadow: 0 0 7px rgba(255, 107, 53, 0.48);
+}
+.v2-sidebar .agent-card[data-activity-state="executing"] .status-bar {
+  color: var(--status-blocked);
+  border-color: rgba(255, 107, 53, 0.34);
+  background: rgba(255, 107, 53, 0.07);
+}
+.v2-sidebar .agent-card[data-activity-state="executing"] .status-bar .sdot {
+  background: var(--status-blocked);
+  box-shadow: 0 0 5px var(--status-blocked);
+  animation: none;
+}
+.v2-sidebar .agent-card[data-activity-state="handoff"] {
+  border-color: rgba(100, 255, 218, 0.45);
+  box-shadow: 0 0 14px rgba(100, 255, 218, 0.14);
+  animation: none;
+}
+.v2-sidebar .agent-card[data-activity-state="handoff"] .rail {
+  background: var(--status-done);
+  box-shadow: 0 0 8px rgba(100, 255, 218, 0.50);
+}
+.v2-sidebar .agent-card[data-activity-state="handoff"] .status-bar {
+  color: var(--status-done);
+  border-color: rgba(100, 255, 218, 0.36);
+  background: rgba(100, 255, 218, 0.08);
+}
+.v2-sidebar .agent-card[data-activity-state="handoff"] .status-bar .sdot {
+  background: var(--status-done);
+  box-shadow: 0 0 6px var(--status-done);
+  animation: none;
+}
+.v2-sidebar .agent-card[data-activity-state="searching"] {
+  border-color: rgba(251, 191, 36, 0.50);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.10), 0 0 20px rgba(251, 191, 36, 0.18);
+  animation: search-breathe 1.8s ease-in-out infinite;
+}
+.v2-sidebar .agent-card[data-activity-state="searching"] .rail {
+  background: rgb(251, 191, 36);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.55);
+}
+.v2-sidebar .agent-card[data-activity-state="searching"] .status-bar {
+  color: rgb(251, 191, 36);
+  border-color: rgba(251, 191, 36, 0.40);
+  background: rgba(251, 191, 36, 0.08);
+}
+.v2-sidebar .agent-card[data-activity-state="searching"] .status-bar .sdot {
+  background: rgb(251, 191, 36);
+  box-shadow: 0 0 7px rgba(251, 191, 36, 0.65);
+  animation: dot-pulse-soft 0.8s ease-in-out infinite;
+}
 .v2-sidebar .agent-card[data-activity-state="subagent"] {
   border-color: rgba(0, 240, 255, 0.22);
   box-shadow: var(--glow-card);
@@ -208,6 +306,18 @@ const v2Css = `
   0%, 100% { box-shadow: none; }
   50% { box-shadow: 0 0 10px rgba(0, 240, 255, 0.30); }
 }
+@keyframes dot-pulse-fast {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.88); }
+}
+@keyframes dot-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@keyframes search-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.08), 0 0 14px rgba(251, 191, 36, 0.14); }
+  50% { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.16), 0 0 24px rgba(251, 191, 36, 0.26); }
+}
 .v2-sidebar .agent-card .meta-strip {
   font-size: 9px;
   padding: 4px 0;
@@ -304,12 +414,13 @@ const v2Css = `
 async function loadInitial() {
   try {
     const [fleet, tasks, events] = await Promise.all([fetchFleet(), fetchTasks(), fetchEvents()]);
-    return { fleet, tasks, events, sseStatus: 'connecting' as const };
+    return { fleet, tasks, events, activityOverrides: {}, sseStatus: 'connecting' as const };
   } catch {
     return {
       fleet: EMPTY_FLEET,
       tasks: EMPTY_TASKS,
       events: EMPTY_EVENTS,
+      activityOverrides: {},
       sseStatus: 'closed' as const,
     };
   }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { Agent, AgentCli, AgentLifecycleStatus, AgentModel, AgentStatus } from '../lib/cockpit-types';
+import type { Agent, AgentActivityState, AgentCli, AgentLifecycleStatus, AgentModel, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, parseModelFromPane, shortModelName } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
@@ -33,17 +33,30 @@ const lifecycleLabel: Record<AgentLifecycleStatus, string> = {
   tool_done: 'TOOL OK',
   subagent: 'SUBAGENT',
   subagent_done: 'SUB OK',
+  reading: 'LENDO',
+  writing: 'ESCREVENDO',
+  executing: 'EXECUTANDO',
+  handoff: 'HANDOFF',
+  searching: 'PESQUISANDO',
   idle: 'IDLE',
   error: 'ERRO',
   event: 'EVENTO',
 };
 
-type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
-
 const LIFECYCLE_FRESHNESS_WINDOW_SECONDS = 90;
+// Off-timer usa last_seen (não lifecycle_updated_at) porque cobre hook + JSONL.
+// lifecycle só atualiza com hook, então agente trabalhando localmente parece
+// idle pro lifecycle mas last_seen avança. Stop com 'passou a bola' é exclusão
+// explícita — agente fechou turno de propósito, manter idle indefinido.
+const IDLE_OFFLINE_WINDOW_SECONDS = 600;
 
 const activityLabel: Record<AgentActivityState, string> = {
   thinking: 'PENSANDO',
+  reading: 'LENDO',
+  writing: 'ESCREVENDO',
+  executing: 'EXECUTANDO',
+  handoff: 'MENSAGEANDO',
+  searching: 'PESQUISANDO',
   tool: 'TOOL',
   subagent: 'SUBAGENTE',
   blocked: 'BLOQUEADO',
@@ -56,12 +69,40 @@ function deriveActivityState(agent: Agent, serverNow: number): AgentActivityStat
   if (agent.status === 'offline') return 'offline';
   if (agent.status === 'blocked' || agent.lifecycle_status === 'error') return 'blocked';
   if (agent.status === 'done') return 'done';
-  const isFresh =
-    agent.lifecycle_updated_at !== null &&
-    serverNow - agent.lifecycle_updated_at <= LIFECYCLE_FRESHNESS_WINDOW_SECONDS;
+
+  // Stop intencional ('passou a bola') NUNCA vira offline — turno fechado de
+  // propósito; mantém idle indefinido até o próximo evento.
+  if (agent.lifecycle_status === 'idle' && agent.lifecycle_detail === 'passou a bola') {
+    return 'idle';
+  }
+
+  const lastSeenAgeSec =
+    agent.last_seen !== null ? serverNow - agent.last_seen : Infinity;
+
+  // Sessão recém-iniciada (last_seen fresco) é idle, não thinking nem offline.
+  if (agent.lifecycle_status === 'session' && lastSeenAgeSec <= IDLE_OFFLINE_WINDOW_SECONDS) {
+    return 'idle';
+  }
+
+  // Sem QUALQUER sinal há mais de 10min: offline visual.
+  if (lastSeenAgeSec > IDLE_OFFLINE_WINDOW_SECONDS) return 'offline';
+
+  const lifecycleAgeSec =
+    agent.lifecycle_updated_at !== null ? serverNow - agent.lifecycle_updated_at : Infinity;
+  const isFresh = lifecycleAgeSec <= LIFECYCLE_FRESHNESS_WINDOW_SECONDS;
   const isActive = agent.status === 'running' || isFresh;
 
   switch (agent.lifecycle_status) {
+    case 'reading':
+      return 'reading';
+    case 'writing':
+      return 'writing';
+    case 'executing':
+      return 'executing';
+    case 'handoff':
+      return 'handoff';
+    case 'searching':
+      return 'searching';
     case 'tool':
       return 'tool';
     case 'subagent':
@@ -80,6 +121,11 @@ function deriveActivityState(agent: Agent, serverNow: number): AgentActivityStat
 
 function formatLifecycle(agent: Agent): string {
   if (!agent.lifecycle_status && !agent.lifecycle_detail) return '—';
+  // "passou a bola" (Stop hook) ganha indicador visual ↑ pra destacar handoff
+  // de turno encerrado vs idle puro.
+  if (agent.lifecycle_status === 'idle' && agent.lifecycle_detail === 'passou a bola') {
+    return '↑ PASSOU A BOLA';
+  }
   const label = agent.lifecycle_status
     ? (lifecycleLabel[agent.lifecycle_status] ?? agent.lifecycle_status.toUpperCase())
     : 'EVENTO';
@@ -123,7 +169,7 @@ export function AgentCard({
   agent: Agent;
   serverNow: number;
 }) {
-  const { events, mutate } = useFleet();
+  const { activityOverrides, events, mutate } = useFleet();
   const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
   const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
@@ -136,7 +182,8 @@ export function AgentCard({
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
-  const activityState = deriveActivityState(agent, serverNow);
+  const activityOverride = activityOverrides[agent.slug];
+  const activityState = activityOverride?.state ?? deriveActivityState(agent, serverNow);
   const lastEvent = events.find((e) => e.agent_slug === agent.slug);
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;

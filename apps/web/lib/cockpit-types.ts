@@ -1,6 +1,18 @@
 export type AgentStatus = 'running' | 'idle' | 'blocked' | 'done' | 'offline';
 
-export type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
+export type AgentActivityState =
+  | 'thinking'
+  | 'reading'
+  | 'writing'
+  | 'executing'
+  | 'handoff'
+  | 'searching'
+  | 'tool'
+  | 'subagent'
+  | 'blocked'
+  | 'idle'
+  | 'offline'
+  | 'done';
 
 export type AgentActivityOverride = {
   state: AgentActivityState;
@@ -15,6 +27,11 @@ export type AgentLifecycleStatus =
   | 'tool_done'
   | 'subagent'
   | 'subagent_done'
+  | 'reading'
+  | 'writing'
+  | 'executing'
+  | 'handoff'
+  | 'searching'
   | 'idle'
   | 'error'
   | 'event';
