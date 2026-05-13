@@ -243,3 +243,89 @@ def test_lifecycle_hold_allows_tool_done_after_window(tmp_path: Path, monkeypatc
     assert agent["lifecycle_detail"] == "Edit"
     assert agent["lifecycle_event"] == "hook:PostToolUse"
     assert agent["lifecycle_updated_at"] == 1_010
+
+
+def test_stop_suppressed_inside_hold(tmp_path: Path, monkeypatch) -> None:
+    import db.store as store
+
+    db = _setup_db(tmp_path)
+    clock = _Clock(1_000)
+    monkeypatch.setattr(store, "time", clock)
+
+    db._update_agent_lifecycle(
+        "daniel",
+        status="writing",
+        detail="apps/api/db/store.py",
+        event="hook:PreToolUse",
+    )
+    clock.now += 2
+    db._update_agent_lifecycle(
+        "daniel",
+        status="idle",
+        detail="passou a bola",
+        event="hook:Stop",
+    )
+
+    agent = db._get_agent("daniel")
+    assert agent["lifecycle_status"] == "writing"
+    assert agent["lifecycle_detail"] == "apps/api/db/store.py"
+    assert agent["lifecycle_event"] == "hook:Stop"
+    assert agent["lifecycle_updated_at"] == 1_000
+
+
+def test_stop_materialized_after_hold(tmp_path: Path, monkeypatch) -> None:
+    import db.store as store
+
+    db = _setup_db(tmp_path)
+    clock = _Clock(1_000)
+    monkeypatch.setattr(store, "time", clock)
+
+    db._update_agent_lifecycle(
+        "daniel",
+        status="writing",
+        detail="apps/api/db/store.py",
+        event="hook:PreToolUse",
+    )
+    clock.now += 2
+    db._insert_task_event("hook:Stop", None, "daniel", None, {}, None)
+    db._update_agent_lifecycle(
+        "daniel",
+        status="idle",
+        detail="passou a bola",
+        event="hook:Stop",
+    )
+    clock.now += 8
+
+    snapshot = db._fleet_snapshot(1)
+    agent = snapshot["agents"][0]
+    assert agent["lifecycle_status"] == "idle"
+    assert agent["lifecycle_detail"] == "passou a bola"
+    assert agent["lifecycle_updated_at"] == 1_010
+
+
+def test_stop_outside_granular_writes_normally(tmp_path: Path, monkeypatch) -> None:
+    import db.store as store
+
+    db = _setup_db(tmp_path)
+    clock = _Clock(1_000)
+    monkeypatch.setattr(store, "time", clock)
+
+    db._update_agent_lifecycle(
+        "daniel",
+        status="prompt",
+        detail="aguardando",
+        event="jsonl:user",
+    )
+    clock.now += 2
+    db._update_agent_lifecycle(
+        "daniel",
+        status="idle",
+        detail="passou a bola",
+        event="hook:Stop",
+    )
+
+    agent = db._get_agent("daniel")
+    assert agent["lifecycle_status"] == "idle"
+    assert agent["lifecycle_detail"] == "passou a bola"
+    assert agent["lifecycle_event"] == "hook:Stop"
+    assert agent["lifecycle_updated_at"] == 1_002

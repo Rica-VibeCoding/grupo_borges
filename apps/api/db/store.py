@@ -578,6 +578,15 @@ class GrupoBorgesDB:
                 suppress_downgrade = (
                     now - current["lifecycle_updated_at"] < LIFECYCLE_HOLD_SECONDS
                 )
+            elif (
+                status == "idle"
+                and clean_detail == "passou a bola"
+                and current is not None
+                and current["lifecycle_status"] in GRANULAR
+                and current["lifecycle_updated_at"] is not None
+                and now - current["lifecycle_updated_at"] < LIFECYCLE_HOLD_SECONDS
+            ):
+                suppress_downgrade = True
 
             if suppress_downgrade:
                 conn.execute(
@@ -2602,7 +2611,9 @@ class GrupoBorgesDB:
                 """
             ).fetchall()
             latest_lifecycle_by_slug: dict[str, dict[str, Any]] = {}
+            latest_event_kind_by_slug: dict[str, str] = {}
             for row in latest_event_rows:
+                latest_event_kind_by_slug[row["agent_slug"]] = row["kind"]
                 payload = None
                 if row["payload"]:
                     try:
@@ -2680,8 +2691,13 @@ class GrupoBorgesDB:
                 and agent.get("lifecycle_updated_at") is not None
                 and now - agent["lifecycle_updated_at"] >= LIFECYCLE_HOLD_SECONDS
             ):
-                agent["lifecycle_status"] = None
-                agent["lifecycle_detail"] = None
+                if latest_event_kind_by_slug.get(slug) == "hook:Stop":
+                    agent["lifecycle_status"] = "idle"
+                    agent["lifecycle_detail"] = "passou a bola"
+                    agent["lifecycle_updated_at"] = now
+                else:
+                    agent["lifecycle_status"] = None
+                    agent["lifecycle_detail"] = None
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"],
