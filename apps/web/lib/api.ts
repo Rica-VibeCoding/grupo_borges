@@ -79,6 +79,29 @@ export async function patchTaskStatus(taskId: string, status: TaskPatchStatus): 
   return res.json();
 }
 
+export type TaskPatchPayload = {
+  title?: string;
+  body?: string | null;
+  assignee?: string;
+  status?: TaskPatchStatus;
+  priority?: number;
+  review_mode?: ReviewMode;
+  reviewer_assignee?: string | null;
+  tags?: string[] | null;
+  instance_id?: string | null;
+  skill_hint?: string | null;
+};
+
+export async function patchTask(taskId: string, fields: TaskPatchPayload): Promise<Task> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchTask failed: ${res.status}`));
+  return res.json();
+}
+
 export async function createTask(payload: TaskCreatePayload): Promise<Task> {
   const res = await fetch('/api/tasks', {
     method: 'POST',
