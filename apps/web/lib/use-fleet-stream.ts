@@ -31,19 +31,14 @@ const SSE_TRIGGERED_REFETCH_DEBOUNCE_MS = 250;
 const SSE_MAX_BACKOFF_SECONDS = 60;
 const EVENT_BUFFER_CAP = 200;
 const INITIAL_EVENT_FETCH_LIMIT = 50;
+// V2.4 — janela curta pra evitar flicker entre eventos consecutivos.
+// Trabalhando/aguardando visíveis por ~2-3s mesmo se backend já devolveu
+// ocioso no próximo polling; ocioso/offline não precisam respiro.
 const ACTIVITY_MIN_VISIBLE_MS: Record<AgentActivityState, number> = {
-  thinking: 2_500,
-  reading: 2_500,
-  writing: 3_500,
-  executing: 3_500,
-  handoff: 3_500,
-  searching: 3_500,
-  tool: 3_500,
-  subagent: 3_500,
-  blocked: 4_000,
-  idle: 1_200,
-  offline: 1_200,
-  done: 2_000,
+  trabalhando: 2_500,
+  aguardando: 3_500,
+  ocioso: 1_000,
+  offline: 1_000,
 };
 
 type Snapshot = { fleet: FleetResponse; tasks: Task[]; events: TaskEvent[] };
@@ -125,6 +120,9 @@ function eventDetail(ev: TaskEvent): string | null {
   return ev.kind;
 }
 
+// V2.4 — 4 estados. Backend (_hook_lifecycle/derive_lifecycle_from_event) já
+// colapsa todos os microestados antigos. Mapping local é só pra override SSE
+// curto, evitando flicker entre o evento chegar e o /api/fleet seguinte refletir.
 function activityFromEvent(ev: TaskEvent): AgentActivityState | null {
   const kind = ev.kind;
   if (
@@ -133,66 +131,42 @@ function activityFromEvent(ev: TaskEvent): AgentActivityState | null {
     kind === 'codex.turn.failed' ||
     kind === 'codex.error' ||
     kind === 'tara.exec.failed' ||
-    kind === 'lifecycle.blocked'
-  ) return 'blocked';
-  if (kind === 'hook:PreToolUse') {
-    // Discrimina micro-estado por tool_name no payload (mesma lógica do backend
-    // _pre_tool_lifecycle em apps/api/routers/hooks.py). Default cai em 'tool'
-    // genérico se payload não tiver tool_name reconhecido.
-    const body = payloadBody(ev.payload);
-    const toolName = typeof body?.tool_name === 'string' ? body.tool_name : null;
-    const toolInput =
-      body?.tool_input && typeof body.tool_input === 'object' && !Array.isArray(body.tool_input)
-        ? (body.tool_input as Record<string, unknown>)
-        : null;
-    if (toolName === 'Read') return 'reading';
-    if (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit') return 'writing';
-    if (toolName === 'Bash') {
-      const cmd = typeof toolInput?.command === 'string' ? toolInput.command : '';
-      return /\btmux send-keys -t [\"']?[\w-]+/.test(cmd) ? 'handoff' : 'executing';
-    }
-    if (toolName === 'WebFetch' || toolName === 'WebSearch') return 'searching';
-    if (toolName === 'Task') return 'subagent';
-    return 'tool';
-  }
-  if (kind === 'codex.item.started' || kind === 'codex.item.updated') {
-    return 'tool';
-  }
-  if (kind === 'hook:SubagentStart') return 'subagent';
-  if (
-    kind === 'hook:UserPromptSubmit' ||
-    kind === 'hook:SessionStart' ||
-    kind === 'UserPromptSubmit' ||
-    kind === 'SessionStart' ||
-    kind === 'tara.exec.started' ||
-    kind === 'codex.turn.started' ||
-    kind === 'hook:PostToolUse' ||
-    kind === 'hook:SubagentStop' ||
-    kind === 'codex.item.completed'
-  ) return 'thinking';
+    kind === 'lifecycle.blocked' ||
+    kind === 'dispatch.failed'
+  ) return 'aguardando';
   if (
     kind === 'hook:Stop' ||
     kind === 'Stop' ||
     kind === 'tara.exec.completed' ||
     kind === 'codex.turn.completed' ||
-    kind === 'lifecycle.review'
-  ) return 'idle';
+    kind === 'lifecycle.review' ||
+    kind === 'lifecycle.done'
+  ) return 'ocioso';
+  if (
+    kind === 'hook:PreToolUse' ||
+    kind === 'hook:PostToolUse' ||
+    kind === 'hook:UserPromptSubmit' ||
+    kind === 'hook:SessionStart' ||
+    kind === 'hook:SubagentStart' ||
+    kind === 'hook:SubagentStop' ||
+    kind === 'UserPromptSubmit' ||
+    kind === 'SessionStart' ||
+    kind === 'tara.exec.started' ||
+    kind === 'codex.turn.started' ||
+    kind === 'codex.item.started' ||
+    kind === 'codex.item.updated' ||
+    kind === 'codex.item.completed' ||
+    kind === 'dispatch' ||
+    kind === 'handoff' ||
+    kind === 'status.changed'
+  ) return 'trabalhando';
   return null;
 }
 
-const ACTIVE_STATES: AgentActivityState[] = [
-  'thinking',
-  'reading',
-  'writing',
-  'executing',
-  'handoff',
-  'searching',
-  'tool',
-  'subagent',
-];
+const ACTIVE_STATES: AgentActivityState[] = ['trabalhando', 'aguardando'];
 
 function isDowngrade(from: AgentActivityState, to: AgentActivityState): boolean {
-  return ACTIVE_STATES.includes(from) && ['idle', 'done'].includes(to);
+  return ACTIVE_STATES.includes(from) && to === 'ocioso';
 }
 
 function getReconnectDelay(attempt: number): number {

@@ -29,11 +29,10 @@ import {
 import { SelectField } from './select-field';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
-  running: 'EXECUTANDO',
-  idle: 'OCIOSO',
-  blocked: 'BLOQUEADO',
-  done: 'CONCLUÍDO',
-  offline: 'OFFLINE',
+  ocioso: 'Ocioso',
+  trabalhando: 'Trabalhando',
+  aguardando: 'Aguardando',
+  offline: 'Offline',
 };
 
 const HANDOFF_STATUSES: ActiveTaskStatus[] = ['running', 'ready', 'backlog'];

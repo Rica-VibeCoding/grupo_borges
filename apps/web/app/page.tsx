@@ -65,219 +65,72 @@ const v2Css = `
 }
 .v2-sidebar .agent-card .status-bar { font-size: 8.5px; padding: 2px 5px; gap: 5px; }
 .v2-sidebar .agent-card .status-bar .sdot { width: 5px; height: 5px; }
-.v2-sidebar .agent-card[data-activity-state="thinking"] {
-  border-color: rgba(0, 240, 255, 0.45);
-  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.08), 0 0 18px rgba(0, 240, 255, 0.16);
-  animation: card-breathe 4.2s ease-in-out infinite;
+/* V2.4 — 4 estados visuais. Glow na borda em vez de cor de fundo.
+   Ocioso: cyan PARADO (cabe ignorar).
+   Trabalhando: emerald pulsa devagar (~2s).
+   Aguardando: amber pulsa intenso (~1s) — convida atenção.
+   Offline: opacidade baixa, sem glow.
+   Contraste estático=ignorável / animado=atenção é o sinal visual principal. */
+
+.v2-sidebar .agent-card[data-activity-state="ocioso"] {
+  border-color: rgba(0, 240, 255, 0.32);
+  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.06), 0 0 16px rgba(0, 240, 255, 0.20);
+  animation: none;
 }
-.v2-sidebar .agent-card[data-activity-state="thinking"] .rail {
+.v2-sidebar .agent-card[data-activity-state="ocioso"] .rail {
   background: var(--accent);
-  box-shadow: 0 0 9px rgba(0, 240, 255, 0.55);
+  box-shadow: 0 0 7px rgba(0, 240, 255, 0.38);
+  opacity: 0.78;
 }
-.v2-sidebar .agent-card[data-activity-state="thinking"] .status-bar {
+.v2-sidebar .agent-card[data-activity-state="ocioso"] .status-bar {
   color: var(--accent);
   border-color: var(--accent-border);
   background: var(--accent-subtle);
 }
-.v2-sidebar .agent-card[data-activity-state="thinking"] .status-bar .sdot {
+.v2-sidebar .agent-card[data-activity-state="ocioso"] .status-bar .sdot {
   background: var(--accent);
-  box-shadow: 0 0 7px var(--accent);
-  animation: dot-pulse 1.6s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="tool"] {
-  border-color: rgba(255, 107, 53, 0.42);
-  box-shadow: 0 0 0 1px rgba(255, 107, 53, 0.06), 0 0 18px rgba(255, 107, 53, 0.16);
-  animation: tool-breathe 2.4s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="tool"] .rail {
-  background: var(--status-blocked);
-  box-shadow: 0 0 9px rgba(255, 107, 53, 0.52);
-}
-.v2-sidebar .agent-card[data-activity-state="tool"] .status-bar {
-  color: var(--status-blocked);
-  border-color: rgba(255, 107, 53, 0.34);
-  background: rgba(255, 107, 53, 0.08);
-}
-.v2-sidebar .agent-card[data-activity-state="tool"] .status-bar .sdot {
-  background: var(--status-blocked);
-  box-shadow: 0 0 7px var(--status-blocked);
-  animation: dot-pulse 1.1s ease-in-out infinite;
-}
-/* Microestados granulares (S5 Bloco 2). Cores seguem semântica:
-   reading=azul rápido · writing=laranja pulsado · executing=laranja sólido
-   handoff=verde sólido · searching=amarelo pulsado */
-.v2-sidebar .agent-card[data-activity-state="reading"] {
-  border-color: rgba(0, 240, 255, 0.55);
-  box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.12), 0 0 22px rgba(0, 240, 255, 0.22);
-  animation: card-breathe 2.1s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="reading"] .rail {
-  background: var(--accent);
-  box-shadow: 0 0 10px rgba(0, 240, 255, 0.65);
-}
-.v2-sidebar .agent-card[data-activity-state="reading"] .status-bar {
-  color: var(--accent);
-  border-color: var(--accent-border);
-  background: var(--accent-subtle);
-}
-.v2-sidebar .agent-card[data-activity-state="reading"] .status-bar .sdot {
-  background: var(--accent);
-  box-shadow: 0 0 7px var(--accent);
-  animation: dot-pulse-fast 0.55s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="writing"] {
-  border-color: rgba(255, 107, 53, 0.50);
-  box-shadow: 0 0 0 1px rgba(255, 107, 53, 0.10), 0 0 20px rgba(255, 107, 53, 0.20);
-  animation: tool-breathe 1.6s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="writing"] .rail {
-  background: var(--status-blocked);
-  box-shadow: 0 0 10px rgba(255, 107, 53, 0.60);
-}
-.v2-sidebar .agent-card[data-activity-state="writing"] .status-bar {
-  color: var(--status-blocked);
-  border-color: rgba(255, 107, 53, 0.40);
-  background: rgba(255, 107, 53, 0.10);
-}
-.v2-sidebar .agent-card[data-activity-state="writing"] .status-bar .sdot {
-  background: var(--status-blocked);
-  box-shadow: 0 0 7px var(--status-blocked);
-  animation: dot-pulse-soft 0.8s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="executing"] {
-  border-color: rgba(255, 107, 53, 0.42);
-  box-shadow: 0 0 12px rgba(255, 107, 53, 0.12);
+  box-shadow: 0 0 5px rgba(0, 240, 255, 0.45);
   animation: none;
 }
-.v2-sidebar .agent-card[data-activity-state="executing"] .rail {
-  background: var(--status-blocked);
-  box-shadow: 0 0 7px rgba(255, 107, 53, 0.48);
+
+.v2-sidebar .agent-card[data-activity-state="trabalhando"] {
+  border-color: rgba(16, 185, 129, 0.55);
+  animation: pulse-trabalhando 2s ease-in-out infinite;
 }
-.v2-sidebar .agent-card[data-activity-state="executing"] .status-bar {
-  color: var(--status-blocked);
-  border-color: rgba(255, 107, 53, 0.34);
-  background: rgba(255, 107, 53, 0.07);
+.v2-sidebar .agent-card[data-activity-state="trabalhando"] .rail {
+  background: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.60);
 }
-.v2-sidebar .agent-card[data-activity-state="executing"] .status-bar .sdot {
-  background: var(--status-blocked);
-  box-shadow: 0 0 5px var(--status-blocked);
-  animation: none;
+.v2-sidebar .agent-card[data-activity-state="trabalhando"] .status-bar {
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(16, 185, 129, 0.10);
 }
-.v2-sidebar .agent-card[data-activity-state="handoff"] {
-  border-color: rgba(100, 255, 218, 0.45);
-  box-shadow: 0 0 14px rgba(100, 255, 218, 0.14);
-  animation: none;
+.v2-sidebar .agent-card[data-activity-state="trabalhando"] .status-bar .sdot {
+  background: #10b981;
+  box-shadow: 0 0 7px rgba(16, 185, 129, 0.70);
+  animation: pulse-dot-trabalhando 2s ease-in-out infinite;
 }
-.v2-sidebar .agent-card[data-activity-state="handoff"] .rail {
-  background: var(--status-done);
-  box-shadow: 0 0 8px rgba(100, 255, 218, 0.50);
+
+.v2-sidebar .agent-card[data-activity-state="aguardando"] {
+  border-color: rgba(245, 158, 11, 0.65);
+  animation: pulse-aguardando 1s ease-in-out infinite;
 }
-.v2-sidebar .agent-card[data-activity-state="handoff"] .status-bar {
-  color: var(--status-done);
-  border-color: rgba(100, 255, 218, 0.36);
-  background: rgba(100, 255, 218, 0.08);
+.v2-sidebar .agent-card[data-activity-state="aguardando"] .rail {
+  background: #f59e0b;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.70);
 }
-.v2-sidebar .agent-card[data-activity-state="handoff"] .status-bar .sdot {
-  background: var(--status-done);
-  box-shadow: 0 0 6px var(--status-done);
-  animation: none;
+.v2-sidebar .agent-card[data-activity-state="aguardando"] .status-bar {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.48);
+  background: rgba(245, 158, 11, 0.12);
 }
-.v2-sidebar .agent-card[data-activity-state="searching"] {
-  border-color: rgba(251, 191, 36, 0.50);
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.10), 0 0 20px rgba(251, 191, 36, 0.18);
-  animation: search-breathe 1.8s ease-in-out infinite;
+.v2-sidebar .agent-card[data-activity-state="aguardando"] .status-bar .sdot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.85);
+  animation: pulse-dot-aguardando 1s ease-in-out infinite;
 }
-.v2-sidebar .agent-card[data-activity-state="searching"] .rail {
-  background: rgb(251, 191, 36);
-  box-shadow: 0 0 10px rgba(251, 191, 36, 0.55);
-}
-.v2-sidebar .agent-card[data-activity-state="searching"] .status-bar {
-  color: rgb(251, 191, 36);
-  border-color: rgba(251, 191, 36, 0.40);
-  background: rgba(251, 191, 36, 0.08);
-}
-.v2-sidebar .agent-card[data-activity-state="searching"] .status-bar .sdot {
-  background: rgb(251, 191, 36);
-  box-shadow: 0 0 7px rgba(251, 191, 36, 0.65);
-  animation: dot-pulse-soft 0.8s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="subagent"] {
-  border-color: rgba(0, 240, 255, 0.22);
-  box-shadow: var(--glow-card);
-  animation: none;
-}
-.v2-sidebar .agent-card[data-activity-state="subagent"] .rail {
-  background: var(--accent-secondary);
-  box-shadow: 0 0 6px rgba(0, 184, 212, 0.34);
-}
-.v2-sidebar .agent-card[data-activity-state="subagent"] .status-bar {
-  color: var(--accent);
-  border-color: var(--accent-border);
-  background: var(--accent-subtle);
-  animation: status-chip-pulse 1.8s ease-in-out infinite;
-}
-.v2-sidebar .agent-card[data-activity-state="subagent"] .status-bar .sdot {
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent);
-}
-.v2-sidebar .agent-card[data-activity-state="blocked"] {
-  border-color: rgba(255, 107, 53, 0.36);
-  box-shadow: 0 0 12px rgba(255, 107, 53, 0.10);
-  animation: none;
-}
-.v2-sidebar .agent-card[data-activity-state="blocked"] .rail {
-  background: var(--status-blocked);
-  box-shadow: 0 0 7px rgba(255, 107, 53, 0.38);
-}
-.v2-sidebar .agent-card[data-activity-state="blocked"] .status-bar {
-  color: var(--status-blocked);
-  border-color: rgba(255, 107, 53, 0.34);
-  background: rgba(255, 107, 53, 0.06);
-}
-.v2-sidebar .agent-card[data-activity-state="blocked"] .status-bar .sdot {
-  background: var(--status-blocked);
-  animation: none;
-}
-.v2-sidebar .agent-card[data-activity-state="idle"] {
-  border-color: var(--border);
-  box-shadow: var(--glow-card);
-  animation: none;
-}
-.v2-sidebar .agent-card[data-activity-state="idle"] .rail {
-  background: var(--status-idle);
-  box-shadow: none;
-  opacity: 0.35;
-}
-.v2-sidebar .agent-card[data-activity-state="idle"] .status-bar {
-  color: var(--muted);
-  border-color: var(--border);
-  background: transparent;
-}
-.v2-sidebar .agent-card[data-activity-state="idle"] .status-bar .sdot {
-  background: var(--status-idle);
-  box-shadow: none;
-  animation: none;
-  opacity: 0.7;
-}
-.v2-sidebar .agent-card[data-activity-state="done"] {
-  border-color: rgba(100, 255, 218, 0.30);
-  box-shadow: 0 0 8px rgba(100, 255, 218, 0.08);
-  animation: none;
-}
-.v2-sidebar .agent-card[data-activity-state="done"] .rail {
-  background: var(--status-done);
-  box-shadow: 0 0 6px rgba(100, 255, 218, 0.34);
-}
-.v2-sidebar .agent-card[data-activity-state="done"] .status-bar {
-  color: var(--status-done);
-  border-color: rgba(100, 255, 218, 0.30);
-  background: rgba(100, 255, 218, 0.05);
-}
-.v2-sidebar .agent-card[data-activity-state="done"] .status-bar .sdot {
-  background: var(--status-done);
-  box-shadow: none;
-  animation: none;
-}
+
 .v2-sidebar .agent-card[data-activity-state="offline"] {
   opacity: 0.46;
   border-color: var(--border-subtle);
@@ -298,25 +151,30 @@ const v2Css = `
   box-shadow: none;
   animation: none;
 }
-@keyframes tool-breathe {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 107, 53, 0.06), 0 0 12px rgba(255, 107, 53, 0.10); }
-  50% { box-shadow: 0 0 0 1px rgba(255, 107, 53, 0.13), 0 0 24px rgba(255, 107, 53, 0.22); }
+
+@keyframes pulse-trabalhando {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.08), 0 0 14px rgba(16, 185, 129, 0.22); }
+  50%      { box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.18), 0 0 28px rgba(16, 185, 129, 0.42); }
 }
-@keyframes status-chip-pulse {
-  0%, 100% { box-shadow: none; }
-  50% { box-shadow: 0 0 10px rgba(0, 240, 255, 0.30); }
+@keyframes pulse-aguardando {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.10), 0 0 18px rgba(245, 158, 11, 0.30); }
+  50%      { box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.24), 0 0 32px rgba(245, 158, 11, 0.55); }
 }
-@keyframes dot-pulse-fast {
+@keyframes pulse-dot-trabalhando {
+  0%, 100% { opacity: 0.95; }
+  50%      { opacity: 0.55; }
+}
+@keyframes pulse-dot-aguardando {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.45; transform: scale(0.88); }
+  50%      { opacity: 0.45; transform: scale(0.88); }
 }
-@keyframes dot-pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-@keyframes search-breathe {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.08), 0 0 14px rgba(251, 191, 36, 0.14); }
-  50% { box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.16), 0 0 24px rgba(251, 191, 36, 0.26); }
+@media (prefers-reduced-motion: reduce) {
+  .v2-sidebar .agent-card[data-activity-state="trabalhando"],
+  .v2-sidebar .agent-card[data-activity-state="aguardando"],
+  .v2-sidebar .agent-card[data-activity-state="trabalhando"] .status-bar .sdot,
+  .v2-sidebar .agent-card[data-activity-state="aguardando"] .status-bar .sdot {
+    animation: none;
+  }
 }
 .v2-sidebar .agent-card .meta-strip {
   font-size: 9px;

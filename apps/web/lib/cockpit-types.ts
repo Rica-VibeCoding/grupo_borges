@@ -1,18 +1,8 @@
-export type AgentStatus = 'running' | 'idle' | 'blocked' | 'done' | 'offline';
+// V2.4 — 4 estados reduzidos. Backend retorna esses valores no /api/fleet
+// e armazena no agent_state.lifecycle_status. Detail rico continua livre.
+export type AgentStatus = 'ocioso' | 'trabalhando' | 'aguardando' | 'offline';
 
-export type AgentActivityState =
-  | 'thinking'
-  | 'reading'
-  | 'writing'
-  | 'executing'
-  | 'handoff'
-  | 'searching'
-  | 'tool'
-  | 'subagent'
-  | 'blocked'
-  | 'idle'
-  | 'offline'
-  | 'done';
+export type AgentActivityState = AgentStatus;
 
 export type AgentActivityOverride = {
   state: AgentActivityState;
@@ -20,21 +10,7 @@ export type AgentActivityOverride = {
   detail: string | null;
 };
 
-export type AgentLifecycleStatus =
-  | 'session'
-  | 'prompt'
-  | 'tool'
-  | 'tool_done'
-  | 'subagent'
-  | 'subagent_done'
-  | 'reading'
-  | 'writing'
-  | 'executing'
-  | 'handoff'
-  | 'searching'
-  | 'idle'
-  | 'error'
-  | 'event';
+export type AgentLifecycleStatus = AgentStatus;
 
 export type SparklineBucket = {
   bucket: string;
