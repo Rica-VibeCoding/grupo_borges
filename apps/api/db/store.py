@@ -208,6 +208,15 @@ def _pre_tool_lifecycle(data: dict[str, Any]) -> tuple[str, str | None]:
         return "searching", detail if isinstance(detail, str) else tool_name
     if tool_name == "Task":
         return "subagent", tool_name
+    if tool_name in {"TodoWrite", "TaskUpdate"}:
+        return "writing", "plano"
+    if tool_name in {"Grep", "Glob"}:
+        pattern = tool_data.get("pattern")
+        return "searching", pattern if isinstance(pattern, str) else tool_name
+    if tool_name == "AskUserQuestion":
+        return "searching", "aguardando resposta"
+    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
+        return "searching", tool_name
     return "tool", tool_name or matcher or "tool em execucao"
 
 

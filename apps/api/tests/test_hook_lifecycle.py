@@ -64,6 +64,30 @@ class _Clock:
             {"tool_name": "WebFetch", "tool_input": {"url": "https://example.com/docs"}},
             ("searching", "https://example.com/docs"),
         ),
+        (
+            {"tool_name": "TodoWrite", "tool_input": {"todos": [{"content": "x"}]}},
+            ("writing", "plano"),
+        ),
+        (
+            {"tool_name": "TaskUpdate", "tool_input": {"taskId": "1", "status": "completed"}},
+            ("writing", "plano"),
+        ),
+        (
+            {"tool_name": "Grep", "tool_input": {"pattern": "TODO"}},
+            ("searching", "TODO"),
+        ),
+        (
+            {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}},
+            ("searching", "**/*.py"),
+        ),
+        (
+            {"tool_name": "AskUserQuestion", "tool_input": {"questions": []}},
+            ("searching", "aguardando resposta"),
+        ),
+        (
+            {"tool_name": "mcp__supabase_geral__list_tables", "tool_input": {}},
+            ("searching", "mcp__supabase_geral__list_tables"),
+        ),
     ],
 )
 def test_pre_tool_lifecycle_microstates(payload: dict, expected: tuple[str, str]) -> None:
