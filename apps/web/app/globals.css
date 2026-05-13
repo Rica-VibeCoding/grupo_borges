@@ -957,6 +957,23 @@
   }
 }
 
+/* iOS Safari auto-zoom no focus: font-size >= 16px é a única solução oficial.
+ * Preserva o look retro/mono (11px) no desktop; sobe pra 16px no mobile.
+ * Sem `user-scalable=no` — anti-pattern de acessibilidade (MDN).
+ * `:where(...)` mantém specificity 0,0,1 mas o :is dentro do @media compete
+ * com regras de classe; usamos seletores explícitos pra ganhar specificity. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select,
+  .new-task-field input,
+  .new-task-field textarea,
+  .handoff-note textarea,
+  .task-review-note textarea {
+    font-size: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-modal-overlay,
   .agent-modal-frame { animation: none !important; }
