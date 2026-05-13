@@ -1,5 +1,24 @@
 export type AgentStatus = 'running' | 'idle' | 'blocked' | 'done' | 'offline';
 
+export type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
+
+export type AgentActivityOverride = {
+  state: AgentActivityState;
+  visible_until_ms: number;
+  detail: string | null;
+};
+
+export type AgentLifecycleStatus =
+  | 'session'
+  | 'prompt'
+  | 'tool'
+  | 'tool_done'
+  | 'subagent'
+  | 'subagent_done'
+  | 'idle'
+  | 'error'
+  | 'event';
+
 export type SparklineBucket = {
   bucket: string;
   count: number;
@@ -61,7 +80,7 @@ export type Agent = {
   current_task_last_heartbeat: number | null;
   last_seen: number | null;
   pane_excerpt: string | null;
-  lifecycle_status: string | null;
+  lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
   lifecycle_event: string | null;
   lifecycle_updated_at: number | null;
@@ -123,6 +142,49 @@ export type Task = {
   current_run_started_at: number | null;
   current_run_ended_at: number | null;
   current_run_outcome: string | null;
+  review_mode?: ReviewMode;
+  reviewer_assignee?: string | null;
+  tags?: string[] | null;
+};
+
+export type ReviewMode = 'human' | 'agent_advisory' | 'agent_autonomous';
+
+export type ReviewAction = 'accept' | 'reject' | 'requeue';
+
+export type ReviewActionPayload = {
+  action: ReviewAction;
+  note?: string | null;
+  criteria_results?: Record<string, unknown> | null;
+  evidence_refs?: string[] | null;
+  content_hash?: string | null;
+};
+
+export type ReviewActionResponse = {
+  event_id: number;
+  new_status: TaskStatus;
+  content_hash: string | null;
+};
+
+export type ReviewEvent = {
+  id: number;
+  task_id: string;
+  agent_slug: string | null;
+  instance_id: string | null;
+  kind: 'review.accepted' | 'review.rejected' | 'review.requeued';
+  payload: Record<string, unknown> | null;
+  created_at: number;
+  human_id: string | null;
+  title: string | null;
+  status: TaskStatus | null;
+  assignee: string | null;
+  reviewer_assignee: string | null;
+  review_mode: ReviewMode | null;
+  tags: string[] | null;
+};
+
+export type ReviewEventsResponse = {
+  events: ReviewEvent[];
+  next_since_id: number | null;
 };
 
 export type KanbanColumnId = 'queue' | 'running' | 'blocked' | 'review' | 'done';

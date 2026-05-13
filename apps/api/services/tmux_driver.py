@@ -2,14 +2,35 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from collections import defaultdict
 from pathlib import Path
 import re
 import shlex
+import subprocess
+import threading
 import time
+import uuid
 from typing import Literal
 
 import libtmux
 from libtmux import exc as libtmux_exc
+
+# Delay entre paste-buffer e Enter pra CC consolidar o paste. Default 150ms
+# (Hermes-style validado em prod). Configurável via env pra ajustar sob carga
+# sem deploy — VPS 8GB pode precisar de 300-500ms em pico.
+_PASTE_SUBMIT_DELAY_S = float(os.getenv("COCKPIT_PASTE_DELAY_MS", "150")) / 1000.0
+_LOAD_BUFFER_TIMEOUT_S = 5.0
+
+# Lock por session_name pra evitar race em dispatches concorrentes no mesmo
+# pane: sem isso, dispatch B pode injetar paste/Enter entre o paste e o Enter
+# de A, e os 2 envelopes saem fundidos como um único prompt no CC.
+_DISPATCH_LOCKS: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+
+# Comandos esperados no pane ativo do agente. Se o user trocou de window (ex:
+# abriu shell auxiliar), `active_pane` aponta pra outra coisa — paste no shell
+# pode executar parte do envelope como comando. Guard aborta nesse caso.
+_EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
 
 AgentCli = Literal["claude_code", "codex"]
 
@@ -217,21 +238,76 @@ def _send_message_sync(session_name: str, text: str) -> bool:
     if not server.has_session(session_name):
         return False
 
-    session = server.sessions.get(session_name=session_name)
-    pane = session.active_pane
-    safe = text.replace("\r", "").replace("\n", " / ")[:800]
-    pane.cmd("send-keys", "-l", safe)
-    pane.cmd("send-keys", "Enter")
-    return True
+    # \r solto vira ruído no buffer tmux; \r\n vira \n; \n é preservado pra
+    # multilinha funcionar como paste real (envelope do Cockpit tem 30+ linhas).
+    # Control chars (exceto \n e \t) removidos pra evitar sequência ANSI inesperada
+    # consumida pelo terminal do pane.
+    sanitized = _CONTROL_CHARS.sub("", text.replace("\r\n", "\n").replace("\r", ""))
+
+    with _DISPATCH_LOCKS[session_name]:
+        session = server.sessions.get(session_name=session_name)
+        pane = session.active_pane
+
+        # Guard: se o pane ativo não é o CLI esperado (ex: agente trocou window
+        # pra rodar shell auxiliar), aborta — paste no shell executaria parte do
+        # envelope como comando.
+        current_cmd = (pane.pane_current_command or "").lower()
+        if current_cmd not in _EXPECTED_PANE_COMMANDS:
+            return False
+
+        # ORDEM CRÍTICA do paste (Hermes-style, validado em prod):
+        #   1. C-u           — limpa input pendente (antes do paste; depois apagaria)
+        #   2. load-buffer   — escreve envelope em buffer nomeado por uuid (sem race)
+        #   3. paste-buffer  — cola e descarta (-d)
+        #   4. sleep 150ms   — CC consolida paste antes do Enter
+        #   5. Enter         — submete
+        pane.cmd("send-keys", "C-u")
+
+        buf_name = f"cockpit-dispatch-{uuid.uuid4().hex[:12]}"
+        paste_ok = False
+        try:
+            try:
+                load_result = subprocess.run(
+                    ["tmux", "load-buffer", "-b", buf_name, "-"],
+                    input=sanitized,
+                    text=True,
+                    capture_output=True,
+                    timeout=_LOAD_BUFFER_TIMEOUT_S,
+                )
+            except subprocess.TimeoutExpired:
+                return False
+            if load_result.returncode != 0:
+                return False
+
+            pane.cmd("paste-buffer", "-d", "-b", buf_name)
+            paste_ok = True
+            time.sleep(_PASTE_SUBMIT_DELAY_S)
+            pane.cmd("send-keys", "Enter")
+            return True
+        except libtmux_exc.LibTmuxException:
+            return False
+        finally:
+            # paste-buffer -d descarta no path feliz. Em qualquer falha (load
+            # com returncode != 0, paste-buffer exception), buffer pode ter
+            # ficado órfão — cleanup oportunista.
+            if not paste_ok:
+                try:
+                    server.cmd("delete-buffer", "-b", buf_name)
+                except libtmux_exc.LibTmuxException:
+                    pass
 
 
 async def send_message(session_name: str, text: str) -> bool:
-    """Digita `text` sanitizado no pane ativo e submete com Enter.
+    """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 
-    Texto é sanitizado (CR/LF → ` / `, cap 800 chars); Enter é submetido cru —
-    agente alvo em estado ativo pode ter o input atual submetido junto.
+    Sequência (Hermes-style, validada em produção):
+        send-keys C-u → load-buffer → paste-buffer -d → sleep 150ms → send-keys Enter
 
-    Retorna False quando a sessão não existe; erros de tmux reais sobem para o
-    caller logar sem desfazer a transação já persistida.
+    Preserva multilinha (envelope do Cockpit tem 30+ linhas); só sanitiza CR
+    isolados. Buffer nomeado por uuid evita race entre dispatches concorrentes.
+
+    Retorna False quando a sessão não existe ou o load-buffer falha. Erros do
+    paste-buffer tentam cleanup do buffer e retornam False sem propagar — o
+    caller loga sem desfazer a transação já persistida.
     """
     return await asyncio.to_thread(_send_message_sync, session_name, text)

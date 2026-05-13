@@ -28,6 +28,7 @@ from db.store import GrupoBorgesDB
 from orchestrator.auto_dispatcher import AutoDispatcher
 from orchestrator.jsonl_watcher import JsonlWatcher
 from orchestrator.tmux_driver import TmuxDriver
+from orchestrator.watchdog import Watchdog
 from routers import agents as agents_router
 from routers import codex_events as codex_events_router
 from routers import events as events_router
@@ -45,6 +46,9 @@ async def lifespan(app: FastAPI):
     with Path(settings.agents_yaml).open("r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     app.state.agents_config = config
+    # Map Tailscale-User-Login → reviewer slug (humanos com permissão de review).
+    raw_humans = config.get("humans") or {}
+    app.state.humans = {str(k).strip().lower(): str(v).strip().lower() for k, v in raw_humans.items()}
 
     db = GrupoBorgesDB(settings.db_path)
     await db.startup()
@@ -71,8 +75,19 @@ async def lifespan(app: FastAPI):
         await auto_dispatcher.start()
     app.state.auto_dispatcher = auto_dispatcher
 
+    watchdog = None
+    if settings.watchdog_enabled:
+        watchdog = Watchdog(
+            db=db,
+            interval_seconds=settings.watchdog_interval_seconds,
+        )
+        await watchdog.start()
+    app.state.watchdog = watchdog
+
     yield
 
+    if watchdog is not None:
+        await watchdog.stop()
     if auto_dispatcher is not None:
         await auto_dispatcher.stop()
     await watcher.stop()
@@ -108,11 +123,16 @@ async def tailscale_identity(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    # Dev: GB_DEV_BYPASS_AUTH=1 + cliente em loopback bypassa identity
+    # Dev: GB_DEV_BYPASS_AUTH=1 + cliente em loopback bypassa identity.
+    # Se o header vier mesmo assim (curl/proxy de teste), propaga pro state
+    # — permite validar lookup de humans/reviewer sem subir tailscaled local.
     settings = getattr(app.state, "settings", None)
     if settings and settings.dev_bypass_auth:
         host = request.client.host if request.client else None
         if _is_loopback(host):
+            dev_user = request.headers.get("Tailscale-User-Login")
+            if dev_user:
+                request.state.tailscale_user = dev_user
             return await call_next(request)
 
     user = request.headers.get("Tailscale-User-Login")
@@ -149,6 +169,7 @@ async def health() -> dict:
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(fleet_router.router, prefix="/api/fleet", tags=["fleet"])
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(tasks_router.reviews_router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(events_router.router, prefix="/api/events", tags=["events"])
 app.include_router(codex_events_router.router, prefix="/api/codex-events", tags=["codex"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])

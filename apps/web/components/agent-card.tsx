@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { Agent, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
+import type { Agent, AgentCli, AgentLifecycleStatus, AgentModel, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, parseModelFromPane, shortModelName } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
+import { formatRelativeShort, summarize } from './activity-feed';
 import { SelectField } from './select-field';
 
 const stateLabel: Record<AgentStatus, string> = {
@@ -25,7 +26,7 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
   offline: 4,
 };
 
-const lifecycleLabel: Record<string, string> = {
+const lifecycleLabel: Record<AgentLifecycleStatus, string> = {
   session: 'SESSÃO',
   prompt: 'PROMPT',
   tool: 'TOOL',
@@ -36,6 +37,46 @@ const lifecycleLabel: Record<string, string> = {
   error: 'ERRO',
   event: 'EVENTO',
 };
+
+type AgentActivityState = 'thinking' | 'tool' | 'subagent' | 'blocked' | 'idle' | 'offline' | 'done';
+
+const LIFECYCLE_FRESHNESS_WINDOW_SECONDS = 90;
+
+const activityLabel: Record<AgentActivityState, string> = {
+  thinking: 'PENSANDO',
+  tool: 'TOOL',
+  subagent: 'SUBAGENTE',
+  blocked: 'BLOQUEADO',
+  idle: 'OCIOSO',
+  offline: 'OFFLINE',
+  done: 'CONCLUÍDO',
+};
+
+function deriveActivityState(agent: Agent, serverNow: number): AgentActivityState {
+  if (agent.status === 'offline') return 'offline';
+  if (agent.status === 'blocked' || agent.lifecycle_status === 'error') return 'blocked';
+  if (agent.status === 'done') return 'done';
+  const isFresh =
+    agent.lifecycle_updated_at !== null &&
+    serverNow - agent.lifecycle_updated_at <= LIFECYCLE_FRESHNESS_WINDOW_SECONDS;
+  const isActive = agent.status === 'running' || isFresh;
+
+  switch (agent.lifecycle_status) {
+    case 'tool':
+      return 'tool';
+    case 'subagent':
+      return 'subagent';
+    case 'prompt':
+    case 'session':
+    case 'tool_done':
+    case 'subagent_done':
+      return isActive ? 'thinking' : 'idle';
+    case 'idle':
+      return agent.status === 'running' ? 'thinking' : 'idle';
+    default:
+      return isActive ? 'thinking' : 'idle';
+  }
+}
 
 function formatLifecycle(agent: Agent): string {
   if (!agent.lifecycle_status && !agent.lifecycle_detail) return '—';
@@ -82,7 +123,7 @@ export function AgentCard({
   agent: Agent;
   serverNow: number;
 }) {
-  const { mutate } = useFleet();
+  const { events, mutate } = useFleet();
   const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
   const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
@@ -95,7 +136,10 @@ export function AgentCard({
   const contextPct = parseContextPct(agent.pane_excerpt);
   const paneModel = parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
-  const label = `Agente ${agent.name}, ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
+  const activityState = deriveActivityState(agent, serverNow);
+  const lastEvent = events.find((e) => e.agent_slug === agent.slug);
+  const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
+  const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
   useEffect(() => {
@@ -115,6 +159,7 @@ export function AgentCard({
     <article
       className="agent-card scan-host"
       data-state={agent.status}
+      data-activity-state={activityState}
       data-slug={agent.slug}
       data-instance-focus={instanceFocus ? 'true' : 'false'}
       tabIndex={0}
@@ -162,7 +207,7 @@ export function AgentCard({
           </div>
           <span className="status-bar" aria-hidden="true">
             <span className="sdot" />
-            {stateLabel[agent.status]}
+            {activityLabel[activityState]}
           </span>
         </div>
         <div className="meta-strip" aria-hidden="true">
@@ -209,6 +254,14 @@ export function AgentCard({
             </Dialog.Root>
           </span>
         </div>
+        {lastEvent && (
+          <div className="last-action mono" aria-hidden="true">
+            <span className="la-spark" aria-hidden>•</span>
+            <span className="la-text">{summarize(lastEvent)}</span>
+            <span className="la-sep">·</span>
+            <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
+          </div>
+        )}
         <div className="pane pane-session" aria-hidden="true">
           <span className="ps-model">{paneModel ?? shortModelName(model)}</span>
           <span className="ps-sep">·</span>

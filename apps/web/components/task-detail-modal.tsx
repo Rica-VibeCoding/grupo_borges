@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import type { Task, TaskEvent } from '../lib/cockpit-types';
+import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
 import { dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
+import { TaskEditForm } from './task-edit-form';
+import { TaskReviewActions } from './task-review-actions';
 import { formatDateTime } from '../lib/format-time';
 
 type UiTaskStatus = Exclude<TaskPatchStatus, 'ready'>;
@@ -18,6 +20,12 @@ const STATUS_OPTIONS: Array<{ value: UiTaskStatus; label: string }> = [
   { value: 'blocked', label: 'BLOQUEADO' },
   { value: 'done', label: 'CONCLUÍDO' },
 ];
+
+const REVIEW_ACTION_TOAST_LABEL: Record<ReviewAction, string> = {
+  accept: 'ACEITA',
+  reject: 'REJEITADA',
+  requeue: 'REENFILEIRADA',
+};
 
 function uiStatus(status: TaskPatchStatus | 'archived' | undefined): UiTaskStatus {
   if (status === 'archived' || status === 'done') return 'done';
@@ -96,6 +104,11 @@ export function TaskDetailModal({
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const agentOptions = useMemo(
+    () => fleet.agents.map((a) => ({ value: a.slug, label: `${a.name} · ${a.slug}` })),
+    [fleet.agents],
+  );
   const effectiveTask = freshTask ?? task;
   const timeline = useMemo(
     () => events.filter((event) => event.task_id === effectiveTask?.id).slice(0, 12),
@@ -117,6 +130,7 @@ export function TaskDetailModal({
       setMessage(null);
       setSaving(false);
       setDispatching(false);
+      setEditing(false);
       return;
     }
 
@@ -220,11 +234,61 @@ export function TaskDetailModal({
                 <section className="task-detail-main">
                   <Field label="ID" value={effectiveTask.human_id || effectiveTask.id} />
                   <Field label="UUID" value={effectiveTask.id} />
-                  <Field label="TÍTULO" value={effectiveTask.title} />
-                  <div className="task-detail-field task-detail-body-field">
-                    <span className="task-detail-key">BODY</span>
-                    <p className="task-detail-value">{effectiveTask.body?.trim() || '—'}</p>
-                  </div>
+                  {editing && (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') ? (
+                    <TaskEditForm
+                      task={effectiveTask}
+                      mode="full"
+                      agentOptions={agentOptions}
+                      onSaved={(updated) => {
+                        setFreshTask(updated);
+                        void mutate();
+                        setEditing(false);
+                        fire({
+                          kind: 'success',
+                          msg: `EDITADA · ${taskDisplayId(updated)}`,
+                          sub: 'CAMPOS ATUALIZADOS',
+                        });
+                      }}
+                      onError={(msg) => {
+                        setMessage(msg);
+                        fire({ kind: 'warn', msg: 'EDIÇÃO FALHOU', sub: msg });
+                      }}
+                      onCancel={() => setEditing(false)}
+                    />
+                  ) : (
+                    <>
+                      <Field label="TÍTULO" value={effectiveTask.title} />
+                      <div className="task-detail-field task-detail-body-field">
+                        <span className="task-detail-key">BODY</span>
+                        <p className="task-detail-value">{effectiveTask.body?.trim() || '—'}</p>
+                      </div>
+                      {(() => {
+                        // Defensivo: backend pode retornar tags como string JSON
+                        // bruta em algumas rotas (bug residual). Normaliza aqui
+                        // pra evitar TypeError no .join.
+                        const raw = effectiveTask.tags;
+                        let list: string[] = [];
+                        if (Array.isArray(raw)) list = raw;
+                        else if (typeof raw === 'string' && raw) {
+                          try {
+                            const p = JSON.parse(raw);
+                            if (Array.isArray(p)) list = p;
+                          } catch {
+                            // ignore
+                          }
+                        }
+                        return list.length > 0 ? (
+                          <Field label="TAGS" value={list.join(', ')} />
+                        ) : null;
+                      })()}
+                      {effectiveTask.review_mode && effectiveTask.review_mode !== 'human' && (
+                        <Field label="MODO REVISÃO" value={effectiveTask.review_mode} />
+                      )}
+                      {effectiveTask.reviewer_assignee && (
+                        <Field label="REVISOR" value={effectiveTask.reviewer_assignee} />
+                      )}
+                    </>
+                  )}
                 </section>
 
                 <aside className="task-detail-side">
@@ -255,6 +319,27 @@ export function TaskDetailModal({
                 </aside>
               </div>
 
+              {effectiveTask.status === 'review' && (
+                <TaskReviewActions
+                  task={effectiveTask}
+                  onResolved={(newStatus) => {
+                    setFreshTask((prev) => (prev ? { ...prev, status: newStatus } : prev));
+                    void mutate();
+                  }}
+                  onError={(msg) => {
+                    setMessage(msg);
+                    fire({ kind: 'warn', msg: 'REVIEW NÃO APLICADA', sub: msg });
+                  }}
+                  onSuccess={(action) => {
+                    fire({
+                      kind: 'success',
+                      msg: `REVIEW · ${taskDisplayId(effectiveTask)}`,
+                      sub: REVIEW_ACTION_TOAST_LABEL[action],
+                    });
+                  }}
+                />
+              )}
+
               <section className="task-timeline">
                 <div className="task-timeline-head">
                   <span>TIMELINE</span>
@@ -284,10 +369,21 @@ export function TaskDetailModal({
                   {dispatching && <span>enviando para sessão...</span>}
                   {message && <span className="task-detail-error">{message}</span>}
                 </div>
+                {!editing &&
+                  (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
+                    <button
+                      type="button"
+                      className="form-cancel task-detail-edit"
+                      onClick={() => setEditing(true)}
+                      disabled={saving || dispatching || loadState === 'loading'}
+                    >
+                      EDITAR
+                    </button>
+                  )}
                 <button
                   type="button"
                   className="form-submit task-detail-dispatch"
-                  disabled={dispatching || saving || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
+                  disabled={dispatching || saving || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
                   onClick={dispatchToSession}
                 >
                   {dispatching ? 'ENVIANDO...' : effectiveTask.status === 'running' ? 'EM EXECUÇÃO' : 'ENVIAR SESSÃO'}

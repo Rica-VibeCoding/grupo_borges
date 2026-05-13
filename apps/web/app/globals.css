@@ -579,6 +579,191 @@
   color: var(--status-blocked);
 }
 
+/* ============ TASK REVIEW (3 ações: aceitar / rejeitar / re-enfileirar) ============ */
+.task-review {
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 191, 0, 0.06) 0%, transparent 100%);
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-review-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.task-review-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f6b73c;
+  box-shadow: 0 0 0 0 rgba(246, 183, 60, 0.5);
+  animation: task-review-pulse 1.6s cubic-bezier(.4,0,.6,1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-review-pulse { animation: none; }
+}
+
+@keyframes task-review-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(246, 183, 60, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(246, 183, 60, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(246, 183, 60, 0); }
+}
+
+.task-review-title {
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+.task-review-mode {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+.task-review-mode[data-mode="agent_advisory"] { color: #6dd0ff; border-color: rgba(109, 208, 255, 0.5); }
+.task-review-mode[data-mode="agent_autonomous"] { color: #f6b73c; border-color: rgba(246, 183, 60, 0.5); }
+
+.task-review-tags {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.task-review-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--border-subtle);
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.task-review-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid #f6b73c;
+  background: rgba(246, 183, 60, 0.06);
+  color: var(--text);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.task-review-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-review-note textarea {
+  min-height: 56px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.4;
+}
+
+.task-review-note textarea:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.task-review-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.task-review-btn {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 140ms ease;
+}
+
+.task-review-btn:hover:not(:disabled) {
+  background: var(--accent-subtle);
+}
+
+.task-review-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.task-review-btn[data-pending="true"] {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.task-review-accept {
+  border-color: rgba(76, 209, 122, 0.55);
+  color: #4cd17a;
+}
+.task-review-accept:hover:not(:disabled) {
+  background: rgba(76, 209, 122, 0.10);
+  border-color: #4cd17a;
+}
+
+.task-review-reject {
+  border-color: rgba(255, 121, 92, 0.55);
+  color: #ff795c;
+}
+.task-review-reject:hover:not(:disabled) {
+  background: rgba(255, 121, 92, 0.10);
+  border-color: #ff795c;
+}
+
+.task-review-requeue {
+  border-color: rgba(109, 208, 255, 0.55);
+  color: #6dd0ff;
+}
+.task-review-requeue:hover:not(:disabled) {
+  background: rgba(109, 208, 255, 0.10);
+  border-color: #6dd0ff;
+}
+
+.task-review-foot {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .task-review-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ============ NEW TASK ============ */
 .kanban-new-task {
   background: var(--accent-subtle);
@@ -654,8 +839,97 @@
   padding-top: 4px;
 }
 
+.new-task-review {
+  border: 1px solid var(--border);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  min-width: 0;
+}
+
+.new-task-review legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.review-mode-radios {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.review-mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 140ms ease, color 120ms ease;
+  min-width: 0;
+}
+
+.review-mode-option input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.review-mode-option:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.review-mode-option[data-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.review-mode-label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.review-mode-desc {
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.review-mode-option[data-checked="true"] .review-mode-desc {
+  color: var(--text);
+}
+
 .form-note[data-kind="error"] {
   color: var(--status-blocked);
+}
+
+.form-note[data-kind="warn"] {
+  color: #f6b73c;
+  border-left: 2px solid #f6b73c;
+  padding: 6px 10px;
+  background: rgba(246, 183, 60, 0.06);
+  font-size: 10px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .review-mode-radios {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -680,6 +954,23 @@
   }
   .kanban-new-task {
     min-height: 28px;
+  }
+}
+
+/* iOS Safari auto-zoom no focus: font-size >= 16px é a única solução oficial.
+ * Preserva o look retro/mono (11px) no desktop; sobe pra 16px no mobile.
+ * Sem `user-scalable=no` — anti-pattern de acessibilidade (MDN).
+ * `:where(...)` mantém specificity 0,0,1 mas o :is dentro do @media compete
+ * com regras de classe; usamos seletores explícitos pra ganhar specificity. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select,
+  .new-task-field input,
+  .new-task-field textarea,
+  .handoff-note textarea,
+  .task-review-note textarea {
+    font-size: 16px;
   }
 }
 

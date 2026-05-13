@@ -18,6 +18,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from orchestrator.checkpoint_parser import checkpoint_hash, parse_checkpoint
+
 from util import parse_dict_or_none, redact_payload
 
 router = APIRouter()
@@ -84,6 +86,11 @@ def _hook_lifecycle(event_kind: str, payload: dict[str, Any]) -> tuple[str, str 
     return "event", event_kind
 
 
+def _canonical_event_kind(path_event_kind: str, payload: dict[str, Any]) -> str:
+    hook_event_name = payload.get("hook_event_name")
+    return hook_event_name if isinstance(hook_event_name, str) and hook_event_name else path_event_kind
+
+
 @router.post("/{event_kind}")
 async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
     db = request.app.state.db
@@ -110,6 +117,7 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
 
     cwd = payload.get("cwd")
     slug = _slug_from_cwd(cwd, agents_config)
+    canonical_event_kind = _canonical_event_kind(event_kind, payload)
 
     # Mascara secrets e trunca strings > 8KB antes de gravar (util.redact_payload).
     # raw_text também passa pelo scrub — é o JSON bruto, mesmo risco.
@@ -117,7 +125,7 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
     safe_raw = redact_payload(raw_text) if raw_text else None
 
     event_id = await db.insert_task_event(
-        kind=f"hook:{event_kind}",
+        kind=f"hook:{canonical_event_kind}",
         agent_slug=slug,
         payload=safe_payload,
         raw_jsonl=safe_raw,
@@ -125,23 +133,122 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
 
     if slug is not None:
         await db.upsert_agent_state(slug)
-        lifecycle_status, lifecycle_detail = _hook_lifecycle(event_kind, payload)
+        lifecycle_status, lifecycle_detail = _hook_lifecycle(canonical_event_kind, payload)
         await db.update_agent_lifecycle(
             slug,
             status=lifecycle_status,
             detail=lifecycle_detail,
-            event=f"hook:{event_kind}",
+            event=f"hook:{canonical_event_kind}",
         )
-        await db.touch_agent_run_heartbeat(slug, source_kind=f"hook:{event_kind}")
+        await db.touch_agent_run_heartbeat(slug, source_kind=f"hook:{canonical_event_kind}")
         await db.advance_task_from_lifecycle(
             slug,
             lifecycle_status=lifecycle_status,
-            source_event=f"hook:{event_kind}",
+            source_event=f"hook:{canonical_event_kind}",
         )
+
+        # Fonte 1 (PostToolUse hook): ao fim do turno (Stop), lê transcript_path
+        # e verifica STATE: — mais rápido que JSONL watcher (~1s).
+        if canonical_event_kind == "Stop":
+            await _try_detect_checkpoint_from_stop(db, slug, payload)
 
     return {
         "received": True,
         "event_id": event_id,
         "agent_slug": slug,
-        "is_critical": event_kind in CRITICAL_EVENTS,
+        "is_critical": canonical_event_kind in CRITICAL_EVENTS,
     }
+
+
+async def _try_detect_checkpoint_from_stop(db: Any, slug: str, payload: dict) -> None:
+    """Lê as últimas linhas do transcript JSONL e detecta STATE: ao fim do turno."""
+    import asyncio
+    from pathlib import Path
+
+    transcript_path = payload.get("transcript_path")
+    if not transcript_path:
+        return
+
+    try:
+        text = await asyncio.to_thread(_read_tail_text, transcript_path, max_bytes=8192)
+    except Exception:
+        return
+
+    if not text:
+        return
+
+    cp = parse_checkpoint(text)
+    if cp is None:
+        return
+
+    # Busca task running mais recente do agente
+    running = await db.list_tasks(assignee=slug, status="running", limit=1)
+    if not running:
+        return
+
+    task_id = running[0]["id"]
+    chash = checkpoint_hash(
+        state=cp["state"],
+        summary=cp.get("summary"),
+        files_changed=cp.get("files_changed"),
+        next_step=cp.get("next_step"),
+    )
+    await db.record_checkpoint(
+        task_id=task_id,
+        agent_slug=slug,
+        state=cp["state"],
+        summary=cp.get("summary"),
+        files_changed=cp.get("files_changed"),
+        next_step=cp.get("next_step"),
+        handoff_to=cp.get("handoff_to"),
+        content_hash=chash,
+        source="stop_hook",
+    )
+
+
+def _read_tail_text(path: str, max_bytes: int = 8192) -> str | None:
+    """Lê as últimas linhas do JSONL, parseia e extrai texto de blocos assistant.
+
+    JSONL contém strings com \\n escapado — não dá pra aplicar STATE: regex diretamente
+    no raw bytes. Precisa parsear cada linha como JSON e extrair o texto real.
+    """
+    import json as _json
+
+    try:
+        p = Path(path)
+        if not p.exists():
+            return None
+        size = p.stat().st_size
+        offset = max(0, size - max_bytes)
+        with p.open("rb") as f:
+            f.seek(offset)
+            data = f.read()
+        raw = data.decode("utf-8", errors="replace")
+    except OSError:
+        return None
+
+    parts: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = _json.loads(line)
+        except _json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict) or obj.get("type") != "assistant":
+            continue
+        message = obj.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            parts.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    if text.strip():
+                        parts.append(text)
+
+    return "\n".join(parts) if parts else None

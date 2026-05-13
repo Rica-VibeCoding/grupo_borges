@@ -7,6 +7,11 @@ import type {
   AgentSkillsResponse,
   AgentTablesResponse,
   FleetResponse,
+  ReviewAction,
+  ReviewActionPayload,
+  ReviewActionResponse,
+  ReviewEventsResponse,
+  ReviewMode,
   Task,
   TaskHandoffResponse,
   TaskEvent,
@@ -24,6 +29,9 @@ export type TaskCreatePayload = {
   status?: TaskPatchStatus;
   priority?: number;
   idempotency_key?: string | null;
+  review_mode?: ReviewMode;
+  reviewer_assignee?: string | null;
+  tags?: string[] | null;
 };
 
 export type TaskDispatchResponse = {
@@ -68,6 +76,29 @@ export async function patchTaskStatus(taskId: string, status: TaskPatchStatus): 
     body: JSON.stringify({ status }),
   });
   if (!res.ok) throw new Error(`patchTaskStatus failed: ${res.status}`);
+  return res.json();
+}
+
+export type TaskPatchPayload = {
+  title?: string;
+  body?: string | null;
+  assignee?: string;
+  status?: TaskPatchStatus;
+  priority?: number;
+  review_mode?: ReviewMode;
+  reviewer_assignee?: string | null;
+  tags?: string[] | null;
+  instance_id?: string | null;
+  skill_hint?: string | null;
+};
+
+export async function patchTask(taskId: string, fields: TaskPatchPayload): Promise<Task> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchTask failed: ${res.status}`));
   return res.json();
 }
 
@@ -168,5 +199,59 @@ export async function postTaskHandoff(
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`postTaskHandoff failed: ${res.status}`);
+  return res.json();
+}
+
+export async function reviewTask(
+  taskId: string,
+  payload: ReviewActionPayload,
+  reviewerSlug?: string | null,
+): Promise<ReviewActionResponse>;
+export async function reviewTask(
+  taskId: string,
+  action: ReviewAction,
+  body?: Omit<ReviewActionPayload, 'action'>,
+  reviewerSlug?: string | null,
+): Promise<ReviewActionResponse>;
+export async function reviewTask(
+  taskId: string,
+  actionOrPayload: ReviewAction | ReviewActionPayload,
+  bodyOrReviewer?: Omit<ReviewActionPayload, 'action'> | string | null,
+  reviewerMaybe?: string | null,
+): Promise<ReviewActionResponse> {
+  const payload: ReviewActionPayload =
+    typeof actionOrPayload === 'string'
+      ? {
+          action: actionOrPayload,
+          ...((bodyOrReviewer as Omit<ReviewActionPayload, 'action'> | undefined) ?? {}),
+        }
+      : actionOrPayload;
+  const reviewerSlug =
+    typeof actionOrPayload === 'string'
+      ? reviewerMaybe
+      : (bodyOrReviewer as string | null | undefined);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (reviewerSlug) headers['X-Reviewer-Slug'] = reviewerSlug;
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/review`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `reviewTask failed: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchReviews(
+  filters: { reviewer?: string | null; since_id?: number | null; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ReviewEventsResponse> {
+  const qs = new URLSearchParams();
+  if (filters.reviewer) qs.set('reviewer', filters.reviewer);
+  if (filters.since_id !== null && filters.since_id !== undefined) {
+    qs.set('since_id', String(filters.since_id));
+  }
+  qs.set('limit', String(filters.limit ?? 50));
+  const res = await fetch(`/api/reviews?${qs.toString()}`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchReviews failed: ${res.status}`));
   return res.json();
 }

@@ -41,6 +41,17 @@ OFFLINE_THRESHOLD_SECONDS = 300
 # A margem é maior que o offline do agente para evitar falso positivo em ações longas.
 RUN_STALE_THRESHOLD_SECONDS = 600
 
+REVIEW_MODES = {"human", "agent_advisory", "agent_autonomous"}
+REVIEW_ACTIONS = {
+    "accept": ("review.accepted", "done"),
+    "accepted": ("review.accepted", "done"),
+    "reject": ("review.rejected", "running"),
+    "rejected": ("review.rejected", "running"),
+    "requeue": ("review.requeued", "ready"),
+    "requeued": ("review.requeued", "ready"),
+}
+_UNSET = object()
+
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
     if not raw:
@@ -81,10 +92,36 @@ def derive_prefix(name: str) -> str:
     return "??"
 
 
+def _normalize_task_row(task: dict[str, Any]) -> dict[str, Any]:
+    """Parseia campos JSON-TEXT da row de `tasks` pra forma utilizável.
+
+    Hoje só `tags` precisa (TEXT JSON list[str]). Falhas silenciosas
+    preservam o valor bruto; o frontend tem fallback defensivo.
+    """
+    raw_tags = task.get("tags")
+    if raw_tags and isinstance(raw_tags, str):
+        try:
+            parsed = json.loads(raw_tags)
+            if isinstance(parsed, list):
+                task["tags"] = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return task
+
+
+def _json_array_or_none(value: list[Any] | tuple[Any, ...] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(list(value), ensure_ascii=False)
+
+
 def derive_agent_status(
     last_seen: int | None,
     instances: list[dict[str, Any]] | None,
     *,
+    lifecycle_status: str | None = None,
+    lifecycle_updated_at: int | None = None,
+    current_task_id: str | None = None,
     now: int | None = None,
 ) -> str:
     """Deriva status do agente a partir do heartbeat + status das instâncias.
@@ -100,10 +137,25 @@ def derive_agent_status(
       5) caso contrário → idle (inclui agente vivo sem instances)
     """
     now = now if now is not None else int(time.time())
+    lifecycle_is_fresh = (
+        lifecycle_updated_at is not None
+        and now - lifecycle_updated_at <= OFFLINE_THRESHOLD_SECONDS
+    )
     if last_seen is None or (now - last_seen) > OFFLINE_THRESHOLD_SECONDS:
         return "offline"
+    if lifecycle_status == "error":
+        return "blocked"
+    if lifecycle_is_fresh and lifecycle_status in {
+        "session",
+        "prompt",
+        "tool",
+        "tool_done",
+        "subagent",
+        "subagent_done",
+    }:
+        return "running"
     if not instances:
-        return "idle"
+        return "running" if current_task_id else "idle"
     statuses = {i["status"] for i in instances}
     if "running" in statuses:
         return "running"
@@ -213,40 +265,55 @@ class GrupoBorgesDB:
         with self._connect() as conn:
             with SCHEMA_PATH.open("r", encoding="utf-8") as f:
                 conn.executescript(f.read())
-            # Migração idempotente: coluna `human_id` adicionada após o schema
-            # original (CREATE TABLE IF NOT EXISTS não altera tabela existente).
-            # `executescript` faz commit implícito → o ALTER abaixo roda em autocommit;
-            # capturamos "duplicate column" caso dois startups concorrentes (ex: dev
-            # reload) racem pra adicionar a mesma coluna.
-            existing = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
-            if "human_id" not in existing:
-                try:
-                    conn.execute("ALTER TABLE tasks ADD COLUMN human_id TEXT")
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
+            # Migrações idempotentes: `executescript` fez commit implícito → ALTERs abaixo
+            # rodam em autocommit. `_add_column_if_missing` engole "duplicate column" caso
+            # dois startups concorrentes (ex: dev reload) racem na mesma coluna.
+            if self._add_column_if_missing(conn, "tasks", "human_id", "TEXT"):
                 conn.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_human_id "
                     "ON tasks(human_id) WHERE human_id IS NOT NULL"
                 )
-            agent_state_cols = {
-                row["name"] for row in conn.execute("PRAGMA table_info(agent_state)")
-            }
-            for col, ddl in {
-                "lifecycle_status": "ALTER TABLE agent_state ADD COLUMN lifecycle_status TEXT",
-                "lifecycle_detail": "ALTER TABLE agent_state ADD COLUMN lifecycle_detail TEXT",
-                "lifecycle_event": "ALTER TABLE agent_state ADD COLUMN lifecycle_event TEXT",
-                "lifecycle_updated_at": (
-                    "ALTER TABLE agent_state ADD COLUMN lifecycle_updated_at INTEGER"
-                ),
-            }.items():
-                if col in agent_state_cols:
-                    continue
-                try:
-                    conn.execute(ddl)
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
+            for col, definition in (
+                ("lifecycle_status", "TEXT"),
+                ("lifecycle_detail", "TEXT"),
+                ("lifecycle_event", "TEXT"),
+                ("lifecycle_updated_at", "INTEGER"),
+            ):
+                self._add_column_if_missing(conn, "agent_state", col, definition)
+
+            # S2: colunas de watchdog/checkpoint/review
+            for col, definition in (
+                ("heartbeat_timeout_seconds", "INTEGER DEFAULT 900"),
+                ("max_hops", "INTEGER DEFAULT 5"),
+                ("reviewer_assignee", "TEXT"),
+                ("review_mode", "TEXT NOT NULL DEFAULT 'human'"),
+                ("tags", "TEXT"),
+            ):
+                self._add_column_if_missing(conn, "tasks", col, definition)
+
+            self._add_column_if_missing(conn, "agents", "can_review", "TEXT")
+
+            if self._add_column_if_missing(conn, "task_events", "content_hash", "TEXT"):
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_idempotency "
+                    "ON task_events(task_id, content_hash) WHERE content_hash IS NOT NULL"
+                )
+
+    @staticmethod
+    def _add_column_if_missing(
+        conn: sqlite3.Connection, table: str, column: str, definition: str
+    ) -> bool:
+        """ALTER TABLE idempotente. Retorna True se a coluna foi adicionada agora."""
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column in existing:
+            return False
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+            return False
+        return True
 
     async def shutdown(self) -> None:
         # No-op: connection-per-call não mantém estado pra fechar
@@ -264,8 +331,9 @@ class GrupoBorgesDB:
                 conn.execute(
                     """
                     INSERT INTO agents (slug, name, role, emoji, tmux_session, workspace_path,
-                                        cli_default, model_default, capabilities, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        cli_default, model_default, capabilities, can_review,
+                                        created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(slug) DO UPDATE SET
                         name           = excluded.name,
                         role           = excluded.role,
@@ -275,6 +343,7 @@ class GrupoBorgesDB:
                         cli_default    = excluded.cli_default,
                         model_default  = excluded.model_default,
                         capabilities   = excluded.capabilities,
+                        can_review     = excluded.can_review,
                         updated_at     = excluded.updated_at
                     """,
                     (
@@ -287,6 +356,7 @@ class GrupoBorgesDB:
                         a.get("cli_default", "claude_code"),
                         a["model_default"],
                         json.dumps(a.get("capabilities", []), ensure_ascii=False),
+                        json.dumps(a.get("can_review", []), ensure_ascii=False),
                         now,
                         now,
                     ),
@@ -352,6 +422,7 @@ class GrupoBorgesDB:
     def _row_to_agent(row: sqlite3.Row) -> dict[str, Any]:
         d = dict(row)
         d["capabilities"] = json.loads(d["capabilities"] or "[]")
+        d["can_review"] = json.loads(d["can_review"] or "[]")
         return d
 
     # ---------- agent_state ----------
@@ -449,32 +520,386 @@ class GrupoBorgesDB:
         instance_id: str | None = None,
         payload: dict[str, Any] | None = None,
         raw_jsonl: str | None = None,
-    ) -> int:
+        content_hash: str | None = None,
+    ) -> int | None:
         return await asyncio.to_thread(
             self._insert_task_event,
-            kind, task_id, agent_slug, instance_id, payload, raw_jsonl,
+            kind, task_id, agent_slug, instance_id, payload, raw_jsonl, content_hash,
         )
 
     def _insert_task_event(
-        self, kind, task_id, agent_slug, instance_id, payload, raw_jsonl
-    ) -> int:
+        self, kind, task_id, agent_slug, instance_id, payload, raw_jsonl, content_hash=None
+    ) -> int | None:
         with self._connect() as conn, conn:
-            cur = conn.execute(
-                """
-                INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    agent_slug,
-                    instance_id,
-                    kind,
-                    json.dumps(payload, ensure_ascii=False) if payload is not None else None,
-                    raw_jsonl,
-                    int(time.time()),
-                ),
-            )
-            return cur.lastrowid
+            if content_hash is not None:
+                # INSERT OR IGNORE funciona com índice parcial UNIQUE WHERE content_hash IS NOT NULL.
+                # Verifica via rowcount (0 = ignorado, nada inserido).
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO task_events
+                        (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, content_hash, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        agent_slug,
+                        instance_id,
+                        kind,
+                        json.dumps(payload, ensure_ascii=False) if payload is not None else None,
+                        raw_jsonl,
+                        content_hash,
+                        int(time.time()),
+                    ),
+                )
+                return cur.lastrowid if cur.rowcount > 0 else None
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO task_events
+                        (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        agent_slug,
+                        instance_id,
+                        kind,
+                        json.dumps(payload, ensure_ascii=False) if payload is not None else None,
+                        raw_jsonl,
+                        int(time.time()),
+                    ),
+                )
+                return cur.lastrowid
+
+    async def record_review_action(
+        self,
+        task_id: str,
+        action: str,
+        reviewer: str,
+        payload: dict[str, Any] | None,
+        content_hash: str | None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._record_review_action,
+            task_id,
+            action,
+            reviewer,
+            payload,
+            content_hash,
+        )
+
+    def _record_review_action(
+        self,
+        task_id: str,
+        action: str,
+        reviewer: str,
+        payload: dict[str, Any] | None,
+        content_hash: str | None,
+    ) -> dict[str, Any] | None:
+        action_key = action.strip().lower()
+        if action_key not in REVIEW_ACTIONS:
+            raise ValueError(f"review action invalida: {action!r}")
+        event_kind, next_status = REVIEW_ACTIONS[action_key]
+        now = int(time.time())
+        event_payload = dict(payload or {})
+        event_payload.update(
+            {
+                "action": action_key,
+                "reviewer": reviewer,
+                "to_status": next_status,
+            }
+        )
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                task_row = conn.execute(
+                    "SELECT * FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+                task = dict(task_row)
+                event_payload["from_status"] = task["status"]
+
+                # task_events.agent_slug é FK pra agents(slug). Reviewer humano (Rica)
+                # ou slug não-registrado vai pro payload, agent_slug fica NULL.
+                agent_exists = conn.execute(
+                    "SELECT 1 FROM agents WHERE slug = ?",
+                    (reviewer,),
+                ).fetchone()
+                event_agent_slug = reviewer if agent_exists else None
+
+                if content_hash is not None:
+                    cur = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO task_events
+                            (task_id, agent_slug, instance_id, kind, payload, content_hash, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            task_id,
+                            event_agent_slug,
+                            task.get("instance_id"),
+                            event_kind,
+                            json.dumps(event_payload, ensure_ascii=False),
+                            content_hash,
+                            now,
+                        ),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return None
+                    event_id = cur.lastrowid
+                else:
+                    cur = conn.execute(
+                        """
+                        INSERT INTO task_events
+                            (task_id, agent_slug, instance_id, kind, payload, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            task_id,
+                            event_agent_slug,
+                            task.get("instance_id"),
+                            event_kind,
+                            json.dumps(event_payload, ensure_ascii=False),
+                            now,
+                        ),
+                    )
+                    event_id = cur.lastrowid
+
+                if next_status == "done":
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'done', completed_at = ?
+                        WHERE id = ?
+                        """,
+                        (now, task_id),
+                    )
+                    self._close_open_runs_for_status(
+                        conn, task_id=task_id, task_status="done", ended_at=now,
+                    )
+                    conn.execute(
+                        """
+                        UPDATE agent_state
+                        SET current_task_id = NULL, last_seen = ?
+                        WHERE slug = ? AND current_task_id = ?
+                        """,
+                        (now, task["assignee"], task_id),
+                    )
+                elif next_status == "running":
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'running',
+                            started_at = COALESCE(started_at, ?),
+                            completed_at = NULL
+                        WHERE id = ?
+                        """,
+                        (now, task_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET status = 'ready',
+                            instance_id = NULL,
+                            completed_at = NULL
+                        WHERE id = ?
+                        """,
+                        (task_id,),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE agent_state
+                        SET current_task_id = NULL, last_seen = ?
+                        WHERE slug = ? AND current_task_id = ?
+                        """,
+                        (now, task["assignee"], task_id),
+                    )
+
+                updated = self._get_task_from_conn(conn, task_id)
+                conn.commit()
+                return {
+                    "event_id": event_id,
+                    "task": updated,
+                    "payload": event_payload,
+                }
+            except Exception:
+                conn.rollback()
+                raise
+
+    async def record_checkpoint(
+        self,
+        *,
+        task_id: str,
+        agent_slug: str | None,
+        state: str,
+        summary: str | None = None,
+        files_changed: str | None = None,
+        next_step: str | None = None,
+        handoff_to: str | None = None,
+        content_hash: str | None = None,
+        source: str = "unknown",
+    ) -> dict[str, Any] | None:
+        """Grava um checkpoint de agente e transita o status da task.
+
+        Retorna None se o checkpoint já foi gravado (idempotência via content_hash).
+        """
+        return await asyncio.to_thread(
+            self._record_checkpoint,
+            task_id=task_id,
+            agent_slug=agent_slug,
+            state=state,
+            summary=summary,
+            files_changed=files_changed,
+            next_step=next_step,
+            handoff_to=handoff_to,
+            content_hash=content_hash,
+            source=source,
+        )
+
+    def _record_checkpoint(
+        self,
+        *,
+        task_id: str,
+        agent_slug: str | None,
+        state: str,
+        summary: str | None,
+        files_changed: str | None,
+        next_step: str | None,
+        handoff_to: str | None,
+        content_hash: str | None,
+        source: str,
+    ) -> dict[str, Any] | None:
+        now = int(time.time())
+        payload = {
+            "state": state,
+            "summary": summary,
+            "files_changed": files_changed,
+            "next_step": next_step,
+            "handoff_to": handoff_to,
+            "source": source,
+        }
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Inserção idempotente via INSERT OR IGNORE (funciona com índice parcial)
+                if content_hash is not None:
+                    cur = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO task_events
+                            (task_id, agent_slug, kind, payload, content_hash, created_at)
+                        VALUES (?, ?, 'checkpoint', ?, ?, ?)
+                        """,
+                        (
+                            task_id,
+                            agent_slug,
+                            json.dumps(payload, ensure_ascii=False),
+                            content_hash,
+                            now,
+                        ),
+                    )
+                    if cur.rowcount == 0:
+                        conn.rollback()
+                        return None  # duplicata — já processado
+                    event_id = cur.lastrowid
+                else:
+                    cur = conn.execute(
+                        """
+                        INSERT INTO task_events
+                            (task_id, agent_slug, kind, payload, created_at)
+                        VALUES (?, ?, 'checkpoint', ?, ?)
+                        """,
+                        (
+                            task_id,
+                            agent_slug,
+                            json.dumps(payload, ensure_ascii=False),
+                            now,
+                        ),
+                    )
+                    event_id = cur.lastrowid
+
+                # Busca task atual pra validar que existe e está running
+                task_row = conn.execute(
+                    "SELECT id, status, assignee FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if task_row is None:
+                    conn.rollback()
+                    return None
+
+                task_status = task_row["status"]
+
+                # Atualiza heartbeat do run ativo (se existir)
+                conn.execute(
+                    """
+                    UPDATE task_runs
+                    SET last_heartbeat = ?
+                    WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                    """,
+                    (now, task_id),
+                )
+
+                new_task_status: str | None = None
+                if state == "DONE" and task_status not in ("done", "blocked"):
+                    new_task_status = "review"
+                    conn.execute(
+                        "UPDATE tasks SET status = 'review', completed_at = ? WHERE id = ?",
+                        (now, task_id),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'done', ended_at = ?, outcome = 'completed'
+                        WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                        """,
+                        (now, task_id),
+                    )
+                elif state in ("BLOCKED", "NEEDS_INPUT") and task_status not in ("blocked", "done", "review"):
+                    new_task_status = "blocked"
+                    conn.execute(
+                        "UPDATE tasks SET status = 'blocked' WHERE id = ?",
+                        (task_id,),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'blocked', ended_at = ?, outcome = ?
+                        WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                        """,
+                        (now, state.lower(), task_id),
+                    )
+                elif state == "HANDOFF" and task_status not in ("blocked", "done", "review"):
+                    # Handoff: task pai fica blocked (aguarda filho completar)
+                    new_task_status = "blocked"
+                    conn.execute(
+                        "UPDATE tasks SET status = 'blocked' WHERE id = ?",
+                        (task_id,),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE task_runs
+                        SET status = 'blocked', ended_at = ?, outcome = 'handoff_pending'
+                        WHERE task_id = ? AND status = 'running' AND ended_at IS NULL
+                        """,
+                        (now, task_id),
+                    )
+                # IN_PROGRESS: só heartbeat, sem transição de status
+
+                conn.commit()
+                return {
+                    "event_id": event_id,
+                    "task_id": task_id,
+                    "state": state,
+                    "new_task_status": new_task_status or task_status,
+                }
+            except Exception:
+                conn.rollback()
+                raise
 
     async def list_events_after(self, after_id: int, limit: int = 200) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._list_events_after, after_id, limit)
@@ -542,6 +967,67 @@ class GrupoBorgesDB:
                 result.append(d)
             return result
 
+    async def list_review_events(
+        self,
+        reviewer_slug: str | None = None,
+        limit: int = 100,
+        since_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(
+            self._list_review_events,
+            reviewer_slug,
+            limit,
+            since_id,
+        )
+
+    def _list_review_events(
+        self,
+        reviewer_slug: str | None,
+        limit: int,
+        since_id: int | None,
+    ) -> list[dict[str, Any]]:
+        clauses = [
+            "e.kind IN ('review.accepted', 'review.rejected', 'review.requeued')",
+        ]
+        params: list[Any] = []
+        if reviewer_slug:
+            clauses.append(
+                "(e.agent_slug = ? OR t.reviewer_assignee = ? "
+                "OR json_extract(e.payload, '$.reviewer') = ?)"
+            )
+            params.extend([reviewer_slug, reviewer_slug, reviewer_slug])
+        if since_id is not None:
+            clauses.append("e.id > ?")
+            params.append(since_id)
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT e.id, e.task_id, e.agent_slug, e.instance_id, e.kind,
+                       e.payload, e.created_at,
+                       t.human_id, t.title, t.status, t.assignee,
+                       t.reviewer_assignee, t.review_mode, t.tags
+                FROM task_events e
+                LEFT JOIN tasks t ON t.id = e.task_id
+                WHERE {" AND ".join(clauses)}
+                ORDER BY e.id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                d = dict(row)
+                for key in ("payload", "tags"):
+                    if d.get(key):
+                        try:
+                            d[key] = json.loads(d[key])
+                        except json.JSONDecodeError:
+                            pass
+                result.append(d)
+            return result
+
     # ---------- tasks ----------
 
     TASK_STATUSES = {"backlog", "ready", "running", "review", "blocked", "done"}
@@ -595,11 +1081,18 @@ class GrupoBorgesDB:
             parent = dict(parent_row)
             child_title = f"↳ {clean_note or parent['title']}"
             child_human_id = self._next_human_id(conn, to_agent)
+
+            # MAX_HOPS: filho herda parent.max_hops - 1. Se chegar em 0, bloqueia.
+            parent_hops = parent.get("max_hops") if parent.get("max_hops") is not None else 5
+            child_hops = max(0, int(parent_hops) - 1)
+            child_status = "blocked" if child_hops == 0 else "ready"
+
             conn.execute(
                 """
                 INSERT INTO tasks (id, human_id, title, body, assignee, origin_agent,
-                                   status, priority, created_at, idempotency_key)
-                VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?)
+                                   status, priority, created_at, idempotency_key,
+                                   heartbeat_timeout_seconds, max_hops)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     child_id,
@@ -608,9 +1101,12 @@ class GrupoBorgesDB:
                     clean_note,
                     to_agent,
                     parent["assignee"],
+                    child_status,
                     parent["priority"],
                     now,
                     idempotency_key,
+                    parent.get("heartbeat_timeout_seconds") or 900,
+                    child_hops,
                 ),
             )
             conn.execute(
@@ -626,6 +1122,7 @@ class GrupoBorgesDB:
                 "from": parent["assignee"],
                 "to": to_agent,
                 "note": clean_note,
+                "child_max_hops": child_hops,
             }
             cur = conn.execute(
                 """
@@ -639,6 +1136,20 @@ class GrupoBorgesDB:
                     now,
                 ),
             )
+            if child_hops == 0:
+                # Filho bloqueado imediatamente por hop_limit
+                conn.execute(
+                    """
+                    INSERT INTO task_events (task_id, agent_slug, kind, payload, created_at)
+                    VALUES (?, ?, 'hop_limit', ?, ?)
+                    """,
+                    (
+                        child_id,
+                        to_agent,
+                        json.dumps({"reason": "hop_limit", "parent": parent_id}, ensure_ascii=False),
+                        now,
+                    ),
+                )
             child = self._get_task_from_conn(conn, child_id)
             assert child is not None
             return {
@@ -647,6 +1158,7 @@ class GrupoBorgesDB:
                 "child": child,
                 "event_id": cur.lastrowid,
                 "payload": payload,
+                "hop_limit_blocked": child_hops == 0,
             }
 
     def _handoff_by_idempotency_key(
@@ -790,7 +1302,7 @@ class GrupoBorgesDB:
                 """,
                 params,
             )
-            return [dict(row) for row in cur.fetchall()]
+            return [_normalize_task_row(dict(row)) for row in cur.fetchall()]
 
     async def get_task(self, task_id: str) -> dict[str, Any] | None:
         return await asyncio.to_thread(self._get_task, task_id)
@@ -828,7 +1340,9 @@ class GrupoBorgesDB:
             (task_id,),
         )
         row = cur.fetchone()
-        return dict(row) if row is not None else None
+        if row is None:
+            return None
+        return _normalize_task_row(dict(row))
 
     async def touch_agent_run_heartbeat(
         self,
@@ -1066,22 +1580,16 @@ class GrupoBorgesDB:
                 conn.rollback()
                 raise
 
-    async def mark_stale_runs(
-        self,
-        *,
-        threshold_seconds: int = RUN_STALE_THRESHOLD_SECONDS,
-    ) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(
-            self._mark_stale_runs,
-            threshold_seconds=threshold_seconds,
-        )
+    async def mark_stale_runs(self) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._mark_stale_runs)
 
-    def _mark_stale_runs(self, *, threshold_seconds: int) -> list[dict[str, Any]]:
+    def _mark_stale_runs(self) -> list[dict[str, Any]]:
         now = int(time.time())
-        cutoff = now - threshold_seconds
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
+                # Usa heartbeat_timeout_seconds por-task (default 900s).
+                # Cada row tem seu próprio cutoff: now - COALESCE(t.heartbeat_timeout_seconds, 900)
                 stale_rows = conn.execute(
                     """
                     SELECT
@@ -1091,16 +1599,17 @@ class GrupoBorgesDB:
                         r.started_at AS run_started_at,
                         t.human_id,
                         t.assignee,
-                        t.instance_id
+                        t.instance_id,
+                        COALESCE(t.heartbeat_timeout_seconds, 900) AS timeout_s
                     FROM task_runs r
                     JOIN tasks t ON t.id = r.task_id
                     WHERE r.status = 'running'
                       AND r.ended_at IS NULL
                       AND t.status = 'running'
-                      AND COALESCE(r.last_heartbeat, r.started_at) < ?
+                      AND COALESCE(r.last_heartbeat, r.started_at) < (? - COALESCE(t.heartbeat_timeout_seconds, 900))
                     ORDER BY COALESCE(r.last_heartbeat, r.started_at) ASC
                     """,
-                    (cutoff,),
+                    (now,),
                 ).fetchall()
                 marked: list[dict[str, Any]] = []
                 for row in stale_rows:
@@ -1110,8 +1619,8 @@ class GrupoBorgesDB:
                         "assignee": row["assignee"],
                         "run_id": row["run_id"],
                         "last_heartbeat": row["last_heartbeat"],
-                        "threshold_seconds": threshold_seconds,
-                        "reason": "heartbeat_stale",
+                        "timeout_seconds": row["timeout_s"],
+                        "reason": "timed_out",
                     }
                     conn.execute(
                         """
@@ -1144,7 +1653,7 @@ class GrupoBorgesDB:
                     conn.execute(
                         """
                         INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, created_at)
-                        VALUES (?, ?, ?, 'run.stale', ?, ?)
+                        VALUES (?, ?, ?, 'run.timed_out', ?, ?)
                         """,
                         (
                             row["task_id"],
@@ -1639,6 +2148,59 @@ class GrupoBorgesDB:
                 return refreshed if refreshed is not None else updated
             return updated
 
+    async def update_task_review_fields(
+        self,
+        task_id: str,
+        review_mode: str | object = _UNSET,
+        reviewer_assignee: str | None | object = _UNSET,
+        tags: list[Any] | tuple[Any, ...] | None | object = _UNSET,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._update_task_review_fields,
+            task_id,
+            review_mode,
+            reviewer_assignee,
+            tags,
+        )
+
+    def _update_task_review_fields(
+        self,
+        task_id: str,
+        review_mode: str | object,
+        reviewer_assignee: str | None | object,
+        tags: list[Any] | tuple[Any, ...] | None | object,
+    ) -> dict[str, Any] | None:
+        sets: list[str] = []
+        params: list[Any] = []
+        if review_mode is not _UNSET:
+            if not isinstance(review_mode, str) or review_mode not in REVIEW_MODES:
+                raise ValueError(f"review_mode invalido: {review_mode!r}")
+            sets.append("review_mode = ?")
+            params.append(review_mode)
+        if reviewer_assignee is not _UNSET:
+            if reviewer_assignee is not None and not isinstance(reviewer_assignee, str):
+                raise ValueError("reviewer_assignee deve ser string ou None")
+            sets.append("reviewer_assignee = ?")
+            params.append(reviewer_assignee)
+        if tags is not _UNSET:
+            if tags is not None and not isinstance(tags, (list, tuple)):
+                raise ValueError("tags deve ser lista, tupla ou None")
+            sets.append("tags = ?")
+            params.append(_json_array_or_none(tags))
+
+        if not sets:
+            return self._get_task(task_id)
+
+        params.append(task_id)
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+            if cur.rowcount == 0:
+                return None
+            return self._get_task_from_conn(conn, task_id)
+
     @staticmethod
     def _close_open_runs_for_status(
         conn: sqlite3.Connection,
@@ -2026,7 +2588,12 @@ class GrupoBorgesDB:
                     agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
-                agent["last_seen"], agent_instances, now=now,
+                agent["last_seen"],
+                agent_instances,
+                lifecycle_status=agent.get("lifecycle_status"),
+                lifecycle_updated_at=agent.get("lifecycle_updated_at"),
+                current_task_id=agent.get("current_task_id"),
+                now=now,
             )
             agent["sparkline"] = build_hour_series(
                 spark_by_slug.get(slug, {}), start_dt, sparkline_hours,

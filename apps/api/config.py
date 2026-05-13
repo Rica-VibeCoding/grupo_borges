@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     # auth / dev
     dev_bypass_auth: bool = False
+    # Slug humano usado em dev local quando Tailscale-User-Login está ausente.
+    # Vazio = sem reviewer humano default (precisa X-Reviewer-Slug de agente).
+    dev_default_reviewer: str = ""
     hook_bearer_token: str | None = None
 
     # paths
@@ -41,6 +44,10 @@ class Settings(BaseSettings):
     auto_dispatch_enabled: bool = False
     auto_dispatch_interval_seconds: float = 5.0
     auto_dispatch_batch_size: int = 1
+
+    # watchdog (timeout + capture-pane checkpoint detection)
+    watchdog_enabled: bool = True
+    watchdog_interval_seconds: float = 30.0
 
 
 def get_settings() -> Settings:

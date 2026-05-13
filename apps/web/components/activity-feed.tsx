@@ -6,7 +6,7 @@ import { useFleet } from '../lib/fleet-context';
 
 const FEED_LIMIT = 40;
 
-function formatRelativeShort(deltaSec: number): string {
+export function formatRelativeShort(deltaSec: number): string {
   if (deltaSec < 60) return `${deltaSec}s`;
   const m = Math.floor(deltaSec / 60);
   if (m < 60) return `${m}m`;
@@ -27,8 +27,20 @@ function pickToolTarget(toolInput: Record<string, unknown>): string | null {
   return null;
 }
 
-function summarize(ev: TaskEvent): string {
+export function summarize(ev: TaskEvent): string {
   const payload = (ev.payload ?? {}) as Record<string, unknown>;
+
+  const summarizeToolUse = (toolName: string): string => {
+    if (toolName === 'Bash') return 'rodou comando';
+    if (toolName === 'Read') return 'leu arquivo';
+    if (toolName === 'Edit') return 'editou arquivo';
+    if (toolName === 'Write') return 'escreveu arquivo';
+    if (toolName === 'Grep') return 'buscou no código';
+    if (toolName.startsWith('mcp__')) return 'usou ferramenta externa';
+    return toolName;
+  };
+
+  if (ev.kind === 'hook:StopFailure') return 'erro ao parar';
 
   // hook:* events vindo do PostToolUse
   if (ev.kind.startsWith('hook:')) {
@@ -57,6 +69,8 @@ function summarize(ev: TaskEvent): string {
       return 'mensagem do usuário';
     case 'jsonl:assistant':
       return 'resposta do assistente';
+    case 'jsonl:system':
+      return 'atualizou contexto';
     case 'jsonl:summary':
       return typeof payload.summary === 'string' ? payload.summary.slice(0, 80) : 'summary';
     case 'UserPromptSubmit':
@@ -66,11 +80,25 @@ function summarize(ev: TaskEvent): string {
     case 'Stop':
       return 'turno finalizado';
     case 'PostToolUse':
-      return typeof payload.tool_name === 'string' ? payload.tool_name : 'tool executada';
+      return typeof payload.tool_name === 'string' ? summarizeToolUse(payload.tool_name) : 'tool executada';
+    case 'tara.exec.started':
+      return 'tara iniciada';
+    case 'tara.exec.completed':
+      return 'tara terminou';
+    case 'tara.exec.failed':
+      return 'tara falhou';
+    case 'hook:StopFailure':
+      return 'erro ao parar';
     case 'lifecycle.review':
       return 'task enviada para revisão';
     case 'lifecycle.blocked':
       return 'task bloqueada por falha';
+    case 'lifecycle.done':
+      return 'concluído';
+    case 'lifecycle.running':
+      return 'rodando';
+    case 'lifecycle.failed':
+      return 'falhou';
     default:
       return ev.kind;
   }
