@@ -19,7 +19,7 @@ from services import tmux_driver
 
 router = APIRouter()
 
-AgentStatus = Literal["running", "idle", "blocked", "done", "offline"]
+AgentStatus = Literal["ocioso", "trabalhando", "aguardando", "offline"]
 
 
 class SparklineBucket(BaseModel):
@@ -75,10 +75,9 @@ class FleetAgent(BaseModel):
 
 class FleetKpis(BaseModel):
     total: int
-    running: int
-    blocked: int
-    idle: int
-    done: int
+    trabalhando: int
+    aguardando: int
+    ocioso: int
     offline: int
     tasks_active: int
     tasks_running: int

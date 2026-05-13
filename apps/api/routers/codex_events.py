@@ -62,28 +62,27 @@ def _short_text(value: Any, *, limit: int = 80) -> str | None:
 
 def _codex_lifecycle(payload: CodexEventCreate) -> tuple[str, str | None]:
     body = payload.payload or {}
-    item_type = _short_text(body.get("type"), limit=40)
     label = _short_text(body.get("label"), limit=80)
     name = _short_text(body.get("name"), limit=80)
-    detail = label or name or item_type
+    detail = label or name
 
     if payload.kind == "tara.exec.started":
-        return "session", "tara-codex iniciado"
+        return "trabalhando", "tara-codex iniciado"
     if payload.kind == "tara.exec.completed":
-        return "idle", "tara-codex concluido"
+        return "ocioso", "tara-codex concluído"
     if payload.kind == "tara.exec.failed":
-        return "error", "tara-codex falhou"
+        return "aguardando", "tara-codex falhou"
     if payload.kind == "codex.turn.started":
-        return "prompt", "turno iniciado"
+        return "trabalhando", "turno iniciado"
     if payload.kind in {"codex.item.started", "codex.item.updated"}:
-        return "tool", detail or "item em execucao"
+        return "trabalhando", detail or "item em execução"
     if payload.kind == "codex.item.completed":
-        return "tool_done", detail or "item concluido"
+        return "trabalhando", "item concluído"
     if payload.kind == "codex.turn.completed":
-        return "idle", "turno concluido"
+        return "ocioso", "turno concluído"
     if payload.kind in {"codex.turn.failed", "codex.error"}:
-        return "error", detail or "erro codex"
-    return "event", payload.kind
+        return "aguardando", "erro codex"
+    return "trabalhando", payload.kind
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

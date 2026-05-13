@@ -33,95 +33,102 @@ def _setup_db(tmp_path: Path):
     return db
 
 
-class _Clock:
-    def __init__(self, now: int) -> None:
-        self.now = now
-
-    def time(self) -> int:
-        return self.now
+@pytest.mark.parametrize(
+    ("event_kind", "payload", "expected"),
+    [
+        ("SessionStart", {}, ("ocioso", "sessão iniciada")),
+        ("UserPromptSubmit", {"prompt": "executa a missão"}, ("trabalhando", "executa a missão")),
+        (
+            "PreToolUse",
+            {"tool_name": "Edit", "tool_input": {"file_path": "apps/api/routers/hooks.py"}},
+            ("trabalhando", "apps/api/routers/hooks.py"),
+        ),
+        (
+            "PreToolUse",
+            {"tool_name": "Bash", "tool_input": {"command": "uv run pytest tests/test_hooks.py"}},
+            ("trabalhando", "uv run pytest tests/test_hooks.py"),
+        ),
+        (
+            "PreToolUse",
+            {"tool_name": "WebSearch", "tool_input": {"query": "FastAPI SSE docs"}},
+            ("trabalhando", "FastAPI SSE docs"),
+        ),
+        ("PostToolUse", {"tool_name": "Edit"}, ("trabalhando", "Edit")),
+        ("PostToolUseFailure", {"tool_name": "Bash"}, ("aguardando", "Bash")),
+        ("SubagentStart", {"agent_type": "general-purpose"}, ("trabalhando", "general-purpose")),
+        ("SubagentStop", {"agent_type": "general-purpose"}, ("trabalhando", "general-purpose")),
+        ("Stop", {}, ("ocioso", "passou a bola")),
+        ("StopFailure", {"reason": "precisa de input"}, ("aguardando", "precisa de input")),
+        ("UnknownEvent", {}, ("trabalhando", "UnknownEvent")),
+    ],
+)
+def test_hook_lifecycle_returns_4_states_only(
+    event_kind: str,
+    payload: dict,
+    expected: tuple[str, str],
+) -> None:
+    status, detail = _hook_lifecycle(event_kind, payload)
+    assert (status, detail) == expected
+    assert status in {"ocioso", "trabalhando", "aguardando"}
 
 
 @pytest.mark.parametrize(
-    ("payload", "expected"),
+    ("kwargs", "expected"),
     [
-        ({"tool_name": "Read", "tool_input": {"file_path": "PLANO.md"}}, ("reading", "Read")),
         (
-            {"tool_name": "Edit", "tool_input": {"file_path": "apps/api/routers/hooks.py"}},
-            ("writing", "apps/api/routers/hooks.py"),
-        ),
-        (
-            {"tool_name": "Bash", "tool_input": {"command": "uv run pytest tests/test_hooks.py"}},
-            ("executing", "uv run pytest tests/test_hooks.py"),
+            {"last_seen": None, "instances": [], "now": 1_000},
+            "offline",
         ),
         (
             {
-                "tool_name": "Bash",
-                "tool_input": {"command": "tmux send-keys -t vinicius 'STATE:'"},
+                "last_seen": 950,
+                "instances": [],
+                "lifecycle_status": "trabalhando",
+                "lifecycle_updated_at": 950,
+                "now": 1_000,
             },
-            ("handoff", "vinicius"),
+            "trabalhando",
         ),
         (
-            {"tool_name": "WebFetch", "tool_input": {"url": "https://example.com/docs"}},
-            ("searching", "https://example.com/docs"),
+            {
+                "last_seen": 950,
+                "instances": [],
+                "lifecycle_status": "aguardando",
+                "lifecycle_updated_at": 100,
+                "now": 1_000,
+            },
+            "aguardando",
         ),
         (
-            {"tool_name": "TodoWrite", "tool_input": {"todos": [{"content": "x"}]}},
-            ("writing", "plano"),
+            {
+                "last_seen": 950,
+                "instances": [],
+                "lifecycle_status": "ocioso",
+                "lifecycle_updated_at": 950,
+                "now": 1_000,
+            },
+            "ocioso",
         ),
         (
-            {"tool_name": "TaskUpdate", "tool_input": {"taskId": "1", "status": "completed"}},
-            ("writing", "plano"),
+            {"last_seen": 950, "instances": [{"status": "running"}], "now": 1_000},
+            "trabalhando",
         ),
         (
-            {"tool_name": "Grep", "tool_input": {"pattern": "TODO"}},
-            ("searching", "TODO"),
+            {"last_seen": 950, "instances": [{"status": "blocked"}], "now": 1_000},
+            "aguardando",
         ),
         (
-            {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}},
-            ("searching", "**/*.py"),
-        ),
-        (
-            {"tool_name": "AskUserQuestion", "tool_input": {"questions": []}},
-            ("searching", "aguardando resposta"),
-        ),
-        (
-            {"tool_name": "mcp__supabase_geral__list_tables", "tool_input": {}},
-            ("searching", "mcp__supabase_geral__list_tables"),
+            {"last_seen": 950, "instances": [{"status": "done"}], "now": 1_000},
+            "ocioso",
         ),
     ],
 )
-def test_pre_tool_lifecycle_microstates(payload: dict, expected: tuple[str, str]) -> None:
-    assert _hook_lifecycle("PreToolUse", payload) == expected
+def test_derive_agent_status_4_values(kwargs: dict, expected: str) -> None:
+    from db.store import derive_agent_status
 
-
-def test_pre_tool_lifecycle_tmux_handoff_with_hyphen_and_quotes() -> None:
-    hyphen = _hook_lifecycle(
-        "PreToolUse",
-        {"tool_name": "Bash", "tool_input": {"command": "tmux send-keys -t miga-dani 'oi'"}},
-    )
-    quoted = _hook_lifecycle(
-        "PreToolUse",
-        {"tool_name": "Bash", "tool_input": {"command": "tmux send-keys -t \"vinicius\" hi"}},
-    )
-    assert hyphen == ("handoff", "miga-dani")
-    assert quoted == ("handoff", "vinicius")
-
-
-def test_pre_tool_lifecycle_tmux_handoff_regex_vs_generic_bash() -> None:
-    handoff = _hook_lifecycle(
-        "PreToolUse",
-        {
-            "tool_name": "Bash",
-            "tool_input": {"command": "printf x && tmux send-keys -t vinicius 'segue'"},
-        },
-    )
-    generic = _hook_lifecycle(
-        "PreToolUse",
-        {"tool_name": "Bash", "tool_input": {"command": "printf x && pytest -q"}},
-    )
-
-    assert handoff == ("handoff", "vinicius")
-    assert generic == ("executing", "printf x && pytest -q")
+    status = derive_agent_status(**kwargs)
+    assert status == expected
+    assert status in {"ocioso", "trabalhando", "aguardando", "offline"}
 
 
 def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:
@@ -129,14 +136,12 @@ def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:
 
     payload = {"message": {"stop_reason": "end_turn", "content": []}}
     status, detail = derive_lifecycle_from_event("jsonl:assistant", payload)
-    assert status == "idle"
+    assert status == "ocioso"
     assert detail == "passou a bola"
 
 
 def test_derive_lifecycle_jsonl_assistant_tool_use_does_not_emit_tool() -> None:
-    """Pre-anúncio de tool_use no JSONL não deve setar 'tool' — PreToolUse hook
-    é a fonte de verdade do granular. Retornar 'tool' aqui fura o hold do passo
-    4 e causa flicker."""
+    """Pre-anúncio de tool_use no JSONL não deve sobrescrever o hook PreToolUse."""
     from db.store import derive_lifecycle_from_event
 
     payload = {
@@ -145,13 +150,12 @@ def test_derive_lifecycle_jsonl_assistant_tool_use_does_not_emit_tool() -> None:
         },
     }
     status, detail = derive_lifecycle_from_event("jsonl:assistant", payload)
-    assert status == "event"
-    assert detail == "assistant"
+    assert status is None
+    assert detail is None
 
 
 def test_jsonl_watcher_assistant_tool_use_returns_none() -> None:
-    """Simetria: _jsonl_lifecycle no watcher também não deve emitir 'tool' pra
-    assistant tool_use block."""
+    """Simetria: _jsonl_lifecycle no watcher não emite lifecycle pra tool_use."""
     from orchestrator.jsonl_watcher import _jsonl_lifecycle
 
     payload = {
@@ -163,59 +167,3 @@ def test_jsonl_watcher_assistant_tool_use_returns_none() -> None:
     status, detail = _jsonl_lifecycle(payload, "assistant")
     assert status is None
     assert detail is None
-
-
-def test_lifecycle_hold_suppresses_tool_done_inside_window(tmp_path: Path, monkeypatch) -> None:
-    import db.store as store
-
-    db = _setup_db(tmp_path)
-    clock = _Clock(1_000)
-    monkeypatch.setattr(store, "time", clock)
-
-    db._update_agent_lifecycle(
-        "daniel",
-        status="writing",
-        detail="apps/api/db/store.py",
-        event="hook:PreToolUse",
-    )
-    clock.now += 1
-    db._update_agent_lifecycle(
-        "daniel",
-        status="tool_done",
-        detail="Edit",
-        event="hook:PostToolUse",
-    )
-
-    agent = db._get_agent("daniel")
-    assert agent["lifecycle_status"] == "writing"
-    assert agent["lifecycle_detail"] == "apps/api/db/store.py"
-    assert agent["lifecycle_event"] == "hook:PostToolUse"
-    assert agent["lifecycle_updated_at"] == 1_000
-
-
-def test_lifecycle_hold_allows_tool_done_after_window(tmp_path: Path, monkeypatch) -> None:
-    import db.store as store
-
-    db = _setup_db(tmp_path)
-    clock = _Clock(1_000)
-    monkeypatch.setattr(store, "time", clock)
-
-    db._update_agent_lifecycle(
-        "daniel",
-        status="writing",
-        detail="apps/api/db/store.py",
-        event="hook:PreToolUse",
-    )
-    clock.now += 10
-    db._update_agent_lifecycle(
-        "daniel",
-        status="tool_done",
-        detail="Edit",
-        event="hook:PostToolUse",
-    )
-
-    agent = db._get_agent("daniel")
-    assert agent["lifecycle_status"] == "tool_done"
-    assert agent["lifecycle_detail"] == "Edit"
-    assert agent["lifecycle_event"] == "hook:PostToolUse"
-    assert agent["lifecycle_updated_at"] == 1_010

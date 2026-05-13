@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from db.store import GrupoBorgesDB
@@ -22,9 +21,31 @@ AGENT = {
 
 def _setup_db(tmp_path: Path) -> GrupoBorgesDB:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
-    asyncio.run(db.startup())
-    asyncio.run(db.sync_agents_from_yaml([AGENT]))
+    db._apply_schema()
+    db._sync_agents([AGENT])
     return db
+
+
+def _create_task(
+    db: GrupoBorgesDB,
+    *,
+    id: str,
+    title: str,
+    assignee: str,
+    status: str,
+) -> dict:
+    return db._create_task(
+        id=id,
+        title=title,
+        assignee=assignee,
+        body=None,
+        instance_id=None,
+        origin_agent=None,
+        skill_hint=None,
+        status=status,
+        priority=0,
+        idempotency_key=None,
+    )
 
 
 def _agent_from_snapshot(snapshot: dict, slug: str) -> dict:
@@ -33,47 +54,43 @@ def _agent_from_snapshot(snapshot: dict, slug: str) -> dict:
 
 def test_fleet_snapshot_ignores_ready_and_backlog_tasks(tmp_path: Path) -> None:
     db = _setup_db(tmp_path)
-    asyncio.run(
-        db.create_task(
-            id="ready-task",
-            title="Ready task",
-            assignee="daniel",
-            status="ready",
-        )
+    _create_task(
+        db,
+        id="ready-task",
+        title="Ready task",
+        assignee="daniel",
+        status="ready",
     )
-    asyncio.run(
-        db.create_task(
-            id="backlog-task",
-            title="Backlog task",
-            assignee="daniel",
-            status="backlog",
-        )
+    _create_task(
+        db,
+        id="backlog-task",
+        title="Backlog task",
+        assignee="daniel",
+        status="backlog",
     )
 
-    snapshot = asyncio.run(db.fleet_snapshot())
+    snapshot = db._fleet_snapshot(24)
 
     assert _agent_from_snapshot(snapshot, "daniel")["current_task_id"] is None
 
 
 def test_fleet_snapshot_uses_running_task_display_id(tmp_path: Path) -> None:
     db = _setup_db(tmp_path)
-    running = asyncio.run(
-        db.create_task(
-            id="running-task",
-            title="Running task",
-            assignee="daniel",
-            status="running",
-        )
+    running = _create_task(
+        db,
+        id="running-task",
+        title="Running task",
+        assignee="daniel",
+        status="running",
     )
-    asyncio.run(
-        db.create_task(
-            id="ready-task",
-            title="Ready task",
-            assignee="daniel",
-            status="ready",
-        )
+    _create_task(
+        db,
+        id="ready-task",
+        title="Ready task",
+        assignee="daniel",
+        status="ready",
     )
 
-    snapshot = asyncio.run(db.fleet_snapshot())
+    snapshot = db._fleet_snapshot(24)
 
     assert _agent_from_snapshot(snapshot, "daniel")["current_task_id"] == running["human_id"]

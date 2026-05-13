@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import re
 import sqlite3
 import time
 import uuid
@@ -37,13 +36,10 @@ HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
 # Janela de tolerância pra considerar um agente "online" baseado no último heartbeat.
 # Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
 OFFLINE_THRESHOLD_SECONDS = 300
-LIFECYCLE_HOLD_SECONDS = 8
 
 # Uma task em execução sem hook/jsonl por 10 minutos deixa de ser "verde".
 # A margem é maior que o offline do agente para evitar falso positivo em ações longas.
 RUN_STALE_THRESHOLD_SECONDS = 600
-
-GRANULAR = {"reading", "writing", "executing", "searching", "handoff"}
 
 REVIEW_MODES = {"human", "agent_advisory", "agent_autonomous"}
 REVIEW_ACTIONS = {
@@ -130,15 +126,7 @@ def derive_agent_status(
 ) -> str:
     """Deriva status do agente a partir do heartbeat + status das instâncias.
 
-    Single source of truth pra UI: 5 estados (running, blocked, done, idle, offline).
-    UI Designer assume essa derivação — não duplicar lógica no frontend.
-
-    Ordem de precedência:
-      1) sem heartbeat ou heartbeat > 5min → offline
-      2) qualquer instance running → running
-      3) qualquer instance blocked → blocked
-      4) todas as instances done → done
-      5) caso contrário → idle (inclui agente vivo sem instances)
+    Single source of truth pra UI V2.4: ocioso, trabalhando, aguardando, offline.
     """
     now = now if now is not None else int(time.time())
     lifecycle_is_fresh = (
@@ -147,32 +135,22 @@ def derive_agent_status(
     )
     if last_seen is None or (now - last_seen) > OFFLINE_THRESHOLD_SECONDS:
         return "offline"
-    if lifecycle_status == "error":
-        return "blocked"
-    if lifecycle_is_fresh and lifecycle_status in {
-        "session",
-        "prompt",
-        "tool",
-        "tool_done",
-        "reading",
-        "writing",
-        "executing",
-        "handoff",
-        "searching",
-        "subagent",
-        "subagent_done",
-    }:
-        return "running"
+    if lifecycle_status == "trabalhando" and lifecycle_is_fresh:
+        return "trabalhando"
+    if lifecycle_status == "aguardando":
+        return "aguardando"
+    if lifecycle_status == "ocioso":
+        return "ocioso"
     if not instances:
-        return "running" if current_task_id else "idle"
+        return "ocioso"
     statuses = {i["status"] for i in instances}
     if "running" in statuses:
-        return "running"
+        return "trabalhando"
     if "blocked" in statuses:
-        return "blocked"
+        return "aguardando"
     if statuses == {"done"}:
-        return "done"
-    return "idle"
+        return "ocioso"
+    return "ocioso"
 
 
 def _short_text(value: Any, *, limit: int = 80) -> str | None:
@@ -184,47 +162,11 @@ def _short_text(value: Any, *, limit: int = 80) -> str | None:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
-def _pre_tool_lifecycle(data: dict[str, Any]) -> tuple[str, str | None]:
-    tool_name = _short_text(data.get("tool_name"), limit=64)
-    matcher = _short_text(data.get("matcher"), limit=64)
-    tool_input = data.get("tool_input")
-    tool_data = tool_input if isinstance(tool_input, dict) else {}
-
-    if tool_name == "Read":
-        return "reading", tool_name
-    if tool_name in {"Write", "Edit", "NotebookEdit"}:
-        file_path = tool_data.get("file_path")
-        return "writing", file_path if isinstance(file_path, str) else tool_name
-    if tool_name == "Bash":
-        command = tool_data.get("command")
-        if isinstance(command, str):
-            handoff = re.search(r"\btmux send-keys -t [\"']?([\w-]+)", command)
-            if handoff:
-                return "handoff", handoff.group(1)
-            return "executing", _short_text(command, limit=80)
-        return "executing", tool_name
-    if tool_name in {"WebFetch", "WebSearch"}:
-        detail = tool_data.get("url") or tool_data.get("query")
-        return "searching", detail if isinstance(detail, str) else tool_name
-    if tool_name == "Task":
-        return "subagent", tool_name
-    if tool_name in {"TodoWrite", "TaskUpdate"}:
-        return "writing", "plano"
-    if tool_name in {"Grep", "Glob"}:
-        pattern = tool_data.get("pattern")
-        return "searching", pattern if isinstance(pattern, str) else tool_name
-    if tool_name == "AskUserQuestion":
-        return "searching", "aguardando resposta"
-    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
-        return "searching", tool_name
-    return "tool", tool_name or matcher or "tool em execucao"
-
-
 def derive_lifecycle_from_event(
     kind: str | None,
     payload: dict[str, Any] | None,
 ) -> tuple[str | None, str | None]:
-    """Microestado defensivo a partir do último evento salvo.
+    """Lifecycle defensivo a partir do último evento salvo.
 
     Usado como fallback para bancos já populados antes das colunas lifecycle.
     Os routers continuam gravando o estado explícito para eventos novos.
@@ -234,60 +176,71 @@ def derive_lifecycle_from_event(
     clean_kind = kind.removeprefix("hook:")
     data = payload or {}
 
-    if clean_kind == "SessionStart":
-        return "session", "sessao iniciada"
-    if clean_kind == "UserPromptSubmit":
-        return "prompt", "prompt recebido"
-    if clean_kind == "PreToolUse":
-        return _pre_tool_lifecycle(data)
-    if clean_kind == "PostToolUse":
-        return "tool_done", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
-    if clean_kind == "PostToolUseFailure":
-        return "error", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
-    if clean_kind == "SubagentStart":
-        return "subagent", data.get("agent_type") if isinstance(data.get("agent_type"), str) else None
-    if clean_kind == "SubagentStop":
-        return "subagent_done", data.get("agent_type") if isinstance(data.get("agent_type"), str) else None
-    if clean_kind == "Stop":
-        return "idle", "passou a bola"
-    if clean_kind == "StopFailure":
-        return "error", "turno falhou"
+    if kind.startswith("hook:") and clean_kind in {
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+        "StopFailure",
+    }:
+        from routers.hooks import _hook_lifecycle
+
+        return _hook_lifecycle(clean_kind, data)
 
     if kind == "tara.exec.started":
-        return "session", "tara-codex iniciado"
+        return "trabalhando", "tara-codex iniciado"
     if kind == "tara.exec.completed":
-        return "idle", "tara-codex concluido"
+        return "ocioso", "tara-codex concluído"
     if kind == "tara.exec.failed":
-        return "error", "tara-codex falhou"
+        return "aguardando", "tara-codex falhou"
     if kind == "codex.turn.started":
-        return "prompt", "turno iniciado"
+        return "trabalhando", "turno iniciado"
+    if kind == "codex.turn.completed":
+        return "ocioso", "turno concluído"
+    if kind in {"codex.turn.failed", "codex.error"}:
+        return "aguardando", "erro codex"
     if kind in {"codex.item.started", "codex.item.updated"}:
         body = data.get("body") if isinstance(data.get("body"), dict) else data
-        detail = body.get("label") or body.get("name") or body.get("type")
-        return "tool", detail if isinstance(detail, str) else "item em execucao"
+        detail = _short_text(body.get("label"), limit=80) or _short_text(body.get("name"), limit=80)
+        return "trabalhando", detail or "item em execução"
     if kind == "codex.item.completed":
-        return "tool_done", "item concluido"
-    if kind == "codex.turn.completed":
-        return "idle", "turno concluido"
-    if kind in {"codex.turn.failed", "codex.error"}:
-        return "error", "erro codex"
+        return "trabalhando", "item concluído"
 
     if kind == "jsonl:user":
-        return "prompt", "mensagem do usuario"
+        message = data.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str) and content.strip():
+                return "trabalhando", "mensagem do usuário"
+            if isinstance(content, list) and any(
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+                and block.get("text", "").strip()
+                for block in content
+            ):
+                return "trabalhando", "mensagem do usuário"
+        return None, None
     if kind == "jsonl:assistant":
         message = data.get("message")
         if isinstance(message, dict):
-            # Tool_use block aqui é pre-anúncio (Claude diz "vou rodar Bash") —
-            # PreToolUse hook é fonte de verdade do granular. Devolver "tool"
-            # aqui dispararia flicker contra o hold do passo 4. Ver
-            # _jsonl_lifecycle em jsonl_watcher.py pra simetria.
             if message.get("stop_reason") == "end_turn":
-                return "idle", "passou a bola"
+                return "ocioso", "passou a bola"
+            content = message.get("content")
+            if isinstance(content, list) and any(
+                isinstance(block, dict) and block.get("type") == "tool_use"
+                for block in content
+            ):
+                return None, None
         return "event", "assistant"
     if kind == "jsonl:result":
-        return "idle", "sessao finalizada"
+        return "ocioso", "sessão finalizada"
 
-    return "event", clean_kind
+    return None, None
 
 
 class GrupoBorgesDB:
@@ -548,37 +501,6 @@ class GrupoBorgesDB:
         if clean_detail is not None and len(clean_detail) > 160:
             clean_detail = f"{clean_detail[:157]}..."
         with self._connect() as conn, conn:
-            current = conn.execute(
-                """
-                SELECT lifecycle_status, lifecycle_updated_at
-                FROM agent_state
-                WHERE slug = ?
-                """,
-                (slug,),
-            ).fetchone()
-            suppress_downgrade = False
-            if (
-                status in {"tool_done", "subagent_done"}
-                and current is not None
-                and current["lifecycle_status"] in GRANULAR
-                and current["lifecycle_updated_at"] is not None
-            ):
-                suppress_downgrade = (
-                    now - current["lifecycle_updated_at"] < LIFECYCLE_HOLD_SECONDS
-                )
-
-            if suppress_downgrade:
-                conn.execute(
-                    """
-                    UPDATE agent_state
-                    SET last_seen = ?,
-                        lifecycle_event = ?
-                    WHERE slug = ?
-                    """,
-                    (now, event, slug),
-                )
-                return
-
             conn.execute(
                 """
                 UPDATE agent_state
@@ -1554,9 +1476,9 @@ class GrupoBorgesDB:
         else:
             return None
 
-        if next_status == "review" and lifecycle_status != "idle":
+        if next_status == "review" and lifecycle_status != "ocioso":
             return None
-        if next_status == "blocked" and lifecycle_status != "error":
+        if next_status == "blocked" and lifecycle_status != "aguardando":
             return None
 
         now = int(time.time())
@@ -2658,18 +2580,15 @@ class GrupoBorgesDB:
             )
             if agent.get("lifecycle_status") is None:
                 latest_lifecycle = latest_lifecycle_by_slug.get(slug)
-                if latest_lifecycle is not None:
+                if latest_lifecycle is not None and latest_lifecycle["status"] in {
+                    "ocioso",
+                    "trabalhando",
+                    "aguardando",
+                }:
                     agent["lifecycle_status"] = latest_lifecycle["status"]
                     agent["lifecycle_detail"] = latest_lifecycle["detail"]
                     agent["lifecycle_event"] = latest_lifecycle["event"]
                     agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
-            if (
-                agent.get("lifecycle_status") in GRANULAR
-                and agent.get("lifecycle_updated_at") is not None
-                and now - agent["lifecycle_updated_at"] >= LIFECYCLE_HOLD_SECONDS
-            ):
-                agent["lifecycle_status"] = None
-                agent["lifecycle_detail"] = None
             agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"],
@@ -2686,10 +2605,9 @@ class GrupoBorgesDB:
         status_counts = Counter(a["status"] for a in agents)
         kpis = {
             "total": len(agents),
-            "running": status_counts.get("running", 0),
-            "blocked": status_counts.get("blocked", 0),
-            "idle": status_counts.get("idle", 0),
-            "done": status_counts.get("done", 0),
+            "trabalhando": status_counts.get("trabalhando", 0),
+            "aguardando": status_counts.get("aguardando", 0),
+            "ocioso": status_counts.get("ocioso", 0),
             "offline": status_counts.get("offline", 0),
             "tasks_active": sum(
                 task_counts.get(s, 0)

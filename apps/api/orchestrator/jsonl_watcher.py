@@ -66,39 +66,36 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
     if not payload:
         return None, None
     if event_type == "user":
-        blocks = _content_blocks(payload)
-        if blocks and any(block.get("type") == "tool_result" for block in blocks):
-            has_error = any(block.get("is_error") is True for block in blocks)
-            return ("error", "tool falhou") if has_error else ("tool_done", "tool concluida")
         message = payload.get("message")
         if isinstance(message, dict):
             content = message.get("content")
             if isinstance(content, str) and content.strip():
-                return "prompt", "mensagem do usuario"
-            if any(block.get("type") == "text" for block in blocks):
-                return "prompt", "mensagem do usuario"
+                return "trabalhando", "mensagem do usuário"
+            if any(
+                block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+                and block.get("text", "").strip()
+                for block in _content_blocks(payload)
+            ):
+                return "trabalhando", "mensagem do usuário"
         return None, None
     if event_type == "summary":
         return None, None
     if event_type == "result":
         outcome = _short_text(payload.get("outcome"), limit=80)
-        return "idle", outcome or "sessao finalizada"
+        return "ocioso", outcome or "sessão finalizada"
     if event_type == "assistant":
         message = payload.get("message")
         if not isinstance(message, dict):
             return None, None
-        # Assistant tool_use block pre-anuncia tool (Claude diz "vou rodar Bash")
-        # mas NÃO é fonte de verdade do granular: o PreToolUse hook chega ~100ms
-        # depois com tool_input completo e é quem deve setar reading/writing/etc.
-        # Retornar "tool" aqui sobrescreveria o tool_done segurado pelo hold do
-        # _update_agent_lifecycle e causaria flicker. Mantém watcher mudo pra
-        # tool_use — só capturamos fim de turno.
         stop_reason = _short_text(message.get("stop_reason"), limit=40)
         if stop_reason == "end_turn":
-            return "idle", "passou a bola"
+            return "ocioso", "passou a bola"
+        if any(block.get("type") == "tool_use" for block in _content_blocks(payload)):
+            return None, None
         return None, None
     if event_type == "system" and payload.get("subtype") == "turn_duration":
-        return "idle", "passou a bola"
+        return "ocioso", "passou a bola"
     return None, None
 
 

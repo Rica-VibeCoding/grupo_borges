@@ -14,7 +14,6 @@ SubagentStop, Stop) — por enquanto só sinalizamos via flag no response.
 """
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -58,70 +57,41 @@ def _short_text(value: Any, *, limit: int = 80) -> str | None:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
-def _pre_tool_lifecycle(
-    tool_name: str | None,
-    matcher: str | None,
-    tool_input: Any,
-) -> tuple[str, str | None]:
-    data = tool_input if isinstance(tool_input, dict) else {}
-
-    if tool_name == "Read":
-        return "reading", tool_name
-    if tool_name in {"Write", "Edit", "NotebookEdit"}:
-        file_path = data.get("file_path")
-        return "writing", file_path if isinstance(file_path, str) else tool_name
-    if tool_name == "Bash":
-        command = data.get("command")
-        if isinstance(command, str):
-            handoff = re.search(r"\btmux send-keys -t [\"']?([\w-]+)", command)
-            if handoff:
-                return "handoff", handoff.group(1)
-            return "executing", _short_text(command, limit=80)
-        return "executing", tool_name
-    if tool_name in {"WebFetch", "WebSearch"}:
-        detail = data.get("url") or data.get("query")
-        return "searching", detail if isinstance(detail, str) else tool_name
-    if tool_name == "Task":
-        return "subagent", tool_name
-    if tool_name in {"TodoWrite", "TaskUpdate"}:
-        return "writing", "plano"
-    if tool_name in {"Grep", "Glob"}:
-        pattern = data.get("pattern")
-        return "searching", pattern if isinstance(pattern, str) else tool_name
-    if tool_name == "AskUserQuestion":
-        return "searching", "aguardando resposta"
-    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
-        return "searching", tool_name
-    return "tool", tool_name or matcher or "tool em execucao"
-
-
 def _hook_lifecycle(event_kind: str, payload: dict[str, Any]) -> tuple[str, str | None]:
     tool_name = _short_text(payload.get("tool_name"), limit=64)
     agent_type = _short_text(payload.get("agent_type"), limit=64)
-    matcher = _short_text(payload.get("matcher"), limit=64)
 
     if event_kind == "SessionStart":
-        source = _short_text(payload.get("source"), limit=40)
-        return "session", source or "sessao iniciada"
+        return "ocioso", "sessão iniciada"
     if event_kind == "UserPromptSubmit":
         prompt = _short_text(payload.get("prompt"), limit=80)
-        return "prompt", prompt or "prompt recebido"
+        return "trabalhando", prompt or "prompt recebido"
     if event_kind == "PreToolUse":
-        return _pre_tool_lifecycle(tool_name, matcher, payload.get("tool_input"))
+        tool_input = payload.get("tool_input")
+        data = tool_input if isinstance(tool_input, dict) else {}
+        detail = (
+            _short_text(data.get("file_path"), limit=80)
+            or _short_text(data.get("command"), limit=80)
+            or _short_text(data.get("pattern"), limit=80)
+            or _short_text(data.get("query"), limit=80)
+            or _short_text(data.get("url"), limit=80)
+            or tool_name
+        )
+        return "trabalhando", detail
     if event_kind == "PostToolUse":
-        return "tool_done", tool_name or matcher or "tool concluida"
+        return "trabalhando", tool_name or "tool concluída"
     if event_kind == "PostToolUseFailure":
-        return "error", tool_name or matcher or "tool falhou"
+        return "aguardando", tool_name or "tool falhou"
     if event_kind == "SubagentStart":
-        return "subagent", agent_type or "subagent iniciado"
+        return "trabalhando", agent_type or "subagente iniciado"
     if event_kind == "SubagentStop":
-        return "subagent_done", agent_type or "subagent finalizado"
+        return "trabalhando", agent_type or "subagente terminou"
     if event_kind == "Stop":
-        return "idle", "passou a bola"
+        return "ocioso", "passou a bola"
     if event_kind == "StopFailure":
         reason = _short_text(payload.get("reason"), limit=80)
-        return "error", reason or "turno falhou"
-    return "event", event_kind
+        return "aguardando", reason or "turno falhou"
+    return "trabalhando", event_kind
 
 
 def _canonical_event_kind(path_event_kind: str, payload: dict[str, Any]) -> str:
