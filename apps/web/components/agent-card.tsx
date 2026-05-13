@@ -43,6 +43,45 @@ const lifecycleLabel: Record<AgentLifecycleStatus, string> = {
   event: 'EVENTO',
 };
 
+// Tabela inversa pra last-action sincronizado (V2.3 item 1).
+// Quando o lifecycle do agente é granular, last-action prioriza o último
+// hook:Pre/PostToolUse cujo tool_name pertence ao set — evita mostrar
+// "resposta do assistente" quando o card diz ESCREVENDO/EXECUTANDO.
+// Em sincronia com apps/api/routers/hooks.py:_pre_tool_lifecycle.
+const MICROSTATE_TOOLS: Partial<Record<AgentLifecycleStatus, Set<string>>> = {
+  reading: new Set(['Read']),
+  writing: new Set(['Write', 'Edit', 'NotebookEdit', 'TodoWrite', 'TaskUpdate', 'TaskCreate']),
+  executing: new Set(['Bash', 'Skill']),
+  searching: new Set([
+    'Grep', 'Glob', 'WebFetch', 'WebSearch', 'AskUserQuestion',
+    'ToolSearch', 'Monitor', 'ScheduleWakeup',
+  ]),
+  subagent: new Set(['Task', 'Agent']),
+  // handoff é Bash com tmux send-keys; tratamos como executing pro fallback.
+  // mcp__* vira searching no backend mas usa prefix match — checado abaixo.
+};
+
+function eventMatchesLifecycle(
+  ev: { kind: string; payload?: unknown },
+  lifecycle: AgentLifecycleStatus | null | undefined,
+): boolean {
+  if (!lifecycle) return false;
+  if (ev.kind !== 'hook:PreToolUse' && ev.kind !== 'hook:PostToolUse') return false;
+  const payload = (ev.payload ?? {}) as Record<string, unknown>;
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : null;
+  if (!toolName) return false;
+  const set = MICROSTATE_TOOLS[lifecycle];
+  if (set && set.has(toolName)) return true;
+  // mcp__* vai pra searching no _pre_tool_lifecycle backend.
+  if (lifecycle === 'searching' && toolName.startsWith('mcp__')) return true;
+  // Bash + tmux send-keys vira handoff; Bash sozinho é executing.
+  if (lifecycle === 'handoff' && toolName === 'Bash') {
+    const toolInput = (payload.tool_input ?? {}) as Record<string, unknown>;
+    return typeof toolInput.command === 'string' && /\btmux send-keys -t/.test(toolInput.command);
+  }
+  return false;
+}
+
 const LIFECYCLE_FRESHNESS_WINDOW_SECONDS = 90;
 // Off-timer usa last_seen (não lifecycle_updated_at) porque cobre hook + JSONL.
 // lifecycle só atualiza com hook, então agente trabalhando localmente parece
@@ -184,7 +223,13 @@ export function AgentCard({
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent, serverNow);
-  const lastEvent = events.find((e) => e.agent_slug === agent.slug);
+  // last-action sincronizado: prioriza evento cujo tool_name casa com o
+  // lifecycle granular atual; fallback é o último evento renderizável (com
+  // summarize não-null). Resolve "card diz ESCREVENDO mas last-action mostra
+  // 'resposta do assistente'" (V2.3 item 1).
+  const agentEvents = events.filter((e) => e.agent_slug === agent.slug);
+  const matchedEvent = agentEvents.find((e) => eventMatchesLifecycle(e, agent.lifecycle_status));
+  const lastEvent = matchedEvent ?? agentEvents.find((e) => summarize(e) !== null) ?? null;
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
   const lastEventSummary = lastEvent ? summarize(lastEvent) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
