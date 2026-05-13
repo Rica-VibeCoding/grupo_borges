@@ -269,7 +269,7 @@ export default function ReviewsPage() {
     <>
       <style dangerouslySetInnerHTML={{ __html: cockpitCss + reviewsCss }} />
       <main className="reviews-shell">
-        <Link href="/v2" className="reviews-back">← VOLTAR AO COCKPIT</Link>
+        <Link href="/" className="reviews-back">← VOLTAR AO COCKPIT</Link>
         <ReviewsPanel />
       </main>
     </>
