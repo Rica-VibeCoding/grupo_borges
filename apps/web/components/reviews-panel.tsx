@@ -70,10 +70,16 @@ export function ReviewsPanel() {
 
   useEffect(() => {
     if (!autoRefresh) return;
+    let activeCtrl: AbortController | null = null;
     const handle = setInterval(() => {
-      void load();
+      activeCtrl?.abort();
+      activeCtrl = new AbortController();
+      void load(activeCtrl.signal);
     }, 15_000);
-    return () => clearInterval(handle);
+    return () => {
+      clearInterval(handle);
+      activeCtrl?.abort();
+    };
   }, [autoRefresh, load]);
 
   const filtered = useMemo(() => {

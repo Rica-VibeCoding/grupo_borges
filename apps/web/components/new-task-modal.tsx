@@ -26,6 +26,8 @@ const VETOED_TAGS = new Set([
   'send_external',
 ]);
 
+const RICA_REVIEWER_SENTINEL = '__rica__';
+
 const REVIEW_MODE_OPTIONS: Array<{
   value: ReviewMode;
   label: string;
@@ -73,13 +75,13 @@ export function NewTaskModal({
   const [status, setStatus] = useState<UiTaskStatus>('backlog');
   const [priority, setPriority] = useState('0');
   const [reviewMode, setReviewMode] = useState<ReviewMode>('human');
-  const [reviewerAssignee, setReviewerAssignee] = useState<string>('');
+  const [reviewerAssignee, setReviewerAssignee] = useState<string>(RICA_REVIEWER_SENTINEL);
   const [tagsInput, setTagsInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const reviewerOptions = useMemo(
     () => [
-      { value: '', label: '— Rica (humano) —' },
+      { value: RICA_REVIEWER_SENTINEL, label: '— Rica (humano) —' },
       ...fleet.agents.map((a) => ({ value: a.slug, label: `${a.name} · ${a.slug}` })),
     ],
     [fleet.agents],
@@ -96,7 +98,7 @@ export function NewTaskModal({
       setStatus('backlog');
       setPriority('0');
       setReviewMode('human');
-      setReviewerAssignee('');
+      setReviewerAssignee(RICA_REVIEWER_SENTINEL);
       setTagsInput('');
       setSaving(false);
       setMessage(null);
@@ -123,7 +125,10 @@ export function NewTaskModal({
         priority: Number.parseInt(priority, 10) || 0,
         idempotency_key: safeUUID(),
         review_mode: reviewMode,
-        reviewer_assignee: reviewerAssignee || null,
+        reviewer_assignee:
+          reviewerAssignee && reviewerAssignee !== RICA_REVIEWER_SENTINEL
+            ? reviewerAssignee
+            : null,
         tags: tags.length > 0 ? tags : null,
       });
       await mutate();

@@ -6,6 +6,7 @@ existente, sem reinserir.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import sqlite3
@@ -19,6 +20,10 @@ REVIEWER_SLUG_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 
 from db.store import GrupoBorgesDB, _parse_csv_statuses
 from orchestrator.checkpoint_parser import checkpoint_hash
+from services.criteria_executor import (
+    parse_success_criteria,
+    run_success_criteria,
+)
 from services.evidence_refs import validate_evidence_refs
 from services.review_policy import assert_can_review, is_autonomous_allowed
 from services import tmux_driver
@@ -245,6 +250,60 @@ async def patch_task(task_id: str, payload: TaskPatch, request: Request) -> dict
     return updated
 
 
+async def _derive_reviewer(
+    request: Request,
+    db: GrupoBorgesDB,
+    fallback_header_slug: str | None,
+) -> str:
+    """Identifica o reviewer da request.
+
+    Prioridade:
+    1. `Tailscale-User-Login` (humano autenticado pelo tailscaled) → lookup em
+       `app.state.humans`. Slug humano só passa se estiver mapeado.
+    2. Fallback `X-Reviewer-Slug` para server-to-server (agentes em loopback,
+       dev local com `GB_DEV_BYPASS_AUTH=1`). Só aceita slug existente em
+       `agents.yaml` — fecha o vetor de humano arbitrário via header.
+
+    Retorna o slug do reviewer (lowercase). Levanta HTTPException 401/403/400.
+    """
+    humans: dict[str, str] = getattr(request.app.state, "humans", {}) or {}
+    ts_user = getattr(request.state, "tailscale_user", None)
+    if ts_user:
+        mapped = humans.get(ts_user.strip().lower())
+        if not mapped:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tailscale login {ts_user!r} não autorizado para review",
+            )
+        return mapped
+
+    # Loopback / dev_bypass — sem Tailscale-User-Login.
+    # Permite GB_DEV_DEFAULT_REVIEWER pra simular reviewer humano em dev.
+    settings = getattr(request.app.state, "settings", None)
+    if settings and getattr(settings, "dev_default_reviewer", ""):
+        return settings.dev_default_reviewer.strip().lower()
+    if not fallback_header_slug:
+        raise HTTPException(
+            status_code=401,
+            detail="missing reviewer: forneça Tailscale-User-Login ou X-Reviewer-Slug",
+        )
+    candidate = fallback_header_slug.strip().lower()
+    if not REVIEWER_SLUG_RE.match(candidate):
+        raise HTTPException(
+            status_code=400,
+            detail="X-Reviewer-Slug inválido (use [a-z0-9_-]{1,64})",
+        )
+    # Slug por header só pode ser agente existente.
+    agents = await db.list_agents()
+    if not any(a["slug"] == candidate for a in agents):
+        raise HTTPException(
+            status_code=403,
+            detail=f"X-Reviewer-Slug {candidate!r} não está em agents.yaml "
+            "(use Tailscale-User-Login para reviewer humano)",
+        )
+    return candidate
+
+
 @router.post("/{task_id}/review")
 async def review_task(
     task_id: str,
@@ -257,14 +316,14 @@ async def review_task(
     if task is None:
         raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
 
-    reviewer = (reviewer_slug or "rica").strip().lower()
-    if not REVIEWER_SLUG_RE.match(reviewer):
-        raise HTTPException(
-            status_code=400,
-            detail="X-Reviewer-Slug inválido (use [a-z0-9_-]{1,64})",
-        )
+    reviewer = await _derive_reviewer(request, db, reviewer_slug)
     evidence_refs = payload.evidence_refs or []
-    if payload.action == "accept" and task.get("review_mode") == "agent_autonomous":
+    autonomous_accept = (
+        payload.action == "accept" and task.get("review_mode") == "agent_autonomous"
+    )
+    criteria: list = []
+    assignee_workspace: str | None = None
+    if autonomous_accept:
         allowed, reason = is_autonomous_allowed(task)
         if not allowed:
             raise HTTPException(status_code=422, detail=reason or "review autonomous vetado")
@@ -277,10 +336,16 @@ async def review_task(
                 status_code=422,
                 detail=f"assignee {task['assignee']!r} não está em agents.yaml",
             )
-        try:
-            assert_can_review(reviewer, task["assignee"], agents_db)
-        except (KeyError, ValueError) as e:
-            raise HTTPException(status_code=403, detail=str(e)) from e
+        # Humanos (slug não está em agents.yaml — vem do map `humans` via
+        # Tailscale-User-Login) pulam `assert_can_review`: já são autorizados
+        # via identidade. Whitelist `can_review` é orientada a agent-to-agent.
+        humans_map: dict[str, str] = getattr(request.app.state, "humans", {}) or {}
+        is_human_reviewer = reviewer in set(humans_map.values())
+        if not is_human_reviewer:
+            try:
+                assert_can_review(reviewer, task["assignee"], agents_db)
+            except (KeyError, ValueError) as e:
+                raise HTTPException(status_code=403, detail=str(e)) from e
 
         if not evidence_refs:
             raise HTTPException(status_code=422, detail="evidence_refs obrigatório para accept autonomous")
@@ -295,6 +360,17 @@ async def review_task(
         if invalid:
             raise HTTPException(status_code=422, detail={"invalid_evidence_refs": invalid})
 
+        try:
+            criteria = parse_success_criteria(task.get("body"))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"Success Criteria malformado: {e}") from e
+        if not criteria:
+            raise HTTPException(
+                status_code=422,
+                detail="autonomous accept exige bloco '## Success Criteria' no body com pelo menos 1 cmd",
+            )
+        assignee_workspace = workspace
+
     review_payload = payload.model_dump(exclude_none=True, exclude={"content_hash"})
     result = await db.record_review_action(
         task_id,
@@ -306,6 +382,31 @@ async def review_task(
     if result is None:
         raise HTTPException(status_code=409, detail="review duplicado ou não gravado")
     task_result = result.get("task") or {}
+
+    # Autonomous accept: dispara executor em background. Task fica em status=review
+    # (criteria_pending) até os comandos terminarem. Promoção pra done acontece
+    # dentro do `run_success_criteria` se todos passarem; falha volta pra running.
+    if autonomous_accept and criteria and assignee_workspace:
+        await db.update_task(task_id, {"status": "review"})
+        asyncio.create_task(
+            run_success_criteria(
+                task_id=task_id,
+                assignee_slug=task["assignee"],
+                criteria=criteria,
+                workspace=assignee_workspace,
+                db=db,
+                reviewer=reviewer,
+                event_id_origin=result["event_id"],
+            )
+        )
+        return {
+            "event_id": result["event_id"],
+            "new_status": "review",
+            "criteria_pending": True,
+            "criteria_count": len(criteria),
+            "content_hash": payload.content_hash,
+        }
+
     return {
         "event_id": result["event_id"],
         "new_status": task_result.get("status"),

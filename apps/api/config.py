@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     # auth / dev
     dev_bypass_auth: bool = False
+    # Slug humano usado em dev local quando Tailscale-User-Login está ausente.
+    # Vazio = sem reviewer humano default (precisa X-Reviewer-Slug de agente).
+    dev_default_reviewer: str = ""
     hook_bearer_token: str | None = None
 
     # paths

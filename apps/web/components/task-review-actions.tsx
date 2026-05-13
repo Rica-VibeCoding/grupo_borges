@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReviewAction, Task } from '../lib/cockpit-types';
 import { reviewTask } from '../lib/api';
 
@@ -25,9 +25,17 @@ const ACTION_ORDER: ReviewAction[] = ['accept', 'reject', 'requeue'];
 export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onSuccess }: Props) {
   const [pending, setPending] = useState<ReviewAction | null>(null);
   const [note, setNote] = useState('');
+  const mountedRef = useRef(true);
   const reviewMode = task.review_mode ?? 'human';
   const tags = task.tags ?? [];
   const requiresEvidence = reviewMode === 'agent_autonomous';
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const submit = useCallback(
     async (action: ReviewAction) => {
@@ -47,14 +55,16 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
           },
           reviewerSlug,
         );
+        if (!mountedRef.current) return;
         onSuccess(action);
         onResolved(result.new_status);
         if (action === 'reject') setNote('');
       } catch (err) {
+        if (!mountedRef.current) return;
         const msg = err instanceof Error ? err.message : String(err);
         onError(msg);
       } finally {
-        setPending(null);
+        if (mountedRef.current) setPending(null);
       }
     },
     [note, onError, onResolved, onSuccess, pending, reviewerSlug, task.id],

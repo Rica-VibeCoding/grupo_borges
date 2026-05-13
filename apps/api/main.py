@@ -46,6 +46,9 @@ async def lifespan(app: FastAPI):
     with Path(settings.agents_yaml).open("r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     app.state.agents_config = config
+    # Map Tailscale-User-Login → reviewer slug (humanos com permissão de review).
+    raw_humans = config.get("humans") or {}
+    app.state.humans = {str(k).strip().lower(): str(v).strip().lower() for k, v in raw_humans.items()}
 
     db = GrupoBorgesDB(settings.db_path)
     await db.startup()
@@ -120,11 +123,16 @@ async def tailscale_identity(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
-    # Dev: GB_DEV_BYPASS_AUTH=1 + cliente em loopback bypassa identity
+    # Dev: GB_DEV_BYPASS_AUTH=1 + cliente em loopback bypassa identity.
+    # Se o header vier mesmo assim (curl/proxy de teste), propaga pro state
+    # — permite validar lookup de humans/reviewer sem subir tailscaled local.
     settings = getattr(app.state, "settings", None)
     if settings and settings.dev_bypass_auth:
         host = request.client.host if request.client else None
         if _is_loopback(host):
+            dev_user = request.headers.get("Tailscale-User-Login")
+            if dev_user:
+                request.state.tailscale_user = dev_user
             return await call_next(request)
 
     user = request.headers.get("Tailscale-User-Login")

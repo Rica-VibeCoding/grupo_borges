@@ -145,6 +145,14 @@ agents:
     can_review:
       - daniel
 
+# Humanos autenticados via Tailscale-User-Login.
+# Header derivado do tailscaled local (não spoofável sem comprometer o node).
+# Slug humano NÃO precisa estar em `agents:` — fica fora do kanban mas pode revisar.
+humans:
+  ricardo.nilton@hotmail.com: rica
+  conectamovelmar@gmail.com: rica
+  conectamoveis@gmail.com: rica
+
 repo_aliases:
   fluyt: /home/clawd/repos/fluyt
   grupo_borges: /home/clawd/repos/grupo_borges
