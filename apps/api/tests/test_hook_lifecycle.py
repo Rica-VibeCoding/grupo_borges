@@ -109,6 +109,38 @@ def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:
     assert detail == "passou a bola"
 
 
+def test_derive_lifecycle_jsonl_assistant_tool_use_does_not_emit_tool() -> None:
+    """Pre-anúncio de tool_use no JSONL não deve setar 'tool' — PreToolUse hook
+    é a fonte de verdade do granular. Retornar 'tool' aqui fura o hold do passo
+    4 e causa flicker."""
+    from db.store import derive_lifecycle_from_event
+
+    payload = {
+        "message": {
+            "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}],
+        },
+    }
+    status, detail = derive_lifecycle_from_event("jsonl:assistant", payload)
+    assert status == "event"
+    assert detail == "assistant"
+
+
+def test_jsonl_watcher_assistant_tool_use_returns_none() -> None:
+    """Simetria: _jsonl_lifecycle no watcher também não deve emitir 'tool' pra
+    assistant tool_use block."""
+    from orchestrator.jsonl_watcher import _jsonl_lifecycle
+
+    payload = {
+        "type": "assistant",
+        "message": {
+            "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}],
+        },
+    }
+    status, detail = _jsonl_lifecycle(payload, "assistant")
+    assert status is None
+    assert detail is None
+
+
 def test_lifecycle_hold_suppresses_tool_done_inside_window(tmp_path: Path, monkeypatch) -> None:
     import db.store as store
 

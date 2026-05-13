@@ -87,16 +87,12 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
         message = payload.get("message")
         if not isinstance(message, dict):
             return None, None
-        content = message.get("content")
-        if isinstance(content, list):
-            tools = [
-                _short_text(block.get("name"), limit=64)
-                for block in content
-                if isinstance(block, dict) and block.get("type") == "tool_use"
-            ]
-            tools = [tool for tool in tools if tool]
-            if tools:
-                return "tool", ", ".join(tools[:2])
+        # Assistant tool_use block pre-anuncia tool (Claude diz "vou rodar Bash")
+        # mas NÃO é fonte de verdade do granular: o PreToolUse hook chega ~100ms
+        # depois com tool_input completo e é quem deve setar reading/writing/etc.
+        # Retornar "tool" aqui sobrescreveria o tool_done segurado pelo hold do
+        # _update_agent_lifecycle e causaria flicker. Mantém watcher mudo pra
+        # tool_use — só capturamos fim de turno.
         stop_reason = _short_text(message.get("stop_reason"), limit=40)
         if stop_reason == "end_turn":
             return "idle", "passou a bola"

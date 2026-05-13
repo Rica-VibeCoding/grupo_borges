@@ -268,12 +268,10 @@ def derive_lifecycle_from_event(
     if kind == "jsonl:assistant":
         message = data.get("message")
         if isinstance(message, dict):
-            content = message.get("content")
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        name = block.get("name")
-                        return "tool", name if isinstance(name, str) else "tool em execucao"
+            # Tool_use block aqui é pre-anúncio (Claude diz "vou rodar Bash") —
+            # PreToolUse hook é fonte de verdade do granular. Devolver "tool"
+            # aqui dispararia flicker contra o hold do passo 4. Ver
+            # _jsonl_lifecycle em jsonl_watcher.py pra simetria.
             if message.get("stop_reason") == "end_turn":
                 return "idle", "passou a bola"
         return "event", "assistant"
