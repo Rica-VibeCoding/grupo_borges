@@ -69,7 +69,15 @@ class _Clock:
             ("writing", "plano"),
         ),
         (
+            {"tool_name": "Agent", "tool_input": {"prompt": "revisar"}},
+            ("subagent", "Agent"),
+        ),
+        (
             {"tool_name": "TaskUpdate", "tool_input": {"taskId": "1", "status": "completed"}},
+            ("writing", "plano"),
+        ),
+        (
+            {"tool_name": "TaskCreate", "tool_input": {"title": "novo passo"}},
             ("writing", "plano"),
         ),
         (
@@ -83,6 +91,22 @@ class _Clock:
         (
             {"tool_name": "AskUserQuestion", "tool_input": {"questions": []}},
             ("searching", "aguardando resposta"),
+        ),
+        (
+            {"tool_name": "ToolSearch", "tool_input": {"query": "github"}},
+            ("searching", "ToolSearch"),
+        ),
+        (
+            {"tool_name": "Monitor", "tool_input": {}},
+            ("searching", "Monitor"),
+        ),
+        (
+            {"tool_name": "ScheduleWakeup", "tool_input": {"delay": "10m"}},
+            ("searching", "agendando"),
+        ),
+        (
+            {"tool_name": "Skill", "tool_input": {"name": "imagegen"}},
+            ("executing", "Skill"),
         ),
         (
             {"tool_name": "mcp__supabase_geral__list_tables", "tool_input": {}},

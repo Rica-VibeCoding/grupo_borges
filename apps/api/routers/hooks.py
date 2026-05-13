@@ -83,13 +83,25 @@ def _pre_tool_lifecycle(
         return "searching", detail if isinstance(detail, str) else tool_name
     if tool_name == "Task":
         return "subagent", tool_name
+    if tool_name == "Agent":
+        return "subagent", tool_name
     if tool_name in {"TodoWrite", "TaskUpdate"}:
+        return "writing", "plano"
+    if tool_name == "TaskCreate":
         return "writing", "plano"
     if tool_name in {"Grep", "Glob"}:
         pattern = data.get("pattern")
         return "searching", pattern if isinstance(pattern, str) else tool_name
     if tool_name == "AskUserQuestion":
         return "searching", "aguardando resposta"
+    # Keep in sync with db.store._pre_tool_lifecycle.
+    if tool_name in {"ToolSearch", "Monitor"}:
+        return "searching", tool_name
+    if tool_name == "ScheduleWakeup":
+        return "searching", "agendando"
+    if tool_name == "Skill":
+        # Tech-debt V2.4: criar estado "loading" se Skill virar frequente.
+        return "executing", tool_name
     if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
         return "searching", tool_name
     return "tool", tool_name or matcher or "tool em execucao"

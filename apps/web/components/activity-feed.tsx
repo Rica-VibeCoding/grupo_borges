@@ -119,12 +119,22 @@ export function summarize(ev: TaskEvent): string | null {
       return toolName ? toolPhrase(toolName, toolInput, 'post') : null;
     case 'hook:Stop':
       return 'passou a bola';
+    case 'hook:SubagentStart':
+      return 'subagente iniciado';
     case 'hook:SubagentStop':
       return 'subagente terminou';
     case 'hook:StopFailure':
       return 'erro ao parar';
+    case 'handoff': {
+      const toAgent = payload.to_agent_slug;
+      return `passou para ${typeof toAgent === 'string' ? toAgent : 'outro agente'}`;
+    }
+    case 'checkpoint':
+      return 'checkpoint salvo';
     case 'lifecycle.review':
       return 'task enviada para revisão';
+    case 'review.accepted':
+      return 'review aceito';
     case 'lifecycle.blocked':
       return 'task bloqueada';
     case 'lifecycle.done':
@@ -133,6 +143,10 @@ export function summarize(ev: TaskEvent): string | null {
       return 'rodando';
     case 'lifecycle.failed':
       return 'falhou';
+    case 'status.changed': {
+      const newStatus = payload.new_status;
+      return typeof newStatus === 'string' ? `status ${newStatus}` : 'status mudou';
+    }
     case 'tara.exec.started':
       return 'Tara iniciada';
     case 'tara.exec.completed':
@@ -147,6 +161,10 @@ export function summarize(ev: TaskEvent): string | null {
       return codexItemPhrase(payload, 'pre');
     case 'codex.item.completed':
       return codexItemPhrase(payload, 'post');
+    case 'dispatch':
+      return 'dispatch enviado';
+    case 'dispatch.failed':
+      return 'dispatch falhou';
     case 'jsonl:user':
       return hasUserText(payload) ? 'mensagem do usuário' : null;
     case 'jsonl:assistant':
