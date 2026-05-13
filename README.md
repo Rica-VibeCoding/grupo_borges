@@ -40,6 +40,14 @@ grupo_borges/
 └── AGENTS.md
 ```
 
+## Documentação operacional
+
+- **Spec do protocolo de dispatch:** [`../ze_claude/ze-shared/cockpit-handoff.md`](https://github.com/Rica-VibeCoding/ze_claude/blob/main/ze-shared/cockpit-handoff.md) — envelope, estados de checkpoint, ciclo de vida, regra de canal, onboarding de novo agente.
+- **Manual do Rica:** [`../ze_claude/pavan/playbooks/cockpit-como-usar.md`](https://github.com/Rica-VibeCoding/ze_claude/blob/main/pavan/playbooks/cockpit-como-usar.md) — como usar no dia-a-dia.
+- **Catálogo de recursos S1-S4:** [`../ze_claude/pavan/playbooks/cockpit-recursos-novos.md`](https://github.com/Rica-VibeCoding/ze_claude/blob/main/pavan/playbooks/cockpit-recursos-novos.md) — 39 features com "onde está / como validar".
+- **Plano de execução:** [`../ze_claude/daniel/cockpit-plano-v1.md`](https://github.com/Rica-VibeCoding/ze_claude/blob/main/daniel/cockpit-plano-v1.md) — v5 (S1-S4 entregues 12-13/05/2026).
+- **Bridge do trabalho:** [`../ze_claude/daniel/cockpit-bridge.md`](https://github.com/Rica-VibeCoding/ze_claude/blob/main/daniel/cockpit-bridge.md) — registro técnico de cada sessão.
+
 ## Pra começar
 
 Backend (VPS):
