@@ -90,7 +90,7 @@ export function AgentCard({
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent);
-  const lastEvent = events.find((e) => e.agent_slug === agent.slug);
+  const lastEvent = events.find((e) => e.agent_slug === agent.slug && summarize(e) !== null);
   const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
   const lastEventSummary = lastEvent ? summarize(lastEvent) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
@@ -196,14 +196,18 @@ export function AgentCard({
             </Dialog.Root>
           </span>
         </div>
-        {lastEvent && lastEventSummary && (
-          <div className="last-action mono" aria-hidden="true">
-            <span className="la-spark" aria-hidden>•</span>
-            <span className="la-text">{lastEventSummary}</span>
-            <span className="la-sep">·</span>
-            <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
-          </div>
-        )}
+        <div className="last-action mono" aria-hidden="true">
+          {lastEvent && lastEventSummary ? (
+            <>
+              <span className="la-spark" aria-hidden>•</span>
+              <span className="la-text">{lastEventSummary}</span>
+              <span className="la-sep">·</span>
+              <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
+            </>
+          ) : (
+            <span className="la-text la-empty">— sem atividade recente</span>
+          )}
+        </div>
         <div className="pane pane-session" aria-hidden="true">
           <span className="ps-model">{paneModel ?? shortModelName(model)}</span>
           <span className="ps-sep">·</span>
