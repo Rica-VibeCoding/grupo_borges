@@ -2548,14 +2548,8 @@ class GrupoBorgesDB:
                            LIMIT 1
                        ) AS run_last_heartbeat
                 FROM tasks
-                WHERE status IN ('running', 'ready', 'backlog')
+                WHERE status = 'running'
                 ORDER BY
-                    CASE status
-                        WHEN 'running' THEN 0
-                        WHEN 'ready' THEN 1
-                        WHEN 'backlog' THEN 2
-                        ELSE 3
-                    END,
                     priority DESC,
                     activity_at DESC
                 """
