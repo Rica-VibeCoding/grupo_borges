@@ -14,6 +14,7 @@ SubagentStop, Stop) — por enquanto só sinalizamos via flag no response.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -57,6 +58,34 @@ def _short_text(value: Any, *, limit: int = 80) -> str | None:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
+def _pre_tool_lifecycle(
+    tool_name: str | None,
+    matcher: str | None,
+    tool_input: Any,
+) -> tuple[str, str | None]:
+    data = tool_input if isinstance(tool_input, dict) else {}
+
+    if tool_name == "Read":
+        return "reading", tool_name
+    if tool_name in {"Write", "Edit", "NotebookEdit"}:
+        file_path = data.get("file_path")
+        return "writing", file_path if isinstance(file_path, str) else tool_name
+    if tool_name == "Bash":
+        command = data.get("command")
+        if isinstance(command, str):
+            handoff = re.search(r"\btmux send-keys -t [\"']?([\w-]+)", command)
+            if handoff:
+                return "handoff", handoff.group(1)
+            return "executing", _short_text(command, limit=80)
+        return "executing", tool_name
+    if tool_name in {"WebFetch", "WebSearch"}:
+        detail = data.get("url") or data.get("query")
+        return "searching", detail if isinstance(detail, str) else tool_name
+    if tool_name == "Task":
+        return "subagent", tool_name
+    return "tool", tool_name or matcher or "tool em execucao"
+
+
 def _hook_lifecycle(event_kind: str, payload: dict[str, Any]) -> tuple[str, str | None]:
     tool_name = _short_text(payload.get("tool_name"), limit=64)
     agent_type = _short_text(payload.get("agent_type"), limit=64)
@@ -69,7 +98,7 @@ def _hook_lifecycle(event_kind: str, payload: dict[str, Any]) -> tuple[str, str 
         prompt = _short_text(payload.get("prompt"), limit=80)
         return "prompt", prompt or "prompt recebido"
     if event_kind == "PreToolUse":
-        return "tool", tool_name or matcher or "tool em execucao"
+        return _pre_tool_lifecycle(tool_name, matcher, payload.get("tool_input"))
     if event_kind == "PostToolUse":
         return "tool_done", tool_name or matcher or "tool concluida"
     if event_kind == "PostToolUseFailure":
@@ -79,7 +108,7 @@ def _hook_lifecycle(event_kind: str, payload: dict[str, Any]) -> tuple[str, str 
     if event_kind == "SubagentStop":
         return "subagent_done", agent_type or "subagent finalizado"
     if event_kind == "Stop":
-        return "idle", "turno finalizado"
+        return "idle", "passou a bola"
     if event_kind == "StopFailure":
         reason = _short_text(payload.get("reason"), limit=80)
         return "error", reason or "turno falhou"
@@ -133,7 +162,7 @@ async def receive_hook(event_kind: str, request: Request) -> dict[str, Any]:
 
     if slug is not None:
         await db.upsert_agent_state(slug)
-        lifecycle_status, lifecycle_detail = _hook_lifecycle(canonical_event_kind, payload)
+        lifecycle_status, lifecycle_detail = _hook_lifecycle(canonical_event_kind, safe_payload)
         await db.update_agent_lifecycle(
             slug,
             status=lifecycle_status,

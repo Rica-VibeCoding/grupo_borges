@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import re
 import sqlite3
 import time
 import uuid
@@ -150,6 +151,11 @@ def derive_agent_status(
         "prompt",
         "tool",
         "tool_done",
+        "reading",
+        "writing",
+        "executing",
+        "handoff",
+        "searching",
         "subagent",
         "subagent_done",
     }:
@@ -164,6 +170,42 @@ def derive_agent_status(
     if statuses == {"done"}:
         return "done"
     return "idle"
+
+
+def _short_text(value: Any, *, limit: int = 80) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.split())
+    if not text:
+        return None
+    return text if len(text) <= limit else f"{text[: limit - 3]}..."
+
+
+def _pre_tool_lifecycle(data: dict[str, Any]) -> tuple[str, str | None]:
+    tool_name = _short_text(data.get("tool_name"), limit=64)
+    matcher = _short_text(data.get("matcher"), limit=64)
+    tool_input = data.get("tool_input")
+    tool_data = tool_input if isinstance(tool_input, dict) else {}
+
+    if tool_name == "Read":
+        return "reading", tool_name
+    if tool_name in {"Write", "Edit", "NotebookEdit"}:
+        file_path = tool_data.get("file_path")
+        return "writing", file_path if isinstance(file_path, str) else tool_name
+    if tool_name == "Bash":
+        command = tool_data.get("command")
+        if isinstance(command, str):
+            handoff = re.search(r"\btmux send-keys -t [\"']?([\w-]+)", command)
+            if handoff:
+                return "handoff", handoff.group(1)
+            return "executing", _short_text(command, limit=80)
+        return "executing", tool_name
+    if tool_name in {"WebFetch", "WebSearch"}:
+        detail = tool_data.get("url") or tool_data.get("query")
+        return "searching", detail if isinstance(detail, str) else tool_name
+    if tool_name == "Task":
+        return "subagent", tool_name
+    return "tool", tool_name or matcher or "tool em execucao"
 
 
 def derive_lifecycle_from_event(
@@ -185,7 +227,7 @@ def derive_lifecycle_from_event(
     if clean_kind == "UserPromptSubmit":
         return "prompt", "prompt recebido"
     if clean_kind == "PreToolUse":
-        return "tool", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
+        return _pre_tool_lifecycle(data)
     if clean_kind == "PostToolUse":
         return "tool_done", data.get("tool_name") if isinstance(data.get("tool_name"), str) else None
     if clean_kind == "PostToolUseFailure":
@@ -195,7 +237,7 @@ def derive_lifecycle_from_event(
     if clean_kind == "SubagentStop":
         return "subagent_done", data.get("agent_type") if isinstance(data.get("agent_type"), str) else None
     if clean_kind == "Stop":
-        return "idle", "turno finalizado"
+        return "idle", "passou a bola"
     if clean_kind == "StopFailure":
         return "error", "turno falhou"
 
