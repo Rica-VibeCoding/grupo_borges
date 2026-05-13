@@ -237,18 +237,6 @@ export function AgentCard({
             <span className="agent-role">
               <span className="agent-slug">{agent.slug}</span>
               <span aria-hidden="true"> | </span>
-              <span
-                style={{
-                  color: 'var(--muted)',
-                  fontSize: '8.5px',
-                  letterSpacing: '0.18em',
-                  marginRight: 4,
-                  opacity: 0.55,
-                  textTransform: 'uppercase',
-                }}
-              >
-                MICRO
-              </span>
               <span>{lifecycle}</span>
             </span>
           </div>
