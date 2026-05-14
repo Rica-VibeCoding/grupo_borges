@@ -133,7 +133,7 @@ agents:
     emoji: "⭐"
     origin: sikh ("estrela")
     tmux_session: tara-1
-    workspace_path: /tmp/tara
+    workspace_path: /home/clawd/repos/ze_claude/tara
     cli_default: codex
     model_default: codex-gpt-5-5
     kind: executor

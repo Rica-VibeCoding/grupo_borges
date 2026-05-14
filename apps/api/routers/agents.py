@@ -197,18 +197,22 @@ async def list_agent_skills(slug: str, request: Request) -> dict[str, Any]:
 async def list_agent_docs(
     slug: str,
     request: Request,
-    filename: str | None = Query(default=None, description="Quando preenchido, devolve o doc com @include resolvido"),
+    filename: str | None = Query(default=None, description="Quando preenchido, devolve o conteúdo do doc"),
+    resolve: bool = Query(default=False, description="Se true, expande @include inline (default: false — conteúdo cru)"),
 ) -> dict[str, Any]:
     """Docs do workspace (CLAUDE/SOUL/IDENTITY/AGENTS/TOOLS/OPS).
 
     Sem `filename`: lista os docs existentes (metadados leves).
-    Com `filename`: devolve `content_md` com `@include` recursivo resolvido
-    (cap profundidade 5, cap 256KB).
+    Com `filename`: devolve `content_md` cru (default) ou com `@include`
+    expandido inline quando `resolve=true` (cap profundidade 5, cap 256KB).
     """
     agent = await _get_agent_or_404(request, slug)
     if filename:
         resolved = await asyncio.to_thread(
-            workspace_reader.read_doc_resolved, agent["workspace_path"], filename
+            workspace_reader.read_doc_resolved,
+            agent["workspace_path"],
+            filename,
+            resolve=resolve,
         )
         if resolved is None:
             raise HTTPException(status_code=404, detail=f"Doc {filename} não encontrado em {slug}")

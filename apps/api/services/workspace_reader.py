@@ -16,7 +16,9 @@ from typing import Any
 
 import yaml
 
-DOC_FILENAMES = ("CLAUDE.md", "SOUL.md", "IDENTITY.md", "AGENTS.md", "TOOLS.md", "OPS.md")
+CANONICAL_ORDER = ("SOUL.md", "IDENTITY.md", "CLAUDE.md", "AGENTS.md", "TOOLS.md", "OPS.md", "MEMORY.md")
+DOCS_SUBDIR = "docs"
+DOCS_MAX_DEPTH = 2  # docs/<file>.md e docs/<sub>/<file>.md
 SKILLS_SUBDIR = ".claude/skills"
 INCLUDE_RE = re.compile(r"^@(\S+)\s*$")
 INCLUDE_MAX_DEPTH = 5
@@ -103,38 +105,118 @@ class _ResolveState:
 
 
 def read_docs(workspace_path: str) -> list[dict[str, Any]]:
-    """Lista metadados dos docs do agente (sem resolver @include — peso menor)."""
-    root = Path(workspace_path)
+    """Lista todos os docs Markdown do workspace — reflete a estrutura real
+    do repo, não whitelist hardcoded.
+
+    Inclui:
+    - `*.md` no root do workspace
+    - `docs/**/*.md` até profundidade 2 (docs/X.md, docs/sub/X.md)
+
+    Filtra: `*.bak*`, arquivos ocultos, links quebrados.
+
+    Ordem: docs canônicos do root (SOUL → IDENTITY → CLAUDE → AGENTS → TOOLS
+    → OPS → MEMORY) primeiro, depois outros *.md do root em ordem alfabética,
+    depois conteúdo de `docs/` em ordem alfabética por caminho.
+    """
+    root = Path(workspace_path).resolve()
     out: list[dict[str, Any]] = []
-    for name in DOC_FILENAMES:
-        p = root / name
-        if not p.exists() or not p.is_file():
-            continue
-        stat = p.stat()
-        title = _extract_title(p)
+    seen: set[str] = set()
+
+    def _emit(path: Path, filename: str) -> None:
+        if filename in seen:
+            return
+        try:
+            stat = path.stat()
+        except OSError:
+            return
         out.append({
-            "filename": name,
-            "title": title,
+            "filename": filename,
+            "title": _extract_title(path),
             "size_bytes": stat.st_size,
             "updated_at": int(stat.st_mtime),
         })
+        seen.add(filename)
+
+    # 1) Canônicos do root (na ordem fixa)
+    for name in CANONICAL_ORDER:
+        p = root / name
+        if p.is_file() and not _is_skipped_doc(name):
+            _emit(p, name)
+
+    # 2) Outros *.md do root (alfabético)
+    root_extras = sorted(
+        p for p in root.glob("*.md")
+        if p.is_file() and p.name not in seen and not _is_skipped_doc(p.name)
+    )
+    for p in root_extras:
+        _emit(p, p.name)
+
+    # 3) docs/**/*.md (alfabético, max DOCS_MAX_DEPTH)
+    docs_root = root / DOCS_SUBDIR
+    if docs_root.is_dir():
+        for p in sorted(docs_root.rglob("*.md")):
+            if not p.is_file() or _is_skipped_doc(p.name):
+                continue
+            try:
+                rel = p.relative_to(root)
+            except ValueError:
+                continue
+            # rel tem forma docs/<...>; max profundidade = 1 + DOCS_MAX_DEPTH
+            if len(rel.parts) > 1 + DOCS_MAX_DEPTH:
+                continue
+            _emit(p, str(rel))
+
     return out
 
 
-def read_doc_resolved(workspace_path: str, filename: str) -> dict[str, Any] | None:
-    """Lê um doc específico do workspace com `@include` recursivamente resolvido.
+def _is_skipped_doc(name: str) -> bool:
+    return name.startswith(".") or ".bak" in name
+
+
+def read_doc_resolved(
+    workspace_path: str, filename: str, *, resolve: bool = False
+) -> dict[str, Any] | None:
+    """Lê um doc específico do workspace.
+
+    Default (`resolve=False`): retorna o conteúdo cru, exatamente como está no
+    arquivo — `@include` aparece literal. É o modo usado pelo cockpit pra
+    avaliar cada doc isoladamente.
+
+    `resolve=True`: resolve `@include` recursivamente (forma como o Claude Code
+    monta a persona em runtime). Cap profundidade 5, cap 256KB.
+
+    `filename` pode ser nome simples (`CLAUDE.md`) ou caminho relativo
+    (`docs/processo-comercial.md`). Path traversal é bloqueado — alvo
+    obrigatoriamente dentro do `workspace_path`.
+
     Retorna `{filename, content_md, truncated}` ou `None` se não existir.
     """
-    if filename not in DOC_FILENAMES:
+    if not filename or _is_skipped_doc(Path(filename).name):
         return None
-    root = Path(workspace_path)
-    target = root / filename
-    if not target.exists() or not target.is_file():
+    root = Path(workspace_path).resolve()
+    try:
+        target = (root / filename).resolve()
+    except OSError:
+        return None
+    try:
+        if not target.is_relative_to(root):
+            return None
+    except AttributeError:  # Python <3.9 fallback (não esperado em produção)
+        if root not in target.parents and target != root:
+            return None
+    if not target.is_file():
         return None
 
-    state = _ResolveState()
-    content = _resolve_file(target, depth=0, state=state)
-    truncated = state.bytes_used >= INCLUDE_MAX_BYTES
+    if resolve:
+        state = _ResolveState()
+        content = _resolve_file(target, depth=0, state=state)
+        truncated = state.bytes_used >= INCLUDE_MAX_BYTES
+    else:
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            content = f"<!-- read error: {e} -->"
+        truncated = False
     return {
         "filename": filename,
         "content_md": content,
