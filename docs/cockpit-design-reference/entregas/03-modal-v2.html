@@ -1,0 +1,1356 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Cockpit · Agent Modal · Daniel Singh</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/augmented-ui@2.0.0/augmented-ui.min.css">
+<template id="__bundler_thumbnail" data-bg-color="#060b18">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#060b18"/>
+    <g stroke="#00f0ff" stroke-width="2" fill="none" opacity="0.85">
+      <rect x="180" y="160" width="840" height="480"/>
+      <path d="M 180 160 L 220 160 L 220 200 L 180 200 Z" fill="#00f0ff" opacity="0.4"/>
+    </g>
+    <g font-family="monospace" fill="#e0f7fa">
+      <text x="240" y="260" font-size="22" fill="#5d9bb8" letter-spacing="6">AGENT // DETAIL</text>
+      <text x="240" y="340" font-size="56" font-weight="700" fill="#00f0ff">DANIEL SINGH</text>
+      <text x="240" y="380" font-size="20" fill="#5d9bb8">// daniel · dev sênior</text>
+      <g stroke="#00f0ff" stroke-width="1.5" fill="none">
+        <rect x="240" y="440" width="120" height="30"/>
+        <rect x="372" y="440" width="120" height="30"/>
+        <rect x="504" y="440" width="120" height="30"/>
+        <rect x="636" y="440" width="120" height="30"/>
+      </g>
+      <rect x="240" y="440" width="120" height="30" fill="#00f0ff" opacity="0.15"/>
+      <text x="270" y="461" font-size="14" fill="#00f0ff">MISSÃO</text>
+      <text x="404" y="461" font-size="14" fill="#5d9bb8">SKILLS</text>
+      <text x="540" y="461" font-size="14" fill="#5d9bb8">DOCS</text>
+      <text x="660" y="461" font-size="14" fill="#5d9bb8">TABELAS</text>
+    </g>
+  </svg>
+</template>
+<style>
+:root[data-theme="dark"] {
+  --bg:#060b18; --panel:#0d1b2a; --card:#112240; --card-2:#153258;
+  --border:#1a3a5c; --border-subtle:#142d4a;
+  --text:#e0f7fa; --muted:#5d9bb8;
+  --accent:#00f0ff; --accent-active:#00e5ff; --accent-secondary:#00b8d4;
+  --accent-subtle:rgba(0,240,255,0.08); --accent-border:rgba(0,240,255,0.25);
+  --status-running:#00f0ff; --status-idle:#5d9bb8; --status-blocked:#ff6b35;
+  --status-done:#64ffda; --status-offline:#4a5666;
+  --glow-card:0 0 1px rgba(0,240,255,0.08);
+  --glow-hover:0 0 8px rgba(0,240,255,0.30);
+  --glow-focus:0 0 6px rgba(0,240,255,0.40);
+  --grid-line:rgba(0,240,255,0.025); --hud-mark:rgba(0,240,255,0.32);
+}
+:root[data-theme="light"] {
+  --bg:#eef1f5; --panel:#e8ecf2; --card:#f4f6f9; --card-2:#e0e4ea;
+  --border:#c4cdd8; --border-subtle:#d4dbe4;
+  --text:#0a1628; --muted:#5a6a7e;
+  --accent:#0097a7; --accent-active:#00838f; --accent-secondary:#00bcd4;
+  --accent-subtle:rgba(0,151,167,0.08); --accent-border:rgba(0,151,167,0.25);
+  --status-running:#0097a7; --status-idle:#5a6a7e; --status-blocked:#c45000;
+  --status-done:#2e7d52; --status-offline:#98a4b3;
+  --glow-card:0 1px 2px rgba(10,22,40,0.06);
+  --glow-hover:0 0 6px rgba(0,151,167,0.25);
+  --glow-focus:0 0 4px rgba(0,151,167,0.40);
+  --grid-line:rgba(10,22,40,0.04); --hud-mark:rgba(0,151,167,0.45);
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:'Geist',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  min-height:100vh; position:relative; overflow:hidden;
+}
+body::before {
+  content:""; position:fixed; inset:0;
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size:64px 64px; pointer-events:none; z-index:0;
+}
+.mono { font-family:'JetBrains Mono',ui-monospace,monospace; font-feature-settings:'zero','ss02'; }
+
+/* corner marks */
+.corner-mark { position:fixed; width:18px; height:18px; border-color:var(--hud-mark); z-index:10; pointer-events:none; }
+.corner-mark.tl { top:10px; left:10px; border-top:1px solid; border-left:1px solid; }
+.corner-mark.tr { top:10px; right:10px; border-top:1px solid; border-right:1px solid; }
+.corner-mark.bl { bottom:10px; left:10px; border-bottom:1px solid; border-left:1px solid; }
+.corner-mark.br { bottom:10px; right:10px; border-bottom:1px solid; border-right:1px solid; }
+
+/* ============ COCKPIT CONTEXT (simplified) ============ */
+.viewport {
+  position:relative; z-index:1; min-height:100vh;
+  padding:48px 56px 48px;
+  display:flex; flex-direction:column; gap:22px;
+}
+.context-label {
+  display:flex; align-items:center; gap:14px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--muted);
+}
+.context-label .num-tag { color:var(--accent); border:1px solid var(--accent-border); padding:2px 8px; }
+.context-label .rule { flex:1; height:1px; background:var(--border); }
+
+.mini-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
+.mini-card {
+  background:var(--card); border:1px solid var(--border);
+  display:grid; grid-template-columns:3px 1fr;
+  cursor:pointer; transition:border-color 120ms ease, box-shadow 120ms ease;
+  border-radius:6px; overflow:hidden;
+}
+.mini-card:hover { border-color:var(--accent-border); box-shadow:var(--glow-hover); }
+.mini-card .m-rail { background:var(--status-idle); opacity:0.35; }
+.mini-card[data-state="running"] .m-rail { background:var(--status-running); box-shadow:0 0 6px var(--status-running); opacity:1; }
+.mini-card[data-state="blocked"] .m-rail { background:var(--status-blocked); box-shadow:0 0 6px var(--status-blocked); opacity:1; }
+.mini-card[data-state="done"]    .m-rail { background:var(--status-done); opacity:0.9; }
+.mini-card[data-state="offline"] .m-rail { background:var(--status-offline); opacity:0.6; }
+.mini-card[data-state="offline"] { opacity:0.55; }
+.m-body { padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+.m-head { display:flex; align-items:center; gap:10px; }
+.m-avatar {
+  width:30px; height:30px; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg); border:1px solid var(--border); color:var(--text);
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
+}
+.mini-card[data-state="running"] .m-avatar { border-color:var(--accent-border); color:var(--accent); }
+.m-name { font-weight:600; font-size:12.5px; color:var(--text); letter-spacing:-0.005em; }
+.m-slug { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); }
+.m-slug::before { content:"//"; opacity:0.5; margin-right:3px; }
+.m-status {
+  font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.16em; text-transform:uppercase;
+  padding:2px 7px; border:1px solid var(--border); color:var(--muted);
+  display:inline-flex; align-items:center; gap:6px; align-self:flex-start;
+}
+.m-status .sd { width:5px; height:5px; border-radius:50%; background:var(--status-idle); }
+.mini-card[data-state="running"] .m-status { color:var(--accent); border-color:var(--accent-border); background:var(--accent-subtle); }
+.mini-card[data-state="running"] .m-status .sd { background:var(--accent); box-shadow:0 0 4px var(--accent); }
+.mini-card[data-state="blocked"] .m-status { color:var(--status-blocked); border-color:rgba(255,107,53,0.30); }
+.mini-card[data-state="blocked"] .m-status .sd { background:var(--status-blocked); }
+.mini-card[data-state="done"] .m-status { color:var(--status-done); border-color:rgba(100,255,218,0.30); }
+.mini-card[data-state="done"] .m-status .sd { background:var(--status-done); }
+.mini-card[data-state="offline"] .m-status .sd { background:var(--status-offline); }
+.m-role { font-size:11px; color:var(--muted); line-height:1.3; }
+.m-foot {
+  display:flex; justify-content:space-between;
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--muted);
+  letter-spacing:0.1em; opacity:0.7; padding-top:6px;
+  border-top:1px solid var(--border-subtle);
+}
+.mini-card.active-source {
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent), 0 0 16px rgba(0,240,255,0.35);
+}
+
+/* ============ MODAL BACKDROP ============ */
+.modal-backdrop {
+  position:fixed; inset:0;
+  background:rgba(6,11,24,0.72);
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+  z-index:90;
+  display:flex; align-items:center; justify-content:center;
+  padding:5vh 24px;
+  animation:fade-in 140ms ease;
+}
+:root[data-theme="light"] .modal-backdrop { background:rgba(10,22,40,0.40); }
+.modal-backdrop[hidden] { display:none; }
+@keyframes fade-in { from { opacity:0; } to { opacity:1; } }
+
+/* ============ MODAL FRAME ============ */
+.modal {
+  width:min(960px, calc(100% - 24px));
+  max-height:90vh;
+  display:flex; flex-direction:column;
+  position:relative;
+  /* augmented-ui frame: TL and BR clipped (HUD signature) */
+  --aug-tl1:18px; --aug-tl-extend1:22px;
+  --aug-br1:18px; --aug-br-extend1:22px;
+  --aug-border-bg:var(--accent-border);
+  --aug-inlay-bg:var(--panel);
+  --aug-border-all:1px;
+  box-shadow:
+    0 0 0 1px rgba(0,240,255,0.04),
+    0 0 32px rgba(0,240,255,0.12),
+    0 30px 80px rgba(0,0,0,0.65);
+  animation:modal-in 220ms cubic-bezier(.2,.7,.2,1);
+  transform-origin:50% 40%;
+}
+:root[data-theme="light"] .modal {
+  box-shadow:
+    0 0 0 1px rgba(0,151,167,0.10),
+    0 30px 80px rgba(10,22,40,0.18);
+}
+@keyframes modal-in {
+  from { opacity:0; transform:translateY(-8px) scale(0.985); }
+  to   { opacity:1; transform:none; }
+}
+
+/* corner ticks inside modal frame (HUD detail) */
+.modal::before, .modal::after {
+  content:""; position:absolute; width:14px; height:14px;
+  border-color:var(--accent); opacity:0.65; pointer-events:none; z-index:3;
+}
+.modal::before { top:6px; right:36px; border-top:1px solid; border-right:1px solid; }
+.modal::after  { bottom:6px; left:36px;  border-bottom:1px solid; border-left:1px solid; }
+
+/* ============ MODAL HEADER ============ */
+.m-header {
+  display:flex; align-items:stretch; gap:0;
+  padding:0;
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(180deg, rgba(0,240,255,0.04), transparent 100%);
+  position:relative;
+}
+.mh-meta-left {
+  display:flex; align-items:flex-start; gap:16px;
+  padding:20px 22px 18px;
+  flex:1; min-width:0;
+}
+.mh-avatar {
+  width:64px; height:64px; flex:none;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg);
+  border:1px solid var(--accent-border);
+  color:var(--accent);
+  font-family:'JetBrains Mono',monospace; font-weight:700;
+  font-size:22px; letter-spacing:0.02em;
+  position:relative;
+  box-shadow:inset 0 0 0 1px rgba(0,240,255,0.04), 0 0 12px rgba(0,240,255,0.18);
+}
+.mh-avatar::before, .mh-avatar::after { content:""; position:absolute; width:6px; height:6px; border-color:var(--accent); }
+.mh-avatar::before { top:-2px; left:-2px; border-top:1px solid; border-left:1px solid; }
+.mh-avatar::after  { bottom:-2px; right:-2px; border-bottom:1px solid; border-right:1px solid; }
+
+.mh-identity { display:flex; flex-direction:column; gap:6px; min-width:0; padding-top:2px; }
+.mh-slug-row {
+  display:flex; align-items:center; gap:10px;
+  font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
+  color:var(--muted);
+}
+.mh-slug-row .agent-id { color:var(--accent); letter-spacing:0.12em; }
+.mh-slug-row .agent-id::before { content:"// "; opacity:0.5; }
+.mh-slug-row .sep { color:var(--border); }
+.mh-slug-row .multi-badge {
+  display:inline-flex; align-items:center;
+  border:1px solid var(--accent-border); color:var(--accent);
+  font-family:'JetBrains Mono',monospace; font-size:9.5px; font-weight:600;
+  letter-spacing:0.06em; padding:1px 6px;
+  background:var(--accent-subtle);
+  cursor:pointer;
+  transition:background 120ms ease, border-color 120ms ease;
+}
+.mh-slug-row .multi-badge:hover { background:rgba(0,240,255,0.14); border-color:var(--accent); }
+.mh-slug-row .multi-badge[data-instances="0"] { color:var(--muted); border-color:var(--border); background:transparent; cursor:default; }
+.mh-slug-row .multi-badge[data-instances="0"]:hover { background:transparent; border-color:var(--border); }
+.mh-instance-pills {
+  display:none; gap:6px; flex-wrap:wrap; align-items:center;
+  margin-top:4px;
+  font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.04em;
+}
+.mh-instance-pills[data-open="true"] { display:inline-flex; animation:mh-pill-in 180ms ease-out; }
+@keyframes mh-pill-in { from { opacity:0; transform:translateY(-2px); } to { opacity:1; transform:none; } }
+.mh-instance-pills .ipill {
+  display:inline-flex; align-items:center; gap:6px;
+  border:1px solid var(--border); padding:2px 8px;
+  color:var(--text);
+}
+.mh-instance-pills .ipill .pdot { width:5px; height:5px; border-radius:50%; background:var(--status-running); box-shadow:0 0 4px var(--accent); }
+.mh-name {
+  font-family:'Geist',sans-serif; font-weight:600; font-size:22px;
+  color:var(--text); letter-spacing:-0.015em; line-height:1.15;
+}
+.mh-role {
+  font-family:'Geist',sans-serif; font-size:13px; color:var(--muted); line-height:1.35;
+}
+
+.mh-stats {
+  display:grid; grid-template-rows:repeat(2, 1fr);
+  grid-auto-flow:column; grid-auto-columns:1fr;
+  gap:4px 16px;
+  padding:18px 22px;
+  border-left:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace;
+  align-self:stretch; align-items:center;
+}
+.mh-stat { display:flex; flex-direction:column; gap:2px; min-width:60px; }
+.mh-stat .k { color:var(--muted); opacity:0.65; font-size:8.5px; letter-spacing:0.2em; text-transform:uppercase; }
+.mh-stat .v { color:var(--text); font-size:12px; font-weight:500; letter-spacing:0.02em; }
+.mh-stat .v.ok { color:var(--status-done); }
+.mh-stat .v.cy { color:var(--accent); }
+.mh-stat .v .sd {
+  display:inline-block; width:6px; height:6px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 5px var(--accent);
+  margin-right:6px; vertical-align:0;
+  animation:dot-pulse 1.7s ease-in-out infinite;
+}
+
+.mh-close {
+  flex:none; align-self:stretch;
+  width:44px;
+  background:transparent; border:0; border-left:1px solid var(--border);
+  color:var(--muted); cursor:pointer;
+  font-family:'JetBrains Mono',monospace; font-size:14px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  transition:color 120ms ease, background 120ms ease;
+}
+.mh-close { position:relative; }
+.mh-close:hover { color:var(--status-blocked); background:rgba(255,107,53,0.06); }
+.mh-close:focus-visible { outline:1px solid var(--accent); outline-offset:-2px; }
+
+/* ============ TABS ============ */
+.m-tabs {
+  display:flex; align-items:stretch; gap:0;
+  padding:0;
+  border-bottom:1px solid var(--border);
+  background:var(--bg);
+  font-family:'JetBrains Mono',monospace;
+  position:relative;
+}
+.m-tabs::before {
+  content:""; position:absolute; left:0; bottom:-1px; height:1px; width:0;
+  background:var(--accent); box-shadow:0 0 6px var(--accent);
+  transition:left 220ms cubic-bezier(.3,.7,.3,1), width 220ms cubic-bezier(.3,.7,.3,1);
+  z-index:2;
+}
+.m-tab {
+  flex:1;
+  display:flex; align-items:center; justify-content:flex-start; gap:10px;
+  background:transparent; border:0; cursor:pointer;
+  padding:14px 18px; color:var(--muted);
+  font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:500;
+  letter-spacing:0.18em; text-transform:uppercase;
+  position:relative;
+  transition:color 140ms ease, background 140ms ease;
+  border-right:1px solid var(--border-subtle);
+}
+.m-tab:last-child { border-right:0; }
+.m-tab .ix {
+  font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em;
+  color:var(--muted); opacity:0.55; font-weight:400;
+}
+.m-tab .label { letter-spacing:0.2em; }
+.m-tab .cnt {
+  margin-left:auto;
+  font-size:9px; letter-spacing:0.06em;
+  color:var(--muted); opacity:0.55;
+  border:1px solid var(--border); padding:1px 5px;
+  font-weight:500;
+}
+.m-tab:hover { color:var(--text); background:var(--accent-subtle); }
+.m-tab:hover .ix { color:var(--accent); opacity:1; }
+.m-tab[aria-selected="true"] {
+  color:var(--accent); background:var(--accent-subtle);
+}
+.m-tab[aria-selected="true"] .ix { color:var(--accent); opacity:1; }
+.m-tab[aria-selected="true"] .cnt { border-color:var(--accent-border); color:var(--accent); opacity:1; }
+.m-tab:focus-visible { outline:1px solid var(--accent); outline-offset:-2px; box-shadow:inset 0 0 0 1px rgba(0,240,255,0.25); }
+
+/* ============ TABPANELS ============ */
+.m-panels { flex:1; overflow:auto; background:var(--panel); position:relative; }
+.m-panel { display:none; padding:26px 30px 28px; }
+.m-panel[data-active="true"] { display:block; animation:panel-in 200ms ease; }
+@keyframes panel-in { from { opacity:0; transform:translateY(2px); } to { opacity:1; transform:none; } }
+
+/* sub-header for each panel */
+.panel-eyebrow {
+  display:flex; align-items:center; gap:12px;
+  font-family:'JetBrains Mono',monospace; font-size:9.5px;
+  letter-spacing:0.22em; text-transform:uppercase; color:var(--muted);
+  margin-bottom:18px;
+}
+.panel-eyebrow .tag { color:var(--accent); border:1px solid var(--accent-border); padding:2px 8px; }
+.panel-eyebrow .rule { flex:1; height:1px; background:var(--border-subtle); }
+.panel-eyebrow .endcap { opacity:0.7; }
+
+/* ============ TAB 1 · MISSÃO (markdown render) ============ */
+.prose {
+  max-width:62ch;
+  font-family:'Geist',sans-serif; font-size:13px; line-height:1.7;
+  color:var(--text);
+}
+.prose h2 {
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px; font-weight:600;
+  letter-spacing:0.22em; text-transform:uppercase;
+  color:var(--accent);
+  margin:24px 0 12px;
+  padding-bottom:8px;
+  border-bottom:1px solid var(--border-subtle);
+  display:flex; align-items:center; gap:10px;
+}
+.prose h2::before {
+  content:"§"; color:var(--accent); opacity:0.7; font-weight:400;
+}
+.prose h2:first-child { margin-top:0; }
+.prose p { margin:0 0 14px; color:var(--text); }
+.prose p strong { color:var(--text); font-weight:600; }
+.prose ul {
+  list-style:none; padding:0; margin:0 0 14px;
+  display:flex; flex-direction:column; gap:6px;
+}
+.prose ul li {
+  position:relative; padding-left:22px;
+  color:var(--text); font-size:13px; line-height:1.55;
+}
+.prose ul li::before {
+  content:"›"; position:absolute; left:6px; top:0;
+  color:var(--accent); font-family:'JetBrains Mono',monospace;
+  font-weight:600;
+}
+.prose ul li.ok::before { content:"✓"; color:var(--status-done); }
+.prose ul li.no::before { content:"✕"; color:var(--status-blocked); }
+.prose code, .prose .code-inline {
+  font-family:'JetBrains Mono',monospace; font-size:11.5px;
+  color:var(--accent); background:var(--accent-subtle);
+  border:1px solid var(--border-subtle);
+  padding:1px 6px; letter-spacing:0.01em;
+}
+
+.soul-meta {
+  display:flex; flex-wrap:wrap; align-items:center; gap:14px;
+  margin-top:24px; padding-top:18px;
+  border-top:1px solid var(--border-subtle);
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);
+}
+.soul-meta .k { opacity:0.6; }
+.soul-meta .v { color:var(--text); }
+.soul-meta .sep { color:var(--border); }
+
+/* ============ TAB 2 · SKILLS ============ */
+.skills-list {
+  display:flex; flex-direction:column;
+  background:var(--card);
+  border:1px solid var(--border);
+}
+.skill-row {
+  display:grid;
+  grid-template-columns: 28px 1.6fr 1.4fr 56px 110px;
+  align-items:center; gap:14px;
+  padding:12px 14px;
+  background:var(--card);
+  border-bottom:1px solid var(--border-subtle);
+  cursor:pointer;
+  transition:background 120ms ease;
+}
+.skill-row:nth-child(even) { background:var(--card-2); }
+.skill-row:last-child { border-bottom:0; }
+.skill-row:hover, .skill-row:focus-visible {
+  background:var(--accent-subtle);
+  outline:0;
+  box-shadow:inset 0 0 0 1px var(--accent-border);
+}
+.skill-row .ix {
+  font-family:'JetBrains Mono',monospace; font-size:9.5px;
+  color:var(--muted); opacity:0.55; letter-spacing:0.06em;
+}
+.skill-row .name {
+  font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:500;
+  color:var(--text); letter-spacing:0;
+  display:flex; align-items:center; gap:8px;
+}
+.skill-row .name::before {
+  content:""; width:6px; height:6px; border-radius:50%;
+  background:var(--status-offline); flex:none;
+}
+.skill-row[data-active="true"] .name { color:var(--accent); }
+.skill-row[data-active="true"] .name::before { background:var(--accent); box-shadow:0 0 5px var(--accent); }
+.skill-row[data-dormant="true"] .name { color:var(--muted); opacity:0.7; }
+
+.skill-bar-wrap { display:flex; align-items:center; gap:10px; }
+.skill-bar {
+  flex:1; height:6px; background:var(--bg);
+  border:1px solid var(--border-subtle);
+  position:relative; overflow:hidden;
+}
+.skill-bar .fill {
+  position:absolute; left:0; top:0; bottom:0; width:0;
+  background:var(--accent); box-shadow:0 0 4px rgba(0,240,255,0.45);
+}
+.skill-row[data-dormant="true"] .skill-bar .fill { background:var(--status-offline); box-shadow:none; }
+.skill-bar-wrap .count {
+  font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
+  color:var(--text); font-variant-numeric:tabular-nums; min-width:18px; text-align:right;
+}
+.skill-row[data-active="true"] .skill-bar-wrap .count { color:var(--accent); }
+.skill-row[data-dormant="true"] .skill-bar-wrap .count { color:var(--muted); opacity:0.7; }
+
+.skill-row .calls-label {
+  font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.18em;
+  text-transform:uppercase; color:var(--muted); opacity:0.7; text-align:right;
+}
+.skill-row .last {
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  color:var(--muted); letter-spacing:0.06em; text-align:right;
+}
+.skill-row[data-active="true"] .last { color:var(--text); }
+
+.skills-head {
+  display:grid; grid-template-columns: 28px 1.6fr 1.4fr 56px 110px;
+  align-items:center; gap:14px;
+  padding:6px 14px 10px;
+  border-bottom:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace; font-size:8.5px;
+  letter-spacing:0.2em; text-transform:uppercase; color:var(--muted); opacity:0.7;
+  margin-bottom:4px;
+}
+.skills-head .ar { text-align:right; }
+
+.skills-summary {
+  display:flex; align-items:center; gap:20px;
+  padding:14px 16px;
+  margin-top:18px;
+  border:1px solid var(--border-subtle);
+  background:var(--bg);
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);
+}
+.skills-summary .item { display:inline-flex; align-items:baseline; gap:8px; }
+.skills-summary .item .k { opacity:0.6; font-size:9px; letter-spacing:0.18em; }
+.skills-summary .item .v {
+  color:var(--text); font-size:18px; font-weight:600;
+  letter-spacing:0.02em; font-variant-numeric:tabular-nums;
+}
+.skills-summary .item .v.cy { color:var(--accent); text-shadow:0 0 8px rgba(0,240,255,0.3); }
+.skills-summary .item .v.mu { color:var(--muted); }
+.skills-summary .sep { width:1px; height:24px; background:var(--border); opacity:0.5; }
+
+/* ============ TAB 3 · DOCS ============ */
+.tree-head {
+  display:flex; align-items:center; gap:12px;
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);
+  padding:6px 14px 10px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:6px;
+}
+.tree-head .path { color:var(--accent); letter-spacing:0.04em; text-transform:none; }
+.tree-head .counts { margin-left:auto; opacity:0.7; }
+.tree-head .counts b { color:var(--text); font-weight:500; }
+
+.tree { display:flex; flex-direction:column; gap:0; }
+.tree-row {
+  display:flex; align-items:center; gap:0;
+  padding:6px 14px;
+  font-family:'JetBrains Mono',monospace; font-size:12px;
+  color:var(--text); cursor:pointer;
+  border-left:2px solid transparent;
+  transition:background 100ms ease, border-color 100ms ease;
+  user-select:none;
+}
+.tree-row:hover {
+  background:var(--accent-subtle);
+  border-left-color:var(--accent);
+}
+.tree-row[data-selected="true"] {
+  background:var(--accent-subtle);
+  border-left-color:var(--accent);
+}
+.tree-row[data-selected="true"] .name { color:var(--accent); }
+.tree-row .indent { width:0; flex:none; }
+.tree-row .caret {
+  width:14px; flex:none; text-align:center;
+  color:var(--muted); font-size:9px; opacity:0.65;
+  transition:transform 120ms ease, color 120ms ease;
+}
+.tree-row[data-kind="folder"] .caret { color:var(--accent); opacity:0.85; }
+.tree-row[data-kind="file"]   .caret { visibility:hidden; }
+.tree-row[data-open="false"] .caret::before { content:"▸"; }
+.tree-row[data-open="true"]  .caret::before { content:"▾"; }
+.tree-row .glyph {
+  width:18px; flex:none; text-align:center; color:var(--muted); opacity:0.7;
+  font-size:11px;
+}
+.tree-row[data-kind="folder"] .glyph { color:var(--accent); opacity:0.85; }
+.tree-row[data-kind="folder"][data-special="true"] .glyph { color:var(--status-done); }
+.tree-row[data-ext="md"] .glyph { color:var(--accent-secondary); }
+.tree-row .name {
+  flex:1; min-width:0;
+  letter-spacing:0.01em;
+}
+.tree-row[data-kind="folder"] .name { font-weight:500; }
+.tree-row .ext-tag {
+  font-family:'JetBrains Mono',monospace; font-size:9px;
+  color:var(--muted); opacity:0.5; letter-spacing:0.06em; margin-left:8px;
+}
+.tree-row .annot {
+  color:var(--muted); opacity:0.6;
+  font-size:10.5px;
+  letter-spacing:0;
+  margin-left:auto;
+  padding-left:12px;
+  font-style:normal;
+}
+.tree-row .annot .sz { color:var(--text); opacity:0.85; }
+.tree-row[data-current="true"] .name { color:var(--accent); }
+.tree-row[data-current="true"]::after {
+  content:"◀ SOUL.md"; margin-left:10px;
+  font-family:'JetBrains Mono',monospace; font-size:9px;
+  letter-spacing:0.18em; color:var(--accent); opacity:0.85;
+}
+.tree-children[hidden] { display:none; }
+
+/* ============ TAB 4 · TABELAS ============ */
+.tables-head {
+  display:grid;
+  grid-template-columns: 1.4fr 110px 1.2fr 130px;
+  align-items:center; gap:14px;
+  padding:6px 14px 10px;
+  border-bottom:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace; font-size:8.5px;
+  letter-spacing:0.2em; text-transform:uppercase; color:var(--muted); opacity:0.7;
+}
+.tables-head .ar { text-align:right; }
+.tables-list {
+  display:flex; flex-direction:column;
+  background:var(--card);
+  border:1px solid var(--border);
+}
+.tbl-row {
+  display:grid;
+  grid-template-columns: 1.4fr 110px 1.2fr 130px;
+  align-items:center; gap:14px;
+  padding:14px;
+  background:var(--card);
+  border-bottom:1px solid var(--border-subtle);
+  transition:background 120ms ease;
+  cursor:pointer;
+}
+.tbl-row:nth-child(even) { background:var(--card-2); }
+.tbl-row:last-child { border-bottom:0; }
+.tbl-row:hover, .tbl-row:focus-visible {
+  background:var(--accent-subtle);
+  outline:0;
+  box-shadow:inset 0 0 0 1px var(--accent-border);
+}
+.tbl-row .tname {
+  font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:500;
+  color:var(--text); letter-spacing:0;
+  display:flex; align-items:center; gap:10px;
+}
+.tbl-row .tname::before {
+  content:""; width:8px; height:8px; flex:none;
+  border:1px solid var(--accent-border); transform:rotate(45deg);
+  background:var(--accent-subtle);
+}
+.tbl-row[data-perm="read/write"] .tname::before {
+  background:var(--accent); box-shadow:0 0 5px var(--accent);
+}
+.tbl-row .perm {
+  font-family:'JetBrains Mono',monospace; font-size:9.5px;
+  letter-spacing:0.16em; text-transform:uppercase;
+  padding:3px 8px; border:1px solid var(--border);
+  color:var(--muted); text-align:center;
+  display:inline-block; justify-self:start;
+}
+.tbl-row[data-perm="read/write"] .perm {
+  color:var(--accent); border-color:var(--accent-border); background:var(--accent-subtle);
+}
+.tbl-row .rows-wrap { display:flex; align-items:center; gap:10px; }
+.tbl-row .rows-num {
+  font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600;
+  color:var(--text); font-variant-numeric:tabular-nums;
+  min-width:42px; text-align:right;
+}
+.tbl-row[data-perm="read/write"] .rows-num { color:var(--accent); }
+.tbl-row .rows-bar {
+  flex:1; height:5px; background:var(--bg);
+  border:1px solid var(--border-subtle); position:relative; overflow:hidden;
+}
+.tbl-row .rows-bar .fill {
+  position:absolute; left:0; top:0; bottom:0;
+  background:var(--accent-secondary); opacity:0.6;
+}
+.tbl-row[data-perm="read/write"] .rows-bar .fill {
+  background:var(--accent); opacity:0.85;
+  box-shadow:0 0 4px rgba(0,240,255,0.45);
+}
+.tbl-row .lwrite {
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  color:var(--muted); letter-spacing:0.06em; text-align:right;
+  opacity:0.85;
+}
+.tbl-row[data-perm="read/write"] .lwrite { color:var(--text); opacity:1; }
+
+.tables-summary {
+  display:flex; align-items:center; gap:20px;
+  padding:14px 16px;
+  margin-top:18px;
+  border:1px solid var(--border-subtle);
+  background:var(--bg);
+  font-family:'JetBrains Mono',monospace; font-size:10px;
+  letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);
+}
+.tables-summary .item { display:inline-flex; align-items:baseline; gap:8px; }
+.tables-summary .item .k { opacity:0.6; font-size:9px; letter-spacing:0.18em; }
+.tables-summary .item .v {
+  color:var(--text); font-size:18px; font-weight:600;
+  letter-spacing:0.02em; font-variant-numeric:tabular-nums;
+}
+.tables-summary .item .v.cy { color:var(--accent); }
+.tables-summary .sep { width:1px; height:24px; background:var(--border); opacity:0.5; }
+
+/* ============ MODAL FOOTER ============ */
+.m-foot {
+  display:flex; align-items:center; gap:0;
+  padding:0;
+  border-top:1px solid var(--border);
+  background:var(--panel);
+  font-family:'JetBrains Mono',monospace; font-size:9.5px;
+  letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);
+}
+.m-foot .item { padding:9px 14px; display:inline-flex; align-items:center; gap:6px; }
+.m-foot .item .k { opacity:0.55; font-size:9px; letter-spacing:0.18em; }
+.m-foot .item .v { color:var(--text); }
+.m-foot .item .v.ok { color:var(--status-done); }
+.m-foot .item .v.cy { color:var(--accent); }
+.m-foot .sep { width:1px; align-self:stretch; background:var(--border); opacity:0.7; }
+.m-foot .spacer { flex:1; }
+.m-foot .hb-dot {
+  width:5px; height:5px; border-radius:50%; background:var(--status-done);
+  box-shadow:0 0 4px var(--status-done);
+  animation:heartbeat 1.2s ease-in-out infinite;
+}
+.m-foot .keyhints { display:inline-flex; gap:0; }
+.m-foot .keyhints .kbd {
+  border:1px solid var(--border); padding:2px 5px; font-size:8.5px;
+  color:var(--text); background:var(--bg); letter-spacing:0;
+  margin:0 4px;
+}
+
+/* ============ ANIMATIONS ============ */
+@keyframes dot-pulse {
+  0%,100% { box-shadow:0 0 3px var(--accent); transform:scale(1); }
+  50%     { box-shadow:0 0 9px var(--accent), 0 0 14px rgba(0,240,255,0.35); transform:scale(1.18); }
+}
+@keyframes heartbeat { 0%,80%,100% { opacity:1; } 40% { opacity:0.3; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *,*::before,*::after { animation:none !important; transition:none !important; }
+  .modal-backdrop { animation:fade-in 80ms ease !important; }
+  .modal { animation:fade-in 100ms ease !important; }
+}
+
+button:focus-visible {
+  outline:1px solid var(--accent); outline-offset:2px;
+  box-shadow:var(--glow-focus);
+}
+
+@media (max-width: 760px) {
+  .viewport { padding:24px 18px; }
+  .mini-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .mh-stats { display:none; }
+  .m-tab .cnt { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="corner-mark tl"></div>
+<div class="corner-mark tr"></div>
+<div class="corner-mark bl"></div>
+<div class="corner-mark br"></div>
+
+<!-- ============ COCKPIT CONTEXT (behind backdrop) ============ -->
+<div class="viewport">
+  <div class="context-label mono">
+    <span class="num-tag">03</span>
+    <span>FLEET · 06 AGENTS · LIVE</span>
+    <span class="rule"></span>
+    <span>order: status · running first</span>
+  </div>
+
+  <div class="mini-grid" id="miniGrid">
+    <!-- cards injected by JS -->
+  </div>
+</div>
+
+<!-- ============ MODAL ============ -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="mhName"
+       aria-describedby="mhRole"
+       data-augmented-ui="tl-clip br-clip border"
+       id="modal">
+
+    <!-- ============ HEADER ============ -->
+    <header class="m-header">
+      <div class="mh-meta-left">
+        <div class="mh-avatar">DS</div>
+        <div class="mh-identity">
+          <div class="mh-slug-row">
+            <span class="agent-id">daniel</span>
+            <span class="sep">│</span>
+            <span>agent.id 0x07</span>
+            <span class="sep">│</span>
+            <button type="button" class="multi-badge" data-instances="2" aria-expanded="false" aria-label="toggle instances">[2]</button>
+          </div>
+          <h1 class="mh-name" id="mhName">Daniel Singh</h1>
+          <div class="mh-role" id="mhRole">Dev sênior — líder de área · Fluyt + portfólio Rica</div>
+          <div class="mh-instance-pills" id="mhPills" data-open="false">
+            <span class="ipill"><span class="pdot"></span>daniel-1</span>
+            <span class="ipill"><span class="pdot"></span>daniel-2</span>
+          </div>
+        </div>
+      </div>
+      <div class="mh-stats">
+        <div class="mh-stat"><span class="k">STATUS</span><span class="v cy"><span class="sd"></span>RUNNING</span></div>
+        <div class="mh-stat"><span class="k">MDL</span><span class="v">opus-4.7</span></div>
+        <div class="mh-stat"><span class="k">CLI</span><span class="v">cc</span></div>
+        <div class="mh-stat"><span class="k">LSEEN</span><span class="v ok">há 12s</span></div>
+        <div class="mh-stat"><span class="k">SOUL.md</span><span class="v">v3.2</span></div>
+        <div class="mh-stat"><span class="k">EDIT</span><span class="v">há 3d</span></div>
+      </div>
+      <button class="mh-close" id="closeBtn" type="button" aria-label="Fechar (Esc)">✕</button>
+    </header>
+
+    <!-- ============ TABS ============ -->
+    <div class="m-tabs" role="tablist" aria-label="Detalhes do agente">
+      <button class="m-tab" type="button" role="tab"
+              id="tab-missao"  aria-controls="panel-missao"  aria-selected="true" tabindex="0">
+        <span class="ix">01</span><span class="label">MISSÃO</span><span class="cnt">SOUL.md</span>
+      </button>
+      <button class="m-tab" type="button" role="tab"
+              id="tab-skills"  aria-controls="panel-skills"  aria-selected="false" tabindex="-1">
+        <span class="ix">02</span><span class="label">SKILLS</span><span class="cnt">08</span>
+      </button>
+      <button class="m-tab" type="button" role="tab"
+              id="tab-docs"    aria-controls="panel-docs"    aria-selected="false" tabindex="-1">
+        <span class="ix">03</span><span class="label">DOCS</span><span class="cnt">52</span>
+      </button>
+      <button class="m-tab" type="button" role="tab"
+              id="tab-tabelas" aria-controls="panel-tabelas" aria-selected="false" tabindex="-1">
+        <span class="ix">04</span><span class="label">TABELAS</span><span class="cnt">04</span>
+      </button>
+    </div>
+
+    <!-- ============ PANELS ============ -->
+    <div class="m-panels">
+
+      <!-- ====== TAB 1 · MISSÃO ====== -->
+      <section class="m-panel" data-active="true" role="tabpanel"
+               id="panel-missao" aria-labelledby="tab-missao" tabindex="0">
+
+        <div class="panel-eyebrow mono">
+          <span class="tag">01</span>
+          <span>MISSÃO // SOUL.md</span>
+          <span class="rule"></span>
+          <span class="endcap">~/daniel/SOUL.md · 8 KB</span>
+        </div>
+
+        <article class="prose">
+          <h2>Quem sou</h2>
+          <p>
+            <strong>Daniel Singh.</strong> Dev sênior do Rica em desenvolvimento de software.
+            Líder da área de dev. <span class="code-inline">Fluyt</span> é o produto principal, mas atendo todo
+            o portfólio (Conecta Movelmar, Conecta Lojistas, Radar Fluyt, e o que
+            nascer dali em diante).
+          </p>
+
+          <h2>Especialização</h2>
+          <ul>
+            <li>Stack: <span class="code-inline">Next.js 16</span> + <span class="code-inline">Supabase</span> + <span class="code-inline">Vercel</span></li>
+            <li>Monorepo <span class="code-inline">Turbo</span> + <span class="code-inline">pnpm</span></li>
+            <li>Refactor + arquitetura + code review</li>
+            <li>Marketing pro Fluyt: emails de novidades, onboarding, prospecção</li>
+          </ul>
+
+          <h2>Fronteiras</h2>
+          <ul>
+            <li class="ok">Dev/code/deploy/refactor de qualquer repo do Rica</li>
+            <li class="no">Operação dia-a-dia dos outros agentes (cada um cuida do seu domínio)</li>
+          </ul>
+
+          <h2>Regras pessoais</h2>
+          <ul>
+            <li>Antes de codar feature de framework: <span class="code-inline">Context7</span> obrigatório</li>
+            <li>Reportar com 1-2 linhas de fundamento, sem dump</li>
+            <li>Trust internal code; validar só nos <em>boundaries</em></li>
+            <li>Preview obrigatório antes de email pra usuário ou deploy em produção</li>
+          </ul>
+
+          <div class="soul-meta mono">
+            <span><span class="k">SHA</span> <span class="v">a2c4f81</span></span>
+            <span class="sep">│</span>
+            <span><span class="k">EDIT</span> <span class="v">2026-05-07 09:14</span></span>
+            <span class="sep">│</span>
+            <span><span class="k">CHARS</span> <span class="v">1 247</span></span>
+            <span class="sep">│</span>
+            <span><span class="k">REV</span> <span class="v">v3.2</span></span>
+          </div>
+        </article>
+      </section>
+
+      <!-- ====== TAB 2 · SKILLS ====== -->
+      <section class="m-panel" data-active="false" role="tabpanel"
+               id="panel-skills" aria-labelledby="tab-skills" tabindex="0" hidden>
+
+        <div class="panel-eyebrow mono">
+          <span class="tag">02</span>
+          <span>SKILLS // INVOCATIONS · 24H</span>
+          <span class="rule"></span>
+          <span class="endcap">order: calls_24h · desc</span>
+        </div>
+
+        <div class="skills-head mono">
+          <span></span>
+          <span>NAME</span>
+          <span>VOLUME · 24H</span>
+          <span class="ar">CALLS</span>
+          <span class="ar">LAST USED</span>
+        </div>
+
+        <div class="skills-list" id="skillsList"></div>
+
+        <div class="skills-summary mono">
+          <div class="item"><span class="k">TOTAL · 24H</span><span class="v cy">28</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">ACTIVE</span><span class="v">5</span> <span style="opacity:0.5">/ 08</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">DORMANT</span><span class="v mu">3</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">TOP</span><span class="v" style="font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:0.08em;">fluyt-backlog</span></div>
+        </div>
+      </section>
+
+      <!-- ====== TAB 3 · DOCS ====== -->
+      <section class="m-panel" data-active="false" role="tabpanel"
+               id="panel-docs" aria-labelledby="tab-docs" tabindex="0" hidden>
+
+        <div class="panel-eyebrow mono">
+          <span class="tag">03</span>
+          <span>DOCS // WORKSPACE TREE</span>
+          <span class="rule"></span>
+          <span class="endcap">vps:~/agents/daniel/</span>
+        </div>
+
+        <div class="tree-head mono">
+          <span class="path">~/agents/daniel/</span>
+          <span class="counts">
+            <b>52</b> files
+            <span style="opacity:0.5; margin:0 8px">·</span>
+            <b>48 KB</b> total
+            <span style="opacity:0.5; margin:0 8px">·</span>
+            scope <b>memory + fabrica-de-software</b>
+          </span>
+        </div>
+
+        <div class="tree" id="docsTree"></div>
+      </section>
+
+      <!-- ====== TAB 4 · TABELAS ====== -->
+      <section class="m-panel" data-active="false" role="tabpanel"
+               id="panel-tabelas" aria-labelledby="tab-tabelas" tabindex="0" hidden>
+
+        <div class="panel-eyebrow mono">
+          <span class="tag">04</span>
+          <span>TABELAS // SUPABASE · grupo_borges</span>
+          <span class="rule"></span>
+          <span class="endcap">scope: 4 tables · 1.143 rows</span>
+        </div>
+
+        <div class="tables-head mono">
+          <span>TABLE</span>
+          <span>PERMISSION</span>
+          <span>ROWS</span>
+          <span class="ar">LAST WRITE</span>
+        </div>
+
+        <div class="tables-list" id="tablesList"></div>
+
+        <div class="tables-summary mono">
+          <div class="item"><span class="k">TOTAL ROWS</span><span class="v cy">1.143</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">READ/WRITE</span><span class="v">2</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">READ ONLY</span><span class="v">2</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">LAST WRITE</span><span class="v" style="font-size:11px; letter-spacing:0.08em;">há 1h · fc_backlog</span></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ============ FOOTER ============ -->
+    <footer class="m-foot">
+      <span class="item"><span class="hb-dot"></span><span class="k">AGENT</span><span class="v cy">daniel</span></span>
+      <span class="sep"></span>
+      <span class="item"><span class="k">PID</span><span class="v">7841</span></span>
+      <span class="sep"></span>
+      <span class="item"><span class="k">TMUX</span><span class="v">daniel-1, daniel-2</span></span>
+      <span class="sep"></span>
+      <span class="item"><span class="k">UPDATED</span><span class="v ok">há 12s</span></span>
+      <span class="spacer"></span>
+      <span class="item">
+        <span class="k">NAV</span>
+        <span class="keyhints">
+          <span class="kbd">←</span><span class="kbd">→</span>
+        </span>
+        <span style="opacity:0.6">tabs</span>
+        <span style="margin-left:10px; opacity:0.4">·</span>
+        <span class="kbd">ESC</span><span style="opacity:0.6">close</span>
+      </span>
+    </footer>
+
+  </div>
+</div>
+
+<script>
+/* ============ DATA ============ */
+const AGENTS = [
+  { slug:'pavan',    name:'José Pavan',       role:'Consigliere',                model:'opus-4.7',   cli:'cc',    status:'running', task_id:'RN-2180', instance_count:1, last_seen:'há 45s' },
+  { slug:'daniel',   name:'Daniel Singh',     role:'Dev sênior — líder de área', model:'opus-4.7',   cli:'cc',    status:'running', task_id:'RN-2182', instance_count:2, last_seen:'há 12s' },
+  { slug:'lucas',    name:'Lucas Marchetti',  role:'Diretor de marketing',       model:'sonnet-4.6', cli:'cc',    status:'blocked', task_id:'RN-2177', instance_count:1, last_seen:'há 30min' },
+  { slug:'vinicius', name:'Vinicius Zanella', role:'Especialista — lojistas',    model:'haiku-4.5',  cli:'cc',    status:'idle',    task_id:null,      instance_count:1, last_seen:'há 2h' },
+  { slug:'felipe',   name:'Felipe Conti',     role:'Especialista — comercial',   model:'opus-4.7',   cli:'codex', status:'done',    task_id:'DN-2169', instance_count:1, last_seen:'há 10min' },
+  { slug:'barsi',    name:'Luiz Barsi',       role:'CFO read-only',              model:'haiku-4.5',  cli:'cc',    status:'offline', task_id:null,      instance_count:0, last_seen:'há 2h20' },
+];
+
+const STATE_LABEL = { running:'RUN', idle:'IDLE', blocked:'BLK', done:'DONE', offline:'OFF' };
+const ORDER = { running:0, blocked:1, idle:2, done:3, offline:4 };
+const initialsOf = (name) => name.split(' ').filter(Boolean).slice(0,2).map(w => w[0]).join('').toUpperCase();
+
+const SKILLS = [
+  { name:'fluyt-backlog',    last_used:'há 30min', calls_24h:12 },
+  { name:'gmail-api',        last_used:'há 2h',    calls_24h:8  },
+  { name:'vercel:deploy',    last_used:'há 1h',    calls_24h:4  },
+  { name:'frontend-design',  last_used:'há 4h',    calls_24h:3  },
+  { name:'code-review',      last_used:'ontem',    calls_24h:0  },
+  { name:'voz',              last_used:'ontem',    calls_24h:1  },
+  { name:'simplify',         last_used:'há 3d',    calls_24h:0  },
+  { name:'test-fluyt',       last_used:'há 5d',    calls_24h:0  },
+];
+
+const TABLES = [
+  { name:'fc_backlog',          perm:'read/write', rows:87,  last_write:'há 1h'  },
+  { name:'fc_changelog',        perm:'read',       rows:142, last_write:'há 2d'  },
+  { name:'fc_reunioes',         perm:'read/write', rows:23,  last_write:'há 6h'  },
+  { name:'email_historico_log', perm:'read',       rows:891, last_write:'ontem' },
+];
+
+const TREE = [
+  { type:'file',   name:'SOUL.md',    annot:'esse arquivo · 8 KB', ext:'md', current:true },
+  { type:'file',   name:'IDENTITY.md', annot:'1.5 KB', ext:'md' },
+  { type:'file',   name:'AGENTS.md',   annot:'12 KB · code rules pro Codex CLI + Daniel-CC', ext:'md' },
+  { type:'file',   name:'OPS.md',      annot:'4 KB · operação Daniel-CC', ext:'md' },
+  { type:'file',   name:'TOOLS.md',    annot:'2 KB', ext:'md' },
+  { type:'file',   name:'CLAUDE.md',   annot:'3 KB · @include resolver pra outros', ext:'md' },
+  { type:'file',   name:'MEMORY.md',   annot:'estado mutável atual', ext:'md' },
+  { type:'folder', name:'memory/', open:true, children:[
+    { type:'file', name:'2026-05-10-cockpit-design-3-versoes.md', annot:'3 KB', ext:'md' },
+    { type:'file', name:'2026-05-09-grupo-borges-decisoes.md',    annot:'2 KB', ext:'md' },
+    { type:'file', name:'REFERENCIA.md', annot:'15 KB · detalhes estáveis', ext:'md' },
+    { type:'file', name:'... (47 arquivos)', annot:'+44 arquivos', ext:'…', dim:true },
+  ]},
+  { type:'folder', name:'fabrica-de-software/', open:true, special:true, children:[
+    { type:'file',   name:'INDEX.md', annot:'', ext:'md' },
+    { type:'folder', name:'design-systems/', open:false, children:[
+      { type:'folder', name:'linear/' },
+      { type:'folder', name:'vercel/' },
+      { type:'folder', name:'stripe/' },
+    ]},
+    { type:'folder', name:'cockpit-grupo-borges/', open:true, children:[
+      { type:'file',   name:'DECISOES.md', annot:'', ext:'md' },
+      { type:'folder', name:'design-prompt/' },
+      { type:'folder', name:'entregas/' },
+    ]},
+    { type:'folder', name:'claude-code/' },
+  ]},
+];
+
+/* ============ COCKPIT MINI-CARDS (context behind backdrop) ============ */
+(function(){
+  const grid = document.getElementById('miniGrid');
+  const sorted = [...AGENTS].sort((a,b) => ORDER[a.status] - ORDER[b.status]);
+  sorted.forEach(a => {
+    const c = document.createElement('div');
+    c.className = 'mini-card';
+    c.dataset.state = a.status;
+    c.dataset.slug = a.slug;
+    if (a.slug === 'daniel') c.classList.add('active-source');
+    c.innerHTML = `
+      <div class="m-rail"></div>
+      <div class="m-body">
+        <div class="m-head">
+          <div class="m-avatar">${initialsOf(a.name)}</div>
+          <div style="display:flex; flex-direction:column; gap:1px; min-width:0; flex:1;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="m-name">${a.name}</span>
+              <span class="m-slug">${a.slug}</span>
+            </div>
+            <div class="m-role">${a.role}</div>
+          </div>
+        </div>
+        <div class="m-status mono"><span class="sd"></span>${STATE_LABEL[a.status]}${a.task_id ? ` · ${a.task_id}` : ''}</div>
+        <div class="m-foot">
+          <span>${a.model}</span>
+          <span>${a.last_seen}</span>
+        </div>
+      </div>`;
+    grid.appendChild(c);
+  });
+})();
+
+/* ============ SKILLS RENDER ============ */
+(function(){
+  const list = document.getElementById('skillsList');
+  const max = Math.max(...SKILLS.map(s => s.calls_24h), 1);
+  SKILLS.forEach((s, i) => {
+    const active = s.calls_24h > 0;
+    const dormant = s.calls_24h === 0;
+    const pct = Math.round((s.calls_24h / max) * 100);
+    const row = document.createElement('button');
+    row.className = 'skill-row';
+    row.type = 'button';
+    row.dataset.active = active;
+    row.dataset.dormant = dormant;
+    row.setAttribute('aria-label', `Skill ${s.name}, ${s.calls_24h} invocações em 24h, último uso ${s.last_used}`);
+    row.innerHTML = `
+      <span class="ix mono">${String(i+1).padStart(2,'0')}</span>
+      <span class="name">${s.name}</span>
+      <div class="skill-bar-wrap">
+        <div class="skill-bar"><div class="fill" style="width:${pct}%"></div></div>
+        <span class="count mono">${s.calls_24h}</span>
+      </div>
+      <span class="calls-label">${active ? '24H' : '—'}</span>
+      <span class="last">${s.last_used}</span>
+    `;
+    list.appendChild(row);
+  });
+})();
+
+/* ============ TABLES RENDER ============ */
+(function(){
+  const list = document.getElementById('tablesList');
+  const max = Math.max(...TABLES.map(t => t.rows), 1);
+  TABLES.forEach(t => {
+    const row = document.createElement('button');
+    row.className = 'tbl-row';
+    row.type = 'button';
+    row.dataset.perm = t.perm;
+    const pct = Math.round((t.rows / max) * 100);
+    row.innerHTML = `
+      <span class="tname mono">${t.name}</span>
+      <span class="perm mono">${t.perm.replace('/', ' / ')}</span>
+      <div class="rows-wrap">
+        <span class="rows-num">${t.rows.toLocaleString('pt-BR').replace(/,/g, ' ')}</span>
+        <div class="rows-bar"><div class="fill" style="width:${pct}%"></div></div>
+      </div>
+      <span class="lwrite">▸ ${t.last_write}</span>
+    `;
+    list.appendChild(row);
+  });
+})();
+
+/* ============ DOCS TREE RENDER ============ */
+(function(){
+  const root = document.getElementById('docsTree');
+
+  function renderNode(node, depth) {
+    const row = document.createElement('div');
+    row.className = 'tree-row';
+    row.dataset.kind = node.type;
+    row.dataset.open = node.open ? 'true' : 'false';
+    if (node.ext) row.dataset.ext = node.ext;
+    if (node.special) row.dataset.special = 'true';
+    if (node.current) row.dataset.current = 'true';
+    row.tabIndex = 0;
+
+    const glyph = node.type === 'folder' ? '▣' : '▤';
+    const indent = depth * 18;
+    row.innerHTML = `
+      <span class="indent" style="width:${indent}px"></span>
+      <span class="caret"></span>
+      <span class="glyph">${glyph}</span>
+      <span class="name">${node.name}</span>
+      ${node.annot ? `<span class="annot mono">${node.annot}</span>` : ''}
+    `;
+    if (node.type === 'folder') {
+      row.addEventListener('click', () => {
+        const isOpen = row.dataset.open === 'true';
+        row.dataset.open = isOpen ? 'false' : 'true';
+        const children = row.nextElementSibling;
+        if (children && children.classList.contains('tree-children')) {
+          children.hidden = isOpen;
+        }
+      });
+    } else {
+      row.addEventListener('click', () => {
+        root.querySelectorAll('.tree-row[data-selected="true"]').forEach(r => r.dataset.selected = 'false');
+        row.dataset.selected = 'true';
+      });
+    }
+    root.appendChild(row);
+
+    if (node.type === 'folder' && node.children && node.children.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'tree-children';
+      wrap.hidden = !node.open;
+      root.appendChild(wrap);
+      // render children into root, but with depth+1; we need to instead append children inside wrap
+      const originalAppend = root.appendChild;
+      // simpler: temporarily redirect by rendering into a sub-root
+      const subRoot = wrap;
+      node.children.forEach(child => renderNodeInto(child, depth + 1, subRoot));
+    }
+  }
+
+  function renderNodeInto(node, depth, container) {
+    const row = document.createElement('div');
+    row.className = 'tree-row';
+    row.dataset.kind = node.type;
+    row.dataset.open = node.open ? 'true' : 'false';
+    if (node.ext) row.dataset.ext = node.ext;
+    if (node.special) row.dataset.special = 'true';
+    if (node.current) row.dataset.current = 'true';
+    if (node.dim) row.style.opacity = '0.5';
+    row.tabIndex = 0;
+    const glyph = node.type === 'folder' ? '▣' : '▤';
+    const indent = depth * 18;
+    row.innerHTML = `
+      <span class="indent" style="width:${indent}px"></span>
+      <span class="caret"></span>
+      <span class="glyph">${glyph}</span>
+      <span class="name">${node.name}</span>
+      ${node.annot ? `<span class="annot mono">${node.annot}</span>` : ''}
+    `;
+    container.appendChild(row);
+
+    if (node.type === 'folder' && node.children && node.children.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'tree-children';
+      wrap.hidden = !node.open;
+      container.appendChild(wrap);
+      node.children.forEach(child => renderNodeInto(child, depth + 1, wrap));
+      row.addEventListener('click', () => {
+        const isOpen = row.dataset.open === 'true';
+        row.dataset.open = isOpen ? 'false' : 'true';
+        wrap.hidden = isOpen;
+      });
+    } else if (node.type === 'file') {
+      row.addEventListener('click', () => {
+        document.querySelectorAll('.tree-row[data-selected="true"]').forEach(r => r.dataset.selected = 'false');
+        row.dataset.selected = 'true';
+      });
+    }
+  }
+
+  TREE.forEach(node => renderNodeInto(node, 0, root));
+  // Auto-select the SOUL.md current row
+  const cur = root.querySelector('.tree-row[data-current="true"]');
+  if (cur) cur.dataset.selected = 'true';
+})();
+
+/* ============ TABS BEHAVIOR ============ */
+(function(){
+  const tabs = [...document.querySelectorAll('.m-tab')];
+  const panels = tabs.map(t => document.getElementById(t.getAttribute('aria-controls')));
+
+  function activate(idx, focus) {
+    tabs.forEach((t, i) => {
+      const active = i === idx;
+      t.setAttribute('aria-selected', active);
+      t.tabIndex = active ? 0 : -1;
+      panels[i].hidden = !active;
+      panels[i].dataset.active = active;
+    });
+    if (focus) tabs[idx].focus();
+  }
+
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => activate(i, true));
+    t.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') { e.preventDefault(); activate((i+1) % tabs.length, true); }
+      else if (e.key === 'ArrowLeft')  { e.preventDefault(); activate((i-1+tabs.length) % tabs.length, true); }
+      else if (e.key === 'Home')       { e.preventDefault(); activate(0, true); }
+      else if (e.key === 'End')        { e.preventDefault(); activate(tabs.length-1, true); }
+    });
+  });
+})();
+
+/* ============ MODAL BEHAVIOR ============ */
+(function(){
+  const backdrop = document.getElementById('modalBackdrop');
+  const modal = document.getElementById('modal');
+  const closeBtn = document.getElementById('closeBtn');
+  let sourceCard = null;
+
+  function isOpen() { return !backdrop.hidden; }
+
+  function focusables() {
+    return [...modal.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )].filter(el => !el.hidden && !el.disabled && el.offsetParent !== null);
+  }
+
+  function open(slug) {
+    sourceCard = slug ? document.querySelector(`.mini-card[data-slug="${slug}"]`) : null;
+    backdrop.hidden = false;
+    // Focus close button first (predictable), then user can Tab into tabs/content
+    setTimeout(() => closeBtn.focus(), 30);
+  }
+
+  function close() {
+    backdrop.hidden = true;
+    if (sourceCard) sourceCard.focus?.();
+  }
+
+  closeBtn.addEventListener('click', close);
+
+  // multi-instance badge expansion
+  const mhBadge = document.querySelector('.mh-slug-row .multi-badge');
+  const mhPills = document.getElementById('mhPills');
+  if (mhBadge && mhPills && mhBadge.dataset.instances !== '0') {
+    mhBadge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = mhPills.dataset.open === 'true';
+      mhPills.dataset.open = open ? 'false' : 'true';
+      mhBadge.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  }
+
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) close();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!isOpen()) {
+      // Reopen on Enter when a mini-card is focused (round-trip from cockpit)
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const f = focusables();
+      if (!f.length) return;
+      const first = f[0], last = f[f.length-1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+
+  // Mini-cards re-open the modal (round-trip)
+  document.querySelectorAll('.mini-card').forEach(c => {
+    c.tabIndex = 0;
+    c.addEventListener('click', () => open(c.dataset.slug));
+    c.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(c.dataset.slug); }
+    });
+  });
+
+  // Open on load (Daniel selected by default per spec)
+  open('daniel');
+})();
+</script>
+</body>
+</html>
