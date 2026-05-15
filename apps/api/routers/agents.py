@@ -8,6 +8,7 @@ GET  /api/agents/{slug}/docs           — docs do workspace (lista + resolved c
 GET  /api/agents/{slug}/tables         — tabelas do domínio do agente (de agents.yaml)
 GET  /api/agents/{slug}/pane/stream    — DS-2: SSE com excerpt do pane (poll 1 Hz, dedupe sha1)
 POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-buffer
+POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
 POST /api/agents/{slug}/model          — DS-2: troca modelo via /model <slug> + confirma na statusline
 """
 from __future__ import annotations
@@ -16,11 +17,14 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import sqlite3
+import subprocess
+import tempfile
 import time
 from typing import Any, AsyncGenerator, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, UploadFile, status
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, Field
 from sse_starlette import EventSourceResponse
@@ -364,6 +368,88 @@ async def send_agent_input(
     if not delivered:
         raise HTTPException(status_code=409, detail="agent_pane_unavailable")
     return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
+
+
+_VOICE_ALLOWED_MIMES = {"audio/ogg", "audio/webm", "audio/mp4", "audio/mpeg"}
+_VOICE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+_VOICE_STT_SCRIPT = "/home/clawd/repos/ze_claude/ze-shared/.claude/skills/voz/scripts/stt-openai.sh"
+_VOICE_STT_TIMEOUT_S = 30
+_VOICE_MIME_SUFFIX = {
+    "audio/ogg": ".oga",
+    "audio/webm": ".webm",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+}
+
+
+@router.post("/{slug}/voice")
+async def post_agent_voice(
+    slug: str, audio: UploadFile, request: Request
+) -> dict[str, Any]:
+    """Upload áudio → STT (gpt-4o-transcribe) → envia transcrito via send-keys.
+
+    - 404 quando agente não existe
+    - 422 quando mime não suportado ou tamanho > 10MB
+    - 502 `stt_failed` quando script STT retorna exit≠0
+    - 502 `stt_empty` quando transcrição vem vazia
+    - 504 `stt_timeout` quando STT estoura 30s
+    - 200 + {transcribed, tmux_delivered, duration_ms} no caminho feliz
+
+    Cleanup do arquivo temp acontece no `finally`.
+    """
+    agent = await _get_agent_or_404(request, slug)
+
+    if audio.content_type not in _VOICE_ALLOWED_MIMES:
+        raise HTTPException(
+            status_code=422, detail=f"mime não suportado: {audio.content_type}"
+        )
+
+    content = await audio.read()
+    if len(content) > _VOICE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="audio maior que 10MB")
+
+    started_at = time.monotonic()
+    suffix = _VOICE_MIME_SUFFIX.get(audio.content_type or "", ".bin")
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_path = tmp.name
+    try:
+        tmp.write(content)
+        tmp.close()
+
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [_VOICE_STT_SCRIPT, tmp_path],
+                capture_output=True,
+                timeout=_VOICE_STT_TIMEOUT_S,
+                text=True,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise HTTPException(status_code=504, detail="stt_timeout") from e
+
+        if result.returncode != 0:
+            stderr_tail = (result.stderr or "").strip().splitlines()
+            last = stderr_tail[-1] if stderr_tail else "unknown"
+            raise HTTPException(status_code=502, detail=f"stt_failed: {last}")
+
+        transcribed = (result.stdout or "").strip()
+        if not transcribed:
+            raise HTTPException(status_code=502, detail="stt_empty")
+
+        delivered = await tmux_driver.send_message(
+            agent["tmux_session"], transcribed
+        )
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        return {
+            "transcribed": transcribed,
+            "tmux_delivered": delivered,
+            "duration_ms": duration_ms,
+        }
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 @router.post("/{slug}/model", response_model=ModelChangeResponse)
