@@ -12,12 +12,12 @@ type Props = {
   onSuccess: (action: ReviewAction) => void;
 };
 
-type ActionMeta = { label: string; pending: string; icon: string; cssClass: string };
+type ActionMeta = { label: string; pending: string; cssClass: string };
 
 const ACTION_META: Record<ReviewAction, ActionMeta> = {
-  accept: { label: 'ACEITAR', pending: 'ACEITANDO...', icon: '✓', cssClass: 'task-review-accept' },
-  reject: { label: 'REJEITAR', pending: 'REJEITANDO...', icon: '↻', cssClass: 'task-review-reject' },
-  requeue: { label: 'RE-ENFILEIRAR', pending: 'REENFILEIRANDO...', icon: '⇄', cssClass: 'task-review-requeue' },
+  accept: { label: 'ACEITAR', pending: 'ACEITANDO...', cssClass: 'task-review-accept' },
+  reject: { label: 'REJEITAR', pending: 'REJEITANDO...', cssClass: 'task-review-reject' },
+  requeue: { label: 'RE-ENFILEIRAR', pending: 'REENFILEIRANDO...', cssClass: 'task-review-requeue' },
 };
 
 const ACTION_ORDER: ReviewAction[] = ['accept', 'reject', 'requeue'];
@@ -121,7 +121,7 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
               disabled={pending !== null}
               data-pending={isPending}
             >
-              {isPending ? meta.pending : `${meta.icon} ${meta.label}`}
+              {isPending ? meta.pending : meta.label}
             </button>
           );
         })}
