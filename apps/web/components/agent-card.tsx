@@ -147,7 +147,15 @@ export function AgentCard({
       <div className="rail" aria-hidden="true" />
       <div className="card-body">
         <div className="card-head">
-          <div className="avatar" aria-hidden="true">{initials}</div>
+          <div className="avatar" aria-hidden="true">
+            {initials}
+            <img
+              src={`/avatars/${agent.slug}.png`}
+              alt=""
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          </div>
           <div className="head-text">
             <div className="head-toprow">
               <span className="agent-name">
