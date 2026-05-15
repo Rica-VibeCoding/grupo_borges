@@ -230,8 +230,10 @@ function ChatInput({
         type="submit"
         className="chat-input-send"
         disabled={sending || text.trim().length === 0}
+        aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
+        title={sending ? 'enviando…' : 'enviar (⌘+Enter)'}
       >
-        {sending ? 'ENVIANDO…' : 'ENVIAR'}
+        {sending ? '…' : '→'}
       </button>
     </form>
   );

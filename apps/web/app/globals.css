@@ -550,10 +550,13 @@
   outline: none; border-color: var(--accent-border); background: var(--accent-subtle);
 }
 .chat-input-send {
-  align-self: stretch; min-width: 100px;
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em;
-  padding: 0 14px; border: 1px solid var(--accent-border); background: var(--accent);
+  align-self: flex-end;
+  width: 40px; height: 40px; min-width: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace; font-size: 18px; line-height: 1;
+  padding: 0; border: 1px solid var(--accent-border); background: var(--accent);
   color: var(--bg); cursor: pointer;
+  border-radius: 6px;
 }
 .chat-input-send:disabled { opacity: 0.45; cursor: not-allowed; }
 .chat-input-send:hover:not(:disabled) { filter: brightness(1.1); }
@@ -576,8 +579,8 @@
 @media (max-width: 600px) {
   .chat-head { flex-direction: column; align-items: stretch; }
   .chat-preview { max-height: 40vh; font-size: 10px; }
-  .chat-input { flex-direction: column; }
-  .chat-input-send { min-height: 36px; }
+  /* Input fica horizontal mesmo no mobile — [textarea] [→] estilo WhatsApp;
+     send ainda é 40x40 fixo. */
 }
 
 /* AgentModal — listas de skills/tabelas + viewer de docs (Fase 3) */
