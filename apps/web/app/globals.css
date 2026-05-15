@@ -1143,6 +1143,13 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
+  /* Frame tem height: 100vh - 64px (DS-54.1). Sem overflow no form, o
+     conteúdo cresce além do frame e o footer .new-task-actions vai pra
+     fora do viewport. flex:1 + overflow no form + sticky no footer
+     resolve sem mover o submit pra fora do <form>. */
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .new-task-row {
@@ -1186,7 +1193,16 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  padding-top: 4px;
+  /* Sticky no rodapé do form scrollável — botão CRIAR sempre visível
+     mesmo com muitos anexos. Background opaco pra não vazar o conteúdo
+     que passa por baixo. */
+  position: sticky;
+  bottom: -16px;
+  margin: 0 -16px -16px;
+  padding: 12px 16px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .new-task-review {
