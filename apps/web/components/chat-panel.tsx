@@ -6,13 +6,13 @@ import * as Select from '@radix-ui/react-select';
 import type { Agent } from '../lib/cockpit-types';
 import {
   AgentInputError,
-  postAgentInput,
   postAgentModel,
   toShortModelSlug,
   type ChatModelSlug,
 } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
+import { useAgentSend } from '../lib/use-agent-send';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { AgentStatusline } from './agent-statusline';
 
@@ -192,9 +192,8 @@ function ChatInput({
   agentName: string;
   onFocusChange?: (focused: boolean) => void;
 }) {
-  const { fire } = useToast();
+  const { sending, sendText } = useAgentSend(slug, agentName);
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-grow: começa em 1 linha (42px box-border), cresce até ~6 linhas
@@ -210,31 +209,9 @@ function ChatInput({
   const onSubmit = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
-    setSending(true);
-    try {
-      const res = await postAgentInput(slug, trimmed);
-      if (res.tmux_delivered) {
-        setText('');
-        fire({ kind: 'success', msg: `enviado pro ${agentName}` });
-      } else {
-        fire({ kind: 'warn', msg: 'envio não confirmado', sub: 'pane fora do CLI esperado' });
-      }
-    } catch (err) {
-      const detail = err instanceof AgentInputError ? err.detail : null;
-      if (err instanceof AgentInputError && err.status === 409 && detail === 'agent_pane_unavailable') {
-        fire({
-          kind: 'warn',
-          msg: 'agente fora do CLI esperado',
-          sub: 'verifique se ele tá no Claude/Codex e não em shell auxiliar',
-          ttlMs: 6000,
-        });
-      } else {
-        fire({ kind: 'warn', msg: 'falha ao enviar', sub: detail ?? String(err) });
-      }
-    } finally {
-      setSending(false);
-    }
-  }, [agentName, fire, sending, slug, text]);
+    await sendText(trimmed);
+    setText('');
+  }, [sending, sendText, text]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

@@ -195,6 +195,23 @@ export async function postAgentInput(
   return res.json();
 }
 
+// not_implemented — endpoint POST /api/agents/{slug}/image not yet available (DS-54).
+// Stub preserved so useAgentSend can import and compile; throws at runtime.
+export class AgentImageNotImplementedError extends Error {
+  constructor() {
+    super('postAgentImage: endpoint not yet implemented (DS-54)');
+    this.name = 'AgentImageNotImplementedError';
+  }
+}
+
+export async function postAgentImage(
+  _slug: string,
+  _file: File,
+  _caption?: string,
+): Promise<{ tmux_delivered: boolean }> {
+  throw new AgentImageNotImplementedError();
+}
+
 export async function postAgentVoice(
   slug: string,
   audioBlob: Blob,
