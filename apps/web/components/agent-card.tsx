@@ -34,6 +34,9 @@ function deriveActivityState(agent: Agent): AgentActivityState {
 }
 
 function formatLifecycle(agent: Agent): string {
+  if (agent.executor_kind === 'codex') {
+    return agent.status_line ?? agent.lifecycle_detail ?? agent.lifecycle_status ?? '—';
+  }
   if (!agent.lifecycle_status && !agent.lifecycle_detail) return '—';
   return agent.lifecycle_detail ? agent.lifecycle_detail : (agent.lifecycle_status ?? '—');
 }
@@ -83,10 +86,18 @@ export function AgentCard({
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
   const model = agent.state_model ?? agent.model_default;
-  const sessionStarted = agent.instances[0]?.started_at ?? agent.pane_session_started_at ?? null;
+  const isCodexExecutor = agent.executor_kind === 'codex';
+  // sessionStarted: Codex usa session_started_at (do evento); CC usa pane_session_started_at
+  const sessionStarted = isCodexExecutor
+    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
+    : (agent.instances[0]?.started_at ?? agent.pane_session_started_at ?? null);
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
-  const contextPct = parseContextPct(agent.pane_excerpt);
-  const paneModel = parseModelFromPane(agent.pane_excerpt);
+  // contextPct: Codex recebe campo direto do backend; CC faz parse do pane_excerpt
+  const contextPct = isCodexExecutor
+    ? (agent.context_pct ?? null)
+    : parseContextPct(agent.pane_excerpt);
+  // paneModel: CC extrai do statusline do pane; Codex usa null (cai no shortModelName(model))
+  const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent);
@@ -202,7 +213,12 @@ export function AgentCard({
           </span>
         </div>
         <div className="last-action mono" aria-hidden="true">
-          {lastEvent && lastEventSummary ? (
+          {isCodexExecutor && agent.active_task_label ? (
+            <>
+              <span className="la-spark" aria-hidden>▸</span>
+              <span className="la-text">{agent.active_task_label}</span>
+            </>
+          ) : lastEvent && lastEventSummary ? (
             <>
               <span className="la-spark" aria-hidden>•</span>
               <span className="la-text">{lastEventSummary}</span>
