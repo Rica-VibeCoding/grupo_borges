@@ -15,6 +15,7 @@ import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { AgentStatusline } from './agent-statusline';
 import { SelectField } from './select-field';
+import { Sparkline } from './sparkline';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'opus', label: 'Opus' },
@@ -47,6 +48,7 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
         <AgentStatusline agent={agent} serverNow={serverNow} variant="modal" />
         <ModelSelector agent={agent} />
       </div>
+      <Sparkline buckets={agent.sparkline} variant="pulse" />
       <PanePreview
         excerpt={excerpt}
         executorKind={executorKind}

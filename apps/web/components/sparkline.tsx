@@ -16,10 +16,13 @@ import type { SparklineBucket } from '../lib/cockpit-types';
 export function Sparkline({
   buckets,
   label = 'SPARKLINE · 24H',
+  variant = 'full',
 }: {
   buckets: SparklineBucket[];
   label?: string;
+  variant?: 'full' | 'pulse';
 }) {
+  if (variant === 'pulse') return <SparklinePulse buckets={buckets} />;
   const { max, mean, peakIdx, total, nonZero } = useMemo(() => {
     const counts = buckets.map((b) => b.count);
     const total = counts.reduce((a, b) => a + b, 0);
@@ -174,6 +177,35 @@ export function Sparkline({
           <span>{formatHour(buckets[Math.floor(buckets.length / 2)]!.bucket)}</span>
         )}
         <span>{formatHour(buckets[buckets.length - 1]!.bucket)}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Variant "pulse" — minimalista, sem pico/média/eixo. Renderiza só as barras
+ * em ~30px de altura. Usada no topo da aba CHAT pra dar "pulso" do agente
+ * sem competir com o preview do pane.
+ */
+function SparklinePulse({ buckets }: { buckets: SparklineBucket[] }) {
+  if (buckets.length === 0) return null;
+  const counts = buckets.map((b) => b.count);
+  const max = Math.max(0, ...counts);
+  return (
+    <div className="sparkline-pulse" aria-label="Atividade 24h">
+      <div className="sparkline-pulse-bars" role="img" aria-hidden="true">
+        {buckets.map((b) => {
+          const h = max > 0 ? Math.max(2, Math.round((b.count / max) * 100)) : 2;
+          return (
+            <span
+              key={b.bucket}
+              className="splp-bar"
+              data-zero={b.count === 0 ? 'true' : 'false'}
+              style={{ height: `${h}%` }}
+              title={`${formatHour(b.bucket)}: ${b.count} evento${b.count === 1 ? '' : 's'}`}
+            />
+          );
+        })}
       </div>
     </div>
   );

@@ -379,6 +379,22 @@
 .sparkline-bars .sb { flex: 1; background: var(--accent); opacity: 0.85; }
 .sparkline-bars .sb[data-zero="true"] { background: var(--border); opacity: 0.5; }
 
+/* Sparkline pulse — variant compacta usada na aba CHAT (~30px, sem eixo) -- */
+.sparkline-pulse {
+  width: 100%; padding: 2px 0;
+}
+.sparkline-pulse-bars {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 30px; width: 100%;
+}
+.sparkline-pulse .splp-bar {
+  flex: 1; background: var(--accent); opacity: 0.75;
+  border-radius: 1px;
+}
+.sparkline-pulse .splp-bar[data-zero="true"] {
+  background: var(--border); opacity: 0.45;
+}
+
 /* Sparkline v2 — DS-7 (pico + média + eixo + hover) ---------------------- */
 .sparkline-v2 { gap: 6px; }
 .sparkline-head {
