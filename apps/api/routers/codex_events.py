@@ -25,7 +25,7 @@ from util import redact_payload
 
 router = APIRouter()
 log = logging.getLogger(__name__)
-GPT_5_5_CONTEXT_WINDOW = 128_000
+GPT_5_5_CONTEXT_WINDOW = 1_050_000
 
 
 CodexEventKind = Literal[
