@@ -273,12 +273,12 @@ export function NewTaskModal({
 
             {/* Anexos */}
             <div className="new-task-field">
-              <div className="new-task-attachments-head">
+              <div className="task-attachments-head">
                 <span>Anexos</span>
                 <span aria-live="polite">({pendingFiles.length}/{MAX_FILES})</span>
               </div>
               <label
-                className="new-task-dropzone"
+                className="task-dropzone"
                 data-empty={pendingFiles.length === 0 ? 'true' : 'false'}
                 data-drag={dragActive ? 'true' : 'false'}
                 onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
@@ -307,13 +307,13 @@ export function NewTaskModal({
                 )}
               </label>
               {pendingFiles.length > 0 && (
-                <div className="new-task-thumb-grid">
+                <div className="task-thumb-grid">
                   {pendingFiles.map((f, idx) => (
-                    <div key={`${f.name}-${idx}`} className="new-task-thumb">
+                    <div key={`${f.name}-${idx}`} className="task-thumb">
                       <img src={thumbUrls[idx]} alt={f.name} />
                       <button
                         type="button"
-                        className="new-task-thumb-remove"
+                        className="task-thumb-remove"
                         aria-label={`Remover imagem ${idx + 1}`}
                         onClick={() => removeFile(idx)}
                       >×</button>

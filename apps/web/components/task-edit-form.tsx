@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReviewMode, Task } from '../lib/cockpit-types';
 import { patchTask, type TaskPatchPayload, type TaskPatchStatus } from '../lib/api';
 import { SelectField } from './select-field';
+import { useToast } from '../lib/toast-context';
 
 /**
  * Edição de task. Regras por status:
@@ -31,6 +32,9 @@ const VETOED_TAGS = new Set([
   'send_external',
 ]);
 
+const MAX_FILES = 5;
+const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
 type Mode = 'full' | 'status-only';
 
 export function TaskEditForm({
@@ -48,6 +52,7 @@ export function TaskEditForm({
   onError: (msg: string) => void;
   onCancel: () => void;
 }) {
+  const { fire } = useToast();
   const titleRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(task.title);
   const [body, setBody] = useState(task.body ?? '');
@@ -61,6 +66,12 @@ export function TaskEditForm({
   const [saving, setSaving] = useState(false);
   const mountedRef = useRef(true);
 
+  // Attachments
+  const persistedUrls: string[] = Array.isArray(task.image_urls) ? task.image_urls : [];
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [pendingThumbUrls, setPendingThumbUrls] = useState<string[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -70,6 +81,46 @@ export function TaskEditForm({
 
   useEffect(() => {
     titleRef.current?.focus();
+  }, []);
+
+  // Revoke pending thumb object URLs on change
+  useEffect(() => {
+    const urls = pendingFiles.map((f) => URL.createObjectURL(f));
+    setPendingThumbUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [pendingFiles]);
+
+  const addFiles = useCallback(
+    (incoming: FileList | File[]) => {
+      const list = Array.from(incoming);
+      const accepted: File[] = [];
+      const currentTotal = persistedUrls.length + pendingFiles.length;
+      for (const f of list) {
+        if (!f.type.startsWith('image/')) {
+          fire({ kind: 'warn', msg: 'ARQUIVO REJEITADO', sub: `${f.name}: tipo inválido (apenas image/*)` });
+          continue;
+        }
+        if (f.size > MAX_SIZE) {
+          fire({ kind: 'warn', msg: 'ARQUIVO REJEITADO', sub: `${f.name}: excede 10 MB` });
+          continue;
+        }
+        if (currentTotal + accepted.length >= MAX_FILES) {
+          fire({ kind: 'warn', msg: 'ARQUIVO REJEITADO', sub: `Limite de ${MAX_FILES} imagens atingido` });
+          break;
+        }
+        accepted.push(f);
+      }
+      if (accepted.length > 0) {
+        setPendingFiles((prev) => [...prev, ...accepted]);
+      }
+    },
+    [persistedUrls.length, pendingFiles.length, fire],
+  );
+
+  const removePending = useCallback((idx: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
   }, []);
 
   const reviewerOptions = [
@@ -83,6 +134,8 @@ export function TaskEditForm({
     .filter(Boolean);
   const autonomousConflicts =
     reviewMode === 'agent_autonomous' ? tagsList.filter((t) => VETOED_TAGS.has(t)) : [];
+
+  const totalAttachments = persistedUrls.length + pendingFiles.length;
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -122,15 +175,38 @@ export function TaskEditForm({
       }
     }
 
-    if (Object.keys(fields).length === 0) {
-      if (mountedRef.current) setSaving(false);
-      onCancel();
-      return;
-    }
-
     try {
-      const updated = await patchTask(task.id, fields);
+      let updated: Task;
+
+      if (Object.keys(fields).length > 0) {
+        updated = await patchTask(task.id, fields);
+      } else {
+        updated = task;
+      }
+
+      // Upload pending images after PATCH
+      if (pendingFiles.length > 0) {
+        const fd = new FormData();
+        pendingFiles.forEach((f) => fd.append('files', f));
+        const imgRes = await fetch(`/api/tasks/${task.id}/images`, { method: 'POST', body: fd });
+        if (imgRes.status === 201) {
+          const imgData = await imgRes.json().catch(() => null);
+          if (imgData && typeof imgData === 'object' && 'image_urls' in imgData) {
+            updated = { ...updated, image_urls: imgData.image_urls as string[] };
+          }
+        } else {
+          const errText = await imgRes.text().catch(() => String(imgRes.status));
+          fire({ kind: 'warn', msg: 'CAMPOS SALVOS · IMAGENS FALHARAM', sub: errText });
+        }
+      }
+
       if (!mountedRef.current) return;
+
+      if (Object.keys(fields).length === 0 && pendingFiles.length === 0) {
+        onCancel();
+        return;
+      }
+
       onSaved(updated);
     } catch (err) {
       if (!mountedRef.current) return;
@@ -193,6 +269,65 @@ export function TaskEditForm({
             disabled={saving}
           />
         </label>
+      </div>
+
+      {/* Anexos */}
+      <div className="new-task-field">
+        <div className="task-attachments-head">
+          <span>Anexos</span>
+          <span aria-live="polite">({totalAttachments}/{MAX_FILES})</span>
+        </div>
+        <label
+          className="task-dropzone"
+          data-empty={totalAttachments === 0 ? 'true' : 'false'}
+          data-drag={dragActive ? 'true' : 'false'}
+          onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragActive(false);
+            if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+          }}
+        >
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            aria-label="Anexar imagens à task"
+            style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+            onChange={(e) => { if (e.currentTarget.files) { addFiles(e.currentTarget.files); e.currentTarget.value = ''; } }}
+          />
+          {totalAttachments === 0 ? (
+            <>
+              <span className="dropzone-main">+ ARRASTE / CLIQUE</span>
+              <span className="dropzone-sub">PNG·JPG·WEBP · 10MB</span>
+            </>
+          ) : (
+            <span className="dropzone-main">+ ANEXAR MAIS</span>
+          )}
+        </label>
+        {totalAttachments > 0 && (
+          <div className="task-thumb-grid">
+            {/* Persisted images (read-only, no X) */}
+            {persistedUrls.map((url, idx) => (
+              <div key={`persisted-${idx}`} className="task-thumb" data-status="persisted">
+                <img src={url} alt={`Anexo ${idx + 1}`} />
+              </div>
+            ))}
+            {/* Pending (new, removable) */}
+            {pendingFiles.map((f, idx) => (
+              <div key={`pending-${f.name}-${idx}`} className="task-thumb" data-status="pending">
+                <img src={pendingThumbUrls[idx]} alt={f.name} />
+                <button
+                  type="button"
+                  className="task-thumb-remove"
+                  aria-label={`Remover imagem ${persistedUrls.length + idx + 1}`}
+                  onClick={() => removePending(idx)}
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <fieldset className="new-task-review">

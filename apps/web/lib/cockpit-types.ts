@@ -145,6 +145,7 @@ export type Task = {
   review_mode?: ReviewMode;
   reviewer_assignee?: string | null;
   tags?: string[] | null;
+  image_urls?: string[] | null;
 };
 
 export type ReviewMode = 'human' | 'agent_advisory' | 'agent_autonomous';

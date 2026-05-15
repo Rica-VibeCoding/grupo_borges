@@ -798,6 +798,28 @@
 .agent-modal-head .status-bar[data-state="offline"] { color: var(--status-offline); opacity: 0.7; }
 .agent-modal-head .status-bar[data-state="offline"] .sdot { background: var(--status-offline); }
 
+/* ============ TASK EDIT FORM ============ */
+/* When editing, task-edit-form replaces the read-only fields inside
+   task-detail-main. It mirrors the new-task-form scroll+sticky pattern:
+   the form itself is not a scroll container (task-detail-body handles that),
+   so the sticky footer anchors to task-detail-body's scroll edge. */
+.task-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Negative margin compensates for task-detail-main's 16px padding so
+     the sticky footer bleeds edge-to-edge like .new-task-actions does. */
+  margin: -16px;
+  padding: 16px;
+}
+
+.task-edit-hint {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  margin: 0;
+}
+
 /* ============ TASK DETAIL ============ */
 .task-detail-frame {
   width: min(820px, calc(100vw - 32px));
@@ -1279,7 +1301,7 @@
 }
 
 /* ── DS-54.3 Anexos ─────────────────────────────────────────────── */
-.new-task-attachments-head {
+.task-attachments-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -1289,7 +1311,7 @@
   text-transform: uppercase;
 }
 
-.new-task-dropzone {
+.task-dropzone {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1303,19 +1325,19 @@
   min-height: 64px;
 }
 
-.new-task-dropzone[data-empty="false"] {
+.task-dropzone[data-empty="false"] {
   padding: 10px;
   flex-direction: row;
   min-height: unset;
 }
 
-.new-task-dropzone:hover,
-.new-task-dropzone[data-drag="true"] {
+.task-dropzone:hover,
+.task-dropzone[data-drag="true"] {
   border-color: var(--accent-border);
   background: var(--accent-subtle);
 }
 
-.new-task-dropzone[data-drag="true"] {
+.task-dropzone[data-drag="true"] {
   border-color: var(--accent);
 }
 
@@ -1332,13 +1354,13 @@
   letter-spacing: 0.1em;
 }
 
-.new-task-thumb-grid {
+.task-thumb-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.new-task-thumb {
+.task-thumb {
   position: relative;
   width: 64px;
   height: 64px;
@@ -1347,14 +1369,14 @@
   overflow: hidden;
 }
 
-.new-task-thumb img {
+.task-thumb img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.new-task-thumb-remove {
+.task-thumb-remove {
   position: absolute;
   top: 0;
   right: 0;
@@ -1373,7 +1395,7 @@
   transition: border-color 120ms ease, color 120ms ease;
 }
 
-.new-task-thumb-remove:hover {
+.task-thumb-remove:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
