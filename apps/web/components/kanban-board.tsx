@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import type { KanbanColumn, KanbanColumnId, Task, TaskStatus } from '../lib/cockpit-types';
+import { formatDateTime } from '../lib/format-time';
 import { useIsMobile } from '../lib/use-is-mobile';
 import { NewTaskModal } from './new-task-modal';
 import { TaskDetailModal } from './task-detail-modal';
@@ -34,6 +35,21 @@ function taskAgeLabel(task: Task, serverNow: number): string {
 
 function taskDisplayId(task: Task): string {
   return task.human_id || task.id.slice(0, 8);
+}
+
+function taskPriority(task: Task): number {
+  const p = task.priority;
+  return typeof p === 'number' && p >= 1 && p <= 5 ? p : 3;
+}
+
+function taskFirstTag(task: Task): string | null {
+  const tags = task.tags;
+  if (Array.isArray(tags) && tags.length > 0 && typeof tags[0] === 'string') return tags[0];
+  return null;
+}
+
+function taskAbsTime(task: Task): string {
+  return formatDateTime(task.created_at);
 }
 
 function buildColumns(tasks: Task[], serverNow: number): KanbanColumn[] {
@@ -72,6 +88,10 @@ function KanbanRowView({
   const displayId = taskDisplayId(task);
   const owner = task.assignee ?? '—';
   const age = taskAgeLabel(task, serverNow);
+  const priority = taskPriority(task);
+  const firstTag = taskFirstTag(task);
+  const absTime = taskAbsTime(task);
+  const title = task.title ?? '';
   const open = useCallback(() => onOpen(task), [onOpen, task]);
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -88,15 +108,22 @@ function KanbanRowView({
       data-st={columnStatusAttr(columnId)}
       tabIndex={0}
       role="button"
-      aria-label={`Tarefa ${displayId}, responsável ${owner}, ${age}`}
+      aria-label={`Tarefa ${displayId}, P${priority}, responsável ${owner}, ${age}`}
       onClick={open}
       onKeyDown={onKey}
     >
-      <span className="sdot" aria-hidden="true" />
-      <span className="id mono">{displayId}</span>
-      <span className="owner mono">@{owner}</span>
-      <span className="time mono">{age}</span>
-      <span className="caret" aria-hidden="true">›</span>
+      <div className="krow-line1">
+        <span className="sdot" aria-hidden="true" />
+        <span className="krow-id mono">{displayId}</span>
+        <span className="krow-priority mono" data-p={String(priority)}>P{priority}</span>
+        <span className="krow-owner mono">@{owner}</span>
+        <span className="krow-age mono" title={absTime}>{age}</span>
+        <span className="caret" aria-hidden="true">›</span>
+      </div>
+      <div className="krow-line2">
+        {firstTag && <span className="krow-tag">{firstTag}</span>}
+        <span className="krow-title">{title}</span>
+      </div>
     </div>
   );
 }
