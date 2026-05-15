@@ -1160,7 +1160,7 @@
   width: min(560px, calc(100vw - 32px));
 }
 
-.new-task-form {
+.task-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1172,6 +1172,12 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.task-form-id-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
 }
 
 .new-task-row {
