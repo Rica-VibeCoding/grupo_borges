@@ -522,7 +522,12 @@
   padding: 8px 10px;
   border: 1px solid var(--border-subtle); background: var(--bg);
   color: var(--text);
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
+  font-family: 'JetBrains Mono', monospace;
+  /* iOS Safari zooma input com font-size < 16px e o chat fica pela metade
+     da tela. 16px é o mínimo seguro pra prevenir o auto-zoom no focus —
+     vale também pra Android Chrome em modo desktop. Não compensar com -webkit-text-size-adjust:
+     a flag não cobre o gesto de zoom no focus. */
+  font-size: 16px; line-height: 1.45;
 }
 .chat-input-textarea:focus {
   outline: none; border-color: var(--accent-border); background: var(--accent-subtle);

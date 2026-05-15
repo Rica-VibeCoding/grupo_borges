@@ -33,8 +33,11 @@ const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
  */
 export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) {
   const stream = usePaneStream(agent.slug, /* enabled */ true);
+  // Mobile: enquanto user digita, preview fica imóvel (sem scroll involuntário).
+  // Decisão de UX cravada pelo Rica — chat ocupando metade vertical em iOS Safari
+  // é inviável quando o zoom dispara no focus do textarea.
+  const [inputFocused, setInputFocused] = useState(false);
 
-  // Fallback inicial enquanto SSE não chega: usa o pane_excerpt já vivo no /fleet.
   const excerpt = stream.excerpt ?? agent.pane_excerpt ?? '';
   const executorKind = stream.executorKind ?? agent.executor_kind ?? 'claude_code';
 
@@ -48,8 +51,13 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
         excerpt={excerpt}
         executorKind={executorKind}
         connectionStatus={stream.status}
+        paused={inputFocused}
       />
-      <ChatInput slug={agent.slug} agentName={agent.name} />
+      <ChatInput
+        slug={agent.slug}
+        agentName={agent.name}
+        onFocusChange={setInputFocused}
+      />
     </div>
   );
 }
@@ -60,10 +68,12 @@ function PanePreview({
   excerpt,
   executorKind: _executorKind,
   connectionStatus,
+  paused = false,
 }: {
   excerpt: string;
   executorKind: string;
   connectionStatus: string;
+  paused?: boolean;
 }) {
   const preRef = useRef<HTMLPreElement>(null);
   const [stuck, setStuck] = useState(true);
@@ -71,8 +81,11 @@ function PanePreview({
   useLayoutEffect(() => {
     const el = preRef.current;
     if (!el || !stuck) return;
+    // paused (user digitando): chat fica imóvel — sem scroll involuntário.
+    // Quando paused vira false (blur), efeito roda de novo e segue stuck-bottom.
+    if (paused) return;
     el.scrollTop = el.scrollHeight;
-  }, [excerpt, stuck]);
+  }, [excerpt, stuck, paused]);
 
   const onScroll = useCallback(() => {
     const el = preRef.current;
@@ -117,7 +130,15 @@ function PanePreview({
 
 // ----- ChatInput ----------------------------------------------------------
 
-function ChatInput({ slug, agentName }: { slug: string; agentName: string }) {
+function ChatInput({
+  slug,
+  agentName,
+  onFocusChange,
+}: {
+  slug: string;
+  agentName: string;
+  onFocusChange?: (focused: boolean) => void;
+}) {
   const { fire } = useToast();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -175,6 +196,8 @@ function ChatInput({ slug, agentName }: { slug: string; agentName: string }) {
         value={text}
         onChange={(e) => setText(e.currentTarget.value)}
         onKeyDown={onKeyDown}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
         placeholder={`mensagem pro ${agentName} (⌘+Enter envia)`}
         rows={3}
         maxLength={8192}
