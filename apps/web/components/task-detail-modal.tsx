@@ -381,14 +381,16 @@ export function TaskDetailModal({
                       EDITAR
                     </button>
                   )}
-                <button
-                  type="button"
-                  className="form-submit task-detail-dispatch"
-                  disabled={dispatching || saving || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
-                  onClick={dispatchToSession}
-                >
-                  {dispatching ? 'ENVIANDO...' : effectiveTask.status === 'running' ? 'EM EXECUÇÃO' : 'ENVIAR SESSÃO'}
-                </button>
+                {effectiveTask.status !== 'review' && (
+                  <button
+                    type="button"
+                    className="form-submit task-detail-dispatch"
+                    disabled={dispatching || saving || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
+                    onClick={dispatchToSession}
+                  >
+                    {dispatching ? 'ENVIANDO...' : effectiveTask.status === 'running' ? 'EM EXECUÇÃO' : 'ENVIAR SESSÃO'}
+                  </button>
+                )}
               </footer>
             </>
           )}
