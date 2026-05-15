@@ -73,13 +73,28 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
 // entre blocos de conteúdo. Comprimir essas linhas em vazias preserva a
 // estrutura semântica do excerpt sem poluir.
 const BOX_DRAWING_LINE = /^[\s─-╿▀-▟]+$/u;
-function stripBoxDrawingLines(src: string): string {
+
+// Chrome do próprio Claude Code que vaza no fim do excerpt (statusline,
+// bypass-permissions, Remote Control). Filtragem só aqui no display — o
+// `agent.pane_excerpt` cru continua intacto pros parsers (parseContextPct,
+// parseModelFromPane) extraírem ctx%/modelo/tempo da statusline.
+const CC_CHROME_LINE = new RegExp(
+  [
+    String.raw`^(?:Opus|Sonnet|Haiku)\s+\d+\.\d+.*?\[.*?\]\s+\d+%\s*$`,
+    String.raw`^Remote Control active.*$`,
+    String.raw`^▶▶?\s+bypass permissions.*$`,
+    String.raw`^>+\s*$`,
+  ].join('|'),
+);
+
+function stripChrome(src: string): string {
   if (!src) return src;
   return src
     .split('\n')
-    .map((line) => (BOX_DRAWING_LINE.test(line) ? '' : line))
+    .map((line) => (BOX_DRAWING_LINE.test(line) || CC_CHROME_LINE.test(line) ? '' : line))
     .join('\n')
-    .replace(/\n{3,}/g, '\n\n');
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n+$/, '');
 }
 
 function PanePreview({
@@ -119,7 +134,7 @@ function PanePreview({
     setStuck(true);
   }, []);
 
-  const cleaned = useMemo(() => stripBoxDrawingLines(excerpt), [excerpt]);
+  const cleaned = useMemo(() => stripChrome(excerpt), [excerpt]);
   const empty = !cleaned;
 
   return (
