@@ -69,10 +69,18 @@ export function AgentModal() {
             <>
               <header className="agent-modal-head">
                 <div className="head-left">
-                  <Dialog.Title className="agent-modal-title">
-                    {agent.name} <span className="muted">// {agent.slug}</span>
-                  </Dialog.Title>
-                  <span className="agent-modal-role">{agent.role}</span>
+                  <img
+                    className="modal-avatar"
+                    src={`/avatars/${agent.slug}.png`}
+                    alt=""
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <div className="modal-head-text">
+                    <Dialog.Title className="agent-modal-title">
+                      {agent.name} <span className="muted">// {agent.slug}</span>
+                    </Dialog.Title>
+                    <span className="agent-modal-role">{agent.role}</span>
+                  </div>
                 </div>
                 <div className="head-right">
                   <span className="status-bar" data-state={agent.status}>
