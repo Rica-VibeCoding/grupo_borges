@@ -11,6 +11,7 @@ import {
   type ChatModelSlug,
 } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
+import { useIsMobile } from '../lib/use-is-mobile';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { AgentStatusline } from './agent-statusline';
@@ -158,8 +159,12 @@ function ChatInput({
   onFocusChange?: (focused: boolean) => void;
 }) {
   const { fire } = useToast();
+  const isMobile = useIsMobile();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const placeholder = isMobile
+    ? `Mensagem pro ${agentName}…`
+    : `mensagem pro ${agentName} (⌘+Enter envia)`;
 
   const onSubmit = useCallback(async () => {
     const trimmed = text.trim();
@@ -216,7 +221,7 @@ function ChatInput({
         onKeyDown={onKeyDown}
         onFocus={() => onFocusChange?.(true)}
         onBlur={() => onFocusChange?.(false)}
-        placeholder={`mensagem pro ${agentName} (⌘+Enter envia)`}
+        placeholder={placeholder}
         rows={3}
         maxLength={8192}
         aria-label={`Mensagem pro agente ${agentName}`}
