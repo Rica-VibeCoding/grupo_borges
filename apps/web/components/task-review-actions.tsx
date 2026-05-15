@@ -20,7 +20,7 @@ const ACTION_META: Record<ReviewAction, ActionMeta> = {
   requeue: { label: 'BACKLOG', pending: 'ENVIANDO...', cssClass: 'task-review-requeue' },
 };
 
-const ACTION_ORDER: ReviewAction[] = ['accept', 'reject', 'requeue'];
+const ACTION_ORDER: ReviewAction[] = ['requeue', 'reject', 'accept'];
 
 export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onSuccess }: Props) {
   const [pending, setPending] = useState<ReviewAction | null>(null);
