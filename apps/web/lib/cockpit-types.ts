@@ -150,6 +150,12 @@ export type Task = {
 
 export type ReviewMode = 'human' | 'agent_advisory' | 'agent_autonomous';
 
+export const REVIEW_MODE_OPTIONS: Array<{ value: ReviewMode; label: string; desc: string }> = [
+  { value: 'human',            label: 'HUMANA',     desc: 'default — Rica revisa manualmente' },
+  { value: 'agent_advisory',   label: 'ADVISORY',   desc: 'agente dá parecer, Rica confirma' },
+  { value: 'agent_autonomous', label: 'AUTONOMOUS', desc: 'agente decide e segue (exige Success Criteria + evidence_refs)' },
+];
+
 export type ReviewAction = 'accept' | 'reject' | 'requeue';
 
 export type ReviewActionPayload = {

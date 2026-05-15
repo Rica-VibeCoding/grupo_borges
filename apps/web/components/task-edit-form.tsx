@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { REVIEW_MODE_OPTIONS } from '../lib/cockpit-types';
 import type { ReviewMode, Task } from '../lib/cockpit-types';
 import { patchTask, type TaskPatchPayload, type TaskPatchStatus } from '../lib/api';
 import { SelectField } from './select-field';
@@ -17,11 +18,6 @@ import { useToast } from '../lib/toast-context';
 
 const RICA_REVIEWER_SENTINEL = '__rica__';
 
-const REVIEW_MODE_OPTIONS: Array<{ value: ReviewMode; label: string }> = [
-  { value: 'human', label: 'HUMANA' },
-  { value: 'agent_advisory', label: 'ADVISORY' },
-  { value: 'agent_autonomous', label: 'AUTONOMOUS' },
-];
 
 const VETOED_TAGS = new Set([
   'deploy_prod',
@@ -241,16 +237,6 @@ export function TaskEditForm({
         />
       </label>
 
-      <label className="new-task-field">
-        <span>Body</span>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.currentTarget.value)}
-          disabled={saving}
-          rows={6}
-        />
-      </label>
-
       <div className="new-task-row">
         <SelectField<string>
           label="Responsável"
@@ -270,6 +256,16 @@ export function TaskEditForm({
           />
         </label>
       </div>
+
+      <label className="new-task-field">
+        <span>Body</span>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.currentTarget.value)}
+          disabled={saving}
+          rows={6}
+        />
+      </label>
 
       {/* Anexos */}
       <div className="new-task-field">
@@ -348,6 +344,7 @@ export function TaskEditForm({
                 disabled={saving}
               />
               <span className="review-mode-label">{opt.label}</span>
+              <span className="review-mode-desc">{opt.desc}</span>
             </label>
           ))}
         </div>
@@ -371,9 +368,17 @@ export function TaskEditForm({
           </label>
         </div>
 
+        {reviewMode === 'agent_autonomous' && (
+          <p className="form-note" data-kind="warn">
+            Modo autonomous é OPT-IN. Tasks com tag vetada (deploy_prod, db_migration,
+            customer_email, customer_whatsapp, financial_op, send_external) são recusadas
+            pelo backend.
+          </p>
+        )}
         {autonomousConflicts.length > 0 && (
           <p className="form-note" data-kind="error">
-            ⚠️ tag vetada para autonomous: <strong>{autonomousConflicts.join(', ')}</strong>
+            ⚠️ tag vetada para autonomous: <strong>{autonomousConflicts.join(', ')}</strong>.
+            Mude pra <code>human</code>/<code>agent_advisory</code> ou remova a tag.
           </p>
         )}
       </fieldset>

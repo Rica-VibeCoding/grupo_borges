@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { createTask, type TaskPatchStatus } from '../lib/api';
+import { REVIEW_MODE_OPTIONS } from '../lib/cockpit-types';
 import type { ReviewMode } from '../lib/cockpit-types';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
@@ -28,27 +29,6 @@ const VETOED_TAGS = new Set([
 
 const RICA_REVIEWER_SENTINEL = '__rica__';
 
-const REVIEW_MODE_OPTIONS: Array<{
-  value: ReviewMode;
-  label: string;
-  desc: string;
-}> = [
-  {
-    value: 'human',
-    label: 'HUMANA',
-    desc: 'default — Rica revisa manualmente',
-  },
-  {
-    value: 'agent_advisory',
-    label: 'ADVISORY',
-    desc: 'agente dá parecer, Rica confirma',
-  },
-  {
-    value: 'agent_autonomous',
-    label: 'AUTONOMOUS',
-    desc: 'agente decide e segue (exige Success Criteria + evidence_refs)',
-  },
-];
 
 function safeUUID(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
