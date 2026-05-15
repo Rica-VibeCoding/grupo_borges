@@ -137,6 +137,32 @@ export function TaskDetailModal({
     () => events.filter((event) => event.task_id === effectiveTask?.id).slice(0, 12),
     [events, effectiveTask?.id],
   );
+  const timelineEntries = useMemo<
+    Array<{ id: string; at: number; kind: string; summary: string }>
+  >(() => {
+    if (!effectiveTask) return [];
+    const out: Array<{ id: string; at: number; kind: string; summary: string }> = [];
+    const assignee = effectiveTask.assignee ?? 'sem responsável';
+    out.push({ id: 'syn-created', at: effectiveTask.created_at, kind: 'criada', summary: assignee });
+    if (effectiveTask.started_at && effectiveTask.started_at > effectiveTask.created_at) {
+      out.push({ id: 'syn-started', at: effectiveTask.started_at, kind: 'iniciada', summary: assignee });
+    }
+    if (
+      effectiveTask.completed_at &&
+      effectiveTask.completed_at > (effectiveTask.started_at ?? effectiveTask.created_at)
+    ) {
+      const kind =
+        effectiveTask.status === 'done' || effectiveTask.status === 'archived'
+          ? 'concluída'
+          : 'finalizada';
+      out.push({ id: 'syn-completed', at: effectiveTask.completed_at, kind, summary: assignee });
+    }
+    for (const e of timeline) {
+      out.push({ id: `evt-${e.id}`, at: e.created_at, kind: eventTitle(e), summary: eventSummary(e) });
+    }
+    out.sort((a, b) => a.at - b.at);
+    return out;
+  }, [effectiveTask, timeline]);
   const selectedStatus = useMemo<UiTaskStatus>(
     () => uiStatus(effectiveTask?.status),
     [effectiveTask?.status],
@@ -369,16 +395,11 @@ export function TaskDetailModal({
 
               <section className="task-timeline">
                 <ol>
-                  <li>
-                    <span className="task-timeline-at">{formatTimelineTime(effectiveTask.created_at)}</span>
-                    <span className="task-timeline-kind">criada</span>
-                    <span className="task-timeline-summary">{effectiveTask.assignee ?? 'sem responsável'}</span>
-                  </li>
-                  {timeline.map((event) => (
-                    <li key={event.id}>
-                      <span className="task-timeline-at">{formatTimelineTime(event.created_at)}</span>
-                      <span className="task-timeline-kind">{eventTitle(event)}</span>
-                      <span className="task-timeline-summary">{eventSummary(event)}</span>
+                  {timelineEntries.map((entry) => (
+                    <li key={entry.id}>
+                      <span className="task-timeline-at">{formatTimelineTime(entry.at)}</span>
+                      <span className="task-timeline-kind">{entry.kind}</span>
+                      <span className="task-timeline-summary">{entry.summary}</span>
                     </li>
                   ))}
                 </ol>
