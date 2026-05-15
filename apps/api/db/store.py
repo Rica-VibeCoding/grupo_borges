@@ -237,7 +237,7 @@ def derive_lifecycle_from_event(
                 isinstance(block, dict) and block.get("type") == "tool_use"
                 for block in content
             ):
-                return None, None
+                return "trabalhando", "tool_use"
         return "event", "assistant"
     if kind == "jsonl:result":
         return "ocioso", "sessão finalizada"

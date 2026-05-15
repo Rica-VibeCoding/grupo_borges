@@ -92,7 +92,7 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
         if stop_reason == "end_turn":
             return "ocioso", "passou a bola"
         if any(block.get("type") == "tool_use" for block in _content_blocks(payload)):
-            return None, None
+            return "trabalhando", "tool_use"
         return None, None
     if event_type == "system" and payload.get("subtype") == "turn_duration":
         return "ocioso", "passou a bola"
