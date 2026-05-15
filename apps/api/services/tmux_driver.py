@@ -191,6 +191,25 @@ def parse_session_elapsed_from_pane(excerpt: str | None) -> int | None:
     return (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
 
 
+# Modelo curto no statusline do CC (último match — statusline fica no fim do pane).
+_CC_MODEL_NAME = re.compile(r"\b(Opus|Sonnet|Haiku)\s+\d+\.\d+", re.IGNORECASE)
+
+
+def parse_model_from_pane(excerpt: str | None) -> str | None:
+    """Extrai slug curto (opus|sonnet|haiku) do statusline do pane.
+
+    Server-side port do `parseModelFromPane` do agent-card.tsx. Usado pelo
+    `POST /api/agents/{slug}/model` pra confirmar que a troca via `/model`
+    propagou pra statusline. Retorna None pro Codex (formato diferente).
+    """
+    if not excerpt:
+        return None
+    matches = list(_CC_MODEL_NAME.finditer(excerpt))
+    if not matches:
+        return None
+    return matches[-1].group(1).lower()
+
+
 async def capture_pane_excerpt(
     session_name: str,
     *,
@@ -295,6 +314,30 @@ def _send_message_sync(session_name: str, text: str) -> bool:
                     server.cmd("delete-buffer", "-b", buf_name)
                 except libtmux_exc.LibTmuxException:
                     pass
+
+
+def _press_enter_sync(session_name: str) -> bool:
+    server = libtmux.Server()
+    if not server.has_session(session_name):
+        return False
+    with _DISPATCH_LOCKS[session_name]:
+        session = server.sessions.get(session_name=session_name)
+        pane = session.active_pane
+        try:
+            pane.cmd("send-keys", "Enter")
+            return True
+        except libtmux_exc.LibTmuxException:
+            return False
+
+
+async def press_enter(session_name: str) -> bool:
+    """Envia só `Enter` no pane ativo. Idempotente: sem prompt aberto, vira
+    no-op no CC. Usado pelo `/model` pra confirmar picker quando ele aparece —
+    sem picker, o Enter cai em prompt vazio e o CC ignora.
+
+    Retorna False quando a sessão não existe ou libtmux falha — caller decide.
+    """
+    return await asyncio.to_thread(_press_enter_sync, session_name)
 
 
 async def send_message(session_name: str, text: str) -> bool:
