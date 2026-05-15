@@ -52,15 +52,10 @@ export function AgentModal() {
   const { selectedSlug, close } = useSelectedAgent();
   const { fleet } = useFleet();
   const isMobile = useIsMobile();
-  const [handoffOpen, setHandoffOpen] = useState(false);
   const agent: Agent | null = selectedSlug
     ? fleet.agents.find((a) => a.slug === selectedSlug) ?? null
     : null;
   const open = agent !== null;
-
-  useEffect(() => {
-    if (!open) setHandoffOpen(false);
-  }, [open]);
 
   return (
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) close(); }}>
@@ -101,6 +96,7 @@ export function AgentModal() {
                   <Tabs.Trigger value="skills" className="agent-modal-tab">SKILLS</Tabs.Trigger>
                   <Tabs.Trigger value="docs" className="agent-modal-tab">DOCS</Tabs.Trigger>
                   <Tabs.Trigger value="tabelas" className="agent-modal-tab">TABELAS</Tabs.Trigger>
+                  <Tabs.Trigger value="handoff" className="agent-modal-tab">HANDOFF</Tabs.Trigger>
                 </Tabs.List>
                 <Tabs.Content value="chat" className="agent-modal-panel">
                   <ChatPanel agent={agent} serverNow={fleet.health.server_now} />
@@ -117,18 +113,10 @@ export function AgentModal() {
                 <Tabs.Content value="tabelas" className="agent-modal-panel">
                   <TablesPanel slug={agent.slug} />
                 </Tabs.Content>
+                <Tabs.Content value="handoff" className="agent-modal-panel">
+                  <HandoffPanel agent={agent} />
+                </Tabs.Content>
               </Tabs.Root>
-              <footer className="agent-modal-footer">
-                <button
-                  type="button"
-                  className="handoff-toggle"
-                  aria-expanded={handoffOpen}
-                  onClick={() => setHandoffOpen((v) => !v)}
-                >
-                  Handoff →
-                </button>
-                {handoffOpen && <HandoffPanel agent={agent} />}
-              </footer>
             </>
           )}
         </Dialog.Content>
