@@ -6,13 +6,14 @@ GET  /api/agents/{slug}/sparkline      — eventos por hora (mini-chart de ativi
 GET  /api/agents/{slug}/skills         — skills do workspace (.claude/skills/*/SKILL.md)
 GET  /api/agents/{slug}/docs           — docs do workspace (lista + resolved com @include)
 GET  /api/agents/{slug}/tables         — tabelas do domínio do agente (de agents.yaml)
-GET  /api/agents/{slug}/pane/stream    — DS-2 stub: SSE com excerpt do pane (1 Hz na impl)
-POST /api/agents/{slug}/input          — DS-2 stub: envia texto pro pane via paste-buffer
-POST /api/agents/{slug}/model          — DS-2 stub: troca modelo via /model <slug>
+GET  /api/agents/{slug}/pane/stream    — DS-2: SSE com excerpt do pane (poll 1 Hz, dedupe sha1)
+POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-buffer
+POST /api/agents/{slug}/model          — DS-2: troca modelo via /model <slug> + confirma na statusline
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import sqlite3
@@ -288,29 +289,62 @@ class ModelChangeResponse(BaseModel):
     model: str
 
 
+_PANE_STREAM_POLL_S = 1.0
+_PANE_STREAM_DISCONNECT_CHECK_S = 0.1
+_PANE_STREAM_LINE_LIMIT = 80
+_PANE_STREAM_MAX_CHARS = 8000
+
+
 @router.get("/{slug}/pane/stream")
 async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
-    """SSE com excerpt do pane em tempo real (1 Hz na impl real).
+    """SSE com excerpt do pane em tempo real (poll 1 Hz, dedupe por hash).
 
-    Stub: 404 quando agente não existe; senão emite 1 evento placeholder e fecha.
-    Tara: teste cobre 404 + recebimento do placeholder + close gracioso.
+    - 404 quando agente não existe (antes de abrir o stream)
+    - Loop: `capture_pane_excerpt(line_limit=80, max_chars=8000)` a cada 1s;
+      emite `event: pane` com `{excerpt, captured_at, executor_kind}` só
+      quando hash sha1 do excerpt muda — evita ping pano espumante na rede.
+    - Encerra ao detectar `request.is_disconnected()` no início de cada tick.
     """
-    await _get_agent_or_404(request, slug)
+    agent = await _get_agent_or_404(request, slug)
+    session = agent["tmux_session"]
+    executor_kind = agent.get("executor_kind") or "claude_code"
 
-    async def _placeholder_stream() -> AsyncGenerator[dict, None]:
-        yield {
-            "event": "pane",
-            "data": json.dumps(
-                {
-                    "excerpt": "",
-                    "captured_at": int(time.time()),
-                    "executor_kind": "",
-                    "stub": True,
-                }
-            ),
-        }
+    async def _pane_stream() -> AsyncGenerator[dict, None]:
+        last_hash: str | None = None
+        elapsed = _PANE_STREAM_POLL_S  # força captura no primeiro tick
+        while True:
+            if await request.is_disconnected():
+                return
+            if elapsed >= _PANE_STREAM_POLL_S:
+                excerpt = (
+                    await tmux_driver.capture_pane_excerpt(
+                        session,
+                        line_limit=_PANE_STREAM_LINE_LIMIT,
+                        max_chars=_PANE_STREAM_MAX_CHARS,
+                    )
+                    or ""
+                )
+                current_hash = hashlib.sha1(excerpt.encode("utf-8")).hexdigest()
+                if current_hash != last_hash:
+                    yield {
+                        "event": "pane",
+                        "data": json.dumps(
+                            {
+                                "excerpt": excerpt,
+                                "captured_at": int(time.time()),
+                                "executor_kind": executor_kind,
+                            }
+                        ),
+                    }
+                    last_hash = current_hash
+                elapsed = 0.0
+            # Sleep cooperativo: checa disconnect a cada 100ms pra teardown
+            # rápido em TestClient e cliente real. asyncio.sleep(1s) cego
+            # pendura a stream porque sse-starlette não cancela em close.
+            await asyncio.sleep(_PANE_STREAM_DISCONNECT_CHECK_S)
+            elapsed += _PANE_STREAM_DISCONNECT_CHECK_S
 
-    return EventSourceResponse(_placeholder_stream())
+    return EventSourceResponse(_pane_stream())
 
 
 @router.post("/{slug}/input", response_model=InputResponse)
