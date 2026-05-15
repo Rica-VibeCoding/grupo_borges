@@ -162,9 +162,18 @@ function ChatInput({
   const isMobile = useIsMobile();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const placeholder = isMobile
     ? `Mensagem pro ${agentName}…`
     : `mensagem pro ${agentName} (⌘+Enter envia)`;
+
+  // Auto-grow: começa em 1 linha, cresce até max ~6 linhas (240px) com scroll.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+  }, [text]);
 
   const onSubmit = useCallback(async () => {
     const trimmed = text.trim();
@@ -214,7 +223,17 @@ function ChatInput({
         void onSubmit();
       }}
     >
+      <button
+        type="button"
+        className="chat-icon-btn"
+        disabled
+        aria-label="Anexar imagem (em breve)"
+        title="anexar imagem — em breve (DS-54)"
+      >
+        <span aria-hidden="true">📷</span>
+      </button>
       <textarea
+        ref={textareaRef}
         className="chat-input-textarea mono"
         value={text}
         onChange={(e) => setText(e.currentTarget.value)}
@@ -222,10 +241,19 @@ function ChatInput({
         onFocus={() => onFocusChange?.(true)}
         onBlur={() => onFocusChange?.(false)}
         placeholder={placeholder}
-        rows={3}
+        rows={1}
         maxLength={8192}
         aria-label={`Mensagem pro agente ${agentName}`}
       />
+      <button
+        type="button"
+        className="chat-icon-btn"
+        disabled
+        aria-label="Mensagem de voz (em breve)"
+        title="mensagem de voz — em breve (DS-54)"
+      >
+        <span aria-hidden="true">🎤</span>
+      </button>
       <button
         type="submit"
         className="chat-input-send"
