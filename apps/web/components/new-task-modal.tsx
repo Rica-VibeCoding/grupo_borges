@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { createTask, type TaskPatchStatus } from '../lib/api';
 import type { ReviewMode } from '../lib/cockpit-types';
@@ -77,6 +77,9 @@ export function NewTaskModal({
   const [reviewMode, setReviewMode] = useState<ReviewMode>('human');
   const [reviewerAssignee, setReviewerAssignee] = useState<string>(RICA_REVIEWER_SENTINEL);
   const [tagsInput, setTagsInput] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [thumbUrls, setThumbUrls] = useState<string[]>([]);
+  const [dragActive, setDragActive] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const reviewerOptions = useMemo(
@@ -102,8 +105,52 @@ export function NewTaskModal({
       setTagsInput('');
       setSaving(false);
       setMessage(null);
+      setPendingFiles([]);
+      setDragActive(false);
     }
   }, [open]);
+
+  // Revoke old thumb URLs and rebuild when pendingFiles changes
+  useEffect(() => {
+    const urls = pendingFiles.map((f) => URL.createObjectURL(f));
+    setThumbUrls(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [pendingFiles]);
+
+  const MAX_FILES = 5;
+  const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
+  const addFiles = useCallback(
+    (incoming: FileList | File[]) => {
+      const list = Array.from(incoming);
+      const accepted: File[] = [];
+      for (const f of list) {
+        if (!f.type.startsWith('image/')) {
+          fire({ kind: 'warn', msg: 'ARQUIVO REJEITADO', sub: `${f.name}: tipo inválido (apenas image/*)` });
+          continue;
+        }
+        if (f.size > MAX_SIZE) {
+          fire({ kind: 'warn', msg: 'ARQUIVO REJEITADO', sub: `${f.name}: excede 10 MB` });
+          continue;
+        }
+        if (pendingFiles.length + accepted.length >= MAX_FILES) {
+          fire({ kind: 'warn', msg: 'ARQUIVO REJEITADO', sub: `Limite de ${MAX_FILES} imagens atingido` });
+          break;
+        }
+        accepted.push(f);
+      }
+      if (accepted.length > 0) {
+        setPendingFiles((prev) => [...prev, ...accepted]);
+      }
+    },
+    [pendingFiles.length, fire],
+  );
+
+  const removeFile = useCallback((idx: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -131,6 +178,17 @@ export function NewTaskModal({
             : null,
         tags: tags.length > 0 ? tags : null,
       });
+
+      if (pendingFiles.length > 0) {
+        const fd = new FormData();
+        pendingFiles.forEach((f) => fd.append('files', f));
+        const imgRes = await fetch(`/api/tasks/${created.id}/images`, { method: 'POST', body: fd });
+        if (imgRes.status !== 201) {
+          const errText = await imgRes.text().catch(() => String(imgRes.status));
+          fire({ kind: 'warn', msg: 'TASK CRIADA · IMAGENS FALHARAM', sub: errText });
+        }
+      }
+
       await mutate();
       fire({
         kind: 'success',
@@ -212,6 +270,58 @@ export function NewTaskModal({
               <span>Body</span>
               <textarea value={body} onChange={(e) => setBody(e.currentTarget.value)} />
             </label>
+
+            {/* Anexos */}
+            <div className="new-task-field">
+              <div className="new-task-attachments-head">
+                <span>Anexos</span>
+                <span aria-live="polite">({pendingFiles.length}/{MAX_FILES})</span>
+              </div>
+              <label
+                className="new-task-dropzone"
+                data-empty={pendingFiles.length === 0 ? 'true' : 'false'}
+                data-drag={dragActive ? 'true' : 'false'}
+                onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragActive(false);
+                  if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+                }}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  aria-label="Anexar imagens à task"
+                  style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+                  onChange={(e) => { if (e.currentTarget.files) { addFiles(e.currentTarget.files); e.currentTarget.value = ''; } }}
+                />
+                {pendingFiles.length === 0 ? (
+                  <>
+                    <span className="dropzone-main">+ ARRASTE / CLIQUE</span>
+                    <span className="dropzone-sub">PNG·JPG·WEBP · 10MB</span>
+                  </>
+                ) : (
+                  <span className="dropzone-main">+ ANEXAR MAIS</span>
+                )}
+              </label>
+              {pendingFiles.length > 0 && (
+                <div className="new-task-thumb-grid">
+                  {pendingFiles.map((f, idx) => (
+                    <div key={`${f.name}-${idx}`} className="new-task-thumb">
+                      <img src={thumbUrls[idx]} alt={f.name} />
+                      <button
+                        type="button"
+                        className="new-task-thumb-remove"
+                        aria-label={`Remover imagem ${idx + 1}`}
+                        onClick={() => removeFile(idx)}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <fieldset className="new-task-review">
               <legend>Modo de revisão</legend>

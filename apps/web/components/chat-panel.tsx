@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Select from '@radix-ui/react-select';
 import type { Agent } from '../lib/cockpit-types';
@@ -10,9 +10,9 @@ import {
   toShortModelSlug,
   type ChatModelSlug,
 } from '../lib/api';
+import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
-import { useAgentSend } from '../lib/use-agent-send';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { AgentStatusline } from './agent-statusline';
 
@@ -183,6 +183,15 @@ function PanePreview({
 
 // ----- ChatInput ----------------------------------------------------------
 
+const WAVEFORM_BARS = 24;
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function ChatInput({
   slug,
   agentName,
@@ -192,13 +201,37 @@ function ChatInput({
   agentName: string;
   onFocusChange?: (focused: boolean) => void;
 }) {
-  const { sending, sendText } = useAgentSend(slug, agentName);
+  const { sending, sendText, sendImage, sendVoice } = useAgentSend(slug, agentName);
+  const { fire } = useToast();
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-grow: começa em 1 linha (42px box-border), cresce até ~6 linhas
-  // (134px) com scroll. Cap bate com max-height do CSS pra evitar pixel
-  // off-by-one que reabre scrollbar quando a 6ª linha completa.
+  // --- image state ---
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+
+  // --- recording state ---
+  const [recording, setRecording] = useState(false);
+  const [recordedDuration, setRecordedDuration] = useState(0);
+  const [audioLevels, setAudioLevels] = useState<number[]>(Array(WAVEFORM_BARS).fill(0));
+
+  // Refs for MediaRecorder / AudioContext — not reactive state
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  // Cleanup thumb URL on unmount / image change
+  useEffect(() => {
+    return () => {
+      if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    };
+  }, [thumbUrl]);
+
+  // Auto-grow textarea
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -206,16 +239,49 @@ function ChatInput({
     el.style.height = `${Math.min(el.scrollHeight, 134)}px`;
   }, [text]);
 
+  // --- helpers ---
+
+  const clearImage = useCallback(() => {
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    setThumbUrl(null);
+    setPendingImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [thumbUrl]);
+
+  const attachFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) {
+      fire({ kind: 'warn', msg: 'só imagens são suportadas', sub: `tipo recebido: ${file.type}` });
+      return;
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      fire({ kind: 'warn', msg: 'imagem muito grande', sub: 'limite: 10 MB' });
+      return;
+    }
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    setThumbUrl(URL.createObjectURL(file));
+    setPendingImage(file);
+  }, [fire, thumbUrl]);
+
+  // --- submit ---
+
   const onSubmit = useCallback(async () => {
+    if (sending) return;
+    if (pendingImage) {
+      const caption = text.trim() || undefined;
+      await sendImage(pendingImage, caption);
+      clearImage();
+      setText('');
+      textareaRef.current?.focus();
+      return;
+    }
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed) return;
     await sendText(trimmed);
     setText('');
-  }, [sending, sendText, text]);
+  }, [sending, pendingImage, text, sendImage, sendText, clearImage]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // ⌘+Enter (Mac) / Ctrl+Enter (Linux/Win) envia. Enter sozinho quebra linha.
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         void onSubmit();
@@ -224,54 +290,269 @@ function ChatInput({
     [onSubmit],
   );
 
-  return (
-    <form
-      className="chat-input"
-      onSubmit={(e) => {
+  // --- paste ---
+
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const files = Array.from(e.clipboardData.files);
+      const imageFile = files.find((f) => f.type.startsWith('image/'));
+      if (imageFile) {
         e.preventDefault();
-        void onSubmit();
-      }}
-    >
-      <button
-        type="button"
-        className="chat-icon-btn"
-        disabled
-        aria-label="Anexar imagem (em breve)"
-        title={`anexar imagem pro ${agentName} — em breve (DS-54)`}
+        attachFile(imageFile);
+      }
+    },
+    [attachFile],
+  );
+
+  // --- mic / recording ---
+
+  const stopWaveformLoop = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const cleanupRecording = useCallback(() => {
+    stopWaveformLoop();
+    stopTimer();
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    mediaRecorderRef.current = null;
+    chunksRef.current = [];
+    setAudioLevels(Array(WAVEFORM_BARS).fill(0));
+    setRecordedDuration(0);
+  }, [stopWaveformLoop, stopTimer]);
+
+  const startWaveformLoop = useCallback((analyser: AnalyserNode) => {
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      // Map full FFT bin range down to WAVEFORM_BARS buckets
+      const step = Math.floor(data.length / WAVEFORM_BARS);
+      const levels = Array.from({ length: WAVEFORM_BARS }, (_, i) => {
+        let sum = 0;
+        for (let j = 0; j < step; j++) sum += data[i * step + j];
+        return Math.round((sum / step / 255) * 100);
+      });
+      setAudioLevels(levels);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const handleMicClick = useCallback(async () => {
+    // If already recording: CANCEL (second click = cancel without send)
+    if (recording) {
+      mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current?.stop();
+      cleanupRecording();
+      setRecording(false);
+      return;
+    }
+
+    // Start recording
+    let stream: MediaStream;
+    try {
+      // navigator.mediaDevices is undefined in non-secure contexts (plain HTTP).
+      // On iOS Safari, permission must be triggered by a direct user gesture —
+      // calling getUserMedia from an async chain loses that link on some versions.
+      // Autoplay policy note: AudioContext must be created/resumed inside the
+      // user gesture handler (same constraint).
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      fire({
+        kind: 'warn',
+        msg: 'permissão de microfone negada',
+        sub: err instanceof Error ? err.message : String(err),
+        ttlMs: 6000,
+      });
+      return;
+    }
+
+    // AudioContext + Analyser for waveform
+    const ctx = new AudioContext();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    audioContextRef.current = ctx;
+    analyserRef.current = analyser;
+
+    // MediaRecorder — prefer webm/opus, fallback to browser default
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : '';
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+    mediaRecorderRef.current = recorder;
+    chunksRef.current = [];
+
+    recorder.ondataavailable = (ev) => {
+      if (ev.data.size > 0) chunksRef.current.push(ev.data);
+    };
+
+    recorder.onstop = async () => {
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+      stream.getTracks().forEach((t) => t.stop());
+      cleanupRecording();
+      setRecording(false);
+      // Only send if we actually have audio (cancelled path does its own cleanup)
+      if (blob.size > 0) {
+        await sendVoice(blob);
+      }
+    };
+
+    recorder.start(100); // collect chunks every 100ms
+    setRecording(true);
+    startWaveformLoop(analyser);
+
+    // Duration counter
+    let secs = 0;
+    timerRef.current = setInterval(() => {
+      secs += 1;
+      setRecordedDuration(secs);
+    }, 1000);
+  }, [recording, fire, cleanupRecording, startWaveformLoop, sendVoice]);
+
+  const handleStopRecording = useCallback(() => {
+    // ⏹ button: stop and send
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      // onstop handler sends the voice blob
+    }
+  }, []);
+
+  // sendDisabled: no image, no text, and not recording
+  const sendDisabled =
+    sending || (recording ? false : pendingImage ? false : text.trim().length === 0);
+
+  return (
+    <div className="chat-input-wrap">
+      {/* Image chip */}
+      {pendingImage && thumbUrl && !recording && (
+        <div className="chat-image-chip">
+          <img src={thumbUrl} alt="" aria-hidden="true" />
+          <span className="chat-image-chip-name" title={pendingImage.name}>
+            {pendingImage.name}
+          </span>
+          <button
+            type="button"
+            className="chat-image-chip-remove"
+            onClick={clearImage}
+            aria-label="Remover imagem"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <form
+        className="chat-input"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (recording) {
+            handleStopRecording();
+          } else {
+            void onSubmit();
+          }
+        }}
+        onPaste={onPaste}
       >
-        <PaperclipIcon />
-      </button>
-      <textarea
-        ref={textareaRef}
-        className="chat-input-textarea mono"
-        value={text}
-        onChange={(e) => setText(e.currentTarget.value)}
-        onKeyDown={onKeyDown}
-        onFocus={() => onFocusChange?.(true)}
-        onBlur={() => onFocusChange?.(false)}
-        rows={1}
-        maxLength={8192}
-        aria-label={`Mensagem pro agente ${agentName}`}
-      />
-      <button
-        type="button"
-        className="chat-icon-btn"
-        disabled
-        aria-label="Mensagem de voz (em breve)"
-        title="mensagem de voz — em breve (DS-54)"
-      >
-        <MicIcon />
-      </button>
-      <button
-        type="submit"
-        className="chat-input-send"
-        disabled={sending || text.trim().length === 0}
-        aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
-        title={sending ? 'enviando…' : 'enviar (⌘+Enter)'}
-      >
-        {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
-      </button>
-    </form>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          aria-hidden="true"
+          tabIndex={-1}
+          onChange={(e) => {
+            const file = e.currentTarget.files?.[0];
+            if (file) attachFile(file);
+          }}
+        />
+
+        {recording ? (
+          /* Waveform mode — replaces textarea + paperclip */
+          <div className="chat-waveform" aria-label="Gravando áudio">
+            {audioLevels.map((lvl, i) => (
+              <span
+                key={i}
+                className="chat-waveform-bar"
+                style={{ height: `${Math.max(4, Math.round(lvl * 0.36))}px` }}
+                aria-hidden="true"
+              />
+            ))}
+            <span
+              className="chat-recording-timer mono"
+              aria-live="polite"
+              aria-label={`Duração: ${formatDuration(recordedDuration)}`}
+            >
+              {formatDuration(recordedDuration)}
+            </span>
+          </div>
+        ) : (
+          <>
+            {/* Paperclip */}
+            <button
+              type="button"
+              className="chat-icon-btn"
+              aria-label="Anexar imagem"
+              title={`anexar imagem pro ${agentName}`}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <PaperclipIcon />
+            </button>
+
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
+              className="chat-input-textarea mono"
+              value={text}
+              onChange={(e) => setText(e.currentTarget.value)}
+              onKeyDown={onKeyDown}
+              onFocus={() => onFocusChange?.(true)}
+              onBlur={() => onFocusChange?.(false)}
+              rows={1}
+              maxLength={8192}
+              placeholder={pendingImage ? 'legenda opcional…' : undefined}
+              aria-label={`Mensagem pro agente ${agentName}`}
+            />
+          </>
+        )}
+
+        {/* Mic / Stop */}
+        <button
+          type={recording ? 'submit' : 'button'}
+          className={recording ? 'chat-icon-btn chat-stop-btn' : 'chat-icon-btn'}
+          aria-label={recording ? 'Parar gravação' : 'Gravar mensagem de voz'}
+          title={recording ? 'parar e enviar (⏹)' : 'gravar mensagem de voz'}
+          onClick={recording ? undefined : () => void handleMicClick()}
+        >
+          {recording ? <StopIcon /> : <MicIcon />}
+        </button>
+
+        {/* Send */}
+        <button
+          type="submit"
+          className="chat-input-send"
+          disabled={sendDisabled}
+          aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
+          title={sending ? 'enviando…' : 'enviar (⌘+Enter)'}
+        >
+          {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -328,6 +609,20 @@ function MicIcon() {
       <rect x="9" y="3" width="6" height="12" rx="3" />
       <path d="M5 11a7 7 0 0 0 14 0" />
       <path d="M12 18v3" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="5" y="5" width="14" height="14" rx="2" />
     </svg>
   );
 }

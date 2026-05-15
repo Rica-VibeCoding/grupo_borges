@@ -661,6 +661,55 @@
 }
 .chat-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* DS-54.5 — ChatInput: image chip + waveform recorder */
+.chat-input-wrap {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.chat-image-chip {
+  display: flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 8px;
+  border: 1px solid var(--accent-border); background: var(--accent-subtle);
+  border-radius: 4px; font-family: 'JetBrains Mono', monospace; overflow: hidden;
+}
+.chat-image-chip img {
+  width: 22px; height: 22px; object-fit: cover; border-radius: 2px; flex-shrink: 0;
+}
+.chat-image-chip-name {
+  flex: 1; min-width: 0;
+  font-size: 10px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-image-chip-remove {
+  flex-shrink: 0; width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: none; background: transparent; color: var(--muted);
+  cursor: pointer; font-size: 10px; line-height: 1;
+  border-radius: 2px;
+}
+.chat-image-chip-remove:hover { color: var(--text); background: var(--border); }
+
+.chat-waveform {
+  flex: 1; display: flex; align-items: center; gap: 2px;
+  height: 38px; padding: 0 4px;
+  border: 1px solid var(--accent-border); background: var(--accent-subtle);
+  border-radius: 6px; overflow: hidden;
+}
+.chat-waveform-bar {
+  width: 3px; background: var(--accent); border-radius: 1px;
+  transition: height 60ms ease; flex-shrink: 0;
+}
+.chat-recording-timer {
+  flex-shrink: 0; font-size: 11px; color: var(--accent); padding: 0 4px;
+  min-width: 36px; text-align: right;
+}
+/* Stop btn: same base as chat-icon-btn but accent-active state always on */
+.chat-stop-btn {
+  background: var(--accent-subtle) !important;
+  color: var(--accent) !important;
+  border-color: var(--accent-border) !important;
+}
+.chat-stop-btn:hover { background: var(--accent) !important; color: var(--bg) !important; }
+
 @media (max-width: 600px) {
   .chat-preview { font-size: 10px; }
   .pm-line { font-size: 10.5px; gap: 6px; }
@@ -1207,6 +1256,106 @@
 
 .review-mode-option[data-checked="true"] .review-mode-desc {
   color: var(--text);
+}
+
+/* ── DS-54.3 Anexos ─────────────────────────────────────────────── */
+.new-task-attachments-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.new-task-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--border);
+  padding: 18px 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 120ms ease, background 140ms ease;
+  min-height: 64px;
+}
+
+.new-task-dropzone[data-empty="false"] {
+  padding: 10px;
+  flex-direction: row;
+  min-height: unset;
+}
+
+.new-task-dropzone:hover,
+.new-task-dropzone[data-drag="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.new-task-dropzone[data-drag="true"] {
+  border-color: var(--accent);
+}
+
+.dropzone-main {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.dropzone-sub {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.new-task-thumb-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.new-task-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.new-task-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.new-task-thumb-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.new-task-thumb-remove:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .form-note[data-kind="error"] {
