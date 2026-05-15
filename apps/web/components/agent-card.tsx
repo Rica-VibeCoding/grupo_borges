@@ -88,9 +88,11 @@ export function AgentCard({
   const model = agent.state_model ?? agent.model_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
   // sessionStarted: Codex usa session_started_at (do evento); CC usa pane_session_started_at
+  // pra refletir /clear (zera o transcript). instances[0].started_at é uptime do tmux,
+  // que não muda no /clear — só como fallback quando o pane não tem statusline parseável.
   const sessionStarted = isCodexExecutor
     ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
-    : (agent.instances[0]?.started_at ?? agent.pane_session_started_at ?? null);
+    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   // contextPct: Codex recebe campo direto do backend; CC faz parse do pane_excerpt
   const contextPct = isCodexExecutor
