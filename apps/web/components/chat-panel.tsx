@@ -179,6 +179,7 @@ function ChatInput({
   agentName: string;
   onFocusChange?: (focused: boolean) => void;
 }) {
+  const [avatarOk, setAvatarOk] = useState(true);
   const { fire } = useToast();
   const isMobile = useIsMobile();
   const [text, setText] = useState('');
@@ -236,6 +237,14 @@ function ChatInput({
     [onSubmit],
   );
 
+  const initials = agentName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0]!)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
   return (
     <form
       className="chat-input"
@@ -244,15 +253,22 @@ function ChatInput({
         void onSubmit();
       }}
     >
-      <button
-        type="button"
-        className="chat-icon-btn"
-        disabled
-        aria-label="Anexar imagem (em breve)"
-        title="anexar imagem — em breve (DS-54)"
+      <span
+        className="chat-input-avatar"
+        aria-hidden="true"
+        title={`anexar imagem pro ${agentName} — em breve (DS-54)`}
       >
-        <span aria-hidden="true">📷</span>
-      </button>
+        {avatarOk ? (
+          <img
+            src={`/avatars/${slug}.png`}
+            alt=""
+            onError={() => setAvatarOk(false)}
+            draggable={false}
+          />
+        ) : (
+          <span className="chat-input-avatar-fallback">{initials}</span>
+        )}
+      </span>
       <textarea
         ref={textareaRef}
         className="chat-input-textarea mono"
@@ -273,7 +289,7 @@ function ChatInput({
         aria-label="Mensagem de voz (em breve)"
         title="mensagem de voz — em breve (DS-54)"
       >
-        <span aria-hidden="true">🎤</span>
+        <MicIcon />
       </button>
       <button
         type="submit"
@@ -282,9 +298,48 @@ function ChatInput({
         aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
         title={sending ? 'enviando…' : 'enviar (⌘+Enter)'}
       >
-        {sending ? '…' : '→'}
+        {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
       </button>
     </form>
+  );
+}
+
+function ArrowUpIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 19V5" />
+      <path d="m6 11 6-6 6 6" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="3" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
+    </svg>
   );
 }
 
