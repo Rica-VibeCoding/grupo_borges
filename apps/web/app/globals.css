@@ -115,7 +115,18 @@
   color: var(--accent); background: var(--accent-subtle);
   box-shadow: inset 0 -2px 0 var(--accent);
 }
-.agent-modal-panel { padding: 12px 14px 14px; overflow: auto; min-height: 0; }
+/* flex:1 + min-height:0 essenciais pro Tabs.Content preencher o frame
+   (Radix renderiza só o panel ativo) e pro flex-child interno contrair
+   abaixo do conteúdo natural — sem isso a aba CHAT colapsa pro tamanho
+   mínimo do textarea+preview e sobra vazio embaixo do input. */
+.agent-modal-panel {
+  padding: 12px 14px 14px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
 
 .agent-modal-footer {
   flex: none;
@@ -520,7 +531,14 @@
   height: 100%; min-height: 0;
 }
 
-.chat-preview-wrap { position: relative; flex: 1; min-height: 160px; display: flex; }
+.chat-preview-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  /* min-height:0 libera o flex-child a contrair abaixo do tamanho
+     intrínseco — sem isso o input "empurra" e nasce vazio embaixo. */
+  min-height: 0;
+  display: flex;
+}
 .chat-preview {
   flex: 1; margin: 0; padding: 12px;
   border: 1px solid var(--border-subtle);
@@ -529,7 +547,7 @@
   color: var(--text);
   font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
-  max-height: 60vh; min-height: 160px;
+  min-height: 0;
 }
 .chat-preview-pill {
   position: absolute; right: 12px; bottom: 12px;
@@ -565,18 +583,25 @@
 .chat-icon-btn {
   width: 36px; height: 36px; min-width: 36px;
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: 1px solid var(--border-subtle); background: transparent;
-  color: var(--muted); cursor: pointer;
+  padding: 0; border: 1px solid var(--border); background: var(--card);
+  color: var(--text); cursor: pointer;
   border-radius: 6px;
   align-self: flex-end;
   margin-bottom: 2px;
 }
-.chat-icon-btn:hover:not(:disabled) { background: var(--accent-subtle); color: var(--text); }
-.chat-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.chat-icon-btn:hover:not(:disabled) { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent-border); }
+/* Disabled mantém visível: só baixa um pouco a opacity (era 0.45 — Rica
+   reclamou que o mic ficava apagado/dim no mobile). 0.7 deixa o ícone
+   firme mas claramente sem ação. */
+.chat-icon-btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
 .chat-input-textarea {
   flex: 1; resize: none;
-  min-height: 40px; max-height: 240px;
+  /* 1 linha exata box-border: 22.4px (line 16×1.4) + 18px padding (9×2)
+     + 2px border = 42.4px → 42px floor. Auto-grow via useLayoutEffect
+     cresce até 6 linhas (~134px com padding). Rica reclamou que abria
+     em 2 linhas — agora começa em 1 firme. */
+  min-height: 42px; max-height: 134px;
   padding: 9px 10px;
   border: 1px solid var(--border-subtle); background: var(--bg);
   color: var(--text);
@@ -595,14 +620,23 @@
   align-self: flex-end;
   width: 40px; height: 40px; min-width: 40px;
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: 1px solid var(--accent-border); background: var(--accent);
-  color: var(--bg); cursor: pointer;
+  padding: 0;
+  /* Ação luminosa porém sutil — bg cyan dessaturado em vez do azul puro
+     do --accent (Rica: "não tem muito a ver"). Ícone fica accent firme,
+     hover intensifica o bg. Lê como botão de ação sem chamariz. */
+  border: 1px solid var(--accent-border);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  cursor: pointer;
   border-radius: 6px;
-  transition: filter 120ms ease, transform 120ms ease;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
 }
 .chat-input-send svg { display: block; }
-.chat-input-send:disabled { opacity: 0.45; cursor: not-allowed; }
-.chat-input-send:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+.chat-input-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-input-send:hover:not(:disabled) {
+  background: var(--accent); color: var(--bg);
+  transform: translateY(-1px);
+}
 .chat-input-send:active:not(:disabled) { transform: translateY(0); }
 
 .chat-confirm-frame {
@@ -622,9 +656,11 @@
 .chat-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 @media (max-width: 600px) {
-  .chat-preview { max-height: 44vh; font-size: 10px; }
+  .chat-preview { font-size: 10px; }
   .pm-line { font-size: 10.5px; gap: 6px; }
-  /* Input fica horizontal: [avatar] [textarea] [mic] [⬆] estilo WhatsApp. */
+  /* Input sticky-bottom natural pelo flex chain (frame 100dvh →
+     panel flex:1 → chat-panel flex column → preview flex:1 →
+     input flex:0). Layout horizontal: [avatar][textarea][mic][⬆]. */
 }
 
 /* AgentModal — listas de skills/tabelas + viewer de docs (Fase 3) */
@@ -1279,8 +1315,11 @@
   left: 0;
   transform: none;
   width: 100vw;
-  height: 100vh;
-  max-height: 100vh;
+  /* dvh acompanha redução do viewport quando iOS Safari mostra/some
+     a barra de URL e quando o teclado virtual abre. vh fica fixo no
+     "max viewport" e empurraria o input pra fora da tela visível. */
+  height: 100dvh;
+  max-height: 100dvh;
   border: 0;
   animation: agent-modal-frame-mobile-in 160ms ease forwards;
 }

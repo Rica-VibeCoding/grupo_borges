@@ -12,7 +12,6 @@ import {
   type ChatModelSlug,
 } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
-import { useIsMobile } from '../lib/use-is-mobile';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { AgentStatusline } from './agent-statusline';
@@ -195,20 +194,18 @@ function ChatInput({
 }) {
   const [avatarOk, setAvatarOk] = useState(true);
   const { fire } = useToast();
-  const isMobile = useIsMobile();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const placeholder = isMobile
-    ? `Mensagem pro ${agentName}…`
-    : `mensagem pro ${agentName} (⌘+Enter envia)`;
 
-  // Auto-grow: começa em 1 linha, cresce até max ~6 linhas (240px) com scroll.
+  // Auto-grow: começa em 1 linha (42px box-border), cresce até ~6 linhas
+  // (134px) com scroll. Cap bate com max-height do CSS pra evitar pixel
+  // off-by-one que reabre scrollbar quando a 6ª linha completa.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 134)}px`;
   }, [text]);
 
   const onSubmit = useCallback(async () => {
@@ -291,7 +288,6 @@ function ChatInput({
         onKeyDown={onKeyDown}
         onFocus={() => onFocusChange?.(true)}
         onBlur={() => onFocusChange?.(false)}
-        placeholder={placeholder}
         rows={1}
         maxLength={8192}
         aria-label={`Mensagem pro agente ${agentName}`}
