@@ -319,12 +319,17 @@ async def send_agent_input(
 ) -> InputResponse:
     """Cola `payload.text` no pane ativo via tmux paste-buffer + Enter.
 
-    Stub: 404 quando agente não existe; valida payload via Pydantic (422 em
-    text vazio/>8KB ou idempotency_key vazio/>128); senão 501.
-    Impl real: chama tmux_driver.send_message, retorna delivered.
+    - 404 quando agente não existe
+    - 422 (Pydantic) em text vazio/>8KB ou idempotency_key vazio/>128
+    - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
+      CLI esperado — guard do tmux_driver, ex: user trocou window)
+    - 200 + `tmux_delivered=True` no caminho feliz
     """
-    await _get_agent_or_404(request, slug)
-    raise HTTPException(status_code=501, detail="not_implemented")
+    agent = await _get_agent_or_404(request, slug)
+    delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
+    if not delivered:
+        raise HTTPException(status_code=409, detail="agent_pane_unavailable")
+    return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
 
 
 @router.post("/{slug}/model", response_model=ModelChangeResponse)
