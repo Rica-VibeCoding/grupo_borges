@@ -154,6 +154,75 @@ export async function fetchAgentTables(slug: string, signal?: AbortSignal): Prom
   return res.json();
 }
 
+// ----- DS-2: chat / model endpoints --------------------------------------
+
+export type ChatModelSlug = 'opus' | 'sonnet' | 'haiku';
+
+export type AgentInputResponse = {
+  tmux_delivered: boolean;
+  sent_at: number;
+};
+
+export type AgentModelChangeResponse = {
+  tmux_delivered: boolean;
+  state_persisted: boolean;
+  confirmed: boolean;
+  model: string;
+};
+
+export class AgentInputError extends Error {
+  constructor(message: string, readonly status: number, readonly detail: string | null) {
+    super(message);
+    this.name = 'AgentInputError';
+  }
+}
+
+export async function postAgentInput(
+  slug: string,
+  text: string,
+): Promise<AgentInputResponse> {
+  const idempotency_key =
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/input`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, idempotency_key }),
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentInput failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
+export async function postAgentModel(
+  slug: string,
+  model: ChatModelSlug,
+  options?: { force?: boolean },
+): Promise<AgentModelChangeResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, force: options?.force ?? false }),
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentModel failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
+// Mapeia state_model/model_default longo (claude-opus-4-7, etc) pro slug curto
+// aceito pelo POST /model (whitelist opus|sonnet|haiku). Codex retorna null —
+// caller decide se renderiza dropdown (não renderiza pra Codex).
+export function toShortModelSlug(model: string | null | undefined): ChatModelSlug | null {
+  if (!model) return null;
+  if (model.includes('opus')) return 'opus';
+  if (model.includes('sonnet')) return 'sonnet';
+  if (model.includes('haiku')) return 'haiku';
+  return null;
+}
+
 export async function createAgentInstance(
   slug: string,
   payload: AgentInstanceCreate,
