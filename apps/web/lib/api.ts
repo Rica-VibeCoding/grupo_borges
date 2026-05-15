@@ -255,3 +255,8 @@ export async function fetchReviews(
   if (!res.ok) throw new Error(await errorDetail(res, `fetchReviews failed: ${res.status}`));
   return res.json();
 }
+
+export async function deleteTask(taskId: string): Promise<void> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await errorDetail(res, `deleteTask failed: ${res.status}`));
+}
