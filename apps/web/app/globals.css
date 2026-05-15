@@ -568,6 +568,10 @@
   font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
   min-height: 0;
+  /* Conteúdo encosta no input (estilo WhatsApp/Remote Control). Quando o
+     texto é menor que a caixa, justify-content empurra pro fim; quando
+     excede, o overflow-y assume e o sticky-bottom já tava certo. */
+  display: flex; flex-direction: column; justify-content: flex-end;
 }
 .chat-preview-pill {
   position: absolute; right: 12px; bottom: 12px;
