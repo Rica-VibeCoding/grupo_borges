@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
-import { dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
+import { deleteTask, dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
@@ -119,6 +119,8 @@ export function TaskDetailModal({
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const agentOptions = useMemo(
     () => fleet.agents.map((a) => ({ value: a.slug, label: `${a.name} · ${a.slug}` })),
     [fleet.agents],
@@ -186,6 +188,8 @@ export function TaskDetailModal({
       setSaving(false);
       setDispatching(false);
       setEditing(false);
+      setConfirmDelete(false);
+      setDeleting(false);
       return;
     }
 
@@ -227,6 +231,25 @@ export function TaskDetailModal({
       fire({ kind: 'warn', msg: 'STATUS NÃO ALTERADO', sub: msg });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!effectiveTask || deleting) return;
+    setDeleting(true);
+    setMessage(null);
+    try {
+      await deleteTask(effectiveTask.id);
+      await mutate();
+      fire({ kind: 'success', msg: `EXCLUÍDA · ${taskDisplayId(effectiveTask)}` });
+      onOpenChange(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessage(msg);
+      fire({ kind: 'warn', msg: 'ERRO AO EXCLUIR', sub: msg });
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -402,24 +425,70 @@ export function TaskDetailModal({
                   {runHeartbeatStale && <span className="task-detail-error">run sem heartbeat recente</span>}
                   {saving && <span>salvando status...</span>}
                   {dispatching && <span>enviando para sessão...</span>}
+                  {deleting && <span>excluindo...</span>}
                   {message && <span className="task-detail-error">{message}</span>}
                 </div>
                 {!editing &&
+                  !confirmDelete &&
+                  (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
+                    <button
+                      type="button"
+                      className="form-cancel task-detail-delete"
+                      onClick={() => setConfirmDelete(true)}
+                      disabled={saving || dispatching || deleting || loadState === 'loading'}
+                    >
+                      EXCLUIR
+                    </button>
+                  )}
+                {confirmDelete && (
+                  <>
+                    <button
+                      type="button"
+                      className="form-cancel task-detail-delete-cancel"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                    >
+                      CANCELAR
+                    </button>
+                    <button
+                      type="button"
+                      className="form-cancel task-detail-delete-confirm"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                    >
+                      {deleting ? 'EXCLUINDO...' : `CONFIRMAR EXCLUSÃO · ${taskDisplayId(effectiveTask)}`}
+                    </button>
+                  </>
+                )}
+                {!editing &&
+                  !confirmDelete &&
                   (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
                     <button
                       type="button"
                       className="form-cancel task-detail-edit"
                       onClick={() => setEditing(true)}
-                      disabled={saving || dispatching || loadState === 'loading'}
+                      disabled={saving || dispatching || deleting || loadState === 'loading'}
                     >
                       EDITAR
                     </button>
                   )}
-                {effectiveTask.status !== 'review' && (
+                {!confirmDelete &&
+                  effectiveTask.status !== 'done' &&
+                  effectiveTask.status !== 'review' && (
+                    <button
+                      type="button"
+                      className="form-cancel task-detail-complete"
+                      onClick={() => changeStatus('done')}
+                      disabled={saving || dispatching || deleting || editing || loadState === 'loading'}
+                    >
+                      CONCLUIR ✓
+                    </button>
+                  )}
+                {effectiveTask.status !== 'review' && !confirmDelete && (
                   <button
                     type="button"
                     className="form-submit task-detail-dispatch"
-                    disabled={dispatching || saving || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
+                    disabled={dispatching || saving || deleting || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
                     onClick={dispatchToSession}
                   >
                     {dispatching ? 'ENVIANDO...' : effectiveTask.status === 'running' ? 'EM EXECUÇÃO' : 'ENVIAR SESSÃO'}
