@@ -16,6 +16,14 @@ const STATUS_LABEL: Record<AgentStatus, string> = {
   offline: 'Offline',
 };
 
+// Gradiente verde→amarelo→vermelho conforme ocupação de contexto.
+// Usado nas células da ps-bar pra dar leitura imediata de risco.
+function ctxTier(pct: number): 'low' | 'mid' | 'high' {
+  if (pct < 50) return 'low';
+  if (pct < 80) return 'mid';
+  return 'high';
+}
+
 /**
  * Statusline compacta reutilizável (model · time · ctx%).
  *
@@ -49,22 +57,13 @@ export function AgentStatusline({
   const modelLabel = paneModel ?? shortModelName(model);
 
   if (variant === 'modal') {
+    // Dedupe: status chip mora no top-right do header do AgentModal (`.status-bar`);
+    // model mora no <ModelSelector> da aba CHAT. Aqui não duplicamos — só info
+    // adicional que o header/selector não mostram (executor, ctx, session, visto).
     return (
       <div className="pane-modal mono" role="group" aria-label="Statusline do agente">
-        <span className="pm-chip" data-state={agent.status}>
-          <span className="pm-dot" aria-hidden="true" />
-          {STATUS_LABEL[agent.status]}
-        </span>
         <span className="pm-chip pm-kind" title={`executor: ${agent.executor_kind ?? 'claude_code'}`}>
           {isCodexExecutor ? 'CODEX' : 'CC'}
-        </span>
-        <span className="pm-chip">
-          <span className="pm-k">model</span>
-          <span className="pm-v">{modelLabel}</span>
-        </span>
-        <span className="pm-chip">
-          <span className="pm-k">session</span>
-          <span className="pm-v">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
         </span>
         <span className="pm-chip">
           <span className="pm-k">ctx</span>
@@ -76,6 +75,7 @@ export function AgentStatusline({
                     key={i}
                     className="psb-cell"
                     data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
+                    data-tier={ctxTier(contextPct)}
                   />
                 ))}
               </span>
@@ -85,7 +85,14 @@ export function AgentStatusline({
             <span className="pm-v">— %</span>
           )}
         </span>
-        <span className="pm-chip pm-seen" title={agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—'}>
+        <span className="pm-chip">
+          <span className="pm-k">session</span>
+          <span className="pm-v">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
+        </span>
+        <span
+          className="pm-chip pm-seen"
+          title={agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—'}
+        >
           <span className="pm-k">visto</span>
           <span className="pm-v">{formatLastSeen(agent.last_seen, serverNow)}</span>
         </span>
