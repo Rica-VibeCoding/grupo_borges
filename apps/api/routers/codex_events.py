@@ -12,7 +12,9 @@ Tailscale-only via middleware existente (`main.py`); dev local usa
 """
 from __future__ import annotations
 
+import json
 import logging
+import time
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request, status
@@ -23,6 +25,7 @@ from util import redact_payload
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+GPT_5_5_CONTEXT_WINDOW = 128_000
 
 
 CodexEventKind = Literal[
@@ -60,6 +63,149 @@ def _short_text(value: Any, *, limit: int = 80) -> str | None:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
+def _snippet(value: Any, *, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.split())
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _body(payload: CodexEventCreate) -> dict[str, Any]:
+    return payload.payload if isinstance(payload.payload, dict) else {}
+
+
+def _item(body: dict[str, Any]) -> dict[str, Any]:
+    item = body.get("item")
+    if isinstance(item, dict):
+        return item
+    return body
+
+
+def _thread_id(body: dict[str, Any]) -> str | None:
+    for key in ("thread_id", "id"):
+        value = body.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _active_task_label(body: dict[str, Any]) -> str | None:
+    for key in ("active_task_label", "task_label", "label", "prompt"):
+        value = _snippet(body.get(key), limit=280)
+        if value is not None:
+            return value
+    argv = body.get("argv")
+    if isinstance(argv, list):
+        parts = [part for part in argv if isinstance(part, str) and part.strip()]
+        if parts:
+            return " ".join(parts)[:280]
+    return None
+
+
+def _int_timestamp(value: Any, *, fallback: int) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return fallback
+
+
+def _usage_context_pct(usage: Any) -> float | None:
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = usage.get("input_tokens")
+    if not isinstance(input_tokens, int | float):
+        return None
+    window = usage.get("model_context_window", GPT_5_5_CONTEXT_WINDOW)
+    if not isinstance(window, int | float) or window <= 0:
+        window = GPT_5_5_CONTEXT_WINDOW
+    return round(input_tokens / window * 100, 1)
+
+
+def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
+    body = _body(payload)
+    item = _item(body)
+    now = int(time.time())
+
+    if payload.kind == "tara.exec.started":
+        update: dict[str, Any] = {
+            "executor_kind": "codex",
+            "status_line": "iniciando",
+            "session_started_at": _int_timestamp(body.get("started_at"), fallback=now),
+        }
+        label = _active_task_label(body)
+        if label is not None:
+            update["active_task_label"] = label
+        return update
+
+    if payload.kind == "codex.thread.started":
+        return {
+            "executor_kind": "codex",
+            "session_started_at": _int_timestamp(body.get("started_at"), fallback=now),
+        }
+
+    if payload.kind == "codex.turn.started":
+        update = {
+            "executor_kind": "codex",
+            "status_line": "processando turn",
+        }
+        label = _active_task_label(body)
+        if label is not None:
+            update["active_task_label"] = label
+        return update
+
+    if payload.kind == "codex.item.completed" and item.get("type") == "agent_message":
+        text = item.get("text")
+        message = _snippet(text, limit=280)
+        status_line = _snippet(text, limit=80)
+        if message is None and status_line is None:
+            return {"executor_kind": "codex"}
+        update = {
+            "executor_kind": "codex",
+        }
+        if message is not None:
+            update["last_assistant_message"] = message
+        if status_line is not None:
+            update["status_line"] = status_line
+        return update
+
+    if payload.kind == "codex.item.started" and item.get("type") == "command_execution":
+        command = _snippet(item.get("command"), limit=80)
+        if command is None:
+            return {"executor_kind": "codex"}
+        return {
+            "executor_kind": "codex",
+            "status_line": f"rodando: {command}",
+        }
+
+    if payload.kind == "codex.turn.completed":
+        usage = body.get("usage")
+        update = {"executor_kind": "codex"}
+        if usage is not None:
+            update["token_usage_json"] = json.dumps(usage, ensure_ascii=False)
+        context_pct = _usage_context_pct(usage)
+        if context_pct is not None:
+            update["context_pct"] = context_pct
+        return update
+
+    if payload.kind == "tara.exec.completed":
+        return {
+            "executor_kind": "codex",
+            "status_line": "ocioso",
+        }
+
+    if payload.kind == "tara.exec.failed":
+        error = _snippet(body.get("error"), limit=80) or _snippet(body.get("stderr"), limit=80)
+        return {
+            "executor_kind": "codex",
+            "status_line": f"falhou: {error}" if error else "falhou",
+        }
+
+    return {}
+
+
 def _codex_lifecycle(payload: CodexEventCreate) -> tuple[str, str | None]:
     body = payload.payload or {}
     label = _short_text(body.get("label"), limit=80)
@@ -71,7 +217,7 @@ def _codex_lifecycle(payload: CodexEventCreate) -> tuple[str, str | None]:
     if payload.kind == "tara.exec.completed":
         return "ocioso", "tara-codex concluído"
     if payload.kind == "tara.exec.failed":
-        return "aguardando", "tara-codex falhou"
+        return "offline", "tara-codex falhou"
     if payload.kind == "codex.turn.started":
         return "trabalhando", "turno iniciado"
     if payload.kind in {"codex.item.started", "codex.item.updated"}:
@@ -96,8 +242,9 @@ async def receive_codex_event(payload: CodexEventCreate, request: Request) -> di
         "delegator_agent_slug": payload.delegator_agent_slug,
         "target_agent_slug": payload.target_agent_slug,
     }
-    if payload.thread_id:
-        enriched_payload["thread_id"] = payload.thread_id
+    body_thread_id = _thread_id(payload.payload or {})
+    if payload.thread_id or body_thread_id:
+        enriched_payload["thread_id"] = payload.thread_id or body_thread_id
     if safe_payload:
         enriched_payload["body"] = safe_payload
 
@@ -108,14 +255,10 @@ async def receive_codex_event(payload: CodexEventCreate, request: Request) -> di
         raw_jsonl=safe_raw,
     )
 
-    if payload.kind in {
-        "tara.exec.started",
-        "tara.exec.completed",
-        "tara.exec.failed",
-        "codex.turn.completed",
-        "codex.item.completed",
-    }:
-        await db.upsert_agent_state(payload.target_agent_slug)
+    await db.upsert_agent_state(payload.target_agent_slug)
+    codex_state = _codex_state_update(payload)
+    if codex_state:
+        await db.update_agent_codex_state(payload.target_agent_slug, **codex_state)
     lifecycle_status, lifecycle_detail = _codex_lifecycle(payload)
     await db.update_agent_lifecycle(
         payload.target_agent_slug,

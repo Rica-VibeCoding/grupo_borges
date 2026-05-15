@@ -61,6 +61,13 @@ class FleetAgent(BaseModel):
     current_task_last_heartbeat: int | None = None
     last_seen: int | None
     pane_excerpt: str | None
+    executor_kind: str | None = None
+    status_line: str | None = None
+    active_task_label: str | None = None
+    context_pct: float | None = None
+    session_started_at: int | None = None
+    last_assistant_message: str | None = None
+    token_usage_json: str | None = None
     lifecycle_status: str | None = None
     lifecycle_detail: str | None = None
     lifecycle_event: str | None = None

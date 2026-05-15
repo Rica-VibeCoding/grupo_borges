@@ -135,6 +135,8 @@ def derive_agent_status(
     )
     if last_seen is None or (now - last_seen) > OFFLINE_THRESHOLD_SECONDS:
         return "offline"
+    if lifecycle_status == "offline":
+        return "offline"
     if lifecycle_status == "trabalhando" and lifecycle_is_fresh:
         return "trabalhando"
     if lifecycle_status == "aguardando":
@@ -196,7 +198,7 @@ def derive_lifecycle_from_event(
     if kind == "tara.exec.completed":
         return "ocioso", "tara-codex concluído"
     if kind == "tara.exec.failed":
-        return "aguardando", "tara-codex falhou"
+        return "offline", "tara-codex falhou"
     if kind == "codex.turn.started":
         return "trabalhando", "turno iniciado"
     if kind == "codex.turn.completed":
@@ -283,6 +285,13 @@ class GrupoBorgesDB:
                 ("lifecycle_detail", "TEXT"),
                 ("lifecycle_event", "TEXT"),
                 ("lifecycle_updated_at", "INTEGER"),
+                ("executor_kind", "TEXT"),
+                ("status_line", "TEXT"),
+                ("active_task_label", "TEXT"),
+                ("context_pct", "REAL"),
+                ("session_started_at", "INTEGER"),
+                ("last_assistant_message", "TEXT"),
+                ("token_usage_json", "TEXT"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
 
@@ -394,6 +403,9 @@ class GrupoBorgesDB:
                 """
                 SELECT a.*, s.cli AS state_cli, s.model AS state_model,
                        s.current_task_id, s.last_seen, s.pane_excerpt,
+                       s.executor_kind, s.status_line, s.active_task_label,
+                       s.context_pct, s.session_started_at,
+                       s.last_assistant_message, s.token_usage_json,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at, s.instance_count
                 FROM agents a
@@ -412,6 +424,9 @@ class GrupoBorgesDB:
                 """
                 SELECT a.*, s.cli AS state_cli, s.model AS state_model,
                        s.current_task_id, s.last_seen, s.pane_excerpt,
+                       s.executor_kind, s.status_line, s.active_task_label,
+                       s.context_pct, s.session_started_at,
+                       s.last_assistant_message, s.token_usage_json,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at, s.instance_count
                 FROM agents a
@@ -512,6 +527,54 @@ class GrupoBorgesDB:
                 WHERE slug = ?
                 """,
                 (now, status, clean_detail, event, now, slug),
+            )
+
+    async def update_agent_codex_state(
+        self,
+        slug: str,
+        **fields: Any,
+    ) -> None:
+        await asyncio.to_thread(self._update_agent_codex_state, slug, **fields)
+
+    def _update_agent_codex_state(self, slug: str, **fields: Any) -> None:
+        allowed = {
+            "executor_kind",
+            "status_line",
+            "active_task_label",
+            "context_pct",
+            "session_started_at",
+            "last_assistant_message",
+            "token_usage_json",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return
+
+        if isinstance(updates.get("status_line"), str):
+            updates["status_line"] = updates["status_line"].strip()[:280] or None
+        if isinstance(updates.get("active_task_label"), str):
+            updates["active_task_label"] = updates["active_task_label"].strip()[:280] or None
+        if isinstance(updates.get("last_assistant_message"), str):
+            updates["last_assistant_message"] = (
+                updates["last_assistant_message"].strip()[:280] or None
+            )
+
+        now = int(time.time())
+        assignments = ["last_seen = ?"]
+        values: list[Any] = [now]
+        for key, value in updates.items():
+            assignments.append(f"{key} = ?")
+            values.append(value)
+        values.append(slug)
+
+        with self._connect() as conn, conn:
+            conn.execute(
+                f"""
+                UPDATE agent_state
+                SET {", ".join(assignments)}
+                WHERE slug = ?
+                """,
+                values,
             )
 
     # ---------- task_events ----------
@@ -1478,7 +1541,7 @@ class GrupoBorgesDB:
 
         if next_status == "review" and lifecycle_status != "ocioso":
             return None
-        if next_status == "blocked" and lifecycle_status != "aguardando":
+        if next_status == "blocked" and lifecycle_status not in {"aguardando", "offline"}:
             return None
 
         now = int(time.time())
@@ -2461,6 +2524,9 @@ class GrupoBorgesDB:
                 """
                 SELECT a.*, s.cli AS state_cli, s.model AS state_model,
                        s.current_task_id, s.last_seen, s.pane_excerpt,
+                       s.executor_kind, s.status_line, s.active_task_label,
+                       s.context_pct, s.session_started_at,
+                       s.last_assistant_message, s.token_usage_json,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at, s.instance_count
                 FROM agents a

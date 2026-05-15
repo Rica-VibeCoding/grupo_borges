@@ -38,6 +38,13 @@ CREATE TABLE IF NOT EXISTS agent_state (
     last_seen         INTEGER,                              -- unix timestamp do último heartbeat
     jsonl_path        TEXT,                                 -- arquivo JSONL ativo
     pane_excerpt      TEXT,                                 -- últimos N chars do tmux capture-pane
+    executor_kind     TEXT,                                 -- NULL=Claude Code, "codex"=Tara/Codex
+    status_line       TEXT,                                 -- linha curta de status Codex
+    active_task_label TEXT,                                 -- descrição curta da tarefa Codex atual
+    context_pct       REAL,                                 -- input_tokens / janela do modelo * 100
+    session_started_at INTEGER,                             -- epoch da última execução/sessão Codex
+    last_assistant_message TEXT,                            -- snippet do último agent_message Codex
+    token_usage_json  TEXT,                                 -- usage JSON do último turn.completed
     lifecycle_status  TEXT,                                 -- microestado: session | prompt | tool | subagent | idle | error | event
     lifecycle_detail  TEXT,                                 -- detalhe curto pra UI (tool, subagent, outcome)
     lifecycle_event   TEXT,                                 -- último evento bruto que alimentou lifecycle
