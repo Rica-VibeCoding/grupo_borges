@@ -126,10 +126,6 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
           );
         })}
       </div>
-
-      <p className="task-review-foot">
-        ACEITAR → done · REJEITAR → running (volta pro agente com nota) · RE-ENFILEIRAR → ready
-      </p>
     </section>
   );
 }
