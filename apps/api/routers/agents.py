@@ -1,22 +1,28 @@
 """
-GET /api/agents                     — lista 6 agentes da frota com state agregado
-GET /api/agents/{slug}              — detalhe + state de um agente
-GET /api/agents/{slug}/instances    — lista instâncias do agente (pílulas multi-instância)
-GET /api/agents/{slug}/sparkline    — eventos por hora (mini-chart de atividade)
-GET /api/agents/{slug}/skills       — skills do workspace (.claude/skills/*/SKILL.md)
-GET /api/agents/{slug}/docs         — docs do workspace (lista + resolved com @include)
-GET /api/agents/{slug}/tables       — tabelas do domínio do agente (de agents.yaml)
+GET  /api/agents                       — lista 6 agentes da frota com state agregado
+GET  /api/agents/{slug}                — detalhe + state de um agente
+GET  /api/agents/{slug}/instances      — lista instâncias do agente (pílulas multi-instância)
+GET  /api/agents/{slug}/sparkline      — eventos por hora (mini-chart de atividade)
+GET  /api/agents/{slug}/skills         — skills do workspace (.claude/skills/*/SKILL.md)
+GET  /api/agents/{slug}/docs           — docs do workspace (lista + resolved com @include)
+GET  /api/agents/{slug}/tables         — tabelas do domínio do agente (de agents.yaml)
+GET  /api/agents/{slug}/pane/stream    — DS-2 stub: SSE com excerpt do pane (1 Hz na impl)
+POST /api/agents/{slug}/input          — DS-2 stub: envia texto pro pane via paste-buffer
+POST /api/agents/{slug}/model          — DS-2 stub: troca modelo via /model <slug>
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
-from typing import Any, Literal
+import time
+from typing import Any, AsyncGenerator, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, Field
+from sse_starlette import EventSourceResponse
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
 from services import tmux_driver
@@ -245,3 +251,96 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     return agent
+
+
+# ----- Chat / Pane endpoints (DS-2) ---------------------------------------
+# Stubs. Tipos + roteamento + gates determinísticos prontos; lógica real entra
+# em passo 2 (send_message, capture_pane loop, upsert_agent_state, task_event).
+
+ChatModel = Literal["opus", "sonnet", "haiku"]
+
+
+class PaneStreamEvent(BaseModel):
+    excerpt: str
+    captured_at: int
+    executor_kind: str
+
+
+class InputRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=8192)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+
+class InputResponse(BaseModel):
+    tmux_delivered: bool
+    sent_at: int
+
+
+class ModelChangeRequest(BaseModel):
+    model: ChatModel
+    force: bool = False
+
+
+class ModelChangeResponse(BaseModel):
+    tmux_delivered: bool
+    state_persisted: bool
+    confirmed: bool
+    model: str
+
+
+@router.get("/{slug}/pane/stream")
+async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
+    """SSE com excerpt do pane em tempo real (1 Hz na impl real).
+
+    Stub: 404 quando agente não existe; senão emite 1 evento placeholder e fecha.
+    Tara: teste cobre 404 + recebimento do placeholder + close gracioso.
+    """
+    await _get_agent_or_404(request, slug)
+
+    async def _placeholder_stream() -> AsyncGenerator[dict, None]:
+        yield {
+            "event": "pane",
+            "data": json.dumps(
+                {
+                    "excerpt": "",
+                    "captured_at": int(time.time()),
+                    "executor_kind": "",
+                    "stub": True,
+                }
+            ),
+        }
+
+    return EventSourceResponse(_placeholder_stream())
+
+
+@router.post("/{slug}/input", response_model=InputResponse)
+async def send_agent_input(
+    slug: str, payload: InputRequest, request: Request
+) -> InputResponse:
+    """Cola `payload.text` no pane ativo via tmux paste-buffer + Enter.
+
+    Stub: 404 quando agente não existe; valida payload via Pydantic (422 em
+    text vazio/>8KB ou idempotency_key vazio/>128); senão 501.
+    Impl real: chama tmux_driver.send_message, retorna delivered.
+    """
+    await _get_agent_or_404(request, slug)
+    raise HTTPException(status_code=501, detail="not_implemented")
+
+
+@router.post("/{slug}/model", response_model=ModelChangeResponse)
+async def change_agent_model(
+    slug: str, payload: ModelChangeRequest, request: Request
+) -> ModelChangeResponse:
+    """Troca modelo do agente via `/model <slug>` (Claude Code).
+
+    Gates determinísticos já no stub:
+    - 404 quando agente não existe
+    - 422 (Pydantic) quando model fora do whitelist opus/sonnet/haiku
+    - 422 `codex_no_runtime_model_switch` quando executor_kind=codex (DS-2.1)
+    Caminho feliz: 501 (impl real envia /model + poll capture_pane + persist).
+    Gate 409 `agent_busy_confirm_required` entra com a impl real.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if agent.get("executor_kind") == "codex":
+        raise HTTPException(status_code=422, detail="codex_no_runtime_model_switch")
+    raise HTTPException(status_code=501, detail="not_implemented")
