@@ -195,6 +195,23 @@ export async function postAgentInput(
   return res.json();
 }
 
+export async function postAgentVoice(
+  slug: string,
+  audioBlob: Blob,
+): Promise<{ transcribed: string; tmux_delivered: boolean; duration_ms: number }> {
+  const fd = new FormData();
+  fd.append('audio', audioBlob, 'voice.webm');
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/voice`, {
+    method: 'POST',
+    body: fd,
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`postAgentVoice ${res.status}: ${txt}`);
+  }
+  return res.json();
+}
+
 export async function postAgentModel(
   slug: string,
   model: ChatModelSlug,
