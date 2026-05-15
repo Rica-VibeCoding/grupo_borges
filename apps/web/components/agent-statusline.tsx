@@ -100,7 +100,7 @@ export function AgentStatusline({
         </span>
         <span className="pm-sep" aria-hidden="true">·</span>
         <span className="pm-tok pm-dim" title={seenTitle}>
-          visto {seenLabel}
+          visto {seenLabel.replace(/^há /, '')}
         </span>
       </div>
     );

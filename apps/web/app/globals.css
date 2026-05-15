@@ -116,17 +116,29 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 /* flex:1 + min-height:0 essenciais pro Tabs.Content preencher o frame
-   (Radix renderiza só o panel ativo) e pro flex-child interno contrair
-   abaixo do conteúdo natural — sem isso a aba CHAT colapsa pro tamanho
-   mínimo do textarea+preview e sobra vazio embaixo do input. */
-.agent-modal-panel {
+   e pro flex-child interno contrair abaixo do conteúdo natural — sem
+   isso a aba CHAT colapsa pro tamanho mínimo do textarea+preview e
+   sobra vazio embaixo do input.
+   ATENÇÃO: declarar `display: flex` aqui sem [data-state="active"]
+   ANULA o `hidden` attribute que Radix injeta nos Tabs.Content
+   inativos (CSS author override mata UA `[hidden] { display: none }`).
+   Validado via Playwright: 5 panels inativos de 79.5px ocupando
+   espaço fantasma faz o panel ativo encolher em ~400px. */
+.agent-modal-panel[data-state="active"] {
   padding: 12px 14px 14px;
   overflow: auto;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
 }
+.agent-modal-panel[hidden],
+.agent-modal-panel[data-state="inactive"] {
+  display: none !important;
+}
+/* Aba CHAT: input cola na base via padding-bottom 0. Outras abas
+   (INF, SKILLS, DOCS, TABELAS, HANDOFF) preservam o padding 14px. */
+.agent-modal-panel:has(> .chat-panel) { padding-bottom: 0; }
 
 .agent-modal-footer {
   flex: none;
@@ -528,7 +540,11 @@
 /* AgentModal · aba CHAT (DS-2) ------------------------------------------ */
 .chat-panel {
   display: flex; flex-direction: column; gap: 8px;
-  height: 100%; min-height: 0;
+  /* flex:1 1 0 garante crescimento dentro do .agent-modal-panel
+     (que é flex column). height:100% não basta porque resolve antes
+     do flex layout. */
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .chat-preview-wrap {
