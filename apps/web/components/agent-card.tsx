@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { Agent, AgentActivityState, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
-import { deriveInitials, formatDuration, formatLastSeen, parseContextPct, parseModelFromPane, shortModelName } from '../lib/cockpit-types';
+import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
 import { formatRelativeShort, summarize } from './activity-feed';
+import { AgentStatusline } from './agent-statusline';
 import { SelectField } from './select-field';
 
 // V2.4 — 4 estados, textos pt-BR próprios. Glow na borda; ocioso estático,
@@ -85,21 +86,7 @@ export function AgentCard({
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
-  const model = agent.state_model ?? agent.model_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
-  // sessionStarted: Codex usa session_started_at (do evento); CC usa pane_session_started_at
-  // pra refletir /clear (zera o transcript). instances[0].started_at é uptime do tmux,
-  // que não muda no /clear — só como fallback quando o pane não tem statusline parseável.
-  const sessionStarted = isCodexExecutor
-    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
-    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
-  const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
-  // contextPct: Codex recebe campo direto do backend; CC faz parse do pane_excerpt
-  const contextPct = isCodexExecutor
-    ? (agent.context_pct ?? null)
-    : parseContextPct(agent.pane_excerpt);
-  // paneModel: CC extrai do statusline do pane; Codex usa null (cai no shortModelName(model))
-  const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent);
@@ -239,28 +226,8 @@ export function AgentCard({
             <span className="la-text la-empty">— sem atividade recente</span>
           )}
         </div>
-        <div className="pane pane-session" aria-hidden="true">
-          <span className="ps-model">{paneModel ?? shortModelName(model)}</span>
-          <span className="ps-sep">·</span>
-          <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
-          <span className="ps-sep">·</span>
-          <span className="ps-ctx">
-            {contextPct !== null ? (
-              <>
-                <span className="ps-bar" aria-hidden="true">
-                  {Array.from({ length: 10 }, (_, i) => (
-                    <span
-                      key={i}
-                      className="psb-cell"
-                      data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
-                    />
-                  ))}
-                </span>
-                {' '}{contextPct}%
-              </>
-            ) : '— %'}
-          </span>
-        </div>
+        <AgentStatusline agent={agent} serverNow={serverNow} variant="card" />
+
       </div>
     </article>
   );
