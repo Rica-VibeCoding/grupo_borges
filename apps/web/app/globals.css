@@ -458,24 +458,25 @@
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--status-idle); flex: none;
 }
-.pane-modal .pm-chip[data-state="trabalhando"] {
-  border-color: var(--accent-border); color: var(--accent);
-}
-.pane-modal .pm-chip[data-state="trabalhando"] .pm-dot {
-  background: var(--accent); box-shadow: 0 0 6px var(--accent);
-}
-.pane-modal .pm-chip[data-state="aguardando"] {
-  border-color: rgba(255,107,53,0.30); color: var(--status-blocked);
-}
-.pane-modal .pm-chip[data-state="aguardando"] .pm-dot { background: var(--status-blocked); }
-.pane-modal .pm-chip[data-state="offline"] { color: var(--status-offline); opacity: 0.7; }
-.pane-modal .pm-chip[data-state="offline"] .pm-dot { background: var(--status-offline); }
-
 .pane-modal .pm-kind {
   font-size: 9px; letter-spacing: 0.2em;
   color: var(--muted);
 }
 .pane-modal .pm-ctx { display: inline-flex; align-items: center; gap: 4px; }
+
+@media (max-width: 600px) {
+  /* Mobile: 4 chips em 2x2 (2 linhas) pra não comer vertical. Em desktop
+     deixa wrap natural (1 linha quando cabe). */
+  .pane-modal {
+    gap: 6px 8px;
+    width: 100%;
+  }
+  .pane-modal .pm-chip {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    justify-content: center;
+  }
+}
 
 /* AgentModal · aba CHAT (DS-2) ------------------------------------------ */
 .chat-panel {
