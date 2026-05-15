@@ -17,7 +17,7 @@ export function CockpitLiveV2() {
         <AgentCards agents={fleet.agents} serverNow={fleet.health.server_now} />
       </aside>
       <main className="v2-main">
-        <div className="section-label" aria-hidden="true">
+        <div className="section-label v2-kanban-section-label" aria-hidden="true">
           <span className="num-tag">04</span>
           <span>KANBAN · FLUXO DE TAREFAS</span>
           <span className="rule" />

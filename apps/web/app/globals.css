@@ -1120,10 +1120,19 @@
   .sse-banner .sb-msg { padding:0 12px !important; gap:8px !important; font-size:10px !important; }
   .sse-banner .sb-retry { padding:0 12px !important; }
   .sse-banner .sep { display:none !important; }
+  .v2-kanban-section-label { display: none !important; }
   .kanban-topline { flex-wrap:wrap !important; gap:6px 0 !important; padding:8px 12px !important; }
   .kanban-topline .right { display:none !important; }
-  .kanban-mobile-tabs { flex-wrap:wrap !important; }
-  .kanban-mobile-tab { flex:1 1 0 !important; min-width:0 !important; padding:10px 4px !important; min-height:44px !important; font-size:10px !important; }
+  .kanban-mobile-tabs { flex-wrap:nowrap !important; overflow-x:auto !important; }
+  .kanban-mobile-tab {
+    flex:0 0 auto !important;
+    min-width:0 !important;
+    padding:10px 12px !important;
+    min-height:44px !important;
+    font-size:10px !important;
+    letter-spacing:0.04em !important;
+    white-space:nowrap !important;
+  }
   .footer .grp { flex-wrap:wrap !important; }
   .footer .sb-item { padding:6px 8px !important; font-size:9px !important; }
   .toast-stack { right:8px !important; bottom:auto !important; top:8px !important; max-width:calc(100vw - 16px) !important; }
