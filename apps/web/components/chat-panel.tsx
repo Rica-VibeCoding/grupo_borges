@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as Select from '@radix-ui/react-select';
 import type { Agent } from '../lib/cockpit-types';
 import {
   AgentInputError,
@@ -15,14 +16,18 @@ import { useIsMobile } from '../lib/use-is-mobile';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { AgentStatusline } from './agent-statusline';
-import { SelectField } from './select-field';
-import { Sparkline } from './sparkline';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'opus', label: 'Opus' },
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'haiku', label: 'Haiku' },
 ];
+
+const MODEL_LABEL: Record<ChatModelSlug, string> = {
+  opus: 'Opus',
+  sonnet: 'Sonnet',
+  haiku: 'Haiku',
+};
 
 /**
  * Aba CHAT do AgentModal — DS-2.
@@ -45,11 +50,12 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
 
   return (
     <div className="chat-panel">
-      <div className="chat-head">
-        <AgentStatusline agent={agent} serverNow={serverNow} variant="modal" />
-        <ModelSelector agent={agent} />
-      </div>
-      <Sparkline buckets={agent.sparkline} variant="pulse" />
+      <AgentStatusline
+        agent={agent}
+        serverNow={serverNow}
+        variant="modal"
+        extra={<ModelChip agent={agent} />}
+      />
       <PanePreview
         excerpt={excerpt}
         executorKind={executorKind}
@@ -282,9 +288,12 @@ function ChatInput({
   );
 }
 
-// ----- ModelSelector ------------------------------------------------------
+// ----- ModelChip ---------------------------------------------------------
+// Chip clickable inline na statusline (Pavan opção B). Visual: "Opus ▾".
+// Lógica idêntica ao antigo <ModelSelector>: confirmação modal quando
+// status === 'trabalhando', toast em sucesso/falha, Codex disabled+tooltip.
 
-function ModelSelector({ agent }: { agent: Agent }) {
+function ModelChip({ agent }: { agent: Agent }) {
   const { mutate } = useFleet();
   const { fire } = useToast();
   const isCodex = agent.executor_kind === 'codex';
@@ -304,31 +313,16 @@ function ModelSelector({ agent }: { agent: Agent }) {
       try {
         const res = await postAgentModel(agent.slug, target, { force });
         if (!res.tmux_delivered) {
-          fire({
-            kind: 'warn',
-            msg: 'troca não entregue',
-            sub: 'pane fora do CLI esperado',
-            ttlMs: 6000,
-          });
+          fire({ kind: 'warn', msg: 'troca não entregue', sub: 'pane fora do CLI esperado', ttlMs: 6000 });
         } else if (!res.confirmed) {
-          fire({
-            kind: 'warn',
-            msg: 'troca enviada, não confirmada',
-            sub: 'verifique a statusline do pane',
-            ttlMs: 6000,
-          });
+          fire({ kind: 'warn', msg: 'troca enviada, não confirmada', sub: 'verifique a statusline', ttlMs: 6000 });
         } else {
           fire({ kind: 'success', msg: `modelo trocado pra ${target}` });
         }
         await mutate();
       } catch (err) {
         const detail = err instanceof AgentInputError ? err.detail : null;
-        fire({
-          kind: 'warn',
-          msg: 'falha ao trocar modelo',
-          sub: detail ?? String(err),
-          ttlMs: 6000,
-        });
+        fire({ kind: 'warn', msg: 'falha ao trocar modelo', sub: detail ?? String(err), ttlMs: 6000 });
       } finally {
         setBusy(false);
         setPending(null);
@@ -338,43 +332,52 @@ function ModelSelector({ agent }: { agent: Agent }) {
   );
 
   const onSelect = useCallback(
-    (next: ChatModelSlug) => {
+    (next: string) => {
+      const slug = next as ChatModelSlug;
       if (busy) return;
-      if (next === currentSlug) return;
+      if (slug === currentSlug) return;
       if (agent.status === 'trabalhando') {
-        setConfirmTarget(next);
+        setConfirmTarget(slug);
         return;
       }
-      void sendChange(next, false);
+      void sendChange(slug, false);
     },
     [agent.status, busy, currentSlug, sendChange],
   );
 
-  if (isCodex) {
-    return (
-      <div className="chat-model" title="Codex não troca modelo em runtime — DS-2.1 vai tratar via restart com -m">
-        <SelectField<ChatModelSlug>
-          label="Modelo"
-          value={(currentSlug ?? 'opus') as ChatModelSlug}
-          onValueChange={() => {}}
-          options={MODEL_OPTIONS}
-          disabled
-        />
-      </div>
-    );
-  }
+  const displaySlug = (pending ?? currentSlug ?? 'opus') as ChatModelSlug;
+  const displayLabel = MODEL_LABEL[displaySlug];
+  const disabled = busy || isCodex;
 
   return (
     <>
-      <div className="chat-model" aria-busy={busy}>
-        <SelectField<ChatModelSlug>
-          label="Modelo"
-          value={(pending ?? currentSlug ?? 'opus') as ChatModelSlug}
-          onValueChange={onSelect}
-          options={MODEL_OPTIONS}
-          disabled={busy}
-        />
-      </div>
+      <Select.Root
+        value={displaySlug}
+        onValueChange={onSelect}
+        disabled={disabled}
+      >
+        <Select.Trigger
+          className="model-chip"
+          aria-label="Modelo"
+          aria-busy={busy}
+          title={isCodex ? 'Codex não troca modelo em runtime' : 'Trocar modelo'}
+        >
+          <Select.Value>{displayLabel}</Select.Value>
+          <Select.Icon className="model-chip-caret" aria-hidden="true">▾</Select.Icon>
+        </Select.Trigger>
+        <Select.Portal>
+          <Select.Content className="select-content" position="popper" sideOffset={4}>
+            <Select.Viewport>
+              {MODEL_OPTIONS.map((opt) => (
+                <Select.Item key={opt.value} value={opt.value} className="select-item">
+                  <Select.ItemText>{opt.label}</Select.ItemText>
+                  <Select.ItemIndicator className="select-indicator">✓</Select.ItemIndicator>
+                </Select.Item>
+              ))}
+            </Select.Viewport>
+          </Select.Content>
+        </Select.Portal>
+      </Select.Root>
       <Dialog.Root
         open={confirmTarget !== null}
         onOpenChange={(o) => { if (!o) setConfirmTarget(null); }}

@@ -461,76 +461,57 @@
 
 .muted { color: var(--muted); }
 
-/* AgentStatusline · variant="modal" (DS-2 sub D) -------------------------- */
-.pane-modal {
-  display: flex; flex-wrap: wrap; align-items: center;
-  gap: 6px 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
-  flex: 1; min-width: 0;
-}
-.pane-modal .pm-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 8px;
-  /* Chips neutros: cinza claro sem azul. Hierarquia visual fica:
-       status (header)  →  cor luminosa (status do agente)
-       ctx bar          →  gradiente verde/amarelo/vermelho (carga real)
-       chips info       →  neutros (não competem com os 2 acima) */
-  border: 1px solid var(--border-subtle);
-  background: transparent;
+/* AgentStatusline · variant="modal" (DS-2 polish: 1 linha) ---------------- */
+.pm-line {
+  display: flex; align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
   color: var(--muted);
-  letter-spacing: 0.04em;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0; flex-wrap: wrap;
+}
+.pm-line .pm-tok {
+  display: inline-flex; align-items: center; gap: 5px;
   white-space: nowrap;
 }
-.pane-modal .pm-chip .pm-v { color: var(--text); }
-.pane-modal .pm-k {
-  color: var(--muted); font-size: 9px; letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.pane-modal .pm-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--status-idle); flex: none;
-}
+.pm-line .pm-v { color: var(--text); }
+.pm-line .pm-dim { color: var(--muted); }
+.pm-line .pm-sep { color: var(--border); user-select: none; }
+.pm-line .pm-tok-ctx { gap: 6px; }
+.pm-line .ps-bar .psb-cell[data-tier="low"][data-on="1"]  { background: var(--status-done); }
+.pm-line .ps-bar .psb-cell[data-tier="mid"][data-on="1"]  { background: #f0c000; }
+.pm-line .ps-bar .psb-cell[data-tier="high"][data-on="1"] { background: var(--status-blocked); }
+.pm-line .pm-slot { display: inline-flex; align-items: center; }
 
-/* CTX bar — gradiente conforme carga: verde (< 50%) → amarelo (50–80%) → vermelho (>= 80%) */
-.pane-modal .ps-bar .psb-cell[data-tier="low"][data-on="1"]  { background: var(--status-done); }
-.pane-modal .ps-bar .psb-cell[data-tier="mid"][data-on="1"]  { background: #f0c000; }
-.pane-modal .ps-bar .psb-cell[data-tier="high"][data-on="1"] { background: var(--status-blocked); }
-.pane-modal .pm-kind {
-  font-size: 9px; letter-spacing: 0.2em;
-  color: var(--muted);
+/* Chip clickable do modelo (Opus ▾) — slot inline na statusline.
+   Pavan opção B: troca de modelo é rara, chip ocupa pouco espaço. */
+.model-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
-.pane-modal .pm-ctx { display: inline-flex; align-items: center; gap: 4px; }
-
-@media (max-width: 600px) {
-  /* Mobile: 4 chips em 2x2 (2 linhas) pra não comer vertical. Em desktop
-     deixa wrap natural (1 linha quando cabe). */
-  .pane-modal {
-    gap: 6px 8px;
-    width: 100%;
-  }
-  .pane-modal .pm-chip {
-    flex: 1 1 calc(50% - 4px);
-    min-width: 0;
-    justify-content: center;
-  }
+.model-chip:hover:not(:disabled) {
+  border-color: var(--accent-border); color: var(--accent); background: var(--accent-subtle);
 }
+.model-chip:focus-visible {
+  outline: none; box-shadow: var(--focus-ring-glow); border-color: var(--accent-border);
+}
+.model-chip[disabled] { opacity: 0.55; cursor: not-allowed; }
+.model-chip[aria-busy="true"] { opacity: 0.7; }
+.model-chip-caret { font-size: 9px; color: var(--muted); }
 
 /* AgentModal · aba CHAT (DS-2) ------------------------------------------ */
 .chat-panel {
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 8px;
   height: 100%; min-height: 0;
-}
-.chat-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
-  padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle);
-}
-.chat-model { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.chat-model .select-field {
-  flex-direction: row; align-items: center; gap: 8px;
-}
-.chat-model .select-field > span {
-  font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted);
 }
 
 .chat-preview-wrap { position: relative; flex: 1; min-height: 160px; display: flex; }
@@ -616,10 +597,9 @@
 .chat-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
 @media (max-width: 600px) {
-  .chat-head { flex-direction: column; align-items: stretch; }
-  .chat-preview { max-height: 40vh; font-size: 10px; }
-  /* Input fica horizontal mesmo no mobile — [textarea] [→] estilo WhatsApp;
-     send ainda é 40x40 fixo. */
+  .chat-preview { max-height: 44vh; font-size: 10px; }
+  .pm-line { font-size: 10.5px; gap: 6px; }
+  /* Input fica horizontal: [avatar] [textarea] [mic] [⬆] estilo WhatsApp. */
 }
 
 /* AgentModal — listas de skills/tabelas + viewer de docs (Fase 3) */
@@ -666,8 +646,7 @@
   .agent-modal-docs-nav { flex-direction: row; flex-wrap: wrap; }
 }
 
-/* Cantos arredondados sutis: chips, listas, status do header (DS-2 polish) */
-.pane-modal .pm-chip { border-radius: var(--radius-chip); }
+/* Cantos arredondados sutis: listas, status do header (DS-2 polish) */
 .missao-caps-list li { border-radius: var(--radius-chip); }
 
 .agent-modal-head .status-bar {

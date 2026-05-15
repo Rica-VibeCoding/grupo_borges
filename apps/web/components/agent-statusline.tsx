@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import type { Agent, AgentStatus } from '../lib/cockpit-types';
 import {
   formatDuration,
@@ -39,10 +40,12 @@ export function AgentStatusline({
   agent,
   serverNow,
   variant = 'card',
+  extra,
 }: {
   agent: Agent;
   serverNow: number;
   variant?: 'card' | 'modal';
+  extra?: ReactNode;
 }) {
   const model = agent.state_model ?? agent.model_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
@@ -57,18 +60,24 @@ export function AgentStatusline({
   const modelLabel = paneModel ?? shortModelName(model);
 
   if (variant === 'modal') {
-    // Dedupe: status chip mora no top-right do header do AgentModal (`.status-bar`);
-    // model mora no <ModelSelector> da aba CHAT. Aqui não duplicamos — só info
-    // adicional que o header/selector não mostram (executor, ctx, session, visto).
+    // 1-linha (DS-2 polish): tokens separados por `·` em vez de chips empilhados.
+    // Modelo entra como slot `extra` (chip clickable do ModelSelector inline);
+    // status já mora no header `.status-bar`, executor_kind no `title`.
+    const sessionLabel = sessionSecs !== null ? formatDuration(sessionSecs) : '—';
+    const seenLabel = formatLastSeen(agent.last_seen, serverNow);
+    const seenTitle = agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—';
     return (
-      <div className="pane-modal mono" role="group" aria-label="Statusline do agente">
-        <span className="pm-chip pm-kind" title={`executor: ${agent.executor_kind ?? 'claude_code'}`}>
-          {isCodexExecutor ? 'CODEX' : 'CC'}
-        </span>
-        <span className="pm-chip">
-          <span className="pm-k">ctx</span>
+      <div
+        className="pm-line mono"
+        role="group"
+        aria-label="Statusline do agente"
+        title={`executor: ${agent.executor_kind ?? 'claude_code'}`}
+      >
+        {extra && <span className="pm-slot">{extra}</span>}
+        {extra && <span className="pm-sep" aria-hidden="true">·</span>}
+        <span className="pm-tok pm-tok-ctx">
           {contextPct !== null ? (
-            <span className="pm-ctx">
+            <>
               <span className="ps-bar" aria-hidden="true">
                 {Array.from({ length: 10 }, (_, i) => (
                   <span
@@ -79,22 +88,19 @@ export function AgentStatusline({
                   />
                 ))}
               </span>
-              <span className="pm-v"> {contextPct}%</span>
-            </span>
+              <span className="pm-v">{contextPct}%</span>
+            </>
           ) : (
-            <span className="pm-v">— %</span>
+            <span className="pm-v pm-dim">ctx —</span>
           )}
         </span>
-        <span className="pm-chip">
-          <span className="pm-k">session</span>
-          <span className="pm-v">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
+        <span className="pm-sep" aria-hidden="true">·</span>
+        <span className="pm-tok" title="duração da sessão">
+          <span className="pm-v">{sessionLabel}</span>
         </span>
-        <span
-          className="pm-chip pm-seen"
-          title={agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—'}
-        >
-          <span className="pm-k">visto</span>
-          <span className="pm-v">{formatLastSeen(agent.last_seen, serverNow)}</span>
+        <span className="pm-sep" aria-hidden="true">·</span>
+        <span className="pm-tok pm-dim" title={seenTitle}>
+          visto {seenLabel}
         </span>
       </div>
     );
