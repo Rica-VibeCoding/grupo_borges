@@ -42,26 +42,18 @@ function formatUnixDateTime(unixSec: number | null): string {
   return formatDateTime(unixSec);
 }
 
-const TIMELINE_TIME_FMT = new Intl.DateTimeFormat('pt-BR', {
+const TIMELINE_FMT = new Intl.DateTimeFormat('sv-SE', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
   timeZone: 'America/Sao_Paulo',
 });
-const TIMELINE_DATE_FMT = new Intl.DateTimeFormat('pt-BR', {
-  day: '2-digit',
-  month: '2-digit',
-  timeZone: 'America/Sao_Paulo',
-});
 
 function formatTimelineTime(unixSec: number): string {
-  const date = new Date(unixSec * 1000);
-  const today = new Date();
-  const sameDay =
-    date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) ===
-    today.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-  if (sameDay) return TIMELINE_TIME_FMT.format(date);
-  return `${TIMELINE_DATE_FMT.format(date)} ${TIMELINE_TIME_FMT.format(date)}`;
+  return TIMELINE_FMT.format(new Date(unixSec * 1000));
 }
 
 function Field({ label, value }: { label: string; value: string | number | null }) {
