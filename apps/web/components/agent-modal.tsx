@@ -89,7 +89,7 @@ export function AgentModal() {
                   </Dialog.Close>
                 </div>
               </header>
-              <Tabs.Root defaultValue="inf" className="agent-modal-tabs">
+              <Tabs.Root defaultValue="chat" className="agent-modal-tabs">
                 <Tabs.List className="agent-modal-tablist" aria-label="Abas de detalhes do agente">
                   <Tabs.Trigger value="chat" className="agent-modal-tab">CHAT</Tabs.Trigger>
                   <Tabs.Trigger value="inf" className="agent-modal-tab">INF.</Tabs.Trigger>
