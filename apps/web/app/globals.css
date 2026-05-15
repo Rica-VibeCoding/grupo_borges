@@ -614,15 +614,25 @@
   padding: 3px 7px; border: 1px solid var(--border); color: var(--muted);
 }
 .agent-modal-head .status-bar .sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-idle); flex: none; }
-.agent-modal-head .status-bar[data-state="running"] { color: var(--accent); border-color: var(--accent-border); background: var(--accent-subtle); }
-.agent-modal-head .status-bar[data-state="running"] .sdot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
-.agent-modal-head .status-bar[data-state="review"] { color: var(--status-blocked); border-color: rgba(255,107,53,0.30); }
-.agent-modal-head .status-bar[data-state="review"] .sdot { background: var(--status-blocked); }
-.agent-modal-head .status-bar[data-state="blocked"] { color: var(--status-blocked); border-color: rgba(255,107,53,0.30); }
-.agent-modal-head .status-bar[data-state="blocked"] .sdot { background: var(--status-blocked); }
-.agent-modal-head .status-bar[data-state="done"] { color: var(--status-done); border-color: rgba(100,255,218,0.30); }
-.agent-modal-head .status-bar[data-state="done"] .sdot { background: var(--status-done); }
-.agent-modal-head .status-bar[data-state="offline"] { color: var(--status-offline); }
+/* data-state vem do Agent.status (pt-BR). Mesmos vars --status-* do card pra
+   dar a "cor luminosa" que Rica cravou — header alinha com o card visualmente. */
+.agent-modal-head .status-bar[data-state="trabalhando"] {
+  color: var(--status-running); border-color: rgba(0,240,255,0.30); background: var(--accent-subtle);
+}
+.agent-modal-head .status-bar[data-state="trabalhando"] .sdot {
+  background: var(--status-running); box-shadow: 0 0 6px var(--status-running);
+}
+.agent-modal-head .status-bar[data-state="ocioso"] {
+  color: var(--status-idle); border-color: var(--border-subtle);
+}
+.agent-modal-head .status-bar[data-state="ocioso"] .sdot { background: var(--status-idle); }
+.agent-modal-head .status-bar[data-state="aguardando"] {
+  color: var(--status-blocked); border-color: rgba(255,107,53,0.30);
+}
+.agent-modal-head .status-bar[data-state="aguardando"] .sdot {
+  background: var(--status-blocked); box-shadow: 0 0 6px var(--status-blocked);
+}
+.agent-modal-head .status-bar[data-state="offline"] { color: var(--status-offline); opacity: 0.7; }
 .agent-modal-head .status-bar[data-state="offline"] .sdot { background: var(--status-offline); }
 
 /* ============ TASK DETAIL ============ */
