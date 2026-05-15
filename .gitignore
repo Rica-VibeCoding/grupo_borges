@@ -30,6 +30,10 @@ secrets/
 *.db-wal
 apps/api/db/grupo_borges.db*
 
+# Uploads de imagens (gerados em runtime)
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+
 # Logs
 *.log
 logs/

@@ -7,13 +7,17 @@ existente, sem reinserir.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import re
 import sqlite3
 import uuid
+from pathlib import Path
 from typing import Annotated, Any, Literal, Union
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi.params import File
 from pydantic import BaseModel, Field
 
 REVIEWER_SLUG_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
@@ -725,6 +729,83 @@ async def checkpoint_task(
         "new_task_status": result["new_task_status"],
         "content_hash": chash,
     }
+
+
+_IMAGE_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_IMAGE_MAX_FILES = 5
+_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "tasks"
+
+
+@router.post("/{task_id}/images", status_code=status.HTTP_201_CREATED)
+async def upload_task_images(
+    task_id: str,
+    request: Request,
+    files: list[UploadFile] = File(...),
+) -> dict[str, Any]:
+    """Upload de imagens para uma task. Aceita até 5 arquivos por request (10 MB cada).
+
+    Salva em apps/api/uploads/tasks/{task_id}/{uuid}.{ext} e atualiza image_urls na task.
+    Retorna lista de URLs relativas prontas para o frontend montar <img src="...">.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+
+    task = await db.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+
+    if len(files) > _IMAGE_MAX_FILES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"máximo {_IMAGE_MAX_FILES} arquivos por request, recebidos {len(files)}",
+        )
+
+    dest_dir = _UPLOADS_BASE / task_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    uploaded: list[dict[str, Any]] = []
+    try:
+        for upload in files:
+            ct = (upload.content_type or "").lower()
+            if not ct.startswith("image/"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"arquivo {upload.filename!r}: content-type {ct!r} não é imagem",
+                )
+
+            # Sanitiza extensão: aceita só o whitelist; fallback .png
+            raw_ext = Path(upload.filename or "").suffix.lower()
+            ext = raw_ext if raw_ext in _IMAGE_ALLOWED_EXTENSIONS else ".png"
+
+            content = await upload.read()
+            if len(content) > _IMAGE_MAX_BYTES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"arquivo {upload.filename!r} excede 10 MB",
+                )
+
+            filename = f"{uuid.uuid4()}{ext}"
+            dest = dest_dir / filename
+            await asyncio.to_thread(dest.write_bytes, content)
+
+            rel_url = f"/uploads/tasks/{task_id}/{filename}"
+            uploaded.append(
+                {"url": rel_url, "filename": upload.filename, "size": len(content)}
+            )
+            log.info("task %s: imagem salva %s (%d bytes)", task_id, rel_url, len(content))
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("Erro ao salvar imagens da task %s: %s", task_id, exc)
+        raise HTTPException(status_code=500, detail="erro interno ao salvar imagem") from exc
+
+    new_urls = [item["url"] for item in uploaded]
+    updated = await db.append_task_image_urls(task_id, new_urls)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+
+    return {"task_id": task_id, "uploaded": uploaded}
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)

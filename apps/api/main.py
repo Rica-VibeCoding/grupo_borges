@@ -21,6 +21,8 @@ from pathlib import Path
 import yaml
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from starlette.responses import JSONResponse
 
 from config import get_settings
@@ -174,3 +176,9 @@ app.include_router(events_router.router, prefix="/api/events", tags=["events"])
 app.include_router(codex_events_router.router, prefix="/api/codex-events", tags=["codex"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
+
+# Static files: imagens de tasks. O diretório é criado on-demand pelo endpoint de upload,
+# mas garantimos que exista no boot para o mount não falhar.
+_uploads_dir = Path(__file__).resolve().parent / "uploads"
+_uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")

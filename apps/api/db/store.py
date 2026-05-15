@@ -95,17 +95,20 @@ def derive_prefix(name: str) -> str:
 def _normalize_task_row(task: dict[str, Any]) -> dict[str, Any]:
     """Parseia campos JSON-TEXT da row de `tasks` pra forma utilizável.
 
-    Hoje só `tags` precisa (TEXT JSON list[str]). Falhas silenciosas
-    preservam o valor bruto; o frontend tem fallback defensivo.
+    `tags` e `image_urls` são TEXT que armazenam JSON list[str].
+    Falhas silenciosas preservam o valor bruto; o frontend tem fallback defensivo.
     """
-    raw_tags = task.get("tags")
-    if raw_tags and isinstance(raw_tags, str):
-        try:
-            parsed = json.loads(raw_tags)
-            if isinstance(parsed, list):
-                task["tags"] = parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
+    for field in ("tags", "image_urls"):
+        raw = task.get(field)
+        if raw and isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    task[field] = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif raw is None:
+            task[field] = []
     return task
 
 
@@ -302,6 +305,7 @@ class GrupoBorgesDB:
                 ("reviewer_assignee", "TEXT"),
                 ("review_mode", "TEXT NOT NULL DEFAULT 'human'"),
                 ("tags", "TEXT"),
+                ("image_urls", "TEXT"),
             ):
                 self._add_column_if_missing(conn, "tasks", col, definition)
 
@@ -2267,6 +2271,37 @@ class GrupoBorgesDB:
             )
             if cur.rowcount == 0:
                 return None
+            return self._get_task_from_conn(conn, task_id)
+
+    async def append_task_image_urls(
+        self, task_id: str, new_urls: list[str]
+    ) -> dict[str, Any] | None:
+        """Appenda URLs ao campo image_urls da task (não substitui). Thread-safe."""
+        return await asyncio.to_thread(self._append_task_image_urls, task_id, new_urls)
+
+    def _append_task_image_urls(
+        self, task_id: str, new_urls: list[str]
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn, conn:
+            row = conn.execute(
+                "SELECT image_urls FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            existing: list[str] = []
+            raw = row["image_urls"]
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, list):
+                        existing = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            merged = existing + new_urls
+            conn.execute(
+                "UPDATE tasks SET image_urls = ? WHERE id = ?",
+                (json.dumps(merged, ensure_ascii=False), task_id),
+            )
             return self._get_task_from_conn(conn, task_id)
 
     @staticmethod
