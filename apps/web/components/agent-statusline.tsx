@@ -1,7 +1,20 @@
 'use client';
 
-import type { Agent } from '../lib/cockpit-types';
-import { formatDuration, parseContextPct, parseModelFromPane, shortModelName } from '../lib/cockpit-types';
+import type { Agent, AgentStatus } from '../lib/cockpit-types';
+import {
+  formatDuration,
+  formatLastSeen,
+  parseContextPct,
+  parseModelFromPane,
+  shortModelName,
+} from '../lib/cockpit-types';
+
+const STATUS_LABEL: Record<AgentStatus, string> = {
+  ocioso: 'Ocioso',
+  trabalhando: 'Trabalhando',
+  aguardando: 'Aguardando',
+  offline: 'Offline',
+};
 
 /**
  * Statusline compacta reutilizável (model · time · ctx%).
@@ -10,10 +23,10 @@ import { formatDuration, parseContextPct, parseModelFromPane, shortModelName } f
  *   Mesma marcação, mesmas classes CSS (`pane pane-session`, `ps-*`); ANSI/parse
  *   continuam vindo do `parseContextPct` / `parseModelFromPane` / Codex direto.
  *
- * Variant "modal" — placeholder; Daniel desenha versão expandida em DS-2 sub D
- * (ctx%, model, time, status, executor_kind, last_event delta).
+ * Variant "modal" — expandida (DS-2 sub D): chips horizontais com status,
+ *   executor_kind, model, time, ctx%, visto-em-rel. Usada na aba CHAT do
+ *   AgentModal pra dar contexto vivo do agente sem ocupar a vertical.
  */
-// TODO: variant="modal" expandida — Daniel
 export function AgentStatusline({
   agent,
   serverNow,
@@ -25,29 +38,64 @@ export function AgentStatusline({
 }) {
   const model = agent.state_model ?? agent.model_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
-  // sessionStarted: Codex usa session_started_at (do evento); CC usa pane_session_started_at
-  // pra refletir /clear (zera o transcript). instances[0].started_at é uptime do tmux,
-  // que não muda no /clear — só como fallback quando o pane não tem statusline parseável.
   const sessionStarted = isCodexExecutor
     ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
     : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
-  // contextPct: Codex recebe campo direto do backend; CC faz parse do pane_excerpt
   const contextPct = isCodexExecutor
     ? (agent.context_pct ?? null)
     : parseContextPct(agent.pane_excerpt);
-  // paneModel: CC extrai do statusline do pane; Codex usa null (cai no shortModelName(model))
   const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
+  const modelLabel = paneModel ?? shortModelName(model);
 
   if (variant === 'modal') {
-    // TODO: variant="modal" expandida — Daniel (DS-2 sub D)
-    // Placeholder: por enquanto renderiza o mesmo conteúdo da variant "card"
-    // pra não quebrar consumidores que já passem variant="modal".
+    return (
+      <div className="pane-modal mono" role="group" aria-label="Statusline do agente">
+        <span className="pm-chip" data-state={agent.status}>
+          <span className="pm-dot" aria-hidden="true" />
+          {STATUS_LABEL[agent.status]}
+        </span>
+        <span className="pm-chip pm-kind" title={`executor: ${agent.executor_kind ?? 'claude_code'}`}>
+          {isCodexExecutor ? 'CODEX' : 'CC'}
+        </span>
+        <span className="pm-chip">
+          <span className="pm-k">model</span>
+          <span className="pm-v">{modelLabel}</span>
+        </span>
+        <span className="pm-chip">
+          <span className="pm-k">session</span>
+          <span className="pm-v">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
+        </span>
+        <span className="pm-chip">
+          <span className="pm-k">ctx</span>
+          {contextPct !== null ? (
+            <span className="pm-ctx">
+              <span className="ps-bar" aria-hidden="true">
+                {Array.from({ length: 10 }, (_, i) => (
+                  <span
+                    key={i}
+                    className="psb-cell"
+                    data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
+                  />
+                ))}
+              </span>
+              <span className="pm-v"> {contextPct}%</span>
+            </span>
+          ) : (
+            <span className="pm-v">— %</span>
+          )}
+        </span>
+        <span className="pm-chip pm-seen" title={agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—'}>
+          <span className="pm-k">visto</span>
+          <span className="pm-v">{formatLastSeen(agent.last_seen, serverNow)}</span>
+        </span>
+      </div>
+    );
   }
 
   return (
     <div className="pane pane-session" aria-hidden="true">
-      <span className="ps-model">{paneModel ?? shortModelName(model)}</span>
+      <span className="ps-model">{modelLabel}</span>
       <span className="ps-sep">·</span>
       <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
       <span className="ps-sep">·</span>

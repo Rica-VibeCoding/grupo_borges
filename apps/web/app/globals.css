@@ -381,6 +381,49 @@
 
 .muted { color: var(--muted); }
 
+/* AgentStatusline · variant="modal" (DS-2 sub D) -------------------------- */
+.pane-modal {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  flex: 1; min-width: 0;
+}
+.pane-modal .pm-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle); background: var(--accent-subtle);
+  color: var(--text);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.pane-modal .pm-k {
+  color: var(--muted); font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.pane-modal .pm-v { color: var(--text); }
+.pane-modal .pm-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--status-idle); flex: none;
+}
+.pane-modal .pm-chip[data-state="trabalhando"] {
+  border-color: var(--accent-border); color: var(--accent);
+}
+.pane-modal .pm-chip[data-state="trabalhando"] .pm-dot {
+  background: var(--accent); box-shadow: 0 0 6px var(--accent);
+}
+.pane-modal .pm-chip[data-state="aguardando"] {
+  border-color: rgba(255,107,53,0.30); color: var(--status-blocked);
+}
+.pane-modal .pm-chip[data-state="aguardando"] .pm-dot { background: var(--status-blocked); }
+.pane-modal .pm-chip[data-state="offline"] { color: var(--status-offline); opacity: 0.7; }
+.pane-modal .pm-chip[data-state="offline"] .pm-dot { background: var(--status-offline); }
+
+.pane-modal .pm-kind {
+  font-size: 9px; letter-spacing: 0.2em;
+  color: var(--muted);
+}
+.pane-modal .pm-ctx { display: inline-flex; align-items: center; gap: 4px; }
+
 /* AgentModal · aba CHAT (DS-2) ------------------------------------------ */
 .chat-panel {
   display: flex; flex-direction: column; gap: 12px;
