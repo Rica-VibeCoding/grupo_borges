@@ -28,6 +28,7 @@ import {
 } from '../lib/api';
 import { SelectField } from './select-field';
 import { ChatPanel } from './chat-panel';
+import { Sparkline } from './sparkline';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
   ocioso: 'Ocioso',
@@ -262,29 +263,6 @@ function KV({ k, v }: { k: string; v: string }) {
     <div className="kv">
       <span className="kv-k">{k}</span>
       <span className="kv-v">{v}</span>
-    </div>
-  );
-}
-
-function Sparkline({ buckets }: { buckets: { bucket: string; count: number }[] }) {
-  const max = Math.max(1, ...buckets.map((b) => b.count));
-  return (
-    <div className="sparkline" aria-label="Eventos das últimas 24 horas">
-      <span className="missao-key">SPARKLINE · 24H</span>
-      <div className="sparkline-bars" role="img" aria-hidden="true">
-        {buckets.map((b) => {
-          const h = Math.max(2, Math.round((b.count / max) * 32));
-          return (
-            <span
-              key={b.bucket}
-              className="sb"
-              data-zero={b.count === 0 ? 'true' : 'false'}
-              style={{ height: `${h}px` }}
-              title={`${b.bucket}: ${b.count}`}
-            />
-          );
-        })}
-      </div>
     </div>
   );
 }

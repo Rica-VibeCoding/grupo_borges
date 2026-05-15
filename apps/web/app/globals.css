@@ -379,6 +379,59 @@
 .sparkline-bars .sb { flex: 1; background: var(--accent); opacity: 0.85; }
 .sparkline-bars .sb[data-zero="true"] { background: var(--border); opacity: 0.5; }
 
+/* Sparkline v2 — DS-7 (pico + média + eixo + hover) ---------------------- */
+.sparkline-v2 { gap: 6px; }
+.sparkline-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.sparkline-summary {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: var(--muted);
+}
+.sparkline-summary .sparkline-sep { color: var(--border); }
+.sparkline-summary .sparkline-stat { display: inline-flex; align-items: baseline; gap: 4px; }
+.sparkline-summary .ss-k { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
+.sparkline-summary .ss-v { color: var(--text); }
+
+.sparkline-plot { position: relative; display: flex; gap: 8px; align-items: stretch; }
+.sparkline-axis-y {
+  display: flex; flex-direction: column; justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted);
+  text-align: right; min-width: 28px;
+  padding: 8px 0 14px;
+}
+.sparkline-svg {
+  flex: 1; width: 100%; height: 80px;
+  display: block;
+}
+.sparkline-svg .sl-bar { fill: var(--accent); fill-opacity: 0.78; transition: fill-opacity 80ms; }
+.sparkline-svg .sl-bar[data-zero="true"] { fill: var(--border); fill-opacity: 0.55; }
+.sparkline-svg .sl-bar[data-peak="true"] { fill-opacity: 1; }
+.sparkline-svg .sl-bar[data-hover="true"] { fill-opacity: 1; filter: drop-shadow(0 0 4px var(--accent)); }
+.sparkline-svg .sl-axis { stroke: var(--border-subtle); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sparkline-svg .sl-mean { stroke: var(--accent); stroke-width: 1; opacity: 0.55; vector-effect: non-scaling-stroke; }
+.sparkline-svg .sl-peak-marker { fill: var(--accent); }
+
+.sparkline-tooltip {
+  position: absolute; top: -8px; transform: translateX(-50%);
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--accent-border); background: var(--bg-elev, var(--card-2));
+  color: var(--text); font-size: 10px;
+  pointer-events: none; white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+}
+.sparkline-tooltip .sl-tt-hour { color: var(--accent); font-weight: 600; }
+.sparkline-tooltip .sl-tt-count { color: var(--muted); }
+
+.sparkline-axis-x {
+  display: flex; justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted);
+  padding: 0 0 0 36px;
+}
+
 .muted { color: var(--muted); }
 
 /* AgentStatusline · variant="modal" (DS-2 sub D) -------------------------- */
