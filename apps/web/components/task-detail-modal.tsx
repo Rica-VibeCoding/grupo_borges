@@ -74,11 +74,14 @@ function Field({ label, value }: { label: string; value: string | number | null 
 }
 
 function eventTitle(event: TaskEvent): string {
-  if (event.kind === 'dispatch') return 'dispatch enviado';
+  if (event.kind === 'dispatch') return 'dispatch';
   if (event.kind === 'dispatch.failed') return 'dispatch falhou';
   if (event.kind === 'run.stale') return 'run sem sinal';
-  if (event.kind === 'status.changed') return 'status alterado';
-  if (event.kind === 'handoff') return 'handoff criado';
+  if (event.kind === 'status.changed') {
+    const to = event.payload?.to_status;
+    return typeof to === 'string' ? to : 'status';
+  }
+  if (event.kind === 'handoff') return 'handoff';
   return event.kind;
 }
 
@@ -100,9 +103,7 @@ function eventSummary(event: TaskEvent): string {
     return `${run} · heartbeat expirado${threshold}`;
   }
   if (event.kind === 'status.changed') {
-    const fromStatus = typeof payload.from_status === 'string' ? payload.from_status : '?';
-    const toStatus = typeof payload.to_status === 'string' ? payload.to_status : '?';
-    return `${fromStatus} → ${toStatus}`;
+    return event.agent_slug ?? '—';
   }
   if (event.kind === 'handoff') {
     const to = typeof payload.to === 'string' ? payload.to : 'agente';
@@ -289,31 +290,6 @@ export function TaskDetailModal({
                         <span className="task-detail-key">BODY</span>
                         <p className="task-detail-value">{effectiveTask.body?.trim() || '—'}</p>
                       </div>
-                      {(() => {
-                        // Defensivo: backend pode retornar tags como string JSON
-                        // bruta em algumas rotas (bug residual). Normaliza aqui
-                        // pra evitar TypeError no .join.
-                        const raw = effectiveTask.tags;
-                        let list: string[] = [];
-                        if (Array.isArray(raw)) list = raw;
-                        else if (typeof raw === 'string' && raw) {
-                          try {
-                            const p = JSON.parse(raw);
-                            if (Array.isArray(p)) list = p;
-                          } catch {
-                            // ignore
-                          }
-                        }
-                        return list.length > 0 ? (
-                          <Field label="TAGS" value={list.join(', ')} />
-                        ) : null;
-                      })()}
-                      {effectiveTask.review_mode && effectiveTask.review_mode !== 'human' && (
-                        <Field label="MODO REVISÃO" value={effectiveTask.review_mode} />
-                      )}
-                      {effectiveTask.reviewer_assignee && (
-                        <Field label="REVISOR" value={effectiveTask.reviewer_assignee} />
-                      )}
                     </>
                   )}
                 </section>
@@ -331,6 +307,26 @@ export function TaskDetailModal({
                   <Field label="RESPONSÁVEL" value={effectiveTask.assignee} />
                   <Field label="PRIORIDADE" value={effectiveTask.priority} />
                   <Field label="ORIGEM" value={effectiveTask.origin_agent} />
+                  <Field label="MODO REVISÃO" value={effectiveTask.review_mode ?? 'human'} />
+                  {effectiveTask.reviewer_assignee && (
+                    <Field label="REVISOR" value={effectiveTask.reviewer_assignee} />
+                  )}
+                  {(() => {
+                    const raw = effectiveTask.tags;
+                    let list: string[] = [];
+                    if (Array.isArray(raw)) list = raw;
+                    else if (typeof raw === 'string' && raw) {
+                      try {
+                        const p = JSON.parse(raw);
+                        if (Array.isArray(p)) list = p;
+                      } catch {
+                        // ignore
+                      }
+                    }
+                    return list.length > 0 ? (
+                      <Field label="TAGS" value={list.join(', ')} />
+                    ) : null;
+                  })()}
                   <Field label="INSTÂNCIA" value={effectiveTask.instance_id} />
                   <Field label="RUN" value={effectiveTask.current_run_id ?? null} />
                   <Field label="RUN STATUS" value={effectiveTask.current_run_status} />
@@ -371,11 +367,7 @@ export function TaskDetailModal({
                 />
               )}
 
-              <details className="task-timeline">
-                <summary className="task-timeline-head">
-                  <span>TIMELINE</span>
-                  <span>{timeline.length === 0 ? 'SEM EVENTOS NO BUFFER' : `${timeline.length} EVENTOS`}</span>
-                </summary>
+              <section className="task-timeline">
                 <ol>
                   <li>
                     <span className="task-timeline-at">{formatTimelineTime(effectiveTask.created_at)}</span>
@@ -390,7 +382,7 @@ export function TaskDetailModal({
                     </li>
                   ))}
                 </ol>
-              </details>
+              </section>
 
               <footer className="agent-modal-footer task-detail-footer">
                 <div className="task-detail-footer-info">

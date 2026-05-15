@@ -17,7 +17,7 @@ type ActionMeta = { label: string; pending: string; cssClass: string };
 const ACTION_META: Record<ReviewAction, ActionMeta> = {
   accept: { label: 'ACEITAR', pending: 'ACEITANDO...', cssClass: 'task-review-accept' },
   reject: { label: 'REJEITAR', pending: 'REJEITANDO...', cssClass: 'task-review-reject' },
-  requeue: { label: 'RE-ENFILEIRAR', pending: 'REENFILEIRANDO...', cssClass: 'task-review-requeue' },
+  requeue: { label: 'BACKLOG', pending: 'ENVIANDO...', cssClass: 'task-review-requeue' },
 };
 
 const ACTION_ORDER: ReviewAction[] = ['accept', 'reject', 'requeue'];
@@ -27,7 +27,6 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
   const [note, setNote] = useState('');
   const mountedRef = useRef(true);
   const reviewMode = task.review_mode ?? 'human';
-  const tags = task.tags ?? [];
   const requiresEvidence = reviewMode === 'agent_autonomous';
 
   useEffect(() => {
@@ -75,18 +74,6 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
       <header className="task-review-head">
         <span className="task-review-pulse" aria-hidden="true" />
         <span className="task-review-title">REVISÃO PENDENTE</span>
-        <span className="task-review-mode" data-mode={reviewMode}>
-          {reviewMode === 'human' && 'HUMANA'}
-          {reviewMode === 'agent_advisory' && 'ADVISORY'}
-          {reviewMode === 'agent_autonomous' && 'AUTONOMOUS'}
-        </span>
-        {tags.length > 0 && (
-          <span className="task-review-tags" aria-label="tags da task">
-            {tags.map((t) => (
-              <span key={t} className="task-review-tag">{t}</span>
-            ))}
-          </span>
-        )}
       </header>
 
       {requiresEvidence && (
@@ -103,7 +90,7 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
           onChange={(e) => setNote(e.target.value)}
           placeholder="contexto da decisão — vai pro audit log"
           maxLength={1000}
-          rows={3}
+          rows={6}
           disabled={pending !== null}
         />
       </label>
