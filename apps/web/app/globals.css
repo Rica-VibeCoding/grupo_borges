@@ -858,6 +858,18 @@
   min-width: 0;
 }
 
+.task-detail-row-pair {
+  display: flex;
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.task-detail-row-pair > .task-detail-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .task-detail-side .task-detail-field {
   grid-template-columns: 92px minmax(0, 1fr);
 }
@@ -1443,6 +1455,10 @@
   .task-detail-side .task-detail-field {
     grid-template-columns: 1fr;
     gap: 4px;
+  }
+  .task-detail-row-pair {
+    flex-direction: column;
+    gap: 10px;
   }
   .new-task-row {
     grid-template-columns: 1fr;

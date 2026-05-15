@@ -309,8 +309,10 @@ export function TaskDetailModal({
 
               <div className="task-detail-body">
                 <section className="task-detail-main">
-                  <Field label="ID" value={effectiveTask.human_id || effectiveTask.id} />
-                  <Field label="UUID" value={effectiveTask.id} />
+                  <div className="task-detail-row-pair">
+                    <Field label="ID" value={effectiveTask.human_id || effectiveTask.id} />
+                    <Field label="UUID" value={effectiveTask.id} />
+                  </div>
                   {editing && (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') ? (
                     <TaskEditForm
                       task={effectiveTask}
