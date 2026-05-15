@@ -73,31 +73,45 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
 
 // ----- PanePreview --------------------------------------------------------
 
-// Linhas compostas exclusivamente por caracteres de box-drawing/heavy/light
-// (─ ━ ═ │ ┃ ╭ ╮ ╰ ╯ ╱ ╳ etc.) viram ruído visual no preview — o CC desenha
-// containers ASCII que, em fonte mono, lêem como barras horizontais fantasmas
-// entre blocos de conteúdo. Comprimir essas linhas em vazias preserva a
-// estrutura semântica do excerpt sem poluir.
-const BOX_DRAWING_LINE = /^[\s─-╿▀-▟]+$/u;
+// Chrome do próprio Claude Code que vaza no excerpt (não é conteúdo do
+// agente). Filtragem só aqui no display — `agent.pane_excerpt` continua
+// intacto pros parsers (parseContextPct, parseModelFromPane) extraírem
+// ctx%/modelo/tempo da linha de statusline.
+//
+// Validado contra 19 fixtures reais de tmux capture (DS-2 polish v2).
+const CC_CHROME_PATTERNS: RegExp[] = [
+  // Statusline: HH:MM ou HH:MM:SS, bar opcional, % no meio/fim, sufixo livre.
+  // Pega tanto "Opus 4.7 - 32:13 - [█░] 16%" quanto a versão concatenada
+  // com "Remote Control active" no fim da mesma linha.
+  /^.*?\b(?:Opus|Sonnet|Haiku)\s+\d+\.\d+\b.*?\d+%/,
+  // "Verb for Nm Ns" — spinner finalizado: ✻ Brewed, * Cogitated,
+  // Considering, Thinking, Sautéed, Osmosing, Boogieing, Flibbertigibbeting…
+  /^[\W]*\w+\s+for\s+\d+m?\s*\d*s?(\s*[·•].*)?\s*$/u,
+  // Spinner ATIVO com contador de tokens:
+  // "· Boogieing… (1m 8s · ↓ 2.7k tokens · thought for 33s)"
+  /^[\s·•⏺]+\w+(?:ing|ed|aed)\.?…?\s*\(.*tokens.*\)$/u,
+  // "Remote Control active" / "Remote Control connecting…" (qualquer estado).
+  /Remote Control\s+\w+/,
+  // "⏵⏵ bypass permissions on …" / "▶▶ bypass permissions …" — char varia
+  // (U+23F5 vs U+25B6), catch por substring é mais seguro.
+  /bypass permissions/,
+];
 
-// Chrome do próprio Claude Code que vaza no fim do excerpt (statusline,
-// bypass-permissions, Remote Control). Filtragem só aqui no display — o
-// `agent.pane_excerpt` cru continua intacto pros parsers (parseContextPct,
-// parseModelFromPane) extraírem ctx%/modelo/tempo da statusline.
-const CC_CHROME_LINE = new RegExp(
-  [
-    String.raw`^(?:Opus|Sonnet|Haiku)\s+\d+\.\d+.*?\[.*?\]\s+\d+%\s*$`,
-    String.raw`^Remote Control active.*$`,
-    String.raw`^▶▶?\s+bypass permissions.*$`,
-    String.raw`^>+\s*$`,
-  ].join('|'),
-);
+// Separador horizontal: 8+ chars consecutivos de box-drawing/block elements.
+// Captura tanto "──────" puro quanto "── Daniel ──" (texto curto entre regras).
+const SEPARATOR_RULE = /[─━═│┃╭╮╰╯╱╳─-╿▀-▟]{8,}/u;
+
+function isChromeLine(line: string): boolean {
+  if (!line) return false;
+  if (SEPARATOR_RULE.test(line)) return true;
+  return CC_CHROME_PATTERNS.some((re) => re.test(line));
+}
 
 function stripChrome(src: string): string {
   if (!src) return src;
   return src
     .split('\n')
-    .map((line) => (BOX_DRAWING_LINE.test(line) || CC_CHROME_LINE.test(line) ? '' : line))
+    .map((line) => (isChromeLine(line) ? '' : line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\n+$/, '');
