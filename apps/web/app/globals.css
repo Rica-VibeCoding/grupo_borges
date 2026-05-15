@@ -581,9 +581,9 @@
 
 .chat-input {
   display: flex; gap: 6px; align-items: flex-end;
-  /* Pequeno respiro embaixo pra input não cortar visualmente na borda
-     do viewport iOS (safe-area). 8px é o mínimo confortável. */
-  padding-bottom: 8px;
+  /* Respiro embaixo pra input não cortar na borda do viewport iOS
+     (safe-area). 16px confortável estilo WhatsApp/Telegram nativo. */
+  padding-bottom: 16px;
 }
 .chat-icon-btn {
   width: 36px; height: 36px; min-width: 36px;
