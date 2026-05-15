@@ -181,4 +181,4 @@ app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
 # mas garantimos que exista no boot para o mount não falhar.
 _uploads_dir = Path(__file__).resolve().parent / "uploads"
 _uploads_dir.mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir), html=False), name="uploads")

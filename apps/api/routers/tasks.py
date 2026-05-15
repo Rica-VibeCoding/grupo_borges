@@ -737,6 +737,26 @@ _IMAGE_MAX_FILES = 5
 _UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "tasks"
 
 
+def _sniff_image_type(data: bytes) -> str | None:
+    """Detecta tipo de imagem via magic bytes (header). Retorna ext canônica
+    (.png/.jpg/.gif/.webp) ou None se não bate com nenhuma assinatura.
+
+    content_type vindo do multipart é controlado pelo cliente — não é
+    confiável. Sniff de bytes garante que o arquivo é realmente imagem.
+    """
+    if len(data) < 12:
+        return None
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
 @router.post("/{task_id}/images", status_code=status.HTTP_201_CREATED)
 async def upload_task_images(
     task_id: str,
@@ -773,16 +793,25 @@ async def upload_task_images(
                     detail=f"arquivo {upload.filename!r}: content-type {ct!r} não é imagem",
                 )
 
-            # Sanitiza extensão: aceita só o whitelist; fallback .png
-            raw_ext = Path(upload.filename or "").suffix.lower()
-            ext = raw_ext if raw_ext in _IMAGE_ALLOWED_EXTENSIONS else ".png"
-
             content = await upload.read()
             if len(content) > _IMAGE_MAX_BYTES:
                 raise HTTPException(
                     status_code=422,
                     detail=f"arquivo {upload.filename!r} excede 10 MB",
                 )
+
+            # Magic-bytes sniff: extensão e content_type são input do cliente,
+            # não confiar. Se sniff falhar, rejeita — não tenta adivinhar.
+            sniffed_ext = _sniff_image_type(content)
+            if sniffed_ext is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"arquivo {upload.filename!r}: conteúdo não é imagem válida "
+                        "(esperado PNG/JPEG/GIF/WEBP)"
+                    ),
+                )
+            ext = sniffed_ext
 
             filename = f"{uuid.uuid4()}{ext}"
             dest = dest_dir / filename

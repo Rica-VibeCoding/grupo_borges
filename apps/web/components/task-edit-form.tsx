@@ -79,9 +79,19 @@ export function TaskEditForm({
         pendingFiles.forEach((f) => fd.append('files', f));
         const imgRes = await fetch(`/api/tasks/${task.id}/images`, { method: 'POST', body: fd });
         if (imgRes.status === 201) {
+          // Endpoint retorna `{task_id, uploaded: [{url, filename, size}]}`.
+          // Mescla as URLs novas com as existentes pra não perder estado local.
           const imgData = await imgRes.json().catch(() => null);
-          if (imgData && typeof imgData === 'object' && 'image_urls' in imgData) {
-            updated = { ...updated, image_urls: imgData.image_urls as string[] };
+          const newUrls: string[] = Array.isArray(imgData?.uploaded)
+            ? imgData.uploaded.map((u: { url?: unknown }) => u?.url).filter(
+                (v: unknown): v is string => typeof v === 'string',
+              )
+            : [];
+          if (newUrls.length > 0) {
+            updated = {
+              ...updated,
+              image_urls: [...(updated.image_urls ?? []), ...newUrls],
+            };
           }
         } else {
           const errText = await imgRes.text().catch(() => String(imgRes.status));

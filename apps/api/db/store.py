@@ -2283,6 +2283,10 @@ class GrupoBorgesDB:
         self, task_id: str, new_urls: list[str]
     ) -> dict[str, Any] | None:
         with self._connect() as conn, conn:
+            # BEGIN EXCLUSIVE: 2 uploads simultâneos pra mesma task fariam
+            # SELECT→UPDATE concorrentes; ambos leem existing=[], um sobrescreve
+            # o outro. Lock exclusivo serializa o read-modify-write.
+            conn.execute("BEGIN EXCLUSIVE")
             row = conn.execute(
                 "SELECT image_urls FROM tasks WHERE id = ?", (task_id,)
             ).fetchone()

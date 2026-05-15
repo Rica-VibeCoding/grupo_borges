@@ -807,10 +807,10 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Negative margin compensates for task-detail-main's 16px padding so
-     the sticky footer bleeds edge-to-edge like .new-task-actions does. */
-  margin: -16px;
-  padding: 16px;
+}
+
+.task-edit-form[data-mode="full"] {
+  display: contents;
 }
 
 .task-edit-hint {
@@ -822,12 +822,15 @@
 
 /* ============ TASK DETAIL ============ */
 .task-detail-frame {
-  width: min(820px, calc(100vw - 32px));
+  /* Alinhado com .new-task-frame (modelo de Rica) — mesma largura nos
+     2 fluxos de task (criar e abrir/editar). */
+  width: min(560px, calc(100vw - 32px));
 }
 
 .task-detail-body {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   overflow: auto;
 }
@@ -838,6 +841,13 @@
   flex-direction: column;
   gap: 10px;
   padding: 16px;
+}
+
+.task-detail-main-editing {
+  flex: 1;
+  gap: 0;
+  min-height: 0;
+  padding: 0;
 }
 
 .task-detail-field {
@@ -1157,6 +1167,8 @@
 }
 
 .new-task-frame {
+  /* MODELO: NewTask é a referência visual cravada pelo Rica.
+     560px é o original — não mexer. Outros modais alinham com este. */
   width: min(560px, calc(100vw - 32px));
 }
 
