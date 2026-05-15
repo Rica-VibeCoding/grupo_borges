@@ -27,6 +27,7 @@ import {
   postTaskHandoff,
 } from '../lib/api';
 import { SelectField } from './select-field';
+import { ChatPanel } from './chat-panel';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
   ocioso: 'Ocioso',
@@ -92,14 +93,18 @@ export function AgentModal() {
                   </Dialog.Close>
                 </div>
               </header>
-              <Tabs.Root defaultValue="missao" className="agent-modal-tabs">
+              <Tabs.Root defaultValue="inf" className="agent-modal-tabs">
                 <Tabs.List className="agent-modal-tablist" aria-label="Abas de detalhes do agente">
-                  <Tabs.Trigger value="missao" className="agent-modal-tab">MISSÃO</Tabs.Trigger>
+                  <Tabs.Trigger value="chat" className="agent-modal-tab">CHAT</Tabs.Trigger>
+                  <Tabs.Trigger value="inf" className="agent-modal-tab">INF.</Tabs.Trigger>
                   <Tabs.Trigger value="skills" className="agent-modal-tab">SKILLS</Tabs.Trigger>
                   <Tabs.Trigger value="docs" className="agent-modal-tab">DOCS</Tabs.Trigger>
                   <Tabs.Trigger value="tabelas" className="agent-modal-tab">TABELAS</Tabs.Trigger>
                 </Tabs.List>
-                <Tabs.Content value="missao" className="agent-modal-panel">
+                <Tabs.Content value="chat" className="agent-modal-panel">
+                  <ChatPanel agent={agent} serverNow={fleet.health.server_now} />
+                </Tabs.Content>
+                <Tabs.Content value="inf" className="agent-modal-panel">
                   <MissaoPanel agent={agent} serverNow={fleet.health.server_now} />
                 </Tabs.Content>
                 <Tabs.Content value="skills" className="agent-modal-panel">
