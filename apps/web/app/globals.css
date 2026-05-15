@@ -537,26 +537,34 @@
 .task-timeline ol {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .task-timeline li {
-  display: grid;
-  grid-template-columns: 148px 132px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
   color: var(--text);
   font-size: 10.5px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
-.task-timeline-at,
+.task-timeline-at {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
 .task-timeline-kind {
   color: var(--muted);
   text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  flex: none;
 }
 
 .task-timeline-summary {
@@ -978,10 +986,6 @@
   .task-detail-side-collapse[open] > summary::after { content: '−'; }
   .task-detail-side-collapse[open] > summary { border-bottom: 1px solid var(--border); }
   .task-detail-side-collapse:not([open]) > summary { border-bottom: 0; }
-  .task-timeline li {
-    grid-template-columns: 1fr;
-    gap: 3px;
-  }
   .new-task-row {
     grid-template-columns: 1fr;
   }

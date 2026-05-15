@@ -42,6 +42,28 @@ function formatUnixDateTime(unixSec: number | null): string {
   return formatDateTime(unixSec);
 }
 
+const TIMELINE_TIME_FMT = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/Sao_Paulo',
+});
+const TIMELINE_DATE_FMT = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: '2-digit',
+  timeZone: 'America/Sao_Paulo',
+});
+
+function formatTimelineTime(unixSec: number): string {
+  const date = new Date(unixSec * 1000);
+  const today = new Date();
+  const sameDay =
+    date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) ===
+    today.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  if (sameDay) return TIMELINE_TIME_FMT.format(date);
+  return `${TIMELINE_DATE_FMT.format(date)} ${TIMELINE_TIME_FMT.format(date)}`;
+}
+
 function Field({ label, value }: { label: string; value: string | number | null }) {
   return (
     <div className="task-detail-field">
@@ -80,8 +102,7 @@ function eventSummary(event: TaskEvent): string {
   if (event.kind === 'status.changed') {
     const fromStatus = typeof payload.from_status === 'string' ? payload.from_status : '?';
     const toStatus = typeof payload.to_status === 'string' ? payload.to_status : '?';
-    const closedRuns = typeof payload.closed_runs === 'number' ? ` · runs fechados: ${payload.closed_runs}` : '';
-    return `${fromStatus} -> ${toStatus}${closedRuns}`;
+    return `${fromStatus} → ${toStatus}`;
   }
   if (event.kind === 'handoff') {
     const to = typeof payload.to === 'string' ? payload.to : 'agente';
@@ -357,13 +378,13 @@ export function TaskDetailModal({
                 </summary>
                 <ol>
                   <li>
-                    <span className="task-timeline-at">{formatUnixDateTime(effectiveTask.created_at)}</span>
+                    <span className="task-timeline-at">{formatTimelineTime(effectiveTask.created_at)}</span>
                     <span className="task-timeline-kind">criada</span>
                     <span className="task-timeline-summary">{effectiveTask.assignee ?? 'sem responsável'}</span>
                   </li>
                   {timeline.map((event) => (
                     <li key={event.id}>
-                      <span className="task-timeline-at">{formatUnixDateTime(event.created_at)}</span>
+                      <span className="task-timeline-at">{formatTimelineTime(event.created_at)}</span>
                       <span className="task-timeline-kind">{eventTitle(event)}</span>
                       <span className="task-timeline-summary">{eventSummary(event)}</span>
                     </li>
