@@ -533,9 +533,12 @@
 
 .chat-preview-wrap {
   position: relative;
-  flex: 1 1 auto;
-  /* min-height:0 libera o flex-child a contrair abaixo do tamanho
-     intrínseco — sem isso o input "empurra" e nasce vazio embaixo. */
+  /* flex-basis 0 (não auto) força a área a ocupar TODO o espaço
+     disponível independente do conteúdo — sem texto, ainda toma a
+     mesma altura. Comportamento idêntico a WhatsApp/Telegram: a área
+     de mensagens não "encolhe" quando vazia. Único momento que muda
+     é quando o teclado abre e o viewport encolhe via 100dvh. */
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
 }
