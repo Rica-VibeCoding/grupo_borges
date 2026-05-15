@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
 import { dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
@@ -105,6 +105,7 @@ export function TaskDetailModal({
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [editing, setEditing] = useState(false);
+  const sideDetailsRef = useRef<HTMLDetailsElement>(null);
   const agentOptions = useMemo(
     () => fleet.agents.map((a) => ({ value: a.slug, label: `${a.name} · ${a.slug}` })),
     [fleet.agents],
@@ -151,6 +152,13 @@ export function TaskDetailModal({
       });
 
     return () => ctrl.abort();
+  }, [task]);
+
+  useEffect(() => {
+    if (!task) return;
+    const el = sideDetailsRef.current;
+    if (!el) return;
+    el.open = !window.matchMedia('(max-width: 760px)').matches;
   }, [task]);
 
   async function changeStatus(next: UiTaskStatus) {
@@ -257,7 +265,6 @@ export function TaskDetailModal({
                     />
                   ) : (
                     <>
-                      <Field label="TÍTULO" value={effectiveTask.title} />
                       <div className="task-detail-field task-detail-body-field">
                         <span className="task-detail-key">BODY</span>
                         <p className="task-detail-value">{effectiveTask.body?.trim() || '—'}</p>
@@ -291,7 +298,9 @@ export function TaskDetailModal({
                   )}
                 </section>
 
-                <aside className="task-detail-side">
+                <details ref={sideDetailsRef} className="task-detail-side-collapse" open>
+                  <summary>METADADOS</summary>
+                  <aside className="task-detail-side">
                   <SelectField<UiTaskStatus>
                     label="Status"
                     value={selectedStatus}
@@ -316,7 +325,8 @@ export function TaskDetailModal({
                   <Field label="CRIADA" value={formatUnixDateTime(effectiveTask.created_at)} />
                   <Field label="INICIADA" value={formatUnixDateTime(effectiveTask.started_at)} />
                   <Field label="CONCLUÍDA" value={formatUnixDateTime(effectiveTask.completed_at)} />
-                </aside>
+                  </aside>
+                </details>
               </div>
 
               {effectiveTask.status === 'review' && (
