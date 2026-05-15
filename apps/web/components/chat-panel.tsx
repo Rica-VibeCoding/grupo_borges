@@ -66,6 +66,21 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
 
 // ----- PanePreview --------------------------------------------------------
 
+// Linhas compostas exclusivamente por caracteres de box-drawing/heavy/light
+// (─ ━ ═ │ ┃ ╭ ╮ ╰ ╯ ╱ ╳ etc.) viram ruído visual no preview — o CC desenha
+// containers ASCII que, em fonte mono, lêem como barras horizontais fantasmas
+// entre blocos de conteúdo. Comprimir essas linhas em vazias preserva a
+// estrutura semântica do excerpt sem poluir.
+const BOX_DRAWING_LINE = /^[\s─-╿▀-▟]+$/u;
+function stripBoxDrawingLines(src: string): string {
+  if (!src) return src;
+  return src
+    .split('\n')
+    .map((line) => (BOX_DRAWING_LINE.test(line) ? '' : line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 function PanePreview({
   excerpt,
   executorKind: _executorKind,
@@ -103,7 +118,8 @@ function PanePreview({
     setStuck(true);
   }, []);
 
-  const empty = !excerpt;
+  const cleaned = useMemo(() => stripBoxDrawingLines(excerpt), [excerpt]);
+  const empty = !cleaned;
 
   return (
     <div className="chat-preview-wrap">
@@ -114,7 +130,7 @@ function PanePreview({
         aria-live="polite"
         aria-busy={connectionStatus === 'connecting'}
       >
-        {empty ? '— sem saída capturada —' : excerpt}
+        {empty ? '— sem saída capturada —' : cleaned}
       </pre>
       {!stuck && (
         <button
