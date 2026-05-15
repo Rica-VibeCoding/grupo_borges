@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
 import { dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
@@ -119,7 +119,6 @@ export function TaskDetailModal({
   const [saving, setSaving] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [editing, setEditing] = useState(false);
-  const sideDetailsRef = useRef<HTMLDetailsElement>(null);
   const agentOptions = useMemo(
     () => fleet.agents.map((a) => ({ value: a.slug, label: `${a.name} · ${a.slug}` })),
     [fleet.agents],
@@ -163,6 +162,21 @@ export function TaskDetailModal({
     ? fleet.health.server_now - effectiveTask.current_run_last_heartbeat
     : null;
   const runHeartbeatStale = runHeartbeatAge !== null && runHeartbeatAge > fleet.health.stale_threshold_seconds;
+  const tagsList = useMemo<string[]>(() => {
+    const raw = effectiveTask?.tags;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw) {
+      try {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p)) return p;
+      } catch {
+        // ignore
+      }
+    }
+    return [];
+  }, [effectiveTask?.tags]);
+  const reviewModeLabel = (effectiveTask?.review_mode ?? 'human').toUpperCase();
+  const metaSummaryChips = [reviewModeLabel, ...tagsList.map((t) => t.toUpperCase())];
 
   useEffect(() => {
     if (!task) {
@@ -192,13 +206,6 @@ export function TaskDetailModal({
       });
 
     return () => ctrl.abort();
-  }, [task]);
-
-  useEffect(() => {
-    if (!task) return;
-    const el = sideDetailsRef.current;
-    if (!el) return;
-    el.open = !window.matchMedia('(max-width: 760px)').matches;
   }, [task]);
 
   async function changeStatus(next: UiTaskStatus) {
@@ -312,55 +319,6 @@ export function TaskDetailModal({
                   )}
                 </section>
 
-                <details ref={sideDetailsRef} className="task-detail-side-collapse" open>
-                  <summary>METADADOS</summary>
-                  <aside className="task-detail-side">
-                  <SelectField<UiTaskStatus>
-                    label="Status"
-                    value={selectedStatus}
-                    onValueChange={changeStatus}
-                    options={STATUS_OPTIONS}
-                    disabled={saving || loadState === 'loading'}
-                  />
-                  <Field label="RESPONSÁVEL" value={effectiveTask.assignee} />
-                  <Field label="PRIORIDADE" value={effectiveTask.priority} />
-                  <Field label="ORIGEM" value={effectiveTask.origin_agent} />
-                  <Field label="MODO REVISÃO" value={effectiveTask.review_mode ?? 'human'} />
-                  {effectiveTask.reviewer_assignee && (
-                    <Field label="REVISOR" value={effectiveTask.reviewer_assignee} />
-                  )}
-                  {(() => {
-                    const raw = effectiveTask.tags;
-                    let list: string[] = [];
-                    if (Array.isArray(raw)) list = raw;
-                    else if (typeof raw === 'string' && raw) {
-                      try {
-                        const p = JSON.parse(raw);
-                        if (Array.isArray(p)) list = p;
-                      } catch {
-                        // ignore
-                      }
-                    }
-                    return list.length > 0 ? (
-                      <Field label="TAGS" value={list.join(', ')} />
-                    ) : null;
-                  })()}
-                  <Field label="INSTÂNCIA" value={effectiveTask.instance_id} />
-                  <Field label="RUN" value={effectiveTask.current_run_id ?? null} />
-                  <Field label="RUN STATUS" value={effectiveTask.current_run_status} />
-                  <Field
-                    label="RUN HB"
-                    value={
-                      effectiveTask.current_run_last_heartbeat
-                        ? formatUnixDateTime(effectiveTask.current_run_last_heartbeat)
-                        : null
-                    }
-                  />
-                  <Field label="CRIADA" value={formatUnixDateTime(effectiveTask.created_at)} />
-                  <Field label="INICIADA" value={formatUnixDateTime(effectiveTask.started_at)} />
-                  <Field label="CONCLUÍDA" value={formatUnixDateTime(effectiveTask.completed_at)} />
-                  </aside>
-                </details>
               </div>
 
               {effectiveTask.status === 'review' && (
@@ -396,6 +354,47 @@ export function TaskDetailModal({
                   ))}
                 </ol>
               </section>
+
+              <details className="task-detail-side-collapse">
+                <summary>
+                  <span className="task-detail-side-chips">
+                    {metaSummaryChips.map((chip, idx) => (
+                      <span key={`${chip}-${idx}`}>{chip}</span>
+                    ))}
+                  </span>
+                </summary>
+                <aside className="task-detail-side">
+                  <SelectField<UiTaskStatus>
+                    label="Status"
+                    value={selectedStatus}
+                    onValueChange={changeStatus}
+                    options={STATUS_OPTIONS}
+                    disabled={saving || loadState === 'loading'}
+                  />
+                  <Field label="RESPONSÁVEL" value={effectiveTask.assignee} />
+                  <Field label="PRIORIDADE" value={effectiveTask.priority} />
+                  <Field label="ORIGEM" value={effectiveTask.origin_agent} />
+                  <Field label="MODO REVISÃO" value={effectiveTask.review_mode ?? 'human'} />
+                  {effectiveTask.reviewer_assignee && (
+                    <Field label="REVISOR" value={effectiveTask.reviewer_assignee} />
+                  )}
+                  {tagsList.length > 0 && <Field label="TAGS" value={tagsList.join(', ')} />}
+                  <Field label="INSTÂNCIA" value={effectiveTask.instance_id} />
+                  <Field label="RUN" value={effectiveTask.current_run_id ?? null} />
+                  <Field label="RUN STATUS" value={effectiveTask.current_run_status} />
+                  <Field
+                    label="RUN HB"
+                    value={
+                      effectiveTask.current_run_last_heartbeat
+                        ? formatUnixDateTime(effectiveTask.current_run_last_heartbeat)
+                        : null
+                    }
+                  />
+                  <Field label="CRIADA" value={formatUnixDateTime(effectiveTask.created_at)} />
+                  <Field label="INICIADA" value={formatUnixDateTime(effectiveTask.started_at)} />
+                  <Field label="CONCLUÍDA" value={formatUnixDateTime(effectiveTask.completed_at)} />
+                </aside>
+              </details>
 
               <footer className="agent-modal-footer task-detail-footer">
                 <div className="task-detail-footer-info">
