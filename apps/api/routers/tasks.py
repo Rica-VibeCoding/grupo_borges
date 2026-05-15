@@ -383,6 +383,17 @@ async def review_task(
         raise HTTPException(status_code=409, detail="review duplicado ou não gravado")
     task_result = result.get("task") or {}
 
+    # Pós-review humana: pinga assignee no tmux pra rodar changelog/commit/push.
+    # Só dispara em accept→done ou reject→backlog/blocked. Autonomous tem fluxo próprio.
+    await _maybe_notify_post_review(
+        db=db,
+        task_id=task_id,
+        action=payload.action,
+        new_status=task_result.get("status"),
+        reviewer=reviewer,
+        note=payload.note,
+    )
+
     # Autonomous accept: dispara executor em background. Task fica em status=review
     # (criteria_pending) até os comandos terminarem. Promoção pra done acontece
     # dentro do `run_success_criteria` se todos passarem; falha volta pra running.
@@ -581,6 +592,69 @@ def _format_handoff_message(
     if note_text:
         lines.append(f"Nota: {note_text}")
     return "\n".join(lines)
+
+
+def _format_review_outcome_message(
+    *, task: dict[str, Any], decision: str, reviewer: str | None, note: str | None
+) -> str:
+    display_id = task.get("human_id") or task["id"]
+    title = task.get("title") or ""
+    reviewer_txt = reviewer or "humano"
+    lines = [
+        f"Review {decision} — task {display_id}",
+        f"Título: {title}",
+        f"Revisor: {reviewer_txt}",
+        f"Status novo: {task.get('status')}",
+    ]
+    if note:
+        lines.append(f"Nota: {note.strip()}")
+    if decision == "ACEITA":
+        lines.append(
+            "Pós-aceite: rode changelog (se aplicável), commit e push das mudanças "
+            "que ainda não foram pushadas. Comunique pelo canal externo se houver."
+        )
+    else:
+        lines.append("Pós-rejeição: revise o feedback e ajuste antes de pedir nova review.")
+    return "\n".join(lines)
+
+
+async def _maybe_notify_post_review(
+    *,
+    db: GrupoBorgesDB,
+    task_id: str,
+    action: str,
+    new_status: str | None,
+    reviewer: str | None,
+    note: str | None,
+) -> bool:
+    """Pinga o assignee via tmux quando review humana decide.
+
+    Só dispara em transições terminais (accept→done ou reject→backlog/blocked).
+    Ignora review_mode=agent_autonomous (já tem run_success_criteria).
+    """
+    if action not in {"accept", "reject"}:
+        return False
+    if new_status not in {"done", "backlog", "blocked"}:
+        return False
+
+    task = await db.get_task(task_id)
+    if not task or task.get("review_mode") == "agent_autonomous":
+        return False
+
+    agents = await db.list_agents()
+    agent = next((a for a in agents if a["slug"] == task.get("assignee")), None)
+    if not agent or not agent.get("tmux_session"):
+        return False
+
+    decision = "ACEITA" if action == "accept" else "REJEITADA"
+    msg = _format_review_outcome_message(
+        task=task, decision=decision, reviewer=reviewer, note=note
+    )
+    try:
+        return await tmux_driver.send_message(agent["tmux_session"], msg)
+    except Exception as e:
+        log.warning("Falha ao notificar pós-review task %s: %s", task_id, e)
+        return False
 
 
 def _format_dispatch_message(*, task: dict[str, Any], note: str | None) -> str:
