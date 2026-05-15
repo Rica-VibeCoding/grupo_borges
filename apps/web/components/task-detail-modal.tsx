@@ -322,6 +322,7 @@ export function TaskDetailModal({
               {effectiveTask.status === 'review' && (
                 <TaskReviewActions
                   task={effectiveTask}
+                  reviewerSlug={effectiveTask.reviewer_assignee}
                   onResolved={(newStatus) => {
                     setFreshTask((prev) => (prev ? { ...prev, status: newStatus } : prev));
                     void mutate();
