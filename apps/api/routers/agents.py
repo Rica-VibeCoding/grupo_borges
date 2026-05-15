@@ -333,14 +333,68 @@ async def change_agent_model(
 ) -> ModelChangeResponse:
     """Troca modelo do agente via `/model <slug>` (Claude Code).
 
-    Gates determinísticos já no stub:
+    Gates:
     - 404 quando agente não existe
     - 422 (Pydantic) quando model fora do whitelist opus/sonnet/haiku
     - 422 `codex_no_runtime_model_switch` quando executor_kind=codex (DS-2.1)
-    Caminho feliz: 501 (impl real envia /model + poll capture_pane + persist).
-    Gate 409 `agent_busy_confirm_required` entra com a impl real.
+    - 409 `agent_busy_confirm_required` quando lifecycle=trabalhando sem force
+
+    Caminho feliz (200):
+    1. envia `/model <slug>` via send_message
+    2. picker idempotente: aguarda 300ms e envia Enter extra
+    3. poll capture_pane_excerpt em t+500/1000/1500ms; regex parse_model_from_pane
+       confirma propagação. `confirmed=False` é warning (não erro).
+    4. persiste state_model SÓ se delivered=True (inversão v2)
+    5. emite task_event `agent.model_change` com {from, to, actor, confirmed}
     """
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") == "codex":
         raise HTTPException(status_code=422, detail="codex_no_runtime_model_switch")
-    raise HTTPException(status_code=501, detail="not_implemented")
+    if agent.get("lifecycle_status") == "trabalhando" and not payload.force:
+        raise HTTPException(status_code=409, detail="agent_busy_confirm_required")
+
+    db: GrupoBorgesDB = request.app.state.db
+    session = agent["tmux_session"]
+    target = payload.model
+    from_model = agent.get("state_model") or agent.get("model_default")
+
+    delivered = await tmux_driver.send_message(session, f"/model {target}")
+
+    state_persisted = False
+    confirmed = False
+
+    if delivered:
+        # Picker do /model pode parar em prompt de confirmação ("Switch to ... y/n").
+        # Enter idempotente: sem picker, cai em prompt vazio e o CC ignora.
+        await asyncio.sleep(0.3)
+        await tmux_driver.press_enter(session)
+
+        # Poll de confirmação em t+500/1000/1500ms (acumulado). Sai cedo no match.
+        for _ in range(3):
+            await asyncio.sleep(0.5)
+            excerpt = await tmux_driver.capture_pane_excerpt(session)
+            if tmux_driver.parse_model_from_pane(excerpt) == target:
+                confirmed = True
+                break
+
+        # Persistência só após delivered=True (v2: sem regressão silenciosa).
+        await db.upsert_agent_state(slug, model=target)
+        state_persisted = True
+
+        await db.insert_task_event(
+            kind="agent.model_change",
+            agent_slug=slug,
+            payload={
+                "from": from_model,
+                "to": target,
+                "actor": "cockpit",
+                "confirmed": confirmed,
+            },
+        )
+
+    return ModelChangeResponse(
+        tmux_delivered=delivered,
+        state_persisted=state_persisted,
+        confirmed=confirmed,
+        model=target,
+    )
