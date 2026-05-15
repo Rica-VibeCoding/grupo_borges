@@ -149,11 +149,7 @@ function KanbanMobileView({
   onOpenTask: (task: Task) => void;
 }) {
   const [activeStatus, setActiveStatus] = useState<KanbanColumnId>('running');
-  const activeColumn = columns.find((column) => column.id === activeStatus) ?? columns[0]!;
-  const displayColumn =
-    activeStatus === 'running' && activeColumn.tasks.length === 0
-      ? (columns.find((column) => column.id === 'queue') ?? activeColumn)
-      : activeColumn;
+  const displayColumn = columns.find((column) => column.id === activeStatus) ?? columns[0]!;
 
   return (
     <div className="kanban-mobile">
