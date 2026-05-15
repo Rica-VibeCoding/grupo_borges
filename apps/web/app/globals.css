@@ -1,6 +1,13 @@
 @import "tailwindcss";
 @import "augmented-ui/augmented-ui.min.css";
 
+/* Bordas arredondadas sutis — Rica: "sutil, tela que a gente já tá
+   acostumado". Frame ~8px, chips/botões ~6px. Não vira pílula. */
+:root {
+  --radius-frame: 8px;
+  --radius-chip: 6px;
+}
+
 :root[data-theme="dark"] {
   --bg:#060b18; --panel:#0d1b2a; --card:#112240; --card-2:#153258;
   --border:#1a3a5c; --border-subtle:#142d4a;
@@ -49,6 +56,7 @@
   z-index: 101;
   background: var(--panel);
   border: 1px solid var(--accent-border);
+  border-radius: var(--radius-frame);
   box-shadow: 0 0 0 1px var(--accent-border), 0 12px 48px rgba(0, 0, 0, 0.6);
   display: flex; flex-direction: column;
   overflow: hidden;
@@ -77,6 +85,7 @@
 
 .agent-modal-close {
   background: transparent; border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
   color: var(--muted); cursor: pointer; padding: 4px 10px;
   font-family: 'JetBrains Mono', monospace; font-size: 11px;
   transition: color 120ms ease, border-color 120ms ease;
@@ -116,6 +125,7 @@
 .instance-pill {
   background: transparent;
   border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
   color: var(--muted);
   cursor: pointer;
   font-family: 'JetBrains Mono', monospace;
@@ -204,6 +214,7 @@
   justify-content: space-between;
   gap: 8px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
   background: var(--panel);
   color: var(--text);
   padding: 0 10px;
@@ -525,7 +536,9 @@
 .chat-preview-wrap { position: relative; flex: 1; min-height: 160px; display: flex; }
 .chat-preview {
   flex: 1; margin: 0; padding: 12px;
-  border: 1px solid var(--border-subtle); background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg);
   color: var(--text);
   font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
@@ -590,6 +603,7 @@
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: min(420px, calc(100vw - 32px));
   background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--radius-frame);
   padding: 18px; z-index: 200;
   display: flex; flex-direction: column; gap: 12px;
   font-family: 'JetBrains Mono', monospace;
@@ -652,7 +666,12 @@
   .agent-modal-docs-nav { flex-direction: row; flex-wrap: wrap; }
 }
 
+/* Cantos arredondados sutis: chips, listas, status do header (DS-2 polish) */
+.pane-modal .pm-chip { border-radius: var(--radius-chip); }
+.missao-caps-list li { border-radius: var(--radius-chip); }
+
 .agent-modal-head .status-bar {
+  border-radius: var(--radius-chip);
   display: inline-flex; align-items: center; gap: 7px;
   font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
   letter-spacing: 0.14em; text-transform: uppercase;
