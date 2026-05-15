@@ -225,7 +225,6 @@ export function TaskDetailModal({
                   <Dialog.Title className="agent-modal-title">
                     {taskDisplayId(effectiveTask)} <span className="muted">// {effectiveTask.title}</span>
                   </Dialog.Title>
-                  <span className="agent-modal-role">DETALHE DA TAREFA</span>
                 </div>
                 <div className="head-right">
                   <span className="status-bar" data-state={selectedStatus === 'backlog' ? 'idle' : selectedStatus}>
@@ -351,11 +350,11 @@ export function TaskDetailModal({
                 />
               )}
 
-              <section className="task-timeline">
-                <div className="task-timeline-head">
+              <details className="task-timeline">
+                <summary className="task-timeline-head">
                   <span>TIMELINE</span>
                   <span>{timeline.length === 0 ? 'SEM EVENTOS NO BUFFER' : `${timeline.length} EVENTOS`}</span>
-                </div>
+                </summary>
                 <ol>
                   <li>
                     <span className="task-timeline-at">{formatUnixDateTime(effectiveTask.created_at)}</span>
@@ -370,11 +369,11 @@ export function TaskDetailModal({
                     </li>
                   ))}
                 </ol>
-              </section>
+              </details>
 
               <footer className="agent-modal-footer task-detail-footer">
                 <div className="task-detail-footer-info">
-                  <span>{loadState === 'loading' ? 'carregando detalhe fresco...' : 'snapshot sincronizado'}</span>
+                  {loadState === 'loading' && <span>carregando detalhe fresco...</span>}
                   {runHeartbeatStale && <span className="task-detail-error">run sem heartbeat recente</span>}
                   {saving && <span>salvando status...</span>}
                   {dispatching && <span>enviando para sessão...</span>}

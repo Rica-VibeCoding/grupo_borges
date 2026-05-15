@@ -511,18 +511,28 @@
 
 .task-timeline {
   border-top: 1px solid var(--border);
-  padding: 12px 16px 14px;
 }
 
-.task-timeline-head {
+.task-timeline > summary.task-timeline-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
+  padding: 12px 16px;
   color: var(--muted);
   font-size: 9px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
 }
+.task-timeline > summary.task-timeline-head::-webkit-details-marker { display: none; }
+.task-timeline > summary.task-timeline-head::after {
+  content: '+';
+  font-size: 14px;
+}
+.task-timeline[open] > summary.task-timeline-head::after { content: '−'; }
+.task-timeline[open] > ol { padding: 0 16px 14px; margin-top: 0; }
 
 .task-timeline ol {
   display: flex;
