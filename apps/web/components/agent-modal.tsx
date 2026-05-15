@@ -79,7 +79,6 @@ export function AgentModal() {
                     <Dialog.Title className="agent-modal-title">
                       {agent.name} <span className="muted">// {agent.slug}</span>
                     </Dialog.Title>
-                    <span className="agent-modal-role">{agent.role}</span>
                   </div>
                 </div>
                 <div className="head-right">
