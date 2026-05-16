@@ -1,5 +1,4 @@
-// Rodar: `node --test --experimental-strip-types tests/pane-chrome.test.ts`
-// (Node 22.22+, strip-types é default).
+// Rodar: `node --test tests/pane-chrome.test.ts` (Node 22.22+, strip-types default).
 //
 // JP-11 Fase 1 — DS-58.
 

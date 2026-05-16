@@ -182,7 +182,11 @@ function PanePreview({
     }
   }, [cleanedNow, isPartial]);
 
-  const display = isPartial ? lastGoodFrameRef.current : cleanedNow;
+  // Fallback: primeira render com isPartial=true (sessão CC abriu com spinner
+  // ativo) — ref ainda vazia. Mostrar cleanedNow evita "tela vazia" inicial.
+  const display = isPartial && lastGoodFrameRef.current
+    ? lastGoodFrameRef.current
+    : cleanedNow;
   const segments = useMemo(() => parseAnsi(display), [display]);
   const empty = segments.length === 0;
 

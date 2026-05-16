@@ -301,8 +301,9 @@ class ModelChangeResponse(BaseModel):
 _PANE_STREAM_POLL_S = 1.0
 _PANE_STREAM_DISCONNECT_CHECK_S = 0.1
 # 200 linhas (era 80) cobre respostas longas sem cortar o topo. Configurável
-# via env pro ops afinar sob carga sem deploy. ANSI preservado inflaciona
-# bytes ~20-30% — `_PANE_STREAM_MAX_CHARS` sobe pra 20k.
+# via env pro ops afinar sob carga sem deploy. `_PANE_STREAM_MAX_CHARS` foi a
+# 20k acomodando linhas mais longas + escape sequences ANSI preservadas no
+# stream (bandwidth real precisa ser medido em prod — backlog Fase 2).
 _PANE_STREAM_LINE_LIMIT = int(os.getenv("COCKPIT_PANE_LINE_LIMIT", "200"))
 _PANE_STREAM_MAX_CHARS = int(os.getenv("COCKPIT_PANE_MAX_CHARS", "20000"))
 
@@ -312,9 +313,13 @@ async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
     """SSE com excerpt do pane em tempo real (poll 1 Hz, dedupe por hash).
 
     - 404 quando agente não existe (antes de abrir o stream)
-    - Loop: `capture_pane_excerpt(line_limit=80, max_chars=8000)` a cada 1s;
-      emite `event: pane` com `{excerpt, captured_at, executor_kind}` só
-      quando hash sha1 do excerpt muda — evita ping pano espumante na rede.
+    - Loop: `capture_pane_excerpt(line_limit=_PANE_STREAM_LINE_LIMIT,
+      max_chars=_PANE_STREAM_MAX_CHARS, preserve_ansi=True)` a cada 1s;
+      defaults 200/20000, overrideable via env `COCKPIT_PANE_LINE_LIMIT` /
+      `COCKPIT_PANE_MAX_CHARS`. Emite `event: pane` com `{excerpt,
+      captured_at, executor_kind}` só quando hash sha1 do excerpt muda.
+    - `preserve_ansi=True` mantém escape sequences pro front renderizar
+      cores via `lib/pane-chrome.ts:parseAnsi`.
     - Encerra ao detectar `request.is_disconnected()` no início de cada tick.
     """
     agent = await _get_agent_or_404(request, slug)

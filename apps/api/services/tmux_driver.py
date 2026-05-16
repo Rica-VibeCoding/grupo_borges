@@ -44,6 +44,9 @@ _UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
 _MODEL_PATTERN = re.compile(r"[a-z0-9.\-]{1,80}")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Variante que preserva ESC (0x1b) pra `preserve_ansi=True` — strippar o ESC
+# anula as escape sequences ANSI (vira `[31m...` literal no front).
+_CONTROL_CHARS_KEEP_ESC = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 _BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
     "claude_code": re.compile(r"╭|Claude Code v\d"),
     "codex": re.compile("›"),
@@ -146,9 +149,10 @@ def _clean_pane_lines(
     front faz o parse via `lib/pane-chrome.ts:parseAnsi`.
     """
     cleaned: list[str] = []
+    control_re = _CONTROL_CHARS_KEEP_ESC if preserve_ansi else _CONTROL_CHARS
     for line in lines:
         text = line if preserve_ansi else _ANSI_ESCAPE.sub("", line)
-        text = _CONTROL_CHARS.sub("", text).rstrip()
+        text = control_re.sub("", text).rstrip()
         # `strip()` removendo ANSI pra detectar linha "vazia visualmente"
         if _ANSI_ESCAPE.sub("", text).strip():
             cleaned.append(text)

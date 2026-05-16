@@ -2,7 +2,7 @@
 // detect de frame parcial e render ANSI mínimo.
 //
 // Lógica antes embutida em `components/chat-panel.tsx`. Extraída pra
-// permitir teste isolado em `tests/pane-chrome.test.mjs`.
+// permitir teste isolado em `tests/pane-chrome.test.ts`.
 //
 // JP-11 Fase 1 — DS-58.
 
@@ -33,10 +33,13 @@ const SPINNER_FINISHED = new RegExp(
   'u',
 );
 
-// Spinner ATIVO com contador de tokens entre parênteses:
-// "· Boogieing… (1m 8s · ↓ 2.7k tokens · thought for 33s)" — pode ter glifo
-// CC no prefixo (✻ ✶ ⏺) em vez de bullet.
-const SPINNER_ACTIVE = /^[\s·•⏺✻✶★⏵▶]+\w+(?:ing|ed|aed)\.?…?\s*\(.*tokens.*\)\s*$/u;
+// Spinner ATIVO: verb+reticências entre glifo prefixo e parêntese de metadata.
+// "✻ Thinking… (45s)" — variante inicial antes do contador acumular `tokens`.
+// "· Boogieing… (1m 8s · ↓ 2.7k tokens · thought for 33s)" — variante final.
+//
+// O `…` (hellip) é o marker confiável de spinner ATIVO — verbo finalizado vira
+// "for Nm Ns" sem hellip. Por isso `\.?…` é OBRIGATÓRIO (não opcional).
+const SPINNER_ACTIVE = /^[\s·•⏺✻✶★⏵▶]+\w+(?:ing|ed|aed)\.?…\s*\(.*\)\s*$/u;
 
 const REMOTE_CONTROL = /Remote Control\s+\w+/;
 const BYPASS_PERMISSIONS = /bypass permissions/;

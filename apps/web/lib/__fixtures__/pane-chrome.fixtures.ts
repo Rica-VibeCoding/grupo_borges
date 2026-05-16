@@ -15,6 +15,9 @@ export const CHROME_FIXTURES: FixtureCase[] = [
   { name: 'spinner-finished-bullet-thought', line: 'Boogieing for 12s · thought for 3s', chrome: true },
   { name: 'spinner-active-tokens', line: '· Boogieing… (1m 8s · ↓ 2.7k tokens · thought for 33s)', chrome: true },
   { name: 'spinner-active-flibbertigibbeting', line: '✻ Flibbertigibbeting… (45s · ↑ 1.2k tokens)', chrome: true },
+  // Primeiros ticks antes do contador acumular `tokens` — caso pego no review.
+  { name: 'spinner-active-no-tokens-yet', line: '✻ Thinking… (45s)', chrome: true },
+  { name: 'spinner-active-time-only', line: '· Cogitating… (3s)', chrome: true },
   { name: 'remote-control-connecting', line: 'Remote Control connecting…', chrome: true },
   { name: 'bypass-permissions', line: '⏵⏵ bypass permissions on for this session', chrome: true },
   { name: 'separator-long', line: '────────────────────────────────', chrome: true },
