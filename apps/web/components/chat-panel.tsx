@@ -548,7 +548,7 @@ function ChatInput({
         void onSubmit();
       }
     },
-    [onSubmit, slashOpen, slashItems, slashSelectedValue, closeSlash, insertSlashCommand],
+    [onSubmit, slashOpen, slashItems, slashSelectedValue, insertSlashCommand],
   );
 
   // --- paste ---
