@@ -208,6 +208,7 @@ function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tabPressedRef = useRef(false);
   const tabPressedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- image state ---
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -236,6 +237,7 @@ function ChatInput({
   useEffect(() => {
     return () => {
       if (tabPressedTimeoutRef.current) clearTimeout(tabPressedTimeoutRef.current);
+      if (sendFlashTimeoutRef.current) clearTimeout(sendFlashTimeoutRef.current);
     };
   }, []);
 
@@ -255,6 +257,17 @@ function ChatInput({
     setPendingImage(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [thumbUrl]);
+
+  const flashTextareaSend = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    if (sendFlashTimeoutRef.current) clearTimeout(sendFlashTimeoutRef.current);
+    el.classList.add('chat-send-flash');
+    sendFlashTimeoutRef.current = setTimeout(() => {
+      textareaRef.current?.classList.remove('chat-send-flash');
+      sendFlashTimeoutRef.current = null;
+    }, 150);
+  }, []);
 
   const attachFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -276,6 +289,7 @@ function ChatInput({
     if (sending) return;
     if (pendingImage) {
       const caption = text.trim() || undefined;
+      flashTextareaSend();
       await sendImage(pendingImage, caption);
       clearImage();
       setText('');
@@ -284,9 +298,10 @@ function ChatInput({
     }
     const trimmed = text.trim();
     if (!trimmed) return;
+    flashTextareaSend();
     await sendText(trimmed);
     setText('');
-  }, [sending, pendingImage, text, sendImage, sendText, clearImage]);
+  }, [sending, pendingImage, text, sendImage, sendText, clearImage, flashTextareaSend]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -537,7 +552,7 @@ function ChatInput({
             {/* Textarea */}
             <textarea
               ref={textareaRef}
-              className="chat-input-textarea mono"
+              className="chat-input-textarea"
               value={text}
               onChange={(e) => setText(e.currentTarget.value)}
               onKeyDown={onKeyDown}
@@ -580,8 +595,8 @@ function ChatInput({
 function ArrowUpIcon() {
   return (
     <svg
-      width="18"
-      height="18"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
