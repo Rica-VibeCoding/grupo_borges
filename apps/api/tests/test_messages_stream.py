@@ -123,6 +123,18 @@ def _insert_jsonl(
     ) or 0
 
 
+def _insert_raw_event(db: GrupoBorgesDB, *, kind: str, payload: str) -> int:
+    with db._connect() as conn, conn:
+        cur = conn.execute(
+            """
+            INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (None, "daniel", None, kind, payload, None, 1778905912),
+        )
+        return int(cur.lastrowid)
+
+
 def _parse_sse(blob: str) -> list[tuple[str, dict[str, Any]]]:
     events: list[tuple[str, dict[str, Any]]] = []
     for block in blob.replace("\r\n", "\n").split("\n\n"):
@@ -245,6 +257,53 @@ async def test_messages_stream_since_id_returns_only_newer_events(tmp_path: Path
     messages = [payload for name, payload in events if name == "message"]
     assert [m["uuid"] for m in messages] == ["uuid-2"]
     assert events[0][1]["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_since_id_greater_than_max_returns_empty_replay(
+    tmp_path: Path,
+) -> None:
+    app, db = _build_app(tmp_path)
+    last_id = _insert_jsonl(db, session_id="sess-a", uuid="uuid-1")
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        since_id=last_id + 100,
+        stop_after="replay-end",
+    )
+
+    assert [name for name, _ in events] == ["replay-start", "replay-end"]
+    assert events[0][1] == {"session_id": "sess-a", "total": 0}
+    assert events[-1][1]["last_id"] == last_id + 100
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_agent_without_sessions_returns_null_session_id(
+    tmp_path: Path,
+) -> None:
+    app, _ = _build_app(tmp_path)
+
+    _, _, events = await _drive_stream(app, stop_after="replay-end")
+
+    assert [name for name, _ in events] == ["replay-start", "replay-end"]
+    assert events[0][1] == {"session_id": None, "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_corrupt_payload_does_not_break_stream(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app, db = _build_app(tmp_path)
+    caplog.set_level("WARNING", logger="db.store")
+    _insert_raw_event(db, kind="jsonl:user", payload="{not-json")
+
+    _, _, events = await _drive_stream(app, stop_after="replay-end")
+
+    assert [name for name, _ in events] == ["replay-start", "replay-end"]
+    assert events[0][1] == {"session_id": None, "total": 0}
+    assert "payload JSON inválido em task_events.id=" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -304,6 +304,7 @@ _MESSAGES_STREAM_LIMIT_DEFAULT = 200
 _MESSAGES_STREAM_LIMIT_MAX = 500
 _MESSAGES_STREAM_POLL_S = 0.25
 _MESSAGES_STREAM_HEARTBEAT_S = 15.0
+_MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY = 50
 # 200 linhas (era 80) cobre respostas longas sem cortar o topo. Configurável
 # via env pro ops afinar sob carga sem deploy. `_PANE_STREAM_MAX_CHARS` foi a
 # 20k acomodando linhas mais longas + escape sequences ANSI preservadas no
@@ -420,56 +421,86 @@ async def stream_agent_messages(
     async def _message_stream() -> AsyncGenerator[dict[str, str], None]:
         started_at = time.perf_counter()
         last_id = since_id
-        replay_events = await db.list_jsonl_message_events(
-            slug,
-            session_id=resolved_session_id,
-            since_id=since_id,
-            limit=capped_limit,
-        )
-        yield _sse_json(
-            "replay-start",
-            {"session_id": resolved_session_id, "total": len(replay_events)},
-        )
-        for event in replay_events:
-            if await request.is_disconnected():
-                return
-            last_id = max(last_id, int(event["id"]))
-            canonical = _canonical_jsonl_message_event(event)
-            if canonical is not None:
-                yield _sse_json("message", canonical)
-        yield _sse_json(
-            "replay-end",
-            {
-                "last_id": last_id,
-                "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
-            },
-        )
-
         last_heartbeat = time.monotonic()
-        while True:
-            if await request.is_disconnected():
-                return
 
-            live_events = await db.list_jsonl_message_events(
-                slug,
-                session_id=resolved_session_id,
-                since_id=last_id,
-                limit=_MESSAGES_STREAM_LIMIT_MAX,
+        try:
+            try:
+                replay_events = await db.list_jsonl_message_events(
+                    slug,
+                    session_id=resolved_session_id,
+                    since_id=since_id,
+                    limit=capped_limit,
+                )
+            except sqlite3.OperationalError as e:
+                log.warning("Erro SQLite recuperável no replay de %s: %s", slug, e)
+                replay_events = []
+                yield _sse_json(
+                    "error",
+                    {"code": "sqlite_operational_error", "detail": str(e)},
+                )
+
+            yield _sse_json(
+                "replay-start",
+                {"session_id": resolved_session_id, "total": len(replay_events)},
             )
-            for event in live_events:
+            for index, event in enumerate(replay_events, start=1):
                 if await request.is_disconnected():
                     return
                 last_id = max(last_id, int(event["id"]))
                 canonical = _canonical_jsonl_message_event(event)
                 if canonical is not None:
                     yield _sse_json("message", canonical)
+                if index % _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY == 0:
+                    now = time.monotonic()
+                    if now - last_heartbeat >= _MESSAGES_STREAM_HEARTBEAT_S:
+                        yield _sse_json("heartbeat", {"ts": int(time.time())})
+                        last_heartbeat = now
+            yield _sse_json(
+                "replay-end",
+                {
+                    "last_id": last_id,
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                },
+            )
 
-            now = time.monotonic()
-            if now - last_heartbeat >= _MESSAGES_STREAM_HEARTBEAT_S:
-                yield _sse_json("heartbeat", {"ts": int(time.time())})
-                last_heartbeat = now
+            while True:
+                if await request.is_disconnected():
+                    return
 
-            await asyncio.sleep(_MESSAGES_STREAM_POLL_S)
+                try:
+                    live_events = await db.list_jsonl_message_events(
+                        slug,
+                        session_id=resolved_session_id,
+                        since_id=last_id,
+                        limit=_MESSAGES_STREAM_LIMIT_MAX,
+                    )
+                except sqlite3.OperationalError as e:
+                    log.warning("Erro SQLite recuperável no live stream de %s: %s", slug, e)
+                    yield _sse_json(
+                        "error",
+                        {"code": "sqlite_operational_error", "detail": str(e)},
+                    )
+                    await asyncio.sleep(_MESSAGES_STREAM_POLL_S)
+                    continue
+
+                for event in live_events:
+                    if await request.is_disconnected():
+                        return
+                    last_id = max(last_id, int(event["id"]))
+                    canonical = _canonical_jsonl_message_event(event)
+                    if canonical is not None:
+                        yield _sse_json("message", canonical)
+
+                now = time.monotonic()
+                if now - last_heartbeat >= _MESSAGES_STREAM_HEARTBEAT_S:
+                    yield _sse_json("heartbeat", {"ts": int(time.time())})
+                    last_heartbeat = now
+
+                await asyncio.sleep(_MESSAGES_STREAM_POLL_S)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            log.debug("messages stream encerrado para agent=%s session_id=%s", slug, resolved_session_id)
 
     return EventSourceResponse(
         _message_stream(),

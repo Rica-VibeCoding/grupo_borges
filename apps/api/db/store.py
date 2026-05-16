@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import sqlite3
 import time
 import uuid
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
+logger = logging.getLogger(__name__)
 
 # Formato canônico do bucket horário usado pela sparkline. Compartilhado entre
 # a SQL agregada (strftime) e o gap fill no router — single source of truth.
@@ -67,6 +69,7 @@ REVIEW_ACTIONS = {
     "requeued": ("review.requeued", "ready"),
 }
 _UNSET = object()
+_JSONL_MESSAGE_KINDS = ("jsonl:user", "jsonl:assistant", "jsonl:attachment", "jsonl:summary")
 
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
@@ -1030,19 +1033,25 @@ class GrupoBorgesDB:
         return await asyncio.to_thread(self._latest_jsonl_session_id, agent_slug)
 
     def _latest_jsonl_session_id(self, agent_slug: str) -> str | None:
+        kind_placeholders = ", ".join("?" for _ in _JSONL_MESSAGE_KINDS)
         with self._connect() as conn:
             row = conn.execute(
-                """
+                f"""
                 SELECT json_extract(payload, '$.sessionId') AS session_id
                 FROM task_events
                 WHERE agent_slug = ?
-                  AND kind IN ('jsonl:user', 'jsonl:assistant', 'jsonl:attachment', 'jsonl:summary')
+                  AND kind IN ({kind_placeholders})
+                  AND json_valid(payload) = 1
                   AND json_extract(payload, '$.uuid') IS NOT NULL
                   AND json_extract(payload, '$.sessionId') IS NOT NULL
+                  AND (
+                    json_extract(payload, '$.isSidechain') IS NULL
+                    OR json_extract(payload, '$.isSidechain') != 1
+                  )
                 ORDER BY id DESC
                 LIMIT 1
                 """,
-                (agent_slug,),
+                (agent_slug, *_JSONL_MESSAGE_KINDS),
             ).fetchone()
             return row["session_id"] if row is not None else None
 
@@ -1069,15 +1078,21 @@ class GrupoBorgesDB:
         since_id: int,
         limit: int,
     ) -> list[dict[str, Any]]:
+        kind_placeholders = ", ".join("?" for _ in _JSONL_MESSAGE_KINDS)
         clauses = [
             "agent_slug = ?",
-            "kind IN ('jsonl:user', 'jsonl:assistant', 'jsonl:attachment', 'jsonl:summary')",
+            f"kind IN ({kind_placeholders})",
             "id > ?",
-            "json_extract(payload, '$.uuid') IS NOT NULL",
+            "("
+            "json_valid(payload) = 0 "
+            "OR (json_valid(payload) = 1 AND json_extract(payload, '$.uuid') IS NOT NULL)"
+            ")",
         ]
-        params: list[Any] = [agent_slug, since_id]
+        params: list[Any] = [agent_slug, *_JSONL_MESSAGE_KINDS, since_id]
         if session_id is not None:
-            clauses.append("json_extract(payload, '$.sessionId') = ?")
+            clauses.append(
+                "json_valid(payload) = 1 AND json_extract(payload, '$.sessionId') = ?"
+            )
             params.append(session_id)
         params.append(limit)
 
@@ -1099,7 +1114,8 @@ class GrupoBorgesDB:
                     try:
                         d["payload"] = json.loads(d["payload"])
                     except json.JSONDecodeError:
-                        pass
+                        logger.warning("payload JSON inválido em task_events.id=%s", row["id"])
+                        continue
                 result.append(d)
             return result
 
