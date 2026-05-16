@@ -9,6 +9,11 @@ const config: NextConfig = {
     '*.tailfe77db.ts.net',
     '100.107.56.38',
   ],
+  // SSE quebra em rewrites() quando o servidor Node de dev aplica gzip:
+  // chunks pequenos ficam presos no decoder do browser, então o cliente
+  // vê o replay inicial em rajada e nunca recebe heartbeat/live. Vercel
+  // edge tem compressão própria, então isso só desliga em dev/self-host.
+  compress: false,
   async rewrites() {
     return [{ source: '/api/:path*', destination: `${API_BASE}/api/:path*` }];
   },

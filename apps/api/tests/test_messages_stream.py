@@ -220,6 +220,9 @@ async def test_messages_stream_replay_and_schema_are_canonical(tmp_path: Path) -
 
     assert status == 200
     assert headers["content-type"].startswith("text/event-stream")
+    assert headers["cache-control"] == "no-cache"
+    assert headers["connection"] == "keep-alive"
+    assert headers["x-accel-buffering"] == "no"
     assert [name for name, _ in events] == [
         "replay-start",
         "message",

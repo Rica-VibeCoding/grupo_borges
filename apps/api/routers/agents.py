@@ -504,7 +504,11 @@ async def stream_agent_messages(
 
     return EventSourceResponse(
         _message_stream(),
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
