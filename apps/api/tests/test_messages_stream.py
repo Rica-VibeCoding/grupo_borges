@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi import FastAPI
 
 from db.store import GrupoBorgesDB
+from orchestrator import jsonl_watcher
 from routers import agents as agents_router
 
 
@@ -34,6 +35,7 @@ DANIEL = {
 
 
 def _build_app(tmp_path: Path) -> tuple[FastAPI, GrupoBorgesDB]:
+    jsonl_watcher.reset_subagent_state_for_tests()
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
     db._sync_agents([DANIEL])
@@ -71,11 +73,13 @@ def _payload(
     uuid: str = "uuid-a",
     parent_uuid: str | None = None,
     text: str = "olá",
+    is_sidechain: bool = False,
+    content: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     role = "assistant" if kind == "assistant" else "user"
     message: dict[str, Any] = {
         "role": role,
-        "content": [{"type": "text", "text": text}],
+        "content": content if content is not None else [{"type": "text", "text": text}],
     }
     if kind == "assistant":
         message.update(
@@ -91,7 +95,7 @@ def _payload(
         "uuid": uuid,
         "parentUuid": parent_uuid,
         "sessionId": session_id,
-        "isSidechain": False,
+        "isSidechain": is_sidechain,
         "userType": "external",
         "timestamp": "2026-05-16T03:56:24.353Z",
         "message": message,
@@ -106,19 +110,25 @@ def _insert_jsonl(
     uuid: str = "uuid-a",
     parent_uuid: str | None = None,
     text: str = "olá",
+    is_sidechain: bool = False,
+    content: list[dict[str, Any]] | None = None,
 ) -> int:
+    payload = _payload(
+        kind=kind,
+        session_id=session_id,
+        uuid=uuid,
+        parent_uuid=parent_uuid,
+        text=text,
+        is_sidechain=is_sidechain,
+        content=content,
+    )
+    jsonl_watcher.update_subagent_state_from_jsonl("daniel", payload, kind)
     return db._insert_task_event(
         f"jsonl:{kind}",
         None,
         "daniel",
         None,
-        _payload(
-            kind=kind,
-            session_id=session_id,
-            uuid=uuid,
-            parent_uuid=parent_uuid,
-            text=text,
-        ),
+        payload,
         None,
     ) or 0
 
@@ -157,6 +167,7 @@ async def _drive_stream(
     limit: int = 200,
     since_id: int = 0,
     stop_after: str,
+    stop_after_status: str | None = None,
     max_wait_s: float = 3.0,
 ) -> tuple[int, dict[str, str], list[tuple[str, dict[str, Any]]]]:
     disconnected = False
@@ -174,6 +185,12 @@ async def _drive_stream(
     )
     body_chunks: list[bytes] = []
     direct_events: list[tuple[str, dict[str, Any]]] = []
+
+    def should_stop(event_name: str, data: dict[str, Any]) -> bool:
+        if event_name != stop_after:
+            return False
+        return stop_after_status is None or data.get("status") == stop_after_status
+
     try:
         async def collect() -> None:
             async for chunk in response.body_iterator:
@@ -181,12 +198,15 @@ async def _drive_stream(
                     event_name = str(chunk["event"])
                     data = json.loads(chunk["data"])
                     direct_events.append((event_name, data))
-                    if event_name == stop_after:
+                    if should_stop(event_name, data):
                         break
                 else:
                     body = chunk if isinstance(chunk, bytes) else chunk.encode()
                     body_chunks.append(body)
-                    if f"event: {stop_after}".encode() in body:
+                    parsed = _parse_sse(
+                        b"".join(body_chunks).decode("utf-8", errors="replace")
+                    )
+                    if any(should_stop(name, payload) for name, payload in parsed):
                         break
 
         await asyncio.wait_for(collect(), timeout=max_wait_s)
@@ -196,7 +216,7 @@ async def _drive_stream(
 
     headers = {k.decode(): v.decode() for k, v in response.raw_headers}
     blob = b"".join(body_chunks).decode("utf-8", errors="replace")
-    return response.status_code, headers, direct_events or _parse_sse(blob)
+    return response.status_code, headers, direct_events + _parse_sse(blob)
 
 
 @pytest.mark.asyncio
@@ -379,3 +399,138 @@ async def test_messages_stream_heartbeat_after_replay(tmp_path: Path) -> None:
     assert [name for name, _ in events][:3] == ["replay-start", "message", "replay-end"]
     assert events[-1][0] == "heartbeat"
     assert isinstance(events[-1][1]["ts"], int)
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_emits_subagent_active_status(tmp_path: Path) -> None:
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(
+        db,
+        kind="assistant",
+        session_id="sess-a",
+        uuid="sidechain-1",
+        parent_uuid="toolu-parent-1",
+        is_sidechain=True,
+        text="subagent rodando",
+    )
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        stop_after="subagent_status",
+    )
+
+    event_name, payload = events[-1]
+    assert event_name == "subagent_status"
+    assert payload["parent_uuid"] == "toolu-parent-1"
+    assert payload["status"] == "active"
+    assert isinstance(payload["started_at_ms"], int)
+    assert isinstance(payload["last_seen_ms"], int)
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_emits_subagent_completed_status(tmp_path: Path) -> None:
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(
+        db,
+        kind="assistant",
+        session_id="sess-a",
+        uuid="sidechain-1",
+        parent_uuid="toolu-parent-1",
+        is_sidechain=True,
+    )
+    _insert_jsonl(
+        db,
+        kind="user",
+        session_id="sess-a",
+        uuid="tool-result-1",
+        content=[
+            {
+                "type": "tool_result",
+                "tool_use_id": "toolu-parent-1",
+                "content": "done",
+            }
+        ],
+    )
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        stop_after="subagent_status",
+        stop_after_status="completed",
+    )
+
+    status_events = [payload for name, payload in events if name == "subagent_status"]
+    assert status_events[-1]["parent_uuid"] == "toolu-parent-1"
+    assert status_events[-1]["status"] == "completed"
+    assert status_events[-1]["duration_ms"] >= 0
+    assert isinstance(status_events[-1]["started_at_ms"], int)
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_emits_subagent_stalled_after_30s(tmp_path: Path) -> None:
+    app, _ = _build_app(tmp_path)
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "daniel",
+        {
+            "type": "assistant",
+            "uuid": "sidechain-1",
+            "parentUuid": "toolu-parent-1",
+            "sessionId": "sess-a",
+            "isSidechain": True,
+            "message": {"role": "assistant", "content": []},
+        },
+        "assistant",
+        now_ms=1_000,
+    )
+
+    with patch("routers.agents._MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S", 0.01), patch(
+        "routers.agents._MESSAGES_STREAM_POLL_S", 0.01
+    ), patch("orchestrator.jsonl_watcher._now_ms", return_value=32_000):
+        _, _, events = await _drive_stream(
+            app,
+            session_id="sess-a",
+            stop_after="subagent_status",
+            stop_after_status="stalled",
+            max_wait_s=3.0,
+        )
+
+    stalled = [
+        payload
+        for name, payload in events
+        if name == "subagent_status" and payload["status"] == "stalled"
+    ]
+    assert stalled[-1]["parent_uuid"] == "toolu-parent-1"
+    assert stalled[-1]["started_at_ms"] == 1_000
+    assert stalled[-1]["last_seen_ms"] == 1_000
+    assert stalled[-1]["duration_ms"] == 31_000
+
+
+def test_mark_stalled_subagents_emits_once_and_clears_state() -> None:
+    # Regressão pós-review: stalled deve ser emitido UMA VEZ por parent_uuid
+    # e o parent removido do state in-memory, senão (1) cada scan de 10s
+    # re-emite o mesmo stalled e (2) o dict cresce monotônico em produção.
+    jsonl_watcher.reset_subagent_state_for_tests()
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "daniel",
+        {
+            "type": "assistant",
+            "uuid": "sidechain-once",
+            "parentUuid": "toolu-once",
+            "sessionId": "sess-once",
+            "isSidechain": True,
+            "message": {"role": "assistant", "content": []},
+        },
+        "assistant",
+        now_ms=1_000,
+    )
+
+    first = jsonl_watcher.mark_stalled_subagents("daniel", now_ms=32_000)
+    second = jsonl_watcher.mark_stalled_subagents("daniel", now_ms=42_000)
+    third = jsonl_watcher.mark_stalled_subagents("daniel", now_ms=120_000)
+
+    assert len(first) == 1
+    assert first[0]["parent_uuid"] == "toolu-once"
+    assert second == []
+    assert third == []
+    assert "toolu-once" not in jsonl_watcher._subagent_state.get("daniel", {})

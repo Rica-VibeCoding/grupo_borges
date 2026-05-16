@@ -30,9 +30,14 @@ from typing import Any, AsyncGenerator, Literal
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, Field
-from sse_starlette import EventSourceResponse
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
+from orchestrator.jsonl_watcher import (
+    mark_stalled_subagents,
+    subagent_active_snapshot,
+    subagent_status_events_since,
+)
 from services import tmux_driver
 from services import workspace_reader
 
@@ -304,6 +309,7 @@ _MESSAGES_STREAM_LIMIT_DEFAULT = 200
 _MESSAGES_STREAM_LIMIT_MAX = 500
 _MESSAGES_STREAM_POLL_S = 0.25
 _MESSAGES_STREAM_HEARTBEAT_S = 15.0
+_MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S = 10.0
 _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY = 50
 # 200 linhas (era 80) cobre respostas longas sem cortar o topo. Configurável
 # via env pro ops afinar sob carga sem deploy. `_PANE_STREAM_MAX_CHARS` foi a
@@ -399,6 +405,17 @@ def _sse_json(event: str, data: dict[str, Any]) -> dict[str, str]:
     return {"event": event, "data": json.dumps(data, ensure_ascii=False)}
 
 
+def _subagent_sse(data: dict[str, Any]) -> ServerSentEvent:
+    return ServerSentEvent(
+        event="subagent_status",
+        data=json.dumps(data, ensure_ascii=False),
+    )
+
+
+def _public_subagent_status(event: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in event.items() if key != "seq"}
+
+
 @router.get("/{slug}/messages/stream")
 async def stream_agent_messages(
     slug: str,
@@ -418,10 +435,12 @@ async def stream_agent_messages(
     capped_limit = min(limit, _MESSAGES_STREAM_LIMIT_MAX)
     resolved_session_id = session_id or await db.latest_jsonl_session_id(slug)
 
-    async def _message_stream() -> AsyncGenerator[dict[str, str], None]:
+    async def _message_stream() -> AsyncGenerator[dict[str, str] | ServerSentEvent, None]:
         started_at = time.perf_counter()
         last_id = since_id
         last_heartbeat = time.monotonic()
+        last_subagent_seq = 0
+        last_stall_scan = time.monotonic()
 
         try:
             try:
@@ -462,6 +481,19 @@ async def stream_agent_messages(
                     "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
                 },
             )
+            initial_status_events, last_subagent_seq = subagent_status_events_since(
+                slug,
+                last_subagent_seq,
+            )
+            active_status_seen = set()
+            for status_event in initial_status_events:
+                public_event = _public_subagent_status(status_event)
+                if public_event.get("status") == "active":
+                    active_status_seen.add(public_event.get("parent_uuid"))
+                yield _subagent_sse(public_event)
+            for status_event in subagent_active_snapshot(slug):
+                if status_event["parent_uuid"] not in active_status_seen:
+                    yield _subagent_sse(status_event)
 
             while True:
                 if await request.is_disconnected():
@@ -492,6 +524,22 @@ async def stream_agent_messages(
                         yield _sse_json("message", canonical)
 
                 now = time.monotonic()
+                status_events, last_subagent_seq = subagent_status_events_since(
+                    slug,
+                    last_subagent_seq,
+                )
+                for status_event in status_events:
+                    yield _subagent_sse(_public_subagent_status(status_event))
+
+                if now - last_stall_scan >= _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S:
+                    for status_event in mark_stalled_subagents(slug):
+                        yield _subagent_sse(status_event)
+                    _, last_subagent_seq = subagent_status_events_since(
+                        slug,
+                        last_subagent_seq,
+                    )
+                    last_stall_scan = now
+
                 if now - last_heartbeat >= _MESSAGES_STREAM_HEARTBEAT_S:
                     yield _sse_json("heartbeat", {"ts": int(time.time())})
                     last_heartbeat = now

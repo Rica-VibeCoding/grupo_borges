@@ -27,7 +27,9 @@ import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
+from typing import Any
 
 from watchfiles import Change, awatch
 
@@ -37,6 +39,9 @@ from util import parse_dict_or_none
 logger = logging.getLogger(__name__)
 
 _NON_ENCODED_CHAR = re.compile(r"[^A-Za-z0-9-]")
+_subagent_state: dict[str, dict[str, dict[str, int]]] = {}
+_subagent_status_events: dict[str, list[dict[str, Any]]] = {}
+_subagent_event_seq = 0
 
 
 def encoded_cwd(workspace_path: str) -> str:
@@ -60,6 +65,161 @@ def _content_blocks(payload: dict) -> list[dict]:
     if isinstance(content, list):
         return [block for block in content if isinstance(block, dict)]
     return []
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _jsonl_bool(payload: dict, *keys: str) -> bool:
+    return any(bool(payload.get(key)) for key in keys)
+
+
+def _jsonl_value(payload: dict, *keys: str) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _append_subagent_status(slug: str, payload: dict[str, Any]) -> None:
+    global _subagent_event_seq
+    _subagent_event_seq += 1
+    event = {"seq": _subagent_event_seq, **payload}
+    events = _subagent_status_events.setdefault(slug, [])
+    events.append(event)
+    del events[:-200]
+
+
+def _tool_result_ids(payload: dict) -> set[str]:
+    ids: set[str] = set()
+    for block in _content_blocks(payload):
+        if block.get("type") != "tool_result":
+            continue
+        tool_use_id = block.get("tool_use_id")
+        if isinstance(tool_use_id, str) and tool_use_id:
+            ids.add(tool_use_id)
+    # tool_use_id_match: chave custom opcional pro caller informar diretamente
+    # qual tool_use_id está sendo fechado, sem precisar mergulhar em content[].
+    # Mantida pra evolução defensiva — payloads sintéticos de teste/cli a usam.
+    match = payload.get("tool_use_id_match")
+    if isinstance(match, str) and match:
+        ids.add(match)
+    return ids
+
+
+def update_subagent_state_from_jsonl(
+    slug: str,
+    payload: dict | None,
+    event_type: str,
+    *,
+    now_ms: int | None = None,
+) -> None:
+    """Atualiza estado in-memory de subagents ativos a partir de uma linha JSONL."""
+    if not payload:
+        return
+    now = now_ms if now_ms is not None else _now_ms()
+    parent_uuid = _jsonl_value(payload, "parentUuid", "parent_uuid")
+    if (
+        _jsonl_bool(payload, "isSidechain", "is_sidechain")
+        and isinstance(parent_uuid, str)
+        and parent_uuid
+    ):
+        active_by_parent = _subagent_state.setdefault(slug, {})
+        state = active_by_parent.get(parent_uuid)
+        if state is None:
+            state = {"started_at_ms": now, "last_seen_ms": now}
+            active_by_parent[parent_uuid] = state
+            _append_subagent_status(
+                slug,
+                {
+                    "parent_uuid": parent_uuid,
+                    "status": "active",
+                    "started_at_ms": state["started_at_ms"],
+                    "last_seen_ms": state["last_seen_ms"],
+                },
+            )
+        else:
+            state["last_seen_ms"] = now
+
+    if event_type != "user":
+        return
+    active_by_parent = _subagent_state.get(slug)
+    if not active_by_parent:
+        return
+    completed_ids = _tool_result_ids(payload)
+    for completed_parent in completed_ids & set(active_by_parent):
+        state = active_by_parent.pop(completed_parent)
+        _append_subagent_status(
+            slug,
+            {
+                "parent_uuid": completed_parent,
+                "status": "completed",
+                "started_at_ms": state["started_at_ms"],
+                "duration_ms": max(0, now - state["started_at_ms"]),
+                "last_seen_ms": state["last_seen_ms"],
+            },
+        )
+
+
+def subagent_active_snapshot(slug: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "parent_uuid": parent_uuid,
+            "status": "active",
+            "started_at_ms": state["started_at_ms"],
+            "last_seen_ms": state["last_seen_ms"],
+        }
+        for parent_uuid, state in _subagent_state.get(slug, {}).items()
+    ]
+
+
+def subagent_status_events_since(
+    slug: str,
+    after_seq: int,
+) -> tuple[list[dict[str, Any]], int]:
+    events = [
+        event
+        for event in _subagent_status_events.get(slug, [])
+        if int(event.get("seq", 0)) > after_seq
+    ]
+    latest_seq = after_seq
+    if events:
+        latest_seq = max(int(event["seq"]) for event in events)
+    return events, latest_seq
+
+
+def mark_stalled_subagents(slug: str, *, now_ms: int | None = None) -> list[dict[str, Any]]:
+    # Stalled é emitido UMA VEZ por parent_uuid: removemos do state após emitir
+    # pra evitar (1) re-emissão a cada scan de 10s e (2) crescimento monotônico
+    # do dict quando subagent crasha sem tool_result. Itera sobre snapshot pra
+    # mutar dict no loop.
+    now = now_ms if now_ms is not None else _now_ms()
+    stalled: list[dict[str, Any]] = []
+    slug_state = _subagent_state.get(slug, {})
+    for parent_uuid in list(slug_state.keys()):
+        state = slug_state[parent_uuid]
+        if now - state["last_seen_ms"] <= 30_000:
+            continue
+        payload = {
+            "parent_uuid": parent_uuid,
+            "status": "stalled",
+            "started_at_ms": state["started_at_ms"],
+            "last_seen_ms": state["last_seen_ms"],
+            "duration_ms": max(0, now - state["started_at_ms"]),
+        }
+        _append_subagent_status(slug, payload)
+        stalled.append(payload)
+        slug_state.pop(parent_uuid, None)
+    return stalled
+
+
+def reset_subagent_state_for_tests() -> None:
+    global _subagent_event_seq
+    _subagent_state.clear()
+    _subagent_status_events.clear()
+    _subagent_event_seq = 0
 
 
 def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None, str | None]:
@@ -212,6 +372,7 @@ class JsonlWatcher:
         for line in new_lines:
             payload = parse_dict_or_none(line)
             event_type = str((payload or {}).get("type") or "unknown")
+            update_subagent_state_from_jsonl(slug, payload, event_type)
             await self._db.insert_task_event(
                 kind=f"jsonl:{event_type}",
                 agent_slug=slug,
