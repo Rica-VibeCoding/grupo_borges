@@ -17,11 +17,13 @@ export type SlashCommand = {
 };
 
 export const SLASH_COMMANDS: SlashCommand[] = [
-  { value: 'clear', label: '/clear', desc: 'limpa o pane' },
+  { value: 'clear', label: '/clear', desc: 'limpa o contexto' },
+  { value: 'compact', label: '/compact', desc: 'compacta o contexto preservando o essencial' },
+  { value: 'memory', label: '/memory', desc: 'edita CLAUDE.md e auto-memory' },
+  { value: 'reload-plugins', label: '/reload-plugins', desc: 'recarrega plugins (skills, hooks, MCP)' },
   { value: 'restart', label: '/restart', desc: 'reinicia o agente' },
-  { value: 'help', label: '/help', desc: 'mostra ajuda' },
-  { value: 'status', label: '/status', desc: 'pede status do agente' },
   { value: 'skill', label: '/skill <nome>', desc: 'invoca skill' },
+  { value: 'status', label: '/status', desc: 'pede status do agente' },
 ];
 
 export function filterSlashCommands(query: string): SlashCommand[] {
