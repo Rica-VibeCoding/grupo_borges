@@ -399,7 +399,8 @@ async def post_agent_voice(
     """
     agent = await _get_agent_or_404(request, slug)
 
-    if audio.content_type not in _VOICE_ALLOWED_MIMES:
+    base_mime = (audio.content_type or "").split(";")[0].strip()
+    if base_mime not in _VOICE_ALLOWED_MIMES:
         raise HTTPException(
             status_code=422, detail=f"mime não suportado: {audio.content_type}"
         )
@@ -409,7 +410,7 @@ async def post_agent_voice(
         raise HTTPException(status_code=422, detail="audio maior que 10MB")
 
     started_at = time.monotonic()
-    suffix = _VOICE_MIME_SUFFIX.get(audio.content_type or "", ".bin")
+    suffix = _VOICE_MIME_SUFFIX.get(base_mime, ".bin")
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp_path = tmp.name
     try:
