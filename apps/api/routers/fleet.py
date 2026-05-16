@@ -25,6 +25,7 @@ AgentStatus = Literal["ocioso", "trabalhando", "aguardando", "offline"]
 class SparklineBucket(BaseModel):
     bucket: str  # ISO UTC "%Y-%m-%dT%H:00:00Z"
     count: int
+    tokens: int = 0  # DS-58: SUM(input+output) da hora; altura da sparkline.
 
 
 class FleetInstance(BaseModel):

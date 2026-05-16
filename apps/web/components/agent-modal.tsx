@@ -16,7 +16,7 @@ import type {
   ActiveTaskStatus,
   Task,
 } from '../lib/cockpit-types';
-import { formatLastSeen } from '../lib/cockpit-types';
+import { formatDuration, formatLastSeen, shortModelName } from '../lib/cockpit-types';
 import { formatDateTime } from '../lib/format-time';
 import {
   fetchAgentDoc,
@@ -211,38 +211,99 @@ function HandoffPanel({ agent }: { agent: Agent }) {
   );
 }
 
+/**
+ * MissaoPanel (aba INF) — DS-58 polish.
+ *
+ * Reagrupado em blocos de sinergia (Rica): IDENTIDADE, INFRA, SESSÃO, TAREFA,
+ * CICLO DE VIDA, ATIVIDADE. Grupo TAREFA / CICLO DE VIDA inteiro só aparece se
+ * tiver pelo menos 1 campo populado — evita ruído quando agente tá ocioso.
+ * STDOUT · PANE removido (redundante com chat panel + statusline).
+ */
 function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) {
-  const totalEvents = agent.sparkline.reduce((acc, b) => acc + b.count, 0);
+  const sessionStarted = agent.executor_kind === 'codex'
+    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
+    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
+  const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
+
+  const hasTaskInfo = Boolean(
+    agent.current_task_id || agent.active_task_label || agent.current_task_last_heartbeat,
+  );
+  const hasLifecycle = Boolean(
+    agent.lifecycle_status || agent.lifecycle_detail || agent.lifecycle_event,
+  );
+
   return (
     <div className="missao-grid">
-      <KV k="WORKSPACE" v={agent.workspace_path} />
-      <KV k="TMUX" v={agent.tmux_session} />
-      <KV k="CLI" v={agent.state_cli ?? agent.cli_default} />
-      <KV k="MODELO" v={agent.state_model ?? agent.model_default} />
-      <KV k="STATUS" v={STATUS_LABEL[agent.status]} />
-      <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} />
-      <KV k="VISTO EM ABS" v={formatUnixDateTime(agent.last_seen)} />
-      <KV k="TAREFA" v={agent.current_task_id ?? '—'} />
-      <KV k="INSTÂNCIAS" v={String(agent.instance_count)} />
-      <KV k="EVENTOS · 24H" v={String(totalEvents)} />
-      <div className="missao-stdout">
-        <span className="missao-key">{agent.executor_kind === 'codex' ? 'ÚLTIMA MENSAGEM' : 'STDOUT · PANE'}</span>
-        <pre>{agent.executor_kind === 'codex'
-          ? (agent.last_assistant_message ?? '— sem mensagem recente —')
-          : (agent.pane_excerpt ?? '— nenhuma saída capturada —')}</pre>
-      </div>
-      <div className="missao-caps">
-        <span className="missao-key">CAPACIDADES</span>
-        {agent.capabilities.length === 0 ? (
-          <span className="muted">—</span>
-        ) : (
-          <ul className="missao-caps-list">
-            {agent.capabilities.map((c) => <li key={c}>{c}</li>)}
-          </ul>
-        )}
-      </div>
-      <Sparkline buckets={agent.sparkline} />
+      <MissaoSection title="IDENTIDADE">
+        <KV k="NOME" v={agent.name} />
+        <KV k="PAPEL" v={agent.role} />
+        <KV k="SLUG" v={agent.slug} />
+        <KV k="EMOJI" v={agent.emoji ?? '—'} />
+        <div className="missao-caps">
+          <span className="missao-key">CAPACIDADES</span>
+          {agent.capabilities.length === 0 ? (
+            <span className="muted">—</span>
+          ) : (
+            <ul className="missao-caps-list">
+              {agent.capabilities.map((c) => <li key={c}>{c}</li>)}
+            </ul>
+          )}
+        </div>
+      </MissaoSection>
+
+      <MissaoSection title="INFRA">
+        <KV k="WORKSPACE" v={agent.workspace_path} />
+        <KV k="TMUX" v={agent.tmux_session} />
+        <KV k="EXECUTOR" v={agent.executor_kind ?? 'claude_code'} />
+        <KV k="CLI" v={agent.state_cli ?? agent.cli_default} />
+        <KV k="MODELO" v={shortModelName(agent.state_model ?? agent.model_default)} />
+      </MissaoSection>
+
+      <MissaoSection title="SESSÃO">
+        <KV k="STATUS" v={STATUS_LABEL[agent.status]} />
+        <KV k="CONTEXTO" v={agent.context_pct !== null ? `${agent.context_pct}%` : '—'} />
+        <KV k="DURAÇÃO" v={sessionSecs !== null ? formatDuration(sessionSecs) : '—'} />
+        <KV k="INÍCIO" v={formatUnixDateTime(sessionStarted)} />
+        <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} />
+        <KV k="VISTO EM ABS" v={formatUnixDateTime(agent.last_seen)} />
+        <KV k="INSTÂNCIAS" v={String(agent.instance_count)} />
+      </MissaoSection>
+
+      {hasTaskInfo && (
+        <MissaoSection title="TAREFA">
+          <KV k="ATUAL" v={agent.current_task_id ?? '—'} />
+          <KV k="RÓTULO" v={agent.active_task_label ?? '—'} />
+          <KV
+            k="ÚLTIMO HEARTBEAT"
+            v={agent.current_task_last_heartbeat !== null
+              ? formatLastSeen(agent.current_task_last_heartbeat, serverNow)
+              : '—'}
+          />
+        </MissaoSection>
+      )}
+
+      {hasLifecycle && (
+        <MissaoSection title="CICLO DE VIDA">
+          <KV k="STATUS" v={agent.lifecycle_status ? STATUS_LABEL[agent.lifecycle_status] : '—'} />
+          <KV k="DETALHE" v={agent.lifecycle_detail ?? '—'} />
+          <KV k="EVENTO" v={agent.lifecycle_event ?? '—'} />
+          <KV k="ATUALIZADO" v={formatUnixDateTime(agent.lifecycle_updated_at)} />
+        </MissaoSection>
+      )}
+
+      <MissaoSection title="ATIVIDADE">
+        <Sparkline buckets={agent.sparkline} />
+      </MissaoSection>
     </div>
+  );
+}
+
+function MissaoSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="missao-section">
+      <header className="missao-section-head">{title}</header>
+      <div className="missao-section-body">{children}</div>
+    </section>
   );
 }
 

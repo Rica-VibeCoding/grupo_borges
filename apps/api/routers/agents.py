@@ -190,8 +190,10 @@ async def get_agent_sparkline(
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
 
     start_dt, _ = hour_window(hours)
-    counts = await db.event_counts_per_hour(slug, since_unix=int(start_dt.timestamp()))
-    return build_hour_series(counts, start_dt, hours)
+    since_unix = int(start_dt.timestamp())
+    counts = await db.event_counts_per_hour(slug, since_unix=since_unix)
+    tokens = await db.event_tokens_per_hour(slug, since_unix=since_unix)
+    return build_hour_series(counts, start_dt, hours, token_sums=tokens)
 
 
 # ----- Fase 3: skills / docs / tables (alimenta o AgentModal) ---------------

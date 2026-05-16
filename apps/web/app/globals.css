@@ -461,10 +461,27 @@
   }
 }
 
-/* INF panel (DS-58): grid KV com tipografia Linear + console pane elevado. */
+/* INF panel (DS-58 polish): reagrupado em seções de sinergia.
+   .missao-grid agora é container vertical de <MissaoSection>; cada seção tem
+   header mono caps + body com grid 2-col de KVs. Hairlines separam grupos. */
 .missao-grid {
+  display: flex; flex-direction: column;
+  gap: 0;
+}
+.missao-section {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--chat-hairline);
+}
+.missao-section:first-child { padding-top: 4px; }
+.missao-section:last-child { border-bottom: none; padding-bottom: 4px; }
+.missao-section-head {
+  color: var(--muted); font-size: 10px; letter-spacing: 0.16em;
+  text-transform: uppercase; font-family: 'JetBrains Mono', monospace;
+}
+.missao-section-body {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 28px;
+  gap: 10px 28px;
 }
 .missao-grid .kv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .kv-k {
@@ -477,30 +494,11 @@
   letter-spacing: -0.011em;
   overflow-wrap: anywhere;
 }
-/* Caminhos (workspace, tmux) ficam melhor em mono — herdam família mas
-   força mono via data attr não viável; trade-off: aceito Geist universal.
-   Caminho com slash continua legível em Geist 510. */
 
-.missao-caps { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding-top: 10px; }
+.missao-caps { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
 .missao-key {
   color: var(--muted); font-size: 10px; letter-spacing: 0.14em;
   text-transform: uppercase; font-family: 'JetBrains Mono', monospace;
-}
-.missao-stdout { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding-top: 10px; }
-.missao-stdout pre {
-  max-height: 180px;
-  overflow: auto;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--chat-hairline);
-  border-radius: 10px;
-  background: var(--panel);
-  color: var(--text-on-panel);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .missao-caps-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .missao-caps-list li {
@@ -508,6 +506,9 @@
   padding: 3px 10px;
   border: 1px solid var(--accent-border); background: var(--accent-subtle);
   border-radius: var(--radius-pill);
+}
+@media (max-width: 640px) {
+  .missao-section-body { grid-template-columns: 1fr; }
 }
 
 .sparkline { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding-top: 8px; }
@@ -582,6 +583,24 @@
   display: flex; justify-content: space-between;
   font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted);
   padding: 0 0 0 36px;
+}
+/* DS-58: span por barra, render contínuo. CSS decide quais labels mostrar:
+   - desktop: cada 2h → mostra 1 em 2 (12 labels em 24 buckets)
+   - mobile:  cada 4h → mostra 1 em 4 (6 labels em 24 buckets)
+   nth-child(2n+1) = filhos 1,3,5,... (i % 2 === 0 zero-based). */
+.sparkline-axis-x-dense {
+  justify-content: stretch;
+  gap: 2px;
+  padding: 4px 0 0 36px;
+}
+.sparkline-axis-x-dense > span {
+  flex: 1; min-width: 0;
+  text-align: center;
+  font-size: 9px; letter-spacing: 0.04em;
+}
+.sparkline-axis-x-dense > span:not(:nth-child(2n+1)) { visibility: hidden; }
+@media (max-width: 640px) {
+  .sparkline-axis-x-dense > span:not(:nth-child(4n+1)) { visibility: hidden; }
 }
 
 .muted { color: var(--muted); }

@@ -15,6 +15,9 @@ export type AgentLifecycleStatus = AgentStatus;
 export type SparklineBucket = {
   bucket: string;
   count: number;
+  /** DS-58: SUM(input+output tokens) da hora. Sparkline plota tokens pra altura,
+   *  count fica pro tooltip (msgs trocadas). Backend gap-fill com 0 garante valor. */
+  tokens: number;
 };
 
 export type AgentInstance = {

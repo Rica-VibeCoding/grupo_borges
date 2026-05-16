@@ -33,6 +33,22 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 # a SQL agregada (strftime) e o gap fill no router — single source of truth.
 HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
 
+# DS-58: SUM(input+output tokens) por bucket. Cobre `jsonl:assistant` (Claude,
+# $.message.usage.*) e `codex.turn.completed` (Codex, $.body.usage.*). Outros
+# kinds não somam. Constante única usada em 2 queries (fleet_snapshot +
+# event_tokens_per_hour) pra evitar divergência silenciosa se o payload mudar.
+_TOKEN_SUM_SQL = """SUM(
+    CASE
+        WHEN kind = 'jsonl:assistant' THEN
+            COALESCE(json_extract(payload, '$.message.usage.input_tokens'), 0)
+            + COALESCE(json_extract(payload, '$.message.usage.output_tokens'), 0)
+        WHEN kind = 'codex.turn.completed' THEN
+            COALESCE(json_extract(payload, '$.body.usage.input_tokens'), 0)
+            + COALESCE(json_extract(payload, '$.body.usage.output_tokens'), 0)
+        ELSE 0
+    END
+)"""
+
 # Janela de tolerância pra considerar um agente "online" baseado no último heartbeat.
 # Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
 OFFLINE_THRESHOLD_SECONDS = 300
@@ -72,13 +88,24 @@ def hour_window(hours: int) -> tuple[datetime, int]:
 
 
 def build_hour_series(
-    counts: dict[str, int], start_dt: datetime, hours: int,
+    counts: dict[str, int],
+    start_dt: datetime,
+    hours: int,
+    *,
+    token_sums: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
-    """Preenche horas vazias com 0 — UI recebe array contíguo de `hours` itens."""
+    """Preenche horas vazias com 0 — UI recebe array contíguo de `hours` itens.
+
+    Quando `token_sums` é fornecido, cada bucket ganha `tokens` (soma input+output
+    da hora). Sparkline DS-58 plota tokens; count fica pro tooltip.
+    """
     out: list[dict[str, Any]] = []
     for i in range(hours):
         key = (start_dt + timedelta(hours=i)).strftime(HOUR_BUCKET_FMT)
-        out.append({"bucket": key, "count": counts.get(key, 0)})
+        bucket: dict[str, Any] = {"bucket": key, "count": counts.get(key, 0)}
+        if token_sums is not None:
+            bucket["tokens"] = token_sums.get(key, 0)
+        out.append(bucket)
     return out
 
 
@@ -2542,6 +2569,36 @@ class GrupoBorgesDB:
             )
             return {row["hour_bucket"]: row["cnt"] for row in cur.fetchall()}
 
+    async def event_tokens_per_hour(
+        self,
+        agent_slug: str,
+        *,
+        since_unix: int,
+    ) -> dict[str, int]:
+        """SUM(input+output tokens) por hora UTC pros eventos de um agente.
+
+        Cobre `jsonl:assistant` (Claude, $.message.usage.*) e `codex.turn.completed`
+        (Codex, $.body.usage.*). Outros kinds não somam. DS-58.
+        """
+        return await asyncio.to_thread(self._event_tokens_per_hour, agent_slug, since_unix)
+
+    def _event_tokens_per_hour(
+        self, agent_slug: str, since_unix: int,
+    ) -> dict[str, int]:
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                SELECT
+                    strftime(?, created_at, 'unixepoch') AS hour_bucket,
+                    {_TOKEN_SUM_SQL} AS tokens
+                FROM task_events
+                WHERE agent_slug = ? AND created_at >= ?
+                GROUP BY hour_bucket
+                """,
+                (HOUR_BUCKET_FMT, agent_slug, since_unix),
+            )
+            return {row["hour_bucket"]: (row["tokens"] or 0) for row in cur.fetchall()}
+
     # ---------- fleet snapshot (agregado pra UI) ----------
 
     async def fleet_snapshot(
@@ -2587,11 +2644,14 @@ class GrupoBorgesDB:
                 inst = self._row_to_instance(row)
                 by_slug.setdefault(inst["agent_slug"], []).append(inst)
 
+            # DS-58: sparkline mostra TOKENS (input+output) por hora.
+            # cache_read_input_tokens NÃO entra na altura — Rica pediu "tokens" reais.
             spark_rows = conn.execute(
-                """
+                f"""
                 SELECT agent_slug,
                        strftime(?, created_at, 'unixepoch') AS hour_bucket,
-                       COUNT(*) AS cnt
+                       COUNT(*) AS cnt,
+                       {_TOKEN_SUM_SQL} AS tokens
                 FROM task_events
                 WHERE agent_slug IS NOT NULL AND created_at >= ?
                 GROUP BY agent_slug, hour_bucket
@@ -2599,8 +2659,12 @@ class GrupoBorgesDB:
                 (HOUR_BUCKET_FMT, since_unix),
             ).fetchall()
             spark_by_slug: dict[str, dict[str, int]] = {}
+            spark_tokens_by_slug: dict[str, dict[str, int]] = {}
             for row in spark_rows:
                 spark_by_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
+                spark_tokens_by_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = (
+                    row["tokens"] or 0
+                )
 
             latest_event_rows = conn.execute(
                 """
@@ -2704,7 +2768,10 @@ class GrupoBorgesDB:
                 now=now,
             )
             agent["sparkline"] = build_hour_series(
-                spark_by_slug.get(slug, {}), start_dt, sparkline_hours,
+                spark_by_slug.get(slug, {}),
+                start_dt,
+                sparkline_hours,
+                token_sums=spark_tokens_by_slug.get(slug, {}),
             )
 
         status_counts = Counter(a["status"] for a in agents)
