@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -16,7 +16,7 @@ import type { ContentPart, MessagePayload } from '../lib/messages-types';
  *  - thinking chip colapsável
  *  - sidechain agrupado por parent_uuid (subagents viram 1 chip único)
  *  - dual rail técnica (tools/arquivos/tempo/tokens) embaixo de assistant
- *  - markdown via react-markdown 9 + remark-gfm + rehype-highlight
+ *  - markdown via react-markdown 10 + remark-gfm + rehype-highlight
  *  - auto-scroll bottom + pílula "↓ nova mensagem" se user scrollou
  */
 
@@ -37,7 +37,7 @@ function textOf(content: string | ContentPart[] | undefined | null): string {
     .join('\n');
 }
 
-function toolResultBodyToString(content: ContentPart['type'] extends 'tool_result' ? string | ContentPart[] : unknown): string {
+function toolResultBodyToString(content: string | ContentPart[]): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
@@ -156,8 +156,12 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
     if (m.kind === 'assistant') {
       if (!m.message) continue;
       items.push({ kind: 'assistant', payload: m, parts: extractContentParts(m.message.content) });
+      continue;
     }
-    // kind === 'attachment' | 'summary' | 'system' — não renderiza no MVP
+    // kind === 'attachment' | 'summary' | 'system' — fall-through proposital:
+    // MVP da Fase 2 só rende user/assistant/sidechain. Quando entrar suporte
+    // a attachment (imagem inline) ou summary (separador de compaction),
+    // adicionar branch aqui — não esquecer do guard `!m.message`.
   }
 
   return items;
@@ -165,7 +169,7 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
 
 // --- Bubbles e chips ---------------------------------------------------------
 
-function UserBubble({ text }: { text: string }) {
+const UserBubble = memo(function UserBubble({ text }: { text: string }) {
   return (
     <div className="msg-row msg-row-user">
       <div className="msg-bubble msg-bubble-user">
@@ -173,9 +177,9 @@ function UserBubble({ text }: { text: string }) {
       </div>
     </div>
   );
-}
+});
 
-function UserInternalBubble({ text }: { text: string }) {
+const UserInternalBubble = memo(function UserInternalBubble({ text }: { text: string }) {
   return (
     <div className="msg-row msg-row-user">
       <div className="msg-bubble msg-bubble-internal" title="evento interno (hook/sistema)">
@@ -183,7 +187,7 @@ function UserInternalBubble({ text }: { text: string }) {
       </div>
     </div>
   );
-}
+});
 
 function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
   const [open, setOpen] = useState(false);
@@ -275,7 +279,7 @@ function SidechainChip({ count, durMs }: { count: number; durMs: number | null }
   );
 }
 
-function AssistantBubble({
+const AssistantBubble = memo(function AssistantBubble({
   parts,
   toolResults,
   usage,
@@ -376,7 +380,7 @@ function AssistantBubble({
       </div>
     </div>
   );
-}
+});
 
 // --- Container + auto-scroll -------------------------------------------------
 
@@ -397,16 +401,18 @@ export function ChatMessages({ messages, loading = false, emptyLabel }: ChatMess
   const items = useMemo(() => buildRenderItems(messages), [messages]);
 
   // Auto-scroll quando "grudado" no fim; senão acende pílula "↓ nova mensagem".
+  // Durante replay (loading=true), suprime hasNew — senão a pílula pulsa
+  // a cada um dos N eventos do dump histórico (UX ruim, falso "novo").
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (stuck) {
       el.scrollTop = el.scrollHeight;
       setHasNew(false);
-    } else {
+    } else if (!loading) {
       setHasNew(true);
     }
-  }, [items.length, stuck]);
+  }, [items.length, stuck, loading]);
 
   // Reset quando o slug muda (messages volta a 0).
   useEffect(() => {
@@ -449,15 +455,18 @@ export function ChatMessages({ messages, loading = false, emptyLabel }: ChatMess
         aria-live="polite"
         aria-busy={loading}
       >
-        {items.map((item, i) => {
-          if (item.kind === 'user') return <UserBubble key={i} text={item.text} />;
-          if (item.kind === 'user-internal') return <UserInternalBubble key={i} text={item.text} />;
+        {items.map((item) => {
           if (item.kind === 'sidechain-group') {
-            return <SidechainChip key={i} count={item.count} durMs={item.durMs} />;
+            return <SidechainChip key={`sc:${item.rootUuid}`} count={item.count} durMs={item.durMs} />;
           }
+          // payload.uuid é único por evento JSONL — chave estável protege
+          // estado dos chips abertos quando troca sessão / ordem deslizar.
+          const key = item.payload.uuid;
+          if (item.kind === 'user') return <UserBubble key={key} text={item.text} />;
+          if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} />;
           return (
             <AssistantBubble
-              key={i}
+              key={key}
               parts={item.parts}
               toolResults={toolResults}
               usage={item.payload.message?.usage}
@@ -465,7 +474,7 @@ export function ChatMessages({ messages, loading = false, emptyLabel }: ChatMess
           );
         })}
       </div>
-      {!stuck && hasNew && (
+      {!stuck && hasNew && !loading && (
         <button
           type="button"
           className="chat-messages-pill"

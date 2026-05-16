@@ -27,6 +27,11 @@ const USE_FIXTURES =
 // resume sem buracos no histórico — então fechamos e abrimos manualmente.
 const RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
 
+// Contrato: heartbeat a cada 15s. Sem dois consecutivos (30s) e a stream
+// virou zumbi — força reconexão pra evitar UI "live" sem dados (NAT timeout
+// em mobile, switch de rede silencioso).
+const HEARTBEAT_WATCHDOG_MS = 30_000;
+
 function buildUrl(slug: string, sessionId?: string | null, sinceId?: number | null): string {
   const params = new URLSearchParams();
   if (sessionId) params.set('sessionId', sessionId);
@@ -35,8 +40,8 @@ function buildUrl(slug: string, sessionId?: string | null, sinceId?: number | nu
   return `/api/agents/${encodeURIComponent(slug)}/messages/stream${qs ? `?${qs}` : ''}`;
 }
 
-async function loadFixtures(): Promise<MessagePayload[]> {
-  const res = await fetch('/__fixtures__/messages.jsonl', { cache: 'no-store' });
+async function loadFixtures(signal: AbortSignal): Promise<MessagePayload[]> {
+  const res = await fetch('/__fixtures__/messages.jsonl', { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`fixtures HTTP ${res.status}`);
   const text = await res.text();
   return text
@@ -70,6 +75,14 @@ export function useMessagesStream(
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
   const aliveRef = useRef(true);
+  // Replay vem em rajada de N eventos antes de virar live. Sem buffer, cada
+  // append faz setState separado (microtask por evento), forçando N renders
+  // do consumidor + N reconstruções dos useMemo. Bufferizamos e damos 1
+  // setState no replay-end.
+  const replayBufferRef = useRef<MessagePayload[] | null>(null);
+  // Watchdog: marca cada heartbeat/message recebido. setInterval verifica.
+  const lastHeartbeatRef = useRef<number>(0);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!slug || !enabled) {
@@ -81,10 +94,14 @@ export function useMessagesStream(
     aliveRef.current = true;
     setState({ ...INITIAL, status: 'connecting' });
     lastIdRef.current = null;
+    replayBufferRef.current = null;
+    retryCountRef.current = 0;
+    lastHeartbeatRef.current = Date.now();
 
     // --- Modo fixture: dispensa SSE, carrega arquivo local. -----------------
     if (USE_FIXTURES) {
-      loadFixtures()
+      const ctrl = new AbortController();
+      loadFixtures(ctrl.signal)
         .then((messages) => {
           if (!aliveRef.current) return;
           setState({
@@ -96,6 +113,7 @@ export function useMessagesStream(
         })
         .catch((err) => {
           if (!aliveRef.current) return;
+          if (err instanceof DOMException && err.name === 'AbortError') return;
           setState({
             messages: [],
             status: 'error',
@@ -105,10 +123,54 @@ export function useMessagesStream(
         });
       return () => {
         aliveRef.current = false;
+        ctrl.abort();
       };
     }
 
     // --- Modo real: EventSource com replay + live. --------------------------
+
+    function noteActivity() {
+      lastHeartbeatRef.current = Date.now();
+      // Qualquer atividade real (mensagem, heartbeat, replay-end) zera o
+      // backoff. Sem isso o contador fica grudado no max em sessões que
+      // não emitem replay-end na reconexão (cursor em dia).
+      if (retryCountRef.current !== 0) retryCountRef.current = 0;
+    }
+
+    function scheduleReconnect(reason: string) {
+      if (!aliveRef.current) return;
+      if (sourceRef.current) {
+        sourceRef.current.close();
+        sourceRef.current = null;
+      }
+      setState((prev) => ({ ...prev, status: 'error', errorDetail: reason }));
+      const attempt = retryCountRef.current;
+      const delay =
+        RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)];
+      retryCountRef.current += 1;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (!aliveRef.current) return;
+        setState((prev) => ({ ...prev, status: 'connecting' }));
+        connect();
+      }, delay);
+    }
+
+    function flushReplayBuffer() {
+      const buf = replayBufferRef.current;
+      replayBufferRef.current = null;
+      if (!buf || buf.length === 0) {
+        setState((prev) => ({ ...prev, status: 'live' }));
+        return;
+      }
+      setState((prev) => ({
+        ...prev,
+        messages: prev.messages.concat(buf),
+        status: 'live',
+      }));
+    }
+
     function connect() {
       if (!slug || !aliveRef.current) return;
       const url = buildUrl(slug, sessionId, lastIdRef.current);
@@ -118,6 +180,7 @@ export function useMessagesStream(
       source.addEventListener('replay-start', (ev) => {
         try {
           const data = JSON.parse((ev as MessageEvent).data) as { total?: number };
+          replayBufferRef.current = [];
           setState((prev) => ({
             ...prev,
             status: 'replaying',
@@ -125,7 +188,8 @@ export function useMessagesStream(
             errorDetail: null,
           }));
         } catch {
-          /* schema inesperado — segue */
+          /* schema inesperado — segue, replay-end ainda flusha */
+          replayBufferRef.current = [];
         }
       });
 
@@ -133,25 +197,36 @@ export function useMessagesStream(
         try {
           const payload = JSON.parse(ev.data) as MessagePayload;
           if (typeof payload.id === 'number') {
-            // cursor pra resume; replay manda em ordem ASC, live só cresce
             if (lastIdRef.current === null || payload.id > lastIdRef.current) {
               lastIdRef.current = payload.id;
             }
           }
-          setState((prev) => ({
-            ...prev,
-            messages: prev.messages.concat(payload),
-          }));
+          noteActivity();
+          if (replayBufferRef.current !== null) {
+            // Em replay: buffer cresce, sem setState — flush dispara no replay-end
+            replayBufferRef.current.push(payload);
+          } else {
+            setState((prev) => ({
+              ...prev,
+              messages: prev.messages.concat(payload),
+            }));
+          }
         } catch {
           /* payload mal-formado: ignora linha, mantém stream */
         }
       });
 
       source.addEventListener('replay-end', () => {
-        retryCountRef.current = 0;
-        setState((prev) => ({ ...prev, status: 'live' }));
+        noteActivity();
+        flushReplayBuffer();
       });
 
+      source.addEventListener('heartbeat', () => {
+        noteActivity();
+      });
+
+      // Named event do contrato (recoverable) — distinto do onerror nativo
+      // (transport drop). MessageEvent só existe aqui; transport drop é Event puro.
       source.addEventListener('error', (ev) => {
         try {
           const data = JSON.parse((ev as MessageEvent).data) as { detail?: string };
@@ -159,31 +234,29 @@ export function useMessagesStream(
             setState((prev) => ({ ...prev, errorDetail: data.detail ?? null }));
           }
         } catch {
-          /* error sem payload (drop de transporte) — segue pro retry */
+          /* sem .data: é o onerror nativo bubbling — ignorado aqui */
         }
       });
 
-      // EventSource emite `error` (sem detail) tanto na falha inicial quanto
-      // em drop de transporte. Browser reconecta sozinho, mas perdemos a
-      // janela entre last-event-id e since_id. Fechamos e re-abrimos.
+      // Transport-level error (rede caiu, 5xx, parse fail). Browser reconectaria
+      // sozinho, mas perderíamos a janela do since_id — então fechamos e
+      // re-abrimos manualmente com cursor.
       source.onerror = () => {
-        if (!aliveRef.current) return;
-        source.close();
-        sourceRef.current = null;
-        setState((prev) => ({ ...prev, status: 'error' }));
-        const attempt = retryCountRef.current;
-        const delay =
-          RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)];
-        retryCountRef.current += 1;
-        retryTimerRef.current = setTimeout(() => {
-          if (!aliveRef.current) return;
-          setState((prev) => ({ ...prev, status: 'connecting' }));
-          connect();
-        }, delay);
+        scheduleReconnect('transport-drop');
       };
     }
 
     connect();
+
+    // Watchdog — verifica a cada 10s se passou >30s sem heartbeat/message.
+    // Cobre zombie connection (NAT timeout em mobile, switch de rede silencioso).
+    watchdogRef.current = setInterval(() => {
+      if (!aliveRef.current) return;
+      const since = Date.now() - lastHeartbeatRef.current;
+      if (since > HEARTBEAT_WATCHDOG_MS && sourceRef.current) {
+        scheduleReconnect('heartbeat-timeout');
+      }
+    }, 10_000);
 
     return () => {
       aliveRef.current = false;
@@ -191,10 +264,15 @@ export function useMessagesStream(
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
+      if (watchdogRef.current) {
+        clearInterval(watchdogRef.current);
+        watchdogRef.current = null;
+      }
       if (sourceRef.current) {
         sourceRef.current.close();
         sourceRef.current = null;
       }
+      replayBufferRef.current = null;
       setState((prev) => ({ ...prev, status: 'closed' }));
     };
   }, [slug, enabled, sessionId]);
