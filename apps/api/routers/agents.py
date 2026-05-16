@@ -410,7 +410,10 @@ async def post_agent_voice(
         raise HTTPException(status_code=422, detail="audio maior que 10MB")
 
     started_at = time.monotonic()
-    suffix = _VOICE_MIME_SUFFIX.get(base_mime, ".bin")
+    # stt-openai.sh só converte via ffmpeg extensões não reconhecidas (.oga, .opus…).
+    # .webm vai direto pra OpenAI mas alguns encodings de browser falham. Salvar sempre
+    # como .oga força a conversão mp3 e resolve webm/mp4/ogg de uma vez.
+    suffix = ".oga"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp_path = tmp.name
     try:
