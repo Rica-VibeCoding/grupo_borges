@@ -22,6 +22,7 @@ import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { useMessagesStream } from '../lib/use-messages-stream';
+import { useSetSubagentStatusForAgent } from '../lib/subagent-activity-context';
 import {
   endsWithActiveSpinner,
   parseAnsi,
@@ -76,6 +77,19 @@ export function ChatPanel({
   const excerpt = paneStream.excerpt ?? agent.pane_excerpt ?? '';
   const executorKind = paneStream.executorKind ?? agent.executor_kind ?? 'claude_code';
 
+  // Espelha o Map do hook pro contexto global, pra fleet view (AgentCard)
+  // poder ler `useSubagentActiveCount(slug)` e renderizar badge. Cleanup
+  // do effect zera o slug quando ChatPanel desmonta (modal fechou).
+  const publishSubagent = useSetSubagentStatusForAgent(agent.slug);
+  useEffect(() => {
+    publishSubagent(messagesStream.subagentStatusByParentUuid);
+  }, [publishSubagent, messagesStream.subagentStatusByParentUuid]);
+  useEffect(() => {
+    return () => {
+      publishSubagent(new Map());
+    };
+  }, [publishSubagent]);
+
   return (
     <div className="chat-panel">
       <ChatHeader agent={agent} serverNow={serverNow} />
@@ -90,6 +104,7 @@ export function ChatPanel({
         <ChatMessages
           messages={messagesStream.messages}
           loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
+          subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
         />
       )}
       <ChatInput

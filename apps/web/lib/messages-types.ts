@@ -14,6 +14,18 @@ export type ContentPart =
       is_error?: boolean;
     };
 
+// Named event `subagent_status` emitido pelo backend (jsonl_watcher + agents.py).
+// `seq` é interno e removido por `_public_subagent_status` antes de virar SSE.
+export type SubagentStatusKind = 'active' | 'completed' | 'stalled';
+
+export type SubagentStatusEntry = {
+  parent_uuid: string;
+  status: SubagentStatusKind;
+  started_at_ms: number;
+  last_seen_ms?: number;
+  duration_ms?: number;
+};
+
 export type MessagePayload = {
   id: number;
   kind: MessageKind;

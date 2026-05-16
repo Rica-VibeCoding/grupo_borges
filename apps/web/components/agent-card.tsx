@@ -7,6 +7,7 @@ import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
 import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
+import { useSubagentActiveCount } from '../lib/subagent-activity-context';
 import { formatRelativeShort, summarize } from './activity-feed';
 import { AgentStatusline } from './agent-statusline';
 import { SelectField } from './select-field';
@@ -84,6 +85,7 @@ export function AgentCard({
   const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
+  const subagentActiveCount = useSubagentActiveCount(agent.slug);
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
@@ -152,6 +154,16 @@ export function AgentCard({
                 <span className="wifi-off" title="SSE desconectado" aria-hidden="true">
                   <WifiOffIcon />
                 </span>
+                {subagentActiveCount > 0 && (
+                  <span
+                    className="subagent-badge"
+                    title={`${subagentActiveCount} subagent${subagentActiveCount === 1 ? '' : 's'} rodando`}
+                    aria-label={`${subagentActiveCount} subagent${subagentActiveCount === 1 ? '' : 's'} ativo${subagentActiveCount === 1 ? '' : 's'}`}
+                  >
+                    <span className="subagent-badge-dot" aria-hidden="true" />
+                    <span className="subagent-badge-num mono">{subagentActiveCount}</span>
+                  </span>
+                )}
               </span>
             </div>
             <span className="agent-role">

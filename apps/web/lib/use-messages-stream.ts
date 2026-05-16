@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { MessagePayload } from './messages-types';
+import type { MessagePayload, SubagentStatusEntry } from './messages-types';
 
 export type MessagesStreamStatus = 'idle' | 'connecting' | 'replaying' | 'live' | 'error' | 'closed';
 
@@ -10,14 +10,28 @@ export type MessagesStreamState = {
   status: MessagesStreamStatus;
   replayTotal: number | null;
   errorDetail: string | null;
+  /** Status ao vivo de subagents (parent_uuid → entrada). JP-11 F3-2. */
+  subagentStatusByParentUuid: Map<string, SubagentStatusEntry>;
 };
 
-const INITIAL: MessagesStreamState = {
+// Factory ao invés de constante: cada slot recebe Map própria. Compartilhar
+// uma sentinela mutável vira footgun se algum consumer fizer `.set()` por
+// engano — poluiria o estado inicial de todos.
+const emptySubagentMap = (): Map<string, SubagentStatusEntry> => new Map();
+
+const makeInitialState = (): MessagesStreamState => ({
   messages: [],
   status: 'idle',
   replayTotal: null,
   errorDetail: null,
-};
+  subagentStatusByParentUuid: emptySubagentMap(),
+});
+
+// Entries terminais (completed / stalled) são removidas após este TTL pra
+// não inflar a Map quando o agente roda 100+ subagents numa sessão longa.
+// Janela curta o bastante pra UX (chip "concluído (Xs)" pisca e some), longa
+// o suficiente pra render ver o estado final antes de sumir.
+const SUBAGENT_TERMINAL_TTL_MS = 10_000;
 
 const USE_FIXTURES =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_USE_FIXTURES === '1';
@@ -69,7 +83,7 @@ export function useMessagesStream(
   enabled: boolean,
   sessionId?: string | null,
 ): MessagesStreamState {
-  const [state, setState] = useState<MessagesStreamState>(INITIAL);
+  const [state, setState] = useState<MessagesStreamState>(makeInitialState);
   const lastIdRef = useRef<number | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,16 +97,18 @@ export function useMessagesStream(
   // Watchdog: marca cada heartbeat/message recebido. setInterval verifica.
   const lastHeartbeatRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // GC dos status terminais (completed/stalled). 1 timer por parent_uuid.
+  const subagentGcTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     if (!slug || !enabled) {
-      setState(INITIAL);
+      setState(makeInitialState());
       lastIdRef.current = null;
       return;
     }
 
     aliveRef.current = true;
-    setState({ ...INITIAL, status: 'connecting' });
+    setState({ ...makeInitialState(), status: 'connecting' });
     lastIdRef.current = null;
     replayBufferRef.current = null;
     retryCountRef.current = 0;
@@ -109,6 +125,7 @@ export function useMessagesStream(
             status: 'live',
             replayTotal: messages.length,
             errorDetail: null,
+            subagentStatusByParentUuid: emptySubagentMap(),
           });
         })
         .catch((err) => {
@@ -119,6 +136,7 @@ export function useMessagesStream(
             status: 'error',
             replayTotal: null,
             errorDetail: err instanceof Error ? err.message : String(err),
+            subagentStatusByParentUuid: emptySubagentMap(),
           });
         });
       return () => {
@@ -143,6 +161,13 @@ export function useMessagesStream(
         sourceRef.current.close();
         sourceRef.current = null;
       }
+      // Não-blocker: timers GC pré-queda podem disparar entre close() e
+      // o evento re-emitido pelo backend (ring buffer), causando flicker
+      // do entry. Zerar timers — o snapshot pós-replay vai re-popular.
+      for (const timer of subagentGcTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      subagentGcTimersRef.current.clear();
       setState((prev) => ({ ...prev, status: 'error', errorDetail: reason }));
       const attempt = retryCountRef.current;
       const delay =
@@ -225,6 +250,44 @@ export function useMessagesStream(
         noteActivity();
       });
 
+      // Named event do backend (sse-starlette). Payload: SubagentStatusEntry.
+      // Backend já dedup via `seq` e emite snapshot pós-replay (active vistos
+      // antes de subir o consumer aparecem aqui). Stalled é emitido 1×.
+      source.addEventListener('subagent_status', (ev) => {
+        try {
+          const entry = JSON.parse((ev as MessageEvent).data) as SubagentStatusEntry;
+          if (!entry?.parent_uuid || !entry.status) return;
+          noteActivity();
+          // Cancela GC pendente se mesmo parent voltar a aparecer (defensivo —
+          // backend não re-emite active depois de terminal, mas evita race).
+          const pendingTimer = subagentGcTimersRef.current.get(entry.parent_uuid);
+          if (pendingTimer) {
+            clearTimeout(pendingTimer);
+            subagentGcTimersRef.current.delete(entry.parent_uuid);
+          }
+          setState((prev) => {
+            const next = new Map(prev.subagentStatusByParentUuid);
+            next.set(entry.parent_uuid, entry);
+            return { ...prev, subagentStatusByParentUuid: next };
+          });
+          if (entry.status === 'completed' || entry.status === 'stalled') {
+            const timer = setTimeout(() => {
+              subagentGcTimersRef.current.delete(entry.parent_uuid);
+              if (!aliveRef.current) return;
+              setState((prev) => {
+                if (!prev.subagentStatusByParentUuid.has(entry.parent_uuid)) return prev;
+                const next = new Map(prev.subagentStatusByParentUuid);
+                next.delete(entry.parent_uuid);
+                return { ...prev, subagentStatusByParentUuid: next };
+              });
+            }, SUBAGENT_TERMINAL_TTL_MS);
+            subagentGcTimersRef.current.set(entry.parent_uuid, timer);
+          }
+        } catch {
+          /* payload mal-formado: ignora */
+        }
+      });
+
       // Named event do contrato (recoverable) — distinto do onerror nativo
       // (transport drop). MessageEvent só existe aqui; transport drop é Event puro.
       source.addEventListener('error', (ev) => {
@@ -272,6 +335,10 @@ export function useMessagesStream(
         sourceRef.current.close();
         sourceRef.current = null;
       }
+      for (const timer of subagentGcTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      subagentGcTimersRef.current.clear();
       replayBufferRef.current = null;
       setState((prev) => ({ ...prev, status: 'closed' }));
     };

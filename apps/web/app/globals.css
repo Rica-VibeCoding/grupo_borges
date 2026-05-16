@@ -2198,6 +2198,37 @@
 .msg-chip-thinking { opacity: 0.8; }
 .msg-chip-sidechain { max-width: 88%; }
 
+/* JP-11 F3-2 — status ao vivo do subagent. Mesmo container, troca cor da
+   borda + glyph; sem mexer em tipografia/spacing. */
+.msg-chip-sidechain[data-live="active"] {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.05);
+}
+.msg-chip-sidechain[data-live="active"] .msg-chip-glyph {
+  display: inline-block;
+  animation: subagent-spin 1.4s linear infinite;
+  color: #f59e0b;
+}
+.msg-chip-sidechain[data-live="completed"] {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.04);
+}
+.msg-chip-sidechain[data-live="completed"] .msg-chip-glyph { color: #38bdf8; }
+.msg-chip-sidechain[data-live="stalled"] {
+  border-color: rgba(249, 115, 22, 0.55);
+  background: rgba(249, 115, 22, 0.06);
+}
+.msg-chip-sidechain[data-live="stalled"] .msg-chip-glyph { color: #f97316; }
+@keyframes subagent-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-chip-sidechain[data-live="active"] .msg-chip-glyph {
+    animation: none;
+  }
+}
+
 /* Dual rail técnica — linha de metadados embaixo do assistant bubble. */
 .msg-rail {
   margin-top: 8px;

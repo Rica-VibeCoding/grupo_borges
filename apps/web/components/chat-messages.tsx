@@ -5,7 +5,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import type { ContentPart, MessagePayload } from '../lib/messages-types';
+import type { ContentPart, MessagePayload, SubagentStatusEntry } from '../lib/messages-types';
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -263,16 +263,64 @@ function ToolUseChip({
   );
 }
 
-function SidechainChip({ count, durMs }: { count: number; durMs: number | null }) {
+// Status ao vivo do subagent (F3-2). Backend emite via SSE `subagent_status`:
+//  active    → rodando agora (spinner amarelo)
+//  completed → tool_result chegou (azul, dur ms autoritativa)
+//  stalled   → >30s sem evento (laranja, ms desde last_seen)
+// `null` = ainda não vi status (sessão histórica pré-F3-2 ou backend off).
+function SidechainChip({
+  count,
+  durMs,
+  liveStatus,
+  nowMs,
+}: {
+  count: number;
+  durMs: number | null;
+  liveStatus: SubagentStatusEntry | null;
+  nowMs: number;
+}) {
+  let chipState: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
+  let glyph = '🔧';
+  let label = `launched ${count} subagent${count === 1 ? '' : 's'}`;
+  let trailing: string | null = durMs !== null && durMs > 0 ? formatMs(durMs) : null;
+
+  if (liveStatus) {
+    // Cada chip = 1 subagent (parent_uuid único). `count` é # de turnos
+    // internos do subagent, não tem leitura útil pro user no modo live.
+    if (liveStatus.status === 'active') {
+      chipState = 'active';
+      glyph = '⏳';
+      label = 'subagent rodando…';
+      trailing = formatMs(Math.max(0, nowMs - liveStatus.started_at_ms));
+    } else if (liveStatus.status === 'completed') {
+      chipState = 'completed';
+      glyph = '✓';
+      label = 'subagent concluído';
+      trailing = liveStatus.duration_ms != null
+        ? formatMs(liveStatus.duration_ms)
+        : (durMs !== null && durMs > 0 ? formatMs(durMs) : null);
+    } else if (liveStatus.status === 'stalled') {
+      chipState = 'stalled';
+      glyph = '⚠';
+      const sinceMs = liveStatus.last_seen_ms != null
+        ? Math.max(0, nowMs - liveStatus.last_seen_ms)
+        : 0;
+      label = `subagent sem resposta há ${formatMs(sinceMs)}`;
+      trailing = null;
+    }
+  }
+
   return (
     <div className="msg-row msg-row-assistant">
-      <div className="msg-chip msg-chip-sidechain">
+      <div
+        className="msg-chip msg-chip-sidechain"
+        data-live={chipState}
+        aria-live="polite"
+      >
         <span className="msg-chip-head">
-          <span className="msg-chip-glyph">🔧</span>
-          <span className="msg-chip-label">launched {count} subagent{count === 1 ? '' : 's'}</span>
-          {durMs !== null && durMs > 0 && (
-            <span className="msg-chip-arg mono">{formatMs(durMs)}</span>
-          )}
+          <span className="msg-chip-glyph" aria-hidden="true">{glyph}</span>
+          <span className="msg-chip-label">{label}</span>
+          {trailing && <span className="msg-chip-arg mono">{trailing}</span>}
         </span>
       </div>
     </div>
@@ -390,15 +438,38 @@ export type ChatMessagesProps = {
   loading?: boolean;
   /** Render alternativo do empty state. */
   emptyLabel?: string;
+  /** Status ao vivo dos subagents por parent_uuid (JP-11 F3-2). */
+  subagentStatusByParentUuid?: Map<string, SubagentStatusEntry>;
 };
 
-export function ChatMessages({ messages, loading = false, emptyLabel }: ChatMessagesProps) {
+export function ChatMessages({
+  messages,
+  loading = false,
+  emptyLabel,
+  subagentStatusByParentUuid,
+}: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
   const [hasNew, setHasNew] = useState(false);
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
   const items = useMemo(() => buildRenderItems(messages), [messages]);
+
+  // Relógio só liga quando há subagent active — tick a cada 1s atualiza o
+  // "rodando 12s". Para no ciclo seguinte quando nada mais está active.
+  const hasActiveSubagent = useMemo(() => {
+    if (!subagentStatusByParentUuid) return false;
+    for (const entry of subagentStatusByParentUuid.values()) {
+      if (entry.status === 'active') return true;
+    }
+    return false;
+  }, [subagentStatusByParentUuid]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasActiveSubagent) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hasActiveSubagent]);
 
   // Auto-scroll quando "grudado" no fim; senão acende pílula "↓ nova mensagem".
   // Durante replay (loading=true), suprime hasNew — senão a pílula pulsa
@@ -457,7 +528,16 @@ export function ChatMessages({ messages, loading = false, emptyLabel }: ChatMess
       >
         {items.map((item) => {
           if (item.kind === 'sidechain-group') {
-            return <SidechainChip key={`sc:${item.rootUuid}`} count={item.count} durMs={item.durMs} />;
+            const liveStatus = subagentStatusByParentUuid?.get(item.rootUuid) ?? null;
+            return (
+              <SidechainChip
+                key={`sc:${item.rootUuid}`}
+                count={item.count}
+                durMs={item.durMs}
+                liveStatus={liveStatus}
+                nowMs={nowMs}
+              />
+            );
           }
           // payload.uuid é único por evento JSONL — chave estável protege
           // estado dos chips abertos quando troca sessão / ordem deslizar.

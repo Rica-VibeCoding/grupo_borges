@@ -10,6 +10,7 @@ import { cockpitCss } from '../lib/cockpit-css';
 import { EMPTY_EVENTS, EMPTY_FLEET, EMPTY_TASKS } from '../lib/cockpit-mock';
 import { FleetProvider } from '../lib/fleet-context';
 import { SelectedAgentProvider } from '../lib/selected-agent-context';
+import { SubagentActivityProvider } from '../lib/subagent-activity-context';
 import { ToastProvider } from '../lib/toast-context';
 
 const v2Css = `
@@ -267,6 +268,41 @@ const v2Css = `
 .kpi-thin .kt-sep { color:var(--muted); opacity:0.45; }
 .kpi-thin .kt-meta { color:var(--text); }
 .kpi-thin .kt-hb { margin-left:auto; color:var(--muted); opacity:0.7; font-size:10px; letter-spacing:0.12em; }
+
+/* JP-11 F3-2 — badge subagent active inline ao lado do nome do agente.
+   Inline pra não competir com .status-bar no canto sup-direito da card. */
+.agent-card .subagent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  color: #f59e0b;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  vertical-align: middle;
+  pointer-events: none;
+}
+.agent-card .subagent-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.85);
+  animation: subagent-badge-pulse 1.4s ease-in-out infinite;
+}
+.agent-card .subagent-badge-num { font-weight: 600; }
+@keyframes subagent-badge-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-card .subagent-badge-dot { animation: none; }
+}
 `;
 
 async function loadInitial() {
@@ -296,17 +332,19 @@ export default async function Page() {
       <div className="corner-mark br" />
       <FleetProvider initial={initial}>
         <ToastProvider>
-          <SelectedAgentProvider>
-            <SseBanner />
-            <div className="viewport">
-              <CockpitHeader />
-              <KpiStripThin />
-              <CockpitLiveV2 />
-              <Footer />
-            </div>
-            <AgentModal />
-            <ToastStack />
-          </SelectedAgentProvider>
+          <SubagentActivityProvider>
+            <SelectedAgentProvider>
+              <SseBanner />
+              <div className="viewport">
+                <CockpitHeader />
+                <KpiStripThin />
+                <CockpitLiveV2 />
+                <Footer />
+              </div>
+              <AgentModal />
+              <ToastStack />
+            </SelectedAgentProvider>
+          </SubagentActivityProvider>
         </ToastProvider>
       </FleetProvider>
     </>
