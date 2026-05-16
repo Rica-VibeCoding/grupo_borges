@@ -30,6 +30,15 @@
   --glow-hover:0 0 8px rgba(0,240,255,0.30);
   --focus-ring-glow:0 0 0 3px rgba(0,240,255,0.10), 0 0 8px rgba(0,240,255,0.30);
   --grid-line:rgba(0,240,255,0.025); --hud-mark:rgba(0,240,255,0.32);
+  /* JP-11 Fase 2: bolhas do chat real (user/assistant/internal). User puxa
+     o brand ciano via --accent-subtle (Apple Messages-like) em vez de verde
+     iMessage — paleta do cockpit é cyan, não green. */
+  --bubble-user:var(--accent-subtle);
+  --bubble-user-border:var(--accent-border);
+  --bubble-assistant:var(--card-2);
+  --bubble-assistant-border:var(--chat-hairline-strong);
+  --bubble-internal:rgba(255,255,255,0.04);
+  --bubble-internal-border:rgba(255,255,255,0.05);
 }
 
 :root[data-theme="light"] {
@@ -51,6 +60,13 @@
   --glow-hover:0 0 6px rgba(0,151,167,0.25);
   --focus-ring-glow:0 0 0 3px rgba(0,151,167,0.14), 0 0 6px rgba(0,151,167,0.45);
   --grid-line:rgba(10,22,40,0.04); --hud-mark:rgba(0,151,167,0.45);
+  /* JP-11 Fase 2 — light theme. */
+  --bubble-user:var(--accent-subtle);
+  --bubble-user-border:var(--accent-border);
+  --bubble-assistant:var(--card-2);
+  --bubble-assistant-border:var(--chat-hairline-strong);
+  --bubble-internal:rgba(10,22,40,0.04);
+  --bubble-internal-border:rgba(10,22,40,0.06);
 }
 
 * {
@@ -1916,3 +1932,266 @@
 
 /* Logo no header: imagem ocupa 100% do glyph 28x28 sem deformar. */
 .brand-glyph img { display:block; width:100%; height:100%; object-fit:contain; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   JP-11 Fase 2 — Chat real (JSONL parseado)
+   Aba CHAT no AgentModal: bolhas user/assistant + chips tool/thinking +
+   dual rail técnica. Coexiste com aba PANE (mirror tmux DS-2) intacta.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.chat-messages-wrap {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+}
+.chat-messages-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--chat-hairline);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.chat-messages-empty {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  border: 1px dashed var(--chat-hairline);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  padding: 24px;
+}
+.chat-messages-pill {
+  position: absolute; right: 14px; bottom: 14px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-border); background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  border-radius: var(--radius-pill);
+}
+.chat-messages-pill:hover { filter: brightness(1.1); }
+
+/* Linhas de mensagem — flex pra alinhar bolha à esquerda (assistant) ou
+   direita (user). max-width segura largura confortável de leitura. */
+.msg-row {
+  display: flex;
+  width: 100%;
+}
+.msg-row-user { justify-content: flex-end; }
+.msg-row-assistant { justify-content: flex-start; }
+
+.msg-bubble {
+  max-width: 88%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--bubble-assistant-border);
+  background: var(--bubble-assistant);
+  color: var(--text-on-panel);
+  font-family: 'Geist', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.msg-bubble-user {
+  background: var(--bubble-user);
+  border-color: var(--bubble-user-border);
+}
+.msg-bubble-internal {
+  background: var(--bubble-internal);
+  border-color: var(--bubble-internal-border);
+  color: var(--muted);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0;
+}
+.msg-bubble-assistant {
+  background: var(--bubble-assistant);
+  border-color: var(--bubble-assistant-border);
+}
+.msg-bubble p { margin: 0; }
+.msg-bubble p + p { margin-top: 8px; }
+.msg-bubble ul,
+.msg-bubble ol { margin: 4px 0 4px 18px; padding: 0; }
+.msg-bubble li { margin: 2px 0; }
+.msg-bubble code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+:root[data-theme="light"] .msg-bubble code {
+  background: rgba(10,22,40,0.06);
+}
+.msg-bubble pre {
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.msg-bubble pre code { background: none; padding: 0; }
+.msg-bubble a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.msg-bubble blockquote {
+  margin: 6px 0;
+  padding: 4px 12px;
+  border-left: 2px solid var(--accent-border);
+  color: var(--muted);
+}
+.msg-bubble table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.msg-bubble th,
+.msg-bubble td {
+  border: 1px solid var(--chat-hairline-strong);
+  padding: 4px 8px;
+  text-align: left;
+}
+.msg-text + .msg-text { margin-top: 8px; }
+.msg-text + .msg-chip,
+.msg-chip + .msg-text,
+.msg-chip + .msg-chip { margin-top: 6px; }
+
+/* Chips: tool_use, thinking, sidechain. Visual unificado — fundo discreto,
+   header clicável, body colapsado por default. */
+.msg-chip {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--chat-hairline-strong);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-align: left;
+  padding: 0;
+}
+.msg-chip[data-err="1"] {
+  border-color: rgba(255, 82, 82, 0.4);
+}
+.msg-chip .msg-chip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.msg-chip-glyph { font-size: 13px; line-height: 1; }
+.msg-chip-label { color: var(--text); font-weight: 500; }
+.msg-chip-arg {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.msg-chip-caret {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: auto;
+}
+.msg-chip:hover { border-color: var(--accent-border); }
+.msg-chip[data-open="1"] { background: var(--card-2); }
+.msg-chip-body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--chat-hairline);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.msg-chip-section { display: flex; flex-direction: column; gap: 4px; }
+.msg-chip-section-head {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.msg-chip-body pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 320px;
+}
+.msg-chip-body pre code { background: none; padding: 0; }
+.msg-chip-thinking { opacity: 0.8; }
+.msg-chip-sidechain { max-width: 88%; }
+
+/* Dual rail técnica — linha de metadados embaixo do assistant bubble. */
+.msg-rail {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--chat-hairline);
+}
+.msg-rail-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+.msg-rail-sep { opacity: 0.5; }
+.msg-rail-caret { color: var(--muted); font-size: 10px; margin-left: auto; }
+.msg-rail-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.msg-rail-list li { display: flex; gap: 0; flex-wrap: wrap; }
+.msg-rail-tool { color: var(--text); }
+.msg-rail-arg { color: var(--muted); }
+
+/* Mobile (≤600px): bolhas ganham largura full, chips reduzem padding. */
+@media (max-width: 600px) {
+  .msg-bubble { max-width: 92%; font-size: 14px; }
+  .chat-messages-scroll { padding: 10px 10px 14px; gap: 8px; }
+  .msg-chip-body pre { max-height: 240px; font-size: 10.5px; }
+}

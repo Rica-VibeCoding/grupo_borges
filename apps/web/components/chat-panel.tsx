@@ -21,11 +21,13 @@ import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
+import { useMessagesStream } from '../lib/use-messages-stream';
 import {
   endsWithActiveSpinner,
   parseAnsi,
   stripChrome,
 } from '../lib/pane-chrome';
+import { ChatMessages } from './chat-messages';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'opus', label: 'Opus' },
@@ -48,25 +50,41 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
  * - <ModelSelector> SelectField; Codex disabled+tooltip; modal de
  *   confirmação quando `status === 'trabalhando'` (não toast)
  */
-export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) {
-  const stream = usePaneStream(agent.slug, /* enabled */ true);
+export function ChatPanel({
+  agent,
+  serverNow,
+  mode = 'pane',
+}: {
+  agent: Agent;
+  serverNow: number;
+  /** 'pane' = excerpt cru do tmux (debug). 'chat' = JSONL parseado (JP-11 Fase 2). */
+  mode?: 'pane' | 'chat';
+}) {
   // Mobile: enquanto user digita, preview fica imóvel (sem scroll involuntário).
   // Decisão de UX cravada pelo Rica — chat ocupando metade vertical em iOS Safari
   // é inviável quando o zoom dispara no focus do textarea.
   const [inputFocused, setInputFocused] = useState(false);
-
-  const excerpt = stream.excerpt ?? agent.pane_excerpt ?? '';
-  const executorKind = stream.executorKind ?? agent.executor_kind ?? 'claude_code';
+  const paneStream = usePaneStream(agent.slug, /* enabled */ mode === 'pane');
+  const messagesStream = useMessagesStream(agent.slug, /* enabled */ mode === 'chat');
+  const excerpt = paneStream.excerpt ?? agent.pane_excerpt ?? '';
+  const executorKind = paneStream.executorKind ?? agent.executor_kind ?? 'claude_code';
 
   return (
     <div className="chat-panel">
       <ChatHeader agent={agent} serverNow={serverNow} />
-      <PanePreview
-        excerpt={excerpt}
-        executorKind={executorKind}
-        connectionStatus={stream.status}
-        paused={inputFocused}
-      />
+      {mode === 'pane' ? (
+        <PanePreview
+          excerpt={excerpt}
+          executorKind={executorKind}
+          connectionStatus={paneStream.status}
+          paused={inputFocused}
+        />
+      ) : (
+        <ChatMessages
+          messages={messagesStream.messages}
+          loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
+        />
+      )}
       <ChatInput
         slug={agent.slug}
         agentName={agent.name}
