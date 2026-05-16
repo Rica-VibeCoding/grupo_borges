@@ -132,11 +132,25 @@ async def bootstrap_cli_in_session(
     )
 
 
-def _clean_pane_lines(lines: list[str], *, max_chars: int) -> str | None:
+def _clean_pane_lines(
+    lines: list[str],
+    *,
+    max_chars: int,
+    preserve_ansi: bool = False,
+) -> str | None:
+    """Junta `lines` num excerpt, removendo control chars e linhas vazias.
+
+    Default strippa ANSI — todos os parsers (`parse_model_from_pane`,
+    `parse_session_elapsed_from_pane`) leem texto puro. Quando o consumer
+    quer renderizar cores (stream pra UI), passa `preserve_ansi=True` e o
+    front faz o parse via `lib/pane-chrome.ts:parseAnsi`.
+    """
     cleaned: list[str] = []
     for line in lines:
-        text = _CONTROL_CHARS.sub("", _ANSI_ESCAPE.sub("", line)).rstrip()
-        if text.strip():
+        text = line if preserve_ansi else _ANSI_ESCAPE.sub("", line)
+        text = _CONTROL_CHARS.sub("", text).rstrip()
+        # `strip()` removendo ANSI pra detectar linha "vazia visualmente"
+        if _ANSI_ESCAPE.sub("", text).strip():
             cleaned.append(text)
     if not cleaned:
         return None
@@ -151,6 +165,7 @@ def _capture_pane_excerpt_sync(
     *,
     line_limit: int,
     max_chars: int,
+    preserve_ansi: bool = False,
 ) -> str | None:
     server = libtmux.Server()
     if not server.has_session(session_name):
@@ -163,7 +178,7 @@ def _capture_pane_excerpt_sync(
         escape_sequences=True,
         join_wrapped=True,
     )
-    return _clean_pane_lines(lines, max_chars=max_chars)
+    return _clean_pane_lines(lines, max_chars=max_chars, preserve_ansi=preserve_ansi)
 
 
 # Statusline do Claude Code, variações observadas:
@@ -216,11 +231,15 @@ async def capture_pane_excerpt(
     line_limit: int = _PANE_EXCERPT_LINES,
     max_chars: int = _PANE_EXCERPT_MAX_CHARS,
     timeout_s: float = _PANE_EXCERPT_TIMEOUT_S,
+    preserve_ansi: bool = False,
 ) -> str | None:
     """Retorna um excerpt curto do pane ativo sem deixar /api/fleet travar.
 
     Falhas comuns de tmux (sessão ausente, pane inválido, timeout) viram None:
     o cockpit deve mostrar fallback limpo em vez de quebrar o snapshot.
+
+    `preserve_ansi=True` mantém escape sequences pro caller renderizar cores
+    no client (SSE stream). Default False — todos os parsers leem texto puro.
     """
     try:
         return await asyncio.wait_for(
@@ -229,6 +248,7 @@ async def capture_pane_excerpt(
                 session_name,
                 line_limit=line_limit,
                 max_chars=max_chars,
+                preserve_ansi=preserve_ansi,
             ),
             timeout=timeout_s,
         )

@@ -300,8 +300,11 @@ class ModelChangeResponse(BaseModel):
 
 _PANE_STREAM_POLL_S = 1.0
 _PANE_STREAM_DISCONNECT_CHECK_S = 0.1
-_PANE_STREAM_LINE_LIMIT = 80
-_PANE_STREAM_MAX_CHARS = 8000
+# 200 linhas (era 80) cobre respostas longas sem cortar o topo. Configurável
+# via env pro ops afinar sob carga sem deploy. ANSI preservado inflaciona
+# bytes ~20-30% — `_PANE_STREAM_MAX_CHARS` sobe pra 20k.
+_PANE_STREAM_LINE_LIMIT = int(os.getenv("COCKPIT_PANE_LINE_LIMIT", "200"))
+_PANE_STREAM_MAX_CHARS = int(os.getenv("COCKPIT_PANE_MAX_CHARS", "20000"))
 
 
 @router.get("/{slug}/pane/stream")
@@ -330,6 +333,7 @@ async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
                         session,
                         line_limit=_PANE_STREAM_LINE_LIMIT,
                         max_chars=_PANE_STREAM_MAX_CHARS,
+                        preserve_ansi=True,
                     )
                     or ""
                 )

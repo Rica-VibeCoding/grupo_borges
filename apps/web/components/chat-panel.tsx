@@ -21,6 +21,11 @@ import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
+import {
+  endsWithActiveSpinner,
+  parseAnsi,
+  stripChrome,
+} from '../lib/pane-chrome';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'opus', label: 'Opus' },
@@ -139,50 +144,19 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
 }
 
 // ----- PanePreview --------------------------------------------------------
-
-// Chrome do próprio Claude Code que vaza no excerpt (não é conteúdo do
-// agente). Filtragem só aqui no display — `agent.pane_excerpt` continua
+//
+// Chrome do próprio Claude Code (statusline, spinner, separadores) é
+// filtrado no display via `stripChrome` — `agent.pane_excerpt` continua
 // intacto pros parsers (parseContextPct, parseModelFromPane) extraírem
 // ctx%/modelo/tempo da linha de statusline.
 //
-// Validado contra 19 fixtures reais de tmux capture (DS-2 polish v2).
-const CC_CHROME_PATTERNS: RegExp[] = [
-  // Statusline: HH:MM ou HH:MM:SS, bar opcional, % no meio/fim, sufixo livre.
-  // Pega tanto "Opus 4.7 - 32:13 - [█░] 16%" quanto a versão concatenada
-  // com "Remote Control active" no fim da mesma linha.
-  /^.*?\b(?:Opus|Sonnet|Haiku)\s+\d+\.\d+\b.*?\d+%/,
-  // "Verb for Nm Ns" — spinner finalizado: ✻ Brewed, * Cogitated,
-  // Considering, Thinking, Sautéed, Osmosing, Boogieing, Flibbertigibbeting…
-  /^[\W]*\w+\s+for\s+\d+m?\s*\d*s?(\s*[·•].*)?\s*$/u,
-  // Spinner ATIVO com contador de tokens:
-  // "· Boogieing… (1m 8s · ↓ 2.7k tokens · thought for 33s)"
-  /^[\s·•⏺]+\w+(?:ing|ed|aed)\.?…?\s*\(.*tokens.*\)$/u,
-  // "Remote Control active" / "Remote Control connecting…" (qualquer estado).
-  /Remote Control\s+\w+/,
-  // "⏵⏵ bypass permissions on …" / "▶▶ bypass permissions …" — char varia
-  // (U+23F5 vs U+25B6), catch por substring é mais seguro.
-  /bypass permissions/,
-];
-
-// Separador horizontal: 8+ chars consecutivos de box-drawing/block elements.
-// Captura tanto "──────" puro quanto "── Daniel ──" (texto curto entre regras).
-const SEPARATOR_RULE = /[─━═│┃╭╮╰╯╱╳─-╿▀-▟]{8,}/u;
-
-function isChromeLine(line: string): boolean {
-  if (!line) return false;
-  if (SEPARATOR_RULE.test(line)) return true;
-  return CC_CHROME_PATTERNS.some((re) => re.test(line));
-}
-
-function stripChrome(src: string): string {
-  if (!src) return src;
-  return src
-    .split('\n')
-    .map((line) => (isChromeLine(line) ? '' : line))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/\n+$/, '');
-}
+// Frame parcial: quando o excerpt termina com spinner ATIVO, CC ainda está
+// escrevendo — renderizar o tick atual produz meio-frame flickerando.
+// `lastGoodFrameRef` segura o último frame estável; só atualiza quando
+// `endsWithActiveSpinner` é false (pattern via context7 React 19 — derive
+// no render, persiste em useLayoutEffect).
+//
+// Lógica isolada e testada em `lib/pane-chrome.ts` + `tests/pane-chrome.test.ts`.
 
 function PanePreview({
   excerpt,
@@ -198,14 +172,26 @@ function PanePreview({
   const preRef = useRef<HTMLPreElement>(null);
   const [stuck, setStuck] = useState(true);
 
+  const isPartial = useMemo(() => endsWithActiveSpinner(excerpt), [excerpt]);
+  const cleanedNow = useMemo(() => stripChrome(excerpt), [excerpt]);
+  const lastGoodFrameRef = useRef<string>('');
+
+  useLayoutEffect(() => {
+    if (!isPartial) {
+      lastGoodFrameRef.current = cleanedNow;
+    }
+  }, [cleanedNow, isPartial]);
+
+  const display = isPartial ? lastGoodFrameRef.current : cleanedNow;
+  const segments = useMemo(() => parseAnsi(display), [display]);
+  const empty = segments.length === 0;
+
   useLayoutEffect(() => {
     const el = preRef.current;
     if (!el || !stuck) return;
-    // paused (user digitando): chat fica imóvel — sem scroll involuntário.
-    // Quando paused vira false (blur), efeito roda de novo e segue stuck-bottom.
     if (paused) return;
     el.scrollTop = el.scrollHeight;
-  }, [excerpt, stuck, paused]);
+  }, [display, stuck, paused]);
 
   const onScroll = useCallback(() => {
     const el = preRef.current;
@@ -221,9 +207,6 @@ function PanePreview({
     setStuck(true);
   }, []);
 
-  const cleaned = useMemo(() => stripChrome(excerpt), [excerpt]);
-  const empty = !cleaned;
-
   return (
     <div className="chat-preview-wrap">
       <pre
@@ -233,7 +216,21 @@ function PanePreview({
         aria-live="polite"
         aria-busy={connectionStatus === 'connecting'}
       >
-        {empty ? '— sem saída capturada —' : cleaned}
+        {empty ? (
+          '— sem saída capturada —'
+        ) : (
+          segments.map((seg, i) => (
+            <span
+              key={i}
+              style={{
+                color: seg.color,
+                fontWeight: seg.bold ? 700 : undefined,
+              }}
+            >
+              {seg.text}
+            </span>
+          ))
+        )}
       </pre>
       {!stuck && (
         <button
