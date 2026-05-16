@@ -169,7 +169,7 @@
    Validado via Playwright: 5 panels inativos de 79.5px ocupando
    espaço fantasma faz o panel ativo encolher em ~400px. */
 .agent-modal-panel[data-state="active"] {
-  padding: 14px 16px 16px;
+  padding: 10px 16px 12px;
   overflow: auto;
   min-height: 0;
   flex: 1 1 0;
@@ -462,28 +462,28 @@
 }
 
 /* INF panel (DS-58 polish): reagrupado em seções de sinergia.
-   .missao-grid agora é container vertical de <MissaoSection>; cada seção tem
-   header mono caps + body com grid 2-col de KVs. Hairlines separam grupos. */
+   Densidade apertada (DS-58 tighten) — Rica reclamou de scroll forçado;
+   sparkline tem que caber sem rolar em modal ~720px desktop. */
 .missao-grid {
   display: flex; flex-direction: column;
   gap: 0;
 }
 .missao-section {
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 14px 0;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--chat-hairline);
 }
-.missao-section:first-child { padding-top: 4px; }
-.missao-section:last-child { border-bottom: none; padding-bottom: 4px; }
+.missao-section:first-child { padding-top: 2px; }
+.missao-section:last-child { border-bottom: none; padding-bottom: 2px; }
 .missao-section-head {
   color: var(--muted); font-size: 10px; letter-spacing: 0.16em;
   text-transform: uppercase; font-family: 'JetBrains Mono', monospace;
 }
 .missao-section-body {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 28px;
+  gap: 6px 24px;
 }
-.missao-grid .kv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.missao-grid .kv { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .kv-k {
   color: var(--muted); font-size: 10px; letter-spacing: 0.14em;
   text-transform: uppercase; font-family: 'JetBrains Mono', monospace;

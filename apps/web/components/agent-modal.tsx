@@ -212,18 +212,22 @@ function HandoffPanel({ agent }: { agent: Agent }) {
 }
 
 /**
- * MissaoPanel (aba INF) — DS-58 polish.
+ * MissaoPanel (aba INF) — DS-58 polish + tighten.
  *
- * Reagrupado em blocos de sinergia (Rica): IDENTIDADE, INFRA, SESSÃO, TAREFA,
- * CICLO DE VIDA, ATIVIDADE. Grupo TAREFA / CICLO DE VIDA inteiro só aparece se
- * tiver pelo menos 1 campo populado — evita ruído quando agente tá ocioso.
- * STDOUT · PANE removido (redundante com chat panel + statusline).
+ * Reagrupado em blocos de sinergia: IDENTIDADE, INFRA, SESSÃO, TAREFA(opt),
+ * CICLO(opt), ATIVIDADE. KVs com valor null/'—' são SUPRIMIDOS (não rendem
+ * linha órfã no grid 2-col). STDOUT removido.
+ *
+ * Tighten: VISTO EM ABS fundido no title hover de VISTO EM (eliminou 1 KV);
+ * EXECUTOR só aparece se ≠ 'claude_code' (default suprimido).
  */
 function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) {
   const sessionStarted = agent.executor_kind === 'codex'
     ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
     : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
+  const isCodexExec = agent.executor_kind === 'codex';
+  const seenAbs = formatUnixDateTime(agent.last_seen);
 
   const hasTaskInfo = Boolean(
     agent.current_task_id || agent.active_task_label || agent.current_task_last_heartbeat,
@@ -238,7 +242,7 @@ function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) 
         <KV k="NOME" v={agent.name} />
         <KV k="PAPEL" v={agent.role} />
         <KV k="SLUG" v={agent.slug} />
-        <KV k="EMOJI" v={agent.emoji ?? '—'} />
+        {agent.emoji && <KV k="EMOJI" v={agent.emoji} />}
         <div className="missao-caps">
           <span className="missao-key">CAPACIDADES</span>
           {agent.capabilities.length === 0 ? (
@@ -254,40 +258,38 @@ function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) 
       <MissaoSection title="INFRA">
         <KV k="WORKSPACE" v={agent.workspace_path} />
         <KV k="TMUX" v={agent.tmux_session} />
-        <KV k="EXECUTOR" v={agent.executor_kind ?? 'claude_code'} />
         <KV k="CLI" v={agent.state_cli ?? agent.cli_default} />
         <KV k="MODELO" v={shortModelName(agent.state_model ?? agent.model_default)} />
+        {isCodexExec && <KV k="EXECUTOR" v="codex" />}
       </MissaoSection>
 
       <MissaoSection title="SESSÃO">
         <KV k="STATUS" v={STATUS_LABEL[agent.status]} />
-        <KV k="CONTEXTO" v={agent.context_pct !== null ? `${agent.context_pct}%` : '—'} />
-        <KV k="DURAÇÃO" v={sessionSecs !== null ? formatDuration(sessionSecs) : '—'} />
-        <KV k="INÍCIO" v={formatUnixDateTime(sessionStarted)} />
-        <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} />
-        <KV k="VISTO EM ABS" v={formatUnixDateTime(agent.last_seen)} />
+        {agent.context_pct !== null && <KV k="CONTEXTO" v={`${agent.context_pct}%`} />}
+        {sessionSecs !== null && <KV k="DURAÇÃO" v={formatDuration(sessionSecs)} />}
+        {sessionStarted !== null && <KV k="INÍCIO" v={formatUnixDateTime(sessionStarted)} />}
+        <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} title={seenAbs} />
         <KV k="INSTÂNCIAS" v={String(agent.instance_count)} />
       </MissaoSection>
 
       {hasTaskInfo && (
         <MissaoSection title="TAREFA">
-          <KV k="ATUAL" v={agent.current_task_id ?? '—'} />
-          <KV k="RÓTULO" v={agent.active_task_label ?? '—'} />
-          <KV
-            k="ÚLTIMO HEARTBEAT"
-            v={agent.current_task_last_heartbeat !== null
-              ? formatLastSeen(agent.current_task_last_heartbeat, serverNow)
-              : '—'}
-          />
+          {agent.current_task_id && <KV k="ATUAL" v={agent.current_task_id} />}
+          {agent.active_task_label && <KV k="RÓTULO" v={agent.active_task_label} />}
+          {agent.current_task_last_heartbeat !== null && (
+            <KV k="ÚLTIMO HEARTBEAT" v={formatLastSeen(agent.current_task_last_heartbeat, serverNow)} />
+          )}
         </MissaoSection>
       )}
 
       {hasLifecycle && (
         <MissaoSection title="CICLO DE VIDA">
-          <KV k="STATUS" v={agent.lifecycle_status ? STATUS_LABEL[agent.lifecycle_status] : '—'} />
-          <KV k="DETALHE" v={agent.lifecycle_detail ?? '—'} />
-          <KV k="EVENTO" v={agent.lifecycle_event ?? '—'} />
-          <KV k="ATUALIZADO" v={formatUnixDateTime(agent.lifecycle_updated_at)} />
+          {agent.lifecycle_status && <KV k="STATUS" v={STATUS_LABEL[agent.lifecycle_status]} />}
+          {agent.lifecycle_detail && <KV k="DETALHE" v={agent.lifecycle_detail} />}
+          {agent.lifecycle_event && <KV k="EVENTO" v={agent.lifecycle_event} />}
+          {agent.lifecycle_updated_at !== null && (
+            <KV k="ATUALIZADO" v={formatUnixDateTime(agent.lifecycle_updated_at)} />
+          )}
         </MissaoSection>
       )}
 
@@ -307,11 +309,11 @@ function MissaoSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
-function KV({ k, v }: { k: string; v: string }) {
+function KV({ k, v, title }: { k: string; v: string; title?: string }) {
   return (
     <div className="kv">
       <span className="kv-k">{k}</span>
-      <span className="kv-v">{v}</span>
+      <span className="kv-v" title={title}>{v}</span>
     </div>
   );
 }
