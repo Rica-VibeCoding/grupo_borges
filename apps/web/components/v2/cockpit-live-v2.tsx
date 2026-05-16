@@ -23,7 +23,7 @@ export function CockpitLiveV2() {
           <span className="rule" />
           <span className="endcap">aria-live: educado</span>
         </div>
-        <KanbanBoard tasks={tasks} serverNow={fleet.health.server_now} />
+        <KanbanBoard tasks={tasks} />
       </main>
     </div>
   );

@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import type { KanbanColumn, KanbanColumnId, Task, TaskStatus } from '../lib/cockpit-types';
-import { formatDateTime } from '../lib/format-time';
 import { useIsMobile } from '../lib/use-is-mobile';
 import { NewTaskModal } from './new-task-modal';
 import { TaskDetailModal } from './task-detail-modal';
@@ -15,44 +14,41 @@ const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatu
   { id: 'done', name: 'CONCLUÍDO', sourceStatuses: ['done'] },
 ];
 
-function formatRelativeShort(deltaSec: number): string {
-  if (deltaSec < 60) return `${deltaSec}s`;
-  const m = Math.floor(deltaSec / 60);
-  if (m < 60) {
-    const remS = deltaSec % 60;
-    return remS === 0 ? `${m}m` : `${m}m${String(remS).padStart(2, '0')}`;
-  }
-  const h = Math.floor(m / 60);
-  const remM = m % 60;
-  return remM === 0 ? `${h}h` : `${h}h${String(remM).padStart(2, '0')}`;
-}
-
-function taskAgeLabel(task: Task, serverNow: number): string {
-  const anchor = task.completed_at ?? task.started_at ?? task.created_at;
-  const delta = Math.max(0, serverNow - anchor);
-  return formatRelativeShort(delta);
-}
-
 function taskDisplayId(task: Task): string {
   return task.human_id || task.id.slice(0, 8);
 }
 
-function taskPriority(task: Task): number {
-  const p = task.priority;
-  return typeof p === 'number' && p >= 1 && p <= 5 ? p : 3;
+// Stamp por status (intencional — discutido no brief):
+//   done    → completed_at  (quando concluiu)
+//   running → started_at    (quando entrou em curso)
+//   outros  → created_at    (quando nasceu)
+// Trade-off: dois cards podem exibir o mesmo timestamp significando coisas
+// diferentes. Aceito porque a coluna onde o card vive já dá o contexto, e
+// "freshness contextualizado por status" mata o age relativo "5m53" sem
+// perder a informação útil que ele transmitia.
+function taskAnchorTime(task: Task): number {
+  return task.completed_at ?? task.started_at ?? task.created_at;
 }
 
-function taskFirstTag(task: Task): string | null {
-  const tags = task.tags;
-  if (Array.isArray(tags) && tags.length > 0 && typeof tags[0] === 'string') return tags[0];
-  return null;
+// DS-58 kanban: stamp absoluto no formato DD/MM/YY-HH:mm (TZ São Paulo).
+// Substitui o age relativo "5m53" que dava ansiedade de freshness.
+const KANBAN_STAMP_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/Sao_Paulo',
+});
+
+function formatKanbanStamp(unixSec: number): string {
+  const parts = KANBAN_STAMP_FORMATTER.formatToParts(new Date(unixSec * 1000));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('day')}/${get('month')}/${get('year')}-${get('hour')}:${get('minute')}`;
 }
 
-function taskAbsTime(task: Task): string {
-  return formatDateTime(task.created_at);
-}
-
-function buildColumns(tasks: Task[], serverNow: number): KanbanColumn[] {
+function buildColumns(tasks: Task[]): KanbanColumn[] {
   const byStatus = new Map<TaskStatus, Task[]>();
   for (const t of tasks) {
     const arr = byStatus.get(t.status) ?? [];
@@ -77,21 +73,20 @@ function columnStatusAttr(id: KanbanColumnId): string {
 function KanbanRowView({
   task,
   columnId,
-  serverNow,
   onOpen,
 }: {
   task: Task;
   columnId: KanbanColumnId;
-  serverNow: number;
   onOpen: (task: Task) => void;
 }) {
   const displayId = taskDisplayId(task);
   const owner = task.assignee ?? '—';
-  const age = taskAgeLabel(task, serverNow);
-  const priority = taskPriority(task);
-  const firstTag = taskFirstTag(task);
-  const absTime = taskAbsTime(task);
-  const title = task.title ?? '';
+  const stamp = formatKanbanStamp(taskAnchorTime(task));
+  // DS-58 kanban one-line: card vira ID · @owner · DD/MM/YY-HH:mm.
+  // Título da task NÃO renderiza visível — vai no `title` attr (preview hover
+  // desktop + acessibilidade) e no aria-label. Detalhes completos abrem via
+  // click → TaskDetailModal (onOpen).
+  const titleAttr = task.title || displayId;
   const open = useCallback(() => onOpen(task), [onOpen, task]);
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
@@ -108,33 +103,23 @@ function KanbanRowView({
       data-st={columnStatusAttr(columnId)}
       tabIndex={0}
       role="button"
-      aria-label={`Tarefa ${displayId}, P${priority}, responsável ${owner}, ${age}`}
+      title={titleAttr}
+      aria-label={`Tarefa ${displayId}, responsável ${owner}, ${stamp}`}
       onClick={open}
       onKeyDown={onKey}
     >
-      <div className="krow-line1">
-        <span className="sdot" aria-hidden="true" />
-        <span className="krow-id mono">{displayId}</span>
-        <span className="krow-priority mono" data-p={String(priority)}>P{priority}</span>
-        <span className="krow-owner mono">@{owner}</span>
-        <span className="krow-age mono" title={absTime}>{age}</span>
-        <span className="caret" aria-hidden="true">›</span>
-      </div>
-      <div className="krow-line2">
-        {firstTag && <span className="krow-tag">{firstTag}</span>}
-        <span className="krow-title">{title}</span>
-      </div>
+      <span className="krow-id mono">{displayId}</span>
+      <span className="krow-owner mono">@{owner}</span>
+      <span className="krow-stamp mono">{stamp}</span>
     </div>
   );
 }
 
 function KanbanColumnView({
   column,
-  serverNow,
   onOpenTask,
 }: {
   column: KanbanColumn;
-  serverNow: number;
   onOpenTask: (task: Task) => void;
 }) {
   return (
@@ -158,7 +143,7 @@ function KanbanColumnView({
           <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
         ) : (
           column.tasks.map((task) => (
-            <KanbanRowView key={task.id} task={task} columnId={column.id} serverNow={serverNow} onOpen={onOpenTask} />
+            <KanbanRowView key={task.id} task={task} columnId={column.id} onOpen={onOpenTask} />
           ))
         )}
       </div>
@@ -168,11 +153,9 @@ function KanbanColumnView({
 
 function KanbanMobileView({
   columns,
-  serverNow,
   onOpenTask,
 }: {
   columns: KanbanColumn[];
-  serverNow: number;
   onOpenTask: (task: Task) => void;
 }) {
   const [activeStatus, setActiveStatus] = useState<KanbanColumnId>('running');
@@ -211,7 +194,7 @@ function KanbanMobileView({
             <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
           ) : (
             displayColumn.tasks.map((task) => (
-              <KanbanRowView key={task.id} task={task} columnId={displayColumn.id} serverNow={serverNow} onOpen={onOpenTask} />
+              <KanbanRowView key={task.id} task={task} columnId={displayColumn.id} onOpen={onOpenTask} />
             ))
           )}
         </div>
@@ -220,11 +203,11 @@ function KanbanMobileView({
   );
 }
 
-export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: number }) {
+export function KanbanBoard({ tasks }: { tasks: Task[] }) {
   const isMobile = useIsMobile();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
-  const columns = buildColumns(tasks, serverNow);
+  const columns = buildColumns(tasks);
   const counts = Object.fromEntries(columns.map((c) => [c.id, c.tasks.length])) as Record<KanbanColumnId, number>;
   const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -251,11 +234,11 @@ export function KanbanBoard({ tasks, serverNow }: { tasks: Task[]; serverNow: nu
         </div>
       </div>
       {isMobile ? (
-        <KanbanMobileView columns={columns} serverNow={serverNow} onOpenTask={setSelectedTask} />
+        <KanbanMobileView columns={columns} onOpenTask={setSelectedTask} />
       ) : (
         <div className="kanban-cols" id="kbcols">
           {columns.map((column) => (
-            <KanbanColumnView key={column.id} column={column} serverNow={serverNow} onOpenTask={setSelectedTask} />
+            <KanbanColumnView key={column.id} column={column} onOpenTask={setSelectedTask} />
           ))}
         </div>
       )}
