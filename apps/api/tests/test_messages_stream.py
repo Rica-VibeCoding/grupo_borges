@@ -506,6 +506,80 @@ async def test_messages_stream_emits_subagent_stalled_after_30s(tmp_path: Path) 
     assert stalled[-1]["duration_ms"] == 31_000
 
 
+def test_subagent_completed_uses_real_jsonl_shape() -> None:
+    # Regressão pós-E2E vivo 2026-05-16: no JSONL real do Claude Code, o
+    # tool_result.tool_use_id é o ID da Anthropic (toolu_xxx), NÃO o
+    # parentUuid da msg. _subagent_state é indexado por parentUuid (uuid
+    # de msg). Sem o mapa _subagent_task_tool_use, nunca casaria → chip
+    # ficava em "active" pra sempre na UI. Esse teste reproduz o fluxo
+    # real: assistant Task → sidechain → tool_result → completed.
+    jsonl_watcher.reset_subagent_state_for_tests()
+
+    assistant_uuid = "msg-uuid-task"
+    tool_use_id = "toolu_real_01"
+
+    # 1. Assistant principal emite tool_use Task
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "pavan",
+        {
+            "type": "assistant",
+            "uuid": assistant_uuid,
+            "sessionId": "sess-real",
+            "isSidechain": False,
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": tool_use_id, "name": "Task", "input": {}}],
+            },
+        },
+        "assistant",
+        now_ms=1_000,
+    )
+
+    # 2. Subagent começa (sidechain com parentUuid = uuid da msg do assistant)
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "pavan",
+        {
+            "type": "assistant",
+            "uuid": "sidechain-msg-1",
+            "parentUuid": assistant_uuid,
+            "sessionId": "sess-real",
+            "isSidechain": True,
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "trabalhando"}]},
+        },
+        "assistant",
+        now_ms=2_000,
+    )
+
+    assert assistant_uuid in jsonl_watcher._subagent_state.get("pavan", {})
+
+    # 3. Tool_result vem referenciando tool_use_id (NÃO parentUuid).
+    #    Esse é o shape real do CC — antes do fix, mismatch silencioso.
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "pavan",
+        {
+            "type": "user",
+            "uuid": "user-result",
+            "parentUuid": "prev-msg",
+            "sessionId": "sess-real",
+            "isSidechain": False,
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "..."}],
+            },
+        },
+        "user",
+        now_ms=5_000,
+    )
+
+    # Estado limpo, evento completed emitido
+    assert assistant_uuid not in jsonl_watcher._subagent_state.get("pavan", {})
+    events = jsonl_watcher._subagent_status_events.get("pavan", [])
+    completed = [e for e in events if e["status"] == "completed"]
+    assert len(completed) == 1
+    assert completed[-1]["parent_uuid"] == assistant_uuid
+    assert completed[-1]["duration_ms"] == 3_000
+
+
 def test_mark_stalled_subagents_emits_once_and_clears_state() -> None:
     # Regressão pós-review: stalled deve ser emitido UMA VEZ por parent_uuid
     # e o parent removido do state in-memory, senão (1) cada scan de 10s

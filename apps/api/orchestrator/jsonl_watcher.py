@@ -42,6 +42,23 @@ _NON_ENCODED_CHAR = re.compile(r"[^A-Za-z0-9-]")
 _subagent_state: dict[str, dict[str, dict[str, int]]] = {}
 _subagent_status_events: dict[str, list[dict[str, Any]]] = {}
 _subagent_event_seq = 0
+# Reverse lookup pra fechamento de subagent: quando o assistant principal
+# emite `tool_use {name: "Task", id: TUID}`, o JSONL do CC depois entrega o
+# tool_result referenciando esse TUID (não a uuid da msg). Pra correlacionar
+# tool_result → parent_uuid (uuid da msg que disparou o Task), guardamos
+# {slug → {tool_use_id → parent_uuid}}. Populado em assistant.tool_use Task,
+# consumido em user.tool_result, limpo no fechamento.
+_subagent_task_tool_use: dict[str, dict[str, str]] = {}
+# {slug → {agentId → parent_uuid}} — pro caso ASYNC (Agent run_in_background),
+# o fim do subagent vem como queue-operation enqueue com task-notification,
+# que só tem agentId pra identificar de qual subagent é. Esse mapa traduz
+# pro parent_uuid armazenado em _subagent_state.
+_subagent_agent_to_parent: dict[str, dict[str, str]] = {}
+# {slug → {agentId}} — quando a task-notification do CC chega ANTES de
+# vermos o primeiro sidechain do subagent (subagent ultra-rápido onde o
+# JsonlWatcher leu o final do arquivo antes do meio), guardamos aqui pra
+# fechar assim que o primeiro sidechain chegar.
+_subagent_pending_close: dict[str, set[str]] = {}
 
 
 def encoded_cwd(workspace_path: str) -> str:
@@ -109,6 +126,72 @@ def _tool_result_ids(payload: dict) -> set[str]:
     return ids
 
 
+def _register_subagent_tool_use(slug: str, payload: dict) -> None:
+    # Assistant principal emitiu `tool_use {name: "Task"|"Agent", id: TUID}`.
+    # Registra TUID → uuid da própria msg, pra que o tool_result subsequente
+    # (que só carrega TUID, não parent_uuid) consiga fechar o subagent quando
+    # for o caso síncrono (Task). Caso async (Agent run_in_background) o fim
+    # real vem por `assistant.isSidechain + stop_reason=end_turn` — ver
+    # `_close_subagent_by_agent_id` abaixo.
+    msg_uuid = payload.get("uuid")
+    if not isinstance(msg_uuid, str) or not msg_uuid:
+        return
+    for block in _content_blocks(payload):
+        if block.get("type") != "tool_use":
+            continue
+        if block.get("name") not in ("Task", "Agent"):
+            continue
+        tool_use_id = block.get("id")
+        if isinstance(tool_use_id, str) and tool_use_id:
+            _subagent_task_tool_use.setdefault(slug, {})[tool_use_id] = msg_uuid
+
+
+_TASK_NOTIF_ID_RE = re.compile(r"<task-id>\s*([A-Za-z0-9_-]+)\s*</task-id>")
+
+
+def _close_subagent_by_agent_id(slug: str, agent_id: str, now: int) -> None:
+    parent_uuid = _subagent_agent_to_parent.get(slug, {}).get(agent_id)
+    if not parent_uuid:
+        return
+    active_by_parent = _subagent_state.get(slug, {})
+    state = active_by_parent.pop(parent_uuid, None)
+    if state is None:
+        return
+    _append_subagent_status(
+        slug,
+        {
+            "parent_uuid": parent_uuid,
+            "status": "completed",
+            "started_at_ms": state["started_at_ms"],
+            "duration_ms": max(0, now - state["started_at_ms"]),
+            "last_seen_ms": state["last_seen_ms"],
+        },
+    )
+    _subagent_agent_to_parent.get(slug, {}).pop(agent_id, None)
+
+
+def _maybe_close_subagent_via_task_notification(slug: str, payload: dict, now: int) -> None:
+    # Fim do subagent ASYNC (Agent run_in_background): CC enfileira um evento
+    # `queue-operation` no JSONL principal com content `<task-notification>
+    # <task-id>X</task-id> <status>completed</status>...` — é o sinal oficial
+    # de fim do subagent quando o caller é assíncrono. (stop_reason="end_turn"
+    # NÃO é emitido pelo CC pra subagents async, confirmado em E2E vivo.)
+    content = payload.get("content")
+    if not isinstance(content, str) or "<task-notification>" not in content:
+        return
+    match = _TASK_NOTIF_ID_RE.search(content)
+    if not match:
+        return
+    agent_id = match.group(1)
+    parent_uuid = _subagent_agent_to_parent.get(slug, {}).get(agent_id)
+    if parent_uuid:
+        _close_subagent_by_agent_id(slug, agent_id, now)
+        return
+    # Race: task-notification chegou antes de qualquer sidechain do agentId
+    # (subagent ultra-rápido). Marca pra fechar assim que o sidechain entrar.
+    _subagent_pending_close.setdefault(slug, set()).add(agent_id)
+
+
 def update_subagent_state_from_jsonl(
     slug: str,
     payload: dict | None,
@@ -120,7 +203,12 @@ def update_subagent_state_from_jsonl(
     if not payload:
         return
     now = now_ms if now_ms is not None else _now_ms()
+
+    if event_type == "assistant":
+        _register_subagent_tool_use(slug, payload)
+
     parent_uuid = _jsonl_value(payload, "parentUuid", "parent_uuid")
+    agent_id = payload.get("agentId") if isinstance(payload.get("agentId"), str) else None
     if (
         _jsonl_bool(payload, "isSidechain", "is_sidechain")
         and isinstance(parent_uuid, str)
@@ -131,6 +219,8 @@ def update_subagent_state_from_jsonl(
         if state is None:
             state = {"started_at_ms": now, "last_seen_ms": now}
             active_by_parent[parent_uuid] = state
+            if agent_id:
+                _subagent_agent_to_parent.setdefault(slug, {})[agent_id] = parent_uuid
             _append_subagent_status(
                 slug,
                 {
@@ -140,16 +230,41 @@ def update_subagent_state_from_jsonl(
                     "last_seen_ms": state["last_seen_ms"],
                 },
             )
+            # Race-handling: se a task-notification chegou ANTES desse
+            # primeiro sidechain, fecha já agora (emit completed back-to-back).
+            if agent_id and agent_id in _subagent_pending_close.get(slug, set()):
+                _subagent_pending_close[slug].discard(agent_id)
+                _close_subagent_by_agent_id(slug, agent_id, now)
+                return
         else:
             state["last_seen_ms"] = now
+            if agent_id and agent_id not in _subagent_agent_to_parent.setdefault(slug, {}):
+                _subagent_agent_to_parent[slug][agent_id] = parent_uuid
+
+    # Caso 1: fim do subagent ASYNC — queue-operation enqueue com
+    # content `<task-notification><task-id>X</task-id>...`. Esse é o sinal
+    # oficial do CC.
+    if event_type == "queue-operation" and payload.get("operation") == "enqueue":
+        _maybe_close_subagent_via_task_notification(slug, payload, now)
+        return
 
     if event_type != "user":
         return
     active_by_parent = _subagent_state.get(slug)
     if not active_by_parent:
         return
+    # Caso 2: fim do subagent SÍNCRONO (Task tool clássico) — tool_result
+    # carrega tool_use_id; via _subagent_task_tool_use traduzimos pra
+    # parent_uuid. Mantemos o match direto pra payloads sintéticos onde
+    # tool_use_id já é o parent_uuid (ver testes).
     completed_ids = _tool_result_ids(payload)
-    for completed_parent in completed_ids & set(active_by_parent):
+    tool_use_map = _subagent_task_tool_use.get(slug, {})
+    candidate_parents: set[str] = set(completed_ids)
+    for tuid in completed_ids:
+        mapped_parent = tool_use_map.get(tuid)
+        if mapped_parent:
+            candidate_parents.add(mapped_parent)
+    for completed_parent in candidate_parents & set(active_by_parent):
         state = active_by_parent.pop(completed_parent)
         _append_subagent_status(
             slug,
@@ -161,6 +276,11 @@ def update_subagent_state_from_jsonl(
                 "last_seen_ms": state["last_seen_ms"],
             },
         )
+    # GC: tira do map os TUIDs cujo parent já fechou (ou nunca esteve ativo)
+    for tuid in list(tool_use_map.keys()):
+        mapped = tool_use_map.get(tuid)
+        if mapped and mapped not in active_by_parent:
+            tool_use_map.pop(tuid, None)
 
 
 def subagent_active_snapshot(slug: str) -> list[dict[str, Any]]:
@@ -219,6 +339,9 @@ def reset_subagent_state_for_tests() -> None:
     global _subagent_event_seq
     _subagent_state.clear()
     _subagent_status_events.clear()
+    _subagent_task_tool_use.clear()
+    _subagent_agent_to_parent.clear()
+    _subagent_pending_close.clear()
     _subagent_event_seq = 0
 
 
