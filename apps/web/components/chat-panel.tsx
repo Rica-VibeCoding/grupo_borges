@@ -33,7 +33,7 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
  *
  * - statusline embarcada (variant="modal" expandida no commit seguinte)
  * - <PanePreview> sticky-bottom com pílula "↓ novo" quando user destacou
- * - <ChatInput> textarea ⌘+Enter / Ctrl+Enter
+ * - <ChatInput> textarea Enter envia; Shift+Enter quebra linha
  * - <ModelSelector> SelectField; Codex disabled+tooltip; modal de
  *   confirmação quando `status === 'trabalhando'` (não toast)
  */
@@ -206,6 +206,8 @@ function ChatInput({
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tabPressedRef = useRef(false);
+  const tabPressedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- image state ---
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -230,6 +232,12 @@ function ChatInput({
       if (thumbUrl) URL.revokeObjectURL(thumbUrl);
     };
   }, [thumbUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (tabPressedTimeoutRef.current) clearTimeout(tabPressedTimeoutRef.current);
+    };
+  }, []);
 
   // Auto-grow textarea
   useLayoutEffect(() => {
@@ -282,7 +290,20 @@ function ChatInput({
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'Tab') {
+        tabPressedRef.current = true;
+        if (tabPressedTimeoutRef.current) clearTimeout(tabPressedTimeoutRef.current);
+        tabPressedTimeoutRef.current = setTimeout(() => {
+          tabPressedRef.current = false;
+          tabPressedTimeoutRef.current = null;
+        }, 300);
+        return;
+      }
+
+      if (e.key !== 'Enter') return;
+      if (e.shiftKey || tabPressedRef.current) return;
+
+      if (!e.altKey) {
         e.preventDefault();
         void onSubmit();
       }
@@ -547,7 +568,7 @@ function ChatInput({
           className="chat-input-send"
           disabled={sendDisabled}
           aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
-          title={sending ? 'enviando…' : 'enviar (⌘+Enter)'}
+          title={sending ? 'enviando…' : 'enviar (Enter)'}
         >
           {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
         </button>
