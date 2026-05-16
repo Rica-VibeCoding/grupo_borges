@@ -106,33 +106,30 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
         aria-hidden="true"
         title={agent.status ?? 'ocioso'}
       />
-      <div className="chat-header-id">
-        <span className="chat-header-name">{agent.name}</span>
-        <span className="chat-header-meta mono">
-          <span>{modelLabel}</span>
-          <span className="chat-header-sep" aria-hidden="true">·</span>
-          <span title="duração da sessão">{sessionLabel}</span>
-          <span className="chat-header-sep" aria-hidden="true">·</span>
-          {contextPct !== null ? (
-            <span className="chat-header-ctx" title={`contexto ${contextPct}%`}>
-              <span className="ps-bar" aria-hidden="true">
-                {Array.from({ length: 10 }, (_, i) => (
-                  <span
-                    key={i}
-                    className="psb-cell"
-                    data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
-                    data-tier={ctxTier(contextPct)}
-                  />
-                ))}
-              </span>
-              <span>{contextPct}%</span>
+      <div className="chat-header-meta mono">
+        <span>{modelLabel}</span>
+        <span className="chat-header-sep" aria-hidden="true">·</span>
+        <span title="duração da sessão">{sessionLabel}</span>
+        <span className="chat-header-sep" aria-hidden="true">·</span>
+        {contextPct !== null ? (
+          <span className="chat-header-ctx" title={`contexto ${contextPct}%`}>
+            <span className="ps-bar" aria-hidden="true">
+              {Array.from({ length: 10 }, (_, i) => (
+                <span
+                  key={i}
+                  className="psb-cell"
+                  data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
+                  data-tier={ctxTier(contextPct)}
+                />
+              ))}
             </span>
-          ) : (
-            <span className="chat-header-dim">ctx —</span>
-          )}
-          <span className="chat-header-sep" aria-hidden="true">·</span>
-          <span className="chat-header-dim" title={seenTitle}>visto {seenLabel.replace(/^há /, '')}</span>
-        </span>
+            <span>{contextPct}%</span>
+          </span>
+        ) : (
+          <span className="chat-header-dim">ctx —</span>
+        )}
+        <span className="chat-header-sep" aria-hidden="true">·</span>
+        <span className="chat-header-dim" title={seenTitle}>visto {seenLabel.replace(/^há /, '')}</span>
       </div>
       <div className="chat-header-actions">
         <ModelChip agent={agent} />
