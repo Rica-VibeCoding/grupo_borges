@@ -9,6 +9,7 @@ GET  /api/agents/{slug}/tables         — tabelas do domínio do agente (de age
 GET  /api/agents/{slug}/pane/stream    — DS-2: SSE com excerpt do pane (poll 1 Hz, dedupe sha1)
 POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-buffer
 POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
+POST /api/agents/{slug}/image          — DS-54: upload imagem → path absoluto → send-keys
 POST /api/agents/{slug}/model          — DS-2: troca modelo via /model <slug> + confirma na statusline
 """
 from __future__ import annotations
@@ -22,9 +23,11 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+import uuid
+from pathlib import Path
 from typing import Any, AsyncGenerator, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, Field
 from sse_starlette import EventSourceResponse
@@ -380,6 +383,26 @@ _VOICE_MIME_SUFFIX = {
     "audio/mp4": ".m4a",
     "audio/mpeg": ".mp3",
 }
+_IMAGE_ALLOWED_MIMES = {"image/jpeg", "image/png", "image/webp"}
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+_IMAGE_MIME_SUFFIX = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+_AGENT_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "agents"
+
+
+def _sniff_agent_image_type(data: bytes) -> str | None:
+    if len(data) < 12:
+        return None
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return None
 
 
 @router.post("/{slug}/voice")
@@ -454,6 +477,63 @@ async def post_agent_voice(
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+@router.post("/{slug}/image")
+async def post_agent_image(
+    slug: str,
+    file: UploadFile,
+    request: Request,
+    caption: str | None = Form(default=None),
+) -> dict[str, Any]:
+    """Upload imagem → salva permanente → envia path absoluto via send-keys.
+
+    - 404 quando agente não existe
+    - 422 quando mime não suportado, tamanho > 10MB ou bytes não são imagem real
+    - 200 + {path, tmux_delivered, duration_ms} no caminho feliz
+    """
+    agent = await _get_agent_or_404(request, slug)
+
+    base_mime = (file.content_type or "").split(";")[0].strip()
+    if base_mime not in _IMAGE_ALLOWED_MIMES:
+        raise HTTPException(
+            status_code=422, detail=f"mime não suportado: {file.content_type}"
+        )
+
+    content = await file.read()
+    if len(content) > _IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="imagem maior que 10MB")
+
+    ext = _IMAGE_MIME_SUFFIX[base_mime]
+    sniffed_ext = _sniff_agent_image_type(content)
+    if sniffed_ext is None or sniffed_ext != ext:
+        raise HTTPException(status_code=422, detail="arquivo não é imagem válida")
+
+    started_at = time.monotonic()
+    filename = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
+    dest_dir = _AGENT_UPLOADS_BASE / slug
+    absolute_path = dest_dir / filename
+
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(absolute_path.write_bytes, content)
+    except OSError as exc:
+        log.error("Erro ao salvar imagem do agente %s em %s: %s", slug, absolute_path, exc)
+        raise HTTPException(status_code=500, detail="erro interno ao salvar imagem") from exc
+
+    caption_text = (caption or "").strip()
+    text = f"Imagem enviada via cockpit: {absolute_path}"
+    if caption_text:
+        text = f"{text}\nCaption: {caption_text}"
+
+    delivered = await tmux_driver.send_message(agent["tmux_session"], text)
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    log.info("agent %s: imagem salva %s", slug, absolute_path)
+    return {
+        "path": str(absolute_path),
+        "tmux_delivered": delivered,
+        "duration_ms": duration_ms,
+    }
 
 
 @router.post("/{slug}/model", response_model=ModelChangeResponse)
