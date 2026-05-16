@@ -345,6 +345,18 @@ def reset_subagent_state_for_tests() -> None:
     _subagent_event_seq = 0
 
 
+# DS-64 F4-3 A4 — sessão nova do CC = JSONL novo. Sem reset, subagents
+# active da sessão antiga continuam grudados no `_subagent_state[slug]`
+# (UI mostra spinner pra subagent que já morreu). Limpa só índices por
+# slug; `_subagent_event_seq` é global (não tem por slug) e segue.
+def reset_subagent_state_for_slug(slug: str) -> None:
+    _subagent_state.pop(slug, None)
+    _subagent_status_events.pop(slug, None)
+    _subagent_task_tool_use.pop(slug, None)
+    _subagent_agent_to_parent.pop(slug, None)
+    _subagent_pending_close.pop(slug, None)
+
+
 def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None, str | None]:
     if not payload:
         return None, None
@@ -397,6 +409,9 @@ class JsonlWatcher:
             encoded_cwd(a["workspace_path"]): a["slug"] for a in agents
         }
         self._offsets: dict[str, int] = {}
+        # F4-3 A4 — último JSONL processado por slug. Mudança = nova sessão
+        # CC → reseta subagent state pro slug pra não carregar fantasmas.
+        self._last_jsonl_by_slug: dict[str, str] = {}
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -491,6 +506,14 @@ class JsonlWatcher:
         if not new_lines:
             return
         self._offsets[str(path)] = new_offset
+
+        # F4-3 A4 — detecta sessão CC nova (JSONL path diferente do último
+        # visto pro slug) e zera subagent state antes de processar a
+        # primeira rajada. Pré-popula no boot evita reset no primeiro tick.
+        previous_path = self._last_jsonl_by_slug.get(slug)
+        if previous_path is not None and previous_path != str(path):
+            reset_subagent_state_for_slug(slug)
+        self._last_jsonl_by_slug[slug] = str(path)
 
         for line in new_lines:
             payload = parse_dict_or_none(line)

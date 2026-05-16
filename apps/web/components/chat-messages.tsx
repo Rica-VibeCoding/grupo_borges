@@ -5,7 +5,13 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import type { ContentPart, MessagePayload, SubagentStatusEntry } from '../lib/messages-types';
+import type {
+  ContentPart,
+  MessagePayload,
+  SubagentStatusEntry,
+  SubagentStatusKind,
+} from '../lib/messages-types';
+import { ChannelEnvelopeView, looksLikeChannelEnvelope } from './channel-envelope';
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -93,8 +99,58 @@ type ToolResultLookup = Map<string, { content: string; isError: boolean }>;
 type RenderItem =
   | { kind: 'user'; payload: MessagePayload; text: string }
   | { kind: 'user-internal'; payload: MessagePayload; text: string }
+  | { kind: 'channel'; payload: MessagePayload; raw: string }
   | { kind: 'assistant'; payload: MessagePayload; parts: ContentPart[] }
-  | { kind: 'sidechain-group'; rootUuid: string; count: number; durMs: number | null };
+  | {
+      kind: 'sidechain-group';
+      rootUuid: string;
+      count: number;
+      durMs: number | null;
+      /** parent_uuids de TODAS as msgs sidechain do grupo. Usado pra
+       *  casar o status ao vivo: o backend indexa por `parent_uuid` da
+       *  msg sidechain, que varia ao longo do subagent (cada turn
+       *  aponta pra anterior). Sem essa lista, chip só casaria status
+       *  do primeiro turn. */
+      parentUuids: string[];
+    };
+
+// Calcula o root de cada msg sidechain — sobe parent_uuid até achar uma
+// msg NÃO-sidechain (o caller, dona do tool_use Task/Agent) ou sair do
+// batch. Sem esse walk, cada turn do subagent vira seu próprio "root"
+// e o Rica vê N chips em vez de 1 (turn N tem parentUuid = uuid de
+// turn N-1, ambos sidechain).
+function buildSidechainRoots(messages: MessagePayload[]): Map<string, string> {
+  const byUuid = new Map<string, MessagePayload>();
+  for (const m of messages) byUuid.set(m.uuid, m);
+  const rootByUuid = new Map<string, string>();
+
+  for (const m of messages) {
+    if (!m.is_sidechain || rootByUuid.has(m.uuid)) continue;
+    const chain: string[] = [];
+    // visited blinda contra JSONL cíclico (A.parent=B, B.parent=A). Cache
+    // só é populado pós-break, então sem isso o walk loopa infinitamente
+    // e congela o tab.
+    const visited = new Set<string>();
+    let cur: MessagePayload | undefined = m;
+    let root: string | null = null;
+    while (cur && cur.is_sidechain) {
+      if (visited.has(cur.uuid)) { root = cur.uuid; break; }
+      visited.add(cur.uuid);
+      chain.push(cur.uuid);
+      const cached = rootByUuid.get(cur.uuid);
+      if (cached) { root = cached; break; }
+      if (!cur.parent_uuid) { root = cur.uuid; break; }
+      const parent = byUuid.get(cur.parent_uuid);
+      if (!parent) { root = cur.parent_uuid; break; }
+      if (!parent.is_sidechain) { root = parent.uuid; break; }
+      cur = parent;
+    }
+    if (root) {
+      for (const u of chain) rootByUuid.set(u, root);
+    }
+  }
+  return rootByUuid;
+}
 
 function buildToolResultLookup(messages: MessagePayload[]): ToolResultLookup {
   const map: ToolResultLookup = new Map();
@@ -113,26 +169,39 @@ function buildToolResultLookup(messages: MessagePayload[]): ToolResultLookup {
 
 function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
   const items: RenderItem[] = [];
-  const sidechainSeen = new Set<string>();
+  const sidechainRootByUuid = buildSidechainRoots(messages);
   const sidechainByRoot = new Map<string, MessagePayload[]>();
   for (const m of messages) {
     if (!m.is_sidechain) continue;
-    const root = m.parent_uuid ?? m.uuid;
+    const root = sidechainRootByUuid.get(m.uuid) ?? m.parent_uuid ?? m.uuid;
     const arr = sidechainByRoot.get(root) ?? [];
     arr.push(m);
     sidechainByRoot.set(root, arr);
   }
+  const sidechainEmitted = new Set<string>();
 
   for (const m of messages) {
     if (m.is_sidechain) {
-      const root = m.parent_uuid ?? m.uuid;
-      if (sidechainSeen.has(root)) continue;
-      sidechainSeen.add(root);
+      // F4-2: filtra bubbles individuais; emite UM chip por subagent
+      // (agrupado pelo root real, não pelo parent_uuid literal).
+      const root = sidechainRootByUuid.get(m.uuid) ?? m.parent_uuid ?? m.uuid;
+      if (sidechainEmitted.has(root)) continue;
+      sidechainEmitted.add(root);
       const group = sidechainByRoot.get(root) ?? [m];
       const tsStart = Date.parse(group[0]?.timestamp ?? m.timestamp);
       const tsEnd = Date.parse(group[group.length - 1]?.timestamp ?? m.timestamp);
       const durMs = Number.isFinite(tsStart) && Number.isFinite(tsEnd) ? tsEnd - tsStart : null;
-      items.push({ kind: 'sidechain-group', rootUuid: root, count: group.length, durMs });
+      const parentUuids: string[] = [];
+      for (const sm of group) {
+        if (sm.parent_uuid) parentUuids.push(sm.parent_uuid);
+      }
+      items.push({
+        kind: 'sidechain-group',
+        rootUuid: root,
+        count: group.length,
+        durMs,
+        parentUuids,
+      });
       continue;
     }
 
@@ -145,6 +214,13 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
 
       const text = textOf(m.message.content).trim();
       if (!text) continue;
+      // F4-1: detecta envelope `<channel source="...">` injetado pelo hook
+      // UserPromptSubmit e renderiza chip por tipo (audio/imagem/doc) em
+      // vez de bubble user com XML cru.
+      if (looksLikeChannelEnvelope(text)) {
+        items.push({ kind: 'channel', payload: m, raw: text });
+        continue;
+      }
       if (m.user_type === 'internal') {
         items.push({ kind: 'user-internal', payload: m, text });
       } else {
@@ -261,6 +337,43 @@ function ToolUseChip({
       )}
     </div>
   );
+}
+
+// Resolve o status efetivo do grupo de sidechain (F4-2): backend indexa por
+// parent_uuid de CADA turn (que varia ao longo do subagent), então o front
+// precisa varrer todos os parent_uuids do grupo + o rootUuid. Preferência:
+// active > stalled > completed; em empate, last_seen_ms mais recente.
+const STATUS_RANK: Record<SubagentStatusKind, number> = {
+  active: 3,
+  stalled: 2,
+  completed: 1,
+};
+
+function resolveSidechainLiveStatus(
+  rootUuid: string,
+  parentUuids: string[],
+  statusMap?: Map<string, SubagentStatusEntry>,
+): SubagentStatusEntry | null {
+  if (!statusMap) return null;
+  let best: SubagentStatusEntry | null = null;
+  const seen = new Set<string>();
+  const candidates = [rootUuid, ...parentUuids];
+  for (const u of candidates) {
+    if (seen.has(u)) continue;
+    seen.add(u);
+    const entry = statusMap.get(u);
+    if (!entry) continue;
+    if (!best) { best = entry; continue; }
+    const er = STATUS_RANK[entry.status];
+    const br = STATUS_RANK[best.status];
+    if (er > br) { best = entry; continue; }
+    if (er === br) {
+      const eLast = entry.last_seen_ms ?? entry.started_at_ms;
+      const bLast = best.last_seen_ms ?? best.started_at_ms;
+      if (eLast > bLast) best = entry;
+    }
+  }
+  return best;
 }
 
 // Status ao vivo do subagent (F3-2). Backend emite via SSE `subagent_status`:
@@ -434,6 +547,8 @@ const AssistantBubble = memo(function AssistantBubble({
 
 export type ChatMessagesProps = {
   messages: MessagePayload[];
+  /** Slug do agente — usado pra montar URLs de attachment do canal (F4-1). */
+  slug: string;
   /** Status pra anunciar empty vs loading. */
   loading?: boolean;
   /** Render alternativo do empty state. */
@@ -444,6 +559,7 @@ export type ChatMessagesProps = {
 
 export function ChatMessages({
   messages,
+  slug,
   loading = false,
   emptyLabel,
   subagentStatusByParentUuid,
@@ -528,7 +644,11 @@ export function ChatMessages({
       >
         {items.map((item) => {
           if (item.kind === 'sidechain-group') {
-            const liveStatus = subagentStatusByParentUuid?.get(item.rootUuid) ?? null;
+            const liveStatus = resolveSidechainLiveStatus(
+              item.rootUuid,
+              item.parentUuids,
+              subagentStatusByParentUuid,
+            );
             return (
               <SidechainChip
                 key={`sc:${item.rootUuid}`}
@@ -544,6 +664,13 @@ export function ChatMessages({
           const key = item.payload.uuid;
           if (item.kind === 'user') return <UserBubble key={key} text={item.text} />;
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} />;
+          if (item.kind === 'channel') {
+            return (
+              <div key={key} className="msg-row msg-row-user">
+                <ChannelEnvelopeView raw={item.raw} slug={slug} />
+              </div>
+            );
+          }
           return (
             <AssistantBubble
               key={key}

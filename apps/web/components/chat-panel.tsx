@@ -103,6 +103,7 @@ export function ChatPanel({
       ) : (
         <ChatMessages
           messages={messagesStream.messages}
+          slug={agent.slug}
           loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
           subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
         />
@@ -824,6 +825,11 @@ function ChatInput({
               aria-haspopup="listbox"
               aria-expanded={slashOpen}
               aria-controls={slashOpen ? 'slash-palette-listbox' : undefined}
+              aria-activedescendant={
+                slashOpen && slashSelectedValue
+                  ? `slash-item-${slashSelectedValue}`
+                  : undefined
+              }
             />
           </>
         )}

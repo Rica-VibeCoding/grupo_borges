@@ -2198,6 +2198,122 @@
 .msg-chip-thinking { opacity: 0.8; }
 .msg-chip-sidechain { max-width: 88%; }
 
+/* DS-64 F4-1 — channel envelope. Substitui bubble user com XML cru por
+   chip discreto por tipo de anexo. Visual inspirado em Linear: bordas
+   semi-transparentes finas, monospace pra metadata, accent só em hover. */
+.channel-env-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 88%;
+  margin-left: auto;
+}
+.channel-env {
+  background: var(--card);
+  border: 1px solid var(--chat-hairline-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.channel-env[data-kind="text"],
+.channel-env[data-kind="loose-text"] {
+  background: var(--card-2);
+  font-family: inherit;
+}
+.channel-env-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.channel-env-head:hover {
+  background: var(--card-2);
+}
+.channel-env-glyph { font-size: 13px; line-height: 1; }
+.channel-env-label { font-weight: 500; }
+.channel-env-arg {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.channel-meta {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.channel-env-caret {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 4px;
+}
+.channel-env-body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--chat-hairline);
+  background: var(--bg);
+}
+.channel-env-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--chat-hairline);
+  flex: none;
+}
+.channel-env-image-full {
+  max-width: 100%;
+  max-height: 420px;
+  display: block;
+  border-radius: 4px;
+}
+.channel-env-audio,
+.channel-env-video {
+  width: 100%;
+  max-width: 360px;
+}
+.channel-env-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.channel-env-link:hover { text-decoration: underline; }
+.channel-env-cta {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+}
+.channel-env-cta:hover { text-decoration: none; background: var(--accent-subtle); }
+.channel-env-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+}
+.channel-env-text .channel-meta {
+  margin-left: 0;
+}
+.channel-env-text-body {
+  color: var(--text);
+  font-family: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 /* JP-11 F3-2 — status ao vivo do subagent. Mesmo container, troca cor da
    borda + glyph; sem mexer em tipografia/spacing. */
 .msg-chip-sidechain[data-live="active"] {

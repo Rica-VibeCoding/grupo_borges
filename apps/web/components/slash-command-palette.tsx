@@ -101,6 +101,7 @@ export function SlashCommandPalette({
             <Command.Item
               key={c.value}
               value={c.value}
+              id={`slash-item-${c.value}`}
               onSelect={() => onSelect(c)}
               className="slash-palette-item"
             >

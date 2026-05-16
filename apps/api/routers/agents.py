@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Literal
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, Field
 from sse_starlette import EventSourceResponse, ServerSentEvent
@@ -812,4 +813,66 @@ async def change_agent_model(
         state_persisted=state_persisted,
         confirmed=confirmed,
         model=target,
+    )
+
+
+# DS-64 F4-1 — serve attachments do channel inbox (WhatsApp/Telegram).
+# Path absoluto vem do XML `<channel ... attachment_path="...">` que o hook
+# UserPromptSubmit injeta. Whitelist rígida: só caminhos sob a raiz oficial
+# de inbox dos canais, resolvidos pra evitar `..` ou symlink escape.
+_CHANNEL_ATTACHMENT_ROOT = Path("/home/clawd/.claude/channels").resolve()
+_CHANNEL_MIME_BY_SUFFIX = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".oga": "audio/ogg",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
+@router.get("/{slug}/channel-attachment")
+async def get_channel_attachment(
+    slug: str, request: Request, path: str = Query(..., min_length=1)
+) -> FileResponse:
+    """Serve um arquivo recebido via canal (WhatsApp/Telegram inbox).
+
+    - 404 quando agente não existe
+    - 400 quando path está fora da whitelist (`~/.claude/channels/<canal>/inbox/`)
+    - 404 quando arquivo não existe no disco
+    """
+    await _get_agent_or_404(request, slug)
+
+    try:
+        resolved = Path(path).resolve(strict=False)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"path inválido: {exc}") from exc
+
+    try:
+        resolved.relative_to(_CHANNEL_ATTACHMENT_ROOT)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="path fora da raiz de canais permitida",
+        ) from exc
+
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="arquivo não existe")
+
+    suffix = resolved.suffix.lower()
+    media_type = _CHANNEL_MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
+    return FileResponse(
+        path=str(resolved),
+        media_type=media_type,
+        filename=resolved.name,
     )
