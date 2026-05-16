@@ -1026,6 +1026,83 @@ class GrupoBorgesDB:
                 result.append(d)
             return result
 
+    async def latest_jsonl_session_id(self, agent_slug: str) -> str | None:
+        return await asyncio.to_thread(self._latest_jsonl_session_id, agent_slug)
+
+    def _latest_jsonl_session_id(self, agent_slug: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT json_extract(payload, '$.sessionId') AS session_id
+                FROM task_events
+                WHERE agent_slug = ?
+                  AND kind IN ('jsonl:user', 'jsonl:assistant', 'jsonl:attachment', 'jsonl:summary')
+                  AND json_extract(payload, '$.uuid') IS NOT NULL
+                  AND json_extract(payload, '$.sessionId') IS NOT NULL
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (agent_slug,),
+            ).fetchone()
+            return row["session_id"] if row is not None else None
+
+    async def list_jsonl_message_events(
+        self,
+        agent_slug: str,
+        *,
+        session_id: str | None,
+        since_id: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(
+            self._list_jsonl_message_events,
+            agent_slug,
+            session_id,
+            since_id,
+            limit,
+        )
+
+    def _list_jsonl_message_events(
+        self,
+        agent_slug: str,
+        session_id: str | None,
+        since_id: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        clauses = [
+            "agent_slug = ?",
+            "kind IN ('jsonl:user', 'jsonl:assistant', 'jsonl:attachment', 'jsonl:summary')",
+            "id > ?",
+            "json_extract(payload, '$.uuid') IS NOT NULL",
+        ]
+        params: list[Any] = [agent_slug, since_id]
+        if session_id is not None:
+            clauses.append("json_extract(payload, '$.sessionId') = ?")
+            params.append(session_id)
+        params.append(limit)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT id, task_id, agent_slug, instance_id, kind, payload, created_at
+                FROM task_events
+                WHERE {" AND ".join(clauses)}
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                d = dict(row)
+                if d.get("payload"):
+                    try:
+                        d["payload"] = json.loads(d["payload"])
+                    except json.JSONDecodeError:
+                        pass
+                result.append(d)
+            return result
+
     async def max_event_id(self) -> int:
         return await asyncio.to_thread(self._max_event_id)
 

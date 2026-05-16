@@ -300,6 +300,10 @@ class ModelChangeResponse(BaseModel):
 
 _PANE_STREAM_POLL_S = 1.0
 _PANE_STREAM_DISCONNECT_CHECK_S = 0.1
+_MESSAGES_STREAM_LIMIT_DEFAULT = 200
+_MESSAGES_STREAM_LIMIT_MAX = 500
+_MESSAGES_STREAM_POLL_S = 0.25
+_MESSAGES_STREAM_HEARTBEAT_S = 15.0
 # 200 linhas (era 80) cobre respostas longas sem cortar o topo. Configurável
 # via env pro ops afinar sob carga sem deploy. `_PANE_STREAM_MAX_CHARS` foi a
 # 20k acomodando linhas mais longas + escape sequences ANSI preservadas no
@@ -363,6 +367,114 @@ async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
             elapsed += _PANE_STREAM_DISCONNECT_CHECK_S
 
     return EventSourceResponse(_pane_stream())
+
+
+def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    payload = event.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    uuid_value = payload.get("uuid")
+    if not uuid_value:
+        return None
+    kind = payload.get("type")
+    if not isinstance(kind, str) or not kind:
+        raw_kind = event.get("kind")
+        kind = raw_kind.removeprefix("jsonl:") if isinstance(raw_kind, str) else "unknown"
+    return {
+        "id": event["id"],
+        "kind": kind,
+        "uuid": uuid_value,
+        "parent_uuid": payload.get("parentUuid"),
+        "session_id": payload.get("sessionId"),
+        "is_sidechain": bool(payload.get("isSidechain", False)),
+        "user_type": payload.get("userType"),
+        "timestamp": payload.get("timestamp"),
+        "created_at": event["created_at"],
+        "message": payload.get("message"),
+    }
+
+
+def _sse_json(event: str, data: dict[str, Any]) -> dict[str, str]:
+    return {"event": event, "data": json.dumps(data, ensure_ascii=False)}
+
+
+@router.get("/{slug}/messages/stream")
+async def stream_agent_messages(
+    slug: str,
+    request: Request,
+    session_id: str | None = Query(default=None, alias="sessionId"),
+    limit: int = Query(default=_MESSAGES_STREAM_LIMIT_DEFAULT, ge=1),
+    since_id: int = Query(default=0, ge=0),
+) -> EventSourceResponse:
+    """SSE canônico dos eventos JSONL de conversa de um agente.
+
+    Protocolo: `replay-start` → N `message` → `replay-end` → live polling
+    com `heartbeat` a cada 15s. O cursor público é `task_events.id`.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+    await _get_agent_or_404(request, slug)
+
+    capped_limit = min(limit, _MESSAGES_STREAM_LIMIT_MAX)
+    resolved_session_id = session_id or await db.latest_jsonl_session_id(slug)
+
+    async def _message_stream() -> AsyncGenerator[dict[str, str], None]:
+        started_at = time.perf_counter()
+        last_id = since_id
+        replay_events = await db.list_jsonl_message_events(
+            slug,
+            session_id=resolved_session_id,
+            since_id=since_id,
+            limit=capped_limit,
+        )
+        yield _sse_json(
+            "replay-start",
+            {"session_id": resolved_session_id, "total": len(replay_events)},
+        )
+        for event in replay_events:
+            if await request.is_disconnected():
+                return
+            last_id = max(last_id, int(event["id"]))
+            canonical = _canonical_jsonl_message_event(event)
+            if canonical is not None:
+                yield _sse_json("message", canonical)
+        yield _sse_json(
+            "replay-end",
+            {
+                "last_id": last_id,
+                "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+            },
+        )
+
+        last_heartbeat = time.monotonic()
+        while True:
+            if await request.is_disconnected():
+                return
+
+            live_events = await db.list_jsonl_message_events(
+                slug,
+                session_id=resolved_session_id,
+                since_id=last_id,
+                limit=_MESSAGES_STREAM_LIMIT_MAX,
+            )
+            for event in live_events:
+                if await request.is_disconnected():
+                    return
+                last_id = max(last_id, int(event["id"]))
+                canonical = _canonical_jsonl_message_event(event)
+                if canonical is not None:
+                    yield _sse_json("message", canonical)
+
+            now = time.monotonic()
+            if now - last_heartbeat >= _MESSAGES_STREAM_HEARTBEAT_S:
+                yield _sse_json("heartbeat", {"ts": int(time.time())})
+                last_heartbeat = now
+
+            await asyncio.sleep(_MESSAGES_STREAM_POLL_S)
+
+    return EventSourceResponse(
+        _message_stream(),
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 @router.post("/{slug}/input", response_model=InputResponse)
