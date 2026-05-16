@@ -28,6 +28,13 @@ import {
   stripChrome,
 } from '../lib/pane-chrome';
 import { ChatMessages } from './chat-messages';
+import {
+  SlashCommandPalette,
+  applySlashSelection,
+  detectSlashContext,
+  filterSlashCommands,
+  type SlashCommand,
+} from './slash-command-palette';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'opus', label: 'Opus' },
@@ -306,6 +313,25 @@ function ChatInput({
   const [recordedDuration, setRecordedDuration] = useState(0);
   const [audioLevels, setAudioLevels] = useState<number[]>(Array(WAVEFORM_BARS).fill(0));
 
+  // --- slash palette state (DS-62) ---
+  // `slashSliceStart` é o índice do "/" no texto; `null` = palette fechado.
+  const [slashSliceStart, setSlashSliceStart] = useState<number | null>(null);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashSelectedValue, setSlashSelectedValue] = useState<string>('');
+  const slashItems = useMemo(
+    () => (slashSliceStart === null ? [] : filterSlashCommands(slashQuery)),
+    [slashSliceStart, slashQuery],
+  );
+  const slashOpen = slashSliceStart !== null;
+  // Ajusta selectedValue quando os items mudam pra evitar item órfão.
+  useEffect(() => {
+    if (!slashOpen) return;
+    if (slashItems.length === 0) return;
+    if (!slashItems.some((c) => c.value === slashSelectedValue)) {
+      setSlashSelectedValue(slashItems[0].value);
+    }
+  }, [slashOpen, slashItems, slashSelectedValue]);
+
   // Refs for MediaRecorder / AudioContext — not reactive state
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -335,6 +361,92 @@ function ChatInput({
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 134)}px`;
   }, [text]);
+
+  // --- slash palette helpers (DS-62) ---
+
+  // Marca o sliceStart do `/` que foi descartado via Esc — enquanto o caret
+  // permanecer no mesmo slash context, syncSlashFromCaret NÃO reabre. Limpa
+  // quando o contexto some (caret sai do `/<...>` ou texto muda fora dele).
+  const dismissedSliceStartRef = useRef<number | null>(null);
+
+  const syncSlashFromCaret = useCallback((value: string, caret: number) => {
+    const ctx = detectSlashContext(value, caret);
+    if (ctx === null) {
+      dismissedSliceStartRef.current = null;
+      setSlashSliceStart(null);
+      setSlashQuery('');
+      return;
+    }
+    if (dismissedSliceStartRef.current === ctx.sliceStart) {
+      // Mesmo slash context que o user descartou — fica fechado.
+      setSlashSliceStart(null);
+      setSlashQuery('');
+      return;
+    }
+    dismissedSliceStartRef.current = null;
+    setSlashSliceStart(ctx.sliceStart);
+    setSlashQuery(ctx.query);
+  }, []);
+
+  const closeSlash = useCallback(() => {
+    dismissedSliceStartRef.current = slashSliceStart;
+    setSlashSliceStart(null);
+    setSlashQuery('');
+  }, [slashSliceStart]);
+
+  // Radix Dialog escuta Esc com `capture: true` no document — pra ter
+  // precedência, registramos *no window* em capture (window vem antes de
+  // document na fase capture). Quando palette aberto, sequestra Esc.
+  useEffect(() => {
+    if (slashSliceStart === null) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeSlash();
+    };
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
+  }, [slashSliceStart, closeSlash]);
+
+  const insertSlashCommand = useCallback(
+    (cmd: SlashCommand) => {
+      const el = textareaRef.current;
+      if (!el || slashSliceStart === null) return;
+      const caret = el.selectionStart ?? el.value.length;
+      const next = applySlashSelection(text, caret, slashSliceStart, cmd);
+      setText(next.text);
+      closeSlash();
+      // Restaurar caret após render (texto controlado dispara render assíncrono).
+      requestAnimationFrame(() => {
+        const node = textareaRef.current;
+        if (!node) return;
+        node.focus();
+        node.setSelectionRange(next.caret, next.caret);
+      });
+    },
+    [text, slashSliceStart, closeSlash],
+  );
+
+  const onTextareaChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.currentTarget.value;
+      const caret = e.currentTarget.selectionStart ?? value.length;
+      setText(value);
+      syncSlashFromCaret(value, caret);
+    },
+    [syncSlashFromCaret],
+  );
+
+  // Reabrir/recalcular palette quando caret muda sem digitação (setas, click).
+  const onTextareaKeyUp = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') return;
+      const el = e.currentTarget;
+      syncSlashFromCaret(el.value, el.selectionStart ?? el.value.length);
+    },
+    [syncSlashFromCaret],
+  );
 
   // --- helpers ---
 
@@ -392,6 +504,32 @@ function ChatInput({
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Esc com palette aberto é interceptado em window-capture (useEffect
+      // acima) pra ter precedência sobre Radix Dialog. ArrowLeft/Right ficam
+      // livres — o keyUp recalcula contexto se o caret sair do slash.
+      if (slashOpen && slashItems.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const idx = slashItems.findIndex((c) => c.value === slashSelectedValue);
+          const next = slashItems[(idx + 1) % slashItems.length];
+          setSlashSelectedValue(next.value);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const idx = slashItems.findIndex((c) => c.value === slashSelectedValue);
+          const prev = slashItems[(idx - 1 + slashItems.length) % slashItems.length];
+          setSlashSelectedValue(prev.value);
+          return;
+        }
+        if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          const sel = slashItems.find((c) => c.value === slashSelectedValue) ?? slashItems[0];
+          insertSlashCommand(sel);
+          return;
+        }
+      }
+
       if (e.key === 'Tab') {
         tabPressedRef.current = true;
         if (tabPressedTimeoutRef.current) clearTimeout(tabPressedTimeoutRef.current);
@@ -410,7 +548,7 @@ function ChatInput({
         void onSubmit();
       }
     },
-    [onSubmit],
+    [onSubmit, slashOpen, slashItems, slashSelectedValue, closeSlash, insertSlashCommand],
   );
 
   // --- paste ---
@@ -560,6 +698,21 @@ function ChatInput({
 
   return (
     <div className="chat-input-wrap">
+      {/* mousedown.preventDefault impede que o clique no item tire foco do
+          textarea antes do onSelect disparar. */}
+      {slashOpen && (
+        <div
+          className="slash-palette-anchor"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <SlashCommandPalette
+            items={slashItems}
+            selectedValue={slashSelectedValue}
+            onActiveChange={setSlashSelectedValue}
+            onSelect={insertSlashCommand}
+          />
+        </div>
+      )}
       {/* Image chip */}
       {pendingImage && thumbUrl && !recording && (
         <div className="chat-image-chip">
@@ -641,14 +794,21 @@ function ChatInput({
               ref={textareaRef}
               className="chat-input-textarea"
               value={text}
-              onChange={(e) => setText(e.currentTarget.value)}
+              onChange={onTextareaChange}
               onKeyDown={onKeyDown}
+              onKeyUp={onTextareaKeyUp}
+              onClick={(e) =>
+                syncSlashFromCaret(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)
+              }
               onFocus={() => onFocusChange?.(true)}
               onBlur={() => onFocusChange?.(false)}
               rows={1}
               maxLength={8192}
               placeholder={pendingImage ? 'legenda opcional…' : undefined}
               aria-label={`Mensagem pro agente ${agentName}`}
+              aria-haspopup="listbox"
+              aria-expanded={slashOpen}
+              aria-controls={slashOpen ? 'slash-palette-listbox' : undefined}
             />
           </>
         )}
