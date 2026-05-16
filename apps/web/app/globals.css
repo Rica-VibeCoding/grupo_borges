@@ -11,6 +11,10 @@
 :root[data-theme="dark"] {
   --bg:#060b18; --panel:#0d1b2a; --card:#112240; --card-2:#153258;
   --border:#1a3a5c; --border-subtle:#142d4a;
+  /* Hairlines semi-transparentes brancas (DS-57): wireframe-em-moonlight do Linear,
+     usadas nas superfícies elevadas do chat panel. Coexistem com --border* solidas. */
+  --chat-hairline:rgba(255,255,255,0.06);
+  --chat-hairline-strong:rgba(255,255,255,0.08);
   --text:#e0f7fa; --muted:#5d9bb8;
   --accent:#00f0ff; --accent-active:#00e5ff; --accent-secondary:#00b8d4;
   --accent-subtle:rgba(0,240,255,0.08); --accent-border:rgba(0,240,255,0.25);
@@ -26,6 +30,10 @@
 :root[data-theme="light"] {
   --bg:#eef1f5; --panel:#e8ecf2; --card:#f4f6f9; --card-2:#e0e4ea;
   --border:#c4cdd8; --border-subtle:#d4dbe4;
+  /* Em light theme as hairlines viram traços escuros sutis (mesmo papel,
+     polaridade invertida). */
+  --chat-hairline:rgba(10,22,40,0.08);
+  --chat-hairline-strong:rgba(10,22,40,0.12);
   --text:#0a1628; --muted:#5a6a7e;
   --accent:#0097a7; --accent-active:#00838f; --accent-secondary:#00bcd4;
   --accent-subtle:rgba(0,151,167,0.08); --accent-border:rgba(0,151,167,0.25);
@@ -566,126 +574,184 @@
 .model-chip[aria-busy="true"] { opacity: 0.7; }
 .model-chip-caret { font-size: 9px; color: var(--muted); }
 
-/* AgentModal · aba CHAT (DS-2) ------------------------------------------ */
+/* AgentModal · aba CHAT (DS-57 — redesign Linear+Apple) ------------------
+   Hierarquia em 3 níveis (luminance stacking):
+     - chat-panel: canvas (--bg) — fundo
+     - chat-preview: --panel (step up) — pane elevado
+     - chat-input (dock): --card (step up²) — superfície de ação
+   Tipografia: Inter (Geist) com 'cv01','ss03' + JetBrains Mono no console.
+   Input vira capsule única (paperclip+textarea+mic+send no mesmo wrapper). */
 .chat-panel {
-  display: flex; flex-direction: column; gap: 8px;
-  /* flex:1 1 0 garante crescimento dentro do .agent-modal-panel
-     (que é flex column). height:100% não basta porque resolve antes
-     do flex layout. */
+  display: flex; flex-direction: column; gap: 10px;
   flex: 1 1 0;
   min-height: 0;
+  font-feature-settings: "cv01", "ss03";
 }
 
 .chat-preview-wrap {
   position: relative;
-  /* flex-basis 0 (não auto) força a área a ocupar TODO o espaço
-     disponível independente do conteúdo — sem texto, ainda toma a
-     mesma altura. Comportamento idêntico a WhatsApp/Telegram: a área
-     de mensagens não "encolhe" quando vazia. Único momento que muda
-     é quando o teclado abre e o viewport encolhe via 100dvh. */
   flex: 1 1 0;
   min-height: 0;
   display: flex;
 }
 .chat-preview {
-  flex: 1; margin: 0; padding: 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
+  flex: 1; margin: 0; padding: 14px 14px 12px;
+  border: 1px solid var(--chat-hairline);
+  border-radius: 10px;
+  background: var(--panel);
+  /* Branco neutro fixo (Linear primary text). NÃO usar var(--text) — em dark
+     theme é ciano-tintado (#e0f7fa) e o pane fica colorido demais. */
+  color: #f7f8f8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; line-height: 1.55;
   white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto;
   min-height: 0;
-  /* Conteúdo encosta no input (estilo WhatsApp/Remote Control). Quando o
-     texto é menor que a caixa, justify-content empurra pro fim; quando
-     excede, o overflow-y assume e o sticky-bottom já tava certo. */
   display: flex; flex-direction: column; justify-content: flex-end;
 }
 .chat-preview-pill {
-  position: absolute; right: 12px; bottom: 12px;
+  position: absolute; right: 14px; bottom: 14px;
   font-family: 'JetBrains Mono', monospace; font-size: 10px;
   padding: 4px 10px;
   border: 1px solid var(--accent-border); background: var(--accent);
   color: var(--bg);
   cursor: pointer;
   letter-spacing: 0.08em;
+  border-radius: 9999px;
 }
 .chat-preview-pill:hover { filter: brightness(1.1); }
 
+/* Input dock: capsule única englobando paperclip + textarea + mic + send.
+   Sem borders internas — hover/focus ilumina o dock inteiro.
+   align-items: flex-end pra botões ancorarem embaixo quando textarea cresce. */
 .chat-input {
-  display: flex; gap: 6px; align-items: flex-end;
-  /* Respiro embaixo pra input não cortar na borda do viewport iOS
-     (safe-area). 32px = afastamento Rica-aprovado depois de 8→16→24→32. */
-  padding-bottom: 32px;
+  display: flex; gap: 2px; align-items: flex-end;
+  padding: 5px 5px 5px 6px;
+  border: 1px solid var(--chat-hairline-strong);
+  background: var(--card);
+  border-radius: 22px;
+  /* Respiro pra não cortar na home indicator iOS — 32px aprovado pelo Rica
+     em 4 iterações (8→16→24→32). Cresce se safe-area for maior. */
+  margin-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.chat-input:focus-within {
+  border-color: var(--accent-border);
+  background: var(--card-2);
+  box-shadow: var(--focus-ring-glow);
 }
 .chat-icon-btn {
   width: 32px; height: 32px; min-width: 32px;
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: 1px solid var(--border); background: var(--card);
-  color: var(--text); cursor: pointer;
+  padding: 0; border: none; background: transparent;
+  color: var(--muted); cursor: pointer;
   border-radius: 50%;
-  align-self: flex-end;
-  margin-bottom: 2px;
-  transition: transform 80ms ease-out;
+  transition: color 120ms ease, background 120ms ease, transform 80ms ease-out;
 }
-.chat-icon-btn:hover:not(:disabled) { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent-border); }
-.chat-icon-btn:active:not(:disabled) { transform: scale(0.94); }
-/* Disabled mantém visível: só baixa um pouco a opacity (era 0.45 — Rica
-   reclamou que o mic ficava apagado/dim no mobile). 0.7 deixa o ícone
-   firme mas claramente sem ação. */
-.chat-icon-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+.chat-input:focus-within .chat-icon-btn { color: var(--text); }
+.chat-icon-btn:hover:not(:disabled) { color: var(--accent); background: var(--accent-subtle); }
+.chat-icon-btn:active:not(:disabled) { transform: scale(0.92); }
+.chat-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .chat-input-textarea {
   flex: 1; resize: none;
-  /* 1 linha exata box-border: 22.4px (line 16×1.4) + 18px padding (9×2)
-     + 2px border = 42.4px → 42px floor. Auto-grow via useLayoutEffect
-     cresce até 6 linhas (~134px com padding). Rica reclamou que abria
-     em 2 linhas — agora começa em 1 firme. */
-  min-height: 42px; max-height: 134px;
-  padding: 9px 10px;
-  border: 1px solid var(--border-subtle); background: var(--bg);
+  min-height: 32px; max-height: 134px;
+  padding: 5px 8px;
+  border: none; background: transparent;
   color: var(--text);
   font-family: 'Geist', sans-serif;
-  /* iOS Safari zooma input com font-size < 16px e o chat fica pela metade
-     da tela. 16px é o mínimo seguro pra prevenir o auto-zoom no focus —
-     vale também pra Android Chrome em modo desktop. */
-  font-size: 16px; line-height: 1.4;
-  border-radius: 6px;
+  font-weight: 510;
+  /* font-feature-settings herdado de .chat-panel — não duplicar. */
+  letter-spacing: -0.011em;
+  /* iOS Safari zooma input com font-size < 16px — manter 16px no mobile. */
+  font-size: 15px; line-height: 1.45;
   overflow-y: auto;
 }
-.chat-input-textarea:focus {
-  outline: none; border-color: var(--accent-border); background: var(--accent-subtle);
+@media (max-width: 600px) {
+  .chat-input-textarea { font-size: 16px; }
 }
+.chat-input-textarea:focus { outline: none; }
 .chat-input textarea.chat-send-flash {
   opacity: 0;
   transform: translateY(-4px);
   transition: opacity 150ms ease-out, transform 150ms ease-out;
 }
 .chat-input-send {
-  align-self: flex-end;
   width: 32px; height: 32px; min-width: 32px;
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
-  /* Ação luminosa porém sutil — bg cyan dessaturado em vez do azul puro
-     do --accent (Rica: "não tem muito a ver"). Ícone fica accent firme,
-     hover intensifica o bg. Lê como botão de ação sem chamariz. */
-  border: 1px solid var(--accent-border);
-  background: var(--accent-subtle);
-  color: var(--accent);
+  border: none;
+  background: var(--accent);
+  color: var(--bg);
   cursor: pointer;
   border-radius: 50%;
-  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  transition: filter 120ms ease, transform 80ms ease-out, background 120ms ease, opacity 120ms ease;
 }
 .chat-input-send svg { display: block; }
-.chat-input-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-input-send:disabled {
+  opacity: 0.35;
+  background: rgba(0,240,255,0.18);
+  color: var(--muted);
+  cursor: not-allowed;
+}
 .chat-input-send:hover:not(:disabled) {
-  background: var(--accent); color: var(--bg);
+  filter: brightness(1.15);
   transform: translateY(-1px);
 }
 .chat-input-send:active:not(:disabled) {
-  transform: scale(0.94);
-  transition: transform 80ms ease-out;
+  transform: scale(0.92);
 }
+
+/* Header do chat — identidade do agente em 2 linhas + status-dot pulsante.
+   Substitui o variant="modal" da AgentStatusline na aba CHAT (DS-57). */
+.chat-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 2px 4px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.chat-header-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--status-idle);
+  flex: none;
+  position: relative;
+}
+.chat-header-dot[data-status="trabalhando"] { background: var(--status-running); }
+.chat-header-dot[data-status="trabalhando"]::after {
+  content: ''; position: absolute; inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--status-running);
+  animation: chat-dot-pulse 1.6s ease-out infinite;
+  pointer-events: none;
+}
+.chat-header-dot[data-status="aguardando"] { background: var(--status-blocked); }
+.chat-header-dot[data-status="offline"]    { background: var(--status-offline); }
+@keyframes chat-dot-pulse {
+  0%   { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(2.2);  opacity: 0;   }
+}
+.chat-header-id {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; flex: 1;
+}
+.chat-header-name {
+  font-family: 'Geist', sans-serif;
+  font-size: 14px; font-weight: 510;
+  letter-spacing: -0.011em;
+  color: var(--text); line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-header-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.04em;
+  color: var(--muted); line-height: 1.4;
+  display: flex; align-items: center; gap: 6px;
+  white-space: nowrap; overflow: hidden;
+}
+.chat-header-sep { opacity: 0.45; }
+.chat-header-dim { color: var(--status-offline); }
+.chat-header-ctx { display: inline-flex; align-items: center; gap: 5px; }
+.chat-header-ctx .ps-bar { display: inline-flex; gap: 1.5px; }
+.chat-header-ctx .ps-bar .psb-cell { width: 3px; height: 6px; border-radius: 1px; }
+.chat-header-actions { flex: none; display: inline-flex; align-items: center; }
 
 /* Bolhas pré-prontas pra futuro render de histórico de chat (não usadas ainda). */
 .chat-bubble {
@@ -775,11 +841,12 @@
 .chat-stop-btn:hover { background: var(--accent) !important; color: var(--bg) !important; }
 
 @media (max-width: 600px) {
-  .chat-preview { font-size: 10px; }
+  .chat-preview { font-size: 12px; line-height: 1.5; padding: 12px; }
   .pm-line { font-size: 10.5px; gap: 6px; }
-  /* Input sticky-bottom natural pelo flex chain (frame 100dvh →
-     panel flex:1 → chat-panel flex column → preview flex:1 →
-     input flex:0). Layout horizontal: [avatar][textarea][mic][⬆]. */
+  .chat-header { gap: 10px; padding-bottom: 8px; }
+  .chat-header-name { font-size: 13px; }
+  /* mobile mantém o respiro (max c/ safe-area) — não override.
+     Tablet/desktop não tem home indicator mas 32px segue como afastamento. */
 }
 
 /* AgentModal — listas de skills/tabelas + viewer de docs (Fase 3) */

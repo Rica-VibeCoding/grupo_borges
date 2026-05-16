@@ -5,6 +5,13 @@ import * as Dialog from '@radix-ui/react-dialog';
 import * as Select from '@radix-ui/react-select';
 import type { Agent } from '../lib/cockpit-types';
 import {
+  formatDuration,
+  formatLastSeen,
+  parseContextPct,
+  parseModelFromPane,
+  shortModelName,
+} from '../lib/cockpit-types';
+import {
   AgentInputError,
   postAgentModel,
   toShortModelSlug,
@@ -14,7 +21,6 @@ import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
-import { AgentStatusline } from './agent-statusline';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'opus', label: 'Opus' },
@@ -49,12 +55,7 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
 
   return (
     <div className="chat-panel">
-      <AgentStatusline
-        agent={agent}
-        serverNow={serverNow}
-        variant="modal"
-        extra={<ModelChip agent={agent} />}
-      />
+      <ChatHeader agent={agent} serverNow={serverNow} />
       <PanePreview
         excerpt={excerpt}
         executorKind={executorKind}
@@ -66,6 +67,76 @@ export function ChatPanel({ agent, serverNow }: { agent: Agent; serverNow: numbe
         agentName={agent.name}
         onFocusChange={setInputFocused}
       />
+    </div>
+  );
+}
+
+// ----- ChatHeader ---------------------------------------------------------
+// DS-57: identidade do agente em 2 linhas + status-dot pulsante.
+// Substitui AgentStatusline variant="modal" — dá presença ao agente como
+// entidade, não apenas barra horizontal de tokens.
+
+function ctxTier(pct: number): 'low' | 'mid' | 'high' {
+  if (pct < 50) return 'low';
+  if (pct < 80) return 'mid';
+  return 'high';
+}
+
+function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
+  const isCodex = agent.executor_kind === 'codex';
+  const model = agent.state_model ?? agent.model_default;
+  const sessionStarted = isCodex
+    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
+    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
+  const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
+  const contextPct = isCodex
+    ? (agent.context_pct ?? null)
+    : parseContextPct(agent.pane_excerpt);
+  const paneModel = isCodex ? null : parseModelFromPane(agent.pane_excerpt);
+  const modelLabel = paneModel ?? shortModelName(model);
+  const sessionLabel = sessionSecs !== null ? formatDuration(sessionSecs) : '—';
+  const seenLabel = formatLastSeen(agent.last_seen, serverNow);
+  const seenTitle = agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—';
+
+  return (
+    <div className="chat-header" role="group" aria-label={`Cabeçalho do agente ${agent.name}`}>
+      <span
+        className="chat-header-dot"
+        data-status={agent.status ?? 'ocioso'}
+        aria-hidden="true"
+        title={agent.status ?? 'ocioso'}
+      />
+      <div className="chat-header-id">
+        <span className="chat-header-name">{agent.name}</span>
+        <span className="chat-header-meta mono">
+          <span>{modelLabel}</span>
+          <span className="chat-header-sep" aria-hidden="true">·</span>
+          <span title="duração da sessão">{sessionLabel}</span>
+          <span className="chat-header-sep" aria-hidden="true">·</span>
+          {contextPct !== null ? (
+            <span className="chat-header-ctx" title={`contexto ${contextPct}%`}>
+              <span className="ps-bar" aria-hidden="true">
+                {Array.from({ length: 10 }, (_, i) => (
+                  <span
+                    key={i}
+                    className="psb-cell"
+                    data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
+                    data-tier={ctxTier(contextPct)}
+                  />
+                ))}
+              </span>
+              <span>{contextPct}%</span>
+            </span>
+          ) : (
+            <span className="chat-header-dim">ctx —</span>
+          )}
+          <span className="chat-header-sep" aria-hidden="true">·</span>
+          <span className="chat-header-dim" title={seenTitle}>visto {seenLabel.replace(/^há /, '')}</span>
+        </span>
+      </div>
+      <div className="chat-header-actions">
+        <ModelChip agent={agent} />
+      </div>
     </div>
   );
 }
@@ -186,7 +257,7 @@ function PanePreview({
 const WAVEFORM_BARS = 24;
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-function formatDuration(seconds: number): string {
+function formatRecordingDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
@@ -531,9 +602,9 @@ function ChatInput({
             <span
               className="chat-recording-timer mono"
               aria-live="polite"
-              aria-label={`Duração: ${formatDuration(recordedDuration)}`}
+              aria-label={`Duração: ${formatRecordingDuration(recordedDuration)}`}
             >
-              {formatDuration(recordedDuration)}
+              {formatRecordingDuration(recordedDuration)}
             </span>
           </div>
         ) : (
