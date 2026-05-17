@@ -28,7 +28,7 @@
 // CSS mora em `app/globals.css` na seção `/* DS-70 OneLineChip */` — ver
 // abaixo do `.msg-chip-body`. Token names em `--chip-*` pra não colidir.
 
-import { memo, useCallback, useId, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { memo, useCallback, useId, useState, type ReactNode } from 'react';
 
 export type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
 import type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
@@ -83,13 +83,6 @@ export const OneLineChip = memo(function OneLineChip({
     });
   }, [expandable, onToggle]);
 
-  // Botão já trata Enter/Space — interceptamos só pra preventDefault de Space
-  // não scrollar a página quando o chip está focado.
-  const onKeyDown = useCallback((e: KeyboardEvent<HTMLButtonElement>) => {
-    if (!expandable) return;
-    if (e.key === ' ') e.preventDefault();
-  }, [expandable]);
-
   return (
     <div
       className="one-line-chip"
@@ -102,7 +95,6 @@ export const OneLineChip = memo(function OneLineChip({
         type="button"
         className="one-line-chip-head"
         onClick={toggle}
-        onKeyDown={onKeyDown}
         aria-expanded={expandable ? open : undefined}
         aria-controls={expandable ? bodyId : undefined}
         // Quando não-expansível, o "botão" é decorativo. `tabIndex=-1` evita
