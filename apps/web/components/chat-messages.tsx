@@ -184,6 +184,20 @@ function buildSidechainRoots(messages: MessagePayload[]): Map<string, string> {
   return rootByUuid;
 }
 
+// DS-65 F5-5: marker injetado pelo CC quando o agente faz Read de imagem —
+// "[Image: original 1280x900, displayed at 768x540. Multiply coordinates by
+// 1.67 to map to original image.]". Vaza como bubble user/assistant plain
+// text porque o classifier devolve `plain`. Se houver image_path no mesmo
+// turno, já é renderizado inline (ChannelEnvelope/attachment) — o marker é
+// puro ruído. Regex ancorada com âncoras e formato fixo evita falso-positivo
+// em texto que cite o marker entre aspas.
+const IMAGE_READ_MARKER_RE =
+  /^\[Image: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by [\d.]+ to map to original image\.\]$/;
+
+function isImageReadMarker(text: string): boolean {
+  return IMAGE_READ_MARKER_RE.test(text.trim());
+}
+
 // JP-13 F2: padrões de meta-decisão. Match no início do primeiro text part
 // do assistant. Case-insensitive, ancorado em ^. Manter conservador —
 // false-positive aqui esconde resposta legítima do agente.
@@ -300,6 +314,9 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
 
       const text = textOf(m.message.content).trim();
       if (!text) continue;
+      // F5-5: ruído de Read de imagem — marker `[Image: original WxH, ...]`
+      // sem conteúdo útil. Se houver image_path no turno, já é inline.
+      if (isImageReadMarker(text)) continue;
       // F4-1: detecta envelope `<channel source="...">` injetado pelo hook
       // UserPromptSubmit e renderiza chip por tipo (audio/imagem/doc) em
       // vez de bubble user com XML cru.
@@ -318,6 +335,16 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
     if (m.kind === 'assistant') {
       if (!m.message) continue;
       const parts = extractContentParts(m.message.content);
+      // F5-5: assistant text-only cujo conteúdo é APENAS o marker do Read
+      // de imagem — suprime sem chip. Se tiver tool_use, não toca (agente
+      // ainda está agindo).
+      if (
+        parts.length === 1
+        && parts[0].type === 'text'
+        && isImageReadMarker(parts[0].text)
+      ) {
+        continue;
+      }
       // JP-13 F2: assistant text-only com padrão de meta-decisão no início
       // ("eco da minha mensagem", "não respondo", "aguardando direção" …)
       // colapsa em chip discreto pra não vazar raciocínio interno como
