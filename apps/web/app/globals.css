@@ -2333,6 +2333,107 @@
 .msg-chip-thinking { opacity: 0.8; }
 .msg-chip-sidechain { max-width: 88%; }
 
+/* DS-70 / JP-17 — OneLineChip universal.
+   Substitui msg-chip + msg-chip-sidechain + channel-env quando integrado
+   (aguardando classifier universal JP-16 da Tara). Estética Apple-HIG:
+   label sem mono, accent só em focus/active, expand com curva suave. */
+.one-line-chip {
+  display: block;
+  max-width: 88%;
+  border: 1px solid var(--chat-hairline-strong);
+  background: var(--card);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: background 120ms cubic-bezier(.4,0,.2,1),
+              border-color 120ms cubic-bezier(.4,0,.2,1);
+}
+.one-line-chip[data-open="1"] { background: var(--card-2); }
+.one-line-chip:hover { border-color: var(--accent-border); }
+
+.one-line-chip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 80ms cubic-bezier(.4,0,.2,1);
+}
+.one-line-chip[data-expandable="0"] .one-line-chip-head { cursor: default; }
+.one-line-chip-head:active { transform: scale(0.98); }
+.one-line-chip-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.one-line-chip-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
+.one-line-chip-label {
+  color: var(--text);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.one-line-chip-summary {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.one-line-chip-trailing {
+  color: var(--muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.one-line-chip-caret {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.one-line-chip[data-expandable="0"] .one-line-chip-summary { flex: 1; }
+
+.one-line-chip-body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--chat-hairline);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: one-line-chip-expand 120ms cubic-bezier(.4,0,.2,1);
+}
+.one-line-chip-body pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 320px;
+}
+.one-line-chip-body pre code { background: none; padding: 0; }
+
+@keyframes one-line-chip-expand {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Tone hooks — afetam só borda esquerda (acent-line, não fundo), Apple-HIG
+   evita cores semânticas saturadas em chips densos. */
+.one-line-chip[data-tone="active"] { border-left: 2px solid var(--status-running); }
+.one-line-chip[data-tone="completed"] { border-left: 2px solid var(--status-done); }
+.one-line-chip[data-tone="stalled"] { border-left: 2px solid var(--status-blocked); }
+.one-line-chip[data-tone="error"] { border-left: 2px solid var(--health-down); }
+
 /* DS-64 F4-1 — channel envelope. Substitui bubble user com XML cru por
    chip discreto por tipo de anexo. Visual inspirado em Linear: bordas
    semi-transparentes finas, monospace pra metadata, accent só em hover. */

@@ -12,7 +12,8 @@ import type {
   SubagentStatusKind,
 } from '../lib/messages-types';
 import { ChannelEnvelopeView, looksLikeChannelEnvelope } from './channel-envelope';
-import { looksLikeLocalCommandWrapper } from '../lib/local-command-wrapper';
+import { OneLineChip, type OneLineChipKind } from './one-line-chip';
+import { classifyMessage, type ChatChip } from '../lib/chat-payload-classifier';
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -109,6 +110,18 @@ type RenderItem =
   | { kind: 'channel'; payload: MessagePayload; raw: string }
   | { kind: 'assistant'; payload: MessagePayload; parts: ContentPart[] }
   | { kind: 'meta-decision'; payload: MessagePayload; text: string }
+  | {
+      /** DS-70/JP-17: chip universal vindo do classifier (Tara, JP-16).
+       *  Cobre slash command nativo, Skill tool, e tool_use com result
+       *  grande. Sidechain e channel envelope continuam com seus chips
+       *  específicos (F1 e F4-1) — refator pra OneLineChip neles é
+       *  opcional e fica pra round seguinte. */
+      kind: 'chip';
+      payload: MessagePayload;
+      chip: ChatChip;
+      expandBody: string;
+      classifierKind: OneLineChipKind;
+    }
   | {
       kind: 'sidechain-group';
       rootUuid: string;
@@ -221,8 +234,15 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
     sidechainByRoot.set(root, arr);
   }
   const sidechainEmitted = new Set<string>();
+  // DS-70/JP-17: mensagens consumidas pelo classifier como `nextMsg`
+  // (caso clássico: Skill tool puxa o assistant text seguinte como
+  // expandBody do chip — esse assistant não deve renderizar de novo).
+  const consumedByClassifier = new Set<string>();
 
-  for (const m of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (consumedByClassifier.has(m.uuid)) continue;
+
     if (m.is_sidechain) {
       // F4-2: filtra bubbles individuais; emite UM chip por subagent
       // (agrupado pelo root real, não pelo parent_uuid literal).
@@ -247,6 +267,30 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
       continue;
     }
 
+    // DS-70/JP-17: classifier universal (JP-16 Tara) com lookahead. Substitui
+    // o F5-4 silenciador e cobre slash command nativo, Skill tool e tool_use
+    // com result grande — todos viram OneLineChip. Sidechain (F1) e channel
+    // envelope (F4-1) caem como `plain` aqui e são tratados pelos branches
+    // abaixo com chips específicos atuais (refator pra OneLineChip neles é
+    // round seguinte).
+    const next = messages[i + 1];
+    const payload = classifyMessage(m, next);
+    if (payload.kind === 'suppress') continue;
+    if (payload.kind === 'slash' || payload.kind === 'skill' || payload.kind === 'tool') {
+      items.push({
+        kind: 'chip',
+        payload: m,
+        chip: payload.chip,
+        expandBody: payload.expandBody,
+        classifierKind: payload.kind,
+      });
+      // Skill puxa o assistant text seguinte como expandBody — marca pra não
+      // renderizar de novo. Tool não consome (o tool_result-only user já é
+      // skipped pelo guard `onlyToolResult` mais abaixo).
+      if (payload.kind === 'skill' && next) consumedByClassifier.add(next.uuid);
+      continue;
+    }
+
     if (m.kind === 'user') {
       if (!m.message) continue;
       const parts = extractContentParts(m.message.content);
@@ -256,12 +300,6 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
 
       const text = textOf(m.message.content).trim();
       if (!text) continue;
-      // F5-4: oculta wrappers de slash command nativos do CC (/model,
-      // /clear, /reload-plugins…) que vazam pro JSONL como user message
-      // com XML cru. Só suprime quando o content é INTEIRAMENTE composto
-      // pelas 6 tags whitelisted — mix de texto livre + tag inline cai
-      // em bubble normal (proteção contra falso-positivo).
-      if (looksLikeLocalCommandWrapper(text)) continue;
       // F4-1: detecta envelope `<channel source="...">` injetado pelo hook
       // UserPromptSubmit e renderiza chip por tipo (audio/imagem/doc) em
       // vez de bubble user com XML cru.
@@ -880,6 +918,22 @@ export function ChatMessages({
           if (item.kind === 'user') return <UserBubble key={key} text={item.text} />;
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} />;
           if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} />;
+          if (item.kind === 'chip') {
+            // Slash/Skill/Tool — chip universal vindo do classifier (Tara,
+            // JP-16). expandBody='' → chip não expansível (caret some).
+            const row = item.classifierKind === 'slash' ? 'msg-row-user' : 'msg-row-assistant';
+            return (
+              <div key={key} className={`msg-row ${row}`}>
+                <OneLineChip
+                  icon={item.chip.icon}
+                  label={item.chip.label}
+                  summary={item.chip.summary}
+                  expandBody={item.expandBody || null}
+                  kind={item.classifierKind}
+                />
+              </div>
+            );
+          }
           if (item.kind === 'channel') {
             return (
               <div key={key} className="msg-row msg-row-user">
