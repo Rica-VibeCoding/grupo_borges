@@ -25,6 +25,12 @@
 // expandem nativamente (botão já trata). Sem ARIA custom — quanto menos,
 // melhor.
 //
+// Accessible name: vem do texto visível dos spans filhos (icon é
+// aria-hidden, label + summary + trailing + caret entram no cálculo).
+// CSS truncar com ellipsis NÃO esconde do screen reader — o texto real
+// continua no DOM e é lido por inteiro. Por isso NÃO tem `title` nem
+// `aria-label` em span filho: dobraria o accessible name sem ganho.
+//
 // CSS mora em `app/globals.css` na seção `/* DS-70 OneLineChip */` — ver
 // abaixo do `.msg-chip-body`. Token names em `--chip-*` pra não colidir.
 
@@ -109,7 +115,7 @@ export const OneLineChip = memo(function OneLineChip({
         <span className="one-line-chip-icon" aria-hidden="true">{icon}</span>
         <span className="one-line-chip-label">{label}</span>
         {summary && (
-          <span className="one-line-chip-summary mono" title={summary}>
+          <span className="one-line-chip-summary mono">
             {summary}
           </span>
         )}
