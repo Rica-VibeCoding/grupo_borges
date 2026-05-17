@@ -581,6 +581,9 @@ export function ChatMessages({
               || item.classifierKind === 'skill'
             );
             const row = userSide ? 'msg-row-user' : 'msg-row-assistant';
+            // Channel envelope abre por default — Rica lê msg de outro
+            // canal sem precisar clicar (msg dele do cockpit pediu).
+            const openByDefault = item.classifierKind === 'channel-envelope';
             return (
               <div key={key} className={`msg-row ${row}`}>
                 <OneLineChip
@@ -591,6 +594,7 @@ export function ChatMessages({
                   kind={item.classifierKind}
                   tone={item.tone}
                   timestamp={formatHHMM(itemTs)}
+                  defaultOpen={openByDefault}
                 />
               </div>
             );
