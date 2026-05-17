@@ -9,11 +9,20 @@
 #   tara-codex --delegator daniel -C /home/clawd/repos/grupo_borges "<prompt>"
 #
 # Args extras (após `--`) passam direto pro `codex exec`.
-# Flags lidas pelo wrapper: --delegator <slug>, --cockpit-url <url>.
+# Flags lidas pelo wrapper:
+#   --delegator <slug>   identifica quem disparou (default: daniel)
+#   --cockpit-url <url>  endpoint /api/codex-events
+#   --resume-last        reusa thread_id capturada do último run desse
+#                        delegator (se < 12h); senão segue fresh e avisa
+#   --fresh              no-op explícito — default é fresh
 #
 # Defaults:
 #   COCKPIT_URL=http://127.0.0.1:8000
 #   DELEGATOR=daniel (se -d/--delegator não passado)
+#
+# Thread store: ~/.tara/threads/<delegator>.txt — gravada quando o evento
+# JSONL `thread.started` é observado. Quem decide --resume-last é o
+# Daniel-CC ao montar o comando, não o wrapper.
 #
 # NÃO commitar prompts com segredos — payload passa por scrub no backend
 # mas evita expor no log local.
@@ -23,7 +32,10 @@ set -euo pipefail
 COCKPIT_URL="${COCKPIT_URL:-http://127.0.0.1:8000}"
 DELEGATOR="${TARA_DELEGATOR:-daniel}"
 CODEX_BIN="${CODEX_BIN:-codex}"
+THREAD_DIR="${TARA_THREAD_DIR:-${HOME}/.tara/threads}"
+THREAD_MAX_AGE=43200  # 12h em segundos
 
+RESUME_LAST=0
 CODEX_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +43,10 @@ while [[ $# -gt 0 ]]; do
       DELEGATOR="$2"; shift 2 ;;
     --cockpit-url)
       COCKPIT_URL="$2"; shift 2 ;;
+    --resume-last)
+      RESUME_LAST=1; shift ;;
+    --fresh)
+      shift ;;
     --)
       shift; CODEX_ARGS+=("$@"); break ;;
     *)
@@ -39,9 +55,28 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#CODEX_ARGS[@]} -eq 0 ]]; then
-  echo "uso: tara-codex [--delegator <slug>] -- <args do codex exec>" >&2
-  echo "ou:  tara-codex [--delegator <slug>] <args do codex exec>" >&2
+  echo "uso: tara-codex [--delegator <slug>] [--resume-last] -- <args do codex exec>" >&2
+  echo "ou:  tara-codex [--delegator <slug>] [--resume-last] <args do codex exec>" >&2
   exit 2
+fi
+
+mkdir -p "$THREAD_DIR"
+THREAD_FILE="$THREAD_DIR/${DELEGATOR}.txt"
+
+RESUME_ARGS=()
+if [[ "$RESUME_LAST" -eq 1 ]]; then
+  if [[ -f "$THREAD_FILE" ]]; then
+    age=$(( $(date +%s) - $(stat -c %Y "$THREAD_FILE") ))
+    thread_id=$(<"$THREAD_FILE")
+    if [[ -n "$thread_id" && "$age" -lt "$THREAD_MAX_AGE" ]]; then
+      RESUME_ARGS+=(--resume "$thread_id")
+      echo "[tara-codex] retomando thread $thread_id (--resume-last, idade ${age}s)" >&2
+    else
+      echo "[tara-codex] --resume-last ignorado: thread em $THREAD_FILE tem $((age/3600))h (>12h) ou vazia" >&2
+    fi
+  else
+    echo "[tara-codex] --resume-last ignorado: sem thread anterior em $THREAD_FILE" >&2
+  fi
 fi
 
 post_event() {
@@ -76,7 +111,14 @@ started_at=$(date +%s)
 post_event "tara.exec.started" "{\"started_at\":$started_at,\"argv\":$(printf '%s\n' "${CODEX_ARGS[@]}" | jq -R . | jq -sc .)}"
 
 set +e
-"$CODEX_BIN" exec --json "${CODEX_ARGS[@]}" | tee /dev/stderr | while IFS= read -r line; do
+"$CODEX_BIN" exec --json "${RESUME_ARGS[@]}" "${CODEX_ARGS[@]}" | tee /dev/stderr | while IFS= read -r line; do
+  # Captura thread_id pra próximo --resume-last.
+  if [[ "$line" == *'"thread.started"'* ]]; then
+    tid=$(printf '%s' "$line" | jq -r '.thread_id // empty' 2>/dev/null || true)
+    if [[ -n "$tid" ]]; then
+      printf '%s' "$tid" > "$THREAD_FILE"
+    fi
+  fi
   post_raw_jsonl "$line"
 done
 exit_code=${PIPESTATUS[0]}
