@@ -378,12 +378,10 @@ function SidechainClusterChip({
 const AssistantBubble = memo(function AssistantBubble({
   parts,
   toolResults,
-  usage,
   ts,
 }: {
   parts: ContentPart[];
   toolResults: ToolResultLookup;
-  usage: NonNullable<MessagePayload['message']>['usage'];
   ts?: string;
 }) {
   // DS-71 round 3: wrapper `msg-bubble msg-bubble-assistant` removido por
@@ -574,22 +572,16 @@ export function ChatMessages({
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} ts={itemTs} />;
           if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} ts={itemTs} />;
           if (item.kind === 'chip') {
-            // Slash/Skill/Tool/Task/Channel/Sidechain — chip universal vindo
-            // do classifier (Tara, JP-16). expandBody='' → chip não expansível
-            // (caret some). slash + channel-envelope = user-side; demais =
-            // assistant-side.
-            // Skill é invocação do user (mesmo que tecnicamente venha como
-            // assistant tool_use), então alinha no lado user — Rica pediu
-            // explicitamente "skills saem do meu lado".
+            // Slash/Skill/Tool/Task/Sidechain — chip universal vindo do
+            // classifier (Tara, JP-16). channel-envelope NÃO chega aqui
+            // (render-items roteia pra kind='channel' via ChannelEnvelopeView).
+            // Slash + Skill = user-side ("skills saem do meu lado", Rica);
+            // demais = assistant-side.
             const userSide = (
               item.classifierKind === 'slash'
-              || item.classifierKind === 'channel-envelope'
               || item.classifierKind === 'skill'
             );
             const row = userSide ? 'msg-row-user' : 'msg-row-assistant';
-            // Channel envelope abre por default — Rica lê msg de outro
-            // canal sem precisar clicar (msg dele do cockpit pediu).
-            const openByDefault = item.classifierKind === 'channel-envelope';
             return (
               <div key={key} className={`msg-row ${row}`}>
                 <OneLineChip
@@ -600,7 +592,6 @@ export function ChatMessages({
                   kind={item.classifierKind}
                   tone={item.tone}
                   timestamp={formatHHMM(itemTs)}
-                  defaultOpen={openByDefault}
                 />
               </div>
             );
@@ -617,7 +608,6 @@ export function ChatMessages({
               key={key}
               parts={item.parts}
               toolResults={toolResults}
-              usage={item.payload.message?.usage}
               ts={itemTs}
             />
           );

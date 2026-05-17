@@ -70,10 +70,12 @@ const LOCAL_COMMAND_CAVEAT_ONLY_RE = /^\s*(?:<local-command-caveat\s*>[\s\S]*?<\
 const IMAGE_READ_MARKER_RE =
   /^\[Image: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by [\d.]+ to map to original image\.\]$/;
 // DS-71 round 5: quando o CC injeta uma Skill, o conteúdo do SKILL.md vaza
-// como user text começando com "Base directory for this skill: ...". O
+// como user text começando com "Base directory for this skill: /<path>". O
 // chip kind=skill já carrega icon/label/expand — esse texto vira ruído
-// duplicado. Suprime no classifier (Rica feedback).
-const SKILL_PREAMBLE_RE = /^\s*Base directory for this skill:/;
+// duplicado. Suprime no classifier. Pós-ritual: âncora exige `: /` (path
+// absoluto seguinte) — texto que cite o marker entre aspas/contexto NÃO
+// começa com `Base directory for this skill: /` então não casa.
+const SKILL_PREAMBLE_RE = /^\s*Base directory for this skill: \//;
 
 export function classifyMessage(
   msg: MessagePayload,

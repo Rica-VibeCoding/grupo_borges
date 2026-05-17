@@ -2201,14 +2201,6 @@
   background: var(--bubble-user);
   border-color: var(--bubble-user-border);
 }
-.msg-bubble-internal {
-  background: var(--bubble-internal);
-  border-color: var(--bubble-internal-border);
-  color: var(--muted);
-  font-size: 12px;
-  font-family: 'JetBrains Mono', monospace;
-  letter-spacing: 0;
-}
 .msg-bubble-assistant {
   background: var(--bubble-assistant);
   border-color: var(--bubble-assistant-border);
@@ -2258,88 +2250,6 @@
   text-align: left;
 }
 .msg-text + .msg-text { margin-top: 8px; }
-.msg-text + .msg-chip,
-.msg-chip + .msg-text,
-.msg-chip + .msg-chip { margin-top: 6px; }
-
-/* Chips: tool_use, thinking, sidechain. Visual unificado — fundo discreto,
-   header clicável, body colapsado por default. */
-.msg-chip {
-  display: block;
-  width: 100%;
-  border: 1px solid var(--chat-hairline-strong);
-  background: var(--card);
-  color: var(--muted);
-  border-radius: 8px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-align: left;
-  padding: 0;
-}
-.msg-chip[data-err="1"] {
-  border-color: rgba(255, 82, 82, 0.4);
-}
-.msg-chip .msg-chip-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.msg-chip-glyph { font-size: 13px; line-height: 1; }
-.msg-chip-label { color: var(--text); font-weight: 500; }
-.msg-chip-arg {
-  color: var(--muted);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-.msg-chip-caret {
-  color: var(--muted);
-  font-size: 10px;
-  margin-left: auto;
-}
-.msg-chip:hover { border-color: var(--accent-border); }
-.msg-chip[data-open="1"] { background: var(--card-2); }
-.msg-chip-body {
-  padding: 8px 10px 10px;
-  border-top: 1px solid var(--chat-hairline);
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.msg-chip-section { display: flex; flex-direction: column; gap: 4px; }
-.msg-chip-section-head {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.msg-chip-body pre {
-  margin: 0;
-  padding: 8px 10px;
-  background: var(--panel);
-  border: 1px solid var(--chat-hairline);
-  border-radius: 6px;
-  overflow-x: auto;
-  font-size: 11px;
-  line-height: 1.5;
-  max-height: 320px;
-}
-.msg-chip-body pre code { background: none; padding: 0; }
-.msg-chip-thinking { opacity: 0.8; }
-.msg-chip-sidechain { max-width: 88%; }
 
 /* DS-70 / JP-17 — OneLineChip universal.
    Substitui msg-chip + msg-chip-sidechain + channel-env quando integrado
@@ -2485,11 +2395,15 @@
   background: #0a0a0c;
   border-color: #1f1f24;
   opacity: 0.7;
+  color: #d2d2d7;
 }
 :root[data-theme="light"] .one-line-chip[data-kind="user-internal"] {
   background: #1d1d1f;
   border-color: #424245;
   color: #d2d2d7;
+}
+:root[data-theme="light"] .one-line-chip[data-kind="user-internal"] .one-line-chip-label {
+  color: #f5f5f7;
 }
 .one-line-chip[data-kind="user-internal"][data-open="1"] {
   background: #15151a;

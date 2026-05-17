@@ -112,7 +112,9 @@ export const OneLineChip = memo(function OneLineChip({
         className="one-line-chip-head"
         onClick={toggle}
         aria-expanded={expandable ? open : undefined}
-        aria-controls={expandable ? bodyId : undefined}
+        // aria-controls só quando o body REALMENTE existe no DOM (Axe pode
+        // flagar referência a ID inexistente quando body não monta).
+        aria-controls={expandable && open ? bodyId : undefined}
         // Quando não-expansível, o "botão" é decorativo. `tabIndex=-1` evita
         // foco perdido em chips puramente informativos (sidechain idle, por
         // exemplo). Sem disabled — visualmente igual.
