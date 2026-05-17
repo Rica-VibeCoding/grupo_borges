@@ -12,6 +12,7 @@ import type {
   SubagentStatusKind,
 } from '../lib/messages-types';
 import { ChannelEnvelopeView, looksLikeChannelEnvelope } from './channel-envelope';
+import { looksLikeLocalCommandWrapper } from '../lib/local-command-wrapper';
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -255,6 +256,12 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
 
       const text = textOf(m.message.content).trim();
       if (!text) continue;
+      // F5-4: oculta wrappers de slash command nativos do CC (/model,
+      // /clear, /reload-plugins…) que vazam pro JSONL como user message
+      // com XML cru. Só suprime quando o content é INTEIRAMENTE composto
+      // pelas 6 tags whitelisted — mix de texto livre + tag inline cai
+      // em bubble normal (proteção contra falso-positivo).
+      if (looksLikeLocalCommandWrapper(text)) continue;
       // F4-1: detecta envelope `<channel source="...">` injetado pelo hook
       // UserPromptSubmit e renderiza chip por tipo (audio/imagem/doc) em
       // vez de bubble user com XML cru.
