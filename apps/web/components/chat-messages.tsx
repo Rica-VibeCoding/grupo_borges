@@ -572,9 +572,13 @@ export function ChatMessages({
             // do classifier (Tara, JP-16). expandBody='' → chip não expansível
             // (caret some). slash + channel-envelope = user-side; demais =
             // assistant-side.
+            // Skill é invocação do user (mesmo que tecnicamente venha como
+            // assistant tool_use), então alinha no lado user — Rica pediu
+            // explicitamente "skills saem do meu lado".
             const userSide = (
               item.classifierKind === 'slash'
               || item.classifierKind === 'channel-envelope'
+              || item.classifierKind === 'skill'
             );
             const row = userSide ? 'msg-row-user' : 'msg-row-assistant';
             return (

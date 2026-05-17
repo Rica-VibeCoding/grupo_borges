@@ -68,6 +68,11 @@ const LOCAL_COMMAND_CAVEAT_ONLY_RE = /^\s*(?:<local-command-caveat\s*>[\s\S]*?<\
 // falso-positivo em texto que cite o marker entre aspas ou concatenado.
 const IMAGE_READ_MARKER_RE =
   /^\[Image: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by [\d.]+ to map to original image\.\]$/;
+// DS-71 round 5: quando o CC injeta uma Skill, o conteúdo do SKILL.md vaza
+// como user text começando com "Base directory for this skill: ...". O
+// chip kind=skill já carrega icon/label/expand — esse texto vira ruído
+// duplicado. Suprime no classifier (Rica feedback).
+const SKILL_PREAMBLE_RE = /^\s*Base directory for this skill:/;
 
 export function classifyMessage(
   msg: MessagePayload,
@@ -89,6 +94,10 @@ export function classifyMessage(
   }
 
   if (IMAGE_READ_MARKER_RE.test(text.trim())) {
+    return { kind: 'suppress', chip: null, expandBody: null, rawRef };
+  }
+
+  if (SKILL_PREAMBLE_RE.test(text)) {
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
   }
 
