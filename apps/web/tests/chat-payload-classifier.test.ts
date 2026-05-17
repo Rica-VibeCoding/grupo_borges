@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 
 import type { ContentPart, MessagePayload } from '../lib/messages-types.ts';
 import { classifyMessage } from '../lib/chat-payload-classifier.ts';
+import {
+  doneTaskNotificationXml,
+  failedTaskNotificationXml,
+} from '../lib/__fixtures__/task-notification.fixtures.ts';
 
 const baseMessage = {
   id: 1,
@@ -242,6 +246,38 @@ test('classifyMessage — channel telegram usa icon próprio', () => {
   assert.equal(payload.kind, 'channel-envelope');
   assert.equal(payload.chip.icon, '✈️');
   assert.equal(payload.chip.label, 'telegram Daniel');
+});
+
+test('classifyMessage — task-notification failed vira chip vermelho', () => {
+  const payload = classifyMessage(userText(52, failedTaskNotificationXml));
+  assert.equal(payload.kind, 'task-notification');
+  assert.deepEqual(payload.chip, {
+    icon: '🔴',
+    label: 'Task: Background command \'pnpm test\' failed wi',
+    summary: 'failed: Background command \'pnpm test\' failed with exit code 144',
+  });
+  assert.match(payload.expandBody, /"taskId": "bzubuuj01"/);
+  assert.match(payload.expandBody, /<task-notification>/);
+});
+
+test('classifyMessage — task-notification done vira chip verde', () => {
+  const payload = classifyMessage(userText(53, doneTaskNotificationXml));
+  assert.equal(payload.kind, 'task-notification');
+  assert.deepEqual(payload.chip, {
+    icon: '🟢',
+    label: 'Task: Background command completed successfull',
+    summary: 'done: Background command completed successfully',
+  });
+  assert.match(payload.expandBody, /"status": "done"/);
+  assert.match(payload.expandBody, /<output-file>\/tmp\/done12345\/output<\/output-file>/);
+});
+
+test('classifyMessage — task-notification inline em texto livre permanece plain', () => {
+  const payload = classifyMessage(userText(
+    54,
+    `antes\n${failedTaskNotificationXml}\ndepois`,
+  ));
+  assert.equal(payload.kind, 'plain');
 });
 
 test('classifyMessage — rawRef usa uuid original', () => {

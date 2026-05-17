@@ -1,5 +1,6 @@
 import type { ContentPart, MessagePayload } from './messages-types.ts';
 import { parseLocalCommand } from './slash-command-wrapper.ts';
+import { parseTaskNotification } from './task-notification-wrapper.ts';
 
 export type ChatChip = {
   icon: string;
@@ -7,7 +8,13 @@ export type ChatChip = {
   summary: string;
 };
 
-type ChipPayloadKind = 'slash' | 'skill' | 'tool' | 'sidechain-cluster' | 'channel-envelope';
+type ChipPayloadKind =
+  | 'slash'
+  | 'skill'
+  | 'tool'
+  | 'sidechain-cluster'
+  | 'channel-envelope'
+  | 'task-notification';
 
 type ChipPayload = {
   kind: ChipPayloadKind;
@@ -62,6 +69,20 @@ export function classifyMessage(
 
   if (SYSTEM_REMINDER_RE.test(text)) {
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
+  }
+
+  const taskNotification = parseTaskNotification(text);
+  if (taskNotification) {
+    return {
+      kind: 'task-notification',
+      chip: {
+        icon: taskNotificationIcon(taskNotification.status),
+        label: `Task: ${taskNotification.summary.slice(0, 40)}`,
+        summary: `${taskNotification.status}: ${taskNotification.summary}`,
+      },
+      expandBody: JSON.stringify(taskNotification, null, 2),
+      rawRef,
+    };
   }
 
   if (msg.message?.role === 'user') {
@@ -273,6 +294,13 @@ function channelExpandBody(channel: { attrs: Record<string, string>; body: strin
     .map((key) => channel.attrs[key] ? `${key}: ${channel.attrs[key]}` : '')
     .filter(Boolean);
   return [channel.body, ...attachments].filter(Boolean).join('\n');
+}
+
+function taskNotificationIcon(status: string): string {
+  if (status === 'failed') return '🔴';
+  if (status === 'done') return '🟢';
+  if (status === 'running') return '🟡';
+  return '⚙️';
 }
 
 function firstLine(value: string): string {
