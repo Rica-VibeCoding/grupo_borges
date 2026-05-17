@@ -57,26 +57,26 @@ test('buildRenderItems — task-notification (done) produz item kind=chip', () =
   }
 });
 
-test('buildRenderItems — channel-envelope (whatsapp) produz item kind=chip', () => {
+// DS-71 round 9: channel-envelope deixou de virar chip universal (perdia
+// player de áudio/imagem inline). Volta a emitir kind='channel' com o raw
+// — render usa ChannelEnvelopeView com 5 sub-renders ricos.
+test('buildRenderItems — channel-envelope (whatsapp) produz item kind=channel', () => {
   const raw = '<channel source="whatsapp" user="Rica" attachment_kind="audio" attachment_path="/tmp/a.ogg">manda status</channel>';
   const items = buildRenderItems([userText(12, raw)]);
   assert.equal(items.length, 1);
-  assert.equal(items[0].kind, 'chip');
-  if (items[0].kind === 'chip') {
-    assert.equal(items[0].classifierKind, 'channel-envelope');
-    assert.equal(items[0].chip.icon, '⚙️');
-    assert.equal(items[0].chip.label, 'Channel: whatsapp Rica');
+  assert.equal(items[0].kind, 'channel');
+  if (items[0].kind === 'channel') {
+    assert.match(items[0].raw, /<channel source="whatsapp"/);
   }
 });
 
-test('buildRenderItems — channel-envelope (telegram) produz item kind=chip', () => {
+test('buildRenderItems — channel-envelope (telegram) produz item kind=channel', () => {
   const raw = '<channel source="telegram" user="Daniel">texto do telegram</channel>';
   const items = buildRenderItems([userText(13, raw)]);
   assert.equal(items.length, 1);
-  assert.equal(items[0].kind, 'chip');
-  if (items[0].kind === 'chip') {
-    assert.equal(items[0].classifierKind, 'channel-envelope');
-    assert.equal(items[0].chip.icon, '⚙️');
+  assert.equal(items[0].kind, 'channel');
+  if (items[0].kind === 'channel') {
+    assert.match(items[0].raw, /<channel source="telegram"/);
   }
 });
 

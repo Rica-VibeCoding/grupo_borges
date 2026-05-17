@@ -2,6 +2,7 @@ import type { ContentPart, MessagePayload } from './messages-types.ts';
 import type { OneLineChipTone } from '../components/one-line-chip-types.ts';
 import { parseLocalCommand } from './slash-command-wrapper.ts';
 import { parseTaskNotification } from './task-notification-wrapper.ts';
+import { prettifyToolName } from './tool-name.ts';
 
 export type ChatChip = {
   icon: string;
@@ -186,7 +187,7 @@ export function classifyMessage(
           kind: 'tool',
           chip: {
             icon: '⚙️',
-            label: `Tool: ${toolUse.name}`,
+            label: `Tool: ${prettifyToolName(toolUse.name)}`,
             summary: truncate(firstLine(result.body), 80),
           },
           expandBody: result.body,

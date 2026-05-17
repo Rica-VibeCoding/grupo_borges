@@ -198,7 +198,9 @@ const MediaEnvelope = memo(function MediaEnvelope({
   slug: string;
   variant: MediaVariantKind;
 }) {
-  const [open, setOpen] = useState(false);
+  // DS-71 round 9: msg de outro canal entra aberta por default (Rica feedback
+  // — leitura imediata, não auditoria). Click ainda recolhe.
+  const [open, setOpen] = useState(true);
   const path = envelope.attrs.attachment_path ?? '';
   const url = path ? attachmentUrl(slug, path) : '';
   const v = MEDIA_VARIANTS[variant];

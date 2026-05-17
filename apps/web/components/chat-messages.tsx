@@ -20,6 +20,7 @@ import {
   type SidechainGroupRef,
   type ToolResultLookup,
 } from '../lib/render-items';
+import { prettifyToolName } from '../lib/tool-name';
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -185,15 +186,20 @@ function ToolUseChip({
       )}
     </div>
   );
+  // DS-71 round 9: tool sem result ainda → tone=active (breathing).
+  // Quando o tool_result chega no JSONL, result deixa de ser null e o
+  // chip para de pulsar. Pra MCP tools, label encurtado via
+  // prettifyToolName (`mcp__plugin_telegram_telegram__reply` → `telegram.reply`).
+  const tone = result === null ? 'active' : (result.isError ? 'error' : 'idle');
   return (
     <OneLineChip
       kind="tool"
       icon="⚙️"
-      label={`Tool: ${name}`}
+      label={`Tool: ${prettifyToolName(name)}`}
       summary={short || undefined}
       trailing={result?.isError ? 'erro' : undefined}
       timestamp={formatHHMM(ts)}
-      tone={result?.isError ? 'error' : 'idle'}
+      tone={tone}
       expandBody={expandBody}
     />
   );

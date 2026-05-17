@@ -205,7 +205,6 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
       case 'skill':
       case 'tool':
       case 'task-notification':
-      case 'channel-envelope':
       case 'sidechain-cluster': {
         items.push({
           kind: 'chip',
@@ -217,6 +216,15 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
         });
         if (payload.kind === 'skill' && next) consumedByClassifier.add(next.uuid);
         continue;
+      }
+      case 'channel-envelope': {
+        // DS-71 round 9: channel-envelope NÃO vira chip universal — perderia
+        // player de áudio/imagem inline. Volta pro ChannelEnvelopeView que
+        // tem 5 sub-renders ricos (audio/image/video/document/text). O
+        // branch user-text logo abaixo detecta o raw via prefix `<channel
+        // source=...>` e emite kind='channel' que o render embrulha no
+        // componente certo. Deixa cair pro `if (m.kind === 'user')` abaixo.
+        break;
       }
       default:
         assertNever(payload);
