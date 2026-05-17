@@ -624,6 +624,7 @@ export function ChatMessages({
                   summary={item.chip.summary}
                   expandBody={item.expandBody || null}
                   kind={item.classifierKind}
+                  tone={item.tone}
                 />
               </div>
             );

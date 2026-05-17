@@ -4,7 +4,7 @@
 
 import type { ContentPart, MessagePayload } from './messages-types.ts';
 import { classifyMessage } from './chat-payload-classifier.ts';
-import type { OneLineChipKind } from '../components/one-line-chip-types.ts';
+import type { OneLineChipKind, OneLineChipTone } from '../components/one-line-chip-types.ts';
 
 export type ToolResultLookup = Map<string, { content: string; isError: boolean }>;
 
@@ -26,6 +26,7 @@ export type RenderItem =
       chip: { icon: string; label: string; summary: string };
       expandBody: string;
       classifierKind: OneLineChipKind;
+      tone?: OneLineChipTone;
     }
   | {
       kind: 'sidechain-group';
@@ -212,6 +213,7 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
           chip: payload.chip,
           expandBody: payload.expandBody,
           classifierKind: payload.kind,
+          tone: payload.tone,
         });
         if (payload.kind === 'skill' && next) consumedByClassifier.add(next.uuid);
         continue;

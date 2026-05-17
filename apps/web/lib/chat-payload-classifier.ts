@@ -1,4 +1,5 @@
 import type { ContentPart, MessagePayload } from './messages-types.ts';
+import type { OneLineChipTone } from '../components/one-line-chip-types.ts';
 import { parseLocalCommand } from './slash-command-wrapper.ts';
 import { parseTaskNotification } from './task-notification-wrapper.ts';
 
@@ -21,6 +22,10 @@ type ChipPayload = {
   chip: ChatChip;
   expandBody: string;
   rawRef: string;
+  /** V2: tone visual derivado do payload (failed→error, done→completed, etc).
+   *  `undefined` = chip neutro (idle). Consumido pelo OneLineChip via prop
+   *  `tone`. Sem propagação aqui, a borda colorida só existia na rota dev. */
+  tone?: OneLineChipTone;
 };
 
 type PlainPayload = {
@@ -87,6 +92,7 @@ export function classifyMessage(
       },
       expandBody: JSON.stringify(taskNotification, null, 2),
       rawRef,
+      tone: taskNotificationTone(taskNotification.status),
     };
   }
 
@@ -154,17 +160,18 @@ export function classifyMessage(
     }
 
     if (toolUse) {
-      const result = matchingToolResult(toolUse.id, nextMsg);
-      if (result && result.length > 300) {
+      const result = matchingToolResultEntry(toolUse.id, nextMsg);
+      if (result && result.body.length > 300) {
         return {
           kind: 'tool',
           chip: {
             icon: '⚙️',
             label: `Tool: ${toolUse.name}`,
-            summary: truncate(firstLine(result), 80),
+            summary: truncate(firstLine(result.body), 80),
           },
-          expandBody: result,
+          expandBody: result.body,
           rawRef,
+          tone: result.isError ? 'error' : undefined,
         };
       }
     }
@@ -220,7 +227,10 @@ function firstToolUse(msg: MessagePayload): Extract<ContentPart, { type: 'tool_u
   ) ?? null;
 }
 
-function matchingToolResult(toolUseId: string, nextMsg?: MessagePayload): string | null {
+function matchingToolResultEntry(
+  toolUseId: string,
+  nextMsg?: MessagePayload,
+): { body: string; isError: boolean } | null {
   if (!nextMsg?.message) return null;
   const parts = contentParts(nextMsg.message.content);
   const result = parts.find(
@@ -228,7 +238,11 @@ function matchingToolResult(toolUseId: string, nextMsg?: MessagePayload): string
       part.type === 'tool_result' && part.tool_use_id === toolUseId
     ),
   );
-  return result ? toolResultBody(result.content) : null;
+  if (!result) return null;
+  return {
+    body: toolResultBody(result.content),
+    isError: Boolean(result.is_error),
+  };
 }
 
 function skillInfo(input: unknown): { name: string; summary: string } {
@@ -306,6 +320,13 @@ function taskNotificationIcon(status: string): string {
   if (status === 'done') return '🟢';
   if (status === 'running') return '🟡';
   return '⚙️';
+}
+
+function taskNotificationTone(status: string): OneLineChipTone | undefined {
+  if (status === 'failed') return 'error';
+  if (status === 'done') return 'completed';
+  if (status === 'running') return 'active';
+  return undefined;
 }
 
 function firstLine(value: string): string {

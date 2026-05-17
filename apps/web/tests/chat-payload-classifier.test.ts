@@ -291,6 +291,65 @@ test('classifyMessage — task-notification done vira chip verde', () => {
   assert.match(payload.expandBody, /<output-file>\/tmp\/done12345\/output<\/output-file>/);
 });
 
+test('classifyMessage — task-notification failed propaga tone=error', () => {
+  const payload = classifyMessage(userText(70, failedTaskNotificationXml));
+  assert.equal(payload.kind, 'task-notification');
+  if (payload.kind === 'task-notification') {
+    assert.equal(payload.tone, 'error');
+  }
+});
+
+test('classifyMessage — task-notification done propaga tone=completed', () => {
+  const payload = classifyMessage(userText(71, doneTaskNotificationXml));
+  assert.equal(payload.kind, 'task-notification');
+  if (payload.kind === 'task-notification') {
+    assert.equal(payload.tone, 'completed');
+  }
+});
+
+test('classifyMessage — tool com is_error propaga tone=error', () => {
+  const use = assistantParts(72, [{
+    type: 'tool_use',
+    id: 'toolu-err',
+    name: 'Bash',
+    input: { command: 'pnpm test' },
+  }]);
+  const errResult = msg({
+    id: 73,
+    uuid: 'uuid-73',
+    kind: 'user',
+    message: {
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'toolu-err',
+        content: 'erro fatal\n' + 'x'.repeat(310),
+        is_error: true,
+      }],
+    },
+  });
+  const payload = classifyMessage(use, errResult);
+  assert.equal(payload.kind, 'tool');
+  if (payload.kind === 'tool') {
+    assert.equal(payload.tone, 'error');
+  }
+});
+
+test('classifyMessage — tool sem is_error não define tone', () => {
+  const use = assistantParts(74, [{
+    type: 'tool_use',
+    id: 'toolu-ok',
+    name: 'Bash',
+    input: { command: 'ls' },
+  }]);
+  const big = 'ok\n' + 'x'.repeat(310);
+  const payload = classifyMessage(use, toolResult(75, 'toolu-ok', big));
+  assert.equal(payload.kind, 'tool');
+  if (payload.kind === 'tool') {
+    assert.equal(payload.tone, undefined);
+  }
+});
+
 test('classifyMessage — task-notification inline em texto livre permanece plain', () => {
   const payload = classifyMessage(userText(
     54,
