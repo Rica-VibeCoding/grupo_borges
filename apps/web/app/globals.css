@@ -893,21 +893,24 @@
 .slash-palette {
   background: var(--panel);
   border: 1px solid var(--accent-border);
-  border-radius: 6px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
   padding: 4px;
-  max-height: 240px;
+  max-height: 320px;
   overflow-y: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
+  min-width: 0;
 }
 .slash-palette [cmdk-list] { display: flex; flex-direction: column; gap: 1px; }
 .slash-palette-item {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text);
+  min-width: 0;
+  white-space: nowrap;
 }
 .slash-palette-item[data-selected="true"] {
   background: var(--accent-subtle);
@@ -921,6 +924,11 @@
 .slash-palette-item-desc {
   color: var(--muted);
   font-size: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .slash-palette-empty {
   padding: 8px 10px;
