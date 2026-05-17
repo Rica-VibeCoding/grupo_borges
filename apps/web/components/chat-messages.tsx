@@ -96,11 +96,18 @@ function formatTokens(n: number): string {
 
 type ToolResultLookup = Map<string, { content: string; isError: boolean }>;
 
+type SidechainGroupRef = {
+  rootUuid: string;
+  parentUuids: string[];
+  durMs: number | null;
+};
+
 type RenderItem =
   | { kind: 'user'; payload: MessagePayload; text: string }
   | { kind: 'user-internal'; payload: MessagePayload; text: string }
   | { kind: 'channel'; payload: MessagePayload; raw: string }
   | { kind: 'assistant'; payload: MessagePayload; parts: ContentPart[] }
+  | { kind: 'meta-decision'; payload: MessagePayload; text: string }
   | {
       kind: 'sidechain-group';
       rootUuid: string;
@@ -112,6 +119,17 @@ type RenderItem =
        *  aponta pra anterior). Sem essa lista, chip só casaria status
        *  do primeiro turn. */
       parentUuids: string[];
+    }
+  | {
+      /** JP-13 F1: N sidechain-groups consecutivos colapsam num único
+       *  chip "launched N subagents". Sem isso, 14 subagents = 14 chips
+       *  empilhados que enchem a tela. Cada subagent é resolvido por
+       *  seu rootUuid próprio pro status live (active/completed/stalled
+       *  aggregado). */
+      kind: 'sidechain-cluster';
+      groups: SidechainGroupRef[];
+      subagentCount: number;
+      totalDurMs: number | null;
     };
 
 // Calcula o root de cada msg sidechain — sobe parent_uuid até achar uma
@@ -150,6 +168,29 @@ function buildSidechainRoots(messages: MessagePayload[]): Map<string, string> {
     }
   }
   return rootByUuid;
+}
+
+// JP-13 F2: padrões de meta-decisão. Match no início do primeiro text part
+// do assistant. Case-insensitive, ancorado em ^. Manter conservador —
+// false-positive aqui esconde resposta legítima do agente.
+const META_DECISION_PATTERNS: RegExp[] = [
+  /^eco d[oae] /i,
+  /^não respondo\b/i,
+  /^aguardando direção/i,
+  /^silenciando\b/i,
+  /^ignorando (mensagem|eco|loop)/i,
+];
+
+function isMetaDecisionAssistant(parts: ContentPart[]): boolean {
+  // Tem tool_use? Não é meta-decisão — agente está agindo.
+  if (parts.some((p) => p.type === 'tool_use')) return false;
+  const textParts = parts.filter(
+    (p): p is Extract<ContentPart, { type: 'text' }> => p.type === 'text',
+  );
+  if (textParts.length === 0) return false;
+  const head = textParts[0].text.trim();
+  if (!head) return false;
+  return META_DECISION_PATTERNS.some((re) => re.test(head));
 }
 
 function buildToolResultLookup(messages: MessagePayload[]): ToolResultLookup {
@@ -231,7 +272,19 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
 
     if (m.kind === 'assistant') {
       if (!m.message) continue;
-      items.push({ kind: 'assistant', payload: m, parts: extractContentParts(m.message.content) });
+      const parts = extractContentParts(m.message.content);
+      // JP-13 F2: assistant text-only com padrão de meta-decisão no início
+      // ("eco da minha mensagem", "não respondo", "aguardando direção" …)
+      // colapsa em chip discreto pra não vazar raciocínio interno como
+      // bubble grande. Filtro frágil: whitelist puro. Alargar quando
+      // aparecer padrão novo que o Rica reclamar; fix durável fica no
+      // agente (não emitir meta-decisão como assistant text).
+      if (isMetaDecisionAssistant(parts)) {
+        const text = textOf(m.message.content).trim();
+        items.push({ kind: 'meta-decision', payload: m, text });
+        continue;
+      }
+      items.push({ kind: 'assistant', payload: m, parts });
       continue;
     }
     // kind === 'attachment' | 'summary' | 'system' — fall-through proposital:
@@ -241,6 +294,43 @@ function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
   }
 
   return items;
+}
+
+// JP-13 F1: colapsa runs de sidechain-group consecutivos. 1 grupo isolado
+// fica como está; 2+ viram um sidechain-cluster com count agregado.
+function coalesceSidechainGroups(items: RenderItem[]): RenderItem[] {
+  const out: RenderItem[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const cur = items[i];
+    if (cur.kind !== 'sidechain-group') {
+      out.push(cur);
+      i++;
+      continue;
+    }
+    let j = i;
+    const refs: SidechainGroupRef[] = [];
+    let totalDur = 0;
+    let anyDur = false;
+    while (j < items.length && items[j].kind === 'sidechain-group') {
+      const g = items[j] as Extract<RenderItem, { kind: 'sidechain-group' }>;
+      refs.push({ rootUuid: g.rootUuid, parentUuids: g.parentUuids, durMs: g.durMs });
+      if (g.durMs !== null) { totalDur += g.durMs; anyDur = true; }
+      j++;
+    }
+    if (refs.length === 1) {
+      out.push(cur);
+    } else {
+      out.push({
+        kind: 'sidechain-cluster',
+        groups: refs,
+        subagentCount: refs.length,
+        totalDurMs: anyDur ? totalDur : null,
+      });
+    }
+    i = j;
+  }
+  return out;
 }
 
 // --- Bubbles e chips ---------------------------------------------------------
@@ -289,6 +379,34 @@ function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
         <pre className="msg-chip-body mono"><code>{text}</code></pre>
       )}
     </button>
+  );
+}
+
+// JP-13 F2: chip discreto pra meta-decisão filtrada. Reusa estilo do
+// thinking-chip — colapsável, conteúdo mono na expansão. Glyph 🤐 sinaliza
+// "agente decidiu silenciar". Se Rica reclamar de bubble legítima escondida,
+// o texto fica acessível via expand.
+function MetaDecisionChip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="msg-row msg-row-assistant">
+      <button
+        type="button"
+        className="msg-chip msg-chip-thinking"
+        data-open={open ? '1' : '0'}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="msg-chip-head">
+          <span className="msg-chip-glyph">🤐</span>
+          <span className="msg-chip-label">meta-decisão (silenciado)</span>
+          <span className="msg-chip-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
+        </span>
+        {open && (
+          <pre className="msg-chip-body mono"><code>{text}</code></pre>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -440,6 +558,84 @@ function SidechainChip({
   );
 }
 
+// JP-13 F1: chip único pra N subagents consecutivos. Resolve status por
+// subagent individualmente (via resolveSidechainLiveStatus por rootUuid)
+// e agrega em (active|stalled|completed|idle). Quando há `active`, mostra
+// "K rodando · Ts" com o tempo do active mais recente. Caso contrário,
+// trailing = soma das durações dos subagents completos.
+function SidechainClusterChip({
+  groups,
+  subagentCount,
+  totalDurMs,
+  statusMap,
+  nowMs,
+}: {
+  groups: SidechainGroupRef[];
+  subagentCount: number;
+  totalDurMs: number | null;
+  statusMap?: Map<string, SubagentStatusEntry>;
+  nowMs: number;
+}) {
+  let activeN = 0;
+  let completedN = 0;
+  let stalledN = 0;
+  let mostRecentActiveStart = 0;
+
+  for (const g of groups) {
+    const entry = resolveSidechainLiveStatus(g.rootUuid, g.parentUuids, statusMap);
+    if (!entry) continue;
+    if (entry.status === 'active') {
+      activeN++;
+      if (entry.started_at_ms > mostRecentActiveStart) {
+        mostRecentActiveStart = entry.started_at_ms;
+      }
+    } else if (entry.status === 'completed') {
+      completedN++;
+    } else if (entry.status === 'stalled') {
+      stalledN++;
+    }
+  }
+
+  let chipState: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
+  let glyph = '🔧';
+  let label = `launched ${subagentCount} subagents`;
+  let trailing: string | null = totalDurMs !== null && totalDurMs > 0 ? formatMs(totalDurMs) : null;
+
+  if (activeN > 0) {
+    chipState = 'active';
+    glyph = '⏳';
+    label = `${subagentCount} subagents · ${activeN} rodando`;
+    trailing = mostRecentActiveStart > 0
+      ? formatMs(Math.max(0, nowMs - mostRecentActiveStart))
+      : null;
+  } else if (stalledN > 0) {
+    chipState = 'stalled';
+    glyph = '⚠';
+    label = `${subagentCount} subagents · ${stalledN} sem resposta`;
+    trailing = null;
+  } else if (completedN === subagentCount && subagentCount > 0) {
+    chipState = 'completed';
+    glyph = '✓';
+    label = `${subagentCount} subagents concluídos`;
+  }
+
+  return (
+    <div className="msg-row msg-row-assistant">
+      <div
+        className="msg-chip msg-chip-sidechain"
+        data-live={chipState}
+        aria-live="polite"
+      >
+        <span className="msg-chip-head">
+          <span className="msg-chip-glyph" aria-hidden="true">{glyph}</span>
+          <span className="msg-chip-label">{label}</span>
+          {trailing && <span className="msg-chip-arg mono">{trailing}</span>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const AssistantBubble = memo(function AssistantBubble({
   parts,
   toolResults,
@@ -569,7 +765,7 @@ export function ChatMessages({
   const [hasNew, setHasNew] = useState(false);
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
-  const items = useMemo(() => buildRenderItems(messages), [messages]);
+  const items = useMemo(() => coalesceSidechainGroups(buildRenderItems(messages)), [messages]);
 
   // Relógio só liga quando há subagent active — tick a cada 1s atualiza o
   // "rodando 12s". Para no ciclo seguinte quando nada mais está active.
@@ -659,11 +855,24 @@ export function ChatMessages({
               />
             );
           }
+          if (item.kind === 'sidechain-cluster') {
+            return (
+              <SidechainClusterChip
+                key={`scc:${item.groups[0]?.rootUuid ?? 'x'}:${item.subagentCount}`}
+                groups={item.groups}
+                subagentCount={item.subagentCount}
+                totalDurMs={item.totalDurMs}
+                statusMap={subagentStatusByParentUuid}
+                nowMs={nowMs}
+              />
+            );
+          }
           // payload.uuid é único por evento JSONL — chave estável protege
           // estado dos chips abertos quando troca sessão / ordem deslizar.
           const key = item.payload.uuid;
           if (item.kind === 'user') return <UserBubble key={key} text={item.text} />;
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} />;
+          if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} />;
           if (item.kind === 'channel') {
             return (
               <div key={key} className="msg-row msg-row-user">
