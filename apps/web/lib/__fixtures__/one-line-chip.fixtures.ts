@@ -108,7 +108,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     summary: 'general-purpose · review F5-4 segurança regex',
     trailing: '12s',
     expandBody: null,
-    kind: 'sidechain',
+    kind: 'sidechain-cluster',
     tone: 'active',
   },
   {
@@ -118,7 +118,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     summary: 'general-purpose · review F5-4 arquitetural',
     trailing: '28s',
     expandBody: '47k tokens · 6 tool uses · patch passa, sem blockers.',
-    kind: 'sidechain',
+    kind: 'sidechain-cluster',
     tone: 'completed',
   },
   {
@@ -127,7 +127,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     label: 'subagent',
     summary: 'Explore · listing apps/web/components',
     trailing: 'sem resposta há 42s',
-    kind: 'sidechain',
+    kind: 'sidechain-cluster',
     tone: 'stalled',
   },
 
@@ -139,7 +139,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     summary: 'Rica · áudio recebido',
     trailing: '14:32',
     expandBody: '[player de áudio aqui na integração real]',
-    kind: 'envelope',
+    kind: 'channel-envelope',
   },
   {
     name: 'envelope-telegram-foto',
@@ -148,7 +148,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     summary: 'Rica · print do bug',
     trailing: '23:18',
     expandBody: '[<img/> da foto na integração real]',
-    kind: 'envelope',
+    kind: 'channel-envelope',
   },
   {
     name: 'envelope-whatsapp-texto',
@@ -157,6 +157,6 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     summary: 'Rica: pusha F5-4 agora',
     trailing: '18:42',
     expandBody: null,
-    kind: 'envelope',
+    kind: 'channel-envelope',
   },
 ];

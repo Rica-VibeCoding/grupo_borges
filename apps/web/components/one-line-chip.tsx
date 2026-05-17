@@ -30,19 +30,8 @@
 
 import { memo, useCallback, useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 
-export type OneLineChipKind =
-  | 'slash'      // slash command nativo do CC (/model, /clear, …)
-  | 'skill'      // skill executada (Skill tool)
-  | 'tool'       // tool_use genérico (Bash, Edit, Read, …)
-  | 'sidechain'  // subagent (Task tool, isolation worktree)
-  | 'envelope';  // channel envelope (whatsapp/telegram anexo)
-
-export type OneLineChipTone =
-  | 'idle'
-  | 'active'
-  | 'completed'
-  | 'stalled'
-  | 'error';
+export type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
+import type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
 
 export type OneLineChipProps = {
   /** Glyph/emoji do início. Mantém pequeno (1 char) — Apple-HIG não usa

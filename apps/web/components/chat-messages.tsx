@@ -11,9 +11,15 @@ import type {
   SubagentStatusEntry,
   SubagentStatusKind,
 } from '../lib/messages-types';
-import { ChannelEnvelopeView, looksLikeChannelEnvelope } from './channel-envelope';
-import { OneLineChip, type OneLineChipKind } from './one-line-chip';
-import { classifyMessage, type ChatChip } from '../lib/chat-payload-classifier';
+import { ChannelEnvelopeView } from './channel-envelope';
+import { OneLineChip } from './one-line-chip';
+import {
+  buildRenderItems,
+  buildToolResultLookup,
+  coalesceSidechainGroups,
+  type SidechainGroupRef,
+  type ToolResultLookup,
+} from '../lib/render-items';
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -28,43 +34,9 @@ import { classifyMessage, type ChatChip } from '../lib/chat-payload-classifier';
  *  - auto-scroll bottom + pílula "↓ nova mensagem" se user scrollou
  */
 
-function extractContentParts(content: string | ContentPart[] | undefined | null): ContentPart[] {
-  if (content == null) return [];
-  if (typeof content === 'string') {
-    return [{ type: 'text', text: content }];
-  }
-  return content;
-}
-
-function textOf(content: string | ContentPart[] | undefined | null): string {
-  if (content == null) return '';
-  if (typeof content === 'string') return content;
-  return content
-    .filter((p): p is Extract<ContentPart, { type: 'text' }> => p.type === 'text')
-    .map((p) => p.text)
-    .join('\n');
-}
-
-function toolResultBodyToString(content: string | ContentPart[]): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((p) => {
-        if (typeof p === 'string') return p;
-        if (p && typeof p === 'object' && 'text' in p && typeof (p as { text?: unknown }).text === 'string') {
-          return (p as { text: string }).text;
-        }
-        return JSON.stringify(p);
-      })
-      .join('\n');
-  }
-  return String(content ?? '');
-}
-
 function shortToolArg(name: string, input: unknown): string {
   if (!input || typeof input !== 'object') return '';
   const i = input as Record<string, unknown>;
-  // heurísticas mais comuns: Bash → command, Edit/Write/Read → file_path, Grep → pattern
   if (typeof i.command === 'string') return truncate(i.command, 64);
   if (typeof i.file_path === 'string') return truncate(i.file_path, 64);
   if (typeof i.pattern === 'string') return truncate(i.pattern, 64);
@@ -92,317 +64,6 @@ function formatTokens(n: number): string {
   if (n < 1000) return `${n}`;
   if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
   return `${Math.round(n / 1000)}k`;
-}
-
-// --- Estrutura de render -----------------------------------------------------
-
-type ToolResultLookup = Map<string, { content: string; isError: boolean }>;
-
-type SidechainGroupRef = {
-  rootUuid: string;
-  parentUuids: string[];
-  durMs: number | null;
-};
-
-type RenderItem =
-  | { kind: 'user'; payload: MessagePayload; text: string }
-  | { kind: 'user-internal'; payload: MessagePayload; text: string }
-  | { kind: 'channel'; payload: MessagePayload; raw: string }
-  | { kind: 'assistant'; payload: MessagePayload; parts: ContentPart[] }
-  | { kind: 'meta-decision'; payload: MessagePayload; text: string }
-  | {
-      /** DS-70/JP-17: chip universal vindo do classifier (Tara, JP-16).
-       *  Cobre slash command nativo, Skill tool, e tool_use com result
-       *  grande. Sidechain e channel envelope continuam com seus chips
-       *  específicos (F1 e F4-1) — refator pra OneLineChip neles é
-       *  opcional e fica pra round seguinte. */
-      kind: 'chip';
-      payload: MessagePayload;
-      chip: ChatChip;
-      expandBody: string;
-      classifierKind: OneLineChipKind;
-    }
-  | {
-      kind: 'sidechain-group';
-      rootUuid: string;
-      count: number;
-      durMs: number | null;
-      /** parent_uuids de TODAS as msgs sidechain do grupo. Usado pra
-       *  casar o status ao vivo: o backend indexa por `parent_uuid` da
-       *  msg sidechain, que varia ao longo do subagent (cada turn
-       *  aponta pra anterior). Sem essa lista, chip só casaria status
-       *  do primeiro turn. */
-      parentUuids: string[];
-    }
-  | {
-      /** JP-13 F1: N sidechain-groups consecutivos colapsam num único
-       *  chip "launched N subagents". Sem isso, 14 subagents = 14 chips
-       *  empilhados que enchem a tela. Cada subagent é resolvido por
-       *  seu rootUuid próprio pro status live (active/completed/stalled
-       *  aggregado). */
-      kind: 'sidechain-cluster';
-      groups: SidechainGroupRef[];
-      subagentCount: number;
-      totalDurMs: number | null;
-    };
-
-// Calcula o root de cada msg sidechain — sobe parent_uuid até achar uma
-// msg NÃO-sidechain (o caller, dona do tool_use Task/Agent) ou sair do
-// batch. Sem esse walk, cada turn do subagent vira seu próprio "root"
-// e o Rica vê N chips em vez de 1 (turn N tem parentUuid = uuid de
-// turn N-1, ambos sidechain).
-function buildSidechainRoots(messages: MessagePayload[]): Map<string, string> {
-  const byUuid = new Map<string, MessagePayload>();
-  for (const m of messages) byUuid.set(m.uuid, m);
-  const rootByUuid = new Map<string, string>();
-
-  for (const m of messages) {
-    if (!m.is_sidechain || rootByUuid.has(m.uuid)) continue;
-    const chain: string[] = [];
-    // visited blinda contra JSONL cíclico (A.parent=B, B.parent=A). Cache
-    // só é populado pós-break, então sem isso o walk loopa infinitamente
-    // e congela o tab.
-    const visited = new Set<string>();
-    let cur: MessagePayload | undefined = m;
-    let root: string | null = null;
-    while (cur && cur.is_sidechain) {
-      if (visited.has(cur.uuid)) { root = cur.uuid; break; }
-      visited.add(cur.uuid);
-      chain.push(cur.uuid);
-      const cached = rootByUuid.get(cur.uuid);
-      if (cached) { root = cached; break; }
-      if (!cur.parent_uuid) { root = cur.uuid; break; }
-      const parent = byUuid.get(cur.parent_uuid);
-      if (!parent) { root = cur.parent_uuid; break; }
-      if (!parent.is_sidechain) { root = parent.uuid; break; }
-      cur = parent;
-    }
-    if (root) {
-      for (const u of chain) rootByUuid.set(u, root);
-    }
-  }
-  return rootByUuid;
-}
-
-// DS-65 F5-5: marker injetado pelo CC quando o agente faz Read de imagem —
-// "[Image: original 1280x900, displayed at 768x540. Multiply coordinates by
-// 1.67 to map to original image.]". Vaza como bubble user/assistant plain
-// text porque o classifier devolve `plain`. Se houver image_path no mesmo
-// turno, já é renderizado inline (ChannelEnvelope/attachment) — o marker é
-// puro ruído. Regex ancorada com âncoras e formato fixo evita falso-positivo
-// em texto que cite o marker entre aspas.
-const IMAGE_READ_MARKER_RE =
-  /^\[Image: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by [\d.]+ to map to original image\.\]$/;
-
-function isImageReadMarker(text: string): boolean {
-  return IMAGE_READ_MARKER_RE.test(text.trim());
-}
-
-// JP-13 F2: padrões de meta-decisão. Match no início do primeiro text part
-// do assistant. Case-insensitive, ancorado em ^. Manter conservador —
-// false-positive aqui esconde resposta legítima do agente.
-const META_DECISION_PATTERNS: RegExp[] = [
-  /^eco d[oae] /i,
-  /^não respondo\b/i,
-  /^aguardando direção/i,
-  /^silenciando\b/i,
-  /^ignorando (mensagem|eco|loop)/i,
-];
-
-function isMetaDecisionAssistant(parts: ContentPart[]): boolean {
-  // Tem tool_use? Não é meta-decisão — agente está agindo.
-  if (parts.some((p) => p.type === 'tool_use')) return false;
-  const textParts = parts.filter(
-    (p): p is Extract<ContentPart, { type: 'text' }> => p.type === 'text',
-  );
-  if (textParts.length === 0) return false;
-  const head = textParts[0].text.trim();
-  if (!head) return false;
-  return META_DECISION_PATTERNS.some((re) => re.test(head));
-}
-
-function buildToolResultLookup(messages: MessagePayload[]): ToolResultLookup {
-  const map: ToolResultLookup = new Map();
-  for (const m of messages) {
-    if (m.kind !== 'user' || !m.message) continue;
-    const parts = extractContentParts(m.message.content);
-    for (const p of parts) {
-      if (p.type === 'tool_result') {
-        const body = typeof p.content === 'string' ? p.content : toolResultBodyToString(p.content);
-        map.set(p.tool_use_id, { content: body, isError: Boolean(p.is_error) });
-      }
-    }
-  }
-  return map;
-}
-
-function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
-  const items: RenderItem[] = [];
-  const sidechainRootByUuid = buildSidechainRoots(messages);
-  const sidechainByRoot = new Map<string, MessagePayload[]>();
-  for (const m of messages) {
-    if (!m.is_sidechain) continue;
-    const root = sidechainRootByUuid.get(m.uuid) ?? m.parent_uuid ?? m.uuid;
-    const arr = sidechainByRoot.get(root) ?? [];
-    arr.push(m);
-    sidechainByRoot.set(root, arr);
-  }
-  const sidechainEmitted = new Set<string>();
-  // DS-70/JP-17: mensagens consumidas pelo classifier como `nextMsg`
-  // (caso clássico: Skill tool puxa o assistant text seguinte como
-  // expandBody do chip — esse assistant não deve renderizar de novo).
-  const consumedByClassifier = new Set<string>();
-
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (consumedByClassifier.has(m.uuid)) continue;
-
-    if (m.is_sidechain) {
-      // F4-2: filtra bubbles individuais; emite UM chip por subagent
-      // (agrupado pelo root real, não pelo parent_uuid literal).
-      const root = sidechainRootByUuid.get(m.uuid) ?? m.parent_uuid ?? m.uuid;
-      if (sidechainEmitted.has(root)) continue;
-      sidechainEmitted.add(root);
-      const group = sidechainByRoot.get(root) ?? [m];
-      const tsStart = Date.parse(group[0]?.timestamp ?? m.timestamp);
-      const tsEnd = Date.parse(group[group.length - 1]?.timestamp ?? m.timestamp);
-      const durMs = Number.isFinite(tsStart) && Number.isFinite(tsEnd) ? tsEnd - tsStart : null;
-      const parentUuids: string[] = [];
-      for (const sm of group) {
-        if (sm.parent_uuid) parentUuids.push(sm.parent_uuid);
-      }
-      items.push({
-        kind: 'sidechain-group',
-        rootUuid: root,
-        count: group.length,
-        durMs,
-        parentUuids,
-      });
-      continue;
-    }
-
-    // DS-70/JP-17: classifier universal (JP-16 Tara) com lookahead. Substitui
-    // o F5-4 silenciador e cobre slash command nativo, Skill tool e tool_use
-    // com result grande — todos viram OneLineChip. Sidechain (F1) e channel
-    // envelope (F4-1) caem como `plain` aqui e são tratados pelos branches
-    // abaixo com chips específicos atuais (refator pra OneLineChip neles é
-    // round seguinte).
-    const next = messages[i + 1];
-    const payload = classifyMessage(m, next);
-    if (payload.kind === 'suppress') continue;
-    if (payload.kind === 'slash' || payload.kind === 'skill' || payload.kind === 'tool') {
-      items.push({
-        kind: 'chip',
-        payload: m,
-        chip: payload.chip,
-        expandBody: payload.expandBody,
-        classifierKind: payload.kind,
-      });
-      // Skill puxa o assistant text seguinte como expandBody — marca pra não
-      // renderizar de novo. Tool não consome (o tool_result-only user já é
-      // skipped pelo guard `onlyToolResult` mais abaixo).
-      if (payload.kind === 'skill' && next) consumedByClassifier.add(next.uuid);
-      continue;
-    }
-
-    if (m.kind === 'user') {
-      if (!m.message) continue;
-      const parts = extractContentParts(m.message.content);
-      // tool_result-only user messages são absorvidos no chip do assistant
-      const onlyToolResult = parts.every((p) => p.type === 'tool_result');
-      if (onlyToolResult && parts.length > 0) continue;
-
-      const text = textOf(m.message.content).trim();
-      if (!text) continue;
-      // F5-5: ruído de Read de imagem — marker `[Image: original WxH, ...]`
-      // sem conteúdo útil. Se houver image_path no turno, já é inline.
-      if (isImageReadMarker(text)) continue;
-      // F4-1: detecta envelope `<channel source="...">` injetado pelo hook
-      // UserPromptSubmit e renderiza chip por tipo (audio/imagem/doc) em
-      // vez de bubble user com XML cru.
-      if (looksLikeChannelEnvelope(text)) {
-        items.push({ kind: 'channel', payload: m, raw: text });
-        continue;
-      }
-      if (m.user_type === 'internal') {
-        items.push({ kind: 'user-internal', payload: m, text });
-      } else {
-        items.push({ kind: 'user', payload: m, text });
-      }
-      continue;
-    }
-
-    if (m.kind === 'assistant') {
-      if (!m.message) continue;
-      const parts = extractContentParts(m.message.content);
-      // F5-5: assistant text-only cujo conteúdo é APENAS o marker do Read
-      // de imagem — suprime sem chip. Se tiver tool_use, não toca (agente
-      // ainda está agindo).
-      if (
-        parts.length === 1
-        && parts[0].type === 'text'
-        && isImageReadMarker(parts[0].text)
-      ) {
-        continue;
-      }
-      // JP-13 F2: assistant text-only com padrão de meta-decisão no início
-      // ("eco da minha mensagem", "não respondo", "aguardando direção" …)
-      // colapsa em chip discreto pra não vazar raciocínio interno como
-      // bubble grande. Filtro frágil: whitelist puro. Alargar quando
-      // aparecer padrão novo que o Rica reclamar; fix durável fica no
-      // agente (não emitir meta-decisão como assistant text).
-      if (isMetaDecisionAssistant(parts)) {
-        const text = textOf(m.message.content).trim();
-        items.push({ kind: 'meta-decision', payload: m, text });
-        continue;
-      }
-      items.push({ kind: 'assistant', payload: m, parts });
-      continue;
-    }
-    // kind === 'attachment' | 'summary' | 'system' — fall-through proposital:
-    // MVP da Fase 2 só rende user/assistant/sidechain. Quando entrar suporte
-    // a attachment (imagem inline) ou summary (separador de compaction),
-    // adicionar branch aqui — não esquecer do guard `!m.message`.
-  }
-
-  return items;
-}
-
-// JP-13 F1: colapsa runs de sidechain-group consecutivos. 1 grupo isolado
-// fica como está; 2+ viram um sidechain-cluster com count agregado.
-function coalesceSidechainGroups(items: RenderItem[]): RenderItem[] {
-  const out: RenderItem[] = [];
-  let i = 0;
-  while (i < items.length) {
-    const cur = items[i];
-    if (cur.kind !== 'sidechain-group') {
-      out.push(cur);
-      i++;
-      continue;
-    }
-    let j = i;
-    const refs: SidechainGroupRef[] = [];
-    let totalDur = 0;
-    let anyDur = false;
-    while (j < items.length && items[j].kind === 'sidechain-group') {
-      const g = items[j] as Extract<RenderItem, { kind: 'sidechain-group' }>;
-      refs.push({ rootUuid: g.rootUuid, parentUuids: g.parentUuids, durMs: g.durMs });
-      if (g.durMs !== null) { totalDur += g.durMs; anyDur = true; }
-      j++;
-    }
-    if (refs.length === 1) {
-      out.push(cur);
-    } else {
-      out.push({
-        kind: 'sidechain-cluster',
-        groups: refs,
-        subagentCount: refs.length,
-        totalDurMs: anyDur ? totalDur : null,
-      });
-    }
-    i = j;
-  }
-  return out;
 }
 
 // --- Bubbles e chips ---------------------------------------------------------
@@ -946,9 +607,15 @@ export function ChatMessages({
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} />;
           if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} />;
           if (item.kind === 'chip') {
-            // Slash/Skill/Tool — chip universal vindo do classifier (Tara,
-            // JP-16). expandBody='' → chip não expansível (caret some).
-            const row = item.classifierKind === 'slash' ? 'msg-row-user' : 'msg-row-assistant';
+            // Slash/Skill/Tool/Task/Channel/Sidechain — chip universal vindo
+            // do classifier (Tara, JP-16). expandBody='' → chip não expansível
+            // (caret some). slash + channel-envelope = user-side; demais =
+            // assistant-side.
+            const userSide = (
+              item.classifierKind === 'slash'
+              || item.classifierKind === 'channel-envelope'
+            );
+            const row = userSide ? 'msg-row-user' : 'msg-row-assistant';
             return (
               <div key={key} className={`msg-row ${row}`}>
                 <OneLineChip
