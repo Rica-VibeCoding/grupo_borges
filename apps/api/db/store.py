@@ -1695,10 +1695,12 @@ class GrupoBorgesDB:
         lifecycle_status: str,
         source_event: str,
     ) -> dict[str, Any] | None:
+        # JP-13 F3: hook:Stop, jsonl:assistant e jsonl:result foram REMOVIDOS
+        # do trigger de review — disparavam a cada fim de turno do CC, marcando
+        # task como done/review prematuramente. Caminho explícito (STATE: DONE
+        # no transcript → record_state_event em store.py:1006) cobre CC.
+        # tara/codex.*.completed são genuinamente terminais (exec one-shot).
         if source_event in {
-            "hook:Stop",
-            "jsonl:assistant",
-            "jsonl:result",
             "tara.exec.completed",
             "codex.turn.completed",
         }:
