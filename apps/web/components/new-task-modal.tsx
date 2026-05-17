@@ -5,7 +5,6 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { createTask } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
-import { useIsMobile } from '../lib/use-is-mobile';
 import { TaskForm, type TaskFormValues } from './task-form';
 
 function safeUUID(): string {
@@ -21,7 +20,6 @@ export function NewTaskModal({
 }) {
   const { fleet, mutate } = useFleet();
   const { fire } = useToast();
-  const isMobile = useIsMobile();
   const titleRef = useRef<HTMLInputElement>(null);
 
   const agentOptions = useMemo(
@@ -90,7 +88,7 @@ export function NewTaskModal({
       <Dialog.Portal>
         <Dialog.Overlay className="agent-modal-overlay" />
         <Dialog.Content
-          className={`agent-modal-frame new-task-frame mono${isMobile ? ' new-task-frame-mobile' : ''}`}
+          className="agent-modal-frame new-task-frame mono"
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => {
             e.preventDefault();

@@ -1113,15 +1113,17 @@
   width: min(560px, calc(100vw - 32px));
 }
 
-.task-detail-frame-mobile,
-.new-task-frame-mobile {
-  top: 0;
-  left: 0;
-  transform: none;
-  width: 100vw;
-  height: 100dvh;
-  max-height: 100dvh;
-  border: 0;
+@media (max-width: 640px) {
+  .task-detail-frame,
+  .new-task-frame {
+    top: 0;
+    left: 0;
+    transform: none;
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+  }
 }
 
 .task-detail-body {

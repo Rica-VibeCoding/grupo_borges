@@ -6,7 +6,6 @@ import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
 import { deleteTask, dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
-import { useIsMobile } from '../lib/use-is-mobile';
 import { SelectField } from './select-field';
 import { TaskEditForm } from './task-edit-form';
 import { TaskReviewActions } from './task-review-actions';
@@ -114,7 +113,6 @@ export function TaskDetailModal({
 }) {
   const { events, fleet, mutate } = useFleet();
   const { fire } = useToast();
-  const isMobile = useIsMobile();
   const [freshTask, setFreshTask] = useState<Task | null>(null);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -289,7 +287,7 @@ export function TaskDetailModal({
     <Dialog.Root open={task !== null} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="agent-modal-overlay" />
-        <Dialog.Content className={`agent-modal-frame task-detail-frame mono${isMobile ? ' task-detail-frame-mobile' : ''}`} aria-describedby={undefined}>
+        <Dialog.Content className="agent-modal-frame task-detail-frame mono" aria-describedby={undefined}>
           {effectiveTask && (
             <>
               <header className="agent-modal-head">
