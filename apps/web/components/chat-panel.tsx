@@ -335,8 +335,8 @@ function ChatInput({
   const [slashQuery, setSlashQuery] = useState('');
   const [slashSelectedValue, setSlashSelectedValue] = useState<string>('');
   const slashItems = useMemo(
-    () => (slashSliceStart === null ? [] : filterSlashCommands(slashQuery)),
-    [slashSliceStart, slashQuery],
+    () => (slashSliceStart === null ? [] : filterSlashCommands(slashQuery, agentName)),
+    [slashSliceStart, slashQuery, agentName],
   );
   const slashOpen = slashSliceStart !== null;
   // Ajusta selectedValue quando os items mudam pra evitar item órfão.

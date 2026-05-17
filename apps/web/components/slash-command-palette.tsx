@@ -16,20 +16,24 @@ export type SlashCommand = {
   desc: string;
 };
 
-export const SLASH_COMMANDS: SlashCommand[] = [
-  { value: 'clear', label: '/clear', desc: 'limpa o contexto' },
-  { value: 'compact', label: '/compact', desc: 'compacta o contexto preservando o essencial' },
-  { value: 'memory', label: '/memory', desc: 'edita CLAUDE.md e auto-memory' },
-  { value: 'reload-plugins', label: '/reload-plugins', desc: 'recarrega plugins (skills, hooks, MCP)' },
-  { value: 'restart', label: '/restart', desc: 'reinicia o agente' },
-  { value: 'skill', label: '/skill <nome>', desc: 'invoca skill' },
-  { value: 'status', label: '/status', desc: 'pede status do agente' },
-];
+export function getSlashCommands(agentName: string): SlashCommand[] {
+  const name = agentName.trim() || 'agente';
+  return [
+    { value: 'clear', label: '/clear', desc: `limpa o contexto de ${name}` },
+    { value: 'compact', label: '/compact', desc: `compacta o contexto de ${name}` },
+    { value: 'memory', label: '/memory', desc: `edita CLAUDE.md e auto-memory de ${name}` },
+    { value: 'reload-plugins', label: '/reload-plugins', desc: 'recarrega plugins (skills, hooks, MCP)' },
+    { value: 'restart', label: '/restart', desc: `reinicia ${name}` },
+    { value: 'skill', label: '/skill <nome>', desc: `invoca skill em ${name}` },
+    { value: 'status', label: '/status', desc: `pede status de ${name}` },
+  ];
+}
 
-export function filterSlashCommands(query: string): SlashCommand[] {
+export function filterSlashCommands(query: string, agentName: string): SlashCommand[] {
+  const commands = getSlashCommands(agentName);
   const q = query.toLowerCase();
-  if (!q) return SLASH_COMMANDS;
-  return SLASH_COMMANDS.filter((c) => c.value.toLowerCase().startsWith(q));
+  if (!q) return commands;
+  return commands.filter((c) => c.value.toLowerCase().startsWith(q));
 }
 
 /**
