@@ -83,25 +83,24 @@ function firstLineSummary(text: string, max = 80): string {
   return head.length > max ? head.slice(0, max - 1) + '…' : head;
 }
 
-const UserBubble = memo(function UserBubble({ text, ts }: { text: string; ts?: string }) {
+// DS-71 round 4: feedback Rica — input dele tem que ser bubble igual o
+// output do agent, NÃO chip encapsulado. Volta pro msg-bubble-user clássico
+// com markdown. Chip era confuso demais visualmente; bubble livre alinha
+// input e output no mesmo padrão de leitura.
+const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: string }) {
   return (
     <div className="msg-row msg-row-user">
-      <OneLineChip
-        kind="user"
-        icon="⚙️"
-        label="User:"
-        summary={firstLineSummary(text)}
-        timestamp={formatHHMM(ts)}
-        expandBody={
-          <div className="one-line-chip-md">
-            <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
-          </div>
-        }
-      />
+      <div className="msg-bubble msg-bubble-user">
+        <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+      </div>
     </div>
   );
 });
 
+// DS-71 round 4: eventos internos (hook/sistema) viram chip discreto
+// COM cor própria (preto/grafite) — Rica pediu distinção visual entre
+// input real e injection automática. Mantém OneLineChip kind=user-internal
+// mas com fundo `--graphite-deep` (override no CSS).
 const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text: string; ts?: string }) {
   return (
     <div className="msg-row msg-row-user">

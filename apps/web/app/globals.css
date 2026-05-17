@@ -2470,20 +2470,27 @@
 .one-line-chip[data-kind="meta-decision"] { opacity: 0.85; }
 .one-line-chip[data-kind="user-internal"] { opacity: 0.75; }
 
-/* DS-71 round 2 — bubble do user precisa de tom próprio pra não se
-   confundir com chips do agent (feedback Rica msg 2892). Usa
-   --accent-subtle (já existe no cockpit) — tom azul leve coerente com
-   o accent do tema. Hover/open mantêm escala. */
-.one-line-chip[data-kind="user"] {
-  background: var(--accent-subtle);
-  border-color: var(--accent-border);
+/* DS-71 round 4 — user-internal chip discreto preto/grafite (feedback
+   Rica). Distingue eventos automáticos do CC (hooks, system reminders)
+   das mensagens reais do user. Fundo bem escuro pra "sumir" sem
+   esconder, label em mono cinza, sem brilho de accent. */
+.one-line-chip[data-kind="user-internal"] {
+  background: #0a0a0c;
+  border-color: #1f1f24;
+  opacity: 0.7;
 }
-.one-line-chip[data-kind="user"][data-open="1"] {
-  background: var(--accent-subtle);
-  filter: brightness(1.08);
+:root[data-theme="light"] .one-line-chip[data-kind="user-internal"] {
+  background: #1d1d1f;
+  border-color: #424245;
+  color: #d2d2d7;
 }
-.one-line-chip[data-kind="user"] .one-line-chip-label {
-  color: var(--accent);
+.one-line-chip[data-kind="user-internal"][data-open="1"] {
+  background: #15151a;
+  opacity: 0.9;
+}
+.one-line-chip[data-kind="user-internal"] .one-line-chip-label,
+.one-line-chip[data-kind="user-internal"] .one-line-chip-summary {
+  font-family: 'JetBrains Mono', monospace;
 }
 
 /* DS-71 — sections internas pro expandBody do ToolUseChip e similares.
