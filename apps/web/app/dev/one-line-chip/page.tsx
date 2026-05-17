@@ -14,8 +14,10 @@ export default function OneLineChipPreviewPage() {
         OneLineChip preview
       </h1>
       <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 24 }}>
-        DS-70/JP-17 — 14 fixtures cobrindo 5 kinds × 5 tones × expansível/não.
-        Click no chip pra expandir. Foco com Tab.
+        DS-70/JP-17/DS-71 — fixtures cobrindo todos os kinds × tones ×
+        expansível/não. Click no chip pra expandir. Foco com Tab.
+        Tone <code>active</code> tem breathing animation (opacidade 1→0.85→1
+        em 1.8s).
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ONE_LINE_CHIP_FIXTURES.map((fx) => (
@@ -36,6 +38,7 @@ export default function OneLineChipPreviewPage() {
               label={fx.label}
               summary={fx.summary}
               trailing={fx.trailing}
+              timestamp={fx.timestamp}
               expandBody={fx.expandBody}
               kind={fx.kind}
               tone={fx.tone}

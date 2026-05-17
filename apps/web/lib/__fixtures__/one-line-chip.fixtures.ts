@@ -24,7 +24,9 @@ export type OneLineChipFixture = {
   tone?: OneLineChipTone;
 };
 
-export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
+export type OneLineChipFixtureExt = OneLineChipFixture & { timestamp?: string };
+
+export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixtureExt[] = [
   // --- slash command -----------------------------------------------------
   {
     name: 'slash-model-opus',
@@ -158,5 +160,48 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixture[] = [
     trailing: '18:42',
     expandBody: null,
     kind: 'channel-envelope',
+  },
+
+  // --- thinking ----------------------------------------------------------
+  {
+    name: 'thinking-curto',
+    icon: '💭',
+    label: 'pensou 3s',
+    timestamp: '22:15',
+    expandBody: 'Rica quer chip único universal — vou refatorar 9 variantes em sprint.',
+    kind: 'thinking',
+  },
+
+  // --- meta-decision -----------------------------------------------------
+  {
+    name: 'meta-decision-silenciado',
+    icon: '🤐',
+    label: 'meta-decisão',
+    summary: 'silenciado',
+    timestamp: '22:18',
+    expandBody: 'eco da minha própria mensagem — não respondo.',
+    kind: 'meta-decision',
+  },
+
+  // --- user --------------------------------------------------------------
+  {
+    name: 'user-mensagem-curta',
+    icon: '👤',
+    label: 'você',
+    summary: 'pusha F5-4 agora, sangramento na UI',
+    timestamp: '18:42',
+    expandBody: 'pusha F5-4 agora, sangramento na UI\n\nResposta curta.',
+    kind: 'user',
+  },
+
+  // --- user-internal -----------------------------------------------------
+  {
+    name: 'user-internal-hook',
+    icon: '⚙',
+    label: 'evento interno',
+    summary: 'hook UserPromptSubmit injetou contexto Telegram',
+    timestamp: '22:20',
+    expandBody: '<channel source="telegram" chat_id="7262275215" message_id="2886"…>',
+    kind: 'user-internal',
   },
 ];

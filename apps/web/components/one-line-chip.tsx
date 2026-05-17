@@ -51,6 +51,11 @@ export type OneLineChipProps = {
   summary?: string;
   /** Texto curto à direita — duração, contagem, peso de tokens. Mono. */
   trailing?: string;
+  /** Horário compacto HH:MM no canto direito antes do caret. Tipografia
+   *  menor que `trailing`, cor muted. Sai do trailing pra não competir
+   *  com duração/erro/contagem (o trailing carrega "o que aconteceu";
+   *  timestamp só carrega "quando"). */
+  timestamp?: string;
   /** Corpo expandido. `null`/`undefined` = chip NÃO expansível (caret some
    *  e header não é clicável). String → renderizada em `<pre>`. Aceita
    *  ReactNode pra payload rico (botões, imagens, etc). */
@@ -70,6 +75,7 @@ export const OneLineChip = memo(function OneLineChip({
   label,
   summary,
   trailing,
+  timestamp,
   expandBody,
   kind,
   tone = 'idle',
@@ -121,6 +127,9 @@ export const OneLineChip = memo(function OneLineChip({
         )}
         {trailing && (
           <span className="one-line-chip-trailing mono">{trailing}</span>
+        )}
+        {timestamp && (
+          <span className="one-line-chip-timestamp mono">{timestamp}</span>
         )}
         {expandable && (
           <span className="one-line-chip-caret" aria-hidden="true">

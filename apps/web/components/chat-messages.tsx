@@ -66,127 +66,144 @@ function formatTokens(n: number): string {
   return `${Math.round(n / 1000)}k`;
 }
 
+// DS-71 — HH:MM compacto pro slot `timestamp` do OneLineChip. Localizado
+// pt-BR, 24h, TZ-relative do browser. Retorna `undefined` quando o iso é
+// inválido (chip não renderiza o slot).
+const HH_MM_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+function formatHHMM(iso?: string | null): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return HH_MM_FORMATTER.format(d);
+}
+
 // --- Bubbles e chips ---------------------------------------------------------
 
-const UserBubble = memo(function UserBubble({ text }: { text: string }) {
+// DS-71: helper pra primeira linha truncada — vira summary do chip.
+function firstLineSummary(text: string, max = 80): string {
+  const head = text.trim().split(/\r?\n/, 1)[0] ?? '';
+  return head.length > max ? head.slice(0, max - 1) + '…' : head;
+}
+
+const UserBubble = memo(function UserBubble({ text, ts }: { text: string; ts?: string }) {
   return (
     <div className="msg-row msg-row-user">
-      <div className="msg-bubble msg-bubble-user">
-        <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
-      </div>
+      <OneLineChip
+        kind="user"
+        icon="👤"
+        label="você"
+        summary={firstLineSummary(text)}
+        timestamp={formatHHMM(ts)}
+        expandBody={
+          <div className="one-line-chip-md">
+            <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+          </div>
+        }
+      />
     </div>
   );
 });
 
-const UserInternalBubble = memo(function UserInternalBubble({ text }: { text: string }) {
+const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text: string; ts?: string }) {
   return (
     <div className="msg-row msg-row-user">
-      <div className="msg-bubble msg-bubble-internal" title="evento interno (hook/sistema)">
-        <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
-      </div>
+      <OneLineChip
+        kind="user-internal"
+        icon="⚙"
+        label="evento interno"
+        summary={firstLineSummary(text)}
+        timestamp={formatHHMM(ts)}
+        expandBody={
+          <div className="one-line-chip-md">
+            <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+          </div>
+        }
+      />
     </div>
   );
 });
 
+// DS-71: ThinkingChip migrado pra OneLineChip kind=thinking. Heurística de
+// segundos (text.length / 200) mantida até backend mandar duração real do
+// thinking via usage.
 function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
-  const [open, setOpen] = useState(false);
-  // Heurística leve até backend mandar tempo real do turno: ~1s a cada 200 chars
-  // de thinking (curva grosseira do tokens-per-second). Quando tivermos
-  // `usage.thinking_tokens` ou diff de timestamp, trocar.
-  const seconds = useMemo(() => Math.max(1, Math.round((text?.length ?? 0) / 200)), [text]);
+  const seconds = Math.max(1, Math.round((text?.length ?? 0) / 200));
   return (
-    <button
-      type="button"
-      className="msg-chip msg-chip-thinking"
-      data-open={open ? '1' : '0'}
-      onClick={() => setOpen((v) => !v)}
-      aria-expanded={open}
-      title={ts ? new Date(ts).toLocaleString('pt-BR') : undefined}
-    >
-      <span className="msg-chip-head">
-        <span className="msg-chip-glyph">💭</span>
-        <span className="msg-chip-label">pensou {seconds}s</span>
-        <span className="msg-chip-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
-      </span>
-      {open && (
-        <pre className="msg-chip-body mono"><code>{text}</code></pre>
-      )}
-    </button>
+    <OneLineChip
+      kind="thinking"
+      icon="💭"
+      label={`pensou ${seconds}s`}
+      timestamp={formatHHMM(ts)}
+      expandBody={text}
+    />
   );
 }
 
-// JP-13 F2: chip discreto pra meta-decisão filtrada. Reusa estilo do
-// thinking-chip — colapsável, conteúdo mono na expansão. Glyph 🤐 sinaliza
-// "agente decidiu silenciar". Se Rica reclamar de bubble legítima escondida,
-// o texto fica acessível via expand.
-function MetaDecisionChip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+// JP-13 F2 → DS-71: MetaDecisionChip migrado pra OneLineChip. Glyph 🤐
+// sinaliza "agente decidiu silenciar". Texto completo no expand.
+function MetaDecisionChip({ text, ts }: { text: string; ts?: string }) {
   return (
     <div className="msg-row msg-row-assistant">
-      <button
-        type="button"
-        className="msg-chip msg-chip-thinking"
-        data-open={open ? '1' : '0'}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="msg-chip-head">
-          <span className="msg-chip-glyph">🤐</span>
-          <span className="msg-chip-label">meta-decisão (silenciado)</span>
-          <span className="msg-chip-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
-        </span>
-        {open && (
-          <pre className="msg-chip-body mono"><code>{text}</code></pre>
-        )}
-      </button>
+      <OneLineChip
+        kind="meta-decision"
+        icon="🤐"
+        label="meta-decisão"
+        summary="silenciado"
+        timestamp={formatHHMM(ts)}
+        expandBody={text}
+      />
     </div>
   );
 }
 
+// DS-71: ToolUseChip migrado pra OneLineChip kind=tool. Expand combina
+// input JSON + resultado (ou erro) em pre blocks via ReactNode.
 function ToolUseChip({
   name,
   input,
   result,
+  ts,
 }: {
   name: string;
   input: unknown;
   result: { content: string; isError: boolean } | null;
+  ts?: string;
 }) {
-  const [open, setOpen] = useState(false);
   const short = shortToolArg(name, input);
-  return (
-    <div className="msg-chip msg-chip-tool" data-open={open ? '1' : '0'} data-err={result?.isError ? '1' : '0'}>
-      <button
-        type="button"
-        className="msg-chip-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="msg-chip-glyph">🔧</span>
-        <span className="msg-chip-label">{name}</span>
-        {short && <span className="msg-chip-arg mono">{short}</span>}
-        <span className="msg-chip-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
-      </button>
-      {open && (
-        <div className="msg-chip-body">
-          <div className="msg-chip-section">
-            <span className="msg-chip-section-head">input</span>
-            <pre className="mono"><code>{JSON.stringify(input, null, 2)}</code></pre>
-          </div>
-          {result && (
-            <div className="msg-chip-section">
-              <span className="msg-chip-section-head">{result.isError ? 'erro' : 'resultado'}</span>
-              <pre className="mono"><code>{result.content}</code></pre>
-            </div>
-          )}
-          {!result && (
-            <div className="msg-chip-section">
-              <span className="msg-chip-section-head muted">— sem resultado capturado —</span>
-            </div>
-          )}
+  const expandBody = (
+    <div className="one-line-chip-sections">
+      <div className="one-line-chip-section">
+        <span className="one-line-chip-section-head">input</span>
+        <pre className="mono"><code>{JSON.stringify(input, null, 2)}</code></pre>
+      </div>
+      {result && (
+        <div className="one-line-chip-section">
+          <span className="one-line-chip-section-head">{result.isError ? 'erro' : 'resultado'}</span>
+          <pre className="mono"><code>{result.content}</code></pre>
+        </div>
+      )}
+      {!result && (
+        <div className="one-line-chip-section">
+          <span className="one-line-chip-section-head muted">— sem resultado capturado —</span>
         </div>
       )}
     </div>
+  );
+  return (
+    <OneLineChip
+      kind="tool"
+      icon="🔧"
+      label={name}
+      summary={short || undefined}
+      trailing={result?.isError ? 'erro' : undefined}
+      timestamp={formatHHMM(ts)}
+      tone={result?.isError ? 'error' : 'idle'}
+      expandBody={expandBody}
+    />
   );
 }
 
@@ -232,61 +249,61 @@ function resolveSidechainLiveStatus(
 //  completed → tool_result chegou (azul, dur ms autoritativa)
 //  stalled   → >30s sem evento (laranja, ms desde last_seen)
 // `null` = ainda não vi status (sessão histórica pré-F3-2 ou backend off).
+// DS-71: SidechainChip (single subagent) migrado pra OneLineChip kind=
+// sidechain-cluster. Tone vem do liveStatus do backend (active/completed/
+// stalled). Breathing animation aplicada automaticamente quando active.
 function SidechainChip({
   count,
   durMs,
   liveStatus,
   nowMs,
+  ts,
 }: {
   count: number;
   durMs: number | null;
   liveStatus: SubagentStatusEntry | null;
   nowMs: number;
+  ts?: string;
 }) {
-  let chipState: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
+  let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
   let glyph = '🔧';
   let label = `launched ${count} subagent${count === 1 ? '' : 's'}`;
-  let trailing: string | null = durMs !== null && durMs > 0 ? formatMs(durMs) : null;
+  let trailing: string | undefined = durMs !== null && durMs > 0 ? formatMs(durMs) : undefined;
 
   if (liveStatus) {
-    // Cada chip = 1 subagent (parent_uuid único). `count` é # de turnos
-    // internos do subagent, não tem leitura útil pro user no modo live.
     if (liveStatus.status === 'active') {
-      chipState = 'active';
+      tone = 'active';
       glyph = '⏳';
       label = 'subagent rodando…';
       trailing = formatMs(Math.max(0, nowMs - liveStatus.started_at_ms));
     } else if (liveStatus.status === 'completed') {
-      chipState = 'completed';
+      tone = 'completed';
       glyph = '✓';
       label = 'subagent concluído';
       trailing = liveStatus.duration_ms != null
         ? formatMs(liveStatus.duration_ms)
-        : (durMs !== null && durMs > 0 ? formatMs(durMs) : null);
+        : (durMs !== null && durMs > 0 ? formatMs(durMs) : undefined);
     } else if (liveStatus.status === 'stalled') {
-      chipState = 'stalled';
+      tone = 'stalled';
       glyph = '⚠';
       const sinceMs = liveStatus.last_seen_ms != null
         ? Math.max(0, nowMs - liveStatus.last_seen_ms)
         : 0;
       label = `subagent sem resposta há ${formatMs(sinceMs)}`;
-      trailing = null;
+      trailing = undefined;
     }
   }
 
   return (
     <div className="msg-row msg-row-assistant">
-      <div
-        className="msg-chip msg-chip-sidechain"
-        data-live={chipState}
-        aria-live="polite"
-      >
-        <span className="msg-chip-head">
-          <span className="msg-chip-glyph" aria-hidden="true">{glyph}</span>
-          <span className="msg-chip-label">{label}</span>
-          {trailing && <span className="msg-chip-arg mono">{trailing}</span>}
-        </span>
-      </div>
+      <OneLineChip
+        kind="sidechain-cluster"
+        icon={glyph}
+        label={label}
+        trailing={trailing}
+        timestamp={formatHHMM(ts)}
+        tone={tone}
+      />
     </div>
   );
 }
@@ -296,6 +313,9 @@ function SidechainChip({
 // e agrega em (active|stalled|completed|idle). Quando há `active`, mostra
 // "K rodando · Ts" com o tempo do active mais recente. Caso contrário,
 // trailing = soma das durações dos subagents completos.
+// DS-71: SidechainClusterChip migrado pra OneLineChip. Mesma lógica de
+// agregação (active > stalled > completed) mas renderiza via OneLineChip
+// pra estética unificada e breathing automático em active.
 function SidechainClusterChip({
   groups,
   subagentCount,
@@ -329,42 +349,38 @@ function SidechainClusterChip({
     }
   }
 
-  let chipState: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
+  let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
   let glyph = '🔧';
   let label = `launched ${subagentCount} subagents`;
-  let trailing: string | null = totalDurMs !== null && totalDurMs > 0 ? formatMs(totalDurMs) : null;
+  let trailing: string | undefined = totalDurMs !== null && totalDurMs > 0 ? formatMs(totalDurMs) : undefined;
 
   if (activeN > 0) {
-    chipState = 'active';
+    tone = 'active';
     glyph = '⏳';
     label = `${subagentCount} subagents · ${activeN} rodando`;
     trailing = mostRecentActiveStart > 0
       ? formatMs(Math.max(0, nowMs - mostRecentActiveStart))
-      : null;
+      : undefined;
   } else if (stalledN > 0) {
-    chipState = 'stalled';
+    tone = 'stalled';
     glyph = '⚠';
     label = `${subagentCount} subagents · ${stalledN} sem resposta`;
-    trailing = null;
+    trailing = undefined;
   } else if (completedN === subagentCount && subagentCount > 0) {
-    chipState = 'completed';
+    tone = 'completed';
     glyph = '✓';
     label = `${subagentCount} subagents concluídos`;
   }
 
   return (
     <div className="msg-row msg-row-assistant">
-      <div
-        className="msg-chip msg-chip-sidechain"
-        data-live={chipState}
-        aria-live="polite"
-      >
-        <span className="msg-chip-head">
-          <span className="msg-chip-glyph" aria-hidden="true">{glyph}</span>
-          <span className="msg-chip-label">{label}</span>
-          {trailing && <span className="msg-chip-arg mono">{trailing}</span>}
-        </span>
-      </div>
+      <OneLineChip
+        kind="sidechain-cluster"
+        icon={glyph}
+        label={label}
+        trailing={trailing}
+        tone={tone}
+      />
     </div>
   );
 }
@@ -373,10 +389,12 @@ const AssistantBubble = memo(function AssistantBubble({
   parts,
   toolResults,
   usage,
+  ts,
 }: {
   parts: ContentPart[];
   toolResults: ToolResultLookup;
   usage: NonNullable<MessagePayload['message']>['usage'];
+  ts?: string;
 }) {
   const [railOpen, setRailOpen] = useState(false);
   const toolUses = useMemo(
@@ -411,7 +429,7 @@ const AssistantBubble = memo(function AssistantBubble({
             );
           }
           if (part.type === 'thinking') {
-            return <ThinkingChip key={i} text={part.thinking} />;
+            return <ThinkingChip key={i} text={part.thinking} ts={ts} />;
           }
           if (part.type === 'tool_use') {
             return (
@@ -420,6 +438,7 @@ const AssistantBubble = memo(function AssistantBubble({
                 name={part.name}
                 input={part.input}
                 result={toolResults.get(part.id) ?? null}
+                ts={ts}
               />
             );
           }
@@ -578,6 +597,8 @@ export function ChatMessages({
               item.parentUuids,
               subagentStatusByParentUuid,
             );
+            // Pega timestamp do primeiro turn do grupo pra mostrar HH:MM.
+            const groupTs = messages.find((m) => m.uuid === item.rootUuid)?.timestamp;
             return (
               <SidechainChip
                 key={`sc:${item.rootUuid}`}
@@ -585,6 +606,7 @@ export function ChatMessages({
                 durMs={item.durMs}
                 liveStatus={liveStatus}
                 nowMs={nowMs}
+                ts={groupTs}
               />
             );
           }
@@ -603,9 +625,10 @@ export function ChatMessages({
           // payload.uuid é único por evento JSONL — chave estável protege
           // estado dos chips abertos quando troca sessão / ordem deslizar.
           const key = item.payload.uuid;
-          if (item.kind === 'user') return <UserBubble key={key} text={item.text} />;
-          if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} />;
-          if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} />;
+          const itemTs = item.payload.timestamp;
+          if (item.kind === 'user') return <UserBubble key={key} text={item.text} ts={itemTs} />;
+          if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} ts={itemTs} />;
+          if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} ts={itemTs} />;
           if (item.kind === 'chip') {
             // Slash/Skill/Tool/Task/Channel/Sidechain — chip universal vindo
             // do classifier (Tara, JP-16). expandBody='' → chip não expansível
@@ -625,6 +648,7 @@ export function ChatMessages({
                   expandBody={item.expandBody || null}
                   kind={item.classifierKind}
                   tone={item.tone}
+                  timestamp={formatHHMM(itemTs)}
                 />
               </div>
             );
@@ -642,6 +666,7 @@ export function ChatMessages({
               parts={item.parts}
               toolResults={toolResults}
               usage={item.payload.message?.usage}
+              ts={itemTs}
             />
           );
         })}

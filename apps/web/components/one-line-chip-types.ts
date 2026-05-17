@@ -7,9 +7,13 @@ export type OneLineChipKind =
   | 'slash'              // slash command nativo do CC (/model, /clear, …)
   | 'skill'              // skill executada (Skill tool)
   | 'tool'               // tool_use genérico (Bash, Edit, Read, …)
+  | 'thinking'           // thinking part do assistant (💭 pensou Xs)
+  | 'meta-decision'      // assistant text-only com padrão de meta-decisão
   | 'sidechain-cluster'  // subagent (Task tool, isolation worktree)
   | 'channel-envelope'   // channel envelope (whatsapp/telegram anexo)
-  | 'task-notification'; // notificação de background task (PushNotification)
+  | 'task-notification'  // notificação de background task (PushNotification)
+  | 'user'               // bubble user textual (mensagem do user)
+  | 'user-internal';     // evento interno hook/sistema
 
 export type OneLineChipTone =
   | 'idle'
