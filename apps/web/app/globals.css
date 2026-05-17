@@ -2466,7 +2466,13 @@
 /* Kind hooks pra novos tipos — thinking/meta-decision herdam estilo base,
    só ajustam glyph color via opacity quando idle. user/user-internal ficam
    alinhados à direita (msg-row-user). */
-.one-line-chip[data-kind="thinking"] { opacity: 0.85; }
+/* DS-71 round 6 — diferenças sutis pra reconhecer pensando/skill/subagent
+   sem quebrar a uniformidade visual (feedback Rica). Mudanças finas:
+   opacity + tinta do label, nunca background ruidoso. */
+.one-line-chip[data-kind="thinking"] { opacity: 0.7; }
+.one-line-chip[data-kind="thinking"] .one-line-chip-label { font-style: italic; }
+.one-line-chip[data-kind="skill"] .one-line-chip-label { color: var(--accent); }
+.one-line-chip[data-kind="sidechain-cluster"] .one-line-chip-label { font-weight: 600; }
 .one-line-chip[data-kind="meta-decision"] { opacity: 0.85; }
 .one-line-chip[data-kind="user-internal"] { opacity: 0.75; }
 

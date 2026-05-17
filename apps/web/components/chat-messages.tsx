@@ -129,7 +129,7 @@ function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
     <OneLineChip
       kind="thinking"
       icon="⚙️"
-      label={`Thinking: ${seconds}s`}
+      label={`Pensando: ${seconds}s`}
       timestamp={formatHHMM(ts)}
       expandBody={text}
     />
