@@ -2470,6 +2470,22 @@
 .one-line-chip[data-kind="meta-decision"] { opacity: 0.85; }
 .one-line-chip[data-kind="user-internal"] { opacity: 0.75; }
 
+/* DS-71 round 2 — bubble do user precisa de tom próprio pra não se
+   confundir com chips do agent (feedback Rica msg 2892). Usa
+   --accent-subtle (já existe no cockpit) — tom azul leve coerente com
+   o accent do tema. Hover/open mantêm escala. */
+.one-line-chip[data-kind="user"] {
+  background: var(--accent-subtle);
+  border-color: var(--accent-border);
+}
+.one-line-chip[data-kind="user"][data-open="1"] {
+  background: var(--accent-subtle);
+  filter: brightness(1.08);
+}
+.one-line-chip[data-kind="user"] .one-line-chip-label {
+  color: var(--accent);
+}
+
 /* DS-71 — sections internas pro expandBody do ToolUseChip e similares.
    Reusa visual do msg-chip-body legado mas alinha com tokens do
    one-line-chip-body. */

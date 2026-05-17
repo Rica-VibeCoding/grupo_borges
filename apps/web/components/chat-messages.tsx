@@ -60,12 +60,6 @@ function formatMs(ms: number): string {
   return `${m}m ${rs}s`;
 }
 
-function formatTokens(n: number): string {
-  if (n < 1000) return `${n}`;
-  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${Math.round(n / 1000)}k`;
-}
-
 // DS-71 — HH:MM compacto pro slot `timestamp` do OneLineChip. Localizado
 // pt-BR, 24h, TZ-relative do browser. Retorna `undefined` quando o iso é
 // inválido (chip não renderiza o slot).
@@ -396,22 +390,11 @@ const AssistantBubble = memo(function AssistantBubble({
   usage: NonNullable<MessagePayload['message']>['usage'];
   ts?: string;
 }) {
-  const [railOpen, setRailOpen] = useState(false);
-  const toolUses = useMemo(
-    () => parts.filter((p): p is Extract<ContentPart, { type: 'tool_use' }> => p.type === 'tool_use'),
-    [parts],
-  );
-  const files = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of toolUses) {
-      if (!p.input || typeof p.input !== 'object') continue;
-      const fp = (p.input as Record<string, unknown>).file_path;
-      if (typeof fp === 'string') set.add(fp);
-    }
-    return set;
-  }, [toolUses]);
-  const tokensOut = usage?.output_tokens ?? null;
-
+  // DS-71 round 2: msg-rail removido por feedback Rica (msg 2891) — linha
+  // dupla "1 ferramenta · 1 arquivo · 1.3k tok" embaixo de cada chip era
+  // ruído visual. Info técnica agregada (tools/arquivos/tokens) é recuperável
+  // expandindo cada chip individualmente quando vier do classifier; pra
+  // visão agregada do turno, a aba INF do cockpit já cumpre o papel.
   return (
     <div className="msg-row msg-row-assistant">
       <div className="msg-bubble msg-bubble-assistant">
@@ -444,48 +427,6 @@ const AssistantBubble = memo(function AssistantBubble({
           }
           return null;
         })}
-        {(toolUses.length > 0 || tokensOut !== null) && (
-          <div className="msg-rail" data-open={railOpen ? '1' : '0'}>
-            <button
-              type="button"
-              className="msg-rail-head"
-              onClick={() => setRailOpen((v) => !v)}
-              aria-expanded={railOpen}
-            >
-              {toolUses.length > 0 && (
-                <>
-                  <span>{toolUses.length} ferramenta{toolUses.length === 1 ? '' : 's'}</span>
-                  <span className="msg-rail-sep" aria-hidden="true">·</span>
-                </>
-              )}
-              {files.size > 0 && (
-                <>
-                  <span>{files.size} arquivo{files.size === 1 ? '' : 's'}</span>
-                  <span className="msg-rail-sep" aria-hidden="true">·</span>
-                </>
-              )}
-              {tokensOut !== null && (
-                <>
-                  <span>{formatTokens(tokensOut)} tok</span>
-                  <span className="msg-rail-sep" aria-hidden="true">·</span>
-                </>
-              )}
-              <span className="msg-rail-caret" aria-hidden="true">{railOpen ? '▴' : '▾'}</span>
-            </button>
-            {railOpen && (
-              <ul className="msg-rail-list mono">
-                {toolUses.map((p) => (
-                  <li key={p.id}>
-                    <span className="msg-rail-tool">{p.name}</span>
-                    {shortToolArg(p.name, p.input) && (
-                      <span className="msg-rail-arg"> · {shortToolArg(p.name, p.input)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
