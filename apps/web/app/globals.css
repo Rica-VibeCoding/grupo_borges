@@ -1123,6 +1123,10 @@
     height: 100dvh;
     max-height: 100dvh;
     border: 0;
+    /* Sem isso, a animação `agent-modal-frame-in` (do base) reaplica
+       translate(-50%, -50%) no estado final via `forwards` e o modal
+       vai pra (-50vw, -50vh) — fica cortado fora da tela à esquerda. */
+    animation: agent-modal-frame-mobile-in 160ms ease forwards;
   }
 }
 
