@@ -1,6 +1,13 @@
 'use client';
 
 import { Command } from 'cmdk';
+import {
+  applySlashSelection,
+  detectSlashContext,
+  filterSlashCommands,
+  getSlashCommands,
+  type SlashCommand,
+} from '../lib/slash-command-palette-logic';
 
 /**
  * Slash command palette — DS-62 (JP-11 Fase 3 F3-1).
@@ -8,70 +15,20 @@ import { Command } from 'cmdk';
  * cmdk inline (não Dialog): renderização condicional, foco fica no textarea,
  * navegação por teclado vem do ChatInput (intercepta Arrow/Enter/Esc). cmdk
  * cuida só de visual selecionado, ARIA e ordem de items.
- */
-
-export type SlashCommand = {
-  value: string;
-  label: string;
-  desc: string;
-};
-
-export function getSlashCommands(agentName: string): SlashCommand[] {
-  const name = agentName.trim() || 'agente';
-  return [
-    { value: 'clear', label: '/clear', desc: `limpa o contexto de ${name}` },
-    { value: 'compact', label: '/compact', desc: `compacta o contexto de ${name}` },
-    { value: 'memory', label: '/memory', desc: `edita CLAUDE.md e auto-memory de ${name}` },
-    { value: 'reload-plugins', label: '/reload-plugins', desc: 'recarrega plugins (skills, hooks, MCP)' },
-    { value: 'restart', label: '/restart', desc: `reinicia ${name}` },
-    { value: 'skill', label: '/skill <nome>', desc: `invoca skill em ${name}` },
-    { value: 'status', label: '/status', desc: `pede status de ${name}` },
-  ];
-}
-
-export function filterSlashCommands(query: string, agentName: string): SlashCommand[] {
-  const commands = getSlashCommands(agentName);
-  const q = query.toLowerCase();
-  if (!q) return commands;
-  return commands.filter((c) => c.value.toLowerCase().startsWith(q));
-}
-
-/**
- * Detecta contexto de slash command na posição do caret.
- * Retorna `null` se não está num slash trigger; senão retorna
- * `{ sliceStart, query }` onde sliceStart é o índice do `/` no texto.
  *
- * Trigger: `/` precedido por início-de-string OU whitespace, e sem whitespace
- * entre o `/` e o caret.
+ * Helpers puros (getSlashCommands, filterSlashCommands, detectSlashContext,
+ * applySlashSelection) moram em lib/slash-command-palette-logic.ts pra
+ * permitir teste via node:test sem JSX. Re-exportados aqui pra manter a API
+ * estável pros consumidores.
  */
-export function detectSlashContext(
-  text: string,
-  caret: number,
-): { sliceStart: number; query: string } | null {
-  if (caret < 1) return null;
-  const before = text.slice(0, caret);
-  const match = before.match(/(?:^|\s)(\/\S*)$/);
-  if (!match) return null;
-  const slashFragment = match[1];
-  const sliceStart = before.length - slashFragment.length;
-  return { sliceStart, query: slashFragment.slice(1) };
-}
 
-/**
- * Calcula o novo texto + posição do caret após inserir `cmd` no slash context
- * identificado por `sliceStart..caret`.
- */
-export function applySlashSelection(
-  text: string,
-  caret: number,
-  sliceStart: number,
-  cmd: SlashCommand,
-): { text: string; caret: number } {
-  const before = text.slice(0, sliceStart);
-  const after = text.slice(caret);
-  const insert = `/${cmd.value} `;
-  return { text: before + insert + after, caret: sliceStart + insert.length };
-}
+export type { SlashCommand };
+export {
+  getSlashCommands,
+  filterSlashCommands,
+  detectSlashContext,
+  applySlashSelection,
+};
 
 export function SlashCommandPalette({
   items,
