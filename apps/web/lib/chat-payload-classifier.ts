@@ -55,6 +55,7 @@ const SLASH_ICONS: Record<string, string> = {
 const CHANNEL_RE = /^\s*<channel\s+([^>]+)>([\s\S]*?)<\/channel>\s*$/;
 const ATTR_RE = /([a-zA-Z_][\w-]*)="([^"]*)"/g;
 const SYSTEM_REMINDER_RE = /^\s*<system-reminder\s*>[\s\S]*?<\/system-reminder\s*>\s*$/;
+const LOCAL_COMMAND_CAVEAT_ONLY_RE = /^\s*(?:<local-command-caveat\s*>[\s\S]*?<\/local-command-caveat\s*>\s*)+$/;
 
 export function classifyMessage(
   msg: MessagePayload,
@@ -68,6 +69,10 @@ export function classifyMessage(
   }
 
   if (SYSTEM_REMINDER_RE.test(text)) {
+    return { kind: 'suppress', chip: null, expandBody: null, rawRef };
+  }
+
+  if (LOCAL_COMMAND_CAVEAT_ONLY_RE.test(text)) {
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
   }
 
