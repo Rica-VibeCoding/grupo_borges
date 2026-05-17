@@ -26,8 +26,11 @@ class Settings(BaseSettings):
     # auth / dev
     dev_bypass_auth: bool = False
     # Slug humano usado em dev local quando Tailscale-User-Login está ausente.
-    # Vazio = sem reviewer humano default (precisa X-Reviewer-Slug de agente).
-    dev_default_reviewer: str = ""
+    # Cockpit hoje é single-tenant (Rica) e na prática o frontend é servido
+    # pela porta Next dev direta (sem TS Serve no caminho), então o header
+    # nunca chega. Default = rica resolve o aceite/rejeição via cockpit.
+    # Quando entrar segundo humano, voltar a "" e forçar acesso via :3443.
+    dev_default_reviewer: str = "rica"
     hook_bearer_token: str | None = None
 
     # paths
