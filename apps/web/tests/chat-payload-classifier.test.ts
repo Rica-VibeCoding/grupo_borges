@@ -358,6 +358,28 @@ test('classifyMessage — task-notification inline em texto livre permanece plai
   assert.equal(payload.kind, 'plain');
 });
 
+test('classifyMessage — 2 task-notifications consecutivos viram 1 chip (parseia o primeiro)', () => {
+  const payload = classifyMessage(userText(55, `${doneTaskNotificationXml}\n${failedTaskNotificationXml}`));
+  assert.equal(payload.kind, 'task-notification');
+  if (payload.kind === 'task-notification') {
+    // primeiro envelope é o `done` — tone reflete isso
+    assert.equal(payload.tone, 'completed');
+    assert.equal(payload.chip.icon, '🟢');
+  }
+});
+
+test('classifyMessage — task-notification colado com system-reminder antes vira chip', () => {
+  const raw = `<system-reminder>ruído</system-reminder>\n${failedTaskNotificationXml}`;
+  const payload = classifyMessage(userText(56, raw));
+  assert.equal(payload.kind, 'task-notification');
+});
+
+test('classifyMessage — task-notification colado com system-reminder depois vira chip', () => {
+  const raw = `${failedTaskNotificationXml}\n<system-reminder>ruído pós-envelope</system-reminder>`;
+  const payload = classifyMessage(userText(57, raw));
+  assert.equal(payload.kind, 'task-notification');
+});
+
 test('classifyMessage — marker [Image:] exato suprime', () => {
   const marker = '[Image: original 1280x900, displayed at 768x540. Multiply coordinates by 1.67 to map to original image.]';
   const payload = classifyMessage(userText(80, marker));
