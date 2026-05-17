@@ -88,8 +88,8 @@ const UserBubble = memo(function UserBubble({ text, ts }: { text: string; ts?: s
     <div className="msg-row msg-row-user">
       <OneLineChip
         kind="user"
-        icon="👤"
-        label="você"
+        icon="⚙️"
+        label="User:"
         summary={firstLineSummary(text)}
         timestamp={formatHHMM(ts)}
         expandBody={
@@ -107,8 +107,8 @@ const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text
     <div className="msg-row msg-row-user">
       <OneLineChip
         kind="user-internal"
-        icon="⚙"
-        label="evento interno"
+        icon="⚙️"
+        label="Internal:"
         summary={firstLineSummary(text)}
         timestamp={formatHHMM(ts)}
         expandBody={
@@ -129,8 +129,8 @@ function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
   return (
     <OneLineChip
       kind="thinking"
-      icon="💭"
-      label={`pensou ${seconds}s`}
+      icon="⚙️"
+      label={`Thinking: ${seconds}s`}
       timestamp={formatHHMM(ts)}
       expandBody={text}
     />
@@ -144,9 +144,8 @@ function MetaDecisionChip({ text, ts }: { text: string; ts?: string }) {
     <div className="msg-row msg-row-assistant">
       <OneLineChip
         kind="meta-decision"
-        icon="🤐"
-        label="meta-decisão"
-        summary="silenciado"
+        icon="⚙️"
+        label="Meta: silenciado"
         timestamp={formatHHMM(ts)}
         expandBody={text}
       />
@@ -190,8 +189,8 @@ function ToolUseChip({
   return (
     <OneLineChip
       kind="tool"
-      icon="🔧"
-      label={name}
+      icon="⚙️"
+      label={`Tool: ${name}`}
       summary={short || undefined}
       trailing={result?.isError ? 'erro' : undefined}
       timestamp={formatHHMM(ts)}
@@ -260,30 +259,26 @@ function SidechainChip({
   ts?: string;
 }) {
   let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
-  let glyph = '🔧';
-  let label = `launched ${count} subagent${count === 1 ? '' : 's'}`;
+  let label = `Subagent: ${count}x`;
   let trailing: string | undefined = durMs !== null && durMs > 0 ? formatMs(durMs) : undefined;
 
   if (liveStatus) {
     if (liveStatus.status === 'active') {
       tone = 'active';
-      glyph = '⏳';
-      label = 'subagent rodando…';
+      label = 'Subagent: rodando…';
       trailing = formatMs(Math.max(0, nowMs - liveStatus.started_at_ms));
     } else if (liveStatus.status === 'completed') {
       tone = 'completed';
-      glyph = '✓';
-      label = 'subagent concluído';
+      label = 'Subagent: concluído';
       trailing = liveStatus.duration_ms != null
         ? formatMs(liveStatus.duration_ms)
         : (durMs !== null && durMs > 0 ? formatMs(durMs) : undefined);
     } else if (liveStatus.status === 'stalled') {
       tone = 'stalled';
-      glyph = '⚠';
       const sinceMs = liveStatus.last_seen_ms != null
         ? Math.max(0, nowMs - liveStatus.last_seen_ms)
         : 0;
-      label = `subagent sem resposta há ${formatMs(sinceMs)}`;
+      label = `Subagent: sem resposta há ${formatMs(sinceMs)}`;
       trailing = undefined;
     }
   }
@@ -292,7 +287,7 @@ function SidechainChip({
     <div className="msg-row msg-row-assistant">
       <OneLineChip
         kind="sidechain-cluster"
-        icon={glyph}
+        icon="⚙️"
         label={label}
         trailing={trailing}
         timestamp={formatHHMM(ts)}
@@ -344,33 +339,29 @@ function SidechainClusterChip({
   }
 
   let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
-  let glyph = '🔧';
-  let label = `launched ${subagentCount} subagents`;
+  let label = `Subagent: ${subagentCount}x`;
   let trailing: string | undefined = totalDurMs !== null && totalDurMs > 0 ? formatMs(totalDurMs) : undefined;
 
   if (activeN > 0) {
     tone = 'active';
-    glyph = '⏳';
-    label = `${subagentCount} subagents · ${activeN} rodando`;
+    label = `Subagent: ${subagentCount}x · ${activeN} rodando`;
     trailing = mostRecentActiveStart > 0
       ? formatMs(Math.max(0, nowMs - mostRecentActiveStart))
       : undefined;
   } else if (stalledN > 0) {
     tone = 'stalled';
-    glyph = '⚠';
-    label = `${subagentCount} subagents · ${stalledN} sem resposta`;
+    label = `Subagent: ${subagentCount}x · ${stalledN} sem resposta`;
     trailing = undefined;
   } else if (completedN === subagentCount && subagentCount > 0) {
     tone = 'completed';
-    glyph = '✓';
-    label = `${subagentCount} subagents concluídos`;
+    label = `Subagent: ${subagentCount}x concluídos`;
   }
 
   return (
     <div className="msg-row msg-row-assistant">
       <OneLineChip
         kind="sidechain-cluster"
-        icon={glyph}
+        icon="⚙️"
         label={label}
         trailing={trailing}
         tone={tone}
@@ -390,45 +381,52 @@ const AssistantBubble = memo(function AssistantBubble({
   usage: NonNullable<MessagePayload['message']>['usage'];
   ts?: string;
 }) {
-  // DS-71 round 2: msg-rail removido por feedback Rica (msg 2891) — linha
-  // dupla "1 ferramenta · 1 arquivo · 1.3k tok" embaixo de cada chip era
-  // ruído visual. Info técnica agregada (tools/arquivos/tokens) é recuperável
-  // expandindo cada chip individualmente quando vier do classifier; pra
-  // visão agregada do turno, a aba INF do cockpit já cumpre o papel.
+  // DS-71 round 3: wrapper `msg-bubble msg-bubble-assistant` removido por
+  // feedback Rica (msg 2894 — "componente dentro de componente"). Cada part
+  // vira sua própria row no feed; chips de thinking/tool ficam soltos. Text
+  // part mantém bubble pra legibilidade do markdown longo. Quando o turno
+  // só tem chips (sem text), nada envolve nada.
   return (
-    <div className="msg-row msg-row-assistant">
-      <div className="msg-bubble msg-bubble-assistant">
-        {parts.map((part, i) => {
-          if (part.type === 'text') {
-            return (
-              <div key={i} className="msg-text">
-                <Markdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight]}
-                >
-                  {part.text}
-                </Markdown>
+    <>
+      {parts.map((part, i) => {
+        if (part.type === 'text') {
+          return (
+            <div key={i} className="msg-row msg-row-assistant">
+              <div className="msg-bubble msg-bubble-assistant">
+                <div className="msg-text">
+                  <Markdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeHighlight]}
+                  >
+                    {part.text}
+                  </Markdown>
+                </div>
               </div>
-            );
-          }
-          if (part.type === 'thinking') {
-            return <ThinkingChip key={i} text={part.thinking} ts={ts} />;
-          }
-          if (part.type === 'tool_use') {
-            return (
+            </div>
+          );
+        }
+        if (part.type === 'thinking') {
+          return (
+            <div key={i} className="msg-row msg-row-assistant">
+              <ThinkingChip text={part.thinking} ts={ts} />
+            </div>
+          );
+        }
+        if (part.type === 'tool_use') {
+          return (
+            <div key={i} className="msg-row msg-row-assistant">
               <ToolUseChip
-                key={i}
                 name={part.name}
                 input={part.input}
                 result={toolResults.get(part.id) ?? null}
                 ts={ts}
               />
-            );
-          }
-          return null;
-        })}
-      </div>
-    </div>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </>
   );
 });
 

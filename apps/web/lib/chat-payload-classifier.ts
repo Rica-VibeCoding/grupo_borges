@@ -97,7 +97,7 @@ export function classifyMessage(
     return {
       kind: 'task-notification',
       chip: {
-        icon: taskNotificationIcon(taskNotification.status),
+        icon: '⚙️',
         label: `Task: ${taskNotification.summary.slice(0, 40)}`,
         summary: `${taskNotification.status}: ${taskNotification.summary}`,
       },
@@ -113,8 +113,8 @@ export function classifyMessage(
       return {
         kind: 'slash',
         chip: {
-          icon: SLASH_ICONS[slash.name] ?? '⚡',
-          label: slash.name,
+          icon: '⚙️',
+          label: `Slash: ${slash.name}`,
           summary: truncate(firstLine(slash.stdout), 80),
         },
         expandBody: slash.stdout,
@@ -127,8 +127,8 @@ export function classifyMessage(
       return {
         kind: 'channel-envelope',
         chip: {
-          icon: channelIcon(channel.attrs.source),
-          label: channelLabel(channel.attrs),
+          icon: '⚙️',
+          label: `Channel: ${channelLabel(channel.attrs)}`,
           summary: truncate(channel.body, 80),
         },
         expandBody: channelExpandBody(channel),
@@ -142,8 +142,8 @@ export function classifyMessage(
     return {
       kind: 'sidechain-cluster',
       chip: {
-        icon: '🤖',
-        label: `Subagent (${cluster.count}x)`,
+        icon: '⚙️',
+        label: `Subagent: ${cluster.count}x`,
         summary: truncate(firstLine(cluster.body), 80),
       },
       expandBody: cluster.body,
@@ -161,7 +161,7 @@ export function classifyMessage(
       return {
         kind: 'skill',
         chip: {
-          icon: '🔧',
+          icon: '⚙️',
           label: `Skill: ${skill.name}`,
           summary: truncate(skill.summary, 80),
         },

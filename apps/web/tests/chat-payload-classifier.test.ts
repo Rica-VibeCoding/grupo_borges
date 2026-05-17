@@ -74,7 +74,7 @@ function slashRaw(name: string, stdout = '', args = ''): string {
 test('classifyMessage — slash /clear vira chip com icon mapeado', () => {
   const payload = classifyMessage(userText(10, slashRaw('/clear')));
   assert.equal(payload.kind, 'slash');
-  assert.deepEqual(payload.chip, { icon: '🧹', label: '/clear', summary: '' });
+  assert.deepEqual(payload.chip, { icon: '⚙️', label: 'Slash: /clear', summary: '' });
   assert.equal(payload.expandBody, '');
 });
 
@@ -84,7 +84,7 @@ test('classifyMessage — slash /reload-plugins resume primeira linha do stdout'
     'Reloaded: 2 plugins\nSecond line',
   )));
   assert.equal(payload.kind, 'slash');
-  assert.equal(payload.chip.icon, '↻');
+  assert.equal(payload.chip.icon, '⚙️');
   assert.equal(payload.chip.summary, 'Reloaded: 2 plugins');
   assert.equal(payload.expandBody, 'Reloaded: 2 plugins\nSecond line');
 });
@@ -92,8 +92,8 @@ test('classifyMessage — slash /reload-plugins resume primeira linha do stdout'
 test('classifyMessage — slash custom usa raio', () => {
   const payload = classifyMessage(userText(12, slashRaw('/project:ship-it', 'queued')));
   assert.equal(payload.kind, 'slash');
-  assert.equal(payload.chip.icon, '⚡');
-  assert.equal(payload.chip.label, '/project:ship-it');
+  assert.equal(payload.chip.icon, '⚙️');
+  assert.equal(payload.chip.label, 'Slash: /project:ship-it');
 });
 
 test('classifyMessage — system-reminder isolado suprime', () => {
@@ -151,7 +151,7 @@ test('classifyMessage — Skill usa nome e corpo da próxima resposta assistant'
   const payload = classifyMessage(skillUse, next);
   assert.equal(payload.kind, 'skill');
   assert.deepEqual(payload.chip, {
-    icon: '🔧',
+    icon: '⚙️',
     label: 'Skill: imagegen',
     summary: 'Gerar imagem raster com prompt detalhado',
   });
@@ -217,7 +217,7 @@ test('classifyMessage — sidechain isolado vira cluster 1x', () => {
     message: { role: 'assistant', content: [{ type: 'text', text: 'subagent terminou' }] },
   }));
   assert.equal(payload.kind, 'sidechain-cluster');
-  assert.equal(payload.chip.label, 'Subagent (1x)');
+  assert.equal(payload.chip.label, 'Subagent: 1x');
   assert.equal(payload.chip.summary, 'subagent terminou');
 });
 
@@ -238,7 +238,7 @@ test('classifyMessage — sidechain consecutivo agrega nextMsg', () => {
   });
   const payload = classifyMessage(first, second);
   assert.equal(payload.kind, 'sidechain-cluster');
-  assert.equal(payload.chip.label, 'Subagent (2x)');
+  assert.equal(payload.chip.label, 'Subagent: 2x');
   assert.equal(payload.expandBody, 'primeiro output\n\nsegundo output');
 });
 
@@ -250,8 +250,8 @@ test('classifyMessage — channel whatsapp vira envelope clicável', () => {
   ].join('')));
   assert.equal(payload.kind, 'channel-envelope');
   assert.deepEqual(payload.chip, {
-    icon: '📱',
-    label: 'whatsapp Rica',
+    icon: '⚙️',
+    label: 'Channel: whatsapp Rica',
     summary: 'manda status',
   });
   assert.equal(payload.expandBody, 'manda status\nattachment_kind: audio\nattachment_path: /tmp/a.ogg');
@@ -263,15 +263,15 @@ test('classifyMessage — channel telegram usa icon próprio', () => {
     '<channel source="telegram" user="Daniel">texto do telegram</channel>',
   ));
   assert.equal(payload.kind, 'channel-envelope');
-  assert.equal(payload.chip.icon, '✈️');
-  assert.equal(payload.chip.label, 'telegram Daniel');
+  assert.equal(payload.chip.icon, '⚙️');
+  assert.equal(payload.chip.label, 'Channel: telegram Daniel');
 });
 
 test('classifyMessage — task-notification failed vira chip vermelho', () => {
   const payload = classifyMessage(userText(52, failedTaskNotificationXml));
   assert.equal(payload.kind, 'task-notification');
   assert.deepEqual(payload.chip, {
-    icon: '🔴',
+    icon: '⚙️',
     label: 'Task: Background command \'pnpm test\' failed wi',
     summary: 'failed: Background command \'pnpm test\' failed with exit code 144',
   });
@@ -283,7 +283,7 @@ test('classifyMessage — task-notification done vira chip verde', () => {
   const payload = classifyMessage(userText(53, doneTaskNotificationXml));
   assert.equal(payload.kind, 'task-notification');
   assert.deepEqual(payload.chip, {
-    icon: '🟢',
+    icon: '⚙️',
     label: 'Task: Background command completed successfull',
     summary: 'done: Background command completed successfully',
   });
@@ -364,7 +364,7 @@ test('classifyMessage — 2 task-notifications consecutivos viram 1 chip (parsei
   if (payload.kind === 'task-notification') {
     // primeiro envelope é o `done` — tone reflete isso
     assert.equal(payload.tone, 'completed');
-    assert.equal(payload.chip.icon, '🟢');
+    assert.equal(payload.chip.icon, '⚙️');
   }
 });
 

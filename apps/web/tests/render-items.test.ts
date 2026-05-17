@@ -42,7 +42,7 @@ test('buildRenderItems — task-notification (failed) produz item kind=chip', ()
   assert.equal(items[0].kind, 'chip');
   if (items[0].kind === 'chip') {
     assert.equal(items[0].classifierKind, 'task-notification');
-    assert.equal(items[0].chip.icon, '🔴');
+    assert.equal(items[0].chip.icon, '⚙️');
     assert.match(items[0].expandBody, /"taskId": "bzubuuj01"/);
   }
 });
@@ -53,7 +53,7 @@ test('buildRenderItems — task-notification (done) produz item kind=chip', () =
   assert.equal(items[0].kind, 'chip');
   if (items[0].kind === 'chip') {
     assert.equal(items[0].classifierKind, 'task-notification');
-    assert.equal(items[0].chip.icon, '🟢');
+    assert.equal(items[0].chip.icon, '⚙️');
   }
 });
 
@@ -64,8 +64,8 @@ test('buildRenderItems — channel-envelope (whatsapp) produz item kind=chip', (
   assert.equal(items[0].kind, 'chip');
   if (items[0].kind === 'chip') {
     assert.equal(items[0].classifierKind, 'channel-envelope');
-    assert.equal(items[0].chip.icon, '📱');
-    assert.equal(items[0].chip.label, 'whatsapp Rica');
+    assert.equal(items[0].chip.icon, '⚙️');
+    assert.equal(items[0].chip.label, 'Channel: whatsapp Rica');
   }
 });
 
@@ -76,7 +76,7 @@ test('buildRenderItems — channel-envelope (telegram) produz item kind=chip', (
   assert.equal(items[0].kind, 'chip');
   if (items[0].kind === 'chip') {
     assert.equal(items[0].classifierKind, 'channel-envelope');
-    assert.equal(items[0].chip.icon, '✈️');
+    assert.equal(items[0].chip.icon, '⚙️');
   }
 });
 
