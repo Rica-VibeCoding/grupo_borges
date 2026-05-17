@@ -28,7 +28,7 @@
 // CSS mora em `app/globals.css` na seção `/* DS-70 OneLineChip */` — ver
 // abaixo do `.msg-chip-body`. Token names em `--chip-*` pra não colidir.
 
-import { memo, useCallback, useId, useState, type ReactNode } from 'react';
+import { memo, useId, useState, type ReactNode } from 'react';
 
 export type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
 import type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
@@ -74,14 +74,18 @@ export const OneLineChip = memo(function OneLineChip({
   const expandable = expandBody != null;
   const bodyId = useId();
 
-  const toggle = useCallback(() => {
+  // Sem useCallback: `toggle` é passado direto pro <button> nativo, que não
+  // é memoizado — identidade da fn não importa pro filho. Wrap aqui só
+  // pagaria tax de allocation do useCallback + array de deps. Doc do React:
+  // "useCallback only matters when passing the function to a memoized child".
+  function toggle() {
     if (!expandable) return;
     setOpen((prev) => {
       const next = !prev;
       onToggle?.(next);
       return next;
     });
-  }, [expandable, onToggle]);
+  }
 
   return (
     <div
