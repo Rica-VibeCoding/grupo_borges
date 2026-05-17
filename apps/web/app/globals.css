@@ -2442,6 +2442,16 @@
 .one-line-chip[data-tone="stalled"] { border-left: 2px solid var(--status-blocked); }
 .one-line-chip[data-tone="error"] { border-left: 2px solid var(--health-down); }
 
+/* A1 — touch target Apple-HIG (≥44pt) em mobile. Desktop fica enxuto;
+   abaixo de 768px o padding aumenta pra chegar em ~44px de altura
+   tocável (head com line-height ~24 + 10px×2 padding). slash-palette-item
+   recebe o mesmo tratamento — selecionar comando com dedo no Telegram
+   mobile / iPad com touch precisa de alvo grande. */
+@media (max-width: 768px) {
+  .one-line-chip-head { padding: 14px 14px; min-height: 44px; }
+  .slash-palette-item { padding: 14px 14px; min-height: 44px; }
+}
+
 /* DS-64 F4-1 — channel envelope. Substitui bubble user com XML cru por
    chip discreto por tipo de anexo. Visual inspirado em Linear: bordas
    semi-transparentes finas, monospace pra metadata, accent só em hover. */
