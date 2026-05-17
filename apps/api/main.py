@@ -37,6 +37,7 @@ from routers import events as events_router
 from routers import fleet as fleet_router
 from routers import hooks as hooks_router
 from routers import stream as stream_router
+from routers import task_commits as task_commits_router
 from routers import tasks as tasks_router
 
 
@@ -172,6 +173,7 @@ app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(fleet_router.router, prefix="/api/fleet", tags=["fleet"])
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(tasks_router.reviews_router, prefix="/api/reviews", tags=["reviews"])
+app.include_router(task_commits_router.router, prefix="/api/task-commits", tags=["tasks"])
 app.include_router(events_router.router, prefix="/api/events", tags=["events"])
 app.include_router(codex_events_router.router, prefix="/api/codex-events", tags=["codex"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])

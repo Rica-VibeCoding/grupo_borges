@@ -8,6 +8,7 @@ import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { SelectField } from './select-field';
 import { TaskEditForm } from './task-edit-form';
+import { TaskCommitsList } from './task-commits-list';
 import { TaskReviewActions } from './task-review-actions';
 import { formatDateTime } from '../lib/format-time';
 
@@ -340,6 +341,7 @@ export function TaskDetailModal({
                   )}
                 </section>
 
+                <TaskCommitsList taskId={effectiveTask.id} />
               </div>
 
               {effectiveTask.status === 'review' && (

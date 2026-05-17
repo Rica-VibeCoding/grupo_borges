@@ -182,6 +182,21 @@ async def get_task(task_id: str, request: Request) -> dict[str, Any]:
     return task
 
 
+@router.get("/{task_id}/commits")
+async def list_task_commits(task_id: str, request: Request) -> dict[str, Any]:
+    """DS-51 — lista commits amarrados à task (ordem cronológica).
+
+    Retorna `{commits: [{sha, repo, message, author, committed_at}]}`.
+    Lista vazia se nenhum commit foi linkado ainda.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+    task = await db.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"task {task_id} não encontrada")
+    commits = await db.list_task_commits(task_id)
+    return {"task_id": task_id, "commits": commits}
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_task(payload: TaskCreate, request: Request) -> dict[str, Any]:
     db: GrupoBorgesDB = request.app.state.db

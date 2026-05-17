@@ -130,6 +130,25 @@ CREATE TABLE IF NOT EXISTS task_runs (
 );
 
 -- ============================================================
+-- task_commits — amarra commits git aos cards do cockpit (DS-51)
+--
+-- Convenção: agente cita o human_id na mensagem do commit (DS-51,
+-- JP-11, etc) e um hook git post-commit faz POST /api/task-commits.
+-- O cockpit lookup task_id via human_id, persiste e mostra na timeline.
+-- diff fica no git, não duplicamos aqui — só sha+msg+autor+ts+repo.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS task_commits (
+    task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    sha        TEXT NOT NULL,                             -- git rev-parse HEAD
+    repo       TEXT NOT NULL,                             -- "grupo_borges", "fluyt", etc
+    message    TEXT NOT NULL,                             -- primeira linha do commit
+    author     TEXT NOT NULL,                             -- "Nome <email>"
+    committed_at INTEGER NOT NULL,                        -- unix ts do commit
+    created_at INTEGER NOT NULL,                          -- quando o hook reportou
+    PRIMARY KEY (task_id, sha)
+);
+
+-- ============================================================
 -- task_events — log estruturado (1 hook event = 1 row + JSONL eventos selecionados)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS task_events (
@@ -150,6 +169,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status ON tasks(assignee, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_status          ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_origin          ON tasks(origin_agent);
 CREATE INDEX IF NOT EXISTS idx_links_child           ON task_links(child_id);
+CREATE INDEX IF NOT EXISTS idx_task_commits_repo_sha ON task_commits(repo, sha);
+CREATE INDEX IF NOT EXISTS idx_task_commits_task     ON task_commits(task_id, committed_at);
 CREATE INDEX IF NOT EXISTS idx_runs_heartbeat        ON task_runs(last_heartbeat);
 CREATE INDEX IF NOT EXISTS idx_runs_task             ON task_runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_task           ON task_events(task_id);

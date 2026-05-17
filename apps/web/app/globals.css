@@ -1221,6 +1221,93 @@
   white-space: pre-wrap;
 }
 
+/* DS-51 — lista de commits amarrados à task */
+.task-commits {
+  margin: 12px 16px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.task-commits > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+.task-commits > summary::-webkit-details-marker { display: none; }
+.task-commits > summary::after {
+  content: '▾';
+  margin-left: auto;
+  font-size: 10px;
+  opacity: 0.5;
+}
+.task-commits[open] > summary::after { content: '▴'; }
+
+.task-commits-label { font-weight: 600; color: var(--text); }
+.task-commits-count {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.task-commits-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.task-commits-item {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  grid-template-areas:
+    "sha msg"
+    "sha meta";
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: baseline;
+}
+
+.task-commits-sha {
+  grid-area: sha;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.task-commits-sha:hover { text-decoration: underline; }
+
+.task-commits-msg {
+  grid-area: msg;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-commits-meta {
+  grid-area: meta;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .task-timeline {
   border-top: 1px solid var(--border);
   padding: 10px 16px 14px;

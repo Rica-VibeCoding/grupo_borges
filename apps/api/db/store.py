@@ -673,6 +673,62 @@ class GrupoBorgesDB:
                 )
                 return cur.lastrowid
 
+    async def find_task_id_by_human_id(self, human_id: str) -> str | None:
+        return await asyncio.to_thread(self._find_task_id_by_human_id, human_id)
+
+    def _find_task_id_by_human_id(self, human_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM tasks WHERE human_id = ? LIMIT 1",
+                (human_id.strip().upper(),),
+            ).fetchone()
+            return row["id"] if row else None
+
+    async def record_task_commit(
+        self,
+        *,
+        task_id: str,
+        sha: str,
+        repo: str,
+        message: str,
+        author: str,
+        committed_at: int,
+    ) -> bool:
+        """Idempotente — PK (task_id, sha). Retorna True se inseriu, False se já existia."""
+        return await asyncio.to_thread(
+            self._record_task_commit, task_id, sha, repo, message, author, committed_at
+        )
+
+    def _record_task_commit(
+        self, task_id, sha, repo, message, author, committed_at,
+    ) -> bool:
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO task_commits
+                    (task_id, sha, repo, message, author, committed_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, sha, repo, message, author, committed_at, int(time.time())),
+            )
+            return cur.rowcount > 0
+
+    async def list_task_commits(self, task_id: str) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._list_task_commits, task_id)
+
+    def _list_task_commits(self, task_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT sha, repo, message, author, committed_at, created_at
+                  FROM task_commits
+                 WHERE task_id = ?
+              ORDER BY committed_at ASC
+                """,
+                (task_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     async def record_review_action(
         self,
         task_id: str,
