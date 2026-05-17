@@ -358,6 +358,36 @@ test('classifyMessage — task-notification inline em texto livre permanece plai
   assert.equal(payload.kind, 'plain');
 });
 
+test('classifyMessage — marker [Image:] exato suprime', () => {
+  const marker = '[Image: original 1280x900, displayed at 768x540. Multiply coordinates by 1.67 to map to original image.]';
+  const payload = classifyMessage(userText(80, marker));
+  assert.equal(payload.kind, 'suppress');
+});
+
+test('classifyMessage — marker [Image:] com whitespace ao redor suprime', () => {
+  const marker = '  \n[Image: original 800x600, displayed at 400x300. Multiply coordinates by 2 to map to original image.]\n  ';
+  const payload = classifyMessage(userText(81, marker));
+  assert.equal(payload.kind, 'suppress');
+});
+
+test('classifyMessage — marker [Image:] citado entre aspas permanece plain', () => {
+  const quoted = 'o marker é literal: "[Image: original 1280x900, displayed at 768x540. Multiply coordinates by 1.67 to map to original image.]"';
+  const payload = classifyMessage(userText(82, quoted));
+  assert.equal(payload.kind, 'plain');
+});
+
+test('classifyMessage — marker [Image:] com fator inteiro "1" suprime (caso real)', () => {
+  const marker = '[Image: original 512x512, displayed at 512x512. Multiply coordinates by 1 to map to original image.]';
+  const payload = classifyMessage(userText(83, marker));
+  assert.equal(payload.kind, 'suppress');
+});
+
+test('classifyMessage — marker [Image:] concatenado com outro texto permanece plain', () => {
+  const concat = '[Image: original 1280x900, displayed at 768x540. Multiply coordinates by 1.67 to map to original image.] vamos analisar';
+  const payload = classifyMessage(userText(84, concat));
+  assert.equal(payload.kind, 'plain');
+});
+
 test('classifyMessage — rawRef usa uuid original', () => {
   const payload = classifyMessage(userText(60, 'texto'));
   assert.equal(payload.rawRef, 'uuid-60');

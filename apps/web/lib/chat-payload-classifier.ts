@@ -61,6 +61,13 @@ const CHANNEL_RE = /^\s*<channel\s+([^>]+)>([\s\S]*?)<\/channel>\s*$/;
 const ATTR_RE = /([a-zA-Z_][\w-]*)="([^"]*)"/g;
 const SYSTEM_REMINDER_RE = /^\s*<system-reminder\s*>[\s\S]*?<\/system-reminder\s*>\s*$/;
 const LOCAL_COMMAND_CAVEAT_ONLY_RE = /^\s*(?:<local-command-caveat\s*>[\s\S]*?<\/local-command-caveat\s*>\s*)+$/;
+// F5-5: marker injetado pelo CC quando o agente faz Read de imagem —
+// "[Image: original 1280x900, displayed at 768x540. Multiply coordinates by
+// 1.67 to map to original image.]". Se houver image_path no mesmo turno, já
+// é renderizado inline — o marker é puro ruído. Âncoras `^...$` previnem
+// falso-positivo em texto que cite o marker entre aspas ou concatenado.
+const IMAGE_READ_MARKER_RE =
+  /^\[Image: original \d+x\d+, displayed at \d+x\d+\. Multiply coordinates by [\d.]+ to map to original image\.\]$/;
 
 export function classifyMessage(
   msg: MessagePayload,
@@ -78,6 +85,10 @@ export function classifyMessage(
   }
 
   if (LOCAL_COMMAND_CAVEAT_ONLY_RE.test(text)) {
+    return { kind: 'suppress', chip: null, expandBody: null, rawRef };
+  }
+
+  if (IMAGE_READ_MARKER_RE.test(text.trim())) {
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
   }
 
