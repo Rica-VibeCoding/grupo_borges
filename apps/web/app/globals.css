@@ -2471,7 +2471,8 @@
    opacity + tinta do label, nunca background ruidoso. */
 .one-line-chip[data-kind="thinking"] { opacity: 0.7; }
 .one-line-chip[data-kind="thinking"] .one-line-chip-label { font-style: italic; }
-.one-line-chip[data-kind="skill"] .one-line-chip-label { color: var(--accent); }
+.one-line-chip[data-kind="skill"] .one-line-chip-label,
+.one-line-chip[data-kind="slash"] .one-line-chip-label { color: var(--accent); }
 .one-line-chip[data-kind="sidechain-cluster"] .one-line-chip-label { font-weight: 600; }
 .one-line-chip[data-kind="meta-decision"] { opacity: 0.85; }
 .one-line-chip[data-kind="user-internal"] { opacity: 0.75; }
