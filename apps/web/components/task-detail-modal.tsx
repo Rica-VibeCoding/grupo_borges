@@ -6,6 +6,7 @@ import type { ReviewAction, Task, TaskEvent } from '../lib/cockpit-types';
 import { deleteTask, dispatchTask, fetchTask, patchTaskStatus, type TaskPatchStatus } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
+import { useIsMobile } from '../lib/use-is-mobile';
 import { SelectField } from './select-field';
 import { TaskEditForm } from './task-edit-form';
 import { TaskReviewActions } from './task-review-actions';
@@ -113,6 +114,7 @@ export function TaskDetailModal({
 }) {
   const { events, fleet, mutate } = useFleet();
   const { fire } = useToast();
+  const isMobile = useIsMobile();
   const [freshTask, setFreshTask] = useState<Task | null>(null);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -287,7 +289,7 @@ export function TaskDetailModal({
     <Dialog.Root open={task !== null} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="agent-modal-overlay" />
-        <Dialog.Content className="agent-modal-frame task-detail-frame mono" aria-describedby={undefined}>
+        <Dialog.Content className={`agent-modal-frame task-detail-frame mono${isMobile ? ' task-detail-frame-mobile' : ''}`} aria-describedby={undefined}>
           {effectiveTask && (
             <>
               <header className="agent-modal-head">
@@ -302,17 +304,13 @@ export function TaskDetailModal({
                     {STATUS_OPTIONS.find((s) => s.value === selectedStatus)?.label ?? selectedStatus}
                   </span>
                   <Dialog.Close asChild>
-                    <button type="button" className="agent-modal-close" aria-label="Fechar detalhe">X</button>
+                    <button type="button" className="agent-modal-close" aria-label="Fechar detalhe">✕</button>
                   </Dialog.Close>
                 </div>
               </header>
 
               <div className="task-detail-body">
                 <section className="task-detail-main">
-                  <div className="task-detail-row-pair">
-                    <Field label="ID" value={effectiveTask.human_id || effectiveTask.id} />
-                    <Field label="UUID" value={effectiveTask.id} />
-                  </div>
                   {editing && (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') ? (
                     <TaskEditForm
                       task={effectiveTask}
@@ -396,6 +394,8 @@ export function TaskDetailModal({
                     options={STATUS_OPTIONS}
                     disabled={saving || loadState === 'loading'}
                   />
+                  <Field label="ID" value={effectiveTask.human_id || effectiveTask.id.slice(0, 8)} />
+                  <Field label="UUID" value={effectiveTask.id} />
                   <Field label="RESPONSÁVEL" value={effectiveTask.assignee} />
                   <Field label="PRIORIDADE" value={effectiveTask.priority} />
                   <Field label="ORIGEM" value={effectiveTask.origin_agent} />

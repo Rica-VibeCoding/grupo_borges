@@ -90,7 +90,7 @@ export function TaskReviewActions({ task, reviewerSlug, onResolved, onError, onS
           onChange={(e) => setNote(e.target.value)}
           placeholder="contexto da decisão — vai pro audit log"
           maxLength={1000}
-          rows={6}
+          rows={3}
           disabled={pending !== null}
         />
       </label>
