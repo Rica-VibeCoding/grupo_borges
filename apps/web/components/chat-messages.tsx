@@ -259,6 +259,7 @@ function ToolUseChip({
 // active > stalled > completed; em empate, last_seen_ms mais recente.
 const STATUS_RANK: Record<SubagentStatusKind, number> = {
   active: 3,
+  starting: 3,
   stalled: 2,
   completed: 1,
 };
