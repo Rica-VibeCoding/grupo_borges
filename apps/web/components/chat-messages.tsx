@@ -592,22 +592,6 @@ const AssistantBubble = memo(function AssistantBubble({
   );
 });
 
-// Placeholder "agente compondo" — aparece enquanto há optimistic não-erro no
-// feed (heurística "user mandou, ainda não veio resposta"). Reutiliza
-// OneLineChip kind=thinking com tone=active pra herdar a breathing animation.
-const TypingPlaceholder = memo(function TypingPlaceholder({ agentName }: { agentName: string }) {
-  return (
-    <div className="msg-row msg-row-assistant" data-typing-placeholder>
-      <OneLineChip
-        kind="thinking"
-        icon="⚙️"
-        label={`${agentName} digitando…`}
-        tone="active"
-      />
-    </div>
-  );
-});
-
 // --- Container + auto-scroll -------------------------------------------------
 
 export type ChatMessagesProps = {
@@ -622,8 +606,6 @@ export type ChatMessagesProps = {
   subagentStatusByParentUuid?: Map<string, SubagentStatusEntry>;
   /** Bolhas locais ainda não confirmadas pelo SSE (JP-18 R2). */
   optimistic?: OptimisticEntry[];
-  /** Nome do agente — usado no placeholder "X digitando…" (JP-18 R2). */
-  agentName?: string;
 };
 
 export function ChatMessages({
@@ -633,7 +615,6 @@ export function ChatMessages({
   emptyLabel,
   subagentStatusByParentUuid,
   optimistic,
-  agentName,
 }: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -858,9 +839,6 @@ export function ChatMessages({
                 optimisticStatus={entry.status}
               />
             ))}
-            {optimistic.some((e) => e.status !== 'error') && (
-              <TypingPlaceholder agentName={agentName ?? 'agente'} />
-            )}
           </>
         )}
         {/* SENTINEL — NÃO condicionalizar: callback ref do scroller assume sentinel presente no mount. */}
