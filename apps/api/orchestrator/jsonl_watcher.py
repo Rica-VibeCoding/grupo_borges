@@ -283,7 +283,14 @@ def update_subagent_state_from_jsonl(
             tool_use_map.pop(tuid, None)
 
 
-def subagent_active_snapshot(slug: str) -> list[dict[str, Any]]:
+def subagent_active_snapshot(
+    slug: str,
+    *,
+    task_id: str | None = None,
+) -> list[dict[str, Any]]:
+    # task_id filtra subsessões tool-spawned daquela task (LB-9 Bloco 3 popover).
+    # Nativas CC (sem task_id no state) ficam fora quando o filtro é aplicado —
+    # o popover só renderiza tool-spawned mesmo.
     return [
         {
             "parent_uuid": parent_uuid,
@@ -301,6 +308,7 @@ def subagent_active_snapshot(slug: str) -> list[dict[str, Any]]:
             },
         }
         for parent_uuid, state in _subagent_state.get(slug, {}).items()
+        if task_id is None or state.get("task_id") == task_id
     ]
 
 

@@ -925,14 +925,20 @@ async def spawn_agent_subsession(
 
 
 @router.get("/{slug}/subagents")
-async def list_agent_subagents(slug: str, request: Request) -> list[dict[str, Any]]:
+async def list_agent_subagents(
+    slug: str,
+    request: Request,
+    task_id: str | None = Query(default=None),
+) -> list[dict[str, Any]]:
     """Snapshot das subsessões ativas do agente (polling REST 5s — LB-9 Bloco 2).
 
     Retorna subsessões ativas em _subagent_state, incluindo as spawned_by_tool
     (com task_id, session_name, visibility) e as nativas do CC (parent_uuid, status).
+
+    Com `?task_id=` filtra só as tool-spawned daquela task (popover Bloco 3).
     """
     db: GrupoBorgesDB = request.app.state.db
     if await db.get_agent(slug) is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
 
-    return subagent_active_snapshot(slug)
+    return subagent_active_snapshot(slug, task_id=task_id)
