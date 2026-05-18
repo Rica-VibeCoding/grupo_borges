@@ -14,8 +14,6 @@ import type {
 import { ChannelEnvelopeView } from './channel-envelope';
 import { CodeBlock } from './code-block';
 import { OneLineChip } from './one-line-chip';
-
-const MD_COMPONENTS = { pre: CodeBlock };
 import {
   buildRenderItems,
   buildToolResultLookup,
@@ -24,6 +22,14 @@ import {
   type ToolResultLookup,
 } from '../lib/render-items';
 import { prettifyToolName } from '../lib/tool-name';
+
+const MD_COMPONENTS = { pre: CodeBlock };
+// Sem ref estável aqui, cada `<Markdown remarkPlugins={[...]}>` cria array
+// novo por render e força react-markdown a reconfigurar o pipeline remark+
+// rehype toda vez — caro com rehype-highlight no caminho.
+// `as const` aqui não passa: react-markdown tipa `Pluggable[]` mutável.
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeHighlight];
 
 /**
  * ChatMessages — render da conversa real (JSONL) — JP-11 Fase 2.
@@ -130,7 +136,7 @@ const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: strin
           </a>
           {image.caption && (
             <div className="msg-image-caption">
-              <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{image.caption}</Markdown>
+              <Markdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{image.caption}</Markdown>
             </div>
           )}
         </div>
@@ -140,7 +146,7 @@ const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: strin
   return (
     <div className="msg-row msg-row-user">
       <div className="msg-bubble msg-bubble-user">
-        <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</Markdown>
+        <Markdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{text}</Markdown>
       </div>
     </div>
   );
@@ -161,7 +167,7 @@ const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text
         timestamp={formatHHMM(ts)}
         expandBody={
           <div className="one-line-chip-md">
-            <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</Markdown>
+            <Markdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{text}</Markdown>
           </div>
         }
       />
@@ -172,7 +178,7 @@ const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text
 // DS-71: ThinkingChip migrado pra OneLineChip kind=thinking. Heurística de
 // segundos (text.length / 200) mantida até backend mandar duração real do
 // thinking via usage.
-function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
+const ThinkingChip = memo(function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
   const seconds = Math.max(1, Math.round((text?.length ?? 0) / 200));
   return (
     <OneLineChip
@@ -183,11 +189,11 @@ function ThinkingChip({ text, ts }: { text: string; ts?: string }) {
       expandBody={text}
     />
   );
-}
+});
 
 // JP-13 F2 → DS-71: MetaDecisionChip migrado pra OneLineChip. Glyph 🤐
 // sinaliza "agente decidiu silenciar". Texto completo no expand.
-function MetaDecisionChip({ text, ts }: { text: string; ts?: string }) {
+const MetaDecisionChip = memo(function MetaDecisionChip({ text, ts }: { text: string; ts?: string }) {
   return (
     <div className="msg-row msg-row-assistant">
       <OneLineChip
@@ -199,11 +205,11 @@ function MetaDecisionChip({ text, ts }: { text: string; ts?: string }) {
       />
     </div>
   );
-}
+});
 
 // DS-71: ToolUseChip migrado pra OneLineChip kind=tool. Expand combina
 // input JSON + resultado (ou erro) em pre blocks via ReactNode.
-function ToolUseChip({
+const ToolUseChip = memo(function ToolUseChip({
   name,
   input,
   result,
@@ -251,7 +257,7 @@ function ToolUseChip({
       expandBody={expandBody}
     />
   );
-}
+});
 
 // Resolve o status efetivo do grupo de sidechain (F4-2): backend indexa por
 // parent_uuid de CADA turn (que varia ao longo do subagent), então o front
@@ -299,19 +305,31 @@ function resolveSidechainLiveStatus(
 // DS-71: SidechainChip (single subagent) migrado pra OneLineChip kind=
 // sidechain-cluster. Tone vem do liveStatus do backend (active/completed/
 // stalled). Breathing animation aplicada automaticamente quando active.
-function SidechainChip({
+// JP-18 R1: relógio interno — só liga quando liveStatus.status === 'active'.
+// Antes o container ChatMessages mantinha um setInterval(1s) que re-renderizava
+// items.map inteiro a cada tick; agora cada chip cuida do próprio "Xs".
+function useTickingNow(enabled: boolean): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enabled) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [enabled]);
+  return nowMs;
+}
+
+const SidechainChip = memo(function SidechainChip({
   count,
   durMs,
   liveStatus,
-  nowMs,
   ts,
 }: {
   count: number;
   durMs: number | null;
   liveStatus: SubagentStatusEntry | null;
-  nowMs: number;
   ts?: string;
 }) {
+  const nowMs = useTickingNow(liveStatus?.status === 'active');
   let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
   let label = `Subagent: ${count}x`;
   let trailing: string | undefined = durMs !== null && durMs > 0 ? formatMs(durMs) : undefined;
@@ -349,7 +367,7 @@ function SidechainChip({
       />
     </div>
   );
-}
+});
 
 // JP-13 F1: chip único pra N subagents consecutivos. Resolve status por
 // subagent individualmente (via resolveSidechainLiveStatus por rootUuid)
@@ -359,54 +377,56 @@ function SidechainChip({
 // DS-71: SidechainClusterChip migrado pra OneLineChip. Mesma lógica de
 // agregação (active > stalled > completed) mas renderiza via OneLineChip
 // pra estética unificada e breathing automático em active.
-function SidechainClusterChip({
+const SidechainClusterChip = memo(function SidechainClusterChip({
   groups,
   subagentCount,
   totalDurMs,
   statusMap,
-  nowMs,
 }: {
   groups: SidechainGroupRef[];
   subagentCount: number;
   totalDurMs: number | null;
   statusMap?: Map<string, SubagentStatusEntry>;
-  nowMs: number;
 }) {
-  let activeN = 0;
-  let completedN = 0;
-  let stalledN = 0;
-  let mostRecentActiveStart = 0;
-
-  for (const g of groups) {
-    const entry = resolveSidechainLiveStatus(g.rootUuid, g.parentUuids, statusMap);
-    if (!entry) continue;
-    if (entry.status === 'active') {
-      activeN++;
-      if (entry.started_at_ms > mostRecentActiveStart) {
-        mostRecentActiveStart = entry.started_at_ms;
+  const aggregated = useMemo(() => {
+    let activeN = 0;
+    let completedN = 0;
+    let stalledN = 0;
+    let mostRecentActiveStart = 0;
+    for (const g of groups) {
+      const entry = resolveSidechainLiveStatus(g.rootUuid, g.parentUuids, statusMap);
+      if (!entry) continue;
+      if (entry.status === 'active') {
+        activeN++;
+        if (entry.started_at_ms > mostRecentActiveStart) {
+          mostRecentActiveStart = entry.started_at_ms;
+        }
+      } else if (entry.status === 'completed') {
+        completedN++;
+      } else if (entry.status === 'stalled') {
+        stalledN++;
       }
-    } else if (entry.status === 'completed') {
-      completedN++;
-    } else if (entry.status === 'stalled') {
-      stalledN++;
     }
-  }
+    return { activeN, completedN, stalledN, mostRecentActiveStart };
+  }, [groups, statusMap]);
+
+  const nowMs = useTickingNow(aggregated.activeN > 0);
 
   let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
   let label = `Subagent: ${subagentCount}x`;
   let trailing: string | undefined = totalDurMs !== null && totalDurMs > 0 ? formatMs(totalDurMs) : undefined;
 
-  if (activeN > 0) {
+  if (aggregated.activeN > 0) {
     tone = 'active';
-    label = `Subagent: ${subagentCount}x · ${activeN} rodando`;
-    trailing = mostRecentActiveStart > 0
-      ? formatMs(Math.max(0, nowMs - mostRecentActiveStart))
+    label = `Subagent: ${subagentCount}x · ${aggregated.activeN} rodando`;
+    trailing = aggregated.mostRecentActiveStart > 0
+      ? formatMs(Math.max(0, nowMs - aggregated.mostRecentActiveStart))
       : undefined;
-  } else if (stalledN > 0) {
+  } else if (aggregated.stalledN > 0) {
     tone = 'stalled';
-    label = `Subagent: ${subagentCount}x · ${stalledN} sem resposta`;
+    label = `Subagent: ${subagentCount}x · ${aggregated.stalledN} sem resposta`;
     trailing = undefined;
-  } else if (completedN === subagentCount && subagentCount > 0) {
+  } else if (aggregated.completedN === subagentCount && subagentCount > 0) {
     tone = 'completed';
     label = `Subagent: ${subagentCount}x concluídos`;
   }
@@ -422,7 +442,7 @@ function SidechainClusterChip({
       />
     </div>
   );
-}
+});
 
 const AssistantBubble = memo(function AssistantBubble({
   parts,
@@ -447,8 +467,8 @@ const AssistantBubble = memo(function AssistantBubble({
               <div className="msg-bubble msg-bubble-assistant">
                 <div className="msg-text">
                   <Markdown
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeHighlight]}
+                    remarkPlugins={REMARK_PLUGINS}
+                    rehypePlugins={REHYPE_PLUGINS}
                     components={MD_COMPONENTS}
                   >
                     {part.text}
@@ -510,22 +530,6 @@ export function ChatMessages({
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
   const items = useMemo(() => coalesceSidechainGroups(buildRenderItems(messages)), [messages]);
-
-  // Relógio só liga quando há subagent active — tick a cada 1s atualiza o
-  // "rodando 12s". Para no ciclo seguinte quando nada mais está active.
-  const hasActiveSubagent = useMemo(() => {
-    if (!subagentStatusByParentUuid) return false;
-    for (const entry of subagentStatusByParentUuid.values()) {
-      if (entry.status === 'active') return true;
-    }
-    return false;
-  }, [subagentStatusByParentUuid]);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    if (!hasActiveSubagent) return;
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [hasActiveSubagent]);
 
   // Auto-scroll quando "grudado" no fim; senão acende pílula "↓ nova mensagem".
   // Durante replay (loading=true), suprime hasNew — senão a pílula pulsa
@@ -597,7 +601,6 @@ export function ChatMessages({
                 count={item.count}
                 durMs={item.durMs}
                 liveStatus={liveStatus}
-                nowMs={nowMs}
                 ts={groupTs}
               />
             );
@@ -610,7 +613,6 @@ export function ChatMessages({
                 subagentCount={item.subagentCount}
                 totalDurMs={item.totalDurMs}
                 statusMap={subagentStatusByParentUuid}
-                nowMs={nowMs}
               />
             );
           }
