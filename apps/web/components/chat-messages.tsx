@@ -12,7 +12,10 @@ import type {
   SubagentStatusKind,
 } from '../lib/messages-types';
 import { ChannelEnvelopeView } from './channel-envelope';
+import { CodeBlock } from './code-block';
 import { OneLineChip } from './one-line-chip';
+
+const MD_COMPONENTS = { pre: CodeBlock };
 import {
   buildRenderItems,
   buildToolResultLookup,
@@ -127,7 +130,7 @@ const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: strin
           </a>
           {image.caption && (
             <div className="msg-image-caption">
-              <Markdown remarkPlugins={[remarkGfm]}>{image.caption}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{image.caption}</Markdown>
             </div>
           )}
         </div>
@@ -137,7 +140,7 @@ const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: strin
   return (
     <div className="msg-row msg-row-user">
       <div className="msg-bubble msg-bubble-user">
-        <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+        <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</Markdown>
       </div>
     </div>
   );
@@ -158,7 +161,7 @@ const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text
         timestamp={formatHHMM(ts)}
         expandBody={
           <div className="one-line-chip-md">
-            <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{text}</Markdown>
           </div>
         }
       />
@@ -445,6 +448,7 @@ const AssistantBubble = memo(function AssistantBubble({
                   <Markdown
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeHighlight]}
+                    components={MD_COMPONENTS}
                   >
                     {part.text}
                   </Markdown>
