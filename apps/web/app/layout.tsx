@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { SseProvider } from '../components/sse-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -36,7 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="/theme-restore.js" />
       </head>
       <body data-sse="on" data-load="off">
-        {children}
+        <SseProvider>{children}</SseProvider>
       </body>
     </html>
   );
