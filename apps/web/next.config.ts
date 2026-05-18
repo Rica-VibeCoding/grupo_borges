@@ -15,7 +15,10 @@ const config: NextConfig = {
   // edge tem compressão própria, então isso só desliga em dev/self-host.
   compress: false,
   async rewrites() {
-    return [{ source: '/api/:path*', destination: `${API_BASE}/api/:path*` }];
+    return [
+      { source: '/api/:path*', destination: `${API_BASE}/api/:path*` },
+      { source: '/uploads/:path*', destination: `${API_BASE}/uploads/:path*` },
+    ];
   },
 };
 

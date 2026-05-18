@@ -84,11 +84,51 @@ function firstLineSummary(text: string, max = 80): string {
   return head.length > max ? head.slice(0, max - 1) + '…' : head;
 }
 
+// Detecta payload de imagem do cockpit (agents.py:732):
+//   "Imagem enviada via cockpit: <absolute_path>[\nCaption: <text>]"
+// Extrai sufixo após /uploads/ pra montar URL pública via rewrite.
+const COCKPIT_IMG_RE = /^Imagem enviada via cockpit: (.+?)(?:\nCaption: ([\s\S]+))?$/;
+
+function parseCockpitImage(text: string): { url: string; caption: string | null } | null {
+  const match = text.match(COCKPIT_IMG_RE);
+  if (!match) return null;
+  const absPath = match[1].trim();
+  const uploadsIdx = absPath.indexOf('/uploads/');
+  if (uploadsIdx === -1) return null;
+  return {
+    url: absPath.slice(uploadsIdx),
+    caption: match[2]?.trim() || null,
+  };
+}
+
 // DS-71 round 4: feedback Rica — input dele tem que ser bubble igual o
 // output do agent, NÃO chip encapsulado. Volta pro msg-bubble-user clássico
 // com markdown. Chip era confuso demais visualmente; bubble livre alinha
 // input e output no mesmo padrão de leitura.
 const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: string }) {
+  const image = parseCockpitImage(text);
+  if (image) {
+    return (
+      <div className="msg-row msg-row-user">
+        <div className="msg-bubble msg-bubble-user msg-bubble-image">
+          <a
+            href={image.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="msg-image-link"
+            aria-label="Abrir imagem em tamanho completo"
+          >
+            <img src={image.url} alt={image.caption ?? 'imagem enviada'} className="msg-image-thumb" />
+          </a>
+          {image.caption && (
+            <div className="msg-image-caption">
+              <Markdown remarkPlugins={[remarkGfm]}>{image.caption}</Markdown>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="msg-row msg-row-user">
       <div className="msg-bubble msg-bubble-user">
