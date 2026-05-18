@@ -39,6 +39,16 @@ const STATUS_LABEL: Record<AgentStatus, string> = {
 
 const HANDOFF_STATUSES: ActiveTaskStatus[] = ['running', 'ready', 'backlog'];
 
+type SwipeStart = { x: number; y: number; t: number; target: EventTarget | null };
+
+// Considera "scrollable" alvos onde o swipe horizontal pode atrapalhar o
+// gesto nativo (scroll, seleção de texto). Edge swipe (≤30px da borda
+// esquerda) ignora esse veto — intent claro do usuário.
+function isScrollableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest('.chat-messages-scroll, .agent-modal-docs-pre, .agent-modal-docs-body, textarea, .agent-modal-tablist');
+}
+
 function safeUUID(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -62,7 +72,7 @@ export function AgentModal() {
   // horizontal das tabs e seleção de texto em pre/code.
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [swiping, setSwiping] = useState(false);
-  const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const swipeStartRef = useRef<SwipeStart | null>(null);
   const swipeWidthRef = useRef<number>(0);
 
   // Reset offset toda vez que o modal abre/fecha.
@@ -74,26 +84,21 @@ export function AgentModal() {
     }
   }, [open]);
 
-  // Considera "scrollable" alvos onde o swipe horizontal pode atrapalhar o
-  // gesto nativo (scroll, seleção de texto). Edge swipe (≤30px da borda
-  // esquerda) ignora esse veto — intent claro do usuário.
-  const isScrollableTarget = (target: EventTarget | null): boolean => {
-    if (!(target instanceof Element)) return false;
-    return !!target.closest('.chat-messages-scroll, .agent-modal-docs-pre, .agent-modal-docs-body, textarea, .agent-modal-tablist');
-  };
-
   const onFrameTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     if (!isMobile) return;
     const t = e.touches[0];
     if (!t) return;
-    swipeStartRef.current = { x: t.clientX, y: t.clientY, t: performance.now() };
+    swipeStartRef.current = {
+      x: t.clientX,
+      y: t.clientY,
+      t: performance.now(),
+      target: e.target,
+    };
     swipeWidthRef.current = window.innerWidth;
-    // Marca alvo pra decisão posterior no touchmove.
-    (swipeStartRef.current as { x: number; y: number; t: number; target?: EventTarget | null }).target = e.target;
   }, [isMobile]);
 
   const onFrameTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    const start = swipeStartRef.current as ({ x: number; y: number; t: number; target?: EventTarget | null } | null);
+    const start = swipeStartRef.current;
     if (!start) return;
     const t = e.touches[0];
     if (!t) return;
@@ -112,7 +117,7 @@ export function AgentModal() {
       if (dx < 0) { swipeStartRef.current = null; return; }
       // Em área scrollável, só aceita se for edge swipe (borda esquerda).
       const isEdge = start.x < 30;
-      if (!isEdge && isScrollableTarget(start.target ?? null)) {
+      if (!isEdge && isScrollableTarget(start.target)) {
         swipeStartRef.current = null;
         return;
       }

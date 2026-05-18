@@ -85,21 +85,18 @@ function firstLineSummary(text: string, max = 80): string {
 }
 
 // Detecta payload de imagem do cockpit (agents.py:732):
-//   "Imagem enviada via cockpit: <absolute_path>[(\s|\n)*Caption: <text>]"
+//   "Imagem enviada via cockpit: <absolute_path>[\s*Caption: <text>]"
 // O `\n` entre path e Caption é engolido pela pipeline tmux/CC em alguns
 // fluxos — por isso o separador é `\s*` (tolera newline, espaço ou colado).
-// Path tem que terminar numa extensão de imagem (sem espaço no meio).
-const COCKPIT_IMG_RE = /^Imagem enviada via cockpit: (\/[^\s]+?\.(?:jpe?g|png|gif|webp))\s*(?:Caption:\s*([\s\S]+))?$/i;
+// Captura direto a partir de `/uploads/agents/` pra obter URL pública.
+const COCKPIT_IMG_RE = /^Imagem enviada via cockpit: \S*?(\/uploads\/agents\/[^\s]+?\.(?:jpe?g|png|gif|webp))\s*(?:Caption:\s*([\s\S]+))?$/i;
 
 function parseCockpitImage(text: string): { url: string; caption: string | null } | null {
   const match = text.match(COCKPIT_IMG_RE);
   if (!match) return null;
-  const absPath = match[1];
-  const uploadsIdx = absPath.indexOf('/uploads/');
-  if (uploadsIdx === -1) return null;
   return {
-    url: absPath.slice(uploadsIdx),
-    caption: match[2]?.trim() || null,
+    url: match[1],
+    caption: match[2]?.trim() ?? null,
   };
 }
 
@@ -120,7 +117,13 @@ const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: strin
             className="msg-image-link"
             aria-label="Abrir imagem em tamanho completo"
           >
-            <img src={image.url} alt={image.caption ?? 'imagem enviada'} className="msg-image-thumb" />
+            <img
+              src={image.url}
+              alt=""
+              className="msg-image-thumb"
+              loading="lazy"
+              decoding="async"
+            />
           </a>
           {image.caption && (
             <div className="msg-image-caption">
