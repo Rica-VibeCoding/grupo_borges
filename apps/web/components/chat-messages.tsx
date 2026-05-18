@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -336,6 +336,47 @@ function useTickingNow(enabled: boolean): number {
   return nowMs;
 }
 
+function subagentName(entry: SubagentStatusEntry | null, fallback: string): string {
+  if (!entry) return fallback;
+  return entry.description || entry.agent_type || entry.session_name || entry.agent_slug || fallback;
+}
+
+function subagentKind(entry: SubagentStatusEntry | null): string {
+  if (!entry) return 'Claude Code';
+  return entry.agent_type || (entry.spawned_by_tool ? 'subsessão MCP' : 'Claude Code');
+}
+
+function subagentDetails(entry: SubagentStatusEntry | null, statusLabel: string, fallback: string) {
+  const name = subagentName(entry, fallback);
+  const rows = [
+    ['nome', name],
+    ['tipo', subagentKind(entry)],
+    ['tarefa', entry?.task_id || '—'],
+    ['sessão', entry?.session_name || '—'],
+    ['estado', statusLabel],
+  ];
+  return (
+    <div className="one-line-chip-sections">
+      {rows.map(([label, value]) => (
+        <div key={label} className="subagent-detail-row">
+          <span className="one-line-chip-section-head">{label}</span>
+          <span className="mono">{value}</span>
+        </div>
+      ))}
+      {entry?.prompt && (
+        <div className="one-line-chip-section">
+          <span className="one-line-chip-section-head">prompt</span>
+          <pre className="mono"><code>{entry.prompt}</code></pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubagentIcon({ tone }: { tone: 'idle' | 'active' | 'completed' | 'stalled' }) {
+  return <span className="subagent-status-icon" data-tone={tone} aria-hidden="true" />;
+}
+
 const SidechainChip = memo(function SidechainChip({
   count,
   durMs,
@@ -347,19 +388,22 @@ const SidechainChip = memo(function SidechainChip({
   liveStatus: SubagentStatusEntry | null;
   ts?: string;
 }) {
-  const nowMs = useTickingNow(liveStatus?.status === 'active');
+  const nowMs = useTickingNow(liveStatus?.status === 'active' || liveStatus?.status === 'starting');
   let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
-  let label = `Subagent: ${count}x`;
+  let statusLabel = `${count}x`;
+  let summary = subagentName(liveStatus, statusLabel);
   let trailing: string | undefined = durMs !== null && durMs > 0 ? formatMs(durMs) : undefined;
 
   if (liveStatus) {
-    if (liveStatus.status === 'active') {
+    if (liveStatus.status === 'active' || liveStatus.status === 'starting') {
       tone = 'active';
-      label = 'Subagent: rodando…';
+      statusLabel = liveStatus.status === 'starting' ? 'iniciando' : 'rodando';
+      summary = `${subagentName(liveStatus, statusLabel)} · ${statusLabel}`;
       trailing = formatMs(Math.max(0, nowMs - liveStatus.started_at_ms));
     } else if (liveStatus.status === 'completed') {
       tone = 'completed';
-      label = 'Subagent: concluído';
+      statusLabel = 'concluído';
+      summary = `${subagentName(liveStatus, 'subagente')} · concluído`;
       trailing = liveStatus.duration_ms != null
         ? formatMs(liveStatus.duration_ms)
         : (durMs !== null && durMs > 0 ? formatMs(durMs) : undefined);
@@ -368,7 +412,8 @@ const SidechainChip = memo(function SidechainChip({
       const sinceMs = liveStatus.last_seen_ms != null
         ? Math.max(0, nowMs - liveStatus.last_seen_ms)
         : 0;
-      label = `Subagent: sem resposta há ${formatMs(sinceMs)}`;
+      statusLabel = `sem resposta há ${formatMs(sinceMs)}`;
+      summary = `${subagentName(liveStatus, 'subagente')} · ${statusLabel}`;
       trailing = undefined;
     }
   }
@@ -377,11 +422,13 @@ const SidechainChip = memo(function SidechainChip({
     <div className="msg-row msg-row-assistant">
       <OneLineChip
         kind="sidechain-cluster"
-        icon="⚙️"
-        label={label}
+        icon={<SubagentIcon tone={tone} />}
+        label="Subagent:"
+        summary={summary}
         trailing={trailing}
         timestamp={formatHHMM(ts)}
         tone={tone}
+        expandBody={subagentDetails(liveStatus, statusLabel, `${count}x`)}
       />
     </div>
   );
@@ -414,7 +461,7 @@ const SidechainClusterChip = memo(function SidechainClusterChip({
     for (const g of groups) {
       const entry = resolveSidechainLiveStatus(g.rootUuid, g.parentUuids, statusMap);
       if (!entry) continue;
-      if (entry.status === 'active') {
+      if (entry.status === 'active' || entry.status === 'starting') {
         activeN++;
         if (entry.started_at_ms > mostRecentActiveStart) {
           mostRecentActiveStart = entry.started_at_ms;
@@ -431,32 +478,38 @@ const SidechainClusterChip = memo(function SidechainClusterChip({
   const nowMs = useTickingNow(aggregated.activeN > 0);
 
   let tone: 'idle' | 'active' | 'completed' | 'stalled' = 'idle';
-  let label = `Subagent: ${subagentCount}x`;
+  let summary = `${subagentCount}x`;
+  let statusLabel = `${subagentCount}x`;
   let trailing: string | undefined = totalDurMs !== null && totalDurMs > 0 ? formatMs(totalDurMs) : undefined;
 
   if (aggregated.activeN > 0) {
     tone = 'active';
-    label = `Subagent: ${subagentCount}x · ${aggregated.activeN} rodando`;
+    statusLabel = `${aggregated.activeN} rodando`;
+    summary = `${subagentCount}x · ${statusLabel}`;
     trailing = aggregated.mostRecentActiveStart > 0
       ? formatMs(Math.max(0, nowMs - aggregated.mostRecentActiveStart))
       : undefined;
   } else if (aggregated.stalledN > 0) {
     tone = 'stalled';
-    label = `Subagent: ${subagentCount}x · ${aggregated.stalledN} sem resposta`;
+    statusLabel = `${aggregated.stalledN} sem resposta`;
+    summary = `${subagentCount}x · ${statusLabel}`;
     trailing = undefined;
   } else if (aggregated.completedN === subagentCount && subagentCount > 0) {
     tone = 'completed';
-    label = `Subagent: ${subagentCount}x concluídos`;
+    statusLabel = 'concluídos';
+    summary = `${subagentCount}x concluídos`;
   }
 
   return (
     <div className="msg-row msg-row-assistant">
       <OneLineChip
         kind="sidechain-cluster"
-        icon="⚙️"
-        label={label}
+        icon={<SubagentIcon tone={tone} />}
+        label="Subagent:"
+        summary={summary}
         trailing={trailing}
         tone={tone}
+        expandBody={subagentDetails(null, statusLabel, `${subagentCount} subagentes`)}
       />
     </div>
   );
@@ -564,48 +617,111 @@ export function ChatMessages({
   optimistic,
   agentName,
 }: ChatMessagesProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // `stuck` = sentinel está visível no viewport do scroller (Rica grudado no
+  // fim). Decisão central pro bottom-stick: auto-scroll só quando true.
+  // Inicializa true: feed novo sempre nasce no fim.
   const [stuck, setStuck] = useState(true);
   const [hasNew, setHasNew] = useState(false);
+  // Ref espelho do stuck — RO/IO callbacks leem sem precisar de deps.
+  const stuckRef = useRef(true);
+  stuckRef.current = stuck;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
   const items = useMemo(() => coalesceSidechainGroups(buildRenderItems(messages)), [messages]);
   const optimisticLen = optimistic?.length ?? 0;
 
-  // Auto-scroll quando "grudado" no fim; senão acende pílula "↓ nova mensagem".
-  // Durante replay (loading=true), suprime hasNew — senão a pílula pulsa
-  // a cada um dos N eventos do dump histórico (UX ruim, falso "novo").
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (stuck) {
-      el.scrollTop = el.scrollHeight;
-      setHasNew(false);
-    } else if (!loading) {
-      setHasNew(true);
-    }
-  }, [items.length, optimisticLen, stuck, loading]);
+  // Callback refs (não useEffect): componente alterna entre empty-state e
+  // scroller; useEffect de mount rodaria com refs null e nunca refaria setup.
+  // Callback ref dispara no attach/detach — lifecycle correto pros observers.
+  // RO observa o wrapper interno (scroller tem altura fixa via flex).
+  const ioRef = useRef<IntersectionObserver | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const roRafIdRef = useRef(0);
 
-  // Reset quando o slug muda (messages volta a 0).
-  useEffect(() => {
-    if (messages.length === 0) {
-      setStuck(true);
-      setHasNew(false);
-    }
-  }, [messages.length]);
-
-  const onScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    setStuck(atBottom);
-    if (atBottom) setHasNew(false);
+  const scrollerCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (ioRef.current) { ioRef.current.disconnect(); ioRef.current = null; }
+    scrollRef.current = node;
+    if (!node) return;
+    // Callback refs disparam após commit do subtree → sentinelRef já existe.
+    const target = sentinelRef.current;
+    if (!target) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          setStuck(true);
+          setHasNew(false);
+        } else {
+          setStuck(false);
+        }
+      },
+      { root: node, rootMargin: '0px 0px 100px 0px', threshold: 0 },
+    );
+    io.observe(target);
+    ioRef.current = io;
   }, []);
 
+  const contentCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (roRafIdRef.current) {
+      cancelAnimationFrame(roRafIdRef.current);
+      roRafIdRef.current = 0;
+    }
+    contentRef.current = node;
+    if (!node) return;
+    // Tracking de altura — só reagimos a mudança vertical. Timers de chip
+    // (`Subagent: 17s → 18s`) mudam LARGURA, acionariam pílula espúria.
+    let lastHeight = node.getBoundingClientRect().height;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const h = entry.contentBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+      if (h === lastHeight) return;
+      lastHeight = h;
+      if (roRafIdRef.current) return;
+      roRafIdRef.current = requestAnimationFrame(() => {
+        roRafIdRef.current = 0;
+        // Durante loading força grudado: user não interage com replay,
+        // estabiliza no fim antes de assumir controle.
+        if (loadingRef.current || stuckRef.current) {
+          sentinelRef.current?.scrollIntoView({ block: 'end' });
+        } else {
+          setHasNew(true);
+        }
+      });
+    });
+    ro.observe(node);
+    roRef.current = ro;
+  }, []);
+
+  // Reset em troca de agente — stuck/hasNew do feed anterior não valem aqui.
+  // Sem isso, abrir agente cheio vindo de outro deixa stuck=false residual e
+  // pílula acende antes do IO estabilizar.
+  useEffect(() => {
+    setStuck(true);
+    setHasNew(false);
+  }, [slug]);
+
+  // Auto-stick em mudança de items/optimistic. Esse é o caminho previsível
+  // pra "novos itens grudam no fim" — dep-based, dispara só quando length
+  // muda (não quando stuck muda). O RO no content cobre mudança de altura
+  // sem mudança de length (streaming dentro de uma msg, chip expand).
+  useEffect(() => {
+    if (loadingRef.current || stuckRef.current) {
+      sentinelRef.current?.scrollIntoView({ block: 'end' });
+    } else if (items.length > 0 || optimisticLen > 0) {
+      setHasNew(true);
+    }
+  }, [items.length, optimisticLen]);
+
   const goBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    sentinelRef.current?.scrollIntoView({ block: 'end' });
     setStuck(true);
     setHasNew(false);
   }, []);
@@ -621,12 +737,13 @@ export function ChatMessages({
   return (
     <div className="chat-messages-wrap">
       <div
-        ref={scrollRef}
+        ref={scrollerCallbackRef}
         className="chat-messages-scroll"
-        onScroll={onScroll}
+        data-chat-scroller="1"
         aria-live="polite"
         aria-busy={loading}
       >
+        <div ref={contentCallbackRef} className="chat-messages-content">
         {items.map((item) => {
           if (item.kind === 'sidechain-group') {
             const liveStatus = resolveSidechainLiveStatus(
@@ -719,6 +836,9 @@ export function ChatMessages({
             )}
           </>
         )}
+        {/* SENTINEL — NÃO condicionalizar: callback ref do scroller assume sentinel presente no mount. */}
+        <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
+        </div>
       </div>
       {!stuck && hasNew && !loading && (
         <button

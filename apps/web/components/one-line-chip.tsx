@@ -34,7 +34,8 @@
 // CSS mora em `app/globals.css` na seção `/* DS-70 OneLineChip */` — ver
 // abaixo do `.msg-chip-body`. Token names em `--chip-*` pra não colidir.
 
-import { memo, useId, useState, type ReactNode } from 'react';
+import { memo, useId, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 
 export type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
 import type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
@@ -68,6 +69,12 @@ export type OneLineChipProps = {
   defaultOpen?: boolean;
   /** Callback opcional ao alternar — útil pro caller logar interação. */
   onToggle?: (next: boolean) => void;
+  /** Scroller pai pra preservação de posição quando expand acontece acima
+   *  do viewport. Aceita HTMLElement ou getter. Default: o ancestor mais
+   *  próximo com `[data-chat-scroller]` — seletor canônico do feed de chat.
+   *  Em outros contextos (kanban, statusline), passe explicitamente; sem
+   *  scroller resolvido, expand acontece sem preservação. */
+  scrollAnchor?: HTMLElement | (() => HTMLElement | null);
 };
 
 export const OneLineChip = memo(function OneLineChip({
@@ -81,10 +88,12 @@ export const OneLineChip = memo(function OneLineChip({
   tone = 'idle',
   defaultOpen = false,
   onToggle,
+  scrollAnchor,
 }: OneLineChipProps) {
   const [open, setOpen] = useState(defaultOpen);
   const expandable = expandBody != null;
   const bodyId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // Sem useCallback: `toggle` é passado direto pro <button> nativo, que não
   // é memoizado — identidade da fn não importa pro filho. Wrap aqui só
@@ -92,15 +101,45 @@ export const OneLineChip = memo(function OneLineChip({
   // "useCallback only matters when passing the function to a memoized child".
   function toggle() {
     if (!expandable) return;
-    setOpen((prev) => {
-      const next = !prev;
-      onToggle?.(next);
-      return next;
+    // Anchor preserve: chip acima do viewport não pode empurrar conteúdo já
+    // lido pra cima. flushSync força commit do open pra medir delta real.
+    const scroller =
+      typeof scrollAnchor === 'function' ? scrollAnchor()
+      : scrollAnchor ?? (rootRef.current?.closest('[data-chat-scroller]') as HTMLElement | null);
+    if (!scroller) {
+      setOpen((prev) => {
+        const next = !prev;
+        onToggle?.(next);
+        return next;
+      });
+      return;
+    }
+
+    const chipTop = rootRef.current?.getBoundingClientRect().top ?? 0;
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    const chipAboveViewport = chipTop < scrollerTop;
+    const prevScrollHeight = scroller.scrollHeight;
+    const prevScrollTop = scroller.scrollTop;
+
+    flushSync(() => {
+      setOpen((prev) => {
+        const next = !prev;
+        onToggle?.(next);
+        return next;
+      });
     });
+
+    if (chipAboveViewport) {
+      const delta = scroller.scrollHeight - prevScrollHeight;
+      if (delta !== 0) {
+        scroller.scrollTop = prevScrollTop + delta;
+      }
+    }
   }
 
   return (
     <div
+      ref={rootRef}
       className="one-line-chip"
       data-kind={kind}
       data-tone={tone}
