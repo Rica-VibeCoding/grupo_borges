@@ -9,7 +9,7 @@ import json
 import time
 from typing import Annotated, Any, AsyncGenerator
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from db.store import GrupoBorgesDB
@@ -59,6 +59,8 @@ async def stream_global_events(
     Cada evento SSE tem `event: subagent_status` e `data: {slug, ...SubagentStatusEntry}`.
     """
     slug_set = {s.strip() for s in slugs.split(",") if s.strip()}
+    if not slug_set:
+        raise HTTPException(status_code=400, detail="slugs= é obrigatório (1+ slugs separados por vírgula)")
 
     async def _stream() -> AsyncGenerator[ServerSentEvent, None]:
         # Captura cursor ANTES do snapshot: janela entre os dois é coberta

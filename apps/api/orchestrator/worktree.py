@@ -87,21 +87,55 @@ def cleanup_worktree_sync(
         logger.debug("Worktree %s removido (subsessão %s)", worktree_path, subsession_id)
 
 
+def _tmux_subsession_worktrees() -> set[str]:
+    """Reconcilia worktrees /tmp/subsession-* com tmux sessions sub-* vivas.
+
+    Em hot-reload da API (dev) ou restart com sessões legítimas em curso,
+    _subagent_state nasce vazio mas o tmux ainda hospeda claude --bg em
+    /tmp/subsession-<id>. Sem esse check o boot sweep apagaria o cwd do
+    processo vivo. Best-effort: falha silenciosa preserva tudo.
+    """
+    paths: set[str] = set()
+    try:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return paths
+    for name in (line.strip() for line in result.stdout.splitlines()):
+        if not name.startswith("sub-"):
+            continue
+        try:
+            cwd_result = subprocess.run(
+                ["tmux", "display-message", "-t", name, "-p", "#{pane_current_path}"],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            continue
+        cwd = cwd_result.stdout.strip()
+        if cwd.startswith(f"/tmp/{_SUBSESSION_PREFIX}"):
+            paths.add(cwd)
+    return paths
+
+
 def sweep_orphan_worktrees_sync(
     workspace_paths: list[str],
     active_worktree_paths: set[str],
 ) -> int:
-    """Remove /tmp/subsession-* sem entrada ativa em _subagent_state.
+    """Remove /tmp/subsession-* sem entrada ativa em _subagent_state nem em tmux.
 
-    Chamado no boot da API após reboot (subsessões efêmeras — OK remover sem checar commits).
+    Chamado no boot da API após reboot. Reconcilia com tmux pra não apagar
+    worktrees de subsessões legítimas em curso (cenário hot-reload em dev).
     Retorna quantidade de diretórios removidos.
     """
+    protected = set(active_worktree_paths) | _tmux_subsession_worktrees()
     removed = 0
     with contextlib.suppress(OSError):
         for entry in Path("/tmp").iterdir():
             if not entry.name.startswith(_SUBSESSION_PREFIX):
                 continue
-            if str(entry) in active_worktree_paths:
+            if str(entry) in protected:
                 continue
             shutil.rmtree(str(entry), ignore_errors=True)
             removed += 1

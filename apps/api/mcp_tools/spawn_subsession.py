@@ -52,28 +52,6 @@ class SpawnSubsessionInput(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-def _check_no_dirty_index(workspace_path: str) -> None:
-    """Falha se há mudanças não-commitadas (staged ou unstaged) em arquivos rastreados.
-
-    Usa `git diff HEAD --quiet` em vez de --porcelain: ignora untracked files (como
-    .claude/ gerado pelo CC em runtime) que não afetam o worktree de HEAD.
-    """
-    result = subprocess.run(
-        ["git", "diff", "HEAD", "--quiet"],
-        cwd=workspace_path,
-        capture_output=True,
-        timeout=5,
-    )
-    if result.returncode == 1:
-        raise ValueError(
-            "Workspace pai tem mudanças não-commitadas — commita antes de spawnar"
-        )
-    if result.returncode != 0:
-        raise ValueError(
-            f"git diff HEAD falhou em {workspace_path}: {result.stderr.decode(errors='replace').strip()}"
-        )
-
-
 def _create_worktree_sync(workspace_path: str, worktree_path: str) -> None:
     subprocess.run(
         ["git", "worktree", "add", worktree_path, "HEAD"],
@@ -85,6 +63,8 @@ def _create_worktree_sync(workspace_path: str, worktree_path: str) -> None:
 
 
 def _launch_in_tmux_sync(session_name: str, worktree_path: str, prompt: str) -> None:
+    import time
+
     server = libtmux.Server()
     session = server.new_session(session_name=session_name, detached=True, kill_session=False)
     pane = session.active_pane
@@ -93,6 +73,22 @@ def _launch_in_tmux_sync(session_name: str, worktree_path: str, prompt: str) -> 
         f"claude --dangerously-skip-permissions --bg {shlex.quote(prompt)}"
     )
     pane.send_keys(cmd)
+    # Validação leve: 1.2s depois, capture_pane e procura sinais de falha óbvia
+    # (binário ausente, cd em path errado). Sem isso, fire-and-forget devolvia
+    # status="starting" mesmo com claude --bg morto, e o estado só limpava no
+    # TTL de 10min do SubsessionSweeper.
+    time.sleep(1.2)
+    output = "\n".join(pane.capture_pane() or [])
+    _BAD_SIGNALS = (
+        "command not found",
+        "claude: not found",
+        "No such file or directory",
+        "cd: ",
+    )
+    if any(signal in output for signal in _BAD_SIGNALS):
+        raise libtmux_exc.LibTmuxException(
+            f"claude --bg falhou ao iniciar em {session_name}: {output[-200:]}"
+        )
 
 
 def _force_remove_worktree_sync(workspace_path: str, worktree_path: str) -> None:
@@ -165,10 +161,12 @@ async def spawn_subsession(
     session_name = f"sub-{slug}-{short_id}"
     worktree_path = f"/tmp/subsession-{subsession_id}"
 
-    # 1. Dirty index check — falha rápido antes de criar worktree
-    await asyncio.to_thread(_check_no_dirty_index, workspace_path)
+    # Worktree isolado (worktree sempre — regra cardinal v2).
+    # NÃO checamos dirty index: `git worktree add HEAD` clona do HEAD, não do
+    # working tree, então mudanças unstaged no monorepo do pai não vazam pro
+    # worktree do filho. Removido em 2026-05-18 após Tara reportar bloqueio
+    # 409 universal causado por arquivo modificado em ze-shared (raiz git).
 
-    # 2. Worktree isolado (worktree sempre — regra cardinal v2)
     try:
         await asyncio.to_thread(_create_worktree_sync, workspace_path, worktree_path)
     except subprocess.CalledProcessError as exc:
