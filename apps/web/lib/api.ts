@@ -12,6 +12,7 @@ import type {
   ReviewActionResponse,
   ReviewEventsResponse,
   ReviewMode,
+  SubagentEntry,
   Task,
   TaskHandoffResponse,
   TaskEvent,
@@ -369,4 +370,43 @@ export async function fetchReviews(
 export async function deleteTask(taskId: string): Promise<void> {
   const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(await errorDetail(res, `deleteTask failed: ${res.status}`));
+}
+
+export type SubsessionSpawnPayload = {
+  task_id: string;
+  prompt: string;
+  visibility: boolean;
+  skill?: string;
+};
+
+export type SubsessionSpawnResult = {
+  subsession_id: string;
+  session_name: string;
+  status: string;
+};
+
+export async function spawnSubsession(
+  agentSlug: string,
+  payload: SubsessionSpawnPayload,
+): Promise<SubsessionSpawnResult> {
+  const body = { ...payload, agent_slug: agentSlug };
+  const res = await fetch(`/api/agents/${encodeURIComponent(agentSlug)}/subagents/spawn`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `spawnSubsession failed: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchTaskSubsessions(
+  agentSlug: string,
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<SubagentEntry[]> {
+  const url = `/api/agents/${encodeURIComponent(agentSlug)}/subagents?task_id=${encodeURIComponent(taskId)}`;
+  const res = await fetch(url, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(`fetchTaskSubsessions failed: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data.subagents ?? []);
 }

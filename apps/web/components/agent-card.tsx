@@ -1,16 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import type { Agent, AgentActivityState, AgentCli, AgentModel, AgentStatus } from '../lib/cockpit-types';
+import type { Agent, AgentActivityState, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
-import { createAgentInstance } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
 import { useSubagentActiveCount } from '../lib/subagent-activity-context';
 import { formatRelativeShort, summarize } from './activity-feed';
 import { AgentStatusline } from './agent-statusline';
-import { SelectField } from './select-field';
 
 // V2.4 — 4 estados, textos pt-BR próprios. Glow na borda; ocioso estático,
 // trabalhando pulsa devagar (~2s), aguardando pulsa intenso (~1s), offline opaco.
@@ -43,22 +40,6 @@ function formatLifecycle(agent: Agent): string {
   return agent.lifecycle_detail ? agent.lifecycle_detail : (agent.lifecycle_status ?? '—');
 }
 
-const CLI_OPTIONS: Array<{ value: AgentCli; label: string }> = [
-  { value: 'claude_code', label: 'Claude Code' },
-  { value: 'codex', label: 'Codex' },
-];
-
-const MODELS_BY_CLI: Record<AgentCli, AgentModel[]> = {
-  claude_code: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
-  codex: [
-    'codex-gpt-5-5',
-    'codex-gpt-5-4',
-    'codex-gpt-5-4-mini',
-    'codex-gpt-5-3-codex',
-    'codex-gpt-5-2',
-  ],
-};
-
 function WifiOffIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -80,8 +61,7 @@ export function AgentCard({
   agent: Agent;
   serverNow: number;
 }) {
-  const { activityOverrides, events, mutate } = useFleet();
-  const [instanceDialogOpen, setInstanceDialogOpen] = useState(false);
+  const { activityOverrides, events } = useFleet();
   const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
@@ -192,33 +172,6 @@ export function AgentCard({
                 +{agent.instances.length}
               </button>
             )}
-            <Dialog.Root open={instanceDialogOpen} onOpenChange={setInstanceDialogOpen}>
-              <Dialog.Trigger asChild>
-                <button
-                  type="button"
-                  className="instance-add"
-                  aria-label={`Criar nova instância de ${agent.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  ＋
-                </button>
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Overlay className="agent-modal-overlay" />
-                <Dialog.Content
-                  className="instance-dialog mono"
-                  onClick={(e) => e.stopPropagation()}
-                  aria-describedby={undefined}
-                >
-                  <Dialog.Title className="instance-dialog-title">Nova instância</Dialog.Title>
-                  <NewInstanceForm
-                    agent={agent}
-                    onCreated={mutate}
-                    onClose={() => setInstanceDialogOpen(false)}
-                  />
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
           </span>
         </div>
         <div className="last-action mono" aria-hidden="true">
@@ -242,80 +195,6 @@ export function AgentCard({
 
       </div>
     </article>
-  );
-}
-
-function NewInstanceForm({
-  agent,
-  onCreated,
-  onClose,
-}: {
-  agent: Agent;
-  onCreated: () => Promise<void>;
-  onClose: () => void;
-}) {
-  const [cli, setCli] = useState<AgentCli>((agent.cli_default as AgentCli) || 'claude_code');
-  const [model, setModel] = useState<AgentModel>(
-    () => {
-      const def = (agent.model_default as AgentModel) || 'claude-haiku-4-5';
-      const initialCli = (agent.cli_default as AgentCli) || 'claude_code';
-      return MODELS_BY_CLI[initialCli].includes(def) ? def : MODELS_BY_CLI[initialCli][0];
-    },
-  );
-  const [isSubagent, setIsSubagent] = useState(false);
-  const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
-  const [message, setMessage] = useState<string | null>(null);
-
-  const availableModels = MODELS_BY_CLI[cli];
-  function onCliChange(next: AgentCli) {
-    setCli(next);
-    if (!MODELS_BY_CLI[next].includes(model)) setModel(MODELS_BY_CLI[next][0]);
-  }
-
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setState('saving');
-    setMessage(null);
-    try {
-      const result = await createAgentInstance(agent.slug, { cli, model, is_subagent: isSubagent });
-      await onCreated();
-      if (result.session_error) {
-        setMessage(`instância criada; tmux falhou: ${result.session_error}`);
-      } else {
-        onClose();
-      }
-      setState('idle');
-    } catch (err) {
-      setState('error');
-      setMessage(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  return (
-    <form className="instance-form" onSubmit={submit}>
-      <SelectField<AgentCli> label="CLI" value={cli} onValueChange={onCliChange} options={CLI_OPTIONS} />
-      <SelectField<AgentModel>
-        label="Modelo"
-        value={model}
-        onValueChange={setModel}
-        options={availableModels.map((v) => ({ value: v, label: v }))}
-      />
-      <label className="check-row">
-        <input
-          type="checkbox"
-          checked={isSubagent}
-          onChange={(e) => setIsSubagent(e.currentTarget.checked)}
-        />
-        <span>is_subagent</span>
-      </label>
-      {message && <p className="form-note" data-kind={state === 'error' ? 'error' : 'info'}>{message}</p>}
-      <button type="submit" className="form-submit" disabled={state === 'saving'}>
-        {state === 'saving' ? 'CRIANDO…' : 'CRIAR'}
-      </button>
-      <button type="button" className="form-cancel" onClick={onClose} disabled={state === 'saving'}>
-        FECHAR
-      </button>
-    </form>
   );
 }
 

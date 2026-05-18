@@ -10,6 +10,7 @@ import { SelectField } from './select-field';
 import { TaskEditForm } from './task-edit-form';
 import { TaskCommitsList } from './task-commits-list';
 import { TaskReviewActions } from './task-review-actions';
+import { SubsessionPopover } from './subsession-popover';
 import { formatDateTime } from '../lib/format-time';
 
 type UiTaskStatus = Exclude<TaskPatchStatus, 'ready'>;
@@ -422,6 +423,12 @@ export function TaskDetailModal({
               </details>
 
               <footer className="agent-modal-footer task-detail-footer">
+                {effectiveTask.assignee && !editing && !confirmDelete && (
+                  <SubsessionPopover
+                    taskId={effectiveTask.id}
+                    agentSlug={effectiveTask.assignee}
+                  />
+                )}
                 <div className="task-detail-footer-info">
                   {loadState === 'loading' && <span>carregando detalhe fresco...</span>}
                   {runHeartbeatStale && <span className="task-detail-error">run sem heartbeat recente</span>}

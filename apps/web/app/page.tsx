@@ -5,6 +5,7 @@ import { SseBanner } from '../components/sse-banner';
 import { ToastStack } from '../components/toast-stack';
 import { CockpitLiveV2 } from '../components/v2/cockpit-live-v2';
 import { KpiStripThin } from '../components/v2/kpi-strip-thin';
+import { subsessionCss } from '../components/subsession-popover';
 import { fetchEvents, fetchFleet, fetchTasks } from '../lib/api';
 import { cockpitCss } from '../lib/cockpit-css';
 import { EMPTY_EVENTS, EMPTY_FLEET, EMPTY_TASKS } from '../lib/cockpit-mock';
@@ -326,6 +327,7 @@ export default async function Page() {
     <>
       <style dangerouslySetInnerHTML={{ __html: cockpitCss }} />
       <style dangerouslySetInnerHTML={{ __html: v2Css }} />
+      <style dangerouslySetInnerHTML={{ __html: subsessionCss }} />
       <div className="corner-mark tl" />
       <div className="corner-mark tr" />
       <div className="corner-mark bl" />

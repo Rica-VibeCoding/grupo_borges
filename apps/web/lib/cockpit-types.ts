@@ -271,6 +271,17 @@ export type AgentTablesResponse = {
   count: number;
 };
 
+export type SubagentEntry = {
+  subsession_id: string;
+  agent_slug: string;
+  task_id: string | null;
+  visibility: boolean;
+  status: string;
+  session_name: string;
+  started_at: number;
+  spawned_by_tool: boolean;
+};
+
 export function deriveInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '??';
