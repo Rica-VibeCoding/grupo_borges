@@ -12,55 +12,55 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
   const preRef = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
 
-  const onCopy = useCallback(async () => {
+  const flashCopied = useCallback(() => {
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }, []);
+
+  const onCopy = useCallback(() => {
     const text = preRef.current?.textContent ?? '';
     if (!text) return;
 
-    // 1) Caminho preferido: Clipboard API (precisa de secure context).
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-        return;
-      } catch {
-        // cai pro fallback abaixo
-      }
-    }
-
-    // 2) Fallback iOS-safe: textarea contentEditable + setSelectionRange.
-    //    iOS Safari rejeita execCommand('copy') em <textarea readonly>; o
-    //    pattern abaixo (contentEditable=true + selectNodeContents +
-    //    setSelectionRange) é o único que funciona consistente em
-    //    iOS 13+. font-size 16px evita zoom automático.
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.contentEditable = 'true';
-    ta.readOnly = false;
-    ta.style.cssText = 'position:fixed;top:-9999px;left:0;width:1px;height:1px;font-size:16px;opacity:0;';
-    document.body.appendChild(ta);
-
-    const range = document.createRange();
-    range.selectNodeContents(ta);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    ta.setSelectionRange(0, text.length);
-
-    let ok = false;
+    // 1) Caminho síncrono primeiro (execCommand) — funciona em iOS Safari
+    //    e mantém transient activation. Pattern iOS-safe: textarea
+    //    contentEditable=true + selectNodeContents + setSelectionRange.
+    //    iOS Safari rejeita execCommand em textarea readonly; bug histórico
+    //    é navigator.clipboard.writeText ficar pending sem resolver/rejeitar
+    //    no iOS (sintoma: botão "pensa" mas clipboard vazio).
+    let copiedViaExec = false;
     try {
-      ok = document.execCommand('copy');
-    } catch {
-      ok = false;
-    }
-    sel?.removeAllRanges();
-    document.body.removeChild(ta);
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.contentEditable = 'true';
+      ta.readOnly = false;
+      ta.style.cssText = 'position:fixed;top:-9999px;left:0;width:1px;height:1px;font-size:16px;opacity:0;';
+      document.body.appendChild(ta);
 
-    if (ok) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      const range = document.createRange();
+      range.selectNodeContents(ta);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      ta.setSelectionRange(0, text.length);
+
+      copiedViaExec = document.execCommand('copy');
+      sel?.removeAllRanges();
+      document.body.removeChild(ta);
+    } catch {
+      copiedViaExec = false;
     }
-  }, []);
+
+    if (copiedViaExec) {
+      flashCopied();
+      return;
+    }
+
+    // 2) Fallback async: Clipboard API. Não bloqueia UI; se falhar,
+    //    silenciosamente; usuário pode tentar de novo.
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(flashCopied).catch(() => {});
+    }
+  }, [flashCopied]);
 
   return (
     <div className="code-block-wrap">
