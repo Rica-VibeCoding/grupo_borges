@@ -94,6 +94,11 @@ export function useMessagesStream(
   // do consumidor + N reconstruções dos useMemo. Bufferizamos e damos 1
   // setState no replay-end.
   const replayBufferRef = useRef<MessagePayload[] | null>(null);
+  // JP-18 R4: pós-replay, cada chunk SSE fazia setState próprio → N renders/
+  // reconstrução de useMemo por chunk no consumer. Acumulamos em ref e
+  // damos 1 setState/frame via requestAnimationFrame.
+  const pendingMessagesRef = useRef<MessagePayload[]>([]);
+  const rafIdRef = useRef<number | null>(null);
   // Watchdog: marca cada heartbeat/message recebido. setInterval verifica.
   const lastHeartbeatRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -168,6 +173,13 @@ export function useMessagesStream(
         clearTimeout(timer);
       }
       subagentGcTimersRef.current.clear();
+      // rAF pendente fica órfão se reconectar antes do flush. Cancela e
+      // descarta — backend reemite via since_id no replay.
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      pendingMessagesRef.current = [];
       setState((prev) => ({ ...prev, status: 'error', errorDetail: reason }));
       const attempt = retryCountRef.current;
       const delay =
@@ -180,6 +192,21 @@ export function useMessagesStream(
         setState((prev) => ({ ...prev, status: 'connecting' }));
         connect();
       }, delay);
+    }
+
+    function flushPendingMessages() {
+      rafIdRef.current = null;
+      if (!aliveRef.current) {
+        pendingMessagesRef.current = [];
+        return;
+      }
+      const pending = pendingMessagesRef.current;
+      if (pending.length === 0) return;
+      pendingMessagesRef.current = [];
+      setState((prev) => ({
+        ...prev,
+        messages: prev.messages.concat(pending),
+      }));
     }
 
     function flushReplayBuffer() {
@@ -231,10 +258,13 @@ export function useMessagesStream(
             // Em replay: buffer cresce, sem setState — flush dispara no replay-end
             replayBufferRef.current.push(payload);
           } else {
-            setState((prev) => ({
-              ...prev,
-              messages: prev.messages.concat(payload),
-            }));
+            // Live: acumula em ref e agenda 1 flush por frame. Sem isso, cada
+            // chunk faz setState → re-render do consumer + reconstrução O(N) de
+            // useMemo no ChatMessages.
+            pendingMessagesRef.current.push(payload);
+            if (rafIdRef.current === null) {
+              rafIdRef.current = requestAnimationFrame(flushPendingMessages);
+            }
           }
         } catch {
           /* payload mal-formado: ignora linha, mantém stream */
@@ -339,6 +369,11 @@ export function useMessagesStream(
         clearTimeout(timer);
       }
       subagentGcTimersRef.current.clear();
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      pendingMessagesRef.current = [];
       replayBufferRef.current = null;
       setState((prev) => ({ ...prev, status: 'closed' }));
     };
