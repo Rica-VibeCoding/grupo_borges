@@ -34,7 +34,7 @@ test('detectSlashContext — caret=0 retorna null', () => {
 test('getSlashCommands — injeta nome do agente em todos exceto reload-plugins', () => {
   const cmds = getSlashCommands('Pavan');
   const byValue = Object.fromEntries(cmds.map((c) => [c.value, c.desc]));
-  for (const value of ['clear', 'compact', 'memory', 'restart', 'skill', 'status']) {
+  for (const value of ['checkpoint', 'clear', 'compact', 'memory', 'restart', 'skill', 'status']) {
     assert.match(
       byValue[value],
       /Pavan/,

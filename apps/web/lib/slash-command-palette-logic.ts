@@ -12,6 +12,7 @@ export type SlashCommand = {
 export function getSlashCommands(agentName: string): SlashCommand[] {
   const name = agentName.trim() || 'agente';
   return [
+    { value: 'checkpoint', label: '/checkpoint', desc: `${name} salva memória da sessão + gera bloco copiável de retomada` },
     { value: 'clear', label: '/clear', desc: `limpa o contexto de ${name}` },
     { value: 'compact', label: '/compact', desc: `compacta o contexto de ${name}` },
     { value: 'memory', label: '/memory', desc: `edita CLAUDE.md e auto-memory de ${name}` },
