@@ -106,17 +106,36 @@ export function classifyMessage(
 
   const taskNotification = parseTaskNotification(text);
   if (taskNotification) {
-    return {
-      kind: 'task-notification',
-      chip: {
-        icon: '⚙️',
-        label: `Task: ${taskNotification.summary.slice(0, 40)}`,
-        summary: `${taskNotification.status}: ${taskNotification.summary}`,
-      },
-      expandBody: JSON.stringify(taskNotification, null, 2),
-      rawRef,
-      tone: taskNotificationTone(taskNotification.status),
-    };
+    switch (taskNotification.kind) {
+      case 'background':
+        return {
+          kind: 'task-notification',
+          chip: {
+            icon: '⚙️',
+            label: `Task: ${taskNotification.summary.slice(0, 40)}`,
+            summary: `${taskNotification.status}: ${taskNotification.summary}`,
+          },
+          expandBody: JSON.stringify(taskNotification, null, 2),
+          rawRef,
+          tone: taskNotificationTone(taskNotification.status),
+        };
+      case 'monitor':
+        return {
+          kind: 'task-notification',
+          chip: {
+            icon: '⚙️',
+            label: `Monitor: ${truncate(taskNotification.summary, 40)}`,
+            summary: taskNotification.event,
+          },
+          expandBody: JSON.stringify({
+            taskId: taskNotification.taskId,
+            summary: taskNotification.summary,
+            event: taskNotification.event,
+          }, null, 2),
+          rawRef,
+          tone: 'active',
+        };
+    }
   }
 
   if (msg.message?.role === 'user') {

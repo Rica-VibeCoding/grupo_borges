@@ -6,6 +6,7 @@ import { classifyMessage } from '../lib/chat-payload-classifier.ts';
 import {
   doneTaskNotificationXml,
   failedTaskNotificationXml,
+  monitorTaskNotificationXml,
 } from '../lib/__fixtures__/task-notification.fixtures.ts';
 
 const baseMessage = {
@@ -304,6 +305,22 @@ test('classifyMessage — task-notification done propaga tone=completed', () => 
   assert.equal(payload.kind, 'task-notification');
   if (payload.kind === 'task-notification') {
     assert.equal(payload.tone, 'completed');
+  }
+});
+
+test('classifyMessage — task-notification monitor vira chip ativo com JSON limpo', () => {
+  const payload = classifyMessage(userText(76, monitorTaskNotificationXml));
+  assert.equal(payload.kind, 'task-notification');
+  if (payload.kind === 'task-notification') {
+    assert.deepEqual(payload.chip, {
+      icon: '⚙️',
+      label: 'Monitor: Monitor event: "Tara bmac929z9 — evento…',
+      summary: 'REPORT_READY: /tmp/tara-ios-form-bar.md (5882 bytes)',
+    });
+    assert.equal(payload.tone, 'active');
+    assert.match(payload.expandBody, /"taskId": "bvhvvwlz8"/);
+    assert.match(payload.expandBody, /"event": "REPORT_READY: \/tmp\/tara-ios-form-bar.md \(5882 bytes\)"/);
+    assert.doesNotMatch(payload.expandBody, /<task-notification>/);
   }
 });
 

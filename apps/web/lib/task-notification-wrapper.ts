@@ -6,11 +6,12 @@
 // reminder colado fazia o XML vazar em UserBubble.
 const ENVELOPE_BLOCKS_ONLY_RE = /^\s*(?:<(?:task-notification|system-reminder)\s*>[\s\S]*?<\/(?:task-notification|system-reminder)\s*>\s*)+$/;
 const FIRST_TASK_NOTIFICATION_RE = /<task-notification\s*>([\s\S]*?)<\/task-notification\s*>/;
-const TASK_NOTIFICATION_TAG_RE = /<(task-id|tool-use-id|output-file|status|summary)\s*>([\s\S]*?)<\/\1\s*>/g;
+const TASK_NOTIFICATION_TAG_RE = /<(task-id|tool-use-id|output-file|status|summary|event)\s*>([\s\S]*?)<\/\1\s*>/g;
 
-type TaskNotificationTag = 'task-id' | 'tool-use-id' | 'output-file' | 'status' | 'summary';
+type TaskNotificationTag = 'task-id' | 'tool-use-id' | 'output-file' | 'status' | 'summary' | 'event';
 
-export type ParsedTaskNotification = {
+export type BackgroundTaskNotification = {
+  kind: 'background';
   taskId: string;
   toolUseId: string;
   outputFile: string;
@@ -19,6 +20,16 @@ export type ParsedTaskNotification = {
   raw: string;
 };
 
+export type MonitorTaskNotification = {
+  kind: 'monitor';
+  taskId: string;
+  summary: string;
+  event: string;
+  raw: string;
+};
+
+export type ParsedTaskNotification = BackgroundTaskNotification | MonitorTaskNotification;
+
 export function parseTaskNotification(raw: string): ParsedTaskNotification | null {
   if (!ENVELOPE_BLOCKS_ONLY_RE.test(raw)) return null;
 
@@ -26,6 +37,14 @@ export function parseTaskNotification(raw: string): ParsedTaskNotification | nul
   if (!first) return null;
 
   const tags = parseTaskNotificationTags(first[1]);
+  return parseBackgroundTaskNotification(tags, raw)
+    ?? parseMonitorTaskNotification(tags, raw);
+}
+
+function parseBackgroundTaskNotification(
+  tags: Partial<Record<TaskNotificationTag, string>>,
+  raw: string,
+): BackgroundTaskNotification | null {
   const taskId = tags['task-id'];
   const toolUseId = tags['tool-use-id'];
   const outputFile = tags['output-file'];
@@ -35,11 +54,31 @@ export function parseTaskNotification(raw: string): ParsedTaskNotification | nul
   if (!taskId || !toolUseId || !outputFile || !status || !summary) return null;
 
   return {
+    kind: 'background',
     taskId,
     toolUseId,
     outputFile,
     status,
     summary,
+    raw: raw.trim(),
+  };
+}
+
+function parseMonitorTaskNotification(
+  tags: Partial<Record<TaskNotificationTag, string>>,
+  raw: string,
+): MonitorTaskNotification | null {
+  const taskId = tags['task-id'];
+  const summary = tags.summary;
+  const event = tags.event;
+
+  if (!taskId || !summary || !event) return null;
+
+  return {
+    kind: 'monitor',
+    taskId,
+    summary,
+    event,
     raw: raw.trim(),
   };
 }
