@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import type { Agent, AgentActivityState, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
 import { useFleet } from '../lib/fleet-context';
@@ -62,7 +62,6 @@ export function AgentCard({
   serverNow: number;
 }) {
   const { activityOverrides, events } = useFleet();
-  const [instanceFocus, setInstanceFocus] = useState(false);
   const initials = deriveInitials(agent.name);
   const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
   const subagentActiveCount = useSubagentActiveCount(agent.slug);
@@ -83,9 +82,6 @@ export function AgentCard({
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
-  useEffect(() => {
-    if (agent.instances.length <= 1) setInstanceFocus(false);
-  }, [agent.instances.length]);
   const onKey = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -102,7 +98,6 @@ export function AgentCard({
       data-state={agent.status}
       data-activity-state={activityState}
       data-slug={agent.slug}
-      data-instance-focus={instanceFocus ? 'true' : 'false'}
       tabIndex={0}
       role="button"
       aria-haspopup="dialog"
@@ -160,19 +155,7 @@ export function AgentCard({
         <div className="meta-strip" aria-hidden="true">
           <span className="m-val lseen-val">{lastSeenFmt}</span>
           <span><span className="m-key">TAREFA</span><span className="m-val">{task ?? '—'}</span></span>
-          <span className="card-actions" onClick={(e) => e.stopPropagation()}>
-            {agent.instances.length > 1 && (
-              <button
-                type="button"
-                className="instance-pill"
-                aria-pressed={instanceFocus}
-                title="Destacar instâncias deste agente"
-                onClick={(e) => { e.stopPropagation(); setInstanceFocus((v) => !v); }}
-              >
-                +{agent.instances.length}
-              </button>
-            )}
-          </span>
+          <span className="card-actions" onClick={(e) => e.stopPropagation()} />
         </div>
         <div className="last-action mono" aria-hidden="true">
           {isCodexExecutor && agent.active_task_label ? (

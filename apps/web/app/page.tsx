@@ -210,13 +210,6 @@ const v2Css = `
 .v2-sidebar .agent-card[data-state="offline"] .card-head { min-height: 26px; }
 .v2-sidebar .agent-card[data-state="offline"] .avatar { width: 24px; height: 24px; font-size: 9px; }
 .v2-sidebar .agent-card[data-state="offline"] .avatar { filter: grayscale(0.6); opacity: 0.8; }
-/* Pílula +N continua clicável */
-.v2-sidebar .agent-card .instance-pill {
-  height: 19px;
-  min-width: 19px;
-  font-size: 10px;
-  padding: 0 5px;
-}
 /* Section label compacta na sidebar */
 .v2-sidebar .section-label { padding: 0 0 4px; font-size: 9px; }
 .v2-sidebar .section-label .num-tag { padding: 1px 6px; }
