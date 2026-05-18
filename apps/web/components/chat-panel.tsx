@@ -369,12 +369,16 @@ function ChatInput({
     };
   }, []);
 
-  // Auto-grow textarea
+  // Auto-grow textarea. overflow-y gerenciado aqui — CSS default é hidden pra
+  // evitar scrollbar durante medição de scrollHeight (reflow reduz largura →
+  // texto vaza fora do contorno no WebKit/iOS). Só ativa auto quando bate no cap.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 134)}px`;
+    const h = el.scrollHeight;
+    el.style.height = `${Math.min(h, 134)}px`;
+    el.style.overflowY = h > 134 ? 'auto' : 'hidden';
   }, [text]);
 
   // --- slash palette helpers (DS-62) ---

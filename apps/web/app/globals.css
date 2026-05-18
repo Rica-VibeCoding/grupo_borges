@@ -757,7 +757,7 @@
   letter-spacing: -0.011em;
   /* iOS Safari zooma input com font-size < 16px — manter 16px no mobile. */
   font-size: 15px; line-height: 1.45;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 @media (max-width: 600px) {
   .chat-input-textarea { font-size: 16px; }
