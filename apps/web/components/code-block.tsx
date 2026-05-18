@@ -24,6 +24,17 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
     window.setTimeout(() => setCopied(false), 1500);
   }, []);
 
+  const selectPreContents = useCallback(() => {
+    const pre = preRef.current;
+    if (!pre) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }, []);
+
   const onCopy = useCallback(() => {
     const text = preRef.current?.textContent ?? '';
     if (!text) return;
@@ -51,11 +62,14 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
       ta.setSelectionRange(0, text.length);
 
       copiedViaExec = document.execCommand('copy');
-      sel?.removeAllRanges();
       document.body.removeChild(ta);
     } catch {
       copiedViaExec = false;
     }
+
+    // Depois do copy, selecionar o <pre> real: feedback visual do que foi
+    // copiado + permite cmd/ctrl+C manual se o copy automático falhou.
+    selectPreContents();
 
     if (copiedViaExec) {
       flashCopied();
@@ -75,7 +89,7 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
     // 3) Último recurso (iOS Safari): Web Share API abre share sheet
     //    nativo com opção "Copiar". 1 tap extra mas 100% confiável.
     shareFallback(text);
-  }, [flashCopied]);
+  }, [flashCopied, selectPreContents]);
 
   return (
     <div className="code-block-wrap">

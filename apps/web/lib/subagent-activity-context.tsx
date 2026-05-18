@@ -178,7 +178,7 @@ export function useSubagentActiveCount(slug: string): number {
   return useMemo(() => {
     let n = 0;
     for (const entry of statusMap.values()) {
-      if (entry.status === 'active') n += 1;
+      if (entry.status === 'active' && entry.visibility !== false) n += 1;
     }
     return n;
   }, [statusMap]);

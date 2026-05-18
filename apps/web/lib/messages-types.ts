@@ -24,6 +24,7 @@ export type SubagentStatusEntry = {
   started_at_ms: number;
   last_seen_ms?: number;
   duration_ms?: number;
+  visibility?: boolean;
 };
 
 export type MessagePayload = {
