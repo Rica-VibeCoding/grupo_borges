@@ -78,7 +78,7 @@ export function SubsessionPopover({
       {activeSubsessions.length > 0 && (
         <ul className="subsession-list mono" aria-label="Subsessões ativas">
           {activeSubsessions.map((s) => (
-            <li key={s.subsession_id} className="subsession-item">
+            <li key={s.parent_uuid} className="subsession-item">
               <span className="subsession-dot" aria-hidden="true" />
               <span className="subsession-name">{s.session_name}</span>
               <span className="subsession-status">{s.status}</span>

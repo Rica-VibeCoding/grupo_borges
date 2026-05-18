@@ -272,7 +272,7 @@ export type AgentTablesResponse = {
 };
 
 export type SubagentEntry = {
-  subsession_id: string;
+  parent_uuid: string;
   agent_slug: string;
   task_id: string | null;
   visibility: boolean;
