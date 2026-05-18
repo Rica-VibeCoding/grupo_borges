@@ -26,11 +26,21 @@ import libtmux
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, Field
 
-from orchestrator.jsonl_watcher import register_spawned_subagent
+from orchestrator.jsonl_watcher import count_active_subsessions_for_task, register_spawned_subagent
+from services import workspace_reader
 
 _REPOS_ROOT = Path("/home/clawd/repos").resolve()
 _UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
 _PROMPT_MAX = 8_192
+_MAX_ACTIVE_SUBSESSIONS = 3
+
+
+class TooManySubsessionsError(Exception):
+    """Limite de subsessões ativas por task atingido."""
+
+
+class SkillNotFoundError(Exception):
+    """Skill solicitada não existe no workspace do agente-pai."""
 
 
 class SpawnSubsessionInput(BaseModel):
@@ -38,6 +48,7 @@ class SpawnSubsessionInput(BaseModel):
     agent_slug: str = Field(min_length=1, max_length=64)
     prompt: str = Field(min_length=1, max_length=_PROMPT_MAX)
     visibility: bool
+    skill: str | None = Field(default=None, max_length=128)
     metadata: dict[str, Any] | None = None
 
 
@@ -84,8 +95,12 @@ def _launch_in_tmux_sync(session_name: str, worktree_path: str, prompt: str) -> 
     pane.send_keys(cmd)
 
 
-def _cleanup_worktree_sync(workspace_path: str, worktree_path: str) -> None:
-    """Remove worktree com força — chamado em rollback e cleanup de stalled."""
+def _force_remove_worktree_sync(workspace_path: str, worktree_path: str) -> None:
+    """Remove worktree incondicionalmente — apenas para rollback de spawn falho.
+
+    Diferente de cleanup_worktree_sync em orchestrator/worktree.py:
+    não checa commits não-merged porque o spawn falhou antes de qualquer trabalho.
+    """
     subprocess.run(
         ["git", "worktree", "remove", "--force", worktree_path],
         cwd=workspace_path,
@@ -109,9 +124,35 @@ async def spawn_subsession(
 ) -> dict[str, Any]:
     """Cria worktree isolado + tmux session + registra subsessão.
 
+    Raises PermissionError se agent_slug != slug (só o agente-pai pode spawnar).
+    Raises TooManySubsessionsError se já há 3 subsessões ativas para task_id.
+    Raises SkillNotFoundError se skill solicitada não existe no workspace.
     Raises ValueError com mensagem descritiva em caso de pré-condição falha.
     Raises libtmux_exc.LibTmuxException se tmux falhar.
     """
+    # Validação 1 — permissão: só o agente-pai pode spawnar (slug = rota = pai).
+    if payload.agent_slug != slug:
+        raise PermissionError(
+            f"Permissão negada: '{payload.agent_slug}' não é o agente-pai '{slug}'"
+        )
+
+    # Validação 2 — limite 3 subsessões ativas por task.
+    active_count = count_active_subsessions_for_task(payload.task_id)
+    if active_count >= _MAX_ACTIVE_SUBSESSIONS:
+        raise TooManySubsessionsError(
+            f"Limite de {_MAX_ACTIVE_SUBSESSIONS} subsessões ativas por task atingido "
+            f"(task_id={payload.task_id!r}, ativas={active_count})"
+        )
+
+    # Validação 3 — skill deve existir no workspace do pai (se informada).
+    if payload.skill is not None:
+        skills = await asyncio.to_thread(workspace_reader.read_skills_cached, workspace_path)
+        skill_names = {s["name"] for s in skills}
+        if payload.skill not in skill_names:
+            raise SkillNotFoundError(
+                f"Skill '{payload.skill}' não encontrada no workspace de '{slug}'"
+            )
+
     if _UNSAFE_WORKSPACE_CHARS.search(workspace_path):
         raise ValueError("workspace_path contém caracteres inseguros")
 
@@ -139,7 +180,7 @@ async def spawn_subsession(
         await asyncio.to_thread(_launch_in_tmux_sync, session_name, worktree_path, payload.prompt)
     except libtmux_exc.LibTmuxException:
         # Cleanup worktree se tmux falhou
-        await asyncio.to_thread(_cleanup_worktree_sync, workspace_path, worktree_path)
+        await asyncio.to_thread(_force_remove_worktree_sync, workspace_path, worktree_path)
         raise
 
     # Steps 4-5 com cleanup de fallback: worktree + tmux session já existem aqui.
@@ -173,7 +214,7 @@ async def spawn_subsession(
         )
     except Exception:
         # Cleanup best-effort: worktree + tmux session criados nos steps 2-3
-        await asyncio.to_thread(_cleanup_worktree_sync, workspace_path, worktree_path)
+        await asyncio.to_thread(_force_remove_worktree_sync, workspace_path, worktree_path)
         await asyncio.to_thread(_kill_tmux_session_sync, session_name)
         raise
 

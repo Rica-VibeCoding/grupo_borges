@@ -14,6 +14,7 @@ Rodar prod (VPS, atrás do tailscale serve):
 """
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,6 +32,7 @@ from orchestrator.auto_dispatcher import AutoDispatcher
 from orchestrator.jsonl_watcher import JsonlWatcher
 from orchestrator.tmux_driver import TmuxDriver
 from orchestrator.watchdog import Watchdog
+from orchestrator.worktree import SubsessionSweeper, sweep_orphan_worktrees_sync
 from routers import agents as agents_router
 from routers import codex_events as codex_events_router
 from routers import events as events_router
@@ -87,8 +89,21 @@ async def lifespan(app: FastAPI):
         await watchdog.start()
     app.state.watchdog = watchdog
 
+    # Boot sweep: remove worktrees /tmp/subsession-* órfãos (sem estado ativo).
+    # _subagent_state está vazio no boot, então qualquer /tmp/subsession-* é órfão.
+    workspace_paths = [a["workspace_path"] for a in config["agents"] if a.get("workspace_path")]
+    await asyncio.to_thread(sweep_orphan_worktrees_sync, workspace_paths, set())
+
+    sweeper = None
+    if settings.subsession_sweeper_enabled:
+        sweeper = SubsessionSweeper(interval_seconds=settings.subsession_sweeper_interval_seconds)
+        await sweeper.start()
+    app.state.sweeper = sweeper
+
     yield
 
+    if sweeper is not None:
+        await sweeper.stop()
     if watchdog is not None:
         await watchdog.stop()
     if auto_dispatcher is not None:

@@ -360,29 +360,58 @@ def subagent_status_events_since(
     return events, latest_seq
 
 
+def count_active_subsessions_for_task(task_id: str) -> int:
+    """Conta subsessões tool-spawned ativas para um task_id específico."""
+    count = 0
+    for slug_state in _subagent_state.values():
+        for state in slug_state.values():
+            if state.get("spawned_by_tool") and state.get("task_id") == task_id:
+                count += 1
+    return count
+
+
 def mark_stalled_subagents(slug: str, *, now_ms: int | None = None) -> list[dict[str, Any]]:
     # Stalled é emitido UMA VEZ por parent_uuid: removemos do state após emitir
     # pra evitar (1) re-emissão a cada scan de 10s e (2) crescimento monotônico
     # do dict quando subagent crasha sem tool_result. Itera sobre snapshot pra
     # mutar dict no loop.
+    #
+    # TTL: spawned_by_tool = 600s (10min — não têm JSONL, só expiram por tempo).
+    #      nativo CC = 30s (JSONL atualiza last_seen_ms a cada evento).
     now = now_ms if now_ms is not None else _now_ms()
     stalled: list[dict[str, Any]] = []
     slug_state = _subagent_state.get(slug, {})
     for parent_uuid in list(slug_state.keys()):
         state = slug_state[parent_uuid]
-        if now - state["last_seen_ms"] <= 30_000:
+        ttl_ms = 600_000 if state.get("spawned_by_tool") else 30_000
+        if now - state["last_seen_ms"] <= ttl_ms:
             continue
-        payload = {
+        payload: dict[str, Any] = {
             "parent_uuid": parent_uuid,
             "status": "stalled",
             "started_at_ms": state["started_at_ms"],
             "last_seen_ms": state["last_seen_ms"],
             "duration_ms": max(0, now - state["started_at_ms"]),
         }
+        # Inclui campos de cleanup para subsessões tool-spawned
+        for field in ("worktree_path", "workspace_path", "session_name", "spawned_by_tool", "task_id"):
+            if field in state:
+                payload[field] = state[field]
         _append_subagent_status(slug, payload)
         stalled.append(payload)
         slug_state.pop(parent_uuid, None)
     return stalled
+
+
+def mark_stalled_all_slugs(*, now_ms: int | None = None) -> list[dict[str, Any]]:
+    """Varre todos os slugs e retorna todas as entradas stalled.
+
+    Usado pelo SubsessionSweeper periódico — não pelo SSE tick por slug.
+    """
+    all_stalled: list[dict[str, Any]] = []
+    for slug in list(_subagent_state.keys()):
+        all_stalled.extend(mark_stalled_subagents(slug, now_ms=now_ms))
+    return all_stalled
 
 
 def reset_subagent_state_for_tests() -> None:

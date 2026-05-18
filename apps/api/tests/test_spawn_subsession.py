@@ -213,7 +213,7 @@ async def test_spawn_subsession_cleans_worktree_on_tmux_failure():
             "mcp_tools.spawn_subsession._launch_in_tmux_sync",
             side_effect=ltexc.LibTmuxException("session already exists"),
         ),
-        patch("mcp_tools.spawn_subsession._cleanup_worktree_sync") as mock_cleanup,
+        patch("mcp_tools.spawn_subsession._force_remove_worktree_sync") as mock_cleanup,
         patch("mcp_tools.spawn_subsession.Path.is_relative_to", return_value=True),
     ):
         with pytest.raises(ltexc.LibTmuxException):

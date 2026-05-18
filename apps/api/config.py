@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     watchdog_enabled: bool = True
     watchdog_interval_seconds: float = 30.0
 
+    # subsession sweeper (stall detection TTL 10min + worktree cleanup)
+    subsession_sweeper_enabled: bool = True
+    subsession_sweeper_interval_seconds: float = 300.0
+
 
 def get_settings() -> Settings:
     return Settings()

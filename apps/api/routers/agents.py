@@ -36,7 +36,12 @@ from pydantic import BaseModel, Field
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
-from mcp_tools.spawn_subsession import SpawnSubsessionInput, spawn_subsession
+from mcp_tools.spawn_subsession import (
+    SkillNotFoundError,
+    SpawnSubsessionInput,
+    TooManySubsessionsError,
+    spawn_subsession,
+)
 from orchestrator.jsonl_watcher import (
     mark_stalled_subagents,
     subagent_active_snapshot,
@@ -905,6 +910,12 @@ async def spawn_agent_subsession(
 
     try:
         result = await spawn_subsession(slug, workspace_path, payload, db)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except TooManySubsessionsError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except SkillNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except libtmux_exc.LibTmuxException as exc:
