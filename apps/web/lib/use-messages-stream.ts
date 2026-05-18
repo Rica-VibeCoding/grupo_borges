@@ -173,13 +173,23 @@ export function useMessagesStream(
         clearTimeout(timer);
       }
       subagentGcTimersRef.current.clear();
-      // rAF pendente fica órfão se reconectar antes do flush. Cancela e
-      // descarta — backend reemite via since_id no replay.
+      // rAF pendente: cancelar e fazer FLUSH SÍNCRONO antes de zerar. Sem
+      // isso, lastIdRef já avançou por chunk (linha ~252) mas o setState
+      // ainda não rodou — descartar a fila perderia o chunk permanente
+      // (since_id na reconexão pula esses ids no backend).
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = null;
       }
-      pendingMessagesRef.current = [];
+      if (pendingMessagesRef.current.length > 0) {
+        const pending = pendingMessagesRef.current;
+        pendingMessagesRef.current = [];
+        // Vai num batch com o setState abaixo (auto-batching React 18+).
+        setState((prev) => ({
+          ...prev,
+          messages: prev.messages.concat(pending),
+        }));
+      }
       setState((prev) => ({ ...prev, status: 'error', errorDetail: reason }));
       const attempt = retryCountRef.current;
       const delay =
