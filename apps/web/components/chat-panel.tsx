@@ -119,8 +119,8 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
   const isCodex = agent.executor_kind === 'codex';
   const model = agent.state_model ?? agent.model_default;
   const sessionStarted = isCodex
-    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
-    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
+    ? agent.session_started_at
+    : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = isCodex
     ? (agent.context_pct ?? null)

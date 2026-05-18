@@ -50,8 +50,8 @@ export function AgentStatusline({
   const model = agent.state_model ?? agent.model_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
   const sessionStarted = isCodexExecutor
-    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
-    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
+    ? agent.session_started_at
+    : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = isCodexExecutor
     ? (agent.context_pct ?? null)

@@ -20,20 +20,6 @@ export type SparklineBucket = {
   tokens: number;
 };
 
-export type AgentInstance = {
-  id: string;
-  agent_slug: string;
-  instance_num: number;
-  tmux_session: string | null;
-  cli: string | null;
-  model: string | null;
-  is_subagent: boolean;
-  parent_session_id: string | null;
-  status: AgentStatus;
-  started_at: number;
-  ended_at: number | null;
-};
-
 export type AgentCli = 'claude_code' | 'codex';
 
 export type AgentModel =
@@ -76,9 +62,7 @@ export type Agent = {
   lifecycle_event: string | null;
   lifecycle_updated_at: number | null;
   pane_session_started_at: number | null;
-  instance_count: number;
   status: AgentStatus;
-  instances: AgentInstance[];
   sparkline: SparklineBucket[];
 };
 

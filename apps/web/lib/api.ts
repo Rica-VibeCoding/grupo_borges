@@ -263,14 +263,6 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   return null;
 }
 
-export async function deleteAgentInstance(slug: string, instanceId: string): Promise<void> {
-  const res = await fetch(
-    `/api/agents/${encodeURIComponent(slug)}/instances/${encodeURIComponent(instanceId)}`,
-    { method: 'DELETE' },
-  );
-  if (!res.ok) throw new Error(`deleteAgentInstance failed: ${res.status}`);
-}
-
 export async function listAgentTasks(
   slug: string,
   statuses: ActiveTaskStatus[] = ['running', 'ready', 'backlog'],

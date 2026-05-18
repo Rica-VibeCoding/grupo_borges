@@ -327,8 +327,8 @@ function HandoffPanel({ agent }: { agent: Agent }) {
  */
 function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) {
   const sessionStarted = agent.executor_kind === 'codex'
-    ? (agent.session_started_at ?? agent.instances[0]?.started_at ?? null)
-    : (agent.pane_session_started_at ?? agent.instances[0]?.started_at ?? null);
+    ? agent.session_started_at
+    : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const isCodexExec = agent.executor_kind === 'codex';
   const seenAbs = formatUnixDateTime(agent.last_seen);
@@ -373,7 +373,6 @@ function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) 
         {sessionSecs !== null && <KV k="DURAÇÃO" v={formatDuration(sessionSecs)} />}
         {sessionStarted !== null && <KV k="INÍCIO" v={formatUnixDateTime(sessionStarted)} />}
         <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} title={seenAbs} />
-        <KV k="INSTÂNCIAS" v={String(agent.instance_count)} />
       </MissaoSection>
 
       {hasTaskInfo && (
