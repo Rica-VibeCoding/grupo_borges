@@ -28,20 +28,6 @@ class SparklineBucket(BaseModel):
     tokens: int = 0  # DS-58: SUM(input+output) da hora; altura da sparkline.
 
 
-class FleetInstance(BaseModel):
-    id: str
-    agent_slug: str
-    instance_num: int
-    tmux_session: str | None
-    cli: str
-    model: str
-    is_subagent: bool
-    parent_session_id: str | None
-    status: Literal["idle", "running", "blocked", "done"]
-    started_at: int
-    ended_at: int | None
-
-
 class FleetAgent(BaseModel):
     # campos da tabela agents
     slug: str
@@ -74,10 +60,8 @@ class FleetAgent(BaseModel):
     lifecycle_event: str | None = None
     lifecycle_updated_at: int | None = None
     pane_session_started_at: int | None = None
-    instance_count: int
     # campos derivados/hidratados pelo snapshot
     status: AgentStatus
-    instances: list[FleetInstance]
     sparkline: list[SparklineBucket]
 
 

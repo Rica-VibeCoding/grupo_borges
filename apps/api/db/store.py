@@ -150,14 +150,13 @@ def _json_array_or_none(value: list[Any] | tuple[Any, ...] | None) -> str | None
 
 def derive_agent_status(
     last_seen: int | None,
-    instances: list[dict[str, Any]] | None,
     *,
     lifecycle_status: str | None = None,
     lifecycle_updated_at: int | None = None,
     current_task_id: str | None = None,
     now: int | None = None,
 ) -> str:
-    """Deriva status do agente a partir do heartbeat + status das instâncias.
+    """Deriva status do agente a partir do heartbeat + lifecycle.
 
     Single source of truth pra UI V2.4: ocioso, trabalhando, aguardando, offline.
     """
@@ -174,17 +173,6 @@ def derive_agent_status(
         return "trabalhando"
     if lifecycle_status == "aguardando":
         return "aguardando"
-    if lifecycle_status == "ocioso":
-        return "ocioso"
-    if not instances:
-        return "ocioso"
-    statuses = {i["status"] for i in instances}
-    if "running" in statuses:
-        return "trabalhando"
-    if "blocked" in statuses:
-        return "aguardando"
-    if statuses == {"done"}:
-        return "ocioso"
     return "ocioso"
 
 
@@ -441,7 +429,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
-                       s.lifecycle_updated_at, s.instance_count
+                       s.lifecycle_updated_at
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
                 ORDER BY a.slug
@@ -462,7 +450,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
-                       s.lifecycle_updated_at, s.instance_count
+                       s.lifecycle_updated_at
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
                 WHERE a.slug = ?
@@ -2520,172 +2508,6 @@ class GrupoBorgesDB:
             cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
             return cur.rowcount > 0
 
-    # ---------- agent_instances ----------
-
-    async def create_agent_instance(
-        self,
-        *,
-        agent_slug: str,
-        cli: str,
-        model: str,
-        is_subagent: bool,
-    ) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            self._create_agent_instance,
-            agent_slug=agent_slug,
-            cli=cli,
-            model=model,
-            is_subagent=is_subagent,
-        )
-
-    def _create_agent_instance(
-        self, *, agent_slug: str, cli: str, model: str, is_subagent: bool
-    ) -> dict[str, Any]:
-        now = int(time.time())
-        instance_id = str(uuid.uuid4())
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            cur = conn.execute(
-                """
-                SELECT COALESCE(MAX(instance_num), 0) + 1 AS next_num
-                FROM agent_instances
-                WHERE agent_slug = ?
-                """,
-                (agent_slug,),
-            )
-            instance_num = int(cur.fetchone()["next_num"])
-            tmux_session = None
-            if not is_subagent and cli in {"claude_code", "codex"}:
-                tmux_session = f"{agent_slug}-{instance_num}"
-            conn.execute(
-                """
-                INSERT INTO agent_instances (
-                    id, agent_slug, instance_num, tmux_session, cli, model,
-                    is_subagent, status, started_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'idle', ?)
-                """,
-                (
-                    instance_id,
-                    agent_slug,
-                    instance_num,
-                    tmux_session,
-                    cli,
-                    model,
-                    1 if is_subagent else 0,
-                    now,
-                ),
-            )
-            conn.execute(
-                """
-                UPDATE agent_state
-                SET instance_count = (
-                    SELECT COUNT(*) FROM agent_instances
-                    WHERE agent_slug = ? AND ended_at IS NULL
-                )
-                WHERE slug = ?
-                """,
-                (agent_slug, agent_slug),
-            )
-            conn.commit()
-
-        instance = self._get_agent_instance(instance_id)
-        assert instance is not None
-        return instance
-
-    async def end_agent_instance(
-        self, *, agent_slug: str, instance_id: str
-    ) -> dict[str, Any] | None:
-        return await asyncio.to_thread(
-            self._end_agent_instance, agent_slug=agent_slug, instance_id=instance_id
-        )
-
-    def _end_agent_instance(
-        self, *, agent_slug: str, instance_id: str
-    ) -> dict[str, Any] | None:
-        now = int(time.time())
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                "SELECT * FROM agent_instances WHERE id = ? AND agent_slug = ?",
-                (instance_id, agent_slug),
-            ).fetchone()
-            if row is None:
-                conn.rollback()
-                return None
-            conn.execute(
-                """
-                UPDATE agent_instances
-                SET status = 'done', ended_at = COALESCE(ended_at, ?)
-                WHERE id = ? AND agent_slug = ?
-                """,
-                (now, instance_id, agent_slug),
-            )
-            conn.execute(
-                """
-                UPDATE agent_state
-                SET instance_count = (
-                    SELECT COUNT(*) FROM agent_instances
-                    WHERE agent_slug = ? AND ended_at IS NULL
-                )
-                WHERE slug = ?
-                """,
-                (agent_slug, agent_slug),
-            )
-            conn.commit()
-            row_dict = dict(row)
-            row_dict["status"] = "done"
-            row_dict["ended_at"] = row_dict["ended_at"] or now
-            return self._row_to_instance_dict(row_dict)
-
-    async def get_agent_instance(self, instance_id: str) -> dict[str, Any] | None:
-        return await asyncio.to_thread(self._get_agent_instance, instance_id)
-
-    def _get_agent_instance(self, instance_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM agent_instances WHERE id = ?",
-                (instance_id,),
-            ).fetchone()
-            return self._row_to_instance(row) if row is not None else None
-
-    async def list_agent_instances(
-        self,
-        agent_slug: str,
-        *,
-        status: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(self._list_agent_instances, agent_slug, status)
-
-    def _list_agent_instances(
-        self, agent_slug: str, status: str | None,
-    ) -> list[dict[str, Any]]:
-        clauses = ["agent_slug = ?"]
-        params: list[Any] = [agent_slug]
-        if status:
-            clauses.append("status = ?")
-            params.append(status)
-        with self._connect() as conn:
-            cur = conn.execute(
-                f"""
-                SELECT * FROM agent_instances
-                WHERE {' AND '.join(clauses)}
-                ORDER BY instance_num ASC
-                """,
-                params,
-            )
-            return [self._row_to_instance(row) for row in cur.fetchall()]
-
-    @staticmethod
-    def _row_to_instance(row: sqlite3.Row) -> dict[str, Any]:
-        return GrupoBorgesDB._row_to_instance_dict(dict(row))
-
-    @staticmethod
-    def _row_to_instance_dict(d: dict[str, Any]) -> dict[str, Any]:
-        # SQLite armazena bool como INTEGER 0/1 — converter pra UI consumir direto.
-        d["is_subagent"] = bool(d["is_subagent"])
-        return d
-
     # ---------- task_events: sparkline ----------
 
     async def event_counts_per_hour(
@@ -2775,25 +2597,13 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
-                       s.lifecycle_updated_at, s.instance_count
+                       s.lifecycle_updated_at
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
                 ORDER BY a.slug
                 """
             ).fetchall()
             agents = [self._row_to_agent(r) for r in agent_rows]
-
-            instance_rows = conn.execute(
-                """
-                SELECT * FROM agent_instances
-                WHERE ended_at IS NULL
-                ORDER BY agent_slug, instance_num
-                """
-            ).fetchall()
-            by_slug: dict[str, list[dict[str, Any]]] = {}
-            for row in instance_rows:
-                inst = self._row_to_instance(row)
-                by_slug.setdefault(inst["agent_slug"], []).append(inst)
 
             # DS-58: sparkline mostra TOKENS (input+output) por hora.
             # cache_read_input_tokens NÃO entra na altura — Rica pediu "tokens" reais.
@@ -2889,10 +2699,9 @@ class GrupoBorgesDB:
                     },
                 )
 
-        # Hidrata cada agente com instances ativas, status derivado e buckets gap-filled.
+        # Hidrata cada agente com status derivado e buckets gap-filled.
         for agent in agents:
             slug = agent["slug"]
-            agent_instances = by_slug.get(slug, [])
             current_task = current_task_by_agent.get(slug)
             agent["current_task_id"] = current_task["display_id"] if current_task else None
             agent["current_task_last_heartbeat"] = (
@@ -2909,10 +2718,8 @@ class GrupoBorgesDB:
                     agent["lifecycle_detail"] = latest_lifecycle["detail"]
                     agent["lifecycle_event"] = latest_lifecycle["event"]
                     agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
-            agent["instances"] = agent_instances
             agent["status"] = derive_agent_status(
                 agent["last_seen"],
-                agent_instances,
                 lifecycle_status=agent.get("lifecycle_status"),
                 lifecycle_updated_at=agent.get("lifecycle_updated_at"),
                 current_task_id=agent.get("current_task_id"),
