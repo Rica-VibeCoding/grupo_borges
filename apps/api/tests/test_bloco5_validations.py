@@ -88,7 +88,6 @@ async def test_spawn_permission_ok_matching_slug():
     payload = _valid_payload(agent_slug="daniel")
 
     with (
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index"),
         patch("mcp_tools.spawn_subsession._create_worktree_sync"),
         patch("mcp_tools.spawn_subsession._launch_in_tmux_sync"),
         patch("mcp_tools.spawn_subsession.Path.is_relative_to", return_value=True),
@@ -141,7 +140,6 @@ async def test_spawn_limit_not_exceeded_with_2_active():
     payload = _valid_payload(agent_slug="daniel")
 
     with (
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index"),
         patch("mcp_tools.spawn_subsession._create_worktree_sync"),
         patch("mcp_tools.spawn_subsession._launch_in_tmux_sync"),
         patch("mcp_tools.spawn_subsession.Path.is_relative_to", return_value=True),
@@ -184,7 +182,6 @@ async def test_spawn_skill_found_ok():
             "mcp_tools.spawn_subsession.workspace_reader.read_skills_cached",
             return_value=[{"name": "checkpoint"}, {"name": "memoria"}],
         ),
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index"),
         patch("mcp_tools.spawn_subsession._create_worktree_sync"),
         patch("mcp_tools.spawn_subsession._launch_in_tmux_sync"),
     ):
@@ -201,7 +198,6 @@ async def test_spawn_no_skill_field_skips_validation():
 
     with (
         patch("mcp_tools.spawn_subsession.Path.is_relative_to", return_value=True),
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index"),
         patch("mcp_tools.spawn_subsession._create_worktree_sync"),
         patch("mcp_tools.spawn_subsession._launch_in_tmux_sync"),
         patch(
