@@ -39,7 +39,7 @@ from util import parse_dict_or_none
 logger = logging.getLogger(__name__)
 
 _NON_ENCODED_CHAR = re.compile(r"[^A-Za-z0-9-]")
-_subagent_state: dict[str, dict[str, dict[str, int]]] = {}
+_subagent_state: dict[str, dict[str, dict[str, Any]]] = {}
 _subagent_status_events: dict[str, list[dict[str, Any]]] = {}
 _subagent_event_seq = 0
 # Reverse lookup pra fechamento de subagent: quando o assistant principal
@@ -290,9 +290,59 @@ def subagent_active_snapshot(slug: str) -> list[dict[str, Any]]:
             "status": "active",
             "started_at_ms": state["started_at_ms"],
             "last_seen_ms": state["last_seen_ms"],
+            # Campos extras presentes só em subsessões spawned by tool (LB-9)
+            **{
+                k: state[k]
+                for k in (
+                    "task_id", "session_name", "worktree_path",
+                    "workspace_path", "visibility", "spawned_by_tool",
+                )
+                if k in state
+            },
         }
         for parent_uuid, state in _subagent_state.get(slug, {}).items()
     ]
+
+
+def register_spawned_subagent(
+    slug: str,
+    subsession_id: str,
+    *,
+    task_id: str,
+    session_name: str,
+    worktree_path: str,
+    workspace_path: str,
+    visibility: bool,
+    agent_slug: str,
+    now_ms: int | None = None,
+) -> None:
+    """Registra subsessão criada via tool MCP spawn_subsession no estado in-memory."""
+    now = now_ms if now_ms is not None else _now_ms()
+    active_by_parent = _subagent_state.setdefault(slug, {})
+    active_by_parent[subsession_id] = {
+        "started_at_ms": now,
+        "last_seen_ms": now,
+        "task_id": task_id,
+        "session_name": session_name,
+        "worktree_path": worktree_path,
+        "workspace_path": workspace_path,
+        "visibility": visibility,
+        "agent_slug": agent_slug,
+        "spawned_by_tool": True,
+    }
+    _append_subagent_status(
+        slug,
+        {
+            "parent_uuid": subsession_id,
+            "status": "starting",
+            "started_at_ms": now,
+            "last_seen_ms": now,
+            "task_id": task_id,
+            "session_name": session_name,
+            "visibility": visibility,
+            "spawned_by_tool": True,
+        },
+    )
 
 
 def subagent_status_events_since(

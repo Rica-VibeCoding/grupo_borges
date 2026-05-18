@@ -11,6 +11,8 @@ POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-
 POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
 POST /api/agents/{slug}/image          — DS-54: upload imagem → path absoluto → send-keys
 POST /api/agents/{slug}/model          — DS-2: troca modelo via /model <slug> + confirma na statusline
+POST /api/agents/{slug}/subagents/spawn — LB-9: tool MCP spawn_subsession via HTTP
+GET  /api/agents/{slug}/subagents      — LB-9: snapshot de subsessões ativas (polling REST 5s)
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ from pydantic import BaseModel, Field
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
+from mcp_tools.spawn_subsession import SpawnSubsessionInput, spawn_subsession
 from orchestrator.jsonl_watcher import (
     mark_stalled_subagents,
     subagent_active_snapshot,
@@ -876,3 +879,49 @@ async def get_channel_attachment(
         media_type=media_type,
         filename=resolved.name,
     )
+
+
+# ----- LB-9 Bloco 1: subsessões spawned via tool MCP -------------------------
+
+
+@router.post("/{slug}/subagents/spawn", status_code=status.HTTP_200_OK)
+async def spawn_agent_subsession(
+    slug: str,
+    payload: SpawnSubsessionInput,
+    request: Request,
+) -> dict[str, Any]:
+    """Cria subsessão filho com worktree isolado (LB-9 Bloco 1).
+
+    - 404 quando agente não existe
+    - 409 quando workspace pai tem mudanças não-commitadas
+    - 409 quando tmux falha ao criar sessão
+    - 200 + { subsession_id, session_name, status:"starting" } no caminho feliz
+    """
+    agent = await _get_agent_or_404(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+    workspace_path = agent.get("workspace_path", "")
+    if not workspace_path:
+        raise HTTPException(status_code=409, detail="workspace_path não configurado para o agente")
+
+    try:
+        result = await spawn_subsession(slug, workspace_path, payload, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except libtmux_exc.LibTmuxException as exc:
+        raise HTTPException(status_code=409, detail=f"tmux error: {exc}") from exc
+
+    return result
+
+
+@router.get("/{slug}/subagents")
+async def list_agent_subagents(slug: str, request: Request) -> list[dict[str, Any]]:
+    """Snapshot das subsessões ativas do agente (polling REST 5s — LB-9 Bloco 2).
+
+    Retorna subsessões ativas em _subagent_state, incluindo as spawned_by_tool
+    (com task_id, session_name, visibility) e as nativas do CC (parent_uuid, status).
+    """
+    db: GrupoBorgesDB = request.app.state.db
+    if await db.get_agent(slug) is None:
+        raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
+
+    return subagent_active_snapshot(slug)
