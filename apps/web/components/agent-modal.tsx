@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useFleet } from '../lib/fleet-context';
@@ -57,11 +57,106 @@ export function AgentModal() {
     : null;
   const open = agent !== null;
 
+  // Swipe-right-to-close (mobile only). Ativo somente quando o gesto começa
+  // no header — evita conflito com scroll vertical do conteúdo, scroll
+  // horizontal das tabs e seleção de texto em pre/code.
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const swipeWidthRef = useRef<number>(0);
+
+  // Reset offset toda vez que o modal abre/fecha.
+  useEffect(() => {
+    if (!open) {
+      setSwipeOffset(0);
+      setSwiping(false);
+      swipeStartRef.current = null;
+    }
+  }, [open]);
+
+  // Considera "scrollable" alvos onde o swipe horizontal pode atrapalhar o
+  // gesto nativo (scroll, seleção de texto). Edge swipe (≤30px da borda
+  // esquerda) ignora esse veto — intent claro do usuário.
+  const isScrollableTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof Element)) return false;
+    return !!target.closest('.chat-messages-scroll, .agent-modal-docs-pre, .agent-modal-docs-body, textarea, .agent-modal-tablist');
+  };
+
+  const onFrameTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMobile) return;
+    const t = e.touches[0];
+    if (!t) return;
+    swipeStartRef.current = { x: t.clientX, y: t.clientY, t: performance.now() };
+    swipeWidthRef.current = window.innerWidth;
+    // Marca alvo pra decisão posterior no touchmove.
+    (swipeStartRef.current as { x: number; y: number; t: number; target?: EventTarget | null }).target = e.target;
+  }, [isMobile]);
+
+  const onFrameTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const start = swipeStartRef.current as ({ x: number; y: number; t: number; target?: EventTarget | null } | null);
+    if (!start) return;
+    const t = e.touches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    if (!swiping) {
+      // Threshold inicial pra decidir o eixo (8px).
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      // Vertical dominante → cancela (deixa scroll fluir).
+      if (Math.abs(dy) > Math.abs(dx)) {
+        swipeStartRef.current = null;
+        return;
+      }
+      // Swipe pra esquerda → ignora.
+      if (dx < 0) { swipeStartRef.current = null; return; }
+      // Em área scrollável, só aceita se for edge swipe (borda esquerda).
+      const isEdge = start.x < 30;
+      if (!isEdge && isScrollableTarget(start.target ?? null)) {
+        swipeStartRef.current = null;
+        return;
+      }
+      setSwiping(true);
+    }
+    if (dx > 0) setSwipeOffset(dx);
+  }, [swiping]);
+
+  const onFrameTouchEnd = useCallback(() => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) { setSwiping(false); setSwipeOffset(0); return; }
+    const elapsed = performance.now() - start.t;
+    const velocity = swipeOffset / Math.max(1, elapsed); // px/ms
+    const thresholdPx = swipeWidthRef.current * 0.35;
+    const fastSwipe = velocity > 0.5 && swipeOffset > 60;
+    if (swipeOffset > thresholdPx || fastSwipe) {
+      close();
+    } else {
+      setSwipeOffset(0);
+    }
+    setSwiping(false);
+  }, [swipeOffset, close]);
+
+  const frameStyle = isMobile && swipeOffset > 0
+    ? {
+        transform: `translateX(${swipeOffset}px)`,
+        transition: swiping ? 'none' : 'transform 180ms cubic-bezier(.2,.7,.2,1)',
+      }
+    : undefined;
+
   return (
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) close(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="agent-modal-overlay" />
-        <Dialog.Content className={`agent-modal-frame mono${isMobile ? ' agent-modal-frame-mobile' : ''}`} aria-describedby={undefined}>
+        <Dialog.Content
+          className={`agent-modal-frame mono${isMobile ? ' agent-modal-frame-mobile' : ''}`}
+          aria-describedby={undefined}
+          style={frameStyle}
+          onTouchStart={onFrameTouchStart}
+          onTouchMove={onFrameTouchMove}
+          onTouchEnd={onFrameTouchEnd}
+          onTouchCancel={onFrameTouchEnd}
+        >
           {agent && (
             <>
               <header className="agent-modal-head">

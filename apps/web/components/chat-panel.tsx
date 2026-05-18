@@ -54,7 +54,8 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
  *
  * - statusline embarcada (variant="modal" expandida no commit seguinte)
  * - <PanePreview> sticky-bottom com pílula "↓ novo" quando user destacou
- * - <ChatInput> textarea Enter envia; Shift+Enter quebra linha
+ * - <ChatInput> textarea Enter envia; Shift+Enter quebra linha (desktop).
+ *   Mobile (pointer:coarse): Enter quebra linha, só botão envia
  * - <ModelSelector> SelectField; Codex disabled+tooltip; modal de
  *   confirmação quando `status === 'trabalhando'` (não toast)
  */
@@ -329,6 +330,18 @@ function ChatInput({
   const [recordedDuration, setRecordedDuration] = useState(0);
   const [audioLevels, setAudioLevels] = useState<number[]>(Array(WAVEFORM_BARS).fill(0));
 
+  // Em dispositivos com pointer coarse (mobile/tablet), Enter quebra linha em
+  // vez de enviar — só o botão de send envia. Desktop intocado.
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(pointer: coarse)');
+    setIsCoarsePointer(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsCoarsePointer(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   // --- slash palette state (DS-62) ---
   // `slashSliceStart` é o índice do "/" no texto; `null` = palette fechado.
   const [slashSliceStart, setSlashSliceStart] = useState<number | null>(null);
@@ -558,13 +571,14 @@ function ChatInput({
 
       if (e.key !== 'Enter') return;
       if (e.shiftKey || tabPressedRef.current) return;
+      if (isCoarsePointer) return;
 
       if (!e.altKey) {
         e.preventDefault();
         void onSubmit();
       }
     },
-    [onSubmit, slashOpen, slashItems, slashSelectedValue, insertSlashCommand],
+    [onSubmit, slashOpen, slashItems, slashSelectedValue, insertSlashCommand, isCoarsePointer],
   );
 
   // --- paste ---
