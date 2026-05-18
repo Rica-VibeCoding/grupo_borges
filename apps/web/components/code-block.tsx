@@ -28,26 +28,34 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
       }
     }
 
-    // 2) Fallback: textarea offscreen + execCommand. Funciona em contextos
-    //    sem clipboard API (HTTP, iframes restritos, navegadores antigos).
+    // 2) Fallback iOS-safe: textarea contentEditable + setSelectionRange.
+    //    iOS Safari rejeita execCommand('copy') em <textarea readonly>; o
+    //    pattern abaixo (contentEditable=true + selectNodeContents +
+    //    setSelectionRange) é o único que funciona consistente em
+    //    iOS 13+. font-size 16px evita zoom automático.
     const ta = document.createElement('textarea');
     ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.top = '0';
-    ta.style.left = '0';
-    ta.style.opacity = '0';
-    ta.style.pointerEvents = 'none';
+    ta.contentEditable = 'true';
+    ta.readOnly = false;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:0;width:1px;height:1px;font-size:16px;opacity:0;';
     document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
+
+    const range = document.createRange();
+    range.selectNodeContents(ta);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    ta.setSelectionRange(0, text.length);
+
     let ok = false;
     try {
       ok = document.execCommand('copy');
     } catch {
       ok = false;
     }
+    sel?.removeAllRanges();
     document.body.removeChild(ta);
+
     if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
