@@ -214,7 +214,6 @@
 .handoff-toggle,
 .form-submit,
 .form-cancel,
-.instance-add,
 .instance-pill {
   background: transparent;
   border: 1px solid var(--chat-hairline-strong);
@@ -250,7 +249,6 @@
 .handoff-toggle[aria-expanded="true"],
 .form-submit:hover:not(:disabled),
 .form-cancel:hover:not(:disabled),
-.instance-add:hover,
 .instance-pill:hover,
 .instance-pill[aria-pressed="true"] {
   color: var(--accent);
@@ -413,7 +411,6 @@
   min-width: 0;
 }
 
-.instance-add,
 .instance-pill {
   min-width: 24px;
   height: 22px;

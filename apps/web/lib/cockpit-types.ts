@@ -46,18 +46,6 @@ export type AgentModel =
   | 'codex-gpt-5-3-codex'
   | 'codex-gpt-5-2';
 
-export type AgentInstanceCreate = {
-  cli: AgentCli;
-  model: AgentModel;
-  is_subagent: boolean;
-};
-
-export type AgentInstanceCreateResponse = {
-  instance: AgentInstance;
-  tmux_created: boolean;
-  session_error?: string;
-};
-
 export type Agent = {
   slug: string;
   name: string;

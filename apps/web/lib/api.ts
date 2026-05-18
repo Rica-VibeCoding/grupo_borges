@@ -2,8 +2,6 @@ import type {
   ActiveTaskStatus,
   AgentDocResolved,
   AgentDocsResponse,
-  AgentInstanceCreate,
-  AgentInstanceCreateResponse,
   AgentSkillsResponse,
   AgentTablesResponse,
   FleetResponse,
@@ -263,19 +261,6 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('haiku')) return 'haiku';
   return null;
-}
-
-export async function createAgentInstance(
-  slug: string,
-  payload: AgentInstanceCreate,
-): Promise<AgentInstanceCreateResponse> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/instances`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`createAgentInstance failed: ${res.status}`);
-  return res.json();
 }
 
 export async function deleteAgentInstance(slug: string, instanceId: string): Promise<void> {

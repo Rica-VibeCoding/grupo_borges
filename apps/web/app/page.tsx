@@ -210,8 +210,7 @@ const v2Css = `
 .v2-sidebar .agent-card[data-state="offline"] .card-head { min-height: 26px; }
 .v2-sidebar .agent-card[data-state="offline"] .avatar { width: 24px; height: 24px; font-size: 9px; }
 .v2-sidebar .agent-card[data-state="offline"] .avatar { filter: grayscale(0.6); opacity: 0.8; }
-/* Botão de criar instância e pílula +N continuam clicáveis */
-.v2-sidebar .agent-card .instance-add,
+/* Pílula +N continua clicável */
 .v2-sidebar .agent-card .instance-pill {
   height: 19px;
   min-width: 19px;
