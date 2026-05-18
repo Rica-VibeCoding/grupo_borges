@@ -85,14 +85,16 @@ function firstLineSummary(text: string, max = 80): string {
 }
 
 // Detecta payload de imagem do cockpit (agents.py:732):
-//   "Imagem enviada via cockpit: <absolute_path>[\nCaption: <text>]"
-// Extrai sufixo após /uploads/ pra montar URL pública via rewrite.
-const COCKPIT_IMG_RE = /^Imagem enviada via cockpit: (.+?)(?:\nCaption: ([\s\S]+))?$/;
+//   "Imagem enviada via cockpit: <absolute_path>[(\s|\n)*Caption: <text>]"
+// O `\n` entre path e Caption é engolido pela pipeline tmux/CC em alguns
+// fluxos — por isso o separador é `\s*` (tolera newline, espaço ou colado).
+// Path tem que terminar numa extensão de imagem (sem espaço no meio).
+const COCKPIT_IMG_RE = /^Imagem enviada via cockpit: (\/[^\s]+?\.(?:jpe?g|png|gif|webp))\s*(?:Caption:\s*([\s\S]+))?$/i;
 
 function parseCockpitImage(text: string): { url: string; caption: string | null } | null {
   const match = text.match(COCKPIT_IMG_RE);
   if (!match) return null;
-  const absPath = match[1].trim();
+  const absPath = match[1];
   const uploadsIdx = absPath.indexOf('/uploads/');
   if (uploadsIdx === -1) return null;
   return {
