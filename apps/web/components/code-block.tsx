@@ -15,19 +15,42 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
   const onCopy = useCallback(async () => {
     const text = preRef.current?.textContent ?? '';
     if (!text) return;
+
+    // 1) Caminho preferido: Clipboard API (precisa de secure context).
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+        return;
+      } catch {
+        // cai pro fallback abaixo
+      }
+    }
+
+    // 2) Fallback: textarea offscreen + execCommand. Funciona em contextos
+    //    sem clipboard API (HTTP, iframes restritos, navegadores antigos).
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
     try {
-      await navigator.clipboard.writeText(text);
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Fallback: seleciona o conteúdo pra usuário copiar à mão.
-      const range = document.createRange();
-      if (preRef.current) {
-        range.selectNodeContents(preRef.current);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
-      }
     }
   }, []);
 
