@@ -411,6 +411,48 @@ def mark_stalled_subagents(slug: str, *, now_ms: int | None = None) -> list[dict
     return stalled
 
 
+def mark_completed_when_tmux_gone(
+    alive_tmux_sessions: set[str],
+    *,
+    now_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    """Tool-spawned cuja tmux session sumiu = terminou limpo, marca como completed.
+
+    Antes desse check, claude --bg que encerrava normalmente ficava grudado em
+    _subagent_state até o TTL 600s do mark_stalled. Popover do task continuava
+    mostrando subsessão "ativa" durante esses 10min.
+
+    Chamado pelo SubsessionSweeper a cada tick com snapshot atual do tmux.
+    Retorna entries com status:"completed" (mesmo formato de mark_stalled) para
+    o sweeper drenar (kill_tmux no-op + cleanup_worktree).
+    """
+    now = now_ms if now_ms is not None else _now_ms()
+    completed: list[dict[str, Any]] = []
+    for slug in list(_subagent_state.keys()):
+        slug_state = _subagent_state[slug]
+        for parent_uuid in list(slug_state.keys()):
+            state = slug_state[parent_uuid]
+            if not state.get("spawned_by_tool"):
+                continue
+            session_name = state.get("session_name", "")
+            if not session_name or session_name in alive_tmux_sessions:
+                continue
+            payload: dict[str, Any] = {
+                "parent_uuid": parent_uuid,
+                "status": "completed",
+                "started_at_ms": state["started_at_ms"],
+                "last_seen_ms": state["last_seen_ms"],
+                "duration_ms": max(0, now - state["started_at_ms"]),
+            }
+            for field in ("worktree_path", "workspace_path", "session_name", "spawned_by_tool", "task_id"):
+                if field in state:
+                    payload[field] = state[field]
+            _append_subagent_status(slug, payload)
+            completed.append(payload)
+            slug_state.pop(parent_uuid, None)
+    return completed
+
+
 def mark_stalled_all_slugs(*, now_ms: int | None = None) -> list[dict[str, Any]]:
     """Varre todos os slugs e retorna todas as entradas stalled.
 

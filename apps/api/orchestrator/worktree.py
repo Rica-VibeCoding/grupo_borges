@@ -193,10 +193,20 @@ class SubsessionSweeper:
                 pass
 
     async def _tick(self) -> None:
-        from orchestrator.jsonl_watcher import mark_stalled_all_slugs
+        from orchestrator.jsonl_watcher import (
+            mark_completed_when_tmux_gone,
+            mark_stalled_all_slugs,
+        )
 
+        # 1. Terminação limpa: tool-spawned cuja tmux session sumiu vira completed.
+        alive_tmux = await asyncio.to_thread(_alive_tmux_sub_sessions)
+        completed: list[dict[str, Any]] = await asyncio.to_thread(
+            mark_completed_when_tmux_gone, alive_tmux
+        )
+        # 2. Timeout duro: tool-spawned vivo há > 10min sem JSONL vira stalled.
         stalled: list[dict[str, Any]] = await asyncio.to_thread(mark_stalled_all_slugs)
-        for entry in stalled:
+
+        for entry in completed + stalled:
             if not entry.get("spawned_by_tool"):
                 continue
             worktree_path = entry.get("worktree_path", "")
@@ -214,6 +224,22 @@ class SubsessionSweeper:
                     worktree_path=worktree_path,
                     subsession_id=subsession_id,
                 )
+
+
+def _alive_tmux_sub_sessions() -> set[str]:
+    """Lista nomes de tmux sessions ativas começando com 'sub-'."""
+    alive: set[str] = set()
+    try:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return alive
+    for name in (line.strip() for line in result.stdout.splitlines()):
+        if name.startswith("sub-"):
+            alive.add(name)
+    return alive
 
 
 async def _kill_tmux(session_name: str) -> None:
