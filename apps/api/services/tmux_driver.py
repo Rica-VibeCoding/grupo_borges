@@ -298,12 +298,10 @@ def _send_message_sync(session_name: str, text: str) -> bool:
         if current_cmd not in _EXPECTED_PANE_COMMANDS:
             return False
 
-        # ORDEM CRÍTICA do paste (Hermes-style, validado em prod):
-        #   1. C-u           — limpa input pendente (antes do paste; depois apagaria)
-        #   2. load-buffer   — escreve envelope em buffer nomeado por uuid (sem race)
-        #   3. paste-buffer  — cola e descarta (-d)
-        #   4. sleep 150ms   — CC consolida paste antes do Enter
-        #   5. Enter         — submete
+        # Sequência detalhada na docstring de send_message. -p (bracketed paste)
+        # é crítico pra multilinha: sem ele tmux converte \n → CR e cada linha
+        # submete separado. Gotcha: extended-keys-format=csi-u no tmux faz CC
+        # perder \n dentro do bracket (anthropics/claude-code#43169).
         pane.cmd("send-keys", "C-u")
 
         buf_name = f"cockpit-dispatch-{uuid.uuid4().hex[:12]}"
@@ -322,7 +320,7 @@ def _send_message_sync(session_name: str, text: str) -> bool:
             if load_result.returncode != 0:
                 return False
 
-            pane.cmd("paste-buffer", "-d", "-b", buf_name)
+            pane.cmd("paste-buffer", "-d", "-p", "-b", buf_name)
             paste_ok = True
             time.sleep(_PASTE_SUBMIT_DELAY_S)
             pane.cmd("send-keys", "Enter")
@@ -368,10 +366,12 @@ async def send_message(session_name: str, text: str) -> bool:
     """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 
     Sequência (Hermes-style, validada em produção):
-        send-keys C-u → load-buffer → paste-buffer -d → sleep 150ms → send-keys Enter
+        send-keys C-u → load-buffer → paste-buffer -d -p → sleep 150ms → send-keys Enter
 
     Preserva multilinha (envelope do Cockpit tem 30+ linhas); só sanitiza CR
     isolados. Buffer nomeado por uuid evita race entre dispatches concorrentes.
+    `-p` ativa bracketed paste — CC consolida o bloco em mensagem única em vez
+    de submeter linha-a-linha.
 
     Retorna False quando a sessão não existe ou o load-buffer falha. Erros do
     paste-buffer tentam cleanup do buffer e retornam False sem propagar — o
