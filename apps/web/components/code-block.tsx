@@ -2,6 +2,13 @@
 
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 
+/** Último recurso pra iOS Safari quando clipboard API + execCommand falham. */
+function shareFallback(text: string): void {
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    navigator.share({ text }).catch(() => {});
+  }
+}
+
 /**
  * Wrapper de <pre> com botão "copiar" no canto superior direito. Plugado nos
  * Markdown do chat (assistant + user) via `components={{ pre: CodeBlock }}`.
@@ -56,10 +63,18 @@ export function CodeBlock({ children, ...props }: { children?: ReactNode } & Rea
     }
 
     // 2) Fallback async: Clipboard API. Não bloqueia UI; se falhar,
-    //    silenciosamente; usuário pode tentar de novo.
+    //    silenciosamente cai pro Web Share.
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(flashCopied).catch(() => {});
+      navigator.clipboard
+        .writeText(text)
+        .then(flashCopied)
+        .catch(() => shareFallback(text));
+      return;
     }
+
+    // 3) Último recurso (iOS Safari): Web Share API abre share sheet
+    //    nativo com opção "Copiar". 1 tap extra mas 100% confiável.
+    shareFallback(text);
   }, [flashCopied]);
 
   return (
