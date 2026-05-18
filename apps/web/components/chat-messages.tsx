@@ -19,6 +19,7 @@ import {
   buildRenderItems,
   buildToolResultLookup,
   coalesceSidechainGroups,
+  deriveSubagentStatusesFromMessages,
   type SidechainGroupRef,
   type ToolResultLookup,
 } from '../lib/render-items';
@@ -338,7 +339,7 @@ function useTickingNow(enabled: boolean): number {
 
 function subagentName(entry: SubagentStatusEntry | null, fallback: string): string {
   if (!entry) return fallback;
-  return entry.description || entry.agent_type || entry.session_name || entry.agent_slug || fallback;
+  return entry.agent_type || entry.agent_slug || entry.session_name || fallback;
 }
 
 function subagentKind(entry: SubagentStatusEntry | null): string {
@@ -346,15 +347,30 @@ function subagentKind(entry: SubagentStatusEntry | null): string {
   return entry.agent_type || (entry.spawned_by_tool ? 'subsessão MCP' : 'Claude Code');
 }
 
+function formatNumber(value?: number): string {
+  if (value == null) return '—';
+  return new Intl.NumberFormat('pt-BR').format(value);
+}
+
 function subagentDetails(entry: SubagentStatusEntry | null, statusLabel: string, fallback: string) {
   const name = subagentName(entry, fallback);
-  const rows = [
+  const rows: Array<[string, string]> = [
     ['nome', name],
     ['tipo', subagentKind(entry)],
-    ['tarefa', entry?.task_id || '—'],
-    ['sessão', entry?.session_name || '—'],
     ['estado', statusLabel],
   ];
+  if (entry?.description) rows.splice(2, 0, ['descrição', entry.description]);
+  if (entry?.task_id) rows.push(['tarefa', entry.task_id]);
+  if (entry?.current_tool) {
+    rows.push([
+      'ferramenta',
+      entry.current_tool_summary ? `${entry.current_tool}: ${entry.current_tool_summary}` : entry.current_tool,
+    ]);
+  }
+  if (entry?.total_tokens != null) rows.push(['tokens', formatNumber(entry.total_tokens)]);
+  if (entry?.total_tool_use_count != null) rows.push(['ferramentas usadas', formatNumber(entry.total_tool_use_count)]);
+  if (entry?.session_name) rows.push(['sessão', entry.session_name]);
+  if (entry?.agent_id) rows.push(['agentId', entry.agent_id]);
   return (
     <div className="one-line-chip-sections">
       {rows.map(([label, value]) => (
@@ -398,7 +414,9 @@ const SidechainChip = memo(function SidechainChip({
     if (liveStatus.status === 'active' || liveStatus.status === 'starting') {
       tone = 'active';
       statusLabel = liveStatus.status === 'starting' ? 'iniciando' : 'rodando';
-      summary = `${subagentName(liveStatus, statusLabel)} · ${statusLabel}`;
+      summary = liveStatus.current_tool
+        ? `${subagentName(liveStatus, statusLabel)} · ${liveStatus.current_tool}`
+        : `${subagentName(liveStatus, statusLabel)} · ${statusLabel}`;
       trailing = formatMs(Math.max(0, nowMs - liveStatus.started_at_ms));
     } else if (liveStatus.status === 'completed') {
       tone = 'completed';
@@ -633,6 +651,15 @@ export function ChatMessages({
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
   const items = useMemo(() => coalesceSidechainGroups(buildRenderItems(messages)), [messages]);
+  const effectiveSubagentStatusByParentUuid = useMemo(() => {
+    const derived = deriveSubagentStatusesFromMessages(messages);
+    if (!subagentStatusByParentUuid || subagentStatusByParentUuid.size === 0) return derived;
+    const next = new Map(derived);
+    for (const [parentUuid, live] of subagentStatusByParentUuid) {
+      next.set(parentUuid, { ...next.get(parentUuid), ...live });
+    }
+    return next;
+  }, [messages, subagentStatusByParentUuid]);
   const optimisticLen = optimistic?.length ?? 0;
 
   // Callback refs (não useEffect): componente alterna entre empty-state e
@@ -749,7 +776,7 @@ export function ChatMessages({
             const liveStatus = resolveSidechainLiveStatus(
               item.rootUuid,
               item.parentUuids,
-              subagentStatusByParentUuid,
+              effectiveSubagentStatusByParentUuid,
             );
             // Pega timestamp do primeiro turn do grupo pra mostrar HH:MM.
             const groupTs = messages.find((m) => m.uuid === item.rootUuid)?.timestamp;
@@ -770,7 +797,7 @@ export function ChatMessages({
                 groups={item.groups}
                 subagentCount={item.subagentCount}
                 totalDurMs={item.totalDurMs}
-                statusMap={subagentStatusByParentUuid}
+                statusMap={effectiveSubagentStatusByParentUuid}
               />
             );
           }

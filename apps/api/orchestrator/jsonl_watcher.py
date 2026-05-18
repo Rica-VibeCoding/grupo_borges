@@ -49,6 +49,8 @@ _subagent_event_seq = 0
 # {slug → {tool_use_id → parent_uuid}}. Populado em assistant.tool_use Task,
 # consumido em user.tool_result, limpo no fechamento.
 _subagent_task_tool_use: dict[str, dict[str, str]] = {}
+_subagent_task_meta: dict[str, dict[str, dict[str, Any]]] = {}
+_subagent_prompt_meta: dict[str, dict[str, dict[str, Any]]] = {}
 # {slug → {agentId → parent_uuid}} — pro caso ASYNC (Agent run_in_background),
 # o fim do subagent vem como queue-operation enqueue com task-notification,
 # que só tem agentId pra identificar de qual subagent é. Esse mapa traduz
@@ -144,12 +146,110 @@ def _register_subagent_tool_use(slug: str, payload: dict) -> None:
         tool_use_id = block.get("id")
         if isinstance(tool_use_id, str) and tool_use_id:
             _subagent_task_tool_use.setdefault(slug, {})[tool_use_id] = msg_uuid
+            tool_input = block.get("input")
+            meta: dict[str, Any] = {}
+            if isinstance(tool_input, dict):
+                for src, dest in (
+                    ("subagent_type", "agent_type"),
+                    ("agent_type", "agent_type"),
+                    ("description", "description"),
+                    ("prompt", "prompt"),
+                ):
+                    value = tool_input.get(src)
+                    if isinstance(value, str) and value.strip():
+                        meta[dest] = value.strip()
+            if meta:
+                _subagent_task_meta.setdefault(slug, {})[msg_uuid] = meta
+                prompt = meta.get("prompt")
+                if isinstance(prompt, str) and prompt:
+                    _subagent_prompt_meta.setdefault(slug, {})[prompt] = meta
+
+
+def _message_text(payload: dict) -> str | None:
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    return None
+
+
+def _tool_activity(payload: dict) -> dict[str, Any]:
+    for block in _content_blocks(payload):
+        if block.get("type") != "tool_use":
+            continue
+        name = block.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        meta: dict[str, Any] = {"current_tool": name}
+        tool_input = block.get("input")
+        if isinstance(tool_input, dict):
+            for key in ("description", "command", "file_path", "pattern", "query", "url"):
+                value = _short_text(tool_input.get(key))
+                if value:
+                    meta["current_tool_summary"] = value
+                    break
+        return meta
+    return {}
+
+
+def _tool_result_meta(payload: dict) -> dict[str, Any]:
+    result = payload.get("toolUseResult")
+    if not isinstance(result, dict):
+        return {}
+    meta: dict[str, Any] = {}
+    agent_id = result.get("agentId")
+    if isinstance(agent_id, str) and agent_id:
+        meta["agent_id"] = agent_id
+    agent_type = result.get("agentType")
+    if isinstance(agent_type, str) and agent_type:
+        meta["agent_type"] = agent_type
+    prompt = result.get("prompt")
+    if isinstance(prompt, str) and prompt:
+        meta["prompt"] = prompt
+    total_duration = result.get("totalDurationMs")
+    if isinstance(total_duration, int | float):
+        meta["duration_ms"] = max(0, int(total_duration))
+    total_tokens = result.get("totalTokens")
+    if isinstance(total_tokens, int):
+        meta["total_tokens"] = total_tokens
+    total_tools = result.get("totalToolUseCount")
+    if isinstance(total_tools, int):
+        meta["total_tool_use_count"] = total_tools
+    tool_stats = result.get("toolStats")
+    if isinstance(tool_stats, dict):
+        meta["tool_stats"] = tool_stats
+    status = result.get("status")
+    if isinstance(status, str) and status:
+        meta["result_status"] = status
+    return meta
+
+
+def _subagent_public_meta(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: state[k]
+        for k in (
+            "task_id", "session_name", "worktree_path", "workspace_path",
+            "visibility", "spawned_by_tool", "agent_slug", "agent_type",
+            "description", "prompt", "agent_id", "current_tool",
+            "current_tool_summary", "total_tokens", "total_tool_use_count",
+            "tool_stats", "result_status",
+        )
+        if k in state
+    }
 
 
 _TASK_NOTIF_ID_RE = re.compile(r"<task-id>\s*([A-Za-z0-9_-]+)\s*</task-id>")
 
 
-def _close_subagent_by_agent_id(slug: str, agent_id: str, now: int) -> None:
+def _close_subagent_by_agent_id(
+    slug: str,
+    agent_id: str,
+    now: int,
+    *,
+    meta: dict[str, Any] | None = None,
+) -> None:
     parent_uuid = _subagent_agent_to_parent.get(slug, {}).get(agent_id)
     if not parent_uuid:
         return
@@ -157,14 +257,20 @@ def _close_subagent_by_agent_id(slug: str, agent_id: str, now: int) -> None:
     state = active_by_parent.pop(parent_uuid, None)
     if state is None:
         return
+    if meta:
+        state.update(meta)
+    duration_ms = state.get("duration_ms")
+    if not isinstance(duration_ms, int):
+        duration_ms = max(0, now - state["started_at_ms"])
     _append_subagent_status(
         slug,
         {
             "parent_uuid": parent_uuid,
             "status": "completed",
             "started_at_ms": state["started_at_ms"],
-            "duration_ms": max(0, now - state["started_at_ms"]),
+            "duration_ms": duration_ms,
             "last_seen_ms": state["last_seen_ms"],
+            **_subagent_public_meta(state),
         },
     )
     _subagent_agent_to_parent.get(slug, {}).pop(agent_id, None)
@@ -207,17 +313,36 @@ def update_subagent_state_from_jsonl(
     if event_type == "assistant":
         _register_subagent_tool_use(slug, payload)
 
-    parent_uuid = _jsonl_value(payload, "parentUuid", "parent_uuid")
+    raw_parent_uuid = _jsonl_value(payload, "parentUuid", "parent_uuid")
+    payload_uuid = payload.get("uuid") if isinstance(payload.get("uuid"), str) else None
     agent_id = payload.get("agentId") if isinstance(payload.get("agentId"), str) else None
-    if (
-        _jsonl_bool(payload, "isSidechain", "is_sidechain")
-        and isinstance(parent_uuid, str)
-        and parent_uuid
-    ):
+    if _jsonl_bool(payload, "isSidechain", "is_sidechain"):
         active_by_parent = _subagent_state.setdefault(slug, {})
+        mapped_parent = _subagent_agent_to_parent.get(slug, {}).get(agent_id or "")
+        if mapped_parent:
+            parent_uuid = mapped_parent
+        elif isinstance(raw_parent_uuid, str) and raw_parent_uuid in active_by_parent:
+            parent_uuid = raw_parent_uuid
+        elif agent_id and payload_uuid:
+            parent_uuid = payload_uuid
+        elif isinstance(raw_parent_uuid, str) and raw_parent_uuid:
+            parent_uuid = raw_parent_uuid
+        else:
+            parent_uuid = None
+
+        if not parent_uuid:
+            return
+
         state = active_by_parent.get(parent_uuid)
         if state is None:
             state = {"started_at_ms": now, "last_seen_ms": now}
+            state.update(_subagent_task_meta.get(slug, {}).get(parent_uuid, {}))
+            text = _message_text(payload)
+            if text:
+                state.update(_subagent_prompt_meta.get(slug, {}).get(text, {}))
+            if agent_id:
+                state["agent_id"] = agent_id
+            state.update(_tool_activity(payload))
             active_by_parent[parent_uuid] = state
             if agent_id:
                 _subagent_agent_to_parent.setdefault(slug, {})[agent_id] = parent_uuid
@@ -228,6 +353,7 @@ def update_subagent_state_from_jsonl(
                     "status": "active",
                     "started_at_ms": state["started_at_ms"],
                     "last_seen_ms": state["last_seen_ms"],
+                    **_subagent_public_meta(state),
                 },
             )
             # Race-handling: se a task-notification chegou ANTES desse
@@ -238,6 +364,21 @@ def update_subagent_state_from_jsonl(
                 return
         else:
             state["last_seen_ms"] = now
+            if agent_id:
+                state["agent_id"] = agent_id
+            tool_meta = _tool_activity(payload)
+            if tool_meta:
+                state.update(tool_meta)
+                _append_subagent_status(
+                    slug,
+                    {
+                        "parent_uuid": parent_uuid,
+                        "status": "active",
+                        "started_at_ms": state["started_at_ms"],
+                        "last_seen_ms": state["last_seen_ms"],
+                        **_subagent_public_meta(state),
+                    },
+                )
             if agent_id and agent_id not in _subagent_agent_to_parent.setdefault(slug, {}):
                 _subagent_agent_to_parent[slug][agent_id] = parent_uuid
 
@@ -253,6 +394,10 @@ def update_subagent_state_from_jsonl(
     active_by_parent = _subagent_state.get(slug)
     if not active_by_parent:
         return
+    result_meta = _tool_result_meta(payload)
+    result_agent_id = result_meta.get("agent_id")
+    if isinstance(result_agent_id, str) and result_agent_id:
+        _close_subagent_by_agent_id(slug, result_agent_id, now, meta=result_meta)
     # Caso 2: fim do subagent SÍNCRONO (Task tool clássico) — tool_result
     # carrega tool_use_id; via _subagent_task_tool_use traduzimos pra
     # parent_uuid. Mantemos o match direto pra payloads sintéticos onde
@@ -274,6 +419,7 @@ def update_subagent_state_from_jsonl(
                 "started_at_ms": state["started_at_ms"],
                 "duration_ms": max(0, now - state["started_at_ms"]),
                 "last_seen_ms": state["last_seen_ms"],
+                **_subagent_public_meta(state),
             },
         )
     # GC: tira do map os TUIDs cujo parent já fechou (ou nunca esteve ativo)
@@ -281,6 +427,10 @@ def update_subagent_state_from_jsonl(
         mapped = tool_use_map.get(tuid)
         if mapped and mapped not in active_by_parent:
             tool_use_map.pop(tuid, None)
+            meta = _subagent_task_meta.get(slug, {}).pop(mapped, None)
+            prompt = meta.get("prompt") if isinstance(meta, dict) else None
+            if isinstance(prompt, str):
+                _subagent_prompt_meta.get(slug, {}).pop(prompt, None)
 
 
 def subagent_active_snapshot(
@@ -297,15 +447,7 @@ def subagent_active_snapshot(
             "status": "active",
             "started_at_ms": state["started_at_ms"],
             "last_seen_ms": state["last_seen_ms"],
-            # Campos extras presentes só em subsessões spawned by tool (LB-9)
-            **{
-                k: state[k]
-                for k in (
-                    "task_id", "session_name", "worktree_path",
-                    "workspace_path", "visibility", "spawned_by_tool",
-                )
-                if k in state
-            },
+            **_subagent_public_meta(state),
         }
         for parent_uuid, state in _subagent_state.get(slug, {}).items()
         if task_id is None or state.get("task_id") == task_id
@@ -348,6 +490,7 @@ def register_spawned_subagent(
             "task_id": task_id,
             "session_name": session_name,
             "visibility": visibility,
+            "agent_slug": agent_slug,
             "spawned_by_tool": True,
         },
     )
@@ -391,7 +534,7 @@ def mark_stalled_subagents(slug: str, *, now_ms: int | None = None) -> list[dict
     slug_state = _subagent_state.get(slug, {})
     for parent_uuid in list(slug_state.keys()):
         state = slug_state[parent_uuid]
-        ttl_ms = 600_000 if state.get("spawned_by_tool") else 30_000
+        ttl_ms = 600_000 if state.get("spawned_by_tool") or state.get("current_tool") else 30_000
         if now - state["last_seen_ms"] <= ttl_ms:
             continue
         payload: dict[str, Any] = {
@@ -402,9 +545,7 @@ def mark_stalled_subagents(slug: str, *, now_ms: int | None = None) -> list[dict
             "duration_ms": max(0, now - state["started_at_ms"]),
         }
         # Inclui campos de cleanup para subsessões tool-spawned
-        for field in ("worktree_path", "workspace_path", "session_name", "spawned_by_tool", "task_id"):
-            if field in state:
-                payload[field] = state[field]
+        payload.update(_subagent_public_meta(state))
         _append_subagent_status(slug, payload)
         stalled.append(payload)
         slug_state.pop(parent_uuid, None)
@@ -444,9 +585,7 @@ def mark_completed_when_tmux_gone(
                 "last_seen_ms": state["last_seen_ms"],
                 "duration_ms": max(0, now - state["started_at_ms"]),
             }
-            for field in ("worktree_path", "workspace_path", "session_name", "spawned_by_tool", "task_id"):
-                if field in state:
-                    payload[field] = state[field]
+            payload.update(_subagent_public_meta(state))
             _append_subagent_status(slug, payload)
             completed.append(payload)
             slug_state.pop(parent_uuid, None)
@@ -469,6 +608,8 @@ def reset_subagent_state_for_tests() -> None:
     _subagent_state.clear()
     _subagent_status_events.clear()
     _subagent_task_tool_use.clear()
+    _subagent_task_meta.clear()
+    _subagent_prompt_meta.clear()
     _subagent_agent_to_parent.clear()
     _subagent_pending_close.clear()
     _subagent_event_seq = 0
@@ -482,6 +623,8 @@ def reset_subagent_state_for_slug(slug: str) -> None:
     _subagent_state.pop(slug, None)
     _subagent_status_events.pop(slug, None)
     _subagent_task_tool_use.pop(slug, None)
+    _subagent_task_meta.pop(slug, None)
+    _subagent_prompt_meta.pop(slug, None)
     _subagent_agent_to_parent.pop(slug, None)
     _subagent_pending_close.pop(slug, None)
 

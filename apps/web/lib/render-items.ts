@@ -2,7 +2,7 @@
 // `components/chat-messages.tsx` (V1) pra permitir teste de integração via
 // `node --test` sem puxar React/CSS. Não tem side-effect — só types.
 
-import type { ContentPart, MessagePayload } from './messages-types.ts';
+import type { ContentPart, MessagePayload, SubagentStatusEntry, ToolUseResult } from './messages-types.ts';
 import { classifyMessage } from './chat-payload-classifier.ts';
 import type { OneLineChipKind, OneLineChipTone } from '../components/one-line-chip-types.ts';
 
@@ -145,6 +145,109 @@ export function buildToolResultLookup(messages: MessagePayload[]): ToolResultLoo
     }
   }
   return map;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function toolUseMetaFromContent(content: string | ContentPart[] | undefined | null): Map<string, Partial<SubagentStatusEntry>> {
+  const metaByToolUseId = new Map<string, Partial<SubagentStatusEntry>>();
+  for (const part of extractContentParts(content)) {
+    if (part.type !== 'tool_use' || (part.name !== 'Task' && part.name !== 'Agent')) continue;
+    if (!part.input || typeof part.input !== 'object') continue;
+    const input = part.input as Record<string, unknown>;
+    const meta: Partial<SubagentStatusEntry> = {};
+    const agentType = stringValue(input.subagent_type) ?? stringValue(input.agent_type);
+    const description = stringValue(input.description);
+    const prompt = stringValue(input.prompt);
+    if (agentType) meta.agent_type = agentType;
+    if (description) meta.description = description;
+    if (prompt) meta.prompt = prompt;
+    if (Object.keys(meta).length > 0) metaByToolUseId.set(part.id, meta);
+  }
+  return metaByToolUseId;
+}
+
+function toolResultIds(content: string | ContentPart[] | undefined | null): string[] {
+  return extractContentParts(content)
+    .filter((part): part is Extract<ContentPart, { type: 'tool_result' }> => part.type === 'tool_result')
+    .map((part) => part.tool_use_id);
+}
+
+function statusFromToolUseResult(
+  rootUuid: string,
+  result: ToolUseResult,
+  fallback: Partial<SubagentStatusEntry>,
+  message: MessagePayload,
+  rootMessage?: MessagePayload,
+): SubagentStatusEntry {
+  const messageTs = Date.parse(message.timestamp);
+  const rootTs = rootMessage ? Date.parse(rootMessage.timestamp) : NaN;
+  const startedAt = Number.isFinite(rootTs)
+    ? rootTs
+    : (Number.isFinite(messageTs) ? messageTs : message.created_at * 1000);
+  const lastSeenAt = Number.isFinite(messageTs) ? messageTs : message.created_at * 1000;
+  const durationMs = numberValue(result.totalDurationMs);
+  return {
+    parent_uuid: rootUuid,
+    status: result.status === 'completed' ? 'completed' : 'completed',
+    started_at_ms: startedAt,
+    last_seen_ms: lastSeenAt,
+    duration_ms: durationMs == null ? Math.max(0, lastSeenAt - startedAt) : Math.max(0, Math.round(durationMs)),
+    agent_id: stringValue(result.agentId),
+    agent_type: stringValue(result.agentType) ?? fallback.agent_type,
+    description: fallback.description,
+    prompt: stringValue(result.prompt) ?? fallback.prompt,
+    total_tokens: numberValue(result.totalTokens),
+    total_tool_use_count: numberValue(result.totalToolUseCount),
+    tool_stats: result.toolStats,
+    result_status: stringValue(result.status),
+  };
+}
+
+export function deriveSubagentStatusesFromMessages(messages: MessagePayload[]): Map<string, SubagentStatusEntry> {
+  const roots = buildSidechainRoots(messages);
+  const byUuid = new Map(messages.map((message) => [message.uuid, message]));
+  const rootByAgentId = new Map<string, string>();
+  const rootByPrompt = new Map<string, string>();
+  const metaByToolUseId = new Map<string, Partial<SubagentStatusEntry>>();
+
+  for (const message of messages) {
+    if (message.kind === 'assistant' && !message.is_sidechain) {
+      for (const [toolUseId, meta] of toolUseMetaFromContent(message.message?.content)) {
+        metaByToolUseId.set(toolUseId, meta);
+      }
+    }
+    if (!message.is_sidechain) continue;
+    const root = roots.get(message.uuid) ?? message.parent_uuid ?? message.uuid;
+    if (message.agent_id) rootByAgentId.set(message.agent_id, root);
+    if (typeof message.message?.content === 'string' && message.message.content.trim()) {
+      rootByPrompt.set(message.message.content.trim(), root);
+    }
+  }
+
+  const statuses = new Map<string, SubagentStatusEntry>();
+  for (const message of messages) {
+    const result = message.tool_use_result;
+    if (!result) continue;
+    const root = (
+      (result.agentId ? rootByAgentId.get(result.agentId) : undefined)
+      ?? (result.prompt ? rootByPrompt.get(result.prompt) : undefined)
+    );
+    if (!root) continue;
+    const fallback = toolResultIds(message.message?.content)
+      .map((toolUseId) => metaByToolUseId.get(toolUseId))
+      .find((meta): meta is Partial<SubagentStatusEntry> => Boolean(meta))
+      ?? {};
+    statuses.set(root, statusFromToolUseResult(root, result, fallback, message, byUuid.get(root)));
+  }
+
+  return statuses;
 }
 
 // V1: blinda o switch de kinds vindos do classifier. Se um kind futuro nascer

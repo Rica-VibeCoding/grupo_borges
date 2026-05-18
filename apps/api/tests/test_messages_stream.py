@@ -528,7 +528,16 @@ def test_subagent_completed_uses_real_jsonl_shape() -> None:
             "isSidechain": False,
             "message": {
                 "role": "assistant",
-                "content": [{"type": "tool_use", "id": tool_use_id, "name": "Task", "input": {}}],
+                "content": [{
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "Task",
+                    "input": {
+                        "subagent_type": "general-purpose",
+                        "description": "revisar UI",
+                        "prompt": "checar pílula de subagente",
+                    },
+                }],
             },
         },
         "assistant",
@@ -551,6 +560,7 @@ def test_subagent_completed_uses_real_jsonl_shape() -> None:
     )
 
     assert assistant_uuid in jsonl_watcher._subagent_state.get("pavan", {})
+    assert jsonl_watcher._subagent_state["pavan"][assistant_uuid]["agent_type"] == "general-purpose"
 
     # 3. Tool_result vem referenciando tool_use_id (NÃO parentUuid).
     #    Esse é o shape real do CC — antes do fix, mismatch silencioso.
@@ -578,6 +588,114 @@ def test_subagent_completed_uses_real_jsonl_shape() -> None:
     assert len(completed) == 1
     assert completed[-1]["parent_uuid"] == assistant_uuid
     assert completed[-1]["duration_ms"] == 3_000
+    assert completed[-1]["agent_type"] == "general-purpose"
+    assert completed[-1]["description"] == "revisar UI"
+    assert completed[-1]["prompt"] == "checar pílula de subagente"
+
+
+def test_subagent_state_uses_agent_id_as_stable_identity() -> None:
+    jsonl_watcher.reset_subagent_state_for_tests()
+
+    prompt = "analisar pílula"
+    agent_id = "agent-stable-1"
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "lucas",
+        {
+            "type": "assistant",
+            "uuid": "task-msg-1",
+            "isSidechain": False,
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu-agent-1",
+                    "name": "Agent",
+                    "input": {
+                        "subagent_type": "code-reviewer",
+                        "description": "revisar pílula",
+                        "prompt": prompt,
+                    },
+                }],
+            },
+        },
+        "assistant",
+        now_ms=1_000,
+    )
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "lucas",
+        {
+            "type": "user",
+            "uuid": "side-user-1",
+            "parentUuid": None,
+            "isSidechain": True,
+            "agentId": agent_id,
+            "message": {"role": "user", "content": prompt},
+        },
+        "user",
+        now_ms=2_000,
+    )
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "lucas",
+        {
+            "type": "assistant",
+            "uuid": "side-tool-1",
+            "parentUuid": "different-parent",
+            "isSidechain": True,
+            "agentId": agent_id,
+            "message": {
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu-bash",
+                    "name": "Bash",
+                    "input": {"description": "rodando validação"},
+                }],
+            },
+        },
+        "assistant",
+        now_ms=3_000,
+    )
+
+    snapshot = jsonl_watcher.subagent_active_snapshot("lucas")
+    assert len(snapshot) == 1
+    assert snapshot[0]["parent_uuid"] == "side-user-1"
+    assert snapshot[0]["agent_id"] == agent_id
+    assert snapshot[0]["agent_type"] == "code-reviewer"
+    assert snapshot[0]["description"] == "revisar pílula"
+    assert snapshot[0]["current_tool"] == "Bash"
+    assert snapshot[0]["current_tool_summary"] == "rodando validação"
+
+    jsonl_watcher.update_subagent_state_from_jsonl(
+        "lucas",
+        {
+            "type": "user",
+            "uuid": "tool-result-1",
+            "isSidechain": False,
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "toolu-agent-1", "content": "..."}],
+            },
+            "toolUseResult": {
+                "status": "completed",
+                "agentId": agent_id,
+                "agentType": "code-reviewer",
+                "totalDurationMs": 12_345,
+                "totalTokens": 9876,
+                "totalToolUseCount": 2,
+            },
+        },
+        "user",
+        now_ms=20_000,
+    )
+
+    assert jsonl_watcher.subagent_active_snapshot("lucas") == []
+    completed = [
+        e for e in jsonl_watcher._subagent_status_events.get("lucas", [])
+        if e["status"] == "completed"
+    ]
+    assert completed[-1]["duration_ms"] == 12_345
+    assert completed[-1]["total_tokens"] == 9876
+    assert completed[-1]["total_tool_use_count"] == 2
 
 
 def test_mark_stalled_subagents_emits_once_and_clears_state() -> None:
@@ -608,3 +726,18 @@ def test_mark_stalled_subagents_emits_once_and_clears_state() -> None:
     assert second == []
     assert third == []
     assert "toolu-once" not in jsonl_watcher._subagent_state.get("daniel", {})
+
+
+def test_mark_stalled_keeps_native_subagent_inside_long_tool() -> None:
+    jsonl_watcher.reset_subagent_state_for_tests()
+    jsonl_watcher._subagent_state.setdefault("felipe", {})["subagent-long-tool"] = {
+        "started_at_ms": 1_000,
+        "last_seen_ms": 1_000,
+        "current_tool": "Bash",
+        "current_tool_summary": "until-loop",
+    }
+
+    stalled = jsonl_watcher.mark_stalled_subagents("felipe", now_ms=61_000)
+
+    assert stalled == []
+    assert "subagent-long-tool" in jsonl_watcher._subagent_state.get("felipe", {})

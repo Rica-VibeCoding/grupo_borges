@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { MessagePayload } from '../lib/messages-types.ts';
-import { buildRenderItems } from '../lib/render-items.ts';
+import { buildRenderItems, deriveSubagentStatusesFromMessages } from '../lib/render-items.ts';
 import {
   doneTaskNotificationXml,
   failedTaskNotificationXml,
@@ -33,6 +33,16 @@ function userText(id: number, content: string): MessagePayload {
     uuid: `uuid-${id}`,
     kind: 'user',
     message: { role: 'user', content },
+  };
+}
+
+function message(overrides: Partial<MessagePayload> & { message: MessagePayload['message'] }): MessagePayload {
+  return {
+    ...baseMessage,
+    ...overrides,
+    id: overrides.id ?? baseMessage.id,
+    uuid: overrides.uuid ?? baseMessage.uuid,
+    message: overrides.message,
   };
 }
 
@@ -84,4 +94,66 @@ test('buildRenderItems — texto livre cai em kind=user (não vira chip)', () =>
   const items = buildRenderItems([userText(14, 'mensagem normal do Rica')]);
   assert.equal(items.length, 1);
   assert.equal(items[0].kind, 'user');
+});
+
+test('deriveSubagentStatusesFromMessages — recupera tokens e prompt do resultado', () => {
+  const prompt = 'analisar pílula';
+  const messages: MessagePayload[] = [
+    message({
+      id: 20,
+      uuid: 'agent-tool',
+      kind: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'toolu-agent',
+          name: 'Agent',
+          input: {
+            subagent_type: 'code-reviewer',
+            description: 'revisar pílula',
+            prompt,
+          },
+        }],
+      },
+    }),
+    message({
+      id: 21,
+      uuid: 'side-root',
+      kind: 'user',
+      is_sidechain: true,
+      agent_id: 'agent-1',
+      message: { role: 'user', content: prompt },
+    }),
+    message({
+      id: 22,
+      uuid: 'tool-result',
+      kind: 'user',
+      parent_uuid: 'agent-tool',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu-agent', content: 'done' }],
+      },
+      tool_use_result: {
+        status: 'completed',
+        agentId: 'agent-1',
+        agentType: 'code-reviewer',
+        prompt,
+        totalDurationMs: 12_345,
+        totalTokens: 9876,
+        totalToolUseCount: 2,
+      },
+    }),
+  ];
+
+  const statuses = deriveSubagentStatusesFromMessages(messages);
+  const entry = statuses.get('side-root');
+
+  assert.equal(entry?.status, 'completed');
+  assert.equal(entry?.agent_type, 'code-reviewer');
+  assert.equal(entry?.description, 'revisar pílula');
+  assert.equal(entry?.prompt, prompt);
+  assert.equal(entry?.total_tokens, 9876);
+  assert.equal(entry?.total_tool_use_count, 2);
+  assert.equal(entry?.duration_ms, 12_345);
 });

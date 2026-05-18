@@ -25,6 +25,31 @@ export type SubagentStatusEntry = {
   last_seen_ms?: number;
   duration_ms?: number;
   visibility?: boolean;
+  agent_slug?: string;
+  agent_id?: string;
+  agent_type?: string;
+  session_name?: string;
+  task_id?: string | null;
+  description?: string;
+  prompt?: string;
+  spawned_by_tool?: boolean;
+  current_tool?: string;
+  current_tool_summary?: string;
+  total_tokens?: number;
+  total_tool_use_count?: number;
+  tool_stats?: Record<string, unknown>;
+  result_status?: string;
+};
+
+export type ToolUseResult = {
+  status?: string;
+  prompt?: string;
+  agentId?: string;
+  agentType?: string;
+  totalDurationMs?: number;
+  totalTokens?: number;
+  totalToolUseCount?: number;
+  toolStats?: Record<string, unknown>;
 };
 
 // JP-18 R2: bolha local enquanto o user-message não volta pelo SSE. Vive só
@@ -44,6 +69,8 @@ export type MessagePayload = {
   parent_uuid: string | null;
   session_id: string | null;
   is_sidechain: boolean;
+  agent_id?: string | null;
+  tool_use_result?: ToolUseResult | null;
   user_type: 'external' | 'internal';
   timestamp: string;
   created_at: number;

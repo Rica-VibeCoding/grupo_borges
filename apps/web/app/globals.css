@@ -2408,6 +2408,48 @@
 .one-line-chip[data-kind="meta-decision"] { opacity: 0.85; }
 .one-line-chip[data-kind="user-internal"] { opacity: 0.75; }
 
+.subagent-status-icon {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--muted);
+  border-top-color: transparent;
+  display: inline-block;
+}
+.subagent-status-icon[data-tone="active"] {
+  border-color: var(--status-running);
+  border-top-color: transparent;
+  animation: subagent-status-spin 900ms linear infinite;
+}
+.subagent-status-icon[data-tone="completed"] {
+  border-color: var(--status-done);
+  background: var(--status-done);
+}
+.subagent-status-icon[data-tone="stalled"] {
+  border-color: var(--status-blocked);
+}
+.subagent-detail-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+.subagent-detail-row .one-line-chip-section-head {
+  white-space: nowrap;
+}
+.subagent-detail-row .mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+@keyframes subagent-status-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .subagent-status-icon[data-tone="active"] { animation: none; }
+}
+
 /* DS-71 round 4 — user-internal chip discreto preto/grafite (feedback
    Rica). Distingue eventos automáticos do CC (hooks, system reminders)
    das mensagens reais do user. Fundo bem escuro pra "sumir" sem

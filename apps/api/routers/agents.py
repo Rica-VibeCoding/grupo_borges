@@ -287,6 +287,8 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
         "timestamp": payload.get("timestamp"),
         "created_at": event["created_at"],
         "message": payload.get("message"),
+        "agent_id": payload.get("agentId"),
+        "tool_use_result": payload.get("toolUseResult"),
     }
 
 
