@@ -30,11 +30,8 @@
   --glow-hover:0 0 8px rgba(0,240,255,0.30);
   --focus-ring-glow:0 0 0 3px rgba(0,240,255,0.10), 0 0 8px rgba(0,240,255,0.30);
   --grid-line:rgba(0,240,255,0.025); --hud-mark:rgba(0,240,255,0.32);
-  /* JP-11 Fase 2: bolhas do chat real (user/assistant/internal). User puxa
-     o brand ciano via --accent-subtle (Apple Messages-like) em vez de verde
-     iMessage — paleta do cockpit é cyan, não green. */
-  --bubble-user:var(--accent-subtle);
-  --bubble-user-border:var(--accent-border);
+  --bubble-user:#005c4b;
+  --bubble-user-border:#0b7c69;
   --bubble-assistant:var(--card-2);
   --bubble-assistant-border:var(--chat-hairline-strong);
   --bubble-internal:rgba(255,255,255,0.04);
@@ -665,9 +662,9 @@
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 .chat-input:focus-within {
-  border-color: var(--accent-border);
-  background: var(--card-2);
-  box-shadow: var(--focus-ring-glow);
+  border-color: var(--chat-hairline-strong);
+  background: var(--card);
+  box-shadow: none;
 }
 .chat-icon-btn {
   width: 32px; height: 32px; min-width: 32px;
@@ -687,6 +684,7 @@
   min-height: 32px; max-height: 134px;
   padding: 5px 8px;
   border: none; background: transparent;
+  appearance: none;
   color: var(--text);
   font-family: 'Geist', sans-serif;
   font-weight: 510;
@@ -699,7 +697,12 @@
 @media (max-width: 600px) {
   .chat-input-textarea { font-size: 16px; }
 }
-.chat-input-textarea:focus { outline: none; }
+.chat-input-textarea:focus,
+.chat-input-textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
 .chat-input textarea.chat-send-flash {
   opacity: 0;
   transform: translateY(-4px);
@@ -2149,6 +2152,7 @@
 }
 .msg-bubble-user {
   background: var(--bubble-user);
+  border-width: 0.5px;
   border-color: var(--bubble-user-border);
 }
 /* JP-18 R2 — optimistic bubble. pending/sent fica dim (espera SSE);
