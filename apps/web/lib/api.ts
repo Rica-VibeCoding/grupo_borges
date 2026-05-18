@@ -16,6 +16,7 @@ import type {
   TaskEvent,
   TaskStatus,
 } from './cockpit-types';
+import { safeUUID } from './ids';
 
 const SERVER_API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
 
@@ -180,8 +181,7 @@ export async function postAgentInput(
   slug: string,
   text: string,
 ): Promise<AgentInputResponse> {
-  const idempotency_key =
-    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const idempotency_key = safeUUID();
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/input`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

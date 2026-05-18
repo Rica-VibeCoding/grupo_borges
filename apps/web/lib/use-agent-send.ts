@@ -58,6 +58,8 @@ export function useAgentSend(slug: string, agentName: string): UseAgentSendResul
         }
       } catch (err) {
         fireSendError(err);
+        // Propaga pra quem chama poder marcar optimistic como 'error' (JP-18 R2).
+        throw err;
       } finally {
         setSending(false);
       }

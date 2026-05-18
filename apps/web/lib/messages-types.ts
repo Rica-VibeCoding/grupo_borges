@@ -27,6 +27,16 @@ export type SubagentStatusEntry = {
   visibility?: boolean;
 };
 
+// JP-18 R2: bolha local enquanto o user-message não volta pelo SSE. Vive só
+// no client; reconciliada quando MessagePayload role='user' com mesmo text
+// chega via stream. `clientId` é UUID front-side; `ts` é Date.now() do submit.
+export type OptimisticEntry = {
+  clientId: string;
+  text: string;
+  ts: number;
+  status: 'pending' | 'sent' | 'error';
+};
+
 export type MessagePayload = {
   id: number;
   kind: MessageKind;

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Select from '@radix-ui/react-select';
 import type { Agent } from '../lib/cockpit-types';
+import { safeUUID } from '../lib/ids';
+import type { OptimisticEntry } from '../lib/messages-types';
 import {
   formatDuration,
   formatLastSeen,
@@ -77,6 +79,50 @@ export function ChatPanel({
   const excerpt = paneStream.excerpt ?? agent.pane_excerpt ?? '';
   const executorKind = paneStream.executorKind ?? agent.executor_kind ?? 'claude_code';
 
+  // JP-18 R2: optimistic state lifted pro ChatPanel pra ChatInput poder
+  // registrar a bolha antes do POST e ChatMessages poder renderizar.
+  // Reconciliação por (text, janela 2s) — backend não propaga clientId hoje.
+  const agentSend = useAgentSend(agent.slug, agent.name);
+  const [optimistic, setOptimistic] = useState<OptimisticEntry[]>([]);
+
+  const submitText = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const clientId = safeUUID();
+      const entry: OptimisticEntry = {
+        clientId,
+        text: trimmed,
+        ts: Date.now(),
+        status: 'pending',
+      };
+      setOptimistic((prev) => [...prev, entry]);
+      try {
+        await agentSend.sendText(trimmed);
+        // sucesso: status='sent'. SSE vai trazer o real e reconciliar.
+        setOptimistic((prev) =>
+          prev.map((e) => (e.clientId === clientId ? { ...e, status: 'sent' } : e)),
+        );
+      } catch {
+        // toast já disparado dentro do useAgentSend; só marca erro local.
+        setOptimistic((prev) =>
+          prev.map((e) => (e.clientId === clientId ? { ...e, status: 'error' } : e)),
+        );
+      }
+    },
+    [agentSend],
+  );
+
+  useEffect(() => {
+    if (optimistic.length === 0) return;
+    setOptimistic((prev) => reconcileOptimistic(prev, messagesStream.messages));
+  }, [messagesStream.messages, optimistic.length]);
+
+  // Limpa quando troca de agente (slug muda → messagesStream reseta também).
+  useEffect(() => {
+    setOptimistic([]);
+  }, [agent.slug]);
+
   return (
     <div className="chat-panel">
       <ChatHeader agent={agent} serverNow={serverNow} />
@@ -93,15 +139,59 @@ export function ChatPanel({
           slug={agent.slug}
           loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
           subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
+          optimistic={optimistic}
+          agentName={agent.name}
         />
       )}
       <ChatInput
-        slug={agent.slug}
         agentName={agent.name}
         onFocusChange={setInputFocused}
+        sendText={submitText}
+        sendImage={agentSend.sendImage}
+        sendVoice={agentSend.sendVoice}
+        sending={agentSend.sending}
       />
     </div>
   );
+}
+
+// useOptimistic não serve: estado base vem de SSE async, action precisaria
+// segurar até evento real chegar (janela imprevisível). Reconcile manual:
+// match por (text + janela -2s..+30s), TTL 10s descarta órfãos silenciosos.
+const OPTIMISTIC_TTL_MS = 10_000;
+const OPTIMISTIC_MAX_LAG_MS = 30_000;
+
+function reconcileOptimistic(
+  pending: OptimisticEntry[],
+  realMessages: ReturnType<typeof useMessagesStream>['messages'],
+): OptimisticEntry[] {
+  if (pending.length === 0) return pending;
+  const now = Date.now();
+  const userMsgs = realMessages.filter(
+    (m) => m.message?.role === 'user' && m.user_type === 'external',
+  );
+  const consumed = new Set<string>();
+  const next = pending.filter((opt) => {
+    if (opt.status === 'error') return true; // mantém pra retry visual
+    if (now - opt.ts > OPTIMISTIC_TTL_MS) return false; // órfão silencioso
+    const match = userMsgs.find((m) => {
+      if (consumed.has(m.uuid)) return false;
+      const content = m.message?.content;
+      const txt = typeof content === 'string' ? content : '';
+      if (txt.trim() !== opt.text) return false;
+      const realTs = Date.parse(m.timestamp);
+      if (!Number.isFinite(realTs)) return false;
+      const lag = realTs - opt.ts;
+      return lag > -2000 && lag < OPTIMISTIC_MAX_LAG_MS;
+    });
+    if (match) {
+      consumed.add(match.uuid);
+      return false;
+    }
+    return true;
+  });
+  // Se nada mudou, retorna ref original pra não causar re-render do consumer.
+  return next.length === pending.length ? pending : next;
 }
 
 // ----- ChatHeader ---------------------------------------------------------
@@ -290,15 +380,20 @@ function formatRecordingDuration(seconds: number): string {
 }
 
 function ChatInput({
-  slug,
   agentName,
   onFocusChange,
+  sendText,
+  sendImage,
+  sendVoice,
+  sending,
 }: {
-  slug: string;
   agentName: string;
   onFocusChange?: (focused: boolean) => void;
+  sendText: (text: string) => Promise<void>;
+  sendImage: (file: File, caption?: string) => Promise<void>;
+  sendVoice: (blob: Blob) => Promise<void>;
+  sending: boolean;
 }) {
-  const { sending, sendText, sendImage, sendVoice } = useAgentSend(slug, agentName);
   const { fire } = useToast();
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);

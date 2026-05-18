@@ -8,6 +8,7 @@ import 'highlight.js/styles/github-dark.css';
 import type {
   ContentPart,
   MessagePayload,
+  OptimisticEntry,
   SubagentStatusEntry,
   SubagentStatusKind,
 } from '../lib/messages-types';
@@ -113,12 +114,26 @@ function parseCockpitImage(text: string): { url: string; caption: string | null 
 // output do agent, NÃO chip encapsulado. Volta pro msg-bubble-user clássico
 // com markdown. Chip era confuso demais visualmente; bubble livre alinha
 // input e output no mesmo padrão de leitura.
-const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: string }) {
+// JP-18 R2: aceita `optimisticStatus` opcional pra render local antes do SSE
+// confirmar — adiciona classe + data-status que o CSS usa pra dim/error.
+const UserBubble = memo(function UserBubble({
+  text,
+  optimisticStatus,
+}: {
+  text: string;
+  ts?: string;
+  optimisticStatus?: OptimisticEntry['status'];
+}) {
   const image = parseCockpitImage(text);
+  const optClass = optimisticStatus ? ' msg-bubble-optimistic' : '';
+  const rowProps = optimisticStatus ? { 'data-optimistic': optimisticStatus } : {};
   if (image) {
     return (
-      <div className="msg-row msg-row-user">
-        <div className="msg-bubble msg-bubble-user msg-bubble-image">
+      <div className="msg-row msg-row-user" {...rowProps}>
+        <div
+          className={`msg-bubble msg-bubble-user msg-bubble-image${optClass}`}
+          data-status={optimisticStatus}
+        >
           <a
             href={image.url}
             target="_blank"
@@ -144,8 +159,11 @@ const UserBubble = memo(function UserBubble({ text }: { text: string; ts?: strin
     );
   }
   return (
-    <div className="msg-row msg-row-user">
-      <div className="msg-bubble msg-bubble-user">
+    <div className="msg-row msg-row-user" {...rowProps}>
+      <div
+        className={`msg-bubble msg-bubble-user${optClass}`}
+        data-status={optimisticStatus}
+      >
         <Markdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{text}</Markdown>
       </div>
     </div>
@@ -503,6 +521,22 @@ const AssistantBubble = memo(function AssistantBubble({
   );
 });
 
+// Placeholder "agente compondo" — aparece enquanto há optimistic não-erro no
+// feed (heurística "user mandou, ainda não veio resposta"). Reutiliza
+// OneLineChip kind=thinking com tone=active pra herdar a breathing animation.
+const TypingPlaceholder = memo(function TypingPlaceholder({ agentName }: { agentName: string }) {
+  return (
+    <div className="msg-row msg-row-assistant" data-typing-placeholder>
+      <OneLineChip
+        kind="thinking"
+        icon="⚙️"
+        label={`${agentName} digitando…`}
+        tone="active"
+      />
+    </div>
+  );
+});
+
 // --- Container + auto-scroll -------------------------------------------------
 
 export type ChatMessagesProps = {
@@ -515,6 +549,10 @@ export type ChatMessagesProps = {
   emptyLabel?: string;
   /** Status ao vivo dos subagents por parent_uuid (JP-11 F3-2). */
   subagentStatusByParentUuid?: Map<string, SubagentStatusEntry>;
+  /** Bolhas locais ainda não confirmadas pelo SSE (JP-18 R2). */
+  optimistic?: OptimisticEntry[];
+  /** Nome do agente — usado no placeholder "X digitando…" (JP-18 R2). */
+  agentName?: string;
 };
 
 export function ChatMessages({
@@ -523,6 +561,8 @@ export function ChatMessages({
   loading = false,
   emptyLabel,
   subagentStatusByParentUuid,
+  optimistic,
+  agentName,
 }: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
@@ -530,6 +570,7 @@ export function ChatMessages({
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
   const items = useMemo(() => coalesceSidechainGroups(buildRenderItems(messages)), [messages]);
+  const optimisticLen = optimistic?.length ?? 0;
 
   // Auto-scroll quando "grudado" no fim; senão acende pílula "↓ nova mensagem".
   // Durante replay (loading=true), suprime hasNew — senão a pílula pulsa
@@ -543,7 +584,7 @@ export function ChatMessages({
     } else if (!loading) {
       setHasNew(true);
     }
-  }, [items.length, stuck, loading]);
+  }, [items.length, optimisticLen, stuck, loading]);
 
   // Reset quando o slug muda (messages volta a 0).
   useEffect(() => {
@@ -569,7 +610,7 @@ export function ChatMessages({
     setHasNew(false);
   }, []);
 
-  if (!loading && items.length === 0) {
+  if (!loading && items.length === 0 && optimisticLen === 0) {
     return (
       <div className="chat-messages-empty muted">
         {emptyLabel ?? '— ainda não há conversa nesta sessão —'}
@@ -664,6 +705,20 @@ export function ChatMessages({
             />
           );
         })}
+        {optimistic && optimistic.length > 0 && (
+          <>
+            {optimistic.map((entry) => (
+              <UserBubble
+                key={`opt:${entry.clientId}`}
+                text={entry.text}
+                optimisticStatus={entry.status}
+              />
+            ))}
+            {optimistic.some((e) => e.status !== 'error') && (
+              <TypingPlaceholder agentName={agentName ?? 'agente'} />
+            )}
+          </>
+        )}
       </div>
       {!stuck && hasNew && !loading && (
         <button

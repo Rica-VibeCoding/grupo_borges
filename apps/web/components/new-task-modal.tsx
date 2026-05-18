@@ -5,11 +5,8 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { createTask } from '../lib/api';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
+import { safeUUID } from '../lib/ids';
 import { TaskForm, type TaskFormValues } from './task-form';
-
-function safeUUID(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 export function NewTaskModal({
   open,

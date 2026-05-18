@@ -18,6 +18,7 @@ import type {
 } from '../lib/cockpit-types';
 import { formatDuration, formatLastSeen, shortModelName } from '../lib/cockpit-types';
 import { formatDateTime } from '../lib/format-time';
+import { safeUUID } from '../lib/ids';
 import {
   fetchAgentDoc,
   fetchAgentDocs,
@@ -47,10 +48,6 @@ type SwipeStart = { x: number; y: number; t: number; target: EventTarget | null 
 function isScrollableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return !!target.closest('.chat-messages-scroll, .agent-modal-docs-pre, .agent-modal-docs-body, textarea, .agent-modal-tablist');
-}
-
-function safeUUID(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function formatUnixDateTime(unixSec: number | null): string {
