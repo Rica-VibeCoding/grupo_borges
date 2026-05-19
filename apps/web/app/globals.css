@@ -718,28 +718,81 @@
   cursor: pointer;
   border-radius: 50%;
   transition: filter 120ms ease, transform 80ms ease-out, background 120ms ease, opacity 120ms ease;
+  /* Pointer Events robustos pra long-press (iOS): bloqueia callout nativo,
+     seleção de texto e double-tap-delay que cancelariam o gesture. */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .chat-input-send svg { display: block; }
-.chat-input-send:disabled {
+/* aria-disabled em vez de :disabled — mantém o botão recebendo eventos pro long-press
+   funcionar (POST /destrava). onSubmit já no-op quando input vazio. */
+.chat-input-send[aria-disabled="true"] {
   opacity: 0.35;
   background: rgba(0,240,255,0.18);
   color: var(--muted);
-  cursor: not-allowed;
+  /* sem cursor: not-allowed — long-press (2s) funciona aqui pra voltar pro chat */
+  cursor: pointer;
 }
-.chat-input-send:hover:not(:disabled) {
+.chat-input-send:hover:not([aria-disabled="true"]) {
   filter: brightness(1.15);
   transform: translateY(-1px);
 }
-.chat-input-send:active:not(:disabled) {
+.chat-input-send:active:not([aria-disabled="true"]) {
   transform: scale(0.92);
 }
-/* Long-press (input vazio, 2s) → POST /destrava. Botão transiciona da cor atual
-   pra cor da bolha do user em 2s. Solta antes → volta em 200ms (transition base).
-   Quando ativa, soltar é o jeito normal — animação visual indica progresso. */
+/* Long-press (input vazio, 2s) → POST /destrava. Durante o press:
+   - background vira verde da bolha (transition 2s)
+   - botão cresce de scale(1) → scale(1.35) (transition 2s)
+   - halo verde com blur grande expande ao redor (box-shadow transition 2s)
+   Visual inspirado no long-press de ícone iOS — visível em mobile mesmo
+   com tela pequena. `opacity: 1` cobre o 0.35 do [aria-disabled]. */
 .chat-input-send[data-long-pressing] {
   background: var(--bubble-user);
   color: var(--text-on-panel);
-  transition: background 2000ms linear, color 2000ms linear, transform 80ms ease-out;
+  opacity: 1;
+  transform: scale(2);
+  box-shadow: 0 0 0 6px color-mix(in oklab, var(--bubble-user) 60%, transparent),
+              0 0 32px 12px color-mix(in oklab, var(--bubble-user) 45%, transparent);
+  transition:
+    background 2000ms linear,
+    color 2000ms linear,
+    opacity 200ms ease,
+    transform 2000ms ease-out,
+    box-shadow 2000ms ease-out;
+}
+/* Disparou — "explosão" curta antes do cooldown. Botão pula pra scale 1.55,
+   halo dispara, opacidade pisca; depois CSS base recolhe em 320ms. */
+.chat-input-send[data-long-press-fired] {
+  background: var(--bubble-user);
+  color: var(--text-on-panel);
+  opacity: 1;
+  animation: long-press-fired 320ms ease-out;
+}
+@keyframes long-press-fired {
+  0% {
+    transform: scale(2);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--bubble-user) 60%, transparent),
+                0 0 32px 12px color-mix(in oklab, var(--bubble-user) 45%, transparent);
+  }
+  40% {
+    transform: scale(2.3);
+    box-shadow: 0 0 0 14px color-mix(in oklab, var(--bubble-user) 50%, transparent),
+                0 0 56px 24px color-mix(in oklab, var(--bubble-user) 35%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-input-send[data-long-pressing],
+  .chat-input-send[data-long-press-fired] {
+    transform: none;
+    animation: none;
+    box-shadow: none;
+  }
 }
 
 /* Header do chat — status-dot pulsante + caption + ModelChip.
@@ -1319,19 +1372,37 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
+  gap: 8px;
   color: var(--muted);
   font-size: 9.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-.task-detail-footer-info {
+.task-detail-footer > button,
+.task-detail-footer .subsession-trigger {
+  white-space: nowrap;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  letter-spacing: 0.10em;
+}
+
+.task-detail-footer-row-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.task-detail-status-banner {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
-  min-width: 0;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: rgba(255, 107, 53, 0.06);
+  color: var(--status-blocked);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .task-detail-dispatch {

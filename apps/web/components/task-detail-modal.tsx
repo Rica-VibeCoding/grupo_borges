@@ -422,14 +422,13 @@ export function TaskDetailModal({
                 </aside>
               </details>
 
-              <footer className="agent-modal-footer task-detail-footer">
-                {effectiveTask.assignee && !editing && !confirmDelete && (
-                  <SubsessionPopover
-                    taskId={effectiveTask.id}
-                    agentSlug={effectiveTask.assignee}
-                  />
-                )}
-                <div className="task-detail-footer-info">
+              {(loadState === 'loading' ||
+                runHeartbeatStale ||
+                saving ||
+                dispatching ||
+                deleting ||
+                message) && (
+                <div className="task-detail-status-banner">
                   {loadState === 'loading' && <span>carregando detalhe fresco...</span>}
                   {runHeartbeatStale && <span className="task-detail-error">run sem heartbeat recente</span>}
                   {saving && <span>salvando status...</span>}
@@ -437,20 +436,12 @@ export function TaskDetailModal({
                   {deleting && <span>excluindo...</span>}
                   {message && <span className="task-detail-error">{message}</span>}
                 </div>
-                {!editing &&
-                  !confirmDelete &&
-                  (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
-                    <button
-                      type="button"
-                      className="form-cancel task-detail-delete"
-                      onClick={() => setConfirmDelete(true)}
-                      disabled={saving || dispatching || deleting || loadState === 'loading'}
-                    >
-                      EXCLUIR
-                    </button>
-                  )}
-                {confirmDelete && (
+              )}
+
+              <footer className="agent-modal-footer task-detail-footer">
+                {confirmDelete ? (
                   <>
+                    <span className="task-detail-footer-row-spacer" />
                     <button
                       type="button"
                       className="form-cancel task-detail-delete-cancel"
@@ -468,40 +459,58 @@ export function TaskDetailModal({
                       {deleting ? 'EXCLUINDO...' : `CONFIRMAR EXCLUSÃO · ${taskDisplayId(effectiveTask)}`}
                     </button>
                   </>
-                )}
-                {!editing &&
-                  !confirmDelete &&
-                  (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
-                    <button
-                      type="button"
-                      className="form-cancel task-detail-edit"
-                      onClick={() => setEditing(true)}
-                      disabled={saving || dispatching || deleting || loadState === 'loading'}
-                    >
-                      EDITAR
-                    </button>
-                  )}
-                {!confirmDelete &&
-                  effectiveTask.status !== 'done' &&
-                  effectiveTask.status !== 'review' && (
-                    <button
-                      type="button"
-                      className="form-cancel task-detail-complete"
-                      onClick={() => changeStatus('done')}
-                      disabled={saving || dispatching || deleting || editing || loadState === 'loading'}
-                    >
-                      CONCLUIR ✓
-                    </button>
-                  )}
-                {effectiveTask.status !== 'review' && !confirmDelete && (
-                  <button
-                    type="button"
-                    className="form-submit task-detail-dispatch"
-                    disabled={dispatching || saving || deleting || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
-                    onClick={dispatchToSession}
-                  >
-                    {dispatching ? 'ENVIANDO...' : effectiveTask.status === 'running' ? 'EM EXECUÇÃO' : 'ENVIAR SESSÃO'}
-                  </button>
+                ) : (
+                  <>
+                    {effectiveTask.assignee && !editing && (
+                      <SubsessionPopover
+                        taskId={effectiveTask.id}
+                        agentSlug={effectiveTask.assignee}
+                      />
+                    )}
+                    <span className="task-detail-footer-row-spacer" />
+                    {!editing &&
+                      (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
+                        <button
+                          type="button"
+                          className="form-cancel task-detail-delete"
+                          onClick={() => setConfirmDelete(true)}
+                          disabled={saving || dispatching || deleting || loadState === 'loading'}
+                        >
+                          EXCLUIR
+                        </button>
+                      )}
+                    {!editing &&
+                      (effectiveTask.status === 'backlog' || effectiveTask.status === 'ready') && (
+                        <button
+                          type="button"
+                          className="form-cancel task-detail-edit"
+                          onClick={() => setEditing(true)}
+                          disabled={saving || dispatching || deleting || loadState === 'loading'}
+                        >
+                          EDITAR
+                        </button>
+                      )}
+                    {effectiveTask.status !== 'done' && effectiveTask.status !== 'review' && (
+                      <button
+                        type="button"
+                        className="form-cancel task-detail-complete"
+                        onClick={() => changeStatus('done')}
+                        disabled={saving || dispatching || deleting || editing || loadState === 'loading'}
+                      >
+                        CONCLUIR ✓
+                      </button>
+                    )}
+                    {effectiveTask.status !== 'review' && (
+                      <button
+                        type="button"
+                        className="form-submit task-detail-dispatch"
+                        disabled={dispatching || saving || deleting || editing || effectiveTask.status === 'done' || effectiveTask.status === 'running'}
+                        onClick={dispatchToSession}
+                      >
+                        {dispatching ? 'ENVIANDO...' : effectiveTask.status === 'running' ? 'EM EXECUÇÃO' : 'ENVIAR'}
+                      </button>
+                    )}
+                  </>
                 )}
               </footer>
             </>
