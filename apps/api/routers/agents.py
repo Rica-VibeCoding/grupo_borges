@@ -58,6 +58,8 @@ _CLAUDE_JSON = Path.home() / ".claude.json"
 _SECRET_KEY_RE = re.compile(r"token|secret|password|authorization", re.IGNORECASE)
 _PLUGIN_INSTALL_PATH_KEYS = ("installPath", "install_path", "path", "dir")
 _PLUGIN_ID_KEYS = ("id", "pluginId", "plugin_id")
+_CLAUDE_AI_PREFIX = "claude.ai "
+_PLUGIN_DISABLED_PREFIX = "plugin:"
 
 @router.get("")
 async def list_agents(request: Request):
@@ -299,6 +301,18 @@ def _mcp_entry(kind: str, id_: str, name: str, enabled: bool, definition: dict[s
     return entry
 
 
+def _project_state(claude_json: Any, workspace: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(claude_json, dict):
+        claude_json = {}
+    projects = claude_json.get("projects")
+    if not isinstance(projects, dict):
+        projects = {}
+    project = projects.get(workspace)
+    if not isinstance(project, dict):
+        project = {}
+    return projects, project
+
+
 def _plugin_id(key: str | None, entry: Any) -> str | None:
     if isinstance(entry, dict):
         for field in _PLUGIN_ID_KEYS:
@@ -369,21 +383,40 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
 
     installed = _read_json_file(_CLAUDE_HOME / "plugins" / "installed_plugins.json", {})
     servers: list[dict[str, Any]] = []
+    known_ids: set[str] = set()
     for plugin_id, install_path, metadata in _iter_installed_plugins(installed):
         enabled = enabled_plugins.get(plugin_id, True) is not False
         entry = _plugin_mcp_entry(plugin_id, install_path, enabled, metadata)
         if entry is not None:
             servers.append(entry)
+            known_ids.add(plugin_id)
+            known_ids.add(entry["name"])
 
     claude_json = _read_json_file(_CLAUDE_JSON, {})
-    projects = claude_json.get("projects") if isinstance(claude_json, dict) else {}
-    project = projects.get(str(workspace), {}) if isinstance(projects, dict) else {}
-    enabled_mcp = set(_as_list(project.get("enabledMcpjsonServers")) if isinstance(project, dict) else [])
-    disabled_mcp = set(_as_list(project.get("disabledMcpjsonServers")) if isinstance(project, dict) else [])
+    _, project = _project_state(claude_json, str(workspace))
+    enabled_mcp = set(_as_list(project.get("enabledMcpjsonServers")))
+    disabled_mcp = set(_as_list(project.get("disabledMcpjsonServers")))
+    disabled_workspace_mcp = set(_as_list(project.get("disabledMcpServers")))
 
     for server_id, definition in _mcp_server_defs(_read_json_file(workspace / ".mcp.json", {})).items():
         enabled = server_id in enabled_mcp and server_id not in disabled_mcp
         servers.append(_mcp_entry("mcp_json", server_id, server_id, enabled, definition))
+        known_ids.add(server_id)
+
+    remote_ids = set(_as_list(claude_json.get("claudeAiMcpEverConnected") if isinstance(claude_json, dict) else None))
+    remote_ids.update(item for item in disabled_workspace_mcp if item.startswith(_CLAUDE_AI_PREFIX))
+    for server_id in sorted(remote_ids):
+        enabled = server_id not in disabled_workspace_mcp
+        servers.append(_mcp_entry("remote", server_id, server_id, enabled, {"transport": "remote"}))
+        known_ids.add(server_id)
+
+    for server_id in sorted(disabled_workspace_mcp):
+        if server_id.startswith(_CLAUDE_AI_PREFIX) or server_id.startswith(_PLUGIN_DISABLED_PREFIX):
+            continue
+        if server_id in known_ids:
+            continue
+        servers.append(_mcp_entry("user_scope", server_id, server_id, False, {}))
+        known_ids.add(server_id)
 
     return {"servers": servers}
 
@@ -391,7 +424,7 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
 @router.patch("/{slug}/mcp/{kind}/{id}", response_model=McpToggleResponse)
 async def patch_agent_mcp(
     slug: str,
-    kind: Literal["plugin", "mcp_json"],
+    kind: Literal["plugin", "mcp_json", "remote", "user_scope"],
     id: str,
     payload: McpToggleRequest,
     request: Request,
@@ -415,12 +448,19 @@ async def patch_agent_mcp(
     claude_json = _read_json_file(_CLAUDE_JSON, {})
     if not isinstance(claude_json, dict):
         claude_json = {}
-    projects = claude_json.get("projects")
-    if not isinstance(projects, dict):
-        projects = {}
-    project = projects.get(workspace)
-    if not isinstance(project, dict):
-        project = {}
+    projects, project = _project_state(claude_json, workspace)
+
+    if kind in {"remote", "user_scope"}:
+        disabled_servers = _as_list(project.get("disabledMcpServers"))
+        if payload.enabled:
+            disabled_servers = [item for item in disabled_servers if item != id]
+        elif id not in disabled_servers:
+            disabled_servers.append(id)
+        project["disabledMcpServers"] = disabled_servers
+        projects[workspace] = project
+        claude_json["projects"] = projects
+        _atomic_write_json(_CLAUDE_JSON, claude_json)
+        return McpToggleResponse(applied=True, requires_reload=True)
 
     enabled = _as_list(project.get("enabledMcpjsonServers"))
     disabled = _as_list(project.get("disabledMcpjsonServers"))
