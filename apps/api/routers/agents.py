@@ -782,11 +782,25 @@ async def stream_agent_messages(
     )
 
 
+_SLASH_CMD_RE = re.compile(r'^/[a-z][a-z0-9_:-]*(\s|$)')
+
+
+def _is_slash_command(text: str) -> bool:
+    """Slash commands do CC (/clear, /model, /status, etc) precisam chegar raw —
+    envelopados, o CC trata como texto e não dispara o comando. `/etc/passwd`
+    não casa (após `etc` vem `/`, não whitespace/EOL).
+    """
+    return bool(_SLASH_CMD_RE.match(text.lstrip()))
+
+
 def _wrap_cockpit_envelope(text: str, message_id: str, attachment_kind: str | None = None) -> str:
     """Envelopa input do cockpit com tag `<channel source="cockpit">` pra que o
     hook `cockpit-load-skill.sh` detecte e injete a skill `canal-cockpit`.
-    Padrão espelha o envelope dos canais Telegram/WhatsApp.
+    Padrão espelha o envelope dos canais Telegram/WhatsApp. Slash commands
+    bypassam o envelope — CC precisa receber a linha crua pra disparar.
     """
+    if _is_slash_command(text):
+        return text
     parts = [f'source="cockpit"', f'message_id="{message_id}"', f'ts="{int(time.time())}"']
     if attachment_kind:
         parts.append(f'attachment_kind="{attachment_kind}"')
