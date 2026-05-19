@@ -27,6 +27,20 @@ const RELOAD_DEBOUNCE_MS = 200;
 
 type ServerKey = string;
 const keyOf = (s: { kind: McpServerKind; id: string }): ServerKey => `${s.kind}::${s.id}`;
+const kindLabel = (kind: McpServerKind): string => {
+  switch (kind) {
+    case 'plugin':
+      return 'plugin';
+    case 'mcp_json':
+      return 'mcp.json';
+    case 'remote':
+      return 'remote';
+    case 'user_scope':
+      return 'user';
+  }
+};
+
+type TabKey = 'active' | 'disabled';
 
 export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void }) {
   const { fire } = useToast();
@@ -34,6 +48,7 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requiresReload, setRequiresReload] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const [tab, setTab] = useState<TabKey>('active');
   const panelRef = useRef<HTMLDivElement>(null);
 
   const pendingTimers = useRef<Map<ServerKey, ReturnType<typeof setTimeout>>>(new Map());
@@ -162,13 +177,38 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
     };
   }, [onClose]);
 
-  const grouped = useMemo(() => {
-    if (!servers) return { plugin: [] as McpServer[], mcp_json: [] as McpServer[] };
-    return {
-      plugin: servers.filter((s) => s.kind === 'plugin'),
-      mcp_json: servers.filter((s) => s.kind === 'mcp_json'),
+  // Partição enabled/disabled vem primeiro (raiz das abas). Dentro de cada
+  // aba os items são re-agrupados por kind (plugin · mcp_json · remote ·
+  // user_scope) pra preservar a leitura de origem do MCP.
+  const partitioned = useMemo(() => {
+    const empty = {
+      active: [] as McpServer[],
+      disabled: [] as McpServer[],
     };
+    if (!servers) return empty;
+    return servers.reduce((acc, s) => {
+      (s.enabled ? acc.active : acc.disabled).push(s);
+      return acc;
+    }, empty);
   }, [servers]);
+
+  const counts = useMemo(
+    () => ({ active: partitioned.active.length, disabled: partitioned.disabled.length }),
+    [partitioned],
+  );
+
+  const visibleServers = tab === 'active' ? partitioned.active : partitioned.disabled;
+
+  const grouped = useMemo(() => {
+    const buckets: Record<McpServerKind, McpServer[]> = {
+      plugin: [],
+      mcp_json: [],
+      remote: [],
+      user_scope: [],
+    };
+    for (const s of visibleServers) buckets[s.kind].push(s);
+    return buckets;
+  }, [visibleServers]);
 
   return (
     <div className="mcp-panel-anchor" onMouseDown={(e) => e.stopPropagation()}>
@@ -203,20 +243,56 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
         ) : servers.length === 0 ? (
           <div className="mcp-panel-empty">nenhum server MCP configurado</div>
         ) : (
-          <div className="mcp-panel-body">
-            <McpGroup
-              label="Plugins"
-              items={grouped.plugin}
-              onToggle={onToggle}
-              emptyHint="sem plugins MCP ativos"
-            />
-            <McpGroup
-              label="Project ( .mcp.json )"
-              items={grouped.mcp_json}
-              onToggle={onToggle}
-              emptyHint="sem .mcp.json no workspace"
-            />
-          </div>
+          <>
+            <div className="mcp-panel-tabs" role="tablist">
+              <McpTab
+                label="Ativos"
+                count={counts.active}
+                active={tab === 'active'}
+                onSelect={() => setTab('active')}
+                tone="on"
+              />
+              <McpTab
+                label="Desativados"
+                count={counts.disabled}
+                active={tab === 'disabled'}
+                onSelect={() => setTab('disabled')}
+                tone="off"
+              />
+            </div>
+            <div className="mcp-panel-body">
+              {visibleServers.length === 0 ? (
+                <p className="mcp-panel-empty">
+                  {tab === 'active'
+                    ? 'nenhum server ativo — habilite na aba ao lado.'
+                    : 'tudo ligado — nenhum server na reserva.'}
+                </p>
+              ) : (
+                <>
+                  <McpGroup
+                    label="Plugins"
+                    items={grouped.plugin}
+                    onToggle={onToggle}
+                  />
+                  <McpGroup
+                    label="Project ( .mcp.json )"
+                    items={grouped.mcp_json}
+                    onToggle={onToggle}
+                  />
+                  <McpGroup
+                    label="Remote (claude.ai)"
+                    items={grouped.remote}
+                    onToggle={onToggle}
+                  />
+                  <McpGroup
+                    label="User-scope"
+                    items={grouped.user_scope}
+                    onToggle={onToggle}
+                  />
+                </>
+              )}
+            </div>
+          </>
         )}
 
         {requiresReload && (
@@ -240,29 +316,54 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
   );
 }
 
+function McpTab({
+  label,
+  count,
+  active,
+  onSelect,
+  tone,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onSelect: () => void;
+  tone: 'on' | 'off';
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className="mcp-panel-tab"
+      data-active={active ? '1' : '0'}
+      data-tone={tone}
+      onClick={onSelect}
+    >
+      <span className="mcp-panel-tab-label">{label}</span>
+      <span className="mcp-panel-tab-count mono">{count}</span>
+    </button>
+  );
+}
+
 function McpGroup({
   label,
   items,
   onToggle,
-  emptyHint,
 }: {
   label: string;
   items: McpServer[];
   onToggle: (s: McpServer) => void;
-  emptyHint: string;
 }) {
+  // Grupos vazios somem dentro de cada aba — leitura limpa, sem placeholders.
+  if (items.length === 0) return null;
   return (
     <section className="mcp-group">
       <h3 className="mcp-group-label">{label}</h3>
-      {items.length === 0 ? (
-        <p className="mcp-group-empty">{emptyHint}</p>
-      ) : (
-        <ul className="mcp-group-list">
-          {items.map((s) => (
-            <McpRow key={keyOf(s)} server={s} onToggle={onToggle} />
-          ))}
-        </ul>
-      )}
+      <ul className="mcp-group-list">
+        {items.map((s) => (
+          <McpRow key={keyOf(s)} server={s} onToggle={onToggle} />
+        ))}
+      </ul>
     </section>
   );
 }
@@ -295,7 +396,7 @@ function McpRow({
       <div className="mcp-row-meta">
         <span className="mcp-row-name">{server.name}</span>
         <span className="mcp-row-id mono" title={`${server.kind}:${server.id}`}>
-          {server.kind === 'plugin' ? 'plugin' : 'mcp.json'} · {server.id}
+          {kindLabel(server.kind)} · {server.id}
         </span>
       </div>
       {transport && <span className="mcp-row-transport mono">{transport}</span>}

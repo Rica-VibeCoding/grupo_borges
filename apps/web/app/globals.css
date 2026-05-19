@@ -2128,7 +2128,6 @@
   .sse-banner .sep { display:none !important; }
   .v2-kanban-section-label { display: none !important; }
   .kanban-topline { flex-wrap:wrap !important; gap:6px 0 !important; padding:8px 12px !important; }
-  .kanban-topline .right { display:none !important; }
   .kanban-mobile-tabs { flex-wrap:nowrap !important; overflow-x:auto !important; }
   .kanban-mobile-tab {
     flex:0 0 auto !important;
@@ -2862,6 +2861,48 @@ button.channel-env-head:hover {
   transition: color 120ms ease, background 120ms ease;
 }
 .mcp-panel-close:hover { color: var(--text); background: var(--accent-subtle); }
+/* Tabs Ativos/Desativados — segmento de 2 pills com contador.
+   tone=on (verde da bolha) pra "Ativos", tone=off (hairline) pra "Desativados". */
+.mcp-panel-tabs {
+  display: flex; gap: 6px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid var(--chat-hairline);
+}
+.mcp-panel-tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 11px 8px;
+  border: none; background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* sobrepõe o hairline do container */
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.mcp-panel-tab:hover { color: var(--text); }
+.mcp-panel-tab[data-active="1"] {
+  color: var(--text);
+}
+.mcp-panel-tab[data-active="1"][data-tone="on"]  { border-bottom-color: var(--bubble-user-border); }
+.mcp-panel-tab[data-active="1"][data-tone="off"] { border-bottom-color: var(--chat-hairline-strong); }
+.mcp-panel-tab-count {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--chat-hairline);
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.mcp-panel-tab[data-active="1"][data-tone="on"]  .mcp-panel-tab-count {
+  background: color-mix(in oklab, var(--bubble-user) 28%, transparent);
+  color: var(--text);
+}
+.mcp-panel-tab[data-active="1"][data-tone="off"] .mcp-panel-tab-count {
+  background: var(--chat-hairline-strong);
+  color: var(--text);
+}
 .mcp-panel-body {
   display: flex; flex-direction: column;
   overflow-y: auto;
