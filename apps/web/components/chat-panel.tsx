@@ -8,10 +8,7 @@ import { safeUUID } from '../lib/ids';
 import type { OptimisticEntry } from '../lib/messages-types';
 import {
   formatDuration,
-  formatLastSeen,
   parseContextPct,
-  parseModelFromPane,
-  shortModelName,
 } from '../lib/cockpit-types';
 import {
   AgentInputError,
@@ -42,15 +39,15 @@ import {
 } from './slash-command-palette';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'haiku', label: 'Haiku' },
+  { value: 'opus', label: 'Opus 4.7' },
+  { value: 'sonnet', label: 'Sonnet 4.6' },
+  { value: 'haiku', label: 'Haiku 4.5' },
 ];
 
 const MODEL_LABEL: Record<ChatModelSlug, string> = {
-  opus: 'Opus',
-  sonnet: 'Sonnet',
-  haiku: 'Haiku',
+  opus: 'Opus 4.7',
+  sonnet: 'Sonnet 4.6',
+  haiku: 'Haiku 4.5',
 };
 
 /**
@@ -213,7 +210,6 @@ function ctxTier(pct: number): 'low' | 'mid' | 'high' {
 
 function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
   const isCodex = agent.executor_kind === 'codex';
-  const model = agent.state_model ?? agent.model_default;
   const sessionStarted = isCodex
     ? agent.session_started_at
     : agent.pane_session_started_at;
@@ -221,11 +217,7 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
   const contextPct = isCodex
     ? (agent.context_pct ?? null)
     : parseContextPct(agent.pane_excerpt);
-  const paneModel = isCodex ? null : parseModelFromPane(agent.pane_excerpt);
-  const modelLabel = paneModel ?? shortModelName(model);
   const sessionLabel = sessionSecs !== null ? formatDuration(sessionSecs) : '—';
-  const seenLabel = formatLastSeen(agent.last_seen, serverNow);
-  const seenTitle = agent.last_seen ? new Date(agent.last_seen * 1000).toISOString() : '—';
 
   return (
     <div className="chat-header" role="group" aria-label={`Cabeçalho do agente ${agent.name}`}>
@@ -236,8 +228,6 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
         title={agent.status ?? 'ocioso'}
       />
       <div className="chat-header-meta mono">
-        <span>{modelLabel}</span>
-        <span className="chat-header-sep" aria-hidden="true">·</span>
         <span title="duração da sessão">{sessionLabel}</span>
         <span className="chat-header-sep" aria-hidden="true">·</span>
         {contextPct !== null ? (
@@ -257,8 +247,6 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
         ) : (
           <span className="chat-header-dim">ctx —</span>
         )}
-        <span className="chat-header-sep" aria-hidden="true">·</span>
-        <span className="chat-header-dim" title={seenTitle}>visto {seenLabel.replace(/^há /, '')}</span>
       </div>
       <div className="chat-header-actions">
         <ModelChip agent={agent} />
