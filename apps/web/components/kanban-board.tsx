@@ -208,29 +208,18 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const columns = buildColumns(tasks);
-  const counts = Object.fromEntries(columns.map((c) => [c.id, c.tasks.length])) as Record<KanbanColumnId, number>;
-  const pad = (n: number) => String(n).padStart(2, '0');
 
   return (
     <div className="kanban-wrap scan-host" aria-label="Kanban de tarefas" role="region" aria-live="polite">
       <div className="scan" aria-hidden="true" />
       <div className="kanban-topline">
         <div className="lead">
-          <span className="num-tag">04</span>
-          <span>KANBAN · FLUXO DE TAREFAS</span>
-          <span className="live" id="kbLive">AO VIVO · SSE</span>
+          <span>KANBAN</span>
         </div>
         <div className="right">
           <button type="button" className="kanban-new-task" onClick={() => setNewTaskOpen(true)}>
             + NOVA
           </button>
-          <span className="it"><span className="k">BACKLOG</span><span className="v">{pad(counts.queue)}</span></span>
-          <span className="it"><span className="k">EXEC</span><span className="v cy">{pad(counts.running)}</span></span>
-          <span className="it">
-            <span className="k">BLQ</span>
-            <span className="v" style={{ color: 'var(--status-blocked)' }}>{pad(counts.blocked)}</span>
-          </span>
-          <span className="it"><span className="k">OK</span><span className="v">{pad(counts.done)}</span></span>
         </div>
       </div>
       {isMobile ? (
