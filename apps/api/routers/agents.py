@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import tempfile
@@ -51,6 +52,12 @@ from services import workspace_reader
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+_CLAUDE_HOME = Path.home() / ".claude"
+_CLAUDE_JSON = Path.home() / ".claude.json"
+_SECRET_KEY_RE = re.compile(r"token|secret|password|authorization", re.IGNORECASE)
+_PLUGIN_INSTALL_PATH_KEYS = ("installPath", "install_path", "path", "dir")
+_PLUGIN_ID_KEYS = ("id", "pluginId", "plugin_id")
 
 @router.get("")
 async def list_agents(request: Request):
@@ -155,6 +162,290 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     return agent
+
+
+# ----- JP-25: MCP inventory / toggles --------------------------------------
+
+
+class McpToggleRequest(BaseModel):
+    enabled: bool
+
+
+class McpToggleResponse(BaseModel):
+    applied: bool
+    requires_reload: bool
+
+
+class McpReloadResponse(BaseModel):
+    tmux_delivered: bool
+
+
+def _read_json_file(path: Path, default: Any) -> Any:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"JSON inválido em {path}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"erro lendo {path}: {exc}") from exc
+
+
+def _atomic_write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+        text=True,
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, path)
+    except OSError as exc:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail=f"erro escrevendo {path}: {exc}") from exc
+
+
+def _as_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if isinstance(item, str)]
+    return []
+
+
+def _mcp_server_defs(payload: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return {}
+    wrapped = payload.get("mcpServers")
+    if isinstance(wrapped, dict):
+        source = wrapped
+    else:
+        source = payload
+    return {
+        str(name): definition
+        for name, definition in source.items()
+        if isinstance(name, str) and isinstance(definition, dict)
+    }
+
+
+def _redact_args(args: Any) -> list[str]:
+    if not isinstance(args, list):
+        return []
+    redacted: list[str] = []
+    redact_next = False
+    for raw in args:
+        arg = str(raw)
+        if redact_next:
+            redacted.append("<redacted>")
+            redact_next = False
+            continue
+        key = arg.split("=", 1)[0]
+        if _SECRET_KEY_RE.search(key):
+            if "=" in arg:
+                redacted.append(f"{key}=<redacted>")
+            else:
+                redacted.append(arg)
+                redact_next = True
+            continue
+        if _SECRET_KEY_RE.search(arg):
+            redacted.append("<redacted>")
+        else:
+            redacted.append(arg)
+    return redacted
+
+
+def _redacted_command(definition: dict[str, Any]) -> str | None:
+    command = definition.get("command")
+    if not isinstance(command, str) or not command:
+        return None
+    parts = [command, *_redact_args(definition.get("args"))]
+    return " ".join(parts)
+
+
+def _transport(definition: dict[str, Any]) -> str:
+    transport = definition.get("transport") or definition.get("type")
+    if isinstance(transport, str) and transport:
+        return transport
+    if definition.get("command"):
+        return "stdio"
+    if definition.get("url"):
+        return "http"
+    return "unknown"
+
+
+def _mcp_entry(kind: str, id_: str, name: str, enabled: bool, definition: dict[str, Any]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "kind": kind,
+        "id": id_,
+        "name": name,
+        "enabled": enabled,
+        "transport": _transport(definition),
+    }
+    description = definition.get("description")
+    if isinstance(description, str) and description:
+        entry["description"] = description
+    command_redacted = _redacted_command(definition)
+    if command_redacted:
+        entry["command_redacted"] = command_redacted
+    return entry
+
+
+def _plugin_id(key: str | None, entry: Any) -> str | None:
+    if isinstance(entry, dict):
+        for field in _PLUGIN_ID_KEYS:
+            value = entry.get(field)
+            if isinstance(value, str) and value:
+                return value
+        name = entry.get("name")
+        source = entry.get("source") or entry.get("registry")
+        if isinstance(name, str) and isinstance(source, str) and name and source:
+            return f"{name}@{source}"
+    if key and "@" in key:
+        return key
+    return key
+
+
+def _plugin_install_path(entry: Any) -> Path | None:
+    if not isinstance(entry, dict):
+        return None
+    for field in _PLUGIN_INSTALL_PATH_KEYS:
+        value = entry.get(field)
+        if isinstance(value, str) and value:
+            return Path(value).expanduser()
+    return None
+
+
+def _iter_installed_plugins(raw: Any) -> list[tuple[str, Path | None, dict[str, Any]]]:
+    if isinstance(raw, dict) and "plugins" in raw:
+        raw = raw["plugins"]
+
+    items: list[tuple[str | None, Any]]
+    if isinstance(raw, list):
+        items = [(None, item) for item in raw]
+    elif isinstance(raw, dict):
+        items = list(raw.items())
+    else:
+        return []
+
+    plugins: list[tuple[str, Path | None, dict[str, Any]]] = []
+    for key, entry in items:
+        metadata = entry if isinstance(entry, dict) else {}
+        plugin_id = _plugin_id(str(key) if key else None, metadata)
+        if not plugin_id:
+            continue
+        plugins.append((plugin_id, _plugin_install_path(metadata), metadata))
+    return plugins
+
+
+def _plugin_mcp_entry(plugin_id: str, install_path: Path | None, enabled: bool, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    if install_path is None:
+        return _mcp_entry("plugin", plugin_id, metadata.get("name") or plugin_id.split("@", 1)[0], enabled, {})
+
+    definitions = _mcp_server_defs(_read_json_file(install_path / ".mcp.json", {}))
+    if not definitions:
+        return None
+    name, definition = next(iter(definitions.items()))
+    return _mcp_entry("plugin", plugin_id, name, enabled, definition)
+
+
+@router.get("/{slug}/mcp")
+async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
+    agent = await _get_agent_or_404(request, slug)
+    workspace = Path(agent["workspace_path"])
+
+    settings = _read_json_file(_CLAUDE_HOME / "settings.json", {})
+    enabled_plugins = settings.get("enabledPlugins") if isinstance(settings, dict) else {}
+    if not isinstance(enabled_plugins, dict):
+        enabled_plugins = {}
+
+    installed = _read_json_file(_CLAUDE_HOME / "plugins" / "installed_plugins.json", {})
+    servers: list[dict[str, Any]] = []
+    for plugin_id, install_path, metadata in _iter_installed_plugins(installed):
+        enabled = enabled_plugins.get(plugin_id, True) is not False
+        entry = _plugin_mcp_entry(plugin_id, install_path, enabled, metadata)
+        if entry is not None:
+            servers.append(entry)
+
+    claude_json = _read_json_file(_CLAUDE_JSON, {})
+    projects = claude_json.get("projects") if isinstance(claude_json, dict) else {}
+    project = projects.get(str(workspace), {}) if isinstance(projects, dict) else {}
+    enabled_mcp = set(_as_list(project.get("enabledMcpjsonServers")) if isinstance(project, dict) else [])
+    disabled_mcp = set(_as_list(project.get("disabledMcpjsonServers")) if isinstance(project, dict) else [])
+
+    for server_id, definition in _mcp_server_defs(_read_json_file(workspace / ".mcp.json", {})).items():
+        enabled = server_id in enabled_mcp and server_id not in disabled_mcp
+        servers.append(_mcp_entry("mcp_json", server_id, server_id, enabled, definition))
+
+    return {"servers": servers}
+
+
+@router.patch("/{slug}/mcp/{kind}/{id}", response_model=McpToggleResponse)
+async def patch_agent_mcp(
+    slug: str,
+    kind: Literal["plugin", "mcp_json"],
+    id: str,
+    payload: McpToggleRequest,
+    request: Request,
+) -> McpToggleResponse:
+    agent = await _get_agent_or_404(request, slug)
+
+    if kind == "plugin":
+        settings_path = _CLAUDE_HOME / "settings.json"
+        settings = _read_json_file(settings_path, {})
+        if not isinstance(settings, dict):
+            settings = {}
+        enabled_plugins = settings.get("enabledPlugins")
+        if not isinstance(enabled_plugins, dict):
+            enabled_plugins = {}
+        enabled_plugins[id] = payload.enabled
+        settings["enabledPlugins"] = enabled_plugins
+        _atomic_write_json(settings_path, settings)
+        return McpToggleResponse(applied=True, requires_reload=True)
+
+    workspace = str(Path(agent["workspace_path"]))
+    claude_json = _read_json_file(_CLAUDE_JSON, {})
+    if not isinstance(claude_json, dict):
+        claude_json = {}
+    projects = claude_json.get("projects")
+    if not isinstance(projects, dict):
+        projects = {}
+    project = projects.get(workspace)
+    if not isinstance(project, dict):
+        project = {}
+
+    enabled = _as_list(project.get("enabledMcpjsonServers"))
+    disabled = _as_list(project.get("disabledMcpjsonServers"))
+    if payload.enabled:
+        if id not in enabled:
+            enabled.append(id)
+        disabled = [item for item in disabled if item != id]
+    else:
+        if id not in disabled:
+            disabled.append(id)
+        enabled = [item for item in enabled if item != id]
+
+    project["enabledMcpjsonServers"] = enabled
+    project["disabledMcpjsonServers"] = disabled
+    projects[workspace] = project
+    claude_json["projects"] = projects
+    _atomic_write_json(_CLAUDE_JSON, claude_json)
+    return McpToggleResponse(applied=True, requires_reload=True)
+
+
+@router.post("/{slug}/mcp/reload", response_model=McpReloadResponse)
+async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
+    agent = await _get_agent_or_404(request, slug)
+    delivered = await tmux_driver.send_message(agent["tmux_session"], "/reload-plugins")
+    return McpReloadResponse(tmux_delivered=delivered)
 
 
 # ----- Chat / Pane endpoints (DS-2) ---------------------------------------
