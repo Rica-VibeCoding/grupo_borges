@@ -31,6 +31,7 @@ import {
   stripChrome,
 } from '../lib/pane-chrome';
 import { ChatMessages } from './chat-messages';
+import { McpPanel } from './mcp-panel';
 import {
   SlashCommandPalette,
   applySlashSelection,
@@ -443,6 +444,10 @@ function ChatInput({
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
+  // --- JP-25: painel /mcp inline (intercepta input `/mcp` puro antes do tmux) ---
+  const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
+  const closeMcpPanel = useCallback(() => setMcpPanelOpen(false), []);
+
   // --- slash palette state (DS-62) ---
   // `slashSliceStart` é o índice do "/" no texto; `null` = palette fechado.
   const [slashSliceStart, setSlashSliceStart] = useState<number | null>(null);
@@ -658,10 +663,18 @@ function ChatInput({
     }
     const trimmed = text.trim();
     if (!trimmed) return;
+    // JP-25: `/mcp` puro (sem args) abre painel inline em vez de mandar pro tmux.
+    // Outros `/mcp <arg>` seguem normal.
+    if (trimmed === '/mcp') {
+      setText('');
+      closeSlash();
+      setMcpPanelOpen(true);
+      return;
+    }
     flashTextareaSend();
     await sendText(trimmed);
     setText('');
-  }, [sending, pendingImage, text, sendImage, sendText, clearImage, flashTextareaSend]);
+  }, [sending, pendingImage, text, sendImage, sendText, clearImage, flashTextareaSend, closeSlash]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -883,6 +896,7 @@ function ChatInput({
           />
         </div>
       )}
+      {mcpPanelOpen && <McpPanel slug={slug} onClose={closeMcpPanel} />}
       {/* Image chip */}
       {pendingImage && thumbUrl && !recording && (
         <div className="chat-image-chip">

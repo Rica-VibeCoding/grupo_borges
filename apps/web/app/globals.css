@@ -2811,3 +2811,205 @@ button.channel-env-head:hover {
   .chat-messages-content { padding: 10px 10px 14px; gap: 8px; }
   .msg-chip-body pre { max-height: 240px; font-size: 10.5px; }
 }
+
+/* JP-25 — painel inline /mcp. Estrutura visual segue o vocabulário do
+   slash-palette (anchor absoluto acima do dock, --panel + --accent-border),
+   mas com layout de rows pra toggle. Footer aparece quando há mudança que
+   exige /reload-plugins e fica destacado em --accent-subtle. */
+.mcp-panel-anchor {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  pointer-events: auto;
+}
+.mcp-panel {
+  background: var(--panel);
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  display: flex; flex-direction: column;
+  max-height: min(440px, calc(100vh - 200px));
+  overflow: hidden;
+  font-family: 'Geist', sans-serif;
+}
+.mcp-panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--chat-hairline);
+  background: linear-gradient(180deg, var(--accent-subtle), transparent);
+}
+.mcp-panel-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text);
+  letter-spacing: -0.005em;
+}
+.mcp-panel-title-prefix {
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mcp-panel-title-sep { color: var(--muted); opacity: 0.7; }
+.mcp-panel-close {
+  background: transparent; border: none;
+  color: var(--muted); cursor: pointer;
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: color 120ms ease, background 120ms ease;
+}
+.mcp-panel-close:hover { color: var(--text); background: var(--accent-subtle); }
+.mcp-panel-body {
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.mcp-panel-empty {
+  padding: 22px 16px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.mcp-panel-dim { opacity: 0.7; }
+.mcp-group { padding: 6px 0; }
+.mcp-group + .mcp-group { border-top: 1px dashed var(--chat-hairline); }
+.mcp-group-label {
+  margin: 4px 14px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.mcp-group-empty {
+  margin: 2px 14px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-style: italic;
+  opacity: 0.75;
+}
+.mcp-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex; flex-direction: column;
+}
+.mcp-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  margin: 0 6px;
+  transition: background 120ms ease;
+}
+.mcp-row + .mcp-row { margin-top: 2px; }
+.mcp-row:hover { background: rgba(255, 255, 255, 0.03); }
+.mcp-row-meta {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; flex: 1;
+}
+.mcp-row-name {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 510;
+  letter-spacing: -0.008em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mcp-row-id {
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mcp-row-transport {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--chat-hairline-strong);
+  background: var(--bg);
+}
+/* Toggle iOS-style. role="switch" + aria-checked já narram pro AT.
+   data-on="1" pinta accent, data-on="0" fica em hairline-strong. */
+.mcp-toggle {
+  position: relative;
+  width: 36px; height: 20px;
+  flex-shrink: 0;
+  padding: 0; border: none;
+  border-radius: var(--radius-pill);
+  background: var(--chat-hairline-strong);
+  cursor: pointer;
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+.mcp-toggle[data-on="1"] {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 12px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.mcp-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-border);
+}
+.mcp-toggle-thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 180ms cubic-bezier(0.32, 0.72, 0.35, 1), background 160ms ease;
+}
+.mcp-toggle[data-on="1"] .mcp-toggle-thumb {
+  transform: translateX(16px);
+  background: var(--bg);
+}
+.mcp-panel-foot {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: var(--accent-subtle);
+  border-top: 1px solid var(--accent-border);
+}
+.mcp-panel-foot-msg {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.45;
+}
+.mcp-panel-foot-msg code {
+  background: var(--bg);
+  border: 1px solid var(--chat-hairline-strong);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--accent);
+}
+.mcp-panel-foot-cta {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 6px 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: filter 120ms ease, transform 80ms ease-out, opacity 120ms ease;
+}
+.mcp-panel-foot-cta:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+.mcp-panel-foot-cta:active:not(:disabled) { transform: scale(0.97); }
+.mcp-panel-foot-cta:disabled { opacity: 0.55; cursor: progress; }
+
+@media (max-width: 600px) {
+  .mcp-panel { max-height: min(420px, calc(100vh - 160px)); }
+  .mcp-row { padding: 11px 14px; }
+  .mcp-panel-foot { flex-direction: column; align-items: stretch; }
+  .mcp-panel-foot-cta { align-self: flex-end; }
+}

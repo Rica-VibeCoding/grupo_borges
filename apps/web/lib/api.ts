@@ -396,6 +396,61 @@ export async function spawnSubsession(
   return res.json();
 }
 
+// ----- JP-25: MCP painel inline -----------------------------------------
+
+export type McpServerKind = 'plugin' | 'mcp_json';
+
+export type McpServer = {
+  kind: McpServerKind;
+  id: string;
+  name: string;
+  enabled: boolean;
+  transport?: string | null;
+  description?: string | null;
+  command_redacted?: string | null;
+};
+
+export type AgentMcpResponse = { servers: McpServer[] };
+
+export type AgentMcpPatchResponse = { applied: boolean; requires_reload: boolean };
+
+export type AgentMcpReloadResponse = { tmux_delivered: boolean };
+
+export async function getAgentMcp(slug: string, signal?: AbortSignal): Promise<AgentMcpResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/mcp`, {
+    cache: 'no-store',
+    signal,
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `getAgentMcp failed: ${res.status}`));
+  return res.json();
+}
+
+export async function patchAgentMcp(
+  slug: string,
+  kind: McpServerKind,
+  id: string,
+  enabled: boolean,
+): Promise<AgentMcpPatchResponse> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(slug)}/mcp/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentMcp failed: ${res.status}`));
+  return res.json();
+}
+
+export async function postAgentMcpReload(slug: string): Promise<AgentMcpReloadResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/mcp/reload`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `postAgentMcpReload failed: ${res.status}`));
+  return res.json();
+}
+
 export async function fetchTaskSubsessions(
   agentSlug: string,
   taskId: string,
