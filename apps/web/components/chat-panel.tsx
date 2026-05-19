@@ -763,10 +763,13 @@ function ChatInput({
     audioContextRef.current = ctx;
     analyserRef.current = analyser;
 
-    // MediaRecorder — prefer webm/opus, fallback to browser default
+    // MediaRecorder — cascata explícita: opus (Chrome/FF) → mp4/AAC (iOS Safari/WebKit
+    // não suporta webm) → default. WebKit blog confirma: Safari só MP4+AAC pra áudio.
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'
-      : '';
+      : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : '';
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
     mediaRecorderRef.current = recorder;
     chunksRef.current = [];
@@ -776,7 +779,12 @@ function ChatInput({
     };
 
     recorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+      // recorder.mimeType vem populado em browsers modernos; fallback pro mimeType
+      // que escolhemos acima (ou mp4, que iOS sempre suporta — webm como default
+      // dava falso-positivo em iOS antigo: blob marcado webm sendo mp4).
+      const blob = new Blob(chunksRef.current, {
+        type: recorder.mimeType || mimeType || 'audio/mp4',
+      });
       stream.getTracks().forEach((t) => t.stop());
       cleanupRecording();
       setRecording(false);

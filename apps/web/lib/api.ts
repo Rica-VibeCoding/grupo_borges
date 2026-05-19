@@ -223,7 +223,14 @@ export async function postAgentVoice(
   audioBlob: Blob,
 ): Promise<{ transcribed: string; tmux_delivered: boolean; duration_ms: number }> {
   const fd = new FormData();
-  fd.append('audio', audioBlob, 'voice.webm');
+  // Extensão segue o mime real do blob. Server confia no Content-Type, mas
+  // filename correto ajuda em debug/log.
+  const ext = audioBlob.type.includes('mp4')
+    ? 'mp4'
+    : audioBlob.type.includes('ogg')
+      ? 'ogg'
+      : 'webm';
+  fd.append('audio', audioBlob, `voice.${ext}`);
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/voice`, {
     method: 'POST',
     body: fd,
