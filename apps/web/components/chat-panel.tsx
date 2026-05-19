@@ -832,22 +832,50 @@ function ChatInput({
       return;
     }
 
-    // AudioContext + Analyser for waveform
-    const ctx = new AudioContext();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    ctx.createMediaStreamSource(stream).connect(analyser);
+    // AudioContext + Analyser + MediaRecorder dentro de try/catch único — em iOS
+    // Chrome (WebKit) qualquer um pode lançar silencioso e travar a UI em estado
+    // "botão active mas sem gravação". Falhas reportadas via toast pra debug claro.
+    let ctx: AudioContext;
+    let analyser: AnalyserNode;
+    let recorder: MediaRecorder;
+    let mimeType = '';
+    try {
+      if (typeof MediaRecorder === 'undefined') {
+        throw new Error('MediaRecorder não existe nesse browser');
+      }
+      ctx = new AudioContext();
+      // iOS: ctx pode nascer 'suspended' fora do gesture chain — força resume.
+      if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+
+      // Cascata explícita: opus (Chrome/FF) → mp4/AAC (iOS WebKit) → default.
+      mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : '';
+      try {
+        recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      } catch {
+        // iOS edge: isTypeSupported retorna true mas construtor falha — fallback.
+        recorder = new MediaRecorder(stream);
+        mimeType = '';
+      }
+    } catch (err) {
+      stream.getTracks().forEach((t) => t.stop());
+      fire({
+        kind: 'warn',
+        msg: 'falha ao iniciar gravação',
+        sub: err instanceof Error ? err.message : String(err),
+        ttlMs: 8000,
+      });
+      return;
+    }
+
     audioContextRef.current = ctx;
     analyserRef.current = analyser;
-
-    // MediaRecorder — cascata explícita: opus (Chrome/FF) → mp4/AAC (iOS Safari/WebKit
-    // não suporta webm) → default. WebKit blog confirma: Safari só MP4+AAC pra áudio.
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : MediaRecorder.isTypeSupported('audio/mp4')
-        ? 'audio/mp4'
-        : '';
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
     mediaRecorderRef.current = recorder;
     chunksRef.current = [];
 
@@ -871,7 +899,24 @@ function ChatInput({
       }
     };
 
-    recorder.start(100); // collect chunks every 100ms
+    // recorder.start(timeslice) lança em algumas builds iOS Chrome — fallback sem arg.
+    try {
+      recorder.start(100);
+    } catch {
+      try {
+        recorder.start();
+      } catch (err) {
+        stream.getTracks().forEach((t) => t.stop());
+        cleanupRecording();
+        fire({
+          kind: 'warn',
+          msg: 'gravação não iniciou',
+          sub: err instanceof Error ? err.message : String(err),
+          ttlMs: 8000,
+        });
+        return;
+      }
+    }
     setRecording(true);
     startWaveformLoop(analyser);
 
