@@ -284,7 +284,72 @@ def _transport(definition: dict[str, Any]) -> str:
     return "unknown"
 
 
-def _mcp_entry(kind: str, id_: str, name: str, enabled: bool, definition: dict[str, Any]) -> dict[str, Any]:
+_PROVIDES_ORDER = ("skill", "mcp", "subagent", "hook", "lsp")
+
+
+def _scan_plugin_provides(install_path: Path) -> list[str]:
+    """Detecta o que um plugin expõe ao escanear seu install_path.
+
+    Procura por: agents/*.md → subagent; commands/*.md → skill (slash);
+    .mcp.json (mcpServers) → mcp; hooks/* → hook; skills/*/SKILL.md → skill.
+    Retorna lista ordenada e deduplicada.
+    """
+    found: set[str] = set()
+    try:
+        if not install_path.is_dir():
+            return []
+    except OSError:
+        return []
+
+    agents_dir = install_path / "agents"
+    if agents_dir.is_dir():
+        try:
+            if any(p.suffix == ".md" for p in agents_dir.rglob("*.md")):
+                found.add("subagent")
+        except OSError:
+            pass
+
+    commands_dir = install_path / "commands"
+    if commands_dir.is_dir():
+        try:
+            if any(p.suffix == ".md" for p in commands_dir.glob("*.md")):
+                found.add("skill")
+        except OSError:
+            pass
+
+    skills_dir = install_path / "skills"
+    if skills_dir.is_dir():
+        try:
+            if any((sub / "SKILL.md").is_file() for sub in skills_dir.iterdir() if sub.is_dir()):
+                found.add("skill")
+        except OSError:
+            pass
+
+    mcp_path = install_path / ".mcp.json"
+    if mcp_path.is_file():
+        defs = _mcp_server_defs(_read_json_file(mcp_path, {}))
+        if defs:
+            found.add("mcp")
+
+    hooks_dir = install_path / "hooks"
+    if hooks_dir.is_dir():
+        try:
+            if any(True for _ in hooks_dir.iterdir()):
+                found.add("hook")
+        except OSError:
+            pass
+
+    return [item for item in _PROVIDES_ORDER if item in found]
+
+
+def _mcp_entry(
+    kind: str,
+    id_: str,
+    name: str,
+    enabled: bool,
+    definition: dict[str, Any],
+    provides: list[str] | None = None,
+) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "kind": kind,
         "id": id_,
@@ -298,6 +363,8 @@ def _mcp_entry(kind: str, id_: str, name: str, enabled: bool, definition: dict[s
     command_redacted = _redacted_command(definition)
     if command_redacted:
         entry["command_redacted"] = command_redacted
+    if provides:
+        entry["provides"] = list(provides)
     return entry
 
 
@@ -361,14 +428,19 @@ def _iter_installed_plugins(raw: Any) -> list[tuple[str, Path | None, dict[str, 
 
 
 def _plugin_mcp_entry(plugin_id: str, install_path: Path | None, enabled: bool, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    fallback_name = metadata.get("name") or plugin_id.split("@", 1)[0]
     if install_path is None:
-        return _mcp_entry("plugin", plugin_id, metadata.get("name") or plugin_id.split("@", 1)[0], enabled, {})
+        return _mcp_entry("plugin", plugin_id, fallback_name, enabled, {})
 
+    provides = _scan_plugin_provides(install_path)
     definitions = _mcp_server_defs(_read_json_file(install_path / ".mcp.json", {}))
-    if not definitions:
-        return None
-    name, definition = next(iter(definitions.items()))
-    return _mcp_entry("plugin", plugin_id, name, enabled, definition)
+    if definitions:
+        name, definition = next(iter(definitions.items()))
+        return _mcp_entry("plugin", plugin_id, name, enabled, definition, provides=provides)
+    # Plugin sem .mcp.json: ainda aparece no painel pra Rica enxergar o que
+    # tem instalado (skill-only, subagent-only, hook-only). transport/command
+    # ficam None (não tem MCP rodando), só `provides` informa o que expõe.
+    return _mcp_entry("plugin", plugin_id, fallback_name, enabled, {}, provides=provides)
 
 
 @router.get("/{slug}/mcp")
@@ -418,18 +490,71 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
         servers.append(_mcp_entry("user_scope", server_id, server_id, False, {}))
         known_ids.add(server_id)
 
+    # Subagentes user-level (~/.claude/agents/*.md). Não recursivo — só .md
+    # direto na pasta. Toggle não suportado (Rica move arquivo manualmente).
+    user_agents_dir = _CLAUDE_HOME / "agents"
+    if user_agents_dir.is_dir():
+        try:
+            agent_files = sorted(p for p in user_agents_dir.glob("*.md") if p.is_file())
+        except OSError:
+            agent_files = []
+        for agent_file in agent_files:
+            stem = agent_file.stem
+            name = _parse_agent_name_from_md(agent_file) or stem
+            servers.append(
+                _mcp_entry(
+                    "agent_user",
+                    stem,
+                    name,
+                    True,
+                    {},
+                    provides=["subagent"],
+                )
+            )
+
     return {"servers": servers}
+
+
+def _parse_agent_name_from_md(path: Path) -> str | None:
+    """Extrai `name:` do frontmatter YAML de um .md (primeira ocorrência).
+
+    Lê só até o segundo `---` ou EOF (cap 4KB). Sem dependência de yaml lib —
+    split simples por linha. Retorna None se não achar `name:` ou se o
+    frontmatter não existir.
+    """
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as f:
+            head = f.read(4096)
+    except OSError:
+        return None
+    lines = head.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            return None
+        if stripped.startswith("name:"):
+            value = stripped.split(":", 1)[1].strip().strip("'\"")
+            return value or None
+    return None
 
 
 @router.patch("/{slug}/mcp/{kind}/{id}", response_model=McpToggleResponse)
 async def patch_agent_mcp(
     slug: str,
-    kind: Literal["plugin", "mcp_json", "remote", "user_scope"],
+    kind: Literal["plugin", "mcp_json", "remote", "user_scope", "agent_user"],
     id: str,
     payload: McpToggleRequest,
     request: Request,
 ) -> McpToggleResponse:
     agent = await _get_agent_or_404(request, slug)
+
+    if kind == "agent_user":
+        raise HTTPException(
+            status_code=422,
+            detail="subagentes user-level não suportam toggle (mova arquivo .md manualmente)",
+        )
 
     if kind == "plugin":
         action = "enable" if payload.enabled else "disable"
