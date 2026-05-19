@@ -15,6 +15,7 @@ import {
 } from '../lib/cockpit-types';
 import {
   AgentInputError,
+  postAgentDestrava,
   postAgentModel,
   toShortModelSlug,
   type ChatModelSlug,
@@ -143,6 +144,7 @@ export function ChatPanel({
         />
       )}
       <ChatInput
+        slug={agent.slug}
         agentName={agent.name}
         onFocusChange={setInputFocused}
         sendText={submitText}
@@ -379,6 +381,7 @@ function formatRecordingDuration(seconds: number): string {
 }
 
 function ChatInput({
+  slug,
   agentName,
   onFocusChange,
   sendText,
@@ -386,6 +389,7 @@ function ChatInput({
   sendVoice,
   sending,
 }: {
+  slug: string;
   agentName: string;
   onFocusChange?: (focused: boolean) => void;
   sendText: (text: string) => Promise<void>;
@@ -400,6 +404,23 @@ function ChatInput({
   const tabPressedRef = useRef(false);
   const tabPressedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // --- long-press do send button → /destrava (volta pro chat fechando modal /status/mcp/memory) ---
+  // Long-press só ativa com input vazio (não conflita com envio). 2s de pressão dispara
+  // POST /destrava → backend manda Escape via send-keys. Cooldown de 5s evita spam.
+  const LONG_PRESS_MS = 2000;
+  const LONG_PRESS_COOLDOWN_MS = 5000;
+  const [longPressing, setLongPressing] = useState(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressCooldownUntilRef = useRef(0);
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setLongPressing(false);
+  }, []);
+  useEffect(() => () => cancelLongPress(), [cancelLongPress]);
 
   // --- image state ---
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -594,6 +615,33 @@ function ChatInput({
     setThumbUrl(URL.createObjectURL(file));
     setPendingImage(file);
   }, [fire, thumbUrl]);
+
+  const startLongPress = useCallback(() => {
+    if (text.trim() !== '' || pendingImage) return;
+    if (Date.now() < longPressCooldownUntilRef.current) return;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    setLongPressing(true);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      setLongPressing(false);
+      longPressCooldownUntilRef.current = Date.now() + LONG_PRESS_COOLDOWN_MS;
+      void postAgentDestrava(slug)
+        .then(() => {
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try { navigator.vibrate(40); } catch { /* iOS pode bloquear */ }
+          }
+          fire({ kind: 'success', msg: 'voltei pro chat', ttlMs: 1500 });
+        })
+        .catch((err) => {
+          fire({
+            kind: 'warn',
+            msg: 'destrava falhou',
+            sub: err instanceof Error ? err.message : String(err),
+            ttlMs: 4000,
+          });
+        });
+    }, LONG_PRESS_MS);
+  }, [text, pendingImage, slug, fire]);
 
   // --- submit ---
 
@@ -951,13 +999,20 @@ function ChatInput({
           {recording ? <StopIcon /> : <MicIcon />}
         </button>
 
-        {/* Send */}
+        {/* Send (long-press com input vazio → /destrava: fecha modal /status, /mcp etc) */}
         <button
           type="submit"
           className="chat-input-send"
           disabled={sendDisabled}
           aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
-          title={sending ? 'enviando…' : 'enviar (Enter)'}
+          title={sending ? 'enviando…' : 'enviar (Enter) · segure 2s pra voltar pro chat'}
+          data-long-pressing={longPressing || undefined}
+          onMouseDown={startLongPress}
+          onMouseUp={cancelLongPress}
+          onMouseLeave={cancelLongPress}
+          onTouchStart={startLongPress}
+          onTouchEnd={cancelLongPress}
+          onTouchCancel={cancelLongPress}
         >
           {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
         </button>

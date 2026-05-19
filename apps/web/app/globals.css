@@ -733,6 +733,14 @@
 .chat-input-send:active:not(:disabled) {
   transform: scale(0.92);
 }
+/* Long-press (input vazio, 2s) → POST /destrava. Botão transiciona da cor atual
+   pra cor da bolha do user em 2s. Solta antes → volta em 200ms (transition base).
+   Quando ativa, soltar é o jeito normal — animação visual indica progresso. */
+.chat-input-send[data-long-pressing] {
+  background: var(--bubble-user);
+  color: var(--text-on-panel);
+  transition: background 2000ms linear, color 2000ms linear, transform 80ms ease-out;
+}
 
 /* Header do chat — status-dot pulsante + caption + ModelChip.
    Sem nome do agente (vem do AgentModal header acima — evita duplicação).

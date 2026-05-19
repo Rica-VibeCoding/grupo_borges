@@ -806,6 +806,20 @@ async def spawn_agent_subsession(
     return result
 
 
+@router.post("/{slug}/destrava")
+async def post_agent_destrava(slug: str, request: Request) -> dict[str, Any]:
+    """Envia Escape no pane ativo do agente — destrava modais interativos do CC
+    (`/status`, `/mcp`, `/memory`, `/config`, prompts de confirmação) que cobrem
+    o input. Idempotente: sem modal aberto, Escape vira no-op no CC.
+
+    - 404 quando agente não existe
+    - 200 + {tmux_delivered, sent_at} no caminho feliz
+    """
+    agent = await _get_agent_or_404(request, slug)
+    delivered = await tmux_driver.press_escape(agent["tmux_session"])
+    return {"tmux_delivered": delivered, "sent_at": int(time.time())}
+
+
 @router.get("/{slug}/subagents")
 async def list_agent_subagents(
     slug: str,

@@ -362,6 +362,30 @@ async def press_enter(session_name: str) -> bool:
     return await asyncio.to_thread(_press_enter_sync, session_name)
 
 
+def _press_escape_sync(session_name: str) -> bool:
+    server = libtmux.Server()
+    if not server.has_session(session_name):
+        return False
+    with _DISPATCH_LOCKS[session_name]:
+        session = server.sessions.get(session_name=session_name)
+        pane = session.active_pane
+        try:
+            pane.cmd("send-keys", "Escape")
+            return True
+        except libtmux_exc.LibTmuxException:
+            return False
+
+
+async def press_escape(session_name: str) -> bool:
+    """Envia só `Escape` no pane ativo. Usado pelo botão "Destrava" quando um
+    modal interativo do CC (`/status`, `/mcp`, `/memory`, etc) trava o agente.
+    Idempotente: sem modal aberto, Escape em prompt vazio do CC é no-op.
+
+    Retorna False quando a sessão não existe ou libtmux falha.
+    """
+    return await asyncio.to_thread(_press_escape_sync, session_name)
+
+
 async def send_message(session_name: str, text: str) -> bool:
     """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 

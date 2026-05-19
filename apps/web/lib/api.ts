@@ -218,6 +218,19 @@ export async function postAgentImage(
   return res.json();
 }
 
+export async function postAgentDestrava(
+  slug: string,
+): Promise<{ tmux_delivered: boolean; sent_at: number }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/destrava`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`postAgentDestrava ${res.status}: ${txt}`);
+  }
+  return res.json();
+}
+
 export async function postAgentVoice(
   slug: string,
   audioBlob: Blob,
