@@ -108,7 +108,7 @@ def test_voice_returns_transcribed_and_delivered(tmp_path: Path) -> None:
             mock_send.assert_awaited_once()
             args, _ = mock_send.call_args
             assert args[0] == "daniel"
-            assert args[1] == "olá mundo"
+            assert args[1] == "🎙 olá mundo"
 
 
 def test_voice_handles_stt_failure_502(tmp_path: Path) -> None:

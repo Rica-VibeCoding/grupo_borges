@@ -782,31 +782,6 @@ async def stream_agent_messages(
     )
 
 
-_SLASH_CMD_RE = re.compile(r'^/[a-z][a-z0-9_:-]*(\s|$)')
-
-
-def _is_slash_command(text: str) -> bool:
-    """Slash commands do CC (/clear, /model, /status, etc) precisam chegar raw —
-    envelopados, o CC trata como texto e não dispara o comando. `/etc/passwd`
-    não casa (após `etc` vem `/`, não whitespace/EOL).
-    """
-    return bool(_SLASH_CMD_RE.match(text.lstrip()))
-
-
-def _wrap_cockpit_envelope(text: str, message_id: str, attachment_kind: str | None = None) -> str:
-    """Envelopa input do cockpit com tag `<channel source="cockpit">` pra que o
-    hook `cockpit-load-skill.sh` detecte e injete a skill `canal-cockpit`.
-    Padrão espelha o envelope dos canais Telegram/WhatsApp. Slash commands
-    bypassam o envelope — CC precisa receber a linha crua pra disparar.
-    """
-    if _is_slash_command(text):
-        return text
-    parts = [f'source="cockpit"', f'message_id="{message_id}"', f'ts="{int(time.time())}"']
-    if attachment_kind:
-        parts.append(f'attachment_kind="{attachment_kind}"')
-    return f"<channel {' '.join(parts)}>{text}</channel>"
-
-
 @router.post("/{slug}/input", response_model=InputResponse)
 async def send_agent_input(
     slug: str, payload: InputRequest, request: Request
@@ -820,8 +795,7 @@ async def send_agent_input(
     - 200 + `tmux_delivered=True` no caminho feliz
     """
     agent = await _get_agent_or_404(request, slug)
-    wrapped = _wrap_cockpit_envelope(payload.text, payload.idempotency_key)
-    delivered = await tmux_driver.send_message(agent["tmux_session"], wrapped)
+    delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
     if not delivered:
         raise HTTPException(status_code=409, detail="agent_pane_unavailable")
     return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
@@ -917,9 +891,8 @@ async def post_agent_voice(
         if not transcribed:
             raise HTTPException(status_code=502, detail="stt_empty")
 
-        wrapped = _wrap_cockpit_envelope(transcribed, uuid.uuid4().hex, attachment_kind="audio")
         delivered = await tmux_driver.send_message(
-            agent["tmux_session"], wrapped
+            agent["tmux_session"], f"🎙 {transcribed}"
         )
         duration_ms = int((time.monotonic() - started_at) * 1000)
         return {
@@ -984,8 +957,7 @@ async def post_agent_image(
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"
 
-    wrapped = _wrap_cockpit_envelope(text, uuid.uuid4().hex, attachment_kind="image")
-    delivered = await tmux_driver.send_message(agent["tmux_session"], wrapped)
+    delivered = await tmux_driver.send_message(agent["tmux_session"], text)
     duration_ms = int((time.monotonic() - started_at) * 1000)
     log.info("agent %s: imagem salva %s", slug, absolute_path)
     return {
