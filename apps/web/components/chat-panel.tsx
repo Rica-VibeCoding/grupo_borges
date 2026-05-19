@@ -411,8 +411,11 @@ function ChatInput({
   // POST /destrava → backend manda Escape via send-keys. Cooldown de 5s evita spam.
   const LONG_PRESS_MS = 2000;
   const LONG_PRESS_COOLDOWN_MS = 5000;
+  const LONG_PRESS_FIRED_FLASH_MS = 320;
   const [longPressing, setLongPressing] = useState(false);
+  const [longPressFired, setLongPressFired] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFiredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressCooldownUntilRef = useRef(0);
   const cancelLongPress = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -421,7 +424,10 @@ function ChatInput({
     }
     setLongPressing(false);
   }, []);
-  useEffect(() => () => cancelLongPress(), [cancelLongPress]);
+  useEffect(() => () => {
+    cancelLongPress();
+    if (longPressFiredTimerRef.current) clearTimeout(longPressFiredTimerRef.current);
+  }, [cancelLongPress]);
 
   // --- image state ---
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -629,6 +635,12 @@ function ChatInput({
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null;
       setLongPressing(false);
+      setLongPressFired(true);
+      if (longPressFiredTimerRef.current) clearTimeout(longPressFiredTimerRef.current);
+      longPressFiredTimerRef.current = setTimeout(() => {
+        longPressFiredTimerRef.current = null;
+        setLongPressFired(false);
+      }, LONG_PRESS_FIRED_FLASH_MS);
       longPressCooldownUntilRef.current = Date.now() + LONG_PRESS_COOLDOWN_MS;
       void postAgentDestrava(slug)
         .then(() => {
@@ -1013,20 +1025,27 @@ function ChatInput({
           {recording ? <StopIcon /> : <MicIcon />}
         </button>
 
-        {/* Send (long-press com input vazio → /destrava: fecha modal /status, /mcp etc) */}
+        {/* Send (long-press com input vazio → /destrava: fecha modal /status, /mcp etc).
+            Pointer Events unificados — separar mouse/touch é frágil em iOS (touchcancel
+            automático em long-press pra exibir callout nativo). setPointerCapture
+            garante que pointerup/cancel cheguem mesmo se o dedo sair do botão.
+            aria-disabled em vez de disabled pra eventos passarem; onSubmit já no-op
+            quando input vazio (linha ~660). */}
         <button
           type="submit"
           className="chat-input-send"
-          disabled={sendDisabled}
+          aria-disabled={sendDisabled}
           aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
           title={sending ? 'enviando…' : 'enviar (Enter) · segure 2s pra voltar pro chat'}
           data-long-pressing={longPressing || undefined}
-          onMouseDown={startLongPress}
-          onMouseUp={cancelLongPress}
-          onMouseLeave={cancelLongPress}
-          onTouchStart={startLongPress}
-          onTouchEnd={cancelLongPress}
-          onTouchCancel={cancelLongPress}
+          data-long-press-fired={longPressFired || undefined}
+          onPointerDown={(e) => {
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* iOS pode falhar */ }
+            startLongPress();
+          }}
+          onPointerUp={cancelLongPress}
+          onPointerCancel={cancelLongPress}
+          onPointerLeave={cancelLongPress}
         >
           {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
         </button>
