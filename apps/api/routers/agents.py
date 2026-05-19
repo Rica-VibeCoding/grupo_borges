@@ -419,7 +419,14 @@ def _iter_installed_plugins(raw: Any) -> list[tuple[str, Path | None, dict[str, 
 
     plugins: list[tuple[str, Path | None, dict[str, Any]]] = []
     for key, entry in items:
-        metadata = entry if isinstance(entry, dict) else {}
+        # installed_plugins.json (v2) usa {name: [{installPath, scope, ...}, ...]}
+        # — uma lista de instalações por plugin. Pega a primeira pra metadata.
+        if isinstance(entry, list) and entry and isinstance(entry[0], dict):
+            metadata = entry[0]
+        elif isinstance(entry, dict):
+            metadata = entry
+        else:
+            metadata = {}
         plugin_id = _plugin_id(str(key) if key else None, metadata)
         if not plugin_id:
             continue
