@@ -25,6 +25,7 @@ import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { usePaneStream } from '../lib/use-pane-stream';
 import { useMessagesStream } from '../lib/use-messages-stream';
+import { stripCockpitEnvelope } from '../lib/render-items';
 import {
   endsWithActiveSpinner,
   parseAnsi,
@@ -179,7 +180,10 @@ function reconcileOptimistic(
     const match = userMsgs.find((m) => {
       if (consumed.has(m.uuid)) return false;
       const content = m.message?.content;
-      const txt = typeof content === 'string' ? content : '';
+      const rawTxt = typeof content === 'string' ? content : '';
+      // Envelope <channel source="cockpit"> envolve o texto cru no backend
+      // pro hook detectar. Pra reconcile bater, strip antes de comparar.
+      const txt = stripCockpitEnvelope(rawTxt) ?? rawTxt;
       if (txt.trim() !== opt.text) return false;
       const realTs = Date.parse(m.timestamp);
       if (!Number.isFinite(realTs)) return false;

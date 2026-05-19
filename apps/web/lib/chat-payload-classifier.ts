@@ -154,7 +154,7 @@ export function classifyMessage(
     }
 
     const channel = parseChannelEnvelope(text);
-    if (channel) {
+    if (channel && channel.attrs.source !== 'cockpit') {
       return {
         kind: 'channel-envelope',
         chip: {

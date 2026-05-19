@@ -77,9 +77,18 @@ export function toolResultBodyToString(content: string | ContentPart[]): string 
 // dependência circular com o componente React. Casa o mesmo prefixo que
 // `looksLikeChannelEnvelope` em components/channel-envelope.tsx.
 const LOOKS_LIKE_CHANNEL_RE = /^\s*<channel\s+source=/;
+// Envelope do próprio cockpit (source="cockpit") tem só função técnica
+// (hook detectar canal pra carregar skill canal-cockpit). Na UI, strip pro
+// balão do usuário voltar ao visual normal — sem chip "Channel: cockpit".
+const COCKPIT_ENVELOPE_RE = /^\s*<channel\s+[^>]*source="cockpit"[^>]*>([\s\S]*?)<\/channel>\s*$/;
 
 function looksLikeChannelEnvelopeRaw(raw: string): boolean {
   return LOOKS_LIKE_CHANNEL_RE.test(raw);
+}
+
+export function stripCockpitEnvelope(raw: string): string | null {
+  const match = COCKPIT_ENVELOPE_RE.exec(raw);
+  return match ? match[1].trim() : null;
 }
 
 // META_DECISION_PATTERNS — JP-13 F2 (assistant text-only colapsa em chip).
@@ -179,6 +188,59 @@ function toolResultIds(content: string | ContentPart[] | undefined | null): stri
     .map((part) => part.tool_use_id);
 }
 
+function toolActivityFromContent(content: string | ContentPart[] | undefined | null): Partial<SubagentStatusEntry> {
+  for (const part of extractContentParts(content)) {
+    if (part.type !== 'tool_use') continue;
+    if (part.name === 'Task' || part.name === 'Agent') continue;
+    const activity: Partial<SubagentStatusEntry> = { current_tool: part.name };
+    if (part.input && typeof part.input === 'object') {
+      const input = part.input as Record<string, unknown>;
+      const summary = (
+        stringValue(input.description)
+        ?? stringValue(input.command)
+        ?? stringValue(input.file_path)
+        ?? stringValue(input.pattern)
+        ?? stringValue(input.query)
+        ?? stringValue(input.url)
+      );
+      if (summary) activity.current_tool_summary = summary;
+    }
+    return activity;
+  }
+  return {};
+}
+
+function timestampMs(message: MessagePayload): number {
+  const parsed = Date.parse(message.timestamp);
+  return Number.isFinite(parsed) ? parsed : message.created_at * 1000;
+}
+
+function statusFromSidechainMessages(
+  rootUuid: string,
+  group: MessagePayload[],
+  meta: Partial<SubagentStatusEntry>,
+): SubagentStatusEntry | null {
+  if (group.length === 0) return null;
+  const first = group[0];
+  const last = group[group.length - 1];
+  const agentId = group.find((message) => message.agent_id)?.agent_id;
+  const activity = [...group]
+    .reverse()
+    .map((message) => toolActivityFromContent(message.message?.content))
+    .find((value) => value.current_tool);
+  return {
+    parent_uuid: rootUuid,
+    status: 'active',
+    started_at_ms: timestampMs(first),
+    last_seen_ms: timestampMs(last),
+    agent_id: agentId ?? meta.agent_id,
+    agent_type: meta.agent_type,
+    description: meta.description,
+    prompt: meta.prompt,
+    ...(activity ?? {}),
+  };
+}
+
 function statusFromToolUseResult(
   rootUuid: string,
   result: ToolUseResult,
@@ -215,16 +277,22 @@ export function deriveSubagentStatusesFromMessages(messages: MessagePayload[]): 
   const byUuid = new Map(messages.map((message) => [message.uuid, message]));
   const rootByAgentId = new Map<string, string>();
   const rootByPrompt = new Map<string, string>();
+  const metaByPrompt = new Map<string, Partial<SubagentStatusEntry>>();
   const metaByToolUseId = new Map<string, Partial<SubagentStatusEntry>>();
+  const sidechainByRoot = new Map<string, MessagePayload[]>();
 
   for (const message of messages) {
     if (message.kind === 'assistant' && !message.is_sidechain) {
       for (const [toolUseId, meta] of toolUseMetaFromContent(message.message?.content)) {
         metaByToolUseId.set(toolUseId, meta);
+        if (meta.prompt) metaByPrompt.set(meta.prompt, meta);
       }
     }
     if (!message.is_sidechain) continue;
     const root = roots.get(message.uuid) ?? message.parent_uuid ?? message.uuid;
+    const group = sidechainByRoot.get(root) ?? [];
+    group.push(message);
+    sidechainByRoot.set(root, group);
     if (message.agent_id) rootByAgentId.set(message.agent_id, root);
     if (typeof message.message?.content === 'string' && message.message.content.trim()) {
       rootByPrompt.set(message.message.content.trim(), root);
@@ -232,6 +300,14 @@ export function deriveSubagentStatusesFromMessages(messages: MessagePayload[]): 
   }
 
   const statuses = new Map<string, SubagentStatusEntry>();
+  for (const [prompt, root] of rootByPrompt) {
+    const meta = metaByPrompt.get(prompt);
+    const group = sidechainByRoot.get(root);
+    if (!meta || !group) continue;
+    const active = statusFromSidechainMessages(root, group, meta);
+    if (active) statuses.set(root, active);
+  }
+
   for (const message of messages) {
     const result = message.tool_use_result;
     if (!result) continue;
@@ -340,9 +416,11 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
       const onlyToolResult = parts.every((p) => p.type === 'tool_result');
       if (onlyToolResult && parts.length > 0) continue;
 
-      const text = textOf(m.message.content).trim();
-      if (!text) continue;
-      if (looksLikeChannelEnvelopeRaw(text)) {
+      const rawText = textOf(m.message.content).trim();
+      if (!rawText) continue;
+      const cockpitBody = stripCockpitEnvelope(rawText);
+      const text = cockpitBody ?? rawText;
+      if (cockpitBody === null && looksLikeChannelEnvelopeRaw(text)) {
         items.push({ kind: 'channel', payload: m, raw: text });
         continue;
       }
