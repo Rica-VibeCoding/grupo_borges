@@ -138,6 +138,7 @@ def test_get_mcp_lists_plugin_and_project_servers_redacted(tmp_path: Path, monke
             "transport": "stdio",
             "description": "Telegram channel",
             "command_redacted": "node server.js --access-token <redacted>",
+            "provides": ["mcp"],
         },
         {
             "kind": "mcp_json",
@@ -331,6 +332,84 @@ def test_patch_mcp_user_scope_updates_disabled_mcp_servers(tmp_path: Path, monke
     assert enable_response == agents_router.McpToggleResponse(applied=True, requires_reload=True)
     state = json.loads(claude_json.read_text(encoding="utf-8"))
     assert state["projects"][str(workspace)]["disabledMcpServers"] == []
+
+
+def test_mcp_includes_plugin_without_mcp_json(tmp_path: Path, monkeypatch) -> None:
+    """Plugin sem `.mcp.json` mas com `agents/*.md` aparece com provides=["subagent"].
+
+    Hoje plugins skill-only / subagent-only ficam invisíveis no painel /mcp.
+    Esse teste fixa o comportamento novo: cada plugin instalado vira entry,
+    `provides` declara o que ele expõe.
+    """
+    request, claude_home, _, _ = _build_request(tmp_path, monkeypatch)
+    plugin_dir = tmp_path / "subagent-only-plugin"
+    (plugin_dir / "agents").mkdir(parents=True)
+    (plugin_dir / "agents" / "reviewer.md").write_text("# stub", encoding="utf-8")
+    _write_json(
+        claude_home / "plugins" / "installed_plugins.json",
+        {
+            "plugins": [
+                {
+                    "id": "code-review@anthropic",
+                    "name": "code-review",
+                    "installPath": str(plugin_dir),
+                }
+            ]
+        },
+    )
+
+    servers = _servers_by_key(_run(agents_router.list_agent_mcp("daniel", request)))
+    entry = servers[("plugin", "code-review@anthropic")]
+    assert entry["name"] == "code-review"
+    assert entry["enabled"] is True
+    assert entry["provides"] == ["subagent"]
+    # Sem .mcp.json => transport unknown, sem command_redacted.
+    assert entry["transport"] == "unknown"
+    assert "command_redacted" not in entry
+
+
+def test_mcp_includes_user_agents(tmp_path: Path, monkeypatch) -> None:
+    """`~/.claude/agents/*.md` vira entry com kind=agent_user e provides=[subagent].
+
+    Frontmatter `name:` quando presente vira o name visível; senão usa o stem.
+    """
+    request, claude_home, _, _ = _build_request(tmp_path, monkeypatch)
+    agents_dir = claude_home / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "explore-paralelo.md").write_text(
+        "---\nname: Explore Paralelo\ndescription: stub\n---\nbody\n",
+        encoding="utf-8",
+    )
+    (agents_dir / "sem-frontmatter.md").write_text("# só body, sem yaml\n", encoding="utf-8")
+
+    servers = _servers_by_key(_run(agents_router.list_agent_mcp("daniel", request)))
+    with_fm = servers[("agent_user", "explore-paralelo")]
+    assert with_fm["name"] == "Explore Paralelo"
+    assert with_fm["enabled"] is True
+    assert with_fm["provides"] == ["subagent"]
+    no_fm = servers[("agent_user", "sem-frontmatter")]
+    assert no_fm["name"] == "sem-frontmatter"
+    assert no_fm["provides"] == ["subagent"]
+
+
+def test_patch_agent_user_returns_422(tmp_path: Path, monkeypatch) -> None:
+    """PATCH em kind=agent_user retorna 422 — toggle não suportado."""
+    request, _, _, _ = _build_request(tmp_path, monkeypatch)
+    try:
+        _run(
+            agents_router.patch_agent_mcp(
+                "daniel",
+                "agent_user",
+                "explore-paralelo",
+                agents_router.McpToggleRequest(enabled=False),
+                request,
+            )
+        )
+    except agents_router.HTTPException as exc:
+        assert exc.status_code == 422
+        assert "user-level" in exc.detail
+    else:
+        raise AssertionError("esperava HTTPException 422 pra agent_user")
 
 
 def test_reload_mcp_sends_reload_plugins_to_tmux(tmp_path: Path, monkeypatch) -> None:
