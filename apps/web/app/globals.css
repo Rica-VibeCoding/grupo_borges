@@ -2137,9 +2137,8 @@
 .msg-row-user { justify-content: flex-end; }
 .msg-row-assistant { justify-content: flex-start; }
 
-/* Slide-in curto + fade na entrada da bolha. Sem JS lib (Tailwind v4 não
-   trás slide built-in). Replay flusha tudo num frame → todas animam juntas
-   (fade-in coletivo, 180ms, tolerável). Live chunk: anima na entrada. */
+/* Slide-in + fade na entrada da bolha. Replay flusha num frame → todas
+   animam juntas (fade coletivo, 180ms, tolerável). */
 @keyframes msg-enter {
   from {
     opacity: 0;

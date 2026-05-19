@@ -604,7 +604,7 @@ export type ChatMessagesProps = {
   emptyLabel?: string;
   /** Status ao vivo dos subagents por parent_uuid (JP-11 F3-2). */
   subagentStatusByParentUuid?: Map<string, SubagentStatusEntry>;
-  /** Bolhas locais ainda não confirmadas pelo SSE (JP-18 R2). */
+  /** Bolhas locais ainda não confirmadas pelo SSE. */
   optimistic?: OptimisticEntry[];
 };
 
