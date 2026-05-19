@@ -11,7 +11,6 @@ import pytest
 
 from mcp_tools.spawn_subsession import (
     SpawnSubsessionInput,
-    _check_no_dirty_index,
     spawn_subsession,
 )
 from orchestrator import jsonl_watcher
@@ -41,33 +40,6 @@ def _valid_payload(**overrides) -> SpawnSubsessionInput:
         visibility=True,
     )
     return SpawnSubsessionInput(**(defaults | overrides))
-
-
-# ---------------------------------------------------------------------------
-# _check_no_dirty_index
-# ---------------------------------------------------------------------------
-
-
-def test_check_dirty_raises_on_tracked_changes():
-    # returncode=1 = git diff HEAD found differences
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=1, stdout=b"", stderr=b"")
-        with pytest.raises(ValueError, match="mudanças não-commitadas"):
-            _check_no_dirty_index("/some/workspace")
-
-
-def test_check_dirty_ok_on_clean():
-    # returncode=0 = no differences
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0, stdout=b"", stderr=b"")
-        _check_no_dirty_index("/some/workspace")  # não deve lançar
-
-
-def test_check_dirty_raises_on_git_failure():
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=128, stdout=b"", stderr=b"not a git repo")
-        with pytest.raises(ValueError, match="git diff HEAD falhou"):
-            _check_no_dirty_index("/some/workspace")
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +103,6 @@ async def test_spawn_subsession_happy_path():
     payload = _valid_payload()
 
     with (
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index"),
         patch("mcp_tools.spawn_subsession._create_worktree_sync"),
         patch("mcp_tools.spawn_subsession._launch_in_tmux_sync"),
         patch(
@@ -163,32 +134,6 @@ async def test_spawn_subsession_happy_path():
 
 
 @pytest.mark.asyncio
-async def test_spawn_subsession_dirty_workspace_raises_409_equivalent():
-    reset_subagent_state_for_tests()
-    db = _make_db()
-    payload = _valid_payload()
-
-    def _dirty(*_a, **_kw):
-        raise ValueError("Workspace pai tem mudanças não-commitadas — commita antes de spawnar")
-
-    with (
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index", side_effect=_dirty),
-        patch("mcp_tools.spawn_subsession.Path.is_relative_to", return_value=True),
-    ):
-        with pytest.raises(ValueError, match="mudanças não-commitadas"):
-            await spawn_subsession(
-                "daniel",
-                "/home/clawd/repos/ze_claude/daniel",
-                payload,
-                db,
-            )
-
-    # Worktree NÃO deve ter sido criado
-    snapshot = subagent_active_snapshot("daniel")
-    assert len(snapshot) == 0
-
-
-@pytest.mark.asyncio
 async def test_spawn_subsession_unsafe_workspace_raises():
     reset_subagent_state_for_tests()
     db = _make_db()
@@ -207,7 +152,6 @@ async def test_spawn_subsession_cleans_worktree_on_tmux_failure():
     import libtmux.exc as ltexc
 
     with (
-        patch("mcp_tools.spawn_subsession._check_no_dirty_index"),
         patch("mcp_tools.spawn_subsession._create_worktree_sync"),
         patch(
             "mcp_tools.spawn_subsession._launch_in_tmux_sync",
