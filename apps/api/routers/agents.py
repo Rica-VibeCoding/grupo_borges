@@ -432,16 +432,19 @@ async def patch_agent_mcp(
     agent = await _get_agent_or_404(request, slug)
 
     if kind == "plugin":
-        settings_path = _CLAUDE_HOME / "settings.json"
-        settings = _read_json_file(settings_path, {})
-        if not isinstance(settings, dict):
-            settings = {}
-        enabled_plugins = settings.get("enabledPlugins")
-        if not isinstance(enabled_plugins, dict):
-            enabled_plugins = {}
-        enabled_plugins[id] = payload.enabled
-        settings["enabledPlugins"] = enabled_plugins
-        _atomic_write_json(settings_path, settings)
+        action = "enable" if payload.enabled else "disable"
+        result = await asyncio.to_thread(
+            subprocess.run,
+            ["claude", "plugin", action, id],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"claude plugin {action} falhou: {result.stderr.strip()}",
+            )
         return McpToggleResponse(applied=True, requires_reload=True)
 
     workspace = str(Path(agent["workspace_path"]))
