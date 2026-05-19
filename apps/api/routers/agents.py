@@ -950,7 +950,10 @@ async def post_agent_image(
         raise HTTPException(status_code=500, detail="erro interno ao salvar imagem") from exc
 
     caption_text = (caption or "").strip()
-    text = f"Imagem enviada via cockpit: {absolute_path}"
+    # Path SEMPRE em nova linha — single-line "Imagem enviada via cockpit: <path>"
+    # faz o CC auto-anexar o path como imagem e consumir o texto, deixando só o
+    # cabeçalho no input. Multi-linha quebra esse auto-detect.
+    text = f"Imagem enviada via cockpit:\n{absolute_path}"
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"
 

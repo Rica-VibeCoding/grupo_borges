@@ -95,12 +95,12 @@ function firstLineSummary(text: string, max = 80): string {
   return head.length > max ? head.slice(0, max - 1) + '…' : head;
 }
 
-// Detecta payload de imagem do cockpit (agents.py:732):
-//   "Imagem enviada via cockpit: <absolute_path>[\s*Caption: <text>]"
-// O `\n` entre path e Caption é engolido pela pipeline tmux/CC em alguns
-// fluxos — por isso o separador é `\s*` (tolera newline, espaço ou colado).
+// Detecta payload de imagem do cockpit (agents.py:953):
+//   "Imagem enviada via cockpit:\n<absolute_path>[\s*Caption: <text>]"
+// Path em nova linha sempre — single-line fazia o CC auto-anexar e consumir
+// o path. Separador após `:` é `\s+` (tolera newline, espaço, etc).
 // Captura direto a partir de `/uploads/agents/` pra obter URL pública.
-const COCKPIT_IMG_RE = /^Imagem enviada via cockpit: \S*?(\/uploads\/agents\/[^\s]+?\.(?:jpe?g|png|gif|webp))\s*(?:Caption:\s*([\s\S]+))?$/i;
+const COCKPIT_IMG_RE = /^Imagem enviada via cockpit:\s+\S*?(\/uploads\/agents\/[^\s]+?\.(?:jpe?g|png|gif|webp))\s*(?:Caption:\s*([\s\S]+))?$/i;
 
 function parseCockpitImage(text: string): { url: string; caption: string | null } | null {
   const match = text.match(COCKPIT_IMG_RE);
