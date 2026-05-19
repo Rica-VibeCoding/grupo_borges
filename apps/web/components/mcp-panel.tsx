@@ -8,17 +8,28 @@ import {
   type McpServer,
   type McpServerKind,
 } from '../lib/api';
+import {
+  matchesStatus,
+  matchesTab,
+  type McpStatusFilter,
+  type McpTabKey,
+} from '../lib/mcp-filter';
 import { useToast } from '../lib/toast-context';
 
 /**
- * JP-25 — painel inline /mcp.
+ * Painel inline /mcp — redesign 3 tabs por TIPO de recurso.
  *
- * Substitui o modal bloqueante do CC nativo: o user digita `/mcp` no input,
- * o ChatInput intercepta e abre este painel acima do dock. Lista servers
- * agrupados por kind (plugin + mcp_json), toggle otimista (UI muda na hora,
- * rollback em erro), debounce 200ms pra absorver múltiplos cliques sequenciais
- * no mesmo server. Footer aparece quando há mudança que exige reload e
- * permite disparar `/reload-plugins` direto no tmux do agente.
+ * Tabs primárias: Skills · MCPs · Subagentes (filtro por `provides` do backend,
+ * com fallback pelo kind legacy pra MCPs). Filtro secundário Todos / Ativos /
+ * Desativados como pill no topo do corpo. Hooks/LSP ficam fora das 3 tabs
+ * principais por enquanto (skip).
+ *
+ * Toggle otimista (UI muda na hora, rollback em erro), debounce 200ms pra
+ * absorver múltiplos cliques no mesmo server. Footer aparece quando há mudança
+ * que exige reload e dispara `/reload-plugins` direto no tmux do agente.
+ *
+ * Subagentes user-level (kind=agent_user) tem toggle desabilitado — tooltip
+ * instrui mover o .md em ~/.claude/agents/ pra desabilitar (PATCH retorna 422).
  *
  * Fecha via Esc, clique no botão "✕" ou clique fora.
  */
@@ -37,10 +48,22 @@ const kindLabel = (kind: McpServerKind): string => {
       return 'remote';
     case 'user_scope':
       return 'user';
+    case 'agent_user':
+      return 'user';
   }
 };
 
-type TabKey = 'active' | 'disabled';
+const TABS: ReadonlyArray<{ key: McpTabKey; label: string }> = [
+  { key: 'skills', label: 'Skills' },
+  { key: 'mcps', label: 'MCPs' },
+  { key: 'subagents', label: 'Subagentes' },
+];
+
+const STATUS_FILTERS: ReadonlyArray<{ key: McpStatusFilter; label: string }> = [
+  { key: 'all', label: 'Todos' },
+  { key: 'enabled', label: 'Ativos' },
+  { key: 'disabled', label: 'Desativados' },
+];
 
 export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void }) {
   const { fire } = useToast();
@@ -48,7 +71,8 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [requiresReload, setRequiresReload] = useState(false);
   const [reloading, setReloading] = useState(false);
-  const [tab, setTab] = useState<TabKey>('active');
+  const [tab, setTab] = useState<McpTabKey>('skills');
+  const [status, setStatus] = useState<McpStatusFilter>('all');
   const panelRef = useRef<HTMLDivElement>(null);
 
   const pendingTimers = useRef<Map<ServerKey, ReturnType<typeof setTimeout>>>(new Map());
@@ -120,6 +144,8 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
 
   const onToggle = useCallback(
     (server: McpServer) => {
+      // Subagentes user-level (kind=agent_user) não aceitam PATCH (422 no backend).
+      if (server.kind === 'agent_user') return;
       const next = !server.enabled;
       setServers((prev) =>
         prev === null
@@ -177,38 +203,28 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
     };
   }, [onClose]);
 
-  // Partição enabled/disabled vem primeiro (raiz das abas). Dentro de cada
-  // aba os items são re-agrupados por kind (plugin · mcp_json · remote ·
-  // user_scope) pra preservar a leitura de origem do MCP.
-  const partitioned = useMemo(() => {
-    const empty = {
-      active: [] as McpServer[],
-      disabled: [] as McpServer[],
-    };
+  // Contagem por tab é independente do status filter (mostra total real do tipo).
+  const tabCounts = useMemo(() => {
+    const empty: Record<McpTabKey, number> = { skills: 0, mcps: 0, subagents: 0 };
     if (!servers) return empty;
-    return servers.reduce((acc, s) => {
-      (s.enabled ? acc.active : acc.disabled).push(s);
-      return acc;
-    }, empty);
+    for (const s of servers) {
+      for (const t of TABS) {
+        if (matchesTab(s, t.key)) empty[t.key] += 1;
+      }
+    }
+    return empty;
   }, [servers]);
 
-  const counts = useMemo(
-    () => ({ active: partitioned.active.length, disabled: partitioned.disabled.length }),
-    [partitioned],
+  const visibleServers = useMemo(() => {
+    if (!servers) return [];
+    return servers.filter((s) => matchesTab(s, tab) && matchesStatus(s, status));
+  }, [servers, tab, status]);
+
+  // Há plugin multi-tipo no inventário inteiro? (não restringido por tab atual).
+  const hasMultiTypePlugin = useMemo(
+    () => Boolean(servers?.some((s) => (s.provides?.length ?? 0) > 1)),
+    [servers],
   );
-
-  const visibleServers = tab === 'active' ? partitioned.active : partitioned.disabled;
-
-  const grouped = useMemo(() => {
-    const buckets: Record<McpServerKind, McpServer[]> = {
-      plugin: [],
-      mcp_json: [],
-      remote: [],
-      user_scope: [],
-    };
-    for (const s of visibleServers) buckets[s.kind].push(s);
-    return buckets;
-  }, [visibleServers]);
 
   return (
     <div className="mcp-panel-anchor" onMouseDown={(e) => e.stopPropagation()}>
@@ -216,13 +232,13 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
         ref={panelRef}
         className="mcp-panel"
         role="dialog"
-        aria-label="Servers MCP do agente"
+        aria-label="Recursos do agente (skills · MCPs · subagentes)"
       >
         <header className="mcp-panel-head">
           <span className="mcp-panel-title">
             <span className="mcp-panel-title-prefix mono">/mcp</span>
             <span className="mcp-panel-title-sep" aria-hidden="true">·</span>
-            <span>Servers do agente</span>
+            <span>Recursos do agente</span>
           </span>
           <button
             type="button"
@@ -241,55 +257,59 @@ export function McpPanel({ slug, onClose }: { slug: string; onClose: () => void 
         ) : servers === null ? (
           <div className="mcp-panel-empty mono">carregando…</div>
         ) : servers.length === 0 ? (
-          <div className="mcp-panel-empty">nenhum server MCP configurado</div>
+          <div className="mcp-panel-empty">nenhum recurso configurado</div>
         ) : (
           <>
             <div className="mcp-panel-tabs" role="tablist">
-              <McpTab
-                label="Ativos"
-                count={counts.active}
-                active={tab === 'active'}
-                onSelect={() => setTab('active')}
-                tone="on"
-              />
-              <McpTab
-                label="Desativados"
-                count={counts.disabled}
-                active={tab === 'disabled'}
-                onSelect={() => setTab('disabled')}
-                tone="off"
-              />
+              {TABS.map((t) => (
+                <McpTab
+                  key={t.key}
+                  label={t.label}
+                  count={tabCounts[t.key]}
+                  active={tab === t.key}
+                  onSelect={() => setTab(t.key)}
+                />
+              ))}
             </div>
+
+            <div className="mcp-panel-subbar">
+              <div className="mcp-status-pills" role="tablist" aria-label="Filtro de status">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={status === f.key}
+                    className="mcp-status-pill"
+                    data-active={status === f.key ? '1' : '0'}
+                    onClick={() => setStatus(f.key)}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {hasMultiTypePlugin && (
+                <small className="mcp-panel-note">
+                  Plugin pode expor múltiplos tipos — desligar afeta todos os recursos do plugin.
+                </small>
+              )}
+            </div>
+
             <div className="mcp-panel-body">
               {visibleServers.length === 0 ? (
                 <p className="mcp-panel-empty">
-                  {tab === 'active'
-                    ? 'nenhum server ativo — habilite na aba ao lado.'
-                    : 'tudo ligado — nenhum server na reserva.'}
+                  {status === 'enabled'
+                    ? 'nenhum recurso ativo nessa categoria.'
+                    : status === 'disabled'
+                      ? 'nenhum recurso desativado nessa categoria.'
+                      : 'nenhum recurso nessa categoria.'}
                 </p>
               ) : (
-                <>
-                  <McpGroup
-                    label="Plugins"
-                    items={grouped.plugin}
-                    onToggle={onToggle}
-                  />
-                  <McpGroup
-                    label="Project ( .mcp.json )"
-                    items={grouped.mcp_json}
-                    onToggle={onToggle}
-                  />
-                  <McpGroup
-                    label="Remote (claude.ai)"
-                    items={grouped.remote}
-                    onToggle={onToggle}
-                  />
-                  <McpGroup
-                    label="User-scope"
-                    items={grouped.user_scope}
-                    onToggle={onToggle}
-                  />
-                </>
+                <ul className="mcp-group-list">
+                  {visibleServers.map((s) => (
+                    <McpRow key={keyOf(s)} server={s} onToggle={onToggle} />
+                  ))}
+                </ul>
               )}
             </div>
           </>
@@ -321,13 +341,11 @@ function McpTab({
   count,
   active,
   onSelect,
-  tone,
 }: {
   label: string;
   count: number;
   active: boolean;
   onSelect: () => void;
-  tone: 'on' | 'off';
 }) {
   return (
     <button
@@ -336,35 +354,11 @@ function McpTab({
       aria-selected={active}
       className="mcp-panel-tab"
       data-active={active ? '1' : '0'}
-      data-tone={tone}
       onClick={onSelect}
     >
       <span className="mcp-panel-tab-label">{label}</span>
       <span className="mcp-panel-tab-count mono">{count}</span>
     </button>
-  );
-}
-
-function McpGroup({
-  label,
-  items,
-  onToggle,
-}: {
-  label: string;
-  items: McpServer[];
-  onToggle: (s: McpServer) => void;
-}) {
-  // Grupos vazios somem dentro de cada aba — leitura limpa, sem placeholders.
-  if (items.length === 0) return null;
-  return (
-    <section className="mcp-group">
-      <h3 className="mcp-group-label">{label}</h3>
-      <ul className="mcp-group-list">
-        {items.map((s) => (
-          <McpRow key={keyOf(s)} server={s} onToggle={onToggle} />
-        ))}
-      </ul>
-    </section>
   );
 }
 
@@ -376,25 +370,48 @@ function McpRow({
   onToggle: (s: McpServer) => void;
 }) {
   const transport = server.transport && server.transport !== 'unknown' ? server.transport : null;
-  const tooltip =
-    server.command_redacted ??
-    server.description ??
-    (transport ? `transport: ${transport}` : undefined);
+  const providesList = server.provides ?? [];
+  const isMulti = providesList.length > 1;
+  const isUserSubagent = server.kind === 'agent_user';
+
+  const tooltip = isUserSubagent
+    ? 'Mova o arquivo .md em ~/.claude/agents/ pra desabilitar.'
+    : (server.command_redacted ??
+       server.description ??
+       (transport ? `transport: ${transport}` : undefined));
+
   return (
     <li className="mcp-row" title={tooltip ?? undefined}>
       <button
         type="button"
         role="switch"
         aria-checked={server.enabled}
-        aria-label={`${server.enabled ? 'Desativar' : 'Ativar'} ${server.name}`}
+        aria-disabled={isUserSubagent}
+        aria-label={
+          isUserSubagent
+            ? `${server.name} (gerenciado via ~/.claude/agents/)`
+            : `${server.enabled ? 'Desativar' : 'Ativar'} ${server.name}`
+        }
         className="mcp-toggle"
         data-on={server.enabled ? '1' : '0'}
+        data-locked={isUserSubagent ? '1' : '0'}
         onClick={() => onToggle(server)}
+        disabled={isUserSubagent}
       >
         <span className="mcp-toggle-thumb" aria-hidden="true" />
       </button>
       <div className="mcp-row-meta">
-        <span className="mcp-row-name">{server.name}</span>
+        <span className="mcp-row-name">
+          {server.name}
+          {isMulti && (
+            <span
+              className="mcp-provides-badge mono"
+              title={`Plugin expõe: ${providesList.join(' · ')}`}
+            >
+              expõe: {providesList.join('+')}
+            </span>
+          )}
+        </span>
         <span className="mcp-row-id mono" title={`${server.kind}:${server.id}`}>
           {kindLabel(server.kind)} · {server.id}
         </span>

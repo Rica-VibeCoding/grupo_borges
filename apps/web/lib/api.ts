@@ -398,7 +398,9 @@ export async function spawnSubsession(
 
 // ----- JP-25: MCP painel inline -----------------------------------------
 
-export type McpServerKind = 'plugin' | 'mcp_json' | 'remote' | 'user_scope';
+export type McpServerKind = 'plugin' | 'mcp_json' | 'remote' | 'user_scope' | 'agent_user';
+
+export type McpProvides = 'skill' | 'mcp' | 'subagent' | 'hook' | 'lsp';
 
 export type McpServer = {
   kind: McpServerKind;
@@ -408,6 +410,7 @@ export type McpServer = {
   transport?: string | null;
   description?: string | null;
   command_redacted?: string | null;
+  provides?: McpProvides[] | null;
 };
 
 export type AgentMcpResponse = { servers: McpServer[] };
