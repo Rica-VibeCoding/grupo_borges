@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import asyncio
 from pathlib import Path
@@ -200,10 +201,18 @@ def test_get_mcp_marks_workspace_disabled_mcp_as_disabled(tmp_path: Path, monkey
     }
 
 
-def test_patch_mcp_plugin_updates_enabled_plugins(tmp_path: Path, monkeypatch) -> None:
-    request, claude_home, _, _ = _build_request(tmp_path, monkeypatch)
-    settings_path = claude_home / "settings.json"
-    _write_json(settings_path, {"enabledPlugins": {"telegram@claude-plugins-official": True}})
+def test_patch_mcp_plugin_invokes_claude_cli(tmp_path: Path, monkeypatch) -> None:
+    """Toggle de plugin chama `claude plugin disable/enable` (não edita JSON).
+    Mocka subprocess.run pra evitar mexer no estado real do CLI durante teste.
+    """
+    request, _, _, _ = _build_request(tmp_path, monkeypatch)
+    calls: list[tuple[list[str], str | None]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((list(cmd), kwargs.get("cwd")))
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(agents_router.subprocess, "run", fake_run)
 
     response = _run(
         agents_router.patch_agent_mcp(
@@ -216,8 +225,11 @@ def test_patch_mcp_plugin_updates_enabled_plugins(tmp_path: Path, monkeypatch) -
     )
 
     assert response == agents_router.McpToggleResponse(applied=True, requires_reload=True)
-    settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert settings["enabledPlugins"]["telegram@claude-plugins-official"] is False
+    assert len(calls) == 1
+    cmd, cwd = calls[0]
+    assert cmd == ["claude", "plugin", "disable", "telegram@claude-plugins-official"]
+    # cwd = workspace do agente, pra settings.local.json override pegar.
+    assert cwd is not None and cwd.endswith("workspace")
 
 
 def test_patch_mcp_json_moves_between_enabled_and_disabled_lists(tmp_path: Path, monkeypatch) -> None:

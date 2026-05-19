@@ -433,17 +433,27 @@ async def patch_agent_mcp(
 
     if kind == "plugin":
         action = "enable" if payload.enabled else "disable"
+        # cwd = workspace do agente: settings local (.claude/settings.local.json)
+        # de cada Zé faz override do user-scope. Sem isso, o disable escreve no
+        # CWD do uvicorn (grupo_borges/apps/api) e nada acontece pro agente alvo.
         result = await asyncio.to_thread(
             subprocess.run,
             ["claude", "plugin", action, id],
+            cwd=str(agent["workspace_path"]),
             capture_output=True,
             text=True,
             timeout=10,
         )
         if result.returncode != 0:
+            # CLI retorna erro quando já está no estado desejado — trata como
+            # idempotente em vez de devolver 500 (Rica clicaria e veria erro
+            # vermelho mesmo o estado já estando correto).
+            stderr = result.stderr.strip()
+            if "already" in stderr.lower():
+                return McpToggleResponse(applied=True, requires_reload=False)
             raise HTTPException(
                 status_code=500,
-                detail=f"claude plugin {action} falhou: {result.stderr.strip()}",
+                detail=f"claude plugin {action} falhou: {stderr}",
             )
         return McpToggleResponse(applied=True, requires_reload=True)
 
