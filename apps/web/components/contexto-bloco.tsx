@@ -1,20 +1,9 @@
 import type { PainelContexto } from '../lib/cockpit-types';
+import { clampPct, formatCompactNumber } from '../lib/painel-format';
 
 type ContextoBlocoProps = {
   data: PainelContexto;
 };
-
-function formatCompactNumber(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '0';
-  if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}m`;
-  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
-  return String(value);
-}
-
-function clampPct(value: number | null | undefined): number {
-  if (value === null || value === undefined || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, value));
-}
 
 export function ContextoBloco({ data }: ContextoBlocoProps) {
   if (!data.available) {
@@ -25,15 +14,17 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
     );
   }
 
-  const tokens = data.tokens;
-  const total = tokens.total || tokens.input + tokens.output + tokens.cache_creation + tokens.cache_read;
-  const pct = clampPct(data.pct);
+  const currentUsage = data.tokens;
+  const total =
+    currentUsage.total ||
+    currentUsage.input + currentUsage.output + currentUsage.cache_creation + currentUsage.cache_read;
+  const pct = clampPct(data.pct ?? 0);
   const segmentTotal = Math.max(total, 1);
   const segments = [
-    { key: 'input', label: 'input', value: tokens.input, className: 'input' },
-    { key: 'output', label: 'output', value: tokens.output, className: 'output' },
-    { key: 'cache_creation', label: 'cache creation', value: tokens.cache_creation, className: 'cache-create' },
-    { key: 'cache_read', label: 'cache read', value: tokens.cache_read, className: 'cache-read' },
+    { key: 'input', label: 'input', value: currentUsage.input, className: 'input' },
+    { key: 'output', label: 'output', value: currentUsage.output, className: 'output' },
+    { key: 'cache_creation', label: 'cache creation', value: currentUsage.cache_creation, className: 'cache-create' },
+    { key: 'cache_read', label: 'cache read', value: currentUsage.cache_read, className: 'cache-read' },
   ];
 
   return (
@@ -42,7 +33,7 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
         <div className="painel-bloco-title">Contexto</div>
         <div className="painel-chip-row">
           {data.model_family && <span className="painel-chip">{data.model_family}</span>}
-          <span className="painel-chip">{formatCompactNumber(data.context_window)}</span>
+          <span className="painel-chip">{formatCompactNumber(data.context_window ?? 0)}</span>
         </div>
       </div>
 

@@ -26,8 +26,9 @@ import subprocess
 import tempfile
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncGenerator, Literal
+from typing import Any, AsyncGenerator, Literal, NamedTuple
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -62,10 +63,11 @@ _PLUGIN_ID_KEYS = ("id", "pluginId", "plugin_id")
 _CLAUDE_AI_PREFIX = "claude.ai "
 _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
-_AGENT_PAINEL_DEFAULT_CONTEXT_WINDOW = 200_000
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
+_AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
 AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max"]
+AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
 
 
 class AgentPainelTokens(BaseModel):
@@ -79,7 +81,7 @@ class AgentPainelTokens(BaseModel):
 class AgentPainelContexto(BaseModel):
     model: str | None = None
     model_family: str | None = None
-    context_window: int = _AGENT_PAINEL_DEFAULT_CONTEXT_WINDOW
+    context_window: int | None = None
     tokens: AgentPainelTokens
     pct: float | None = None
     source: str
@@ -94,11 +96,16 @@ class AgentPainelEffort(BaseModel):
     session_may_diverge: bool = True
 
 
+class AgentPainelPermission(BaseModel):
+    mode: AgentPainelPermissionMode
+    source: str
+    session_may_diverge: bool = True
+
+
 class AgentPainelQuotaWindow(BaseModel):
-    reset_at: int | None = None
+    used_percentage: float | None = None
+    resets_at: int | None = None
     remaining_seconds: int | None = None
-    used_pct: float | None = None
-    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentPainelQuotas(BaseModel):
@@ -111,10 +118,24 @@ class AgentPainelQuotas(BaseModel):
     seven_day: AgentPainelQuotaWindow | None = None
 
 
+class AgentPainelSubagentEntry(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    state: str | None = None
+    sessionId: str | None = None
+    cwd: str | None = None
+    model: str | None = None
+    context_pct: float | None = None
+    context_tokens: int | None = None
+    context_window_size: int | None = None
+    started_at: int | None = None
+    sender: str | None = None
+
+
 class AgentPainelSubagents(BaseModel):
     count: int
     active_count: int
-    items: list[dict[str, Any]]
+    items: list[AgentPainelSubagentEntry]
 
 
 class AgentPainelResponse(BaseModel):
@@ -122,6 +143,7 @@ class AgentPainelResponse(BaseModel):
     generated_at: int
     contexto: AgentPainelContexto
     effort: AgentPainelEffort
+    permission: AgentPainelPermission
     quotas: AgentPainelQuotas
     subagents: AgentPainelSubagents
 
@@ -130,12 +152,25 @@ class AgentPainelEffortPatchRequest(BaseModel):
     effort: AgentPainelEffortValue
 
 
+class AgentPainelPermissionPatchRequest(BaseModel):
+    mode: AgentPainelPermissionMode
+
+
 class AgentPainelEffortPatchResponse(BaseModel):
     slug: str
     effort: str
     source: str
     session_may_diverge: bool = True
     written: bool = True
+
+
+class AgentPainelPermissionPatchResponse(BaseModel):
+    slug: str
+    mode: AgentPainelPermissionMode
+    source: str
+    session_may_diverge: bool = True
+    written: bool = True
+
 
 @router.get("")
 async def list_agents(request: Request):
@@ -246,17 +281,20 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
 async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
-    contexto, effort, quotas, subagents = await asyncio.gather(
-        asyncio.to_thread(_build_painel_contexto, agent),
+    cc_status = await _load_cc_status(db, slug)
+    contexto, effort, permission, quotas, subagents = await asyncio.gather(
+        asyncio.to_thread(_build_painel_contexto, agent, cc_status),
         asyncio.to_thread(_read_agent_effort),
-        _read_agent_quotas(db, slug),
-        asyncio.to_thread(lambda: _build_agent_subagents(subagent_active_snapshot(slug))),
+        asyncio.to_thread(_read_agent_permission),
+        asyncio.to_thread(_build_painel_quotas, cc_status),
+        asyncio.to_thread(_build_agent_subagents, agent.get("workspace_path")),
     )
     return AgentPainelResponse(
         slug=slug,
         generated_at=int(time.time()),
         contexto=contexto,
         effort=effort,
+        permission=permission,
         quotas=quotas,
         subagents=subagents,
     )
@@ -270,6 +308,16 @@ async def patch_agent_effort(
 ) -> AgentPainelEffortPatchResponse:
     await _get_agent_or_404(request, slug)
     return await asyncio.to_thread(_write_agent_effort, slug, patch.effort)
+
+
+@router.patch("/{slug}/permission-mode", response_model=AgentPainelPermissionPatchResponse)
+async def patch_agent_permission_mode(
+    slug: str,
+    patch: AgentPainelPermissionPatchRequest,
+    request: Request,
+) -> AgentPainelPermissionPatchResponse:
+    await _get_agent_or_404(request, slug)
+    return await asyncio.to_thread(_write_agent_permission_mode, slug, patch.mode)
 
 
 # ----- JP-25: MCP inventory / toggles --------------------------------------
@@ -322,47 +370,6 @@ def _atomic_write_json(path: Path, data: Any) -> None:
         raise HTTPException(status_code=500, detail=f"erro escrevendo {path}: {exc}") from exc
 
 
-def _int_from_any(value: Any) -> int | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(float(value))
-        except ValueError:
-            return None
-    return None
-
-
-def _float_from_any(value: Any) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return None
-    return None
-
-
-def _unix_from_any(value: Any) -> int | None:
-    direct = _int_from_any(value)
-    if direct is not None:
-        return direct
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        parsed = time.strptime(value.replace("Z", "+0000"), "%Y-%m-%dT%H:%M:%S%z")
-        return int(time.mktime(parsed))
-    except ValueError:
-        return None
-
-
 def _model_family(model: str | None) -> str | None:
     if not model:
         return None
@@ -373,54 +380,71 @@ def _model_family(model: str | None) -> str | None:
     return model
 
 
-def _parse_token_usage(raw: Any) -> dict[str, Any] | None:
-    if raw is None:
+def _int_or_none(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _num_or_none(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str) and raw.strip():
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-        return parsed if isinstance(parsed, dict) else None
-    return None
+    return float(value)
 
 
-def _token_count(usage: dict[str, Any], *keys: str) -> int:
-    for key in keys:
-        value = _int_from_any(usage.get(key))
-        if value is not None:
-            return max(0, value)
-    return 0
+class _CCStatus(NamedTuple):
+    session_id: str | None
+    path: Path | None
+    payload: dict[str, Any] | None
 
 
-def _build_painel_contexto(agent: dict[str, Any]) -> AgentPainelContexto:
-    usage = _parse_token_usage(agent.get("token_usage_json"))
-    model = agent.get("state_model") or agent.get("model_default")
-    updated_at = _int_from_any(agent.get("last_seen"))
-    if not usage:
+async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
+    """Lê /tmp/cc-status-<sessionId>.json escrito pela statusline do CC.
+
+    Fonte única pra `_build_painel_contexto` (contexto/tokens) E pra
+    `_build_painel_quotas` (rate limits): payload é parseado uma vez
+    e propagado pra ambos via `asyncio.gather`.
+    """
+    session_id = await db.latest_jsonl_session_id(slug)
+    if not session_id:
+        return _CCStatus(None, None, None)
+    path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
+    if not path.exists():
+        return _CCStatus(session_id, path, None)
+    payload = await asyncio.to_thread(_read_json_file, path, None)
+    if not isinstance(payload, dict):
+        return _CCStatus(session_id, path, None)
+    return _CCStatus(session_id, path, payload)
+
+
+def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelContexto:
+    payload = cc_status.payload or {}
+    model_block = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+    model = (
+        model_block.get("display_name")
+        or model_block.get("id")
+        or agent.get("state_model")
+        or agent.get("model_default")
+    )
+    updated_at = _int_or_none(payload.get("updated_at"))
+    context_window_block = payload.get("context_window")
+    if not isinstance(context_window_block, dict):
         return AgentPainelContexto(
             model=model,
             model_family=_model_family(model),
             tokens=AgentPainelTokens(),
-            pct=_float_from_any(agent.get("context_pct")),
-            source="agent_state.context_pct",
+            pct=None,
+            source=str(cc_status.path) if cc_status.path else "cc_status:missing",
             updated_at=updated_at,
             available=False,
         )
 
-    input_tokens = _token_count(usage, "input_tokens", "input")
-    output_tokens = _token_count(usage, "output_tokens", "output")
-    cache_creation = _token_count(usage, "cache_creation_input_tokens", "cache_creation")
-    cache_read = _token_count(usage, "cache_read_input_tokens", "cache_read")
+    usage = context_window_block.get("current_usage") if isinstance(context_window_block.get("current_usage"), dict) else {}
+    input_tokens = _int_or_none(usage.get("input_tokens")) or 0
+    output_tokens = _int_or_none(usage.get("output_tokens")) or 0
+    cache_creation = _int_or_none(usage.get("cache_creation_input_tokens")) or 0
+    cache_read = _int_or_none(usage.get("cache_read_input_tokens")) or 0
     total = input_tokens + output_tokens + cache_creation + cache_read
-    context_window = (
-        _int_from_any(usage.get("context_window_size"))
-        or _int_from_any(usage.get("context_window"))
-        or _AGENT_PAINEL_DEFAULT_CONTEXT_WINDOW
-    )
-    pct = round((total / context_window) * 100, 2) if context_window > 0 else None
+    context_window = _int_or_none(context_window_block.get("context_window_size"))
+    pct = _num_or_none(context_window_block.get("used_percentage"))
     return AgentPainelContexto(
         model=model,
         model_family=_model_family(model),
@@ -433,7 +457,7 @@ def _build_painel_contexto(agent: dict[str, Any]) -> AgentPainelContexto:
             total=total,
         ),
         pct=pct,
-        source="agent_state.token_usage_json",
+        source=str(cc_status.path),
         updated_at=updated_at,
         available=True,
     )
@@ -449,7 +473,7 @@ def _read_agent_effort() -> AgentPainelEffort:
 
 
 def _agent_painel_settings_path() -> Path:
-    return _CLAUDE_HOME / "settings.json"
+    return _CLAUDE_HOME / _AGENT_PAINEL_SETTINGS_PATH
 
 
 def _write_agent_effort(slug: str, effort: AgentPainelEffortValue) -> AgentPainelEffortPatchResponse:
@@ -469,56 +493,220 @@ def _write_agent_effort(slug: str, effort: AgentPainelEffortValue) -> AgentPaine
     )
 
 
-def _quota_window(raw: Any) -> AgentPainelQuotaWindow:
-    payload = raw if isinstance(raw, dict) else {}
-    reset_at = payload.get("reset_at") if "reset_at" in payload else payload.get("resetAt")
-    remaining_seconds = (
-        payload.get("remaining_seconds")
-        if "remaining_seconds" in payload
-        else payload.get("remainingSeconds")
+def _read_agent_permission() -> AgentPainelPermission:
+    settings_path = _agent_painel_settings_path()
+    settings = _read_json_file(settings_path, {})
+    permissions = settings.get("permissions") if isinstance(settings, dict) else None
+    mode = permissions.get("defaultMode") if isinstance(permissions, dict) else None
+    if mode not in ("ask", "bypassPermissions", "plan", "acceptEdits"):
+        mode = "ask"
+    return AgentPainelPermission(mode=mode, source=str(settings_path))
+
+
+def _write_agent_permission_mode(
+    slug: str,
+    mode: AgentPainelPermissionMode,
+) -> AgentPainelPermissionPatchResponse:
+    settings_path = _agent_painel_settings_path()
+    settings = _read_json_file(settings_path, {})
+    if not isinstance(settings, dict):
+        raise HTTPException(status_code=500, detail=f"JSON inválido em {settings_path}: raiz deve ser objeto")
+
+    permissions = settings.get("permissions")
+    if not isinstance(permissions, dict):
+        permissions = {}
+    permissions["defaultMode"] = mode
+    settings["permissions"] = permissions
+    _atomic_write_json(settings_path, settings)
+    return AgentPainelPermissionPatchResponse(
+        slug=slug,
+        mode=mode,
+        source=str(settings_path),
+        session_may_diverge=True,
+        written=True,
     )
-    used_pct = payload.get("used_pct") if "used_pct" in payload else payload.get("usedPct")
+
+
+def _quota_window(raw: Any, now: int) -> AgentPainelQuotaWindow | None:
+    if not isinstance(raw, dict):
+        return None
+    used_percentage = _num_or_none(raw.get("used_percentage"))
+    resets_at = _int_or_none(raw.get("resets_at"))
+    remaining_seconds = max(0, resets_at - now) if resets_at is not None else None
     return AgentPainelQuotaWindow(
-        reset_at=_unix_from_any(reset_at),
-        remaining_seconds=_int_from_any(remaining_seconds),
-        used_pct=_float_from_any(used_pct),
-        raw=payload,
+        used_percentage=used_percentage,
+        resets_at=resets_at,
+        remaining_seconds=remaining_seconds,
     )
 
 
-async def _read_agent_quotas(db: GrupoBorgesDB, slug: str) -> AgentPainelQuotas:
-    session_id = await db.latest_jsonl_session_id(slug)
-    if not session_id:
+def _build_painel_quotas(cc_status: _CCStatus) -> AgentPainelQuotas:
+    if cc_status.session_id is None:
         return AgentPainelQuotas(status="missing")
+    source = str(cc_status.path) if cc_status.path else None
+    if cc_status.payload is None:
+        return AgentPainelQuotas(status="missing", source=source, session_id=cc_status.session_id)
 
-    path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
-    if not path.exists():
-        return AgentPainelQuotas(status="missing", source=str(path), session_id=session_id)
-
-    payload = await asyncio.to_thread(_read_json_file, path, {})
-    if not isinstance(payload, dict):
-        return AgentPainelQuotas(status="unknown", source=str(path), session_id=session_id)
-
-    updated_at = _int_from_any(payload.get("updated_at"))
+    payload = cc_status.payload
+    now = int(time.time())
+    updated_at = _int_or_none(payload.get("updated_at"))
     status: Literal["available", "missing", "stale", "unknown"] = "available"
     if updated_at is None:
         status = "unknown"
-    elif int(time.time()) - updated_at > _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS:
+    elif now - updated_at > _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS:
         status = "stale"
 
-    rate_limits = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else payload
+    rate_limits = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else {}
     return AgentPainelQuotas(
         status=status,
-        source=str(path),
-        session_id=session_id,
+        source=source,
+        session_id=cc_status.session_id,
         updated_at=updated_at,
-        five_hour=_quota_window(rate_limits.get("five_hour") if isinstance(rate_limits, dict) else None),
-        seven_day=_quota_window(rate_limits.get("seven_day") if isinstance(rate_limits, dict) else None),
+        five_hour=_quota_window(rate_limits.get("five_hour"), now),
+        seven_day=_quota_window(rate_limits.get("seven_day"), now),
     )
 
 
-def _build_agent_subagents(items: list[dict[str, Any]]) -> AgentPainelSubagents:
-    return AgentPainelSubagents(count=len(items), active_count=len(items), items=items)
+_AGENT_VIEW_ACTIVE_STATES = frozenset({"working", "needs_input", "blocked"})
+_AGENT_VIEW_ITEMS_CAP = 10
+_AGENT_VIEW_RECENT_WINDOW_SECONDS = 15 * 60
+
+
+def _parse_iso_epoch(value: Any) -> int | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return int(dt.timestamp())
+
+
+def _is_recent(updated_at_iso: Any, window_seconds: int) -> bool:
+    if not isinstance(updated_at_iso, str):
+        return False
+    try:
+        dt = datetime.fromisoformat(updated_at_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    age = (datetime.now(timezone.utc) - dt).total_seconds()
+    return age <= window_seconds
+
+
+_SUBAGENT_SENDER_BY_CWD: tuple[tuple[str, str], ...] = (
+    ("/home/clawd/repos/ze_claude/daniel", "Daniel"),
+    ("/home/clawd/repos/ze_claude/pavan", "Pavan"),
+    ("/home/clawd/repos/ze_claude/lucas", "Lucas"),
+    ("/home/clawd/repos/ze_claude/vinicius", "Vinicius"),
+    ("/home/clawd/repos/ze_claude/felipe", "Felipe"),
+    ("/home/clawd/repos/ze_claude/barsi", "Barsi"),
+    ("/home/clawd/repos/ze_claude/miga_dani", "Miga"),
+    ("/home/clawd/repos/grupo_borges", "Pavan"),
+)
+
+
+def _infer_sender_from_cwd(cwd: str | None) -> str | None:
+    """Mapeia o `cwd` de um job pro slug do agente que disparou o subagent.
+
+    Match por prefixo de path (separador `/`) — subdirs do workspace contam
+    como mesmo sender. Retorna `None` quando o cwd não bate com nenhum
+    workspace conhecido.
+    """
+    if not isinstance(cwd, str) or not cwd:
+        return None
+    for prefix, sender in _SUBAGENT_SENDER_BY_CWD:
+        if cwd == prefix or cwd.startswith(prefix + "/"):
+            return sender
+    return None
+
+
+def _read_cc_status_for_subagent(session_id: str | None) -> dict[str, Any] | None:
+    if not session_id:
+        return None
+    path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
+    if not path.exists():
+        return None
+    payload = _read_json_file(path, None)
+    return payload if isinstance(payload, dict) else None
+
+
+def _list_agent_view_jobs(agent_workspace_path: str | None) -> list[dict[str, Any]]:
+    """Percorre `~/.claude/jobs/*/state.json` e lista jobs ativos do sistema.
+
+    Cada entry retornada inclui um campo extra `_job_id` (basename do diretório).
+    """
+    base = _CLAUDE_HOME / "jobs"
+    if not base.exists():
+        return []
+    jobs: list[dict[str, Any]] = []
+    for state_path in base.glob("*/state.json"):
+        try:
+            with state_path.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        state = payload.get("state")
+        if not isinstance(state, str) or state.lower() not in _AGENT_VIEW_ACTIVE_STATES:
+            continue
+        if not _is_recent(payload.get("updatedAt"), _AGENT_VIEW_RECENT_WINDOW_SECONDS):
+            continue
+        payload["_job_id"] = state_path.parent.name
+        jobs.append(payload)
+    jobs.sort(key=lambda j: j.get("updatedAt") or j.get("createdAt") or "", reverse=True)
+    return jobs
+
+
+def _agent_view_entry(job: dict[str, Any], cc_status: dict[str, Any] | None) -> AgentPainelSubagentEntry:
+    session_id = job.get("sessionId") if isinstance(job.get("sessionId"), str) else None
+    model: str | None = None
+    context_pct: float | None = None
+    context_tokens: int | None = None
+    context_window_size: int | None = None
+    if cc_status:
+        model_block = cc_status.get("model") if isinstance(cc_status.get("model"), dict) else None
+        if model_block:
+            raw_display = (
+                model_block.get("display_name")
+                if isinstance(model_block.get("display_name"), str)
+                else model_block.get("id") if isinstance(model_block.get("id"), str) else None
+            )
+            model = re.sub(r"\s*\([^)]*context\)\s*$", "", raw_display).strip() if raw_display else None
+        ctx = cc_status.get("context_window") if isinstance(cc_status.get("context_window"), dict) else None
+        if ctx:
+            context_pct = _num_or_none(ctx.get("used_percentage"))
+            context_window_size = _int_or_none(ctx.get("context_window_size"))
+            usage = ctx.get("current_usage") if isinstance(ctx.get("current_usage"), dict) else {}
+            if usage:
+                input_t = _int_or_none(usage.get("input_tokens")) or 0
+                output_t = _int_or_none(usage.get("output_tokens")) or 0
+                cache_c = _int_or_none(usage.get("cache_creation_input_tokens")) or 0
+                cache_r = _int_or_none(usage.get("cache_read_input_tokens")) or 0
+                context_tokens = input_t + output_t + cache_c + cache_r
+    cwd_value = job.get("cwd") if isinstance(job.get("cwd"), str) else None
+    return AgentPainelSubagentEntry(
+        id=job.get("_job_id") if isinstance(job.get("_job_id"), str) else None,
+        name=job.get("name") if isinstance(job.get("name"), str) else None,
+        state=job.get("state") if isinstance(job.get("state"), str) else None,
+        sessionId=session_id,
+        cwd=cwd_value,
+        model=model,
+        context_pct=context_pct,
+        context_tokens=context_tokens,
+        context_window_size=context_window_size,
+        started_at=_parse_iso_epoch(job.get("createdAt")),
+        sender=_infer_sender_from_cwd(cwd_value),
+    )
+
+
+def _build_agent_subagents(agent_workspace_path: str | None) -> AgentPainelSubagents:
+    jobs = _list_agent_view_jobs(agent_workspace_path)
+    items = [
+        _agent_view_entry(job, _read_cc_status_for_subagent(job.get("sessionId")))
+        for job in jobs[:_AGENT_VIEW_ITEMS_CAP]
+    ]
+    return AgentPainelSubagents(count=len(jobs), active_count=len(jobs), items=items)
 
 
 def _as_list(value: Any) -> list[str]:

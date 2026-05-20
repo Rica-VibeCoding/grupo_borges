@@ -1,44 +1,42 @@
 import type { PainelQuotaWindow, PainelQuotas } from '../lib/cockpit-types';
+import { clampPct, formatRemainingShort } from '../lib/painel-format';
 
 type QuotasBlocoProps = {
   data: PainelQuotas;
 };
 
-function clampPct(value: number | null | undefined): number {
-  if (value === null || value === undefined || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, value));
-}
-
-function formatReset(seconds: number | null | undefined): string {
-  if (seconds === null || seconds === undefined) return 'reset pendente';
-  const safe = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(safe / 3600);
-  const m = Math.floor((safe % 3600) / 60);
-  const s = safe % 60;
-  if (h > 0) return `reset em ${h}h${String(m).padStart(2, '0')}m`;
-  if (m > 0) return `reset em ${m}m${String(s).padStart(2, '0')}s`;
-  return `reset em ${s}s`;
-}
-
 function QuotaRow({ label, window }: { label: string; window: PainelQuotaWindow | null | undefined }) {
-  const pct = clampPct(window?.used_pct);
+  if (!window) {
+    return (
+      <div className="painel-quota-row">
+        <span className="painel-quota-label">{label}</span>
+        <span className="painel-quota-reset">sem dados</span>
+      </div>
+    );
+  }
+
+  const pct = clampPct(window.used_percentage ?? 0);
+  const resetLabel =
+    window.remaining_seconds === null || window.remaining_seconds === undefined
+      ? 'reset pendente'
+      : `reset em ${formatRemainingShort(window.remaining_seconds)}`;
 
   return (
     <div className="painel-quota-row">
-      <div className="painel-quota-meta">
-        <span>{label}</span>
-        <span>{Math.round(pct)}%</span>
+      <span className="painel-quota-label">{label}</span>
+      <div className="painel-quota-bar">
+        <div
+          className="painel-progress"
+          role="meter"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct)}
+        >
+          <span className="painel-progress-fill quota" style={{ width: `${pct}%` }} />
+        </div>
       </div>
-      <div className="painel-progress" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
-        <span className="painel-progress-fill quota" style={{ width: `${pct}%` }} />
-      </div>
-      <div className="painel-quota-reset">{formatReset(window?.remaining_seconds)}</div>
-      {window?.raw && Object.keys(window.raw).length > 0 && (
-        <details className="painel-raw">
-          <summary>raw</summary>
-          <pre>{JSON.stringify(window.raw, null, 2)}</pre>
-        </details>
-      )}
+      <span className="painel-quota-pct">{Math.round(pct)}%</span>
+      <span className="painel-quota-reset">· {resetLabel}</span>
     </div>
   );
 }

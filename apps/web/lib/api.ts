@@ -3,6 +3,7 @@ import type {
   AgentDocResolved,
   AgentDocsResponse,
   AgentPainelResponse,
+  PainelPermissionMode,
   AgentSkillsResponse,
   AgentTablesResponse,
   FleetResponse,
@@ -171,6 +172,19 @@ export async function patchAgentEffort(
     body: JSON.stringify({ effort }),
   });
   if (!res.ok) throw new Error(await errorDetail(res, `patchAgentEffort failed: ${res.status}`));
+  return res.json();
+}
+
+export async function patchAgentPermissionMode(
+  slug: string,
+  mode: PainelPermissionMode,
+): Promise<{ slug: string; mode: PainelPermissionMode; source: string; session_may_diverge: boolean; written: boolean }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/permission-mode`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentPermissionMode failed: ${res.status}`));
   return res.json();
 }
 

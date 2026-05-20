@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, AgentPainelResponse } from '../lib/cockpit-types';
 import { fetchAgentPainel } from '../lib/api';
 import { ContextoBloco } from './contexto-bloco';
 import { EffortBloco } from './effort-bloco';
+import { PermissionBloco } from './permission-bloco';
 import { QuotasBloco } from './quotas-bloco';
 import { SubagentsBloco } from './subagents-bloco';
 
@@ -20,7 +21,7 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const hasDataRef = useRef(false);
+  const activeControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -32,47 +33,57 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
     };
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    let controller: AbortController | null = null;
-    hasDataRef.current = false;
-    setData(null);
-    setError(null);
-    setLoading(true);
-
-    async function load() {
-      controller?.abort();
-      controller = new AbortController();
+  const loadPainel = useCallback(
+    async (showLoading: boolean) => {
+      activeControllerRef.current?.abort();
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
       const signal = controller.signal;
-      if (!hasDataRef.current) setLoading(true);
+      if (showLoading) setLoading(true);
       try {
         const next = await fetchAgentPainel(slug, signal);
-        if (!mounted || signal.aborted) return;
+        if (signal.aborted) return;
         setData(next);
-        hasDataRef.current = true;
         setError(null);
         setLastUpdated(Date.now());
       } catch (err) {
-        if (!mounted || signal.aborted) return;
+        if (signal.aborted) return;
         setError(err instanceof Error ? err.message : 'erro ao carregar painel');
       } finally {
-        if (mounted && !signal.aborted) setLoading(false);
+        if (activeControllerRef.current === controller) {
+          activeControllerRef.current = null;
+          if (!signal.aborted) setLoading(false);
+        }
       }
-    }
+    },
+    [slug],
+  );
 
-    void load();
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    void loadPainel(true);
+
+    return () => {
+      activeControllerRef.current?.abort();
+    };
+  }, [loadPainel, refreshNonce]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
-      void load();
+      void loadPainel(false);
     }, 5000);
 
     return () => {
-      mounted = false;
       window.clearInterval(interval);
-      controller?.abort();
     };
-  }, [slug, refreshNonce]);
+  }, [loadPainel]);
 
   function handleEffortChange(_value: string) {
+    setRefreshNonce((value) => value + 1);
+  }
+
+  function handlePermissionChange() {
     setRefreshNonce((value) => value + 1);
   }
 
@@ -102,6 +113,7 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
         <>
           <ContextoBloco data={data.contexto} />
           <EffortBloco data={data.effort} slug={slug} onChange={handleEffortChange} />
+          <PermissionBloco data={data.permission} slug={slug} onChange={handlePermissionChange} />
           <QuotasBloco data={data.quotas} />
           <SubagentsBloco data={data.subagents} />
         </>

@@ -254,7 +254,7 @@ export type PainelTokens = {
 export type PainelContexto = {
   model: string | null;
   model_family: string | null;
-  context_window: number;
+  context_window: number | null;
   tokens: PainelTokens;
   pct: number | null;
   source: string;
@@ -269,11 +269,18 @@ export type PainelEffort = {
   session_may_diverge: boolean;
 };
 
+export type PainelPermissionMode = 'ask' | 'bypassPermissions' | 'plan' | 'acceptEdits';
+
+export type PainelPermission = {
+  mode: PainelPermissionMode;
+  source: string;
+  session_may_diverge: boolean;
+};
+
 export type PainelQuotaWindow = {
-  reset_at?: number | null;
+  resets_at?: number | null;
   remaining_seconds?: number | null;
-  used_pct?: number | null;
-  raw: Record<string, unknown>;
+  used_percentage?: number | null;
 };
 
 export type PainelQuotas = {
@@ -287,14 +294,17 @@ export type PainelQuotas = {
 };
 
 export type PainelSubagentEntry = {
-  parent_uuid?: string | null;
-  agent_slug?: string | null;
-  task_id?: string | null;
-  visibility: boolean;
-  status: string;
-  session_name?: string | null;
-  started_at?: number | null;
-  spawned_by_tool?: boolean | null;
+  id: string | null;
+  name: string | null;
+  state: string | null;
+  sessionId: string | null;
+  cwd: string | null;
+  model: string | null;
+  context_pct: number | null;
+  context_tokens: number | null;
+  context_window_size: number | null;
+  started_at: number | null;
+  sender?: string | null;
 };
 
 export type PainelSubagents = {
@@ -308,6 +318,7 @@ export type AgentPainelResponse = {
   generated_at: number;
   contexto: PainelContexto;
   effort: PainelEffort;
+  permission: PainelPermission;
   quotas: PainelQuotas;
   subagents: PainelSubagents;
 };
