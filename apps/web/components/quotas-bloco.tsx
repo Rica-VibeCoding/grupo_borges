@@ -16,6 +16,8 @@ function QuotaRow({ label, window }: { label: string; window: PainelQuotaWindow 
   }
 
   const pct = clampPct(window.used_percentage ?? 0);
+  // Math.ceil pra bater com o display do claude.ai (round nosso ficava 1pp atrás).
+  const pctDisplay = Math.ceil(pct);
   const resetLabel =
     window.remaining_seconds === null || window.remaining_seconds === undefined
       ? 'reset pendente'
@@ -30,12 +32,12 @@ function QuotaRow({ label, window }: { label: string; window: PainelQuotaWindow 
           role="meter"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={Math.round(pct)}
+          aria-valuenow={pctDisplay}
         >
           <span className="painel-progress-fill quota" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <span className="painel-quota-pct">{Math.round(pct)}%</span>
+      <span className="painel-quota-pct">{pctDisplay}%</span>
       <span className="painel-quota-reset">· {resetLabel}</span>
     </div>
   );
