@@ -64,6 +64,7 @@ _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _AGENT_PAINEL_DEFAULT_CONTEXT_WINDOW = 200_000
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
 _CC_STATUS_PREFIX = "cc-status-"
+AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class AgentPainelTokens(BaseModel):
@@ -122,6 +123,18 @@ class AgentPainelResponse(BaseModel):
     effort: AgentPainelEffort
     quotas: AgentPainelQuotas
     subagents: AgentPainelSubagents
+
+
+class AgentPainelEffortPatchRequest(BaseModel):
+    effort: AgentPainelEffortValue
+
+
+class AgentPainelEffortPatchResponse(BaseModel):
+    slug: str
+    effort: str
+    source: str
+    session_may_diverge: bool = True
+    written: bool = True
 
 @router.get("")
 async def list_agents(request: Request):
@@ -246,6 +259,16 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         quotas=quotas,
         subagents=subagents,
     )
+
+
+@router.patch("/{slug}/effort", response_model=AgentPainelEffortPatchResponse)
+async def patch_agent_effort(
+    slug: str,
+    patch: AgentPainelEffortPatchRequest,
+    request: Request,
+) -> AgentPainelEffortPatchResponse:
+    await _get_agent_or_404(request, slug)
+    return await asyncio.to_thread(_write_agent_effort, slug, patch.effort)
 
 
 # ----- JP-25: MCP inventory / toggles --------------------------------------
@@ -416,12 +439,33 @@ def _build_painel_contexto(agent: dict[str, Any]) -> AgentPainelContexto:
 
 
 def _read_agent_effort() -> AgentPainelEffort:
-    settings_path = _CLAUDE_HOME / "settings.json"
+    settings_path = _agent_painel_settings_path()
     settings = _read_json_file(settings_path, {})
     value = settings.get("effortLevel") if isinstance(settings, dict) else None
     if value is not None:
         value = str(value)
     return AgentPainelEffort(value=value, source=str(settings_path))
+
+
+def _agent_painel_settings_path() -> Path:
+    return _CLAUDE_HOME / "settings.json"
+
+
+def _write_agent_effort(slug: str, effort: AgentPainelEffortValue) -> AgentPainelEffortPatchResponse:
+    settings_path = _agent_painel_settings_path()
+    settings = _read_json_file(settings_path, {})
+    if not isinstance(settings, dict):
+        raise HTTPException(status_code=500, detail=f"JSON inválido em {settings_path}: raiz deve ser objeto")
+
+    settings["effortLevel"] = effort
+    _atomic_write_json(settings_path, settings)
+    return AgentPainelEffortPatchResponse(
+        slug=slug,
+        effort=effort,
+        source=str(settings_path),
+        session_may_diverge=True,
+        written=True,
+    )
 
 
 def _quota_window(raw: Any) -> AgentPainelQuotaWindow:

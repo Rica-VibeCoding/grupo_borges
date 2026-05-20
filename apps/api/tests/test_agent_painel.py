@@ -157,3 +157,51 @@ def test_agent_painel_404(tmp_path: Path, monkeypatch) -> None:
         response = client.get("/api/agents/inexistente/painel")
 
     assert response.status_code == 404
+
+
+def test_agent_painel_patch_effort_atualiza_settings(tmp_path: Path, monkeypatch) -> None:
+    settings = {
+        "effortLevel": "medium",
+        "theme": "dark",
+        "nested": {"keep": True},
+    }
+    _write_settings(tmp_path, monkeypatch, settings)
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/daniel/effort", json={"effort": "xhigh"})
+
+    assert response.status_code == 200
+    body = response.json()
+    settings_path = tmp_path / ".claude" / "settings.json"
+    assert body == {
+        "slug": "daniel",
+        "effort": "xhigh",
+        "source": str(settings_path),
+        "session_may_diverge": True,
+        "written": True,
+    }
+    persisted = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert persisted["effortLevel"] == "xhigh"
+    assert persisted["theme"] == "dark"
+    assert persisted["nested"] == {"keep": True}
+
+
+def test_agent_painel_patch_effort_invalido(tmp_path: Path, monkeypatch) -> None:
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/daniel/effort", json={"effort": "ultra-high"})
+
+    assert response.status_code == 422
+
+
+def test_agent_painel_patch_effort_404(tmp_path: Path, monkeypatch) -> None:
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/inexistente/effort", json={"effort": "high"})
+
+    assert response.status_code == 404
