@@ -98,9 +98,9 @@ export function PermissionBloco({ data, slug, onChange }: PermissionBlocoProps) 
   }, [slug, clearSending]);
 
   return (
-    <section className="painel-bloco" aria-label="Permissão">
+    <section className="painel-bloco" aria-label="Funções">
       <div className="painel-bloco-head">
-        <div className="painel-bloco-title">Permissão</div>
+        <div className="painel-bloco-title">Funções</div>
         {data.session_may_diverge && (
           <span
             className="painel-help"
