@@ -1796,6 +1796,17 @@ async def post_agent_destrava(slug: str, request: Request) -> dict[str, Any]:
     return {"tmux_delivered": delivered, "sent_at": int(time.time())}
 
 
+@router.post("/{slug}/clear")
+async def post_agent_clear(slug: str, request: Request) -> dict[str, Any]:
+    """Dispara `/clear` no CC do agente — limpa o contexto da sessão. Destrutivo:
+    histórico da sessão vai embora (auto-memory persiste). Gate de UX é long-press
+    no botão do painel — backend só entrega.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    delivered = await tmux_driver.send_message(agent["tmux_session"], "/clear")
+    return {"tmux_delivered": delivered, "sent_at": int(time.time())}
+
+
 @router.get("/{slug}/subagents")
 async def list_agent_subagents(
     slug: str,

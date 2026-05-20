@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PainelPermission, PainelPermissionMode } from '../lib/cockpit-types';
-import { patchAgentPermissionMode } from '../lib/api';
+import { patchAgentPermissionMode, postAgentClear } from '../lib/api';
 
 type PermissionBlocoProps = {
   data: PainelPermission;
@@ -17,11 +17,38 @@ const TOGGLES: Array<{ mode: ToggleMode; label: string }> = [
   { mode: 'plan', label: 'plan' },
 ];
 
+const CLEAR_LONG_PRESS_MS = 2000;
+const CLEAR_FIRED_FLASH_MS = 320;
+const CLEAR_COOLDOWN_MS = 5000;
+
 export function PermissionBloco({ data, slug, onChange }: PermissionBlocoProps) {
   const [saving, setSaving] = useState<PainelPermissionMode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeMode: ToggleMode | null =
     data.mode === 'bypassPermissions' || data.mode === 'plan' ? data.mode : null;
+
+  // Long-press do /clear — destrutivo, exige 2s de pressão. Padrão alinhado
+  // com o send button do chat-panel (POST /destrava). Cooldown evita disparo
+  // duplicado se o press tremeu.
+  const [clearPressing, setClearPressing] = useState(false);
+  const [clearFired, setClearFired] = useState(false);
+  const [clearSending, setClearSending] = useState(false);
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearFiredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearCooldownUntilRef = useRef(0);
+
+  const cancelClearLongPress = useCallback(() => {
+    if (clearTimerRef.current) {
+      clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+    setClearPressing(false);
+  }, []);
+
+  useEffect(() => () => {
+    cancelClearLongPress();
+    if (clearFiredTimerRef.current) clearTimeout(clearFiredTimerRef.current);
+  }, [cancelClearLongPress]);
 
   async function handleToggle(mode: ToggleMode) {
     if (saving !== null) return;
@@ -37,6 +64,38 @@ export function PermissionBloco({ data, slug, onChange }: PermissionBlocoProps) 
       setSaving(null);
     }
   }
+
+  const startClearLongPress = useCallback(() => {
+    if (clearSending) return;
+    if (Date.now() < clearCooldownUntilRef.current) return;
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    setError(null);
+    setClearPressing(true);
+    clearTimerRef.current = setTimeout(() => {
+      clearTimerRef.current = null;
+      setClearPressing(false);
+      setClearFired(true);
+      if (clearFiredTimerRef.current) clearTimeout(clearFiredTimerRef.current);
+      clearFiredTimerRef.current = setTimeout(() => {
+        clearFiredTimerRef.current = null;
+        setClearFired(false);
+      }, CLEAR_FIRED_FLASH_MS);
+      clearCooldownUntilRef.current = Date.now() + CLEAR_COOLDOWN_MS;
+      setClearSending(true);
+      void postAgentClear(slug)
+        .then(() => {
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try { navigator.vibrate(40); } catch { /* iOS pode bloquear */ }
+          }
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'falha no /clear');
+        })
+        .finally(() => {
+          setClearSending(false);
+        });
+    }, CLEAR_LONG_PRESS_MS);
+  }, [slug, clearSending]);
 
   return (
     <section className="painel-bloco" aria-label="Permissão">
@@ -72,6 +131,24 @@ export function PermissionBloco({ data, slug, onChange }: PermissionBlocoProps) 
             </button>
           );
         })}
+        <button
+          type="button"
+          className="painel-permission-chip painel-permission-clear"
+          data-long-pressing={clearPressing || undefined}
+          data-long-press-fired={clearFired || undefined}
+          aria-label="Limpar contexto da sessão (segure 2s)"
+          title="segure 2s pra mandar /clear no CC"
+          disabled={clearSending}
+          onPointerDown={(e) => {
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* iOS pode falhar */ }
+            startClearLongPress();
+          }}
+          onPointerUp={cancelClearLongPress}
+          onPointerCancel={cancelClearLongPress}
+          onPointerLeave={cancelClearLongPress}
+        >
+          {clearSending ? 'limpando' : 'clear'}
+        </button>
       </div>
 
       {error && (

@@ -3413,6 +3413,61 @@ button.channel-env-head:hover {
   opacity: 0.55;
 }
 
+/* Botão clear — ação destrutiva, exige long-press 2s. Visual segue o
+   send button (chat-input-send): cresce, ganha halo e troca de cor durante
+   o press. Sinalização vermelha (health-down) diferencia da ação verde do
+   destrava. */
+.painel-permission-clear {
+  position: relative;
+  z-index: 1;
+}
+.painel-permission-clear[data-long-pressing] {
+  background: var(--health-down);
+  border-color: var(--health-down);
+  color: var(--bg);
+  opacity: 1;
+  transform: scale(1.6);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--health-down) 55%, transparent),
+              0 0 24px 8px color-mix(in oklab, var(--health-down) 40%, transparent);
+  transition:
+    background 2000ms linear,
+    border-color 2000ms linear,
+    color 2000ms linear,
+    transform 2000ms ease-out,
+    box-shadow 2000ms ease-out;
+}
+.painel-permission-clear[data-long-press-fired] {
+  background: var(--health-down);
+  border-color: var(--health-down);
+  color: var(--bg);
+  opacity: 1;
+  animation: painel-permission-clear-fired 320ms ease-out;
+}
+@keyframes painel-permission-clear-fired {
+  0% {
+    transform: scale(1.6);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--health-down) 55%, transparent),
+                0 0 24px 8px color-mix(in oklab, var(--health-down) 40%, transparent);
+  }
+  40% {
+    transform: scale(1.85);
+    box-shadow: 0 0 0 10px color-mix(in oklab, var(--health-down) 45%, transparent),
+                0 0 44px 18px color-mix(in oklab, var(--health-down) 30%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .painel-permission-clear[data-long-pressing],
+  .painel-permission-clear[data-long-press-fired] {
+    transform: none;
+    animation: none;
+    box-shadow: none;
+  }
+}
+
 .painel-inline-error,
 .painel-panel-error {
   overflow: hidden;

@@ -265,6 +265,19 @@ export async function postAgentDestrava(
   return res.json();
 }
 
+export async function postAgentClear(
+  slug: string,
+): Promise<{ tmux_delivered: boolean; sent_at: number }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/clear`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`postAgentClear ${res.status}: ${txt}`);
+  }
+  return res.json();
+}
+
 export async function postAgentVoice(
   slug: string,
   audioBlob: Blob,
