@@ -3416,10 +3416,18 @@ button.channel-env-head:hover {
 /* Botão clear — ação destrutiva, exige long-press 2s. Visual segue o
    send button (chat-input-send): cresce, ganha halo e troca de cor durante
    o press. Sinalização vermelha (health-down) diferencia da ação verde do
-   destrava. */
+   destrava. Idle: empurrado pra direita (margin-left:auto) e tingido de
+   alerta suave. */
 .painel-permission-clear {
   position: relative;
   z-index: 1;
+  margin-left: auto;
+  color: color-mix(in oklab, var(--health-down) 75%, var(--muted));
+  border-color: color-mix(in oklab, var(--health-down) 40%, var(--chat-hairline-strong));
+}
+.painel-permission-clear:hover:not(:disabled) {
+  color: var(--health-down);
+  background: color-mix(in oklab, var(--health-down) 15%, transparent);
 }
 .painel-permission-clear[data-long-pressing] {
   background: var(--health-down);
