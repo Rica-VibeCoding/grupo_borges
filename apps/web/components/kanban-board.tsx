@@ -14,6 +14,14 @@ const COLUMN_DEFS: { id: KanbanColumnId; name: string; sourceStatuses: TaskStatu
   { id: 'done', name: 'CONCLUÍDO', sourceStatuses: ['done'] },
 ];
 
+const EMPTY_HINT: Record<KanbanColumnId, string> = {
+  queue: '—',
+  running: '—',
+  blocked: '—',
+  review: '—',
+  done: '—',
+};
+
 function taskDisplayId(task: Task): string {
   return task.human_id || task.id.slice(0, 8);
 }
@@ -140,7 +148,7 @@ function KanbanColumnView({
       </div>
       <div className="kcol-body">
         {column.tasks.length === 0 ? (
-          <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
+          <div className="kcol-empty"><span className="hint">{EMPTY_HINT[column.id]}</span></div>
         ) : (
           column.tasks.map((task) => (
             <KanbanRowView key={task.id} task={task} columnId={column.id} onOpen={onOpenTask} />
@@ -191,7 +199,7 @@ function KanbanMobileView({
         </div>
         <div className="kcol-body">
           {displayColumn.tasks.length === 0 ? (
-            <div className="kcol-empty"><span className="hint">// aguardando primeiro evento</span></div>
+            <div className="kcol-empty"><span className="hint">{EMPTY_HINT[displayColumn.id]}</span></div>
           ) : (
             displayColumn.tasks.map((task) => (
               <KanbanRowView key={task.id} task={task} columnId={displayColumn.id} onOpen={onOpenTask} />
