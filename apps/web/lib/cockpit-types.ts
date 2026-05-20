@@ -243,6 +243,75 @@ export type AgentTablesResponse = {
   count: number;
 };
 
+export type PainelTokens = {
+  input: number;
+  output: number;
+  cache_creation: number;
+  cache_read: number;
+  total: number;
+};
+
+export type PainelContexto = {
+  model: string | null;
+  model_family: string | null;
+  context_window: number;
+  tokens: PainelTokens;
+  pct: number | null;
+  source: string;
+  updated_at: number | null;
+  available: boolean;
+};
+
+export type PainelEffort = {
+  value: string | null;
+  allowed: string[];
+  source: string;
+  session_may_diverge: boolean;
+};
+
+export type PainelQuotaWindow = {
+  reset_at?: number | null;
+  remaining_seconds?: number | null;
+  used_pct?: number | null;
+  raw: Record<string, unknown>;
+};
+
+export type PainelQuotas = {
+  status: 'available' | 'missing' | 'stale' | 'unknown';
+  source?: string | null;
+  session_id?: string | null;
+  updated_at?: number | null;
+  stale_after_seconds: number;
+  five_hour?: PainelQuotaWindow | null;
+  seven_day?: PainelQuotaWindow | null;
+};
+
+export type PainelSubagentEntry = {
+  parent_uuid?: string | null;
+  agent_slug?: string | null;
+  task_id?: string | null;
+  visibility: boolean;
+  status: string;
+  session_name?: string | null;
+  started_at?: number | null;
+  spawned_by_tool?: boolean | null;
+};
+
+export type PainelSubagents = {
+  count: number;
+  active_count: number;
+  items: PainelSubagentEntry[];
+};
+
+export type AgentPainelResponse = {
+  slug: string;
+  generated_at: number;
+  contexto: PainelContexto;
+  effort: PainelEffort;
+  quotas: PainelQuotas;
+  subagents: PainelSubagents;
+};
+
 export type SubagentEntry = {
   parent_uuid: string;
   agent_slug: string;

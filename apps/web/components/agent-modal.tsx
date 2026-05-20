@@ -29,6 +29,7 @@ import {
 } from '../lib/api';
 import { SelectField } from './select-field';
 import { ChatPanel } from './chat-panel';
+import { PainelPanel } from './painel-panel';
 import { Sparkline } from './sparkline';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
@@ -189,7 +190,7 @@ export function AgentModal() {
               <Tabs.Root defaultValue="chat" className="agent-modal-tabs">
                 <Tabs.List className="agent-modal-tablist" aria-label="Abas de detalhes do agente">
                   <Tabs.Trigger value="chat" className="agent-modal-tab">CHAT</Tabs.Trigger>
-                  <Tabs.Trigger value="pane" className="agent-modal-tab">PANE</Tabs.Trigger>
+                  <Tabs.Trigger value="painel" className="agent-modal-tab">PAINEL</Tabs.Trigger>
                   <Tabs.Trigger value="inf" className="agent-modal-tab">INF.</Tabs.Trigger>
                   <Tabs.Trigger value="skills" className="agent-modal-tab">SKILLS</Tabs.Trigger>
                   <Tabs.Trigger value="docs" className="agent-modal-tab">DOCS</Tabs.Trigger>
@@ -197,10 +198,10 @@ export function AgentModal() {
                   <Tabs.Trigger value="handoff" className="agent-modal-tab">HANDOFF</Tabs.Trigger>
                 </Tabs.List>
                 <Tabs.Content value="chat" className="agent-modal-panel">
-                  <ChatPanel agent={agent} serverNow={fleet.health.server_now} mode="chat" />
+                  <ChatPanel agent={agent} serverNow={fleet.health.server_now} />
                 </Tabs.Content>
-                <Tabs.Content value="pane" className="agent-modal-panel">
-                  <ChatPanel agent={agent} serverNow={fleet.health.server_now} mode="pane" />
+                <Tabs.Content value="painel" className="agent-modal-panel">
+                  <PainelPanel slug={agent.slug} agent={agent} />
                 </Tabs.Content>
                 <Tabs.Content value="inf" className="agent-modal-panel">
                   <MissaoPanel agent={agent} serverNow={fleet.health.server_now} />

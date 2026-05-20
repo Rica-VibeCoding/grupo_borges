@@ -2,6 +2,7 @@ import type {
   ActiveTaskStatus,
   AgentDocResolved,
   AgentDocsResponse,
+  AgentPainelResponse,
   AgentSkillsResponse,
   AgentTablesResponse,
   FleetResponse,
@@ -151,6 +152,25 @@ export async function fetchAgentDoc(slug: string, filename: string, signal?: Abo
 export async function fetchAgentTables(slug: string, signal?: AbortSignal): Promise<AgentTablesResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/tables`, { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`fetchAgentTables failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentPainel(slug: string, signal?: AbortSignal): Promise<AgentPainelResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/painel`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchAgentPainel failed: ${res.status}`));
+  return res.json();
+}
+
+export async function patchAgentEffort(
+  slug: string,
+  effort: string,
+): Promise<{ slug: string; effort: string; source: string; session_may_diverge: boolean; written: boolean }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/effort`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ effort }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentEffort failed: ${res.status}`));
   return res.json();
 }
 

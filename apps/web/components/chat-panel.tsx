@@ -20,14 +20,8 @@ import {
 import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
-import { usePaneStream } from '../lib/use-pane-stream';
 import { useMessagesStream } from '../lib/use-messages-stream';
 import { stripCockpitEnvelope } from '../lib/render-items';
-import {
-  endsWithActiveSpinner,
-  parseAnsi,
-  stripChrome,
-} from '../lib/pane-chrome';
 import { ChatMessages } from './chat-messages';
 import { McpPanel } from './mcp-panel';
 import {
@@ -54,7 +48,6 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
  * Aba CHAT do AgentModal — DS-2.
  *
  * - statusline embarcada (variant="modal" expandida no commit seguinte)
- * - <PanePreview> sticky-bottom com pílula "↓ novo" quando user destacou
  * - <ChatInput> textarea Enter envia; Shift+Enter quebra linha (desktop).
  *   Mobile (pointer:coarse): Enter quebra linha, só botão envia
  * - <ModelSelector> SelectField; Codex disabled+tooltip; modal de
@@ -63,21 +56,11 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
 export function ChatPanel({
   agent,
   serverNow,
-  mode = 'pane',
 }: {
   agent: Agent;
   serverNow: number;
-  /** 'pane' = excerpt cru do tmux (debug). 'chat' = JSONL parseado (JP-11 Fase 2). */
-  mode?: 'pane' | 'chat';
 }) {
-  // Mobile: enquanto user digita, preview fica imóvel (sem scroll involuntário).
-  // Decisão de UX cravada pelo Rica — chat ocupando metade vertical em iOS Safari
-  // é inviável quando o zoom dispara no focus do textarea.
-  const [inputFocused, setInputFocused] = useState(false);
-  const paneStream = usePaneStream(agent.slug, /* enabled */ mode === 'pane');
-  const messagesStream = useMessagesStream(agent.slug, /* enabled */ mode === 'chat');
-  const excerpt = paneStream.excerpt ?? agent.pane_excerpt ?? '';
-  const executorKind = paneStream.executorKind ?? agent.executor_kind ?? 'claude_code';
+  const messagesStream = useMessagesStream(agent.slug, true);
 
   // JP-18 R2: optimistic state lifted pro ChatPanel pra ChatInput poder
   // registrar a bolha antes do POST e ChatMessages poder renderizar.
@@ -126,26 +109,16 @@ export function ChatPanel({
   return (
     <div className="chat-panel">
       <ChatHeader agent={agent} serverNow={serverNow} />
-      {mode === 'pane' ? (
-        <PanePreview
-          excerpt={excerpt}
-          executorKind={executorKind}
-          connectionStatus={paneStream.status}
-          paused={inputFocused}
-        />
-      ) : (
-        <ChatMessages
-          messages={messagesStream.messages}
-          slug={agent.slug}
-          loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
-          subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
-          optimistic={optimistic}
-        />
-      )}
+      <ChatMessages
+        messages={messagesStream.messages}
+        slug={agent.slug}
+        loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
+        subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
+        optimistic={optimistic}
+      />
       <ChatInput
         slug={agent.slug}
         agentName={agent.name}
-        onFocusChange={setInputFocused}
         sendText={submitText}
         sendImage={agentSend.sendImage}
         sendVoice={agentSend.sendVoice}
@@ -251,113 +224,6 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
       <div className="chat-header-actions">
         <ModelChip agent={agent} />
       </div>
-    </div>
-  );
-}
-
-// ----- PanePreview --------------------------------------------------------
-//
-// Chrome do próprio Claude Code (statusline, spinner, separadores) é
-// filtrado no display via `stripChrome` — `agent.pane_excerpt` continua
-// intacto pros parsers (parseContextPct, parseModelFromPane) extraírem
-// ctx%/modelo/tempo da linha de statusline.
-//
-// Frame parcial: quando o excerpt termina com spinner ATIVO, CC ainda está
-// escrevendo — renderizar o tick atual produz meio-frame flickerando.
-// `lastGoodFrameRef` segura o último frame estável; só atualiza quando
-// `endsWithActiveSpinner` é false (pattern via context7 React 19 — derive
-// no render, persiste em useLayoutEffect).
-//
-// Lógica isolada e testada em `lib/pane-chrome.ts` + `tests/pane-chrome.test.ts`.
-
-function PanePreview({
-  excerpt,
-  executorKind: _executorKind,
-  connectionStatus,
-  paused = false,
-}: {
-  excerpt: string;
-  executorKind: string;
-  connectionStatus: string;
-  paused?: boolean;
-}) {
-  const preRef = useRef<HTMLPreElement>(null);
-  const [stuck, setStuck] = useState(true);
-
-  const isPartial = useMemo(() => endsWithActiveSpinner(excerpt), [excerpt]);
-  const cleanedNow = useMemo(() => stripChrome(excerpt), [excerpt]);
-  const lastGoodFrameRef = useRef<string>('');
-
-  useLayoutEffect(() => {
-    if (!isPartial) {
-      lastGoodFrameRef.current = cleanedNow;
-    }
-  }, [cleanedNow, isPartial]);
-
-  // Fallback: primeira render com isPartial=true (sessão CC abriu com spinner
-  // ativo) — ref ainda vazia. Mostrar cleanedNow evita "tela vazia" inicial.
-  const display = isPartial && lastGoodFrameRef.current
-    ? lastGoodFrameRef.current
-    : cleanedNow;
-  const segments = useMemo(() => parseAnsi(display), [display]);
-  const empty = segments.length === 0;
-
-  useLayoutEffect(() => {
-    const el = preRef.current;
-    if (!el || !stuck) return;
-    if (paused) return;
-    el.scrollTop = el.scrollHeight;
-  }, [display, stuck, paused]);
-
-  const onScroll = useCallback(() => {
-    const el = preRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    setStuck(atBottom);
-  }, []);
-
-  const goBottom = useCallback(() => {
-    const el = preRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    setStuck(true);
-  }, []);
-
-  return (
-    <div className="chat-preview-wrap">
-      <pre
-        ref={preRef}
-        className="chat-preview mono"
-        onScroll={onScroll}
-        aria-live="polite"
-        aria-busy={connectionStatus === 'connecting'}
-      >
-        {empty ? (
-          '— sem saída capturada —'
-        ) : (
-          segments.map((seg, i) => (
-            <span
-              key={i}
-              style={{
-                color: seg.color,
-                fontWeight: seg.bold ? 700 : undefined,
-              }}
-            >
-              {seg.text}
-            </span>
-          ))
-        )}
-      </pre>
-      {!stuck && (
-        <button
-          type="button"
-          className="chat-preview-pill"
-          onClick={goBottom}
-          aria-label="Rolar pro fim do pane"
-        >
-          ↓ novo conteúdo
-        </button>
-      )}
     </div>
   );
 }
