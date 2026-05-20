@@ -347,6 +347,29 @@ async def test_messages_stream_filters_by_session_id(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_messages_stream_tags_synthetic_wakeup_dynamic(
+    tmp_path: Path,
+) -> None:
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(
+        db,
+        session_id="sess-a",
+        uuid="uuid-wakeup",
+        text="<<autonomous-loop-dynamic>>",
+    )
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        stop_after="replay-end",
+    )
+
+    messages = [payload for name, payload in events if name == "message"]
+    assert messages[0]["meta"]["kind"] == "wakeup-dynamic"
+    assert messages[0]["meta"]["raw_text"] == "<<autonomous-loop-dynamic>>"
+
+
+@pytest.mark.asyncio
 async def test_messages_stream_default_session_is_latest(tmp_path: Path) -> None:
     app, db = _build_app(tmp_path)
     _insert_jsonl(db, session_id="sess-a", uuid="uuid-a")

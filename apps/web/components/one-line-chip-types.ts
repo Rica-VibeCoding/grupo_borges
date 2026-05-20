@@ -13,7 +13,8 @@ export type OneLineChipKind =
   | 'channel-envelope'   // channel envelope (whatsapp/telegram anexo)
   | 'task-notification'  // notificação de background task (PushNotification)
   | 'user'               // bubble user textual (mensagem do user)
-  | 'user-internal';     // evento interno hook/sistema
+  | 'user-internal'      // evento interno hook/sistema
+  | 'synthetic';         // injeção do runtime CC (ScheduleWakeup sentinel, STT prefix)
 
 export type OneLineChipTone =
   | 'idle'

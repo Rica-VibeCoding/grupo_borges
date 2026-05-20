@@ -96,6 +96,34 @@ test('buildRenderItems — texto livre cai em kind=user (não vira chip)', () =>
   assert.equal(items[0].kind, 'user');
 });
 
+test('buildRenderItems — meta.kind=wakeup-dynamic vira item kind=synthetic', () => {
+  const m: MessagePayload = {
+    ...userText(15, '<<autonomous-loop-dynamic>>'),
+    meta: { kind: 'wakeup-dynamic', raw_text: '<<autonomous-loop-dynamic>>' },
+  };
+  const items = buildRenderItems([m]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'synthetic');
+  if (items[0].kind === 'synthetic') {
+    assert.equal(items[0].syntheticKind, 'wakeup-dynamic');
+    assert.equal(items[0].rawText, '<<autonomous-loop-dynamic>>');
+  }
+});
+
+test('buildRenderItems — meta.kind=stt vira item kind=synthetic com rawText preservado', () => {
+  const m: MessagePayload = {
+    ...userText(16, '🎙 abrir relatório'),
+    meta: { kind: 'stt', raw_text: '🎙 abrir relatório' },
+  };
+  const items = buildRenderItems([m]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'synthetic');
+  if (items[0].kind === 'synthetic') {
+    assert.equal(items[0].syntheticKind, 'stt');
+    assert.equal(items[0].rawText, '🎙 abrir relatório');
+  }
+});
+
 test('deriveSubagentStatusesFromMessages — recupera tokens e prompt do resultado', () => {
   const prompt = 'analisar pílula';
   const messages: MessagePayload[] = [
@@ -156,4 +184,66 @@ test('deriveSubagentStatusesFromMessages — recupera tokens e prompt do resulta
   assert.equal(entry?.total_tokens, 9876);
   assert.equal(entry?.total_tool_use_count, 2);
   assert.equal(entry?.duration_ms, 12_345);
+});
+
+test('deriveSubagentStatusesFromMessages — recupera metadados enquanto subagente roda', () => {
+  const prompt = 'mapear input do cockpit';
+  const messages: MessagePayload[] = [
+    message({
+      id: 30,
+      uuid: 'agent-tool-active',
+      kind: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'toolu-agent-active',
+          name: 'Agent',
+          input: {
+            subagent_type: 'Explore',
+            description: 'Mapear envio cockpit→CC',
+            prompt,
+          },
+        }],
+      },
+    }),
+    message({
+      id: 31,
+      uuid: 'side-active-root',
+      kind: 'user',
+      is_sidechain: true,
+      agent_id: 'agent-active-1',
+      message: { role: 'user', content: prompt },
+    }),
+    message({
+      id: 32,
+      uuid: 'side-active-tool',
+      kind: 'assistant',
+      is_sidechain: true,
+      parent_uuid: 'side-active-root',
+      agent_id: 'agent-active-1',
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'toolu-read',
+          name: 'Read',
+          input: {
+            file_path: '/home/clawd/repos/grupo_borges/apps/api/routers/agents.py',
+          },
+        }],
+      },
+    }),
+  ];
+
+  const statuses = deriveSubagentStatusesFromMessages(messages);
+  const entry = statuses.get('side-active-root');
+
+  assert.equal(entry?.status, 'active');
+  assert.equal(entry?.agent_type, 'Explore');
+  assert.equal(entry?.description, 'Mapear envio cockpit→CC');
+  assert.equal(entry?.prompt, prompt);
+  assert.equal(entry?.agent_id, 'agent-active-1');
+  assert.equal(entry?.current_tool, 'Read');
+  assert.equal(entry?.current_tool_summary, '/home/clawd/repos/grupo_borges/apps/api/routers/agents.py');
 });

@@ -204,4 +204,31 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixtureExt[] = [
     expandBody: '<channel source="telegram" chat_id="7262275215" message_id="2886"…>',
     kind: 'user-internal',
   },
+
+  // --- synthetic (wakeup ScheduleWakeup + STT 🎙) -------------------------
+  {
+    name: 'synthetic-wakeup-dynamic',
+    icon: '⏰',
+    label: 'Wakeup dinâmico',
+    summary: 'ScheduleWakeup',
+    timestamp: '00:25',
+    kind: 'synthetic',
+  },
+  {
+    name: 'synthetic-wakeup-cron',
+    icon: '🗓',
+    label: 'Wakeup agendado',
+    summary: 'CronCreate',
+    timestamp: '07:00',
+    kind: 'synthetic',
+  },
+  {
+    name: 'synthetic-stt',
+    icon: '🎙',
+    label: 'Áudio transcrito',
+    summary: 'Testando áudio pelo cockpit',
+    timestamp: '00:31',
+    expandBody: 'Testando áudio pelo cockpit.',
+    kind: 'synthetic',
+  },
 ];

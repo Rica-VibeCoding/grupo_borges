@@ -11,6 +11,7 @@ import type {
   OptimisticEntry,
   SubagentStatusEntry,
   SubagentStatusKind,
+  SyntheticKind,
 } from '../lib/messages-types';
 import { ChannelEnvelopeView } from './channel-envelope';
 import { CodeBlock } from './code-block';
@@ -188,6 +189,64 @@ const UserInternalBubble = memo(function UserInternalBubble({ text, ts }: { text
           <div className="one-line-chip-md">
             <Markdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{text}</Markdown>
           </div>
+        }
+      />
+    </div>
+  );
+});
+
+// Injeções do runtime CC que não são input real do user:
+//   - wakeup-dynamic / wakeup-cron: sentinel re-emitido pelo ScheduleWakeup
+//     pra retomar /loop. Chega como bolha de user crua `<<autonomous-loop...>>`.
+//   - stt: áudio transcrito por `agents.py:1040` (prefixo `🎙 `).
+// Back taga via `meta.kind`; aqui renderiza chip discreto em vez de bubble.
+const SYNTHETIC_PRESENTATION: Record<
+  SyntheticKind,
+  { icon: string; label: string; summary: (raw: string) => string }
+> = {
+  'wakeup-dynamic': {
+    icon: '⏰',
+    label: 'Wakeup dinâmico',
+    summary: () => 'ScheduleWakeup',
+  },
+  'wakeup-cron': {
+    icon: '🗓',
+    label: 'Wakeup agendado',
+    summary: () => 'CronCreate',
+  },
+  stt: {
+    icon: '🎙',
+    label: 'Áudio transcrito',
+    summary: (raw) => firstLineSummary(raw.replace(/^🎙\s+/, '')),
+  },
+};
+
+const UserSyntheticBubble = memo(function UserSyntheticBubble({
+  syntheticKind,
+  rawText,
+  ts,
+}: {
+  syntheticKind: SyntheticKind;
+  rawText: string;
+  ts?: string;
+}) {
+  const preset = SYNTHETIC_PRESENTATION[syntheticKind];
+  const isStt = syntheticKind === 'stt';
+  const sttText = isStt ? rawText.replace(/^🎙\s+/, '') : rawText;
+  return (
+    <div className="msg-row msg-row-user">
+      <OneLineChip
+        kind="synthetic"
+        icon={preset.icon}
+        label={preset.label}
+        summary={preset.summary(rawText)}
+        timestamp={formatHHMM(ts)}
+        expandBody={
+          isStt ? (
+            <div className="one-line-chip-md">
+              <Markdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>{sttText}</Markdown>
+            </div>
+          ) : null
         }
       />
     </div>
@@ -788,6 +847,14 @@ export function ChatMessages({
           const itemTs = item.payload.timestamp;
           if (item.kind === 'user') return <UserBubble key={key} text={item.text} ts={itemTs} />;
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} ts={itemTs} />;
+          if (item.kind === 'synthetic') return (
+            <UserSyntheticBubble
+              key={key}
+              syntheticKind={item.syntheticKind}
+              rawText={item.rawText}
+              ts={itemTs}
+            />
+          );
           if (item.kind === 'meta-decision') return <MetaDecisionChip key={key} text={item.text} ts={itemTs} />;
           if (item.kind === 'chip') {
             // Slash/Skill/Tool/Task/Sidechain — chip universal vindo do

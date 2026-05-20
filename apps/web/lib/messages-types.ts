@@ -52,6 +52,13 @@ export type ToolUseResult = {
   toolStats?: Record<string, unknown>;
 };
 
+export type SyntheticKind = 'wakeup-dynamic' | 'wakeup-cron' | 'stt';
+
+export type SyntheticMeta = {
+  kind: SyntheticKind;
+  raw_text: string;
+};
+
 // JP-18 R2: bolha local enquanto o user-message não volta pelo SSE. Vive só
 // no client; reconciliada quando MessagePayload role='user' com mesmo text
 // chega via stream. `clientId` é UUID front-side; `ts` é Date.now() do submit.
@@ -74,6 +81,7 @@ export type MessagePayload = {
   user_type: 'external' | 'internal';
   timestamp: string;
   created_at: number;
+  meta?: SyntheticMeta;
   // Pode vir null em kinds como `attachment` / `summary` / `system` que não
   // carregam payload de chat (mesmo schema canônico do contrato).
   message: {

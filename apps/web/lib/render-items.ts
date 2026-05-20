@@ -2,7 +2,7 @@
 // `components/chat-messages.tsx` (V1) pra permitir teste de integração via
 // `node --test` sem puxar React/CSS. Não tem side-effect — só types.
 
-import type { ContentPart, MessagePayload, SubagentStatusEntry, ToolUseResult } from './messages-types.ts';
+import type { ContentPart, MessagePayload, SubagentStatusEntry, SyntheticKind, ToolUseResult } from './messages-types.ts';
 import { classifyMessage } from './chat-payload-classifier.ts';
 import type { OneLineChipKind, OneLineChipTone } from '../components/one-line-chip-types.ts';
 
@@ -17,6 +17,7 @@ export type SidechainGroupRef = {
 export type RenderItem =
   | { kind: 'user'; payload: MessagePayload; text: string }
   | { kind: 'user-internal'; payload: MessagePayload; text: string }
+  | { kind: 'synthetic'; payload: MessagePayload; syntheticKind: SyntheticKind; rawText: string }
   | { kind: 'channel'; payload: MessagePayload; raw: string }
   | { kind: 'assistant'; payload: MessagePayload; parts: ContentPart[] }
   | { kind: 'meta-decision'; payload: MessagePayload; text: string }
@@ -415,6 +416,19 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
       const parts = extractContentParts(m.message.content);
       const onlyToolResult = parts.every((p) => p.type === 'tool_result');
       if (onlyToolResult && parts.length > 0) continue;
+
+      // Sentinel runtime (ScheduleWakeup `<<autonomous-loop[-dynamic]>>`) e STT
+      // (`🎙 …`) chegam tagueados pelo back via `meta.kind`. Tratamos antes do
+      // envelope cockpit porque essas injeções não passam por envelope.
+      if (m.meta) {
+        items.push({
+          kind: 'synthetic',
+          payload: m,
+          syntheticKind: m.meta.kind,
+          rawText: m.meta.raw_text,
+        });
+        continue;
+      }
 
       const rawText = textOf(m.message.content).trim();
       if (!rawText) continue;

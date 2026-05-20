@@ -47,6 +47,7 @@ from orchestrator.jsonl_watcher import (
     subagent_active_snapshot,
     subagent_status_events_since,
 )
+from orchestrator.synthetic_message import detect_synthetic_kind
 from services import tmux_driver
 from services import workspace_reader
 
@@ -1056,7 +1057,7 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
     if not isinstance(kind, str) or not kind:
         raw_kind = event.get("kind")
         kind = raw_kind.removeprefix("jsonl:") if isinstance(raw_kind, str) else "unknown"
-    return {
+    canonical = {
         "id": event["id"],
         "kind": kind,
         "uuid": uuid_value,
@@ -1070,6 +1071,10 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
         "agent_id": payload.get("agentId"),
         "tool_use_result": payload.get("toolUseResult"),
     }
+    meta = detect_synthetic_kind(canonical["message"])
+    if meta is not None:
+        canonical["meta"] = meta
+    return canonical
 
 
 def _sse_json(event: str, data: dict[str, Any]) -> dict[str, str]:
