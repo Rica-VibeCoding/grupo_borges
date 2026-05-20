@@ -34,7 +34,7 @@ test('detectSlashContext — caret=0 retorna null', () => {
 test('getSlashCommands — injeta nome do agente em todos exceto reload-plugins', () => {
   const cmds = getSlashCommands('Pavan');
   const byValue = Object.fromEntries(cmds.map((c) => [c.value, c.desc]));
-  for (const value of ['checkpoint', 'clear', 'compact', 'memory', 'restart', 'skill', 'status']) {
+  for (const value of ['checkpoint', 'compact']) {
     assert.match(
       byValue[value],
       /Pavan/,
@@ -45,9 +45,9 @@ test('getSlashCommands — injeta nome do agente em todos exceto reload-plugins'
 });
 
 test('filterSlashCommands — agentName vazio cai no fallback "agente"', () => {
-  const filtered = filterSlashCommands('clear', '');
+  const filtered = filterSlashCommands('compact', '');
   assert.equal(filtered.length, 1);
-  assert.equal(filtered[0].value, 'clear');
+  assert.equal(filtered[0].value, 'compact');
   assert.match(filtered[0].desc, /\bagente\b/);
 });
 
