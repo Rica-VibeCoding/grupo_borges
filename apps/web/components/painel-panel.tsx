@@ -18,7 +18,19 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const hasDataRef = useRef(false);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -58,26 +70,40 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
       window.clearInterval(interval);
       controller?.abort();
     };
-  }, [slug]);
+  }, [slug, refreshNonce]);
+
+  function handleEffortChange(_value: string) {
+    setRefreshNonce((value) => value + 1);
+  }
+
+  const updatedAgo =
+    lastUpdated === null ? null : `${Math.max(0, Math.floor((now - lastUpdated) / 1000))}s`;
 
   if (loading && !data) {
     return (
       <div className="painel-panel" aria-busy="true">
-        <div>carregando painel...</div>
+        <div className="painel-empty">carregando painel...</div>
       </div>
     );
   }
 
   return (
     <div className="painel-panel">
-      {error && <div role="alert">erro: {error}</div>}
+      <div className="painel-panel-head">
+        <span>PAINEL</span>
+        {updatedAgo && <span>atualizado há {updatedAgo}</span>}
+      </div>
+      {error && (
+        <div className="painel-panel-error" role="alert">
+          erro: {error}
+        </div>
+      )}
       {data && (
         <>
-          <ContextoBloco contexto={data.contexto} />
-          <EffortBloco effort={data.effort} />
-          <QuotasBloco quotas={data.quotas} />
-          <SubagentsBloco subagents={data.subagents} />
-          {lastUpdated !== null && <span hidden>{lastUpdated}</span>}
+          <ContextoBloco data={data.contexto} />
+          <EffortBloco data={data.effort} slug={slug} onChange={handleEffortChange} />
+          <QuotasBloco data={data.quotas} />
+          <SubagentsBloco data={data.subagents} />
         </>
       )}
     </div>
