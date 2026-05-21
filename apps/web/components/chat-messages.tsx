@@ -206,12 +206,12 @@ const SYNTHETIC_PRESENTATION: Record<
 > = {
   'wakeup-dynamic': {
     icon: '⏰',
-    label: 'Retomada dinâmica',
+    label: 'Cutucada dinâmica',
     summary: () => 'ritmo do agente',
   },
   'wakeup-cron': {
     icon: '🗓',
-    label: 'Retomada agendada',
+    label: 'Cutucada agendada',
     summary: () => 'cron',
   },
   stt: {

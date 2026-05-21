@@ -209,7 +209,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixtureExt[] = [
   {
     name: 'synthetic-wakeup-dynamic',
     icon: '⏰',
-    label: 'Retomada dinâmica',
+    label: 'Cutucada dinâmica',
     summary: 'ritmo do agente',
     timestamp: '00:25',
     kind: 'synthetic',
@@ -217,7 +217,7 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixtureExt[] = [
   {
     name: 'synthetic-wakeup-cron',
     icon: '🗓',
-    label: 'Retomada agendada',
+    label: 'Cutucada agendada',
     summary: 'cron',
     timestamp: '07:00',
     kind: 'synthetic',
