@@ -4,10 +4,9 @@ export const EMPTY_FLEET: FleetResponse = {
   agents: [],
   kpis: {
     total: 0,
-    running: 0,
-    blocked: 0,
-    idle: 0,
-    done: 0,
+    trabalhando: 0,
+    aguardando: 0,
+    ocioso: 0,
     offline: 0,
     tasks_active: 0,
     tasks_running: 0,

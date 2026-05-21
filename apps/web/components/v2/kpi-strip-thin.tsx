@@ -25,25 +25,27 @@ export function KpiStripThin() {
   const { fleet, tasks, sseStatus } = useFleet();
   const { agents, health, kpis } = fleet;
   const now = health.server_now || Math.floor(Date.now() / 1000);
-  const threshold = health.offline_threshold_seconds;
-  const staleOfflineAgents = agents.filter((agent) => {
-    if (agent.status !== 'offline') return false;
-    if (agent.last_seen === null) return true;
-    return now - agent.last_seen > threshold;
-  });
   const blockedTasks = tasks.filter((task) => task.status === 'blocked');
   const tasksBlocked = blockedTasks.map((task) => task.human_id);
-  const hasFailure = sseStatus === 'closed' || staleOfflineAgents.length > 0;
-  const statusGeral: StatusGeral = hasFailure ? 'falha' : blockedTasks.length > 0 ? 'atencao' : 'ok';
-  const exec = kpis.running;
-  const blocked = kpis.blocked;
-  const agentesAtivos = kpis.running + kpis.idle + kpis.blocked + kpis.done;
-  const falhaList = agents.filter((agent) => agent.status === 'offline').map((agent) => agent.name);
-  const falhaNames = falhaList.slice(0, 2).join(' ');
-  const falhaAgent = staleOfflineAgents[0] ?? agents.find((agent) => agent.status === 'offline');
-  const falhaElapsed = falhaAgent?.last_seen === null || falhaAgent?.last_seen === undefined
-    ? '—'
-    : formatElapsed(now - falhaAgent.last_seen);
+  const exec = kpis.trabalhando;
+  const aguardando = kpis.aguardando;
+  const agentesAtivos = kpis.trabalhando + kpis.aguardando + kpis.ocioso;
+  const offlineCount = kpis.offline;
+  const sseDown = sseStatus !== 'open';
+  const noneActive = kpis.total > 0 && agentesAtivos === 0;
+  const hasFailure = sseDown || noneActive;
+  const hasAttention = blockedTasks.length > 0 || offlineCount > 0;
+  const statusGeral: StatusGeral = hasFailure ? 'falha' : hasAttention ? 'atencao' : 'ok';
+  const offlineAgents = agents.filter((agent) => agent.status === 'offline');
+  const firstOffline = offlineAgents[0];
+  const firstOfflineElapsed = firstOffline?.last_seen
+    ? formatElapsed(now - firstOffline.last_seen)
+    : '—';
+  const offlineLabel = offlineCount > 0
+    ? offlineCount === 1
+      ? `${firstOffline?.name} offline há ${firstOfflineElapsed}`
+      : `${offlineCount} offline · ${firstOffline?.name} há ${firstOfflineElapsed}`
+    : null;
   const lastSync = health.last_sync ? formatClock(health.last_sync) : '— —';
 
   return (
@@ -53,19 +55,25 @@ export function KpiStripThin() {
       {statusGeral === 'falha' && (
         <span className="kt-meta">
           <span className="kt-sep"> · </span>
-          {falhaAgent ? `${falhaNames} sem heartbeat há ${falhaElapsed}` : 'uplink sem heartbeat'}
+          {sseDown ? 'uplink down' : 'sem zés ativos'}
         </span>
       )}
-      {statusGeral === 'atencao' && (
+      {statusGeral === 'atencao' && tasksBlocked.length > 0 && (
         <span className="kt-meta">
           <span className="kt-sep"> · </span>
-          {tasksBlocked.length} BLOQ{tasksBlocked.length > 0 ? ` · ${tasksBlocked.join(' ')}` : ''}
+          {tasksBlocked.length} BLOQ · {tasksBlocked.join(' ')}
+        </span>
+      )}
+      {statusGeral === 'atencao' && offlineLabel && (
+        <span className="kt-meta">
+          <span className="kt-sep"> · </span>
+          {offlineLabel}
         </span>
       )}
       <span className="kt-meta"><span className="kt-sep"> · </span>{agentesAtivos}/{kpis.total} ativos</span>
       {exec > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>exec {exec}</span>}
-      {blocked > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>ag bloq {blocked}</span>}
-      {sseStatus !== 'open' && <span className="kt-meta"><span className="kt-sep"> · </span>uplink down</span>}
+      {aguardando > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>ag aguard {aguardando}</span>}
+      {sseDown && statusGeral !== 'falha' && <span className="kt-meta"><span className="kt-sep"> · </span>uplink down</span>}
       <span className="kt-hb"> · hb {lastSync}</span>
     </div>
   );

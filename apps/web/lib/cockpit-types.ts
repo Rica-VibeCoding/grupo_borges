@@ -68,10 +68,9 @@ export type Agent = {
 
 export type FleetKpis = {
   total: number;
-  running: number;
-  blocked: number;
-  idle: number;
-  done: number;
+  trabalhando: number;
+  aguardando: number;
+  ocioso: number;
   offline: number;
   tasks_active: number;
   tasks_running: number;
