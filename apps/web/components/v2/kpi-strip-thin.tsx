@@ -21,6 +21,8 @@ function formatElapsed(seconds: number): string {
   return restHours > 0 ? `${days}d ${restHours}h` : `${days}d`;
 }
 
+const OFFLINE_STALE_SECONDS = 3600; // > 1h sem heartbeat = morte provável, não soneca
+
 export function KpiStripThin() {
   const { fleet, tasks, sseStatus } = useFleet();
   const { agents, health, kpis } = fleet;
@@ -31,20 +33,24 @@ export function KpiStripThin() {
   const aguardando = kpis.aguardando;
   const agentesAtivos = kpis.trabalhando + kpis.aguardando + kpis.ocioso;
   const offlineCount = kpis.offline;
+  const offlineAgents = agents.filter((agent) => agent.status === 'offline');
+  const staleOffline = offlineAgents.filter((agent) => {
+    if (agent.last_seen === null) return true;
+    return now - agent.last_seen > OFFLINE_STALE_SECONDS;
+  });
   const sseDown = sseStatus !== 'open';
   const noneActive = kpis.total > 0 && agentesAtivos === 0;
   const hasFailure = sseDown || noneActive;
-  const hasAttention = blockedTasks.length > 0 || offlineCount > 0;
+  const hasAttention = blockedTasks.length > 0 || staleOffline.length > 0;
   const statusGeral: StatusGeral = hasFailure ? 'falha' : hasAttention ? 'atencao' : 'ok';
-  const offlineAgents = agents.filter((agent) => agent.status === 'offline');
-  const firstOffline = offlineAgents[0];
-  const firstOfflineElapsed = firstOffline?.last_seen
-    ? formatElapsed(now - firstOffline.last_seen)
+  const firstStale = staleOffline[0];
+  const firstStaleElapsed = firstStale?.last_seen
+    ? formatElapsed(now - firstStale.last_seen)
     : '—';
-  const offlineLabel = offlineCount > 0
-    ? offlineCount === 1
-      ? `${firstOffline?.name} offline há ${firstOfflineElapsed}`
-      : `${offlineCount} offline · ${firstOffline?.name} há ${firstOfflineElapsed}`
+  const staleLabel = staleOffline.length > 0
+    ? staleOffline.length === 1
+      ? `${firstStale?.name} offline há ${firstStaleElapsed}`
+      : `${staleOffline.length} offline há +1h · ${firstStale?.name} há ${firstStaleElapsed}`
     : null;
   const lastSync = health.last_sync ? formatClock(health.last_sync) : '— —';
 
@@ -64,13 +70,16 @@ export function KpiStripThin() {
           {tasksBlocked.length} BLOQ · {tasksBlocked.join(' ')}
         </span>
       )}
-      {statusGeral === 'atencao' && offlineLabel && (
+      {statusGeral === 'atencao' && staleLabel && (
         <span className="kt-meta">
           <span className="kt-sep"> · </span>
-          {offlineLabel}
+          {staleLabel}
         </span>
       )}
       <span className="kt-meta"><span className="kt-sep"> · </span>{agentesAtivos}/{kpis.total} ativos</span>
+      {offlineCount > 0 && statusGeral !== 'atencao' && (
+        <span className="kt-meta"><span className="kt-sep"> · </span>{offlineCount} offline</span>
+      )}
       {exec > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>exec {exec}</span>}
       {aguardando > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>ag aguard {aguardando}</span>}
       {sseDown && statusGeral !== 'falha' && <span className="kt-meta"><span className="kt-sep"> · </span>uplink down</span>}
