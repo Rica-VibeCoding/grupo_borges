@@ -18,6 +18,7 @@ export function getSlashCommands(agentName: string): SlashCommand[] {
     { value: 'encerrar', label: '/encerrar', desc: `faxina de fim de sessão — salva memória, limpa temp, reporta entrega` },
     { value: 'impl-go', label: '/impl-go', desc: `implementação multi-arquivo com Tara (explore → write → review → push)` },
     { value: 'reload-plugins', label: '/reload-plugins', desc: 'recarrega plugins (skills, hooks, MCP)' },
+    { value: 'revisar', label: '/revisar', desc: `code review + simplificação em paralelo no diff atual` },
   ];
 }
 
