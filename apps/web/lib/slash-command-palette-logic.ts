@@ -15,6 +15,7 @@ export function getSlashCommands(agentName: string): SlashCommand[] {
     { value: 'checkpoint', label: '/checkpoint', desc: `${name} salva memória da sessão + gera bloco copiável de retomada` },
     { value: 'compact', label: '/compact', desc: `compacta o contexto de ${name}` },
     { value: 'dispatch', label: '/dispatch', desc: `sub-agentes em paralelo (explore · context7 · backend · frontend · shadcn)` },
+    { value: 'encerrar', label: '/encerrar', desc: `faxina de fim de sessão — salva memória, limpa temp, reporta entrega` },
     { value: 'impl-go', label: '/impl-go', desc: `implementação multi-arquivo com Tara (explore → write → review → push)` },
     { value: 'reload-plugins', label: '/reload-plugins', desc: 'recarrega plugins (skills, hooks, MCP)' },
   ];
