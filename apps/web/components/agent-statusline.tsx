@@ -25,6 +25,19 @@ function ctxTier(pct: number): 'low' | 'mid' | 'high' {
   return 'high';
 }
 
+// Família do modelo pra colorir o label (CSS lê via data-model). Casa por
+// substring case-insensitive — funciona tanto pra "Opus 4.7" quanto pro
+// slug bruto "claude-opus-4-7".
+function modelFamilyOf(label: string, raw: string, isCodex: boolean): string {
+  if (isCodex) return 'codex';
+  const s = `${label} ${raw}`.toLowerCase();
+  if (s.includes('opus')) return 'opus';
+  if (s.includes('sonnet')) return 'sonnet';
+  if (s.includes('haiku')) return 'haiku';
+  if (s.includes('gpt')) return 'codex';
+  return 'other';
+}
+
 /**
  * Statusline compacta reutilizável (model · time · ctx%).
  *
@@ -61,6 +74,7 @@ export function AgentStatusline({
   // pendente de propagação no CC. Card reflete execução, não a seleção.
   const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
   const modelLabel = paneModel ?? shortModelName(model);
+  const modelFamily = modelFamilyOf(modelLabel, model, isCodexExecutor);
 
   const barCells = variant === 'inline' ? 6 : 10;
 
@@ -69,7 +83,7 @@ export function AgentStatusline({
     const sev = contextPct === null ? 'unknown' : contextPct < 50 ? 'ok' : contextPct < 80 ? 'warn' : 'crit';
     return (
       <div className="pane pane-session pane-session-inline" aria-hidden="true">
-        <span className="ps-model">{modelLabel}</span>
+        <span className="ps-model" data-model={modelFamily}>{modelLabel}</span>
         <span className="ps-sep">·</span>
         <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs, false) : '—'}</span>
         <span className="ps-sep">·</span>
@@ -136,7 +150,7 @@ export function AgentStatusline({
 
   return (
     <div className="pane pane-session" aria-hidden="true">
-      <span className="ps-model">{modelLabel}</span>
+      <span className="ps-model" data-model={modelFamily}>{modelLabel}</span>
       <span className="ps-sep">·</span>
       <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
       <span className="ps-sep">·</span>
