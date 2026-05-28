@@ -799,7 +799,7 @@
    Sem nome do agente (vem do AgentModal header acima — evita duplicação).
    DS-57 polish: dot e caption +1 tier de tamanho. */
 .chat-header {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 20px;
   padding: 4px 4px 12px;
   border-bottom: 1px solid var(--chat-hairline);
 }
