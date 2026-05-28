@@ -44,7 +44,7 @@ export function AgentStatusline({
 }: {
   agent: Agent;
   serverNow: number;
-  variant?: 'card' | 'modal';
+  variant?: 'card' | 'modal' | 'inline';
   extra?: ReactNode;
 }) {
   const model = agent.state_model ?? agent.model_default;
@@ -58,6 +58,31 @@ export function AgentStatusline({
     : parseContextPct(agent.pane_excerpt);
   const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
   const modelLabel = paneModel ?? shortModelName(model);
+
+  const barCells = variant === 'inline' ? 6 : 10;
+
+  if (variant === 'inline') {
+    // Compacta pro card-strip: wrapper .pane preto + barra fluida (estilo painel).
+    const sev = contextPct === null ? 'unknown' : contextPct < 50 ? 'ok' : contextPct < 80 ? 'warn' : 'crit';
+    return (
+      <div className="pane pane-session pane-session-inline" aria-hidden="true">
+        <span className="ps-model">{modelLabel}</span>
+        <span className="ps-sep">·</span>
+        <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs, false) : '—'}</span>
+        <span className="ps-sep">·</span>
+        <span className="ps-ctx">
+          {contextPct !== null ? (
+            <>
+              <span className="psi-bar" aria-hidden="true">
+                <span className="psi-bar-fill" data-severity={sev} style={{ width: `${contextPct}%` }} />
+              </span>
+              <span className="psi-pct">{contextPct}%</span>
+            </>
+          ) : <span className="psi-pct">— %</span>}
+        </span>
+      </div>
+    );
+  }
 
   if (variant === 'modal') {
     // 1-linha (DS-2 polish): tokens separados por `·` em vez de chips empilhados.
@@ -116,11 +141,11 @@ export function AgentStatusline({
         {contextPct !== null ? (
           <>
             <span className="ps-bar" aria-hidden="true">
-              {Array.from({ length: 10 }, (_, i) => (
+              {Array.from({ length: barCells }, (_, i) => (
                 <span
                   key={i}
                   className="psb-cell"
-                  data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
+                  data-on={i < Math.round((contextPct * barCells) / 100) ? '1' : '0'}
                 />
               ))}
             </span>

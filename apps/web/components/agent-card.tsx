@@ -2,11 +2,10 @@
 
 import { useCallback } from 'react';
 import type { Agent, AgentActivityState, AgentStatus } from '../lib/cockpit-types';
-import { deriveInitials, formatLastSeen } from '../lib/cockpit-types';
+import { deriveInitials } from '../lib/cockpit-types';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
 import { useSubagentActiveCount } from '../lib/subagent-activity-context';
-import { formatRelativeShort, summarize } from './activity-feed';
 import { AgentStatusline } from './agent-statusline';
 
 // V2.4 — 4 estados, textos pt-BR próprios. Glow na borda; ocioso estático,
@@ -61,9 +60,8 @@ export function AgentCard({
   agent: Agent;
   serverNow: number;
 }) {
-  const { activityOverrides, events } = useFleet();
+  const { activityOverrides } = useFleet();
   const initials = deriveInitials(agent.name);
-  const lastSeenFmt = formatLastSeen(agent.last_seen, serverNow);
   const subagentActiveCount = useSubagentActiveCount(agent.slug);
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
@@ -71,14 +69,6 @@ export function AgentCard({
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent);
-  let lastEvent: typeof events[number] | null = null;
-  let lastEventSummary: string | null = null;
-  for (const e of events) {
-    if (e.agent_slug !== agent.slug) continue;
-    const s = summarize(e);
-    if (s !== null) { lastEvent = e; lastEventSummary = s; break; }
-  }
-  const lastEventDelta = lastEvent ? Math.max(0, serverNow - lastEvent.created_at) : null;
   const label = `Agente ${agent.name}, ${activityLabel[activityState]}, macro ${stateLabel[agent.status]}${task ? `, tarefa ${task}` : ''}`;
   const { select } = useSelectedAgent();
   const open = useCallback(() => select(agent.slug), [select, agent.slug]);
@@ -152,29 +142,21 @@ export function AgentCard({
             {activityLabel[activityState]}
           </span>
         </div>
-        <div className="meta-strip" aria-hidden="true">
-          <span className="m-val lseen-val">{lastSeenFmt}</span>
-          <span><span className="m-key">TAREFA</span><span className="m-val">{task ?? '—'}</span></span>
-          <span className="card-actions" onClick={(e) => e.stopPropagation()} />
-        </div>
-        <div className="last-action mono" aria-hidden="true">
-          {isCodexExecutor && agent.active_task_label ? (
-            <>
-              <span className="la-spark" aria-hidden>▸</span>
-              <span className="la-text">{agent.active_task_label}</span>
-            </>
-          ) : lastEvent && lastEventSummary ? (
-            <>
-              <span className="la-spark" aria-hidden>•</span>
-              <span className="la-text">{lastEventSummary}</span>
-              <span className="la-sep">·</span>
-              <span className="la-time num" suppressHydrationWarning>há {formatRelativeShort(lastEventDelta!)}</span>
-            </>
-          ) : (
-            <span className="la-text la-empty">— sem atividade recente</span>
-          )}
-        </div>
-        <AgentStatusline agent={agent} serverNow={serverNow} variant="card" />
+        {agent.status !== 'offline' && (() => {
+          const taskLabel = (isCodexExecutor && agent.active_task_label) || task || null;
+          return (
+            <div className="card-strip" aria-hidden="true">
+              {taskLabel && (
+                <span className="card-task">
+                  <span className="m-key">TAREFA</span>
+                  <span className="m-val">{taskLabel}</span>
+                </span>
+              )}
+              <AgentStatusline agent={agent} serverNow={serverNow} variant="inline" />
+              <span className="card-actions" onClick={(e) => e.stopPropagation()} />
+            </div>
+          );
+        })()}
 
       </div>
     </article>

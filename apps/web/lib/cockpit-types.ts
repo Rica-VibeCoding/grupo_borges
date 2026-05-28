@@ -351,9 +351,12 @@ export function formatLastSeen(lastSeen: number | null, serverNow: number): stri
   return rem === 0 ? `há ${h}h` : `há ${h}h${String(rem).padStart(2, '0')}`;
 }
 
-export function formatDuration(seconds: number): string {
+export function formatDuration(seconds: number, withSeconds = true): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
+  if (!withSeconds) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
   const s = seconds % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
