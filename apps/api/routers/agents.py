@@ -952,6 +952,10 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
     enabled_plugins = settings.get("enabledPlugins") if isinstance(settings, dict) else {}
     if not isinstance(enabled_plugins, dict):
         enabled_plugins = {}
+    local_settings = _read_json_file(workspace / ".claude" / "settings.local.json", {})
+    local_ep = local_settings.get("enabledPlugins") if isinstance(local_settings, dict) else {}
+    if isinstance(local_ep, dict):
+        enabled_plugins = {**enabled_plugins, **local_ep}
 
     installed = _read_json_file(_CLAUDE_HOME / "plugins" / "installed_plugins.json", {})
     servers: list[dict[str, Any]] = []
