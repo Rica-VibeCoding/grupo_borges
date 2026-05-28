@@ -56,8 +56,11 @@ export function AgentStatusline({
   const contextPct = isCodexExecutor
     ? (agent.context_pct ?? null)
     : parseContextPct(agent.pane_excerpt);
-  const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
-  const modelLabel = paneModel ?? shortModelName(model);
+  // Fonte de verdade do modelo = state_model/model_default (igual ModelSelector
+  // em chat-panel.tsx:1041). Pane_excerpt fica só como fallback se faltar config.
+  const modelLabel = shortModelName(model)
+    || (isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt))
+    || '—';
 
   const barCells = variant === 'inline' ? 6 : 10;
 
