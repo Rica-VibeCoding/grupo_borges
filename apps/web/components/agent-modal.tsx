@@ -159,6 +159,10 @@ export function AgentModal() {
           onTouchMove={onFrameTouchMove}
           onTouchEnd={onFrameTouchEnd}
           onTouchCancel={onFrameTouchEnd}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            if (isMobile) window.scrollTo({ top: 0, behavior: 'instant' });
+          }}
         >
           {agent && (
             <>
