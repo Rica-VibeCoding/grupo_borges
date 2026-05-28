@@ -142,21 +142,16 @@ export function AgentCard({
             {activityLabel[activityState]}
           </span>
         </div>
-        {agent.status !== 'offline' && (() => {
-          const taskLabel = (isCodexExecutor && agent.active_task_label) || task || null;
-          return (
-            <div className="card-strip" aria-hidden="true">
-              {taskLabel && (
-                <span className="card-task">
-                  <span className="m-key">TAREFA</span>
-                  <span className="m-val">{taskLabel}</span>
-                </span>
-              )}
-              <AgentStatusline agent={agent} serverNow={serverNow} variant="inline" />
-              <span className="card-actions" onClick={(e) => e.stopPropagation()} />
-            </div>
-          );
-        })()}
+        {agent.status !== 'offline' && (
+          <div className="card-strip" aria-hidden="true">
+            <span className="card-task">
+              <span className="m-key">TAREFA</span>
+              <span className="m-val">{(isCodexExecutor && agent.active_task_label) || task || '—'}</span>
+            </span>
+            <AgentStatusline agent={agent} serverNow={serverNow} variant="inline" />
+            <span className="card-actions" onClick={(e) => e.stopPropagation()} />
+          </div>
+        )}
 
       </div>
     </article>
