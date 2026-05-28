@@ -213,6 +213,25 @@ export function useMessagesStream(
       }, delay);
     }
 
+    // Dedup por uuid contra messages já no estado. Backend tem 67+ uuids
+    // duplicados em task_events (jsonl_watcher reinsere o mesmo evento com
+    // ids consecutivos — bug antigo, investigado em apps/api). Sem o dedup
+    // aqui o React explode com "two children with the same key" porque a
+    // key do render é payload.uuid (chat-messages.tsx:884).
+    function dedupAppend(existing: MessagePayload[], incoming: MessagePayload[]): MessagePayload[] {
+      if (incoming.length === 0) return existing;
+      const seen = new Set<string>();
+      for (const m of existing) if (m.uuid) seen.add(m.uuid);
+      const out: MessagePayload[] = existing.slice();
+      for (const m of incoming) {
+        if (!m.uuid || !seen.has(m.uuid)) {
+          out.push(m);
+          if (m.uuid) seen.add(m.uuid);
+        }
+      }
+      return out;
+    }
+
     function flushPendingMessages() {
       rafIdRef.current = null;
       if (!aliveRef.current) {
@@ -224,7 +243,7 @@ export function useMessagesStream(
       pendingMessagesRef.current = [];
       setState((prev) => ({
         ...prev,
-        messages: prev.messages.concat(pending),
+        messages: dedupAppend(prev.messages, pending),
       }));
     }
 
@@ -237,7 +256,7 @@ export function useMessagesStream(
       }
       setState((prev) => ({
         ...prev,
-        messages: prev.messages.concat(buf),
+        messages: dedupAppend(prev.messages, buf),
         status: 'live',
       }));
     }
