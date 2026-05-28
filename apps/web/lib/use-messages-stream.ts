@@ -257,6 +257,7 @@ export function useMessagesStream(
             status: 'replaying',
             replayTotal: data.total ?? null,
             errorDetail: null,
+            askUserByRequestId: emptyAskUserMap(),
           }));
         } catch {
           /* schema inesperado — segue, replay-end ainda flusha */
