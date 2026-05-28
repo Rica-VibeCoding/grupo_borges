@@ -24,7 +24,7 @@ export type RenderItem =
   | {
       kind: 'chip';
       payload: MessagePayload;
-      chip: { icon: string; label: string; summary: string };
+      chip: { icon: string; label: string; summary: string; accent?: string };
       expandBody: string;
       classifierKind: OneLineChipKind;
       tone?: OneLineChipTone;

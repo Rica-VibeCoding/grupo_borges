@@ -8,6 +8,8 @@ export type ChatChip = {
   icon: string;
   label: string;
   summary: string;
+  /** Cor semântica opcional do chip (família de modelo em /model, etc). */
+  accent?: string;
 };
 
 type ChipPayloadKind =
@@ -147,13 +149,16 @@ export function classifyMessage(
     if (slash) {
       const cleanStdout = stripAnsi(slash.stdout);
       const labelArgs = slash.args ? ` ${slash.args}` : '';
+      const accent = slash.name === '/model' ? modelFamilyFromArg(slash.args) : undefined;
+      const chip: ChatChip = {
+        icon: SLASH_ICONS[slash.name] ?? '⚙️',
+        label: `Slash: ${slash.name}${labelArgs}`,
+        summary: truncate(firstLine(cleanStdout), 80),
+      };
+      if (accent) chip.accent = accent;
       return {
         kind: 'slash',
-        chip: {
-          icon: SLASH_ICONS[slash.name] ?? '⚙️',
-          label: `Slash: ${slash.name}${labelArgs}`,
-          summary: truncate(firstLine(cleanStdout), 80),
-        },
+        chip,
         expandBody: cleanStdout,
         rawRef,
       };
@@ -386,6 +391,15 @@ function firstLine(value: string): string {
 const ANSI_RE = /\x1b\[[\d;]*m|�\[[\d;]*m/g;
 function stripAnsi(value: string): string {
   return value.replace(ANSI_RE, '');
+}
+
+function modelFamilyFromArg(arg: string): string | undefined {
+  const s = arg.toLowerCase();
+  if (s.includes('opus')) return 'opus';
+  if (s.includes('sonnet')) return 'sonnet';
+  if (s.includes('haiku')) return 'haiku';
+  if (s.includes('gpt') || s.includes('codex')) return 'codex';
+  return undefined;
 }
 
 function truncate(value: string, max: number): string {

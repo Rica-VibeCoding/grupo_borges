@@ -2504,6 +2504,15 @@
 .one-line-chip[data-kind="skill"] .one-line-chip-label,
 .one-line-chip[data-kind="slash"] .one-line-chip-label { color: var(--accent); }
 .one-line-chip[data-kind="sidechain-cluster"] .one-line-chip-label { font-weight: 600; }
+/* Cor por família de modelo no chip /model — sobrescreve o accent default. */
+.one-line-chip[data-accent="opus"]   .one-line-chip-label { color: #c084fc; }
+.one-line-chip[data-accent="sonnet"] .one-line-chip-label { color: #00f0ff; }
+.one-line-chip[data-accent="haiku"]  .one-line-chip-label { color: #64ffda; }
+.one-line-chip[data-accent="codex"]  .one-line-chip-label { color: #ffa657; }
+:root[data-theme="light"] .one-line-chip[data-accent="opus"]   .one-line-chip-label { color: #8b5cf6; }
+:root[data-theme="light"] .one-line-chip[data-accent="sonnet"] .one-line-chip-label { color: #0097a7; }
+:root[data-theme="light"] .one-line-chip[data-accent="haiku"]  .one-line-chip-label { color: #2e7d52; }
+:root[data-theme="light"] .one-line-chip[data-accent="codex"]  .one-line-chip-label { color: #d97706; }
 .one-line-chip[data-kind="meta-decision"] { opacity: 0.85; }
 .one-line-chip[data-kind="user-internal"] { opacity: 0.75; }
 

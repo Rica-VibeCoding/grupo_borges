@@ -75,6 +75,9 @@ export type OneLineChipProps = {
    *  Em outros contextos (kanban, statusline), passe explicitamente; sem
    *  scroller resolvido, expand acontece sem preservação. */
   scrollAnchor?: HTMLElement | (() => HTMLElement | null);
+  /** Cor semântica opcional pro label (ex: família de modelo no /model).
+   *  Renderiza como `data-accent` no root; CSS aplica color no label. */
+  accent?: string;
 };
 
 export const OneLineChip = memo(function OneLineChip({
@@ -89,6 +92,7 @@ export const OneLineChip = memo(function OneLineChip({
   defaultOpen = false,
   onToggle,
   scrollAnchor,
+  accent,
 }: OneLineChipProps) {
   const [open, setOpen] = useState(defaultOpen);
   const expandable = expandBody != null;
@@ -143,6 +147,7 @@ export const OneLineChip = memo(function OneLineChip({
       className="one-line-chip"
       data-kind={kind}
       data-tone={tone}
+      data-accent={accent}
       data-open={open ? '1' : '0'}
       data-expandable={expandable ? '1' : '0'}
     >

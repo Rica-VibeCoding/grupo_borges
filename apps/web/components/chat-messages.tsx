@@ -877,6 +877,7 @@ export function ChatMessages({
                   kind={item.classifierKind}
                   tone={item.tone}
                   timestamp={formatHHMM(itemTs)}
+                  accent={item.chip.accent}
                 />
               </div>
             );
