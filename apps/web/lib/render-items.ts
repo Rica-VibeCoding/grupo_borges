@@ -480,7 +480,7 @@ export function mergeAskUserItems(
   if (!askUserByRequestId || askUserByRequestId.size === 0) return items;
   const askItems: RenderItem[] = [];
   for (const entry of askUserByRequestId.values()) {
-    if (entry.kind !== 'pending') continue;
+    if (entry.status !== 'pending') continue;
     askItems.push({ kind: 'ask-user', entry });
   }
   askItems.sort((a, b) => {

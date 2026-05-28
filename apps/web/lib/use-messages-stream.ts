@@ -254,6 +254,7 @@ export function useMessagesStream(
           replayBufferRef.current = [];
           setState((prev) => ({
             ...prev,
+            messages: [],
             status: 'replaying',
             replayTotal: data.total ?? null,
             errorDetail: null,
