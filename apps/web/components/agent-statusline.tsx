@@ -56,11 +56,11 @@ export function AgentStatusline({
   const contextPct = isCodexExecutor
     ? (agent.context_pct ?? null)
     : parseContextPct(agent.pane_excerpt);
-  // Fonte de verdade do modelo = state_model/model_default (igual ModelSelector
-  // em chat-panel.tsx:1041). Pane_excerpt fica só como fallback se faltar config.
-  const modelLabel = shortModelName(model)
-    || (isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt))
-    || '—';
+  // Modelo REAL da sessão = pane_excerpt (tmux capture), alinhado com o %.
+  // state_model é a última intenção persistida (POST /model) — pode estar
+  // pendente de propagação no CC. Card reflete execução, não a seleção.
+  const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
+  const modelLabel = paneModel ?? shortModelName(model);
 
   const barCells = variant === 'inline' ? 6 : 10;
 
