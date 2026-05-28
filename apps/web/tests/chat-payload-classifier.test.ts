@@ -75,7 +75,7 @@ function slashRaw(name: string, stdout = '', args = ''): string {
 test('classifyMessage — slash /clear vira chip com icon mapeado', () => {
   const payload = classifyMessage(userText(10, slashRaw('/clear')));
   assert.equal(payload.kind, 'slash');
-  assert.deepEqual(payload.chip, { icon: '⚙️', label: 'Slash: /clear', summary: '' });
+  assert.deepEqual(payload.chip, { icon: '🧹', label: 'Slash: /clear', summary: '' });
   assert.equal(payload.expandBody, '');
 });
 
@@ -85,7 +85,7 @@ test('classifyMessage — slash /reload-plugins resume primeira linha do stdout'
     'Reloaded: 2 plugins\nSecond line',
   )));
   assert.equal(payload.kind, 'slash');
-  assert.equal(payload.chip.icon, '⚙️');
+  assert.equal(payload.chip.icon, '↻');
   assert.equal(payload.chip.summary, 'Reloaded: 2 plugins');
   assert.equal(payload.expandBody, 'Reloaded: 2 plugins\nSecond line');
 });

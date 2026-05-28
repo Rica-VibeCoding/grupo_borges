@@ -62,6 +62,10 @@ const CHANNEL_RE = /^\s*<channel\s+([^>]+)>([\s\S]*?)<\/channel>\s*$/;
 const ATTR_RE = /([a-zA-Z_][\w-]*)="([^"]*)"/g;
 const SYSTEM_REMINDER_RE = /^\s*<system-reminder\s*>[\s\S]*?<\/system-reminder\s*>\s*$/;
 const LOCAL_COMMAND_CAVEAT_ONLY_RE = /^\s*(?:<local-command-caveat\s*>[\s\S]*?<\/local-command-caveat\s*>\s*)+$/;
+// Stdout órfão (sem <command-name> junto): vem do CC em msg separada quando
+// um /comando termina. parseLocalCommand exige a tupla completa, então
+// stdout-só cai em "plain" e renderiza literal (ANSI bruto + tag). Suprime.
+const LOCAL_COMMAND_STDOUT_ONLY_RE = /^\s*(?:<local-command-(?:stdout|caveat)\s*>[\s\S]*?<\/local-command-(?:stdout|caveat)\s*>\s*)+$/;
 // F5-5: marker injetado pelo CC quando o agente faz Read de imagem —
 // "[Image: original 1280x900, displayed at 768x540. Multiply coordinates by
 // 1.67 to map to original image.]". Se houver image_path no mesmo turno, já
@@ -92,7 +96,7 @@ export function classifyMessage(
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
   }
 
-  if (LOCAL_COMMAND_CAVEAT_ONLY_RE.test(text)) {
+  if (LOCAL_COMMAND_CAVEAT_ONLY_RE.test(text) || LOCAL_COMMAND_STDOUT_ONLY_RE.test(text)) {
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
   }
 
@@ -141,14 +145,16 @@ export function classifyMessage(
   if (msg.message?.role === 'user') {
     const slash = parseLocalCommand(text);
     if (slash) {
+      const cleanStdout = stripAnsi(slash.stdout);
+      const labelArgs = slash.args ? ` ${slash.args}` : '';
       return {
         kind: 'slash',
         chip: {
-          icon: '⚙️',
-          label: `Slash: ${slash.name}`,
-          summary: truncate(firstLine(slash.stdout), 80),
+          icon: SLASH_ICONS[slash.name] ?? '⚙️',
+          label: `Slash: ${slash.name}${labelArgs}`,
+          summary: truncate(firstLine(cleanStdout), 80),
         },
-        expandBody: slash.stdout,
+        expandBody: cleanStdout,
         rawRef,
       };
     }
@@ -373,6 +379,13 @@ function taskNotificationTone(status: string): OneLineChipTone | undefined {
 
 function firstLine(value: string): string {
   return value.trim().split(/\r?\n/, 1)[0] ?? '';
+}
+
+// CC stdout pode trazer ANSI bruto (`\x1b[1mOpus 4.7\x1b[22m`) ou já mojibake
+// (`�[1m...�[22m` quando o terminal não decodifica). Remove ambos.
+const ANSI_RE = /\x1b\[[\d;]*m|�\[[\d;]*m/g;
+function stripAnsi(value: string): string {
+  return value.replace(ANSI_RE, '');
 }
 
 function truncate(value: string, max: number): string {
