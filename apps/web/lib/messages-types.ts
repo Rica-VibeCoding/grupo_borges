@@ -54,6 +54,35 @@ export type ToolUseResult = {
 
 export type SyntheticKind = 'wakeup-dynamic' | 'wakeup-cron' | 'stt';
 
+// ask-user MCP: server bloqueia o CC esperando resposta humana. Backend emite
+// via SSE named events:
+//   `ask_user` data={request_id, kind:'pending', questions:[...], created_at_ms}
+//   `ask_user` data={request_id, kind:'answered', answers:[...], answered_at_ms}
+//   `ask_user` data={request_id, kind:'timeout'}
+// Frontend POST resposta em /api/ask_user/answer/{request_id} body={answers}.
+export type AskUserOption = {
+  label: string;
+  description?: string;
+};
+
+export type AskUserQuestion = {
+  question: string;
+  header?: string;
+  options: AskUserOption[];
+  multiSelect?: boolean;
+};
+
+export type AskUserStatus = 'pending' | 'answered' | 'timeout';
+
+export type AskUserEntry = {
+  request_id: string;
+  status: AskUserStatus;
+  questions: AskUserQuestion[];
+  answers?: string[];
+  created_at_ms: number;
+  answered_at_ms?: number;
+};
+
 export type SyntheticMeta = {
   kind: SyntheticKind;
   raw_text: string;

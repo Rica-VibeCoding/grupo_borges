@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import type {
+  AskUserEntry,
   ContentPart,
   MessagePayload,
   OptimisticEntry,
@@ -13,6 +14,7 @@ import type {
   SubagentStatusKind,
   SyntheticKind,
 } from '../lib/messages-types';
+import { AskUserCard } from './ask-user-card';
 import { ChannelEnvelopeView } from './channel-envelope';
 import { CodeBlock } from './code-block';
 import { OneLineChip } from './one-line-chip';
@@ -21,6 +23,7 @@ import {
   buildToolResultLookup,
   coalesceSidechainGroups,
   deriveSubagentStatusesFromMessages,
+  mergeAskUserItems,
   type SidechainGroupRef,
   type ToolResultLookup,
 } from '../lib/render-items';
@@ -665,6 +668,8 @@ export type ChatMessagesProps = {
   subagentStatusByParentUuid?: Map<string, SubagentStatusEntry>;
   /** Bolhas locais ainda não confirmadas pelo SSE. */
   optimistic?: OptimisticEntry[];
+  /** ask-user MCP — entries pendentes/respondidas por request_id. */
+  askUserByRequestId?: Map<string, AskUserEntry>;
 };
 
 export function ChatMessages({
@@ -674,6 +679,7 @@ export function ChatMessages({
   emptyLabel,
   subagentStatusByParentUuid,
   optimistic,
+  askUserByRequestId,
 }: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -690,7 +696,28 @@ export function ChatMessages({
   loadingRef.current = loading;
 
   const toolResults = useMemo(() => buildToolResultLookup(messages), [messages]);
-  const items = useMemo(() => coalesceSidechainGroups(buildRenderItems(messages)), [messages]);
+  const items = useMemo(
+    () => mergeAskUserItems(
+      coalesceSidechainGroups(buildRenderItems(messages)),
+      askUserByRequestId,
+    ),
+    [messages, askUserByRequestId],
+  );
+
+  // POST resposta ask-user pro backend; backend re-emite o entry como answered.
+  const submitAskUser = useCallback(
+    async (requestId: string, answers: string[]) => {
+      const res = await fetch(`/api/ask_user/answer/${encodeURIComponent(requestId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    },
+    [],
+  );
   const effectiveSubagentStatusByParentUuid = useMemo(() => {
     const derived = deriveSubagentStatusesFromMessages(messages);
     if (!subagentStatusByParentUuid || subagentStatusByParentUuid.size === 0) return derived;
@@ -839,6 +866,17 @@ export function ChatMessages({
                 totalDurMs={item.totalDurMs}
                 statusMap={effectiveSubagentStatusByParentUuid}
               />
+            );
+          }
+          if (item.kind === 'ask-user') {
+            const reqId = item.entry.request_id;
+            return (
+              <div key={`ask:${reqId}`} className="msg-row msg-row-assistant">
+                <AskUserCard
+                  entry={item.entry}
+                  onSubmit={(answers) => submitAskUser(reqId, answers)}
+                />
+              </div>
             );
           }
           // payload.uuid é único por evento JSONL — chave estável protege

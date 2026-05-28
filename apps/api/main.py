@@ -34,6 +34,7 @@ from orchestrator.tmux_driver import TmuxDriver
 from orchestrator.watchdog import Watchdog
 from orchestrator.worktree import SubsessionSweeper, sweep_orphan_worktrees_sync
 from routers import agents as agents_router
+from routers import ask_user as ask_user_router
 from routers import codex_events as codex_events_router
 from routers import events as events_router
 from routers import fleet as fleet_router
@@ -185,6 +186,7 @@ async def health() -> dict:
 
 
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
+app.include_router(ask_user_router.router, prefix="/api/ask_user", tags=["ask_user"])
 app.include_router(fleet_router.router, prefix="/api/fleet", tags=["fleet"])
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(tasks_router.reviews_router, prefix="/api/reviews", tags=["reviews"])

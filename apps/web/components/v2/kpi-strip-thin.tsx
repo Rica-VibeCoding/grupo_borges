@@ -21,7 +21,7 @@ function formatElapsed(seconds: number): string {
   return restHours > 0 ? `${days}d ${restHours}h` : `${days}d`;
 }
 
-const OFFLINE_STALE_SECONDS = 3600; // > 1h sem heartbeat = morte provável, não soneca
+const OFFLINE_STALE_SECONDS = 3600;
 
 export function KpiStripThin() {
   const { fleet, tasks, sseStatus } = useFleet();
@@ -50,40 +50,59 @@ export function KpiStripThin() {
   const staleLabel = staleOffline.length > 0
     ? staleOffline.length === 1
       ? `${firstStale?.name} offline há ${firstStaleElapsed}`
-      : `${staleOffline.length} offline há +1h · ${firstStale?.name} há ${firstStaleElapsed}`
+      : `${firstStale?.name} offline há ${firstStaleElapsed} · +${staleOffline.length - 1} offline`
     : null;
   const lastSync = health.last_sync ? formatClock(health.last_sync) : '— —';
+  const blockedLabel = tasksBlocked.length === 1
+    ? `1 tarefa parada · ${tasksBlocked[0]}`
+    : `${tasksBlocked.length} tarefas paradas · ${tasksBlocked.join(' ')}`;
+  const failureLabel = sseDown ? 'Cockpit sem conexão ao vivo' : 'nenhum agente ativo agora';
+  const mobilePrimary = statusGeral === 'falha'
+    ? failureLabel
+    : statusGeral === 'atencao'
+      ? tasksBlocked.length > 0 ? blockedLabel : staleLabel
+      : null;
+  const mobileSecondary = [
+    `${agentesAtivos}/${kpis.total} ativos`,
+    offlineCount > 0 && statusGeral !== 'atencao' ? `${offlineCount} offline` : null,
+    exec > 0 ? `${exec} trabalhando` : null,
+    aguardando > 0 ? `${aguardando} aguardando` : null,
+    sseDown && statusGeral !== 'falha' ? 'sem conexão ao vivo' : null,
+    `visto ${lastSync}`,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="kpi-thin mono" data-state={statusGeral} role="group" aria-label="Status da frota">
       <span className="kt-dot" aria-hidden="true" />
       <span className="kt-main">{statusGeral === 'falha' ? 'EM FALHA' : statusGeral === 'atencao' ? 'ATENÇÃO' : 'OK'}</span>
       {statusGeral === 'falha' && (
-        <span className="kt-meta">
+        <span className="kt-meta kt-desktop-meta">
           <span className="kt-sep"> · </span>
-          {sseDown ? 'uplink down' : 'sem zés ativos'}
+          {failureLabel}
         </span>
       )}
       {statusGeral === 'atencao' && tasksBlocked.length > 0 && (
-        <span className="kt-meta">
+        <span className="kt-meta kt-desktop-meta">
           <span className="kt-sep"> · </span>
-          {tasksBlocked.length} BLOQ · {tasksBlocked.join(' ')}
+          {blockedLabel}
         </span>
       )}
       {statusGeral === 'atencao' && staleLabel && (
-        <span className="kt-meta">
+        <span className="kt-meta kt-desktop-meta">
           <span className="kt-sep"> · </span>
           {staleLabel}
         </span>
       )}
-      <span className="kt-meta"><span className="kt-sep"> · </span>{agentesAtivos}/{kpis.total} ativos</span>
+      {mobilePrimary && <span className="kt-mobile-meta kt-mobile-primary">{mobilePrimary}</span>}
+      <span className="kt-mobile-meta kt-mobile-secondary">{mobileSecondary}</span>
+      <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{agentesAtivos}/{kpis.total} ativos</span>
       {offlineCount > 0 && statusGeral !== 'atencao' && (
-        <span className="kt-meta"><span className="kt-sep"> · </span>{offlineCount} offline</span>
+        <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{offlineCount} offline</span>
       )}
-      {exec > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>exec {exec}</span>}
-      {aguardando > 0 && <span className="kt-meta"><span className="kt-sep"> · </span>ag aguard {aguardando}</span>}
-      {sseDown && statusGeral !== 'falha' && <span className="kt-meta"><span className="kt-sep"> · </span>uplink down</span>}
-      <span className="kt-hb"> · hb {lastSync}</span>
+      {exec > 0 && <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{exec} trabalhando</span>}
+      {aguardando > 0 && <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{aguardando} aguardando</span>}
+      {sseDown && statusGeral !== 'falha' && <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>sem conexão ao vivo</span>}
+      <span className="kt-hb kt-desktop-meta"> · visto {lastSync}</span>
     </div>
   );
 }

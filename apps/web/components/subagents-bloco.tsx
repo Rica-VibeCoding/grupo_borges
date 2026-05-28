@@ -1,5 +1,5 @@
 import type { PainelSubagentEntry, PainelSubagents } from '../lib/cockpit-types';
-import { clampPct, formatCwdShort, formatElapsedShort } from '../lib/painel-format';
+import { clampPct, formatElapsedShort } from '../lib/painel-format';
 
 type SubagentsBlocoProps = {
   data: PainelSubagents;
@@ -20,8 +20,8 @@ function SubagentCard({ entry, nowSeconds }: { entry: PainelSubagentEntry; nowSe
   const pctLabel = pctValue === null ? '—' : `${Math.round(pctValue)}%`;
   const name = entry.name ?? entry.sessionId?.slice(0, 8) ?? 'subagent';
   const elapsedLabel = entry.started_at === null ? '—' : formatElapsedShort(nowSeconds - entry.started_at);
-  const repo = entry.cwd ? formatCwdShort(entry.cwd) : null;
   const model = entry.model ?? null;
+  const sender = entry.sender ?? null;
 
   return (
     <div className="painel-subagent-card" data-state={state} data-severity={sev}>
@@ -32,10 +32,6 @@ function SubagentCard({ entry, nowSeconds }: { entry: PainelSubagentEntry; nowSe
           <span className="painel-subagent-state-dot" data-state={state} aria-hidden="true" />
         )}
         <span className="painel-subagent-name" title={name}>{name}</span>
-        {repo && <span className="painel-subagent-repo" title={entry.cwd ?? ''}>{repo}</span>}
-      </div>
-      <div className="painel-subagent-row-bottom">
-        {model && <span className="painel-subagent-model" title={model}>{model}</span>}
         <div className="painel-subagent-bar" role="progressbar" aria-valuenow={pctValue ?? 0} aria-valuemin={0} aria-valuemax={100}>
           <div
             className="painel-subagent-bar-fill"
@@ -45,6 +41,11 @@ function SubagentCard({ entry, nowSeconds }: { entry: PainelSubagentEntry; nowSe
         </div>
         <span className="painel-subagent-pct" data-severity={sev}>{pctLabel}</span>
         <span className="painel-subagent-elapsed">{elapsedLabel}</span>
+      </div>
+      <div className="painel-subagent-row-bottom">
+        {model && <span className="painel-subagent-model" title={model}>{model}</span>}
+        {model && sender && <span className="painel-subagent-sep" aria-hidden="true">·</span>}
+        {sender && <span className="painel-subagent-sender">via {sender}</span>}
       </div>
     </div>
   );

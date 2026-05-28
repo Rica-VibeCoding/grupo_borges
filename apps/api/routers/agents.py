@@ -49,6 +49,11 @@ from orchestrator.jsonl_watcher import (
     subagent_status_events_since,
 )
 from orchestrator.synthetic_message import detect_synthetic_kind
+from routers.ask_user import (
+    ask_user_active_snapshot,
+    ask_user_events_since,
+    _public_event as _public_ask_user,
+)
 from services import tmux_driver
 from services import workspace_reader
 
@@ -1280,6 +1285,13 @@ def _subagent_sse(data: dict[str, Any]) -> ServerSentEvent:
     )
 
 
+def _ask_user_sse(data: dict[str, Any]) -> ServerSentEvent:
+    return ServerSentEvent(
+        event="ask_user",
+        data=json.dumps(data, ensure_ascii=False),
+    )
+
+
 def _public_subagent_status(event: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in event.items() if key != "seq"}
 
@@ -1308,6 +1320,7 @@ async def stream_agent_messages(
         last_id = since_id
         last_heartbeat = time.monotonic()
         last_subagent_seq = 0
+        last_ask_user_seq = 0
         last_stall_scan = time.monotonic()
 
         try:
@@ -1363,6 +1376,21 @@ async def stream_agent_messages(
                 if status_event["parent_uuid"] not in active_status_seen:
                     yield _subagent_sse(status_event)
 
+            # ask_user — drena fila in-memory pra novos clientes verem requests
+            # ainda pendentes (e o histórico answered/timeout recente). Avança
+            # cursor pra não re-emitir no loop live.
+            initial_ask_user_events, last_ask_user_seq = ask_user_events_since(
+                slug,
+                last_ask_user_seq,
+            )
+            seen_request_ids: set[str] = set()
+            for event_payload in initial_ask_user_events:
+                seen_request_ids.add(event_payload.get("request_id", ""))
+                yield _ask_user_sse(_public_ask_user(event_payload))
+            for snapshot in ask_user_active_snapshot(slug):
+                if snapshot.get("request_id") not in seen_request_ids:
+                    yield _ask_user_sse(_public_ask_user(snapshot))
+
             while True:
                 if await request.is_disconnected():
                     return
@@ -1398,6 +1426,13 @@ async def stream_agent_messages(
                 )
                 for status_event in status_events:
                     yield _subagent_sse(_public_subagent_status(status_event))
+
+                ask_user_events, last_ask_user_seq = ask_user_events_since(
+                    slug,
+                    last_ask_user_seq,
+                )
+                for event_payload in ask_user_events:
+                    yield _ask_user_sse(_public_ask_user(event_payload))
 
                 if now - last_stall_scan >= _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S:
                     for status_event in mark_stalled_subagents(slug):

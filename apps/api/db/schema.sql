@@ -163,6 +163,20 @@ CREATE TABLE IF NOT EXISTS task_events (
 );
 
 -- ============================================================
+-- ask_user_pending — perguntas MCP ask-user aguardando resposta humana
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ask_user_pending (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id     TEXT UNIQUE NOT NULL,
+    agent_slug     TEXT NOT NULL,
+    questions_json TEXT NOT NULL,
+    answers_json   TEXT,
+    status         TEXT NOT NULL DEFAULT 'pending',
+    created_at     INTEGER NOT NULL,
+    answered_at    INTEGER
+);
+
+-- ============================================================
 -- Indexes pra queries rápidas (kanban, dashboard, debug)
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status ON tasks(assignee, status);
@@ -177,3 +191,5 @@ CREATE INDEX IF NOT EXISTS idx_events_task           ON task_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_agent          ON task_events(agent_slug, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON task_events(kind, created_at);
 CREATE INDEX IF NOT EXISTS idx_instances_agent       ON agent_instances(agent_slug, status);
+CREATE INDEX IF NOT EXISTS idx_ask_user_request      ON ask_user_pending(request_id);
+CREATE INDEX IF NOT EXISTS idx_ask_user_agent        ON ask_user_pending(agent_slug, created_at);

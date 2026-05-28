@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { MessagePayload, SubagentStatusEntry } from './messages-types';
+import type { AskUserEntry, MessagePayload, SubagentStatusEntry } from './messages-types';
 
 export type MessagesStreamStatus = 'idle' | 'connecting' | 'replaying' | 'live' | 'error' | 'closed';
 
@@ -12,12 +12,18 @@ export type MessagesStreamState = {
   errorDetail: string | null;
   /** Status ao vivo de subagents (parent_uuid → entrada). JP-11 F3-2. */
   subagentStatusByParentUuid: Map<string, SubagentStatusEntry>;
+  /** ask-user MCP — request pendente/respondido por request_id.
+   *  Named SSE event `ask_user`. Entries `answered`/`timeout` ficam no Map
+   *  pra render histórico do chat (sem TTL — sessões ask-user costumam ser
+   *  curtas; remover sumiria a decisão da timeline). */
+  askUserByRequestId: Map<string, AskUserEntry>;
 };
 
 // Factory ao invés de constante: cada slot recebe Map própria. Compartilhar
 // uma sentinela mutável vira footgun se algum consumer fizer `.set()` por
 // engano — poluiria o estado inicial de todos.
 const emptySubagentMap = (): Map<string, SubagentStatusEntry> => new Map();
+const emptyAskUserMap = (): Map<string, AskUserEntry> => new Map();
 
 const makeInitialState = (): MessagesStreamState => ({
   messages: [],
@@ -25,6 +31,7 @@ const makeInitialState = (): MessagesStreamState => ({
   replayTotal: null,
   errorDetail: null,
   subagentStatusByParentUuid: emptySubagentMap(),
+  askUserByRequestId: emptyAskUserMap(),
 });
 
 // Entries terminais (completed / stalled) são removidas após este TTL pra
@@ -131,6 +138,7 @@ export function useMessagesStream(
             replayTotal: messages.length,
             errorDetail: null,
             subagentStatusByParentUuid: emptySubagentMap(),
+            askUserByRequestId: emptyAskUserMap(),
           });
         })
         .catch((err) => {
@@ -142,6 +150,7 @@ export function useMessagesStream(
             replayTotal: null,
             errorDetail: err instanceof Error ? err.message : String(err),
             subagentStatusByParentUuid: emptySubagentMap(),
+            askUserByRequestId: emptyAskUserMap(),
           });
         });
       return () => {
@@ -323,6 +332,42 @@ export function useMessagesStream(
             }, SUBAGENT_TERMINAL_TTL_MS);
             subagentGcTimersRef.current.set(entry.parent_uuid, timer);
           }
+        } catch {
+          /* payload mal-formado: ignora */
+        }
+      });
+
+      // ask-user MCP: backend emite named event `ask_user` com payload
+      // {request_id, kind:'pending'|'answered'|'timeout', questions?, answers?,
+      // created_at_ms, answered_at_ms?}. Frontend mantém Map por request_id;
+      // re-emit do mesmo request_id (pending → answered) sobrescreve em
+      // place pra render `respondido com: X` no mesmo card.
+      source.addEventListener('ask_user', (ev) => {
+        try {
+          const data = JSON.parse((ev as MessageEvent).data) as {
+            request_id: string;
+            kind: 'pending' | 'answered' | 'timeout';
+            questions?: AskUserEntry['questions'];
+            answers?: string[];
+            created_at_ms?: number;
+            answered_at_ms?: number;
+          };
+          if (!data?.request_id || !data.kind) return;
+          noteActivity();
+          setState((prev) => {
+            const next = new Map(prev.askUserByRequestId);
+            const existing = next.get(data.request_id);
+            const entry: AskUserEntry = {
+              request_id: data.request_id,
+              status: data.kind,
+              questions: data.questions ?? existing?.questions ?? [],
+              answers: data.answers ?? existing?.answers,
+              created_at_ms: data.created_at_ms ?? existing?.created_at_ms ?? Date.now(),
+              answered_at_ms: data.answered_at_ms ?? existing?.answered_at_ms,
+            };
+            next.set(data.request_id, entry);
+            return { ...prev, askUserByRequestId: next };
+          });
         } catch {
           /* payload mal-formado: ignora */
         }

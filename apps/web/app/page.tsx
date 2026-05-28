@@ -9,6 +9,7 @@ import { subsessionCss } from '../components/subsession-popover';
 import { fetchEvents, fetchFleet, fetchTasks } from '../lib/api';
 import { cockpitCss } from '../lib/cockpit-css';
 import { EMPTY_EVENTS, EMPTY_FLEET, EMPTY_TASKS } from '../lib/cockpit-mock';
+import { AskUserPendingProvider } from '../lib/ask-user-pending-context';
 import { FleetProvider } from '../lib/fleet-context';
 import { SelectedAgentProvider } from '../lib/selected-agent-context';
 import { SubagentActivityProvider } from '../lib/subagent-activity-context';
@@ -261,6 +262,16 @@ const v2Css = `
 .kpi-thin .kt-sep { color:var(--muted); opacity:0.45; }
 .kpi-thin .kt-meta { color:var(--text); }
 .kpi-thin .kt-hb { margin-left:auto; color:var(--muted); opacity:0.7; font-size:10px; letter-spacing:0.12em; }
+.kpi-thin .kt-mobile-meta { display:none; }
+@media (max-width: 700px) {
+  .kpi-thin { display:grid; grid-template-columns:auto auto minmax(0, 1fr); grid-template-rows:auto auto; align-items:center; column-gap:8px; row-gap:3px; min-height:48px; padding:8px 12px; font-size:10px; letter-spacing:0.04em; }
+  .kpi-thin .kt-dot { grid-row:1 / 3; width:8px; height:8px; }
+  .kpi-thin .kt-main { grid-column:2; grid-row:1; font-size:10px; letter-spacing:0.12em; white-space:nowrap; }
+  .kpi-thin .kt-desktop-meta { display:none; }
+  .kpi-thin .kt-mobile-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
+  .kpi-thin .kt-mobile-primary { display:block; grid-column:3; grid-row:1; opacity:0.92; }
+  .kpi-thin .kt-mobile-secondary { display:block; grid-column:2 / 4; grid-row:2; color:var(--muted); font-size:9.5px; opacity:0.85; }
+}
 
 /* JP-11 F3-2 — badge subagent active inline ao lado do nome do agente.
    Inline pra não competir com .status-bar no canto sup-direito da card. */
@@ -327,6 +338,7 @@ export default async function Page() {
       <FleetProvider initial={initial}>
         <ToastProvider>
           <SubagentActivityProvider>
+            <AskUserPendingProvider>
             <SelectedAgentProvider>
               <SseBanner />
               <div className="viewport">
@@ -338,6 +350,7 @@ export default async function Page() {
               <AgentModal />
               <ToastStack />
             </SelectedAgentProvider>
+            </AskUserPendingProvider>
           </SubagentActivityProvider>
         </ToastProvider>
       </FleetProvider>

@@ -661,6 +661,80 @@ class GrupoBorgesDB:
                 )
                 return cur.lastrowid
 
+    # ---------- ask_user ----------
+
+    async def insert_ask_user_pending(
+        self,
+        *,
+        request_id: str,
+        agent_slug: str,
+        questions: list[dict[str, Any]],
+    ) -> int:
+        return await asyncio.to_thread(
+            self._insert_ask_user_pending,
+            request_id,
+            agent_slug,
+            questions,
+        )
+
+    def _insert_ask_user_pending(
+        self,
+        request_id: str,
+        agent_slug: str,
+        questions: list[dict[str, Any]],
+    ) -> int:
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                """
+                INSERT INTO ask_user_pending
+                    (request_id, agent_slug, questions_json, status, created_at)
+                VALUES (?, ?, ?, 'pending', ?)
+                """,
+                (
+                    request_id,
+                    agent_slug,
+                    json.dumps(questions, ensure_ascii=False),
+                    int(time.time()),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    async def answer_ask_user_request(self, *, request_id: str, answers: list[str]) -> bool:
+        return await asyncio.to_thread(self._answer_ask_user_request, request_id, answers)
+
+    def _answer_ask_user_request(self, request_id: str, answers: list[str]) -> bool:
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                """
+                UPDATE ask_user_pending
+                SET status = 'answered',
+                    answers_json = ?,
+                    answered_at = ?
+                WHERE request_id = ? AND status = 'pending'
+                """,
+                (
+                    json.dumps(answers, ensure_ascii=False),
+                    int(time.time()),
+                    request_id,
+                ),
+            )
+            return cur.rowcount > 0
+
+    async def mark_ask_user_timeout(self, request_id: str) -> bool:
+        return await asyncio.to_thread(self._mark_ask_user_timeout, request_id)
+
+    def _mark_ask_user_timeout(self, request_id: str) -> bool:
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                """
+                UPDATE ask_user_pending
+                SET status = 'timeout'
+                WHERE request_id = ? AND status = 'pending'
+                """,
+                (request_id,),
+            )
+            return cur.rowcount > 0
+
     async def find_task_id_by_human_id(self, human_id: str) -> str | None:
         return await asyncio.to_thread(self._find_task_id_by_human_id, human_id)
 

@@ -3702,3 +3702,262 @@ button.channel-env-head:hover {
     padding: 0.5rem;
   }
 }
+
+/* ask-user MCP — card de pergunta bloqueante. Reusa tokens do cockpit
+   (--card, --chat-hairline*, --accent, --status-running) pra ficar coerente
+   com o resto do chat. Borda esquerda laranja piscando enquanto pending
+   (reaproveita @keyframes one-line-chip-breathing via data-tone="active"). */
+.ask-user-card {
+  background: var(--card);
+  border: 1px solid var(--chat-hairline-strong);
+  border-radius: 10px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 560px;
+  width: 100%;
+}
+.ask-user-card[data-tone="active"] {
+  border-left: 2px solid var(--status-running);
+  animation: one-line-chip-breathing 1.8s ease-in-out infinite;
+}
+.ask-user-card[data-tone="completed"] { border-left: 2px solid var(--status-done); }
+.ask-user-card[data-tone="stalled"]   { border-left: 2px solid var(--status-blocked); opacity: 0.85; }
+@media (prefers-reduced-motion: reduce) {
+  .ask-user-card[data-tone="active"] { animation: none; }
+}
+
+.ask-user-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ask-user-card-counter {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.ask-user-card-header {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ask-user-card-head-spacer { flex: 1; }
+.ask-user-card-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.ask-user-card-dismiss:hover { color: var(--text); background: var(--panel); }
+
+.ask-user-card-question {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.ask-user-card-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ask-user-card-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.ask-user-card-option:hover:not(:disabled) {
+  background: var(--card-2, var(--panel));
+  border-color: var(--accent-border, var(--chat-hairline-strong));
+}
+.ask-user-card-option:disabled { opacity: 0.5; cursor: default; }
+.ask-user-card-option[data-selected="1"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.ask-user-card-check {
+  font-size: 14px;
+  line-height: 1.2;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.ask-user-card-option[data-selected="1"] .ask-user-card-check { color: var(--accent); }
+.ask-user-card-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.ask-user-card-option-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.ask-user-card-option-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.ask-user-card-option-freeform .ask-user-card-option-label { font-style: italic; }
+
+.ask-user-card-freeform {
+  width: 100%;
+  margin-top: 4px;
+  background: var(--bg);
+  border: 1px solid var(--chat-hairline);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  resize: vertical;
+  min-height: 60px;
+}
+.ask-user-card-freeform:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ask-user-card-error {
+  font-size: 12px;
+  color: var(--health-down, #ef4444);
+}
+
+.ask-user-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.ask-user-card-actions-spacer { flex: 1; }
+.ask-user-card-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--chat-hairline);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.ask-user-card-btn:hover:not(:disabled) { background: var(--card-2, var(--panel)); }
+.ask-user-card-btn:disabled { opacity: 0.5; cursor: default; }
+.ask-user-card-btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 500;
+}
+.ask-user-card-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--accent);
+}
+.ask-user-card-btn-ghost {
+  background: transparent;
+}
+
+.ask-user-card-answered {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ask-user-card-answered-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border-radius: 6px;
+}
+.ask-user-card-answered-q { font-size: 12px; color: var(--muted); }
+.ask-user-card-answered-a { font-size: 13px; color: var(--text); }
+
+.ask-user-card-timeout {
+  font-size: 12px;
+  color: var(--status-blocked);
+  font-style: italic;
+}
+
+/* Card EXTERNO da frota: borda laranja piscando quando o agente está
+ * com ask_user pendente. Sobrescreve qualquer cor de status (mesmo
+ * "trabalhando"=ciano) porque ask_user pendente é estado mais urgente
+ * que requer atenção humana. Cai automaticamente quando o slug some
+ * de /api/ask_user/pending. */
+/* Vermelho suave (Tailwind red-500 #ef4444) com glow forte que pulsa.
+ * Borda fica em vermelho transparente no vale e cheia no pico — sem dupla
+ * borda interna (tava parecendo "linha vermelha crua"). Cadência 1.0s pra
+ * ser visivelmente mais intensa que o breathing padrão (1.8s). */
+@keyframes agent-card-asking-user {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.30);
+    border-color: rgba(239, 68, 68, 0.55);
+  }
+  50% {
+    box-shadow:
+      0 0 28px rgba(239, 68, 68, 0.85),
+      0 0 12px rgba(239, 68, 68, 0.70);
+    border-color: #ef4444;
+  }
+}
+.agent-card[data-asking-user="true"] {
+  border-color: rgba(239, 68, 68, 0.55) !important;
+  animation: agent-card-asking-user 1.0s ease-in-out infinite;
+}
+/* Sobrescreve rail/status-bar/dot quando ask_user pendente — vermelho domina
+ * o esquema, sem competir com verde "trabalhando" ou ciano "ocioso". */
+.agent-card[data-asking-user="true"] .rail {
+  background: #ef4444 !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.70) !important;
+  opacity: 1 !important;
+}
+.agent-card[data-asking-user="true"] .status-bar {
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.50) !important;
+  background: rgba(239, 68, 68, 0.10) !important;
+}
+.agent-card[data-asking-user="true"] .status-bar .sdot {
+  background: #ef4444 !important;
+  box-shadow: 0 0 6px #ef4444 !important;
+  animation: dot-blink 1.0s steps(2) infinite !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-card[data-asking-user="true"] { animation: none; }
+  .agent-card[data-asking-user="true"] .status-bar .sdot { animation: none !important; }
+}
+
+/* Card INTERNO (no chat) também precisava do breathing — o seletor
+ * @keyframes one-line-chip-breathing era específico de .one-line-chip,
+ * por isso a borda do ask-user-card aparecia parada. Aqui aplica a
+ * mesma cadência por seletor próprio. */
+@keyframes ask-user-card-breathing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+.ask-user-card[data-tone="active"] {
+  border-left: 3px solid var(--status-blocked);
+  animation: ask-user-card-breathing 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-user-card[data-tone="active"] { animation: none; }
+}

@@ -2,7 +2,7 @@
 // `components/chat-messages.tsx` (V1) pra permitir teste de integração via
 // `node --test` sem puxar React/CSS. Não tem side-effect — só types.
 
-import type { ContentPart, MessagePayload, SubagentStatusEntry, SyntheticKind, ToolUseResult } from './messages-types.ts';
+import type { AskUserEntry, ContentPart, MessagePayload, SubagentStatusEntry, SyntheticKind, ToolUseResult } from './messages-types.ts';
 import { classifyMessage } from './chat-payload-classifier.ts';
 import type { OneLineChipKind, OneLineChipTone } from '../components/one-line-chip-types.ts';
 
@@ -41,6 +41,13 @@ export type RenderItem =
       groups: SidechainGroupRef[];
       subagentCount: number;
       totalDurMs: number | null;
+    }
+  | {
+      // ask-user MCP — não vem do JSONL. Injetado por ChatMessages a partir
+      // do Map<request_id, AskUserEntry> emitido pelo hook via named SSE event
+      // `ask_user`. Ordenado por created_at_ms entre os items do feed.
+      kind: 'ask-user';
+      entry: AskUserEntry;
     };
 
 export function extractContentParts(content: string | ContentPart[] | undefined | null): ContentPart[] {
@@ -460,6 +467,26 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
   }
 
   return items;
+}
+
+// ask-user — merge entries do hook como items virtuais ordenados por created_at.
+// Insere no final do feed (chronologically last) já que ask-user só dispara
+// quando o agente está aguardando humano, e a sessão fica parada esperando.
+// Em sessões com múltiplos requests pendentes, ordena por created_at_ms.
+export function mergeAskUserItems(
+  items: RenderItem[],
+  askUserByRequestId: Map<string, AskUserEntry> | undefined,
+): RenderItem[] {
+  if (!askUserByRequestId || askUserByRequestId.size === 0) return items;
+  const askItems: RenderItem[] = [];
+  for (const entry of askUserByRequestId.values()) {
+    askItems.push({ kind: 'ask-user', entry });
+  }
+  askItems.sort((a, b) => {
+    if (a.kind !== 'ask-user' || b.kind !== 'ask-user') return 0;
+    return a.entry.created_at_ms - b.entry.created_at_ms;
+  });
+  return [...items, ...askItems];
 }
 
 // JP-13 F1: colapsa runs de sidechain-group consecutivos. 1 grupo isolado fica

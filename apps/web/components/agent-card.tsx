@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import type { Agent, AgentActivityState, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials } from '../lib/cockpit-types';
+import { useAskUserPending } from '../lib/ask-user-pending-context';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
 import { useSubagentActiveCount } from '../lib/subagent-activity-context';
@@ -63,6 +64,7 @@ export function AgentCard({
   const { activityOverrides } = useFleet();
   const initials = deriveInitials(agent.name);
   const subagentActiveCount = useSubagentActiveCount(agent.slug);
+  const isAskingUser = useAskUserPending(agent.slug);
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
   const isCodexExecutor = agent.executor_kind === 'codex';
@@ -87,6 +89,7 @@ export function AgentCard({
       className="agent-card scan-host"
       data-state={agent.status}
       data-activity-state={activityState}
+      data-asking-user={isAskingUser ? 'true' : undefined}
       data-slug={agent.slug}
       tabIndex={0}
       role="button"

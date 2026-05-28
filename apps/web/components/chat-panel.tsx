@@ -114,6 +114,7 @@ export function ChatPanel({
         slug={agent.slug}
         loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
         subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
+        askUserByRequestId={messagesStream.askUserByRequestId}
         optimistic={optimistic}
       />
       <ChatInput
