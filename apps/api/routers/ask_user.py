@@ -149,7 +149,7 @@ async def wait_for_user(payload: AskUserWaitRequest, request: Request) -> dict[s
             "questions": questions,
             "created_at_ms": _now_ms(),
         })
-        await asyncio.wait_for(event.wait(), timeout=3600)
+        await asyncio.wait_for(event.wait(), timeout=1500)
         answers = pending_answers.pop(request_id, None)
         if answers is None:
             raise HTTPException(status_code=500, detail="Resposta ask_user ausente")
