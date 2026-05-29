@@ -806,9 +806,14 @@ export function ChatMessages({
   // pra "novos itens grudam no fim" — dep-based, dispara só quando length
   // muda (não quando stuck muda). O RO no content cobre mudança de altura
   // sem mudança de length (streaming dentro de uma msg, chip expand).
+  // rAF dá 1 frame pro layout estabilizar antes do scroll — evita bolha
+  // nascer escondida quando chat ocupa tela inteira no mobile.
   useEffect(() => {
     if (loadingRef.current || stuckRef.current) {
-      sentinelRef.current?.scrollIntoView({ block: 'end' });
+      const id = requestAnimationFrame(() => {
+        sentinelRef.current?.scrollIntoView({ block: 'end' });
+      });
+      return () => cancelAnimationFrame(id);
     } else if (items.length > 0 || optimisticLen > 0) {
       setHasNew(true);
     }
