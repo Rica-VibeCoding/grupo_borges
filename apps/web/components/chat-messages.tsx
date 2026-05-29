@@ -668,6 +668,8 @@ export type ChatMessagesProps = {
   subagentStatusByParentUuid?: Map<string, SubagentStatusEntry>;
   /** Bolhas locais ainda não confirmadas pelo SSE. */
   optimistic?: OptimisticEntry[];
+  /** Mapeia uuid real para clientId optimistic reconciliado, preservando key/DOM. */
+  uuidToClientId?: Map<string, string>;
   /** ask-user MCP — entries pendentes/respondidas por request_id. */
   askUserByRequestId?: Map<string, AskUserEntry>;
 };
@@ -679,6 +681,7 @@ export function ChatMessages({
   emptyLabel,
   subagentStatusByParentUuid,
   optimistic,
+  uuidToClientId,
   askUserByRequestId,
 }: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -888,7 +891,16 @@ export function ChatMessages({
           // estado dos chips abertos quando troca sessão / ordem deslizar.
           const key = item.payload.uuid;
           const itemTs = item.payload.timestamp;
-          if (item.kind === 'user') return <UserBubble key={key} text={item.text} ts={itemTs} />;
+          if (item.kind === 'user') {
+            const optimisticKey = uuidToClientId?.get(item.payload.uuid);
+            return (
+              <UserBubble
+                key={optimisticKey ? `opt:${optimisticKey}` : key}
+                text={item.text}
+                ts={itemTs}
+              />
+            );
+          }
           if (item.kind === 'user-internal') return <UserInternalBubble key={key} text={item.text} ts={itemTs} />;
           if (item.kind === 'synthetic') return (
             <UserSyntheticBubble

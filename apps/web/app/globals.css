@@ -2252,6 +2252,9 @@
 }
 /* JP-18 R2 — optimistic bubble. pending/sent fica dim (espera SSE);
    error vira vermelho discreto pra sinalizar falha sem alarmar. */
+.msg-bubble-optimistic {
+  transition: opacity 220ms ease-out;
+}
 .msg-bubble-optimistic[data-status='pending'],
 .msg-bubble-optimistic[data-status='sent'] {
   opacity: 0.65;

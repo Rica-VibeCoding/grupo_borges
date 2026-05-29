@@ -67,6 +67,7 @@ export function ChatPanel({
   // Reconciliação por (text, janela 2s) — backend não propaga clientId hoje.
   const agentSend = useAgentSend(agent.slug, agent.name);
   const [optimistic, setOptimistic] = useState<OptimisticEntry[]>([]);
+  const [uuidToClientId, setUuidToClientId] = useState<Map<string, string>>(new Map());
 
   const submitText = useCallback(
     async (text: string) => {
@@ -98,12 +99,17 @@ export function ChatPanel({
 
   useEffect(() => {
     if (optimistic.length === 0) return;
-    setOptimistic((prev) => reconcileOptimistic(prev, messagesStream.messages));
-  }, [messagesStream.messages, optimistic.length]);
+    const { next, reconciled } = reconcileOptimistic(optimistic, messagesStream.messages);
+    setOptimistic(next);
+    if (reconciled.size > 0) {
+      setUuidToClientId((current) => new Map([...current, ...reconciled]));
+    }
+  }, [messagesStream.messages, optimistic]);
 
   // Limpa quando troca de agente (slug muda → messagesStream reseta também).
   useEffect(() => {
     setOptimistic([]);
+    setUuidToClientId(new Map());
   }, [agent.slug]);
 
   return (
@@ -116,6 +122,7 @@ export function ChatPanel({
         subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
         askUserByRequestId={messagesStream.askUserByRequestId}
         optimistic={optimistic}
+        uuidToClientId={uuidToClientId}
       />
       <ChatInput
         slug={agent.slug}
@@ -138,8 +145,9 @@ const OPTIMISTIC_MAX_LAG_MS = 30_000;
 function reconcileOptimistic(
   pending: OptimisticEntry[],
   realMessages: ReturnType<typeof useMessagesStream>['messages'],
-): OptimisticEntry[] {
-  if (pending.length === 0) return pending;
+): { next: OptimisticEntry[]; reconciled: Map<string, string> } {
+  const reconciled = new Map<string, string>();
+  if (pending.length === 0) return { next: pending, reconciled };
   const now = Date.now();
   const userMsgs = realMessages.filter(
     (m) => m.message?.role === 'user' && m.user_type === 'external',
@@ -163,12 +171,13 @@ function reconcileOptimistic(
     });
     if (match) {
       consumed.add(match.uuid);
+      reconciled.set(match.uuid, opt.clientId);
       return false;
     }
     return true;
   });
   // Se nada mudou, retorna ref original pra não causar re-render do consumer.
-  return next.length === pending.length ? pending : next;
+  return { next: next.length === pending.length ? pending : next, reconciled };
 }
 
 // ----- ChatHeader ---------------------------------------------------------
