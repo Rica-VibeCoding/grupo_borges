@@ -379,7 +379,7 @@ function ChatInput({
     if (shouldShrink) {
       shrinkAnimationRef.current = el.animate(
         [{ height: `${from}px` }, { height: `${next}px` }],
-        { duration: 150, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+        { duration: 800, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
       );
     }
     prevTextRef.current = text;
@@ -488,7 +488,7 @@ function ChatInput({
     sendFlashTimeoutRef.current = setTimeout(() => {
       textareaRef.current?.classList.remove('chat-send-flash');
       sendFlashTimeoutRef.current = null;
-    }, 150);
+    }, 800);
   }, []);
 
   const attachFile = useCallback((file: File) => {
@@ -545,10 +545,10 @@ function ChatInput({
     if (pendingImage) {
       const caption = text.trim() || undefined;
       flashTextareaSend();
-      await sendImage(pendingImage, caption);
-      clearImage();
       setText('');
+      clearImage();
       textareaRef.current?.focus();
+      await sendImage(pendingImage, caption);
       return;
     }
     const trimmed = text.trim();
@@ -562,8 +562,8 @@ function ChatInput({
       return;
     }
     flashTextareaSend();
-    await sendText(trimmed);
     setText('');
+    await sendText(trimmed);
   }, [sending, pendingImage, text, sendImage, sendText, clearImage, flashTextareaSend, closeSlash]);
 
   const onKeyDown = useCallback(
