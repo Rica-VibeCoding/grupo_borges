@@ -201,7 +201,11 @@ export function AgentModal() {
                   <Tabs.Trigger value="tabelas" className="agent-modal-tab">TABELAS</Tabs.Trigger>
                   <Tabs.Trigger value="handoff" className="agent-modal-tab">HANDOFF</Tabs.Trigger>
                 </Tabs.List>
-                <Tabs.Content value="chat" className="agent-modal-panel">
+                {/* forceMount: preserva conexão SSE do useMessagesStream ao trocar de aba.
+                    CSS .agent-modal-panel[data-state="inactive"] esconde via display:none
+                    (globals.css:196), então não vaza visual nem rouba foco. Outras abas
+                    seguem default (mount on activate) pra não disparar 5 fetches no open. */}
+                <Tabs.Content value="chat" className="agent-modal-panel" forceMount>
                   <ChatPanel agent={agent} serverNow={fleet.health.server_now} />
                 </Tabs.Content>
                 <Tabs.Content value="painel" className="agent-modal-panel">

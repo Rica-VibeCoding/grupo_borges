@@ -193,3 +193,17 @@ CREATE INDEX IF NOT EXISTS idx_events_kind           ON task_events(kind, create
 CREATE INDEX IF NOT EXISTS idx_instances_agent       ON agent_instances(agent_slug, status);
 CREATE INDEX IF NOT EXISTS idx_ask_user_request      ON ask_user_pending(request_id);
 CREATE INDEX IF NOT EXISTS idx_ask_user_agent        ON ask_user_pending(agent_slug, created_at);
+
+-- Indexes JSON1 pro replay do chat (/api/agents/{slug}/messages/stream).
+-- WHERE textual precisa BATER exato com a expressão do índice (sqlite.org/expridx.html).
+-- Medido em Daniel/70k eventos: 754ms→2ms (list) e 890ms→<1ms (latest).
+CREATE INDEX IF NOT EXISTS idx_events_agent_session_id
+    ON task_events (agent_slug, json_extract(payload, '$.sessionId'), id);
+CREATE INDEX IF NOT EXISTS idx_events_latest_session
+    ON task_events (agent_slug, id)
+    WHERE json_extract(payload, '$.sessionId') IS NOT NULL
+      AND json_extract(payload, '$.uuid') IS NOT NULL
+      AND (
+        json_extract(payload, '$.isSidechain') IS NULL
+        OR json_extract(payload, '$.isSidechain') != 1
+      );
