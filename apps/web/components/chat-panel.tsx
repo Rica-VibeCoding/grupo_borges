@@ -357,13 +357,32 @@ function ChatInput({
   // Auto-grow textarea. overflow-y gerenciado aqui — CSS default é hidden pra
   // evitar scrollbar durante medição de scrollHeight (reflow reduz largura →
   // texto vaza fora do contorno no WebKit/iOS). Só ativa auto quando bate no cap.
+  // Shrink animado SÓ no send (text → ''), via WAAPI — coordena com .chat-send-flash
+  // (150ms). Nunca anima em digitação pra evitar clipping com overflow-y: hidden.
+  const prevTextRef = useRef(text);
+  const shrinkAnimationRef = useRef<Animation | null>(null);
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
+    shrinkAnimationRef.current?.cancel();
+    const from = el.offsetHeight;
     el.style.height = 'auto';
     const h = el.scrollHeight;
-    el.style.height = `${Math.min(h, 134)}px`;
+    const next = Math.min(h, 134);
+    el.style.height = `${next}px`;
     el.style.overflowY = h > 134 ? 'auto' : 'hidden';
+    const shouldShrink =
+      prevTextRef.current.length > 0 &&
+      text.length === 0 &&
+      from > next &&
+      window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+    if (shouldShrink) {
+      shrinkAnimationRef.current = el.animate(
+        [{ height: `${from}px` }, { height: `${next}px` }],
+        { duration: 150, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+      );
+    }
+    prevTextRef.current = text;
   }, [text]);
 
   // --- slash palette helpers (DS-62) ---
