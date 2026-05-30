@@ -12,6 +12,7 @@ export type SlashCommand = {
 export function getSlashCommands(agentName: string): SlashCommand[] {
   const name = agentName.trim() || 'agente';
   return [
+    { value: 'auditoria', label: '/auditoria', desc: `auditoria do diff via subagente escolhido (review · simplify · plan · completa) com triagem e refactor` },
     { value: 'checkpoint', label: '/checkpoint', desc: `${name} salva memória da sessão + gera bloco copiável de retomada` },
     { value: 'compact', label: '/compact', desc: `compacta o contexto de ${name}` },
     { value: 'dispatch', label: '/dispatch', desc: `sub-agentes em paralelo (explore · context7 · backend · frontend · shadcn)` },
