@@ -681,7 +681,7 @@
 
 .chat-input-textarea {
   flex: 1; resize: none;
-  min-height: 32px; max-height: 134px;
+  min-height: 32px; max-height: 180px;
   padding: 5px 8px;
   border: none; background: transparent;
   appearance: none;
@@ -2210,25 +2210,33 @@
 .msg-row {
   display: flex;
   width: 100%;
-  animation: msg-enter 180ms ease-out;
+  animation: msg-enter 120ms ease-out;
 }
-.msg-row-user { justify-content: flex-end; }
+/* User: slide curto com curva spring da Apple (cubic-bezier 0.32,0.72,0,1).
+   200ms é o ponto onde o olho rastreia a bolha subindo do input pro feed
+   — sensação iMessage/Telegram, sem "pulinho" do fade+translate antigo. */
+.msg-row-user {
+  justify-content: flex-end;
+  animation: msg-enter-user 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* Real do SSE substituindo um optimistic já visível → sem animação. Otimista
+   e real moram em arrays React diferentes, key estável não compartilha DOM
+   entre pais — sem isso, o real reanima e gera "piscadinha de encaixe". */
+.msg-row-user-noanim { animation: none !important; }
 .msg-row-assistant { justify-content: flex-start; }
 
-/* Slide-in + fade na entrada da bolha. Replay flusha num frame → todas
-   animam juntas (fade coletivo, 180ms, tolerável). */
+/* Fade puro na entrada da bolha do assistant. */
 @keyframes msg-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes msg-enter-user {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .msg-row { animation: none; }
+  .msg-row,
+  .msg-row-user { animation: none; }
 }
 
 .msg-bubble {
@@ -2250,15 +2258,9 @@
   border-width: 0.5px;
   border-color: var(--bubble-user-border);
 }
-/* JP-18 R2 — optimistic bubble. pending/sent fica dim (espera SSE);
-   error vira vermelho discreto pra sinalizar falha sem alarmar. */
-.msg-bubble-optimistic {
-  transition: opacity 220ms ease-out;
-}
-.msg-bubble-optimistic[data-status='pending'],
-.msg-bubble-optimistic[data-status='sent'] {
-  opacity: 0.65;
-}
+/* Optimistic bubble — entra vívida (opacity: 1), igual chat maduro.
+   Só `error` muda visualmente; pending/sent não mostram ack pro user
+   (SSE confirma em ~500ms, dim+piscada criavam ansiedade desnecessária). */
 .msg-bubble-optimistic[data-status='error'] {
   border-color: color-mix(in oklab, var(--bubble-user-border) 50%, #ef4444);
   background: color-mix(in oklab, var(--bubble-user) 85%, #ef4444);

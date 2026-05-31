@@ -124,17 +124,24 @@ function parseCockpitImage(text: string): { url: string; caption: string | null 
 const UserBubble = memo(function UserBubble({
   text,
   optimisticStatus,
+  reconciled,
 }: {
   text: string;
   ts?: string;
   optimisticStatus?: OptimisticEntry['status'];
+  /** True quando esse bubble é o "real" do SSE que substitui um optimistic
+   *  já visível. Suprime a animação de entrada pra evitar piscadinha de
+   *  re-mount (otimista e real moram em arrays React diferentes, então a
+   *  key estável não compartilha DOM — sem isso, o real faz slide de novo). */
+  reconciled?: boolean;
 }) {
   const image = parseCockpitImage(text);
   const optClass = optimisticStatus ? ' msg-bubble-optimistic' : '';
+  const rowClass = reconciled ? 'msg-row msg-row-user msg-row-user-noanim' : 'msg-row msg-row-user';
   const rowProps = optimisticStatus ? { 'data-optimistic': optimisticStatus } : {};
   if (image) {
     return (
-      <div className="msg-row msg-row-user" {...rowProps}>
+      <div className={rowClass} {...rowProps}>
         <div
           className={`msg-bubble msg-bubble-user msg-bubble-image${optClass}`}
           data-status={optimisticStatus}
@@ -164,7 +171,7 @@ const UserBubble = memo(function UserBubble({
     );
   }
   return (
-    <div className="msg-row msg-row-user" {...rowProps}>
+    <div className={rowClass} {...rowProps}>
       <div
         className={`msg-bubble msg-bubble-user${optClass}`}
         data-status={optimisticStatus}
@@ -739,6 +746,7 @@ export function ChatMessages({
   const ioRef = useRef<IntersectionObserver | null>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const roRafIdRef = useRef(0);
+  const rafCleanupRef = useRef(0);
 
   const scrollerCallbackRef = useCallback((node: HTMLDivElement | null) => {
     if (ioRef.current) { ioRef.current.disconnect(); ioRef.current = null; }
@@ -811,12 +819,38 @@ export function ChatMessages({
   // sem mudança de length (streaming dentro de uma msg, chip expand).
   // rAF dá 1 frame pro layout estabilizar antes do scroll — evita bolha
   // nascer escondida quando chat ocupa tela inteira no mobile.
+  // Caso especial: aumento de `optimisticLen` = user acabou de enviar. Força
+  // scroll incondicional (chat maduro sempre acompanha o próprio envio,
+  // mesmo se IO perdeu o sentinel por layout shift do textarea/teclado).
+  const prevOptimisticLenRef = useRef(optimisticLen);
   useEffect(() => {
-    if (loadingRef.current || stuckRef.current) {
-      const id = requestAnimationFrame(() => {
-        sentinelRef.current?.scrollIntoView({ block: 'end' });
+    const userJustSent = optimisticLen > prevOptimisticLenRef.current;
+    prevOptimisticLenRef.current = optimisticLen;
+    if (userJustSent || loadingRef.current || stuckRef.current) {
+      // Double rAF + fallback scrollTop=scrollHeight: textarea encolhe com
+      // transition 60ms quando user envia; um único scrollIntoView dispara
+      // ANTES da altura final, então a bolha "vaza" pra baixo da fold. O
+      // 2º frame pega a altura já estabilizada, e o scrollTop direto no
+      // scroller cobre o caso de o sentinel ter sido desmontado.
+      // behavior: 'smooth' = ~300ms ease-in-out grátis do navegador.
+      // Acompanha o slide da bolha do user (200ms spring) — bolha e scroll
+      // se movem juntos, sensação iMessage. Reduced-motion respeitado nativo.
+      const scrollOpts: ScrollIntoViewOptions = { block: 'end', behavior: 'smooth' };
+      const id1 = requestAnimationFrame(() => {
+        sentinelRef.current?.scrollIntoView(scrollOpts);
+        const id2 = requestAnimationFrame(() => {
+          sentinelRef.current?.scrollIntoView(scrollOpts);
+          if (userJustSent) {
+            setStuck(true);
+            setHasNew(false);
+          }
+        });
+        rafCleanupRef.current = id2;
       });
-      return () => cancelAnimationFrame(id);
+      rafCleanupRef.current = id1;
+      return () => {
+        if (rafCleanupRef.current) cancelAnimationFrame(rafCleanupRef.current);
+      };
     } else if (items.length > 0 || optimisticLen > 0) {
       setHasNew(true);
     }
@@ -898,6 +932,7 @@ export function ChatMessages({
                 key={optimisticKey ? `opt:${optimisticKey}` : key}
                 text={item.text}
                 ts={itemTs}
+                reconciled={!!optimisticKey}
               />
             );
           }

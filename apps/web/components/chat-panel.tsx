@@ -97,14 +97,29 @@ export function ChatPanel({
     [agentSend],
   );
 
+  // Reconcile em useMemo (render-time), NÃO em useEffect. Antes: SSE chegava,
+  // items.map renderizava o real + bloco optimistic ainda renderizava o
+  // pending → 1 frame com 2 balões → useEffect limpava no frame seguinte.
+  // Usuário via "piscadinha de encaixe". Memo deriva visivelOptimistic na
+  // mesma fase do render do real — frame 1 já sai limpo.
+  // setOptimistic em useEffect só persiste a limpeza pra próximas decisões.
+  const reconciledView = useMemo(
+    () => reconcileOptimistic(optimistic, messagesStream.messages),
+    [optimistic, messagesStream.messages],
+  );
+  const visibleOptimistic = reconciledView.next;
+  const mergedUuidToClientId = useMemo(() => {
+    if (reconciledView.reconciled.size === 0) return uuidToClientId;
+    return new Map([...uuidToClientId, ...reconciledView.reconciled]);
+  }, [uuidToClientId, reconciledView.reconciled]);
   useEffect(() => {
-    if (optimistic.length === 0) return;
-    const { next, reconciled } = reconcileOptimistic(optimistic, messagesStream.messages);
-    setOptimistic(next);
-    if (reconciled.size > 0) {
-      setUuidToClientId((current) => new Map([...current, ...reconciled]));
+    if (reconciledView.next !== optimistic) {
+      setOptimistic(reconciledView.next);
     }
-  }, [messagesStream.messages, optimistic]);
+    if (reconciledView.reconciled.size > 0) {
+      setUuidToClientId((current) => new Map([...current, ...reconciledView.reconciled]));
+    }
+  }, [reconciledView, optimistic]);
 
   // Limpa quando troca de agente (slug muda → messagesStream reseta também).
   useEffect(() => {
@@ -121,8 +136,8 @@ export function ChatPanel({
         loading={messagesStream.status === 'connecting' || messagesStream.status === 'replaying'}
         subagentStatusByParentUuid={messagesStream.subagentStatusByParentUuid}
         askUserByRequestId={messagesStream.askUserByRequestId}
-        optimistic={optimistic}
-        uuidToClientId={uuidToClientId}
+        optimistic={visibleOptimistic}
+        uuidToClientId={mergedUuidToClientId}
       />
       <ChatInput
         slug={agent.slug}
@@ -376,10 +391,13 @@ function ChatInput({
     shrinkAnimationRef.current?.cancel();
     const from = el.offsetHeight;
     el.style.height = 'auto';
-    const h = el.scrollHeight;
-    const next = Math.min(h, 134);
+    // +2px de folga absorve leading interno do WebKit (iOS Safari) que faz
+    // scrollHeight bater curto e clipar a última linha em branco quando o
+    // texto tem `\n\n` no meio.
+    const h = el.scrollHeight + 2;
+    const next = Math.min(h, 180);
     el.style.height = `${next}px`;
-    el.style.overflowY = h > 134 ? 'auto' : 'hidden';
+    el.style.overflowY = h > 180 ? 'auto' : 'hidden';
     const shouldShrink =
       prevTextRef.current.length > 0 &&
       text.length === 0 &&
