@@ -398,17 +398,13 @@ function ChatInput({
     const next = Math.min(h, 180);
     el.style.height = `${next}px`;
     el.style.overflowY = h > 180 ? 'auto' : 'hidden';
-    const shouldShrink =
-      prevTextRef.current.length > 0 &&
-      text.length === 0 &&
-      from > next &&
-      window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
-    if (shouldShrink) {
-      shrinkAnimationRef.current = el.animate(
-        [{ height: `${from}px` }, { height: `${next}px` }],
-        { duration: 800, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-      );
-    }
+    // NÃO animar a altura no send. `height` dispara layout a cada frame: o WAAPI
+    // de 250ms fazia o textarea encolher DEPOIS do scroll da bolha (dispara em
+    // ~32ms), o scroller crescia tarde e a bolha aterrissava ~meio cm acima da
+    // posição final — só fechava quando a msg real chegava e re-disparava o
+    // scroll (a "descida" que o Rica via). Altura síncrona = layout final já
+    // pronto quando o scroll roda. Feedback de envio fica com .chat-send-flash.
+    void from;
     prevTextRef.current = text;
   }, [text]);
 

@@ -2168,13 +2168,20 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Coluna flex pro conteúdo poder grudar no fundo via margin-top:auto. */
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--chat-hairline);
   border-radius: 10px;
   background: #000;
 }
 /* Wrapper interno hospeda flex/gap/padding pro ResizeObserver detectar
-   crescimento de altura — scroller externo tem altura fixa via flex:1. */
+   crescimento de altura — scroller externo tem altura fixa via flex:1.
+   margin-top:auto = conversa curta gruda a última bolha no fundo (junto do
+   input), sem vão preto; conversa longa o auto vira 0 e o scroll normal
+   assume. À prova do clipping do `justify-content:flex-end`. */
 .chat-messages-content {
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2212,12 +2219,13 @@
   width: 100%;
   animation: msg-enter 120ms ease-out;
 }
-/* User: slide curto com curva spring da Apple (cubic-bezier 0.32,0.72,0,1).
-   200ms é o ponto onde o olho rastreia a bolha subindo do input pro feed
-   — sensação iMessage/Telegram, sem "pulinho" do fade+translate antigo. */
+/* User: fade puro curto. Sem translateY pra evitar 2 movimentos no eixo Y
+   competindo (animação da bolha + smooth scroll). Só fade — quem desce é
+   o scroll, bolha aparece sólida no lugar final. Elimina "encaixe" do
+   overshoot do spring antigo. */
 .msg-row-user {
   justify-content: flex-end;
-  animation: msg-enter-user 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  animation: msg-enter-user 140ms ease-out;
 }
 /* Real do SSE substituindo um optimistic já visível → sem animação. Otimista
    e real moram em arrays React diferentes, key estável não compartilha DOM
@@ -2231,8 +2239,8 @@
   to   { opacity: 1; }
 }
 @keyframes msg-enter-user {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .msg-row,
