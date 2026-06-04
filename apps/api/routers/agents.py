@@ -28,7 +28,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncGenerator, Literal, NamedTuple
+from typing import Any, AsyncGenerator, Literal, NamedTuple, get_args
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -1141,6 +1141,18 @@ async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
 
 ChatModel = Literal["opus", "sonnet", "haiku"]
 
+# DS-69 — modelos Codex selecionáveis pra Tara. Slugs canônicos (id do backend);
+# a tradução pro nome cru do CLI (`gpt-5.5` etc) mora em
+# `tmux_driver._CODEX_MODEL_MAP` — fonte única do de-para, não duplicar aqui.
+CodexModel = Literal[
+    "codex-gpt-5-5",
+    "codex-gpt-5-4",
+    "codex-gpt-5-4-mini",
+    "codex-gpt-5-3-codex",
+    "codex-gpt-5-2",
+]
+_CODEX_MODEL_SLUGS = frozenset(get_args(CodexModel))
+
 
 class PaneStreamEvent(BaseModel):
     excerpt: str
@@ -1159,7 +1171,7 @@ class InputResponse(BaseModel):
 
 
 class ModelChangeRequest(BaseModel):
-    model: ChatModel
+    model: ChatModel | CodexModel
     force: bool = False
 
 
@@ -1168,6 +1180,9 @@ class ModelChangeResponse(BaseModel):
     state_persisted: bool
     confirmed: bool
     model: str
+    # DS-69 — True quando a troca vale na sessão viva (Claude Code via /model);
+    # False quando só vale na PRÓXIMA execução (Codex CLI não troca em runtime).
+    runtime_switch: bool = True
 
 
 _PANE_STREAM_POLL_S = 1.0
@@ -1652,32 +1667,60 @@ async def post_agent_image(
 async def change_agent_model(
     slug: str, payload: ModelChangeRequest, request: Request
 ) -> ModelChangeResponse:
-    """Troca modelo do agente via `/model <slug>` (Claude Code).
+    """Troca modelo do agente.
 
-    Gates:
-    - 404 quando agente não existe
+    Dois caminhos por `executor_kind` (DS-69):
+
+    **Claude Code** — troca em runtime via `/model <slug>`:
     - 422 (Pydantic) quando model fora do whitelist opus/sonnet/haiku
-    - 422 `codex_no_runtime_model_switch` quando executor_kind=codex (DS-2.1)
+    - 422 `model_not_allowed_for_claude_code` se vier slug Codex
     - 409 `agent_busy_confirm_required` quando lifecycle=trabalhando sem force
+    - caminho feliz: envia `/model`, picker idempotente, poll de confirmação,
+      persiste state_model só se delivered=True, emite task_event. runtime_switch=True.
 
-    Caminho feliz (200):
-    1. envia `/model <slug>` via send_message
-    2. picker idempotente: aguarda 300ms e envia Enter extra
-    3. poll capture_pane_excerpt em t+500/1000/1500ms; regex parse_model_from_pane
-       confirma propagação. `confirmed=False` é warning (não erro).
-    4. persiste state_model SÓ se delivered=True (inversão v2)
-    5. emite task_event `agent.model_change` com {from, to, actor, confirmed}
+    **Codex (Tara)** — NÃO troca em sessão viva (sem `/model`):
+    - 422 `model_not_allowed_for_codex` se vier slug Claude
+    - persiste state_model (escolha do Rica), emite task_event, runtime_switch=False.
+      O wrapper `tara-codex` injeta `-m <modelo>` na PRÓXIMA execução.
     """
     agent = await _get_agent_or_404(request, slug)
-    if agent.get("executor_kind") == "codex":
-        raise HTTPException(status_code=422, detail="codex_no_runtime_model_switch")
+    is_codex = agent.get("executor_kind") == "codex"
+    db: GrupoBorgesDB = request.app.state.db
+    target = payload.model
+    from_model = agent.get("state_model") or agent.get("model_default")
+
+    # Allowlist cruzada: nunca aceitar slug Codex em agente Claude nem o inverso.
+    if is_codex and target not in _CODEX_MODEL_SLUGS:
+        raise HTTPException(status_code=422, detail="model_not_allowed_for_codex")
+    if not is_codex and target in _CODEX_MODEL_SLUGS:
+        raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
+
+    if is_codex:
+        # Persiste a escolha como estado da Tara; vale na próxima execução Codex.
+        await db.upsert_agent_state(slug, model=target)
+        await db.insert_task_event(
+            kind="agent.model_change",
+            agent_slug=slug,
+            payload={
+                "from": from_model,
+                "to": target,
+                "actor": "cockpit",
+                "confirmed": False,
+                "runtime_switch": False,
+            },
+        )
+        return ModelChangeResponse(
+            tmux_delivered=False,
+            state_persisted=True,
+            confirmed=False,
+            runtime_switch=False,
+            model=target,
+        )
+
     if agent.get("lifecycle_status") == "trabalhando" and not payload.force:
         raise HTTPException(status_code=409, detail="agent_busy_confirm_required")
 
-    db: GrupoBorgesDB = request.app.state.db
     session = agent["tmux_session"]
-    target = payload.model
-    from_model = agent.get("state_model") or agent.get("model_default")
 
     delivered = await tmux_driver.send_message(session, f"/model {target}")
 
@@ -1717,6 +1760,7 @@ async def change_agent_model(
         tmux_delivered=delivered,
         state_persisted=state_persisted,
         confirmed=confirmed,
+        runtime_switch=True,
         model=target,
     )
 

@@ -79,6 +79,38 @@ if [[ "$RESUME_LAST" -eq 1 ]]; then
   fi
 fi
 
+# DS-69 — modelo escolhido pelo Rica no cockpit. Se o chamador NÃO passou
+# `-m/--model`, busca o `state_model` persistido da Tara e injeta `-m <raw>`.
+# Explícito da linha de comando sempre vence. De-para canônico→cru espelha
+# `apps/api/services/tmux_driver.py:_CODEX_MODEL_MAP` (fonte única lá).
+codex_raw_model() {
+  case "$1" in
+    codex-gpt-5-5)      echo "gpt-5.5" ;;
+    codex-gpt-5-4)      echo "gpt-5.4" ;;
+    codex-gpt-5-4-mini) echo "gpt-5.4-mini" ;;
+    codex-gpt-5-3-codex) echo "gpt-5.3-codex" ;;
+    codex-gpt-5-2)      echo "gpt-5.2" ;;
+    *) echo "" ;;
+  esac
+}
+
+caller_set_model=0
+for arg in "${CODEX_ARGS[@]}"; do
+  case "$arg" in
+    -m|--model|-m=*|--model=*) caller_set_model=1; break ;;
+  esac
+done
+
+if [[ "$caller_set_model" -eq 0 ]]; then
+  persisted=$(curl -sS -m 4 "${COCKPIT_URL}/api/agents/tara" 2>/dev/null \
+    | jq -r '.state_model // empty' 2>/dev/null || true)
+  raw=$(codex_raw_model "$persisted")
+  if [[ -n "$raw" ]]; then
+    CODEX_ARGS=(-m "$raw" "${CODEX_ARGS[@]}")
+    echo "[tara-codex] modelo do cockpit: $persisted → -m $raw" >&2
+  fi
+fi
+
 post_event() {
   local kind="$1"
   local body="$2"

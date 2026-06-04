@@ -78,8 +78,8 @@ def test_model_rejects_invalid_slug(tmp_path: Path) -> None:
         assert response.status_code == 422
 
 
-def test_model_codex_returns_422_no_runtime_switch(tmp_path: Path) -> None:
-    """`executor_kind=codex` → 422 `codex_no_runtime_model_switch` (DS-2.1 cuida)."""
+def test_model_codex_rejects_claude_slug(tmp_path: Path) -> None:
+    """DS-69 — slug Claude (opus/sonnet/haiku) em agente Codex → 422."""
     app = _build_app(tmp_path, codex_for_tara=True)
     with TestClient(app) as client:
         response = client.post(
@@ -87,7 +87,43 @@ def test_model_codex_returns_422_no_runtime_switch(tmp_path: Path) -> None:
             json={"model": "sonnet"},
         )
         assert response.status_code == 422
-        assert response.json()["detail"] == "codex_no_runtime_model_switch"
+        assert response.json()["detail"] == "model_not_allowed_for_codex"
+
+
+def test_model_codex_persists_without_runtime_switch(tmp_path: Path) -> None:
+    """DS-69 — Codex aceita slug próprio, persiste state_model, NÃO toca o tmux,
+    e sinaliza runtime_switch=False (vale na próxima execução)."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    with patch("routers.agents.tmux_driver.send_message") as send:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/model",
+                json={"model": "codex-gpt-5-4"},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["runtime_switch"] is False
+            assert body["tmux_delivered"] is False
+            assert body["state_persisted"] is True
+            assert body["model"] == "codex-gpt-5-4"
+        # Codex nunca recebe /model no pane.
+        send.assert_not_called()
+    # state_model persistido reflete a escolha.
+    import asyncio
+    agent = asyncio.get_event_loop().run_until_complete(app.state.db.get_agent("tara"))
+    assert agent["state_model"] == "codex-gpt-5-4"
+
+
+def test_model_claude_rejects_codex_slug(tmp_path: Path) -> None:
+    """DS-69 — slug Codex em agente Claude Code → 422 (não mistura seletor)."""
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agents/daniel/model",
+            json={"model": "codex-gpt-5-5"},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_not_allowed_for_claude_code"
 
 
 @pytest.mark.xfail(strict=False, reason="stub: gate `agent_busy_confirm_required` entra com impl real")

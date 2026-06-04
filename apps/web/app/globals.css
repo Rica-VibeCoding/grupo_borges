@@ -357,6 +357,16 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
+/* DS-69 — nota no topo do dropdown Codex: troca vale na próxima execução. */
+.select-hint {
+  padding: 7px 12px 6px;
+  font-family: 'Geist', sans-serif;
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--accent-border);
+}
+
 .select-item {
   position: relative;
   min-height: 32px;

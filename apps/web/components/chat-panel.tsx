@@ -15,7 +15,10 @@ import {
   postAgentDestrava,
   postAgentModel,
   toShortModelSlug,
+  toCodexModelSlug,
   type ChatModelSlug,
+  type CodexModelSlug,
+  type AnyModelSlug,
 } from '../lib/api';
 import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
@@ -42,6 +45,24 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
   opus: 'Opus 4.7',
   sonnet: 'Sonnet 4.6',
   haiku: 'Haiku 4.5',
+};
+
+// DS-69 — opções Codex pra Tara (executor_kind=codex). Slugs canônicos casam
+// com a allowlist do backend; o label é o nome amigável pro Rica.
+const CODEX_MODEL_OPTIONS: Array<{ value: CodexModelSlug; label: string }> = [
+  { value: 'codex-gpt-5-5', label: 'GPT-5.5' },
+  { value: 'codex-gpt-5-4', label: 'GPT-5.4' },
+  { value: 'codex-gpt-5-4-mini', label: 'GPT-5.4 Mini' },
+  { value: 'codex-gpt-5-3-codex', label: 'GPT-5.3 Codex' },
+  { value: 'codex-gpt-5-2', label: 'GPT-5.2' },
+];
+
+const CODEX_MODEL_LABEL: Record<CodexModelSlug, string> = {
+  'codex-gpt-5-5': 'GPT-5.5',
+  'codex-gpt-5-4': 'GPT-5.4',
+  'codex-gpt-5-4-mini': 'GPT-5.4 Mini',
+  'codex-gpt-5-3-codex': 'GPT-5.3 Codex',
+  'codex-gpt-5-2': 'GPT-5.2',
 };
 
 /**
@@ -1079,28 +1100,45 @@ function StopIcon() {
 function ModelChip({ agent }: { agent: Agent }) {
   const { mutate } = useFleet();
   const { fire } = useToast();
+  // DS-69 — Codex (Tara) usa allowlist e fluxo próprios: troca não vale em
+  // runtime, só na próxima execução. Claude Code segue o /model de sempre.
   const isCodex = agent.executor_kind === 'codex';
-  const currentSlug: ChatModelSlug | null = useMemo(
-    () => toShortModelSlug(agent.state_model ?? agent.model_default),
-    [agent.state_model, agent.model_default],
+  const options = isCodex ? CODEX_MODEL_OPTIONS : MODEL_OPTIONS;
+  const fallbackSlug: AnyModelSlug = isCodex ? 'codex-gpt-5-5' : 'opus';
+  const labelOf = useCallback(
+    (slug: AnyModelSlug): string =>
+      isCodex
+        ? CODEX_MODEL_LABEL[slug as CodexModelSlug] ?? slug
+        : MODEL_LABEL[slug as ChatModelSlug] ?? slug,
+    [isCodex],
+  );
+  const currentSlug: AnyModelSlug | null = useMemo(
+    () =>
+      isCodex
+        ? toCodexModelSlug(agent.state_model ?? agent.model_default)
+        : toShortModelSlug(agent.state_model ?? agent.model_default),
+    [isCodex, agent.state_model, agent.model_default],
   );
 
-  const [pending, setPending] = useState<ChatModelSlug | null>(null);
+  const [pending, setPending] = useState<AnyModelSlug | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmTarget, setConfirmTarget] = useState<ChatModelSlug | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<AnyModelSlug | null>(null);
 
   const sendChange = useCallback(
-    async (target: ChatModelSlug, force: boolean) => {
+    async (target: AnyModelSlug, force: boolean) => {
       setBusy(true);
       setPending(target);
       try {
         const res = await postAgentModel(agent.slug, target, { force });
-        if (!res.tmux_delivered) {
+        if (!res.runtime_switch) {
+          // Codex: persistido, vale na próxima execução da Tara.
+          fire({ kind: 'success', msg: `Tara usa ${labelOf(target)} na próxima execução` });
+        } else if (!res.tmux_delivered) {
           fire({ kind: 'warn', msg: 'troca não entregue', sub: 'pane fora do CLI esperado', ttlMs: 6000 });
         } else if (!res.confirmed) {
           fire({ kind: 'warn', msg: 'troca enviada, não confirmada', sub: 'verifique a statusline', ttlMs: 6000 });
         } else {
-          fire({ kind: 'success', msg: `modelo trocado pra ${target}` });
+          fire({ kind: 'success', msg: `modelo trocado pra ${labelOf(target)}` });
         }
         await mutate();
       } catch (err) {
@@ -1111,26 +1149,27 @@ function ModelChip({ agent }: { agent: Agent }) {
         setPending(null);
       }
     },
-    [agent.slug, fire, mutate],
+    [agent.slug, fire, labelOf, mutate],
   );
 
   const onSelect = useCallback(
     (next: string) => {
-      const slug = next as ChatModelSlug;
+      const slug = next as AnyModelSlug;
       if (busy) return;
       if (slug === currentSlug) return;
-      if (agent.status === 'trabalhando') {
+      // Codex não toca a sessão viva — sem modal de "trabalhando", persiste direto.
+      if (!isCodex && agent.status === 'trabalhando') {
         setConfirmTarget(slug);
         return;
       }
       void sendChange(slug, false);
     },
-    [agent.status, busy, currentSlug, sendChange],
+    [agent.status, busy, currentSlug, isCodex, sendChange],
   );
 
-  const displaySlug = (pending ?? currentSlug ?? 'opus') as ChatModelSlug;
-  const displayLabel = MODEL_LABEL[displaySlug];
-  const disabled = busy || isCodex;
+  const displaySlug = pending ?? currentSlug ?? fallbackSlug;
+  const displayLabel = labelOf(displaySlug);
+  const disabled = busy;
 
   return (
     <>
@@ -1143,15 +1182,20 @@ function ModelChip({ agent }: { agent: Agent }) {
           className="model-chip"
           aria-label="Modelo"
           aria-busy={busy}
-          title={isCodex ? 'Codex não troca modelo em runtime' : 'Trocar modelo'}
+          title={isCodex ? 'Modelo da próxima execução da Tara' : 'Trocar modelo'}
         >
           <Select.Value>{displayLabel}</Select.Value>
           <Select.Icon className="model-chip-caret" aria-hidden="true">▾</Select.Icon>
         </Select.Trigger>
         <Select.Portal>
           <Select.Content className="select-content" position="popper" sideOffset={4}>
+            {isCodex && (
+              <div className="select-hint" role="note">
+                vale na próxima execução
+              </div>
+            )}
             <Select.Viewport>
-              {MODEL_OPTIONS.map((opt) => (
+              {options.map((opt) => (
                 <Select.Item key={opt.value} value={opt.value} className="select-item">
                   <Select.ItemText>{opt.label}</Select.ItemText>
                   <Select.ItemIndicator className="select-indicator">✓</Select.ItemIndicator>

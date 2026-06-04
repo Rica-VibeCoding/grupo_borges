@@ -192,6 +192,17 @@ export async function patchAgentPermissionMode(
 
 export type ChatModelSlug = 'opus' | 'sonnet' | 'haiku';
 
+// DS-69 — slugs canônicos dos modelos Codex (espelham allowlist do backend e
+// `tmux_driver._CODEX_MODEL_MAP`). Tara troca por estes; Claude Code não.
+export type CodexModelSlug =
+  | 'codex-gpt-5-5'
+  | 'codex-gpt-5-4'
+  | 'codex-gpt-5-4-mini'
+  | 'codex-gpt-5-3-codex'
+  | 'codex-gpt-5-2';
+
+export type AnyModelSlug = ChatModelSlug | CodexModelSlug;
+
 export type AgentInputResponse = {
   tmux_delivered: boolean;
   sent_at: number;
@@ -202,6 +213,8 @@ export type AgentModelChangeResponse = {
   state_persisted: boolean;
   confirmed: boolean;
   model: string;
+  // DS-69 — false quando a troca só vale na próxima execução (Codex).
+  runtime_switch: boolean;
 };
 
 export class AgentInputError extends Error {
@@ -304,7 +317,7 @@ export async function postAgentVoice(
 
 export async function postAgentModel(
   slug: string,
-  model: ChatModelSlug,
+  model: AnyModelSlug,
   options?: { force?: boolean },
 ): Promise<AgentModelChangeResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/model`, {
@@ -328,6 +341,21 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('haiku')) return 'haiku';
   return null;
+}
+
+// DS-69 — slugs Codex são canônicos (state_model já vem como `codex-gpt-5-5`).
+// Valida contra a lista fechada; qualquer coisa fora vira null (UI cai no default).
+const CODEX_MODEL_SLUGS: readonly CodexModelSlug[] = [
+  'codex-gpt-5-5',
+  'codex-gpt-5-4',
+  'codex-gpt-5-4-mini',
+  'codex-gpt-5-3-codex',
+  'codex-gpt-5-2',
+];
+
+export function toCodexModelSlug(model: string | null | undefined): CodexModelSlug | null {
+  if (!model) return null;
+  return CODEX_MODEL_SLUGS.find((slug) => slug === model) ?? null;
 }
 
 export async function listAgentTasks(
