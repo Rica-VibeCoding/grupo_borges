@@ -203,6 +203,20 @@ export async function patchAgentCodexSandbox(
   return res.json();
 }
 
+// Painel Codex-nativo — arma "nova conversa" pro próximo turno (consumido no /input).
+export async function patchAgentCodexNewThread(
+  slug: string,
+  armed: boolean,
+): Promise<{ slug: string; armed: boolean }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex-new-thread`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ armed }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentCodexNewThread failed: ${res.status}`));
+  return res.json();
+}
+
 // ----- DS-2: chat / model endpoints --------------------------------------
 
 export type ChatModelSlug = 'opus' | 'sonnet' | 'haiku';
@@ -242,12 +256,13 @@ export class AgentInputError extends Error {
 export async function postAgentInput(
   slug: string,
   text: string,
+  options?: { fresh?: boolean },
 ): Promise<AgentInputResponse> {
   const idempotency_key = safeUUID();
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/input`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, idempotency_key }),
+    body: JSON.stringify({ text, idempotency_key, fresh: options?.fresh ?? false }),
   });
   if (!res.ok) {
     const detail = await errorDetail(res, `postAgentInput failed: ${res.status}`);

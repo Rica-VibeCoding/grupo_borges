@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS agent_state (
     token_usage_json  TEXT,                                 -- usage JSON do último turn.completed
     codex_reasoning_effort TEXT,                            -- low | medium | high persistido pro próximo codex exec
     codex_sandbox    TEXT,                                  -- read-only | workspace-write | danger-full-access
+    codex_next_fresh INTEGER,                               -- 1 = próximo codex exec começa thread nova (armado pelo painel)
     lifecycle_status  TEXT,                                 -- microestado: session | prompt | tool | subagent | idle | error | event
     lifecycle_detail  TEXT,                                 -- detalhe curto pra UI (tool, subagent, outcome)
     lifecycle_event   TEXT,                                 -- último evento bruto que alimentou lifecycle

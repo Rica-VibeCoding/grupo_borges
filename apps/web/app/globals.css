@@ -652,6 +652,18 @@
   align-self: center; margin-top: 4px;
   font-size: 11px; font-style: italic;
 }
+/* Ação ao vivo: comando que a Tara rodou — linha discreta, não bolha. */
+.codex-action-line {
+  align-self: stretch; display: flex; align-items: center; gap: 6px;
+  padding: 3px 10px; margin: 1px 0;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--muted); overflow: hidden;
+}
+.codex-action-caret { color: var(--accent); flex-shrink: 0; }
+.codex-action-line code {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: none; padding: 0; color: var(--muted);
+}
 /* Bolha otimista (mensagem do Rica antes do rollout confirmar). */
 .codex-bubble-pending { opacity: 0.62; }
 /* Indicador "Tara digitando" — 3 pontinhos pulsando. */

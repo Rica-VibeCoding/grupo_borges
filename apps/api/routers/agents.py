@@ -167,6 +167,7 @@ class AgentPainelResponse(BaseModel):
     subagents: AgentPainelSubagents
     sandbox: AgentPainelSandbox | None = None
     codex_native: bool | None = None
+    codex_next_fresh: bool | None = None
 
 
 class AgentPainelEffortPatchRequest(BaseModel):
@@ -179,6 +180,10 @@ class AgentPainelPermissionPatchRequest(BaseModel):
 
 class AgentCodexSandboxPatchRequest(BaseModel):
     sandbox: AgentCodexSandboxValue
+
+
+class AgentCodexNewThreadPatchRequest(BaseModel):
+    armed: bool = True
 
 
 class AgentPainelEffortPatchResponse(BaseModel):
@@ -332,6 +337,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
             sandbox=_build_codex_painel_sandbox(agent),
             codex_native=True,
+            codex_next_fresh=bool(agent.get("codex_next_fresh")),
         )
 
     cc_status = await _load_cc_status(db, slug)
@@ -393,6 +399,21 @@ async def patch_agent_codex_sandbox(
         session_may_diverge=True,
         written=True,
     )
+
+
+@router.patch("/{slug}/codex-new-thread")
+async def patch_agent_codex_new_thread(
+    slug: str,
+    patch: AgentCodexNewThreadPatchRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Arma/desarma "nova conversa" pro próximo turno Codex (consumido no /input)."""
+    agent = await _get_agent_or_404(request, slug)
+    if agent.get("executor_kind") != "codex":
+        raise HTTPException(status_code=400, detail="not_a_codex_agent")
+    db: GrupoBorgesDB = request.app.state.db
+    await db.update_agent_codex_state(slug, codex_next_fresh=1 if patch.armed else 0)
+    return {"slug": slug, "armed": patch.armed}
 
 
 @router.patch("/{slug}/permission-mode", response_model=AgentPainelPermissionPatchResponse)
@@ -1355,7 +1376,12 @@ def _tara_codex_script_path() -> str:
 
 
 def _spawn_tara_codex_input(
-    *, cwd: str, text: str, thread_id: str | None, fresh: bool = False
+    *,
+    cwd: str,
+    text: str,
+    thread_id: str | None,
+    fresh: bool = False,
+    image_path: str | None = None,
 ) -> None:
     # Via `bash <script>` em vez de exec direto: o bit +x pode cair em edição/
     # linter, e um PermissionError aqui viraria 500 silencioso no /input.
@@ -1367,7 +1393,10 @@ def _spawn_tara_codex_input(
     ]
     if thread_id and not fresh:
         cmd.extend(["--resume-thread", thread_id])
-    cmd.extend(["-C", cwd, "--", text])
+    cmd.extend(["-C", cwd])
+    if image_path is not None:
+        cmd.extend(["-i", image_path])
+    cmd.extend(["--", text])
     subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -1377,6 +1406,39 @@ def _spawn_tara_codex_input(
         start_new_session=True,
         close_fds=True,
     )
+
+
+async def _spawn_codex_agent_turn(
+    slug: str,
+    request: Request,
+    *,
+    text: str,
+    fresh: bool = False,
+    image_path: str | None = None,
+) -> None:
+    lock = await _codex_input_lock(slug)
+    async with lock:
+        agent = await _get_agent_or_404(request, slug)
+        if _codex_turn_in_flight(agent):
+            raise HTTPException(status_code=409, detail="codex_turn_in_flight")
+        # "Nova conversa" armada pelo painel (codex_next_fresh) — consome aqui:
+        # próximo turno começa thread fresh e o flag é zerado.
+        armed_fresh = bool(agent.get("codex_next_fresh"))
+        effective_fresh = fresh or armed_fresh
+        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+        thread = None
+        if not effective_fresh:
+            thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
+        _spawn_tara_codex_input(
+            cwd=cwd,
+            text=text,
+            thread_id=thread.thread_id if thread is not None else None,
+            fresh=effective_fresh,
+            image_path=image_path,
+        )
+        if armed_fresh:
+            db: GrupoBorgesDB = request.app.state.db
+            await db.update_agent_codex_state(slug, codex_next_fresh=0)
 
 
 @router.get("/{slug}/pane/stream")
@@ -1672,22 +1734,13 @@ async def send_agent_input(
     """
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") == "codex":
-        lock = await _codex_input_lock(slug)
-        async with lock:
-            agent = await _get_agent_or_404(request, slug)
-            if _codex_turn_in_flight(agent):
-                raise HTTPException(status_code=409, detail="codex_turn_in_flight")
-            cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-            thread = None
-            if not payload.fresh:
-                thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
-            _spawn_tara_codex_input(
-                cwd=cwd,
-                text=payload.text,
-                thread_id=thread.thread_id if thread is not None else None,
-                fresh=payload.fresh,
-            )
-            return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
+        await _spawn_codex_agent_turn(
+            slug,
+            request,
+            text=payload.text,
+            fresh=payload.fresh,
+        )
+        return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
 
     delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
     if not delivered:
@@ -1785,6 +1838,19 @@ async def post_agent_voice(
         if not transcribed:
             raise HTTPException(status_code=502, detail="stt_empty")
 
+        if agent.get("executor_kind") == "codex":
+            await _spawn_codex_agent_turn(
+                slug,
+                request,
+                text=transcribed,
+            )
+            duration_ms = int((time.monotonic() - started_at) * 1000)
+            return {
+                "transcribed": transcribed,
+                "tmux_delivered": True,
+                "duration_ms": duration_ms,
+            }
+
         delivered = await tmux_driver.send_message(
             agent["tmux_session"], f"🎙 {transcribed}"
         )
@@ -1850,6 +1916,22 @@ async def post_agent_image(
     text = f"Imagem enviada via cockpit:\n{absolute_path}"
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"
+
+    if agent.get("executor_kind") == "codex":
+        prompt = caption_text or "Veja a imagem anexa."
+        await _spawn_codex_agent_turn(
+            slug,
+            request,
+            text=prompt,
+            image_path=str(absolute_path),
+        )
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        log.info("agent %s: imagem salva %s", slug, absolute_path)
+        return {
+            "path": str(absolute_path),
+            "tmux_delivered": True,
+            "duration_ms": duration_ms,
+        }
 
     delivered = await tmux_driver.send_message(agent["tmux_session"], text)
     duration_ms = int((time.monotonic() - started_at) * 1000)

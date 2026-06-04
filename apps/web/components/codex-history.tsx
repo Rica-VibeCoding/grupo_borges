@@ -5,10 +5,21 @@ import {
   AgentInputError,
   getCodexMessages,
   postAgentInput,
+  postAgentImage,
+  postAgentVoice,
   type CodexMessage,
 } from '../lib/api';
 import { safeUUID } from '../lib/ids';
 import { useToast } from '../lib/toast-context';
+import { useVoiceRecorder } from '../lib/use-voice-recorder';
+
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+function formatRecDuration(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 // TK-25 etapa 2 — chat da Tara (Codex) com ENVIO. Não usa o pipeline SSE do
 // Claude Code: a Tara roda `codex exec`, o estado vive em ~/.codex. Mandamos via
@@ -30,6 +41,11 @@ export function CodexChat({ slug }: { slug: string }) {
   const [waiting, setWaiting] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  // Anexo de imagem pendente (envia no submit). "Nova conversa" mora no painel
+  // (flag persistido codex_next_fresh), não aqui — o chat é só a mensagem.
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const waitingRef = useRef(false);
@@ -97,32 +113,112 @@ export function CodexChat({ slug }: { slug: string }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, optimistic.length, waiting]);
 
-  const submit = useCallback(async () => {
-    const trimmed = text.trim();
-    if (!trimmed || sending) return;
-    const clientId = safeUUID();
-    setOptimistic((o) => [...o, { id: clientId, text: trimmed }]);
-    setText('');
-    setSending(true);
-    try {
-      await postAgentInput(slug, trimmed);
-      baselineAssistantRef.current = assistantCountRef.current;
-      waitStartRef.current = Date.now();
-      setWaiting(true);
-      void load();
-    } catch (err) {
+  const afterSend = useCallback(() => {
+    baselineAssistantRef.current = assistantCountRef.current;
+    waitStartRef.current = Date.now();
+    setWaiting(true);
+    void load();
+  }, [load]);
+
+  const onSendError = useCallback(
+    (err: unknown) => {
       const detail = err instanceof AgentInputError ? err.detail : null;
       if (detail === 'codex_turn_in_flight') {
         fire({ kind: 'warn', msg: 'Tara ainda está respondendo', sub: 'espere o turno terminar', ttlMs: 5000 });
       } else {
         fire({ kind: 'warn', msg: 'falha ao enviar pra Tara', sub: detail ?? String(err), ttlMs: 6000 });
       }
-      setOptimistic((o) => o.filter((e) => e.id !== clientId));
-      setText(trimmed);
+    },
+    [fire],
+  );
+
+  const clearImage = useCallback(() => {
+    setPendingImage(null);
+    setThumbUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return null;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  const submit = useCallback(async () => {
+    const trimmed = text.trim();
+    if (sending) return;
+    // Precisa de texto OU imagem.
+    if (!trimmed && !pendingImage) return;
+    setSending(true);
+    try {
+      if (pendingImage) {
+        // Caption = texto digitado (opcional). Backend codex spawna `codex exec
+        // resume <id> -i <path> "<caption|placeholder>"`.
+        await postAgentImage(slug, pendingImage, trimmed || undefined);
+        clearImage();
+        setText('');
+        afterSend();
+        return;
+      }
+      const clientId = safeUUID();
+      setOptimistic((o) => [...o, { id: clientId, text: trimmed }]);
+      setText('');
+      try {
+        await postAgentInput(slug, trimmed);
+        afterSend();
+      } catch (err) {
+        setOptimistic((o) => o.filter((e) => e.id !== clientId));
+        setText(trimmed);
+        throw err;
+      }
+    } catch (err) {
+      onSendError(err);
     } finally {
       setSending(false);
     }
-  }, [text, sending, slug, load, fire]);
+  }, [text, sending, pendingImage, slug, clearImage, afterSend, onSendError]);
+
+  const onVoiceRecorded = useCallback(
+    async (blob: Blob) => {
+      setSending(true);
+      try {
+        await postAgentVoice(slug, blob);
+        afterSend();
+      } catch (err) {
+        onSendError(err);
+      } finally {
+        setSending(false);
+      }
+    },
+    [slug, afterSend, onSendError],
+  );
+
+  const { recording, audioLevels, durationSec, toggle, stopAndSend } = useVoiceRecorder({
+    onRecorded: onVoiceRecorded,
+    onWarn: (msg, sub) => fire({ kind: 'warn', msg, sub, ttlMs: 6000 }),
+  });
+
+  const attachImage = useCallback(
+    (file: File | null) => {
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        fire({ kind: 'warn', msg: 'só imagem', sub: file.type || 'tipo desconhecido', ttlMs: 5000 });
+        return;
+      }
+      if (file.size > IMAGE_MAX_BYTES) {
+        fire({ kind: 'warn', msg: 'imagem maior que 10MB', ttlMs: 5000 });
+        return;
+      }
+      setThumbUrl((url) => {
+        if (url) URL.revokeObjectURL(url);
+        return URL.createObjectURL(file);
+      });
+      setPendingImage(file);
+    },
+    [fire],
+  );
+
+  // Revoga thumb no unmount.
+  useEffect(() => () => {
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+  }, [thumbUrl]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -146,12 +242,20 @@ export function CodexChat({ slug }: { slug: string }) {
         )}
 
         <div className="codex-history-list">
-          {messages.map((m) => (
-            <div key={m.id} className={`codex-bubble codex-bubble-${m.role}`}>
-              <span className="codex-bubble-role">{m.role === 'user' ? 'Rica' : 'Tara'}</span>
-              <p className="codex-bubble-text">{m.text}</p>
-            </div>
-          ))}
+          {messages.map((m) =>
+            m.item_type === 'function_call' ? (
+              // Ação ao vivo: comando que a Tara rodou — linha discreta, NÃO bolha.
+              <div key={m.id} className="codex-action-line" title={m.text}>
+                <span className="codex-action-caret" aria-hidden="true">▸</span>
+                <code>{m.text}</code>
+              </div>
+            ) : (
+              <div key={m.id} className={`codex-bubble codex-bubble-${m.role}`}>
+                <span className="codex-bubble-role">{m.role === 'user' ? 'Rica' : 'Tara'}</span>
+                <p className="codex-bubble-text">{m.text}</p>
+              </div>
+            ),
+          )}
 
           {optimistic.map((o) => (
             <div key={o.id} className="codex-bubble codex-bubble-user codex-bubble-pending">
@@ -175,33 +279,101 @@ export function CodexChat({ slug }: { slug: string }) {
         </div>
       </div>
 
-      <form
-        className="chat-input"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
-        <textarea
-          className="chat-input-textarea"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          maxLength={8192}
-          placeholder="mensagem pra Tara (Codex)…"
-          aria-label="Mensagem pro agente Tara"
-        />
-        <button
-          type="submit"
-          className="chat-input-send"
-          aria-disabled={sending || text.trim().length === 0}
-          aria-label={sending ? 'Enviando…' : 'Enviar mensagem'}
-          title={sending ? 'enviando…' : 'enviar (Enter)'}
+      <div className="chat-input-wrap">
+        {thumbUrl && (
+          <div className="chat-image-chip">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={thumbUrl} alt="anexo" />
+            <span className="chat-image-chip-name">{pendingImage?.name}</span>
+            <button
+              type="button"
+              className="chat-image-chip-remove"
+              onClick={clearImage}
+              aria-label="Remover imagem"
+              title="remover"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        <form
+          className="chat-input"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (recording) {
+              stopAndSend();
+              return;
+            }
+            void submit();
+          }}
         >
-          {sending ? <span aria-hidden="true">…</span> : <ArrowUpIcon />}
-        </button>
-      </form>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              attachImage(e.target.files?.[0] ?? null);
+            }}
+          />
+          <button
+            type="button"
+            className="chat-icon-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || recording}
+            aria-label="Anexar imagem"
+            title="anexar imagem"
+          >
+            <PaperclipIcon />
+          </button>
+
+          {recording ? (
+            <div className="chat-waveform" aria-label="Gravando áudio">
+              {audioLevels.map((lvl, i) => (
+                <span
+                  key={i}
+                  className="chat-waveform-bar"
+                  style={{ height: `${Math.max(8, lvl)}%` }}
+                />
+              ))}
+              <span className="chat-recording-timer">{formatRecDuration(durationSec)}</span>
+            </div>
+          ) : (
+            <textarea
+              className="chat-input-textarea"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={onKeyDown}
+              rows={1}
+              maxLength={8192}
+              placeholder={pendingImage ? 'legenda da imagem (opcional)…' : 'mensagem pra Tara (Codex)…'}
+              aria-label="Mensagem pro agente Tara"
+            />
+          )}
+
+          <button
+            type="button"
+            className="chat-icon-btn"
+            onClick={() => void toggle()}
+            disabled={sending}
+            aria-label={recording ? 'Cancelar gravação' : 'Gravar áudio'}
+            title={recording ? 'cancelar' : 'gravar áudio'}
+          >
+            {recording ? <span aria-hidden="true">✕</span> : <MicIcon />}
+          </button>
+
+          <button
+            type="submit"
+            className="chat-input-send"
+            aria-disabled={sending || (!recording && text.trim().length === 0 && !pendingImage)}
+            aria-label={sending ? 'Enviando…' : recording ? 'Parar e enviar' : 'Enviar mensagem'}
+            title={sending ? 'enviando…' : recording ? 'parar e enviar' : 'enviar (Enter)'}
+          >
+            {sending ? <span aria-hidden="true">…</span> : recording ? <StopIcon /> : <ArrowUpIcon />}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -215,3 +387,32 @@ function ArrowUpIcon() {
     </svg>
   );
 }
+
+function PaperclipIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <line x1="12" y1="17" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+

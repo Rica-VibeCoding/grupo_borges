@@ -166,6 +166,93 @@ def test_input_claude_still_uses_tmux_not_codex(tmp_path: Path) -> None:
     popen.assert_not_called()
 
 
+def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
+    """Áudio para Tara Codex vira prompt transcrito via tara-codex."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    fake_stt = SimpleNamespace(returncode=0, stdout="olá Tara\n", stderr="")
+    thread = SimpleNamespace(thread_id="thread-voice")
+    with patch("routers.agents.subprocess.run", return_value=fake_stt), \
+         patch("routers.agents.codex_reader.find_latest_thread", return_value=thread), \
+         patch("routers.agents.subprocess.Popen") as popen, \
+         patch("routers.agents.tmux_driver.send_message") as send_message:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/voice",
+                files={"audio": ("voice.webm", b"fakebytes", "audio/webm")},
+            )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["transcribed"] == "olá Tara"
+    assert body["tmux_delivered"] is True
+    send_message.assert_not_called()
+    popen.assert_called_once()
+    cmd = popen.call_args.args[0]
+    assert "--resume-thread" in cmd
+    assert "thread-voice" in cmd
+    assert cmd[-4:] == ["-C", "/tmp/tara", "--", "olá Tara"]
+
+
+def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> None:
+    """Imagem para Tara Codex passa `-i <path>` antes do separador `--`."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    thread = SimpleNamespace(thread_id="thread-image")
+    png_1x1 = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+        b"\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00"
+        b"\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
+         patch("routers.agents.codex_reader.find_latest_thread", return_value=thread), \
+         patch("routers.agents.subprocess.Popen") as popen, \
+         patch("routers.agents.tmux_driver.send_message") as send_message:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/image",
+                data={"caption": "descreva"},
+                files={"file": ("image.png", png_1x1, "image/png")},
+            )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["tmux_delivered"] is True
+    assert body["path"].endswith(".png")
+    send_message.assert_not_called()
+    popen.assert_called_once()
+    cmd = popen.call_args.args[0]
+    separator_index = cmd.index("--")
+    image_index = cmd.index("-i")
+    assert image_index < separator_index
+    assert cmd[image_index + 1] == body["path"]
+    assert cmd[-1] == "descreva"
+
+
+def test_input_codex_next_fresh_armed_starts_new_thread_and_clears(tmp_path: Path) -> None:
+    """codex_next_fresh armado pelo painel → /input começa thread nova (sem
+    --resume-thread) e zera o flag depois de consumir."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_codex_state("tara", codex_next_fresh=1)
+    with patch("routers.agents.codex_reader.find_latest_thread", return_value=None) as find_thread, \
+         patch("routers.agents.subprocess.Popen") as popen:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/input",
+                json={"text": "começa do zero", "idempotency_key": "kf"},
+            )
+            assert response.status_code == 200
+            # Fresh: não busca thread anterior nem passa --resume-thread.
+            find_thread.assert_not_called()
+            cmd = popen.call_args.args[0]
+            assert "--resume-thread" not in cmd
+            # Flag consumido: painel volta a reportar não-armado (esse GET pode
+            # chamar find_thread — por isso o assert_not_called veio antes).
+            painel = client.get("/api/agents/tara/painel")
+
+    assert painel.status_code == 200
+    assert painel.json().get("codex_next_fresh") is False
+
+
 @pytest.mark.xfail(strict=False, reason="stub retorna 501; impl real retorna 409 quando pane offline")
 def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:
     """Quando `tmux_driver.send_message` retorna False (pane fora do CLI esperado),

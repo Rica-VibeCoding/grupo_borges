@@ -64,14 +64,18 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
         </div>
       )}
 
-      <dl className="painel-breakdown">
-        {segments.map((segment) => (
-          <div key={segment.key}>
-            <dt>{segment.label}</dt>
-            <dd>{formatCompactNumber(segment.value)}</dd>
-          </div>
-        ))}
-      </dl>
+      {/* Breakdown só faz sentido com o detalhamento do CC. Codex (pct=null)
+          só dá o total — esconde as 4 caixas zeradas. */}
+      {hasPct && (
+        <dl className="painel-breakdown">
+          {segments.map((segment) => (
+            <div key={segment.key}>
+              <dt>{segment.label}</dt>
+              <dd>{formatCompactNumber(segment.value)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </section>
   );
 }

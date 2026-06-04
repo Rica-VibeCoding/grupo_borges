@@ -9,7 +9,8 @@ Conversa real:
 - `payload.type=message` + `role=assistant` → bolha da Tara.
 - `payload.type=message` + `role=user` → bolha do usuário, MAS só quando não
   for injeção de contexto de ambiente (AGENTS.md, `<INSTRUCTIONS>`, permissions).
-- developer/system, reasoning, function_call, function_call_output → internos.
+- developer/system, reasoning, function_call_output → internos.
+- function_call → visível só com comando/nome resumido; output segue redigido.
 """
 from __future__ import annotations
 
@@ -103,6 +104,35 @@ def _extract_text(payload: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _summarize_function_call(payload: dict[str, Any]) -> str:
+    name = payload.get("name")
+    if not isinstance(name, str) or not name.strip():
+        name = "function_call"
+    name = name.strip()
+
+    arguments = payload.get("arguments")
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (json.JSONDecodeError, ValueError):
+            arguments = {"arguments": arguments}
+    if not isinstance(arguments, dict):
+        arguments = {}
+
+    for key in ("cmd", "command", "shell_command"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            text = value.strip()
+            return text[:240]
+
+    if name in {"exec_command", "shell"} and isinstance(arguments.get("argv"), list):
+        argv = [str(item) for item in arguments["argv"] if item is not None]
+        if argv:
+            return " ".join(argv)[:240]
+
+    return name[:120]
+
+
 def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage]:
     """Parseia o JSONL de rollout em mensagens classificadas e sanitizadas.
 
@@ -147,8 +177,19 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
                         visible=visible,
                     )
                 )
+            elif item_type == "function_call":
+                messages.append(
+                    CodexMessage(
+                        id=msg_id,
+                        role="internal",
+                        text=_summarize_function_call(payload),
+                        timestamp=timestamp,
+                        item_type=item_type,
+                        visible=True,
+                    )
+                )
             else:
-                # reasoning / function_call / function_call_output / etc → interno,
+                # reasoning / function_call_output / etc → interno,
                 # SEM texto. Mantemos a entrada só pra contagem honesta de atividade.
                 messages.append(
                     CodexMessage(

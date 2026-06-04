@@ -336,6 +336,8 @@ export type AgentPainelResponse = {
   // Presentes apenas quando o agente é Codex (executor_kind='codex').
   sandbox?: PainelSandbox | null;
   codex_native?: boolean | null;
+  // true = "nova conversa" armada no painel; próximo turno começa thread fresh.
+  codex_next_fresh?: boolean | null;
 };
 
 export type SubagentEntry = {

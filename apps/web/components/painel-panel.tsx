@@ -7,6 +7,7 @@ import { ContextoBloco } from './contexto-bloco';
 import { EffortBloco } from './effort-bloco';
 import { PermissionBloco } from './permission-bloco';
 import { SandboxBloco } from './sandbox-bloco';
+import { ConversaBloco } from './conversa-bloco';
 import { QuotasBloco } from './quotas-bloco';
 import { SubagentsBloco } from './subagents-bloco';
 
@@ -117,6 +118,11 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
           <ContextoBloco data={data.contexto} />
           <EffortBloco data={data.effort} slug={slug} onChange={handleEffortChange} />
           <SandboxBloco data={data.sandbox} slug={slug} onChange={handlePermissionChange} />
+          <ConversaBloco
+            slug={slug}
+            armed={Boolean(data.codex_next_fresh)}
+            onChange={handlePermissionChange}
+          />
         </>
       ) : (
         data && (
