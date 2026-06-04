@@ -35,22 +35,21 @@ SECRET_MARKERS = (
 def test_parse_rollout_visible_messages_only_real_conversation() -> None:
     msgs = cr.parse_rollout(FIXTURE, thread_id="t1")
     visible = [m for m in msgs if m.visible]
-    # Conversa real + function_call sanitizado para alimentar "rodando: <cmd>".
-    assert [m.role for m in visible] == ["user", "internal", "assistant", "user"]
+    # Conversa real: 2 user (pergunta + "beleza, segue") + 1 assistant.
+    assert [m.role for m in visible] == ["user", "assistant", "user"]
     assert visible[0].text == "tara, voce esta no cockpit?"
-    assert visible[1].item_type == "function_call"
-    assert visible[1].text == "ls /caminho/sensivel"
-    assert visible[2].role == "assistant"
-    assert "diretorio da Tara" in visible[2].text
-    assert visible[3].text == "beleza, segue"
+    assert visible[1].role == "assistant"
+    assert "diretorio da Tara" in visible[1].text
+    assert visible[2].text == "beleza, segue"
 
 
 def test_parse_rollout_hides_injected_context_and_internals() -> None:
     msgs = cr.parse_rollout(FIXTURE, thread_id="t1")
     internal = [m for m in msgs if not m.visible]
     item_types = {m.item_type for m in internal}
-    # developer + AGENTS.md(user) viram message/internal; reasoning + tool output também.
+    # developer + AGENTS.md(user) viram message/internal; reasoning + tool I/O também.
     assert "reasoning" in item_types
+    assert "function_call" in item_types
     assert "function_call_output" in item_types
     # Todo item interno sai SEM texto.
     assert all(m.text == "" for m in internal)
