@@ -26,7 +26,7 @@ import { useToast } from '../lib/toast-context';
 import { useMessagesStream } from '../lib/use-messages-stream';
 import { stripCockpitEnvelope } from '../lib/render-items';
 import { ChatMessages } from './chat-messages';
-import { CodexHistory } from './codex-history';
+import { CodexChat } from './codex-history';
 import { McpPanel } from './mcp-panel';
 import {
   SlashCommandPalette,
@@ -153,11 +153,12 @@ export function ChatPanel({
   }, [agent.slug]);
 
   if (isCodex) {
-    // Envio pra Codex ainda não implementado (TK-25 é read-only) → sem ChatInput.
+    // Tara (Codex): chat próprio com envio via `codex exec resume` + poll do
+    // rollout. Sem o pipeline SSE/optimistic do Claude Code.
     return (
       <div className="chat-panel">
         <ChatHeader agent={agent} serverNow={serverNow} />
-        <CodexHistory slug={agent.slug} />
+        <CodexChat slug={agent.slug} />
       </div>
     );
   }

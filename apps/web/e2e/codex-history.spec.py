@@ -38,8 +38,8 @@ def run() -> None:
         expect(bubbles.first).to_be_visible(timeout=10000)
         assert bubbles.count() >= 1, "histórico Codex devia ter ao menos uma bolha"
 
-        # 2. Read-only: nenhum textarea de envio no painel da Tara.
-        assert page.locator(".chat-panel textarea").count() == 0, "Codex é read-only — não pode ter input"
+        # 2. Etapa 2: o chat da Tara agora TEM input de envio (codex exec resume).
+        assert page.locator(".chat-panel textarea").count() == 1, "chat da Tara devia ter input de envio"
 
         # 3. Nenhum vazamento de contexto sensível.
         body = page.inner_text("body")

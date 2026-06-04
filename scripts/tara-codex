@@ -12,6 +12,8 @@
 # Flags lidas pelo wrapper:
 #   --delegator <slug>   identifica quem disparou (default: daniel)
 #   --cockpit-url <url>  endpoint /api/codex-events
+#   --resume-thread <id> retoma explicitamente uma thread Codex (vence
+#                        --resume-last)
 #   --resume-last        reusa thread_id capturada do último run desse
 #                        delegator (se < 12h); senão segue fresh e avisa
 #   --fresh              no-op explícito — default é fresh
@@ -36,6 +38,7 @@ THREAD_DIR="${TARA_THREAD_DIR:-${HOME}/.tara/threads}"
 THREAD_MAX_AGE=43200  # 12h em segundos
 
 RESUME_LAST=0
+RESUME_THREAD=""
 CODEX_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,6 +46,8 @@ while [[ $# -gt 0 ]]; do
       DELEGATOR="$2"; shift 2 ;;
     --cockpit-url)
       COCKPIT_URL="$2"; shift 2 ;;
+    --resume-thread)
+      RESUME_THREAD="$2"; shift 2 ;;
     --resume-last)
       RESUME_LAST=1; shift ;;
     --fresh)
@@ -63,14 +68,15 @@ fi
 mkdir -p "$THREAD_DIR"
 THREAD_FILE="$THREAD_DIR/${DELEGATOR}.txt"
 
-RESUME_ARGS=()
-if [[ "$RESUME_LAST" -eq 1 ]]; then
+if [[ -n "$RESUME_THREAD" ]]; then
+  echo "[tara-codex] retomando thread $RESUME_THREAD (--resume-thread)" >&2
+elif [[ "$RESUME_LAST" -eq 1 ]]; then
   if [[ -f "$THREAD_FILE" ]]; then
     age=$(( $(date +%s) - $(stat -c %Y "$THREAD_FILE") ))
     thread_id=$(<"$THREAD_FILE")
     if [[ -n "$thread_id" && "$age" -lt "$THREAD_MAX_AGE" ]]; then
-      RESUME_ARGS+=(--resume "$thread_id")
-      echo "[tara-codex] retomando thread $thread_id (--resume-last, idade ${age}s)" >&2
+      RESUME_THREAD="$thread_id"
+      echo "[tara-codex] retomando thread $RESUME_THREAD (--resume-last, idade ${age}s)" >&2
     else
       echo "[tara-codex] --resume-last ignorado: thread em $THREAD_FILE tem $((age/3600))h (>12h) ou vazia" >&2
     fi
@@ -139,11 +145,23 @@ post_raw_jsonl() {
     > /dev/null || true
 }
 
+EXEC_ARGS=(exec --json)
+if [[ -n "$RESUME_THREAD" ]]; then
+  last_index=$((${#CODEX_ARGS[@]} - 1))
+  prompt="${CODEX_ARGS[$last_index]}"
+  if [[ "$last_index" -gt 0 ]]; then
+    EXEC_ARGS+=("${CODEX_ARGS[@]:0:$last_index}")
+  fi
+  EXEC_ARGS+=(resume "$RESUME_THREAD" "$prompt")
+else
+  EXEC_ARGS+=("${CODEX_ARGS[@]}")
+fi
+
 started_at=$(date +%s)
-post_event "tara.exec.started" "{\"started_at\":$started_at,\"argv\":$(printf '%s\n' "${CODEX_ARGS[@]}" | jq -R . | jq -sc .)}"
+post_event "tara.exec.started" "{\"started_at\":$started_at,\"argv\":$(printf '%s\n' "${EXEC_ARGS[@]}" | jq -R . | jq -sc .)}"
 
 set +e
-"$CODEX_BIN" exec --json "${RESUME_ARGS[@]}" "${CODEX_ARGS[@]}" | tee /dev/stderr | while IFS= read -r line; do
+"$CODEX_BIN" "${EXEC_ARGS[@]}" | tee /dev/stderr | while IFS= read -r line; do
   # Captura thread_id pra próximo --resume-last.
   if [[ "$line" == *'"thread.started"'* ]]; then
     tid=$(printf '%s' "$line" | jq -r '.thread_id // empty' 2>/dev/null || true)

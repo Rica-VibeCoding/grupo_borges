@@ -1202,6 +1202,52 @@ _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY = 50
 # stream (bandwidth real precisa ser medido em prod — backlog Fase 2).
 _PANE_STREAM_LINE_LIMIT = int(os.getenv("COCKPIT_PANE_LINE_LIMIT", "200"))
 _PANE_STREAM_MAX_CHARS = int(os.getenv("COCKPIT_PANE_MAX_CHARS", "20000"))
+_CODEX_INPUT_LOCKS: dict[str, asyncio.Lock] = {}
+_CODEX_INPUT_LOCKS_GUARD = asyncio.Lock()
+_CODEX_BUSY_STATUS_LINES = ("iniciando", "processando turn", "rodando:")
+
+
+async def _codex_input_lock(slug: str) -> asyncio.Lock:
+    async with _CODEX_INPUT_LOCKS_GUARD:
+        lock = _CODEX_INPUT_LOCKS.get(slug)
+        if lock is None:
+            lock = asyncio.Lock()
+            _CODEX_INPUT_LOCKS[slug] = lock
+        return lock
+
+
+def _codex_turn_in_flight(agent: dict[str, Any]) -> bool:
+    if agent.get("lifecycle_status") == "trabalhando":
+        return True
+    status_line = str(agent.get("status_line") or "").strip().lower()
+    return any(status_line.startswith(marker) for marker in _CODEX_BUSY_STATUS_LINES)
+
+
+def _tara_codex_script_path() -> str:
+    return str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex")
+
+
+def _spawn_tara_codex_input(*, cwd: str, text: str, thread_id: str | None) -> None:
+    # Via `bash <script>` em vez de exec direto: o bit +x pode cair em edição/
+    # linter, e um PermissionError aqui viraria 500 silencioso no /input.
+    cmd = [
+        "bash",
+        _tara_codex_script_path(),
+        "--delegator",
+        "cockpit",
+    ]
+    if thread_id:
+        cmd.extend(["--resume-thread", thread_id])
+    cmd.extend(["-C", cwd, "-s", "danger-full-access", "--", text])
+    subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
 
 
 @router.get("/{slug}/pane/stream")
@@ -1485,15 +1531,32 @@ async def stream_agent_messages(
 async def send_agent_input(
     slug: str, payload: InputRequest, request: Request
 ) -> InputResponse:
-    """Cola `payload.text` no pane ativo via tmux paste-buffer + Enter.
+    """Envia `payload.text` ao executor ativo do agente.
 
     - 404 quando agente não existe
     - 422 (Pydantic) em text vazio/>8KB ou idempotency_key vazio/>128
+    - Codex: dispara `scripts/tara-codex` detached, retomando thread atual
+      quando existir; 409 `codex_turn_in_flight` se Tara já está em turno.
     - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
-      CLI esperado — guard do tmux_driver, ex: user trocou window)
+      CLI esperado — guard do tmux_driver, ex: user trocou window) no Claude Code
     - 200 + `tmux_delivered=True` no caminho feliz
     """
     agent = await _get_agent_or_404(request, slug)
+    if agent.get("executor_kind") == "codex":
+        lock = await _codex_input_lock(slug)
+        async with lock:
+            agent = await _get_agent_or_404(request, slug)
+            if _codex_turn_in_flight(agent):
+                raise HTTPException(status_code=409, detail="codex_turn_in_flight")
+            cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+            thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
+            _spawn_tara_codex_input(
+                cwd=cwd,
+                text=payload.text,
+                thread_id=thread.thread_id if thread is not None else None,
+            )
+            return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
+
     delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
     if not delivered:
         raise HTTPException(status_code=409, detail="agent_pane_unavailable")

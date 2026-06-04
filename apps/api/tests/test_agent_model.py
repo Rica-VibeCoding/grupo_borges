@@ -108,9 +108,10 @@ def test_model_codex_persists_without_runtime_switch(tmp_path: Path) -> None:
             assert body["model"] == "codex-gpt-5-4"
         # Codex nunca recebe /model no pane.
         send.assert_not_called()
-    # state_model persistido reflete a escolha.
+    # state_model persistido reflete a escolha. asyncio.run cria loop próprio —
+    # get_event_loop() quebra na suíte completa (sem loop atual no 3.12).
     import asyncio
-    agent = asyncio.get_event_loop().run_until_complete(app.state.db.get_agent("tara"))
+    agent = asyncio.run(app.state.db.get_agent("tara"))
     assert agent["state_model"] == "codex-gpt-5-4"
 
 
