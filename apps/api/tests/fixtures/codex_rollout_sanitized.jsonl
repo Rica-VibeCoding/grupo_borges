@@ -1,0 +1,13 @@
+{"type":"session_meta","timestamp":"2026-06-04T01:56:07.991Z","payload":{"id":"fixture-thread","cwd":"/home/clawd/repos/ze_claude/tara","model_provider":"openai","base_instructions":"SEGREDO-SISTEMA: nunca deve aparecer na UI","cli_version":"0.0.0"}}
+{"type":"turn_context","timestamp":"2026-06-04T01:56:07.992Z","payload":{"cwd":"/home/clawd/repos/ze_claude/tara"}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:08.015Z","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions instructions>\nSEGREDO-DEV: sandbox danger-full-access"}]}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:08.016Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /home/clawd/repos/ze_claude/tara\n\n<INSTRUCTIONS>\nSEGREDO-AGENTS: manual interno do executor\n</INSTRUCTIONS>"}]}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:08.020Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"tara, voce esta no cockpit?"}]}}
+{"type":"event_msg","timestamp":"2026-06-04T01:56:10.000Z","payload":{"type":"turn.started"}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:11.000Z","payload":{"type":"reasoning","summary":[],"encrypted_content":"SEGREDO-REASONING-CRIPTOGRAFADO"}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:11.500Z","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":\"ls /caminho/sensivel\"}"}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:11.700Z","payload":{"type":"function_call_output","output":"SEGREDO-OUTPUT-DE-FERRAMENTA"}}
+{"type":"response_item","timestamp":"2026-06-04T01:56:11.942Z","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Rica, estou no diretorio da Tara. Posso checar a estrutura."}]}}
+{"linha":"corrompida sem type valido"}
+{isto nao e json valido]]
+{"type":"response_item","timestamp":"2026-06-04T01:56:12.500Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"beleza, segue"}]}}

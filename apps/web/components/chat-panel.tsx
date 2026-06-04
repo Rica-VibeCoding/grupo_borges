@@ -26,6 +26,7 @@ import { useToast } from '../lib/toast-context';
 import { useMessagesStream } from '../lib/use-messages-stream';
 import { stripCockpitEnvelope } from '../lib/render-items';
 import { ChatMessages } from './chat-messages';
+import { CodexHistory } from './codex-history';
 import { McpPanel } from './mcp-panel';
 import {
   SlashCommandPalette,
@@ -81,7 +82,10 @@ export function ChatPanel({
   agent: Agent;
   serverNow: number;
 }) {
-  const messagesStream = useMessagesStream(agent.slug, true);
+  // TK-25 — Tara (codex) não tem stream de pane Claude Code; desliga o SSE e
+  // renderiza histórico read-only do Codex local.
+  const isCodex = agent.executor_kind === 'codex';
+  const messagesStream = useMessagesStream(agent.slug, !isCodex);
 
   // JP-18 R2: optimistic state lifted pro ChatPanel pra ChatInput poder
   // registrar a bolha antes do POST e ChatMessages poder renderizar.
@@ -147,6 +151,16 @@ export function ChatPanel({
     setOptimistic([]);
     setUuidToClientId(new Map());
   }, [agent.slug]);
+
+  if (isCodex) {
+    // Envio pra Codex ainda não implementado (TK-25 é read-only) → sem ChatInput.
+    return (
+      <div className="chat-panel">
+        <ChatHeader agent={agent} serverNow={serverNow} />
+        <CodexHistory slug={agent.slug} />
+      </div>
+    );
+  }
 
   return (
     <div className="chat-panel">

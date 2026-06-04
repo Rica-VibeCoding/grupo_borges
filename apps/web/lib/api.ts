@@ -358,6 +358,65 @@ export function toCodexModelSlug(model: string | null | undefined): CodexModelSl
   return CODEX_MODEL_SLUGS.find((slug) => slug === model) ?? null;
 }
 
+// ----- TK-25: leitura read-only do Codex local (Tara) --------------------
+
+export type CodexThreadSummary = {
+  thread_id: string;
+  rollout_path: string;
+  cwd: string;
+  title: string;
+  model: string | null;
+  reasoning_effort: string | null;
+  tokens_used: number;
+  updated_at_ms: number | null;
+  created_at_ms: number | null;
+  source: 'codex-local';
+};
+
+export type CodexMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'internal';
+  text: string;
+  timestamp: string;
+  item_type: string;
+  visible: boolean;
+};
+
+export type CodexMessagesResponse = {
+  source: 'codex-local';
+  thread_id: string | null;
+  model: string | null;
+  tokens_used: number | null;
+  updated_at_ms: number | null;
+  messages: CodexMessage[];
+  hidden_count: number;
+};
+
+export async function getCodexThread(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<CodexThreadSummary | null> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex/thread`, {
+    cache: 'no-store',
+    signal,
+  });
+  if (!res.ok) throw new Error(`getCodexThread failed: ${res.status}`);
+  const body = (await res.json()) as { thread: CodexThreadSummary | null };
+  return body.thread;
+}
+
+export async function getCodexMessages(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<CodexMessagesResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex/messages`, {
+    cache: 'no-store',
+    signal,
+  });
+  if (!res.ok) throw new Error(`getCodexMessages failed: ${res.status}`);
+  return res.json();
+}
+
 export async function listAgentTasks(
   slug: string,
   statuses: ActiveTaskStatus[] = ['running', 'ready', 'backlog'],

@@ -9,7 +9,9 @@ GET  /api/agents/{slug}/pane/stream    — DS-2: SSE com excerpt do pane (poll 1
 POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-buffer
 POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
 POST /api/agents/{slug}/image          — DS-54: upload imagem → path absoluto → send-keys
-POST /api/agents/{slug}/model          — DS-2: troca modelo via /model <slug> + confirma na statusline
+POST /api/agents/{slug}/model          — DS-2/DS-69: troca modelo (Claude /model em runtime · Codex persiste pra próxima exec)
+GET  /api/agents/{slug}/codex/thread   — TK-25: resumo read-only da thread Codex atual (modelo/tokens/atividade)
+GET  /api/agents/{slug}/codex/messages — TK-25: histórico read-only sanitizado da última thread Codex
 POST /api/agents/{slug}/subagents/spawn — LB-9: tool MCP spawn_subsession via HTTP
 GET  /api/agents/{slug}/subagents      — LB-9: snapshot de subsessões ativas (polling REST 5s)
 """
@@ -54,6 +56,7 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
+from services import codex_reader
 from services import tmux_driver
 from services import workspace_reader
 
@@ -1762,6 +1765,85 @@ async def change_agent_model(
         confirmed=confirmed,
         runtime_switch=True,
         model=target,
+    )
+
+
+# ----- TK-25: leitura read-only do Codex local (Tara) ---------------------
+# Card/chat da Tara não têm pane Claude Code; os dados reais vivem no
+# `~/.codex/state_5.sqlite` + rollout JSONL. Endpoints abaixo são SÓ leitura:
+# nunca escrevem no SQLite do Codex e nunca expõem prompt de sistema/dev,
+# reasoning ou tool I/O (filtrado em `services.codex_reader`).
+
+
+class CodexThreadResponse(BaseModel):
+    thread: dict[str, Any] | None
+
+
+class CodexMessagesResponse(BaseModel):
+    source: str
+    thread_id: str | None
+    model: str | None
+    tokens_used: int | None
+    updated_at_ms: int | None
+    messages: list[dict[str, Any]]
+    hidden_count: int
+
+
+def _codex_db_path() -> str | None:
+    # Override por env facilita teste/instância alternativa; default é o real.
+    return os.environ.get("CODEX_STATE_DB") or str(codex_reader.STATE_DB)
+
+
+async def _require_codex_agent(request: Request, slug: str) -> dict[str, Any]:
+    agent = await _get_agent_or_404(request, slug)
+    is_codex = agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex"
+    if not is_codex:
+        raise HTTPException(status_code=400, detail="not_a_codex_agent")
+    return agent
+
+
+@router.get("/{slug}/codex/thread", response_model=CodexThreadResponse)
+async def get_codex_thread(slug: str, request: Request) -> CodexThreadResponse:
+    """Resumo da thread Codex atual do agente (modelo, tokens, última atividade)."""
+    agent = await _require_codex_agent(request, slug)
+    cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+    thread = await asyncio.to_thread(
+        codex_reader.find_latest_thread, cwd, _codex_db_path()
+    )
+    return CodexThreadResponse(thread=thread.to_dict() if thread else None)
+
+
+@router.get("/{slug}/codex/messages", response_model=CodexMessagesResponse)
+async def get_codex_messages(
+    slug: str,
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=1000),
+    include_internal: bool = Query(default=False),
+) -> CodexMessagesResponse:
+    """Histórico read-only da última thread Codex.
+
+    Por padrão devolve só bolhas visíveis (user/assistant reais); itens internos
+    (developer/system/reasoning/tool) entram só na contagem `hidden_count`.
+    `include_internal=true` adiciona marcadores internos SEM texto (nunca vaza).
+    """
+    agent = await _require_codex_agent(request, slug)
+    cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+    thread, all_msgs = await asyncio.to_thread(
+        codex_reader.read_latest_conversation, cwd, _codex_db_path()
+    )
+
+    hidden_count = sum(1 for m in all_msgs if not m.visible)
+    selected = all_msgs if include_internal else [m for m in all_msgs if m.visible]
+    selected = selected[-limit:]
+
+    return CodexMessagesResponse(
+        source=codex_reader.SOURCE,
+        thread_id=thread.thread_id if thread else None,
+        model=thread.model if thread else None,
+        tokens_used=thread.tokens_used if thread else None,
+        updated_at_ms=thread.updated_at_ms if thread else None,
+        messages=[m.to_dict() for m in selected],
+        hidden_count=hidden_count,
     )
 
 
