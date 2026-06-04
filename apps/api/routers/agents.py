@@ -71,11 +71,15 @@ _PLUGIN_ID_KEYS = ("id", "pluginId", "plugin_id")
 _CLAUDE_AI_PREFIX = "claude.ai "
 _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+_CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high"]
+_CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
+_CODEX_DEFAULT_SANDBOX = "danger-full-access"
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
 _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
 AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
+AgentCodexSandboxValue = Literal["read-only", "workspace-write", "danger-full-access"]
 
 
 class AgentPainelTokens(BaseModel):
@@ -106,6 +110,13 @@ class AgentPainelEffort(BaseModel):
 
 class AgentPainelPermission(BaseModel):
     mode: AgentPainelPermissionMode
+    source: str
+    session_may_diverge: bool = True
+
+
+class AgentPainelSandbox(BaseModel):
+    value: AgentCodexSandboxValue
+    allowed: list[str] = Field(default_factory=lambda: list(_CODEX_ALLOWED_SANDBOXES))
     source: str
     session_may_diverge: bool = True
 
@@ -154,6 +165,8 @@ class AgentPainelResponse(BaseModel):
     permission: AgentPainelPermission
     quotas: AgentPainelQuotas
     subagents: AgentPainelSubagents
+    sandbox: AgentPainelSandbox | None = None
+    codex_native: bool | None = None
 
 
 class AgentPainelEffortPatchRequest(BaseModel):
@@ -162,6 +175,10 @@ class AgentPainelEffortPatchRequest(BaseModel):
 
 class AgentPainelPermissionPatchRequest(BaseModel):
     mode: AgentPainelPermissionMode
+
+
+class AgentCodexSandboxPatchRequest(BaseModel):
+    sandbox: AgentCodexSandboxValue
 
 
 class AgentPainelEffortPatchResponse(BaseModel):
@@ -175,6 +192,14 @@ class AgentPainelEffortPatchResponse(BaseModel):
 class AgentPainelPermissionPatchResponse(BaseModel):
     slug: str
     mode: AgentPainelPermissionMode
+    source: str
+    session_may_diverge: bool = True
+    written: bool = True
+
+
+class AgentCodexSandboxPatchResponse(BaseModel):
+    slug: str
+    sandbox: AgentCodexSandboxValue
     source: str
     session_may_diverge: bool = True
     written: bool = True
@@ -285,10 +310,30 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     return agent
 
 
-@router.get("/{slug}/painel", response_model=AgentPainelResponse)
+@router.get(
+    "/{slug}/painel",
+    response_model=AgentPainelResponse,
+)
 async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
+    if agent.get("executor_kind") == "codex":
+        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+        thread = await asyncio.to_thread(
+            codex_reader.find_latest_thread, cwd, _codex_db_path()
+        )
+        return AgentPainelResponse(
+            slug=slug,
+            generated_at=int(time.time()),
+            contexto=_build_codex_painel_contexto(agent, thread),
+            effort=_build_codex_painel_effort(agent),
+            permission=_read_agent_permission(),
+            quotas=AgentPainelQuotas(status="missing", source="codex-native"),
+            subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
+            sandbox=_build_codex_painel_sandbox(agent),
+            codex_native=True,
+        )
+
     cc_status = await _load_cc_status(db, slug)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
@@ -314,8 +359,40 @@ async def patch_agent_effort(
     patch: AgentPainelEffortPatchRequest,
     request: Request,
 ) -> AgentPainelEffortPatchResponse:
-    await _get_agent_or_404(request, slug)
+    agent = await _get_agent_or_404(request, slug)
+    if agent.get("executor_kind") == "codex":
+        if patch.effort not in _CODEX_PAINEL_ALLOWED_EFFORTS:
+            raise HTTPException(status_code=422, detail="codex_effort_not_allowed")
+        db: GrupoBorgesDB = request.app.state.db
+        await db.update_agent_codex_state(slug, codex_reasoning_effort=patch.effort)
+        return AgentPainelEffortPatchResponse(
+            slug=slug,
+            effort=patch.effort,
+            source="agent_state.codex_reasoning_effort",
+            session_may_diverge=True,
+            written=True,
+        )
     return await asyncio.to_thread(_write_agent_effort, slug, patch.effort)
+
+
+@router.patch("/{slug}/codex-sandbox", response_model=AgentCodexSandboxPatchResponse)
+async def patch_agent_codex_sandbox(
+    slug: str,
+    patch: AgentCodexSandboxPatchRequest,
+    request: Request,
+) -> AgentCodexSandboxPatchResponse:
+    agent = await _get_agent_or_404(request, slug)
+    if agent.get("executor_kind") != "codex":
+        raise HTTPException(status_code=400, detail="not_a_codex_agent")
+    db: GrupoBorgesDB = request.app.state.db
+    await db.update_agent_codex_state(slug, codex_sandbox=patch.sandbox)
+    return AgentCodexSandboxPatchResponse(
+        slug=slug,
+        sandbox=patch.sandbox,
+        source="agent_state.codex_sandbox",
+        session_may_diverge=True,
+        written=True,
+    )
 
 
 @router.patch("/{slug}/permission-mode", response_model=AgentPainelPermissionPatchResponse)
@@ -396,6 +473,55 @@ def _num_or_none(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
+
+
+def _build_codex_painel_contexto(
+    agent: dict[str, Any],
+    thread: codex_reader.CodexThread | None,
+) -> AgentPainelContexto:
+    model = (
+        thread.model
+        if thread is not None and thread.model
+        else agent.get("state_model") or agent.get("model_default")
+    )
+    tokens_used = thread.tokens_used if thread is not None else 0
+    updated_at = (
+        int(thread.updated_at_ms / 1000)
+        if thread is not None and thread.updated_at_ms is not None
+        else None
+    )
+    return AgentPainelContexto(
+        model=model,
+        model_family=_model_family(model),
+        tokens=AgentPainelTokens(total=tokens_used),
+        pct=None,
+        source=codex_reader.SOURCE,
+        updated_at=updated_at,
+        available=thread is not None,
+    )
+
+
+def _build_codex_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
+    value = agent.get("codex_reasoning_effort")
+    if value not in _CODEX_PAINEL_ALLOWED_EFFORTS:
+        value = None
+    return AgentPainelEffort(
+        value=value,
+        allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
+        source="agent_state.codex_reasoning_effort",
+        session_may_diverge=True,
+    )
+
+
+def _build_codex_painel_sandbox(agent: dict[str, Any]) -> AgentPainelSandbox:
+    value = agent.get("codex_sandbox")
+    if value not in _CODEX_ALLOWED_SANDBOXES:
+        value = _CODEX_DEFAULT_SANDBOX
+    return AgentPainelSandbox(
+        value=value,
+        source="agent_state.codex_sandbox",
+        session_may_diverge=True,
+    )
 
 
 class _CCStatus(NamedTuple):
@@ -1166,6 +1292,7 @@ class PaneStreamEvent(BaseModel):
 class InputRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8192)
     idempotency_key: str = Field(min_length=1, max_length=128)
+    fresh: bool = False
 
 
 class InputResponse(BaseModel):
@@ -1227,7 +1354,9 @@ def _tara_codex_script_path() -> str:
     return str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex")
 
 
-def _spawn_tara_codex_input(*, cwd: str, text: str, thread_id: str | None) -> None:
+def _spawn_tara_codex_input(
+    *, cwd: str, text: str, thread_id: str | None, fresh: bool = False
+) -> None:
     # Via `bash <script>` em vez de exec direto: o bit +x pode cair em edição/
     # linter, e um PermissionError aqui viraria 500 silencioso no /input.
     cmd = [
@@ -1236,9 +1365,9 @@ def _spawn_tara_codex_input(*, cwd: str, text: str, thread_id: str | None) -> No
         "--delegator",
         "cockpit",
     ]
-    if thread_id:
+    if thread_id and not fresh:
         cmd.extend(["--resume-thread", thread_id])
-    cmd.extend(["-C", cwd, "-s", "danger-full-access", "--", text])
+    cmd.extend(["-C", cwd, "--", text])
     subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -1549,11 +1678,14 @@ async def send_agent_input(
             if _codex_turn_in_flight(agent):
                 raise HTTPException(status_code=409, detail="codex_turn_in_flight")
             cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-            thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
+            thread = None
+            if not payload.fresh:
+                thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
             _spawn_tara_codex_input(
                 cwd=cwd,
                 text=payload.text,
                 thread_id=thread.thread_id if thread is not None else None,
+                fresh=payload.fresh,
             )
             return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
 

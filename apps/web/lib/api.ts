@@ -3,6 +3,7 @@ import type {
   AgentDocResolved,
   AgentDocsResponse,
   AgentPainelResponse,
+  PainelCodexSandbox,
   PainelPermissionMode,
   AgentSkillsResponse,
   AgentTablesResponse,
@@ -185,6 +186,20 @@ export async function patchAgentPermissionMode(
     body: JSON.stringify({ mode }),
   });
   if (!res.ok) throw new Error(await errorDetail(res, `patchAgentPermissionMode failed: ${res.status}`));
+  return res.json();
+}
+
+// Painel Codex-nativo — sandbox da Tara (no lugar de bypass/plan do CC).
+export async function patchAgentCodexSandbox(
+  slug: string,
+  sandbox: PainelCodexSandbox,
+): Promise<{ slug: string; sandbox: PainelCodexSandbox; written: boolean }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex-sandbox`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sandbox }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentCodexSandbox failed: ${res.status}`));
   return res.json();
 }
 

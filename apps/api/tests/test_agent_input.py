@@ -127,7 +127,7 @@ def test_input_codex_with_thread_spawns_resume_wrapper(tmp_path: Path) -> None:
     ]
     assert "--resume-thread" in cmd
     assert "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2" in cmd
-    assert cmd[-6:] == ["-C", "/tmp/tara", "-s", "danger-full-access", "--", "oi Tara"]
+    assert cmd[-4:] == ["-C", "/tmp/tara", "--", "oi Tara"]
 
 
 def test_input_codex_turn_in_flight_returns_409(tmp_path: Path) -> None:

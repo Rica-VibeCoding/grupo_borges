@@ -313,6 +313,8 @@ class GrupoBorgesDB:
                 ("session_started_at", "INTEGER"),
                 ("last_assistant_message", "TEXT"),
                 ("token_usage_json", "TEXT"),
+                ("codex_reasoning_effort", "TEXT"),
+                ("codex_sandbox", "TEXT"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
 
@@ -428,6 +430,7 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
+                       s.codex_reasoning_effort, s.codex_sandbox,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -449,6 +452,7 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
+                       s.codex_reasoning_effort, s.codex_sandbox,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -567,6 +571,8 @@ class GrupoBorgesDB:
             "session_started_at",
             "last_assistant_message",
             "token_usage_json",
+            "codex_reasoning_effort",
+            "codex_sandbox",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
@@ -2670,6 +2676,7 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
+                       s.codex_reasoning_effort, s.codex_sandbox,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a

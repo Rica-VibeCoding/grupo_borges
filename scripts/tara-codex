@@ -101,20 +101,62 @@ codex_raw_model() {
 }
 
 caller_set_model=0
+caller_set_effort=0
+caller_set_sandbox=0
 for arg in "${CODEX_ARGS[@]}"; do
   case "$arg" in
     -m|--model|-m=*|--model=*) caller_set_model=1; break ;;
   esac
 done
+for i in "${!CODEX_ARGS[@]}"; do
+  arg="${CODEX_ARGS[$i]}"
+  next=""
+  if [[ "$i" -lt $((${#CODEX_ARGS[@]} - 1)) ]]; then
+    next="${CODEX_ARGS[$((i + 1))]}"
+  fi
+  case "$arg" in
+    -c|--config)
+      [[ "$next" == model_reasoning_effort=* ]] && caller_set_effort=1
+      ;;
+    -c=model_reasoning_effort=*|--config=model_reasoning_effort=*|model_reasoning_effort=*)
+      caller_set_effort=1
+      ;;
+    -s|--sandbox|-s=*|--sandbox=*)
+      caller_set_sandbox=1
+      ;;
+  esac
+done
+
+persisted_agent_json=$(curl -sS -m 4 "${COCKPIT_URL}/api/agents/tara" 2>/dev/null || true)
 
 if [[ "$caller_set_model" -eq 0 ]]; then
-  persisted=$(curl -sS -m 4 "${COCKPIT_URL}/api/agents/tara" 2>/dev/null \
+  persisted=$(printf '%s' "$persisted_agent_json" \
     | jq -r '.state_model // empty' 2>/dev/null || true)
   raw=$(codex_raw_model "$persisted")
   if [[ -n "$raw" ]]; then
     CODEX_ARGS=(-m "$raw" "${CODEX_ARGS[@]}")
     echo "[tara-codex] modelo do cockpit: $persisted → -m $raw" >&2
   fi
+fi
+
+if [[ "$caller_set_effort" -eq 0 ]]; then
+  persisted_effort=$(printf '%s' "$persisted_agent_json" \
+    | jq -r '.codex_reasoning_effort // empty' 2>/dev/null || true)
+  if [[ "$persisted_effort" =~ ^(low|medium|high)$ ]]; then
+    CODEX_ARGS=(-c "model_reasoning_effort=$persisted_effort" "${CODEX_ARGS[@]}")
+    echo "[tara-codex] effort do cockpit: model_reasoning_effort=$persisted_effort" >&2
+  fi
+fi
+
+if [[ "$caller_set_sandbox" -eq 0 ]]; then
+  persisted_sandbox=$(printf '%s' "$persisted_agent_json" \
+    | jq -r '.codex_sandbox // empty' 2>/dev/null || true)
+  case "$persisted_sandbox" in
+    read-only|workspace-write|danger-full-access) ;;
+    *) persisted_sandbox="danger-full-access" ;;
+  esac
+  CODEX_ARGS=(-s "$persisted_sandbox" "${CODEX_ARGS[@]}")
+  echo "[tara-codex] sandbox do cockpit: -s $persisted_sandbox" >&2
 fi
 
 post_event() {

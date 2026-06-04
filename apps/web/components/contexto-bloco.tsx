@@ -18,6 +18,9 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
   const total =
     currentUsage.total ||
     currentUsage.input + currentUsage.output + currentUsage.cache_creation + currentUsage.cache_read;
+  // Codex não expõe %-da-janela-agora (pct=null) — mostramos só tokens reais,
+  // sem a barra de progresso que fingiria uma fração da janela.
+  const hasPct = data.pct !== null && data.pct !== undefined;
   const pct = clampPct(data.pct ?? 0);
   const segmentTotal = Math.max(total, 1);
   const segments = [
@@ -39,25 +42,27 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
 
       <div className="painel-context-summary">
         <span>{formatCompactNumber(total)} tokens</span>
-        <span>{Math.round(pct)}%</span>
+        {hasPct && <span>{Math.round(pct)}%</span>}
       </div>
 
-      <div
-        className="painel-progress painel-progress-stacked"
-        role="meter"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(pct)}
-      >
-        {segments.map((segment) => (
-          <span
-            key={segment.key}
-            className={`painel-progress-segment ${segment.className}`}
-            style={{ width: `${(segment.value / segmentTotal) * pct}%` }}
-            title={`${segment.label}: ${formatCompactNumber(segment.value)}`}
-          />
-        ))}
-      </div>
+      {hasPct && (
+        <div
+          className="painel-progress painel-progress-stacked"
+          role="meter"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(pct)}
+        >
+          {segments.map((segment) => (
+            <span
+              key={segment.key}
+              className={`painel-progress-segment ${segment.className}`}
+              style={{ width: `${(segment.value / segmentTotal) * pct}%` }}
+              title={`${segment.label}: ${formatCompactNumber(segment.value)}`}
+            />
+          ))}
+        </div>
+      )}
 
       <dl className="painel-breakdown">
         {segments.map((segment) => (
