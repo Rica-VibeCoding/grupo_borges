@@ -12,9 +12,9 @@ const SEPARATOR_RULE = /[─━═│┃╭╮╰╯╱╳─-╿▀-▟]{8,}/u;
 // quer texto puro pra teste de regex/parse de statusline.
 const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
-// Statusline modelo: "Opus 4.7 - 32:13 - [█░] 16%". Tolera prefixo livre
+// Statusline modelo: "Opus 4.8 - 32:13 - [█░] 16%" / "Fable 5 - ...". Tolera prefixo livre
 // (linha pode vir com glifos/Remote Control concatenado).
-const STATUSLINE = /^.*?\b(?:Opus|Sonnet|Haiku)\s+\d+\.\d+\b.*?\d+%/;
+const STATUSLINE = /^.*?\b(?:Fable|Opus|Sonnet|Haiku)\s+\d+(?:\.\d+)?\b.*?\d+%/;
 
 // Verb-spinner FINALIZADO: "✻ Brewed for 5m 23s", "⏺ Cogitated for 1m · ↑ 2.7k".
 //

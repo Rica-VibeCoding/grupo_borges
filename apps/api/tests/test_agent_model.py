@@ -68,7 +68,7 @@ def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
 
 
 def test_model_rejects_invalid_slug(tmp_path: Path) -> None:
-    """Slug fora do whitelist `opus|sonnet|haiku` → 422 (Pydantic Literal)."""
+    """Slug fora do whitelist `fable|opus|sonnet|haiku` → 422 (Pydantic Literal)."""
     app = _build_app(tmp_path)
     with TestClient(app) as client:
         response = client.post(
@@ -200,6 +200,26 @@ def test_model_emits_task_event_on_change(tmp_path: Path) -> None:
     )
     # Sanity: pelo menos 1 evento foi gravado
     assert sum(events.values()) >= 1
+
+
+def test_model_fable_confirmed_via_pane(tmp_path: Path) -> None:
+    """Fable 5 entra no whitelist e confirma via statusline SEM decimal na versão
+    ("Fable 5 - ..." — diferente de "Opus 4.8"). Regex do parser cobre os dois."""
+    app = _build_app(tmp_path)
+    with patch("routers.agents.tmux_driver.send_message", return_value=True), \
+         patch("routers.agents.tmux_driver.press_enter", return_value=True), \
+         patch("routers.agents.tmux_driver.capture_pane_excerpt",
+               return_value="Fable 5 - 00:01 - [..........] 1%"):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/model",
+                json={"model": "fable"},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["tmux_delivered"] is True
+            assert body["confirmed"] is True
+            assert body["model"] == "fable"
 
 
 @pytest.mark.xfail(strict=False, reason="stub: regex parser pra confirmar troca entra com impl real")

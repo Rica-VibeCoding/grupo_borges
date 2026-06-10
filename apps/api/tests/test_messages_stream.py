@@ -85,7 +85,7 @@ def _payload(
         message.update(
             {
                 "id": f"msg-{uuid}",
-                "model": "claude-opus-4-7",
+                "model": "claude-opus-4-8",
                 "stop_reason": "end_turn",
                 "usage": {"input_tokens": 1, "output_tokens": 2},
             }

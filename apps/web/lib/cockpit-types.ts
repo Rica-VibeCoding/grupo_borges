@@ -23,6 +23,8 @@ export type SparklineBucket = {
 export type AgentCli = 'claude_code' | 'codex';
 
 export type AgentModel =
+  | 'claude-fable-5'
+  | 'claude-opus-4-8'
   | 'claude-opus-4-7'
   | 'claude-sonnet-4-6'
   | 'claude-haiku-4-5'
@@ -381,6 +383,8 @@ export function formatDuration(seconds: number, withSeconds = true): string {
 
 export function shortModelName(model: string): string {
   const map: Record<string, string> = {
+    'claude-fable-5':     'Fable 5',
+    'claude-opus-4-8':    'Opus 4.8',
     'claude-opus-4-7':    'Opus 4.7',
     'claude-opus-4-5':    'Opus 4.5',
     'claude-sonnet-4-6':  'Sonnet 4.6',
@@ -404,7 +408,8 @@ export function parseModelFromPane(excerpt: string | null): string | null {
   //   "Sonnet 4.6 - 40:26:47 - [███░] 32%"
   //   "Sonnet 4.6 (200k context) - [███░] 81%"
   // Pega o último match — statusline fica no fim do pane.
-  const re = /\b(Opus|Sonnet|Haiku)\s+(\d+\.\d+)\b/g;
+  // Fable não tem decimal na versão ("Fable 5") — \d+(?:\.\d+)?
+  const re = /\b(Fable|Opus|Sonnet|Haiku)\s+(\d+(?:\.\d+)?)\b/g;
   let last: RegExpExecArray | null = null;
   for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
     last = m;

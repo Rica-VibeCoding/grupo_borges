@@ -187,10 +187,11 @@ def _capture_pane_excerpt_sync(
 
 # Statusline do Claude Code, variações observadas:
 #   "Sonnet 4.6 - 40:26:47 - [████░] 32%"
-#   "Opus 4.7 (1M context) - 20:14:19 - [...] 7%"  ← janela 1M insere parêntese
+#   "Opus 4.8 (1M context) - 20:14:19 - [...] 7%"  ← janela 1M insere parêntese
+#   "Fable 5 - 03:54 - [...] 27%"                  ← Fable não tem decimal na versão
 #   "Opus 4.7 (1M context) - 05:42 - [...] 9%"     ← sessão < 1h emite só MM:SS
 _CC_SESSION_TIME = re.compile(
-    r"\b(?:Opus|Sonnet|Haiku)\s+\d+\.\d+(?:\s+\([^)]*\))?\s+[-–]\s+"
+    r"\b(?:Fable|Opus|Sonnet|Haiku)\s+\d+(?:\.\d+)?(?:\s+\([^)]*\))?\s+[-–]\s+"
     r"(?:(\d+):)?(\d+):(\d{2})\b",
 )
 
@@ -211,11 +212,11 @@ def parse_session_elapsed_from_pane(excerpt: str | None) -> int | None:
 
 
 # Modelo curto no statusline do CC (último match — statusline fica no fim do pane).
-_CC_MODEL_NAME = re.compile(r"\b(Opus|Sonnet|Haiku)\s+\d+\.\d+", re.IGNORECASE)
+_CC_MODEL_NAME = re.compile(r"\b(Fable|Opus|Sonnet|Haiku)\s+\d+(?:\.\d+)?", re.IGNORECASE)
 
 
 def parse_model_from_pane(excerpt: str | None) -> str | None:
-    """Extrai slug curto (opus|sonnet|haiku) do statusline do pane.
+    """Extrai slug curto (fable|opus|sonnet|haiku) do statusline do pane.
 
     Server-side port do `parseModelFromPane` do agent-card.tsx. Usado pelo
     `POST /api/agents/{slug}/model` pra confirmar que a troca via `/model`

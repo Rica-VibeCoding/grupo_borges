@@ -31,6 +31,7 @@ function ctxTier(pct: number): 'low' | 'mid' | 'high' {
 function modelFamilyOf(label: string, raw: string, isCodex: boolean): string {
   if (isCodex) return 'codex';
   const s = `${label} ${raw}`.toLowerCase();
+  if (s.includes('fable')) return 'fable';
   if (s.includes('opus')) return 'opus';
   if (s.includes('sonnet')) return 'sonnet';
   if (s.includes('haiku')) return 'haiku';

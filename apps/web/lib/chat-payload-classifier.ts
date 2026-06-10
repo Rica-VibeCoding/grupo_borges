@@ -395,6 +395,7 @@ function stripAnsi(value: string): string {
 
 function modelFamilyFromArg(arg: string): string | undefined {
   const s = arg.toLowerCase();
+  if (s.includes('fable')) return 'fable';
   if (s.includes('opus')) return 'opus';
   if (s.includes('sonnet')) return 'sonnet';
   if (s.includes('haiku')) return 'haiku';

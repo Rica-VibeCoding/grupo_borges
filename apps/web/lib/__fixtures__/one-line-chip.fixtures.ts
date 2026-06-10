@@ -32,8 +32,16 @@ export const ONE_LINE_CHIP_FIXTURES: OneLineChipFixtureExt[] = [
     name: 'slash-model-opus',
     icon: '⌘',
     label: 'slash command',
-    summary: '/model → Set model to opus-4.7',
-    expandBody: '/model opus-4.7\n\nSet model to claude-opus-4-7.',
+    summary: '/model → Set model to opus-4.8',
+    expandBody: '/model opus-4.8\n\nSet model to claude-opus-4-8.',
+    kind: 'slash',
+  },
+  {
+    name: 'slash-model-fable',
+    icon: '⌘',
+    label: 'slash command',
+    summary: '/model → Set model to fable',
+    expandBody: '/model fable\n\nSet model to claude-fable-5.',
     kind: 'slash',
   },
   {

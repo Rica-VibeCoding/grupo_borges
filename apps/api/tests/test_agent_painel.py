@@ -72,7 +72,7 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         json.dumps(
             {
                 "updated_at": int(time.time()),
-                "model": {"id": "claude-opus-4-7", "display_name": "Opus 4.7"},
+                "model": {"id": "claude-fable-5", "display_name": "Fable 5"},
                 "context_window": {
                     "context_window_size": 200_000,
                     "used_percentage": 87,
@@ -105,7 +105,7 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         }
         assert body["contexto"]["pct"] == 87
         assert body["contexto"]["context_window"] == 200_000
-        assert body["contexto"]["model_family"] == "opus"
+        assert body["contexto"]["model_family"] == "fable"
         assert body["effort"]["value"] == "high"
         assert body["permission"]["mode"] == "plan"
     finally:
@@ -424,7 +424,7 @@ def test_agent_painel_subagents_le_cc_status(tmp_path: Path, monkeypatch) -> Non
         json.dumps(
             {
                 "updated_at": int(time.time()),
-                "model": {"id": "claude-opus-4-7", "display_name": "Opus 4.7"},
+                "model": {"id": "claude-opus-4-8", "display_name": "Opus 4.8"},
                 "context_window": {
                     "context_window_size": 200_000,
                     "used_percentage": 72,
@@ -450,7 +450,7 @@ def test_agent_painel_subagents_le_cc_status(tmp_path: Path, monkeypatch) -> Non
         entry = items[0]
         assert entry["sessionId"] == sub_session
         assert entry["cwd"] == "/tmp/daniel"
-        assert entry["model"] == "Opus 4.7"
+        assert entry["model"] == "Opus 4.8"
         assert entry["context_pct"] == 72
         assert entry["context_window_size"] == 200_000
         assert entry["context_tokens"] == 143_000

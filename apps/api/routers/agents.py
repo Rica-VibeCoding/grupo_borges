@@ -480,7 +480,7 @@ def _model_family(model: str | None) -> str | None:
     if not model:
         return None
     lowered = model.lower()
-    for family in ("opus", "sonnet", "haiku", "codex", "gpt"):
+    for family in ("fable", "opus", "sonnet", "haiku", "codex", "gpt"):
         if family in lowered:
             return family
     return model
@@ -1289,7 +1289,7 @@ async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
 # Stubs. Tipos + roteamento + gates determinísticos prontos; lógica real entra
 # em passo 2 (send_message, capture_pane loop, upsert_agent_state, task_event).
 
-ChatModel = Literal["opus", "sonnet", "haiku"]
+ChatModel = Literal["fable", "opus", "sonnet", "haiku"]
 
 # DS-69 — modelos Codex selecionáveis pra Tara. Slugs canônicos (id do backend);
 # a tradução pro nome cru do CLI (`gpt-5.5` etc) mora em
@@ -1952,7 +1952,7 @@ async def change_agent_model(
     Dois caminhos por `executor_kind` (DS-69):
 
     **Claude Code** — troca em runtime via `/model <slug>`:
-    - 422 (Pydantic) quando model fora do whitelist opus/sonnet/haiku
+    - 422 (Pydantic) quando model fora do whitelist fable/opus/sonnet/haiku
     - 422 `model_not_allowed_for_claude_code` se vier slug Codex
     - 409 `agent_busy_confirm_required` quando lifecycle=trabalhando sem force
     - caminho feliz: envia `/model`, picker idempotente, poll de confirmação,

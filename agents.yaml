@@ -13,7 +13,7 @@ agents:
     tmux_session: pavan
     workspace_path: /home/clawd/repos/ze_claude/pavan
     cli_default: claude_code
-    model_default: claude-opus-4-7
+    model_default: claude-opus-4-8
     capabilities:
       - meta-orquestracao
       - palavra-final
@@ -36,7 +36,7 @@ agents:
     tmux_session: daniel
     workspace_path: /home/clawd/repos/ze_claude/daniel
     cli_default: claude_code
-    model_default: claude-opus-4-7
+    model_default: claude-opus-4-8
     capabilities:
       - dev-fullstack
       - fluyt
@@ -60,7 +60,7 @@ agents:
     tmux_session: lucas
     workspace_path: /home/clawd/repos/ze_claude/lucas
     cli_default: claude_code
-    model_default: claude-opus-4-7
+    model_default: claude-opus-4-8
     capabilities:
       - marketing-multi-marca
       - conecta
@@ -78,7 +78,7 @@ agents:
     tmux_session: vinicius
     workspace_path: /home/clawd/repos/ze_claude/vinicius
     cli_default: claude_code
-    model_default: claude-opus-4-7
+    model_default: claude-opus-4-8
     capabilities:
       - movelmar
       - lojistas-conecta
@@ -98,7 +98,7 @@ agents:
     tmux_session: felipe
     workspace_path: /home/clawd/repos/ze_claude/felipe
     cli_default: claude_code
-    model_default: claude-opus-4-7
+    model_default: claude-opus-4-8
     capabilities:
       - comercial-fluyt-b2b
       - woodpro
@@ -116,7 +116,7 @@ agents:
     tmux_session: barsi
     workspace_path: /home/clawd/repos/ze_claude/barsi
     cli_default: claude_code
-    model_default: claude-opus-4-7
+    model_default: claude-opus-4-8
     capabilities:
       - cfo-read-only
       - monitor-financeiro
@@ -163,8 +163,12 @@ repo_aliases:
 
 # Modelos disponíveis (escolhível por instância no card da UI)
 available_models:
-  - id: claude-opus-4-7
-    label: Opus 4.7
+  - id: claude-fable-5
+    label: Fable 5
+    cli: claude_code
+    cost_tier: premium
+  - id: claude-opus-4-8
+    label: Opus 4.8
     cli: claude_code
     cost_tier: high
   - id: claude-sonnet-4-6

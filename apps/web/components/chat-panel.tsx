@@ -37,13 +37,15 @@ import {
 } from './slash-command-palette';
 
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
-  { value: 'opus', label: 'Opus 4.7' },
+  { value: 'fable', label: 'Fable 5' },
+  { value: 'opus', label: 'Opus 4.8' },
   { value: 'sonnet', label: 'Sonnet 4.6' },
   { value: 'haiku', label: 'Haiku 4.5' },
 ];
 
 const MODEL_LABEL: Record<ChatModelSlug, string> = {
-  opus: 'Opus 4.7',
+  fable: 'Fable 5',
+  opus: 'Opus 4.8',
   sonnet: 'Sonnet 4.6',
   haiku: 'Haiku 4.5',
 };

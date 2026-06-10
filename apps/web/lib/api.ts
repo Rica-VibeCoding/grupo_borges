@@ -219,7 +219,7 @@ export async function patchAgentCodexNewThread(
 
 // ----- DS-2: chat / model endpoints --------------------------------------
 
-export type ChatModelSlug = 'opus' | 'sonnet' | 'haiku';
+export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
 // DS-69 — slugs canônicos dos modelos Codex (espelham allowlist do backend e
 // `tmux_driver._CODEX_MODEL_MAP`). Tara troca por estes; Claude Code não.
@@ -363,10 +363,11 @@ export async function postAgentModel(
 }
 
 // Mapeia state_model/model_default longo (claude-opus-4-7, etc) pro slug curto
-// aceito pelo POST /model (whitelist opus|sonnet|haiku). Codex retorna null —
+// aceito pelo POST /model (whitelist fable|opus|sonnet|haiku). Codex retorna null —
 // caller decide se renderiza dropdown (não renderiza pra Codex).
 export function toShortModelSlug(model: string | null | undefined): ChatModelSlug | null {
   if (!model) return null;
+  if (model.includes('fable')) return 'fable';
   if (model.includes('opus')) return 'opus';
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('haiku')) return 'haiku';
