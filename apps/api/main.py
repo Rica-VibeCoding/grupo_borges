@@ -41,6 +41,7 @@ from routers import fleet as fleet_router
 from routers import hooks as hooks_router
 from routers import stream as stream_router
 from routers import task_commits as task_commits_router
+from routers import tts as tts_router
 from routers import tasks as tasks_router
 
 
@@ -195,6 +196,7 @@ app.include_router(events_router.router, prefix="/api/events", tags=["events"])
 app.include_router(codex_events_router.router, prefix="/api/codex-events", tags=["codex"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
+app.include_router(tts_router.router, prefix="/api", tags=["tts"])
 
 # Static files: imagens de tasks. O diretório é criado on-demand pelo endpoint de upload,
 # mas garantimos que exista no boot para o mount não falhar.

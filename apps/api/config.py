@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     subsession_sweeper_enabled: bool = True
     subsession_sweeper_interval_seconds: float = 300.0
 
+    # TTS (edge-tts)
+    tts_voice: str = "pt-BR-FranciscaNeural"
+    tts_rate: str = "+0%"
+    tts_pitch: str = "+0Hz"
+
 
 def get_settings() -> Settings:
     return Settings()
