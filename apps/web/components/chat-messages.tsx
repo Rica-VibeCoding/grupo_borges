@@ -28,7 +28,7 @@ import {
   type ToolResultLookup,
 } from '../lib/render-items';
 import { prettifyToolName } from '../lib/tool-name';
-import { useTts } from '../lib/tts-context';
+import { playExclusive, stopExclusive, useTts } from '../lib/tts-context';
 
 const MD_COMPONENTS = { pre: CodeBlock };
 // Sem ref estável aqui, cada `<Markdown remarkPlugins={[...]}>` cria array
@@ -603,16 +603,96 @@ const SidechainClusterChip = memo(function SidechainClusterChip({
   );
 });
 
+// JP-21: concatena só as parts de texto de um turno assistant — é o que o
+// TTS sintetiza (thinking/tool_use ficam de fora).
+function assistantText(parts: ContentPart[]): string {
+  return parts
+    .filter((p): p is Extract<ContentPart, { type: 'text' }> => p.type === 'text')
+    .map((p) => p.text)
+    .join('\n\n');
+}
+
+// JP-21 v2: play sob demanda por bolha. Sintetiza só no clique (zero custo até
+// pedir), funciona em qualquer mensagem (inclusive histórico) e toca pelo
+// singleton `playExclusive` — um áudio por vez, sem emboliada. Substitui o
+// autoplay automático (que falhava no fluxo de teste, tocava sozinho e
+// empilhava players simultâneos).
+const BubbleAudio = memo(function BubbleAudio({ text, slug }: { text: string; slug: string }) {
+  const tts = useTts();
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'ready'>('idle');
+  const [playing, setPlaying] = useState(false);
+  const urlRef = useRef<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Revoga o blob e solta o singleton no unmount/troca de mensagem.
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) stopExclusive(audioRef.current);
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
+  }, []);
+
+  const attachAudio = useCallback((url: string) => {
+    const a = new Audio(url);
+    a.addEventListener('play', () => setPlaying(true));
+    a.addEventListener('pause', () => setPlaying(false));
+    a.addEventListener('ended', () => setPlaying(false));
+    audioRef.current = a;
+    return a;
+  }, []);
+
+  const onClick = useCallback(async () => {
+    if (phase === 'loading') return;
+    // Já tocando este → pausa (toggle play/pause na mesma bolha).
+    if (playing && audioRef.current) {
+      stopExclusive(audioRef.current);
+      setPlaying(false);
+      return;
+    }
+    // Já sintetizado → só retoca (sem custo de rede).
+    if (urlRef.current) {
+      const a = audioRef.current ?? attachAudio(urlRef.current);
+      playExclusive(a);
+      return;
+    }
+    setPhase('loading');
+    const url = await tts.synthText(text, slug);
+    if (!url) { setPhase('idle'); return; }
+    urlRef.current = url;
+    setPhase('ready');
+    playExclusive(attachAudio(url));
+  }, [phase, playing, text, slug, tts, attachAudio]);
+
+  const label = phase === 'loading'
+    ? 'Sintetizando áudio…'
+    : playing ? 'Pausar áudio' : 'Ouvir resposta';
+
+  return (
+    <button
+      type="button"
+      className={`bubble-audio-btn${playing ? ' bubble-audio-playing' : ''}`}
+      data-phase={phase}
+      onClick={() => void onClick()}
+      title={label}
+      aria-label={label}
+    >
+      <span aria-hidden="true">
+        {phase === 'loading' ? '⏳' : playing ? '⏸' : '🔊'}
+      </span>
+    </button>
+  );
+});
+
 const AssistantBubble = memo(function AssistantBubble({
   parts,
   toolResults,
   ts,
-  ttsUrl,
+  slug,
 }: {
   parts: ContentPart[];
   toolResults: ToolResultLookup;
   ts?: string;
-  ttsUrl?: string;
+  slug: string;
 }) {
   // DS-71 round 3: wrapper `msg-bubble msg-bubble-assistant` removido por
   // feedback Rica (msg 2894 — "componente dentro de componente"). Cada part
@@ -635,6 +715,7 @@ const AssistantBubble = memo(function AssistantBubble({
                     {part.text}
                   </Markdown>
                 </div>
+                {part.text.trim() && <BubbleAudio text={part.text} slug={slug} />}
               </div>
             </div>
           );
@@ -660,17 +741,6 @@ const AssistantBubble = memo(function AssistantBubble({
         }
         return null;
       })}
-      {ttsUrl && (
-        <div className="msg-row msg-row-assistant">
-          <audio
-            className="tts-player"
-            src={ttsUrl}
-            controls
-            autoPlay
-            aria-label="Áudio da resposta"
-          />
-        </div>
-      )}
     </>
   );
 });
@@ -693,10 +763,6 @@ export type ChatMessagesProps = {
   uuidToClientId?: Map<string, string>;
   /** ask-user MCP — entries pendentes/respondidas por request_id. */
   askUserByRequestId?: Map<string, AskUserEntry>;
-  /** TTS — true enquanto a stream está viva (JP-21). */
-  isLive?: boolean;
-  /** TTS — true se o último input do user foi voz (STT). */
-  lastUserWasVoice?: boolean;
 };
 
 export function ChatMessages({
@@ -708,8 +774,6 @@ export function ChatMessages({
   optimistic,
   uuidToClientId,
   askUserByRequestId,
-  isLive,
-  lastUserWasVoice,
 }: ChatMessagesProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -733,55 +797,6 @@ export function ChatMessages({
     ),
     [messages, askUserByRequestId],
   );
-
-  const tts = useTts();
-  const liveStartRef = useRef<number>(-1);
-  const ttsUrlsRef = useRef(new Map<string, string>());
-  const [ttsRevision, setTtsRevision] = useState(0);
-
-  useEffect(() => {
-    if (isLive && liveStartRef.current === -1) {
-      liveStartRef.current = items.length;
-    }
-    if (!isLive) {
-      liveStartRef.current = -1;
-    }
-  }, [isLive, items.length]);
-
-  useEffect(() => {
-    if (!tts.settings.enabled || tts.settings.trigger === 'never') return;
-    if (liveStartRef.current < 0) return;
-    const freshItems = items.slice(liveStartRef.current);
-    for (let i = 0; i < freshItems.length; i++) {
-      const item = freshItems[i];
-      if (item.kind !== 'assistant') continue;
-      const key = item.payload.uuid;
-      if (ttsUrlsRef.current.has(key)) continue;
-      if (tts.settings.trigger === 'on_voice_input') {
-        const globalIdx = liveStartRef.current + i;
-        const prevItem = globalIdx > 0 ? items[globalIdx - 1] : null;
-        const prevWasVoice = prevItem?.kind === 'synthetic' && prevItem.syntheticKind === 'stt';
-        const fallbackVoice = lastUserWasVoice ?? false;
-        if (!prevWasVoice && !fallbackVoice) continue;
-      }
-      const text = item.parts
-        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-        .map((p) => p.text)
-        .join('\n\n');
-      if (!text.trim()) continue;
-      ttsUrlsRef.current.set(key, 'loading');
-      tts.synthText(text).then((url) => {
-        if (url) {
-          ttsUrlsRef.current.set(key, url);
-          setTtsRevision((r) => r + 1);
-        } else {
-          ttsUrlsRef.current.delete(key);
-        }
-      });
-    }
-  }, [items, isLive, tts.settings.enabled, tts.settings.trigger, lastUserWasVoice, tts.synthText]);
-
-  void ttsRevision;
 
   // POST resposta ask-user pro backend; backend re-emite o entry como answered.
   const submitAskUser = useCallback(
@@ -1048,14 +1063,13 @@ export function ChatMessages({
               </div>
             );
           }
-          const ttsUrl = ttsUrlsRef.current.get(key);
           return (
             <AssistantBubble
               key={key}
               parts={item.parts}
               toolResults={toolResults}
               ts={itemTs}
-              ttsUrl={typeof ttsUrl === 'string' && ttsUrl !== 'loading' ? ttsUrl : undefined}
+              slug={slug}
             />
           );
         })}

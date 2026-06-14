@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     subsession_sweeper_enabled: bool = True
     subsession_sweeper_interval_seconds: float = 300.0
 
-    # TTS (edge-tts)
+    # TTS — engine preferido Google Chirp3-HD (voz da frota), fallback edge-tts.
+    # tts_voice é só o default edge usado quando não há voz da frota nem key.
+    google_tts_api_key: str = ""
     tts_voice: str = "pt-BR-FranciscaNeural"
     tts_rate: str = "+0%"
     tts_pitch: str = "+0Hz"

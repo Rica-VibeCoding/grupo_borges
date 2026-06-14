@@ -4056,15 +4056,37 @@ button.channel-env-head:hover {
   .ask-user-card[data-tone="active"] { animation: none; }
 }
 
-/* JP-21 TTS player */
-.tts-player {
-  width: 100%;
-  max-width: 320px;
-  height: 36px;
-  border-radius: 8px;
-  accent-color: var(--accent, #60a5fa);
+/* JP-21 v2 — botão de play sob demanda na bolha do agente. Discreto no canto,
+   sintetiza só no clique e toca um áudio por vez (singleton playExclusive). */
+.bubble-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 6px;
+  border-radius: 7px;
+  border: 1px solid var(--border, #2a3a4f);
+  background: transparent;
+  color: var(--muted, #7d8da3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 120ms ease, border-color 120ms ease, background 120ms ease;
 }
-
-.tts-toggle-on {
+.bubble-audio-btn:hover {
+  opacity: 1;
+  border-color: var(--accent, #60a5fa);
+}
+.bubble-audio-btn[data-phase='loading'] {
+  cursor: progress;
+  opacity: 1;
+}
+/* Tocando: borda e fundo acesos pra mostrar qual bolha está no ar. */
+.bubble-audio-playing {
+  opacity: 1;
   color: var(--accent, #60a5fa);
+  border-color: var(--accent, #60a5fa);
+  background: color-mix(in srgb, var(--accent, #60a5fa) 16%, transparent);
 }

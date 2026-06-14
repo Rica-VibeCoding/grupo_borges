@@ -23,7 +23,8 @@ const DEFAULTS: TtsSettings = { enabled: false, trigger: 'always', voice: '' };
 type TtsContextValue = {
   settings: TtsSettings;
   update: (patch: Partial<TtsSettings>) => void;
-  synthText: (text: string) => Promise<string | null>;
+  /** Sintetiza `text`; `slug` resolve a voz do agente no backend (frota). */
+  synthText: (text: string, slug?: string) => Promise<string | null>;
 };
 
 const TtsContext = createContext<TtsContextValue | null>(null);
@@ -46,12 +47,13 @@ export function TtsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const synthText = useCallback(async (text: string): Promise<string | null> => {
+  const synthText = useCallback(async (text: string, slug?: string): Promise<string | null> => {
     try {
       const res = await fetch('/api/tts/synth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: settings.voice }),
+        // voice vazio → backend resolve pela voz da frota via slug do agente.
+        body: JSON.stringify({ text, slug: slug ?? '', voice: settings.voice }),
       });
       if (!res.ok) return null;
       const blob = await res.blob();
@@ -72,4 +74,23 @@ export function useTts(): TtsContextValue {
   const ctx = useContext(TtsContext);
   if (!ctx) throw new Error('useTts: TtsProvider ausente na árvore');
   return ctx;
+}
+
+// Singleton de reprodução — só UM áudio toca por vez em toda a aba. Tocar um
+// novo pausa o anterior, eliminando a "emboliada" de vários players juntos.
+let activeAudio: HTMLAudioElement | null = null;
+
+export function playExclusive(el: HTMLAudioElement): void {
+  if (activeAudio && activeAudio !== el) {
+    activeAudio.pause();
+    activeAudio.currentTime = 0;
+  }
+  activeAudio = el;
+  el.currentTime = 0;
+  void el.play().catch(() => { /* navegador pode bloquear sem gesto */ });
+}
+
+export function stopExclusive(el: HTMLAudioElement): void {
+  el.pause();
+  if (activeAudio === el) activeAudio = null;
 }

@@ -21,7 +21,6 @@ import {
   type AnyModelSlug,
 } from '../lib/api';
 import { useAgentSend } from '../lib/use-agent-send';
-import { useTts } from '../lib/tts-context';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { useMessagesStream } from '../lib/use-messages-stream';
@@ -166,19 +165,6 @@ export function ChatPanel({
     );
   }
 
-  const isLive = messagesStream.status === 'live';
-
-  const lastUserWasVoice = useMemo(() => {
-    const msgs = messagesStream.messages;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i];
-      if (m.message?.role === 'user' && m.user_type === 'external') {
-        return m.meta?.kind === 'stt';
-      }
-    }
-    return false;
-  }, [messagesStream.messages]);
-
   return (
     <div className="chat-panel">
       <ChatHeader agent={agent} serverNow={serverNow} />
@@ -190,8 +176,6 @@ export function ChatPanel({
         askUserByRequestId={messagesStream.askUserByRequestId}
         optimistic={visibleOptimistic}
         uuidToClientId={mergedUuidToClientId}
-        isLive={isLive}
-        lastUserWasVoice={lastUserWasVoice}
       />
       <ChatInput
         slug={agent.slug}
@@ -249,23 +233,6 @@ function reconcileOptimistic(
   return { next: next.length === pending.length ? pending : next, reconciled };
 }
 
-// ----- TtsToggle ----------------------------------------------------------
-
-function TtsToggle() {
-  const { settings, update } = useTts();
-  return (
-    <button
-      type="button"
-      className={`chat-icon-btn tts-toggle${settings.enabled ? ' tts-toggle-on' : ''}`}
-      title={settings.enabled ? 'TTS ativo — clique pra desligar' : 'TTS desligado — clique pra ativar'}
-      aria-label={settings.enabled ? 'Desligar leitura em voz' : 'Ativar leitura em voz'}
-      onClick={() => update({ enabled: !settings.enabled })}
-    >
-      🔊
-    </button>
-  );
-}
-
 // ----- ChatHeader ---------------------------------------------------------
 // DS-57: identidade do agente em 2 linhas + status-dot pulsante.
 // Substitui AgentStatusline variant="modal" — dá presença ao agente como
@@ -318,7 +285,6 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
         )}
       </div>
       <div className="chat-header-actions">
-        <TtsToggle />
         <ModelChip agent={agent} />
       </div>
     </div>
