@@ -9,6 +9,7 @@ import {
   parseModelFromPane,
   shortModelName,
 } from '../lib/cockpit-types';
+import { formatCompactNumber } from '../lib/painel-format';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
   ocioso: 'Ocioso',
@@ -68,8 +69,9 @@ export function AgentStatusline({
     : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = isCodexExecutor
-    ? (agent.context_pct ?? null)
-    : parseContextPct(agent.pane_excerpt);
+    ? null
+    : (parseContextPct(agent.pane_excerpt) ?? agent.context_pct ?? null);
+  const codexTokens = isCodexExecutor ? agent.codex_tokens_used : null;
   // Modelo REAL da sessão = pane_excerpt (tmux capture), alinhado com o %.
   // state_model é a última intenção persistida (POST /model) — pode estar
   // pendente de propagação no CC. Card reflete execução, não a seleção.
@@ -96,7 +98,7 @@ export function AgentStatusline({
               </span>
               <span className="psi-pct">{contextPct}%</span>
             </>
-          ) : <span className="psi-pct">— %</span>}
+          ) : <span className="psi-pct">{codexTokens !== null ? `${formatCompactNumber(codexTokens)} tk` : '— %'}</span>}
         </span>
       </div>
     );
@@ -133,6 +135,8 @@ export function AgentStatusline({
               </span>
               <span className="pm-v">{contextPct}%</span>
             </>
+          ) : codexTokens !== null ? (
+            <span className="pm-v pm-dim">{formatCompactNumber(codexTokens)} tokens</span>
           ) : (
             <span className="pm-v pm-dim">ctx —</span>
           )}
@@ -169,7 +173,7 @@ export function AgentStatusline({
             </span>
             {' '}{contextPct}%
           </>
-        ) : '— %'}
+        ) : codexTokens !== null ? `${formatCompactNumber(codexTokens)} tk` : '— %'}
       </span>
     </div>
   );

@@ -10,13 +10,22 @@ import { SandboxBloco } from './sandbox-bloco';
 import { ConversaBloco } from './conversa-bloco';
 import { QuotasBloco } from './quotas-bloco';
 import { SubagentsBloco } from './subagents-bloco';
+import { useFleet } from '../lib/fleet-context';
 
 type PainelPanelProps = {
   slug: string;
   agent: Agent;
+  codexNextFresh?: boolean;
+  onCodexNextFreshChange?: (armed: boolean) => void;
 };
 
-export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
+export function PainelPanel({
+  slug,
+  agent: _agent,
+  codexNextFresh,
+  onCodexNextFreshChange,
+}: PainelPanelProps) {
+  const { mutate } = useFleet();
   const [data, setData] = useState<AgentPainelResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,10 +92,17 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
 
   function handleEffortChange(_value: string) {
     setRefreshNonce((value) => value + 1);
+    void mutate();
   }
 
   function handlePermissionChange() {
     setRefreshNonce((value) => value + 1);
+    void mutate();
+  }
+
+  function handleConversationChange(armed: boolean) {
+    onCodexNextFreshChange?.(armed);
+    handlePermissionChange();
   }
 
   const updatedAgo =
@@ -120,8 +136,8 @@ export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
           <SandboxBloco data={data.sandbox} slug={slug} onChange={handlePermissionChange} />
           <ConversaBloco
             slug={slug}
-            armed={Boolean(data.codex_next_fresh)}
-            onChange={handlePermissionChange}
+            armed={codexNextFresh ?? Boolean(data.codex_next_fresh)}
+            onChange={handleConversationChange}
           />
         </>
       ) : (

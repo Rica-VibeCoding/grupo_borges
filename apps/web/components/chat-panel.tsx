@@ -20,6 +20,7 @@ import {
   type CodexModelSlug,
   type AnyModelSlug,
 } from '../lib/api';
+import { formatCompactNumber } from '../lib/painel-format';
 import { useAgentSend } from '../lib/use-agent-send';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
@@ -80,9 +81,13 @@ const CODEX_MODEL_LABEL: Record<CodexModelSlug, string> = {
 export function ChatPanel({
   agent,
   serverNow,
+  codexNextFresh,
+  onCodexNextFreshChange,
 }: {
   agent: Agent;
   serverNow: number;
+  codexNextFresh?: boolean;
+  onCodexNextFreshChange?: (armed: boolean) => void;
 }) {
   // TK-25 — Tara (codex) não tem stream de pane Claude Code; desliga o SSE e
   // renderiza histórico read-only do Codex local.
@@ -159,8 +164,16 @@ export function ChatPanel({
     // rollout. Sem o pipeline SSE/optimistic do Claude Code.
     return (
       <div className="chat-panel">
-        <ChatHeader agent={agent} serverNow={serverNow} />
-        <CodexChat slug={agent.slug} />
+        <ChatHeader
+          agent={agent}
+          serverNow={serverNow}
+          codexNextFresh={codexNextFresh ?? Boolean(agent.codex_next_fresh)}
+        />
+        <CodexChat
+          slug={agent.slug}
+          nextFresh={codexNextFresh ?? Boolean(agent.codex_next_fresh)}
+          onFreshConsumed={() => onCodexNextFreshChange?.(false)}
+        />
       </div>
     );
   }
@@ -244,15 +257,24 @@ function ctxTier(pct: number): 'low' | 'mid' | 'high' {
   return 'high';
 }
 
-function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
+function ChatHeader({
+  agent,
+  serverNow,
+  codexNextFresh = false,
+}: {
+  agent: Agent;
+  serverNow: number;
+  codexNextFresh?: boolean;
+}) {
   const isCodex = agent.executor_kind === 'codex';
   const sessionStarted = isCodex
     ? agent.session_started_at
     : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = isCodex
-    ? (agent.context_pct ?? null)
+    ? null
     : parseContextPct(agent.pane_excerpt);
+  const codexTokens = isCodex ? agent.codex_tokens_used : null;
   const sessionLabel = sessionSecs !== null ? formatDuration(sessionSecs) : '—';
 
   return (
@@ -280,6 +302,10 @@ function ChatHeader({ agent, serverNow }: { agent: Agent; serverNow: number }) {
             </span>
             <span>{contextPct}%</span>
           </span>
+        ) : codexNextFresh ? (
+          <span className="chat-header-dim">próxima thread nova</span>
+        ) : codexTokens !== null ? (
+          <span className="chat-header-dim">{formatCompactNumber(codexTokens)} tokens</span>
         ) : (
           <span className="chat-header-dim">ctx —</span>
         )}

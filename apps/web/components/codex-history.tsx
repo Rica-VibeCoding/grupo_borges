@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AgentInputError,
+  fetchAgentPainel,
   getCodexMessages,
   postAgentInput,
   postAgentImage,
@@ -10,6 +11,7 @@ import {
   type CodexMessage,
 } from '../lib/api';
 import { safeUUID } from '../lib/ids';
+import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { useVoiceRecorder } from '../lib/use-voice-recorder';
 
@@ -32,8 +34,17 @@ const WAIT_TIMEOUT_MS = 180_000; // some o "digitando" se o turno travar
 
 type Optimistic = { id: string; text: string };
 
-export function CodexChat({ slug }: { slug: string }) {
+export function CodexChat({
+  slug,
+  nextFresh,
+  onFreshConsumed,
+}: {
+  slug: string;
+  nextFresh?: boolean;
+  onFreshConsumed?: () => void;
+}) {
   const { fire } = useToast();
+  const { mutate } = useFleet();
   const [messages, setMessages] = useState<CodexMessage[]>([]);
   const [hiddenCount, setHiddenCount] = useState(0);
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
@@ -41,8 +52,8 @@ export function CodexChat({ slug }: { slug: string }) {
   const [waiting, setWaiting] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  // Anexo de imagem pendente (envia no submit). "Nova conversa" mora no painel
-  // (flag persistido codex_next_fresh), não aqui — o chat é só a mensagem.
+  // Anexo de imagem pendente (envia no submit). "Nova conversa" vem armada
+  // pelo painel e é consumida no próximo envio de texto.
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,8 +128,9 @@ export function CodexChat({ slug }: { slug: string }) {
     baselineAssistantRef.current = assistantCountRef.current;
     waitStartRef.current = Date.now();
     setWaiting(true);
+    void mutate();
     void load();
-  }, [load]);
+  }, [load, mutate]);
 
   const onSendError = useCallback(
     (err: unknown) => {
@@ -161,7 +173,15 @@ export function CodexChat({ slug }: { slug: string }) {
       setOptimistic((o) => [...o, { id: clientId, text: trimmed }]);
       setText('');
       try {
-        await postAgentInput(slug, trimmed);
+        let fresh = Boolean(nextFresh);
+        try {
+          const painel = await fetchAgentPainel(slug);
+          fresh = Boolean(painel.codex_next_fresh);
+        } catch {
+          fresh = Boolean(nextFresh);
+        }
+        await postAgentInput(slug, trimmed, { fresh });
+        if (fresh) onFreshConsumed?.();
         afterSend();
       } catch (err) {
         setOptimistic((o) => o.filter((e) => e.id !== clientId));
@@ -173,7 +193,7 @@ export function CodexChat({ slug }: { slug: string }) {
     } finally {
       setSending(false);
     }
-  }, [text, sending, pendingImage, slug, clearImage, afterSend, onSendError]);
+  }, [text, sending, pendingImage, slug, nextFresh, onFreshConsumed, clearImage, afterSend, onSendError]);
 
   const onVoiceRecorded = useCallback(
     async (blob: Blob) => {
@@ -231,7 +251,7 @@ export function CodexChat({ slug }: { slug: string }) {
     <div className="codex-history">
       <div className="codex-history-source" role="note">
         <span className="codex-source-dot" aria-hidden="true" />
-        Codex local · thread contínua
+        {nextFresh ? 'Codex local · próxima mensagem abre thread nova' : 'Codex local · thread contínua'}
       </div>
 
       <div ref={scrollRef} className="codex-history-scroll">
@@ -415,4 +435,3 @@ function StopIcon() {
     </svg>
   );
 }
-

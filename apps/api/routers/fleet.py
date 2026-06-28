@@ -8,16 +8,19 @@ quando `last_seen` excede o threshold), pra UI não precisar replicar regra.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
-from services import tmux_driver
+from services import codex_reader, tmux_driver
 
 router = APIRouter()
+_CC_STATUS_PREFIX = "cc-status-"
 
 AgentStatus = Literal["ocioso", "trabalhando", "aguardando", "offline"]
 
@@ -55,6 +58,8 @@ class FleetAgent(BaseModel):
     session_started_at: int | None = None
     last_assistant_message: str | None = None
     token_usage_json: str | None = None
+    codex_tokens_used: int | None = None
+    codex_next_fresh: bool | None = None
     lifecycle_status: str | None = None
     lifecycle_detail: str | None = None
     lifecycle_event: str | None = None
@@ -111,6 +116,54 @@ async def _hydrate_pane_excerpts(agents: list[dict]) -> None:
         agent["pane_session_started_at"] = now - elapsed if elapsed is not None else None
 
 
+def _num_or_none(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _read_cc_context_pct(session_id: str) -> float | None:
+    path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    context_window = payload.get("context_window")
+    if not isinstance(context_window, dict):
+        return None
+    return _num_or_none(context_window.get("used_percentage"))
+
+
+async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None:
+    async def hydrate(agent: dict) -> None:
+        if agent.get("executor_kind") == "codex":
+            agent["context_pct"] = None
+            return
+        if agent.get("context_pct") is not None:
+            return
+        session_id = await db.latest_jsonl_session_id(agent["slug"])
+        if not session_id:
+            return
+        agent["context_pct"] = await asyncio.to_thread(_read_cc_context_pct, session_id)
+
+    await asyncio.gather(*(hydrate(agent) for agent in agents))
+
+
+async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
+    async def hydrate(agent: dict) -> None:
+        if agent.get("executor_kind") != "codex":
+            agent["codex_tokens_used"] = None
+            return
+        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+        thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
+        agent["codex_tokens_used"] = thread.tokens_used if thread is not None else None
+        agent["context_pct"] = None
+
+    await asyncio.gather(*(hydrate(agent) for agent in agents))
+
+
 @router.get("", response_model=FleetSnapshot)
 async def get_fleet(
     request: Request,
@@ -121,4 +174,6 @@ async def get_fleet(
     snapshot = await db.fleet_snapshot(sparkline_hours=sparkline_hours)
     snapshot["health"]["stale_threshold_seconds"] = RUN_STALE_THRESHOLD_SECONDS
     await _hydrate_pane_excerpts(snapshot["agents"])
+    await _hydrate_codex_tokens_used(snapshot["agents"])
+    await _hydrate_cc_context_pct(db, snapshot["agents"])
     return snapshot

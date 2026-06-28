@@ -84,11 +84,13 @@ def test_codex_events_update_agent_state(tmp_path: Path) -> None:
     )
 
     agent = db._get_agent("tara")
+    fleet_agent = next(agent for agent in db._fleet_snapshot(24)["agents"] if agent["slug"] == "tara")
 
     assert agent["executor_kind"] == "codex"
     assert agent["status_line"] == "ocioso"
     assert agent["active_task_label"] == "Opção C"
-    assert agent["context_pct"] == 3.0
+    assert agent["context_pct"] is None
+    assert fleet_agent["context_pct"] is None
     assert agent["session_started_at"] == 1_700_000_000
     assert agent["last_assistant_message"] == "Backend completo com parser Codex."
     assert agent["token_usage_json"] == '{"input_tokens": 32000, "output_tokens": 100}'

@@ -59,6 +59,8 @@ export type Agent = {
   session_started_at: number | null;
   last_assistant_message: string | null;
   token_usage_json: string | null;
+  codex_tokens_used: number | null;
+  codex_next_fresh: boolean | null;
   lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
   lifecycle_event: string | null;

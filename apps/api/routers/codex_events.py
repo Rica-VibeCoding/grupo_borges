@@ -26,11 +26,6 @@ from util import redact_payload
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-# Janela real do GPT-5.5 conforme ~/.codex/models_cache.json:
-#   context_window = 272_000, max_context_window = 272_000.
-GPT_5_5_CONTEXT_WINDOW = 272_000
-
-
 CodexEventKind = Literal[
     # Lifecycle custom emitido pelo wrapper:
     "tara.exec.started",
@@ -115,35 +110,6 @@ def _int_timestamp(value: Any, *, fallback: int) -> int:
     return fallback
 
 
-def _usage_context_pct(usage: Any) -> float | None:
-    """Percent USADO da janela de contexto (0-100).
-
-    Espelha o statusline bash dos agentes Claude Code (que o Rica
-    desenhou e o frontend já parsa via `parseContextPct`):
-
-        PCT = clamp(input_tokens / window * 100, 0, 100)
-
-    Pra sessão fresh do Codex, input_tokens já inclui o overhead
-    inicial (system prompt + tools + memory carregadas) → barra fica
-    baixa em valor coerente com CC (~5%).
-
-    `codex exec --json` emite usage *cumulativo de sessão* no
-    `turn.completed` (source: `usage_from_last_total`). Em sessão
-    longa, input_tokens cresce e estoura a janela per-call do modelo
-    — o clamp em 100% serve de gatilho visual pra `/clear`/compact.
-    """
-    if not isinstance(usage, dict):
-        return None
-    input_tokens = usage.get("input_tokens")
-    if not isinstance(input_tokens, int | float):
-        return None
-    window = usage.get("model_context_window", GPT_5_5_CONTEXT_WINDOW)
-    if not isinstance(window, int | float) or window <= 0:
-        window = GPT_5_5_CONTEXT_WINDOW
-    pct_used = min(max(input_tokens / window * 100.0, 0.0), 100.0)
-    return round(pct_used, 1)
-
-
 def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
     body = _body(payload)
     item = _item(body)
@@ -205,9 +171,6 @@ def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
         update = {"executor_kind": "codex"}
         if usage is not None:
             update["token_usage_json"] = json.dumps(usage, ensure_ascii=False)
-        context_pct = _usage_context_pct(usage)
-        if context_pct is not None:
-            update["context_pct"] = context_pct
         return update
 
     if payload.kind == "tara.exec.completed":

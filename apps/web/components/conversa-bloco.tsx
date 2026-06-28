@@ -6,7 +6,7 @@ import { patchAgentCodexNewThread } from '../lib/api';
 type ConversaBlocoProps = {
   slug: string;
   armed: boolean;
-  onChange?: () => void;
+  onChange?: (armed: boolean) => void;
 };
 
 // Bloco "Conversa" do painel Codex — comando "nova conversa" (no lugar do /clear
@@ -20,9 +20,10 @@ export function ConversaBloco({ slug, armed, onChange }: ConversaBlocoProps) {
     if (saving) return;
     setSaving(true);
     setError(null);
+    const nextArmed = !armed;
     try {
-      await patchAgentCodexNewThread(slug, !armed);
-      onChange?.();
+      await patchAgentCodexNewThread(slug, nextArmed);
+      onChange?.(nextArmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'erro ao armar nova conversa');
     } finally {
