@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { patchAgentCodexNewThread } from '../lib/api';
 
 type ConversaBlocoProps = {
@@ -15,9 +15,14 @@ type ConversaBlocoProps = {
 export function ConversaBloco({ slug, armed, onChange }: ConversaBlocoProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Guard síncrono: `saving` (state) só atualiza no próximo render, então dois
+  // cliques no mesmo tick liam `false` e passavam os dois (armava+desarmava →
+  // "não funcionou"). O ref barra na hora.
+  const savingRef = useRef(false);
 
   async function toggle() {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     const nextArmed = !armed;
@@ -27,6 +32,7 @@ export function ConversaBloco({ slug, armed, onChange }: ConversaBlocoProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'erro ao armar nova conversa');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }

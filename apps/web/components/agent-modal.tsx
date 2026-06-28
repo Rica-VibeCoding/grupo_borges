@@ -48,7 +48,10 @@ type SwipeStart = { x: number; y: number; t: number; target: EventTarget | null 
 // esquerda) ignora esse veto — intent claro do usuário.
 function isScrollableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  return !!target.closest('.chat-messages-scroll, .agent-modal-docs-pre, .agent-modal-docs-body, textarea, .agent-modal-tablist');
+  // `.painel-panel` + `button`: toque que começa no painel (onde mora o botão
+  // "nova conversa") ou em qualquer botão não pode virar swipe-to-close — o
+  // arrasto horizontal armava o gesto e cancelava o click no mobile.
+  return !!target.closest('.chat-messages-scroll, .agent-modal-docs-pre, .agent-modal-docs-body, textarea, .agent-modal-tablist, .painel-panel, button');
 }
 
 function formatUnixDateTime(unixSec: number | null): string {
