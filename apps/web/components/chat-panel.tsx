@@ -40,14 +40,14 @@ import {
 const MODEL_OPTIONS: Array<{ value: ChatModelSlug; label: string }> = [
   { value: 'fable', label: 'Fable 5' },
   { value: 'opus', label: 'Opus 4.8' },
-  { value: 'sonnet', label: 'Sonnet 4.6' },
+  { value: 'sonnet', label: 'Sonnet 5' },
   { value: 'haiku', label: 'Haiku 4.5' },
 ];
 
 const MODEL_LABEL: Record<ChatModelSlug, string> = {
   fable: 'Fable 5',
   opus: 'Opus 4.8',
-  sonnet: 'Sonnet 4.6',
+  sonnet: 'Sonnet 5',
   haiku: 'Haiku 4.5',
 };
 
