@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import type { Agent, AgentActivityState, AgentStatus } from '../lib/cockpit-types';
 import { deriveInitials } from '../lib/cockpit-types';
+import { compareAgentsByRecentActivity } from '../lib/agent-sort';
 import { useAskUserPending } from '../lib/ask-user-pending-context';
 import { useFleet } from '../lib/fleet-context';
 import { useSelectedAgent } from '../lib/selected-agent-context';
@@ -16,13 +17,6 @@ const stateLabel: Record<AgentStatus, string> = {
   trabalhando: 'Trabalhando',
   aguardando: 'Aguardando',
   offline: 'Offline',
-};
-
-const STATUS_ORDER: Record<AgentStatus, number> = {
-  trabalhando: 0,
-  aguardando: 1,
-  ocioso: 2,
-  offline: 3,
 };
 
 const activityLabel: Record<AgentActivityState, string> = stateLabel;
@@ -162,10 +156,7 @@ export function AgentCard({
 }
 
 export function AgentCards({ agents, serverNow }: { agents: Agent[]; serverNow: number }) {
-  const sorted = [...agents].sort((a, b) => {
-    const da = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-    return da !== 0 ? da : a.name.localeCompare(b.name);
-  });
+  const sorted = [...agents].sort(compareAgentsByRecentActivity);
   return (
     <div className="grid" id="cards" role="list" aria-label="Agentes">
       {sorted.map((agent) => (
