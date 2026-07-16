@@ -8,7 +8,7 @@ import { safeUUID } from '../lib/ids';
 import type { OptimisticEntry } from '../lib/messages-types';
 import {
   formatDuration,
-  parseContextPct,
+  resolveContextPct,
 } from '../lib/cockpit-types';
 import {
   AgentInputError,
@@ -277,12 +277,7 @@ function ChatHeader({
     ? agent.session_started_at
     : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
-  // Só mostra contexto de agente ativo — em offline/ocioso o header não deve
-  // exibir % de agente parado (o excerpt fica stale). Codex não tem statusline.
-  const contextIsRelevant = agent.status === 'trabalhando' || agent.status === 'aguardando';
-  const contextPct = isCodex || !contextIsRelevant
-    ? null
-    : parseContextPct(agent.pane_excerpt);
+  const contextPct = resolveContextPct(agent);
   const codexTokens = isCodex ? agent.codex_tokens_used : null;
   const sessionLabel = sessionSecs !== null ? formatDuration(sessionSecs) : '—';
 

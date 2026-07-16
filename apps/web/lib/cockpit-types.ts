@@ -421,6 +421,13 @@ export function parseContextPct(excerpt: string | null): number | null {
   return last ? parseInt(last[1]!, 10) : null;
 }
 
+export function resolveContextPct(
+  agent: Pick<Agent, 'executor_kind' | 'pane_excerpt' | 'context_pct'>,
+): number | null {
+  if (agent.executor_kind === 'codex') return null;
+  return parseContextPct(agent.pane_excerpt) ?? agent.context_pct;
+}
+
 export function parseModelFromPane(excerpt: string | null): string | null {
   if (!excerpt) return null;
   // CC statusline aparece em dois formatos:

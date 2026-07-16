@@ -5,8 +5,8 @@ import type { Agent, AgentStatus } from '../lib/cockpit-types';
 import {
   formatDuration,
   formatLastSeen,
-  parseContextPct,
   parseModelFromPane,
+  resolveContextPct,
   shortModelName,
 } from '../lib/cockpit-types';
 import { formatCompactNumber } from '../lib/painel-format';
@@ -68,9 +68,7 @@ export function AgentStatusline({
     ? agent.session_started_at
     : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
-  const contextPct = isCodexExecutor
-    ? null
-    : (parseContextPct(agent.pane_excerpt) ?? agent.context_pct ?? null);
+  const contextPct = resolveContextPct(agent);
   const codexTokens = isCodexExecutor ? agent.codex_tokens_used : null;
   // Modelo REAL da sessão = pane_excerpt (tmux capture), alinhado com o %.
   // state_model é a última intenção persistida (POST /model) — pode estar
