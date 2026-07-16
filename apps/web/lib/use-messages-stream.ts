@@ -92,6 +92,7 @@ export function useMessagesStream(
 ): MessagesStreamState {
   const [state, setState] = useState<MessagesStreamState>(makeInitialState);
   const lastIdRef = useRef<number | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
@@ -116,12 +117,14 @@ export function useMessagesStream(
     if (!slug || !enabled) {
       setState(makeInitialState());
       lastIdRef.current = null;
+      activeSessionIdRef.current = null;
       return;
     }
 
     aliveRef.current = true;
     setState({ ...makeInitialState(), status: 'connecting' });
     lastIdRef.current = null;
+    activeSessionIdRef.current = null;
     replayBufferRef.current = null;
     retryCountRef.current = 0;
     lastHeartbeatRef.current = Date.now();
@@ -263,21 +266,33 @@ export function useMessagesStream(
 
     function connect() {
       if (!slug || !aliveRef.current) return;
-      const url = buildUrl(slug, sessionId, lastIdRef.current);
+      const resumeFromId = lastIdRef.current;
+      const url = buildUrl(slug, sessionId, resumeFromId);
       const source = new EventSource(url);
       sourceRef.current = source;
 
       source.addEventListener('replay-start', (ev) => {
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as { total?: number };
+          const data = JSON.parse((ev as MessageEvent).data) as {
+            session_id?: string | null;
+            total?: number;
+          };
+          const replaySessionId = typeof data.session_id === 'string' ? data.session_id : null;
+          const isSameSessionResume =
+            resumeFromId !== null &&
+            activeSessionIdRef.current !== null &&
+            replaySessionId === activeSessionIdRef.current;
+          activeSessionIdRef.current = replaySessionId;
           replayBufferRef.current = [];
           setState((prev) => ({
             ...prev,
-            messages: [],
+            messages: isSameSessionResume ? prev.messages : [],
             status: 'replaying',
             replayTotal: data.total ?? null,
             errorDetail: null,
-            askUserByRequestId: emptyAskUserMap(),
+            askUserByRequestId: isSameSessionResume
+              ? prev.askUserByRequestId
+              : emptyAskUserMap(),
           }));
         } catch {
           /* schema inesperado — segue, replay-end ainda flusha */
