@@ -1767,10 +1767,10 @@ def _resolve_stt_script() -> str:
         Path.home() / ".claude" / "scripts" / "stt-openai.sh",  # Oracle (casa nova)
         Path("/home/clawd/repos/ze_claude/ze-shared/.claude/skills/voz/scripts/stt-openai.sh"),  # Hostinger (tropa)
     ]
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
-    return str(candidates[0])
+    return next(
+        (str(candidate) for candidate in candidates if candidate.exists()),
+        str(candidates[0]),
+    )
 
 
 _VOICE_STT_SCRIPT = _resolve_stt_script()
