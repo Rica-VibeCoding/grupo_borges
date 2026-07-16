@@ -1295,6 +1295,9 @@ ChatModel = Literal["fable", "opus", "sonnet", "haiku"]
 # a tradução pro nome cru do CLI (`gpt-5.5` etc) mora em
 # `tmux_driver._CODEX_MODEL_MAP` — fonte única do de-para, não duplicar aqui.
 CodexModel = Literal[
+    "codex-gpt-5-6-sol",
+    "codex-gpt-5-6-terra",
+    "codex-gpt-5-6-luna",
     "codex-gpt-5-5",
     "codex-gpt-5-4",
     "codex-gpt-5-4-mini",
@@ -1750,7 +1753,27 @@ async def send_agent_input(
 
 _VOICE_ALLOWED_MIMES = {"audio/ogg", "audio/webm", "audio/mp4", "audio/mpeg"}
 _VOICE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
-_VOICE_STT_SCRIPT = "/home/clawd/repos/ze_claude/ze-shared/.claude/skills/voz/scripts/stt-openai.sh"
+def _resolve_stt_script() -> str:
+    """Resolve o script de STT nos dois ambientes sem depender de .env.
+
+    Override explícito via GB_STT_SCRIPT (convenção GB_* do projeto); senão
+    tenta os caminhos conhecidos por host (Oracle usa ~/.claude/scripts;
+    tropa usa o skill em ze-shared). Um hardcode único quebraria o outro host.
+    """
+    override = os.environ.get("GB_STT_SCRIPT")
+    if override:
+        return override
+    candidates = [
+        Path.home() / ".claude" / "scripts" / "stt-openai.sh",  # Oracle (casa nova)
+        Path("/home/clawd/repos/ze_claude/ze-shared/.claude/skills/voz/scripts/stt-openai.sh"),  # Hostinger (tropa)
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0])
+
+
+_VOICE_STT_SCRIPT = _resolve_stt_script()
 _VOICE_STT_TIMEOUT_S = 30
 _VOICE_MIME_SUFFIX = {
     "audio/ogg": ".oga",
@@ -1828,6 +1851,11 @@ async def post_agent_voice(
             )
         except subprocess.TimeoutExpired as e:
             raise HTTPException(status_code=504, detail="stt_timeout") from e
+        except (FileNotFoundError, PermissionError) as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"stt_script_not_found: {_VOICE_STT_SCRIPT}",
+            ) from e
 
         if result.returncode != 0:
             stderr_tail = (result.stderr or "").strip().splitlines()
