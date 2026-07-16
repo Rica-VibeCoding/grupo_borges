@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   AgentInputError,
   fetchAgentPainel,
@@ -14,8 +16,11 @@ import { safeUUID } from '../lib/ids';
 import { useFleet } from '../lib/fleet-context';
 import { useToast } from '../lib/toast-context';
 import { useVoiceRecorder } from '../lib/use-voice-recorder';
+import { CodeBlock } from './code-block';
 
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const MARKDOWN_COMPONENTS = { pre: CodeBlock };
+const MARKDOWN_PLUGINS = [remarkGfm];
 
 function formatRecDuration(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -52,6 +57,8 @@ export function CodexChat({
   const [waiting, setWaiting] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  const [pendingFreshThread, setPendingFreshThread] = useState(false);
   // Anexo de imagem pendente (envia no submit). "Nova conversa" vem armada
   // pelo painel e é consumida no próximo envio de texto.
   const [pendingImage, setPendingImage] = useState<File | null>(null);
@@ -64,13 +71,47 @@ export function CodexChat({
   const baselineAssistantRef = useRef(0);
   const assistantCountRef = useRef(0);
   const waitStartRef = useRef(0);
+  const currentThreadIdRef = useRef<string | null>(null);
+  const previousFreshThreadIdRef = useRef<string | null>(null);
+  const nextFreshRef = useRef(false);
+  const pendingFreshThreadRef = useRef(false);
   waitingRef.current = waiting;
   optimisticRef.current = optimistic;
+  currentThreadIdRef.current = currentThreadId;
+  nextFreshRef.current = Boolean(nextFresh);
+  pendingFreshThreadRef.current = pendingFreshThread;
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
         const res = await getCodexMessages(slug, signal);
+        const responseThreadId = res.thread_id ?? null;
+
+        if (nextFreshRef.current && !pendingFreshThreadRef.current) {
+          currentThreadIdRef.current = responseThreadId;
+          setCurrentThreadId(responseThreadId);
+          setMessages([]);
+          setHiddenCount(0);
+          setStatus('empty');
+          return;
+        }
+
+        if (
+          pendingFreshThreadRef.current &&
+          previousFreshThreadIdRef.current &&
+          responseThreadId === previousFreshThreadIdRef.current
+        ) {
+          setStatus((s) => (s === 'loading' ? 'empty' : s));
+          return;
+        }
+
+        if (pendingFreshThreadRef.current) {
+          pendingFreshThreadRef.current = false;
+          setPendingFreshThread(false);
+        }
+
+        currentThreadIdRef.current = responseThreadId;
+        setCurrentThreadId(responseThreadId);
         // visible + texto não-vazio (agent_message às vezes vem vazio → bolha fantasma).
         const visible = res.messages.filter((m) => m.visible && m.text.trim().length > 0);
         setMessages(visible);
@@ -96,6 +137,18 @@ export function CodexChat({
     },
     [slug],
   );
+
+  useEffect(() => {
+    if (nextFresh) {
+      setMessages([]);
+      setHiddenCount(0);
+      setStatus('empty');
+      setOptimistic([]);
+      setWaiting(false);
+      return;
+    }
+    if (!pendingFreshThreadRef.current) void load();
+  }, [nextFresh, load]);
 
   // Poll com cadência dinâmica: rápido enquanto espera/otimista pendente.
   useEffect(() => {
@@ -179,6 +232,14 @@ export function CodexChat({
           fresh = Boolean(painel.codex_next_fresh);
         } catch {
           fresh = Boolean(nextFresh);
+        }
+        if (fresh) {
+          previousFreshThreadIdRef.current = currentThreadIdRef.current;
+          pendingFreshThreadRef.current = true;
+          setPendingFreshThread(true);
+          setMessages([]);
+          setHiddenCount(0);
+          setStatus('empty');
         }
         await postAgentInput(slug, trimmed, { fresh });
         if (fresh) onFreshConsumed?.();
@@ -272,7 +333,11 @@ export function CodexChat({
             ) : (
               <div key={m.id} className={`codex-bubble codex-bubble-${m.role}`}>
                 <span className="codex-bubble-role">{m.role === 'user' ? 'Rica' : 'Tara'}</span>
-                <p className="codex-bubble-text">{m.text}</p>
+                <div className="codex-bubble-text">
+                  <Markdown remarkPlugins={MARKDOWN_PLUGINS} components={MARKDOWN_COMPONENTS}>
+                    {m.text}
+                  </Markdown>
+                </div>
               </div>
             ),
           )}
@@ -280,7 +345,11 @@ export function CodexChat({
           {optimistic.map((o) => (
             <div key={o.id} className="codex-bubble codex-bubble-user codex-bubble-pending">
               <span className="codex-bubble-role">Rica</span>
-              <p className="codex-bubble-text">{o.text}</p>
+              <div className="codex-bubble-text">
+                <Markdown remarkPlugins={MARKDOWN_PLUGINS} components={MARKDOWN_COMPONENTS}>
+                  {o.text}
+                </Markdown>
+              </div>
             </div>
           ))}
 
