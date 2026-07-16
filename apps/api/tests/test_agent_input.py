@@ -43,7 +43,7 @@ TARA = {
     "tmux_session": "tara",
     "workspace_path": "/tmp/tara",
     "cli_default": "codex",
-    "model_default": "codex-gpt-5-5",
+    "model_default": "codex-gpt-5-6-sol",
     "capabilities": [],
     "can_review": [],
 }

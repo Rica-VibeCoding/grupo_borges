@@ -6,7 +6,7 @@ import { useToast } from './toast-context';
 
 export type UseAgentSendResult = {
   sending: boolean;
-  sendText: (text: string) => Promise<void>;
+  sendText: (text: string, options?: { fresh?: boolean }) => Promise<void>;
   sendImage: (file: File, caption?: string) => Promise<void>;
   sendVoice: (blob: Blob) => Promise<void>;
 };
@@ -46,11 +46,11 @@ export function useAgentSend(slug: string, agentName: string): UseAgentSendResul
   // ---- sendText -------------------------------------------------------------
 
   const sendText = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { fresh?: boolean }) => {
       if (!text.trim() || sending) return;
       setSending(true);
       try {
-        const res = await postAgentInput(slug, text.trim());
+        const res = await postAgentInput(slug, text.trim(), options);
         if (res.tmux_delivered) {
           fireSuccess();
         } else {

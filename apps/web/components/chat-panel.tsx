@@ -54,6 +54,9 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
 // DS-69 — opções Codex pra Tara (executor_kind=codex). Slugs canônicos casam
 // com a allowlist do backend; o label é o nome amigável pro Rica.
 const CODEX_MODEL_OPTIONS: Array<{ value: CodexModelSlug; label: string }> = [
+  { value: 'codex-gpt-5-6-sol', label: 'GPT-5.6 Sol' },
+  { value: 'codex-gpt-5-6-terra', label: 'GPT-5.6 Terra' },
+  { value: 'codex-gpt-5-6-luna', label: 'GPT-5.6 Luna' },
   { value: 'codex-gpt-5-5', label: 'GPT-5.5' },
   { value: 'codex-gpt-5-4', label: 'GPT-5.4' },
   { value: 'codex-gpt-5-4-mini', label: 'GPT-5.4 Mini' },
@@ -62,6 +65,9 @@ const CODEX_MODEL_OPTIONS: Array<{ value: CodexModelSlug; label: string }> = [
 ];
 
 const CODEX_MODEL_LABEL: Record<CodexModelSlug, string> = {
+  'codex-gpt-5-6-sol': 'GPT-5.6 Sol',
+  'codex-gpt-5-6-terra': 'GPT-5.6 Terra',
+  'codex-gpt-5-6-luna': 'GPT-5.6 Luna',
   'codex-gpt-5-5': 'GPT-5.5',
   'codex-gpt-5-4': 'GPT-5.4',
   'codex-gpt-5-4-mini': 'GPT-5.4 Mini',
@@ -1147,7 +1153,7 @@ function ModelChip({ agent }: { agent: Agent }) {
   // runtime, só na próxima execução. Claude Code segue o /model de sempre.
   const isCodex = agent.executor_kind === 'codex';
   const options = isCodex ? CODEX_MODEL_OPTIONS : MODEL_OPTIONS;
-  const fallbackSlug: AnyModelSlug = isCodex ? 'codex-gpt-5-5' : 'opus';
+  const fallbackSlug: AnyModelSlug = isCodex ? 'codex-gpt-5-6-sol' : 'opus';
   const labelOf = useCallback(
     (slug: AnyModelSlug): string =>
       isCodex

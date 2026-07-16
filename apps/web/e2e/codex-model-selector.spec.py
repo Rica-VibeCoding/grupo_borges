@@ -32,7 +32,16 @@ from playwright.sync_api import expect, sync_playwright
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:3007")
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
-CODEX_OPTIONS = ["GPT-5.5", "GPT-5.4", "GPT-5.4 Mini", "GPT-5.3 Codex", "GPT-5.2"]
+CODEX_OPTIONS = [
+    "GPT-5.6 Sol",
+    "GPT-5.6 Terra",
+    "GPT-5.6 Luna",
+    "GPT-5.5",
+    "GPT-5.4",
+    "GPT-5.4 Mini",
+    "GPT-5.3 Codex",
+    "GPT-5.2",
+]
 CLAUDE_OPTIONS = ["Opus 4.7", "Sonnet 4.6", "Haiku 4.5"]
 
 
@@ -53,7 +62,7 @@ def post_tara_model(model: str) -> None:
 
 
 def run() -> None:
-    original_model = api_get_tara().get("state_model") or "codex-gpt-5-5"
+    original_model = api_get_tara().get("state_model") or "codex-gpt-5-6-sol"
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, channel="chrome")
@@ -69,7 +78,7 @@ def run() -> None:
         chip_text = chip.inner_text()
         assert "GPT" in chip_text, f"chip da Tara devia mostrar modelo Codex, veio {chip_text!r}"
 
-        # --- 2. Dropdown: 5 modelos Codex + nota da próxima execução ---------
+        # --- 2. Dropdown: modelos Codex + nota da próxima execução -----------
         chip.click()
         for label in CODEX_OPTIONS:
             expect(page.get_by_role("option", name=label, exact=True)).to_be_visible(timeout=4000)
@@ -80,13 +89,13 @@ def run() -> None:
         for label in CLAUDE_OPTIONS:
             assert label not in menu_text, f"seletor Codex vazou modelo Claude {label!r}"
 
-        # --- 3. Selecionar GPT-5.4 → toast + persistência --------------------
-        page.get_by_role("option", name="GPT-5.4", exact=True).click()
+        # --- 3. Selecionar GPT-5.6 Terra → toast + persistência --------------
+        page.get_by_role("option", name="GPT-5.6 Terra", exact=True).click()
         toast = page.get_by_text("próxima execução")
         expect(toast).to_be_visible(timeout=4000)
 
         persisted = api_get_tara().get("state_model")
-        assert persisted == "codex-gpt-5-4", f"state_model devia ser codex-gpt-5-4, veio {persisted!r}"
+        assert persisted == "codex-gpt-5-6-terra", f"state_model devia ser codex-gpt-5-6-terra, veio {persisted!r}"
 
         # --- 4. Regressão Claude Code (Daniel) -------------------------------
         page.keyboard.press("Escape")

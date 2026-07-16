@@ -135,7 +135,7 @@ agents:
     tmux_session: tara-1
     workspace_path: /home/clawd/repos/ze_claude/tara
     cli_default: codex
-    model_default: codex-gpt-5-5
+    model_default: codex-gpt-5-6-sol
     kind: executor
     capabilities:
       - codex-exec
@@ -179,8 +179,8 @@ available_models:
     label: Haiku 4.5
     cli: claude_code
     cost_tier: low
-  - id: gpt-5-5
-    label: Codex GPT-5.5
+  - id: codex-gpt-5-6-sol
+    label: Codex GPT-5.6 Sol
     cli: codex
     cost_tier: medium
 

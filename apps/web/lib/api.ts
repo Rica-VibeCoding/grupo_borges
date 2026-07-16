@@ -224,6 +224,9 @@ export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';
 // DS-69 — slugs canônicos dos modelos Codex (espelham allowlist do backend e
 // `tmux_driver._CODEX_MODEL_MAP`). Tara troca por estes; Claude Code não.
 export type CodexModelSlug =
+  | 'codex-gpt-5-6-sol'
+  | 'codex-gpt-5-6-terra'
+  | 'codex-gpt-5-6-luna'
   | 'codex-gpt-5-5'
   | 'codex-gpt-5-4'
   | 'codex-gpt-5-4-mini'
@@ -374,9 +377,12 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   return null;
 }
 
-// DS-69 — slugs Codex são canônicos (state_model já vem como `codex-gpt-5-5`).
+// DS-69 — slugs Codex são canônicos (state_model já vem como `codex-gpt-*`).
 // Valida contra a lista fechada; qualquer coisa fora vira null (UI cai no default).
 const CODEX_MODEL_SLUGS: readonly CodexModelSlug[] = [
+  'codex-gpt-5-6-sol',
+  'codex-gpt-5-6-terra',
+  'codex-gpt-5-6-luna',
   'codex-gpt-5-5',
   'codex-gpt-5-4',
   'codex-gpt-5-4-mini',

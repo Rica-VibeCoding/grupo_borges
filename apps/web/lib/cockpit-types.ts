@@ -29,6 +29,9 @@ export type AgentModel =
   | 'claude-sonnet-5'
   | 'claude-sonnet-4-6'
   | 'claude-haiku-4-5'
+  | 'codex-gpt-5-6-sol'
+  | 'codex-gpt-5-6-terra'
+  | 'codex-gpt-5-6-luna'
   | 'codex-gpt-5-5'
   | 'codex-gpt-5-4'
   | 'codex-gpt-5-4-mini'
@@ -393,6 +396,9 @@ export function shortModelName(model: string): string {
     'claude-sonnet-5':    'Sonnet 5',
     'claude-sonnet-4-6':  'Sonnet 4.6',
     'claude-haiku-4-5':   'Haiku 4.5',
+    'codex-gpt-5-6-sol':   'GPT-5.6 Sol',
+    'codex-gpt-5-6-terra': 'GPT-5.6 Terra',
+    'codex-gpt-5-6-luna':  'GPT-5.6 Luna',
     'codex-gpt-5-5':      'GPT-5.5',
     'codex-gpt-5-4':      'GPT-5.4',
     'codex-gpt-5-4-mini': 'GPT-5.4m',

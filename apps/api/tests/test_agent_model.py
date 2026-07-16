@@ -43,7 +43,7 @@ TARA = {
     "tmux_session": "tara",
     "workspace_path": "/tmp/tara",
     "cli_default": "codex",
-    "model_default": "codex-gpt-5-5",
+    "model_default": "codex-gpt-5-6-sol",
     "capabilities": [],
     "can_review": [],
 }
@@ -98,21 +98,21 @@ def test_model_codex_persists_without_runtime_switch(tmp_path: Path) -> None:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/model",
-                json={"model": "codex-gpt-5-4"},
+                json={"model": "codex-gpt-5-6-terra"},
             )
             assert response.status_code == 200
             body = response.json()
             assert body["runtime_switch"] is False
             assert body["tmux_delivered"] is False
             assert body["state_persisted"] is True
-            assert body["model"] == "codex-gpt-5-4"
+            assert body["model"] == "codex-gpt-5-6-terra"
         # Codex nunca recebe /model no pane.
         send.assert_not_called()
     # state_model persistido reflete a escolha. asyncio.run cria loop próprio —
     # get_event_loop() quebra na suíte completa (sem loop atual no 3.12).
     import asyncio
     agent = asyncio.run(app.state.db.get_agent("tara"))
-    assert agent["state_model"] == "codex-gpt-5-4"
+    assert agent["state_model"] == "codex-gpt-5-6-terra"
 
 
 def test_model_claude_rejects_codex_slug(tmp_path: Path) -> None:
@@ -121,7 +121,7 @@ def test_model_claude_rejects_codex_slug(tmp_path: Path) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/agents/daniel/model",
-            json={"model": "codex-gpt-5-5"},
+            json={"model": "codex-gpt-5-6-sol"},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "model_not_allowed_for_claude_code"

@@ -33,7 +33,7 @@ TARA = {
     "tmux_session": "tara",
     "workspace_path": "/tmp/tara",
     "cli_default": "codex",
-    "model_default": "codex-gpt-5-5",
+    "model_default": "codex-gpt-5-6-sol",
     "capabilities": [],
     "can_review": [],
 }
@@ -170,7 +170,7 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
     )
 
     async def fake_capture(_session_name: str) -> str:
-        return "GPT-5.5 - 00:03:03"
+        return "GPT-5.6 Sol - 00:03:03"
 
     def fake_find_latest_thread(cwd: str):
         assert cwd == "/tmp/tara"
