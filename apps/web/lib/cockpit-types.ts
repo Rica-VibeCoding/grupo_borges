@@ -408,8 +408,17 @@ export function shortModelName(model: string): string {
 
 export function parseContextPct(excerpt: string | null): number | null {
   if (!excerpt) return null;
-  const m = excerpt.match(/(\d+)%/);
-  return m ? parseInt(m[1]!, 10) : null;
+  // A statusline do CC mostra o contexto como "[██░░░░░░░░] 21%" no fim do pane.
+  // Banners promocionais do CC (ex.: "weekly rate limits 50% higher") também têm
+  // "%", então NÃO pegar o primeiro match: ancorar na barra "]" e pegar o ÚLTIMO
+  // (statusline vive no fim do pane, igual parseModelFromPane). Sem barra = sem
+  // contexto confiável → null (não exibe o banner como se fosse contexto).
+  const re = /]\s*(\d+)\s*%/g;
+  let last: RegExpExecArray | null = null;
+  for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
+    last = m;
+  }
+  return last ? parseInt(last[1]!, 10) : null;
 }
 
 export function parseModelFromPane(excerpt: string | null): string | null {
