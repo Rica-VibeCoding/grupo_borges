@@ -34,7 +34,8 @@ agents:
     emoji: "🚀"
     origin: indiano sikh ("leão")
     tmux_session: daniel
-    workspace_path: /home/clawd/repos/ze_claude/daniel
+    # [2026-07-17 Pavan] Daniel embedded no promob-splitter — reverter = voltar linha abaixo pra /home/clawd/repos/ze_claude/daniel
+    workspace_path: /home/clawd/repos/promob-splitter
     cli_default: claude_code
     model_default: claude-opus-4-8
     capabilities:
