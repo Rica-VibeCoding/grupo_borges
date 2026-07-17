@@ -34,6 +34,26 @@ _EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
 
 AgentCli = Literal["claude_code", "codex"]
 
+# Socket tmux por sessão. Na Hostinger a frota inteira vive no socket default.
+# Na Oracle o boot systemd (borges-agent@%i) sobe UM server tmux por agente em
+# `tmux -L borges-<sessão>` — o socket default nem existe lá. Env
+# COCKPIT_TMUX_SOCKET="borges-{session}" ativa a busca no socket nomeado, com
+# fallback pro default (subsessões criadas pelo próprio cockpit moram lá).
+_TMUX_SOCKET_TEMPLATE = os.getenv("COCKPIT_TMUX_SOCKET", "").strip()
+
+
+def _server_for(session_name: str) -> libtmux.Server:
+    if _TMUX_SOCKET_TEMPLATE:
+        named = libtmux.Server(
+            socket_name=_TMUX_SOCKET_TEMPLATE.format(session=session_name)
+        )
+        try:
+            if named.has_session(session_name):
+                return named
+        except libtmux_exc.LibTmuxException:
+            pass
+    return libtmux.Server()
+
 _BOOTSTRAP_TIMEOUT_S = 15.0
 _BOOTSTRAP_POLL_INTERVAL_S = 0.25
 _PANE_EXCERPT_TIMEOUT_S = 0.5
@@ -78,6 +98,8 @@ _CLI_COMMANDS = {
 
 
 def _create_empty_session_sync(session_name: str) -> None:
+    # Criação deliberada no socket default: sessão nova é sempre do cockpit
+    # (subsessão); os sockets nomeados pertencem ao borges-agent@ do systemd.
     server = libtmux.Server()
     try:
         server.new_session(session_name=session_name, detached=True, kill_session=False)
@@ -101,7 +123,7 @@ def _bootstrap_cli_in_session_sync(
     if not resolved_workspace.is_relative_to(_REPOS_ROOT):
         raise ValueError(f"workspace_path fora de {_REPOS_ROOT}: {workspace_path}")
 
-    server = libtmux.Server()
+    server = _server_for(session_name)
     if not server.has_session(session_name):
         return {"attempted": False, "confirmed": False}
 
@@ -174,7 +196,7 @@ def _capture_pane_excerpt_sync(
     max_chars: int,
     preserve_ansi: bool = False,
 ) -> str | None:
-    server = libtmux.Server()
+    server = _server_for(session_name)
     if not server.has_session(session_name):
         return None
     session = server.sessions.get(session_name=session_name)
@@ -265,7 +287,7 @@ async def capture_pane_excerpt(
 
 
 def _kill_session_if_exists_sync(session_name: str) -> bool:
-    server = libtmux.Server()
+    server = _server_for(session_name)
     if not server.has_session(session_name):
         return False
     try:
@@ -281,7 +303,7 @@ async def kill_session_if_exists(session_name: str) -> bool:
 
 
 def _send_message_sync(session_name: str, text: str) -> bool:
-    server = libtmux.Server()
+    server = _server_for(session_name)
     if not server.has_session(session_name):
         return False
 
@@ -310,10 +332,16 @@ def _send_message_sync(session_name: str, text: str) -> bool:
 
         buf_name = f"cockpit-dispatch-{uuid.uuid4().hex[:12]}"
         paste_ok = False
+        # load-buffer precisa cair no MESMO server tmux do pane — socket
+        # nomeado quando _server_for resolveu um (senão o paste-buffer não
+        # acha o buffer).
+        tmux_argv = ["tmux"]
+        if server.socket_name:
+            tmux_argv += ["-L", server.socket_name]
         try:
             try:
                 load_result = subprocess.run(
-                    ["tmux", "load-buffer", "-b", buf_name, "-"],
+                    tmux_argv + ["load-buffer", "-b", buf_name, "-"],
                     input=sanitized,
                     text=True,
                     capture_output=True,
@@ -343,7 +371,7 @@ def _send_message_sync(session_name: str, text: str) -> bool:
 
 
 def _press_enter_sync(session_name: str) -> bool:
-    server = libtmux.Server()
+    server = _server_for(session_name)
     if not server.has_session(session_name):
         return False
     with _DISPATCH_LOCKS[session_name]:
@@ -367,7 +395,7 @@ async def press_enter(session_name: str) -> bool:
 
 
 def _press_escape_sync(session_name: str) -> bool:
-    server = libtmux.Server()
+    server = _server_for(session_name)
     if not server.has_session(session_name):
         return False
     with _DISPATCH_LOCKS[session_name]:
