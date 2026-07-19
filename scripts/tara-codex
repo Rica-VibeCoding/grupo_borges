@@ -9,6 +9,16 @@
 #   tara-codex --delegator daniel -C /home/clawd/repos/grupo_borges "<prompt>"
 #
 # Args extras (após `--`) passam direto pro `codex exec`.
+#
+# Contrato de saída (2026-07-19, batismo Hiro→Tara):
+#   STDOUT = só a última agent_message (resultado limpo, análogo ao hiro-k3)
+#   STDERR = JSONL cru do `codex exec --json` (relay de observabilidade)
+#   stdin da chamada interna é fechado (< /dev/null) — sem isso o codex
+#   fica em "Reading additional input from stdin..." eternamente quando
+#   disparado por outro agente (pipe de stdin aberto no harness).
+#   O -C precisa ser repo git (ou usar --skip-git-repo-check) — o codex
+#   aborta em pasta avulsa: "Not inside a trusted directory".
+#
 # Flags lidas pelo wrapper:
 #   --delegator <slug>   identifica quem disparou (default: daniel)
 #   --cockpit-url <url>  endpoint /api/codex-events
@@ -234,13 +244,19 @@ started_at=$(date +%s)
 post_event "tara.exec.started" "{\"started_at\":$started_at,\"argv\":$(printf '%s\n' "${EXEC_ARGS[@]}" | jq -R . | jq -sc .)}"
 
 set +e
-"$CODEX_BIN" "${EXEC_ARGS[@]}" | tee /dev/stderr | while IFS= read -r line; do
+LAST_MSG_FILE=$(mktemp "${TMPDIR:-/tmp}/tara-codex-lastmsg.XXXXXX")
+"$CODEX_BIN" "${EXEC_ARGS[@]}" < /dev/null | while IFS= read -r line; do
+  printf '%s\n' "$line" >&2
   # Captura thread_id pra próximo --resume-last.
   if [[ "$line" == *'"thread.started"'* ]]; then
     tid=$(printf '%s' "$line" | jq -r '.thread_id // empty' 2>/dev/null || true)
     if [[ -n "$tid" ]]; then
       printf '%s' "$tid" > "$THREAD_FILE"
     fi
+  fi
+  # Captura a última agent_message (resultado limpo pro stdout no final).
+  if [[ "$line" == *'"item.completed"'* && "$line" == *'"agent_message"'* ]]; then
+    printf '%s' "$line" | jq -r '.item.text // empty' > "$LAST_MSG_FILE" 2>/dev/null || true
   fi
   post_raw_jsonl "$line"
 done
@@ -255,5 +271,12 @@ if [[ "$exit_code" -eq 0 ]]; then
 else
   post_event "tara.exec.failed" "{\"exit_code\":$exit_code,\"duration_s\":$duration}"
 fi
+
+# Resultado limpo no stdout (observabilidade JSONL ficou no stderr).
+if [[ -s "$LAST_MSG_FILE" ]]; then
+  cat "$LAST_MSG_FILE"
+  printf '\n'
+fi
+rm -f "$LAST_MSG_FILE"
 
 exit "$exit_code"
