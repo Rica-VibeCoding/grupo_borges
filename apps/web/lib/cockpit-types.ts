@@ -321,7 +321,7 @@ export type PainelSubagents = {
 };
 
 // Painel Codex-nativo (Tara). Quando codex_native=true, o frontend troca os
-// controles de CC: effort vira 3 níveis, FUNÇÕES vira sandbox, e Quotas/Subagents
+// controles de CC: effort usa níveis Codex, FUNÇÕES vira sandbox, e Quotas/Subagents
 // (sem equivalente no Codex) são ocultados. Shape espelha o backend (top-level,
 // igual effort/permission/quotas).
 export type PainelCodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access';

@@ -28,14 +28,28 @@ DANIEL = {
     "can_review": [],
 }
 
+TARA = {
+    "slug": "tara",
+    "name": "Tara Kaur",
+    "role": "executor",
+    "emoji": "TK",
+    "tmux_session": "tara",
+    "workspace_path": "/tmp/tara",
+    "cli_default": "codex",
+    "model_default": "gpt-5.5",
+    "capabilities": [],
+    "can_review": [],
+}
+
 
 def _build_app(tmp_path: Path) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL])
+    db._sync_agents([DANIEL, TARA])
+    db._update_agent_codex_state("tara", executor_kind="codex")
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL]}
+    app.state.agents_config = {"agents": [DANIEL, TARA]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -214,6 +228,40 @@ def test_agent_painel_patch_effort_invalido(tmp_path: Path, monkeypatch) -> None
         response = client.patch("/api/agents/daniel/effort", json={"effort": "ultra-high"})
 
     assert response.status_code == 422
+
+
+def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) -> None:
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/tara/effort", json={"effort": "xhigh"})
+        painel = client.get("/api/agents/tara/painel")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "slug": "tara",
+        "effort": "xhigh",
+        "source": "agent_state.codex_reasoning_effort",
+        "session_may_diverge": True,
+        "written": True,
+    }
+    assert painel.status_code == 200
+    body = painel.json()
+    assert body["effort"]["value"] == "xhigh"
+    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh"]
+    assert body["codex_native"] is True
+
+
+def test_agent_painel_codex_effort_rejeita_max(tmp_path: Path, monkeypatch) -> None:
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/tara/effort", json={"effort": "max"})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "codex_effort_not_allowed"
 
 
 def test_agent_painel_patch_effort_404(tmp_path: Path, monkeypatch) -> None:

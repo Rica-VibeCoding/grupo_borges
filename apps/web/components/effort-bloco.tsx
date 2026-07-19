@@ -47,7 +47,12 @@ export function EffortBloco({ data, slug, onChange }: EffortBlocoProps) {
         </div>
       </div>
 
-      <div className="painel-segmented" role="group" aria-label="Selecionar effort">
+      <div
+        className="painel-segmented"
+        role="group"
+        aria-label="Selecionar effort"
+        style={{ gridTemplateColumns: `repeat(${data.allowed.length}, minmax(0, 1fr))` }}
+      >
         {data.allowed.map((value) => {
           const isActive = value === data.value;
           const isSaving = saving === value;
