@@ -49,10 +49,25 @@ TARA = {
 }
 
 
+HIRO = {
+    "slug": "hiro",
+    "name": "Hiro Nakamura",
+    "role": "dev",
+    "emoji": "🧪",
+    "tmux_session": "hiro",
+    "workspace_path": "/tmp/hiro",
+    "cli_default": "claude_code",
+    "model_default": "k3",
+    "model_family": "kimi",
+    "capabilities": [],
+    "can_review": [],
+}
+
+
 def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA])
+    db._sync_agents([DANIEL, TARA, HIRO])
     if codex_for_tara:
         # Marca Tara como executor codex no agent_state — necessário pro gate 422.
         db._update_agent_codex_state(
@@ -62,7 +77,7 @@ def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
         )
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA]}
+    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -122,6 +137,65 @@ def test_model_claude_rejects_codex_slug(tmp_path: Path) -> None:
         response = client.post(
             "/api/agents/daniel/model",
             json={"model": "codex-gpt-5-6-sol"},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_not_allowed_for_claude_code"
+
+
+def test_model_kimi_rejects_claude_slug(tmp_path: Path) -> None:
+    """Kimi (Hiro) — slug Claude (opus/sonnet/…) em agente Kimi → 422."""
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agents/hiro/model",
+            json={"model": "opus"},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_not_allowed_for_kimi"
+
+
+def test_model_kimi_rejects_codex_slug(tmp_path: Path) -> None:
+    """Kimi (Hiro) — slug Codex em agente Kimi → 422 com detail da família kimi
+    (o gate Anthropic não pode capturar antes e rotular errado)."""
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agents/hiro/model",
+            json={"model": "codex-gpt-5-6-sol"},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "model_not_allowed_for_kimi"
+
+
+def test_model_kimi_persists_without_runtime_switch(tmp_path: Path) -> None:
+    """Kimi (Hiro) — aceita slug próprio, persiste state_model, NÃO toca o tmux
+    (modelo é env var de boot, /model do CC não alcança o motor)."""
+    app = _build_app(tmp_path)
+    with patch("routers.agents.tmux_driver.send_message") as send:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/hiro/model",
+                json={"model": "kimi-k2.7-code"},
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["runtime_switch"] is False
+            assert body["tmux_delivered"] is False
+            assert body["state_persisted"] is True
+            assert body["model"] == "kimi-k2.7-code"
+        send.assert_not_called()
+    import asyncio
+    agent = asyncio.run(app.state.db.get_agent("hiro"))
+    assert agent["state_model"] == "kimi-k2.7-code"
+
+
+def test_model_claude_rejects_kimi_slug(tmp_path: Path) -> None:
+    """Slug Kimi em agente Claude Code → 422 (família não vaza entre cards)."""
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agents/daniel/model",
+            json={"model": "kimi-k3"},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "model_not_allowed_for_claude_code"

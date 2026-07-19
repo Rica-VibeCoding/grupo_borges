@@ -233,7 +233,9 @@ export type CodexModelSlug =
   | 'codex-gpt-5-3-codex'
   | 'codex-gpt-5-2';
 
-export type AnyModelSlug = ChatModelSlug | CodexModelSlug;
+export type KimiModelSlug = 'kimi-k3' | 'kimi-k2.7-code' | 'kimi-k2.7-code-highspeed';
+
+export type AnyModelSlug = ChatModelSlug | CodexModelSlug | KimiModelSlug;
 
 export type AgentInputResponse = {
   tmux_delivered: boolean;
@@ -393,6 +395,23 @@ const CODEX_MODEL_SLUGS: readonly CodexModelSlug[] = [
 export function toCodexModelSlug(model: string | null | undefined): CodexModelSlug | null {
   if (!model) return null;
   return CODEX_MODEL_SLUGS.find((slug) => slug === model) ?? null;
+}
+
+const KIMI_MODEL_SLUGS: readonly KimiModelSlug[] = [
+  'kimi-k3',
+  'kimi-k2.7-code',
+  'kimi-k2.7-code-highspeed',
+];
+
+const KIMI_RAW_MODEL_TO_SLUG: Record<string, KimiModelSlug> = {
+  k3: 'kimi-k3',
+  'kimi-for-coding': 'kimi-k2.7-code',
+  'kimi-for-coding-highspeed': 'kimi-k2.7-code-highspeed',
+};
+
+export function toKimiModelSlug(model: string | null | undefined): KimiModelSlug | null {
+  if (!model) return null;
+  return KIMI_MODEL_SLUGS.find((slug) => slug === model) ?? KIMI_RAW_MODEL_TO_SLUG[model] ?? null;
 }
 
 // ----- TK-25: leitura read-only do Codex local (Tara) --------------------

@@ -41,6 +41,9 @@ class FleetAgent(BaseModel):
     workspace_path: str
     cli_default: str
     model_default: str
+    # Família de modelos do agente (agents.yaml). "kimi" no Hiro — drive o
+    # seletor de modelo/effort do front; None = família Anthropic padrão.
+    model_family: str | None = None
     capabilities: list[str]
     created_at: int
     updated_at: int

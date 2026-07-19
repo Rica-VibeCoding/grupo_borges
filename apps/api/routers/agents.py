@@ -72,6 +72,10 @@ _CLAUDE_AI_PREFIX = "claude.ai "
 _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh"]
+# Kimi K3 (assinatura Kimi Code): o endpoint expõe think_efforts low/high/max
+# (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
+# GET api.kimi.com/coding/v1/models.
+_KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
 _CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
 _CODEX_DEFAULT_SANDBOX = "danger-full-access"
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
@@ -341,9 +345,15 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         )
 
     cc_status = await _load_cc_status(db, slug)
+    is_kimi = agent.get("model_family") == "kimi"
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
-        asyncio.to_thread(_read_agent_effort),
+        # Kimi: effort persistido em agent_state (env var de boot), não o
+        # settings.json global — senão o card do Hiro mostraria o effort dos
+        # agentes Anthropic e os 5 níveis que o motor não tem.
+        asyncio.to_thread(_build_kimi_painel_effort, agent)
+        if is_kimi
+        else asyncio.to_thread(_read_agent_effort),
         asyncio.to_thread(_read_agent_permission),
         asyncio.to_thread(_build_painel_quotas, cc_status),
         asyncio.to_thread(_build_agent_subagents, agent.get("workspace_path")),
@@ -375,6 +385,21 @@ async def patch_agent_effort(
             slug=slug,
             effort=patch.effort,
             source="agent_state.codex_reasoning_effort",
+            session_may_diverge=True,
+            written=True,
+        )
+    if agent.get("model_family") == "kimi":
+        # Kimi pensa sempre; o nível é env var (CLAUDE_CODE_EFFORT_LEVEL) lida
+        # no boot — persistir no settings.json global não teria efeito e ainda
+        # vazaria pros outros agentes. Vale no próximo boot, como o modelo.
+        if patch.effort not in _KIMI_PAINEL_ALLOWED_EFFORTS:
+            raise HTTPException(status_code=422, detail="kimi_effort_not_allowed")
+        db = request.app.state.db
+        await db.update_agent_codex_state(slug, kimi_reasoning_effort=patch.effort)
+        return AgentPainelEffortPatchResponse(
+            slug=slug,
+            effort=patch.effort,
+            source="agent_state.kimi_reasoning_effort",
             session_may_diverge=True,
             written=True,
         )
@@ -480,6 +505,9 @@ def _model_family(model: str | None) -> str | None:
     if not model:
         return None
     lowered = model.lower()
+    # Motor Kimi: id cru `k3` / slugs `kimi-*` — agrupa tudo como "kimi" no painel.
+    if "kimi" in lowered or lowered.startswith("k3"):
+        return "kimi"
     for family in ("fable", "opus", "sonnet", "haiku", "codex", "gpt"):
         if family in lowered:
             return family
@@ -530,6 +558,18 @@ def _build_codex_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
         value=value,
         allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
         source="agent_state.codex_reasoning_effort",
+        session_may_diverge=True,
+    )
+
+
+def _build_kimi_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
+    value = agent.get("kimi_reasoning_effort")
+    if value not in _KIMI_PAINEL_ALLOWED_EFFORTS:
+        value = None
+    return AgentPainelEffort(
+        value=value,
+        allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
+        source="agent_state.kimi_reasoning_effort",
         session_may_diverge=True,
     )
 
@@ -1306,6 +1346,18 @@ CodexModel = Literal[
 ]
 _CODEX_MODEL_SLUGS = frozenset(get_args(CodexModel))
 
+# Modelos Kimi (assinatura Kimi Code, endpoint api.kimi.com/coding/) pro Hiro.
+# Slugs canônicos; o de-para pro id cru do motor (`k3`, `kimi-for-coding`, …)
+# mora em `ze-shared/scripts/kimi-models.sh` — fonte única consumida pelos
+# wrappers bash (subir-frota.sh, hiro-k3), espelho do padrão `_CODEX_MODEL_MAP`.
+# Lista validada 19/07 via GET /v1/models: só esses 3 existem na assinatura.
+KimiModel = Literal[
+    "kimi-k3",
+    "kimi-k2.7-code",
+    "kimi-k2.7-code-highspeed",
+]
+_KIMI_MODEL_SLUGS = frozenset(get_args(KimiModel))
+
 
 class PaneStreamEvent(BaseModel):
     excerpt: str
@@ -1325,7 +1377,7 @@ class InputResponse(BaseModel):
 
 
 class ModelChangeRequest(BaseModel):
-    model: ChatModel | CodexModel
+    model: ChatModel | CodexModel | KimiModel
     force: bool = False
 
 
@@ -1990,21 +2042,32 @@ async def change_agent_model(
     - 422 `model_not_allowed_for_codex` se vier slug Claude
     - persiste state_model (escolha do Rica), emite task_event, runtime_switch=False.
       O wrapper `tara-codex` injeta `-m <modelo>` na PRÓXIMA execução.
+
+    **Kimi (Hiro)** — NÃO troca em sessão viva (motor é fixo por env var no
+    boot; `/model` do CC só lista aliases Anthropic, todos mapeados pro mesmo
+    id Kimi). Mesmo contrato do Codex: persiste state_model, emite task_event,
+    runtime_switch=False. Quem aplica é o boot (`subir-frota.sh subir_hiro`)
+    e o wrapper `hiro-k3`, lendo o estado persistido.
     """
     agent = await _get_agent_or_404(request, slug)
     is_codex = agent.get("executor_kind") == "codex"
+    is_kimi = agent.get("model_family") == "kimi"
     db: GrupoBorgesDB = request.app.state.db
     target = payload.model
     from_model = agent.get("state_model") or agent.get("model_default")
 
-    # Allowlist cruzada: nunca aceitar slug Codex em agente Claude nem o inverso.
+    # Allowlist cruzada: nunca aceitar slug de uma família em agente de outra.
     if is_codex and target not in _CODEX_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_codex")
-    if not is_codex and target in _CODEX_MODEL_SLUGS:
+    if is_kimi and target not in _KIMI_MODEL_SLUGS:
+        raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
+    if not is_codex and not is_kimi and target in (_CODEX_MODEL_SLUGS | _KIMI_MODEL_SLUGS):
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
 
-    if is_codex:
-        # Persiste a escolha como estado da Tara; vale na próxima execução Codex.
+    if is_codex or is_kimi:
+        # Persiste a escolha como estado do agente; vale na próxima execução
+        # (Codex) ou no próximo boot da sessão (Kimi — env var de modelo é
+        # lida só na subida do processo).
         await db.upsert_agent_state(slug, model=target)
         await db.insert_task_event(
             kind="agent.model_change",

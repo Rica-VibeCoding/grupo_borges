@@ -16,8 +16,10 @@ import {
   postAgentModel,
   toShortModelSlug,
   toCodexModelSlug,
+  toKimiModelSlug,
   type ChatModelSlug,
   type CodexModelSlug,
+  type KimiModelSlug,
   type AnyModelSlug,
 } from '../lib/api';
 import { formatCompactNumber } from '../lib/painel-format';
@@ -73,6 +75,18 @@ const CODEX_MODEL_LABEL: Record<CodexModelSlug, string> = {
   'codex-gpt-5-4-mini': 'GPT-5.4 Mini',
   'codex-gpt-5-3-codex': 'GPT-5.3 Codex',
   'codex-gpt-5-2': 'GPT-5.2',
+};
+
+const KIMI_MODEL_OPTIONS: Array<{ value: KimiModelSlug; label: string }> = [
+  { value: 'kimi-k3', label: 'Kimi K3 · 1M' },
+  { value: 'kimi-k2.7-code', label: 'Kimi K2.7 Code' },
+  { value: 'kimi-k2.7-code-highspeed', label: 'Kimi K2.7 HS' },
+];
+
+const KIMI_MODEL_LABEL: Record<KimiModelSlug, string> = {
+  'kimi-k3': 'Kimi K3 · 1M',
+  'kimi-k2.7-code': 'Kimi K2.7 Code',
+  'kimi-k2.7-code-highspeed': 'Kimi K2.7 HS',
 };
 
 /**
@@ -1150,21 +1164,26 @@ function ModelChip({ agent }: { agent: Agent }) {
   // DS-69 — Codex (Tara) usa allowlist e fluxo próprios: troca não vale em
   // runtime, só na próxima execução. Claude Code segue o /model de sempre.
   const isCodex = agent.executor_kind === 'codex';
-  const options = isCodex ? CODEX_MODEL_OPTIONS : MODEL_OPTIONS;
-  const fallbackSlug: AnyModelSlug = isCodex ? 'codex-gpt-5-6-sol' : 'opus';
+  const isKimi = agent.model_family === 'kimi';
+  const options = isCodex ? CODEX_MODEL_OPTIONS : isKimi ? KIMI_MODEL_OPTIONS : MODEL_OPTIONS;
+  const fallbackSlug: AnyModelSlug = isCodex ? 'codex-gpt-5-6-sol' : isKimi ? 'kimi-k3' : 'opus';
   const labelOf = useCallback(
     (slug: AnyModelSlug): string =>
       isCodex
         ? CODEX_MODEL_LABEL[slug as CodexModelSlug] ?? slug
-        : MODEL_LABEL[slug as ChatModelSlug] ?? slug,
-    [isCodex],
+        : isKimi
+          ? KIMI_MODEL_LABEL[slug as KimiModelSlug] ?? slug
+          : MODEL_LABEL[slug as ChatModelSlug] ?? slug,
+    [isCodex, isKimi],
   );
   const currentSlug: AnyModelSlug | null = useMemo(
     () =>
       isCodex
         ? toCodexModelSlug(agent.state_model ?? agent.model_default)
-        : toShortModelSlug(agent.state_model ?? agent.model_default),
-    [isCodex, agent.state_model, agent.model_default],
+        : isKimi
+          ? toKimiModelSlug(agent.state_model ?? agent.model_default)
+          : toShortModelSlug(agent.state_model ?? agent.model_default),
+    [isCodex, isKimi, agent.state_model, agent.model_default],
   );
 
   const [pending, setPending] = useState<AnyModelSlug | null>(null);
@@ -1178,8 +1197,12 @@ function ModelChip({ agent }: { agent: Agent }) {
       try {
         const res = await postAgentModel(agent.slug, target, { force });
         if (!res.runtime_switch) {
-          // Codex: persistido, vale na próxima execução da Tara.
-          fire({ kind: 'success', msg: `Tara usa ${labelOf(target)} na próxima execução` });
+          fire({
+            kind: 'success',
+            msg: isKimi
+              ? `${agent.name} usa ${labelOf(target)} no próximo boot`
+              : `${agent.name} usa ${labelOf(target)} na próxima execução`,
+          });
         } else if (!res.tmux_delivered) {
           fire({ kind: 'warn', msg: 'troca não entregue', sub: 'pane fora do CLI esperado', ttlMs: 6000 });
         } else if (!res.confirmed) {
@@ -1196,7 +1219,7 @@ function ModelChip({ agent }: { agent: Agent }) {
         setPending(null);
       }
     },
-    [agent.slug, fire, labelOf, mutate],
+    [agent.name, agent.slug, fire, isKimi, labelOf, mutate],
   );
 
   const onSelect = useCallback(
@@ -1204,14 +1227,14 @@ function ModelChip({ agent }: { agent: Agent }) {
       const slug = next as AnyModelSlug;
       if (busy) return;
       if (slug === currentSlug) return;
-      // Codex não toca a sessão viva — sem modal de "trabalhando", persiste direto.
-      if (!isCodex && agent.status === 'trabalhando') {
+      // Codex e Kimi não tocam a sessão viva — persistem direto.
+      if (!isCodex && !isKimi && agent.status === 'trabalhando') {
         setConfirmTarget(slug);
         return;
       }
       void sendChange(slug, false);
     },
-    [agent.status, busy, currentSlug, isCodex, sendChange],
+    [agent.status, busy, currentSlug, isCodex, isKimi, sendChange],
   );
 
   const displaySlug = pending ?? currentSlug ?? fallbackSlug;
@@ -1229,16 +1252,16 @@ function ModelChip({ agent }: { agent: Agent }) {
           className="model-chip"
           aria-label="Modelo"
           aria-busy={busy}
-          title={isCodex ? 'Modelo da próxima execução da Tara' : 'Trocar modelo'}
+          title={isCodex ? 'Modelo da próxima execução da Tara' : isKimi ? 'Modelo do próximo boot do Hiro' : 'Trocar modelo'}
         >
           <Select.Value>{displayLabel}</Select.Value>
           <Select.Icon className="model-chip-caret" aria-hidden="true">▾</Select.Icon>
         </Select.Trigger>
         <Select.Portal>
           <Select.Content className="select-content" position="popper" sideOffset={4}>
-            {isCodex && (
+            {(isCodex || isKimi) && (
               <div className="select-hint" role="note">
-                vale na próxima execução
+                {isKimi ? 'vale no próximo boot' : 'vale na próxima execução'}
               </div>
             )}
             <Select.Viewport>

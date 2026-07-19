@@ -41,15 +41,29 @@ TARA = {
     "can_review": [],
 }
 
+HIRO = {
+    "slug": "hiro",
+    "name": "Hiro Nakamura",
+    "role": "dev",
+    "emoji": "🧪",
+    "tmux_session": "hiro",
+    "workspace_path": "/tmp/hiro",
+    "cli_default": "claude_code",
+    "model_default": "k3",
+    "model_family": "kimi",
+    "capabilities": [],
+    "can_review": [],
+}
+
 
 def _build_app(tmp_path: Path) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA])
+    db._sync_agents([DANIEL, TARA, HIRO])
     db._update_agent_codex_state("tara", executor_kind="codex")
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA]}
+    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -262,6 +276,45 @@ def test_agent_painel_codex_effort_rejeita_max(tmp_path: Path, monkeypatch) -> N
 
     assert response.status_code == 422
     assert response.json()["detail"] == "codex_effort_not_allowed"
+
+
+def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
+    """Kimi (Hiro) — effort persiste em agent_state (env de boot), allowed é a
+    trinca do motor (low/high/max), NÃO toca o settings.json global."""
+    settings_dir = tmp_path / ".claude"
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/hiro/effort", json={"effort": "max"})
+        painel = client.get("/api/agents/hiro/painel")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "slug": "hiro",
+        "effort": "max",
+        "source": "agent_state.kimi_reasoning_effort",
+        "session_may_diverge": True,
+        "written": True,
+    }
+    assert painel.status_code == 200
+    body = painel.json()
+    assert body["effort"]["value"] == "max"
+    assert body["effort"]["allowed"] == ["low", "high", "max"]
+    # settings global intocado — o valor "medium" é dos agentes Anthropic.
+    assert json.loads((settings_dir / "settings.json").read_text())["effortLevel"] == "medium"
+
+
+def test_agent_painel_kimi_effort_rejeita_medium(tmp_path: Path, monkeypatch) -> None:
+    """Kimi (Hiro) — medium/xhigh não existem no motor (só low/high/max)."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/hiro/effort", json={"effort": "medium"})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "kimi_effort_not_allowed"
 
 
 def test_agent_painel_patch_effort_404(tmp_path: Path, monkeypatch) -> None:

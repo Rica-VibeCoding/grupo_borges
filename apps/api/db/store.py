@@ -316,6 +316,7 @@ class GrupoBorgesDB:
                 ("codex_reasoning_effort", "TEXT"),
                 ("codex_sandbox", "TEXT"),
                 ("codex_next_fresh", "INTEGER"),
+                ("kimi_reasoning_effort", "TEXT"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
 
@@ -331,6 +332,7 @@ class GrupoBorgesDB:
                 self._add_column_if_missing(conn, "tasks", col, definition)
 
             self._add_column_if_missing(conn, "agents", "can_review", "TEXT")
+            self._add_column_if_missing(conn, "agents", "model_family", "TEXT")
 
             if self._add_column_if_missing(conn, "task_events", "content_hash", "TEXT"):
                 conn.execute(
@@ -371,8 +373,8 @@ class GrupoBorgesDB:
                     """
                     INSERT INTO agents (slug, name, role, emoji, tmux_session, workspace_path,
                                         cli_default, model_default, capabilities, can_review,
-                                        created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        model_family, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(slug) DO UPDATE SET
                         name           = excluded.name,
                         role           = excluded.role,
@@ -383,6 +385,7 @@ class GrupoBorgesDB:
                         model_default  = excluded.model_default,
                         capabilities   = excluded.capabilities,
                         can_review     = excluded.can_review,
+                        model_family   = excluded.model_family,
                         updated_at     = excluded.updated_at
                     """,
                     (
@@ -396,6 +399,7 @@ class GrupoBorgesDB:
                         a["model_default"],
                         json.dumps(a.get("capabilities", []), ensure_ascii=False),
                         json.dumps(a.get("can_review", []), ensure_ascii=False),
+                        a.get("model_family"),
                         now,
                         now,
                     ),
@@ -432,6 +436,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
+                       s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -454,6 +459,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
+                       s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -575,6 +581,7 @@ class GrupoBorgesDB:
             "codex_reasoning_effort",
             "codex_sandbox",
             "codex_next_fresh",
+            "kimi_reasoning_effort",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
@@ -2679,6 +2686,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
+                       s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
