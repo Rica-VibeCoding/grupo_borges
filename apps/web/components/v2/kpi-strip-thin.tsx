@@ -3,7 +3,7 @@
 import { useFleet } from '../../lib/fleet-context';
 import { formatClock } from '../../lib/format-time';
 
-type StatusGeral = 'ok' | 'atencao' | 'falha';
+type StatusGeral = 'ok' | 'comunicado' | 'atencao' | 'falha';
 
 function formatElapsed(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '—';
@@ -40,9 +40,10 @@ export function KpiStripThin() {
   });
   const sseDown = sseStatus !== 'open';
   const noneActive = kpis.total > 0 && agentesAtivos === 0;
-  const hasFailure = sseDown || noneActive;
-  const hasAttention = blockedTasks.length > 0 || staleOffline.length > 0;
-  const statusGeral: StatusGeral = hasFailure ? 'falha' : hasAttention ? 'atencao' : 'ok';
+  const hasFailure = sseDown;
+  const hasAttention = blockedTasks.length > 0;
+  const hasNotice = noneActive || staleOffline.length > 0;
+  const statusGeral: StatusGeral = hasFailure ? 'falha' : hasAttention ? 'atencao' : hasNotice ? 'comunicado' : 'ok';
   const firstStale = staleOffline[0];
   const firstStaleElapsed = firstStale?.last_seen
     ? formatElapsed(now - firstStale.last_seen)
@@ -56,15 +57,21 @@ export function KpiStripThin() {
   const blockedLabel = tasksBlocked.length === 1
     ? `1 tarefa parada · ${tasksBlocked[0]}`
     : `${tasksBlocked.length} tarefas paradas · ${tasksBlocked.join(' ')}`;
-  const failureLabel = sseDown ? 'Cockpit sem conexão ao vivo' : 'nenhum agente ativo agora';
+  const failureLabel = 'Cockpit sem conexão ao vivo';
+  const noticeLabel = [
+    noneActive ? 'nenhum agente ativo agora' : null,
+    staleLabel,
+  ].filter(Boolean).join(' · ');
   const mobilePrimary = statusGeral === 'falha'
     ? failureLabel
     : statusGeral === 'atencao'
-      ? tasksBlocked.length > 0 ? blockedLabel : staleLabel
+      ? blockedLabel
+      : statusGeral === 'comunicado'
+        ? noticeLabel
       : null;
   const mobileSecondary = [
     `${agentesAtivos}/${kpis.total} ativos`,
-    offlineCount > 0 && statusGeral !== 'atencao' ? `${offlineCount} offline` : null,
+    offlineCount > 0 && statusGeral !== 'comunicado' ? `${offlineCount} offline` : null,
     exec > 0 ? `${exec} trabalhando` : null,
     aguardando > 0 ? `${aguardando} aguardando` : null,
     sseDown && statusGeral !== 'falha' ? 'sem conexão ao vivo' : null,
@@ -74,7 +81,9 @@ export function KpiStripThin() {
   return (
     <div className="kpi-thin mono" data-state={statusGeral} role="group" aria-label="Status da frota">
       <span className="kt-dot" aria-hidden="true" />
-      <span className="kt-main">{statusGeral === 'falha' ? 'EM FALHA' : statusGeral === 'atencao' ? 'ATENÇÃO' : 'OK'}</span>
+      <span className="kt-main">
+        {statusGeral === 'falha' ? 'EM FALHA' : statusGeral === 'atencao' ? 'ATENÇÃO' : statusGeral === 'comunicado' ? 'COMUNICADO' : 'OK'}
+      </span>
       {statusGeral === 'falha' && (
         <span className="kt-meta kt-desktop-meta">
           <span className="kt-sep"> · </span>
@@ -93,10 +102,16 @@ export function KpiStripThin() {
           {staleLabel}
         </span>
       )}
+      {statusGeral === 'comunicado' && noticeLabel && (
+        <span className="kt-meta kt-desktop-meta">
+          <span className="kt-sep"> · </span>
+          {noticeLabel}
+        </span>
+      )}
       {mobilePrimary && <span className="kt-mobile-meta kt-mobile-primary">{mobilePrimary}</span>}
       <span className="kt-mobile-meta kt-mobile-secondary">{mobileSecondary}</span>
       <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{agentesAtivos}/{kpis.total} ativos</span>
-      {offlineCount > 0 && statusGeral !== 'atencao' && (
+      {offlineCount > 0 && statusGeral !== 'comunicado' && (
         <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{offlineCount} offline</span>
       )}
       {exec > 0 && <span className="kt-meta kt-desktop-meta"><span className="kt-sep"> · </span>{exec} trabalhando</span>}
