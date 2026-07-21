@@ -34,8 +34,8 @@ agents:
     emoji: "🚀"
     origin: indiano sikh ("leão")
     tmux_session: daniel
-    # [2026-07-17 Pavan] Daniel embedded no promob-splitter — reverter = voltar linha abaixo pra /home/clawd/repos/ze_claude/daniel
-    workspace_path: /home/clawd/repos/promob-splitter
+    # [2026-07-21 Pavan] Daniel embedded no fluyt (veio do promob-splitter) — reverter = voltar linha abaixo pra /home/clawd/repos/ze_claude/daniel
+    workspace_path: /home/clawd/repos/fluyt
     cli_default: claude_code
     model_default: claude-opus-4-8
     capabilities:
@@ -143,6 +143,28 @@ agents:
       - refactor-mecânico
       - smoke-e2e
       - executora-pareada-daniel
+    can_review:
+      - daniel
+
+  - slug: hiro
+    name: Hiro Nakamura
+    role: Dev par de teste — motor Kimi K3
+    emoji: "🧪"
+    origin: japonês
+    tmux_session: hiro
+    # [2026-07-19 Pavan] Clone experimental do Daniel no promob-splitter (worktree hiro-teste). Backend NÃO-Anthropic (Kimi K3, assinatura Kimi Code). Controle via tmux (RC não existe nesse motor). Domínio próprio decidido pelo Rica 19/07.
+    workspace_path: /home/clawd/repos/promob-splitter-hiro
+    cli_default: claude_code
+    model_default: k3
+    # [2026-07-19 Hiro] Família de modelos do agente: drive o seletor do cockpit
+    # (POST /model vira persist-only, effort low/high/max). Sem o campo = Anthropic.
+    model_family: kimi
+    capabilities:
+      - dev-fullstack
+      - promob-splitter
+      - fluyt
+      - teste-motor-kimi-k3
+      - refactor
     can_review:
       - daniel
 
