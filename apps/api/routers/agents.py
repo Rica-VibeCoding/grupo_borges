@@ -27,11 +27,13 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Literal, NamedTuple, get_args
 
+import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from libtmux import exc as libtmux_exc
@@ -78,7 +80,16 @@ _CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh"]
 _KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
 _CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
 _CODEX_DEFAULT_SANDBOX = "danger-full-access"
+_TELECODEX_CONTROL_URL = os.environ.get(
+    "TELECODEX_CONTROL_URL",
+    "http://127.0.0.1:8787/control/new-thread",
+)
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
+# Kimi: mesmo endpoint do `/usage` do Kimi Code CLI — janela de 5h + cota
+# semanal da assinatura. Cache curto: o painel faz poll e a cota anda devagar.
+_KIMI_USAGES_URL = "https://api.kimi.com/coding/v1/usages"
+_KIMI_USAGES_CACHE_TTL_SECONDS = 60
+_KIMI_USAGES_FAILURE_TTL_SECONDS = 30
 # Contexto: cc-status só atualiza em turno; idade > 5min = agente dormindo
 # (mesmo limiar do OFFLINE da frota) -> UI marca "dados antigos".
 _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
@@ -350,6 +361,12 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
 
     cc_status = await _load_cc_status(db, slug)
     is_kimi = agent.get("model_family") == "kimi"
+    kimi_usages = None
+    if is_kimi:
+        kimi_api_key = getattr(request.app.state, "settings", None)
+        kimi_api_key = getattr(kimi_api_key, "kimi_api_key", None)
+        if kimi_api_key:
+            kimi_usages = await _get_kimi_usages(kimi_api_key)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
         # Kimi: effort persistido em agent_state (env var de boot), não o
@@ -359,7 +376,9 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         if is_kimi
         else asyncio.to_thread(_read_agent_effort),
         asyncio.to_thread(_read_agent_permission),
-        asyncio.to_thread(_build_painel_quotas, cc_status),
+        asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
+        if kimi_usages is not None
+        else asyncio.to_thread(_build_painel_quotas, cc_status),
         asyncio.to_thread(_build_agent_subagents, agent.get("workspace_path")),
     )
     return AgentPainelResponse(
@@ -436,13 +455,26 @@ async def patch_agent_codex_new_thread(
     patch: AgentCodexNewThreadPatchRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Arma/desarma "nova conversa" pro próximo turno Codex (consumido no /input)."""
+    """Cria thread Codex nova imediatamente quando o executor local estiver disponível."""
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") != "codex":
         raise HTTPException(status_code=400, detail="not_a_codex_agent")
     db: GrupoBorgesDB = request.app.state.db
-    await db.update_agent_codex_state(slug, codex_next_fresh=1 if patch.armed else 0)
-    return {"slug": slug, "armed": patch.armed}
+    if patch.armed:
+        started = await _telecodex_new_thread()
+        if started is not None:
+            await db.update_agent_codex_state(slug, codex_next_fresh=0)
+            return {
+                "slug": slug,
+                "armed": False,
+                "thread_started": not bool(started.get("pending")),
+                "thread_pending": bool(started.get("pending")),
+                "thread_id": started.get("threadId"),
+            }
+        await db.update_agent_codex_state(slug, codex_next_fresh=1)
+        return {"slug": slug, "armed": True, "thread_started": False, "thread_id": None}
+    await db.update_agent_codex_state(slug, codex_next_fresh=0)
+    return {"slug": slug, "armed": False, "thread_started": False, "thread_id": None}
 
 
 @router.patch("/{slug}/permission-mode", response_model=AgentPainelPermissionPatchResponse)
@@ -736,6 +768,89 @@ def _write_agent_permission_mode(
         source=str(settings_path),
         session_may_diverge=True,
         written=True,
+    )
+
+
+_kimi_usages_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def _fetch_kimi_usages_sync(api_key: str) -> dict[str, Any] | None:
+    """GET /coding/v1/usages da assinatura Kimi Code (fonte do `/usage` do CLI).
+
+    Devolve janela de 300min em `limits[]` e cota da assinatura em `usage`
+    (valores numéricos vêm como string). Qualquer falha -> None (quem chama
+    cai no comportamento antigo, baseado no cc-status).
+    """
+    request = urllib.request.Request(
+        _KIMI_USAGES_URL,
+        headers={"x-api-key": api_key, "accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+async def _get_kimi_usages(api_key: str) -> dict[str, Any] | None:
+    now = time.time()
+    cached = _kimi_usages_cache.get("kimi")
+    if cached is not None:
+        fetched_at, payload = cached
+        ttl = (
+            _KIMI_USAGES_CACHE_TTL_SECONDS
+            if payload is not None
+            else _KIMI_USAGES_FAILURE_TTL_SECONDS
+        )
+        if now - fetched_at < ttl:
+            return payload
+    payload = await asyncio.to_thread(_fetch_kimi_usages_sync, api_key)
+    _kimi_usages_cache["kimi"] = (now, payload)
+    return payload
+
+
+def _kimi_quota_window(detail: Any, now: int) -> AgentPainelQuotaWindow | None:
+    if not isinstance(detail, dict):
+        return None
+    try:
+        limit = float(detail.get("limit"))
+        used = float(detail.get("used"))
+    except (TypeError, ValueError):
+        return None
+    if limit <= 0:
+        return None
+    resets_at = _parse_iso_epoch(detail.get("resetTime"))
+    return AgentPainelQuotaWindow(
+        used_percentage=round(used / limit * 100, 1),
+        resets_at=resets_at,
+        remaining_seconds=max(0, resets_at - now) if resets_at is not None else None,
+    )
+
+
+def _build_kimi_painel_quotas(kimi_usages: dict[str, Any]) -> AgentPainelQuotas:
+    """Mapeia /coding/v1/usages pro mesmo shape 5h+7d que o CC mostra."""
+    now = int(time.time())
+    five_hour = None
+    limits = kimi_usages.get("limits")
+    entries = limits if isinstance(limits, list) else []
+    for entry in entries:
+        window = entry.get("window") if isinstance(entry, dict) else None
+        if (
+            isinstance(window, dict)
+            and window.get("duration") == 300
+            and window.get("timeUnit") == "TIME_UNIT_MINUTE"
+        ):
+            five_hour = _kimi_quota_window(entry.get("detail"), now)
+            break
+    if five_hour is None and entries and isinstance(entries[0], dict):
+        five_hour = _kimi_quota_window(entries[0].get("detail"), now)
+    return AgentPainelQuotas(
+        status="available",
+        source=_KIMI_USAGES_URL,
+        updated_at=now,
+        five_hour=five_hour,
+        seven_day=_kimi_quota_window(kimi_usages.get("usage"), now),
     )
 
 
@@ -1425,6 +1540,23 @@ _PANE_STREAM_MAX_CHARS = int(os.getenv("COCKPIT_PANE_MAX_CHARS", "20000"))
 _CODEX_INPUT_LOCKS: dict[str, asyncio.Lock] = {}
 _CODEX_INPUT_LOCKS_GUARD = asyncio.Lock()
 _CODEX_BUSY_STATUS_LINES = ("iniciando", "processando turn", "rodando:")
+
+
+async def _telecodex_new_thread() -> dict[str, Any] | None:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(_TELECODEX_CONTROL_URL, json={})
+        if not res.is_success:
+            log.warning("telecodex new-thread failed: HTTP %s", res.status_code)
+            return None
+        body = res.json()
+    except Exception as exc:
+        log.warning("telecodex new-thread failed: %s", exc)
+        return None
+    if isinstance(body, dict) and body.get("ok") is True:
+        return body
+    log.warning("telecodex new-thread returned unexpected body: %r", body)
+    return None
 
 
 async def _codex_input_lock(slug: str) -> asyncio.Lock:

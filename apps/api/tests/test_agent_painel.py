@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -224,6 +225,67 @@ def test_agent_painel_contexto_indisponivel_sem_arquivo_em_nenhuma_sessao(
     contexto = response.json()["contexto"]
     assert contexto["available"] is False
     assert contexto["stale"] is False
+
+
+def test_agent_painel_quotas_kimi_mapeia_usages(tmp_path: Path, monkeypatch) -> None:
+    """Hiro (família kimi): quotas vêm do /coding/v1/usages — janela de 300min
+    vira 5h e o `usage` top-level vira 7d, mesmo shape do CC."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    app.state.settings = SimpleNamespace(kimi_api_key="sk-kimi-teste")
+    _insert_session_event(app.state.db, "ds135-kimi-quota", agent_slug="hiro")
+    reset_5h = "2026-07-24T18:50:40.377739Z"
+    reset_7d = "2026-07-26T03:50:40.377739Z"
+
+    async def fake_usages(api_key: str) -> dict:
+        assert api_key == "sk-kimi-teste"
+        return {
+            "usage": {"limit": "100", "used": "90", "remaining": "10", "resetTime": reset_7d},
+            "limits": [
+                {
+                    "window": {"duration": 300, "timeUnit": "TIME_UNIT_MINUTE"},
+                    "detail": {"limit": "100", "used": "20", "remaining": "80", "resetTime": reset_5h},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(agents_router, "_get_kimi_usages", fake_usages)
+    with TestClient(app) as client:
+        response = client.get("/api/agents/hiro/painel")
+
+    assert response.status_code == 200
+    quotas = response.json()["quotas"]
+    assert quotas["status"] == "available"
+    assert quotas["source"] == "https://api.kimi.com/coding/v1/usages"
+    assert quotas["five_hour"]["used_percentage"] == 20.0
+    assert quotas["five_hour"]["resets_at"] == int(
+        datetime(2026, 7, 24, 18, 50, 40, tzinfo=timezone.utc).timestamp()
+    )
+    assert quotas["seven_day"]["used_percentage"] == 90.0
+    assert quotas["seven_day"]["resets_at"] == int(
+        datetime(2026, 7, 26, 3, 50, 40, tzinfo=timezone.utc).timestamp()
+    )
+
+
+def test_agent_painel_quotas_kimi_falha_no_fetch_cai_pro_cc_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Fetch do usages quebrado: cai no caminho antigo (cc-status -> missing)."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    app.state.settings = SimpleNamespace(kimi_api_key="sk-kimi-teste")
+    _insert_session_event(app.state.db, "ds135-kimi-down", agent_slug="hiro")
+    Path("/tmp/cc-status-ds135-kimi-down.json").unlink(missing_ok=True)
+
+    async def fake_usages_down(api_key: str) -> None:
+        return None
+
+    monkeypatch.setattr(agents_router, "_get_kimi_usages", fake_usages_down)
+    with TestClient(app) as client:
+        response = client.get("/api/agents/hiro/painel")
+
+    assert response.status_code == 200
+    assert response.json()["quotas"]["status"] == "missing"
 
 
 def test_agent_painel_contexto_arquivo_velho_marca_stale(tmp_path: Path, monkeypatch) -> None:

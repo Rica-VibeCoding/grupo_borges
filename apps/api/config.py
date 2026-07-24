@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     subsession_sweeper_enabled: bool = True
     subsession_sweeper_interval_seconds: float = 300.0
 
+    # Kimi (assinatura Kimi Code do Hiro) — chave sk-kimi-... pro endpoint
+    # /coding/v1/usages que alimenta o bloco Quotas do painel (5h + semanal).
+    kimi_api_key: str | None = None
+
     # TTS — engine preferido Google Chirp3-HD (voz da frota), fallback edge-tts.
     # tts_voice é só o default edge usado quando não há voz da frota nem key.
     google_tts_api_key: str = ""
