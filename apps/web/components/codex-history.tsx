@@ -87,15 +87,6 @@ export function CodexChat({
         const res = await getCodexMessages(slug, signal);
         const responseThreadId = res.thread_id ?? null;
 
-        if (nextFreshRef.current && !pendingFreshThreadRef.current) {
-          currentThreadIdRef.current = responseThreadId;
-          setCurrentThreadId(responseThreadId);
-          setMessages([]);
-          setHiddenCount(0);
-          setStatus('empty');
-          return;
-        }
-
         if (
           pendingFreshThreadRef.current &&
           previousFreshThreadIdRef.current &&
@@ -139,14 +130,6 @@ export function CodexChat({
   );
 
   useEffect(() => {
-    if (nextFresh) {
-      setMessages([]);
-      setHiddenCount(0);
-      setStatus('empty');
-      setOptimistic([]);
-      setWaiting(false);
-      return;
-    }
     if (!pendingFreshThreadRef.current) void load();
   }, [nextFresh, load]);
 

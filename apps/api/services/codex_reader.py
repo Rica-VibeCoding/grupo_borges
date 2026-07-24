@@ -23,6 +23,7 @@ from typing import Any
 CODEX_HOME = Path.home() / ".codex"
 STATE_DB = CODEX_HOME / "state_5.sqlite"
 TARA_CWD = "/home/clawd/repos/ze_claude/tara"
+TELECODEX_CONTEXTS = Path(TARA_CWD) / ".telecodex" / "contexts.json"
 
 SOURCE = "codex-local"
 
@@ -39,6 +40,12 @@ _INSTRUCTION_MARKERS = (
 
 # payload.type que, quando role=message, podem virar conversa visível.
 _VISIBLE_ROLES = ("user", "assistant")
+
+_AUDIO_SKILL_PREFIX = (
+    "Use $audio-telegram-resumo nesta sessão. A entrada veio por áudio do Rica; "
+    "responda em áudios curtos por etapa até a demanda encerrar."
+)
+_AUDIO_TRANSCRIPT_PREFIX = "Mensagem transcrita do áudio do Rica:"
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,16 @@ def classify_message(role: str, text: str) -> tuple[str, bool]:
         return "user", True
     # developer, system, tool, qualquer outro → interno.
     return "internal", False
+
+
+def _strip_audio_skill_prefix(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith(_AUDIO_SKILL_PREFIX):
+        return text
+    rest = stripped[len(_AUDIO_SKILL_PREFIX) :].lstrip()
+    if rest.startswith(_AUDIO_TRANSCRIPT_PREFIX):
+        return rest[len(_AUDIO_TRANSCRIPT_PREFIX) :].lstrip()
+    return rest
 
 
 def _extract_text(payload: dict[str, Any]) -> str:
@@ -165,7 +182,7 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
 
             if item_type == "message":
                 role_in = str(payload.get("role") or "")
-                text = _extract_text(payload)
+                text = _strip_audio_skill_prefix(_extract_text(payload))
                 role_out, visible = classify_message(role_in, text)
                 messages.append(
                     CodexMessage(
@@ -224,10 +241,69 @@ def _row_to_thread(row: sqlite3.Row) -> CodexThread:
     )
 
 
+def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
+    p = Path(context_path)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, list):
+        return None
+
+    candidates: list[tuple[int, str]] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("workspace") != cwd:
+            continue
+        thread_id = entry.get("threadId")
+        if not isinstance(thread_id, str) or not thread_id.strip():
+            continue
+        updated_at = entry.get("updatedAt")
+        if not isinstance(updated_at, int):
+            updated_at = 0
+        candidates.append((updated_at, thread_id.strip()))
+
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
+def _fetch_thread_by_id(conn: sqlite3.Connection, cwd: str, thread_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT id, rollout_path, cwd, title, model, reasoning_effort,
+               tokens_used, updated_at_ms, created_at_ms
+        FROM threads
+        WHERE id = ? AND cwd = ? AND archived = 0
+        LIMIT 1
+        """,
+        (thread_id, cwd),
+    ).fetchone()
+
+
+def _fetch_latest_thread(conn: sqlite3.Connection, cwd: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT id, rollout_path, cwd, title, model, reasoning_effort,
+               tokens_used, updated_at_ms, created_at_ms
+        FROM threads
+        WHERE cwd = ? AND archived = 0
+        ORDER BY updated_at_ms DESC, updated_at DESC
+        LIMIT 1
+        """,
+        (cwd,),
+    ).fetchone()
+
+
 def find_latest_thread(
-    cwd: str = TARA_CWD, db_path: str | Path = STATE_DB
+    cwd: str = TARA_CWD,
+    db_path: str | Path = STATE_DB,
+    telecodex_context_path: str | Path | None = TELECODEX_CONTEXTS,
 ) -> CodexThread | None:
-    """Acha a thread mais recente (não arquivada) do `cwd` no state do Codex.
+    """Acha a thread ativa do `cwd` no state do Codex.
 
     Abre o SQLite em modo read-only via URI — defesa em profundidade contra
     qualquer escrita acidental no banco do Codex.
@@ -239,17 +315,13 @@ def find_latest_thread(
     conn = sqlite3.connect(uri, uri=True, timeout=2.0)
     try:
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            """
-            SELECT id, rollout_path, cwd, title, model, reasoning_effort,
-                   tokens_used, updated_at_ms, created_at_ms
-            FROM threads
-            WHERE cwd = ? AND archived = 0
-            ORDER BY updated_at_ms DESC, updated_at DESC
-            LIMIT 1
-            """,
-            (cwd,),
-        ).fetchone()
+        row = None
+        if telecodex_context_path is not None:
+            thread_id = _read_telecodex_thread_id(cwd, telecodex_context_path)
+            if thread_id is not None:
+                row = _fetch_thread_by_id(conn, cwd, thread_id)
+        if row is None:
+            row = _fetch_latest_thread(conn, cwd)
     finally:
         conn.close()
     return _row_to_thread(row) if row else None

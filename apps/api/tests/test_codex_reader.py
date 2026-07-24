@@ -71,6 +71,22 @@ def test_parse_rollout_tolerates_corrupt_lines() -> None:
     assert len(msgs) == 8  # 5 message + reasoning + function_call + function_call_output
 
 
+def test_parse_rollout_strips_audio_skill_prefix(tmp_path: Path) -> None:
+    rollout = tmp_path / "audio.jsonl"
+    rollout.write_text(
+        """
+{"type":"response_item","timestamp":"2026-07-19T20:00:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Use $audio-telegram-resumo nesta sessão. A entrada veio por áudio do Rica; responda em áudios curtos por etapa até a demanda encerrar.\\n\\nMensagem transcrita do áudio do Rica:\\nTeste de áudio agora."}]}}
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    msgs = cr.parse_rollout(rollout, thread_id="audio")
+
+    assert len(msgs) == 1
+    assert msgs[0].role == "user"
+    assert msgs[0].text == "Teste de áudio agora."
+
+
 def test_classify_message_rules() -> None:
     assert cr.classify_message("assistant", "oi") == ("assistant", True)
     assert cr.classify_message("user", "pergunta normal") == ("user", True)
@@ -113,12 +129,65 @@ def _make_threads_db(tmp_path: Path) -> Path:
 
 def test_find_latest_thread_filters_cwd_archived_and_recency(tmp_path: Path) -> None:
     db = _make_threads_db(tmp_path)
-    thread = cr.find_latest_thread(cr.TARA_CWD, db)
+    thread = cr.find_latest_thread(cr.TARA_CWD, db, telecodex_context_path=None)
     assert thread is not None
     # Pega a mais recente NÃO arquivada do cwd da Tara — "new", não "arch"/"other".
     assert thread.thread_id == "new"
     assert thread.tokens_used == 99
     assert thread.source == "codex-local"
+
+
+def test_find_latest_thread_prefers_telecodex_context(tmp_path: Path) -> None:
+    db = _make_threads_db(tmp_path)
+    contexts = tmp_path / "contexts.json"
+    contexts.write_text(
+        """
+        [
+          {
+            "contextKey": "7262275215",
+            "threadId": "old",
+            "workspace": "/home/clawd/repos/ze_claude/tara",
+            "updatedAt": 1784492021977
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    thread = cr.find_latest_thread(cr.TARA_CWD, db, telecodex_context_path=contexts)
+
+    assert thread is not None
+    assert thread.thread_id == "old"
+    assert thread.tokens_used == 10
+
+
+def test_find_latest_thread_falls_back_when_telecodex_context_is_stale(tmp_path: Path) -> None:
+    db = _make_threads_db(tmp_path)
+    contexts = tmp_path / "contexts.json"
+    contexts.write_text(
+        """
+        [
+          {
+            "contextKey": "7262275215",
+            "threadId": "missing",
+            "workspace": "/home/clawd/repos/ze_claude/tara",
+            "updatedAt": 1784492021977
+          },
+          {
+            "contextKey": "outro",
+            "threadId": "other",
+            "workspace": "/outro/cwd",
+            "updatedAt": 1784492021999
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    thread = cr.find_latest_thread(cr.TARA_CWD, db, telecodex_context_path=contexts)
+
+    assert thread is not None
+    assert thread.thread_id == "new"
 
 
 def test_find_latest_thread_missing_db_returns_none(tmp_path: Path) -> None:

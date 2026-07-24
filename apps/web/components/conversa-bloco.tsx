@@ -10,8 +10,8 @@ type ConversaBlocoProps = {
 };
 
 // Bloco "Conversa" do painel Codex — comando "nova conversa" (no lugar do /clear
-// do CC). Arma um flag persistido (codex_next_fresh); o próximo turno da Tara
-// começa thread fresh e o backend zera o flag.
+// do CC). O backend tenta criar a thread na hora; se não conseguir, mantém o
+// flag persistido para o próximo turno.
 export function ConversaBloco({ slug, armed, onChange }: ConversaBlocoProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +27,8 @@ export function ConversaBloco({ slug, armed, onChange }: ConversaBlocoProps) {
     setError(null);
     const nextArmed = !armed;
     try {
-      await patchAgentCodexNewThread(slug, nextArmed);
-      onChange?.(nextArmed);
+      const result = await patchAgentCodexNewThread(slug, nextArmed);
+      onChange?.(result.armed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'erro ao armar nova conversa');
     } finally {

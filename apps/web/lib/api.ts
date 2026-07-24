@@ -207,7 +207,13 @@ export async function patchAgentCodexSandbox(
 export async function patchAgentCodexNewThread(
   slug: string,
   armed: boolean,
-): Promise<{ slug: string; armed: boolean }> {
+): Promise<{
+  slug: string;
+  armed: boolean;
+  thread_started?: boolean;
+  thread_pending?: boolean;
+  thread_id?: string | null;
+}> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex-new-thread`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
