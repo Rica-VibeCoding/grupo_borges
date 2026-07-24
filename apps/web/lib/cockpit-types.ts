@@ -24,6 +24,7 @@ export type AgentCli = 'claude_code' | 'codex';
 
 export type AgentModel =
   | 'claude-fable-5'
+  | 'claude-opus-5'
   | 'claude-opus-4-8'
   | 'claude-opus-4-7'
   | 'claude-sonnet-5'
@@ -392,6 +393,7 @@ export function formatDuration(seconds: number, withSeconds = true): string {
 export function shortModelName(model: string): string {
   const map: Record<string, string> = {
     'claude-fable-5':     'Fable 5',
+    'claude-opus-5':      'Opus 5',
     'claude-opus-4-8':    'Opus 4.8',
     'claude-opus-4-7':    'Opus 4.7',
     'claude-opus-4-5':    'Opus 4.5',
@@ -435,12 +437,17 @@ export function parseModelFromPane(excerpt: string | null): string | null {
   // CC statusline aparece em dois formatos:
   //   "Sonnet 4.6 - 40:26:47 - [███░] 32%"
   //   "Sonnet 4.6 (200k context) - [███░] 81%"
+  //   "claude-opus-5 - 02:50:23 - [███░] 61%"
   // Pega o último match — statusline fica no fim do pane.
   // Fable não tem decimal na versão ("Fable 5") — \d+(?:\.\d+)?
-  const re = /\b(Fable|Opus|Sonnet|Haiku)\s+(\d+(?:\.\d+)?)\b/g;
+  const re =
+    /\b(?:(Fable|Opus|Sonnet|Haiku)\s+(\d+(?:\.\d+)?)|claude-(fable|opus|sonnet|haiku)-(\d+(?:-\d+)*))\b/g;
   let last: RegExpExecArray | null = null;
   for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
     last = m;
   }
-  return last ? `${last[1]} ${last[2]}` : null;
+  if (!last) return null;
+  if (last[1] && last[2]) return `${last[1]} ${last[2]}`;
+  const family = last[3]!;
+  return `${family[0]!.toUpperCase()}${family.slice(1)} ${last[4]!.replaceAll('-', '.')}`;
 }

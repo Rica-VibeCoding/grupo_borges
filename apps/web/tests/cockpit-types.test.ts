@@ -1,7 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveContextPct } from '../lib/cockpit-types.ts';
+import {
+  parseModelFromPane,
+  resolveContextPct,
+  shortModelName,
+} from '../lib/cockpit-types.ts';
+
+test('shortModelName normaliza o id do Opus 5', () => {
+  assert.equal(shortModelName('claude-opus-5'), 'Opus 5');
+});
+
+test('parseModelFromPane normaliza o id cru do Opus 5', () => {
+  assert.equal(
+    parseModelFromPane('claude-opus-5 - 02:50:23 - [##] 61%'),
+    'Opus 5',
+  );
+});
+
+test('parseModelFromPane mantém o formato amigável do Opus 5', () => {
+  assert.equal(parseModelFromPane('Opus 5 - 02:50:23 - [##] 61%'), 'Opus 5');
+});
 
 test('resolveContextPct prioriza o percentual do painel', () => {
   const contextPct = resolveContextPct({
