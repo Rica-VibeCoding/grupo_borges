@@ -146,10 +146,14 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
             return
         if agent.get("context_pct") is not None:
             return
-        session_id = await db.latest_jsonl_session_id(agent["slug"])
-        if not session_id:
-            return
-        agent["context_pct"] = await asyncio.to_thread(_read_cc_context_pct, session_id)
+        # Mesmo fallback do painel: última sessão pode não ter cc-status
+        # (curta/headless) — usa a mais recente que tenha arquivo legível.
+        session_ids = await db.recent_jsonl_session_ids(agent["slug"])
+        for session_id in session_ids:
+            pct = await asyncio.to_thread(_read_cc_context_pct, session_id)
+            if pct is not None:
+                agent["context_pct"] = pct
+                return
 
     await asyncio.gather(*(hydrate(agent) for agent in agents))
 

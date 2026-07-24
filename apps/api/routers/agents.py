@@ -79,6 +79,9 @@ _KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
 _CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
 _CODEX_DEFAULT_SANDBOX = "danger-full-access"
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
+# Contexto: cc-status só atualiza em turno; idade > 5min = agente dormindo
+# (mesmo limiar do OFFLINE da frota) -> UI marca "dados antigos".
+_AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
 _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
 AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max"]
@@ -103,6 +106,7 @@ class AgentPainelContexto(BaseModel):
     source: str
     updated_at: int | None = None
     available: bool
+    stale: bool = False
 
 
 class AgentPainelEffort(BaseModel):
@@ -589,6 +593,7 @@ class _CCStatus(NamedTuple):
     session_id: str | None
     path: Path | None
     payload: dict[str, Any] | None
+    fell_back: bool = False
 
 
 async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
@@ -597,17 +602,24 @@ async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
     Fonte única pra `_build_painel_contexto` (contexto/tokens) E pra
     `_build_painel_quotas` (rate limits): payload é parseado uma vez
     e propagado pra ambos via `asyncio.gather`.
+
+    Fallback: a sessão mais recente pode não ter arquivo (sessão curta ou
+    headless não roda statusline). Nesse caso anda pra trás nas sessões
+    recentes até achar uma com arquivo legível, marcando `fell_back` —
+    melhor mostrar o último contexto conhecido do que painel vazio.
     """
-    session_id = await db.latest_jsonl_session_id(slug)
-    if not session_id:
+    session_ids = await db.recent_jsonl_session_ids(slug)
+    if not session_ids:
         return _CCStatus(None, None, None)
-    path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
-    if not path.exists():
-        return _CCStatus(session_id, path, None)
-    payload = await asyncio.to_thread(_read_json_file, path, None)
-    if not isinstance(payload, dict):
-        return _CCStatus(session_id, path, None)
-    return _CCStatus(session_id, path, payload)
+    for session_id in session_ids:
+        path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
+        if not path.exists():
+            continue
+        payload = await asyncio.to_thread(_read_json_file, path, None)
+        if not isinstance(payload, dict):
+            continue
+        return _CCStatus(session_id, path, payload, session_id != session_ids[0])
+    return _CCStatus(session_ids[0], Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_ids[0]}.json", None)
 
 
 def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelContexto:
@@ -631,6 +643,10 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
             updated_at=updated_at,
             available=False,
         )
+    stale = cc_status.fell_back or (
+        updated_at is not None
+        and int(time.time()) - updated_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
+    )
 
     usage = context_window_block.get("current_usage") if isinstance(context_window_block.get("current_usage"), dict) else {}
     input_tokens = _int_or_none(usage.get("input_tokens")) or 0
@@ -655,6 +671,7 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
         source=str(cc_status.path),
         updated_at=updated_at,
         available=True,
+        stale=stale,
     )
 
 

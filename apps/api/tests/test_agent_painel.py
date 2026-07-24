@@ -75,11 +75,11 @@ def _write_settings(tmp_path: Path, monkeypatch, payload: dict) -> None:
     monkeypatch.setattr(agents_router, "_CLAUDE_HOME", claude_home)
 
 
-def _insert_session_event(db: GrupoBorgesDB, session_id: str) -> None:
+def _insert_session_event(db: GrupoBorgesDB, session_id: str, agent_slug: str = "daniel") -> None:
     db._insert_task_event(
         "jsonl:assistant",
         task_id=None,
-        agent_slug="daniel",
+        agent_slug=agent_slug,
         instance_id=None,
         payload={"uuid": f"uuid-{session_id}", "sessionId": session_id},
         raw_jsonl=None,
@@ -134,6 +134,7 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         assert body["contexto"]["pct"] == 87
         assert body["contexto"]["context_window"] == 200_000
         assert body["contexto"]["model_family"] == "fable"
+        assert body["contexto"]["stale"] is False
         assert body["effort"]["value"] == "high"
         assert body["permission"]["mode"] == "plan"
     finally:
@@ -154,6 +155,115 @@ def test_agent_painel_quota_missing_without_file(tmp_path: Path, monkeypatch) ->
     assert quotas["status"] == "missing"
     assert quotas["session_id"] == "ds135-missing"
     assert quotas["source"] == "/tmp/cc-status-ds135-missing.json"
+
+
+def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monkeypatch) -> None:
+    """Sessão mais nova sem cc-status (curta/headless): painel mostra o último
+    contexto conhecido da sessão anterior, marcado stale — não esvazia."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    suffix = int(time.time())
+    old_session = f"ds135-fallback-old-{suffix}"
+    new_session = f"ds135-fallback-new-{suffix}"
+    _insert_session_event(app.state.db, old_session)
+    _insert_session_event(app.state.db, new_session)
+    old_path = Path(f"/tmp/cc-status-{old_session}.json")
+    old_path.write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()) - 3600,
+                "model": {"id": "claude-opus-4-8", "display_name": "Opus 4.8"},
+                "context_window": {
+                    "context_window_size": 200_000,
+                    "used_percentage": 42,
+                    "current_usage": {
+                        "input_tokens": 80_000,
+                        "output_tokens": 4_000,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    Path(f"/tmp/cc-status-{new_session}.json").unlink(missing_ok=True)
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/agents/daniel/painel")
+
+        assert response.status_code == 200
+        body = response.json()
+        contexto = body["contexto"]
+        assert contexto["available"] is True
+        assert contexto["stale"] is True
+        assert contexto["pct"] == 42
+        assert contexto["tokens"]["total"] == 84_000
+        assert contexto["source"] == f"/tmp/cc-status-{old_session}.json"
+        # quotas herda o mesmo arquivo antigo: status "stale" (badge no front)
+        assert body["quotas"]["status"] == "stale"
+    finally:
+        old_path.unlink(missing_ok=True)
+
+
+def test_agent_painel_contexto_indisponivel_sem_arquivo_em_nenhuma_sessao(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Nenhuma sessão com cc-status: comportamento antigo — available=False."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    session_id = f"ds135-nofile-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    Path(f"/tmp/cc-status-{session_id}.json").unlink(missing_ok=True)
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/daniel/painel")
+
+    assert response.status_code == 200
+    contexto = response.json()["contexto"]
+    assert contexto["available"] is False
+    assert contexto["stale"] is False
+
+
+def test_agent_painel_contexto_arquivo_velho_marca_stale(tmp_path: Path, monkeypatch) -> None:
+    """Sessão atual com cc-status velho (> 5min, agente dormindo): stale=True."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    session_id = f"ds135-oldfile-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id, agent_slug="hiro")
+    cc_path = Path(f"/tmp/cc-status-{session_id}.json")
+    cc_path.write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()) - 600,
+                "model": {"id": "k3", "display_name": "k3"},
+                "context_window": {
+                    "context_window_size": 1_048_576,
+                    "used_percentage": 5,
+                    "current_usage": {
+                        "input_tokens": 50_000,
+                        "output_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/agents/hiro/painel")
+
+        assert response.status_code == 200
+        contexto = response.json()["contexto"]
+        assert contexto["available"] is True
+        assert contexto["stale"] is True
+        assert contexto["context_window"] == 1_048_576
+    finally:
+        cc_path.unlink(missing_ok=True)
 
 
 def test_agent_painel_parse_quota_file(tmp_path: Path, monkeypatch) -> None:

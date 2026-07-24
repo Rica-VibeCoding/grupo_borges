@@ -35,6 +35,7 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
       <div className="painel-bloco-head">
         <div className="painel-bloco-title">Contexto</div>
         <div className="painel-chip-row">
+          {data.stale && <span className="painel-chip painel-chip-warn">dados antigos</span>}
           {data.model_family && <span className="painel-chip">{data.model_family}</span>}
           <span className="painel-chip">{formatCompactNumber(data.context_window ?? 0)}</span>
         </div>

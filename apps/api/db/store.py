@@ -1188,6 +1188,40 @@ class GrupoBorgesDB:
             ).fetchone()
             return row["session_id"] if row is not None else None
 
+    async def recent_jsonl_session_ids(self, agent_slug: str, limit: int = 8) -> list[str]:
+        return await asyncio.to_thread(self._recent_jsonl_session_ids, agent_slug, limit)
+
+    def _recent_jsonl_session_ids(self, agent_slug: str, limit: int = 8) -> list[str]:
+        """SessionIds recentes do agente, do mais ao menos recente (por último evento).
+
+        Mesmos filtros do `_latest_jsonl_session_id`. Usado pra fallback do
+        cc-status: quando a sessão mais nova não tem arquivo no /tmp (sessão
+        curta/headless), o painel anda pra trás até achar uma que tenha.
+        """
+        kind_placeholders = ", ".join("?" for _ in _JSONL_MESSAGE_KINDS)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT json_extract(payload, '$.sessionId') AS session_id,
+                       MAX(id) AS last_id
+                FROM task_events
+                WHERE agent_slug = ?
+                  AND kind IN ({kind_placeholders})
+                  AND json_valid(payload) = 1
+                  AND json_extract(payload, '$.uuid') IS NOT NULL
+                  AND json_extract(payload, '$.sessionId') IS NOT NULL
+                  AND (
+                    json_extract(payload, '$.isSidechain') IS NULL
+                    OR json_extract(payload, '$.isSidechain') != 1
+                  )
+                GROUP BY session_id
+                ORDER BY last_id DESC
+                LIMIT ?
+                """,
+                (agent_slug, *_JSONL_MESSAGE_KINDS, limit),
+            ).fetchall()
+            return [row["session_id"] for row in rows]
+
     async def list_jsonl_message_events(
         self,
         agent_slug: str,

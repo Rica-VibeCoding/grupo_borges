@@ -268,6 +268,7 @@ export type PainelContexto = {
   source: string;
   updated_at: number | null;
   available: boolean;
+  stale: boolean;
 };
 
 export type PainelEffort = {
