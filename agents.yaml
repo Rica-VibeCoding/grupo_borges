@@ -34,8 +34,8 @@ agents:
     emoji: "🚀"
     origin: indiano sikh ("leão")
     tmux_session: daniel
-    # [2026-07-21 Pavan] Daniel embedded no fluyt (veio do promob-splitter) — reverter = voltar linha abaixo pra /home/clawd/repos/ze_claude/daniel
-    workspace_path: /home/clawd/repos/fluyt
+    # [2026-07-28 Pavan] Daniel embedded no app Comercial do fluyt (veio da raiz do monorepo) — reverter = voltar linha abaixo pra /home/clawd/repos/ze_claude/daniel
+    workspace_path: /home/clawd/repos/fluyt/apps/com
     cli_default: claude_code
     model_default: claude-opus-4-8
     capabilities:
