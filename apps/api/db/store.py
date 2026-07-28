@@ -71,6 +71,13 @@ REVIEW_ACTIONS = {
 _UNSET = object()
 _JSONL_MESSAGE_KINDS = ("jsonl:user", "jsonl:assistant", "jsonl:attachment", "jsonl:summary")
 
+# Quantos eventos recentes `_recent_jsonl_session_ids` varre antes de agrupar.
+# Sem esse teto o GROUP BY passa por todo o histórico do agente (150k linhas no
+# Daniel), e o custo aparecia inteiro no `/api/fleet` — 1,75s pros 8 agentes
+# contra 0,29s com a janela. As últimas 4k mensagens cobrem folgado as 8
+# sessões que o caller pede.
+_RECENT_SESSION_SCAN_WINDOW = 4000
+
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
     if not raw:
@@ -1202,18 +1209,23 @@ class GrupoBorgesDB:
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT json_extract(payload, '$.sessionId') AS session_id,
-                       MAX(id) AS last_id
-                FROM task_events
-                WHERE agent_slug = ?
-                  AND kind IN ({kind_placeholders})
-                  AND json_valid(payload) = 1
-                  AND json_extract(payload, '$.uuid') IS NOT NULL
-                  AND json_extract(payload, '$.sessionId') IS NOT NULL
-                  AND (
-                    json_extract(payload, '$.isSidechain') IS NULL
-                    OR json_extract(payload, '$.isSidechain') != 1
-                  )
+                SELECT session_id, MAX(last_id) AS last_id
+                FROM (
+                    SELECT json_extract(payload, '$.sessionId') AS session_id,
+                           id AS last_id
+                    FROM task_events
+                    WHERE agent_slug = ?
+                      AND kind IN ({kind_placeholders})
+                      AND json_valid(payload) = 1
+                      AND json_extract(payload, '$.uuid') IS NOT NULL
+                      AND json_extract(payload, '$.sessionId') IS NOT NULL
+                      AND (
+                        json_extract(payload, '$.isSidechain') IS NULL
+                        OR json_extract(payload, '$.isSidechain') != 1
+                      )
+                    ORDER BY id DESC
+                    LIMIT {_RECENT_SESSION_SCAN_WINDOW}
+                )
                 GROUP BY session_id
                 ORDER BY last_id DESC
                 LIMIT ?
