@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+/* ============================================================================
+ * globals.css — CONGELADO. Único lugar do repo onde cor é declarada.
+ *
+ * Proibido em qualquer outro arquivo: hex, rgb(), oklch(), nome de cor,
+ * bg-[#123456] e style inline com cor. É o que permite o Rica pedir "põe no
+ * verde" e a mudança acontecer num lugar, não em quarenta.
+ *
+ * Este arquivo é a UNIÃO DE DUAS METADES, com donos distintos
+ * (docs/cockpit-v2-ownership.md §1):
+ *
+ *   §A  PELE      — Daniel, contrato em docs/cockpit-v2-estetica.md
+ *   §B  ESQUELETO — Pavan, medidas e ritmo
+ *
+ * Editar a §A sem passar pelo contrato de estética é divergência; vira issue
+ * contra o contrato, não edição local.
+ * ==========================================================================*/
+
+:root {
+  color-scheme: dark;
+
+  /* ===== §A PELE — Daniel ==================================================
+   * Tese: não estamos desenhando um chat, estamos desenhando um LOG DE EXECUÇÃO
+   * que às vezes conversa. 82% dos blocos gravados são tool_use/tool_result.
+   *
+   * Três decisões de autoria: luz em vez de sombra; o neutro tem temperatura
+   * (hue 265 em tudo); a temperatura sobe conforme a máquina precisa de você.
+   * Contraste verificado por rota independente — 11/11 tokens passam, medidos
+   * contra a superfície MAIS CLARA (surface-raised), que é o pior caso.
+   * ======================================================================= */
+
+  /* -- superfícies: quatro degraus, luz crescente ------------------------- */
+  --ck-surface-canvas: oklch(0.215 0.008 265);   /* #18191d palco do chat */
+  --ck-surface-nav: oklch(0.250 0.010 265);      /* #1f2227 tropa, gaveta, chrome */
+  --ck-surface-composer: oklch(0.285 0.011 265); /* #272a30 composer, campo, popover */
+  --ck-surface-raised: oklch(0.315 0.012 265);   /* #2f3238 mensagem elevada, overlay */
+
+  /* -- texto -------------------------------------------------------------- */
+  --ck-text-primary: oklch(0.96 0.004 265);      /* #f0f2f4  11.5:1  corpo, título */
+  --ck-text-secondary: oklch(0.76 0.008 265);    /* #aeb1b6   6.0:1  metadado, label */
+  --ck-text-tertiary: oklch(0.62 0.008 265);     /* #84868b   3.55:1 ⚠️ NUNCA corpo:
+                                                    só ícone, separador, texto ≥20px */
+
+  /* -- estado: a temperatura sobe conforme a máquina precisa de você ------ */
+  --ck-state-thinking: oklch(0.73 0.14 285);     /* #9f9afc  5.2:1  raciocinando */
+  --ck-state-running: oklch(0.78 0.13 220);      /* #36caf1  6.7:1  tool em execução */
+  --ck-state-attention: oklch(0.82 0.14 78);     /* #f6b84d  7.3:1  ESPERA HUMANO */
+  --ck-state-ok: oklch(0.76 0.13 150);           /* #6fc884  6.3:1  concluído */
+  --ck-state-fail: oklch(0.74 0.16 22);          /* #ff7d7c  5.2:1  falhou, cancelado */
+  --ck-focus: oklch(0.80 0.13 220);              /* #40d1f7  7.2:1  anel de teclado */
+
+  /* -- diff: remoção e falha são o MESMO vermelho, de propósito ----------- */
+  --ck-diff-add: oklch(0.76 0.14 148);           /* #6dc97d  6.3:1 no pior caso */
+  --ck-diff-del: oklch(0.74 0.16 22);            /* = state-fail */
+  --ck-diff-add-bg: color-mix(in oklch, var(--ck-diff-add) 12%, var(--ck-surface-canvas));
+  --ck-diff-del-bg: color-mix(in oklch, var(--ck-diff-del) 12%, var(--ck-surface-canvas));
+
+  /* -- bordas: luz, não sombra -------------------------------------------- */
+  --ck-edge-functional: oklch(0.60 0.012 265);   /* #7d8088  ≥3:1 OBRIGATÓRIO:
+                                                    input, botão, controle */
+  --ck-edge-hairline: oklch(0.38 0.010 265);     /* separador decorativo */
+  --ck-edge-light: rgb(255 255 255 / 0.07);      /* fio de luz 1px no TOPO do elevado */
+
+  /* -- tipografia: escala ------------------------------------------------- */
+  --ck-text-xs: 0.75rem;      /* 12px  overline, badge */
+  --ck-text-sm: 0.8125rem;    /* 13px  mono de conteúdo, metadado */
+  --ck-text-base: 0.9375rem;  /* 15px  corpo do chat */
+  --ck-text-md: 1rem;         /* 16px  CAMPO DE ENTRADA — piso do iOS, abaixo
+                                 disso o Safari dá zoom ao focar */
+  --ck-text-lg: 1.25rem;      /* 20px  título de seção */
+  --ck-text-hero: 1.75rem;    /* 28px  estado vazio, hero */
+
+  /* ===== §B ESQUELETO — Pavan ==============================================
+   * Medida e ritmo. Onde a §A responde "que cor", esta responde "quanto" e
+   * "quão rápido". Números de container vêm das medidas reais do app do ChatGPT
+   * (docs/cockpit-v2-playbook.md), que são de DESKTOP — daí a escada.
+   * ======================================================================= */
+
+  /* -- espaço: escala de 4px, sem valor solto ---------------------------- */
+  --ck-space-1: 0.25rem;   /*  4px */
+  --ck-space-2: 0.5rem;    /*  8px */
+  --ck-space-3: 0.75rem;   /* 12px */
+  --ck-space-4: 1rem;      /* 16px */
+  --ck-space-5: 1.5rem;    /* 24px */
+  --ck-space-6: 2rem;      /* 32px */
+  --ck-space-8: 3rem;      /* 48px */
+
+  /* -- larguras ---------------------------------------------------------- */
+  --ck-w-nav: 260px;          /* coluna da tropa */
+  --ck-w-drawer: 380px;       /* gaveta dos painéis */
+  --ck-w-composer: 768px;     /* composer, medida do ChatGPT */
+  --ck-h-composer: 52px;      /* altura de repouso, idem */
+
+  /* Escada de leitura por container query, não por viewport: a coluna do chat
+     não sabe qual é o tamanho da tela, só o do espaço que recebeu. */
+  --ck-read-narrow: 32rem;
+  --ck-read-mid: 40rem;
+  --ck-read-wide: 48rem;
+
+  /* -- alvo de toque: piso de acessibilidade do iOS ---------------------- */
+  --ck-touch-min: 44px;
+
+  /* -- raio: sutil. "Tela que a gente já tá acostumado" ------------------ */
+  --ck-radius-frame: 8px;
+  --ck-radius-chip: 6px;
+  --ck-radius-pill: 9999px;
+
+  /* -- ritmo: duas durações e um easing. Mais que isso é indisciplina ---- */
+  --ck-dur-fast: 120ms;    /* hover, foco, press */
+  --ck-dur-calm: 320ms;    /* mudança de estado — ex: filete de running sumindo */
+  --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* -- camadas: nomeadas, porque z-index numérico solto vira leilão ------ */
+  --ck-z-base: 0;
+  --ck-z-sticky: 10;      /* header do chat, indicador de nova mensagem */
+  --ck-z-drawer: 20;
+  --ck-z-overlay: 30;     /* popover, menu */
+  --ck-z-modal: 40;
+  --ck-z-toast: 50;
+
+  /* -- celular: risco nº 1 do projeto, por isso mora nos tokens ---------- */
+  --ck-safe-top: env(safe-area-inset-top, 0px);
+  --ck-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ck-safe-left: env(safe-area-inset-left, 0px);
+  --ck-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Expõe os tokens como utilitários do Tailwind (bg-surface-canvas,
+ * text-state-fail, ...) SEM criar um segundo sistema de nomes: `inline` faz o
+ * @theme referenciar as vars acima em vez de copiar valores. A fonte única de
+ * verdade continua sendo o :root. */
+@theme inline {
+  --color-surface-canvas: var(--ck-surface-canvas);
+  --color-surface-nav: var(--ck-surface-nav);
+  --color-surface-composer: var(--ck-surface-composer);
+  --color-surface-raised: var(--ck-surface-raised);
+
+  --color-text-primary: var(--ck-text-primary);
+  --color-text-secondary: var(--ck-text-secondary);
+  --color-text-tertiary: var(--ck-text-tertiary);
+
+  --color-state-thinking: var(--ck-state-thinking);
+  --color-state-running: var(--ck-state-running);
+  --color-state-attention: var(--ck-state-attention);
+  --color-state-ok: var(--ck-state-ok);
+  --color-state-fail: var(--ck-state-fail);
+  --color-focus: var(--ck-focus);
+
+  --color-diff-add: var(--ck-diff-add);
+  --color-diff-del: var(--ck-diff-del);
+  --color-diff-add-bg: var(--ck-diff-add-bg);
+  --color-diff-del-bg: var(--ck-diff-del-bg);
+
+  --color-edge-functional: var(--ck-edge-functional);
+  --color-edge-hairline: var(--ck-edge-hairline);
+}
+
+/* ===== base ============================================================== */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--ck-surface-canvas);
+  color: var(--ck-text-primary);
+  font-size: var(--ck-text-base);
+  -webkit-font-smoothing: antialiased;
+  /* dvh, não vh: no iOS a barra de endereço faz vh mentir e o composer sai da
+     tela quando o teclado abre. */
+  min-height: 100dvh;
+}
+
+/* Foco visível sempre — o anel é token, não decoração opcional. */
+:focus-visible {
+  outline: 2px solid var(--ck-focus);
+  outline-offset: 2px;
+}
+
+/* Fio de luz no topo de superfície elevada. É a assinatura da §A: luz = vida,
+ * em vez de sombra projetada. */
+.ck-lit {
+  box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+
+/* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do
+ * state-attention, que é o único com direito a animação persistente. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

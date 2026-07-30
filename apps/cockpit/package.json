@@ -1,0 +1,27 @@
+{
+  "name": "@grupo_borges/cockpit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cockpit v2 — camada de apresentação nova, contra o mesmo back FastAPI. Porta 3008.",
+  "scripts": {
+    "dev": "next dev --port 3008 --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --port 3008",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@grupo_borges/cockpit-core": "workspace:*",
+    "clsx": "2.1.1",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "tailwind-merge": "2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.10",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.1",
+    "tailwindcss": "4.3.0",
+    "typescript": "5.7.3"
+  }
+}
