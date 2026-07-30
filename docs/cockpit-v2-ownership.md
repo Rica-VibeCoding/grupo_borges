@@ -274,3 +274,33 @@ voltar ao ar — não é oportunidade de melhoria.
 Única exceção prevista: `fixtures/cockpit-v2/gravar-transcripts.py` consome o
 `apps/web` **de fora**, pela mesma SSE que o front usa. Instrumentar de fora não é
 tocar.
+
+---
+
+## Mapa vigente — 30/07 14h, com TRÊS agentes escrevendo no mesmo app ao mesmo tempo
+
+A tabela por frente lá em cima era o **plano** (`components/chat/`, `components/render/`). O
+recorte real ficou outro, e como agora há três pessoas com o editor aberto no mesmo `apps/cockpit`
+**ao mesmo tempo**, o mapa que vale para consultar antes de tocar em arquivo é este:
+
+| Caminho | Dono agora | O que está sendo feito |
+|---|---|---|
+| `components/shell/**` | **Daniel** | composer alto, barra de telas, gaveta, ícones, aparência das fases do envio |
+| `app/globals.css`, `app/layout.tsx` | **Daniel** | paleta indo para cinza neutro (§13 da estética) + `theme-color` amarrado |
+| `components/feed/**` | **Hiro** | feed real **sem** `assistant-ui` — o plano de fuga |
+| `app/spike/sem-lib/**`, `docs/cockpit-v2-medicao/**` | **Hiro** | braço de controle e arranjos de medição |
+| `lib/envio.ts` | **Tara** | motor da confirmação por eco |
+| `apps/api/routers/agents.py`, `db/store.py` | **Tara**, exceção pontual aberta pelo Pavan | campo de fronteira no `POST /input` |
+| `components/renderers/**` | **de consumo** | quem achar que precisa mudar, fala com o Pavan antes |
+| `app/spike/page.tsx` (**com** a biblioteca) | **ninguém toca** | é a bancada de comparação até o Rica medir no iPhone |
+| `apps/web/**` | **ninguém** | congelado |
+
+Três regras que só existem por causa da simultaneidade:
+
+1. **`git add` por caminho explícito, sempre.** Com três working sets vivos na mesma árvore,
+   um `git add -A` arrasta trabalho pela metade de outra pessoa para dentro do seu commit.
+2. **`components/renderers/**` é de leitura para todos.** São 90 testes escritos por duas
+   pessoas diferentes; mudança ali quebra feed e chrome ao mesmo tempo.
+3. **Bancada de medição não se desmonta antes do veredito.** O `/spike` com a biblioteca fica
+   de pé mesmo depois de o plano de fuga entrar — quem tira a referência antes do número final
+   repete o beco onde as duas primeiras tentativas de medir a escala morreram.
