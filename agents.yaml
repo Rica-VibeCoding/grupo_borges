@@ -34,8 +34,14 @@ agents:
     emoji: "🚀"
     origin: indiano sikh ("leão")
     tmux_session: daniel
-    # [2026-07-28 Pavan] Daniel embedded no app Comercial do fluyt (veio da raiz do monorepo) — reverter = voltar linha abaixo pra /home/clawd/repos/ze_claude/daniel
-    workspace_path: /home/clawd/repos/fluyt/apps/com
+    # [2026-07-30 Pavan] Desembutido: o embed em fluyt/apps/com (28/07) foi perdido
+    # num restart e o painel passou a mostrar "parado" — apontava pro JSONL do embed,
+    # cuja sessão morreu em 28/07 18:28, enquanto o Daniel real trabalhava em
+    # ze_claude/daniel. Decisão do Rica (30/07): ele fica na casa dele até o
+    # repositório do cockpit v2 nascer, e aí é embutido LÁ (skill embed-ze).
+    # ⚠️ Este campo tem de casar com o cwd REAL da sessão tmux — é por ele que o
+    # back resolve o diretório de JSONL. Divergência não dá erro: dá agente ocioso.
+    workspace_path: /home/clawd/repos/ze_claude/daniel
     cli_default: claude_code
     model_default: claude-opus-4-8
     capabilities:
