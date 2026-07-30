@@ -25,6 +25,16 @@
 // `status` existe no tipo mas NÃO é preenchido aqui: o contrato não fixa como
 // derivá-lo do nosso payload, e chutar status de mensagem é inventar semântica
 // de uma lib de um dia de idade.
+//
+// IDENTIDADE é cláusula do §5.1, não capricho. O motivo está no pacote:
+// external-store-thread-runtime-core.js:132 chama
+//   fromThreadMessageLike(convertMessage(m, idx), idx.toString(), autoStatus)
+// — o fallback de id é o ÍNDICE na lista. Mensagem sem id ganha identidade
+// posicional, que muda quando a lista cresce, e a linha remonta a cada flush
+// (falso positivo de G4, com a culpa caindo na biblioteca). E nas linhas
+// 136-144 o mesmo arquivo deduplica por id, com console.warn, mantendo a
+// ÚLTIMA ocorrência: id repetido não é aviso, é mensagem sumida do feed.
+// Por isso o id tem de ser presente E único — daí `refDe`.
 // ---------------------------------------------------------------------------
 
 import type { ThreadMessageLike } from '@assistant-ui/react';
@@ -49,6 +59,17 @@ function papelDe(payload: MessagePayload | undefined): Papel {
   return payload?.message?.role === 'user' ? 'user' : 'assistant';
 }
 
+/**
+ * A identidade da mensagem. Espelha `messageRef` do classificador
+ * (chat-payload-classifier.ts:236) de propósito: `uuid` vazio é caso real, e o
+ * core já se defende dele com o mesmo fallback. Duas razões para copiar em vez
+ * de inventar — sem id a identidade vira o índice na lista (ver cabeçalho); e
+ * usando a MESMA régua do classificador, o id daqui casa com o `rawRef` de lá.
+ */
+function refDe(payload: MessagePayload): string {
+  return payload.uuid || String(payload.id);
+}
+
 function criadoEm(payload: MessagePayload | undefined): Date | undefined {
   if (!payload) return undefined;
   if (payload.timestamp) {
@@ -63,12 +84,17 @@ function criadoEm(payload: MessagePayload | undefined): Date | undefined {
 /** Monta a mensagem sem chaves com `undefined`: o `id` opcional do tipo é
  *  `string | undefined`, mas emitir a chave com undefined polui o diff dos
  *  testes e o JSON que vai pro renderer. */
-function mensagem(role: Papel, content: Parts, id?: string, payload?: MessagePayload): ThreadMessageLike {
+function mensagem(
+  role: Papel, content: Parts, id?: string, payload?: MessagePayload, criadoEmMs?: number,
+): ThreadMessageLike {
   const m: {
     role: Papel; content: Parts; id?: string; createdAt?: Date;
   } = { role, content };
   if (id) m.id = id;
-  const criado = criadoEm(payload);
+  // `criadoEmMs` é para o item que não tem payload (ask-user). Todo campo de
+  // `ThreadMessageLike` é readonly no tipo instalado, então não dá para completar
+  // a mensagem depois — ou sai pronta daqui, ou o call-site duplica o construtor.
+  const criado = criadoEmMs !== undefined ? new Date(criadoEmMs) : criadoEm(payload);
   if (criado) m.createdAt = criado;
   return m;
 }
@@ -149,7 +175,7 @@ export function toThreadMessages(itens: RenderItem[], lookup?: ToolResultLookup)
 function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLike {
   switch (item.kind) {
     case 'user':
-      return mensagem('user', [{ type: 'text', text: item.text }], item.payload.uuid, item.payload);
+      return mensagem('user', [{ type: 'text', text: item.text }], refDe(item.payload), item.payload);
 
     case 'user-internal':
       // Texto continua sendo part de texto — o marcador é uma part a mais, não
@@ -157,10 +183,10 @@ function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLik
       return mensagem('user', [
         { type: 'text', text: item.text },
         partDeDados('data-internal', { userType: item.payload.user_type }),
-      ], item.payload.uuid, item.payload);
+      ], refDe(item.payload), item.payload);
 
     case 'assistant':
-      return mensagem('assistant', partsDoAssistant(item.parts, lookup), item.payload.uuid, item.payload);
+      return mensagem('assistant', partsDoAssistant(item.parts, lookup), refDe(item.payload), item.payload);
 
     case 'chip': {
       // Chip de tool é o único que a lib modela nativamente. O `toolName` vem
@@ -174,35 +200,42 @@ function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLik
         const base = uso
           ? toolCall(uso, lookup)
           : ({ type: 'tool-call', toolName: item.chip.label } as Part);
+        // Precedência é do lookup, não do chip. Hoje os dois valores são
+        // idênticos (`expandBody` é o corpo integral, `tone==='error'` ⟺
+        // `is_error`), mas escrever por cima faria o lookup virar decoração — e
+        // o lookup é justamente o que a ponte existe para não perder. O chip é
+        // o fallback de quando o tool_result não chegou.
+        // `in`, não truthiness: resultado de tool pode ser string vazia, e vazio
+        // que veio do lookup ainda é resposta — não é ausência.
+        const semResultado = !('result' in (base as Record<string, unknown>));
         const comResultado = {
           ...(base as Record<string, unknown>),
-          result: item.expandBody,
-          isError: item.tone === 'error',
+          ...(semResultado ? { result: item.expandBody, isError: item.tone === 'error' } : {}),
         } as Part;
-        return mensagem('assistant', [comResultado], item.payload.uuid, item.payload);
+        return mensagem('assistant', [comResultado], refDe(item.payload), item.payload);
       }
       return mensagem(papelDe(item.payload), [partDeDados('data-chip', {
         classifierKind: item.classifierKind,
         chip: item.chip,
         expandBody: item.expandBody,
         tone: item.tone,
-      })], item.payload.uuid, item.payload);
+      })], refDe(item.payload), item.payload);
     }
 
     case 'synthetic':
       return mensagem(papelDe(item.payload), [partDeDados('data-synthetic', {
         syntheticKind: item.syntheticKind, rawText: item.rawText,
-      })], item.payload.uuid, item.payload);
+      })], refDe(item.payload), item.payload);
 
     case 'channel':
       return mensagem(papelDe(item.payload), [partDeDados('data-channel', {
         raw: item.raw,
-      })], item.payload.uuid, item.payload);
+      })], refDe(item.payload), item.payload);
 
     case 'meta-decision':
       return mensagem('assistant', [partDeDados('data-meta', {
         text: item.text,
-      })], item.payload.uuid, item.payload);
+      })], refDe(item.payload), item.payload);
 
     case 'sidechain-group':
       return mensagem('assistant', [partDeDados('data-sidechain', {
@@ -216,14 +249,18 @@ function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLik
         subagentCount: item.subagentCount, totalDurMs: item.totalDurMs,
       })], item.groups[0]?.rootUuid);
 
-    case 'ask-user':
-      // ⚠️ NÃO ESTÁ NA TABELA DO §5.1. O contrato lista nove kind; o union do
-      // RenderItem tem dez, e este é o décimo. Ele não sai de buildRenderItems
-      // (entra por mergeAskUserItems, a partir do SSE `ask_user`), então não
-      // aparece no caminho medido — mas o switch é exaustivo e deixá-lo de fora
-      // quebraria a build. Segue a regra declarada do próprio §5.1: o que a lib
-      // não modela vai como data-*. Confirmar com o dono do contrato.
-      return mensagem('assistant', [partDeDados('data-ask-user', { entry: item.entry })]);
+    case 'ask-user': {
+      // O décimo kind. Ratificado como `data-ask-user` no §5.1 (emenda 27064af):
+      // o que a lib não modela vai como data-*. Não sai de buildRenderItems —
+      // entra por mergeAskUserItems, a partir do SSE `ask_user`.
+      //
+      // Identidade vem do próprio entry: sem payload, mas com request_id, que é
+      // a chave do Map de onde ele veio, e created_at_ms, que é a régua de
+      // ordenação em render-items.ts:488. Sem id a lib gera um por conversão e
+      // o card remonta a cada flush.
+      return mensagem('assistant', [partDeDados('data-ask-user', { entry: item.entry })],
+        item.entry.request_id, undefined, item.entry.created_at_ms);
+    }
 
     default:
       return kindNaoTratado(item);

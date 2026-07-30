@@ -94,6 +94,18 @@ test('as 52 famílias atravessam a ponte sem lançar e saem bem formadas', () =>
   }
 });
 
+test('as 52 famílias saem com id presente e ÚNICO', () => {
+  // Não é higiene: external-store-thread-runtime-core.js:136-144 deduplica por
+  // id e mantém a última ocorrência, com console.warn. Id repetido some do feed
+  // — e "sumiu uma mensagem" é a última coisa que se descobre olhando a tela.
+  const itens = buildRenderItems(EVENTOS);
+  const ids = toThreadMessages(itens, buildToolResultLookup(EVENTOS)).map((m) => m.id);
+
+  const semId = ids.filter((id) => !id);
+  assert.deepEqual(semId, [], `${semId.length} mensagens sem id → a lib cai no índice como identidade`);
+  assert.equal(new Set(ids).size, ids.length, 'id repetido: a lib descarta a ocorrência anterior');
+});
+
 test('cada família isolada também atravessa — nenhuma depende das vizinhas', () => {
   for (const f of FIXTURES) {
     const itens = cobre(buildRenderItems([f.evento]));
@@ -342,19 +354,37 @@ test('chip de tool → tool-call nativo com o toolName do tool_use, não o rótu
 /* 5. Exaustividade — o teste que quebra quando alguém acrescenta um kind      */
 /* ========================================================================== */
 
-test('ask-user: décimo kind, fora da tabela do §5.1, cai em data-ask-user', () => {
-  // O §5.1 fecha nove kind; o union do RenderItem tem dez. Este não sai de
-  // buildRenderItems (entra por mergeAskUserItems, do SSE `ask_user`), então
-  // não aparece nas fixtures. Segue a regra declarada do contrato: o que a lib
-  // não modela vira data-*. Pendente de ratificação do dono do contrato.
+test('ask-user: décimo kind, ratificado como data-ask-user, com id e createdAt do entry', () => {
+  // O §5.1 nasceu com nove kind; o union tem dez. Ratificado em 27064af: o que
+  // a lib não modela vira data-*. Não sai de buildRenderItems (entra por
+  // mergeAskUserItems, do SSE `ask_user`), então não aparece nas fixtures.
   const item = {
     kind: 'ask-user',
-    entry: { request_id: 'req-1', status: 'pending', questions: [], created_at_ms: 1 },
+    entry: { request_id: 'req-1', status: 'pending', questions: [], created_at_ms: 1_700_000_000_000 },
   } satisfies RenderItem;
   COBERTOS.add('ask-user');
 
-  const p = parts(toThreadMessages([item])[0])[0];
+  const [m] = toThreadMessages([item]);
+  const p = parts(m)[0];
   assert.equal(p.type, 'data-ask-user');
+  // Sem id a lib gera um por conversão e o card remonta a cada flush — falso
+  // positivo de G4 que só apareceria na medição.
+  assert.equal(m.id, 'req-1');
+  assert.equal(m.createdAt?.getTime(), 1_700_000_000_000);
+});
+
+test('uuid vazio cai no id numérico, mesma régua do messageRef do classificador', () => {
+  // uuid vazio é caso real, não hipótese: o core se defende dele em
+  // chat-payload-classifier.ts:236 com `msg.uuid || String(msg.id)`. Sem o
+  // fallback, a mensagem sai sem id e a identidade passa a ser gerada pela lib.
+  const itens = buildRenderItems([derivaDeUser({ uuid: '', id: 4242 })]);
+  assert.equal(itens.length, 1);
+  const [m] = toThreadMessages(itens);
+  assert.equal(m.id, '4242');
+
+  // e o caminho normal continua usando o uuid
+  const [normal] = toThreadMessages(buildRenderItems([derivaDeUser({ uuid: 'u-1', id: 4242 })]));
+  assert.equal(normal.id, 'u-1');
 });
 
 test('todos os dez kind do union têm conversão coberta por teste', () => {
