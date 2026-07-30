@@ -83,7 +83,8 @@ import type {
 } from '@assistant-ui/react';
 
 import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
-import { buildRenderItems, buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { toThreadMessages } from '@/lib/spike/to-thread-messages';
@@ -403,9 +404,27 @@ export default function SpikePage() {
     limit: 1000,
   });
 
-  // buildRenderItems é o ativo que sobrevive aos dois caminhos do gate; a
-  // biblioteca entra depois dele, nunca antes.
-  const itens = useMemo(() => buildRenderItems(messages), [messages]);
+  // O classificador é o ativo que sobrevive aos dois caminhos do gate; a
+  // biblioteca entra depois dele, nunca antes. O que muda aqui é só QUANTO dele
+  // roda por flush: `buildRenderItems` reclassificava a lista inteira a cada
+  // evento (O(N) por flush, a causa do G1 reprovar com p95 de 361ms), e a versão
+  // incremental da Tara só reprocessa a cauda.
+  //
+  // Instância em ref, criada uma vez: ela É o estado (guarda a lista anterior e
+  // as entradas já classificadas). Recriar por render zeraria esse estado e
+  // devolveria o O(N) sem aparecer em lugar nenhum.
+  const incrementalRef = useRef<ReturnType<typeof createIncrementalRenderItems> | null>(null);
+  if (incrementalRef.current === null) incrementalRef.current = createIncrementalRenderItems();
+
+  // ⚠️ A cópia rasa NÃO é decoração. `update()` devolve sempre o MESMO array,
+  // mutado no lugar — e external-store-thread-runtime-core.js:122 curto-circuita
+  // quando `oldStore.messages === store.messages`, devolvendo antes de
+  // reconstruir. Sem o array novo, mensagem nova simplesmente não aparecia.
+  // Copiar N ponteiros é trivial perto de reclassificar N mensagens, e o que
+  // importa preservar é a identidade dos ITENS, não a do array: com ela estável,
+  // o WeakMap de thread-message-converter.js:5 finalmente acerta no prefixo e só
+  // a cauda é reconvertida.
+  const itens = useMemo(() => [...incrementalRef.current!.update(messages)], [messages]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
 
   // convertMessage é por item (assinatura :43); a minha ponte é por lista, daí
