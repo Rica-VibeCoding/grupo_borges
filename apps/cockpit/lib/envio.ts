@@ -23,7 +23,6 @@ export type FaseEnvio =
 
 type BaseEnvio = {
   texto: string;
-  fronteira: FronteiraEnvio;
   /**
    * Ecos idênticos que ainda podem pertencer a uma tentativa anterior
    * pendurada/falha. São consumidos antes de confirmar a tentativa atual.
@@ -35,12 +34,29 @@ type BaseEnvio = {
 
 export type EstadoEnvio =
   | { fase: 'ocioso' }
-  | ({ fase: 'enviando'; ecoCandidatoId?: number } & BaseEnvio)
-  | ({ fase: 'aceito'; aceitoEmMs: number } & BaseEnvio)
-  | ({ fase: 'confirmado'; ecoId: number } & BaseEnvio)
-  | ({ fase: 'pendurado'; aceitoEmMs: number } & BaseEnvio)
+  | ({
+      fase: 'enviando';
+      fronteira?: FronteiraEnvio;
+      ecoCandidatoId?: number;
+    } & BaseEnvio)
+  | ({
+      fase: 'aceito';
+      fronteira: FronteiraEnvio;
+      aceitoEmMs: number;
+    } & BaseEnvio)
+  | ({
+      fase: 'confirmado';
+      fronteira: FronteiraEnvio;
+      ecoId: number;
+    } & BaseEnvio)
+  | ({
+      fase: 'pendurado';
+      fronteira: FronteiraEnvio;
+      aceitoEmMs: number;
+    } & BaseEnvio)
   | ({
       fase: 'falhou';
+      fronteira?: FronteiraEnvio;
       erro: unknown;
       entregaIncerta: boolean;
     } & BaseEnvio);
@@ -49,8 +65,8 @@ export type EstadoEnvio =
  * High-water obtido atomicamente do servidor imediatamente antes do POST.
  *
  * O último callback SSE processado NÃO serve: um item antigo pode estar na
- * fila do browser com id maior. O backend atual ainda não expõe essa barreira;
- * a integração precisa adicioná-la antes de usar este motor em produção.
+ * fila do browser com id maior. O backend devolve esta barreira no POST antes
+ * da primeira operação capaz de entregar o texto.
  */
 export type FronteiraEnvio = {
   id: number;
@@ -58,8 +74,12 @@ export type FronteiraEnvio = {
 };
 
 export type EventoEnvio =
-  | { tipo: 'enviar'; texto: string; fronteira: FronteiraEnvio }
-  | { tipo: 'aceitar'; agoraMs: number }
+  | { tipo: 'enviar'; texto: string; fronteira?: FronteiraEnvio }
+  | {
+      tipo: 'aceitar';
+      agoraMs: number;
+      fronteira?: FronteiraEnvio;
+    }
   | { tipo: 'falhar'; erro: unknown; entregaIncerta: boolean }
   | {
       tipo: 'item-do-stream';
@@ -115,11 +135,13 @@ export function reduzEnvio(
 
   if (evento.tipo === 'aceitar') {
     if (estado.fase !== 'enviando') return estado;
+    const fronteira = evento.fronteira ?? estado.fronteira;
+    if (fronteira === undefined) return estado;
     if (estado.ecoCandidatoId !== undefined) {
       const { ecoCandidatoId, ...base } = estado;
-      return { ...base, fase: 'confirmado', ecoId: ecoCandidatoId };
+      return { ...base, fase: 'confirmado', fronteira, ecoId: ecoCandidatoId };
     }
-    return { ...estado, fase: 'aceito', aceitoEmMs: evento.agoraMs };
+    return { ...estado, fase: 'aceito', fronteira, aceitoEmMs: evento.agoraMs };
   }
 
   if (evento.tipo === 'falhar') {
@@ -147,6 +169,7 @@ export function reduzEnvio(
     (estado.fase !== 'enviando' &&
       estado.fase !== 'aceito' &&
       estado.fase !== 'pendurado') ||
+    estado.fronteira === undefined ||
     evento.item.papel !== 'user' ||
     evento.item.id <= estado.fronteira.id ||
     normalizaTextoDoEco(evento.item.texto) !==
