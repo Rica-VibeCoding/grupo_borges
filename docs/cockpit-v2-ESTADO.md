@@ -56,33 +56,48 @@ instrumento para a pergunta errada.
   levantou e não trocou sozinho (certo); troquei agora porque **nenhum lado foi medido
   com os consertos**, então não há assimetria a criar.
 
-## 4. Em voo — atualizado 30/07 06:35, com o Rica dormindo
+## 4. Em voo — checkpoint de 30/07 11:45 (o de 06:35 está no histórico do git)
 
-Ele acordou às 6h, cobrou que **ninguém estava implementando** e mandou distribuir em vez
-de fazer eu mesmo. Despachado:
+A rodada da madrugada rendeu 6 commits. O que mudou de fato desde a §2:
 
-- **Daniel** (Opus 5, xhigh, 26%) — duas coisas na ordem: a troca do incremental do passo 1
-  (é arquivo dele) e depois a **camada visual**: `globals.css` com os tokens de pele,
-  AppShell de verdade, lista em `/`, chat em `/agente/[slug]`, gaveta como `<aside>` com
-  `?painel=`, mobile-first (safe-area, `dvh`, input ≥16px). Fora de escopo: `apps/web`,
-  `lib/spike/*` e a decisão assistant-ui × shadcn.
-- **Tara** (`tara-codex`, thread `019fb347`) — componente de contrato fechado e isolado:
-  `apps/cockpit/components/renderers/diff-viewer.tsx` + teste. Props fixas
-  (`filePath`/`oldString`/`newString`), LCS próprio sem dependência nova, **zero hex** —
-  só os tokens `--ck-*`. Proibido commitar, subir servidor ou tocar outro arquivo.
-  Esse path é **dela** nesta rodada.
-- **Hiro** — **bloqueado**, não conta como frente: cada envio cai no modal "Continue with
-  Fable 5". A quota Kimi está boa (49/100, reset 02/08) e as env vars do K3 estão no
-  processo, então não é quota nem lançamento errado. Escape dispensa o modal mas come o
-  prompt. Opção 1 é transação financeira → decisão do Rica.
-- **Supervisão:** cron de 5 min na minha sessão (`CronCreate`, id `07e3864c`) olhando as
-  panes, destravando modal com Escape e despachando frente nova. ⚠️ É **session-only** —
-  morre com a minha sessão, e aí a supervisão para sem avisar ninguém.
-- A troca da chamada para o incremental em `page.tsx` era minha por ownership; passou pro
-  Daniel porque o arquivo é dele e o Rica cobrou distribuição.
-- ⚠️ O texto *"roda o probe de novo no iPhone do Rica pra confirmar"* que estava digitado
-  no input do Daniel foi **descartado** (`C-u`) antes do despacho. Continua valendo: o
-  probe exige o Rica com o celular na mão.
+**Números do gate mudaram, e para pior — o §2 está desatualizado.**
+`385fe2d`: medindo **só a fase de medição**, que é a janela que o gate define, o p95 do
+G1 fica entre **500 e 867 ms** em 6 rodadas, mediana ~600 ms, contra corte de 32. O
+266,6 ms de `19058ac` diluía a fase calma de preenchimento junto. O perfil de CPU atribui
+o custo a coletor de lixo (13%) e a `useEffect`/`useMemo`/`useRef` do `@assistant-ui/tap`
+(~6,8%). **A escala ficou sem resposta**: duas tentativas de variar o histórico não
+moveram a variável independente (nem a hora de abrir a página nem `?historico=N`
+governam o que o cliente carrega — o feed inicial ficou em 742 itens nas duas), e o
+parâmetro foi revertido para não enganar quem medir depois. Responder exige mexer no
+`use-canario-stream.ts`; **autorizei o Daniel a fazê-lo depois da rodada visual**.
+
+**O item 5 do gate tem prova** (`ea99cc1`, relatório completo em
+`cockpit-v2-paridade-relatorio.md`): v1 e v2 são cópias independentes e produzem saída
+idêntica nas 52 famílias e nos 4 transcripts SSE (796 itens, comparados por kind,
+posição, identidade e agrupamento). O número só vale porque o comparador foi provado por
+4 mutantes — e o de ordem **passou batido nas famílias isoladas**, que produzem 0 ou 1
+item. Lacunas que ficam: reconexão real e `sidechain-cluster`, que exigiriam rodar carga
+contra o canário — parado no estado canônico esperando a medição do Rica.
+
+**Regra nova, e ela manda em toda UI daqui pra frente** (`1d445a3`, §9.1 do
+`cockpit-v2-estetica.md`): UI definitiva sai em **rodada dedicada, com contexto limpo**,
+com a skill `frontend-design` carregada antes de desenhar, e a régua é *"isto vale largar
+o cockpit antigo?"*. Veio depois de o Rica reprovar a primeira coluna TROPA — e a causa
+foi erro meu de orquestração: despachei pele e instrumentação do gate no mesmo turno.
+
+**Quem está com o quê agora:**
+
+- **Daniel** — rodada visual em curso sob a §9.1, começada com contexto em 1%. Escopo:
+  levantamento `:3007` × `:3008`, status line de volta, TROPA recomposta com shadcn no
+  chrome, fallback de emoji (Felipe/Barsi/Vinicius vêm com `emoji: null` da API). O resto
+  da pele de `526aba7` fica.
+- **Tara** — livre. Quatro rodadas de auditoria entregues, todas sem tocar no repositório;
+  o `diff-viewer` dela está em `05764f2`, verificado por mim (36/36, `tsc` limpo).
+- **Hiro** — **bloqueado**, não conta como frente: todo envio cai no modal *"Fable 5 now
+  uses usage credits — R$ 67,44 in credits"*, que come o prompt. Não é quota Kimi (49/100,
+  reset 02/08) nem env var errada. Opção 1 é transação financeira → decisão do Rica.
+- **Supervisão:** cron de 5 min (`CronCreate`, id `07e3864c`). ⚠️ **session-only** — morre
+  com a minha sessão e a supervisão para sem avisar ninguém. Este §4 é o antídoto.
 
 ## 5. Retomada — os passos, na ordem
 
