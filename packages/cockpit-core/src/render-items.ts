@@ -175,9 +175,12 @@ export function buildToolResultLookup(messages: MessagePayload[]): ToolResultLoo
       };
       if (totalResults === 1 && m.tool_use_result != null) {
         entry.rich = m.tool_use_result;
-      } else {
+      } else if (totalResults === 1) {
         // tool_use_id duplicado: o texto do último ganha (regra antiga), mas
         // o rico do primeiro sobrevive — mesmo id é a mesma execução (D4).
+        // A herança só vale em mensagem de UM result: numa multi-result a
+        // associação já é ambígua por definição (D3), e herdar rich velho
+        // ali reintroduziria a ambiguidade que o D3 existe pra evitar.
         const anterior = map.get(p.tool_use_id);
         if (anterior && 'rich' in anterior) entry.rich = anterior.rich;
       }

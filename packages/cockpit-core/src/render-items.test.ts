@@ -258,12 +258,18 @@ test('deriveSubagentStatusesFromMessages — recupera metadados enquanto subagen
 function mensagemComResult(
   id: number,
   toolUseId: string,
-  extras?: { toolUseResult?: unknown; results?: Array<{ id: string; content: string }> },
+  extras?: {
+    toolUseResult?: unknown;
+    content?: string;
+    isError?: boolean;
+    results?: Array<{ id: string; content: string; isError?: boolean }>;
+  },
 ): MessagePayload {
-  const parts = (extras?.results ?? [{ id: toolUseId, content: 'saida' }]).map((r) => ({
+  const parts = (extras?.results ?? [{ id: toolUseId, content: extras?.content ?? 'saida', isError: extras?.isError }]).map((r) => ({
     type: 'tool_result',
     tool_use_id: r.id,
     content: r.content,
+    ...(r.isError !== undefined ? { is_error: r.isError } : {}),
   }));
   // Via JSON de propósito: os testes 3 e 5 usam formas que o tipo
   // `ToolUseResult` não declara — é exatamente o que `rich?: unknown` existe
@@ -324,29 +330,65 @@ test('lookup — mensagem com >1 tool_result não anexa rich a nenhum (D3)', () 
 
 test('lookup — duplicata: evento posterior sem rico preserva o rico anterior (D4)', () => {
   const lookup = buildToolResultLookup([
-    mensagemComResult(3, 'toolu-dup', { toolUseResult: { status: 'completed', totalTokens: 10 } }),
-    mensagemComResult(4, 'toolu-dup'),
+    mensagemComResult(3, 'toolu-dup', {
+      toolUseResult: { status: 'completed', totalTokens: 10 },
+      content: 'saida-ANTIGA',
+      isError: false,
+    }),
+    mensagemComResult(4, 'toolu-dup', { content: 'saida-NOVA', isError: true }),
   ]);
   const entry = lookup.get('toolu-dup');
 
   assert.ok(entry);
-  assert.equal(entry.content, 'saida'); // o texto do último ganha
+  // Valores DIFERENTES de propósito (revisão Tara): se uma regressão
+  // preservar os campos do primeiro evento, este teste pega.
+  assert.equal(entry.content, 'saida-NOVA'); // o texto do último ganha
+  assert.equal(entry.isError, true); // o isError do último também
   const rich = entry.rich as { totalTokens: number };
   assert.equal(rich.totalTokens, 10); // mas o rico do primeiro sobrevive
 });
 
 test('lookup — duplicata: evento posterior COM rico substitui (D4)', () => {
   const lookup = buildToolResultLookup([
-    mensagemComResult(5, 'toolu-dup2', { toolUseResult: { status: 'running' } }),
-    mensagemComResult(6, 'toolu-dup2', { toolUseResult: { status: 'completed' } }),
+    mensagemComResult(5, 'toolu-dup2', {
+      toolUseResult: { status: 'running' },
+      content: 'saida-PARCIAL',
+    }),
+    mensagemComResult(6, 'toolu-dup2', {
+      toolUseResult: { status: 'completed' },
+      content: 'saida-FINAL',
+    }),
   ]);
-  const rich = lookup.get('toolu-dup2')!.rich as { status: string };
+  const entry = lookup.get('toolu-dup2')!;
+  assert.equal(entry.content, 'saida-FINAL');
+  const rich = entry.rich as { status: string };
   assert.equal(rich.status, 'completed');
+});
+
+test('lookup — multi-result reusando o MESMO id não herda rich velho (D3×D4)', () => {
+  // Caso da revisão Tara: mensagem com 2 parts tool_result do MESMO
+  // tool_use_id e um rich pré-existente no mapa. O D4 herda rich entre
+  // EVENTOS (mesmo id = mesma execução), mas dentro de UMA mensagem
+  // multi-result a associação é ambígua por definição — herdar aqui
+  // contradiz o D3. Regra: a herança só vale quando a mensagem atual tem
+  // exatamente 1 result.
+  const lookup = buildToolResultLookup([
+    mensagemComResult(7, 'toolu-mix', { toolUseResult: { status: 'completed', totalTokens: 99 } }),
+    mensagemComResult(8, 'ignorado', {
+      results: [
+        { id: 'toolu-mix', content: 'primeira saida' },
+        { id: 'toolu-mix', content: 'segunda saida' },
+      ],
+    }),
+  ]);
+  const entry = lookup.get('toolu-mix')!;
+  assert.equal(entry.content, 'segunda saida'); // último part ganha o texto
+  assert.equal(Object.hasOwn(entry, 'rich'), false); // mas NÃO herda o rich
 });
 
 test('lookup — tool_use_result em forma inesperada atravessa como está (D1)', () => {
   const lookup = buildToolResultLookup([
-    mensagemComResult(7, 'toolu-estranho', { toolUseResult: 'uma string, não um objeto' }),
+    mensagemComResult(9, 'toolu-estranho', { toolUseResult: 'uma string, não um objeto' }),
   ]);
   assert.equal(lookup.get('toolu-estranho')!.rich, 'uma string, não um objeto');
 });

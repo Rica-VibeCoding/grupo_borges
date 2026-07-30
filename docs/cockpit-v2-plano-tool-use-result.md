@@ -50,12 +50,20 @@ mais que errado. Custo medido: **zero hoje** — varri as 52 fixtures e nenhuma
 mensagem tem mais de um `tool_result`; o caso é coberto por teste sintético
 para o dia em que aparecer.
 
-**D4. `tool_use_id` duplicado: o rico sobrevive ao evento posterior sem rico.**
+**D4. `tool_use_id` duplicado: o rico sobrevive ao evento posterior sem rico —
+mas só em mensagem de UM result.**
 "Último ganha" continua valendo para `content`/`isError` (regra antiga). Mas
 um evento posterior com o mesmo `tool_use_id` e sem `tool_use_result` **não
 apaga** o rico já registrado — mesmo `tool_use_id` é a mesma execução, então o
 rico do primeiro continua válido. Se o posterior TAMBÉM tiver rico, o do
 posterior ganha (é informação mais nova da mesma execução). Coberto por teste.
+**Desvio D3×D4 (revisão Tara, 30/07):** a herança NÃO acontece dentro de uma
+mensagem multi-result que reutilize o mesmo id — ali a associação é ambígua
+por definição (D3) e herdar rich velho reintroduziria a ambiguidade. Regra
+final: herda só quando a mensagem atual tem exatamente 1 `tool_result`.
+**Força do teste (revisão Tara):** os eventos de duplicata usam `content` e
+`isError` DIFERENTES entre si — uma regressão que preserve os campos do
+primeiro evento reprova o teste.
 
 **D5. Os testes provam comportamento, não ausência de exceção.**
 Bateria na seção "Testes" abaixo: forma inesperada de `tool_use_result`,
@@ -170,8 +178,11 @@ Em `packages/cockpit-core/src/render-items.test.ts` (idioma da casa:
    `tool_result` + `tool_use_result` presente → NENHUMA das duas entradas tem
    `rich`. (Fixture real não cobre: 0 ocorrências hoje — medido.)
 4. **Duplicata** (D4): evento A com rico, evento B posterior com o mesmo
-   `tool_use_id` e sem rico → `content`/`isError` do B, `rich` do A. E o
-   inverso: B com rico próprio → `rich` do B.
+   `tool_use_id` e sem rico → `content`/`isError` do B, `rich` do A — com
+   valores DIFERENTES entre A e B, pra provar qual lado venceu. E o inverso:
+   B com rico próprio → `rich` do B.
+4b. **D3×D4**: mensagem multi-result reusando o MESMO id com rich prévio no
+   mapa → último part ganha o texto, mas NÃO herda o rich.
 5. **Forma inesperada**: `tool_use_result` como string solta → atravessa como
    está (é `unknown`); a rejeição é dos normalizadores — coberta nos testes
    dos renderers (fetch × lista cruzados).
