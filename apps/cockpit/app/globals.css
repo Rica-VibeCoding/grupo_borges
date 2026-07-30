@@ -71,6 +71,54 @@
   --ck-text-lg: 1.25rem;      /* 20px  título de seção */
   --ck-text-hero: 1.75rem;    /* 28px  estado vazio, hero */
 
+  /* -- tipografia: família ------------------------------------------------
+   * Mono é a voz da MÁQUINA (comando, saída, caminho, diff, nome de tool).
+   * Sans é a voz do PRODUTO (navegação, label, título, texto do Rica).
+   * Isto não é o tema sci-fi revogado: lá era mono em ≥70% da TELA; aqui é
+   * mono em 100% do conteúdo de execução e 0% do chrome — o oposto.
+   * As --font-geist-* vêm do next/font, declaradas em app/fonts.ts. */
+  --ck-font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --ck-font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* -- tipografia: métrica ------------------------------------------------
+   * Eram prosa no contrato e viraram token depois de o overline nascer com
+   * 0.08em em vez de 0.055em. Prosa não se consome. */
+  --ck-leading-body: 1.55;    /* corpo e mono — bloco de código respira.
+                                 13px × 1.55 = 20,15px, que é o que faz a linha
+                                 de ferramenta caber nos 28–32px com respiro */
+  --ck-leading-hero: 1.2;
+  --ck-track-hero: -0.035em;
+  --ck-track-title: -0.012em;
+  --ck-track-overline: 0.055em;
+
+  /* -- interação: UM véu de luz que compõe sobre qualquer superfície -------
+   * Não são dois tokens por superfície (seriam oito): interagir é receber mais
+   * luz, coerente com "luz em vez de sombra". O degrau da escada de elevação é
+   * 1.09–1.11×, então hover fica ABAIXO de uma elevação e pressed pouco acima:
+   * interagir nunca é confundido com subir de camada.
+   * Teto 0.05 medido: em 0.065 a borda funcional cai pra 2.98:1 e reprova.
+   * ⛔ PROIBIDO sobre --ck-surface-raised — lá até o hover de 0.03 dá 2.98. */
+  --ck-overlay-hover: rgb(255 255 255 / 0.03);     /* Δ 1.087× — não existe no celular */
+  --ck-overlay-selected: rgb(255 255 255 / 0.04);  /* Δ 1.134× + barra de 2px */
+  --ck-overlay-pressed: rgb(255 255 255 / 0.05);   /* Δ 1.168× */
+
+  /* -- link ---------------------------------------------------------------
+   * Matiz 250: a 30° do ciano de running e 35° do violeta de thinking —
+   * equidistante dos dois estados com que poderia ser confundido. Croma 0.09,
+   * MAIS BAIXO que o de qualquer estado (0.13–0.16), de propósito: URL no meio
+   * do stdout não pode gritar mais alto que uma falha. AAA (7:1) em toda a
+   * escada — canvas 10.11 · nav 9.18 · composer 8.28 · raised 7.40. */
+  --ck-link: oklch(0.82 0.09 250);                 /* #97c9fd */
+
+  /* -- seleção ------------------------------------------------------------
+   * Força fundo E cor: sem forçar, selecionar texto em state-fail ou diff-add
+   * produz um par que ninguém mediu. Forçado, existe UM par e ele dá 7.57:1. */
+  --ck-selection-bg: oklch(0.42 0.08 265);         /* #374c79 */
+  --ck-selection-fg: var(--ck-text-primary);
+
+  /* -- véu de modal: o fundo PERDE luz, não ganha sombra ------------------- */
+  --ck-scrim: rgb(0 0 0 / 0.55);                   /* modal destaca 1.53× */
+
   /* ===== §B ESQUELETO — Pavan ==============================================
    * Medida e ritmo. Onde a §A responde "que cor", esta responde "quanto" e
    * "quão rápido". Números de container vêm das medidas reais do app do ChatGPT
@@ -154,6 +202,23 @@
 
   --color-edge-functional: var(--ck-edge-functional);
   --color-edge-hairline: var(--ck-edge-hairline);
+
+  --color-link: var(--ck-link);
+
+  /* Sem estes, `font-mono` do Tailwind entrega a pilha default do framework e
+     não a Geist Mono — e a tela parece que usou o token sem ter usado. */
+  --font-sans: var(--ck-font-sans);
+  --font-mono: var(--ck-font-mono);
+
+  /* Idem na escala: sem sobrescrever, `text-sm` do Tailwind entrega 14px em vez
+     dos 13px do contrato. Um pixel de diferença espalhado por toda a tela é
+     exatamente como um sistema de tokens vira decorativo. */
+  --text-xs: var(--ck-text-xs);
+  --text-sm: var(--ck-text-sm);
+  --text-base: var(--ck-text-base);
+  --text-md: var(--ck-text-md);
+  --text-lg: var(--ck-text-lg);
+  --text-hero: var(--ck-text-hero);
 }
 
 /* ===== base ============================================================== */
@@ -166,11 +231,23 @@ body {
 body {
   background: var(--ck-surface-canvas);
   color: var(--ck-text-primary);
+  font-family: var(--ck-font-sans);
   font-size: var(--ck-text-base);
+  /* Sem isto o body herda o `normal` do browser (~1.2), 22% mais apertado do
+     que o contrato manda. */
+  line-height: var(--ck-leading-body);
   -webkit-font-smoothing: antialiased;
   /* dvh, não vh: no iOS a barra de endereço faz vh mentir e o composer sai da
      tela quando o teclado abre. */
   min-height: 100dvh;
+}
+
+/* Log implica copiar trecho, e o azul default do browser destoa. Força os DOIS
+ * lados — senão selecionar texto em state-fail ou diff-add produz um par que
+ * ninguém mediu. */
+::selection {
+  background: var(--ck-selection-bg);
+  color: var(--ck-selection-fg);
 }
 
 /* Foco visível sempre — o anel é token, não decoração opcional. */
@@ -183,6 +260,63 @@ body {
  * em vez de sombra projetada. */
 .ck-lit {
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+
+/* Véu de interação. É `background-image` e não `::after` de propósito: um
+ * pseudo-elemento sobreposto pintaria branco POR CIMA do texto e lavaria o
+ * contraste que a §2.6 mediu. Gradiente de uma cor só compõe sobre a
+ * background-color de qualquer superfície e fica SOB o conteúdo, que é
+ * exatamente onde o número medido vale.
+ *
+ * Sem transition: `background-image` não interpola, e a 3% de branco um degrau
+ * instantâneo é invisível. Fingir animação aqui seria custo sem entrega. */
+.ck-veil:hover {
+  background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
+}
+
+.ck-veil:active {
+  background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed));
+}
+
+/* Selecionado carrega véu MAIS barra de 2px: 1.13× de luminância não sobrevive
+ * ao Rica olhando o celular no sol, e cor sozinha nunca é portadora única. */
+.ck-veil[data-selecionado='true'] {
+  background-image: linear-gradient(var(--ck-overlay-selected), var(--ck-overlay-selected));
+}
+
+/* Campo de entrada. As duas regras existem por causa do WebKit:
+ *
+ * - `::placeholder` sem cor explícita herda a cor do texto, e aí o campo VAZIO
+ *   parece um campo preenchido. Tem de ser `secondary` (4.5:1, é metadado).
+ * - campo `disabled` no WebKit ganha um cinza do sistema por cima do que o CSS
+ *   pediu, e `-webkit-text-fill-color` é o único jeito de recuperar o token.
+ *   Sem isso, o único lugar da tela com cor fora da paleta seria o composer. */
+.ck-campo::placeholder {
+  color: var(--ck-text-secondary);
+  -webkit-text-fill-color: var(--ck-text-secondary);
+  opacity: 1;
+}
+
+.ck-campo:disabled {
+  color: var(--ck-text-primary);
+  -webkit-text-fill-color: var(--ck-text-primary);
+  opacity: 1;
+}
+
+/* Número que atualiza sozinho não pode dançar: contador de token, tempo
+ * decorrido, estatística de diff, % de contexto. A mono já carrega o recurso,
+ * mas o % na tropa é sans e renderiza proporcional sem isto. */
+.ck-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Link é SEMPRE sublinhado. Num log cheio de estado colorido, o sublinhado é o
+ * que separa "clicável" de "colorido" — cor não é portadora única. */
+.ck-link {
+  color: var(--ck-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
 }
 
 /* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do

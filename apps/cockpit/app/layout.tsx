@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { geistMono, geistSans } from './fonts';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -20,7 +21,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
+    // As duas classes publicam --font-geist-sans e --font-geist-mono, que são o
+    // que os tokens --ck-font-* consomem. Sem elas os tokens caem no fallback de
+    // sistema em silêncio: a tela renderiza, só não é a fonte do contrato.
+    <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body>{children}</body>
     </html>
   );
