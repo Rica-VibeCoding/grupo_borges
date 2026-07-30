@@ -460,6 +460,117 @@ body {
   }
 }
 
+/* ===== O MOVIMENTO — como tudo entra e sai neste app ======================
+ *
+ * Ordem do Rica (30/07), sobre o painel do ChatGPT: *"aprender o código desse
+ * movimento, porque em tudo vai ser com ele"*. Então isto não é o estilo de um
+ * painel: é O padrão de entrada e saída do app. Quem for animar qualquer
+ * superfície nova usa `.ck-surge` e não escreve keyframe próprio.
+ *
+ * A regra que decide a técnica: **saída não se anima com o elemento sendo
+ * REMOVIDO do DOM.** `@starting-style` só cobre o elemento aparecendo ou
+ * saindo de `display: none` — conferido na doc, não suposto. Como aqui a
+ * superfície mora na URL (decisão nº 1 do `app-shell.tsx`), a gaveta era
+ * removida na navegação e por isso só teria entrada.
+ *
+ * A saída é o motivo de o `app-shell` passar a renderizar a gaveta SEMPRE e
+ * alternar apenas o `data-aberto`. O nó sobrevive à navegação — React
+ * reconcilia o mesmo elemento na mesma posição da árvore — e o CSS ganha os
+ * dois lados do movimento. Nenhuma linha de JavaScript, nenhum
+ * `AnimatePresence`, nenhuma biblioteca de motion: o shell continua Server
+ * Component, que é o que faz deep-link do Telegram e botão voltar do Android
+ * funcionarem.
+ *
+ * `display` entra na transição com `allow-discrete` porque ele não interpola:
+ * sem isso o elemento sumiria no primeiro frame da saída e a animação rodaria
+ * no vazio. Com ele, o `display: none` fica adiado até o movimento terminar.
+ *
+ * Só `opacity` e `transform` animam (proibição §9.4), então isto não custa
+ * layout nem briga com o streaming do feed.
+ *
+ * ⚠️ `--ck-dur-enter` (200ms) e `--ck-ease-exit` são da §B e ainda não existem
+ * — pedidos ao Pavan. O fallback no `var()` é ponte: quando os tokens
+ * nascerem, estas regras passam a consumi-los sem eu tocar em nada. */
+.ck-surge {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease),
+    display var(--ck-dur-enter, 200ms) allow-discrete;
+}
+
+/* Fechado. `translateY` de 6px com `scale` de 0.98: a superfície não desliza
+   de fora da tela, ela AFUNDA um pouco e se afasta — o mesmo gesto do painel
+   da referência. Deslizar da borda direita seria a gramática de gaveta, e esta
+   deixou de ser gaveta quando passou a flutuar. */
+.ck-surge[data-aberto='false'] {
+  display: none;
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  transition-timing-function: var(--ck-ease-exit, cubic-bezier(0.4, 0, 1, 1));
+}
+
+/* DEPOIS da regra principal, obrigatoriamente: `@starting-style` tem a mesma
+   especificidade e perderia por ordem se viesse antes. */
+@starting-style {
+  .ck-surge[data-aberto='true'] {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+/* O véu acompanha, senão o preto entra de uma vez e denuncia que só a caixa
+   está animando. */
+.ck-surge-veu {
+  opacity: 1;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
+    display var(--ck-dur-enter, 200ms) allow-discrete;
+}
+
+.ck-surge-veu[data-aberto='false'] {
+  display: none;
+  opacity: 0;
+}
+
+@starting-style {
+  .ck-surge-veu[data-aberto='true'] {
+    opacity: 0;
+  }
+}
+
+/* O PAINEL FLUTUANTE — a forma que a referência do Rica pede.
+ *
+ * *"flutua sobre o conteúdo, cantos arredondados, NÃO ocupa a tela inteira de
+ * cima a baixo"* e *"centraliza na altura"*. Três consequências:
+ *
+ * - `top` e `bottom` presos ao respiro + `height: fit-content` + `margin-block:
+ *   auto` centralizam sem `transform` — e isso é requisito, não preferência: o
+ *   `transform` está reservado para o movimento acima, e um `translateY(-50%)`
+ *   de centralização brigaria com ele no meio da animação.
+ * - `max-height` limita ao que sobra da tela, e o conteúdo rola por dentro.
+ * - O mesmo `--ck-space-2` da folha (§14). A referência de textura que o Rica
+ *   mandou depois confirma a borda: no print dele o fio entre as duas áreas
+ *   escuras é MAIS CLARO que as duas (#323232 sobre #202020/#181818), que é
+ *   exatamente o `--ck-edge-light` — branco a 7% sobre a superfície `nav` dá
+ *   (49,49,49) contra os (50,50,50) medidos por ele. A textura que ele pediu
+ *   já era a assinatura da §A: luz em vez de sombra. */
+.ck-flutua {
+  position: fixed;
+  z-index: var(--ck-z-drawer);
+  top: calc(var(--ck-space-2) + var(--ck-safe-top));
+  bottom: calc(var(--ck-space-2) + var(--ck-safe-bottom));
+  right: calc(var(--ck-space-2) + var(--ck-safe-right));
+  margin-block: auto;
+  height: fit-content;
+  max-height: calc(100dvh - 2 * var(--ck-space-2) - var(--ck-safe-top) - var(--ck-safe-bottom));
+  width: calc(100% - 2 * var(--ck-space-2));
+  max-width: var(--ck-w-drawer);
+  border-radius: var(--ck-radius-caixa);
+  box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+
 /* Véu de interação. É `background-image` e não `::after` de propósito: um
  * pseudo-elemento sobreposto pintaria branco POR CIMA do texto e lavaria o
  * contraste que a §2.6 mediu. Gradiente de uma cor só compõe sobre a

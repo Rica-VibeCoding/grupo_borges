@@ -50,7 +50,12 @@ function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
         style={{
           gap: 'var(--ck-space-2)',
           padding: 'var(--ck-space-3) var(--ck-space-4)',
-          borderColor: 'var(--ck-edge-hairline)',
+          // `edge-light`, não `edge-hairline`: a referência de textura que o
+          // Rica mandou tem o fio entre duas áreas escuras MAIS CLARO que as
+          // duas (#323232 sobre #202020/#181818). O hairline (#424242) é mais
+          // duro que isso; branco a 7% sobre esta superfície dá (49,49,49) —
+          // o valor que ele mediu, e a assinatura da §A: luz, não sombra.
+          borderColor: 'var(--ck-edge-light)',
         }}
       >
         <span

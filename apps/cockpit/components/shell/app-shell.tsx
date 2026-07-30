@@ -77,7 +77,6 @@ export function AppShell({
   rotuloPainel = 'painel',
   palco = 'folha',
 }: AppShellProps) {
-  const mostrarGaveta = Boolean(drawer) && painelAberto;
   const folha = palco === 'folha';
 
   return (
@@ -131,31 +130,39 @@ export function AppShell({
         {children}
       </main>
 
-      {mostrarGaveta ? (
+      {/* O painel. Repare no `drawer ?` em vez do antigo `mostrarGaveta ?`: ele
+          fica SEMPRE no DOM e o que muda é `data-aberto`.
+
+          Isto não é detalhe de implementação, é o que compra a animação de
+          SAÍDA. `@starting-style` só cobre elemento aparecendo ou saindo de
+          `display: none`; elemento REMOVIDO do DOM sai sem transição nenhuma —
+          e removido era o que ele era, porque a navegação `?painel=…` deixava
+          de renderizá-lo. Mantido montado, o React reconcilia o mesmo nó a cada
+          navegação e o CSS anima os dois lados. Ver `.ck-surge` no globals.css.
+
+          `inert` quando fechado: durante a saída o elemento ainda está visível
+          por ~200ms, e sem isto o conteúdo continuaria alcançável por Tab
+          nesse intervalo. */}
+      {drawer ? (
         <>
-          {/* Véu. É um `<Link>` porque fechar a gaveta é navegar — sem estado,
+          {/* Véu. É um `<Link>` porque fechar o painel é navegar — sem estado,
               sem handler, funciona com JavaScript desligado e o botão voltar
               faz a coisa certa. Zero `backdrop-filter`: blur em tela cheia na
               GPU do celular é exatamente o que afunda o item 1 do gate. */}
           <Link
             href={fecharPainelHref}
             aria-label={`Fechar ${rotuloPainel}`}
-            className="fixed inset-0"
+            data-aberto={String(painelAberto)}
+            className="ck-surge-veu fixed inset-0"
             style={{ background: 'var(--ck-scrim)', zIndex: 'var(--ck-z-drawer)' }}
           />
 
           <aside
             aria-label={rotuloPainel}
-            className="fixed inset-y-0 right-0 flex w-full min-h-0 flex-col overflow-y-auto border-l"
-            style={{
-              maxWidth: 'var(--ck-w-drawer)',
-              background: 'var(--ck-surface-nav)',
-              borderColor: 'var(--ck-edge-hairline)',
-              zIndex: 'var(--ck-z-drawer)',
-              paddingRight: 'var(--ck-safe-right)',
-              paddingTop: 'var(--ck-safe-top)',
-              paddingBottom: 'var(--ck-safe-bottom)',
-            }}
+            data-aberto={String(painelAberto)}
+            inert={!painelAberto}
+            className="ck-surge ck-flutua flex min-h-0 flex-col overflow-hidden"
+            style={{ background: 'var(--ck-surface-nav)' }}
           >
             {drawer}
           </aside>

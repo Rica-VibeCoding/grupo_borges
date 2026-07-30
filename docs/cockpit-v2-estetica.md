@@ -987,3 +987,76 @@ não é pendência" custa o mesmo tempo de quem for fechá-la depois.
 **O que isto não conserta:** os 26 valores crus já escritos vivem em `components/renderers/**`,
 que é do Hiro. Token novo não reescreve código alheio; a utilitária existe a partir de agora e
 a troca é dele.
+
+## 17. `.ck-surge` — O MOVIMENTO do app, e o painel que flutua (30/07)
+
+> **Rica, sobre o painel do ChatGPT:** *"aprender o código desse movimento, porque em tudo vai
+> ser com ele"*
+
+Então isto não é o estilo de um painel: é **o padrão de entrada e saída do app inteiro**. Quem
+animar superfície nova usa `.ck-surge` e não escreve keyframe próprio.
+
+### A regra que decide a técnica
+
+**Saída não se anima com o elemento sendo REMOVIDO do DOM.** `@starting-style` cobre o
+elemento *aparecendo* ou saindo de `display: none` — conferido na doc, não suposto. Como aqui
+a superfície mora na URL, a gaveta deixava de ser renderizada na navegação e por isso só
+poderia ter entrada.
+
+A saída é o motivo de o `app-shell` passar a **manter o painel sempre montado**, alternando só
+`data-aberto`. O React reconcilia o mesmo nó a cada navegação e o CSS ganha os dois lados.
+`display` entra na transição com `allow-discrete` (ele não interpola: sem isso o elemento
+sumiria no primeiro frame e a animação rodaria no vazio).
+
+**O que isto compra:** zero JavaScript, zero `AnimatePresence`, zero biblioteca de motion — o
+shell continua Server Component, que é o que faz deep-link e botão voltar funcionarem. Não foi
+preciso `experimental.viewTransition`: **esta peça não é shared element transition** (não há
+elemento migrando entre dois lugares, como seria a animação do retrato da §15), é entrada e
+saída de uma superfície única. O palpite do despacho estava certo, e o freio da §15 não se
+aplica aqui.
+
+Só `opacity` e `transform` animam (§9.4). O gesto é `translateY(6px) + scale(0.98)`: a
+superfície **afunda e se afasta**, em vez de deslizar da borda — deslizar é gramática de
+gaveta, e ela deixou de ser gaveta quando passou a flutuar.
+
+### A forma — medida, não estimada
+
+| o que o Rica pediu | medido no browser |
+|---|---|
+| flutua, não ocupa a tela de cima a baixo | altura **425px** de 900 (desktop) e de 844 (iPhone) |
+| centraliza na altura | folga **237px** em cima e 237px embaixo — iguais |
+| mantém o gap do resto do design | **8px** à direita = `--ck-space-2`, o mesmo da folha |
+| cantos arredondados | **16px** = `--ck-radius-caixa`, o mesmo da folha |
+| entra com movimento suave | saída com **10–11 frames** em valor intermediário |
+
+Centralizar usa `top`/`bottom` + `margin-block: auto` + `height: fit-content`, **nunca**
+`translateY(-50%)`: o `transform` está reservado ao movimento, e os dois brigariam no meio da
+animação.
+
+### A textura da borda — a referência do Rica já era a assinatura da §A
+
+Ele mandou um print de outro app com uma "bordinha discreta" entre duas áreas escuras e mediu:
+claro `#202020`, escuro `#181818`, e o fio entre eles **mais claro que os dois**, `#323232`.
+
+Nosso par de superfícies é quase o mesmo (`nav` #222222, `canvas` #191919), e a conta fecha
+sozinha: `--ck-edge-light` é branco a 7%, que sobre `nav` dá **(49,49,49)** contra os (50,50,50)
+que ele mediu. Ou seja, a textura que ele pediu **já existia** — é o fio de luz da §2.5, e a
+regra "luz em vez de sombra" chegou nela por dedução dois dias antes de ele mostrar o print.
+
+Consequência prática: separador **dentro** de superfície flutuante usa `--ck-edge-light`, não
+`--ck-edge-hairline` (#424242, mais duro que a referência). O `hairline` continua valendo onde
+separa conteúdo no plano, sem elevação.
+
+### Aberto — e é a metade que falta
+
+- **As ações rápidas não entraram.** O Rica as chama de *"ideia central do painel"*, e é peça
+  própria: o back já expõe o que elas precisam (`patchAgentEffort`, `patchAgentPermissionMode`,
+  `postAgentDestrava`, `patchAgentCodexSandbox`), mas cada uma é um controle de cliente com
+  estado e falha, no perfil do que o `composer.tsx` já faz com o esforço. Esta rodada entregou
+  a **forma e o movimento**, que é o que a ordem explícita pedia e o que ele julga na tela.
+- **Os "subagentes assistidos" que ele mandou tirar não existem na v2** — nenhum componente de
+  `apps/cockpit` renderiza `subagents`. O que ele viu está no cockpit antigo. Na v2 o item já
+  nasce satisfeito; o painel mostra os seis campos de detalhe do agente.
+- **`--ck-dur-enter` (200ms) e `--ck-ease-exit`** continuam faltando e são da §B. As regras
+  consomem `var(--ck-dur-enter, 200ms)`: quando o Pavan criar os tokens, elas passam a usá-los
+  sem ninguém tocar no CSS.
