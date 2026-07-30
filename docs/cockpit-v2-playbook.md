@@ -2,7 +2,10 @@
 
 > Reconstrução da camada visual do cockpit. Alvo estético: app do Codex / ChatGPT (dark, chat no centro, moderno).
 > Decidido pelo Rica em 2026-07-30. Líder da frente: Pavan. Executores: Daniel ×N, Tara (Codex), Hiro (Kimi).
-> **Estado:** em construção — seções marcadas `⏳ pesquisa` aguardam retorno das frentes.
+> **Estado (30/07):** este é o **plano original**, e ele já foi executado até o gate.
+> Não sobrou nenhuma seção `⏳ pesquisa` pendente. Onde este arquivo divergir do
+> `cockpit-v2-ESTADO.md`, **o ESTADO ganha** — ele descreve o presente, este descreve
+> a intenção de partida. Correções já aplicadas aqui estão marcadas com ~~riscado~~.
 
 ## 1. O que muda e o que NÃO muda
 

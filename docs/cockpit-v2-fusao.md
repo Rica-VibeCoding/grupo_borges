@@ -3,6 +3,11 @@
 > Juiz: Pavan. Opinantes: `sol` (cold read, sem ver o playbook) e `kimi` (crítica adversarial, com o playbook na mão).
 > Insumo extra: verificação de código do `assistant-ui` 0.15.1 / core 0.3.1 feita sob encomenda para desempatar.
 > Data: 2026-07-30.
+>
+> ⚠️ **Registro histórico do processo de decisão** — é o *porquê*, não o estado. A ordem
+> de execução do fim do arquivo **já foi cumprida até o gate**, e o item 5 ("decide
+> assistant-ui × shadcn-only") **está decidido**: o braço de controle mediu o mesmo spike
+> sem a biblioteca e ela saiu. Estado atual em `cockpit-v2-ESTADO.md`.
 
 ## Consenso — os dois chegaram sozinhos, de pontos de partida opostos
 

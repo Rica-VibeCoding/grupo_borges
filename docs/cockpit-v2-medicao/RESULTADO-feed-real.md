@@ -10,6 +10,13 @@ braço de controle medido na mesma janela, e ainda tem escala residual (1,20×)
 onde o controle é plano (1,00×). Por isso o `FeedAoVivo` **não foi plugado** em
 `app/agente/[slug]/page.tsx` — a rota que o Rica usa continua no que estava.
 
+> ⚠️ **Este veredito foi CORRIGIDO horas depois, pelo autor.** A magnitude
+> "1,67× a 2,0×" não sobreviveu à repetição — ver §"Os três braços" e §"O p95
+> mentiu por quantização". O feed é pior que o controle, mas menos do que este
+> parágrafo afirma, e a decisão de não plugar continua válida por outra conta.
+> O texto original fica de pé de propósito: apagar o erro esconderia como ele
+> passou.
+
 ## Os números
 
 Bancada idêntica nas duas rotas: canário, `?historico=N&recentes=1`, janela de
@@ -39,6 +46,50 @@ piora de 3× onde a real é de 2×. Metade do buraco seria da máquina, não do
 código. Quem repetir esta medição: **rode o controle na mesma sessão**, não
 compare com número de outro dia. É barato e é a diferença entre um veredito e
 um palpite.
+
+## Os três braços na mesma sessão — a dívida que este documento criou
+
+Pedido pelo Pavan em 30/07, e o furo é honesto: a régua acima ("rode o controle
+na mesma sessão") condenava a nossa própria conclusão sobre a assistant-ui. Os
+400 / 400 / 724,9 ms dela eram da rodada 1, medidos ANTES de o piso da máquina
+subir, e nunca tinham sido remedidos. Script: `escala_g1_tres_bracos.py`.
+
+Os três braços rodados juntos, rotacionados, com os três braços de um mesmo
+nível ADJACENTES na sequência (encadear um braço inteiro depois do outro daria a
+degradação da sessão de presente ao último):
+
+| histórico | `/spike` (assistant-ui) | `/spike/sem-lib` | `/spike/feed` |
+|---|---|---|---|
+| 50 | 433,4 ms | 50,1 ms | 83,3 ms |
+| 200 | 466,7 ms | 33,4 ms | 100,0 ms |
+| 500 | **966,5 ms** | 50,0 ms | 50,0 ms |
+| escala (10×) | **2,23× — ESCALA** | 1,00× | 0,60× |
+| frames entregues (500) | **131** | 1.365 | 1.264 |
+| pior frame (500) | **56.681 ms** | 233 ms | 633 ms |
+
+**A biblioteca fica condenada, e por mais do que antes.** Remedida hoje ela está
+PIOR que o arquivo (724,9 → 966,5 no nível 500), a escala com o histórico
+apareceu mais forte que no gate (1,81× → 2,23×), ela está a **19,33× o
+controle** e entrega **um décimo** dos frames. O pior frame dela no nível 500
+foi de 56 segundos de tela parada. Nenhuma conversa muda.
+
+## O p95 mentiu por quantização — e eu reportei a mentira
+
+Na tabela acima o feed empata com o controle no nível 500 (50,0 contra 50,0),
+mas dá 2,99× dele no nível 200. Não há tendência nisso: **é ruído**. O
+instrumento é quantizado em degraus de 16,67 ms, e a mediana de 3 rodadas pula
+um degrau inteiro sozinha — o mesmo feed, sem uma linha alterada, deu 100,1 ms
+numa série e 50 ms na seguinte.
+
+Foi assim que o "1,67× a 2,0× pior" do topo deste documento nasceu: dentro do
+ruído, reportado como se estivesse fora dele.
+
+**A métrica que não tem esse defeito é `frames`** — frames entregues na janela
+de 25 s. É contínua, não tem degrau, e mede exatamente o que importa: quanta
+tela o Rica recebeu enquanto o feed trabalhava. Por ela, o feed entrega **~78%**
+dos frames do controle (0,77 / 0,65 / 0,93 nos três níveis) — pior, sim, mas
+~1,3× em fluidez, não 2×. **Daqui em diante, relatar por frames; usar o p95 só
+como referência grossa.**
 
 ## O que o cache já resolveu — e o que não
 
