@@ -435,6 +435,41 @@ Estado vazio de verdade (agente sem conversa, lista sem resultado) usa `--ck-tex
 14. Highlighter de linguagem em bloco de código (§7.1).
 15. Entrelinha ou tracking escritos como valor solto — são token desde 30/07 (§4).
 
+## 9.1 A regra do santo graal — como toda UI definitiva fecha
+
+> **Rica, 30/07/2026, depois de reprovar a primeira TROPA:** *"sempre que terminar a
+> UI, tem que ver se ela está o santo graal. Se não tiver, não serve, tem que polir até
+> ficar alta performance visual — tem que valer largar o cockpit antigo. Usar toda a
+> computação para pensar em algo que seja meu, mas com o toque de excelência das UIs
+> modernas. Tudo de UI tem que carregar frontend designer, plugin do CC, pesquisar se
+> for preciso. Pode ser por último, depois de tudo funcionando, mas se algo for ficar
+> definitivo tem que ser assim: com contexto limpo, e não com um monte de outra coisa
+> de código na cabeça tentando implementar uma UI bonita."*
+
+Isto é regra de processo, não gosto. Vale para qualquer superfície que vá ficar.
+
+1. **Rodada dedicada, contexto limpo.** UI definitiva não sai no fim de um turno que
+   passou o dia em `useLayoutEffect` e perfil de CPU. Fecha o turno, `/compact` ou
+   sessão nova, e só então a rodada visual. Foi exatamente o que produziu a TROPA
+   reprovada: pele feita logo depois de sete horas de instrumentação do gate.
+2. **Carregar a skill `frontend-design`** (plugin oficial do CC, `frontend-design@claude-plugins-official`,
+   já instalado nesta máquina) antes de desenhar. Ela existe para evitar o que o Rica
+   chamou de "um visual que um LLM bem paradinho faria" — inclusive nomeando os três
+   clichês em que o design gerado por IA cai. Pesquisar referência real quando o
+   assunto pedir.
+3. **A régua é largar o antigo.** A pergunta não é "está bonito?", é "isto vale
+   substituir o cockpit que funciona?". Enquanto a resposta for não, a peça não está
+   pronta — não importa que passe no gate técnico.
+4. **Autoral, não clone.** Segue valendo a divisão do playbook §9: esqueleto emprestado
+   e invisível (medida, ergonomia), autoria na pele. "Está dentro das medidas do
+   ChatGPT" nunca foi defesa contra "não amei".
+5. **Ordem permitida:** pode vir por último, depois de a coisa funcionar. O que não
+   pode é virar definitivo sem passar por aqui.
+6. **Juiz único: o Rica.** Binário, sem recurso a argumento técnico.
+
+Corolário para mim (Pavan): despachar frente visual junto com frente de instrumentação
+no mesmo turno é erro meu, não do executor.
+
 ## 10. Fronteira — o que este documento NÃO decide
 
 Do esqueleto (Pavan), e aqui só se obedece:
