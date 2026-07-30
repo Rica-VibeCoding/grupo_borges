@@ -47,6 +47,28 @@ própria**, rebase diário, merge em janela revisada.
 | `apps/web/**` | **ninguém** | congelado por decisão do Rica |
 | `apps/api/**` | **fora de escopo** | o back não sai do lugar |
 
+### Papéis fixos, e quem audita quem — regra do Rica (30/07)
+
+Não é combinado deste passo, é **regra permanente** do grupo:
+
+| papel | quem | audita |
+|---|---|---|
+| **frontend master** | **Daniel** | — |
+| revisão de **frontend** | **Kimi / Hiro** | o trabalho do Daniel |
+| revisão de **backend** | **Tara / Codex** | o meu trabalho |
+
+Duas consequências que fazem a regra valer a pena:
+
+1. **Ninguém audita a si mesmo.** Verificação que reusa a implementação do autor não
+   é verificação — é a mesma conta feita duas vezes. Já pegou erro real nos dois
+   sentidos: o Daniel achou uma contradição nos meus docs, e eu achei um mecanismo
+   que ele afirmou sem medir.
+2. **O revisor é escolhido pelo domínio, não pela disponibilidade.** Frontend vai
+   para quem tem Tailwind/React no corpus; backend/infra vai para quem tem shell,
+   tipos e protocolo.
+
+O auditor **não corrige**: ele relata. Quem corrige é o dono do caminho.
+
 Papéis do passo 7, dentro dos caminhos acima:
 
 - **Tara (Codex)** — componentes de contrato fechado: orb em Canvas 2D, diff
