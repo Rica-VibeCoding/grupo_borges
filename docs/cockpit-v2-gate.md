@@ -144,6 +144,32 @@ importado por componente nenhum e ninguém constrói feature em cima dele.
 
 ---
 
+## 5.1 O instrumento contaminando a medição — dois defeitos que só apareceram dirigindo
+
+Achados pelo Daniel operando o probe na própria bancada, depois de a auditoria de
+código do Hiro já ter passado por ele. Ficam escritos porque a lição vale além deste
+instrumento:
+
+1. **O overlay nascia embaixo e cobria o composer.** No iPhone o Rica não conseguiria
+   digitar — e sem digitar **não existe G2**. Um instrumento que impede o gesto que
+   ele mede não falha: ele mente por omissão.
+2. **Movido para o topo, com o textarea de JSON aberto, passava de 500 px e comia o
+   scroll do feed.** Resultado: uma rodada com **G3 e G4 zerados**, que ele quase
+   reportou como defeito da página. Zero ali não era "passou perfeito", era "não
+   mediu".
+
+Agora o overlay nasce no topo, tem botão `⇅` para trocar de lado, e o JSON só aparece
+ao parar a medição.
+
+**A lição:** nenhum dos dois sairia de leitura de código — os dois exigiram dirigir a
+coisa. Auditoria estática e operação real pegam classes diferentes de defeito, e num
+instrumento de gate a segunda é obrigatória, porque o modo de falha mais perigoso não
+é o número errado: é o **zero que parece aprovação**. Vale para o probe e vale para o
+painel — é a mesma razão pela qual o gate é medido no aparelho do Rica e não em
+notebook.
+
+---
+
 ## 6. O que o Rica faz
 
 Abre o link no iPhone, o teste roda 60 segundos duas vezes (antigo e novo), e o
