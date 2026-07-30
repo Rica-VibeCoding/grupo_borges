@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
-import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
+import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { execucaoDaParte, execucaoDoChip, usoDoChip } from './execucao-do-item.ts';
@@ -64,6 +64,39 @@ describe('execução — resultado que ainda não chegou', () => {
     assert.equal(entrada.estado, 'complete');
     assert.equal(entrada.result, 'estourou');
     assert.equal(entrada.isError, true);
+  });
+});
+
+describe('execução — resultado rico', () => {
+  it('lookup com rich propaga o valor para a entrada', () => {
+    const rich = { code: 200, bytes: 2_954_287 };
+    const lookup: ToolResultLookup = new Map([
+      ['t1', { content: 'ok', isError: false, rich }],
+    ]);
+    const entrada = execucaoDaParte(
+      USO as Extract<ContentPart, { type: 'tool_use' }>,
+      lookup,
+    );
+    assert.equal(entrada.rich, rich);
+  });
+
+  it('lookup sem rich deixa o campo undefined sem quebrar', () => {
+    const lookup: ToolResultLookup = new Map([
+      ['t1', { content: 'ok', isError: false }],
+    ]);
+    const entrada = execucaoDaParte(
+      USO as Extract<ContentPart, { type: 'tool_use' }>,
+      lookup,
+    );
+    assert.equal(entrada.rich, undefined);
+  });
+
+  it('sem lookup deixa rich undefined enquanto a execução está em voo', () => {
+    const entrada = execucaoDaParte(
+      USO as Extract<ContentPart, { type: 'tool_use' }>,
+      undefined,
+    );
+    assert.equal(entrada.rich, undefined);
   });
 });
 

@@ -15,6 +15,7 @@ export type EntradaDaExecucao = {
   toolName: string;
   args?: unknown;
   result?: unknown;
+  rich?: unknown;
   isError?: boolean;
   /** Sem resultado casado, a execução ainda está em voo. */
   estado: 'running' | 'complete';
@@ -41,6 +42,7 @@ export function execucaoDaParte(
     toolName: parte.name,
     args: parte.input,
     result: achado?.content,
+    rich: achado?.rich,
     isError: achado?.isError,
     estado: achado ? 'complete' : 'running',
   };
