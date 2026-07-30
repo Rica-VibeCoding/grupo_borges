@@ -181,6 +181,37 @@ Também levantado: mapear `--text-*: var(--ck-text-*)` no `@theme`, senão `text
 do Tailwind (14px) convive com `--ck-text-sm` (13px) e escrever `text-sm` parece
 usar o token mas usa outro valor.
 
+## 5.2 Rodada paralela de 30/07 03:08 — três frentes abertas ao mesmo tempo
+
+Pedido do Rica: *"quero que a gente consiga distribuir mais esses trabalhos"*. A
+crítica é justa pela metade e vale registrar de que metade: os passos 1 a 4 são
+sequenciais **por decisão escrita** (§ordem de execução da fusão — paralelizar
+scaffold é onde nascem os conflitos), mas duas peças eram paralelizáveis desde o
+começo e não saíram. Saíram agora.
+
+O critério que autoriza antecipar as duas, antes do spike do passo 5: **ambas
+sobrevivem às duas hipóteses do spike.** O coalescedor é fronteira SSE→store e o
+levantamento de renderers é sobre o classificador — nenhum dos dois muda se
+`assistant-ui` cair para shadcn-only. Antecipar não gera retrabalho; se gerasse, não
+antecipava.
+
+| frente | quem | caminho exclusivo nesta rodada | por que é dele |
+|---|---|---|---|
+| tokens de pele que faltam (§5.1) | **Daniel** | `docs/cockpit-v2-estetica.md` | frontend master; eu não invento token de pele |
+| coalescedor de stream puro | **Tara** | `packages/cockpit-core/src/stream-coalescer.ts` + `.test.ts` + a linha no `exports` | lógica pura, sem React, contrato fechado e testável — é o perfil dela |
+| matriz payload→renderer (52 famílias) | **Hiro** | `docs/cockpit-v2-matriz-renderers.md` | cauda longa de frontend contra fixture real, papel do passo 7 |
+| spike do chat + gate no iPhone | **Pavan** | `apps/cockpit/**`, harness de medição | decisão de arquitetura e medição no aparelho do Rica não delego |
+
+Duas exceções conscientes ao que está escrito acima:
+
+1. `docs/cockpit-v2-*.md` é meu por §2, e eu **cedi** `cockpit-v2-matriz-renderers.md`
+   ao Hiro nesta rodada. Cessão explícita e por escrito é diferente de dois autores
+   no mesmo arquivo por acidente.
+2. `packages/cockpit-core/**` é meu por §2 e por §3.4 (mudança lá pausa as frentes).
+   A Tara entra com **arquivo novo**, não edita os existentes, e a única mudança em
+   arquivo compartilhado é uma linha em `exports` — colisão de uma linha se resolve
+   na leitura.
+
 ## 6. O que não é ownership de ninguém
 
 `apps/web` está congelado. Isso inclui o bug do clear, que **fica para o v2** por
