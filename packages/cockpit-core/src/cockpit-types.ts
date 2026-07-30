@@ -1,0 +1,453 @@
+// V2.4 — 4 estados reduzidos. Backend retorna esses valores no /api/fleet
+// e armazena no agent_state.lifecycle_status. Detail rico continua livre.
+export type AgentStatus = 'ocioso' | 'trabalhando' | 'aguardando' | 'offline';
+
+export type AgentActivityState = AgentStatus;
+
+export type AgentActivityOverride = {
+  state: AgentActivityState;
+  visible_until_ms: number;
+  detail: string | null;
+};
+
+export type AgentLifecycleStatus = AgentStatus;
+
+export type SparklineBucket = {
+  bucket: string;
+  count: number;
+  /** DS-58: SUM(input+output tokens) da hora. Sparkline plota tokens pra altura,
+   *  count fica pro tooltip (msgs trocadas). Backend gap-fill com 0 garante valor. */
+  tokens: number;
+};
+
+export type AgentCli = 'claude_code' | 'codex';
+
+export type AgentModel =
+  | 'claude-fable-5'
+  | 'claude-opus-5'
+  | 'claude-opus-4-8'
+  | 'claude-opus-4-7'
+  | 'claude-sonnet-5'
+  | 'claude-sonnet-4-6'
+  | 'claude-haiku-4-5'
+  | 'codex-gpt-5-6-sol'
+  | 'codex-gpt-5-6-terra'
+  | 'codex-gpt-5-6-luna'
+  | 'codex-gpt-5-5'
+  | 'codex-gpt-5-4'
+  | 'codex-gpt-5-4-mini'
+  | 'codex-gpt-5-3-codex'
+  | 'codex-gpt-5-2';
+
+export type Agent = {
+  slug: string;
+  name: string;
+  role: string;
+  emoji: string | null;
+  tmux_session: string;
+  workspace_path: string;
+  cli_default: string;
+  model_default: string;
+  model_family?: string | null; // família de modelos do agente ("kimi" no Hiro; null = Anthropic).
+  capabilities: string[];
+  created_at: number;
+  updated_at: number;
+  state_cli: string | null;
+  state_model: string | null;
+  current_task_id: string | null;
+  current_task_last_heartbeat: number | null;
+  last_seen: number | null;
+  pane_excerpt: string | null;
+  executor_kind: string | null;
+  status_line: string | null;
+  active_task_label: string | null;
+  context_pct: number | null;
+  session_started_at: number | null;
+  last_assistant_message: string | null;
+  token_usage_json: string | null;
+  codex_tokens_used: number | null;
+  codex_next_fresh: boolean | null;
+  lifecycle_status: AgentLifecycleStatus | null;
+  lifecycle_detail: string | null;
+  lifecycle_event: string | null;
+  lifecycle_updated_at: number | null;
+  pane_session_started_at: number | null;
+  status: AgentStatus;
+  sparkline: SparklineBucket[];
+};
+
+export type FleetKpis = {
+  total: number;
+  trabalhando: number;
+  aguardando: number;
+  ocioso: number;
+  offline: number;
+  tasks_active: number;
+  tasks_running: number;
+  tasks_blocked: number;
+  tasks_done: number;
+};
+
+export type FleetHealth = {
+  last_sync: number | null;
+  server_now: number;
+  offline_threshold_seconds: number;
+  stale_threshold_seconds: number;
+};
+
+export type FleetResponse = {
+  agents: Agent[];
+  kpis: FleetKpis;
+  health: FleetHealth;
+};
+
+export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'blocked' | 'done' | 'archived';
+
+export type ActiveTaskStatus = 'backlog' | 'ready' | 'running';
+
+export type Task = {
+  id: string;
+  human_id: string;
+  title: string;
+  body: string | null;
+  assignee: string | null;
+  instance_id: string | null;
+  origin_agent: string | null;
+  skill_hint: string | null;
+  status: TaskStatus;
+  priority: number;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  idempotency_key: string | null;
+  current_run_id: number | null;
+  current_run_status: string | null;
+  current_run_last_heartbeat: number | null;
+  current_run_started_at: number | null;
+  current_run_ended_at: number | null;
+  current_run_outcome: string | null;
+  review_mode?: ReviewMode;
+  reviewer_assignee?: string | null;
+  tags?: string[] | null;
+  image_urls?: string[] | null;
+};
+
+export type ReviewMode = 'human' | 'agent_advisory' | 'agent_autonomous';
+
+export const REVIEW_MODE_OPTIONS: Array<{ value: ReviewMode; label: string; desc: string }> = [
+  { value: 'human',            label: 'HUMANA',     desc: 'default — Rica revisa manualmente' },
+  { value: 'agent_advisory',   label: 'ADVISORY',   desc: 'agente dá parecer, Rica confirma' },
+  { value: 'agent_autonomous', label: 'AUTONOMOUS', desc: 'agente decide e segue (exige Success Criteria + evidence_refs)' },
+];
+
+export type ReviewAction = 'accept' | 'reject' | 'requeue';
+
+export type ReviewActionPayload = {
+  action: ReviewAction;
+  note?: string | null;
+  criteria_results?: Record<string, unknown> | null;
+  evidence_refs?: string[] | null;
+  content_hash?: string | null;
+};
+
+export type ReviewActionResponse = {
+  event_id: number;
+  new_status: TaskStatus;
+  content_hash: string | null;
+};
+
+export type ReviewEvent = {
+  id: number;
+  task_id: string;
+  agent_slug: string | null;
+  instance_id: string | null;
+  kind: 'review.accepted' | 'review.rejected' | 'review.requeued';
+  payload: Record<string, unknown> | null;
+  created_at: number;
+  human_id: string | null;
+  title: string | null;
+  status: TaskStatus | null;
+  assignee: string | null;
+  reviewer_assignee: string | null;
+  review_mode: ReviewMode | null;
+  tags: string[] | null;
+};
+
+export type ReviewEventsResponse = {
+  events: ReviewEvent[];
+  next_since_id: number | null;
+};
+
+export type KanbanColumnId = 'queue' | 'running' | 'blocked' | 'review' | 'done';
+
+export type KanbanColumn = {
+  id: KanbanColumnId;
+  name: string;
+  tasks: Task[];
+};
+
+export type TaskEvent = {
+  id: number;
+  task_id: string | null;
+  agent_slug: string | null;
+  instance_id: string | null;
+  kind: string;
+  payload: Record<string, unknown> | null;
+  created_at: number;
+};
+
+export type TaskHandoffResponse = {
+  parent_id: string;
+  child_id: string;
+  tmux_delivered: boolean;
+};
+
+// ----- Agent modal (Fase 3): skills / docs / tables ------------------------
+
+export type AgentSkill = {
+  name: string;
+  description: string;
+  path: string;
+  is_symlink: boolean;
+  shared_from: string | null;
+  size_bytes: number;
+  updated_at: number;
+};
+
+export type AgentSkillsResponse = {
+  slug: string;
+  skills: AgentSkill[];
+  count: number;
+};
+
+export type AgentDocMeta = {
+  filename: string;
+  title: string | null;
+  size_bytes: number;
+  updated_at: number;
+};
+
+export type AgentDocsResponse = {
+  slug: string;
+  docs: AgentDocMeta[];
+  count: number;
+};
+
+export type AgentDocResolved = {
+  slug: string;
+  filename: string;
+  content_md: string;
+  truncated: boolean;
+};
+
+export type AgentTable = {
+  name: string;
+  db: string;
+  description?: string;
+};
+
+export type AgentTablesResponse = {
+  slug: string;
+  tables: AgentTable[];
+  count: number;
+};
+
+export type PainelTokens = {
+  input: number;
+  output: number;
+  cache_creation: number;
+  cache_read: number;
+  total: number;
+};
+
+export type PainelContexto = {
+  model: string | null;
+  model_family: string | null;
+  context_window: number | null;
+  tokens: PainelTokens;
+  pct: number | null;
+  source: string;
+  updated_at: number | null;
+  available: boolean;
+  stale: boolean;
+};
+
+export type PainelEffort = {
+  value: string | null;
+  allowed: string[];
+  source: string;
+  session_may_diverge: boolean;
+};
+
+export type PainelPermissionMode = 'ask' | 'bypassPermissions' | 'plan' | 'acceptEdits';
+
+export type PainelPermission = {
+  mode: PainelPermissionMode;
+  source: string;
+  session_may_diverge: boolean;
+};
+
+export type PainelQuotaWindow = {
+  resets_at?: number | null;
+  remaining_seconds?: number | null;
+  used_percentage?: number | null;
+};
+
+export type PainelQuotas = {
+  status: 'available' | 'missing' | 'stale' | 'unknown';
+  source?: string | null;
+  session_id?: string | null;
+  updated_at?: number | null;
+  stale_after_seconds: number;
+  five_hour?: PainelQuotaWindow | null;
+  seven_day?: PainelQuotaWindow | null;
+};
+
+export type PainelSubagentEntry = {
+  id: string | null;
+  name: string | null;
+  state: string | null;
+  sessionId: string | null;
+  cwd: string | null;
+  model: string | null;
+  context_pct: number | null;
+  context_tokens: number | null;
+  context_window_size: number | null;
+  started_at: number | null;
+  sender?: string | null;
+};
+
+export type PainelSubagents = {
+  count: number;
+  active_count: number;
+  items: PainelSubagentEntry[];
+};
+
+// Painel Codex-nativo (Tara). Quando codex_native=true, o frontend troca os
+// controles de CC: effort usa níveis Codex, FUNÇÕES vira sandbox, e Quotas/Subagents
+// (sem equivalente no Codex) são ocultados. Shape espelha o backend (top-level,
+// igual effort/permission/quotas).
+export type PainelCodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access';
+
+export type PainelSandbox = {
+  value: PainelCodexSandbox;
+  allowed: string[];
+  source: string;
+  session_may_diverge: boolean;
+};
+
+export type AgentPainelResponse = {
+  slug: string;
+  generated_at: number;
+  contexto: PainelContexto;
+  effort: PainelEffort;
+  permission: PainelPermission;
+  quotas: PainelQuotas;
+  subagents: PainelSubagents;
+  // Presentes apenas quando o agente é Codex (executor_kind='codex').
+  sandbox?: PainelSandbox | null;
+  codex_native?: boolean | null;
+  // true = "nova conversa" armada no painel; próximo turno começa thread fresh.
+  codex_next_fresh?: boolean | null;
+};
+
+export type SubagentEntry = {
+  parent_uuid: string;
+  agent_slug: string;
+  task_id: string | null;
+  visibility: boolean;
+  status: string;
+  session_name: string;
+  started_at: number;
+  spawned_by_tool: boolean;
+};
+
+export function deriveInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '??';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+export function formatLastSeen(lastSeen: number | null, serverNow: number): string {
+  if (lastSeen === null) return '—';
+  const deltaSec = Math.max(0, serverNow - lastSeen);
+  if (deltaSec < 60) return `há ${deltaSec}s`;
+  const m = Math.floor(deltaSec / 60);
+  if (m < 60) return `há ${m}min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `há ${h}h` : `há ${h}h${String(rem).padStart(2, '0')}`;
+}
+
+export function formatDuration(seconds: number, withSeconds = true): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (!withSeconds) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const s = seconds % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+export function shortModelName(model: string): string {
+  const map: Record<string, string> = {
+    'claude-fable-5':     'Fable 5',
+    'claude-opus-5':      'Opus 5',
+    'claude-opus-4-8':    'Opus 4.8',
+    'claude-opus-4-7':    'Opus 4.7',
+    'claude-opus-4-5':    'Opus 4.5',
+    'claude-sonnet-5':    'Sonnet 5',
+    'claude-sonnet-4-6':  'Sonnet 4.6',
+    'claude-haiku-4-5':   'Haiku 4.5',
+    'codex-gpt-5-6-sol':   'GPT-5.6 Sol',
+    'codex-gpt-5-6-terra': 'GPT-5.6 Terra',
+    'codex-gpt-5-6-luna':  'GPT-5.6 Luna',
+    'codex-gpt-5-5':      'GPT-5.5',
+    'codex-gpt-5-4':      'GPT-5.4',
+    'codex-gpt-5-4-mini': 'GPT-5.4m',
+  };
+  return map[model] ?? model;
+}
+
+export function parseContextPct(excerpt: string | null): number | null {
+  if (!excerpt) return null;
+  // A statusline do CC mostra o contexto como "[██░░░░░░░░] 21%" no fim do pane.
+  // Banners promocionais do CC (ex.: "weekly rate limits 50% higher") também têm
+  // "%", então NÃO pegar o primeiro match: ancorar na barra "]" e pegar o ÚLTIMO
+  // (statusline vive no fim do pane, igual parseModelFromPane). Sem barra = sem
+  // contexto confiável → null (não exibe o banner como se fosse contexto).
+  const re = /]\s*(\d+)\s*%/g;
+  let last: RegExpExecArray | null = null;
+  for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
+    last = m;
+  }
+  return last ? parseInt(last[1]!, 10) : null;
+}
+
+export function resolveContextPct(
+  agent: Pick<Agent, 'executor_kind' | 'pane_excerpt' | 'context_pct'>,
+): number | null {
+  if (agent.executor_kind === 'codex') return null;
+  return parseContextPct(agent.pane_excerpt) ?? agent.context_pct;
+}
+
+export function parseModelFromPane(excerpt: string | null): string | null {
+  if (!excerpt) return null;
+  // CC statusline aparece em dois formatos:
+  //   "Sonnet 4.6 - 40:26:47 - [███░] 32%"
+  //   "Sonnet 4.6 (200k context) - [███░] 81%"
+  //   "claude-opus-5 - 02:50:23 - [███░] 61%"
+  // Pega o último match — statusline fica no fim do pane.
+  // Fable não tem decimal na versão ("Fable 5") — \d+(?:\.\d+)?
+  const re =
+    /\b(?:(Fable|Opus|Sonnet|Haiku)\s+(\d+(?:\.\d+)?)|claude-(fable|opus|sonnet|haiku)-(\d+(?:-\d+)*))\b/g;
+  let last: RegExpExecArray | null = null;
+  for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
+    last = m;
+  }
+  if (!last) return null;
+  if (last[1] && last[2]) return `${last[1]} ${last[2]}`;
+  const family = last[3]!;
+  return `${family[0]!.toUpperCase()}${family.slice(1)} ${last[4]!.replaceAll('-', '.')}`;
+}

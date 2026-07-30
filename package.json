@@ -1,0 +1,16 @@
+{
+  "name": "grupo_borges",
+  "private": true,
+  "description": "Raiz do workspace do Cockpit v2. O cockpit atual (apps/web) fica fora do glob — ver docs/cockpit-v2-stack.md",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "corepack pnpm --filter @grupo_borges/cockpit dev",
+    "build": "corepack pnpm --filter @grupo_borges/cockpit build",
+    "type-check": "corepack pnpm -r type-check",
+    "test": "corepack pnpm -r test",
+    "instalar-cockpit-velho": "cd apps/web && corepack pnpm install --ignore-workspace"
+  }
+}

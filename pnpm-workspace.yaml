@@ -1,0 +1,13 @@
+# Workspace do Cockpit v2. Glob EXPLÍCITO de propósito.
+#
+# `apps/web` (o cockpit atual, no ar na porta 3007) fica DE FORA: é assim que ele
+# nunca é reinstalado nem tem `node_modules` mexido pela obra do v2. Medido em
+# 30/07 com pnpm 10.20.0 — ver docs/cockpit-v2-stack.md §3.
+#
+# Se algum dia for preciso instalar no cockpit velho:
+#   cd apps/web && corepack pnpm install --ignore-workspace
+# (a flag de linha de comando é a única que funciona; `.npmrc` com
+#  ignore-workspace=true é ignorado pelo pnpm)
+packages:
+  - 'apps/cockpit'
+  - 'packages/*'

@@ -1,0 +1,31 @@
+{
+  "name": "@grupo_borges/cockpit-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lógica pura do cockpit — sem React, sem CSS. Consumido como source (transpilePackages), sem build step.",
+  "exports": {
+    "./render-items": "./src/render-items.ts",
+    "./chat-payload-classifier": "./src/chat-payload-classifier.ts",
+    "./messages-types": "./src/messages-types.ts",
+    "./one-line-chip-types": "./src/one-line-chip-types.ts",
+    "./slash-command-wrapper": "./src/slash-command-wrapper.ts",
+    "./task-notification-wrapper": "./src/task-notification-wrapper.ts",
+    "./tool-name": "./src/tool-name.ts",
+    "./cockpit-types": "./src/cockpit-types.ts",
+    "./api": "./src/api.ts",
+    "./format-time": "./src/format-time.ts",
+    "./ids": "./src/ids.ts",
+    "./agent-sort": "./src/agent-sort.ts",
+    "./mcp-filter": "./src/mcp-filter.ts",
+    "./painel-format": "./src/painel-format.ts"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "test": "node --test src/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.10",
+    "typescript": "5.7.3"
+  }
+}
