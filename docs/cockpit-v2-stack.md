@@ -306,6 +306,43 @@ nos dois caminhos, é `buildRenderItems(messages: MessagePayload[]): RenderItem[
 em `lib/render-items.ts`. O contrato de dados é escrito em cima dele — ver
 `cockpit-v2-data-contract.md`.
 
+### E `useExternalStoreRuntime` mora em `legacy-runtime/` — o spike muda de porta
+
+Achado ao instalar o pacote e ler os tipos, não a documentação (30/07,
+`@assistant-ui/react` 0.15.1 + `@tanstack/react-virtual` 3.14.9, ambos pinados
+exatos no `apps/cockpit`).
+
+O caminho que a fusão presumia é reexportado de
+`dist/legacy-runtime/runtime-cores/external-store/useExternalStoreRuntime.js`. Ao
+lado dele existe `dist/client/ExternalThread.d.ts`, fora do `legacy-runtime`, cuja
+assinatura é exatamente a nossa forma:
+
+```ts
+type ExternalThreadProps = {
+  messages: readonly ExternalThreadMessage[];   // ThreadMessage & { id: string }
+  isRunning?: boolean;
+  isLoading?: boolean | undefined;
+  onNew?: (message: AppendMessage) => void;
+  // …
+};
+```
+
+Uma thread alimentada por fonte externa, só-leitura, com callback para o envio —
+que é literalmente o painel: ele **observa** sessões do Claude Code e manda texto de
+volta por uma função nossa (`sendText(slug, texto)` do contrato de dados).
+
+**Então o spike se constrói sobre `client/ExternalThread`, não sobre
+`useExternalStoreRuntime`.** Dois cuidados honestos sobre a força desta afirmação:
+
+- Não há tag `@deprecated` em nenhum dos dois arquivos. A evidência é a **topologia
+  do pacote** — um caminho está dentro de um diretório chamado `legacy-runtime`, o
+  outro não —, e ela é suficiente para escolher, não para acusar.
+- A verificação de código que desempatou a fusão examinou a granularidade de
+  atualização do caminho **legacy** (WeakMap por identidade do objeto, lista
+  assinando só `length`). Aquela medição **não transfere automaticamente** para o
+  `client/`. É mais um motivo para o gate ser medido, e não deduzido: o número vem
+  do caminho que vamos usar de verdade.
+
 ---
 
 ## 9. Verificações já feitas — não repetir
