@@ -64,7 +64,32 @@ function alturaDeParte(parte: ContentPart): number {
   }
 }
 
+/**
+ * Cache por IDENTIDADE do item.
+ *
+ * `estimateSize` não é chamada uma vez por item: o virtualizador a chama para
+ * todo índice ainda não medido sempre que recalcula as medições. Sem cache, o
+ * trabalho por item (percorrer o texto) vira trabalho por item × N itens, e o
+ * p95 volta a escalar com o histórico — que é exatamente o defeito que o G1
+ * tinha acabado de matar. O esqueleto não sofria disso porque a estimativa dele
+ * era uma leitura de variável, O(1) — e era justamente por ser uma média móvel,
+ * o defeito do outro lado.
+ *
+ * `WeakMap` porque a chave é o próprio item: o classificador incremental
+ * preserva a identidade dos itens estáveis, então o acerto é alto, e o que sai
+ * da lista sai do cache junto sem ninguém precisar limpar.
+ */
+const cache = new WeakMap<RenderItem, number>();
+
 export function estimaAltura(item: RenderItem): number {
+  const guardada = cache.get(item);
+  if (guardada !== undefined) return guardada;
+  const altura = calculaAltura(item);
+  cache.set(item, altura);
+  return altura;
+}
+
+function calculaAltura(item: RenderItem): number {
   switch (item.kind) {
     case 'user':
     case 'user-internal':

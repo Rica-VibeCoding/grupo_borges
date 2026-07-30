@@ -35,6 +35,13 @@ describe('estimativa — determinística e sem estado', () => {
     }
   });
 
+  it('o cache não altera a resposta — item novo com o mesmo conteúdo dá o mesmo número', () => {
+    const original = fala('mesmo conteúdo, outra identidade');
+    const gemeo = fala('mesmo conteúdo, outra identidade');
+    assert.notEqual(original, gemeo, 'o teste precisa de duas identidades distintas');
+    assert.equal(estimaAltura(gemeo), estimaAltura(original));
+  });
+
   it('estimar OUTROS itens no meio não muda a resposta — foi a média móvel que deslocou 20.273 px', () => {
     const alvo = fala('curto');
     const antes = estimaAltura(alvo);
