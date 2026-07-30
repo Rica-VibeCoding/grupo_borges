@@ -566,3 +566,37 @@ E no `@theme inline`, para que exista utilitário e não valor arbitrário:
 
 Faltam ainda, na §B e com o Pavan: `--ck-dur-enter: 200ms` e
 `--ck-ease-exit: cubic-bezier(0.4, 0, 1, 1)` (§5).
+
+---
+
+## 10. Veredito parcial do Rica — 30/07 16:31
+
+**As cores estão aprovadas.** Palavras dele: *"as cores do nosso cockpit novo estão
+aprovadas"*. A paleta de `--ck-*` sai da mesa de discussão; quem for desenhar daqui pra
+frente **consome** os tokens, não propõe cor nova sem revalidar pelo §3.
+
+Junto veio uma referência visual — a tela do ChatGPT Plus, guardada em
+`/tmp/cockpit-v2-prints/referencia-rica-chatgpt.jpg` — com o pedido: *"olha como quero os
+desenhos e fontes, pra ele se inspirar"* e a ressalva *"mas essa tela muito preta, prefiro
+a nossa"*.
+
+### A distinção que governa o uso dessa referência
+
+**Empresta-se o vocabulário. Não se empresta a gramática.**
+
+- **Vocabulário — adotar:** ícone de traço fino e contorno aberto (não há um único ícone
+  sólido na referência inteira); ações da mensagem como fileira de ícones pequenos, sem
+  moldura e sem fundo; tipografia de peso regular com escala curta, deixando o espaço fazer
+  o trabalho que o negrito faria; lista lateral densa, sem cartão e sem borda — **item é
+  linha, não card**, que é a mesma régua da §7.
+- **Gramática — não adotar:** a estrutura de tela. A §1 deste contrato declara que o v2
+  **não é um clone do ChatGPT**, e o próprio Rica já havia pedido *"algo que seja meu, mas
+  com o toque de excelência das UIs modernas"*. A referência é de um **chat**; a nossa tese
+  é **log de execução** (82% `tool_use`). Copiar a organização dela trairia a tese que
+  justifica o projeto.
+- **A cor da referência está descartada por ele mesmo.** O preto quase absoluto sai;
+  `--ck-surface-canvas` fica.
+
+Consequência prática: a referência entra como **calibragem de acabamento**, não como novo
+layout. Ícone de ferramenta com traço fino, duração em peso regular, linha colapsada sendo
+linha — e a §7 segue mandando na estrutura.
