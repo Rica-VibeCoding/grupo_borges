@@ -206,6 +206,17 @@ terceiro, e o desenho fica com renderer nosso:
 | `chip` de tool | `{ type: 'tool-call', toolName, args, result, isError }` |
 | `synthetic`, `channel`, `meta-decision`, `chip` não-tool | `data-*` (`data-synthetic`, `data-channel`, `data-meta`, `data-chip`) |
 | `sidechain-group`, `sidechain-cluster` | `data-sidechain` |
+| `ask-user` | `data-ask-user`, com `id = entry.request_id` |
+
+⚠️ **A tabela nasceu com nove `kind` e o union tem dez.** O décimo é `ask-user`, e a
+falha é deste contrato, não de quem implementou: o Daniel achou a lacuna ao escrever
+a ponte e **parou para pedir ratificação** em vez de decidir sozinho, que é
+exatamente o comportamento que a mitigação do ownership §5.3 pede. Ratificado —
+`data-ask-user` é a aplicação correta da regra declarada.
+
+Ele não sai de `buildRenderItems`; entra por `mergeAskUserItems`, a partir do evento
+SSE `ask_user`. Logo **não aparece no caminho que o gate mede** — mas o `switch` é
+exaustivo, e deixá-lo de fora quebraria a build.
 
 Duas razões para isso não ser preferência de estilo:
 
@@ -217,8 +228,31 @@ Duas razões para isso não ser preferência de estilo:
    `data-x` já é um componente nosso recebendo um objeto nosso — vira renderer direto,
    sem desmontar conversão.
 
+### `id` é obrigatório e estável — e é requisito de gate, não de estilo
+
+Todo `ThreadMessageLike` sai com `id` **presente e estável entre flushes**. A fonte é
+a mesma que o classificador já usa em `chat-payload-classifier.ts:237`:
+
+```ts
+id = payload.uuid || String(payload.id)   // uuid vazio é caso real, não hipótese
+```
+
+Por que isso está no contrato e não no code review: `id` ausente ou instável faz a
+lista **remontar o item**, e remontagem estoura o G4 do gate — que reprovaria a
+biblioteca por culpa da conversão. É o mesmo modo de falha do achado M3 da auditoria
+do probe: o defeito só aparece na medição, e a culpa cai no lugar errado.
+
 O que **não** entra nesta ponte: virtualização, store e composer. São objeto do
 spike, medidos pelo gate, não fixados aqui.
+
+### O resumo do chip de tool é derivável, e fica derivável
+
+A ponte emite `{toolName, args, result, isError}` e **não** carrega `chip.summary` nem
+`chip.icon`. Isso é deliberado: o resumo é `truncate(firstLine(corpo), 80)` do
+classificador, então quem desenhar a linha aplica a mesma função sobre o `result` que
+já recebeu — em vez de a conversão transportar texto de apresentação. Se a paridade
+com o painel atual exigir o ícone, ele entra como `data-chip-meta` ao lado, nunca
+dentro do `tool-call`.
 
 ---
 
