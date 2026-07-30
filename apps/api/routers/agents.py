@@ -2051,7 +2051,11 @@ async def post_agent_voice(
     - 502 `stt_failed` quando script STT retorna exit≠0
     - 502 `stt_empty` quando transcrição vem vazia
     - 504 `stt_timeout` quando STT estoura 30s
-    - 200 + {transcribed, tmux_delivered, duration_ms} no caminho feliz
+    - 200 + {transcribed, tmux_delivered, duration_ms, event_boundary_id} no
+      caminho feliz
+    - `event_boundary_id` é o maior task_events.id observado imediatamente antes
+      do STT, impedindo que eventos chegados durante a transcrição caiam abaixo
+      da fronteira de confirmação do áudio.
 
     Cleanup do arquivo temp acontece no `finally`.
     """
@@ -2067,6 +2071,8 @@ async def post_agent_voice(
     if len(content) > _VOICE_MAX_BYTES:
         raise HTTPException(status_code=422, detail="audio maior que 10MB")
 
+    db: GrupoBorgesDB = request.app.state.db
+    event_boundary_id = await db.max_event_id()
     started_at = time.monotonic()
     # stt-openai.sh só converte via ffmpeg extensões não reconhecidas (.oga, .opus…).
     # .webm vai direto pra OpenAI mas alguns encodings de browser falham. Salvar sempre
@@ -2114,6 +2120,7 @@ async def post_agent_voice(
                 "transcribed": transcribed,
                 "tmux_delivered": True,
                 "duration_ms": duration_ms,
+                "event_boundary_id": event_boundary_id,
             }
 
         delivered = await tmux_driver.send_message(
@@ -2124,6 +2131,7 @@ async def post_agent_voice(
             "transcribed": transcribed,
             "tmux_delivered": delivered,
             "duration_ms": duration_ms,
+            "event_boundary_id": event_boundary_id,
         }
     finally:
         try:

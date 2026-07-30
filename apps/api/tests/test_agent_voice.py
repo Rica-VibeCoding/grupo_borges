@@ -91,6 +91,10 @@ def test_voice_validates_size(tmp_path: Path) -> None:
 def test_voice_returns_transcribed_and_delivered(tmp_path: Path) -> None:
     """Caminho feliz: STT devolve texto + tmux entrega → 200 com payload completo."""
     app = _build_app(tmp_path)
+    event_before_stt = app.state.db._insert_task_event(
+        "test.before_voice", None, "daniel", None, None, None
+    )
+    assert event_before_stt is not None
     fake = _fake_completed(stdout="olá mundo\n", stderr="", returncode=0)
     with patch("routers.agents.subprocess.run", return_value=fake), patch(
         "routers.agents.tmux_driver.send_message", return_value=True
@@ -105,10 +109,39 @@ def test_voice_returns_transcribed_and_delivered(tmp_path: Path) -> None:
             assert body["transcribed"] == "olá mundo"
             assert body["tmux_delivered"] is True
             assert isinstance(body["duration_ms"], int)
+            assert body["event_boundary_id"] == event_before_stt
             mock_send.assert_awaited_once()
             args, _ = mock_send.call_args
             assert args[0] == "daniel"
             assert args[1] == "🎙 olá mundo"
+
+
+def test_voice_reads_event_boundary_before_stt(tmp_path: Path) -> None:
+    """Evento inserido durante o STT fica acima da fronteira devolvida."""
+    app = _build_app(tmp_path)
+    db = app.state.db
+    event_during_stt: list[int] = []
+
+    def stt_with_concurrent_event(*_args, **_kwargs):
+        event_id = db._insert_task_event(
+            "test.during_stt", None, "daniel", None, None, None
+        )
+        assert event_id is not None
+        event_during_stt.append(event_id)
+        return _fake_completed(stdout="áudio confirmado\n")
+
+    with patch(
+        "routers.agents.subprocess.run", side_effect=stt_with_concurrent_event
+    ), patch("routers.agents.tmux_driver.send_message", return_value=True):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/voice",
+                files={"audio": ("voice.webm", b"fakebytes", "audio/webm")},
+            )
+
+    assert response.status_code == 200, response.text
+    assert event_during_stt
+    assert response.json()["event_boundary_id"] < event_during_stt[0]
 
 
 def test_voice_handles_stt_failure_502(tmp_path: Path) -> None:
