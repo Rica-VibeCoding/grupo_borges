@@ -65,7 +65,8 @@
 //   VirtualItem { key,index,start,end,size }     :23-30
 // ---------------------------------------------------------------------------
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AssistantRuntimeProvider,
@@ -398,10 +399,30 @@ function Composer() {
 /* Página                                                                     */
 /* ========================================================================== */
 
-export default function SpikePage() {
+/** Teto de histórico quando a URL não pede outro. */
+const HISTORICO_PADRAO = 1000;
+
+function Bancada() {
+  // `?historico=N` é a VARIÁVEL INDEPENDENTE da medição de escala: quantos
+  // eventos o cliente já tem quando a janela medida começa. A primeira versão
+  // deste parâmetro foi revertida por não mover nada — passava `limit` a um
+  // endpoint em que `limit` só dimensionava o primeiro lote do replay, e os três
+  // níveis abriam com a mesma lista. Agora ele anda junto com `recentes`, que é
+  // o que faz o teto valer. Ver `docs/cockpit-v2-gate.md`.
+  const parametros = useSearchParams();
+  const pedido = Number.parseInt(parametros.get('historico') ?? '', 10);
+  const historico =
+    Number.isSafeInteger(pedido) && pedido > 0 ? pedido : HISTORICO_PADRAO;
+
+  // A bancada fala com um uvicorn SÓ DELA por `API_BACKEND_URL` no `next dev` —
+  // o rewrite do config já cobre, e por ser mesma origem não esbarra no CORS.
+  // O de produção roda sem `--reload`: medir contra ele depois de mexer no
+  // backend mediria o código velho achando que é o novo.
+
   const { messages, isRunning, isLoading, status, descartados } = useCanarioStream({
     slug: SLUG_CANARIO,
-    limit: 1000,
+    limit: historico,
+    recentes: true,
   });
 
   // O classificador é o ativo que sobrevive aos dois caminhos do gate; a
@@ -481,6 +502,9 @@ export default function SpikePage() {
           <span>{status}</span>
           <span>{messages.length} msg</span>
           <span>{itens.length} itens</span>
+          {/* O teto pedido, ao lado do que de fato entrou: é assim que se vê num
+              relance se o parâmetro mordeu, sem ter de confiar na URL. */}
+          <span>teto {historico}</span>
           {/* Descarte por id não-crescente é contável de propósito: em teste de
               paridade, diferente de zero é sinal, não ruído. */}
           <span style={{ color: descartados ? 'var(--ck-state-attention)' : undefined }}>
@@ -504,5 +528,16 @@ export default function SpikePage() {
         src="/gate-probe.js?dur=60&ind=%5Bdata-gate-new-messages%5D"
       />
     </AssistantRuntimeProvider>
+  );
+}
+
+// `useSearchParams` faz a árvore até o Suspense mais próximo cair pra render de
+// cliente; sem a fronteira, o build de produção FALHA (em dev passa, porque lá a
+// rota é sob demanda — é o tipo de coisa que só aparece no deploy).
+export default function SpikePage() {
+  return (
+    <Suspense fallback={null}>
+      <Bancada />
+    </Suspense>
   );
 }

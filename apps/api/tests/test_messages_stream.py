@@ -52,8 +52,11 @@ def _build_app(tmp_path: Path) -> tuple[FastAPI, GrupoBorgesDB]:
         session_id: str | None,
         since_id: int,
         limit: int,
+        newest_first: bool = False,
     ) -> list[dict[str, Any]]:
-        return db._list_jsonl_message_events(agent_slug, session_id, since_id, limit)
+        return db._list_jsonl_message_events(
+            agent_slug, session_id, since_id, limit, newest_first
+        )
 
     db.get_agent = get_agent  # type: ignore[method-assign]
     db.latest_jsonl_session_id = latest_jsonl_session_id  # type: ignore[method-assign]
@@ -166,6 +169,7 @@ async def _drive_stream(
     session_id: str | None = None,
     limit: int = 200,
     since_id: int = 0,
+    recentes: bool = False,
     stop_after: str,
     stop_after_status: str | None = None,
     max_wait_s: float = 3.0,
@@ -182,6 +186,7 @@ async def _drive_stream(
         session_id=session_id,
         limit=limit,
         since_id=since_id,
+        recentes=recentes,
     )
     body_chunks: list[bytes] = []
     direct_events: list[tuple[str, dict[str, Any]]] = []
@@ -403,6 +408,60 @@ async def test_messages_stream_limit_is_capped_at_500(tmp_path: Path) -> None:
     assert len(messages) == 500
     assert messages[0]["uuid"] == "uuid-000"
     assert messages[-1]["uuid"] == "uuid-499"
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_recentes_replays_the_tail_not_the_head(
+    tmp_path: Path,
+) -> None:
+    """`recentes=1` troca QUAL ponta do histórico o replay entrega.
+
+    Sem ele o replay manda a cabeça (o teste acima: uuid-000..499) e o loop live
+    puxa todo o resto — então `limit` dimensiona o primeiro lote, não o histórico
+    que o cliente acumula. Foi isso que fez três níveis de medição (250/500/1000)
+    convergirem para a mesma lista e invalidou duas rodadas.
+    """
+    app, db = _build_app(tmp_path)
+    for index in range(505):
+        _insert_jsonl(db, session_id="sess-a", uuid=f"uuid-{index:03d}")
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        limit=10,
+        recentes=True,
+        stop_after="replay-end",
+    )
+
+    messages = [payload for name, payload in events if name == "message"]
+    assert len(messages) == 10
+    # A CAUDA, e ainda em ordem crescente: o cursor do SSE depende disso.
+    assert messages[0]["uuid"] == "uuid-495"
+    assert messages[-1]["uuid"] == "uuid-504"
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_recentes_is_ignored_on_reconnect(tmp_path: Path) -> None:
+    """Em reconexão o cliente quer o que PERDEU, em ordem — não a cauda.
+
+    Pedir a cauda com cursor na mão abriria buraco no meio: os eventos entre o
+    cursor e o início da cauda nunca chegariam, e o cliente não teria como saber.
+    """
+    app, db = _build_app(tmp_path)
+    for index in range(20):
+        _insert_jsonl(db, session_id="sess-a", uuid=f"uuid-{index:03d}")
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        limit=5,
+        since_id=1,
+        recentes=True,
+        stop_after="replay-end",
+    )
+
+    messages = [payload for name, payload in events if name == "message"]
+    assert [m["uuid"] for m in messages] == [f"uuid-{i:03d}" for i in range(1, 6)]
 
 
 @pytest.mark.asyncio

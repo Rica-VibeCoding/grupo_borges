@@ -1241,6 +1241,7 @@ class GrupoBorgesDB:
         session_id: str | None,
         since_id: int,
         limit: int,
+        newest_first: bool = False,
     ) -> list[dict[str, Any]]:
         return await asyncio.to_thread(
             self._list_jsonl_message_events,
@@ -1248,6 +1249,7 @@ class GrupoBorgesDB:
             session_id,
             since_id,
             limit,
+            newest_first,
         )
 
     def _list_jsonl_message_events(
@@ -1256,6 +1258,7 @@ class GrupoBorgesDB:
         session_id: str | None,
         since_id: int,
         limit: int,
+        newest_first: bool = False,
     ) -> list[dict[str, Any]]:
         kind_placeholders = ", ".join("?" for _ in _JSONL_MESSAGE_KINDS)
         clauses = [
@@ -1281,7 +1284,7 @@ class GrupoBorgesDB:
                 SELECT id, task_id, agent_slug, instance_id, kind, payload, created_at
                 FROM task_events
                 WHERE {" AND ".join(clauses)}
-                ORDER BY id ASC
+                ORDER BY id {"DESC" if newest_first else "ASC"}
                 LIMIT ?
                 """,
                 params,
@@ -1296,6 +1299,11 @@ class GrupoBorgesDB:
                         logger.warning("payload JSON inválido em task_events.id=%s", row["id"])
                         continue
                 result.append(d)
+            # `newest_first` é só como o SQLite ESCOLHE as linhas (a cauda em vez
+            # da cabeça). Quem consome sempre recebe em ordem crescente de id —
+            # o cursor do SSE depende disso.
+            if newest_first:
+                result.reverse()
             return result
 
     async def max_event_id(self) -> int:

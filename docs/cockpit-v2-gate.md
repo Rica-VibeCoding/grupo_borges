@@ -219,59 +219,76 @@ Arranjos versionados em `docs/cockpit-v2-medicao/`: `remede_g1.py` (rodada limpa
 `perfila_g1b.py` (com perfil de CPU). Ambos pedem a bancada de pé em `:3008` e o
 gerador de carga em `fixtures/cockpit-v2/`.
 
-### O G1 escala com o histórico acumulado? — não respondida, e por quê (30/07)
+### O G1 escala com o histórico acumulado? — SIM (30/07)
 
-A pergunta importa: se o p95 cresce com o que o Rica **acumula**, e não só com o
-que **chega**, então virtualizar não resolve por construção e isso é o argumento
-definitivo contra a biblioteca. Tentei responder e **não consegui**. Fica escrito
-porque negativo não registrado é negativo que a próxima pessoa repete.
+**Resposta: escala.** Com 10× mais histórico carregado, o p95 da mesma janela de
+medição fica **1,8× pior**. O custo cresce com o que o Rica **acumula**, não só
+com o que **chega** — e isso é o argumento definitivo contra a biblioteca:
+virtualizar não resolve por construção, porque o gasto não está em desenhar as
+linhas visíveis, está no que acontece por flush sobre a lista inteira.
 
-**Duas tentativas, as duas falharam em mover a variável independente:**
+Seis rodadas por nível (duas passagens de três), mesma janela de 25 s a 50 Hz,
+mesmo banco, mesma semente. A única variável é quanto histórico o cliente já
+tinha quando a medição começou:
 
-1. **Controlar pela hora de abrir a página**, supondo que o replay do SSE fosse
-   limitado a 500 eventos (`LIMITE_REPLAY_SSE` em `gerar-carga.py`). Abrindo a
-   página antes e depois do preenchimento, os **dois** braços começaram com 742
-   itens: na prática o replay não limita.
-2. **Controlar por `?historico=N`**, passando 250/500/1000 ao `limit` do
-   `useCanarioStream`. Os **três** níveis também começaram com 742 itens: esse
-   `limit` não governa quanto histórico o cliente carrega. O parâmetro foi
-   revertido — botão que não move nada engana quem vier medir depois.
-
-Nos dois casos eu medi **a mesma condição** com rótulos diferentes. Qualquer
-conclusão sobre escala tirada dessas rodadas seria inválida por construção, não
-por medida.
-
-**Como responder de verdade:** dar ao `useCanarioStream` um limite de histórico
-que ele obedeça e repetir os três níveis. É mudança em `lib/spike/*`, que não é
-meu nesta rodada.
-
-#### O que a rodada entregou mesmo assim — e corrige o 266,6 ms acima
-
-Seis rodadas de 25 s a 50 Hz, medindo **só a fase `medicao`**, que é a janela do
-gate:
-
-| rodada | p95 | pior frame | mediana | frames |
+| histórico | n | p95 mediana | p95 mín–máx | frames na janela |
 |---|---|---|---|---|
-| 1 | 533,3 ms | 966,6 | 16,7 | 217 |
-| 2 | 699,9 ms | 1.050,0 | 16,7 | 163 |
-| 3 | 799,9 ms | 1.266,6 | 16,7 | 144 |
-| 4 | 599,9 ms | 1.033,4 | 33,3 | 196 |
-| 5 | 499,9 ms | 683,4 | 116,6 | 178 |
-| 6 | 866,6 ms | 1.200,0 | 266,7 | 91 |
+| 50 | 6 | **400,0 ms** | 283–1033 | 238–484 |
+| 200 | 6 | **400,0 ms** | 350–733 | 140–384 |
+| 500 | 6 | **724,9 ms** | 567–1083 | 106–196 |
 
-Mediana das seis: **~600 ms**, contra corte de 32 ms.
+**Não é linear, e o formato importa mais que o fator.** De 50 para 200 (4× de
+histórico) o p95 não se move: 400 ms nos dois. De 200 para 500 (2,5×) ele salta
+1,81×. Há um joelho entre 200 e 500 itens, não uma rampa — o que aponta para
+custo por flush sobre a lista inteira passando a dominar a partir de um tamanho,
+e não para um O(N) puro desde o primeiro item.
 
-O **266,6 ms** registrado na seção anterior mediu preenchimento **e** medição
-juntos, e foi diluído pela fase calma. Isolando a janela que o gate define, o
-número é **2 a 3× pior**. A conclusão contra a biblioteca não muda de direção —
-fica mais dura.
+A **contagem de frames** confirma por um caminho independente: na mesma janela de
+25 s, o nível 50 rende 238–484 frames e o nível 500 rende 106–196. Menos frames
+no mesmo tempo é a mesma informação que o p95, medida sem passar pelo percentil.
 
-**Um aviso de método para quem repetir:** a bancada **degrada ao longo de
-rodadas consecutivas**. Os frames caem de 217 para 91 e a mediana sobe de 16,7
-para 266,7 entre a primeira e a última. Intercale os níveis (eu intercalei) e
-nunca compare a primeira rodada com a última como se fossem a mesma máquina.
+#### A prova de que o instrumento mordeu — que é o que faltava nas duas tentativas
 
-Arranjo em `docs/cockpit-v2-medicao/escala_g1.py`.
+| histórico pedido | msg no início da janela | itens no início |
+|---|---|---|
+| 50 | 50 | 50 |
+| 200 | 200 | 200 |
+| 500 | 500 | 500 |
+
+Exato, nos três, em todas as rodadas. Antes disso os três níveis abriam com 742
+itens — a mesma condição medida com três rótulos.
+
+**Por que não mordia, e por que não era corrigível pelo cliente:** o `limit` do
+SSE dimensionava o **primeiro lote do replay**, e o replay entregava os N eventos
+mais **antigos** (`ORDER BY id ASC`). O cursor parava no N-ésimo, e o loop live
+puxava todo o resto do banco logo em seguida, em ciclos de 500 — como se fosse
+novidade. Qualquer `limit` que o cliente pedisse era engolido segundos depois.
+Conserto em `recentes=1` (aditivo, default-off): o replay passa a entregar a
+**cauda** e o cursor já sai no topo. Ver `portao_historico.py`, que é o portão a
+rodar antes de qualquer medição de escala.
+
+#### Três armadilhas de bancada que custaram rodada, para quem repetir
+
+1. **Ordem fixa vira "escala" falsa.** A bancada degrada dentro de uma sequência.
+   Com a ordem fixa 50/200/500, o nível 500 cai sempre em terceiro e leva a
+   degradação inteira na conta dele. A primeira passagem produziu exatamente
+   isso. Com a ordem **rotacionada** — cada nível ocupando cada posição uma vez —
+   o efeito não só persistiu como cresceu: na rodada em que o nível 500 foi o
+   **primeiro** da sequência, ele deu o pior p95 de todos (1083 ms). É isso que
+   separa achado de artefato.
+2. **JSONL órfão com a mesma `sessionId`.** O `--reset` apaga só o arquivo
+   apontado por `.cockpit-v2-active`. Sobrou de um run antigo um arquivo sem
+   sufixo de timestamp, idêntico byte a byte ao ativo, que o watcher reimportava
+   a cada limpeza: o banco de "1000 eventos" era 500 reais e 500 duplicados, com
+   uuid repetido. Conferir `COUNT(*)` contra `COUNT(DISTINCT uuid)`.
+3. **Dois uvicorn no mesmo SQLite duplicam a ingestão.** Subir um backend só da
+   medição para escapar do teto de replay parece inofensivo e não é: cada
+   processo traz o próprio watcher de JSONL, os dois importam o mesmo arquivo, e
+   cada evento entra duas vezes (a biblioteca acusa `duplicate message id` no
+   console). Medir contra um backend só.
+
+Arranjo em `docs/cockpit-v2-medicao/escala_g1.py`; portão em
+`docs/cockpit-v2-medicao/portao_historico.py`.
 
 ### Regra de comparação contra o baseline
 

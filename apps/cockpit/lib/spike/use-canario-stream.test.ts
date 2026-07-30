@@ -261,3 +261,38 @@ test('evento com id não-crescente é descartado, mas o descarte fica contado', 
   );
   controller.dispose();
 });
+
+test('recentes só vai na primeira conexão — em reconexão manda since_id', () => {
+  const clock = timers();
+  const fake = eventSources();
+  const controller = createCanarioStream({
+    slug: 'canario',
+    limit: 250,
+    recentes: true,
+    eventSourceConstructor: fake.EventSource,
+    reconnectDelayMs: 1,
+    heartbeatTimeoutMs: 60_000,
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+  });
+
+  // Primeira: sem cursor, então o cliente pede a CAUDA do histórico. É isto que
+  // faz `limit` virar teto de verdade em vez de tamanho do primeiro lote.
+  const first = fake.instances[0];
+  assert.match(first.url, /limit=250/);
+  assert.match(first.url, /recentes=1/);
+  assert.ok(!first.url.includes('since_id'));
+
+  first.emit('replay-start');
+  first.emit('message', FIXTURE.evento);
+  first.emit('replay-end');
+  first.fail();
+  clock.runNext();
+
+  // Reconexão: com cursor na mão, pedir a cauda abriria buraco no meio do que o
+  // cliente perdeu — então `recentes` sai da URL.
+  const second = fake.instances[1];
+  assert.match(second.url, new RegExp(`since_id=${FIXTURE.evento.id}`));
+  assert.ok(!second.url.includes('recentes'));
+  controller.dispose();
+});

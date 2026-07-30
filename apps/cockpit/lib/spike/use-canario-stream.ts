@@ -46,6 +46,15 @@ type CanarioStreamOptions = {
   slug: string;
   sessionId?: string | null;
   limit?: number;
+  /**
+   * Faz `limit` significar TETO DE HISTÓRICO em vez de tamanho do primeiro lote.
+   *
+   * Sem isto, o `limit` não morde: o replay entrega os N eventos mais ANTIGOS e
+   * o polling live puxa todo o resto do banco logo em seguida — 250, 500 e 1000
+   * convergiam para a mesma lista, o que invalidou duas rodadas de medição de
+   * escala. Ver `docs/cockpit-v2-gate.md`.
+   */
+  recentes?: boolean;
   eventSourceConstructor: EventSourceConstructor;
   reconnectDelayMs?: number;
   heartbeatTimeoutMs?: number;
@@ -80,12 +89,17 @@ function buildStreamUrl(
   sessionId: string | null | undefined,
   limit: number,
   sinceId: number | undefined,
+  recentes: boolean,
 ): string {
   const params = new URLSearchParams({
     limit: String(limit),
   });
   if (sessionId) params.set('sessionId', sessionId);
   if (sinceId !== undefined) params.set('since_id', String(sinceId));
+  // Só na PRIMEIRA conexão. Em reconexão existe cursor, e aí o que se quer é
+  // tudo o que passou desde ele, em ordem — pedir "a cauda" nesse caso abriria
+  // buraco no meio do que o cliente perdeu.
+  if (recentes && sinceId === undefined) params.set('recentes', '1');
   return `/api/agents/${encodeURIComponent(slug)}/messages/stream?${params}`;
 }
 
@@ -190,6 +204,7 @@ export function createCanarioStream(
       options.sessionId,
       options.limit ?? 500,
       coalescer.lastId(),
+      options.recentes ?? false,
     );
     const nextSource = new options.eventSourceConstructor(streamUrl);
     source = nextSource;
@@ -276,6 +291,8 @@ export type UseCanarioStreamOptions = {
   slug: string;
   sessionId?: string | null;
   limit?: number;
+  /** Ver `CanarioStreamOptions.recentes`. */
+  recentes?: boolean;
   eventSourceConstructor?: EventSourceConstructor;
 };
 
@@ -283,6 +300,7 @@ export function useCanarioStream({
   slug,
   sessionId,
   limit = 500,
+  recentes = false,
   eventSourceConstructor,
 }: UseCanarioStreamOptions): CanarioStreamState {
   const [state, setState] = useState<CanarioStreamState>(INITIAL_STATE);
@@ -299,6 +317,7 @@ export function useCanarioStream({
       slug,
       sessionId,
       limit,
+      recentes,
       eventSourceConstructor: EventSourceImpl,
     });
     setState(controller.getSnapshot());
@@ -310,7 +329,7 @@ export function useCanarioStream({
       unsubscribe();
       controller.dispose();
     };
-  }, [eventSourceConstructor, limit, sessionId, slug]);
+  }, [eventSourceConstructor, limit, recentes, sessionId, slug]);
 
   return state;
 }

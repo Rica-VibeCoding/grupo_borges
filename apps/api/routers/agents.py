@@ -1527,6 +1527,12 @@ _PANE_STREAM_POLL_S = 1.0
 _PANE_STREAM_DISCONNECT_CHECK_S = 0.1
 _MESSAGES_STREAM_LIMIT_DEFAULT = 200
 _MESSAGES_STREAM_LIMIT_MAX = 500
+# Teto do REPLAY, separado do teto do lote de polling acima. Os dois eram o mesmo
+# número e isso não era escolha, era coincidência: o polling quer lote pequeno
+# (latência por ciclo), o replay quer profundidade (quanto histórico o cliente
+# consegue pedir). Só morde junto com `recentes=1` — sem ele o `limit` continua
+# capado em `_MESSAGES_STREAM_LIMIT_MAX` e nada muda para quem já está no ar.
+_MESSAGES_STREAM_REPLAY_LIMIT_MAX = 5_000
 _MESSAGES_STREAM_POLL_S = 0.25
 _MESSAGES_STREAM_HEARTBEAT_S = 15.0
 _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S = 10.0
@@ -1762,16 +1768,35 @@ async def stream_agent_messages(
     session_id: str | None = Query(default=None, alias="sessionId"),
     limit: int = Query(default=_MESSAGES_STREAM_LIMIT_DEFAULT, ge=1),
     since_id: int = Query(default=0, ge=0),
+    recentes: bool = Query(default=False),
 ) -> EventSourceResponse:
     """SSE canônico dos eventos JSONL de conversa de um agente.
 
     Protocolo: `replay-start` → N `message` → `replay-end` → live polling
     com `heartbeat` a cada 15s. O cursor público é `task_events.id`.
+
+    `recentes=1` troca QUAL ponta do histórico o replay entrega: sem ele, o
+    replay manda os `limit` eventos MAIS ANTIGOS e o loop live puxa todo o resto
+    do banco em ciclos de `_MESSAGES_STREAM_LIMIT_MAX` — então `limit` dimensiona
+    o primeiro lote, não o histórico que o cliente acumula. Com ele, o replay
+    manda os `limit` mais RECENTES e o cursor já sai no topo, então `limit` vira
+    teto de verdade.
+
+    Fica opcional e desligado por padrão de propósito: o painel em produção
+    depende do comportamento atual, e esta rodada é de medição — não é hora de
+    mudar o que o Rica vê. Só vale na primeira conexão: em reconexão o cliente
+    manda `since_id` e aí ele quer tudo o que perdeu, em ordem, não a cauda.
     """
     db: GrupoBorgesDB = request.app.state.db
     await _get_agent_or_404(request, slug)
 
-    capped_limit = min(limit, _MESSAGES_STREAM_LIMIT_MAX)
+    replay_newest_first = recentes and since_id == 0
+    capped_limit = min(
+        limit,
+        _MESSAGES_STREAM_REPLAY_LIMIT_MAX
+        if replay_newest_first
+        else _MESSAGES_STREAM_LIMIT_MAX,
+    )
     resolved_session_id = session_id or await db.latest_jsonl_session_id(slug)
 
     async def _message_stream() -> AsyncGenerator[dict[str, str] | ServerSentEvent, None]:
@@ -1789,6 +1814,7 @@ async def stream_agent_messages(
                     session_id=resolved_session_id,
                     since_id=since_id,
                     limit=capped_limit,
+                    newest_first=replay_newest_first,
                 )
             except sqlite3.OperationalError as e:
                 log.warning("Erro SQLite recuperável no replay de %s: %s", slug, e)
