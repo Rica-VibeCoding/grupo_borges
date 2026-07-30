@@ -49,6 +49,13 @@ def argumentos() -> argparse.Namespace:
         default="tudo",
         help="Fase isolada a executar; 'tudo' roda as três em sequência.",
     )
+    parser.add_argument(
+        "--medicao-segundos",
+        type=int,
+        default=MEDICAO_SEGUNDOS,
+        help="Duração da fase medição. Alongar elimina a sincronia manual entre o "
+        "botão do probe no celular e o disparo da carga no servidor.",
+    )
     parser.add_argument("--api", default=os.environ.get("GB_API_URL", API_PADRAO))
     parser.add_argument(
         "--sse-base-url",
@@ -205,8 +212,13 @@ def grava_linha(arquivo, evento: dict) -> None:
     arquivo.flush()
 
 
-def gera_eventos(seed: int) -> tuple[str, list[dict]]:
-    """Materializa a sequência completa para fases isoladas serem idênticas."""
+def gera_eventos(seed: int, medicao_segundos: int = MEDICAO_SEGUNDOS) -> tuple[str, list[dict]]:
+    """Materializa a sequência completa para fases isoladas serem idênticas.
+
+    `medicao_segundos` só ALONGA a cauda: histórico e preenchimento consomem o
+    mesmo rng na mesma ordem, então continuam byte-a-byte iguais entre durações
+    diferentes. É o que permite alongar a carga sem invalidar a comparação com o
+    baseline — desde que os dois lados usem a MESMA duração."""
     rng = random.Random(seed)
     moldes, pesos = carrega_familias()
     session_id = uuid_deterministico(rng)
@@ -226,7 +238,7 @@ def gera_eventos(seed: int) -> tuple[str, list[dict]]:
         eventos.append(evento)
         parent_uuid = evento["uuid"]
 
-    total = HISTORICO_TOTAL + PREENCHIMENTO_TOTAL + MEDICAO_HZ * MEDICAO_SEGUNDOS
+    total = HISTORICO_TOTAL + PREENCHIMENTO_TOTAL + MEDICAO_HZ * medicao_segundos
     for numero in range(HISTORICO_TOTAL, total):
         evento = evento_chunk(
             rng=rng,
@@ -337,7 +349,7 @@ def main() -> int:
     if args.reset:
         print(f"Reset: {removidos} eventos anteriores removidos do canário", flush=True)
 
-    session_id, eventos = gera_eventos(args.seed)
+    session_id, eventos = gera_eventos(args.seed, args.medicao_segundos)
     projects_dir = Path(
         os.environ.get("GB_CLAUDE_PROJECTS_DIR", str(Path.home() / ".claude" / "projects"))
     )
@@ -404,7 +416,7 @@ def main() -> int:
                 arquivo=arquivo,
                 eventos=eventos,
                 inicio_indice=HISTORICO_TOTAL + PREENCHIMENTO_TOTAL,
-                quantidade=MEDICAO_HZ * MEDICAO_SEGUNDOS,
+                quantidade=MEDICAO_HZ * args.medicao_segundos,
                 hz=MEDICAO_HZ,
                 db_path=db_path,
                 slug=args.slug,
