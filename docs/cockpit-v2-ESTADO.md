@@ -80,11 +80,26 @@ que ficam: reconexão real e `sidechain-cluster`.
 
 ## 5. Quem está com o quê — mapa vigente
 
-| Agente | Frente | Caminhos |
+| Agente | Frente **em voo agora** (30/07 ~17h30) | Caminhos |
 |---|---|---|
-| **Daniel** | medição do G1 + camada visual + sidebar | `components/shell/**`, `globals.css`, `layout.tsx`, `docs/cockpit-v2-medicao/*.py` |
-| **Hiro** | feed sem biblioteca + auditoria | `components/feed/**`, `app/spike/sem-lib/**` |
-| **Tara** | envio e semântica de status | `lib/envio.ts`, exceção pontual em `apps/api/` |
+| **Daniel** | **a sidebar**, em rodada dedicada com contexto limpo | `components/shell/**`, `globals.css`, `layout.tsx` |
+| **Hiro** | **os 2 renderers P0** + o plano de execução do encanamento | `components/renderers/**` |
+| **Tara** | livre — última entrega foi o `offline` | `lib/envio.ts`, exceção pontual em `apps/api/` |
+
+**O que foi pedido a cada um, para conferir a entrega contra o pedido:**
+
+- **Daniel — sidebar.** Desktop: a Tropa vira plano de fundo permanente, o chat é a
+  superfície elevada que **sobrepõe sem fechar** a sidebar; a coluna estática da raiz
+  (`app/page.tsx:72-76`) e o vazio "Escolha um agente" **morrem**; celular continua uma
+  superfície por vez. Minerar o **CSS** do `sidebar-08` (inset), **não** o
+  `SidebarProvider` — ele colide com superfície-mora-na-URL + shell como Server Component
+  (deep-link do Telegram, botão voltar do Android). Entrega vem com prints em 390×844 @3x
+  dark, nome novo em `/tmp/cockpit-v2-prints/`. Régua: *"vale largar o cockpit antigo?"*.
+- **Hiro — renderers P0.** `fetch-result` (500 eventos) e `result-list`/WebSearch (336),
+  arquivo novo por família em `components/renderers/`, **teste contra fixture real**. Mais
+  o plano de execução do pré-requisito do `tool_use_result` — plano, não implementação.
+  O pipeline **ficou livre** quando a bancada do Daniel fechou; quem executar, executa
+  agora sem colidir.
 
 `components/renderers/**` é de **consumo** para todos — quem achar que precisa mudar,
 fala com o Pavan antes. Ninguém audita o próprio trabalho.
