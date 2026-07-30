@@ -13,10 +13,48 @@ function isThinkingPart(value: unknown): value is { type: 'thinking'; thinking: 
   return part.type === 'thinking' && typeof part.thinking === 'string';
 }
 
+let cachedText = '';
+let cachedLineCount = 0;
+
 function countLines(text: string): number {
-  if (text.trim() === '') return 0;
-  const withoutTrailingBreaks = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
-  return withoutTrailingBreaks.split('\n').length;
+  if (text === cachedText) return cachedLineCount;
+
+  let lineCount = 0;
+  if (/\S/u.test(text)) {
+    lineCount = 1;
+
+    for (
+      let index = text.indexOf('\n');
+      index !== -1;
+      index = text.indexOf('\n', index + 1)
+    ) {
+      lineCount += 1;
+    }
+
+    for (
+      let index = text.indexOf('\r');
+      index !== -1;
+      index = text.indexOf('\r', index + 1)
+    ) {
+      if (text.charCodeAt(index + 1) !== 0x000a) lineCount += 1;
+    }
+
+    for (let index = text.length - 1; index >= 0; index -= 1) {
+      const code = text.charCodeAt(index);
+      if (code === 0x000a) {
+        lineCount -= 1;
+        if (text.charCodeAt(index - 1) === 0x000d) index -= 1;
+      } else if (code === 0x000d) {
+        lineCount -= 1;
+      } else {
+        break;
+      }
+    }
+  }
+
+  cachedText = text;
+  cachedLineCount = lineCount;
+  return lineCount;
 }
 
 /**
@@ -24,18 +62,26 @@ function countLines(text: string): number {
  * legada e null. Num array, só partes thinking pertencem a este renderer.
  */
 export function normalizeThinkingContent(content: unknown): NormalizedThinking | null {
-  const text =
-    typeof content === 'string'
-      ? content
-      : Array.isArray(content)
-        ? content.filter(isThinkingPart).map((part) => part.thinking).join('\n\n')
-        : '';
+  let text = '';
 
-  if (text.trim() === '') return null;
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    let hasThinkingPart = false;
+    for (const part of content) {
+      if (!isThinkingPart(part)) continue;
+      if (hasThinkingPart) text += '\n\n';
+      text += part.thinking;
+      hasThinkingPart = true;
+    }
+  }
+
+  const lineCount = countLines(text);
+  if (lineCount === 0) return null;
 
   return {
     text,
-    lineCount: countLines(text),
+    lineCount,
   };
 }
 
