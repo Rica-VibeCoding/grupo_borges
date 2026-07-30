@@ -197,6 +197,32 @@ como aprovada uma peça que o Rica nunca julgou.
 cockpit antigo"*): o envio precisa **confirmar que entrou** — ou o painel devolve erro, ou
 não diz que enviou. Silêncio otimista é o defeito.
 
+## 4.3 Checkpoint 30/07 ~13:40 — as três frentes em voo
+
+- **Daniel** — rodada visual dedicada da §7 (a linha de ferramenta), com contexto zerado e
+  a skill `frontend-design` carregada, como a §9.1 exige. Recebeu a referência do Rica
+  (ChatGPT) com a regra de uso do §10 do `cockpit-v2-estetica.md`: empresta vocabulário,
+  não gramática. Bateu 29% e tem `/compact` enfileirado.
+- **Tara** — entregou `9129528` (88/88, `tsc` limpo): `useMemo` no diff, largura de coluna
+  dinâmica, e as duas bordas obrigatórias **travadas em teste no markdown** com as contagens
+  reais (330 array / 87 string / 199 null). Agora no guard rail do LCS.
+- **Hiro** — montando o **braço de controle** do G1: mesmo experimento sem `assistant-ui`.
+  É o teste que decide a biblioteca, pela ressalva do gate (`3366d32`).
+
+### A decisão do algoritmo do diff — não trocar, e o número é o motivo
+
+A Tara levantou corretamente que o LCS é `O(n·m)` em memória e que arquivo grande poderia
+custar centenas de MB no celular. **Medi o corpus antes de decidir:** 38 patches nos
+transcripts reais, mediana **18 linhas**, p95 **70**, **máximo 90**. Uma matriz 90×90 são
+8.100 células — trivial. O risco é real como propriedade do algoritmo e **inexistente nos
+dados**.
+
+Decisão: **mantém o LCS**. Trocar por Myers agora seria complexidade contra um problema que
+os dados não mostram. No lugar entra um **guard rail** pela cauda que eu *não* medi — o
+componente recebe `oldString`/`newString` crus (`diff-viewer.tsx:14-15`), sem teto
+estrutural, então acima do limite ele não roda o LCS e diz na tela que omitiu, com o número
+de linhas. Degradar em silêncio seria o mesmo pecado do "copiado" que não copiou.
+
 ## 5. Retomada — os passos, na ordem
 
 1. **Trocar a chamada** em `apps/cockpit/app/spike/page.tsx:359-360`:
