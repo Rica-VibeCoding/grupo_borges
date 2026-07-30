@@ -274,19 +274,29 @@ Extração via `playwright-pc` no Chrome do Rica continua útil só para **scree
 
 O cockpit atual **não pode quebrar** (decisão do Rica).
 
-- app novo em `apps/web2`, porta separada, mesmo backend — strangler fig, como manda o `refactor-playbook.md`
-- `lib/` é importado, não copiado, para não bifurcar a lógica de stream
-- `apps/web` não recebe commit durante a obra
-- vira o padrão só quando o v2 estiver equivalente e aprovado
-- prova real com agentes de verdade rodando (Márcio e Andy entre eles), já que o back é o mesmo
+> ⚠️ **Corrigido pela fusão** (`docs/cockpit-v2-fusao.md`, 30/07). Onde este bloco
+> divergir dela, **a fusão vence** — ela é posterior e passou pelo gate.
+
+- app novo em **`apps/cockpit`** (nunca `web2`: nome provisório vira fóssil), porta separada, mesmo backend — strangler fig, como manda o `refactor-playbook.md`
+- a lógica que sobrevive sai para **`packages/cockpit-core`**, pacote de workspace com tsconfig próprio — **não** import cruzado entre dois apps Next (alias resolvendo contra tsconfig errado e risco de React duplicado)
+- `apps/web` não recebe commit durante a obra. Corolário que a fusão cobrou: existe uma **lista curta de cirurgias permitidas** dentro do core (o hotspot 10 mora em `use-messages-stream.ts:316`), senão "zero reescrita" e "os 10 hotspots resolvidos" se contradizem
+- vira o padrão só quando o v2 estiver equivalente e aprovado, por **troca de rota reversível**, com os links antigos redirecionando
+- prova real com **agente-canário**, nunca com a sessão viva de ninguém — o envio cai por `send-keys` no meio do trabalho produtivo do Márcio e do Dimy
+- **onde constrói:** Oracle (`vps-arm-borges-767247`), medido em 30/07 — 8,6 GB livres contra 4,9 GB da Hostinger, 62 GB de disco contra 20, zero steal, e Next 16 já rodando lá em `aarch64`. Mas **build ARM não atravessa**: código sim, `node_modules` e `.next` não. E o **gate mede contra o back da Hostinger**, onde o produto vive — medir na máquina folgada e virar a chave na apertada fraudaria o próprio gate
 
 ## 8. Sequência
 
+> ⚠️ **Substituída** pela "Ordem de execução aprovada" de `docs/cockpit-v2-fusao.md`,
+> que tem 10 passos e começa pelo baseline. Mantida aqui só como registro do que
+> mudou e por quê.
+
 1. Playbook fechado (este documento) — com as 3 frentes de pesquisa incorporadas
-2. Mockup navegável publicado como link, aprovado pelo Rica no celular, **antes** de existir uma linha de Next
-3. `apps/web2` implementado em camadas paralelas
-4. Equivalência funcional verificada contra o cockpit atual
+2. ~~Mockup navegável aprovado **antes** de existir uma linha de Next~~ → **incoerente, corrigido:** se é navegável e fiel de medida, já é o stack real; se é HTML estático, aprova aparência sem aprovar comportamento. Mockup passa a ser **fatia vertical no stack real, em branch descartável**
+3. ~~`apps/web2`~~ → `apps/cockpit`, e o **scaffold é sequencial, feito pelo Pavan sozinho** — paralelizar scaffold é onde nascem os conflitos
+4. Equivalência verificada contra os **transcripts congelados** (`fixtures/cockpit-v2/`), não contra impressão de tela: 52 famílias de payload, incluindo as duas de borda que ninguém escreve de propósito
 5. Virada
+
+**Feito até agora:** passo 1 da fusão (baseline + contrato de paridade) — commit `07251cf`.
 
 ## 9. Divisão do trabalho
 
@@ -294,10 +304,48 @@ Chefia: Pavan. Ninguém commita em `apps/web`.
 
 > **Decisões do Rica em 30/07:** o bug do clear **não** é corrigido no cockpit atual — o v2 nasce certo e pronto. O Daniel trabalha a partir do workspace dele (`ze_claude/daniel`) por enquanto; **quando o repositório do projeto novo for criado, embutir o Daniel dentro dele** (skill `embed-ze`), lembrando que ele roda na **conta Pro** (ricardo.incasa), não na Max da frota.
 
-- **Daniel ×2/×3** — cada sessão em worktree próprio e numa camada distinta (chrome da aplicação, chat, voz), para não brigar por `.git/index`
+- **Daniel ×2/×3** — cada sessão em worktree próprio e numa camada distinta (chrome da aplicação, chat, voz), para não brigar por `.git/index`. **A camada visual é dele, com effort `xhigh`** (decisão do Rica, 30/07)
 - **Tara (Codex)** — componente isolado com contrato de entrada/saída fechado
 - **Hiro (Kimi)** — trabalho repetitivo de volume
 - **Pavan** — playbook, revisão, integração, e a decisão final de virada
+
+### O critério estético, e por que ele é um gate separado
+
+> **Rica, 30/07:** *"na hora de criar as telas, a parte artística, eu quero o poder
+> máximo no Daniel, extra high. Ele tem que fazer algo extremamente excelente, que eu
+> olhe e fale: amei. Esse é o critério — eu tenho que amar. Tem que ser moderno,
+> surpreendente, não pode ser alguma coisa mequetrefe."*
+
+Isto **não** entra no gate numérico do "Comportamento observável" — e a tentativa de
+traduzir "amei" em métrica seria desonestidade de processo. São dois portões
+independentes, e o visual não passa por ser rápido nem o inverso:
+
+- **Gate técnico:** os 12 itens observáveis, medidos, no iPhone do Rica.
+- **Gate estético:** juiz único é o Rica, veredito binário, sem recurso a argumento
+  técnico. "Está dentro das medidas do ChatGPT" não é defesa contra "não amei".
+
+**A tensão que isso cria com a seção 6, e como se resolve.** A seção 6 manda copiar as
+medidas reais do ChatGPT justamente para *não* passar um dia polindo. Mas copiar não
+surpreende ninguém — quem abre um clone do ChatGPT reconhece um clone do ChatGPT. A
+resolução não é escolher um lado:
+
+- **Esqueleto emprestado, e invisível:** escada de container query, 768px de composer,
+  alturas de linha, densidade, área de toque, ritmo de espaçamento. É ergonomia
+  resolvida por quem testou com milhões de pessoas — reinventar isso é perder tempo e
+  perder qualidade junto.
+- **Autoria na pele:** tipografia, cor, profundidade, movimento, os estados vazios, os
+  micro-momentos (o que acontece quando um agente começa a pensar, quando uma tool
+  falha, quando a voz entra). É aqui que mora o "amei", e é aqui que o Daniel tem
+  liberdade — inclusive para divergir do ChatGPT quando a divergência for melhor.
+
+Regra prática: **se a mudança altera medida, justifica; se altera aparência, ousa.**
+
+**Nota operacional sobre "poder máximo":** o effort não é por agente — vem do
+`~/.claude/settings.json`, que os 7 dividem (`session_may_diverge: true` no painel
+significa que a sessão de pé pode ter outro valor em runtime). O Daniel já está em
+`xhigh`. Existe um degrau acima, `max`, aceito pelo painel para agente Claude
+(`_AGENT_PAINEL_ALLOWED_EFFORTS`). Subir o degrau sobe para todo mundo, e a frota está
+na conta **Pro** por decisão do Rica de 30/07 — cota bem menor que a Max 20x.
 
 Contrato entre camadas precisa estar escrito antes de qualquer sessão paralela abrir. Sem isso, três Daniels produzem três estilos.
 
