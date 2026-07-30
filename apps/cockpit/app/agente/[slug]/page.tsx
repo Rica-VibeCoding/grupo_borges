@@ -4,6 +4,7 @@ import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { AppShell } from '@/components/shell/app-shell';
 import { estadoDe } from '@/components/shell/estado';
+import { Retrato } from '@/components/shell/retrato';
 import { Tropa } from '@/components/shell/tropa';
 
 export const dynamic = 'force-dynamic';
@@ -108,6 +109,7 @@ export default async function AgentePage({
 }) {
   const [{ slug }, sp] = await Promise.all([params, searchParams]);
   const fleet = await fetchFleet();
+  const agora = Math.floor(Date.now() / 1000);
   const agente = fleet.agents.find((a) => a.slug === slug);
 
   if (!agente) notFound();
@@ -118,7 +120,7 @@ export default async function AgentePage({
 
   return (
     <AppShell
-      nav={<Tropa agents={fleet.agents} slugSelecionado={slug} />}
+      nav={<Tropa agents={fleet.agents} slugSelecionado={slug} agora={agora} compacta />}
       drawer={<Painel agente={agente} fecharHref={fecharHref} />}
       painelAberto={painelAberto}
       fecharPainelHref={fecharHref}
@@ -154,9 +156,7 @@ export default async function AgentePage({
           ←
         </Link>
 
-        <span aria-hidden className="shrink-0">
-          {agente.emoji ?? '•'}
-        </span>
+        <Retrato slug={agente.slug} nome={agente.name} tamanho={32} />
 
         <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '1px' }}>
           <span

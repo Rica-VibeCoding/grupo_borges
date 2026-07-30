@@ -9,11 +9,15 @@ export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const fleet = await fetchFleet();
+  // Relógio do servidor: `force-dynamic` re-renderiza a cada visita, então a
+  // duração de sessão vem fresca sem precisar de relógio no cliente (que daria
+  // divergência de hidratação).
+  const agora = Math.floor(Date.now() / 1000);
   const chamando = fleet.agents.filter((a) => a.status === 'aguardando').length;
   const trabalhando = fleet.agents.filter((a) => a.status === 'trabalhando').length;
 
   return (
-    <AppShell nav={<Tropa agents={fleet.agents} />}>
+    <AppShell nav={<Tropa agents={fleet.agents} agora={agora} compacta />}>
       {/* No celular a rota `/` É a tropa — tela inteira, uma superfície por vez.
           A lista vem logo abaixo do cabeçalho de propósito: a coisa acionável não
           pode nascer abaixo da dobra. */}
@@ -58,7 +62,7 @@ export default async function Home() {
           className="min-h-0 flex-1 overflow-y-auto"
           style={{ paddingBottom: 'var(--ck-safe-bottom)' }}
         >
-          <Tropa agents={fleet.agents} />
+          <Tropa agents={fleet.agents} agora={agora} />
         </div>
       </div>
 
