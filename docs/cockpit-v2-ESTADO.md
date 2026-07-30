@@ -37,7 +37,7 @@ tem 738 chamadas por sessão — a **linha de ferramenta é a tela**, não um de
 
 | Decisão | Onde está escrita | Como foi decidida |
 |---|---|---|
-| `assistant-ui` **sai** | gate, braço de controle | p95 do controle contra 400–724,9 ms com a lib; escala 1,00× contra 1,81× |
+| `assistant-ui` **sai** | gate + `RESULTADO-feed-real.md` | remedida nos **três braços na mesma sessão**: 19,33× o controle, escala 2,23×, **um décimo** dos frames e um frame de **56 s** de tela parada |
 | G1 é **pareado**, corte absoluto de 32 ms **morreu** | `cockpit-v2-gate.md` §14 | o p95 é quantizado em 16,67 ms e 32 caía no vão entre dois degraus |
 | "enviado" só por **observação do eco** | `cockpit-v2-data-contract.md` §3.1 | `tmux_delivered=True` era literal no `agents.py`, emitido antes do Enter |
 | `offline` = **sessão tmux ausente** | decisão da Tara, 30/07 | morto e ocioso produziam a mesma linha — foi a cegueira das 6 h de 29→30/07 |
@@ -51,13 +51,19 @@ tem 738 chamadas por sessão — a **linha de ferramenta é a tela**, não um de
 ## 4. Onde a construção está
 
 **O feed próprio existe** (`apps/cockpit/components/feed/**`) e passou a consumir
-renderers reais. **Não está plugado** na rota que o Rica usa: medido pareado, ficou
-1,67× a 2,0× pior que o esqueleto, com 1,20× de escala residual onde o controle é
-plano. Relatório: `cockpit-v2-medicao/RESULTADO-feed-real.md`.
+renderers reais. Ainda **não está plugado** na rota que o Rica usa, mas o custo dele é
+bem menor do que se acreditava até 30/07 ~16h: remedido nos três braços, entrega
+**~78% dos frames** do controle — pior em ~1,3× de fluidez, não em 2×.
 
-O custo **não é mais estrutura de virtualização** — a estimativa está em cache por
-identidade e o classificador incremental é o mesmo nos dois braços. Sobrou o render
-por item, e o alvo é o **`Thinking`**: a carga tem 11.880 caracteres de `text` contra
+> ⚠️ **Relatar por `frames`, não por p95.** O p95 é quantizado em degraus de 16,67 ms e
+> a mediana de 3 rodadas pula um degrau inteiro sozinha: o **mesmo** feed, sem uma linha
+> alterada, deu 100,1 ms numa série e 50,0 ms na seguinte. Foi assim que o "1,67× a 2,0×
+> pior" nasceu — ruído reportado como se fosse tendência. `frames` é contínua, não tem
+> degrau, e mede o que importa: quanta tela o Rica recebeu.
+
+O custo restante **não é estrutura de virtualização** — a estimativa está em cache por
+identidade e o classificador incremental é o mesmo nos dois braços. Sobrou o render por
+item, e o alvo é o **`Thinking`**: a carga tem 11.880 caracteres de `text` contra
 **503.272 de `thinking`** (`composicao-da-carga-canario.md`). Perfilar o markdown
 primeiro seria gastar hora no lugar errado.
 
