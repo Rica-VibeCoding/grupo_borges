@@ -39,18 +39,28 @@
  * nesse caso o fetch não roda, porque o estado forçado tem que ser exatamente
  * o que a vitrine mandou, nunca sobrescrito por uma resposta de rede.
  */
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { fetchAgentPainel, patchAgentEffort, postAgentInput } from '@grupo_borges/cockpit-core/api';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import {
+  fetchAgentPainel,
+  patchAgentEffort,
+  postAgentInput,
+  postAgentVoice,
+} from '@grupo_borges/cockpit-core/api';
 
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
+import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
+import { usaGravador } from './usa-gravador';
+import { aparenciaDaVoz, capturando, diagnosticaMicrofone, type FaseVoz } from './voz';
 import {
   IconeAnexo,
   IconeCopiar,
+  IconeDescartar,
   IconeEnviar,
-  IconeMicrofone,
+  IconeOnda,
+  IconeParar,
   IconeReenviar,
 } from './icones';
 
@@ -66,7 +76,24 @@ export type ComposerProps = {
   onEnviar?: (texto: string) => Promise<{ ok: boolean }>;
   /** Só a vitrine `/envio` usa isto. Fora dela, o componente decide sozinho. */
   faseForcada?: FaseEnvio;
+  /** Idem, para `/voz`. Sem isto não há como VER as fases da captura fora de um
+   *  browser com microfone e permissão concedida — que é exatamente onde elas
+   *  não podem ser conferidas antes de subir. */
+  vozForcada?: FaseVoz;
+  segundosForcados?: number;
 };
+
+/** Padrão de onda para a vitrine — fixo, nunca aleatório: dois prints da mesma
+ *  fase precisam ser comparáveis pixel a pixel entre versões. */
+const ONDA_DE_VITRINE = [
+  14, 38, 22, 61, 47, 78, 35, 92, 56, 71, 29, 84, 44, 66, 19, 53, 88, 31, 74, 26, 59, 41, 12, 68,
+];
+
+/** Só a vitrine `/voz` chega aqui: sem microfone aberto não há erro real pra
+ *  diagnosticar, então a fase forçada `impedida` precisa de um exemplo. */
+function impedimentoDaVitrine(vozForcada: FaseVoz | undefined) {
+  return vozForcada === 'impedida' ? diagnosticaMicrofone({ name: 'NotAllowedError' }) : undefined;
+}
 
 const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.ReactElement> = {
   reenviar: IconeReenviar,
@@ -83,6 +110,8 @@ export function Composer({
   onTrocarEsforco,
   onEnviar,
   faseForcada,
+  vozForcada,
+  segundosForcados,
 }: ComposerProps) {
   const [texto, setTexto] = useState('');
   const [ultimoEnviado, setUltimoEnviado] = useState('');
@@ -137,6 +166,47 @@ export function Composer({
   const fase = faseForcada ?? faseLocal;
   const aparencia = aparenciaDe(fase, agentName);
 
+  // ---- voz ----------------------------------------------------------------
+  // O áudio termina na MESMA máquina de seis fases do texto, e isso não é
+  // economia: o back faz STT e entrega por `send-keys` no mesmo POST, então ele
+  // devolve o mesmo `tmux_delivered` literal que mente pro texto. Dar à voz um
+  // caminho próprio de confirmação seria reproduzir o defeito num lugar novo.
+  const [transcrito, setTranscrito] = useState<string | null>(null);
+
+  const subirAudio = useCallback(
+    async (audio: Blob) => {
+      if (faseForcada) return;
+      try {
+        const r = await postAgentVoice(agentSlug, audio);
+        // O que o servidor ENTENDEU aparece na tela. STT erra, e o Rica precisa
+        // saber o que o agente recebeu — sem isso ele descobre pela resposta
+        // errada do agente, três minutos depois.
+        setTranscrito(r.transcribed);
+        setUltimoEnviado(r.transcribed);
+        // `aceito`, nunca `confirmado`: `tmux_delivered` vem da colagem.
+        setFaseLocal('aceito');
+      } catch {
+        setFaseLocal('falhou');
+      }
+    },
+    [agentSlug, faseForcada],
+  );
+
+  const gravador = usaGravador({ aoGravar: subirAudio });
+  const faseVoz = vozForcada ?? gravador.fase;
+  const segundosVoz = segundosForcados ?? gravador.segundos;
+  const vozAparencia = aparenciaDaVoz(faseVoz, {
+    segundos: segundosVoz,
+    nome: agentName,
+    impedimento: gravador.impedimento ?? impedimentoDaVitrine(vozForcada),
+  });
+  // Onda estática na vitrine: os níveis reais vêm do `AnalyserNode`, que não
+  // existe sem microfone aberto. O padrão é fixo de propósito — screenshot com
+  // onda aleatória mudaria a cada print e não daria pra comparar duas versões.
+  const niveisVoz = vozForcada ? ONDA_DE_VITRINE : gravador.niveis;
+  const emCaptura = capturando(faseVoz);
+  const travada = faseVoz === 'travada';
+
   async function enviar(corpo: string) {
     if (!corpo.trim() || faseForcada) return;
     setUltimoEnviado(corpo);
@@ -189,25 +259,41 @@ export function Composer({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
       <form
         onSubmit={aoSubmeter}
-        className="ck-lit mx-auto flex flex-col border"
+        className="ck-lit ck-caixa mx-auto flex flex-col border"
         style={{
           maxWidth: 'var(--ck-w-composer)',
           width: '100%',
           padding: 'var(--ck-space-3)',
           gap: 'var(--ck-space-2)',
           background: 'var(--ck-surface-composer)',
-          borderColor: aparencia.filete ?? 'var(--ck-edge-functional)',
+          // Em captura a moldura inteira assume a cor do estado — é o mesmo
+          // recurso do envio, e aqui ele carrega o aviso de que soltar agora
+          // descarta. Cor de estado na borda alcança a visão periférica; o
+          // olho está no que está sendo falado, não no composer.
+          borderColor: vozAparencia.tinta ?? aparencia.filete ?? 'var(--ck-edge-functional)',
           // A borda inteira (não só um filete de 2px) muda de cor no estado
           // quente: o composer é a única superfície de INPUT da tela, e ali a
           // convenção do filete lateral (linha de execução, mensagem) compete
           // com a moldura que o campo já tem por natureza.
-          borderWidth: aparencia.filete ? '1.5px' : '1px',
-          borderRadius: 'var(--ck-radius-frame)',
+          borderWidth: aparencia.filete || vozAparencia.tinta ? '1.5px' : '1px',
+          // Raio próprio, maior que o do resto (§adendo): a referência do Codex
+          // arredonda a caixa de fala bem mais do que os blocos de conteúdo, e
+          // `--ck-radius-frame` veste código/diff/thinking, onde macio demais
+          // rouba leitura. Ver o comentário do token em `globals.css`.
+          borderRadius: 'var(--ck-radius-caixa)',
           position: 'relative',
           overflow: 'hidden',
           transition: `border-color var(--ck-dur-fast) var(--ck-ease)`,
         }}
       >
+        {emCaptura ? (
+          <PainelDeCaptura
+            fase={faseVoz}
+            aparencia={vozAparencia}
+            segundos={segundosVoz}
+            niveis={niveisVoz}
+          />
+        ) : (
         <textarea
           ref={textareaRef}
           rows={2}
@@ -228,9 +314,47 @@ export function Composer({
             minHeight: '48px',
           }}
         />
+        )}
 
         {/* Base do composer: os controles moram AQUI, dentro da caixa — §12.1. */}
         <div className="flex items-end justify-between" style={{ gap: 'var(--ck-space-2)' }}>
+          {emCaptura ? (
+            // Durante a fala, o canto esquerdo carrega a INSTRUÇÃO do gesto.
+            // É onde ela precisa estar: o polegar está na direita, e o olho
+            // percorre da esquerda. Anexo e motor saem — nenhum dos dois faz
+            // sentido enquanto o microfone está aberto.
+            travada ? (
+              <button
+                type="button"
+                onClick={gravador.descartarTravada}
+                aria-label="Descartar áudio"
+                className="ck-veil flex shrink-0 items-center"
+                style={{
+                  gap: '5px',
+                  minHeight: 'var(--ck-touch-min)',
+                  padding: '0 var(--ck-space-2)',
+                  marginLeft: 'calc(var(--ck-space-2) * -1)',
+                  marginBottom: 'calc(var(--ck-space-2) * -1)',
+                  borderRadius: 'var(--ck-radius-chip)',
+                  fontSize: 'var(--ck-text-sm)',
+                  color: 'var(--ck-text-secondary)',
+                }}
+              >
+                <IconeDescartar tamanho={15} />
+                Descartar
+              </button>
+            ) : (
+              <span
+                style={{
+                  fontSize: 'var(--ck-text-xs)',
+                  color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
+                  paddingBottom: 'var(--ck-space-1)',
+                }}
+              >
+                {vozAparencia.instrucao}
+              </span>
+            )
+          ) : (
           <button
             type="button"
             aria-label="Anexar arquivo"
@@ -246,10 +370,14 @@ export function Composer({
           >
             <IconeAnexo tamanho={17} />
           </button>
+          )}
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
             {/* O motor — modelo em texto, esforço em controle real. Nunca bold:
-                a referência resolve hierarquia com espaço, não com peso. */}
+                a referência resolve hierarquia com espaço, não com peso.
+                Some durante a captura: escolher motor no meio de uma frase
+                falada não é uma decisão que alguém toma. */}
+            {emCaptura ? null : (
             <div
               className="flex min-w-0 items-center"
               style={{ gap: '3px', fontSize: 'var(--ck-text-sm)' }}
@@ -303,46 +431,126 @@ export function Composer({
                 </select>
               ) : null}
             </div>
+            )}
 
-            <button
-              type="button"
-              aria-label="Gravar áudio"
-              className="ck-veil flex shrink-0 items-center justify-center"
-              style={{
-                minWidth: 'var(--ck-touch-min)',
-                minHeight: 'var(--ck-touch-min)',
-                marginBottom: 'calc(var(--ck-space-2) * -1)',
-                borderRadius: 'var(--ck-radius-chip)',
-                color: 'var(--ck-text-secondary)',
-              }}
-            >
-              <IconeMicrofone tamanho={17} />
-            </button>
+            {/* O ÚNICO ELEMENTO SÓLIDO, e ele troca de função — a referência é
+                explícita nisso: na tela do Codex com o composer VAZIO, o botão
+                de massa não é a seta, é a onda. Faz sentido literal: sem texto
+                não há o que enviar, e transformar o alvo grande naquilo que
+                serve é melhor que deixá-lo apagado ao lado de um microfone
+                minúsculo. Foi o que matou o microfone antigo — 17px de traço
+                para o gesto MAIS usado do Rica.
 
-            {/* Único elemento sólido da tela — §12.1. */}
-            <button
-              type="submit"
-              disabled={!texto.trim() || emAndamento}
-              aria-label={`Enviar para ${agentName}`}
-              className="flex shrink-0 items-center justify-center disabled:opacity-40"
-              style={{
-                width: '32px',
-                height: '32px',
-                marginBottom: 'calc(var(--ck-space-1) * -1)',
-                borderRadius: 'var(--ck-radius-pill)',
-                background: 'var(--ck-text-primary)',
-                color: 'var(--ck-surface-canvas)',
-              }}
-            >
-              <IconeEnviar />
-            </button>
+                `key` distinta em cada ramo NÃO é detalhe: sem ela o React muta
+                o `type` do mesmo nó, e o clique que rodou o `onClick` cai no
+                submit do form logo em seguida — o áudio começaria e a mensagem
+                vazia sairia junto. */}
+            {emCaptura || travada ? (
+              travada ? (
+                <button
+                  key="parar"
+                  type="button"
+                  onClick={gravador.enviarTravada}
+                  aria-label={`Enviar áudio para ${agentName}`}
+                  className="flex shrink-0 items-center justify-center"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    marginBottom: 'calc(var(--ck-space-1) * -1)',
+                    borderRadius: 'var(--ck-radius-pill)',
+                    background: 'var(--ck-text-primary)',
+                    color: 'var(--ck-surface-canvas)',
+                  }}
+                >
+                  <IconeParar />
+                </button>
+              ) : (
+                <button
+                  key="voz"
+                  type="button"
+                  {...gravador.handlers}
+                  aria-label={vozAparencia.anuncio}
+                  className="flex shrink-0 items-center justify-center"
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    marginBottom: 'calc(var(--ck-space-1) * -1)',
+                    borderRadius: 'var(--ck-radius-pill)',
+                    background: vozAparencia.tinta ?? 'var(--ck-text-primary)',
+                    color: 'var(--ck-surface-canvas)',
+                    // O gesto não pode virar rolagem nem seleção de texto: no
+                    // iOS, segurar sem isto abre o menu de contexto no meio da
+                    // fala e o `pointermove` some.
+                    touchAction: 'none',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    WebkitTouchCallout: 'none',
+                  }}
+                >
+                  <IconeOnda />
+                </button>
+              )
+            ) : texto.trim() ? (
+              <button
+                key="enviar"
+                type="submit"
+                disabled={emAndamento}
+                aria-label={`Enviar para ${agentName}`}
+                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  borderRadius: 'var(--ck-radius-pill)',
+                  background: 'var(--ck-text-primary)',
+                  color: 'var(--ck-surface-canvas)',
+                }}
+              >
+                <IconeEnviar />
+              </button>
+            ) : (
+              <button
+                key="voz"
+                type="button"
+                disabled={emAndamento || faseVoz === 'transcrevendo'}
+                {...gravador.handlers}
+                aria-label={`Segure para falar com ${agentName}`}
+                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  borderRadius: 'var(--ck-radius-pill)',
+                  background: 'var(--ck-text-primary)',
+                  color: 'var(--ck-surface-canvas)',
+                  touchAction: 'none',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  WebkitTouchCallout: 'none',
+                }}
+              >
+                <IconeOnda />
+              </button>
+            )}
           </div>
         </div>
 
+        {/* O alvo de trava só existe DURANTE o gesto: um cadeado parado na tela
+            o tempo todo seria um controle a mais para ignorar. */}
+        {emCaptura && !travada ? (
+          <AlvoDeTrava progresso={gravador.progresso} armado={gravador.gesto === 'travar'} />
+        ) : null}
+
         {/* O fio — ver `aparencia-envio.ts`. Track de 2px na base, dentro da
             própria moldura (`overflow:hidden` do form recorta a ponta). Só
-            `transform` anima: o compositor não recalcula layout. */}
-        {aparencia.fio !== 'nenhum' ? (
+            `transform` anima: o compositor não recalcula layout.
+
+            A TRANSCRIÇÃO REUSA O MESMO FIO, e isso é o oposto de economia: o
+            STT roda no servidor e existe um tempo morto entre soltar o dedo e o
+            texto existir. Inventar um segundo indicador pra esse intervalo
+            ensinaria duas linguagens para a mesma pergunta — "a máquina está
+            trabalhando?". É um fio só, do começo da fala até o agente receber. */}
+        {aparencia.fio !== 'nenhum' || faseVoz === 'transcrevendo' || faseVoz === 'pedindo' ? (
           <div
             aria-hidden
             style={{
@@ -356,11 +564,15 @@ export function Composer({
             }}
           >
             <div
-              className={aparencia.fio === 'correndo' ? 'ck-fio-percorre' : ''}
+              className={
+                aparencia.fio === 'correndo' || faseVoz === 'transcrevendo' || faseVoz === 'pedindo'
+                  ? 'ck-fio-percorre'
+                  : ''
+              }
               style={{
                 width: '30%',
                 height: '100%',
-                background: aparencia.filete ?? 'var(--ck-state-running)',
+                background: vozAparencia.tinta ?? aparencia.filete ?? 'var(--ck-state-running)',
                 // Travado: parado na METADE do trajeto — é a imagem literal do
                 // "ficou pelo caminho", não uma barra de progresso genérica.
                 transform: aparencia.fio === 'travado' ? 'translateX(120%)' : undefined,
@@ -369,6 +581,93 @@ export function Composer({
           </div>
         ) : null}
       </form>
+
+      {/* MICROFONE INDISPONÍVEL. Nunca um botão que não responde — o defeito
+          que esta rodada consertou no envio, aqui com outra roupa. Sempre duas
+          coisas: o que aconteceu e o que fazer a respeito. A saída é a parte
+          que importa; "permissão negada" sozinho manda o Rica adivinhar em
+          qual das telas de ajuste do iPhone ele mexe. */}
+      {faseVoz === 'impedida' && (gravador.impedimento ?? impedimentoDaVitrine(vozForcada)) ? (
+        <div
+          className="mx-auto flex w-full items-start justify-between"
+          style={{
+            maxWidth: 'var(--ck-w-composer)',
+            padding: '0 var(--ck-space-2)',
+            gap: 'var(--ck-space-3)',
+          }}
+        >
+          <span
+            role="status"
+            aria-live="assertive"
+            style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
+          >
+            {(gravador.impedimento ?? impedimentoDaVitrine(vozForcada))!.resumo} —{' '}
+            {(gravador.impedimento ?? impedimentoDaVitrine(vozForcada))!.saida}
+          </span>
+          <button
+            type="button"
+            onClick={gravador.limparImpedimento}
+            aria-label="Dispensar aviso do microfone"
+            className="ck-veil flex shrink-0 items-center"
+            style={{
+              padding: '4px',
+              borderRadius: 'var(--ck-radius-chip)',
+              color: 'var(--ck-text-secondary)',
+            }}
+          >
+            <IconeDescartar tamanho={13} />
+          </button>
+        </div>
+      ) : null}
+
+      {/* A VOZ FALANDO DE FORA DA CAIXA. Dois casos que a primeira versão desta
+          peça deixou mudos, e o print da vitrine é que denunciou:
+
+          1. `transcrevendo` — o fio corre na base, mas fio sozinho não
+             distingue "subindo áudio" de "enviando texto". O despacho foi
+             explícito: o STT roda no servidor e a tela não pode ficar muda no
+             tempo morto. Fio é ritmo; a palavra é o que diz DE QUE espera se
+             trata.
+          2. `travada` com áudio longo — a duração muda de cor e a moldura
+             também, mas com a gravação travada o canto esquerdo é ocupado
+             pelo botão Descartar e o aviso não tinha onde aparecer. Cor sem
+             motivo é enfeite: quem vê o âmbar precisa saber que é o teto de
+             30s do STT chegando. */}
+      {vozAparencia.instrucao &&
+      faseVoz !== 'impedida' &&
+      (!emCaptura || (travada && vozAparencia.longa)) ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className="mx-auto w-full"
+          style={{
+            maxWidth: 'var(--ck-w-composer)',
+            padding: '0 var(--ck-space-2)',
+            fontSize: 'var(--ck-text-xs)',
+            color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
+          }}
+        >
+          {vozAparencia.instrucao}
+        </span>
+      ) : null}
+
+      {/* O QUE O SERVIDOR ENTENDEU. STT erra, e o texto que subiu não passa
+          pelo campo — sem isto o Rica só descobre o erro pela resposta errada
+          do agente, minutos depois, sem saber que a culpa foi da transcrição. */}
+      {transcrito && (fase === 'aceito' || fase === 'confirmado') ? (
+        <p
+          className="mx-auto w-full"
+          style={{
+            maxWidth: 'var(--ck-w-composer)',
+            margin: 0,
+            padding: '0 var(--ck-space-2)',
+            fontSize: 'var(--ck-text-xs)',
+            color: 'var(--ck-text-secondary)',
+          }}
+        >
+          🎙 {transcrito}
+        </p>
+      ) : null}
 
       {/* Frase de estado + ações. Só existe fora do `ocioso`/`confirmado` —
           sucesso é silêncio, igual à linha de ferramenta (§7). */}

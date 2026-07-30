@@ -83,6 +83,54 @@ export function IconePainel(props: IconeProps) {
   );
 }
 
+/** Forma de onda — o segundo ícone SÓLIDO, e a referência é a razão.
+ *
+ * Na tela do Codex que o Rica mandou, com o composer VAZIO, o botão sólido da
+ * direita não é a seta de enviar: é a onda. Faz sentido literal — sem texto não
+ * há o que enviar, e o alvo de massa é o único que serve pra alguma coisa. Nós
+ * herdamos essa gramática (ver o comentário do botão no composer), então a onda
+ * precisa ter o mesmo peso visual da seta, não o traço fino dos secundários. */
+export function IconeOnda({ tamanho = 15, ...props }: IconeProps) {
+  return (
+    <svg width={tamanho} height={tamanho} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+      <rect x="3" y="10" width="2.2" height="4" rx="1.1" />
+      <rect x="7.4" y="7" width="2.2" height="10" rx="1.1" />
+      <rect x="11.8" y="4" width="2.2" height="16" rx="1.1" />
+      <rect x="16.2" y="8" width="2.2" height="8" rx="1.1" />
+      <rect x="20.6" y="11" width="2.2" height="2" rx="1.1" />
+    </svg>
+  );
+}
+
+/** Quadrado cheio: parar e mandar o que já foi falado. Sólido pelo mesmo
+ *  motivo da onda — é o botão que conclui a ação. */
+export function IconeParar({ tamanho = 13, ...props }: IconeProps) {
+  return (
+    <svg width={tamanho} height={tamanho} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="2.5" />
+    </svg>
+  );
+}
+
+/** Descartar. Traço, nunca sólido: jogar fora não é a ação que a tela promove. */
+export function IconeDescartar(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Tracado>
+  );
+}
+
+/** Cadeado do alvo de trava. Aparece durante o gesto, some depois. */
+export function IconeCadeado(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+      <path d="M8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5" />
+    </Tracado>
+  );
+}
+
 export function IconeReenviar(props: IconeProps) {
   return (
     <Tracado {...props}>

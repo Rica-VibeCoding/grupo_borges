@@ -172,6 +172,21 @@
   --ck-radius-chip: 6px;
   --ck-radius-pill: 9999px;
 
+  /* A CAIXA — composer e afins. Token NOVO, não sequestro do `frame`.
+   *
+   * Medi a referência antes de escolher: na tela do Codex que o Rica mandou, o
+   * raio é ~19px numa caixa de 138px de altura, ou seja **13,8% da altura**. O
+   * nosso composer no iPhone tem ~104px, o que dá 14px por proporção e 19px por
+   * leitura absoluta. 16px cai entre as duas e tem a vantagem de ser exatamente
+   * 2× o `frame` — relação legível, não número solto.
+   *
+   * Por que não mexer no `--ck-radius-frame`: ele veste bloco de código, diff,
+   * thinking e imagem do markdown — conteúdo DENTRO do feed, onde 16px fica
+   * bojudo e rouba a leitura do monoespaçado. A própria referência não arredonda
+   * bloco de código assim. Raio grande é da superfície que RECEBE fala; raio
+   * pequeno é da que MOSTRA saída. */
+  --ck-radius-caixa: 16px;
+
   /* -- ritmo: duas durações e um easing. Mais que isso é indisciplina ---- */
   --ck-dur-fast: 120ms;    /* hover, foco, press */
   --ck-dur-calm: 320ms;    /* mudança de estado — ex: filete de running sumindo */
@@ -272,6 +287,40 @@ body {
 :focus-visible {
   outline: 2px solid var(--ck-focus);
   outline-offset: 2px;
+}
+
+/* O ANEL É DA CAIXA, NÃO DO CAMPO.
+ *
+ * O defeito que o Rica viu ("ele não cria uma borda nego quadrada dentro"): ao
+ * focar o composer aparecia um retângulo ciano em volta do texto, DENTRO da
+ * caixa arredondada. Duas molduras aninhadas, a de dentro quadrada.
+ *
+ * A causa não era o `outline-none` do Tailwind estar ausente — ele está lá. É
+ * cascata: a regra `:focus-visible` acima mora FORA de `@layer`, e pela spec de
+ * cascade layers estilo não-layered vence qualquer camada. As utilitárias do
+ * Tailwind 4 vivem em `@layer utilities`. Empate de especificidade (0,1,0), e
+ * a não-layered ganha por definição. O retângulo era quadrado porque `outline`
+ * segue o raio do elemento, e o `<textarea>` não tem raio.
+ *
+ * A correção segue o padrão do `input-group` do shadcn, conferido no registro
+ * antes de desenhar: o container acende com `:has(controle:focus-visible)` e o
+ * controle interno tem o próprio anel zerado. Duas diferenças nossas, ambas
+ * deliberadas:
+ *
+ * - `box-shadow` em vez de `outline`, porque box-shadow acompanha o
+ *   `border-radius` da caixa. É o ponto inteiro do conserto.
+ * - a supressão mira `.ck-campo`, não todo descendente: os BOTÕES dentro do
+ *   composer (anexo, voz, envio, esforço) mantêm o anel deles. Tirar o foco de
+ *   todo mundo consertaria o print e quebraria a navegação por teclado, que é
+ *   trocar um defeito visível por um invisível. */
+.ck-campo:focus-visible {
+  outline: none;
+}
+
+.ck-caixa:has(.ck-campo:focus-visible) {
+  box-shadow:
+    inset 0 1px 0 0 var(--ck-edge-light),
+    0 0 0 2px var(--ck-focus);
 }
 
 /* Fio de luz no topo de superfície elevada. É a assinatura da §A: luz = vida,
