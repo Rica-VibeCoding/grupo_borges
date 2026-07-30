@@ -110,8 +110,19 @@ foi erro meu de orquestração: despachei pele e instrumentação do gate no mes
   chat. O Rica apontou isso em 30/07 15:11 e está certo: o chat de verdade depende da
   decisão assistant-ui × shadcn, que espera a medição no iPhone dele. Não confundir stub
   com entrega.
-- **Tara** — livre. Quatro rodadas de auditoria entregues, todas sem tocar no repositório;
-  o `diff-viewer` dela está em `05764f2`, verificado por mim (36/36, `tsc` limpo).
+- **Tara** — **renderer de markdown entregue** em `52a7946`, verificado por mim: 50/50 no
+  `npm test`, `tsc` limpo, 14 tokens `--ck-*` e zero hex. `react-markdown` + `remark-gfm` nas
+  **mesmas versões do v1**, decisão minha: trocar de parser criaria divergência de saída que o
+  item 5 do gate obrigaria a provar de novo. Realce de sintaxe ficou **deliberadamente fora** —
+  o `rehype-highlight` do v1 traz hex próprio, e cor definitiva é rodada dedicada (§9.1).
+  Agora no **botão copiar**, que sai de uma divergência que ela mesma reportou (ver abaixo).
+  Antes disso: `diff-viewer` em `05764f2` e quatro rodadas de auditoria sem tocar no repositório.
+- ⚠️ **Divergências v1 × v2 no markdown, abertas** — reportadas por ela, o que é o
+  comportamento certo: (a) **o botão "copiar" do bloco de código sumiu** — não é estética, é
+  função que o Rica usa, e está sendo fechada agora; (b) sem `rehype-raw`, HTML cru não é
+  interpretado; (c) blocos não recebem as classes do `rehype-highlight`. Nota de método: no v1
+  o realce é aplicado **seletivamente** (só `chat-messages.tsx:711`; as outras quatro chamadas
+  usam apenas `remarkPlugins`), então deixá-lo de fora não é regressão geral.
 - **Hiro** — **bloqueado**, não conta como frente: todo envio cai no modal *"Fable 5 now
   uses usage credits — R$ 67,44 in credits"*, que come o prompt. Não é quota Kimi (49/100,
   reset 02/08) nem env var errada. Opção 1 é transação financeira → decisão do Rica.
