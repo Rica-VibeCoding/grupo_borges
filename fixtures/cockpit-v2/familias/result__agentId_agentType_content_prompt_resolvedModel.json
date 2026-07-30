@@ -1,0 +1,86 @@
+{
+  "familia": "result__agentId_agentType_content_prompt_resolvedModel",
+  "ocorrencias": 2,
+  "evento": {
+    "id": 358935,
+    "kind": "user",
+    "uuid": "7c765ce8-0513-4f13-a157-6a2ad6d775ae",
+    "parent_uuid": "535df8f2-8bcf-4dd7-83d1-40231b8e2a53",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": true,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:35:18.106Z",
+    "created_at": 1785209718,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01Xx1AfR4UUNigMH5mcnDjmA",
+          "type": "tool_result",
+          "content": [
+            {
+              "type": "text",
+              "text": "<texto redigido · 16661 chars>"
+            }
+          ]
+        }
+      ]
+    },
+    "agent_id": "a8d94ead4f11ef0db",
+    "tool_use_result": {
+      "status": "completed",
+      "prompt": "<texto redigido · 1858 chars>",
+      "agentId": "a52cc756ebf5ff9c9",
+      "agentType": "Explore",
+      "content": [
+        {
+          "type": "text",
+          "text": "<texto redigido · 16661 chars>"
+        }
+      ],
+      "resolvedModel": "claude-opus-5[1m]",
+      "totalDurationMs": 193145,
+      "totalTokens": 131685,
+      "totalToolUseCount": 33,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 263,
+        "cache_read_input_tokens": 122802,
+        "output_tokens": 8618,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 263
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 8618,
+            "cache_read_input_tokens": 122802,
+            "cache_creation_input_tokens": 263,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 263,
+              "ephemeral_1h_input_tokens": 0
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "toolStats": {
+        "readCount": 5,
+        "searchCount": 0,
+        "bashCount": 28,
+        "editFileCount": 0,
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "otherToolCount": 0
+      }
+    }
+  }
+}

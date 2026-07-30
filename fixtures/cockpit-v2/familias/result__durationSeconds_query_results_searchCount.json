@@ -1,0 +1,52 @@
+{
+  "familia": "result__durationSeconds_query_results_searchCount",
+  "ocorrencias": 165,
+  "evento": {
+    "id": 358601,
+    "kind": "user",
+    "uuid": "22914685-a6f2-4b46-b908-2f91f993d2a2",
+    "parent_uuid": "68145e14-59dd-4b87-bc17-74802cab3c34",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": true,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:32:15.594Z",
+    "created_at": 1785209535,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01NsWE1hquSZkoQwHPygNs57",
+          "type": "tool_result",
+          "content": "<texto redigido · 3096 chars>"
+        }
+      ]
+    },
+    "agent_id": "aa0aec7354d28aa9f",
+    "tool_use_result": {
+      "query": "clickable table row vs side panel drawer UX pattern data table accessibility",
+      "results": [
+        {
+          "tool_use_id": "srvtoolu_01Mx7hYHLpsod4XDGmcwdxbK",
+          "content": [
+            {
+              "title": "Data Table Design UX Patterns & Best Practices - Pencil & Paper",
+              "url": "<texto redigido · 81 chars>"
+            },
+            {
+              "title": "<texto redigido · 127 chars>",
+              "url": "https://arxiv.org/pdf/2209.01741"
+            },
+            {
+              "title": "6 Best Practices for Enterprise Table UX Design - Denovers | Denovers",
+              "url": "https://www.denovers.com/blog/enterprise-table-ux-design"
+            },
+            "<+5 itens do mesmo formato>"
+          ]
+        },
+        "<texto redigido · 1502 chars>"
+      ],
+      "durationSeconds": 9.003043518999592,
+      "searchCount": 1
+    }
+  }
+}

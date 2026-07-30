@@ -1,0 +1,43 @@
+{
+  "familia": "result__method_projects",
+  "ocorrencias": 1,
+  "evento": {
+    "id": 359861,
+    "kind": "user",
+    "uuid": "23109bc5-9553-4d1f-a173-b0273075ff15",
+    "parent_uuid": "d53e2615-4ac2-42c3-878b-31056ece4d68",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T05:47:46.756Z",
+    "created_at": 1785217666,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01JMoWxScLktPDxMSZcPBW4j",
+          "type": "tool_result",
+          "content": "<texto redigido · 319 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "method": "list_projects",
+      "projects": [
+        {
+          "projectId": "019e12e9-66da-7e85-97ac-bf3441b67654",
+          "name": "WoodPro Design System",
+          "isOwned": true,
+          "updatedAt": "2026-06-14T05:02:30.175725Z"
+        },
+        {
+          "projectId": "0c2774c8-a694-4773-9d7d-4dfe947491dd",
+          "name": "Fluyt Design System",
+          "isOwned": true,
+          "updatedAt": "2026-06-14T04:54:30.862879Z"
+        }
+      ]
+    }
+  }
+}

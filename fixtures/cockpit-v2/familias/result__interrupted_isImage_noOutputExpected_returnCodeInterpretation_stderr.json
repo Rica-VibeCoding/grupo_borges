@@ -1,0 +1,35 @@
+{
+  "familia": "result__interrupted_isImage_noOutputExpected_returnCodeInterpretation_stderr",
+  "ocorrencias": 1,
+  "evento": {
+    "id": 366882,
+    "kind": "user",
+    "uuid": "6eedfc80-86f5-4194-970e-e1aace69b0a2",
+    "parent_uuid": "81cdbeaf-d92b-4570-8acb-e772f1dcca54",
+    "session_id": "b7f26458-d1e6-43ba-9dbc-7f792fcc49d4",
+    "is_sidechain": true,
+    "user_type": "external",
+    "timestamp": "2026-07-30T02:12:17.034Z",
+    "created_at": 1785377537,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01SiqR2aXMmUQQD7wLraCX5s",
+          "type": "tool_result",
+          "content": "(Bash completed with no output)",
+          "is_error": false
+        }
+      ]
+    },
+    "agent_id": "ac113ce88097c8293",
+    "tool_use_result": {
+      "stdout": "",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "returnCodeInterpretation": "No matches found",
+      "noOutputExpected": false
+    }
+  }
+}

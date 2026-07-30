@@ -1,0 +1,36 @@
+{
+  "familia": "result__interrupted_isImage_noOutputExpected_persistedOutputPath_persistedOutputSize",
+  "ocorrencias": 5,
+  "evento": {
+    "id": 358476,
+    "kind": "user",
+    "uuid": "9aee7dbf-4b07-401d-bfa6-3b8d267b01f6",
+    "parent_uuid": "307017e1-e642-4518-bcfe-2a870b3ae7eb",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": true,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:31:25.403Z",
+    "created_at": 1785209485,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01BxwiZZPZsdtuP6Z5VmNiRW",
+          "type": "tool_result",
+          "content": "<texto redigido · 2162 chars>",
+          "is_error": false
+        }
+      ]
+    },
+    "agent_id": "a8d94ead4f11ef0db",
+    "tool_use_result": {
+      "stdout": "<texto redigido · 29740 chars>",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false,
+      "persistedOutputPath": "<texto redigido · 125 chars>",
+      "persistedOutputSize": 53240
+    }
+  }
+}

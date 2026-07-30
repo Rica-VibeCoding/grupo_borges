@@ -1,0 +1,70 @@
+{
+  "familia": "tool__Read",
+  "ocorrencias": 83,
+  "evento": {
+    "id": 358299,
+    "kind": "assistant",
+    "uuid": "e5e4f76b-fcdc-479c-81a8-bbe9505c434c",
+    "parent_uuid": "8bc95952-e517-4cf3-a32d-7a9bec7415a0",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:16:50.610Z",
+    "created_at": 1785208611,
+    "message": {
+      "model": "claude-opus-5",
+      "id": "msg_011CdTjK7TNAt7dVv3vT2L1p",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01HARkCDLHQbdSUyTwZW1nyY",
+          "name": "Read",
+          "input": {
+            "file_path": "/home/clawd/repos/ze_claude/ze-shared/.claude/skills/canal-telegram/SKILL.md"
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 680,
+        "cache_read_input_tokens": 57725,
+        "output_tokens": 89,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 680,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 89,
+            "cache_read_input_tokens": 57725,
+            "cache_creation_input_tokens": 680,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 680
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "diagnostics": null
+    },
+    "agent_id": null,
+    "tool_use_result": null
+  }
+}

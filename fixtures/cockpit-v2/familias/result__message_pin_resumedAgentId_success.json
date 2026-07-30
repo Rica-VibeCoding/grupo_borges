@@ -1,0 +1,41 @@
+{
+  "familia": "result__message_pin_resumedAgentId_success",
+  "ocorrencias": 3,
+  "evento": {
+    "id": 366506,
+    "kind": "user",
+    "uuid": "f82425b9-d15d-45f5-802e-cd9d9270555b",
+    "parent_uuid": "5d098064-3cfb-4a24-8568-9ca84141b731",
+    "session_id": "b7f26458-d1e6-43ba-9dbc-7f792fcc49d4",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-30T02:09:56.233Z",
+    "created_at": 1785377404,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01Uw15dGre3AbaUFNM2Hoyy9",
+          "type": "tool_result",
+          "content": [
+            {
+              "type": "text",
+              "text": "<texto redigido · 402 chars>"
+            }
+          ]
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "success": true,
+      "message": "<texto redigido · 259 chars>",
+      "resumedAgentId": "a13ed7dac76527954",
+      "pin": {
+        "id": "a13ed7dac76527954",
+        "name": "a13ed7dac76527954",
+        "ref": "309e2e"
+      }
+    }
+  }
+}

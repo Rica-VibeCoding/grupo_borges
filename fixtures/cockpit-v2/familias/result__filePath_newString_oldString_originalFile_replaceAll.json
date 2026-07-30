@@ -1,0 +1,48 @@
+{
+  "familia": "result__filePath_newString_oldString_originalFile_replaceAll",
+  "ocorrencias": 35,
+  "evento": {
+    "id": 358358,
+    "kind": "user",
+    "uuid": "b34efa3e-abab-436c-a4fd-9e23bb74435f",
+    "parent_uuid": "f63d0080-73bb-43cf-9037-039400c932b3",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:26:00.001Z",
+    "created_at": 1785209160,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_0113cAHG3248xFUzRXv2Ex1u",
+          "type": "tool_result",
+          "content": "<texto redigido · 218 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "filePath": "<texto redigido · 112 chars>",
+      "oldString": "<texto redigido · 149 chars>",
+      "newString": "<texto redigido · 722 chars>",
+      "originalFile": "<texto redigido · 5978 chars>",
+      "structuredPatch": [
+        {
+          "oldStart": 115,
+          "oldLines": 8,
+          "newStart": 115,
+          "newLines": 14,
+          "lines": [
+            " ",
+            " ## 4. Dúvidas em aberto (aguardando Rica)",
+            " ",
+            "<+13 itens do mesmo formato>"
+          ]
+        }
+      ],
+      "userModified": false,
+      "replaceAll": false
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "familia": "bloco__tool_result",
+  "ocorrencias": 1499,
+  "evento": {
+    "id": 358296,
+    "kind": "user",
+    "uuid": "13a11b52-1a43-4026-ada8-b58114f9787e",
+    "parent_uuid": "cfafcdf6-b4a5-4eaf-be7e-95b7630ddd76",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:16:48.739Z",
+    "created_at": 1785208609,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01Cz4F6mCCPGWAhLvRnZPBVP",
+          "content": "Launching skill: canal-telegram"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "success": true,
+      "commandName": "canal-telegram"
+    }
+  }
+}

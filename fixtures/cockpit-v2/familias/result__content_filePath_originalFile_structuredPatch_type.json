@@ -1,0 +1,34 @@
+{
+  "familia": "result__content_filePath_originalFile_structuredPatch_type",
+  "ocorrencias": 33,
+  "evento": {
+    "id": 358334,
+    "kind": "user",
+    "uuid": "46101414-7af4-4d20-ba51-23932c707f16",
+    "parent_uuid": "b0787121-c456-45b0-8800-d2b909064c9c",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:20:55.326Z",
+    "created_at": 1785208855,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01J81KYbeTZnXma5kkcn6fND",
+          "type": "tool_result",
+          "content": "<texto redigido · 208 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "type": "create",
+      "filePath": "<texto redigido · 112 chars>",
+      "content": "<texto redigido · 5978 chars>",
+      "structuredPatch": [],
+      "originalFile": null,
+      "userModified": false
+    }
+  }
+}

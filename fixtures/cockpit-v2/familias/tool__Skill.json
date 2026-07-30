@@ -1,0 +1,70 @@
+{
+  "familia": "tool__Skill",
+  "ocorrencias": 6,
+  "evento": {
+    "id": 358295,
+    "kind": "assistant",
+    "uuid": "cfafcdf6-b4a5-4eaf-be7e-95b7630ddd76",
+    "parent_uuid": "208bea73-38cb-4108-959b-58361c8b7354",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:16:48.580Z",
+    "created_at": 1785208608,
+    "message": {
+      "model": "claude-opus-5",
+      "id": "msg_011CdTjJcULrvMoPF5zcqQ4L",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01Cz4F6mCCPGWAhLvRnZPBVP",
+          "name": "Skill",
+          "input": {
+            "skill": "canal-telegram"
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 331,
+        "cache_read_input_tokens": 57394,
+        "output_tokens": 384,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 331,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 384,
+            "cache_read_input_tokens": 57394,
+            "cache_creation_input_tokens": 331,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 331
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "diagnostics": null
+    },
+    "agent_id": null,
+    "tool_use_result": null
+  }
+}

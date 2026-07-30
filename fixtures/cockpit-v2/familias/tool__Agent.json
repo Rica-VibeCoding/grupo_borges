@@ -1,0 +1,72 @@
+{
+  "familia": "tool__Agent",
+  "ocorrencias": 19,
+  "evento": {
+    "id": 358508,
+    "kind": "assistant",
+    "uuid": "80bfff1e-232e-4198-9e3a-f01c2725e5e9",
+    "parent_uuid": "6996b4f0-3c28-4b02-a6d3-314fc22d6b19",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:31:08.785Z",
+    "created_at": 1785209512,
+    "message": {
+      "model": "claude-opus-5",
+      "id": "msg_011CdTkNJtthczSTZXjeorLo",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01SHBUyuCcuJGMFzxZX6ocKC",
+          "name": "Agent",
+          "input": {
+            "description": "Base factual código das telas",
+            "subagent_type": "general-purpose",
+            "prompt": "<texto redigido · 2916 chars>"
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ],
+      "stop_reason": "tool_use",
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 3645,
+        "cache_read_input_tokens": 85026,
+        "output_tokens": 5114,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 3645,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "not_available",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 5114,
+            "cache_read_input_tokens": 85026,
+            "cache_creation_input_tokens": 3645,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 3645
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard"
+      },
+      "diagnostics": null
+    },
+    "agent_id": null,
+    "tool_use_result": null
+  }
+}

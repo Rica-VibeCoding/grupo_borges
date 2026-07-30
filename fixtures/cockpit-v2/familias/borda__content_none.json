@@ -1,0 +1,18 @@
+{
+  "familia": "borda__content_none",
+  "ocorrencias": 199,
+  "evento": {
+    "id": 358236,
+    "kind": "attachment",
+    "uuid": "8454f610-02e8-4b27-96e6-97adb4642513",
+    "parent_uuid": "227ae22c-8259-4ea2-9afd-97c732b1a2c7",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T02:19:11.003Z",
+    "created_at": 1785205151,
+    "message": null,
+    "agent_id": null,
+    "tool_use_result": null
+  }
+}

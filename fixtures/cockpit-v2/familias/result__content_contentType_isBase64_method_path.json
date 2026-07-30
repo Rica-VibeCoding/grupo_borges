@@ -1,0 +1,34 @@
+{
+  "familia": "result__content_contentType_isBase64_method_path",
+  "ocorrencias": 3,
+  "evento": {
+    "id": 359872,
+    "kind": "user",
+    "uuid": "278a67a3-49a4-47c5-9304-aeb020985728",
+    "parent_uuid": "96e21107-4f31-41bf-939a-0b53d50559f1",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T05:48:04.073Z",
+    "created_at": 1785217684,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_015gp2KTi5Qvj36eAtALc5mr",
+          "type": "tool_result",
+          "content": "<texto redigido · 19575 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "method": "get_file",
+      "path": "FLUYT_UI_REFERENCE.md",
+      "content": "<texto redigido · 18996 chars>",
+      "contentType": "text/markdown",
+      "isBase64": false,
+      "truncated": false
+    }
+  }
+}

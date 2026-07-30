@@ -1,0 +1,35 @@
+{
+  "familia": "result__content_filePath_memdirStamped_originalFile_structuredPatch",
+  "ocorrencias": 7,
+  "evento": {
+    "id": 359780,
+    "kind": "user",
+    "uuid": "68e77fe2-6c64-4592-9302-350ba3ce28fa",
+    "parent_uuid": "cd12389c-1ed5-4058-ac3f-881532cc40dd",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T04:23:43.056Z",
+    "created_at": 1785212623,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01Rzx3ALq28joTWZoCyvWkPS",
+          "type": "tool_result",
+          "content": "<texto redigido · 125 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "type": "create",
+      "filePath": "<texto redigido · 95 chars>",
+      "content": "<texto redigido · 1549 chars>",
+      "structuredPatch": [],
+      "originalFile": null,
+      "userModified": false,
+      "memdirStamped": true
+    }
+  }
+}

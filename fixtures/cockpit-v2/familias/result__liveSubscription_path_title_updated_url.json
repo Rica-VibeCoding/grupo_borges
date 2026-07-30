@@ -1,0 +1,34 @@
+{
+  "familia": "result__liveSubscription_path_title_updated_url",
+  "ocorrencias": 3,
+  "evento": {
+    "id": 359191,
+    "kind": "user",
+    "uuid": "9d973e1f-252f-43e3-b16c-2f60ffc9ac76",
+    "parent_uuid": "333708bb-1364-475e-b555-0571f373c290",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:54:26.699Z",
+    "created_at": 1785210866,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01VaombJH96Rmm9F4QCk6R48",
+          "type": "tool_result",
+          "content": "<texto redigido · 717 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "url": "https://claude.ai/code/artifact/664e38c3-6d52-4343-bdeb-9f4a578815ea",
+      "path": "<texto redigido · 115 chars>",
+      "title": "Redesenho das telas — o que decidir",
+      "updated": false,
+      "version": "1785210866-7ce5",
+      "liveSubscription": "flag_off"
+    }
+  }
+}

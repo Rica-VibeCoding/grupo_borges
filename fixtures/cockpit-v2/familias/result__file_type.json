@@ -1,0 +1,36 @@
+{
+  "familia": "result__file_type",
+  "ocorrencias": 82,
+  "evento": {
+    "id": 358300,
+    "kind": "user",
+    "uuid": "57739889-2fde-4c43-94fb-0c852aef1aa3",
+    "parent_uuid": "e5e4f76b-fcdc-479c-81a8-bbe9505c434c",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:16:50.706Z",
+    "created_at": 1785208611,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01HARkCDLHQbdSUyTwZW1nyY",
+          "type": "tool_result",
+          "content": "<texto redigido · 5999 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "type": "text",
+      "file": {
+        "filePath": "/home/clawd/repos/ze_claude/ze-shared/.claude/skills/canal-telegram/SKILL.md",
+        "content": "<texto redigido · 5519 chars>",
+        "numLines": 147,
+        "startLine": 1,
+        "totalLines": 147
+      }
+    }
+  }
+}

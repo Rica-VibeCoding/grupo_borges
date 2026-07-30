@@ -1,0 +1,35 @@
+{
+  "familia": "result__backgroundTaskId_interrupted_isImage_noOutputExpected_stderr",
+  "ocorrencias": 12,
+  "evento": {
+    "id": 359098,
+    "kind": "user",
+    "uuid": "4d0f2fe4-d06f-487c-87af-b3bc62be11de",
+    "parent_uuid": "be2cc631-ba3d-48f9-8891-7d7b237b7564",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:44:16.367Z",
+    "created_at": 1785210257,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01QchixFTeDeY7Vbn7SeUs5B",
+          "type": "tool_result",
+          "content": "<texto redigido · 281 chars>",
+          "is_error": false
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "stdout": "",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false,
+      "backgroundTaskId": "b0bmcpxe8"
+    }
+  }
+}

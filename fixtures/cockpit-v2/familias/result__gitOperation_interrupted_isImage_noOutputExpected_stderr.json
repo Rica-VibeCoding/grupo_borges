@@ -1,0 +1,39 @@
+{
+  "familia": "result__gitOperation_interrupted_isImage_noOutputExpected_stderr",
+  "ocorrencias": 3,
+  "evento": {
+    "id": 360151,
+    "kind": "user",
+    "uuid": "46c0fe46-1ca4-4b33-9e06-228b6ba7be77",
+    "parent_uuid": "7f8e1ff6-74af-430e-a4bf-75236ab99063",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T15:38:25.335Z",
+    "created_at": 1785253105,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01NrUq1GkuN4zSR3CbfwXzWx",
+          "type": "tool_result",
+          "content": "<texto redigido · 205 chars>",
+          "is_error": false
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "stdout": "<texto redigido · 149 chars>",
+      "stderr": "\nShell cwd was reset to /home/clawd/repos/fluyt/apps/com",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false,
+      "gitOperation": {
+        "push": {
+          "branch": "main"
+        }
+      }
+    }
+  }
+}

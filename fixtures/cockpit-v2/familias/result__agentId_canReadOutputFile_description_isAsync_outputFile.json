@@ -1,0 +1,41 @@
+{
+  "familia": "result__agentId_canReadOutputFile_description_isAsync_outputFile",
+  "ocorrencias": 17,
+  "evento": {
+    "id": 358509,
+    "kind": "user",
+    "uuid": "a58ad9b3-162a-41ac-89d1-ea678a606634",
+    "parent_uuid": "80bfff1e-232e-4198-9e3a-f01c2725e5e9",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:31:08.843Z",
+    "created_at": 1785209512,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01SHBUyuCcuJGMFzxZX6ocKC",
+          "type": "tool_result",
+          "content": [
+            {
+              "type": "text",
+              "text": "<texto redigido · 1058 chars>"
+            }
+          ]
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "isAsync": true,
+      "status": "async_launched",
+      "agentId": "a8d94ead4f11ef0db",
+      "description": "Base factual código das telas",
+      "resolvedModel": "claude-opus-5[1m]",
+      "prompt": "<texto redigido · 2916 chars>",
+      "outputFile": "<texto redigido · 117 chars>",
+      "canReadOutputFile": true
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "familia": "result__bytes_code_codeText_durationMs_result",
+  "ocorrencias": 245,
+  "evento": {
+    "id": 358630,
+    "kind": "user",
+    "uuid": "ff663577-dca9-4902-8df7-b9bf990b76ae",
+    "parent_uuid": "38f8695b-1f60-416f-b98c-baffc1eb2033",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": true,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:32:29.287Z",
+    "created_at": 1785209549,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01FRWfj5j384Pebxk6bLdKce",
+          "type": "tool_result",
+          "content": "<texto redigido · 820 chars>"
+        }
+      ]
+    },
+    "agent_id": "aa0aec7354d28aa9f",
+    "tool_use_result": {
+      "bytes": 2954287,
+      "code": 200,
+      "codeText": "OK",
+      "result": "<texto redigido · 820 chars>",
+      "durationMs": 4211,
+      "url": "https://carbondesignsystem.com/components/data-table/usage/"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "familia": "result__message_pin_success",
+  "ocorrencias": 4,
+  "evento": {
+    "id": 366839,
+    "kind": "user",
+    "uuid": "196fc97a-8056-44c1-bfb8-df9391f37939",
+    "parent_uuid": "c6fe6e3b-38d9-4c91-864d-f6279b225af3",
+    "session_id": "b7f26458-d1e6-43ba-9dbc-7f792fcc49d4",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-30T02:12:00.694Z",
+    "created_at": 1785377520,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_014sm6zR2tQsCh2cjHmes86W",
+          "type": "tool_result",
+          "content": [
+            {
+              "type": "text",
+              "text": "<texto redigido · 176 chars>"
+            }
+          ]
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "success": true,
+      "message": "Message queued for delivery to a2c44a4ca9248dcd0 at its next tool round.",
+      "pin": {
+        "id": "a2c44a4ca9248dcd0",
+        "name": "a2c44a4ca9248dcd0",
+        "ref": "9de3d4"
+      }
+    }
+  }
+}

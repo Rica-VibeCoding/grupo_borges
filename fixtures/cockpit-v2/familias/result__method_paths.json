@@ -1,0 +1,35 @@
+{
+  "familia": "result__method_paths",
+  "ocorrencias": 1,
+  "evento": {
+    "id": 359863,
+    "kind": "user",
+    "uuid": "cefa627b-d773-46da-b839-d0b67377a5aa",
+    "parent_uuid": "51d817b9-06a4-46a1-9513-ca8a5cd8249c",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T05:47:56.955Z",
+    "created_at": 1785217682,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01Hciqm6gU4Fiaf9S9qdmMzN",
+          "type": "tool_result",
+          "content": "<texto redigido · 2736 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "method": "list_files",
+      "paths": [
+        "assets",
+        "assets/illus",
+        "assets/screens",
+        "<+92 itens do mesmo formato>"
+      ]
+    }
+  }
+}

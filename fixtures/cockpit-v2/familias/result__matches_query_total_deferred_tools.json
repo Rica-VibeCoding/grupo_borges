@@ -1,0 +1,38 @@
+{
+  "familia": "result__matches_query_total_deferred_tools",
+  "ocorrencias": 31,
+  "evento": {
+    "id": 358306,
+    "kind": "user",
+    "uuid": "e8d4f106-acd6-4362-9ab6-ce21e1a956b5",
+    "parent_uuid": "3d7a0f06-8203-46ea-86ae-befe72629aa2",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:17:00.962Z",
+    "created_at": 1785208621,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01RNNasmWuLZSy8iHubJTrWU",
+          "content": [
+            {
+              "type": "tool_reference",
+              "tool_name": "mcp__plugin_telegram_telegram__reply"
+            }
+          ]
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "matches": [
+        "mcp__plugin_telegram_telegram__reply"
+      ],
+      "query": "select:mcp__plugin_telegram_telegram__reply",
+      "total_deferred_tools": 137
+    }
+  }
+}

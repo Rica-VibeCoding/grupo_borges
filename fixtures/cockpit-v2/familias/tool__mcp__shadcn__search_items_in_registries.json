@@ -1,0 +1,56 @@
+{
+  "familia": "tool__mcp__shadcn__search_items_in_registries",
+  "ocorrencias": 4,
+  "evento": {
+    "id": 364997,
+    "kind": "assistant",
+    "uuid": "ba0108c7-f986-4190-98c7-5321b21b38e2",
+    "parent_uuid": "0f33102c-803e-4ba0-b65e-db948a8f5aab",
+    "session_id": "b7f26458-d1e6-43ba-9dbc-7f792fcc49d4",
+    "is_sidechain": true,
+    "user_type": "external",
+    "timestamp": "2026-07-30T01:49:57.729Z",
+    "created_at": 1785376197,
+    "message": {
+      "model": "claude-opus-5",
+      "id": "msg_011CdXQJT7pxgAhYAQvWds5w",
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01B5rYg6g9XYxyiRr79KgiaH",
+          "name": "mcp__shadcn__search_items_in_registries",
+          "input": {
+            "query": "sidebar",
+            "registries": [
+              "@shadcn"
+            ],
+            "limit": 10
+          },
+          "caller": {
+            "type": "direct"
+          }
+        }
+      ],
+      "stop_reason": null,
+      "stop_sequence": null,
+      "stop_details": null,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 1049,
+        "cache_read_input_tokens": 38533,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 1049,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 2,
+        "service_tier": "standard",
+        "inference_geo": "not_available"
+      },
+      "diagnostics": null
+    },
+    "agent_id": "a13ed7dac76527954",
+    "tool_use_result": null
+  }
+}

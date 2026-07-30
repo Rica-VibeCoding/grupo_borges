@@ -1,0 +1,34 @@
+{
+  "familia": "result__interrupted_isImage_noOutputExpected_stderr_stdout",
+  "ocorrencias": 679,
+  "evento": {
+    "id": 358303,
+    "kind": "user",
+    "uuid": "533c2950-5833-4a6d-8370-2361a6229803",
+    "parent_uuid": "b1cdbc6a-e345-427a-a61f-5ab4b2ab77ea",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:16:56.754Z",
+    "created_at": 1785208616,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01HxgKszXKdWaSFb3BcjbPHT",
+          "type": "tool_result",
+          "content": "<texto redigido · 525 chars>",
+          "is_error": false
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "stdout": "<texto redigido · 525 chars>",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false
+    }
+  }
+}

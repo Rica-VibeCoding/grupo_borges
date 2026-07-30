@@ -1,0 +1,49 @@
+{
+  "familia": "result__filePath_memdirStamped_newString_oldString_originalFile",
+  "ocorrencias": 2,
+  "evento": {
+    "id": 359047,
+    "kind": "user",
+    "uuid": "8bb866b9-ac92-4e73-a415-1c46e8bb1b4e",
+    "parent_uuid": "81c0a48a-74d1-44cf-a087-d5627d65ca8e",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T03:38:32.556Z",
+    "created_at": 1785209912,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01Gr8y65qB63ewPqMtSUGWQE",
+          "type": "tool_result",
+          "content": "<texto redigido · 130 chars>"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "filePath": "<texto redigido · 90 chars>",
+      "oldString": "<texto redigido · 103 chars>",
+      "newString": "<texto redigido · 532 chars>",
+      "originalFile": "<texto redigido · 961 chars>",
+      "structuredPatch": [
+        {
+          "oldStart": 5,
+          "oldLines": 11,
+          "newStart": 5,
+          "newLines": 13,
+          "lines": [
+            "   node_type: memory",
+            "   type: feedback",
+            "   originSessionId: d6cf8b68-cf12-423c-9fa8-f382a2c97e48",
+            "<+11 itens do mesmo formato>"
+          ]
+        }
+      ],
+      "userModified": false,
+      "replaceAll": false,
+      "memdirStamped": true
+    }
+  }
+}

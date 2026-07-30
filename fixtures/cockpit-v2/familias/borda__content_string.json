@@ -1,0 +1,21 @@
+{
+  "familia": "borda__content_string",
+  "ocorrencias": 87,
+  "evento": {
+    "id": 358227,
+    "kind": "user",
+    "uuid": "42a81800-d863-4ed4-8c8f-fd046747c332",
+    "parent_uuid": "12790849-8a57-43a0-a5c4-414a975c36ec",
+    "session_id": "8d743f0a-8d1e-4b10-b476-455da794660e",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-28T02:19:00.020Z",
+    "created_at": 1785205140,
+    "message": {
+      "role": "user",
+      "content": "<texto redigido · 123 chars>"
+    },
+    "agent_id": null,
+    "tool_use_result": null
+  }
+}

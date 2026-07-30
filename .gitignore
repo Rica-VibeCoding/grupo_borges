@@ -58,3 +58,9 @@ temp/
 
 # Playwright MCP runtime
 .playwright-mcp/
+
+# Transcripts SSE crus do cockpit v2 (contrato de paridade — passo 1 da fusão).
+# 22 MB de conversa real da frota: dado privado do Rica. Só as fixtures de
+# família REDIGIDAS entram no git (fixtures/cockpit-v2/familias/).
+# Regravar com fixtures/cockpit-v2/gravar-transcripts.py.
+fixtures/cockpit-v2/transcripts/

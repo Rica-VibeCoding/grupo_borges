@@ -1,0 +1,29 @@
+{
+  "familia": "result__tasks",
+  "ocorrencias": 1,
+  "evento": {
+    "id": 368152,
+    "kind": "user",
+    "uuid": "2acb8997-43c7-4518-a8d3-dff5d3efa84e",
+    "parent_uuid": "0d04f111-802d-4e79-8285-459567472701",
+    "session_id": "b7f26458-d1e6-43ba-9dbc-7f792fcc49d4",
+    "is_sidechain": false,
+    "user_type": "external",
+    "timestamp": "2026-07-30T03:30:04.163Z",
+    "created_at": 1785382205,
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "tool_use_id": "toolu_01GkoTXCtANtMooJkSN94fKa",
+          "type": "tool_result",
+          "content": "No tasks found"
+        }
+      ]
+    },
+    "agent_id": null,
+    "tool_use_result": {
+      "tasks": []
+    }
+  }
+}
