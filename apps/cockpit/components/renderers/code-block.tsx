@@ -87,27 +87,31 @@ export function CodeBlock({ children, className, ...props }: CodeBlockProps) {
         : 'copiar';
 
   return (
-    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
-      <header className="flex min-h-[44px] items-center justify-end border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-2)]">
+    // SEM section/header/border/bg — ordem do Rica, 30/07: "o output da tropa
+    // não deve sair em caixa isolada". O copiar fica na mesma régua que o
+    // `Copiar` de `linha-execucao.tsx` já usa em produção: `ck-veil`, sem
+    // moldura, sem fundo — só existe quando o olho procura.
+    <div className="max-w-full">
+      <div className="flex justify-end">
         <button
           type="button"
-          className="ck-veil min-h-[44px] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-[13px] text-[var(--ck-text-secondary)]"
+          className="ck-veil min-h-[var(--ck-touch-min)] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-2)] font-sans text-[13px] text-[var(--ck-text-secondary)]"
           onClick={handleCopy}
           aria-live="polite"
         >
           {label}
         </button>
-      </header>
+      </div>
       <pre
         ref={preRef}
         className={mergeMarkdownClassName(
-          'max-w-full overflow-x-auto p-[var(--ck-space-3)] font-mono text-[13px] leading-[1.55] text-[var(--ck-text-primary)] [&>code]:bg-[var(--ck-surface-raised)] [&>code]:p-0',
+          'max-w-full overflow-x-auto font-mono text-[13px] leading-[1.55] text-[var(--ck-text-primary)] [&>code]:bg-transparent [&>code]:p-0',
           className,
         )}
         {...props}
       >
         {children}
       </pre>
-    </section>
+    </div>
   );
 }

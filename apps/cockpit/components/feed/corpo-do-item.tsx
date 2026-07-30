@@ -125,7 +125,18 @@ function Parte({ parte, lookup }: { parte: ContentPart; lookup?: ToolResultLooku
 export function CorpoDoItem({ item, lookup }: Props) {
   switch (item.kind) {
     case 'user':
-      return <Fala texto={item.text} />;
+      // Balão — ordem do Rica, 30/07: "o meu vai em balão, o de vcs fica
+      // solto". `w-fit` + `self-start` seguram a caixa no tamanho do texto
+      // dentro do flex-column do feed; sem os dois ela estica (`align-items:
+      // stretch` é o padrão do eixo cruzado) e o balão vira uma faixa cheia.
+      return (
+        <div
+          className="w-fit max-w-[var(--ck-read-mid)] self-start rounded-[var(--ck-radius-frame)]"
+          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
+        >
+          <Fala texto={item.text} />
+        </div>
+      );
     case 'user-internal':
       return <Fala texto={item.text} tom="discreto" />;
     case 'meta-decision':

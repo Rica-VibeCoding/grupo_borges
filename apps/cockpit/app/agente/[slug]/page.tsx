@@ -204,10 +204,14 @@ export default async function AgentePage({
           ) : null}
 
           {agente.pane_excerpt ? (
-            // Bloco elevado com fio de luz: é a voz da máquina, e é onde a tese
-            // do contrato aparece — log de execução, não bolha de chat.
+            // SOLTO — ordem do Rica, ao vivo (30/07): "o output da tropa não
+            // deve sair em caixa isolada, vamos usar as praticas atuais" / "o
+            // de vcs fica solto, so alinhado com o chat inbox". Revoga a nota
+            // anterior deste bloco ("log de execução, não bolha de chat"
+            // pedia a elevação `ck-lit` + fundo + moldura); a voz da máquina
+            // continua em mono, só perde a caixa — flui alinhada com o
+            // parágrafo acima, não mais um bloco à parte.
             <pre
-              className="ck-lit"
               style={{
                 // O pane é de 80 colunas e a tela tem 390px: com rolagem
                 // horizontal o FIM de cada linha some, e num log o fim da linha é
@@ -215,9 +219,6 @@ export default async function AgentePage({
                 whiteSpace: 'pre-wrap',
                 overflowWrap: 'anywhere',
                 margin: 0,
-                padding: 'var(--ck-space-3)',
-                background: 'var(--ck-surface-raised)',
-                borderRadius: 'var(--ck-radius-frame)',
                 fontFamily: 'var(--ck-font-mono)',
                 fontSize: 'var(--ck-text-sm)',
                 lineHeight: 'var(--ck-leading-body)',
