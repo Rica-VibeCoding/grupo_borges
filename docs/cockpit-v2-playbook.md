@@ -340,14 +340,79 @@ resolução não é escolher um lado:
 
 Regra prática: **se a mudança altera medida, justifica; se altera aparência, ousa.**
 
+#### A cor é da pele — e o congelado do passo 2 não pode matá-la
+
+O Daniel levantou a contradição em 30/07, antes de começar, e ela é real: a seção 6
+crava a rampa dark da OpenAI (`#212121`, `#171717`, `#303030`) e esta seção põe cor em
+autoria. Como o passo 2 da ordem **congela `TOKENS.md` + `globals.css` antes de ele
+entrar**, um congelado com a rampa da OpenAI cravada mataria a autoria de cor no
+contrato e sobraria um clone. Decidido:
+
+- **Congela:** a *estrutura* de tokens (quais existem, como se chamam), a *hierarquia*
+  entre superfícies (app < sidebar < composer < mensagem elevada) e um **piso de
+  contraste** — que é acessibilidade, não gosto, e por isso não é negociável.
+- **Não congela:** os valores de cor, a tipografia, a profundidade e o movimento.
+  A rampa da OpenAI entra como **referência de partida**, nunca como valor cravado.
+- **Quem escreve:** o Daniel escreve a metade "pele"; eu escrevo a metade "esqueleto".
+  Arquivos separados, integrados por mim — ownership por caminho, não por conceito
+  (consenso da fusão), porque dois autores no mesmo arquivo é conflito garantido.
+
+Vale notar que a seção 6 já mandava decidir a **tipografia** por critério próprio
+("Söhne" não é fato). Estender isso à cor é coerência, não concessão.
+
+#### Onde o "amei" realmente mora — o baseline mudou o alvo
+
+Segunda leitura do Daniel, e ela corrige o plano: o baseline mostra **82% de
+`tool_use`/`tool_result`**, 23 tools, 25 formas de resultado e 738 chamadas de Bash.
+A tela **não é conversa, é log de execução.** Então a peça estética central é o
+**grupo de tool, o diff, o raciocínio e a falha de tool** — não a bolha de usuário,
+que é onde um redesenho de chat naturalmente gastaria o esforço.
+
+E as duas famílias de borda (`borda__content_none.json`, 199 ocorrências;
+`borda__content_string.json`, 87) são a **matéria-prima dos estados vazios**: o
+desenho sai contra as 52 famílias reais, não contra estado inventado.
+
 **Nota operacional sobre "poder máximo":** o effort não é por agente — vem do
 `~/.claude/settings.json`, que os 7 dividem (`session_may_diverge: true` no painel
 significa que a sessão de pé pode ter outro valor em runtime). O Daniel já está em
 `xhigh`. Existe um degrau acima, `max`, aceito pelo painel para agente Claude
-(`_AGENT_PAINEL_ALLOWED_EFFORTS`). Subir o degrau sobe para todo mundo, e a frota está
-na conta **Pro** por decisão do Rica de 30/07 — cota bem menor que a Max 20x.
+(`_AGENT_PAINEL_ALLOWED_EFFORTS`). Subir o degrau sobe para todo mundo.
+
+E a frota está na conta **Pro**, com cota bem menor que a Max 20x. Precisão que o
+Daniel cobrou, porque a frase curta cravava premissa errada: a **origem foi acidente**
+— um `/login` às 00:11 de 30/07 sobrescreveu a credencial compartilhada —, e a
+**permanência é decisão** do Rica, tomada às 03:51 depois de avisado ("mantem pro").
+As duas convivem em sequência; quem lê só a primeira metade acha que há reparo
+pendente, e não há.
+
+#### Teto de contexto: 30%, sem exceção
+
+Ordem do Rica em 30/07: **nenhum agente passa de 30% da janela** — "ninguém deve".
+Vale para todas as frentes desta obra. Quem chegar perto compacta ou limpa antes de
+continuar, e quem orquestra confere antes de despachar tarefa grande. Numa obra com
+três frentes paralelas isso é restrição de planejamento, não detalhe operacional:
+tarefa que só cabe estourando o teto está mal fatiada.
 
 Contrato entre camadas precisa estar escrito antes de qualquer sessão paralela abrir. Sem isso, três Daniels produzem três estilos.
+
+### Ownership por caminho — a janela do contrato de estética
+
+O Daniel apontou que "a camada visual é dele" colide com "Daniel ×2/×3 em camadas
+distintas", já que estética atravessa chrome, chat e voz — e que pela minha própria
+regra o contrato tem de sair de **uma** cabeça antes das paralelas abrirem. Está
+certo. Concedida a janela: ele escreve enquanto eu faço o scaffold, em paralelo seguro
+porque os caminhos não se cruzam.
+
+| Caminho | Dono |
+|---|---|
+| `docs/cockpit-v2-estetica.md` (novo) + metade "pele" dos tokens | **Daniel** |
+| `apps/cockpit/**` (scaffold), `packages/cockpit-core/**` | **Pavan** |
+| `STACK.md`, `DATA-CONTRACT.md`, `OWNERSHIP.md`, metade "esqueleto" dos tokens | **Pavan** |
+| `globals.css` congelado — união das duas metades | **Pavan**, na integração |
+| `apps/web` (cockpit atual) | **ninguém** |
+
+As sessões paralelas **consomem** o contrato de estética; não o reescrevem. Divergência
+de estilo depois de aberto vira issue contra o contrato, não edição local.
 
 ## 10. Fontes internas consultadas
 
