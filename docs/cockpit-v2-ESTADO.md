@@ -334,3 +334,41 @@ Tara em `lib/envio.ts` + a exceção pontual em `apps/api/`. `components/rendere
 
 ⚠️ **Ainda esperando o Rica, e nenhum de nós resolve:** o veredito estético da TROPA, o
 conflito 32px × 44px (§11), e a medição no iPhone (v2 em :3444, baseline em :3443).
+
+## 4.5 Fim do turno de 30/07 (~17h40) — o que fica para a próxima sessão
+
+**Conserto do "enviado" fechado nas três peças**, todas conferidas por mim rodando os
+testes, não pela narrativa: redutor `lib/envio.ts` (`71b15b8`), fronteira
+`event_boundary_id` no `POST /input` (`bb730f5`) e o hook `lib/usa-envio.ts` (`3dfc592`,
+166/166, `tsc` limpo). **Falta só a ligação no composer** — é do Daniel, e eu segurei de
+propósito enquanto ele estava com o arquivo aberto no push-to-talk.
+
+**Suíte do back voltou ao verde:** 190 passed, 2 xfailed, zero failures (era 176 com 8
+vermelhos). Os 8 eram teste desatualizado desde `a501c87` (`derive_agent_status` sem o
+parâmetro `instances`), não bug de produção — a Tara reescreveu os casos com substância
+em vez de esvaziar, e não tocou em `apps/api` fora de `tests/`.
+
+**Em voo quando o turno fechou:** o Daniel no push-to-talk (`usa-gravador.ts`, `voz.ts`,
+`captura-voz.tsx`, rota `/voz` — ainda não commitado) mais as duas correções que o Rica
+pediu no composer: o **retângulo azul de foco** dentro da caixa arredondada (ele estava
+inspecionando em vez de chutar) e o **raio de 8px**, macio demais para a referência.
+
+⚠️ **Hiro bloqueado, e a causa está medida:** o `429` da Kimi é **limite de tamanho**, não
+sobrecarga que passa esperando — 200 bytes respondem 200 em 1 s, 12 KB já falham, e a
+quota não se move. Qualquer turno real passa de 12 KB, então **recolar o despacho é
+inútil**. A frente dele (`components/feed/**`, o feed sem `assistant-ui`) está parada. Os
+caminhos são esperar, liberar outro motor (o Rica **recusou**: sempre k3) ou passar a
+frente para outro.
+
+**Regra nova, permanente, do Rica:** antes de desenhar componente de UI, **verificar se já
+existe pronto** (MCP `shadcn` está ligado). Não vale para trocar o que já está aprovado.
+
+**Conta:** a frota voltou para a **Max** às ~17:35 — a Pro estourou a cota. Confirmado no
+servidor (`subscriptionType: max`). ⚠️ A janela de **1M não está disponível**: o
+`/model claude-opus-5[1m]` foi recusado, então os agentes rodam com janela padrão e 28%
+vale bem menos contexto absoluto do que valia antes.
+
+⚠️ **Continua só com o Rica, e ninguém decide por ele:** a medição no iPhone (v2 em :3444,
+baseline em :3443), o conflito **32px × 44px** (§11), o veredito estético da TROPA v2, e a
+revisão do **corte de 32 ms** do G1 — que cai no vão entre dois degraus de 16,67 ms e por
+isso hoje exige perfeição quase absoluta.
