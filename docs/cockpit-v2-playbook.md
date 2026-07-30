@@ -363,7 +363,7 @@ Vale notar que a seção 6 já mandava decidir a **tipografia** por critério pr
 #### Onde o "amei" realmente mora — o baseline mudou o alvo
 
 Segunda leitura do Daniel, e ela corrige o plano: o baseline mostra **82% de
-`tool_use`/`tool_result`**, 23 tools, 25 formas de resultado e 738 chamadas de Bash.
+`tool_use`/`tool_result`**, 23 tools, 24 formas de resultado e 738 chamadas de Bash.
 A tela **não é conversa, é log de execução.** Então a peça estética central é o
 **grupo de tool, o diff, o raciocínio e a falha de tool** — não a bolha de usuário,
 que é onde um redesenho de chat naturalmente gastaria o esforço.

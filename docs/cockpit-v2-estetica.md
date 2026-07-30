@@ -17,7 +17,7 @@ A razão de existir: três Daniels sem contrato produzem três estilos (`playboo
 
 ## 1. A tese — por que isto não é um clone do ChatGPT
 
-O baseline mediu o que a tela realmente é: **82% dos blocos são `tool_use`/`tool_result`** — 1.500 + 1.499, contra 330 de texto e 804 de thinking; 23 ferramentas distintas, 25 formas de resultado, Bash com 738 chamadas (`fixtures/cockpit-v2/README.md`).
+O baseline mediu o que a tela realmente é: **82% dos blocos são `tool_use`/`tool_result`** — 1.500 + 1.499, contra 330 de texto e 804 de thinking; 23 ferramentas distintas, 24 formas de resultado, Bash com 738 chamadas (`fixtures/cockpit-v2/README.md`).
 
 Isso muda o objeto de design. **Não estamos desenhando um chat; estamos desenhando um log de execução que às vezes conversa.** Quem clona a bolha do ChatGPT está polindo os 18%.
 

@@ -79,8 +79,21 @@ packages:
   - 'packages/*'
 ```
 
-`apps/web` fora do glob é o que protege o cockpit no ar: ele nunca é reinstalado,
-nunca tem `node_modules` mexido, nunca depende do lockfile novo.
+`apps/web` fora do glob é o que protege o cockpit no ar: nenhum comando de rotina
+na raiz o alcança — nem `pnpm install`, nem `pnpm -r`, nem `pnpm update`, nem
+`pnpm dedupe`, nem CI. Confirmado por auditoria independente (Tara, 30/07), que
+também verificou o escopo real: `pnpm list -r --depth -1` lista só a raiz,
+`apps/cockpit` e `packages/cockpit-core`.
+
+⚠️ **A proteção é contra engano de rotina, não contra intenção.** Existe um comando
+que alcança o `apps/web`, e ele é justamente a via de escape documentada:
+
+```bash
+corepack pnpm --dir apps/web install --ignore-workspace   # = pnpm run instalar-cockpit-velho
+```
+
+Ou seja: só toca o cockpit velho quem **pede explicitamente** para tocá-lo. Não
+existe caminho acidental — e essa é a garantia que importa.
 
 ### O que foi medido (pnpm 10.20.0, topologia falsa em `/tmp`, não no repo real)
 
@@ -236,7 +249,7 @@ errar**, não "seria legal ter":
 | skill | por que ela existe |
 |---|---|
 | `subir-cockpit` | subir/derrubar o dev **da porta 3008** sem tocar no 3007. `next dev` genérico ou `pkill next` já derrubou o cockpit da frota antes |
-| `novo-renderer` | são 23 tools e 25 formas de `tool_use_result`; adicionar renderer é o trabalho mais repetido do projeto, e errar o agrupamento não dá erro, dá tela torta |
+| `novo-renderer` | são 23 tools e 24 formas de `tool_use_result`; adicionar renderer é o trabalho mais repetido do projeto, e errar o agrupamento não dá erro, dá tela torta |
 | `mexer-na-pele` | cor só existe em `globals.css`. A skill inclui a varredura de hex solto, que é o modo de falha real |
 | `checar-paridade` | roda o checklist de equivalência contra as fixtures gravadas antes de qualquer merge |
 

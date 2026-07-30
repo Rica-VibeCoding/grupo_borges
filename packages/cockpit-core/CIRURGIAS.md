@@ -80,5 +80,20 @@ Ficaram no `apps/web` de propósito:
 
 Critério de entrada, para quem for adicionar algo: **sem `import` de react, e
 fechado sob suas próprias dependências.** O pacote hoje tem zero import apontando
-para fora de si — foi verificado, e é o que o mantém consumível pelos dois apps sem
-alias cruzado.
+para fora de si — verificado por mim e reconfirmado em auditoria independente
+(Tara, 30/07): os únicos imports externos de todo o pacote são `node:test` e
+`node:assert`, e só no arquivo de teste.
+
+Precisão sobre a procedência: dos 14 arquivos, 13 vieram de `apps/web/lib/` e
+**um** — `one-line-chip-types.ts` — de `apps/web/components/`. A mensagem do commit
+`b1fefc3` diz "14 arquivos de `apps/web/lib`", o que é impreciso. Não afeta o
+fechamento do pacote; fica registrado aqui porque histórico de commit não se
+reescreve.
+
+## O consumo como source foi provado em build de produção
+
+A dúvida real era se `exports` apontando para `.ts` com
+`allowImportingTsExtensions` funcionava só em `next dev`. **Funciona nos dois:** a
+auditoria rodou `pnpm install --frozen-lockfile` e `next build` numa cópia
+temporária, e o Next 16.2.6 compilou, type-checou e gerou as páginas. Não é
+comportamento exclusivo de desenvolvimento.

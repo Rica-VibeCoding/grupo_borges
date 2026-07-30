@@ -64,7 +64,7 @@ timestamp · created_at · agent_id · message{role, content} · tool_use_result
   `tool_result`, contra 330 `text` e 804 `thinking`. O chat da frota **não é
   `user/assistant`** — isso é evidência empírica para o spike do `assistant-ui`
   (era exatamente o argumento eliminatório do `sol` na fusão).
-- **23 tools distintas** e **25 formas diferentes de `tool_use_result`**. Cada forma
+- **23 tools distintas** e **24 formas diferentes de `tool_use_result`**. Cada forma
   é um caso de renderer. Bash domina com 738 chamadas.
 - **Casos de borda que quebram renderer ingênuo, achados sem procurar:**
   199 mensagens com `content: null` e 87 com `content` string em vez de lista.
