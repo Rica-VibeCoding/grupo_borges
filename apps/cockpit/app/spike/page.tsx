@@ -423,6 +423,18 @@ export default function SpikePage() {
         <Feed />
         <Composer />
       </div>
+
+      {/* O probe é servido de public/ e se auto-instala, mas nada o carregava —
+          a bancada subiu sem instrumento e isso só apareceu com o Rica de celular
+          na mão. Sem parâmetro de seletor de propósito: os defaults do probe
+          ([data-gate-messages] / [data-gate-message]) já são os atributos desta
+          página. `ind` fecha a segunda cláusula do G3 (indicador de mensagem
+          nova), que era o achado M2 da auditoria. Sem `auto`: quem dá a partida
+          sou eu, sincronizado com a carga. */}
+      <script
+        async
+        src="/gate-probe.js?dur=60&ind=%5Bdata-gate-new-messages%5D"
+      />
     </AssistantRuntimeProvider>
   );
 }
