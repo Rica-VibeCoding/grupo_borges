@@ -3,9 +3,8 @@
 > Auditoria pedida pelo Daniel. **RELATO, não correção** — não editei nada em
 > `apps/cockpit/`. Achado sem certeza está marcado como SUSPEITA.
 >
-> Estado do trabalho: **EM ANDAMENTO** (regravação incremental — turno anterior
-> morreu em 429 segurando relato em memória; agora cada achado entra no disco na
-> hora).
+> Estado do trabalho: **COMPLETO** (regravação incremental — cada achado entrou
+> no disco na hora; os turnos anteriores morreram em 429 mas nada se perdeu).
 
 ## Fila de verificação — o que falta olhar
 
@@ -25,8 +24,10 @@ Parte 1 (cor fora do tema):
 - [x] `app/spike/sem-lib/` — varredura mecânica limpa (auto-auditoria, ceticismo aplicado: conferi os style multilinha um a um).
 
 Parte 2 (cauda longa da matriz):
-- [ ] ler `docs/cockpit-v2-matriz-renderers.md` inteiro
-- [ ] cruzar famílias previstas × renderers/testes existentes
+- [x] ler `docs/cockpit-v2-matriz-renderers.md` inteiro
+- [x] cruzar famílias previstas × renderers/testes existentes
+
+**AUDITORIA COMPLETA — as duas partes estão fechadas abaixo.**
 
 ## Parte 1 — cor fora do tema
 
