@@ -372,3 +372,42 @@ vale bem menos contexto absoluto do que valia antes.
 baseline em :3443), o conflito **32px × 44px** (§11), o veredito estético da TROPA v2, e a
 revisão do **corte de 32 ms** do G1 — que cai no vão entre dois degraus de 16,67 ms e por
 isso hoje exige perfeição quase absoluta.
+
+## 4.6 Três decisões delegadas à Tara pelo Rica — 30/07 ~16h20
+
+O Rica delegou expressamente: *"peça a opinião da Tara para essas dúvidas, ela vai
+decidir"*. As três estavam travadas comigo. Ela decidiu com as imagens dele em mãos
+(anexadas ao pedido) e o código lido. **As três estão aceitas e em execução.**
+
+**1. Sidebar — dono: Daniel, porte médio.** No desktop a Tropa vira o **plano de
+fundo permanente** e o chat é a **superfície elevada** sobre ela, deixando sempre
+visível a faixa esquerda. Logo, gaveta fechada por default está **errada nesse
+breakpoint**. A coluna estática da raiz e o vazio "Escolha um agente" **morrem**: `/`
+mostra só a Tropa, e selecionar um agente sobrepõe o chat **sem fechar** a sidebar.
+No celular continua uma superfície por vez.
+⚠️ Insumo que ela NÃO tinha ao decidir: o registry shadcn tem `sidebar-08`, *"an
+inset sidebar with secondary navigation"* — `inset` é exatamente o painel elevado de
+canto arredondado da referência. **Mas** adotar `SidebarProvider` colide com a
+decisão estrutural nº 1 do `app-shell.tsx` (superfície mora na URL, shell é Server
+Component sem JS no cliente, para deep-link do Telegram e botão voltar do Android).
+Vale minerar o CSS do `inset`, não o provider. Quem for executar decide com esse dado.
+
+**2. Offline — dona: Tara, porte médio.** `offline` passa a significar **sessão tmux
+ausente**. Sessão presente sem atividade recente é `ocioso`; `trabalhando` e
+`aguardando` continuam vindo do lifecycle. O back lista as sessões tmux **uma vez por
+snapshot**, em `asyncio.to_thread`, e cruza o conjunto com todos os agentes — nunca
+agente por agente. Mudança semântica intencional, exige teste e documentação.
+Motivo: hoje morto e ocioso produzem a **mesma linha** na tela, que é a cegueira que
+custou as 6h de 29→30/07.
+
+**3. Régua do G1 — donos: Hiro na régua, Daniel na medição, porte pequeno.** O corte
+absoluto de 32 ms **morre**; o G1 vira pareado. Registrada na **§14 do
+`cockpit-v2-gate.md`** (`25ec3e3`), com o porquê e a prova de que não afrouxa.
+
+### O que sobrou sem solução, e não é falha de ninguém
+
+`/destrava` **não ganha** campo `confirmed`. A Tara parou antes de escrever: comparar
+panes gera falso positivo por relógio, spinner e output concorrente, então não há
+sinal observável confiável de que o modal fechou. `/clear` idem. Fica registrado para
+ninguém tentar de novo achando que é fácil — campo novo que também mente é pior que
+campo ausente.
