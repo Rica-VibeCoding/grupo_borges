@@ -110,12 +110,32 @@ gravação de tela ou devtools", nunca por leitura de código).
 |---|---|---|---|
 | **G1** | cadência de frame sob carga | p95 do delta entre frames consecutivos, nos 60s | **p95 ≤ 32 ms** e **nenhum frame > 250 ms** |
 | **G2** | eco da digitação | `keydown` → caractere pintado no frame seguinte, durante os últimos 20s | **p95 ≤ 100 ms** |
-| **G3** | scroll não é arrancado | deslocamento vertical acumulado da viewport com o usuário rolado para cima | **0 px**, e indicador de mensagem nova visível |
+| **G3** | scroll não é arrancado | **deslocamento da âncora** com o usuário rolado para cima (o `scrollTop` escrito vira diagnóstico, ver abaixo) | **0 px**, e indicador de mensagem nova visível |
 | **G4** | repintura cirúrgica | contador de render por bolha; soma dos renders das mensagens que **não** são a última | **≤ 2 por mensagem** na janela (tolera a montagem e um reflow de entrada); **zero** é o alvo |
 
 `p95` porque média esconde travada: 59 segundos lisos com um engasgo de 400 ms é
 exatamente a experiência que faz o Rica dizer que o painel está ruim, e a média não
 enxerga isso.
+
+### Por que o G3 mede a âncora, e não o `scrollTop` (decidido 30/07)
+
+O Daniel mediu os dois lados juntos ao consertar o G3: dos **8.463 px** que o
+virtualizador escreveu em `scrollTop`, só **1.782** viraram movimento que o olho vê
+— fator de ~4,7×. O resto é **compensação que existe justamente para manter o
+conteúdo parado** quando uma linha entra acima da viewport.
+
+Ou seja: em feed virtualizado, `scrollTop` **não é evidência de arranco**. Aprovar ou
+reprovar por ele é reprovar o mecanismo que impede o arranco.
+
+Ele levantou a questão e **não** trocou a métrica sozinho, pelo mesmo argumento que
+usou no M2 do probe: mudar a régua no meio invalidaria a comparação. Está certo — e é
+exatamente por isso que a troca acontece **agora**: nenhum lado foi medido ainda com
+os consertos, então não há assimetria a criar. Se eu esperasse o baseline, a decisão
+ficaria travada.
+
+Os dois números continuam no JSON. `por_deslocamento_de_ancora_px` decide;
+`por_scrolltop_px` fica como diagnóstico — útil justamente para ver a compensação
+trabalhando.
 
 ### Regra de comparação contra o baseline
 

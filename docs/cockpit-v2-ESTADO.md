@@ -46,12 +46,24 @@ instrumento para a pergunta errada.
   faria o instrumento reprovar o app bom, e a guarda que impede o G4 de "passar por
   vacuidade". Essa guarda **funcionou ao vivo** nas duas primeiras tentativas.
 
+- **G3** — `5b8124c`: a causa era `estimateSize` **fixo em 72 px** no virtualizador.
+  Estimativa errada faz o virtualizador corrigir a posição quando mede o tamanho real,
+  e a correção desloca a âncora. Os dois números foram a ~zero depois do conserto.
+- **Métrica do G3 trocada** (gate §4): o critério passa a ser o **deslocamento da
+  âncora**, não o `scrollTop`. O Daniel mediu que dos 8.463 px escritos em `scrollTop`
+  só 1.782 viraram movimento visível — o resto é a compensação que mantém o conteúdo
+  parado. Aprovar por `scrollTop` seria reprovar o mecanismo que evita o arranco. Ele
+  levantou e não trocou sozinho (certo); troquei agora porque **nenhum lado foi medido
+  com os consertos**, então não há assimetria a criar.
+
 ## 4. Em voo quando a sessão fechou
 
-- **Daniel** — o G3 (20.273 px de deslocamento com o Rica rolado para cima). Contexto
-  em 19%. A metade do indicador de mensagem nova já está fechada (`verificada: true`).
-- **Ninguém** está no `page.tsx` além dele. A troca da chamada para o incremental é
-  **minha** e ainda não foi feita — ver passo 1 abaixo.
+- **Nada.** Daniel ocioso em 20%, G1 e G3 entregues, tree limpo nos dois repos.
+- A troca da chamada para o incremental em `page.tsx` é **minha** e ainda não foi
+  feita — ver passo 1 abaixo. É o único item de código pendente.
+- ⚠️ Havia o texto *"roda o probe de novo no iPhone do Rica pra confirmar"* digitado e
+  **não enviado** no input do Daniel. Provavelmente o Rica na janela errada — já
+  aconteceu antes. Não submeti: rodar o probe exige o Rica com o celular na mão.
 
 ## 5. Retomada — os passos, na ordem
 
