@@ -571,6 +571,22 @@ Faltam ainda, na §B e com o Pavan: `--ck-dur-enter: 200ms` e
 
 ## 10. Veredito parcial do Rica — 30/07 16:31
 
+> ⚠️ **Duas coisas desta seção foram revogadas pelo próprio Rica horas depois. Leia a
+> §12 e a §13 antes de aplicar qualquer coisa daqui:**
+>
+> - **"prefiro a nossa" sobre a cor da referência → revogado pela §13.** Ele tinha visto
+>   só o recorte escuro. A paleta passou a ser **cinza neutro**.
+> - **"empresta vocabulário, não gramática" → revogado pela §12, para o composer e a
+>   barra de telas.** Nessas duas peças a ordem é *"adota ela"*. O feed **não** entra: a
+>   referência é a tela vazia, e a §1 (log de execução) continua inteira.
+>
+> O que continua de pé aqui: as cores saírem da mesa de discussão, e o vocabulário de
+> acabamento (ícone de traço fino, ação sem moldura, item é linha e não card).
+>
+> ⚠️ Existe **outra §10** neste arquivo — "Fronteira: o que este documento NÃO decide".
+> Numeração duplicada, mantida de propósito: outros docs e a memória já apontam para
+> "§10", e renumerar quebraria essas referências sem ganho.
+
 **As cores estão aprovadas.** Palavras dele: *"as cores do nosso cockpit novo estão
 aprovadas"*. A paleta de `--ck-*` sai da mesa de discussão; quem for desenhar daqui pra
 frente **consome** os tokens, não propõe cor nova sem revalidar pelo §3.
