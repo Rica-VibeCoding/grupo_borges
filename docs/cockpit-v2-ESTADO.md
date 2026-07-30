@@ -223,6 +223,17 @@ componente recebe `oldString`/`newString` crus (`diff-viewer.tsx:14-15`), sem te
 estrutural, então acima do limite ele não roda o LCS e diz na tela que omitiu, com o número
 de linhas. Degradar em silêncio seria o mesmo pecado do "copiado" que não copiou.
 
+### Próximo passo imediato (30/07 ~14h)
+
+**Pedir ao Daniel os prints da `/gramatica`** em viewport de iPhone (390x844 @3x, dark),
+com nome novo em `/tmp/cockpit-v2-prints/` — os antigos ficam para comparação. É a linha de
+ferramenta de `117749e`, e ela é o que o Rica vai julgar pela régua da §9.1 (*"vale largar
+o cockpit antigo?"*). Ele estava compactando quando a peça fechou.
+
+Junto do print vão as duas perguntas abertas que **só ele** resolve: o conflito 32px × 44px
+(§11 do `cockpit-v2-estetica.md`) e o veredito estético da TROPA, que segue pendente desde
+`860068f`.
+
 ## 5. Retomada — os passos, na ordem
 
 1. **Trocar a chamada** em `apps/cockpit/app/spike/page.tsx:359-360`:
