@@ -163,6 +163,65 @@ renderer contra payload imaginado. Fluxo na skill `novo-renderer`.
 
 ---
 
+## 5.1 A conversão para o `assistant-ui` — contrato do spike
+
+Só vale se o spike do passo 5 passar. Se cair para shadcn-only, esta seção morre
+inteira e nada mais do contrato se mexe — que é o ponto de ela estar isolada aqui.
+
+**A ponte é de `RenderItem`, não de `MessagePayload`.** O classificador é o ativo
+(528 linhas que já sabem linearizar payload do Claude Code); a biblioteca é só quem
+desenha. Então:
+
+```
+MessagePayload[] → buildRenderItems → RenderItem[] → toThreadMessages → ThreadMessageLike[]
+```
+
+Assinatura do alvo, **copiada do pacote instalado**
+(`@assistant-ui/core@0.3.1`, `dist/runtime/utils/thread-message-like.d.ts:9`) — não
+de documentação, não de memória:
+
+```ts
+type ThreadMessageLike = {
+  readonly role: "assistant" | "user" | "system";
+  readonly content: string | readonly (TextMessagePart | ReasoningMessagePart | … |
+    { readonly type: "tool-call"; readonly toolName: string; readonly args?: ReadonlyJSONObject;
+      readonly result?: any; readonly isError?: boolean; … } |
+    { readonly type: `data-${string}`; readonly data: any })[];
+  readonly id?: string;
+  readonly createdAt?: Date;
+  readonly status?: MessageStatus;
+};
+```
+
+### A regra que resolve os nove `kind`
+
+A lib modela nativamente texto, raciocínio e chamada de ferramenta. **Tudo o que ela
+não modela vai como part `data-*`**, que é o canal declarado dela para dado de
+terceiro, e o desenho fica com renderer nosso:
+
+| `RenderItem.kind` | vira |
+|---|---|
+| `user`, `user-internal` | `role: 'user'`, part de texto (`user-internal` marcado em `data-internal`) |
+| `assistant` | um part por `ContentPart`: texto → `TextMessagePart`, thinking → `ReasoningMessagePart`, tool → `tool-call` |
+| `chip` de tool | `{ type: 'tool-call', toolName, args, result, isError }` |
+| `synthetic`, `channel`, `meta-decision`, `chip` não-tool | `data-*` (`data-synthetic`, `data-channel`, `data-meta`, `data-chip`) |
+| `sidechain-group`, `sidechain-cluster` | `data-sidechain` |
+
+Duas razões para isso não ser preferência de estilo:
+
+1. **O `tool-call` nativo tem `result` e `isError`.** Isso encaixa exatamente no
+   achado da matriz de renderers: hoje o `tool_use_result` rico chega e é descartado,
+   e o que decide virar chip é o corte de 300 caracteres em
+   `chat-payload-classifier.ts:216`. A lib aceita o payload que já temos.
+2. **`data-*` é o plano de fuga barato.** Se o gate reprovar a biblioteca, cada
+   `data-x` já é um componente nosso recebendo um objeto nosso — vira renderer direto,
+   sem desmontar conversão.
+
+O que **não** entra nesta ponte: virtualização, store e composer. São objeto do
+spike, medidos pelo gate, não fixados aqui.
+
+---
+
 ## 6. O que este contrato deliberadamente não fixa
 
 - **Como** o estado é guardado (store, context, biblioteca) — é o objeto do spike
