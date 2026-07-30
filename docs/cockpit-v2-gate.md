@@ -390,3 +390,69 @@ o gate decidir, nesta ordem:
 4. **A rota `/spike` morre** junto com a decisão, seja qual for. O que sobrevive dela
    é o que já está fora dela de propósito: coalescedor em `cockpit-core`, transporte
    e ponte em `lib/spike/` — e a ponte só sobrevive se o `assistant-ui` ficar.
+
+---
+
+## O braço de controle respondeu — o custo É da biblioteca (30/07, Hiro, `2bccafe`)
+
+A ressalva que eu inseri em `3366d32` segurava a condenação da `assistant-ui` por um motivo
+metodológico: a medição rodava na **fatia vertical inteira** (nossa camada *mais* a
+biblioteca), e o painel antigo declara o mesmo `O(N)` em
+`apps/web/lib/use-messages-stream.ts:317`. Se o joelho fosse herança da nossa arquitetura,
+trocar de biblioteca jogaria fora trabalho bom por diagnóstico errado.
+
+**O experimento que decide foi construído e rodado.** `app/spike/sem-lib` é a **mesma
+bancada** do `/spike`: mesmo SSE do canário, mesmo `?historico=N&recentes=1`, mesmo
+coalescedor, mesmo classificador incremental, **mesmo virtualizador `@tanstack`** (ele não é
+da biblioteca; tirá-lo mudaria duas variáveis), mesmos seletores de probe, mesma janela de
+25 s a 50 Hz. A única variável que muda é o runtime — sem `AssistantRuntimeProvider`, sem
+`useExternalStoreRuntime`, sem `MessagePrimitive`/`ThreadPrimitive`.
+
+Portão provado antes de medir, como manda a régua: 50 → 50, 200 → 200, 500 → 500.
+
+| histórico | **com** a biblioteca (`b5aa7a2`) | **sem** a biblioteca (`2bccafe`) |
+|---|---|---|
+| 50 | 400,0 ms | 33,3 ms |
+| 200 | 400,0 ms | 33,4 ms |
+| 500 | **724,9 ms** | 33,4 ms |
+| escala (10× de feed) | **1,81×** | **1,00×** |
+| frames na janela de 25 s | 106–484 | 1.277–1.486 |
+
+**O joelho não encolheu: desapareceu.** E a contagem de frames confirma por um caminho que
+não passa pelo percentil — 1.480 frames em 25 s é ~59 fps, contra ~9,5 fps do pior nível com
+a biblioteca.
+
+**Veredito: a ressalva está respondida e retirada.** O custo que escala com o histórico
+acumulado é da biblioteca. A nossa camada — SSE, coalescedor, classificador incremental,
+virtualizador — segura p95 plano com 10× de feed. O gate pode condenar pela razão certa, e o
+trabalho seguinte é o **plano de fuga** (shadcn-only consumindo `RenderItem`), não "consertar
+a nossa camada".
+
+### ⚠️ Ressalva de leitura — 33,4 ms NÃO é "quase reprovou"
+
+O p95 sem a biblioteca é **quantizado**, e quem for calibrar o corte precisa saber disso.
+
+A bancada mede o delta entre frames **reais**. Num display a 60 Hz o delta mínimo é
+**16,67 ms**, e os valores possíveis são múltiplos dele: 16,7 · 33,3 · 50 · 66,7… A mediana
+sem a biblioteca é **16,7 ms** — um frame, perfeito — e o p95 é **33,3 ms**, que é o
+**degrau imediatamente seguinte**. Traduzindo: em 5% das amostras um único frame pulou.
+
+Consequência para o corte do G1: **32 ms cai no vão entre dois degraus** (16,7 e 33,3). Do
+jeito que está escrito, o G1 só passa com p95 = 16,7 ms, isto é, **menos de 5% de frames
+pulados** — perfeição quase absoluta. Não é o que a intenção original ("um frame a 30 fps")
+sugere ao leitor.
+
+Isso **não afeta em nada a conclusão acima**: a comparação é 33,4 contra 724,9, que são 2
+degraus contra 43. Mas afeta duas outras coisas, e ficam registradas:
+
+1. **Não se deve dizer que o braço sem biblioteca "reprovou por 1,4 ms".** Ele está no piso
+   prático do instrumento.
+2. **O corte de 32 ms merece revisão** antes de virar critério de aprovação de qualquer peça
+   — ou o corte sobe para o degrau seguinte (33,4, "no máximo um frame pulado"), ou a métrica
+   passa a contar frames perdidos em vez de medir delta em milissegundos, que é a mesma
+   informação sem a armadilha da quantização. **Decisão minha, e ela é do Rica em última
+   instância**, porque muda a régua de aprovação — fica anotada, não aplicada.
+
+Nada disso vale para a medição no **iPhone**, que continua sendo o número que manda: lá o
+alvo é o hardware real do Rica, e o p95 de 361 ms que abriu esta investigação foi medido no
+aparelho dele, não nesta bancada.
