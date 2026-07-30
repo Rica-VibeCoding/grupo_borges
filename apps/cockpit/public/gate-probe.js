@@ -16,13 +16,20 @@
  *   No v2 (3008), em desenvolvimento:
  *     <script src="/gate-probe.js"></script>
  *
- *   No painel antigo (3007), pelo Safari do iPhone — bookmarklet, uma linha:
+ *   No painel antigo, pelo Safari do iPhone — bookmarklet, uma linha:
  *     javascript:(function(){var s=document.createElement('script');
- *     s.src='http://SEU-HOST:3008/gate-probe.js';document.body.appendChild(s)})()
+ *     s.src='https://srv1061129.tailfe77db.ts.net:3444/gate-probe.js';
+ *     document.body.appendChild(s)})()
  *
- *   `<script src>` clássico não passa por CORS, então carregar de 3008 dentro da
- *   página da 3007 funciona; o que bloquearia é CSP, e o apps/web não define
- *   nenhuma (verificado em 30/07).
+ *   `<script src>` clássico não passa por CORS, então carregar de outra origem
+ *   dentro da página do painel antigo funciona; o que bloquearia é CSP, e o
+ *   apps/web não define nenhuma (verificado em 30/07).
+ *
+ *   ⚠️ O esquema é **https**, e isso não é detalhe: o painel antigo é servido
+ *   por https no hostname `.ts.net`, e um `<script src="http://…">` ali seria
+ *   barrado por **mixed content** — mecanismo independente de CSP, que a
+ *   verificação de CSP não cobre. Achado M5 da auditoria do Hiro; a URL acima
+ *   foi testada pelo Pavan e responde 200 em HTTP/2.
  *
  * ---------------------------------------------------------------------------
  * PARÂMETROS  (nenhum seletor é hardcoded — §"não hardcoda" do pedido)
@@ -32,6 +39,8 @@
  *
  *   sel   seletor do container que ROLA. Default '[data-gate-messages]'.
  *   msg   seletor do nó de mensagem.     Default '[data-gate-message]'.
+ *   ind   seletor do indicador de "mensagem nova" — 2ª cláusula do G3. Sem ele
+ *         a cláusula fica declarada como NÃO verificada, nunca como aprovada.
  *   dur   duração da janela em segundos. Default 60 (contrato §3).
  *   auto  '1' começa a medir sozinho ao carregar. Default: espera o toque.
  *
@@ -60,6 +69,19 @@
  * 4. O G3 lê `getBoundingClientRect` da âncora a 4 Hz. Ler layout força reflow,
  *    então é 4 vezes por segundo e só enquanto o usuário está rolado para cima —
  *    de propósito, para o instrumento não sujar o G1 que ele mesmo mede.
+ * 4b. O G3 IGNORA os 700 ms seguintes a qualquer gesto, porque o scroll inercial
+ *    do iOS continua emitindo evento por 300–800 ms depois que o dedo solta e o
+ *    corte é de ZERO pixel. Com rabo de 200 ms, todo fling — a única forma de
+ *    subir num feed de mil mensagens — contava como "arrancado" e reprovava app
+ *    bom, inclusive o baseline (achado A1). O preço é uma janela cega de 700 ms
+ *    logo após o toque; o que foi descartado nela sai em
+ *    `descartado_por_gesto_px`, para a cegueira ser auditável em vez de invisível.
+ * 5b. O observer NÃO escuta `attributes`. Biblioteca de UI mexe em `class`/`aria-*`
+ *    o tempo todo: cada atributo viraria registro processado em microtask na
+ *    thread principal, bem no intervalo que o G1 mede, e um indicador de
+ *    "digitando…" animado por troca de classe estouraria sozinho o corte do G4
+ *    (achado M1). Perde-se o re-render que só troca classe — que não reflui
+ *    conteúdo e não é o que o G4 procura.
  * 5. Cor em hex cru aqui dentro NÃO viola o §9.1 do contrato de estética: este
  *    arquivo tem de renderizar igual no painel antigo, onde os tokens `--ck-*`
  *    não existem. Instrumento descartável não usa o sistema de design.
@@ -78,9 +100,17 @@
   var PADRAO = {
     seletor: '[data-gate-messages]',
     seletorMsg: '[data-gate-message]',
+    seletorIndicador: '',
     duracaoMs: 60000,
     auto: false
   };
+
+  // Rabo do gesto: 700ms. Ver limite 4b no cabeçalho — é o que separa fling
+  // legítimo de scroll arrancado pelo app.
+  var RABO_GESTO_MS = 700;
+  // Piso de amostras do G2: abaixo disso o nearest-rank vira "quase o máximo de
+  // N pequeno" e um p95 de 6 teclas seria lido como número de gate (achado B2).
+  var MIN_AMOSTRAS_G2 = 30;
 
   var CORTES = {
     g1_p95_ms: 32,
@@ -101,6 +131,7 @@
     if (g) {
       if (g.seletor) c.seletor = g.seletor;
       if (g.seletorMsg) c.seletorMsg = g.seletorMsg;
+      if (g.seletorIndicador) c.seletorIndicador = g.seletorIndicador;
       if (g.duracaoSegundos) c.duracaoMs = g.duracaoSegundos * 1000;
       if (g.auto) c.auto = true;
     }
@@ -113,6 +144,7 @@
         var v = decodeURIComponent(par[1] || '');
         if (k === 'sel' && v) c.seletor = v;
         if (k === 'msg' && v) c.seletorMsg = v;
+        if (k === 'ind' && v) c.seletorIndicador = v;
         if (k === 'dur' && v) c.duracaoMs = parseFloat(v) * 1000;
         if (k === 'auto' && v === '1') c.auto = true;
       }
@@ -178,6 +210,28 @@
     return melhor;
   }
 
+  // Layout em que a PÁGINA inteira rola (body/html com overflow visible) é
+  // comum no celular e não passa no teste de overflowY acima — sem isto, G3 e
+  // G4 saíam "indisponível" num app perfeitamente medível (achado M4a). Entra
+  // como último recurso: quando existe scroller de elemento, ele é mais
+  // específico e ganha.
+  function scrollerDaPagina() {
+    var el = document.scrollingElement || document.documentElement;
+    if (!el) return null;
+    return el.scrollHeight - el.clientHeight >= 80 ? el : null;
+  }
+
+  function ehScrollerDaPagina(el) {
+    return !!el && (el === document.scrollingElement || el === document.documentElement ||
+                    el === document.body);
+  }
+
+  // Scroll da viewport dispara no Document, não no <html> — quem observa o
+  // scroller da página tem de ouvir window, senão o G3 fica mudo.
+  function alvoDeScroll(el) {
+    return ehScrollerDaPagina(el) ? window : el;
+  }
+
   function resolveContainer() {
     if (CFG.seletor) {
       var alvo = document.querySelector(CFG.seletor);
@@ -185,6 +239,8 @@
     }
     var auto = detectaContainer();
     if (auto) return { el: auto, origem: 'auto' };
+    var pagina = scrollerDaPagina();
+    if (pagina) return { el: pagina, origem: 'auto-pagina' };
     return { el: null, origem: 'nao-encontrado' };
   }
 
@@ -225,13 +281,24 @@
 
   var G1 = { deltas: [], pausasAba: 0 };
   var G2 = { amostras: [], semPintura: 0 };
-  var G3 = { scrollPx: 0, ancoraPx: 0, eventos: 0, ancora: null, ancoraY: 0 };
+  var G3 = novoG3();
   var G4 = { porNo: new Map(), ordem: [], ultima: null };
+
+  function novoG3() {
+    return {
+      scrollPx: 0, ancoraPx: 0, eventos: 0, ancora: null, ancoraY: 0,
+      // quanto o rabo de gesto engoliu — a janela cega tem de ser auditável
+      descartadoPorGesto: 0,
+      // 2ª cláusula do corte: indicador de mensagem nova visível
+      indicadorVisto: false, indicadorTicks: 0, ticksRoladoPraCima: 0,
+      containerMorreu: false
+    };
+  }
 
   function zera() {
     G1 = { deltas: [], pausasAba: 0 };
     G2 = { amostras: [], semPintura: 0 };
-    G3 = { scrollPx: 0, ancoraPx: 0, eventos: 0, ancora: null, ancoraY: 0 };
+    G3 = novoG3();
     G4 = { porNo: new Map(), ordem: [], ultima: null };
   }
 
@@ -306,11 +373,20 @@
   var ultimoScrollTop = 0;
   var estavaRoladoPraCima = false;
 
+  // ACHADO A1 (alta). O rabo era de 200ms e não havia listener de touchend: o
+  // glide inercial do iOS dura 300–800ms depois que o dedo solta, e com corte
+  // de ZERO pixel todo fling virava "scroll arrancado". Como subir num feed de
+  // mil mensagens só se faz com fling, o G3 reprovaria o app bom e o baseline
+  // junto — o instrumento condenaria os dois lados da comparação.
   function marcaGesto() {
-    // 200ms de rabo: o scroll inercial do iOS chega depois do touchend.
-    gestoAte = agora() + 200;
+    gestoAte = agora() + RABO_GESTO_MS;
     G3.ancora = null;
   }
+
+  var EVENTOS_DE_GESTO = [
+    'touchstart', 'touchmove', 'touchend', 'touchcancel',
+    'pointerdown', 'pointerup', 'pointercancel', 'wheel', 'keydown'
+  ];
 
   function distanciaDoFim(el) {
     return el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -323,6 +399,11 @@
     // A decisão usa o estado ANTERIOR: se o app arranca a tela pro fim, no
     // momento do evento já estamos colados no fim e o teste "está rolado pra
     // cima?" responderia não — perdendo exatamente o caso que o G3 procura.
+    if (estavaRoladoPraCima && d !== 0 && agora() <= gestoAte) {
+      // Dentro do rabo do gesto: é o dedo (ou a inércia dele). Não conta, mas
+      // registra — janela cega invisível é pior que janela cega declarada.
+      G3.descartadoPorGesto += Math.abs(d);
+    }
     if (estavaRoladoPraCima && agora() > gestoAte && d !== 0) {
       G3.scrollPx += Math.abs(d);
       G3.eventos++;
@@ -338,10 +419,36 @@
 
   // Conteúdo inserido ACIMA da viewport empurra a leitura sem mexer no
   // scrollTop. Só uma âncora visual pega isso.
+  function visivel(el) {
+    if (!el || !document.contains(el)) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity || '1') > 0.05;
+  }
+
   function mediAncora() {
-    if (!rodando || !container || !lista) return;
+    if (!rodando || !container) return;
+
+    // ACHADO M3. O container é resolvido uma vez; se o feed remontar (reconexão
+    // SSE, troca de rota) o observer fica preso num nó morto e o G4 sai com
+    // zero mensagem observada — que passaria no corte por vacuidade. Aprovar
+    // sem ter medido é o pior sentido de erro possível num instrumento.
+    if (!ehScrollerDaPagina(container) && !document.contains(container)) {
+      G3.containerMorreu = true;
+    }
+
+    if (!lista) return;
     if (!estavaRoladoPraCima) { G3.ancora = null; return; }
     if (agora() < gestoAte) { G3.ancora = null; return; }
+
+    // 2ª cláusula do corte do G3 (contrato §4): "0 px E indicador de mensagem
+    // nova visível". Só é verificável com o seletor do indicador em mãos.
+    G3.ticksRoladoPraCima++;
+    if (CFG.seletorIndicador) {
+      G3.indicadorTicks++;
+      if (visivel(document.querySelector(CFG.seletorIndicador))) G3.indicadorVisto = true;
+    }
 
     var topo = container.getBoundingClientRect().top;
     if (!G3.ancora || !container.contains(G3.ancora)) {
@@ -429,6 +536,21 @@
     var g3 = G3.scrollPx + G3.ancoraPx;
     var g4 = resumoG4();
 
+    // ACHADO M3: container morto ou nunca visto invalida G3 e G4. `passou` só
+    // pode ser true se houve o que medir.
+    var vivo = !!container && !G3.containerMorreu &&
+               (ehScrollerDaPagina(container) || document.contains(container));
+    var g4Mediu = vivo && g4.mensagens_observadas > 0;
+
+    // ACHADO B1: o contrato define o G2 "durante os últimos 20s"; o corte tem
+    // de usar essa janela, que já era calculada e ignorada. Corridas menores
+    // que 20s caem na janela inteira, que aí é a mesma coisa.
+    var janelaCurta = (fim - t0Sessao) <= 20000;
+    var g2Corte = janelaCurta ? g2p : g2p20;
+    var g2N = janelaCurta ? msG2.length : ult20.length;
+    // ACHADO B2: p95 de meia dúzia de teclas é "quase o máximo", não percentil.
+    var g2Mediu = g2N >= MIN_AMOSTRAS_G2 && g2Corte !== null;
+
     return {
       meta: {
         gerado_em: new Date().toISOString(),
@@ -441,6 +563,12 @@
         concluida: !!tFimSessao,
         alvo: descreve(container),
         alvo_origem: origemAlvo,
+        // ACHADO M4b: o critério "mais descendentes" elege uma sidebar longa se
+        // o feed estiver virtualizado com poucos nós montados, e aí G3/G4 medem
+        // o componente errado em silêncio. Alvo adivinhado é sinal amarelo: no
+        // baseline, confirmar pelo botão "Alvo" antes de aceitar o número.
+        alvo_conferir: origemAlvo === 'auto' || origemAlvo === 'auto-pagina',
+        alvo_vivo: vivo,
         lista: descreve(lista),
         seletor_msg_casou: !!(CFG.seletorMsg && document.querySelector(CFG.seletorMsg)),
         probe: 'gate-probe.js'
@@ -457,34 +585,54 @@
       g2_eco_da_digitacao: {
         // Zero amostra é NÃO MEDIDO, não reprovado. Ninguém digitou — reprovar
         // por isso transformaria "faltou operar" em "o app é lento".
-        indisponivel: msG2.length === 0,
-        motivo: msG2.length === 0 ? 'nenhuma tecla digitada durante a janela' : null,
+        indisponivel: !g2Mediu,
+        motivo: g2Mediu ? null
+          : msG2.length === 0 ? 'nenhuma tecla digitada durante a janela'
+          : 'amostras insuficientes na janela do corte (' + g2N + ' < ' + MIN_AMOSTRAS_G2 + ')',
+        janela_do_corte: janelaCurta ? 'corrida inteira (< 20s)' : 'ultimos 20s',
         amostras: msG2.length,
         amostras_ultimos_20s: ult20.length,
         p95_ms: r2(g2p),
         p95_ultimos_20s_ms: r2(g2p20),
+        p95_do_corte_ms: r2(g2Corte),
         pior_ms: r2(maior(msG2)),
         teclas_sem_pintura: G2.semPintura,
-        passou: g2p === null ? null : g2p <= CORTES.g2_p95_ms
+        passou: g2Mediu ? g2Corte <= CORTES.g2_p95_ms : null
       },
       g3_scroll_nao_arrancado: {
-        indisponivel: !container,
-        motivo: container ? null : 'nenhum container de mensagens encontrado',
-        total_px: container ? r2(g3) : null,
-        por_scrolltop_px: container ? r2(G3.scrollPx) : null,
-        por_deslocamento_de_ancora_px: container ? r2(G3.ancoraPx) : null,
+        indisponivel: !vivo,
+        motivo: vivo ? null
+          : !container ? 'nenhum container de mensagens encontrado'
+          : 'o container observado saiu do documento durante a janela',
+        total_px: vivo ? r2(g3) : null,
+        por_scrolltop_px: vivo ? r2(G3.scrollPx) : null,
+        por_deslocamento_de_ancora_px: vivo ? r2(G3.ancoraPx) : null,
+        // Auditoria da janela cega de 700ms do rabo de gesto (A1).
+        descartado_por_gesto_px: r2(G3.descartadoPorGesto),
         eventos: G3.eventos,
-        passou: container ? g3 <= CORTES.g3_px : null
+        // 2ª cláusula do corte (contrato §4). Sem seletor de indicador ela
+        // NÃO é verificada — e não verificada nunca vira aprovada.
+        clausula_indicador: {
+          verificada: !!CFG.seletorIndicador && G3.ticksRoladoPraCima > 0,
+          visivel: CFG.seletorIndicador ? G3.indicadorVisto : null,
+          motivo: CFG.seletorIndicador
+            ? (G3.ticksRoladoPraCima > 0 ? null : 'nunca esteve rolado para cima na janela')
+            : 'sem seletor `ind=` — conferir a olho, e conferir NOS DOIS LADOS'
+        },
+        passou: vivo ? g3 <= CORTES.g3_px : null
       },
       g4_repintura_cirurgica: {
-        indisponivel: !container,
-        motivo: container ? null : 'nenhum container de mensagens encontrado',
+        indisponivel: !g4Mediu,
+        motivo: g4Mediu ? null
+          : !container ? 'nenhum container de mensagens encontrado'
+          : G3.containerMorreu ? 'o container observado saiu do documento durante a janela'
+          : 'zero mensagem observada — nao ha o que aprovar',
         mensagens_observadas: g4.mensagens_observadas,
         ultima_mensagem_mutacoes: g4.ultima_mensagem_total,
-        seladas_max_por_mensagem: container ? g4.seladas_max : null,
-        seladas_soma: container ? g4.seladas_soma : null,
-        seladas_acima_do_corte: container ? g4.seladas_acima_do_corte : null,
-        passou: container ? g4.seladas_max <= CORTES.g4_mutacoes_por_mensagem_selada : null
+        seladas_max_por_mensagem: g4Mediu ? g4.seladas_max : null,
+        seladas_soma: g4Mediu ? g4.seladas_soma : null,
+        seladas_acima_do_corte: g4Mediu ? g4.seladas_acima_do_corte : null,
+        passou: g4Mediu ? g4.seladas_max <= CORTES.g4_mutacoes_por_mensagem_selada : null
       }
     };
   }
@@ -515,13 +663,14 @@
       ultimoScrollTop = container.scrollTop;
       estavaRoladoPraCima = distanciaDoFim(container) > 8;
       obs = new MutationObserver(onMutacoes);
-      obs.observe(container, { childList: true, subtree: true, characterData: true, attributes: true });
-      container.addEventListener('scroll', onScroll, { passive: true });
+      // Sem `attributes` — ver limite 5b no cabeçalho (achado M1).
+      obs.observe(container, { childList: true, subtree: true, characterData: true });
+      alvoDeScroll(container).addEventListener('scroll', onScroll, { passive: true });
     }
 
     document.addEventListener('keydown', onKeydown, true);
     document.addEventListener('visibilitychange', onVisibilidade);
-    ['touchstart', 'touchmove', 'wheel', 'pointerdown'].forEach(function (ev) {
+    EVENTOS_DE_GESTO.forEach(function (ev) {
       window.addEventListener(ev, marcaGesto, { passive: true, capture: true });
     });
 
@@ -536,10 +685,10 @@
     rodando = false;
     tFimSessao = agora();
     if (obs) { obs.disconnect(); obs = null; }
-    if (container) container.removeEventListener('scroll', onScroll);
+    if (container) alvoDeScroll(container).removeEventListener('scroll', onScroll);
     document.removeEventListener('keydown', onKeydown, true);
     document.removeEventListener('visibilitychange', onVisibilidade);
-    ['touchstart', 'touchmove', 'wheel', 'pointerdown'].forEach(function (ev) {
+    EVENTOS_DE_GESTO.forEach(function (ev) {
       window.removeEventListener(ev, marcaGesto, true);
     });
     cancelAnimationFrame(rafId);
@@ -675,8 +824,9 @@
     linhas.g1.valor.textContent = marca(
       r.g1_cadencia_de_frame.p95_ms + ' / ' + r.g1_cadencia_de_frame.pior_frame_ms + ' ms',
       r.g1_cadencia_de_frame.passou);
-    linhas.g2.valor.textContent = r.g2_eco_da_digitacao.indisponivel ? 'não digitou'
-      : marca(r.g2_eco_da_digitacao.p95_ms + ' ms', r.g2_eco_da_digitacao.passou);
+    linhas.g2.valor.textContent = r.g2_eco_da_digitacao.indisponivel
+      ? (r.g2_eco_da_digitacao.amostras ? 'poucas teclas' : 'não digitou')
+      : marca(r.g2_eco_da_digitacao.p95_do_corte_ms + ' ms', r.g2_eco_da_digitacao.passou);
     linhas.g3.valor.textContent = r.g3_scroll_nao_arrancado.indisponivel ? 'indisponível'
       : marca(r.g3_scroll_nao_arrancado.total_px + ' px', r.g3_scroll_nao_arrancado.passou);
     linhas.g4.valor.textContent = r.g4_repintura_cirurgica.indisponivel ? 'indisponível'
@@ -684,8 +834,16 @@
               r.g4_repintura_cirurgica.passou);
 
     [linhas.g1, linhas.g2, linhas.g3, linhas.g4].forEach(function (l) {
-      l.valor.style.color = l.valor.textContent.indexOf('❌') !== -1 ? C.ruim : C.ok;
+      var t = l.valor.textContent;
+      l.valor.style.color = t.indexOf('❌') !== -1 ? C.ruim : t.indexOf('✅') !== -1 ? C.ok : C.fraco;
     });
+
+    var pendencias = [];
+    if (r.meta.alvo_conferir) pendencias.push('alvo adivinhado — confira no botão Alvo');
+    if (!r.g3_scroll_nao_arrancado.clausula_indicador.verificada) {
+      pendencias.push('cláusula 2 do G3 (indicador) não verificada');
+    }
+    aviso(pendencias.join(' · '));
   }
 
   /* Escolher o alvo com o dedo — no painel antigo o scroller não tem marcador
