@@ -1,0 +1,6 @@
+{"meta":{"gerado_em":"2026-07-30T07:57:17.703Z","duracao_s":60.27,"concluida":true,"viewport":"393x695","dpr":3,"agente_usuario":"iPhone OS 18_7 Safari 26.6","alvo":"div > div","alvo_origem":"parametro","alvo_vivo":true,"seletor_msg_casou":true},
+"cortes":{"g1_p95_ms":32,"g1_pior_frame_ms":250,"g2_p95_ms":100,"g3_px":0,"g4_mutacoes_por_mensagem_selada":2},
+"g1_cadencia_de_frame":{"frames":489,"p95_ms":361,"pior_frame_ms":519,"mediana_ms":99,"pausas_aba":0,"passou":false},
+"g2_eco_da_digitacao":{"indisponivel":true,"motivo":"amostras insuficientes na janela do corte (3 < 30)","amostras":54,"amostras_ultimos_20s":3,"p95_ms":552,"p95_ultimos_20s_ms":362,"pior_ms":1135,"teclas_sem_pintura":0,"passou":null},
+"g3_scroll_nao_arrancado":{"indisponivel":false,"total_px":20273,"por_scrolltop_px":19936,"por_deslocamento_de_ancora_px":337,"descartado_por_gesto_px":230768,"eventos":23,"clausula_indicador":{"verificada":true,"visivel":true},"passou":false},
+"g4_repintura_cirurgica":{"indisponivel":false,"mensagens_observadas":1246,"ultima_mensagem_mutacoes":1,"seladas_max_por_mensagem":0,"seladas_soma":0,"seladas_acima_do_corte":0,"passou":true}}
