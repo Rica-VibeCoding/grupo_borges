@@ -115,6 +115,61 @@ desligado, ou nasce junto com o endpoint. Não é bug do front.
 
 ---
 
+## 3.1 ⚠️ Correção da §3 — portar `useAgentSend` como está carrega um defeito (Pavan, 30/07)
+
+A §3 acima manda portar. **Porte a estrutura, não o comportamento de confirmação** — ele é a
+causa provável do defeito registrado na §4.2 do `cockpit-v2-ESTADO.md` (texto que fica
+pendurado no input de um agente sem ter sido submetido).
+
+**O que o código prova, nos dois lados:**
+
+- `apps/api/routers/agents.py:1973` e `:1978` — o caminho feliz devolve
+  `InputResponse(tmux_delivered=True, ...)` **literal**. Quando o driver falha, o endpoint
+  levanta **409**, não devolve `false`. Logo `tmux_delivered` **nunca chega `false` num 200**,
+  e o ramo `firePaneWarn()` de `use-agent-send.ts:57` é **código morto**.
+- `apps/api/services/tmux_driver.py:425` — a entrega é
+  `send-keys C-u` → `load-buffer` → `paste-buffer -d -p` → **espera 150 ms** → `send-keys Enter`.
+  O `True` é emitido depois da colagem. **Ninguém verifica que o Enter submeteu.**
+
+**Consequência:** o painel canta *"enviado pro Daniel"* pela colagem, não pelo envio. Se o
+Enter cair num modal, num overlay ou numa pane que reagiu tarde, o texto fica no input, o
+agente nunca o vê, e a tela do Rica afirma que entregou. Isso é **mentira de UI** pela §9 da
+estética — e das piores, porque a mentira é sobre a única coisa que o painel existe para fazer.
+
+Bate com a evidência: as quatro aparições de texto pendurado em 30/07 saíram do
+`POST /api/agents/{slug}/input` do próprio cockpit (39 ao daniel, 7 ao hiro), de dispositivos
+conhecidos do Rica. **Nunca foi fantasma — era envio real que não submeteu, com a UI dizendo
+que sim.**
+
+### Contrato do envio no v2 — confirmação é por OBSERVAÇÃO, não por promessa
+
+A prova de que a mensagem entrou é ela **voltar no stream** como item do usuário. Nada mais
+serve: o 200 prova colagem, o eco prova submissão.
+
+```ts
+type FaseEnvio =
+  | 'ocioso'
+  | 'enviando'      // POST em voo
+  | 'aceito'        // 200 do back: colou. NÃO é "entregue" — o eco ainda não voltou
+  | 'confirmado'    // o texto reapareceu no stream: o agente recebeu. ÚNICO estado feliz
+  | 'pendurado'     // o prazo estourou sem eco: provavelmente está no input do agente
+  | 'falhou';       // 409 / rede / erro do back
+```
+
+- **`aceito` é estado de espera, e a tela precisa mostrar isso** — não pode parecer sucesso.
+- **`pendurado` não é erro, é diagnóstico** e a tela diz o que fazer: o texto pode estar no
+  input do agente; reenviar duplica. Reenvio a partir daqui é **decisão do Rica**, nunca
+  automática.
+- **`confirmado` é o único estado que pode cantar sucesso.**
+
+O prazo entre `aceito` e `pendurado` sai de **medição no corpus** (intervalo real entre o POST
+e o eco correspondente), não de chute.
+
+Vale para os três caminhos — texto, imagem e voz —, porque os três compartilham a mesma
+promessa falsa hoje.
+
+---
+
 ## 4. Protocolo SSE — o que o front recebe
 
 Eventos nomeados em `lib/use-messages-stream.ts`:

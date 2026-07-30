@@ -625,3 +625,52 @@ significa expandir a linha errada, que é irritação real e repetida.
 **Isto só se resolve com o dedo do Rica na tela.** Nenhum de nós tem como decidir por
 raciocínio: ou ele erra o toque no uso normal, ou não erra. Vai junto da medição do gate,
 e até lá continua marcado como aberto — não como resolvido.
+
+---
+
+## 12. Segunda referência do Rica — a tela do Codex, e ela é para ADOTAR (30/07 13:47)
+
+> Nota de numeração: existem duas seções "10" neste arquivo (a *Fronteira*, mais acima, e o
+> *Veredito parcial*). Não renumerei para não invalidar as citações dos despachos já dados.
+> Referências a §10 daqui pra frente significam o **Veredito parcial**.
+
+Chegou uma segunda referência — `/tmp/cockpit-v2-prints/referencia-rica-composer.jpg`, a tela
+inicial do **Codex** (aba *Work*) — e o tom mudou. Na primeira era *"pra ele se inspirar"*.
+Nesta é: **"essa ui está muito boa, adota ela"**. Antes disso ele nomeou o que quer, e as
+palavras são dele:
+
+- *"chat input maior com modelo em baixo"*
+- *"botão em cima para mudar a tela para as que vamos precisar"*
+
+### O que fica adotado — a gramática, não só o vocabulário
+
+A §10 dizia *"empresta-se vocabulário, não gramática"*. Para **estas duas peças**, a regra
+está revogada por ordem direta dele. O que se adota:
+
+1. **Composer alto, controles por dentro.** A caixa de escrever é alta e tem respiro — não é
+   uma linha fina. Os controles moram **dentro** dela, na base: à esquerda as ações de anexo,
+   à direita **o modelo e o esforço** (na referência, `5.6 Sol · Extra alto` com chevron),
+   o microfone, e o botão de envio como único elemento sólido da tela.
+2. **Modelo e esforço embaixo, à direita, dentro do composer.** Isto não é enfeite: o cockpit
+   já tem seletor de modelo e de esforço por agente (família Kimi inclusive). Hoje eles moram
+   longe de onde a decisão é tomada. Na referência, a escolha do motor está a um toque de onde
+   se escreve — que é onde ela pertence.
+3. **Barra segmentada no topo para trocar de tela.** Na referência é `Chat | Work`. Pill
+   contido, centralizado, o ativo em superfície elevada e o inativo só texto.
+
+### O que continua NÃO sendo adotado, e o motivo não mudou
+
+**O feed.** A §1 vale inteira: 82% do tráfego é `tool_use`, a tela é **log de execução** e não
+sequência de bolhas. A referência é a tela *vazia* do Codex — ela mostra o composer e a
+navegação, não mostra o feed. Adotar o que a imagem mostra não conflita com a nossa tese em
+lugar nenhum; a §7 (gramática da execução, já entregue em `117749e`) segue mandando no feed.
+
+E **a cor continua nossa** — a §10 registrou o *"essa tela muito preta, prefiro a nossa"*, e
+esta referência é do mesmo preto quase absoluto. `--ck-surface-canvas` fica.
+
+### O limite honesto da barra de telas
+
+*"as que vamos precisar"* inclui a fase 2 (kanban), que **não existe** e não vai ser desenhada
+agora (§4.1 do `cockpit-v2-ESTADO.md`). Botão que não leva a lugar nenhum é mentira de UI e
+reprova pela §9. A barra nasce com os destinos que **existem hoje** e com o desenho pronto para
+receber o terceiro quando a fase 2 chegar.
