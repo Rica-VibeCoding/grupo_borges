@@ -67,7 +67,9 @@ Não é preto puro de propósito: `#000` em OLED de celular causa arraste (*smea
 | `--ck-state-fail` | `oklch(0.74 0.16 22)` | `#ff7d7c` | 5.2:1 | falhou, cancelado |
 | `--ck-focus` | `oklch(0.80 0.13 220)` | `#40d1f7` | 7.2:1 | anel de foco de teclado |
 
-`--ck-state-fail` fica **fora do gamut sRGB** por escolha: em tela display-P3 (o iPhone do Rica) o vermelho existe mais vivo; em sRGB o browser clampa. O piso de 4.5:1 foi medido **no valor já clampado**, então vale nas duas telas — o P3 é ganho, não dependência.
+`--ck-state-fail` fica **fora do gamut sRGB** por escolha: em tela display-P3 (o iPhone do Rica) o vermelho existe mais vivo; em sRGB o browser reduz para o gamut. O P3 é ganho, não dependência.
+
+> **Como o browser reduz, de verdade** (verificado pelo Pavan em rota independente, e corrige o que este documento afirmava antes): CSS Color 4 **não** faz clamp por canal — faz *gamut mapping* reduzindo o **croma** e preservando L e H. Os dois caminhos foram calculados: clamp por canal dá **5.21:1**, redução de croma dá **5.23:1**. Passa nos dois, e a medição por clamp usada aqui é a **conservadora** — o real é ligeiramente melhor. Quem revalidar cor fora de gamut pode medir por clamp com segurança: erra para o lado seguro.
 
 ### 2.4 Diff
 
@@ -88,7 +90,9 @@ Sinal de menos em estatística de diff é **U+2212 (`−`)**, não hífen — he
 | `--ck-edge-hairline` | `oklch(0.38 0.010 265)` | sem piso | separador decorativo entre mensagens/linhas |
 | `--ck-edge-light` | `rgb(255 255 255 / 0.07)` | sem piso | fio de luz de 1px no **topo** de superfície elevada |
 
-A distinção não é estética, é WCAG 2.1 §1.4.11: o piso de 3:1 vale para **componente de interface e indicador de estado**, não para separador decorativo. Se eu exigisse 3:1 em toda borda, a tela viraria uma grade cinza-claro. `L=0.56` foi testado e **reprova** (2.78:1 sobre a superfície elevada) — por isso 0.60.
+A distinção não é estética, é WCAG 2.1 §1.4.11: o piso de 3:1 vale para **componente de interface e indicador de estado**, não para separador decorativo. Se eu exigisse 3:1 em toda borda, a tela viraria uma grade cinza-claro.
+
+Por que exatamente `L=0.60`, e não menos: `L=0.56` **reprova** (2.78:1 sobre a superfície elevada). `L=0.58` passa, mas por **0.02** (3.02:1) — margem que qualquer arredondamento de renderização come. `L=0.60` dá 3.27:1, que é folga saudável. **Não "otimizar" isso para baixo.**
 
 Aplicação do fio de luz, barata e sem blur:
 
@@ -167,6 +171,13 @@ Isto **não** é o retorno do tema revogado. O `DECISOES.md` de maio cravava "Je
 | `--ck-text-lg` | 1.25rem / 20px | título de seção |
 | `--ck-text-hero` | 1.75rem / 28px | estado vazio, hero |
 
+### Duas exigências técnicas — entram no gate, não são gosto
+
+Impostas pelo Pavan na aprovação da tipografia, e corretas:
+
+1. **Self-host obrigatório, via `next/font/local`, com subset `latin`.** A fonte **não pode depender de rede externa**: quem serve é a VPS, e o cockpit é acessado pelo tailnet. CDN de fonte é ponto único de falha fora do nosso controle.
+2. **Medir o peso servido.** Duas fontes variáveis entregues inteiras afundam o **item 1 do gate** (streaming sem engasgo no celular). Se o par Geist Sans + Geist Mono não couber no orçamento, o corte é nas variações de peso — não na legibilidade.
+
 Entrelinha: 1.55 no corpo e no mono (bloco de código respira), 1.2 no hero.
 Tracking: `-0.035em` no hero · `-0.012em` em título de linha · `+0.055em` em overline maiúscula (os três vêm do Codex, §6) · zero no corpo.
 `tabular-nums` obrigatório em: contador de token, tempo decorrido, estatística de diff, quota.
@@ -244,6 +255,19 @@ Do esqueleto (Pavan), e aqui só se obedece:
 `apps/web` não recebe commit de ninguém.
 
 **Modo claro:** o v2 nasce só escuro (o alvo é dark, e o usuário é celular). Os tokens são semânticos de propósito — quando o claro entrar, deriva valores sem renomear nada.
+
+Dois detalhes que **furam a estética inteira** se esquecidos — apontados pelo Pavan, e obrigatórios:
+
+```css
+:root { color-scheme: dark; }   /* sem isto, scrollbar, input, select e date picker
+                                  NATIVOS renderizam claros e destroem a tela */
+```
+
+```html
+<meta name="theme-color" content="#18191d">  <!-- = --ck-surface-canvas -->
+```
+
+Sem o `theme-color`, a barra do Safari no iPhone do Rica destoa da tela — e é a primeira coisa que ele vê. Se `--ck-surface-canvas` mudar, **este valor muda junto**.
 
 ---
 
