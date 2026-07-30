@@ -7,9 +7,9 @@
 // virtualizador (`@tanstack/react-virtual`), que nunca foi dela.
 //
 // Duas mudanças de fundo em relação ao esqueleto, e as duas são o G3:
-//   1. `estimateSize` é DETERMINÍSTICA por item (ver `estimativa.ts`) — a média
-//      móvel do esqueleto deslocava tudo o que ainda não fora medido, por fora
-//      da compensação do virtualizador.
+//   1. `estimateSize` é CONSTANTE — nem a média móvel do esqueleto (que
+//      deslocava tudo o que ainda não fora medido, por fora da compensação do
+//      virtualizador), nem a função por item que a substituiu. Ver ALTURA_ITEM.
 //   2. quando o Rica está rolado para cima, o que se preserva é o ITEM sob o
 //      olho dele, não o `scrollTop` (ver `ancora.ts`).
 
@@ -21,7 +21,6 @@ import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/re
 import { capturaAncora, estaColado, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { chaveDe } from './chave';
 import { CorpoDoItem } from './corpo-do-item';
-import { estimaAltura } from './estimativa';
 
 export type FeedProps = {
   itens: readonly RenderItem[];
@@ -32,6 +31,36 @@ export type FeedProps = {
  *  medição continuar comparável. */
 const SOBRA = 6;
 
+/**
+ * Altura suposta para item que ainda NÃO foi medido, em px.
+ *
+ * Constante de propósito, e a doc do @tanstack/react-virtual é explícita sobre
+ * o porquê: "If you are dynamically measuring your elements, it's recommended
+ * to estimate the largest possible size (within comfort) of your items."
+ * Como este feed passa `measureElement` no envelope (mais abaixo), a estimativa
+ * é DESCARTADA no primeiro render de cada item — todo trabalho gasto para
+ * produzi-la é trabalho jogado fora.
+ *
+ * E não é pouco trabalho: `getMeasurements` percorre de `pendingMin` até
+ * `count` chamando `estimateSize` em cada item não medido (virtual-core 3.17.7,
+ * linha 632), e `getMeasurementOptions` zera `pendingMin` sempre que uma opção
+ * de medição muda de identidade — `count` inclusive, que muda a cada flush de
+ * streaming. Ou seja: ~1.280 chamadas por flush, num feed de 1.300 itens. A
+ * versão anterior fazia cinco varreduras de texto por chamada; o cache em
+ * WeakMap que veio depois trocou isso por um lookup, mas manteve trabalho por
+ * item. A doc manda não fazer o trabalho.
+ *
+ * O NÚMERO veio de medição, não de palpite: `docs/cockpit-v2-medicao/
+ * alturas_reais.py` colheu `offsetHeight` dos 500 itens da carga do canário e
+ * os 500 medem 36 px. 44 px é o item colapsado (execução ou raciocínio
+ * fechado), que cobre a carga inteira com folga e é o caminho quente da tese do
+ * v2 — 82% `tool_use`, que nasce fechado. Errar aqui é barato: a medição real
+ * corrige no primeiro render e o virtualizador compensa o delta. Refazer a
+ * conta contra tráfego real do Rica (não contra a fixture) é o que muda este
+ * número.
+ */
+const ALTURA_ITEM = 44;
+
 export function Feed({ itens, lookup }: FeedProps) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
 
@@ -41,15 +70,25 @@ export function Feed({ itens, lookup }: FeedProps) {
   const contagemRef = useRef(0);
   const [temNovas, setTemNovas] = useState(false);
 
+  // A doc pede `getItemKey` memoizado ("to avoid unnecessary recalculations"),
+  // e o motivo está em virtual-core 3.17.7: ele é dependência do memo de
+  // `getMeasurementOptions`, e uma arrow nova a cada render força a varredura
+  // completa das medições. Ler as chaves por ref mantém a identidade fixa para
+  // sempre, sem prender a função à lista.
+  //
+  // Ressalva honesta: durante streaming isso NÃO economiza nada, porque `count`
+  // também é dependência e cresce a cada flush. O ganho é quando o Rica só rola
+  // e nada chega — que é a maior parte do tempo dele olhando a tela.
+  const chavesRef = useRef(chaves);
+  chavesRef.current = chaves;
+  const chaveDoItem = useCallback((indice: number) => chavesRef.current[indice] ?? indice, []);
+
   const virtualizer = useVirtualizer({
     count: itens.length,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: (indice) => {
-      const item = itens[indice];
-      return item ? estimaAltura(item) : 0;
-    },
+    estimateSize: () => ALTURA_ITEM,
     overscan: SOBRA,
-    getItemKey: (indice) => chaves[indice] ?? indice,
+    getItemKey: chaveDoItem,
   });
 
   const virtuais = virtualizer.getVirtualItems();

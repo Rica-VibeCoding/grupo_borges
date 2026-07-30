@@ -105,6 +105,52 @@ virtualização**: é o custo de render por item. A única variável entre as du
 rotas é o miolo — `LinhaExecucao`, `Thinking` e `AssistantMarkdown` no lugar de
 `<p>` e `<div>`.
 
+## A doc da biblioteca condenou a nossa estimativa — e a troca NÃO moveu o número
+
+Régua nova do Pavan, 30/07, e ela nasceu de uma cobrança do Rica: *antes de
+inventar otimização, ler a doc da biblioteca que já está no projeto.* A doc do
+`@tanstack/react-virtual` diz, sobre `estimateSize`:
+
+> "If you are dynamically measuring your elements, it's recommended to estimate
+> the largest possible size (within comfort) of your items."
+
+E este feed passa `measureElement` no envelope. Ou seja: **a estimativa é
+descartada no primeiro render de cada item**, e todo trabalho para produzi-la é
+trabalho jogado fora. O mecanismo, conferido na fonte instalada (virtual-core
+3.17.7, mais duro que a doc): `getMeasurements` percorre de `pendingMin` até
+`count` chamando `estimateSize` em cada item não medido (linha 632);
+`getMeasurementOptions` **zera** `pendingMin` (linha 555) sempre que uma opção
+de medição muda de identidade — e `count` é uma delas, então durante streaming
+a varredura completa acontece a cada flush. ~1.280 chamadas por flush.
+
+Trocamos por `ALTURA_ITEM = 44`, constante. O número saiu de medição
+(`alturas_reais.py`): os 500 itens da carga do canário medem **36 px, todos**;
+44 é o item colapsado, cobre a carga com folga e é o caminho quente da tese do
+v2. `getItemKey` foi memoizado por ref, como a doc pede — com a ressalva de que
+isso não economiza durante streaming, porque `count` muda sozinho.
+
+**Resultado: nada.** Frames entregues pelo feed, como fração do controle:
+
+| histórico | antes (estimativa por item + WeakMap) | depois (constante) |
+|---|---|---|
+| 50 | 77,2% | 78,6% |
+| 200 | 65,2% | 71,5% |
+| 500 | 92,6% | 85,3% |
+| média | ~78% | ~78% |
+
+Idêntico dentro do ruído. A leitura honesta: **o cache em WeakMap (`2658fc6`) já
+tinha colhido o ganho disponível** — ele levou a escala de 1,40× para 1,20×, e a
+constante só removeu o resíduo. O trabalho por item já estava barato demais para
+aparecer.
+
+A troca fica, e não por causa do número: manter 115 linhas de função, cache e
+teste para produzir um valor que a biblioteca descarta é errado com ou sem p95.
+Mas quem procurar aqui um ganho de desempenho não vai achar.
+
+**O que isso ELIMINA, e esse é o valor da rodada:** o virtualizador e a
+estimativa saem da lista de suspeitos com prova, não com argumento. O custo
+residual de ~22% dos frames é dos renderers.
+
 ## Onde olhar na próxima rodada
 
 **No `Thinking`, não no markdown.** Ver
@@ -118,8 +164,18 @@ Dois pontos concretos a medir lá:
 1. `buildThinkingRenderModel(content)` roda a cada render e percorre blocos de
    ~6,6 mil caracteres para contar linhas. Candidato a memoização por
    identidade — o mesmo remédio que funcionou na estimativa.
-2. Se `initiallyExpanded` vier ligado, cada bloco arrasta o parser de markdown
-   com 6,6 mil caracteres de primeira.
+2. ~~Se `initiallyExpanded` vier ligado, cada bloco arrasta o parser de markdown
+   com 6,6 mil caracteres de primeira.~~ **DESCARTADO em 30/07 sem custar
+   rodada:** `initiallyExpanded` não é bandeira configurável, é `false` literal
+   no tipo (`lib/thinking.ts:7`). O corpo só monta `AssistantMarkdown` quando
+   `open` é verdadeiro, e `open` nasce daquele literal. O markdown do raciocínio
+   nunca roda no primeiro render.
+
+O candidato 1 é mais gordo do que este documento dizia. Por bloco visível, por
+flush: `trim()` em `normalizeThinkingContent`, `trim()` de novo em `countLines`,
+`replace(/\r\n?/g)`, `replace(/\n+$/)` e um `split('\n')` que aloca uma string
+por linha — **para usar só o `.length`**. Cinco varreduras e ~cinco cópias de
+6,6 KB, e o resultado é um inteiro. `Thinking` também não é memoizado.
 
 **O que NÃO é o gargalo, e já está descartado:** o `buildToolResultLookup(messages)`
 O(N) por flush é idêntico nas duas rotas, então não explica a diferença. O
