@@ -2,11 +2,15 @@ import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { mergeMarkdownClassName, transformMarkdownUrl } from '../../lib/markdown';
+import {
+  mergeMarkdownClassName,
+  normalizeMarkdownContent,
+  transformMarkdownUrl,
+} from '../../lib/markdown';
 import { CodeBlock } from './code-block';
 
 export type AssistantMarkdownProps = {
-  children: string;
+  children: unknown;
   className?: string;
 };
 
@@ -153,6 +157,9 @@ const MARKDOWN_COMPONENTS: Components = {
 };
 
 export function AssistantMarkdown({ children, className = '' }: AssistantMarkdownProps) {
+  const content = normalizeMarkdownContent(children);
+  if (content === null) return null;
+
   return (
     <div
       className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-3)] overflow-hidden font-sans text-[13px] leading-[1.55] text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${className}`}
@@ -162,7 +169,7 @@ export function AssistantMarkdown({ children, className = '' }: AssistantMarkdow
         components={MARKDOWN_COMPONENTS}
         urlTransform={transformMarkdownUrl}
       >
-        {children}
+        {content}
       </ReactMarkdown>
     </div>
   );

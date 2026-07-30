@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   calculateDiff,
@@ -16,7 +16,13 @@ export type DiffViewerProps = {
   className?: string;
 };
 
-function DiffCodeLine({ line }: { line: DiffLine }) {
+function DiffCodeLine({
+  line,
+  lineNumberWidth,
+}: {
+  line: DiffLine;
+  lineNumberWidth: number;
+}) {
   const marker = line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' ';
   const colorClass =
     line.type === 'add'
@@ -26,7 +32,12 @@ function DiffCodeLine({ line }: { line: DiffLine }) {
         : '';
 
   return (
-    <div className={`grid min-w-max grid-cols-[3ch_3ch_2ch_1fr] ${colorClass}`}>
+    <div
+      className={`grid min-w-max ${colorClass}`}
+      style={{
+        gridTemplateColumns: `${lineNumberWidth}ch ${lineNumberWidth}ch 2ch minmax(0, 1fr)`,
+      }}
+    >
       <span className="select-none text-right">{line.oldLineNumber ?? ''}</span>
       <span className="select-none text-right">{line.newLineNumber ?? ''}</span>
       <span className="select-none text-center">{marker}</span>
@@ -41,9 +52,20 @@ export function DiffViewer({
   newString,
   className = '',
 }: DiffViewerProps) {
-  const lines = calculateDiff(oldString, newString);
-  const summary = summarizeDiff(lines);
-  const blocks = collapseContext(lines);
+  const { blocks, lineNumberWidth, summary } = useMemo(() => {
+    const lines = calculateDiff(oldString, newString);
+    const largestLineNumber = lines.reduce(
+      (largest, line) =>
+        Math.max(largest, line.oldLineNumber ?? 0, line.newLineNumber ?? 0),
+      0,
+    );
+
+    return {
+      blocks: collapseContext(lines),
+      lineNumberWidth: Math.max(3, String(largestLineNumber).length),
+      summary: summarizeDiff(lines),
+    };
+  }, [oldString, newString]);
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(() => new Set());
 
   function expandBlock(id: string) {
@@ -73,7 +95,13 @@ export function DiffViewer({
         {blocks.map((block) => {
           if (block.type === 'line') {
             const key = `${block.line.type}-${block.line.oldLineNumber ?? 'x'}-${block.line.newLineNumber ?? 'x'}`;
-            return <DiffCodeLine key={key} line={block.line} />;
+            return (
+              <DiffCodeLine
+                key={key}
+                line={block.line}
+                lineNumberWidth={lineNumberWidth}
+              />
+            );
           }
 
           if (expandedBlocks.has(block.id)) {
@@ -81,6 +109,7 @@ export function DiffViewer({
               <DiffCodeLine
                 key={`${block.id}-${line.oldLineNumber ?? 'x'}-${line.newLineNumber ?? 'x'}`}
                 line={line}
+                lineNumberWidth={lineNumberWidth}
               />
             ));
           }

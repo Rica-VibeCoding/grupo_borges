@@ -1,10 +1,65 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   mergeMarkdownClassName,
+  normalizeMarkdownContent,
   transformMarkdownUrl,
 } from './markdown.ts';
+
+type Fixture = {
+  familia: string;
+  ocorrencias: number;
+  evento: {
+    message: {
+      content: unknown;
+    } | null;
+  };
+};
+
+const FIXTURE_DIR = join(import.meta.dirname, '../../../fixtures/cockpit-v2/familias');
+
+function loadFixture(name: string): Fixture {
+  return JSON.parse(readFileSync(join(FIXTURE_DIR, `${name}.json`), 'utf8')) as Fixture;
+}
+
+test('extrai texto do content array real', () => {
+  const fixture = loadFixture('bloco__text');
+  const content = fixture.evento.message?.content;
+  assert.ok(Array.isArray(content));
+
+  const textPart = content.find(
+    (part): part is { type: 'text'; text: string } =>
+      typeof part === 'object' &&
+      part !== null &&
+      (part as Record<string, unknown>).type === 'text' &&
+      typeof (part as Record<string, unknown>).text === 'string',
+  );
+  assert.ok(textPart);
+
+  assert.equal(fixture.ocorrencias, 330);
+  assert.equal(normalizeMarkdownContent(content), textPart.text);
+});
+
+test('content null real vira ausência, sem depender do react-markdown', () => {
+  const fixture = loadFixture('borda__content_none');
+  const content = fixture.evento.message?.content ?? null;
+
+  assert.equal(fixture.ocorrencias, 199);
+  assert.equal(content, null);
+  assert.equal(normalizeMarkdownContent(content), null);
+});
+
+test('content string real atravessa como um único corpo', () => {
+  const fixture = loadFixture('borda__content_string');
+  const content = fixture.evento.message?.content;
+  assert.equal(typeof content, 'string');
+
+  assert.equal(fixture.ocorrencias, 87);
+  assert.equal(normalizeMarkdownContent(content), content);
+});
 
 test('preserva URLs web absolutas', () => {
   assert.equal(
