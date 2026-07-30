@@ -153,6 +153,23 @@ foi erro meu de orquestração: despachei pele e instrumentação do gate no mes
 - **Supervisão:** cron de 5 min (`CronCreate`, id `07e3864c`). ⚠️ **session-only** — morre
   com a minha sessão e a supervisão para sem avisar ninguém. Este §4 é o antídoto.
 
+## 4.1 Escopo em duas fases — decisão do Rica, 30/07 16:11
+
+Palavras dele: *"vamos fazer o novo em duas fases — chat com a tropa; kanban de tarefas
+por último, depois de validar a cultura da ui no chat"*. Na mesma mensagem delegou o
+resto: *"tome as decisões, blz"*.
+
+- **Fase 1 — chat com a tropa.** É o que está em execução. Tudo o que estiver sendo
+  construído agora pertence a ela.
+- **Fase 2 — kanban de tarefas.** **Não existe nesta fase.** Só começa depois de a
+  cultura visual do chat estar validada por ele.
+
+A ordem não é cronograma, é dependência: o chat **funda** a gramática visual que o kanban
+vai herdar. Cultura que nascer errada no chat se propaga para a fase 2 e fica cara de
+desfazer. Por isso a peça despachada agora é a §7 do `cockpit-v2-estetica.md` — a linha de
+ferramenta. Pelos números do baseline, 82% do tráfego é `tool_use` e só o Bash tem 738
+chamadas por sessão: essa linha **é** a tela, não é um detalhe dela.
+
 ## 5. Retomada — os passos, na ordem
 
 1. **Trocar a chamada** em `apps/cockpit/app/spike/page.tsx:359-360`:
