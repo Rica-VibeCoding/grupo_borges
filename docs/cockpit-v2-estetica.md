@@ -40,9 +40,15 @@ Ordem de elevação fixada pelo esqueleto: `app < nav < composer < mensagem elev
 | Token | OKLCH | sRGB | Onde |
 |---|---|---|---|
 | `--ck-surface-canvas` | `oklch(0.215 0.008 265)` | `#18191d` | palco do chat — onde o texto longo vive |
-| `--ck-surface-nav` | `oklch(0.250 0.010 265)` | `#1f2227` | coluna da tropa, gaveta, chrome |
+| `--ck-surface-nav` | `oklch(0.250 0.010 265)` | `#1f2227` | coluna da tropa, gaveta, ~~chrome~~ (ver §14) |
 | `--ck-surface-composer` | `oklch(0.285 0.011 265)` | `#272a30` | composer, campos, popover |
 | `--ck-surface-raised` | `oklch(0.315 0.012 265)` | `#2f3238` | mensagem elevada, tool group aberto, overlay |
+
+> ⚠️ **A palavra "chrome" nesta linha está revogada pela §14 (30/07).** Chrome que mora
+> DENTRO da folha — barra de telas, cabeçalho do agente — é `--ck-surface-canvas`, igual
+> ao palco. Pintá-lo de `nav` fazia o topo da folha ter exatamente a cor da mesa em volta
+> e o recorte sumia na borda. `nav` continua valendo para a mesa, a faixa da tropa, a
+> gaveta e o trilho do pill.
 
 Não é preto puro de propósito: `#000` em OLED de celular causa arraste (*smearing*) na rolagem e endurece a leitura de texto longo.
 
@@ -766,3 +772,92 @@ justamente para que esses matizes fiquem mais nítidos contra elas.
 Consequência para a barra de telas da §12: ela fica **centralizada no topo** e o botão da gaveta
 mora **à direita dela**, na mesma faixa. São dois controles no mesmo chrome, e é assim na
 referência.
+
+---
+
+## 14. A MESA E A FOLHA — como o *"sidebar ao fundo, igual o fluyt"* virou tela (30/07)
+
+Rodada dedicada, contexto limpo, skill `frontend-design` carregada — o rito da §9.1.
+Esta seção é o que ficou **decidido**; quem for desenhar por cima consome daqui.
+
+### O que o Fluyt faz de verdade
+
+Fui ver antes de desenhar, em vez de deduzir da frase: `apps/com` monta
+`<Sidebar variant="inset">`, que é o `sidebar-08` do registro do shadcn. A anatomia do
+variant, lida no componente:
+
+- o wrapper inteiro pinta com a cor da sidebar — **a sidebar não desenha caixa, ela É o fundo**
+- o conteúdo é um painel `bg-background` com `m-2 ml-0 rounded-xl`
+
+**Emprestei a medida, recusei o mecanismo.** Adotar o `SidebarProvider` custaria a decisão
+estrutural nº 1 do `app-shell.tsx` — superfície mora na URL, shell sem JavaScript no
+cliente —, que é o que faz deep-link do Telegram e botão voltar do Android funcionarem.
+O inset virou duas classes no `globals.css` (`.ck-palco`, `.ck-faixa`).
+
+### A tela
+
+| | celular | desktop (≥768px) |
+|---|---|---|
+| tropa | gaveta sobreposta com véu | **faixa permanente**, sem véu e sem botão de abrir |
+| palco | largura cheia, sem margem nem raio | **folha**: `margin 8px` em três lados, raio, fio de luz no topo |
+| botão `≡` | existe | **some** — fundo não se abre, e botão que não faz nada é a mentira de UI da §9 |
+
+**Por que a folha é mais escura que a mesa, e isso não inverte a escada.** Não é papel
+sobre a mesa, é **visor no painel**: o chassi (tropa) recebe a luz, o visor é a abertura
+por onde se vê o log. A relação de luminância é a mesma da referência aprovada — no Codex
+desktop a sidebar é `#202020` e o palco `#181818`. O que eleva a folha é o **recorte**:
+margem, raio e o fio de luz de 1px. Separação medida: 1,095× — dentro do degrau da escada.
+
+**O raio é `--ck-radius-caixa` (16px), reusado, não inventado.** O `sidebar-08` usa 12px, que
+não existe no nosso conjunto; `frame` (8px) é raio de conteúdo dentro do feed e num painel
+de 1.100px lê como quadrado. Se o esqueleto quiser um `--ck-radius-palco` próprio, a chamada
+é do Pavan — token de medida não é meu.
+
+### A assinatura: a ABA
+
+**O item selecionado da tropa funde com a folha.** Perde o véu de 4%, assume a cor da folha,
+perde o raio do lado direito e avança os 8px do respiro até encostar nela — medido no
+browser, `aba.right` = `folha.x` = 260. Carrega informação em vez de decorar: a folha aberta
+não está solta sobre a mesa, ela **sai do agente que você escolheu**.
+
+O filete de 2px continua: fundir é sinal de forma, e forma sozinha não basta quando o item
+sai da vista ao rolar a lista. Só existe a partir de `md` — no celular não há folha em que
+encostar, e lá o véu segue sendo o sinal.
+
+### A raiz `/` deixou de ser um deserto
+
+Tinha dois layouts — um `md:hidden` para o celular e uma coluna de 260px encostada na borda
+com quatro quintos de tela vazia ao lado, fechada por um *"Escolha um agente"* no meio do
+nada. Morreram os dois. É **uma** lista, numa coluna de leitura que o desktop centraliza:
+`palco="mesa"`, sem folha, porque recortar uma folha vazia seria emoldurar o próprio vazio
+que se queria matar.
+
+### Contraste — nenhuma cor nova, e os pares que mudaram de superfície MELHORAM
+
+O chrome que saiu de `nav` para `canvas` levou junto todo o texto que vive nele. Como
+`canvas` é mais escuro, o contraste sobe em todos:
+
+| token | sobre `nav` (antes) | sobre `canvas` (agora) |
+|---|---|---|
+| `--ck-text-primary` | 14,24:1 | **15,59:1** |
+| `--ck-text-secondary` | 7,45:1 | **8,16:1** |
+| `--ck-state-running` | 8,28:1 | **9,07:1** |
+| `--ck-edge-functional` | 4,05:1 | **4,44:1** |
+
+O pior caso da §3 (`raised`) não foi tocado: segue o que já estava medido.
+
+### `theme-color` agora é por rota
+
+A §10-Fronteira amarra o `theme-color` a `--ck-surface-canvas`. A regra real é que ele bata
+com a cor que **encosta na barra do Safari**, e ela deixou de ser a mesma nas duas rotas: no
+chat quem encosta é a folha (`#191919`, no `layout.tsx`), na raiz é a mesa (`#222222`, num
+`export const viewport` da própria página). Verificado no HTML servido que o merge do Next é
+por campo — o `viewport-fit=cover` do layout sobrevive na raiz.
+
+### Aberto
+
+- **O rio entre o nome e o chip de estado** na raiz do desktop: a coluna de 32rem é mais larga
+  que o celular e o chip vai para a ponta. Não mexi no cartão da tropa — ele já passou pelo
+  olho do Rica e não é a peça desta rodada. Se incomodar, é uma linha.
+- **`/avatars/canario.webp` dá 404** e o Canário cai na inicial "CC". Pré-existente, não é
+  desta rodada.

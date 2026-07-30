@@ -75,14 +75,13 @@ function CartaoVivo({
     <li>
       <Link
         href={`/agente/${agente.slug}`}
-        className="ck-veil flex items-center"
+        className="ck-veil ck-aba flex items-center"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
           padding: 'var(--ck-space-2) var(--ck-space-3)',
-          borderRadius: 'var(--ck-radius-chip)',
           // Filete só marca SELEÇÃO. O estado já está dito duas vezes no chip
           // (cor + palavra); uma terceira seria ruído.
           borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
@@ -137,14 +136,13 @@ function LinhaDormindo({
     <li>
       <Link
         href={`/agente/${agente.slug}`}
-        className="ck-veil flex items-center"
+        className="ck-veil ck-aba flex items-center"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
           padding: 'var(--ck-space-1) var(--ck-space-3)',
-          borderRadius: 'var(--ck-radius-chip)',
           borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
         }}
       >

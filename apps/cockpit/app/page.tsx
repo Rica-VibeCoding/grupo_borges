@@ -1,3 +1,4 @@
+import type { Viewport } from 'next';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
 import { Tropa } from '@/components/shell/tropa';
@@ -6,6 +7,13 @@ import { Tropa } from '@/components/shell/tropa';
 // `API_BACKEND_URL`, o que só resolve no servidor. No cliente o caminho é
 // relativo (`/api/...`) e quem resolve é o rewrite do next.config.
 export const dynamic = 'force-dynamic';
+
+// A regra do contrato (§10-Fronteira) é que o `theme-color` bata com a cor que
+// ENCOSTA na barra do Safari, e ela não é a mesma nas duas rotas: no chat quem
+// encosta é a folha (`--ck-surface-canvas`, o valor do layout), aqui é a mesa
+// (`--ck-surface-nav`). Sem isto a barra do iPhone fica um degrau mais escura
+// que a tela, que é a primeira coisa que o Rica vê ao abrir.
+export const viewport: Viewport = { themeColor: '#222222' };
 
 export default async function Home() {
   const fleet = await fetchFleet();
@@ -17,95 +25,60 @@ export default async function Home() {
   const trabalhando = fleet.agents.filter((a) => a.status === 'trabalhando').length;
 
   return (
-    // Sem `nav`: aquele slot do AppShell é exclusivo do overlay da tropa
-    // dentro do CHAT (§13) — aqui na raiz a tropa é a própria superfície, e
-    // no desktop ela é uma coluna estática montada abaixo, fora do shell.
-    <AppShell>
-      {/* No celular a rota `/` É a tropa — tela inteira, uma superfície por vez.
-          A lista vem logo abaixo do cabeçalho de propósito: a coisa acionável não
-          pode nascer abaixo da dobra. */}
-      <div className="flex min-h-0 flex-1 flex-col md:hidden">
-        <header
-          className="ck-lit shrink-0 border-b"
+    // `palco="mesa"`: aqui a tropa É a tela, então o palco não se recorta em
+    // folha. Recortar produziria uma moldura arredondada em volta de nada — e
+    // é justamente o vazio que esta página tinha até agora.
+    //
+    // Sem `nav`: a faixa lateral existe onde há uma folha ao lado dela para
+    // navegar. Na raiz não há folha, e a tropa na faixa mais o mesmo conteúdo
+    // ao centro seriam duas listas idênticas na mesma tela.
+    <AppShell palco="mesa">
+      {/* UM layout, não dois. O que a rota `/` tinha era um bloco `md:hidden`
+          para o celular e outro `hidden md:flex` para o desktop — e o segundo
+          era uma coluna de 260px encostada na borda com quatro quintos de tela
+          vazia ao lado, fechada por um "Escolha um agente" no meio do nada.
+          Morreram os dois: é a mesma lista, numa coluna de leitura que o
+          desktop centraliza. A largura de linha que serve no celular serve
+          aqui; o que o desktop ganha é margem, não mais coisa. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className="mx-auto flex w-full flex-col"
           style={{
-            background: 'var(--ck-surface-nav)',
-            borderColor: 'var(--ck-edge-hairline)',
-            // O cabeçalho estende a própria cor por baixo do notch em vez de o
-            // shell empurrar o palco inteiro pra baixo.
-            paddingTop: 'calc(var(--ck-space-3) + var(--ck-safe-top))',
-            paddingRight: 'calc(var(--ck-space-4) + var(--ck-safe-right))',
-            paddingBottom: 'var(--ck-space-3)',
-            paddingLeft: 'calc(var(--ck-space-4) + var(--ck-safe-left))',
+            maxWidth: 'var(--ck-read-narrow)',
+            paddingTop: 'calc(var(--ck-space-4) + var(--ck-safe-top))',
+            paddingRight: 'calc(var(--ck-space-2) + var(--ck-safe-right))',
+            paddingBottom: 'calc(var(--ck-space-6) + var(--ck-safe-bottom))',
+            paddingLeft: 'calc(var(--ck-space-2) + var(--ck-safe-left))',
           }}
         >
-          <p
-            style={{
-              fontSize: 'var(--ck-text-lg)',
-              letterSpacing: 'var(--ck-track-title)',
-              color: 'var(--ck-text-primary)',
-            }}
-          >
-            Cockpit
-          </p>
-          <p
-            className="ck-tabular"
-            style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}
-          >
-            {fleet.agents.length} na frota · {trabalhando} trabalhando
-            {chamando > 0 ? (
-              <>
-                {' · '}
-                <span style={{ color: 'var(--ck-state-attention)' }}>{chamando} chamando</span>
-              </>
-            ) : null}
-          </p>
-        </header>
+          {/* Sem faixa de cor própria e sem borda inferior: o cabeçalho já
+              está sobre a mesa, e uma segunda superfície aqui separaria duas
+              coisas que são a mesma. */}
+          <header style={{ padding: '0 var(--ck-space-3) var(--ck-space-2)' }}>
+            <p
+              style={{
+                fontSize: 'var(--ck-text-lg)',
+                letterSpacing: 'var(--ck-track-title)',
+                color: 'var(--ck-text-primary)',
+              }}
+            >
+              Cockpit
+            </p>
+            <p
+              className="ck-tabular"
+              style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}
+            >
+              {fleet.agents.length} na frota · {trabalhando} trabalhando
+              {chamando > 0 ? (
+                <>
+                  {' · '}
+                  <span style={{ color: 'var(--ck-state-attention)' }}>{chamando} chamando</span>
+                </>
+              ) : null}
+            </p>
+          </header>
 
-        <div
-          className="min-h-0 flex-1 overflow-y-auto"
-          style={{ paddingBottom: 'var(--ck-safe-bottom)' }}
-        >
           <Tropa agents={fleet.agents} agora={agora} />
-        </div>
-      </div>
-
-      {/* Desktop: coluna da tropa MONTADA AQUI, estática — só na raiz. É a
-          única superfície onde ela ainda ocupa espaço permanente; dentro do
-          chat ela virou overlay (§13), mas aqui ESTA página existe para
-          mostrar a tropa, então escondê-la atrás de um toque seria pior. */}
-      <div className="hidden min-h-0 flex-1 md:flex">
-        <aside
-          className="min-h-0 shrink-0 overflow-y-auto border-r"
-          style={{
-            width: 'var(--ck-w-nav)',
-            background: 'var(--ck-surface-nav)',
-            borderColor: 'var(--ck-edge-hairline)',
-            paddingLeft: 'var(--ck-safe-left)',
-          }}
-        >
-          <Tropa agents={fleet.agents} agora={agora} compacta />
-        </aside>
-
-        {/* Sem ilustração — ilustração genérica é a assinatura do mequetrefe. */}
-        <div
-          className="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
-          style={{ padding: 'var(--ck-space-6)', gap: 'var(--ck-space-2)' }}
-        >
-          <p
-            style={{
-              fontSize: 'var(--ck-text-hero)',
-              lineHeight: 'var(--ck-leading-hero)',
-              letterSpacing: 'var(--ck-track-hero)',
-              color: 'var(--ck-text-primary)',
-            }}
-          >
-            {chamando > 0 ? 'Alguém está te esperando' : 'Escolha um agente'}
-          </p>
-          <p style={{ fontSize: 'var(--ck-text-base)', color: 'var(--ck-text-secondary)' }}>
-            {chamando > 0
-              ? `${chamando} ${chamando === 1 ? 'agente parado' : 'agentes parados'} aguardando você na coluna ao lado.`
-              : `${fleet.agents.length} na frota, ${trabalhando} trabalhando agora.`}
-          </p>
         </div>
       </div>
     </AppShell>

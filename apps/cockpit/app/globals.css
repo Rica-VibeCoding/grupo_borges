@@ -329,6 +329,118 @@ body {
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 
+/* ===== A MESA E A FOLHA ====================================================
+ *
+ * Ordem do Rica (§13): *"sidebar fica ao fundo da tela do chat, igual o
+ * fluyt"*. Fui ver o que o Fluyt faz de verdade antes de desenhar: ele monta
+ * `<Sidebar variant="inset">`, o mesmo `sidebar-08` do registro do shadcn. A
+ * anatomia do variant, lida no componente e não de memória:
+ *
+ *   - o wrapper INTEIRO pinta com a cor da sidebar (`has-data-[variant=inset]:bg-sidebar`)
+ *   - a sidebar não desenha caixa nenhuma — ela É o fundo
+ *   - o conteúdo é um painel `bg-background` com `m-2 ml-0 rounded-xl`
+ *
+ * Emprestei a MEDIDA (margem de 8px em três lados, canto arredondado) e
+ * recusei o mecanismo: adotar o `SidebarProvider` custaria a decisão nº 1 do
+ * `app-shell.tsx` — superfície mora na URL, shell sem JavaScript no cliente —
+ * que é o que faz deep-link do Telegram e botão voltar do Android
+ * funcionarem. Provider é estado de cliente; aqui são duas classes.
+ *
+ * A metáfora, e ela resolve a tensão com "luz = perto": a folha do chat é mais
+ * ESCURA que a mesa, o que pareceria uma inversão da escada de elevação. Não
+ * é. Isto não é papel sobre a mesa, é VISOR no painel: o chassi (a tropa)
+ * recebe a luz, o visor é a abertura por onde se vê o log. A relação de
+ * luminância é a mesma da referência que o Rica aprovou — no Codex desktop a
+ * sidebar é #202020 e o palco #181818. O que eleva a folha aqui é o RECORTE:
+ * margem, raio e o fio de luz de 1px na borda de cima.
+ *
+ * Sem `box-shadow` com blur em lugar nenhum: proibição §9.3.
+ * ==========================================================================*/
+
+/* A folha. No celular ela não existe: uma superfície por vez, largura cheia,
+ * sem margem — dar raio a uma superfície que ocupa a tela inteira só arredonda
+ * o canto da tela. */
+@media (min-width: 768px) {
+  .ck-palco {
+    margin: var(--ck-space-2) var(--ck-space-2) var(--ck-space-2) 0;
+    border-radius: var(--ck-radius-caixa);
+    box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+  }
+}
+
+/* A tropa. É o MESMO elemento nos dois breakpoints, não duas listas com
+ * `md:hidden` de um lado e `hidden md:flex` do outro — duplicar a lista
+ * duplicaria também o `<nav aria-label="Tropa">`, e leitor de tela passaria a
+ * anunciar duas navegações onde há uma.
+ *
+ * Celular: gaveta sobreposta, sai do fluxo, o palco nunca paga a largura dela.
+ * Desktop: faixa permanente no fluxo. A gaveta fechada por default está errada
+ * aqui — a tropa é o fundo, e fundo não se abre. */
+.ck-faixa {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  width: 100%;
+  max-width: var(--ck-w-nav);
+  z-index: var(--ck-z-drawer);
+  padding-top: var(--ck-safe-top);
+  padding-bottom: var(--ck-safe-bottom);
+  padding-left: var(--ck-safe-left);
+}
+
+@media (min-width: 768px) {
+  .ck-faixa {
+    position: static;
+    width: var(--ck-w-nav);
+    flex-shrink: 0;
+    z-index: auto;
+    /* O mesmo 8px da margem da folha, e não é simetria por simetria: é o que
+       põe o overline da tropa na mesma linha do pill de telas lá dentro. Sem
+       ele os dois cabeçalhos ficam 8px fora de registro — perto o bastante
+       para parecer erro, longe o bastante para incomodar. */
+    padding-top: var(--ck-space-2);
+  }
+}
+
+/* A ABA — o item selecionado da tropa funde com a folha.
+ *
+ * É a assinatura desta tela, e ela carrega informação em vez de decorar: a
+ * folha aberta não está solta sobre a mesa, ela SAI do agente que você
+ * escolheu. O item perde o véu de 4% e assume a cor da folha, perde o raio do
+ * lado direito e avança os 8px do respiro da faixa até encostar nela.
+ *
+ * Vale só a partir de `md`, porque só aí existe folha para encostar. No
+ * celular a tropa é gaveta sobre o palco e o véu continua sendo o sinal.
+ *
+ * Contraste melhora: o par passa de texto sobre `nav`+véu (5,72:1 no
+ * secondary) para texto sobre `canvas` (6,74:1). E o filete de 2px continua —
+ * fundir com a folha é sinal de forma, e forma sozinha também não é portadora
+ * única quando o item some da vista ao rolar a lista. */
+.ck-aba {
+  border-radius: var(--ck-radius-chip);
+}
+
+/* As duas classes no seletor não são enfeite: `.ck-veil[data-selecionado]`
+ * pinta o véu de 4% e tem a mesma especificidade (0,2,0) que teria
+ * `.ck-aba[data-selecionado]`. Empate se resolve por ordem no arquivo, e
+ * ordem é exatamente a fragilidade que já mordeu aqui uma vez (ver o
+ * `:focus-visible` mais abaixo). Somar a classe que o elemento já tem leva a
+ * (0,3,0) e a exceção passa a vencer onde quer que esteja escrita.
+ *
+ * Sem o `background-image: none` a aba fica 4% mais clara que a folha em que
+ * deveria encostar — perto o bastante para parecer emenda malfeita. */
+@media (min-width: 768px) {
+  .ck-veil.ck-aba[data-selecionado='true'] {
+    background-image: none;
+    background-color: var(--ck-surface-canvas);
+    border-radius: var(--ck-radius-chip) 0 0 var(--ck-radius-chip);
+    /* Avança sobre o respiro da faixa até a borda da folha. O conteúdo não se
+       mexe: quem cresce 8px é a caixa, o `padding-right` de 12px continua
+       valendo a partir da borda nova. */
+    margin-right: calc(var(--ck-space-2) * -1);
+  }
+}
+
 /* Véu de interação. É `background-image` e não `::after` de propósito: um
  * pseudo-elemento sobreposto pintaria branco POR CIMA do texto e lavaria o
  * contraste que a §2.6 mediu. Gradiente de uma cor só compõe sobre a

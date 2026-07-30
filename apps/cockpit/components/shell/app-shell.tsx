@@ -17,13 +17,23 @@
  *    Dois provider dividem o mesmo cmd+B e brigam pelo atalho.
  *
  * §13 (30/07) — MUDANÇA DE COMPORTAMENTO, ordem direta: *"sidebar fica ao
- * fundo da tela do chat, igual o fluyt"* e *"ela não empurra o conteúdo:
- * sobrepõe"*. Até aqui a tropa era uma coluna permanente em `md+`, reservando
- * `--ck-w-nav` e empurrando o palco. Isso saiu: a tropa agora usa o MESMO
- * mecanismo que a gaveta já tinha à direita — `fixed` + véu, JAMAIS reserva
- * largura — só que espelhado à esquerda. O palco fica sempre em largura
- * cheia, em qualquer tela. A rota `/` (tropa em tela inteira no celular)
- * continua fora disto: aquela é outra superfície, não usa `nav` do AppShell.
+ * fundo da tela do chat, igual o fluyt"*. Fui ver o que o Fluyt faz: ele monta
+ * `<Sidebar variant="inset">`, o `sidebar-08` do registro do shadcn. Daí a
+ * estrutura desta tela, e ela é diferente em cada breakpoint porque o
+ * problema é diferente:
+ *
+ * - **Celular** — uma superfície por vez. A tropa é gaveta sobreposta com
+ *   véu, sai do fluxo, e o palco nunca paga a largura dela.
+ * - **Desktop** — A MESA E A FOLHA. O shell inteiro pinta com a cor da tropa:
+ *   a tropa não desenha caixa, ela É o fundo, permanente, sem véu e sem botão
+ *   para abrir (fundo não se abre). O palco vira uma folha recortada sobre ela
+ *   — margem de 8px em três lados, canto arredondado, fio de luz no topo.
+ *   A faixa esquerda fica sempre à vista, e trocar de agente troca a folha sem
+ *   fechar nada.
+ *
+ * O que NÃO veio junto do `sidebar-08` foi o `SidebarProvider`: ele é estado
+ * de cliente e custaria a decisão nº 1 acima. Emprestei o CSS (as classes
+ * `.ck-palco` e `.ck-faixa` no globals.css), não o mecanismo.
  *
  * Sobre safe-area: o shell cuida só das bordas LATERAIS das gavetas. Topo e
  * base pertencem a quem encosta neles — o cabeçalho do chat estende a própria
@@ -36,9 +46,11 @@ import Link from 'next/link';
 
 type AppShellProps = {
   children: React.ReactNode;
-  /** Tropa como overlay à ESQUERDA. Ausente = a rota não tem tropa pra abrir
-   *  (hoje só a `/agente/[slug]` tem; a rota `/` monta a tropa sozinha). */
+  /** A tropa. Gaveta no celular, faixa permanente no desktop. Ausente = a rota
+   *  não tem tropa ao lado — é o caso da `/`, onde a tropa É o children. */
   nav?: React.ReactNode;
+  /** Só governa o CELULAR (vem de `?nav=aberto`). No desktop a faixa está
+   *  sempre à vista e este valor não muda nada. */
   navAberta?: boolean;
   fecharNavHref?: string;
   drawer?: React.ReactNode;
@@ -48,6 +60,10 @@ type AppShellProps = {
   /** Para onde o véu e o botão de fechar apontam: a mesma rota, sem o param. */
   fecharPainelHref?: string;
   rotuloPainel?: string;
+  /** `folha` recorta o palco sobre a mesa (chat). `mesa` entrega o children
+   *  direto sobre o fundo, sem recorte — é a rota `/`, onde a tropa é a tela e
+   *  uma folha vazia seria uma moldura em volta de nada. */
+  palco?: 'folha' | 'mesa';
 };
 
 export function AppShell({
@@ -59,44 +75,61 @@ export function AppShell({
   painelAberto = false,
   fecharPainelHref = '?',
   rotuloPainel = 'painel',
+  palco = 'folha',
 }: AppShellProps) {
-  const mostrarNav = Boolean(nav) && navAberta;
   const mostrarGaveta = Boolean(drawer) && painelAberto;
+  const folha = palco === 'folha';
 
   return (
     // `h-dvh` + `overflow-hidden`: a página inteira não rola: cada superfície rola
     // por dentro. Sem isto o composer sobe junto com o feed e sai da tela.
-    <div className="relative flex h-dvh overflow-hidden">
-      {/* Palco. Largura cheia sempre — nada aqui reserva espaço pras gavetas.
-          `min-w-0` é obrigatório: sem ele um bloco de código longo estica o
-          flex item e o body ganha rolagem horizontal. */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
-
-      {mostrarNav ? (
+    //
+    // O fundo é a cor da TROPA, não a do palco: é o que faz a faixa esquerda
+    // existir sem que a tropa precise desenhar uma caixa para si.
+    <div
+      className="relative flex h-dvh overflow-hidden"
+      style={{ background: 'var(--ck-surface-nav)' }}
+    >
+      {nav ? (
         <>
-          <Link
-            href={fecharNavHref}
-            aria-label="Fechar lista de agentes"
-            className="fixed inset-0"
-            style={{ background: 'var(--ck-scrim)', zIndex: 'var(--ck-z-drawer)' }}
-          />
+          {/* Véu — só no celular. No desktop a faixa é fundo permanente e não
+              há nada para velar; deixar o véu vivo lá cobriria a folha inteira
+              se alguém chegasse por um link com `?nav=aberto`. */}
+          {navAberta ? (
+            <Link
+              href={fecharNavHref}
+              aria-label="Fechar lista de agentes"
+              className="fixed inset-0 md:hidden"
+              style={{ background: 'var(--ck-scrim)', zIndex: 'var(--ck-z-drawer)' }}
+            />
+          ) : null}
+
           <aside
             aria-label="lista de agentes"
-            className="fixed inset-y-0 left-0 flex w-full min-h-0 flex-col overflow-y-auto border-r"
+            className={`ck-faixa min-h-0 flex-col overflow-y-auto border-r md:border-r-0 ${
+              navAberta ? 'flex' : 'hidden'
+            } md:flex`}
+            // Os `safe-*` desta faixa moram na classe, não aqui: no desktop o
+            // `padding-top` vira o respiro que alinha a tropa com o chrome da
+            // folha, e estilo inline venceria a media query.
             style={{
-              maxWidth: 'var(--ck-w-nav)',
               background: 'var(--ck-surface-nav)',
               borderColor: 'var(--ck-edge-hairline)',
-              zIndex: 'var(--ck-z-drawer)',
-              paddingLeft: 'var(--ck-safe-left)',
-              paddingTop: 'var(--ck-safe-top)',
-              paddingBottom: 'var(--ck-safe-bottom)',
             }}
           >
             {nav}
           </aside>
         </>
       ) : null}
+
+      {/* Palco. `min-w-0` é obrigatório: sem ele um bloco de código longo
+          estica o flex item e o body ganha rolagem horizontal. */}
+      <main
+        className={`flex min-w-0 flex-1 flex-col overflow-hidden ${folha ? 'ck-palco' : ''}`}
+        style={folha ? { background: 'var(--ck-surface-canvas)' } : undefined}
+      >
+        {children}
+      </main>
 
       {mostrarGaveta ? (
         <>

@@ -65,12 +65,14 @@ function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
         >
           Detalhes
         </span>
-        {/* Fechar é navegar. No `xl` a gaveta é coluna fixa e o botão sai —
-            lá não há o que fechar. */}
+        {/* Fechar é navegar. O `xl:hidden` que estava aqui vinha de um plano em
+            que a gaveta virava coluna fixa nas telas grandes; ela nunca virou —
+            é overlay em qualquer largura —, então o botão sumia em `xl` e
+            sobrava o véu como única saída. */}
         <Link
           href={fecharHref}
           aria-label="Fechar detalhes"
-          className="ck-veil flex items-center justify-center xl:hidden"
+          className="ck-veil flex items-center justify-center"
           style={{
             minWidth: 'var(--ck-touch-min)',
             minHeight: 'var(--ck-touch-min)',
@@ -145,12 +147,12 @@ export default async function AgentePage({
       />
 
       {/* Identidade do agente — abaixo do chrome, não mais dono do botão de
-          voltar nem do "⋯": os dois viraram os ícones da BarraDeTelas. */}
+          voltar nem do "⋯": os dois viraram os ícones da BarraDeTelas.
+          Sem cor própria: é o topo da folha, e a folha é uma superfície só. */}
       <header
         className="flex shrink-0 items-center border-b"
         style={{
           gap: 'var(--ck-space-2)',
-          background: 'var(--ck-surface-nav)',
           borderColor: 'var(--ck-edge-hairline)',
           padding: 'var(--ck-space-2) var(--ck-space-3)',
         }}
