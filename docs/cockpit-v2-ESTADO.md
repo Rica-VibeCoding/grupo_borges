@@ -123,9 +123,33 @@ foi erro meu de orquestração: despachei pele e instrumentação do gate no mes
   interpretado; (c) blocos não recebem as classes do `rehype-highlight`. Nota de método: no v1
   o realce é aplicado **seletivamente** (só `chat-messages.tsx:711`; as outras quatro chamadas
   usam apenas `remarkPlugins`), então deixá-lo de fora não é regressão geral.
-- **Hiro** — **bloqueado**, não conta como frente: todo envio cai no modal *"Fable 5 now
-  uses usage credits — R$ 67,44 in credits"*, que come o prompt. Não é quota Kimi (49/100,
-  reset 02/08) nem env var errada. Opção 1 é transação financeira → decisão do Rica.
+- **Hiro** — **desbloqueado 30/07 12:48, custo zero.** A causa era `CLAUDE_CODE_EFFORT_LEVEL=max`
+  (confirmada lendo `/proc/<pid>/environ`, não pelo sintoma): `max` obriga Fable 5 e o Claude Code
+  valida a política da conta **antes** de rotear pro Kimi, então nem o motor k3 salvava. Conserto:
+  `PATCH /api/agents/hiro/effort` para `high` + relançar. Relançar exige extrair a função
+  `subir_hiro` do `subir-frota.sh` — rodar o script inteiro chama `main`, que mexeria no cockpit.
+  Não se toca na opção 1 do modal: é transação financeira de R$ 67,44 e é decisão do Rica.
+- **Varredura de cor literal, Hiro, 30/07** — veredito: **a regra "zero hex" está de pé no app
+  inteiro**, não só onde eu tinha conferido à mão. `app/`, `components/shell/`,
+  `components/renderers/` e `lib/` limpos. Três achados, e a classificação dele está aceita:
+  1. `app/layout.tsx:13` — `themeColor: '#18191d'`: exceção **inevitável**, a API Viewport do Next
+     não aceita `var()`; o valor é amarrado por contrato ao `--ck-surface-canvas`.
+  2. ⚠️ `components/ui/badge.tsx:16` — `text-white` no variant `destructive`, **e o agravante é
+     outro**: nenhum dos tokens shadcn que o arquivo referencia (`bg-primary`, `bg-destructive`,
+     `ring`, `accent`, `foreground`, `border`) existe no `@theme inline` do `globals.css`. Hoje é
+     inerte (o único uso é `tropa.tsx:40` com `variant="ghost"` e style em `--ck-*`), mas quem usar
+     `destructive` amanhã herda branco literal **mais** tokens que não resolvem. Despachado de volta
+     pra ele consertar.
+  3. `public/gate-probe.js` — 7 hex + 1 rgba: instrumento descartável, fora do bundle, roda no painel
+     antigo por bookmarklet e por isso **precisa** de paleta própria. Fora do escopo da regra.
+  Nota de método: ele descartou `#feed` como falso positivo (era seletor CSS em comentário). Um
+  achado desses entrando na lista derrubaria a credibilidade do relatório inteiro.
+- **Papel do Hiro mudou em 30/07**, por ordem do Rica (*"usa ele, vamos tirar o atrazado, coisa que
+  o Daniel ia fazer"* / *"Hiro tb é fera na ui"*): ele **sai do read-only e implementa**. O que não
+  muda é que ninguém audita o próprio trabalho — o que ele escrever agora é auditado por outro.
+- **Ordem de custo, Rica 30/07** (*"poupe o cc um pouco, tara e hiro na dianteira, Daniel volta para
+  embelezar"*): Tara (Codex) e Hiro (Kimi) rodam **fora da cota do Claude Code** e assumem a frente;
+  o Daniel fica só na camada visual, que é o que exige o modelo caro.
 - **Supervisão:** cron de 5 min (`CronCreate`, id `07e3864c`). ⚠️ **session-only** — morre
   com a minha sessão e a supervisão para sem avisar ninguém. Este §4 é o antídoto.
 
