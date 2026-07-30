@@ -42,6 +42,56 @@ AgentCli = Literal["claude_code", "codex"]
 _TMUX_SOCKET_TEMPLATE = os.getenv("COCKPIT_TMUX_SOCKET", "").strip()
 
 
+def _configured_named_socket_names() -> list[str]:
+    """Descobre sockets configurados sem consultar uma vez por agente."""
+    if not _TMUX_SOCKET_TEMPLATE:
+        return []
+    if "{session}" not in _TMUX_SOCKET_TEMPLATE:
+        return [_TMUX_SOCKET_TEMPLATE]
+    tmux_tmpdir = Path(os.getenv("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
+    pattern = _TMUX_SOCKET_TEMPLATE.replace("{session}", "*")
+    return sorted(path.name for path in tmux_tmpdir.glob(pattern) if path.is_socket())
+
+
+def _session_names_from_server(server: libtmux.Server) -> set[str]:
+    """Lista sessões preservando erro, ao contrário de ``Server.sessions``."""
+    result = server.cmd("list-sessions", "-F#{session_name}")
+    if result.returncode == 0:
+        return {name for name in result.stdout if name}
+
+    error = "\n".join(result.stderr).strip()
+    # Ausência do próprio servidor/socket confirma que não há sessões nele.
+    if "no server running" in error.lower() or "no such file or directory" in error.lower():
+        return set()
+    raise libtmux_exc.LibTmuxException(error or "falha ao listar sessões tmux")
+
+
+def _list_session_names_sync() -> set[str]:
+    """Inventaria sessões dos sockets configurados sem consulta por agente.
+
+    Na Hostinger, lê somente o server default. Na Oracle, descobre de uma vez
+    os sockets ``borges-*`` no diretório tmux e lê cada server encontrado; o
+    default também entra porque hospeda subsessões criadas pelo cockpit.
+
+    Erro de observação é propagado: falha de permissão/comando não pode virar
+    conjunto vazio e marcar falsamente toda a frota como offline. Socket ou
+    server comprovadamente ausente equivale corretamente a zero sessões.
+    """
+    session_names: set[str] = set()
+    named_socket_names = _configured_named_socket_names()
+    for socket_name in named_socket_names:
+        server = libtmux.Server(socket_name=socket_name)
+        session_names.update(_session_names_from_server(server))
+
+    session_names.update(_session_names_from_server(libtmux.Server()))
+    return session_names
+
+
+async def list_session_names() -> set[str]:
+    """Retorna o snapshot de sessões tmux sem bloquear o event loop."""
+    return await asyncio.to_thread(_list_session_names_sync)
+
+
 def _server_for(session_name: str) -> libtmux.Server:
     if _TMUX_SOCKET_TEMPLATE:
         named = libtmux.Server(

@@ -51,9 +51,12 @@ _TOKEN_SUM_SQL = """SUM(
     END
 )"""
 
-# Janela de tolerância pra considerar um agente "online" baseado no último heartbeat.
-# Se nenhum hook/jsonl chega há mais que isso, derive_agent_status retorna "offline".
-OFFLINE_THRESHOLD_SECONDS = 300
+# Janela de frescor do lifecycle. Presença online é determinada exclusivamente
+# pela sessão tmux; heartbeat velho com sessão viva significa agente ocioso.
+LIFECYCLE_FRESH_THRESHOLD_SECONDS = 300
+# Compatibilidade do payload health consumido pelo apps/web congelado. O nome
+# público é legado; não determina mais o status offline.
+OFFLINE_THRESHOLD_SECONDS = LIFECYCLE_FRESH_THRESHOLD_SECONDS
 
 # Uma task em execução sem hook/jsonl por 10 minutos deixa de ser "verde".
 # A margem é maior que o offline do agente para evitar falso positivo em ações longas.
@@ -158,23 +161,27 @@ def _json_array_or_none(value: list[Any] | tuple[Any, ...] | None) -> str | None
 def derive_agent_status(
     last_seen: int | None,
     *,
+    session_present: bool,
     lifecycle_status: str | None = None,
     lifecycle_updated_at: int | None = None,
     current_task_id: str | None = None,
     now: int | None = None,
 ) -> str:
-    """Deriva status do agente a partir do heartbeat + lifecycle.
+    """Deriva status do agente a partir da presença tmux + lifecycle.
 
-    Single source of truth pra UI V2.4: ocioso, trabalhando, aguardando, offline.
+    Contrato: ``offline`` significa exclusivamente sessão tmux ausente. Com
+    sessão presente, heartbeat velho ou ausente resulta em ``ocioso``; estados
+    ``trabalhando``/``aguardando`` continuam derivados do lifecycle.
+
+    ``last_seen`` e ``current_task_id`` permanecem na assinatura por
+    compatibilidade do contrato de derivação, mas não definem presença online.
     """
     now = now if now is not None else int(time.time())
     lifecycle_is_fresh = (
         lifecycle_updated_at is not None
-        and now - lifecycle_updated_at <= OFFLINE_THRESHOLD_SECONDS
+        and now - lifecycle_updated_at <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
     )
-    if last_seen is None or (now - last_seen) > OFFLINE_THRESHOLD_SECONDS:
-        return "offline"
-    if lifecycle_status == "offline":
+    if not session_present:
         return "offline"
     if lifecycle_status == "trabalhando" and lifecycle_is_fresh:
         return "trabalhando"
@@ -2718,16 +2725,20 @@ class GrupoBorgesDB:
     # ---------- fleet snapshot (agregado pra UI) ----------
 
     async def fleet_snapshot(
-        self, *, sparkline_hours: int = 24,
+        self, *, active_tmux_sessions: set[str], sparkline_hours: int = 24,
     ) -> dict[str, Any]:
         """Snapshot atômico da frota: 6 agents + state + instances + sparkline + KPIs.
 
         Implementação prefere ler tudo numa única conexão (4 queries) a expor
         N+1 pro caller. Resposta serve a /api/fleet sem mais round-trips.
         """
-        return await asyncio.to_thread(self._fleet_snapshot, sparkline_hours)
+        return await asyncio.to_thread(
+            self._fleet_snapshot, sparkline_hours, active_tmux_sessions
+        )
 
-    def _fleet_snapshot(self, sparkline_hours: int) -> dict[str, Any]:
+    def _fleet_snapshot(
+        self, sparkline_hours: int, active_tmux_sessions: set[str]
+    ) -> dict[str, Any]:
         now = int(time.time())
         start_dt, _ = hour_window(sparkline_hours)
         since_unix = int(start_dt.timestamp())
@@ -2865,6 +2876,7 @@ class GrupoBorgesDB:
                     agent["lifecycle_updated_at"] = latest_lifecycle["updated_at"]
             agent["status"] = derive_agent_status(
                 agent["last_seen"],
+                session_present=agent["tmux_session"] in active_tmux_sessions,
                 lifecycle_status=agent.get("lifecycle_status"),
                 lifecycle_updated_at=agent.get("lifecycle_updated_at"),
                 current_task_id=agent.get("current_task_id"),

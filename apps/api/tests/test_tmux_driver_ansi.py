@@ -6,11 +6,17 @@ quebrando o pipeline ANSI ponta a ponta (front recebia `[31m...` literal).
 """
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from libtmux import exc as libtmux_exc
+from services import tmux_driver
 from services.tmux_driver import _clean_pane_lines  # type: ignore[attr-defined]
 
 
@@ -51,3 +57,76 @@ def test_clean_pane_lines_empty_visual_lines_filtered() -> None:
     """Linha com só escape sequences (vazia visualmente) é descartada."""
     out = _clean_pane_lines(["\x1b[31m\x1b[0m"], max_chars=1000, preserve_ansi=True)
     assert out is None
+
+
+def test_list_session_names_runs_inventory_in_to_thread(monkeypatch) -> None:
+    calls = 0
+
+    async def fake_to_thread(func, *args):
+        nonlocal calls
+        calls += 1
+        assert func is tmux_driver._list_session_names_sync
+        assert args == ()
+        return {"daniel", "felipe"}
+
+    monkeypatch.setattr(tmux_driver.asyncio, "to_thread", fake_to_thread)
+
+    assert asyncio.run(tmux_driver.list_session_names()) == {"daniel", "felipe"}
+    assert calls == 1
+
+
+def test_session_inventory_includes_named_sockets_without_default(monkeypatch) -> None:
+    results_by_socket = {
+        "borges-daniel": SimpleNamespace(returncode=0, stdout=["daniel"], stderr=[]),
+        "borges-felipe": SimpleNamespace(returncode=0, stdout=["felipe"], stderr=[]),
+        None: SimpleNamespace(
+            returncode=1,
+            stdout=[],
+            stderr=["error connecting: No such file or directory"],
+        ),
+    }
+
+    class FakeServer:
+        def __init__(self, socket_name=None):
+            self.socket_name = socket_name
+
+        def cmd(self, *_args):
+            return results_by_socket[self.socket_name]
+
+    monkeypatch.setattr(
+        tmux_driver,
+        "_configured_named_socket_names",
+        lambda: ["borges-daniel", "borges-felipe"],
+    )
+    monkeypatch.setattr(tmux_driver.libtmux, "Server", FakeServer)
+
+    assert tmux_driver._list_session_names_sync() == {"daniel", "felipe"}
+
+
+def test_session_inventory_propagates_named_socket_failure(monkeypatch) -> None:
+    class BrokenServer:
+        def __init__(self, socket_name=None):
+            self.socket_name = socket_name
+
+        def cmd(self, *_args):
+            return SimpleNamespace(
+                returncode=1,
+                stdout=[],
+                stderr=[f"permission denied em {self.socket_name}"],
+            )
+
+    monkeypatch.setattr(
+        tmux_driver,
+        "_configured_named_socket_names",
+        lambda: ["borges-daniel"],
+    )
+    monkeypatch.setattr(tmux_driver.libtmux, "Server", BrokenServer)
+
+    with pytest.raises(libtmux_exc.LibTmuxException):
+        tmux_driver._list_session_names_sync()
+
+
+def test_static_named_socket_is_inventoried(monkeypatch) -> None:
+    monkeypatch.setattr(tmux_driver, "_TMUX_SOCKET_TEMPLATE", "borges-frota")
+
+    assert tmux_driver._configured_named_socket_names() == ["borges-frota"]

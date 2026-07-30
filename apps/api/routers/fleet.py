@@ -3,7 +3,7 @@ GET /api/fleet — snapshot agregado da frota para a UI montar o dashboard em 1 
 
 Combina o que `/api/agents` + N× `/instances` + N× `/sparkline` + agregados de
 tasks devolveriam, num único payload. Resposta inclui status derivado (`offline`
-quando `last_seen` excede o threshold), pra UI não precisar replicar regra.
+quando a sessão tmux está ausente), pra UI não precisar replicar regra.
 """
 from __future__ import annotations
 
@@ -178,7 +178,11 @@ async def get_fleet(
 ):
     db: GrupoBorgesDB = request.app.state.db
     await db.mark_stale_runs()
-    snapshot = await db.fleet_snapshot(sparkline_hours=sparkline_hours)
+    active_tmux_sessions = await tmux_driver.list_session_names()
+    snapshot = await db.fleet_snapshot(
+        sparkline_hours=sparkline_hours,
+        active_tmux_sessions=active_tmux_sessions,
+    )
     snapshot["health"]["stale_threshold_seconds"] = RUN_STALE_THRESHOLD_SECONDS
     await _hydrate_pane_excerpts(snapshot["agents"])
     await _hydrate_codex_tokens_used(snapshot["agents"])

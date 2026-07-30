@@ -84,7 +84,11 @@ def test_codex_events_update_agent_state(tmp_path: Path) -> None:
     )
 
     agent = db._get_agent("tara")
-    fleet_agent = next(agent for agent in db._fleet_snapshot(24)["agents"] if agent["slug"] == "tara")
+    fleet_agent = next(
+        agent
+        for agent in db._fleet_snapshot(24, {"tara"})["agents"]
+        if agent["slug"] == "tara"
+    )
 
     assert agent["executor_kind"] == "codex"
     assert agent["status_line"] == "ocioso"
@@ -111,7 +115,11 @@ def test_codex_failed_marks_lifecycle_offline(tmp_path: Path) -> None:
     )
 
     agent = db._get_agent("tara")
-    fleet_agent = next(agent for agent in db._fleet_snapshot(24)["agents"] if agent["slug"] == "tara")
+    fleet_agent = next(
+        agent
+        for agent in db._fleet_snapshot(24, set())["agents"]
+        if agent["slug"] == "tara"
+    )
 
     assert agent["executor_kind"] == "codex"
     assert agent["status_line"] == "falhou: processo abortou"
@@ -122,7 +130,11 @@ def test_codex_failed_marks_lifecycle_offline(tmp_path: Path) -> None:
 def test_fleet_snapshot_keeps_new_fields_null_for_claude_code(tmp_path: Path) -> None:
     db = _setup_db(tmp_path)
 
-    daniel = next(agent for agent in db._fleet_snapshot(24)["agents"] if agent["slug"] == "daniel")
+    daniel = next(
+        agent
+        for agent in db._fleet_snapshot(24, {"daniel"})["agents"]
+        if agent["slug"] == "daniel"
+    )
 
     assert daniel["executor_kind"] is None
     assert daniel["status_line"] is None
