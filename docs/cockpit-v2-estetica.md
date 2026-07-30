@@ -718,8 +718,18 @@ Pior caso — cada texto contra a superfície **mais clara**, que é a régua da
 | `--ck-text-tertiary` | 3,53:1 | 3,47:1 | −0,06 |
 
 **Nenhum token muda de categoria** e a §3 continua de pé — o `tertiary` já estava marcado como
-*nunca corpo*, e segue. Separação entre superfícies vizinhas fica em 1,09–1,18 contra 1,09–1,12
-de hoje: mesma faixa.
+*nunca corpo*, e segue.
+
+> ⚠️ **Correção de 30/07 14:20 — esta tabela previu errado, e para pior.** O Daniel implementou
+> (`19de8a6`) e mediu o resultado real: o contraste **SOBE**, não cai. `primary` 11,45 → **11,62**,
+> `secondary` 5,97 → **6,07**, `tertiary` 3,53 → **3,57**. Conferi os três e batem.
+>
+> O erro foi meu e é de **método**: medi o texto ainda **azulado** contra a superfície já
+> **neutra**, misturando os dois mundos. Ele levou a regra até o fim — neutralizou texto e
+> bordas junto das superfícies — e aí o par inteiro fica no mesmo eixo. Fica a lição: ao prever
+> o efeito de uma mudança de paleta, mede-se o **estado final completo**, nunca o meio do
+> caminho. Separação entre superfícies vizinhas ficou em 1,103–1,108, mais uniforme que os
+> 1,101–1,119 de antes.
 
 **Decisão: as superfícies vão para cinza neutro.** Mantém-se o `L` de cada degrau (é ele que
 carrega a hierarquia) e zera-se o croma. Quem aplica é o Daniel — token de pele é dele. O
