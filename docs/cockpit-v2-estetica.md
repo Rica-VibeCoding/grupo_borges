@@ -674,3 +674,69 @@ esta referência é do mesmo preto quase absoluto. `--ck-surface-canvas` fica.
 agora (§4.1 do `cockpit-v2-ESTADO.md`). Botão que não leva a lugar nenhum é mentira de UI e
 reprova pela §9. A barra nasce com os destinos que **existem hoje** e com o desenho pronto para
 receber o terceiro quando a fase 2 chegar.
+
+---
+
+## 13. A paleta vira CINZA NEUTRO — ordem do Rica, e ela custa 0,19 de contraste (30/07 13:53)
+
+Meia hora depois do *"adota ela"*, o Rica mandou a mesma tela em **desktop inteiro**
+(`/tmp/cockpit-v2-prints/referencia-rica-codex-desktop.jpg`) e três coisas novas, palavras dele:
+
+- *"essas cores são bonitas tb, **pode mudar a doc para elas**"*
+- *"à direita em cima um botão para abrir a gaveta - painel"*
+- *"sidebar fica ao fundo da tela do chat, igual o fluyt"*
+
+⚠️ A primeira **revoga em parte a §10**: lá ele tinha dito *"essa tela muito preta, prefiro a
+nossa"* e as cores estavam aprovadas. O que mudou é que na §10 ele viu só o recorte escuro do
+composer; agora viu a tela inteira. **Vale a mais recente.**
+
+### Amostrei a referência antes de mexer, e o pedido é menor do que parece
+
+Média 5×5 sobre o JPEG, para não ler ruído de compressão:
+
+| papel | referência | nosso token hoje |
+|---|---|---|
+| canvas | `#181818` | `--ck-surface-canvas` `#18191d` |
+| nav / sidebar | `#202020` | `--ck-surface-nav` `#1f2227` |
+| composer | `#2d2d2d` | `--ck-surface-composer` `#272a30` |
+
+**Os degraus de luminância são praticamente os mesmos.** A diferença sistemática é uma só: a
+referência é cinza **neutro puro** (viés azul−vermelho = 0 em todos os pontos) e a nossa paleta
+tem viés azul — croma 0,008–0,012 no matiz 265.
+
+Ou seja: o pedido dele é **zerar o croma das superfícies**, não repaginar a paleta. Um
+parâmetro, e reversível.
+
+### O custo, medido antes de decidir (é o que autoriza a troca)
+
+Pior caso — cada texto contra a superfície **mais clara**, que é a régua da nossa verificação:
+
+| token | hoje (sobre `#2f3238`) | neutro (sobre `#333333`) | Δ |
+|---|---|---|---|
+| `--ck-text-primary` | 11,45:1 | 11,26:1 | −0,19 |
+| `--ck-text-secondary` | 5,97:1 | 5,87:1 | −0,10 |
+| `--ck-text-tertiary` | 3,53:1 | 3,47:1 | −0,06 |
+
+**Nenhum token muda de categoria** e a §3 continua de pé — o `tertiary` já estava marcado como
+*nunca corpo*, e segue. Separação entre superfícies vizinhas fica em 1,09–1,18 contra 1,09–1,12
+de hoje: mesma faixa.
+
+**Decisão: as superfícies vão para cinza neutro.** Mantém-se o `L` de cada degrau (é ele que
+carrega a hierarquia) e zera-se o croma. Quem aplica é o Daniel — token de pele é dele. O
+`theme-color` do `layout.tsx` muda junto, pela amarração da §10-Fronteira.
+
+**O que NÃO fica neutro:** os matizes funcionais — `running`, `thinking`, diff, link, erro. Eles
+são cor com significado, e a §3 os governa. A neutralidade é das **superfícies**, e existe
+justamente para que esses matizes fiquem mais nítidos contra elas.
+
+### As outras duas: gaveta com botão, e sidebar ao fundo
+
+- **Botão de gaveta no canto superior direito.** Na referência é um ícone de traço fino, sem
+  moldura, alinhado com a barra de telas. Abre e fecha o painel lateral.
+- **Sidebar ao fundo, *"igual o fluyt"*.** Ela não empurra o conteúdo: sobrepõe-se, e a tela do
+  chat continua sendo a tela. No celular isto é o que salva a largura — a coluna do chat nunca
+  paga o preço da gaveta.
+
+Consequência para a barra de telas da §12: ela fica **centralizada no topo** e o botão da gaveta
+mora **à direita dela**, na mesma faixa. São dois controles no mesmo chrome, e é assim na
+referência.
