@@ -174,6 +174,21 @@ agents:
     can_review:
       - daniel
 
+  # Canário descartável do gate cockpit v2. Não corresponde a sessão produtiva.
+  - slug: canario
+    name: Canário do Cockpit
+    role: Gerador de carga sintética
+    emoji: "🐤"
+    tmux_session: canario
+    # Aponta pro repo real de propósito: o canário não tem workspace próprio, e
+    # caminho inexistente quebra qualquer rota que leia git do workspace.
+    workspace_path: /home/clawd/repos/grupo_borges
+    cli_default: claude_code
+    model_default: claude-opus-4-8
+    capabilities:
+      - benchmark-cockpit-v2
+    can_review: []
+
 # Humanos autenticados via Tailscale-User-Login.
 # Header derivado do tailscaled local (não spoofável sem comprometer o node).
 # Slug humano NÃO precisa estar em `agents:` — fica fora do kanban mas pode revisar.

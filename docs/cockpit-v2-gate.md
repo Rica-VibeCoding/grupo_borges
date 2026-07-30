@@ -45,7 +45,7 @@ performance em cima de trabalho produtivo de outro agente.
 
 | parâmetro | valor |
 |---|---|
-| histórico pré-carregado | **1.000 mensagens** |
+| histórico pré-carregado | **1.000 mensagens** — em duas etapas, ver abaixo |
 | taxa de chunks | **50 por segundo** |
 | duração | **60 segundos** |
 | posição do scroll | dois cenários: colado no fim, e rolado para cima |
@@ -54,6 +54,28 @@ performance em cima de trabalho produtivo de outro agente.
 A mesma carga roda contra o **painel antigo (3007)** para produzir baseline. Sem
 baseline, "ficou melhor" é opinião — e o antigo é a régua honesta, porque é o que o
 Rica usa hoje e aceita.
+
+### As 1.000 mensagens chegam em duas etapas — e por que não mexo no back
+
+O SSE canônico limita o replay a **500** (`_MESSAGES_STREAM_LIMIT_MAX`,
+`apps/api/routers/agents.py:1529`). Achado pela Tara ao construir o gerador, e
+confirmado no código.
+
+Levantar esse teto seria uma linha, e é justamente o tipo de linha que a fusão
+recusou: **o back não sai do lugar durante a migração**, porque um ajuste no
+endpoint que o painel em produção consome coloca o cockpit do Rica em risco para
+resolver um problema de bancada.
+
+Então o histórico chega em duas etapas, e o requisito real fica intacto — o que o
+gate mede é **1.000 mensagens montadas na tela**, não 1.000 num único replay:
+
+1. **replay** — 500 mensagens já no banco, entregues na conexão;
+2. **preenchimento** — outras 500 injetadas em cadência alta, ao vivo, com o
+   cronômetro **parado**;
+3. **medição** — só então os 60 segundos a 50 eventos/s.
+
+Efeito colateral bem-vindo: a etapa 2 exercita o caminho live com o DOM já cheio,
+que é o pior caso do coalescedor.
 
 ---
 
