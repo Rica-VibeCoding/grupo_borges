@@ -137,6 +137,88 @@ Os dois números continuam no JSON. `por_deslocamento_de_ancora_px` decide;
 `por_scrolltop_px` fica como diagnóstico — útil justamente para ver a compensação
 trabalhando.
 
+### O G1 depois dos dois consertos — continua reprovando, e o custo não é nosso (medido 30/07)
+
+Contexto: o G1 reprovou no iPhone do Rica com **p95 361 ms** contra corte de 32. Vieram
+dois consertos no caminho quente — o classificador incremental da Tara (48× medido em
+banco de teste) e a troca da chamada no `spike/page.tsx` pela instância estável. Depois
+dos dois, **o G1 continua reprovando**. Fica registrado aqui porque é a evidência mais
+forte que o gate tem contra a biblioteca, e ela não vive em lugar nenhum além disto.
+
+**Protocolo** (reprodutível, Chromium com viewport e UA de iPhone, bancada em `:3008`):
+
+1. `gerar-carga.py --reset --fase historico` → canário em 500 eventos / 242 itens
+2. página aberta e `__GATE_PROBE__` instalado **antes** do preenchimento — o gerador
+   exige o SSE aberto, e foi essa ordem que invalidou a primeira tentativa
+3. `--fase preenchimento`, depois `--fase medicao --medicao-segundos 25`
+4. probe ligado durante as duas fases; feed conferido no cabeçalho antes e depois
+
+Duas rodadas, uma limpa e uma com o profiler do V8 ligado (o sampler cobra caro e
+**baixa** o p95 ao roubar tempo do main thread, por isso a limpa é a que vale):
+
+| rodada | frames | p95 | pior frame | mediana | feed |
+|---|---|---|---|---|---|
+| limpa | 1.011 | **266,6 ms** | 1.049,9 ms | 16,7 ms | 242 → 1.992 itens |
+| com profiler | 1.155 | 199,9 ms | 1.100 ms | 16,7 ms | 242 → 1.992 itens |
+
+**A mediana em 16,7 ms é o dado que muda a leitura.** Metade dos frames sai no orçamento
+de 60 fps: não é lentidão uniforme, é rajada. O p95 estourado e a mediana perfeita, juntos,
+descrevem trabalho que se acumula e desaba de uma vez — não trabalho espalhado por frame.
+
+**Perfil de CPU** (`Profiler` do CDP, amostragem de 200 µs, atribuição por *self time*,
+top 20 sem ocioso):
+
+```
+5332 ms  11,8%  (garbage collector)          nativo
+1301 ms   2,9%  useEffect                    @assistant-ui/tap:876
+ 793 ms   1,8%  jsxDEV                       react (build de desenvolvimento)
+ 765 ms   1,7%  useRef                       @assistant-ui/tap:873
+ 731 ms   1,6%  useMemo                      @assistant-ui/tap:874
+ 710 ms   1,6%  useMemo                      @assistant-ui/tap:528
+ 657 ms   1,5%  hasContextDepsChanged        @assistant-ui/tap:162
+ 573 ms   1,3%  depsShallowEqual             @assistant-ui/tap:492
+ 531 ms   1,2%  useMessageClient             @assistant-ui/core:476
+ 482 ms   1,1%  useRenderMemo                @assistant-ui/tap:1296
+ 463 ms   1,0%  withReactDispatcher          @assistant-ui/tap:1057
+ 455 ms   1,0%  commitAllCallbacks           @assistant-ui/tap:196
+ 443 ms   1,0%  useComposerClient            @assistant-ui/core:116
+ 379 ms   0,8%  peekResourceFiber            @assistant-ui/tap:32
+```
+
+Somando só as entradas de `tap` + `core` que aparecem no top 20: **~21% do self time
+não-ocioso**. Mais 11,8% de coletor de lixo, que é a mesma alocação vista pelo outro lado.
+
+**Nenhuma função nossa aparece no top 20.** Nem `buildRenderItems`, nem
+`toThreadMessages`, nem `buildToolResultLookup`. O trabalho da Tara está correto e o 48×
+dela é real — o classificador só nunca foi o custo dominante.
+
+**Hipótese do mecanismo, ainda não confirmada:** a biblioteca instancia recurso por
+mensagem para **todas** as mensagens, não só para as ~37 que a virtualização monta. Se
+for isso, virtualizar não resolve por construção, e é coerente com o custo ter subido com
+o feed indo a 1.992 itens. **A medição que decide** é p95 sob a mesma carga com o feed em
+500 contra 2.500: se o custo escalar com o total e não com o renderizado, a hipótese passa
+de plausível a verificada. Não rodei — a decisão que ela alimenta não é minha.
+
+**Dois limites honestos desta evidência**, porque quem ler tem de saber onde ela para:
+
+- **É build de desenvolvimento.** `jsxDEV` no perfil prova. Build de produção corta
+  overhead de React e provavelmente melhora o número absoluto. O que *não* muda é a
+  proporção entre nós e a biblioteca — e a proporção é o achado.
+- **É Chromium, não Safari.** Serve como sanidade do conserto e como diagnóstico de
+  atribuição. O gate continua sendo o iPhone do Rica.
+
+**Armadilha achada no caminho, registrada para não ser reintroduzida:** `update()` do
+classificador incremental devolve **sempre o mesmo array**, mutado no lugar. E
+`external-store-thread-runtime-core.js:122` curto-circuita em
+`oldStore.messages === store.messages`, retornando antes de reconstruir. Sem uma cópia
+rasa no ponto de entrega, mensagem nova **não aparece** e nada acusa: sem erro, sem aviso,
+feed congelado com aparência de saudável. Por isso o "feed andou?" virou asserção do
+arranjo de medição, e não conferência de olho — p95 de página congelada mede o nada.
+
+Arranjos versionados em `docs/cockpit-v2-medicao/`: `remede_g1.py` (rodada limpa) e
+`perfila_g1b.py` (com perfil de CPU). Ambos pedem a bancada de pé em `:3008` e o
+gerador de carga em `fixtures/cockpit-v2/`.
+
 ### Regra de comparação contra o baseline
 
 Passar os quatro cortes não basta. Contra o painel antigo, na mesma carga:
