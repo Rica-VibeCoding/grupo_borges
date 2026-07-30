@@ -108,7 +108,7 @@ gravação de tela ou devtools", nunca por leitura de código).
 
 | # | medida | como se obtém | corte |
 |---|---|---|---|
-| **G1** | cadência de frame sob carga | p95 do delta entre frames consecutivos, nos 60s | **p95 ≤ 32 ms** e **nenhum frame > 250 ms** |
+| **G1** | cadência de frame sob carga | p95 do delta entre frames consecutivos, nos 60s | ~~p95 ≤ 32 ms~~ → **p95 ≤ p95 do controle + 16,7 ms**, medido na MESMA sessão, e **nenhum frame > 250 ms** (ver §14) |
 | **G2** | eco da digitação | `keydown` → caractere pintado no frame seguinte, durante os últimos 20s | **p95 ≤ 100 ms** |
 | **G3** | scroll não é arrancado | **deslocamento da âncora** com o usuário rolado para cima (o `scrollTop` escrito vira diagnóstico, ver abaixo) | **0 px**, e indicador de mensagem nova visível |
 | **G4** | repintura cirúrgica | contador de render por bolha; soma dos renders das mensagens que **não** são a última | **≤ 2 por mensagem** na janela (tolera a montagem e um reflow de entrada); **zero** é o alvo |
@@ -456,3 +456,43 @@ degraus contra 43. Mas afeta duas outras coisas, e ficam registradas:
 Nada disso vale para a medição no **iPhone**, que continua sendo o número que manda: lá o
 alvo é o hardware real do Rica, e o p95 de 361 ms que abriu esta investigação foi medido no
 aparelho dele, não nesta bancada.
+
+---
+
+## §14 — O corte absoluto de 32 ms morreu (decidido 30/07)
+
+**Decisão da Tara, por delegação expressa do Rica** ("peça a opinião da Tara para
+essas dúvidas, ela vai decidir"). O corte absoluto sai; o G1 passa a ser **pareado**:
+
+> **`p95_feed ≤ p95_controle + 16,7 ms`**, com o controle medido na **mesma sessão**,
+> mantido o veto absoluto de qualquer frame acima de **250 ms**.
+
+### Por que o corte absoluto tinha de morrer
+
+Ele passou a reprovar o **melhor caso fisicamente possível**. Medição pareada de 30/07
+(`RESULTADO-feed-real.md`): o braço de controle — DOM feio, sem biblioteca — mede
+**49,9–50,0 ms**. O mesmo código media **33,3–33,4 ms** na rodada de `2bccafe`. O piso
+da máquina subiu ~1,5×, e a VPS é compartilhada com a frota inteira, então ele **vai
+variar de novo**.
+
+Com corte fixo em 32 ms, uma rodada em máquina ocupada reprova qualquer front, por
+melhor que seja — e uma rodada em máquina vazia aprovaria front ruim. A régua estava
+medindo a VPS, não o código.
+
+### Por que +16,7 ms, e não outro número
+
+É exatamente **um degrau de 60 Hz**. O p95 desta bancada é quantizado em múltiplos de
+16,67 ms (§13), então a tolerância vale "no máximo um frame a mais que o controle" —
+a menor unidade que o instrumento consegue distinguir. Qualquer folga menor é ruído;
+qualquer folga maior deixa passar meio frame de regressão real.
+
+### O que isso NÃO afrouxa
+
+Os números de hoje **continuam reprovados**, e é assim que se sabe que a régua não foi
+ajustada para caber no resultado: o feed real deu 83–100 ms contra controle de 50 ms.
+O limite seria 66,7 ms. Reprova por larga margem.
+
+⚠️ **Consequência operacional:** não existe mais medir só o braço em teste. Toda rodada
+do G1 passa a exigir o controle na mesma sessão — sem ele não há veredito, só palpite.
+
+Nada disto vale para o **iPhone**, que segue sendo o número que manda.
