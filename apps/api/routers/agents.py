@@ -1506,6 +1506,7 @@ class InputRequest(BaseModel):
 class InputResponse(BaseModel):
     tmux_delivered: bool
     sent_at: int
+    event_boundary_id: int
 
 
 class ModelChangeRequest(BaseModel):
@@ -1961,8 +1962,13 @@ async def send_agent_input(
     - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
       CLI esperado — guard do tmux_driver, ex: user trocou window) no Claude Code
     - 200 + `tmux_delivered=True` no caminho feliz
+    - `event_boundary_id` é o maior task_events.id observado imediatamente antes
+      da primeira operação que pode entregar o texto. Essa ordem causal impede
+      que um evento gerado pelo próprio envio fique abaixo da fronteira.
     """
     agent = await _get_agent_or_404(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+    event_boundary_id = await db.max_event_id()
     if agent.get("executor_kind") == "codex":
         await _spawn_codex_agent_turn(
             slug,
@@ -1970,12 +1976,16 @@ async def send_agent_input(
             text=payload.text,
             fresh=payload.fresh,
         )
-        return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
+    else:
+        delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
+        if not delivered:
+            raise HTTPException(status_code=409, detail="agent_pane_unavailable")
 
-    delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
-    if not delivered:
-        raise HTTPException(status_code=409, detail="agent_pane_unavailable")
-    return InputResponse(tmux_delivered=True, sent_at=int(time.time()))
+    return InputResponse(
+        tmux_delivered=True,
+        sent_at=int(time.time()),
+        event_boundary_id=event_boundary_id,
+    )
 
 
 _VOICE_ALLOWED_MIMES = {"audio/ogg", "audio/webm", "audio/mp4", "audio/mpeg"}

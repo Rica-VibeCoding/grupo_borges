@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -164,6 +164,70 @@ def test_input_claude_still_uses_tmux_not_codex(tmp_path: Path) -> None:
     assert response.status_code == 200
     send_message.assert_called_once_with("daniel", "oi Daniel")
     popen.assert_not_called()
+
+
+def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) -> None:
+    """A fronteira é lida antes da operação que pode gerar o eco do envio."""
+    app = _build_app(tmp_path)
+    order: list[str] = []
+
+    async def max_event_id() -> int:
+        order.append("boundary")
+        return 37
+
+    async def send_message(_session: str, _text: str) -> bool:
+        order.append("send")
+        return True
+
+    app.state.db.max_event_id = max_event_id
+    with patch(
+        "routers.agents.tmux_driver.send_message",
+        new=AsyncMock(side_effect=send_message),
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "oi Daniel", "idempotency_key": "boundary-claude"},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "tmux_delivered": True,
+        "sent_at": body["sent_at"],
+        "event_boundary_id": 37,
+    }
+    assert isinstance(body["sent_at"], int)
+    assert order == ["boundary", "send"]
+
+
+def test_input_reads_event_boundary_before_codex_spawn(tmp_path: Path) -> None:
+    """O caminho Codex respeita a mesma fronteira causal do caminho tmux."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    order: list[str] = []
+
+    async def max_event_id() -> int:
+        order.append("boundary")
+        return 91
+
+    async def spawn(*_args: object, **_kwargs: object) -> None:
+        order.append("spawn")
+
+    app.state.db.max_event_id = max_event_id
+    with patch(
+        "routers.agents._spawn_codex_agent_turn",
+        new=AsyncMock(side_effect=spawn),
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/input",
+                json={"text": "oi Tara", "idempotency_key": "boundary-codex"},
+            )
+
+    assert response.status_code == 200
+    assert response.json()["tmux_delivered"] is True
+    assert response.json()["event_boundary_id"] == 91
+    assert order == ["boundary", "spawn"]
 
 
 def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
