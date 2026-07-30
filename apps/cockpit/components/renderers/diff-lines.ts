@@ -14,6 +14,20 @@ export type DiffSummary = {
   removals: number;
 };
 
+export const DIFF_LINE_LIMIT = 2_000;
+
+export type DiffViewModel =
+  | {
+      status: 'ready';
+      lines: DiffLine[];
+      summary: DiffSummary;
+    }
+  | {
+      status: 'omitted';
+      oldLineCount: number;
+      newLineCount: number;
+    };
+
 function splitLines(value: string): string[] {
   if (value === '') {
     return [];
@@ -24,6 +38,10 @@ function splitLines(value: string): string[] {
     lines.pop();
   }
   return lines;
+}
+
+export function countLines(value: string): number {
+  return splitLines(value).length;
 }
 
 export function calculateDiff(oldString: string, newString: string): DiffLine[] {
@@ -84,6 +102,30 @@ export function calculateDiff(oldString: string, newString: string): DiffLine[] 
   }
 
   return diff;
+}
+
+export function prepareDiff(
+  oldString: string,
+  newString: string,
+  diffCalculator: typeof calculateDiff = calculateDiff,
+): DiffViewModel {
+  const oldLineCount = countLines(oldString);
+  const newLineCount = countLines(newString);
+
+  if (oldLineCount > DIFF_LINE_LIMIT || newLineCount > DIFF_LINE_LIMIT) {
+    return {
+      status: 'omitted',
+      oldLineCount,
+      newLineCount,
+    };
+  }
+
+  const lines = diffCalculator(oldString, newString);
+  return {
+    status: 'ready',
+    lines,
+    summary: summarizeDiff(lines),
+  };
 }
 
 export function summarizeDiff(lines: DiffLine[]): DiffSummary {

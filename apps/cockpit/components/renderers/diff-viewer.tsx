@@ -3,9 +3,8 @@
 import { useMemo, useState } from 'react';
 
 import {
-  calculateDiff,
   collapseContext,
-  summarizeDiff,
+  prepareDiff,
   type DiffLine,
 } from './diff-lines';
 
@@ -52,8 +51,13 @@ export function DiffViewer({
   newString,
   className = '',
 }: DiffViewerProps) {
-  const { blocks, lineNumberWidth, summary } = useMemo(() => {
-    const lines = calculateDiff(oldString, newString);
+  const view = useMemo(() => {
+    const prepared = prepareDiff(oldString, newString);
+    if (prepared.status === 'omitted') {
+      return prepared;
+    }
+
+    const { lines } = prepared;
     const largestLineNumber = lines.reduce(
       (largest, line) =>
         Math.max(largest, line.oldLineNumber ?? 0, line.newLineNumber ?? 0),
@@ -61,9 +65,10 @@ export function DiffViewer({
     );
 
     return {
+      status: 'ready' as const,
       blocks: collapseContext(lines),
       lineNumberWidth: Math.max(3, String(largestLineNumber).length),
-      summary: summarizeDiff(lines),
+      summary: prepared.summary,
     };
   }, [oldString, newString]);
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(() => new Set());
@@ -86,50 +91,61 @@ export function DiffViewer({
         {/* U+2212 (−), não hífen: o contrato §2.4 herda isso do Codex e é o que
             faz o par +/− alinhar em tabular-nums. O marcador de cada LINHA do
             diff continua sendo `-` — lá é sintaxe de diff, não estatística. */}
-        <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-diff-add)]">
-          +{summary.additions}
-        </span>
-        <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-diff-del)]">
-          −{summary.removals}
-        </span>
+        {view.status === 'ready' ? (
+          <>
+            <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-diff-add)]">
+              +{view.summary.additions}
+            </span>
+            <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-diff-del)]">
+              −{view.summary.removals}
+            </span>
+          </>
+        ) : null}
       </header>
 
-      <div className="max-w-full overflow-x-auto font-mono text-[13px] leading-[1.6]">
-        {blocks.map((block) => {
-          if (block.type === 'line') {
-            const key = `${block.line.type}-${block.line.oldLineNumber ?? 'x'}-${block.line.newLineNumber ?? 'x'}`;
+      {view.status === 'omitted' ? (
+        <p className="px-[var(--ck-space-4)] py-[var(--ck-space-3)] text-[13px] text-[var(--ck-fg-muted)]">
+          Diff omitido por tamanho: versão anterior com {view.oldLineCount} linhas e
+          versão nova com {view.newLineCount} linhas.
+        </p>
+      ) : (
+        <div className="max-w-full overflow-x-auto font-mono text-[13px] leading-[1.6]">
+          {view.blocks.map((block) => {
+            if (block.type === 'line') {
+              const key = `${block.line.type}-${block.line.oldLineNumber ?? 'x'}-${block.line.newLineNumber ?? 'x'}`;
+              return (
+                <DiffCodeLine
+                  key={key}
+                  line={block.line}
+                  lineNumberWidth={view.lineNumberWidth}
+                />
+              );
+            }
+
+            if (expandedBlocks.has(block.id)) {
+              return block.lines.map((line) => (
+                <DiffCodeLine
+                  key={`${block.id}-${line.oldLineNumber ?? 'x'}-${line.newLineNumber ?? 'x'}`}
+                  line={line}
+                  lineNumberWidth={view.lineNumberWidth}
+                />
+              ));
+            }
+
             return (
-              <DiffCodeLine
-                key={key}
-                line={block.line}
-                lineNumberWidth={lineNumberWidth}
-              />
+              <button
+                key={block.id}
+                type="button"
+                className="flex min-h-[44px] w-full min-w-max items-center border-y border-[var(--ck-edge-hairline)] px-[var(--ck-space-4)] text-left font-mono text-[13px]"
+                onClick={() => expandBlock(block.id)}
+                aria-label={`Expandir ${block.lines.length} linhas de contexto`}
+              >
+                ... {block.lines.length} linhas
+              </button>
             );
-          }
-
-          if (expandedBlocks.has(block.id)) {
-            return block.lines.map((line) => (
-              <DiffCodeLine
-                key={`${block.id}-${line.oldLineNumber ?? 'x'}-${line.newLineNumber ?? 'x'}`}
-                line={line}
-                lineNumberWidth={lineNumberWidth}
-              />
-            ));
-          }
-
-          return (
-            <button
-              key={block.id}
-              type="button"
-              className="flex min-h-[44px] w-full min-w-max items-center border-y border-[var(--ck-edge-hairline)] px-[var(--ck-space-4)] text-left font-mono text-[13px]"
-              onClick={() => expandBlock(block.id)}
-              aria-label={`Expandir ${block.lines.length} linhas de contexto`}
-            >
-              ... {block.lines.length} linhas
-            </button>
-          );
-        })}
-      </div>
+          })}
+        </div>
+      )}
     </section>
   );
 }

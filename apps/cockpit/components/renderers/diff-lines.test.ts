@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { calculateDiff, collapseContext, summarizeDiff } from './diff-lines.ts';
+import {
+  calculateDiff,
+  collapseContext,
+  DIFF_LINE_LIMIT,
+  prepareDiff,
+  summarizeDiff,
+} from './diff-lines.ts';
 
 describe('calculateDiff', () => {
   it('representa uma linha trocada como remoção seguida de adição', () => {
@@ -77,5 +83,39 @@ describe('summarizeDiff', () => {
     const diff = calculateDiff('fica\nremove 1\nremove 2', 'fica\nadiciona');
 
     assert.deepEqual(summarizeDiff(diff), { additions: 1, removals: 2 });
+  });
+});
+
+describe('prepareDiff', () => {
+  it('não chama o LCS quando qualquer versão excede o limite', () => {
+    const oversized = Array.from(
+      { length: DIFF_LINE_LIMIT + 1 },
+      (_, index) => `linha ${index + 1}`,
+    ).join('\n');
+    let calls = 0;
+
+    const result = prepareDiff('uma linha', oversized, () => {
+      calls += 1;
+      return [];
+    });
+
+    assert.equal(calls, 0);
+    assert.deepEqual(result, {
+      status: 'omitted',
+      oldLineCount: 1,
+      newLineCount: DIFF_LINE_LIMIT + 1,
+    });
+  });
+
+  it('mantém o LCS para entradas dentro do limite', () => {
+    let calls = 0;
+
+    const result = prepareDiff('antes', 'depois', (oldString, newString) => {
+      calls += 1;
+      return calculateDiff(oldString, newString);
+    });
+
+    assert.equal(calls, 1);
+    assert.equal(result.status, 'ready');
   });
 });
