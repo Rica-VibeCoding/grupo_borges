@@ -24,22 +24,39 @@
    * Tese: não estamos desenhando um chat, estamos desenhando um LOG DE EXECUÇÃO
    * que às vezes conversa. 82% dos blocos gravados são tool_use/tool_result.
    *
-   * Três decisões de autoria: luz em vez de sombra; o neutro tem temperatura
-   * (hue 265 em tudo); a temperatura sobe conforme a máquina precisa de você.
+   * Três decisões de autoria: luz em vez de sombra; ACROMÁTICO onde não há
+   * significado; a temperatura sobe conforme a máquina precisa de você.
    * Contraste verificado por rota independente — 11/11 tokens passam, medidos
    * contra a superfície MAIS CLARA (surface-raised), que é o pior caso.
+   *
+   * §13 (30/07) — o hue 265 SAIU das superfícies por ordem do Rica, depois de
+   * ver a tela inteira da referência: *"essas cores são bonitas tb, pode mudar
+   * a doc para elas"*. A referência é cinza neutro puro em todos os pontos.
+   * Mantive o `L` de cada degrau (é ele que carrega a hierarquia) e zerei o
+   * croma — um parâmetro, reversível.
+   *
+   * Zerei junto o croma do TEXTO e das BORDAS, e isso não é escopo esticado: é
+   * a mesma regra levada até o fim. Acromático é tudo que não carrega
+   * significado; matiz fica reservado a quem significa alguma coisa. Efeito
+   * colateral medido: o contraste SOBE em vez de cair — o Pavan previu −0,19 no
+   * primary porque mediu texto azulado sobre superfície neutra; neutro sobre
+   * neutro dá 11,62:1 contra os 11,45:1 de antes. Os três textos ganham.
+   *
+   * O que continua com matiz: estado, diff, foco e link. São cor COM
+   * significado, e o fundo neutro é justamente o que os deixa mais nítidos —
+   * o menor deles (thinking e fail) mede 5,2:1 no pior caso, sem mudar nada.
    * ======================================================================= */
 
-  /* -- superfícies: quatro degraus, luz crescente ------------------------- */
-  --ck-surface-canvas: oklch(0.215 0.008 265);   /* #18191d palco do chat */
-  --ck-surface-nav: oklch(0.250 0.010 265);      /* #1f2227 tropa, gaveta, chrome */
-  --ck-surface-composer: oklch(0.285 0.011 265); /* #272a30 composer, campo, popover */
-  --ck-surface-raised: oklch(0.315 0.012 265);   /* #2f3238 mensagem elevada, overlay */
+  /* -- superfícies: quatro degraus, luz crescente, croma zero ------------- */
+  --ck-surface-canvas: oklch(0.215 0 0);         /* #191919 palco do chat */
+  --ck-surface-nav: oklch(0.250 0 0);            /* #222222 tropa, gaveta, chrome */
+  --ck-surface-composer: oklch(0.285 0 0);       /* #2a2a2a composer, campo, popover */
+  --ck-surface-raised: oklch(0.315 0 0);         /* #313131 mensagem elevada, overlay */
 
   /* -- texto -------------------------------------------------------------- */
-  --ck-text-primary: oklch(0.96 0.004 265);      /* #f0f2f4  11.5:1  corpo, título */
-  --ck-text-secondary: oklch(0.76 0.008 265);    /* #aeb1b6   6.0:1  metadado, label */
-  --ck-text-tertiary: oklch(0.62 0.008 265);     /* #84868b   3.55:1 ⚠️ NUNCA corpo:
+  --ck-text-primary: oklch(0.96 0 0);            /* #f2f2f2  11.62:1  corpo, título */
+  --ck-text-secondary: oklch(0.76 0 0);          /* #b1b1b1   6.07:1  metadado, label */
+  --ck-text-tertiary: oklch(0.62 0 0);           /* #868686   3.57:1 ⚠️ NUNCA corpo:
                                                     só ícone, separador, texto ≥20px */
 
   /* -- estado: a temperatura sobe conforme a máquina precisa de você ------ */
@@ -57,9 +74,10 @@
   --ck-diff-del-bg: color-mix(in oklch, var(--ck-diff-del) 12%, var(--ck-surface-canvas));
 
   /* -- bordas: luz, não sombra -------------------------------------------- */
-  --ck-edge-functional: oklch(0.60 0.012 265);   /* #7d8088  ≥3:1 OBRIGATÓRIO:
-                                                    input, botão, controle */
-  --ck-edge-hairline: oklch(0.38 0.010 265);     /* separador decorativo */
+  --ck-edge-functional: oklch(0.60 0 0);         /* #808080  3.29:1 sobre raised —
+                                                    ≥3:1 OBRIGATÓRIO: input, botão,
+                                                    controle */
+  --ck-edge-hairline: oklch(0.38 0 0);           /* #424242 separador decorativo */
   --ck-edge-light: rgb(255 255 255 / 0.07);      /* fio de luz 1px no TOPO do elevado */
 
   /* -- tipografia: escala ------------------------------------------------- */
@@ -353,4 +371,18 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .ck-pulso[data-estado] { animation: none; }
+}
+
+/* Fio de envio na base do composer (contrato §3.1 / `aparencia-envio.ts`):
+   percorre enquanto a mensagem está em trânsito (`enviando`/`aceito`) e É
+   ESTÁTICO, parado na metade, quando pendura — a posição fixa em vez de
+   animação é a imagem exata de "ficou pelo caminho". Só `transform` anima. */
+@keyframes ck-percorre {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+.ck-fio-percorre { animation: ck-percorre 1.6s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-fio-percorre { animation: none; }
 }

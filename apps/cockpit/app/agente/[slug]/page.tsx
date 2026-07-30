@@ -3,7 +3,10 @@ import { notFound } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { AppShell } from '@/components/shell/app-shell';
+import { BarraDeTelas } from '@/components/shell/barra-de-telas';
+import { Composer } from '@/components/shell/composer';
 import { estadoDe } from '@/components/shell/estado';
+import { leMotor } from '@/components/shell/motor';
 import { Retrato } from '@/components/shell/retrato';
 import { Tropa } from '@/components/shell/tropa';
 import { lePane } from '@/lib/pane';
@@ -116,47 +119,42 @@ export default async function AgentePage({
   if (!agente) notFound();
 
   const painelAberto = typeof sp.painel === 'string' && sp.painel.length > 0;
+  const navAberta = sp.nav === 'aberto';
   const fecharHref = `/agente/${slug}`;
   const estado = estadoDe(agente.status);
+  const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
 
   return (
     <AppShell
       nav={<Tropa agents={fleet.agents} slugSelecionado={slug} agora={agora} compacta />}
+      navAberta={navAberta}
+      fecharNavHref={fecharHref}
       drawer={<Painel agente={agente} fecharHref={fecharHref} />}
       painelAberto={painelAberto}
       fecharPainelHref={fecharHref}
       rotuloPainel="detalhes do agente"
     >
+      {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
+          painel à direita. §12.3/§13: dois controles na mesma faixa. */}
+      <BarraDeTelas
+        telas={[{ rotulo: 'Chat', ativa: true }]}
+        abrirNavHref={navAberta ? fecharHref : `${fecharHref}?nav=aberto`}
+        navAberta={navAberta}
+        abrirPainelHref={painelAberto ? fecharHref : `${fecharHref}?painel=detalhes`}
+        painelAberto={painelAberto}
+      />
+
+      {/* Identidade do agente — abaixo do chrome, não mais dono do botão de
+          voltar nem do "⋯": os dois viraram os ícones da BarraDeTelas. */}
       <header
-        className="ck-lit flex shrink-0 items-center border-b"
+        className="flex shrink-0 items-center border-b"
         style={{
           gap: 'var(--ck-space-2)',
           background: 'var(--ck-surface-nav)',
           borderColor: 'var(--ck-edge-hairline)',
-          // O cabeçalho estende a própria cor por baixo do notch, em vez de o
-          // shell empurrar o palco inteiro pra baixo e deixar uma faixa órfã.
-          paddingTop: 'calc(var(--ck-space-2) + var(--ck-safe-top))',
-          paddingRight: 'calc(var(--ck-space-3) + var(--ck-safe-right))',
-          paddingBottom: 'var(--ck-space-2)',
-          paddingLeft: 'calc(var(--ck-space-2) + var(--ck-safe-left))',
+          padding: 'var(--ck-space-2) var(--ck-space-3)',
         }}
       >
-        {/* Voltar só no celular: no desktop a tropa está ali à esquerda. */}
-        <Link
-          href="/"
-          aria-label="Voltar para a tropa"
-          className="ck-veil flex shrink-0 items-center justify-center md:hidden"
-          style={{
-            minWidth: 'var(--ck-touch-min)',
-            minHeight: 'var(--ck-touch-min)',
-            borderRadius: 'var(--ck-radius-chip)',
-            fontSize: 'var(--ck-text-lg)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          ←
-        </Link>
-
         <Retrato slug={agente.slug} nome={agente.name} tamanho={32} />
 
         <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '1px' }}>
@@ -182,24 +180,6 @@ export default async function AgentePage({
             {estado.rotulo}
           </span>
         </span>
-
-        {/* Abrir o painel é navegar: `?painel=detalhes`. No `xl` ele já é coluna
-            fixa, então o botão some. */}
-        <Link
-          href={`${fecharHref}?painel=detalhes`}
-          aria-label="Abrir detalhes do agente"
-          className="ck-veil flex shrink-0 items-center justify-center xl:hidden"
-          data-selecionado={painelAberto ? 'true' : 'false'}
-          style={{
-            minWidth: 'var(--ck-touch-min)',
-            minHeight: 'var(--ck-touch-min)',
-            borderRadius: 'var(--ck-radius-chip)',
-            fontSize: 'var(--ck-text-lg)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          ⋯
-        </Link>
       </header>
 
       {/* Coluna de leitura por container query: a coluna não sabe o tamanho da
@@ -287,51 +267,9 @@ export default async function AgentePage({
           paddingBottom: 'calc(var(--ck-space-3) + var(--ck-safe-bottom))',
         }}
       >
-        <div
-          className="ck-lit mx-auto flex items-end border"
-          style={{
-            gap: 'var(--ck-space-2)',
-            maxWidth: 'var(--ck-w-composer)',
-            minHeight: 'var(--ck-h-composer)',
-            padding: 'var(--ck-space-2) var(--ck-space-3)',
-            background: 'var(--ck-surface-composer)',
-            borderColor: 'var(--ck-edge-functional)',
-            borderRadius: 'var(--ck-radius-frame)',
-          }}
-        >
-          {/* Envio entra junto com o feed — esta rodada é a camada visual. Fica
-              `disabled` com a cor declarada no token: `disabled` sem cor
-              explícita ganha o cinza do sistema e fura a paleta. */}
-          <textarea
-            rows={1}
-            disabled
-            placeholder={`Mensagem para ${agente.name}`}
-            className="ck-campo min-w-0 flex-1 resize-none bg-transparent outline-none"
-            style={{
-              // 16px é piso, não estética: abaixo disso o Safari dá zoom ao focar
-              // o campo e o layout inteiro salta.
-              fontSize: 'var(--ck-text-md)',
-              lineHeight: 'var(--ck-leading-body)',
-            }}
-          />
-          {/* Borda funcional (≥3:1) e não só o fundo: sem ela o botão flutua no
-              composer sem dizer que é alvo de toque. */}
-          <span
-            aria-hidden
-            className="flex shrink-0 items-center justify-center border"
-            style={{
-              minWidth: 'var(--ck-touch-min)',
-              minHeight: '36px',
-              borderRadius: 'var(--ck-radius-chip)',
-              background: 'var(--ck-surface-raised)',
-              borderColor: 'var(--ck-edge-functional)',
-              color: 'var(--ck-text-primary)',
-              fontSize: 'var(--ck-text-base)',
-            }}
-          >
-            ↑
-          </span>
-        </div>
+        {/* Sem `esforcoValor`/`esforcoPermitido`/`onEnviar`: o Composer busca o
+            painel e envia sozinho — ver o cabeçalho do próprio componente. */}
+        <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
       </div>
     </AppShell>
   );

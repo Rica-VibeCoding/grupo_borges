@@ -1,0 +1,425 @@
+'use client';
+
+/**
+ * Composer — a caixa alta, controles por dentro (§12.1/§12.2).
+ *
+ * A referência do Rica pediu duas coisas com todas as letras: "chat input
+ * maior com modelo em baixo" e o motor a um toque de onde se escreve. As
+ * decisões que traduzem isso:
+ *
+ * 1. **Caixa alta com respiro**, não a linha fina que o v1 tinha. Os controles
+ *    moram DENTRO dela, na base — não numa barra externa acima ou abaixo.
+ * 2. **Modelo é texto, esforço é controle real.** O endpoint de esforço
+ *    (`PATCH /{slug}/effort`) já existe e a lista de valores permitidos vem do
+ *    back — então o seletor É funcional. O de modelo (`POST /{slug}/model`)
+ *    também existe, mas troca de modelo tem consequência de sessão diferente
+ *    por executor (Claude troca em runtime, Codex só na próxima execução —
+ *    comentário do próprio `api.ts`), e decidir esse fluxo não é a camada
+ *    visual desta rodada. Um controle que finge mudar o motor e não muda é
+ *    pior que não ter controle (ordem explícita do Rica) — por isso o modelo
+ *    aparece como VALOR REAL, não como botão morto fingindo interatividade.
+ * 3. **O único elemento sólido é o envio.** Tudo ao redor — anexo, motor,
+ *    microfone — é traço ou texto. É a hierarquia que a referência desenha:
+ *    uma tela inteira de contorno com UM ponto de massa.
+ *
+ * O FIO NA BASE é a tradução visual das seis fases da §3.1 do contrato de
+ * dados — ver `aparencia-envio.ts` para a régua completa. Resumo do porquê:
+ * `aceito` e `confirmado` são hoje INDISTINGUÍVEIS na tela (é o defeito que
+ * gerou texto pendurado sem aviso), e a distinção aqui não depende de ler
+ * palavra nenhuma — depende do fio se mover, parar, ou sumir.
+ *
+ * `faseForcada` existe só para a vitrine em `/envio` — o resto do componente
+ * ignora que esse prop existe.
+ *
+ * ESFORÇO É AUTOSSUFICIENTE DE PROPÓSITO. A página que usa o Composer no chat
+ * real não precisa buscar `/painel` antes — se `esforcoPermitido` não vier por
+ * prop, o próprio componente busca ao montar (`fetchAgentPainel`, a mesma
+ * função que `cockpit-core` já expõe) e aplica a troca via `patchAgentEffort`.
+ * A vitrine `/envio` passa os dois props explícitos e assume o controle —
+ * nesse caso o fetch não roda, porque o estado forçado tem que ser exatamente
+ * o que a vitrine mandou, nunca sobrescrito por uma resposta de rede.
+ */
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { fetchAgentPainel, patchAgentEffort, postAgentInput } from '@grupo_borges/cockpit-core/api';
+
+import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
+import { copyText } from '../../lib/clipboard';
+import { fallbackCopy } from '../renderers/copia-fallback';
+import { descreveMotor, rotulaEsforco, type Motor } from './motor';
+import {
+  IconeAnexo,
+  IconeCopiar,
+  IconeEnviar,
+  IconeMicrofone,
+  IconeReenviar,
+} from './icones';
+
+export type ComposerProps = {
+  agentSlug: string;
+  agentName: string;
+  motor: Motor;
+  /** Presentes = controlado (a vitrine). Ausentes = o componente busca e
+   *  aplica sozinho contra `/painel` e `/effort` do próprio agente. */
+  esforcoValor?: string | null;
+  esforcoPermitido?: string[];
+  onTrocarEsforco?: (valor: string) => Promise<void>;
+  onEnviar?: (texto: string) => Promise<{ ok: boolean }>;
+  /** Só a vitrine `/envio` usa isto. Fora dela, o componente decide sozinho. */
+  faseForcada?: FaseEnvio;
+};
+
+const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.ReactElement> = {
+  reenviar: IconeReenviar,
+  copiar: IconeCopiar,
+  'tentar-de-novo': IconeReenviar,
+};
+
+export function Composer({
+  agentSlug,
+  agentName,
+  motor,
+  esforcoValor,
+  esforcoPermitido,
+  onTrocarEsforco,
+  onEnviar,
+  faseForcada,
+}: ComposerProps) {
+  const [texto, setTexto] = useState('');
+  const [ultimoEnviado, setUltimoEnviado] = useState('');
+  const [faseLocal, setFaseLocal] = useState<FaseEnvio>('ocioso');
+  const [trocandoEsforco, setTrocandoEsforco] = useState(false);
+  const idAnuncio = useId();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Controlado (vitrine) quando o prop vem definido; autossuficiente (chat
+  // real) quando não vem — nesse caso busca `/painel` uma vez ao montar.
+  const controlado = esforcoPermitido !== undefined;
+  const [esforcoBuscado, setEsforcoBuscado] = useState<{
+    valor: string | null;
+    permitido: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (controlado) return;
+    let vivo = true;
+    fetchAgentPainel(agentSlug)
+      .then((painel) => {
+        if (vivo) setEsforcoBuscado({ valor: painel.effort.value, permitido: painel.effort.allowed });
+      })
+      .catch(() => {
+        // Painel indisponível: o controle nasce ausente, não fingido. Sem
+        // lista de valores permitidos não há o que oferecer.
+        if (vivo) setEsforcoBuscado({ valor: null, permitido: [] });
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [controlado, agentSlug]);
+
+  const esforcoValorEfetivo = controlado ? esforcoValor ?? null : esforcoBuscado?.valor ?? null;
+  const esforcoPermitidoEfetivo = controlado ? esforcoPermitido ?? [] : esforcoBuscado?.permitido ?? [];
+
+  async function trocarEsforcoEfetivo(valor: string) {
+    if (onTrocarEsforco) {
+      await onTrocarEsforco(valor);
+      return;
+    }
+    if (controlado) return; // vitrine sem handler: não há back pra chamar
+    const anterior = esforcoBuscado;
+    setEsforcoBuscado((atual) => (atual ? { ...atual, valor } : atual));
+    try {
+      await patchAgentEffort(agentSlug, valor);
+    } catch {
+      setEsforcoBuscado(anterior); // reverte — controle que erra e finge é pior
+    }
+  }
+
+  const fase = faseForcada ?? faseLocal;
+  const aparencia = aparenciaDe(fase, agentName);
+
+  async function enviar(corpo: string) {
+    if (!corpo.trim() || faseForcada) return;
+    setUltimoEnviado(corpo);
+    setFaseLocal('enviando');
+    setTexto('');
+    try {
+      // Sem `onEnviar` explícito (o caso real, fora da vitrine), o próprio
+      // componente chama `postAgentInput` — mesma régua do esforço: a página
+      // que monta o Composer no chat não precisa saber COMO o envio acontece.
+      const resposta = onEnviar
+        ? await onEnviar(corpo)
+        : await postAgentInput(agentSlug, corpo).then(
+            () => ({ ok: true }),
+            () => ({ ok: false }),
+          );
+      // Honesto com o que sabemos até aqui: o 200 prova que colou no tmux, não
+      // que o Enter submeteu. `confirmado` exige ver o eco voltar no stream —
+      // isso é o motor da Tara (`lib/envio.ts`), que ainda não está plugado.
+      // Cantar sucesso antes da hora é o MESMO defeito que esta peça existe
+      // para consertar, só que na outra ponta.
+      setFaseLocal(resposta.ok ? 'aceito' : 'falhou');
+    } catch {
+      setFaseLocal('falhou');
+    }
+  }
+
+  function aoSubmeter(e: FormEvent) {
+    e.preventDefault();
+    enviar(texto);
+  }
+
+  function acionar(acao: AcaoEnvio) {
+    if (acao === 'copiar') {
+      const moderno =
+        typeof navigator !== 'undefined' && navigator.clipboard
+          ? navigator.clipboard.writeText.bind(navigator.clipboard)
+          : undefined;
+      void copyText(ultimoEnviado, { writeText: moderno, fallbackCopy });
+      return;
+    }
+    // reenviar/tentar-de-novo: mesma ação, o texto já não está mais no campo —
+    // por isso ele foi guardado em `ultimoEnviado`, não descartado ao esvaziar
+    // o textarea.
+    enviar(ultimoEnviado);
+  }
+
+  const emAndamento = emTransito(fase);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
+      <form
+        onSubmit={aoSubmeter}
+        className="ck-lit mx-auto flex flex-col border"
+        style={{
+          maxWidth: 'var(--ck-w-composer)',
+          width: '100%',
+          padding: 'var(--ck-space-3)',
+          gap: 'var(--ck-space-2)',
+          background: 'var(--ck-surface-composer)',
+          borderColor: aparencia.filete ?? 'var(--ck-edge-functional)',
+          // A borda inteira (não só um filete de 2px) muda de cor no estado
+          // quente: o composer é a única superfície de INPUT da tela, e ali a
+          // convenção do filete lateral (linha de execução, mensagem) compete
+          // com a moldura que o campo já tem por natureza.
+          borderWidth: aparencia.filete ? '1.5px' : '1px',
+          borderRadius: 'var(--ck-radius-frame)',
+          position: 'relative',
+          overflow: 'hidden',
+          transition: `border-color var(--ck-dur-fast) var(--ck-ease)`,
+        }}
+      >
+        <textarea
+          ref={textareaRef}
+          rows={2}
+          value={texto}
+          disabled={emAndamento}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              enviar(texto);
+            }
+          }}
+          placeholder={`Mensagem para ${agentName}`}
+          className="ck-campo min-w-0 resize-none bg-transparent outline-none"
+          style={{
+            fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
+            lineHeight: 'var(--ck-leading-body)',
+            minHeight: '48px',
+          }}
+        />
+
+        {/* Base do composer: os controles moram AQUI, dentro da caixa — §12.1. */}
+        <div className="flex items-end justify-between" style={{ gap: 'var(--ck-space-2)' }}>
+          <button
+            type="button"
+            aria-label="Anexar arquivo"
+            className="ck-veil flex shrink-0 items-center justify-center"
+            style={{
+              minWidth: 'var(--ck-touch-min)',
+              minHeight: 'var(--ck-touch-min)',
+              marginLeft: 'calc(var(--ck-space-2) * -1)',
+              marginBottom: 'calc(var(--ck-space-2) * -1)',
+              borderRadius: 'var(--ck-radius-chip)',
+              color: 'var(--ck-text-secondary)',
+            }}
+          >
+            <IconeAnexo tamanho={17} />
+          </button>
+
+          <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
+            {/* O motor — modelo em texto, esforço em controle real. Nunca bold:
+                a referência resolve hierarquia com espaço, não com peso. */}
+            <div
+              className="flex min-w-0 items-center"
+              style={{ gap: '3px', fontSize: 'var(--ck-text-sm)' }}
+              title={descreveMotor(motor)}
+            >
+              <span
+                className="truncate"
+                style={{
+                  color:
+                    motor.certeza === 'pode-divergir'
+                      ? 'var(--ck-text-tertiary)'
+                      : 'var(--ck-text-secondary)',
+                }}
+              >
+                {motor.modelo}
+              </span>
+              {esforcoPermitidoEfetivo.length > 0 ? (
+                <select
+                  aria-label={`Esforço de ${agentName}`}
+                  value={esforcoValorEfetivo ?? ''}
+                  disabled={trocandoEsforco}
+                  onChange={async (e) => {
+                    setTrocandoEsforco(true);
+                    try {
+                      await trocarEsforcoEfetivo(e.target.value);
+                    } finally {
+                      setTrocandoEsforco(false);
+                    }
+                  }}
+                  className="bg-transparent outline-none"
+                  style={{
+                    color: 'var(--ck-text-secondary)',
+                    fontFamily: 'var(--ck-font-sans)',
+                    fontSize: 'var(--ck-text-sm)',
+                    // `appearance: none` tiraria a seta nativa; mantemos a seta
+                    // do sistema — é a única pista de que isto é um `<select>`
+                    // e não texto, e substituí-la por um glifo custava mais do
+                    // que o problema pedia.
+                  }}
+                >
+                  {/* O VALOR vai cru pro back (`low`…`max`, é o contrato do
+                      endpoint), mas o RÓTULO é português — a referência mostra
+                      "Extra alto", não "xhigh", e quem lê esta linha é o Rica.
+                      O primeiro print pegou este defeito: o composer estava
+                      cantando "Opus high" no meio de uma tela em português. */}
+                  {esforcoPermitidoEfetivo.map((valor) => (
+                    <option key={valor} value={valor}>
+                      {rotulaEsforco(valor)}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              aria-label="Gravar áudio"
+              className="ck-veil flex shrink-0 items-center justify-center"
+              style={{
+                minWidth: 'var(--ck-touch-min)',
+                minHeight: 'var(--ck-touch-min)',
+                marginBottom: 'calc(var(--ck-space-2) * -1)',
+                borderRadius: 'var(--ck-radius-chip)',
+                color: 'var(--ck-text-secondary)',
+              }}
+            >
+              <IconeMicrofone tamanho={17} />
+            </button>
+
+            {/* Único elemento sólido da tela — §12.1. */}
+            <button
+              type="submit"
+              disabled={!texto.trim() || emAndamento}
+              aria-label={`Enviar para ${agentName}`}
+              className="flex shrink-0 items-center justify-center disabled:opacity-40"
+              style={{
+                width: '32px',
+                height: '32px',
+                marginBottom: 'calc(var(--ck-space-1) * -1)',
+                borderRadius: 'var(--ck-radius-pill)',
+                background: 'var(--ck-text-primary)',
+                color: 'var(--ck-surface-canvas)',
+              }}
+            >
+              <IconeEnviar />
+            </button>
+          </div>
+        </div>
+
+        {/* O fio — ver `aparencia-envio.ts`. Track de 2px na base, dentro da
+            própria moldura (`overflow:hidden` do form recorta a ponta). Só
+            `transform` anima: o compositor não recalcula layout. */}
+        {aparencia.fio !== 'nenhum' ? (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: '2px',
+              overflow: 'hidden',
+              background: 'var(--ck-edge-hairline)',
+            }}
+          >
+            <div
+              className={aparencia.fio === 'correndo' ? 'ck-fio-percorre' : ''}
+              style={{
+                width: '30%',
+                height: '100%',
+                background: aparencia.filete ?? 'var(--ck-state-running)',
+                // Travado: parado na METADE do trajeto — é a imagem literal do
+                // "ficou pelo caminho", não uma barra de progresso genérica.
+                transform: aparencia.fio === 'travado' ? 'translateX(120%)' : undefined,
+              }}
+            />
+          </div>
+        ) : null}
+      </form>
+
+      {/* Frase de estado + ações. Só existe fora do `ocioso`/`confirmado` —
+          sucesso é silêncio, igual à linha de ferramenta (§7). */}
+      {aparencia.frase || aparencia.acoes.length > 0 ? (
+        <div
+          className="mx-auto flex w-full items-center justify-between"
+          style={{ maxWidth: 'var(--ck-w-composer)', padding: '0 var(--ck-space-2)' }}
+        >
+          <span
+            id={idAnuncio}
+            role="status"
+            aria-live={aparencia.urgencia}
+            style={{
+              fontSize: 'var(--ck-text-xs)',
+              color: aparencia.filete ?? 'var(--ck-text-secondary)',
+            }}
+          >
+            {aparencia.frase}
+          </span>
+          {aparencia.acoes.length > 0 ? (
+            <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
+              {aparencia.acoes.map((acao) => {
+                const Icone = ROTULO_ICONE[acao];
+                return (
+                  <button
+                    key={acao}
+                    type="button"
+                    onClick={() => acionar(acao)}
+                    className="ck-veil flex items-center"
+                    style={{
+                      gap: '5px',
+                      padding: '4px 8px',
+                      borderRadius: 'var(--ck-radius-chip)',
+                      fontSize: 'var(--ck-text-xs)',
+                      color: 'var(--ck-text-secondary)',
+                    }}
+                  >
+                    <Icone tamanho={13} />
+                    {rotulaAcao(acao)}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        // Elemento vazio de altura fixa: reserva o espaço da linha de status
+        // ANTES de ela existir, mesma regra do hotspot 6 da linha de execução —
+        // sem isto o fio aparecendo empurra o composer um pixel pra cima.
+        <div aria-hidden style={{ height: '17px' }} />
+      )}
+    </div>
+  );
+}

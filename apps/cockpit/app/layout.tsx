@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   // themeColor tem de bater com --ck-surface-canvas. Se o token mudar, este
   // valor muda junto — é o que impede a barra do Safari de destoar do palco.
-  themeColor: '#18191d',
+  themeColor: '#191919',
   colorScheme: 'dark',
   width: 'device-width',
   initialScale: 1,

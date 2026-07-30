@@ -17,7 +17,10 @@ export default async function Home() {
   const trabalhando = fleet.agents.filter((a) => a.status === 'trabalhando').length;
 
   return (
-    <AppShell nav={<Tropa agents={fleet.agents} agora={agora} compacta />}>
+    // Sem `nav`: aquele slot do AppShell é exclusivo do overlay da tropa
+    // dentro do CHAT (§13) — aqui na raiz a tropa é a própria superfície, e
+    // no desktop ela é uma coluna estática montada abaixo, fora do shell.
+    <AppShell>
       {/* No celular a rota `/` É a tropa — tela inteira, uma superfície por vez.
           A lista vem logo abaixo do cabeçalho de propósito: a coisa acionável não
           pode nascer abaixo da dobra. */}
@@ -66,27 +69,44 @@ export default async function Home() {
         </div>
       </div>
 
-      {/* Desktop: a tropa já é a coluna da esquerda, então aqui vai o vazio.
-          Sem ilustração — ilustração genérica é a assinatura do mequetrefe. */}
-      <div
-        className="hidden min-h-0 flex-1 flex-col items-center justify-center text-center md:flex"
-        style={{ padding: 'var(--ck-space-6)', gap: 'var(--ck-space-2)' }}
-      >
-        <p
+      {/* Desktop: coluna da tropa MONTADA AQUI, estática — só na raiz. É a
+          única superfície onde ela ainda ocupa espaço permanente; dentro do
+          chat ela virou overlay (§13), mas aqui ESTA página existe para
+          mostrar a tropa, então escondê-la atrás de um toque seria pior. */}
+      <div className="hidden min-h-0 flex-1 md:flex">
+        <aside
+          className="min-h-0 shrink-0 overflow-y-auto border-r"
           style={{
-            fontSize: 'var(--ck-text-hero)',
-            lineHeight: 'var(--ck-leading-hero)',
-            letterSpacing: 'var(--ck-track-hero)',
-            color: 'var(--ck-text-primary)',
+            width: 'var(--ck-w-nav)',
+            background: 'var(--ck-surface-nav)',
+            borderColor: 'var(--ck-edge-hairline)',
+            paddingLeft: 'var(--ck-safe-left)',
           }}
         >
-          {chamando > 0 ? 'Alguém está te esperando' : 'Escolha um agente'}
-        </p>
-        <p style={{ fontSize: 'var(--ck-text-base)', color: 'var(--ck-text-secondary)' }}>
-          {chamando > 0
-            ? `${chamando} ${chamando === 1 ? 'agente parado' : 'agentes parados'} aguardando você na coluna ao lado.`
-            : `${fleet.agents.length} na frota, ${trabalhando} trabalhando agora.`}
-        </p>
+          <Tropa agents={fleet.agents} agora={agora} compacta />
+        </aside>
+
+        {/* Sem ilustração — ilustração genérica é a assinatura do mequetrefe. */}
+        <div
+          className="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
+          style={{ padding: 'var(--ck-space-6)', gap: 'var(--ck-space-2)' }}
+        >
+          <p
+            style={{
+              fontSize: 'var(--ck-text-hero)',
+              lineHeight: 'var(--ck-leading-hero)',
+              letterSpacing: 'var(--ck-track-hero)',
+              color: 'var(--ck-text-primary)',
+            }}
+          >
+            {chamando > 0 ? 'Alguém está te esperando' : 'Escolha um agente'}
+          </p>
+          <p style={{ fontSize: 'var(--ck-text-base)', color: 'var(--ck-text-secondary)' }}>
+            {chamando > 0
+              ? `${chamando} ${chamando === 1 ? 'agente parado' : 'agentes parados'} aguardando você na coluna ao lado.`
+              : `${fleet.agents.length} na frota, ${trabalhando} trabalhando agora.`}
+          </p>
+        </div>
       </div>
     </AppShell>
   );
