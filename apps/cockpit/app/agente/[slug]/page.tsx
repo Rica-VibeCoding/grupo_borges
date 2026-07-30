@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
@@ -6,6 +5,7 @@ import { AppShell } from '@/components/shell/app-shell';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
+import { LinkFechaPainel } from '@/components/shell/painel-otimista';
 import { Tropa } from '@/components/shell/tropa';
 import { lePane } from '@/lib/pane';
 
@@ -68,13 +68,15 @@ function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
         >
           Detalhes
         </span>
-        {/* Fechar é navegar. O `xl:hidden` que estava aqui vinha de um plano em
-            que a gaveta virava coluna fixa nas telas grandes; ela nunca virou —
-            é overlay em qualquer largura —, então o botão sumia em `xl` e
-            sobrava o véu como única saída. */}
-        <Link
+        {/* Fechar é navegar — e desde 30/07 também é otimista: o
+            `LinkFechaPainel` vira o painel no mesmo frame e a URL alcança
+            atrás; sem JS é o Link de sempre. O `xl:hidden` que estava aqui
+            vinha de um plano em que a gaveta virava coluna fixa nas telas
+            grandes; ela nunca virou — é overlay em qualquer largura —, então
+            o botão sumia em `xl` e sobrava o véu como única saída. */}
+        <LinkFechaPainel
           href={fecharHref}
-          aria-label="Fechar detalhes"
+          rotulo="detalhes"
           className="ck-veil flex items-center justify-center"
           style={{
             minWidth: 'var(--ck-touch-min)',
@@ -86,7 +88,7 @@ function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
           }}
         >
           ×
-        </Link>
+        </LinkFechaPainel>
       </div>
 
       <div
@@ -144,7 +146,8 @@ export default async function AgentePage({
         telas={[{ rotulo: 'Chat', ativa: true }]}
         abrirNavHref={navAberta ? fecharHref : `${fecharHref}?nav=aberto`}
         navAberta={navAberta}
-        abrirPainelHref={painelAberto ? fecharHref : `${fecharHref}?painel=detalhes`}
+        hrefAbrirPainel={`${fecharHref}?painel=detalhes`}
+        hrefFecharPainel={fecharHref}
         painelAberto={painelAberto}
       />
 

@@ -1008,12 +1008,34 @@ A saída é o motivo de o `app-shell` passar a **manter o painel sempre montado*
 `display` entra na transição com `allow-discrete` (ele não interpola: sem isso o elemento
 sumiria no primeiro frame e a animação rodaria no vazio).
 
-**O que isto compra:** zero JavaScript, zero `AnimatePresence`, zero biblioteca de motion — o
-shell continua Server Component, que é o que faz deep-link e botão voltar funcionarem. Não foi
+**O que isto compra:** zero `AnimatePresence`, zero biblioteca de motion — o shell continua
+Server Component, que é o que faz deep-link e botão voltar funcionarem. Não foi
 preciso `experimental.viewTransition`: **esta peça não é shared element transition** (não há
 elemento migrando entre dois lugares, como seria a animação do retrato da §15), é entrada e
 saída de uma superfície única. O palpite do despacho estava certo, e o freio da §15 não se
-aplica aqui.
+aplica aqui. (Nasceu "zero JavaScript"; a abertura otimista abaixo adicionou UMA peça de
+cliente — a animação em si continua 100% CSS.)
+
+### A abertura otimista — a demora não era a animação (30/07, noite)
+
+Testado ao vivo, o Rica cravou: *"demora muito para abrir"*. Medido com Playwright na :3008:
+**do clique até o `data-aberto` virar iam 2,0–2,7s** — e a animação de 200ms corria inteira
+DEPOIS. A demora era a navegação `?painel=detalhes` esperando a página `force-dynamic`
+renderizar no servidor (a página inteira leva 1,4–1,9s). Pré-busca (prefetch) não resolve:
+`staleTimes.dynamic` é 0 no Next 16, e cachear o payload dessa página mostraria o feed
+desatualizado (a página é feed+painel junto).
+
+A saída (`painel-otimista.tsx`): `useOptimistic` + `router.push` na MESMA transição — o
+padrão oficial do guia do Next 16.2 (`interactive-apps`). Como o painel já fica sempre
+montado, o clique vira `data-aberto` **no mesmo frame** e a URL alcança a tela atrás. A URL
+segue fonte da verdade: deep-link, refresh e botão voltar intactos; sem JS, os três gatilhos
+(botão do chrome, véu, `×`) degradam pro `<Link>` de sempre. Navegação falha → o otimista
+reverte sozinho.
+
+Na mesma rodada, ordem do Rica via Pavan (com prints): **o véu não escurece mais** — saiu o
+`background: var(--ck-scrim)` dos dois véus (nav e painel). Ficou o alvo de clique que fecha;
+se ele quiser o fundo INTERATIVO (clicar no chat com o painel aberto, como na referência), é
+remover o véu de vez. O token `--ck-scrim` ficou sem consumidor.
 
 Só `opacity` e `transform` animam (§9.4). O gesto é `translateY(6px) + scale(0.98)`: a
 superfície **afunda e se afasta**, em vez de deslizar da borda — deslizar é gramática de

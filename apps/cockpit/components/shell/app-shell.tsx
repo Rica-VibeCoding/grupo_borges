@@ -10,8 +10,16 @@
  *    dentro do chat é `?nav=aberto`, painel é `?painel=...`. Deep-link do
  *    Telegram, refresh e botão voltar do Android precisam funcionar, e nenhum
  *    dos três funciona com seleção guardada em context. Consequência boa: o
- *    shell inteiro é Server Component, sem uma linha de JavaScript no cliente —
- *    inclusive abrir e fechar as duas gavetas, que são `<Link>`.
+ *    shell inteiro é Server Component, e abrir/fechar degrada pra `<Link>`
+ *    puro sem JavaScript.
+ *
+ *    Desde 30/07 a regra tem UM acréscimo: a página do agente é
+ *    `force-dynamic`, e a ida e volta da navegação custava 2,0–2,7s medidos
+ *    antes do painel sequer começar a aparecer — o Rica pegou ao vivo
+ *    (*"demora muito para abrir"*). A abertura otimista (`painel-otimista.tsx`)
+ *    vira o `data-aberto` no mesmo frame e deixa a URL alcançar a tela atrás.
+ *    A URL continua sendo a fonte da verdade — o otimista só adianta a
+ *    pintura, não detém estado.
  *
  * 2. **Cada gaveta é um `<aside>` próprio, nunca um `SidebarProvider`.**
  *    Dois provider dividem o mesmo cmd+B e brigam pelo atalho.
@@ -43,6 +51,8 @@
  * Dono deste arquivo: frente `chrome` (docs/cockpit-v2-ownership.md §2).
  */
 import Link from 'next/link';
+
+import { GavetaPainel, PainelProvider } from './painel-otimista';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -85,21 +95,31 @@ export function AppShell({
     //
     // O fundo é a cor da TROPA, não a do palco: é o que faz a faixa esquerda
     // existir sem que a tropa precise desenhar uma caixa para si.
-    <div
-      className="relative flex h-dvh overflow-hidden"
-      style={{ background: 'var(--ck-surface-nav)' }}
-    >
+    //
+    // O provider do painel otimista envolve TUDO: o botão de abrir mora na
+    // `BarraDeTelas` (lá dentro do `main`, via children) e véu+aside moram
+    // aqui embaixo — os dois lados precisam do mesmo contexto. Fora de rota
+    // com painel ele só não é consumido.
+    <PainelProvider aberto={painelAberto}>
+      <div
+        className="relative flex h-dvh overflow-hidden"
+        style={{ background: 'var(--ck-surface-nav)' }}
+      >
       {nav ? (
         <>
           {/* Véu — só no celular. No desktop a faixa é fundo permanente e não
               há nada para velar; deixar o véu vivo lá cobriria a folha inteira
-              se alguém chegasse por um link com `?nav=aberto`. */}
+              se alguém chegasse por um link com `?nav=aberto`.
+
+              NÃO escurece mais — ordem do Rica (30/07, via Pavan, com prints):
+              *"tira a função que escurece o resto da tela quando a gaveta
+              aparece"*. Ficou só o alvo de toque que fecha. */}
           {navAberta ? (
             <Link
               href={fecharNavHref}
               aria-label="Fechar lista de agentes"
               className="fixed inset-0 md:hidden"
-              style={{ background: 'var(--ck-scrim)', zIndex: 'var(--ck-z-drawer)' }}
+              style={{ zIndex: 'var(--ck-z-drawer)' }}
             />
           ) : null}
 
@@ -140,34 +160,19 @@ export function AppShell({
           de renderizá-lo. Mantido montado, o React reconcilia o mesmo nó a cada
           navegação e o CSS anima os dois lados. Ver `.ck-surge` no globals.css.
 
+          E é o que também compra a ABERTURA OTIMISTA: como o conteúdo já está
+          montado, o clique vira `data-aberto` no mesmo frame e a navegação só
+          sincroniza a URL atrás (ver `painel-otimista.tsx`).
+
           `inert` quando fechado: durante a saída o elemento ainda está visível
           por ~200ms, e sem isto o conteúdo continuaria alcançável por Tab
           nesse intervalo. */}
       {drawer ? (
-        <>
-          {/* Véu. É um `<Link>` porque fechar o painel é navegar — sem estado,
-              sem handler, funciona com JavaScript desligado e o botão voltar
-              faz a coisa certa. Zero `backdrop-filter`: blur em tela cheia na
-              GPU do celular é exatamente o que afunda o item 1 do gate. */}
-          <Link
-            href={fecharPainelHref}
-            aria-label={`Fechar ${rotuloPainel}`}
-            data-aberto={String(painelAberto)}
-            className="ck-surge-veu fixed inset-0"
-            style={{ background: 'var(--ck-scrim)', zIndex: 'var(--ck-z-drawer)' }}
-          />
-
-          <aside
-            aria-label={rotuloPainel}
-            data-aberto={String(painelAberto)}
-            inert={!painelAberto}
-            className="ck-surge ck-flutua flex min-h-0 flex-col overflow-hidden"
-            style={{ background: 'var(--ck-surface-nav)' }}
-          >
-            {drawer}
-          </aside>
-        </>
+        <GavetaPainel fecharHref={fecharPainelHref} rotulo={rotuloPainel} aberto={painelAberto}>
+          {drawer}
+        </GavetaPainel>
       ) : null}
-    </div>
+      </div>
+    </PainelProvider>
   );
 }

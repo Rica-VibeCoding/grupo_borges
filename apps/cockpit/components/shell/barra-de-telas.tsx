@@ -15,10 +15,13 @@
  * fio de luz devia aparecer. Cada superfície é uniforme; o que separa uma da
  * outra é a forma.
  *
- * Server Component de propósito — os três são `<Link>`, e a regra 1 do
- * `app-shell.tsx` vale aqui também: o que está aberto mora na URL
- * (`?nav=aberto`, `?painel=...`), nunca em estado de cliente. Refresh, deep
- * link do Telegram e botão voltar do Android continuam funcionando de graça.
+ * A barra é Server Component e os controles continuam `<Link>` por baixo —
+ * a regra 1 do `app-shell.tsx` vale aqui também: o que está aberto mora na
+ * URL (`?nav=aberto`, `?painel=...`), nunca em estado de cliente. Refresh,
+ * deep link do Telegram e botão voltar do Android continuam funcionando de
+ * graça. O botão do painel é a ÚNICA peça de cliente (`BotaoPainel`): desde
+ * 30/07 a abertura é otimista — vira o painel no mesmo frame e empurra a
+ * navegação atrás (`painel-otimista.tsx`); sem JS ele é o Link de sempre.
  *
  * A PILL É HONESTA (§9 — botão que não leva a lugar nenhum é mentira de UI):
  * hoje só existe UM destino de produto (o chat do agente). A fase 2 (kanban)
@@ -30,7 +33,8 @@
  */
 import Link from 'next/link';
 
-import { IconeMenu, IconePainel } from './icones';
+import { IconeMenu } from './icones';
+import { BotaoPainel } from './painel-otimista';
 
 export type Tela = { rotulo: string; ativa: boolean };
 
@@ -38,7 +42,10 @@ type BarraDeTelasProps = {
   telas: Tela[];
   abrirNavHref: string;
   navAberta: boolean;
-  abrirPainelHref: string;
+  /** Os DOIS destinos do botão do painel — o `BotaoPainel` escolhe conforme o
+   *  estado otimista do momento, que pode correr à frente da URL. */
+  hrefAbrirPainel: string;
+  hrefFecharPainel: string;
   painelAberto: boolean;
 };
 
@@ -46,7 +53,8 @@ export function BarraDeTelas({
   telas,
   abrirNavHref,
   navAberta,
-  abrirPainelHref,
+  hrefAbrirPainel,
+  hrefFecharPainel,
   painelAberto,
 }: BarraDeTelasProps) {
   return (
@@ -115,21 +123,11 @@ export function BarraDeTelas({
         ))}
       </div>
 
-      <Link
-        href={abrirPainelHref}
-        aria-label={painelAberto ? 'Fechar detalhes' : 'Abrir detalhes do agente'}
-        data-selecionado={painelAberto ? 'true' : 'false'}
-        className="ck-veil flex shrink-0 items-center justify-center"
-        style={{
-          minWidth: 'var(--ck-touch-min)',
-          minHeight: 'var(--ck-touch-min)',
-          marginRight: 'calc(var(--ck-space-3) * -1)',
-          borderRadius: 'var(--ck-radius-chip)',
-          color: 'var(--ck-text-secondary)',
-        }}
-      >
-        <IconePainel tamanho={18} />
-      </Link>
+      <BotaoPainel
+        hrefAbrir={hrefAbrirPainel}
+        hrefFechar={hrefFecharPainel}
+        aberto={painelAberto}
+      />
     </div>
   );
 }
