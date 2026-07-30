@@ -51,6 +51,12 @@ Somo o que o sol trouxe na mesma direção: manter montada só a conversa ativa 
 
 E uma verificação que dá para fazer antes de escrever qualquer código: **dois `EventSource` mais os fetches de API contra o teto de ~6 conexões HTTP/1.1 por host do Safari.** Se o `tailscale serve` não negociar HTTP/2, a lista não carrega quando o chat está aberto — e isso viraria um bug misterioso caçado por dias.
 
+> ✅ **Verificado em 30/07 (Pavan).** `curl` contra `srv1061129.tailfe77db.ts.net` responde
+> `http_version: 2` com status 200 nas **duas** portas — 3443 (painel antigo) e 3444 (v2).
+> Com HTTP/2 há multiplexação numa conexão só, então o teto de ~6 por host não se aplica e
+> o risco não se materializa. Vale enquanto o acesso for por `tailscale serve`: se algum dia
+> a rota sair por outro proxy, refazer esta medição antes de assumir que continua valendo.
+
 ## O que entra que ninguém do plano tinha
 
 Do sol:
