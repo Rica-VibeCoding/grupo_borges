@@ -696,6 +696,7 @@
     clearTimeout(timerFim);
     var r = resultado();
     campoJson.value = JSON.stringify(r, null, 2);
+    campoJson.style.display = 'block';
     pintaUI(r);
   }
 
@@ -704,6 +705,11 @@
   var overlay, corpo, campoJson, btIniciar, btAlvo, linhaAviso, cabecalho;
   var minimizado = false;
   var escolhendoAlvo = false;
+  // Nasce no TOPO, e não é gosto: o composer de qualquer chat fica embaixo, e
+  // um overlay ancorado embaixo cobre justamente o campo onde o operador tem de
+  // digitar para o G2 existir. Descoberto dirigindo o probe contra a bancada do
+  // spike — o clique no textarea da página batia no textarea do overlay.
+  var noTopo = true;
 
   function el(tag, css, texto) {
     var e = document.createElement(tag);
@@ -741,7 +747,7 @@
 
   function montaOverlay() {
     overlay = el('div',
-      'position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));' +
+      'position:fixed;left:8px;right:8px;' +
       'z-index:2147483647;background:' + C.fundo + ';color:' + C.texto +
       ';border:1px solid ' + C.borda + ';border-radius:12px;padding:10px;' +
       'font:14px/1.45 ' + MONO + ';-webkit-text-size-adjust:100%;' +
@@ -757,7 +763,13 @@
       corpo.style.display = minimizado ? 'none' : 'block';
       btMin.textContent = minimizado ? '+' : '—';
     });
+    var btLado = el('button',
+      'min-width:44px;min-height:32px;border-radius:8px;border:1px solid ' + C.borda +
+      ';background:transparent;color:' + C.fraco + ';font:700 16px ' + MONO + ';', '⇅');
+    btLado.addEventListener('click', function () { noTopo = !noTopo; posiciona(); });
+
     cabecalho.appendChild(titulo);
+    cabecalho.appendChild(btLado);
     cabecalho.appendChild(btMin);
 
     corpo = el('div', '');
@@ -787,11 +799,27 @@
       'font:12px ' + MONO + ';-webkit-text-size-adjust:100%;');
     campoJson.readOnly = true;
     campoJson.placeholder = 'JSON aparece aqui ao parar';
+    // Escondido enquanto mede: com o textarea aberto o overlay passa de 500px
+    // de altura e tapa metade da tela — no topo cobre o feed, embaixo cobre o
+    // composer. Overlay de instrumento tem de ocupar uma faixa fina.
+    campoJson.style.display = 'none';
     corpo.appendChild(campoJson);
 
     overlay.appendChild(cabecalho);
     overlay.appendChild(corpo);
     document.body.appendChild(overlay);
+    posiciona();
+  }
+
+  function posiciona() {
+    if (!overlay) return;
+    if (noTopo) {
+      overlay.style.top = 'calc(8px + env(safe-area-inset-top, 0px))';
+      overlay.style.bottom = 'auto';
+    } else {
+      overlay.style.bottom = 'calc(8px + env(safe-area-inset-bottom, 0px))';
+      overlay.style.top = 'auto';
+    }
   }
 
   function aviso(txt) {
