@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { normalizeThinkingContent } from './thinking.ts';
+import {
+  buildThinkingRenderModel,
+  normalizeThinkingContent,
+} from './thinking.ts';
 
 type Fixture = {
   familia: string;
@@ -40,23 +43,43 @@ test('extrai corpo não vazio do representante real de thinking', () => {
     thinkingPart.thinking,
     /^<texto redigido · 73238 chars · 388 linhas>\n<linha redigida>/,
   );
-  assert.deepEqual(normalizeThinkingContent(content), {
+  assert.deepEqual(buildThinkingRenderModel(content), {
     text: thinkingPart.thinking,
     lineCount: 388,
+    initiallyExpanded: false,
   });
 });
 
-test('content null real vira cabeçalho vazio, sem corpo expansível', () => {
+test('thinking vazio com signature real vira ausência', () => {
+  const fixture = loadFixture('bloco__thinking');
+  const content = fixture.evento.message?.content;
+  assert.ok(Array.isArray(content));
+
+  const sealedContent = content.map((part) => {
+    if (
+      typeof part === 'object' &&
+      part !== null &&
+      (part as Record<string, unknown>).type === 'thinking'
+    ) {
+      const thinkingPart = part as Record<string, unknown>;
+      assert.match(String(thinkingPart.signature), /^<texto redigido · \d+ chars>$/);
+      return { ...thinkingPart, thinking: '' };
+    }
+    return part;
+  });
+
+  assert.equal(fixture.ocorrencias, 804);
+  assert.equal(buildThinkingRenderModel(sealedContent), null);
+});
+
+test('content null real vira ausência', () => {
   const fixture = loadFixture('borda__content_none');
   const content = fixture.evento.message?.content ?? null;
 
   assert.equal(fixture.ocorrencias, 199);
   assert.equal(fixture.evento.message, null);
   assert.equal(content, null);
-  assert.deepEqual(normalizeThinkingContent(content), {
-    text: '',
-    lineCount: 0,
-  });
+  assert.equal(buildThinkingRenderModel(content), null);
 });
 
 test('content string real vira um único corpo de uma linha', () => {
