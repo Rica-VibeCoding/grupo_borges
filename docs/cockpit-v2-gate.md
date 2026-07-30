@@ -223,9 +223,30 @@ gerador de carga em `fixtures/cockpit-v2/`.
 
 **Resposta: escala.** Com 10× mais histórico carregado, o p95 da mesma janela de
 medição fica **1,8× pior**. O custo cresce com o que o Rica **acumula**, não só
-com o que **chega** — e isso é o argumento definitivo contra a biblioteca:
-virtualizar não resolve por construção, porque o gasto não está em desenhar as
-linhas visíveis, está no que acontece por flush sobre a lista inteira.
+com o que **chega**: virtualizar não resolve por construção, porque o gasto não
+está em desenhar as linhas visíveis, está no que acontece por flush sobre a
+lista inteira.
+
+> ⚠️ **Ressalva do Pavan — isto ainda NÃO é o argumento definitivo contra a
+> biblioteca, e a diferença decide o próximo trabalho.** A medição roda na fatia
+> vertical inteira (nossa camada + `assistant-ui`), e o painel antigo tem o
+> **mesmo O(N)**: `apps/web/lib/use-messages-stream.ts:317` comenta com todas as
+> letras *"reconstrução O(N) de useMemo no ChatMessages"*. Se o joelho for
+> herança da nossa arquitetura, trocar de biblioteca não resolve nada — e o gate
+> §2 já registra a mesma armadilha para o G1 e o G3, que reprovaram por código
+> nosso enquanto o G4 (o único que media a biblioteca) passou com zero.
+>
+> **O experimento que decide não é medir o v1.** O `apps/web` está congelado por
+> decisão do Rica e não há como controlar o histórico dele sem tocar no que foi
+> congelado — mesmo beco das duas primeiras tentativas. O teste certo é medir o
+> **v2 sem a biblioteca**: mesmo canário, mesma carga, mesmo portão, render
+> simples no lugar do runtime da `assistant-ui`. Joelho some ⇒ é dela. Joelho
+> persiste ⇒ é nosso, e a decisão do gate deixa de ser "trocar de biblioteca"
+> para virar "consertar a nossa camada", que é outro trabalho inteiro.
+>
+> O plano de fuga já está pago: o `data-contract` §5 registra que cada `data-x`
+> é componente nosso recebendo objeto nosso, então o render simples não precisa
+> ser escrito do zero.
 
 Seis rodadas por nível (duas passagens de três), mesma janela de 25 s a 50 Hz,
 mesmo banco, mesma semente. A única variável é quanto histórico o cliente já
