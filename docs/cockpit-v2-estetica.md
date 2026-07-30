@@ -879,13 +879,22 @@ chat quem encosta é a folha (`#191919`, no `layout.tsx`), na raiz é a mesa (`#
 `export const viewport` da própria página). Verificado no HTML servido que o merge do Next é
 por campo — o `viewport-fit=cover` do layout sobrevive na raiz.
 
-### Aberto
+### Fechado — os dois cosméticos que ficaram em aberto (Daniel, 30/07)
 
-- **O rio entre o nome e o chip de estado** na raiz do desktop: a coluna de 32rem é mais larga
-  que o celular e o chip vai para a ponta. Não mexi no cartão da tropa — ele já passou pelo
-  olho do Rica e não é a peça desta rodada. Se incomodar, é uma linha.
-- **`/avatars/canario.webp` dá 404** e o Canário cai na inicial "CC". Pré-existente, não é
-  desta rodada.
+- ~~O rio entre o nome e o chip de estado na raiz do desktop: a coluna de 32rem é mais larga
+  que o celular e o chip vai para a ponta.~~ Era mesmo uma linha: o nome do `CartaoVivo`
+  (`tropa.tsx`) perdia `flex-1` porque nada mais nesse `<span>` precisava dele — sem sibling
+  pra empurrar, ele só esticava a caixa e deixava o chip na ponta. Sem ele, o nome para no
+  próprio texto e o chip encosta com a folga fixa de `--ck-space-2`. Medido nos dois
+  extremos, celular (390px) e desktop bem além da coluna (1024px): 8px em ambos, nenhum rio.
+  A folga que sobrava agora cai depois do chip, no fim da linha — onde não lê como "os dois
+  se separaram".
+- ~~`/avatars/canario.webp` dá 404 e o Canário cai na inicial "CC".~~ Ficou a inicial — o
+  Canário é descartável (`agents.yaml`: gerador de carga sintética do gate, "não corresponde
+  a sessão produtiva"), e inventar retrato pra ele seria dar identidade a quem não é gente da
+  tropa. O que saiu foi o 404: `retrato.tsx` agora sabe (`SEM_RETRATO`) que o slug não tem
+  foto e nem tenta o `<AvatarImage>` — vai direto pro fallback, sem round-trip. Confirmado
+  zero pedido a `/avatars/canario.webp` na rede.
 
 ## 15. O cabeçalho de identidade saiu do chat — ordem do Rica (30/07)
 

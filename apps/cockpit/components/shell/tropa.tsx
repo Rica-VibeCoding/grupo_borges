@@ -104,7 +104,13 @@ function CartaoVivo({
         <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '3px' }}>
           <span className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
             <span
-              className="min-w-0 flex-1 truncate tracking-title"
+              // SEM `flex-1`: esticava até a borda da linha e empurrava o chip
+              // pra ponta. No nav compacto (260px) não muda nada — não há chip
+              // pra empurrar. Na raiz (`/`), onde a coluna de leitura chega a
+              // 32rem, era isso que abria o rio entre o nome e o chip; a folga
+              // que sobra agora vai pro FIM da linha, depois do chip, onde não
+              // lê como "os dois se separaram".
+              className="min-w-0 truncate tracking-title"
               style={{
                 fontSize: compacta ? 'var(--ck-text-sm)' : 'var(--ck-text-base)',
                 color: 'var(--ck-text-primary)',
