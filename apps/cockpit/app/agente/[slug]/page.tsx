@@ -40,6 +40,27 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string | null }) {
   );
 }
 
+/**
+ * Limpa o que sobra da captura do tmux.
+ *
+ * O `pane_excerpt` vem com sequências de escape que o terminal consome e a tela
+ * não: hyperlink OSC-8 (`ESC ] 8 ; id=… ; url ESC \`) aparecia literalmente como
+ * `]8;id=h5o667;https://…\`, e cores SGR (`ESC [ 0 m`) viravam sujeira no meio da
+ * linha. Não é decisão de estilo — é dado cru vazando pro olho.
+ */
+function limpaPane(bruto: string): string {
+  return (
+    bruto
+      // OSC (hyperlink `ESC ] 8 ; id=… ; url`) — termina em BEL ou String Terminator.
+      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, '')
+      // CSI (cor SGR, movimento de cursor, apagar linha).
+      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+      // Seleção de charset e demais escapes de dois caracteres.
+      .replace(/\x1b[()#][0-9A-Za-z]/g, '')
+      .replace(/\x1b[=>78Mc]/g, '')
+  );
+}
+
 function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -174,10 +195,11 @@ export default async function AgentePage({
             className="truncate"
             style={{ fontSize: 'var(--ck-text-xs)', color: estado.cor }}
           >
+            {/* Só a palavra do estado. `lifecycle_detail` estava vazando cru aqui
+                — "trabalhando · tool_use" — que é o mesmo jargão de máquina que
+                saiu da TROPA. O detalhe técnico vive no painel `?painel=detalhes`,
+                que é onde quem quer o detalhe vai buscar. */}
             {estado.rotulo}
-            {agente.lifecycle_detail ? (
-              <span style={{ color: 'var(--ck-text-secondary)' }}> · {agente.lifecycle_detail}</span>
-            ) : null}
           </span>
         </span>
 
@@ -225,8 +247,13 @@ export default async function AgentePage({
             // Bloco elevado com fio de luz: é a voz da máquina, e é onde a tese
             // do contrato aparece — log de execução, não bolha de chat.
             <pre
-              className="ck-lit overflow-x-auto"
+              className="ck-lit"
               style={{
+                // O pane é de 80 colunas e a tela tem 390px: com rolagem
+                // horizontal o FIM de cada linha some, e num log o fim da linha é
+                // justamente onde está o resultado. Quebra em vez de cortar.
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
                 margin: 0,
                 padding: 'var(--ck-space-3)',
                 background: 'var(--ck-surface-raised)',
@@ -237,7 +264,7 @@ export default async function AgentePage({
                 color: 'var(--ck-text-primary)',
               }}
             >
-              {agente.pane_excerpt}
+              {limpaPane(agente.pane_excerpt)}
             </pre>
           ) : null}
 
