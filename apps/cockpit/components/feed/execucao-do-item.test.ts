@@ -1,0 +1,111 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
+import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+
+import { execucaoDaParte, execucaoDoChip, usoDoChip } from './execucao-do-item.ts';
+
+// `buildToolResultLookup` só olha mensagens de kind `user` — é assim que o
+// Claude Code emite o resultado de uma ferramenta, e um fixture com kind
+// `assistant` produz lookup vazio sem erro nenhum.
+function payload(
+  id: number,
+  conteudo: ContentPart[],
+  kind: 'user' | 'assistant' = 'assistant',
+): MessagePayload {
+  return {
+    id,
+    kind,
+    uuid: `uuid-${id}`,
+    parent_uuid: null,
+    session_id: 'sessao',
+    is_sidechain: false,
+    user_type: 'external',
+    timestamp: '2026-07-30T12:00:00Z',
+    created_at: id,
+    message: { role: 'assistant', content: conteudo },
+  };
+}
+
+function chip(conteudo: ContentPart[], extras: Partial<Extract<RenderItem, { kind: 'chip' }>> = {}) {
+  const item: Extract<RenderItem, { kind: 'chip' }> = {
+    kind: 'chip',
+    payload: payload(1, conteudo),
+    chip: { icon: '$', label: 'Bash', summary: '' },
+    expandBody: '',
+    classifierKind: 'tool',
+    ...extras,
+  };
+  return item;
+}
+
+const USO: ContentPart = { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } };
+
+describe('execução — resultado que ainda não chegou', () => {
+  it('sem resultado casado a execução está RODANDO, não concluída', () => {
+    const entrada = execucaoDaParte(USO as Extract<ContentPart, { type: 'tool_use' }>, undefined);
+    assert.equal(entrada.estado, 'running');
+    assert.equal(entrada.result, undefined);
+    assert.equal(entrada.toolName, 'Bash');
+  });
+
+  it('com resultado casado vira concluída, e o erro atravessa', () => {
+    const lookup = buildToolResultLookup([
+      payload(1, [USO]),
+      payload(
+        2,
+        [{ type: 'tool_result', tool_use_id: 't1', content: 'estourou', is_error: true }],
+        'user',
+      ),
+    ]);
+    const entrada = execucaoDaParte(USO as Extract<ContentPart, { type: 'tool_use' }>, lookup);
+    assert.equal(entrada.estado, 'complete');
+    assert.equal(entrada.result, 'estourou');
+    assert.equal(entrada.isError, true);
+  });
+});
+
+describe('execução — bordas do chip', () => {
+  it('chip com tool_use por baixo usa o nome REAL da ferramenta, não o rótulo', () => {
+    const item = chip([{ type: 'tool_use', id: 't9', name: 'Grep', input: {} }], {
+      chip: { icon: '?', label: 'rótulo do classificador', summary: '' },
+    });
+    assert.equal(usoDoChip(item)?.name, 'Grep');
+    assert.equal(execucaoDoChip(item).toolName, 'Grep');
+  });
+
+  it('chip SEM tool_use casável cai no rótulo em vez de quebrar', () => {
+    const item = chip([{ type: 'text', text: 'sem uso de ferramenta aqui' }]);
+    assert.equal(usoDoChip(item), undefined);
+    assert.equal(execucaoDoChip(item).toolName, 'Bash');
+  });
+
+  it('conteúdo vazio: corpo vazio NÃO vira concluído com resultado vazio', () => {
+    const item = chip([], { expandBody: '' });
+    const entrada = execucaoDoChip(item);
+    assert.equal(entrada.estado, 'running');
+    assert.equal(entrada.result, undefined, 'string vazia não pode virar resultado');
+  });
+
+  it('conteúdo vazio: mensagem sem content não derruba a leitura', () => {
+    const item = chip([]);
+    item.payload = { ...item.payload, message: null };
+    assert.equal(usoDoChip(item), undefined);
+    assert.doesNotThrow(() => execucaoDoChip(item));
+  });
+
+  it('conteúdo gigante atravessa inteiro — quem trunca é o renderer, não a ponte', () => {
+    const gigante = 'x'.repeat(500_000);
+    const item = chip([], { expandBody: gigante });
+    const entrada = execucaoDoChip(item);
+    assert.equal(entrada.estado, 'complete');
+    assert.equal(entrada.result, gigante);
+  });
+
+  it('chip em tom de erro sem tool_use marca erro; sem tom, não inventa', () => {
+    assert.equal(execucaoDoChip(chip([], { expandBody: 'x', tone: 'error' })).isError, true);
+    assert.equal(execucaoDoChip(chip([], { expandBody: 'x' })).isError, undefined);
+  });
+});
