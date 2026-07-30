@@ -1961,7 +1961,10 @@ async def send_agent_input(
       quando existir; 409 `codex_turn_in_flight` se Tara já está em turno.
     - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
       CLI esperado — guard do tmux_driver, ex: user trocou window) no Claude Code
-    - 200 + `tmux_delivered=True` no caminho feliz
+    - 200 + `tmux_delivered=True` no caminho feliz. Esse campo indica apenas
+      que a colagem no tmux foi despachada; NÃO prova submissão nem entrega ao
+      agente. A prova de submissão é o eco do item `user` no stream, acima do
+      `event_boundary_id` (contrato: §3.1 de docs/cockpit-v2-data-contract.md).
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.
@@ -2052,7 +2055,11 @@ async def post_agent_voice(
     - 502 `stt_empty` quando transcrição vem vazia
     - 504 `stt_timeout` quando STT estoura 30s
     - 200 + {transcribed, tmux_delivered, duration_ms, event_boundary_id} no
-      caminho feliz
+      caminho feliz. `tmux_delivered` indica apenas que a colagem no tmux foi
+      despachada; NÃO prova submissão nem entrega ao agente. A prova de
+      submissão é o eco do item `user` no stream, acima do
+      `event_boundary_id` (contrato: §3.1 de
+      docs/cockpit-v2-data-contract.md).
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       do STT, impedindo que eventos chegados durante a transcrição caiam abaixo
       da fronteira de confirmação do áudio.
