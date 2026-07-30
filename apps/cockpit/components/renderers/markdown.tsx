@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { mergeMarkdownClassName, transformMarkdownUrl } from '../../lib/markdown';
+import { CodeBlock } from './code-block';
 
 export type AssistantMarkdownProps = {
   children: string;
@@ -99,12 +100,9 @@ const MARKDOWN_COMPONENTS: Components = {
   },
   pre({ children, ...props }) {
     return (
-      <pre
-        className="max-w-full overflow-x-auto rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)] p-[var(--ck-space-3)] font-mono text-[13px] leading-[1.55] [&>code]:bg-[var(--ck-surface-raised)] [&>code]:p-0"
-        {...props}
-      >
+      <CodeBlock {...props}>
         {children}
-      </pre>
+      </CodeBlock>
     );
   },
   table({ children, ...props }) {
