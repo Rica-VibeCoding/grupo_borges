@@ -9,35 +9,33 @@
 
 ---
 
-## 1. Fase atual: contrato (a janela aberta agora)
+## 1. Fase de contrato — ENCERRADA
 
-Idêntica à tabela do `cockpit-v2-playbook.md` §9, repetida aqui porque este é o
-arquivo canônico:
+Esta seção descrevia a janela em que o contrato de estética e o esqueleto eram
+escritos em paralelo. Ela **fechou**: `docs/cockpit-v2-estetica.md` está aberto e em
+uso, o scaffold existe, e `app/globals.css` já é a fonte única de cor. O mapa que vale
+hoje é o da §2.
 
-| Caminho | Dono |
-|---|---|
-| `docs/cockpit-v2-estetica.md` + metade **pele** dos tokens | **Daniel** |
-| `apps/cockpit/**` (scaffold), `packages/cockpit-core/**` | **Pavan** |
-| `docs/cockpit-v2-stack.md`, `-data-contract.md`, `-ownership.md` + metade **esqueleto** dos tokens | **Pavan** |
-| `app/globals.css` congelado — união das duas metades | **Pavan**, na integração |
-| `apps/web/**` (cockpit atual) | **ninguém** |
-
-As sessões paralelas **consomem** o contrato de estética; não o reescrevem.
-Divergência de estilo depois de aberto vira issue contra o contrato, não edição
-local.
+O que sobrevive dela como regra: as sessões **consomem** o contrato de estética, não o
+reescrevem. Divergência de estilo depois de aberto vira issue contra o contrato, não
+edição local.
 
 ---
 
-## 2. Fase de construção: três frentes por diretório
+## 2. Fase de construção: o mapa vigente (30/07)
 
-Vale a partir do passo 6, depois de scaffold e spike. Cada frente em **worktree
-própria**, rebase diário, merge em janela revisada.
+Os caminhos abaixo são os que **existem no disco** — conferido em 30/07. Quando o
+recorte mudar, corrigir aqui no mesmo turno: ownership por caminho fantasma é
+ownership nenhum.
 
 | Caminho | Dono | Por quê este recorte |
 |---|---|---|
-| `components/shell/**` | frente **chrome** | AppShell, três colunas, gaveta, navegação |
-| `components/chat/**` | frente **chat** | composer, lista, bolha, scroll |
-| `components/render/**` | frente **renderers** | um arquivo por família de payload |
+| `components/shell/**`, `globals.css`, `layout.tsx` | **Daniel** | AppShell, composer, gaveta, navegação, pele |
+| `components/feed/**`, `app/spike/sem-lib/**` | **Hiro** | o feed próprio, sem `assistant-ui` |
+| `lib/envio.ts` + a exceção pontual em `apps/api/` | **Tara** | confirmação de envio por observação do eco |
+| `components/renderers/**` | **consumo de todos** | um arquivo por família de payload; mudar aqui passa pelo Pavan |
+| `components/ui/**` | shadcn | gerado; conferir se já existe antes de desenhar |
+| `docs/cockpit-v2-medicao/**` | **Daniel** grava, todos leem | bancada e relatórios de medição |
 | `packages/cockpit-core/**` | **Pavan** | núcleo compartilhado: mudança aqui afeta as três frentes |
 | `app/globals.css` | **Pavan** | única fonte de cor. Ver §4 |
 | `app/**/layout.tsx`, `page.tsx`, rotas | **Pavan** | topologia de rota é decisão de arquitetura |
@@ -107,6 +105,11 @@ Papéis do passo 7, dentro dos caminhos acima:
 
 ## 3. Regra de colisão
 
+> ⚠️ **As três frentes dividem o MESMO working tree** — não há worktree por frente
+> hoje (30/07). Daniel, Hiro e Tara escrevem no mesmo `/home/clawd/repos/grupo_borges`,
+> com o mesmo `.git/index`. É o que torna as regras abaixo obrigatórias, não
+> recomendadas: sem worktree, o recorte por caminho é a **única** proteção.
+
 1. **Dois autores no mesmo arquivo é conflito garantido** — não se resolve com
    cuidado, se resolve com recorte. Se duas frentes precisam do mesmo arquivo, o
    arquivo está fazendo duas coisas: quebra-se em dois antes de escrever.
@@ -145,8 +148,8 @@ A fusão exige este número escrito. Medido em 2026-07-30:
 **Teto: 2 `next dev` na Hostinger.** O 3007 (atual, intocável) e o 3008 (v2). Não
 existe terceiro.
 
-As frentes paralelas **não sobem um dev cada**. Elas trabalham em worktree e
-compartilham o 3008, ou verificam na Oracle. Três devs mais cinco sessões de CC
+As frentes paralelas **não sobem um dev cada**. Elas compartilham o 3008, ou
+verificam na Oracle. Três devs mais cinco sessões de CC
 (`MemoryHigh` 1500 MB cada, slice `borges-frota` com `MemoryHigh=5G` /
 `MemoryMax=6G`) estouram a slice — e o que estoura primeiro derruba o cockpit do
 Rica.
