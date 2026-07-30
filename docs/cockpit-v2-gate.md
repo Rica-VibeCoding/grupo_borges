@@ -65,6 +65,25 @@ eventos de input — **nada que dependa de `PerformanceLongTaskTiming` ou
 `performance.memory`, que o Safari não implementa.** Medir com instrumento que não
 existe no aparelho alvo é como não medir.
 
+### O instrumento não pode ser um componente React — e o motivo é o baseline
+
+Um overlay React dentro de `apps/cockpit` mede só o app novo. Mas o gate exige a
+mesma medida no painel antigo, que está **congelado e não recebe commit** — e iframe
+não resolve, porque 3007 e 3008 são origens diferentes e o acesso ao interior fica
+bloqueado.
+
+Então o probe é **um arquivo JS standalone e auto-instalável**, servido em
+`apps/cockpit/public/`. No app novo, ele é carregado em desenvolvimento; no painel
+antigo, entra uma vez por bookmarklet no Safari do Rica, sem uma linha tocada em
+`apps/web`.
+
+Consequência para **G4**: contador de render de React não existe no lado antigo.
+Mede-se, nos dois lados, por `MutationObserver` sobre o container de mensagens,
+atribuindo cada mutação ao nó de mensagem que a contém. É observável de fora,
+idêntico nas duas medições, e não pede instrumentação de framework — que é
+exatamente o que o item 2 do comportamento observável pede ("verificável por
+gravação de tela ou devtools", nunca por leitura de código).
+
 | # | medida | como se obtém | corte |
 |---|---|---|---|
 | **G1** | cadência de frame sob carga | p95 do delta entre frames consecutivos, nos 60s | **p95 ≤ 32 ms** e **nenhum frame > 250 ms** |
@@ -96,10 +115,10 @@ aparelho do Rica; construir instrumento é trabalho distribuível.
 | instrumento | dono | o que é |
 |---|---|---|
 | **gerador de carga** | **Tara** | JSONL sintético a 50 eventos/s por 60s + 1.000 de histórico, ingerido pelo watcher num slug canário. Determinístico, sem React, com semente fixa para o teste ser repetível |
-| **overlay de métricas** | **frente de frontend** (Hiro ou Daniel) | painel flutuante que mostra e exporta G1–G4 em JSON, funcionando em Safari iOS, sem dependência nova |
+| **probe de métricas** | **Daniel** | `apps/cockpit/public/gate-probe.js` — standalone, auto-instalável, mostra e exporta G1–G4 em JSON, roda em Safari iOS e também no painel antigo por bookmarklet, sem dependência nova |
 
-O overlay é **descartável por contrato**: vive em `components/dev/`, não entra no
-bundle de produção e ninguém constrói feature em cima dele.
+O probe é **descartável por contrato**: não entra no bundle de produção, não é
+importado por componente nenhum e ninguém constrói feature em cima dele.
 
 ---
 
