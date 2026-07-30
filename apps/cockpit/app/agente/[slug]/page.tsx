@@ -3,6 +3,7 @@ import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { AppShell } from '@/components/shell/app-shell';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
+import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
 import { LinkFechaPainel } from '@/components/shell/painel-otimista';
@@ -42,7 +43,18 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string | null }) {
   );
 }
 
-function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
+function Painel({
+  agente,
+  fecharHref,
+  painelAberto,
+}: {
+  agente: Agent;
+  fecharHref: string;
+  /** Valor do servidor. O `BlocoDeAcoes` usa como fallback e prefere o
+   *  otimista quando está dentro do `PainelProvider` — é o que faz a re-busca
+   *  do `/painel` começar no frame do clique, não 2s depois. */
+  painelAberto: boolean;
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
@@ -91,6 +103,13 @@ function Painel({ agente, fecharHref }: { agente: Agent; fecharHref: string }) {
         </LinkFechaPainel>
       </div>
 
+      {/* AS AÇÕES RÁPIDAS (§17) — no topo, e FORA da área que rola. O Rica as
+          chama de "ideia central do painel", e desde que a gaveta passou a
+          ancorar no topo e crescer pra baixo, ficar aqui significa ficar
+          sempre à vista: cresça o conteúdo quanto crescer, quem rola são os
+          campos de referência, não os controles. */}
+      <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
+
       <div
         className="flex min-h-0 flex-1 flex-col overflow-y-auto"
         style={{ gap: 'var(--ck-space-4)', padding: 'var(--ck-space-4)' }}
@@ -135,7 +154,7 @@ export default async function AgentePage({
       nav={<Tropa agents={fleet.agents} slugSelecionado={slug} agora={agora} compacta />}
       navAberta={navAberta}
       fecharNavHref={fecharHref}
-      drawer={<Painel agente={agente} fecharHref={fecharHref} />}
+      drawer={<Painel agente={agente} fecharHref={fecharHref} painelAberto={painelAberto} />}
       painelAberto={painelAberto}
       fecharPainelHref={fecharHref}
       rotuloPainel="detalhes do agente"
