@@ -252,6 +252,25 @@
   --text-md: var(--ck-text-md);
   --text-lg: var(--ck-text-lg);
   --text-hero: var(--ck-text-hero);
+
+  /* Entrelinha e tracking também precisam de utilitária, e este mapeamento
+     nasceu de contagem, não de simetria: os renderers escrevem HOJE
+     `leading-[1.55]` 4×, `leading-[1.2]` 2× e — o que prova o ponto —
+     `leading-[1.6]` 1×, uma TERCEIRA entrelinha que o contrato §4 proíbe por
+     escrito ("são duas, não três, de propósito"). Token que só existe como
+     `var()` em `style` inline não serve a quem escreve classe utilitária: o
+     executor precisa de `leading-body`, e sem ele digita o número.
+
+     `--leading-*` e `--tracking-*` são namespaces do Tailwind 4 (conferido na
+     doc da versão, não de memória) e geram exatamente `leading-body` e
+     `tracking-title`. O nome do token de pele continua `--ck-track-*`; a ponte
+     de nome mora aqui, que é o que o `@theme inline` existe para fazer. */
+  --leading-body: var(--ck-leading-body);
+  --leading-hero: var(--ck-leading-hero);
+
+  --tracking-hero: var(--ck-track-hero);
+  --tracking-title: var(--ck-track-title);
+  --tracking-overline: var(--ck-track-overline);
 }
 
 /* ===== base ============================================================== */

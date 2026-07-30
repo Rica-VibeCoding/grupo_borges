@@ -297,10 +297,35 @@ e a troca reflui a página inteira. Num log que está streamando isso é exatame
 é a maior parte da tela, ainda vem com `adjustFontFallback: false` no pacote.
 
 Então: `next/font/local` apontando para os dois `.woff2` (copiados do pacote ou baixados),
-com **`display: 'optional'`**. `optional` dá ~100 ms de bloqueio e **nunca troca depois** — num
-servidor no tailnet a fonte chega folgada dentro da janela, e o pior caso é uma carga em fonte
-de sistema, não um reflow no meio do stream. `weight: '100 900'`, `preload: true`, e as
-variáveis `--font-geist-sans` / `--font-geist-mono` para casar com os tokens acima.
+com ~~`display: 'optional'`~~ **`display: 'fallback'` (ver a placa abaixo)**. `weight: '100 900'`,
+`preload: true`, e as variáveis `--font-geist-sans` / `--font-geist-mono` para casar com os
+tokens acima.
+
+> ⚠️ **`optional` está revogado, e por medição — 30/07.** O raciocínio acima ("num servidor no
+> tailnet a fonte chega folgada dentro da janela") era plausível e está **errado**. `optional`
+> tem janela de bloqueio de ~100 ms e período de troca **zero**: perdida a janela, a página
+> inteira fica em fonte de sistema *para sempre naquela carga*, e o browser não volta atrás nem
+> com a fonte já baixada — `document.fonts` chega a reportá-la como `loaded` enquanto nenhum
+> glifo sai dela.
+>
+> Medido com 5 cargas de cache limpo por rota, comparando a largura do mesmo texto na família
+> do token e na pilha de fallback pura (`document.fonts.check` **não** serve aqui, porque
+> responde sobre a família pedida, não sobre o glifo pintado):
+>
+> | | com `optional` | com `fallback` |
+> |---|---|---|
+> | `/` | 3/5 | **5/5** |
+> | `/agente/[slug]` | 2/5 | **5/5** |
+>
+> Não é degradação graciosa, é sorteio — e a §4 elege a fonte como decisão tipográfica central.
+> `fallback` mantém os **mesmos** ~100 ms de bloqueio (não acrescenta piscar de texto invisível)
+> e abre uma janela de troca de ~3 s. O reflow que eu temia acontece na **carga**, antes de
+> existir stream na tela; o item 2 do gate continua honrado. `swap` segue fora: janela de troca
+> infinita reflui a página depois de qualquer tempo.
+
+Isto também corrige o que a auditoria reportou como *"não existe nenhuma fonte declarada no app"*:
+existe desde 30/07 (`app/fonts.ts` + as duas classes no `layout.tsx`). O sintoma que a auditoria
+viu — tela em fonte de sistema — era real; a causa era o `display`, não a ausência.
 
 ### Entrelinha e tracking — agora token, não prosa
 
@@ -861,3 +886,104 @@ por campo — o `viewport-fit=cover` do layout sobrevive na raiz.
   olho do Rica e não é a peça desta rodada. Se incomodar, é uma linha.
 - **`/avatars/canario.webp` dá 404** e o Canário cai na inicial "CC". Pré-existente, não é
   desta rodada.
+
+## 15. O cabeçalho de identidade saiu do chat — ordem do Rica (30/07)
+
+> *"o agente já aparece selecionado e destacado na tropa, do lado esquerdo — isso já basta
+> pra saber com quem ele está falando"*
+
+Saíram o bloco `<header>` do topo da folha (retrato de 32px + nome + palavra do estado) e a
+linha divisória logo abaixo. **Nenhum substituto entra**, e isso é literal:
+
+> *"se sentir falta de uma identidade dentro do chat eu aviso, mas não seria o que está"*
+
+O que a §14 fez ajuda a explicar por que ele incomodava agora e não antes: desde a MESA E A
+FOLHA a **aba** do item selecionado encosta fisicamente nesta folha. O nome no topo do chat
+passou a ser a terceira vez que a mesma informação aparece — item destacado, aba encostando,
+cabeçalho — e a linha divisória ainda cobrava altura de tela no celular para separar o feed
+de coisa nenhuma.
+
+Trocar o bloco por uma versão discreta dele (marca d'água, nome pequeno, inicial) seria
+devolver o que ele mandou tirar em tamanho menor. A régua da ordem é conviver com a tela
+**sem nada** e ver se falta.
+
+### A animação do retrato — ideia do Rica, e a minha recomendação é NÃO agora
+
+Proposta dele, em tom de sugestão (*"se ele achar mais legal"*, *"aí talvez fique bom"*): ao
+selecionar um agente, **só a foto** sairia da lista da tropa e animaria até o topo do palco,
+no canto arredondado. O nome técnico é **shared element transition**, e no browser é a **View
+Transition API** — `view-transition-name` igual nos dois lados, o pareamento é do browser.
+
+Pesquisado antes de opinar, como ele pediu:
+
+- **Suporte não é o obstáculo.** Same-document view transitions estão no Safari e no Safari
+  iOS a partir da **18.0** (Chrome desde a 111). O aparelho do Rica está em iOS 18.7.
+- **O obstáculo é o Next.** No App Router isso passa por `experimental.viewTransition` +
+  `<ViewTransition>` do React, e a doc da 16.2 diz em texto: *"currently experimental and
+  subject to change, **it's not recommended for production**"*. Ligar flag experimental no
+  meio da fusão dos renderers e do stream, com mais de um executor no mesmo working tree, é
+  risco que não paga por um efeito.
+- **E há a razão de produto, que pesa mais que as duas.** O cabeçalho acabou de sair porque a
+  identidade dentro do chat era redundante, com o combinado explícito de que ele avisa se
+  sentir falta. Devolver a foto ao topo do palco na mesma rodada — ainda que por movimento —
+  é preencher o vazio **antes de ele existir**, e joga fora justamente o teste que a ordem
+  pediu.
+
+Fica como candidata da rodada de estética futura, junto do micro-momento que ela seria (§6).
+Se entrar, o caminho já está levantado: `view-transition-name` único por agente no
+`<Retrato>` da tropa e no elemento de destino — sem biblioteca de motion e sem JS por frame —
+e o `prefers-reduced-motion` do `globals.css` já desliga. O que **não** existe hoje é o
+destino: ele teria de nascer, e nascer é a decisão que o Rica adiou.
+
+## 16. As pendências de token do §5.1 — fechadas, e seis delas já estavam (30/07)
+
+O `cockpit-v2-ownership.md` §5.1 lista sete pendências de pele como bloqueantes dos renderers.
+Fui conferir no código antes de escrever token novo, e a lista **nasceu desatualizada**: seis
+dos sete entraram no commit `526aba7` (30/07 11:17), e o §5.1 foi escrito entre 12:30 e 14:06,
+transcrevendo uma auditoria anterior sem reconferir. Registro item a item porque "pendência que
+não é pendência" custa o mesmo tempo de quem for fechá-la depois.
+
+| item do §5.1 | estado real | onde |
+|---|---|---|
+| `--ck-font-sans` / `--ck-font-mono` | existiam; **mas a fonte não pintava** | §4 + placa do `display` |
+| `line-height` e `tracking` como token | já eram token | §4, `--ck-leading-*` / `--ck-track-*` |
+| cor de link | já era token | §2.7, `--ck-link` + `.ck-link` |
+| scrim / véu | já era token | §2.7, `--ck-scrim` |
+| hover / pressed de superfície | já era token | §2.6, os três `--ck-overlay-*` |
+| `::selection` | já era token **e** regra base | §2.7 |
+| paleta de syntax highlighting | já era decisão escrita: **não vai ter** | §7.1 |
+| `--text-*` mapeado no `@theme` | já estava mapeado | `globals.css`, `@theme inline` |
+
+**O que era pendência de verdade, e virou entrega:**
+
+1. **A fonte não chegava à tela.** O item 1 estava certo no sintoma e errado na causa — ver a
+   placa da §4. `display: 'optional'` → `'fallback'`, de 2–3/5 para **5/5** nas duas rotas.
+
+2. **Métrica sem utilitária é token que ninguém consegue consumir.** `--ck-leading-*` e
+   `--ck-track-*` existiam, mas só como `var()` em `style` inline. Quem escreve classe — que é
+   como os renderers são escritos — não tinha `leading-body`, então digitava o número. Contado
+   no código, não suposto: **`leading-[1.55]` 4×, `leading-[1.2]` 2×** e, o que prova o ponto,
+   **`leading-[1.6]` 1×** — uma **terceira** entrelinha, que esta §4 proíbe por escrito ("são
+   duas, não três, de propósito"). Some `text-[13px]` **24×**, que é `--ck-text-sm` redigitado.
+
+   Os cinco passam a existir como utilitária, no mesmo `@theme inline` que já expunha cor e
+   escala — `--leading-*` e `--tracking-*` são namespaces do Tailwind 4 (conferido na doc da
+   versão): `leading-body`, `leading-hero`, `tracking-hero`, `tracking-title`,
+   `tracking-overline`.
+
+   > ⚠️ **Tailwind 4 é JIT: mapear no `@theme` não gera classe nenhuma.** A classe nasce quando
+   > alguém a escreve. Então mapear e não usar não é verificável — as cinco foram aplicadas nos
+   > pontos que já usavam o mesmo valor por `style` inline (hero do `not-found`, nome e overline
+   > da tropa, campo do composer) e conferidas por computed style: **6/6 batendo na conta do
+   > token** (`-0.18px`, `0.66px`, `24.8px`, `28px`, `33.6px`, `-0.98px`).
+   >
+   > Na primeira medição **quatro das seis falharam** — e não era o CSS: era o cache do
+   > Turbopack em `.next`, que sobrevive ao restart do dev. Mesma armadilha já documentada;
+   > só `rm -rf .next` resolve, e sem isso a leitura seria "o mapeamento não funciona".
+
+3. O oitavo item (`--ck-dur-enter` de 200 ms e `--ck-ease-exit`) é da §B e continua com o
+   Pavan — não toquei.
+
+**O que isto não conserta:** os 26 valores crus já escritos vivem em `components/renderers/**`,
+que é do Hiro. Token novo não reescreve código alheio; a utilitária existe a partir de agora e
+a troca é dele.

@@ -22,14 +22,12 @@ export default function NaoEncontrado() {
         background: 'var(--ck-surface-canvas)',
       }}
     >
-      <p
-        style={{
-          fontSize: 'var(--ck-text-hero)',
-          lineHeight: 'var(--ck-leading-hero)',
-          letterSpacing: 'var(--ck-track-hero)',
-          color: 'var(--ck-text-primary)',
-        }}
-      >
+      {/* As três métricas do hero saem como utilitária (`text-hero`,
+          `leading-hero`, `tracking-hero`) e não como `var()` em style inline:
+          desde o mapeamento do `@theme`, é esta a forma que os renderers
+          conseguem consumir. Escrita aqui, ela existe — e é o exemplo que quem
+          for escrever `leading-[1.55]` copia no lugar. */}
+      <p className="text-hero leading-hero tracking-hero" style={{ color: 'var(--ck-text-primary)' }}>
         Esse agente não está na frota
       </p>
       <p style={{ fontSize: 'var(--ck-text-base)', color: 'var(--ck-text-secondary)' }}>

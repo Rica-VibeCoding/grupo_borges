@@ -104,10 +104,9 @@ function CartaoVivo({
         <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '3px' }}>
           <span className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
             <span
-              className="min-w-0 flex-1 truncate"
+              className="min-w-0 flex-1 truncate tracking-title"
               style={{
                 fontSize: compacta ? 'var(--ck-text-sm)' : 'var(--ck-text-base)',
-                letterSpacing: 'var(--ck-track-title)',
                 color: 'var(--ck-text-primary)',
               }}
             >
@@ -177,13 +176,12 @@ function LinhaDormindo({
 function Overline({ children }: { children: React.ReactNode }) {
   return (
     <p
-      className="flex items-baseline"
+      className="flex items-baseline tracking-overline"
       style={{
         gap: 'var(--ck-space-2)',
         padding: 'var(--ck-space-3) var(--ck-space-3) var(--ck-space-1)',
         fontSize: 'var(--ck-text-xs)',
         textTransform: 'uppercase',
-        letterSpacing: 'var(--ck-track-overline)',
         // tertiary dá 3.55:1 e o contrato o restringe a ícone/separador/texto
         // ≥20px. Overline é label de 12px, então vai de secondary (6.0:1).
         color: 'var(--ck-text-secondary)',

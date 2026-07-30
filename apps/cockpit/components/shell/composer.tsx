@@ -312,10 +312,9 @@ export function Composer({
             }
           }}
           placeholder={`Mensagem para ${agentName}`}
-          className="ck-campo min-w-0 resize-none bg-transparent outline-none"
+          className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
           style={{
             fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
-            lineHeight: 'var(--ck-leading-body)',
             minHeight: '48px',
           }}
         />
