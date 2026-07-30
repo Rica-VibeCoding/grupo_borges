@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { MessagePayload } from './messages-types.ts';
-import { buildRenderItems, deriveSubagentStatusesFromMessages } from './render-items.ts';
+import { buildRenderItems, buildToolResultLookup, deriveSubagentStatusesFromMessages } from './render-items.ts';
 import {
   doneTaskNotificationXml,
   failedTaskNotificationXml,
@@ -246,4 +248,119 @@ test('deriveSubagentStatusesFromMessages — recupera metadados enquanto subagen
   assert.equal(entry?.agent_id, 'agent-active-1');
   assert.equal(entry?.current_tool, 'Read');
   assert.equal(entry?.current_tool_summary, '/home/clawd/repos/grupo_borges/apps/api/routers/agents.py');
+});
+
+/* -------------------------------------------------------------------------- */
+/* buildToolResultLookup — o `rich` (tool_use_result cru) chega ao lookup      */
+/* Plano: docs/cockpit-v2-plano-tool-use-result.md (D1-D5, revisão da Tara).   */
+/* -------------------------------------------------------------------------- */
+
+function mensagemComResult(
+  id: number,
+  toolUseId: string,
+  extras?: { toolUseResult?: unknown; results?: Array<{ id: string; content: string }> },
+): MessagePayload {
+  const parts = (extras?.results ?? [{ id: toolUseId, content: 'saida' }]).map((r) => ({
+    type: 'tool_result',
+    tool_use_id: r.id,
+    content: r.content,
+  }));
+  // Via JSON de propósito: os testes 3 e 5 usam formas que o tipo
+  // `ToolUseResult` não declara — é exatamente o que `rich?: unknown` existe
+  // pra carregar sem fraude de cast.
+  return JSON.parse(JSON.stringify({
+    ...baseMessage,
+    id,
+    uuid: `uuid-rich-${id}`,
+    kind: 'user',
+    message: { role: 'user', content: parts },
+    ...(extras?.toolUseResult !== undefined ? { tool_use_result: extras.toolUseResult } : {}),
+  })) as MessagePayload;
+}
+
+test('lookup — rich atravessa da fixture real (família fetch)', () => {
+  const fixture = JSON.parse(readFileSync(
+    join(import.meta.dirname, '../../../fixtures/cockpit-v2/familias/result__bytes_code_codeText_durationMs_result.json'),
+    'utf8',
+  )) as { evento: MessagePayload };
+
+  const lookup = buildToolResultLookup([fixture.evento]);
+  const entry = lookup.get('toolu_01FRWfj5j384Pebxk6bLdKce');
+
+  assert.ok(entry);
+  assert.ok(Object.hasOwn(entry, 'rich'), 'a propriedade rich tem de existir');
+  const rich = entry.rich as { code: number; bytes: number };
+  assert.equal(rich.code, 200);
+  assert.equal(rich.bytes, 2954287);
+});
+
+test('lookup — sem tool_use_result a entrada NÃO tem a propriedade rich (D2)', () => {
+  const lookup = buildToolResultLookup([mensagemComResult(1, 'toolu-sem-rich')]);
+  const entry = lookup.get('toolu-sem-rich');
+
+  assert.ok(entry);
+  assert.equal(Object.hasOwn(entry, 'rich'), false);
+  assert.equal('rich' in entry, false);
+  assert.equal(entry.content, 'saida');
+  assert.equal(entry.isError, false);
+});
+
+test('lookup — mensagem com >1 tool_result não anexa rich a nenhum (D3)', () => {
+  const lookup = buildToolResultLookup([
+    mensagemComResult(2, 'ignorado', {
+      toolUseResult: { status: 'completed' },
+      results: [
+        { id: 'toolu-a', content: 'saida a' },
+        { id: 'toolu-b', content: 'saida b' },
+      ],
+    }),
+  ]);
+
+  assert.ok(lookup.get('toolu-a'));
+  assert.ok(lookup.get('toolu-b'));
+  assert.equal(Object.hasOwn(lookup.get('toolu-a')!, 'rich'), false);
+  assert.equal(Object.hasOwn(lookup.get('toolu-b')!, 'rich'), false);
+});
+
+test('lookup — duplicata: evento posterior sem rico preserva o rico anterior (D4)', () => {
+  const lookup = buildToolResultLookup([
+    mensagemComResult(3, 'toolu-dup', { toolUseResult: { status: 'completed', totalTokens: 10 } }),
+    mensagemComResult(4, 'toolu-dup'),
+  ]);
+  const entry = lookup.get('toolu-dup');
+
+  assert.ok(entry);
+  assert.equal(entry.content, 'saida'); // o texto do último ganha
+  const rich = entry.rich as { totalTokens: number };
+  assert.equal(rich.totalTokens, 10); // mas o rico do primeiro sobrevive
+});
+
+test('lookup — duplicata: evento posterior COM rico substitui (D4)', () => {
+  const lookup = buildToolResultLookup([
+    mensagemComResult(5, 'toolu-dup2', { toolUseResult: { status: 'running' } }),
+    mensagemComResult(6, 'toolu-dup2', { toolUseResult: { status: 'completed' } }),
+  ]);
+  const rich = lookup.get('toolu-dup2')!.rich as { status: string };
+  assert.equal(rich.status, 'completed');
+});
+
+test('lookup — tool_use_result em forma inesperada atravessa como está (D1)', () => {
+  const lookup = buildToolResultLookup([
+    mensagemComResult(7, 'toolu-estranho', { toolUseResult: 'uma string, não um objeto' }),
+  ]);
+  assert.equal(lookup.get('toolu-estranho')!.rich, 'uma string, não um objeto');
+});
+
+test('lookup — message null + tool_use_result null não quebra (borda__content_none)', () => {
+  const nula = JSON.parse(JSON.stringify({
+    ...baseMessage,
+    id: 8,
+    uuid: 'uuid-nula',
+    kind: 'user',
+    message: null,
+    tool_use_result: null,
+  })) as MessagePayload;
+
+  const lookup = buildToolResultLookup([nula]);
+  assert.equal(lookup.size, 0);
 });

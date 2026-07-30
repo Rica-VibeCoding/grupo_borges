@@ -6,7 +6,14 @@ import type { AskUserEntry, ContentPart, MessagePayload, SubagentStatusEntry, Sy
 import { classifyMessage } from './chat-payload-classifier.ts';
 import type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts';
 
-export type ToolResultLookup = Map<string, { content: string; isError: boolean }>;
+// `rich` é unknown de propósito: `ToolUseResult` (messages-types.ts:44-53) só
+// declara campos de subagente e ampliar o contrato pras 24 famílias de
+// `result__*` é trabalho de outra ordem. A guarda mora no renderer, que valida
+// o payload da própria família e devolve null fora dela. A propriedade é
+// incluída CONDICIONALMENTE (nunca existe com valor undefined) pra preservar a
+// forma exata das entradas sem rico — plano em
+// docs/cockpit-v2-plano-tool-use-result.md (D1, D2).
+export type ToolResultLookup = Map<string, { content: string; isError: boolean; rich?: unknown }>;
 
 export type SidechainGroupRef = {
   rootUuid: string;
@@ -154,11 +161,27 @@ export function buildToolResultLookup(messages: MessagePayload[]): ToolResultLoo
   for (const m of messages) {
     if (m.kind !== 'user' || !m.message) continue;
     const parts = extractContentParts(m.message.content);
+    // O `tool_use_result` é um campo ÚNICO da mensagem: com mais de um part
+    // `tool_result` não há como saber a qual deles o rico pertence, então só
+    // anexa quando a associação é inequívoca (D3 do plano). Ausente vale mais
+    // que errado — 0 mensagens multi-result nas 52 famílias gravadas.
+    const totalResults = parts.reduce((n, q) => n + (q.type === 'tool_result' ? 1 : 0), 0);
     for (const p of parts) {
-      if (p.type === 'tool_result') {
-        const body = typeof p.content === 'string' ? p.content : toolResultBodyToString(p.content);
-        map.set(p.tool_use_id, { content: body, isError: Boolean(p.is_error) });
+      if (p.type !== 'tool_result') continue;
+      const body = typeof p.content === 'string' ? p.content : toolResultBodyToString(p.content);
+      const entry: { content: string; isError: boolean; rich?: unknown } = {
+        content: body,
+        isError: Boolean(p.is_error),
+      };
+      if (totalResults === 1 && m.tool_use_result != null) {
+        entry.rich = m.tool_use_result;
+      } else {
+        // tool_use_id duplicado: o texto do último ganha (regra antiga), mas
+        // o rico do primeiro sobrevive — mesmo id é a mesma execução (D4).
+        const anterior = map.get(p.tool_use_id);
+        if (anterior && 'rich' in anterior) entry.rich = anterior.rich;
       }
+      map.set(p.tool_use_id, entry);
     }
   }
   return map;
