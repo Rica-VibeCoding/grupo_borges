@@ -1023,15 +1023,17 @@ gaveta, e ela deixou de ser gaveta quando passou a flutuar.
 
 | o que o Rica pediu | medido no browser |
 |---|---|
-| flutua, não ocupa a tela de cima a baixo | altura **425px** de 900 (desktop) e de 844 (iPhone) |
-| centraliza na altura | folga **237px** em cima e 237px embaixo — iguais |
-| mantém o gap do resto do design | **8px** à direita = `--ck-space-2`, o mesmo da folha |
+| flutua, não ocupa a tela de cima a baixo | altura **425px** de 800 (desktop) — cabe o conteúdo |
+| **ancora no topo** (segunda ordem, 30/07: *"começa em cima e cresce esticando pra baixo, topo sempre fixo"*) | `top` **8px** com conteúdo normal E estourado — nunca se move |
+| cresce pra baixo sem sair da tela | estourado: **784px** de 800, rolagem por dentro (`overflow-y-auto`) |
+| mantém o gap do resto do design | **8px** no topo e à direita = `--ck-space-2`, o mesmo da folha |
 | cantos arredondados | **16px** = `--ck-radius-caixa`, o mesmo da folha |
 | entra com movimento suave | saída com **10–11 frames** em valor intermediário |
 
-Centralizar usa `top`/`bottom` + `margin-block: auto` + `height: fit-content`, **nunca**
-`translateY(-50%)`: o `transform` está reservado ao movimento, e os dois brigariam no meio da
-animação.
+Ancorar no topo é só `top` preso + `height: fit-content` + `max-height` — sem `bottom` e sem
+`margin-block: auto` (a primeira versão centralizava na altura; a segunda ordem do Rica derrubou
+as duas linhas). Nenhum `transform` na posição: ele está reservado ao movimento, e um
+`translateY(-50%)` de centralização briga com ele no meio da animação.
 
 ### A textura da borda — a referência do Rica já era a assinatura da §A
 

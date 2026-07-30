@@ -543,13 +543,19 @@ body {
 /* O PAINEL FLUTUANTE — a forma que a referência do Rica pede.
  *
  * *"flutua sobre o conteúdo, cantos arredondados, NÃO ocupa a tela inteira de
- * cima a baixo"* e *"centraliza na altura"*. Três consequências:
+ * cima a baixo"*. Ancorado no TOPO, cresce pra baixo — segunda ordem do Rica
+ * (30/07), depois de testar ao vivo: *"ele pode começar em cima como o do
+ * exemplo e fica responsivo verticalmente, crescendo esticando para baixo
+ * mantendo a parte de cima sempre fixa, quando os componentes forem dentro"*.
+ * A versão anterior centralizava na altura (`bottom` preso + `margin-block:
+ * auto`); a ordem nova derruba as duas linhas e o resto fica igual:
  *
- * - `top` e `bottom` presos ao respiro + `height: fit-content` + `margin-block:
- *   auto` centralizam sem `transform` — e isso é requisito, não preferência: o
- *   `transform` está reservado para o movimento acima, e um `translateY(-50%)`
- *   de centralização brigaria com ele no meio da animação.
- * - `max-height` limita ao que sobra da tela, e o conteúdo rola por dentro.
+ * - só o `top` preso ao respiro: a borda de cima NUNCA se move, cresça o
+ *   conteúdo quanto crescer. Nenhum `transform` na posição — ele continua
+ *   reservado ao movimento do `.ck-surge`.
+ * - `height: fit-content` faz a caixa acompanhar o conteúdo; `max-height`
+ *   limita ao que sobra da tela, e estourando o conteúdo rola por dentro
+ *   (`overflow-y-auto` na área de campos do painel).
  * - O mesmo `--ck-space-2` da folha (§14). A referência de textura que o Rica
  *   mandou depois confirma a borda: no print dele o fio entre as duas áreas
  *   escuras é MAIS CLARO que as duas (#323232 sobre #202020/#181818), que é
@@ -560,9 +566,7 @@ body {
   position: fixed;
   z-index: var(--ck-z-drawer);
   top: calc(var(--ck-space-2) + var(--ck-safe-top));
-  bottom: calc(var(--ck-space-2) + var(--ck-safe-bottom));
   right: calc(var(--ck-space-2) + var(--ck-safe-right));
-  margin-block: auto;
   height: fit-content;
   max-height: calc(100dvh - 2 * var(--ck-space-2) - var(--ck-safe-top) - var(--ck-safe-bottom));
   width: calc(100% - 2 * var(--ck-space-2));
