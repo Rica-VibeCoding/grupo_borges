@@ -142,9 +142,13 @@ que cai em silêncio e leva o painel com ela.
 
 **Divisão de trabalho entre as máquinas:**
 
-- **Hostinger** — `next dev` do v2 na 3008, porque é onde o back está. Custo aceito:
-  ~250 MB de RAM e ~550 MB de disco (o `node_modules` do web tem 556 MB, o novo será
-  da ordem).
+- **Hostinger** — `next dev` do v2 na 3008, porque é onde o back está. **Custo real
+  medido, não estimado: 552 MB de RSS** — mais que o dobro do cockpit antigo (226 MB
+  com 3 dias de pé). Turbopack em app recém-compilado é mais gordo; deve assentar,
+  mas planeje com 550 MB, não com 250. Com os dois de pé a slice `borges-frota` fica em
+  **3,8 GB de 5 GB** de `MemoryHigh` (76%) e a máquina com 3,9 GB livres.
+  É por isso que o teto de 2 `next dev` não é conservadorismo: um terceiro encosta no
+  throttle da slice, e o que engasga primeiro é o painel do Rica.
 - **Oracle** — oficina do que **não** precisa do back: `next build` de verificação
   (tipos, lint, tamanho de bundle), componente isolado, spike. Tem 2× a memória e 3×
   o disco livre. O repo já está clonado em `/home/ubuntu/repos/grupo_borges`, node
@@ -153,6 +157,29 @@ que cai em silêncio e leva o painel com ela.
   nativos diferentes. Cada máquina instala o seu; nunca copiar a pasta.
 
 ---
+
+## 5.1 Pendências do contrato de estética — pedir ao Daniel antes do passo 5
+
+Levantadas pela auditoria de frontend (Kimi, 30/07). São **decisões dele**, não
+minhas: eu não invento token de pele. Mas têm de existir **antes** dos renderers,
+porque quando 23 tools × 24 formas de resultado precisarem delas de uma vez, cada
+executor vai escolher um valor diferente — e é exatamente o que o ownership existe
+para evitar.
+
+| falta | por que cobra caro depois |
+|---|---|
+| **`--ck-font-sans` / `--ck-font-mono`** | o contrato §4 elege Geist Sans + Geist Mono via `next/font/local` e faz de "mono = voz da máquina" a decisão tipográfica central. **Não existe nenhuma fonte declarada no app** — hoje tudo sai em fonte de sistema, e cada renderer vai declarar a sua |
+| **`line-height` e `tracking`** | o contrato fixa 1.55 (corpo/mono), 1.2 (hero) e trackings −0.035em / −0.012em / +0.055em. Nenhum é token, então já nasceu uma divergência: eu havia escrito `0.08em` no overline (corrigido para 0.055em à mão, que é remendo, não solução) |
+| **cor de link** | log de execução renderiza URL em saída de ferramenta. Sem token, o primeiro executor inventa |
+| **scrim / véu** | existem as camadas `--ck-z-overlay/modal/toast` mas nenhuma cor de véu |
+| **hover / pressed de superfície** | item da tropa, linha de tool. Cada executor escolheria um degrau diferente |
+| **`::selection`** | log implica copiar trecho; sem token, o azul default do browser destoa |
+| **duração de 200ms + easing de saída** | o contrato §5 define 120/200/320ms e **dois** easings; o CSS tem 120/320 e um easing só. Esta é da minha metade (§B esqueleto) — entra comigo |
+| **paleta de syntax highlighting** | se bloco de código recebe cor, não há paleta. Se a decisão é "mono sem cor", vale escrever isso |
+
+Também levantado: mapear `--text-*: var(--ck-text-*)` no `@theme`, senão `text-sm`
+do Tailwind (14px) convive com `--ck-text-sm` (13px) e escrever `text-sm` parece
+usar o token mas usa outro valor.
 
 ## 6. O que não é ownership de ninguém
 

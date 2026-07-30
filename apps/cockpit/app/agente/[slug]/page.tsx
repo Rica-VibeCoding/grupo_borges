@@ -38,7 +38,9 @@ export default async function AgentePage({
       }
       drawer={
         <div style={{ padding: 'var(--ck-space-4)' }}>
-          <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
+          {/* secondary, não tertiary: label de 12px precisa de 4.5:1 e tertiary
+              dá 3.55:1 (contrato §2.2 e §3). */}
+          <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
             GAVETA
           </p>
         </div>
@@ -101,7 +103,10 @@ export default async function AgentePage({
               // 16px é piso, não estética: abaixo disso o Safari dá zoom ao focar
               // o campo e o layout inteiro salta.
               fontSize: 'var(--ck-text-md)',
-              color: 'var(--ck-text-tertiary)',
+              // secondary e não tertiary, mesmo sendo stub: o contrato limita
+              // tertiary a ícone/separador/texto ≥20px, e padrão copiado de stub
+              // é como token errado se espalha.
+              color: 'var(--ck-text-secondary)',
             }}
           >
             Composer — passo 5

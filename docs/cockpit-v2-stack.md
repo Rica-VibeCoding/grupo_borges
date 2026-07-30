@@ -169,18 +169,56 @@ CORS e sem porta extra exposta.
 
 ---
 
-## 5. Tailwind 4 sem PostCSS
+## 5. Tailwind 4 EXIGE `@tailwindcss/postcss` — eu errei aqui
 
-O `apps/web` roda Tailwind `4.3.0` **sem `postcss.config.*`, sem
-`tailwind.config.*` e sem `@tailwindcss/postcss` instalado**. O CSS declara só:
+> ⚠️ **Esta seção dizia o oposto e estava errada.** Corrigida em 30/07 depois da
+> auditoria de frontend (Kimi). Fica registrado o erro porque o raciocínio que levou
+> a ele é repetível.
 
-```css
-@import "tailwindcss";
+**O que eu escrevi:** que o `apps/web` roda Tailwind `4.3.0` sem
+`postcss.config.*` e sem `@tailwindcss/postcss`, logo "o Next 16 processa
+`@import "tailwindcss"` nativamente" e não se deve criar `postcss.config` "por
+costume".
+
+**O que é verdade:** o Next **não** processa. O `apps/web` não tem o plugin e por
+isso **o Tailwind nunca rodou nele** — medido no CSS que ele serve agora mesmo:
+278 KB, `@theme` **literal** (sinal de que o engine não passou), `box-sizing` de
+preflight ausente e **zero** classe utilitária. Ele funciona porque o tema dele é
+99% artesanal e não depende de utilitária nenhuma.
+
+**O erro de método:** inferi capacidade a partir de ausência de configuração, sem
+olhar a saída. O app "funcionava", então a premissa parecia confirmada — mas o que
+eu tinha era um app cujas classes estavam todas mortas, e nenhum sintoma porque o
+scaffold ainda era simples demais para depender delas.
+
+**O certo, e é obrigatório:** `apps/cockpit/postcss.config.mjs` com
+
+```js
+const config = { plugins: { '@tailwindcss/postcss': {} } };
+export default config;
 ```
 
-O Next 16 processa isso nativamente. Replicar igual no app novo: **não** criar
-`postcss.config.js` "por costume" — configuração a mais aqui vira conflito de
-pipeline, não segurança.
+mais `@tailwindcss/postcss` em `devDependencies` do app, na **mesma versão** do
+`tailwindcss` (4.3.0). Não precisa na raiz do workspace — testei sem, do zero.
+
+**Como saber se está funcionando** (nunca pela presença do import):
+
+| | sem engine | com engine |
+|---|---|---|
+| bytes do CSS servido | 4.410 | 10.993 |
+| `.flex` | 0 | 1 |
+| `box-sizing` (preflight) | 0 | 2 |
+| `@media (min-width: 48rem)` | 0 | 3 |
+| `@theme inline` no CSS servido | 1 (literal) | 0 (consumido) |
+
+⚠️ **O `.next` mascara mudança de `postcss.config` em silêncio.** Ao mexer nele:
+derrubar o dev **pelo PID da porta**, mover o `.next`, subir de novo. Sem isso o
+transform antigo continua valendo e você persegue a hipótese errada — foi o que
+aconteceu comigo por três tentativas.
+
+O que **não** herdamos do `apps/web`: `@import "augmented-ui/..."`, e a paleta
+inteira de `:root[data-theme="dark"]` (ciano `#00f0ff` sobre `#060b18`). É
+exatamente o visual que o v2 joga fora.
 
 O que **não** herdamos: `@import "augmented-ui/..."`, e a paleta inteira de
 `:root[data-theme="dark"]` (ciano `#00f0ff` sobre `#060b18`). É exatamente o
