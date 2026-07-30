@@ -56,14 +56,33 @@ instrumento para a pergunta errada.
   levantou e não trocou sozinho (certo); troquei agora porque **nenhum lado foi medido
   com os consertos**, então não há assimetria a criar.
 
-## 4. Em voo quando a sessão fechou
+## 4. Em voo — atualizado 30/07 06:35, com o Rica dormindo
 
-- **Nada.** Daniel ocioso em 20%, G1 e G3 entregues, tree limpo nos dois repos.
-- A troca da chamada para o incremental em `page.tsx` é **minha** e ainda não foi
-  feita — ver passo 1 abaixo. É o único item de código pendente.
-- ⚠️ Havia o texto *"roda o probe de novo no iPhone do Rica pra confirmar"* digitado e
-  **não enviado** no input do Daniel. Provavelmente o Rica na janela errada — já
-  aconteceu antes. Não submeti: rodar o probe exige o Rica com o celular na mão.
+Ele acordou às 6h, cobrou que **ninguém estava implementando** e mandou distribuir em vez
+de fazer eu mesmo. Despachado:
+
+- **Daniel** (Opus 5, xhigh, 26%) — duas coisas na ordem: a troca do incremental do passo 1
+  (é arquivo dele) e depois a **camada visual**: `globals.css` com os tokens de pele,
+  AppShell de verdade, lista em `/`, chat em `/agente/[slug]`, gaveta como `<aside>` com
+  `?painel=`, mobile-first (safe-area, `dvh`, input ≥16px). Fora de escopo: `apps/web`,
+  `lib/spike/*` e a decisão assistant-ui × shadcn.
+- **Tara** (`tara-codex`, thread `019fb347`) — componente de contrato fechado e isolado:
+  `apps/cockpit/components/renderers/diff-viewer.tsx` + teste. Props fixas
+  (`filePath`/`oldString`/`newString`), LCS próprio sem dependência nova, **zero hex** —
+  só os tokens `--ck-*`. Proibido commitar, subir servidor ou tocar outro arquivo.
+  Esse path é **dela** nesta rodada.
+- **Hiro** — **bloqueado**, não conta como frente: cada envio cai no modal "Continue with
+  Fable 5". A quota Kimi está boa (49/100, reset 02/08) e as env vars do K3 estão no
+  processo, então não é quota nem lançamento errado. Escape dispensa o modal mas come o
+  prompt. Opção 1 é transação financeira → decisão do Rica.
+- **Supervisão:** cron de 5 min na minha sessão (`CronCreate`, id `07e3864c`) olhando as
+  panes, destravando modal com Escape e despachando frente nova. ⚠️ É **session-only** —
+  morre com a minha sessão, e aí a supervisão para sem avisar ninguém.
+- A troca da chamada para o incremental em `page.tsx` era minha por ownership; passou pro
+  Daniel porque o arquivo é dele e o Rica cobrou distribuição.
+- ⚠️ O texto *"roda o probe de novo no iPhone do Rica pra confirmar"* que estava digitado
+  no input do Daniel foi **descartado** (`C-u`) antes do despacho. Continua valendo: o
+  probe exige o Rica com o celular na mão.
 
 ## 5. Retomada — os passos, na ordem
 
