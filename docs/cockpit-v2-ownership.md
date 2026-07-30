@@ -45,7 +45,30 @@ própria**, rebase diário, merge em janela revisada.
 | `docs/cockpit-v2-*.md` | **Pavan** | os contratos |
 | `fixtures/cockpit-v2/**` | **Pavan** grava, todos **leem** | baseline não se edita para passar no teste |
 | `apps/web/**` | **ninguém** | congelado por decisão do Rica |
-| `apps/api/**` | **fora de escopo** | o back não sai do lugar |
+| `apps/api/**` | **fora de escopo**, com uma exceção escrita abaixo | o back não sai do lugar |
+
+#### A exceção do `apps/api` — adição opcional para instrumentação (30/07)
+
+"O back não sai do lugar" quer dizer **o back não muda de comportamento**. Não quer
+dizer que ele seja intocável, e a diferença apareceu na primeira vez que a medição
+precisou dele: o `?historico=N` nunca mordeu porque o replay do SSE entrega os `limit`
+eventos **mais antigos** e o loop live puxa todo o resto — então `limit` dimensionava o
+primeiro lote, nunca o histórico acumulado. Duas rodadas de medição morreram nisso, e
+nenhuma delas era corrigível pelo lado do cliente.
+
+Fica permitido, e **só** isto:
+
+- **aditivo e desligado por padrão** — parâmetro novo com default que preserva byte a byte
+  o comportamento atual. Se remover o parâmetro muda alguma coisa, não é exceção, é mudança.
+- **com teste** que prove os dois caminhos, o velho e o novo.
+- **passa por mim antes de virar commit.** O motivo é operacional: `cockpit-api.service`
+  serve o painel que os 7 agentes usam.
+
+O que continua proibido sem o Rica: alterar comportamento default, migração de schema, e
+reiniciar o `cockpit-api.service` para "ver funcionar". O serviço roda `uvicorn` **sem
+`--reload`** — o processo no ar carregou o código de quando subiu e ignora o disco, o que
+protege o painel de trabalho em andamento, mas também significa que **testar a mudança
+exige um segundo uvicorn em outra porta**, apontando para o mesmo banco. Nunca o de produção.
 
 ### Papéis fixos, e quem audita quem — regra do Rica (30/07)
 
