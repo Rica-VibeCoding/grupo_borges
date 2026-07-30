@@ -331,17 +331,35 @@ Uma thread alimentada por fonte externa, só-leitura, com callback para o envio 
 que é literalmente o painel: ele **observa** sessões do Claude Code e manda texto de
 volta por uma função nossa (`sendText(slug, texto)` do contrato de dados).
 
-**Então o spike se constrói sobre `client/ExternalThread`, não sobre
-`useExternalStoreRuntime`.** Dois cuidados honestos sobre a força desta afirmação:
+Minha primeira conclusão foi "o spike se constrói sobre `client/ExternalThread`", e
+ela **está revogada** — durou vinte e cinco minutos, o tempo de ler uma linha a mais
+do tipo:
 
-- Não há tag `@deprecated` em nenhum dos dois arquivos. A evidência é a **topologia
-  do pacote** — um caminho está dentro de um diretório chamado `legacy-runtime`, o
-  outro não —, e ela é suficiente para escolher, não para acusar.
-- A verificação de código que desempatou a fusão examinou a granularidade de
-  atualização do caminho **legacy** (WeakMap por identidade do objeto, lista
-  assinando só `length`). Aquela medição **não transfere automaticamente** para o
-  `client/`. É mais um motivo para o gate ser medido, e não deduzido: o número vem
-  do caminho que vamos usar de verdade.
+```ts
+declare const ExternalThread: import("@assistant-ui/tap").Resource<ClientOutput<"thread">, [ExternalThreadProps]>;
+```
+
+`ExternalThread` **não é componente React.** É um `Resource` do `@assistant-ui/tap`,
+e o provider que o monta (`AuiProvider` / `useAui`) vem de `@assistant-ui/store` —
+outro pacote. Os três Resources de `client/` (`ExternalThread`, `SingleThreadList`,
+`InMemoryThreadList`) pertencem a esse runtime novo. Consumi-lo custa aprender dois
+pacotes internos sem documentação, **dentro de um spike cujo objetivo é medir
+frame**.
+
+**Decisão: o spike mede `useExternalStoreRuntime`**, o caminho de hook React —
+familiar, e o único que a verificação de código da fusão de fato examinou (WeakMap
+por identidade do objeto, lista assinando só `length`, memo por item, bail-out por
+`Object.is`).
+
+Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
+
+- A evidência de "legacy" é **topologia de pacote**, não tag `@deprecated` — não há
+  nenhuma nos dois arquivos. Serve para saber onde a lib está indo, não para acusar
+  o caminho atual de morto.
+- **Se o `assistant-ui` passar no gate e ficar, herdamos uma migração conhecida**
+  para o runtime `client/`. Isso não é surpresa futura, é dívida declarada agora — e
+  é exatamente o tipo de custo que o argumento de processo do kimi previa quando
+  disse que a biblioteca tem um dia de idade.
 
 ---
 
