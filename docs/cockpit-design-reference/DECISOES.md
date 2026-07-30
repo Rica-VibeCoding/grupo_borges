@@ -1,5 +1,8 @@
 # 2026-05-10 — Design prompt: acertos + divisão de frentes
 
+> ⚠️ **HISTÓRICO — REVOGADO EM 2026-07-30.** As decisões de design deste documento (paleta sci-fi cyan, JetBrains Mono dominante, cantos retos, `augmented-ui`, "componentes custom do zero — NÃO shadcn") foram substituídas por decisão do Rica. A referência de design viva é `docs/cockpit-v2-playbook.md` — estética Codex/ChatGPT, dark, componentes de biblioteca em vez de custom.
+> O que continua válido aqui: o histórico do processo de design e o inventário de endpoints do backend.
+
 > Memo enxuta pra retomar do zero pós-compactação. Tudo aqui é decisão fechada.
 
 ## Atualização operacional — 2026-05-12
