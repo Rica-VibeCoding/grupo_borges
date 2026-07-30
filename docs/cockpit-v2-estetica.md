@@ -600,3 +600,28 @@ a nossa"*.
 Consequência prática: a referência entra como **calibragem de acabamento**, não como novo
 layout. Ícone de ferramenta com traço fino, duração em peso regular, linha colapsada sendo
 linha — e a §7 segue mandando na estrutura.
+
+---
+
+## 11. Conflito interno do contrato — 32px × 44px (aberto, 30/07)
+
+A entrega da linha de ferramenta (`117749e`) expôs uma **contradição entre duas seções
+deste próprio contrato**, e o Daniel fez o certo: declarou o desvio em vez de escolher em
+silêncio.
+
+- **§7** manda a linha colapsada ter **28–32px** de altura. Densidade é a tese: com 3.080
+  eventos por sessão, linha gorda torna a tela infinita.
+- **§3 / mobile** manda alvo de toque de **44×44px**. O alvo real é iPhone.
+
+Num elemento que é *ao mesmo tempo* item de lista denso e alvo de toque, os dois não cabem.
+Ele resolveu por **32px**, com o argumento de que as linhas são adjacentes e contíguas —
+então não há pixel morto entre alvos, e o alvo efetivo é a linha inteira na largura da tela.
+
+**Decisão minha, provisória:** fica 32px, e o motivo é que o argumento é bom para a
+dimensão horizontal (o alvo tem 390px de largura) e a §7 é explícita. **Mas não está
+aprovado** — 32px na vertical fica abaixo do guideline, e numa lista densa errar o toque
+significa expandir a linha errada, que é irritação real e repetida.
+
+**Isto só se resolve com o dedo do Rica na tela.** Nenhum de nós tem como decidir por
+raciocínio: ou ele erra o toque no uso normal, ou não erra. Vai junto da medição do gate,
+e até lá continua marcado como aberto — não como resolvido.
