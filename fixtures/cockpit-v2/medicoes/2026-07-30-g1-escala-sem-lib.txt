@@ -1,0 +1,33 @@
+  histórico 50 · rodada 1 ...
+    msg 50→1300 · itens 50→1300 · p95 33.3 ms · pior 133.3 · mediana 16.7 · frames 1480
+  histórico 200 · rodada 1 ...
+    msg 200→1450 · itens 200→1450 · p95 33.4 ms · pior 250 · mediana 16.7 · frames 1483
+  histórico 500 · rodada 1 ...
+    msg 500→1750 · itens 500→1750 · p95 33.4 ms · pior 183.3 · mediana 16.7 · frames 1471
+  histórico 200 · rodada 2 ...
+    msg 200→1450 · itens 200→1450 · p95 33.4 ms · pior 566.6 · mediana 16.7 · frames 1313
+  histórico 500 · rodada 2 ...
+    msg 500→1750 · itens 500→1750 · p95 50 ms · pior 250 · mediana 16.7 · frames 1277
+  histórico 50 · rodada 2 ...
+    msg 50→1300 · itens 50→1300 · p95 33.3 ms · pior 166.6 · mediana 16.7 · frames 1486
+  histórico 500 · rodada 3 ...
+    msg 500→1750 · itens 500→1750 · p95 33.4 ms · pior 366.6 · mediana 16.7 · frames 1461
+  histórico 50 · rodada 3 ...
+    msg 50→1300 · itens 50→1300 · p95 33.4 ms · pior 550.1 · mediana 16.7 · frames 1468
+  histórico 200 · rodada 3 ...
+    msg 200→1450 · itens 200→1450 · p95 33.4 ms · pior 166.6 · mediana 16.7 · frames 1484
+
+==============================================================================
+PROVA DE QUE O PARÂMETRO MORDE (contagem no início da janela medida)
+  histórico    50 → msg [50] · itens [50]
+  histórico   200 → msg [200] · itens [200]
+  histórico   500 → msg [500] · itens [500]
+
+==============================================================================
+ histórico  itens no início            p95 das rodadas    mediana
+        50               50         [33.3, 33.3, 33.4]      33.3 ms
+       200              200         [33.4, 33.4, 33.4]      33.4 ms
+       500              500           [33.4, 50, 33.4]      33.4 ms
+
+feed inicial 10.0× maior  →  p95 1.00× maior
+CONCLUSÃO: NÃO escala — o custo é por evento que CHEGA, não por evento guardado

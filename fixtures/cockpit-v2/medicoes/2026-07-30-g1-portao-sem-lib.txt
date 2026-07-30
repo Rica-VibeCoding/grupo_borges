@@ -1,0 +1,8 @@
+banco pronto: 1000 eventos do canário
+
+  histórico    50 →    50 msg ·    50 itens
+  histórico   200 →   200 msg ·   200 itens
+  histórico   500 →   500 msg ·   500 itens
+
+============================================================
+PORTÃO ABERTO — os três níveis carregaram quantidades diferentes.
