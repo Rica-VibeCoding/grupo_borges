@@ -219,6 +219,60 @@ Arranjos versionados em `docs/cockpit-v2-medicao/`: `remede_g1.py` (rodada limpa
 `perfila_g1b.py` (com perfil de CPU). Ambos pedem a bancada de pé em `:3008` e o
 gerador de carga em `fixtures/cockpit-v2/`.
 
+### O G1 escala com o histórico acumulado? — não respondida, e por quê (30/07)
+
+A pergunta importa: se o p95 cresce com o que o Rica **acumula**, e não só com o
+que **chega**, então virtualizar não resolve por construção e isso é o argumento
+definitivo contra a biblioteca. Tentei responder e **não consegui**. Fica escrito
+porque negativo não registrado é negativo que a próxima pessoa repete.
+
+**Duas tentativas, as duas falharam em mover a variável independente:**
+
+1. **Controlar pela hora de abrir a página**, supondo que o replay do SSE fosse
+   limitado a 500 eventos (`LIMITE_REPLAY_SSE` em `gerar-carga.py`). Abrindo a
+   página antes e depois do preenchimento, os **dois** braços começaram com 742
+   itens: na prática o replay não limita.
+2. **Controlar por `?historico=N`**, passando 250/500/1000 ao `limit` do
+   `useCanarioStream`. Os **três** níveis também começaram com 742 itens: esse
+   `limit` não governa quanto histórico o cliente carrega. O parâmetro foi
+   revertido — botão que não move nada engana quem vier medir depois.
+
+Nos dois casos eu medi **a mesma condição** com rótulos diferentes. Qualquer
+conclusão sobre escala tirada dessas rodadas seria inválida por construção, não
+por medida.
+
+**Como responder de verdade:** dar ao `useCanarioStream` um limite de histórico
+que ele obedeça e repetir os três níveis. É mudança em `lib/spike/*`, que não é
+meu nesta rodada.
+
+#### O que a rodada entregou mesmo assim — e corrige o 266,6 ms acima
+
+Seis rodadas de 25 s a 50 Hz, medindo **só a fase `medicao`**, que é a janela do
+gate:
+
+| rodada | p95 | pior frame | mediana | frames |
+|---|---|---|---|---|
+| 1 | 533,3 ms | 966,6 | 16,7 | 217 |
+| 2 | 699,9 ms | 1.050,0 | 16,7 | 163 |
+| 3 | 799,9 ms | 1.266,6 | 16,7 | 144 |
+| 4 | 599,9 ms | 1.033,4 | 33,3 | 196 |
+| 5 | 499,9 ms | 683,4 | 116,6 | 178 |
+| 6 | 866,6 ms | 1.200,0 | 266,7 | 91 |
+
+Mediana das seis: **~600 ms**, contra corte de 32 ms.
+
+O **266,6 ms** registrado na seção anterior mediu preenchimento **e** medição
+juntos, e foi diluído pela fase calma. Isolando a janela que o gate define, o
+número é **2 a 3× pior**. A conclusão contra a biblioteca não muda de direção —
+fica mais dura.
+
+**Um aviso de método para quem repetir:** a bancada **degrada ao longo de
+rodadas consecutivas**. Os frames caem de 217 para 91 e a mediana sobe de 16,7
+para 266,7 entre a primeira e a última. Intercale os níveis (eu intercalei) e
+nunca compare a primeira rodada com a última como se fossem a mesma máquina.
+
+Arranjo em `docs/cockpit-v2-medicao/escala_g1.py`.
+
 ### Regra de comparação contra o baseline
 
 Passar os quatro cortes não basta. Contra o painel antigo, na mesma carga:
