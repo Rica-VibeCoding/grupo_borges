@@ -204,10 +204,13 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
         await rede.gravaPermissao(agentSlug, valor as PainelPermissionMode);
       } else await rede.gravaSandbox(agentSlug, valor as PainelCodexSandbox);
     } catch (erro) {
-      // Só a troca MAIS RECENTE tem direito de reverter.
+      // O aviso vale sempre — o Rica precisa saber que a troca não pegou
+      // mesmo quando o dedo já tocou em outro controle antes desta responder.
+      // Só REVERTER é privilégio da troca mais recente: desfazer uma troca
+      // velha apagaria uma troca nova que já teve sucesso.
+      setFalha(diagnosticaAcao(erro, controle.id));
       if (meu === sequencia.current) {
         setPainel(anterior);
-        setFalha(diagnosticaAcao(erro, controle.id));
       }
     } finally {
       if (meu === sequencia.current) setEmVoo(null);
@@ -285,7 +288,16 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
             type="button"
             onClick={() => void acionarDestrava()}
             aria-busy={destrava === 'enviando'}
-            aria-label="Destravar o agente — envia Escape no terminal dele"
+            // Estático só cobriria "Destravar": o nome acessível vence o
+            // conteúdo, então o leitor de tela nunca ouviria "Destravando…"
+            // nem "Escape enviado" — e no estado entregue o nome nem conteria
+            // o texto visível (WCAG 2.5.3). Fora do ocioso o rótulo sozinho já
+            // é a frase inteira.
+            aria-label={
+              destrava === 'ocioso'
+                ? 'Destravar o agente — envia Escape no terminal dele'
+                : rotulaDestrava(destrava)
+            }
             className="ck-veil flex w-full items-center justify-center border"
             style={{
               minHeight: 'var(--ck-touch-min)',
@@ -307,8 +319,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
         <div
           className="flex items-start justify-between"
           style={{ gap: 'var(--ck-space-3)' }}
-          role="status"
-          aria-live="assertive"
+          role="alert"
         >
           <span style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}>
             {falha.resumo} — {falha.saida}
@@ -317,9 +328,10 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
             type="button"
             onClick={() => setFalha(null)}
             aria-label="Dispensar aviso"
-            className="ck-veil flex shrink-0 items-center"
+            className="ck-veil flex shrink-0 items-center justify-center"
             style={{
-              padding: '4px',
+              minHeight: 'var(--ck-touch-min)',
+              minWidth: 'var(--ck-touch-min)',
               borderRadius: 'var(--ck-radius-chip)',
               color: 'var(--ck-text-secondary)',
             }}
@@ -405,6 +417,11 @@ function Segmentado({
               aria-pressed={ativo}
               aria-busy={voando}
               title={opcao.descricao}
+              // O rótulo sozinho ("Só planeja") é curto demais pra carregar a
+              // explicação — soma os dois no nome acessível, rótulo primeiro
+              // (2.5.3: o nome tem que CONTER o texto visível, nunca só a
+              // descrição por baixo dele).
+              aria-label={`${opcao.rotulo}. ${opcao.descricao}`}
               // O ativo NÃO leva `.ck-veil`: véu de interação sobre
               // `--ck-surface-raised` derruba a borda funcional para 2.98:1 e
               // é proibição expressa (§9.11). Ele já é o destaque; quem precisa

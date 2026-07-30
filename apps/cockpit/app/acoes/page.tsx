@@ -222,7 +222,7 @@ export default function VitrineDeAcoes() {
 
         <Secao
           titulo="Codex — a Tara"
-          nota="Sandbox no lugar da permissão, e a escala de esforço é a do Codex. Os dois valores vêm de arquivo, então a ressalva aparece UMA vez no rodapé em vez de três."
+          nota="Sandbox no lugar da permissão, e a escala de esforço é a do Codex. Os dois valores vêm de arquivo (session_may_diverge) — a ressalva não aparece mais na tela, por ordem do Rica (30/07): só no aria-label do grupo."
         >
           <BlocoDeAcoes agentSlug="tara" aberto transporte={transporteFeliz(PAINEL_CODEX)} />
         </Secao>

@@ -57,8 +57,10 @@ export type Opcao = {
   valor: string;
   /** O que o Rica lê. Português, sempre (R.1). */
   rotulo: string;
-  /** O que o valor faz, por extenso. Vira `title` E `aria-label`: no toque o
-   *  primeiro não existe, então ele nunca é o único portador. */
+  /** O que o valor faz, por extenso. Vira `title` sozinha e entra no
+   *  `aria-label` somada ao `rotulo` (o rótulo sozinho já é o nome acessível
+   *  mínimo — a descrição completa, nunca substitui): no toque o `title` não
+   *  existe, então o `aria-label` é quem carrega a explicação. */
   descricao: string;
 };
 
