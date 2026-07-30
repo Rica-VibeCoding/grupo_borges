@@ -87,10 +87,22 @@ foi erro meu de orquestração: despachei pele e instrumentação do gate no mes
 
 **Quem está com o quê agora:**
 
-- **Daniel** — rodada visual em curso sob a §9.1, começada com contexto em 1%. Escopo:
-  levantamento `:3007` × `:3008`, status line de volta, TROPA recomposta com shadcn no
-  chrome, fallback de emoji (Felipe/Barsi/Vinicius vêm com `emoji: null` da API). O resto
-  da pele de `526aba7` fica.
+- **Daniel** — rodada visual **entregue** em `860068f` (TROPA v2), feita sob a §9.1 com
+  contexto limpo. Conferido por mim: 36/36, `tsc` limpo, `/` e `/agente/daniel` em 200, e
+  rota inexistente com 404 próprio. Trouxe `statusline.tsx`, `retrato.tsx` (fallback de
+  identidade no lugar da bolinha), `tropa.tsx` reescrita sobre `avatar`/`badge` do shadcn,
+  e a marca do teto de 30% na barra de contexto. Prints em `/tmp/cockpit-v2-prints/`,
+  enviados ao Rica em 30/07 12:10.
+- **Duas pendências abertas por inspeção dos prints:**
+  1. **OSC 8 vazando como texto** na rota do agente — `]8;id=…;https://claude.ai/code/…`
+     aparece cru na tela. Escapa do strip de ANSI comum porque não é CSI. Melhor
+     renderizar como link do que apenas limpar. **Independe do veredito estético, pode ir.**
+  2. **Veredito estético da TROPA v2** — com o Rica, não respondido ainda. A TROPA só volta
+     à bancada depois dele; mexer antes é retrabalho.
+- ⚠️ **A rota `/agente/[slug]` ainda espelha o pane cru do tmux** — não é proposta de
+  chat. O Rica apontou isso em 30/07 15:11 e está certo: o chat de verdade depende da
+  decisão assistant-ui × shadcn, que espera a medição no iPhone dele. Não confundir stub
+  com entrega.
 - **Tara** — livre. Quatro rodadas de auditoria entregues, todas sem tocar no repositório;
   o `diff-viewer` dela está em `05764f2`, verificado por mim (36/36, `tsc` limpo).
 - **Hiro** — **bloqueado**, não conta como frente: todo envio cai no modal *"Fable 5 now
