@@ -212,6 +212,36 @@ Duas exceções conscientes ao que está escrito acima:
    arquivo compartilhado é uma linha em `exports` — colisão de uma linha se resolve
    na leitura.
 
+## 5.3 Emenda ao "scaffold sequencial, feito por mim, sozinho"
+
+A fusão fixou que o scaffold do chat é meu e sequencial. O **motivo** escrito lá é
+específico: o executor não conhece a API do `assistant-ui`, então escreveria
+integração inventada — *"pin de versão não corrige alucinação de modelo"*.
+
+Ao construir, encontrei o custo real dessa regra: montar a integração exige
+arqueologia de `.d.ts` num pacote bundlado de um dia de idade, e eu queimei parte do
+meu contexto — que é o recurso da coordenação da rodada — lendo tipos que qualquer
+executor lê igual. Ou seja, a regra transferiu o risco de alucinação para um gargalo
+em mim, que é exatamente o que o Rica cobrou nesta rodada.
+
+**Emenda:** o scaffold continua **fatiado por arquivo e revisado por mim**, mas a
+implementação pode ser delegada **sob mitigação explícita**, que substitui a proteção
+original:
+
+1. **Citação obrigatória.** Cada API usada vem com `arquivo:linha` do pacote
+   instalado em `node_modules`. Sem citação, a linha não entra.
+2. **Proibido improvisar assinatura.** Se o tipo não existe onde o executor
+   procurou, ele **para e relata** — não deduz. Foi assim que a ponte de conversão
+   foi despachada, e funcionou.
+3. **Teste contra fixture real**, nunca payload inventado à mão.
+4. **Um autor por arquivo**, com transporte (`lib/spike/**`) e superfície
+   (`app/spike/**`) separados de propósito — a regra de colisão do §3 continua valendo
+   inteira.
+
+O que **não** se delega segue igual: a decisão de qual API usar (foi minha, e
+revoguei a primeira versão dela em 25 minutos), o gate numérico, e a medição no
+aparelho do Rica.
+
 ## 6. O que não é ownership de ninguém
 
 `apps/web` está congelado. Isso inclui o bug do clear, que **fica para o v2** por
