@@ -11,39 +11,16 @@ import {
 
 import { copyText, type ClipboardResult } from '../../lib/clipboard';
 import { mergeMarkdownClassName } from '../../lib/markdown';
+// Saiu daqui para `copia-fallback.ts` quando a linha de execução virou o segundo
+// consumidor: duas cópias divergiriam em silêncio, e a divergência aparece como
+// "copiar não faz nada" só no Safari de alguém.
+import { fallbackCopy } from './copia-fallback';
 
 export type CodeBlockProps = {
   children?: ReactNode;
 } & HTMLAttributes<HTMLPreElement>;
 
 type CopyStatus = 'idle' | 'copied' | 'failed';
-
-function fallbackCopy(text: string): boolean {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.contentEditable = 'true';
-  textarea.readOnly = false;
-  textarea.style.position = 'fixed';
-  textarea.style.top = '-9999px';
-  textarea.style.left = '0';
-  textarea.style.width = '1px';
-  textarea.style.height = '1px';
-  textarea.style.fontSize = '16px';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-
-  try {
-    const range = document.createRange();
-    range.selectNodeContents(textarea);
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    textarea.setSelectionRange(0, text.length);
-    return document.execCommand('copy');
-  } finally {
-    textarea.remove();
-  }
-}
 
 export function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   const preRef = useRef<HTMLPreElement>(null);
