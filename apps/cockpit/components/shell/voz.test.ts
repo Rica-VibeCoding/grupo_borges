@@ -10,6 +10,7 @@ import {
   aparenciaDaVoz,
   capturando,
   diagnosticaMicrofone,
+  diagnosticaTranscricao,
   duracaoLegivel,
   escolheMime,
   extensaoDe,
@@ -118,6 +119,26 @@ describe('microfone indisponível — nunca um botão que não responde', () => 
     const d = impedimentoDeContexto();
     assert.match(d.saida, /ts\.net/);
     assert.match(d.saida, /IP|100\.x/);
+  });
+
+  it('STT que falha no servidor também sai com o que fazer, nunca só o problema', () => {
+    for (const detalhe of ['stt_empty', 'stt_timeout', 'stt_failed', 'stt_script_not_found', '422', 'ruído']) {
+      const d = diagnosticaTranscricao(new Error(`postAgentVoice 502: {"detail":"${detalhe}"}`));
+      assert.ok(d.resumo.length > 0, detalhe);
+      assert.ok(d.saida.length > 0, detalhe);
+    }
+  });
+
+  it('áudio mudo ensina o gesto certo — o começo da fala é o que se perde', () => {
+    const d = diagnosticaTranscricao(new Error('postAgentVoice 502: {"detail":"stt_empty"}'));
+    assert.match(d.saida, /segure|espere/i);
+    assert.equal(d.definitivo, false, 'falar de novo resolve');
+  });
+
+  it('script de STT ausente é infra: não manda o Rica tentar de novo em vão', () => {
+    const d = diagnosticaTranscricao(new Error('stt_script_not_found: /x/stt.sh'));
+    assert.equal(d.definitivo, true);
+    assert.match(d.saida, /texto/);
   });
 
   it('erro sem `name` não quebra o diagnóstico', () => {

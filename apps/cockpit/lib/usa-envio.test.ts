@@ -74,6 +74,18 @@ function fonteFake() {
         ouvinte({ data });
       }
     }
+
+    /** Fecha o replay — é o que a sonda de fronteira espera para responder. */
+    emitirFimDoReplay(): void {
+      for (const ouvinte of this.ouvintes.get('replay-end') ?? []) {
+        ouvinte({ data: '' });
+      }
+    }
+
+    /** A sonda de fronteira é a única que pede a ponta recente do histórico. */
+    ehSonda(): boolean {
+      return this.url.includes('recentes=1');
+    }
   }
 
   return {
@@ -251,4 +263,149 @@ test('dispose durante reconexão cancela espera e impede nova fonte', async () =
 
   relogio.avancar(50);
   assert.equal(fonte.instancias.length, 1);
+});
+
+/* ========================================================================== */
+/* VOZ — o áudio termina na mesma máquina, e o eco NÃO volta igual ao que      */
+/* mandamos: `agents.py` entrega `f"🎙 {transcribed}"` por send-keys.          */
+/* ========================================================================== */
+
+/** Encena o caminho da voz até a sonda de fronteira responder. */
+async function vozAte(
+  fonte: ReturnType<typeof fonteFake>,
+  controle: { enviarVoz(audio: Blob): Promise<string | null> },
+  ultimoIdDoServidor: number | null,
+) {
+  const promessa = controle.enviarVoz(new Blob(['audio']));
+  await Promise.resolve();
+  const sonda = fonte.instancias.find((instancia) => instancia.ehSonda());
+  assert.ok(sonda, 'a fronteira tem que ser lida do servidor ANTES do POST');
+  if (ultimoIdDoServidor !== null) sonda.emitirMensagem(ultimoIdDoServidor, 'user', 'conversa velha');
+  sonda.emitirFimDoReplay();
+  return { transcrito: await promessa, sonda };
+}
+
+function controleDeVoz(
+  fonte: ReturnType<typeof fonteFake>,
+  relogio: ReturnType<typeof relogioFake>,
+  postarVoz: () => Promise<{ transcribed: string; event_boundary_id?: number }>,
+) {
+  return createControleEnvio('daniel', {
+    postar: async () => resposta(0),
+    postarVoz,
+    FonteEventos: fonte.FonteEventos,
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+}
+
+test('o eco da voz volta com o prefixo do back e ainda assim CONFIRMA', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => ({
+    transcribed: 'sobe o cockpit na porta 3008',
+  }));
+
+  const { transcrito } = await vozAte(fonte, controle, 40);
+  assert.equal(transcrito, 'sobe o cockpit na porta 3008');
+  assert.equal(controle.getEstado().fase, 'aceito');
+
+  // Exatamente o que o tmux entrega — sem descascar, isto nunca casaria com o
+  // texto que a UI conhece e TODO áudio terminaria pendurado.
+  const observacao = fonte.instancias.find((instancia) => !instancia.ehSonda());
+  assert.ok(observacao);
+  observacao.emitirMensagem(41, 'user', '🎙 sobe o cockpit na porta 3008');
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'confirmado');
+  assert.equal(estado.texto, 'sobe o cockpit na porta 3008', 'a tela mostra a fala, não o prefixo');
+});
+
+test('executor Codex entrega SEM prefixo — e confirma do mesmo jeito', async () => {
+  // `agents.py` só prefixa no caminho tmux; no ramo codex o texto vai cru.
+  // Descascar tem que ser tolerante, não obrigatório.
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => ({ transcribed: 'roda os testes' }));
+
+  await vozAte(fonte, controle, 10);
+  fonte.instancias.find((i) => !i.ehSonda())!.emitirMensagem(11, 'user', 'roda os testes');
+  assert.equal(controle.getEstado().fase, 'confirmado');
+});
+
+test('texto DIGITADO que começa com o emoji não é descascado', async () => {
+  // O falso positivo de descascar sempre: o eco viria igual ao digitado, e
+  // tirar o prefixo de um lado só quebraria a comparação.
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = createControleEnvio('daniel', {
+    postar: async () => resposta(5),
+    FonteEventos: fonte.FonteEventos,
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('🎙 é o nome do canal');
+  fonte.instancias[0]!.emitirMensagem(6, 'user', '🎙 é o nome do canal');
+  assert.equal(controle.getEstado().fase, 'confirmado');
+});
+
+test('eco ANTERIOR à fronteira sondada não confirma o áudio', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => ({ transcribed: 'mesma frase' }));
+
+  await vozAte(fonte, controle, 90);
+  const observacao = fonte.instancias.find((i) => !i.ehSonda())!;
+  // Uma fala idêntica de dez minutos atrás, reentregue no replay.
+  observacao.emitirMensagem(88, 'user', '🎙 mesma frase');
+  assert.equal(controle.getEstado().fase, 'aceito', 'eco velho não pode confirmar envio novo');
+
+  observacao.emitirMensagem(91, 'user', '🎙 mesma frase');
+  assert.equal(controle.getEstado().fase, 'confirmado');
+});
+
+test('quando o back devolver a barreira no /voice, ela vence a sonda', async () => {
+  // O `/voice` hoje não devolve `event_boundary_id` — o `/input` devolve. O
+  // cliente já lê o campo para que a troca no back baste, sem tocar aqui.
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => ({
+    transcribed: 'fala',
+    event_boundary_id: 700,
+  }));
+
+  await vozAte(fonte, controle, 40);
+  const observacao = fonte.instancias.find((i) => !i.ehSonda())!;
+  observacao.emitirMensagem(500, 'user', '🎙 fala');
+  assert.equal(controle.getEstado().fase, 'aceito', 'abaixo da barreira do servidor');
+  observacao.emitirMensagem(701, 'user', '🎙 fala');
+  assert.equal(controle.getEstado().fase, 'confirmado');
+});
+
+test('STT que falha sobe o erro e NÃO suja a máquina de envio', async () => {
+  // `falhou` com texto vazio ofereceria "reenviar"/"copiar" sobre nada.
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => {
+    throw new Error('postAgentVoice 502: {"detail":"stt_empty"}');
+  });
+
+  await assert.rejects(vozAte(fonte, controle, 40), /stt_empty/);
+  assert.equal(controle.getEstado().fase, 'ocioso');
+});
+
+test('sonda que não responde não trava o áudio do Rica', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => ({ transcribed: 'sem barreira' }));
+
+  const promessa = controle.enviarVoz(new Blob(['audio']));
+  await Promise.resolve();
+  relogio.avancar(4_000); // o teto da sonda
+  assert.equal(await promessa, 'sem barreira');
+  // Entregue e sem confirmação observável — a verdade, não um "enviado" verde.
+  assert.equal(controle.getEstado().fase, 'pendurado');
 });

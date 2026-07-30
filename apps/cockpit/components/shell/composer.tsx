@@ -40,20 +40,23 @@
  * o que a vitrine mandou, nunca sobrescrito por uma resposta de rede.
  */
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import {
-  fetchAgentPainel,
-  patchAgentEffort,
-  postAgentInput,
-  postAgentVoice,
-} from '@grupo_borges/cockpit-core/api';
+import { fetchAgentPainel, patchAgentEffort } from '@grupo_borges/cockpit-core/api';
 
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
+import { usaEnvio } from '../../lib/usa-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
 import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
 import { usaGravador } from './usa-gravador';
-import { aparenciaDaVoz, capturando, diagnosticaMicrofone, type FaseVoz } from './voz';
+import {
+  aparenciaDaVoz,
+  capturando,
+  diagnosticaMicrofone,
+  diagnosticaTranscricao,
+  type FaseVoz,
+  type Impedimento,
+} from './voz';
 import {
   IconeAnexo,
   IconeCopiar,
@@ -73,7 +76,6 @@ export type ComposerProps = {
   esforcoValor?: string | null;
   esforcoPermitido?: string[];
   onTrocarEsforco?: (valor: string) => Promise<void>;
-  onEnviar?: (texto: string) => Promise<{ ok: boolean }>;
   /** Só a vitrine `/envio` usa isto. Fora dela, o componente decide sozinho. */
   faseForcada?: FaseEnvio;
   /** Idem, para `/voz`. Sem isto não há como VER as fases da captura fora de um
@@ -108,15 +110,19 @@ export function Composer({
   esforcoValor,
   esforcoPermitido,
   onTrocarEsforco,
-  onEnviar,
   faseForcada,
   vozForcada,
   segundosForcados,
 }: ComposerProps) {
   const [texto, setTexto] = useState('');
-  const [ultimoEnviado, setUltimoEnviado] = useState('');
-  const [faseLocal, setFaseLocal] = useState<FaseEnvio>('ocioso');
   const [trocandoEsforco, setTrocandoEsforco] = useState(false);
+  // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
+  // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
+  // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
+  // "enviado" mentiroso do painel antigo, só que mais bonito.
+  const envio = usaEnvio(agentSlug);
+  const faseLocal = envio.estado.fase;
+  const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -172,24 +178,27 @@ export function Composer({
   // devolve o mesmo `tmux_delivered` literal que mente pro texto. Dar à voz um
   // caminho próprio de confirmação seria reproduzir o defeito num lugar novo.
   const [transcrito, setTranscrito] = useState<string | null>(null);
+  const [falhaDaFala, setFalhaDaFala] = useState<Impedimento | null>(null);
 
   const subirAudio = useCallback(
     async (audio: Blob) => {
       if (faseForcada) return;
+      setFalhaDaFala(null);
       try {
-        const r = await postAgentVoice(agentSlug, audio);
         // O que o servidor ENTENDEU aparece na tela. STT erra, e o Rica precisa
         // saber o que o agente recebeu — sem isso ele descobre pela resposta
         // errada do agente, três minutos depois.
-        setTranscrito(r.transcribed);
-        setUltimoEnviado(r.transcribed);
-        // `aceito`, nunca `confirmado`: `tmux_delivered` vem da colagem.
-        setFaseLocal('aceito');
-      } catch {
-        setFaseLocal('falhou');
+        setTranscrito(await envio.enviarVoz(audio));
+      } catch (erro) {
+        // O back só entrega DEPOIS de transcrever: falha aqui significa que
+        // nada chegou ao agente. Por isso a fala tem aviso próprio em vez de
+        // virar `falhou` da máquina de envio — ali "reenviar" não teria texto
+        // nenhum para reenviar, e botão que não responde é o defeito da §9.
+        setTranscrito(null);
+        setFalhaDaFala(diagnosticaTranscricao(erro));
       }
     },
-    [agentSlug, faseForcada],
+    [envio, faseForcada],
   );
 
   const gravador = usaGravador({ aoGravar: subirAudio });
@@ -206,31 +215,23 @@ export function Composer({
   const niveisVoz = vozForcada ? ONDA_DE_VITRINE : gravador.niveis;
   const emCaptura = capturando(faseVoz);
   const travada = faseVoz === 'travada';
+  // Dois problemas, uma linha só: microfone que não abre e transcrição que não
+  // veio. São momentos diferentes do mesmo gesto e nunca coexistem — dar duas
+  // faixas de aviso ensinaria dois lugares para olhar quando a fala falha.
+  const avisoDaVoz =
+    faseVoz === 'impedida'
+      ? gravador.impedimento ?? impedimentoDaVitrine(vozForcada) ?? null
+      : falhaDaFala;
 
   async function enviar(corpo: string) {
     if (!corpo.trim() || faseForcada) return;
-    setUltimoEnviado(corpo);
-    setFaseLocal('enviando');
+    // O campo esvazia na hora, mas o texto não se perde: quem o guarda é a
+    // máquina (`estado.texto`), que precisa dele para casar o eco e para
+    // oferecer reenvio se o eco não vier.
     setTexto('');
-    try {
-      // Sem `onEnviar` explícito (o caso real, fora da vitrine), o próprio
-      // componente chama `postAgentInput` — mesma régua do esforço: a página
-      // que monta o Composer no chat não precisa saber COMO o envio acontece.
-      const resposta = onEnviar
-        ? await onEnviar(corpo)
-        : await postAgentInput(agentSlug, corpo).then(
-            () => ({ ok: true }),
-            () => ({ ok: false }),
-          );
-      // Honesto com o que sabemos até aqui: o 200 prova que colou no tmux, não
-      // que o Enter submeteu. `confirmado` exige ver o eco voltar no stream —
-      // isso é o motor da Tara (`lib/envio.ts`), que ainda não está plugado.
-      // Cantar sucesso antes da hora é o MESMO defeito que esta peça existe
-      // para consertar, só que na outra ponta.
-      setFaseLocal(resposta.ok ? 'aceito' : 'falhou');
-    } catch {
-      setFaseLocal('falhou');
-    }
+    setTranscrito(null);
+    setFalhaDaFala(null);
+    await envio.enviar(corpo);
   }
 
   function aoSubmeter(e: FormEvent) {
@@ -247,10 +248,14 @@ export function Composer({
       void copyText(ultimoEnviado, { writeText: moderno, fallbackCopy });
       return;
     }
-    // reenviar/tentar-de-novo: mesma ação, o texto já não está mais no campo —
-    // por isso ele foi guardado em `ultimoEnviado`, não descartado ao esvaziar
-    // o textarea.
-    enviar(ultimoEnviado);
+    // `pendurado` tem caminho próprio na máquina — ela sabe que a tentativa
+    // anterior pode ter sido entregue e conta o eco ambíguo em vez de confirmar
+    // o reenvio com o eco do primeiro. `falhou` é reenvio comum.
+    if (fase === 'pendurado') {
+      void envio.reenviar();
+      return;
+    }
+    void enviar(ultimoEnviado);
   }
 
   const emAndamento = emTransito(fase);
@@ -587,7 +592,7 @@ export function Composer({
           coisas: o que aconteceu e o que fazer a respeito. A saída é a parte
           que importa; "permissão negada" sozinho manda o Rica adivinhar em
           qual das telas de ajuste do iPhone ele mexe. */}
-      {faseVoz === 'impedida' && (gravador.impedimento ?? impedimentoDaVitrine(vozForcada)) ? (
+      {avisoDaVoz ? (
         <div
           className="mx-auto flex w-full items-start justify-between"
           style={{
@@ -601,12 +606,14 @@ export function Composer({
             aria-live="assertive"
             style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
           >
-            {(gravador.impedimento ?? impedimentoDaVitrine(vozForcada))!.resumo} —{' '}
-            {(gravador.impedimento ?? impedimentoDaVitrine(vozForcada))!.saida}
+            {avisoDaVoz.resumo} — {avisoDaVoz.saida}
           </span>
           <button
             type="button"
-            onClick={gravador.limparImpedimento}
+            onClick={() => {
+              setFalhaDaFala(null);
+              gravador.limparImpedimento();
+            }}
             aria-label="Dispensar aviso do microfone"
             className="ck-veil flex shrink-0 items-center"
             style={{

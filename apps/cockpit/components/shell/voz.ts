@@ -114,6 +114,70 @@ export type Impedimento = {
  * como a causa número um de "o mic não funciona". Uma tela que sabe disso e
  * cala é pior que um botão morto.
  */
+/**
+ * O STT falhou NO SERVIDOR — o áudio subiu, a fala não virou texto.
+ *
+ * Mesma régua do microfone: nunca só o diagnóstico, sempre a saída. A diferença
+ * é que aqui nada chegou ao agente (o back só entrega DEPOIS de transcrever),
+ * então a frase pode ser categórica — "não saiu" — em vez de deixar o Rica na
+ * dúvida se deve repetir.
+ *
+ * Os detalhes vêm crus do `detail` do FastAPI, embutidos na mensagem do erro
+ * que `postAgentVoice` lança. Casar por substring é frágil de propósito: se o
+ * back mudar o rótulo, cai no caso geral, que continua acionável.
+ */
+export function diagnosticaTranscricao(erro: unknown): Impedimento {
+  const texto =
+    typeof erro === 'string'
+      ? erro
+      : erro instanceof Error
+        ? erro.message
+        : typeof erro === 'object' && erro !== null && 'message' in erro
+          ? String((erro as { message: unknown }).message)
+          : '';
+
+  if (texto.includes('stt_empty')) {
+    return {
+      resumo: 'não veio fala nenhuma no áudio',
+      saida: 'segure o botão, espere meio segundo e fale — o começo costuma se perder',
+      definitivo: false,
+    };
+  }
+  if (texto.includes('stt_timeout')) {
+    return {
+      resumo: 'o áudio passou do tempo que o servidor transcreve',
+      saida: 'grave em trechos mais curtos — o teto é 30s de processamento',
+      definitivo: false,
+    };
+  }
+  if (texto.includes('stt_script_not_found')) {
+    return {
+      resumo: 'o servidor está sem o script de transcrição',
+      saida: 'isto é infra, não é você: mande por texto e avise o Pavan',
+      definitivo: true,
+    };
+  }
+  if (texto.includes('stt_failed')) {
+    return {
+      resumo: 'a transcrição falhou no servidor',
+      saida: 'tente de novo; se repetir, mande por texto',
+      definitivo: false,
+    };
+  }
+  if (texto.includes('422')) {
+    return {
+      resumo: 'o servidor recusou o formato ou o tamanho do áudio',
+      saida: 'áudios acima de 10 MB não sobem — grave um trecho menor',
+      definitivo: false,
+    };
+  }
+  return {
+    resumo: 'o áudio não chegou ao agente',
+    saida: 'nada foi entregue — tente de novo ou mande por texto',
+    definitivo: false,
+  };
+}
+
 export function impedimentoDeContexto(): Impedimento {
   return {
     resumo: 'o navegador não libera o microfone nesta página',
