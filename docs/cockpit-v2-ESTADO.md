@@ -170,6 +170,33 @@ desfazer. Por isso a peça despachada agora é a §7 do `cockpit-v2-estetica.md`
 ferramenta. Pelos números do baseline, 82% do tráfego é `tool_use` e só o Bash tem 738
 chamadas por sessão: essa linha **é** a tela, não é um detalhe dela.
 
+## 4.2 Defeito do cockpit antigo, diagnosticado 30/07 — mensagem que fica pendurada
+
+Sintoma visto **três vezes em 30/07**: texto aparece no input de um agente sem ninguém da
+frota ter mandado. Os três eram plausíveis e contextuais, o que fazia parecer ordem legítima
+— *"veredito do Rica chegou: aprovou a TROPA"* (Daniel), *"anota o achado do badge como
+pendência"* (Hiro), *"pode dar push"* (Hiro). Nenhum foi submetido.
+
+**Origem, com evidência:** `POST /api/agents/{slug}/input` do próprio cockpit —
+`/tmp/cockpit-api.log` registra 39 envios ao `daniel` e 7 ao `hiro`, vindos de
+`100.68.36.6` (iphone-15-pro) e `100.126.55.11` (note-ricardo), ambos na conta
+`conectamovelmar@`. É o Rica digitando no painel. Não há dispositivo estranho no tailnet.
+
+**A causa do "pendurado"** está em `apps/api/services/tmux_driver.py:425`, e a sequência é:
+`send-keys C-u → load-buffer → paste-buffer -d -p → sleep 150 ms → send-keys Enter`. Se o CC
+estiver ocupado ou com **overlay aberto**, o Enter se perde e o texto fica no input, sem
+enviar. Não é hipótese: **o mesmo overlay do `/rc` comeu duas colagens minhas** nesta mesma
+sessão, e a correção foi Escape + recolar.
+
+**Por que isto é pior que um envio falho:** a mensagem some da tela do Rica, não chega ao
+agente, **e fica armada** — o próximo Enter que cair naquela pane submete um texto fora de
+contexto. Foi o que quase aconteceu com o "aprovou a TROPA", que teria feito o Daniel tratar
+como aprovada uma peça que o Rica nunca julgou.
+
+**Requisito para a fase 1 do v2** (o Rica pediu *"vamos mitigar problemas que tínhamos no
+cockpit antigo"*): o envio precisa **confirmar que entrou** — ou o painel devolve erro, ou
+não diz que enviou. Silêncio otimista é o defeito.
+
 ## 5. Retomada — os passos, na ordem
 
 1. **Trocar a chamada** em `apps/cockpit/app/spike/page.tsx:359-360`:
