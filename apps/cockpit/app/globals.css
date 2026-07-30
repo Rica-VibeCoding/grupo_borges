@@ -187,10 +187,16 @@
    * pequeno é da que MOSTRA saída. */
   --ck-radius-caixa: 16px;
 
-  /* -- ritmo: duas durações e um easing. Mais que isso é indisciplina ---- */
+  /* -- ritmo: três durações e dois easings, fechado pela §5 do contrato ---
+   * Mais que isso é indisciplina. `--ck-dur-enter`/`--ck-ease-exit` faltavam
+   * como token — a prosa já mandava 200ms/cubic-bezier(0.4,0,1,1), quem
+   * animava escrevia cru ou caía no fallback `--ck-dur-enter, 200ms)` das
+   * regras `.ck-surge`. Nasce aqui usado, não como promessa. */
   --ck-dur-fast: 120ms;    /* hover, foco, press */
-  --ck-dur-calm: 320ms;    /* mudança de estado — ex: filete de running sumindo */
-  --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --ck-dur-enter: 200ms;   /* entrada de elemento — ferramenta entrando */
+  --ck-dur-calm: 320ms;    /* troca de superfície — ex: filete de running sumindo */
+  --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);        /* entrada */
+  --ck-ease-exit: cubic-bezier(0.4, 0, 1, 1);     /* saída — filete de running sumindo */
 
   /* -- camadas: nomeadas, porque z-index numérico solto vira leilão ------ */
   --ck-z-base: 0;
@@ -488,9 +494,9 @@ body {
  * Só `opacity` e `transform` animam (proibição §9.4), então isto não custa
  * layout nem briga com o streaming do feed.
  *
- * ⚠️ `--ck-dur-enter` (200ms) e `--ck-ease-exit` são da §B e ainda não existem
- * — pedidos ao Pavan. O fallback no `var()` é ponte: quando os tokens
- * nascerem, estas regras passam a consumi-los sem eu tocar em nada. */
+ * `--ck-dur-enter`/`--ck-ease-exit` nasceram — o `var(--token, 200ms)` que
+ * segue aqui é o fallback que já existia, agora redundante mas inofensivo:
+ * o token sempre resolve primeiro. */
 .ck-surge {
   opacity: 1;
   transform: none;
