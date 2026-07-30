@@ -93,12 +93,19 @@ foi erro meu de orquestração: despachei pele e instrumentação do gate no mes
   identidade no lugar da bolinha), `tropa.tsx` reescrita sobre `avatar`/`badge` do shadcn,
   e a marca do teto de 30% na barra de contexto. Prints em `/tmp/cockpit-v2-prints/`,
   enviados ao Rica em 30/07 12:10.
-- **Duas pendências abertas por inspeção dos prints:**
-  1. **OSC 8 vazando como texto** na rota do agente — `]8;id=…;https://claude.ai/code/…`
-     aparece cru na tela. Escapa do strip de ANSI comum porque não é CSI. Melhor
-     renderizar como link do que apenas limpar. **Independe do veredito estético, pode ir.**
-  2. **Veredito estético da TROPA v2** — com o Rica, não respondido ainda. A TROPA só volta
-     à bancada depois dele; mexer antes é retrabalho.
+- **OSC 8 — fechado** (`2d02a28`): a sequência vira link de verdade em `lib/pane.ts`, com
+  teste próprio (41/41). Verificado no **HTML servido**, não no código: zero ocorrência de
+  `]8;id=` e `]8;;`, e o `<a>` sai com `rel="noreferrer noopener"`.
+- **Veredito estético da TROPA v2** — com o Rica, **não respondido ainda**. A TROPA só volta
+  à bancada depois dele; mexer antes é retrabalho.
+- **Frente atual do Daniel — a escala do G1** (despachada 30/07 ~16h, contexto limpo pós-compact).
+  Revoguei a ordem de "esperar o veredito pra tocar o canário": ele estava parado por uma
+  resposta que não depende dele, e `lib/spike/*` não colide com `components/shell/tropa.tsx`.
+  O portão da frente é **provar que o parâmetro morde antes de medir** — se os três níveis
+  abrirem com a mesma contagem inicial de novo, qualquer p95 dali é inválido, que é
+  exatamente como as duas tentativas anteriores morreram. Arranjo headless pronto em
+  `docs/cockpit-v2-medicao/escala_g1.py`; **não precisa do iPhone**, a pergunta é
+  comparativa entre níveis, não o número absoluto do gate.
 - ⚠️ **A rota `/agente/[slug]` ainda espelha o pane cru do tmux** — não é proposta de
   chat. O Rica apontou isso em 30/07 15:11 e está certo: o chat de verdade depende da
   decisão assistant-ui × shadcn, que espera a medição no iPhone dele. Não confundir stub
