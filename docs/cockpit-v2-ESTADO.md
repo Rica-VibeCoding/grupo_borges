@@ -284,3 +284,53 @@ desktop enquanto o usuário é celular.
 - **`client/ExternalThread` não é o caminho** — é `Resource` de outro runtime
   (`@assistant-ui/tap` + `store`). O spike usa `useExternalStoreRuntime`. Ver
   `cockpit-v2-stack.md`.
+
+## 4.4 Checkpoint 30/07 ~14h — a pergunta que travava o projeto foi respondida
+
+**O G1 tem veredito, e ele condena a biblioteca — agora pela razão certa.** O braço de
+controle do Hiro (`2bccafe`) mediu o v2 **sem** `assistant-ui`, na mesma bancada, com uma
+variável só. Resultado: p95 33,3 / 33,4 / 33,4 ms contra 400 / 400 / 724,9 com ela, e a
+escala vai de **1,81× para 1,00×**. A contagem de frames confirma por fora do percentil: ~59
+fps contra ~9,5 no pior nível. **Retirei a ressalva que eu mesmo tinha inserido em
+`3366d32`** — está escrito no gate (`1495cdb`), junto de uma ressalva nova de leitura: o p95
+é **quantizado** em múltiplos de 16,67 ms, então 33,4 não é "quase reprovou", é o degrau
+imediatamente acima do perfeito. O corte de 32 ms cai no vão entre dois degraus e **merece
+revisão** — anotado, não aplicado, porque mudar régua de aprovação é do Rica.
+
+**Decisão minha, tomada com esse número: o plano de fuga entra.** O Hiro está promovendo o
+esqueleto a `components/feed/` — feed real sem a biblioteca, consumindo
+`lib/spike/render-items-incremental.ts` e os renderers já testados. ⚠️ O `app/spike/page.tsx`
+**com** a biblioteca fica de pé como bancada de comparação até o Rica medir no iPhone; tirar
+referência de medição antes do veredito final é o beco onde as duas primeiras tentativas
+morreram.
+
+**O "enviado" do painel é mentira, e o conserto está em duas mãos.** Diagnóstico fechado:
+`agents.py:1973` devolve `tmux_delivered=True` **literal** e `tmux_driver.py:425` emite esse
+`True` depois da **colagem**, 150 ms antes de um Enter que ninguém verifica. Contrato novo na
+**§3.1 do `cockpit-v2-data-contract.md`**: confirmação passa a ser por **observação** — só o
+eco no stream prova submissão. A Tara entregou o motor (`71b15b8`, 103/103): `ecosIguaisSemDono`
+resolve o caso dos dois envios iguais errando para o lado seguro (na ambiguidade **não**
+confirma), e o tipo `FronteiraEnvio` impede quem integrar de usar um cursor SSE comum como
+falsa garantia. Prazo de 3.000 ms **declarado como não medido** — o corpus não registra o
+instante do POST. Frente aberta agora: o campo de fronteira no `POST /input`, com a **exceção
+de `apps/api/` aberta por mim explicitamente** (aditivo + teste + sem reiniciar o serviço).
+
+**Duas referências novas do Rica, e a segunda revoga parte da primeira.**
+- §12 do `cockpit-v2-estetica.md`: *"essa ui está muito boa, **adota ela**"* sobre a tela do
+  Codex — composer alto com modelo e esforço dentro, barra de telas no topo. Para **estas
+  peças** a regra "empresta vocabulário, não gramática" está revogada por ordem dele. O feed
+  não entra: a referência é a tela **vazia**, e a §1 (log de execução) continua inteira.
+- §13: *"essas cores são bonitas tb, pode mudar a doc para elas"* — **revoga o "prefiro a
+  nossa" da §10**, porque lá ele tinha visto só o recorte escuro. Amostrei os pixels antes de
+  mandar refazer: a diferença é **croma**, não luminância (a referência é cinza neutro puro;
+  a nossa tem viés azul no matiz 265). Custo medido no pior caso: −0,19 no `text-primary`,
+  nenhum token muda de categoria. Mais o botão de gaveta à direita e a **sidebar sobrepondo,
+  não empurrando** (*"igual o fluyt"*).
+
+**Quem está com o quê:** Daniel em `components/shell/**` + `globals.css` + `layout.tsx`
+(composer, chrome, paleta neutra); Hiro em `components/feed/**` + `app/spike/sem-lib/**`;
+Tara em `lib/envio.ts` + a exceção pontual em `apps/api/`. `components/renderers/**` é de
+**consumo** para todos — quem achar que precisa mudar, fala comigo antes.
+
+⚠️ **Ainda esperando o Rica, e nenhum de nós resolve:** o veredito estético da TROPA, o
+conflito 32px × 44px (§11), e a medição no iPhone (v2 em :3444, baseline em :3443).
