@@ -1,0 +1,143 @@
+# OWNERSHIP.md — quem mexe onde, no Cockpit v2
+
+> Passo 2 da ordem em `cockpit-v2-fusao.md`. Consenso dos dois lados da fusão:
+> **ownership por caminho de arquivo, nunca por conceito.**
+>
+> O recorte conceitual falha por um motivo físico: o botão de push-to-talk mora
+> *dentro* do composer, então "voz" e "chat" colidem no mesmo arquivo. Caminho não
+> tem ambiguidade — ou o arquivo é seu, ou não é.
+
+---
+
+## 1. Fase atual: contrato (a janela aberta agora)
+
+Idêntica à tabela do `cockpit-v2-playbook.md` §9, repetida aqui porque este é o
+arquivo canônico:
+
+| Caminho | Dono |
+|---|---|
+| `docs/cockpit-v2-estetica.md` + metade **pele** dos tokens | **Daniel** |
+| `apps/cockpit/**` (scaffold), `packages/cockpit-core/**` | **Pavan** |
+| `docs/cockpit-v2-stack.md`, `-data-contract.md`, `-ownership.md` + metade **esqueleto** dos tokens | **Pavan** |
+| `app/globals.css` congelado — união das duas metades | **Pavan**, na integração |
+| `apps/web/**` (cockpit atual) | **ninguém** |
+
+As sessões paralelas **consomem** o contrato de estética; não o reescrevem.
+Divergência de estilo depois de aberto vira issue contra o contrato, não edição
+local.
+
+---
+
+## 2. Fase de construção: três frentes por diretório
+
+Vale a partir do passo 6, depois de scaffold e spike. Cada frente em **worktree
+própria**, rebase diário, merge em janela revisada.
+
+| Caminho | Dono | Por quê este recorte |
+|---|---|---|
+| `components/shell/**` | frente **chrome** | AppShell, três colunas, gaveta, navegação |
+| `components/chat/**` | frente **chat** | composer, lista, bolha, scroll |
+| `components/render/**` | frente **renderers** | um arquivo por família de payload |
+| `packages/cockpit-core/**` | **Pavan** | núcleo compartilhado: mudança aqui afeta as três frentes |
+| `app/globals.css` | **Pavan** | única fonte de cor. Ver §4 |
+| `app/**/layout.tsx`, `page.tsx`, rotas | **Pavan** | topologia de rota é decisão de arquitetura |
+| `apps/cockpit/CLAUDE.md`, `.claude/skills/**` | **Pavan** | infraestrutura de manutenção |
+| `docs/cockpit-v2-*.md` | **Pavan** | os contratos |
+| `fixtures/cockpit-v2/**` | **Pavan** grava, todos **leem** | baseline não se edita para passar no teste |
+| `apps/web/**` | **ninguém** | congelado por decisão do Rica |
+| `apps/api/**` | **fora de escopo** | o back não sai do lugar |
+
+Papéis do passo 7, dentro dos caminhos acima:
+
+- **Tara (Codex)** — componentes de contrato fechado: orb em Canvas 2D, diff
+  viewer, renderer de markdown. Entra como arquivo novo dentro da frente dona.
+- **Hiro (Kimi)** — cauda longa da matriz de renderers, varredura de hex fora do
+  tema, execução do checklist de equivalência.
+- **Daniel** — a pele. Na fase de construção ele **edita arquivo existente** para
+  aplicar tokens; não escreve integração nova. É a mitigação de alucinação de API:
+  o risco não é o gosto dele, é inventar assinatura de biblioteca com um dia de
+  vida.
+
+---
+
+## 3. Regra de colisão
+
+1. **Dois autores no mesmo arquivo é conflito garantido** — não se resolve com
+   cuidado, se resolve com recorte. Se duas frentes precisam do mesmo arquivo, o
+   arquivo está fazendo duas coisas: quebra-se em dois antes de escrever.
+2. **Quem renomeia commita primeiro** e avisa antes, não depois.
+3. `git add <caminho-explícito>` sempre. Nunca `-A` na raiz — arrasta trabalho de
+   outro agente.
+4. Mudança em `packages/cockpit-core` **pausa as frentes**: é a única peça cujo
+   contrato as três consomem. Passa por mim.
+
+---
+
+## 4. Cor só existe em um arquivo
+
+`app/globals.css` é o **único** lugar do repo onde cor é declarada. Nenhum hex,
+`rgb()`, `oklch()` ou nome de cor em componente, em Tailwind arbitrário
+(`bg-[#123456]`) ou em style inline.
+
+Motivo prático: é o que permite o Rica pedir "põe no verde" e a mudança acontecer
+num lugar, não em quarenta. A varredura de hex solto é uma das skills de
+manutenção, justamente porque este é o modo de falha que se repete.
+
+---
+
+## 5. Orçamento de máquina — quantos `next dev` de pé
+
+A fusão exige este número escrito. Medido em 2026-07-30:
+
+| | Hostinger (`srv1061129`) | Oracle (`vps-arm-borges-767247`) |
+|---|---|---|
+| arquitetura | x86_64 | **aarch64** |
+| memória disponível | 4.685 MB de 7.940 | 8.603 MB de 11.927 |
+| vCPU | — | 2 |
+| disco livre | **20 G (80% cheio)** | 62 G (37%) |
+| `next dev` atual | 3007, ~248 MB RSS, 3 dias de pé | — |
+
+**Teto: 2 `next dev` na Hostinger.** O 3007 (atual, intocável) e o 3008 (v2). Não
+existe terceiro.
+
+As frentes paralelas **não sobem um dev cada**. Elas trabalham em worktree e
+compartilham o 3008, ou verificam na Oracle. Três devs mais cinco sessões de CC
+(`MemoryHigh` 1500 MB cada, slice `borges-frota` com `MemoryHigh=5G` /
+`MemoryMax=6G`) estouram a slice — e o que estoura primeiro derruba o cockpit do
+Rica.
+
+### ⚠️ Onde o app roda: Hostinger, e isso corrige o playbook
+
+O playbook dizia "front novo construído na Oracle". **Não dá, e o motivo é
+medido:** o back (`uvicorn`) escuta **somente em `127.0.0.1:8000`**. Da Oracle,
+`curl http://100.107.56.38:8000/api/fleet` devolve **código 000** — não alcança. E
+o front depende de `rewrites()` para `/api`, que resolve contra o host onde o Next
+roda.
+
+As alternativas foram consideradas e recusadas: mudar o bind do uvicorn é mexer no
+back durante a migração; túnel SSH permanente Oracle→Hostinger adiciona uma peça
+que cai em silêncio e leva o painel com ela.
+
+**Divisão de trabalho entre as máquinas:**
+
+- **Hostinger** — `next dev` do v2 na 3008, porque é onde o back está. Custo aceito:
+  ~250 MB de RAM e ~550 MB de disco (o `node_modules` do web tem 556 MB, o novo será
+  da ordem).
+- **Oracle** — oficina do que **não** precisa do back: `next build` de verificação
+  (tipos, lint, tamanho de bundle), componente isolado, spike. Tem 2× a memória e 3×
+  o disco livre. O repo já está clonado em `/home/ubuntu/repos/grupo_borges`, node
+  v22.22.3. Acesso: `ssh -i ~/.ssh/oracle_arm_sp ubuntu@100.116.1.44`.
+- ⚠️ **`node_modules` não atravessa as máquinas** — aarch64 e x86_64 têm binários
+  nativos diferentes. Cada máquina instala o seu; nunca copiar a pasta.
+
+---
+
+## 6. O que não é ownership de ninguém
+
+`apps/web` está congelado. Isso inclui o bug do clear, que **fica para o v2** por
+decisão do Rica. Se o cockpit atual quebrar sozinho, o conserto é o mínimo para
+voltar ao ar — não é oportunidade de melhoria.
+
+Única exceção prevista: `fixtures/cockpit-v2/gravar-transcripts.py` consome o
+`apps/web` **de fora**, pela mesma SSE que o front usa. Instrumentar de fora não é
+tocar.
