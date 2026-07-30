@@ -21,7 +21,7 @@ function loadFixture(name: string): Fixture {
   return JSON.parse(readFileSync(join(FIXTURE_DIR, `${name}.json`), 'utf8')) as Fixture;
 }
 
-test('extrai thinking do array real sem inventar conteúdo redigido', () => {
+test('extrai corpo não vazio do representante real de thinking', () => {
   const fixture = loadFixture('bloco__thinking');
   const content = fixture.evento.message?.content;
   assert.ok(Array.isArray(content));
@@ -36,9 +36,13 @@ test('extrai thinking do array real sem inventar conteúdo redigido', () => {
   assert.ok(thinkingPart);
 
   assert.equal(fixture.ocorrencias, 804);
+  assert.match(
+    thinkingPart.thinking,
+    /^<texto redigido · 73238 chars · 388 linhas>\n<linha redigida>/,
+  );
   assert.deepEqual(normalizeThinkingContent(content), {
     text: thinkingPart.thinking,
-    lineCount: 0,
+    lineCount: 388,
   });
 });
 

@@ -8,6 +8,7 @@ vira placeholder do mesmo tamanho e a forma fica intacta.
 
 Um exemplar por família: tipo de bloco, tool pelo nome, forma de tool_use_result.
 """
+import argparse
 import collections
 import glob
 import json
@@ -39,7 +40,17 @@ def _opaca(s: str) -> bool:
             and any(c.isdigit() for c in s))
 
 
-def redige(v, prof=0):
+def _redige_string_com_linhas(s: str) -> str:
+    """Redige prosa preservando a quantidade de linhas, nunca o conteúdo."""
+    normalizada = s.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")
+    linhas = 0 if not normalizada.strip() else len(normalizada.split("\n"))
+    if linhas <= 1:
+        return f"<texto redigido · {len(s)} chars>"
+    cabecalho = f"<texto redigido · {len(s)} chars · {linhas} linhas>"
+    return "\n".join([cabecalho, *(["<linha redigida>"] * (linhas - 1))])
+
+
+def redige(v, prof=0, preservar_linhas_thinking=False):
     """Substitui conteúdo textual por placeholder, preservando estrutura e tamanho."""
     if prof > 12:
         return "<profundo>"
@@ -53,22 +64,47 @@ def redige(v, prof=0):
     if isinstance(v, dict):
         return {
             k: (f"<valor de chave sensível redigido · {len(str(x))} chars>"
-                if k.lower() in CHAVES_SENSIVEIS else redige(x, prof + 1))
+                if k.lower() in CHAVES_SENSIVEIS
+                else _redige_string_com_linhas(x)
+                if (
+                    preservar_linhas_thinking
+                    and k == "thinking"
+                    and isinstance(x, str)
+                    and len(x) > LIMITE_STR
+                )
+                else redige(x, prof + 1, preservar_linhas_thinking))
             for k, x in v.items()
         }
     if isinstance(v, list):
         # preserva o comprimento na anotação, mas guarda no máximo 3 itens
-        corte = [redige(x, prof + 1) for x in v[:3]]
+        corte = [redige(x, prof + 1, preservar_linhas_thinking) for x in v[:3]]
         if len(v) > 3:
             corte.append(f"<+{len(v) - 3} itens do mesmo formato>")
         return corte
     return v
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Gera um exemplar redigido por família de payload.",
+    )
+    parser.add_argument(
+        "--preferir-thinking-com-conteudo",
+        action="store_true",
+        help=(
+            "troca apenas o representante de bloco__thinking pelo primeiro "
+            "exemplar com texto; sem a flag, preserva a escolha histórica do primeiro"
+        ),
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
     os.makedirs(DEST, exist_ok=True)
     familias = {}
     contagem = collections.Counter()
+    thinking_com_conteudo_escolhido = False
 
     for caminho in sorted(glob.glob(os.path.join(ORIG, "*.sse.jsonl"))):
         with open(caminho) as f:
@@ -103,6 +139,23 @@ def main() -> int:
                     contagem[k] += 1
                     if k not in familias:
                         familias[k] = redige(d)
+                        if k == "bloco__thinking":
+                            thinking_com_conteudo_escolhido = bool(
+                                isinstance(b.get("thinking"), str)
+                                and b["thinking"].strip()
+                            )
+                    elif (
+                        args.preferir_thinking_com_conteudo
+                        and k == "bloco__thinking"
+                        and not thinking_com_conteudo_escolhido
+                        and isinstance(b.get("thinking"), str)
+                        and b["thinking"].strip()
+                    ):
+                        # Não altera contagem nem família: corrige apenas o exemplar.
+                        # O primeiro evento histórico tem assinatura, mas thinking
+                        # vazio; ele não exercita o renderer desta família.
+                        familias[k] = redige(d, preservar_linhas_thinking=True)
+                        thinking_com_conteudo_escolhido = True
 
                 tur = d.get("tool_use_result")
                 if isinstance(tur, dict):

@@ -40,6 +40,19 @@ python3 fixtures/cockpit-v2/inventario-familias.py
 python3 fixtures/cockpit-v2/redigir-familias.py
 ```
 
+O default continua escolhendo o primeiro exemplar observado. Para
+`bloco__thinking`, esse primeiro evento é degenerado (`thinking: ""`), embora
+exista um exemplar com texto entre as 804 ocorrências. A regravação validada do
+representante usa:
+
+```bash
+python3 fixtures/cockpit-v2/redigir-familias.py --preferir-thinking-com-conteudo
+```
+
+A flag só troca o exemplar dessa família; não altera contagens nem escolhe
+eventos para satisfazer teste. Ela também preserva a quantidade de linhas com
+marcadores redigidos, sem gravar o raciocínio real.
+
 ## O contrato do endpoint
 
 `GET /api/agents/{slug}/messages/stream?sessionId=&limit=&since_id=`
