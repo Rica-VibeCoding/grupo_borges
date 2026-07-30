@@ -198,10 +198,6 @@ async def test_stream_404_agent_not_found(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=False,
-    reason="stub: impl real emite pane event com excerpt/captured_at/executor_kind",
-)
 async def test_stream_emits_pane_event_with_expected_fields(tmp_path: Path) -> None:
     """Lê 1 evento `event: pane` com payload `{excerpt, captured_at, executor_kind}`.
 

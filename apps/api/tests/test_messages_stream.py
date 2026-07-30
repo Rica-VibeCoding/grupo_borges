@@ -136,8 +136,15 @@ def _insert_jsonl(
     ) or 0
 
 
-def _insert_raw_event(db: GrupoBorgesDB, *, kind: str, payload: str) -> int:
+def _insert_legacy_corrupt_event(
+    db: GrupoBorgesDB, *, kind: str, payload: str
+) -> int:
     with db._connect() as conn, conn:
+        # Bancos atuais rejeitam payload inválido ao manter os índices JSON1.
+        # Removê-los simula um banco legado/corrompido e mantém coberto o
+        # fallback defensivo do reader sem alterar o schema de produção.
+        conn.execute("DROP INDEX idx_events_agent_session_id")
+        conn.execute("DROP INDEX idx_events_latest_session")
         cur = conn.execute(
             """
             INSERT INTO task_events (task_id, agent_slug, instance_id, kind, payload, raw_jsonl, created_at)
@@ -325,7 +332,7 @@ async def test_messages_stream_corrupt_payload_does_not_break_stream(
 ) -> None:
     app, db = _build_app(tmp_path)
     caplog.set_level("WARNING", logger="db.store")
-    _insert_raw_event(db, kind="jsonl:user", payload="{not-json")
+    _insert_legacy_corrupt_event(db, kind="jsonl:user", payload="{not-json")
 
     _, _, events = await _drive_stream(app, stop_after="replay-end")
 

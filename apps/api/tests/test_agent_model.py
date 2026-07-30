@@ -201,7 +201,6 @@ def test_model_claude_rejects_kimi_slug(tmp_path: Path) -> None:
         assert response.json()["detail"] == "model_not_allowed_for_claude_code"
 
 
-@pytest.mark.xfail(strict=False, reason="stub: gate `agent_busy_confirm_required` entra com impl real")
 def test_model_busy_without_force_returns_409(tmp_path: Path) -> None:
     """Agente `trabalhando` sem `force=true` → 409 `agent_busy_confirm_required`."""
     app = _build_app(tmp_path)
@@ -218,7 +217,6 @@ def test_model_busy_without_force_returns_409(tmp_path: Path) -> None:
         assert response.json()["detail"] == "agent_busy_confirm_required"
 
 
-@pytest.mark.xfail(strict=False, reason="stub: caminho feliz com force=true entra com impl real")
 def test_model_busy_with_force_passes(tmp_path: Path) -> None:
     """Agente `trabalhando` com `force=true` → 200 (assume risco)."""
     app = _build_app(tmp_path)
@@ -296,7 +294,6 @@ def test_model_fable_confirmed_via_pane(tmp_path: Path) -> None:
             assert body["model"] == "fable"
 
 
-@pytest.mark.xfail(strict=False, reason="stub: regex parser pra confirmar troca entra com impl real")
 def test_model_detects_confirmation_via_pane_regex(tmp_path: Path) -> None:
     """Statusline do pane bate com slug → `confirmed=True`. Não bate → `confirmed=False`
     mas `tmux_delivered=True` (UI mostra warning).

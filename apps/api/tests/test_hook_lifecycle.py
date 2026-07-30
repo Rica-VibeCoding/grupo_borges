@@ -76,13 +76,12 @@ def test_hook_lifecycle_returns_4_states_only(
     ("kwargs", "expected"),
     [
         (
-            {"last_seen": None, "instances": [], "now": 1_000},
+            {"last_seen": None, "now": 1_000},
             "offline",
         ),
         (
             {
                 "last_seen": 950,
-                "instances": [],
                 "lifecycle_status": "trabalhando",
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
@@ -92,7 +91,6 @@ def test_hook_lifecycle_returns_4_states_only(
         (
             {
                 "last_seen": 950,
-                "instances": [],
                 "lifecycle_status": "aguardando",
                 "lifecycle_updated_at": 100,
                 "now": 1_000,
@@ -102,7 +100,6 @@ def test_hook_lifecycle_returns_4_states_only(
         (
             {
                 "last_seen": 950,
-                "instances": [],
                 "lifecycle_status": "ocioso",
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
@@ -110,16 +107,31 @@ def test_hook_lifecycle_returns_4_states_only(
             "ocioso",
         ),
         (
-            {"last_seen": 950, "instances": [{"status": "running"}], "now": 1_000},
-            "trabalhando",
-        ),
-        (
-            {"last_seen": 950, "instances": [{"status": "blocked"}], "now": 1_000},
-            "aguardando",
-        ),
-        (
-            {"last_seen": 950, "instances": [{"status": "done"}], "now": 1_000},
+            {
+                "last_seen": 950,
+                "lifecycle_status": "trabalhando",
+                "lifecycle_updated_at": 100,
+                "now": 1_000,
+            },
             "ocioso",
+        ),
+        (
+            {
+                "last_seen": 950,
+                "lifecycle_status": "offline",
+                "lifecycle_updated_at": 950,
+                "now": 1_000,
+            },
+            "offline",
+        ),
+        (
+            {
+                "last_seen": 100,
+                "lifecycle_status": "trabalhando",
+                "lifecycle_updated_at": 950,
+                "now": 1_000,
+            },
+            "offline",
         ),
     ],
 )
