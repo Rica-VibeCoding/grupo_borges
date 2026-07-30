@@ -92,6 +92,20 @@ const SLUG_CANARIO = 'canario';
 /** Distância do fim, em px, dentro da qual consideramos "colado no fundo". */
 const COLADO_PX = 24;
 
+/**
+ * SEMENTE do estimateSize, não verdade sobre o conteúdo: vale só até as
+ * primeiras linhas serem medidas de verdade, e a partir daí a média corrente
+ * manda. Ver `ALTURA_QUANTUM` e o comentário do `medir`.
+ */
+const ALTURA_SEMENTE = 40;
+
+/**
+ * A estimativa só muda em degraus de 4px. Reagir a cada nó medido faria a
+ * estimativa oscilar, e cada oscilação vira correção de scroll em item ainda
+ * não medido — trocaria um erro grande por um tremor permanente.
+ */
+const ALTURA_QUANTUM = 4;
+
 /* ========================================================================== */
 /* Renderers de part — feios de propósito, densos por contrato (§7 da estética) */
 /* ========================================================================== */
@@ -204,15 +218,50 @@ function Feed() {
   const coladoRef = useRef(true);
   const [temNovas, setTemNovas] = useState(false);
 
+  // Estimativa ADAPTATIVA, e isso é conserto de G3, não afinação de desempenho.
+  // Medido em 30/07: altura real mediana de 36px contra estimativa fixa de 72.
+  // Cada PRIMEIRA medição gerava delta de −36px, e o virtual-core corrige o
+  // scroll por esse delta (virtual-core index.js:855-859) — subir por ~600 itens
+  // nunca medidos acumulava ~20k px de correção, que foi exatamente o que o G3
+  // mediu no iPhone. Em ref, não em estado: `estimateSize` não entra em
+  // `getMeasurementOptions` (index.js:571), então mudar o valor NÃO invalida
+  // medição já feita e não força re-layout — só vale para item ainda não medido.
+  const alturaRef = useRef(ALTURA_SEMENTE);
+  const somaRef = useRef({ soma: 0, n: 0 });
+
   const virtualizer = useVirtualizer({
     count: ids.length,
     getScrollElement: () => scrollerRef.current,
-    estimateSize: () => 72,
+    estimateSize: () => alturaRef.current,
     overscan: 6,
     // Chave estável por id: sem isto o virtualizador remonta linha quando a
     // lista cresce, e remontagem é exatamente o que o G4 conta como repintura.
     getItemKey: (i) => ids[i] ?? i,
   });
+
+  /**
+   * Envelope do `measureElement` da lib: mede primeiro (semântica dela intacta),
+   * depois alimenta a média corrente. Identidade estável — `virtualizer` é a
+   * mesma instância entre renders, e ref que troca de identidade faz o React
+   * desanexar e reanexar, o que geraria medição a mais em vez de a menos.
+   */
+  const medir = useCallback(
+    (node: HTMLElement | null) => {
+      virtualizer.measureElement(node);
+      if (!node) return;
+      const h = node.offsetHeight;
+      if (h <= 0) return;
+      const acc = somaRef.current;
+      acc.soma += h;
+      acc.n += 1;
+      const nova = Math.max(
+        ALTURA_QUANTUM,
+        Math.round(acc.soma / acc.n / ALTURA_QUANTUM) * ALTURA_QUANTUM,
+      );
+      if (nova !== alturaRef.current) alturaRef.current = nova;
+    },
+    [virtualizer],
+  );
 
   const aoRolar = useCallback(() => {
     const el = scrollerRef.current;
@@ -255,7 +304,7 @@ function Feed() {
               key={v.key}
               data-gate-message=""
               data-index={v.index}
-              ref={virtualizer.measureElement}
+              ref={medir}
               style={{
                 position: 'absolute',
                 top: 0,
