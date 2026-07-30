@@ -151,3 +151,22 @@ overlay cospe os oito números. A decisão sai da tabela, não da impressão.
 
 O gosto dele decide a **pele** — isso é o gate estético, separado, e a régua lá é ele
 dizendo "amei". Aqui é só engasgo, e engasgo se mede.
+
+---
+
+## 7. Depois de medir: desmontar a bancada
+
+Escrito aqui porque coisa descartável que ninguém anota é coisa que fica. Depois de
+o gate decidir, nesta ordem:
+
+1. **Remover o `canario` do `agents.yaml`.** Ele aparece na lista de agentes do
+   painel do Rica desde 30/07 — hoje são 9 onde eram 8, e ele foi avisado. É registro
+   de bancada, não agente.
+2. **Limpar os eventos do canário do banco** (`gerar-carga.py --reset` faz isso).
+3. **O `gate-probe.js` fica**, mas segue descartável por contrato: não entra no
+   bundle de produção e nenhum componente o importa. Ele é o instrumento de
+   regressão — quando alguém disser "ficou lento", o número vem dele, não de
+   impressão.
+4. **A rota `/spike` morre** junto com a decisão, seja qual for. O que sobrevive dela
+   é o que já está fora dela de propósito: coalescedor em `cockpit-core`, transporte
+   e ponte em `lib/spike/` — e a ponte só sobrevive se o `assistant-ui` ficar.
