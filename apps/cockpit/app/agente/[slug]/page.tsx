@@ -6,6 +6,7 @@ import { AppShell } from '@/components/shell/app-shell';
 import { estadoDe } from '@/components/shell/estado';
 import { Retrato } from '@/components/shell/retrato';
 import { Tropa } from '@/components/shell/tropa';
+import { lePane } from '@/lib/pane';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,27 +38,6 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string | null }) {
         {valor}
       </span>
     </div>
-  );
-}
-
-/**
- * Limpa o que sobra da captura do tmux.
- *
- * O `pane_excerpt` vem com sequências de escape que o terminal consome e a tela
- * não: hyperlink OSC-8 (`ESC ] 8 ; id=… ; url ESC \`) aparecia literalmente como
- * `]8;id=h5o667;https://…\`, e cores SGR (`ESC [ 0 m`) viravam sujeira no meio da
- * linha. Não é decisão de estilo — é dado cru vazando pro olho.
- */
-function limpaPane(bruto: string): string {
-  return (
-    bruto
-      // OSC (hyperlink `ESC ] 8 ; id=… ; url`) — termina em BEL ou String Terminator.
-      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, '')
-      // CSI (cor SGR, movimento de cursor, apagar linha).
-      .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
-      // Seleção de charset e demais escapes de dois caracteres.
-      .replace(/\x1b[()#][0-9A-Za-z]/g, '')
-      .replace(/\x1b[=>78Mc]/g, '')
   );
 }
 
@@ -264,7 +244,21 @@ export default async function AgentePage({
                 color: 'var(--ck-text-primary)',
               }}
             >
-              {limpaPane(agente.pane_excerpt)}
+              {lePane(agente.pane_excerpt).map((trecho, i) =>
+                trecho.tipo === 'link' ? (
+                  <a
+                    key={i}
+                    href={trecho.href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="ck-link"
+                  >
+                    {trecho.texto}
+                  </a>
+                ) : (
+                  <span key={i}>{trecho.texto}</span>
+                ),
+              )}
             </pre>
           ) : null}
 
