@@ -5,9 +5,7 @@ import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { AppShell } from '@/components/shell/app-shell';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { Composer } from '@/components/shell/composer';
-import { estadoDe } from '@/components/shell/estado';
 import { leMotor } from '@/components/shell/motor';
-import { Retrato } from '@/components/shell/retrato';
 import { Tropa } from '@/components/shell/tropa';
 import { lePane } from '@/lib/pane';
 
@@ -123,7 +121,6 @@ export default async function AgentePage({
   const painelAberto = typeof sp.painel === 'string' && sp.painel.length > 0;
   const navAberta = sp.nav === 'aberto';
   const fecharHref = `/agente/${slug}`;
-  const estado = estadoDe(agente.status);
   const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
 
   return (
@@ -146,43 +143,17 @@ export default async function AgentePage({
         painelAberto={painelAberto}
       />
 
-      {/* Identidade do agente — abaixo do chrome, não mais dono do botão de
-          voltar nem do "⋯": os dois viraram os ícones da BarraDeTelas.
-          Sem cor própria: é o topo da folha, e a folha é uma superfície só. */}
-      <header
-        className="flex shrink-0 items-center border-b"
-        style={{
-          gap: 'var(--ck-space-2)',
-          borderColor: 'var(--ck-edge-hairline)',
-          padding: 'var(--ck-space-2) var(--ck-space-3)',
-        }}
-      >
-        <Retrato slug={agente.slug} nome={agente.name} tamanho={32} />
+      {/* Aqui morava o cabeçalho de identidade — retrato, nome e estado — e a
+          linha que o separava do feed. Saiu por ordem do Rica (30/07): o agente
+          já aparece selecionado e destacado na tropa à esquerda, e desde a MESA
+          E A FOLHA (§14) a aba do item selecionado ENCOSTA nesta folha. Repetir
+          o nome no topo do chat era dizer duas vezes, com a linha divisória
+          cobrando altura de tela no celular para separar o feed de nada.
 
-        <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '1px' }}>
-          <span
-            className="truncate"
-            style={{
-              fontSize: 'var(--ck-text-lg)',
-              lineHeight: '1.2',
-              letterSpacing: 'var(--ck-track-title)',
-              color: 'var(--ck-text-primary)',
-            }}
-          >
-            {agente.name}
-          </span>
-          <span
-            className="truncate"
-            style={{ fontSize: 'var(--ck-text-xs)', color: estado.cor }}
-          >
-            {/* Só a palavra do estado. `lifecycle_detail` estava vazando cru aqui
-                — "trabalhando · tool_use" — que é o mesmo jargão de máquina que
-                saiu da TROPA. O detalhe técnico vive no painel `?painel=detalhes`,
-                que é onde quem quer o detalhe vai buscar. */}
-            {estado.rotulo}
-          </span>
-        </span>
-      </header>
+          Nenhum substituto entra agora, e isso é literal: *"se sentir falta de
+          uma identidade dentro do chat eu aviso, mas não seria o que está"*.
+          Inventar uma marca d'água ou um nome discreto aqui seria trocar o que
+          ele mandou tirar por uma versão menor da mesma coisa. */}
 
       {/* Coluna de leitura por container query: a coluna não sabe o tamanho da
           tela, só o do espaço que recebeu. As medidas do ChatGPT são de desktop —
