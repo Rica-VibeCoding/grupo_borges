@@ -50,7 +50,7 @@ export function FetchResult({ valor }: { valor: unknown }) {
   const tom = tomDoStatus(dados.codigo);
 
   return (
-    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
+    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-composer)]">
       <header className="flex min-h-[44px] min-w-0 items-center gap-[var(--ck-space-3)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)]">
         <span
           className="shrink-0 font-mono text-sm font-medium"

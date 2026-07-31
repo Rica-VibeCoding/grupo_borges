@@ -52,7 +52,7 @@ function ThinkingDisclosure({
       {open ? (
         <div
           id={bodyId}
-          className="border-t border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)] p-[var(--ck-space-3)]"
+          className="border-t border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-composer)] p-[var(--ck-space-3)]"
         >
           <AssistantMarkdown>{text}</AssistantMarkdown>
         </div>

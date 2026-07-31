@@ -95,7 +95,7 @@ export function AgentResult({ valor }: { valor: unknown }) {
   const tipo = dados.variante === 'concluido' ? dados.agentType : 'assíncrono';
 
   return (
-    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
+    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-composer)]">
       <header className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-x-[var(--ck-space-3)] gap-y-[var(--ck-space-1)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)] py-[var(--ck-space-2)]">
         <span className="min-w-0 truncate font-mono text-sm font-medium text-[var(--ck-text-primary)]">
           {dados.agentId}

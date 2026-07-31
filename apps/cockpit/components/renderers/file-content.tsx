@@ -47,7 +47,7 @@ export function FileContent({ valor }: { valor: unknown }) {
   if (!dados) return null;
 
   return (
-    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
+    <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-composer)]">
       <header className="flex min-h-[44px] min-w-0 items-center gap-[var(--ck-space-3)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)]">
         <span className="min-w-0 flex-1 truncate font-mono text-sm text-[var(--ck-text-primary)]">
           {dados.caminho}

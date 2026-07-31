@@ -364,7 +364,7 @@ export function LinhaExecucao({
             gap: 'var(--ck-space-3)',
             margin: '0 var(--ck-space-3) var(--ck-space-2)',
             padding: 'var(--ck-space-3)',
-            background: 'var(--ck-surface-raised)',
+            background: 'var(--ck-surface-composer)',
             borderRadius: 'var(--ck-radius-frame)',
           }}
         >
