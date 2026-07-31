@@ -4,7 +4,7 @@
 > conforme precisar. Ele descreve o **presente** — a história de como chegamos aqui
 > está no git, não aqui.
 >
-> Última faxina: **30/07 ~16:45**. Se a data estiver velha e o texto contradizer o
+> Última faxina: **30/07 ~23h (Hiro, seções 4/5/10)**. Se a data estiver velha e o texto contradizer o
 > código, o código ganha.
 >
 > Ordem de leitura, se precisar de mais: `cockpit-v2-gate.md` (o que decide) →
@@ -50,10 +50,19 @@ tem 738 chamadas por sessão — a **linha de ferramenta é a tela**, não um de
 
 ## 4. Onde a construção está
 
-**O feed próprio existe** (`apps/cockpit/components/feed/**`) e passou a consumir
-renderers reais. Ainda **não está plugado** na rota que o Rica usa, mas o custo dele é
-bem menor do que se acreditava até 30/07 ~16h: remedido nos três braços, entrega
-**~78% dos frames** do controle — pior em ~1,3× de fluidez, não em 2×.
+**O feed próprio existe** (`apps/cockpit/components/feed/**`), consome renderers
+reais e desde 30/07 ~21h está **plugado na `/agente/[slug]/preview`** (`54cb834`) —
+ao lado da rota que o Rica usa, à espera do aval do antes-depois para dobrar na
+`page.tsx` de vez. O custo dele é bem menor do que se acreditava até 30/07 ~16h:
+remedido nos três braços, entrega **~78% dos frames** do controle — pior em ~1,3×
+de fluidez, não em 2×.
+
+**O pipeline do `tool_use_result` rico está FECHADO ponta a ponta** (30/07 ~23h):
+lookup no core (`48de5c8` + `706a04f`) → `EntradaDaExecucao.rich` (`08ec99f`) →
+slot `corpoRico` na `LinhaExecucao` (`2928c1d`) → ramificação `familiaDoRich` no
+feed (`2d51b20`) → os três renderers da matriz na origin: `fetch-result`,
+`result-list` e `agent-result` (Tara, `d6b160d`, revisado pelo Hiro). Sem família
+casada, o corpo cai no `Saida` genérico de sempre — caminho default intacto.
 
 > ⚠️ **Relatar por `frames`, não por p95.** O p95 é quantizado em degraus de 16,67 ms e
 > a mediana de 3 rodadas pula um degrau inteiro sozinha: o **mesmo** feed, sem uma linha
@@ -80,26 +89,36 @@ que ficam: reconexão real e `sidechain-cluster`.
 
 ## 5. Quem está com o quê — mapa vigente
 
-| Agente | Frente **em voo agora** (30/07 ~17h30) | Caminhos |
+| Agente | Frente **em voo agora** (30/07 ~23h) | Caminhos |
 |---|---|---|
-| **Daniel** | **a sidebar**, em rodada dedicada com contexto limpo | `components/shell/**`, `globals.css`, `layout.tsx` |
-| **Hiro** | **os 2 renderers P0** + o plano de execução do encanamento | `components/renderers/**` |
-| **Tara** | livre — entregou `agent-result` (G7), sem commit, falta revisão cruzada | `components/renderers/agent-result.*` |
+| **Daniel** | **a sidebar** + os fixes pós-plug da rota real (`d11c91b`) | `components/shell/**`, `globals.css`, `layout.tsx` |
+| **Hiro** | **livre** — entregou ramificação rich (`2d51b20`), auditoria do `c111fa3` e revisão do `agent-result` | `components/feed/**` |
+| **Tara** | livre — `agent-result` (G7) revisado e commitado (`d6b160d`) | `components/renderers/agent-result.*` |
 
-**O que foi pedido a cada um, para conferir a entrega contra o pedido:**
+**Entregas da sequência rich (30/07 à noite), para conferir contra o pedido:**
 
-- **Daniel — sidebar.** Desktop: a Tropa vira plano de fundo permanente, o chat é a
-  superfície elevada que **sobrepõe sem fechar** a sidebar; a coluna estática da raiz
-  (`app/page.tsx:72-76`) e o vazio "Escolha um agente" **morrem**; celular continua uma
-  superfície por vez. Minerar o **CSS** do `sidebar-08` (inset), **não** o
-  `SidebarProvider` — ele colide com superfície-mora-na-URL + shell como Server Component
-  (deep-link do Telegram, botão voltar do Android). Entrega vem com prints em 390×844 @3x
-  dark, nome novo em `/tmp/cockpit-v2-prints/`. Régua: *"vale largar o cockpit antigo?"*.
-- **Hiro — renderers P0.** `fetch-result` (500 eventos) e `result-list`/WebSearch (336),
-  arquivo novo por família em `components/renderers/`, **teste contra fixture real**. Mais
-  o plano de execução do pré-requisito do `tool_use_result` — plano, não implementação.
-  O pipeline **ficou livre** quando a bancada do Daniel fechou; quem executar, executa
-  agora sem colidir.
+- **Hiro — renderers P0 + ramificação.** `fetch-result` e `result-list` já estavam
+  testados contra fixture; faltava a ligação. Fechada em `2d51b20`: `familiaDoRich`
+  em `execucao-do-item.ts` (6 fixtures reais no teste) escolhe a família, o
+  `corpo-do-item.tsx` só desenha, e o slot `corpoRico` (`2928c1d`, Pavan) encaixa
+  na `LinhaExecucao`. Sem família, `Saida` genérico — nada muda no caminho velho.
+- **Tara — `agent-result` (G7).** Revisão cruzada do Hiro
+  (`cockpit-v2-medicao/revisao-agent-result-tara-30-07.md`): o médio (cor do status
+  por variante) foi resolvido com `classeDeCorDoStatus` por valor + teste sintético
+  de `failed`; baixo e nits abertos por decisão do Pavan. Commit `d6b160d`.
+- **Daniel — fix do 500.** A ramificação ligou os renderers à rota real e expôs um
+  self-import ambíguo `.ts`/`.tsx` dormente (o Turbopack resolve o bare specifier
+  pro próprio arquivo — tsc e suíte são cegos, só load de página real pega). Fix
+  em `d11c91b`, com o mesmo remédio aplicado no `agent-result.tsx`.
+
+**Pedido AINDA em voo — Daniel, sidebar.** Desktop: a Tropa vira plano de fundo
+permanente, o chat é a superfície elevada que **sobrepõe sem fechar** a sidebar; a
+coluna estática da raiz (`app/page.tsx:72-76`) e o vazio "Escolha um agente"
+**morrem**; celular continua uma superfície por vez. Minerar o **CSS** do
+`sidebar-08` (inset), **não** o `SidebarProvider` — ele colide com
+superfície-mora-na-URL + shell como Server Component (deep-link do Telegram, botão
+voltar do Android). Entrega vem com prints em 390×844 @3x dark, nome novo em
+`/tmp/cockpit-v2-prints/`. Régua: *"vale largar o cockpit antigo?"*.
 
 `components/renderers/**` é de **consumo** para todos — quem achar que precisa mudar,
 fala com o Pavan antes. Ninguém audita o próprio trabalho.
@@ -174,29 +193,28 @@ Ao terminar, **desmontar a bancada** (gate §7): o `canario` precisa sair do
 
 ## 10. Pendências técnicas conhecidas
 
-- **O `tool_use_result` rico já chega ao core e ao tipo React** — resolvido em 30/07:
-  `ToolResultLookup` no `packages/cockpit-core` (Hiro, `48de5c8` + `706a04f`) e
-  `EntradaDaExecucao` ganhando `rich?: unknown` a partir de `achado?.rich` (Daniel,
-  `08ec99f`). **O que falta é só a ramificação:** `corpo-do-item.tsx` ainda não lê
-  `rich` pra escolher o renderer (zero ocorrências, conferido 30/07 ~20h30) —
-  território do Hiro, próxima peça dele por decisão do próprio Daniel (nota do
-  `08ec99f`). Enquanto não fechar, `fetch-result`, `result-list` e `agent-result`
-  ficam **órfãos**: construídos, testados contra fixture, sem aparecer na tela real.
-- **Lacunas P0 da matriz:** `fetch-result` (500 eventos) e `result-list`/WebSearch (336).
-  Inventário completo em `cockpit-v2-medicao/auditoria-tema-30-07.md`.
+- ~~**O `tool_use_result` rico já chega ao core e ao tipo React**~~ — **FECHADO
+  30/07 ~23h.** Pipeline inteiro na origin: lookup no core (`48de5c8` + `706a04f`)
+  → `EntradaDaExecucao.rich` (`08ec99f`) → slot `corpoRico` na `LinhaExecucao`
+  (`2928c1d`) → ramificação `familiaDoRich` no feed (Hiro, `2d51b20`) → os três
+  renderers da matriz commitados (`fetch-result`, `result-list`, `agent-result`
+  da Tara em `d6b160d`, revisão do Hiro em
+  `cockpit-v2-medicao/revisao-agent-result-tara-30-07.md`). O plug da rota real
+  expôs o self-import ambíguo `.ts`/`.tsx` — fix do Daniel em `d11c91b`,
+  registrado na §9.
+- ~~**Lacunas P0 da matriz:** `fetch-result` (500 eventos) e `result-list`/WebSearch
+  (336)~~ — **resolvidas** com a mesma sequência acima. O que resta da matriz são
+  os corpos G1/G2-create/G4/G5/G8, sem data marcada. Inventário completo em
+  `cockpit-v2-medicao/auditoria-tema-30-07.md`.
 - **`/destrava` e `/clear` não ganham campo `confirmed`.** Não há sinal observável
   confiável de que o modal fechou — comparar panes gera falso positivo por relógio,
   spinner e output concorrente. Registrado para ninguém tentar de novo achando que é
   fácil: campo novo que também mente é pior que campo ausente.
 - **Supervisão** é um cron de 5 min **session-only** — morre com a sessão do Pavan e
   para sem avisar ninguém. Este arquivo é o antídoto.
-- **`agent-result` (Tara, G7, 30/07 noite):** 3 arquivos novos em
-  `components/renderers/` (normalizador + componente + teste), 3/3 testes novos,
-  suíte completa 248/248, `tsc --noEmit` limpo. Ela mesma corrigiu 2 furos num passo
-  interno (`--ck-text-tertiary` indevido em corpo 13px; cor de `completed` mapeada
-  pro estado errado) — mas o `collab_tool_call` que deveria acionar revisor externo
-  voltou com `receiver_thread_ids` vazio, então **nenhuma revisão de Kimi/Hiro
-  aconteceu ainda** (`cockpit-v2-ownership.md` §"papéis fixos": revisão de frontend
-  é sempre Kimi/Hiro, nunca o próprio autor). Sem commit. Mesmo revisado, só aparece
-  na tela depois que a ramificação em `corpo-do-item.tsx` (item acima) escolher
-  `AgentResult` pra essa família.
+- ~~**`agent-result` (Tara, G7, 30/07 noite):** ... nenhuma revisão de Kimi/Hiro
+  aconteceu ainda ... Sem commit~~ — **resolvido:** revisão cruzada feita pelo Hiro
+  (1 médio resolvido com `classeDeCorDoStatus` por valor + teste sintético de
+  `failed`; baixo `formatoDuracao` e nits abertos por decisão do Pavan), commit
+  `d6b160d` na origin. Detalhe no delta da
+  `cockpit-v2-medicao/revisao-agent-result-tara-30-07.md`.
