@@ -87,3 +87,42 @@ A ramificação em `corpo-do-item.tsx` (peça minha, em andamento) vai chamar
 `normalizarAgentResult` ANTES do componente — que re-normaliza internamente.
 Redundância barata e deliberada: mantém o componente auto-suficiente para a
 vitrine. Não é achado contra o arquivo dela.
+
+---
+
+## Delta pós-revisão (Hiro, 30/07 ~23h — a pedido do Pavan)
+
+Mudanças depois da minha revisão: `d11c91b` (Daniel, committed — fix de
+self-import em `fetch-result.tsx`/`result-list.tsx`) + o WIP em disco no
+`agent-result.{ts,tsx,test.ts}` (território da Tara, sem commit).
+
+**Médio nº 1 — RESOLVIDO, e bem resolvido.** `classeDeCorDoStatus`
+(`agent-result.ts:52`) mapeia pelo VALOR: `completed*` → ok,
+`failed|error|interrupted*` → fail, todo o resto → `text-secondary` neutro —
+exatamente a filosofia do "desconhecido aparece cru". Bônus certo:
+`async_launched` deixou de ser ciano (lançado ≠ rodando) e virou neutro.
+Cobertura no padrão sugerido: teste sintético com `status: 'failed'` sobre a
+fixture de concluído prova que o normalizador aceita e a cor acompanha, mais
+`completed`→ok e `async_launched`→neutro. Sem ressalva.
+
+**O 500 da rota real — causa raiz confirmada e o meu lado absolvido.** O
+`d11c91b` documenta: os `.tsx` irmãos importavam de si mesmos sem extensão e o
+Turbopack resolveu o bare specifier pro próprio arquivo (circular) quando a
+minha ramificação (`2d51b20`) ligou os renderers à rota real — dormente até
+então. Meu `corpo-do-item.tsx` já nascera com extensão explícita nos 3
+imports, pela mesma ambiguidade. Lição registrada: **tsc e suíte NÃO pegam
+isso** — só load de página real; o Playwright do Daniel na `/agente/pavan`
+foi o gate que valeu.
+
+**Suíte real na árvore atual: 254/254** (o "248" do `d11c91b` é de antes dos
+meus 4 testes da ramificação + os do helper). tsc foi rodado limpo pelo
+Daniel no `d11c91b` com o WIP presente.
+
+**Seguem ABERTOS (decisão do Pavan, não bloqueiam o commit dos 3):**
+- Baixo nº 2 — `formatoDuracao` duplicado (o `d11c91b` não tocou; o tmp que
+  vi sumir era alguém começando e parando).
+- Nits 3 e 4 — `Intl.NumberFormat` por chamada; `text-[13px]` × token.
+
+**Veredito do delta: aprovado para commitar o `agent-result` quando a Tara/
+Pavan decidirem** — o fix de import nela é idêntico ao do `d11c91b` e o
+helper está correto e testado.
