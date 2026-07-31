@@ -18,6 +18,7 @@ import { normalizarFetchResult } from '../renderers/fetch-result.ts';
 import { normalizarConteudoDeArquivo } from '../renderers/file-content.ts';
 import { normalizarPaginaPublicada } from '../renderers/published-page.ts';
 import { normalizarListaResultado } from '../renderers/result-list.ts';
+import { normalizarSaidaDeShell } from '../renderers/shell-output.ts';
 import { normalizarLinhaDeStatus } from '../renderers/status-line.ts';
 
 export type EntradaDaExecucao = {
@@ -50,7 +51,7 @@ export function usoDoChip(item: Chip): UsoDeFerramenta | undefined {
  *  A escolha mora aqui (testada contra fixture real); o `.tsx` só desenha. */
 export function familiaDoRich(
   rich: unknown,
-): 'fetch' | 'lista' | 'agente' | 'arquivo' | 'status' | 'pagina-publicada' | null {
+): 'fetch' | 'lista' | 'agente' | 'arquivo' | 'status' | 'pagina-publicada' | 'shell' | null {
   if (rich === null || rich === undefined) return null;
   if (normalizarFetchResult(rich)) return 'fetch';
   if (normalizarListaResultado(rich)) return 'lista';
@@ -58,6 +59,7 @@ export function familiaDoRich(
   if (normalizarConteudoDeArquivo(rich)) return 'arquivo';
   if (normalizarLinhaDeStatus(rich)) return 'status';
   if (normalizarPaginaPublicada(rich)) return 'pagina-publicada';
+  if (normalizarSaidaDeShell(rich)) return 'shell';
   return null;
 }
 

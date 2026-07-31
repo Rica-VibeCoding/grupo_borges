@@ -25,6 +25,7 @@ import { LinhaExecucao } from '@/components/renderers/linha-execucao';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
 import { PublishedPage } from '@/components/renderers/published-page.tsx';
 import { ResultList } from '@/components/renderers/result-list.tsx';
+import { ShellOutput } from '@/components/renderers/shell-output.tsx';
 import { StatusLine } from '@/components/renderers/status-line.tsx';
 import { Thinking } from '@/components/renderers/thinking';
 
@@ -113,6 +114,8 @@ function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
       <StatusLine valor={entrada.rich} />
     ) : familia === 'pagina-publicada' ? (
       <PublishedPage valor={entrada.rich} />
+    ) : familia === 'shell' ? (
+      <ShellOutput valor={entrada.rich} />
     ) : undefined;
 
   return (

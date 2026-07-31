@@ -161,6 +161,13 @@ describe('família do rich — quem renderiza o tool_use_result cru', () => {
     );
   });
 
+  it('saída de shell cai na família shell', () => {
+    assert.equal(
+      familiaDoRich(richDaFixture('result__interrupted_isImage_noOutputExpected_stderr_stdout.json')),
+      'shell',
+    );
+  });
+
   it('fora de qualquer família devolve null — o Saida genérico continua mandando', () => {
     assert.equal(familiaDoRich('texto cru'), null);
     assert.equal(familiaDoRich(null), null);
