@@ -50,6 +50,19 @@ export type RenderItem =
       totalDurMs: number | null;
     }
   | {
+      // §7 do contrato de estética: "ferramentas consecutivas agrupam, com
+      // contador" — Bash sozinho tem 738 chamadas no baseline, sem agrupar o
+      // feed é uma parede. Diferente do sidechain-cluster (que resume e
+      // perde o detalhe — um "passo de subagente" já nasce abstrato), aqui
+      // cada `chip` original é preservado inteiro: comando/args/resultado de
+      // uma tool interessam individualmente, então o grupo é hospedeiro, não
+      // resumo. Quem desenha decide o colapsado ("N ferramentas" + contador)
+      // e a expansão (cada item, individualmente clicável).
+      kind: 'tool-group';
+      items: Extract<RenderItem, { kind: 'chip' }>[];
+      count: number;
+    }
+  | {
       // ask-user MCP — não vem do JSONL. Injetado por ChatMessages a partir
       // do Map<request_id, AskUserEntry> emitido pelo hook via named SSE event
       // `ask_user`. Ordenado por created_at_ms entre os items do feed.
@@ -547,6 +560,41 @@ export function coalesceSidechainGroups(items: RenderItem[]): RenderItem[] {
         subagentCount: refs.length,
         totalDurMs: anyDur ? totalDur : null,
       });
+    }
+    i = j;
+  }
+  return out;
+}
+
+// §7 do contrato de estética: colapsa runs de `chip` de ferramenta
+// (`classifierKind === 'tool'`) consecutivos num `tool-group` com contador.
+// 1 chip isolado fica como está; 2+ viram grupo. Mesmo molde algorítmico do
+// `coalesceSidechainGroups` acima (run consecutivo, desempate por tamanho de
+// run) — a diferença é o que o agregado carrega: o sidechain resume porque já
+// nasce abstrato, aqui cada chip original é preservado (ver comentário do
+// tipo `tool-group`).
+export function coalesceToolGroups(items: RenderItem[]): RenderItem[] {
+  const out: RenderItem[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const cur = items[i];
+    if (cur.kind !== 'chip' || cur.classifierKind !== 'tool') {
+      out.push(cur);
+      i++;
+      continue;
+    }
+    let j = i;
+    const run: Extract<RenderItem, { kind: 'chip' }>[] = [];
+    while (j < items.length) {
+      const candidate = items[j];
+      if (candidate.kind !== 'chip' || candidate.classifierKind !== 'tool') break;
+      run.push(candidate);
+      j++;
+    }
+    if (run.length === 1) {
+      out.push(cur);
+    } else {
+      out.push({ kind: 'tool-group', items: run, count: run.length });
     }
     i = j;
   }

@@ -249,6 +249,18 @@ function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLik
         subagentCount: item.subagentCount, totalDurMs: item.totalDurMs,
       })], item.groups[0]?.rootUuid);
 
+    // Mesmo tratamento resumido dos dois casos acima — `data-*` com o
+    // agregado, não expansão 1:N. Hoje nada no pipeline real produz
+    // `tool-group` (a função que agrupa não está plugada em lugar nenhum
+    // ainda), então a garantia "1:1, sem agrupar" do cabeçalho não é violada
+    // na prática; se um dia essa ponte passar a receber lista já coalescida,
+    // reavaliar.
+    case 'tool-group':
+      return mensagem('assistant', [partDeDados('data-tool-group', {
+        count: item.count,
+        toolNames: item.items.map((chip) => chip.chip.label),
+      })], item.items[0]?.payload.uuid);
+
     case 'ask-user': {
       // O décimo kind. Ratificado como `data-ask-user` no §5.1 (emenda 27064af):
       // o que a lib não modela vai como data-*. Não sai de buildRenderItems —

@@ -217,11 +217,18 @@ function CorpoDoItem({ item, lookup }: { item: RenderItem; lookup?: ToolResultLo
       );
     case 'ask-user':
       return <Dado name="ask-user" data={{ entry: item.entry }} />;
+    case 'tool-group':
+      return (
+        <Dado
+          name="tool-group"
+          data={{ count: item.count, toolNames: item.items.map((chip) => chip.chip.label) }}
+        />
+      );
   }
 }
 
 /** Identidade estável por item — a mesma régua do `refDe` da ponte
- *  (uuid || id), com os três kinds sem payload cobertos pelas chaves naturais. */
+ *  (uuid || id), com os quatro kinds sem payload cobertos pelas chaves naturais. */
 function chaveDe(item: RenderItem): string {
   switch (item.kind) {
     case 'sidechain-group':
@@ -230,6 +237,8 @@ function chaveDe(item: RenderItem): string {
       return `sc-${item.groups[0]?.rootUuid ?? 'sem-raiz'}`;
     case 'ask-user':
       return `ask-${item.entry.request_id}`;
+    case 'tool-group':
+      return `tg-${item.items[0]?.payload.uuid ?? 'sem-raiz'}`;
     default:
       return item.payload.uuid || String(item.payload.id);
   }

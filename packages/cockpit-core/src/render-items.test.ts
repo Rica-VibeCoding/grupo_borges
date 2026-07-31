@@ -4,7 +4,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { MessagePayload } from './messages-types.ts';
-import { buildRenderItems, buildToolResultLookup, deriveSubagentStatusesFromMessages } from './render-items.ts';
+import type { RenderItem } from './render-items.ts';
+import {
+  buildRenderItems,
+  buildToolResultLookup,
+  coalesceToolGroups,
+  deriveSubagentStatusesFromMessages,
+} from './render-items.ts';
 import {
   doneTaskNotificationXml,
   failedTaskNotificationXml,
@@ -405,4 +411,90 @@ test('lookup — message null + tool_use_result null não quebra (borda__content
 
   const lookup = buildToolResultLookup([nula]);
   assert.equal(lookup.size, 0);
+});
+
+/* -------------------------------------------------------------------------- */
+/* coalesceToolGroups — §7 do contrato: ferramentas consecutivas agrupam,    */
+/* com contador. Mesmo molde do coalesceSidechainGroups, mas sem resumir —   */
+/* cada chip original sobrevive inteiro dentro do grupo (ver comentário do   */
+/* tipo `tool-group` em render-items.ts).                                    */
+/* -------------------------------------------------------------------------- */
+
+function chipDeTool(id: number, label: string): RenderItem {
+  return {
+    kind: 'chip',
+    payload: userText(id, label),
+    chip: { icon: '$', label, summary: label },
+    expandBody: '',
+    classifierKind: 'tool',
+  };
+}
+
+function chipDeSlash(id: number): RenderItem {
+  return {
+    kind: 'chip',
+    payload: userText(id, '/model'),
+    chip: { icon: '/', label: '/model', summary: '/model' },
+    expandBody: '',
+    classifierKind: 'slash',
+  };
+}
+
+test('coalesceToolGroups — chip de tool isolado (run de 1) fica como está', () => {
+  const items: RenderItem[] = [
+    { kind: 'user', payload: userText(1, 'oi'), text: 'oi' },
+    chipDeTool(2, 'Bash'),
+    { kind: 'user', payload: userText(3, 'ok'), text: 'ok' },
+  ];
+  const out = coalesceToolGroups(items);
+  assert.equal(out.length, 3);
+  assert.equal(out[1].kind, 'chip');
+});
+
+test('coalesceToolGroups — 2+ chips de tool consecutivos viram 1 tool-group com contador', () => {
+  const items: RenderItem[] = [chipDeTool(1, 'Bash'), chipDeTool(2, 'Bash'), chipDeTool(3, 'Read')];
+  const out = coalesceToolGroups(items);
+  assert.equal(out.length, 1);
+  if (out[0].kind !== 'tool-group') throw new Error('esperava tool-group');
+  assert.equal(out[0].count, 3);
+  assert.equal(out[0].items.length, 3);
+  assert.deepEqual(out[0].items.map((c) => c.chip.label), ['Bash', 'Bash', 'Read']);
+});
+
+test('coalesceToolGroups — chip que não é tool (slash/skill/...) nunca agrupa', () => {
+  const items: RenderItem[] = [chipDeSlash(1), chipDeSlash(2)];
+  const out = coalesceToolGroups(items);
+  assert.equal(out.length, 2);
+  assert.ok(out.every((item) => item.kind === 'chip'));
+});
+
+test('coalesceToolGroups — item não-chip no meio quebra o run em dois grupos', () => {
+  const items: RenderItem[] = [
+    chipDeTool(1, 'Bash'),
+    chipDeTool(2, 'Bash'),
+    { kind: 'user', payload: userText(3, 'pausa'), text: 'pausa' },
+    chipDeTool(4, 'Read'),
+    chipDeTool(5, 'Write'),
+  ];
+  const out = coalesceToolGroups(items);
+  assert.equal(out.length, 3);
+  assert.equal(out[1].kind, 'user');
+  if (out[0].kind !== 'tool-group' || out[2].kind !== 'tool-group') {
+    throw new Error('esperava tool-group nas pontas');
+  }
+  assert.equal(out[0].count, 2);
+  assert.equal(out[2].count, 2);
+});
+
+test('coalesceToolGroups — lista vazia devolve lista vazia', () => {
+  assert.deepEqual(coalesceToolGroups([]), []);
+});
+
+test('coalesceToolGroups — preserva cada chip original por referência, sem perda de dado', () => {
+  const a = chipDeTool(1, 'Bash');
+  const b = chipDeTool(2, 'Bash');
+  const out = coalesceToolGroups([a, b]);
+  if (out[0].kind !== 'tool-group') throw new Error('esperava tool-group');
+  assert.equal(out[0].items[0], a);
+  assert.equal(out[0].items[1], b);
 });
