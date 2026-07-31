@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { execucaoDaParte, execucaoDoChip, usoDoChip } from './execucao-do-item.ts';
+import { execucaoDaParte, execucaoDoChip, familiaDoRich, usoDoChip } from './execucao-do-item.ts';
 
 // `buildToolResultLookup` só olha mensagens de kind `user` — é assim que o
 // Claude Code emite o resultado de uma ferramenta, e um fixture com kind
@@ -97,6 +99,49 @@ describe('execução — resultado rico', () => {
       undefined,
     );
     assert.equal(entrada.rich, undefined);
+  });
+});
+
+describe('família do rich — quem renderiza o tool_use_result cru', () => {
+  const FAMILIAS = join(import.meta.dirname, '../../../../fixtures/cockpit-v2/familias');
+  const richDaFixture = (nome: string): unknown =>
+    (JSON.parse(readFileSync(join(FAMILIAS, nome), 'utf8')) as { evento: { tool_use_result: unknown } })
+      .evento.tool_use_result;
+
+  it('o fetch do WebFetch cai na família fetch', () => {
+    assert.equal(
+      familiaDoRich(richDaFixture('result__bytes_code_codeText_durationMs_result.json')),
+      'fetch',
+    );
+  });
+
+  it('busca e matches caem na família lista', () => {
+    assert.equal(
+      familiaDoRich(richDaFixture('result__durationSeconds_query_results_searchCount.json')),
+      'lista',
+    );
+    assert.equal(
+      familiaDoRich(richDaFixture('result__matches_query_total_deferred_tools.json')),
+      'lista',
+    );
+  });
+
+  it('as duas formas de resultado de subagente caem na família agente', () => {
+    assert.equal(
+      familiaDoRich(richDaFixture('result__agentId_agentType_content_prompt_resolvedModel.json')),
+      'agente',
+    );
+    assert.equal(
+      familiaDoRich(richDaFixture('result__agentId_canReadOutputFile_description_isAsync_outputFile.json')),
+      'agente',
+    );
+  });
+
+  it('fora de qualquer família devolve null — o Saida genérico continua mandando', () => {
+    assert.equal(familiaDoRich(richDaFixture('result__message_success.json')), null);
+    assert.equal(familiaDoRich('texto cru'), null);
+    assert.equal(familiaDoRich(null), null);
+    assert.equal(familiaDoRich(undefined), null);
   });
 });
 

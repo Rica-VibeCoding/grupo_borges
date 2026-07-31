@@ -15,13 +15,20 @@ import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { Badge } from '@/components/ui/badge';
+// Extensão `.tsx` explícita de propósito: cada renderer tem um `.ts` irmão de
+// mesmo nome (a lógica testada), e a resolução sem extensão acha o `.ts`
+// primeiro. O componente só sai pelo caminho completo.
+import { AgentResult } from '@/components/renderers/agent-result.tsx';
+import { FetchResult } from '@/components/renderers/fetch-result.tsx';
 import { LinhaExecucao } from '@/components/renderers/linha-execucao';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
+import { ResultList } from '@/components/renderers/result-list.tsx';
 import { Thinking } from '@/components/renderers/thinking';
 
 import {
   execucaoDaParte,
   execucaoDoChip,
+  familiaDoRich,
   type EntradaDaExecucao,
 } from './execucao-do-item';
 
@@ -86,6 +93,19 @@ function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
 /** A escolha da entrada mora em `execucao-do-item.ts`, que tem teste. Aqui só
  *  se desenha o que foi escolhido. */
 function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
+  // O `rich` é o tool_use_result cru. A família foi escolhida (e provada contra
+  // fixture real) no `familiaDoRich`; sem família, `corpoRico` fica undefined e
+  // a LinhaExecucao cai no `Saida` genérico de sempre — caminho intacto.
+  const familia = familiaDoRich(entrada.rich);
+  const corpoRico =
+    familia === 'fetch' ? (
+      <FetchResult valor={entrada.rich} />
+    ) : familia === 'lista' ? (
+      <ResultList valor={entrada.rich} />
+    ) : familia === 'agente' ? (
+      <AgentResult valor={entrada.rich} />
+    ) : undefined;
+
   return (
     <LinhaExecucao
       toolName={entrada.toolName}
@@ -93,6 +113,7 @@ function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
       result={entrada.result}
       isError={entrada.isError}
       estado={entrada.estado}
+      corpoRico={corpoRico}
     />
   );
 }
