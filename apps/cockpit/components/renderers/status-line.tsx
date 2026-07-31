@@ -32,10 +32,10 @@ export function StatusLine({ valor }: { valor: unknown }) {
         {dados.texto}
       </span>
       {dados.pin ? (
-        <Badge style={{ color: 'var(--ck-text-tertiary)' }}>→ {dados.pin.name}</Badge>
+        <Badge style={{ color: 'var(--ck-text-secondary)' }}>→ {dados.pin.name}</Badge>
       ) : null}
       {dados.resumedAgentId ? (
-        <Badge style={{ color: 'var(--ck-text-tertiary)' }}>retomado</Badge>
+        <Badge style={{ color: 'var(--ck-text-secondary)' }}>retomado</Badge>
       ) : null}
     </div>
   );
