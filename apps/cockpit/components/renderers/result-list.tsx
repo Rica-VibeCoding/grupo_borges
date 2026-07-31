@@ -9,7 +9,10 @@
 
 import { useMemo } from 'react';
 
-import { normalizarListaResultado, type ItemDaLista } from './result-list';
+// Extensão `.ts` explícita: sem ela, a resolução do bare specifier ficava
+// ambígua com este próprio arquivo (mesmo nome, .tsx) e o build quebrava —
+// mesma cautela que o corpo-do-item.tsx já usa pra importar daqui de fora.
+import { normalizarListaResultado, type ItemDaLista } from './result-list.ts';
 
 function Linha({ item }: { item: ItemDaLista }) {
   switch (item.tipo) {
