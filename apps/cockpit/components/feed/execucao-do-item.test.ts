@@ -154,6 +154,13 @@ describe('família do rich — quem renderiza o tool_use_result cru', () => {
     assert.equal(familiaDoRich(richDaFixture('result__message_success.json')), 'status');
   });
 
+  it('página publicada cai na família pagina-publicada', () => {
+    assert.equal(
+      familiaDoRich(richDaFixture('result__liveSubscription_path_title_updated_url.json')),
+      'pagina-publicada',
+    );
+  });
+
   it('fora de qualquer família devolve null — o Saida genérico continua mandando', () => {
     assert.equal(familiaDoRich('texto cru'), null);
     assert.equal(familiaDoRich(null), null);

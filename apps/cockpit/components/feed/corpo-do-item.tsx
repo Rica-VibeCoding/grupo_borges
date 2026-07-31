@@ -23,6 +23,7 @@ import { FetchResult } from '@/components/renderers/fetch-result.tsx';
 import { FileContent } from '@/components/renderers/file-content.tsx';
 import { LinhaExecucao } from '@/components/renderers/linha-execucao';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
+import { PublishedPage } from '@/components/renderers/published-page.tsx';
 import { ResultList } from '@/components/renderers/result-list.tsx';
 import { StatusLine } from '@/components/renderers/status-line.tsx';
 import { Thinking } from '@/components/renderers/thinking';
@@ -110,6 +111,8 @@ function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
       <FileContent valor={entrada.rich} />
     ) : familia === 'status' ? (
       <StatusLine valor={entrada.rich} />
+    ) : familia === 'pagina-publicada' ? (
+      <PublishedPage valor={entrada.rich} />
     ) : undefined;
 
   return (
