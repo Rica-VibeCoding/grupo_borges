@@ -84,7 +84,7 @@ que ficam: reconexão real e `sidechain-cluster`.
 |---|---|---|
 | **Daniel** | **a sidebar**, em rodada dedicada com contexto limpo | `components/shell/**`, `globals.css`, `layout.tsx` |
 | **Hiro** | **os 2 renderers P0** + o plano de execução do encanamento | `components/renderers/**` |
-| **Tara** | livre — última entrega foi o `offline` | `lib/envio.ts`, exceção pontual em `apps/api/` |
+| **Tara** | livre — entregou `agent-result` (G7), sem commit, falta revisão cruzada | `components/renderers/agent-result.*` |
 
 **O que foi pedido a cada um, para conferir a entrega contra o pedido:**
 
@@ -174,10 +174,14 @@ Ao terminar, **desmontar a bancada** (gate §7): o `canario` precisa sair do
 
 ## 10. Pendências técnicas conhecidas
 
-- **O `tool_use_result` rico é descartado antes de chegar à tela**
-  (`render-items.ts:319-332` só lê chaves de subagente). Os corpos G1–G8 da matriz de
-  renderers **não podem ser construídos** enquanto o pipeline não carregar o payload nos
-  itens. Pré-requisito de onda, não detalhe de renderer.
+- **O `tool_use_result` rico já chega ao core e ao tipo React** — resolvido em 30/07:
+  `ToolResultLookup` no `packages/cockpit-core` (Hiro, `48de5c8` + `706a04f`) e
+  `EntradaDaExecucao` ganhando `rich?: unknown` a partir de `achado?.rich` (Daniel,
+  `08ec99f`). **O que falta é só a ramificação:** `corpo-do-item.tsx` ainda não lê
+  `rich` pra escolher o renderer (zero ocorrências, conferido 30/07 ~20h30) —
+  território do Hiro, próxima peça dele por decisão do próprio Daniel (nota do
+  `08ec99f`). Enquanto não fechar, `fetch-result`, `result-list` e `agent-result`
+  ficam **órfãos**: construídos, testados contra fixture, sem aparecer na tela real.
 - **Lacunas P0 da matriz:** `fetch-result` (500 eventos) e `result-list`/WebSearch (336).
   Inventário completo em `cockpit-v2-medicao/auditoria-tema-30-07.md`.
 - **`/destrava` e `/clear` não ganham campo `confirmed`.** Não há sinal observável
@@ -186,3 +190,13 @@ Ao terminar, **desmontar a bancada** (gate §7): o `canario` precisa sair do
   fácil: campo novo que também mente é pior que campo ausente.
 - **Supervisão** é um cron de 5 min **session-only** — morre com a sessão do Pavan e
   para sem avisar ninguém. Este arquivo é o antídoto.
+- **`agent-result` (Tara, G7, 30/07 noite):** 3 arquivos novos em
+  `components/renderers/` (normalizador + componente + teste), 3/3 testes novos,
+  suíte completa 248/248, `tsc --noEmit` limpo. Ela mesma corrigiu 2 furos num passo
+  interno (`--ck-text-tertiary` indevido em corpo 13px; cor de `completed` mapeada
+  pro estado errado) — mas o `collab_tool_call` que deveria acionar revisor externo
+  voltou com `receiver_thread_ids` vazio, então **nenhuma revisão de Kimi/Hiro
+  aconteceu ainda** (`cockpit-v2-ownership.md` §"papéis fixos": revisão de frontend
+  é sempre Kimi/Hiro, nunca o próprio autor). Sem commit. Mesmo revisado, só aparece
+  na tela depois que a ramificação em `corpo-do-item.tsx` (item acima) escolher
+  `AgentResult` pra essa família.
