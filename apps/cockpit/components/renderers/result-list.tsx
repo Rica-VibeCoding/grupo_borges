@@ -19,7 +19,7 @@ function Linha({ item }: { item: ItemDaLista }) {
     case 'link':
       return (
         <a
-          className="ck-link block min-w-0 truncate text-[13px]"
+          className="ck-link block min-w-0 truncate text-sm"
           href={item.url}
           target="_blank"
           rel="noreferrer"
@@ -30,13 +30,13 @@ function Linha({ item }: { item: ItemDaLista }) {
       );
     case 'caminho':
       return (
-        <span className="block min-w-0 truncate font-mono text-[13px] text-[var(--ck-text-primary)]">
+        <span className="block min-w-0 truncate font-mono text-sm text-[var(--ck-text-primary)]">
           {item.caminho}
         </span>
       );
     case 'objeto':
       return (
-        <span className="flex min-w-0 items-baseline gap-[var(--ck-space-2)] text-[13px]">
+        <span className="flex min-w-0 items-baseline gap-[var(--ck-space-2)] text-sm">
           <span className="min-w-0 truncate text-[var(--ck-text-primary)]">{item.nome}</span>
           {item.detalhe ? (
             <span className="min-w-0 flex-1 truncate font-mono text-[var(--ck-text-tertiary)]">
@@ -47,7 +47,7 @@ function Linha({ item }: { item: ItemDaLista }) {
       );
     case 'texto':
       return (
-        <span className="block min-w-0 truncate text-[13px] text-[var(--ck-text-secondary)]">
+        <span className="block min-w-0 truncate text-sm text-[var(--ck-text-secondary)]">
           {item.texto}
         </span>
       );
@@ -62,11 +62,11 @@ export function ResultList({ valor }: { valor: unknown }) {
     <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
       {dados.titulo ? (
         <header className="flex min-h-[44px] min-w-0 items-center gap-[var(--ck-space-2)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)]">
-          <span className="min-w-0 flex-1 truncate font-sans text-[13px] text-[var(--ck-text-secondary)]">
+          <span className="min-w-0 flex-1 truncate font-sans text-sm text-[var(--ck-text-secondary)]">
             {dados.titulo}
           </span>
           {typeof dados.total === 'number' ? (
-            <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-text-tertiary)]">
+            <span className="ck-tabular shrink-0 font-mono text-sm text-[var(--ck-text-tertiary)]">
               {dados.total} {dados.total === 1 ? 'item' : 'itens'}
             </span>
           ) : null}

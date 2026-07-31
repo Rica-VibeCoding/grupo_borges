@@ -95,7 +95,7 @@ export function CodeBlock({ children, className, ...props }: CodeBlockProps) {
       <div className="flex justify-end">
         <button
           type="button"
-          className="ck-veil min-h-[var(--ck-touch-min)] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-2)] font-sans text-[13px] text-[var(--ck-text-secondary)]"
+          className="ck-veil min-h-[var(--ck-touch-min)] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-2)] font-sans text-sm text-[var(--ck-text-secondary)]"
           onClick={handleCopy}
           aria-live="polite"
         >
@@ -105,7 +105,7 @@ export function CodeBlock({ children, className, ...props }: CodeBlockProps) {
       <pre
         ref={preRef}
         className={mergeMarkdownClassName(
-          'max-w-full overflow-x-auto font-mono text-[13px] leading-[1.55] text-[var(--ck-text-primary)] [&>code]:bg-transparent [&>code]:p-0',
+          'max-w-full overflow-x-auto font-mono text-sm leading-body text-[var(--ck-text-primary)] [&>code]:bg-transparent [&>code]:p-0',
           className,
         )}
         {...props}

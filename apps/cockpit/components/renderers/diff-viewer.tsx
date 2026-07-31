@@ -87,16 +87,16 @@ export function DiffViewer({
       aria-label={`Diff de ${filePath}`}
     >
       <header className="flex min-w-0 items-center gap-[var(--ck-space-3)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-4)] py-[var(--ck-space-3)]">
-        <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{filePath}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-sm">{filePath}</span>
         {/* U+2212 (−), não hífen: o contrato §2.4 herda isso do Codex e é o que
             faz o par +/− alinhar em tabular-nums. O marcador de cada LINHA do
             diff continua sendo `-` — lá é sintaxe de diff, não estatística. */}
         {view.status === 'ready' ? (
           <>
-            <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-diff-add)]">
+            <span className="ck-tabular shrink-0 font-mono text-sm text-[var(--ck-diff-add)]">
               +{view.summary.additions}
             </span>
-            <span className="ck-tabular shrink-0 font-mono text-[13px] text-[var(--ck-diff-del)]">
+            <span className="ck-tabular shrink-0 font-mono text-sm text-[var(--ck-diff-del)]">
               −{view.summary.removals}
             </span>
           </>
@@ -104,12 +104,12 @@ export function DiffViewer({
       </header>
 
       {view.status === 'omitted' ? (
-        <p className="px-[var(--ck-space-4)] py-[var(--ck-space-3)] text-[13px] text-[var(--ck-fg-muted)]">
+        <p className="px-[var(--ck-space-4)] py-[var(--ck-space-3)] text-sm text-[var(--ck-fg-muted)]">
           Diff omitido por tamanho: versão anterior com {view.oldLineCount} linhas e
           versão nova com {view.newLineCount} linhas.
         </p>
       ) : (
-        <div className="max-w-full overflow-x-auto font-mono text-[13px] leading-[1.6]">
+        <div className="max-w-full overflow-x-auto font-mono text-sm leading-[1.6]">
           {view.blocks.map((block) => {
             if (block.type === 'line') {
               const key = `${block.line.type}-${block.line.oldLineNumber ?? 'x'}-${block.line.newLineNumber ?? 'x'}`;
@@ -136,7 +136,7 @@ export function DiffViewer({
               <button
                 key={block.id}
                 type="button"
-                className="flex min-h-[44px] w-full min-w-max items-center border-y border-[var(--ck-edge-hairline)] px-[var(--ck-space-4)] text-left font-mono text-[13px]"
+                className="flex min-h-[44px] w-full min-w-max items-center border-y border-[var(--ck-edge-hairline)] px-[var(--ck-space-4)] text-left font-mono text-sm"
                 onClick={() => expandBlock(block.id)}
                 aria-label={`Expandir ${block.lines.length} linhas de contexto`}
               >

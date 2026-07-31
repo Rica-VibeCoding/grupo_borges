@@ -53,17 +53,17 @@ export function FetchResult({ valor }: { valor: unknown }) {
     <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
       <header className="flex min-h-[44px] min-w-0 items-center gap-[var(--ck-space-3)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)]">
         <span
-          className="shrink-0 font-mono text-[13px] font-medium"
+          className="shrink-0 font-mono text-sm font-medium"
           style={{ color: TOM_COR[tom] }}
         >
           {dados.codigo}
           {dados.textoDoCodigo ? ` ${dados.textoDoCodigo}` : ''}
         </span>
-        <span className="shrink-0 font-mono text-[13px] text-[var(--ck-text-secondary)]">
+        <span className="shrink-0 font-mono text-sm text-[var(--ck-text-secondary)]">
           {formatoBytes(dados.bytes)} · {formatoDuracao(dados.duracaoMs)}
         </span>
         <a
-          className="ck-link min-w-0 flex-1 truncate font-mono text-[13px]"
+          className="ck-link min-w-0 flex-1 truncate font-mono text-sm"
           href={dados.url}
           target="_blank"
           rel="noreferrer"
@@ -76,7 +76,7 @@ export function FetchResult({ valor }: { valor: unknown }) {
         {excedente > 0 ? (
           <button
             type="button"
-            className="ck-veil mt-[var(--ck-space-2)] min-h-[44px] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-[13px] text-[var(--ck-text-secondary)]"
+            className="ck-veil mt-[var(--ck-space-2)] min-h-[44px] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-sm text-[var(--ck-text-secondary)]"
             onClick={() => setTudo((v) => !v)}
           >
             {tudo ? 'recolher' : `ver tudo (+${excedente} linhas)`}

@@ -58,7 +58,7 @@ function Resumo({ dados }: { dados: AgentResultConcluido }) {
       {itens.map((item) => (
         <li
           key={item}
-          className="ck-tabular font-mono text-[13px] text-[var(--ck-text-secondary)]"
+          className="ck-tabular font-mono text-sm text-[var(--ck-text-secondary)]"
         >
           {item}
         </li>
@@ -97,15 +97,15 @@ export function AgentResult({ valor }: { valor: unknown }) {
   return (
     <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
       <header className="flex min-h-[44px] min-w-0 flex-wrap items-center gap-x-[var(--ck-space-3)] gap-y-[var(--ck-space-1)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)] py-[var(--ck-space-2)]">
-        <span className="min-w-0 truncate font-mono text-[13px] font-medium text-[var(--ck-text-primary)]">
+        <span className="min-w-0 truncate font-mono text-sm font-medium text-[var(--ck-text-primary)]">
           {dados.agentId}
         </span>
-        <span className="font-sans text-[13px] text-[var(--ck-text-secondary)]">{tipo}</span>
-        <span className="font-mono text-[13px] text-[var(--ck-text-secondary)]">
+        <span className="font-sans text-sm text-[var(--ck-text-secondary)]">{tipo}</span>
+        <span className="font-mono text-sm text-[var(--ck-text-secondary)]">
           {dados.resolvedModel}
         </span>
         <span
-          className={`font-mono text-[13px] ${classeDeCorDoStatus(dados.status)}`}
+          className={`font-mono text-sm ${classeDeCorDoStatus(dados.status)}`}
         >
           {dados.status}
         </span>
@@ -113,14 +113,14 @@ export function AgentResult({ valor }: { valor: unknown }) {
 
       {dados.variante === 'assincrono' ? (
         <div className="flex min-w-0 flex-col gap-[var(--ck-space-2)] p-[var(--ck-space-3)]">
-          <p className="font-sans text-[13px] text-[var(--ck-text-primary)]">
+          <p className="font-sans text-sm text-[var(--ck-text-primary)]">
             {dados.description}
           </p>
-          <p className="break-all font-mono text-[13px] text-[var(--ck-text-secondary)]">
+          <p className="break-all font-mono text-sm text-[var(--ck-text-secondary)]">
             output: {dados.outputFile}
           </p>
           {!dados.canReadOutputFile ? (
-            <p className="font-sans text-[13px] text-[var(--ck-state-attention)]">
+            <p className="font-sans text-sm text-[var(--ck-state-attention)]">
               O arquivo de saída ainda não pode ser lido.
             </p>
           ) : null}
@@ -133,7 +133,7 @@ export function AgentResult({ valor }: { valor: unknown }) {
             {conteudo.excedente > 0 ? (
               <button
                 type="button"
-                className="ck-veil mt-[var(--ck-space-2)] min-h-[44px] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-[13px] text-[var(--ck-text-secondary)]"
+                className="ck-veil mt-[var(--ck-space-2)] min-h-[44px] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-sm text-[var(--ck-text-secondary)]"
                 aria-expanded={tudo}
                 onClick={() =>
                   setExpandidoPara((valorAtual) =>

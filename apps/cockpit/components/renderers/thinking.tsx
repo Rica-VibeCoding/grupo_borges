@@ -35,13 +35,13 @@ function ThinkingDisclosure({
     >
       <button
         type="button"
-        className="ck-veil flex min-h-[44px] w-full min-w-0 items-center gap-[var(--ck-space-2)] px-[var(--ck-space-3)] text-left font-sans text-[13px] text-[var(--ck-text-primary)]"
+        className="ck-veil flex min-h-[44px] w-full min-w-0 items-center gap-[var(--ck-space-2)] px-[var(--ck-space-3)] text-left font-sans text-sm text-[var(--ck-text-primary)]"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         aria-controls={open ? bodyId : undefined}
       >
         <span className="min-w-0 flex-1 font-medium">Raciocínio</span>
-        <span className="shrink-0 font-mono text-[13px] text-[var(--ck-text-secondary)]">
+        <span className="shrink-0 font-mono text-sm text-[var(--ck-text-secondary)]">
           {lineLabel(lineCount)}
         </span>
         <span className="shrink-0 text-[var(--ck-state-thinking)]" aria-hidden="true">

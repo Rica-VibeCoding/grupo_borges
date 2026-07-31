@@ -56,7 +56,7 @@ function Canal({
           : undefined
       }
     >
-      <p id={`${id}-rotulo`} className="m-0 font-mono text-[13px] text-[var(--ck-text-secondary)]">
+      <p id={`${id}-rotulo`} className="m-0 font-mono text-sm text-[var(--ck-text-secondary)]">
         {nome}
       </p>
       <div id={`${id}-conteudo`}>
@@ -81,7 +81,7 @@ function Canal({
       {conteudo.excedente > 0 ? (
         <button
           type="button"
-          className="ck-veil min-h-[var(--ck-touch-min)] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-[13px] text-[var(--ck-text-secondary)]"
+          className="ck-veil min-h-[var(--ck-touch-min)] rounded-[var(--ck-radius-chip)] px-[var(--ck-space-3)] font-sans text-sm text-[var(--ck-text-secondary)]"
           aria-expanded={tudo}
           aria-controls={`${id}-conteudo`}
           onClick={aoAlternar}
@@ -113,7 +113,7 @@ export function ShellOutput({ valor }: { valor: unknown }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-[var(--ck-space-3)]">
-      <div className="flex min-w-0 flex-wrap items-center gap-[var(--ck-space-2)] font-mono text-[13px] text-[var(--ck-text-secondary)]">
+      <div className="flex min-w-0 flex-wrap items-center gap-[var(--ck-space-2)] font-mono text-sm text-[var(--ck-text-secondary)]">
         {dados.interrompido ? (
           <span className="text-[var(--ck-state-fail)]">interrompido</span>
         ) : null}
@@ -140,13 +140,13 @@ export function ShellOutput({ valor }: { valor: unknown }) {
       />
 
       {dados.interpretacaoDoRetorno ? (
-        <p className="m-0 font-sans text-[13px] text-[var(--ck-text-secondary)]">
+        <p className="m-0 font-sans text-sm text-[var(--ck-text-secondary)]">
           {dados.interpretacaoDoRetorno}
         </p>
       ) : null}
 
       {dados.caminhoDaSaidaCompleta ? (
-        <p className="m-0 flex min-w-0 font-mono text-[13px] text-[var(--ck-text-secondary)]">
+        <p className="m-0 flex min-w-0 font-mono text-sm text-[var(--ck-text-secondary)]">
           <span className="shrink-0">saída completa em&nbsp;</span>
           <span className="min-w-0 truncate">{caminho?.diretorio}</span>
           <span className="shrink-0">{caminho?.arquivo}</span>

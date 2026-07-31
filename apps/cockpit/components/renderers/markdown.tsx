@@ -38,7 +38,7 @@ const MARKDOWN_COMPONENTS: Components = {
     return (
       <code
         className={mergeMarkdownClassName(
-          'rounded-[var(--ck-radius-chip)] bg-[var(--ck-surface-raised)] px-[var(--ck-space-1)] py-px font-mono text-[13px] text-[var(--ck-text-primary)]',
+          'rounded-[var(--ck-radius-chip)] bg-[var(--ck-surface-raised)] px-[var(--ck-space-1)] py-px font-mono text-sm text-[var(--ck-text-primary)]',
           className,
         )}
         {...props}
@@ -49,21 +49,21 @@ const MARKDOWN_COMPONENTS: Components = {
   },
   h1({ children, ...props }) {
     return (
-      <h1 className="font-semibold text-[var(--ck-text-lg)] leading-[1.2]" {...props}>
+      <h1 className="font-semibold text-[var(--ck-text-lg)] leading-hero" {...props}>
         {children}
       </h1>
     );
   },
   h2({ children, ...props }) {
     return (
-      <h2 className="font-semibold text-[var(--ck-text-md)] leading-[1.2]" {...props}>
+      <h2 className="font-semibold text-[var(--ck-text-md)] leading-hero" {...props}>
         {children}
       </h2>
     );
   },
   h3({ children, ...props }) {
     return (
-      <h3 className="font-semibold text-[13px] leading-[1.55]" {...props}>
+      <h3 className="font-semibold text-sm leading-body" {...props}>
         {children}
       </h3>
     );
@@ -113,7 +113,7 @@ const MARKDOWN_COMPONENTS: Components = {
     return (
       <div className="max-w-full overflow-x-auto">
         <table
-          className="min-w-max border-collapse font-sans text-[13px] leading-[1.55]"
+          className="min-w-max border-collapse font-sans text-sm leading-body"
           {...props}
         >
           {children}
@@ -162,7 +162,7 @@ export function AssistantMarkdown({ children, className = '' }: AssistantMarkdow
 
   return (
     <div
-      className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-3)] overflow-hidden font-sans text-[13px] leading-[1.55] text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${className}`}
+      className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-3)] overflow-hidden font-sans text-sm leading-body text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${className}`}
     >
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}

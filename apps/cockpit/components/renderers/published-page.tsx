@@ -27,16 +27,16 @@ export function PublishedPage({ valor }: { valor: unknown }) {
   return (
     <section className="max-w-full overflow-hidden rounded-[var(--ck-radius-frame)] border border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-raised)]">
       <header className="flex min-h-[44px] min-w-0 items-center gap-[var(--ck-space-3)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-3)]">
-        <span className="min-w-0 flex-1 truncate font-sans text-[13px] font-medium text-[var(--ck-text-primary)]">
+        <span className="min-w-0 flex-1 truncate font-sans text-sm font-medium text-[var(--ck-text-primary)]">
           {dados.titulo}
         </span>
-        <span className="shrink-0 font-mono text-[13px] text-[var(--ck-text-secondary)]">
+        <span className="shrink-0 font-mono text-sm text-[var(--ck-text-secondary)]">
           {dados.atualizado ? 'atualizado' : 'publicado'} · v{dados.versao}
         </span>
       </header>
       <div className="max-w-full overflow-x-auto p-[var(--ck-space-3)]">
         <a
-          className="ck-link block min-w-0 truncate font-mono text-[13px]"
+          className="ck-link block min-w-0 truncate font-mono text-sm"
           href={dados.url}
           target="_blank"
           rel="noreferrer"

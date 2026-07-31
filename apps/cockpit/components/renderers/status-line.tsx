@@ -22,7 +22,7 @@ export function StatusLine({ valor }: { valor: unknown }) {
   if (!dados) return null;
 
   return (
-    <div className="flex min-w-0 flex-wrap items-baseline gap-[var(--ck-space-2)] font-sans text-[13px]">
+    <div className="flex min-w-0 flex-wrap items-baseline gap-[var(--ck-space-2)] font-sans text-sm">
       <Badge
         style={{ color: dados.sucesso ? 'var(--ck-state-ok)' : 'var(--ck-state-fail)' }}
       >
