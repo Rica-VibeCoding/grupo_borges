@@ -137,8 +137,24 @@ describe('família do rich — quem renderiza o tool_use_result cru', () => {
     );
   });
 
+  it('as duas origens de conteúdo de arquivo caem na família arquivo', () => {
+    assert.equal(familiaDoRich(richDaFixture('result__file_type.json')), 'arquivo');
+    assert.equal(
+      familiaDoRich(richDaFixture('result__content_contentType_isBase64_method_path.json')),
+      'arquivo',
+    );
+  });
+
+  it('linhas de status caem na família status — inclusive a de falha', () => {
+    assert.equal(familiaDoRich(richDaFixture('result__commandName_success.json')), 'status');
+    assert.equal(familiaDoRich(richDaFixture('result__message_pin_success.json')), 'status');
+    // success:false é da família G4 igual — antes da ramificação do G4 este
+    // teste morava no "null" de baixo; quem mudar o contrato do status-line
+    // tem de passar por aqui.
+    assert.equal(familiaDoRich(richDaFixture('result__message_success.json')), 'status');
+  });
+
   it('fora de qualquer família devolve null — o Saida genérico continua mandando', () => {
-    assert.equal(familiaDoRich(richDaFixture('result__message_success.json')), null);
     assert.equal(familiaDoRich('texto cru'), null);
     assert.equal(familiaDoRich(null), null);
     assert.equal(familiaDoRich(undefined), null);

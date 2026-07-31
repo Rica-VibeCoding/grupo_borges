@@ -20,9 +20,11 @@ import { Badge } from '@/components/ui/badge';
 // primeiro. O componente só sai pelo caminho completo.
 import { AgentResult } from '@/components/renderers/agent-result.tsx';
 import { FetchResult } from '@/components/renderers/fetch-result.tsx';
+import { FileContent } from '@/components/renderers/file-content.tsx';
 import { LinhaExecucao } from '@/components/renderers/linha-execucao';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
 import { ResultList } from '@/components/renderers/result-list.tsx';
+import { StatusLine } from '@/components/renderers/status-line.tsx';
 import { Thinking } from '@/components/renderers/thinking';
 
 import {
@@ -104,6 +106,10 @@ function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
       <ResultList valor={entrada.rich} />
     ) : familia === 'agente' ? (
       <AgentResult valor={entrada.rich} />
+    ) : familia === 'arquivo' ? (
+      <FileContent valor={entrada.rich} />
+    ) : familia === 'status' ? (
+      <StatusLine valor={entrada.rich} />
     ) : undefined;
 
   return (

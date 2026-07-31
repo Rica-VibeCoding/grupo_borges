@@ -15,7 +15,9 @@ import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/re
 // como ESM — mesma convenção do `gramatica.ts` e do `acoes-rapidas.ts`.
 import { normalizarAgentResult } from '../renderers/agent-result.ts';
 import { normalizarFetchResult } from '../renderers/fetch-result.ts';
+import { normalizarConteudoDeArquivo } from '../renderers/file-content.ts';
 import { normalizarListaResultado } from '../renderers/result-list.ts';
+import { normalizarLinhaDeStatus } from '../renderers/status-line.ts';
 
 export type EntradaDaExecucao = {
   toolName: string;
@@ -45,11 +47,15 @@ export function usoDoChip(item: Chip): UsoDeFerramenta | undefined {
  *  só desempate defensivo, da mais quente para a mais rara na matriz.
  *  `null` = nenhuma família: o corpo fica com o `Saida` genérico de sempre.
  *  A escolha mora aqui (testada contra fixture real); o `.tsx` só desenha. */
-export function familiaDoRich(rich: unknown): 'fetch' | 'lista' | 'agente' | null {
+export function familiaDoRich(
+  rich: unknown,
+): 'fetch' | 'lista' | 'agente' | 'arquivo' | 'status' | null {
   if (rich === null || rich === undefined) return null;
   if (normalizarFetchResult(rich)) return 'fetch';
   if (normalizarListaResultado(rich)) return 'lista';
   if (normalizarAgentResult(rich)) return 'agente';
+  if (normalizarConteudoDeArquivo(rich)) return 'arquivo';
+  if (normalizarLinhaDeStatus(rich)) return 'status';
   return null;
 }
 
