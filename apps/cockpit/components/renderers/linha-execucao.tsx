@@ -44,7 +44,7 @@
  *    tela inteira, e errar por 6px abre a linha vizinha, que é reversível com
  *    outro toque. Onde há botão isolado (copiar, mostrar o resto), 44px vale.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { copyText } from '../../lib/clipboard';
 import { fallbackCopy } from './copia-fallback';
@@ -75,6 +75,11 @@ const LINHAS_DE_PRIMEIRA = 120;
 export type LinhaExecucaoProps = EntradaExecucao & {
   /** Começa aberta. Só para a vitrine e para o bloco ativo do stream. */
   aberta?: boolean;
+  /** Corpo já resolvido por quem chama — substitui o `Saida` genérico quando
+   *  presente. Escolher QUAL renderer (fetch-result, agent-result, etc.) é
+   *  decisão de fora, em `components/feed/corpo-do-item.tsx`; aqui só existe
+   *  o encaixe, aditivo e sem tocar no caminho atual. */
+  corpoRico?: ReactNode;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -244,7 +249,11 @@ function Saida({ corpo, falhou }: { corpo: string; falhou: boolean }) {
 
 /* -------------------------------------------------------------------------- */
 
-export function LinhaExecucao({ aberta: abertaInicial = false, ...entrada }: LinhaExecucaoProps) {
+export function LinhaExecucao({
+  aberta: abertaInicial = false,
+  corpoRico,
+  ...entrada
+}: LinhaExecucaoProps) {
   const [aberta, setAberta] = useState(abertaInicial);
   const e = useMemo(() => leExecucao(entrada), [entrada]);
 
@@ -374,7 +383,9 @@ export function LinhaExecucao({ aberta: abertaInicial = false, ...entrada }: Lin
             </div>
           ) : null}
 
-          {ehEdicao ? (
+          {corpoRico ? (
+            corpoRico
+          ) : ehEdicao ? (
             <DiffViewer
               filePath={String(args.file_path ?? '')}
               oldString={String(args.old_string)}
