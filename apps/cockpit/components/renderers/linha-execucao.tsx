@@ -266,9 +266,21 @@ export function LinhaExecucao({
     typeof args.old_string === 'string' &&
     typeof args.new_string === 'string';
 
-  // Na edição o pedido não se repete: o caminho e o saldo já estão na linha e no
-  // cabeçalho do diff. Mostrar de novo era o mesmo dado três vezes na mesma tela.
-  const pedido = ehEdicao
+  // G2 sub-formato "create" (matriz, 33 result + 40 tool Write): um Write de
+  // arquivo NOVO não tem old_string/new_string — só file_path+content. Mesmo
+  // DiffViewer da edição, oldString vazia: prepareDiff trata '' como zero
+  // linhas e todo o conteúdo novo sai como 'add' — é o diff correto pra "não
+  // existia, agora existe", sem precisar do tool_use_result rico (que só
+  // chega depois do resultado; os args existem desde o 'rodando').
+  const ehCriacao =
+    entrada.toolName === 'Write' &&
+    typeof args.file_path === 'string' &&
+    typeof args.content === 'string';
+
+  // Na edição e na criação o pedido não se repete: o caminho e o saldo já
+  // estão na linha e no cabeçalho do diff. Mostrar de novo era o mesmo dado
+  // três vezes na mesma tela.
+  const pedido = ehEdicao || ehCriacao
     ? ''
     : ['command', 'query', 'prompt', 'url', 'file_path']
         .map((chave) => args[chave])
@@ -391,6 +403,8 @@ export function LinhaExecucao({
               oldString={String(args.old_string)}
               newString={String(args.new_string)}
             />
+          ) : ehCriacao ? (
+            <DiffViewer filePath={String(args.file_path)} oldString="" newString={String(args.content)} />
           ) : corpo ? (
             <Saida corpo={corpo} falhou={e.desfecho === 'falhou'} />
           ) : e.desfecho === 'rodando' ? (
