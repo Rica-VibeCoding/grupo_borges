@@ -2,28 +2,25 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
+from collections import defaultdict
+from pathlib import Path
 import re
 import shlex
 import subprocess
 import threading
 import time
 import uuid
-from collections import defaultdict
-from collections.abc import Callable
-from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal
 
 import libtmux
 from libtmux import exc as libtmux_exc
 
+# Delay entre paste-buffer e Enter pra CC consolidar o paste. Default 150ms
+# (Hermes-style validado em prod). Configurável via env pra ajustar sob carga
+# sem deploy — VPS 8GB pode precisar de 300-500ms em pico.
+_PASTE_SUBMIT_DELAY_S = float(os.getenv("COCKPIT_PASTE_DELAY_MS", "150")) / 1000.0
 _LOAD_BUFFER_TIMEOUT_S = 5.0
-_SUBMIT_CONFIRM_TIMEOUT_S = 2.0
-_SUBMIT_POLL_INTERVAL_S = 0.05
-_SUBMIT_MAX_ENTER_ATTEMPTS = 3
-
-log = logging.getLogger(__name__)
 
 # Lock por session_name pra evitar race em dispatches concorrentes no mesmo
 # pane: sem isso, dispatch B pode injetar paste/Enter entre o paste e o Enter
@@ -120,8 +117,6 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Variante que preserva ESC (0x1b) pra `preserve_ansi=True` — strippar o ESC
 # anula as escape sequences ANSI (vira `[31m...` literal no front).
 _CONTROL_CHARS_KEEP_ESC = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
-_INPUT_PROMPT_MARKERS = ("❯", "›")
-_PASTED_TEXT_MARKER = re.compile(r"\[Pasted text #[^]]+]")
 _BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
     "claude_code": re.compile(r"╭|Claude Code v\d"),
     "codex": re.compile("›"),
@@ -150,158 +145,6 @@ _CLI_COMMANDS = {
     "claude_code": lambda m: f"claude --dangerously-skip-permissions --model {shlex.quote(m)}",
     "codex": _codex_command,
 }
-
-
-class _PaneInputSnapshot(NamedTuple):
-    state: Literal["empty", "armed", "unknown"]
-    content: str
-
-
-def _is_input_border(line: str) -> bool:
-    stripped = line.strip()
-    return len(stripped) >= 10 and set(stripped) <= {"─", "━", "-"}
-
-
-def _capture_input_snapshot(pane: libtmux.Pane) -> _PaneInputSnapshot:
-    """Lê somente a caixa de input que contém o cursor atual.
-
-    Claude Code e Codex desenham a caixa entre separadores horizontais. Exigir
-    esse contorno evita confundir um item ``❯`` do histórico (ou de um modal)
-    com o prompt editável atual.
-    """
-    try:
-        position = pane.cmd("display-message", "-p", "#{cursor_x}\t#{cursor_y}")
-    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
-        return _PaneInputSnapshot("unknown", "")
-    if position.returncode != 0 or not position.stdout:
-        return _PaneInputSnapshot("unknown", "")
-    try:
-        cursor_x, cursor_y = map(int, position.stdout[0].split("\t", 1))
-        pane_height = int(pane.pane_height)
-    except (TypeError, ValueError):
-        return _PaneInputSnapshot("unknown", "")
-
-    try:
-        lines = pane.capture_pane(
-            start=0,
-            end=max(0, pane_height - 1),
-            escape_sequences=False,
-            join_wrapped=False,
-        )
-    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
-        return _PaneInputSnapshot("unknown", "")
-    if not lines or cursor_y >= len(lines):
-        return _PaneInputSnapshot("unknown", "")
-
-    top_border = next(
-        (row for row in range(cursor_y - 1, -1, -1) if _is_input_border(lines[row])),
-        None,
-    )
-    bottom_border = next(
-        (
-            row
-            for row in range(cursor_y + 1, len(lines))
-            if _is_input_border(lines[row])
-        ),
-        None,
-    )
-    if top_border is None or bottom_border is None:
-        return _PaneInputSnapshot("unknown", "")
-
-    prompt_row = next(
-        (
-            row
-            for row in range(top_border + 1, cursor_y + 1)
-            if lines[row].lstrip().startswith(_INPUT_PROMPT_MARKERS)
-        ),
-        None,
-    )
-    if prompt_row is None:
-        return _PaneInputSnapshot("unknown", "")
-
-    content_lines = lines[prompt_row:bottom_border]
-    first = content_lines[0].lstrip()
-    content_lines[0] = first[1:].lstrip(" \u00a0")
-    content = "\n".join(line.rstrip() for line in content_lines).strip()
-    if cursor_y == prompt_row and cursor_x <= 2:
-        return _PaneInputSnapshot("empty", content)
-    return _PaneInputSnapshot("armed", content)
-
-
-def _normalize_visible_text(value: str) -> str:
-    return re.sub(r"\s+", " ", value.replace("\u00a0", " ")).strip()
-
-
-def _snapshot_contains_payload(snapshot: _PaneInputSnapshot, text: str) -> bool:
-    if snapshot.state != "armed":
-        return False
-    visible = _normalize_visible_text(snapshot.content)
-    expected = _normalize_visible_text(text)
-    if _PASTED_TEXT_MARKER.search(snapshot.content):
-        return True
-    if not expected:
-        return False
-    # Inputs longos podem perder o começo quando a caixa ocupa toda a altura;
-    # o sufixo ainda identifica o payload sem reenviar texto de outra pessoa.
-    needle = expected if len(expected) <= 160 else expected[-80:]
-    return needle in visible
-
-
-def _count_payload_prompt_lines(pane: libtmux.Pane, text: str) -> int:
-    """Conta ocorrências visíveis do payload em linhas de prompt/transcrito.
-
-    A contagem anterior ao paste permite reconhecer a linha que entrou mesmo
-    quando o próprio comando abre um overlay (`/status`, `/model`, etc.) e a
-    caixa de input deixa de existir. Duplicatas antigas não geram falso positivo
-    porque a confirmação exige que a contagem aumente.
-    """
-    expected = _normalize_visible_text(text)
-    if not expected or "\n" in text:
-        return 0
-    needle = expected if len(expected) <= 160 else expected[-80:]
-    try:
-        lines = pane.capture_pane(
-            start=0,
-            end=max(0, int(pane.pane_height) - 1),
-            escape_sequences=False,
-            join_wrapped=False,
-        )
-    except (
-        libtmux_exc.LibTmuxException,
-        AttributeError,
-        IndexError,
-        TypeError,
-        ValueError,
-    ):
-        return 0
-    count = 0
-    for row, line in enumerate(lines):
-        stripped = line.lstrip()
-        if not stripped.startswith(_INPUT_PROMPT_MARKERS):
-            continue
-        block = [stripped[1:].lstrip(" \u00a0")]
-        for continuation in lines[row + 1 :]:
-            if _is_input_border(continuation):
-                break
-            if continuation.lstrip().startswith(_INPUT_PROMPT_MARKERS):
-                break
-            block.append(continuation.rstrip())
-        if needle in _normalize_visible_text("\n".join(block)):
-            count += 1
-    return count
-
-
-def _wait_for_input(
-    pane: libtmux.Pane,
-    predicate: Callable[[_PaneInputSnapshot], bool],
-    deadline: float,
-) -> _PaneInputSnapshot | None:
-    while time.monotonic() < deadline:
-        snapshot = _capture_input_snapshot(pane)
-        if predicate(snapshot):
-            return snapshot
-        time.sleep(_SUBMIT_POLL_INTERVAL_S)
-    return None
 
 
 def _create_empty_session_sync(session_name: str) -> None:
@@ -531,27 +374,11 @@ def _send_message_sync(session_name: str, text: str) -> bool:
         if current_cmd not in _EXPECTED_PANE_COMMANDS:
             return False
 
-        try:
-            prior_prompt_count = _count_payload_prompt_lines(pane, sanitized)
-
-            # Sequência detalhada na docstring de send_message. -p (bracketed
-            # paste) é crítico pra multilinha: sem ele tmux converte \n → CR e
-            # cada linha submete separado. Gotcha: extended-keys-format=csi-u
-            # faz CC perder \n dentro do bracket (anthropics/claude-code#43169).
-            deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
-            pane.cmd("send-keys", "C-u")
-            if _wait_for_input(
-                pane,
-                lambda snapshot: snapshot.state == "empty",
-                deadline,
-            ) is None:
-                log.warning(
-                    "tmux input não observável antes do paste: session=%s",
-                    session_name,
-                )
-                return False
-        except libtmux_exc.LibTmuxException:
-            return False
+        # Sequência detalhada na docstring de send_message. -p (bracketed paste)
+        # é crítico pra multilinha: sem ele tmux converte \n → CR e cada linha
+        # submete separado. Gotcha: extended-keys-format=csi-u no tmux faz CC
+        # perder \n dentro do bracket (anthropics/claude-code#43169).
+        pane.cmd("send-keys", "C-u")
 
         buf_name = f"cockpit-dispatch-{uuid.uuid4().hex[:12]}"
         paste_ok = False
@@ -577,66 +404,9 @@ def _send_message_sync(session_name: str, text: str) -> bool:
 
             pane.cmd("paste-buffer", "-d", "-p", "-b", buf_name)
             paste_ok = True
-            if _wait_for_input(
-                pane,
-                lambda snapshot: _snapshot_contains_payload(snapshot, sanitized),
-                deadline,
-            ) is None:
-                final_snapshot = _capture_input_snapshot(pane)
-                if _snapshot_contains_payload(final_snapshot, sanitized):
-                    pane.cmd("send-keys", "C-u")
-                log.warning("tmux paste não observado no input: session=%s", session_name)
-                return False
-
-            enter_attempts = 0
-            while time.monotonic() < deadline:
-                pane.cmd("send-keys", "Enter")
-                enter_attempts += 1
-
-                armed_observations = 0
-                while time.monotonic() < deadline:
-                    time.sleep(_SUBMIT_POLL_INTERVAL_S)
-                    snapshot = _capture_input_snapshot(pane)
-                    if snapshot.state == "empty":
-                        return True
-                    if _snapshot_contains_payload(snapshot, sanitized):
-                        armed_observations += 1
-                        if armed_observations >= 3:
-                            break
-                    else:
-                        armed_observations = 0
-                        if (
-                            _count_payload_prompt_lines(pane, sanitized)
-                            > prior_prompt_count
-                        ):
-                            return True
-
-                if enter_attempts >= _SUBMIT_MAX_ENTER_ATTEMPTS:
-                    while time.monotonic() < deadline:
-                        time.sleep(_SUBMIT_POLL_INTERVAL_S)
-                        snapshot = _capture_input_snapshot(pane)
-                        if snapshot.state == "empty":
-                            return True
-                        if (
-                            not _snapshot_contains_payload(snapshot, sanitized)
-                            and _count_payload_prompt_lines(pane, sanitized)
-                            > prior_prompt_count
-                        ):
-                            return True
-                    break
-
-            # Só limpa quando a pane ainda prova que o texto armado é o nosso.
-            # Um input diferente pode ter sido digitado por uma pessoa durante
-            # a operação e nunca deve ser apagado/reenviado pelo cockpit.
-            final_snapshot = _capture_input_snapshot(pane)
-            if _snapshot_contains_payload(final_snapshot, sanitized):
-                pane.cmd("send-keys", "C-u")
-            log.warning(
-                "tmux Enter sem confirmação: session=%s attempts=%d",
-                session_name,
-                enter_attempts,
-            )
-            return False
+            time.sleep(_PASTE_SUBMIT_DELAY_S)
+            pane.cmd("send-keys", "Enter")
+            return True
         except libtmux_exc.LibTmuxException:
             return False
         finally:
@@ -701,20 +471,16 @@ async def press_escape(session_name: str) -> bool:
 async def send_message(session_name: str, text: str) -> bool:
     """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 
-    Sequência observável:
-        limpa input → confirma vazio → cola → confirma payload armado → Enter
-        → confirma input vazio; repete Enter no máximo 3 vezes enquanto o mesmo
-        payload continuar comprovadamente armado (teto global de 2s).
+    Sequência (Hermes-style, validada em produção):
+        send-keys C-u → load-buffer → paste-buffer -d -p → sleep 150ms → send-keys Enter
 
     Preserva multilinha (envelope do Cockpit tem 30+ linhas); só sanitiza CR
     isolados. Buffer nomeado por uuid evita race entre dispatches concorrentes.
     `-p` ativa bracketed paste — CC consolida o bloco em mensagem única em vez
     de submeter linha-a-linha.
 
-    Retorna True somente quando a pane prova que o input esvaziou depois do
-    Enter (inclui o recibo ``queued`` do CC ocupado). Sessão ausente, overlay,
-    falha de paste ou ausência de confirmação retornam False. Se o payload ainda
-    estiver comprovadamente armado no timeout, ele é limpo para não ficar
-    pendurado para o próximo Enter humano.
+    Retorna False quando a sessão não existe ou o load-buffer falha. Erros do
+    paste-buffer tentam cleanup do buffer e retornam False sem propagar — o
+    caller loga sem desfazer a transação já persistida.
     """
     return await asyncio.to_thread(_send_message_sync, session_name, text)
