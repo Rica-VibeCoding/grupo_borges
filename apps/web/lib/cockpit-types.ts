@@ -380,6 +380,15 @@ export function formatLastSeen(lastSeen: number | null, serverNow: number): stri
   return rem === 0 ? `há ${h}h` : `há ${h}h${String(rem).padStart(2, '0')}`;
 }
 
+const RAIZ_DOS_REPOS = '/home/clawd/repos/';
+
+export function formatWorkspaceShort(workspacePath: string | null | undefined): string | null {
+  if (!workspacePath) return null;
+  const limpo = workspacePath.replace(/\/+$/, '');
+  if (!limpo) return null;
+  return limpo.startsWith(RAIZ_DOS_REPOS) ? limpo.slice(RAIZ_DOS_REPOS.length) : limpo;
+}
+
 export function formatDuration(seconds: number, withSeconds = true): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);

@@ -16,7 +16,7 @@ import type {
   ActiveTaskStatus,
   Task,
 } from '../lib/cockpit-types';
-import { formatDuration, formatLastSeen, shortModelName } from '../lib/cockpit-types';
+import { formatDuration, formatLastSeen, formatWorkspaceShort, shortModelName } from '../lib/cockpit-types';
 import { formatDateTime } from '../lib/format-time';
 import { safeUUID } from '../lib/ids';
 import {
@@ -202,7 +202,9 @@ export function AgentModal() {
                     <Dialog.Title className="agent-modal-title">
                       {agent.name}
                     </Dialog.Title>
-                    <span className="agent-modal-role">// {agent.slug}</span>
+                    <span className="agent-modal-role" title={agent.workspace_path}>
+                      // {formatWorkspaceShort(agent.workspace_path) ?? agent.slug}
+                    </span>
                   </div>
                 </div>
                 <div className="head-right">

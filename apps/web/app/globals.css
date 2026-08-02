@@ -141,7 +141,10 @@
   letter-spacing: -0.01em; margin: 0;
 }
 .agent-modal-title .muted { color: var(--muted); font-weight: 400; font-size: 12px; letter-spacing: 0.08em; }
-.agent-modal-role { color: var(--muted); font-size: 11px; letter-spacing: 0.06em; }
+.agent-modal-role {
+  color: var(--muted); font-size: 11px; letter-spacing: 0.06em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .agent-modal-close {
   background: transparent; border: 1px solid var(--border);

@@ -278,6 +278,31 @@ voltar ao ar — não é oportunidade de melhoria.
 `apps/web` **de fora**, pela mesma SSE que o front usa. Instrumentar de fora não é
 tocar.
 
+### Exceção aberta pelo Rica em 02/08 — a pasta do agente no cabeçalho
+
+O Rica pediu ao vivo que o cockpit dissesse **em que pasta cada agente está**, para
+não ter de perguntar. O gatilho foi a linha `// daniel` sob o nome no modal: ele
+achava que ali estava o repositório, e ali estava o slug repetido — o nome completo
+já vem na linha de cima.
+
+Ele conhecia a regra do congelamento quando confirmou, e a exceção é deste tamanho:
+`agent-modal.tsx:205` (a linha do subtítulo), `lib/cockpit-types.ts`
+(`formatWorkspaceShort`) e `globals.css:144` (corte por reticências, porque caminho é
+mais longo que apelido). **Exibição pura, nenhum comportamento.**
+
+Duas consequências que quem vier depois precisa saber:
+
+1. `apps/web/lib/cockpit-types.ts` e `packages/cockpit-core/src/cockpit-types.ts`
+   eram cópias byte a byte — o relatório de paridade conta com isso. `formatWorkspaceShort`
+   entrou **só no `apps/web`** e é a primeira divergência entre as duas. Ela morre junto
+   com o v1; não é dívida a pagar no core.
+2. O equivalente no v2 **não é o cabeçalho** — ele saiu do chat por ordem do Rica em
+   30/07 (`cockpit-v2-estetica.md` §15) e a ordem continua de pé. A pasta entrou na
+   TROPA, que é onde ele vê os nove de uma vez. Detalhe na §15.
+
+Segue valendo o resto: `apps/web` não é oportunidade de melhoria. Melhoria só entra
+aqui com o Rica pedindo pelo nome, como esta.
+
 ---
 
 ## Mapa vigente — 30/07 14h, com TRÊS agentes escrevendo no mesmo app ao mesmo tempo
