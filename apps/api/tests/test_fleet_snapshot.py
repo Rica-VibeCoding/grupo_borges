@@ -172,6 +172,25 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
         context_pct=100.0,
         codex_next_fresh=1,
     )
+    rollout = tmp_path / "rollout.jsonl"
+    rollout.write_text(
+        json.dumps(
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "total_tokens": 58_798,
+                        },
+                        "model_context_window": 258_400,
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     async def fake_capture(_session_name: str) -> str:
         return "GPT-5.6 Sol - 00:03:03"
@@ -181,7 +200,7 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
 
     def fake_find_latest_thread(cwd: str):
         assert cwd == "/tmp/tara"
-        return SimpleNamespace(tokens_used=9_712_154)
+        return SimpleNamespace(tokens_used=9_712_154, rollout_path=rollout)
 
     monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
     monkeypatch.setattr(fleet_router.tmux_driver, "list_session_names", fake_list_session_names)
@@ -198,7 +217,7 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
     agent = _agent_from_snapshot(response.json(), "tara")
     assert agent["codex_tokens_used"] == 9_712_154
     assert agent["codex_next_fresh"] is True
-    assert agent["context_pct"] is None
+    assert agent["context_pct"] == 22.8
 
 
 def test_fleet_lists_tmux_sessions_once_per_snapshot(tmp_path: Path, monkeypatch) -> None:

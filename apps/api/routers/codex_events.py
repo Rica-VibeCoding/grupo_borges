@@ -21,6 +21,7 @@ from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB
+from services import codex_reader
 from util import redact_payload
 
 router = APIRouter()
@@ -37,6 +38,7 @@ CodexEventKind = Literal[
     "codex.item.started",
     "codex.item.updated",
     "codex.item.completed",
+    "codex.event_msg",
     "codex.turn.completed",
     "codex.turn.failed",
     "codex.error",
@@ -170,7 +172,22 @@ def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
         usage = body.get("usage")
         update = {"executor_kind": "codex"}
         if usage is not None:
-            update["token_usage_json"] = json.dumps(usage, ensure_ascii=False)
+            update["token_usage_json"] = json.dumps(
+                {"source": "codex.turn.completed", "usage": usage},
+                ensure_ascii=False,
+            )
+        return update
+
+    if payload.kind == "codex.event_msg":
+        token_count = codex_reader.normalize_token_count_payload(body)
+        if token_count is None:
+            return {"executor_kind": "codex"}
+        update = {
+            "executor_kind": "codex",
+            "token_usage_json": json.dumps(token_count, ensure_ascii=False),
+        }
+        if token_count["context_pct"] is not None:
+            update["context_pct"] = token_count["context_pct"]
         return update
 
     if payload.kind == "tara.exec.completed":

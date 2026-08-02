@@ -18,8 +18,6 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
   const total =
     currentUsage.total ||
     currentUsage.input + currentUsage.output + currentUsage.cache_creation + currentUsage.cache_read;
-  // Codex não expõe %-da-janela-agora (pct=null) — mostramos só tokens reais,
-  // sem a barra de progresso que fingiria uma fração da janela.
   const hasPct = data.pct !== null && data.pct !== undefined;
   const pct = clampPct(data.pct ?? 0);
   const segmentTotal = Math.max(total, 1);
@@ -29,6 +27,7 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
     { key: 'cache_creation', label: 'cache creation', value: currentUsage.cache_creation, className: 'cache-create' },
     { key: 'cache_read', label: 'cache read', value: currentUsage.cache_read, className: 'cache-read' },
   ];
+  const hasBreakdown = segments.some((segment) => segment.value > 0);
 
   return (
     <section className="painel-bloco" aria-label="Contexto">
@@ -54,20 +53,22 @@ export function ContextoBloco({ data }: ContextoBlocoProps) {
           aria-valuemax={100}
           aria-valuenow={Math.round(pct)}
         >
-          {segments.map((segment) => (
-            <span
-              key={segment.key}
-              className={`painel-progress-segment ${segment.className}`}
-              style={{ width: `${(segment.value / segmentTotal) * pct}%` }}
-              title={`${segment.label}: ${formatCompactNumber(segment.value)}`}
-            />
-          ))}
+          {hasBreakdown ? (
+            segments.map((segment) => (
+              <span
+                key={segment.key}
+                className={`painel-progress-segment ${segment.className}`}
+                style={{ width: `${(segment.value / segmentTotal) * pct}%` }}
+                title={`${segment.label}: ${formatCompactNumber(segment.value)}`}
+              />
+            ))
+          ) : (
+            <span className="painel-progress-fill quota" style={{ width: `${pct}%` }} />
+          )}
         </div>
       )}
 
-      {/* Breakdown só faz sentido com o detalhamento do CC. Codex (pct=null)
-          só dá o total — esconde as 4 caixas zeradas. */}
-      {hasPct && (
+      {hasPct && hasBreakdown && (
         <dl className="painel-breakdown">
           {segments.map((segment) => (
             <div key={segment.key}>

@@ -221,6 +221,84 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
     return messages
 
 
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return None
+
+
+def _pct_or_none(used: int | None, total: int | None) -> float | None:
+    if used is None or total is None or total <= 0:
+        return None
+    return round(max(0, min(100, used * 100 / total)), 1)
+
+
+def normalize_token_count_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if payload.get("type") != "token_count":
+        return None
+    info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+    last_usage = info.get("last_token_usage")
+    total_usage = info.get("total_token_usage")
+    if not isinstance(last_usage, dict):
+        return None
+
+    context_window = _int_or_none(info.get("model_context_window"))
+    if context_window is None:
+        context_window = _int_or_none(payload.get("model_context_window"))
+    context_tokens = _int_or_none(last_usage.get("total_tokens"))
+    return {
+        "source": "codex.event_msg.token_count",
+        "usage": last_usage,
+        "total_usage": total_usage if isinstance(total_usage, dict) else None,
+        "model_context_window": context_window,
+        "context_tokens": context_tokens,
+        "context_pct": _pct_or_none(context_tokens, context_window),
+        "rate_limits": payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else None,
+    }
+
+
+def read_latest_token_count(path: str | Path) -> dict[str, Any] | None:
+    p = Path(path)
+    if not p.exists():
+        return None
+    latest: dict[str, Any] | None = None
+    latest_context_window: int | None = None
+    with p.open("r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(row, dict) or row.get("type") != "event_msg":
+                continue
+            payload = row.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+            context_window = _int_or_none(info.get("model_context_window"))
+            if context_window is None:
+                context_window = _int_or_none(payload.get("model_context_window"))
+            if context_window is not None:
+                latest_context_window = context_window
+            snapshot = normalize_token_count_payload(payload)
+            if snapshot is not None:
+                if snapshot["model_context_window"] is None and latest_context_window is not None:
+                    snapshot["model_context_window"] = latest_context_window
+                    snapshot["context_pct"] = _pct_or_none(
+                        snapshot["context_tokens"],
+                        latest_context_window,
+                    )
+                latest = snapshot
+    return latest
+
+
 def _row_to_thread(row: sqlite3.Row) -> CodexThread:
     def _int(value: Any) -> int | None:
         try:

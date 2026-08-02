@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -72,6 +73,30 @@ def test_codex_events_update_agent_state(tmp_path: Path) -> None:
             "codex.turn.completed",
             {"usage": {"input_tokens": 32_000, "output_tokens": 100}},
         ),
+        _event(
+            "codex.event_msg",
+            {
+                "type": "token_count",
+                "info": {
+                    "last_token_usage": {
+                        "input_tokens": 58_000,
+                        "cached_input_tokens": 45_000,
+                        "output_tokens": 650,
+                        "reasoning_output_tokens": 290,
+                        "total_tokens": 58_798,
+                    },
+                    "total_token_usage": {"total_tokens": 276_736},
+                    "model_context_window": 258_400,
+                },
+                "rate_limits": {
+                    "primary": {
+                        "used_percent": 4.0,
+                        "window_minutes": 10_080,
+                        "resets_at": 1_786_196_095,
+                    }
+                },
+            },
+        ),
         _event("tara.exec.completed"),
     ):
         db._update_agent_codex_state("tara", **_codex_state_update(event))
@@ -93,11 +118,15 @@ def test_codex_events_update_agent_state(tmp_path: Path) -> None:
     assert agent["executor_kind"] == "codex"
     assert agent["status_line"] == "ocioso"
     assert agent["active_task_label"] == "Opção C"
-    assert agent["context_pct"] is None
-    assert fleet_agent["context_pct"] is None
+    assert agent["context_pct"] == 22.8
+    assert fleet_agent["context_pct"] == 22.8
     assert agent["session_started_at"] == 1_700_000_000
     assert agent["last_assistant_message"] == "Backend completo com parser Codex."
-    assert agent["token_usage_json"] == '{"input_tokens": 32000, "output_tokens": 100}'
+    token_usage = json.loads(agent["token_usage_json"])
+    assert token_usage["source"] == "codex.event_msg.token_count"
+    assert token_usage["context_tokens"] == 58_798
+    assert token_usage["model_context_window"] == 258_400
+    assert token_usage["rate_limits"]["primary"]["window_minutes"] == 10_080
     assert agent["lifecycle_status"] == "ocioso"
 
 

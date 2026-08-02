@@ -352,7 +352,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             contexto=_build_codex_painel_contexto(agent, thread),
             effort=_build_codex_painel_effort(agent),
             permission=_read_agent_permission(),
-            quotas=AgentPainelQuotas(status="missing", source="codex-native"),
+            quotas=_build_codex_painel_quotas(agent, thread),
             subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
             sandbox=_build_codex_painel_sandbox(agent),
             codex_native=True,
@@ -564,12 +564,24 @@ def _build_codex_painel_contexto(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None,
 ) -> AgentPainelContexto:
+    usage_payload = _codex_token_usage_payload(agent, thread)
     model = (
         thread.model
         if thread is not None and thread.model
         else agent.get("state_model") or agent.get("model_default")
     )
-    tokens_used = thread.tokens_used if thread is not None else 0
+    if usage_payload is not None:
+        tokens_used = _int_or_none(usage_payload.get("context_tokens")) or 0
+        context_window = _int_or_none(usage_payload.get("model_context_window"))
+        pct = _num_or_none(usage_payload.get("context_pct"))
+        source = "agent_state.token_usage_json"
+        available = True
+    else:
+        tokens_used = thread.tokens_used if thread is not None else 0
+        context_window = None
+        pct = None
+        source = codex_reader.SOURCE
+        available = thread is not None
     updated_at = (
         int(thread.updated_at_ms / 1000)
         if thread is not None and thread.updated_at_ms is not None
@@ -578,12 +590,32 @@ def _build_codex_painel_contexto(
     return AgentPainelContexto(
         model=model,
         model_family=_model_family(model),
+        context_window=context_window,
         tokens=AgentPainelTokens(total=tokens_used),
-        pct=None,
-        source=codex_reader.SOURCE,
+        pct=pct,
+        source=source,
         updated_at=updated_at,
-        available=thread is not None,
+        available=available,
     )
+
+
+def _codex_token_usage_payload(
+    agent: dict[str, Any],
+    thread: codex_reader.CodexThread | None = None,
+) -> dict[str, Any] | None:
+    raw = agent.get("token_usage_json")
+    if not isinstance(raw, str) or not raw.strip():
+        payload = None
+    else:
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            payload = None
+    if isinstance(payload, dict) and payload.get("source") == "codex.event_msg.token_count":
+        return payload
+    if thread is None:
+        return None
+    return codex_reader.read_latest_token_count(thread.rollout_path)
 
 
 def _build_codex_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
@@ -891,6 +923,54 @@ def _build_painel_quotas(cc_status: _CCStatus) -> AgentPainelQuotas:
         updated_at=updated_at,
         five_hour=_quota_window(rate_limits.get("five_hour"), now),
         seven_day=_quota_window(rate_limits.get("seven_day"), now),
+    )
+
+
+def _codex_quota_window(raw: Any, now: int) -> AgentPainelQuotaWindow | None:
+    if not isinstance(raw, dict):
+        return None
+    used_percentage = _num_or_none(raw.get("used_percent"))
+    if used_percentage is None:
+        used_percentage = _num_or_none(raw.get("used_percentage"))
+    resets_at = _int_or_none(raw.get("resets_at"))
+    return AgentPainelQuotaWindow(
+        used_percentage=used_percentage,
+        resets_at=resets_at,
+        remaining_seconds=max(0, resets_at - now) if resets_at is not None else None,
+    )
+
+
+def _build_codex_painel_quotas(
+    agent: dict[str, Any],
+    thread: codex_reader.CodexThread | None = None,
+) -> AgentPainelQuotas:
+    usage_payload = _codex_token_usage_payload(agent, thread)
+    if usage_payload is None:
+        return AgentPainelQuotas(status="missing", source="agent_state.token_usage_json")
+    rate_limits = usage_payload.get("rate_limits")
+    if not isinstance(rate_limits, dict):
+        return AgentPainelQuotas(status="missing", source="agent_state.token_usage_json")
+
+    now = int(time.time())
+    five_hour = None
+    seven_day = None
+    for key in ("primary", "secondary"):
+        window_raw = rate_limits.get(key)
+        if not isinstance(window_raw, dict):
+            continue
+        window_minutes = _int_or_none(window_raw.get("window_minutes"))
+        if window_minutes == 300:
+            five_hour = _codex_quota_window(window_raw, now)
+        elif window_minutes == 10080:
+            seven_day = _codex_quota_window(window_raw, now)
+
+    status = "available" if five_hour is not None or seven_day is not None else "missing"
+    return AgentPainelQuotas(
+        status=status,
+        source="agent_state.token_usage_json",
+        updated_at=now,
+        five_hour=five_hour,
+        seven_day=seven_day,
     )
 
 

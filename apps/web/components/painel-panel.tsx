@@ -128,12 +128,11 @@ export function PainelPanel({
         </div>
       )}
       {data && data.codex_native && data.sandbox ? (
-        // Painel Codex-nativo (Tara): effort 3 níveis + sandbox no lugar de
-        // bypass/plan; Quotas e Subagents não têm equivalente e ficam ocultos.
         <>
           <ContextoBloco data={data.contexto} />
           <EffortBloco data={data.effort} slug={slug} onChange={handleEffortChange} />
           <SandboxBloco data={data.sandbox} slug={slug} onChange={handlePermissionChange} />
+          <QuotasBloco data={data.quotas} />
           <ConversaBloco
             slug={slug}
             armed={codexNextFresh ?? Boolean(data.codex_next_fresh)}

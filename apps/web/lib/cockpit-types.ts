@@ -428,7 +428,7 @@ export function parseContextPct(excerpt: string | null): number | null {
 export function resolveContextPct(
   agent: Pick<Agent, 'executor_kind' | 'pane_excerpt' | 'context_pct'>,
 ): number | null {
-  if (agent.executor_kind === 'codex') return null;
+  if (agent.executor_kind === 'codex') return agent.context_pct;
   return parseContextPct(agent.pane_excerpt) ?? agent.context_pct;
 }
 

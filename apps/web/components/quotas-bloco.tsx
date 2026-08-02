@@ -46,16 +46,16 @@ function QuotaRow({ label, window }: { label: string; window: PainelQuotaWindow 
 export function QuotasBloco({ data }: QuotasBlocoProps) {
   if (data.status === 'unknown' || data.status === 'missing') {
     return (
-      <section className="painel-bloco painel-bloco-muted" aria-label="Quotas">
-        <div className="painel-empty">Quotas Max indisponíveis (statusline não enviou dados)</div>
+      <section className="painel-bloco painel-bloco-muted" aria-label="Cota usada">
+        <div className="painel-empty">Cota usada indisponível; aguardando linha de status</div>
       </section>
     );
   }
 
   return (
-    <section className="painel-bloco" aria-label="Quotas">
+    <section className="painel-bloco" aria-label="Cota usada">
       <div className="painel-bloco-head">
-        <div className="painel-bloco-title">Quotas</div>
+        <div className="painel-bloco-title">Cota usada</div>
         {data.status === 'stale' && <span className="painel-chip painel-chip-warn">dados antigos</span>}
       </div>
       <div className="painel-quota-list">

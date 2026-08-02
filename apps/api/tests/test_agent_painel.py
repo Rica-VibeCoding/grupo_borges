@@ -158,6 +158,97 @@ def test_agent_painel_quota_missing_without_file(tmp_path: Path, monkeypatch) ->
     assert quotas["source"] == "/tmp/cc-status-ds135-missing.json"
 
 
+def test_agent_painel_codex_usa_token_count_para_contexto_e_quotas(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        context_pct=22.8,
+        token_usage_json=json.dumps(
+            {
+                "source": "codex.event_msg.token_count",
+                "usage": {
+                    "input_tokens": 58_000,
+                    "cached_input_tokens": 45_000,
+                    "output_tokens": 650,
+                    "reasoning_output_tokens": 290,
+                    "total_tokens": 58_798,
+                },
+                "model_context_window": 258_400,
+                "context_tokens": 58_798,
+                "context_pct": 22.8,
+                "rate_limits": {
+                    "primary": {
+                        "used_percent": 4.0,
+                        "window_minutes": 10_080,
+                        "resets_at": int(time.time()) + 6 * 24 * 3600,
+                    }
+                },
+            }
+        ),
+    )
+
+    monkeypatch.setattr(
+        agents_router.codex_reader,
+        "find_latest_thread",
+        lambda *_args: SimpleNamespace(
+            model="gpt-5.6-sol",
+            tokens_used=999_999_999,
+            updated_at_ms=int(time.time() * 1000),
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/tara/painel")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["codex_native"] is True
+    assert body["contexto"]["model"] == "gpt-5.6-sol"
+    assert body["contexto"]["tokens"]["total"] == 58_798
+    assert body["contexto"]["context_window"] == 258_400
+    assert body["contexto"]["pct"] == 22.8
+    assert body["quotas"]["status"] == "available"
+    assert body["quotas"]["seven_day"]["used_percentage"] == 4.0
+    assert body["quotas"]["five_hour"] is None
+
+
+def test_agent_painel_codex_cai_para_rollout_quando_state_nao_tem_token_count(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    rollout = tmp_path / "tara-rollout.jsonl"
+    rollout.write_text(
+        '{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":58798},"model_context_window":258400},"rate_limits":{"primary":{"used_percent":4.0,"window_minutes":10080,"resets_at":1893456000}}}}\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        agents_router.codex_reader,
+        "find_latest_thread",
+        lambda *_args: SimpleNamespace(
+            model="gpt-5.6-sol",
+            tokens_used=500_700,
+            updated_at_ms=int(time.time() * 1000),
+            rollout_path=str(rollout),
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/tara/painel")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["contexto"]["tokens"]["total"] == 58_798
+    assert body["contexto"]["context_window"] == 258_400
+    assert body["contexto"]["pct"] == 22.8
+    assert body["quotas"]["seven_day"]["used_percentage"] == 4.0
+
+
 def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monkeypatch) -> None:
     """Sessão mais nova sem cc-status (curta/headless): painel mostra o último
     contexto conhecido da sessão anterior, marcado stale — não esvazia."""

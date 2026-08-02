@@ -142,7 +142,6 @@ def _read_cc_context_pct(session_id: str) -> float | None:
 async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None:
     async def hydrate(agent: dict) -> None:
         if agent.get("executor_kind") == "codex":
-            agent["context_pct"] = None
             return
         if agent.get("context_pct") is not None:
             return
@@ -166,7 +165,30 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
         cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
         thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
         agent["codex_tokens_used"] = thread.tokens_used if thread is not None else None
-        agent["context_pct"] = None
+        stored_pct = None
+        raw_usage = agent.get("token_usage_json")
+        if isinstance(raw_usage, str) and raw_usage.strip():
+            try:
+                stored_usage = json.loads(raw_usage)
+            except (json.JSONDecodeError, ValueError):
+                stored_usage = None
+            if (
+                isinstance(stored_usage, dict)
+                and stored_usage.get("source") == "codex.event_msg.token_count"
+                and stored_usage.get("context_pct") is not None
+            ):
+                stored_pct = stored_usage["context_pct"]
+        if thread is not None:
+            snapshot = await asyncio.to_thread(codex_reader.read_latest_token_count, thread.rollout_path)
+            if snapshot is not None:
+                agent["context_pct"] = (
+                    snapshot.get("context_pct")
+                    if snapshot.get("context_pct") is not None
+                    else stored_pct
+                )
+                return
+        if stored_pct is not None:
+            agent["context_pct"] = stored_pct
 
     await asyncio.gather(*(hydrate(agent) for agent in agents))
 

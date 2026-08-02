@@ -87,6 +87,29 @@ def test_parse_rollout_strips_audio_skill_prefix(tmp_path: Path) -> None:
     assert msgs[0].text == "Teste de áudio agora."
 
 
+def test_read_latest_token_count_normaliza_contexto_e_rate_limits(tmp_path: Path) -> None:
+    rollout = tmp_path / "tokens.jsonl"
+    rollout.write_text(
+        "\n".join(
+            [
+                '{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":10000},"model_context_window":200000}}}',
+                '{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":58000,"cached_input_tokens":45000,"output_tokens":650,"reasoning_output_tokens":290,"total_tokens":58798},"total_token_usage":{"total_tokens":276736},"model_context_window":258400},"rate_limits":{"primary":{"used_percent":4.0,"window_minutes":10080,"resets_at":1786196095}}}}',
+                '{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":79268,"cached_input_tokens":77184,"output_tokens":289,"reasoning_output_tokens":9,"total_tokens":79557},"total_token_usage":{"total_tokens":13473864}},"rate_limits":{"primary":{"used_percent":12.0,"window_minutes":10080,"resets_at":1786196095}}}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = cr.read_latest_token_count(rollout)
+
+    assert snapshot is not None
+    assert snapshot["source"] == "codex.event_msg.token_count"
+    assert snapshot["context_tokens"] == 79_557
+    assert snapshot["model_context_window"] == 258_400
+    assert snapshot["context_pct"] == 30.8
+    assert snapshot["rate_limits"]["primary"]["window_minutes"] == 10_080
+
+
 def test_classify_message_rules() -> None:
     assert cr.classify_message("assistant", "oi") == ("assistant", True)
     assert cr.classify_message("user", "pergunta normal") == ("user", True)

@@ -9,7 +9,6 @@ import {
   resolveContextPct,
   shortModelName,
 } from '../lib/cockpit-types';
-import { formatCompactNumber } from '../lib/painel-format';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
   ocioso: 'Ocioso',
@@ -69,7 +68,6 @@ export function AgentStatusline({
     : agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = resolveContextPct(agent);
-  const codexTokens = isCodexExecutor ? agent.codex_tokens_used : null;
   // Modelo REAL da sessão = pane_excerpt (tmux capture), alinhado com o %.
   // state_model é a última intenção persistida (POST /model) — pode estar
   // pendente de propagação no CC. Card reflete execução, não a seleção.
@@ -82,6 +80,7 @@ export function AgentStatusline({
   if (variant === 'inline') {
     // Compacta pro card-strip: wrapper .pane preto + barra fluida (estilo painel).
     const sev = contextPct === null ? 'unknown' : contextPct < 50 ? 'ok' : contextPct < 80 ? 'warn' : 'crit';
+    const barPct = contextPct ?? 0;
     return (
       <div className="pane pane-session pane-session-inline" aria-hidden="true">
         <span className="ps-model" data-model={modelFamily}>{modelLabel}</span>
@@ -89,14 +88,10 @@ export function AgentStatusline({
         <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs, false) : '—'}</span>
         <span className="ps-sep">·</span>
         <span className="ps-ctx">
-          {contextPct !== null ? (
-            <>
-              <span className="psi-bar" aria-hidden="true">
-                <span className="psi-bar-fill" data-severity={sev} style={{ width: `${contextPct}%` }} />
-              </span>
-              <span className="psi-pct">{contextPct}%</span>
-            </>
-          ) : <span className="psi-pct">{codexTokens !== null ? `${formatCompactNumber(codexTokens)} tk` : '— %'}</span>}
+          <span className="psi-bar" aria-hidden="true">
+            <span className="psi-bar-fill" data-severity={sev} style={{ width: `${barPct}%` }} />
+          </span>
+          <span className="psi-pct">{contextPct !== null ? `${contextPct}%` : '—%'}</span>
         </span>
       </div>
     );
@@ -119,22 +114,18 @@ export function AgentStatusline({
         {extra && <span className="pm-slot">{extra}</span>}
         {extra && <span className="pm-sep" aria-hidden="true">·</span>}
         <span className="pm-tok pm-tok-ctx">
+          <span className="ps-bar" aria-hidden="true">
+            {Array.from({ length: 10 }, (_, i) => (
+              <span
+                key={i}
+                className="psb-cell"
+                data-on={contextPct !== null && i < Math.round(contextPct / 10) ? '1' : '0'}
+                data-tier={contextPct !== null ? ctxTier(contextPct) : 'low'}
+              />
+            ))}
+          </span>
           {contextPct !== null ? (
-            <>
-              <span className="ps-bar" aria-hidden="true">
-                {Array.from({ length: 10 }, (_, i) => (
-                  <span
-                    key={i}
-                    className="psb-cell"
-                    data-on={i < Math.round(contextPct / 10) ? '1' : '0'}
-                    data-tier={ctxTier(contextPct)}
-                  />
-                ))}
-              </span>
-              <span className="pm-v">{contextPct}%</span>
-            </>
-          ) : codexTokens !== null ? (
-            <span className="pm-v pm-dim">{formatCompactNumber(codexTokens)} tokens</span>
+            <span className="pm-v">{contextPct}%</span>
           ) : (
             <span className="pm-v pm-dim">ctx —</span>
           )}
@@ -158,20 +149,16 @@ export function AgentStatusline({
       <span className="ps-time">{sessionSecs !== null ? formatDuration(sessionSecs) : '—'}</span>
       <span className="ps-sep">·</span>
       <span className="ps-ctx">
-        {contextPct !== null ? (
-          <>
-            <span className="ps-bar" aria-hidden="true">
-              {Array.from({ length: barCells }, (_, i) => (
-                <span
-                  key={i}
-                  className="psb-cell"
-                  data-on={i < Math.round((contextPct * barCells) / 100) ? '1' : '0'}
-                />
-              ))}
-            </span>
-            {' '}{contextPct}%
-          </>
-        ) : codexTokens !== null ? `${formatCompactNumber(codexTokens)} tk` : '— %'}
+        <span className="ps-bar" aria-hidden="true">
+          {Array.from({ length: barCells }, (_, i) => (
+            <span
+              key={i}
+              className="psb-cell"
+              data-on={contextPct !== null && i < Math.round((contextPct * barCells) / 100) ? '1' : '0'}
+            />
+          ))}
+        </span>
+        {' '}{contextPct !== null ? `${contextPct}%` : '—%'}
       </span>
     </div>
   );
