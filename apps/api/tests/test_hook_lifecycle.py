@@ -97,7 +97,7 @@ def test_hook_lifecycle_returns_4_states_only(
                 "lifecycle_updated_at": 100,
                 "now": 1_000,
             },
-            "aguardando",
+            "offline",
         ),
         (
             {
@@ -117,7 +117,7 @@ def test_hook_lifecycle_returns_4_states_only(
                 "lifecycle_updated_at": 100,
                 "now": 1_000,
             },
-            "ocioso",
+            "offline",
         ),
         (
             {
@@ -127,7 +127,7 @@ def test_hook_lifecycle_returns_4_states_only(
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
             },
-            "ocioso",
+            "offline",
         ),
         (
             {
@@ -149,7 +149,7 @@ def test_derive_agent_status_4_values(kwargs: dict, expected: str) -> None:
     assert status in {"ocioso", "trabalhando", "aguardando", "offline"}
 
 
-def test_old_heartbeat_with_tmux_session_is_idle() -> None:
+def test_old_heartbeat_with_tmux_session_is_offline() -> None:
     from db.store import derive_agent_status
 
     assert derive_agent_status(
@@ -158,7 +158,7 @@ def test_old_heartbeat_with_tmux_session_is_idle() -> None:
         lifecycle_status="trabalhando",
         lifecycle_updated_at=100,
         now=1_000,
-    ) == "ocioso"
+    ) == "offline"
 
 
 def test_missing_tmux_session_is_offline() -> None:
@@ -186,6 +186,32 @@ def test_fresh_lifecycle_with_tmux_session_is_preserved(
         lifecycle_updated_at=950,
         now=1_000,
     ) == lifecycle_status
+
+
+def test_codex_fresh_lifecycle_does_not_require_tmux_session() -> None:
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        950,
+        session_present=False,
+        lifecycle_status="trabalhando",
+        lifecycle_updated_at=950,
+        executor_kind="codex",
+        now=1_000,
+    ) == "trabalhando"
+
+
+def test_codex_stale_lifecycle_is_offline_without_tmux_session() -> None:
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        100,
+        session_present=False,
+        lifecycle_status="ocioso",
+        lifecycle_updated_at=100,
+        executor_kind="codex",
+        now=1_000,
+    ) == "offline"
 
 
 def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:

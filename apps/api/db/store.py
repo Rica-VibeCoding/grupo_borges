@@ -165,13 +165,13 @@ def derive_agent_status(
     lifecycle_status: str | None = None,
     lifecycle_updated_at: int | None = None,
     current_task_id: str | None = None,
+    executor_kind: str | None = None,
     now: int | None = None,
 ) -> str:
     """Deriva status do agente a partir da presença tmux + lifecycle.
 
-    Contrato: ``offline`` significa exclusivamente sessão tmux ausente. Com
-    sessão presente, heartbeat velho ou ausente resulta em ``ocioso``; estados
-    ``trabalhando``/``aguardando`` continuam derivados do lifecycle.
+    Contrato: ``offline`` significa ausência de sinal fresco. Para Claude Code,
+    tmux vivo é pré-requisito; para Codex, o wrapper observável é a presença.
 
     ``last_seen`` e ``current_task_id`` permanecem na assinatura por
     compatibilidade do contrato de derivação, mas não definem presença online.
@@ -181,13 +181,17 @@ def derive_agent_status(
         lifecycle_updated_at is not None
         and now - lifecycle_updated_at <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
     )
+    if lifecycle_status == "offline":
+        return "offline"
+    if executor_kind == "codex":
+        if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
+            return lifecycle_status
+        return "offline"
     if not session_present:
         return "offline"
-    if lifecycle_status == "trabalhando" and lifecycle_is_fresh:
-        return "trabalhando"
-    if lifecycle_status == "aguardando":
-        return "aguardando"
-    return "ocioso"
+    if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
+        return lifecycle_status
+    return "offline"
 
 
 def _short_text(value: Any, *, limit: int = 80) -> str | None:
@@ -2880,6 +2884,7 @@ class GrupoBorgesDB:
                 lifecycle_status=agent.get("lifecycle_status"),
                 lifecycle_updated_at=agent.get("lifecycle_updated_at"),
                 current_task_id=agent.get("current_task_id"),
+                executor_kind=agent.get("executor_kind"),
                 now=now,
             )
             agent["sparkline"] = build_hour_series(
