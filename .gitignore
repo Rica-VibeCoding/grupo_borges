@@ -64,3 +64,7 @@ temp/
 # família REDIGIDAS entram no git (fixtures/cockpit-v2/familias/).
 # Regravar com fixtures/cockpit-v2/gravar-transcripts.py.
 fixtures/cockpit-v2/transcripts/
+
+# Worktrees efêmeros do Agent View do Claude Code (isolamento por sessão).
+# Nunca são deliverable — o trabalho volta pelo commit, não pela pasta.
+.claude/worktrees/
