@@ -474,10 +474,9 @@ body {
  * superfície nova usa `.ck-surge` e não escreve keyframe próprio.
  *
  * A regra que decide a técnica: **saída não se anima com o elemento sendo
- * REMOVIDO do DOM.** `@starting-style` só cobre o elemento aparecendo ou
- * saindo de `display: none` — conferido na doc, não suposto. Como aqui a
- * superfície mora na URL (decisão nº 1 do `app-shell.tsx`), a gaveta era
- * removida na navegação e por isso só teria entrada.
+ * REMOVIDO do DOM.** Como aqui a superfície mora na URL (decisão nº 1 do
+ * `app-shell.tsx`), a gaveta era removida na navegação e por isso só teria
+ * entrada.
  *
  * A saída é o motivo de o `app-shell` passar a renderizar a gaveta SEMPRE e
  * alternar apenas o `data-aberto`. O nó sobrevive à navegação — React
@@ -487,63 +486,126 @@ body {
  * Component, que é o que faz deep-link do Telegram e botão voltar do Android
  * funcionarem.
  *
- * `display` entra na transição com `allow-discrete` porque ele não interpola:
- * sem isso o elemento sumiria no primeiro frame da saída e a animação rodaria
- * no vazio. Com ele, o `display: none` fica adiado até o movimento terminar.
+ * ESCONDIDO É `visibility`, NÃO `display` — 02/08.
  *
- * Só `opacity` e `transform` animam (proibição §9.4), então isto não custa
- * layout nem briga com o streaming do feed.
+ * A versão anterior escondia com `display: none` e reabria transicionando
+ * `display` com `allow-discrete`, mais `@starting-style` pro estado inicial da
+ * entrada (elemento em `display: none` não está na árvore de caixas, então não
+ * existe "antes" pra interpolar — daí a necessidade da regra). É o padrão
+ * moderno, é o que a doc recomenda, e roda liso no Chrome.
  *
- * `--ck-dur-enter`/`--ck-ease-exit` nasceram — o `var(--token, 200ms)` que
- * segue aqui é o fallback que já existia, agora redundante mas inofensivo:
- * o token sempre resolve primeiro. */
+ * HONESTIDADE SOBRE ESTA TROCA: ela entrou como conserto pra gaveta não abrir
+ * no iPhone do Rica, e NÃO ERA A CAUSA. A causa era altura zero — `flex-1`
+ * (base 0) dentro de pai com altura de conteúdo, medido na régua `?diag=1` no
+ * aparelho dele (`docs/cockpit-v2-estetica.md` §17). A troca fica pelo mérito
+ * próprio: faz o mesmo trabalho sem depender de duas features novas e frágeis,
+ * e uma superfície que só aparece não deve ter a aparição refém do suporte a
+ * `@starting-style`. Mas quem vier depois merece saber que ela não consertou o
+ * bug que a motivou.
+ *
+ * `visibility` faz o mesmo trabalho sem nenhuma das duas features: o elemento
+ * NUNCA sai da árvore de caixas, então aberto e fechado são dois estados
+ * normais e a transição entre eles é a transição de sempre — a mesma que
+ * qualquer browser dos últimos dez anos roda. E some de verdade: `visibility:
+ * hidden` não pinta, não recebe toque e não entra em leitor de tela.
+ *
+ * Não custa layout: os dois elementos são `position: fixed`, então ocupar
+ * espaço fantasma não é uma possibilidade aqui.
+ *
+ * `visibility` é discreta, e o tempo dela é o que dá o movimento: na ENTRADA
+ * vira em 0s (aparece pra poder ser vista aparecendo); na SAÍDA espera o fade
+ * inteiro (`0s linear var(--ck-dur-enter)`), senão sumiria no primeiro frame e
+ * a animação rodaria no vazio — o mesmo motivo que justificava o
+ * `allow-discrete`, resolvido com uma propriedade que ninguém precisa suportar
+ * porque todo mundo já suporta.
+ *
+ * Só `opacity` e `transform` animam de verdade (proibição §9.4), então isto não
+ * custa layout nem briga com o streaming do feed. */
 .ck-surge {
+  visibility: visible;
   opacity: 1;
   transform: none;
   transition:
     opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
     transform var(--ck-dur-enter, 200ms) var(--ck-ease),
-    display var(--ck-dur-enter, 200ms) allow-discrete;
+    visibility 0s;
 }
 
 /* Fechado. `translateY` de 6px com `scale` de 0.98: a superfície não desliza
    de fora da tela, ela AFUNDA um pouco e se afasta — o mesmo gesto do painel
    da referência. Deslizar da borda direita seria a gramática de gaveta, e esta
-   deixou de ser gaveta quando passou a flutuar. */
+   deixou de ser gaveta quando passou a flutuar.
+
+   `pointer-events: none` é cinto sobre suspensório: `visibility: hidden` já não
+   recebe toque. Fica porque durante os 200ms da saída o elemento ainda está
+   visível, e nesse intervalo ele PODE receber — e não deve. */
 .ck-surge[data-aberto='false'] {
-  display: none;
+  visibility: hidden;
   opacity: 0;
   transform: translateY(6px) scale(0.98);
-  transition-timing-function: var(--ck-ease-exit, cubic-bezier(0.4, 0, 1, 1));
+  pointer-events: none;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    visibility 0s linear var(--ck-dur-enter, 200ms);
 }
 
-/* DEPOIS da regra principal, obrigatoriamente: `@starting-style` tem a mesma
-   especificidade e perderia por ordem se viesse antes. */
-@starting-style {
-  .ck-surge[data-aberto='true'] {
+/* A TROPA entra com o MESMO movimento, só que de lado — ordem do Rica (02/08),
+   assim que a gaveta voltou a aparecer no iPhone: *"vamos deixar o mesmo
+   movimento na mesma velocidade com que abre ali o sidebar. Tudo bem que ela
+   aparece diferente, ela aparece lateralmente, mas a gente pode deixar também
+   ela com o mesmo slow"*. Até aqui a tropa trocava `hidden`/`flex` seco, sem
+   transição nenhuma — era a única superfície do app que aparecia de estalo.
+
+   Muda SÓ o eixo: `translateX` no lugar do `translateY` + `scale`, porque ela
+   entra pela borda esquerda e não afunda. Duração, curva e o fade são os
+   mesmos tokens do `.ck-surge` — é a mesma frase dita de outro ângulo, que é
+   exatamente o que ele pediu.
+
+   Vale SÓ abaixo de `md`, e isso não é detalhe: a partir de 768px a tropa é o
+   FUNDO permanente da tela (§14 — a mesa e a folha), `position: static`, sem
+   botão que a abra. Aplicar o estado fechado lá esconderia a faixa que nunca
+   fecha. */
+@media (max-width: 767.98px) {
+  .ck-surge-lado {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
+      transform var(--ck-dur-enter, 200ms) var(--ck-ease),
+      visibility 0s;
+  }
+
+  .ck-surge-lado[data-aberto='false'] {
+    visibility: hidden;
     opacity: 0;
-    transform: translateY(6px) scale(0.98);
+    transform: translateX(-8px);
+    pointer-events: none;
+    transition:
+      opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+      transform var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+      visibility 0s linear var(--ck-dur-enter, 200ms);
   }
 }
 
 /* O véu acompanha, senão o preto entra de uma vez e denuncia que só a caixa
    está animando. */
 .ck-surge-veu {
+  visibility: visible;
   opacity: 1;
   transition:
     opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
-    display var(--ck-dur-enter, 200ms) allow-discrete;
+    visibility 0s;
 }
 
 .ck-surge-veu[data-aberto='false'] {
-  display: none;
+  visibility: hidden;
   opacity: 0;
-}
-
-@starting-style {
-  .ck-surge-veu[data-aberto='true'] {
-    opacity: 0;
-  }
+  pointer-events: none;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    visibility 0s linear var(--ck-dur-enter, 200ms);
 }
 
 /* O PAINEL FLUTUANTE — a forma que a referência do Rica pede.
@@ -568,12 +630,18 @@ body {
  *   exatamente o `--ck-edge-light` — branco a 7% sobre a superfície `nav` dá
  *   (49,49,49) contra os (50,50,50) medidos por ele. A textura que ele pediu
  *   já era a assinatura da §A: luz em vez de sombra. */
+/* `height` fica em `auto` — 02/08. Era `fit-content`, e num elemento `fixed`
+   com só o `top` preso os dois querem dizer a mesma coisa (altura = conteúdo,
+   limitada pelo `max-height`). A diferença é que `auto` não depende de o motor
+   implementar `fit-content` no eixo do bloco, que é justamente onde o WebKit
+   diverge. Junto com o `flex-auto` dos filhos (ver `Painel` nas duas rotas do
+   agente), é o par que fazia a gaveta abrir com 0px de altura no iPhone. */
 .ck-flutua {
   position: fixed;
   z-index: var(--ck-z-drawer);
   top: calc(var(--ck-space-2) + var(--ck-safe-top));
   right: calc(var(--ck-space-2) + var(--ck-safe-right));
-  height: fit-content;
+  height: auto;
   max-height: calc(100dvh - 2 * var(--ck-space-2) - var(--ck-safe-top) - var(--ck-safe-bottom));
   width: calc(100% - 2 * var(--ck-space-2));
   max-width: var(--ck-w-drawer);

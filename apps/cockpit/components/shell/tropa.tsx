@@ -33,6 +33,28 @@ import { estadoDe } from './estado';
 import { Retrato } from './retrato';
 import { Statusline } from './statusline';
 
+/**
+ * A pasta em que o agente trabalha, sem a raiz que todos compartilham.
+ *
+ * Ordem do Rica (02/08): *"toda tropa eu tenho que saber em que pasta que tá,
+ * para não ficar perguntando"*. Aqui é o único lugar onde ele vê os nove de uma
+ * vez — no chat não há cabeçalho de identidade desde a §15, e o painel INF.
+ * mostra um agente por vez.
+ *
+ * Cortamos só `/home/clawd/repos/`: `fluyt/apps/pos` distingue app de app, coisa
+ * que o último segmento sozinho (`pos`) não faria. Gêmea da do cockpit antigo
+ * (`apps/web/lib/cockpit-types.ts`) e deliberadamente NÃO compartilhada — o
+ * `cockpit-core` é do Pavan, e o antigo está congelado, então a cópia morre com ele.
+ */
+const RAIZ_DOS_REPOS = '/home/clawd/repos/';
+
+function pastaCurta(workspacePath: string | null | undefined): string | null {
+  if (!workspacePath) return null;
+  const limpo = workspacePath.replace(/\/+$/, '');
+  if (!limpo) return null;
+  return limpo.startsWith(RAIZ_DOS_REPOS) ? limpo.slice(RAIZ_DOS_REPOS.length) : limpo;
+}
+
 /** Chip de estado: ponto + palavra. A cor sozinha nunca carrega o sentido. */
 function ChipEstado({ status }: { status: AgentStatus }) {
   const estado = estadoDe(status);
@@ -71,6 +93,7 @@ function CartaoVivo({
   compacta: boolean;
 }) {
   const estado = estadoDe(agente.status);
+  const pasta = pastaCurta(agente.workspace_path);
   return (
     <li>
       <Link
@@ -122,6 +145,24 @@ function CartaoVivo({
           </span>
 
           <Statusline agente={agente} agora={agora} curta={compacta} />
+
+          {/* Terceira linha, e não um pedaço da statusline: aquela é telemetria
+              viva (modelo · sessão · contexto) e a pasta é fato de cadastro, que
+              não muda no ritmo dos outros três. `secondary`, nunca `tertiary` —
+              texto de 12px em `tertiary` fura o piso de 4.5:1 da §3. */}
+          {pasta ? (
+            <span
+              className="min-w-0 truncate"
+              style={{
+                fontFamily: 'var(--ck-font-mono)',
+                fontSize: 'var(--ck-text-xs)',
+                color: 'var(--ck-text-secondary)',
+              }}
+              title={agente.workspace_path}
+            >
+              {pasta}
+            </span>
+          ) : null}
         </span>
       </Link>
     </li>
@@ -137,6 +178,7 @@ function LinhaDormindo({
   selecionado: boolean;
   agora: number;
 }) {
+  const pasta = pastaCurta(agente.workspace_path);
   return (
     <li>
       <Link
@@ -163,6 +205,25 @@ function LinhaDormindo({
         >
           {agente.name}
         </span>
+
+        {/* Quem dorme continua tendo casa, e a ordem do Rica era "toda tropa".
+            Aqui a pasta cabe na MESMA linha — a folga entre o nome e o "há 20h"
+            era rio, não respiro. Ela cede antes do nome e antes do tempo: os dois
+            têm truncamento próprio, a pasta some primeiro no aparelho estreito. */}
+        {pasta ? (
+          <span
+            className="min-w-0 shrink truncate"
+            style={{
+              fontFamily: 'var(--ck-font-mono)',
+              fontSize: 'var(--ck-text-xs)',
+              color: 'var(--ck-text-secondary)',
+              opacity: 0.75,
+            }}
+            title={agente.workspace_path}
+          >
+            {pasta}
+          </span>
+        ) : null}
 
         <span
           className="ck-tabular shrink-0"

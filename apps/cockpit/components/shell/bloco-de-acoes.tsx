@@ -63,7 +63,7 @@ import {
   type Impedimento,
 } from './acoes-rapidas';
 import { IconeDescartar } from './icones';
-import { usePainelAberto } from './painel-otimista';
+import { usePainelAberto } from './superficie-otimista';
 
 /** As cinco chamadas que este bloco faz. Existe como prop para a vitrine poder
  *  exercitar falha e demora sem back nenhum — o mesmo papel do `faseForcada`
@@ -100,7 +100,7 @@ type Carga = 'ocioso' | 'carregando' | 'pronto' | 'indisponivel';
 
 export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }: BlocoDeAcoesProps) {
   // O valor OTIMISTA, não o da URL. O painel abre no mesmo frame do clique
-  // (`painel-otimista.tsx`, do Hiro) enquanto a navegação `?painel=…` leva
+  // (`superficie-otimista.tsx`, do Hiro) enquanto a navegação `?painel=…` leva
   // 2,0–2,7s para voltar do servidor. Reagir à URL faria a busca do `/painel`
   // chegar com esse atraso inteiro — o painel abriria mostrando o esforço
   // velho por dois segundos, que é justamente o defeito que esta re-busca

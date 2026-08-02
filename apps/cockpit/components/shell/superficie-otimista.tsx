@@ -1,5 +1,15 @@
 /**
- * Painel otimista — o clique abre ANTES da navegação voltar.
+ * Superfícies otimistas — o toque abre ANTES da navegação voltar.
+ *
+ * Vale pras DUAS superfícies sobrepostas do celular: o painel de detalhes
+ * (direita) e a tropa (esquerda). Nasceu só pro painel em 30/07; a tropa entrou
+ * em 02/08, e foi o Rica quem viu, testando: *"a sidebar demora um pouquinho
+ * mais para abrir, para começar o movimento — porque ela traz mais dados ou é
+ * alguma configuração?"*. Nem uma coisa nem outra: ela era a última superfície
+ * ainda esperando o servidor. Medido lado a lado na :3008 (viewport de celular,
+ * build de produção): o painel começa a se mover em **271ms**, a tropa em
+ * **618ms**, e os 618 são exatamente a ida e volta (a URL chegava em 630ms). Na
+ * rede dele, pelo túnel, é a mesma espera de 2,0–2,7s que motivou esta peça.
  *
  * O painel de detalhes mora na URL (decisão nº 1 do `app-shell.tsx`) e a
  * página é `force-dynamic`: medido com Playwright na :3008 (30/07), do clique
@@ -39,41 +49,82 @@ import {
   type ReactNode,
 } from 'react';
 
-import { IconePainel } from './icones';
+import { IconeMenu, IconePainel } from './icones';
 
-type PainelCtx = {
+type SuperficieCtx = {
   aberto: boolean;
-  /** Vira o painel na hora e empurra a URL atrás. `abrir` é explícito —
+  /** Vira a superfície na hora e empurra a URL atrás. `abrir` é explícito —
    *  cada gatilho sabe pra qual lado está indo; toggle por negação seria
    *  ambíguo com dois cliques rápidos. */
   ir: (href: string, abrir: boolean) => void;
 };
 
-const Ctx = createContext<PainelCtx | null>(null);
+/** Quanto se espera pela navegação do roteador antes de apelar pro navegador.
+ *  1,2s é folgado pra uma navegação que normalmente é instantânea (a URL troca
+ *  no mesmo frame do otimista) e curto o bastante pra não parecer travamento. */
+const LIMITE_NAVEGACAO_MS = 1_200;
+
+/** Duas superfícies, dois contextos SEPARADOS — de propósito. Painel e tropa
+ *  abrem e fecham independentes (dá pra estar com a tropa aberta e tocar no
+ *  painel), e um contexto só forçaria um estado compartilhado que a URL não tem.
+ *  O preço é um provider a mais na árvore; o ganho é que nenhuma abertura mexe
+ *  na outra. */
+function criaSuperficie() {
+  const Ctx = createContext<SuperficieCtx | null>(null);
+
+  /** O `AppShell` envolve a árvore nisto. Rota que não tem a superfície
+   *  simplesmente não consome o contexto, e o provider custa um nó e nada
+   *  além. */
+  function Provider({ aberto, children }: { aberto: boolean; children: ReactNode }) {
+    const router = useRouter();
+    const [, emTransicao] = useTransition();
+    const [abertoOtimo, marcaOtimo] = useOptimistic(aberto);
+
+    /**
+     * Rede de segurança da navegação — 02/08.
+     *
+     * `router.push` não devolve promessa utilizável, então não dá pra esperar
+     * por ela. O que dá pra observar é o efeito: se depois de
+     * `LIMITE_NAVEGACAO_MS` a URL não mudou, a navegação não aconteceu, e aí a
+     * gente sai do roteador e usa o navegador. Recarrega a página — mais lento
+     * que o otimista, e infinitamente melhor que um botão que não faz nada.
+     *
+     * Cobre o caso da aba velha depois que o app foi reconstruído: o
+     * `preventDefault()` dos gatilhos mata o plano B assim que a página hidrata,
+     * então "JS hidratou o bastante pra interceptar, mas o chunk/RSC não
+     * responde" faria o toque sumir no vazio. (Isto NÃO era o bug do iPhone —
+     * aquele era altura zero, ver §17 da estética. Esta rede entrou junto na
+     * caçada e fica por mérito próprio.)
+     */
+    const ir = (href: string, abrir: boolean) => {
+      const antes = window.location.href;
+      emTransicao(() => {
+        marcaOtimo(abrir);
+        router.push(href);
+      });
+      window.setTimeout(() => {
+        if (window.location.href === antes) window.location.assign(href);
+      }, LIMITE_NAVEGACAO_MS);
+    };
+
+    return <Ctx.Provider value={{ aberto: abertoOtimo, ir }}>{children}</Ctx.Provider>;
+  }
+
+  return { Ctx, Provider };
+}
+
+const painel = criaSuperficie();
+const tropa = criaSuperficie();
+
+export const PainelProvider = painel.Provider;
+export const NavProvider = tropa.Provider;
 
 /** Só o booleano, pra quem precisa reagir à abertura sem gatilhar navegação
  *  (o `BlocoDeAcoes` re-busca o `/painel` quando a gaveta ABRE — com o valor
  *  da URL essa reação chegaria ~2s tarde, o atraso que o otimista matou).
  *  Fora do provider devolve o `fallback` (o valor do servidor). */
 export function usePainelAberto(fallback: boolean): boolean {
-  return useContext(Ctx)?.aberto ?? fallback;
-}
-
-/** O `AppShell` envolve a árvore inteira nisto. Rota sem painel simplesmente
- *  não consome o contexto, e o provider custa um nó a mais e nada além. */
-export function PainelProvider({ aberto, children }: { aberto: boolean; children: ReactNode }) {
-  const router = useRouter();
-  const [, emTransicao] = useTransition();
-  const [abertoOtimo, marcaOtimo] = useOptimistic(aberto);
-
-  const ir = (href: string, abrir: boolean) => {
-    emTransicao(() => {
-      marcaOtimo(abrir);
-      router.push(href);
-    });
-  };
-
-  return <Ctx.Provider value={{ aberto: abertoOtimo, ir }}>{children}</Ctx.Provider>;
+  return useContext(painel.Ctx)?.aberto ?? fallback;
 }
 
 /** Clique de teclado/mouse primário SEM modificador é o que a gente intercepta;
@@ -95,7 +146,7 @@ export function BotaoPainel({
   /** Valor do servidor — usado no SSR e como fallback fora do provider. */
   aberto: boolean;
 }) {
-  const ctx = useContext(Ctx);
+  const ctx = useContext(painel.Ctx);
   const abertoReal = ctx?.aberto ?? aberto;
   const href = abertoReal ? hrefFechar : hrefAbrir;
 
@@ -142,7 +193,7 @@ export function LinkFechaPainel({
   style?: CSSProperties;
   children?: ReactNode;
 }) {
-  const ctx = useContext(Ctx);
+  const ctx = useContext(painel.Ctx);
 
   return (
     <Link
@@ -173,8 +224,8 @@ export function LinkFechaPainel({
  *  O véu NÃO escurece mais — ordem do Rica (30/07, via Pavan, com prints):
  *  *"tira a função que escurece o resto da tela quando a gaveta/painel
  *  aparece"*. Ele continua existindo só como alvo de clique pra fechar (o
- *  `ck-surge-veu` o esconde com `display: none` quando fechado, então fora do
- *  painel aberto ele não intercepta nada). Sem a cor, o clique de fora
+ *  `ck-surge-veu` o esconde com `visibility: hidden` quando fechado, então fora
+ *  do painel aberto ele não intercepta nada). Sem a cor, o clique de fora
  *  fechando é o MESMO comportamento de antes — só perdeu o aviso visual. Se
  *  o Rica quiser o fundo INTERATIVO (clicar no chat com o painel aberto,
  *  como na referência), é remover este Link de vez. */
@@ -190,7 +241,7 @@ export function GavetaPainel({
   aberto: boolean;
   children: ReactNode;
 }) {
-  const ctx = useContext(Ctx);
+  const ctx = useContext(painel.Ctx);
   const abertoReal = ctx?.aberto ?? aberto;
 
   return (
@@ -221,6 +272,123 @@ export function GavetaPainel({
         inert={!abertoReal}
         className="ck-surge ck-flutua flex min-h-0 flex-col overflow-hidden"
         style={{ background: 'var(--ck-surface-nav)' }}
+      >
+        {children}
+      </aside>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* A TROPA — mesma mecânica, outro lado da tela                                */
+/* -------------------------------------------------------------------------- */
+
+/** O `≡` do chrome. Era um `<Link>` seco dentro da `BarraDeTelas`, e por isso a
+ *  tropa era a última superfície que ainda esperava o servidor pra COMEÇAR a se
+ *  mover. Some no desktop (`md:hidden`): lá a tropa é fundo permanente e o botão
+ *  abriria o que já está aberto, que é a mentira de UI da §9. */
+export function BotaoNav({
+  hrefAbrir,
+  hrefFechar,
+  aberto,
+}: {
+  hrefAbrir: string;
+  hrefFechar: string;
+  /** Valor do servidor — usado no SSR e como fallback fora do provider. */
+  aberto: boolean;
+}) {
+  const ctx = useContext(tropa.Ctx);
+  const abertoReal = ctx?.aberto ?? aberto;
+  const href = abertoReal ? hrefFechar : hrefAbrir;
+
+  return (
+    <Link
+      href={href}
+      onClick={
+        ctx
+          ? (e) => {
+              if (!cliqueSimples(e)) return;
+              e.preventDefault();
+              ctx.ir(href, !abertoReal);
+            }
+          : undefined
+      }
+      aria-label={abertoReal ? 'Fechar lista de agentes' : 'Abrir lista de agentes'}
+      data-selecionado={abertoReal ? 'true' : 'false'}
+      className="ck-veil flex shrink-0 items-center justify-center md:hidden"
+      style={{
+        minWidth: 'var(--ck-touch-min)',
+        minHeight: 'var(--ck-touch-min)',
+        marginLeft: 'calc(var(--ck-space-3) * -1)',
+        borderRadius: 'var(--ck-radius-chip)',
+        color: 'var(--ck-text-secondary)',
+      }}
+    >
+      <IconeMenu tamanho={18} />
+    </Link>
+  );
+}
+
+/** Véu + faixa da tropa. Espelha o `GavetaPainel`, com duas diferenças que vêm
+ *  de a tropa ser fundo permanente no desktop:
+ *
+ *  - o véu é `md:hidden` — acima de `md` não há o que velar, e velar cobriria a
+ *    folha inteira se alguém chegasse por link com `?nav=aberto`;
+ *  - o `data-aberto` da faixa só é LIDO abaixo de `md`: a regra `.ck-surge-lado`
+ *    mora dentro da media query do celular, então acima disso o atributo fica no
+ *    DOM sem efeito nenhum e a faixa permanente segue intocada.
+ *
+ *  Sem `inert`, de propósito: no desktop a faixa está à vista com
+ *  `data-aberto="false"`, e um `inert` amarrado a esse booleano desligaria a
+ *  navegação inteira do desktop. Quem tira do alcance do Tab é o
+ *  `visibility: hidden`, que a media query já limita ao celular. */
+export function GavetaNav({
+  fecharHref,
+  aberto,
+  children,
+}: {
+  fecharHref: string;
+  /** Valor do servidor — usado no SSR e como fallback fora do provider. */
+  aberto: boolean;
+  children: ReactNode;
+}) {
+  const ctx = useContext(tropa.Ctx);
+  const abertoReal = ctx?.aberto ?? aberto;
+
+  const fechar = ctx
+    ? (e: MouseEvent<HTMLAnchorElement>) => {
+        if (!cliqueSimples(e)) return;
+        e.preventDefault();
+        ctx.ir(fecharHref, false);
+      }
+    : undefined;
+
+  return (
+    <>
+      {/* Véu — NÃO escurece mais (ordem do Rica, 30/07, via Pavan com prints:
+          *"tira a função que escurece o resto da tela quando a gaveta
+          aparece"*). Ficou só o alvo de toque que fecha. Sempre no DOM, como o
+          do painel: elemento removido não anima a saída. */}
+      <Link
+        href={fecharHref}
+        onClick={fechar}
+        aria-label="Fechar lista de agentes"
+        data-aberto={String(abertoReal)}
+        className="ck-surge-veu fixed inset-0 md:hidden"
+        style={{ zIndex: 'var(--ck-z-drawer)' }}
+      />
+
+      <aside
+        aria-label="lista de agentes"
+        data-aberto={String(abertoReal)}
+        className="ck-faixa ck-surge-lado flex min-h-0 flex-col overflow-y-auto border-r md:border-r-0 md:flex"
+        // Os `safe-*` desta faixa moram na classe, não aqui: no desktop o
+        // `padding-top` vira o respiro que alinha a tropa com o chrome da folha,
+        // e estilo inline venceria a media query.
+        style={{
+          background: 'var(--ck-surface-nav)',
+          borderColor: 'var(--ck-edge-hairline)',
+        }}
       >
         {children}
       </aside>

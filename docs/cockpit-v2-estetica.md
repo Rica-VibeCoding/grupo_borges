@@ -944,6 +944,32 @@ Se entrar, o caminho já está levantado: `view-transition-name` único por agen
 e o `prefers-reduced-motion` do `globals.css` já desliga. O que **não** existe hoje é o
 destino: ele teria de nascer, e nascer é a decisão que o Rica adiou.
 
+### A pasta do agente entrou na TROPA, e não como cabeçalho de volta (02/08)
+
+> *"toda tropa eu tenho que saber em que pasta que tá, para não ficar perguntando"*
+
+Pedido novo do Rica, e ele **não** revoga a ordem acima. O que ele quer saber não é
+identidade — é onde o agente trabalha, e para os nove ao mesmo tempo. Cabeçalho no chat
+mostraria um por vez, que é justamente o que a §15 tirou; o painel INF. já fazia isso e
+não resolvia, porque também é um por vez.
+
+Por isso a pasta é linha da tropa, em `tropa.tsx`:
+
+- **Agente de pé:** terceira linha do cartão, abaixo da statusline. Linha própria e não um
+  pedaço dela — a statusline é telemetria viva (modelo · sessão · contexto) e a pasta é
+  fato de cadastro, que não muda no ritmo dos outros três.
+- **Agente dormindo:** na MESMA linha, entre o nome e o "há 20h". A folga ali era rio, não
+  respiro. Ela cede antes do nome e antes do tempo — no aparelho estreito a pasta some
+  primeiro, porque é a menos urgente das três.
+- **Cor `secondary`, nunca `tertiary`** — 12px em `tertiary` fura o piso de 4.5:1 da §3. É
+  a mesma armadilha que já tinha mordido os badges do `status-line.tsx` (`ffd8902`).
+- Corta só `/home/clawd/repos/`: `fluyt/apps/pos` distingue app de app, coisa que o último
+  segmento sozinho (`pos`) não faria. O caminho inteiro fica no `title`.
+
+O helper é local ao `components/shell/` de propósito — o gêmeo dele mora no `apps/web`
+congelado (ver `cockpit-v2-ownership.md` §6) e o `cockpit-core` é do Pavan. Cópia de seis
+linhas que morre com o v1 é mais barata que abrir o núcleo compartilhado.
+
 ## 16. As pendências de token do §5.1 — fechadas, e seis delas já estavam (30/07)
 
 O `cockpit-v2-ownership.md` §5.1 lista sete pendências de pele como bloqueantes dos renderers.
@@ -1007,15 +1033,14 @@ animar superfície nova usa `.ck-surge` e não escreve keyframe próprio.
 
 ### A regra que decide a técnica
 
-**Saída não se anima com o elemento sendo REMOVIDO do DOM.** `@starting-style` cobre o
-elemento *aparecendo* ou saindo de `display: none` — conferido na doc, não suposto. Como aqui
-a superfície mora na URL, a gaveta deixava de ser renderizada na navegação e por isso só
-poderia ter entrada.
+**Saída não se anima com o elemento sendo REMOVIDO do DOM.** Como aqui a superfície mora na
+URL, a gaveta deixava de ser renderizada na navegação e por isso só poderia ter entrada.
 
 A saída é o motivo de o `app-shell` passar a **manter o painel sempre montado**, alternando só
 `data-aberto`. O React reconcilia o mesmo nó a cada navegação e o CSS ganha os dois lados.
-`display` entra na transição com `allow-discrete` (ele não interpola: sem isso o elemento
-sumiria no primeiro frame e a animação rodaria no vazio).
+
+> Como o elemento fica escondido mudou em 02/08 — era `display: none` + `@starting-style` +
+> `allow-discrete`, virou `visibility`. Motivo abaixo.
 
 **O que isto compra:** zero `AnimatePresence`, zero biblioteca de motion — o shell continua
 Server Component, que é o que faz deep-link e botão voltar funcionarem. Não foi
@@ -1024,6 +1049,101 @@ elemento migrando entre dois lugares, como seria a animação do retrato da §15
 saída de uma superfície única. O palpite do despacho estava certo, e o freio da §15 não se
 aplica aqui. (Nasceu "zero JavaScript"; a abertura otimista abaixo adicionou UMA peça de
 cliente — a animação em si continua 100% CSS.)
+
+### A gaveta abria com 0px de altura no iPhone — três hipóteses erradas e uma medida (02/08)
+
+Sintoma que o Rica reportou quatro vezes: no celular, tocar o botão do painel **não abria nada**, e
+numa das vezes ele mandou foto com o botão parecendo aceso. No Chrome — local, com viewport de
+celular, e pelo túnel — nunca reproduziu.
+
+**As três hipóteses erradas, na ordem, porque o erro é a parte útil:**
+
+1. *A navegação client-side falha* (minha). `preventDefault()` sem plano B, `router.push` sem
+   caminho de erro. Saiu de lá o watchdog do `painel-otimista.tsx` — se a URL não muda em 1,2s, o
+   app abandona o roteador e navega na marra. Continuou não abrindo.
+2. *Chunk velho em cache no Safari* (Tara, em Sol). Mesma família: mexe na navegação. Continuou.
+3. *`@starting-style` + `allow-discrete` engasgando no WebKit* (minha). Veio de um diferencial
+   verdadeiro que o Rica deu — *"o botão da sidebar funciona normal"* — mas eu li o diferencial
+   errado: concluí que a diferença entre a tropa e a gaveta era a **animação**, quando havia outra
+   diferença mais funda. Troquei o `display: none` por `visibility` e anunciei como resolvido.
+   Continuou não abrindo. **A troca fica** (é mais robusta e não depende de duas features novas),
+   mas ela não era a causa e o doc não deve fingir que era.
+
+**O que fechou: medir no aparelho dele.** Não existia log de tela, então virou uma peça — a régua
+`?diag=1` (`components/shell/diagnostico.tsx` + `app/api/diag/route.ts`): pinta no rodapé o que o
+Safari DELE resolveu e manda a mesma leitura pro servidor. Primeira medida que chegou:
+
+```
+vp=393x665  botao=true | aside true vis:visible op:1 disp:flex rect[8,8,377,0]
+```
+
+A gaveta **abria**. Visível, opacidade 1, posição certa, largura certa — e **altura zero**. Nunca
+foi navegação, nunca foi animação, nunca foi cache. Era layout, e os três palpites estavam olhando
+para o lado errado do problema.
+
+**A causa.** A cadeia era:
+
+```
+aside.ck-flutua   height: fit-content; max-height: X; display:flex; flex-direction:column
+  └─ div.flex-1   → flex: 1 1 0%   (o `flex-1` do Tailwind)
+       └─ div.flex-1.overflow-y-auto
+```
+
+O pai tira a altura do CONTEÚDO; o filho declara base **zero**. Quanto um item de base 0 contribui
+para o tamanho intrínseco do pai é exatamente onde os motores divergem: o Blink calcula a fração de
+flex e devolve algo; o WebKit devolve 0. Daí 0px de altura, e daí a tela vazia com o botão aceso.
+
+**O conserto — duas linhas, e nenhuma delas é hack de browser:**
+
+- `flex-auto` no lugar de `flex-1` nos dois níveis do `Painel` (nas duas rotas do agente).
+  `flex: 1 1 auto` faz a base ser o conteúdo, que é o que o pai precisa medir. O `min-h-0`
+  continua deixando o item encolher quando o `max-height` morde — é o que mantém a rolagem por
+  dentro em vez de estouro.
+- `height: auto` no lugar de `fit-content` no `.ck-flutua`. Em elemento `fixed` com só o `top`
+  preso os dois dizem a mesma coisa, e `auto` não depende de o motor implementar `fit-content` no
+  eixo do bloco.
+
+**Lição de método, e ela custou três rodadas.** As três hipóteses saíram de ler código e comparar
+com o que eu conseguia rodar. Nenhuma podia dar certo, porque o bug só existia num motor que eu
+não tinha. O que resolveu foi **construir a medição no aparelho dele** — meia hora de sonda contra
+três rodadas de palpite. Quando o defeito não reproduz no ambiente que você controla, a próxima
+peça a escrever não é o conserto: é o instrumento.
+
+> Sobre o WebKit de verdade: o `playwright install webkit` baixa, mas o binário pede ~20
+> bibliotecas de sistema (gtk-4, gstreamer, libavif…) que exigem `sudo apt`. Se essa instalação
+> acontecer um dia, esta classe inteira de bug passa a reproduzir localmente e a régua vira
+> dispensável.
+
+### A tropa entrou no otimista, e quem viu foi o Rica (02/08)
+
+Assim que as duas superfícies passaram a ter o mesmo movimento, ele perguntou testando:
+*"a sidebar demora um pouquinho mais para abrir, para começar o movimento — porque ela traz mais
+dados ou é alguma configuração?"*. Nem uma coisa nem outra: ela era **a última superfície ainda
+esperando o servidor**. O `≡` era um `<Link>` seco; o `data-aberto` dela só virava quando a
+navegação `?nav=aberto` voltava da página `force-dynamic`.
+
+Medido lado a lado (Playwright, viewport de celular, build de produção na :3008), do toque até o
+`data-aberto` virar:
+
+| | antes | depois |
+|---|---|---|
+| painel | 271ms | 270ms |
+| tropa | **618ms** | **195ms** |
+
+Os 618ms eram exatamente a ida e volta (a URL chegava em 630ms). Na rede dele, pelo túnel, é a
+mesma espera de 2,0–2,7s que criou o mecanismo em 30/07.
+
+**O que mudou.** `painel-otimista.tsx` virou `superficie-otimista.tsx`: o contexto saiu de uma
+constante de módulo para uma fábrica (`criaSuperficie()`), e existem dois — um pro painel, um pra
+tropa. **Separados de propósito**: as duas abrem e fecham independentes (dá pra estar com a tropa
+aberta e tocar no painel), e um contexto só forçaria um estado compartilhado que a URL não tem. O
+`≡` virou `BotaoNav` e o par véu+faixa virou `GavetaNav`, espelhando `BotaoPainel`/`GavetaPainel`.
+
+**O que não mudou, e era o risco:** o desktop. Conferido depois — faixa `position: static`,
+`visibility: visible`, 260px, e o `≡` continua ausente (`md:hidden`). A faixa permanente carrega
+`data-aberto="false"` no DOM e ele não faz nada lá, porque `.ck-surge-lado` mora inteira dentro da
+media query do celular. Pelo mesmo motivo a `GavetaNav` **não** usa `inert`: amarrado a esse
+booleano, ele desligaria a navegação inteira do desktop.
 
 ### A abertura otimista — a demora não era a animação (30/07, noite)
 

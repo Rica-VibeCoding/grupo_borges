@@ -16,7 +16,7 @@
  *    Desde 30/07 a regra tem UM acréscimo: a página do agente é
  *    `force-dynamic`, e a ida e volta da navegação custava 2,0–2,7s medidos
  *    antes do painel sequer começar a aparecer — o Rica pegou ao vivo
- *    (*"demora muito para abrir"*). A abertura otimista (`painel-otimista.tsx`)
+ *    (*"demora muito para abrir"*). A abertura otimista (`superficie-otimista.tsx`)
  *    vira o `data-aberto` no mesmo frame e deixa a URL alcançar a tela atrás.
  *    A URL continua sendo a fonte da verdade — o otimista só adianta a
  *    pintura, não detém estado.
@@ -50,9 +50,7 @@
  *
  * Dono deste arquivo: frente `chrome` (docs/cockpit-v2-ownership.md §2).
  */
-import Link from 'next/link';
-
-import { GavetaPainel, PainelProvider } from './painel-otimista';
+import { GavetaNav, GavetaPainel, NavProvider, PainelProvider } from './superficie-otimista';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -101,44 +99,19 @@ export function AppShell({
     // aqui embaixo — os dois lados precisam do mesmo contexto. Fora de rota
     // com painel ele só não é consumido.
     <PainelProvider aberto={painelAberto}>
+      <NavProvider aberto={navAberta}>
       <div
         className="relative flex h-dvh overflow-hidden"
         style={{ background: 'var(--ck-surface-nav)' }}
       >
+      {/* A tropa. O véu e a faixa agora moram no `GavetaNav`, que é cliente:
+          até 02/08 o `≡` era um `<Link>` seco e a tropa esperava a ida e volta
+          ao servidor pra COMEÇAR a se mover (618ms contra 271ms do painel,
+          medido lado a lado). Mesma mecânica do painel, outro lado da tela. */}
       {nav ? (
-        <>
-          {/* Véu — só no celular. No desktop a faixa é fundo permanente e não
-              há nada para velar; deixar o véu vivo lá cobriria a folha inteira
-              se alguém chegasse por um link com `?nav=aberto`.
-
-              NÃO escurece mais — ordem do Rica (30/07, via Pavan, com prints):
-              *"tira a função que escurece o resto da tela quando a gaveta
-              aparece"*. Ficou só o alvo de toque que fecha. */}
-          {navAberta ? (
-            <Link
-              href={fecharNavHref}
-              aria-label="Fechar lista de agentes"
-              className="fixed inset-0 md:hidden"
-              style={{ zIndex: 'var(--ck-z-drawer)' }}
-            />
-          ) : null}
-
-          <aside
-            aria-label="lista de agentes"
-            className={`ck-faixa min-h-0 flex-col overflow-y-auto border-r md:border-r-0 ${
-              navAberta ? 'flex' : 'hidden'
-            } md:flex`}
-            // Os `safe-*` desta faixa moram na classe, não aqui: no desktop o
-            // `padding-top` vira o respiro que alinha a tropa com o chrome da
-            // folha, e estilo inline venceria a media query.
-            style={{
-              background: 'var(--ck-surface-nav)',
-              borderColor: 'var(--ck-edge-hairline)',
-            }}
-          >
-            {nav}
-          </aside>
-        </>
+        <GavetaNav fecharHref={fecharNavHref} aberto={navAberta}>
+          {nav}
+        </GavetaNav>
       ) : null}
 
       {/* Palco. `min-w-0` é obrigatório: sem ele um bloco de código longo
@@ -154,15 +127,14 @@ export function AppShell({
           fica SEMPRE no DOM e o que muda é `data-aberto`.
 
           Isto não é detalhe de implementação, é o que compra a animação de
-          SAÍDA. `@starting-style` só cobre elemento aparecendo ou saindo de
-          `display: none`; elemento REMOVIDO do DOM sai sem transição nenhuma —
-          e removido era o que ele era, porque a navegação `?painel=…` deixava
-          de renderizá-lo. Mantido montado, o React reconcilia o mesmo nó a cada
+          SAÍDA: elemento REMOVIDO do DOM sai sem transição nenhuma — e removido
+          era o que ele era, porque a navegação `?painel=…` deixava de
+          renderizá-lo. Mantido montado, o React reconcilia o mesmo nó a cada
           navegação e o CSS anima os dois lados. Ver `.ck-surge` no globals.css.
 
           E é o que também compra a ABERTURA OTIMISTA: como o conteúdo já está
           montado, o clique vira `data-aberto` no mesmo frame e a navegação só
-          sincroniza a URL atrás (ver `painel-otimista.tsx`).
+          sincroniza a URL atrás (ver `superficie-otimista.tsx`).
 
           `inert` quando fechado: durante a saída o elemento ainda está visível
           por ~200ms, e sem isto o conteúdo continuaria alcançável por Tab
@@ -173,6 +145,7 @@ export function AppShell({
         </GavetaPainel>
       ) : null}
       </div>
+      </NavProvider>
     </PainelProvider>
   );
 }

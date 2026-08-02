@@ -21,7 +21,7 @@
  * deep link do Telegram e botão voltar do Android continuam funcionando de
  * graça. O botão do painel é a ÚNICA peça de cliente (`BotaoPainel`): desde
  * 30/07 a abertura é otimista — vira o painel no mesmo frame e empurra a
- * navegação atrás (`painel-otimista.tsx`); sem JS ele é o Link de sempre.
+ * navegação atrás (`superficie-otimista.tsx`); sem JS ele é o Link de sempre.
  *
  * A PILL É HONESTA (§9 — botão que não leva a lugar nenhum é mentira de UI):
  * hoje só existe UM destino de produto (o chat do agente). A fase 2 (kanban)
@@ -31,16 +31,16 @@
  * ocupa o mesmo lugar da referência, porque é o rótulo de ONDE você está, e
  * ganha companhia no dia em que houver pra onde ir.
  */
-import Link from 'next/link';
-
-import { IconeMenu } from './icones';
-import { BotaoPainel } from './painel-otimista';
+import { BotaoNav, BotaoPainel } from './superficie-otimista';
 
 export type Tela = { rotulo: string; ativa: boolean };
 
 type BarraDeTelasProps = {
   telas: Tela[];
+  /** Os DOIS destinos do `≡`, pelo mesmo motivo do painel: o `BotaoNav` escolhe
+   *  conforme o estado otimista, que pode correr à frente da URL. */
   abrirNavHref: string;
+  fecharNavHref: string;
   navAberta: boolean;
   /** Os DOIS destinos do botão do painel — o `BotaoPainel` escolhe conforme o
    *  estado otimista do momento, que pode correr à frente da URL. */
@@ -52,6 +52,7 @@ type BarraDeTelasProps = {
 export function BarraDeTelas({
   telas,
   abrirNavHref,
+  fecharNavHref,
   navAberta,
   hrefAbrirPainel,
   hrefFecharPainel,
@@ -68,21 +69,7 @@ export function BarraDeTelas({
         paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
       }}
     >
-      <Link
-        href={abrirNavHref}
-        aria-label={navAberta ? 'Fechar lista de agentes' : 'Abrir lista de agentes'}
-        data-selecionado={navAberta ? 'true' : 'false'}
-        className="ck-veil flex shrink-0 items-center justify-center md:hidden"
-        style={{
-          minWidth: 'var(--ck-touch-min)',
-          minHeight: 'var(--ck-touch-min)',
-          marginLeft: 'calc(var(--ck-space-3) * -1)',
-          borderRadius: 'var(--ck-radius-chip)',
-          color: 'var(--ck-text-secondary)',
-        }}
-      >
-        <IconeMenu tamanho={18} />
-      </Link>
+      <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
 
       {/* Contrapeso do botão de painel — sem ele, o `≡` sumindo no desktop
           puxaria o pill para a esquerda e ele deixaria de estar centralizado

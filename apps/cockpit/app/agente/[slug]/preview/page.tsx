@@ -6,7 +6,7 @@ import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
-import { LinkFechaPainel } from '@/components/shell/painel-otimista';
+import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { Tropa } from '@/components/shell/tropa';
 import { FeedDaConversa } from '../feed-da-conversa';
 
@@ -63,7 +63,15 @@ function Painel({
   painelAberto: boolean;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // `flex-auto` (base no conteúdo), NÃO `flex-1` (base 0) — 02/08. O `flex-1`
+    // do Tailwind é `flex: 1 1 0%`, e o pai (`.ck-flutua`) tem altura vinda do
+    // CONTEÚDO. Item com base 0 contribui 0 pro tamanho intrínseco do pai no
+    // WebKit, e a gaveta inteira nascia com 0px de altura no iPhone do Rica —
+    // visível, no lugar certo, largura certa e altura nenhuma. Com base `auto` a
+    // contribuição é o conteúdo de verdade, nos dois motores. O `min-h-0`
+    // continua deixando o item encolher quando o `max-height` do pai morde, que
+    // é o que faz a área de baixo rolar em vez de estourar.
+    <div className="flex min-h-0 flex-auto flex-col">
       <div
         className="flex shrink-0 items-center justify-between border-b"
         style={{
@@ -102,7 +110,7 @@ function Painel({
       <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
 
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        className="flex min-h-0 flex-auto flex-col overflow-y-auto"
         style={{ gap: 'var(--ck-space-4)', padding: 'var(--ck-space-4)' }}
       >
         <Campo rotulo="Papel" valor={agente.role} />
@@ -136,6 +144,8 @@ export default async function AgentePreviewPage({
   const painelAberto = typeof sp.painel === 'string' && sp.painel.length > 0;
   const navAberta = sp.nav === 'aberto';
   const fecharHref = `/agente/${slug}/preview`;
+  const abrirNavHref = `${fecharHref}?nav=aberto`;
+  const abrirPainelHref = `${fecharHref}?painel=detalhes`;
   const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
 
   return (
@@ -150,9 +160,10 @@ export default async function AgentePreviewPage({
     >
       <BarraDeTelas
         telas={[{ rotulo: 'Chat · preview', ativa: true }]}
-        abrirNavHref={navAberta ? fecharHref : `${fecharHref}?nav=aberto`}
+        abrirNavHref={abrirNavHref}
+        fecharNavHref={fecharHref}
         navAberta={navAberta}
-        hrefAbrirPainel={`${fecharHref}?painel=detalhes`}
+        hrefAbrirPainel={abrirPainelHref}
         hrefFecharPainel={fecharHref}
         painelAberto={painelAberto}
       />
@@ -184,6 +195,7 @@ export default async function AgentePreviewPage({
       >
         <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
       </div>
+
     </AppShell>
   );
 }
