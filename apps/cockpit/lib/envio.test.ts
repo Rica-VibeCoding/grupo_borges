@@ -16,17 +16,20 @@ function enviando(texto = 'faz isso', fronteiraId = 10): EstadoEnvio {
   });
 }
 
+test('prazo de eco cobre agente ocupado sem congelar o composer', () => {
+  assert.equal(PRAZO_ECO_MS, 12_000);
+});
+
 test('200 deixa o envio aceito, ainda sem cantar sucesso', () => {
   const estado = reduzEnvio(enviando(), { tipo: 'aceitar', agoraMs: 1_000 });
   assert.equal(estado.fase, 'aceito');
 });
 
-test('409, rede ou erro do back falha durante o POST', () => {
+test('rejeição explícita do POST é falha real', () => {
   const erro = new Error('agent_pane_unavailable');
   const estado = reduzEnvio(enviando(), {
     tipo: 'falhar',
     erro,
-    entregaIncerta: false,
   });
   assert.deepEqual(estado, {
     fase: 'falhou',
@@ -34,8 +37,17 @@ test('409, rede ou erro do back falha durante o POST', () => {
     fronteira: { id: 10, origem: 'barreira-do-servidor' },
     ecosIguaisSemDono: 0,
     erro,
-    entregaIncerta: false,
   });
+});
+
+test('perda de resposta do POST fica não confirmada, pois pode ter entregado', () => {
+  const erro = new Error('rede caiu depois da entrega');
+  const estado = reduzEnvio(enviando(), {
+    tipo: 'nao-confirmar',
+    erro,
+  });
+  assert.equal(estado.fase, 'nao-confirmado');
+  if (estado.fase === 'nao-confirmado') assert.strictEqual(estado.erro, erro);
 });
 
 test('só item user posterior e com o mesmo texto confirma', () => {
@@ -114,12 +126,12 @@ test('dois envios iguais em sequência não reutilizam o primeiro eco', () => {
   assert.equal(segundoAceito.fase, 'confirmado');
 });
 
-test('retry idêntico após pendurado não rouba eventual eco do primeiro', () => {
-  const primeiroPendurado = reduzEnvio(
+test('novo envio idêntico após não confirmado não rouba eventual eco do primeiro', () => {
+  const primeiroNaoConfirmado = reduzEnvio(
     reduzEnvio(enviando('ok', 40), { tipo: 'aceitar', agoraMs: 0 }),
     { tipo: 'tempo-passou', agoraMs: PRAZO_ECO_MS },
   );
-  const retry = reduzEnvio(primeiroPendurado, {
+  const retry = reduzEnvio(primeiroNaoConfirmado, {
     tipo: 'enviar',
     texto: 'ok',
     fronteira: { id: 40, origem: 'barreira-do-servidor' },
@@ -139,21 +151,21 @@ test('retry idêntico após pendurado não rouba eventual eco do primeiro', () =
 });
 
 test('dívida de eco idêntico não contamina um texto diferente', () => {
-  const primeiroPendurado = reduzEnvio(
+  const primeiroNaoConfirmado = reduzEnvio(
     reduzEnvio(enviando('ok', 40), { tipo: 'aceitar', agoraMs: 0 }),
     { tipo: 'tempo-passou', agoraMs: PRAZO_ECO_MS },
   );
-  const retry = reduzEnvio(primeiroPendurado, {
+  const retry = reduzEnvio(primeiroNaoConfirmado, {
     tipo: 'enviar',
     texto: 'ok',
     fronteira: { id: 40, origem: 'barreira-do-servidor' },
   });
-  const retryFalhou = reduzEnvio(retry, {
-    tipo: 'falhar',
+  const retryNaoConfirmado = reduzEnvio(retry, {
+    tipo: 'nao-confirmar',
     erro: new Error('rede'),
-    entregaIncerta: true,
   });
-  const textoNovo = reduzEnvio(retryFalhou, {
+  assert.equal(retryNaoConfirmado.fase, 'nao-confirmado');
+  const textoNovo = reduzEnvio(retryNaoConfirmado, {
     tipo: 'enviar',
     texto: 'agora outra coisa',
     fronteira: { id: 40, origem: 'barreira-do-servidor' },
@@ -177,7 +189,7 @@ test('não substitui uma tentativa ainda em voo por outro envio', () => {
   assert.strictEqual(sobreposto, primeiro);
 });
 
-test('prazo conta a partir do aceite e vira pendurado no limite', () => {
+test('prazo conta a partir do aceite e vira não confirmado no limite', () => {
   const aceito = reduzEnvio(enviando(), {
     tipo: 'aceitar',
     agoraMs: 5_000,
@@ -192,7 +204,7 @@ test('prazo conta a partir do aceite e vira pendurado no limite', () => {
   });
 
   assert.equal(antes.fase, 'aceito');
-  assert.equal(noLimite.fase, 'pendurado');
+  assert.equal(noLimite.fase, 'nao-confirmado');
 });
 
 test('eco durante o POST só confirma depois do 200', () => {
@@ -213,7 +225,6 @@ test('409 vence um eco candidato e retry idêntico usa o primeiro eco real', () 
   const falhou = reduzEnvio(candidato, {
     tipo: 'falhar',
     erro: new Error('409'),
-    entregaIncerta: false,
   });
   const retry = reduzEnvio(falhou, {
     tipo: 'enviar',
@@ -230,12 +241,12 @@ test('409 vence um eco candidato e retry idêntico usa o primeiro eco real', () 
   assert.equal(ecoReal.fase, 'confirmado');
 });
 
-test('eco tardio recupera um envio pendurado', () => {
-  const pendurado = reduzEnvio(
+test('eco tardio recupera um envio não confirmado', () => {
+  const naoConfirmado = reduzEnvio(
     reduzEnvio(enviando(), { tipo: 'aceitar', agoraMs: 0 }),
     { tipo: 'tempo-passou', agoraMs: PRAZO_ECO_MS },
   );
-  const ecoTardio = reduzEnvio(pendurado, {
+  const ecoTardio = reduzEnvio(naoConfirmado, {
     tipo: 'item-do-stream',
     item: { id: 11, papel: 'user', texto: 'faz isso' },
   });

@@ -141,6 +141,14 @@ describe('microfone indisponível — nunca um botão que não responde', () => 
     assert.match(d.saida, /texto/);
   });
 
+  it('erro genérico não afirma que nada foi entregue', () => {
+    const d = diagnosticaTranscricao(new Error('Failed to fetch'));
+    assert.match(d.resumo, /não consegui confirmar/i);
+    assert.match(d.saida, /confira no chat/i);
+    assert.match(d.saida, /duplicar/i);
+    assert.doesNotMatch(`${d.resumo} ${d.saida}`, /nada foi entregue|não chegou ao agente/i);
+  });
+
   it('erro sem `name` não quebra o diagnóstico', () => {
     assert.ok(diagnosticaMicrofone(undefined).saida.length > 0);
     assert.ok(diagnosticaMicrofone('deu ruim').saida.length > 0);

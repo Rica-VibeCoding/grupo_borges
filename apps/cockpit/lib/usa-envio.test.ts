@@ -125,7 +125,7 @@ test('POST instala a fronteira, fica aceito e o eco user confirma', async () => 
   assert.equal(relogio.quantidade(), 0);
 });
 
-test('erro do POST alimenta falhou e não abre o stream', async () => {
+test('erro de rede sem resposta fica não confirmado e não abre o stream', async () => {
   const fonte = fonteFake();
   const erro = new Error('rede caiu');
   const controle = createControleEnvio('tara', {
@@ -138,15 +138,37 @@ test('erro do POST alimenta falhou e não abre o stream', async () => {
   await controle.enviar('faz isso');
 
   const estado = controle.getEstado();
-  assert.equal(estado.fase, 'falhou');
-  if (estado.fase === 'falhou') {
+  assert.equal(estado.fase, 'nao-confirmado');
+  if (estado.fase === 'nao-confirmado') {
     assert.strictEqual(estado.erro, erro);
-    assert.equal(estado.entregaIncerta, true);
   }
   assert.equal(fonte.instancias.length, 0);
 });
 
-test('timer externo ao redutor transforma aceito em pendurado no prazo', async () => {
+test('rejeição HTTP do POST é falha real', async () => {
+  const erro = Object.assign(new Error('agent_pane_unavailable'), { status: 409 });
+  const controle = createControleEnvio('tara', {
+    postar: async () => {
+      throw erro;
+    },
+  });
+
+  await controle.enviar('faz isso');
+
+  assert.equal(controle.getEstado().fase, 'falhou');
+});
+
+test('tmux_delivered false é falha real', async () => {
+  const controle = createControleEnvio('tara', {
+    postar: async () => ({ ...resposta(10), tmux_delivered: false }),
+  });
+
+  await controle.enviar('faz isso');
+
+  assert.equal(controle.getEstado().fase, 'falhou');
+});
+
+test('timer externo ao redutor transforma aceito em não confirmado no prazo', async () => {
   const fonte = fonteFake();
   const relogio = relogioFake();
   const controle = createControleEnvio('tara', {
@@ -161,10 +183,10 @@ test('timer externo ao redutor transforma aceito em pendurado no prazo', async (
   relogio.avancar(PRAZO_ECO_MS - 1);
   assert.equal(controle.getEstado().fase, 'aceito');
   relogio.avancar(1);
-  assert.equal(controle.getEstado().fase, 'pendurado');
+  assert.equal(controle.getEstado().fase, 'nao-confirmado');
 });
 
-test('reenviar só atua em pendurado e preserva a proteção de texto idêntico', async () => {
+test('mandar de novo só atua em não confirmado e preserva a proteção de texto idêntico', async () => {
   const fonte = fonteFake();
   const relogio = relogioFake();
   let chamadas = 0;
@@ -312,7 +334,7 @@ test('o eco da voz volta com o prefixo do back e ainda assim CONFIRMA', async ()
   assert.equal(controle.getEstado().fase, 'aceito');
 
   // Exatamente o que o tmux entrega — sem descascar, isto nunca casaria com o
-  // texto que a UI conhece e TODO áudio terminaria pendurado.
+  // texto que a UI conhece e TODO áudio terminaria não confirmado.
   const observacao = fonte.instancias.find((instancia) => !instancia.ehSonda());
   assert.ok(observacao);
   observacao.emitirMensagem(41, 'user', '🎙 sobe o cockpit na porta 3008');
@@ -320,6 +342,19 @@ test('o eco da voz volta com o prefixo do back e ainda assim CONFIRMA', async ()
   const estado = controle.getEstado();
   assert.equal(estado.fase, 'confirmado');
   assert.equal(estado.texto, 'sobe o cockpit na porta 3008', 'a tela mostra a fala, não o prefixo');
+});
+
+test('voz com tmux_delivered false é falha real, não falta de eco', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = controleDeVoz(fonte, relogio, async () => ({
+    transcribed: 'faz isso',
+    tmux_delivered: false,
+  }));
+
+  await vozAte(fonte, controle, 40);
+
+  assert.equal(controle.getEstado().fase, 'falhou');
 });
 
 test('executor Codex entrega SEM prefixo — e confirma do mesmo jeito', async () => {
@@ -407,5 +442,5 @@ test('sonda que não responde não trava o áudio do Rica', async () => {
   relogio.avancar(4_000); // o teto da sonda
   assert.equal(await promessa, 'sem barreira');
   // Entregue e sem confirmação observável — a verdade, não um "enviado" verde.
-  assert.equal(controle.getEstado().fase, 'pendurado');
+  assert.equal(controle.getEstado().fase, 'nao-confirmado');
 });

@@ -25,7 +25,7 @@ type RespostaComFronteira = AgentInputResponse & {
  * O back NÃO entrega a transcrição crua: `agents.py` faz
  * `send_message(sessão, f"🎙 {transcribed}")`. O eco volta pelo stream com esse
  * prefixo, e o texto que a UI conhece é a transcrição limpa — sem descascar,
- * a comparação do redutor nunca casa e TODO áudio termina em `pendurado`.
+ * a comparação do redutor nunca casa e TODO áudio termina em `nao-confirmado`.
  *
  * Só descasca quando a tentativa corrente veio de voz. Descascar sempre
  * quebraria o caso legítimo de alguém digitar uma mensagem que começa com o
@@ -36,6 +36,8 @@ export const PREFIXO_VOZ = /^🎙\s*/u;
 
 export type RespostaVoz = {
   transcribed: string;
+  /** `false` é sinal negativo do próprio backend, não mera falta de eco. */
+  tmux_delivered?: boolean;
   /** Ausente hoje: `POST /{slug}/voice` não devolve a barreira que `/input`
    *  devolve. Enquanto não devolver, ela é sondada no servidor antes do POST —
    *  ver `sondarFronteira`. O campo já é lido para que a troca no back seja
@@ -218,10 +220,10 @@ export function createControleEnvio(
         timerReconexao = undefined;
         // O endpoint reexecuta o replay a partir deste cursor. Ainda assim, se
         // o servidor algum dia não conseguir reter/replayar o intervalo da
-        // queda, um eco pode ser perdido e o envio ficará `pendurado`. Não há
-        // reconciliação adicional nesta rodada.
+        // queda, um eco pode ser perdido e o envio ficará
+        // `nao-confirmado`. Não há reconciliação adicional nesta rodada.
         if (
-          (estado.fase === 'aceito' || estado.fase === 'pendurado') &&
+          (estado.fase === 'aceito' || estado.fase === 'nao-confirmado') &&
           estado.fronteira !== undefined
         ) {
           observar(estado.fronteira);
@@ -302,21 +304,27 @@ export function createControleEnvio(
     try {
       const resposta = await postar(agentSlug, texto);
       if (descartado) return;
+      if (!resposta.tmux_delivered) {
+        publicar({
+          tipo: 'falhar',
+          erro: new Error('O backend informou que a sessão tmux não recebeu o texto'),
+        });
+        return;
+      }
       const fronteira = fronteiraDo(resposta.event_boundary_id);
       publicar({ tipo: 'aceitar', agoraMs: agora(), fronteira });
       observar(fronteira);
       armarPrazo();
     } catch (erro) {
       if (descartado) return;
-      publicar({
-        tipo: 'falhar',
-        erro,
-        entregaIncerta:
-          typeof erro !== 'object' ||
-          erro === null ||
-          !('status' in erro) ||
-          typeof erro.status !== 'number',
-      });
+      const rejeicaoHttp =
+        typeof erro === 'object' &&
+        erro !== null &&
+        'status' in erro &&
+        typeof erro.status === 'number';
+      publicar(
+        rejeicaoHttp ? { tipo: 'falhar', erro } : { tipo: 'nao-confirmar', erro },
+      );
     }
   }
 
@@ -342,9 +350,11 @@ export function createControleEnvio(
 
     let transcrito: string;
     let fronteira: FronteiraEnvio | null;
+    let entregueNoTmux: boolean;
     try {
       const resposta = await postarVoz(agentSlug, audio);
       transcrito = resposta.transcribed;
+      entregueNoTmux = resposta.tmux_delivered !== false;
       fronteira =
         typeof resposta.event_boundary_id === 'number'
           ? fronteiraDo(resposta.event_boundary_id)
@@ -361,6 +371,13 @@ export function createControleEnvio(
     if (descartado) return transcrito;
     vozEmVoo = true;
     publicar({ tipo: 'enviar', texto: transcrito, fronteira: fronteira ?? undefined });
+    if (!entregueNoTmux) {
+      publicar({
+        tipo: 'falhar',
+        erro: new Error('O backend informou que a sessão tmux não recebeu o áudio'),
+      });
+      return transcrito;
+    }
     if (fronteira) {
       publicar({ tipo: 'aceitar', agoraMs: agora(), fronteira });
       observar(fronteira);
@@ -368,7 +385,8 @@ export function createControleEnvio(
     } else {
       // Sem barreira não há como distinguir o eco do envio de um item anterior.
       // Confirmar assim mesmo seria adivinhar, e adivinhar aqui é exatamente o
-      // "enviado" mentiroso que esta máquina existe para matar. Fica pendurado:
+      // "enviado" mentiroso que esta máquina existe para matar. Fica não
+      // confirmado:
       // entregue, sem confirmação observável — que é a verdade.
       publicar({ tipo: 'aceitar', agoraMs: agora(), fronteira: fronteiraDo(0) });
       publicar({ tipo: 'tempo-passou', agoraMs: agora() + PRAZO_ECO_MS });
@@ -385,7 +403,7 @@ export function createControleEnvio(
     enviar: executar,
     enviarVoz: executarVoz,
     async reenviar() {
-      if (estado.fase !== 'pendurado') return;
+      if (estado.fase !== 'nao-confirmado') return;
       await executar(estado.texto);
     },
     dispose() {

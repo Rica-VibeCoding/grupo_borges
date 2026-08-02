@@ -3,7 +3,7 @@
  *
  * ⚠️ Isto NÃO é `lib/envio.ts`. Aquele é o motor — o redutor que decide QUANDO
  * uma fase vira outra (200 do POST → `aceito`, eco no stream → `confirmado`,
- * prazo estourado → `pendurado`) e ele é da Tara. Este módulo responde a outra
+ * prazo estourado → `nao-confirmado`) e ele é da Tara. Este módulo responde a outra
  * pergunta: dada uma fase, o que a tela mostra. Os nomes das fases são
  * idênticos aos do contrato de propósito — quando o motor dela entrar, o
  * encaixe é direto e não há tabela de tradução no meio para envelhecer.
@@ -23,8 +23,8 @@
  *                     observando. Nada acabou.
  *   confirmado      → o fio some, o texto acende de `secondary` para `primary`,
  *                     e a superfície ganha o fio de luz (`.ck-lit`).
- *   pendurado       → o fio PARA no meio do caminho e não completa. É a imagem
- *                     exata do que aconteceu: a entrega travou onde parou.
+ *   nao-confirmado  → o fio PARA no meio do caminho e não completa. A máquina
+ *                     não observou o desfecho e não inventa qual foi.
  *
  * São quatro sinais simultâneos entre `aceito` e `confirmado` — movimento,
  * luminância do texto, fio de luz e filete —, e o único que exige leitura é a
@@ -35,7 +35,7 @@
  * Sucesso é silêncio. É a mesma regra da linha de ferramenta (§7, `117749e`):
  * lá, 738 vistos verdes matariam o sinal de uma falha. Aqui, um "entregue!" a
  * cada mensagem treina o olho a ignorar a área — e é exatamente essa área que
- * precisa gritar quando algo ficar pendurado.
+ * precisa gritar quando algo ficar sem confirmação.
  *
  * Módulo neutro: sem `'use client'`.
  */
@@ -46,7 +46,7 @@ export type FaseEnvio =
   | 'enviando'
   | 'aceito'
   | 'confirmado'
-  | 'pendurado'
+  | 'nao-confirmado'
   | 'falhou';
 
 export type AcaoEnvio = 'reenviar' | 'copiar' | 'tentar-de-novo';
@@ -70,11 +70,11 @@ export type AparenciaEnvio = {
 };
 
 /**
- * A frase de `pendurado` é a mais importante da tela e por isso está escrita
+ * A frase de `nao-confirmado` é a mais importante da tela e por isso está escrita
  * aqui e não em JSX: ela é a única coisa que separa um diagnóstico útil de um
  * erro genérico. Diz (1) o que se sabe, (2) o que provavelmente aconteceu e
  * (3) qual é o custo de agir — nesta ordem, porque é a ordem em que a pessoa
- * decide. "Reenviar duplica" é a informação que impede o dano.
+ * decide. "Mandar de novo pode duplicar" é a informação que impede o dano.
  */
 export function aparenciaDe(fase: FaseEnvio, nomeDoAgente: string): AparenciaEnvio {
   switch (fase) {
@@ -124,16 +124,16 @@ export function aparenciaDe(fase: FaseEnvio, nomeDoAgente: string): AparenciaEnv
         urgencia: 'polite',
       };
 
-    case 'pendurado':
+    case 'nao-confirmado':
       return {
         // Âmbar é o token de ESPERA HUMANO, e é literalmente o que isto é: a
         // máquina não tem o que fazer sozinha, a decisão de reenviar é do Rica.
         filete: 'var(--ck-state-attention)',
         assentada: false,
         fio: 'travado',
-        frase: `não confirmou — pode estar no campo de ${nomeDoAgente}. Reenviar duplica.`,
+        frase: 'não consegui confirmar se entrou — confira no chat antes de mandar de novo. Pode duplicar.',
         acoes: ['reenviar', 'copiar'],
-        anuncio: `Envio não confirmado. O texto pode ter ficado no campo de ${nomeDoAgente} sem ser submetido. Reenviar pode duplicar a mensagem.`,
+        anuncio: `Envio não confirmado. Confira no chat de ${nomeDoAgente} antes de mandar de novo, pois a mensagem pode duplicar.`,
         urgencia: 'assertive',
       };
 
@@ -154,7 +154,7 @@ export function aparenciaDe(fase: FaseEnvio, nomeDoAgente: string): AparenciaEnv
 
 const ROTULO_ACAO: Record<AcaoEnvio, string> = {
   // Voz ativa e o mesmo verbo do começo ao fim: o botão diz o que acontece.
-  reenviar: 'Reenviar',
+  reenviar: 'Mandar de novo',
   copiar: 'Copiar texto',
   'tentar-de-novo': 'Tentar de novo',
 };

@@ -4,28 +4,27 @@
  * O `200` do backend só prova que o texto foi colado no pane. A confirmação
  * acontece exclusivamente quando um item `user` posterior volta pelo stream.
  *
- * O corpus atual não permite medir o intervalo POST → eco: `task_events`
- * persiste o `jsonl:user`, mas `/input` não persiste o instante da tentativa
- * nem seu `idempotency_key`. Portanto 3 s é um fallback operacional, alinhado
- * à inclinação registrada no contrato. Para substituí-lo por um percentil
- * medido, o backend precisará registrar `send_attempt_id`, `accepted_at_ms` e
- * o eco correlacionado.
+ * A amostra local de 30/07 teve pior caso de 1,434 s, mas não cobriu o cenário
+ * que importa no uso real: agente ocupado, pane rolando e iPhone via Tailscale.
+ * Em 02/08, 3 s produziu falso negativo e induziu uma entrega duplicada.
+ * 12 s dá 8,3× de margem sobre o pior caso medido sem deixar a decisão humana
+ * presa por tempo demais. Estourar o prazo significa apenas "não confirmado".
  */
-export const PRAZO_ECO_MS = 3_000;
+export const PRAZO_ECO_MS = 12_000;
 
 export type FaseEnvio =
   | 'ocioso'
   | 'enviando'
   | 'aceito'
   | 'confirmado'
-  | 'pendurado'
+  | 'nao-confirmado'
   | 'falhou';
 
 type BaseEnvio = {
   texto: string;
   /**
    * Ecos idênticos que ainda podem pertencer a uma tentativa anterior
-   * pendurada/falha. São consumidos antes de confirmar a tentativa atual.
+   * não confirmada. São consumidos antes de confirmar a tentativa atual.
    * É conservador: na ambiguidade, prefere não confirmar a mensagem a atribuir
    * ao segundo "ok" um eco que pode ser do primeiro.
    */
@@ -50,15 +49,15 @@ export type EstadoEnvio =
       ecoId: number;
     } & BaseEnvio)
   | ({
-      fase: 'pendurado';
-      fronteira: FronteiraEnvio;
-      aceitoEmMs: number;
+      fase: 'nao-confirmado';
+      fronteira?: FronteiraEnvio;
+      aceitoEmMs?: number;
+      erro?: unknown;
     } & BaseEnvio)
   | ({
       fase: 'falhou';
       fronteira?: FronteiraEnvio;
       erro: unknown;
-      entregaIncerta: boolean;
     } & BaseEnvio);
 
 /**
@@ -80,7 +79,8 @@ export type EventoEnvio =
       agoraMs: number;
       fronteira?: FronteiraEnvio;
     }
-  | { tipo: 'falhar'; erro: unknown; entregaIncerta: boolean }
+  | { tipo: 'nao-confirmar'; erro: unknown }
+  | { tipo: 'falhar'; erro: unknown }
   | {
       tipo: 'item-do-stream';
       item: { id: number; papel: string; texto: string };
@@ -103,7 +103,7 @@ function podeComecarNovoEnvio(estado: EstadoEnvio): boolean {
   return (
     estado.fase === 'ocioso' ||
     estado.fase === 'confirmado' ||
-    estado.fase === 'pendurado' ||
+    estado.fase === 'nao-confirmado' ||
     estado.fase === 'falhou'
   );
 }
@@ -118,9 +118,7 @@ export function reduzEnvio(
       estado.fase !== 'ocioso' &&
       normalizaTextoDoEco(estado.texto) === normalizaTextoDoEco(evento.texto);
     const tentativaAnteriorIncerta =
-      (estado.fase === 'pendurado' ||
-        (estado.fase === 'falhou' && estado.entregaIncerta)) &&
-      mesmoTextoAnterior;
+      estado.fase === 'nao-confirmado' && mesmoTextoAnterior;
     return {
       fase: 'enviando',
       texto: evento.texto,
@@ -144,6 +142,12 @@ export function reduzEnvio(
     return { ...estado, fase: 'aceito', fronteira, aceitoEmMs: evento.agoraMs };
   }
 
+  if (evento.tipo === 'nao-confirmar') {
+    if (estado.fase !== 'enviando') return estado;
+    const { ecoCandidatoId: _, ...base } = estado;
+    return { ...base, fase: 'nao-confirmado', erro: evento.erro };
+  }
+
   if (evento.tipo === 'falhar') {
     if (estado.fase !== 'enviando') return estado;
     const { ecoCandidatoId: _, ...base } = estado;
@@ -151,7 +155,6 @@ export function reduzEnvio(
       ...base,
       fase: 'falhou',
       erro: evento.erro,
-      entregaIncerta: evento.entregaIncerta,
     };
   }
 
@@ -162,13 +165,13 @@ export function reduzEnvio(
     ) {
       return estado;
     }
-    return { ...estado, fase: 'pendurado' };
+    return { ...estado, fase: 'nao-confirmado' };
   }
 
   if (
     (estado.fase !== 'enviando' &&
       estado.fase !== 'aceito' &&
-      estado.fase !== 'pendurado') ||
+      estado.fase !== 'nao-confirmado') ||
     estado.fronteira === undefined ||
     evento.item.papel !== 'user' ||
     evento.item.id <= estado.fronteira.id ||
@@ -186,5 +189,10 @@ export function reduzEnvio(
     return { ...estado, ecoCandidatoId: evento.item.id };
   }
 
-  return { ...estado, fase: 'confirmado', ecoId: evento.item.id };
+  return {
+    ...estado,
+    fase: 'confirmado',
+    fronteira: estado.fronteira,
+    ecoId: evento.item.id,
+  };
 }

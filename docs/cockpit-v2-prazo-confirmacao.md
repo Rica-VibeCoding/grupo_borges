@@ -1,10 +1,10 @@
 # Prazo de confirmação POST → eco
 
-Medição em 30/07/2026. Conclusão: **os 3.000 ms atuais cobrem 200/200
-confirmações na janela que o redutor realmente cronometra (`200` → eco)**. Voz e
-texto são muito diferentes quando o relógio começa no início do POST, mas deixam
-de ser materialmente diferentes depois do `200`: o STT acontece antes de o estado
-entrar em `aceito`.
+Medição em 30/07/2026. Ela mostrou que 3.000 ms cobriam 200/200 confirmações na
+janela que o redutor cronometra (`200` → eco), mas foi superada pela evidência de
+produção de 02/08: com o agente ocupado e a saída do pane rolando, o eco não foi
+observado nessa janela e o falso negativo induziu um envio duplicado. O prazo
+operacional passa a **12.000 ms**; estouro significa `nao-confirmado`, nunca falha.
 
 ## 1. Distribuição observada
 
@@ -131,21 +131,20 @@ confirmação:
 - voz durante upload/STT continua em `enviando`;
 - só depois da resposta entra em `aceito` e começa a espera do eco.
 
-## 4. Recomendação
+## 4. Recomendação atualizada após o incidente de 02/08
 
-**Manter 3.000 ms para `aceito` → `pendurado`.** Motivos:
+**Usar 12.000 ms para `aceito` → `nao-confirmado`.** Motivos:
 
-- cobriu 200/200 amostras;
-- é 2,09× o pior caso observado de 1.434 ms;
-- preserva margem para a parte não coberta pelo cliente local: Tailscale,
-  navegador em segundo plano e uma reconexão curta;
-- um valor separado e maior para voz seria medir STT duas vezes, porque o timer
-  atual só começa depois dele.
+- é 8,3× o pior caso local observado de 1.434 ms;
+- cobre melhor o cenário ausente da amostra: agente ocupado, pane rolando,
+  Tailscale e navegador móvel;
+- ainda limita a espera a 12 s antes de devolver a decisão ao Rica;
+- mantém o contrato conservador: sem eco, o painel não diz que enviou e também
+  não afirma o oposto.
 
-Não recomendo reduzir para 1.500 ms apesar de ele cobrir a amostra por apenas
-66 ms: seria ajustar o produto ao máximo de uma única rodada local. Também não
-recomendo aumentar o prazo da voz: o problema de latência total da voz deve ser
-comunicado no estado `enviando/STT`, não escondido dentro de `aceito`.
+Os 3.000 ms continuam documentados acima como resultado da amostra, não como
+configuração recomendada. O incidente real mostrou que ajustar o produto apenas
+ao máximo de uma rodada local era margem insuficiente.
 
 ### Amostra bruta (ms, ordem de coleta)
 

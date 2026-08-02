@@ -227,7 +227,7 @@ export function Composer({
     if (!corpo.trim() || faseForcada) return;
     // O campo esvazia na hora, mas o texto não se perde: quem o guarda é a
     // máquina (`estado.texto`), que precisa dele para casar o eco e para
-    // oferecer reenvio se o eco não vier.
+    // oferecer novo envio se o eco não vier.
     setTexto('');
     setTranscrito(null);
     setFalhaDaFala(null);
@@ -248,10 +248,10 @@ export function Composer({
       void copyText(ultimoEnviado, { writeText: moderno, fallbackCopy });
       return;
     }
-    // `pendurado` tem caminho próprio na máquina — ela sabe que a tentativa
+    // `nao-confirmado` tem caminho próprio na máquina — ela sabe que a tentativa
     // anterior pode ter sido entregue e conta o eco ambíguo em vez de confirmar
     // o reenvio com o eco do primeiro. `falhou` é reenvio comum.
-    if (fase === 'pendurado') {
+    if (fase === 'nao-confirmado') {
       void envio.reenviar();
       return;
     }
@@ -660,7 +660,8 @@ export function Composer({
       {/* O QUE O SERVIDOR ENTENDEU. STT erra, e o texto que subiu não passa
           pelo campo — sem isto o Rica só descobre o erro pela resposta errada
           do agente, minutos depois, sem saber que a culpa foi da transcrição. */}
-      {transcrito && (fase === 'aceito' || fase === 'confirmado') ? (
+      {transcrito &&
+      (fase === 'aceito' || fase === 'confirmado' || fase === 'nao-confirmado') ? (
         <p
           className="mx-auto w-full"
           style={{

@@ -117,10 +117,10 @@ export type Impedimento = {
 /**
  * O STT falhou NO SERVIDOR — o áudio subiu, a fala não virou texto.
  *
- * Mesma régua do microfone: nunca só o diagnóstico, sempre a saída. A diferença
- * é que aqui nada chegou ao agente (o back só entrega DEPOIS de transcrever),
- * então a frase pode ser categórica — "não saiu" — em vez de deixar o Rica na
- * dúvida se deve repetir.
+ * Mesma régua do microfone: nunca só o diagnóstico, sempre a saída. Erros
+ * conhecidos de STT acontecem antes da entrega e podem ser categóricos. Um
+ * erro genérico, porém, também pode ser perda da resposta depois que o back
+ * entregou; nesse caso a tela assume incerteza para não induzir duplicação.
  *
  * Os detalhes vêm crus do `detail` do FastAPI, embutidos na mensagem do erro
  * que `postAgentVoice` lança. Casar por substring é frágil de propósito: se o
@@ -172,8 +172,8 @@ export function diagnosticaTranscricao(erro: unknown): Impedimento {
     };
   }
   return {
-    resumo: 'o áudio não chegou ao agente',
-    saida: 'nada foi entregue — tente de novo ou mande por texto',
+    resumo: 'não consegui confirmar se o áudio entrou',
+    saida: 'confira no chat antes de mandar de novo — repetir pode duplicar',
     definitivo: false,
   };
 }

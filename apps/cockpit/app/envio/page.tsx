@@ -47,11 +47,11 @@ const FASES: Array<{ fase: FaseEnvio; titulo: string; nota: string }> = [
       'e canta calado: sem frase, só o fio sumindo e a superfície acendendo.',
   },
   {
-    fase: 'pendurado',
-    titulo: 'Pendurado',
+    fase: 'nao-confirmado',
+    titulo: 'Não confirmado',
     nota:
-      'O prazo estourou sem eco. Não é erro — é diagnóstico: o texto pode estar parado no ' +
-      'campo do Daniel. O fio para NA METADE do trajeto, e reenviar é decisão sua, nunca automática.',
+      'O prazo estourou sem eco. Não é erro: a entrega pode ter acontecido, mas não foi ' +
+      'observada. O fio para NA METADE, e mandar de novo avisa que pode duplicar.',
   },
   {
     fase: 'falhou',

@@ -14,7 +14,7 @@ const TODAS: FaseEnvio[] = [
   'enviando',
   'aceito',
   'confirmado',
-  'pendurado',
+  'nao-confirmado',
   'falhou',
 ];
 
@@ -43,27 +43,30 @@ describe('aceito × confirmado — o defeito de hoje é os dois parecerem a mesm
   });
 });
 
-describe('pendurado — diagnóstico, não erro', () => {
-  it('avisa que reenviar duplica: é a informação que impede o dano', () => {
-    const p = aparenciaDe('pendurado', 'Daniel');
+describe('não confirmado — diagnóstico, não erro', () => {
+  it('avisa que mandar de novo duplica: é a informação que impede o dano', () => {
+    const p = aparenciaDe('nao-confirmado', 'Daniel');
     assert.match(p.frase ?? '', /duplica/i);
     assert.match(p.anuncio, /duplicar/i);
   });
 
-  it('nomeia o agente onde o texto pode ter ficado', () => {
-    assert.match(aparenciaDe('pendurado', 'Hiro').frase ?? '', /Hiro/);
+  it('não afirma entrega nem falha e manda conferir o chat', () => {
+    const p = aparenciaDe('nao-confirmado', 'Hiro');
+    assert.match(p.frase ?? '', /não consegui confirmar/i);
+    assert.match(p.frase ?? '', /confira no chat/i);
+    assert.doesNotMatch(p.frase ?? '', /não saiu|nada foi entregue/i);
   });
 
   it('oferece a decisão ao humano e nunca decide sozinho', () => {
-    assert.deepEqual(aparenciaDe('pendurado', 'Daniel').acoes, ['reenviar', 'copiar']);
+    assert.deepEqual(aparenciaDe('nao-confirmado', 'Daniel').acoes, ['reenviar', 'copiar']);
   });
 
   it('o fio TRAVA no meio: a imagem do que aconteceu', () => {
-    assert.equal(aparenciaDe('pendurado', 'Daniel').fio, 'travado');
+    assert.equal(aparenciaDe('nao-confirmado', 'Daniel').fio, 'travado');
   });
 
   it('usa o âmbar de ESPERA HUMANO, não o vermelho — não é erro', () => {
-    assert.equal(aparenciaDe('pendurado', 'Daniel').filete, 'var(--ck-state-attention)');
+    assert.equal(aparenciaDe('nao-confirmado', 'Daniel').filete, 'var(--ck-state-attention)');
     assert.equal(aparenciaDe('falhou', 'Daniel').filete, 'var(--ck-state-fail)');
   });
 });
@@ -78,7 +81,7 @@ describe('falha', () => {
 describe('anúncio para leitor de tela', () => {
   it('só interrompe quem precisa de decisão humana', () => {
     const assertivas = TODAS.filter((f) => aparenciaDe(f, 'Daniel').urgencia === 'assertive');
-    assert.deepEqual(assertivas, ['pendurado', 'falhou']);
+    assert.deepEqual(assertivas, ['nao-confirmado', 'falhou']);
   });
 
   it('toda fase visível tem anúncio, mesmo as que não escrevem na tela', () => {
@@ -97,7 +100,7 @@ describe('em trânsito', () => {
 
 describe('rótulo de ação', () => {
   it('é voz ativa e diz o que acontece', () => {
-    assert.equal(rotulaAcao('reenviar'), 'Reenviar');
+    assert.equal(rotulaAcao('reenviar'), 'Mandar de novo');
     assert.equal(rotulaAcao('tentar-de-novo'), 'Tentar de novo');
   });
 });
