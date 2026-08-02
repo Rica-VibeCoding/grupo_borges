@@ -41,9 +41,13 @@ agents:
     # cockpit v2 fechar a matriz de renderers.
     # Reembutido em 31/07 10h — Rica pediu de volta em apps/com pra tocar
     # demandas do dia ali (skill embed-ze).
+    # [2026-08-02 Pavan] Movido pra apps/pos a pedido do Rica. Achado na varredura:
+    # o restart pós-reboot de 01/08 tinha devolvido a sessão pra ze_claude/daniel
+    # sem ninguém mexer aqui — o painel ficou 1 dia apontando pro JSONL errado.
+    # Reverter = embed-ze daniel voltar (+ este campo + restart do uvicorn :8000).
     # ⚠️ Este campo tem de casar com o cwd REAL da sessão tmux — é por ele que o
     # back resolve o diretório de JSONL. Divergência não dá erro: dá agente ocioso.
-    workspace_path: /home/clawd/repos/fluyt/apps/com
+    workspace_path: /home/clawd/repos/fluyt/apps/pos
     cli_default: claude_code
     model_default: claude-opus-4-8
     capabilities:
