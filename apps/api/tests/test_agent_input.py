@@ -313,10 +313,8 @@ def test_input_codex_next_fresh_armed_starts_new_thread_and_clears(tmp_path: Pat
     assert painel.json().get("codex_next_fresh") is False
 
 
-def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:
-    """Quando `tmux_driver.send_message` retorna False (pane fora do CLI esperado),
-    endpoint deve devolver 409 — não 200/500.
-    """
+def test_input_propagates_false_when_submission_is_not_confirmed(tmp_path: Path) -> None:
+    """O endpoint não converte ausência de confirmação em sucesso literal."""
     app = _build_app(tmp_path)
     with patch("routers.agents.tmux_driver.send_message", return_value=False):
         with TestClient(app) as client:
@@ -324,7 +322,8 @@ def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:
                 "/api/agents/daniel/input",
                 json={"text": "oi", "idempotency_key": "k1"},
             )
-            assert response.status_code == 409
+            assert response.status_code == 200
+            assert response.json()["tmux_delivered"] is False
 
 
 def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:

@@ -2058,12 +2058,11 @@ async def send_agent_input(
     - 422 (Pydantic) em text vazio/>8KB ou idempotency_key vazio/>128
     - Codex: dispara `scripts/tara-codex` detached, retomando thread atual
       quando existir; 409 `codex_turn_in_flight` se Tara já está em turno.
-    - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
-      CLI esperado — guard do tmux_driver, ex: user trocou window) no Claude Code
-    - 200 + `tmux_delivered=True` no caminho feliz. Esse campo indica apenas
-      que a colagem no tmux foi despachada; NÃO prova submissão nem entrega ao
-      agente. A prova de submissão é o eco do item `user` no stream, acima do
-      `event_boundary_id` (contrato: §3.1 de docs/cockpit-v2-data-contract.md).
+    - 200 + `tmux_delivered=<verdade observada>` no Claude Code. True exige que
+      o driver tenha visto o input esvaziar (submetido ou recebido como queued);
+      False cobre pane ausente, overlay ou Enter sem confirmação. O eco do item
+      `user` no stream, acima do `event_boundary_id`, continua sendo a prova de
+      entrega ao agente (contrato: §3.1 de docs/cockpit-v2-data-contract.md).
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.
@@ -2071,6 +2070,7 @@ async def send_agent_input(
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
     event_boundary_id = await db.max_event_id()
+    delivered = True
     if agent.get("executor_kind") == "codex":
         await _spawn_codex_agent_turn(
             slug,
@@ -2080,11 +2080,9 @@ async def send_agent_input(
         )
     else:
         delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
-        if not delivered:
-            raise HTTPException(status_code=409, detail="agent_pane_unavailable")
 
     return InputResponse(
-        tmux_delivered=True,
+        tmux_delivered=delivered,
         sent_at=int(time.time()),
         event_boundary_id=event_boundary_id,
     )
