@@ -63,7 +63,9 @@ const MARKDOWN_COMPONENTS: Components = {
   },
   h3({ children, ...props }) {
     return (
-      <h3 className="font-semibold text-sm leading-body" {...props}>
+      // Escada desde 02/08: o título menor ainda é MAIOR que o corpo (15px) —
+      // antes era 13px e a hierarquia corria de cabeça para baixo.
+      <h3 className="font-semibold text-[var(--ck-text-base)] leading-body" {...props}>
         {children}
       </h3>
     );
@@ -162,7 +164,10 @@ export function AssistantMarkdown({ children, className = '' }: AssistantMarkdow
 
   return (
     <div
-      className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-3)] overflow-hidden font-sans text-sm leading-body text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${className}`}
+      // Corpo do chat = 15px (`--ck-text-base`, contrato §4), não 13 — 13px é
+      // metadado. O respiro entre parágrafos (space-4) é o que separa o texto
+      // corrido de um bloco de log.
+      className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-4)] overflow-hidden font-sans text-base leading-body text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${className}`}
     >
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}

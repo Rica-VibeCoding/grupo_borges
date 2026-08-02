@@ -20,6 +20,55 @@ const OSC8 = /\]8;[^;\\]*;([^\\]*)\\([\s\S]*?)\]8;;\\/g;
 /** Sobra de abertura sem par — pane truncado no meio do link. */
 const OSC8_ORFAO = /\]8;[^\\]*\\/g;
 
+/**
+ * O chrome do CLI que não é conversa — ordem do Rica, 02/08: "nada do painel
+ * do terminal entra no feed; statusline, Tip, barras de contexto e linhas em
+ * branco são chrome do CLI, o estado do agente já vive na tropa e no
+ * cabeçalho".
+ *
+ * A lista é por LINHA INTEIRA e deliberadamente estreita: cada regra casou com
+ * chrome real medido no pane (não com o que poderia existir). Ela envelhece —
+ * o CC muda o statusline e uma regra nova nasce aqui; o que não se faz é
+ * alargar a regex até ela morder log de verdade. `--- tsc ---` (hífen ASCII)
+ * NÃO é o separador de caixa (U+2500) e atravessa — há teste que trava isso.
+ */
+const CHROME_DA_LINHA: RegExp[] = [
+  /\[[#█░■]{2,}\]\s*\d+%/, // barra de contexto: "[###] 21%"
+  /⏵⏵/, // indicador de modo
+  /bypass permissions on/i,
+  /^[\s]*[✻✽✶✳✢]/, // o resumo animado: "✻ Worked for 3m…"
+  /^[\s]*[⠋⠙⠚⠞⠖⠦⠴⠲⠳⠓]/, // spinner braille
+  /^[\s]*─{5,}[\s]*$/, // separador de caixa, a linha inteira (U+2500)
+  /^[\s]*❯[\s]*$/, // o prompt vazio
+  /^[\s]*Tip:/, // "Tip: Use /btw"
+  /Esc to interrupt/,
+];
+
+/**
+ * Tira o chrome e colapsa os vazios: runs de linhas em branco viram no máximo
+ * uma, e as bordas não acumulam. A quebra final do texto original sobrevive
+ * (ela é o `\n` entre este trecho e o próximo, não chrome).
+ */
+function filtraChrome(texto: string): string {
+  const linhas = texto.split('\n');
+  const saida: string[] = [];
+  let brancoPendente = false;
+
+  for (const linha of linhas) {
+    if (CHROME_DA_LINHA.some((regra) => regra.test(linha))) continue;
+    if (!/\S/.test(linha)) {
+      brancoPendente = true;
+      continue;
+    }
+    if (brancoPendente && saida.length > 0) saida.push('');
+    brancoPendente = false;
+    saida.push(linha);
+  }
+  // O vazio do fim fecha a última linha (é a quebra final do trecho).
+  if (brancoPendente && saida.length > 0) saida.push('');
+  return saida.join('\n');
+}
+
 export type TrechoPane =
   | { tipo: 'texto'; texto: string }
   | { tipo: 'link'; texto: string; href: string };
@@ -44,7 +93,7 @@ export function lePane(bruto: string): TrechoPane[] {
   let cursor = 0;
 
   const empilhaTexto = (cru: string) => {
-    const texto = cru.replace(OSC8_ORFAO, '');
+    const texto = filtraChrome(cru.replace(OSC8_ORFAO, ''));
     if (texto) trechos.push({ tipo: 'texto', texto });
   };
 

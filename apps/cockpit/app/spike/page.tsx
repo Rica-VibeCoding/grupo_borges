@@ -83,8 +83,8 @@ import type {
   ToolCallMessagePartProps,
 } from '@assistant-ui/react';
 
-import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
@@ -452,7 +452,7 @@ function Bancada() {
   // a lista de um. Memoizado porque identidade instável aqui recria o adapter
   // a cada render.
   const convertMessage = useCallback(
-    (item: RenderItem) => toThreadMessages([item], lookup)[0],
+    (item: ItemDoFeed) => toThreadMessages([item], lookup)[0],
     [lookup],
   );
 
@@ -461,7 +461,7 @@ function Bancada() {
     // envio de volta é `sendText` do contrato de dados e não entra no spike.
   }, []);
 
-  const runtime = useExternalStoreRuntime<RenderItem>({
+  const runtime = useExternalStoreRuntime<ItemDoFeed>({
     messages: itens,
     isRunning,
     isLoading,

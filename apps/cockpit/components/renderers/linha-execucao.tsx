@@ -4,52 +4,59 @@
  * A linha de ferramenta — a peça central do v2.
  *
  * Contrato: `docs/cockpit-v2-estetica.md` §7 (gramática) e §6 (micro-momentos).
- * O modelo, com o raciocínio dos sigilos e do rendimento, está em `gramatica.ts`.
+ * O modelo, com os verbos e o rendimento, está em `gramatica.ts`.
  *
- * Por que esta peça e não outra: 82% do tráfego é execução e o Bash sozinho tem
- * 738 chamadas numa sessão. Quem olha o cockpit passa 80% do tempo olhando esta
- * linha repetida centenas de vezes. Card gordo por chamada torna a tela infinita
- * — densidade é o que faz parecer profissional.
+ * 82% do tráfego é execução e o Bash sozinho tem 738 chamadas numa sessão —
+ * quem olha o cockpit passa 80% do tempo olhando esta linha repetida.
  *
  * ---------------------------------------------------------------------------
- * CINCO DECISÕES QUE VALE ENTENDER ANTES DE MEXER
+ * 02/08 — A LINHA VIROU FRASE DE CHAT
  *
- * 1. ALTURA CONSTANTE, SEMPRE 32px. Não é estilo, é o hotspot 6 do débito: a
- *    linha ocupa a mesma altura antes e depois de o resultado chegar, então
- *    nada empurra o scroll quando o stream avança. Rótulo ausente, rendimento
- *    ausente e falha não mudam a caixa — só o que está DENTRO dela.
+ * Ordem do Rica, com print do app do Claude no iOS: "o texto tem que se
+ * parecer mais com esses chats" e a atividade "não como se fosse numa
+ * caixinha, num componente". O que saiu da linha colapsada:
  *
- * 2. SUCESSO É SILÊNCIO. Nenhuma linha concluída ganha verde. Pintar 738 checks
- *    verdes é o clichê que mata o sinal: se tudo é sucesso colorido, a falha
- *    some no meio. Cor só entra quando a máquina está trabalhando (ciano),
- *    quando falhou (coral) ou quando espera um humano (âmbar) — que é a §1 do
- *    contrato aplicada literalmente: a temperatura sobe conforme a máquina
- *    precisa de você.
+ *   - o sigilo mono (a coluna de 1 caractere) — o verbo agora vai por extenso
+ *     e em português: "Executou npx tsc --noEmit", não "$ npx tsc --noEmit";
+ *   - a fonte monoespacada — mono só na expansão (§7.1: código e saída);
+ *   - qualquer cara de caixa — sem fundo, sem borda, sem badge.
  *
- * 3. TRÊS COLUNAS, NÃO QUATRO. O rótulo é prefixo do alvo, dentro da mesma
- *    célula, e não coluna própria. Com coluna própria, as 53% de linhas sem
- *    rótulo (Bash + Read) ainda pagavam o `gap` da célula vazia e o alvo delas
- *    nascia deslocado do resto — o primeiro print mostrou a coluna dançando.
+ * O que ficou, porque é contrato e não decoração:
  *
- * 4. SEM ANIMAÇÃO DE ENTRADA, e isso é desvio consciente do micro-momento 2.
- *    O feed é virtualizado: o virtualizador monta e desmonta linha ao rolar,
- *    então uma animação de entrada dispararia a cada rolagem e a tela inteira
- *    piscaria durante o scroll. Movimento fica só onde carrega informação e não
- *    re-dispara — o respiro do sigilo enquanto a ferramenta roda.
+ * 1. ALTURA CONSTANTE, 32px. A linha ocupa a mesma altura antes e depois de o
+ *    resultado chegar — nada empurra o scroll quando o stream avança.
  *
- * 5. ALVO DE TOQUE DE 32px, e não os 44 da §3. As duas regras do contrato
- *    colidem neste elemento (§7 manda 28–32px, §3 manda 44×44) e não dá para
- *    cumprir as duas. O piso de 44 existe para alvo pequeno cercado de vazio:
- *    aqui não há vazio — linhas adjacentes cobrem cada pixel, a largura é a
- *    tela inteira, e errar por 6px abre a linha vizinha, que é reversível com
- *    outro toque. Onde há botão isolado (copiar, mostrar o resto), 44px vale.
+ * 2. SUCESSO É SILÊNCIO. Linha concluída é cinza (--ck-text-secondary), sem
+ *    check verde. Cor só quando a máquina trabalha (ciano), falhou (coral)
+ *    ou espera humano (âmbar) — §1: a temperatura sobe conforme a máquina
+ *    precisa de você. O TEMPO VERBAL carrega metade desse sinal: "Executando"
+ *    é o estado, e é por isso que a cor pode ser discreta.
+ *
+ * 3. O DIFF É A EXCEÇÃO COLORIDA DO FEITO: `+N −M` em verde/coral mesmo na
+ *    linha quieta — não é celebração de sucesso, é saldo de edição, e os
+ *    tokens --ck-diff-add/--ck-diff-del existem para isso.
+ *
+ * 4. SEM ANIMAÇÃO DE ENTRADA. O feed é virtualizado: animar montagem
+ *    dispararia a cada rolagem. Movimento fica só onde carrega informação e
+ *    não re-dispara — o pulso da frase enquanto roda, o giro do chevron
+ *    (transform, §9.4).
+ *
+ * 5. ALVO DE TOQUE DE 32px, e não os 44 da §3 — a colisão já documentada:
+ *    linhas adjacentes cobrem cada pixel, errar por 6px abre a vizinha, que é
+ *    reversível com outro toque. Onde há botão isolado (copiar, mostrar o
+ *    resto), 44px vale.
+ *
+ * 6. O FILETE LATERAL só existe enquanto há estado: rodando/aguarda/falhou,
+ *    ou aberto (hairline, ancorando o bloco na linha que o abriu). Fechado e
+ *    feito é transparente — um fio cinza por linha viraria a grade que a
+ *    régua existe para não ser.
  */
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { copyText } from '../../lib/clipboard';
 import { fallbackCopy } from './copia-fallback';
 import { DiffViewer } from './diff-viewer';
-import { corpoDe, leExecucao, type Desfecho, type EntradaExecucao } from './gramatica.ts';
+import { corpoDe, leExecucao, type Desfecho, type EntradaExecucao, type Rendimento } from './gramatica.ts';
 
 /** Reusa o vocabulário de pulso da tropa: o mesmo movimento significa a mesma
  *  coisa nas duas superfícies. `feito` e `falhou` ficam parados — parar também
@@ -117,6 +124,67 @@ function Glifo({ desenho }: { desenho: 'copiar' | 'copiado' }) {
         <path d="M2.75 8.5 6.25 12 13.25 4.5" />
       )}
     </svg>
+  );
+}
+
+/** O chevron da linha — gira ao abrir. Junto do pulso, é o único movimento da
+ *  peça: transform, nunca layout (§9.4). `currentColor` de propósito, como
+ *  todo glifo daqui — herda de quem hospeda em vez de declarar cor (§9.1). */
+export function Chevron({ aberto }: { aberto: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        flexShrink: 0,
+        color: 'var(--ck-text-tertiary)',
+        transform: aberto ? 'rotate(90deg)' : 'none',
+        transition: 'transform 160ms ease',
+      }}
+    >
+      <path d="M6 3.5 10.5 8 6 12.5" />
+    </svg>
+  );
+}
+
+/** O rendimento à direita — da linha E do grupo (que soma os dos membros).
+ *  Saldo de diff sai em partes coloridas (+ verde, − coral) mesmo na linha
+ *  quieta: não é celebração de sucesso, é saldo de edição. O resto é um
+ *  número quieto em secondary, `erro` em coral. */
+export function SaldoDoRendimento({ rendimento, falhou }: { rendimento: Rendimento; falhou: boolean }) {
+  if (rendimento.adicoes !== undefined) {
+    return (
+      <span
+        className="ck-tabular shrink-0"
+        style={{ fontSize: 'var(--ck-text-xs)', whiteSpace: 'nowrap' }}
+      >
+        <span style={{ color: 'var(--ck-diff-add)' }}>+{rendimento.adicoes}</span>
+        {rendimento.remocoes !== undefined ? (
+          <>
+            {' '}
+            <span style={{ color: 'var(--ck-diff-del)' }}>−{rendimento.remocoes}</span>
+          </>
+        ) : null}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="ck-tabular shrink-0"
+      style={{
+        color: falhou ? 'var(--ck-state-fail)' : 'var(--ck-text-secondary)',
+        fontSize: 'var(--ck-text-xs)',
+      }}
+    >
+      {rendimento.texto}
+    </span>
   );
 }
 
@@ -302,54 +370,35 @@ export function LinhaExecucao({
         type="button"
         onClick={() => setAberta((v) => !v)}
         aria-expanded={aberta}
-        className="ck-veil grid w-full items-center text-left"
+        aria-label={`${e.nome}: ${e.alvo}`}
+        className="ck-veil flex w-full items-center text-left"
         style={{
-          // A régua: uma coluna de 1 caractere, largura garantida pela mono. É
-          // o alinhamento — e não um fio desenhado — que faz a coluna virar
-          // régua; um fio vertical aqui seria a linha do tempo genérica.
-          gridTemplateColumns: '1ch minmax(0, 1fr) auto',
           gap: 'var(--ck-space-2)',
           // 32px fixos: a caixa não muda quando o resultado chega (ver nota 1).
           minHeight: '32px',
           padding: 'var(--ck-space-1) var(--ck-space-3)',
-          fontFamily: 'var(--ck-font-mono)',
+          // Sans desde 02/08: a linha é frase de chat, não terminal. A mono
+          // volta na expansão — código e saída, o único lugar dela (§7.1).
+          fontFamily: 'var(--ck-font-sans)',
           fontSize: 'var(--ck-text-sm)',
           lineHeight: 'var(--ck-leading-body)',
         }}
       >
-        {/* O sigilo carrega o verbo E o estado. Decorativo para o leitor de tela:
-            o nome da ferramenta vai por extenso logo ao lado, sempre. */}
-        <span aria-hidden className="ck-pulso" data-estado={PULSO[e.desfecho]} style={{ color: cor }}>
-          {e.sigilo}
+        {/* A frase carrega verbo E estado: o tempo verbal ("Executando") e o
+            pulso dizem "em voo" sem nenhum chrome em volta. */}
+        <span
+          className="ck-pulso min-w-0 flex-1 truncate"
+          data-estado={PULSO[e.desfecho]}
+          style={{ color: cor }}
+        >
+          {e.verbo} {e.alvo}
         </span>
 
-        <span className="truncate">
-          <span className="sr-only">{e.nome} </span>
-          {/* O rótulo só aparece onde o sigilo é ambíguo. `$` só é Bash e `<` só
-              é Read — nesses a palavra seria a mesma informação duas vezes, em
-              821 das 1.535 chamadas do baseline. */}
-          {e.rotulo ? (
-            <span aria-hidden style={{ color: 'var(--ck-text-secondary)' }}>{e.rotulo} </span>
-          ) : null}
-          <span style={{ color: 'var(--ck-text-primary)' }}>{e.alvo}</span>
-        </span>
-
-        {/* O rendimento ocupa o lugar que a §7 reservou para a duração. A duração
-            não existe neste caminho (ver `gramatica.ts`), e o que a chamada
-            PRODUZIU responde a pergunta que quem lê um log realmente faz. */}
         {e.rendimento ? (
-          <span
-            className="ck-tabular shrink-0"
-            style={{
-              color: e.desfecho === 'falhou' ? cor : 'var(--ck-text-secondary)',
-              fontSize: 'var(--ck-text-xs)',
-            }}
-          >
-            {e.rendimento.texto}
-          </span>
-        ) : (
-          <span />
-        )}
+          <SaldoDoRendimento rendimento={e.rendimento} falhou={e.desfecho === 'falhou'} />
+        ) : null}
+
+        <Chevron aberto={aberta} />
       </button>
 
       {aberta ? (
@@ -368,9 +417,10 @@ export function LinhaExecucao({
             borderRadius: 'var(--ck-radius-frame)',
           }}
         >
-          {/* O nome por extenso só quando a linha o escondeu. Onde o rótulo já
-              está visível, repetir aqui era eco. */}
-          {e.rotulo === null ? <Rotulo>{e.nome}</Rotulo> : null}
+          {/* O nome por extenso mora aqui desde 02/08: a frase da linha diz o
+              verbo ("Executou"), não a marca ("Bash") — quem precisa do nome
+              exato abriu a linha e o encontra primeiro. */}
+          <Rotulo>{e.nome}</Rotulo>
 
           {/* A frase que o agente escreveu junto do comando — 738 delas no
               baseline, e o painel de hoje joga todas fora. Sans porque é

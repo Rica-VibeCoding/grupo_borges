@@ -9,6 +9,8 @@ import {
   coalesceSidechainGroups,
 } from '@grupo_borges/cockpit-core/render-items';
 
+import { agrupaFerramentas } from '../../components/feed/grupo-ferramentas.ts';
+import { temConteudoVisivel } from './conteudo-visivel.ts';
 import {
   createIncrementalRenderItems,
   incrementalRenderItemsStats,
@@ -21,8 +23,13 @@ const fixtures: Fixture[] = readdirSync(FIXTURE_DIR)
   .sort()
   .map((file) => JSON.parse(readFileSync(join(FIXTURE_DIR, file), 'utf8')) as Fixture);
 
+// O pipeline de produto inteiro, na ordem: o que não tem conteúdo não desenha
+// (temConteudoVisivel), sidechains agrupam, linhas de trabalho agrupam (§7).
+// O incremental tem de ser idêntico a isto em CADA prefixo — é a régua do teste.
 function full(messages: readonly MessagePayload[]) {
-  return coalesceSidechainGroups(buildRenderItems([...messages]));
+  return agrupaFerramentas(
+    coalesceSidechainGroups(buildRenderItems([...messages]).filter(temConteudoVisivel)),
+  );
 }
 
 test('é idêntico ao rebuild completo em cada prefixo das 52 famílias reais', () => {
@@ -102,4 +109,181 @@ test('reprocessa somente a cauda em 1.040+ mensagens', () => {
   console.log(
     `medição incremental: ${stats.reprocessedMessages}/${stats.totalMessages} mensagens reprocessadas no flush`,
   );
+});
+
+/* ------------------------------------------------------------------------ */
+/* §7 — o grupo de ferramentas no pipeline incremental                       */
+/* ------------------------------------------------------------------------ */
+
+/** Mensagem mínima de tool_use, no molde das fixtures tool__*. Sem resultado
+ *  casado na mensagem seguinte, o classificador a mantém `plain` — ela vira
+ *  item `assistant` só de tool_use, que é como TODA ferramenta aparece
+ *  enquanto roda (e para sempre, quando a saída é curta). */
+function ferramenta(indice: number, nome = 'Bash'): MessagePayload {
+  return {
+    id: 5_000_000 + indice,
+    kind: 'assistant',
+    uuid: `tool-run-${indice}`,
+    parent_uuid: null,
+    is_sidechain: false,
+    timestamp: '2026-08-02T00:00:00Z',
+    created_at: 0,
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', id: `tu-${indice}`, name: nome, input: { command: `cmd ${indice}` } },
+      ],
+    },
+  } as unknown as MessagePayload;
+}
+
+/** O par que vira CHIP de ferramenta no classificador: tool_use + tool_result
+ *  casado na mensagem imediatamente seguinte, com corpo > 300 caracteres
+ *  (chat-payload-classifier.ts). É a minoria da conversa — 18 das 148
+ *  execuções medidas em 02/08. */
+function ferramentaComResultado(indice: number): MessagePayload[] {
+  return [
+    ferramenta(indice),
+    {
+      id: 5_100_000 + indice,
+      kind: 'user',
+      uuid: `tool-result-${indice}`,
+      parent_uuid: null,
+      is_sidechain: false,
+      timestamp: '2026-08-02T00:00:01Z',
+      created_at: 1,
+      message: {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: `tu-${indice}`, content: 'saida '.repeat(60) },
+        ],
+      },
+    } as unknown as MessagePayload,
+  ];
+}
+
+test('corrida de ferramentas chegando uma por flush vira UM grupo que cresce', () => {
+  const incremental = createIncrementalRenderItems();
+  const messages: MessagePayload[] = [];
+
+  for (let length = 1; length <= 6; length++) {
+    messages.push(ferramenta(length));
+    const itens = incremental.update(messages.slice());
+    assert.deepEqual(itens, full(messages), `divergência com ${length} ferramentas`);
+    if (length === 1) {
+      // Uma ferramenta sozinha já é a linha discreta — não vira grupo.
+      assert.equal(itens[0]?.kind, 'assistant');
+    } else {
+      assert.equal(itens.length, 1, `${length} ferramentas = um item só`);
+      assert.equal(itens[0]?.kind, 'grupo-ferramentas');
+      if (itens[0]?.kind === 'grupo-ferramentas') assert.equal(itens[0].itens.length, length);
+    }
+  }
+});
+
+test('chip e assistant de tool_use na MESMA corrida viram um grupo só', () => {
+  // A mistura é o caso real: a ferramenta cuja saída passa de 300 caracteres
+  // vira chip, as vizinhas de saída curta ficam assistant — e são a mesma
+  // corrida de trabalho para quem lê.
+  const incremental = createIncrementalRenderItems();
+  const messages = [...ferramentaComResultado(1), ferramenta(2), ferramenta(3)];
+  for (let length = 1; length <= messages.length; length++) {
+    const prefix = messages.slice(0, length);
+    assert.deepEqual(incremental.update(prefix), full(prefix), `prefixo ${length}`);
+  }
+  const itens = incremental.update(messages);
+  assert.equal(itens.length, 1);
+  assert.equal(itens[0]?.kind, 'grupo-ferramentas');
+  if (itens[0]?.kind === 'grupo-ferramentas') {
+    assert.deepEqual(
+      itens[0].itens.map((item) => item.kind),
+      ['chip', 'assistant', 'assistant'],
+    );
+  }
+});
+
+test('thinking vazio entre ferramentas não quebra a run — some do feed', () => {
+  const thinkingVazio = {
+    id: 5_999_999,
+    kind: 'assistant',
+    uuid: 'thinking-oco',
+    parent_uuid: null,
+    is_sidechain: false,
+    timestamp: '2026-08-02T00:00:01Z',
+    created_at: 1,
+    message: { role: 'assistant', content: [{ type: 'thinking', thinking: '' }] },
+  } as unknown as MessagePayload;
+
+  const incremental = createIncrementalRenderItems();
+  const messages = [ferramenta(1), ferramenta(2), thinkingVazio, ferramenta(3)];
+  for (let length = 1; length <= messages.length; length++) {
+    const prefix = messages.slice(0, length);
+    assert.deepEqual(incremental.update(prefix), full(prefix), `prefixo ${length}`);
+  }
+  const itens = incremental.update(messages);
+  assert.equal(itens.length, 1, 'thinking oco não pode virar item nem quebrar o grupo');
+  assert.equal(itens[0]?.kind, 'grupo-ferramentas');
+  if (itens[0]?.kind === 'grupo-ferramentas') assert.equal(itens[0].itens.length, 3);
+});
+
+test('thinking oco JUNTO do tool_use não tira a mensagem da run', () => {
+  // 803 de 804 thinkings gravados não têm texto (lib/thinking.ts) — e o
+  // claude-code manda thinking oco na MESMA mensagem do tool_use. Se a régua
+  // olhasse a part crua em vez do que desenha, quase nenhuma corrida real
+  // agrupava.
+  const comThinkingOco = {
+    ...ferramenta(9),
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: '  \n' },
+        { type: 'tool_use', id: 'tu-9', name: 'Bash', input: { command: 'cmd 9' } },
+      ],
+    },
+  } as unknown as MessagePayload;
+
+  const incremental = createIncrementalRenderItems();
+  const messages = [ferramenta(7), comThinkingOco, ferramenta(8)];
+  const itens = incremental.update(messages);
+  assert.deepEqual(itens, full(messages));
+  assert.equal(itens.length, 1);
+  assert.equal(itens[0]?.kind, 'grupo-ferramentas');
+});
+
+test('texto entre ferramentas quebra a run em dois grupos, como o rebuild', () => {
+  const texto = {
+    id: 5_999_998,
+    kind: 'assistant',
+    uuid: 'texto-no-meio',
+    parent_uuid: null,
+    is_sidechain: false,
+    timestamp: '2026-08-02T00:00:02Z',
+    created_at: 2,
+    message: { role: 'assistant', content: [{ type: 'text', text: 'vou rodar mais um' }] },
+  } as unknown as MessagePayload;
+
+  const incremental = createIncrementalRenderItems();
+  const messages = [ferramenta(1), ferramenta(2), texto, ferramenta(3), ferramenta(4)];
+  for (let length = 1; length <= messages.length; length++) {
+    const prefix = messages.slice(0, length);
+    assert.deepEqual(incremental.update(prefix), full(prefix), `prefixo ${length}`);
+  }
+  const kinds = incremental.update(messages).map((item) => item.kind);
+  assert.deepEqual(kinds, ['grupo-ferramentas', 'assistant', 'grupo-ferramentas']);
+});
+
+test('a chave do grupo é estável enquanto ele cresce — a linha não remonta', () => {
+  const incremental = createIncrementalRenderItems();
+  const messages = [ferramenta(1), ferramenta(2)];
+  incremental.update(messages);
+  const messages3 = [...messages, ferramenta(3)];
+  incremental.update(messages3);
+  const messages4 = [...messages3, ferramenta(4)];
+  const [grupo] = incremental.update(messages4);
+  // Identidade do primeiro membro preservada: é ela que ancora a `chaveDe`
+  // (`gf-${itens[0].payload.uuid}`) e o estado de aberto/fechado do componente.
+  assert.equal(grupo.kind, 'grupo-ferramentas');
+  if (grupo.kind === 'grupo-ferramentas') {
+    assert.equal(grupo.itens[0]?.payload.uuid, 'tool-run-1');
+  }
 });

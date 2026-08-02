@@ -27,9 +27,9 @@ import { Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } fro
 import { useSearchParams } from 'next/navigation';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 import { buildToolResultLookup, type ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import type { ContentPart } from '@grupo_borges/cockpit-core/messages-types';
+import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
@@ -149,7 +149,7 @@ function ParteDeAssistant({ part, lookup }: { part: ContentPart; lookup?: ToolRe
 
 /** Espelha `converte()` da ponte: um RenderItem vira as mesmas peças visuais,
  *  sem passar por ThreadMessageLike. */
-function CorpoDoItem({ item, lookup }: { item: RenderItem; lookup?: ToolResultLookup }) {
+function CorpoDoItem({ item, lookup }: { item: ItemDoFeed; lookup?: ToolResultLookup }) {
   switch (item.kind) {
     case 'user':
       return <Texto text={item.text} />;
@@ -217,11 +217,18 @@ function CorpoDoItem({ item, lookup }: { item: RenderItem; lookup?: ToolResultLo
       );
     case 'ask-user':
       return <Dado name="ask-user" data={{ entry: item.entry }} />;
-    case 'tool-group':
+    case 'grupo-ferramentas':
       return (
         <Dado
           name="tool-group"
-          data={{ count: item.count, toolNames: item.items.map((chip) => chip.chip.label) }}
+          data={{
+            count: item.itens.length,
+            toolNames: item.itens.map((membro) =>
+              membro.kind === 'chip'
+                ? membro.chip.label
+                : membro.parts.find((p) => p.type === 'tool_use')?.name ?? 'ferramenta',
+            ),
+          }}
         />
       );
   }
@@ -229,7 +236,7 @@ function CorpoDoItem({ item, lookup }: { item: RenderItem; lookup?: ToolResultLo
 
 /** Identidade estável por item — a mesma régua do `refDe` da ponte
  *  (uuid || id), com os quatro kinds sem payload cobertos pelas chaves naturais. */
-function chaveDe(item: RenderItem): string {
+function chaveDe(item: ItemDoFeed): string {
   switch (item.kind) {
     case 'sidechain-group':
       return `sg-${item.rootUuid}`;
@@ -237,8 +244,8 @@ function chaveDe(item: RenderItem): string {
       return `sc-${item.groups[0]?.rootUuid ?? 'sem-raiz'}`;
     case 'ask-user':
       return `ask-${item.entry.request_id}`;
-    case 'tool-group':
-      return `tg-${item.items[0]?.payload.uuid ?? 'sem-raiz'}`;
+    case 'grupo-ferramentas':
+      return `gf-${item.itens[0]?.payload.uuid ?? 'sem-raiz'}`;
     default:
       return item.payload.uuid || String(item.payload.id);
   }
@@ -248,7 +255,7 @@ function chaveDe(item: RenderItem): string {
 /* Feed virtualizado — idêntico ao do /spike, menos os primitives da lib      */
 /* ========================================================================== */
 
-function Feed({ itens, lookup }: { itens: RenderItem[]; lookup?: ToolResultLookup }) {
+function Feed({ itens, lookup }: { itens: ItemDoFeed[]; lookup?: ToolResultLookup }) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const coladoRef = useRef(true);

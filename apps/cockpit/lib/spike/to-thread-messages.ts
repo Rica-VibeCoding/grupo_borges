@@ -41,6 +41,8 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
+import type { GrupoFerramentas } from '../../components/feed/grupo-ferramentas.ts';
+
 type Parts = Exclude<ThreadMessageLike['content'], string>;
 type Part = Parts[number];
 type Papel = ThreadMessageLike['role'];
@@ -168,11 +170,14 @@ function partsDoAssistant(parts: ContentPart[], lookup?: ToolResultLookup): Part
  *               `tool-call` saem sem `result`/`isError` — que é exatamente a
  *               perda de informação que a ponte existe para acabar.
  */
-export function toThreadMessages(itens: RenderItem[], lookup?: ToolResultLookup): ThreadMessageLike[] {
+export function toThreadMessages(
+  itens: (RenderItem | GrupoFerramentas)[],
+  lookup?: ToolResultLookup,
+): ThreadMessageLike[] {
   return itens.map((item) => converte(item, lookup));
 }
 
-function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLike {
+function converte(item: RenderItem | GrupoFerramentas, lookup?: ToolResultLookup): ThreadMessageLike {
   switch (item.kind) {
     case 'user':
       return mensagem('user', [{ type: 'text', text: item.text }], refDe(item.payload), item.payload);
@@ -260,6 +265,21 @@ function converte(item: RenderItem, lookup?: ToolResultLookup): ThreadMessageLik
         count: item.count,
         toolNames: item.items.map((chip) => chip.chip.label),
       })], item.items[0]?.payload.uuid);
+
+    // O grupo nasceu no pipeline de produto em 02/08 (grupo-ferramentas.ts) —
+    // esta ponte passou a receber lista já coalescida, então a ressalva do
+    // caso acima virou realidade. Mesmo tratamento resumido: `data-*` com o
+    // agregado, não expansão 1:N. A bancada mede a MESMA contagem de itens do
+    // feed real, que é o que ela existe para medir.
+    case 'grupo-ferramentas':
+      return mensagem('assistant', [partDeDados('data-tool-group', {
+        count: item.itens.length,
+        toolNames: item.itens.map((membro) =>
+          membro.kind === 'chip'
+            ? membro.chip.label
+            : membro.parts.find((p) => p.type === 'tool_use')?.name ?? 'ferramenta',
+        ),
+      })], item.itens[0]?.payload.uuid);
 
     case 'ask-user': {
       // O décimo kind. Ratificado como `data-ask-user` no §5.1 (emenda 27064af):

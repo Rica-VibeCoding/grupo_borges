@@ -27,8 +27,10 @@ export type EntradaDaExecucao = {
   result?: unknown;
   rich?: unknown;
   isError?: boolean;
-  /** Sem resultado casado, a execução ainda está em voo. */
-  estado: 'running' | 'complete';
+  /** Sem resultado casado, a execução ainda está em voo. Os quatro valores do
+   *  `EntradaExecucao` da gramática — este tipo é espalhado nela — embora este
+   *  módulo só produza os dois primeiros. */
+  estado: 'running' | 'complete' | 'incomplete' | 'requires-action';
 };
 
 type Chip = Extract<RenderItem, { kind: 'chip' }>;

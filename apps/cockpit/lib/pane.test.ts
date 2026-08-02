@@ -56,3 +56,52 @@ test('dois links na mesma captura', () => {
   );
   assert.ok(trechos.some((t) => t.tipo === 'texto' && t.texto.includes('meio')));
 });
+
+/* ------------------------------------------------------------------------ */
+/* O chrome do CLI não entra no feed — ordem do Rica, 02/08                  */
+/* ------------------------------------------------------------------------ */
+
+test('statusline, modo, dica e prompt vazio somem; o log fica', () => {
+  const cru =
+    '  Opus 5 (1M context) - 09:48:12 - [###] 21%\n' +
+    '⏵⏵ accept edits on\n' +
+    '  bypass permissions on\n' +
+    'Tip: Use /btw to add a topic\n' +
+    '✻ Worked for 3m 12s\n' +
+    '❯ \n' +
+    '  Esc to interrupt\n' +
+    'total 48\n' +
+    '-rw-r--r-- 1 clawd staff 231 Aug 2 09:41 README.md\n';
+  const juntos = lePane(cru)
+    .map((t) => t.texto)
+    .join('');
+
+  for (const chrome of ['[###]', '⏵⏵', 'bypass permissions', 'Tip:', 'Worked for', '❯', 'Esc to interrupt']) {
+    assert.ok(!juntos.includes(chrome), `chrome vazou: ${chrome}`);
+  }
+  assert.ok(juntos.includes('total 48'));
+  assert.ok(juntos.includes('README.md'));
+});
+
+test('o separador de caixa (U+2500) sai, mas hífen ASCII não é separador', () => {
+  const cru = 'antes\n──────────────\n--- tsc ---\ndepois';
+  const juntos = lePane(cru)
+    .map((t) => t.texto)
+    .join('');
+  assert.ok(!juntos.includes('──────'), 'separador de caixa ficou');
+  assert.ok(juntos.includes('--- tsc ---'), 'hífen de log foi confundido com caixa');
+});
+
+test('runs de linhas em branco colapsam em uma', () => {
+  const cru = 'primeiro\n\n\n\n\nsegundo\n';
+  const [trecho] = lePane(cru);
+  assert.deepEqual(trecho, { tipo: 'texto', texto: 'primeiro\n\nsegundo\n' });
+});
+
+test('o link OSC 8 sobrevive mesmo morando numa linha de chrome', () => {
+  // A statusline inteira é chrome — menos o link da sessão, que é a única
+  // ponte da tela para o claude.ai.
+  const links = lePane(REAL).filter((t) => t.tipo === 'link');
+  assert.equal(links.length, 1);
+  assert.equal(links[0]!.href, 'https://claude.ai/code/session_01G1qjYg4gSQ5G72M79iri92');
+});

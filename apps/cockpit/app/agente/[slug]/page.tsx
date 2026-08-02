@@ -9,7 +9,7 @@ import { leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
 import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { Tropa } from '@/components/shell/tropa';
-import { lePane } from '@/lib/pane';
+import { FeedDaConversa } from './feed-da-conversa';
 
 export const dynamic = 'force-dynamic';
 
@@ -194,81 +194,31 @@ export default async function AgentePage({
           Inventar uma marca d'água ou um nome discreto aqui seria trocar o que
           ele mandou tirar por uma versão menor da mesma coisa. */}
 
-      {/* Coluna de leitura por container query: a coluna não sabe o tamanho da
+      {/* O FEED DE VERDADE. Até 02/08 esta rota mostrava só o último recado do
+          assistente + o pedaço cru do pane, e o `<FeedDaConversa>` vivia numa
+          rota `/preview` paralela pra não arriscar a tela que o Rica olha ao
+          vivo. Ele mandou sair da versão de teste no mesmo dia: a preview
+          morreu e o feed é o corpo desta rota. `last_assistant_message`,
+          `pane_excerpt` e o estado vazio saíram junto — quem cuida dos três
+          agora é o próprio feed, que lê o stream inteiro em vez do retrato.
+
+          Coluna de leitura por container query: a coluna não sabe o tamanho da
           tela, só o do espaço que recebeu. As medidas do ChatGPT são de desktop —
           no celular a escada desce sozinha. */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto"
-        style={{ containerType: 'inline-size', background: 'var(--ck-surface-canvas)' }}
+        className="min-h-0 flex-1"
+        style={{
+          containerType: 'inline-size',
+          background: 'var(--ck-surface-canvas)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
         <div
-          className="mx-auto flex flex-col"
-          style={{
-            maxWidth: 'var(--ck-read-wide)',
-            gap: 'var(--ck-space-4)',
-            padding: 'var(--ck-space-5) var(--ck-space-4)',
-          }}
+          className="mx-auto flex min-h-0 w-full flex-1 flex-col"
+          style={{ maxWidth: 'var(--ck-read-wide)' }}
         >
-          {agente.last_assistant_message ? (
-            <p style={{ color: 'var(--ck-text-primary)', whiteSpace: 'pre-wrap' }}>
-              {agente.last_assistant_message}
-            </p>
-          ) : null}
-
-          {agente.pane_excerpt ? (
-            // SOLTO — ordem do Rica, ao vivo (30/07): "o output da tropa não
-            // deve sair em caixa isolada, vamos usar as praticas atuais" / "o
-            // de vcs fica solto, so alinhado com o chat inbox". Revoga a nota
-            // anterior deste bloco ("log de execução, não bolha de chat"
-            // pedia a elevação `ck-lit` + fundo + moldura); a voz da máquina
-            // continua em mono, só perde a caixa — flui alinhada com o
-            // parágrafo acima, não mais um bloco à parte.
-            <pre
-              style={{
-                // O pane é de 80 colunas e a tela tem 390px: com rolagem
-                // horizontal o FIM de cada linha some, e num log o fim da linha é
-                // justamente onde está o resultado. Quebra em vez de cortar.
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                margin: 0,
-                fontFamily: 'var(--ck-font-mono)',
-                fontSize: 'var(--ck-text-sm)',
-                lineHeight: 'var(--ck-leading-body)',
-                color: 'var(--ck-text-primary)',
-              }}
-            >
-              {lePane(agente.pane_excerpt).map((trecho, i) =>
-                trecho.tipo === 'link' ? (
-                  <a
-                    key={i}
-                    href={trecho.href}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="ck-link"
-                  >
-                    {trecho.texto}
-                  </a>
-                ) : (
-                  <span key={i}>{trecho.texto}</span>
-                ),
-              )}
-            </pre>
-          ) : null}
-
-          {!agente.last_assistant_message && !agente.pane_excerpt ? (
-            // Estado vazio de verdade: uma frase, sem ilustração — ilustração
-            // genérica é a assinatura do mequetrefe.
-            <p
-              style={{
-                fontSize: 'var(--ck-text-hero)',
-                lineHeight: 'var(--ck-leading-hero)',
-                letterSpacing: 'var(--ck-track-hero)',
-                color: 'var(--ck-text-secondary)',
-              }}
-            >
-              Sem conversa ainda.
-            </p>
-          ) : null}
+          <FeedDaConversa agentSlug={agente.slug} />
         </div>
       </div>
 

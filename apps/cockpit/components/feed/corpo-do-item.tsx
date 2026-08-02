@@ -11,32 +11,20 @@
 // caminho quente é `LinhaExecucao`, e ela nasce colapsada.
 
 import type { ContentPart } from '@grupo_borges/cockpit-core/messages-types';
-import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { Badge } from '@/components/ui/badge';
-// Extensão `.tsx` explícita de propósito: cada renderer tem um `.ts` irmão de
-// mesmo nome (a lógica testada), e a resolução sem extensão acha o `.ts`
-// primeiro. O componente só sai pelo caminho completo.
-import { AgentResult } from '@/components/renderers/agent-result.tsx';
-import { FetchResult } from '@/components/renderers/fetch-result.tsx';
-import { FileContent } from '@/components/renderers/file-content.tsx';
-import { LinhaExecucao } from '@/components/renderers/linha-execucao';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
-import { PublishedPage } from '@/components/renderers/published-page.tsx';
-import { ResultList } from '@/components/renderers/result-list.tsx';
-import { ShellOutput } from '@/components/renderers/shell-output.tsx';
-import { StatusLine } from '@/components/renderers/status-line.tsx';
 import { Thinking } from '@/components/renderers/thinking';
 
+import { Execucao } from './execucao';
 import {
   execucaoDaParte,
   execucaoDoChip,
-  familiaDoRich,
-  type EntradaDaExecucao,
 } from './execucao-do-item';
+import type { ItemDoFeed } from './grupo-ferramentas.ts';
+import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 
-type Props = { item: RenderItem; lookup?: ToolResultLookup };
+type Props = { item: ItemDoFeed; lookup?: ToolResultLookup };
 
 /* -------------------------------------------------------------------------- */
 /* Formas menores — uma linha, sem moldura                                    */
@@ -60,6 +48,10 @@ function Fala({ texto, tom }: { texto: string; tom?: 'discreto' }) {
   );
 }
 
+/** Linha de sistema, sem a caixinha — ordem do Rica, 02/08: "sem borda, sem
+ *  fundo, sem badge". O rótulo é overline (12px, uppercase, tracking largo):
+ *  lê-se como legenda, não como chip. Corpo em secondary — tertiary em texto
+ *  de corpo é reprovação direta do contrato (3.55:1). */
 function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
   return (
     <div
@@ -68,11 +60,19 @@ function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
         gap: 'var(--ck-space-2)',
         alignItems: 'baseline',
         minWidth: 0,
-        fontSize: 'var(--ck-text-sm)',
-        color: 'var(--ck-text-tertiary)',
+        color: 'var(--ck-text-secondary)',
       }}
     >
-      <Badge>{rotulo}</Badge>
+      <span
+        style={{
+          flexShrink: 0,
+          fontSize: 'var(--ck-text-xs)',
+          letterSpacing: 'var(--ck-track-overline)',
+          textTransform: 'uppercase',
+        }}
+      >
+        {rotulo}
+      </span>
       {corpo ? (
         <span
           style={{
@@ -81,52 +81,13 @@ function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
             whiteSpace: 'nowrap',
             minWidth: 0,
             flex: 1,
+            fontSize: 'var(--ck-text-sm)',
           }}
         >
           {corpo}
         </span>
       ) : null}
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Execução                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/** A escolha da entrada mora em `execucao-do-item.ts`, que tem teste. Aqui só
- *  se desenha o que foi escolhido. */
-function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
-  // O `rich` é o tool_use_result cru. A família foi escolhida (e provada contra
-  // fixture real) no `familiaDoRich`; sem família, `corpoRico` fica undefined e
-  // a LinhaExecucao cai no `Saida` genérico de sempre — caminho intacto.
-  const familia = familiaDoRich(entrada.rich);
-  const corpoRico =
-    familia === 'fetch' ? (
-      <FetchResult valor={entrada.rich} />
-    ) : familia === 'lista' ? (
-      <ResultList valor={entrada.rich} />
-    ) : familia === 'agente' ? (
-      <AgentResult valor={entrada.rich} />
-    ) : familia === 'arquivo' ? (
-      <FileContent valor={entrada.rich} />
-    ) : familia === 'status' ? (
-      <StatusLine valor={entrada.rich} />
-    ) : familia === 'pagina-publicada' ? (
-      <PublishedPage valor={entrada.rich} />
-    ) : familia === 'shell' ? (
-      <ShellOutput valor={entrada.rich} />
-    ) : undefined;
-
-  return (
-    <LinhaExecucao
-      toolName={entrada.toolName}
-      args={entrada.args}
-      result={entrada.result}
-      isError={entrada.isError}
-      estado={entrada.estado}
-      corpoRico={corpoRico}
-    />
   );
 }
 
@@ -196,6 +157,9 @@ export function CorpoDoItem({ item, lookup }: Props) {
       ) : (
         <LinhaSeca rotulo={item.chip.label} corpo={item.chip.summary || item.expandBody} />
       );
+
+    case 'grupo-ferramentas':
+      return <GrupoFerramentasView grupo={item} lookup={lookup} />;
 
     case 'synthetic':
       // `stt` não é evento de sistema: é o Rica falando, e chegou por voz em vez

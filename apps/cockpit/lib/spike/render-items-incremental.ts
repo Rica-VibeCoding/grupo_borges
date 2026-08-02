@@ -6,14 +6,27 @@ import {
   coalesceSidechainGroups,
 } from '@grupo_borges/cockpit-core/render-items';
 
+import {
+  agrupaFerramentas,
+  ehLinhaDeTrabalho,
+  type ItemDoFeed,
+} from '../../components/feed/grupo-ferramentas.ts';
+import { temConteudoVisivel } from './conteudo-visivel.ts';
+
+/** O item cru, pré-agrupamento. `tool-group` só nasce do `coalesceToolGroups`
+ *  do core — que este pipeline não chama (a família dele é estreita demais,
+ *  ver grupo-ferramentas.ts) — então a saída do `buildRenderItems` nunca o tem;
+ *  o tipo é estreitado uma vez, aqui, em vez de coerção a cada splice. */
+type ItemCru = Exclude<RenderItem, { kind: 'tool-group' }>;
+
 type RawEntry = {
-  item: RenderItem;
+  item: ItemCru;
   start: number;
   end: number;
 };
 
 type OutputEntry = {
-  item: RenderItem;
+  item: ItemDoFeed;
   start: number;
   end: number;
 };
@@ -112,7 +125,7 @@ function rewindToWholeSidechainGroups(
 function annotateTail(
   messages: readonly MessagePayload[],
   boundary: number,
-  items: readonly RenderItem[],
+  items: readonly ItemCru[],
 ): RawEntry[] {
   const absoluteIndex = new Map<MessagePayload, number>();
   for (let index = boundary; index < messages.length; index++) {
@@ -151,15 +164,36 @@ function coalesceEntries(entries: readonly RawEntry[]): OutputEntry[] {
   let index = 0;
   while (index < entries.length) {
     const entry = entries[index];
-    if (entry.item.kind !== 'sidechain-group') {
+    // Duas famílias agrupam (§7): runs de sidechain viram cluster, runs de
+    // linha de trabalho viram grupo de ferramentas. Uma run é sempre de UMA
+    // família, então uma passagem basta — equivale a aplicar os dois
+    // coalescedores em sequência. A família da ferramenta é a LINHA DE
+    // TRABALHO (chip ∪ assistant só de tool_use), não o chip do
+    // `coalesceToolGroups`: o classificador só emite chip com resultado
+    // >300 caracteres — 18 das 148 execuções da conversa medida em 02/08 —
+    // e agrupar só ele deixaria a parede de trabalho intacta.
+    const familia = entry.item.kind === 'sidechain-group'
+      ? 'sidechain'
+      : ehLinhaDeTrabalho(entry.item)
+        ? 'execucao'
+        : null;
+    if (familia === null) {
       output.push(entry);
       index++;
       continue;
     }
+    const mesmaFamilia = (candidate: RawEntry): boolean =>
+      familia === 'sidechain'
+        ? candidate.item.kind === 'sidechain-group'
+        : ehLinhaDeTrabalho(candidate.item);
     let end = index + 1;
-    while (end < entries.length && entries[end].item.kind === 'sidechain-group') end++;
+    while (end < entries.length && mesmaFamilia(entries[end])) end++;
     const run = entries.slice(index, end);
-    const [item] = coalesceSidechainGroups(run.map((candidate) => candidate.item));
+    // O lado sidechain devolve `RenderItem` no tipo, mas a run que entrou só
+    // tinha sidechain-group — o que sai é group ou cluster, nunca tool-group.
+    const [item] = (familia === 'sidechain'
+      ? coalesceSidechainGroups(run.map((candidate) => candidate.item))
+      : agrupaFerramentas(run.map((candidate) => candidate.item))) as ItemDoFeed[];
     output.push({
       item,
       start: Math.min(...run.map((candidate) => candidate.start)),
@@ -181,16 +215,16 @@ export function incrementalRenderItemsStats(instance: object): IncrementalRender
 }
 
 export function createIncrementalRenderItems(): {
-  update(messages: readonly MessagePayload[]): RenderItem[];
+  update(messages: readonly MessagePayload[]): ItemDoFeed[];
 } {
   let previous: readonly MessagePayload[] = [];
   let rawEntries: RawEntry[] = [];
   let outputEntries: OutputEntry[] = [];
-  const outputItems: RenderItem[] = [];
+  const outputItems: ItemDoFeed[] = [];
   let sidechainParentUuids = new Set<string>();
 
   const instance = {
-    update(messages: readonly MessagePayload[]): RenderItem[] {
+    update(messages: readonly MessagePayload[]): ItemDoFeed[] {
       if (messages === previous) return outputItems;
 
       const previousLength = previous.length;
@@ -213,10 +247,48 @@ export function createIncrementalRenderItems(): {
       }
 
       const stableRawLength = appendOnly ? tailCut(rawEntries, boundary) : 0;
-      const stableOutputLength = appendOnly ? tailCut(outputEntries, boundary) : 0;
-      const tailItems = buildRenderItems([...messages.slice(boundary)]);
+      let stableOutputLength = appendOnly ? tailCut(outputEntries, boundary) : 0;
+      // Dois estágios na cauda, na ordem em que precisam acontecer:
+      //   1. temConteudoVisivel — item sem conteúdo não desenha NADA (ordem do
+      //      Rica, 02/08): o assistant de thinking vazio virava padding puro.
+      //      Filtrar ANTES de agrupar, senão o item oco quebraria a run de
+      //      ferramentas em duas e o §7 nunca dispararia numa corrida real.
+      //   2. coalesceEntries — §7: ferramentas consecutivas viram um grupo só.
+      const tailItems = buildRenderItems([...messages.slice(boundary)])
+        .filter(temConteudoVisivel) as ItemCru[];
       const tailEntries = annotateTail(messages, boundary, tailItems);
-      const coalescedTail = coalesceEntries(tailEntries);
+
+      // Janela de absorção da §7. Se a cauda reprocessada COMEÇA com linha de
+      // trabalho, as linhas consecutivas que a antecedem voltam para a janela
+      // e o grupo é refeito inteiro — MAS sem reprocessar mensagem: os itens
+      // já classificados são reaproveitados como estão. A alternativa (mover
+      // o boundary para trás da run, como o sidechain faz) reclassificaria a
+      // corrida inteira a cada flush — com 738 Bash no baseline, o custo por
+      // flush voltaria a crescer com o histórico, que é o que este módulo
+      // existe para evitar. A linha de trabalho é imutável depois de
+      // classificada (o único item que pode mudar de forma é o da ÚLTIMA
+      // mensagem — um tool_use cujo resultado casa com a mensagem seguinte —
+      // e ela está sempre na cauda pelo `boundary = previous.length - 1`),
+      // então reusá-la é seguro — é por isso que o sidechain continua com
+      // rewind de mensagem e a execução não precisa.
+      let janela: RawEntry[] = tailEntries;
+      if (appendOnly && tailEntries.length > 0 && ehLinhaDeTrabalho(tailEntries[0].item)) {
+        let inicio = stableRawLength;
+        while (inicio > 0 && ehLinhaDeTrabalho(rawEntries[inicio - 1].item)) inicio--;
+        if (inicio < stableRawLength) {
+          janela = [...rawEntries.slice(inicio, stableRawLength), ...tailEntries];
+          // O grupo velho que cobre as linhas absorvidas sai da saída estável —
+          // sem este corte ele ficaria E o grupo novo nasceria, duplicando as
+          // execuções. (Mensagens invisíveis entre elas — o thinking vazio
+          // filtrado acima — não deixam entrada, então o corte é por índice de
+          // mensagem, não por posição na lista.)
+          const inicioMsg = rawEntries[inicio].start;
+          while (stableOutputLength > 0 && outputEntries[stableOutputLength - 1].end >= inicioMsg) {
+            stableOutputLength--;
+          }
+        }
+      }
+      const coalescedTail = coalesceEntries(janela);
 
       rawEntries.splice(stableRawLength, rawEntries.length - stableRawLength, ...tailEntries);
       outputEntries.splice(stableOutputLength, outputEntries.length - stableOutputLength, ...coalescedTail);

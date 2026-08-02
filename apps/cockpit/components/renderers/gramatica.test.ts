@@ -3,31 +3,36 @@ import { describe, it } from 'node:test';
 
 import { encurtaCaminho, encurtaNomeMcp, leExecucao } from './gramatica.ts';
 
-describe('gramática da execução — o sigilo', () => {
-  it('apaga a palavra Bash: o $ já é o nome, e são 738 linhas', () => {
+describe('gramática da execução — o verbo, em português desde 02/08', () => {
+  it('Bash executa — e o verbo carrega o estado pelo tempo verbal', () => {
     const e = leExecucao({ toolName: 'Bash', args: { command: 'git status --short' } });
-    assert.equal(e.sigilo, '$');
-    assert.equal(e.rotulo, null);
+    assert.equal(e.verbo, 'Executou');
     assert.equal(e.alvo, 'git status --short');
+    assert.equal(
+      leExecucao({ toolName: 'Bash', args: { command: 'ls' }, estado: 'running' }).verbo,
+      'Executando',
+    );
   });
 
-  it('mantém o rótulo onde o sigilo é ambíguo — > é Write E Edit', () => {
-    assert.equal(leExecucao({ toolName: 'Write', args: {} }).rotulo, 'Write');
-    assert.equal(leExecucao({ toolName: 'Edit', args: {} }).rotulo, 'Edit');
-    assert.equal(leExecucao({ toolName: 'Read', args: {} }).rotulo, null);
+  it('Write cria, Edit edita — o verbo distingue o que o sigilo > não distinguia', () => {
+    assert.equal(leExecucao({ toolName: 'Write', args: { file_path: '/a.ts' } }).verbo, 'Criou');
+    assert.equal(leExecucao({ toolName: 'Edit', args: { file_path: '/a.ts' } }).verbo, 'Editou');
+    assert.equal(leExecucao({ toolName: 'Read', args: { file_path: '/a.ts' } }).verbo, 'Leu');
   });
 
-  it('classifica MCP pelo MÉTODO, não pelo servidor: a lista envelheceria', () => {
-    assert.equal(leExecucao({ toolName: 'mcp__supabase_geral__execute_sql' }).sigilo, '?');
-    assert.equal(leExecucao({ toolName: 'mcp__supabase_geral__list_tables' }).sigilo, '?');
-    assert.equal(leExecucao({ toolName: 'mcp__plugin_telegram_telegram__reply' }).sigilo, '@');
+  it('MCP cai no genérico que nunca produz frase torta: a lista envelheceria', () => {
+    assert.equal(leExecucao({ toolName: 'mcp__supabase_geral__execute_sql' }).verbo, 'Usou');
+    assert.equal(leExecucao({ toolName: 'mcp__plugin_telegram_telegram__reply' }).verbo, 'Usou');
   });
 
-  it('ferramenta que não conhece cai em ~, nunca em linha muda', () => {
+  it('sem argumento o nome vai no lugar do alvo — linha muda é o modo de falha proibido', () => {
     const e = leExecucao({ toolName: 'FerramentaQueAindaNaoExiste', args: { alvo: 'x' } });
-    assert.equal(e.sigilo, '~');
-    assert.equal(e.rotulo, 'FerramentaQueAindaNaoExiste');
+    assert.equal(e.verbo, 'Usou');
     assert.equal(e.alvo, 'x');
+    // Args parcial do streaming: "Leu Read" é torto, o genérico informa.
+    const parcial = leExecucao({ toolName: 'Read' });
+    assert.equal(parcial.verbo, 'Usou');
+    assert.equal(parcial.alvo, 'Read');
   });
 });
 
@@ -73,9 +78,9 @@ describe('alvo', () => {
     assert.equal(e.alvo, 'cd /tmp \\');
   });
 
-  it('args parcial do streaming não quebra: linha nasce sem alvo e vive', () => {
-    assert.equal(leExecucao({ toolName: 'Bash' }).alvo, '');
-    assert.equal(leExecucao({ toolName: 'Bash', args: 'ainda-nao-e-json' }).alvo, '');
+  it('args parcial do streaming não quebra: a linha nasce com o nome no lugar do alvo', () => {
+    assert.equal(leExecucao({ toolName: 'Bash' }).alvo, 'Bash');
+    assert.equal(leExecucao({ toolName: 'Bash', args: 'ainda-nao-e-json' }).alvo, 'Bash');
   });
 });
 
@@ -97,12 +102,12 @@ describe('rendimento — o que substituiu a duração ausente', () => {
     assert.equal(leExecucao({ toolName: 'Bash', args: {}, result: '\n\n' }).rendimento, null);
   });
 
-  it('Edit sai com o saldo exato, e o sinal é U+2212', () => {
+  it('Edit sai com o saldo exato, estruturado para a linha colorir — e o sinal é U+2212', () => {
     const e = leExecucao({
       toolName: 'Edit',
       args: { file_path: '/a/b.ts', old_string: 'um\ndois\n', new_string: 'um\ndois\ntres\n' },
     });
-    assert.deepEqual(e.rendimento, { texto: '+1 −0' });
+    assert.deepEqual(e.rendimento, { texto: '+1 −0', adicoes: 1, remocoes: 0 });
     assert.ok(e.rendimento!.texto.includes('−'));
   });
 
@@ -121,7 +126,7 @@ assert.equal(e.rendimento?.texto, '3000 trocadas');
       args: { file_path: '/a/b.ts', content: 'um\ndois\n' },
       result: 'File created successfully',
     });
-    assert.deepEqual(e.rendimento, { texto: '+2' });
+    assert.deepEqual(e.rendimento, { texto: '+2', adicoes: 2 });
   });
 
   it('resultado em partes de texto (MCP) é lido igual', () => {

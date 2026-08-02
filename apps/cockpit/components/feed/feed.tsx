@@ -16,14 +16,15 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { capturaAncora, estaColado, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { chaveDe } from './chave';
 import { CorpoDoItem } from './corpo-do-item';
+import type { ItemDoFeed } from './grupo-ferramentas.ts';
 
 export type FeedProps = {
-  itens: readonly RenderItem[];
+  itens: readonly ItemDoFeed[];
   lookup?: ToolResultLookup;
 };
 
