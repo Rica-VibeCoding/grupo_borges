@@ -76,7 +76,11 @@ export type AparenciaEnvio = {
  * (3) qual é o custo de agir — nesta ordem, porque é a ordem em que a pessoa
  * decide. "Mandar de novo pode duplicar" é a informação que impede o dano.
  */
-export function aparenciaDe(fase: FaseEnvio, nomeDoAgente: string): AparenciaEnvio {
+export function aparenciaDe(
+  fase: FaseEnvio,
+  nomeDoAgente: string,
+  opcoes?: { emFila?: boolean },
+): AparenciaEnvio {
   switch (fase) {
     case 'ocioso':
       return {
@@ -114,6 +118,24 @@ export function aparenciaDe(fase: FaseEnvio, nomeDoAgente: string): AparenciaEnv
       };
 
     case 'confirmado':
+      // A confirmação veio da FILA, não do eco: o agente estava no meio de um
+      // turno e o CLI enfileirou a mensagem (`kind: "queued"` do stream). É
+      // recibo MELHOR que o eco — prova que o texto entrou na caixa de
+      // entrada dele. O sucesso continua quieto nos SINAIS (sem filete, sem
+      // fio, texto assentado), mas aqui a palavra vale: dizem ao Rica por que
+      // a resposta não vai vir já. O eco da drenagem chega depois e só apaga
+      // a marca — uma entrega, um aviso.
+      if (opcoes?.emFila === true) {
+        return {
+          filete: null,
+          assentada: true,
+          fio: 'nenhum',
+          frase: 'entrou na fila',
+          acoes: [],
+          anuncio: `${nomeDoAgente} estava ocupado. A mensagem entrou na fila e vai ser lida na sequência.`,
+          urgencia: 'polite',
+        };
+      }
       return {
         filete: null,
         assentada: true,

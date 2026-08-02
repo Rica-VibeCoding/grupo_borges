@@ -20,6 +20,10 @@ export function chaveDe(item: ItemDoFeed): string {
       return `ask-${item.entry.request_id}`;
     case 'grupo-ferramentas':
       return `gf-${item.itens[0]?.payload.uuid ?? 'sem-raiz'}`;
+    case 'linha-viva':
+      // Uma só por feed, sempre na ponta: a chave fixa é o que preserva o
+      // componente (e o relógio que já está correndo) entre flushes.
+      return 'linha-viva';
     default:
       return item.payload.uuid || String(item.payload.id);
   }

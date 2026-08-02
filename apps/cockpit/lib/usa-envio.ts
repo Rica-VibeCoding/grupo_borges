@@ -94,17 +94,45 @@ function respostaTemFronteira(
   return typeof id === 'number' && Number.isSafeInteger(id) && id >= 0;
 }
 
-function textoDaMensagem(payload: MessagePayload): string | null {
+/**
+ * O `kind: "queued"` do backend (commit 640282c): quando o agente está no
+ * meio de um turno, o CLI enfileira a mensagem (`queue-operation`/`enqueue`)
+ * e o stream emite este evento — com `message: null` e o texto no `content`
+ * de fora. O kind não está no union `MessageKind` do cockpit-core, então o
+ * estreitamento é local. É o recibo de entrega da fila: chega em segundos,
+ * enquanto o eco `user` só nasce quando a fila drena — minutos depois.
+ *
+ * Sem type predicate de propósito: `queued` não pertence ao union `MessageKind`,
+ * então `MessagePayload & { kind: 'queued' }` reduz o `kind` a `never` e todo
+ * acesso posterior vira erro. Ler os dois campos por uma janela crua é o que
+ * descreve o formato honestamente — o tipo do core continua sendo a verdade
+ * dele, e este é um evento que ele ainda não conhece.
+ */
+function textoEnfileirado(payload: MessagePayload): string | null {
+  const cru = payload as unknown as { kind?: unknown; content?: unknown };
+  if (cru.kind !== 'queued') return null;
+  return typeof cru.content === 'string' && cru.content.length > 0 ? cru.content : null;
+}
+
+function textoDaMensagem(
+  payload: MessagePayload,
+): { texto: string; papel: 'user' | 'fila' } | null {
+  const daFila = textoEnfileirado(payload);
+  if (daFila !== null) return { texto: daFila, papel: 'fila' };
+  if ((payload as unknown as { kind?: unknown }).kind === 'queued') return null;
   if (payload.message?.role !== 'user') return null;
   const conteudo = payload.message.content;
-  if (typeof conteudo === 'string') return conteudo;
-  return conteudo
-    .filter(
-      (parte): parte is Extract<ContentPart, { type: 'text' }> =>
-        parte.type === 'text',
-    )
-    .map((parte) => parte.text)
-    .join('');
+  const texto =
+    typeof conteudo === 'string'
+      ? conteudo
+      : conteudo
+          .filter(
+            (parte): parte is Extract<ContentPart, { type: 'text' }> =>
+              parte.type === 'text',
+          )
+          .map((parte) => parte.text)
+          .join('');
+  return { texto, papel: 'user' };
 }
 
 function fronteiraDo(id: number): FronteiraEnvio {
@@ -193,17 +221,20 @@ export function createControleEnvio(
         const payload = JSON.parse(evento.data) as MessagePayload;
         if (!Number.isSafeInteger(payload.id) || payload.id <= cursor) return;
         cursor = payload.id;
-        const texto = textoDaMensagem(payload);
-        if (texto === null) return;
+        const extraido = textoDaMensagem(payload);
+        if (extraido === null) return;
         publicar({
           tipo: 'item-do-stream',
           item: {
             id: payload.id,
-            papel: 'user',
-            texto: vozEmVoo ? texto.replace(PREFIXO_VOZ, '') : texto,
+            papel: extraido.papel,
+            texto: vozEmVoo ? extraido.texto.replace(PREFIXO_VOZ, '') : extraido.texto,
           },
         });
-        if (estado.fase === 'confirmado') {
+        // Confirmado pela fila NÃO encerra a observação: o eco `user` da
+        // drenagem ainda precisa chegar para apagar a marca `fila` — senão o
+        // composer fica preso no "entrou na fila" para sempre.
+        if (estado.fase === 'confirmado' && estado.fila !== true) {
           limparTimerPrazo();
           limparTimerReconexao();
           fecharFonte();
@@ -222,10 +253,15 @@ export function createControleEnvio(
         // o servidor algum dia não conseguir reter/replayar o intervalo da
         // queda, um eco pode ser perdido e o envio ficará
         // `nao-confirmado`. Não há reconciliação adicional nesta rodada.
-        if (
-          (estado.fase === 'aceito' || estado.fase === 'nao-confirmado') &&
-          estado.fronteira !== undefined
-        ) {
+        // Confirmado pela fila também reconecta: a observação continua de pé
+        // esperando o eco da drenagem (ver o handler de `message` acima).
+        const aguardandoEco =
+          estado.fase === 'aceito' ||
+          estado.fase === 'nao-confirmado' ||
+          (estado.fase === 'confirmado' && estado.fila === true);
+        // `'fronteira' in estado` em vez de confiar na fase: o `aguardandoEco`
+        // é uma disjunção composta, e o TS não estreita o union por ela.
+        if (aguardandoEco && 'fronteira' in estado && estado.fronteira !== undefined) {
           observar(estado.fronteira);
         }
       }, atrasoReconexaoMs);

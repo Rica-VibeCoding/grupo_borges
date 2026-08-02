@@ -246,6 +246,9 @@ function chaveDe(item: ItemDoFeed): string {
       return `ask-${item.entry.request_id}`;
     case 'grupo-ferramentas':
       return `gf-${item.itens[0]?.payload.uuid ?? 'sem-raiz'}`;
+    case 'linha-viva':
+      // Espelha `components/feed/chave.ts`: uma só por feed, chave fixa.
+      return 'linha-viva';
     default:
       return item.payload.uuid || String(item.payload.id);
   }

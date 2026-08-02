@@ -35,9 +35,21 @@ export type GrupoFerramentas = {
   itens: MembroDoGrupo[];
 };
 
+/** A LINHA VIVA — o "está acontecendo agora" quando a corrida trabalha MAS
+ *  ainda não tocou em nenhuma ferramenta (ou está entre uma e outra): o
+ *  intervalo entre o Rica mandar e o agente agir, que antes era tela muda.
+ *  Nasce sintética no fim do feed (feed-da-conversa.tsx), nunca do
+ *  classificador — por isso não tem `payload`. `desdeMs` ancora o tempo
+ *  decorrido, que conta sozinho no cliente. Quando o trabalho de verdade
+ *  aparece, ela é SUBSTITUÍDA por ele — não some deixando buraco. */
+export type LinhaViva = {
+  kind: 'linha-viva';
+  desdeMs: number;
+};
+
 /** A saída do pipeline do feed: tudo que o core produz, menos `tool-group`
  *  (esta passada o substitui — ver o cabeçalho), mais o grupo amplo. */
-export type ItemDoFeed = Exclude<RenderItem, { kind: 'tool-group' }> | GrupoFerramentas;
+export type ItemDoFeed = Exclude<RenderItem, { kind: 'tool-group' }> | GrupoFerramentas | LinhaViva;
 
 /** É linha de trabalho? A régua do assistant é a MESMA do `temConteudoVisivel`
  *  e da `Parte`: texto e thinking só contam quando têm caractere; tool_result

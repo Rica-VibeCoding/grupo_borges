@@ -23,6 +23,7 @@ import {
 } from './execucao-do-item';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
+import { LinhaVivaView } from './linha-viva.tsx';
 
 type Props = { item: ItemDoFeed; lookup?: ToolResultLookup };
 
@@ -160,6 +161,9 @@ export function CorpoDoItem({ item, lookup }: Props) {
 
     case 'grupo-ferramentas':
       return <GrupoFerramentasView grupo={item} lookup={lookup} />;
+
+    case 'linha-viva':
+      return <LinhaVivaView desdeMs={item.desdeMs} />;
 
     case 'synthetic':
       // `stt` não é evento de sistema: é o Rica falando, e chegou por voz em vez

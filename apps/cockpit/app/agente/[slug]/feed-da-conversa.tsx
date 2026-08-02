@@ -16,13 +16,15 @@ import { useMemo, useRef } from 'react';
 
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { Feed } from '@/components/feed/feed';
+import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
+import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
 const HISTORICO_PADRAO = 1000;
 
 export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
-  const { messages, status } = useCanarioStream({
+  const { messages, isRunning, status } = useCanarioStream({
     slug: agentSlug,
     limit: HISTORICO_PADRAO,
     recentes: true,
@@ -33,10 +35,22 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   const incrementalRef = useRef<ReturnType<typeof createIncrementalRenderItems> | null>(null);
   if (incrementalRef.current === null) incrementalRef.current = createIncrementalRenderItems();
 
-  const itens = useMemo(() => [...incrementalRef.current!.update(messages)], [messages]);
+  const itensBase = useMemo(() => [...incrementalRef.current!.update(messages)], [messages]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
 
-  if (itens.length === 0) {
+  // A LINHA VIVA. A corrida está de pé (`isRunning`) mas o fim do feed não
+  // tem trabalho em voo — o buraco entre o Rica mandar e a primeira
+  // ferramenta, que antes era tela muda. Ela entra como ÚLTIMO ITEM, na
+  // mesma gramática cinza das linhas de ferramenta; quando o trabalho de
+  // verdade chega, é substituída por ele — não some deixando buraco.
+  const itens = useMemo<readonly ItemDoFeed[]>(() => {
+    if (!isRunning || trabalhoEmVooNoFim(itensBase, lookup)) return itensBase;
+    const desdeMs = desdeDaLinhaViva(messages);
+    if (desdeMs === null) return itensBase;
+    return [...itensBase, { kind: 'linha-viva', desdeMs }];
+  }, [isRunning, itensBase, lookup, messages]);
+
+  if (itensBase.length === 0) {
     // `connecting`/`replaying`: o histórico ainda não chegou — ficar em
     // branco é honesto. "Sem conversa ainda." aqui seria mentira pra
     // qualquer agente com histórico de verdade, só ainda não carregado.

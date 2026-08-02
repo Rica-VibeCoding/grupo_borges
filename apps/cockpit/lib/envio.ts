@@ -47,6 +47,13 @@ export type EstadoEnvio =
       fase: 'confirmado';
       fronteira: FronteiraEnvio;
       ecoId: number;
+      /** Presente quando a confirmação veio da FILA (`kind: "queued"` do
+       *  stream) e não do eco: o agente estava ocupado e o CLI enfileirou a
+       *  mensagem — que é recibo de entrega MELHOR que o eco, porque prova
+       *  que o texto entrou na caixa de entrada dele. O eco `user` chega
+       *  depois, quando a fila drena, e só apaga esta marca — nunca
+       *  reconfirma (uma entrega, uma notificação). */
+      fila?: true;
     } & BaseEnvio)
   | ({
       fase: 'nao-confirmado';
@@ -168,12 +175,34 @@ export function reduzEnvio(
     return { ...estado, fase: 'nao-confirmado' };
   }
 
+  // item-do-stream daqui pra baixo. Dois papéis confirmam: o eco `user` de
+  // sempre e o `fila` (`kind: "queued"` — o recibo de que a mensagem entrou
+  // na fila do agente ocupado). Qualquer outro papel é ignorado.
+  const papel = evento.item.papel;
+  if (papel !== 'user' && papel !== 'fila') return estado;
+
+  // O eco que chega DEPOIS do "entrou na fila": a fila drenou e a mensagem
+  // virou item user de verdade. Ele só apaga a marca `fila` — reconfirmar
+  // notificaria a mesma entrega duas vezes, e é exatamente a briga que a
+  // marca existe para impedir.
+  if (estado.fase === 'confirmado') {
+    if (
+      estado.fila !== true ||
+      papel !== 'user' ||
+      evento.item.id <= estado.fronteira.id ||
+      normalizaTextoDoEco(evento.item.texto) !== normalizaTextoDoEco(estado.texto)
+    ) {
+      return estado;
+    }
+    const { fila: _fila, ...confirmado } = estado;
+    return { ...confirmado, ecoId: evento.item.id };
+  }
+
   if (
     (estado.fase !== 'enviando' &&
       estado.fase !== 'aceito' &&
       estado.fase !== 'nao-confirmado') ||
     estado.fronteira === undefined ||
-    evento.item.papel !== 'user' ||
     evento.item.id <= estado.fronteira.id ||
     normalizaTextoDoEco(evento.item.texto) !==
       normalizaTextoDoEco(estado.texto)
@@ -194,5 +223,6 @@ export function reduzEnvio(
     fase: 'confirmado',
     fronteira: estado.fronteira,
     ecoId: evento.item.id,
+    ...(papel === 'fila' ? { fila: true as const } : {}),
   };
 }

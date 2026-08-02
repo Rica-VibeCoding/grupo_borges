@@ -85,6 +85,10 @@ import type {
 
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas';
+
+/** O que a bancada mede: tudo do feed MENOS a linha viva (estado de turno em
+ *  voo, com relógio próprio — não é histórico e não entra na medição). */
+type ItemMedido = Exclude<ItemDoFeed, { kind: 'linha-viva' }>;
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
@@ -445,14 +449,23 @@ function Bancada() {
   // importa preservar é a identidade dos ITENS, não a do array: com ela estável,
   // o WeakMap de thread-message-converter.js:5 finalmente acerta no prefixo e só
   // a cauda é reconvertida.
-  const itens = useMemo(() => [...incrementalRef.current!.update(messages)], [messages]);
+  // A linha viva fica FORA da bancada: ela é o estado do turno em voo, e o que
+  // se mede aqui é o custo de desenhar HISTÓRICO. Deixá-la entrar poria um
+  // relógio correndo dentro da medição.
+  const itens = useMemo<ItemMedido[]>(
+    () =>
+      [...incrementalRef.current!.update(messages)].filter(
+        (item): item is ItemMedido => item.kind !== 'linha-viva',
+      ),
+    [messages],
+  );
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
 
   // convertMessage é por item (assinatura :43); a minha ponte é por lista, daí
   // a lista de um. Memoizado porque identidade instável aqui recria o adapter
   // a cada render.
   const convertMessage = useCallback(
-    (item: ItemDoFeed) => toThreadMessages([item], lookup)[0],
+    (item: ItemMedido) => toThreadMessages([item], lookup)[0],
     [lookup],
   );
 
@@ -461,7 +474,7 @@ function Bancada() {
     // envio de volta é `sendText` do contrato de dados e não entra no spike.
   }, []);
 
-  const runtime = useExternalStoreRuntime<ItemDoFeed>({
+  const runtime = useExternalStoreRuntime<ItemMedido>({
     messages: itens,
     isRunning,
     isLoading,
