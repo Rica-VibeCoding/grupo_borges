@@ -7,6 +7,7 @@ importadas pelo router.
 """
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -148,7 +149,9 @@ def test_voice_handles_stt_failure_502(tmp_path: Path) -> None:
     """STT exit≠0 → 502 com motivo da última linha do stderr."""
     app = _build_app(tmp_path)
     fake = _fake_completed(stdout="", stderr="key inválida\n", returncode=1)
-    with patch("routers.agents.subprocess.run", return_value=fake):
+    with patch("routers.agents._probe_audio_duration_ms", return_value=250), patch(
+        "routers.agents.subprocess.run", return_value=fake
+    ):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/voice",
@@ -157,3 +160,116 @@ def test_voice_handles_stt_failure_502(tmp_path: Path) -> None:
             assert response.status_code == 502
             assert "stt_failed" in response.json()["detail"]
             assert "key inválida" in response.json()["detail"]
+
+
+def test_voice_logs_stt_failure_diagnostics(tmp_path: Path, caplog) -> None:
+    """Falha registra stderr, exit code e metadados do áudio no logger da API."""
+    app = _build_app(tmp_path)
+    fake = _fake_completed(stdout="", stderr="erro detalhado\n", returncode=7)
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    with patch("routers.agents._probe_audio_duration_ms", return_value=1250), patch(
+        "routers.agents.subprocess.run", return_value=fake
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/voice",
+                files={"audio": ("iphone.oga", b"123456", "audio/ogg")},
+            )
+
+    assert response.status_code == 502
+    log_text = caplog.text
+    assert "voice_stt_failed" in log_text
+    assert "filename='iphone.oga'" in log_text
+    assert "mime=audio/ogg" in log_text
+    assert "size_bytes=6" in log_text
+    assert "audio_duration_ms=1250" in log_text
+    assert "stt_duration_ms=" in log_text
+    assert "exit_code=7" in log_text
+    assert "stderr='erro detalhado'" in log_text
+
+
+def test_audio_duration_probe_is_best_effort(caplog) -> None:
+    """Falha operacional ou duração inválida no ffprobe nunca bloqueia o STT."""
+    caplog.set_level(logging.WARNING, logger="uvicorn.error")
+
+    with patch("routers.agents.subprocess.run", side_effect=OSError("sem processo")):
+        assert agents_router._probe_audio_duration_ms("/tmp/audio.oga") is None
+
+    invalid = _fake_completed(stdout="inf\n", stderr="", returncode=0)
+    with patch("routers.agents.subprocess.run", return_value=invalid):
+        assert agents_router._probe_audio_duration_ms("/tmp/audio.oga") is None
+
+    assert caplog.text.count("voice_audio_probe_failed") == 2
+
+
+def test_voice_log_tail_is_bounded() -> None:
+    stderr = "prefixo-sensivel\n" + ("x" * (agents_router._VOICE_LOG_TAIL_CHARS + 10))
+
+    tail = agents_router._voice_log_tail(stderr)
+
+    assert tail.startswith("<truncated>...")
+    assert "prefixo-sensivel" not in tail
+    assert tail.endswith("x" * agents_router._VOICE_LOG_TAIL_CHARS)
+
+
+def test_voice_logs_timeout_diagnostics(tmp_path: Path, caplog) -> None:
+    app = _build_app(tmp_path)
+    timeout = subprocess.TimeoutExpired(
+        cmd=["stt"], timeout=30, stderr=b"tempo limite detalhado\n"
+    )
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    with patch("routers.agents._probe_audio_duration_ms", return_value=900), patch(
+        "routers.agents.subprocess.run", side_effect=timeout
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/voice",
+                files={"audio": ("timeout.oga", b"123", "audio/ogg")},
+            )
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "stt_timeout"
+    assert "voice_stt_timeout" in caplog.text
+    assert "timeout_s=30" in caplog.text
+    assert "stderr='tempo limite detalhado'" in caplog.text
+
+
+def test_voice_logs_script_exec_failure(tmp_path: Path, caplog) -> None:
+    app = _build_app(tmp_path)
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    with patch("routers.agents._probe_audio_duration_ms", return_value=700), patch(
+        "routers.agents.subprocess.run", side_effect=FileNotFoundError("script sumiu")
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/voice",
+                files={"audio": ("exec.oga", b"123", "audio/ogg")},
+            )
+
+    assert response.status_code == 502
+    assert response.json()["detail"].startswith("stt_script_not_found:")
+    assert "voice_stt_exec_failed" in caplog.text
+    assert "script sumiu" in caplog.text
+
+
+def test_voice_logs_empty_transcription(tmp_path: Path, caplog) -> None:
+    app = _build_app(tmp_path)
+    empty = _fake_completed(stdout="\n", stderr="modelo não retornou texto\n")
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+
+    with patch("routers.agents._probe_audio_duration_ms", return_value=600), patch(
+        "routers.agents.subprocess.run", return_value=empty
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/voice",
+                files={"audio": ("empty.oga", b"123", "audio/ogg")},
+            )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "stt_empty"
+    assert "voice_stt_empty" in caplog.text
+    assert "stderr='modelo não retornou texto'" in caplog.text

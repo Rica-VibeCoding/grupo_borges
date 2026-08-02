@@ -64,6 +64,7 @@ from services import workspace_reader
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+voice_log = logging.getLogger("uvicorn.error")
 
 _CLAUDE_HOME = Path.home() / ".claude"
 _CLAUDE_JSON = Path.home() / ".claude.json"
@@ -1793,6 +1794,24 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
     payload = event.get("payload")
     if not isinstance(payload, dict):
         return None
+    if payload.get("type") == "queue-operation":
+        if payload.get("operation") != "enqueue":
+            return None
+        return {
+            "id": event["id"],
+            "kind": "queued",
+            "uuid": None,
+            "parent_uuid": None,
+            "session_id": payload.get("sessionId"),
+            "is_sidechain": False,
+            "user_type": None,
+            "timestamp": payload.get("timestamp"),
+            "created_at": event["created_at"],
+            "message": None,
+            "agent_id": None,
+            "tool_use_result": None,
+            "content": payload.get("content"),
+        }
     uuid_value = payload.get("uuid")
     if not uuid_value:
         return None
@@ -2101,6 +2120,8 @@ _VOICE_MIME_SUFFIX = {
     "audio/mp4": ".m4a",
     "audio/mpeg": ".mp3",
 }
+_VOICE_AUDIO_PROBE_TIMEOUT_S = 5
+_VOICE_LOG_TAIL_CHARS = 8 * 1024
 _IMAGE_ALLOWED_MIMES = {"image/jpeg", "image/png", "image/webp"}
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 _IMAGE_MIME_SUFFIX = {
@@ -2109,6 +2130,62 @@ _IMAGE_MIME_SUFFIX = {
     "image/webp": ".webp",
 }
 _AGENT_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "agents"
+
+
+def _voice_log_tail(value: str | bytes | None) -> str:
+    """Bound subprocess diagnostics while retaining the most recent cause."""
+    if isinstance(value, bytes):
+        text = value.decode(errors="replace")
+    else:
+        text = value or ""
+    text = text.strip()
+    if len(text) <= _VOICE_LOG_TAIL_CHARS:
+        return text
+    return f"<truncated>...{text[-_VOICE_LOG_TAIL_CHARS:]}"
+
+
+def _probe_audio_duration_ms(path: str) -> int | None:
+    """Return media duration from ffprobe without making STT depend on it."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                path,
+            ],
+            capture_output=True,
+            timeout=_VOICE_AUDIO_PROBE_TIMEOUT_S,
+            text=True,
+            errors="replace",
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        voice_log.warning("voice_audio_probe_failed error=%r", exc)
+        return None
+
+    if result.returncode != 0:
+        voice_log.warning(
+            "voice_audio_probe_failed exit_code=%d stderr=%r",
+            result.returncode,
+            _voice_log_tail(result.stderr),
+        )
+        return None
+
+    try:
+        duration_seconds = float((result.stdout or "").strip())
+        if not 0 <= duration_seconds < float("inf"):
+            raise ValueError("duration must be finite and non-negative")
+        return round(duration_seconds * 1000)
+    except (OverflowError, ValueError):
+        voice_log.warning(
+            "voice_audio_probe_failed invalid_duration=%r",
+            (result.stdout or "").strip(),
+        )
+        return None
 
 
 def _sniff_agent_image_type(data: bytes) -> str | None:
@@ -2167,10 +2244,24 @@ async def post_agent_voice(
     suffix = ".oga"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp_path = tmp.name
+    audio_duration_ms: int | None = None
     try:
         tmp.write(content)
         tmp.close()
 
+        audio_duration_ms = await asyncio.to_thread(_probe_audio_duration_ms, tmp_path)
+        voice_log.info(
+            "voice_stt_started slug=%s filename=%r mime=%s size_bytes=%d "
+            "audio_duration_ms=%s script=%s",
+            slug,
+            audio.filename,
+            base_mime,
+            len(content),
+            audio_duration_ms,
+            _VOICE_STT_SCRIPT,
+        )
+
+        stt_started_at = time.monotonic()
         try:
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -2178,23 +2269,102 @@ async def post_agent_voice(
                 capture_output=True,
                 timeout=_VOICE_STT_TIMEOUT_S,
                 text=True,
+                errors="replace",
             )
         except subprocess.TimeoutExpired as e:
+            now = time.monotonic()
+            elapsed_ms = int((now - started_at) * 1000)
+            stt_duration_ms = int((now - stt_started_at) * 1000)
+            voice_log.error(
+                "voice_stt_timeout slug=%s filename=%r mime=%s size_bytes=%d "
+                "audio_duration_ms=%s elapsed_ms=%d stt_duration_ms=%d "
+                "timeout_s=%d stderr=%r",
+                slug,
+                audio.filename,
+                base_mime,
+                len(content),
+                audio_duration_ms,
+                elapsed_ms,
+                stt_duration_ms,
+                _VOICE_STT_TIMEOUT_S,
+                _voice_log_tail(e.stderr),
+            )
             raise HTTPException(status_code=504, detail="stt_timeout") from e
-        except (FileNotFoundError, PermissionError) as e:
+        except OSError as e:
+            now = time.monotonic()
+            elapsed_ms = int((now - started_at) * 1000)
+            stt_duration_ms = int((now - stt_started_at) * 1000)
+            voice_log.exception(
+                "voice_stt_exec_failed slug=%s filename=%r mime=%s size_bytes=%d "
+                "audio_duration_ms=%s elapsed_ms=%d stt_duration_ms=%d script=%s",
+                slug,
+                audio.filename,
+                base_mime,
+                len(content),
+                audio_duration_ms,
+                elapsed_ms,
+                stt_duration_ms,
+                _VOICE_STT_SCRIPT,
+            )
             raise HTTPException(
                 status_code=502,
                 detail=f"stt_script_not_found: {_VOICE_STT_SCRIPT}",
             ) from e
 
         if result.returncode != 0:
+            now = time.monotonic()
+            elapsed_ms = int((now - started_at) * 1000)
+            stt_duration_ms = int((now - stt_started_at) * 1000)
+            voice_log.error(
+                "voice_stt_failed slug=%s filename=%r mime=%s size_bytes=%d "
+                "audio_duration_ms=%s elapsed_ms=%d stt_duration_ms=%d "
+                "exit_code=%d stderr=%r",
+                slug,
+                audio.filename,
+                base_mime,
+                len(content),
+                audio_duration_ms,
+                elapsed_ms,
+                stt_duration_ms,
+                result.returncode,
+                _voice_log_tail(result.stderr),
+            )
             stderr_tail = (result.stderr or "").strip().splitlines()
             last = stderr_tail[-1] if stderr_tail else "unknown"
             raise HTTPException(status_code=502, detail=f"stt_failed: {last}")
 
         transcribed = (result.stdout or "").strip()
         if not transcribed:
+            now = time.monotonic()
+            elapsed_ms = int((now - started_at) * 1000)
+            stt_duration_ms = int((now - stt_started_at) * 1000)
+            voice_log.error(
+                "voice_stt_empty slug=%s filename=%r mime=%s size_bytes=%d "
+                "audio_duration_ms=%s elapsed_ms=%d stt_duration_ms=%d "
+                "exit_code=%d stderr=%r",
+                slug,
+                audio.filename,
+                base_mime,
+                len(content),
+                audio_duration_ms,
+                elapsed_ms,
+                stt_duration_ms,
+                result.returncode,
+                _voice_log_tail(result.stderr),
+            )
             raise HTTPException(status_code=502, detail="stt_empty")
+
+        voice_log.info(
+            "voice_stt_succeeded slug=%s filename=%r mime=%s size_bytes=%d "
+            "audio_duration_ms=%s elapsed_ms=%d stt_duration_ms=%d",
+            slug,
+            audio.filename,
+            base_mime,
+            len(content),
+            audio_duration_ms,
+            int((time.monotonic() - started_at) * 1000),
+            int((time.monotonic() - stt_started_at) * 1000),
+        )
 
         if agent.get("executor_kind") == "codex":
             await _spawn_codex_agent_turn(

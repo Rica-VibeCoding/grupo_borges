@@ -25,7 +25,10 @@ render por item** — e ela está sendo medida.
 - **Fase 1 — chat com a tropa.** É o que está em execução. Tudo o que se constrói
   agora pertence a ela.
 - **Fase 2 — kanban de tarefas.** **Não existe nesta fase.** Só começa depois de a
-  cultura visual do chat estar validada pelo Rica.
+  cultura visual do chat estar validada pelo Rica. Ele pôs prazo em 02/08, testando o
+  v2 no celular: *"hoje a gente vai testar toda a parte do chat, vamos deixar tudo bem
+  polido com tudo que eu vou precisar te passando, e a parte do kanban só depois de eu
+  testar pelo menos umas duas semanas"*. Duas semanas de USO dele, não de calendário.
 
 A ordem não é cronograma, é dependência: o chat **funda** a gramática visual que o
 kanban vai herdar. Pelos números do baseline, 82% do tráfego é `tool_use` e só o Bash

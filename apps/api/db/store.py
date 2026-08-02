@@ -73,6 +73,7 @@ REVIEW_ACTIONS = {
 }
 _UNSET = object()
 _JSONL_MESSAGE_KINDS = ("jsonl:user", "jsonl:assistant", "jsonl:attachment", "jsonl:summary")
+_JSONL_QUEUE_OPERATION_KIND = "jsonl:queue-operation"
 
 # Quantos eventos recentes `_recent_jsonl_session_ids` varre antes de agrupar.
 # Sem esse teto o GROUP BY passa por todo o histórico do agente (150k linhas no
@@ -1274,14 +1275,26 @@ class GrupoBorgesDB:
         kind_placeholders = ", ".join("?" for _ in _JSONL_MESSAGE_KINDS)
         clauses = [
             "agent_slug = ?",
-            f"kind IN ({kind_placeholders})",
-            "id > ?",
             "("
+            f"(kind IN ({kind_placeholders}) AND ("
             "json_valid(payload) = 0 "
             "OR (json_valid(payload) = 1 AND json_extract(payload, '$.uuid') IS NOT NULL)"
+            ")) "
+            "OR ("
+            "kind = ? "
+            "AND json_valid(payload) = 1 "
+            "AND json_extract(payload, '$.type') = 'queue-operation' "
+            "AND json_extract(payload, '$.operation') = 'enqueue'"
+            ")"
             ")",
+            "id > ?",
         ]
-        params: list[Any] = [agent_slug, *_JSONL_MESSAGE_KINDS, since_id]
+        params: list[Any] = [
+            agent_slug,
+            *_JSONL_MESSAGE_KINDS,
+            _JSONL_QUEUE_OPERATION_KIND,
+            since_id,
+        ]
         if session_id is not None:
             clauses.append(
                 "json_valid(payload) = 1 AND json_extract(payload, '$.sessionId') = ?"

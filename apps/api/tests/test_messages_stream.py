@@ -136,6 +136,31 @@ def _insert_jsonl(
     ) or 0
 
 
+def _insert_queue_operation(
+    db: GrupoBorgesDB,
+    *,
+    operation: str,
+    session_id: str = "sess-a",
+    content: str | None = None,
+) -> int:
+    payload: dict[str, Any] = {
+        "type": "queue-operation",
+        "operation": operation,
+        "timestamp": "2026-08-02T12:34:56.789Z",
+        "sessionId": session_id,
+    }
+    if content is not None:
+        payload["content"] = content
+    return db._insert_task_event(
+        "jsonl:queue-operation",
+        None,
+        "daniel",
+        None,
+        payload,
+        None,
+    ) or 0
+
+
 def _insert_legacy_corrupt_event(
     db: GrupoBorgesDB, *, kind: str, payload: str
 ) -> int:
@@ -274,6 +299,115 @@ async def test_messages_stream_replay_and_schema_are_canonical(tmp_path: Path) -
     assert "sessionId" not in message
     assert message["message"]["content"] == [{"type": "text", "text": "primeira"}]
     assert events[-1][1]["last_id"] == events[2][1]["id"]
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_emits_only_enqueued_queue_operations(
+    tmp_path: Path,
+) -> None:
+    app, db = _build_app(tmp_path)
+    first_id = _insert_jsonl(
+        db,
+        kind="user",
+        session_id="sess-a",
+        uuid="uuid-before-queue",
+        text="antes",
+    )
+    with patch("db.store.time.time", return_value=1_775_100_000):
+        queued_id = _insert_queue_operation(
+            db,
+            operation="enqueue",
+            content="🎙 mensagem durante turno ativo",
+        )
+    _insert_queue_operation(db, operation="dequeue")
+    _insert_queue_operation(db, operation="remove", content="não emitir")
+    last_id = _insert_jsonl(
+        db,
+        kind="assistant",
+        session_id="sess-a",
+        uuid="uuid-after-queue",
+        text="depois",
+    )
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-a",
+        stop_after="replay-end",
+    )
+
+    messages = [payload for name, payload in events if name == "message"]
+    assert [message["kind"] for message in messages] == [
+        "user",
+        "queued",
+        "assistant",
+    ]
+    assert [message["id"] for message in messages] == [first_id, queued_id, last_id]
+    assert messages[1] == {
+        "id": queued_id,
+        "kind": "queued",
+        "uuid": None,
+        "parent_uuid": None,
+        "session_id": "sess-a",
+        "is_sidechain": False,
+        "user_type": None,
+        "timestamp": "2026-08-02T12:34:56.789Z",
+        "created_at": 1_775_100_000,
+        "message": None,
+        "agent_id": None,
+        "tool_use_result": None,
+        "content": "🎙 mensagem durante turno ativo",
+    }
+    assert events[-1][1]["last_id"] == last_id
+
+
+@pytest.mark.parametrize("kind", ["user", "assistant", "attachment"])
+@pytest.mark.asyncio
+async def test_messages_stream_existing_kinds_are_unchanged(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    app, db = _build_app(tmp_path)
+    payload = _payload(
+        kind=kind,
+        session_id="sess-existing",
+        uuid=f"uuid-{kind}",
+        parent_uuid="parent-existing",
+        text=f"conteúdo {kind}",
+        is_sidechain=True,
+    )
+    with patch("db.store.time.time", return_value=1_775_000_000):
+        event_id = db._insert_task_event(
+            f"jsonl:{kind}",
+            None,
+            "daniel",
+            None,
+            payload,
+            None,
+        )
+
+    _, _, events = await _drive_stream(
+        app,
+        session_id="sess-existing",
+        stop_after="replay-end",
+    )
+
+    messages = [event_payload for name, event_payload in events if name == "message"]
+    assert messages == [
+        {
+            "id": event_id,
+            "kind": kind,
+            "uuid": f"uuid-{kind}",
+            "parent_uuid": "parent-existing",
+            "session_id": "sess-existing",
+            "is_sidechain": True,
+            "user_type": "external",
+            "timestamp": "2026-05-16T03:56:24.353Z",
+            "created_at": 1_775_000_000,
+            "message": payload["message"],
+            "agent_id": None,
+            "tool_use_result": None,
+        }
+    ]
 
 
 @pytest.mark.asyncio
