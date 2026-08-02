@@ -159,12 +159,18 @@ export function CorpoDoItem({ item, lookup }: Props) {
   switch (item.kind) {
     case 'user':
       // Balão — ordem do Rica, 30/07: "o meu vai em balão, o de vcs fica
-      // solto". `w-fit` + `self-start` seguram a caixa no tamanho do texto
-      // dentro do flex-column do feed; sem os dois ela estica (`align-items:
-      // stretch` é o padrão do eixo cruzado) e o balão vira uma faixa cheia.
+      // solto". `w-fit` segura a caixa no tamanho do texto dentro do
+      // flex-column do feed; sem ele ela estica (`align-items: stretch` é o
+      // padrão do eixo cruzado) e o balão vira uma faixa cheia.
+      //
+      // `self-end` desde 02/08, testando o v2: *"o input que eu mando fica do
+      // lado esquerdo junto com o output, o certo seria do lado direito"*. A
+      // ordem de 30/07 tinha decidido balão contra solto, não o lado — com os
+      // dois à esquerda, a fala dele e a da máquina começavam na mesma margem e
+      // só o fundo separava. O lado é o que distingue quem falou antes de ler.
       return (
         <div
-          className="w-fit max-w-[var(--ck-read-mid)] self-start rounded-[var(--ck-radius-frame)]"
+          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
         >
           <Fala texto={item.text} />
@@ -192,7 +198,23 @@ export function CorpoDoItem({ item, lookup }: Props) {
       );
 
     case 'synthetic':
-      return <LinhaSeca rotulo={item.syntheticKind} corpo={item.rawText} />;
+      // `stt` não é evento de sistema: é o Rica falando, e chegou por voz em vez
+      // de teclado. Estava caindo no mesmo desenho dos wakeups — linha cinza,
+      // truncada, rótulo técnico — e ele leu isso como defeito no teste de 02/08
+      // (*"o texto ficou embaixo"*). Wakeup é máquina se anunciando e continua
+      // discreto; a fala dele ganha o mesmo balão do texto digitado, porque é a
+      // mesma pessoa dizendo a mesma coisa por outra porta. O 🎙 já vem no
+      // `raw_text` e é o que distingue as duas portas — não precisa de rótulo.
+      return item.syntheticKind === 'stt' ? (
+        <div
+          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
+          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
+        >
+          <Fala texto={item.rawText} />
+        </div>
+      ) : (
+        <LinhaSeca rotulo={item.syntheticKind} corpo={item.rawText} />
+      );
     case 'channel':
       return <LinhaSeca rotulo="canal" corpo={item.raw} />;
 
