@@ -6,6 +6,7 @@ import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
+import { Regua } from '@/components/shell/regua';
 import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { Tropa } from '@/components/shell/tropa';
 import { lePane } from '@/lib/pane';
@@ -283,6 +284,11 @@ export default async function AgentePage({
             painel e envia sozinho — ver o cabeçalho do próprio componente. */}
         <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
       </div>
+
+      {/* Régua de medição — só com `?diag=1` na URL. Ver o cabeçalho de
+          `app/api/regua/route.ts`: existe porque o Safari do iPhone é o único
+          motor que eu não consigo rodar aqui. */}
+      {sp.diag === '1' ? <Regua /> : null}
     </AppShell>
   );
 }
