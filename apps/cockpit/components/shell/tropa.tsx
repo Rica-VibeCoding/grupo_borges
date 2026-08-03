@@ -14,8 +14,10 @@
  * 1. RETRATO NO LUGAR DE EMOJI. O antigo nunca usou emoji — usa foto por slug com
  *    inicial de reserva, e é daí que vem o "mais bonito". Detalhe em `retrato.tsx`.
  * 2. TELEMETRIA DE VOLTA. Modelo, tempo de sessão e contexto — a statusline é o
- *    que ele mais olha, e ela some quando o agente está offline porque telemetria
- *    de sessão morta é ruído, não informação. Mesma decisão do antigo.
+ *    que ele mais olha. Sessão morta mostra só o CONTEXTO (ordem do Rica, 03/08:
+ *    "tipo 30% de um milhão de tokens", é o número que decide o /compact na
+ *    volta); modelo, tempo de sessão, pasta e "há 20h" somem — telemetria de
+ *    sessão morta é ruído, e o relógio ele disse que não lê.
  * 3. HIERARQUIA POR VIDA. Quem está de pé ganha cartão de duas linhas; quem está
  *    offline vira uma linha rasa sob um divisor que conta quantos são. A lista
  *    plana era o que fazia sete agentes dormindo pesarem igual ao que trabalha.
@@ -27,19 +29,19 @@
  */
 import Link from 'next/link';
 import type { Agent, AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
-import { formatLastSeen } from '@grupo_borges/cockpit-core/cockpit-types';
+import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
 import { Badge } from '@/components/ui/badge';
 import { estadoDe } from './estado';
 import { Retrato } from './retrato';
-import { Statusline } from './statusline';
+import { Barra, Statusline, TETO_PCT } from './statusline';
 
 /**
  * A pasta em que o agente trabalha, sem a raiz que todos compartilham.
  *
  * Ordem do Rica (02/08): *"toda tropa eu tenho que saber em que pasta que tá,
- * para não ficar perguntando"*. Aqui é o único lugar onde ele vê os nove de uma
- * vez — no chat não há cabeçalho de identidade desde a §15, e o painel INF.
- * mostra um agente por vez.
+ * para não ficar perguntando"*. Em 03/08 ele recortou: a pasta vale pra quem
+ * está DE PÉ (cartão de duas linhas); na linha de quem dorme ela saiu junto
+ * com o "há 20h" — nome + contexto bastam. Então hoje só o `CartaoVivo` chama.
  *
  * Cortamos só `/home/clawd/repos/`: `fluyt/apps/pos` distingue app de app, coisa
  * que o último segmento sozinho (`pos`) não faria. Gêmea da do cockpit antigo
@@ -172,13 +174,11 @@ function CartaoVivo({
 function LinhaDormindo({
   agente,
   selecionado,
-  agora,
 }: {
   agente: Agent;
   selecionado: boolean;
-  agora: number;
 }) {
-  const pasta = pastaCurta(agente.workspace_path);
+  const pct = resolveContextPct(agente);
   return (
     <li>
       <Link
@@ -206,35 +206,46 @@ function LinhaDormindo({
           {agente.name}
         </span>
 
-        {/* Quem dorme continua tendo casa, e a ordem do Rica era "toda tropa".
-            Aqui a pasta cabe na MESMA linha — a folga entre o nome e o "há 20h"
-            era rio, não respiro. Ela cede antes do nome e antes do tempo: os dois
-            têm truncamento próprio, a pasta some primeiro no aparelho estreito. */}
-        {pasta ? (
+        {/* Ordem do Rica (03/08): quem dorme mostra NOME + CONTEXTO — "a
+            quantidade de contexto usado, tipo 30% de um milhão de tokens", o
+            número que decide o /compact quando a sessão voltar. SEM pasta
+            ("nenhum endereço do repositório ali") e SEM "há 20h" ("um timing
+            que não me interessa") — a ordem de 02/08 valia pra tropa de pé; pra
+            quem dorme, pasta e relógio viraram ruído na linha única.
+            O instrumento é o MESMO da statusline dos vivos (Barra + teto de
+            30%): dado velho lido com régua diferente mente duas vezes. O valor
+            é o último que o pane gravou antes de morrer — `resolveContextPct`
+            cai no `context_pct` do banco quando o excerpt já não tem barra. */}
+        {pct !== null ? (
           <span
-            className="min-w-0 shrink truncate"
+            className="ck-tabular flex shrink-0 items-center"
             style={{
+              gap: 'var(--ck-space-1)',
               fontFamily: 'var(--ck-font-mono)',
               fontSize: 'var(--ck-text-xs)',
               color: 'var(--ck-text-secondary)',
-              opacity: 0.75,
             }}
-            title={agente.workspace_path}
+            title={`contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`}
           >
-            {pasta}
+            <Barra pct={pct} />
+            <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
+              {pct}%
+            </span>
           </span>
-        ) : null}
-
-        <span
-          className="ck-tabular shrink-0"
-          style={{
-            fontFamily: 'var(--ck-font-mono)',
-            fontSize: 'var(--ck-text-xs)',
-            color: 'var(--ck-text-tertiary)',
-          }}
-        >
-          {formatLastSeen(agente.last_seen, agora)}
-        </span>
+        ) : (
+          // Rótulo gêmeo do da statusline viva: sessão que morreu sem gravar o
+          // número diz "sem contexto", não inventa zero.
+          <span
+            className="shrink-0"
+            style={{
+              fontFamily: 'var(--ck-font-mono)',
+              fontSize: 'var(--ck-text-xs)',
+              color: 'var(--ck-text-tertiary)',
+            }}
+          >
+            sem contexto
+          </span>
+        )}
       </Link>
     </li>
   );
@@ -343,7 +354,6 @@ export function Tropa({
                 key={a.slug}
                 agente={a}
                 selecionado={a.slug === slugSelecionado}
-                agora={agora}
               />
             ))}
           </ul>

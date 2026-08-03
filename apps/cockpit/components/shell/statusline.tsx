@@ -24,10 +24,12 @@ import {
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { formatCompactNumber } from '@grupo_borges/cockpit-core/painel-format';
 
-/** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta. */
-const TETO_PCT = 30;
+/** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta.
+ *  Exportada: a `LinhaDormindo` (tropa.tsx) julga o contexto de quem dormiu
+ *  pela mesma régua — teto é um só, ou o número mente diferente por linha. */
+export const TETO_PCT = 30;
 
-function Barra({ pct }: { pct: number }) {
+export function Barra({ pct }: { pct: number }) {
   const estourou = pct > TETO_PCT;
   return (
     // A caixa externa é mais alta que a barra de propósito: é ela que deixa o
