@@ -60,10 +60,16 @@ HIRO = {
 }
 
 
-def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
+def _build_app(
+    tmp_path: Path,
+    *,
+    codex_for_tara: bool = False,
+    extra_agents: list[dict] | None = None,
+) -> FastAPI:
+    agents = [DANIEL, TARA, HIRO, *(extra_agents or [])]
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA, HIRO])
+    db._sync_agents(agents)
     if codex_for_tara:
         db._update_agent_codex_state(
             "tara",
@@ -72,7 +78,7 @@ def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
         )
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
+    app.state.agents_config = {"agents": agents}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -420,19 +426,41 @@ def test_relaunch_fails_without_resumable_conversation(tmp_path: Path) -> None:
 
 
 def test_relaunch_rejects_non_native_model_backend_before_lookup(tmp_path: Path) -> None:
-    app = _build_app(tmp_path)
+    """`model_family` fora de {None, anthropic, kimi} — família hipotética sem
+    mecanismo de preservação de env conhecido — segue barrada antes do lookup."""
+    gpt_agent = {**HIRO, "slug": "gpt-agent", "model_family": "gpt"}
+    app = _build_app(tmp_path, extra_agents=[gpt_agent])
     app.state.db.latest_jsonl_session_id = AsyncMock()
     with patch(
         "routers.agents.tmux_driver.restart_claude_with_resume",
         new=AsyncMock(),
     ) as restart:
         with TestClient(app) as client:
-            response = client.post("/api/agents/hiro/relaunch", json={"confirm": True})
+            response = client.post("/api/agents/gpt-agent/relaunch", json={"confirm": True})
 
     assert response.status_code == 409
     assert response.json()["detail"] == "relaunch_requer_backend_anthropic_nativo"
     app.state.db.latest_jsonl_session_id.assert_not_awaited()
     restart.assert_not_awaited()
+
+
+def test_relaunch_allows_kimi_model_family_past_the_guard(tmp_path: Path) -> None:
+    """Hiro (`model_family: kimi`) não é mais barrado aqui — as 7 `ANTHROPIC_*`
+    agora viajam como env preservada (ver `_PRESERVED_ENV_VARS` no tmux_driver),
+    então o guard só precisa proteger famílias sem esse mecanismo."""
+    app = _build_app(tmp_path)
+    app.state.db.latest_jsonl_session_id = AsyncMock(return_value="019e9077-ccf1-7ee1-b8bb-25202f1ed3e2")
+    with patch(
+        "routers.agents.tmux_driver.restart_claude_with_resume",
+        new=AsyncMock(return_value={"confirmed": True, "attempted": True}),
+    ) as restart:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/hiro/relaunch", json={"confirm": True})
+
+    assert response.status_code == 200
+    assert response.json()["tmux_delivered"] is True
+    app.state.db.latest_jsonl_session_id.assert_awaited_once_with("hiro")
+    restart.assert_awaited_once()
 
 
 def test_input_reports_busy_tmux_session_honestly(tmp_path: Path) -> None:

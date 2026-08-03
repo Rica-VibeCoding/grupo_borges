@@ -2872,7 +2872,7 @@ async def post_agent_relaunch(
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
     if agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex":
         raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
-    if agent.get("model_family") not in {None, "anthropic"}:
+    if agent.get("model_family") not in {None, "anthropic", "kimi"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     db: GrupoBorgesDB = request.app.state.db

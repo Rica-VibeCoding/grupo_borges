@@ -1036,7 +1036,11 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
             False,
         )
     ]
-    assert set(server.env_calls) == {("PATH", "/test/bin:/usr/bin"), ("TELEGRAM_STATE_DIR", None)}
+    snapshot = {"PATH": "/test/bin:/usr/bin"}
+    expected_env_calls = {
+        (name, snapshot.get(name)) for name in tmux_driver._PRESERVED_ENV_VARS
+    }
+    assert set(server.env_calls) == expected_env_calls
     assert replacement_pane.entered == 1
     assert "respawn-pane" not in replacement_pane.sent_commands[0][0]
     assert "|| claude" not in replacement_pane.sent_commands[0][0]
@@ -1061,10 +1065,12 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
         patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
         patch(
             "services.tmux_driver._pane_environment_snapshot",
-            return_value={
-                "PATH": "/test/bin:/usr/bin",
-                "TELEGRAM_STATE_DIR": "/home/clawd/.claude/channels/telegram-daniel",
-            },
+            return_value=(
+                snapshot := {
+                    "PATH": "/test/bin:/usr/bin",
+                    "TELEGRAM_STATE_DIR": "/home/clawd/.claude/channels/telegram-daniel",
+                }
+            ),
         ),
         patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
         patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
@@ -1085,10 +1091,10 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
             False,
         )
     ]
-    assert set(server.env_calls) == {
-        ("PATH", "/test/bin:/usr/bin"),
-        ("TELEGRAM_STATE_DIR", "/home/clawd/.claude/channels/telegram-daniel"),
+    expected_env_calls = {
+        (name, snapshot.get(name)) for name in tmux_driver._PRESERVED_ENV_VARS
     }
+    assert set(server.env_calls) == expected_env_calls
 
 
 def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
@@ -1127,6 +1133,58 @@ def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
 
     assert result == {"attempted": True, "confirmed": True}
     assert ("TELEGRAM_STATE_DIR", None) in server.env_calls
+
+
+def test_restart_preserves_kimi_routing_vars_of_hiro(tmp_path: Path) -> None:
+    """Sem as 7 `ANTHROPIC_*`, o relaunch do Hiro bateria na Anthropic de verdade
+    em vez do `k3` — preservar é o que torna seguro liberar o guard de model_family."""
+    old_pane = _BootstrapPane()
+    anchor = "pergunta anterior única do relaunch"
+    old_pane.visible_context = anchor
+    replacement_pane = _RelaunchPane(anchor)
+    server = _RelaunchServer(old_pane, replacement_pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":'
+        f'"{anchor}"}}}}\n'
+    )
+    kimi_env = {
+        "PATH": "/test/bin:/usr/bin",
+        "ANTHROPIC_API_KEY": "sk-kimi-test",
+        "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+        "ANTHROPIC_MODEL": "k3",
+        "ANTHROPIC_DEFAULT_FABLE_MODEL": "k3",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "k3",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "k3",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "k3",
+    }
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value=kimi_env,
+        ),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "hiro",
+            "/home/clawd/repos/grupo_borges",
+            "k3",
+            session_id,
+        )
+
+    assert result == {"attempted": True, "confirmed": True}
+    expected_env_calls = {
+        (name, kimi_env.get(name)) for name in tmux_driver._PRESERVED_ENV_VARS
+    }
+    assert set(server.env_calls) == expected_env_calls
+    # nenhuma das 7 vars vira `unset` — todas estavam presentes no processo antigo
+    assert all(value is not None for name, value in server.env_calls if name != "TELEGRAM_STATE_DIR")
 
 
 def test_resumed_tui_confirmation_does_not_depend_on_scrolled_banner() -> None:

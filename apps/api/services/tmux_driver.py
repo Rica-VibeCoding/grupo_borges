@@ -829,7 +829,23 @@ def _pane_channel_flags(pane_pid: int) -> str:
 #: em qualquer window nova) em vez de virarem prefixo `VAR=valor` costurado
 #: na string do comando — um lugar só pra crescer a lista, sem função nova
 #: por variável nem `shlex.quote` acumulando por cada entrada.
-_PRESERVED_ENV_VARS = ("PATH", "TELEGRAM_STATE_DIR")
+#:
+#: As 7 `ANTHROPIC_*` são o roteamento inteiro do Hiro pro Kimi (sem elas o
+#: `claude` relançado bate na API da Anthropic de verdade, não no `k3`).
+#: Agente sem essas vars simplesmente não as tem no `/proc/<pid>/environ` —
+#: `_pane_environment_snapshot` não força vazio, e o loop chamador faz
+#: `unset_environment` (no-op se a sessão nunca teve a var).
+_PRESERVED_ENV_VARS = (
+    "PATH",
+    "TELEGRAM_STATE_DIR",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+)
 
 
 def _pane_environment_snapshot(
