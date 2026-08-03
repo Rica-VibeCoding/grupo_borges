@@ -1097,6 +1097,13 @@ def _restart_claude_with_resume_sync(
             # devolver aqui — do contrário a window nova fica com um shell
             # vazio pra sempre, sem ninguém mandar o `send-keys` que abre o
             # Claude (bug 7d1efe86).
+            log.warning(
+                "relaunch: processo antigo não saiu em %ss, escalando pra "
+                "SIGKILL: session=%s pids=%s",
+                _RELAUNCH_PROCESS_EXIT_TIMEOUT_S,
+                session_name,
+                old_process_ids,
+            )
             _force_kill_processes(old_process_ids)
             _wait_for_processes_exit(old_process_ids)
 
