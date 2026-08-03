@@ -162,6 +162,19 @@ def _server_for(session_name: str) -> libtmux.Server:
 
 _BOOTSTRAP_TIMEOUT_S = 15.0
 _BOOTSTRAP_POLL_INTERVAL_S = 0.25
+# Retomar conversa NÃO é bootstrap. Subir uma TUI vazia leva segundos; subir
+# `--resume` de uma conversa real leva o tempo de ler o JSONL inteiro e
+# redesenhar a tela — o do Daniel tem 11 MB. Com os 15 s do bootstrap, o
+# `restart_claude_with_resume` matava o pane, subia o processo certo e mesmo
+# assim devolvia `confirmed=False` porque a âncora ainda não tinha aparecido;
+# a UI dizia "não voltou de pé", o Rica clicava de novo e o segundo clique
+# matava a retomada do primeiro. O teste que liberou o botão rodou no canário,
+# de conversa curta, e por isso passou. Sessão real precisa de outra régua.
+_RESUME_TIMEOUT_S = 90.0
+# 0,25 s × 90 s = 360 rodadas de `capture-pane`+`refresh` competindo com a TUI
+# justamente enquanto ela carrega. Espaçar não atrasa o recibo de forma
+# perceptível e devolve CPU pra quem está desenhando a tela.
+_RESUME_POLL_INTERVAL_S = 0.75
 _RELAUNCH_PROCESS_EXIT_TIMEOUT_S = 5.0
 _PANE_EXCERPT_TIMEOUT_S = 0.5
 _PANE_EXCERPT_LINES = 12
@@ -837,9 +850,11 @@ def _remove_replacement_if_old_window_survives(
 def _wait_for_resumed_claude_tui(
     pane: libtmux.Pane,
     anchors: list[str],
+    timeout_s: float = _RESUME_TIMEOUT_S,
+    poll_interval_s: float = _RESUME_POLL_INTERVAL_S,
 ) -> dict[str, bool]:
     """Confirma banner, caixa de input e conteúdo da conversa retomada."""
-    deadline = time.monotonic() + _BOOTSTRAP_TIMEOUT_S
+    deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
             lines = pane.capture_pane(escape_sequences=False, join_wrapped=True)
@@ -847,7 +862,7 @@ def _wait_for_resumed_claude_tui(
             snapshot = _capture_input_snapshot(pane)
             pane.refresh()
         except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
-            time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
+            time.sleep(poll_interval_s)
             continue
         current_cmd = (pane.pane_current_command or "").lower()
         context_visible = bool(anchors) and any(
@@ -859,7 +874,7 @@ def _wait_for_resumed_claude_tui(
             and context_visible
         ):
             return {"attempted": True, "confirmed": True}
-        time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
+        time.sleep(poll_interval_s)
     return {"attempted": True, "confirmed": False}
 
 
