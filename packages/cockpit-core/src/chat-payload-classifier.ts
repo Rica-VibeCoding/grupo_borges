@@ -38,6 +38,29 @@ type PlainPayload = {
   rawRef: string;
 };
 
+/** Números do `compact_boundary` (type:"system", subtype do CC). Hoje o
+ *  stream filtra `type=system` fora e a serialização canônica do back descarta
+ *  tudo que não está na lista de chaves — então isto quase nunca chega. Lido
+ *  defensivamente: quando um dia o back liberar, o cartão ganha a linha
+ *  "222k → 13k tokens" sem nenhuma mudança aqui. */
+export type CompactMeta = {
+  preTokens?: number;
+  postTokens?: number;
+  trigger?: string;
+};
+
+/** O resumo do `/compact`. NÃO é chip: o corpo é longo demais para uma linha
+ *  e o desenho é um cartão próprio do feed (fechado por padrão), não a linha
+ *  seca dos chips. `expandBody` carrega o resumo INTEIRO — é ele que o
+ *  "ver resumo" expande. */
+type CompactSummaryPayload = {
+  kind: 'compact-summary';
+  chip: null;
+  expandBody: string;
+  rawRef: string;
+  compactMeta?: CompactMeta;
+};
+
 type SuppressPayload = {
   kind: 'suppress';
   chip: null;
@@ -45,7 +68,7 @@ type SuppressPayload = {
   rawRef: string;
 };
 
-export type ChatPayload = ChipPayload | PlainPayload | SuppressPayload;
+export type ChatPayload = ChipPayload | PlainPayload | SuppressPayload | CompactSummaryPayload;
 
 const SLASH_ICONS: Record<string, string> = {
   '/clear': '🧹',
@@ -82,6 +105,49 @@ const IMAGE_READ_MARKER_RE =
 // absoluto seguinte) — texto que cite o marker entre aspas/contexto NÃO
 // começa com `Base directory for this skill: /` então não casa.
 const SKILL_PREAMBLE_RE = /^\s*Base directory for this skill: \//;
+// O resumo do `/compact`. Duas âncoras, porque as duas pontas falham sozinhas:
+//
+// - `isCompactSummary: true` é a marca OFICIAL do CC no JSONL — mas o back só
+//   repassa as chaves listadas em `_canonical_jsonl_message_event`
+//   (apps/api/routers/agents.py), e ela não está lá. Hoje NUNCA chega. Fica
+//   lida defensivamente: o dia que o back liberar, a detecção vira pela marca
+//   e não pelo texto.
+// - o prefixo do corpo é o que atravessa hoje. É estável: 12/12 resumos de
+//   compact amostrados nos JSONL da frota (02/08) começam EXATAMENTE com esta
+//   frase. Âncora `^` pelo mesmo motivo das outras: quem CITA a frase no meio
+//   de um texto não casa.
+const COMPACT_SUMMARY_HEAD_RE =
+  /^\s*This session is being continued from a previous conversation that ran out of context/;
+
+/** É a mensagem-resumo de um `/compact`? Exportada para o consumidor do stream
+ *  (a detecção de FIM do compact no `feed-da-conversa.tsx`) sem que ele
+ *  precise classificar a mensagem inteira. */
+export function ehMensagemResumoCompact(msg: MessagePayload): boolean {
+  if (msg.message?.role !== 'user') return false;
+  const cru = msg as unknown as { isCompactSummary?: unknown };
+  if (cru.isCompactSummary === true) return true;
+  return COMPACT_SUMMARY_HEAD_RE.test(textOf(msg.message.content));
+}
+
+/** O `compactMetadata` mora no evento `compact_boundary` (type:"system"), não
+ *  no resumo — mas leitura defensiva não custa: se um dia vier colado na
+ *  mensagem (ou o back mesclar), o cartão mostra os números sem tocar aqui. */
+function compactMetaDe(msg: MessagePayload): CompactMeta | undefined {
+  const cru = (msg as unknown as { compactMetadata?: unknown }).compactMetadata;
+  if (!cru || typeof cru !== 'object') return undefined;
+  const registro = cru as Record<string, unknown>;
+  const meta: CompactMeta = {};
+  if (typeof registro.preTokens === 'number' && Number.isFinite(registro.preTokens)) {
+    meta.preTokens = registro.preTokens;
+  }
+  if (typeof registro.postTokens === 'number' && Number.isFinite(registro.postTokens)) {
+    meta.postTokens = registro.postTokens;
+  }
+  if (typeof registro.trigger === 'string' && registro.trigger) {
+    meta.trigger = registro.trigger;
+  }
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
 
 export function classifyMessage(
   msg: MessagePayload,
@@ -108,6 +174,21 @@ export function classifyMessage(
 
   if (SKILL_PREAMBLE_RE.test(text)) {
     return { kind: 'suppress', chip: null, expandBody: null, rawRef };
+  }
+
+  // O resumo do /compact ANTES de qualquer outro ramo de user/assistant: sem
+  // este caso ele caía em "plain" e o feed cuspia dezenas de linhas de resumo
+  // como se fosse fala do Rica (incidente de 02/08). Não é chip — o corpo é o
+  // próprio conteúdo expandível do cartão.
+  if (ehMensagemResumoCompact(msg)) {
+    const meta = compactMetaDe(msg);
+    return {
+      kind: 'compact-summary',
+      chip: null,
+      expandBody: text.trim(),
+      rawRef,
+      ...(meta ? { compactMeta: meta } : {}),
+    };
   }
 
   const taskNotification = parseTaskNotification(text);

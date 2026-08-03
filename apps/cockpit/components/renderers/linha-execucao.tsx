@@ -80,7 +80,7 @@ const COR: Record<Desfecho, string> = {
 const LINHAS_DE_PRIMEIRA = 120;
 
 export type LinhaExecucaoProps = EntradaExecucao & {
-  /** Começa aberta. Só para a vitrine e para o bloco ativo do stream. */
+  /** Começa aberta. Só para o bloco ativo do stream. */
   aberta?: boolean;
   /** Corpo já resolvido por quem chama — substitui o `Saida` genérico quando
    *  presente. Escolher QUAL renderer (fetch-result, agent-result, etc.) é

@@ -13,11 +13,10 @@ import {
 } from '../../components/feed/grupo-ferramentas.ts';
 import { temConteudoVisivel } from './conteudo-visivel.ts';
 
-/** O item cru, pré-agrupamento. `tool-group` só nasce do `coalesceToolGroups`
- *  do core — que este pipeline não chama (a família dele é estreita demais,
- *  ver grupo-ferramentas.ts) — então a saída do `buildRenderItems` nunca o tem;
- *  o tipo é estreitado uma vez, aqui, em vez de coerção a cada splice. */
-type ItemCru = Exclude<RenderItem, { kind: 'tool-group' }>;
+/** O item cru, pré-agrupamento: exatamente o que o `buildRenderItems` do core
+ *  produz. O agrupamento de ferramentas é o `grupo-ferramentas` deste app, não
+ *  um kind do core. */
+type ItemCru = RenderItem;
 
 type RawEntry = {
   item: ItemCru;
@@ -190,7 +189,7 @@ function coalesceEntries(entries: readonly RawEntry[]): OutputEntry[] {
     while (end < entries.length && mesmaFamilia(entries[end])) end++;
     const run = entries.slice(index, end);
     // O lado sidechain devolve `RenderItem` no tipo, mas a run que entrou só
-    // tinha sidechain-group — o que sai é group ou cluster, nunca tool-group.
+    // tinha sidechain-group — o que sai é group ou cluster.
     const [item] = (familia === 'sidechain'
       ? coalesceSidechainGroups(run.map((candidate) => candidate.item))
       : agrupaFerramentas(run.map((candidate) => candidate.item))) as ItemDoFeed[];

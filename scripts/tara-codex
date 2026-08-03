@@ -78,7 +78,7 @@ fi
 # Marca a delegação pra statusline mostrar "Tara trabalhando há Xs" durante a espera.
 DELEG_HELPER=/home/clawd/repos/ze_claude/ze-shared/scripts/deleg-estado.sh
 if [[ -r "$DELEG_HELPER" ]]; then
-  source "$DELEG_HELPER" && deleg_marcar_inicio "Tara"
+  source "$DELEG_HELPER" && deleg_marcar_inicio "Tara" "$DELEGATOR" tara
 fi
 
 mkdir -p "$THREAD_DIR"

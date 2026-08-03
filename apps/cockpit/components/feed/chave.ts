@@ -24,6 +24,11 @@ export function chaveDe(item: ItemDoFeed): string {
       // Uma só por feed, sempre na ponta: a chave fixa é o que preserva o
       // componente (e o relógio que já está correndo) entre flushes.
       return 'linha-viva';
+    case 'delegacao':
+      // Pode haver duas pro MESMO alvo (duas Taras em paralelo), então o alvo
+      // sozinho não basta — o início distingue e é estável durante a vida da
+      // delegação, que é o que preserva o relógio entre polls.
+      return `delegacao-${item.alvo}-${item.desdeMs}`;
     default:
       return item.payload.uuid || String(item.payload.id);
   }

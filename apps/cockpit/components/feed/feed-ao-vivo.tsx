@@ -4,7 +4,7 @@
 //
 // O `Feed` puro não sabe de rede: recebe itens e desenha. Isto aqui é o único
 // lugar que costura stream → classificador incremental → feed, e existe
-// separado para o `Feed` continuar montável em bancada e em teste.
+// separado para o `Feed` continuar montável em teste.
 
 import { useMemo, useRef } from 'react';
 
@@ -41,5 +41,5 @@ export function FeedAoVivo({ agentSlug, sessionId, limite = HISTORICO_PADRAO }: 
   const itens = useMemo(() => [...incrementalRef.current!.update(messages)], [messages]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
 
-  return <Feed itens={itens} lookup={lookup} />;
+  return <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />;
 }

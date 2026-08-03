@@ -28,23 +28,23 @@
  * gerou texto pendurado sem aviso), e a distinção aqui não depende de ler
  * palavra nenhuma — depende do fio se mover, parar, ou sumir.
  *
- * `faseForcada` existe só para a vitrine em `/envio` — o resto do componente
- * ignora que esse prop existe.
+ * ESFORÇO É AUTOSSUFICIENTE. A página que usa o Composer não precisa buscar
+ * `/painel` antes: o próprio componente busca ao montar (`fetchAgentPainel`, a
+ * mesma função que `cockpit-core` já expõe) e aplica a troca via
+ * `patchAgentEffort`.
  *
- * ESFORÇO É AUTOSSUFICIENTE DE PROPÓSITO. A página que usa o Composer no chat
- * real não precisa buscar `/painel` antes — se `esforcoPermitido` não vier por
- * prop, o próprio componente busca ao montar (`fetchAgentPainel`, a mesma
- * função que `cockpit-core` já expõe) e aplica a troca via `patchAgentEffort`.
- * A vitrine `/envio` passa os dois props explícitos e assume o controle —
- * nesse caso o fetch não roda, porque o estado forçado tem que ser exatamente
- * o que a vitrine mandou, nunca sobrescrito por uma resposta de rede.
+ * NÃO EXISTE MODO DE DEMONSTRAÇÃO AQUI. O componente fala com o agente de
+ * verdade e mostra o que ele está fazendo — nada de estado forçado, nada de
+ * caminho que só a tela de teste exercita.
  */
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { fetchAgentPainel, patchAgentEffort } from '@grupo_borges/cockpit-core/api';
 
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
+import { usaCompact } from '../../lib/compact';
 import { usaEnvio } from '../../lib/usa-envio';
+import { BarraCompact } from './barra-compact';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
 import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
@@ -71,31 +71,7 @@ export type ComposerProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
-  /** Presentes = controlado (a vitrine). Ausentes = o componente busca e
-   *  aplica sozinho contra `/painel` e `/effort` do próprio agente. */
-  esforcoValor?: string | null;
-  esforcoPermitido?: string[];
-  onTrocarEsforco?: (valor: string) => Promise<void>;
-  /** Só a vitrine `/envio` usa isto. Fora dela, o componente decide sozinho. */
-  faseForcada?: FaseEnvio;
-  /** Idem, para `/voz`. Sem isto não há como VER as fases da captura fora de um
-   *  browser com microfone e permissão concedida — que é exatamente onde elas
-   *  não podem ser conferidas antes de subir. */
-  vozForcada?: FaseVoz;
-  segundosForcados?: number;
 };
-
-/** Padrão de onda para a vitrine — fixo, nunca aleatório: dois prints da mesma
- *  fase precisam ser comparáveis pixel a pixel entre versões. */
-const ONDA_DE_VITRINE = [
-  14, 38, 22, 61, 47, 78, 35, 92, 56, 71, 29, 84, 44, 66, 19, 53, 88, 31, 74, 26, 59, 41, 12, 68,
-];
-
-/** Só a vitrine `/voz` chega aqui: sem microfone aberto não há erro real pra
- *  diagnosticar, então a fase forçada `impedida` precisa de um exemplo. */
-function impedimentoDaVitrine(vozForcada: FaseVoz | undefined) {
-  return vozForcada === 'impedida' ? diagnosticaMicrofone({ name: 'NotAllowedError' }) : undefined;
-}
 
 const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.ReactElement> = {
   reenviar: IconeReenviar,
@@ -103,16 +79,15 @@ const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.Reac
   'tentar-de-novo': IconeReenviar,
 };
 
+/** O `/compact` com argumentos (`/compact foca no deploy`) também é compact —
+ *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
+ *  frase. */
+const COMPACT_RE = /^\s*\/compact(?:\s|$)/;
+
 export function Composer({
   agentSlug,
   agentName,
   motor,
-  esforcoValor,
-  esforcoPermitido,
-  onTrocarEsforco,
-  faseForcada,
-  vozForcada,
-  segundosForcados,
 }: ComposerProps) {
   const [texto, setTexto] = useState('');
   const [trocandoEsforco, setTrocandoEsforco] = useState(false);
@@ -126,16 +101,42 @@ export function Composer({
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Controlado (vitrine) quando o prop vem definido; autossuficiente (chat
-  // real) quando não vem — nesse caso busca `/painel` uma vez ao montar.
-  const controlado = esforcoPermitido !== undefined;
+  // O COMPACT trava o composer. Quem manda `/compact` é este componente (o
+  // texto sai por `envio.enviar` como qualquer mensagem), então é aqui que a
+  // espera COMEÇA; quem avisa que ela TERMINOU é o feed (o resumo chega no
+  // stream) — a máquina compartilhada mora em `lib/compact.ts`. Enquanto ela
+  // espera, digitar é proibido: uma mensagem no meio do compact corta o
+  // resumo ao meio, que foi exatamente o acidente que gerou esta peça.
+  const { estado: estadoCompact, iniciar: iniciarCompact, cancelar: cancelarCompact } =
+    usaCompact(agentSlug);
+  const travaCompact =
+    estadoCompact.fase === 'compactando' || estadoCompact.fase === 'concluindo';
+  // O `/compact` saiu mas o compact ainda não deu sinal — é a janela em que
+  // um envio FALHADO significa "o compact nunca começou" e a espera morre.
+  const compactPendenteRef = useRef(false);
+
+  useEffect(() => {
+    if (estadoCompact.fase === 'concluindo' || estadoCompact.fase === 'sem-retorno') {
+      compactPendenteRef.current = false;
+      return;
+    }
+    // `falhou` é certeza (o POST não foi aceito): o compact não existe e a
+    // barra não pode esperar por um resumo que nunca virá. `nao-confirmado`
+    // é ambiguidade — o texto PODE ter entrado — então a espera continua.
+    if (faseLocal === 'falhou' && compactPendenteRef.current) {
+      compactPendenteRef.current = false;
+      cancelarCompact();
+    }
+  }, [faseLocal, estadoCompact.fase, cancelarCompact]);
+
+  // Busca `/painel` uma vez ao montar. Não há mais caminho "controlado": o
+  // valor na tela é sempre o do agente.
   const [esforcoBuscado, setEsforcoBuscado] = useState<{
     valor: string | null;
     permitido: string[];
   } | null>(null);
 
   useEffect(() => {
-    if (controlado) return;
     let vivo = true;
     fetchAgentPainel(agentSlug)
       .then((painel) => {
@@ -149,17 +150,12 @@ export function Composer({
     return () => {
       vivo = false;
     };
-  }, [controlado, agentSlug]);
+  }, [agentSlug]);
 
-  const esforcoValorEfetivo = controlado ? esforcoValor ?? null : esforcoBuscado?.valor ?? null;
-  const esforcoPermitidoEfetivo = controlado ? esforcoPermitido ?? [] : esforcoBuscado?.permitido ?? [];
+  const esforcoValorEfetivo = esforcoBuscado?.valor ?? null;
+  const esforcoPermitidoEfetivo = esforcoBuscado?.permitido ?? [];
 
   async function trocarEsforcoEfetivo(valor: string) {
-    if (onTrocarEsforco) {
-      await onTrocarEsforco(valor);
-      return;
-    }
-    if (controlado) return; // vitrine sem handler: não há back pra chamar
     const anterior = esforcoBuscado;
     setEsforcoBuscado((atual) => (atual ? { ...atual, valor } : atual));
     try {
@@ -169,7 +165,7 @@ export function Composer({
     }
   }
 
-  const fase = faseForcada ?? faseLocal;
+  const fase = faseLocal;
   const aparencia = aparenciaDe(fase, agentName);
 
   // ---- voz ----------------------------------------------------------------
@@ -182,7 +178,10 @@ export function Composer({
 
   const subirAudio = useCallback(
     async (audio: Blob) => {
-      if (faseForcada) return;
+      // A trava do compact vale pra voz também: uma gravação começada ANTES
+      // do `/compact` termina DEPOIS dele, e soltar esse texto no meio da
+      // espera corta o resumo do mesmo jeito.
+      if (travaCompact) return;
       setFalhaDaFala(null);
       try {
         // O que o servidor ENTENDEU aparece na tela. STT erra, e o Rica precisa
@@ -198,21 +197,18 @@ export function Composer({
         setFalhaDaFala(diagnosticaTranscricao(erro));
       }
     },
-    [envio, faseForcada],
+    [envio, travaCompact],
   );
 
   const gravador = usaGravador({ aoGravar: subirAudio });
-  const faseVoz = vozForcada ?? gravador.fase;
-  const segundosVoz = segundosForcados ?? gravador.segundos;
+  const faseVoz = gravador.fase;
+  const segundosVoz = gravador.segundos;
   const vozAparencia = aparenciaDaVoz(faseVoz, {
     segundos: segundosVoz,
     nome: agentName,
-    impedimento: gravador.impedimento ?? impedimentoDaVitrine(vozForcada),
+    impedimento: gravador.impedimento ?? undefined,
   });
-  // Onda estática na vitrine: os níveis reais vêm do `AnalyserNode`, que não
-  // existe sem microfone aberto. O padrão é fixo de propósito — screenshot com
-  // onda aleatória mudaria a cada print e não daria pra comparar duas versões.
-  const niveisVoz = vozForcada ? ONDA_DE_VITRINE : gravador.niveis;
+  const niveisVoz = gravador.niveis;
   const emCaptura = capturando(faseVoz);
   const travada = faseVoz === 'travada';
   // Dois problemas, uma linha só: microfone que não abre e transcrição que não
@@ -220,11 +216,18 @@ export function Composer({
   // faixas de aviso ensinaria dois lugares para olhar quando a fala falha.
   const avisoDaVoz =
     faseVoz === 'impedida'
-      ? gravador.impedimento ?? impedimentoDaVitrine(vozForcada) ?? null
+      ? gravador.impedimento ?? null
       : falhaDaFala;
 
   async function enviar(corpo: string) {
-    if (!corpo.trim() || faseForcada) return;
+    if (!corpo.trim() || travaCompact) return;
+    // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
+    // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
+    // barra precisa nascer com o clique, não com o 200.
+    if (COMPACT_RE.test(corpo)) {
+      compactPendenteRef.current = true;
+      iniciarCompact();
+    }
     // O campo esvazia na hora, mas o texto não se perde: quem o guarda é a
     // máquina (`estado.texto`), que precisa dele para casar o eco e para
     // oferecer novo envio se o eco não vier.
@@ -262,6 +265,9 @@ export function Composer({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
+      {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
+          faixa fina da largura da coluna, nunca overlay nem modal. */}
+      <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />
       <form
         onSubmit={aoSubmeter}
         className="ck-lit ck-caixa mx-auto flex flex-col border"
@@ -303,7 +309,7 @@ export function Composer({
           ref={textareaRef}
           rows={2}
           value={texto}
-          disabled={emAndamento}
+          disabled={emAndamento || travaCompact}
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -311,7 +317,7 @@ export function Composer({
               enviar(texto);
             }
           }}
-          placeholder={`Mensagem para ${agentName}`}
+          placeholder={travaCompact ? 'compactando… aguarde' : `Mensagem para ${agentName}`}
           className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
           style={{
             fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
@@ -498,7 +504,7 @@ export function Composer({
               <button
                 key="enviar"
                 type="submit"
-                disabled={emAndamento}
+                disabled={emAndamento || travaCompact}
                 aria-label={`Enviar para ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
@@ -516,7 +522,7 @@ export function Composer({
               <button
                 key="voz"
                 type="button"
-                disabled={emAndamento || faseVoz === 'transcrevendo'}
+                disabled={emAndamento || travaCompact || faseVoz === 'transcrevendo'}
                 {...gravador.handlers}
                 aria-label={`Segure para falar com ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
@@ -627,7 +633,7 @@ export function Composer({
       ) : null}
 
       {/* A VOZ FALANDO DE FORA DA CAIXA. Dois casos que a primeira versão desta
-          peça deixou mudos, e o print da vitrine é que denunciou:
+          peça deixou mudos:
 
           1. `transcrevendo` — o fio corre na base, mas fio sozinho não
              distingue "subindo áudio" de "enviando texto". O despacho foi

@@ -21,11 +21,13 @@ import {
   execucaoDaParte,
   execucaoDoChip,
 } from './execucao-do-item';
+import { CartaoCompact } from './cartao-compact';
+import { DelegacaoView } from './delegacoes.tsx';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
 
-type Props = { item: ItemDoFeed; lookup?: ToolResultLookup };
+type Props = { item: ItemDoFeed; lookup?: ToolResultLookup; agentSlug?: string };
 
 /* -------------------------------------------------------------------------- */
 /* Formas menores — uma linha, sem moldura                                    */
@@ -117,8 +119,21 @@ function Parte({ parte, lookup }: { parte: ContentPart; lookup?: ToolResultLooku
 /* Item                                                                        */
 /* -------------------------------------------------------------------------- */
 
-export function CorpoDoItem({ item, lookup }: Props) {
+export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
   switch (item.kind) {
+    case 'compact-summary':
+      // O resumo do /compact NÃO é fala do Rica — é evento da máquina e tem
+      // cartão próprio, fechado por padrão. Antes deste caso o texto caía em
+      // `user` e o feed cuspia dezenas de linhas como mensagem digitada.
+      return (
+        <CartaoCompact
+          texto={item.text}
+          uuid={item.payload.uuid}
+          {...(item.compactMeta ? { compactMeta: item.compactMeta } : {})}
+          {...(agentSlug ? { agentSlug } : {})}
+        />
+      );
+
     case 'user':
       // Balão — ordem do Rica, 30/07: "o meu vai em balão, o de vcs fica
       // solto". `w-fit` segura a caixa no tamanho do texto dentro do
@@ -164,6 +179,9 @@ export function CorpoDoItem({ item, lookup }: Props) {
 
     case 'linha-viva':
       return <LinhaVivaView desdeMs={item.desdeMs} />;
+
+    case 'delegacao':
+      return <DelegacaoView quem={item.quem} alvo={item.alvo} desdeMs={item.desdeMs} />;
 
     case 'synthetic':
       // `stt` não é evento de sistema: é o Rica falando, e chegou por voz em vez

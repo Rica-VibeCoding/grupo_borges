@@ -12,12 +12,15 @@
 // `components/feed/**` é território do Hiro (cockpit-v2-ownership.md §2) —
 // este arquivo só CONSOME o que já é público de lá, nunca edita.
 
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
+import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
+import { usaCompact } from '@/lib/compact';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
@@ -29,6 +32,28 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     limit: HISTORICO_PADRAO,
     recentes: true,
   });
+
+  // O FIM do `/compact` é daqui: o composer sabe quando o compact sai, mas só
+  // o stream sabe quando o resumo CHEGA. A mensagem-resumo com timestamp
+  // posterior ao início conclui a espera — e o `concluir` da máquina mede a
+  // duração pelo timestamp DELA, não pelo instante da detecção (a aba podia
+  // estar em segundo plano).
+  const { estado: estadoCompact, concluir: concluirCompact } = usaCompact(agentSlug);
+  const faseCompact = estadoCompact.fase;
+  const desdeCompactMs = estadoCompact.desdeMs;
+
+  useEffect(() => {
+    if (faseCompact !== 'compactando' && faseCompact !== 'sem-retorno') return;
+    if (desdeCompactMs === null) return;
+    for (const m of messages) {
+      if (!ehMensagemResumoCompact(m)) continue;
+      const tsMs = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : Number.NaN;
+      if (Number.isFinite(tsMs) && tsMs > desdeCompactMs) {
+        concluirCompact(m.uuid, tsMs);
+        return;
+      }
+    }
+  }, [messages, faseCompact, desdeCompactMs, concluirCompact]);
 
   // Instância estável — mesma razão do FeedAoVivo: recriar por render jogaria
   // fora o estado incremental do classificador.
@@ -43,12 +68,32 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   // ferramenta, que antes era tela muda. Ela entra como ÚLTIMO ITEM, na
   // mesma gramática cinza das linhas de ferramenta; quando o trabalho de
   // verdade chega, é substituída por ele — não some deixando buraco.
+  //
+  // AS DELEGAÇÕES entram DEPOIS dela, e as duas podem coexistir: a linha viva
+  // é o agente pensando, a delegação é alguém trabalhando a pedido dele
+  // ("Tara trabalhando · há 4 min"). O poll de 3 s mora no `usaDelegacoes` —
+  // fonte única, a mesma que a pílula do topo vai beber quando existir.
+  const delegacoes = usaDelegacoes(agentSlug);
+
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
-    if (!isRunning || trabalhoEmVooNoFim(itensBase, lookup)) return itensBase;
-    const desdeMs = desdeDaLinhaViva(messages);
-    if (desdeMs === null) return itensBase;
-    return [...itensBase, { kind: 'linha-viva', desdeMs }];
-  }, [isRunning, itensBase, lookup, messages]);
+    let lista = itensBase as ItemDoFeed[];
+    if (isRunning && !trabalhoEmVooNoFim(itensBase, lookup)) {
+      const desdeMs = desdeDaLinhaViva(messages);
+      if (desdeMs !== null) lista = [...lista, { kind: 'linha-viva', desdeMs }];
+    }
+    if (delegacoes.length > 0) {
+      lista = [
+        ...lista,
+        ...delegacoes.map((d) => ({
+          kind: 'delegacao' as const,
+          quem: d.quem,
+          alvo: d.alvo,
+          desdeMs: d.inicio * 1000,
+        })),
+      ];
+    }
+    return lista;
+  }, [isRunning, itensBase, lookup, messages, delegacoes]);
 
   if (itensBase.length === 0) {
     // `connecting`/`replaying`: o histórico ainda não chegou — ficar em
@@ -72,5 +117,5 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     );
   }
 
-  return <Feed itens={itens} lookup={lookup} />;
+  return <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />;
 }

@@ -19,7 +19,8 @@
     "./agent-sort": "./src/agent-sort.ts",
     "./mcp-filter": "./src/mcp-filter.ts",
     "./painel-format": "./src/painel-format.ts",
-    "./stream-coalescer": "./src/stream-coalescer.ts"
+    "./stream-coalescer": "./src/stream-coalescer.ts",
+    "./compact-eta": "./src/compact-eta.ts"
   },
   "scripts": {
     "type-check": "tsc --noEmit",

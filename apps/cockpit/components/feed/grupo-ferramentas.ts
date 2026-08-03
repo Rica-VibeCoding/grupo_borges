@@ -1,15 +1,13 @@
 // O grupo de ferramentas — §7 do contrato, na largura da conversa real.
 //
-// O `coalesceToolGroups` do core foi o modelo algorítmico (run consecutiva,
-// 1 fica como está, 2+ viram grupo, membros preservados inteiros — o grupo é
-// hospedeiro, não resumo). Mas ele só enxerga `chip` de ferramenta, e o
-// classificador só EMITE chip quando o tool_result casado tem mais de 300
-// caracteres. Na conversa real medida (400 mensagens, 02/08): 148 execuções,
-// só 18 viraram chip — as outras 130 ficam como item `assistant` cujas parts
-// são só `tool_use`, que é como TODA ferramenta aparece enquanto o resultado
-// não chega (e para sempre, quando a saída é curta). Agrupar só os chips
-// deixaria 82% da atividade fora da linha — exatamente a parede que a ordem
-// do Rica manda virar UMA linha.
+// O primeiro modelo (o antigo `coalesceToolGroups` do core, já removido) só
+// enxergava `chip` de ferramenta, e o classificador só EMITE chip quando o
+// tool_result casado tem mais de 300 caracteres. Na conversa real medida (400
+// mensagens, 02/08): 148 execuções, só 18 viraram chip — as outras 130 ficam
+// como item `assistant` cujas parts são só `tool_use`, que é como TODA
+// ferramenta aparece enquanto o resultado não chega (e para sempre, quando a
+// saída é curta). Agrupar só os chips deixaria 82% da atividade fora da linha
+// — exatamente a parede que a ordem do Rica manda virar UMA linha.
 //
 // Então a família que agrupa aqui é a LINHA DE TRABALHO, não o chip: chip de
 // ferramenta ∪ assistant cuja única coisa visível é tool_use. O thinking oco
@@ -47,9 +45,25 @@ export type LinhaViva = {
   desdeMs: number;
 };
 
-/** A saída do pipeline do feed: tudo que o core produz, menos `tool-group`
- *  (esta passada o substitui — ver o cabeçalho), mais o grupo amplo. */
-export type ItemDoFeed = Exclude<RenderItem, { kind: 'tool-group' }> | GrupoFerramentas | LinhaViva;
+/** A DELEGAÇÃO — alguém trabalhando a pedido deste agente ("Tara trabalhando
+ *  · há 4 min"). Sintética como a linha viva: nasce no fim do feed
+ *  (feed-da-conversa.tsx) a partir do poll de `/api/delegacoes`, nunca do
+ *  classificador. A linha viva é o agente PENSANDO; a delegação é OUTRO
+ *  trabalhando por ele — por isso são itens distintos, e ela empilha ABAIXO.
+ *  `alvo` é o destino do clique (`/agente/<alvo>`); `desdeMs` ancora o tempo. */
+export type DelegacaoItem = {
+  kind: 'delegacao';
+  quem: string;
+  alvo: string;
+  desdeMs: number;
+};
+
+/** A saída do pipeline do feed: tudo que o core produz, mais o grupo amplo. */
+export type ItemDoFeed =
+  | RenderItem
+  | GrupoFerramentas
+  | LinhaViva
+  | DelegacaoItem;
 
 /** É linha de trabalho? A régua do assistant é a MESMA do `temConteudoVisivel`
  *  e da `Parte`: texto e thinking só contam quando têm caractere; tool_result

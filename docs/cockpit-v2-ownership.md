@@ -320,7 +320,6 @@ recorte real ficou outro, e como agora há três pessoas com o editor aberto no 
 | `lib/envio.ts` | **Tara** | motor da confirmação por eco |
 | `apps/api/routers/agents.py`, `db/store.py` | **Tara**, exceção pontual aberta pelo Pavan | campo de fronteira no `POST /input` |
 | `components/renderers/**` | **de consumo** | quem achar que precisa mudar, fala com o Pavan antes |
-| `app/spike/page.tsx` (**com** a biblioteca) | **ninguém toca** | é a bancada de comparação até o Rica medir no iPhone |
 | `apps/web/**` | **ninguém** | congelado |
 
 Três regras que só existem por causa da simultaneidade:
@@ -329,6 +328,9 @@ Três regras que só existem por causa da simultaneidade:
    um `git add -A` arrasta trabalho pela metade de outra pessoa para dentro do seu commit.
 2. **`components/renderers/**` é de leitura para todos.** São 90 testes escritos por duas
    pessoas diferentes; mudança ali quebra feed e chrome ao mesmo tempo.
-3. **Bancada de medição não se desmonta antes do veredito.** O `/spike` com a biblioteca fica
-   de pé mesmo depois de o plano de fuga entrar — quem tira a referência antes do número final
-   repete o beco onde as duas primeiras tentativas de medir a escala morreram.
+3. **O que está pronto entra na UI de verdade — e o Rica clica.** Ordem dele, 02/08,
+   sem exceção: código que funciona vai direto para o painel onde ele testa. Nada de
+   condicionar a exibição a nada — nem a um commit de outra pessoa, nem a um "aviso
+   quando estiver seguro". Se ainda não pode entrar, então não está pronto, e a
+   conversa é sobre terminar. Ele não está na VPS para descobrir o que ficou de fora;
+   se não vê na tela, para ele não existe.

@@ -26,6 +26,9 @@ import type { ItemDoFeed } from './grupo-ferramentas.ts';
 export type FeedProps = {
   itens: readonly ItemDoFeed[];
   lookup?: ToolResultLookup;
+  /** O cartão do `/compact` lê a duração medida na máquina do agente — sem
+   *  slug ele nasce estático (teste). */
+  agentSlug?: string;
 };
 
 /** Itens fora da janela mantidos montados — mesmo número do esqueleto, para a
@@ -62,7 +65,7 @@ const SOBRA = 6;
  */
 const ALTURA_ITEM = 44;
 
-export function Feed({ itens, lookup }: FeedProps) {
+export function Feed({ itens, lookup, agentSlug }: FeedProps) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -198,7 +201,7 @@ export function Feed({ itens, lookup }: FeedProps) {
                     overflowWrap: 'anywhere',
                   }}
                 >
-                  {item ? <CorpoDoItem item={item} lookup={lookup} /> : null}
+                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} /> : null}
                 </div>
               </div>
             );

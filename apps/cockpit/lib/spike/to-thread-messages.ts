@@ -254,23 +254,12 @@ function converte(item: RenderItem | GrupoFerramentas, lookup?: ToolResultLookup
         subagentCount: item.subagentCount, totalDurMs: item.totalDurMs,
       })], item.groups[0]?.rootUuid);
 
-    // Mesmo tratamento resumido dos dois casos acima — `data-*` com o
-    // agregado, não expansão 1:N. Hoje nada no pipeline real produz
-    // `tool-group` (a função que agrupa não está plugada em lugar nenhum
-    // ainda), então a garantia "1:1, sem agrupar" do cabeçalho não é violada
-    // na prática; se um dia essa ponte passar a receber lista já coalescida,
-    // reavaliar.
-    case 'tool-group':
-      return mensagem('assistant', [partDeDados('data-tool-group', {
-        count: item.count,
-        toolNames: item.items.map((chip) => chip.chip.label),
-      })], item.items[0]?.payload.uuid);
-
-    // O grupo nasceu no pipeline de produto em 02/08 (grupo-ferramentas.ts) —
-    // esta ponte passou a receber lista já coalescida, então a ressalva do
-    // caso acima virou realidade. Mesmo tratamento resumido: `data-*` com o
-    // agregado, não expansão 1:N. A bancada mede a MESMA contagem de itens do
-    // feed real, que é o que ela existe para medir.
+    // O grupo de ferramentas nasce no pipeline de produto (grupo-ferramentas.ts):
+    // esta ponte recebe a lista já coalescida. Tratamento resumido — `data-*`
+    // com o agregado, não expansão 1:N. O teste mede a MESMA contagem de itens
+    // do feed real, que é o que ela existe para medir. (O antigo `tool-group`
+    // do core, primeiro modelo de agrupamento, foi removido em 02/08 — o
+    // pipeline incremental o subsumiu e ele nunca chegou a rodar em produção.)
     case 'grupo-ferramentas':
       return mensagem('assistant', [partDeDados('data-tool-group', {
         count: item.itens.length,
@@ -292,6 +281,16 @@ function converte(item: RenderItem | GrupoFerramentas, lookup?: ToolResultLookup
       // o card remonta a cada flush.
       return mensagem('assistant', [partDeDados('data-ask-user', { entry: item.entry })],
         item.entry.request_id, undefined, item.entry.created_at_ms);
+    }
+
+    case 'compact-summary': {
+      // O resumo do /compact: vai como data-* na mesma régua dos agregados —
+      // o teste mede contagem de itens, não o texto expandido. O uuid do
+      // payload mantém a identidade estável entre flushes.
+      return mensagem('assistant', [partDeDados('data-compact-summary', {
+        text: item.text,
+        ...(item.compactMeta ? { compactMeta: item.compactMeta } : {}),
+      })], item.payload.uuid);
     }
 
     default:

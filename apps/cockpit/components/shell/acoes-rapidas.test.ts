@@ -4,13 +4,18 @@ import { describe, it } from 'node:test';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
+  CONFIRMA_RELANCAR_MS,
   RECIBO_MS,
   descreveControle,
+  descreveRelancar,
   diagnosticaAcao,
+  diagnosticaRelancar,
   ehCodex,
   leiaDestrava,
+  leiaRelancar,
   montaControles,
   rotulaDestrava,
+  rotulaRelancar,
   rotulaPermissao,
   rotulaSandbox,
 } from './acoes-rapidas.ts';
@@ -299,5 +304,105 @@ describe('falha — nunca só o diagnóstico, sempre a saída', () => {
     assert.match(diagnosticaAcao(new Error('boom'), 'permissao').resumo, /a permissão/);
     assert.match(diagnosticaAcao(new Error('boom'), 'sandbox').resumo, /o sandbox/);
     assert.match(diagnosticaAcao(new Error('boom'), 'esforco').saida, /voltou ao que era/);
+  });
+});
+
+describe('relançar', () => {
+  it('cada fase tem palavra própria — cor sozinha nunca carrega o significado', () => {
+    const fases = ['ocioso', 'confirmando', 'enviando', 'relancado'] as const;
+    const rotulos = fases.map((f) => rotulaRelancar(f));
+    assert.equal(new Set(rotulos).size, fases.length, 'duas fases dizem a mesma coisa');
+    for (const r of rotulos) assert.ok(r.length > 0);
+  });
+
+  it('a confirmação avisa o que se perde, não só que é preciso confirmar', () => {
+    assert.match(rotulaRelancar('confirmando'), /turno atual/);
+    assert.match(rotulaRelancar('confirmando'), /tocar de novo/i);
+  });
+
+  it('o ocioso promete a conversa de volta — é o motivo de existir do botão', () => {
+    assert.match(rotulaRelancar('ocioso'), /conversa/i);
+    assert.match(rotulaRelancar('relancado'), /conversa/i);
+  });
+
+  it('o nome acessível do ocioso contém o rótulo visível (WCAG 2.5.3)', () => {
+    // "Relançar" é o começo do rótulo visível; o nome acessível estende, não
+    // substitui — senão o comando de voz "clicar em Relançar" não acha o botão.
+    assert.ok(descreveRelancar('ocioso').startsWith('Relançar'));
+    assert.match(descreveRelancar('ocioso'), /turno em andamento é perdido/);
+  });
+
+  it('fora do ocioso o nome acessível é o próprio rótulo — sem dizer duas vezes', () => {
+    for (const fase of ['confirmando', 'enviando', 'relancado'] as const) {
+      assert.equal(descreveRelancar(fase), rotulaRelancar(fase));
+    }
+  });
+
+  it('200 com tmux_delivered false NÃO é sucesso', () => {
+    assert.equal(leiaRelancar({ tmux_delivered: true, attempted: true }), null);
+    const tentou = leiaRelancar({ tmux_delivered: false, attempted: true });
+    assert.ok(tentou, 'tentou e não voltou de pé precisa avisar');
+    assert.match(tentou.resumo, /não voltou de pé/);
+  });
+
+  it('nem tentado e tentado-sem-voltar dão saídas diferentes', () => {
+    const nemTentou = leiaRelancar({ tmux_delivered: false, attempted: false });
+    const tentou = leiaRelancar({ tmux_delivered: false, attempted: true });
+    assert.ok(nemTentou && tentou);
+    assert.notEqual(nemTentou.resumo, tentou.resumo);
+    // Quem tentou pede pra OLHAR a tela (algo aconteceu lá); quem não tentou
+    // pede pra conferir se a sessão existe.
+    assert.match(tentou.saida, /terminal/);
+    assert.match(nemTentou.saida, /viva/);
+  });
+
+  it('Codex é recusa explicada, não erro genérico', () => {
+    const imp = diagnosticaRelancar(new Error('409: relaunch_somente_claude_code'));
+    assert.match(imp.resumo, /não roda Claude Code/);
+    assert.match(imp.saida, /Codex/);
+  });
+
+  it('sem conversa para retomar, a tela diz que NÃO relançou', () => {
+    const imp = diagnosticaRelancar(new Error('postAgentRelaunch failed: 409: resume_session_not_found'));
+    assert.match(imp.resumo, /não achei a conversa/);
+    // O ponto que importa: o agente continua de pé. Sem isto o Rica acharia
+    // que perdeu a sessão e iria conferir no terminal à toa.
+    assert.match(imp.saida, /não relancei/);
+  });
+
+  it('tmux recusando não sugere tentar de novo às cegas', () => {
+    const imp = diagnosticaRelancar(new Error('relaunch_failed: no server running'));
+    assert.match(imp.resumo, /tmux recusou/);
+    assert.match(imp.saida, /viva/);
+  });
+
+  it('confirmação faltando é defeito nosso e o texto assume isso', () => {
+    const imp = diagnosticaRelancar(new Error('400: confirmacao_explicita_obrigatoria'));
+    assert.match(imp.saida, /defeito nosso/);
+  });
+
+  it('qualquer erro produz resumo e saída, inclusive os que não são Error', () => {
+    const casos: unknown[] = [
+      new Error('Failed to fetch'),
+      new Error('postAgentRelaunch failed: 404'),
+      { message: '503' },
+      'string crua',
+      null,
+      undefined,
+    ];
+    for (const erro of casos) {
+      const imp = diagnosticaRelancar(erro);
+      assert.ok(imp.resumo.length > 0, `sem resumo: ${String(erro)}`);
+      assert.ok(imp.saida.length > 0, `sem saída: ${String(erro)}`);
+    }
+  });
+
+  it('o caso geral garante que nada foi alterado', () => {
+    assert.match(diagnosticaRelancar(new Error('boom')).saida, /Nada foi alterado/i);
+  });
+
+  it('a confirmação expira, e com folga para ler a frase', () => {
+    assert.ok(CONFIRMA_RELANCAR_MS >= 5_000, 'curta demais para ler o aviso');
+    assert.ok(CONFIRMA_RELANCAR_MS <= 10_000, 'longa demais: o dedo esquece o que armou');
   });
 });
