@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import shlex
+import signal
 import subprocess
 import threading
 import time
@@ -905,6 +906,22 @@ def _wait_for_processes_exit(process_ids: set[int]) -> bool:
     return not remaining
 
 
+def _force_kill_processes(process_ids: set[int]) -> None:
+    """Escala pra SIGKILL o que sobreviveu ao SIGHUP do `kill-window`.
+
+    `kill-window` já pediu a saída; se o processo continuar de pé depois do
+    timeout de `_wait_for_processes_exit`, é um cleanup handler lento — não
+    motivo pra deixar a window nova sem `send-keys` pra sempre. Não resolve
+    processo em D-state (SIGKILL não interrompe I/O bloqueado), mas esse caso
+    já é diagnosticado à parte, não pelo relaunch.
+    """
+    for process_id in process_ids:
+        try:
+            os.kill(process_id, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 def _anchor_is_visible(output: str, anchor: str) -> bool:
     """Tolera wrapping/cortes da TUI sem aceitar só um banner de sessão nova."""
     if len(anchor) < 24:
@@ -1075,7 +1092,13 @@ def _restart_claude_with_resume_sync(
             )
             return {"attempted": False, "confirmed": False}
         if not _wait_for_processes_exit(old_process_ids):
-            return {"attempted": True, "confirmed": False}
+            # Timeout: o antigo já foi morto pelo `kill-window` (SIGHUP), só
+            # não confirmou saída em 5s. Escalar pra SIGKILL em vez de
+            # devolver aqui — do contrário a window nova fica com um shell
+            # vazio pra sempre, sem ninguém mandar o `send-keys` que abre o
+            # Claude (bug 7d1efe86).
+            _force_kill_processes(old_process_ids)
+            _wait_for_processes_exit(old_process_ids)
 
         session = server.sessions.get(session_name=session_name)
         replacement_pane = session.windows.get(

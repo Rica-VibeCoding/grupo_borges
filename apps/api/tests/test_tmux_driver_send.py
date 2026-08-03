@@ -1241,9 +1241,16 @@ def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path)
     assert result == {"attempted": True, "confirmed": False}
 
 
-def test_restart_keeps_replacement_shell_when_old_process_tree_does_not_exit(
+def test_restart_escalates_to_sigkill_and_still_launches_when_old_process_lingers(
     tmp_path: Path,
 ) -> None:
+    """Bug 7d1efe86: timeout de saída não pode mais deixar a window nova sem `send-keys`.
+
+    Antes, um `_wait_for_processes_exit` estourado fazia a função retornar
+    ANTES de lançar o Claude na window nova — sobrava shell vazio, sem
+    conversa retomada e sem sinal de erro claro. Agora o timeout escala pra
+    SIGKILL nos PIDs remanescentes e o lançamento acontece de qualquer jeito.
+    """
     old_pane = _BootstrapPane()
     old_pane.visible_context = "contexto esperado que deve reaparecer"
     replacement_pane = _RelaunchPane("contexto esperado que deve reaparecer")
@@ -1263,7 +1270,9 @@ def test_restart_keeps_replacement_shell_when_old_process_tree_does_not_exit(
             "services.tmux_driver._pane_environment_snapshot",
             return_value={"PATH": "/test/bin"},
         ),
-        patch("services.tmux_driver._wait_for_processes_exit", return_value=False),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=False) as wait_mock,
+        patch("services.tmux_driver._force_kill_processes") as force_kill_mock,
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
@@ -1272,9 +1281,17 @@ def test_restart_keeps_replacement_shell_when_old_process_tree_does_not_exit(
             session_id,
         )
 
-    assert result == {"attempted": True, "confirmed": False}
-    assert server.active_pane is replacement_pane
-    assert replacement_pane.sent_commands == []
+    force_kill_mock.assert_called_once_with({111})
+    assert wait_mock.call_count == 2
+    assert replacement_pane.sent_commands == [
+        (
+            "claude --dangerously-skip-permissions "
+            "--model claude-opus-4-8 "
+            f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
+            False,
+        )
+    ]
+    assert result == {"attempted": True, "confirmed": True}
 
 
 def test_restart_cleans_replacement_only_when_old_window_provably_survives(
