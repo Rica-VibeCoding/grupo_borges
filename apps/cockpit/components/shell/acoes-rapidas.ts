@@ -263,6 +263,10 @@ export function leiaDestrava(resposta: { tmux_delivered: boolean }): Impedimento
  * (armar e confirmar), e não a pressão longa do cockpit antigo: pressão longa
  * esconde a ação de quem está com pressa, e este botão existe justamente para
  * a hora em que o canal do agente morreu e o Rica precisa dele de volta.
+ *
+ * O `ModoRelancar` (`resume`/`fresco`) mora nas funções de tradução, não
+ * neste tipo: as duas variantes são o mesmo botão com o mesmo ciclo de fase,
+ * só mudando a régua e o `resume` que vai pro back — não duas máquinas.
  */
 export type FaseRelancar = 'ocioso' | 'confirmando' | 'enviando' | 'relancado';
 
@@ -280,19 +284,35 @@ export const CONFIRMA_RELANCAR_MS = 6_000;
 export const RETENTA_PAINEL_BASE_MS = 2_000;
 export const RETENTA_PAINEL_TETO_MS = 15_000;
 
-export function rotulaRelancar(fase: FaseRelancar): string {
+/** `fresco` é o boot sem `--resume` — perde a conversa inteira, não só o
+ *  turno em voo, daí o aviso de confirmação ser mais forte que o do resume. */
+export type ModoRelancar = 'resume' | 'fresco';
+
+/** Rótulo do ocioso é o nome curto pedido pelo Rica (03/08): "Resume"/"Restart"
+ *  — cabe nos três botões numa linha só. Fora do ocioso continua descritivo em
+ *  português, porque ali já não é mais um rótulo de botão, é um aviso. */
+export function rotulaRelancar(fase: FaseRelancar, modo: ModoRelancar = 'resume'): string {
+  if (modo === 'fresco') {
+    if (fase === 'confirmando') return 'Apaga a conversa e recomeça — tocar de novo confirma';
+    if (fase === 'enviando') return 'Relançando…';
+    if (fase === 'relancado') return 'Relançado sem contexto';
+    return 'Restart';
+  }
   if (fase === 'confirmando') return 'Mata o turno atual — tocar de novo confirma';
   if (fase === 'enviando') return 'Relançando…';
   if (fase === 'relancado') return 'Relançado com a conversa';
-  return 'Relançar mantendo a conversa';
+  return 'Resume';
 }
 
 /** O nome acessível. Fora do ocioso o rótulo visível já é a frase inteira —
- *  repetir a explicação faria o leitor de tela ouvir duas vezes. */
-export function descreveRelancar(fase: FaseRelancar): string {
-  return fase === 'ocioso'
-    ? 'Relançar o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido'
-    : rotulaRelancar(fase);
+ *  repetir a explicação faria o leitor de tela ouvir duas vezes. No ocioso o
+ *  nome acessível começa pelo rótulo curto (WCAG 2.5.3, Label in Name) e
+ *  estende em português — o rótulo vira botão, a descrição continua leitura. */
+export function descreveRelancar(fase: FaseRelancar, modo: ModoRelancar = 'resume'): string {
+  if (fase !== 'ocioso') return rotulaRelancar(fase, modo);
+  return modo === 'fresco'
+    ? 'Restart: relança o Claude Code do agente do zero — perde a conversa inteira, não só o turno em andamento'
+    : 'Resume: relança o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido';
 }
 
 /**

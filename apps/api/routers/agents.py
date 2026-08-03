@@ -1600,6 +1600,9 @@ class InputResponse(BaseModel):
 
 class RelaunchRequest(BaseModel):
     confirm: StrictBool
+    # True (default) preserva a conversa via `--resume`. False sobe um Claude
+    # Code do zero na mesma window — perder o contexto é o ponto, não bug.
+    resume: StrictBool = True
 
 
 class ModelChangeRequest(BaseModel):
@@ -2860,12 +2863,16 @@ async def post_agent_relaunch(
     payload: RelaunchRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Relança o pane do Claude Code com ``--resume <session_id>``.
+    """Relança o pane do Claude Code — com ``--resume`` (padrão) ou do zero.
 
     Esta operação mata o processo atual do pane. Por ser destrutiva, o payload
-    exige o campo booleano obrigatório ``confirm`` e só aceita ``true``. O ID da
-    conversa vem do último JSONL principal persistido; sem ele o endpoint falha
-    em vez de iniciar uma conversa nova e perder silenciosamente o contexto.
+    exige o campo booleano obrigatório ``confirm`` e só aceita ``true``.
+
+    ``resume=true`` (padrão): o ID da conversa vem do último JSONL principal
+    persistido; sem ele o endpoint falha em vez de iniciar uma conversa nova e
+    perder silenciosamente o contexto. ``resume=false``: sobe um Claude Code
+    limpo na mesma window, sem checar JSONL nenhum — perder o contexto é o
+    pedido, não um risco a evitar.
     """
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
@@ -2875,24 +2882,39 @@ async def post_agent_relaunch(
     if agent.get("model_family") not in {None, "anthropic", "kimi"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
-    db: GrupoBorgesDB = request.app.state.db
-    session_id = await db.latest_jsonl_session_id(slug)
-    if session_id is None:
-        raise HTTPException(status_code=409, detail="resume_session_not_found")
+    session_id: str | None = None
+    if not payload.resume:
+        try:
+            result = await tmux_driver.restart_claude_fresh(
+                agent["tmux_session"],
+                agent["workspace_path"],
+                agent["model_default"],
+            )
+        except (
+            ValueError,
+            libtmux_exc.LibTmuxException,
+            tmux_driver.TmuxSessionBusyError,
+        ) as exc:
+            raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
+    else:
+        db: GrupoBorgesDB = request.app.state.db
+        session_id = await db.latest_jsonl_session_id(slug)
+        if session_id is None:
+            raise HTTPException(status_code=409, detail="resume_session_not_found")
 
-    try:
-        result = await tmux_driver.restart_claude_with_resume(
-            agent["tmux_session"],
-            agent["workspace_path"],
-            agent["model_default"],
-            session_id,
-        )
-    except (
-        ValueError,
-        libtmux_exc.LibTmuxException,
-        tmux_driver.TmuxSessionBusyError,
-    ) as exc:
-        raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
+        try:
+            result = await tmux_driver.restart_claude_with_resume(
+                agent["tmux_session"],
+                agent["workspace_path"],
+                agent["model_default"],
+                session_id,
+            )
+        except (
+            ValueError,
+            libtmux_exc.LibTmuxException,
+            tmux_driver.TmuxSessionBusyError,
+        ) as exc:
+            raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
 
     return {
         "tmux_delivered": result["confirmed"],

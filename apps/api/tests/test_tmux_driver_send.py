@@ -1187,6 +1187,72 @@ def test_restart_preserves_kimi_routing_vars_of_hiro(tmp_path: Path) -> None:
     assert all(value is not None for name, value in server.env_calls if name != "TELEGRAM_STATE_DIR")
 
 
+def test_restart_fresh_boots_clean_without_resume_or_anchor_check(tmp_path: Path) -> None:
+    """`resume=False`: nenhum JSONL é lido, nenhuma âncora é exigida — o boot
+    limpo confirma só pelo banner do Claude Code, igual o bootstrap comum."""
+    old_pane = _BootstrapPane()
+    old_pane.visible_context = "não importa pro boot limpo"
+    replacement_pane = _RelaunchPane("não importa pro boot limpo")
+    server = _RelaunchServer(old_pane, replacement_pane)
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111}),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+    ):
+        result = tmux_driver._restart_claude_fresh_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+        )
+
+    assert result == {"attempted": True, "confirmed": True}
+    assert replacement_pane.sent_commands == [
+        (
+            "claude --dangerously-skip-permissions --model claude-opus-4-8; "
+            'exec "${SHELL:-/bin/sh}"',
+            False,
+        )
+    ]
+    assert "--resume" not in replacement_pane.sent_commands[0][0]
+
+
+def test_restart_fresh_does_not_read_jsonl_or_check_anchor(tmp_path: Path) -> None:
+    """Diferente do resume, o boot limpo nunca consulta `_claude_resume_jsonl_path`
+    nem `_pane_contains_resume_anchor` — não há conversa nenhuma a validar."""
+    old_pane = _BootstrapPane()
+    old_pane.visible_context = "qualquer coisa, nem precisa bater"
+    replacement_pane = _RelaunchPane("outra coisa qualquer")
+    server = _RelaunchServer(old_pane, replacement_pane)
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111}),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+        patch("services.tmux_driver._claude_resume_jsonl_path") as jsonl_path,
+        patch("services.tmux_driver._pane_contains_resume_anchor") as anchor_check,
+    ):
+        result = tmux_driver._restart_claude_fresh_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+        )
+
+    assert result == {"attempted": True, "confirmed": True}
+    jsonl_path.assert_not_called()
+    anchor_check.assert_not_called()
+
+
 def test_resumed_tui_confirmation_does_not_depend_on_scrolled_banner() -> None:
     pane = _RelaunchPane("contexto retomado visível", show_banner=False)
     pane.enter()

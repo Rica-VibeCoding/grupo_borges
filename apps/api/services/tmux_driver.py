@@ -1002,6 +1002,99 @@ async def bootstrap_cli_in_session(
     )
 
 
+def _swap_window_and_launch(
+    server: libtmux.Server,
+    session_name: str,
+    session: libtmux.Session,
+    old_pane: libtmux.Pane,
+    resolved_workspace: Path,
+    launch_command: str,
+) -> libtmux.Pane | None:
+    """Mecânica de troca de window compartilhada entre resume e boot limpo.
+
+    Preserva env/canais do processo antigo, cria a window nova, mata a antiga
+    (escalando pra SIGKILL se o processo resistir ao timeout — bug 7d1efe86) e
+    manda o `launch_command`. `None` cobre qualquer falha anterior ao envio do
+    comando — todas viram o mesmo `{"attempted": False, "confirmed": False}"`
+    em quem chama, então não há necessidade de distinguir o motivo aqui.
+    """
+    old_window_id = old_pane.window.window_id
+    old_process_ids = _pane_owner_pids(int(old_pane.pane_pid))
+    # Lido ANTES do kill: depois que o processo morre o `/proc` some junto,
+    # e com ele a única prova de quais canais/env o agente tinha ligado.
+    channel_flags = _pane_channel_flags(int(old_pane.pane_pid))
+    env_snapshot = _pane_environment_snapshot(
+        int(old_pane.pane_pid), _PRESERVED_ENV_VARS
+    )
+    env_snapshot.setdefault(
+        "PATH", os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    )
+    # Sessão (não window) é o escopo nativo do tmux pra env: o tmux aplica
+    # sozinho na window nova criada a seguir, sem passar pelo shell —
+    # dispensa `shlex.quote` por variável e cresce só adicionando nome em
+    # `_PRESERVED_ENV_VARS`, sem função nova.
+    for name in _PRESERVED_ENV_VARS:
+        value = env_snapshot.get(name)
+        if value is not None:
+            session.set_environment(name, value)
+        else:
+            session.unset_environment(name)
+    full_launch_command = (
+        f"{launch_command}{channel_flags}; "
+        'exec "${SHELL:-/bin/sh}"'
+    )
+    created = server.cmd(
+        "new-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{window_id}\t#{pane_id}",
+        "-t",
+        f"{session_name}:",
+        "-c",
+        str(resolved_workspace),
+    )
+    if created.returncode != 0 or not created.stdout:
+        return None
+    try:
+        replacement_window_id, _ = created.stdout[0].split("\t", 1)
+    except ValueError:
+        return None
+
+    killed = server.cmd("kill-window", "-t", old_window_id)
+    if killed.returncode != 0:
+        _remove_replacement_if_old_window_survives(
+            server,
+            session_name,
+            old_window_id,
+            replacement_window_id,
+        )
+        return None
+    if not _wait_for_processes_exit(old_process_ids):
+        # Timeout: o antigo já foi morto pelo `kill-window` (SIGHUP), só
+        # não confirmou saída em 5s. Escalar pra SIGKILL em vez de
+        # devolver aqui — do contrário a window nova fica com um shell
+        # vazio pra sempre, sem ninguém mandar o `send-keys` que abre o
+        # Claude (bug 7d1efe86).
+        log.warning(
+            "relaunch: processo antigo não saiu em %ss, escalando pra "
+            "SIGKILL: session=%s pids=%s",
+            _RELAUNCH_PROCESS_EXIT_TIMEOUT_S,
+            session_name,
+            old_process_ids,
+        )
+        _force_kill_processes(old_process_ids)
+        _wait_for_processes_exit(old_process_ids)
+
+    session = server.sessions.get(session_name=session_name)
+    replacement_pane = session.windows.get(
+        window_id=replacement_window_id
+    ).active_pane
+    replacement_pane.send_keys(full_launch_command, enter=False)
+    replacement_pane.enter()
+    return replacement_pane
+
+
 def _restart_claude_with_resume_sync(
     session_name: str,
     workspace_path: str,
@@ -1039,81 +1132,46 @@ def _restart_claude_with_resume_sync(
         if not _pane_contains_resume_anchor(old_pane, anchors):
             raise ValueError("session_id não corresponde à conversa visível no pane")
 
-        old_window_id = old_pane.window.window_id
-        old_process_ids = _pane_owner_pids(int(old_pane.pane_pid))
-        # Lido ANTES do kill: depois que o processo morre o `/proc` some junto,
-        # e com ele a única prova de quais canais/env o agente tinha ligado.
-        channel_flags = _pane_channel_flags(int(old_pane.pane_pid))
-        env_snapshot = _pane_environment_snapshot(
-            int(old_pane.pane_pid), _PRESERVED_ENV_VARS
+        replacement_pane = _swap_window_and_launch(
+            server, session_name, session, old_pane, resolved_workspace, resume_command,
         )
-        env_snapshot.setdefault(
-            "PATH", os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
-        )
-        # Sessão (não window) é o escopo nativo do tmux pra env: o tmux aplica
-        # sozinho na window nova criada a seguir, sem passar pelo shell —
-        # dispensa `shlex.quote` por variável e cresce só adicionando nome em
-        # `_PRESERVED_ENV_VARS`, sem função nova.
-        for name in _PRESERVED_ENV_VARS:
-            value = env_snapshot.get(name)
-            if value is not None:
-                session.set_environment(name, value)
-            else:
-                session.unset_environment(name)
-        launch_command = (
-            f"{resume_command}{channel_flags}; "
-            'exec "${SHELL:-/bin/sh}"'
-        )
-        created = server.cmd(
-            "new-window",
-            "-d",
-            "-P",
-            "-F",
-            "#{window_id}\t#{pane_id}",
-            "-t",
-            f"{session_name}:",
-            "-c",
-            str(resolved_workspace),
-        )
-        if created.returncode != 0 or not created.stdout:
+        if replacement_pane is None:
             return {"attempted": False, "confirmed": False}
-        try:
-            replacement_window_id, _ = created.stdout[0].split("\t", 1)
-        except ValueError:
-            return {"attempted": False, "confirmed": False}
-
-        killed = server.cmd("kill-window", "-t", old_window_id)
-        if killed.returncode != 0:
-            _remove_replacement_if_old_window_survives(
-                server,
-                session_name,
-                old_window_id,
-                replacement_window_id,
-            )
-            return {"attempted": False, "confirmed": False}
-        if not _wait_for_processes_exit(old_process_ids):
-            # Timeout: o antigo já foi morto pelo `kill-window` (SIGHUP), só
-            # não confirmou saída em 5s. Escalar pra SIGKILL em vez de
-            # devolver aqui — do contrário a window nova fica com um shell
-            # vazio pra sempre, sem ninguém mandar o `send-keys` que abre o
-            # Claude (bug 7d1efe86).
-            log.warning(
-                "relaunch: processo antigo não saiu em %ss, escalando pra "
-                "SIGKILL: session=%s pids=%s",
-                _RELAUNCH_PROCESS_EXIT_TIMEOUT_S,
-                session_name,
-                old_process_ids,
-            )
-            _force_kill_processes(old_process_ids)
-            _wait_for_processes_exit(old_process_ids)
-
-        session = server.sessions.get(session_name=session_name)
-        replacement_pane = session.windows.get(
-            window_id=replacement_window_id
-        ).active_pane
-        replacement_pane.send_keys(launch_command, enter=False)
-        replacement_pane.enter()
         return _wait_for_resumed_claude_tui(replacement_pane, anchors)
+    finally:
+        lock.release()
+
+
+def _restart_claude_fresh_sync(
+    session_name: str,
+    workspace_path: str,
+    model: str,
+) -> dict[str, bool]:
+    """Troca a window do agente com boot limpo — sem `--resume`, sem checar
+    conversa antiga. Aqui perder o contexto é o ponto, não um risco a evitar,
+    então não há JSONL/âncora pra validar antes de agir."""
+    resolved_workspace, fresh_command = _prepare_cli_launch(
+        workspace_path, "claude_code", model,
+    )
+
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return {"attempted": False, "confirmed": False}
+
+    lock = _acquire_dispatch_lock(session_name)
+    try:
+        session = server.sessions.get(session_name=session_name)
+        old_pane = session.active_pane
+        current_cmd = (old_pane.pane_current_command or "").lower()
+        if current_cmd not in _EXPECTED_PANE_COMMANDS:
+            return {"attempted": False, "confirmed": False}
+
+        replacement_pane = _swap_window_and_launch(
+            server, session_name, session, old_pane, resolved_workspace, fresh_command,
+        )
+        if replacement_pane is None:
+            return {"attempted": False, "confirmed": False}
+        return _wait_for_cli_banner(replacement_pane, "claude_code")
     finally:
         lock.release()
 
@@ -1131,6 +1189,20 @@ async def restart_claude_with_resume(
         workspace_path,
         model,
         resume_session_id,
+    )
+
+
+async def restart_claude_fresh(
+    session_name: str,
+    workspace_path: str,
+    model: str,
+) -> dict[str, bool]:
+    """Relança sem `--resume` — reseta o pane de propósito, perde o contexto."""
+    return await _run_tmux_operation(
+        _restart_claude_fresh_sync,
+        session_name,
+        workspace_path,
+        model,
     )
 
 
@@ -1488,9 +1560,12 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
             return {"tmux_delivered": False, "degrau": 5, "acao": "pane_incompativel"}
 
         try:
-            # Degrau 1: fecha modal, se houver.
-            if not _send_key(pane, "Escape"):
-                return {"tmux_delivered": False, "degrau": 5, "acao": "escape_falhou"}
+            # Degrau 1: fecha modal, se houver. 3x de propósito — no terminal,
+            # um Escape sozinho na maioria esmagadora não resolve nada (overlay
+            # em camada, menu de autocomplete); repetir é o que costuma destravar.
+            for _ in range(3):
+                if not _send_key(pane, "Escape"):
+                    return {"tmux_delivered": False, "degrau": 5, "acao": "escape_falhou"}
             read_deadline = time.monotonic() + _PRE_PASTE_CONFIRM_TIMEOUT_S
             snapshot = _wait_for_input(
                 pane,

@@ -501,3 +501,44 @@ def test_relaunch_resumes_exact_session_and_reports_confirmation(tmp_path: Path)
         "opus",
         session_id,
     )
+
+
+def test_relaunch_with_resume_false_skips_jsonl_lookup_and_boots_fresh(
+    tmp_path: Path,
+) -> None:
+    """`resume: false` é o boot sem `--resume` — perder o contexto é o pedido,
+    então nem faz sentido consultar o JSONL antes (ele nem precisa existir)."""
+    app = _build_app(tmp_path)
+    app.state.db.latest_jsonl_session_id = AsyncMock()
+    with patch(
+        "routers.agents.tmux_driver.restart_claude_fresh",
+        new=AsyncMock(return_value={"attempted": True, "confirmed": True}),
+    ) as restart_fresh:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/relaunch",
+                json={"confirm": True, "resume": False},
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tmux_delivered"] is True
+    assert body["attempted"] is True
+    assert body["session_id"] is None
+    app.state.db.latest_jsonl_session_id.assert_not_awaited()
+    restart_fresh.assert_awaited_once_with("daniel", "/tmp/daniel", "opus")
+
+
+def test_relaunch_resume_defaults_to_true_when_field_omitted(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    app.state.db.latest_jsonl_session_id = AsyncMock(return_value=session_id)
+    with patch(
+        "routers.agents.tmux_driver.restart_claude_with_resume",
+        new=AsyncMock(return_value={"attempted": True, "confirmed": True}),
+    ) as restart:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/relaunch", json={"confirm": True})
+
+    assert response.status_code == 200
+    restart.assert_awaited_once()

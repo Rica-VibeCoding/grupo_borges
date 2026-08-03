@@ -89,6 +89,71 @@ const REDE = {
   relanca: postAgentRelaunch,
 };
 
+/**
+ * O ciclo do relançar (armar → confirmar → enviar → recibo), parametrizado
+ * por `resume`: mesma máquina de fase pros dois botões (com/sem contexto),
+ * nunca duas cópias divergindo. `setFalha` vem de fora — o painel tem UM
+ * aviso de erro só, não um por botão.
+ */
+function useRelancar(
+  agentSlug: string,
+  resume: boolean,
+  aberto: boolean,
+  setFalha: (falha: Impedimento | null) => void,
+) {
+  const [fase, setFase] = useState<FaseRelancar>('ocioso');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Painel fechado desarma. Confirmação armada é uma pergunta aberta na tela;
+  // se ela saiu, a pergunta caducou — reabrir e achar o botão já no "tocar de
+  // novo confirma" faria um toque distraído matar a conversa.
+  useEffect(() => {
+    if (aberto) return;
+    setFase((f) => (f === 'confirmando' ? 'ocioso' : f));
+    if (timer.current) clearTimeout(timer.current);
+  }, [aberto]);
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  async function acionar() {
+    if (fase === 'enviando') return;
+
+    // Primeiro toque ARMA. Errar o toque aqui custa caro — no mínimo o turno
+    // em voo, no modo sem contexto a conversa inteira.
+    if (fase !== 'confirmando') {
+      setFalha(null);
+      setFase('confirmando');
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        setFase((f) => (f === 'confirmando' ? 'ocioso' : f));
+      }, CONFIRMA_RELANCAR_MS);
+      return;
+    }
+
+    if (timer.current) clearTimeout(timer.current);
+    setFalha(null);
+    setFase('enviando');
+    try {
+      const resposta = await REDE.relanca(agentSlug, resume);
+      const aviso = leiaRelancar(resposta);
+      if (aviso) {
+        setFalha(aviso);
+        setFase('ocioso');
+        return;
+      }
+      setFase('relancado');
+      timer.current = setTimeout(() => setFase('ocioso'), RECIBO_MS);
+    } catch (erro) {
+      setFase('ocioso');
+      setFalha(diagnosticaRelancar(erro));
+    }
+  }
+
+  return [fase, acionar] as const;
+}
+
 export type BlocoDeAcoesProps = {
   agentSlug: string;
   /** O valor do SERVIDOR (`?painel=…`), usado no SSR e como fallback fora do
@@ -115,9 +180,9 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const [emVoo, setEmVoo] = useState<{ id: AcaoId; valor: string } | null>(null);
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
-  const [relancar, setRelancar] = useState<FaseRelancar>('ocioso');
+  const [relancar, acionarRelancar] = useRelancar(agentSlug, true, aberto, setFalha);
+  const [relancarFresco, acionarRelancarFresco] = useRelancar(agentSlug, false, aberto, setFalha);
   const [retentativa, setRetentativa] = useState(0);
-  const relancarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
   // 02/08. O destrava continua acessível (agente travado é pior que compact
@@ -141,22 +206,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   useEffect(
     () => () => {
       if (confirmaTimer.current) clearTimeout(confirmaTimer.current);
-    },
-    [],
-  );
-
-  // Painel fechado desarma o relançar. Confirmação armada é uma pergunta aberta
-  // na tela; se a tela saiu, a pergunta caducou — reabrir e encontrar o botão
-  // já no "tocar de novo confirma" faria um toque distraído matar o turno.
-  useEffect(() => {
-    if (aberto) return;
-    setRelancar((fase) => (fase === 'confirmando' ? 'ocioso' : fase));
-    if (relancarTimer.current) clearTimeout(relancarTimer.current);
-  }, [aberto]);
-
-  useEffect(
-    () => () => {
-      if (relancarTimer.current) clearTimeout(relancarTimer.current);
     },
     [],
   );
@@ -320,41 +369,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     }
   }
 
-  async function acionarRelancar() {
-    if (relancar === 'enviando') return;
-
-    // Primeiro toque ARMA. O relançar mata o processo do pane: o turno em voo
-    // morre e só a conversa volta. Diferente do destrava, que é um Escape
-    // idempotente e não custa nada errar.
-    if (relancar !== 'confirmando') {
-      setFalha(null);
-      setRelancar('confirmando');
-      if (relancarTimer.current) clearTimeout(relancarTimer.current);
-      relancarTimer.current = setTimeout(() => {
-        setRelancar((fase) => (fase === 'confirmando' ? 'ocioso' : fase));
-      }, CONFIRMA_RELANCAR_MS);
-      return;
-    }
-
-    if (relancarTimer.current) clearTimeout(relancarTimer.current);
-    setFalha(null);
-    setRelancar('enviando');
-    try {
-      const resposta = await REDE.relanca(agentSlug);
-      const aviso = leiaRelancar(resposta);
-      if (aviso) {
-        setFalha(aviso);
-        setRelancar('ocioso');
-        return;
-      }
-      setRelancar('relancado');
-      relancarTimer.current = setTimeout(() => setRelancar('ocioso'), RECIBO_MS);
-    } catch (erro) {
-      setRelancar('ocioso');
-      setFalha(diagnosticaRelancar(erro));
-    }
-  }
-
   const controles = painel ? montaControles(painel) : [];
   // O back recusaria com 409 `relaunch_somente_claude_code`, mas oferecer um
   // botão que só existe para dar erro é pior do que não oferecer: `--resume` é
@@ -398,82 +412,126 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
       ))}
 
       {carga === 'pronto' ? (
-        // A linha "Fecha modal que travou o campo…" saiu por ordem do Rica
-        // (30/07): *"pode retirar os textos explicativos"*, citando-a pelo
-        // nome. Nada entrou no lugar — o que o botão faz continua dito no
-        // `aria-label`, que já existia e não é enfeite de tela.
-        <button
-            type="button"
-            onClick={() => void acionarDestrava()}
-            aria-busy={destrava === 'enviando'}
-            // Estático só cobriria "Destravar": o nome acessível vence o
-            // conteúdo, então o leitor de tela nunca ouviria "Destravando…"
-            // nem "Escape enviado" — e no estado entregue o nome nem conteria
-            // o texto visível (WCAG 2.5.3). Fora do ocioso o rótulo sozinho já
-            // é a frase inteira.
-            aria-label={
-              confirmaCompact && compactEmVoo
-                ? 'Destravar interrompe o resumo do compact — tocar de novo confirma'
-                : destrava === 'ocioso'
-                  ? 'Destravar o agente — envia Escape no terminal dele'
-                  : rotulaDestrava(destrava)
-            }
-            className="ck-veil flex w-full items-center justify-center border"
-            style={{
-              minHeight: 'var(--ck-touch-min)',
-              padding: '0 var(--ck-space-3)',
-              borderRadius: 'var(--ck-radius-frame)',
-              borderColor: 'var(--ck-edge-functional)',
-              fontSize: 'var(--ck-text-sm)',
-              // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
-              // portadora de significado (§3/§9.7). A confirmação do compact
-              // entra na mesma régua — âmbar de atenção E outra frase.
-              color:
+        // Destravar + relançar (com e sem contexto) na MESMA linha — os três
+        // cabem lado a lado (ordem do Rica, 03/08). Um debaixo do outro
+        // empurrava o resto do painel pra baixo à toa; a ordem esquerda→direita
+        // continua sendo a escada de custo: Escape não custa nada, relançar com
+        // contexto custa o turno em voo, relançar sem contexto custa a conversa
+        // inteira.
+        <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
+          {/* A linha "Fecha modal que travou o campo…" saiu por ordem do Rica
+              (30/07): *"pode retirar os textos explicativos"*, citando-a pelo
+              nome. Nada entrou no lugar — o que o botão faz continua dito no
+              `aria-label`, que já existia e não é enfeite de tela. */}
+          <button
+              type="button"
+              onClick={() => void acionarDestrava()}
+              aria-busy={destrava === 'enviando'}
+              // Estático só cobriria "Destravar": o nome acessível vence o
+              // conteúdo, então o leitor de tela nunca ouviria "Destravando…"
+              // nem "Escape enviado" — e no estado entregue o nome nem conteria
+              // o texto visível (WCAG 2.5.3). Fora do ocioso o rótulo sozinho já
+              // é a frase inteira.
+              aria-label={
                 confirmaCompact && compactEmVoo
-                  ? 'var(--ck-state-attention)'
-                  : destrava === 'entregue'
-                    ? 'var(--ck-state-ok)'
-                    : 'var(--ck-text-primary)',
-              transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-            }}
-          >
-          {confirmaCompact && compactEmVoo
-            ? 'Interrompe o resumo — tocar de novo confirma'
-            : rotulaDestrava(destrava)}
-        </button>
-      ) : null}
+                  ? 'Destravar interrompe o resumo do compact — tocar de novo confirma'
+                  : destrava === 'ocioso'
+                    ? 'Destravar o agente — envia Escape 3x no terminal dele'
+                    : rotulaDestrava(destrava)
+              }
+              className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+              style={{
+                minHeight: 'var(--ck-touch-min)',
+                padding: '0 var(--ck-space-2)',
+                borderRadius: 'var(--ck-radius-frame)',
+                borderColor: 'var(--ck-edge-functional)',
+                fontSize: 'var(--ck-text-sm)',
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+                // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
+                // portadora de significado (§3/§9.7). A confirmação do compact
+                // entra na mesma régua — âmbar de atenção E outra frase.
+                color:
+                  confirmaCompact && compactEmVoo
+                    ? 'var(--ck-state-attention)'
+                    : destrava === 'entregue'
+                      ? 'var(--ck-state-ok)'
+                      : 'var(--ck-text-primary)',
+                transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+              }}
+            >
+            {confirmaCompact && compactEmVoo
+              ? 'Interrompe o resumo — tocar de novo confirma'
+              : rotulaDestrava(destrava)}
+          </button>
 
-      {/* RELANÇAR — o degrau acima do destrava. Quando o Escape não resolve
-          porque o próprio Claude Code morreu, esta é a única saída que não
-          custa a conversa: sobe outro processo com `--resume`. Fica DEPOIS do
-          destrava de propósito: é a ação mais cara das duas, e a ordem na tela
-          é a ordem em que se deve tentar. */}
-      {carga === 'pronto' && !codex ? (
-        <button
-          type="button"
-          onClick={() => void acionarRelancar()}
-          aria-busy={relancar === 'enviando'}
-          aria-label={descreveRelancar(relancar)}
-          className="ck-veil flex w-full items-center justify-center border"
-          style={{
-            minHeight: 'var(--ck-touch-min)',
-            padding: '0 var(--ck-space-3)',
-            borderRadius: 'var(--ck-radius-frame)',
-            borderColor: 'var(--ck-edge-functional)',
-            fontSize: 'var(--ck-text-sm)',
-            // Mesma régua do destrava: a PALAVRA muda junto com a cor, nunca a
-            // cor sozinha (§3/§9.7).
-            color:
-              relancar === 'confirmando'
-                ? 'var(--ck-state-attention)'
-                : relancar === 'relancado'
-                  ? 'var(--ck-state-ok)'
-                  : 'var(--ck-text-primary)',
-            transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-          }}
-        >
-          {rotulaRelancar(relancar)}
-        </button>
+          {/* RELANÇAR (com contexto) — o degrau acima do destrava. Quando o
+              Escape não resolve porque o próprio Claude Code morreu, esta é a
+              saída que não custa a conversa: sobe outro processo com
+              `--resume`. Fica DEPOIS do destrava de propósito: é a ação mais
+              cara das três, e a ordem na tela é a ordem em que se deve tentar. */}
+          {!codex ? (
+            <button
+              type="button"
+              onClick={() => void acionarRelancar()}
+              aria-busy={relancar === 'enviando'}
+              aria-label={descreveRelancar(relancar)}
+              className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+              style={{
+                minHeight: 'var(--ck-touch-min)',
+                padding: '0 var(--ck-space-2)',
+                borderRadius: 'var(--ck-radius-frame)',
+                borderColor: 'var(--ck-edge-functional)',
+                fontSize: 'var(--ck-text-sm)',
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+                // Mesma régua do destrava: a PALAVRA muda junto com a cor, nunca a
+                // cor sozinha (§3/§9.7).
+                color:
+                  relancar === 'confirmando'
+                    ? 'var(--ck-state-attention)'
+                    : relancar === 'relancado'
+                      ? 'var(--ck-state-ok)'
+                      : 'var(--ck-text-primary)',
+                transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+              }}
+            >
+              {rotulaRelancar(relancar)}
+            </button>
+          ) : null}
+
+          {/* RELANÇAR SEM CONTEXTO — o degrau mais caro dos três. Sobe um
+              Claude Code do zero, sem `--resume`: pro pane travado de um jeito
+              que nem o resume confirma (âncora não bate), ou pra quando
+              recomeçar do zero é o que se quer mesmo. */}
+          {!codex ? (
+            <button
+              type="button"
+              onClick={() => void acionarRelancarFresco()}
+              aria-busy={relancarFresco === 'enviando'}
+              aria-label={descreveRelancar(relancarFresco, 'fresco')}
+              className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+              style={{
+                minHeight: 'var(--ck-touch-min)',
+                padding: '0 var(--ck-space-2)',
+                borderRadius: 'var(--ck-radius-frame)',
+                borderColor: 'var(--ck-edge-functional)',
+                fontSize: 'var(--ck-text-sm)',
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+                color:
+                  relancarFresco === 'confirmando'
+                    ? 'var(--ck-state-attention)'
+                    : relancarFresco === 'relancado'
+                      ? 'var(--ck-state-ok)'
+                      : 'var(--ck-text-primary)',
+                transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+              }}
+            >
+              {rotulaRelancar(relancarFresco, 'fresco')}
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {falha ? (

@@ -320,21 +320,35 @@ describe('relançar', () => {
     assert.match(rotulaRelancar('confirmando'), /tocar de novo/i);
   });
 
-  it('o ocioso promete a conversa de volta — é o motivo de existir do botão', () => {
-    assert.match(rotulaRelancar('ocioso'), /conversa/i);
+  it('o ocioso é o rótulo curto pedido pelo Rica; a promessa da conversa mora na descrição', () => {
+    assert.equal(rotulaRelancar('ocioso'), 'Resume');
+    assert.match(descreveRelancar('ocioso'), /conversa/i);
     assert.match(rotulaRelancar('relancado'), /conversa/i);
   });
 
   it('o nome acessível do ocioso contém o rótulo visível (WCAG 2.5.3)', () => {
-    // "Relançar" é o começo do rótulo visível; o nome acessível estende, não
-    // substitui — senão o comando de voz "clicar em Relançar" não acha o botão.
-    assert.ok(descreveRelancar('ocioso').startsWith('Relançar'));
+    // "Resume" é o rótulo visível; o nome acessível estende, não substitui —
+    // senão o comando de voz "clicar em Resume" não acha o botão.
+    assert.ok(descreveRelancar('ocioso').startsWith('Resume'));
     assert.match(descreveRelancar('ocioso'), /turno em andamento é perdido/);
   });
 
   it('fora do ocioso o nome acessível é o próprio rótulo — sem dizer duas vezes', () => {
     for (const fase of ['confirmando', 'enviando', 'relancado'] as const) {
       assert.equal(descreveRelancar(fase), rotulaRelancar(fase));
+    }
+  });
+
+  it('modo fresco avisa que perde a conversa INTEIRA, não só o turno', () => {
+    assert.equal(rotulaRelancar('ocioso', 'fresco'), 'Restart');
+    assert.ok(descreveRelancar('ocioso', 'fresco').startsWith('Restart'));
+    assert.match(rotulaRelancar('confirmando', 'fresco'), /apaga a conversa/i);
+    assert.match(descreveRelancar('ocioso', 'fresco'), /perde a conversa inteira/i);
+  });
+
+  it('resume e fresco nunca dizem a mesma frase pro mesmo estado — dedo não confunde os dois botões', () => {
+    for (const fase of ['ocioso', 'confirmando', 'relancado'] as const) {
+      assert.notEqual(rotulaRelancar(fase, 'resume'), rotulaRelancar(fase, 'fresco'));
     }
   });
 
