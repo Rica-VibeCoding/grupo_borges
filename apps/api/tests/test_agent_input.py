@@ -340,3 +340,89 @@ def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:
             body = response.json()
             assert body["tmux_delivered"] is True
             assert isinstance(body["sent_at"], int)
+
+
+@pytest.mark.parametrize(
+    ("driver_result", "expected_delivered"),
+    [
+        ({"tmux_delivered": False, "degrau": 2, "acao": "input_vazio"}, False),
+        ({"tmux_delivered": True, "degrau": 3, "acao": "enter"}, True),
+        ({"tmux_delivered": True, "degrau": 4, "acao": "recolar_enter"}, True),
+        (
+            {
+                "tmux_delivered": False,
+                "degrau": 5,
+                "acao": "submissao_nao_confirmada",
+            },
+            False,
+        ),
+    ],
+)
+def test_destrava_reports_the_step_that_resolved_or_failed(
+    tmp_path: Path,
+    driver_result: dict[str, bool | int | str],
+    expected_delivered: bool,
+) -> None:
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.recover_input",
+        new=AsyncMock(return_value=driver_result),
+    ) as recover:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/destrava")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tmux_delivered"] is expected_delivered
+    assert body["degrau"] == driver_result["degrau"]
+    assert body["acao"] == driver_result["acao"]
+    assert isinstance(body["sent_at"], int)
+    recover.assert_awaited_once_with("daniel")
+
+
+def test_relaunch_requires_explicit_confirmation(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        missing = client.post("/api/agents/daniel/relaunch", json={})
+        denied = client.post("/api/agents/daniel/relaunch", json={"confirm": False})
+        coerced = client.post("/api/agents/daniel/relaunch", json={"confirm": "true"})
+
+    assert missing.status_code == 422
+    assert denied.status_code == 400
+    assert denied.json()["detail"] == "confirmacao_explicita_obrigatoria"
+    assert coerced.status_code == 422
+
+
+def test_relaunch_fails_without_resumable_conversation(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    app.state.db.latest_jsonl_session_id = AsyncMock(return_value=None)
+
+    with TestClient(app) as client:
+        response = client.post("/api/agents/daniel/relaunch", json={"confirm": True})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "resume_session_not_found"
+
+
+def test_relaunch_resumes_exact_session_and_reports_confirmation(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    app.state.db.latest_jsonl_session_id = AsyncMock(return_value=session_id)
+    with patch(
+        "routers.agents.tmux_driver.restart_claude_with_resume",
+        new=AsyncMock(return_value={"attempted": True, "confirmed": True}),
+    ) as restart:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/relaunch", json={"confirm": True})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tmux_delivered"] is True
+    assert body["attempted"] is True
+    assert body["session_id"] == session_id
+    restart.assert_awaited_once_with(
+        "daniel",
+        "/tmp/daniel",
+        "opus",
+        session_id,
+    )

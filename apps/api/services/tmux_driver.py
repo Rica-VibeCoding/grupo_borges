@@ -2,25 +2,33 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
-from collections import defaultdict
-from pathlib import Path
 import re
 import shlex
 import subprocess
 import threading
 import time
 import uuid
-from typing import Literal
+from collections import defaultdict
+from collections.abc import Callable
+from pathlib import Path
+from typing import Literal, NamedTuple
 
 import libtmux
 from libtmux import exc as libtmux_exc
 
-# Delay entre paste-buffer e Enter pra CC consolidar o paste. Default 150ms
-# (Hermes-style validado em prod). Configurável via env pra ajustar sob carga
-# sem deploy — VPS 8GB pode precisar de 300-500ms em pico.
-_PASTE_SUBMIT_DELAY_S = float(os.getenv("COCKPIT_PASTE_DELAY_MS", "150")) / 1000.0
+# Orçamentos independentes: pane ocupada pode ficar temporariamente ilegível
+# antes do paste sem consumir o tempo reservado para provar a submissão.
 _LOAD_BUFFER_TIMEOUT_S = 5.0
+_PRE_PASTE_CONFIRM_TIMEOUT_S = 8.0
+_SUBMIT_CONFIRM_TIMEOUT_S = 6.0
+_SUBMIT_POLL_INTERVAL_S = 0.05
+_SUBMIT_ENTER_RETRY_INTERVAL_S = 1.0
+_SUBMIT_MAX_ENTER_ATTEMPTS = 3
+_RECOVERY_STEP_TIMEOUT_S = 3.0
+
+log = logging.getLogger(__name__)
 
 # Lock por session_name pra evitar race em dispatches concorrentes no mesmo
 # pane: sem isso, dispatch B pode injetar paste/Enter entre o paste e o Enter
@@ -117,6 +125,11 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Variante que preserva ESC (0x1b) pra `preserve_ansi=True` — strippar o ESC
 # anula as escape sequences ANSI (vira `[31m...` literal no front).
 _CONTROL_CHARS_KEEP_ESC = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
+_INPUT_PROMPT_MARKERS = ("❯", "›")
+_PASTED_TEXT_MARKER = re.compile(r"\[Pasted text #[^]]+]")
+_SESSION_ID_PATTERN = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 _BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
     "claude_code": re.compile(r"╭|Claude Code v\d"),
     "codex": re.compile("›"),
@@ -147,6 +160,207 @@ _CLI_COMMANDS = {
 }
 
 
+class _PaneInputSnapshot(NamedTuple):
+    state: Literal["empty", "armed", "unknown"]
+    content: str
+
+
+def _is_input_border(line: str) -> bool:
+    stripped = line.strip()
+    return len(stripped) >= 10 and set(stripped) <= {"─", "━", "-"}
+
+
+def _capture_input_snapshot(pane: libtmux.Pane) -> _PaneInputSnapshot:
+    """Lê somente a caixa de input que contém o cursor atual.
+
+    ``unknown`` é uma falha transitória de observação: durante renderização,
+    spinner ou resize o contorno pode desaparecer por alguns frames. Callers
+    devem repetir até o próprio teto, nunca converter um frame em diagnóstico.
+    """
+    try:
+        position = pane.cmd("display-message", "-p", "#{cursor_x}\t#{cursor_y}")
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return _PaneInputSnapshot("unknown", "")
+    if position.returncode != 0 or not position.stdout:
+        return _PaneInputSnapshot("unknown", "")
+    try:
+        cursor_x, cursor_y = map(int, position.stdout[0].split("\t", 1))
+        pane_height = int(pane.pane_height)
+    except (TypeError, ValueError):
+        return _PaneInputSnapshot("unknown", "")
+
+    try:
+        lines = pane.capture_pane(
+            start=0,
+            end=max(0, pane_height - 1),
+            escape_sequences=False,
+            join_wrapped=False,
+        )
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return _PaneInputSnapshot("unknown", "")
+    if not lines or cursor_y >= len(lines):
+        return _PaneInputSnapshot("unknown", "")
+
+    bottom_border = next(
+        (row for row in range(cursor_y + 1, len(lines)) if _is_input_border(lines[row])),
+        None,
+    )
+    if bottom_border is None:
+        return _PaneInputSnapshot("unknown", "")
+
+    top_border = next(
+        (row for row in range(cursor_y - 1, -1, -1) if _is_input_border(lines[row])),
+        None,
+    )
+    search_start = top_border + 1 if top_border is not None else 0
+    prompt_row = next(
+        (
+            row
+            for row in range(cursor_y, search_start - 1, -1)
+            if lines[row].lstrip().startswith(_INPUT_PROMPT_MARKERS)
+        ),
+        None,
+    )
+    if prompt_row is None:
+        return _PaneInputSnapshot("unknown", "")
+
+    try:
+        # Segunda captura une somente soft-wraps do terminal. Assim o degrau 4
+        # pode recolar o mesmo texto sem inserir quebras visuais artificiais.
+        content_lines = pane.capture_pane(
+            start=prompt_row,
+            end=bottom_border - 1,
+            escape_sequences=False,
+            join_wrapped=True,
+        )
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return _PaneInputSnapshot("unknown", "")
+    if not content_lines:
+        return _PaneInputSnapshot("unknown", "")
+    first = content_lines[0].lstrip()
+    if not first.startswith(_INPUT_PROMPT_MARKERS):
+        return _PaneInputSnapshot("unknown", "")
+    after_prompt = first[1:]
+    if after_prompt.startswith((" ", "\u00a0")):
+        after_prompt = after_prompt[1:]
+    content_lines[0] = after_prompt
+    # Ink/Claude preenche o resto da última linha com espaços (em pane 220 col,
+    # um texto curto volta com ~190 espaços). Eles são células de layout, não
+    # input; soft-wraps já foram unidos acima, então retire só a cauda final.
+    content = "\n".join(content_lines).rstrip()
+    # Cursor em x=2 não basta: no incidente real o CC deixou texto visível
+    # armado enquanto reportava o cursor no começo da caixa. Conteúdo vence a
+    # posição para não declarar submissão falsa.
+    if cursor_y == prompt_row and cursor_x <= 2 and not _normalize_visible_text(content):
+        return _PaneInputSnapshot("empty", content)
+    return _PaneInputSnapshot("armed", content)
+
+
+def _normalize_visible_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.replace("\u00a0", " ")).strip()
+
+
+def _snapshot_contains_payload(snapshot: _PaneInputSnapshot, text: str) -> bool:
+    if snapshot.state != "armed":
+        return False
+    visible = _normalize_visible_text(snapshot.content)
+    expected = _normalize_visible_text(text)
+    if _PASTED_TEXT_MARKER.search(snapshot.content):
+        return True
+    if not expected:
+        return False
+    needle = expected if len(expected) <= 160 else expected[-80:]
+    return needle in visible
+
+
+def _snapshot_proves_owned_payload(snapshot: _PaneInputSnapshot, text: str) -> bool:
+    """Versão estrita para C-u: marcador genérico não prova propriedade."""
+    return (
+        snapshot.state == "armed"
+        and not _PASTED_TEXT_MARKER.search(snapshot.content)
+        and snapshot.content == text
+    )
+
+
+def _count_payload_prompt_lines(pane: libtmux.Pane, text: str) -> int | None:
+    """Conta ocorrências visíveis do payload em prompts já transcritos."""
+    expected = _normalize_visible_text(text)
+    if not expected or "\n" in text:
+        return None
+    needle = expected if len(expected) <= 160 else expected[-80:]
+    try:
+        position = pane.cmd("display-message", "-p", "#{cursor_x}\t#{cursor_y}")
+        cursor_y = (
+            int(position.stdout[0].split("\t", 1)[1])
+            if position.returncode == 0 and position.stdout
+            else None
+        )
+        lines = pane.capture_pane(
+            start=0,
+            end=max(0, int(pane.pane_height) - 1),
+            escape_sequences=False,
+            join_wrapped=False,
+        )
+    except (
+        libtmux_exc.LibTmuxException,
+        AttributeError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+    count = 0
+    for row, line in enumerate(lines):
+        stripped = line.lstrip()
+        if not stripped.startswith(_INPUT_PROMPT_MARKERS):
+            continue
+        # A caixa editável atual também começa com ❯/›. Ela não é recibo de
+        # submissão e fica delimitada por bordas horizontais; não a conte.
+        if cursor_y is not None and row <= cursor_y:
+            bottom_border = next(
+                (
+                    index
+                    for index in range(cursor_y + 1, len(lines))
+                    if _is_input_border(lines[index])
+                ),
+                None,
+            )
+            nearer_prompt = any(
+                candidate.lstrip().startswith(_INPUT_PROMPT_MARKERS)
+                for candidate in lines[row + 1 : cursor_y + 1]
+            )
+            if bottom_border is not None and not nearer_prompt:
+                continue
+        block = [stripped[1:].lstrip(" \u00a0")]
+        for continuation in lines[row + 1 :]:
+            if _is_input_border(continuation):
+                break
+            if continuation.lstrip().startswith(_INPUT_PROMPT_MARKERS):
+                break
+            block.append(continuation.rstrip())
+        if needle in _normalize_visible_text("\n".join(block)):
+            count += 1
+    return count
+
+
+def _wait_for_input(
+    pane: libtmux.Pane,
+    predicate: Callable[[_PaneInputSnapshot], bool],
+    deadline: float,
+    *,
+    incompatible: Callable[[_PaneInputSnapshot], bool] | None = None,
+) -> _PaneInputSnapshot | None:
+    """Espera um snapshot útil; ``unknown`` sempre permanece transitório."""
+    while time.monotonic() < deadline:
+        snapshot = _capture_input_snapshot(pane)
+        if predicate(snapshot):
+            return snapshot
+        if snapshot.state != "unknown" and incompatible and incompatible(snapshot):
+            return None
+        time.sleep(_SUBMIT_POLL_INTERVAL_S)
+    return None
+
+
 def _create_empty_session_sync(session_name: str) -> None:
     # Criação deliberada no socket default: sessão nova é sempre do cockpit
     # (subsessão); os sockets nomeados pertencem ao borges-agent@ do systemd.
@@ -163,15 +377,19 @@ async def create_empty_session(session_name: str) -> None:
 
 
 def _bootstrap_cli_in_session_sync(
-    session_name: str, workspace_path: str, cli: AgentCli, model: str
+    session_name: str,
+    workspace_path: str,
+    cli: AgentCli,
+    model: str,
+    *,
+    resume_session_id: str | None = None,
 ) -> dict[str, bool]:
-    if not _MODEL_PATTERN.fullmatch(model):
-        raise ValueError(f"model inválido: {model}")
-    if _UNSAFE_WORKSPACE_CHARS.search(workspace_path):
-        raise libtmux_exc.LibTmuxException("workspace_path contém caracteres inseguros")
-    resolved_workspace = Path(workspace_path).resolve()
-    if not resolved_workspace.is_relative_to(_REPOS_ROOT):
-        raise ValueError(f"workspace_path fora de {_REPOS_ROOT}: {workspace_path}")
+    resolved_workspace, command = _prepare_cli_launch(
+        workspace_path,
+        cli,
+        model,
+        resume_session_id=resume_session_id,
+    )
 
     server = _server_for(session_name)
     if not server.has_session(session_name):
@@ -181,24 +399,47 @@ def _bootstrap_cli_in_session_sync(
     pane = session.active_pane
     # defense-in-depth pre-shlex
     pane.send_keys(f"cd {shlex.quote(str(resolved_workspace))}")
-
-    try:
-        command = _CLI_COMMANDS[cli](model)
-    except KeyError as e:
-        raise libtmux_exc.LibTmuxException(f"cli inválido: {cli}") from e
-
     pane.send_keys(command)
+    return _wait_for_cli_banner(pane, cli)
+
+
+def _wait_for_cli_banner(pane: libtmux.Pane, cli: AgentCli) -> dict[str, bool]:
     pattern = _BANNER_PATTERNS[cli]
     deadline = time.monotonic() + _BOOTSTRAP_TIMEOUT_S
     while time.monotonic() < deadline:
-        output = "\n".join(
-            pane.capture_pane(escape_sequences=True, join_wrapped=True)
-        )
+        output = "\n".join(pane.capture_pane(escape_sequences=True, join_wrapped=True))
         if pattern.search(_ANSI_ESCAPE.sub("", output)):
             return {"attempted": True, "confirmed": True}
         time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
 
     return {"attempted": True, "confirmed": False}
+
+
+def _prepare_cli_launch(
+    workspace_path: str,
+    cli: AgentCli,
+    model: str,
+    *,
+    resume_session_id: str | None = None,
+) -> tuple[Path, str]:
+    """Valida tudo e monta o comando antes de qualquer ação destrutiva."""
+    if not _MODEL_PATTERN.fullmatch(model):
+        raise ValueError(f"model inválido: {model}")
+    if _UNSAFE_WORKSPACE_CHARS.search(workspace_path):
+        raise libtmux_exc.LibTmuxException("workspace_path contém caracteres inseguros")
+    resolved_workspace = Path(workspace_path).resolve()
+    if not resolved_workspace.is_relative_to(_REPOS_ROOT):
+        raise ValueError(f"workspace_path fora de {_REPOS_ROOT}: {workspace_path}")
+
+    try:
+        command = _CLI_COMMANDS[cli](model)
+    except KeyError as e:
+        raise libtmux_exc.LibTmuxException(f"cli inválido: {cli}") from e
+    if resume_session_id is not None:
+        if cli != "claude_code" or not _SESSION_ID_PATTERN.fullmatch(resume_session_id):
+            raise ValueError("session_id inválido para claude --resume")
+        command += f" --resume {shlex.quote(resume_session_id)}"
+    return resolved_workspace, command
 
 
 async def bootstrap_cli_in_session(
@@ -207,6 +448,57 @@ async def bootstrap_cli_in_session(
     """Booteia Claude Code/Codex no pane ativo e confirma readiness por banner."""
     return await asyncio.to_thread(
         _bootstrap_cli_in_session_sync, session, workspace_path, cli, model
+    )
+
+
+def _restart_claude_with_resume_sync(
+    session_name: str,
+    workspace_path: str,
+    model: str,
+    resume_session_id: str,
+) -> dict[str, bool]:
+    """Substitui o processo do pane e retoma exatamente a conversa informada."""
+    resolved_workspace, command = _prepare_cli_launch(
+        workspace_path,
+        "claude_code",
+        model,
+        resume_session_id=resume_session_id,
+    )
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return {"attempted": False, "confirmed": False}
+
+    with _DISPATCH_LOCKS[session_name]:
+        session = server.sessions.get(session_name=session_name)
+        pane = session.active_pane
+        # Passa o resume como comando do próprio respawn. Sem isso, tmux pode
+        # repetir o pane_start_command original (que nas units já é `claude`) e
+        # o bootstrap acabaria digitado dentro de outra TUI.
+        result = pane.cmd(
+            "respawn-pane",
+            "-k",
+            "-c",
+            str(resolved_workspace),
+            command,
+        )
+        if result.returncode != 0:
+            return {"attempted": False, "confirmed": False}
+        return _wait_for_cli_banner(pane, "claude_code")
+
+
+async def restart_claude_with_resume(
+    session_name: str,
+    workspace_path: str,
+    model: str,
+    resume_session_id: str,
+) -> dict[str, bool]:
+    """Relança Claude Code com ``--resume <id>`` e confirma o novo banner."""
+    return await asyncio.to_thread(
+        _restart_claude_with_resume_sync,
+        session_name,
+        workspace_path,
+        model,
+        resume_session_id,
     )
 
 
@@ -352,6 +644,93 @@ async def kill_session_if_exists(session_name: str) -> bool:
     return await asyncio.to_thread(_kill_session_if_exists_sync, session_name)
 
 
+def _load_tmux_buffer(server: libtmux.Server, text: str) -> str | None:
+    buf_name = f"cockpit-dispatch-{uuid.uuid4().hex[:12]}"
+    tmux_argv = ["tmux"]
+    if server.socket_name:
+        tmux_argv += ["-L", server.socket_name]
+    try:
+        result = subprocess.run(
+            tmux_argv + ["load-buffer", "-b", buf_name, "-"],
+            input=text,
+            text=True,
+            capture_output=True,
+            timeout=_LOAD_BUFFER_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        _delete_tmux_buffer(server, buf_name)
+        return None
+    if result.returncode != 0:
+        _delete_tmux_buffer(server, buf_name)
+        return None
+    return buf_name
+
+
+def _delete_tmux_buffer(server: libtmux.Server, buf_name: str) -> None:
+    try:
+        server.cmd("delete-buffer", "-b", buf_name)
+    except libtmux_exc.LibTmuxException:
+        pass
+
+
+def _paste_loaded_buffer(pane: libtmux.Pane, buf_name: str) -> bool:
+    try:
+        # -p ativa bracketed paste (multilinha); -d remove o buffer após uso.
+        result = pane.cmd("paste-buffer", "-d", "-p", "-b", buf_name)
+        return result.returncode == 0
+    except libtmux_exc.LibTmuxException:
+        return False
+
+
+def _send_key(pane: libtmux.Pane, key: str) -> bool:
+    try:
+        return pane.cmd("send-keys", key).returncode == 0
+    except libtmux_exc.LibTmuxException:
+        return False
+
+
+def _confirm_armed_submission(
+    pane: libtmux.Pane,
+    text: str,
+    *,
+    prior_prompt_count: int | None,
+    deadline: float,
+    max_enter_attempts: int,
+) -> tuple[bool, int]:
+    """Pressiona Enter e só confirma por input vazio ou prompt transcrito."""
+    enter_attempts = 0
+    while enter_attempts < max_enter_attempts and time.monotonic() < deadline:
+        if not _send_key(pane, "Enter"):
+            return False, enter_attempts
+        enter_attempts += 1
+        retry_at = min(deadline, time.monotonic() + _SUBMIT_ENTER_RETRY_INTERVAL_S)
+
+        while time.monotonic() < deadline:
+            time.sleep(_SUBMIT_POLL_INTERVAL_S)
+            snapshot = _capture_input_snapshot(pane)
+            current_prompt_count = _count_payload_prompt_lines(pane, text)
+            if (
+                prior_prompt_count is not None
+                and current_prompt_count is not None
+                and current_prompt_count > prior_prompt_count
+            ):
+                return True, enter_attempts
+            if snapshot.state == "unknown":
+                continue
+            if snapshot.state == "empty":
+                return True, enter_attempts
+            if not _snapshot_contains_payload(snapshot, text):
+                # Texto diferente apareceu: pode ser humano. Nunca toque nele.
+                return False, enter_attempts
+            # Só repete Enter depois de uma janela real e enquanto o snapshot
+            # atual ainda prova que o mesmo payload continua armado. unknown
+            # nunca autoriza um Enter extra.
+            if time.monotonic() >= retry_at:
+                break
+
+    return False, enter_attempts
+
+
 def _send_message_sync(session_name: str, text: str) -> bool:
     server = _server_for(session_name)
     if not server.has_session(session_name):
@@ -374,50 +753,228 @@ def _send_message_sync(session_name: str, text: str) -> bool:
         if current_cmd not in _EXPECTED_PANE_COMMANDS:
             return False
 
-        # Sequência detalhada na docstring de send_message. -p (bracketed paste)
-        # é crítico pra multilinha: sem ele tmux converte \n → CR e cada linha
-        # submete separado. Gotcha: extended-keys-format=csi-u no tmux faz CC
-        # perder \n dentro do bracket (anthropics/claude-code#43169).
-        pane.cmd("send-keys", "C-u")
-
-        buf_name = f"cockpit-dispatch-{uuid.uuid4().hex[:12]}"
-        paste_ok = False
-        # load-buffer precisa cair no MESMO server tmux do pane — socket
-        # nomeado quando _server_for resolveu um (senão o paste-buffer não
-        # acha o buffer).
-        tmux_argv = ["tmux"]
-        if server.socket_name:
-            tmux_argv += ["-L", server.socket_name]
         try:
-            try:
-                load_result = subprocess.run(
-                    tmux_argv + ["load-buffer", "-b", buf_name, "-"],
-                    input=sanitized,
-                    text=True,
-                    capture_output=True,
-                    timeout=_LOAD_BUFFER_TIMEOUT_S,
-                )
-            except subprocess.TimeoutExpired:
-                return False
-            if load_result.returncode != 0:
+            # load-buffer não toca o pane e pode levar até 5s. Faça-o antes de
+            # provar vazio para não abrir uma janela de concatenação humana.
+            buf_name = _load_tmux_buffer(server, sanitized)
+            if buf_name is None:
                 return False
 
-            pane.cmd("paste-buffer", "-d", "-p", "-b", buf_name)
-            paste_ok = True
-            time.sleep(_PASTE_SUBMIT_DELAY_S)
-            pane.cmd("send-keys", "Enter")
-            return True
+            paste_ok = False
+            try:
+                pre_paste_deadline = time.monotonic() + _PRE_PASTE_CONFIRM_TIMEOUT_S
+                empty_snapshot = _wait_for_input(
+                    pane,
+                    lambda snapshot: snapshot.state == "empty",
+                    pre_paste_deadline,
+                    incompatible=lambda snapshot: snapshot.state == "armed",
+                )
+                if empty_snapshot is None:
+                    log.warning(
+                        "tmux input indisponível ou armado antes do paste: session=%s",
+                        session_name,
+                    )
+                    return False
+
+                prior_prompt_count = _count_payload_prompt_lines(pane, sanitized)
+                # Segunda leitura imediatamente antes do paste fecha a corrida
+                # entre a observação anterior e uma digitação humana.
+                if _capture_input_snapshot(pane).state != "empty":
+                    log.warning("tmux input mudou antes do paste: session=%s", session_name)
+                    return False
+                if not _paste_loaded_buffer(pane, buf_name):
+                    return False
+                paste_ok = True
+                paste_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
+                pasted = _wait_for_input(
+                    pane,
+                    lambda snapshot: _snapshot_contains_payload(snapshot, sanitized),
+                    paste_deadline,
+                )
+                if pasted is None:
+                    final_snapshot = _capture_input_snapshot(pane)
+                    if _snapshot_proves_owned_payload(final_snapshot, sanitized):
+                        _send_key(pane, "C-u")
+                    log.warning("tmux paste não observado no input: session=%s", session_name)
+                    return False
+
+                submit_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
+                confirmed, enter_attempts = _confirm_armed_submission(
+                    pane,
+                    sanitized,
+                    prior_prompt_count=prior_prompt_count,
+                    deadline=submit_deadline,
+                    max_enter_attempts=_SUBMIT_MAX_ENTER_ATTEMPTS,
+                )
+                if confirmed:
+                    return True
+
+                # Só limpa quando a pane ainda prova que o texto é o nosso.
+                final_snapshot = _capture_input_snapshot(pane)
+                if _snapshot_proves_owned_payload(final_snapshot, sanitized):
+                    _send_key(pane, "C-u")
+                log.warning(
+                    "tmux Enter sem confirmação: session=%s attempts=%d",
+                    session_name,
+                    enter_attempts,
+                )
+                return False
+            finally:
+                # paste-buffer -d descarta no caminho feliz. Em falha anterior
+                # ao paste, o buffer ainda existe e precisa de cleanup.
+                if not paste_ok:
+                    _delete_tmux_buffer(server, buf_name)
         except libtmux_exc.LibTmuxException:
             return False
-        finally:
-            # paste-buffer -d descarta no path feliz. Em qualquer falha (load
-            # com returncode != 0, paste-buffer exception), buffer pode ter
-            # ficado órfão — cleanup oportunista.
-            if not paste_ok:
-                try:
-                    server.cmd("delete-buffer", "-b", buf_name)
-                except libtmux_exc.LibTmuxException:
-                    pass
+
+
+def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
+    """Executa a escada determinística do endpoint ``destrava``."""
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return {"tmux_delivered": False, "degrau": 5, "acao": "sessao_ausente"}
+
+    with _DISPATCH_LOCKS[session_name]:
+        session = server.sessions.get(session_name=session_name)
+        pane = session.active_pane
+        current_cmd = (pane.pane_current_command or "").lower()
+        if current_cmd not in _EXPECTED_PANE_COMMANDS:
+            return {"tmux_delivered": False, "degrau": 5, "acao": "pane_incompativel"}
+
+        try:
+            # Degrau 1: fecha modal, se houver.
+            if not _send_key(pane, "Escape"):
+                return {"tmux_delivered": False, "degrau": 5, "acao": "escape_falhou"}
+            read_deadline = time.monotonic() + _PRE_PASTE_CONFIRM_TIMEOUT_S
+            snapshot = _wait_for_input(
+                pane,
+                lambda candidate: candidate.state != "unknown",
+                read_deadline,
+            )
+            if snapshot is None:
+                return {
+                    "tmux_delivered": False,
+                    "degrau": 5,
+                    "acao": "input_nao_observavel",
+                }
+            # Degrau 2: Escape deixou um input vazio; não existe texto a enviar.
+            if snapshot.state == "empty":
+                return {"tmux_delivered": False, "degrau": 2, "acao": "input_vazio"}
+
+            armed_text = snapshot.content
+            prior_prompt_count = _count_payload_prompt_lines(pane, armed_text)
+
+            # Degrau 3: um Enter, com comprovação observável.
+            confirmed, _ = _confirm_armed_submission(
+                pane,
+                armed_text,
+                prior_prompt_count=prior_prompt_count,
+                deadline=time.monotonic() + _RECOVERY_STEP_TIMEOUT_S,
+                max_enter_attempts=1,
+            )
+            if confirmed:
+                return {"tmux_delivered": True, "degrau": 3, "acao": "enter"}
+
+            current = _wait_for_input(
+                pane,
+                lambda candidate: candidate.state != "unknown",
+                time.monotonic() + _RECOVERY_STEP_TIMEOUT_S,
+            )
+            if current is not None and current.state == "empty":
+                return {"tmux_delivered": True, "degrau": 3, "acao": "enter"}
+            if (
+                current is None
+                or current.state != "armed"
+                or current.content != armed_text
+                or not armed_text
+                or _PASTED_TEXT_MARKER.search(armed_text)
+            ):
+                return {
+                    "tmux_delivered": False,
+                    "degrau": 5,
+                    "acao": "texto_armado_nao_recuperavel",
+                }
+
+            # Degrau 4: guarda o texto antes de limpar. Revalida imediatamente
+            # antes do C-u para nunca apagar texto novo digitado por uma pessoa.
+            buf_name = _load_tmux_buffer(server, armed_text)
+            if buf_name is None:
+                return {"tmux_delivered": False, "degrau": 5, "acao": "buffer_falhou"}
+            repasted = False
+            cleared = False
+            try:
+                latest = _capture_input_snapshot(pane)
+                if latest.state != "armed" or latest.content != armed_text:
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "texto_armado_mudou",
+                    }
+                if not _send_key(pane, "C-u"):
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "limpeza_falhou_buffer_preservado",
+                    }
+                cleared = True
+                cleared_snapshot = _wait_for_input(
+                    pane,
+                    lambda candidate: candidate.state == "empty",
+                    time.monotonic() + _RECOVERY_STEP_TIMEOUT_S,
+                    incompatible=lambda candidate: candidate.state == "armed",
+                )
+                if cleared_snapshot is None:
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "limpeza_nao_confirmada_buffer_preservado",
+                    }
+                if not _paste_loaded_buffer(pane, buf_name):
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "recolagem_falhou_buffer_preservado",
+                    }
+                repasted = True
+                paste_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
+                pasted = _wait_for_input(
+                    pane,
+                    lambda candidate: _snapshot_contains_payload(candidate, armed_text),
+                    paste_deadline,
+                )
+                if pasted is None:
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "recolagem_nao_confirmada",
+                    }
+                submit_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
+                confirmed, _ = _confirm_armed_submission(
+                    pane,
+                    armed_text,
+                    prior_prompt_count=prior_prompt_count,
+                    deadline=submit_deadline,
+                    max_enter_attempts=1,
+                )
+                if confirmed:
+                    return {"tmux_delivered": True, "degrau": 4, "acao": "recolar_enter"}
+                return {
+                    "tmux_delivered": False,
+                    "degrau": 5,
+                    "acao": "submissao_nao_confirmada",
+                }
+            finally:
+                # Se C-u já ocorreu e a recolagem falhou, mantém o buffer
+                # nomeado no tmux: o texto continua recuperável, não descartado.
+                if not repasted and not cleared:
+                    _delete_tmux_buffer(server, buf_name)
+        except libtmux_exc.LibTmuxException:
+            return {"tmux_delivered": False, "degrau": 5, "acao": "erro_tmux"}
+
+
+async def recover_input(session_name: str) -> dict[str, bool | int | str]:
+    """Executa Escape → inspeção → Enter → recolagem segura, fora do event loop."""
+    return await asyncio.to_thread(_recover_input_sync, session_name)
 
 
 def _press_enter_sync(session_name: str) -> bool:
@@ -427,11 +984,7 @@ def _press_enter_sync(session_name: str) -> bool:
     with _DISPATCH_LOCKS[session_name]:
         session = server.sessions.get(session_name=session_name)
         pane = session.active_pane
-        try:
-            pane.cmd("send-keys", "Enter")
-            return True
-        except libtmux_exc.LibTmuxException:
-            return False
+        return _send_key(pane, "Enter")
 
 
 async def press_enter(session_name: str) -> bool:
@@ -451,11 +1004,7 @@ def _press_escape_sync(session_name: str) -> bool:
     with _DISPATCH_LOCKS[session_name]:
         session = server.sessions.get(session_name=session_name)
         pane = session.active_pane
-        try:
-            pane.cmd("send-keys", "Escape")
-            return True
-        except libtmux_exc.LibTmuxException:
-            return False
+        return _send_key(pane, "Escape")
 
 
 async def press_escape(session_name: str) -> bool:
@@ -471,16 +1020,19 @@ async def press_escape(session_name: str) -> bool:
 async def send_message(session_name: str, text: str) -> bool:
     """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 
-    Sequência (Hermes-style, validada em produção):
-        send-keys C-u → load-buffer → paste-buffer -d -p → sleep 150ms → send-keys Enter
+    Sequência observável:
+        confirma input vazio → paste-buffer -d -p → confirma payload armado →
+        Enter (até 3 tentativas enquanto o mesmo payload permanece armado) →
+        confirma input vazio ou nova linha transcrita.
 
     Preserva multilinha (envelope do Cockpit tem 30+ linhas); só sanitiza CR
     isolados. Buffer nomeado por uuid evita race entre dispatches concorrentes.
     `-p` ativa bracketed paste — CC consolida o bloco em mensagem única em vez
     de submeter linha-a-linha.
 
-    Retorna False quando a sessão não existe ou o load-buffer falha. Erros do
-    paste-buffer tentam cleanup do buffer e retornam False sem propagar — o
-    caller loga sem desfazer a transação já persistida.
+    ``unknown`` é transitório até os tetos independentes de pré-paste (8s) e
+    submissão (6s). Retorna True somente com prova observável. C-u só limpa um
+    payload ainda reconhecido como o nosso; texto humano diferente nunca é
+    apagado nem substituído.
     """
     return await asyncio.to_thread(_send_message_sync, session_name, text)
