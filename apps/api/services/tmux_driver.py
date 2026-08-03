@@ -182,6 +182,9 @@ _PANE_EXCERPT_MAX_CHARS = 1200
 _REPOS_ROOT = Path("/home/clawd/repos").resolve()
 _UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
 _MODEL_PATTERN = re.compile(r"[a-z0-9.\-]{1,80}")
+#: Valor de `--channels`: `plugin:<nome>@<origem>`. Estreito de propósito — o
+#: valor vem do `/proc/<pid>/cmdline` e vai parar num comando de shell.
+_CHANNEL_VALUE_PATTERN = re.compile(r"[A-Za-z0-9_.:@\-]{1,120}")
 _CLAUDE_ENCODED_CWD_CHARS = re.compile(r"[^a-zA-Z0-9]")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SGR_ESCAPE = re.compile(r"\x1b\[([0-9;:]*)m")
@@ -765,6 +768,60 @@ def _pane_owner_pids(pane_pid: int) -> set[int]:
     return {pid for pid in (pane_pid, foreground_group) if pid > 0}
 
 
+#: Flags que ligam os canais de mensagem do Claude Code. Cada uma recebe um
+#: valor no argumento seguinte.
+_CHANNEL_FLAGS = ("--channels", "--dangerously-load-development-channels")
+
+
+def _pane_channel_flags(pane_pid: int) -> str:
+    """Lê do processo vivo as flags de canal, pra o relaunch não emudecer o agente.
+
+    `_CLI_COMMANDS` monta o comando do zero e não conhece canal nenhum. Sem
+    isto, relançar deixava o agente SURDO no Telegram: o outbound continuava
+    funcionando (o plugin responde de dentro do turno), mas o poller de
+    entrada nunca subia — mensagem do Rica sumia sem deixar rastro, e o
+    `getWebhookInfo` mostrava `pending=0` porque ninguém estava buscando.
+    Foi o que aconteceu com o Daniel em 02/08: dois cliques no botão de
+    relançar e ele parou de receber áudio, sem nenhum sinal na tela.
+
+    Ler do processo em vez de fixar no `agents.yaml` é de propósito — o Pavan
+    carrega um canal de desenvolvimento a mais, e o que precisa voltar de pé
+    é exatamente o que estava rodando, não o que a config imagina.
+    """
+    candidate_pids = [pane_pid]
+    try:
+        stat = Path(f"/proc/{pane_pid}/stat").read_text()
+        fields = stat[stat.rfind(")") + 2 :].split()
+        foreground_group = int(fields[5])
+        if foreground_group > 0:
+            candidate_pids.insert(0, foreground_group)
+    except (IndexError, OSError, ValueError):
+        pass
+
+    for candidate_pid in candidate_pids:
+        try:
+            raw = Path(f"/proc/{candidate_pid}/cmdline").read_bytes()
+        except OSError:
+            continue
+        argv = [arg for arg in raw.decode(errors="replace").split("\0") if arg]
+        if not any("claude" in arg for arg in argv):
+            continue
+        recovered: list[str] = []
+        for index, arg in enumerate(argv):
+            if arg not in _CHANNEL_FLAGS or index + 1 >= len(argv):
+                continue
+            value = argv[index + 1]
+            # O valor é um identificador de plugin (`plugin:telegram@...`), não
+            # caminho nem texto livre. Recusar o resto fecha a porta pra um
+            # cmdline adulterado virar comando no shell do relaunch.
+            if not _CHANNEL_VALUE_PATTERN.fullmatch(value):
+                continue
+            recovered.append(f"{arg} {shlex.quote(value)}")
+        if recovered:
+            return " " + " ".join(recovered)
+    return ""
+
+
 def _pane_launch_path(pane_pid: int) -> str:
     """Preserva o PATH efetivo do processo foreground, inclusive exports locais."""
     candidate_pids = [pane_pid]
@@ -927,8 +984,11 @@ def _restart_claude_with_resume_sync(
         old_window_id = old_pane.window.window_id
         old_process_ids = _pane_owner_pids(int(old_pane.pane_pid))
         launch_path = _pane_launch_path(int(old_pane.pane_pid))
+        # Lido ANTES do kill: depois que o processo morre o `/proc` some junto,
+        # e com ele a única prova de quais canais o agente tinha ligado.
+        channel_flags = _pane_channel_flags(int(old_pane.pane_pid))
         launch_command = (
-            f"PATH={shlex.quote(launch_path)} {resume_command}; "
+            f"PATH={shlex.quote(launch_path)} {resume_command}{channel_flags}; "
             'exec "${SHELL:-/bin/sh}"'
         )
         created = server.cmd(
