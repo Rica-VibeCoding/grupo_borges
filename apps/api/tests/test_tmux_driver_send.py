@@ -356,6 +356,7 @@ class _RelaunchServer:
         self.old_disappears_on_kill_error = old_disappears_on_kill_error
         self.window_ids = {"@old"}
         self.commands: list[tuple[str, ...]] = []
+        self.env_calls: list[tuple[str, str | None]] = []
         self.sessions = SimpleNamespace(get=self._get_session)
 
     def _get_session(self, **_kwargs: object) -> SimpleNamespace:
@@ -364,7 +365,14 @@ class _RelaunchServer:
                 active_pane=self.replacement_pane
             )
         )
-        return SimpleNamespace(active_pane=self.active_pane, windows=windows)
+        return SimpleNamespace(
+            active_pane=self.active_pane,
+            windows=windows,
+            set_environment=lambda name, value: self.env_calls.append(
+                (name, value)
+            ),
+            unset_environment=lambda name: self.env_calls.append((name, None)),
+        )
 
     def has_session(self, _session_name: str) -> bool:
         return True
@@ -989,7 +997,10 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
         patch("services.tmux_driver._server_for", return_value=server),
         patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
         patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
-        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin:/usr/bin"),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin:/usr/bin"},
+        ),
         patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
         patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
     ):
@@ -1015,14 +1026,17 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
         ),
         ("kill-window", "-t", "@old"),
     ]
+    # PATH/TELEGRAM_STATE_DIR não viram mais prefixo `VAR=valor` na string do
+    # comando — vão pela env nativa da sessão tmux (ver `server.env_calls`).
     assert replacement_pane.sent_commands == [
         (
-            "PATH=/test/bin:/usr/bin claude --dangerously-skip-permissions "
+            "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
             f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
             False,
         )
     ]
+    assert set(server.env_calls) == {("PATH", "/test/bin:/usr/bin"), ("TELEGRAM_STATE_DIR", None)}
     assert replacement_pane.entered == 1
     assert "respawn-pane" not in replacement_pane.sent_commands[0][0]
     assert "|| claude" not in replacement_pane.sent_commands[0][0]
@@ -1045,10 +1059,12 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
         patch("services.tmux_driver._server_for", return_value=server),
         patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
         patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
-        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin:/usr/bin"),
         patch(
-            "services.tmux_driver._pane_telegram_state_dir",
-            return_value="/home/clawd/.claude/channels/telegram-daniel",
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={
+                "PATH": "/test/bin:/usr/bin",
+                "TELEGRAM_STATE_DIR": "/home/clawd/.claude/channels/telegram-daniel",
+            },
         ),
         patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
         patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
@@ -1063,13 +1079,54 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
     assert result == {"attempted": True, "confirmed": True}
     assert replacement_pane.sent_commands == [
         (
-            "TELEGRAM_STATE_DIR=/home/clawd/.claude/channels/telegram-daniel "
-            "PATH=/test/bin:/usr/bin claude --dangerously-skip-permissions "
+            "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
             f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
             False,
         )
     ]
+    assert set(server.env_calls) == {
+        ("PATH", "/test/bin:/usr/bin"),
+        ("TELEGRAM_STATE_DIR", "/home/clawd/.claude/channels/telegram-daniel"),
+    }
+
+
+def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
+    tmp_path: Path,
+) -> None:
+    """Agente que usa o default do plugin de propósito não herda um valor stale."""
+    old_pane = _BootstrapPane()
+    anchor = "pergunta anterior única do relaunch"
+    old_pane.visible_context = anchor
+    replacement_pane = _RelaunchPane(anchor)
+    server = _RelaunchServer(old_pane, replacement_pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":'
+        f'"{anchor}"}}}}\n'
+    )
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": True, "confirmed": True}
+    assert ("TELEGRAM_STATE_DIR", None) in server.env_calls
 
 
 def test_resumed_tui_confirmation_does_not_depend_on_scrolled_banner() -> None:
@@ -1108,7 +1165,10 @@ def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path)
         patch("services.tmux_driver._server_for", return_value=server),
         patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
         patch("services.tmux_driver._pane_owner_pids", return_value={111}),
-        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
         patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
         patch.object(tmux_driver, "_BOOTSTRAP_TIMEOUT_S", 0.01),
         patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
@@ -1141,7 +1201,10 @@ def test_restart_keeps_replacement_shell_when_old_process_tree_does_not_exit(
         patch("services.tmux_driver._server_for", return_value=server),
         patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
         patch("services.tmux_driver._pane_owner_pids", return_value={111}),
-        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
         patch("services.tmux_driver._wait_for_processes_exit", return_value=False),
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
@@ -1178,7 +1241,10 @@ def test_restart_cleans_replacement_only_when_old_window_provably_survives(
         patch("services.tmux_driver._server_for", return_value=server),
         patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
         patch("services.tmux_driver._pane_owner_pids", return_value={111}),
-        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
@@ -1216,7 +1282,10 @@ def test_restart_preserves_replacement_when_old_disappears_despite_kill_error(
         patch("services.tmux_driver._server_for", return_value=server),
         patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
         patch("services.tmux_driver._pane_owner_pids", return_value={111}),
-        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+        patch(
+            "services.tmux_driver._pane_environment_snapshot",
+            return_value={"PATH": "/test/bin"},
+        ),
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",

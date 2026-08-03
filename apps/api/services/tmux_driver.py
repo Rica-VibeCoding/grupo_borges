@@ -822,42 +822,26 @@ def _pane_channel_flags(pane_pid: int) -> str:
     return ""
 
 
-def _pane_launch_path(pane_pid: int) -> str:
-    """Preserva o PATH efetivo do processo foreground, inclusive exports locais."""
-    candidate_pids = [pane_pid]
-    try:
-        stat = Path(f"/proc/{pane_pid}/stat").read_text()
-        fields = stat[stat.rfind(")") + 2 :].split()
-        foreground_group = int(fields[5])
-        if foreground_group > 0:
-            candidate_pids.insert(0, foreground_group)
-    except (IndexError, OSError, ValueError):
-        pass
-
-    for candidate_pid in candidate_pids:
-        try:
-            environment = Path(f"/proc/{candidate_pid}/environ").read_bytes()
-        except OSError:
-            continue
-        for item in environment.split(b"\0"):
-            if item.startswith(b"PATH="):
-                value = item.removeprefix(b"PATH=").decode(errors="replace")
-                if value:
-                    return value
-    return os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+#: Env vars do processo antigo que precisam sobreviver ao relaunch. Diferente
+#: de `_CHANNEL_FLAGS` (argumento de CLI, não env var — continua lido do
+#: `cmdline`), estas viajam pelo mecanismo nativo do tmux (`set-environment`/
+#: `show-environment`, testado empiricamente: tmux 3.4 injeta a env da sessão
+#: em qualquer window nova) em vez de virarem prefixo `VAR=valor` costurado
+#: na string do comando — um lugar só pra crescer a lista, sem função nova
+#: por variável nem `shlex.quote` acumulando por cada entrada.
+_PRESERVED_ENV_VARS = ("PATH", "TELEGRAM_STATE_DIR")
 
 
-def _pane_telegram_state_dir(pane_pid: int) -> str | None:
-    """Preserva o `TELEGRAM_STATE_DIR` efetivo do processo foreground.
+def _pane_environment_snapshot(
+    pane_pid: int, names: tuple[str, ...]
+) -> dict[str, str]:
+    """Lê do `/proc/<pid>/environ` do processo foreground os `names` pedidos.
 
-    Sem isto, o relaunch derrubava o poller no diretório default do plugin
-    (`~/.claude/channels/telegram/`) em vez do canal próprio do agente —
-    quem não fosse o dono desse default passava a competir com ele pelo
-    mesmo bot/token, perdendo mensagem por causa do offset do `getUpdates`.
-    Aconteceu de verdade com o Pavan em 03/08, roubando o canal do Daniel.
-    `None` (em vez de string vazia) quando o processo antigo não tinha a
-    var setada — alguns agentes usam o default do plugin de propósito, e
-    forçar a var vazia mudaria esse comportamento em vez de preservá-lo.
+    Uma passada só resolve todas as vars de uma vez — mesma lógica de
+    candidatos (pane vs. grupo foreground) que `_pane_channel_flags` usa pra
+    args de CLI, aqui aplicada a env vars. Nome ausente no processo antigo
+    simplesmente não entra no dict (sem forçar vazio) — quem chama decide se
+    isso vira `unset` ou um default.
     """
     candidate_pids = [pane_pid]
     try:
@@ -869,19 +853,23 @@ def _pane_telegram_state_dir(pane_pid: int) -> str | None:
     except (IndexError, OSError, ValueError):
         pass
 
+    prefixes = {name: f"{name}=".encode() for name in names}
+    found: dict[str, str] = {}
     for candidate_pid in candidate_pids:
+        if len(found) == len(names):
+            break
         try:
             environment = Path(f"/proc/{candidate_pid}/environ").read_bytes()
         except OSError:
             continue
         for item in environment.split(b"\0"):
-            if item.startswith(b"TELEGRAM_STATE_DIR="):
-                value = item.removeprefix(b"TELEGRAM_STATE_DIR=").decode(
-                    errors="replace"
-                )
+            for name, prefix in prefixes.items():
+                if name in found or not item.startswith(prefix):
+                    continue
+                value = item.removeprefix(prefix).decode(errors="replace")
                 if value:
-                    return value
-    return None
+                    found[name] = value
+    return found
 
 
 def _wait_for_processes_exit(process_ids: set[int]) -> bool:
@@ -1020,18 +1008,26 @@ def _restart_claude_with_resume_sync(
 
         old_window_id = old_pane.window.window_id
         old_process_ids = _pane_owner_pids(int(old_pane.pane_pid))
-        launch_path = _pane_launch_path(int(old_pane.pane_pid))
         # Lido ANTES do kill: depois que o processo morre o `/proc` some junto,
-        # e com ele a única prova de quais canais o agente tinha ligado.
+        # e com ele a única prova de quais canais/env o agente tinha ligado.
         channel_flags = _pane_channel_flags(int(old_pane.pane_pid))
-        telegram_state_dir = _pane_telegram_state_dir(int(old_pane.pane_pid))
-        state_dir_export = (
-            f"TELEGRAM_STATE_DIR={shlex.quote(telegram_state_dir)} "
-            if telegram_state_dir
-            else ""
+        env_snapshot = _pane_environment_snapshot(
+            int(old_pane.pane_pid), _PRESERVED_ENV_VARS
         )
+        env_snapshot.setdefault(
+            "PATH", os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+        )
+        # Sessão (não window) é o escopo nativo do tmux pra env: o tmux aplica
+        # sozinho na window nova criada a seguir, sem passar pelo shell —
+        # dispensa `shlex.quote` por variável e cresce só adicionando nome em
+        # `_PRESERVED_ENV_VARS`, sem função nova.
+        for name in _PRESERVED_ENV_VARS:
+            value = env_snapshot.get(name)
+            if value is not None:
+                session.set_environment(name, value)
+            else:
+                session.unset_environment(name)
         launch_command = (
-            f"{state_dir_export}PATH={shlex.quote(launch_path)} "
             f"{resume_command}{channel_flags}; "
             'exec "${SHELL:-/bin/sh}"'
         )
