@@ -37,7 +37,7 @@ import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from libtmux import exc as libtmux_exc
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
@@ -333,6 +333,14 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     return agent
+
+
+async def _send_tmux_or_409(session_name: str, text: str) -> bool:
+    """Envia ao pane ou distingue contenção transitória de pane indisponível."""
+    try:
+        return await tmux_driver.send_message(session_name, text)
+    except tmux_driver.TmuxSessionBusyError as exc:
+        raise HTTPException(status_code=409, detail="agent_tmux_busy") from exc
 
 
 @router.get(
@@ -1534,7 +1542,7 @@ async def patch_agent_mcp(
 @router.post("/{slug}/mcp/reload", response_model=McpReloadResponse)
 async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
     agent = await _get_agent_or_404(request, slug)
-    delivered = await tmux_driver.send_message(agent["tmux_session"], "/reload-plugins")
+    delivered = await _send_tmux_or_409(agent["tmux_session"], "/reload-plugins")
     return McpReloadResponse(tmux_delivered=delivered)
 
 
@@ -1588,6 +1596,10 @@ class InputResponse(BaseModel):
     tmux_delivered: bool
     sent_at: int
     event_boundary_id: int
+
+
+class RelaunchRequest(BaseModel):
+    confirm: StrictBool
 
 
 class ModelChangeRequest(BaseModel):
@@ -2079,7 +2091,7 @@ async def send_agent_input(
             fresh=payload.fresh,
         )
     else:
-        delivered = await tmux_driver.send_message(agent["tmux_session"], payload.text)
+        delivered = await _send_tmux_or_409(agent["tmux_session"], payload.text)
         if not delivered:
             raise HTTPException(status_code=409, detail="agent_pane_unavailable")
 
@@ -2145,23 +2157,32 @@ def _voice_log_tail(value: str | bytes | None) -> str:
 
 
 def _probe_audio_duration_ms(path: str) -> int | None:
-    """Return media duration from ffprobe without making STT depend on it."""
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                path,
-            ],
+    """Return media duration from ffprobe without making STT depend on it.
+
+    MediaRecorder WebM may not finalize ``format.duration``. Keep that cheap
+    header lookup as the fast path, then decode frames only when it is absent.
+    Both probes share one deadline so instrumentation cannot extend its budget.
+    """
+    deadline = time.monotonic() + _VOICE_AUDIO_PROBE_TIMEOUT_S
+
+    def run_ffprobe(*args: str) -> subprocess.CompletedProcess[str]:
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0:
+            raise subprocess.TimeoutExpired(cmd=["ffprobe", *args, path], timeout=0)
+        return subprocess.run(
+            ["ffprobe", "-v", "error", *args, path],
             capture_output=True,
-            timeout=_VOICE_AUDIO_PROBE_TIMEOUT_S,
+            timeout=remaining_s,
             text=True,
             errors="replace",
+        )
+
+    try:
+        result = run_ffprobe(
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         voice_log.warning("voice_audio_probe_failed error=%r", exc)
@@ -2175,17 +2196,68 @@ def _probe_audio_duration_ms(path: str) -> int | None:
         )
         return None
 
+    raw_duration = (result.stdout or "").strip()
     try:
-        duration_seconds = float((result.stdout or "").strip())
+        duration_seconds = float(raw_duration)
         if not 0 <= duration_seconds < float("inf"):
             raise ValueError("duration must be finite and non-negative")
         return round(duration_seconds * 1000)
     except (OverflowError, ValueError):
+        if raw_duration not in {"", "N/A"}:
+            voice_log.warning(
+                "voice_audio_probe_failed invalid_duration=%r",
+                raw_duration,
+            )
+            return None
+
+    try:
+        result = run_ffprobe(
+            "-select_streams",
+            "a:0",
+            "-show_frames",
+            "-show_entries",
+            "frame=pts_time,duration_time",
+            "-of",
+            "csv=p=0",
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        voice_log.warning("voice_audio_probe_failed error=%r", exc)
+        return None
+
+    if result.returncode != 0:
         voice_log.warning(
-            "voice_audio_probe_failed invalid_duration=%r",
-            (result.stdout or "").strip(),
+            "voice_audio_probe_failed exit_code=%d stderr=%r",
+            result.returncode,
+            _voice_log_tail(result.stderr),
         )
         return None
+
+    first_pts: float | None = None
+    last_end: float | None = None
+    for line in (result.stdout or "").splitlines():
+        values = line.split(",")
+        try:
+            pts = float(values[0])
+            frame_duration = float(values[1]) if len(values) > 1 else 0.0
+            if (
+                not 0 <= frame_duration < float("inf")
+                or not abs(pts) < float("inf")
+            ):
+                continue
+        except (IndexError, OverflowError, ValueError):
+            continue
+        first_pts = pts if first_pts is None else min(first_pts, pts)
+        frame_end = pts + frame_duration
+        last_end = frame_end if last_end is None else max(last_end, frame_end)
+
+    if first_pts is not None and last_end is not None and last_end >= first_pts:
+        return round((last_end - first_pts) * 1000)
+
+    voice_log.warning(
+        "voice_audio_probe_failed invalid_duration=%r",
+        raw_duration,
+    )
+    return None
 
 
 def _sniff_agent_image_type(data: bytes) -> str | None:
@@ -2380,7 +2452,7 @@ async def post_agent_voice(
                 "event_boundary_id": event_boundary_id,
             }
 
-        delivered = await tmux_driver.send_message(
+        delivered = await _send_tmux_or_409(
             agent["tmux_session"], f"🎙 {transcribed}"
         )
         duration_ms = int((time.monotonic() - started_at) * 1000)
@@ -2463,7 +2535,7 @@ async def post_agent_image(
             "duration_ms": duration_ms,
         }
 
-    delivered = await tmux_driver.send_message(agent["tmux_session"], text)
+    delivered = await _send_tmux_or_409(agent["tmux_session"], text)
     duration_ms = int((time.monotonic() - started_at) * 1000)
     log.info("agent %s: imagem salva %s", slug, absolute_path)
     return {
@@ -2543,7 +2615,7 @@ async def change_agent_model(
 
     session = agent["tmux_session"]
 
-    delivered = await tmux_driver.send_message(session, f"/model {target}")
+    delivered = await _send_tmux_or_409(session, f"/model {target}")
 
     state_persisted = False
     confirmed = False
@@ -2767,16 +2839,67 @@ async def spawn_agent_subsession(
 
 @router.post("/{slug}/destrava")
 async def post_agent_destrava(slug: str, request: Request) -> dict[str, Any]:
-    """Envia Escape no pane ativo do agente — destrava modais interativos do CC
-    (`/status`, `/mcp`, `/memory`, `/config`, prompts de confirmação) que cobrem
-    o input. Idempotente: sem modal aberto, Escape vira no-op no CC.
+    """Executa escada determinística para recuperar modal ou texto armado.
 
     - 404 quando agente não existe
-    - 200 + {tmux_delivered, sent_at} no caminho feliz
+    - Escape fecha modal; input vazio confirma que o destravamento funcionou
+    - input armado recebe Enter e, se necessário, é recapturado/recolado igual
+    - 200 sempre informa ``degrau``, ``acao`` e ``tmux_delivered`` observados
+
+    O front atual lê apenas ``tmux_delivered``; por isso o degrau 2 retorna
+    ``true`` quando Escape cumpriu o papel e não havia texto armado a submeter.
     """
     agent = await _get_agent_or_404(request, slug)
-    delivered = await tmux_driver.press_escape(agent["tmux_session"])
-    return {"tmux_delivered": delivered, "sent_at": int(time.time())}
+    result = await tmux_driver.recover_input(agent["tmux_session"])
+    return {**result, "sent_at": int(time.time())}
+
+
+@router.post("/{slug}/relaunch")
+async def post_agent_relaunch(
+    slug: str,
+    payload: RelaunchRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Relança o pane do Claude Code com ``--resume <session_id>``.
+
+    Esta operação mata o processo atual do pane. Por ser destrutiva, o payload
+    exige o campo booleano obrigatório ``confirm`` e só aceita ``true``. O ID da
+    conversa vem do último JSONL principal persistido; sem ele o endpoint falha
+    em vez de iniciar uma conversa nova e perder silenciosamente o contexto.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
+    if agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex":
+        raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
+    if agent.get("model_family") not in {None, "anthropic"}:
+        raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
+
+    db: GrupoBorgesDB = request.app.state.db
+    session_id = await db.latest_jsonl_session_id(slug)
+    if session_id is None:
+        raise HTTPException(status_code=409, detail="resume_session_not_found")
+
+    try:
+        result = await tmux_driver.restart_claude_with_resume(
+            agent["tmux_session"],
+            agent["workspace_path"],
+            agent["model_default"],
+            session_id,
+        )
+    except (
+        ValueError,
+        libtmux_exc.LibTmuxException,
+        tmux_driver.TmuxSessionBusyError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
+
+    return {
+        "tmux_delivered": result["confirmed"],
+        "attempted": result["attempted"],
+        "session_id": session_id,
+        "sent_at": int(time.time()),
+    }
 
 
 @router.post("/{slug}/clear")
@@ -2786,7 +2909,7 @@ async def post_agent_clear(slug: str, request: Request) -> dict[str, Any]:
     no botão do painel — backend só entrega.
     """
     agent = await _get_agent_or_404(request, slug)
-    delivered = await tmux_driver.send_message(agent["tmux_session"], "/clear")
+    delivered = await _send_tmux_or_409(agent["tmux_session"], "/clear")
     return {"tmux_delivered": delivered, "sent_at": int(time.time())}
 
 

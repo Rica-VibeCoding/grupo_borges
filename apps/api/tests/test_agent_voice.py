@@ -203,6 +203,25 @@ def test_audio_duration_probe_is_best_effort(caplog) -> None:
     assert caplog.text.count("voice_audio_probe_failed") == 2
 
 
+def test_audio_duration_probe_decodes_frames_when_header_has_no_duration() -> None:
+    header = _fake_completed(stdout="N/A\n")
+    frames = _fake_completed(
+        stdout="-0.007000,0.020000\n0.014000,0.020000\n1.974000,0.016000,\n"
+    )
+
+    with patch(
+        "routers.agents.subprocess.run", side_effect=[header, frames]
+    ) as ffprobe:
+        assert agents_router._probe_audio_duration_ms("/tmp/live.webm") == 1997
+
+    assert ffprobe.call_count == 2
+    header_call, frames_call = ffprobe.call_args_list
+    assert "format=duration" in header_call.args[0]
+    assert "-show_frames" in frames_call.args[0]
+    assert "frame=pts_time,duration_time" in frames_call.args[0]
+    assert 0 < frames_call.kwargs["timeout"] <= header_call.kwargs["timeout"] <= 5
+
+
 def test_voice_log_tail_is_bounded() -> None:
     stderr = "prefixo-sensivel\n" + ("x" * (agents_router._VOICE_LOG_TAIL_CHARS + 10))
 
