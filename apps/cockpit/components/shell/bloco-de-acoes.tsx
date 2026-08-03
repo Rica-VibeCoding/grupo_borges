@@ -25,13 +25,6 @@
  * quinto botão óbvio — mas o §17 lista quatro rotas, e é destrutivo. Entra
  * quando for pedido, não porque cabia.
  *
- * ARQUIVO NOVO DE PROPÓSITO, e o `app-shell.tsx` não é tocado: o Hiro está
- * mexendo na posição e na velocidade do mesmo painel. Nada aqui escreve no
- * `globals.css` pelo mesmo motivo (`.ck-flutua`/`.ck-surge` são dele nesta
- * rodada) — a pele usa só token e classe que já existem. A integração no JSX
- * do painel (`app/agente/[slug]/page.tsx`) é o passo seguinte, depois que o
- * commit dele fechar.
- *
  * A régua — quais controles existem, em que ordem, como se traduzem e o que
  * cada falha diz — mora em `acoes-rapidas.ts`, testada. Aqui fica só estado,
  * rede e pixel.
@@ -43,6 +36,8 @@ import {
   patchAgentEffort,
   patchAgentPermissionMode,
   postAgentDestrava,
+  postAgentRelaunch,
+  type RelaunchResponse,
 } from '@grupo_borges/cockpit-core/api';
 import type {
   AgentPainelResponse,
@@ -51,37 +46,47 @@ import type {
 } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
+  CONFIRMA_RELANCAR_MS,
   RECIBO_MS,
+  RETENTA_PAINEL_BASE_MS,
+  RETENTA_PAINEL_TETO_MS,
   descreveControle,
+  descreveRelancar,
   diagnosticaAcao,
+  diagnosticaRelancar,
+  ehCodex,
   leiaDestrava,
+  leiaRelancar,
   montaControles,
   rotulaDestrava,
+  rotulaRelancar,
   type AcaoId,
   type Controle,
   type FaseDestrava,
+  type FaseRelancar,
   type Impedimento,
 } from './acoes-rapidas';
 import { IconeDescartar } from './icones';
+import { usaCompact } from '../../lib/compact';
 import { usePainelAberto } from './superficie-otimista';
 
-/** As cinco chamadas que este bloco faz. Existe como prop para a vitrine poder
- *  exercitar falha e demora sem back nenhum — o mesmo papel do `faseForcada`
- *  no composer, só que sem contaminar o componente com estado de mentira. */
-export type TransporteDeAcoes = {
-  lePainel: (slug: string, signal?: AbortSignal) => Promise<AgentPainelResponse>;
-  gravaEsforco: (slug: string, valor: string) => Promise<unknown>;
-  gravaPermissao: (slug: string, valor: PainelPermissionMode) => Promise<unknown>;
-  gravaSandbox: (slug: string, valor: PainelCodexSandbox) => Promise<unknown>;
-  destrava: (slug: string) => Promise<{ tmux_delivered: boolean }>;
-};
+/** Tempo que a confirmação do destrava-durante-compact fica armada. Passou,
+ *  o botão volta ao normal — confirmação que expira não prende o dedo de
+ *  ninguém num estado que ele já esqueceu. */
+const CONFIRMA_COMPACT_MS = 4_000;
 
-const TRANSPORTE_REAL: TransporteDeAcoes = {
+
+/** As seis chamadas que este bloco faz, contra o agente de verdade. Já foram
+ *  injetáveis por prop para a vitrine `/acoes` exercitar falha e demora sem
+ *  back; a vitrine morreu em 02/08 e a injeção foi junto — o painel fala com o
+ *  agente e ponto. */
+const REDE = {
   lePainel: fetchAgentPainel,
   gravaEsforco: patchAgentEffort,
   gravaPermissao: patchAgentPermissionMode,
   gravaSandbox: patchAgentCodexSandbox,
   destrava: postAgentDestrava,
+  relanca: postAgentRelaunch,
 };
 
 export type BlocoDeAcoesProps = {
@@ -92,38 +97,69 @@ export type BlocoDeAcoesProps = {
    *  saída da §17), então este booleano é a única forma de o bloco saber que
    *  voltou à tela — e cada volta re-busca. */
   aberto: boolean;
-  /** Só a vitrine injeta. */
-  transporte?: TransporteDeAcoes;
 };
 
 type Carga = 'ocioso' | 'carregando' | 'pronto' | 'indisponivel';
 
-export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }: BlocoDeAcoesProps) {
+export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAcoesProps) {
   // O valor OTIMISTA, não o da URL. O painel abre no mesmo frame do clique
   // (`superficie-otimista.tsx`, do Hiro) enquanto a navegação `?painel=…` leva
   // 2,0–2,7s para voltar do servidor. Reagir à URL faria a busca do `/painel`
   // chegar com esse atraso inteiro — o painel abriria mostrando o esforço
   // velho por dois segundos, que é justamente o defeito que esta re-busca
-  // existe para evitar. Fora do provider (a vitrine `/acoes`) o hook devolve o
-  // fallback, e o comportamento é o de antes.
+  // existe para evitar. Fora do provider o hook devolve o fallback.
   const aberto = usePainelAberto(abertoDoServidor);
-  // O transporte é lido por REF, nunca como dependência de efeito. Quem passa
-  // um objeto literal (`transporte={{...}}`) constrói um objeto novo a cada
-  // render, e um efeito que dependesse dessa identidade re-buscaria em laço
-  // infinito — foi exatamente o que a vitrine produziu na primeira conferência
-  // no browser: overlay de erro do Next e só a primeira seção renderizada.
-  // Transporte é parâmetro de construção, não estado; ref é a forma honesta de
-  // dizer isso.
-  const redeRef = useRef<TransporteDeAcoes>(transporte ?? TRANSPORTE_REAL);
-  useEffect(() => {
-    redeRef.current = transporte ?? TRANSPORTE_REAL;
-  });
 
   const [painel, setPainel] = useState<AgentPainelResponse | null>(null);
   const [carga, setCarga] = useState<Carga>('ocioso');
   const [emVoo, setEmVoo] = useState<{ id: AcaoId; valor: string } | null>(null);
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
+  const [relancar, setRelancar] = useState<FaseRelancar>('ocioso');
+  const [retentativa, setRetentativa] = useState(0);
+  const relancarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
+  // 02/08. O destrava continua acessível (agente travado é pior que compact
+  // perdido), mas o primeiro toque vira aviso e só o segundo dispara. Só a
+  // fase `compactando` pede confirmação: no `concluindo` o resumo já existe e
+  // no `sem-retorno` o composer já está livre — proteger esses dois seria
+  // copiar a proteção sem o perigo, como a pressão longa do cockpit antigo.
+  const { estado: estadoCompact, cancelar: cancelarCompact } = usaCompact(agentSlug);
+  const compactEmVoo = estadoCompact.fase === 'compactando';
+  const [confirmaCompact, setConfirmaCompact] = useState(false);
+  const confirmaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // O compact terminou (ou o painel fechou) com a confirmação armada: desarma
+    // — o toque seguinte tem de ser lido do zero, não herdar um "quase" velho.
+    if (compactEmVoo) return;
+    setConfirmaCompact(false);
+    if (confirmaTimer.current) clearTimeout(confirmaTimer.current);
+  }, [compactEmVoo, aberto]);
+
+  useEffect(
+    () => () => {
+      if (confirmaTimer.current) clearTimeout(confirmaTimer.current);
+    },
+    [],
+  );
+
+  // Painel fechado desarma o relançar. Confirmação armada é uma pergunta aberta
+  // na tela; se a tela saiu, a pergunta caducou — reabrir e encontrar o botão
+  // já no "tocar de novo confirma" faria um toque distraído matar o turno.
+  useEffect(() => {
+    if (aberto) return;
+    setRelancar((fase) => (fase === 'confirmando' ? 'ocioso' : fase));
+    if (relancarTimer.current) clearTimeout(relancarTimer.current);
+  }, [aberto]);
+
+  useEffect(
+    () => () => {
+      if (relancarTimer.current) clearTimeout(relancarTimer.current);
+    },
+    [],
+  );
 
   // Uma troca pode ser atropelada por outra (o dedo insiste). A resposta velha
   // não pode reverter o valor que a nova acabou de aplicar — sem isto, dois
@@ -134,7 +170,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
   const buscar = useCallback(
     (signal?: AbortSignal) => {
       setCarga((atual) => (atual === 'pronto' ? atual : 'carregando'));
-      redeRef.current
+      REDE
         .lePainel(agentSlug, signal)
         .then((novo) => {
           if (signal?.aborted) return;
@@ -163,6 +199,34 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
     buscar(controlador.signal);
     return () => controlador.abort();
   }, [aberto, buscar]);
+
+  // O painel se reconecta sozinho. Antes disto, uma única falha de rede deixava
+  // `carga` em `indisponivel` para sempre — o `buscar` só rodava de novo se o
+  // Rica fechasse e reabrisse a gaveta. Um restart da API de 6 segundos bastava
+  // para os controles sumirem da tela dele e não voltarem, que foi o incidente
+  // de 02/08 ("essa merda desse botão não volta"). `retentativa` é state, não
+  // ref, de propósito: o `.catch` do `buscar` reescreve `indisponivel` com o
+  // mesmo valor e o React não re-renderiza, então sem um valor que muda a cada
+  // rodada o agendamento pararia na primeira tentativa.
+  useEffect(() => {
+    if (!aberto || carga !== 'indisponivel') {
+      if (retentativa !== 0) setRetentativa(0);
+      return;
+    }
+    const espera = Math.min(
+      RETENTA_PAINEL_BASE_MS * 2 ** retentativa,
+      RETENTA_PAINEL_TETO_MS,
+    );
+    const controlador = new AbortController();
+    const agendado = setTimeout(() => {
+      setRetentativa((n) => n + 1);
+      buscar(controlador.signal);
+    }, espera);
+    return () => {
+      clearTimeout(agendado);
+      controlador.abort();
+    };
+  }, [aberto, carga, retentativa, buscar]);
 
   useEffect(
     () => () => {
@@ -198,7 +262,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
     aplicaLocal(controle.id, valor);
 
     try {
-      const rede = redeRef.current;
+      const rede = REDE;
       if (controle.id === 'esforco') await rede.gravaEsforco(agentSlug, valor);
       else if (controle.id === 'permissao') {
         await rede.gravaPermissao(agentSlug, valor as PainelPermissionMode);
@@ -219,10 +283,25 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
 
   async function acionarDestrava() {
     if (destrava === 'enviando') return;
+    // Compact em voo: o primeiro toque ARMA, não dispara. O Escape que sai
+    // agora corta o resumo ao meio — o Rica decide isso sabendo, não por
+    // acidente. Confirmado, a máquina do compact é cancelada ANTES do disparo:
+    // sem isto a barra continuaria esperando um resumo que o Escape matou.
+    if (compactEmVoo && !confirmaCompact) {
+      setConfirmaCompact(true);
+      if (confirmaTimer.current) clearTimeout(confirmaTimer.current);
+      confirmaTimer.current = setTimeout(() => setConfirmaCompact(false), CONFIRMA_COMPACT_MS);
+      return;
+    }
+    if (confirmaCompact) {
+      setConfirmaCompact(false);
+      if (confirmaTimer.current) clearTimeout(confirmaTimer.current);
+      cancelarCompact();
+    }
     setFalha(null);
     setDestrava('enviando');
     try {
-      const resposta = await redeRef.current.destrava(agentSlug);
+      const resposta = await REDE.destrava(agentSlug);
       const aviso = leiaDestrava(resposta);
       if (aviso) {
         setFalha(aviso);
@@ -241,7 +320,46 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
     }
   }
 
+  async function acionarRelancar() {
+    if (relancar === 'enviando') return;
+
+    // Primeiro toque ARMA. O relançar mata o processo do pane: o turno em voo
+    // morre e só a conversa volta. Diferente do destrava, que é um Escape
+    // idempotente e não custa nada errar.
+    if (relancar !== 'confirmando') {
+      setFalha(null);
+      setRelancar('confirmando');
+      if (relancarTimer.current) clearTimeout(relancarTimer.current);
+      relancarTimer.current = setTimeout(() => {
+        setRelancar((fase) => (fase === 'confirmando' ? 'ocioso' : fase));
+      }, CONFIRMA_RELANCAR_MS);
+      return;
+    }
+
+    if (relancarTimer.current) clearTimeout(relancarTimer.current);
+    setFalha(null);
+    setRelancar('enviando');
+    try {
+      const resposta = await REDE.relanca(agentSlug);
+      const aviso = leiaRelancar(resposta);
+      if (aviso) {
+        setFalha(aviso);
+        setRelancar('ocioso');
+        return;
+      }
+      setRelancar('relancado');
+      relancarTimer.current = setTimeout(() => setRelancar('ocioso'), RECIBO_MS);
+    } catch (erro) {
+      setRelancar('ocioso');
+      setFalha(diagnosticaRelancar(erro));
+    }
+  }
+
   const controles = painel ? montaControles(painel) : [];
+  // O back recusaria com 409 `relaunch_somente_claude_code`, mas oferecer um
+  // botão que só existe para dar erro é pior do que não oferecer: `--resume` é
+  // conceito de Claude Code, e a Tara retoma thread por outro caminho.
+  const codex = painel ? ehCodex(painel) : false;
 
   return (
     <section
@@ -294,9 +412,11 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
             // o texto visível (WCAG 2.5.3). Fora do ocioso o rótulo sozinho já
             // é a frase inteira.
             aria-label={
-              destrava === 'ocioso'
-                ? 'Destravar o agente — envia Escape no terminal dele'
-                : rotulaDestrava(destrava)
+              confirmaCompact && compactEmVoo
+                ? 'Destravar interrompe o resumo do compact — tocar de novo confirma'
+                : destrava === 'ocioso'
+                  ? 'Destravar o agente — envia Escape no terminal dele'
+                  : rotulaDestrava(destrava)
             }
             className="ck-veil flex w-full items-center justify-center border"
             style={{
@@ -306,12 +426,53 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor, transporte }
               borderColor: 'var(--ck-edge-functional)',
               fontSize: 'var(--ck-text-sm)',
               // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
-              // portadora de significado (§3/§9.7).
-              color: destrava === 'entregue' ? 'var(--ck-state-ok)' : 'var(--ck-text-primary)',
+              // portadora de significado (§3/§9.7). A confirmação do compact
+              // entra na mesma régua — âmbar de atenção E outra frase.
+              color:
+                confirmaCompact && compactEmVoo
+                  ? 'var(--ck-state-attention)'
+                  : destrava === 'entregue'
+                    ? 'var(--ck-state-ok)'
+                    : 'var(--ck-text-primary)',
               transition: 'color var(--ck-dur-fast) var(--ck-ease)',
             }}
           >
-          {rotulaDestrava(destrava)}
+          {confirmaCompact && compactEmVoo
+            ? 'Interrompe o resumo — tocar de novo confirma'
+            : rotulaDestrava(destrava)}
+        </button>
+      ) : null}
+
+      {/* RELANÇAR — o degrau acima do destrava. Quando o Escape não resolve
+          porque o próprio Claude Code morreu, esta é a única saída que não
+          custa a conversa: sobe outro processo com `--resume`. Fica DEPOIS do
+          destrava de propósito: é a ação mais cara das duas, e a ordem na tela
+          é a ordem em que se deve tentar. */}
+      {carga === 'pronto' && !codex ? (
+        <button
+          type="button"
+          onClick={() => void acionarRelancar()}
+          aria-busy={relancar === 'enviando'}
+          aria-label={descreveRelancar(relancar)}
+          className="ck-veil flex w-full items-center justify-center border"
+          style={{
+            minHeight: 'var(--ck-touch-min)',
+            padding: '0 var(--ck-space-3)',
+            borderRadius: 'var(--ck-radius-frame)',
+            borderColor: 'var(--ck-edge-functional)',
+            fontSize: 'var(--ck-text-sm)',
+            // Mesma régua do destrava: a PALAVRA muda junto com a cor, nunca a
+            // cor sozinha (§3/§9.7).
+            color:
+              relancar === 'confirmando'
+                ? 'var(--ck-state-attention)'
+                : relancar === 'relancado'
+                  ? 'var(--ck-state-ok)'
+                  : 'var(--ck-text-primary)',
+            transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+          }}
+        >
+          {rotulaRelancar(relancar)}
         </button>
       ) : null}
 

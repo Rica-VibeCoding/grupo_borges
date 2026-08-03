@@ -250,6 +250,116 @@ export function leiaDestrava(resposta: { tmux_delivered: boolean }): Impedimento
 }
 
 // ---------------------------------------------------------------------------
+// Relançar
+// ---------------------------------------------------------------------------
+
+/**
+ * O relançar mata o processo do Claude Code no pane e sobe outro com
+ * `--resume <session_id>`. A conversa sobrevive; o turno em andamento, não.
+ *
+ * Por isso ele NÃO é toque simples como o destrava. O destrava manda um Escape
+ * idempotente — errar o toque não custa nada. Aqui errar o toque interrompe
+ * trabalho em voo. O gesto é o mesmo já usado no destrava-durante-compact
+ * (armar e confirmar), e não a pressão longa do cockpit antigo: pressão longa
+ * esconde a ação de quem está com pressa, e este botão existe justamente para
+ * a hora em que o canal do agente morreu e o Rica precisa dele de volta.
+ */
+export type FaseRelancar = 'ocioso' | 'confirmando' | 'enviando' | 'relancado';
+
+/** Quanto tempo a confirmação do relançar fica armada. Mais longa que a do
+ *  destrava-durante-compact (4s): ali o segundo toque é reflexo de quem já
+ *  decidiu, aqui a frase avisa que o turno atual morre e merece ser lida. */
+export const CONFIRMA_RELANCAR_MS = 6_000;
+
+/** Espera da primeira retentativa do `/painel` depois de ele ter caído, e teto
+ *  do crescimento. Painel fora do ar não pode virar estado permanente: um
+ *  restart da API de 6 segundos apagava os controles da tela até o Rica fechar
+ *  e reabrir a gaveta, e o que ele via era o botão sumindo sozinho e não
+ *  voltando mais. Começa curto porque a causa comum é justamente um restart —
+ *  e cresce até 15s para não martelar uma API que está de fato fora. */
+export const RETENTA_PAINEL_BASE_MS = 2_000;
+export const RETENTA_PAINEL_TETO_MS = 15_000;
+
+export function rotulaRelancar(fase: FaseRelancar): string {
+  if (fase === 'confirmando') return 'Mata o turno atual — tocar de novo confirma';
+  if (fase === 'enviando') return 'Relançando…';
+  if (fase === 'relancado') return 'Relançado com a conversa';
+  return 'Relançar mantendo a conversa';
+}
+
+/** O nome acessível. Fora do ocioso o rótulo visível já é a frase inteira —
+ *  repetir a explicação faria o leitor de tela ouvir duas vezes. */
+export function descreveRelancar(fase: FaseRelancar): string {
+  return fase === 'ocioso'
+    ? 'Relançar o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido'
+    : rotulaRelancar(fase);
+}
+
+/**
+ * Mesma régua do `leiaDestrava`: 200 não é sucesso. O back devolve `attempted`
+ * (mandou o comando) separado de `tmux_delivered` (viu o CC voltar de pé) —
+ * dizer "relançado" com o segundo falso seria prometer um agente vivo que
+ * pode ter ficado num pane morto, que é o pior lugar para mentir: o Rica só
+ * descobriria ao mandar a próxima mensagem e não receber nada.
+ */
+export function leiaRelancar(resposta: {
+  tmux_delivered: boolean;
+  attempted: boolean;
+}): Impedimento | null {
+  if (resposta.tmux_delivered) return null;
+  return resposta.attempted
+    ? {
+        resumo: 'mandei relançar mas o Claude Code não voltou de pé',
+        saida: 'abra o terminal do agente e veja o que ficou na tela antes de tentar de novo',
+      }
+    : {
+        resumo: 'o relançamento nem chegou a ser tentado',
+        saida: 'a sessão do agente pode estar fechada — confira se ela está viva',
+      };
+}
+
+/** Traduz as recusas do `POST /{slug}/relaunch`. Casa por substring do detail
+ *  preservado pelo `postAgentRelaunch`. */
+export function diagnosticaRelancar(erro: unknown): Impedimento {
+  const texto = textoDoErro(erro);
+
+  if (texto.includes('relaunch_somente_claude_code')) {
+    return {
+      resumo: 'este agente não roda Claude Code',
+      saida: 'a Tara é Codex — relançar preservando conversa só existe no Claude Code',
+    };
+  }
+  if (texto.includes('resume_session_not_found')) {
+    return {
+      resumo: 'não achei a conversa para retomar',
+      saida: 'relançar agora começaria do zero, então não relancei — fale com o agente uma vez e tente de novo',
+    };
+  }
+  if (texto.includes('relaunch_failed')) {
+    return {
+      resumo: 'o tmux recusou o relançamento',
+      saida: 'a sessão pode ter sido fechada por fora — confira se ela está viva',
+    };
+  }
+  if (texto.includes('confirmacao_explicita_obrigatoria')) {
+    return {
+      resumo: 'o servidor não recebeu a confirmação',
+      saida: 'isso é defeito nosso, não seu — avise o Daniel',
+    };
+  }
+  if (texto.includes('404')) {
+    return {
+      resumo: 'o agente sumiu da frota',
+      saida: 'volte para a lista e abra de novo',
+    };
+  }
+  return {
+    resumo: 'não consegui relançar o agente',
+    saida: 'nada foi alterado — tente de novo; se repetir, é infra',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Falha
 // ---------------------------------------------------------------------------
 
@@ -272,16 +382,21 @@ const NOME_DA_ACAO: Record<AcaoId, string> = {
  * substring é o que dá — e é frágil de propósito: rótulo novo cai no caso
  * geral, que continua acionável.
  */
-export function diagnosticaAcao(erro: unknown, id: AcaoId): Impedimento {
-  const texto =
-    typeof erro === 'string'
-      ? erro
-      : erro instanceof Error
-        ? erro.message
-        : typeof erro === 'object' && erro !== null && 'message' in erro
-          ? String((erro as { message: unknown }).message)
-          : '';
+/** O texto pesquisável de qualquer coisa que caia num `catch`. Extraído de
+ *  `diagnosticaAcao` quando o relançar precisou da mesma leitura — dois
+ *  diagnósticos casando substring sobre formas diferentes de erro dariam dois
+ *  jeitos sutilmente diferentes de errar. */
+function textoDoErro(erro: unknown): string {
+  if (typeof erro === 'string') return erro;
+  if (erro instanceof Error) return erro.message;
+  if (typeof erro === 'object' && erro !== null && 'message' in erro) {
+    return String((erro as { message: unknown }).message);
+  }
+  return '';
+}
 
+export function diagnosticaAcao(erro: unknown, id: AcaoId): Impedimento {
+  const texto = textoDoErro(erro);
   const alvo = NOME_DA_ACAO[id];
 
   if (texto.includes('not_a_codex_agent')) {
