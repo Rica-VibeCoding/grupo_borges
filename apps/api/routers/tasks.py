@@ -485,6 +485,14 @@ async def dispatch_task(
     dispatch_text = _format_dispatch_message(task=claimed["task"], note=payload.note)
     try:
         tmux_delivered = await tmux_driver.send_message(agent["tmux_session"], dispatch_text)
+    except tmux_driver.TmuxSessionBusyError as e:
+        await db.record_task_dispatch_failed(
+            task_id,
+            run_id=run_id,
+            tmux_session=agent["tmux_session"],
+            reason="tmux_busy",
+        )
+        raise HTTPException(status_code=409, detail="agent_tmux_busy") from e
     except Exception as e:
         await db.record_task_dispatch_failed(
             task_id,

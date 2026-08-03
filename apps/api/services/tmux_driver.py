@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import json
 import logging
 import os
 import re
@@ -10,10 +12,10 @@ import subprocess
 import threading
 import time
 import uuid
-from collections import defaultdict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, TypeVar
 
 import libtmux
 from libtmux import exc as libtmux_exc
@@ -27,18 +29,64 @@ _SUBMIT_POLL_INTERVAL_S = 0.05
 _SUBMIT_ENTER_RETRY_INTERVAL_S = 1.0
 _SUBMIT_MAX_ENTER_ATTEMPTS = 3
 _RECOVERY_STEP_TIMEOUT_S = 3.0
+# Espera pelo lock da sessão antes de devolver 409 `tmux_busy`. O teto existe
+# pra não enfileirar requisição indefinidamente, mas 0,25s (valor da primeira
+# rodada) recusava toda concorrência: uma entrega normal com a pane ocupada
+# gasta até ~19s (load 5 + pré-paste 8 + submissão 6), então a segunda mensagem
+# do Rica batia em 409 enquanto a primeira ainda estava sendo entregue — e um
+# 409 real apareceu no log em `POST /api/agents/pavan/input`. O motivo original
+# de falhar rápido era não saturar as 6 threads do executor default; isso saiu
+# de cena com o _TMUX_EXECUTOR dedicado abaixo, então esperar aqui não segura
+# mais banco, SSE nem /fleet. 5s cobre o caso comum com folga e ainda falha bem
+# antes do pior caso, que é quando o 409 honesto realmente ajuda.
+_DISPATCH_LOCK_TIMEOUT_S = 5.0
 
 log = logging.getLogger(__name__)
 
 # Lock por session_name pra evitar race em dispatches concorrentes no mesmo
 # pane: sem isso, dispatch B pode injetar paste/Enter entre o paste e o Enter
 # de A, e os 2 envelopes saem fundidos como um único prompt no CC.
-_DISPATCH_LOCKS: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+_DISPATCH_LOCKS: dict[str, threading.Lock] = {}
+_DISPATCH_LOCKS_GUARD = threading.Lock()
+
+# Operações de envio podem ficar dezenas de segundos observando a TUI. Elas não
+# podem ocupar o executor default, compartilhado pelas leituras da API e do DB.
+_TMUX_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cockpit-tmux")
 
 # Comandos esperados no pane ativo do agente. Se o user trocou de window (ex:
 # abriu shell auxiliar), `active_pane` aponta pra outra coisa — paste no shell
 # pode executar parte do envelope como comando. Guard aborta nesse caso.
 _EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
+
+
+class TmuxSessionBusyError(RuntimeError):
+    """Outra operação do cockpit já controla o mesmo pane tmux."""
+
+
+def _dispatch_lock_for(session_name: str) -> threading.Lock:
+    """Retorna um lock único por sessão, inclusive sob criação concorrente."""
+    with _DISPATCH_LOCKS_GUARD:
+        lock = _DISPATCH_LOCKS.get(session_name)
+        if lock is None:
+            lock = threading.Lock()
+            _DISPATCH_LOCKS[session_name] = lock
+        return lock
+
+
+def _acquire_dispatch_lock(session_name: str) -> threading.Lock:
+    lock = _dispatch_lock_for(session_name)
+    if not lock.acquire(timeout=_DISPATCH_LOCK_TIMEOUT_S):
+        raise TmuxSessionBusyError(f"sessão tmux ocupada: {session_name}")
+    return lock
+
+
+_T = TypeVar("_T")
+
+
+async def _run_tmux_operation(func: Callable[..., _T], *args: object) -> _T:
+    loop = asyncio.get_running_loop()
+    call = functools.partial(func, *args)
+    return await loop.run_in_executor(_TMUX_EXECUTOR, call)
 
 AgentCli = Literal["claude_code", "codex"]
 
@@ -114,13 +162,16 @@ def _server_for(session_name: str) -> libtmux.Server:
 
 _BOOTSTRAP_TIMEOUT_S = 15.0
 _BOOTSTRAP_POLL_INTERVAL_S = 0.25
+_RELAUNCH_PROCESS_EXIT_TIMEOUT_S = 5.0
 _PANE_EXCERPT_TIMEOUT_S = 0.5
 _PANE_EXCERPT_LINES = 12
 _PANE_EXCERPT_MAX_CHARS = 1200
 _REPOS_ROOT = Path("/home/clawd/repos").resolve()
 _UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
 _MODEL_PATTERN = re.compile(r"[a-z0-9.\-]{1,80}")
+_CLAUDE_ENCODED_CWD_CHARS = re.compile(r"[^a-zA-Z0-9]")
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_SGR_ESCAPE = re.compile(r"\x1b\[([0-9;:]*)m")
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # Variante que preserva ESC (0x1b) pra `preserve_ansi=True` — strippar o ESC
 # anula as escape sequences ANSI (vira `[31m...` literal no front).
@@ -170,6 +221,128 @@ def _is_input_border(line: str) -> bool:
     return len(stripped) >= 10 and set(stripped) <= {"─", "━", "-"}
 
 
+def _sgr_dim_state(sequence: str, dim: bool) -> bool:
+    """Aplica ao estado dim somente parâmetros SGR relevantes."""
+    raw_params = sequence[2:-1]
+    params = raw_params.split(";") if raw_params else ["0"]
+    index = 0
+    while index < len(params):
+        raw_param = params[index]
+        # Forma com dois-pontos mantém subparâmetros no mesmo item. Nenhuma
+        # variante de dim usa subparâmetro, então não a confunda com SGR 2.
+        if ":" in raw_param:
+            index += 1
+            continue
+        try:
+            param = int(raw_param or "0")
+        except ValueError:
+            index += 1
+            continue
+
+        # 38/48/58 introduzem cor estendida. Em ``38;2;r;g;b``, o 2 é modo
+        # RGB, não dim; consuma a sequência inteira antes de continuar.
+        if param in {38, 48, 58} and index + 1 < len(params):
+            try:
+                color_mode = int(params[index + 1])
+            except ValueError:
+                index += 1
+                continue
+            if color_mode == 5:
+                index += 3
+                continue
+            if color_mode == 2:
+                index += 5
+                continue
+        if param == 0:
+            dim = False
+        elif param == 2:
+            dim = True
+        elif param == 22:
+            dim = False
+        index += 1
+    return dim
+
+
+def _styled_input_content(lines: list[str]) -> tuple[str, bool]:
+    """Remove ANSI e informa se todo glifo do input estava sob SGR dim."""
+    output: list[str] = []
+    dim_by_char: list[bool] = []
+    dim = False
+    saw_sgr = False
+    content_started = False
+    separator_pending = False
+
+    for line_number, line in enumerate(lines):
+        if line_number and content_started:
+            output.append("\n")
+            dim_by_char.append(dim)
+        position = 0
+        while position < len(line):
+            escape = _ANSI_ESCAPE.match(line, position)
+            if escape is not None:
+                sequence = escape.group(0)
+                if _SGR_ESCAPE.fullmatch(sequence):
+                    saw_sgr = True
+                    dim = _sgr_dim_state(sequence, dim)
+                position = escape.end()
+                continue
+
+            char = line[position]
+            position += 1
+            if not content_started:
+                if char.isspace():
+                    continue
+                if char in _INPUT_PROMPT_MARKERS:
+                    content_started = True
+                    separator_pending = True
+                continue
+            if separator_pending:
+                separator_pending = False
+                if char in {" ", "\u00a0"}:
+                    continue
+            output.append(char)
+            dim_by_char.append(dim)
+
+    content = "".join(output).rstrip()
+    visible_styles = [
+        char_dim
+        for char, char_dim in zip(
+            output[: len(content)], dim_by_char[: len(content)], strict=True
+        )
+        if not char.isspace()
+    ]
+    entirely_dim = saw_sgr and bool(visible_styles) and all(visible_styles)
+    return content, entirely_dim
+
+
+def _capture_pane_with_sgr_fallback(
+    pane: libtmux.Pane,
+    *,
+    start: int,
+    end: int,
+    join_wrapped: bool,
+) -> tuple[list[str], bool]:
+    """Prefere ``capture-pane -e`` e degrada para a captura antiga."""
+    try:
+        lines = pane.capture_pane(
+            start=start,
+            end=end,
+            escape_sequences=True,
+            join_wrapped=join_wrapped,
+        )
+        return lines, any(_SGR_ESCAPE.search(line) for line in lines)
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return (
+            pane.capture_pane(
+                start=start,
+                end=end,
+                escape_sequences=False,
+                join_wrapped=join_wrapped,
+            ),
+            False,
+        )
+
+
 def _capture_input_snapshot(pane: libtmux.Pane) -> _PaneInputSnapshot:
     """Lê somente a caixa de input que contém o cursor atual.
 
@@ -190,16 +363,17 @@ def _capture_input_snapshot(pane: libtmux.Pane) -> _PaneInputSnapshot:
         return _PaneInputSnapshot("unknown", "")
 
     try:
-        lines = pane.capture_pane(
+        styled_lines, sgr_available = _capture_pane_with_sgr_fallback(
+            pane,
             start=0,
             end=max(0, pane_height - 1),
-            escape_sequences=False,
             join_wrapped=False,
         )
     except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
         return _PaneInputSnapshot("unknown", "")
-    if not lines or cursor_y >= len(lines):
+    if not styled_lines or cursor_y >= len(styled_lines):
         return _PaneInputSnapshot("unknown", "")
+    lines = [_ANSI_ESCAPE.sub("", line) for line in styled_lines]
 
     bottom_border = next(
         (row for row in range(cursor_y + 1, len(lines)) if _is_input_border(lines[row])),
@@ -227,16 +401,26 @@ def _capture_input_snapshot(pane: libtmux.Pane) -> _PaneInputSnapshot:
     try:
         # Segunda captura une somente soft-wraps do terminal. Assim o degrau 4
         # pode recolar o mesmo texto sem inserir quebras visuais artificiais.
-        content_lines = pane.capture_pane(
-            start=prompt_row,
-            end=bottom_border - 1,
-            escape_sequences=False,
-            join_wrapped=True,
-        )
+        if sgr_available:
+            styled_content_lines, content_has_sgr = _capture_pane_with_sgr_fallback(
+                pane,
+                start=prompt_row,
+                end=bottom_border - 1,
+                join_wrapped=True,
+            )
+        else:
+            styled_content_lines = pane.capture_pane(
+                start=prompt_row,
+                end=bottom_border - 1,
+                escape_sequences=False,
+                join_wrapped=True,
+            )
+            content_has_sgr = False
     except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
         return _PaneInputSnapshot("unknown", "")
-    if not content_lines:
+    if not styled_content_lines:
         return _PaneInputSnapshot("unknown", "")
+    content_lines = [_ANSI_ESCAPE.sub("", line) for line in styled_content_lines]
     first = content_lines[0].lstrip()
     if not first.startswith(_INPUT_PROMPT_MARKERS):
         return _PaneInputSnapshot("unknown", "")
@@ -248,12 +432,75 @@ def _capture_input_snapshot(pane: libtmux.Pane) -> _PaneInputSnapshot:
     # um texto curto volta com ~190 espaços). Eles são células de layout, não
     # input; soft-wraps já foram unidos acima, então retire só a cauda final.
     content = "\n".join(content_lines).rstrip()
+    styled_content, entirely_dim = _styled_input_content(styled_content_lines)
+    if content_has_sgr and styled_content == content and entirely_dim:
+        return _PaneInputSnapshot("empty", content)
     # Cursor em x=2 não basta: no incidente real o CC deixou texto visível
     # armado enquanto reportava o cursor no começo da caixa. Conteúdo vence a
     # posição para não declarar submissão falsa.
     if cursor_y == prompt_row and cursor_x <= 2 and not _normalize_visible_text(content):
         return _PaneInputSnapshot("empty", content)
     return _PaneInputSnapshot("armed", content)
+
+
+def _input_is_fully_visible_single_line(pane: libtmux.Pane, expected: str) -> bool:
+    """Prova conservadora antes de C-u: uma única linha física, inteira visível.
+
+    Texto multilinha, soft-wrapped ou com o início rolado para fora da caixa
+    falha fechado. O degrau 4 é um último recurso; é preferível deixar o input
+    intacto a reconstruí-lo a partir de uma captura parcial.
+    """
+    # ASCII permite relacionar bytes visíveis a células do terminal sem
+    # adivinhar largura de emoji/combining chars. Nos demais casos, falha
+    # fechado: o degrau 4 é opcional e destrutivo.
+    if not expected or "\n" in expected or not expected.isascii():
+        return False
+    try:
+        position = pane.cmd("display-message", "-p", "#{cursor_x}\t#{cursor_y}")
+        if position.returncode != 0 or not position.stdout:
+            return False
+        cursor_x, cursor_y = map(int, position.stdout[0].split("\t", 1))
+        pane_height = int(pane.pane_height)
+        pane_width = int(pane.pane_width)
+        styled_lines, _ = _capture_pane_with_sgr_fallback(
+            pane,
+            start=0,
+            end=max(0, pane_height - 1),
+            join_wrapped=False,
+        )
+    except (
+        libtmux_exc.LibTmuxException,
+        AttributeError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ):
+        return False
+
+    lines = [_ANSI_ESCAPE.sub("", line) for line in styled_lines]
+    if cursor_y >= len(lines):
+        return False
+    bottom_border = next(
+        (row for row in range(cursor_y + 1, len(lines)) if _is_input_border(lines[row])),
+        None,
+    )
+    prompt_row = next(
+        (
+            row
+            for row in range(cursor_y, -1, -1)
+            if lines[row].lstrip().startswith(_INPUT_PROMPT_MARKERS)
+        ),
+        None,
+    )
+    if prompt_row is None or bottom_border != prompt_row + 1 or cursor_y != prompt_row:
+        return False
+    visible, _ = _styled_input_content([styled_lines[prompt_row]])
+    expected_cursor_x = len(visible) + 2
+    return (
+        visible == expected
+        and cursor_x == expected_cursor_x
+        and cursor_x < pane_width - 1
+    )
 
 
 def _normalize_visible_text(value: str) -> str:
@@ -442,6 +689,180 @@ def _prepare_cli_launch(
     return resolved_workspace, command
 
 
+def _claude_resume_jsonl_path(workspace: Path, session_id: str) -> Path:
+    """Resolve o JSONL que o Claude Code indexa para este cwd exato."""
+    encoded_cwd = _CLAUDE_ENCODED_CWD_CHARS.sub("-", str(workspace))
+    return Path.home() / ".claude" / "projects" / encoded_cwd / f"{session_id}.jsonl"
+
+
+def _conversation_resume_anchors(jsonl_path: Path) -> list[str]:
+    """Extrai textos recentes que precisam reaparecer na TUI retomada.
+
+    O JSONL do Claude Code não tem schema público estável. O parser portanto
+    ignora linhas/campos desconhecidos e aceita conteúdo textual direto ou em
+    blocos ``{"type": "text", "text": ...}``.
+    """
+    anchors: list[str] = []
+    try:
+        lines = jsonl_path.read_text(errors="replace").splitlines()
+    except OSError:
+        return anchors
+
+    for raw_line in reversed(lines):
+        try:
+            entry = json.loads(raw_line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("type") not in {"user", "assistant"}:
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        texts: list[str] = []
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            texts.extend(
+                block["text"]
+                for block in content
+                if isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            )
+        for text in reversed(texts):
+            normalized = _normalize_visible_text(text)
+            if len(normalized) >= 24 and normalized not in anchors:
+                anchors.append(normalized)
+        if len(anchors) >= 8:
+            break
+    return anchors
+
+
+def _pane_owner_pids(pane_pid: int) -> set[int]:
+    """Lê os PIDs do shell do pane e do processo foreground no Linux."""
+    try:
+        stat = Path(f"/proc/{pane_pid}/stat").read_text()
+        fields = stat[stat.rfind(")") + 2 :].split()
+        foreground_group = int(fields[5])
+    except (IndexError, OSError, ValueError):
+        return {pane_pid}
+    return {pid for pid in (pane_pid, foreground_group) if pid > 0}
+
+
+def _pane_launch_path(pane_pid: int) -> str:
+    """Preserva o PATH efetivo do processo foreground, inclusive exports locais."""
+    candidate_pids = [pane_pid]
+    try:
+        stat = Path(f"/proc/{pane_pid}/stat").read_text()
+        fields = stat[stat.rfind(")") + 2 :].split()
+        foreground_group = int(fields[5])
+        if foreground_group > 0:
+            candidate_pids.insert(0, foreground_group)
+    except (IndexError, OSError, ValueError):
+        pass
+
+    for candidate_pid in candidate_pids:
+        try:
+            environment = Path(f"/proc/{candidate_pid}/environ").read_bytes()
+        except OSError:
+            continue
+        for item in environment.split(b"\0"):
+            if item.startswith(b"PATH="):
+                value = item.removeprefix(b"PATH=").decode(errors="replace")
+                if value:
+                    return value
+    return os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+
+
+def _wait_for_processes_exit(process_ids: set[int]) -> bool:
+    """Espera shell e Claude antigos encerrarem antes do resume."""
+    deadline = time.monotonic() + _RELAUNCH_PROCESS_EXIT_TIMEOUT_S
+    remaining = set(process_ids)
+    while remaining and time.monotonic() < deadline:
+        for process_id in tuple(remaining):
+            try:
+                os.kill(process_id, 0)
+            except ProcessLookupError:
+                remaining.remove(process_id)
+            except PermissionError:
+                pass
+        if remaining:
+            time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
+    return not remaining
+
+
+def _anchor_is_visible(output: str, anchor: str) -> bool:
+    """Tolera wrapping/cortes da TUI sem aceitar só um banner de sessão nova."""
+    if len(anchor) < 24:
+        return False
+    if anchor in output:
+        return True
+    return anchor[:80] in output or anchor[-80:] in output
+
+
+def _pane_contains_resume_anchor(pane: libtmux.Pane, anchors: list[str]) -> bool:
+    """Vincula conservadoramente o JSONL escolhido à conversa da pane atual."""
+    try:
+        lines = pane.capture_pane(escape_sequences=False, join_wrapped=True)
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return False
+    output = _normalize_visible_text("\n".join(lines))
+    return any(_anchor_is_visible(output, anchor) for anchor in anchors)
+
+
+def _remove_replacement_if_old_window_survives(
+    server: libtmux.Server,
+    session_name: str,
+    old_window_id: str,
+    replacement_window_id: str,
+) -> None:
+    """Evita window órfã sem jamais remover a única window sobrevivente."""
+    observed = server.cmd(
+        "list-windows",
+        "-t",
+        session_name,
+        "-F",
+        "#{window_id}",
+    )
+    if observed.returncode != 0:
+        return
+    window_ids = set(observed.stdout)
+    if {old_window_id, replacement_window_id} <= window_ids:
+        server.cmd("kill-window", "-t", replacement_window_id)
+
+
+def _wait_for_resumed_claude_tui(
+    pane: libtmux.Pane,
+    anchors: list[str],
+) -> dict[str, bool]:
+    """Confirma banner, caixa de input e conteúdo da conversa retomada."""
+    deadline = time.monotonic() + _BOOTSTRAP_TIMEOUT_S
+    while time.monotonic() < deadline:
+        try:
+            lines = pane.capture_pane(escape_sequences=False, join_wrapped=True)
+            output = _normalize_visible_text("\n".join(lines))
+            snapshot = _capture_input_snapshot(pane)
+            pane.refresh()
+        except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+            time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
+            continue
+        current_cmd = (pane.pane_current_command or "").lower()
+        context_visible = bool(anchors) and any(
+            _anchor_is_visible(output, anchor) for anchor in anchors
+        )
+        if (
+            current_cmd in {"claude", "node"}
+            and snapshot.state == "empty"
+            and context_visible
+        ):
+            return {"attempted": True, "confirmed": True}
+        time.sleep(_BOOTSTRAP_POLL_INTERVAL_S)
+    return {"attempted": True, "confirmed": False}
+
+
 async def bootstrap_cli_in_session(
     session: str, workspace_path: str, cli: AgentCli, model: str
 ) -> dict[str, bool]:
@@ -457,33 +878,83 @@ def _restart_claude_with_resume_sync(
     model: str,
     resume_session_id: str,
 ) -> dict[str, bool]:
-    """Substitui o processo do pane e retoma exatamente a conversa informada."""
-    resolved_workspace, command = _prepare_cli_launch(
+    """Troca a window do agente sem deixar a sessão tmux ficar sem window."""
+    resolved_workspace, resume_command = _prepare_cli_launch(
         workspace_path,
         "claude_code",
         model,
         resume_session_id=resume_session_id,
     )
+    resume_jsonl = _claude_resume_jsonl_path(resolved_workspace, resume_session_id)
+    if not resume_jsonl.is_file():
+        raise ValueError("session_id não pertence ao workspace atual")
+    anchors = _conversation_resume_anchors(resume_jsonl)
+    if not anchors:
+        raise ValueError("conversa sem texto observável para confirmar o resume")
+
+    # O shell final continua sendo a rede de segurança caso o Claude saia. Não
+    # há fallback para uma conversa fresh: uma TUI nova jamais pode confirmar
+    # este endpoint como se o contexto antigo tivesse voltado.
     server = _server_for(session_name)
     if not server.has_session(session_name):
         return {"attempted": False, "confirmed": False}
 
-    with _DISPATCH_LOCKS[session_name]:
+    lock = _acquire_dispatch_lock(session_name)
+    try:
         session = server.sessions.get(session_name=session_name)
-        pane = session.active_pane
-        # Passa o resume como comando do próprio respawn. Sem isso, tmux pode
-        # repetir o pane_start_command original (que nas units já é `claude`) e
-        # o bootstrap acabaria digitado dentro de outra TUI.
-        result = pane.cmd(
-            "respawn-pane",
-            "-k",
+        old_pane = session.active_pane
+        current_cmd = (old_pane.pane_current_command or "").lower()
+        if current_cmd not in _EXPECTED_PANE_COMMANDS:
+            return {"attempted": False, "confirmed": False}
+        if not _pane_contains_resume_anchor(old_pane, anchors):
+            raise ValueError("session_id não corresponde à conversa visível no pane")
+
+        old_window_id = old_pane.window.window_id
+        old_process_ids = _pane_owner_pids(int(old_pane.pane_pid))
+        launch_path = _pane_launch_path(int(old_pane.pane_pid))
+        launch_command = (
+            f"PATH={shlex.quote(launch_path)} {resume_command}; "
+            'exec "${SHELL:-/bin/sh}"'
+        )
+        created = server.cmd(
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{window_id}\t#{pane_id}",
+            "-t",
+            f"{session_name}:",
             "-c",
             str(resolved_workspace),
-            command,
         )
-        if result.returncode != 0:
+        if created.returncode != 0 or not created.stdout:
             return {"attempted": False, "confirmed": False}
-        return _wait_for_cli_banner(pane, "claude_code")
+        try:
+            replacement_window_id, _ = created.stdout[0].split("\t", 1)
+        except ValueError:
+            return {"attempted": False, "confirmed": False}
+
+        killed = server.cmd("kill-window", "-t", old_window_id)
+        if killed.returncode != 0:
+            _remove_replacement_if_old_window_survives(
+                server,
+                session_name,
+                old_window_id,
+                replacement_window_id,
+            )
+            return {"attempted": False, "confirmed": False}
+        if not _wait_for_processes_exit(old_process_ids):
+            return {"attempted": True, "confirmed": False}
+
+        session = server.sessions.get(session_name=session_name)
+        replacement_pane = session.windows.get(
+            window_id=replacement_window_id
+        ).active_pane
+        replacement_pane.send_keys(launch_command, enter=False)
+        replacement_pane.enter()
+        return _wait_for_resumed_claude_tui(replacement_pane, anchors)
+    finally:
+        lock.release()
 
 
 async def restart_claude_with_resume(
@@ -492,8 +963,8 @@ async def restart_claude_with_resume(
     model: str,
     resume_session_id: str,
 ) -> dict[str, bool]:
-    """Relança Claude Code com ``--resume <id>`` e confirma o novo banner."""
-    return await asyncio.to_thread(
+    """Relança e só confirma quando TUI e conversa retomada estão visíveis."""
+    return await _run_tmux_operation(
         _restart_claude_with_resume_sync,
         session_name,
         workspace_path,
@@ -673,10 +1144,16 @@ def _delete_tmux_buffer(server: libtmux.Server, buf_name: str) -> None:
         pass
 
 
-def _paste_loaded_buffer(pane: libtmux.Pane, buf_name: str) -> bool:
+def _paste_loaded_buffer(
+    pane: libtmux.Pane, buf_name: str, *, delete_after: bool = True
+) -> bool:
     try:
-        # -p ativa bracketed paste (multilinha); -d remove o buffer após uso.
-        result = pane.cmd("paste-buffer", "-d", "-p", "-b", buf_name)
+        # -p ativa bracketed paste (multilinha). No envio comum, -d remove o
+        # buffer; na recuperação ele fica nomeado até haver sucesso comprovado.
+        args = ["paste-buffer"]
+        if delete_after:
+            args.append("-d")
+        result = pane.cmd(*args, "-p", "-b", buf_name)
         return result.returncode == 0
     except libtmux_exc.LibTmuxException:
         return False
@@ -742,7 +1219,8 @@ def _send_message_sync(session_name: str, text: str) -> bool:
     # consumida pelo terminal do pane.
     sanitized = _CONTROL_CHARS.sub("", text.replace("\r\n", "\n").replace("\r", ""))
 
-    with _DISPATCH_LOCKS[session_name]:
+    lock = _acquire_dispatch_lock(session_name)
+    try:
         session = server.sessions.get(session_name=session_name)
         pane = session.active_pane
 
@@ -826,6 +1304,8 @@ def _send_message_sync(session_name: str, text: str) -> bool:
                     _delete_tmux_buffer(server, buf_name)
         except libtmux_exc.LibTmuxException:
             return False
+    finally:
+        lock.release()
 
 
 def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
@@ -834,7 +1314,12 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
     if not server.has_session(session_name):
         return {"tmux_delivered": False, "degrau": 5, "acao": "sessao_ausente"}
 
-    with _DISPATCH_LOCKS[session_name]:
+    try:
+        lock = _acquire_dispatch_lock(session_name)
+    except TmuxSessionBusyError:
+        return {"tmux_delivered": False, "degrau": 5, "acao": "sessao_ocupada"}
+
+    try:
         session = server.sessions.get(session_name=session_name)
         pane = session.active_pane
         current_cmd = (pane.pane_current_command or "").lower()
@@ -859,7 +1344,7 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                 }
             # Degrau 2: Escape deixou um input vazio; não existe texto a enviar.
             if snapshot.state == "empty":
-                return {"tmux_delivered": False, "degrau": 2, "acao": "input_vazio"}
+                return {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
 
             armed_text = snapshot.content
             prior_prompt_count = _count_payload_prompt_lines(pane, armed_text)
@@ -881,7 +1366,11 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                 time.monotonic() + _RECOVERY_STEP_TIMEOUT_S,
             )
             if current is not None and current.state == "empty":
-                return {"tmux_delivered": True, "degrau": 3, "acao": "enter"}
+                return {
+                    "tmux_delivered": False,
+                    "degrau": 5,
+                    "acao": "submissao_nao_confirmada",
+                }
             if (
                 current is None
                 or current.state != "armed"
@@ -894,17 +1383,26 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                     "degrau": 5,
                     "acao": "texto_armado_nao_recuperavel",
                 }
+            if not _input_is_fully_visible_single_line(pane, armed_text):
+                return {
+                    "tmux_delivered": False,
+                    "degrau": 5,
+                    "acao": "texto_armado_nao_totalmente_visivel",
+                }
 
             # Degrau 4: guarda o texto antes de limpar. Revalida imediatamente
             # antes do C-u para nunca apagar texto novo digitado por uma pessoa.
             buf_name = _load_tmux_buffer(server, armed_text)
             if buf_name is None:
                 return {"tmux_delivered": False, "degrau": 5, "acao": "buffer_falhou"}
-            repasted = False
-            cleared = False
+            preserve_buffer = False
             try:
                 latest = _capture_input_snapshot(pane)
-                if latest.state != "armed" or latest.content != armed_text:
+                if (
+                    latest.state != "armed"
+                    or latest.content != armed_text
+                    or not _input_is_fully_visible_single_line(pane, armed_text)
+                ):
                     return {
                         "tmux_delivered": False,
                         "degrau": 5,
@@ -914,9 +1412,9 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                     return {
                         "tmux_delivered": False,
                         "degrau": 5,
-                        "acao": "limpeza_falhou_buffer_preservado",
+                        "acao": "limpeza_falhou",
                     }
-                cleared = True
+                preserve_buffer = True
                 cleared_snapshot = _wait_for_input(
                     pane,
                     lambda candidate: candidate.state == "empty",
@@ -928,14 +1426,15 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                         "tmux_delivered": False,
                         "degrau": 5,
                         "acao": "limpeza_nao_confirmada_buffer_preservado",
+                        "buffer_name": buf_name,
                     }
-                if not _paste_loaded_buffer(pane, buf_name):
+                if not _paste_loaded_buffer(pane, buf_name, delete_after=False):
                     return {
                         "tmux_delivered": False,
                         "degrau": 5,
                         "acao": "recolagem_falhou_buffer_preservado",
+                        "buffer_name": buf_name,
                     }
-                repasted = True
                 paste_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
                 pasted = _wait_for_input(
                     pane,
@@ -946,7 +1445,8 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                     return {
                         "tmux_delivered": False,
                         "degrau": 5,
-                        "acao": "recolagem_nao_confirmada",
+                        "acao": "recolagem_nao_confirmada_buffer_preservado",
+                        "buffer_name": buf_name,
                     }
                 submit_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
                 confirmed, _ = _confirm_armed_submission(
@@ -957,34 +1457,54 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                     max_enter_attempts=1,
                 )
                 if confirmed:
+                    preserve_buffer = False
                     return {"tmux_delivered": True, "degrau": 4, "acao": "recolar_enter"}
                 return {
                     "tmux_delivered": False,
                     "degrau": 5,
-                    "acao": "submissao_nao_confirmada",
+                    "acao": "submissao_nao_confirmada_buffer_preservado",
+                    "buffer_name": buf_name,
                 }
+            except libtmux_exc.LibTmuxException:
+                if preserve_buffer:
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "erro_tmux_buffer_preservado",
+                        "buffer_name": buf_name,
+                    }
+                raise
             finally:
-                # Se C-u já ocorreu e a recolagem falhou, mantém o buffer
-                # nomeado no tmux: o texto continua recuperável, não descartado.
-                if not repasted and not cleared:
+                # Antes do C-u, o texto original continua no input e o buffer é
+                # descartável. Depois dele, qualquer falha mantém uma cópia
+                # nomeada e devolve esse nome ao usuário.
+                if not preserve_buffer:
                     _delete_tmux_buffer(server, buf_name)
         except libtmux_exc.LibTmuxException:
             return {"tmux_delivered": False, "degrau": 5, "acao": "erro_tmux"}
+    finally:
+        lock.release()
 
 
 async def recover_input(session_name: str) -> dict[str, bool | int | str]:
     """Executa Escape → inspeção → Enter → recolagem segura, fora do event loop."""
-    return await asyncio.to_thread(_recover_input_sync, session_name)
+    return await _run_tmux_operation(_recover_input_sync, session_name)
 
 
 def _press_enter_sync(session_name: str) -> bool:
     server = _server_for(session_name)
     if not server.has_session(session_name):
         return False
-    with _DISPATCH_LOCKS[session_name]:
+    try:
+        lock = _acquire_dispatch_lock(session_name)
+    except TmuxSessionBusyError:
+        return False
+    try:
         session = server.sessions.get(session_name=session_name)
         pane = session.active_pane
         return _send_key(pane, "Enter")
+    finally:
+        lock.release()
 
 
 async def press_enter(session_name: str) -> bool:
@@ -995,26 +1515,6 @@ async def press_enter(session_name: str) -> bool:
     Retorna False quando a sessão não existe ou libtmux falha — caller decide.
     """
     return await asyncio.to_thread(_press_enter_sync, session_name)
-
-
-def _press_escape_sync(session_name: str) -> bool:
-    server = _server_for(session_name)
-    if not server.has_session(session_name):
-        return False
-    with _DISPATCH_LOCKS[session_name]:
-        session = server.sessions.get(session_name=session_name)
-        pane = session.active_pane
-        return _send_key(pane, "Escape")
-
-
-async def press_escape(session_name: str) -> bool:
-    """Envia só `Escape` no pane ativo. Usado pelo botão "Destrava" quando um
-    modal interativo do CC (`/status`, `/mcp`, `/memory`, etc) trava o agente.
-    Idempotente: sem modal aberto, Escape em prompt vazio do CC é no-op.
-
-    Retorna False quando a sessão não existe ou libtmux falha.
-    """
-    return await asyncio.to_thread(_press_escape_sync, session_name)
 
 
 async def send_message(session_name: str, text: str) -> bool:
@@ -1035,4 +1535,4 @@ async def send_message(session_name: str, text: str) -> bool:
     payload ainda reconhecido como o nosso; texto humano diferente nunca é
     apagado nem substituído.
     """
-    return await asyncio.to_thread(_send_message_sync, session_name, text)
+    return await _run_tmux_operation(_send_message_sync, session_name, text)

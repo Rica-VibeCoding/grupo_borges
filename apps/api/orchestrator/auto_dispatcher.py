@@ -80,6 +80,20 @@ class AutoDispatcher:
 
         try:
             delivered = await tmux_driver.send_message(tmux_session, dispatch_text)
+        except tmux_driver.TmuxSessionBusyError:
+            await self._db.record_task_dispatch_failed(
+                task["id"],
+                run_id=run_id,
+                tmux_session=tmux_session,
+                reason="tmux_busy",
+                source="auto",
+            )
+            logger.warning(
+                "AutoDispatcher tmux session busy: %s for task %s",
+                tmux_session,
+                task["id"],
+            )
+            return
         except Exception:
             await self._db.record_task_dispatch_failed(
                 task["id"],

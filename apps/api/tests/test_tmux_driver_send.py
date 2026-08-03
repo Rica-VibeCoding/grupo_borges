@@ -1,10 +1,15 @@
 """Confirmação observável do envio tmux, sem tocar em panes da frota."""
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -14,6 +19,7 @@ from services import tmux_driver
 class _FakePane:
     pane_current_command = "claude"
     pane_height = 4
+    pane_width = 80
 
     def __init__(
         self,
@@ -72,7 +78,7 @@ class _FakePane:
             if self.unknown_remaining:
                 self.unknown_remaining -= 1
                 return SimpleNamespace(returncode=0, stdout=[])
-            cursor_x = 2 if self.state == "empty" else 20
+            cursor_x = 2 if self.state == "empty" else 2 + len(self.visible_text)
             return SimpleNamespace(returncode=0, stdout=[f"{cursor_x}\t1"])
         elif args and args[0] == "respawn-pane":
             self.respawn_calls.append(args)
@@ -183,11 +189,59 @@ class _SoftWrappedPane(_FakePane):
         return ["histórico", "❯\u00a0", "", "─" * 80]
 
 
+class _HardMultilinePane(_FakePane):
+    def capture_pane(self, **kwargs: object) -> list[str]:
+        if self.state != "armed":
+            return super().capture_pane(**kwargs)
+        lines = ["histórico", "❯ linha 1", "linha 2", "─" * 80]
+        if isinstance(kwargs.get("start"), int) and kwargs.get("join_wrapped") is True:
+            start = int(kwargs["start"])
+            end = int(kwargs.get("end", start))
+            return lines[start : end + 1]
+        return lines
+
+
+class _SingleRowScrolledPane(_FakePane):
+    pane_width = 80
+
+    def cmd(self, *args: str) -> SimpleNamespace:
+        if args and args[0] == "display-message" and self.state == "armed":
+            return SimpleNamespace(returncode=0, stdout=["79\t1"])
+        return super().cmd(*args)
+
+
 class _PaddedCapturePane(_BottomBorderOnlyPane):
     def capture_pane(self, **kwargs: object) -> list[str]:
         if kwargs.get("join_wrapped") is True:
             content = self.visible_text if self.state == "armed" else ""
             return [f"❯ {content}".ljust(220)]
+        return super().capture_pane(**kwargs)
+
+
+class _StyledCapturePane(_FakePane):
+    def __init__(self, prompt: str, *, cursor_x: int) -> None:
+        super().__init__("")
+        self.prompt = prompt
+        self.cursor_x = cursor_x
+        self.capture_calls: list[dict[str, object]] = []
+
+    def cmd(self, *args: str) -> SimpleNamespace:
+        if args and args[0] == "display-message":
+            return SimpleNamespace(returncode=0, stdout=[f"{self.cursor_x}\t1"])
+        return super().cmd(*args)
+
+    def capture_pane(self, **kwargs: object) -> list[str]:
+        self.capture_calls.append(kwargs)
+        lines = ["─" * 80, self.prompt, "─" * 80, "status"]
+        if kwargs.get("join_wrapped") is True:
+            return [self.prompt]
+        return lines
+
+
+class _EscapeCaptureFailurePane(_BottomBorderOnlyPane):
+    def capture_pane(self, **kwargs: object) -> list[str]:
+        if kwargs.get("escape_sequences") is True:
+            raise AttributeError("capture-pane -e indisponível")
         return super().capture_pane(**kwargs)
 
 
@@ -214,12 +268,137 @@ class _BootstrapPane(_FakePane):
     def __init__(self) -> None:
         super().__init__("")
         self.sent_commands: list[str] = []
+        self.visible_context: str | None = None
 
     def send_keys(self, command: str) -> None:
         self.sent_commands.append(command)
 
     def capture_pane(self, **_kwargs: object) -> list[str]:
-        return ["Claude Code v2.0"]
+        lines = ["Claude Code v2.0"]
+        if self.visible_context:
+            lines.append(self.visible_context)
+        return lines
+
+
+class _RelaunchPane(_FakePane):
+    pane_height = 7
+    pane_width = 220
+
+    def __init__(
+        self,
+        anchor: str,
+        *,
+        show_anchor: bool = True,
+        show_banner: bool = True,
+    ) -> None:
+        super().__init__("")
+        self.anchor = anchor
+        self.show_anchor = show_anchor
+        self.show_banner = show_banner
+        self.launched = False
+        self.sent_commands: list[tuple[str, bool]] = []
+        self.entered = 0
+        self.window = SimpleNamespace(window_id="@replacement")
+        self.pane_pid = 222
+
+    def send_keys(self, command: str, *, enter: bool = True) -> None:
+        self.sent_commands.append((command, enter))
+
+    def enter(self) -> None:
+        self.entered += 1
+        self.launched = True
+
+    def refresh(self) -> None:
+        return None
+
+    def cmd(self, *args: str) -> SimpleNamespace:
+        if args and args[0] == "display-message":
+            return SimpleNamespace(returncode=0, stdout=["2\t4"])
+        return super().cmd(*args)
+
+    def capture_pane(self, **kwargs: object) -> list[str]:
+        if not self.launched:
+            return ["$ "]
+        context = self.anchor if self.show_anchor else "conversa diferente"
+        lines = [
+            "Claude Code v2.1.220" if self.show_banner else "histórico retomado",
+            f"❯ {context}",
+            "● resposta anterior",
+            "─" * self.pane_width,
+            "❯\u00a0",
+            "─" * self.pane_width,
+            "Opus 4.8",
+        ]
+        if isinstance(kwargs.get("start"), int):
+            start = int(kwargs["start"])
+            end = int(kwargs.get("end", start))
+            return lines[start : end + 1]
+        return lines
+
+
+class _RelaunchServer:
+    socket_name = None
+
+    def __init__(
+        self,
+        old_pane: _BootstrapPane,
+        replacement_pane: _RelaunchPane,
+        *,
+        kill_old_returncode: int = 0,
+        old_disappears_on_kill_error: bool = False,
+    ) -> None:
+        old_pane.window = SimpleNamespace(window_id="@old")
+        old_pane.pane_pid = 111
+        self.old_pane = old_pane
+        self.replacement_pane = replacement_pane
+        self.active_pane = old_pane
+        self.kill_old_returncode = kill_old_returncode
+        self.old_disappears_on_kill_error = old_disappears_on_kill_error
+        self.window_ids = {"@old"}
+        self.commands: list[tuple[str, ...]] = []
+        self.sessions = SimpleNamespace(get=self._get_session)
+
+    def _get_session(self, **_kwargs: object) -> SimpleNamespace:
+        windows = SimpleNamespace(
+            get=lambda **_window_kwargs: SimpleNamespace(
+                active_pane=self.replacement_pane
+            )
+        )
+        return SimpleNamespace(active_pane=self.active_pane, windows=windows)
+
+    def has_session(self, _session_name: str) -> bool:
+        return True
+
+    def cmd(self, *args: str) -> SimpleNamespace:
+        self.commands.append(args)
+        if args and args[0] == "new-window":
+            self.window_ids.add("@replacement")
+            return SimpleNamespace(
+                returncode=0,
+                stdout=["@replacement\t%replacement"],
+                stderr=[],
+            )
+        if args[:3] == ("kill-window", "-t", "@old"):
+            if self.kill_old_returncode == 0:
+                self.active_pane = self.replacement_pane
+                self.window_ids.remove("@old")
+            elif self.old_disappears_on_kill_error:
+                self.active_pane = self.replacement_pane
+                self.window_ids.remove("@old")
+            return SimpleNamespace(
+                returncode=self.kill_old_returncode,
+                stdout=[],
+                stderr=["kill falhou"] if self.kill_old_returncode else [],
+            )
+        if args[:3] == ("kill-window", "-t", "@replacement"):
+            self.window_ids.remove("@replacement")
+        if args and args[0] == "list-windows":
+            return SimpleNamespace(
+                returncode=0,
+                stdout=sorted(self.window_ids),
+                stderr=[],
+            )
+        return SimpleNamespace(returncode=0, stdout=[], stderr=[])
 
 
 class _FakeServer:
@@ -238,10 +417,10 @@ class _FakeServer:
         return SimpleNamespace(returncode=0, stdout=[], stderr=[])
 
 
-def _driver_patches(pane: _FakePane):
+def _driver_patches(pane: _FakePane, *, server: _FakeServer | None = None):
     completed = SimpleNamespace(returncode=0, stdout="", stderr="")
     return (
-        patch("services.tmux_driver._server_for", return_value=_FakeServer(pane)),
+        patch("services.tmux_driver._server_for", return_value=server or _FakeServer(pane)),
         patch("services.tmux_driver.subprocess.run", return_value=completed),
         patch.object(tmux_driver, "_PRE_PASTE_CONFIRM_TIMEOUT_S", 0.25),
         patch.object(tmux_driver, "_SUBMIT_CONFIRM_TIMEOUT_S", 0.25),
@@ -320,6 +499,69 @@ def test_snapshot_removes_tui_padding_without_changing_input() -> None:
     snapshot = tmux_driver._capture_input_snapshot(pane)
 
     assert snapshot == tmux_driver._PaneInputSnapshot("armed", "texto humano")
+
+
+def test_snapshot_treats_real_claude_placeholder_capture_as_empty() -> None:
+    pane = _StyledCapturePane(
+        '\x1b[39m❯ \x1b[2mTry "create a util logging.py that..."\x1b[0m',
+        cursor_x=2,
+    )
+
+    snapshot = tmux_driver._capture_input_snapshot(pane)
+
+    assert snapshot == tmux_driver._PaneInputSnapshot(
+        "empty", 'Try "create a util logging.py that..."'
+    )
+    assert all(call["escape_sequences"] is True for call in pane.capture_calls)
+
+
+def test_snapshot_keeps_real_human_input_capture_armed() -> None:
+    pane = _StyledCapturePane("\x1b[39m❯ texto humano de teste", cursor_x=23)
+
+    snapshot = tmux_driver._capture_input_snapshot(pane)
+
+    assert snapshot == tmux_driver._PaneInputSnapshot("armed", "texto humano de teste")
+
+
+def test_snapshot_understands_combined_dim_and_intensity_resets() -> None:
+    for dim_sequence, reset_sequence in (("0;2", "0"), ("2;39", "22")):
+        pane = _StyledCapturePane(
+            f"\x1b[39m❯ \x1b[{dim_sequence}mplaceholder\x1b[{reset_sequence}m",
+            cursor_x=2,
+        )
+
+        assert tmux_driver._capture_input_snapshot(pane) == (
+            "empty",
+            "placeholder",
+        )
+
+
+def test_snapshot_keeps_mixed_dim_and_non_dim_content_armed() -> None:
+    pane = _StyledCapturePane(
+        "\x1b[39m❯ \x1b[2mplaceholder \x1b[22mtexto humano",
+        cursor_x=2,
+    )
+
+    assert tmux_driver._capture_input_snapshot(pane) == (
+        "armed",
+        "placeholder texto humano",
+    )
+
+
+def test_snapshot_does_not_mistake_truecolor_mode_for_dim() -> None:
+    pane = _StyledCapturePane(
+        "\x1b[39m❯ \x1b[38;2;100;120;140mtexto humano",
+        cursor_x=2,
+    )
+
+    assert tmux_driver._capture_input_snapshot(pane) == ("armed", "texto humano")
+
+
+def test_snapshot_falls_back_to_old_behavior_when_sgr_capture_fails() -> None:
+    pane = _EscapeCaptureFailurePane("texto humano")
+    pane.state = "armed"
+
+    assert tmux_driver._capture_input_snapshot(pane) == ("armed", "texto humano")
 
 
 def test_send_treats_partial_paste_render_as_transient() -> None:
@@ -484,7 +726,7 @@ def test_send_fails_closed_when_pane_capture_disappears() -> None:
 def test_recover_reports_empty_at_step_two() -> None:
     pane = _FakePane("irrelevante")
 
-    assert _recover(pane) == {"tmux_delivered": False, "degrau": 2, "acao": "input_vazio"}
+    assert _recover(pane) == {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
 
 
 def test_recover_submits_armed_text_with_enter_at_step_three() -> None:
@@ -509,21 +751,63 @@ def test_recover_repastes_exact_same_text_at_step_four() -> None:
 
 
 def test_recover_preserves_leading_whitespace_when_repasting() -> None:
-    pane = _FakePane("  texto humano com espaços", enter_succeeds_on=2)
+    pane = _FakePane("  texto humano com espacos", enter_succeeds_on=2)
     pane.state = "armed"
 
     assert _recover(pane)["degrau"] == 4
-    assert pane.payload == "  texto humano com espaços"
+    assert pane.payload == "  texto humano com espacos"
 
 
-def test_recover_joins_soft_wrap_without_inserting_newline() -> None:
+def test_recover_refuses_unicode_width_without_touching_input() -> None:
+    pane = _FakePane("texto com ç", enter_succeeds_on=2)
+    pane.state = "armed"
+
+    result = _recover(pane)
+
+    assert result["acao"] == "texto_armado_nao_totalmente_visivel"
+    assert pane.clear_count == 0
+    assert pane.paste_count == 0
+
+
+def test_recover_refuses_text_spanning_multiple_visible_rows() -> None:
     pane = _SoftWrappedPane("texto muito longo sem quebra lógica", enter_succeeds_on=2)
     pane.state = "armed"
 
     result = _recover(pane)
 
-    assert result["tmux_delivered"] is True
-    assert result["degrau"] == 4
+    assert result == {
+        "tmux_delivered": False,
+        "degrau": 5,
+        "acao": "texto_armado_nao_totalmente_visivel",
+    }
+    assert pane.clear_count == 0
+    assert pane.paste_count == 0
+
+
+def test_recover_refuses_hard_multiline_without_touching_input() -> None:
+    pane = _HardMultilinePane("linha 1\nlinha 2", enter_succeeds_on=2)
+    pane.state = "armed"
+
+    result = _recover(pane)
+
+    assert result == {
+        "tmux_delivered": False,
+        "degrau": 5,
+        "acao": "texto_armado_nao_totalmente_visivel",
+    }
+    assert pane.clear_count == 0
+    assert pane.paste_count == 0
+
+
+def test_recover_refuses_single_row_scrolled_input_without_clearing() -> None:
+    pane = _SingleRowScrolledPane("sufixo visível", enter_succeeds_on=2)
+    pane.state = "armed"
+
+    result = _recover(pane)
+
+    assert result["acao"] == "texto_armado_nao_totalmente_visivel"
+    assert pane.clear_count == 0
+    assert pane.paste_count == 0
 
 
 def test_recover_does_not_repaste_until_c_u_is_observed_empty() -> None:
@@ -532,12 +816,35 @@ def test_recover_does_not_repaste_until_c_u_is_observed_empty() -> None:
 
     result = _recover(pane)
 
-    assert result == {
-        "tmux_delivered": False,
-        "degrau": 5,
-        "acao": "limpeza_nao_confirmada_buffer_preservado",
-    }
+    assert result["tmux_delivered"] is False
+    assert result["degrau"] == 5
+    assert result["acao"] == "limpeza_nao_confirmada_buffer_preservado"
+    assert str(result["buffer_name"]).startswith("cockpit-dispatch-")
     assert pane.paste_count == 0
+
+
+def test_recover_returns_buffer_name_when_repaste_fails() -> None:
+    pane = _FakePane("texto humano", enter_succeeds_on=2, paste_returncode=1)
+    pane.state = "armed"
+    server = _FakeServer(pane)
+    patches = _driver_patches(pane, server=server)
+
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        patches[5],
+        patches[6],
+    ):
+        result = tmux_driver._recover_input_sync("pane-teste")
+
+    assert result["tmux_delivered"] is False
+    assert result["acao"] == "recolagem_falhou_buffer_preservado"
+    assert str(result["buffer_name"]).startswith("cockpit-dispatch-")
+    assert result["buffer_name"] not in server.deleted_buffers
+    assert pane.clear_count == 1
 
 
 def test_recover_reports_escape_command_failure() -> None:
@@ -567,12 +874,125 @@ def test_recover_never_clears_text_if_human_changes_it_after_first_enter() -> No
     assert pane.paste_count == 0
 
 
-def test_restart_replaces_pane_and_bootstraps_exact_resume_session() -> None:
-    pane = _BootstrapPane()
-    server = _FakeServer(pane)
+def test_recover_does_not_claim_submission_when_input_emptied_without_proof() -> None:
+    pane = _FakePane("texto humano", enter_succeeds_on=None)
+    pane.state = "armed"
+
+    def unconfirmed_then_human_clears(*_args, **_kwargs):
+        pane.state = "empty"
+        pane.visible_text = ""
+        return False, 1
+
+    with patch(
+        "services.tmux_driver._confirm_armed_submission",
+        side_effect=unconfirmed_then_human_clears,
+    ):
+        result = _recover(pane)
+
+    assert result == {
+        "tmux_delivered": False,
+        "degrau": 5,
+        "acao": "submissao_nao_confirmada",
+    }
+
+
+def test_dispatch_lock_registry_is_atomic_per_session() -> None:
+    session_name = "lock-creation-race"
+    tmux_driver._DISPATCH_LOCKS.pop(session_name, None)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+        locks = list(executor.map(tmux_driver._dispatch_lock_for, [session_name] * 100))
+
+    assert len({id(lock) for lock in locks}) == 1
+
+
+def test_send_fails_fast_when_same_session_is_already_dispatching() -> None:
+    pane = _FakePane("não deve aguardar")
+    lock = tmux_driver._dispatch_lock_for("pane-teste")
+    lock.acquire()
+    patches = _driver_patches(pane)
+    try:
+        with (
+            patches[0],
+            patches[1],
+            patch.object(tmux_driver, "_DISPATCH_LOCK_TIMEOUT_S", 0.01),
+            pytest.raises(tmux_driver.TmuxSessionBusyError, match="sessão tmux ocupada"),
+        ):
+            tmux_driver._send_message_sync("pane-teste", pane.payload)
+    finally:
+        lock.release()
+
+    assert pane.paste_count == 0
+    assert pane.enter_count == 0
+
+
+def test_recover_reports_busy_session_without_waiting_for_dispatch() -> None:
+    pane = _FakePane("não deve aguardar")
+    lock = tmux_driver._dispatch_lock_for("pane-teste")
+    lock.acquire()
+    try:
+        with patch.object(tmux_driver, "_DISPATCH_LOCK_TIMEOUT_S", 0.01):
+            result = _recover(pane)
+    finally:
+        lock.release()
+
+    assert result == {
+        "tmux_delivered": False,
+        "degrau": 5,
+        "acao": "sessao_ocupada",
+    }
+    assert pane.escape_count == 0
+
+
+def test_long_tmux_operations_use_dedicated_executor(monkeypatch) -> None:
+    def in_tmux_executor(*_args: object) -> bool:
+        return threading.current_thread().name.startswith("cockpit-tmux")
+
+    monkeypatch.setattr(tmux_driver, "_send_message_sync", in_tmux_executor)
+    monkeypatch.setattr(
+        tmux_driver,
+        "_recover_input_sync",
+        lambda *_args: {"in_tmux_executor": in_tmux_executor()},
+    )
+    monkeypatch.setattr(
+        tmux_driver,
+        "_restart_claude_with_resume_sync",
+        lambda *_args: {"in_tmux_executor": in_tmux_executor()},
+    )
+
+    assert asyncio.run(tmux_driver.send_message("daniel", "oi")) is True
+    assert asyncio.run(tmux_driver.recover_input("daniel"))["in_tmux_executor"] is True
+    restarted = asyncio.run(
+        tmux_driver.restart_claude_with_resume(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2",
+        )
+    )
+    assert restarted["in_tmux_executor"] is True
+
+
+def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Path) -> None:
+    old_pane = _BootstrapPane()
+    anchor = "pergunta anterior única do relaunch"
+    old_pane.visible_context = anchor
+    replacement_pane = _RelaunchPane(anchor)
+    server = _RelaunchServer(old_pane, replacement_pane)
     session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
 
-    with patch("services.tmux_driver._server_for", return_value=server):
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":'
+        f'"{anchor}"}}}}\n'
+    )
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
+        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin:/usr/bin"),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+    ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
             "/home/clawd/repos/grupo_borges",
@@ -581,15 +1001,189 @@ def test_restart_replaces_pane_and_bootstraps_exact_resume_session() -> None:
         )
 
     assert result == {"attempted": True, "confirmed": True}
-    assert pane.sent_commands == []
-    respawn = pane.respawn_calls[0]
-    assert respawn[:4] == (
-        "respawn-pane",
-        "-k",
-        "-c",
-        "/home/clawd/repos/grupo_borges",
+    assert server.commands[:2] == [
+        (
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{window_id}\t#{pane_id}",
+            "-t",
+            "daniel:",
+            "-c",
+            "/home/clawd/repos/grupo_borges",
+        ),
+        ("kill-window", "-t", "@old"),
+    ]
+    assert replacement_pane.sent_commands == [
+        (
+            "PATH=/test/bin:/usr/bin claude --dangerously-skip-permissions "
+            "--model claude-opus-4-8 "
+            f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
+            False,
+        )
+    ]
+    assert replacement_pane.entered == 1
+    assert "respawn-pane" not in replacement_pane.sent_commands[0][0]
+    assert "|| claude" not in replacement_pane.sent_commands[0][0]
+
+
+def test_resumed_tui_confirmation_does_not_depend_on_scrolled_banner() -> None:
+    pane = _RelaunchPane("contexto retomado visível", show_banner=False)
+    pane.enter()
+
+    with patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001):
+        result = tmux_driver._wait_for_resumed_claude_tui(
+            pane,
+            ["contexto retomado visível"],
+        )
+
+    assert result == {"attempted": True, "confirmed": True}
+
+
+def test_resume_confirmation_rejects_short_generic_anchor() -> None:
+    assert tmux_driver._anchor_is_visible("Claude respondeu ok", "ok") is False
+
+
+def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path) -> None:
+    old_pane = _BootstrapPane()
+    old_pane.visible_context = "contexto esperado que deve reaparecer"
+    replacement_pane = _RelaunchPane(
+        "contexto esperado que deve reaparecer",
+        show_anchor=False,
     )
-    assert respawn[4].endswith(f"--resume {session_id}")
+    server = _RelaunchServer(old_pane, replacement_pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"assistant","message":{"content":'
+        '[{"type":"text","text":"contexto esperado que deve reaparecer"}]}}\n'
+    )
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111}),
+        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_TIMEOUT_S", 0.01),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": True, "confirmed": False}
+
+
+def test_restart_keeps_replacement_shell_when_old_process_tree_does_not_exit(
+    tmp_path: Path,
+) -> None:
+    old_pane = _BootstrapPane()
+    old_pane.visible_context = "contexto esperado que deve reaparecer"
+    replacement_pane = _RelaunchPane("contexto esperado que deve reaparecer")
+    server = _RelaunchServer(old_pane, replacement_pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"content":'
+        '"contexto esperado que deve reaparecer"}}\n'
+    )
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111}),
+        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=False),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": True, "confirmed": False}
+    assert server.active_pane is replacement_pane
+    assert replacement_pane.sent_commands == []
+
+
+def test_restart_cleans_replacement_only_when_old_window_provably_survives(
+    tmp_path: Path,
+) -> None:
+    old_pane = _BootstrapPane()
+    old_pane.visible_context = "contexto esperado que deve reaparecer"
+    replacement_pane = _RelaunchPane("contexto esperado que deve reaparecer")
+    server = _RelaunchServer(
+        old_pane,
+        replacement_pane,
+        kill_old_returncode=1,
+    )
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"content":'
+        '"contexto esperado que deve reaparecer"}}\n'
+    )
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111}),
+        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": False, "confirmed": False}
+    assert server.commands[-1] == ("kill-window", "-t", "@replacement")
+    assert server.window_ids == {"@old"}
+    assert replacement_pane.sent_commands == []
+
+
+def test_restart_preserves_replacement_when_old_disappears_despite_kill_error(
+    tmp_path: Path,
+) -> None:
+    old_pane = _BootstrapPane()
+    old_pane.visible_context = "contexto esperado que deve reaparecer"
+    replacement_pane = _RelaunchPane("contexto esperado que deve reaparecer")
+    server = _RelaunchServer(
+        old_pane,
+        replacement_pane,
+        kill_old_returncode=1,
+        old_disappears_on_kill_error=True,
+    )
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"content":'
+        '"contexto esperado que deve reaparecer"}}\n'
+    )
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111}),
+        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin"),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": False, "confirmed": False}
+    assert server.window_ids == {"@replacement"}
+    assert ("kill-window", "-t", "@replacement") not in server.commands
 
 
 def test_restart_validates_before_destructive_respawn() -> None:
@@ -609,4 +1203,97 @@ def test_restart_validates_before_destructive_respawn() -> None:
         else:
             raise AssertionError("preflight inválido deveria falhar")
 
+    assert pane.respawn_calls == []
+
+
+def test_restart_refuses_resume_missing_from_current_workspace(tmp_path: Path) -> None:
+    pane = _BootstrapPane()
+    server = _FakeServer(pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch(
+            "services.tmux_driver._claude_resume_jsonl_path",
+            return_value=tmp_path / "ausente.jsonl",
+        ),
+        pytest.raises(ValueError, match="não pertence ao workspace atual"),
+    ):
+        tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert pane.respawn_calls == []
+
+
+def test_restart_refuses_jsonl_from_another_visible_conversation(tmp_path: Path) -> None:
+    pane = _BootstrapPane()
+    pane.visible_context = "texto distintivo da conversa realmente aberta"
+    replacement_pane = _RelaunchPane("texto distintivo de outra conversa")
+    server = _RelaunchServer(pane, replacement_pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"content":'
+        '"texto distintivo de outra conversa"}}\n'
+    )
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        pytest.raises(ValueError, match="não corresponde à conversa visível"),
+    ):
+        tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert server.commands == []
+    assert server.active_pane is pane
+
+
+def test_resume_jsonl_path_is_scoped_to_encoded_current_workspace() -> None:
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+
+    with patch("services.tmux_driver.Path.home", return_value=Path("/home/tester")):
+        path = tmux_driver._claude_resume_jsonl_path(
+            Path("/home/clawd/repos/grupo_borges"),
+            session_id,
+        )
+
+    assert path == (
+        Path("/home/tester/.claude/projects")
+        / "-home-clawd-repos-grupo-borges"
+        / f"{session_id}.jsonl"
+    )
+
+
+def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Path) -> None:
+    pane = _BootstrapPane()
+    pane.pane_current_command = "bash"
+    server = _FakeServer(pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"content":'
+        '"contexto existente e suficientemente distintivo"}}\n'
+    )
+
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": False, "confirmed": False}
     assert pane.respawn_calls == []

@@ -45,10 +45,25 @@ TARA = {
 }
 
 
+HIRO = {
+    "slug": "hiro",
+    "name": "Hiro Nakamura",
+    "role": "dev",
+    "emoji": "HN",
+    "tmux_session": "hiro",
+    "workspace_path": "/tmp/hiro",
+    "cli_default": "claude_code",
+    "model_default": "k3",
+    "model_family": "kimi",
+    "capabilities": [],
+    "can_review": [],
+}
+
+
 def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA])
+    db._sync_agents([DANIEL, TARA, HIRO])
     if codex_for_tara:
         db._update_agent_codex_state(
             "tara",
@@ -57,7 +72,7 @@ def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
         )
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA]}
+    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -345,7 +360,7 @@ def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("driver_result", "expected_delivered"),
     [
-        ({"tmux_delivered": False, "degrau": 2, "acao": "input_vazio"}, False),
+        ({"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}, True),
         ({"tmux_delivered": True, "degrau": 3, "acao": "enter"}, True),
         ({"tmux_delivered": True, "degrau": 4, "acao": "recolar_enter"}, True),
         (
@@ -402,6 +417,38 @@ def test_relaunch_fails_without_resumable_conversation(tmp_path: Path) -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == "resume_session_not_found"
+
+
+def test_relaunch_rejects_non_native_model_backend_before_lookup(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    app.state.db.latest_jsonl_session_id = AsyncMock()
+    with patch(
+        "routers.agents.tmux_driver.restart_claude_with_resume",
+        new=AsyncMock(),
+    ) as restart:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/hiro/relaunch", json={"confirm": True})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "relaunch_requer_backend_anthropic_nativo"
+    app.state.db.latest_jsonl_session_id.assert_not_awaited()
+    restart.assert_not_awaited()
+
+
+def test_input_reports_busy_tmux_session_honestly(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.send_message",
+        new=AsyncMock(side_effect=agents_router.tmux_driver.TmuxSessionBusyError("busy")),
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "oi", "idempotency_key": "busy-1"},
+            )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "agent_tmux_busy"
 
 
 def test_relaunch_resumes_exact_session_and_reports_confirmation(tmp_path: Path) -> None:
