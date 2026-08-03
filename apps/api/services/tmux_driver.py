@@ -847,6 +847,43 @@ def _pane_launch_path(pane_pid: int) -> str:
     return os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
 
 
+def _pane_telegram_state_dir(pane_pid: int) -> str | None:
+    """Preserva o `TELEGRAM_STATE_DIR` efetivo do processo foreground.
+
+    Sem isto, o relaunch derrubava o poller no diretório default do plugin
+    (`~/.claude/channels/telegram/`) em vez do canal próprio do agente —
+    quem não fosse o dono desse default passava a competir com ele pelo
+    mesmo bot/token, perdendo mensagem por causa do offset do `getUpdates`.
+    Aconteceu de verdade com o Pavan em 03/08, roubando o canal do Daniel.
+    `None` (em vez de string vazia) quando o processo antigo não tinha a
+    var setada — alguns agentes usam o default do plugin de propósito, e
+    forçar a var vazia mudaria esse comportamento em vez de preservá-lo.
+    """
+    candidate_pids = [pane_pid]
+    try:
+        stat = Path(f"/proc/{pane_pid}/stat").read_text()
+        fields = stat[stat.rfind(")") + 2 :].split()
+        foreground_group = int(fields[5])
+        if foreground_group > 0:
+            candidate_pids.insert(0, foreground_group)
+    except (IndexError, OSError, ValueError):
+        pass
+
+    for candidate_pid in candidate_pids:
+        try:
+            environment = Path(f"/proc/{candidate_pid}/environ").read_bytes()
+        except OSError:
+            continue
+        for item in environment.split(b"\0"):
+            if item.startswith(b"TELEGRAM_STATE_DIR="):
+                value = item.removeprefix(b"TELEGRAM_STATE_DIR=").decode(
+                    errors="replace"
+                )
+                if value:
+                    return value
+    return None
+
+
 def _wait_for_processes_exit(process_ids: set[int]) -> bool:
     """Espera shell e Claude antigos encerrarem antes do resume."""
     deadline = time.monotonic() + _RELAUNCH_PROCESS_EXIT_TIMEOUT_S
@@ -987,8 +1024,15 @@ def _restart_claude_with_resume_sync(
         # Lido ANTES do kill: depois que o processo morre o `/proc` some junto,
         # e com ele a única prova de quais canais o agente tinha ligado.
         channel_flags = _pane_channel_flags(int(old_pane.pane_pid))
+        telegram_state_dir = _pane_telegram_state_dir(int(old_pane.pane_pid))
+        state_dir_export = (
+            f"TELEGRAM_STATE_DIR={shlex.quote(telegram_state_dir)} "
+            if telegram_state_dir
+            else ""
+        )
         launch_command = (
-            f"PATH={shlex.quote(launch_path)} {resume_command}{channel_flags}; "
+            f"{state_dir_export}PATH={shlex.quote(launch_path)} "
+            f"{resume_command}{channel_flags}; "
             'exec "${SHELL:-/bin/sh}"'
         )
         created = server.cmd(

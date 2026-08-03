@@ -1028,6 +1028,50 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
     assert "|| claude" not in replacement_pane.sent_commands[0][0]
 
 
+def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> None:
+    old_pane = _BootstrapPane()
+    anchor = "pergunta anterior única do relaunch"
+    old_pane.visible_context = anchor
+    replacement_pane = _RelaunchPane(anchor)
+    server = _RelaunchServer(old_pane, replacement_pane)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+
+    resume_jsonl = tmp_path / f"{session_id}.jsonl"
+    resume_jsonl.write_text(
+        '{"type":"user","message":{"role":"user","content":'
+        f'"{anchor}"}}}}\n'
+    )
+    with (
+        patch("services.tmux_driver._server_for", return_value=server),
+        patch("services.tmux_driver._claude_resume_jsonl_path", return_value=resume_jsonl),
+        patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
+        patch("services.tmux_driver._pane_launch_path", return_value="/test/bin:/usr/bin"),
+        patch(
+            "services.tmux_driver._pane_telegram_state_dir",
+            return_value="/home/clawd/.claude/channels/telegram-daniel",
+        ),
+        patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
+        patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
+    ):
+        result = tmux_driver._restart_claude_with_resume_sync(
+            "daniel",
+            "/home/clawd/repos/grupo_borges",
+            "claude-opus-4-8",
+            session_id,
+        )
+
+    assert result == {"attempted": True, "confirmed": True}
+    assert replacement_pane.sent_commands == [
+        (
+            "TELEGRAM_STATE_DIR=/home/clawd/.claude/channels/telegram-daniel "
+            "PATH=/test/bin:/usr/bin claude --dangerously-skip-permissions "
+            "--model claude-opus-4-8 "
+            f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
+            False,
+        )
+    ]
+
+
 def test_resumed_tui_confirmation_does_not_depend_on_scrolled_banner() -> None:
     pane = _RelaunchPane("contexto retomado visível", show_banner=False)
     pane.enter()
