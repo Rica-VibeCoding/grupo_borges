@@ -20,6 +20,9 @@ INPUT=$(cat)
 printf '%s' "$INPUT" | grep -qE '"prompt"[[:space:]]*:[[:space:]]*"([\]n|[\]t|[\]r| )*\[psmux-pc:' || exit 0
 
 SESSION_ID=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+# Sanitiza: session_id vai pro path do marker em /tmp — só [A-Za-z0-9._-],
+# nada de barra/ponto-ponto (endurecimento da Tara, 04/08, copiado do lado VPS).
+SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9._-' | sed 's/^\.*//')
 [ -n "$SESSION_ID" ] || SESSION_ID="sem-id"
 
 # Só lembra na 1a mensagem desse canal por sessão — releitura a cada mensagem é ruído.
