@@ -18,6 +18,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
+import { ScrollArea } from '@/components/ui/scroll-area';
+
 import { capturaAncora, estaColado, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { chaveDe } from './chave';
 import { CorpoDoItem } from './corpo-do-item';
@@ -156,22 +158,47 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
 
   return (
     <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-      <div
-        ref={scrollerRef}
-        data-gate-messages=""
-        onScroll={aoRolar}
-        style={{
-          height: '100%',
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          padding: '0 var(--ck-space-4)',
-          // O ancoramento nativo do browser não enxerga itens em `position:
-          // absolute` — quem ancora aqui é `ancora.ts`, e os dois brigando
-          // produzem exatamente o tranco que estamos removendo.
-          overflowAnchor: 'none',
+      {/* ScrollArea do shadcn (Radix) — 03/08, ordem do Rica: a barra sai da
+          borda da COLUNA e vai para a borda da TELA. Quem rola é o viewport do
+          Radix (`viewportRef`), que é onde o virtualizador, o `onScroll` e o
+          `data-gate-messages` ficam pendurados. `type="always"`: a barra não
+          se esconde, mas é um fio quase apagado (a cor mora no globals.css,
+          `--ck-scrollbar-thumb`). Sendo overlay, ela não paga largura: nada no
+          layout desloca quando ela aparece — e a gaveta, que é `fixed`, nem
+          sente. */}
+      <ScrollArea
+        type="always"
+        style={{ height: '100%' }}
+        viewportRef={scrollerRef}
+        viewportProps={{
+          // Espalhado, não literal: o TS barra `data-*` em props de componente
+          // tipadas, mas o Radix repassa ao div do viewport — e os gates de
+          // teste procuram o atributo lá.
+          ...{ 'data-gate-messages': '' },
+          onScroll: aoRolar,
+          style: {
+            // O ancoramento nativo do browser não enxerga itens em `position:
+            // absolute` — quem ancora aqui é `ancora.ts`, e os dois brigando
+            // produzem exatamente o tranco que estamos removendo.
+            overflowAnchor: 'none',
+          },
         }}
       >
-        <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+        {/* A coluna de leitura desceu pra DENTRO da rolagem: é ela que segura
+            o `max-width` e centraliza, então o trilho da barra pode encostar
+            na borda da tela sem arrastar o texto junto. O padding horizontal
+            que era do scroller veio junto. */}
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            position: 'relative',
+            width: '100%',
+            maxWidth: 'var(--ck-read-wide)',
+            margin: '0 auto',
+            padding: '0 var(--ck-space-4)',
+            boxSizing: 'border-box',
+          }}
+        >
           {virtuais.map((virtual) => {
             const item = itens[virtual.index];
             return (
@@ -207,7 +234,7 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
             );
           })}
         </div>
-      </div>
+      </ScrollArea>
 
       {temNovas ? (
         <button

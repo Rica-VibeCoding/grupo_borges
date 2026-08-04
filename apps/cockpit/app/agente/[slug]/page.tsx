@@ -202,9 +202,11 @@ export default async function AgentePage({
           `pane_excerpt` e o estado vazio saíram junto — quem cuida dos três
           agora é o próprio feed, que lê o stream inteiro em vez do retrato.
 
-          Coluna de leitura por container query: a coluna não sabe o tamanho da
-          tela, só o do espaço que recebeu. As medidas do ChatGPT são de desktop —
-          no celular a escada desce sozinha. */}
+          Sem a camisa `mx-auto max-w` aqui — 03/08. A coluna de leitura desceu
+          pra dentro do `Feed`, porque a barra de rolagem saiu da borda da
+          coluna e foi pra borda da TELA (ordem do Rica, como na referência do
+          ChatGPT): quem segura o `max-width` agora é o conteúdo dentro do
+          trilho, não um wrapper fora dele. */}
       <div
         className="min-h-0 flex-1"
         style={{
@@ -214,12 +216,7 @@ export default async function AgentePage({
           flexDirection: 'column',
         }}
       >
-        <div
-          className="mx-auto flex min-h-0 w-full flex-1 flex-col"
-          style={{ maxWidth: 'var(--ck-read-wide)' }}
-        >
-          <FeedDaConversa agentSlug={agente.slug} />
-        </div>
+        <FeedDaConversa agentSlug={agente.slug} />
       </div>
 
       <div

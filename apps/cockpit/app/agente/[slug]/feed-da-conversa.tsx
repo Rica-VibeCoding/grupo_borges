@@ -104,16 +104,24 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     if (status !== 'live') return null;
 
     return (
-      <p
-        style={{
-          fontSize: 'var(--ck-text-hero)',
-          lineHeight: 'var(--ck-leading-hero)',
-          letterSpacing: 'var(--ck-track-hero)',
-          color: 'var(--ck-text-secondary)',
-        }}
+      // A coluna de leitura não vem mais de um wrapper na página (ela desceu
+      // pra dentro do Feed, pra barra de rolagem encostar na borda da tela) —
+      // o estado vazio se centra sozinho na mesma medida.
+      <div
+        className="mx-auto w-full"
+        style={{ maxWidth: 'var(--ck-read-wide)', padding: '0 var(--ck-space-4)' }}
       >
-        Sem conversa ainda.
-      </p>
+        <p
+          style={{
+            fontSize: 'var(--ck-text-hero)',
+            lineHeight: 'var(--ck-leading-hero)',
+            letterSpacing: 'var(--ck-track-hero)',
+            color: 'var(--ck-text-secondary)',
+          }}
+        >
+          Sem conversa ainda.
+        </p>
+      </div>
     );
   }
 

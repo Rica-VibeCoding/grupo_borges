@@ -80,6 +80,14 @@
   --ck-edge-hairline: oklch(0.38 0 0);           /* #424242 separador decorativo */
   --ck-edge-light: rgb(255 255 255 / 0.07);      /* fio de luz 1px no TOPO do elevado */
 
+  /* -- barra de rolagem: luz quase apagada, sempre presente ----------------
+   * O Rica pediu o polegar MAIS transparente que o habitual: em repouso ele
+   * fica abaixo até do `edge-light` (7%), presente sem chamar; sob a mão sobe
+   * para perto do hairline. Trilha sempre transparente — a barra flutua sobre
+   * o canvas, não abre uma faixa própria. */
+  --ck-scrollbar-thumb: rgb(255 255 255 / 0.05);
+  --ck-scrollbar-thumb-hover: rgb(255 255 255 / 0.18);
+
   /* -- tipografia: escala ------------------------------------------------- */
   --ck-text-xs: 0.75rem;      /* 12px  overline, badge */
   --ck-text-sm: 0.8125rem;    /* 13px  mono de conteúdo, metadado */
@@ -754,4 +762,17 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .ck-fio-percorre { animation: none; }
+}
+
+/* Barra de rolagem do feed (shadcn ScrollArea, `components/ui/scroll-area.tsx`).
+ * A cor mora aqui, não no componente — mesma regra de sempre. O polegar é
+ * `type="always"` (sempre visível quando há o que rolar) mas quase apagado:
+ * `--ck-scrollbar-thumb` em repouso, `--ck-scrollbar-thumb-hover` sob a mão.
+ * O Radix marca as peças com `data-slot`, que é o gancho — sem classe extra. */
+[data-slot='scroll-area-thumb'] {
+  background: var(--ck-scrollbar-thumb);
+  transition: background var(--ck-dur-enter, 200ms) var(--ck-ease);
+}
+[data-slot='scroll-area-thumb']:hover {
+  background: var(--ck-scrollbar-thumb-hover);
 }
