@@ -28,26 +28,21 @@ if [ -f "$marcador" ] && [ ! "$inbox" -nt "$marcador" ]; then
 fi
 
 corpo="$(cat "$inbox")"
-touch "$marcador"
+cabecalho="Recado de outro agente da frota, entregue em $inbox (o remetente NÃO vê tua resposta — responde pelo canal que ele indicar):
+
+"
 
 # Stop exige JSON com hookSpecificOutput — stdout cru só vale pro SessionStart.
-# python3 pro escape: recado tem aspas, barra e quebra de linha à vontade.
-CORPO="$corpo" INBOX="$inbox" python3 -c '
-import json, os
-print(json.dumps({
-    "hookSpecificOutput": {
-        "hookEventName": "Stop",
-        "additionalContext": (
-            "Recado de outro agente da frota, entregue em "
-            + os.environ["INBOX"]
-            + " (o remetente NÃO vê tua resposta — responde pelo canal que ele indicar):\n\n"
-            + os.environ["CORPO"]
-        ),
-    }
-}))
-' 2>/dev/null || {
-  # Sem python3 no PATH o hook não pode falhar calado e comer o recado:
-  # devolve o marcador pro estado anterior pra tentar de novo no próximo turno.
-  rm -f "$marcador"
-  exit 0
-}
+# Escape em sed, sem depender de interpretador: no PC do Rica o `python3` do PATH
+# é o stub da Microsoft Store (ver pavan/docs/operacao-pc.md). Hoje ele responde,
+# mas se voltar ao comportamento de fábrica o canal emudece calado — e canal que
+# falha em silêncio é o defeito que este hook existe pra matar.
+# Ordem obrigatória: barra invertida ANTES das aspas, senão escapa o próprio escape.
+escapado="$(
+  printf '%s%s' "$cabecalho" "$corpo" \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\r//g' -e 's/\t/\\t/g' \
+    | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g'
+)"
+
+printf '{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"%s"}}\n' "$escapado"
+touch "$marcador"
