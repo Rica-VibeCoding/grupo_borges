@@ -4,4 +4,14 @@ matcher = "startup|resume"
   [[hooks.SessionStart.hooks]]
   type = "command"
   command = "t=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f \"$t/.claude/hooks/check-git-updates.sh\" ] || exit 0; exec bash \"$t/.claude/hooks/check-git-updates.sh\""
+  commandWindows = 'C:\PROGRA~1\Git\bin\bash.exe C:\Users\RicardoBorges\Documents\dev\projetos\cockpit-x\.claude\hooks\check-git-updates.sh'
   timeout = 15
+
+[[hooks.UserPromptSubmit]]
+
+  [[hooks.UserPromptSubmit.hooks]]
+  type = "command"
+  command = "t=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f \"$t/.codex/hooks/psmux-canal-load-skill.sh\" ] || exit 0; exec bash \"$t/.codex/hooks/psmux-canal-load-skill.sh\""
+  commandWindows = 'C:\PROGRA~1\Git\bin\bash.exe C:\Users\RicardoBorges\Documents\dev\projetos\cockpit-x\.codex\hooks\psmux-canal-load-skill.sh'
+  timeout = 5
+  additionalContextLimit = 500
