@@ -27,7 +27,12 @@ import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 const HISTORICO_PADRAO = 1000;
 
 export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
-  const { messages, isRunning, status } = useCanarioStream({
+  // `geracao`: o backend emite `session-reset` quando um Restart sem contexto
+  // zera o histórico — o hook a incrementa e nasce com `messages` vazias.
+  // Ela vira `key` lá embaixo (padrão react.dev de reset): Feed, virtualizador
+  // e classificador incremental remontam no MESMO commit em que a lista zera —
+  // sem frame com conteúdo velho, sem frame vazio no meio.
+  const { messages, isRunning, status, geracao } = useCanarioStream({
     slug: agentSlug,
     limit: HISTORICO_PADRAO,
     recentes: true,
@@ -55,12 +60,19 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     }
   }, [messages, faseCompact, desdeCompactMs, concluirCompact]);
 
-  // Instância estável — mesma razão do FeedAoVivo: recriar por render jogaria
-  // fora o estado incremental do classificador.
-  const incrementalRef = useRef<ReturnType<typeof createIncrementalRenderItems> | null>(null);
-  if (incrementalRef.current === null) incrementalRef.current = createIncrementalRenderItems();
+  // Instância estável POR GERAÇÃO — mesma razão do FeedAoVivo: recriar por
+  // render jogaria fora o estado incremental do classificador. Na troca de
+  // geração (session-reset), recriar é exatamente o pedido: o classificador
+  // não pode herdar nada da conversa que foi apagada.
+  const incrementalRef = useRef<{
+    geracao: number;
+    instance: ReturnType<typeof createIncrementalRenderItems>;
+  } | null>(null);
+  if (incrementalRef.current === null || incrementalRef.current.geracao !== geracao) {
+    incrementalRef.current = { geracao, instance: createIncrementalRenderItems() };
+  }
 
-  const itensBase = useMemo(() => [...incrementalRef.current!.update(messages)], [messages]);
+  const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(messages)], [messages]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
 
   // A LINHA VIVA. A corrida está de pé (`isRunning`) mas o fim do feed não
@@ -106,9 +118,12 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     return (
       // A coluna de leitura não vem mais de um wrapper na página (ela desceu
       // pra dentro do Feed, pra barra de rolagem encostar na borda da tela) —
-      // o estado vazio se centra sozinho na mesma medida.
+      // o estado vazio se centra sozinho na mesma medida. `key={geracao}` +
+      // `ck-feed-enter`: após um Restart, o "Sem conversa ainda." nasce com
+      // fade em vez de piscada dura.
       <div
-        className="mx-auto w-full"
+        key={geracao}
+        className="ck-feed-enter mx-auto w-full"
         style={{ maxWidth: 'var(--ck-read-wide)', padding: '0 var(--ck-space-4)' }}
       >
         <p
@@ -125,5 +140,15 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     );
   }
 
-  return <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />;
+  // O wrapper existe pra `key` + fade da troca de geração sem tocar em
+  // `components/feed/**` (território do Hiro): `flex column` + `min-h-0`
+  // repassam ao Feed exatamente o espaço que ele tinha antes.
+  return (
+    <div
+      key={geracao}
+      className="ck-feed-enter flex min-h-0 flex-1 flex-col"
+    >
+      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />
+    </div>
+  );
 }

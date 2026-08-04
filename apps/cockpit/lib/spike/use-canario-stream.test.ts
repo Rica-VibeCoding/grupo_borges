@@ -262,6 +262,37 @@ test('evento com id não-crescente é descartado, mas o descarte fica contado', 
   controller.dispose();
 });
 
+test('session-reset chama onSessionReset e nada mais — quem remonta é o hook', () => {
+  const clock = timers();
+  const fake = eventSources();
+  let resets = 0;
+  const controller = createCanarioStream({
+    slug: 'canario',
+    eventSourceConstructor: fake.EventSource,
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+    onSessionReset: () => {
+      resets += 1;
+    },
+  });
+  const source = fake.instances[0];
+
+  source.emit('replay-start');
+  source.emit('message', FIXTURE.evento);
+  source.emit('replay-end');
+  assert.equal(controller.getSnapshot().messages.length, 1);
+
+  // O controller não limpa nada sozinho: estado intacto até o hook trocar a
+  // geração e nascer um controller novo. Reset em conexão morta não conta.
+  source.emit('session-reset', { slug: 'canario', reason: 'relaunch-fresh' });
+  assert.equal(resets, 1);
+  assert.equal(controller.getSnapshot().messages.length, 1);
+
+  controller.dispose();
+  source.emit('session-reset', {});
+  assert.equal(resets, 1);
+});
+
 test('recentes só vai na primeira conexão — em reconexão manda since_id', () => {
   const clock = timers();
   const fake = eventSources();

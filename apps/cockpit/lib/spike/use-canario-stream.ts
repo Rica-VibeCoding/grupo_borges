@@ -68,6 +68,13 @@ type CanarioStreamOptions = {
    */
   scheduleFrameFn?: (callback: () => void) => number;
   cancelFrameFn?: (handle: number) => void;
+  /**
+   * O backend avisa que o histórico foi zerado (Restart sem contexto apaga os
+   * eventos jsonl do agente — ver `services/session_reset.py` na API). O
+   * controller NÃO se remenda: quem ouve é o hook, que incrementa a geração e
+   * nasce um controller novo — cursor e mensagens velhos morrem com ele.
+   */
+  onSessionReset?: () => void;
 };
 
 type CanarioStreamController = {
@@ -251,6 +258,11 @@ export function createCanarioStream(
       armWatchdog();
     });
 
+    nextSource.addEventListener('session-reset', () => {
+      if (!isCurrent()) return;
+      options.onSessionReset?.();
+    });
+
     nextSource.addEventListener('heartbeat', () => {
       if (!isCurrent()) return;
       armWatchdog();
@@ -302,8 +314,14 @@ export function useCanarioStream({
   limit = 500,
   recentes = false,
   eventSourceConstructor,
-}: UseCanarioStreamOptions): CanarioStreamState {
+}: UseCanarioStreamOptions): CanarioStreamState & { geracao: number } {
   const [state, setState] = useState<CanarioStreamState>(INITIAL_STATE);
+  // Geração da sessão: o `session-reset` do backend (Restart sem contexto) a
+  // incrementa, e ela entrando nas deps do efeito NASCE um controller novo —
+  // EventSource fecha, coalescedor e cursor morrem, `messages` volta a `[]` no
+  // mesmo commit. É o padrão "reset por key" do react.dev aplicado ao stream:
+  // sem frame intermediário, sem mensagem velha sobrevivendo.
+  const [geracao, setGeracao] = useState(0);
 
   useEffect(() => {
     const EventSourceImpl =
@@ -319,6 +337,7 @@ export function useCanarioStream({
       limit,
       recentes,
       eventSourceConstructor: EventSourceImpl,
+      onSessionReset: () => setGeracao((g) => g + 1),
     });
     setState(controller.getSnapshot());
     const unsubscribe = controller.subscribe(() => {
@@ -329,7 +348,7 @@ export function useCanarioStream({
       unsubscribe();
       controller.dispose();
     };
-  }, [eventSourceConstructor, limit, recentes, sessionId, slug]);
+  }, [eventSourceConstructor, limit, recentes, sessionId, slug, geracao]);
 
-  return state;
+  return { ...state, geracao };
 }

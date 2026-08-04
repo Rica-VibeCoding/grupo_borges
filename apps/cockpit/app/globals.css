@@ -776,3 +776,16 @@ body {
 [data-slot='scroll-area-thumb']:hover {
   background: var(--ck-scrollbar-thumb-hover);
 }
+
+/* Entrada do feed após `session-reset` (Restart sem contexto). A remontagem
+ * por `key` é atômica — sem isso o chat zerava num corte seco; com isso o
+ * estado novo nasce num fade curto. Só opacity: nada desloca layout. */
+@keyframes ck-feed-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ck-feed-enter {
+    animation: ck-feed-enter var(--ck-dur-enter, 200ms) var(--ck-ease) both;
+  }
+}
