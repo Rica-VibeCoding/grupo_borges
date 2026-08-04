@@ -78,3 +78,4 @@ fixtures/cockpit-v2/transcripts/
 
 # Relatos de agentes dirigidos por multiplexador (psmux) — artefato local.
 .claude/relatos/
+.claude/skills/reiniciar-tudo/
