@@ -65,6 +65,16 @@ temp/
 # Regravar com fixtures/cockpit-v2/gravar-transcripts.py.
 fixtures/cockpit-v2/transcripts/
 
+# Skill do psmux — ferramenta LOCAL do PC do Rica (Windows), não da VPS.
+# psmux é multiplexador Windows; a frota roda tmux em Linux. Copiada do Fluyt
+# em 2026-08-03 pra dirigir agente por multiplexador aqui no PC. Se o conteúdo
+# virar conhecimento da frota, promover pra doc versionado em .claude/docs/ —
+# não remover esta linha.
+.claude/skills/psmux/
+
 # Worktrees efêmeros do Agent View do Claude Code (isolamento por sessão).
 # Nunca são deliverable — o trabalho volta pelo commit, não pela pasta.
 .claude/worktrees/
+
+# Relatos de agentes dirigidos por multiplexador (psmux) — artefato local.
+.claude/relatos/
