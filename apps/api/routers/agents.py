@@ -2889,19 +2889,24 @@ async def post_agent_relaunch(
         if session_id is None:
             raise HTTPException(status_code=409, detail="resume_session_not_found")
 
+    # Preserva o modelo trocado em runtime (`/model`, persistido em state_model);
+    # sem isso o relaunch sempre revertia pro model_default fixo do agents.yaml
+    # (bug confirmado 03/08: Pavan em Opus 5 voltava pra claude-opus-4-8 a cada restart).
+    relaunch_model = agent.get("state_model") or agent["model_default"]
+
     try:
         if payload.resume:
             result = await tmux_driver.restart_claude_with_resume(
                 agent["tmux_session"],
                 agent["workspace_path"],
-                agent["model_default"],
+                relaunch_model,
                 session_id,
             )
         else:
             result = await tmux_driver.restart_claude_fresh(
                 agent["tmux_session"],
                 agent["workspace_path"],
-                agent["model_default"],
+                relaunch_model,
             )
     except (
         ValueError,
