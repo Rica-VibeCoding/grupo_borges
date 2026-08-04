@@ -15,15 +15,22 @@
  * 3. **No topo**, antes dos seis campos de detalhe. Casa com o `.ck-flutua`
  *    ancorado no topo (a borda de cima nunca se move): as ações ficam à vista
  *    cresça o painel quanto crescer, e o que rola por dentro é a referência.
- * 4. **Destravar é toque simples.** O endpoint só manda Escape e é idempotente
- *    — sem modal aberto, vira no-op. A pressão longa de 2s do cockpit antigo
- *    existe para proteger o `/clear`, que zera contexto; herdar o gesto aqui
- *    seria copiar a proteção sem o perigo, e esconder atrás de dois segundos
- *    justamente a ação que salva o Rica de um agente travado.
+ * 4. **Destravar é toque simples.** O endpoint manda até 3 Escapes (03/08: um
+ *    só raramente resolve overlay em camada) e é idempotente — sem nada pra
+ *    fechar, vira no-op. A pressão longa de 2s do cockpit antigo existe para
+ *    proteger o `/clear`, que zera contexto; herdar o gesto aqui seria copiar
+ *    a proteção sem o perigo, e esconder atrás de dois segundos justamente a
+ *    ação que salva o Rica de um agente travado. O backend checa o estado
+ *    ENTRE cada Escape e para assim que confirma "vazio" — nunca manda dois
+ *    seguidos sobre um prompt já vazio, que é o atalho nativo do próprio
+ *    Claude Code pra abrir o menu de rewind (Esc+Esc).
  *
- * NÃO INVENTEI `/clear`. Ele é vizinho do destrava no cockpit antigo e seria o
- * quinto botão óbvio — mas o §17 lista quatro rotas, e é destrutivo. Entra
- * quando for pedido, não porque cabia.
+ * `/clear` nunca entrou — mas o **Restart** (03/08) é o vizinho ainda mais
+ * destrutivo que a nota original dizia não ter inventado: zera a conversa
+ * inteira, não só o contexto de sessão. Entrou porque foi pedido explicitamente
+ * pelo Rica (o destravar 1x raramente resolvia; o relançar com `--resume`
+ * às vezes nem confirma o resume se a âncora não bate) — mesma régua de
+ * sempre, o botão nasce do pedido, não da simetria com o que já existe.
  *
  * A régua — quais controles existem, em que ordem, como se traduzem e o que
  * cada falha diz — mora em `acoes-rapidas.ts`, testada. Aqui fica só estado,
@@ -37,7 +44,6 @@ import {
   patchAgentPermissionMode,
   postAgentDestrava,
   postAgentRelaunch,
-  type RelaunchResponse,
 } from '@grupo_borges/cockpit-core/api';
 import type {
   AgentPainelResponse,
@@ -65,6 +71,7 @@ import {
   type FaseDestrava,
   type FaseRelancar,
   type Impedimento,
+  type ModoRelancar,
 } from './acoes-rapidas';
 import { IconeDescartar } from './icones';
 import { usaCompact } from '../../lib/compact';
@@ -90,18 +97,25 @@ const REDE = {
 };
 
 /**
- * O ciclo do relançar (armar → confirmar → enviar → recibo), parametrizado
- * por `resume`: mesma máquina de fase pros dois botões (com/sem contexto),
- * nunca duas cópias divergindo. `setFalha` vem de fora — o painel tem UM
- * aviso de erro só, não um por botão.
+ * O ciclo do relançar (armar → confirmar → enviar → recibo) pros DOIS botões
+ * (Resume/Restart) de uma vez — um `estado` só, não uma instância por modo.
+ *
+ * Auditoria 03/08 achou a versão anterior (uma instância de hook por botão,
+ * cada uma com sua própria `fase`) com uma brecha: nada impedia armar/disparar
+ * os dois ao mesmo tempo (o back segura via lock e devolve 409, mas a
+ * mensagem manda diagnosticar a infra quando o problema foi o dedo). Um
+ * estado compartilhado fecha a brecha de graça: só um `modo` por vez pode
+ * estar fora de `ocioso`, e o rótulo curto "Confirmar?" nunca aparece em dois
+ * botões ao mesmo tempo — o botão inativo sempre mostra seu rótulo normal.
+ *
+ * `setFalha` vem de fora — o painel tem UM aviso de erro só, não um por botão.
  */
 function useRelancar(
   agentSlug: string,
-  resume: boolean,
   aberto: boolean,
   setFalha: (falha: Impedimento | null) => void,
 ) {
-  const [fase, setFase] = useState<FaseRelancar>('ocioso');
+  const [estado, setEstado] = useState<{ modo: ModoRelancar; fase: FaseRelancar } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Painel fechado desarma. Confirmação armada é uma pergunta aberta na tela;
@@ -109,7 +123,7 @@ function useRelancar(
   // novo confirma" faria um toque distraído matar a conversa.
   useEffect(() => {
     if (aberto) return;
-    setFase((f) => (f === 'confirmando' ? 'ocioso' : f));
+    setEstado((atual) => (atual?.fase === 'confirmando' ? null : atual));
     if (timer.current) clearTimeout(timer.current);
   }, [aberto]);
 
@@ -117,41 +131,87 @@ function useRelancar(
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  async function acionar() {
-    if (fase === 'enviando') return;
+  async function acionar(modo: ModoRelancar) {
+    // Qualquer relançamento em voo bloqueia os DOIS botões, não só o que foi
+    // clicado — é a mesma trava que impede o dedo de disparar dois ao mesmo
+    // tempo.
+    if (estado?.fase === 'enviando') return;
 
-    // Primeiro toque ARMA. Errar o toque aqui custa caro — no mínimo o turno
-    // em voo, no modo sem contexto a conversa inteira.
-    if (fase !== 'confirmando') {
+    // Primeiro toque ARMA. Clicar num modo diferente do que já estava armado
+    // reinicia a pergunta pro modo novo — o dedo mudou de ideia, não precisa
+    // de um terceiro toque pra "cancelar" o anterior.
+    if (estado?.modo !== modo || estado.fase !== 'confirmando') {
       setFalha(null);
-      setFase('confirmando');
+      setEstado({ modo, fase: 'confirmando' });
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
-        setFase((f) => (f === 'confirmando' ? 'ocioso' : f));
+        setEstado((atual) => (atual?.fase === 'confirmando' ? null : atual));
       }, CONFIRMA_RELANCAR_MS);
       return;
     }
 
     if (timer.current) clearTimeout(timer.current);
     setFalha(null);
-    setFase('enviando');
+    setEstado({ modo, fase: 'enviando' });
     try {
-      const resposta = await REDE.relanca(agentSlug, resume);
+      const resposta = await REDE.relanca(agentSlug, modo === 'resume');
       const aviso = leiaRelancar(resposta);
       if (aviso) {
         setFalha(aviso);
-        setFase('ocioso');
+        setEstado(null);
         return;
       }
-      setFase('relancado');
-      timer.current = setTimeout(() => setFase('ocioso'), RECIBO_MS);
+      setEstado({ modo, fase: 'relancado' });
+      timer.current = setTimeout(() => setEstado(null), RECIBO_MS);
     } catch (erro) {
-      setFase('ocioso');
+      setEstado(null);
       setFalha(diagnosticaRelancar(erro));
     }
   }
 
-  return [fase, acionar] as const;
+  const faseDe = (modo: ModoRelancar): FaseRelancar => (estado?.modo === modo ? estado.fase : 'ocioso');
+  return { faseDe, acionar } as const;
+}
+
+/** Um dos dois botões de relançar (Resume/Restart) — mesmo pixel, mesma régua
+ *  de cor, só o `modo` (e por consequência a `fase` e o rótulo) muda. */
+function BotaoRelancar({
+  fase,
+  modo,
+  onClick,
+}: {
+  fase: FaseRelancar;
+  modo: ModoRelancar;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-busy={fase === 'enviando'}
+      aria-label={descreveRelancar(fase, modo)}
+      className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+      style={{
+        minHeight: 'var(--ck-touch-min)',
+        padding: '0 var(--ck-space-2)',
+        borderRadius: 'var(--ck-radius-frame)',
+        borderColor: 'var(--ck-edge-functional)',
+        fontSize: 'var(--ck-text-sm)',
+        whiteSpace: 'nowrap',
+        // Mesma régua do destrava: a PALAVRA muda junto com a cor, nunca a
+        // cor sozinha (§3/§9.7).
+        color:
+          fase === 'confirmando'
+            ? 'var(--ck-state-attention)'
+            : fase === 'relancado'
+              ? 'var(--ck-state-ok)'
+              : 'var(--ck-text-primary)',
+        transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+      }}
+    >
+      {rotulaRelancar(fase, modo)}
+    </button>
+  );
 }
 
 export type BlocoDeAcoesProps = {
@@ -180,8 +240,9 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const [emVoo, setEmVoo] = useState<{ id: AcaoId; valor: string } | null>(null);
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
-  const [relancar, acionarRelancar] = useRelancar(agentSlug, true, aberto, setFalha);
-  const [relancarFresco, acionarRelancarFresco] = useRelancar(agentSlug, false, aberto, setFalha);
+  const { faseDe: faseRelancar, acionar: acionarRelancar } = useRelancar(agentSlug, aberto, setFalha);
+  const relancar = faseRelancar('resume');
+  const relancarFresco = faseRelancar('fresco');
   const [retentativa, setRetentativa] = useState(0);
 
   // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
@@ -375,6 +436,19 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   // conceito de Claude Code, e a Tara retoma thread por outro caminho.
   const codex = painel ? ehCodex(painel) : false;
 
+  // Aviso de confirmação de largura cheia — o rótulo DENTRO do botão é sempre
+  // curto ("Confirmar?"), a frase que explica o que se perde mora aqui embaixo
+  // (auditoria 03/08: a frase inteira dentro do botão de ~110px cortava antes
+  // de "tocar de novo confirma", que é o próprio aviso do toque destrutivo).
+  const avisoConfirmacao =
+    confirmaCompact && compactEmVoo
+      ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
+      : relancar === 'confirmando'
+        ? descreveRelancar(relancar)
+        : relancarFresco === 'confirmando'
+          ? descreveRelancar(relancarFresco, 'fresco')
+          : null;
+
   return (
     <section
       aria-label="ações rápidas"
@@ -434,7 +508,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
               // é a frase inteira.
               aria-label={
                 confirmaCompact && compactEmVoo
-                  ? 'Destravar interrompe o resumo do compact — tocar de novo confirma'
+                  ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
                   : destrava === 'ocioso'
                     ? 'Destravar o agente — envia Escape 3x no terminal dele'
                     : rotulaDestrava(destrava)
@@ -447,7 +521,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
                 borderColor: 'var(--ck-edge-functional)',
                 fontSize: 'var(--ck-text-sm)',
                 whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
                 // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
                 // portadora de significado (§3/§9.7). A confirmação do compact
                 // entra na mesma régua — âmbar de atenção E outra frase.
@@ -460,9 +533,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
                 transition: 'color var(--ck-dur-fast) var(--ck-ease)',
               }}
             >
-            {confirmaCompact && compactEmVoo
-              ? 'Interrompe o resumo — tocar de novo confirma'
-              : rotulaDestrava(destrava)}
+            {confirmaCompact && compactEmVoo ? 'Confirmar?' : rotulaDestrava(destrava)}
           </button>
 
           {/* RELANÇAR (com contexto) — o degrau acima do destrava. Quando o
@@ -471,33 +542,11 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
               `--resume`. Fica DEPOIS do destrava de propósito: é a ação mais
               cara das três, e a ordem na tela é a ordem em que se deve tentar. */}
           {!codex ? (
-            <button
-              type="button"
-              onClick={() => void acionarRelancar()}
-              aria-busy={relancar === 'enviando'}
-              aria-label={descreveRelancar(relancar)}
-              className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
-              style={{
-                minHeight: 'var(--ck-touch-min)',
-                padding: '0 var(--ck-space-2)',
-                borderRadius: 'var(--ck-radius-frame)',
-                borderColor: 'var(--ck-edge-functional)',
-                fontSize: 'var(--ck-text-sm)',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-                // Mesma régua do destrava: a PALAVRA muda junto com a cor, nunca a
-                // cor sozinha (§3/§9.7).
-                color:
-                  relancar === 'confirmando'
-                    ? 'var(--ck-state-attention)'
-                    : relancar === 'relancado'
-                      ? 'var(--ck-state-ok)'
-                      : 'var(--ck-text-primary)',
-                transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-              }}
-            >
-              {rotulaRelancar(relancar)}
-            </button>
+            <BotaoRelancar
+              fase={relancar}
+              modo="resume"
+              onClick={() => void acionarRelancar('resume')}
+            />
           ) : null}
 
           {/* RELANÇAR SEM CONTEXTO — o degrau mais caro dos três. Sobe um
@@ -505,33 +554,28 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
               que nem o resume confirma (âncora não bate), ou pra quando
               recomeçar do zero é o que se quer mesmo. */}
           {!codex ? (
-            <button
-              type="button"
-              onClick={() => void acionarRelancarFresco()}
-              aria-busy={relancarFresco === 'enviando'}
-              aria-label={descreveRelancar(relancarFresco, 'fresco')}
-              className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
-              style={{
-                minHeight: 'var(--ck-touch-min)',
-                padding: '0 var(--ck-space-2)',
-                borderRadius: 'var(--ck-radius-frame)',
-                borderColor: 'var(--ck-edge-functional)',
-                fontSize: 'var(--ck-text-sm)',
-                whiteSpace: 'nowrap',
-                textOverflow: 'ellipsis',
-                color:
-                  relancarFresco === 'confirmando'
-                    ? 'var(--ck-state-attention)'
-                    : relancarFresco === 'relancado'
-                      ? 'var(--ck-state-ok)'
-                      : 'var(--ck-text-primary)',
-                transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-              }}
-            >
-              {rotulaRelancar(relancarFresco, 'fresco')}
-            </button>
+            <BotaoRelancar
+              fase={relancarFresco}
+              modo="fresco"
+              onClick={() => void acionarRelancar('fresco')}
+            />
           ) : null}
         </div>
+      ) : null}
+
+      {avisoConfirmacao ? (
+        // Largura cheia da gaveta (~348px), não o ~1/3 apertado de um botão —
+        // é aqui que mora a frase que o rótulo curto do botão não conseguia
+        // mostrar sem cortar (ver comentário de `avisoConfirmacao` acima).
+        <p
+          role="status"
+          style={{
+            fontSize: 'var(--ck-text-xs)',
+            color: 'var(--ck-state-attention)',
+          }}
+        >
+          {avisoConfirmacao}
+        </p>
       ) : null}
 
       {falha ? (

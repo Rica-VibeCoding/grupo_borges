@@ -737,6 +737,28 @@ def test_recover_reports_empty_at_step_two() -> None:
     assert _recover(pane) == {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
 
 
+def test_recover_never_sends_escape_when_already_empty() -> None:
+    """Prompt já vazio desde o início: nenhum Escape é mandado. Mandar um só
+    que fosse arriscaria abrir o rewind menu se o Rica repetisse o toque logo
+    em seguida (Esc+Esc em sequência é o atalho nativo do Claude Code)."""
+    pane = _FakePane("irrelevante")
+
+    assert _recover(pane) == {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
+    assert pane.escape_count == 0
+
+
+def test_recover_stops_escaping_once_input_confirms_empty() -> None:
+    """Prova a correção do bug do rewind menu: overlay fecha no 1º Escape, e
+    o degrau 1 PARA em vez de mandar mais 2 — dois Escapes seguidos com o
+    prompt já vazio é o atalho nativo do Claude Code pra abrir o menu de
+    rewind (Esc+Esc, documentado em code.claude.com/docs/en/interactive-mode),
+    que deixaria o pane preso num menu que este endpoint não sabe fechar."""
+    pane = _FakePane("irrelevante", unknown_before_readable=1)
+
+    assert _recover(pane) == {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
+    assert pane.escape_count == 1
+
+
 def test_recover_submits_armed_text_with_enter_at_step_three() -> None:
     pane = _FakePane("texto humano")
     pane.state = "armed"
@@ -857,6 +879,10 @@ def test_recover_returns_buffer_name_when_repaste_fails() -> None:
 
 def test_recover_reports_escape_command_failure() -> None:
     pane = _EscapeErrorPane("texto")
+    # O loop novo só manda Escape enquanto o snapshot ainda não prova "empty"
+    # (checagem entre teclas, ver comentário do degrau 1) — sem texto armado
+    # o teste nunca chegaria a chamar `send-keys Escape` nenhuma vez.
+    pane.state = "armed"
 
     assert _recover(pane) == {
         "tmux_delivered": False,

@@ -264,7 +264,7 @@ describe('destrava — o 200 não é sucesso', () => {
   it('o rótulo do botão conta as três fases', () => {
     assert.equal(rotulaDestrava('ocioso'), 'Destravar');
     assert.equal(rotulaDestrava('enviando'), 'Destravando…');
-    assert.equal(rotulaDestrava('entregue'), 'Escape enviado');
+    assert.equal(rotulaDestrava('entregue'), 'Enviado');
   });
 
   it('o recibo é curto: recibo, não estado', () => {
@@ -315,15 +315,27 @@ describe('relançar', () => {
     for (const r of rotulos) assert.ok(r.length > 0);
   });
 
-  it('a confirmação avisa o que se perde, não só que é preciso confirmar', () => {
-    assert.match(rotulaRelancar('confirmando'), /turno atual/);
-    assert.match(rotulaRelancar('confirmando'), /tocar de novo/i);
+  it('o rótulo do botão é SEMPRE curto — cabe nos ~110px de um dos três botões na mesma linha', () => {
+    // Auditoria 03/08: a frase inteira ("Mata o turno atual — tocar de novo
+    // confirma", 43 char) cortava em elipse dentro do botão, e a elipse nem
+    // aparecia (text-overflow não se aplica a um flex container). O rótulo
+    // curto elimina o corte; a frase completa migrou pra `descreveRelancar`.
+    for (const fase of ['ocioso', 'confirmando', 'enviando', 'relancado'] as const) {
+      assert.ok(
+        rotulaRelancar(fase).length <= 12,
+        `"${rotulaRelancar(fase)}" (fase ${fase}) é longo demais pro botão`,
+      );
+    }
   });
 
   it('o ocioso é o rótulo curto pedido pelo Rica; a promessa da conversa mora na descrição', () => {
     assert.equal(rotulaRelancar('ocioso'), 'Resume');
     assert.match(descreveRelancar('ocioso'), /conversa/i);
-    assert.match(rotulaRelancar('relancado'), /conversa/i);
+  });
+
+  it('a confirmação avisa o que se perde, não só que é preciso confirmar — na DESCRIÇÃO, não no rótulo do botão', () => {
+    assert.match(descreveRelancar('confirmando'), /turno atual/);
+    assert.match(descreveRelancar('confirmando'), /tocar de novo/i);
   });
 
   it('o nome acessível do ocioso contém o rótulo visível (WCAG 2.5.3)', () => {
@@ -333,23 +345,29 @@ describe('relançar', () => {
     assert.match(descreveRelancar('ocioso'), /turno em andamento é perdido/);
   });
 
-  it('fora do ocioso o nome acessível é o próprio rótulo — sem dizer duas vezes', () => {
-    for (const fase of ['confirmando', 'enviando', 'relancado'] as const) {
-      assert.equal(descreveRelancar(fase), rotulaRelancar(fase));
+  it('o nome acessível de TODA fase começa pelo próprio rótulo do botão (WCAG 2.5.3), não só o ocioso', () => {
+    for (const fase of ['ocioso', 'confirmando', 'enviando', 'relancado'] as const) {
+      assert.ok(
+        descreveRelancar(fase).startsWith(rotulaRelancar(fase)),
+        `descrição de "${fase}" não começa pelo rótulo "${rotulaRelancar(fase)}"`,
+      );
     }
   });
 
-  it('modo fresco avisa que perde a conversa INTEIRA, não só o turno', () => {
+  it('modo fresco avisa que perde a conversa INTEIRA, não só o turno — na descrição', () => {
     assert.equal(rotulaRelancar('ocioso', 'fresco'), 'Restart');
     assert.ok(descreveRelancar('ocioso', 'fresco').startsWith('Restart'));
-    assert.match(rotulaRelancar('confirmando', 'fresco'), /apaga a conversa/i);
+    assert.match(descreveRelancar('confirmando', 'fresco'), /apaga a conversa/i);
     assert.match(descreveRelancar('ocioso', 'fresco'), /perde a conversa inteira/i);
   });
 
-  it('resume e fresco nunca dizem a mesma frase pro mesmo estado — dedo não confunde os dois botões', () => {
-    for (const fase of ['ocioso', 'confirmando', 'relancado'] as const) {
-      assert.notEqual(rotulaRelancar(fase, 'resume'), rotulaRelancar(fase, 'fresco'));
-    }
+  it('resume e fresco só precisam diferir no ocioso — os dois nunca ficam fora de ocioso ao mesmo tempo', () => {
+    // O hook único do componente (`useRelancar`) garante que só um `modo` por
+    // vez sai de "ocioso" — por isso "Confirmar?"/"Relançando…"/"Relançado"
+    // podem ser iguais nos dois modos sem ambiguidade visual: nunca aparecem
+    // nos dois botões ao mesmo tempo. Só o ocioso, onde os DOIS botões ficam
+    // visíveis e ativos simultaneamente, precisa mesmo diferir.
+    assert.notEqual(rotulaRelancar('ocioso', 'resume'), rotulaRelancar('ocioso', 'fresco'));
   });
 
   it('200 com tmux_delivered false NÃO é sucesso', () => {

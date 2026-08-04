@@ -2883,38 +2883,32 @@ async def post_agent_relaunch(
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     session_id: str | None = None
-    if not payload.resume:
-        try:
-            result = await tmux_driver.restart_claude_fresh(
-                agent["tmux_session"],
-                agent["workspace_path"],
-                agent["model_default"],
-            )
-        except (
-            ValueError,
-            libtmux_exc.LibTmuxException,
-            tmux_driver.TmuxSessionBusyError,
-        ) as exc:
-            raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
-    else:
+    if payload.resume:
         db: GrupoBorgesDB = request.app.state.db
         session_id = await db.latest_jsonl_session_id(slug)
         if session_id is None:
             raise HTTPException(status_code=409, detail="resume_session_not_found")
 
-        try:
+    try:
+        if payload.resume:
             result = await tmux_driver.restart_claude_with_resume(
                 agent["tmux_session"],
                 agent["workspace_path"],
                 agent["model_default"],
                 session_id,
             )
-        except (
-            ValueError,
-            libtmux_exc.LibTmuxException,
-            tmux_driver.TmuxSessionBusyError,
-        ) as exc:
-            raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
+        else:
+            result = await tmux_driver.restart_claude_fresh(
+                agent["tmux_session"],
+                agent["workspace_path"],
+                agent["model_default"],
+            )
+    except (
+        ValueError,
+        libtmux_exc.LibTmuxException,
+        tmux_driver.TmuxSessionBusyError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=f"relaunch_failed: {exc}") from exc
 
     return {
         "tmux_delivered": result["confirmed"],

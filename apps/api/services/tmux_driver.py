@@ -1560,24 +1560,35 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
             return {"tmux_delivered": False, "degrau": 5, "acao": "pane_incompativel"}
 
         try:
-            # Degrau 1: fecha modal, se houver. 3x de propósito — no terminal,
-            # um Escape sozinho na maioria esmagadora não resolve nada (overlay
-            # em camada, menu de autocomplete); repetir é o que costuma destravar.
+            # Degrau 1: fecha modal, se houver. Até 3x de propósito — no
+            # terminal, um Escape sozinho na maioria esmagadora não resolve
+            # nada (overlay em camada, menu de autocomplete). Mas o estado é
+            # checado ENTRE cada tecla, e o loop para assim que confirmar
+            # "empty": dois Escapes seguidos com o prompt JÁ vazio é o atalho
+            # nativo do próprio Claude Code pra abrir o menu de rewind
+            # (Esc+Esc, documentado em code.claude.com/docs/en/interactive-mode)
+            # — trocaria um destravamento inofensivo por uma tela de navegação
+            # que este endpoint não reconhece nem sabe fechar (não bate no
+            # formato de caixa de input que `_capture_input_snapshot` espera).
+            snapshot = _capture_input_snapshot(pane)
             for _ in range(3):
+                if snapshot.state == "empty":
+                    break
                 if not _send_key(pane, "Escape"):
                     return {"tmux_delivered": False, "degrau": 5, "acao": "escape_falhou"}
-            read_deadline = time.monotonic() + _PRE_PASTE_CONFIRM_TIMEOUT_S
-            snapshot = _wait_for_input(
-                pane,
-                lambda candidate: candidate.state != "unknown",
-                read_deadline,
-            )
-            if snapshot is None:
-                return {
-                    "tmux_delivered": False,
-                    "degrau": 5,
-                    "acao": "input_nao_observavel",
-                }
+                read_deadline = time.monotonic() + _PRE_PASTE_CONFIRM_TIMEOUT_S
+                observed = _wait_for_input(
+                    pane,
+                    lambda candidate: candidate.state != "unknown",
+                    read_deadline,
+                )
+                if observed is None:
+                    return {
+                        "tmux_delivered": False,
+                        "degrau": 5,
+                        "acao": "input_nao_observavel",
+                    }
+                snapshot = observed
             # Degrau 2: Escape deixou um input vazio; não existe texto a enviar.
             if snapshot.state == "empty":
                 return {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}

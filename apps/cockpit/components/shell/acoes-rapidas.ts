@@ -230,7 +230,7 @@ export const RECIBO_MS = 1600;
 
 export function rotulaDestrava(fase: FaseDestrava): string {
   if (fase === 'enviando') return 'Destravando…';
-  if (fase === 'entregue') return 'Escape enviado';
+  if (fase === 'entregue') return 'Enviado';
   return 'Destravar';
 }
 
@@ -254,19 +254,25 @@ export function leiaDestrava(resposta: { tmux_delivered: boolean }): Impedimento
 // ---------------------------------------------------------------------------
 
 /**
- * O relançar mata o processo do Claude Code no pane e sobe outro com
- * `--resume <session_id>`. A conversa sobrevive; o turno em andamento, não.
+ * O relançar mata o processo do Claude Code no pane e sobe outro no lugar —
+ * `resume` mata qual variante: com `--resume <session_id>` (conversa
+ * sobrevive, só o turno em andamento morre) ou do zero (perde a conversa
+ * inteira, de propósito).
  *
- * Por isso ele NÃO é toque simples como o destrava. O destrava manda um Escape
- * idempotente — errar o toque não custa nada. Aqui errar o toque interrompe
- * trabalho em voo. O gesto é o mesmo já usado no destrava-durante-compact
- * (armar e confirmar), e não a pressão longa do cockpit antigo: pressão longa
- * esconde a ação de quem está com pressa, e este botão existe justamente para
- * a hora em que o canal do agente morreu e o Rica precisa dele de volta.
+ * Por isso ele NÃO é toque simples como o destrava. O destrava manda Escape,
+ * idempotente — errar o toque não custa nada. Aqui errar o toque custa caro
+ * nos dois modos (o resume perde o turno em voo, o fresco perde tudo). O
+ * gesto é o mesmo já usado no destrava-durante-compact (armar e confirmar), e
+ * não a pressão longa do cockpit antigo: pressão longa esconde a ação de quem
+ * está com pressa, e este botão existe justamente para a hora em que o canal
+ * do agente morreu e o Rica precisa dele de volta.
  *
  * O `ModoRelancar` (`resume`/`fresco`) mora nas funções de tradução, não
  * neste tipo: as duas variantes são o mesmo botão com o mesmo ciclo de fase,
- * só mudando a régua e o `resume` que vai pro back — não duas máquinas.
+ * só mudando a régua e o `resume` que vai pro back — não duas máquinas. Os
+ * dois modos também compartilham o MESMO estado no componente (`useRelancar`
+ * em `bloco-de-acoes.tsx`), não duas instâncias — só um pode sair de `ocioso`
+ * por vez, o que evita o dedo disparar os dois relançamentos ao mesmo tempo.
  */
 export type FaseRelancar = 'ocioso' | 'confirmando' | 'enviando' | 'relancado';
 
@@ -288,31 +294,35 @@ export const RETENTA_PAINEL_TETO_MS = 15_000;
  *  turno em voo, daí o aviso de confirmação ser mais forte que o do resume. */
 export type ModoRelancar = 'resume' | 'fresco';
 
-/** Rótulo do ocioso é o nome curto pedido pelo Rica (03/08): "Resume"/"Restart"
- *  — cabe nos três botões numa linha só. Fora do ocioso continua descritivo em
- *  português, porque ali já não é mais um rótulo de botão, é um aviso. */
+/** Rótulo SEMPRE curto — os três botões (Destravar/Resume/Restart) dividem
+ *  ~110px na gaveta de 380px (§ auditoria 03/08: a frase longa de confirmação
+ *  cortava em elipse, e `text-overflow` nem se aplica dentro de um flex —
+ *  cortava sem reticências, sumindo com "tocar de novo confirma", que é
+ *  justamente o aviso que evita o toque acidental). A frase completa mora só
+ *  em `descreveRelancar` (aria-label + aviso visível de largura cheia,
+ *  renderizado fora do botão). */
 export function rotulaRelancar(fase: FaseRelancar, modo: ModoRelancar = 'resume'): string {
-  if (modo === 'fresco') {
-    if (fase === 'confirmando') return 'Apaga a conversa e recomeça — tocar de novo confirma';
-    if (fase === 'enviando') return 'Relançando…';
-    if (fase === 'relancado') return 'Relançado sem contexto';
-    return 'Restart';
-  }
-  if (fase === 'confirmando') return 'Mata o turno atual — tocar de novo confirma';
+  if (fase === 'confirmando') return 'Confirmar?';
   if (fase === 'enviando') return 'Relançando…';
-  if (fase === 'relancado') return 'Relançado com a conversa';
-  return 'Resume';
+  if (fase === 'relancado') return 'Relançado';
+  return modo === 'fresco' ? 'Restart' : 'Resume';
 }
 
-/** O nome acessível. Fora do ocioso o rótulo visível já é a frase inteira —
- *  repetir a explicação faria o leitor de tela ouvir duas vezes. No ocioso o
- *  nome acessível começa pelo rótulo curto (WCAG 2.5.3, Label in Name) e
- *  estende em português — o rótulo vira botão, a descrição continua leitura. */
+/** A frase completa — SEMPRE, em toda fase (não só o ocioso). Serve dois
+ *  papéis: nome acessível (WCAG 2.5.3, começa pelo rótulo curto do botão) e,
+ *  quando `fase === 'confirmando'`, o texto do aviso visível de largura cheia
+ *  que substitui o que cortava dentro do botão. */
 export function descreveRelancar(fase: FaseRelancar, modo: ModoRelancar = 'resume'): string {
-  if (fase !== 'ocioso') return rotulaRelancar(fase, modo);
+  const rotulo = rotulaRelancar(fase, modo);
+  if (fase === 'enviando' || fase === 'relancado') return rotulo;
+  if (fase === 'confirmando') {
+    return modo === 'fresco'
+      ? `${rotulo} Apaga a conversa e recomeça — tocar de novo confirma`
+      : `${rotulo} Mata o turno atual — tocar de novo confirma`;
+  }
   return modo === 'fresco'
-    ? 'Restart: relança o Claude Code do agente do zero — perde a conversa inteira, não só o turno em andamento'
-    : 'Resume: relança o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido';
+    ? `${rotulo}: relança o Claude Code do agente do zero — perde a conversa inteira, não só o turno em andamento`
+    : `${rotulo}: relança o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido`;
 }
 
 /**
