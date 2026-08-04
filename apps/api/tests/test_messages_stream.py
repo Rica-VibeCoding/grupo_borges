@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from db.store import GrupoBorgesDB
 from orchestrator import jsonl_watcher
 from routers import agents as agents_router
+from services.session_reset import publish_session_reset
 
 
 DANIEL = {
@@ -622,6 +623,46 @@ async def test_messages_stream_heartbeat_after_replay(tmp_path: Path) -> None:
     assert [name for name, _ in events][:3] == ["replay-start", "message", "replay-end"]
     assert events[-1][0] == "heartbeat"
     assert isinstance(events[-1][1]["ts"], int)
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_emits_session_reset_after_replay(tmp_path: Path) -> None:
+    app, _ = _build_app(tmp_path)
+    real_sleep = asyncio.sleep
+    published = False
+
+    async def publish_during_live_loop(_: float) -> None:
+        nonlocal published
+        if not published:
+            published = True
+            publish_session_reset(
+                "daniel",
+                {
+                    "slug": "daniel",
+                    "at": 1_775_100_000,
+                    "reason": "relaunch-fresh",
+                    "deleted": 4,
+                },
+            )
+        await real_sleep(0)
+
+    with patch("routers.agents.asyncio.sleep", new=publish_during_live_loop):
+        _, _, events = await _drive_stream(
+            app,
+            stop_after="session-reset",
+        )
+
+    names = [name for name, _ in events]
+    assert names.index("replay-end") < names.index("session-reset")
+    assert events[-1] == (
+        "session-reset",
+        {
+            "slug": "daniel",
+            "at": 1_775_100_000,
+            "reason": "relaunch-fresh",
+            "deleted": 4,
+        },
+    )
 
 
 @pytest.mark.asyncio

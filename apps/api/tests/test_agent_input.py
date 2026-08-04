@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 
@@ -510,10 +510,11 @@ def test_relaunch_with_resume_false_skips_jsonl_lookup_and_boots_fresh(
     então nem faz sentido consultar o JSONL antes (ele nem precisa existir)."""
     app = _build_app(tmp_path)
     app.state.db.latest_jsonl_session_id = AsyncMock()
+    app.state.db.delete_jsonl_events = AsyncMock(return_value=7)
     with patch(
         "routers.agents.tmux_driver.restart_claude_fresh",
         new=AsyncMock(return_value={"attempted": True, "confirmed": True}),
-    ) as restart_fresh:
+    ) as restart_fresh, patch("routers.agents.publish_session_reset") as publish_reset:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/relaunch",
@@ -526,7 +527,37 @@ def test_relaunch_with_resume_false_skips_jsonl_lookup_and_boots_fresh(
     assert body["attempted"] is True
     assert body["session_id"] is None
     app.state.db.latest_jsonl_session_id.assert_not_awaited()
+    app.state.db.delete_jsonl_events.assert_awaited_once_with("daniel")
+    publish_reset.assert_called_once_with(
+        "daniel",
+        {
+            "slug": "daniel",
+            "at": ANY,
+            "reason": "relaunch-fresh",
+            "deleted": 7,
+        },
+    )
     restart_fresh.assert_awaited_once_with("daniel", "/tmp/daniel", "opus")
+
+
+def test_relaunch_fresh_failure_keeps_jsonl_and_does_not_publish_reset(
+    tmp_path: Path,
+) -> None:
+    app = _build_app(tmp_path)
+    app.state.db.delete_jsonl_events = AsyncMock()
+    with patch(
+        "routers.agents.tmux_driver.restart_claude_fresh",
+        new=AsyncMock(side_effect=agents_router.tmux_driver.TmuxSessionBusyError("busy")),
+    ), patch("routers.agents.publish_session_reset") as publish_reset:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/relaunch",
+                json={"confirm": True, "resume": False},
+            )
+
+    assert response.status_code == 409
+    app.state.db.delete_jsonl_events.assert_not_awaited()
+    publish_reset.assert_not_called()
 
 
 def test_relaunch_resume_defaults_to_true_when_field_omitted(tmp_path: Path) -> None:

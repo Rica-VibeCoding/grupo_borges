@@ -58,9 +58,8 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_reader
-from services import tmux_driver
-from services import workspace_reader
+from services import codex_reader, tmux_driver, workspace_reader
+from services.session_reset import publish_session_reset, session_reset_events_since
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -1920,6 +1919,7 @@ async def stream_agent_messages(
         last_heartbeat = time.monotonic()
         last_subagent_seq = 0
         last_ask_user_seq = 0
+        _, last_session_reset_seq = session_reset_events_since(slug, 0)
         last_stall_scan = time.monotonic()
 
         try:
@@ -2033,6 +2033,16 @@ async def stream_agent_messages(
                 )
                 for event_payload in ask_user_events:
                     yield _ask_user_sse(_public_ask_user(event_payload))
+
+                session_reset_events, last_session_reset_seq = session_reset_events_since(
+                    slug,
+                    last_session_reset_seq,
+                )
+                for event_payload in session_reset_events:
+                    yield _sse_json(
+                        "session-reset",
+                        {key: value for key, value in event_payload.items() if key != "seq"},
+                    )
 
                 if now - last_stall_scan >= _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S:
                     for status_event in mark_stalled_subagents(slug):
@@ -2882,9 +2892,9 @@ async def post_agent_relaunch(
     if agent.get("model_family") not in {None, "anthropic", "kimi"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
+    db: GrupoBorgesDB = request.app.state.db
     session_id: str | None = None
     if payload.resume:
-        db: GrupoBorgesDB = request.app.state.db
         session_id = await db.latest_jsonl_session_id(slug)
         if session_id is None:
             raise HTTPException(status_code=409, detail="resume_session_not_found")
@@ -2907,6 +2917,16 @@ async def post_agent_relaunch(
                 agent["tmux_session"],
                 agent["workspace_path"],
                 relaunch_model,
+            )
+            deleted = await db.delete_jsonl_events(slug)
+            publish_session_reset(
+                slug,
+                {
+                    "slug": slug,
+                    "at": int(time.time()),
+                    "reason": "relaunch-fresh",
+                    "deleted": deleted,
+                },
             )
     except (
         ValueError,

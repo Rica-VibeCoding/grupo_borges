@@ -2675,6 +2675,17 @@ class GrupoBorgesDB:
             cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
             return cur.rowcount > 0
 
+    async def delete_jsonl_events(self, agent_slug: str) -> int:
+        return await asyncio.to_thread(self._delete_jsonl_events, agent_slug)
+
+    def _delete_jsonl_events(self, agent_slug: str) -> int:
+        with self._connect() as conn, conn:
+            cur = conn.execute(
+                "DELETE FROM task_events WHERE agent_slug = ? AND kind LIKE 'jsonl:%'",
+                (agent_slug,),
+            )
+            return cur.rowcount
+
     # ---------- task_events: sparkline ----------
 
     async def event_counts_per_hour(
