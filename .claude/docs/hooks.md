@@ -147,6 +147,7 @@ Precedência quando múltiplos hooks conflitam: `deny` > `defer` > `ask` > `allo
 4. **Telemetria de modelo/turno** — `PostToolBatch` com `additionalContext` capturando custo estimado por turno; alimenta dashboard de custo do cockpit.
 5. **Captura de UserPromptSubmit pra registrar missão** — quando o Rica manda novo pedido, hook POSTa `{agent, prompt, timestamp}` pro backend cockpit. Vira `task` automaticamente.
 6. **Auto-commit de memória após Stop** — hook `Stop` com script que faz `git add memory/ && git commit -m "memory(<agente>): auto"` se houver mudanças. Garante que memória nunca fica não-commitada.
+7. **Aviso de repo desatualizado** — `SessionStart` com `.claude/hooks/check-git-updates.sh`: roda `git fetch` e avisa (sem `pull`/`rebase` automático) se a branch local está atrás do remoto, com quantos commits e se o working tree tem mudança local. Só informa via stdout — a decisão de sincronizar fica pra sessão. Ligado em `.claude/settings.json` (raiz) e espelhado pro Codex em `.codex/config.toml` (mesmo script, `hooks.SessionStart` em TOML). Cobre sessão aberta na raiz do repo; sessão embutida numa subpasta (`apps/cockpit`, etc.) precisaria do mesmo bloco lá, ainda não existe nenhuma. Pro Codex, cada agente precisa aprovar o hook uma vez via `/hooks` (`t`) numa sessão interativa antes dele valer no `codex exec`.
 
 ## Debugging
 
