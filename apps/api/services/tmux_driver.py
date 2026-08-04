@@ -773,6 +773,12 @@ def _pane_owner_pids(pane_pid: int) -> set[int]:
 #: valor no argumento seguinte.
 _CHANNEL_FLAGS = ("--channels", "--dangerously-load-development-channels")
 
+#: Canal que TODO agente da frota sobe no boot — `ze-shared/scripts/subir-frota.sh`
+#: usa este literal nas duas linhas de lançamento (Claude e Kimi). Serve de piso
+#: quando o processo vivo não tem nada pra copiar; sem ele, mudez vira estado
+#: absorvente (ver `_pane_channel_flags`).
+_CANAL_PADRAO = "--channels plugin:telegram@claude-plugins-official"
+
 
 def _pane_channel_flags(pane_pid: int) -> str:
     """Lê do processo vivo as flags de canal, pra o relaunch não emudecer o agente.
@@ -820,7 +826,13 @@ def _pane_channel_flags(pane_pid: int) -> str:
             recovered.append(f"{arg} {shlex.quote(value)}")
         if recovered:
             return " " + " ".join(recovered)
-    return ""
+    # Nada pra copiar — processo já estava mudo, ou o `/proc` não abriu. Devolver
+    # vazio aqui fazia o relaunch nascer mudo e a próxima leitura achar o mesmo
+    # vazio: quem caía nunca voltava sozinho, e relançar (o conserto) virava o
+    # que mantinha a falta. O piso canônico quebra o ciclo. Continua valendo a
+    # regra do docstring — o processo vivo manda; isto é último recurso, e por
+    # isso não conhece canal de desenvolvimento, só o que os 7 sobem no boot.
+    return " " + _CANAL_PADRAO
 
 
 #: Env vars do processo antigo que precisam sobreviver ao relaunch. Diferente

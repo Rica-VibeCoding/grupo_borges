@@ -1054,11 +1054,14 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
     ]
     # PATH/TELEGRAM_STATE_DIR não viram mais prefixo `VAR=valor` na string do
     # comando — vão pela env nativa da sessão tmux (ver `server.env_calls`).
+    # O `--channels` aparece mesmo com o processo falso não tendo nenhum: é o
+    # piso canônico de `_pane_channel_flags`, pra relaunch não perpetuar mudez.
     assert replacement_pane.sent_commands == [
         (
             "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
-            f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
+            f"--resume {session_id} "
+            f'--channels plugin:telegram@claude-plugins-official; exec "${{SHELL:-/bin/sh}}"',
             False,
         )
     ]
@@ -1113,7 +1116,8 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
         (
             "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
-            f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
+            f"--resume {session_id} "
+            f'--channels plugin:telegram@claude-plugins-official; exec "${{SHELL:-/bin/sh}}"',
             False,
         )
     ]
@@ -1240,7 +1244,8 @@ def test_restart_fresh_boots_clean_without_resume_or_anchor_check(tmp_path: Path
     assert result == {"attempted": True, "confirmed": True}
     assert replacement_pane.sent_commands == [
         (
-            "claude --dangerously-skip-permissions --model claude-opus-4-8; "
+            "claude --dangerously-skip-permissions --model claude-opus-4-8 "
+            "--channels plugin:telegram@claude-plugins-official; "
             'exec "${SHELL:-/bin/sh}"',
             False,
         )
@@ -1379,7 +1384,8 @@ def test_restart_escalates_to_sigkill_and_still_launches_when_old_process_linger
         (
             "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
-            f'--resume {session_id}; exec "${{SHELL:-/bin/sh}}"',
+            f"--resume {session_id} "
+            f'--channels plugin:telegram@claude-plugins-official; exec "${{SHELL:-/bin/sh}}"',
             False,
         )
     ]
