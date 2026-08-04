@@ -374,3 +374,67 @@ Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
   deduzido.
 - **Comportamento do pnpm fora do glob** (§3), incluindo o `.npmrc` que não
   funciona.
+
+---
+
+## 10. Desenvolvimento remoto — front no PC, backend na VPS
+
+Acordado em 04/08/2026 entre o Pavan (VPS) e o Claude do PC, por ordem do Rica. Vale
+pra quem for editar `apps/cockpit` de fora da VPS.
+
+### A regra
+
+**O backend é um só e vive na VPS. Nunca subir `apps/api` no PC.**
+
+Não é preferência. O `apps/api` instancia `TmuxDriver` (`main.py:65`) e comanda as sessões
+tmux dos agentes, lê os JSONL de `Path.home()/.claude/projects` (`config.py:40`) e escreve
+num SQLite de ~1,5 GB. Nada disso existe fora da VPS, e replicar significaria clonar a frota
+inteira. Sintoma correlato já visto: a suíte da API acusa falhas por caminho POSIX quando
+roda no Windows.
+
+**O front pode rodar onde o construtor estiver**, apontando pro backend da VPS.
+
+### Como o front local acha o backend
+
+```
+# apps/cockpit/.env.development.local   (não versionado — é por máquina)
+API_BACKEND_URL=https://srv1061129.tailfe77db.ts.net:3445
+```
+
+`.env.development.local` e **não** `.env.local`: o `.local` puro também vale em
+`next build`, e aí um build local sairia apontando pro backend remoto sem ninguém
+perceber. O `.env.development.example` versionado ao lado é a cópia pra quem chega.
+
+Antes disso a variável era exportada inline a cada `pnpm dev`. Era a causa do
+"local nunca funciona igual": com ela, funciona; sem ela, o front procura
+`127.0.0.1:8000`, que não existe no PC, e a tela quebra sem dizer por quê.
+
+### Por que a :3445 e não a :3444
+
+A **:3445 é rota dedicada pra API** (`tailscale serve --bg --https 3445 http://127.0.0.1:8000`).
+
+A :3444 aponta pro *front* da VPS (3008), que só então reescreve pra 8000 — dois saltos. Pior:
+esse primeiro salto derruba conexão longa. Foi medido em 04/08, quando um relaunch pela :3444
+devolveu `500 / socket hang up` enquanto o backend direto respondia 200. Relaunch e SSE são
+conexões longas; o dev local não tem por que herdar essa fragilidade.
+
+**SSE pela :3445 foi validado, não deduzido** — o risco era o proxy a mais bufferizar e
+reproduzir o sintoma do §4 (replay em rajada e nada depois). Uma conexão de 95s recebeu
+`replay-start`, 20 eventos `message` ao vivo e **2 heartbeats**. Heartbeat atravessando é
+exatamente a prova que faltava.
+
+### Qual URL abrir
+
+- **Dev:** `http://localhost:3008` — na máquina onde o `pnpm dev` está rodando.
+  Tem que ser `localhost`. Por `127.0.0.1` ou pelo IP `100.x` o browser não trata como origem
+  segura e **o modo voz some sem erro** (ver `components/shell/voz.ts`).
+- **Produção, o que o Rica usa:** `https://srv1061129.tailfe77db.ts.net:3444`
+- **A :3445 ninguém abre no browser.** É o cano do front pro backend; aberta na mão devolve
+  JSON cru e parece defeito.
+
+### O que aceitamos junto com isso
+
+Backend único significa que **o front local age na frota de verdade**: clicar em "reiniciar
+agente" enquanto se testa um botão reinicia o agente real, com a conversa dele. Construir uma
+frota falsa custaria caro pra um cockpit cujo valor é mostrar processo real. Fica o dedo leve
+nos botões de ação.
