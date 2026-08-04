@@ -1,3 +1,9 @@
+# Hooks do Codex no Windows (lições de 04/08, placar 6/6):
+# - O campo `command` roda via cmd.exe /C — sintaxe bash falha com "exited with code 1".
+#   O campo irmão `commandWindows` é obrigatório: bash do Git + caminho absoluto.
+# - Sessão interativa NÃO relê este arquivo depois de editado: hook novo/alterado
+#   só carrega em sessão nova (codex exec passa porque nasce lendo a config nova).
+
 [[hooks.SessionStart]]
 matcher = "startup|resume"
 
