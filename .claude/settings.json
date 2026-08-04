@@ -12,6 +12,18 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "t=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f \"$t/.claude/hooks/psmux-canal-load-skill.sh\" ] || exit 0; exec bash \"$t/.claude/hooks/psmux-canal-load-skill.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
