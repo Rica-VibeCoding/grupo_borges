@@ -79,3 +79,8 @@ fixtures/cockpit-v2/transcripts/
 # Relatos de agentes dirigidos por multiplexador (psmux) — artefato local.
 .claude/relatos/
 .claude/skills/reiniciar-tudo/
+
+# Caixa de recado entre agentes: conteúdo é transiente e por máquina (ver
+# .claude/hooks/recado-entre-agentes.sh). Quem escreve entrega na máquina do
+# destinatário — versionar faria a entrega depender de commit + pull.
+.claude/recados/

@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "t=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; [ -f \"$t/.claude/hooks/recado-entre-agentes.sh\" ] || exit 0; exec bash \"$t/.claude/hooks/recado-entre-agentes.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
