@@ -4,8 +4,9 @@
 > conforme precisar. Ele descreve o **presente** — a história de como chegamos aqui
 > está no git, não aqui.
 >
-> Última faxina: **30/07 ~23h (Hiro, seções 4/5/10)**. Se a data estiver velha e o texto contradizer o
-> código, o código ganha.
+> Última faxina: **05/08 ~04h (Pavan, seção 0)**. As seções 1–10 são de **30/07** e
+> descrevem a fase de medição; a **seção 0 manda** onde houver conflito. Se a data
+> estiver velha e o texto contradizer o código, o código ganha.
 >
 > Ordem de leitura, se precisar de mais: `cockpit-v2-gate.md` (o que decide) →
 > `cockpit-v2-ownership.md` (quem mexe onde) → `cockpit-v2-data-contract.md` →
@@ -13,6 +14,55 @@
 > as decisões são assim).
 
 ---
+
+## 0. O que mudou desde 30/07 — leia isto antes das seções 1–10
+
+**A fase de medição acabou e o v2 está em PRODUÇÃO.** O Rica usa todo dia pela
+`:3444`. A pergunta da seção 1 ("quanto custa o nosso render por item") deixou de
+ser a pergunta viva — o feed próprio venceu e está no ar. O trabalho de agora é
+**polir o que ele toca**, não decidir arquitetura.
+
+**Portas** (a seção 8 tem números velhos): `:3443`→3007 v1 · **`:3444`→3009 dev**
+· `:3445`→8000 API · `:3446`→3008 produção v2. Dev e produção **não podem dividir
+o `.next`** — dev usa `COCKPIT_DIST_DIR=.next-dev`. Era isso que fazia o
+Turbopack servir CSS velho.
+
+**Units systemd (user):** `cockpit-api`, `cockpit-v2` (produção 3008),
+`cockpit-web` (v1 3007). `uv sync` seco no `apps/api` **remove pytest e ruff** —
+usar `uv sync --extra dev`.
+
+**Quem está onde:** o **Daniel mora neste repo** desde 04/08 (embedded), e o
+**canário tem casa própria** em `fixtures/cockpit-v2/canario` desde 05/08 —
+dois agentes no mesmo `workspace_path` colidem no `jsonl_watcher`, que indexa por
+encoded-cwd num dict, e o último do `agents.yaml` rouba os eventos do outro sem
+log nenhum (`tropa_task bda9a23f`).
+
+**Entregue em 04–05/08, tudo no ar e conferido em Chrome dirigido:**
+
+- Gaveta de anexo no `+` do composer (foto, vídeo, documento) + rota
+  `POST /api/agents/{slug}/file`; limites alinhados nos três lugares, com teste
+  que quebra a suíte se desalinharem.
+- **Nada evapora** (`d6b1a46`): três portões engoliam texto do usuário em
+  silêncio. A invariante mora em `porta-de-envio.ts` — o campo só esvazia com
+  despacho aceito, e o aceite é **síncrono**, nunca depois do `await` do POST.
+- Compact deixou de comparar relógio do browser com o do servidor.
+- Hydration mismatch de **estrutura** (`b59679b`): `getServerSnapshot` não pode
+  devolver estado retomado do `localStorage`.
+- **HEIC do iPhone** entra e é gravado como JPEG (`0389945`). O `accept` continua
+  `image/*` **de propósito** — é ele que habilita a câmera no celular.
+
+**Em execução:** anexo de imagem com preview no composer. O plano é autocontido
+em **`docs/anexo-imagem-composer-PLANO.md`** — quem retomar essa frente lê aquele
+arquivo, não este. Etapa 0 no ar; etapa 1 (rota que serve o upload de volta) em
+andamento.
+
+**Backlog não mora mais em `.md`:** tudo em `tropa_task` (banco `ze`), convenção
+em `ze-shared/tropa-task.md`. A seção 10 abaixo é histórica.
+
+**Prova de tela:** os scripts Playwright que provam as entregas vivem em
+`/tmp/gaveta/*.mjs` e **não são versionados** — somem no reboot e quem revisa
+conclui que não existem (`tropa_task 4d4d5793`). **Nada foi testado em iPhone
+físico**: o WebKit não sobe nesta VPS, e emular viewport não substitui.
 
 ## 1. Em uma frase
 
