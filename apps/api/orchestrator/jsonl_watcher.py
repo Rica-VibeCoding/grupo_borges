@@ -666,6 +666,43 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
     return None, None
 
 
+def _mapear_por_encoded(agents: list[dict]) -> dict[str, str]:
+    """Mapa `encoded-cwd → slug`, com a colisão tratada em vez de sofrida.
+
+    Era um dict comprehension, e em 04/08 isso custou um dia inteiro: embutir o
+    Daniel em `grupo_borges` deu a ele o mesmo `workspace_path` do canário, as
+    duas chaves colidiram, o **último do `agents.yaml` venceu calado** e todo
+    evento do Daniel passou a chegar carimbado como `canario`. O envio nunca
+    quebrou — usa `tmux_session`, que não colide — então a tela mostrava mensagem
+    saindo pra um agente e resposta aparecendo em outro.
+
+    Colidiu, **ninguém** fica com a chave. Não atribuir custa um card parado, que
+    faz olhar; atribuir errado faz duvidar do sistema inteiro, que foi o que
+    aconteceu. E o log é `error` de propósito: config que se contradiz não pode
+    subir muda.
+    """
+    por_encoded: dict[str, list[str]] = {}
+    for agente in agents:
+        por_encoded.setdefault(encoded_cwd(agente["workspace_path"]), []).append(
+            agente["slug"]
+        )
+
+    mapa: dict[str, str] = {}
+    for encoded, slugs in por_encoded.items():
+        if len(slugs) > 1:
+            logger.error(
+                "JSONL watcher: %d agentes dividem o mesmo workspace_path (%s): %s — "
+                "nenhum deles receberá eventos por esse caminho. Dê a cada um um "
+                "diretório próprio no agents.yaml.",
+                len(slugs),
+                encoded,
+                ", ".join(sorted(slugs)),
+            )
+            continue
+        mapa[encoded] = slugs[0]
+    return mapa
+
+
 class JsonlWatcher:
     def __init__(
         self,
@@ -677,9 +714,7 @@ class JsonlWatcher:
         self._root = Path(claude_projects_dir)
         self._root_resolved = self._root.resolve() if self._root.exists() else self._root
         self._db = db
-        self._slug_by_encoded: dict[str, str] = {
-            encoded_cwd(a["workspace_path"]): a["slug"] for a in agents
-        }
+        self._slug_by_encoded: dict[str, str] = _mapear_por_encoded(agents)
         self._offsets: dict[str, int] = {}
         # F4-3 A4 — último JSONL processado por slug. Mudança = nova sessão
         # CC → reseta subagent state pro slug pra não carregar fantasmas.
