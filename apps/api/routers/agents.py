@@ -2194,6 +2194,16 @@ _DOCUMENT_MIME_SUFFIX = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
+# Espelho de leitura das três tabelas de escrita: o que a `POST /file` sabe
+# GRAVAR é exatamente o que a `GET /file/{nome}` sabe SERVIR, sem lista paralela
+# para desandar. Fechada de propósito — o `guess_type` que o Starlette usa
+# quando `media_type` é None ADIVINHA, e adivinhar `text/html` num arquivo
+# servido sob o domínio do cockpit é script rodando com a origem dele.
+_UPLOAD_MIME_BY_SUFFIX = {
+    ext: mime
+    for tabela in (_IMAGE_MIME_SUFFIX, _VIDEO_MIME_SUFFIX, _DOCUMENT_MIME_SUFFIX)
+    for mime, ext in tabela.items()
+}
 # Teto de leitura por chunk: corta upload gigante antes de materializar na RAM.
 _UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 _AGENT_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "agents"
@@ -2886,6 +2896,55 @@ async def post_agent_file(
         "tmux_delivered": delivered,
         "duration_ms": int((time.monotonic() - started_at) * 1000),
     }
+
+
+@router.get("/{slug}/file/{filename}")
+async def get_agent_file(slug: str, filename: str, request: Request) -> FileResponse:
+    """Serve de volta um upload já gravado em `uploads/agents/<slug>/`.
+
+    Existe porque o feed precisa MOSTRAR a imagem, e até aqui o upload era via de
+    mão única: o arquivo era escrito em disco e o único vestígio na tela era o
+    caminho absoluto em texto cru — o "código feio" que o Rica reclamou.
+
+    - 404 quando o agente não existe, o arquivo não existe, ou a extensão não é
+      uma das que a `POST /file` sabe gravar
+    - 400 quando o nome resolve para fora do diretório do agente
+
+    A guarda de travessia é própria e não confia na sanitização da ESCRITA: são
+    duas portas diferentes, e a de leitura tem que se defender sozinha mesmo que
+    um dia alguém grave um nome por outro caminho. `resolve()` antes de comparar
+    é o que também mata symlink apontando para fora.
+    """
+    await _get_agent_or_404(request, slug)
+
+    base = (_AGENT_UPLOADS_BASE / slug).resolve(strict=False)
+    alvo = (base / filename).resolve(strict=False)
+    try:
+        alvo.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="nome de arquivo inválido") from exc
+
+    media_type = _UPLOAD_MIME_BY_SUFFIX.get(alvo.suffix.lower())
+    if media_type is None or not alvo.is_file():
+        raise HTTPException(status_code=404, detail="arquivo não existe")
+
+    return FileResponse(
+        path=str(alvo),
+        media_type=media_type,
+        filename=alvo.name,
+        # `inline` porque o destino é um `<img>` no feed, não um download. O
+        # default do Starlette é `attachment`.
+        content_disposition_type="inline",
+        headers={
+            # O nome gravado é `timestamp-uuid.ext` e nunca é reescrito, então o
+            # conteúdo é imutável de verdade. Sem isto o feed virtualizado
+            # revalida a mesma foto a cada vez que o item volta à tela.
+            "Cache-Control": "private, max-age=31536000, immutable",
+            # Cinto e suspensório do `media_type` fechado: proíbe o navegador de
+            # farejar o conteúdo e decidir por conta que aquilo é outra coisa.
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/{slug}/model", response_model=ModelChangeResponse)

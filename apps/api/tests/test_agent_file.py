@@ -507,3 +507,96 @@ def test_file_mp4_declarado_como_heic_continua_recusado(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     send_message.assert_not_called()
+
+
+# ---- GET do upload -------------------------------------------------------
+#
+# Até aqui o upload era via de mão única: o arquivo ia pro disco e a única marca
+# dele na tela era o caminho absoluto em texto cru. Sem uma rota que devolva os
+# bytes, o feed não tem de onde puxar a imagem.
+
+
+def _get_file(app: FastAPI, tmp_path: Path, caminho: str, *, slug: str = "daniel"):
+    with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"):
+        with TestClient(app) as client:
+            return client.get(f"/api/agents/{slug}/file/{caminho}")
+
+
+def test_get_file_serve_a_imagem_com_o_content_type_certo(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    enviada, _ = _post_file(
+        app, tmp_path, filename="foto.png", content=PNG_1X1, mime="image/png"
+    )
+    nome = Path(enviada.json()["path"]).name
+
+    response = _get_file(app, tmp_path, nome)
+
+    assert response.status_code == 200, response.text
+    assert response.content == PNG_1X1
+    assert response.headers["content-type"] == "image/png"
+    # `inline`: o destino é um `<img>` no feed, não a pasta de downloads.
+    assert "inline" in response.headers["content-disposition"]
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_get_file_nao_escapa_do_diretorio_do_agente(tmp_path: Path) -> None:
+    """A tentativa é feita de verdade, com um alvo que EXISTE fora da base.
+
+    Um teste que só pede `../../etc/passwd` prova pouco: 404 sairia igual se o
+    arquivo não existisse. Aqui o segredo está no disco, um nível acima, e a
+    única razão possível para não vir na resposta é a guarda ter funcionado.
+    """
+    app = _build_app(tmp_path)
+    base = tmp_path / "uploads"
+    (base / "daniel").mkdir(parents=True, exist_ok=True)
+    segredo = base / "segredo.png"
+    segredo.write_bytes(b"\x89PNG\r\n\x1a\nnao pode vazar")
+
+    for tentativa in ("../segredo.png", "..%2Fsegredo.png", "%2e%2e%2fsegredo.png"):
+        response = _get_file(app, tmp_path, tentativa)
+        assert response.status_code in (400, 404), f"{tentativa} devolveu {response.status_code}"
+        assert b"nao pode vazar" not in response.content, f"{tentativa} VAZOU o arquivo"
+
+
+def test_get_file_nao_segue_symlink_para_fora(tmp_path: Path) -> None:
+    """`resolve()` antes de comparar é o que mata este caso.
+
+    Comparar o caminho ANTES de resolver deixaria passar: `daniel/atalho.png` é
+    literalmente um nome dentro da base — só que aponta para fora dela.
+    """
+    app = _build_app(tmp_path)
+    base = tmp_path / "uploads"
+    (base / "daniel").mkdir(parents=True, exist_ok=True)
+    fora = tmp_path / "fora.png"
+    fora.write_bytes(b"\x89PNG\r\n\x1a\nfora da base")
+    (base / "daniel" / "atalho.png").symlink_to(fora)
+
+    response = _get_file(app, tmp_path, "atalho.png")
+
+    assert response.status_code == 400
+    assert b"fora da base" not in response.content
+
+
+def test_get_file_recusa_extensao_que_o_upload_nao_grava(tmp_path: Path) -> None:
+    """Só se serve o que a `POST /file` sabe gravar.
+
+    Sem isto, qualquer arquivo que aparecesse na pasta por outro caminho — log,
+    `.env`, backup — seria servido com um content-type adivinhado.
+    """
+    app = _build_app(tmp_path)
+    pasta = tmp_path / "uploads" / "daniel"
+    pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / "segredos.env").write_bytes(b"TOKEN=nao-pode-sair")
+
+    response = _get_file(app, tmp_path, "segredos.env")
+
+    assert response.status_code == 404
+    assert b"nao-pode-sair" not in response.content
+
+
+def test_get_file_404_para_arquivo_e_agente_inexistentes(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    (tmp_path / "uploads" / "daniel").mkdir(parents=True, exist_ok=True)
+
+    assert _get_file(app, tmp_path, "nunca-existiu.png").status_code == 404
+    assert _get_file(app, tmp_path, "x.png", slug="fantasma").status_code == 404
