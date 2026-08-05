@@ -425,3 +425,85 @@ def test_file_image_ilegivel_grava_o_original_em_vez_de_falhar(tmp_path: Path) -
     assert response.status_code == 200, response.text
     assert Path(response.json()["path"]).read_bytes() == quebrado
     assert send_message.called
+
+
+# ---- HEIC do iPhone ------------------------------------------------------
+#
+# O WebKit converte HEIC→JPEG no upload só quando o `accept` traz um MIME
+# concreto que o CoreGraphics saiba encodar — e as notas do Safari 27 beta
+# registram a remoção dessa conversão como correção. Ou seja: HEIC CHEGA, e
+# depender do navegador para não receber é apostar no que a Apple fizer depois.
+# Some a isso o caminho "Arquivos"/iCloud, que nunca passou pela conversão.
+#
+# Aceitar e converter na gravação é o único desenho que não deixa o Rica sem
+# conseguir anexar foto. O resto do sistema nunca fica sabendo que HEIC existiu.
+
+
+def _heic(largura: int, altura: int) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+    buffer = BytesIO()
+    Image.new("RGB", (largura, altura), "white").save(buffer, "HEIF", quality=90)
+    return buffer.getvalue()
+
+
+def _formato(caminho: str) -> str | None:
+    from PIL import Image
+
+    with Image.open(caminho) as imagem:
+        return imagem.format
+
+
+def test_file_heic_do_iphone_e_gravado_como_jpeg(tmp_path: Path) -> None:
+    """Foto HEIC da biblioteca do iPhone: entra `.heic`, é gravada `.jpg`.
+
+    A extensão importa tanto quanto os bytes — o agente recebe um PATH, e quem
+    abre o arquivo do outro lado decide pelo que está escrito nele.
+    """
+    app = _build_app(tmp_path)
+    response, send_message = _post_file(
+        app, tmp_path, filename="IMG_4312.HEIC", content=_heic(400, 200), mime="image/heic"
+    )
+
+    assert response.status_code == 200, response.text
+    caminho = response.json()["path"]
+    assert caminho.endswith(".jpg"), "gravou HEIC cru: o leitor do agente não abre"
+    assert _formato(caminho) == "JPEG"
+    assert send_message.called
+
+
+def test_file_heic_com_mime_e_extensao_mentindo_jpeg(tmp_path: Path) -> None:
+    """O modo de falha clássico: HEIC de verdade batizado de `.jpg`.
+
+    Acontece de montão no caminho iCloud/Arquivos, e é a razão de a validação
+    ser por MAGIC BYTES: acreditar no `content_type` aqui é recusar uma foto
+    legítima com "conteúdo não corresponde ao mime", que não diz nada a ninguém.
+    """
+    app = _build_app(tmp_path)
+    response, _ = _post_file(
+        app, tmp_path, filename="IMG_0421.jpg", content=_heic(400, 200), mime="image/jpeg"
+    )
+
+    assert response.status_code == 200, response.text
+    assert _formato(response.json()["path"]) == "JPEG"
+
+
+def test_file_mp4_declarado_como_heic_continua_recusado(tmp_path: Path) -> None:
+    """Guarda de regressão: `ftyp` sozinho NÃO é assinatura de imagem.
+
+    HEIC e MP4 dividem o mesmo box ISO-BMFF no offset 4 — o que separa os dois é
+    a BRAND no offset 8. Sniffar só o `ftyp` faria todo vídeo entrar pela porta
+    da imagem, ser mandado ao Pillow e gravado com extensão errada.
+    """
+    app = _build_app(tmp_path)
+    response, send_message = _post_file(
+        app, tmp_path, filename="clipe.heic", content=MP4_HEADER, mime="image/heic"
+    )
+
+    assert response.status_code == 422
+    send_message.assert_not_called()

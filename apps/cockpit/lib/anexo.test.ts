@@ -54,9 +54,23 @@ test('mime desconhecido com extensão conhecida ainda passa', () => {
 });
 
 test('tipo fora do contrato não classifica', () => {
-  assert.equal(classificaAnexo(arquivo('foto.heic', 'image/heic', 10)), null);
+  // `.gif` e não `.heic`: HEIC passou a valer em 05/08 (o backend converte), e
+  // deixá-lo aqui seria o teste guardando o defeito. `.gif` é imagem de verdade
+  // que continua fora do contrato — ninguém converte, então ninguém aceita.
+  assert.equal(classificaAnexo(arquivo('animado.gif', 'image/gif', 10)), null);
   assert.equal(classificaAnexo(arquivo('pacote.zip', 'application/zip', 10)), null);
   assert.equal(classificaAnexo(arquivo('semextensao', '', 10)), null);
+});
+
+test('HEIC do iPhone classifica como foto — é o formato padrão da câmera dele', () => {
+  assert.equal(classificaAnexo(arquivo('IMG_4312.HEIC', 'image/heic', 10))?.especie, 'image');
+  // Live Photo entrega o mime de sequência.
+  assert.equal(
+    classificaAnexo(arquivo('IMG_4313.heic', 'image/heic-sequence', 10))?.especie,
+    'image',
+  );
+  // Pelo caminho iCloud/Arquivos o mime vem vazio — a extensão é o desempate.
+  assert.equal(classificaAnexo(arquivo('IMG_4314.heic', '', 10))?.especie, 'image');
 });
 
 // ---- validação -----------------------------------------------------------
@@ -84,9 +98,9 @@ test('recusa por TAMANHO dizendo o número e o teto', () => {
 });
 
 test('recusa por TIPO dizendo o que veio e o que vale', () => {
-  const veredito = validaAnexo(arquivo('foto.heic', 'image/heic', 100));
+  const veredito = validaAnexo(arquivo('animado.gif', 'image/gif', 100));
   assert.equal(veredito.ok, false);
-  assert.match(veredito.ok === false ? veredito.motivo : '', /\.heic/);
+  assert.match(veredito.ok === false ? veredito.motivo : '', /\.gif/);
   assert.match(veredito.ok === false ? veredito.motivo : '', /jpg, png, webp/);
 });
 
@@ -117,7 +131,11 @@ test('a gaveta tem exatamente os três itens da ordem, nesta ordem', () => {
 });
 
 test('cada item restringe o picker ao seu tipo', () => {
-  // `image/*` é o que faz o iOS oferecer a câmera — não trocar por `image/jpeg`.
+  // `image/*` é o que faz o iOS oferecer a CÂMERA — não trocar por uma lista de
+  // mimes concretos. Reavaliado em 05/08 contra a matriz do WebKit (bug 212489),
+  // que mostra o concreto disparando a conversão HEIC→JPEG no macOS: mesmo
+  // assim fica, porque a MDN amarra a câmera a este valor e HEIC passou a ser
+  // resolvido no backend, que não depende do humor da Apple.
   assert.equal(ACCEPT_POR_ESPECIE.image, 'image/*');
   assert.equal(ACCEPT_POR_ESPECIE.video, 'video/*');
   assert.doesNotMatch(ACCEPT_POR_ESPECIE.document, /image|video/);

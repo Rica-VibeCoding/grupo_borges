@@ -2150,6 +2150,15 @@ _VOICE_MIME_SUFFIX = {
 _VOICE_AUDIO_PROBE_TIMEOUT_S = 5
 _VOICE_LOG_TAIL_CHARS = 8 * 1024
 _IMAGE_ALLOWED_MIMES = {"image/jpeg", "image/png", "image/webp"}
+# HEIC/HEIF entram SÓ pela `/file`, que converte na gravação. Fora de
+# `_IMAGE_ALLOWED_MIMES` de propósito: a `/image` do v1 não converte e gravaria
+# um arquivo que o leitor de imagem do agente não abre.
+_IMAGE_HEIF_MIMES = {
+    "image/heic",
+    "image/heif",
+    "image/heic-sequence",
+    "image/heif-sequence",
+}
 # Tag 274 do EXIF. Número cru e não `ExifTags.Base.Orientation` para não pagar o
 # import do Pillow no boot — ele só entra quando uma imagem realmente chega.
 _EXIF_ORIENTATION = 274
@@ -2306,7 +2315,22 @@ def _probe_audio_duration_ms(path: str) -> int | None:
     return None
 
 
+# Brands ISO-BMFF de imagem HEIF, lidas de `pillow_heif.misc.get_file_mimetype`
+# (que é quem o `is_supported` da lib consulta) — não de tabela de blog.
+#
+# A brand é o que separa HEIC de MP4: os dois abrem com `ftyp` no offset 4, e
+# sniffar só o `ftyp` mandaria todo vídeo pela porta da imagem. `avif` fica de
+# fora de propósito: o Pillow já o lê sozinho, mas ele não está nos formatos
+# aceitos e entrar aqui seria feature que ninguém pediu.
+_IMAGE_HEIF_BRANDS = {
+    b"heic", b"heix", b"heim", b"heis",  # imagem parada
+    b"hevc", b"hevx", b"hevm", b"hevs",  # sequência (Live Photo) — vale o 1º quadro
+    b"mif1", b"msf1",  # HEIF genérico
+}
+
+
 def _sniff_agent_image_type(data: bytes) -> str | None:
+    """Extensão canônica do que os BYTES são — nunca do que o cliente declarou."""
     if len(data) < 12:
         return None
     if data.startswith(b"\xff\xd8\xff"):
@@ -2315,6 +2339,8 @@ def _sniff_agent_image_type(data: bytes) -> str | None:
         return ".png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
+    if data[4:8] == b"ftyp" and data[8:12] in _IMAGE_HEIF_BRANDS:
+        return ".heic"
     return None
 
 
@@ -2330,7 +2356,12 @@ def _agent_file_content_matches(kind: str, base_mime: str, data: bytes) -> bool:
     inventar heurística de conteúdo ali só rejeitaria arquivo legítimo.
     """
     if kind == "image":
-        return _sniff_agent_image_type(data) == _IMAGE_MIME_SUFFIX[base_mime]
+        # O CONTEÚDO manda, não o `content_type`. HEIC de verdade chega batizado
+        # de `.jpg` pelo caminho iCloud/Arquivos com frequência, e recusá-lo por
+        # divergir do mime declarado é recusar foto legítima com um motivo que
+        # não diz nada a quem está do outro lado. A extensão gravada sai do
+        # sniff, então o arquivo salvo nunca mente sobre os próprios bytes.
+        return _sniff_agent_image_type(data) is not None
     if kind == "video":
         if base_mime == "video/webm":
             return data.startswith(b"\x1a\x45\xdf\xa3")
@@ -2345,8 +2376,15 @@ def _agent_file_content_matches(kind: str, base_mime: str, data: bytes) -> bool:
     return True
 
 
-def _normaliza_orientacao(content: bytes, base_mime: str) -> bytes:
-    """Aplica o EXIF Orientation nos PIXELS e tira a tag. Só imagem, só `/file`.
+def _normaliza_imagem(content: bytes) -> tuple[bytes, str]:
+    """`(bytes a gravar, extensão)`. Aplica o EXIF Orientation nos PIXELS e
+    converte HEIC em JPEG. Só imagem, só `/file`.
+
+    HEIC SEMPRE é convertido. O leitor de imagem do agente não abre `.heic`, e
+    depender do Safari para converter no upload deixou de ser opção: as notas do
+    Safari 27 beta registram a REMOÇÃO dessa conversão como correção, e o
+    caminho "Arquivos"/iCloud nunca passou por ela. Convertendo aqui, o resto do
+    sistema nunca fica sabendo que HEIC existiu.
 
     Por que na gravação e não na tela: o leitor de imagem do agente redimensiona
     o que passa de 2000px no lado maior, e a orientação se perde nesse caminho.
@@ -2372,12 +2410,23 @@ def _normaliza_orientacao(content: bytes, base_mime: str) -> bytes:
     """
     from PIL import Image, ImageOps
 
+    extensao = _sniff_agent_image_type(content) or ".jpg"
+    heif = extensao == ".heic"
+    if heif:
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+
     try:
         with Image.open(io.BytesIO(content)) as imagem:
-            if imagem.getexif().get(_EXIF_ORIENTATION) in (None, 1):
-                return content
-            formato = imagem.format
+            if not heif and imagem.getexif().get(_EXIF_ORIENTATION) in (None, 1):
+                return content, extensao
+            formato = "JPEG" if heif else imagem.format
             ImageOps.exif_transpose(imagem, in_place=True)
+            if heif and imagem.mode not in ("RGB", "L"):
+                # JPEG não tem canal alfa: sem isto o `save` levanta e a foto
+                # cairia no fallback, gravada como `.heic` que ninguém abre.
+                imagem = imagem.convert("RGB")
             destino = io.BytesIO()
             opcoes: dict[str, object] = {}
             # `exif_transpose` já removeu a Orientation de `info["exif"]`; o
@@ -2389,21 +2438,25 @@ def _normaliza_orientacao(content: bytes, base_mime: str) -> bytes:
             if formato == "JPEG":
                 opcoes["quality"] = 95
             imagem.save(destino, format=formato, **opcoes)
-            return destino.getvalue()
+            return destino.getvalue(), ".jpg" if heif else extensao
     except Exception as exc:  # noqa: BLE001 — qualquer falha grava o original
         log.warning(
-            "EXIF de %s não normalizado, gravando original: %s: %s",
-            base_mime,
+            "imagem %s não normalizada, gravando original: %s: %s",
+            extensao,
             type(exc).__name__,
             exc,
         )
-        return content
+        return content, extensao
 
 
 def _resolve_agent_file_kind(base_mime: str) -> tuple[str, str, int] | None:
-    """`(kind, extensão do arquivo salvo, teto em bytes)` — None se mime não serve."""
-    if base_mime in _IMAGE_ALLOWED_MIMES:
-        return "image", _IMAGE_MIME_SUFFIX[base_mime], _IMAGE_MAX_BYTES
+    """`(kind, extensão do arquivo salvo, teto em bytes)` — None se mime não serve.
+
+    Para imagem a extensão daqui é PROVISÓRIA: quem decide é `_normaliza_imagem`,
+    lendo os bytes. O `content_type` de foto de iPhone mente com frequência.
+    """
+    if base_mime in _IMAGE_ALLOWED_MIMES or base_mime in _IMAGE_HEIF_MIMES:
+        return "image", _IMAGE_MIME_SUFFIX.get(base_mime, ".jpg"), _IMAGE_MAX_BYTES
     if base_mime in _VIDEO_MIME_SUFFIX:
         return "video", _VIDEO_MIME_SUFFIX[base_mime], _VIDEO_MAX_BYTES
     if base_mime in _DOCUMENT_MIME_SUFFIX:
@@ -2786,7 +2839,8 @@ async def post_agent_file(
     if kind == "image":
         # Em thread: decodificar e reencodar é CPU, e o event loop não pode
         # parar por causa disso. A `/image` continua intacta — é do v1.
-        content = await asyncio.to_thread(_normaliza_orientacao, content, base_mime)
+        # A extensão sai daqui e não do mime declarado: HEIC entra e sai `.jpg`.
+        content, ext = await asyncio.to_thread(_normaliza_imagem, content)
 
     stored_name = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
     original_name = _sanitize_upload_filename(file.filename, fallback=stored_name)

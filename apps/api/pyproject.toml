@@ -25,6 +25,11 @@ dependencies = [
     # imagem do agente perde a tag ao redimensionar acima de 2000px, e foto de
     # celular sempre passa disso. Ver `_normaliza_orientacao` em agents.py.
     "Pillow>=11.0.0",
+    # HEIC do iPhone. O Pillow sozinho não registra `.heic`/`.heif` (só `.avif`),
+    # e o WebKit está REMOVENDO a conversão automática no upload (notas do
+    # Safari 27 beta). Sem isto, foto da biblioteca do iPhone chega e é recusada.
+    # Wheel binária cp312 manylinux — não compila nesta VPS.
+    "pillow-heif>=1.0.0",
 ]
 
 [project.optional-dependencies]

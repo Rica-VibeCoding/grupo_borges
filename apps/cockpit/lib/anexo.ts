@@ -43,8 +43,20 @@ export const REGRAS: readonly Regra[] = [
   {
     especie: 'image',
     rotulo: 'Foto',
-    mimes: ['image/jpeg', 'image/png', 'image/webp'],
-    extensoes: ['jpg', 'jpeg', 'png', 'webp'],
+    // HEIC é o formato padrão da câmera do iPhone e CHEGA aqui: o Safari só
+    // converte pra JPEG no upload em parte dos caminhos, e as notas do Safari 27
+    // beta registram a remoção dessa conversão. Recusar no cliente seria barrar
+    // a foto antes de o backend ter chance de convertê-la, que é o que ele faz.
+    mimes: [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+      'image/heic-sequence',
+      'image/heif-sequence',
+    ],
+    extensoes: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'],
     tetoBytes: 10 * MB,
     tetoRotulo: '10 MB',
   },
@@ -82,11 +94,22 @@ export const REGRAS: readonly Regra[] = [
  * O `accept` de cada item da gaveta — um input só, com o `accept` trocado
  * conforme o item escolhido.
  *
- * `image/*` e `video/*` em vez da lista fechada NÃO é descuido: no iPhone é o
- * que faz o iOS oferecer a CÂMERA além da galeria, e é também o que faz o
- * Safari converter o HEIC da câmera em JPEG na hora do upload. Listar só
- * `image/jpeg` perderia as duas coisas e deixaria o iPhone sem caminho para
- * mandar foto. O tipo real ainda é conferido depois, pela `validaAnexo`.
+ * `image/*` e `video/*` em vez da lista fechada NÃO é descuido: é o que faz o
+ * iOS oferecer a CÂMERA além da galeria. A MDN amarra as duas coisas na mesma
+ * frase — *"Many mobile devices also let the user take a picture with the
+ * camera when this is used"* — e não documenta o que acontece com uma lista de
+ * mimes concretos. Perder a câmera do iPhone é caro e é certo; o ganho do outro
+ * lado, não.
+ *
+ * A OUTRA METADE DESTE COMENTÁRIO MORREU EM 05/08: dizia que `image/*` também
+ * fazia o Safari converter HEIC em JPEG no upload. É o contrário. A regra do
+ * WebKit (bug 212489) transcodifica quando o `accept` traz um MIME CONCRETO que
+ * o CoreGraphics saiba encodar, e `image/*` não é concreto — no macOS ele é
+ * justamente o valor que devolve HEIC. Não se trocou o `accept` por causa
+ * disso: quem passou a resolver HEIC é o backend, que converte na gravação e
+ * não depende do que a Apple decidir na próxima versão.
+ *
+ * O tipo real ainda é conferido depois, pela `validaAnexo`.
  *
  * Os documentos vão por mime E por extensão porque o Windows entrega `.md` e
  * `.csv` com `type` vazio, e um `accept` só de mime esconde o arquivo no picker.
@@ -169,7 +192,7 @@ export type Veredito =
   | { ok: false; motivo: string };
 
 const FORMATOS_ACEITOS =
-  'foto (jpg, png, webp), vídeo (mp4, mov, webm) ou documento (pdf, txt, md, csv, json, docx, xlsx)';
+  'foto (jpg, png, webp, heic), vídeo (mp4, mov, webm) ou documento (pdf, txt, md, csv, json, docx, xlsx)';
 
 /**
  * A mensagem diz QUAL das duas coisas falhou — tipo ou tamanho — e diz o número.
