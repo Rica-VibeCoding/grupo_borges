@@ -424,10 +424,14 @@ export function createControleEnvio(
     if (descartado) return transcrito;
     vozEmVoo = true;
     publicar({ tipo: 'enviar', texto: transcrito, fronteira: fronteira ?? undefined });
+    // Mesma regra do texto (ver o comentário em `executar`): `tmux_delivered`
+    // falso é ausência de prova, não erro, e `falhou` afirmaria que o áudio não
+    // saiu daqui. Deixar a voz gritando "não recebeu" enquanto texto e anexo já
+    // falam de incerteza seria três linguagens para o mesmo fato.
     if (!entregueNoTmux) {
       publicar({
-        tipo: 'falhar',
-        erro: new Error('O backend informou que a sessão tmux não recebeu o áudio'),
+        tipo: 'nao-confirmar',
+        erro: new Error('O backend não conseguiu provar a entrega no pane — o áudio pode ter entrado'),
       });
       return transcrito;
     }

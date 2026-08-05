@@ -363,7 +363,11 @@ test('o eco da voz volta com o prefixo do back e ainda assim CONFIRMA', async ()
   assert.equal(estado.texto, 'sobe o cockpit na porta 3008', 'a tela mostra a fala, não o prefixo');
 });
 
-test('voz com tmux_delivered false é falha real, não falta de eco', async () => {
+// Mesma régua do texto: a voz atravessa o mesmo `send_message`, então o `false`
+// dela é a mesma ausência de prova. Uma tela que fala de incerteza no texto e no
+// anexo e grita "não recebeu o áudio" na voz ensina duas linguagens para o mesmo
+// fato — e a errada é a que manda repetir.
+test('voz com tmux_delivered false vai para não confirmado, e a tela não afirma que não chegou', async () => {
   const fonte = fonteFake();
   const relogio = relogioFake();
   const controle = controleDeVoz(fonte, relogio, async () => ({
@@ -373,7 +377,13 @@ test('voz com tmux_delivered false é falha real, não falta de eco', async () =
 
   await vozAte(fonte, controle, 40);
 
-  assert.equal(controle.getEstado().fase, 'falhou');
+  const fase = controle.getEstado().fase;
+  assert.equal(fase, 'nao-confirmado');
+
+  const naTela = aparenciaDe(fase, 'Tara');
+  assert.match(naTela.frase ?? '', /não consegui confirmar/i);
+  assert.match(naTela.frase ?? '', /duplica/i);
+  assert.doesNotMatch(naTela.frase ?? '', /não saiu|não recebeu|não chegou|nada foi entregue/i);
 });
 
 test('executor Codex entrega SEM prefixo — e confirma do mesmo jeito', async () => {
