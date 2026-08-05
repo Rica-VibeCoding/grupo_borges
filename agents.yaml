@@ -188,9 +188,13 @@ agents:
     role: Gerador de carga sintética
     emoji: "🐤"
     tmux_session: canario
-    # Aponta pro repo real de propósito: o canário não tem workspace próprio, e
-    # caminho inexistente quebra qualquer rota que leia git do workspace.
-    workspace_path: /home/clawd/repos/grupo_borges
+    # Casa PRÓPRIA, e isso é obrigatório: o jsonl_watcher monta
+    # {encoded_cwd(workspace_path): slug} como dict, então dois agentes no mesmo
+    # workspace colidem e o último vence calado. Enquanto isto apontava para o
+    # repo real, o canário sobrescrevia o Daniel (embedded lá desde 04/08) e os
+    # eventos dele apareciam como canario. É subdiretório do repo de propósito:
+    # caminho inexistente quebraria rota que lê git do workspace.
+    workspace_path: /home/clawd/repos/grupo_borges/fixtures/cockpit-v2/canario
     cli_default: claude_code
     model_default: claude-opus-4-8
     capabilities:
