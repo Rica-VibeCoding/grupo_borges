@@ -9,6 +9,7 @@ GET  /api/agents/{slug}/pane/stream    — DS-2: SSE com excerpt do pane (poll 1
 POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-buffer
 POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
 POST /api/agents/{slug}/image          — DS-54: upload imagem → path absoluto → send-keys
+POST /api/agents/{slug}/file           — upload imagem/vídeo/documento → path absoluto → send-keys
 POST /api/agents/{slug}/model          — DS-2/DS-69: troca modelo (Claude /model em runtime · Codex persiste pra próxima exec)
 GET  /api/agents/{slug}/codex/thread   — TK-25: resumo read-only da thread Codex atual (modelo/tokens/atividade)
 GET  /api/agents/{slug}/codex/messages — TK-25: histórico read-only sanitizado da última thread Codex
@@ -2154,6 +2155,24 @@ _IMAGE_MIME_SUFFIX = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+_VIDEO_MAX_BYTES = 100 * 1024 * 1024  # 100MB
+_VIDEO_MIME_SUFFIX = {
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/webm": ".webm",
+}
+_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024  # 25MB
+_DOCUMENT_MIME_SUFFIX = {
+    "application/pdf": ".pdf",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+    "text/csv": ".csv",
+    "application/json": ".json",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+}
+# Teto de leitura por chunk: corta upload gigante antes de materializar na RAM.
+_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 _AGENT_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "agents"
 
 
@@ -2283,6 +2302,99 @@ def _sniff_agent_image_type(data: bytes) -> str | None:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
     return None
+
+
+# Boxes ISO-BMFF que abrem um mp4/mov legítimo. `ftyp` cobre o caso moderno;
+# os demais aparecem em .mov antigo gravado por câmera/QuickTime.
+_MOVIE_LEADING_BOXES = {b"ftyp", b"moov", b"mdat", b"wide", b"free", b"skip"}
+
+
+def _agent_file_content_matches(kind: str, base_mime: str, data: bytes) -> bool:
+    """Confere magic bytes onde o formato dá essa garantia de graça.
+
+    Texto puro (txt/csv/md/json) não tem assinatura — aí mime + extensão bastam;
+    inventar heurística de conteúdo ali só rejeitaria arquivo legítimo.
+    """
+    if kind == "image":
+        return _sniff_agent_image_type(data) == _IMAGE_MIME_SUFFIX[base_mime]
+    if kind == "video":
+        if base_mime == "video/webm":
+            return data.startswith(b"\x1a\x45\xdf\xa3")
+        return len(data) >= 8 and data[4:8] in _MOVIE_LEADING_BOXES
+    if base_mime == "application/pdf":
+        return data.startswith(b"%PDF")
+    if base_mime in {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }:
+        return data.startswith(b"PK\x03\x04")
+    return True
+
+
+def _resolve_agent_file_kind(base_mime: str) -> tuple[str, str, int] | None:
+    """`(kind, extensão do arquivo salvo, teto em bytes)` — None se mime não serve."""
+    if base_mime in _IMAGE_ALLOWED_MIMES:
+        return "image", _IMAGE_MIME_SUFFIX[base_mime], _IMAGE_MAX_BYTES
+    if base_mime in _VIDEO_MIME_SUFFIX:
+        return "video", _VIDEO_MIME_SUFFIX[base_mime], _VIDEO_MAX_BYTES
+    if base_mime in _DOCUMENT_MIME_SUFFIX:
+        return "document", _DOCUMENT_MIME_SUFFIX[base_mime], _DOCUMENT_MAX_BYTES
+    return None
+
+
+async def _read_upload_within(file: UploadFile, max_bytes: int) -> bytes | None:
+    """Lê o upload inteiro, ou None se ele passar do teto.
+
+    Em chunks porque o teto de vídeo é 100MB: `read()` cego materializaria
+    qualquer tamanho na RAM antes de a validação ter chance de recusar.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_UPLOAD_READ_CHUNK_BYTES)
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > max_bytes:
+            return None
+        chunks.append(chunk)
+
+
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^\w.\- ]", re.UNICODE)
+
+
+def _sanitize_upload_filename(raw: str | None, *, fallback: str) -> str:
+    """Nome original só pra exibir/relatar — nunca vira caminho em disco.
+
+    Descarta diretório do cliente (Windows manda o path inteiro) e tudo que não
+    seja letra/dígito/`.`/`-`/espaço, o que de quebra elimina quebra de linha —
+    senão um nome forjado injetaria linha própria no prompt do agente.
+    """
+    base = re.split(r"[\\/]", raw or "")[-1].strip()
+    return _UNSAFE_FILENAME_CHARS.sub("_", base).strip("._ ")[:120] or fallback
+
+
+def _agent_file_message(
+    kind: str, absolute_path: Path, original_name: str, caption_text: str
+) -> str:
+    if kind == "image":
+        # Path SEMPRE em nova linha — ver comentário em post_agent_image.
+        text = f"Imagem enviada via cockpit:\n{absolute_path}"
+    elif kind == "video":
+        text = (
+            f"Vídeo enviado via cockpit:\n{absolute_path}\n"
+            f"Nome original: {original_name}\n"
+            "Não há visão de vídeo nativa: pra ver o conteúdo, extraia frames "
+            "com ffmpeg (já instalado na VPS)."
+        )
+    else:
+        text = (
+            f"Arquivo enviado via cockpit:\n{absolute_path}\n"
+            f"Nome original: {original_name}"
+        )
+    if caption_text:
+        text = f"{text}\nCaption: {caption_text}"
+    return text
 
 
 @router.post("/{slug}/voice")
@@ -2555,6 +2667,96 @@ async def post_agent_image(
         "path": str(absolute_path),
         "tmux_delivered": delivered,
         "duration_ms": duration_ms,
+    }
+
+
+@router.post("/{slug}/file")
+async def post_agent_file(
+    slug: str,
+    file: UploadFile,
+    request: Request,
+    caption: str | None = Form(default=None),
+) -> dict[str, Any]:
+    """Upload imagem/vídeo/documento → salva permanente → path via send-keys.
+
+    Irmã da `/image`, que segue existindo intacta porque o cockpit v1 depende
+    dela. O composer do v2 chama só esta — inclusive para imagem.
+
+    - 404 quando agente não existe
+    - 409 quando a sessão tmux está indisponível (`_send_tmux_or_409`)
+    - 422 quando mime não suportado, tamanho acima do teto do tipo, ou bytes
+      que não correspondem ao mime declarado
+    - 200 + {path, kind, filename, size, tmux_delivered, duration_ms}
+
+    Tetos por tipo: imagem 10MB, documento 25MB, vídeo 100MB. O arquivo é salvo
+    com nome gerado (`timestamp-uuid.ext`); o nome original vai só na resposta e
+    no texto entregue ao agente.
+    """
+    started_at = time.monotonic()
+    agent = await _get_agent_or_404(request, slug)
+
+    base_mime = (file.content_type or "").split(";")[0].strip()
+    resolved = _resolve_agent_file_kind(base_mime)
+    if resolved is None:
+        raise HTTPException(
+            status_code=422, detail=f"mime não suportado: {file.content_type}"
+        )
+    kind, ext, max_bytes = resolved
+
+    content = await _read_upload_within(file, max_bytes)
+    if content is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{kind} maior que {max_bytes // (1024 * 1024)}MB",
+        )
+    if not _agent_file_content_matches(kind, base_mime, content):
+        raise HTTPException(
+            status_code=422, detail=f"conteúdo não corresponde ao mime {base_mime}"
+        )
+
+    stored_name = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
+    original_name = _sanitize_upload_filename(file.filename, fallback=stored_name)
+    dest_dir = _AGENT_UPLOADS_BASE / slug
+    absolute_path = dest_dir / stored_name
+
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(absolute_path.write_bytes, content)
+    except OSError as exc:
+        log.error(
+            "Erro ao salvar %s do agente %s em %s: %s", kind, slug, absolute_path, exc
+        )
+        raise HTTPException(
+            status_code=500, detail="erro interno ao salvar arquivo"
+        ) from exc
+
+    caption_text = (caption or "").strip()
+    text = _agent_file_message(kind, absolute_path, original_name, caption_text)
+
+    if agent.get("executor_kind") == "codex":
+        if kind == "image":
+            await _spawn_codex_agent_turn(
+                slug,
+                request,
+                text=caption_text or "Veja a imagem anexa.",
+                image_path=str(absolute_path),
+            )
+        else:
+            # O wrapper só anexa imagem em `image_path`; vídeo e documento vão
+            # com o path dentro do próprio prompt.
+            await _spawn_codex_agent_turn(slug, request, text=text)
+        delivered = True
+    else:
+        delivered = await _send_tmux_or_409(agent["tmux_session"], text)
+
+    log.info("agent %s: %s salvo %s", slug, kind, absolute_path)
+    return {
+        "path": str(absolute_path),
+        "kind": kind,
+        "filename": original_name,
+        "size": len(content),
+        "tmux_delivered": delivered,
+        "duration_ms": int((time.monotonic() - started_at) * 1000),
     }
 
 
