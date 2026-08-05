@@ -94,6 +94,101 @@ test('a gaveta não reabre no meio de um envio', async () => {
   await emVoo;
 });
 
+// ---- retenção ------------------------------------------------------------
+
+/** A espinha da retenção: escolher NÃO sobe. O upload passou a ser o toque de
+ *  enviar, que é quando a legenda já existe. */
+test('escolher retém o arquivo e não sobe nada', () => {
+  let subidas = 0;
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      subidas += 1;
+      return respostaOk();
+    },
+  });
+  const escolhido = arquivo('foto.png');
+  controle.escolher(escolhido);
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'escolhido');
+  assert.equal(subidas, 0, 'escolher subiu o arquivo — a legenda nem foi escrita ainda');
+  // O arquivo INTEIRO fica retido: a miniatura precisa dele para o preview e o
+  // despacho para o upload, e o input já foi zerado.
+  assert.equal(estado.fase === 'escolhido' && estado.arquivo, escolhido);
+  assert.equal(estado.fase === 'escolhido' && estado.especie, 'image');
+});
+
+/** Sem isto o Rica anexa o vídeo de 60 MB, escreve a legenda e só então leva o
+ *  não — a viagem inteira para descobrir o que dava para saber no primeiro
+ *  instante. */
+test('escolher valida na hora e recusa sem tocar na rede', () => {
+  let subidas = 0;
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      subidas += 1;
+      return respostaOk();
+    },
+  });
+  controle.escolher(new File([new Uint8Array(8)], 'instalador.exe', { type: '' }));
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'erro');
+  assert.equal(subidas, 0);
+  assert.match(
+    estado.fase === 'erro' ? estado.motivo : '',
+    /\.exe/,
+    'a recusa tem de dizer O QUE foi recusado, não um "falhou" genérico',
+  );
+});
+
+test('escolher fecha a gaveta nos dois desfechos', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.alternarGaveta();
+  controle.escolher(arquivo());
+  assert.equal(controle.getEstado().gaveta, false);
+
+  controle.alternarGaveta();
+  controle.escolher(new File([new Uint8Array(8)], 'x.exe', { type: '' }));
+  assert.equal(controle.getEstado().gaveta, false, 'a gaveta ficou aberta por cima do erro');
+});
+
+test('escolher não atropela um arquivo em voo', async () => {
+  let soltar!: (r: RespostaAnexo) => void;
+  const controle = createControleAnexo('a', {
+    subir: () => new Promise<RespostaAnexo>((resolve) => (soltar = resolve)),
+  });
+  const emVoo = controle.enviar(arquivo(), '');
+  controle.escolher(arquivo('outra.png'));
+  assert.equal(controle.getEstado().fase, 'enviando');
+  soltar(respostaOk());
+  await emVoo;
+});
+
+/** Um arquivo por vez: escolher de novo troca o retido, não empilha. */
+test('escolher de novo substitui o anexo retido', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.escolher(arquivo('primeira.png'));
+  const segunda = arquivo('segunda.png');
+  controle.escolher(segunda);
+  const estado = controle.getEstado();
+  assert.equal(estado.fase === 'escolhido' && estado.arquivo, segunda);
+});
+
+/** Retenção sem saída seria um beco: escolheu a foto errada, e daí? */
+test('limpar solta o anexo retido', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.escolher(arquivo());
+  controle.limpar();
+  assert.equal(controle.getEstado().fase, 'ocioso');
+});
+
+test('descartado não retém mais nada', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.dispose();
+  controle.escolher(arquivo());
+  assert.equal(controle.getEstado().fase, 'ocioso');
+});
+
 // ---- envio ---------------------------------------------------------------
 
 test('o envio percorre enviando → sucesso e fecha a gaveta', async () => {

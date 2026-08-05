@@ -255,7 +255,9 @@ export function AvisoAnexo({
   estado: EstadoAnexo;
   aoDispensar: () => void;
 }) {
-  if (estado.fase === 'ocioso') return null;
+  // `escolhido` não fala aqui: quem anuncia o arquivo retido é a miniatura
+  // dentro da caixa, e uma linha de texto dizendo o mesmo seria eco.
+  if (estado.fase === 'ocioso' || estado.fase === 'escolhido') return null;
 
   const erro = estado.fase === 'erro';
   const texto =

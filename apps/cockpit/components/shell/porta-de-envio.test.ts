@@ -75,6 +75,7 @@ test('toda recusa com texto na mão tem recado; só o campo vazio pode calar', (
     { texto: 'oi', compactando: false, faseEnvio: 'aceito' as const },
     { texto: '   ', compactando: false, faseEnvio: 'ocioso' as const },
     { compactando: true, faseEnvio: 'ocioso' as const },
+    { texto: '', temAnexo: true, compactando: true, faseEnvio: 'ocioso' as const },
   ];
 
   for (const caso of casos) {
@@ -86,6 +87,53 @@ test('toda recusa com texto na mão tem recado; só o campo vazio pode calar', (
     }
     assert.ok(porta.recado, `recusa ${porta.motivo} ficou muda`);
   }
+});
+
+/**
+ * O defeito de 05/08 com roupa nova. Anexar a foto e tocar em enviar sem
+ * escrever legenda é um GESTO — e caía na única recusa muda do módulo, que
+ * existe para quando não há gesto nenhum. A foto ficaria retida, o toque não
+ * faria nada e a tela não diria por quê.
+ */
+test('foto anexada sem legenda abre a porta — gesto não é campo vazio', () => {
+  const porta = abrePorta({ texto: '', temAnexo: true, compactando: false, faseEnvio: 'ocioso' });
+  assert.equal(porta.libera, true, 'anexo sem legenda é gesto e tem o que enviar');
+
+  const soEspaco = abrePorta({
+    texto: '   ',
+    temAnexo: true,
+    compactando: false,
+    faseEnvio: 'ocioso',
+  });
+  assert.equal(soEspaco.libera, true, 'espaço em branco com foto na mão continua sendo gesto');
+});
+
+test('sem texto E sem anexo continua sendo o vazio de sempre', () => {
+  const porta = abrePorta({ texto: '', temAnexo: false, compactando: false, faseEnvio: 'ocioso' });
+  assert.equal(porta.libera, false);
+  assert.equal(porta.libera === false && porta.motivo, 'vazio');
+});
+
+/**
+ * A armadilha do outro lado: fazer o anexo LIBERAR em vez de só não contar como
+ * vazio. Anexo durante o `/compact` corta o resumo ao meio igual ao texto, e
+ * anexo com envio em voo atropela do mesmo jeito — as recusas que valem para o
+ * texto valem para o gesto inteiro, e falando.
+ */
+test('anexo não fura as outras recusas, e elas continuam com recado', () => {
+  const noCompact = abrePorta({
+    texto: '',
+    temAnexo: true,
+    compactando: true,
+    faseEnvio: 'ocioso',
+  });
+  assert.equal(noCompact.libera, false, 'foto durante o compact corta o resumo igual ao texto');
+  assert.equal(noCompact.libera === false && noCompact.motivo, 'compactando');
+  assert.ok(noCompact.libera === false && noCompact.recado, 'recusou a foto sem dizer nada');
+
+  const emVoo = abrePorta({ texto: '', temAnexo: true, compactando: false, faseEnvio: 'enviando' });
+  assert.equal(emVoo.libera, false);
+  assert.ok(emVoo.libera === false && emVoo.recado);
 });
 
 test('a voz não tem campo, então "vazio" não é recusa possível pra ela', () => {

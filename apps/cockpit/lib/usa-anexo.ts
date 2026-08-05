@@ -5,14 +5,20 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import {
   ErroAnexo,
   enviaAnexo,
+  validaAnexo,
   type EspecieAnexo,
   type RespostaAnexo,
 } from './anexo.ts';
 
 /**
- * A máquina do anexo. Quatro fases, e cada uma existe porque tem consequência
+ * A máquina do anexo. Cinco fases, e cada uma existe porque tem consequência
  * na tela:
  *
+ * - `escolhido` é o arquivo RETIDO: escolhido, validado e ainda não enviado.
+ *   Antes ele não existia — escolher a foto disparava o upload na hora, e o
+ *   Rica via o arquivo chegar ao agente sem legenda nenhuma, porque ele nem
+ *   tinha tido a chance de escrever. Reter é o que separa o gesto em dois
+ *   tempos: escolher e, depois, mandar foto e legenda de uma vez.
  * - `enviando` TRAVA o botão. É a única defesa contra o duplo envio: um vídeo de
  *   50 MB por Tailscale demora, e o segundo toque no mesmo botão mandaria o
  *   arquivo duas vezes ao agente.
@@ -30,6 +36,10 @@ import {
  */
 export type FaseAnexo =
   | { fase: 'ocioso' }
+  /** O arquivo fica AQUI, inteiro: a miniatura precisa dele para o preview e o
+   *  despacho precisa dele para subir. Guardar só o nome obrigaria a pedir o
+   *  arquivo de volta ao input, que já foi zerado. */
+  | { fase: 'escolhido'; arquivo: File; especie: EspecieAnexo }
   | { fase: 'enviando'; nome: string }
   | { fase: 'erro'; nome: string; motivo: string }
   | { fase: 'sucesso'; nome: string; especie: EspecieAnexo };
@@ -58,6 +68,9 @@ export type DependenciasAnexoControle = {
 export type ControleAnexo = {
   getEstado(): EstadoAnexo;
   subscribe(ouvinte: () => void): () => void;
+  /** Retém o arquivo escolhido, já validado. Não sobe nada — quem sobe é o
+   *  `enviar`, no toque do botão. */
+  escolher(arquivo: File): void;
   /** `true` quando o arquivo chegou ao agente — é o sinal para o composer
    *  limpar o campo de texto, que virou legenda. Limpar antes seria perder o
    *  texto num 422 de tamanho. */
@@ -98,6 +111,27 @@ export function createControleAnexo(
     subscribe(ouvinte) {
       ouvintes.add(ouvinte);
       return () => ouvintes.delete(ouvinte);
+    },
+
+    escolher(arquivo) {
+      // Mesma trava do `enviar`, e pelo mesmo motivo: com um arquivo em voo não
+      // há para onde mandar o segundo.
+      if (descartado || estado.fase === 'enviando') return;
+      limparTimer();
+      // A validação passou a rodar AQUI, e não só dentro do `enviaAnexo`. Reter
+      // um arquivo que o servidor vai recusar é guardar uma promessa falsa na
+      // tela: o Rica anexaria o vídeo de 60 MB, escreveria a legenda e só então
+      // levaria o não. O `enviaAnexo` continua validando na fronteira dele —
+      // esta é uma segunda porta, não a mudança de lugar da primeira.
+      const veredito = validaAnexo(arquivo);
+      // A gaveta fecha nos dois desfechos, e fecha AQUI e não no clique do item
+      // (ver a nota do `enviar`): quem cancelou o picker sem escolher nada
+      // continua com a gaveta aberta, que é onde ele estava.
+      if (!veredito.ok) {
+        publicar({ fase: 'erro', nome: arquivo.name, motivo: veredito.motivo, gaveta: false });
+        return;
+      }
+      publicar({ fase: 'escolhido', arquivo, especie: veredito.especie, gaveta: false });
     },
 
     async enviar(arquivo, caption) {
@@ -157,6 +191,8 @@ export function createControleAnexo(
       publicar({ ...estado, gaveta: false });
     },
 
+    /** Solta o que estiver na mão — o aviso de erro já lido e, agora, o arquivo
+     *  retido. Sem esta saída, escolher a foto errada seria um beco. */
     limpar() {
       limparTimer();
       publicar({ fase: 'ocioso', gaveta: estado.gaveta });
@@ -173,6 +209,7 @@ export function createControleAnexo(
 
 export function usaAnexo(agentSlug: string): {
   estado: EstadoAnexo;
+  escolher: (arquivo: File) => void;
   enviar: (arquivo: File, caption: string) => Promise<boolean>;
   alternarGaveta: () => void;
   fecharGaveta: () => void;
@@ -191,6 +228,7 @@ export function usaAnexo(agentSlug: string): {
 
   return {
     estado,
+    escolher: controle.escolher,
     enviar: controle.enviar,
     alternarGaveta: controle.alternarGaveta,
     fecharGaveta: controle.fecharGaveta,

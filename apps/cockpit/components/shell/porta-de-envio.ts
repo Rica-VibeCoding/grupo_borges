@@ -7,9 +7,9 @@
  * composer, com o campo já limpo — não sobrou rastro em lugar nenhum, nem no
  * servidor, nem na tela. Eram três portões assim, e todos descartavam calados.
  *
- * A regra que este módulo carrega é uma só: **recusa com texto na mão SEMPRE
- * tem recado.** Silêncio é o defeito; o `recado` nulo só existe para o campo
- * vazio, onde não há gesto nem texto a preservar.
+ * A regra que este módulo carrega é uma só: **recusa com gesto na mão SEMPRE
+ * tem recado.** Silêncio é o defeito; o `recado` nulo só existe para o gesto
+ * vazio, onde não há nada a preservar nem a explicar.
  *
  * Função pura de propósito. Dentro do componente a decisão não era observável
  * por teste nenhum — e defeito que só a tela do Rica enxerga chega nele antes
@@ -18,7 +18,7 @@
 import type { FaseEnvio } from '../../lib/envio.ts';
 
 export type MotivoRecusa =
-  /** Não há gesto: o campo está vazio. */
+  /** Não há gesto: nem texto escrito, nem arquivo anexado. */
   | 'vazio'
   /** O `/compact` está em voo e uma mensagem agora corta o resumo ao meio. */
   | 'compactando'
@@ -61,12 +61,19 @@ const RECADO: Record<'texto' | 'voz', Record<Exclude<MotivoRecusa, 'vazio'>, str
  */
 export function abrePorta(entrada: {
   texto?: string;
+  /** Há arquivo retido no composer, esperando o toque de enviar. */
+  temAnexo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';
 }): PortaDeEnvio {
   const recado = RECADO[entrada.midia ?? 'texto'];
-  if (entrada.texto !== undefined && !entrada.texto.trim()) {
+  // `vazio` é propriedade do GESTO, não do texto. Enquanto anexo e texto eram
+  // caminhos separados isso dava no mesmo; com a foto retida no composer, não:
+  // o Rica anexa, não escreve legenda nenhuma, toca em enviar — e cairia
+  // justamente na ÚNICA recusa muda do módulo. Seria o descarte silencioso de
+  // 05/08 renascendo da invariante que o matou.
+  if (entrada.texto !== undefined && !entrada.texto.trim() && !entrada.temAnexo) {
     return { libera: false, motivo: 'vazio', recado: null };
   }
   if (entrada.compactando) {
@@ -101,6 +108,7 @@ export type EfeitoEnvio = {
 
 export function preparaEnvio(entrada: {
   texto?: string;
+  temAnexo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';
