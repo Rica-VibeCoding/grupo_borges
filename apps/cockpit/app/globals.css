@@ -657,6 +657,42 @@ body {
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 
+/* A GAVETA DO "+" — a única superfície que abre para CIMA.
+ *
+ * *"gaveta abre para cima, com a sutileza da gaveta lateral, apenas foto, vídeo
+ * e doc"* (Rica, via Pavan). O composer mora no rodapé: crescer para baixo
+ * jogaria o menu para fora da tela, e no iPhone para debaixo do teclado.
+ *
+ * ESTA É UMA VARIANTE DE POSIÇÃO, NÃO DE MOVIMENTO. Duração, curva e o fade
+ * continuam sendo os do `.ck-surge` — quem anima esta gaveta é ele, e é por
+ * isso que ela não tem `transition` nenhuma aqui. Dois dialetos de movimento no
+ * mesmo app se enxergam na hora.
+ *
+ * E o gesto do `.ck-surge` já é o certo por acaso feliz: o estado fechado dele
+ * AFUNDA (`translateY(6px) scale(0.98)`), e afundar é exatamente o que uma
+ * gaveta que subiu do composer faz ao voltar. Só o `transform-origin` muda —
+ * sem ele o `scale` encolhe a partir do centro, e a gaveta parece se afastar do
+ * botão em vez de recolher para dentro dele.
+ *
+ * `absolute` e não `fixed` (a diferença para o `.ck-flutua`): esta gaveta é
+ * ancorada no botão, e o botão anda — o composer é centralizado e muda de
+ * largura entre celular e desktop. `fixed` a descolaria do "+" no desktop.
+ * O `bottom: 100%` mede o pai relativo, que é o invólucro do FORM e só ele. */
+.ck-gaveta-acima {
+  position: absolute;
+  z-index: var(--ck-z-overlay);
+  bottom: calc(100% + var(--ck-space-2));
+  /* Alinhada à borda esquerda do "+", não à do composer: o botão vive recuado
+     pelo padding da caixa (`--ck-space-3`) menos a mordida negativa de
+     `--ck-space-2` que o encaixa no canto. */
+  left: calc(var(--ck-space-3) - var(--ck-space-2));
+  width: max-content;
+  max-width: calc(100% - 2 * var(--ck-space-3));
+  transform-origin: bottom left;
+  border-radius: var(--ck-radius-caixa);
+  box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+
 /* Véu de interação. É `background-image` e não `::after` de propósito: um
  * pseudo-elemento sobreposto pintaria branco POR CIMA do texto e lavaria o
  * contraste que a §2.6 mediu. Gradiente de uma cor só compõe sobre a

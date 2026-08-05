@@ -44,6 +44,43 @@ export function IconeAnexo(props: IconeProps) {
   );
 }
 
+/* Os três da gaveta do anexo. Mesmo vocabulário do resto — contorno aberto,
+   nada preenchido — e desenhados na mesma caixa de 24 para que os três fiquem
+   com o mesmo peso óptico numa fileira vertical, que é onde eles vivem. */
+
+export function IconeFoto(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <circle cx="9" cy="10" r="1.6" />
+      {/* A montanha entra pela borda direita em vez de fechar dentro do quadro:
+          fechada, a 16px ela vira um borrão colado na moldura. */}
+      <path d="M4.5 17.5 9.5 12.5l4 4 2.5-2.5 3.5 3.5" />
+    </Tracado>
+  );
+}
+
+export function IconeVideo(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <rect x="3" y="6" width="12.5" height="12" rx="2.5" />
+      <path d="M15.5 11.5 21 8.5v7l-5.5-3z" />
+    </Tracado>
+  );
+}
+
+export function IconeDocumento(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7z" />
+      <path d="M14 3v4h4" />
+      {/* Duas linhas de texto, não três: a terceira encosta na dobra da folha
+          e o ícone perde a leitura no tamanho em que ele é usado. */}
+      <path d="M9 12.5h6M9 16h4" />
+    </Tracado>
+  );
+}
+
 export function IconeMicrofone(props: IconeProps) {
   return (
     <Tracado {...props}>

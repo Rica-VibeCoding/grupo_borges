@@ -43,7 +43,9 @@ import { fetchAgentPainel, patchAgentEffort } from '@grupo_borges/cockpit-core/a
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
+import { usaAnexo } from '../../lib/usa-anexo';
 import { usaEnvio } from '../../lib/usa-envio';
+import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { BarraCompact } from './barra-compact';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
@@ -58,7 +60,6 @@ import {
   type Impedimento,
 } from './voz';
 import {
-  IconeAnexo,
   IconeCopiar,
   IconeDescartar,
   IconeEnviar,
@@ -100,6 +101,16 @@ export function Composer({
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // O ANEXO tem máquina PRÓPRIA, não a de seis fases do texto. Ali a pergunta é
+  // "o agente recebeu?", respondida só pelo eco no stream; aqui o `POST /file`
+  // devolve `tmux_delivered` e o próprio arquivo aparece no feed — não existe
+  // eco de anexo para casar. Ver o cabeçalho de `lib/usa-anexo.ts`.
+  const anexo = usaAnexo(agentSlug);
+  // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
+  // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
+  // devolve o foco ao botão que abriu.
+  const botaoAnexoRef = useRef<HTMLButtonElement>(null);
 
   // O COMPACT trava o composer. Quem manda `/compact` é este componente (o
   // texto sai por `envio.enviar` como qualquer mensagem), então é aqui que a
@@ -268,12 +279,20 @@ export function Composer({
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />
+      {/* O INVÓLUCRO DA ÂNCORA. Existe por uma razão só: dar à gaveta um
+          `position: relative` que meça exatamente a caixa do composer. Se o
+          `bottom: 100%` dela medisse a coluna inteira (que também tem as linhas
+          de estado embaixo), a gaveta subiria alto demais e descolaria do "+".
+          A largura máxima migrou para cá para que o `left` da gaveta case com a
+          borda da caixa também no desktop, onde a coluna é mais larga. */}
+      <div
+        className="relative mx-auto w-full"
+        style={{ maxWidth: 'var(--ck-w-composer)' }}
+      >
       <form
         onSubmit={aoSubmeter}
-        className="ck-lit ck-caixa mx-auto flex flex-col border"
+        className="ck-lit ck-caixa flex w-full flex-col border"
         style={{
-          maxWidth: 'var(--ck-w-composer)',
-          width: '100%',
           padding: 'var(--ck-space-3)',
           gap: 'var(--ck-space-2)',
           background: 'var(--ck-surface-composer)',
@@ -365,21 +384,12 @@ export function Composer({
               </span>
             )
           ) : (
-          <button
-            type="button"
-            aria-label="Anexar arquivo"
-            className="ck-veil flex shrink-0 items-center justify-center"
-            style={{
-              minWidth: 'var(--ck-touch-min)',
-              minHeight: 'var(--ck-touch-min)',
-              marginLeft: 'calc(var(--ck-space-2) * -1)',
-              marginBottom: 'calc(var(--ck-space-2) * -1)',
-              borderRadius: 'var(--ck-radius-chip)',
-              color: 'var(--ck-text-secondary)',
-            }}
-          >
-            <IconeAnexo tamanho={17} />
-          </button>
+          <BotaoAnexo
+            estado={anexo.estado}
+            alternarGaveta={anexo.alternarGaveta}
+            desabilitado={travaCompact || emAndamento}
+            botaoRef={botaoAnexoRef}
+          />
           )}
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
@@ -591,6 +601,24 @@ export function Composer({
           </div>
         ) : null}
       </form>
+
+        {/* A GAVETA. Irmã do form, dentro do invólucro ancorado — sobe a partir
+            do "+" e nunca é recortada pelo `overflow` da caixa. */}
+        <PainelAnexo
+          estado={anexo.estado}
+          // O texto digitado vira a LEGENDA do arquivo, igual ao ChatGPT: uma
+          // entrega só, não duas (o arquivo e depois um texto solto).
+          legenda={texto}
+          fecharGaveta={anexo.fecharGaveta}
+          enviar={anexo.enviar}
+          aoEnviar={() => setTexto('')}
+          botaoRef={botaoAnexoRef}
+        />
+      </div>
+
+      {/* O ESTADO DO ANEXO — subindo, recusado, entregue. Vem antes do aviso da
+          voz porque é o gesto mais recente quando existe. */}
+      <AvisoAnexo estado={anexo.estado} aoDispensar={anexo.limpar} />
 
       {/* MICROFONE INDISPONÍVEL. Nunca um botão que não responde — o defeito
           que esta rodada consertou no envio, aqui com outra roupa. Sempre duas
