@@ -74,6 +74,9 @@ export type DependenciasCompact = {
 export type ControleCompact = {
   getEstado(): EstadoCompact;
   subscribe(ouvinte: () => void): () => void;
+  /** Aplica a espera guardada no storage. Chamada DEPOIS da hidratação, nunca
+   *  na construção — ver o corpo da função. */
+  retomarDoStorage(): void;
   /** O composer mandou um `/compact`. Rearma se já havia um em voo — o segundo
    *  `/compact` substitui o primeiro, e o relógio é do segundo. */
   iniciar(): void;
@@ -132,6 +135,8 @@ export function createControleCompact(
 
   const ouvintes = new Set<() => void>();
   let descartado = false;
+  /** A retomada é uma vez só por máquina — ver `retomarDoStorage`. */
+  let retomou = false;
   let timerEscape: ReturnType<typeof setTimeout> | undefined;
   let timerHold: ReturnType<typeof setTimeout> | undefined;
   let duracoes = duracoesDe(lerRegistro(storage, agentSlug));
@@ -249,32 +254,55 @@ export function createControleCompact(
     });
   }
 
-  // RETOMADA após navegação/refresh: se um compact começou há menos de 6min e
-  // ninguém concluiu, a espera continua de onde estava — o feed reconclui
-  // assim que o resumo aparecer no replay (o timestamp dele é posterior ao
-  // início), e o escape cobre o caso do sinal ter se perdido de verdade.
-  const registroInicial = lerRegistro(storage, agentSlug);
-  const inicio = registroInicial.inicio;
-  if (typeof inicio === 'number' && Number.isFinite(inicio)) {
+  /**
+   * RETOMADA após navegação/refresh: se um compact começou há menos de 6min e
+   * ninguém concluiu, a espera continua de onde estava — o feed reconclui
+   * assim que o resumo aparecer no replay, e o escape cobre o caso do sinal
+   * ter se perdido de verdade.
+   *
+   * NÃO roda na construção, e isso é o conserto de um hydration mismatch de
+   * ESTRUTURA (tropa_task 3c58b8ec). Lendo o storage aqui, a máquina nascia
+   * `compactando` no cliente e `ocioso` no servidor — que não tem
+   * `localStorage` —, e a `BarraCompact` existia num lado e não no outro. A
+   * doc do `useSyncExternalStore` é explícita: o `getServerSnapshot` "will be
+   * used only during server rendering and during hydration of server-rendered
+   * content on the client. The server snapshot must be the same between the
+   * client and the server."
+   *
+   * Por isso ela é chamada por `usaCompact` num EFEITO, depois da hidratação,
+   * e por isso passa por `transicionar` em vez de atribuir `estado` direto:
+   * `transicionar` notifica os ouvintes, e sem essa notificação o React não
+   * re-renderizaria (react#26095 — quando `subscribe` nunca chama o callback,
+   * a divergência entre snapshot de cliente e de servidor não é reconciliada).
+   *
+   * Idempotente: o registry compartilha a máquina entre quatro peças e o
+   * StrictMode monta duas vezes.
+   */
+  function retomarDoStorage(): void {
+    if (descartado || retomou) return;
+    retomou = true;
+    const registro = lerRegistro(storage, agentSlug);
+    const inicio = registro.inicio;
+    if (typeof inicio !== 'number' || !Number.isFinite(inicio)) return;
     const decorrido = agora() - inicio;
-    if (decorrido >= 0 && decorrido < ESCAPE_COMPACT_MS) {
-      // O marco do servidor volta junto: sem ele a espera retomada não teria
-      // linha de base e o primeiro resumo VELHO do replay concluiria na hora.
-      const marco = registroInicial.marco;
-      estado = {
-        ...estado,
-        fase: 'compactando',
-        desdeMs: inicio,
-        marcoServidorMs:
-          typeof marco === 'number' && Number.isFinite(marco) ? marco : null,
-      };
-      armarEscape(ESCAPE_COMPACT_MS - decorrido);
-    } else {
+    if (decorrido < 0 || decorrido >= ESCAPE_COMPACT_MS) {
       persistir({ inicio: null, marco: null });
+      return;
     }
+    // O marco do servidor volta junto: sem ele a espera retomada não teria
+    // linha de base e o primeiro resumo VELHO do replay concluiria na hora.
+    const marco = registro.marco;
+    transicionar({
+      ...estado,
+      fase: 'compactando',
+      desdeMs: inicio,
+      marcoServidorMs: typeof marco === 'number' && Number.isFinite(marco) ? marco : null,
+    });
+    armarEscape(ESCAPE_COMPACT_MS - decorrido);
   }
 
   return {
+    retomarDoStorage,
     getEstado: () => estado,
     subscribe(ouvinte) {
       ouvintes.add(ouvinte);
@@ -337,11 +365,18 @@ export function usaCompact(agentSlug: string): {
   );
 
   useEffect(() => {
+    // A RETOMADA MORA AQUI, não na construção da máquina. Efeito só roda no
+    // cliente e só DEPOIS da hidratação, então o primeiro render bate com o
+    // HTML do servidor — que é o que o `getServerSnapshot` exige ("must be the
+    // same between the client and the server"). Ler o storage antes disto era
+    // o hydration mismatch de estrutura da tropa_task 3c58b8ec: a barra do
+    // compact existia no cliente e não existia no servidor.
+    controle.retomarDoStorage();
     // O useMemo acima já contou uma referência; o efeito só agenda a saída.
     // StrictMode monta→desmonta→monta: o dispose no zero é imediato, mas a
-    // remontagem recria a máquina e a retomada pelo storage recompõe a espera.
+    // remontagem recria a máquina e a retomada recompõe a espera.
     return () => soltar(agentSlug);
-  }, [agentSlug]);
+  }, [agentSlug, controle]);
 
   return {
     estado,

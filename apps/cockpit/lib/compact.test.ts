@@ -220,6 +220,11 @@ test('retomada — início jovem no storage reabre em compactando com escape pel
     storage,
   });
 
+  // Nasce ociosa: no servidor não há storage, e o primeiro render dos dois
+  // lados tem de bater. A espera entra no efeito, depois da hidratação.
+  assert.equal(c.getEstado().fase, 'ocioso');
+
+  c.retomarDoStorage();
   const estado = c.getEstado();
   assert.equal(estado.fase, 'compactando');
   assert.equal(estado.desdeMs, 900_000);
@@ -238,6 +243,7 @@ test('retomada — início velho demais é limpo e a máquina nasce ociosa', () 
     agora: () => 1_000 + ESCAPE_COMPACT_MS + 1,
     storage,
   });
+  c.retomarDoStorage();
   assert.equal(c.getEstado().fase, 'ocioso');
   const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:hiro') ?? '{}') as {
     inicio: number | null;
@@ -329,10 +335,28 @@ test('retomada após refresh traz o marco do servidor junto do início', () => {
   antes.iniciar();
   antes.dispose();
 
-  // Sem o marco persistido, a espera retomada nasceria sem linha de base e o
-  // primeiro resumo VELHO do replay concluiria na hora.
   const depois = createControleCompact('hiro', dependencias);
+  // NASCE OCIOSA — este é o conserto do hydration mismatch de estrutura
+  // (3c58b8ec). No servidor não existe `localStorage`, então a máquina lá
+  // nasce ociosa; se aqui ela nascesse `compactando`, a `BarraCompact`
+  // existiria num lado e não no outro e o React reclamaria na hidratação.
+  assert.equal(depois.getEstado().fase, 'ocioso');
+
+  // A espera só é aplicada no efeito, DEPOIS da hidratação — e notificando,
+  // senão o React não reconcilia (react#26095).
+  let notificacoes = 0;
+  depois.subscribe(() => {
+    notificacoes += 1;
+  });
+  depois.retomarDoStorage();
   assert.equal(depois.getEstado().fase, 'compactando');
+  assert.equal(notificacoes, 1, 'retomada muda sem avisar é retomada que não pinta');
+  // Sem o marco persistido, a espera retomada não teria linha de base e o
+  // primeiro resumo VELHO do replay concluiria na hora.
   assert.equal(depois.getEstado().marcoServidorMs, 999_000);
+
+  // Idempotente: o registry compartilha a máquina e o StrictMode monta 2x.
+  depois.retomarDoStorage();
+  assert.equal(notificacoes, 1);
   depois.dispose();
 });
