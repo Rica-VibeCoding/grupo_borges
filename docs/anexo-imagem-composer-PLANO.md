@@ -242,10 +242,26 @@ Uma etapa, um commit. Não misturar.
 
    Teste com HEIC de verdade. É a **etapa 0** porque sem ela as outras entregam
    uma tela bonita que recusa a foto dele.
-1. **Rota de leitura do upload.** `GET` que serve `apps/api/uploads/agents/<slug>/<arquivo>`
-   com content-type correto. Path traversal barrado (o nome já é sanitizado na
-   escrita por `_sanitize_upload_filename`, mas a leitura precisa da sua própria
-   guarda). Teste que tenta escapar do diretório e falha.
+1. ~~**Rota de leitura do upload.**~~ — **NO AR em 05/08 (`3c5bcef`)**,
+   `GET /{slug}/file/{filename}`, dev e produção. Três coisas que a etapa
+   decidiu e que valem para quem seguir:
+   - **A tabela de content-type é FECHADA**, derivada das três tabelas de
+     escrita — o que a `POST` grava é o que a `GET` serve. Com `media_type=None`
+     o Starlette cai em `guess_type`, que **adivinha**, e adivinhar `text/html`
+     sob o domínio do cockpit é script rodando com a origem dele. Extensão fora
+     da tabela é 404.
+   - **`inline` + `nosniff`**, porque o destino é um `<img>`; o default do
+     Starlette é `attachment`. Seguro porque a tabela não tem `text/html` nem
+     `image/svg+xml`.
+   - **`Cache-Control: private, max-age=31536000, immutable`** — o nome é
+     `timestamp-uuid` e nunca é reescrito. Sem isso o feed virtualizado revalida
+     a mesma foto a cada vez que o item volta à tela. **Fica** (aval do Pavan).
+
+   **Armadilha de teste, achada provando:** travessia com `%2F` volta 404 do
+   **roteador**, não da guarda — `{filename}` sem `:path` não casa segmento com
+   barra, então a requisição nem chega na função. Quem exercita a guarda de fato
+   é o teste de **symlink** apontando pra fora (exige 400). Só o teste de `../`
+   deixaria uma guarda não exercitada passando por testada.
 2. **Retenção do arquivo — e a porta precisa saber que existe anexo.** Nova fase
    na máquina do anexo: escolhido e validado, ainda não enviado. `validaAnexo`
    passa a rodar na escolha. Testes em `lib/*.test.ts` (padrão do repo: lógica
@@ -280,6 +296,12 @@ Uma etapa, um commit. Não misturar.
    caminho. Alinhada à direita, sem moldura. `next/image` com `fill` em container
    com proporção, ou `<img>` — decidir medindo dentro do virtualizador, que é
    onde altura errada estraga o scroll (ver `reference_tanstack_estimatesize_measureelement`).
+
+   **Insumo que a etapa 1 deixou** (não é decisão, é dado): a rota já serve com
+   content-type explícito e `immutable`, então o loader do `next/image`
+   reprocessaria uma imagem que já está do tamanho certo. Se a escolha for
+   `next/image`, `unoptimized` é a opção honesta — com ela a doc diz que o src
+   sai cru, sem validação de hostname.
 
 ## 6. Régua de pronto
 
