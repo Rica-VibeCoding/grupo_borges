@@ -112,15 +112,26 @@ export function BotaoAnexo({
 
 export type PainelAnexoProps = {
   estado: EstadoAnexo;
+  /** O texto digitado AGORA — vira o `caption` do arquivo. */
+  legenda: string;
   fecharGaveta: () => void;
-  /** Retém o arquivo no composer. Escolher DEIXOU de ser enviar: o arquivo
-   *  espera a legenda e sai no mesmo toque que ela. */
-  escolher: (arquivo: File) => void;
+  enviar: (arquivo: File, caption: string) => Promise<boolean>;
+  /** Chamado só quando o arquivo chegou ao agente: o campo esvazia, igual ao
+   *  envio de texto. Num 422 o texto FICA — perder a legenda porque o arquivo
+   *  era grande demais seria cobrar duas vezes pelo mesmo erro. */
+  aoEnviar: () => void;
   botaoRef: RefObject<HTMLButtonElement | null>;
 };
 
 /** Véu + gaveta + o input escondido. Mora FORA do `form` (ver o cabeçalho). */
-export function PainelAnexo({ estado, fecharGaveta, escolher, botaoRef }: PainelAnexoProps) {
+export function PainelAnexo({
+  estado,
+  legenda,
+  fecharGaveta,
+  enviar,
+  aoEnviar,
+  botaoRef,
+}: PainelAnexoProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const aberta = estado.gaveta;
 
@@ -145,13 +156,18 @@ export function PainelAnexo({ estado, fecharGaveta, escolher, botaoRef }: Painel
     input.click();
   }
 
-  function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
+  async function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = evento.target.files?.[0];
     // Zerar o valor SEMPRE: sem isto, escolher o mesmo arquivo duas vezes
     // seguidas não dispara `change` na segunda, e o botão parece morto.
     evento.target.value = '';
     if (!arquivo) return;
-    escolher(arquivo);
+    // ESCOLHER VOLTOU A SER ENVIAR — recuo deliberado de 05/08, não desenho.
+    // A retenção (`controle.escolher`) e a miniatura estão prontas e provadas,
+    // mas quem despacha o par arquivo+legenda é a etapa 4; enquanto ela não
+    // chega, reter deixaria o Rica com a foto parada na tela e sem caminho até
+    // o agente. Religar isto é uma linha, e é a primeira coisa da etapa 4.
+    if (await enviar(arquivo, legenda)) aoEnviar();
   }
 
   return (

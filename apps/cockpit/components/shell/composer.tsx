@@ -354,7 +354,11 @@ export function Composer({
         {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
             baixo em vez de flutuar sobre ele, e o composer cresce. Fica fora do
             `emCaptura` de propósito — o anexo escolhido não some porque o
-            microfone abriu. */}
+            microfone abriu.
+
+            DORMENTE até a etapa 4: como escolher voltou a enviar na hora, a
+            fase `escolhido` não é alcançável e este nó fica fechado, com altura
+            zero. Não está quebrado — está esperando o despacho conjunto. */}
         <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} />
 
         {emCaptura ? (
@@ -655,10 +659,12 @@ export function Composer({
             do "+" e nunca é recortada pelo `overflow` da caixa. */}
         <PainelAnexo
           estado={anexo.estado}
+          // O texto digitado vira a LEGENDA do arquivo, igual ao ChatGPT: uma
+          // entrega só, não duas (o arquivo e depois um texto solto).
+          legenda={texto}
           fecharGaveta={anexo.fecharGaveta}
-          // Escolher RETÉM. O texto digitado vira a legenda do arquivo — igual
-          // ao ChatGPT, uma entrega só — e os dois saem no mesmo toque.
-          escolher={anexo.escolher}
+          enviar={anexo.enviar}
+          aoEnviar={() => setTexto('')}
           botaoRef={botaoAnexoRef}
         />
       </div>
