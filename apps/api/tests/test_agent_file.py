@@ -600,3 +600,38 @@ def test_get_file_404_para_arquivo_e_agente_inexistentes(tmp_path: Path) -> None
 
     assert _get_file(app, tmp_path, "nunca-existiu.png").status_code == 404
     assert _get_file(app, tmp_path, "x.png", slug="fantasma").status_code == 404
+
+
+def test_get_file_nome_com_byte_nulo_e_400_nao_500(tmp_path: Path) -> None:
+    """`Path.resolve()` levanta ANTES de qualquer guarda quando o nome tem `%00`.
+
+    Enquanto o `resolve()` ficou fora do `try`, isto era 500 com stack trace no
+    log — onde devia ser a mesma recusa educada da travessia. `get_channel_attachment`,
+    que esta rota espelha, sempre cobriu os dois; o espelho copiou a comparação
+    e deixou a resolução de fora.
+    """
+    app = _build_app(tmp_path)
+    (tmp_path / "uploads" / "daniel").mkdir(parents=True, exist_ok=True)
+
+    assert _get_file(app, tmp_path, "%00.png").status_code == 400
+
+
+def test_heic_que_nao_converte_e_422_e_nao_grava_nada(tmp_path: Path) -> None:
+    """HEIC ilegível não pode virar 200 com um `.heic` no disco.
+
+    Antes: o `except` devolvia os bytes originais com a extensão do sniff, então
+    o composer via 200, o agente recebia um caminho que o leitor dele não abre, e
+    a `GET /file/{nome}` respondia 404 porque `.heic` não está na tabela. Três
+    mentiras encadeadas a partir de um sucesso falso. Um HEIC truncado — arquivo
+    do iCloud sincronizado pela metade — chega aqui.
+    """
+    app = _build_app(tmp_path)
+    heic_quebrado = b"\x00\x00\x00\x20ftypheic" + b"\x00" * 64
+
+    resposta, _ = _post_file(
+        app, tmp_path, filename="foto.heic", content=heic_quebrado, mime="image/heic"
+    )
+
+    assert resposta.status_code == 422
+    pasta = tmp_path / "uploads" / "daniel"
+    assert not any(pasta.glob("*.heic")) if pasta.exists() else True

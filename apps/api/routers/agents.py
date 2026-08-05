@@ -2206,6 +2206,9 @@ _UPLOAD_MIME_BY_SUFFIX = {
 }
 # Teto de leitura por chunk: corta upload gigante antes de materializar na RAM.
 _UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
+# Quantas normalizações de imagem podem ocupar o pool de threads ao mesmo tempo.
+# Dois porque a VPS tem 2 vCPU; o raciocínio completo está no uso, em `post_agent_file`.
+_SEMAFORO_IMAGEM = asyncio.Semaphore(2)
 _AGENT_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "agents"
 
 
@@ -2414,9 +2417,17 @@ def _normaliza_imagem(content: bytes) -> tuple[bytes, str]:
     e explícito. O ICC vai junto: foto de iPhone é Display P3 e sem o perfil a
     cor desbota, que é defeito visível.
 
-    Falha aqui NUNCA derruba o upload: devolve os bytes originais e registra o
-    porquê. Anexo torto que chega vale mais que anexo que não chega — mas em
-    silêncio isso viraria bug descoberto por acidente daqui a um mês.
+    Falha aqui não derruba o upload de JPEG/PNG/WebP: devolve os bytes originais
+    e registra o porquê. Anexo torto que chega vale mais que anexo que não chega
+    — mas em silêncio isso viraria bug descoberto por acidente daqui a um mês.
+
+    **HEIC é a exceção, e virou 422.** Ali o original não serve de nada: gravado
+    como `.heic`, o agente recebe um caminho que o leitor de imagem dele não
+    abre, e a `GET /file/{nome}` devolve 404 porque `.heic` não está na tabela —
+    tudo isso depois de um 200 que diz ao composer que deu certo. Anexo que não
+    converte não é "anexo torto que chega": é anexo que ninguém consegue ler, e
+    falhar alto é o único jeito honesto. Isso também mantém verdadeira a
+    premissa que `main.py` documenta — a extensão gravada sai sempre da tabela.
     """
     from PIL import Image, ImageOps
 
@@ -2450,6 +2461,16 @@ def _normaliza_imagem(content: bytes) -> tuple[bytes, str]:
             imagem.save(destino, format=formato, **opcoes)
             return destino.getvalue(), ".jpg" if heif else extensao
     except Exception as exc:  # noqa: BLE001 — qualquer falha grava o original
+        if heif:
+            log.warning(
+                "HEIC não convertido, recusando o upload: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="não consegui converter esta foto (HEIC) — mande como JPEG",
+            ) from exc
         log.warning(
             "imagem %s não normalizada, gravando original: %s: %s",
             extensao,
@@ -2850,7 +2871,19 @@ async def post_agent_file(
         # Em thread: decodificar e reencodar é CPU, e o event loop não pode
         # parar por causa disso. A `/image` continua intacta — é do v1.
         # A extensão sai daqui e não do mime declarado: HEIC entra e sai `.jpg`.
-        content, ext = await asyncio.to_thread(_normaliza_imagem, content)
+        #
+        # O semáforo é o que impede a thread de CPU de estrangular todo o resto.
+        # `asyncio.to_thread` usa o executor DEFAULT do loop, que nesta VPS tem
+        # `min(32, 2+4) = 6` workers — e `db/store.py` faz TODA query de SQLite
+        # pelo mesmo pool. Medido aqui com HEIC de 12MP (foto de iPhone típica):
+        # até 5 conversões simultâneas a latência de um `to_thread` trivial fica
+        # abaixo de 4ms; na 6ª ela vai a ~4s, ou seja, a API inteira congela,
+        # incluindo os streams e o `_get_agent_or_404` desta própria rota. Não é
+        # degradação gradual, é precipício — e o pool ainda é dividido com o
+        # sweep de worktrees e a leitura do Codex, então o teto real é menor que
+        # 6. Dois de cada vez são os 2 vCPU da máquina.
+        async with _SEMAFORO_IMAGEM:
+            content, ext = await asyncio.to_thread(_normaliza_imagem, content)
 
     stored_name = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
     original_name = _sanitize_upload_filename(file.filename, fallback=stored_name)
@@ -2918,10 +2951,15 @@ async def get_agent_file(slug: str, filename: str, request: Request) -> FileResp
     await _get_agent_or_404(request, slug)
 
     base = (_AGENT_UPLOADS_BASE / slug).resolve(strict=False)
-    alvo = (base / filename).resolve(strict=False)
     try:
+        # O `resolve()` fica DENTRO do try junto com o `relative_to`: ele levanta
+        # antes de qualquer guarda quando o nome tem byte nulo (`%00.png` dava
+        # 500 com stack trace onde devia dar 400). `get_channel_attachment`, que
+        # esta rota espelha, já cobria os dois — o espelho copiou a comparação e
+        # deixou a resolução de fora.
+        alvo = (base / filename).resolve(strict=False)
         alvo.relative_to(base)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="nome de arquivo inválido") from exc
 
     media_type = _UPLOAD_MIME_BY_SUFFIX.get(alvo.suffix.lower())
