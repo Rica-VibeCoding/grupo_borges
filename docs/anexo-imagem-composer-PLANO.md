@@ -362,6 +362,22 @@ Uma etapa, um commit. Não misturar.
    `next/image`, `unoptimized` é a opção honesta — com ela a doc diz que o src
    sai cru, sem validação de hostname.
 
+   ⚠️ **EXISTEM DUAS PORTAS PRO MESMO ARQUIVO — escolher a certa aqui.**
+   Descoberto em 05/08 conferindo a etapa 1:
+   - `GET /api/agents/{slug}/file/{filename}` (`3c5bcef`) — tabela de mime
+     fechada, `inline`, `immutable`. **É a porta que esta etapa deve usar.**
+   - `/uploads/agents/:path*` — `app.mount("/uploads", StaticFiles)` em
+     `main.py`, com rewrite em `apps/cockpit/next.config.ts:69` **e** em
+     `apps/web/next.config.ts:21`. Usa `guess_type`, que adivinha.
+
+   O v1 **já renderiza** a imagem do agente por essa segunda porta —
+   `apps/web/components/chat-messages.tsx:108` tem a regex que reconhece
+   `Imagem enviada via cockpit:` e extrai o caminho. Vale como referência do
+   formato real do envelope, **não** como código a portar (o v1 será
+   descontinuado). Enquanto ele viver, o mount não pode ser fechado, senão a
+   foto some da tela que o Rica usa. O `nosniff` que faltava no mount virou
+   middleware global em `8944ae6`; **unificar as portas** é `tropa_task`.
+
 ## 6. Régua de pronto
 
 - O Rica anexa uma foto, ela **para** no composer, ele escreve, manda num toque,
