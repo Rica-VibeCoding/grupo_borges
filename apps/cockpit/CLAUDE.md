@@ -1,7 +1,13 @@
 # apps/cockpit — Cockpit v2
 
-Camada de apresentação nova, contra o mesmo back FastAPI. Dev na **3008**.
-O cockpit **atual** é `apps/web` na 3007 e está **congelado** — não recebe commit.
+Camada de apresentação nova, contra o mesmo back FastAPI. Dev na **3009**,
+produção deste app na **3008** (`cockpit-v2.service`). O cockpit **atual** é
+`apps/web` na 3007 e está **congelado** — não recebe commit.
+
+⚠️ Dev e produção **não podem dividir o `.next`** — dois processos escrevendo no
+mesmo diretório é o que fazia o Turbopack servir CSS velho, e um `rm -rf .next`
+pra destravar derruba a produção (aconteceu em 04/08, 7 minutos de 500 nos chunks
+com o HTML ainda respondendo 200). O dev sobe com `COCKPIT_DIST_DIR=.next-dev`.
 
 ## Antes de escrever a primeira linha
 
