@@ -198,8 +198,39 @@ app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
 app.include_router(tts_router.router, prefix="/api", tags=["tts"])
 
-# Static files: imagens de tasks. O diretório é criado on-demand pelo endpoint de upload,
-# mas garantimos que exista no boot para o mount não falhar.
+# Static files: imagens de tasks E os anexos de agente. O diretório é criado
+# on-demand pelo endpoint de upload, mas garantimos que exista no boot para o
+# mount não falhar.
+#
+# ⚠️ Este mount é a SEGUNDA porta para `uploads/agents/<slug>/`. A primeira é
+# `GET /api/agents/{slug}/file/{filename}` (commit `3c5bcef`), que serve com
+# tabela de mime FECHADA, `nosniff` e `inline`. Aqui o `StaticFiles` usa
+# `guess_type`, que ADIVINHA — um `.html` na pasta sairia como `text/html`
+# executável sob a origem do cockpit. Hoje não há via de escrita que produza
+# isso (a `POST /file` força extensão da tabela; a de task deriva do
+# magic-bytes sniff) e o `tailscale_identity` cobre as duas portas, então é
+# defesa em profundidade e não buraco aberto.
+#
+# O mount NÃO pode ser restringido a `uploads/tasks` enquanto o cockpit v1
+# viver: `apps/web/next.config.ts:21` faz rewrite de `/uploads/agents/:path*`
+# pra cá, e `apps/web/components/chat-messages.tsx:108` renderiza a imagem do
+# agente a partir desse caminho. Fechar aqui apaga a foto na tela que o Rica
+# usa. Unificar nas duas portas é assunto da etapa 5 do anexo — ver
+# `docs/anexo-imagem-composer-PLANO.md`.
 _uploads_dir = Path(__file__).resolve().parent / "uploads"
 _uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(_uploads_dir), html=False), name="uploads")
+
+
+@app.middleware("http")
+async def content_type_options(request: Request, call_next):
+    """`nosniff` em tudo que sai da API, inclusive no mount estático acima.
+
+    O `StaticFiles` do Starlette não aceita header extra, e é justamente ele
+    que serve arquivo enviado por upload — o lugar onde adivinhação de tipo
+    custa caro. Global em vez de por rota porque a regra não tem exceção: toda
+    resposta daqui declara seu tipo, e nenhuma quer que o navegador discorde.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    return response
