@@ -262,10 +262,24 @@ Uma etapa, um commit. Não misturar.
    barra, então a requisição nem chega na função. Quem exercita a guarda de fato
    é o teste de **symlink** apontando pra fora (exige 400). Só o teste de `../`
    deixaria uma guarda não exercitada passando por testada.
-2. **Retenção do arquivo — e a porta precisa saber que existe anexo.** Nova fase
-   na máquina do anexo: escolhido e validado, ainda não enviado. `validaAnexo`
-   passa a rodar na escolha. Testes em `lib/*.test.ts` (padrão do repo: lógica
-   pura em `.ts` com `.test.ts` ao lado — **não existe teste de componente**).
+2. ~~**Retenção do arquivo — e a porta precisa saber que existe anexo.**~~ —
+   **NO AR em 05/08 (`a0b1101`)**, 375 testes, `tsc` e `next build` limpos.
+   `vazio` deixou de ser propriedade do **texto** e virou propriedade do
+   **gesto**: só é vazio quando não há texto **nem** anexo. O `recado: null`
+   continua honesto porque gesto sem conteúdo nenhum não tem o que explicar.
+
+   **A produção segue igual DE PROPÓSITO** — o composer ainda chama `enviar` na
+   escolha, e `escolher` fica pronto e sem uso até a miniatura ter o que mostrar.
+   Religar agora deixaria as etapas 2 e 3 com foto que entra e não sai.
+
+   **Teste do outro lado da armadilha**, que o plano não pedia: o anexo **não
+   pode furar as outras recusas**. Foto durante `/compact` corta o resumo ao meio
+   igual ao texto, então continua recusada **com** recado. Sem esse teste, alguém
+   "conserta" com um `if (temAnexo) return {libera:true}` no topo e reabre o
+   buraco que a etapa 4 existe pra fechar.
+
+   Nota de leitura: os testes da porta moram em `components/shell/`, ao lado do
+   módulo — **não** em `lib/`, como esta linha dizia antes.
 
    **Junto, e não na etapa 4:** `abrePorta` hoje recusa texto vazio com
    `recado: null` — a única recusa muda do módulo, e muda **de propósito**,
@@ -292,6 +306,31 @@ Uma etapa, um commit. Não misturar.
    anexo com envio em voo passa por cima. Esta etapa unifica os três caminhos na
    mesma porta **de propósito**, e é isso que fecha o buraco — não é
    consequência acidental de mexer no botão.
+
+   **DECIDIDO (Pavan, 05/08) — as duas regras de limpeza se contradizem, e como
+   sair.** O Daniel achou isto na etapa 2 e não decidiu, corretamente. O texto
+   limpa **no aceite**, síncrono, porque esperar o POST deixa o campo cheio
+   durante a viagem e convida o segundo Enter que duplica. O anexo limpa **na
+   entrega** (`gaveta-anexo.tsx:165`), porque num 422 a legenda tem de ficar —
+   perder o texto porque o arquivo era grande demais cobra duas vezes pelo mesmo
+   erro. Saindo os dois no mesmo gesto, as duas não cabem ao pé da letra.
+
+   **A saída é a leitura dele, e eu cravo:** a fase `enviando` **continua
+   segurando o `File`**, e o erro devolve o arquivo para `escolhido` em vez de
+   perdê-lo. Assim o gesto se limpa no aceite **sem evaporar nada** — o arquivo
+   não sumiu, mudou de fase. `limpaCampo` continua sendo do campo, e o anexo se
+   resolve nas fases, que é onde ele mora. **Não** criar campo novo no
+   `EfeitoEnvio`: `limpaCampo` e um `limpaAnexo` seriam sempre iguais, e dois
+   booleanos sempre iguais convidam ao estado que nenhuma regra justifica
+   ("limpa o texto e guarda a foto").
+
+   **Segunda coisa a fechar aqui — recusa muda que já existe.** `controle.enviar`
+   devolve `false` calado quando a fase é `enviando`. Hoje é inalcançável (botão
+   `disabled`, gaveta não reabre), mas assim que o anexo sair pelo botão de
+   enviar vira recusa silenciosa **dentro do módulo cuja regra é que recusa
+   fala**. A porta não pega: `faseEnvio` é a fase da máquina de **texto**, e
+   upload em voo não a move — quem sabe que há arquivo subindo é só a máquina do
+   anexo. (Achado do Daniel na etapa 2.)
 5. **Renderização no feed.** Reconhecer o envelope e mostrar a imagem no lugar do
    caminho. Alinhada à direita, sem moldura. `next/image` com `fill` em container
    com proporção, ou `<img>` — decidir medindo dentro do virtualizador, que é
