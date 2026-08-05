@@ -112,26 +112,15 @@ export function BotaoAnexo({
 
 export type PainelAnexoProps = {
   estado: EstadoAnexo;
-  /** O texto digitado AGORA — vira o `caption` do arquivo. */
-  legenda: string;
   fecharGaveta: () => void;
-  enviar: (arquivo: File, caption: string) => Promise<boolean>;
-  /** Chamado só quando o arquivo chegou ao agente: o campo esvazia, igual ao
-   *  envio de texto. Num 422 o texto FICA — perder a legenda porque o arquivo
-   *  era grande demais seria cobrar duas vezes pelo mesmo erro. */
-  aoEnviar: () => void;
+  /** Retém o arquivo no composer. Escolher DEIXOU de ser enviar: o arquivo
+   *  espera a legenda e sai no mesmo toque que ela. */
+  escolher: (arquivo: File) => void;
   botaoRef: RefObject<HTMLButtonElement | null>;
 };
 
 /** Véu + gaveta + o input escondido. Mora FORA do `form` (ver o cabeçalho). */
-export function PainelAnexo({
-  estado,
-  legenda,
-  fecharGaveta,
-  enviar,
-  aoEnviar,
-  botaoRef,
-}: PainelAnexoProps) {
+export function PainelAnexo({ estado, fecharGaveta, escolher, botaoRef }: PainelAnexoProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const aberta = estado.gaveta;
 
@@ -149,20 +138,20 @@ export function PainelAnexo({
     return () => document.removeEventListener('keydown', aoTeclar);
   }, [aberta, fecharGaveta]);
 
-  function escolher(accept: string) {
+  function abrirSeletor(accept: string) {
     const input = inputRef.current;
     if (!input) return;
     input.accept = accept;
     input.click();
   }
 
-  async function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
+  function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = evento.target.files?.[0];
     // Zerar o valor SEMPRE: sem isto, escolher o mesmo arquivo duas vezes
     // seguidas não dispara `change` na segunda, e o botão parece morto.
     evento.target.value = '';
     if (!arquivo) return;
-    if (await enviar(arquivo, legenda)) aoEnviar();
+    escolher(arquivo);
   }
 
   return (
@@ -210,7 +199,7 @@ export function PainelAnexo({
               key={item.especie}
               type="button"
               role="menuitem"
-              onClick={() => escolher(item.accept)}
+              onClick={() => abrirSeletor(item.accept)}
               className="ck-veil"
               style={ESTILO_ITEM}
             >

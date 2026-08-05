@@ -46,6 +46,7 @@ import { usaCompact } from '../../lib/compact';
 import { usaAnexo } from '../../lib/usa-anexo';
 import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
+import { MiniaturaAnexo } from './miniatura-anexo';
 import { BarraCompact } from './barra-compact';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
@@ -350,6 +351,12 @@ export function Composer({
           transition: `border-color var(--ck-dur-fast) var(--ck-ease)`,
         }}
       >
+        {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
+            baixo em vez de flutuar sobre ele, e o composer cresce. Fica fora do
+            `emCaptura` de propósito — o anexo escolhido não some porque o
+            microfone abriu. */}
+        <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} />
+
         {emCaptura ? (
           <PainelDeCaptura
             fase={faseVoz}
@@ -648,12 +655,10 @@ export function Composer({
             do "+" e nunca é recortada pelo `overflow` da caixa. */}
         <PainelAnexo
           estado={anexo.estado}
-          // O texto digitado vira a LEGENDA do arquivo, igual ao ChatGPT: uma
-          // entrega só, não duas (o arquivo e depois um texto solto).
-          legenda={texto}
           fecharGaveta={anexo.fecharGaveta}
-          enviar={anexo.enviar}
-          aoEnviar={() => setTexto('')}
+          // Escolher RETÉM. O texto digitado vira a legenda do arquivo — igual
+          // ao ChatGPT, uma entrega só — e os dois saem no mesmo toque.
+          escolher={anexo.escolher}
           botaoRef={botaoAnexoRef}
         />
       </div>

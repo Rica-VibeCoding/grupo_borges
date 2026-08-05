@@ -597,6 +597,65 @@ body {
   }
 }
 
+/* A MINIATURA DO ANEXO — o mesmo movimento, num elemento QUE OCUPA ESPAÇO.
+ *
+ * O `.ck-surge` supõe uma coisa que ele mesmo declara acima: "não custa layout,
+ * os dois elementos são `position: fixed`". Por isso ele pode ficar montado
+ * para sempre e apenas mudar de opacidade. A miniatura mora DENTRO do composer
+ * e o composer cresce por causa dela — montada para sempre, ela seria um buraco
+ * de 146px em cima do campo o tempo todo.
+ *
+ * A saída pede o nó vivo (§17: elemento removido não anima), e a altura não
+ * pode ser animada (proibição §9.4 — só `opacity` e `transform`). As duas se
+ * resolvem com o MESMO truque que a linha de cima usa para a `visibility`:
+ * propriedade discreta que muda em `0s`, com o ATRASO fazendo o trabalho. Na
+ * entrada a altura abre no ato (o composer cresce e a foto sobe no espaço que
+ * apareceu); na saída ela só colapsa depois do fade inteiro, senão a foto
+ * sumiria de estalo e a animação rodaria no vazio.
+ *
+ * `overflow: hidden` recorta o conteúdo no instante em que a altura zera — e aí
+ * a opacidade já é 0. `visibility` acompanha porque conteúdo com `opacity: 0`
+ * continua alcançável por Tab e por leitor de tela.
+ *
+ * QUEM COLAPSA É `max-height`, E NÃO `height`, por uma razão medida: com
+ * `height: auto` de um lado o browser DESCARTA a transição inteira — `auto` não
+ * é ponto de interpolação — e o atraso não acontece, então a foto sumia de
+ * estalo e o fade rodava sobre o vazio (visto no Chrome em 05/08). Com dois
+ * comprimentos dos dois lados o atraso vale. O teto é folgado de propósito:
+ * `max-height` não estica nada, a altura continua sendo a do conteúdo, e 200px
+ * só precisa ser maior que a miniatura mais alta possível (146px + borda). */
+.ck-miniatura {
+  max-height: 200px;
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  overflow: hidden;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease),
+    max-height 0s,
+    margin-bottom 0s,
+    visibility 0s;
+}
+
+/* `margin-bottom` negativa come o `gap` do composer: sem ela a caixa ficaria 8px
+   mais alta para sempre, porque flexbox aplica o `gap` mesmo entre um filho de
+   altura zero e o vizinho. */
+.ck-miniatura[data-aberto='false'] {
+  max-height: 0;
+  margin-bottom: calc(var(--ck-space-2) * -1);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    max-height 0s linear var(--ck-dur-enter, 200ms),
+    margin-bottom 0s linear var(--ck-dur-enter, 200ms),
+    visibility 0s linear var(--ck-dur-enter, 200ms);
+}
+
 /* O véu acompanha, senão o preto entra de uma vez e denuncia que só a caixa
    está animando. */
 .ck-surge-veu {
