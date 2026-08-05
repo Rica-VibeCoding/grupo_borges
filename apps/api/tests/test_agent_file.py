@@ -332,3 +332,96 @@ def test_file_image_for_codex_still_uses_image_flag(tmp_path: Path) -> None:
     assert image_index < cmd.index("--")
     assert cmd[image_index + 1] == body["path"]
     assert cmd[-1] == "descreva"
+
+
+# ---- EXIF Orientation ----------------------------------------------------
+#
+# O leitor de imagem do agente redimensiona o que passa de 2000px no lado maior,
+# e a orientação se perde nesse caminho — medido em 04/08 com par de controle:
+# 1900px chega orientado, 2100px chega cru, mesma imagem e mesma tag. Foto de
+# celular tem 3000px e mais, então cai sempre do lado errado. Por isso a rota
+# aplica a tag nos PIXELS na gravação; corrigir no preview não serviria, o
+# agente lê o arquivo do disco e não a tela.
+
+
+def _jpeg(largura: int, altura: int, orientation: int | None) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    imagem = Image.new("RGB", (largura, altura), "white")
+    buffer = BytesIO()
+    if orientation is None:
+        imagem.save(buffer, "JPEG", quality=90)
+    else:
+        exif = imagem.getexif()
+        exif[274] = orientation
+        imagem.save(buffer, "JPEG", quality=90, exif=exif)
+    return buffer.getvalue()
+
+
+def _medidas(caminho: str) -> tuple[tuple[int, int], int | None]:
+    from PIL import Image
+
+    with Image.open(caminho) as imagem:
+        return imagem.size, imagem.getexif().get(274)
+
+
+def test_file_image_aplica_orientacao_nos_pixels_e_remove_a_tag(tmp_path: Path) -> None:
+    """Orientation 5 é TRANSPOSE: paisagem entra, retrato sai, sem tag sobrando.
+
+    A tag TEM que sumir: se ficar, o próximo leitor que a respeite gira de novo
+    e a foto volta a ficar torta — pelo outro lado.
+    """
+    app = _build_app(tmp_path)
+    response, _ = _post_file(
+        app,
+        tmp_path,
+        filename="iphone.jpg",
+        content=_jpeg(400, 200, orientation=5),
+        mime="image/jpeg",
+    )
+
+    assert response.status_code == 200, response.text
+    tamanho, orientacao = _medidas(response.json()["path"])
+    assert tamanho == (200, 400)
+    assert orientacao is None
+
+
+def test_file_image_sem_tag_nao_e_reencodada(tmp_path: Path) -> None:
+    """Sem Orientation (ou com 1) os bytes saem intactos — nem decodifica.
+
+    É o caminho da esmagadora maioria: screenshot não carrega a tag. Reencodar
+    todo mundo custaria RAM e uma geração de qualidade por nada.
+    """
+    app = _build_app(tmp_path)
+    original = _jpeg(400, 200, orientation=None)
+    response, _ = _post_file(
+        app, tmp_path, filename="print.jpg", content=original, mime="image/jpeg"
+    )
+
+    assert response.status_code == 200, response.text
+    assert Path(response.json()["path"]).read_bytes() == original
+
+    neutra = _jpeg(400, 200, orientation=1)
+    response, _ = _post_file(
+        app, tmp_path, filename="neutra.jpg", content=neutra, mime="image/jpeg"
+    )
+    assert Path(response.json()["path"]).read_bytes() == neutra
+
+
+def test_file_image_ilegivel_grava_o_original_em_vez_de_falhar(tmp_path: Path) -> None:
+    """Anexo torto que chega vale mais que anexo que não chega.
+
+    Bytes com magic de PNG mas corpo quebrado passam o sniff e morrem no Pillow.
+    O upload segue, gravando o original.
+    """
+    app = _build_app(tmp_path)
+    quebrado = b"\x89PNG\r\n\x1a\n" + b"lixo que nao e um PNG de verdade"
+    response, send_message = _post_file(
+        app, tmp_path, filename="quebrado.png", content=quebrado, mime="image/png"
+    )
+
+    assert response.status_code == 200, response.text
+    assert Path(response.json()["path"]).read_bytes() == quebrado
+    assert send_message.called

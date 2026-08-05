@@ -21,6 +21,10 @@ dependencies = [
     "pydantic-settings>=2.5.0",
     "python-multipart>=0.0.20",
     "edge-tts>=7.0.0",
+    # Só pra aplicar o EXIF Orientation nos pixels no POST /file — o leitor de
+    # imagem do agente perde a tag ao redimensionar acima de 2000px, e foto de
+    # celular sempre passa disso. Ver `_normaliza_orientacao` em agents.py.
+    "Pillow>=11.0.0",
 ]
 
 [project.optional-dependencies]

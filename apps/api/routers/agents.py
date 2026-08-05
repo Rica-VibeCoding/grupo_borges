@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import logging
 import os
@@ -2149,6 +2150,9 @@ _VOICE_MIME_SUFFIX = {
 _VOICE_AUDIO_PROBE_TIMEOUT_S = 5
 _VOICE_LOG_TAIL_CHARS = 8 * 1024
 _IMAGE_ALLOWED_MIMES = {"image/jpeg", "image/png", "image/webp"}
+# Tag 274 do EXIF. Número cru e não `ExifTags.Base.Orientation` para não pagar o
+# import do Pillow no boot — ele só entra quando uma imagem realmente chega.
+_EXIF_ORIENTATION = 274
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 _IMAGE_MIME_SUFFIX = {
     "image/jpeg": ".jpg",
@@ -2339,6 +2343,61 @@ def _agent_file_content_matches(kind: str, base_mime: str, data: bytes) -> bool:
     }:
         return data.startswith(b"PK\x03\x04")
     return True
+
+
+def _normaliza_orientacao(content: bytes, base_mime: str) -> bytes:
+    """Aplica o EXIF Orientation nos PIXELS e tira a tag. Só imagem, só `/file`.
+
+    Por que na gravação e não na tela: o leitor de imagem do agente redimensiona
+    o que passa de 2000px no lado maior, e a orientação se perde nesse caminho.
+    Medido em 04/08 com par de controle — 1900px de lado maior chega orientado,
+    2100px chega cru, mesma imagem e mesma tag. Foto de celular tem 3000px e
+    mais, então cai sempre do lado errado. Corrigir no preview não resolveria: o
+    agente lê o arquivo do disco, não a tela.
+
+    Quem não tem tag, ou tem `1`, sai por aqui sem decodificar nada — `Image.open`
+    é preguiçoso e só o cabeçalho é lido. É o caminho da esmagadora maioria
+    (screenshot não carrega Orientation), e é o que mantém o custo de RAM honesto
+    numa VPS de 7GB: só foto torta paga a decodificação.
+
+    `in_place=True` para não pagar a cópia do bitmap. `quality=95` porque a doc
+    do Pillow documenta `keep` como preset de `qtables`, NÃO como valor de
+    `quality`, e não diz nada sobre imagem transposta — na dúvida, o número alto
+    e explícito. O ICC vai junto: foto de iPhone é Display P3 e sem o perfil a
+    cor desbota, que é defeito visível.
+
+    Falha aqui NUNCA derruba o upload: devolve os bytes originais e registra o
+    porquê. Anexo torto que chega vale mais que anexo que não chega — mas em
+    silêncio isso viraria bug descoberto por acidente daqui a um mês.
+    """
+    from PIL import Image, ImageOps
+
+    try:
+        with Image.open(io.BytesIO(content)) as imagem:
+            if imagem.getexif().get(_EXIF_ORIENTATION) in (None, 1):
+                return content
+            formato = imagem.format
+            ImageOps.exif_transpose(imagem, in_place=True)
+            destino = io.BytesIO()
+            opcoes: dict[str, object] = {}
+            # `exif_transpose` já removeu a Orientation de `info["exif"]`; o
+            # resto (data, câmera, lente) é do Rica e continua no arquivo.
+            if imagem.info.get("exif"):
+                opcoes["exif"] = imagem.info["exif"]
+            if imagem.info.get("icc_profile"):
+                opcoes["icc_profile"] = imagem.info["icc_profile"]
+            if formato == "JPEG":
+                opcoes["quality"] = 95
+            imagem.save(destino, format=formato, **opcoes)
+            return destino.getvalue()
+    except Exception as exc:  # noqa: BLE001 — qualquer falha grava o original
+        log.warning(
+            "EXIF de %s não normalizado, gravando original: %s: %s",
+            base_mime,
+            type(exc).__name__,
+            exc,
+        )
+        return content
 
 
 def _resolve_agent_file_kind(base_mime: str) -> tuple[str, str, int] | None:
@@ -2723,6 +2782,11 @@ async def post_agent_file(
         raise HTTPException(
             status_code=422, detail=f"conteúdo não corresponde ao mime {base_mime}"
         )
+
+    if kind == "image":
+        # Em thread: decodificar e reencodar é CPU, e o event loop não pode
+        # parar por causa disso. A `/image` continua intacta — é do v1.
+        content = await asyncio.to_thread(_normaliza_orientacao, content, base_mime)
 
     stored_name = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
     original_name = _sanitize_upload_filename(file.filename, fallback=stored_name)
