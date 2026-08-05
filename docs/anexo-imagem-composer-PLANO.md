@@ -379,6 +379,25 @@ Uma etapa, um commit. Não misturar.
    `next/image`, `unoptimized` é a opção honesta — com ela a doc diz que o src
    sai cru, sem validação de hostname.
 
+   ✅ **NO AR em 05/08 (`924983a`, Tara)** — e com ela o plano inteiro fecha.
+   `components/feed/anexo-imagem.ts` reconhece o envelope, `cartao-anexo-imagem.tsx`
+   monta o cartão. Decisões que a etapa fechou:
+   - **`<img>` direto, não `next/image`** — o insumo abaixo virou decisão medindo:
+     a rota já entrega mime fechado, imagem normalizada e `immutable`, então o
+     loader só reprocessaria o mesmo arquivo. 256px no desktop (⅓ do
+     `--ck-read-wide`, 1,75× a miniatura), raio 16px, sem borda, à direita.
+   - **Proporção 4:3 é reserva provisória** — a natural prevalece quando os
+     metadados chegam, pra não cortar foto vertical.
+   - **O virtualizador foi medido, que era o risco.** Imagens crescendo de 192px
+     reservados para 454,88px naturais: colado no fim, a distância ficou em 0px em
+     todos os quadros (`scrollTop` compensou 5209→5733); rolado para cima, o item
+     âncora ficou em −212px em todos os quadros. **A leitura não pula.**
+
+   ⚠️ **`.ts` e `.tsx` com o MESMO basename quebram o Turbopack** — a Tara criou
+   `anexo-imagem.ts` + `anexo-imagem.tsx`, o `tsc` aceitou, e o dev devolveu 500
+   porque o import resolvia para o arquivo errado. Separou em
+   `cartao-anexo-imagem.tsx`. É a **segunda vez** que isto morde neste repo.
+
    ⚠️ **EXISTEM DUAS PORTAS PRO MESMO ARQUIVO — escolher a certa aqui.**
    Descoberto em 05/08 conferindo a etapa 1:
    - `GET /api/agents/{slug}/file/{filename}` (`3c5bcef`) — tabela de mime
