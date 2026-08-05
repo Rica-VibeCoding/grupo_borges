@@ -43,22 +43,41 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   // posterior ao início conclui a espera — e o `concluir` da máquina mede a
   // duração pelo timestamp DELA, não pelo instante da detecção (a aba podia
   // estar em segundo plano).
-  const { estado: estadoCompact, concluir: concluirCompact } = usaCompact(agentSlug);
+  const {
+    estado: estadoCompact,
+    concluir: concluirCompact,
+    registrarRelogioDoServidor,
+  } = usaCompact(agentSlug);
   const faseCompact = estadoCompact.fase;
-  const desdeCompactMs = estadoCompact.desdeMs;
+  const marcoCompactMs = estadoCompact.marcoServidorMs;
+
+  // A HORA DO SERVIDOR, entregue por quem a tem. É a única peça da tela que vê
+  // `timestamp` de mensagem, e é dela que sai a linha de base do compact.
+  useEffect(() => {
+    for (const m of messages) {
+      if (typeof m.timestamp !== 'string') continue;
+      registrarRelogioDoServidor(Date.parse(m.timestamp));
+    }
+  }, [messages, registrarRelogioDoServidor]);
 
   useEffect(() => {
     if (faseCompact !== 'compactando' && faseCompact !== 'sem-retorno') return;
-    if (desdeCompactMs === null) return;
     for (const m of messages) {
       if (!ehMensagemResumoCompact(m)) continue;
       const tsMs = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : Number.NaN;
-      if (Number.isFinite(tsMs) && tsMs > desdeCompactMs) {
+      if (!Number.isFinite(tsMs)) continue;
+      // Servidor contra SERVIDOR. Antes esta guarda comparava o timestamp do
+      // resumo com o relógio do browser: com o iPhone adiantado mais do que a
+      // duração do compact ela ficava falsa para sempre, `concluir` nunca
+      // disparava e o composer ficava travado até o escape de 6 min — a cada
+      // refresh de novo. `marcoCompactMs` nulo significa feed sem mensagem
+      // nenhuma na largada, e aí qualquer resumo é posterior por definição.
+      if (marcoCompactMs === null || tsMs > marcoCompactMs) {
         concluirCompact(m.uuid, tsMs);
         return;
       }
     }
-  }, [messages, faseCompact, desdeCompactMs, concluirCompact]);
+  }, [messages, faseCompact, marcoCompactMs, concluirCompact]);
 
   // Instância estável POR GERAÇÃO — mesma razão do FeedAoVivo: recriar por
   // render jogaria fora o estado incremental do classificador. Na troca de

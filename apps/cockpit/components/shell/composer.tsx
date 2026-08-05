@@ -49,6 +49,7 @@ import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { BarraCompact } from './barra-compact';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
+import { preparaEnvio } from './porta-de-envio';
 import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
 import { usaGravador } from './usa-gravador';
 import {
@@ -126,6 +127,16 @@ export function Composer({
   // um envio FALHADO significa "o compact nunca começou" e a espera morre.
   const compactPendenteRef = useRef(false);
 
+  // Por que a recusa não foi despachada. Não tem botão de dispensar de
+  // propósito: ela descreve um impedimento do INSTANTE, não um erro a ser
+  // reconhecido — quando o motivo passa, o aviso vai junto.
+  const [avisoDaPorta, setAvisoDaPorta] = useState<string | null>(null);
+  useEffect(() => {
+    if (!travaCompact && faseLocal !== 'enviando' && faseLocal !== 'aceito') {
+      setAvisoDaPorta(null);
+    }
+  }, [travaCompact, faseLocal]);
+
   useEffect(() => {
     if (estadoCompact.fase === 'concluindo' || estadoCompact.fase === 'sem-retorno') {
       compactPendenteRef.current = false;
@@ -191,8 +202,19 @@ export function Composer({
     async (audio: Blob) => {
       // A trava do compact vale pra voz também: uma gravação começada ANTES
       // do `/compact` termina DEPOIS dele, e soltar esse texto no meio da
-      // espera corta o resumo do mesmo jeito.
-      if (travaCompact) return;
+      // espera corta o resumo do mesmo jeito. A recusa continua; o que muda é
+      // que ela FALA — descartar áudio calado é o mesmo defeito do texto, e
+      // pior, porque o áudio não tem campo onde ficar.
+      const efeito = preparaEnvio({
+        compactando: travaCompact,
+        faseEnvio: envio.estado.fase,
+        midia: 'voz',
+      });
+      if (!efeito.despacha) {
+        setAvisoDaPorta(efeito.aviso);
+        return;
+      }
+      setAvisoDaPorta(null);
       setFalhaDaFala(null);
       try {
         // O que o servidor ENTENDEU aparece na tela. STT erra, e o Rica precisa
@@ -231,7 +253,17 @@ export function Composer({
       : falhaDaFala;
 
   async function enviar(corpo: string) {
-    if (!corpo.trim() || travaCompact) return;
+    // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
+    // três `return` mudos recusavam DEPOIS de `setTexto('')` já ter rodado, e
+    // em 05/08 uma mensagem do Rica morreu assim — sem requisição, sem aviso,
+    // sem sobrar em lugar nenhum. Ver `porta-de-envio.ts`.
+    const efeito = preparaEnvio({
+      texto: corpo,
+      compactando: travaCompact,
+      faseEnvio: faseLocal,
+    });
+    setAvisoDaPorta(efeito.aviso);
+    if (!efeito.despacha) return;
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
     // barra precisa nascer com o clique, não com o 200.
@@ -239,10 +271,12 @@ export function Composer({
       compactPendenteRef.current = true;
       iniciarCompact();
     }
-    // O campo esvazia na hora, mas o texto não se perde: quem o guarda é a
-    // máquina (`estado.texto`), que precisa dele para casar o eco e para
-    // oferecer novo envio se o eco não vier.
-    setTexto('');
+    // Esvazia no instante em que a tentativa é ACEITA, não quando ela é
+    // entregue: esperar o POST voltar deixaria o texto no campo durante toda a
+    // viagem de rede, e um segundo Enter ali duplica a mensagem. Daqui em
+    // diante quem guarda o texto é a máquina (`estado.texto`), que precisa
+    // dele para casar o eco e para oferecer novo envio se o eco não vier.
+    if (efeito.limpaCampo) setTexto('');
     setTranscrito(null);
     setFalhaDaFala(null);
     await envio.enviar(corpo);
@@ -328,7 +362,12 @@ export function Composer({
           ref={textareaRef}
           rows={2}
           value={texto}
-          disabled={emAndamento || travaCompact}
+          // SEM `disabled`, de propósito. A doc do React descreve `disabled`
+          // como "will not be interactive and will appear dimmed": o elemento
+          // sai do alcance do foco, e no iPhone isso fecha o teclado no meio
+          // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
+          // editável, ele escreve durante a espera e manda com um toque quando
+          // ela passa. É o que garante que o texto nunca evapora.
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -514,7 +553,10 @@ export function Composer({
               <button
                 key="enviar"
                 type="submit"
-                disabled={emAndamento || travaCompact}
+                // Habilitado mesmo quando a porta vai recusar: desabilitado ele
+                // não responde ao toque e não diz por quê, que é o botão morto
+                // da §9. Tocar agora devolve o motivo na faixa abaixo, e o
+                // texto continua no campo.
                 aria-label={`Enviar para ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
@@ -619,6 +661,26 @@ export function Composer({
       {/* O ESTADO DO ANEXO — subindo, recusado, entregue. Vem antes do aviso da
           voz porque é o gesto mais recente quando existe. */}
       <AvisoAnexo estado={anexo.estado} aoDispensar={anexo.limpar} />
+
+      {/* POR QUE NÃO SAIU. Antes desta faixa a recusa era um `return` mudo: o
+          Rica tocava Enter, o campo esvaziava e a mensagem não existia mais em
+          lugar nenhum. Sem botão de dispensar — o aviso morre quando o motivo
+          morre, e um botão sugeriria que há algo a fazer além de esperar. */}
+      {avisoDaPorta ? (
+        <span
+          role="status"
+          aria-live="polite"
+          className="mx-auto w-full"
+          style={{
+            maxWidth: 'var(--ck-w-composer)',
+            padding: '0 var(--ck-space-2)',
+            fontSize: 'var(--ck-text-xs)',
+            color: 'var(--ck-state-attention)',
+          }}
+        >
+          {avisoDaPorta}
+        </span>
+      ) : null}
 
       {/* MICROFONE INDISPONÍVEL. Nunca um botão que não responde — o defeito
           que esta rodada consertou no envio, aqui com outra roupa. Sempre duas

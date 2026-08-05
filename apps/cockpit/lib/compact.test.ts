@@ -89,6 +89,9 @@ test('concluir — mede do envio ao timestamp do resumo, segura 400ms e volta ao
     storage,
   });
 
+  // O feed reporta a hora DO SERVIDOR antes do envio, como faz de verdade. É
+  // dela que sai a largada; o relógio do browser só move o cronômetro.
+  c.registrarRelogioDoServidor(1_000_000);
   c.iniciar();
   // O resumo nasceu 2min12s depois do envio (timestamp da MENSAGEM, não da detecção).
   c.concluir('uuid-resumo', 1_000_000 + 132_000);
@@ -132,6 +135,7 @@ test('ETA da rodada seguinte sai da mediana das últimas 5 durações reais', ()
 
   const duracoes = [93_000, 108_000, 136_000, 150_000, 163_000];
   for (const d of duracoes) {
+    c.registrarRelogioDoServidor(relogio.agora());
     c.iniciar();
     c.concluir(`uuid-${d}`, relogio.agora() + d);
     agendador.dispararUltimo(); // hold → ocioso
@@ -153,6 +157,7 @@ test('escape — 6min sem resumo vira sem-retorno, e um resumo tardio ainda conc
     storage: null,
   });
 
+  c.registrarRelogioDoServidor(1_000_000);
   c.iniciar();
   const escape = agendador.timers.at(-1);
   assert.equal(escape?.atrasoMs, ESCAPE_COMPACT_MS);
@@ -269,4 +274,65 @@ test('dispose — timers param de agir e transições não notificam mais', () =
   c.cancelar(); // no-op pós-dispose
   assert.equal(notificacoes, 1);
   assert.equal(c.getEstado().fase, 'compactando'); // congelado no descarte
+});
+
+/**
+ * O DEFEITO DE 05/08, no tamanho real.
+ *
+ * O iPhone do Rica estava adiantado em relação à VPS. A guarda que decidia a
+ * conclusão comparava o timestamp do resumo (servidor) com `desdeMs`
+ * (browser), então ela ficava falsa para sempre: `concluir` nunca disparava, o
+ * composer ficava travado até o escape de 6 min, e a mensagem que ele mandou
+ * nesse intervalo foi engolida pela trava.
+ *
+ * Com a largada no relógio do servidor, a deriva do celular deixa de existir
+ * para esta conta.
+ */
+test('celular adiantado 3 min não impede o resumo de concluir o compact', () => {
+  const DERIVA_MS = 180_000;
+  const relogioDoBrowser = relogioFalso(1_000_000 + DERIVA_MS);
+  const agendador = agendadorFalso();
+  const c = createControleCompact('hiro', {
+    agora: relogioDoBrowser.agora,
+    agendar: agendador.agendar,
+    cancelar: agendador.cancelar,
+    storage: null,
+  });
+
+  c.registrarRelogioDoServidor(1_000_000);
+  c.iniciar();
+  assert.equal(c.getEstado().marcoServidorMs, 1_000_000);
+
+  // O resumo nasce 164s depois no relógio DO SERVIDOR — e ainda assim é
+  // ANTERIOR ao `desdeMs` do browser, que é o que travava tudo.
+  const fimNoServidor = 1_000_000 + 164_000;
+  assert.ok(fimNoServidor < c.getEstado().desdeMs!, 'o cenário perdeu a deriva que reproduz o bug');
+
+  c.concluir('uuid-resumo', fimNoServidor);
+  assert.equal(c.getEstado().fase, 'concluindo');
+  assert.equal(c.getEstado().duracaoMs, 164_000);
+  c.dispose();
+});
+
+test('retomada após refresh traz o marco do servidor junto do início', () => {
+  const agendador = agendadorFalso();
+  const storage = storageFalso();
+  const dependencias = {
+    agora: () => 1_000_500,
+    agendar: agendador.agendar,
+    cancelar: agendador.cancelar,
+    storage,
+  };
+
+  const antes = createControleCompact('hiro', dependencias);
+  antes.registrarRelogioDoServidor(999_000);
+  antes.iniciar();
+  antes.dispose();
+
+  // Sem o marco persistido, a espera retomada nasceria sem linha de base e o
+  // primeiro resumo VELHO do replay concluiria na hora.
+  const depois = createControleCompact('hiro', dependencias);
+  assert.equal(depois.getEstado().fase, 'compactando');
+  assert.equal(depois.getEstado().marcoServidorMs, 999_000);
+  depois.dispose();
 });
