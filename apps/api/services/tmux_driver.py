@@ -60,6 +60,121 @@ _TMUX_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cockpit-t
 _EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
 
 
+class _DeliveryChannelRecord(NamedTuple):
+    delivering: bool
+    reason: str | None
+    consecutive_refusals: int
+    blocked_since: float | None
+    last_attempt_at: float
+
+
+_DELIVERY_CHANNEL_RECORDS: dict[str, _DeliveryChannelRecord] = {}
+_DELIVERY_CHANNEL_RECORDS_GUARD = threading.Lock()
+_DELIVERY_FAILURE_MESSAGES = {
+    "sessao_ausente": "A sessão do agente não está disponível.",
+    "pane_incompativel": "A tela ativa do agente não aceita mensagens.",
+    "buffer_indisponivel": "O canal não conseguiu preparar a mensagem.",
+    "input_ocupado_ou_travado": "O campo de mensagem do agente está ocupado ou travado.",
+    "input_nao_observavel": "O canal não conseguiu verificar o campo de mensagem.",
+    "paste_falhou": "O canal não conseguiu colocar a mensagem no campo do agente.",
+    "paste_nao_confirmado": "O canal não confirmou a mensagem no campo do agente.",
+    "envio_nao_confirmado": "O canal não confirmou o envio da mensagem ao agente.",
+    "erro_tmux": "O canal perdeu acesso à sessão do agente.",
+}
+
+
+def _record_delivery_refusal(session_name: str, reason: str) -> bool:
+    """Memoriza e alarma uma recusa sem mudar o contrato booleano do envio."""
+    now = time.time()
+    with _DELIVERY_CHANNEL_RECORDS_GUARD:
+        previous = _DELIVERY_CHANNEL_RECORDS.get(session_name)
+        if previous is not None and not previous.delivering:
+            blocked_since = previous.blocked_since or now
+            consecutive_refusals = previous.consecutive_refusals + 1
+        else:
+            blocked_since = now
+            consecutive_refusals = 1
+        _DELIVERY_CHANNEL_RECORDS[session_name] = _DeliveryChannelRecord(
+            delivering=False,
+            reason=reason,
+            consecutive_refusals=consecutive_refusals,
+            blocked_since=blocked_since,
+            last_attempt_at=now,
+        )
+    blocked_for_seconds = max(0, int(now - blocked_since))
+    log.error(
+        "canal de entrega bloqueado: slug=%s motivo=%s detalhe=%s "
+        "recusas_consecutivas=%d bloqueado_ha_segundos=%d",
+        session_name,
+        reason,
+        _DELIVERY_FAILURE_MESSAGES.get(reason, "Falha desconhecida no canal."),
+        consecutive_refusals,
+        blocked_for_seconds,
+    )
+    return False
+
+
+def _record_delivery_success(session_name: str) -> bool:
+    now = time.time()
+    with _DELIVERY_CHANNEL_RECORDS_GUARD:
+        _DELIVERY_CHANNEL_RECORDS[session_name] = _DeliveryChannelRecord(
+            delivering=True,
+            reason=None,
+            consecutive_refusals=0,
+            blocked_since=None,
+            last_attempt_at=now,
+        )
+    return True
+
+
+def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str | None]:
+    """Expõe o último estado conhecido em linguagem de operação, sem tmuxês."""
+    now = time.time()
+    with _DELIVERY_CHANNEL_RECORDS_GUARD:
+        record = _DELIVERY_CHANNEL_RECORDS.get(session_name)
+
+    if record is None:
+        return {
+            "estado": "sem_dados",
+            "entregando": None,
+            "motivo": None,
+            "mensagem": "Ainda não houve tentativa de entrega desde que a API iniciou.",
+            "recusas_consecutivas": 0,
+            "bloqueado_desde": None,
+            "bloqueado_ha_segundos": 0,
+            "ultima_tentativa_em": None,
+            "acao_recomendada": "Envie uma mensagem para confirmar o canal.",
+        }
+
+    if record.delivering:
+        return {
+            "estado": "entregando",
+            "entregando": True,
+            "motivo": None,
+            "mensagem": "A última entrega ao agente foi confirmada.",
+            "recusas_consecutivas": 0,
+            "bloqueado_desde": None,
+            "bloqueado_ha_segundos": 0,
+            "ultima_tentativa_em": int(record.last_attempt_at),
+            "acao_recomendada": "Nenhuma ação necessária.",
+        }
+
+    blocked_since = record.blocked_since or record.last_attempt_at
+    return {
+        "estado": "bloqueado",
+        "entregando": False,
+        "motivo": record.reason,
+        "mensagem": _DELIVERY_FAILURE_MESSAGES.get(
+            record.reason or "", "Falha desconhecida no canal."
+        ),
+        "recusas_consecutivas": record.consecutive_refusals,
+        "bloqueado_desde": int(blocked_since),
+        "bloqueado_ha_segundos": max(0, int(now - blocked_since)),
+        "ultima_tentativa_em": int(record.last_attempt_at),
+        "acao_recomendada": "Use 'Destravar agente' antes de enviar novamente.",
+    }
+
+
 class TmuxSessionBusyError(RuntimeError):
     """Outra operação do cockpit já controla o mesmo pane tmux."""
 
@@ -1456,7 +1571,7 @@ def _confirm_armed_submission(
 def _send_message_sync(session_name: str, text: str) -> bool:
     server = _server_for(session_name)
     if not server.has_session(session_name):
-        return False
+        return _record_delivery_refusal(session_name, "sessao_ausente")
 
     # \r solto vira ruído no buffer tmux; \r\n vira \n; \n é preservado pra
     # multilinha funcionar como paste real (envelope do Cockpit tem 30+ linhas).
@@ -1474,14 +1589,14 @@ def _send_message_sync(session_name: str, text: str) -> bool:
         # envelope como comando.
         current_cmd = (pane.pane_current_command or "").lower()
         if current_cmd not in _EXPECTED_PANE_COMMANDS:
-            return False
+            return _record_delivery_refusal(session_name, "pane_incompativel")
 
         try:
             # load-buffer não toca o pane e pode levar até 5s. Faça-o antes de
             # provar vazio para não abrir uma janela de concatenação humana.
             buf_name = _load_tmux_buffer(server, sanitized)
             if buf_name is None:
-                return False
+                return _record_delivery_refusal(session_name, "buffer_indisponivel")
 
             paste_ok = False
             try:
@@ -1493,20 +1608,32 @@ def _send_message_sync(session_name: str, text: str) -> bool:
                     incompatible=lambda snapshot: snapshot.state == "armed",
                 )
                 if empty_snapshot is None:
+                    final_snapshot = _capture_input_snapshot(pane)
+                    reason = (
+                        "input_ocupado_ou_travado"
+                        if final_snapshot.state == "armed"
+                        else "input_nao_observavel"
+                    )
                     log.warning(
                         "tmux input indisponível ou armado antes do paste: session=%s",
                         session_name,
                     )
-                    return False
+                    return _record_delivery_refusal(session_name, reason)
 
                 prior_prompt_count = _count_payload_prompt_lines(pane, sanitized)
                 # Segunda leitura imediatamente antes do paste fecha a corrida
                 # entre a observação anterior e uma digitação humana.
-                if _capture_input_snapshot(pane).state != "empty":
+                latest_snapshot = _capture_input_snapshot(pane)
+                if latest_snapshot.state != "empty":
                     log.warning("tmux input mudou antes do paste: session=%s", session_name)
-                    return False
+                    reason = (
+                        "input_ocupado_ou_travado"
+                        if latest_snapshot.state == "armed"
+                        else "input_nao_observavel"
+                    )
+                    return _record_delivery_refusal(session_name, reason)
                 if not _paste_loaded_buffer(pane, buf_name):
-                    return False
+                    return _record_delivery_refusal(session_name, "paste_falhou")
                 paste_ok = True
                 paste_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
                 pasted = _wait_for_input(
@@ -1519,7 +1646,7 @@ def _send_message_sync(session_name: str, text: str) -> bool:
                     if _snapshot_proves_owned_payload(final_snapshot, sanitized):
                         _send_key(pane, "C-u")
                     log.warning("tmux paste não observado no input: session=%s", session_name)
-                    return False
+                    return _record_delivery_refusal(session_name, "paste_nao_confirmado")
 
                 submit_deadline = time.monotonic() + _SUBMIT_CONFIRM_TIMEOUT_S
                 confirmed, enter_attempts = _confirm_armed_submission(
@@ -1530,7 +1657,7 @@ def _send_message_sync(session_name: str, text: str) -> bool:
                     max_enter_attempts=_SUBMIT_MAX_ENTER_ATTEMPTS,
                 )
                 if confirmed:
-                    return True
+                    return _record_delivery_success(session_name)
 
                 # Só limpa quando a pane ainda prova que o texto é o nosso.
                 final_snapshot = _capture_input_snapshot(pane)
@@ -1541,14 +1668,14 @@ def _send_message_sync(session_name: str, text: str) -> bool:
                     session_name,
                     enter_attempts,
                 )
-                return False
+                return _record_delivery_refusal(session_name, "envio_nao_confirmado")
             finally:
                 # paste-buffer -d descarta no caminho feliz. Em falha anterior
                 # ao paste, o buffer ainda existe e precisa de cleanup.
                 if not paste_ok:
                     _delete_tmux_buffer(server, buf_name)
         except libtmux_exc.LibTmuxException:
-            return False
+            return _record_delivery_refusal(session_name, "erro_tmux")
     finally:
         lock.release()
 

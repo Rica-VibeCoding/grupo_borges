@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 import sys
 import threading
 from pathlib import Path
@@ -438,7 +439,12 @@ def _driver_patches(pane: _FakePane, *, server: _FakeServer | None = None):
     )
 
 
-def _send(pane: _FakePane, text: str | None = None) -> bool:
+def _send(
+    pane: _FakePane,
+    text: str | None = None,
+    *,
+    session_name: str = "pane-teste",
+) -> bool:
     patches = _driver_patches(pane)
     with (
         patches[0],
@@ -449,7 +455,7 @@ def _send(pane: _FakePane, text: str | None = None) -> bool:
         patches[5],
         patches[6],
     ):
-        return tmux_driver._send_message_sync("pane-teste", text or pane.payload)
+        return tmux_driver._send_message_sync(session_name, text or pane.payload)
 
 
 def _recover(pane: _FakePane) -> dict[str, bool | int | str]:
@@ -662,6 +668,33 @@ def test_send_never_clears_or_replaces_human_text_already_armed() -> None:
     assert pane.clear_count == 0
     assert pane.paste_count == 0
     assert pane.enter_count == 0
+
+
+def test_send_occupied_input_marks_channel_blocked_and_logs_error(caplog) -> None:
+    pane = _FakePane("payload cockpit")
+    pane.state = "armed"
+    pane.visible_text = "relato humano que não pode ser apagado"
+
+    with caplog.at_level(logging.ERROR, logger="services.tmux_driver"):
+        delivered = _send(pane, session_name="pane-ocupado-sinal")
+
+    channel = tmux_driver.get_delivery_channel_state("pane-ocupado-sinal")
+    assert delivered is False
+    assert channel["estado"] == "bloqueado"
+    assert channel["entregando"] is False
+    assert channel["motivo"] == "input_ocupado_ou_travado"
+    assert channel["recusas_consecutivas"] == 1
+    assert channel["bloqueado_ha_segundos"] >= 0
+    assert channel["acao_recomendada"] == (
+        "Use 'Destravar agente' antes de enviar novamente."
+    )
+    assert "slug=pane-ocupado-sinal" in caplog.text
+    assert "motivo=input_ocupado_ou_travado" in caplog.text
+    assert "recusas_consecutivas=1" in caplog.text
+
+    assert _send(pane, session_name="pane-ocupado-sinal") is False
+    repeated = tmux_driver.get_delivery_channel_state("pane-ocupado-sinal")
+    assert repeated["recusas_consecutivas"] == 2
 
 
 def test_send_never_clears_human_text_that_appears_during_submission() -> None:

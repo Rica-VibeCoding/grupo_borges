@@ -6,6 +6,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -140,6 +141,38 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         assert body["permission"]["mode"] == "plan"
     finally:
         quota_path.unlink(missing_ok=True)
+
+
+def test_agent_painel_expoe_canal_de_entrega_bloqueado(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_settings(
+        tmp_path,
+        monkeypatch,
+        {"effortLevel": "high", "permissions": {"defaultMode": "plan"}},
+    )
+    app = _build_app(tmp_path)
+    channel = {
+        "estado": "bloqueado",
+        "entregando": False,
+        "motivo": "input_ocupado_ou_travado",
+        "mensagem": "O campo de mensagem do agente está ocupado ou travado.",
+        "recusas_consecutivas": 3,
+        "bloqueado_desde": 1_754_400_000,
+        "bloqueado_ha_segundos": 720,
+        "ultima_tentativa_em": 1_754_400_720,
+        "acao_recomendada": "Use 'Destravar agente' antes de enviar novamente.",
+    }
+
+    with patch(
+        "routers.agents.tmux_driver.get_delivery_channel_state",
+        return_value=channel,
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/agents/daniel/painel")
+
+    assert response.status_code == 200
+    assert response.json()["canal_entrega"] == channel
 
 
 def test_agent_painel_quota_missing_without_file(tmp_path: Path, monkeypatch) -> None:

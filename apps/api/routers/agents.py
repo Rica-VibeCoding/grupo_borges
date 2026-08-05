@@ -178,6 +178,18 @@ class AgentPainelSubagents(BaseModel):
     items: list[AgentPainelSubagentEntry]
 
 
+class AgentPainelCanalEntrega(BaseModel):
+    estado: Literal["entregando", "bloqueado", "sem_dados"]
+    entregando: bool | None
+    motivo: str | None = None
+    mensagem: str
+    recusas_consecutivas: int
+    bloqueado_desde: int | None = None
+    bloqueado_ha_segundos: int
+    ultima_tentativa_em: int | None = None
+    acao_recomendada: str
+
+
 class AgentPainelResponse(BaseModel):
     slug: str
     generated_at: int
@@ -186,6 +198,7 @@ class AgentPainelResponse(BaseModel):
     permission: AgentPainelPermission
     quotas: AgentPainelQuotas
     subagents: AgentPainelSubagents
+    canal_entrega: AgentPainelCanalEntrega
     sandbox: AgentPainelSandbox | None = None
     codex_native: bool | None = None
     codex_next_fresh: bool | None = None
@@ -364,6 +377,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             permission=_read_agent_permission(),
             quotas=_build_codex_painel_quotas(agent, thread),
             subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
+            canal_entrega=tmux_driver.get_delivery_channel_state(agent["tmux_session"]),
             sandbox=_build_codex_painel_sandbox(agent),
             codex_native=True,
             codex_next_fresh=bool(agent.get("codex_next_fresh")),
@@ -399,6 +413,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         permission=permission,
         quotas=quotas,
         subagents=subagents,
+        canal_entrega=tmux_driver.get_delivery_channel_state(agent["tmux_session"]),
     )
 
 
@@ -2927,6 +2942,7 @@ async def post_agent_file(
         "filename": original_name,
         "size": len(content),
         "tmux_delivered": delivered,
+        "canal_entrega": tmux_driver.get_delivery_channel_state(agent["tmux_session"]),
         "duration_ms": int((time.monotonic() - started_at) * 1000),
     }
 
