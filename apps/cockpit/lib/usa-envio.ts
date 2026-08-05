@@ -340,10 +340,27 @@ export function createControleEnvio(
     try {
       const resposta = await postar(agentSlug, texto);
       if (descartado) return;
+      // `tmux_delivered: false` é AUSÊNCIA DE PROVA, não erro. O `send_message`
+      // só devolve `true` com prova observável no pane (input vazio ou linha
+      // transcrita, tetos de 8s e 6s); pane em turno ativo não mostra essa prova
+      // e o texto entra na fila do CC do mesmo jeito. Medido em 04/08 no anexo:
+      // 2 de 3 envios voltaram `false` e chegaram nas duas vezes.
+      //
+      // Por isso o destino é `nao-confirmado` e não `falhou`. A diferença não é
+      // de palavra: `falhou` afirma que a mensagem não saiu daqui e oferece
+      // "tentar de novo" como o caminho óbvio — e reenviar um texto que ENTROU
+      // faz o agente rodar o mesmo comando duas vezes, que é pior que arquivo
+      // duplicado. `nao-confirmado` diz que não deu para confirmar, manda
+      // conferir no chat antes e avisa que pode duplicar; e o redutor já conta
+      // `ecosIguaisSemDono` quando o mesmo texto volta, então a máquina foi
+      // desenhada para exatamente este caso.
+      //
+      // `falhou` continua existindo e continua sendo o destino de erro HTTP
+      // real — rejeição, rede, 4xx/5xx. Só o `tmux_delivered` mudou de lado.
       if (!resposta.tmux_delivered) {
         publicar({
-          tipo: 'falhar',
-          erro: new Error('O backend informou que a sessão tmux não recebeu o texto'),
+          tipo: 'nao-confirmar',
+          erro: new Error('O backend não conseguiu provar a entrega no pane — o texto pode ter entrado'),
         });
         return;
       }

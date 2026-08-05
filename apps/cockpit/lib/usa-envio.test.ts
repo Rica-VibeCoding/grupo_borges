@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { aparenciaDe } from '../components/shell/aparencia-envio.ts';
 import { PRAZO_ECO_MS } from './envio.ts';
 import {
   createControleEnvio,
@@ -145,7 +146,10 @@ test('erro de rede sem resposta fica não confirmado e não abre o stream', asyn
   assert.equal(fonte.instancias.length, 0);
 });
 
-test('rejeição HTTP do POST é falha real', async () => {
+// `falhou` não foi aposentado quando o `tmux_delivered` saiu de lá: erro HTTP
+// real continua sendo dele, e é a única fase em que a tela AFIRMA que a
+// mensagem não saiu — porque ali ela sabe.
+test('rejeição HTTP do POST é falha real, e ali a tela afirma que não saiu', async () => {
   const erro = Object.assign(new Error('agent_pane_unavailable'), { status: 409 });
   const controle = createControleEnvio('tara', {
     postar: async () => {
@@ -155,17 +159,32 @@ test('rejeição HTTP do POST é falha real', async () => {
 
   await controle.enviar('faz isso');
 
-  assert.equal(controle.getEstado().fase, 'falhou');
+  const fase = controle.getEstado().fase;
+  assert.equal(fase, 'falhou');
+  assert.match(aparenciaDe(fase, 'Tara').frase ?? '', /não saiu/i);
 });
 
-test('tmux_delivered false é falha real', async () => {
+// `tmux_delivered: false` é ausência de prova, não erro: o `send_message` só
+// devolve `true` com prova observável no pane, e pane em turno ativo não mostra
+// essa prova embora o texto entre na fila. Mandar isso pra `falhou` era pior
+// aqui do que no anexo — `falhou` oferece "tentar de novo" como caminho óbvio, e
+// reenviar um texto que ENTROU faz o agente rodar o mesmo comando duas vezes.
+//
+// O teste trava a corrente inteira: da resposta do backend até a frase na tela.
+test('tmux_delivered false vai para não confirmado, e a tela não afirma que não chegou', async () => {
   const controle = createControleEnvio('tara', {
     postar: async () => ({ ...resposta(10), tmux_delivered: false }),
   });
 
   await controle.enviar('faz isso');
 
-  assert.equal(controle.getEstado().fase, 'falhou');
+  const fase = controle.getEstado().fase;
+  assert.equal(fase, 'nao-confirmado');
+
+  const naTela = aparenciaDe(fase, 'Tara');
+  assert.match(naTela.frase ?? '', /não consegui confirmar/i);
+  assert.match(naTela.frase ?? '', /duplica/i);
+  assert.doesNotMatch(naTela.frase ?? '', /não saiu|não recebeu|não chegou|nada foi entregue/i);
 });
 
 test('timer externo ao redutor transforma aceito em não confirmado no prazo', async () => {
