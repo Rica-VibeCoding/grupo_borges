@@ -292,8 +292,28 @@ Uma etapa, um commit. Não misturar.
    linha.)
 3. **Miniatura no composer.** Preview por `URL.createObjectURL`, revogado no
    cleanup do callback de `ref`. Botão de remover **sempre visível** — sem
-   `:hover`, que não existe no iPhone — com alvo de toque `--ck-touch-min`.
-   Entrada com `starting:` + `motion-reduce:`.
+   `:hover`, que não existe no iPhone — com alvo de toque `--ck-touch-min`
+   (token existe e é usado com `minWidth`/`minHeight` em 6 lugares). Ícone:
+   `IconeDescartar` já existe em `shell/icones`, não desenhar outro.
+
+   ⚠️ **CORRIGIDO em 05/08 — `starting:` era a instrução errada.** O plano dizia
+   *"entrada com `starting:` + `motion-reduce:`"*. Duas coisas o derrubam:
+   - **`starting:` não é usado em lugar nenhum do cockpit** — zero ocorrências em
+     `components/`. A casa anima com `.ck-surge` + `data-aberto`, e o
+     `globals.css:482` é explícito: *"superfície nova usa `.ck-surge` e não
+     escreve keyframe próprio"*. Trazer `starting:` seria um segundo padrão de
+     movimento na mesma tela onde a gaveta já usa o primeiro.
+   - **A miniatura aparece E some**, e `@starting-style` **não cobre elemento
+     removido do DOM** (`reference_starting_style_saida_dom`). A casa já resolveu
+     isso mantendo o nó **sempre montado** e virando `data-aberto` —
+     `superficie-otimista.tsx` diz textualmente *"elemento removido não anima a
+     saída"*.
+
+   A tensão que sobra, e é de quem implementar resolver: a gaveta sempre montada
+   é um nó de conteúdo fixo, e a miniatura tem conteúdo que **muda** com o
+   arquivo escolhido. Resolver **dentro** do padrão da casa (container montado,
+   conteúdo condicional, `objectURL` criado e revogado com o arquivo), não
+   fugindo dele.
 4. **Despacho conjunto, e o anexo passa a entrar pela porta.** O botão de enviar
    manda arquivo + legenda. Respeitar a invariante de `porta-de-envio.ts`
    (commit `d6b1a46`): **nada evapora** — se o envio falhar, a miniatura e o
