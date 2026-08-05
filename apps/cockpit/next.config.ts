@@ -5,6 +5,15 @@ const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
 const config: NextConfig = {
   devIndicators: false,
 
+  // ⚠️ O DEV NÃO DIVIDE DIRETÓRIO DE BUILD COM A PRODUÇÃO. O `next start` da
+  // 3008 roda a partir deste mesmo `apps/cockpit` e serve `.next/`; um
+  // `next dev` apontado pra cá — ou uma faxina de `.next` pra destravar o
+  // Turbopack — deixa a produção devolvendo 500 em todo chunk estático, com o
+  // HTML ainda em 200 (o servidor já está em memória). Foi assim que a 3008 caiu
+  // em 04/08. Dev sobe com `COCKPIT_DIST_DIR=.next-dev`; a produção não define a
+  // variável e continua em `.next`.
+  distDir: process.env.COCKPIT_DIST_DIR ?? '.next',
+
   // O core é consumido como SOURCE (subpath exports apontando pra .ts), sem build
   // step. É isto que transpila.
   transpilePackages: ['@grupo_borges/cockpit-core'],

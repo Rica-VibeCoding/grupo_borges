@@ -9,6 +9,7 @@ venv/
 # Node / Next / Turbo
 node_modules/
 .next/
+.next-dev/
 .turbo/
 dist/
 build/

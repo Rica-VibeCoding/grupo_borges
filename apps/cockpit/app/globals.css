@@ -684,8 +684,15 @@ body {
   bottom: calc(100% + var(--ck-space-2));
   /* Alinhada à borda esquerda do "+", não à do composer: o botão vive recuado
      pelo padding da caixa (`--ck-space-3`) menos a mordida negativa de
-     `--ck-space-2` que o encaixa no canto. */
-  left: calc(var(--ck-space-3) - var(--ck-space-2));
+     `--ck-space-2` que o encaixa no canto.
+
+     O `1px` é a BORDA do form, e ela precisa entrar na conta: o invólucro que
+     ancora esta gaveta mede a caixa do composer pela borda EXTERNA, enquanto o
+     "+" mora depois da borda, no fluxo interno. Sem esta parcela a gaveta
+     encosta 1px à esquerda do botão — medido no Chrome com a gaveta aberta:
+     botão em x=387, gaveta em x=386. Número cru porque é a espessura da borda
+     do próprio composer (`border` do Tailwind), não uma medida de espaço. */
+  left: calc(1px + var(--ck-space-3) - var(--ck-space-2));
   width: max-content;
   max-width: calc(100% - 2 * var(--ck-space-3));
   transform-origin: bottom left;
