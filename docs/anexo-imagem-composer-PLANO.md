@@ -71,12 +71,29 @@ borda um degrau mais clara que o fundo. **O composer cresce em altura** — a
 miniatura não flutua nem sobrepõe. A barra de ações (`+` / modelo / microfone /
 enviar) segue no rodapé, inalterada.
 
+**Medidas das capturas** (Daniel, 05/08 — as duas têm viewport diferente, 913px
+e 1279px, mas a **coluna de conteúdo é a mesma nas duas, ~767px**, então os
+números são comparáveis; medido na imagem, erro de ~3px):
+
+- miniatura no composer: **~146px** quadrada, radius **~16px** → 19% da coluna
+- imagem no feed: **~254px** → 33% da coluna, e **1,74×** a miniatura
+
+São **dados**, não decisão — a proporção é o que vale, e o valor final se fecha
+contra `cockpit-v2-estetica.md`.
+
 ### Frente C — a imagem no feed
 
 Estado 2 da referência: a imagem sobe **alinhada à direita**, maior que a
 miniatura, cantos arredondados e **sem moldura de bolha** — a própria imagem é o
 cartão. Hoje o feed recebe o envelope como texto e não sabe que aquilo é imagem;
 precisa reconhecer o padrão e renderizar, escondendo o caminho.
+
+> ⚠️ **A referência 02 não responde a pergunta central desta frente.** Nela a
+> imagem subiu **sozinha** — o texto à esquerda ("Analisando imagem
+> selecionada") é resposta do assistente, não legenda do Rica. Então a captura
+> **não mostra** como imagem e legenda convivem quando sobem juntas: o texto
+> fica dentro do mesmo cartão, embaixo da imagem, ou vira bolha separada? Isso
+> muda o **renderer**, não só o CSS. Está na seção 7.
 
 ## 4. Doc consultada — o que sustenta cada decisão
 
@@ -120,25 +137,130 @@ o upload de volta**: hoje o arquivo só é escrito em
 `apps/api/uploads/agents/<slug>/`. **Criar essa rota é pré-requisito da Frente
 C** e é o único trabalho de backend do plano.
 
+## 4-A. HEIC do iPhone — o achado que muda o escopo
+
+Levantado em 05/08 na doc do WebKit e da MDN. **É o maior risco do plano e já
+tem decisão tomada.**
+
+Três fatos, todos contra nós:
+
+1. A transcodificação HEIC→JPEG guiada pelo `accept` existe, mas está
+   documentada **só para macOS** — os bugs que a implementaram
+   ([212489](https://bugs.webkit.org/show_bug.cgi?id=212489),
+   [213347](https://bugs.webkit.org/show_bug.cgi?id=213347)) têm `[macOS]` no
+   título e guarda `#if PLATFORM(MAC)` no código. **Não há nenhuma doc oficial
+   descrevendo o que o iOS entrega** ao escolher foto HEIC da biblioteca.
+2. O suporte a HEIC anunciado no Safari 17 é de **exibição**, não de conversão
+   no upload ([webkit.org/blog/14445](https://webkit.org/blog/14445/webkit-features-in-safari-17-0/)).
+3. As notas do **Safari 27 beta** registram como *correção*: *"Fixed HEIC images
+   were incorrectly converted to JPEG when uploaded via drag-and-drop or file
+   input."* ([webkit.org/blog/17967](https://webkit.org/blog/17967/news-from-wwdc26-webkit-in-safari-27-beta/)).
+   Ou seja: o WebKit está **removendo** a conversão.
+
+E o `accept` não salva ninguém — MDN é literal: *"The `accept` attribute doesn't
+validate the types of the selected files; it provides hints… you should make
+sure that the `accept` attribute is backed up by appropriate server-side
+validation."*
+
+### O valor do `accept` importa MUITO — e o nosso está errado hoje
+
+A regra do WebKit (bug 212489) é transcodificar quando o `accept` inclui *"at
+least one MIME type which CG supports encoding to"* — CoreGraphics. **`image/*`
+não é MIME concreto e não dispara nada.** Matriz testada com HEIC real
+([kou_pg_0131](https://zenn.dev/kou_pg_0131/articles/safari-input-file-heic)):
+
+- macOS, `accept=""` ou **`image/*`** → **continua HEIC**
+- macOS, `accept="image/heic"` → continua HEIC
+- macOS, `accept="image/jpeg"` → JPEG · `"image/png"` → PNG
+- macOS, `accept="image/jpeg,image/png,image/gif"` → JPEG (**o primeiro
+  convertível vence**)
+- iOS, qualquer `accept` testado → JPEG (e igual em Chrome/Firefox/Edge no iOS,
+  todos WebKit)
+
+**`lib/anexo.ts:95` usa hoje `image: 'image/*'`** — o único valor que garante
+HEIC voltando no Mac. É bug latente **vivo agora**, não hipótese futura.
+
+Pior: `accept="image/*,image/heic"` faz o Safari 17+ agir ao contrário — pega um
+JPEG de verdade e devolve `.heic`
+([Apple 743049](https://developer.apple.com/forums/thread/743049)). **Nunca pôr
+`image/heic` no `accept`.**
+
+**E mesmo com o `accept` certo, HEIC continua chegando:** o caminho
+"Explorar/Arquivos" (iCloud Drive, Dropbox) **não passa** pela conversão do
+Photos. Some a isso o modo de falha clássico — HEIC de verdade com extensão
+`.jpg` ([Esri #184](https://github.com/Esri/data-collection-ios/issues/184)).
+
+Hoje `_IMAGE_ALLOWED_MIMES` aceita só `image/jpeg`, `image/png`, `image/webp`.
+Chegando `image/heic`, o anexo é **recusado** — e o Rica manda foto do iPhone o
+tempo todo.
+
+**DECISÃO: aceitar HEIC no backend e normalizar na gravação.** Não é
+preferência, é a única opção que não depende do que a Apple resolver fazer na
+próxima versão. Recusar com mensagem bonita continua sendo o Rica sem conseguir
+anexar foto.
+
+Viabilidade **conferida, não suposta**: `pillow-heif` 1.5.0 publica wheel
+binária `cp312 manylinux_2_28 x86_64` — instala sem compilar nesta VPS. O
+Pillow 12.3.0 que já está no `.venv` **não** registra `.heic`/`.heif` (só
+`.avif`), então o plugin é necessário.
+
+A conversão entra **no mesmo ponto** onde a orientação EXIF já é normalizada, e
+o resultado gravado é JPEG — o resto do sistema não fica sabendo que HEIC
+existiu.
+
 ## 5. Etapas
 
 Uma etapa, um commit. Não misturar.
 
+0. **HEIC — as três camadas, e nenhuma sozinha basta.**
+   - **`accept`:** trocar `image/*` por `image/jpeg,image/png` em
+     `lib/anexo.ts:95`, **jpeg primeiro** (o primeiro convertível vence). Não
+     incluir `image/webp` — nenhuma fonte confirma que o CoreGraphics
+     transcodifica pra webp. **Nunca** `image/heic`.
+   - **Backend aceita e converte:** `pillow-heif` na dependência, `image/heic` e
+     `image/heif` em `_IMAGE_ALLOWED_MIMES`, conversão para JPEG na gravação
+     junto do `exif_transpose` (preservando `icc_profile` — foto de iPhone é
+     Display P3).
+   - **Validar por magic bytes, não por `file.type` nem extensão.** HEIC =
+     `66 74 79 70 68 65 69 63` no offset 4 (`ftyp`+`heic`). Já existe precedente
+     no arquivo: `agents.py:2314` sniffa PNG por assinatura.
+
+   Teste com HEIC de verdade. É a **etapa 0** porque sem ela as outras entregam
+   uma tela bonita que recusa a foto dele.
 1. **Rota de leitura do upload.** `GET` que serve `apps/api/uploads/agents/<slug>/<arquivo>`
    com content-type correto. Path traversal barrado (o nome já é sanitizado na
    escrita por `_sanitize_upload_filename`, mas a leitura precisa da sua própria
    guarda). Teste que tenta escapar do diretório e falha.
-2. **Retenção do arquivo.** Nova fase na máquina do anexo: escolhido e validado,
-   ainda não enviado. `validaAnexo` passa a rodar na escolha. Testes em
-   `lib/*.test.ts` (padrão do repo: lógica pura em `.ts` com `.test.ts` ao lado —
-   **não existe teste de componente neste app**).
+2. **Retenção do arquivo — e a porta precisa saber que existe anexo.** Nova fase
+   na máquina do anexo: escolhido e validado, ainda não enviado. `validaAnexo`
+   passa a rodar na escolha. Testes em `lib/*.test.ts` (padrão do repo: lógica
+   pura em `.ts` com `.test.ts` ao lado — **não existe teste de componente**).
+
+   **Junto, e não na etapa 4:** `abrePorta` hoje recusa texto vazio com
+   `recado: null` — a única recusa muda do módulo, e muda **de propósito**,
+   porque campo vazio não é gesto e não há o que preservar nem explicar. Com
+   anexo retido isso **inverte**: o Rica anexa a foto, não escreve nada, toca
+   enviar, e cai justamente na recusa que não fala. É o defeito de 05/08 com
+   roupa nova, nascido da própria invariante que o consertou. Como é **mudança
+   de assinatura** do módulo, entra aqui — deixar para a etapa 4 faz a etapa 2
+   sair já quebrada. (Achado do Daniel na leitura, antes de escrever qualquer
+   linha.)
 3. **Miniatura no composer.** Preview por `URL.createObjectURL`, revogado no
    cleanup do callback de `ref`. Botão de remover **sempre visível** — sem
    `:hover`, que não existe no iPhone — com alvo de toque `--ck-touch-min`.
    Entrada com `starting:` + `motion-reduce:`.
-4. **Despacho conjunto.** O botão de enviar manda arquivo + legenda. Respeitar a
-   invariante de `porta-de-envio.ts` (commit `d6b1a46`): **nada evapora** — se o
-   envio falhar, a miniatura e o texto continuam lá.
+4. **Despacho conjunto, e o anexo passa a entrar pela porta.** O botão de enviar
+   manda arquivo + legenda. Respeitar a invariante de `porta-de-envio.ts`
+   (commit `d6b1a46`): **nada evapora** — se o envio falhar, a miniatura e o
+   texto continuam lá.
+
+   **Escolha explícita, não efeito colateral:** hoje o anexo **não passa pela
+   porta** — só há duas chamadas de `preparaEnvio` no composer (linhas 208 e
+   260, texto e voz). Consequência real: anexo durante `/compact` sobe e **corta
+   o resumo ao meio**, que é exatamente o que a porta impede para o texto; e
+   anexo com envio em voo passa por cima. Esta etapa unifica os três caminhos na
+   mesma porta **de propósito**, e é isso que fecha o buraco — não é
+   consequência acidental de mexer no botão.
 5. **Renderização no feed.** Reconhecer o envelope e mostrar a imagem no lugar do
    caminho. Alinhada à direita, sem moldura. `next/image` com `fill` em container
    com proporção, ou `<img>` — decidir medindo dentro do virtualizador, que é
@@ -161,21 +283,125 @@ Uma etapa, um commit. Não misturar.
 Sem fonte no material que eu levantei. Quem executar deve pesquisar ou perguntar,
 **não inventar**:
 
-- **Números concretos** de tamanho da miniatura, radius e gap. A referência é uma
-  captura; medir nela e casar com `cockpit-v2-estetica.md`.
+- **Imagem + legenda no feed: um cartão ou dois?** A referência 02 não responde
+  porque nela a imagem subiu sozinha. Decidir se a legenda fica **dentro do
+  mesmo cartão, embaixo da imagem**, ou vira **bolha separada** logo abaixo.
+  Muda o renderer. É o buraco mais caro desta lista.
+- **Gap e padding** da miniatura dentro do composer. O tamanho e o radius já
+  estão medidos (§3, Frente B); o respiro em volta não.
 - **Duração e curva** do movimento. A regra da casa é movimento curto; sem
   número publicado, não chutar valor "que parece bom".
 - **Mais de uma imagem** por mensagem. A referência mostra uma. Fora do escopo até
   o Rica pedir.
-- **HEIC do iPhone.** `_IMAGE_ALLOWED_MIMES` aceita só jpeg/png/webp. Se o iOS
-  entregar HEIC, a recusa tem que ser legível — hoje não sabemos o que ele
-  entrega e ninguém mediu.
+- ~~**HEIC do iPhone**~~ — **resolvido, virou decisão: ver §4-A.** Aceitar e
+  converter no backend.
 - **Nome genérico `image.jpg`** que o iOS dá a foto de câmera: com várias fotos
   ele não distingue qual é qual. Já conhecido, nunca registrado.
 - **Progresso do upload** e o que aparece enquanto sobe.
 
-> **Lacuna honesta deste documento:** o Rica pediu pesquisa de **comunidade**
-> (padrões reais, armadilhas de iOS, números de produtos de referência) além da
-> doc oficial. Os dois subagentes que eu tinha em campo foram interrompidos, e
-> **só a parte de documentação oficial está coberta aqui**. O item 7 é
-> exatamente o buraco que aquela pesquisa fecharia.
+## 8. Regras que a doc já cravou — não redecidir
+
+Levantado em 05/08 na MDN e na W3C/WAI. Quem executar **não precisa pesquisar de
+novo** e **não deve divergir** sem trazer fonte melhor.
+
+- **Preview por `URL.createObjectURL`, e revogar tarde.** MDN: *"As long as
+  there's one object URL active, the underlying object cannot be
+  garbage-collected and may cause memory leaks"*; e revogar assim que a imagem
+  renderiza **quebra o uso** (salvar, abrir em nova aba) — *"you should revoke
+  object URLs only when the resource is no longer accessible by the user (such
+  as when the image is removed from the DOM)"*. Casa com o cleanup do callback
+  de `ref` do React 19 (§4). `revokeObjectURL` em URL já revogada **não faz
+  nada**, então chamada dupla é inofensiva.
+- **Nunca `display: none` no `<input type="file">`.** MDN, na página do próprio
+  elemento: *"`opacity` is used to hide the file input instead of
+  `visibility: hidden` or `display: none`, because assistive technology
+  interprets the latter two styles to mean the file input isn't interactive"*, e
+  o `<label>` deixa de ser acionável por teclado. (A MDN se **contradiz** entre
+  páginas — o guia de exemplos usa `display:none`. Vale a página de referência,
+  não o guia.)
+- **`accept` é dica, não contrato** — MDN manda respaldar com validação de
+  servidor. É a mesma razão da §4-A.
+- **Saída animada não remove o nó.** O caminho documentado mantém o elemento na
+  árvore e transiciona `display` ou `content-visibility` com
+  `transition-behavior: allow-discrete`, que segura o valor visível por 100% da
+  duração. Para nó **efetivamente removido** da árvore, a MDN **não documenta**
+  caminho em CSS puro — então a saída da miniatura mantém o nó montado durante a
+  transição.
+- **Alvo de toque:** WCAG 2.2 **SC 2.5.8 (AA) = 24×24 CSS px**; **SC 2.5.5
+  (AAA) = 44×44**. E controle revelado por hover cai no **SC 1.4.13**, que exige
+  ser descartável, apontável e persistente — mais SC 2.1.1 (acionável por
+  teclado). Some com o fato de o iPhone não ter hover: **o botão de remover é
+  sempre visível.**
+- **`prefers-reduced-motion`: substituir, não necessariamente zerar.** MDN fala
+  em *"removes, reduces, or replaces motion-based animations"* e o exemplo
+  oficial troca escala por opacidade — *"tone down the animation to avoid
+  vestibular motion triggers"*. Fade de opacidade é o substituto documentado.
+
+## 9. O que a comunidade cravou — números e armadilhas com fonte
+
+Levantado em 05/08 em código de projetos reais e em issues, não em tutorial.
+
+**Números de referência** (nossa captura do ChatGPT dá 146px de miniatura; os
+projetos abertos usam bem menos):
+
+- [`vercel/ai-elements`](https://github.com/vercel/ai-elements/blob/main/packages/elements/src/attachments.tsx):
+  grade que quebra linha, miniatura **96px**, gap **8px**, botão remover **24px**
+  a **8px** do canto, ícone **12px**.
+- [`ibelick/zola`](https://github.com/ibelick/zola/blob/main/app/components/chat-input/file-items.tsx):
+  faixa horizontal rolável **acima** do textarea, cartão **180px**, radius
+  `2xl`, miniatura **40px**, remover **24px** com anel de 3px.
+- `assistant-ui`: miniatura **40px**.
+
+> Para o iPhone, 96px+ come altura do composer; a faixa de 40–56px é mais
+> honesta em mobile-first. Decidir contra `cockpit-v2-estetica.md`.
+
+**Botão de remover.** Consenso claro, e **nenhuma fonte** defende long-press ou
+swipe. GitLab #7842: *"If it's a touch device, the button should always be
+visible"*. **A armadilha está no código de referência**: o `ai-elements` esconde
+o X com `opacity-0 group-hover:opacity-100` — no iPhone **nunca aparece**.
+LibreChat [#13712](https://github.com/danny-avila/LibreChat/pull/13712) trocou
+breakpoint de largura por **`@media (hover: hover)`**, porque tablet passa do
+`md` e não tem hover. **Usar a media query de hover, nunca largura.** Alvo:
+24px de pintura, **44px de área** via padding (WCAG 2.5.5 / Apple HIG). E
+blindar o X contra foto clara — anel na cor do fundo ou `backdrop-blur`.
+
+**Movimento.** Material 3: short1 50 · short2 100 · short3 150 · short4 200ms.
+NN/g: *"the duration of most animations should be in the range of 100–500 ms"*,
+e *"at 500ms, animations start to feel like a real drag"*. Zola usa **200ms sem
+repique**; prompt-kit usa 150ms. **Convergência: 150–250ms**, entrada
+`ease-out`, saída `ease-in`, nunca linear. A partir de 400ms já é lento.
+Em `prefers-reduced-motion`, colapsar para **0.01ms e não zero** — zero mata o
+`transitionend`.
+
+**Antipadrões que já estão no nosso caminho:**
+
+- **`createObjectURL` dentro do render.** Vaza blob a cada re-render e faz a
+  imagem piscar, porque o cache não sabe que as duas URLs são a mesma imagem
+  ([jonathanleemartin.com](https://jonathanleemartin.com/blog/dont-over-react/)).
+  O Zola comete isso hoje, duas vezes por item. O certo é criar no `add`,
+  revogar no `remove`/`clear`/desmonte — e **nunca revogar antes do `load`**.
+- **Fonte < 16px no campo focado** dá zoom no iOS. O nosso já usa 16px
+  (`composer.tsx:342`), mas a pegadinha é que **16px dentro de
+  `transform: scale(0.9)` renderiza 14,4px e zooma igual**. Consertar com
+  `user-scalable=no` viola WCAG 2.1 — não fazer.
+- **Layout shift:** `width`/`height` (ou `aspect-ratio`) na miniatura, senão o
+  navegador reserva 0×0. **Agravante no iPhone:** a faixa crescendo com o teclado
+  aberto briga com o viewport visual; mitigações citadas são `dvh`,
+  `visualViewport` e `interactiveWidget: 'resizes-content'`.
+- **`alt` da imagem:** sem `alt` o leitor lê o nome do arquivo; com `alt=""` ele
+  pula a imagem inteira. Os dois projetos usam o nome do arquivo com fallback.
+- **Nome genérico:** o iOS batiza toda foto de `image.jpg` e várias se
+  sobrescrevem ([enketo-express #374](https://github.com/kobotoolbox/enketo-express/issues/374)).
+  Renomear antes de subir.
+- **Não esconder as restrições até o toque** (limite de tamanho e formato
+  visíveis antes) — [uxpatterns.dev](https://uxpatterns.dev/patterns/media/image-upload).
+
+**Colar e arrastar** são baratos e valem: varrer `clipboardData.items`, filtrar
+`kind === "file"`. Ressalva real: copiar imagem **de dentro do Safari** põe a
+URL na área de transferência, não os bytes
+([Apple 693560](https://developer.apple.com/forums/thread/693560)). No iPhone é
+irrelevante — é acabamento de desktop.
+
+**Se alguém pensar em converter HEIC no cliente:** não. O canvas do iOS Safari
+tem teto de área (16.777.216 px antes do iOS 18) e foto de iPhone moderno
+estoura. A conversão é no servidor, §4-A.
