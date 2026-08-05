@@ -283,10 +283,16 @@ Uma etapa, um commit. Não misturar.
 Sem fonte no material que eu levantei. Quem executar deve pesquisar ou perguntar,
 **não inventar**:
 
-- **Imagem + legenda no feed: um cartão ou dois?** A referência 02 não responde
-  porque nela a imagem subiu sozinha. Decidir se a legenda fica **dentro do
-  mesmo cartão, embaixo da imagem**, ou vira **bolha separada** logo abaixo.
-  Muda o renderer. É o buraco mais caro desta lista.
+- ~~**Imagem + legenda no feed: um cartão ou dois?**~~ — **DECIDIDO (Pavan,
+  05/08): um cartão só, imagem em cima e legenda embaixo.** A referência 02 não
+  responde porque nela a imagem subiu sozinha, então a decisão é minha e não do
+  executor. Razão: é **um gesto só** do Rica — ele anexou e escreveu numa
+  tacada, e o backend manda os dois num envelope único
+  (`_agent_file_message` concatena `Caption:`). Duas bolhas contariam ao olho
+  uma história que o sistema não viveu, e o feed passaria a sugerir duas
+  mensagens onde houve uma. Se a legenda vier vazia, o cartão é só a imagem.
+  Cuidado de implementação vindo do Messenger: `min-width: 0` nos filhos flex,
+  senão o cartão não encolhe.
 - **Gap e padding** da miniatura dentro do composer. O tamanho e o radius já
   estão medidos (§3, Frente B); o respiro em volta não.
 - **Duração e curva** do movimento. A regra da casa é movimento curto; sem
