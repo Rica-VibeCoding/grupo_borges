@@ -314,6 +314,23 @@ Uma etapa, um commit. Não misturar.
    arquivo escolhido. Resolver **dentro** do padrão da casa (container montado,
    conteúdo condicional, `objectURL` criado e revogado com o arquivo), não
    fugindo dele.
+
+   ✅ **NO AR em 05/08 (`8a0014d`)**, e a tensão foi resolvida sem terceiro jeito:
+   o `.ck-surge` pode ficar montado pra sempre porque é `position: fixed` e não
+   custa layout; a miniatura mora **dentro** do composer e o faria crescer de
+   120px pra 202px permanentes. A saída usa o mesmo truque do `.ck-surge` para
+   `visibility` — propriedade que muda em `0s`, com o **atraso** fazendo o
+   trabalho — aplicado ao espaço.
+
+   **Medida que vale pra qualquer saída de elemento EM FLUXO:** `height: auto`
+   **não transiciona**. Com `auto` de um lado o browser descarta a transição
+   inteira (`auto` não é ponto de interpolação), o atraso não acontece e o
+   elemento some de estalo enquanto o fade roda no vazio — medido, altura ia a
+   zero em ~4ms. Com `max-height` e dois comprimentos, segurou os 192ms do fade.
+
+   ⚠️ **`prefers-reduced-motion` não existe no `globals.css`** — nenhuma
+   ocorrência no arquivo. É do app inteiro, não desta etapa (`tropa_task`
+   `fba589b8`).
 4. **Despacho conjunto, e o anexo passa a entrar pela porta.** O botão de enviar
    manda arquivo + legenda. Respeitar a invariante de `porta-de-envio.ts`
    (commit `d6b1a46`): **nada evapora** — se o envio falhar, a miniatura e o
