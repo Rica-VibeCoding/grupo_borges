@@ -2155,7 +2155,17 @@ _IMAGE_MIME_SUFFIX = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
-_VIDEO_MAX_BYTES = 100 * 1024 * 1024  # 100MB
+# 50MB e nao 100. O teto nao e sobre o que o disco aguenta: o Next BUFFERIZA o
+# corpo inteiro em memoria para fazer o proxy do `/api/*`, com limite POR
+# REQUISICAO. Esta VPS tem 7GB, ja travou por consumo, e dois uploads
+# simultaneos de 100MB seriam 200MB so de buffer do proxy. O par deste numero
+# mora em `apps/cockpit/next.config.ts` (`proxyClientMaxBodySize: '60mb'`), e a
+# folga de 10MB cobre as bordas e a legenda do multipart.
+#
+# Os tres numeros — backend, proxy e validacao do cliente em `lib/anexo.ts` —
+# andam juntos. Desalinhar e o bug de 04/08 com outra roupa: a tela prometendo
+# um tamanho que o transporte nao entrega.
+_VIDEO_MAX_BYTES = 50 * 1024 * 1024  # 50MB
 _VIDEO_MIME_SUFFIX = {
     "video/mp4": ".mp4",
     "video/quicktime": ".mov",
@@ -2345,7 +2355,7 @@ def _resolve_agent_file_kind(base_mime: str) -> tuple[str, str, int] | None:
 async def _read_upload_within(file: UploadFile, max_bytes: int) -> bytes | None:
     """Lê o upload inteiro, ou None se ele passar do teto.
 
-    Em chunks porque o teto de vídeo é 100MB: `read()` cego materializaria
+    Em chunks porque o teto de vídeo é 50MB: `read()` cego materializaria
     qualquer tamanho na RAM antes de a validação ter chance de recusar.
     """
     chunks: list[bytes] = []
@@ -2688,7 +2698,7 @@ async def post_agent_file(
       que não correspondem ao mime declarado
     - 200 + {path, kind, filename, size, tmux_delivered, duration_ms}
 
-    Tetos por tipo: imagem 10MB, documento 25MB, vídeo 100MB. O arquivo é salvo
+    Tetos por tipo: imagem 10MB, documento 25MB, vídeo 50MB. O arquivo é salvo
     com nome gerado (`timestamp-uuid.ext`); o nome original vai só na resposta e
     no texto entregue ao agente.
     """

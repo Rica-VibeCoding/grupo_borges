@@ -6,7 +6,7 @@
  * e "o que o backend recusou?".
  *
  * A VALIDAÇÃO É DUPLA DE PROPÓSITO. O backend valida de novo (e a palavra final
- * é dele — só ele lê o conteúdo real do arquivo), mas esperar 100 MB subirem
+ * é dele — só ele lê o conteúdo real do arquivo), mas esperar 50 MB subirem
  * por Tailscale para receber um 422 de "mime não suportado" é o tipo de espera
  * que faz alguém desistir do gesto. O cliente barra o que dá para barrar antes
  * do primeiro byte; o servidor barra o que só ele sabe.
@@ -53,8 +53,12 @@ export const REGRAS: readonly Regra[] = [
     rotulo: 'Vídeo',
     mimes: ['video/mp4', 'video/quicktime', 'video/webm'],
     extensoes: ['mp4', 'mov', 'webm'],
-    tetoBytes: 100 * MB,
-    tetoRotulo: '100 MB',
+    // 50MB é o teto do transporte, não do disco: o Next bufferiza o corpo
+    // inteiro em memória para fazer o proxy, e esta VPS tem 7GB. Barrar AQUI é
+    // o que faz o vídeo grande morrer em 200ms na tela, com o motivo escrito,
+    // em vez de subir 50MB por Tailscale para se partir no caminho.
+    tetoBytes: 50 * MB,
+    tetoRotulo: '50 MB',
   },
   {
     especie: 'document',
@@ -117,7 +121,7 @@ export const ITENS_DA_GAVETA: readonly {
   {
     especie: 'video',
     rotulo: 'Vídeo',
-    descricao: 'mp4, mov, webm · até 100 MB',
+    descricao: 'mp4, mov, webm · até 50 MB',
     accept: ACCEPT_POR_ESPECIE.video,
   },
   {
@@ -234,6 +238,21 @@ export function detalheDoErro(corpo: unknown, alternativa: string): string {
   return alternativa;
 }
 
+/**
+ * 5xx num upload quase nunca é recusa: é o envio se partindo no caminho —
+ * proxy que trunca o corpo, socket que cai, backend que morreu no meio. Dizer
+ * "o servidor recusou o arquivo (500)" mente duas vezes, e as duas mandam o
+ * Rica para o lado errado: ele vai procurar o que há de errado com o ARQUIVO
+ * quando o arquivo está bom, e vai culpar o backend quando o backend nem viu o
+ * upload inteiro. Foi exatamente o que aconteceu com o .mov do iPhone em 04/08.
+ *
+ * Aqui repetir é a coisa certa a fazer, ao contrário do `tmux_delivered` falso:
+ * transporte partido significa que nada chegou completo, então não há entrega
+ * para duplicar.
+ */
+const RECADO_DE_TRANSPORTE =
+  'O envio se partiu no caminho e o arquivo não chegou inteiro — pode tentar de novo.';
+
 const RECADO_POR_STATUS: Record<number, string> = {
   404: 'Este agente não existe mais no backend.',
   409: 'A sessão do agente não está no ar — suba a sessão e tente de novo.',
@@ -279,8 +298,14 @@ export async function enviaAnexo(
 
   if (!resposta.ok) {
     const corpo = await resposta.json().catch(() => null);
+    // "Recusou" só vale para 4xx, que é o servidor tendo LIDO o arquivo e dito
+    // não. 5xx não é veredito sobre o arquivo. Um `detail` de verdade no corpo
+    // ainda ganha das duas frases — quando o backend explica, é ele quem manda.
     const alternativa =
-      RECADO_POR_STATUS[resposta.status] ?? `O servidor recusou o arquivo (${resposta.status}).`;
+      RECADO_POR_STATUS[resposta.status] ??
+      (resposta.status >= 500
+        ? RECADO_DE_TRANSPORTE
+        : `O servidor recusou o arquivo (${resposta.status}).`);
     throw new ErroAnexo(detalheDoErro(corpo, alternativa), resposta.status);
   }
 

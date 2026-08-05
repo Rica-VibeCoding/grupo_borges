@@ -33,6 +33,33 @@ const config: NextConfig = {
   // docs/cockpit-v2-stack.md §4.
   compress: false,
 
+  // ⚠️ O TETO DE 100MB DO VÍDEO MORA AQUI TAMBÉM, não só no backend. O Next
+  // BUFFERIZA o corpo da requisição quando faz proxy, e o default é 10MB: acima
+  // disso ele trunca, loga "Request body exceeded 10MB" e o FastAPI recebe um
+  // multipart cortado — o socket cai (`ECONNRESET`) e o cliente vê 500. Sem esta
+  // linha o teto de 100MB da rota `/file` é ficção: foto e documento passam
+  // porque cabem em 10MB, vídeo de celular nunca passa. Foi o que travou o Rica
+  // em 04/08 com um .mov do iPhone.
+  //
+  // O nome é `proxyClientMaxBodySize`. O `middlewareClientMaxBodySize` que a
+  // mensagem de erro do Next sugere está DEPRECADO nesta versão (16.2.6) e os
+  // dois juntos lançam E879 — conferido no `config.js:162` e `:616` da própria
+  // instalação, além da doc.
+  //
+  // 60MB, e o número tem dono: o Next bufferiza o corpo INTEIRO em memória para
+  // permitir múltiplas leituras, e o limite é POR REQUISIÇÃO, não global. Esta
+  // VPS tem 7GB e já travou por consumo — 100MB aqui seriam 200MB de buffer com
+  // dois uploads ao mesmo tempo. Por isso o teto de vídeo do backend caiu para
+  // 50MB (`agents.py`, `_VIDEO_MAX_BYTES`) e a folga de 10MB cobre as bordas e a
+  // legenda do multipart.
+  //
+  // TRÊS NÚMEROS ANDAM JUNTOS: este, o `_VIDEO_MAX_BYTES` do backend e o
+  // `tetoBytes` de `lib/anexo.ts`. Mexer em um sozinho recria o bug de 04/08 —
+  // a tela prometendo tamanho que o transporte não entrega.
+  experimental: {
+    proxyClientMaxBodySize: '60mb',
+  },
+
   // O front não fala com o FastAPI por URL absoluta: chama /api/... no próprio
   // host e o Next faz o proxy. É isso que faz o SSE atravessar o Tailscale sem
   // CORS e sem porta extra exposta.

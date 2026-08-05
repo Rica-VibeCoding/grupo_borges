@@ -5,6 +5,7 @@ import {
   ACCEPT_POR_ESPECIE,
   ErroAnexo,
   ITENS_DA_GAVETA,
+  REGRAS,
   classificaAnexo,
   detalheDoErro,
   enviaAnexo,
@@ -65,7 +66,7 @@ test('aceita dentro do teto de cada espécie', () => {
     ok: true,
     especie: 'image',
   });
-  assert.deepEqual(validaAnexo(arquivo('a.mp4', 'video/mp4', 100 * 1024 * 1024)), {
+  assert.deepEqual(validaAnexo(arquivo('a.mp4', 'video/mp4', 50 * 1024 * 1024)), {
     ok: true,
     especie: 'video',
   });
@@ -128,8 +129,27 @@ test('cada item restringe o picker ao seu tipo', () => {
 
 test('todo item da gaveta anuncia o teto da sua espécie', () => {
   assert.match(ITENS_DA_GAVETA[0]!.descricao, /10 MB/);
-  assert.match(ITENS_DA_GAVETA[1]!.descricao, /100 MB/);
+  assert.match(ITENS_DA_GAVETA[1]!.descricao, /50 MB/);
   assert.match(ITENS_DA_GAVETA[2]!.descricao, /25 MB/);
+});
+
+// O bug de 04/08 não foi um número errado — foi DOIS números discordando. O
+// backend prometia 100MB, o proxy do Next cortava em 10MB, e a tela anunciava o
+// número do backend. Este teste amarra a ponta que este pacote controla no
+// número que o proxy realmente aceita: se alguém subir o teto do vídeo sem
+// subir o do proxy, a promessa volta a ser maior que o transporte.
+test('o teto do vídeo cabe no que o proxy do Next aceita', async () => {
+  const { default: config } = await import('../next.config.ts');
+  const limite = config.experimental?.proxyClientMaxBodySize;
+  assert.equal(typeof limite, 'string', 'o proxy precisa de limite explícito — o default é 10MB');
+  const limiteBytes = Number(String(limite).replace(/mb$/i, '')) * 1024 * 1024;
+  const tetoVideo = REGRAS.find((regra) => regra.especie === 'video')!.tetoBytes;
+  assert.ok(
+    tetoVideo < limiteBytes,
+    `vídeo de ${tetoVideo} não cabe no proxy de ${limiteBytes}`,
+  );
+  // A folga existe pro overhead do multipart (bordas + legenda), não é enfeite.
+  assert.ok(limiteBytes - tetoVideo >= 5 * 1024 * 1024, 'folga pro multipart curta demais');
 });
 
 test('formataTamanho fala português', () => {

@@ -14,7 +14,7 @@ import {
  * na tela:
  *
  * - `enviando` TRAVA o botão. É a única defesa contra o duplo envio: um vídeo de
- *   100 MB por Tailscale demora, e o segundo toque no mesmo botão mandaria o
+ *   50 MB por Tailscale demora, e o segundo toque no mesmo botão mandaria o
  *   arquivo duas vezes ao agente.
  * - `erro` carrega a FRASE do backend, não um código. O `detail` do 422 diz se
  *   foi o tipo ou o tamanho; sem ele o Rica tenta de novo às cegas.
