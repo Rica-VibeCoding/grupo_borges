@@ -136,6 +136,43 @@ test('anexo não fura as outras recusas, e elas continuam com recado', () => {
   assert.ok(emVoo.libera === false && emVoo.recado);
 });
 
+/**
+ * A recusa muda que sobrou da etapa 2. `controle.enviar` devolvia `false` calado
+ * com um arquivo em voo — inalcançável enquanto o anexo saía pela gaveta, mas
+ * assim que ele passa a sair pelo botão de enviar o Rica pode tocar duas vezes
+ * durante a subida de um vídeo por Tailscale, que demora. A máquina segura o
+ * segundo toque, e sem isto ela segura CALADA: o botão não responde e a tela não
+ * diz por quê. `faseEnvio` não pega — é a fase da máquina de TEXTO, e upload em
+ * voo não a move.
+ */
+test('segundo toque com arquivo subindo é recusado COM recado', () => {
+  const porta = abrePorta({
+    texto: 'de novo',
+    temAnexo: true,
+    anexoEmVoo: true,
+    compactando: false,
+    faseEnvio: 'ocioso',
+  });
+
+  assert.equal(porta.libera, false, 'o mesmo arquivo iria duas vezes ao agente');
+  assert.equal(porta.libera === false && porta.motivo, 'anexo-em-voo');
+  assert.ok(
+    porta.libera === false && porta.recado,
+    'a máquina já segurava o duplo envio — o que faltava era ela DIZER',
+  );
+});
+
+test('sem arquivo em voo o gesto seguinte passa', () => {
+  const porta = abrePorta({
+    texto: 'segunda foto',
+    temAnexo: true,
+    anexoEmVoo: false,
+    compactando: false,
+    faseEnvio: 'ocioso',
+  });
+  assert.equal(porta.libera, true, 'anexo entregue não pode virar trava permanente');
+});
+
 test('a voz não tem campo, então "vazio" não é recusa possível pra ela', () => {
   const gravando = abrePorta({ compactando: false, faseEnvio: 'ocioso' });
   assert.equal(gravando.libera, true);

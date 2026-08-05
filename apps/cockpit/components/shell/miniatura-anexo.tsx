@@ -22,7 +22,7 @@
 import { useCallback, useState } from 'react';
 
 import type { EspecieAnexo } from '../../lib/anexo';
-import type { EstadoAnexo } from '../../lib/usa-anexo';
+import { arquivoRetido, type EstadoAnexo, type Retido } from '../../lib/usa-anexo';
 import { IconeDescartar, IconeDocumento, IconeVideo } from './icones';
 
 /**
@@ -42,8 +42,6 @@ const ICONE_DA_ESPECIE: Record<
   document: IconeDocumento,
 };
 
-type Retido = { arquivo: File; especie: EspecieAnexo };
-
 export function MiniaturaAnexo({
   estado,
   aoRemover,
@@ -51,16 +49,19 @@ export function MiniaturaAnexo({
   estado: EstadoAnexo;
   aoRemover: () => void;
 }) {
-  const retido: Retido | null =
-    estado.fase === 'escolhido'
-      ? { arquivo: estado.arquivo, especie: estado.especie }
-      : null;
+  // A foto fica na tela do primeiro toque até a entrega — ela atravessa
+  // `escolhido`, `enviando` e o `erro` de upload, que são as três fases que
+  // seguram o arquivo. Fechar a miniatura assim que o upload começa daria ao
+  // olho a impressão de que a foto já foi, e no 422 ele não teria o que
+  // reenviar.
+  const retido = arquivoRetido(estado);
+  const emVoo = estado.fase === 'enviando';
 
   // Ajuste de estado durante o render, que é o caminho documentado do React
   // para derivar de prop sem um efeito no meio: um efeito pintaria o quadrado
   // vazio antes de corrigir.
   const [mostrado, setMostrado] = useState<Retido | null>(retido);
-  const [origem, setOrigem] = useState<File | null>(estado.fase === 'escolhido' ? estado.arquivo : null);
+  const [origem, setOrigem] = useState<File | null>(retido?.arquivo ?? null);
   if (retido && retido.arquivo !== origem) {
     setOrigem(retido.arquivo);
     setMostrado(retido);
@@ -142,7 +143,12 @@ export function MiniaturaAnexo({
             hover, e o alvo simplesmente não existe (WCAG 1.4.13 e 2.5.5).
             24px de pintura dentro de 44px de área: a área é dedo, o desenho é
             olho. A pastilha opaca com borda é o que mantém o × legível sobre
-            foto clara. */}
+            foto clara.
+
+            SOME durante a subida, e só aí: o upload já está em voo e não há
+            como chamá-lo de volta. Um × que some com a foto da tela e deixa o
+            arquivo chegando ao agente mentiria sobre o que acabou de fazer. */}
+        {emVoo ? null : (
         <button
           type="button"
           onClick={aoRemover}
@@ -171,6 +177,7 @@ export function MiniaturaAnexo({
             <IconeDescartar tamanho={12} />
           </span>
         </button>
+        )}
       </div>
     </div>
   );

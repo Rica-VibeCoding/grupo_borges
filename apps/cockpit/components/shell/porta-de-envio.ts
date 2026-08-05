@@ -23,7 +23,10 @@ export type MotivoRecusa =
   /** O `/compact` está em voo e uma mensagem agora corta o resumo ao meio. */
   | 'compactando'
   /** A mensagem anterior ainda não foi confirmada pelo eco. */
-  | 'envio-em-voo';
+  | 'envio-em-voo'
+  /** Um arquivo ainda está subindo — o segundo toque mandaria o mesmo arquivo
+   *  duas vezes ao agente. */
+  | 'anexo-em-voo';
 
 export type PortaDeEnvio =
   | { libera: true }
@@ -42,7 +45,18 @@ export type PortaDeEnvio =
  * um toque; o áudio recusado não tem onde ficar — dizer a ele "continua aqui"
  * seria a mesma mentira de UI que este módulo existe para matar.
  */
-const RECADO: Record<'texto' | 'voz', Record<Exclude<MotivoRecusa, 'vazio'>, string>> = {
+/**
+ * Fora do `RECADO` por mídia porque a voz não carrega anexo: o gesto falado não
+ * passa arquivo nenhum, e escrever a versão "voz" desta recusa seria inventar um
+ * caminho que ninguém percorre.
+ */
+const RECADO_ANEXO_EM_VOO =
+  'o arquivo anterior ainda está subindo — sua mensagem continua aqui';
+
+const RECADO: Record<
+  'texto' | 'voz',
+  Record<Exclude<MotivoRecusa, 'vazio' | 'anexo-em-voo'>, string>
+> = {
   texto: {
     compactando: 'compactando — sua mensagem continua aqui e sai quando a barra sumir',
     'envio-em-voo':
@@ -63,6 +77,9 @@ export function abrePorta(entrada: {
   texto?: string;
   /** Há arquivo retido no composer, esperando o toque de enviar. */
   temAnexo?: boolean;
+  /** Um upload já está em voo. É a fase da máquina do ANEXO — a de texto não se
+   *  move durante uma subida, então `faseEnvio` não cobre este caso. */
+  anexoEmVoo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';
@@ -84,6 +101,12 @@ export function abrePorta(entrada: {
   // o campo, então a recusa devolve o texto em vez de engoli-lo.
   if (entrada.faseEnvio === 'enviando' || entrada.faseEnvio === 'aceito') {
     return { libera: false, motivo: 'envio-em-voo', recado: recado['envio-em-voo'] };
+  }
+  // A trava do duplo envio de arquivo, que a máquina do anexo já fazia CALADA.
+  // Ela continua lá como defesa (o `disabled` do botão pode sumir num
+  // re-render), mas quem responde ao toque do Rica é esta linha.
+  if (entrada.anexoEmVoo) {
+    return { libera: false, motivo: 'anexo-em-voo', recado: RECADO_ANEXO_EM_VOO };
   }
   return { libera: true };
 }
@@ -109,6 +132,7 @@ export type EfeitoEnvio = {
 export function preparaEnvio(entrada: {
   texto?: string;
   temAnexo?: boolean;
+  anexoEmVoo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';

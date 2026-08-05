@@ -112,24 +112,18 @@ export function BotaoAnexo({
 
 export type PainelAnexoProps = {
   estado: EstadoAnexo;
-  /** O texto digitado AGORA — vira o `caption` do arquivo. */
-  legenda: string;
   fecharGaveta: () => void;
-  enviar: (arquivo: File, caption: string) => Promise<boolean>;
-  /** Chamado só quando o arquivo chegou ao agente: o campo esvazia, igual ao
-   *  envio de texto. Num 422 o texto FICA — perder a legenda porque o arquivo
-   *  era grande demais seria cobrar duas vezes pelo mesmo erro. */
-  aoEnviar: () => void;
+  /** Retém o arquivo e para por aí. Quem sobe é o botão de enviar, com a
+   *  legenda que o Rica ainda vai escrever. */
+  escolher: (arquivo: File) => void;
   botaoRef: RefObject<HTMLButtonElement | null>;
 };
 
 /** Véu + gaveta + o input escondido. Mora FORA do `form` (ver o cabeçalho). */
 export function PainelAnexo({
   estado,
-  legenda,
   fecharGaveta,
-  enviar,
-  aoEnviar,
+  escolher,
   botaoRef,
 }: PainelAnexoProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -156,18 +150,17 @@ export function PainelAnexo({
     input.click();
   }
 
-  async function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
+  function aoEscolherArquivo(evento: React.ChangeEvent<HTMLInputElement>) {
     const arquivo = evento.target.files?.[0];
     // Zerar o valor SEMPRE: sem isto, escolher o mesmo arquivo duas vezes
     // seguidas não dispara `change` na segunda, e o botão parece morto.
     evento.target.value = '';
     if (!arquivo) return;
-    // ESCOLHER VOLTOU A SER ENVIAR — recuo deliberado de 05/08, não desenho.
-    // A retenção (`controle.escolher`) e a miniatura estão prontas e provadas,
-    // mas quem despacha o par arquivo+legenda é a etapa 4; enquanto ela não
-    // chega, reter deixaria o Rica com a foto parada na tela e sem caminho até
-    // o agente. Religar isto é uma linha, e é a primeira coisa da etapa 4.
-    if (await enviar(arquivo, legenda)) aoEnviar();
+    // ESCOLHER NÃO SOBE NADA. O arquivo para aqui, vira miniatura, e o Rica
+    // escreve a legenda antes de despachar — que era o pedido original: "a
+    // imagem tem que parar no chat, eu poder escrever alguma coisa, depois num
+    // botão que eu possa enviar". Quem sobe é o botão de enviar do composer.
+    escolher(arquivo);
   }
 
   return (
@@ -267,7 +260,7 @@ export function AvisoAnexo({
   const erro = estado.fase === 'erro';
   const texto =
     estado.fase === 'enviando'
-      ? `Enviando ${estado.nome}…`
+      ? `Enviando ${estado.arquivo.name}…`
       : erro
         ? `${estado.nome}: ${estado.motivo}`
         : `${estado.nome} entregue`;
@@ -292,7 +285,9 @@ export function AvisoAnexo({
         {texto}
       </span>
       {/* Só o erro se dispensa: o "enviando" acaba sozinho e o sucesso some no
-          prazo. Botão para fechar algo que já ia fechar é controle a mais. */}
+          prazo. Botão para fechar algo que já ia fechar é controle a mais.
+          Dispensar fecha o RECADO e não solta o arquivo — desistir da foto é o
+          × da miniatura, que é outro gesto e está a um dedo daqui. */}
       {erro ? (
         <button
           type="button"

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ErroAnexo, type RespostaAnexo } from './anexo.ts';
-import { PRAZO_SUCESSO_MS, createControleAnexo } from './usa-anexo.ts';
+import { PRAZO_SUCESSO_MS, createControleAnexo, type ControleAnexo } from './usa-anexo.ts';
 
 type CallbackTimer = () => void;
 
@@ -46,6 +46,14 @@ function respostaOk(kind: RespostaAnexo['kind'] = 'image'): RespostaAnexo {
   };
 }
 
+/** O caminho real do composer, em dois tempos: escolher retém, o botão de enviar
+ *  despacha o que está na mão. Nenhum chamador passa o `File` para o `enviar` —
+ *  quem o guarda é a máquina. */
+function retemEnvia(controle: ControleAnexo, arq: File, caption = ''): Promise<boolean> {
+  controle.escolher(arq);
+  return controle.enviar(caption);
+}
+
 // ---- gaveta --------------------------------------------------------------
 
 test('a gaveta nasce fechada e alterna', () => {
@@ -69,17 +77,31 @@ test('fecharGaveta é idempotente e não avisa à toa', () => {
   assert.equal(avisos, 2);
 });
 
-test('abrir a gaveta apaga o erro que já foi lido', async () => {
-  const controle = createControleAnexo('a', {
-    subir: async () => {
-      throw new ErroAnexo('mime não suportado');
-    },
-  });
-  await controle.enviar(arquivo(), '');
+test('abrir a gaveta apaga o erro que já foi lido', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.escolher(new File([new Uint8Array(8)], 'x.exe', { type: '' }));
   assert.equal(controle.getEstado().fase, 'erro');
   controle.alternarGaveta();
   assert.equal(controle.getEstado().fase, 'ocioso');
   assert.equal(controle.getEstado().gaveta, true);
+});
+
+/** O outro lado da mesma tecla: apagar o RECADO não pode apagar o ARQUIVO. Quem
+ *  abre a gaveta e desiste no picker volta com a foto ainda na mão. */
+test('abrir a gaveta depois de um upload falho não solta o arquivo', async () => {
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      throw new ErroAnexo('imagem maior que 10MB', 422);
+    },
+  });
+  const foto = arquivo('grande.png');
+  await retemEnvia(controle, foto);
+  assert.equal(controle.getEstado().fase, 'erro');
+
+  controle.alternarGaveta();
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'escolhido', 'o recado saiu, mas a foto tinha de ficar');
+  assert.equal(estado.fase === 'escolhido' && estado.arquivo, foto);
 });
 
 test('a gaveta não reabre no meio de um envio', async () => {
@@ -87,7 +109,7 @@ test('a gaveta não reabre no meio de um envio', async () => {
   const controle = createControleAnexo('a', {
     subir: () => new Promise<RespostaAnexo>((resolve) => (soltar = resolve)),
   });
-  const emVoo = controle.enviar(arquivo(), '');
+  const emVoo = retemEnvia(controle, arquivo());
   controle.alternarGaveta();
   assert.equal(controle.getEstado().gaveta, false);
   soltar(respostaOk());
@@ -157,11 +179,42 @@ test('escolher não atropela um arquivo em voo', async () => {
   const controle = createControleAnexo('a', {
     subir: () => new Promise<RespostaAnexo>((resolve) => (soltar = resolve)),
   });
-  const emVoo = controle.enviar(arquivo(), '');
+  const emVoo = retemEnvia(controle, arquivo());
   controle.escolher(arquivo('outra.png'));
   assert.equal(controle.getEstado().fase, 'enviando');
   soltar(respostaOk());
   await emVoo;
+});
+
+/** A miniatura não pode fechar quando o upload começa: fechar diria ao olho que
+ *  a foto já foi, e num 422 não sobraria o que reenviar. */
+test('o arquivo continua na mão enquanto sobe', async () => {
+  let soltar!: (r: RespostaAnexo) => void;
+  const controle = createControleAnexo('a', {
+    subir: () => new Promise<RespostaAnexo>((resolve) => (soltar = resolve)),
+  });
+  const foto = arquivo('subindo.png');
+  const emVoo = retemEnvia(controle, foto);
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'enviando');
+  assert.equal(estado.fase === 'enviando' && estado.arquivo, foto);
+  assert.equal(estado.fase === 'enviando' && estado.especie, 'image');
+  soltar(respostaOk());
+  await emVoo;
+});
+
+test('sem arquivo na mão, enviar não toca na rede', async () => {
+  let subidas = 0;
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      subidas += 1;
+      return respostaOk();
+    },
+  });
+  assert.equal(await controle.enviar('só texto'), false);
+  assert.equal(subidas, 0);
+  assert.equal(controle.getEstado().fase, 'ocioso', 'gesto sem anexo não move a máquina do anexo');
 });
 
 /** Um arquivo por vez: escolher de novo troca o retido, não empilha. */
@@ -182,6 +235,64 @@ test('limpar solta o anexo retido', () => {
   assert.equal(controle.getEstado().fase, 'ocioso');
 });
 
+/**
+ * A metade do "nada evapora" que o texto não cobre. Num 422 de tamanho o arquivo
+ * tem de continuar na mão: soltá-lo obrigaria o Rica a escolher a foto de novo
+ * só para ler por que ela não subiu — cobrar duas vezes pelo mesmo erro.
+ */
+test('o erro de upload devolve o arquivo à mão, com o recado ao lado', async () => {
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      throw new ErroAnexo('imagem maior que 10MB', 422);
+    },
+  });
+  const foto = arquivo('grande.png');
+  await retemEnvia(controle, foto, 'olha o rodapé');
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'erro');
+  assert.equal(estado.fase === 'erro' && estado.motivo, 'imagem maior que 10MB');
+  assert.equal(
+    estado.fase === 'erro' && estado.retido?.arquivo,
+    foto,
+    'a foto sumiu da tela junto com o não — é o descarte silencioso com outra roupa',
+  );
+});
+
+/** O outro erro não retém nada, e é o certo: um `.exe` não sobe nem tentando, e
+ *  guardá-lo deixaria na tela uma foto com botão de enviar que só sabe recusar. */
+test('o erro da validação não retém nada', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.escolher(new File([new Uint8Array(8)], 'instalador.exe', { type: '' }));
+  const estado = controle.getEstado();
+  assert.equal(estado.fase === 'erro' && estado.retido, null);
+});
+
+/** Dois gestos, dois significados. Dispensar o aviso é "li"; o × da miniatura é
+ *  "desisti". Fazer o primeiro soltar o arquivo mataria a foto por um toque que
+ *  só falava do recado. */
+test('dispensar o aviso fecha o recado e devolve o arquivo a escolhido', async () => {
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      throw new ErroAnexo('recusado');
+    },
+  });
+  const foto = arquivo('foto.png');
+  await retemEnvia(controle, foto);
+  controle.dispensarAviso();
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'escolhido');
+  assert.equal(estado.fase === 'escolhido' && estado.arquivo, foto);
+});
+
+test('dispensar o aviso de uma recusa de validação volta a ocioso', () => {
+  const controle = createControleAnexo('a', { subir: async () => respostaOk() });
+  controle.escolher(new File([new Uint8Array(8)], 'x.exe', { type: '' }));
+  controle.dispensarAviso();
+  assert.equal(controle.getEstado().fase, 'ocioso');
+});
+
 test('descartado não retém mais nada', () => {
   const controle = createControleAnexo('a', { subir: async () => respostaOk() });
   controle.dispose();
@@ -191,21 +302,19 @@ test('descartado não retém mais nada', () => {
 
 // ---- envio ---------------------------------------------------------------
 
-test('o envio percorre enviando → sucesso e fecha a gaveta', async () => {
+test('o envio percorre escolhido → enviando → sucesso', async () => {
   const relogio = relogioFake();
   const controle = createControleAnexo('a', {
     subir: async () => respostaOk('video'),
     agendar: relogio.agendar,
     cancelar: relogio.cancelar,
   });
-  controle.alternarGaveta();
   const fases: string[] = [];
   controle.subscribe(() => fases.push(controle.getEstado().fase));
 
-  const ok = await controle.enviar(arquivo('clipe.mp4'), 'olha isto');
+  const ok = await retemEnvia(controle, arquivo('clipe.mp4'), 'olha isto');
   assert.equal(ok, true);
-  assert.deepEqual(fases, ['enviando', 'sucesso']);
-  assert.equal(controle.getEstado().gaveta, false);
+  assert.deepEqual(fases, ['escolhido', 'enviando', 'sucesso']);
 });
 
 test('o sucesso some sozinho — confirmação não mora na tela', async () => {
@@ -215,7 +324,7 @@ test('o sucesso some sozinho — confirmação não mora na tela', async () => {
     agendar: relogio.agendar,
     cancelar: relogio.cancelar,
   });
-  await controle.enviar(arquivo(), '');
+  await retemEnvia(controle, arquivo());
   assert.equal(controle.getEstado().fase, 'sucesso');
   relogio.avancar(PRAZO_SUCESSO_MS - 1);
   assert.equal(controle.getEstado().fase, 'sucesso');
@@ -232,8 +341,8 @@ test('duplo toque não manda o arquivo duas vezes', async () => {
       return new Promise<RespostaAnexo>((resolve) => (soltar = resolve));
     },
   });
-  const primeiro = controle.enviar(arquivo(), '');
-  const segundo = await controle.enviar(arquivo(), '');
+  const primeiro = retemEnvia(controle, arquivo());
+  const segundo = await controle.enviar('');
   assert.equal(segundo, false);
   assert.equal(chamadas, 1);
   soltar(respostaOk());
@@ -246,7 +355,7 @@ test('a frase do backend chega inteira ao estado de erro', async () => {
       throw new ErroAnexo('imagem maior que 10MB', 422);
     },
   });
-  const ok = await controle.enviar(arquivo('grande.png'), 'legenda');
+  const ok = await retemEnvia(controle, arquivo('grande.png'), 'legenda');
   assert.equal(ok, false);
   const estado = controle.getEstado();
   assert.equal(estado.fase, 'erro');
@@ -260,7 +369,7 @@ test('erro sem ErroAnexo ainda diz alguma coisa — nunca um "falhou" mudo', asy
       throw new Error('boom interno');
     },
   });
-  await controle.enviar(arquivo(), '');
+  await retemEnvia(controle, arquivo());
   const estado = controle.getEstado();
   assert.equal(estado.fase === 'erro' && estado.motivo, 'boom interno');
 });
@@ -271,7 +380,7 @@ test('erro sem mensagem nenhuma ganha frase padrão', async () => {
       throw new Error('');
     },
   });
-  await controle.enviar(arquivo(), '');
+  await retemEnvia(controle, arquivo());
   const estado = controle.getEstado();
   assert.equal(estado.fase === 'erro' && estado.motivo, 'Não foi possível enviar o arquivo.');
 });
@@ -287,9 +396,10 @@ test('depois de erro dá para tentar de novo', async () => {
     agendar: relogio.agendar,
     cancelar: relogio.cancelar,
   });
-  await controle.enviar(arquivo(), '');
+  await retemEnvia(controle, arquivo());
   falhar = false;
-  assert.equal(await controle.enviar(arquivo(), ''), true);
+  // Sem passar o arquivo de novo: ele nunca saiu da mão.
+  assert.equal(await controle.enviar(''), true);
   assert.equal(controle.getEstado().fase, 'sucesso');
 });
 
@@ -301,7 +411,7 @@ test('a legenda digitada chega ao upload', async () => {
       return respostaOk();
     },
   });
-  await controle.enviar(arquivo(), 'compara com o print anterior');
+  await retemEnvia(controle, arquivo(), 'compara com o print anterior');
   assert.equal(vista, 'compara com o print anterior');
 });
 
@@ -313,7 +423,7 @@ test('o slug do controle é o que vai pro upload', async () => {
       return respostaOk();
     },
   });
-  await controle.enviar(arquivo(), '');
+  await retemEnvia(controle, arquivo());
   assert.equal(vista, 'minha-agente');
 });
 
@@ -324,9 +434,9 @@ test('descartado não publica mais nada nem dispara timer órfão', async () => 
     agendar: relogio.agendar,
     cancelar: relogio.cancelar,
   });
-  await controle.enviar(arquivo(), '');
+  await retemEnvia(controle, arquivo());
   controle.dispose();
   relogio.avancar(PRAZO_SUCESSO_MS * 2);
   assert.equal(controle.getEstado().fase, 'sucesso');
-  assert.equal(await controle.enviar(arquivo(), ''), false);
+  assert.equal(await controle.enviar(''), false);
 });

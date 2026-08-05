@@ -24,6 +24,13 @@ import {
  *   arquivo duas vezes ao agente.
  * - `erro` carrega a FRASE do backend, não um código. O `detail` do 422 diz se
  *   foi o tipo ou o tamanho; sem ele o Rica tenta de novo às cegas.
+ *
+ * O ARQUIVO ATRAVESSA AS FASES INTEIRO. `escolhido`, `enviando` e o `erro` de
+ * upload seguram o mesmo `File` — ele muda de fase, nunca evapora. Sem isso, um
+ * 422 de tamanho apagaria a foto da tela e o Rica teria de escolhê-la de novo
+ * para ler o motivo pelo qual ela não subiu. O único `erro` sem arquivo na mão é
+ * o da validação na escolha, onde reter seria guardar uma promessa falsa: aquele
+ * arquivo não sobe nem tentando.
  * - `sucesso` some sozinho. Confirmação que fica na tela vira ruído — o arquivo
  *   já aparece no feed, este aviso só cobre o intervalo entre soltar o arquivo
  *   e ele existir por lá.
@@ -34,15 +41,30 @@ import {
  * anexo para casar, e inventar um `nao-confirmado` sem nada que o resolvesse
  * deixaria um estado do qual não se sai.
  */
+/** O arquivo em mãos. Fica INTEIRO no estado: a miniatura precisa dele para o
+ *  preview e o despacho precisa dele para subir — guardar só o nome obrigaria a
+ *  pedir o arquivo de volta ao input, que já foi zerado. */
+export type Retido = { arquivo: File; especie: EspecieAnexo };
+
 export type FaseAnexo =
   | { fase: 'ocioso' }
-  /** O arquivo fica AQUI, inteiro: a miniatura precisa dele para o preview e o
-   *  despacho precisa dele para subir. Guardar só o nome obrigaria a pedir o
-   *  arquivo de volta ao input, que já foi zerado. */
-  | { fase: 'escolhido'; arquivo: File; especie: EspecieAnexo }
-  | { fase: 'enviando'; nome: string }
-  | { fase: 'erro'; nome: string; motivo: string }
+  | ({ fase: 'escolhido' } & Retido)
+  | ({ fase: 'enviando' } & Retido)
+  /** `retido` é `null` só quando a recusa veio da validação na escolha — ali não
+   *  há arquivo enviável para segurar. Vindo de um upload que falhou, o arquivo
+   *  continua na mão e o próximo toque em enviar é nova tentativa. */
+  | { fase: 'erro'; nome: string; motivo: string; retido: Retido | null }
   | { fase: 'sucesso'; nome: string; especie: EspecieAnexo };
+
+/** O que a miniatura mostra e o que a porta conta como gesto — a pergunta "tem
+ *  arquivo na mão?" atravessa três fases e não se responde por uma só. */
+export function arquivoRetido(estado: FaseAnexo): Retido | null {
+  if (estado.fase === 'escolhido' || estado.fase === 'enviando') {
+    return { arquivo: estado.arquivo, especie: estado.especie };
+  }
+  if (estado.fase === 'erro') return estado.retido;
+  return null;
+}
 
 /**
  * A gaveta mora no MESMO estado do envio porque as duas coisas se cruzam: a
@@ -71,13 +93,18 @@ export type ControleAnexo = {
   /** Retém o arquivo escolhido, já validado. Não sobe nada — quem sobe é o
    *  `enviar`, no toque do botão. */
   escolher(arquivo: File): void;
-  /** `true` quando o arquivo chegou ao agente — é o sinal para o composer
-   *  limpar o campo de texto, que virou legenda. Limpar antes seria perder o
-   *  texto num 422 de tamanho. */
-  enviar(arquivo: File, caption: string): Promise<boolean>;
+  /** Sobe o arquivo que está na mão, com o texto do composer como legenda. Não
+   *  recebe o `File` de fora porque quem o guarda é esta máquina — pedi-lo de
+   *  volta ao chamador abriria a porta para subir um arquivo diferente do que a
+   *  miniatura está mostrando. `true` quando ele chegou ao agente, que é o sinal
+   *  para o composer esvaziar o campo. */
+  enviar(caption: string): Promise<boolean>;
   alternarGaveta(): void;
   fecharGaveta(): void;
   limpar(): void;
+  /** Fecha o recado sem soltar o arquivo — quem dispensa o aviso está dizendo
+   *  "li", não "desisti". Desistir é o × da miniatura, que chama `limpar`. */
+  dispensarAviso(): void;
   dispose(): void;
 };
 
@@ -128,29 +155,40 @@ export function createControleAnexo(
       // (ver a nota do `enviar`): quem cancelou o picker sem escolher nada
       // continua com a gaveta aberta, que é onde ele estava.
       if (!veredito.ok) {
-        publicar({ fase: 'erro', nome: arquivo.name, motivo: veredito.motivo, gaveta: false });
+        // `retido: null` — este arquivo não sobe nem tentando, e guardá-lo seria
+        // deixar na tela uma foto com botão de enviar que só sabe recusar.
+        publicar({
+          fase: 'erro',
+          nome: arquivo.name,
+          motivo: veredito.motivo,
+          retido: null,
+          gaveta: false,
+        });
         return;
       }
       publicar({ fase: 'escolhido', arquivo, especie: veredito.especie, gaveta: false });
     },
 
-    async enviar(arquivo, caption) {
+    async enviar(caption) {
       // A trava do duplo envio mora aqui e não só no `disabled` do botão: o
       // `disabled` some se o React re-renderizar por outro motivo, e o input
       // de arquivo também dispara `change` por caminhos que não passam pelo
-      // clique (arrastar, por exemplo).
+      // clique (arrastar, por exemplo). Ela é MUDA de propósito — quem responde
+      // ao toque do Rica é a porta (`anexo-em-voo`), que roda antes daqui.
       if (descartado || estado.fase === 'enviando') return false;
+      const retido = arquivoRetido(estado);
+      // Sem arquivo na mão não há o que mandar. Não é recusa a explicar: é
+      // chamada que não devia existir, porque quem pergunta se existe gesto é a
+      // porta, no composer.
+      if (!retido) return false;
       limparTimer();
-      // A gaveta fecha aqui, e não no clique do item: fechar no clique e só
-      // então abrir o picker faria a gaveta piscar de volta se o usuário
-      // cancelasse o picker sem escolher nada.
-      publicar({ fase: 'enviando', nome: arquivo.name, gaveta: false });
+      publicar({ fase: 'enviando', ...retido, gaveta: false });
       try {
-        const resposta = await subir(agentSlug, arquivo, caption);
+        const resposta = await subir(agentSlug, retido.arquivo, caption);
         if (descartado) return true;
         publicar({
           fase: 'sucesso',
-          nome: arquivo.name,
+          nome: retido.arquivo.name,
           especie: resposta.kind,
           gaveta: estado.gaveta,
         });
@@ -170,7 +208,12 @@ export function createControleAnexo(
             : erro instanceof Error && erro.message
               ? erro.message
               : 'Não foi possível enviar o arquivo.';
-        publicar({ fase: 'erro', nome: arquivo.name, motivo, gaveta: estado.gaveta });
+        // O ARQUIVO NÃO EVAPORA NO ERRO. Ele volta para a mão com o recado ao
+        // lado: a miniatura continua na tela e o próximo toque em enviar é uma
+        // nova tentativa, com a mesma foto e a mesma legenda. Soltá-lo aqui
+        // cobraria duas vezes pelo mesmo 422 — escolher o arquivo de novo só
+        // para ler por que ele não subiu.
+        publicar({ fase: 'erro', nome: retido.arquivo.name, motivo, retido, gaveta: estado.gaveta });
         return false;
       }
     },
@@ -181,8 +224,15 @@ export function createControleAnexo(
       // rodada, e um menu que abre para nada é o botão morto da §9.
       if (descartado || estado.fase === 'enviando') return;
       // Abrir a gaveta APAGA o erro anterior. Ele já foi lido — quem está
-      // escolhendo outro arquivo não precisa da recusa do anterior na tela.
-      const proximaFase: FaseAnexo = estado.fase === 'erro' ? { fase: 'ocioso' } : estado;
+      // escolhendo outro arquivo não precisa da recusa do anterior na tela. O
+      // que não se apaga é o ARQUIVO: quem abriu a gaveta e desistiu no picker
+      // volta com a foto ainda na mão, não com o composer vazio.
+      const proximaFase: FaseAnexo =
+        estado.fase !== 'erro'
+          ? estado
+          : estado.retido
+            ? { fase: 'escolhido', ...estado.retido }
+            : { fase: 'ocioso' };
       publicar({ ...proximaFase, gaveta: !estado.gaveta });
     },
 
@@ -198,6 +248,17 @@ export function createControleAnexo(
       publicar({ fase: 'ocioso', gaveta: estado.gaveta });
     },
 
+    dispensarAviso() {
+      if (descartado || estado.fase !== 'erro') return;
+      limparTimer();
+      const retido = estado.retido;
+      publicar(
+        retido
+          ? { fase: 'escolhido', ...retido, gaveta: estado.gaveta }
+          : { fase: 'ocioso', gaveta: estado.gaveta },
+      );
+    },
+
     dispose() {
       if (descartado) return;
       descartado = true;
@@ -210,10 +271,11 @@ export function createControleAnexo(
 export function usaAnexo(agentSlug: string): {
   estado: EstadoAnexo;
   escolher: (arquivo: File) => void;
-  enviar: (arquivo: File, caption: string) => Promise<boolean>;
+  enviar: (caption: string) => Promise<boolean>;
   alternarGaveta: () => void;
   fecharGaveta: () => void;
   limpar: () => void;
+  dispensarAviso: () => void;
 } {
   const controle = useMemo(() => createControleAnexo(agentSlug), [agentSlug]);
   const estado = useSyncExternalStore(
@@ -233,5 +295,6 @@ export function usaAnexo(agentSlug: string): {
     alternarGaveta: controle.alternarGaveta,
     fecharGaveta: controle.fecharGaveta,
     limpar: controle.limpar,
+    dispensarAviso: controle.dispensarAviso,
   };
 }

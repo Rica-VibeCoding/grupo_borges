@@ -43,7 +43,7 @@ import { fetchAgentPainel, patchAgentEffort } from '@grupo_borges/cockpit-core/a
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
-import { usaAnexo } from '../../lib/usa-anexo';
+import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
 import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
@@ -109,6 +109,9 @@ export function Composer({
   // devolve `tmux_delivered` e o próprio arquivo aparece no feed — não existe
   // eco de anexo para casar. Ver o cabeçalho de `lib/usa-anexo.ts`.
   const anexo = usaAnexo(agentSlug);
+  // O arquivo na mão atravessa três fases (`escolhido`, `enviando` e o `erro`
+  // de upload) — por isso a pergunta não se responde por uma fase só.
+  const retidoAnexo = arquivoRetido(anexo.estado);
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
   // devolve o foco ao botão que abriu.
@@ -132,11 +135,15 @@ export function Composer({
   // propósito: ela descreve um impedimento do INSTANTE, não um erro a ser
   // reconhecido — quando o motivo passa, o aviso vai junto.
   const [avisoDaPorta, setAvisoDaPorta] = useState<string | null>(null);
+  const anexoEmVoo = anexo.estado.fase === 'enviando';
   useEffect(() => {
-    if (!travaCompact && faseLocal !== 'enviando' && faseLocal !== 'aceito') {
+    // A lista é a dos IMPEDIMENTOS, e o anexo em voo entrou nela junto com o
+    // recado dele. Sem esta linha o "ainda está subindo" ficaria na tela depois
+    // que o arquivo já chegou — aviso que sobrevive ao motivo vira mentira.
+    if (!travaCompact && faseLocal !== 'enviando' && faseLocal !== 'aceito' && !anexoEmVoo) {
       setAvisoDaPorta(null);
     }
-  }, [travaCompact, faseLocal]);
+  }, [travaCompact, faseLocal, anexoEmVoo]);
 
   useEffect(() => {
     if (estadoCompact.fase === 'concluindo' || estadoCompact.fase === 'sem-retorno') {
@@ -253,18 +260,47 @@ export function Composer({
       ? gravador.impedimento ?? null
       : falhaDaFala;
 
-  async function enviar(corpo: string) {
+  /**
+   * `retomada` é o "Reenviar"/"Tentar de novo" da linha de estado: ali o gesto é
+   * o TEXTO que ficou pendurado, e nunca o anexo — a foto na mão não é o que
+   * falhou, e mandá-la com a legenda de outra mensagem seria despachar algo que
+   * o Rica não pediu.
+   */
+  async function enviar(corpo: string, retomada = false) {
     // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
     // três `return` mudos recusavam DEPOIS de `setTexto('')` já ter rodado, e
     // em 05/08 uma mensagem do Rica morreu assim — sem requisição, sem aviso,
     // sem sobrar em lugar nenhum. Ver `porta-de-envio.ts`.
+    //
+    // O ANEXO PASSA POR AQUI, e é o que fecha o último buraco: antes ele subia
+    // pela gaveta, sem porta nenhuma, então foto durante o `/compact` cortava o
+    // resumo ao meio — exatamente o que a porta impede para o texto.
+    const anexar = retidoAnexo !== null && !retomada;
     const efeito = preparaEnvio({
       texto: corpo,
+      temAnexo: anexar,
+      // Só trava o gesto que LEVA o arquivo. Reenviar um texto pendurado
+      // enquanto uma foto sobe não duplica nada e não tem por que esperar.
+      anexoEmVoo: anexar && anexoEmVoo,
       compactando: travaCompact,
       faseEnvio: faseLocal,
     });
     setAvisoDaPorta(efeito.aviso);
     if (!efeito.despacha) return;
+    // UM GESTO, UMA ENTREGA: o arquivo sobe com o texto como legenda, no mesmo
+    // multipart. Não existe mensagem de texto separada — duas requisições dariam
+    // duas entregas ao tmux, e o agente veria a legenda antes ou depois do
+    // arquivo sem ordem garantida.
+    if (anexar) {
+      // Aqui o campo esvazia na ENTREGA, não no aceite. `limpaCampo` é do texto
+      // puro, onde esperar o POST deixaria o campo cheio durante a viagem e um
+      // segundo Enter duplicaria a mensagem; no anexo quem barra o segundo toque
+      // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
+      // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
+      // sozinho não cobre.
+      if (await anexo.enviar(corpo)) setTexto('');
+      return;
+    }
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
     // barra precisa nascer com o clique, não com o 200.
@@ -304,7 +340,7 @@ export function Composer({
       void envio.reenviar();
       return;
     }
-    void enviar(ultimoEnviado);
+    void enviar(ultimoEnviado, true);
   }
 
   const emAndamento = emTransito(fase);
@@ -354,11 +390,8 @@ export function Composer({
         {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
             baixo em vez de flutuar sobre ele, e o composer cresce. Fica fora do
             `emCaptura` de propósito — o anexo escolhido não some porque o
-            microfone abriu.
-
-            DORMENTE até a etapa 4: como escolher voltou a enviar na hora, a
-            fase `escolhido` não é alcançável e este nó fica fechado, com altura
-            zero. Não está quebrado — está esperando o despacho conjunto. */}
+            microfone abriu. Ela fica na tela do primeiro toque até a entrega,
+            atravessando a subida — ver o cabeçalho de `miniatura-anexo.tsx`. */}
         <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} />
 
         {emCaptura ? (
@@ -560,7 +593,10 @@ export function Composer({
                   <IconeOnda />
                 </button>
               )
-            ) : texto.trim() ? (
+            ) : texto.trim() || retidoAnexo ? (
+              // A FOTO SOZINHA JÁ É GESTO. Sem `retidoAnexo` aqui, anexar sem
+              // escrever legenda deixava o microfone no lugar do envio — a foto
+              // na tela e nenhum botão que a mandasse.
               <button
                 key="enviar"
                 type="submit"
@@ -659,19 +695,15 @@ export function Composer({
             do "+" e nunca é recortada pelo `overflow` da caixa. */}
         <PainelAnexo
           estado={anexo.estado}
-          // O texto digitado vira a LEGENDA do arquivo, igual ao ChatGPT: uma
-          // entrega só, não duas (o arquivo e depois um texto solto).
-          legenda={texto}
           fecharGaveta={anexo.fecharGaveta}
-          enviar={anexo.enviar}
-          aoEnviar={() => setTexto('')}
+          escolher={anexo.escolher}
           botaoRef={botaoAnexoRef}
         />
       </div>
 
       {/* O ESTADO DO ANEXO — subindo, recusado, entregue. Vem antes do aviso da
           voz porque é o gesto mais recente quando existe. */}
-      <AvisoAnexo estado={anexo.estado} aoDispensar={anexo.limpar} />
+      <AvisoAnexo estado={anexo.estado} aoDispensar={anexo.dispensarAviso} />
 
       {/* POR QUE NÃO SAIU. Antes desta faixa a recusa era um `return` mudo: o
           Rica tocava Enter, o campo esvaziava e a mensagem não existia mais em
