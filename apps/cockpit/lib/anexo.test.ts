@@ -248,13 +248,26 @@ test('404 e 409 têm recado próprio quando o backend não manda detail', async 
   }
 });
 
-test('200 com tmux_delivered falso não é sucesso', async () => {
+// `false` do backend é "não consegui provar", não "não entregou" — pane em turno
+// ativo nunca mostra a prova que o `send_message` espera, e o texto entra na fila
+// do CC do mesmo jeito. Então a frase não pode cantar sucesso NEM afirmar que o
+// agente ficou sem o arquivo: ela fica na incerteza e desaconselha o reenvio,
+// que é o único jeito de o Rica duplicar a entrega.
+test('200 com tmux_delivered falso não é sucesso, mas também não afirma que não chegou', async () => {
   await assert.rejects(
     enviaAnexo('a', arquivoReal('a.png', 'image/png'), '', {
       fetch: (async () =>
         respostaFake(200, { kind: 'image', tmux_delivered: false })) as unknown as typeof globalThis.fetch,
     }),
-    (erro: unknown) => erro instanceof ErroAnexo && /não recebeu/.test((erro as Error).message),
+    (erro: unknown) => {
+      if (!(erro instanceof ErroAnexo)) return false;
+      const frase = (erro as Error).message;
+      return (
+        /não deu para confirmar/.test(frase) &&
+        /[Nn]ão reenvie/.test(frase) &&
+        !/não recebeu|não chegou/.test(frase)
+      );
+    },
   );
 });
 

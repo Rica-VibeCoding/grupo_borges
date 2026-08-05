@@ -285,11 +285,23 @@ export async function enviaAnexo(
   }
 
   const dados = (await resposta.json()) as RespostaAnexo;
-  // Mesma regra do texto e da voz: `tmux_delivered: false` é o backend dizendo
-  // que o arquivo existe no disco mas o agente não foi avisado. Cantar sucesso
-  // aqui é o "enviado" mentiroso que o resto do composer existe para matar.
+  // `tmux_delivered: false` é o backend dizendo "NÃO CONSEGUI PROVAR", não "não
+  // entregou". O `send_message` só devolve `true` com prova observável no pane
+  // (input vazio ou linha transcrita, tetos de 8s e 6s), e pane em turno ativo
+  // nunca mostra essa prova — o texto entra na fila do CC do mesmo jeito.
+  // Medido em 04/08: 2 de 3 vídeos voltaram `false` e chegaram nas duas vezes,
+  // com o agente confirmando no pane.
+  //
+  // Daí a frase ser de INCERTEZA e não de falha, e desaconselhar o reenvio: o
+  // arquivo já está salvo com path válido, o agente alcança por ele, e reenviar
+  // duplica a entrega. Cantar sucesso continua fora de questão — a tela não
+  // afirma o que não sabe. Separar entregue / não confirmado / falhou é mudança
+  // de contrato do backend, e está na `tropa_task`, não aqui.
   if (dados.tmux_delivered === false) {
-    throw new ErroAnexo('O arquivo subiu, mas a sessão do agente não recebeu o aviso.', resposta.status);
+    throw new ErroAnexo(
+      'enviado, mas não deu para confirmar que o agente viu. Não reenvie: o arquivo já está salvo e o agente alcança por ele — reenviar duplica.',
+      resposta.status,
+    );
   }
   return dados;
 }
