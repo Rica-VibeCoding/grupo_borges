@@ -213,17 +213,32 @@ existiu.
 Uma etapa, um commit. Não misturar.
 
 0. **HEIC — as três camadas, e nenhuma sozinha basta.**
-   - **`accept`:** trocar `image/*` por `image/jpeg,image/png` em
-     `lib/anexo.ts:95`, **jpeg primeiro** (o primeiro convertível vence). Não
-     incluir `image/webp` — nenhuma fonte confirma que o CoreGraphics
-     transcodifica pra webp. **Nunca** `image/heic`.
+   - ~~**`accept`:** trocar `image/*` por `image/jpeg,image/png`~~ —
+     **REVOGADO em 05/08, e a razão importa.** O `image/*` **fica**. A MDN
+     amarra o wildcard à câmera na mesma frase — *"Many mobile devices also let
+     the user take a picture with the camera when this is used"* — e **não
+     documenta** o que acontece com lista de mimes concretos. O ganho da troca
+     era converter no cliente, e a camada 2 tornou isso dispensável; o risco era
+     perder a câmera do Rica, que é o uso real dele. Trocar seria pagar o certo
+     pelo incerto. (Divergência do Daniel, com fonte, e ele estava certo.)
+     **Nunca** `image/heic` no `accept` — isso continua valendo.
+   - **O que a camada 1 virou:** o front parava de recusar HEIC **antes de
+     subir**. A validação do cliente rodava primeiro e barrava a foto sem o
+     backend ter chance de converter — sem isso, as camadas 2 e 3 nunca eram
+     alcançadas.
    - **Backend aceita e converte:** `pillow-heif` na dependência, `image/heic` e
      `image/heif` em `_IMAGE_ALLOWED_MIMES`, conversão para JPEG na gravação
      junto do `exif_transpose` (preservando `icc_profile` — foto de iPhone é
      Display P3).
-   - **Validar por magic bytes, não por `file.type` nem extensão.** HEIC =
-     `66 74 79 70 68 65 69 63` no offset 4 (`ftyp`+`heic`). Já existe precedente
-     no arquivo: `agents.py:2314` sniffa PNG por assinatura.
+   - **Validar por magic bytes, não por `file.type` nem extensão** — e
+     **`ftyp` sozinho NÃO serve de assinatura de imagem**: HEIC e MP4 dividem o
+     mesmo box ISO-BMFF no offset 4, tanto que `_MOVIE_LEADING_BOXES` já usa
+     `data[4:8] == b"ftyp"` pra reconhecer **vídeo**. Sniffar só isso mandaria
+     todo vídeo pela porta da imagem, pro Pillow, gravado com extensão errada. O
+     que separa os dois é a **brand no offset 8**, e a lista boa é a de
+     `pillow_heif.misc.get_file_mimetype` — que é quem o `is_supported` da
+     própria lib consulta. Precedente de sniff no arquivo: `agents.py:2314`
+     (PNG). (Risco que o plano não tinha; achado do Daniel.)
 
    Teste com HEIC de verdade. É a **etapa 0** porque sem ela as outras entregam
    uma tela bonita que recusa a foto dele.
