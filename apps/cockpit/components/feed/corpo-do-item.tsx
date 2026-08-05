@@ -26,6 +26,8 @@ import { DelegacaoView } from './delegacoes.tsx';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
+import { leAnexoImagem } from './anexo-imagem';
+import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
 
 type Props = { item: ItemDoFeed; lookup?: ToolResultLookup; agentSlug?: string };
 
@@ -134,7 +136,11 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
         />
       );
 
-    case 'user':
+    case 'user': {
+      const anexo = agentSlug ? leAnexoImagem(item.text) : null;
+      if (anexo && agentSlug) {
+        return <AnexoImagemView anexo={anexo} agentSlug={agentSlug} />;
+      }
       // Balão — ordem do Rica, 30/07: "o meu vai em balão, o de vcs fica
       // solto". `w-fit` segura a caixa no tamanho do texto dentro do
       // flex-column do feed; sem ele ela estica (`align-items: stretch` é o
@@ -153,6 +159,7 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
           <Fala texto={item.text} />
         </div>
       );
+    }
     case 'user-internal':
       return <Fala texto={item.text} tom="discreto" />;
     case 'meta-decision':
