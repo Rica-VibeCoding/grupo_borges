@@ -25,7 +25,7 @@ type CanarioStreamCacheOptions = {
   clearTimeoutFn?: ClearTimer;
 };
 
-export const CANARIO_STREAM_IDLE_TTL_MS = 5_000;
+export const CANARIO_STREAM_IDLE_TTL_MS = 30_000;
 
 export const INITIAL_CACHED_CANARIO_STREAM_STATE: CachedCanarioStreamState = {
   ...INITIAL_CANARIO_STREAM_STATE,
