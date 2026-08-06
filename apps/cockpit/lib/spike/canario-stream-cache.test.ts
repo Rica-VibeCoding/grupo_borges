@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
-import { createCanarioStreamCache } from './canario-stream-cache.ts';
+import {
+  CANARIO_STREAM_IDLE_TTL_MS,
+  createCanarioStreamCache,
+} from './canario-stream-cache.ts';
 import type { EventSourceLike } from './canario-stream-controller.ts';
 
 const MESSAGE = (JSON.parse(
@@ -16,15 +19,30 @@ const MESSAGE = (JSON.parse(
 
 function timers() {
   let nextHandle = 1;
-  const callbacks = new Map<number, () => void>();
+  let now = 0;
+  const callbacks = new Map<number, { at: number; callback: () => void }>();
   return {
-    setTimeout(callback: () => void): number {
+    setTimeout(callback: () => void, delayMs: number): number {
       const handle = nextHandle++;
-      callbacks.set(handle, callback);
+      callbacks.set(handle, { at: now + delayMs, callback });
       return handle;
     },
     clearTimeout(handle: number): void {
       callbacks.delete(handle);
+    },
+    advanceBy(delayMs: number): void {
+      const target = now + delayMs;
+      while (true) {
+        const next = [...callbacks.entries()]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((left, right) => left[1].at - right[1].at)[0];
+        if (!next) break;
+        const [handle, timer] = next;
+        callbacks.delete(handle);
+        now = timer.at;
+        timer.callback();
+      }
+      now = target;
     },
     pending: () => callbacks.size,
   };
@@ -56,10 +74,13 @@ function eventSources() {
   return { EventSource: FakeEventSource, instances };
 }
 
-test('cache por slug preserva histórico e conexão depois do unmount', () => {
+test('revisita dentro do TTL preserva histórico e reutiliza a conexão', () => {
   const clock = timers();
   const fake = eventSources();
-  const cache = createCanarioStreamCache();
+  const cache = createCanarioStreamCache({
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+  });
   const options = {
     slug: 'pavan',
     limit: 1000,
@@ -76,6 +97,8 @@ test('cache por slug preserva histórico e conexão depois do unmount', () => {
   fake.instances[0].emit('replay-end');
   unsubscribe();
 
+  clock.advanceBy(CANARIO_STREAM_IDLE_TTL_MS - 1);
+  assert.equal(fake.instances[0].closed, false);
   const revisita = cache.get(options);
   assert.equal(revisita, stream);
   assert.deepEqual(revisita.getSnapshot().messages, [MESSAGE]);
@@ -89,8 +112,35 @@ test('cache por slug preserva histórico e conexão depois do unmount', () => {
 
   unsubscribeAgain();
   unsubscribeOther();
-  cache.disposeAll();
+  clock.advanceBy(CANARIO_STREAM_IDLE_TTL_MS);
   assert.ok(fake.instances.every((source) => source.closed));
+  assert.equal(cache.size(), 0);
+  assert.equal(clock.pending(), 0);
+});
+
+test('último unsubscribe fecha o EventSource depois do TTL ocioso', () => {
+  const clock = timers();
+  const fake = eventSources();
+  const cache = createCanarioStreamCache({
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+  });
+  const stream = cache.get({
+    slug: 'pavan',
+    eventSourceConstructor: fake.EventSource,
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+  });
+  const unsubscribe = stream.subscribe(() => {});
+
+  unsubscribe();
+  clock.advanceBy(CANARIO_STREAM_IDLE_TTL_MS - 1);
+  assert.equal(fake.instances[0].closed, false);
+  assert.equal(cache.size(), 1);
+
+  clock.advanceBy(1);
+  assert.equal(fake.instances[0].closed, true, 'TTL chama EventSource.close()');
+  assert.equal(cache.size(), 0);
   assert.equal(clock.pending(), 0);
 });
 

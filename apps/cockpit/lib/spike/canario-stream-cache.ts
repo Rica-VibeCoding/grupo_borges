@@ -15,6 +15,18 @@ export type CachedCanarioStream = {
   dispose(): void;
 };
 
+type TimerHandle = number;
+type SetTimer = (callback: () => void, delayMs: number) => TimerHandle;
+type ClearTimer = (handle: TimerHandle) => void;
+
+type CanarioStreamCacheOptions = {
+  idleTtlMs?: number;
+  setTimeoutFn?: SetTimer;
+  clearTimeoutFn?: ClearTimer;
+};
+
+export const CANARIO_STREAM_IDLE_TTL_MS = 5_000;
+
 export const INITIAL_CACHED_CANARIO_STREAM_STATE: CachedCanarioStreamState = {
   ...INITIAL_CANARIO_STREAM_STATE,
   geracao: 0,
@@ -29,9 +41,16 @@ function streamKey(options: CachedCanarioStreamOptions): string {
   ]);
 }
 
-function createCachedStream(options: CachedCanarioStreamOptions): CachedCanarioStream {
+function createCachedStream(
+  options: CachedCanarioStreamOptions,
+  idleTtlMs: number,
+  schedule: SetTimer,
+  cancel: ClearTimer,
+  onDispose: () => void,
+): CachedCanarioStream {
   let controller: CanarioStreamController | null = null;
   let unsubscribeController: (() => void) | null = null;
+  let idleTimer: TimerHandle | undefined;
   let snapshot = INITIAL_CACHED_CANARIO_STREAM_STATE;
   let geracao = 0;
   let disposed = false;
@@ -66,32 +85,68 @@ function createCachedStream(options: CachedCanarioStreamOptions): CachedCanarioS
     });
   };
 
+  const cancelIdleDispose = () => {
+    if (idleTimer === undefined) return;
+    cancel(idleTimer);
+    idleTimer = undefined;
+  };
+
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    cancelIdleDispose();
+    stopController();
+    listeners.clear();
+    onDispose();
+  };
+
+  const scheduleIdleDispose = () => {
+    cancelIdleDispose();
+    idleTimer = schedule(() => {
+      idleTimer = undefined;
+      dispose();
+    }, idleTtlMs);
+  };
+
   return {
     getSnapshot: () => snapshot,
     subscribe(listener) {
       if (disposed) return () => {};
+      cancelIdleDispose();
       listeners.add(listener);
       startController();
-      return () => listeners.delete(listener);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        listeners.delete(listener);
+        if (listeners.size === 0) scheduleIdleDispose();
+      };
     },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      stopController();
-      listeners.clear();
-    },
+    dispose,
   };
 }
 
-export function createCanarioStreamCache() {
+export function createCanarioStreamCache(options: CanarioStreamCacheOptions = {}) {
   const entries = new Map<string, CachedCanarioStream>();
+  const idleTtlMs = options.idleTtlMs ?? CANARIO_STREAM_IDLE_TTL_MS;
+  const schedule: SetTimer =
+    options.setTimeoutFn ??
+    ((callback, delayMs) =>
+      setTimeout(callback, delayMs) as unknown as TimerHandle);
+  const cancel: ClearTimer =
+    options.clearTimeoutFn ??
+    ((handle) => clearTimeout(handle));
 
   return {
     get(options: CachedCanarioStreamOptions): CachedCanarioStream {
       const key = streamKey(options);
       const cached = entries.get(key);
       if (cached) return cached;
-      const stream = createCachedStream(options);
+      let stream: CachedCanarioStream;
+      stream = createCachedStream(options, idleTtlMs, schedule, cancel, () => {
+        if (entries.get(key) === stream) entries.delete(key);
+      });
       entries.set(key, stream);
       return stream;
     },
