@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next';
+import { fetchFleet } from '@grupo_borges/cockpit-core/api';
+import { FrotaProvider } from '@/components/shell/frota-provider';
 import { geistMono, geistSans } from './fonts';
 import './globals.css';
 
@@ -19,13 +21,16 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const fleet = await fetchFleet();
   return (
     // As duas classes publicam --font-geist-sans e --font-geist-mono, que são o
     // que os tokens --ck-font-* consomem. Sem elas os tokens caem no fallback de
     // sistema em silêncio: a tela renderiza, só não é a fonte do contrato.
     <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <FrotaProvider initialFleet={fleet}>{children}</FrotaProvider>
+      </body>
     </html>
   );
 }

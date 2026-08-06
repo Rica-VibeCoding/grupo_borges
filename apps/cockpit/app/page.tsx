@@ -1,7 +1,7 @@
 import type { Viewport } from 'next';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
-import { Tropa } from '@/components/shell/tropa';
+import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
 
 // Server Component de propósito: `fetchFleet` monta URL absoluta a partir de
 // `API_BACKEND_URL`, o que só resolve no servidor. No cliente o caminho é
@@ -78,7 +78,7 @@ export default async function Home() {
             </p>
           </header>
 
-          <Tropa agents={fleet.agents} agora={agora} />
+          <TropaAoVivo agora={agora} />
         </div>
       </div>
     </AppShell>

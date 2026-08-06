@@ -8,7 +8,7 @@ import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
 import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
-import { Tropa } from '@/components/shell/tropa';
+import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
 import { FeedDaConversa } from './feed-da-conversa';
 
 export const dynamic = 'force-dynamic';
@@ -160,7 +160,7 @@ export default async function AgentePage({
 
   return (
     <AppShell
-      nav={<Tropa agents={fleet.agents} slugSelecionado={slug} agora={agora} compacta />}
+      nav={<TropaAoVivo slugSelecionado={slug} agora={agora} compacta />}
       navAberta={navAberta}
       fecharNavHref={fecharHref}
       drawer={<Painel agente={agente} fecharHref={fecharHref} painelAberto={painelAberto} />}
