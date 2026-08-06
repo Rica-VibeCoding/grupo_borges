@@ -102,6 +102,110 @@ describe('rótulo de ação', () => {
   it('é voz ativa e diz o que acontece', () => {
     assert.equal(rotulaAcao('reenviar'), 'Mandar de novo');
     assert.equal(rotulaAcao('tentar-de-novo'), 'Tentar de novo');
+    assert.equal(rotulaAcao('destravar'), 'Destravar agente');
+  });
+});
+
+/**
+ * O canal bloqueado é a única coisa que sabe MAIS que a máquina de envio: ela
+ * não observou o eco, ele observou a recusa. Quando ele fala, a faixa troca a
+ * dúvida honesta por um diagnóstico com ação.
+ */
+describe('canal bloqueado — a faixa deixa de perguntar e passa a responder', () => {
+  const CANAL = {
+    mensagem: 'O campo de mensagem do agente está ocupado ou travado.',
+    recusasConsecutivas: 2,
+    bloqueadoHaSegundos: 47,
+  };
+
+  it('sem canal bloqueado, a dúvida honesta continua intacta', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário');
+    assert.match(a.frase ?? '', /não consegui confirmar/);
+    assert.deepEqual(a.acoes, ['reenviar', 'copiar']);
+  });
+
+  it('com o canal bloqueado, diz o motivo em vez de "não sei"', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', { canalBloqueado: CANAL });
+    assert.match(a.frase ?? '', /não entrou/);
+    assert.match(a.frase ?? '', /ocupado ou travado/);
+    assert.doesNotMatch(a.frase ?? '', /não consegui confirmar/);
+  });
+
+  it('tira o "mandar de novo" do amarelo: com o canal fechado o gesto não entrega', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', { canalBloqueado: CANAL });
+    assert.deepEqual(a.acoes, ['destravar', 'copiar']);
+  });
+
+  it('o filete continua âmbar — a decisão ainda é humana', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', { canalBloqueado: CANAL });
+    assert.equal(a.filete, 'var(--ck-state-attention)');
+    assert.equal(a.urgencia, 'assertive');
+  });
+
+  it('o anúncio leva o que não cabe na linha: contador e duração', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', { canalBloqueado: CANAL });
+    assert.match(a.anuncio, /2 tentativas seguidas/);
+    assert.match(a.anuncio, /47 segundos/);
+  });
+
+  /**
+   * O 409 `agent_pane_unavailable` — que é a recusa do driver, o caminho MAIS
+   * direto do canal bloqueado — cai em `falhou`, não no amarelo
+   * (`usa-envio.ts:371`: rejeição HTTP vira `falhar`). Cobrir só o amarelo
+   * deixaria mudo justamente o estado onde o bloqueio aparece primeiro.
+   */
+  it('o vermelho também ganha o motivo — é onde o 409 do canal cai', () => {
+    const a = aparenciaDe('falhou', 'Canário', { canalBloqueado: CANAL });
+    assert.match(a.frase ?? '', /ocupado ou travado/);
+    assert.equal(a.filete, 'var(--ck-state-fail)');
+  });
+
+  it('no vermelho o "tentar de novo" FICA — ali a mensagem não saiu, não duplica', () => {
+    const a = aparenciaDe('falhou', 'Canário', { canalBloqueado: CANAL });
+    assert.deepEqual(a.acoes, ['destravar', 'tentar-de-novo']);
+  });
+
+  /**
+   * Medido no canário em 05/08: com texto humano armado, o `/destrava` devolve
+   * `tmux_delivered: false` / `texto_armado_nao_recuperavel`. E
+   * `input_ocupado_ou_travado` é o motivo mais comum — logo é o caminho
+   * frequente, não a borda.
+   */
+  it('destrava que não resolveu FALA, em vez de deixar o botão mudo', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', {
+      canalBloqueado: CANAL,
+      destravaFalhou: true,
+    });
+    assert.match(a.frase ?? '', /destrava não resolveu/);
+    assert.match(a.frase ?? '', /terminal de Canário/);
+  });
+
+  it('e para de oferecer o botão que já provou não resolver', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', {
+      canalBloqueado: CANAL,
+      destravaFalhou: true,
+    });
+    assert.deepEqual(a.acoes, ['copiar']);
+    const v = aparenciaDe('falhou', 'Canário', {
+      canalBloqueado: CANAL,
+      destravaFalhou: true,
+    });
+    // No vermelho o "tentar de novo" fica: o Rica pode ter aberto o terminal e
+    // resolvido à mão entre um toque e outro.
+    assert.deepEqual(v.acoes, ['tentar-de-novo']);
+  });
+
+  it('sem bloqueio, um destrava velho não inventa frase nenhuma', () => {
+    const a = aparenciaDe('nao-confirmado', 'Canário', { destravaFalhou: true });
+    assert.match(a.frase ?? '', /não consegui confirmar/);
+    assert.deepEqual(a.acoes, ['reenviar', 'copiar']);
+  });
+
+  it('não contamina o caminho feliz — canal velho não fala por envio que deu certo', () => {
+    for (const fase of ['ocioso', 'enviando', 'aceito', 'confirmado'] as FaseEnvio[]) {
+      const com = aparenciaDe(fase, 'Canário', { canalBloqueado: CANAL });
+      assert.deepEqual(com, aparenciaDe(fase, 'Canário'), fase);
+    }
   });
 });
 

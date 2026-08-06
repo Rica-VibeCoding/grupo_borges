@@ -40,6 +40,8 @@
  * Módulo neutro: sem `'use client'`.
  */
 
+import { anuncioPara, frasePara, type CanalBloqueado } from './canal-entrega.ts';
+
 /** Nomes idênticos aos da §3.1 do contrato de dados. Não renomear. */
 export type FaseEnvio =
   | 'ocioso'
@@ -49,7 +51,7 @@ export type FaseEnvio =
   | 'nao-confirmado'
   | 'falhou';
 
-export type AcaoEnvio = 'reenviar' | 'copiar' | 'tentar-de-novo';
+export type AcaoEnvio = 'reenviar' | 'copiar' | 'tentar-de-novo' | 'destravar';
 
 export type AparenciaEnvio = {
   /** Cor do filete de 2px à esquerda. `null` = sem filete (só o confirmado). */
@@ -79,8 +81,27 @@ export type AparenciaEnvio = {
 export function aparenciaDe(
   fase: FaseEnvio,
   nomeDoAgente: string,
-  opcoes?: { emFila?: boolean },
+  opcoes?: {
+    emFila?: boolean;
+    canalBloqueado?: CanalBloqueado | null;
+    destravaFalhou?: boolean;
+  },
 ): AparenciaEnvio {
+  // O canal só tem direito de falar nos dois estados de insucesso. Num envio
+  // que deu certo ele seria memória velha de uma tentativa anterior — o estado
+  // é "desde a última recusa", não "agora", e contradizer um sucesso observado
+  // com um bloqueio já superado é a mentira de UI da §9 ao contrário.
+  const canal =
+    fase === 'nao-confirmado' || fase === 'falhou' ? (opcoes?.canalBloqueado ?? null) : null;
+  // O toque que não resolveu só significa alguma coisa ao lado do bloqueio que
+  // ele tentou abrir. Sozinho é um fato sobre uma tela que já passou.
+  const destravaMudo = canal !== null && opcoes?.destravaFalhou === true;
+  const fraseDoCanal = destravaMudo
+    ? `o destrava não resolveu — abra o terminal de ${nomeDoAgente}`
+    : canal
+      ? frasePara(canal)
+      : null;
+
   switch (fase) {
     case 'ocioso':
       return {
@@ -153,9 +174,15 @@ export function aparenciaDe(
         filete: 'var(--ck-state-attention)',
         assentada: false,
         fio: 'travado',
-        frase: 'não consegui confirmar se entrou — confira no chat antes de mandar de novo. Pode duplicar.',
-        acoes: ['reenviar', 'copiar'],
-        anuncio: `Envio não confirmado. Confira no chat de ${nomeDoAgente} antes de mandar de novo, pois a mensagem pode duplicar.`,
+        // Com o canal bloqueado o "mandar de novo" SAI: o back já sabe que a
+        // entrega foi recusada, então repetir o gesto não entrega — só ensina
+        // que o botão não funciona. Fica o que resolve (destravar) e o que
+        // resguarda (copiar).
+        frase: fraseDoCanal ?? 'não consegui confirmar se entrou — confira no chat antes de mandar de novo. Pode duplicar.',
+        acoes: destravaMudo ? ['copiar'] : canal ? ['destravar', 'copiar'] : ['reenviar', 'copiar'],
+        anuncio: canal
+          ? anuncioPara(canal, nomeDoAgente)
+          : `Envio não confirmado. Confira no chat de ${nomeDoAgente} antes de mandar de novo, pois a mensagem pode duplicar.`,
         urgencia: 'assertive',
       };
 
@@ -166,9 +193,19 @@ export function aparenciaDe(
         // esta mensagem não vive em lugar nenhum. Idêntico à §7.
         assentada: false,
         fio: 'nenhum',
-        frase: 'não saiu',
-        acoes: ['tentar-de-novo'],
-        anuncio: 'O envio falhou. A mensagem não saiu daqui.',
+        // "não saiu" é verdade, mas é só a metade que o front enxerga. O 409
+        // `agent_pane_unavailable` — a recusa do driver, que é o caminho mais
+        // direto do canal bloqueado — cai AQUI, e o back sabe por quê.
+        //
+        // Ao contrário do âmbar, o "tentar de novo" FICA: neste estado a
+        // mensagem comprovadamente não saiu, então repetir não duplica. A
+        // ordem é a do gesto — destravar primeiro, mandar depois.
+        frase: fraseDoCanal ?? 'não saiu',
+        acoes:
+          destravaMudo || !canal ? ['tentar-de-novo'] : ['destravar', 'tentar-de-novo'],
+        anuncio: canal
+          ? anuncioPara(canal, nomeDoAgente)
+          : 'O envio falhou. A mensagem não saiu daqui.',
         urgencia: 'assertive',
       };
   }
@@ -179,6 +216,9 @@ const ROTULO_ACAO: Record<AcaoEnvio, string> = {
   reenviar: 'Mandar de novo',
   copiar: 'Copiar texto',
   'tentar-de-novo': 'Tentar de novo',
+  // Diz em QUEM se mexe. "Destravar" sozinho, ao lado de uma mensagem que não
+  // entrou, se leria como destravar a mensagem.
+  destravar: 'Destravar agente',
 };
 
 export function rotulaAcao(acao: AcaoEnvio): string {

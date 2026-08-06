@@ -62,6 +62,7 @@ import {
   type Impedimento,
 } from './voz';
 import {
+  IconeCadeado,
   IconeCopiar,
   IconeDescartar,
   IconeEnviar,
@@ -69,6 +70,7 @@ import {
   IconeParar,
   IconeReenviar,
 } from './icones';
+import { usaCanalEntrega } from './usa-canal-entrega';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -80,6 +82,7 @@ const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.Reac
   reenviar: IconeReenviar,
   copiar: IconeCopiar,
   'tentar-de-novo': IconeReenviar,
+  destravar: IconeCadeado,
 };
 
 /** O `/compact` com argumentos (`/compact foca no deploy`) também é compact —
@@ -196,7 +199,13 @@ export function Composer({
   }
 
   const fase = faseLocal;
-  const aparencia = aparenciaDe(fase, agentName);
+  // Só os dois estados de insucesso perguntam ao back por quê. No caminho
+  // normal ninguém faz essa pergunta, e o `/painel` não é consultado.
+  const { canalBloqueado, destravaFalhou, destravar } = usaCanalEntrega(
+    agentSlug,
+    fase === 'nao-confirmado' || fase === 'falhou',
+  );
+  const aparencia = aparenciaDe(fase, agentName, { canalBloqueado, destravaFalhou });
 
   // ---- voz ----------------------------------------------------------------
   // O áudio termina na MESMA máquina de seis fases do texto, e isso não é
@@ -325,6 +334,14 @@ export function Composer({
   }
 
   function acionar(acao: AcaoEnvio) {
+    // Destravar não reenvia nada: abre o canal e devolve a faixa ao estado
+    // genérico, onde o botão de mandar de novo volta a existir. Juntar os dois
+    // gestos num toque mandaria o texto por um canal cuja abertura ainda não
+    // foi confirmada — que é o defeito, não o conserto.
+    if (acao === 'destravar') {
+      void destravar();
+      return;
+    }
     if (acao === 'copiar') {
       const moderno =
         typeof navigator !== 'undefined' && navigator.clipboard
