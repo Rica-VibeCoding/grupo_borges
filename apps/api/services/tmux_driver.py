@@ -342,6 +342,35 @@ _CLI_COMMANDS = {
     "codex": _codex_command,
 }
 
+#: Cerca de memória por sessão, espelhando `ze-shared/scripts/subir-frota.sh`.
+#: O slice é o teto do conjunto (`MemoryHigh=5G`/`MemoryMax=6G`); sem teto por
+#: sessão, uma só consome tudo e estrangula as outras. `MemoryHigh` é throttle,
+#: não kill — de propósito: `MemoryMax` faria o OOM killer escolher o maior
+#: processo do cgroup, que numa sessão com contexto grande é o próprio `claude`.
+#:
+#: Sem este prefixo a sessão relançada pelo painel nascia em `app.slice`, fora da
+#: cerca, e ficava assim até o próximo boot da VPS — foi o que deixou o `pavan`
+#: sem freio nenhum em 07/08/2026 e trocou throttle por OOM kill no meio de um
+#: fan-out. O boot da frota sempre embrulhou; o relaunch, não.
+_MEMORY_FENCE_SLICE = "borges-frota.slice"
+_MEMORY_HIGH_DEFAULT = "1500M"
+#: O pavan orquestra — faz fan-out de subagente, e subagente dele abre neto.
+#: Pior pico medido nos de execução: 701 MiB; num fan-out de 5 dele: 2410 MiB.
+_MEMORY_HIGH_POR_SESSAO = {"pavan": "3G"}
+
+
+def _memory_fence_prefix(session_name: str) -> str:
+    """Embrulho que prende o processo (e tudo que ele spawna) na cerca.
+
+    `session_name` só indexa um dicionário de literais — nada dele entra na
+    string do shell, então não há superfície de injeção aqui.
+    """
+    memory_high = _MEMORY_HIGH_POR_SESSAO.get(session_name, _MEMORY_HIGH_DEFAULT)
+    return (
+        f"systemd-run --user --scope --slice={_MEMORY_FENCE_SLICE} "
+        f"-p MemoryHigh={memory_high} -- "
+    )
+
 
 class _PaneInputSnapshot(NamedTuple):
     state: Literal["empty", "armed", "unknown"]
@@ -764,6 +793,7 @@ def _bootstrap_cli_in_session_sync(
     resume_session_id: str | None = None,
 ) -> dict[str, bool]:
     resolved_workspace, command = _prepare_cli_launch(
+        session_name,
         workspace_path,
         cli,
         model,
@@ -795,6 +825,7 @@ def _wait_for_cli_banner(pane: libtmux.Pane, cli: AgentCli) -> dict[str, bool]:
 
 
 def _prepare_cli_launch(
+    session_name: str,
     workspace_path: str,
     cli: AgentCli,
     model: str,
@@ -818,7 +849,7 @@ def _prepare_cli_launch(
         if cli != "claude_code" or not _SESSION_ID_PATTERN.fullmatch(resume_session_id):
             raise ValueError("session_id inválido para claude --resume")
         command += f" --resume {shlex.quote(resume_session_id)}"
-    return resolved_workspace, command
+    return resolved_workspace, _memory_fence_prefix(session_name) + command
 
 
 def _claude_resume_jsonl_path(workspace: Path, session_id: str) -> Path:
@@ -1230,6 +1261,7 @@ def _restart_claude_with_resume_sync(
 ) -> dict[str, bool]:
     """Troca a window do agente sem deixar a sessão tmux ficar sem window."""
     resolved_workspace, resume_command = _prepare_cli_launch(
+        session_name,
         workspace_path,
         "claude_code",
         model,
@@ -1278,7 +1310,7 @@ def _restart_claude_fresh_sync(
     conversa antiga. Aqui perder o contexto é o ponto, não um risco a evitar,
     então não há JSONL/âncora pra validar antes de agir."""
     resolved_workspace, fresh_command = _prepare_cli_launch(
-        workspace_path, "claude_code", model,
+        session_name, workspace_path, "claude_code", model,
     )
 
     server = _server_for(session_name)

@@ -16,6 +16,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services import tmux_driver
 
+#: Cerca de memória que todo lançamento carrega desde o OOM do pavan (07/08/2026).
+#: Escrita à mão de propósito — montar a partir de `tmux_driver` faria o teste
+#: concordar sozinho com qualquer valor que o módulo passasse a usar.
+CERCA = (
+    "systemd-run --user --scope --slice=borges-frota.slice "
+    "-p MemoryHigh=1500M -- "
+)
+
 
 class _FakePane:
     pane_current_command = "claude"
@@ -1091,7 +1099,7 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
     # piso canônico de `_pane_channel_flags`, pra relaunch não perpetuar mudez.
     assert replacement_pane.sent_commands == [
         (
-            "claude --dangerously-skip-permissions "
+            CERCA + "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
             f"--resume {session_id} "
             f'--channels plugin:telegram@claude-plugins-official; exec "${{SHELL:-/bin/sh}}"',
@@ -1147,7 +1155,7 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
     assert result == {"attempted": True, "confirmed": True}
     assert replacement_pane.sent_commands == [
         (
-            "claude --dangerously-skip-permissions "
+            CERCA + "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
             f"--resume {session_id} "
             f'--channels plugin:telegram@claude-plugins-official; exec "${{SHELL:-/bin/sh}}"',
@@ -1277,7 +1285,7 @@ def test_restart_fresh_boots_clean_without_resume_or_anchor_check(tmp_path: Path
     assert result == {"attempted": True, "confirmed": True}
     assert replacement_pane.sent_commands == [
         (
-            "claude --dangerously-skip-permissions --model claude-opus-4-8 "
+            CERCA + "claude --dangerously-skip-permissions --model claude-opus-4-8 "
             "--channels plugin:telegram@claude-plugins-official; "
             'exec "${SHELL:-/bin/sh}"',
             False,
@@ -1415,7 +1423,7 @@ def test_restart_escalates_to_sigkill_and_still_launches_when_old_process_linger
     assert wait_mock.call_count == 2
     assert replacement_pane.sent_commands == [
         (
-            "claude --dangerously-skip-permissions "
+            CERCA + "claude --dangerously-skip-permissions "
             "--model claude-opus-4-8 "
             f"--resume {session_id} "
             f'--channels plugin:telegram@claude-plugins-official; exec "${{SHELL:-/bin/sh}}"',
