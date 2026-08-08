@@ -124,6 +124,8 @@ export type EfeitoEnvio = {
    * A limpeza é do instante em que a tentativa é ACEITA, não do instante em
    * que ela é entregue: esperar o POST voltar deixaria o texto no campo
    * durante toda a viagem de rede, convidando um segundo Enter que duplica.
+   *
+   * E só quando o corpo VEIO do campo — ver `retomada`.
    */
   limpaCampo: boolean;
   aviso: string | null;
@@ -136,8 +138,20 @@ export function preparaEnvio(entrada: {
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';
+  /**
+   * O corpo veio da MÁQUINA, não do campo: é o "Reenviar"/"Tentar de novo" da
+   * linha de estado, que despacha o texto pendurado de uma tentativa anterior.
+   *
+   * O campo, nesse instante, guarda outra coisa — o que o Rica escreveu
+   * enquanto olhava a faixa de erro (o textarea nunca é `disabled` justamente
+   * para isso). Esvaziá-lo não limparia o gesto: comeria uma mensagem que
+   * nunca virou requisição, calada, que é o descarte de 05/08 que este módulo
+   * existe para matar. Fica na porta, e não num `if` no componente, porque
+   * "quando o campo pode esvaziar" é a decisão que este módulo carrega.
+   */
+  retomada?: boolean;
 }): EfeitoEnvio {
   const porta = abrePorta(entrada);
-  if (porta.libera) return { despacha: true, limpaCampo: true, aviso: null };
+  if (porta.libera) return { despacha: true, limpaCampo: !entrada.retomada, aviso: null };
   return { despacha: false, limpaCampo: false, aviso: porta.recado };
 }

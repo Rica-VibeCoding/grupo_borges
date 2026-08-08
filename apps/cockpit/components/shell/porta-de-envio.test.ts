@@ -182,6 +182,33 @@ test('a voz não tem campo, então "vazio" não é recusa possível pra ela', ()
   assert.ok(noCompact.libera === false && noCompact.recado, 'áudio descartado calado é o mesmo bug');
 });
 
+/**
+ * O OUTRO ÂNGULO DO MESMO DESCARTE. O "Tentar de novo"/"Reenviar" da linha de
+ * estado despacha o texto que ficou PENDURADO na máquina — e o campo, nesse
+ * instante, guarda outra coisa: o que o Rica escreveu enquanto olhava a faixa
+ * de erro (o textarea nunca é `disabled`, justamente para ele poder escrever
+ * durante a espera). O campo não contém o corpo que está saindo, então
+ * esvaziá-lo não limpa o gesto: come uma mensagem que nunca virou requisição,
+ * sem aviso e sem sobrar em lugar nenhum. É 05/08 com outra roupa.
+ */
+test('retomada despacha o pendurado e NÃO come o que está no campo', () => {
+  for (const faseEnvio of ['falhou', 'nao-confirmado'] as const) {
+    const efeito = preparaEnvio({
+      texto: 'sobe o build',
+      compactando: false,
+      faseEnvio,
+      retomada: true,
+    });
+
+    assert.equal(efeito.despacha, true, `${faseEnvio} tem de deixar o reenvio sair`);
+    assert.equal(
+      efeito.limpaCampo,
+      false,
+      'o campo guarda outra mensagem — esvaziá-lo apaga o que o Rica escreveu esperando',
+    );
+  }
+});
+
 test('fase confirmada ou falhada não segura a próxima mensagem', () => {
   for (const faseEnvio of ['ocioso', 'confirmado', 'nao-confirmado', 'falhou'] as const) {
     assert.equal(

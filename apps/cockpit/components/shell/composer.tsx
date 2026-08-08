@@ -293,6 +293,10 @@ export function Composer({
       anexoEmVoo: anexar && anexoEmVoo,
       compactando: travaCompact,
       faseEnvio: faseLocal,
+      // Quem decide se o campo pode esvaziar é a porta, e para decidir ela
+      // precisa saber de onde veio o corpo: numa retomada ele vem da máquina,
+      // e o campo guarda a mensagem NOVA que o Rica escreveu esperando.
+      retomada,
     });
     setAvisoDaPorta(efeito.aviso);
     if (!efeito.despacha) return;
