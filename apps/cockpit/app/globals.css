@@ -420,10 +420,16 @@ body {
   outline: none;
 }
 
+/* Pedido do Rica em 08/08: tirar o anel azul (`--ck-focus`) daqui — ele é
+ * reservado a navegação por teclado (a regra `.ck-campo:focus-visible`
+ * genérica, linha ~391), não a "estou digitando". Referência pedida foi
+ * Claude/GPT desktop: nos dois o campo focado só clareia a PRÓPRIA borda,
+ * sem halo colorido por fora. Por isso aqui é troca da variável que a borda
+ * inline já lê (`--ck-edge-functional`, usada em `composer.tsx`), não um
+ * box-shadow novo — continua sendo o mesmo fio de 1px, só mais claro. */
 .ck-caixa:has(.ck-campo:focus-visible) {
-  box-shadow:
-    inset 0 1px 0 0 var(--ck-edge-light),
-    0 0 0 2px var(--ck-focus);
+  --ck-edge-functional: oklch(0.78 0 0);
+  box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 
 /* Fio de luz no topo de superfície elevada. É a assinatura da §A: luz = vida,
