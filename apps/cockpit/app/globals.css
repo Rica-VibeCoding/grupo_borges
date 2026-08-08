@@ -184,36 +184,6 @@
    * texto atravessando bem mais apagado. */
   --ck-surface-composer-material: color-mix(in oklch, var(--ck-surface-raised) 60%, transparent);
 
-  /* O RODAPÉ — a faixa entre a base da caixa e a base da tela (o padding do
-   * wrapper, 33px medidos). Até 08/08 ali era canvas puro e o feed passava
-   * NÍTIDO até encostar no fim da tela; o Rica pediu *"abaixo dela pode embaçar
-   * o vidro um pouco"* e menos transparência que a caixa.
-   *
-   * Um degrau mais fechado que a caixa DE PROPÓSITO, porque a função é outra:
-   * dentro da caixa o vidro emoldura um campo que se lê, aqui ele ENCERRA a
-   * tela — nada nesta faixa é para ser lido, é o rabo da mensagem saindo de
-   * cena. Mesmo assim não é cortina: continua `raised` com desfoque, e não
-   * alpha na cor do canvas, que foi o que o Rica reprovou na primeira volta
-   * (Apple HIG, scroll edge effects: *"They don't block or darken like
-   * overlays"*). Desfoque maior que o da caixa pela mesma razão da densidade —
-   * ali o desfoque protege leitura, aqui ele apaga.
-   *
-   * ⚠️ O DESFOQUE AQUI É MENOR QUE O DA CAIXA, e é contraintuitivo: numa faixa
-   * de 33px, mais desfoque BORRA MENOS. Medido em cena congelada, desvio-padrão
-   * do mesmo recorte com uma linha do feed atravessando: sem filtro 77.9 →
-   * 6px 22.3 → **12px 20.2** → 20px 22.2 → 36px 32.6. A curva tem fundo e
-   * volta a subir. A leitura provável é a duplicação de borda: o raio passa
-   * muito da altura da faixa, não há backdrop abaixo para misturar, e o que
-   * entra na conta é a réplica da própria beirada — o texto nítido volta.
-   * (Causa é hipótese; a curva é medição.) Por isso 12px e não o 36 da caixa. */
-  /* 80%: um degrau bem acima dos 60% da caixa, e o teto é a referência, não o
-   * gosto. Medido no mesmo recorte com uma linha atravessando (desvio-padrão,
-   * cena congelada): sem vidro 52.8 → 78% dá 6.4 → 86% dá 2.9. A partir dos 86
-   * a linha praticamente some, e some não é o alvo — na referência o texto
-   * abaixo da pílula ainda se enxerga, borrado e apagado. */
-  --ck-rodape-material: color-mix(in oklch, var(--ck-surface-raised) 80%, transparent);
-  --ck-rodape-desfoque: 12px;
-
   /* ===== §B ESQUELETO — Pavan ==============================================
    * Medida e ritmo. Onde a §A responde "que cor", esta responde "quanto" e
    * "quão rápido". Números de container vêm das medidas reais do app do ChatGPT
@@ -487,51 +457,6 @@ body {
   backdrop-filter: blur(var(--ck-veu-desfoque));
 }
 
-/* O FECHO DA TELA. Vive ancorado na base da caixa e desce até o fim do palco,
- * transbordando de propósito: quem recorta é o `overflow: hidden` do `.ck-palco`,
- * então esta faixa nunca precisa saber quanto padding o wrapper do composer tem.
- * Não é ancestral da caixa nem do feed — não forma Backdrop Root para ninguém. */
-.ck-rodape-vidro {
-  background: var(--ck-rodape-material);
-  -webkit-backdrop-filter: blur(var(--ck-rodape-desfoque));
-  backdrop-filter: blur(var(--ck-rodape-desfoque));
-}
-
-/* A ROLAGEM DE DENTRO DA CAIXA. Nasceu em 08/08 com o campo que cresce até
- * `--ck-h-campo-max` — antes o campo nunca rolava e a barra nativa nunca
- * aparecia. O padrão da casa é o fio apagado do feed, e ele já tem cor: os
- * mesmos `--ck-scrollbar-thumb`/`-hover` do polegar do Radix.
- *
- * Duas declarações porque nenhuma sozinha cobre o alvo. `scrollbar-color` é o
- * padronizado, mas só chegou no **Safari 26.2** (MDN/BCD; `safari_ios` espelha
- * o desktop) — o iPhone é justamente onde o Rica testa, e lá o legado
- * `::-webkit-scrollbar` é o que pega. No Chrome os dois brigam e o padronizado
- * desliga o pseudo-elemento; como ambos pintam o MESMO fio, o desempate é
- * indiferente. `thin` e não `none`: a MDN desaconselha sumir com a barra
- * ("negatively impacts accessibility") e o Rica pediu a barra do app, não a
- * ausência dela. */
-.ck-campo {
-  scrollbar-width: thin;
-  scrollbar-color: var(--ck-scrollbar-thumb) transparent;
-}
-.ck-campo::-webkit-scrollbar {
-  width: 6px;
-}
-.ck-campo::-webkit-scrollbar-track {
-  background: transparent;   /* a barra flutua sobre o campo, sem faixa própria */
-}
-.ck-campo::-webkit-scrollbar-thumb {
-  background: var(--ck-scrollbar-thumb);
-  border-radius: 3px;
-}
-.ck-campo::-webkit-scrollbar-thumb:hover {
-  background: var(--ck-scrollbar-thumb-hover);
-}
-/* As setinhas das pontas são o que denuncia a barra do sistema no meio do app. */
-.ck-campo::-webkit-scrollbar-button {
-  display: none;
-}
-
 /* Sem desfoque na máquina não existe material: o tint sozinho deixaria o texto
  * do feed passar LEGÍVEL por dentro da caixa, e aí o placeholder disputa a
  * leitura com uma frase inteira. Sem blur, superfície opaca — é a
@@ -539,10 +464,6 @@ body {
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .ck-caixa,
   .ck-sobre-material {
-    background: var(--ck-surface-composer) !important;
-  }
-  /* No rodapé o opaco é a intenção mesmo: ali nada se lê. */
-  .ck-rodape-vidro {
     background: var(--ck-surface-composer) !important;
   }
 }

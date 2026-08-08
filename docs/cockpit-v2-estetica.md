@@ -1316,53 +1316,6 @@ O composer sempre dependeu da borda para existir como componente (WCAG 1.4.11). 
 quiser a borda mais fraca mesmo assim, é decisão dele contra um piso da §3 e entra aqui
 como exceção consciente — não é coisa que eu faça sozinho.
 
-### Tentativa 4 — o rodapé, e o desfoque que borra MENOS quanto maior (08/08)
-
-Com o vidro na forma da caixa, a faixa entre a base dela e a base da tela virou canvas
-puro: o feed passava por ali **nítido** até encostar no fim da tela. O Rica: *"abaixo do
-imputext só reduzir a transparência, a do imputext a transparência está boa, agora abaixo
-dela pode embaçar o vidro um pouco"*. Dentro da caixa não se toca — ele aprovou.
-
-`--ck-rodape-material` (80%) e `--ck-rodape-desfoque` (12px). Um degrau bem mais fechado
-que os 60% da caixa **porque a função é outra**: dentro da caixa o vidro emoldura um campo
-que se lê, no rodapé ele encerra a tela e nada ali é para ser lido. Continua material, não
-cortina: `raised` com desfoque, e não alpha na cor do canvas — foi a cortina que o Rica
-reprovou na tentativa 1, e é o que a HIG desaconselha (*"They don't block or darken like
-overlays"*).
-
-**O achado desta tentativa: numa faixa rasa, mais desfoque borra MENOS.** Medido no mesmo
-recorte com uma linha do feed atravessando, cena congelada, desvio-padrão da luminância:
-
-- sem filtro **77.9** · 6px **22.3** · **12px 20.2** · 20px **22.2** · 36px **32.6**
-
-A curva tem fundo e volta a subir — o 36px da caixa, aplicado aqui, devolve o texto quase
-nítido. A leitura provável é a duplicação de borda: o raio passa muito da altura da faixa
-(33px), não há backdrop abaixo para entrar na mistura, e o que entra é a réplica da própria
-beirada. **A causa é hipótese; a curva é medição** — e é a curva que fixa o valor.
-
-A densidade tem teto pelo mesmo motivo que tem piso: sem vidro o recorte mede 52.8, a 78%
-cai para 6.4 e a 86% para 2.9, onde a linha praticamente some. Some não é o alvo — na
-referência o texto abaixo da pílula ainda se enxerga. Daí 80%.
-
-### A rolagem de dentro da caixa — o padrão do app, em dois mecanismos
-
-O campo que cresce até `--ck-h-campo-max` trouxe uma barra de rolagem que não existia antes,
-e veio a do sistema: cinza clara, com setas. O padrão da casa já tinha cor
-(`--ck-scrollbar-thumb` / `-hover`, os mesmos do polegar do Radix) — token não se cria, se
-reusa (§9.9).
-
-Duas declarações, porque nenhuma sozinha cobre o alvo:
-
-- `scrollbar-width` + `scrollbar-color` é o padronizado, mas só chegou no **Safari 26.2**
-  (MDN/BCD; `safari_ios` espelha o desktop). O iPhone é justamente onde o Rica testa.
-- `::-webkit-scrollbar` é o legado — e é ele que pega no WebKit do iPhone hoje.
-
-No Chrome os dois brigam e o padronizado desliga o pseudo-elemento; como ambos pintam o
-mesmo fio, o desempate é indiferente. `thin` e não `none`: a MDN desaconselha sumir com a
-barra (*"negatively impacts accessibility"*), e o pedido foi a barra do app, não a ausência
-dela. `::-webkit-scrollbar-button { display: none }` porque a setinha é o que denuncia a
-barra do sistema no meio do app.
-
 ### Limite honesto da medição
 
 Chromium. **O WebKit não roda nesta máquina** (faltam bibliotecas de sistema e instalá-las
