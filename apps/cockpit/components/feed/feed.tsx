@@ -181,6 +181,15 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
             // absolute` — quem ancora aqui é `ancora.ts`, e os dois brigando
             // produzem exatamente o tranco que estamos removendo.
             overflowAnchor: 'none',
+            // O respiro do composer flutuante (08/08). O padding vai no ELEMENTO
+            // QUE ROLA, não num wrapper de fora: fora, ele encolheria o feed e a
+            // rolagem terminaria acima do composer — que é justamente o oposto
+            // do pedido, porque não sobraria conteúdo passando por baixo para
+            // desfocar. Aqui ele só estica o fim do conteúdo rolável, e "ir ao
+            // fim" passa a parar com a última mensagem logo acima do composer.
+            // Quem mede e publica a variável é `app/agente/[slug]/palco-da-conversa.tsx`;
+            // o piso de `0px` mantém esta rota igual onde o palco não existe.
+            paddingBottom: 'var(--ck-composer-altura, 0px)',
           },
         }}
       >
@@ -244,7 +253,11 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
           style={{
             position: 'absolute',
             left: '50%',
-            bottom: 'var(--ck-space-3)',
+            // Sobe junto com o composer flutuante — senão este botão nasce
+            // atrás dele, e um aviso de "mensagens novas" escondido é pior que
+            // aviso nenhum. Na referência do ChatGPT a setinha fica exatamente
+            // aqui: logo acima da caixa de escrever.
+            bottom: 'calc(var(--ck-composer-altura, 0px) + var(--ck-space-3))',
             transform: 'translateX(-50%)',
             minHeight: 'var(--ck-touch-min)',
             padding: '0 var(--ck-space-4)',

@@ -253,6 +253,17 @@ Duas exceções conscientes ao que está escrito acima:
    A Tara entra com **arquivo novo**, não edita os existentes, e a única mudança em
    arquivo compartilhado é uma linha em `exports` — colisão de uma linha se resolve
    na leitura.
+3. **`components/feed/feed.tsx` é do Hiro e eu entrei nele em 08/08 — Pavan, sem
+   cessão dele, porque não havia como pedir:** o Hiro está em 403 de ciclo de
+   cobrança até 09/08 00:50 BRT, e o composer flutuante que o Rica pediu não
+   existe sem duas linhas ali. São duas e só duas: `paddingBottom` no viewport
+   que rola (o respiro do composer) e o `bottom` do botão "mensagens novas",
+   que sem isso nasce atrás do composer. Ambas leem `--ck-composer-altura` com
+   piso `0px`, então **o arquivo se comporta exatamente como antes** onde a
+   variável não existe — nenhuma outra rota muda. Tentei de fora primeiro: um
+   wrapper com padding encolhe o feed e a rolagem termina acima do composer,
+   que é o oposto do pedido. Hiro: se discordar do lugar, o caminho é seu, me
+   fala e eu reverto.
 
 ## 5.3 Emenda ao "scaffold sequencial, feito por mim, sozinho"
 

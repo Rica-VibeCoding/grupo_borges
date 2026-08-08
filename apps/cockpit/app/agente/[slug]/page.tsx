@@ -10,6 +10,7 @@ import { Regua } from '@/components/shell/regua';
 import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
 import { FeedDaConversa } from './feed-da-conversa';
+import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,31 +207,22 @@ export default async function AgentePage({
           pra dentro do `Feed`, porque a barra de rolagem saiu da borda da
           coluna e foi pra borda da TELA (ordem do Rica, como na referência do
           ChatGPT): quem segura o `max-width` agora é o conteúdo dentro do
-          trilho, não um wrapper fora dele. */}
-      <div
-        className="min-h-0 flex-1"
-        style={{
-          containerType: 'inline-size',
-          background: 'var(--ck-surface-canvas)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+          trilho, não um wrapper fora dele.
+
+          08/08: o feed e o composer deixaram de ser irmãos numa coluna flex. O
+          `<PalcoDaConversa>` sobrepõe os dois para que o feed corra POR BAIXO
+          do composer — sem isso não há o que desfocar, e o desfoque é o pedido.
+          O `containerType`, o fundo e o respiro do fim moraram aqui e foram
+          para lá; ler o cabeçalho daquele arquivo antes de mexer nesta região. */}
+      <PalcoDaConversa
+        composer={
+          // Sem `esforcoValor`/`esforcoPermitido`/`onEnviar`: o Composer busca o
+          // painel e envia sozinho — ver o cabeçalho do próprio componente.
+          <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
+        }
       >
         <FeedDaConversa agentSlug={agente.slug} />
-      </div>
-
-      <div
-        className="shrink-0"
-        style={{
-          background: 'var(--ck-surface-canvas)',
-          padding: 'var(--ck-space-3) var(--ck-space-4)',
-          paddingBottom: 'calc(var(--ck-space-3) + var(--ck-safe-bottom))',
-        }}
-      >
-        {/* Sem `esforcoValor`/`esforcoPermitido`/`onEnviar`: o Composer busca o
-            painel e envia sozinho — ver o cabeçalho do próprio componente. */}
-        <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
-      </div>
+      </PalcoDaConversa>
 
       {/* Régua de medição — só com `?diag=1` na URL. Ver o cabeçalho de
           `app/api/regua/route.ts`: existe porque o Safari do iPhone é o único

@@ -365,6 +365,16 @@ Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
 
 ## 9. Verificações já feitas — não repetir
 
+- **"Eu só uso Chrome" NÃO tira o WebKit da conta.** O Rica avisou em 08/08 que
+  não usa Safari, e no PC isso vale: lá o Chrome é Blink de verdade. **No iPhone
+  dele, não vale.** A regra 2.5.6 da App Store obriga, verbatim: *"Apps that
+  browse the web must use the appropriate WebKit framework and WebKit
+  JavaScript"* — o entitlement de motor alternativo existe só para **UE e
+  Japão**, e o Brasil não está na lista. Chrome no iPhone é casca em cima do
+  WebKit. Consequência prática, e ela já custou uma caçada inteira (a gaveta de
+  0px, estética §"02/08"): bug que só aparece no aparelho dele é bug de WebKit,
+  e recurso novo se confere na coluna do Safari, nunca na do Chrome.
+  Fonte: https://developer.apple.com/app-store/review/guidelines/ §2.5.6.
 - **HTTP/2 no `tailscale serve`: confirmado.** `curl` negocia `http_version=2`
   contra `https://srv1061129.tailfe77db.ts.net:3443`. O risco de os dois
   `EventSource` mais os fetches baterem no teto de ~6 conexões por host do Safari
