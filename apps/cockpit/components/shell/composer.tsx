@@ -534,7 +534,7 @@ export function Composer({
           // recurso do envio, e aqui ele carrega o aviso de que soltar agora
           // descarta. Cor de estado na borda alcança a visão periférica; o
           // olho está no que está sendo falado, não no composer.
-          borderColor: vozAparencia.tinta ?? aparencia.filete ?? 'var(--ck-edge-functional)',
+          borderColor: vozAparencia.tinta ?? aparencia.filete ?? 'var(--ck-edge-composer)',
           // A borda inteira (não só um filete de 2px) muda de cor no estado
           // quente: o composer é a única superfície de INPUT da tela, e ali a
           // convenção do filete lateral (linha de execução, mensagem) compete

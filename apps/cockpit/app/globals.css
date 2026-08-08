@@ -79,6 +79,17 @@
                                                     controle */
   --ck-edge-hairline: oklch(0.38 0 0);           /* #424242 separador decorativo */
   --ck-edge-light: rgb(255 255 255 / 0.07);      /* fio de luz 1px no TOPO do elevado */
+  /* Borda do composer, só ela — pedido do Rica em 08/08 comparando com o app
+   * do Claude: "fininha e meio falhada", a nossa tava "grossa, esbranquiçada".
+   * `--ck-edge-functional` é cinza SÓLIDO calibrado pra 3:1 (comentário acima)
+   * — contrato de acessibilidade que outros usos dele (feed, tabela, blocos)
+   * ainda precisam. O composer não: a caixa já se distingue do canvas pelo
+   * material (`ck-caixa`, backdrop-filter), então o fio pode ser decorativo.
+   * Branco translúcido em vez de cinza opaco é exatamente o que o shadcn/ui
+   * usa em Input/Textarea no dark mode — `--input: oklch(1 0 0 / 15%)`,
+   * conferido no registro via Context7 antes de cravar o número. */
+  --ck-edge-composer: rgb(255 255 255 / 0.14);
+  --ck-edge-composer-foco: rgb(255 255 255 / 0.28);
 
   /* -- barra de rolagem: luz quase apagada, sempre presente ----------------
    * O Rica pediu o polegar MAIS transparente que o habitual: em repouso ele
@@ -425,10 +436,10 @@ body {
  * genérica, linha ~391), não a "estou digitando". Referência pedida foi
  * Claude/GPT desktop: nos dois o campo focado só clareia a PRÓPRIA borda,
  * sem halo colorido por fora. Por isso aqui é troca da variável que a borda
- * inline já lê (`--ck-edge-functional`, usada em `composer.tsx`), não um
+ * inline já lê (`--ck-edge-composer`, usada em `composer.tsx`), não um
  * box-shadow novo — continua sendo o mesmo fio de 1px, só mais claro. */
 .ck-caixa:has(.ck-campo:focus-visible) {
-  --ck-edge-functional: oklch(0.78 0 0);
+  --ck-edge-composer: var(--ck-edge-composer-foco);
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 
