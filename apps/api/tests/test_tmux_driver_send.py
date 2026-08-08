@@ -505,7 +505,9 @@ def _entrega(
         return tmux_driver._send_message_sync(session_name, text or pane.payload)
 
 
-def _recover(pane: _FakePane) -> dict[str, bool | int | str]:
+def _recover(
+    pane: _FakePane, *, session_name: str = "pane-teste"
+) -> dict[str, bool | int | str]:
     patches = _driver_patches(pane)
     with (
         patches[0],
@@ -516,7 +518,7 @@ def _recover(pane: _FakePane) -> dict[str, bool | int | str]:
         patches[5],
         patches[6],
     ):
-        return tmux_driver._recover_input_sync("pane-teste")
+        return tmux_driver._recover_input_sync(session_name)
 
 
 def test_send_retries_unknown_snapshots_until_input_stabilizes() -> None:
@@ -898,6 +900,54 @@ def test_recover_reports_empty_at_step_two() -> None:
     pane = _FakePane("irrelevante")
 
     assert _recover(pane) == {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
+
+
+@pytest.mark.parametrize(
+    ("pane", "expected"),
+    [
+        (_FakePane("irrelevante"), (2, "input_vazio")),
+        (_FakePane("texto armado", enter_succeeds_on=1), (3, "enter")),
+        (_FakePane("texto armado", enter_succeeds_on=2), (4, "recolar_enter")),
+    ],
+)
+def test_recover_confirmed_steps_clear_channel_without_claiming_delivery(
+    pane: _FakePane,
+    expected: tuple[int, str],
+) -> None:
+    session_name = f"recover-state-{expected[0]}"
+    if expected[0] != 2:
+        pane.state = "armed"
+    tmux_driver._record_delivery_refusal(session_name, "paste_nao_confirmado")
+
+    result = _recover(pane, session_name=session_name)
+    channel = tmux_driver.get_delivery_channel_state(session_name)
+
+    assert (result["degrau"], result["acao"]) == expected
+    assert result["tmux_delivered"] is True
+    assert channel["estado"] == "entregando"
+    assert channel["entregando"] is True
+    assert channel["motivo"] is None
+    assert channel["recusas_consecutivas"] == 0
+    assert channel["bloqueado_desde"] is None
+    assert channel["bloqueado_ha_segundos"] == 0
+    assert channel["acao_recomendada"] == "Nenhuma ação necessária."
+    assert channel["mensagem"] == "Canal recuperado; nenhuma nova mensagem foi entregue."
+
+
+def test_recover_failed_step_keeps_channel_blocked() -> None:
+    session_name = "recover-state-failed"
+    pane = _HardMultilinePane("linha 1\nlinha 2", enter_succeeds_on=2)
+    pane.state = "armed"
+    tmux_driver._record_delivery_refusal(session_name, "paste_nao_confirmado")
+
+    result = _recover(pane, session_name=session_name)
+    channel = tmux_driver.get_delivery_channel_state(session_name)
+
+    assert result["tmux_delivered"] is False
+    assert channel["estado"] == "bloqueado"
+    assert channel["entregando"] is False
+    assert channel["motivo"] == "paste_nao_confirmado"
+    assert channel["recusas_consecutivas"] == 1
 
 
 def test_recover_never_sends_escape_when_already_empty() -> None:

@@ -3331,6 +3331,8 @@ async def post_agent_destrava(slug: str, request: Request) -> dict[str, Any]:
     - Escape fecha modal; input vazio confirma que o destravamento funcionou
     - input armado recebe Enter e, se necessário, é recapturado/recolado igual
     - 200 sempre informa ``degrau``, ``acao`` e ``tmux_delivered`` observados
+    - um desfecho confirmado também limpa o bloqueio do canal no painel; falhas
+      preservam o estado bloqueado para não liberar um input ainda inseguro
 
     O front atual lê apenas ``tmux_delivered``; por isso o degrau 2 retorna
     ``true`` quando Escape cumpriu o papel e não havia texto armado a submeter.

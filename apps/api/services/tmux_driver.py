@@ -75,6 +75,7 @@ class _DeliveryChannelRecord(NamedTuple):
     consecutive_refusals: int
     blocked_since: float | None
     last_attempt_at: float
+    recovered_without_delivery: bool = False
 
 
 _DELIVERY_CHANNEL_RECORDS: dict[str, _DeliveryChannelRecord] = {}
@@ -100,6 +101,13 @@ _REFUSALS_BEFORE_PASTE = frozenset(
         "buffer_indisponivel",
         "input_ocupado_ou_travado",
         "input_nao_observavel",
+    }
+)
+_RECOVERY_SUCCESS_OUTCOMES = frozenset(
+    {
+        (2, "input_vazio"),
+        (3, "enter"),
+        (4, "recolar_enter"),
     }
 )
 
@@ -184,6 +192,35 @@ def _record_delivery_success(session_name: str) -> DeliveryResult:
     return DELIVERED
 
 
+def _record_delivery_recovery(session_name: str) -> None:
+    """Marca o canal como saudável após um destravamento confirmado.
+
+    O estado saudável compartilha a representação histórica de ``entregando``
+    para manter o contrato do painel, mas não deve afirmar que uma mensagem
+    nova foi entregue: o destravamento só recupera o canal.
+    """
+    now = time.time()
+    with _DELIVERY_CHANNEL_RECORDS_GUARD:
+        _DELIVERY_CHANNEL_RECORDS[session_name] = _DeliveryChannelRecord(
+            delivering=True,
+            reason=None,
+            consecutive_refusals=0,
+            blocked_since=None,
+            last_attempt_at=now,
+            recovered_without_delivery=True,
+        )
+
+
+def _record_confirmed_recovery(
+    session_name: str, result: dict[str, bool | int | str]
+) -> dict[str, bool | int | str]:
+    """Limpa o bloqueio apenas para os três desfechos positivos conhecidos."""
+    outcome = (result.get("degrau"), result.get("acao"))
+    if result.get("tmux_delivered") is True and outcome in _RECOVERY_SUCCESS_OUTCOMES:
+        _record_delivery_recovery(session_name)
+    return result
+
+
 def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str | None]:
     """Expõe o último estado conhecido em linguagem de operação, sem tmuxês."""
     now = time.time()
@@ -204,11 +241,16 @@ def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str 
         }
 
     if record.delivering:
+        message = (
+            "Canal recuperado; nenhuma nova mensagem foi entregue."
+            if record.recovered_without_delivery
+            else "A última entrega ao agente foi confirmada."
+        )
         return {
             "estado": "entregando",
             "entregando": True,
             "motivo": None,
-            "mensagem": "A última entrega ao agente foi confirmada.",
+            "mensagem": message,
             "recusas_consecutivas": 0,
             "bloqueado_desde": None,
             "bloqueado_ha_segundos": 0,
@@ -1868,7 +1910,10 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                 snapshot = observed
             # Degrau 2: Escape deixou um input vazio; não existe texto a enviar.
             if snapshot.state == "empty":
-                return {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}
+                return _record_confirmed_recovery(
+                    session_name,
+                    {"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"},
+                )
 
             armed_text = snapshot.content
             prior_prompt_count = _count_payload_prompt_lines(pane, armed_text)
@@ -1882,7 +1927,10 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                 max_enter_attempts=1,
             )
             if confirmed:
-                return {"tmux_delivered": True, "degrau": 3, "acao": "enter"}
+                return _record_confirmed_recovery(
+                    session_name,
+                    {"tmux_delivered": True, "degrau": 3, "acao": "enter"},
+                )
 
             current = _wait_for_input(
                 pane,
@@ -1982,7 +2030,14 @@ def _recover_input_sync(session_name: str) -> dict[str, bool | int | str]:
                 )
                 if confirmed:
                     preserve_buffer = False
-                    return {"tmux_delivered": True, "degrau": 4, "acao": "recolar_enter"}
+                    return _record_confirmed_recovery(
+                        session_name,
+                        {
+                            "tmux_delivered": True,
+                            "degrau": 4,
+                            "acao": "recolar_enter",
+                        },
+                    )
                 return {
                     "tmux_delivered": False,
                     "degrau": 5,
