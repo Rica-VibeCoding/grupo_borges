@@ -80,7 +80,7 @@ export function BarraCompact({
     // receita é a dos avisos da voz: o que aconteceu + o que fazer + dismiss.
     return (
       <div
-        className="mx-auto flex w-full items-start justify-between"
+        className="ck-sobre-material mx-auto flex w-full items-start justify-between"
         style={{
           maxWidth: 'var(--ck-w-composer)',
           padding: '0 var(--ck-space-2)',
@@ -125,7 +125,7 @@ export function BarraCompact({
 
   return (
     <div
-      className="mx-auto w-full"
+      className="ck-sobre-material mx-auto w-full"
       style={{ maxWidth: 'var(--ck-w-composer)', padding: '0 var(--ck-space-2)' }}
     >
       <div

@@ -136,7 +136,7 @@ export function BlocoDaFila({
 
   return (
     <div
-      className="mx-auto w-full"
+      className="ck-sobre-material mx-auto w-full"
       style={{ maxWidth: 'var(--ck-w-composer)', padding: '0 var(--ck-space-2)' }}
     >
       <div className="flex items-center" style={{ gap: 'var(--ck-space-2)' }}>

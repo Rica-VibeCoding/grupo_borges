@@ -223,6 +223,21 @@ export function Composer({
     }
   }
 
+  // A CAIXA CRESCE COM O QUE ESTÁ ESCRITO. Efeito e não `onChange` porque o
+  // campo tem três autores: o Rica digitando, a fila devolvendo um item ao
+  // campo (`editarDaFila`) e o envio esvaziando. Preso ao `onChange`, a caixa
+  // ficaria alta depois de mandar a mensagem e baixa depois de editar da fila.
+  //
+  // `height = 'auto'` antes de ler `scrollHeight` não é ritual: sem zerar, o
+  // `scrollHeight` nunca desce, porque ele mede o conteúdo contra a altura já
+  // aplicada. É o que faz a caixa encolher ao apagar linha.
+  useEffect(() => {
+    const campo = textareaRef.current;
+    if (!campo) return;
+    campo.style.height = 'auto';
+    campo.style.height = `${campo.scrollHeight}px`;
+  }, [texto]);
+
   const fase = faseLocal;
   // Só os dois estados de insucesso perguntam ao back por quê. No caminho
   // normal ninguém faz essa pergunta, e o `/painel` não é consultado.
@@ -482,7 +497,14 @@ export function Composer({
         style={{
           padding: 'var(--ck-space-3)',
           gap: 'var(--ck-space-2)',
-          background: 'var(--ck-surface-composer)',
+          // A CAIXA É MATERIAL, não superfície opaca. Ela não tem
+          // `backdrop-filter` próprio de propósito: o véu atrás já desfocou o
+          // feed, e um segundo desfoque aqui só custaria GPU para borrar o que
+          // já está borrado. O que ela faz é somar um degrau de luz sobre o
+          // resultado — é assim que a referência distingue a pílula da faixa
+          // sem opacar nenhuma das duas, e é por isso que o texto do feed
+          // atravessa POR DENTRO dela. Ver §18 da estética.
+          background: 'var(--ck-surface-composer-material)',
           // Em captura a moldura inteira assume a cor do estado — é o mesmo
           // recurso do envio, e aqui ele carrega o aviso de que soltar agora
           // descarta. Cor de estado na borda alcança a visão periférica; o
@@ -491,8 +513,11 @@ export function Composer({
           // A borda inteira (não só um filete de 2px) muda de cor no estado
           // quente: o composer é a única superfície de INPUT da tela, e ali a
           // convenção do filete lateral (linha de execução, mensagem) compete
-          // com a moldura que o campo já tem por natureza.
-          borderWidth: aparencia.filete || vozAparencia.tinta ? '1.5px' : '1px',
+          // com a moldura que o campo já tem por natureza. Quem sinaliza é a
+          // COR, e só ela: o 1.5px do estado saiu em 08/08, quando o Rica pediu
+          // "borda fininha, igual nós temos no CC" — engrossar era um segundo
+          // portador para o mesmo recado, e o que ele nota é a espessura.
+          borderWidth: '1px',
           // Raio próprio, maior que o do resto (§adendo): a referência do Codex
           // arredonda a caixa de fala bem mais do que os blocos de conteúdo, e
           // `--ck-radius-frame` veste código/diff/thinking, onde macio demais
@@ -520,7 +545,12 @@ export function Composer({
         ) : (
         <textarea
           ref={textareaRef}
-          rows={2}
+          // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
+          // referência: "queria que o input de texto tivesse uma linha só,
+          // igual a do CC, e não duas linhas … conforme eu vou digitando e
+          // pulando linha, ela vai aumentando na altura". Revoga a §12 da
+          // estética, que mandava caixa alta; os controles continuam dentro.
+          rows={1}
           value={texto}
           // SEM `disabled`, de propósito. A doc do React descreve `disabled`
           // como "will not be interactive and will appear dimmed": o elemento
@@ -544,7 +574,9 @@ export function Composer({
           className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
           style={{
             fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
-            minHeight: '48px',
+            // Teto para o crescimento: passando disto o composer comeria a
+            // conversa. Rolagem interna assume, que é o que o CC faz.
+            maxHeight: 'var(--ck-h-campo-max)',
           }}
         />
         )}

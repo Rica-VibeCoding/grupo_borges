@@ -27,8 +27,6 @@
 
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 
-import { VeuDoComposer } from '@/components/shell/veu-do-composer';
-
 export function PalcoDaConversa({
   composer,
   children,
@@ -82,7 +80,9 @@ export function PalcoDaConversa({
 
       {/* O composer. Sem `background` aqui: quem pinta é o próprio componente,
           e pintar nos dois lugares criaria uma camada opaca por baixo da
-          translúcida — o desfoque existiria e não apareceria.
+          translúcida — o desfoque existiria e não apareceria. Desde 08/08 o
+          vidro tem a FORMA DA CAIXA e não há mais camada de fundo nenhuma
+          nesta faixa: o feed passa nítido até encostar no composer.
 
           `position: absolute` e não `sticky`: `sticky` ancora no scrollport
           mais próximo (css-position-3 §3.4), que aqui é o viewport do Radix
@@ -99,11 +99,7 @@ export function PalcoDaConversa({
           paddingBottom: 'calc(var(--ck-space-3) + var(--ck-safe-bottom))',
         }}
       >
-        <VeuDoComposer />
-        {/* `relative` é o que põe a caixa POR CIMA do véu: entre dois elementos
-            posicionados sem `z-index`, ganha o que vem depois na árvore. Sem
-            esta linha o véu cobre o composer e o campo fica desfocado. */}
-        <div className="relative">{composer}</div>
+        {composer}
       </div>
     </div>
   );

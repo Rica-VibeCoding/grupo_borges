@@ -680,6 +680,15 @@ e até lá continua marcado como aberto — não como resolvido.
 
 ## 12. Segunda referência do Rica — a tela do Codex, e ela é para ADOTAR (30/07 13:47)
 
+> ⛔ **A "caixa alta" do item 1 está REVOGADA desde 08/08.** Ordem do Rica, olhando a
+> referência do Claude Code no iPhone dele: *"queria que o input de texto tivesse uma linha
+> só, igual a do CC, e não duas linhas. Ele teria as ferramentas embaixo, mas uma linha de
+> texto, e conforme eu vou digitando e pulando linha, ela vai aumentando na altura."*
+> A referência do Codex é de 30/07 e esta é mais recente. **O que continua valendo do item 1
+> são os controles por dentro da caixa** — a referência nova confirma isso. O que cai é a
+> altura de partida: nasce com uma linha (95px medidos, controles inclusos) e cresce até o
+> teto de `--ck-h-campo-max`. Ver §18.
+
 > Nota de numeração: existem duas seções "10" neste arquivo (a *Fronteira*, mais acima, e o
 > *Veredito parcial*). Não renumerei para não invalidar as citações dos despachos já dados.
 > Referências a §10 daqui pra frente significam o **Veredito parcial**.
@@ -1217,84 +1226,104 @@ separa conteúdo no plano, sem elevação.
   consomem `var(--ck-dur-enter, 200ms)`: quando o Pavan criar os tokens, elas passam a usá-los
   sem ninguém tocar no CSS.
 
-## 18. O VÉU DO COMPOSER — a exceção de blur da §9.2, exercida (08/08)
+## 18. O VIDRO DO COMPOSER — três tentativas, e o que cada uma ensinou (08/08)
 
 Ordem do Rica: *"vamos aplicar esse desfoque então que eu tô ansioso pra ver. Capricha
-nessa UI."* Duas referências vieram junto, e elas pedem coisas diferentes.
+nessa UI."* Fechou na terceira. As duas primeiras foram reprovadas por ele no iPhone, e
+as duas por decisão de desenho — a engenharia funcionava nas três.
 
-### Qual das duas referências vale, e por quê não é gosto
+### A referência definitiva é o Claude Code no iPhone dele
 
-- **ChatGPT — adotada.** O campo é SÓLIDO e o texto dentro dele está limpo. Translúcido é
-  só a **faixa em volta**: dá pra ler "CPU Usage" passando desfocado por trás dela. Acima
-  da caixa há um **fade** — o texto entra nítido em cima e desbota descendo.
-- **Telegram — recusada.** *Liquid glass*: os próprios controles translúcidos, com a foto
-  de perfil aparecendo por trás do campo. Reprova na §3, e a régua é objetiva: texto sobre
-  superfície translúcida tem contraste que depende do que está passando por baixo, e o
-  piso de 7:1 AAA não admite "depende".
+Não é a foto do ChatGPT (que levou à tentativa 1) nem a do Telegram (recusada). Na foto do
+CC dá para ver **uma linha de texto borrada passando POR DENTRO da pílula**, atrás do
+placeholder. Isso derruba a régua que eu tinha escrito aqui — *"o campo continua sólido,
+nenhum texto pisa em superfície translúcida"*: **o campo é material**. Foi justamente
+mantê-lo sólido que produziu a faixa preta que ele reprovou.
 
-**Consequência que trava tudo o resto:** o campo continua `--ck-surface-composer` sólido.
-Nenhum texto passou a pisar em superfície nova, então a régua de contraste inteira já
-medida (link a 8.28:1 no composer, e os pares da §2.6) **segue valendo sem remedição**.
+### Tentativa 1 — tint na cor da própria página
 
-### O número, e ele é medido no pixel
+`--ck-surface-canvas` a 72% sobre uma página `--ck-surface-canvas`. Tint cor-do-fundo só
+sabe subtrair: 72% de qualquer coisa atrás vira a cor da página. O texto sumia antes de
+chegar na caixa. Nenhuma plataforma faz isso:
 
-O véu é `--ck-surface-canvas` a **72%** com desfoque de **20px**. A pergunta que a §2.1
-faz de qualquer superfície nova é se a escada `canvas < nav < composer` continua legível
-quando o conteúdo claro do feed passa por baixo. Medi na tela em vez de estimar: capturei
-a faixa com o véu ligado e desligado, na mesma rolagem, com texto de corpo atravessando
-os 72px inteiros. Em múltiplos da luminância do canvas:
+- **Fluent**, valores de produção em tema escuro: TintColor `#2C2C2C` sobre base `#202020`
+  — o tint deles é **mais claro** que a base — com TintOpacity **0.15**.
+- **Apple HIG, Materials:** *"If the underlying content is sufficiently dark… you don't
+  need to apply a dimming layer."* O nosso conteúdo já é escuro.
+- **Filter Effects L2:** *"The effect of the backdrop-filter will not be visible unless
+  some portion of element B is semi-transparent."*
 
-| região da faixa | sem o véu (máx) | **com o véu (máx)** | mediana com véu |
-|---|---|---|---|
-| faixa sólida (56–72px) | 91.34× | **1.56×** | 1.41× |
-| fade (0–56px) | 38.45× | 27.86× | 1.09× |
+### Tentativa 2 — a faixa retangular, e a seta que o Rica desenhou
 
-Régua da §2.1: `nav` 1.65× · `composer` 2.38× · `raised` 3.16×.
+O véu subia 64px acima da caixa com uma escada de quatro camadas de desfoque progressivo
+no topo (o `variable blur` que a HIG descreve para o `scroll edge effect`, montado à mão
+porque o CSS não tem desfoque variável). A engenharia estava certa; o desenho, não. Ele
+desenhou uma seta no print apontando onde a faixa começava: *"a transparência não está só
+atrás da caixa de texto, ela começa logo acima… como se a transparência fosse um quadrado
+inteiro"*.
 
-O pior caso real da faixa sólida — texto branco cheio por baixo — para em **1.56×**, ou
-seja **abaixo do `nav`**. O véu se acomoda entre `canvas` e `nav`, e a caixa sólida que
-ele emoldura continua sendo a coisa mais clara da região, com folga de 0.8×. A escada lê
-inteira. No fade os números altos são o efeito **pedido**: ali o véu é quase transparente
-de propósito, e o que se vê é o texto entrando nítido antes de desbotar.
+Fica registrado o que essa tentativa provou, porque vale para a próxima vez que alguém
+propuser fade: **cortina de alpha na cor do fundo não é `scroll edge effect`.** A HIG
+rejeita o efeito com todas as letras — *"They don't block or darken like overlays"* — e o
+que ela descreve é gradiente de **intensidade de desfoque**, não de opacidade.
 
-O modelo analítico bate com a medida e diz onde está o limite: o véu só alcançaria o
-`composer` se a tinta clara sob a faixa passasse de ~28% da área, regime que texto de
-corpo borrado a 20px não produz.
+### Tentativa 3 — a forma do vidro é a forma da caixa
 
-> Não subir o desfoque "para ficar mais bonito". Em 20px a palavra sob a faixa já deixou
-> de ser palavra e virou textura, que é o efeito pedido. Mais que isso custa GPU de
-> celular sem mudar o que se vê.
+E por isso o vidro **é** a caixa. Esta versão é mais simples que as duas anteriores:
+sumiram o elemento de véu, as quatro camadas e a escada de máscaras. Sobrou
+`backdrop-filter` em `.ck-caixa` e em `.ck-sobre-material` (barra do compact e bloco da
+fila, que ficam fora da caixa e por isso precisam de placa própria). O texto do feed fica
+**nítido até encostar** na caixa, borra ao atravessá-la e reaparece por baixo.
 
-### O fade: `mask-image` venceu, e a medição resolveu a dúvida do Pavan
+### Contraste sobre fundo variável — como se mede a partir de agora
 
-A pergunta aberta era se `mask` e `backdrop-filter` no MESMO elemento sobrevivem, já que
-`mask` está na lista de Backdrop Root do Filter Effects Level 2 §3. **Sobrevivem** — medido
-no Chromium, com o desfoque enxergando o feed inteiro. A alternativa (fade por gradiente
-de cor num irmão, sem `mask`) foi descartada por um motivo visual e não teórico: ela
-desvanece a COR mas não o DESFOQUE, e a borda superior do blur vira uma linha reta de
-nitidez atravessando o texto — exatamente o defeito que o fade existe para não ter.
+Isto muda a §3 na prática, e é a parte que precisa do aval do Rica para virar contrato: com
+o campo translúcido, o texto do app pisa em superfície que depende do que está rolando por
+baixo. A técnica é a **G18** da WCAG — *"the area behind the text is fogged … so that the
+maximum darkness is still light enough to maintain a 4.5:1 contrast ratio"*. Quem segura o
+contraste é o **desfoque**, não a opacidade do tint: 36px transformam qualquer texto do
+feed em textura de baixa frequência.
 
-O que continua valendo como regra: `mask` num elemento **ACIMA** do que desfoca mata o
-desfoque com certeza. Por isso o `mask` mora no próprio véu, nunca num pai.
+A régua deixa de ser "medir contra a superfície mais clara" e passa a ser **procurar o pior
+caso rolando**: capturar a região com o conteúdo do composer escondido, em ~26 posições de
+rolagem, e tomar o p99 de luminância. Medido assim, com `--ck-veu-desfoque: 36px` e
+`--ck-surface-composer-material` a 60%:
 
-Pelo mesmo motivo **não existe `will-change` aqui**, e não é esquecimento. A doc do MDN
-chama a propriedade de *"last resort ... should not be used to anticipate performance
-problems"*, e no nosso caso ela é pior que inócua: `will-change: backdrop-filter` num
-ancestral custaria justamente o desfoque que se quis otimizar.
+- dentro da caixa — pior fundo rgb(53) · texto digitado **10.96:1** (piso 7) · placeholder
+  **5.72:1** (piso 4.5)
+- barra do compact e bloco da fila (placa `.ck-sobre-material`, medida com o elemento
+  injetado na tela porque só existe durante o compact) — pior fundo rgb(64) · **4.84:1**
+  (piso 4.5) · e o texto primário ali dá 9.26:1
+- linha de estado **sob** a caixa — não pisa em vidro: o respiro que o feed reserva
+  (`--ck-composer-altura`) garante que nada do log passe abaixo do composer, então ali o
+  fundo é `--ck-surface-canvas` puro e vale o 6.07:1 já tabelado na §2.2
 
-### O fio de luz da §2.1 não vem para o véu
+**O que fixou a densidade do material foi a BORDA, não o gosto.** A 38% o pior fundo dentro
+da caixa sobe a rgb(56), e ali `--ck-edge-functional` mede **2.97:1** — reprova o piso de
+3:1 para borda funcional. A 60% volta a 3.11:1.
 
-É a única coisa que este elemento recusa do contrato, e a recusa é do próprio desenho:
-fio de 1px marca onde uma superfície COMEÇA, e o topo desta não começa em lugar nenhum —
-desvanece. Um fio ali seria uma linha dura exatamente no pixel em que o fade pede
-dissolução. Quem carrega o fio continua sendo a caixa sólida por cima, que já o tem via
-`.ck-lit`, e é ela que a §2.1 descreve.
+### A "borda fininha" — o pedido que eu não pude atender inteiro
+
+Rica: *"gosto mais da borda fininha, igual nós temos no CC."* Ela já é 1px, e a espessura
+extra de 1.5px que o estado quente usava **saiu** — quem sinaliza estado é a cor, e
+engrossar era um segundo portador para o mesmo recado.
+
+A **cor** eu não baixei, e o motivo é medido: `--ck-edge-functional` mede 3.11:1 contra a
+caixa, com folga de 0.11 sobre o piso. Não há para onde escurecer. A saída teórica seria a
+caixa se delimitar sozinha pela luminância, mas ela nunca fez isso — mesmo quando era
+`--ck-surface-composer` **sólido**, a razão contra o palco era 1.20:1, e hoje é 1.42:1.
+O composer sempre dependeu da borda para existir como componente (WCAG 1.4.11). Se o Rica
+quiser a borda mais fraca mesmo assim, é decisão dele contra um piso da §3 e entra aqui
+como exceção consciente — não é coisa que eu faça sozinho.
 
 ### Limite honesto da medição
 
-Tudo acima foi medido no Chromium. **O WebKit não roda nesta máquina** (faltam bibliotecas
-de sistema e instalá-las pede sudo), então o Safari do iPhone continua sendo o motor que
-só o Rica vê — é a mesma razão pela qual a régua de `?diag=1` existe. O prefixo
-`-webkit-` está escrito à mão nas duas propriedades e **conferido no CSS servido**, não só
-no CSS escrito. Se o Safari recusar `mask` + `backdrop-filter` no mesmo elemento, o
-degradado é perder o desfoque e manter a faixa: fica feio, não fica quebrado.
+Chromium. **O WebKit não roda nesta máquina** (faltam bibliotecas de sistema e instalá-las
+pede sudo), e no iPhone todo navegador usa o motor do Safari — então quem vê primeiro é o
+Rica. Os prefixos `-webkit-` estão escritos à mão e **conferidos no CSS servido**, não só
+no escrito. Sem suporte a `backdrop-filter`, o `@supports` devolve superfície opaca, que é
+a mesma `FallbackColor` que a Fluent define para o caso.
+
+E a prova de que o desfoque **pinta** nunca é média de luminância nem computed style: é o
+mesmo recorte capturado com o filtro ligado e desligado, olhado. Escurecer e desfocar são
+perguntas diferentes, e a média não as separa.
