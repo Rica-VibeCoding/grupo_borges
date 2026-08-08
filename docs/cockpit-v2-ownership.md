@@ -68,6 +68,22 @@ reiniciar o `cockpit-api.service` para "ver funcionar". O serviço roda `uvicorn
 protege o painel de trabalho em andamento, mas também significa que **testar a mudança
 exige um segundo uvicorn em outra porta**, apontando para o mesmo banco. Nunca o de produção.
 
+> ⚠️ **REVOGADO EM PARTE — 08/08/2026, ordem direta do Rica.** Palavras dele:
+> *"pode reciclar, não precisa nem perguntar. Crava isso: terminou, sobe tudo.
+> Quero ver na tela."*
+>
+> **Reciclar para PUBLICAR entrega pronta não pergunta mais.** Continua proibido
+> reciclar *"para ver funcionar"* — isso é teste, e teste continua sendo o segundo
+> uvicorn em outra porta. A distinção é entre publicar o que já passou pela régua e
+> usar produção como bancada.
+>
+> Como reciclar, e não é `restart`: `systemctl --user kill --signal=SIGTERM
+> cockpit-api.service`. A unit é **transiente** (`systemd-run` no `subir-frota.sh`),
+> e `stop`/`restart` a APAGAM — o start seguinte devolve "Unit not found". Com
+> `Restart=always`, o SIGTERM derruba o cgroup e o systemd religa em segundos, sem
+> deixar uvicorn órfão segurando a `:8000`. Provar pela **data do processo**
+> (`ps -o lstart`), nunca por `ActiveState=active`.
+
 ### Papéis fixos, e quem audita quem — regra do Rica (30/07)
 
 Não é combinado deste passo, é **regra permanente** do grupo:
