@@ -109,6 +109,30 @@ const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.Reac
  *  frase. */
 const COMPACT_RE = /^\s*\/compact(?:\s|$)/;
 
+// Teclado físico tem Shift previsível; teclado virtual (touch) não — o Enter dele é
+// a única tecla de "concluir campo", então usá-la pra enviar rouba a quebra de
+// linha. `pointer: coarse` é o sinal recomendado pela doc do MDN pra detectar touch,
+// mais confiável que sniffar user-agent (ex: iPad com teclado físico continua coarse,
+// mas aí o Shift+Enter já resolve).
+function usaTecladoTouch(): boolean {
+  const [touch, setTouch] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches,
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const consulta = window.matchMedia('(pointer: coarse)');
+    const aoMudar = () => setTouch(consulta.matches);
+    consulta.addEventListener('change', aoMudar);
+    return () => consulta.removeEventListener('change', aoMudar);
+  }, []);
+
+  return touch;
+}
+
 export function Composer({
   agentSlug,
   agentName,
@@ -125,6 +149,7 @@ export function Composer({
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const tecladoTouch = usaTecladoTouch();
 
   // O ANEXO tem máquina PRÓPRIA, não a de seis fases do texto. Ali a pergunta é
   // "o agente recebeu?", respondida só pelo eco no stream; aqui o `POST /file`
@@ -560,7 +585,8 @@ export function Composer({
           // ela passa. É o que garante que o texto nunca evapora.
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            // No teclado touch o Enter só quebra linha — envio é só pelo botão.
+            if (e.key === 'Enter' && !e.shiftKey && !tecladoTouch) {
               e.preventDefault();
               enviar(texto);
             }
