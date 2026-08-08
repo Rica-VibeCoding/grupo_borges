@@ -24,11 +24,12 @@
  *
  * ── Fronteira de sistema ─────────────────────────────────────────────────
  *
- * `leCanalBloqueado` valida o que chega da rede em vez de confiar no tipo: o
- * `canal_entrega` ainda não está no `AgentPainelResponse` do `cockpit-core`,
- * que é do Pavan. É o mesmo precedente do `kind: "queued"` em `usa-envio.ts` —
- * ler por uma janela crua descreve honestamente um campo que o tipo do núcleo
- * ainda não conhece, em vez de mentir um cast.
+ * `leCanalBloqueado` valida o que chega da rede em vez de confiar no tipo — e
+ * continua assim agora que o `canal_entrega` ENTROU no `AgentPainelResponse`
+ * do `cockpit-core`. Tipo de TypeScript some na compilação: ele descreve o que
+ * o back promete, nunca o que o socket entregou. Campo ausente numa API mais
+ * velha, resposta truncada, proxy que devolve HTML de erro — tudo isso passa
+ * pelo tipo e morre aqui, virando `null`, que é o caso normal.
  *
  * Módulo neutro: sem `'use client'`, sem React, sem DOM.
  */

@@ -336,6 +336,26 @@ export type PainelSandbox = {
   session_may_diverge: boolean;
 };
 
+// O que o driver do tmux sabe sobre a ÚLTIMA tentativa de entrega — não sobre a
+// mensagem que você está mandando agora. `bloqueado` é a única leitura que
+// autoriza afirmar "não entrou": nos outros dois o canal não prova nada, e a UI
+// tem que continuar honesta sobre a dúvida.
+//
+// `mensagem` e `acao_recomendada` já chegam em prosa de operação em pt-BR, do
+// `_DELIVERY_FAILURE_MESSAGES` do driver. O front NÃO traduz motivo em texto:
+// quem nomeia a falha é quem a observou.
+export type PainelCanalEntrega = {
+  estado: 'entregando' | 'bloqueado' | 'sem_dados';
+  entregando: boolean | null;
+  motivo?: string | null;
+  mensagem: string;
+  recusas_consecutivas: number;
+  bloqueado_desde?: number | null;
+  bloqueado_ha_segundos: number;
+  ultima_tentativa_em?: number | null;
+  acao_recomendada: string;
+};
+
 export type AgentPainelResponse = {
   slug: string;
   generated_at: number;
@@ -344,6 +364,7 @@ export type AgentPainelResponse = {
   permission: PainelPermission;
   quotas: PainelQuotas;
   subagents: PainelSubagents;
+  canal_entrega: PainelCanalEntrega;
   // Presentes apenas quando o agente é Codex (executor_kind='codex').
   sandbox?: PainelSandbox | null;
   codex_native?: boolean | null;

@@ -41,6 +41,19 @@ function painel(patch: Partial<AgentPainelResponse> = {}): AgentPainelResponse {
     permission: { mode: 'ask', source: 'teste', session_may_diverge: false },
     quotas: { status: 'unknown', stale_after_seconds: 0 },
     subagents: { count: 0, active_count: 0, items: [] },
+    // Piso copiado do back (`get_delivery_channel_state`, sem registro ainda),
+    // não inventado: fixture que erra o shape esconde regressão de contrato.
+    canal_entrega: {
+      estado: 'sem_dados',
+      entregando: null,
+      motivo: null,
+      mensagem: 'Ainda não houve tentativa de entrega desde que a API iniciou.',
+      recusas_consecutivas: 0,
+      bloqueado_desde: null,
+      bloqueado_ha_segundos: 0,
+      ultima_tentativa_em: null,
+      acao_recomendada: 'Envie uma mensagem para confirmar o canal.',
+    },
     ...patch,
   };
 }
