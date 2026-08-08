@@ -53,6 +53,16 @@ export type PortaDeEnvio =
 const RECADO_ANEXO_EM_VOO =
   'o arquivo anterior ainda está subindo — sua mensagem continua aqui';
 
+/**
+ * O compact com ARQUIVO na mão. O texto puro vai para a fila e sai sozinho (ver
+ * `EfeitoEnvio.enfileira`); o anexo não — a fila carrega texto, e pendurar um
+ * arquivo fora do composer inventaria um segundo lugar onde ele pode estar. Aqui
+ * a espera continua sendo manual, então a frase não pode prometer despacho: era
+ * essa promessa não cumprida, na linha de baixo, que gerou esta rodada.
+ */
+const RECADO_COMPACT_COM_ANEXO =
+  'compactando — o anexo continua aqui, toque em enviar quando a barra sumir';
+
 const RECADO: Record<
   'texto' | 'voz',
   Record<Exclude<MotivoRecusa, 'vazio' | 'anexo-em-voo'>, string>
@@ -111,9 +121,22 @@ export function abrePorta(entrada: {
   return { libera: true };
 }
 
-/** O que o composer faz com o gesto: despachar, esvaziar o campo, avisar. */
+/** O que o composer faz com o gesto: despachar, enfileirar, esvaziar o campo,
+ *  avisar. */
 export type EfeitoEnvio = {
   despacha: boolean;
+  /**
+   * Não sai agora, mas SAI — fica pendurado à vista e o composer despacha
+   * sozinho quando o compact terminar (`fila-de-envio.ts`).
+   *
+   * Existe porque a frase de `RECADO.texto.compactando` era mentira: nada
+   * reenviava, e o comentário do composer justificava a ausência de botão
+   * dizendo que "não há algo a fazer além de esperar". Agora a promessa tem
+   * quem a cumpra, e por isso este é o único caso em que o campo esvazia sem
+   * despacho — o texto não evaporou, mudou de lugar, e o lugar novo está na
+   * tela com o texto inteiro à mostra.
+   */
+  enfileira: boolean;
   /**
    * O campo só esvazia quando a tentativa foi despachada. Era o contrário:
    * `composer.tsx` limpava ANTES de chamar a máquina, apostando numa promessa
@@ -152,6 +175,33 @@ export function preparaEnvio(entrada: {
   retomada?: boolean;
 }): EfeitoEnvio {
   const porta = abrePorta(entrada);
-  if (porta.libera) return { despacha: true, limpaCampo: !entrada.retomada, aviso: null };
-  return { despacha: false, limpaCampo: false, aviso: porta.recado };
+  if (porta.libera) {
+    return { despacha: true, enfileira: false, limpaCampo: !entrada.retomada, aviso: null };
+  }
+  // A FILA. Só o texto puro, e só na espera do compact:
+  //
+  // - `temAnexo` fica de fora — a fila carrega texto, e pendurar um arquivo fora
+  //   do composer inventaria um segundo lugar onde ele pode estar.
+  // - `midia: 'voz'` fica de fora — o áudio recusado não tem onde ficar, e o
+  //   recado dele já é honesto ("grave de novo").
+  // - `retomada` fica de fora — o corpo veio da máquina, que já o guarda com o
+  //   botão de reenviar do lado; enfileirar criaria uma segunda cópia do mesmo
+  //   texto em dois lugares que não sabem um do outro.
+  // - Os OUTROS motivos ficam de fora: `envio-em-voo` dura o tempo de uma
+  //   viagem de rede e `anexo-em-voo` o de uma subida — pendurar bloco para uma
+  //   espera de segundos é mais interrupção do que a espera.
+  const vaiParaFila =
+    porta.motivo === 'compactando' &&
+    (entrada.midia ?? 'texto') === 'texto' &&
+    !entrada.temAnexo &&
+    !entrada.retomada;
+  if (vaiParaFila) {
+    // Sem aviso: o bloco da fila JÁ diz o que vai acontecer, com o texto à
+    // vista. Repetir a frase embaixo dele seria dizer duas vezes a mesma coisa
+    // em dois lugares — e a segunda, sem o texto, diria menos.
+    return { despacha: false, enfileira: true, limpaCampo: true, aviso: null };
+  }
+  const aviso =
+    porta.motivo === 'compactando' && entrada.temAnexo ? RECADO_COMPACT_COM_ANEXO : porta.recado;
+  return { despacha: false, enfileira: false, limpaCampo: false, aviso };
 }

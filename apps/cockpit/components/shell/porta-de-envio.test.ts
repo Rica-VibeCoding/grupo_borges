@@ -4,41 +4,110 @@ import { test } from 'node:test';
 import { abrePorta, preparaEnvio } from './porta-de-envio.ts';
 
 /**
- * A ESPINHA: o campo nunca esvazia sem despacho.
+ * A ESPINHA: o campo nunca esvazia sem que o texto vá para ALGUM lugar visível.
  *
  * É este par que reproduz o incidente. Antes, `composer.tsx:245` chamava
  * `setTexto('')` incondicionalmente e só depois consultava a máquina — o
  * equivalente a `limpaCampo: true, despacha: false`, que é o descarte com o
  * texto já apagado. Se algum dia alguém reintroduzir a limpeza otimista, é
  * aqui que quebra.
+ *
+ * A invariante ganhou um segundo destino em 08/08 e NÃO afrouxou: a fila do
+ * compact esvazia o campo sem despachar, e isso é legítimo porque o texto
+ * aparece inteiro no bloco acima do composer, com o controle de trazê-lo de
+ * volta. O que continua proibido é o campo esvaziar e o texto não estar em
+ * lugar nenhum.
  */
-test('campo esvaziado sem despacho é o descarte — nunca pode acontecer', () => {
+test('campo esvaziado sem destino é o descarte — nunca pode acontecer', () => {
   const casos = [
     { texto: 'sobe o build', compactando: true, faseEnvio: 'ocioso' as const },
     { texto: 'e a segunda', compactando: false, faseEnvio: 'aceito' as const },
     { texto: 'e a terceira', compactando: false, faseEnvio: 'enviando' as const },
     { texto: '  ', compactando: false, faseEnvio: 'ocioso' as const },
+    { texto: 'com foto', temAnexo: true, compactando: true, faseEnvio: 'ocioso' as const },
   ];
 
   for (const caso of casos) {
     const efeito = preparaEnvio(caso);
     assert.equal(efeito.despacha, false, 'este caso tem de ser recusado');
-    assert.equal(
-      efeito.limpaCampo,
-      false,
-      'recusou e ainda assim esvaziaria o campo: é exatamente a mensagem perdida de 05/08',
-    );
+    if (efeito.limpaCampo) {
+      assert.ok(
+        efeito.enfileira,
+        'esvaziou o campo sem despachar e sem enfileirar: é a mensagem perdida de 05/08',
+      );
+    }
   }
 });
 
-test('recusa que despacha nada tem de falar, salvo campo vazio', () => {
-  assert.ok(preparaEnvio({ texto: 'oi', compactando: true, faseEnvio: 'ocioso' }).aviso);
+/**
+ * A FILA. A frase "sua mensagem continua aqui e sai quando a barra sumir" era
+ * mentira: nada reenviava. Agora o texto puro sai do campo, fica pendurado à
+ * vista e é despachado sozinho — ver `fila-de-envio.ts`.
+ */
+test('texto recusado pelo compact vai para a fila, não fica preso no campo', () => {
+  const efeito = preparaEnvio({ texto: 'sobe o build', compactando: true, faseEnvio: 'ocioso' });
+
+  assert.equal(efeito.despacha, false, 'durante o compact nada sai — é a trava que gerou a peça');
+  assert.equal(efeito.enfileira, true);
+  assert.equal(efeito.limpaCampo, true, 'o texto saiu das mãos: deixá-lo no campo o duplicaria');
+  assert.equal(
+    efeito.aviso,
+    null,
+    'o bloco da fila já diz o que vai acontecer, e com o texto junto — repetir embaixo diria menos',
+  );
+});
+
+test('só o TEXTO entra na fila — anexo, voz e retomada não têm onde ficar', () => {
+  const comFoto = preparaEnvio({
+    texto: 'olha isso',
+    temAnexo: true,
+    compactando: true,
+    faseEnvio: 'ocioso',
+  });
+  assert.equal(comFoto.enfileira, false, 'a fila carrega texto, não arquivo');
+  assert.equal(comFoto.limpaCampo, false);
+  assert.ok(comFoto.aviso, 'e a recusa do anexo continua falando');
+  assert.doesNotMatch(
+    comFoto.aviso,
+    /sai quando/,
+    'com anexo o envio continua manual — prometer despacho é a mentira que esta rodada matou',
+  );
+
+  const voz = preparaEnvio({ compactando: true, faseEnvio: 'ocioso', midia: 'voz' });
+  assert.equal(voz.enfileira, false, 'áudio recusado não tem onde ficar; o recado dele é outro');
+  assert.ok(voz.aviso);
+
+  const pendurado = preparaEnvio({
+    texto: 'sobe o build',
+    compactando: true,
+    faseEnvio: 'ocioso',
+    retomada: true,
+  });
+  assert.equal(
+    pendurado.enfileira,
+    false,
+    'a máquina já guarda o texto pendurado — enfileirar faria duas cópias que não se conhecem',
+  );
+});
+
+test('as esperas de segundos não viram bloco na tela', () => {
+  // `envio-em-voo` dura uma viagem de rede e `anexo-em-voo` uma subida. Pendurar
+  // um bloco para isso é mais interrupção do que a própria espera.
+  for (const faseEnvio of ['enviando', 'aceito'] as const) {
+    const efeito = preparaEnvio({ texto: 'e a segunda', compactando: false, faseEnvio });
+    assert.equal(efeito.enfileira, false);
+    assert.ok(efeito.aviso, 'e continuam falando, que é a invariante do módulo');
+  }
+});
+
+test('recusa que não enfileira tem de falar, salvo campo vazio', () => {
+  assert.ok(preparaEnvio({ texto: 'oi', compactando: false, faseEnvio: 'aceito' }).aviso);
   assert.equal(preparaEnvio({ texto: '', compactando: false, faseEnvio: 'ocioso' }).aviso, null);
 });
 
 test('liberado despacha e esvazia o campo no mesmo instante', () => {
   const efeito = preparaEnvio({ texto: 'vai', compactando: false, faseEnvio: 'ocioso' });
-  assert.deepEqual(efeito, { despacha: true, limpaCampo: true, aviso: null });
+  assert.deepEqual(efeito, { despacha: true, enfileira: false, limpaCampo: true, aviso: null });
 });
 
 /**

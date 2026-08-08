@@ -37,7 +37,15 @@
  * verdade e mostra o que ele está fazendo — nada de estado forçado, nada de
  * caminho que só a tela de teste exercita.
  */
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { fetchAgentPainel, patchAgentEffort } from '@grupo_borges/cockpit-core/api';
 
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
@@ -48,6 +56,17 @@ import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
 import { BarraCompact } from './barra-compact';
+import { BlocoDaFila } from './bloco-da-fila';
+import {
+  FILA_VAZIA,
+  devolveAoInicio,
+  enfileira,
+  proximoDaFila,
+  reagiuAsFases,
+  retira,
+  soltaPausa,
+  type ItemDaFila,
+} from './fila-de-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { descreveMotor, rotulaEsforco, type Motor } from './motor';
 import { preparaEnvio } from './porta-de-envio';
@@ -133,6 +152,12 @@ export function Composer({
   // O `/compact` saiu mas o compact ainda não deu sinal — é a janela em que
   // um envio FALHADO significa "o compact nunca começou" e a espera morre.
   const compactPendenteRef = useRef(false);
+
+  // A FILA DA ESPERA. O texto recusado pelo compact não fica no campo: ele sai
+  // das mãos, fica pendurado à vista e é despachado sozinho quando a espera
+  // termina — a régua de quem sai e quando mora em `fila-de-envio.ts`.
+  const [fila, setFila] = useState(FILA_VAZIA);
+  const contadorFila = useRef(0);
 
   // Por que a recusa não foi despachada. Não tem botão de dispensar de
   // propósito: ela descreve um impedimento do INSTANTE, não um erro a ser
@@ -275,7 +300,7 @@ export function Composer({
    * falhou, e mandá-la com a legenda de outra mensagem seria despachar algo que
    * o Rica não pediu.
    */
-  async function enviar(corpo: string, retomada = false) {
+  async function enviar(corpo: string, retomada = false): Promise<boolean> {
     // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
     // três `return` mudos recusavam DEPOIS de `setTexto('')` já ter rodado, e
     // em 05/08 uma mensagem do Rica morreu assim — sem requisição, sem aviso,
@@ -299,7 +324,18 @@ export function Composer({
       retomada,
     });
     setAvisoDaPorta(efeito.aviso);
-    if (!efeito.despacha) return;
+    // A FILA. O único caminho em que o campo esvazia sem despacho — e não é
+    // descarte: o texto sai do campo e aparece inteiro no bloco logo acima,
+    // com o controle de trazê-lo de volta. O despacho é do efeito abaixo,
+    // quando a espera terminar.
+    if (efeito.enfileira) {
+      contadorFila.current += 1;
+      const item = { id: `fila-${contadorFila.current}`, texto: corpo };
+      setFila((atual) => enfileira(atual, item));
+      if (efeito.limpaCampo) setTexto('');
+      return false;
+    }
+    if (!efeito.despacha) return false;
     // UM GESTO, UMA ENTREGA: o arquivo sobe com o texto como legenda, no mesmo
     // multipart. Não existe mensagem de texto separada — duas requisições dariam
     // duas entregas ao tmux, e o agente veria a legenda antes ou depois do
@@ -312,7 +348,7 @@ export function Composer({
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
       if (await anexo.enviar(corpo)) setTexto('');
-      return;
+      return true;
     }
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
@@ -330,6 +366,57 @@ export function Composer({
     setTranscrito(null);
     setFalhaDaFala(null);
     await envio.enviar(corpo);
+    return true;
+  }
+
+  /**
+   * A FILA ANDANDO. Effect Event porque o despacho precisa LER a fila sem
+   * DEPENDER dela como reação: o que dispara é a espera mudando de estado.
+   *
+   * A guarda de `ref` que se costuma escrever aqui não serviria — a doc do
+   * React nomeia esse recurso como "a common pitfall" e diz com todas as letras
+   * que ele "doesn't fix the bug", só esconde o duplo disparo do StrictMode em
+   * desenvolvimento.
+   *
+   * `reagiuAsFases` devolve o MESMO objeto quando nada muda, então o `setFila`
+   * de um tick sem novidade não re-renderiza e o efeito não gira em falso.
+   */
+  const drenarFila = useEffectEvent(() => {
+    const fases = { compact: estadoCompact.fase, envio: faseLocal };
+    const atualizado = reagiuAsFases(fila, fases);
+    const proximo = proximoDaFila(atualizado, fases);
+    if (!proximo) {
+      setFila(atualizado);
+      return;
+    }
+    setFila(retira(atualizado, proximo.id).estado);
+    // `retomada: true`: o corpo não veio do campo. É o que impede a fila de
+    // comer o que ele escreveu DEPOIS — e o que impede a foto retida de sair
+    // de carona numa mensagem que não é dela.
+    void enviar(proximo.texto, true).then((saiu) => {
+      if (!saiu) setFila((atual) => devolveAoInicio(atual, proximo));
+    });
+  });
+
+  // A fila entra nas dependências de propósito, e não é ela que dispara o
+  // despacho: é ela que faz a DRENAGEM CONTINUAR. Cada item que sai encolhe a
+  // fila, o efeito roda de novo e o seguinte espera o eco do anterior — a
+  // serialização sai da porta (`envio-em-voo`), não de um laço aqui. É também o
+  // que faz o botão "enviar mesmo assim" despachar sem um caminho próprio: ele
+  // só apaga a pausa.
+  useEffect(() => {
+    drenarFila();
+  }, [estadoCompact.fase, faseLocal, fila]);
+
+  /** Tira da fila e devolve ao campo — cancelar e editar são o mesmo gesto, e
+   *  nada que saia da fila evapora. O que já estava escrito fica embaixo: o
+   *  campo é do Rica, e sobrescrevê-lo seria o descarte pela porta dos fundos. */
+  function editarDaFila(id: string) {
+    const { estado, item } = retira(fila, id);
+    if (!item) return;
+    setFila(estado);
+    setTexto((atual) => (atual.trim() ? `${item.texto}\n${atual}` : item.texto));
+    textareaRef.current?.focus();
   }
 
   function aoSubmeter(e: FormEvent) {
@@ -371,6 +458,14 @@ export function Composer({
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />
+      {/* A FILA DA ESPERA — entre o indicador de trabalho e a caixa, nunca
+          dentro dela: o campo é o que está sendo escrito agora, a fila é o que
+          já saiu das mãos. */}
+      <BlocoDaFila
+        estado={fila}
+        aoEditar={editarDaFila}
+        aoForcar={() => setFila(soltaPausa(fila))}
+      />
       {/* O INVÓLUCRO DA ÂNCORA. Existe por uma razão só: dar à gaveta um
           `position: relative` que meça exatamente a caixa do composer. Se o
           `bottom: 100%` dela medisse a coluna inteira (que também tem as linhas
@@ -440,7 +535,12 @@ export function Composer({
               enviar(texto);
             }
           }}
-          placeholder={travaCompact ? 'compactando… aguarde' : `Mensagem para ${agentName}`}
+          // "aguarde" era a mesma promessa vazia da faixa: dizia para esperar
+          // sem dizer o que aconteceria com o que ele escrevesse. Agora entra
+          // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
+          placeholder={
+            travaCompact ? 'compactando… pode escrever, entra na fila' : `Mensagem para ${agentName}`
+          }
           className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
           style={{
             fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
@@ -729,7 +829,12 @@ export function Composer({
       {/* POR QUE NÃO SAIU. Antes desta faixa a recusa era um `return` mudo: o
           Rica tocava Enter, o campo esvaziava e a mensagem não existia mais em
           lugar nenhum. Sem botão de dispensar — o aviso morre quando o motivo
-          morre, e um botão sugeriria que há algo a fazer além de esperar. */}
+          morre.
+
+          A recusa do COMPACT não passa mais por aqui: ela virou fila, e quem
+          fala por ela é o bloco lá em cima, com o texto à vista. O que sobra
+          nesta faixa são as esperas de segundos (envio e anexo em voo) — para
+          essas, esperar é mesmo a única coisa a fazer. */}
       {avisoDaPorta ? (
         <span
           role="status"

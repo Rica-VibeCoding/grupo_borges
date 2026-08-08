@@ -51,6 +51,18 @@ hipótese.
 | `composer-retomada.py` | "Tentar de novo" reenvia o texto pendurado sem comer o que está no campo. Bug `307c4624`, commit `c4ab92f`. |
 | `bolha-da-fila.py` | Mensagem enviada com o agente em turno vira bolha na hora, marcada "na fila"; a marca cai na drenagem e não nasce bolha duplicada. Bug `e615c350`. |
 | `cota-no-painel.py` | Painel mostra a cota das duas janelas com percentual e reset; cota velha vem marcada com a idade; `missing` vira recado sem comer os controles. Bug `294c5464`. |
+| `fila-do-compact.py` | O escrito durante o compact fica pendurado à vista e sai sozinho quando a espera termina — e NADA chega ao agente antes disso: o resumo nasce inteiro e gravado antes da fila. |
+
+**`fila-do-compact.py` também roda solto**, pelo mesmo motivo e com um a mais: o
+que se mede é a ORDEM em que duas coisas chegam ao agente (o resumo e a mensagem
+enfileirada), e um compact interceptado não tem resumo para nascer antes. Alvo é
+o `canario`, e não é escolha de conveniência — o compact apaga o contexto de quem
+o recebe.
+
+**Seletor que depende de estado é seletor que some na hora H:** o placeholder do
+composer MUDA durante o compact, e `get_by_placeholder("Mensagem para")` custou
+uma corrida inteira. Ancore no elemento (`locator("textarea")`), não no texto que
+a própria mudança altera.
 
 **Exceção à regra 1 em `bolha-da-fila.py`:** ele despacha DE VERDADE, sem
 interceptar. O que se mede é o caminho inteiro CLI → JSONL → SSE → feed, e um
