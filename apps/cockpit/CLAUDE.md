@@ -42,6 +42,11 @@ peça central está polindo 18% da tela.
    tarefa, não são um segundo pedido. A ordem da unit é `stop` → `reset-failed`
    → `systemd-run`; invertida, a transiente continua carregada e o `systemd-run`
    morre com *"already loaded or has a fragment file"* deixando a 3008 fora.
+   **Mas isso só vale pra 3008/:3446.** O Rica olha o cockpit pela `:3444`, que
+   aponta pro **dev na 3009** (Turbopack), não pra produção — código e arquivo
+   novo em `public/` aparecem sozinhos, sem build nem restart. Rodar
+   `pnpm build` + religar a unit achando que é obrigatório pra ele ver é
+   trabalho perdido (08/08).
 
 ## Skills daqui
 
