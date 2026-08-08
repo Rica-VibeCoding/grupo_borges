@@ -26,7 +26,7 @@ peça central está polindo 18% da tela.
 | mexer em `packages/cockpit-core` | `../../packages/cockpit-core/CIRURGIAS.md` |
 | entender por que o plano é este | `../../docs/cockpit-v2-playbook.md` |
 
-## Cinco regras que não se negociam
+## Seis regras que não se negociam
 
 1. **Cor só em `app/globals.css`.** Nenhum hex, `rgb()`, `oklch()`, `bg-[#...]`
    ou cor inline em componente. É o que permite "põe no verde" mudar um lugar.
@@ -37,6 +37,11 @@ peça central está polindo 18% da tela.
 4. **Teto de 300 linhas por arquivo.** Passou, está fazendo duas coisas.
 5. **Nunca `next dev` genérico nem `pkill next`** — derruba o cockpit do Rica na
    3007. Use a skill `subir-cockpit`.
+6. **Terminou, publica — sem perguntar.** Ordem do Rica em 08/08: commit não é
+   entrega, ele só vê o que está na 3008. Build e republicação fazem parte da
+   tarefa, não são um segundo pedido. A ordem da unit é `stop` → `reset-failed`
+   → `systemd-run`; invertida, a transiente continua carregada e o `systemd-run`
+   morre com *"already loaded or has a fragment file"* deixando a 3008 fora.
 
 ## Skills daqui
 
