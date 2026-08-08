@@ -156,6 +156,14 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
           className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
         >
+          {item.enfileirada ? (
+            // O composer já avisa "entrou na fila" (usa-envio.ts:113); esta é
+            // a metade do feed concordando com ele. Cai sozinha quando o eco
+            // chega, então é estado do turno — não carimbo de histórico.
+            <div style={{ color: 'var(--ck-text-tertiary)', fontSize: 'var(--ck-text-xs)' }}>
+              na fila
+            </div>
+          ) : null}
           <Fala texto={item.text} />
         </div>
       );

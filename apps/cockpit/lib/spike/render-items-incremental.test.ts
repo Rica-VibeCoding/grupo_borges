@@ -89,6 +89,75 @@ test('novo grupo lateral estende run já coalescido', () => {
   }
 });
 
+// tropa_task e615c350. A bolha da fila nasce dezenas de mensagens antes do
+// eco, então ela está SEMPRE na parte estável quando ele chega — sem o rewind
+// a cauda não vê o par, e o Rica lê a própria frase duas vezes.
+test('fila e eco: o rewind mantém a paridade com o rebuild em cada prefixo', () => {
+  const trabalho = fixtures.find((fixture) => fixture.evento.kind === 'assistant' && !fixture.evento.is_sidechain);
+  assert.ok(trabalho);
+  const enfileirada = {
+    ...trabalho.evento,
+    id: 7_000_001,
+    kind: 'queued',
+    uuid: '',
+    message: null,
+    content: 'tem mandei um anexo',
+  } as unknown as MessagePayload;
+  const eco = {
+    ...trabalho.evento,
+    id: 7_000_003,
+    kind: 'user',
+    uuid: 'eco-da-fila',
+    message: { role: 'user', content: 'tem mandei um anexo' },
+  } as unknown as MessagePayload;
+  const meio = { ...trabalho.evento, id: 7_000_002, uuid: 'turno-em-curso' };
+
+  const messages = [enfileirada, meio, eco];
+  const incremental = createIncrementalRenderItems();
+  for (let length = 1; length <= messages.length; length++) {
+    const prefix = messages.slice(0, length);
+    assert.deepEqual(incremental.update(prefix), full(prefix), `divergência no prefixo ${length}`);
+  }
+  // A régua do produto, não só a do oráculo: uma bolha, e sem a marca depois
+  // que o turno consumiu a frase.
+  const bolhas = incremental.update(messages).filter((item) => item.kind === 'user');
+  assert.equal(bolhas.length, 1);
+  assert.equal(bolhas[0].kind === 'user' && bolhas[0].enfileirada, undefined);
+});
+
+// O caminho que o canário mostrou ao vivo em 07/08: a fila drenou DENTRO do
+// turno, o CLI gravou `queue-operation remove` e nenhuma linha `user`. Quem
+// tira a marca aqui é o fim do turno, e ele chega numa cauda posterior.
+test('fila drenada sem eco: o fim do turno tira a marca na cauda seguinte', () => {
+  const trabalho = fixtures.find((fixture) => fixture.evento.kind === 'assistant' && !fixture.evento.is_sidechain);
+  assert.ok(trabalho);
+  const enfileirada = {
+    ...trabalho.evento,
+    id: 7_100_001,
+    kind: 'queued',
+    uuid: '',
+    message: null,
+    content: 'tem mandei um anexo',
+  } as unknown as MessagePayload;
+  const fimDoTurno = {
+    ...trabalho.evento,
+    id: 7_100_002,
+    uuid: 'fim-do-turno',
+    message: { role: 'assistant', stop_reason: 'end_turn', content: 'terminei' },
+  } as unknown as MessagePayload;
+
+  const incremental = createIncrementalRenderItems();
+  const marcada = incremental.update([enfileirada]).filter((item) => item.kind === 'user');
+  assert.equal(marcada.length, 1);
+  assert.equal(marcada[0].kind === 'user' && marcada[0].enfileirada, true);
+
+  const messages = [enfileirada, fimDoTurno];
+  assert.deepEqual(incremental.update(messages), full(messages));
+  const depois = incremental.update(messages).filter((item) => item.kind === 'user');
+  assert.equal(depois.length, 1);
+  assert.equal(depois[0].kind === 'user' && depois[0].enfileirada, undefined);
+});
+
 test('reprocessa somente a cauda em 1.040+ mensagens', () => {
   const source = fixtures.find((fixture) => !fixture.evento.is_sidechain)?.evento;
   assert.ok(source);

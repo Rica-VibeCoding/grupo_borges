@@ -98,20 +98,12 @@ function respostaTemFronteira(
  * O `kind: "queued"` do backend (commit 640282c): quando o agente está no
  * meio de um turno, o CLI enfileira a mensagem (`queue-operation`/`enqueue`)
  * e o stream emite este evento — com `message: null` e o texto no `content`
- * de fora. O kind não está no union `MessageKind` do cockpit-core, então o
- * estreitamento é local. É o recibo de entrega da fila: chega em segundos,
- * enquanto o eco `user` só nasce quando a fila drena — minutos depois.
- *
- * Sem type predicate de propósito: `queued` não pertence ao union `MessageKind`,
- * então `MessagePayload & { kind: 'queued' }` reduz o `kind` a `never` e todo
- * acesso posterior vira erro. Ler os dois campos por uma janela crua é o que
- * descreve o formato honestamente — o tipo do core continua sendo a verdade
- * dele, e este é um evento que ele ainda não conhece.
+ * de fora. É o recibo de entrega da fila: chega em segundos, enquanto o eco
+ * `user` só nasce quando a fila drena — minutos depois.
  */
 function textoEnfileirado(payload: MessagePayload): string | null {
-  const cru = payload as unknown as { kind?: unknown; content?: unknown };
-  if (cru.kind !== 'queued') return null;
-  return typeof cru.content === 'string' && cru.content.length > 0 ? cru.content : null;
+  if (payload.kind !== 'queued') return null;
+  return typeof payload.content === 'string' && payload.content.length > 0 ? payload.content : null;
 }
 
 function textoDaMensagem(
@@ -119,7 +111,7 @@ function textoDaMensagem(
 ): { texto: string; papel: 'user' | 'fila' } | null {
   const daFila = textoEnfileirado(payload);
   if (daFila !== null) return { texto: daFila, papel: 'fila' };
-  if ((payload as unknown as { kind?: unknown }).kind === 'queued') return null;
+  if (payload.kind === 'queued') return null;
   if (payload.message?.role !== 'user') return null;
   const conteudo = payload.message.content;
   const texto =

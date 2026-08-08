@@ -49,6 +49,17 @@ hipótese.
 |---|---|
 | `retentativa-painel.py` | Painel fora do ar volta sozinho; backoff cresce (2s/4s/8s) e para ao fechar a gaveta. Bug `940d5c07`, commit `783b2be`. |
 | `composer-retomada.py` | "Tentar de novo" reenvia o texto pendurado sem comer o que está no campo. Bug `307c4624`, commit `c4ab92f`. |
+| `bolha-da-fila.py` | Mensagem enviada com o agente em turno vira bolha na hora, marcada "na fila"; a marca cai na drenagem e não nasce bolha duplicada. Bug `e615c350`. |
+
+**Exceção à regra 1 em `bolha-da-fila.py`:** ele despacha DE VERDADE, sem
+interceptar. O que se mede é o caminho inteiro CLI → JSONL → SSE → feed, e um
+`fulfill` provaria só o desenho. O alvo é o `canario` (`agents.yaml`), agente
+descartável com casa própria — nunca um agente produtivo.
+
+**Terceira regra, aprendida nesse mesmo bug:** *espere o FATO, não o relógio.*
+Duas corridas erraram por cronômetro — uma leu como sucesso uma bolha que era o
+eco comum (o agente já tinha saído do turno), outra leu como defeito uma marca
+legítima (o turno ainda rodava). O laço espera a linha no JSONL.
 
 Screenshot **não** é versionado — é artefato de corrida e pesa. O que se versiona
 é o script que sabe tirá-lo de novo. Sai em `/home/clawd/provas/<nome>/`, ou onde

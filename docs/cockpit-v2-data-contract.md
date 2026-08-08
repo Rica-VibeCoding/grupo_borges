@@ -66,7 +66,7 @@ sem passar pelo contrato:
 
 | kind | o que é | campos que o renderer usa |
 |---|---|---|
-| `user` | mensagem do Rica | `text` |
+| `user` | mensagem do Rica | `text`, `enfileirada?` |
 | `user-internal` | entrada que não é do Rica (hook, sistema) | `text` |
 | `synthetic` | mensagem fabricada pelo CC | `syntheticKind`, `rawText` |
 | `channel` | veio de Telegram/WhatsApp | `raw` (envelope ainda cru) |
@@ -76,6 +76,31 @@ sem passar pelo contrato:
 | `sidechain-group` | um subagente | `rootUuid`, `count`, `durMs`, `parentUuids` |
 | `sidechain-cluster` | 2+ subagentes consecutivos | `groups[]`, `subagentCount`, `totalDurMs` |
 | `ask-user` | pergunta do MCP `ask-user` | `entry` — **não vem do JSONL**, vem do evento SSE `ask_user` |
+
+### O `kind: 'queued'` do stream não ganha item próprio (tropa_task e615c350)
+
+`MessagePayload.kind` tem um sexto valor além dos cinco de chat: `queued`, o
+`queue-operation`/`enqueue` que o CLI grava quando a mensagem chega com o turno
+rodando. Vem com `message: null` e o texto solto em `content`.
+
+Ele **não** vira um décimo primeiro `RenderItem`. `buildRenderItems` o normaliza
+para uma entrada de usuário e deixa o pipeline de sempre classificar — envelope
+de canal, task-notification e chip de skill têm de casar igual nas duas
+passagens, senão a frase muda de forma quando a fila drena. A bolha nasce na
+posição em que o Rica digitou e ganha `enfileirada: true` enquanto o turno não a
+consumiu.
+
+Sair da fila tem **dois** caminhos, e os dois estão cobertos em
+`resolucaoDaFila`:
+
+- **turno novo** — o CLI regrava a frase como `user`. Esse eco é DESCARTADO
+  (uma entrega, uma bolha). 1680 de 2443 enfileiramentos do corpus local.
+- **mesmo turno** — o CLI grava `queue-operation remove` e **nenhuma** linha
+  `user` (medido no canário, 07/08). O `remove` não é canonizado pelo back, então
+  quem tira a marca é o `stop_reason: 'end_turn'` do turno.
+
+O `end_turn` tira a marca mas **não** fecha a janela do eco: na drenagem em turno
+novo o eco chega depois dele.
 
 O `chip` é onde mora a maior parte da tela: ele carrega o resultado de
 `chat-payload-classifier.ts` (13 KB) e é o item que o `tool_use`/`tool_result`

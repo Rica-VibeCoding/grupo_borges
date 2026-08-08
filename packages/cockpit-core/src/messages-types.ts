@@ -1,7 +1,10 @@
 // Tipos canônicos do contrato SSE /api/agents/{slug}/messages/stream — JP-11 Fase 2.
 // Fonte: /tmp/jp11-fase2-contrato.md (cravado por Pavan após spike).
 
-export type MessageKind = 'user' | 'assistant' | 'attachment' | 'summary' | 'system';
+// `queued` não é linha de chat do JSONL: é o `queue-operation`/`enqueue` que o
+// CLI grava quando a mensagem chega no meio de um turno. Vem com `message:
+// null` e o texto em `content` (agents.py:_canonical_jsonl_message_event).
+export type MessageKind = 'user' | 'assistant' | 'attachment' | 'summary' | 'system' | 'queued';
 
 export type ContentPart =
   | { type: 'text'; text: string }
@@ -126,4 +129,7 @@ export type MessagePayload = {
     };
     content: string | ContentPart[];
   } | null;
+  // Só no `kind: 'queued'`, onde `message` é sempre null: o texto que o CLI
+  // pôs na fila. O eco `user` com o mesmo texto só nasce quando a fila drena.
+  content?: string | null;
 };

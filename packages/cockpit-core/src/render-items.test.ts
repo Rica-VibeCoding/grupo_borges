@@ -103,6 +103,90 @@ test('buildRenderItems — texto livre cai em kind=user (não vira chip)', () =>
   assert.equal(items[0].kind, 'user');
 });
 
+// Mensagem enfileirada (tropa_task e615c350): o backend já entregava o item
+// com `message: null` e o texto em `content`, e o montador o descartava em
+// silêncio — a frase existia no CLI, existia no banco e não existia na tela.
+function enfileirada(id: number, content: string): MessagePayload {
+  return {
+    ...baseMessage,
+    id,
+    kind: 'queued',
+    uuid: '',
+    user_type: 'external',
+    message: null,
+    content,
+  };
+}
+
+test('buildRenderItems — kind=queued com message null vira bolha do usuário', () => {
+  const items = buildRenderItems([enfileirada(20, 'tem mandei um anexo')]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'user');
+  if (items[0].kind === 'user') {
+    assert.equal(items[0].text, 'tem mandei um anexo');
+    assert.equal(items[0].enfileirada, true);
+    // Sem uuid no JSONL: o sintético é o que impede colisão entre dois queued.
+    assert.equal(items[0].payload.uuid, 'queued-20');
+  }
+});
+
+test('buildRenderItems — o eco `user` da fila não abre uma SEGUNDA bolha', () => {
+  const items = buildRenderItems([
+    enfileirada(21, 'tem mandei um anexo'),
+    userText(22, 'tem mandei um anexo'),
+  ]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'user');
+  if (items[0].kind === 'user') {
+    assert.equal(items[0].text, 'tem mandei um anexo');
+    // Fila drenada: a bolha fica onde ele digitou, mas a marca cai.
+    assert.equal(items[0].enfileirada, undefined);
+  }
+});
+
+test('buildRenderItems — fila drenada no mesmo turno perde a marca sem eco nenhum', () => {
+  // O caminho medido no canário 07/08: `enqueue` → `remove` → nenhuma linha
+  // `user`. O `remove` não chega ao front, então quem resolve é o fim do turno.
+  const items = buildRenderItems([
+    enfileirada(26, 'tem mandei um anexo'),
+    message({
+      id: 27,
+      uuid: 'uuid-27',
+      kind: 'assistant',
+      message: { role: 'assistant', stop_reason: 'end_turn', content: 'terminei' },
+    }),
+  ]);
+  const bolhas = items.filter((item) => item.kind === 'user');
+  assert.equal(bolhas.length, 1);
+  assert.equal(bolhas[0].kind === 'user' && bolhas[0].enfileirada, undefined);
+});
+
+test('buildRenderItems — fim de turno não fecha a janela do eco (drenagem em turno novo)', () => {
+  // Ordem real da drenagem em turno novo: a fila é gravada, o turno em curso
+  // termina, e SÓ ENTÃO o CLI submete a frase como `user`. Se o `end_turn`
+  // fechasse a janela, esse eco viraria a segunda bolha.
+  const items = buildRenderItems([
+    enfileirada(28, 'tem mandei um anexo'),
+    message({
+      id: 29,
+      uuid: 'uuid-29',
+      kind: 'assistant',
+      message: { role: 'assistant', stop_reason: 'end_turn', content: 'terminei' },
+    }),
+    userText(30, 'tem mandei um anexo'),
+  ]);
+  assert.equal(items.filter((item) => item.kind === 'user').length, 1);
+});
+
+test('buildRenderItems — duas frases iguais de verdade continuam dando duas bolhas', () => {
+  const items = buildRenderItems([userText(23, 'oi'), userText(24, 'oi')]);
+  assert.equal(items.filter((item) => item.kind === 'user').length, 2);
+});
+
+test('buildRenderItems — queued sem content não desenha nada', () => {
+  assert.deepEqual(buildRenderItems([enfileirada(25, '   ')]), []);
+});
+
 test('buildRenderItems — meta.kind=wakeup-dynamic vira item kind=synthetic', () => {
   const m: MessagePayload = {
     ...userText(15, '<<autonomous-loop-dynamic>>'),

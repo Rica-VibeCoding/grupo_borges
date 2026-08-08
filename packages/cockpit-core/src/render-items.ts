@@ -22,7 +22,15 @@ export type SidechainGroupRef = {
 };
 
 export type RenderItem =
-  | { kind: 'user'; payload: MessagePayload; text: string }
+  | {
+      kind: 'user';
+      payload: MessagePayload;
+      text: string;
+      // Bolha nascida do `queue-operation`/`enqueue`: o turno em curso ainda
+      // não consumiu a frase. Cai sozinha quando o eco `user` chega (o par é
+      // feito em `paresFilaEco`), então é estado, não histórico.
+      enfileirada?: true;
+    }
   | { kind: 'user-internal'; payload: MessagePayload; text: string }
   | { kind: 'synthetic'; payload: MessagePayload; syntheticKind: SyntheticKind; rawText: string }
   | { kind: 'channel'; payload: MessagePayload; raw: string }
@@ -198,6 +206,99 @@ export function buildToolResultLookup(messages: MessagePayload[]): ToolResultLoo
     }
   }
   return map;
+}
+
+// A mensagem que chega com o turno rodando é gravada pelo CLI como
+// `queue-operation`/`enqueue`, e o back canoniza isso em `kind: 'queued'` com
+// `message: null` e o texto solto em `content` (agents.py:1828). Sem tratar
+// esse kind ela não existia na tela: caía fora dos dois `if` do montador e o
+// feed discordava do aviso "entrou na fila" que o composer já dava.
+export function textoEnfileirado(m: MessagePayload): string | null {
+  if (m.kind !== 'queued') return null;
+  const texto = typeof m.content === 'string' ? m.content.trim() : '';
+  return texto || null;
+}
+
+// Normaliza pro formato que o resto do montador já sabe ler. Vale a cópia em
+// vez de um ramo próprio porque o texto enfileirado é o MESMO que vai voltar
+// no eco `user`: envelope de canal, task-notification e chip de skill têm de
+// classificar igual nas duas passagens, senão a frase muda de forma quando a
+// fila drena.
+function comoEntradaDoUsuario(m: MessagePayload, texto: string): MessagePayload {
+  return {
+    ...m,
+    kind: 'user',
+    // O `queued` não tem uuid no JSONL. Sem um sintético todos colidem em
+    // `consumedByClassifier` e nas chaves do feed, que caem pro `id`.
+    uuid: m.uuid || `queued-${m.id}`,
+    message: { role: 'user', content: texto },
+  };
+}
+
+export type ResolucaoDaFila = {
+  /** Índice do eco `user` → índice da fila que ele repete. O eco não desenha. */
+  ecos: Map<number, number>;
+  /** Filas que o turno já consumiu: a marca "na fila" cai. */
+  resolvidas: Set<number>;
+  /** Quem resolve → MENOR fila que resolve. A fronteira do montador
+   *  incremental volta até ela pra reprocessar o par inteiro. */
+  gatilhos: Map<number, number>;
+};
+
+// Uma mensagem enfileirada sai da fila por DOIS caminhos, e o corpus obriga a
+// cobrir os dois:
+//
+//   - drenagem em turno novo: o CLI grava a frase de novo como `user` — 1680
+//     dos 2443 enfileiramentos de texto do corpus local (medido 07/08). Aqui a
+//     bolha da fila fica (é onde o Rica digitou) e o ECO é descartado, senão
+//     ele lê a própria frase duas vezes.
+//   - drenagem dentro do MESMO turno: o CLI grava `queue-operation remove` e
+//     NENHUMA linha `user` (canário, 07/08: enqueue → remove → nada). Sem
+//     tratar este caminho a marca "na fila" ficaria para sempre numa mensagem
+//     que já foi lida. O `remove` não chega ao front (o back só canoniza o
+//     `enqueue`), então o sinal usado é o fim do turno: o CLI drena a fila até
+//     ali, sempre.
+//
+// O casamento do eco é 1:1 e em ordem — duas frases iguais de verdade
+// continuam dando duas bolhas. O fim de turno resolve a MARCA mas não fecha a
+// janela do eco: na drenagem em turno novo o eco chega DEPOIS do `end_turn`.
+export function resolucaoDaFila(messages: readonly MessagePayload[]): ResolucaoDaFila {
+  const pendentes = new Map<string, number[]>();
+  const abertas = new Set<number>();
+  const ecos = new Map<number, number>();
+  const resolvidas = new Set<number>();
+  const gatilhos = new Map<number, number>();
+
+  const resolve = (gatilho: number, fila: number): void => {
+    resolvidas.add(fila);
+    abertas.delete(fila);
+    const anterior = gatilhos.get(gatilho);
+    gatilhos.set(gatilho, anterior === undefined ? fila : Math.min(anterior, fila));
+  };
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const enfileirado = textoEnfileirado(m);
+    if (enfileirado !== null) {
+      const fila = pendentes.get(enfileirado) ?? [];
+      fila.push(i);
+      pendentes.set(enfileirado, fila);
+      abertas.add(i);
+      continue;
+    }
+    if (m.kind === 'user' && m.message) {
+      const origem = pendentes.get(textOf(m.message.content).trim())?.shift();
+      if (origem !== undefined) {
+        ecos.set(i, origem);
+        resolve(i, origem);
+      }
+      continue;
+    }
+    if (m.kind === 'assistant' && m.message?.stop_reason === 'end_turn') {
+      for (const fila of [...abertas]) resolve(i, fila);
+    }
+  }
+  return { ecos, resolvidas, gatilhos };
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -390,9 +491,14 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
   }
   const sidechainEmitted = new Set<string>();
   const consumedByClassifier = new Set<string>();
+  const { ecos, resolvidas } = resolucaoDaFila(messages);
 
   for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
+    // O eco `user` da fila é a MESMA frase que já virou bolha lá atrás.
+    if (ecos.has(i)) continue;
+    const bruta = messages[i];
+    const daFila = textoEnfileirado(bruta);
+    const m = daFila === null ? bruta : comoEntradaDoUsuario(bruta, daFila);
     if (consumedByClassifier.has(m.uuid)) continue;
 
     if (m.is_sidechain) {
@@ -493,7 +599,10 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
       if (m.user_type === 'internal') {
         items.push({ kind: 'user-internal', payload: m, text });
       } else {
-        items.push({ kind: 'user', payload: m, text });
+        // A marca só vale enquanto a fila não drenou: consumida a frase, a
+        // bolha vira uma mensagem comum.
+        const naFila = daFila !== null && !resolvidas.has(i);
+        items.push({ kind: 'user', payload: m, text, ...(naFila ? { enfileirada: true as const } : {}) });
       }
       continue;
     }

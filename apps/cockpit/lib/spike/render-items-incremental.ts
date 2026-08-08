@@ -4,6 +4,7 @@ import {
   buildRenderItems,
   buildSidechainRoots,
   coalesceSidechainGroups,
+  resolucaoDaFila,
 } from '@grupo_borges/cockpit-core/render-items';
 
 import {
@@ -101,6 +102,27 @@ function rewindAcrossClassifierConsumption(entries: readonly RawEntry[], boundar
   return predecessor ? predecessor.start : boundary;
 }
 
+// O que resolve uma mensagem enfileirada — o eco `user` ou o fim do turno —
+// muda um item ANTERIOR: apaga a marca "na fila" e, no caso do eco, descarta
+// a repetição (`resolucaoDaFila`). Sem trazer a fronteira até o `queued`, a
+// cauda reprocessada não enxerga o par: o eco vira uma SEGUNDA bolha da mesma
+// frase e a marca nunca cai.
+//
+// A régua é "o gatilho está DENTRO da janela", não "o gatilho acabou de
+// chegar": a fronteira padrão já reprocessa a última mensagem a cada flush, e
+// um gatilho reprocessado sem o par ressuscita a bolha duplicada mesmo sem
+// mensagem nova. Varre de trás pra frente porque baixar a fronteira pode
+// puxar um gatilho anterior pra dentro da janela — descendo, ele ainda é
+// testado.
+function rewindForQueuedEcho(current: readonly MessagePayload[], boundary: number): number {
+  const gatilhos = [...resolucaoDaFila(current).gatilhos];
+  for (let index = gatilhos.length - 1; index >= 0; index--) {
+    const [gatilho, fila] = gatilhos[index];
+    if (gatilho >= boundary) boundary = Math.min(boundary, fila);
+  }
+  return boundary;
+}
+
 function rewindToWholeSidechainGroups(
   messages: readonly MessagePayload[],
   boundary: number,
@@ -126,9 +148,13 @@ function annotateTail(
   boundary: number,
   items: readonly ItemCru[],
 ): RawEntry[] {
-  const absoluteIndex = new Map<MessagePayload, number>();
+  // Índice por `id`, não por identidade de objeto: o item de uma mensagem
+  // enfileirada carrega uma CÓPIA normalizada do payload (o core troca o kind
+  // e move o texto pra dentro do `message`), e por identidade ela não seria
+  // achada — a entrada cairia toda no `boundary` e desalinharia os cortes.
+  const absoluteIndex = new Map<number, number>();
   for (let index = boundary; index < messages.length; index++) {
-    absoluteIndex.set(messages[index], index);
+    absoluteIndex.set(messages[index].id, index);
   }
   const hasSidechainItem = items.some((item) => item.kind === 'sidechain-group');
   const roots = hasSidechainItem ? rootsAt(messages) : new Map<string, string>();
@@ -151,7 +177,7 @@ function annotateTail(
       };
     }
     if ('payload' in item) {
-      const index = absoluteIndex.get(item.payload) ?? boundary;
+      const index = absoluteIndex.get(item.payload.id) ?? boundary;
       return { item, start: index, end: index };
     }
     return { item, start: boundary, end: boundary };
@@ -221,6 +247,9 @@ export function createIncrementalRenderItems(): {
   let outputEntries: OutputEntry[] = [];
   const outputItems: ItemDoFeed[] = [];
   let sidechainParentUuids = new Set<string>();
+  // Sem nenhuma mensagem enfileirada não há par a refazer, e o `paresFilaEco`
+  // é uma varredura de tudo — o caso comum (fila vazia) não paga por ela.
+  let temEnfileirado = false;
 
   const instance = {
     update(messages: readonly MessagePayload[]): ItemDoFeed[] {
@@ -236,6 +265,9 @@ export function createIncrementalRenderItems(): {
         );
         if (sidechainMayChange) {
           boundary = rewindForChangedSidechains(previous, messages, boundary);
+        }
+        if (temEnfileirado || appended.some((message) => message.kind === 'queued')) {
+          boundary = rewindForQueuedEcho(messages, boundary);
         }
         boundary = rewindAcrossClassifierConsumption(rawEntries, boundary);
         boundary = rewindAcrossCoalescedRun(rawEntries, boundary);
@@ -297,12 +329,16 @@ export function createIncrementalRenderItems(): {
         ...coalescedTail.map((entry) => entry.item),
       );
       previous = messages;
-      if (!appendOnly) sidechainParentUuids = new Set();
+      if (!appendOnly) {
+        sidechainParentUuids = new Set();
+        temEnfileirado = false;
+      }
       for (let index = appendOnly ? previousLength : 0; index < messages.length; index++) {
         const message = messages[index];
         if (message.is_sidechain && message.parent_uuid) {
           sidechainParentUuids.add(message.parent_uuid);
         }
+        if (message.kind === 'queued') temEnfileirado = true;
       }
       statsByInstance.set(instance, {
         reprocessedMessages: messages.length - boundary,
