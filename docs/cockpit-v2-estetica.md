@@ -452,6 +452,7 @@ Estado vazio de verdade (agente sem conversa, lista sem resultado) usa `--ck-tex
 
 1. Hex cru em componente. Só token.
 2. `backdrop-blur` em lista ou feed. Permitido **só** no composer flutuante (um elemento).
+   **Exercida em 08/08** — o elemento é `.ck-veu-composer`, e não existe segundo. Ver §18.
 3. `box-shadow` com blur > 8px em fundo escuro.
 4. Animar `width`/`height`/`top`/`left`.
 5. `100vh` — usar `100dvh` + `env(safe-area-inset-*)`.
@@ -463,6 +464,8 @@ Estado vazio de verdade (agente sem conversa, lista sem resultado) usa `--ck-tex
 11. Véu de interação (`--ck-overlay-*`) sobre `--ck-surface-raised` — derruba a borda funcional para 2.98:1 (§2.6).
 12. Link sem sublinhado, ou URL renderizada como texto comum (§2.7).
 13. `backdrop-filter` no véu de modal (§2.7) — a exceção de blur continua sendo só o composer.
+    Continua de pé **depois** de a exceção do composer ser exercida: uma é faixa de 72px, a
+    outra é tela cheia, e o item 1 do gate mede a segunda (§18).
 14. Highlighter de linguagem em bloco de código (§7.1).
 15. Entrelinha ou tracking escritos como valor solto — são token desde 30/07 (§4).
 
@@ -1213,3 +1216,85 @@ separa conteúdo no plano, sem elevação.
 - **`--ck-dur-enter` (200ms) e `--ck-ease-exit`** continuam faltando e são da §B. As regras
   consomem `var(--ck-dur-enter, 200ms)`: quando o Pavan criar os tokens, elas passam a usá-los
   sem ninguém tocar no CSS.
+
+## 18. O VÉU DO COMPOSER — a exceção de blur da §9.2, exercida (08/08)
+
+Ordem do Rica: *"vamos aplicar esse desfoque então que eu tô ansioso pra ver. Capricha
+nessa UI."* Duas referências vieram junto, e elas pedem coisas diferentes.
+
+### Qual das duas referências vale, e por quê não é gosto
+
+- **ChatGPT — adotada.** O campo é SÓLIDO e o texto dentro dele está limpo. Translúcido é
+  só a **faixa em volta**: dá pra ler "CPU Usage" passando desfocado por trás dela. Acima
+  da caixa há um **fade** — o texto entra nítido em cima e desbota descendo.
+- **Telegram — recusada.** *Liquid glass*: os próprios controles translúcidos, com a foto
+  de perfil aparecendo por trás do campo. Reprova na §3, e a régua é objetiva: texto sobre
+  superfície translúcida tem contraste que depende do que está passando por baixo, e o
+  piso de 7:1 AAA não admite "depende".
+
+**Consequência que trava tudo o resto:** o campo continua `--ck-surface-composer` sólido.
+Nenhum texto passou a pisar em superfície nova, então a régua de contraste inteira já
+medida (link a 8.28:1 no composer, e os pares da §2.6) **segue valendo sem remedição**.
+
+### O número, e ele é medido no pixel
+
+O véu é `--ck-surface-canvas` a **72%** com desfoque de **20px**. A pergunta que a §2.1
+faz de qualquer superfície nova é se a escada `canvas < nav < composer` continua legível
+quando o conteúdo claro do feed passa por baixo. Medi na tela em vez de estimar: capturei
+a faixa com o véu ligado e desligado, na mesma rolagem, com texto de corpo atravessando
+os 72px inteiros. Em múltiplos da luminância do canvas:
+
+| região da faixa | sem o véu (máx) | **com o véu (máx)** | mediana com véu |
+|---|---|---|---|
+| faixa sólida (56–72px) | 91.34× | **1.56×** | 1.41× |
+| fade (0–56px) | 38.45× | 27.86× | 1.09× |
+
+Régua da §2.1: `nav` 1.65× · `composer` 2.38× · `raised` 3.16×.
+
+O pior caso real da faixa sólida — texto branco cheio por baixo — para em **1.56×**, ou
+seja **abaixo do `nav`**. O véu se acomoda entre `canvas` e `nav`, e a caixa sólida que
+ele emoldura continua sendo a coisa mais clara da região, com folga de 0.8×. A escada lê
+inteira. No fade os números altos são o efeito **pedido**: ali o véu é quase transparente
+de propósito, e o que se vê é o texto entrando nítido antes de desbotar.
+
+O modelo analítico bate com a medida e diz onde está o limite: o véu só alcançaria o
+`composer` se a tinta clara sob a faixa passasse de ~28% da área, regime que texto de
+corpo borrado a 20px não produz.
+
+> Não subir o desfoque "para ficar mais bonito". Em 20px a palavra sob a faixa já deixou
+> de ser palavra e virou textura, que é o efeito pedido. Mais que isso custa GPU de
+> celular sem mudar o que se vê.
+
+### O fade: `mask-image` venceu, e a medição resolveu a dúvida do Pavan
+
+A pergunta aberta era se `mask` e `backdrop-filter` no MESMO elemento sobrevivem, já que
+`mask` está na lista de Backdrop Root do Filter Effects Level 2 §3. **Sobrevivem** — medido
+no Chromium, com o desfoque enxergando o feed inteiro. A alternativa (fade por gradiente
+de cor num irmão, sem `mask`) foi descartada por um motivo visual e não teórico: ela
+desvanece a COR mas não o DESFOQUE, e a borda superior do blur vira uma linha reta de
+nitidez atravessando o texto — exatamente o defeito que o fade existe para não ter.
+
+O que continua valendo como regra: `mask` num elemento **ACIMA** do que desfoca mata o
+desfoque com certeza. Por isso o `mask` mora no próprio véu, nunca num pai.
+
+Pelo mesmo motivo **não existe `will-change` aqui**, e não é esquecimento. A doc do MDN
+chama a propriedade de *"last resort ... should not be used to anticipate performance
+problems"*, e no nosso caso ela é pior que inócua: `will-change: backdrop-filter` num
+ancestral custaria justamente o desfoque que se quis otimizar.
+
+### O fio de luz da §2.1 não vem para o véu
+
+É a única coisa que este elemento recusa do contrato, e a recusa é do próprio desenho:
+fio de 1px marca onde uma superfície COMEÇA, e o topo desta não começa em lugar nenhum —
+desvanece. Um fio ali seria uma linha dura exatamente no pixel em que o fade pede
+dissolução. Quem carrega o fio continua sendo a caixa sólida por cima, que já o tem via
+`.ck-lit`, e é ela que a §2.1 descreve.
+
+### Limite honesto da medição
+
+Tudo acima foi medido no Chromium. **O WebKit não roda nesta máquina** (faltam bibliotecas
+de sistema e instalá-las pede sudo), então o Safari do iPhone continua sendo o motor que
+só o Rica vê — é a mesma razão pela qual a régua de `?diag=1` existe. O prefixo
+`-webkit-` está escrito à mão nas duas propriedades e **conferido no CSS servido**, não só
+no CSS escrito. Se o Safari recusar `mask` + `backdrop-filter` no mesmo elemento, o
+degradado é perder o desfoque e manter a faixa: fica feio, não fica quebrado.

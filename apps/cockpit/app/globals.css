@@ -145,6 +145,40 @@
   /* -- véu de modal: o fundo PERDE luz, não ganha sombra ------------------- */
   --ck-scrim: rgb(0 0 0 / 0.55);                   /* modal destaca 1.53× */
 
+  /* -- véu do composer flutuante: a ÚNICA exceção de blur do contrato -------
+   * A §9.2 abriu esta exceção em 30/07 ("permitido só no composer flutuante,
+   * um elemento") e ela nunca tinha sido exercida — até 08/08 o repo não tinha
+   * um `backdrop-filter` sequer. Estes três tokens são o exercício dela, e o
+   * plural é enganoso: eles vestem UM elemento (`.ck-veu-composer`).
+   *
+   * O que é translúcido é a FAIXA em volta, nunca o campo. O campo continua
+   * `--ck-surface-composer` sólido, porque texto sobre superfície translúcida
+   * tem contraste que depende do que está passando por baixo, e o piso de 7:1
+   * da §3 não admite "depende". A referência aprovada (ChatGPT) faz exatamente
+   * isto; a recusada (Telegram, liquid glass) é que translucidez os controles.
+   *
+   * 72% medido, não escolhido no olho. Abaixo da faixa passa o feed borrado, e
+   * a superfície resultante depende de quanta tinta clara ele tem ali. Régua
+   * da §2.1 em múltiplos do canvas — nav 1.57× · composer 2.33× · raised 3.15×:
+   *
+   *   tinta sob a faixa   0%     12%     20%     35%     100%
+   *   véu resultante      1.00×  1.50×   1.90×   2.81×   9.34×
+   *
+   * No regime real (texto de 15px borrado a 20px cobre 12–20% da área) o véu
+   * fica ENTRE nav e composer: mais claro que o palco, mais escuro que o campo
+   * que ele emoldura. A escada continua lendo na ordem certa. Só passando de
+   * ~28% de tinta o véu alcançaria o composer, e nesse regime quem separa os
+   * dois é a borda funcional que o campo tem e a faixa não. O 100% é teórico
+   * (uma superfície branca cheia sob a faixa) e não pisa texto nenhum — o que
+   * lê ali é sempre o campo sólido.
+   *
+   * Não subir o desfoque "para ficar mais bonito": 20px já é o limite em que a
+   * palavra sob a faixa deixa de ser legível e vira textura, que é o efeito
+   * pedido. Mais que isso custa GPU de celular sem mudar o que se vê. */
+  --ck-veu-composer: color-mix(in oklch, var(--ck-surface-canvas) 72%, transparent);
+  --ck-veu-desfoque: 20px;
+  --ck-veu-fade: 56px;   /* altura do desvanecimento no topo da faixa */
+
   /* ===== §B ESQUELETO — Pavan ==============================================
    * Medida e ritmo. Onde a §A responde "que cor", esta responde "quanto" e
    * "quão rápido". Números de container vêm das medidas reais do app do ChatGPT
@@ -360,6 +394,69 @@ body {
  * em vez de sombra projetada. */
 .ck-lit {
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+
+/* O VÉU DO COMPOSER FLUTUANTE — a exceção de blur da §9.2, exercida.
+ *
+ * Um elemento só, `aria-hidden`, sem descendente e sem alvo de toque: ele é o
+ * fundo que a faixa do composer ganhou quando ela saiu do fluxo. O que se lê
+ * por trás dele é o feed rolando; o que está por cima é o campo SÓLIDO.
+ *
+ * ARMADILHA 1 — Backdrop Root. Filter Effects 2 §3: qualquer ANCESTRAL com
+ * `opacity < 1`, `filter`, `mask*`, `clip-path`, `mix-blend-mode`,
+ * `backdrop-filter` ou `will-change` de uma dessas encerra o backdrop, e o
+ * desfoque passa a enxergar só o que está entre ele e o filho — o feed some da
+ * conta e o efeito desaparece SEM ERRO NENHUM. A árvore acima daqui está limpa
+ * (`overflow: hidden` não forma backdrop root), e é por isso que o `mask` do
+ * fade mora NESTE elemento e não num pai: aqui ele desvanece a própria faixa,
+ * um nível acima ele mataria o desfoque dela.
+ *
+ * Pelo mesmo motivo não existe `will-change` aqui. A doc do MDN chama a
+ * propriedade de "last resort ... should not be used to anticipate performance
+ * problems", e no nosso caso ela é pior que inócua: `will-change: backdrop-filter`
+ * num pai custaria justamente o desfoque que se quis otimizar.
+ *
+ * SEM `z-index` NEGATIVO, e é decisão, não esquecimento: `-1` só se comporta
+ * dentro de um stacking context, e o context estaria em arquivo de outra
+ * pessoa. Quem põe a caixa por cima do véu é o `position: relative` do irmão
+ * que carrega o composer, no `palco-da-conversa.tsx` — elemento posicionado
+ * pinta acima de elemento posicionado anterior, sem `z-index` nenhum.
+ *
+ * O FADE é a metade do desenho que a referência do Rica mostra e que ninguém
+ * nota até faltar: sem ele a faixa começa numa linha reta atravessando o texto.
+ * O gradiente é máscara, não tinta — o preto ali é canal alfa, não cor, e por
+ * isso não sai de token (não existe "cor" nenhuma sendo escolhida).
+ *
+ * O fio de luz da §2.1 NÃO vem para cá, e é a única coisa que este elemento
+ * recusa do contrato: fio é o que marca onde uma superfície COMEÇA, e o topo
+ * desta não começa em lugar nenhum — desvanece. Um fio de 1px ali seria uma
+ * linha dura exatamente no pixel em que o desenho pede dissolução. Quem carrega
+ * o fio continua sendo a caixa sólida por cima, que já o tem via `.ck-lit`. */
+.ck-veu-composer {
+  position: absolute;
+  /* Sobe o fade inteiro para dentro do feed: é ali que o texto precisa entrar
+     nítido e desbotar, e não a partir da borda da caixa. */
+  top: calc(var(--ck-veu-fade) * -1);
+  /* O wrapper já é `inset-x-0` e vai até `bottom: 0` do palco, então o véu não
+     precisa sangrar: ele cobre a faixa inteira, padding e safe-area inclusos. */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: var(--ck-veu-composer);
+  -webkit-backdrop-filter: blur(var(--ck-veu-desfoque));
+  backdrop-filter: blur(var(--ck-veu-desfoque));
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0) 0, rgb(0 0 0 / 1) var(--ck-veu-fade));
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0) 0, rgb(0 0 0 / 1) var(--ck-veu-fade));
+}
+
+/* Sem desfoque na máquina, a faixa vira cor chapada e o fade sozinho já separa
+ * o composer do feed. Nada de "quase transparente sem blur": ali o texto do
+ * feed passaria LEGÍVEL por trás do campo, que é pior que não ter efeito. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ck-veu-composer {
+    background: var(--ck-surface-canvas);
+  }
 }
 
 /* ===== A MESA E A FOLHA ====================================================
