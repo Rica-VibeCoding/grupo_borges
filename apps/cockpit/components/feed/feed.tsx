@@ -195,8 +195,17 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
       >
         {/* A coluna de leitura desceu pra DENTRO da rolagem: é ela que segura
             o `max-width` e centraliza, então o trilho da barra pode encostar
-            na borda da tela sem arrastar o texto junto. O padding horizontal
-            que era do scroller veio junto. */}
+            na borda da tela sem arrastar o texto junto.
+
+            O padding horizontal MOROU AQUI e não fazia nada — 08/08. Os itens
+            virtualizados são `position: absolute` e este trilho é o ancestral
+            posicionado deles, então o containing block é o PADDING BOX: `left:
+            0` cola na borda de fora do padding e `width: 100%` mede a caixa
+            inteira. Resultado medido na produção, viewport de 390: mensagens
+            de 0 a 390, caixa do composer de 16 a 374. O Rica viu de olho —
+            *"o nosso tá rente à borda do aplicativo… o certo era alinhar os
+            textos com a caixa de texto"*. O recuo foi para o item, onde os
+            absolutos não conseguem ignorá-lo. */}
         <div
           style={{
             height: virtualizer.getTotalSize(),
@@ -204,7 +213,6 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
             width: '100%',
             maxWidth: 'var(--ck-read-wide)',
             margin: '0 auto',
-            padding: '0 var(--ck-space-4)',
             boxSizing: 'border-box',
           }}
         >
@@ -229,7 +237,11 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 'var(--ck-space-1)',
-                    padding: 'var(--ck-space-2) 0',
+                    // O recuo lateral é `--ck-space-4` porque é o MESMO do
+                    // wrapper do composer: é o que põe a primeira letra do
+                    // feed na mesma vertical da borda da caixa de escrever.
+                    // Mudou um, muda o outro.
+                    padding: 'var(--ck-space-2) var(--ck-space-4)',
                     // Borda de conteúdo gigante: uma linha de 200 mil caracteres
                     // sem espaço estoura a largura e leva a rolagem horizontal
                     // junto. Os renderers truncam a ALTURA; a largura é daqui.
