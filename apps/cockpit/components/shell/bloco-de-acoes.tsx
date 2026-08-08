@@ -298,6 +298,13 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     [agentSlug],
   );
 
+  // O controlador é da ABERTURA, não de uma leitura. Toda busca desta sessão de
+  // painel — a primeira e cada retentativa — morre junto quando a gaveta fecha
+  // ou o agente troca, e só então. Era um controlador por rodada de backoff, e
+  // o cleanup da rodada abortava o fetch que o próprio timeout tinha acabado de
+  // disparar (ver o efeito da retentativa abaixo).
+  const sessao = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (!aberto) {
       // Fechou: a próxima abertura começa limpa. Aviso de falha guardado de
@@ -306,6 +313,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
       return;
     }
     const controlador = new AbortController();
+    sessao.current = controlador;
     buscar(controlador.signal);
     return () => controlador.abort();
   }, [aberto, buscar]);
@@ -319,23 +327,29 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   // mesmo valor e o React não re-renderiza, então sem um valor que muda a cada
   // rodada o agendamento pararia na primeira tentativa.
   useEffect(() => {
-    if (!aberto || carga !== 'indisponivel') {
+    // O painel VOLTOU (ou a gaveta fechou): a próxima queda recomeça do degrau
+    // de baixo. O reset é em `pronto`, não em "deixou de ser indisponível" —
+    // a retentativa passa por `carregando` no caminho, e zerar ali devolveria o
+    // expoente a zero a cada rodada: o backoff nunca sairia dos 2s.
+    if (!aberto || carga === 'pronto') {
       if (retentativa !== 0) setRetentativa(0);
       return;
     }
+    if (carga !== 'indisponivel') return;
     const espera = Math.min(
       RETENTA_PAINEL_BASE_MS * 2 ** retentativa,
       RETENTA_PAINEL_TETO_MS,
     );
-    const controlador = new AbortController();
     const agendado = setTimeout(() => {
       setRetentativa((n) => n + 1);
-      buscar(controlador.signal);
+      // O signal é o da ABERTURA, nunca um desta rodada. `retentativa` está nas
+      // dependências (é o que reagenda a rodada seguinte), então o bump aqui
+      // re-roda este efeito no mesmo tick — e um cleanup que abortasse mataria
+      // a busca que a linha de cima acabou de disparar. O painel só voltava por
+      // acidente de timing.
+      buscar(sessao.current?.signal);
     }, espera);
-    return () => {
-      clearTimeout(agendado);
-      controlador.abort();
-    };
+    return () => clearTimeout(agendado);
   }, [aberto, carga, retentativa, buscar]);
 
   useEffect(
