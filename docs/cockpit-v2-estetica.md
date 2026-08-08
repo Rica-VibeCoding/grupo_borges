@@ -1316,6 +1316,54 @@ O composer sempre dependeu da borda para existir como componente (WCAG 1.4.11). 
 quiser a borda mais fraca mesmo assim, é decisão dele contra um piso da §3 e entra aqui
 como exceção consciente — não é coisa que eu faça sozinho.
 
+### Tentativa 4 — o rodapé, o desastre da placa cinza, e a régua dos DOIS ESTADOS (08/08)
+
+Com o vidro na forma da caixa, a faixa entre a base dela e a base da tela virou canvas puro:
+o feed passava por ali **nítido** até encostar no fim da tela. O Rica: *"abaixo do imputext
+só reduzir a transparência, a do imputext a transparência está boa, agora abaixo dela pode
+embaçar o vidro um pouco"*. Dentro da caixa não se toca — ele aprovou.
+
+**A primeira versão foi reprovada na lata** (*"desastre total, ficou pior que estava"*,
+revertida em `624c612`) e a causa cabe numa linha de aritmética: o tint era
+`--ck-surface-raised` a 80%. `raised` é `#313131`, a superfície MAIS CLARA da escada; 80%
+dela sobre o canvas `#191919` dá `#2c2c2c` — **44 contra 25**. Não é vidro, é uma placa
+cinza clara.
+
+**Por que a medição não pegou, e é isto que vira régua:** eu medi com **uma linha de texto
+atravessando** a faixa, e nesse estado o valor entregava o resultado certo. Só que existe um
+segundo estado, e é o mais comum de todos — **fim da rolagem, nada atrás do vidro**. O
+`--ck-composer-altura` garante que o feed pare acima do composer, então abaixo da caixa fica
+vazio sempre que a conversa está no fim. Sem nada para borrar, sobra só o tint: a placa.
+
+> **Régua nova, e ela vale para todo material desta doc: mede-se nos DOIS ESTADOS — com
+> conteúdo atrás e SEM NADA atrás. No estado vazio o material tem que ser indistinguível da
+> superfície que ele cobre.** É o que a Apple já dizia e nós dois lemos sem aplicar: *"If the
+> underlying content is sufficiently dark… you don't need to apply a dimming layer."*
+
+A correção é escolher a COR do tint, não o percentual: `color-mix(canvas X%, transparent)`
+sobre canvas dá canvas em **qualquer** X. O rodapé some quando vazio **por construção**, não
+por sorte de valor, e continua apagando quando há texto porque quem faz esse trabalho é o
+desfoque (G18). Ficou em `canvas` 70% com 12px.
+
+Medido nos três estados, comparando a faixa com o canvas puro (25,25,25):
+
+- **fim da rolagem** — faixa 25.1, máximo 28 · delta de média **0.1**
+- **meio da conversa** — faixa 32.7, máximo 57: é o texto borrado passando, e é para aparecer
+- **agente sem conversa** (`barsi`) — faixa 25.0, máximo 25 · **idêntico ao canvas**
+
+**O desfoque é MENOR que o da caixa**, e isso é medição, não gosto: numa faixa de 33px, mais
+desfoque borra MENOS. Desvio-padrão do mesmo recorte com uma linha atravessando, cena
+congelada: sem filtro **77.9** · 6px **22.3** · **12px 20.2** · 20px **22.2** · 36px **32.6**.
+A curva tem fundo e volta a subir — o 36px da caixa, aplicado aqui, devolve o texto quase
+nítido. A leitura provável é a duplicação de borda: o raio passa muito da altura da faixa,
+não há backdrop abaixo para entrar na mistura, e o que entra é a réplica da própria beirada.
+**A causa é hipótese; a curva é medição** — e é a curva que fixa o valor.
+
+O elemento transborda de propósito e quem recorta é o `overflow: hidden` do `.ck-palco`.
+Isso resolve duas coisas de uma vez: a pele não precisa conhecer o padding que o esqueleto
+escolheu, e no desktop o recorte impede a faixa de vazar sobre a coluna da tropa, que é outra
+superfície (verificado pintando o elemento de vermelho: ele para na borda do palco).
+
 ### A rolagem de dentro da caixa — o padrão do app, em dois mecanismos (08/08)
 
 O campo que cresce até `--ck-h-campo-max` trouxe uma barra de rolagem que não existia antes,

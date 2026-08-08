@@ -184,6 +184,34 @@
    * texto atravessando bem mais apagado. */
   --ck-surface-composer-material: color-mix(in oklch, var(--ck-surface-raised) 60%, transparent);
 
+  /* O RODAPÉ — a faixa entre a base da caixa e a base da tela (o padding do
+   * wrapper, 33px medidos). Ali o feed passava NÍTIDO até encostar no fim da
+   * tela, e o Rica pediu *"abaixo dela pode embaçar o vidro um pouco"*.
+   *
+   * ⚠️ O TINT É `canvas`, E ISSO NÃO É DETALHE — é a correção de um desastre.
+   * A primeira versão usou `raised` a 80%, que é a superfície MAIS CLARA da
+   * escada: 80% de #313131 sobre o canvas #191919 dá #2c2c2c, 44 contra 25.
+   * Não é vidro, é uma placa cinza clara, e foi o que o Rica fotografou
+   * (*"desastre total, ficou pior que estava"*, revertido em `624c612`).
+   *
+   * `canvas` sobre `canvas` dá `canvas` em QUALQUER percentual: quando não há
+   * nada atrás, o rodapé some por construção — não por sorte de valor. E quando
+   * há texto passando, quem apaga é o desfoque, que é o trabalho dele desde
+   * sempre (WCAG G18). É o que a Apple já dizia e eu tinha lido sem aplicar:
+   * *"If the underlying content is sufficiently dark… you don't need to apply a
+   * dimming layer."*
+   *
+   * ⚠️ O DESFOQUE É MENOR QUE O DA CAIXA, e também é contraintuitivo: numa
+   * faixa de 33px, mais desfoque BORRA MENOS. Medido em cena congelada,
+   * desvio-padrão do mesmo recorte com uma linha atravessando: sem filtro 77.9
+   * → 6px 22.3 → **12px 20.2** → 20px 22.2 → 36px 32.6. A curva tem fundo e
+   * volta a subir. A leitura provável é a duplicação de borda: o raio passa
+   * muito da altura da faixa, não há backdrop abaixo para misturar, e o que
+   * entra na conta é a réplica da própria beirada. (Causa é hipótese; a curva
+   * é medição.) */
+  --ck-rodape-material: color-mix(in oklch, var(--ck-surface-canvas) 70%, transparent);
+  --ck-rodape-desfoque: 12px;
+
   /* ===== §B ESQUELETO — Pavan ==============================================
    * Medida e ritmo. Onde a §A responde "que cor", esta responde "quanto" e
    * "quão rápido". Números de container vêm das medidas reais do app do ChatGPT
@@ -457,6 +485,18 @@ body {
   backdrop-filter: blur(var(--ck-veu-desfoque));
 }
 
+/* O FECHO DA TELA. Vive ancorado na base da caixa e desce até o fim do palco,
+ * transbordando de propósito: quem recorta é o `overflow: hidden` do `.ck-palco`,
+ * então esta faixa nunca precisa saber quanto padding o wrapper do composer tem
+ * — e é o mesmo recorte que a impede de vazar sobre a coluna da tropa, que é
+ * outra superfície. Não é ancestral da caixa nem do feed: não forma Backdrop
+ * Root para ninguém. */
+.ck-rodape-vidro {
+  background: var(--ck-rodape-material);
+  -webkit-backdrop-filter: blur(var(--ck-rodape-desfoque));
+  backdrop-filter: blur(var(--ck-rodape-desfoque));
+}
+
 /* A ROLAGEM DE DENTRO DA CAIXA. Nasceu em 08/08 com o campo que cresce até
  * `--ck-h-campo-max` — antes o campo nunca rolava e a barra nativa nunca
  * aparecia. O padrão da casa é o fio apagado do feed, e ele já tem cor: os
@@ -500,6 +540,11 @@ body {
   .ck-caixa,
   .ck-sobre-material {
     background: var(--ck-surface-composer) !important;
+  }
+  /* No rodapé o opaco é a intenção: `canvas` cheio continua indistinguível do
+   * canvas nos dois estados, e ali nada é para ser lido. */
+  .ck-rodape-vidro {
+    background: var(--ck-surface-canvas) !important;
   }
 }
 

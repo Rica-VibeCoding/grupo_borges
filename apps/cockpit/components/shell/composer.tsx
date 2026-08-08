@@ -844,6 +844,21 @@ export function Composer({
         ) : null}
       </form>
 
+        {/* O RODAPÉ DE VIDRO. Ancorado na base da caixa (`top: 100%`) e descendo
+            além do fim da tela — quem recorta é o `overflow: hidden` do palco,
+            e é por isso que este elemento não precisa conhecer o padding do
+            wrapper que o Pavan escolheu. O tint é na cor do CANVAS: some quando
+            não há nada atrás (que é o estado do fim da rolagem, o mais comum de
+            todos) e continua apagando quando há texto passando, porque quem faz
+            esse trabalho é o desfoque. Ver §18 da estética.
+            `aria-hidden` porque não há nada a anunciar, e sem eventos para não
+            roubar o toque de quem mira o fim do feed. */}
+        <div
+          aria-hidden
+          className="ck-rodape-vidro pointer-events-none absolute"
+          style={{ top: '100%', left: '-50vw', right: '-50vw', height: '50vh' }}
+        />
+
         {/* A GAVETA. Irmã do form, dentro do invólucro ancorado — sobe a partir
             do "+" e nunca é recortada pelo `overflow` da caixa. */}
         <PainelAnexo
