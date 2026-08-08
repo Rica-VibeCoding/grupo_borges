@@ -206,25 +206,6 @@ agents:
       - motor-deepseek-opencode-go
     can_review: []
 
-  # Canário descartável do gate cockpit v2. Não corresponde a sessão produtiva.
-  - slug: canario
-    name: Canário do Cockpit
-    role: Gerador de carga sintética
-    emoji: "🐤"
-    tmux_session: canario
-    # Casa PRÓPRIA, e isso é obrigatório: o jsonl_watcher monta
-    # {encoded_cwd(workspace_path): slug} como dict, então dois agentes no mesmo
-    # workspace colidem e o último vence calado. Enquanto isto apontava para o
-    # repo real, o canário sobrescrevia o Daniel (embedded lá desde 04/08) e os
-    # eventos dele apareciam como canario. É subdiretório do repo de propósito:
-    # caminho inexistente quebraria rota que lê git do workspace.
-    workspace_path: /home/clawd/repos/grupo_borges/fixtures/cockpit-v2/canario
-    cli_default: claude_code
-    model_default: claude-opus-4-8
-    capabilities:
-      - benchmark-cockpit-v2
-    can_review: []
-
 # Humanos autenticados via Tailscale-User-Login.
 # Header derivado do tailscaled local (não spoofável sem comprometer o node).
 # Slug humano NÃO precisa estar em `agents:` — fica fora do kanban mas pode revisar.
