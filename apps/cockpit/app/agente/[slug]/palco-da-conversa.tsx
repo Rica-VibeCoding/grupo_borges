@@ -27,6 +27,8 @@
 
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 
+import { VeuDoComposer } from '@/components/shell/veu-do-composer';
+
 export function PalcoDaConversa({
   composer,
   children,
@@ -97,7 +99,11 @@ export function PalcoDaConversa({
           paddingBottom: 'calc(var(--ck-space-3) + var(--ck-safe-bottom))',
         }}
       >
-        {composer}
+        <VeuDoComposer />
+        {/* `relative` é o que põe a caixa POR CIMA do véu: entre dois elementos
+            posicionados sem `z-index`, ganha o que vem depois na árvore. Sem
+            esta linha o véu cobre o composer e o campo fica desfocado. */}
+        <div className="relative">{composer}</div>
       </div>
     </div>
   );
