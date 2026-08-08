@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import fleet as fleet_router
+from services import tmux_driver
 
 
 AGENT = {
@@ -89,7 +90,7 @@ def test_fleet_snapshot_ignores_ready_and_backlog_tasks(tmp_path: Path) -> None:
         status="backlog",
     )
 
-    snapshot = db._fleet_snapshot(24, {"daniel"})
+    snapshot = db._fleet_snapshot(24, {"daniel"}, {"daniel"})
 
     assert _agent_from_snapshot(snapshot, "daniel")["current_task_id"] is None
 
@@ -111,7 +112,7 @@ def test_fleet_snapshot_uses_running_task_display_id(tmp_path: Path) -> None:
         status="ready",
     )
 
-    snapshot = db._fleet_snapshot(24, {"daniel"})
+    snapshot = db._fleet_snapshot(24, {"daniel"}, {"daniel"})
 
     assert _agent_from_snapshot(snapshot, "daniel")["current_task_id"] == running["human_id"]
 
@@ -142,11 +143,15 @@ def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path
     async def fake_capture(_session_name: str) -> str:
         return "Opus 4.8 - Cascading... (3m 33s · 12.7k tokens)"
 
-    async def fake_list_session_names() -> set[str]:
-        return {"daniel"}
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory({"daniel"}, {"daniel"})
 
     monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
-    monkeypatch.setattr(fleet_router.tmux_driver, "list_session_names", fake_list_session_names)
+    monkeypatch.setattr(
+        fleet_router.tmux_driver,
+        "list_session_inventory",
+        fake_list_session_inventory,
+    )
 
     app = FastAPI()
     app.state.db = db
@@ -195,15 +200,21 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
     async def fake_capture(_session_name: str) -> str:
         return "GPT-5.6 Sol - 00:03:03"
 
-    async def fake_list_session_names() -> set[str]:
-        return {"daniel", "tara"}
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory(
+            {"daniel", "tara"}, {"daniel", "tara"}
+        )
 
     def fake_find_latest_thread(cwd: str):
         assert cwd == "/tmp/tara"
         return SimpleNamespace(tokens_used=9_712_154, rollout_path=rollout)
 
     monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
-    monkeypatch.setattr(fleet_router.tmux_driver, "list_session_names", fake_list_session_names)
+    monkeypatch.setattr(
+        fleet_router.tmux_driver,
+        "list_session_inventory",
+        fake_list_session_inventory,
+    )
     monkeypatch.setattr(fleet_router.codex_reader, "find_latest_thread", fake_find_latest_thread)
 
     app = FastAPI()
@@ -220,19 +231,23 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
     assert agent["context_pct"] == 22.8
 
 
-def test_fleet_lists_tmux_sessions_once_per_snapshot(tmp_path: Path, monkeypatch) -> None:
+def test_fleet_lists_tmux_inventory_once_per_snapshot(tmp_path: Path, monkeypatch) -> None:
     db = _setup_db(tmp_path)
     calls = 0
 
-    async def fake_list_session_names() -> set[str]:
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
         nonlocal calls
         calls += 1
-        return {"daniel"}
+        return tmux_driver.TmuxSessionInventory({"daniel"}, {"daniel"})
 
     async def fake_capture(_session_name: str) -> None:
         return None
 
-    monkeypatch.setattr(fleet_router.tmux_driver, "list_session_names", fake_list_session_names)
+    monkeypatch.setattr(
+        fleet_router.tmux_driver,
+        "list_session_inventory",
+        fake_list_session_inventory,
+    )
     monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
 
     app = FastAPI()

@@ -58,6 +58,14 @@ _TMUX_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cockpit-t
 # abriu shell auxiliar), `active_pane` aponta pra outra coisa — paste no shell
 # pode executar parte do envelope como comando. Guard aborta nesse caso.
 _EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
+_CLAUDE_PANE_COMMANDS = {"claude", "node"}
+
+
+class TmuxSessionInventory(NamedTuple):
+    """Sessões existentes e sessões com Claude Code no foreground."""
+
+    sessions: set[str]
+    claude_process_sessions: set[str]
 
 
 class _DeliveryChannelRecord(NamedTuple):
@@ -225,21 +233,41 @@ def _configured_named_socket_names() -> list[str]:
     return sorted(path.name for path in tmux_tmpdir.glob(pattern) if path.is_socket())
 
 
-def _session_names_from_server(server: libtmux.Server) -> set[str]:
-    """Lista sessões preservando erro, ao contrário de ``Server.sessions``."""
-    result = server.cmd("list-sessions", "-F#{session_name}")
+def _session_inventory_from_server(server: libtmux.Server) -> TmuxSessionInventory:
+    """Lê presença da sessão e do CLI pelo snapshot de panes do tmux.
+
+    ``pane_dead`` impede que um pane retido por ``remain-on-exit`` conte como
+    processo vivo. ``pane_current_command`` distingue o shell inicial
+    (``pane_pid``) do processo em foreground, que é o sinal útil aqui.
+    """
+    pane_format = "#{session_name}\t#{pane_dead}\t#{pane_current_command}"
+    result = server.cmd("list-panes", "-a", f"-F{pane_format}")
     if result.returncode == 0:
-        return {name for name in result.stdout if name}
+        sessions: set[str] = set()
+        claude_process_sessions: set[str] = set()
+        for line in result.stdout:
+            try:
+                session_name, pane_dead, current_command = line.split("\t", 2)
+            except ValueError as exc:
+                raise libtmux_exc.LibTmuxException(
+                    f"formato inesperado de list-panes: {line!r}"
+                ) from exc
+            if not session_name:
+                continue
+            sessions.add(session_name)
+            if pane_dead == "0" and current_command in _CLAUDE_PANE_COMMANDS:
+                claude_process_sessions.add(session_name)
+        return TmuxSessionInventory(sessions, claude_process_sessions)
 
     error = "\n".join(result.stderr).strip()
     # Ausência do próprio servidor/socket confirma que não há sessões nele.
     if "no server running" in error.lower() or "no such file or directory" in error.lower():
-        return set()
+        return TmuxSessionInventory(set(), set())
     raise libtmux_exc.LibTmuxException(error or "falha ao listar sessões tmux")
 
 
-def _list_session_names_sync() -> set[str]:
-    """Inventaria sessões dos sockets configurados sem consulta por agente.
+def _list_session_inventory_sync() -> TmuxSessionInventory:
+    """Inventaria sessões e CLIs dos sockets sem consulta por agente.
 
     Na Hostinger, lê somente o server default. Na Oracle, descobre de uma vez
     os sockets ``borges-*`` no diretório tmux e lê cada server encontrado; o
@@ -249,18 +277,33 @@ def _list_session_names_sync() -> set[str]:
     conjunto vazio e marcar falsamente toda a frota como offline. Socket ou
     server comprovadamente ausente equivale corretamente a zero sessões.
     """
-    session_names: set[str] = set()
+    sessions: set[str] = set()
+    claude_process_sessions: set[str] = set()
     named_socket_names = _configured_named_socket_names()
     for socket_name in named_socket_names:
         server = libtmux.Server(socket_name=socket_name)
-        session_names.update(_session_names_from_server(server))
+        inventory = _session_inventory_from_server(server)
+        sessions.update(inventory.sessions)
+        claude_process_sessions.update(inventory.claude_process_sessions)
 
-    session_names.update(_session_names_from_server(libtmux.Server()))
-    return session_names
+    inventory = _session_inventory_from_server(libtmux.Server())
+    sessions.update(inventory.sessions)
+    claude_process_sessions.update(inventory.claude_process_sessions)
+    return TmuxSessionInventory(sessions, claude_process_sessions)
+
+
+async def list_session_inventory() -> TmuxSessionInventory:
+    """Retorna presença de sessões e CLIs sem bloquear o event loop."""
+    return await asyncio.to_thread(_list_session_inventory_sync)
+
+
+def _list_session_names_sync() -> set[str]:
+    """Compatibilidade: retorna somente os nomes do inventário completo."""
+    return _list_session_inventory_sync().sessions
 
 
 async def list_session_names() -> set[str]:
-    """Retorna o snapshot de sessões tmux sem bloquear o event loop."""
+    """Compatibilidade: retorna somente as sessões tmux existentes."""
     return await asyncio.to_thread(_list_session_names_sync)
 
 

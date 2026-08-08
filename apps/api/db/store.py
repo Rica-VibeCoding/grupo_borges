@@ -51,8 +51,8 @@ _TOKEN_SUM_SQL = """SUM(
     END
 )"""
 
-# Janela de frescor do lifecycle. Presença online é determinada exclusivamente
-# pela sessão tmux; heartbeat velho com sessão viva significa agente ocioso.
+# Janela de frescor do lifecycle. Para Claude, presença online exige sessão tmux
+# e um CLI de agente vivo no foreground; lifecycle velho então significa ocioso.
 LIFECYCLE_FRESH_THRESHOLD_SECONDS = 300
 # Compatibilidade do payload health consumido pelo apps/web congelado. O nome
 # público é legado; não determina mais o status offline.
@@ -163,6 +163,7 @@ def derive_agent_status(
     last_seen: int | None,
     *,
     session_present: bool,
+    agent_process_present: bool,
     lifecycle_status: str | None = None,
     lifecycle_updated_at: int | None = None,
     current_task_id: str | None = None,
@@ -172,7 +173,8 @@ def derive_agent_status(
     """Deriva status do agente a partir da presença tmux + lifecycle.
 
     Contrato: ``offline`` significa ausência de sinal fresco. Para Claude Code,
-    tmux vivo é pré-requisito; para Codex, o wrapper observável é a presença.
+    sessão tmux + CLI de agente no foreground são pré-requisitos; para Codex, o
+    wrapper observável é a presença.
 
     ``last_seen`` e ``current_task_id`` permanecem na assinatura por
     compatibilidade do contrato de derivação, mas não definem presença online.
@@ -188,11 +190,11 @@ def derive_agent_status(
         if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
             return lifecycle_status
         return "offline"
-    if not session_present:
+    if not session_present or not agent_process_present:
         return "offline"
     if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
         return lifecycle_status
-    return "offline"
+    return "ocioso"
 
 
 def _short_text(value: Any, *, limit: int = 80) -> str | None:
@@ -2753,7 +2755,11 @@ class GrupoBorgesDB:
     # ---------- fleet snapshot (agregado pra UI) ----------
 
     async def fleet_snapshot(
-        self, *, active_tmux_sessions: set[str], sparkline_hours: int = 24,
+        self,
+        *,
+        active_tmux_sessions: set[str],
+        active_claude_process_sessions: set[str],
+        sparkline_hours: int = 24,
     ) -> dict[str, Any]:
         """Snapshot atômico da frota: 6 agents + state + instances + sparkline + KPIs.
 
@@ -2761,11 +2767,17 @@ class GrupoBorgesDB:
         N+1 pro caller. Resposta serve a /api/fleet sem mais round-trips.
         """
         return await asyncio.to_thread(
-            self._fleet_snapshot, sparkline_hours, active_tmux_sessions
+            self._fleet_snapshot,
+            sparkline_hours,
+            active_tmux_sessions,
+            active_claude_process_sessions,
         )
 
     def _fleet_snapshot(
-        self, sparkline_hours: int, active_tmux_sessions: set[str]
+        self,
+        sparkline_hours: int,
+        active_tmux_sessions: set[str],
+        active_claude_process_sessions: set[str],
     ) -> dict[str, Any]:
         now = int(time.time())
         start_dt, _ = hour_window(sparkline_hours)
@@ -2905,6 +2917,9 @@ class GrupoBorgesDB:
             agent["status"] = derive_agent_status(
                 agent["last_seen"],
                 session_present=agent["tmux_session"] in active_tmux_sessions,
+                agent_process_present=(
+                    agent["tmux_session"] in active_claude_process_sessions
+                ),
                 lifecycle_status=agent.get("lifecycle_status"),
                 lifecycle_updated_at=agent.get("lifecycle_updated_at"),
                 current_task_id=agent.get("current_task_id"),

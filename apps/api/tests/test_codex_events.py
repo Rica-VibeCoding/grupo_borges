@@ -111,7 +111,7 @@ def test_codex_events_update_agent_state(tmp_path: Path) -> None:
     agent = db._get_agent("tara")
     fleet_agent = next(
         agent
-        for agent in db._fleet_snapshot(24, {"tara"})["agents"]
+        for agent in db._fleet_snapshot(24, {"tara"}, {"tara"})["agents"]
         if agent["slug"] == "tara"
     )
 
@@ -146,7 +146,7 @@ def test_codex_failed_marks_lifecycle_offline(tmp_path: Path) -> None:
     agent = db._get_agent("tara")
     fleet_agent = next(
         agent
-        for agent in db._fleet_snapshot(24, set())["agents"]
+        for agent in db._fleet_snapshot(24, set(), set())["agents"]
         if agent["slug"] == "tara"
     )
 
@@ -161,7 +161,7 @@ def test_fleet_snapshot_keeps_new_fields_null_for_claude_code(tmp_path: Path) ->
 
     daniel = next(
         agent
-        for agent in db._fleet_snapshot(24, {"daniel"})["agents"]
+        for agent in db._fleet_snapshot(24, {"daniel"}, {"daniel"})["agents"]
         if agent["slug"] == "daniel"
     )
 

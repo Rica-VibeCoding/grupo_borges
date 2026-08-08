@@ -59,26 +59,31 @@ def test_clean_pane_lines_empty_visual_lines_filtered() -> None:
     assert out is None
 
 
-def test_list_session_names_runs_inventory_in_to_thread(monkeypatch) -> None:
+def test_list_session_inventory_runs_in_to_thread(monkeypatch) -> None:
     calls = 0
+    expected = tmux_driver.TmuxSessionInventory({"daniel", "felipe"}, {"daniel"})
 
     async def fake_to_thread(func, *args):
         nonlocal calls
         calls += 1
-        assert func is tmux_driver._list_session_names_sync
+        assert func is tmux_driver._list_session_inventory_sync
         assert args == ()
-        return {"daniel", "felipe"}
+        return expected
 
     monkeypatch.setattr(tmux_driver.asyncio, "to_thread", fake_to_thread)
 
-    assert asyncio.run(tmux_driver.list_session_names()) == {"daniel", "felipe"}
+    assert asyncio.run(tmux_driver.list_session_inventory()) == expected
     assert calls == 1
 
 
 def test_session_inventory_includes_named_sockets_without_default(monkeypatch) -> None:
     results_by_socket = {
-        "borges-daniel": SimpleNamespace(returncode=0, stdout=["daniel"], stderr=[]),
-        "borges-felipe": SimpleNamespace(returncode=0, stdout=["felipe"], stderr=[]),
+        "borges-daniel": SimpleNamespace(
+            returncode=0, stdout=["daniel\t0\tclaude"], stderr=[]
+        ),
+        "borges-felipe": SimpleNamespace(
+            returncode=0, stdout=["felipe\t0\tbash"], stderr=[]
+        ),
         None: SimpleNamespace(
             returncode=1,
             stdout=[],
@@ -100,7 +105,33 @@ def test_session_inventory_includes_named_sockets_without_default(monkeypatch) -
     )
     monkeypatch.setattr(tmux_driver.libtmux, "Server", FakeServer)
 
-    assert tmux_driver._list_session_names_sync() == {"daniel", "felipe"}
+    assert tmux_driver._list_session_inventory_sync() == tmux_driver.TmuxSessionInventory(
+        {"daniel", "felipe"}, {"daniel"}
+    )
+
+
+def test_session_inventory_requires_live_agent_cli_not_only_tmux_session() -> None:
+    result = SimpleNamespace(
+        returncode=0,
+        stdout=[
+            "claude-vivo\t0\tclaude",
+            "claude-node\t0\tnode",
+            "so-shell\t0\tbash",
+            "pane-morto\t1\tclaude",
+        ],
+        stderr=[],
+    )
+    server = SimpleNamespace(cmd=lambda *_args: result)
+
+    inventory = tmux_driver._session_inventory_from_server(server)
+
+    assert inventory.sessions == {
+        "claude-vivo",
+        "claude-node",
+        "so-shell",
+        "pane-morto",
+    }
+    assert inventory.claude_process_sessions == {"claude-vivo", "claude-node"}
 
 
 def test_session_inventory_propagates_named_socket_failure(monkeypatch) -> None:
@@ -123,7 +154,7 @@ def test_session_inventory_propagates_named_socket_failure(monkeypatch) -> None:
     monkeypatch.setattr(tmux_driver.libtmux, "Server", BrokenServer)
 
     with pytest.raises(libtmux_exc.LibTmuxException):
-        tmux_driver._list_session_names_sync()
+        tmux_driver._list_session_inventory_sync()
 
 
 def test_static_named_socket_is_inventoried(monkeypatch) -> None:

@@ -76,13 +76,19 @@ def test_hook_lifecycle_returns_4_states_only(
     ("kwargs", "expected"),
     [
         (
-            {"last_seen": None, "session_present": False, "now": 1_000},
+            {
+                "last_seen": None,
+                "session_present": False,
+                "agent_process_present": False,
+                "now": 1_000,
+            },
             "offline",
         ),
         (
             {
                 "last_seen": 950,
                 "session_present": True,
+                "agent_process_present": True,
                 "lifecycle_status": "trabalhando",
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
@@ -93,16 +99,18 @@ def test_hook_lifecycle_returns_4_states_only(
             {
                 "last_seen": 950,
                 "session_present": True,
+                "agent_process_present": True,
                 "lifecycle_status": "aguardando",
                 "lifecycle_updated_at": 100,
                 "now": 1_000,
             },
-            "offline",
+            "ocioso",
         ),
         (
             {
                 "last_seen": 950,
                 "session_present": True,
+                "agent_process_present": True,
                 "lifecycle_status": "ocioso",
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
@@ -113,16 +121,18 @@ def test_hook_lifecycle_returns_4_states_only(
             {
                 "last_seen": 950,
                 "session_present": True,
+                "agent_process_present": True,
                 "lifecycle_status": "trabalhando",
                 "lifecycle_updated_at": 100,
                 "now": 1_000,
             },
-            "offline",
+            "ocioso",
         ),
         (
             {
                 "last_seen": 950,
                 "session_present": True,
+                "agent_process_present": True,
                 "lifecycle_status": "offline",
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
@@ -133,6 +143,7 @@ def test_hook_lifecycle_returns_4_states_only(
             {
                 "last_seen": 100,
                 "session_present": True,
+                "agent_process_present": True,
                 "lifecycle_status": "trabalhando",
                 "lifecycle_updated_at": 950,
                 "now": 1_000,
@@ -149,12 +160,26 @@ def test_derive_agent_status_4_values(kwargs: dict, expected: str) -> None:
     assert status in {"ocioso", "trabalhando", "aguardando", "offline"}
 
 
-def test_old_heartbeat_with_tmux_session_is_offline() -> None:
+def test_stale_lifecycle_with_live_claude_process_is_idle() -> None:
     from db.store import derive_agent_status
 
     assert derive_agent_status(
         100,
         session_present=True,
+        agent_process_present=True,
+        lifecycle_status="trabalhando",
+        lifecycle_updated_at=100,
+        now=1_000,
+    ) == "ocioso"
+
+
+def test_tmux_session_without_agent_process_is_offline() -> None:
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        100,
+        session_present=True,
+        agent_process_present=False,
         lifecycle_status="trabalhando",
         lifecycle_updated_at=100,
         now=1_000,
@@ -167,6 +192,7 @@ def test_missing_tmux_session_is_offline() -> None:
     assert derive_agent_status(
         950,
         session_present=False,
+        agent_process_present=False,
         lifecycle_status="trabalhando",
         lifecycle_updated_at=950,
         now=1_000,
@@ -182,6 +208,7 @@ def test_fresh_lifecycle_with_tmux_session_is_preserved(
     assert derive_agent_status(
         950,
         session_present=True,
+        agent_process_present=True,
         lifecycle_status=lifecycle_status,
         lifecycle_updated_at=950,
         now=1_000,
@@ -194,6 +221,7 @@ def test_codex_fresh_lifecycle_does_not_require_tmux_session() -> None:
     assert derive_agent_status(
         950,
         session_present=False,
+        agent_process_present=False,
         lifecycle_status="trabalhando",
         lifecycle_updated_at=950,
         executor_kind="codex",
@@ -207,6 +235,7 @@ def test_codex_stale_lifecycle_is_offline_without_tmux_session() -> None:
     assert derive_agent_status(
         100,
         session_present=False,
+        agent_process_present=False,
         lifecycle_status="ocioso",
         lifecycle_updated_at=100,
         executor_kind="codex",
