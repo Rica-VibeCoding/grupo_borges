@@ -12,6 +12,16 @@ node_modules/
 .next-dev/
 .turbo/
 dist/
+
+# Gerado pelo Next (typescript.mdx: "should be added to .gitignore") — oscila
+# com o distDir (.next-dev no dev, .next em prod). apps/web fica de fora: v1
+# está congelado, não recebe commit, e destravar isso lá é outra task.
+apps/cockpit/next-env.d.ts
+
+# Override local do agents.yaml (config.py escolhe este arquivo se existir).
+# Nunca editar o agents.yaml versionado pra customizar a frota local — é
+# assim que o pull para de abortar em quem roda outra frota (ex: Oracle).
+agents.local.yaml
 build/
 .vercel/
 *.tsbuildinfo

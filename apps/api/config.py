@@ -8,10 +8,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 API_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = API_ROOT.parents[1]
+
+
+def _default_agents_yaml() -> str:
+    """agents.local.yaml (gitignored) vence se existir.
+
+    Permite frota diferente por ambiente (ex: Oracle) sem editar o
+    agents.yaml versionado — é a edição local nele que fazia o
+    `git pull --rebase` abortar toda vez que o upstream também mexia
+    no arquivo. GB_AGENTS_YAML no .env continua valendo por cima disto.
+    """
+    local = REPO_ROOT / "agents.local.yaml"
+    if local.exists():
+        return str(local)
+    return str(REPO_ROOT / "agents.yaml")
 
 
 class Settings(BaseSettings):
@@ -34,7 +49,7 @@ class Settings(BaseSettings):
     hook_bearer_token: str | None = None
 
     # paths
-    agents_yaml: str = str(REPO_ROOT / "agents.yaml")
+    agents_yaml: str = Field(default_factory=_default_agents_yaml)
     workspaces_root: str = ""  # raiz dos workspaces dos 6 agentes (opcional, info)
     db_path: str = str(API_ROOT / "data" / "grupo_borges.db")
     claude_projects_dir: str = str(Path.home() / ".claude" / "projects")
