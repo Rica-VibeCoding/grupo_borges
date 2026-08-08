@@ -50,6 +50,7 @@ hipótese.
 | `retentativa-painel.py` | Painel fora do ar volta sozinho; backoff cresce (2s/4s/8s) e para ao fechar a gaveta. Bug `940d5c07`, commit `783b2be`. |
 | `composer-retomada.py` | "Tentar de novo" reenvia o texto pendurado sem comer o que está no campo. Bug `307c4624`, commit `c4ab92f`. |
 | `bolha-da-fila.py` | Mensagem enviada com o agente em turno vira bolha na hora, marcada "na fila"; a marca cai na drenagem e não nasce bolha duplicada. Bug `e615c350`. |
+| `cota-no-painel.py` | Painel mostra a cota das duas janelas com percentual e reset; cota velha vem marcada com a idade; `missing` vira recado sem comer os controles. Bug `294c5464`. |
 
 **Exceção à regra 1 em `bolha-da-fila.py`:** ele despacha DE VERDADE, sem
 interceptar. O que se mede é o caminho inteiro CLI → JSONL → SSE → feed, e um

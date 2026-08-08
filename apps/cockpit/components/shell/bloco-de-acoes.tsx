@@ -73,6 +73,7 @@ import {
   type Impedimento,
   type ModoRelancar,
 } from './acoes-rapidas';
+import { BlocoDeCota } from './bloco-de-cota';
 import { IconeDescartar } from './icones';
 import { usaCompact } from '../../lib/compact';
 import { usePainelAberto } from './superficie-otimista';
@@ -464,160 +465,168 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           : null;
 
   return (
-    <section
-      aria-label="ações rápidas"
-      className="flex shrink-0 flex-col border-b"
-      style={{
-        gap: 'var(--ck-space-4)',
-        padding: 'var(--ck-space-4)',
-        // `edge-light`, não `hairline`: separador DENTRO de superfície
-        // flutuante é o fio de luz da §17 — o hairline (#424242) é mais duro
-        // que a textura que o Rica mediu na referência.
-        borderColor: 'var(--ck-edge-light)',
-      }}
-    >
-      {carga === 'indisponivel' ? (
-        <Recado
-          texto="não consegui ler os controles deste agente"
-          rotuloAcao="Tentar de novo"
-          aoAcionar={() => buscar()}
-        />
-      ) : null}
+    <>
+      <section
+        aria-label="ações rápidas"
+        className="flex shrink-0 flex-col border-b"
+        style={{
+          gap: 'var(--ck-space-4)',
+          padding: 'var(--ck-space-4)',
+          // `edge-light`, não `hairline`: separador DENTRO de superfície
+          // flutuante é o fio de luz da §17 — o hairline (#424242) é mais duro
+          // que a textura que o Rica mediu na referência.
+          borderColor: 'var(--ck-edge-light)',
+        }}
+      >
+        {carga === 'indisponivel' ? (
+          <Recado
+            texto="não consegui ler os controles deste agente"
+            rotuloAcao="Tentar de novo"
+            aoAcionar={() => buscar()}
+          />
+        ) : null}
 
-      {carga === 'carregando' && controles.length === 0 ? (
-        // Altura reservada: sem isto os seis campos sobem e descem quando os
-        // controles chegam, e o painel pisca a cada abertura.
-        <div aria-hidden style={{ height: '96px' }} />
-      ) : null}
+        {carga === 'carregando' && controles.length === 0 ? (
+          // Altura reservada: sem isto os seis campos sobem e descem quando os
+          // controles chegam, e o painel pisca a cada abertura.
+          <div aria-hidden style={{ height: '96px' }} />
+        ) : null}
 
-      {controles.map((controle) => (
-        <Segmentado
-          key={controle.id}
-          controle={controle}
-          emVoo={emVoo?.id === controle.id ? emVoo.valor : null}
-          aoEscolher={(valor) => void trocar(controle, valor)}
-        />
-      ))}
+        {controles.map((controle) => (
+          <Segmentado
+            key={controle.id}
+            controle={controle}
+            emVoo={emVoo?.id === controle.id ? emVoo.valor : null}
+            aoEscolher={(valor) => void trocar(controle, valor)}
+          />
+        ))}
 
-      {carga === 'pronto' ? (
-        // Destravar + relançar (com e sem contexto) na MESMA linha — os três
-        // cabem lado a lado (ordem do Rica, 03/08). Um debaixo do outro
-        // empurrava o resto do painel pra baixo à toa; a ordem esquerda→direita
-        // continua sendo a escada de custo: Escape não custa nada, relançar com
-        // contexto custa o turno em voo, relançar sem contexto custa a conversa
-        // inteira.
-        <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
-          {/* A linha "Fecha modal que travou o campo…" saiu por ordem do Rica
-              (30/07): *"pode retirar os textos explicativos"*, citando-a pelo
-              nome. Nada entrou no lugar — o que o botão faz continua dito no
-              `aria-label`, que já existia e não é enfeite de tela. */}
-          <button
-              type="button"
-              onClick={() => void acionarDestrava()}
-              aria-busy={destrava === 'enviando'}
-              // Estático só cobriria "Destravar": o nome acessível vence o
-              // conteúdo, então o leitor de tela nunca ouviria "Destravando…"
-              // nem "Escape enviado" — e no estado entregue o nome nem conteria
-              // o texto visível (WCAG 2.5.3). Fora do ocioso o rótulo sozinho já
-              // é a frase inteira.
-              aria-label={
-                confirmaCompact && compactEmVoo
-                  ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
-                  : destrava === 'ocioso'
-                    ? 'Destravar o agente — envia Escape 3x no terminal dele'
-                    : rotulaDestrava(destrava)
-              }
-              className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
-              style={{
-                minHeight: 'var(--ck-touch-min)',
-                padding: '0 var(--ck-space-2)',
-                borderRadius: 'var(--ck-radius-frame)',
-                borderColor: 'var(--ck-edge-functional)',
-                fontSize: 'var(--ck-text-sm)',
-                whiteSpace: 'nowrap',
-                // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
-                // portadora de significado (§3/§9.7). A confirmação do compact
-                // entra na mesma régua — âmbar de atenção E outra frase.
-                color:
+        {carga === 'pronto' ? (
+          // Destravar + relançar (com e sem contexto) na MESMA linha — os três
+          // cabem lado a lado (ordem do Rica, 03/08). Um debaixo do outro
+          // empurrava o resto do painel pra baixo à toa; a ordem esquerda→direita
+          // continua sendo a escada de custo: Escape não custa nada, relançar com
+          // contexto custa o turno em voo, relançar sem contexto custa a conversa
+          // inteira.
+          <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
+            {/* A linha "Fecha modal que travou o campo…" saiu por ordem do Rica
+                (30/07): *"pode retirar os textos explicativos"*, citando-a pelo
+                nome. Nada entrou no lugar — o que o botão faz continua dito no
+                `aria-label`, que já existia e não é enfeite de tela. */}
+            <button
+                type="button"
+                onClick={() => void acionarDestrava()}
+                aria-busy={destrava === 'enviando'}
+                // Estático só cobriria "Destravar": o nome acessível vence o
+                // conteúdo, então o leitor de tela nunca ouviria "Destravando…"
+                // nem "Escape enviado" — e no estado entregue o nome nem conteria
+                // o texto visível (WCAG 2.5.3). Fora do ocioso o rótulo sozinho já
+                // é a frase inteira.
+                aria-label={
                   confirmaCompact && compactEmVoo
-                    ? 'var(--ck-state-attention)'
-                    : destrava === 'entregue'
-                      ? 'var(--ck-state-ok)'
-                      : 'var(--ck-text-primary)',
-                transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-              }}
-            >
-            {confirmaCompact && compactEmVoo ? 'Confirmar?' : rotulaDestrava(destrava)}
-          </button>
+                    ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
+                    : destrava === 'ocioso'
+                      ? 'Destravar o agente — envia Escape 3x no terminal dele'
+                      : rotulaDestrava(destrava)
+                }
+                className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+                style={{
+                  minHeight: 'var(--ck-touch-min)',
+                  padding: '0 var(--ck-space-2)',
+                  borderRadius: 'var(--ck-radius-frame)',
+                  borderColor: 'var(--ck-edge-functional)',
+                  fontSize: 'var(--ck-text-sm)',
+                  whiteSpace: 'nowrap',
+                  // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
+                  // portadora de significado (§3/§9.7). A confirmação do compact
+                  // entra na mesma régua — âmbar de atenção E outra frase.
+                  color:
+                    confirmaCompact && compactEmVoo
+                      ? 'var(--ck-state-attention)'
+                      : destrava === 'entregue'
+                        ? 'var(--ck-state-ok)'
+                        : 'var(--ck-text-primary)',
+                  transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+                }}
+              >
+              {confirmaCompact && compactEmVoo ? 'Confirmar?' : rotulaDestrava(destrava)}
+            </button>
 
-          {/* RELANÇAR (com contexto) — o degrau acima do destrava. Quando o
-              Escape não resolve porque o próprio Claude Code morreu, esta é a
-              saída que não custa a conversa: sobe outro processo com
-              `--resume`. Fica DEPOIS do destrava de propósito: é a ação mais
-              cara das três, e a ordem na tela é a ordem em que se deve tentar. */}
-          {!codex ? (
-            <BotaoRelancar
-              fase={relancar}
-              modo="resume"
-              onClick={() => void acionarRelancar('resume')}
-            />
-          ) : null}
+            {/* RELANÇAR (com contexto) — o degrau acima do destrava. Quando o
+                Escape não resolve porque o próprio Claude Code morreu, esta é a
+                saída que não custa a conversa: sobe outro processo com
+                `--resume`. Fica DEPOIS do destrava de propósito: é a ação mais
+                cara das três, e a ordem na tela é a ordem em que se deve tentar. */}
+            {!codex ? (
+              <BotaoRelancar
+                fase={relancar}
+                modo="resume"
+                onClick={() => void acionarRelancar('resume')}
+              />
+            ) : null}
 
-          {/* RELANÇAR SEM CONTEXTO — o degrau mais caro dos três. Sobe um
-              Claude Code do zero, sem `--resume`: pro pane travado de um jeito
-              que nem o resume confirma (âncora não bate), ou pra quando
-              recomeçar do zero é o que se quer mesmo. */}
-          {!codex ? (
-            <BotaoRelancar
-              fase={relancarFresco}
-              modo="fresco"
-              onClick={() => void acionarRelancar('fresco')}
-            />
-          ) : null}
-        </div>
-      ) : null}
+            {/* RELANÇAR SEM CONTEXTO — o degrau mais caro dos três. Sobe um
+                Claude Code do zero, sem `--resume`: pro pane travado de um jeito
+                que nem o resume confirma (âncora não bate), ou pra quando
+                recomeçar do zero é o que se quer mesmo. */}
+            {!codex ? (
+              <BotaoRelancar
+                fase={relancarFresco}
+                modo="fresco"
+                onClick={() => void acionarRelancar('fresco')}
+              />
+            ) : null}
+          </div>
+        ) : null}
 
-      {avisoConfirmacao ? (
-        // Largura cheia da gaveta (~348px), não o ~1/3 apertado de um botão —
-        // é aqui que mora a frase que o rótulo curto do botão não conseguia
-        // mostrar sem cortar (ver comentário de `avisoConfirmacao` acima).
-        <p
-          role="status"
-          style={{
-            fontSize: 'var(--ck-text-xs)',
-            color: 'var(--ck-state-attention)',
-          }}
-        >
-          {avisoConfirmacao}
-        </p>
-      ) : null}
-
-      {falha ? (
-        <div
-          className="flex items-start justify-between"
-          style={{ gap: 'var(--ck-space-3)' }}
-          role="alert"
-        >
-          <span style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}>
-            {falha.resumo} — {falha.saida}
-          </span>
-          <button
-            type="button"
-            onClick={() => setFalha(null)}
-            aria-label="Dispensar aviso"
-            className="ck-veil flex shrink-0 items-center justify-center"
+        {avisoConfirmacao ? (
+          // Largura cheia da gaveta (~348px), não o ~1/3 apertado de um botão —
+          // é aqui que mora a frase que o rótulo curto do botão não conseguia
+          // mostrar sem cortar (ver comentário de `avisoConfirmacao` acima).
+          <p
+            role="status"
             style={{
-              minHeight: 'var(--ck-touch-min)',
-              minWidth: 'var(--ck-touch-min)',
-              borderRadius: 'var(--ck-radius-chip)',
-              color: 'var(--ck-text-secondary)',
+              fontSize: 'var(--ck-text-xs)',
+              color: 'var(--ck-state-attention)',
             }}
           >
-            <IconeDescartar tamanho={13} />
-          </button>
-        </div>
-      ) : null}
-    </section>
+            {avisoConfirmacao}
+          </p>
+        ) : null}
+
+        {falha ? (
+          <div
+            className="flex items-start justify-between"
+            style={{ gap: 'var(--ck-space-3)' }}
+            role="alert"
+          >
+            <span style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}>
+              {falha.resumo} — {falha.saida}
+            </span>
+            <button
+              type="button"
+              onClick={() => setFalha(null)}
+              aria-label="Dispensar aviso"
+              className="ck-veil flex shrink-0 items-center justify-center"
+              style={{
+                minHeight: 'var(--ck-touch-min)',
+                minWidth: 'var(--ck-touch-min)',
+                borderRadius: 'var(--ck-radius-chip)',
+                color: 'var(--ck-text-secondary)',
+              }}
+            >
+              <IconeDescartar tamanho={13} />
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      {/* Cota é leitura, não ação — irmã da região, nunca dentro dela. Só
+          aparece com o painel lido: fabricar "sem dados" enquanto a busca está
+          em voo ou caiu diria que o agente não reporta cota, quando o que caiu
+          foi a rede. O recado da falha já está acima. */}
+      {carga === 'pronto' ? <BlocoDeCota quotas={painel?.quotas} /> : null}
+    </>
   );
 }
 
