@@ -182,6 +182,30 @@ agents:
     can_review:
       - daniel
 
+  # [2026-08-08 Pavan] Executor de implementação do Cockpit V2, motor DeepSeek
+  # V4-Flash via assinatura OpenCode Go (não-Anthropic — mesmo padrão do Hiro/
+  # Kimi). Orquestrado pelo Pavan, worktree isolado (nunca o checkout do Daniel).
+  # Slug ficou "canarinho" de propósito: já existe "canario" abaixo (gerador de
+  # carga sintética do gate, nome consagrado em dezenas de arquivos do cockpit —
+  # NÃO renomear aquele). O Rica chama este de "Canário" no dia a dia; o slug
+  # técnico é só pra não colidir. Sem model_family ainda — o painel mostra
+  # contexto/effort como se fosse Anthropic (mesmo gotcha que o Kimi teve antes
+  # do DS-69; corrigir quando alguém tiver tempo de estender o backend).
+  - slug: canarinho
+    name: Canário
+    role: Executor de implementação — Cockpit V2, motor DeepSeek V4-Flash (Go)
+    emoji: "🐤"
+    tmux_session: canario
+    workspace_path: /home/clawd/repos/grupo_borges-canario
+    cli_default: claude_code
+    model_default: deepseek-v4-flash
+    capabilities:
+      - dev-fullstack
+      - cockpit-v2
+      - polimento-ui
+      - motor-deepseek-opencode-go
+    can_review: []
+
   # Canário descartável do gate cockpit v2. Não corresponde a sessão produtiva.
   - slug: canario
     name: Canário do Cockpit
