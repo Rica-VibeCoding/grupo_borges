@@ -179,7 +179,10 @@ def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
         return update
 
     if payload.kind == "codex.event_msg":
-        token_count = codex_reader.normalize_token_count_payload(body)
+        token_count = codex_reader.normalize_token_count_payload(
+            body,
+            observed_at=_int_timestamp(body.get("timestamp"), fallback=now),
+        )
         if token_count is None:
             return {"executor_kind": "codex"}
         update = {

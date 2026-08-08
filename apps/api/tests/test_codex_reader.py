@@ -110,6 +110,37 @@ def test_read_latest_token_count_normaliza_contexto_e_rate_limits(tmp_path: Path
     assert snapshot["rate_limits"]["primary"]["window_minutes"] == 10_080
 
 
+def test_read_latest_token_count_traz_observed_at_da_linha_do_rollout(tmp_path: Path) -> None:
+    """A idade da cota sai do rollout, não do relógio de quem lê."""
+    rollout = tmp_path / "tokens.jsonl"
+    rollout.write_text(
+        '{"timestamp":"2026-08-07T21:32:00.123Z","type":"event_msg","payload":'
+        '{"type":"token_count","info":{"last_token_usage":{"total_tokens":10000},'
+        '"model_context_window":200000}}}',
+        encoding="utf-8",
+    )
+
+    snapshot = cr.read_latest_token_count(rollout)
+
+    assert snapshot is not None
+    assert snapshot["observed_at"] == 1_786_138_320  # 2026-08-07T21:32:00Z
+
+
+def test_read_latest_token_count_sem_timestamp_deixa_observed_at_none(tmp_path: Path) -> None:
+    """Linha antiga sem timestamp vira idade desconhecida, nunca 'agora'."""
+    rollout = tmp_path / "tokens.jsonl"
+    rollout.write_text(
+        '{"type":"event_msg","payload":{"type":"token_count","info":'
+        '{"last_token_usage":{"total_tokens":10000},"model_context_window":200000}}}',
+        encoding="utf-8",
+    )
+
+    snapshot = cr.read_latest_token_count(rollout)
+
+    assert snapshot is not None
+    assert snapshot["observed_at"] is None
+
+
 def test_classify_message_rules() -> None:
     assert cr.classify_message("assistant", "oi") == ("assistant", True)
     assert cr.classify_message("user", "pergunta normal") == ("user", True)

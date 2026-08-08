@@ -87,6 +87,10 @@ _TELECODEX_CONTROL_URL = os.environ.get(
     "http://127.0.0.1:8787/control/new-thread",
 )
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
+# Codex é mais generoso porque a cota dele só chega em evento (webhook por
+# turno), não num arquivo de status reescrito de segundo em segundo como o CC.
+# Com 20s a Tara apareceria "stale" entre um turno e o seguinte, trabalhando.
+_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS = 300
 # Kimi: mesmo endpoint do `/usage` do Kimi Code CLI — janela de 5h + cota
 # semanal da assinatura. Cache curto: o painel faz poll e a cota anda devagar.
 _KIMI_USAGES_URL = "https://api.kimi.com/coding/v1/usages"
@@ -971,10 +975,18 @@ def _build_codex_painel_quotas(
 ) -> AgentPainelQuotas:
     usage_payload = _codex_token_usage_payload(agent, thread)
     if usage_payload is None:
-        return AgentPainelQuotas(status="missing", source="agent_state.token_usage_json")
+        return AgentPainelQuotas(
+            status="missing",
+            source="agent_state.token_usage_json",
+            stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
+        )
     rate_limits = usage_payload.get("rate_limits")
     if not isinstance(rate_limits, dict):
-        return AgentPainelQuotas(status="missing", source="agent_state.token_usage_json")
+        return AgentPainelQuotas(
+            status="missing",
+            source="agent_state.token_usage_json",
+            stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
+        )
 
     now = int(time.time())
     five_hour = None
@@ -989,11 +1001,24 @@ def _build_codex_painel_quotas(
         elif window_minutes == 10080:
             seven_day = _codex_quota_window(window_raw, now)
 
-    status = "available" if five_hour is not None or seven_day is not None else "missing"
+    # `observed_at` é o instante em que a origem mediu a cota. Carimbar `now`
+    # aqui fazia a cota nunca envelhecer: Tara parada há horas mostrava dado
+    # "de agora". Payload gravado antes deste campo existir vira `unknown` —
+    # é honesto, a idade dele é desconhecida.
+    observed_at = _int_or_none(usage_payload.get("observed_at"))
+    if five_hour is None and seven_day is None:
+        status: Literal["available", "missing", "stale", "unknown"] = "missing"
+    elif observed_at is None:
+        status = "unknown"
+    elif now - observed_at > _CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS:
+        status = "stale"
+    else:
+        status = "available"
     return AgentPainelQuotas(
         status=status,
         source="agent_state.token_usage_json",
-        updated_at=now,
+        updated_at=observed_at,
+        stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         five_hour=five_hour,
         seven_day=seven_day,
     )

@@ -6,8 +6,10 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -220,6 +222,7 @@ def test_agent_painel_codex_usa_token_count_para_contexto_e_quotas(
                         "resets_at": int(time.time()) + 6 * 24 * 3600,
                     }
                 },
+                "observed_at": int(time.time()),
             }
         ),
     )
@@ -247,6 +250,76 @@ def test_agent_painel_codex_usa_token_count_para_contexto_e_quotas(
     assert body["quotas"]["status"] == "available"
     assert body["quotas"]["seven_day"]["used_percentage"] == 4.0
     assert body["quotas"]["five_hour"] is None
+
+
+def _codex_token_usage_json(*, observed_at: int | None) -> str:
+    payload: dict[str, Any] = {
+        "source": "codex.event_msg.token_count",
+        "usage": {"total_tokens": 58_798},
+        "model_context_window": 258_400,
+        "context_tokens": 58_798,
+        "context_pct": 22.8,
+        "rate_limits": {
+            "primary": {
+                "used_percent": 4.0,
+                "window_minutes": 10_080,
+                "resets_at": int(time.time()) + 6 * 24 * 3600,
+            }
+        },
+    }
+    if observed_at is not None:
+        payload["observed_at"] = observed_at
+    return json.dumps(payload)
+
+
+@pytest.mark.parametrize(
+    ("observed_at_delta", "status_esperado"),
+    [
+        (-9 * 3600, "stale"),
+        (None, "unknown"),
+    ],
+)
+def test_agent_painel_codex_nao_carimba_cota_velha_como_atual(
+    tmp_path: Path, monkeypatch, observed_at_delta: int | None, status_esperado: str
+) -> None:
+    """Cota da Tara parada há horas não pode aparecer como medida agora.
+
+    O `updated_at` vinha de `time.time()` na LEITURA — a cota nunca envelhecia.
+    Payload legado (sem `observed_at`) vira `unknown`, não `available`.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        token_usage_json=_codex_token_usage_json(
+            observed_at=None if observed_at_delta is None else agora + observed_at_delta
+        ),
+    )
+
+    monkeypatch.setattr(
+        agents_router.codex_reader,
+        "find_latest_thread",
+        lambda *_args: SimpleNamespace(
+            model="gpt-5.6-sol",
+            tokens_used=0,
+            updated_at_ms=agora * 1000,
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/tara/painel")
+
+    quotas = response.json()["quotas"]
+    assert quotas["status"] == status_esperado
+    assert quotas["stale_after_seconds"] == 300
+    # o dado em si continua entregue — o que muda é a idade declarada
+    assert quotas["seven_day"]["used_percentage"] == 4.0
+    if observed_at_delta is None:
+        assert quotas["updated_at"] is None
+    else:
+        assert quotas["updated_at"] == agora + observed_at_delta
 
 
 def test_agent_painel_codex_cai_para_rollout_quando_state_nao_tem_token_count(

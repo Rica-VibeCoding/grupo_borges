@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -237,7 +238,33 @@ def _pct_or_none(used: int | None, total: int | None) -> float | None:
     return round(max(0, min(100, used * 100 / total)), 1)
 
 
-def normalize_token_count_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+def _epoch_or_none(value: Any) -> int | None:
+    """Timestamp do rollout vem ISO (`2026-08-07T21:32:00.123Z`) ou epoch."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp())
+    return None
+
+
+def normalize_token_count_payload(
+    payload: dict[str, Any],
+    *,
+    observed_at: int | None = None,
+) -> dict[str, Any] | None:
+    """`observed_at` é QUANDO a cota foi medida na origem, não quando alguém leu.
+
+    Sem ele o painel carimbava `time.time()` na leitura e a cota da Tara nunca
+    envelhecia: agente parado há horas aparecia com dado "de agora".
+    """
     if payload.get("type") != "token_count":
         return None
     info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
@@ -258,6 +285,7 @@ def normalize_token_count_payload(payload: dict[str, Any]) -> dict[str, Any] | N
         "context_tokens": context_tokens,
         "context_pct": _pct_or_none(context_tokens, context_window),
         "rate_limits": payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else None,
+        "observed_at": observed_at,
     }
 
 
@@ -287,7 +315,10 @@ def read_latest_token_count(path: str | Path) -> dict[str, Any] | None:
                 context_window = _int_or_none(payload.get("model_context_window"))
             if context_window is not None:
                 latest_context_window = context_window
-            snapshot = normalize_token_count_payload(payload)
+            snapshot = normalize_token_count_payload(
+                payload,
+                observed_at=_epoch_or_none(row.get("timestamp")),
+            )
             if snapshot is not None:
                 if snapshot["model_context_window"] is None and latest_context_window is not None:
                     snapshot["model_context_window"] = latest_context_window
