@@ -188,6 +188,11 @@ export function Composer({
   // propósito: ela descreve um impedimento do INSTANTE, não um erro a ser
   // reconhecido — quando o motivo passa, o aviso vai junto.
   const [avisoDaPorta, setAvisoDaPorta] = useState<string | null>(null);
+  // O SINAL DE RECUSA. A porta recusou um toque com recado — o botão de enviar
+  // sacode pra o Rica sentir o "não" mesmo quando o aviso da faixa fica
+  // escondido atrás do teclado do iPhone. Estado e não classe persistente:
+  // `onAnimationEnd` limpa, então o próximo toque recusado re-sacode.
+  const [sinalRecusa, setSinalRecusa] = useState(false);
   const anexoEmVoo = anexo.estado.fase === 'enviando';
   useEffect(() => {
     // A lista é a dos IMPEDIMENTOS, e o anexo em voo entrou nela junto com o
@@ -364,6 +369,13 @@ export function Composer({
       retomada,
     });
     setAvisoDaPorta(efeito.aviso);
+    // A recusa com recado é um toque que não saiu. O aviso da faixa pode ficar
+    // atrás do teclado no iPhone — quem sente é o botão, sacudindo. Só o toque
+    // DIRETO (`!retomada`): o despacho da fila já mostra o recuo no bloco, e o
+    // "Reenviar" é o usuário pedindo de novo — nenhum dos dois é gesto mudo.
+    if (!retomada && !efeito.despacha && efeito.aviso !== null) {
+      setSinalRecusa(true);
+    }
     // A FILA. O único caminho em que o campo esvazia sem despacho — e não é
     // descarte: o texto sai do campo e aparece inteiro no bloco logo acima,
     // com o controle de trazê-lo de volta. O despacho é do efeito abaixo,
@@ -788,10 +800,15 @@ export function Composer({
                 type="submit"
                 // Habilitado mesmo quando a porta vai recusar: desabilitado ele
                 // não responde ao toque e não diz por quê, que é o botão morto
-                // da §9. Tocar agora devolve o motivo na faixa abaixo, e o
-                // texto continua no campo.
+                // da §9. Tocar agora devolve o motivo na faixa abaixo — e, se a
+                // faixa estiver escondida atrás do teclado, o botão sacode
+                // (`sinalRecusa` + `.ck-sacudir`) pra o toque não parecer morto.
+                onAnimationEnd={() => setSinalRecusa(false)}
                 aria-label={`Enviar para ${agentName}`}
-                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                className={
+                  'flex shrink-0 items-center justify-center disabled:opacity-40' +
+                  (sinalRecusa ? ' ck-sacudir' : '')
+                }
                 style={{
                   width: '32px',
                   height: '32px',

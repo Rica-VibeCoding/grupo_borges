@@ -1094,3 +1094,24 @@ body {
     animation: ck-feed-enter var(--ck-dur-enter, 200ms) var(--ck-ease) both;
   }
 }
+
+/* O toque que a porta recusou não pode parecer morto: com o aviso da recusa
+ * escondido atrás do teclado no iPhone, o composer parece travado. O botão de
+ * enviar sacode — rápido, pequeno e sem deslocar layout (só `transform`, como
+ * toda animação da casa). Quem dispara é o `composer.tsx` (`sinalRecusa`), na
+ * recusa com recado de um toque direto no botão.
+ *
+ * O nome carrega o EFEITO (sacudir), não o motivo: a mesma classe serve a
+ * qualquer recusa com recado, não só `anexo-em-voo`/`envio-em-voo`. */
+@keyframes ck-sacudir {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+.ck-sacudir { animation: ck-sacudir var(--ck-dur-enter, 200ms) var(--ck-ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-sacudir { animation: none; }
+}
