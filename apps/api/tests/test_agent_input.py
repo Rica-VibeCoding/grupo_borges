@@ -15,6 +15,9 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
+from services import tmux_driver
+
+_RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
 
 
 DANIEL = {
@@ -170,7 +173,7 @@ def test_input_codex_turn_in_flight_returns_409(tmp_path: Path) -> None:
 def test_input_claude_still_uses_tmux_not_codex(tmp_path: Path) -> None:
     """Agente Claude Code preserva caminho tmux original."""
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=True) as send_message, \
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED) as send_message, \
          patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
@@ -192,9 +195,9 @@ def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) 
         order.append("boundary")
         return 37
 
-    async def send_message(_session: str, _text: str) -> bool:
+    async def send_message(_session: str, _text: str) -> tmux_driver.DeliveryResult:
         order.append("send")
-        return True
+        return tmux_driver.DELIVERED
 
     app.state.db.max_event_id = max_event_id
     with patch(
@@ -339,7 +342,7 @@ def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:
     endpoint deve devolver 409 — não 200/500.
     """
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=False):
+    with patch("routers.agents.tmux_driver.send_message", return_value=_RECUSADO):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/input",
@@ -351,7 +354,7 @@ def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:
 def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:
     """Caminho feliz: send_message=True → 200 + `tmux_delivered: True` + `sent_at` int."""
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=True):
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/input",

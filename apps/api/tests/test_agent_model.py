@@ -19,6 +19,9 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
+from services import tmux_driver
+
+_RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
 
 
 DANIEL = {
@@ -223,7 +226,7 @@ def test_model_busy_with_force_passes(tmp_path: Path) -> None:
     app.state.db._update_agent_lifecycle(
         "daniel", status="trabalhando", detail=None, event="test.setup"
     )
-    with patch("routers.agents.tmux_driver.send_message", return_value=True), \
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED), \
          patch("routers.agents.tmux_driver.capture_pane_excerpt", return_value="Sonnet 4.6 - 00:01 - [...] 1%"):
         with TestClient(app) as client:
             response = client.post(
@@ -237,7 +240,7 @@ def test_model_busy_with_force_passes(tmp_path: Path) -> None:
 def test_model_persists_state_only_when_delivered(tmp_path: Path) -> None:
     """`tmux_delivered=False` → NÃO escreve `state_model` (inversão cravada no plano v2)."""
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=False):
+    with patch("routers.agents.tmux_driver.send_message", return_value=_RECUSADO):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/model",
@@ -257,7 +260,7 @@ def test_model_persists_state_only_when_delivered(tmp_path: Path) -> None:
 def test_model_emits_task_event_on_change(tmp_path: Path) -> None:
     """Troca confirmada deve emitir `task_event` kind=`agent.model_change` com `{from, to, actor}`."""
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=True), \
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED), \
          patch("routers.agents.tmux_driver.capture_pane_excerpt", return_value="Sonnet 4.6 - 00:01 - [...] 1%"):
         with TestClient(app) as client:
             response = client.post(
@@ -278,7 +281,7 @@ def test_model_fable_confirmed_via_pane(tmp_path: Path) -> None:
     """Fable 5 entra no whitelist e confirma via statusline SEM decimal na versão
     ("Fable 5 - ..." — diferente de "Opus 4.8"). Regex do parser cobre os dois."""
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=True), \
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED), \
          patch("routers.agents.tmux_driver.press_enter", return_value=True), \
          patch("routers.agents.tmux_driver.capture_pane_excerpt",
                return_value="Fable 5 - 00:01 - [..........] 1%"):
@@ -300,7 +303,7 @@ def test_model_detects_confirmation_via_pane_regex(tmp_path: Path) -> None:
     """
     app = _build_app(tmp_path)
     # Caso "match": statusline mostra Sonnet → confirmed True
-    with patch("routers.agents.tmux_driver.send_message", return_value=True), \
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED), \
          patch("routers.agents.tmux_driver.capture_pane_excerpt", return_value="Sonnet 4.6 - 00:01 - [...] 1%"):
         with TestClient(app) as client:
             response = client.post(
@@ -311,7 +314,7 @@ def test_model_detects_confirmation_via_pane_regex(tmp_path: Path) -> None:
             assert response.json()["confirmed"] is True
 
     # Caso "no match": statusline ainda mostra Opus → confirmed False, delivered True
-    with patch("routers.agents.tmux_driver.send_message", return_value=True), \
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED), \
          patch("routers.agents.tmux_driver.capture_pane_excerpt", return_value="Opus 4.7 - 00:01 - [...] 1%"):
         with TestClient(app) as client:
             response = client.post(

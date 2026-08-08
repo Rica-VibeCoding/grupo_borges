@@ -79,7 +79,7 @@ class AutoDispatcher:
         dispatch_text = _format_dispatch_message(task=task, note=claimed.get("note"))
 
         try:
-            delivered = await tmux_driver.send_message(tmux_session, dispatch_text)
+            entrega = await tmux_driver.send_message(tmux_session, dispatch_text)
         except tmux_driver.TmuxSessionBusyError:
             await self._db.record_task_dispatch_failed(
                 task["id"],
@@ -109,18 +109,26 @@ class AutoDispatcher:
             )
             return
 
-        if not delivered:
+        if not entrega.delivered:
             await self._db.record_task_dispatch_failed(
                 task["id"],
                 run_id=run_id,
                 tmux_session=tmux_session,
-                reason="tmux_session_not_found",
+                reason=entrega.reason or "tmux_session_not_found",
                 source="auto",
             )
+            # `safe_to_resend` diz se o pane ficou intocado. É quem vier a
+            # reenviar sozinho que precisa dele: reenviar um desfecho incerto
+            # duplica a missão no agente, e uma task despachada duas vezes é
+            # pior que uma task parada com o motivo escrito.
             logger.warning(
-                "AutoDispatcher tmux session not found: %s for task %s",
-                tmux_session,
+                "AutoDispatcher não entregou task %s em %s: desfecho=%s motivo=%s "
+                "seguro_reenviar=%s",
                 task["id"],
+                tmux_session,
+                entrega.outcome,
+                entrega.reason,
+                entrega.safe_to_resend,
             )
             return
 

@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routers import agents as agents_router
+from services import tmux_driver
 
 
 DANIEL = {
@@ -415,7 +416,7 @@ def test_patch_agent_user_returns_422(tmp_path: Path, monkeypatch) -> None:
 def test_reload_mcp_sends_reload_plugins_to_tmux(tmp_path: Path, monkeypatch) -> None:
     request, _, _, _ = _build_request(tmp_path, monkeypatch)
 
-    with patch("routers.agents.tmux_driver.send_message", return_value=True) as send_message:
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED) as send_message:
         response = _run(agents_router.reload_agent_mcp("daniel", request))
 
     assert response == agents_router.McpReloadResponse(tmux_delivered=True)

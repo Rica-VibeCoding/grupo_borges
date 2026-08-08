@@ -484,7 +484,7 @@ async def dispatch_task(
     run_id = claimed["run_id"]
     dispatch_text = _format_dispatch_message(task=claimed["task"], note=payload.note)
     try:
-        tmux_delivered = await tmux_driver.send_message(agent["tmux_session"], dispatch_text)
+        entrega = await tmux_driver.send_message(agent["tmux_session"], dispatch_text)
     except tmux_driver.TmuxSessionBusyError as e:
         await db.record_task_dispatch_failed(
             task_id,
@@ -507,12 +507,14 @@ async def dispatch_task(
             e,
         )
         raise HTTPException(status_code=502, detail="falha ao enviar mensagem para tmux") from e
-    if not tmux_delivered:
+    if not entrega.delivered:
+        # O motivo real no lugar do "tmux_session_not_found" fixo, que era
+        # mentira em oito dos nove desfechos possíveis.
         await db.record_task_dispatch_failed(
             task_id,
             run_id=run_id,
             tmux_session=agent["tmux_session"],
-            reason="tmux_session_not_found",
+            reason=entrega.reason or "tmux_session_not_found",
         )
         raise HTTPException(
             status_code=409,
@@ -586,9 +588,9 @@ async def handoff_task(
             note=payload.note,
         )
         try:
-            tmux_delivered = await tmux_driver.send_message(
-                to_agent_row["tmux_session"], handoff_text
-            )
+            tmux_delivered = (
+                await tmux_driver.send_message(to_agent_row["tmux_session"], handoff_text)
+            ).delivered
         except Exception as e:
             log.warning(
                 "Falha ao entregar handoff %s -> %s via tmux session %s: %s",
@@ -678,7 +680,7 @@ async def _maybe_notify_post_review(
         task=task, decision=decision, reviewer=reviewer, note=note
     )
     try:
-        return await tmux_driver.send_message(agent["tmux_session"], msg)
+        return (await tmux_driver.send_message(agent["tmux_session"], msg)).delivered
     except Exception as e:
         log.warning("Falha ao notificar pós-review task %s: %s", task_id, e)
         return False

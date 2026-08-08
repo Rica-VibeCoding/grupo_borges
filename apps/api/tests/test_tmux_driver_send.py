@@ -52,6 +52,7 @@ class _FakePane:
         self.state = "empty"
         self.enter_count = 0
         self.paste_count = 0
+        self.paste_args: tuple[str, ...] = ()
         self.clear_count = 0
         self.escape_count = 0
         self.respawn_calls: list[tuple[str, ...]] = []
@@ -71,6 +72,7 @@ class _FakePane:
             self.state = "armed"
             self.visible_text = self.payload
             self.paste_count += 1
+            self.paste_args = args
             self.unknown_remaining = self.unknown_after_paste
         elif args[:2] == ("send-keys", "Enter"):
             self.enter_count += 1
@@ -169,6 +171,33 @@ class _PartialPastePane(_FakePane):
             if self.partial_reads >= 5:
                 self.visible_text = self.payload
         return result
+
+
+class _ModoDois004DesligadoPane(_FakePane):
+    """Reproduz a regra do tmux medida no CC real (v2.1.226), payload de 2 linhas.
+
+    Com o modo 2004 desligado — CC em turno, modal aberto — o `-p` não emite
+    marcador nenhum e o tmux converte cada \\n do buffer em \\r. Num CLI
+    interativo cada \\r é Enter: a mensagem é submetida em pedaços. Medido:
+    sem `-p` e sem `-r`, "PROVA linha um" saiu sozinha e "PROVA linha dois"
+    atrás dela, duas mensagens onde era uma. Com `-r`, as duas linhas ficam
+    íntegras no input e nada é submetido até o `send-keys Enter` do driver.
+    """
+
+    def __init__(self, payload: str) -> None:
+        super().__init__(payload)
+        self.submissoes_precoces = 0
+
+    def cmd(self, *args: str) -> SimpleNamespace:
+        if args and args[0] == "paste-buffer" and not self.paste_returncode:
+            resultado = super().cmd(*args)
+            if "-r" not in args:
+                partido = self.payload.split("\n")
+                self.submissoes_precoces = len([p for p in partido[:-1] if p])
+                self.visible_text = partido[-1]
+                self.state = "armed" if partido[-1] else "empty"
+            return resultado
+        return super().cmd(*args)
 
 
 class _ClearNoOpPane(_FakePane):
@@ -453,6 +482,16 @@ def _send(
     *,
     session_name: str = "pane-teste",
 ) -> bool:
+    """Só o "entregou ou não" — quem mede desfecho e motivo usa `_entrega`."""
+    return _entrega(pane, text, session_name=session_name).delivered
+
+
+def _entrega(
+    pane: _FakePane,
+    text: str | None = None,
+    *,
+    session_name: str = "pane-teste",
+) -> tmux_driver.DeliveryResult:
     patches = _driver_patches(pane)
     with (
         patches[0],
@@ -592,6 +631,48 @@ def test_send_treats_partial_paste_render_as_transient() -> None:
     assert _send(pane) is True
 
 
+def test_send_paste_carrega_p_e_r_na_ordem_do_tmux() -> None:
+    """Crava a lista de args, não só a presença do comando.
+
+    O fake antigo só olhava `args[0] == "paste-buffer"`, então a falta do `-r`
+    passava por 41 testes verdes sem ninguém ver.
+    """
+    pane = _FakePane("payload cockpit")
+
+    assert _send(pane) is True
+    assert pane.paste_args[:4] == ("paste-buffer", "-d", "-p", "-r")
+    assert pane.paste_args[4] == "-b"
+
+
+def test_send_entrega_multilinha_inteira_com_bracketed_paste_desligado() -> None:
+    """A metade que importa: o envelope não pode ser partido em N mensagens."""
+    pane = _ModoDois004DesligadoPane("PROVA linha um\nPROVA linha dois")
+
+    assert _send(pane) is True
+    assert pane.submissoes_precoces == 0, "o paste submeteu sozinho — mensagem partida"
+    assert pane.enter_count == 1, "quem submete é o driver, uma vez, com tudo no campo"
+
+
+def test_send_sem_r_partiria_a_mensagem_no_modo_degradado() -> None:
+    """O contrafactual: sem `-r` o fake parte, e o envio deixa de se provar.
+
+    Sem este teste, `_ModoDois004DesligadoPane` seria um cenário que nunca
+    falha — um fake que só confirma o que já passa não prova nada.
+    """
+    pane = _ModoDois004DesligadoPane("PROVA linha um\nPROVA linha dois")
+
+    with patch.object(
+        tmux_driver,
+        "_paste_loaded_buffer",
+        lambda p, buf, delete_after=True: p.cmd("paste-buffer", "-d", "-p", "-b", buf).returncode
+        == 0,
+    ):
+        entrega = _entrega(pane)
+
+    assert entrega.delivered is False
+    assert pane.submissoes_precoces == 1, "a primeira linha teria ido sozinha ao agente"
+
+
 def test_send_detects_nonzero_paste_returncode() -> None:
     pane = _FakePane("não colar", paste_returncode=1)
 
@@ -614,7 +695,7 @@ def test_send_revalidates_empty_after_buffer_load() -> None:
         patch.object(tmux_driver, "_PRE_PASTE_CONFIRM_TIMEOUT_S", 0.02),
         patch.object(tmux_driver, "_SUBMIT_POLL_INTERVAL_S", 0.001),
     ):
-        delivered = tmux_driver._send_message_sync("pane-teste", pane.payload)
+        delivered = tmux_driver._send_message_sync("pane-teste", pane.payload).delivered
 
     assert delivered is False
     assert pane.visible_text == "rascunho humano"
@@ -661,7 +742,7 @@ def test_send_does_not_invent_transcript_proof_when_baseline_was_unreadable() ->
             side_effect=unreadable_then_old_prompt,
         ),
     ):
-        delivered = tmux_driver._send_message_sync("pane-teste", pane.payload)
+        delivered = tmux_driver._send_message_sync("pane-teste", pane.payload).delivered
 
     assert delivered is False
 
@@ -703,6 +784,47 @@ def test_send_occupied_input_marks_channel_blocked_and_logs_error(caplog) -> Non
     assert _send(pane, session_name="pane-ocupado-sinal") is False
     repeated = tmux_driver.get_delivery_channel_state("pane-ocupado-sinal")
     assert repeated["recusas_consecutivas"] == 2
+
+
+def test_entrega_devolve_os_tres_desfechos_e_nao_so_dois() -> None:
+    """O caminho feliz e os dois modos de falha, na mesma prova.
+
+    Um teste que só checasse a recusa seria satisfeito por quebrar a função.
+    """
+    entregue = _entrega(_FakePane("payload cockpit"))
+    assert (entregue.outcome, entregue.reason) == ("delivered", None)
+    assert entregue.delivered is True
+    assert entregue.safe_to_resend is False, "não se reenvia o que já chegou"
+
+    ocupado = _FakePane("payload cockpit")
+    ocupado.state = "armed"
+    ocupado.visible_text = "rascunho humano"
+    recusado = _entrega(ocupado, session_name="pane-desfecho-recusa")
+    assert recusado.outcome == "refused"
+    assert recusado.reason == "input_ocupado_ou_travado"
+    assert recusado.safe_to_resend is True, "nada foi colado: reenviar é seguro"
+    assert recusado.message == "O campo de mensagem do agente está ocupado ou travado."
+
+    sem_confirmar = _FakePane("payload cockpit", enter_succeeds_on=None)
+    incerto = _entrega(sem_confirmar, session_name="pane-desfecho-incerto")
+    assert incerto.outcome == "uncertain"
+    assert incerto.reason == "envio_nao_confirmado"
+    assert incerto.delivered is False
+    assert incerto.safe_to_resend is False, (
+        "o texto foi colado e o Enter foi dado: reenviar duplicaria a mensagem no agente"
+    )
+
+
+def test_todo_motivo_de_recusa_tem_desfecho_e_frase() -> None:
+    """A régua nova não pode deixar motivo órfão quando alguém acrescentar um."""
+    for motivo in tmux_driver._DELIVERY_FAILURE_MESSAGES:
+        resultado = tmux_driver.DeliveryResult(
+            outcome="refused" if motivo in tmux_driver._REFUSALS_BEFORE_PASTE else "uncertain",
+            reason=motivo,
+        )
+        assert resultado.message != "Falha desconhecida no canal."
+    # Os cinco de antes do paste são os únicos seguros para reenvio automático.
+    assert tmux_driver._REFUSALS_BEFORE_PASTE < set(tmux_driver._DELIVERY_FAILURE_MESSAGES)
 
 
 def test_send_never_clears_human_text_that_appears_during_submission() -> None:

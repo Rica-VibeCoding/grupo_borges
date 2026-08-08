@@ -354,9 +354,14 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
 
 
 async def _send_tmux_or_409(session_name: str, text: str) -> bool:
-    """Envia ao pane ou distingue contenção transitória de pane indisponível."""
+    """Envia ao pane ou distingue contenção transitória de pane indisponível.
+
+    Reduz o resultado a bool porque o contrato HTTP destes endpoints é bool. O
+    motivo e o desfecho (recusado × incerto) ficam no log do canal e em
+    ``get_delivery_channel_state``; enriquecer a resposta é outro commit.
+    """
     try:
-        return await tmux_driver.send_message(session_name, text)
+        return (await tmux_driver.send_message(session_name, text)).delivered
     except tmux_driver.TmuxSessionBusyError as exc:
         raise HTTPException(status_code=409, detail="agent_tmux_busy") from exc
 

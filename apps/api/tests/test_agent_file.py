@@ -85,7 +85,14 @@ def _post_file(
     delivered: bool = True,
 ):
     with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
-         patch("routers.agents.tmux_driver.send_message", return_value=delivered) as send_message:
+         patch(
+             "routers.agents.tmux_driver.send_message",
+             return_value=(
+                 tmux_driver.DELIVERED
+                 if delivered
+                 else tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
+             ),
+         ) as send_message:
         with TestClient(app) as client:
             response = client.post(
                 f"/api/agents/{slug}/file",

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
+from services import tmux_driver
 
 
 DANIEL = {
@@ -98,7 +99,7 @@ def test_voice_returns_transcribed_and_delivered(tmp_path: Path) -> None:
     assert event_before_stt is not None
     fake = _fake_completed(stdout="olá mundo\n", stderr="", returncode=0)
     with patch("routers.agents.subprocess.run", return_value=fake), patch(
-        "routers.agents.tmux_driver.send_message", return_value=True
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
     ) as mock_send:
         with TestClient(app) as client:
             response = client.post(
@@ -133,7 +134,7 @@ def test_voice_reads_event_boundary_before_stt(tmp_path: Path) -> None:
 
     with patch(
         "routers.agents.subprocess.run", side_effect=stt_with_concurrent_event
-    ), patch("routers.agents.tmux_driver.send_message", return_value=True):
+    ), patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/voice",

@@ -15,6 +15,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple, TypeVar
 
@@ -89,10 +90,54 @@ _DELIVERY_FAILURE_MESSAGES = {
     "envio_nao_confirmado": "O canal não confirmou o envio da mensagem ao agente.",
     "erro_tmux": "O canal perdeu acesso à sessão do agente.",
 }
+# Motivos que provam que o pane não foi tocado: a recusa aconteceu antes de
+# qualquer paste. O que não está aqui aconteceu depois — a mensagem pode ter
+# entrado no agente sem que o canal conseguisse confirmar.
+_REFUSALS_BEFORE_PASTE = frozenset(
+    {
+        "sessao_ausente",
+        "pane_incompativel",
+        "buffer_indisponivel",
+        "input_ocupado_ou_travado",
+        "input_nao_observavel",
+    }
+)
 
 
-def _record_delivery_refusal(session_name: str, reason: str) -> bool:
-    """Memoriza e alarma uma recusa sem mudar o contrato booleano do envio."""
+@dataclass(frozen=True, slots=True)
+class DeliveryResult:
+    """Os três desfechos de um envio, onde antes havia um bool com dois.
+
+    ``refused`` e ``uncertain`` eram ambos ``False``, e a diferença entre eles é
+    prática: só ``refused`` prova que nada foi escrito no pane, e portanto só
+    ele é seguro para reenviar sozinho. Reenviar um ``uncertain`` duplica a
+    mensagem no agente.
+    """
+
+    outcome: Literal["delivered", "refused", "uncertain"]
+    reason: str | None = None
+
+    @property
+    def delivered(self) -> bool:
+        return self.outcome == "delivered"
+
+    @property
+    def safe_to_resend(self) -> bool:
+        return self.outcome == "refused"
+
+    @property
+    def message(self) -> str | None:
+        """O motivo em linguagem de operação, para log e para quem for exibir."""
+        if self.reason is None:
+            return None
+        return _DELIVERY_FAILURE_MESSAGES.get(self.reason, "Falha desconhecida no canal.")
+
+
+DELIVERED = DeliveryResult(outcome="delivered")
+
+
+def _record_delivery_refusal(session_name: str, reason: str) -> DeliveryResult:
+    """Memoriza, alarma e devolve a recusa com o motivo que já era calculado."""
     now = time.time()
     with _DELIVERY_CHANNEL_RECORDS_GUARD:
         previous = _DELIVERY_CHANNEL_RECORDS.get(session_name)
@@ -110,19 +155,23 @@ def _record_delivery_refusal(session_name: str, reason: str) -> bool:
             last_attempt_at=now,
         )
     blocked_for_seconds = max(0, int(now - blocked_since))
+    outcome: Literal["refused", "uncertain"] = (
+        "refused" if reason in _REFUSALS_BEFORE_PASTE else "uncertain"
+    )
     log.error(
-        "canal de entrega bloqueado: slug=%s motivo=%s detalhe=%s "
+        "canal de entrega bloqueado: slug=%s desfecho=%s motivo=%s detalhe=%s "
         "recusas_consecutivas=%d bloqueado_ha_segundos=%d",
         session_name,
+        outcome,
         reason,
         _DELIVERY_FAILURE_MESSAGES.get(reason, "Falha desconhecida no canal."),
         consecutive_refusals,
         blocked_for_seconds,
     )
-    return False
+    return DeliveryResult(outcome=outcome, reason=reason)
 
 
-def _record_delivery_success(session_name: str) -> bool:
+def _record_delivery_success(session_name: str) -> DeliveryResult:
     now = time.time()
     with _DELIVERY_CHANNEL_RECORDS_GUARD:
         _DELIVERY_CHANNEL_RECORDS[session_name] = _DeliveryChannelRecord(
@@ -132,7 +181,7 @@ def _record_delivery_success(session_name: str) -> bool:
             blocked_since=None,
             last_attempt_at=now,
         )
-    return True
+    return DELIVERED
 
 
 def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str | None]:
@@ -1585,10 +1634,24 @@ def _paste_loaded_buffer(
     try:
         # -p ativa bracketed paste (multilinha). No envio comum, -d remove o
         # buffer; na recuperação ele fica nomeado até haver sucesso comprovado.
+        #
+        # -r é o cinto do -p: `-p` é CONDICIONAL — o tmux só emite os marcadores
+        # de bracketed paste se o modo 2004 estiver ligado no pane NAQUELE
+        # instante, e sem eles ele converte cada \n em \r, que num CLI
+        # interativo é Enter. Um envelope de 30 linhas viraria 30 mensagens.
+        #
+        # Matriz medida no CC real (v2.1.226), duas linhas de payload:
+        #   -p sem -r, CC ocioso ................ duas linhas no input, íntegro
+        #   -p com -r, CC ocioso ................ idêntico, byte a byte
+        #   sem -p sem -r (o degradado de hoje) . PARTIDO: cada linha submetida
+        #                                         sozinha, duas mensagens
+        #   sem -p com -r (degradado + conserto)  íntegro no input, sem submeter
+        # No último caso o `send-keys Enter` que vem depois submete tudo de uma
+        # vez — o -r conserta, não só adia. Estritamente melhor nos quatro.
         args = ["paste-buffer"]
         if delete_after:
             args.append("-d")
-        result = pane.cmd(*args, "-p", "-b", buf_name)
+        result = pane.cmd(*args, "-p", "-r", "-b", buf_name)
         return result.returncode == 0
     except libtmux_exc.LibTmuxException:
         return False
@@ -1643,7 +1706,7 @@ def _confirm_armed_submission(
     return False, enter_attempts
 
 
-def _send_message_sync(session_name: str, text: str) -> bool:
+def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
     server = _server_for(session_name)
     if not server.has_session(session_name):
         return _record_delivery_refusal(session_name, "sessao_ausente")
@@ -1978,22 +2041,27 @@ async def press_enter(session_name: str) -> bool:
     return await asyncio.to_thread(_press_enter_sync, session_name)
 
 
-async def send_message(session_name: str, text: str) -> bool:
+async def send_message(session_name: str, text: str) -> DeliveryResult:
     """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 
     Sequência observável:
-        confirma input vazio → paste-buffer -d -p → confirma payload armado →
+        confirma input vazio → paste-buffer -d -p -r → confirma payload armado →
         Enter (até 3 tentativas enquanto o mesmo payload permanece armado) →
         confirma input vazio ou nova linha transcrita.
 
     Preserva multilinha (envelope do Cockpit tem 30+ linhas); só sanitiza CR
     isolados. Buffer nomeado por uuid evita race entre dispatches concorrentes.
     `-p` ativa bracketed paste — CC consolida o bloco em mensagem única em vez
-    de submeter linha-a-linha.
+    de submeter linha-a-linha; `-r` garante que o \\n continue \\n mesmo quando
+    o `-p` não tem efeito (ver `_paste_loaded_buffer`).
 
     ``unknown`` é transitório até os tetos independentes de pré-paste (8s) e
-    submissão (6s). Retorna True somente com prova observável. C-u só limpa um
+    submissão (6s). ``delivered`` só com prova observável. C-u só limpa um
     payload ainda reconhecido como o nosso; texto humano diferente nunca é
     apagado nem substituído.
+
+    O retorno distingue os três desfechos (ver ``DeliveryResult``): quem quiser
+    reenviar sozinho precisa checar ``safe_to_resend``, não só ``delivered`` —
+    reenviar um desfecho incerto duplica a mensagem no agente.
     """
     return await _run_tmux_operation(_send_message_sync, session_name, text)
