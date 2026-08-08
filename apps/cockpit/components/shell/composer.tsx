@@ -399,7 +399,15 @@ export function Composer({
       // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
-      if (await anexo.enviar(corpo)) setTexto('');
+      if (await anexo.enviar(corpo)) {
+        setTexto('');
+      } else {
+        // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
+        // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então
+        // quem responde ao toque é este sinal, a mesma resposta física da
+        // recusa de porta. O motivo fica na miniatura, acima do teclado.
+        setSinalRecusa(true);
+      }
       return true;
     }
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o

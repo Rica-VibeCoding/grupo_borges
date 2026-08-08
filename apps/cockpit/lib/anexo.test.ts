@@ -309,6 +309,30 @@ test('200 com tmux_delivered falso não é sucesso, mas também não afirma que 
   );
 });
 
+test('recusa explicada pelo canal_entrega usa a frase do backend, não a genérica', async () => {
+  await assert.rejects(
+    enviaAnexo('a', arquivoReal('a.png', 'image/png'), '', {
+      fetch: (async () =>
+        respostaFake(200, {
+          kind: 'image',
+          tmux_delivered: false,
+          canal_entrega: {
+            estado: 'bloqueado',
+            mensagem: 'O campo de mensagem do agente está ocupado ou travado.',
+          },
+        })) as unknown as typeof globalThis.fetch,
+    }),
+    (erro: unknown) => {
+      if (!(erro instanceof ErroAnexo)) return false;
+      const frase = (erro as Error).message;
+      return (
+        /campo de mensagem do agente está ocupado/.test(frase) &&
+        /toque em enviar de novo/.test(frase)
+      );
+    },
+  );
+});
+
 test('rede caindo no meio não afirma que o arquivo não chegou', async () => {
   await assert.rejects(
     enviaAnexo('a', arquivoReal('a.png', 'image/png'), '', {

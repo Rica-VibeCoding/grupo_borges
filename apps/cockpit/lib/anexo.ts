@@ -218,6 +218,16 @@ export function validaAnexo(arquivo: ArquivoParaAnexar): Veredito {
   return { ok: true, especie: regra.especie };
 }
 
+/** O estado do canal de entrega que o `/file` devolve junto (mesmo shape do
+ *  `/painel`). Quem importa é a recusa: quando `tmux_delivered` é `false`, este
+ *  campo é o que o backend ESCREVE sobre o porquê — ex: "input ocupado ou
+ *  travado". Ausente numa API mais velha ou num proxy que trunque — daí ser
+ *  opcional e lido defensivo. */
+export type CanalEntregaDaResposta = {
+  estado?: string;
+  mensagem?: string;
+};
+
 export type RespostaAnexo = {
   path: string;
   kind: EspecieAnexo;
@@ -225,6 +235,7 @@ export type RespostaAnexo = {
   size: number;
   tmux_delivered: boolean;
   duration_ms: number;
+  canal_entrega?: CanalEntregaDaResposta | null;
 };
 
 export class ErroAnexo extends Error {
@@ -286,6 +297,15 @@ export type DependenciasAnexo = {
   fetch?: typeof globalThis.fetch;
 };
 
+/** A frase de operação que o backend escreveu sobre a última entrega, se ele a
+ *  enviou. `null` quando ausente ou ilegível — o caso normal de uma API mais
+ *  velha ou de um proxy que trunque a resposta. */
+function fraseDoCanal(canal: unknown): string | null {
+  if (typeof canal !== 'object' || canal === null) return null;
+  const frase = (canal as { mensagem?: unknown }).mensagem;
+  return typeof frase === 'string' && frase.trim() ? frase.trim() : null;
+}
+
 /**
  * Sobe UM arquivo. O `caption` é o que estava digitado no composer: vai junto no
  * mesmo multipart, não como mensagem separada — duas requisições dariam duas
@@ -346,8 +366,15 @@ export async function enviaAnexo(
   // afirma o que não sabe. Separar entregue / não confirmado / falhou é mudança
   // de contrato do backend, e está na `tropa_task`, não aqui.
   if (dados.tmux_delivered === false) {
+    // `canal_entrega` (quando o backend o envia) diz que a entrega foi
+    // RECUSADA e por quê — ex: "input ocupado ou travado". Aí o arquivo foi
+    // salvo mas o agente não recebeu, e a saída é tentar de novo. Sem o campo,
+    // fica a incerteza original: o texto PODE ter entrado, e reenviar duplicaria.
+    const canal = fraseDoCanal(dados.canal_entrega);
     throw new ErroAnexo(
-      'enviado, mas não deu para confirmar que o agente viu. Não reenvie: o arquivo já está salvo e o agente alcança por ele — reenviar duplica.',
+      canal
+        ? `${canal} O arquivo ficou salvo, mas não chegou ao agente — toque em enviar de novo.`
+        : 'enviado, mas não deu para confirmar que o agente viu. Não reenvie: o arquivo já está salvo e o agente alcança por ele — reenviar duplica.',
       resposta.status,
     );
   }

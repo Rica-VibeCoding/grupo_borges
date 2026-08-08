@@ -56,6 +56,10 @@ export function MiniaturaAnexo({
   // reenviar.
   const retido = arquivoRetido(estado);
   const emVoo = estado.fase === 'enviando';
+  // A recusa de entrega (ex: 200 com `tmux_delivered:false` por input ocupado)
+  // segura a foto com um MOTIVO — e o motivo mora aqui, na miniatura, porque o
+  // aviso da faixa fica abaixo do composer, atrás do teclado no iPhone.
+  const erro = estado.fase === 'erro';
 
   // Ajuste de estado durante o render, que é o caminho documentado do React
   // para derivar de prop sem um efeito no meio: um efeito pintaria o quadrado
@@ -106,6 +110,7 @@ export function MiniaturaAnexo({
             // não um cartão de outra família. Casa com os ~16px medidos.
             borderRadius: 'var(--ck-radius-caixa)',
             border: '1px solid var(--ck-edge-hairline)',
+            borderColor: erro ? 'var(--ck-state-attention)' : undefined,
             background: 'var(--ck-surface-raised)',
           }}
         >
@@ -179,6 +184,27 @@ export function MiniaturaAnexo({
         </button>
         )}
       </div>
+
+      {/* O MOTIVO DA RECUSA, ACIMA DO CAMPO. O aviso da faixa (AvisoAnexo) fica
+          ABAIXO do composer — atrás do teclado no iPhone —, então a recusa que
+          segura a foto deixava o Rica tocando às cegas. Aqui ele vê o porquê
+          com o teclado aberto. `aria-hidden`: o anúncio é do AvisoAnexo
+          (`role=status` + `aria-live`), que está no DOM; os dois juntos
+          duplicariam o recado pro leitor de tela. */}
+      {erro ? (
+        <p
+          aria-hidden
+          style={{
+            margin: 0,
+            paddingTop: 'var(--ck-space-1)',
+            fontSize: 'var(--ck-text-xs)',
+            lineHeight: 1.4,
+            color: 'var(--ck-state-attention)',
+          }}
+        >
+          {estado.motivo}
+        </p>
+      ) : null}
     </div>
   );
 }
