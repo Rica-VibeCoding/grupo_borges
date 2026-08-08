@@ -584,9 +584,16 @@ export function Composer({
           // editável, ele escreve durante a espera e manda com um toque quando
           // ela passa. É o que garante que o texto nunca evapora.
           onChange={(e) => setTexto(e.target.value)}
+          // Com ANEXO na mão o Enter volta a enviar no touch. A quebra de linha
+          // ficou pro texto puro, mas sem o envio a foto era um beco: o Shift
+          // não existe no teclado virtual, e o "manda e não sai" do reporte de
+          // 08/08 era o Enter virando newline com a foto retida — o único
+          // gesto de enviar que o Rica tinha ali. `enterKeyHint` troca a tecla
+          // do teclado virtual pra "Enviar" exatamente nesse caso, pra o toque
+          // não parecer morto.
+          enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
           onKeyDown={(e) => {
-            // No teclado touch o Enter só quebra linha — envio é só pelo botão.
-            if (e.key === 'Enter' && !e.shiftKey && !tecladoTouch) {
+            if (e.key === 'Enter' && !e.shiftKey && (!tecladoTouch || retidoAnexo !== null)) {
               e.preventDefault();
               enviar(texto);
             }
