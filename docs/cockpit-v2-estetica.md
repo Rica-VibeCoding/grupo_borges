@@ -1316,6 +1316,31 @@ O composer sempre dependeu da borda para existir como componente (WCAG 1.4.11). 
 quiser a borda mais fraca mesmo assim, é decisão dele contra um piso da §3 e entra aqui
 como exceção consciente — não é coisa que eu faça sozinho.
 
+### A rolagem de dentro da caixa — o padrão do app, em dois mecanismos (08/08)
+
+O campo que cresce até `--ck-h-campo-max` trouxe uma barra de rolagem que não existia antes,
+e veio a do sistema: cinza clara, com setas. O padrão da casa já tinha cor
+(`--ck-scrollbar-thumb` / `-hover`, os mesmos do polegar do Radix) — token não se cria, se
+reusa (§9.9).
+
+Duas declarações, porque nenhuma sozinha cobre o alvo:
+
+- `scrollbar-width` + `scrollbar-color` é o padronizado, mas só chegou no **Safari 26.2**
+  (MDN/BCD; `safari_ios` espelha o desktop). O iPhone é justamente onde o Rica testa.
+- `::-webkit-scrollbar` é o legado — e é ele que pega no WebKit do iPhone hoje.
+
+No Chrome os dois brigam e o padronizado desliga o pseudo-elemento; como ambos pintam o
+mesmo fio, o desempate é indiferente. `thin` e não `none`: a MDN desaconselha sumir com a
+barra (*"negatively impacts accessibility"*), e o pedido foi a barra do app, não a ausência
+dela. `::-webkit-scrollbar-button { display: none }` porque a setinha é o que denuncia a
+barra do sistema no meio do app.
+
+**Não verificado por mim no alvo real.** O Chromium desta máquina usa barra overlay de 2px
+que não pinta em captura — nem com o estilo, nem sem ele — e quatro combinações de flag
+(`OverlayScrollbar`, `OverlayScrollbars`, `FluentScrollbar`, `FluentOverlayScrollbar`) não
+devolvem a barra clássica. O que está medido é o computed style aplicado e a barra não
+roubando largura do texto (`offsetWidth - clientWidth = 0`).
+
 ### Limite honesto da medição
 
 Chromium. **O WebKit não roda nesta máquina** (faltam bibliotecas de sistema e instalá-las
