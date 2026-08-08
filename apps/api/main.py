@@ -31,6 +31,7 @@ from db.store import GrupoBorgesDB
 from orchestrator.auto_dispatcher import AutoDispatcher
 from orchestrator.jsonl_watcher import JsonlWatcher
 from orchestrator.tmux_driver import TmuxDriver
+from orchestrator.uploads_sweeper import UploadsSweeper, sweep_uploads_once
 from orchestrator.watchdog import Watchdog
 from orchestrator.worktree import SubsessionSweeper, sweep_orphan_worktrees_sync
 from routers import agents as agents_router
@@ -102,8 +103,29 @@ async def lifespan(app: FastAPI):
         await sweeper.start()
     app.state.sweeper = sweeper
 
+    # Boot sweep + loop periódico: uploads/agents/<slug>/* além da retenção.
+    uploads_agents_dir = _uploads_dir / "agents"
+    uploads_sweeper = None
+    if settings.uploads_sweeper_enabled:
+        await asyncio.to_thread(
+            sweep_uploads_once,
+            uploads_base=uploads_agents_dir,
+            retention_days=settings.uploads_retention_days,
+            retention_days_canario=settings.uploads_retention_days_canario,
+        )
+        uploads_sweeper = UploadsSweeper(
+            uploads_base=uploads_agents_dir,
+            retention_days=settings.uploads_retention_days,
+            retention_days_canario=settings.uploads_retention_days_canario,
+            interval_seconds=settings.uploads_sweeper_interval_seconds,
+        )
+        await uploads_sweeper.start()
+    app.state.uploads_sweeper = uploads_sweeper
+
     yield
 
+    if uploads_sweeper is not None:
+        await uploads_sweeper.stop()
     if sweeper is not None:
         await sweeper.stop()
     if watchdog is not None:

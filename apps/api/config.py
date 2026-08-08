@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     subsession_sweeper_enabled: bool = True
     subsession_sweeper_interval_seconds: float = 300.0
 
+    # uploads sweeper — retenção por idade em uploads/agents/<slug>/*. Canário
+    # é benchmark sintético (não histórico do Rica), teto bem mais curto.
+    uploads_sweeper_enabled: bool = True
+    uploads_sweeper_interval_seconds: float = 3600.0
+    uploads_retention_days: float = 30.0
+    uploads_retention_days_canario: float = 2.0
+
     # Kimi (assinatura Kimi Code do Hiro) — chave sk-kimi-... pro endpoint
     # /coding/v1/usages que alimenta o bloco Quotas do painel (5h + semanal).
     kimi_api_key: str | None = None
