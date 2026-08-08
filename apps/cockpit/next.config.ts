@@ -1,9 +1,37 @@
+import { execSync } from 'node:child_process';
 import type { NextConfig } from 'next';
 
 const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
 
+/**
+ * O ID DE DEPLOY — o anti-version-skew. Rebuild publicado com a aba do Rica
+ * aberta deixava o bundle antigo em memória referenciando chunk hasheado que
+ * não existe mais: o seletor de foto morria e o clique de enviar não disparava
+ * requisição nenhuma (zero POST /file no log da API, 08/08 noite). Com o
+ * `deploymentId` o Next injeta o ID nos assets estáticos, nas respostas de
+ * navegação e no `data-dpl-id` do `<html>`; o cliente que detectar divergência
+ * força reload completo sozinho — sem o Rica saber que precisa de F5. Doc:
+ * self-hosting.mdx (Version Skew), conferido via Context7 na 16.2.9.
+ *
+ * O valor é a revisão curta do git, lida na hora em que o config é avaliado
+ * (roda em Node, no build E no start). Muda a cada commit → muda a cada
+ * deploy, sem exigir variável nova no boot da unit. Sem `.git` (build fora do
+ * repo), cai num timestamp — raro, e o requisito do id variar entre deploys
+ * continua de pé.
+ */
+function idDoDeploy(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return String(Date.now());
+  }
+}
+
 const config: NextConfig = {
   devIndicators: false,
+  deploymentId: idDoDeploy(),
 
   // ⚠️ O DEV NÃO DIVIDE DIRETÓRIO DE BUILD COM A PRODUÇÃO. O `next start` da
   // 3008 roda a partir deste mesmo `apps/cockpit` e serve `.next/`; um
