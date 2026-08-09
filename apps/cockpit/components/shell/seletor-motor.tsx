@@ -15,7 +15,8 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { desfechoDaTrocaDeEsforco, rotulaEsforco, rotulaModelo, type Motor } from './motor';
+import { EtiquetaDoEsforco } from './etiqueta-esforco';
+import { desfechoDaTrocaDeEsforco, etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor } from './motor';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 
 type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
@@ -24,6 +25,8 @@ type SeletorMotorProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
+  /** Kimi/Codex têm `requested` no painel; o Claude não (ver motor.ts). */
+  esforcoCobrePedido: boolean;
 };
 
 function paraModeloClaude(valor: string): ChatModelSlug | null {
@@ -55,7 +58,7 @@ function usaTelaEstreita() {
   return estreita;
 }
 
-export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps) {
+export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }: SeletorMotorProps) {
   const [painel, setPainel] = useState<PainelDoMotor | null>(null);
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDoSeletor>('inicio');
@@ -83,6 +86,7 @@ export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps)
   const esforco = painel?.effort ?? null;
   const rotuloModelo = modelo?.value ? rotulaModelo(modelo.value) : motor.modelo;
   const rotuloDoEsforco = esforco?.value ? rotulaEsforco(esforco.value) : motor.esforco;
+  const etiquetaEsforco = etiquetaDoEsforco(esforco, esforcoCobrePedido);
   const temControle = Boolean(modelo?.allowed.length || esforco?.allowed.length);
 
   function alterarAbertura(proximo: boolean) {
@@ -225,6 +229,7 @@ export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps)
         {rotuloDoEsforco ? (
           <span style={{ color: 'var(--ck-text-secondary)' }}>{rotuloDoEsforco}</span>
         ) : null}
+        {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
       </div>
     );
   }
@@ -260,6 +265,7 @@ export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps)
         >
           <span className="truncate">{rotuloModelo}</span>
           {rotuloDoEsforco ? <span className="shrink-0">{rotuloDoEsforco}</span> : null}
+          {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
           <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>⌄</span>
         </button>
       </DropdownMenuTrigger>

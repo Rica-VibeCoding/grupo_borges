@@ -280,6 +280,12 @@ export type PainelEffort = {
   allowed: string[];
   source: string;
   session_may_diverge: boolean;
+  // O que o painel pediu, preenchido só quando `value` veio de fonte viva e só
+  // nos motores cujo back separa pedido de efetivo (Kimi e Codex — no Claude o
+  // campo é sempre null). A UI compara os dois: iguais não dizem nada,
+  // diferentes significam que a troca não pegou, e `requested=null` com fonte
+  // viva significa que ninguém escolheu — é o default do motor.
+  requested?: string | null;
 };
 
 export type PainelPermissionMode = 'ask' | 'bypassPermissions' | 'plan' | 'acceptEdits';
