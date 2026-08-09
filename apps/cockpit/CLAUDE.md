@@ -4,6 +4,11 @@ Camada de apresentação nova, contra o mesmo back FastAPI. Dev na **3009**,
 produção deste app na **3008** (`cockpit-v2.service`). O cockpit **atual** é
 `apps/web` na 3007 e está **congelado** — não recebe commit.
 
+O Rica não alcança nenhuma dessas portas direto: elas escutam em `127.0.0.1` e
+quem publica é o `tailscale serve`, com TLS no nome do node. **Passar o IP da
+Tailscale quebra** — a URL é sempre `https://srv1061129.tailfe77db.ts.net:<porta>`,
+`:3443`→3007, `:3444`→3009 (é esta que ele abre), `:3445`→API 8000, `:3446`→3008.
+
 ⚠️ Dev e produção **não podem dividir o `.next`** — dois processos escrevendo no
 mesmo diretório é o que fazia o Turbopack servir CSS velho, e um `rm -rf .next`
 pra destravar derruba a produção (aconteceu em 04/08, 7 minutos de 500 nos chunks
