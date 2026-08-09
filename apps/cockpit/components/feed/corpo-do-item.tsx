@@ -137,10 +137,21 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
       );
 
     case 'user': {
-      const anexo = agentSlug ? leAnexoImagem(item.text) : null;
-      if (anexo && agentSlug) {
-        return <AnexoImagemView anexo={anexo} agentSlug={agentSlug} />;
+      // O envelope chega picado em duas mensagens desde que o CC passou a
+      // anexar a imagem sozinho: uma traz a legenda, a outra o caminho. Cada
+      // metade desenha o que tem — foto com legenda quando as duas vieram
+      // juntas (fila, envelope inteiro), foto sozinha e legenda sozinha
+      // quando não. O que não tem nenhuma das duas já saiu no filtro.
+      const anexo = leAnexoImagem(item.text);
+      if (anexo?.filename && agentSlug) {
+        return (
+          <AnexoImagemView
+            anexo={{ filename: anexo.filename, legenda: anexo.legenda }}
+            agentSlug={agentSlug}
+          />
+        );
       }
+      if (anexo && !anexo.legenda) return null;
       // Balão — ordem do Rica, 30/07: "o meu vai em balão, o de vcs fica
       // solto". `w-fit` segura a caixa no tamanho do texto dentro do
       // flex-column do feed; sem ele ela estica (`align-items: stretch` é o
@@ -164,7 +175,7 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
               na fila
             </div>
           ) : null}
-          <Fala texto={item.text} />
+          <Fala texto={anexo?.legenda ?? item.text} />
         </div>
       );
     }

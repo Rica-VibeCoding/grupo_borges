@@ -13,14 +13,18 @@
 
 import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 
-import { ehMarcadorDeOrigem } from '../../components/feed/anexo-imagem.ts';
+import { leAnexoImagem } from '../../components/feed/anexo-imagem.ts';
 
 export function temConteudoVisivel(item: RenderItem): boolean {
-  // Segundo caso, 08/08: o `[Image: source: /…/uploads/…]` que o CC grava
-  // depois de anexar a imagem sozinho vira uma linha `user` própria no JSONL.
-  // Desenhá-la põe o caminho absoluto na tela do Rica logo abaixo do envelope
-  // — dois balões de ruído no lugar da foto.
-  if (item.kind === 'user') return !ehMarcadorDeOrigem(item.text);
+  // Segundo caso, 08/08: o envelope de imagem chega picado em duas mensagens
+  // `user` desde que o CC passou a anexar a foto sozinho. A metade que não
+  // trouxe nem o caminho nem a legenda — `[Image: source:]` de arquivo fora de
+  // `uploads/`, ou o cabeçalho sem `Caption:` — não desenha nada e não pode
+  // virar um balão com o caminho absoluto na tela do Rica.
+  if (item.kind === 'user') {
+    const anexo = leAnexoImagem(item.text);
+    return anexo === null || anexo.filename !== null || anexo.legenda !== null;
+  }
   if (item.kind !== 'assistant') return true;
   return item.parts.some((parte) => {
     switch (parte.type) {

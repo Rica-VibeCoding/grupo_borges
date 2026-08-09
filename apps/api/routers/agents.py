@@ -2577,7 +2577,7 @@ def _agent_file_message(
 ) -> str:
     if kind == "image":
         # Path SEMPRE em nova linha — ver comentário em post_agent_image.
-        text = f"Imagem enviada via cockpit: {absolute_path.name}\n{absolute_path}"
+        text = f"Imagem enviada via cockpit:\n{absolute_path}"
     elif kind == "video":
         text = (
             f"Vídeo enviado via cockpit:\n{absolute_path}\n"
@@ -2839,9 +2839,11 @@ async def post_agent_image(
     # auto-detect: o CC anexa a imagem e troca o path por `[Image #N]` no input
     # de qualquer jeito (medido 08/08 no pane do Felipe). Quem confirma a
     # colagem tem que contar com o path sumindo — ver `_snapshot_contains_payload`.
-    # O nome vai TAMBÉM no cabeçalho porque a linha do path é apagada inteira
-    # quando o CC anexa: é o que sobra pro feed achar o arquivo (anexo-imagem.ts).
-    text = f"Imagem enviada via cockpit: {absolute_path.name}\n{absolute_path}"
+    # Nome no cabeçalho NÃO resolve o feed: medido 08/08 22:22, o CC come a
+    # linha inteira que cita a imagem, e com o nome ali sobrou só
+    # `[Image #4]Caption: …`. Quem acha o arquivo é a linha `[Image: source:]`
+    # que ele grava depois — o front lê de lá (anexo-imagem.ts).
+    text = f"Imagem enviada via cockpit:\n{absolute_path}"
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"
 

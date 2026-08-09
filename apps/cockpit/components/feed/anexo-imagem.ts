@@ -3,61 +3,69 @@
  * só o traduz para apresentação. O caminho absoluto nunca chega ao DOM.
  *
  * Formato produzido por `_agent_file_message`:
- *   Imagem enviada via cockpit: <nome gravado>
- *   /.../uploads/agents/<slug>/<nome gravado>
+ *   Imagem enviada via cockpit:
+ *   /.../uploads/agents/<slug>/<arquivo>
  *   Caption: <legenda opcional, inclusive com novas linhas>
  *
- * O CC anexa a imagem por conta própria: apaga a linha do caminho, prefixa
- * `[Image #N]` ao texto e grava logo depois uma linha `[Image: source: …]` com
- * o caminho de volta. Por isso o nome vai TAMBÉM no cabeçalho — é o único
- * pedaço do envelope que sobrevive à mastigação — e por isso a linha do
- * caminho é opcional na leitura.
+ * O CC anexa a imagem por conta própria e o envelope chega picado em DUAS
+ * mensagens (medido 08/08): a primeira perde a linha que cita a imagem e ganha
+ * o prefixo `[Image #N]` — às vezes sobra só `[Image #N]Caption: …` —, e a
+ * segunda é uma linha só, `[Image: source: /caminho>]`, com o caminho de volta.
+ * Por isso `filename` e `legenda` chegam separados: cada metade traz uma.
+ *
+ * Pôr o nome do arquivo no cabeçalho NÃO resolve — foi tentado e o CC comeu a
+ * linha do cabeçalho junto, por citar a imagem.
  */
 
 export type AnexoImagem = {
-  filename: string;
+  /** `null` quando o CC engoliu o caminho e só a legenda sobreviveu. */
+  filename: string | null;
   legenda: string | null;
 };
+
+/** A metade que tem foto para desenhar. */
+export type AnexoComFoto = AnexoImagem & { filename: string };
 
 /** Prefixo que o CC cola no texto ao anexar a imagem sozinho. */
 const MARCADOR_DE_ANEXO = /^\[Image #\d+]/;
 
-/** A linha que o CC grava DEPOIS da mensagem, com o caminho de origem. */
-const MARCADOR_DE_ORIGEM = /^\[Image: source: .+]$/;
+/** A linha que ele grava DEPOIS da mensagem, com o caminho de origem. */
+const MARCADOR_DE_ORIGEM = /^\[Image: source: (.+)]$/;
 
-const ABERTURA = /^Imagem enviada via cockpit:[ \t]*(.*)$/i;
-
-const NOME_GRAVADO = /^[\w.-]+\.(?:jpg|png|webp)$/i;
+const ABERTURA = /^Imagem enviada via cockpit:/i;
 
 const CAMINHO_DO_UPLOAD =
   /(?:^|[\\/])uploads[\\/]agents[\\/][^\\/\s]+[\\/]([^\\/\s]+\.(?:jpg|png|webp))$/i;
 
 const LEGENDA = /^Caption:[ \t]*([\s\S]*)$/;
 
-/** Registro do harness, não fala de ninguém: sozinho não desenha nada. */
-export function ehMarcadorDeOrigem(texto: string): boolean {
-  return MARCADOR_DE_ORIGEM.test(texto.trim());
-}
-
 /** Só reconhece o envelope inteiro. Texto comum que apenas menciona o prefixo
  * continua sendo fala do Rica, sem desaparecer dentro de uma imagem. */
 export function leAnexoImagem(texto: string): AnexoImagem | null {
+  const origem = texto.trim().match(MARCADOR_DE_ORIGEM);
+  if (origem) {
+    // Imagem lida de fora de `uploads/` (um Read do próprio agente) não tem
+    // rota que a sirva: sem nome nem legenda, o item não desenha nada.
+    return { filename: origem[1]?.match(CAMINHO_DO_UPLOAD)?.[1] ?? null, legenda: null };
+  }
+
   const linhas = texto.split(/\r?\n/);
-  const abertura = (linhas[0] ?? '').replace(MARCADOR_DE_ANEXO, '').match(ABERTURA);
-  if (!abertura) return null;
+  const anexada = MARCADOR_DE_ANEXO.test(linhas[0] ?? '');
+  if (anexada) linhas[0] = (linhas[0] ?? '').replace(MARCADOR_DE_ANEXO, '');
 
-  // O caminho vence o cabeçalho quando existe: é ele que aponta o arquivo em
-  // disco. O cabeçalho é a rede que segura o caso em que o CC comeu a linha.
-  const cabecalho = (abertura[1] ?? '').trim();
-  const doCaminho = (linhas[1] ?? '').trim().match(CAMINHO_DO_UPLOAD)?.[1];
-  const filename = doCaminho ?? (NOME_GRAVADO.test(cabecalho) ? cabecalho : undefined);
-  if (!filename) return null;
+  // Cabeçalho e caminho são do envelope, não da fala: saem os dois quando
+  // estão lá. Depois do CC, pode não ter sobrado nenhum dos dois.
+  if (ABERTURA.test(linhas[0] ?? '')) linhas.shift();
+  const filename = (linhas[0] ?? '').trim().match(CAMINHO_DO_UPLOAD)?.[1] ?? null;
+  if (filename) linhas.shift();
+  if (!anexada && !filename) return null;
 
-  const resto = linhas.slice(doCaminho ? 2 : 1).join('\n');
+  const resto = linhas.join('\n');
   if (!resto) return { filename, legenda: null };
 
   const legenda = resto.match(LEGENDA);
-  if (!legenda) return null;
+  // Sem `Caption:` e sem o prefixo do CC, o que sobrou não é envelope nenhum.
+  if (!legenda) return anexada ? { filename, legenda: resto } : null;
   return { filename, legenda: legenda[1]?.trim() || null };
 }
 

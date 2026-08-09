@@ -103,11 +103,7 @@ def _post_file(
 
 
 def test_file_image_saves_and_keeps_legacy_text(tmp_path: Path) -> None:
-    """Imagem: kind `image` e o mesmo texto que a `/image` já mandava.
-
-    O nome gravado abre o cabeçalho porque o CC apaga a linha do path inteira
-    ao anexar a imagem sozinho — sem ele o feed perde o arquivo.
-    """
+    """Imagem: kind `image` e o mesmo texto que a `/image` já mandava."""
     app = _build_app(tmp_path)
     response, send_message = _post_file(
         app, tmp_path, filename="foto.png", content=PNG_1X1, mime="image/png"
@@ -121,8 +117,7 @@ def test_file_image_saves_and_keeps_legacy_text(tmp_path: Path) -> None:
     assert body["tmux_delivered"] is True
     assert Path(body["path"]).read_bytes() == PNG_1X1
     text = send_message.call_args.args[1]
-    nome_gravado = Path(body["path"]).name
-    assert text == f"Imagem enviada via cockpit: {nome_gravado}\n{body['path']}"
+    assert text == f"Imagem enviada via cockpit:\n{body['path']}"
 
 
 def test_file_document_sends_path_and_original_name(tmp_path: Path) -> None:

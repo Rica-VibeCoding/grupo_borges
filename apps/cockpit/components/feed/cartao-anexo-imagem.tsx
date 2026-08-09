@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { AnexoImagem } from './anexo-imagem';
+import type { AnexoComFoto } from './anexo-imagem';
 import { urlDoAnexoImagem } from './anexo-imagem';
 
 /**
@@ -13,7 +13,7 @@ export function AnexoImagemView({
   anexo,
   agentSlug,
 }: {
-  anexo: AnexoImagem;
+  anexo: AnexoComFoto;
   agentSlug: string;
 }) {
   // O sweep de retenção (apps/api/orchestrator/uploads_sweeper.py) apaga

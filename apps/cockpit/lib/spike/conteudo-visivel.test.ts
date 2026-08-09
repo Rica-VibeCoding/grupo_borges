@@ -64,14 +64,29 @@ function falaDoRica(texto: string): MessagePayload {
   } as unknown as MessagePayload;
 }
 
-test('a linha de origem que o CC grava ao anexar a imagem não desenha', () => {
-  const [marcador] = buildRenderItems([
+test('metade de envelope de imagem sem foto e sem legenda não desenha', () => {
+  const [foraDeUploads] = buildRenderItems([
+    falaDoRica('[Image: source: /tmp/print-do-rica.png]'),
+  ]);
+  assert.equal(foraDeUploads.kind, 'user');
+  assert.equal(temConteudoVisivel(foraDeUploads), false);
+
+  const [semLegenda] = buildRenderItems([
+    falaDoRica('[Image #2]Imagem enviada via cockpit:'),
+  ]);
+  assert.equal(temConteudoVisivel(semLegenda), false);
+});
+
+test('a metade que tem foto, e a que tem legenda, continuam desenhando', () => {
+  const [comFoto] = buildRenderItems([
     falaDoRica(
       '[Image: source: /home/clawd/repos/grupo_borges/apps/api/uploads/agents/daniel/1786236851587-9f17120b8449.png]',
     ),
   ]);
-  assert.equal(marcador.kind, 'user');
-  assert.equal(temConteudoVisivel(marcador), false);
+  assert.equal(temConteudoVisivel(comFoto), true);
+
+  const [comLegenda] = buildRenderItems([falaDoRica('[Image #4]Caption: agora valendo')]);
+  assert.equal(temConteudoVisivel(comLegenda), true);
 
   const [fala] = buildRenderItems([falaDoRica('Daniel, agora valendo')]);
   assert.equal(temConteudoVisivel(fala), true);
