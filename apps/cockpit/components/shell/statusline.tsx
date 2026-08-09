@@ -44,12 +44,17 @@ export function Barra({ pct }: { pct: number }) {
         className="relative block w-full overflow-hidden"
         style={{ height: '4px', borderRadius: '2px', background: 'var(--ck-edge-hairline)' }}
       >
+        {/* Abaixo do teto a barra é NEUTRA, não verde. Verde é julgamento, e
+            "10% de contexto" não pede julgamento nenhum: com nove agentes na
+            coluna, oito barras verdes viravam a única cor da tela e roubavam o
+            olho do único número que pede ação. Neutro embaixo, âmbar em cima —
+            a cor aparece onde há decisão a tomar, e só ali. */}
         <span
           className="absolute inset-y-0 left-0 block"
           style={{
             width: `${Math.min(100, pct)}%`,
             borderRadius: '2px',
-            background: estourou ? 'var(--ck-state-attention)' : 'var(--ck-state-ok)',
+            background: estourou ? 'var(--ck-state-attention)' : 'var(--ck-text-secondary)',
           }}
         />
       </span>

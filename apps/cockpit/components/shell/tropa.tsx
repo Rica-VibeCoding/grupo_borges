@@ -25,12 +25,40 @@
  * O que ficou da primeira versão porque estava certo: `aguardando` sobe pro topo.
  * O único estado quente é o único que chama o Rica.
  *
+ * TERCEIRA VERSÃO (09/08) — ordem do Rica: *"tem que deixar uma tela bonita,
+ * como se fosse pintar as paredes da casa nova"*. Nada aqui é gosto; as quatro
+ * mudanças saíram de olhar a coluna renderizada e perguntar o que cada pixel
+ * informa:
+ *
+ * 4. O ESTADO VIRA SEÇÃO. A lista já ordenava por estado desde a v2, mas a tela
+ *    não contava isso: na coluna de 260px o único sinal era um ponto de 9px no
+ *    canto do retrato, e a ordem lia como alfabética quebrada. Agora cada estado
+ *    é um grupo com título contado e GRUDADO no topo enquanto se rola — a
+ *    palavra que diz em que estado você está lendo nunca sai da tela. Com isso o
+ *    chip por linha saiu: repetia nove vezes, três pixels abaixo, a palavra que
+ *    o título já diz.
+ * 5. A PASTA VIRA EXCEÇÃO. `ze_claude/<slug>` é o endereço-casa de quem mora no
+ *    próprio workspace, e era o que seis das nove linhas diziam — uma linha
+ *    inteira repetindo o nome logo acima. Some quando é a casa, aparece quando
+ *    não é. Deixou de ser rótulo e virou informação: quem exibe pasta está fora
+ *    de casa.
+ * 6. COR SÓ ONDE HÁ JULGAMENTO. Detalhe na `Barra` (statusline.tsx).
+ * 7. O PULSO DE 24H. O `/api/fleet` sempre entregou `sparkline` — 24 baldes de
+ *    token por hora, por agente — e nenhuma tela do v2 lia. Sem ele, quem não
+ *    gastou um token hoje pesa igual a quem gastou um milhão. Entra como marca
+ *    d'água na base do cartão: não pede linha, não compete com texto nenhum, e
+ *    quem não trabalhou simplesmente não desenha nada. A ausência é a
+ *    informação.
+ *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
 import Link from 'next/link';
-import type { Agent, AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
+import type {
+  Agent,
+  AgentStatus,
+  SparklineBucket,
+} from '@grupo_borges/cockpit-core/cockpit-types';
 import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
-import { Badge } from '@/components/ui/badge';
 import { estadoDe } from './estado';
 import { Retrato } from './retrato';
 import { Barra, Statusline, TETO_PCT } from './statusline';
@@ -50,36 +78,86 @@ import { Barra, Statusline, TETO_PCT } from './statusline';
  */
 const RAIZ_DOS_REPOS = '/home/clawd/repos/';
 
-function pastaCurta(workspacePath: string | null | undefined): string | null {
+/** O endereço-casa: quem mora no próprio workspace da frota. */
+const CASA_DA_FROTA = 'ze_claude/';
+
+function pastaCurta(
+  workspacePath: string | null | undefined,
+  slug: string,
+): string | null {
   if (!workspacePath) return null;
   const limpo = workspacePath.replace(/\/+$/, '');
   if (!limpo) return null;
-  return limpo.startsWith(RAIZ_DOS_REPOS) ? limpo.slice(RAIZ_DOS_REPOS.length) : limpo;
+  const curta = limpo.startsWith(RAIZ_DOS_REPOS)
+    ? limpo.slice(RAIZ_DOS_REPOS.length)
+    : limpo;
+  // Quem está em `ze_claude/<slug>` está na própria casa, e dizer isso é
+  // repetir o nome que está três pixels acima. O que informa é o DESVIO: o
+  // Daniel em `grupo_borges`, o Hiro em `promob-splitter-hiro`. Comparado
+  // contra o slug, não contra uma lista — agente novo entra sozinho.
+  return curta === `${CASA_DA_FROTA}${slug}` ? null : curta;
 }
 
-/** Chip de estado: ponto + palavra. A cor sozinha nunca carrega o sentido. */
-function ChipEstado({ status }: { status: AgentStatus }) {
-  const estado = estadoDe(status);
+/**
+ * O pulso das últimas 24 horas — `sparkline` do `/api/fleet`, um balde por hora.
+ *
+ * Marca d'água na base do cartão, atrás do conteúdo: é contexto de fundo, não
+ * um dado a ler. Quem trabalhou tem relevo; quem passou o dia parado devolve
+ * `null` e o cartão fica liso — a ausência do desenho É a leitura, e desenhar
+ * uma régua reta de zeros seria dizer "medi e não achei nada" com a mesma tinta
+ * de quem produziu.
+ *
+ * Normalizado pelo próprio máximo do agente, nunca pelo da frota: a Tara sozinha
+ * responde por três ordens de grandeza a mais que o resto, e numa escala comum
+ * ela achataria as outras oito em linha reta. Aqui a pergunta é "o dia DELE foi
+ * cheio?", não "quem gastou mais".
+ *
+ * Barra de 2px com 1px de respiro, largura própria de 71px — NÃO `flex-1`
+ * espalhado pela linha inteira. Com 24 baldes numa faixa de 700px cada barra
+ * saía com 28px de largura e o desenho parava de ler como gráfico: virava um
+ * bloco cinza solto na base do cartão. Sparkline é textura, e textura precisa
+ * de traço fino.
+ *
+ * Só no modo largo. Na coluna de 260px a telemetria já ocupa a linha inteira e
+ * o pulso encostaria no percentual — dois layouts, não um responsivo.
+ */
+function Pulso({ buckets }: { buckets: SparklineBucket[] }) {
+  const max = Math.max(0, ...buckets.map((b) => b.tokens));
+  if (max <= 0) return null;
   return (
-    <Badge
-      variant="ghost"
-      className="shrink-0"
+    <span
+      aria-hidden
+      className="pointer-events-none absolute flex items-end"
       style={{
-        gap: '5px',
-        padding: '2px 8px',
-        background: 'var(--ck-surface-raised)',
-        fontSize: 'var(--ck-text-xs)',
-        color: estado.cor,
+        right: 'var(--ck-space-3)',
+        bottom: 'var(--ck-space-2)',
+        gap: '1px',
+        height: '13px',
+        // O chão das 24 horas. Sem ele os traços de quem trabalhou em duas
+        // horas do dia ficam boiando e leem como falha de renderização; com
+        // ele, a mesma tinta vira eixo, e o vazio ao lado passa a significar
+        // "aqui não houve nada" em vez de "aqui não desenhou".
+        borderBottom: '1px solid var(--ck-text-primary)',
+        opacity: 0.22,
       }}
     >
-      <span
-        aria-hidden
-        className="ck-pulso shrink-0 rounded-full"
-        data-estado={status}
-        style={{ width: '5px', height: '5px', background: 'currentColor' }}
-      />
-      {estado.rotulo}
-    </Badge>
+      {buckets.map((b) => (
+        // Hora sem token não desenha traço, mas continua ocupando o seu lugar na
+        // fila — a grade das 24 horas é o que deixa ler QUANDO o trabalho
+        // aconteceu. Um piso de altura para todo mundo enchia o desenho de
+        // pontinhos e o que se via era um pontilhado, não um gráfico.
+        <span
+          key={b.bucket}
+          className="block"
+          style={{
+            width: '2px',
+            height: b.tokens > 0 ? `${Math.max(12, Math.round((b.tokens / max) * 100))}%` : 0,
+            borderRadius: '1px 1px 0 0',
+            background: 'var(--ck-text-primary)',
+          }}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -95,55 +173,45 @@ function CartaoVivo({
   compacta: boolean;
 }) {
   const estado = estadoDe(agente.status);
-  const pasta = pastaCurta(agente.workspace_path);
+  const pasta = pastaCurta(agente.workspace_path, agente.slug);
   return (
     <li>
       <Link
         href={`/agente/${agente.slug}`}
-        className="ck-veil ck-aba flex items-center"
+        className="ck-veil ck-aba relative flex items-center overflow-hidden"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
           padding: 'var(--ck-space-2) var(--ck-space-3)',
-          // Filete só marca SELEÇÃO. O estado já está dito duas vezes no chip
-          // (cor + palavra); uma terceira seria ruído.
+          // Filete só marca SELEÇÃO. O estado já está dito duas vezes — título
+          // da seção e ponto no retrato; uma terceira seria ruído.
           borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
         }}
       >
-        {/* Na coluna de 260px o estado vira ponto no retrato e devolve a linha
-            inteira ao nome — com a palavra sobrando, "Daniel Singh" virava
-            "Daniel …". No celular há largura pro chip escrito. */}
+        {compacta ? null : <Pulso buckets={agente.sparkline} />}
+
+        {/* O ponto de estado vale nos DOIS modos desde que o título da seção
+            passou a carregar a palavra. Ele é o reforço local: quando a lista
+            é longa e o título grudado já rolou pra fora do alcance do olho,
+            o ponto continua dizendo em que estado esta linha está. */}
         <Retrato
           slug={agente.slug}
           nome={agente.name}
           tamanho={compacta ? 34 : 40}
-          marca={
-            compacta
-              ? { cor: estado.cor, rotulo: estado.rotulo, estado: agente.status }
-              : undefined
-          }
+          marca={{ cor: estado.cor, rotulo: estado.rotulo, estado: agente.status }}
         />
 
-        <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '3px' }}>
-          <span className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
-            <span
-              // SEM `flex-1`: esticava até a borda da linha e empurrava o chip
-              // pra ponta. No nav compacto (260px) não muda nada — não há chip
-              // pra empurrar. Na raiz (`/`), onde a coluna de leitura chega a
-              // 32rem, era isso que abria o rio entre o nome e o chip; a folga
-              // que sobra agora vai pro FIM da linha, depois do chip, onde não
-              // lê como "os dois se separaram".
-              className="min-w-0 truncate tracking-title"
-              style={{
-                fontSize: compacta ? 'var(--ck-text-sm)' : 'var(--ck-text-base)',
-                color: 'var(--ck-text-primary)',
-              }}
-            >
-              {agente.name}
-            </span>
-            {compacta ? null : <ChipEstado status={agente.status} />}
+        <span className="relative flex min-w-0 flex-1 flex-col" style={{ gap: '3px' }}>
+          <span
+            className="min-w-0 truncate tracking-title"
+            style={{
+              fontSize: compacta ? 'var(--ck-text-sm)' : 'var(--ck-text-base)',
+              color: 'var(--ck-text-primary)',
+            }}
+          >
+            {agente.name}
           </span>
 
           <Statusline agente={agente} agora={agora} curta={compacta} />
@@ -174,9 +242,11 @@ function CartaoVivo({
 function LinhaDormindo({
   agente,
   selecionado,
+  compacta,
 }: {
   agente: Agent;
   selecionado: boolean;
+  compacta: boolean;
 }) {
   const pct = resolveContextPct(agente);
   return (
@@ -231,7 +301,13 @@ function LinhaDormindo({
                 : `contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`
             }
           >
-            <Barra pct={pct} />
+            {/* Na coluna de 260px a barra sai e fica o número. Somados, barra +
+                percentual + a palavra "antigo" comiam 142 dos 188px úteis da
+                linha e sobrava "Tar…" no lugar de "Tara Kaur". Entre desenhar a
+                régua e conseguir ler de quem é o número, ler de quem é vem
+                primeiro — e o julgamento não se perde: o valor continua ao lado
+                do teto de 30%, em âmbar quando passa. Na tela cheia cabe tudo. */}
+            {compacta ? null : <Barra pct={pct} />}
             <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
               {pct}%
             </span>
@@ -263,18 +339,39 @@ function LinhaDormindo({
   );
 }
 
-function Overline({ children }: { children: React.ReactNode }) {
+/**
+ * Título de seção. GRUDA no topo enquanto a seção rola.
+ *
+ * Não é efeito: com o chip fora da linha, é este título que carrega a palavra
+ * do estado, e uma palavra que sai da tela deixa de carregar coisa alguma. Ele
+ * fica onde o olho já está.
+ *
+ * As margens negativas existem porque o `<nav>` tem respiro lateral de 8px: sem
+ * elas o fundo do título pararia antes da borda da coluna e as linhas passariam
+ * por baixo pelas frestas. O texto não se mexe — o padding devolve os mesmos
+ * 8+12px de recuo a partir da borda nova.
+ */
+function Overline({
+  children,
+  cor = 'var(--ck-text-secondary)',
+}: {
+  children: React.ReactNode;
+  cor?: string;
+}) {
   return (
     <p
-      className="flex items-baseline tracking-overline"
+      className="sticky top-0 flex items-baseline tracking-overline"
       style={{
+        zIndex: 1,
         gap: 'var(--ck-space-2)',
-        padding: 'var(--ck-space-3) var(--ck-space-3) var(--ck-space-1)',
+        margin: '0 calc(var(--ck-space-2) * -1)',
+        padding: 'var(--ck-space-3) calc(var(--ck-space-2) + var(--ck-space-3)) var(--ck-space-1)',
+        background: 'var(--ck-surface-nav)',
         fontSize: 'var(--ck-text-xs)',
         textTransform: 'uppercase',
         // tertiary dá 3.55:1 e o contrato o restringe a ícone/separador/texto
         // ≥20px. Overline é label de 12px, então vai de secondary (6.0:1).
-        color: 'var(--ck-text-secondary)',
+        color: cor,
       }}
     >
       {children}
@@ -296,14 +393,22 @@ export function Tropa({
    *  layouts, e fingir o contrário foi o que cortou nome e modelo. */
   compacta?: boolean;
 }) {
-  const ordenar = (a: Agent, b: Agent) => {
-    const da = estadoDe(a.status).ordem;
-    const db = estadoDe(b.status).ordem;
-    return da !== db ? da - db : a.name.localeCompare(b.name, 'pt-BR');
-  };
-  const vivos = agents.filter((a) => a.status !== 'offline').sort(ordenar);
-  const dormindo = agents.filter((a) => a.status === 'offline').sort(ordenar);
-  const chamando = agents.filter((a) => a.status === 'aguardando').length;
+  const porNome = (a: Agent, b: Agent) => a.name.localeCompare(b.name, 'pt-BR');
+  // Uma passada só, e a ordem das seções sai da mesma tabela que ordenava a
+  // lista plana (`ESTADO[].ordem`) — a régua do que vem antes continua sendo
+  // uma, não duas.
+  const secoes = (['aguardando', 'trabalhando', 'ocioso', 'offline'] as AgentStatus[])
+    .map((status) => ({
+      status,
+      estado: estadoDe(status),
+      // Comparado pela ORDEM do estado resolvido, não pelo campo cru: status
+      // desconhecido cai em `offline` dentro do `estadoDe` e continua aparecendo.
+      // Filtrar por igualdade de string faria o agente sumir da tela em silêncio.
+      membros: agents
+        .filter((a) => estadoDe(a.status).ordem === estadoDe(status).ordem)
+        .sort(porNome),
+    }))
+    .filter((s) => s.membros.length > 0);
 
   // Frota vazia: o backend responde, só não há ninguém. Diferente de erro, e a
   // tela precisa dizer qual dos dois é — lista vazia e sem palavra nenhuma lê
@@ -331,46 +436,39 @@ export function Tropa({
       className="flex min-h-0 flex-col overflow-y-auto"
       style={{ padding: '0 var(--ck-space-2) var(--ck-space-4)' }}
     >
-      <Overline>
-        <span>Tropa</span>
-        {chamando > 0 ? (
-          <span className="ck-tabular" style={{ color: 'var(--ck-state-attention)' }}>
-            {chamando} chamando
-          </span>
-        ) : null}
-      </Overline>
-
-      <ul>
-        {vivos.map((a) => (
-          <CartaoVivo
-            key={a.slug}
-            agente={a}
-            selecionado={a.slug === slugSelecionado}
-            agora={agora}
-            compacta={compacta}
-          />
-        ))}
-      </ul>
-
-      {dormindo.length > 0 ? (
-        <>
-          <Overline>
-            <span>Offline</span>
-            <span className="ck-tabular" style={{ color: 'var(--ck-text-tertiary)' }}>
-              {dormindo.length}
+      {/* O overline "Tropa" saiu daqui: ele nomeava o que o `aria-label` já
+          nomeia e o que a tela inteira já é. No lugar dele entram os títulos que
+          dizem algo — o estado e quantos estão nele. */}
+      {secoes.map(({ status, estado, membros }) => (
+        <section key={status}>
+          <Overline cor={status === 'aguardando' ? estado.cor : undefined}>
+            <span>{estado.rotulo}</span>
+            <span className="ck-tabular" style={{ opacity: 0.75 }}>
+              {membros.length}
             </span>
           </Overline>
           <ul>
-            {dormindo.map((a) => (
-              <LinhaDormindo
-                key={a.slug}
-                agente={a}
-                selecionado={a.slug === slugSelecionado}
-              />
-            ))}
+            {membros.map((a) =>
+              status === 'offline' ? (
+                <LinhaDormindo
+                  key={a.slug}
+                  agente={a}
+                  selecionado={a.slug === slugSelecionado}
+                  compacta={compacta}
+                />
+              ) : (
+                <CartaoVivo
+                  key={a.slug}
+                  agente={a}
+                  selecionado={a.slug === slugSelecionado}
+                  agora={agora}
+                  compacta={compacta}
+                />
+              ),
+            )}
           </ul>
-        </>
-      ) : null}
+        </section>
+      ))}
     </nav>
   );
 }
