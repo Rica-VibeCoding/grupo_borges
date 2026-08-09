@@ -104,6 +104,15 @@ export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps)
     setAviso(null);
     try {
       const resposta = await patchAgentEffort(agentSlug, valor);
+      // 200 não é sinônimo de aplicado — o back sinaliza no corpo, igual à
+      // troca de modelo. Hoje o sinal é `written` (a gravação do arquivo de
+      // config); quando o PATCH passar a também ENTREGAR `/effort` na sessão
+      // tmux, a checagem da entrega entra neste mesmo ponto, espelhando o
+      // `tmux_delivered` de `trocarModelo` e o aviso de entrega falha.
+      if (!resposta.written) {
+        mostrarAviso('Não foi possível aplicar o esforço.');
+        return;
+      }
       setPainel((atual) =>
         atual
           ? {
