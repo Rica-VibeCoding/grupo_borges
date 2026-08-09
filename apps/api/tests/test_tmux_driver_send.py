@@ -586,6 +586,38 @@ def test_snapshot_keeps_real_human_input_capture_armed() -> None:
     assert snapshot == tmux_driver._PaneInputSnapshot("armed", "texto humano de teste")
 
 
+def test_payload_confirmado_quando_cc_troca_o_path_por_image_n() -> None:
+    """Captura real: o CC engole o path da imagem e mostra `[Image #N]`.
+
+    Sem isto o paste nunca é observado, o Enter não chega a ser enviado e o
+    envelope fica largado no input do agente.
+    """
+    texto = (
+        "Imagem enviada via cockpit:\n"
+        "/home/clawd/repos/grupo_borges/apps/api/uploads/agents/felipe/1786-0d5d.png\n"
+        "Caption: prova do fix"
+    )
+    snapshot = tmux_driver._PaneInputSnapshot(
+        "armed",
+        "[Image #1]Imagem enviada via cockpit:\nCaption: prova do fix",
+    )
+
+    assert tmux_driver._snapshot_contains_payload(snapshot, texto) is True
+
+
+def test_payload_com_image_n_de_outro_texto_nao_confirma() -> None:
+    texto = (
+        "Imagem enviada via cockpit:\n"
+        "/home/clawd/repos/grupo_borges/apps/api/uploads/agents/felipe/1786-0d5d.png\n"
+        "Caption: prova do fix"
+    )
+    snapshot = tmux_driver._PaneInputSnapshot(
+        "armed", "[Image #1]outra coisa que o Rica digitou"
+    )
+
+    assert tmux_driver._snapshot_contains_payload(snapshot, texto) is False
+
+
 def test_snapshot_understands_combined_dim_and_intensity_resets() -> None:
     for dim_sequence, reset_sequence in (("0;2", "0"), ("2;39", "22")):
         pane = _StyledCapturePane(

@@ -2835,9 +2835,10 @@ async def post_agent_image(
         raise HTTPException(status_code=500, detail="erro interno ao salvar imagem") from exc
 
     caption_text = (caption or "").strip()
-    # Path SEMPRE em nova linha — single-line "Imagem enviada via cockpit: <path>"
-    # faz o CC auto-anexar o path como imagem e consumir o texto, deixando só o
-    # cabeçalho no input. Multi-linha quebra esse auto-detect.
+    # Path SEMPRE em nova linha, por legibilidade. Multi-linha NÃO impede o
+    # auto-detect: o CC anexa a imagem e troca o path por `[Image #N]` no input
+    # de qualquer jeito (medido 08/08 no pane do Felipe). Quem confirma a
+    # colagem tem que contar com o path sumindo — ver `_snapshot_contains_payload`.
     text = f"Imagem enviada via cockpit:\n{absolute_path}"
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"

@@ -444,6 +444,12 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _CONTROL_CHARS_KEEP_ESC = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 _INPUT_PROMPT_MARKERS = ("❯", "›")
 _PASTED_TEXT_MARKER = re.compile(r"\[Pasted text #[^]]+]")
+# O CC reconhece path de imagem dentro do texto colado, remove o path do input e
+# põe `[Image #N]` no lugar. Quem procurar o path de volta no pane nunca acha.
+_IMAGE_ATTACHMENT_MARKER = re.compile(r"\[Image #\d+]")
+_SWALLOWED_IMAGE_PATH = re.compile(
+    r"(?mi)^[ \t]*/\S+\.(?:png|jpe?g|gif|webp|bmp|heic|heif|svg)[ \t]*$"
+)
 _SESSION_ID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
@@ -809,6 +815,11 @@ def _snapshot_contains_payload(snapshot: _PaneInputSnapshot, text: str) -> bool:
     expected = _normalize_visible_text(text)
     if _PASTED_TEXT_MARKER.search(snapshot.content):
         return True
+    if _IMAGE_ATTACHMENT_MARKER.search(snapshot.content):
+        # O path some do input; cabeçalho e legenda continuam visíveis e ainda
+        # provam a colagem. Sem isto, todo envio de foto morre em
+        # `paste_nao_confirmado` com o texto largado no terminal.
+        expected = _normalize_visible_text(_SWALLOWED_IMAGE_PATH.sub("", text))
     if not expected:
         return False
     needle = expected if len(expected) <= 160 else expected[-80:]
