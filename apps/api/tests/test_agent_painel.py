@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
+from services import tmux_driver
 
 
 DANIEL = {
@@ -575,7 +576,9 @@ def test_agent_painel_404(tmp_path: Path, monkeypatch) -> None:
     assert response.status_code == 404
 
 
-def test_agent_painel_patch_effort_atualiza_settings(tmp_path: Path, monkeypatch) -> None:
+def test_agent_painel_patch_effort_claude_runtime_preserva_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
     settings = {
         "effortLevel": "medium",
         "theme": "dark",
@@ -583,24 +586,82 @@ def test_agent_painel_patch_effort_atualiza_settings(tmp_path: Path, monkeypatch
     }
     _write_settings(tmp_path, monkeypatch, settings)
     app = _build_app(tmp_path)
+    session_id = f"effort-runtime-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()),
+                "effort": {"level": "xhigh"},
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/daniel/effort", json={"effort": "xhigh"})
+    try:
+        with patch(
+            "routers.agents.tmux_driver.send_message",
+            return_value=tmux_driver.DELIVERED,
+        ) as send, patch(
+            "routers.agents.tmux_driver.press_enter", return_value=True
+        ):
+            with TestClient(app) as client:
+                response = client.patch(
+                    "/api/agents/daniel/effort", json={"effort": "xhigh"}
+                )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body == {
+            "slug": "daniel",
+            "effort": "xhigh",
+            "source": str(status_path),
+            "session_may_diverge": False,
+            "written": True,
+            "tmux_delivered": True,
+            "confirmed": True,
+            "runtime_switch": True,
+        }
+        send.assert_called_once_with("daniel", "/effort xhigh")
+        persisted = json.loads(
+            (tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8")
+        )
+        assert persisted == settings
+    finally:
+        status_path.unlink(missing_ok=True)
+
+
+def test_agent_painel_patch_effort_auto_eh_aceito_no_runtime(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    before = agents_router._CCStatus(
+        "effort-auto-session", None, {"updated_at": 1, "effort": {"level": "high"}}
+    )
+    after = agents_router._CCStatus(
+        "effort-auto-session",
+        Path("/tmp/cc-status-effort-auto-session.json"),
+        {"updated_at": 2, "effort": {"level": "xhigh"}},
+    )
+
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ) as send, patch(
+        "routers.agents.tmux_driver.press_enter", return_value=True
+    ), patch("routers.agents._load_cc_status", side_effect=[before, after]), patch(
+        "routers.agents.asyncio.sleep", new_callable=AsyncMock
+    ):
+        with TestClient(app) as client:
+            response = client.patch(
+                "/api/agents/daniel/effort", json={"effort": "auto"}
+            )
 
     assert response.status_code == 200
-    body = response.json()
-    settings_path = tmp_path / ".claude" / "settings.json"
-    assert body == {
-        "slug": "daniel",
-        "effort": "xhigh",
-        "source": str(settings_path),
-        "session_may_diverge": True,
-        "written": True,
-    }
-    persisted = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert persisted["effortLevel"] == "xhigh"
-    assert persisted["theme"] == "dark"
-    assert persisted["nested"] == {"keep": True}
+    assert response.json()["effort"] == "auto"
+    assert response.json()["confirmed"] is True
+    send.assert_called_once_with("daniel", "/effort auto")
 
 
 def test_agent_painel_patch_effort_invalido(tmp_path: Path, monkeypatch) -> None:

@@ -75,6 +75,10 @@ _PLUGIN_ID_KEYS = ("id", "pluginId", "plugin_id")
 _CLAUDE_AI_PREFIX = "claude.ai "
 _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+# Claude Code também aceita `auto`: ele restaura o default do modelo ativo
+# (docs: https://code.claude.com/docs/en/commands e /en/model-config).
+# Não misturar esta lista com Codex/Kimi — cada executor tem contrato próprio.
+_CLAUDE_PAINEL_ALLOWED_EFFORTS = [*_AGENT_PAINEL_ALLOWED_EFFORTS, "auto"]
 _CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh"]
 # Kimi K3 (assinatura Kimi Code): o endpoint expõe think_efforts low/high/max
 # (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
@@ -101,7 +105,7 @@ _KIMI_USAGES_FAILURE_TTL_SECONDS = 30
 _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
 _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
-AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max"]
+AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "auto"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
 AgentCodexSandboxValue = Literal["read-only", "workspace-write", "danger-full-access"]
 
@@ -230,6 +234,11 @@ class AgentPainelEffortPatchResponse(BaseModel):
     source: str
     session_may_diverge: bool = True
     written: bool = True
+    # Presentes apenas no caminho Claude Code; opcionais preservam o contrato
+    # enxuto dos caminhos persist-only de Codex e Kimi.
+    tmux_delivered: bool | None = None
+    confirmed: bool | None = None
+    runtime_switch: bool | None = None
 
 
 class AgentPainelPermissionPatchResponse(BaseModel):
@@ -407,7 +416,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         # agentes Anthropic e os 5 níveis que o motor não tem.
         asyncio.to_thread(_build_kimi_painel_effort, agent)
         if is_kimi
-        else asyncio.to_thread(_read_agent_effort),
+        else asyncio.to_thread(_build_claude_painel_effort, agent, cc_status),
         asyncio.to_thread(_read_agent_permission),
         asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
         if kimi_usages is not None
@@ -426,7 +435,11 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     )
 
 
-@router.patch("/{slug}/effort", response_model=AgentPainelEffortPatchResponse)
+@router.patch(
+    "/{slug}/effort",
+    response_model=AgentPainelEffortPatchResponse,
+    response_model_exclude_none=True,
+)
 async def patch_agent_effort(
     slug: str,
     patch: AgentPainelEffortPatchRequest,
@@ -460,7 +473,44 @@ async def patch_agent_effort(
             session_may_diverge=True,
             written=True,
         )
-    return await asyncio.to_thread(_write_agent_effort, slug, patch.effort)
+
+    # Claude Code aplica esforço vivo pelo slash command. O próprio comando
+    # persiste o default para novas sessões; escrever ~/.claude/settings.json
+    # aqui seria redundante e vazaria a escolha para os outros agentes.
+    before = await _load_cc_status(request.app.state.db, slug)
+    session = agent["tmux_session"]
+    delivered = await _send_tmux_or_409(session, f"/effort {patch.effort}")
+    confirmed = False
+    confirmed_status: _CCStatus | None = None
+    if delivered:
+        # Igual ao endpoint /model: Enter separado cobre o picker/slider sem
+        # depender de o comando já ter sido submetido pelo driver.
+        await asyncio.sleep(0.3)
+        await tmux_driver.press_enter(session)
+        confirmed, confirmed_status = await _poll_claude_effort(
+            request.app.state.db,
+            slug,
+            patch.effort,
+            before,
+        )
+
+    source = (
+        str(confirmed_status.path)
+        if confirmed_status is not None and confirmed_status.path is not None
+        else str(before.path)
+        if before.path is not None
+        else "claude_code.runtime"
+    )
+    return AgentPainelEffortPatchResponse(
+        slug=slug,
+        effort=patch.effort,
+        source=source,
+        session_may_diverge=not confirmed,
+        written=True,
+        tmux_delivered=delivered,
+        confirmed=confirmed,
+        runtime_switch=True,
+    )
 
 
 @router.patch("/{slug}/codex-sandbox", response_model=AgentCodexSandboxPatchResponse)
@@ -720,6 +770,56 @@ async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
     return _CCStatus(session_ids[0], Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_ids[0]}.json", None)
 
 
+def _cc_effort_level(payload: dict[str, Any] | None) -> str | None:
+    effort = payload.get("effort") if isinstance(payload, dict) else None
+    level = effort.get("level") if isinstance(effort, dict) else None
+    return level if level in _CLAUDE_PAINEL_ALLOWED_EFFORTS else None
+
+
+async def _poll_claude_effort(
+    db: GrupoBorgesDB,
+    slug: str,
+    target: AgentPainelEffortValue,
+    before: _CCStatus,
+) -> tuple[bool, _CCStatus | None]:
+    """Confirma `/effort` no JSON da statusline da sessão alvo.
+
+    Schema documentado em https://code.claude.com/docs/en/statusline.
+
+    A statusline pode rodar em sessões simultâneas, então um arquivo de uma
+    sessão anterior nunca confirma a troca. `auto` é especial: o CC expõe no
+    JSON o nível efetivo do modelo, não a palavra `auto`; nesse caso exigimos
+    uma atualização do arquivo ou uma mudança do nível observado.
+    """
+    before_level = _cc_effort_level(before.payload)
+    before_updated_at = _int_or_none(before.payload.get("updated_at")) if before.payload else None
+    before_session_id = before.session_id if not before.fell_back else None
+    latest: _CCStatus | None = None
+
+    for _ in range(3):
+        await asyncio.sleep(0.5)
+        candidate = await _load_cc_status(db, slug)
+        latest = candidate
+        if candidate.fell_back or candidate.payload is None:
+            continue
+        if before_session_id is not None and candidate.session_id != before_session_id:
+            continue
+        level = _cc_effort_level(candidate.payload)
+        if level is None:
+            continue
+        if target != "auto" and level == target:
+            return True, candidate
+        if target == "auto":
+            updated_at = _int_or_none(candidate.payload.get("updated_at"))
+            if before_level is None or level != before_level or (
+                updated_at is not None
+                and (before_updated_at is None or updated_at > before_updated_at)
+            ):
+                return True, candidate
+
+    return False, latest
+
+
 def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelContexto:
     payload = cc_status.payload or {}
     model_block = payload.get("model") if isinstance(payload.get("model"), dict) else {}
@@ -773,13 +873,45 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
     )
 
 
+def _build_claude_painel_effort(
+    agent: dict[str, Any], cc_status: _CCStatus
+) -> AgentPainelEffort:
+    value = _cc_effort_level(cc_status.payload)
+    if value is not None and cc_status.path is not None:
+        updated_at = _int_or_none(cc_status.payload.get("updated_at")) if cc_status.payload else None
+        stale = cc_status.fell_back or (
+            updated_at is not None
+            and int(time.time()) - updated_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
+        )
+        return AgentPainelEffort(
+            value=value,
+            allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
+            source=str(cc_status.path),
+            session_may_diverge=stale,
+        )
+
+    # Compatibilidade para sessões que ainda não produziram statusline: isto
+    # só lê o default global, nunca o escreve no caminho runtime acima.
+    settings = _read_agent_effort()
+    return AgentPainelEffort(
+        value=settings.value,
+        allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
+        source=settings.source,
+        session_may_diverge=True,
+    )
+
+
 def _read_agent_effort() -> AgentPainelEffort:
     settings_path = _agent_painel_settings_path()
     settings = _read_json_file(settings_path, {})
     value = settings.get("effortLevel") if isinstance(settings, dict) else None
     if value is not None:
         value = str(value)
-    return AgentPainelEffort(value=value, source=str(settings_path))
+    return AgentPainelEffort(
+        value=value,
+        allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
+        source=str(settings_path),
+    )
 
 
 def _agent_painel_settings_path() -> Path:
