@@ -87,6 +87,9 @@ export type ComposerProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
+  /** Repasse direto para o SeletorMotor: Kimi/Codex têm `requested` no painel,
+   *  o Claude não (ver `contratoSeparaPedido` em motor.ts). */
+  esforcoCobrePedido: boolean;
 };
 
 const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.ReactElement> = {
@@ -129,6 +132,7 @@ export function Composer({
   agentSlug,
   agentName,
   motor,
+  esforcoCobrePedido,
 }: ComposerProps) {
   const [texto, setTexto] = useState('');
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
@@ -638,7 +642,7 @@ export function Composer({
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
             {emCaptura ? null : (
-              <SeletorMotor agentSlug={agentSlug} agentName={agentName} motor={motor} />
+              <SeletorMotor agentSlug={agentSlug} agentName={agentName} motor={motor} esforcoCobrePedido={esforcoCobrePedido} />
             )}
             {/* O ÚNICO ELEMENTO SÓLIDO, e ele troca de função — a referência é
                 explícita nisso: na tela do Codex com o composer VAZIO, o botão

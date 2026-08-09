@@ -7,7 +7,7 @@ import {
   rotulaAcao,
   type FaseEnvio,
 } from './aparencia-envio.ts';
-import { descreveMotor, desfechoDaTrocaDeEsforco, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
+import { contratoSeparaPedido, descreveMotor, desfechoDaTrocaDeEsforco, etiquetaDoEsforco, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
 
 const TODAS: FaseEnvio[] = [
   'ocioso',
@@ -296,5 +296,40 @@ describe('desfecho da troca de esforço — 200 não é sinônimo de aplicado', 
       'aplicado',
     );
     assert.equal(desfechoDaTrocaDeEsforco({ written: true }), 'aplicado');
+  });
+});
+
+describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nada', () => {
+  it('divergiu: o pedido aparece no título, a palavra é "diverge"', () => {
+    // O caso real do Hiro em 09/08: pediram high, a sessão roda xhigh.
+    const e = etiquetaDoEsforco({ value: 'xhigh', requested: 'high', session_may_diverge: false }, true);
+    assert.equal(e?.palavra, 'diverge');
+    assert.match(e?.titulo ?? '', /pedido alto/i);
+    assert.match(e?.titulo ?? '', /extra alto/);
+  });
+
+  it('convergiu: nenhuma etiqueta — é o caso normal, não polui', () => {
+    assert.equal(etiquetaDoEsforco({ value: 'max', requested: 'max', session_may_diverge: false }, true), null);
+  });
+
+  it('ninguém pediu: "padrão", e o título deixa claro que não foi escolha', () => {
+    const e = etiquetaDoEsforco({ value: 'xhigh', requested: null, session_may_diverge: false }, true);
+    assert.equal(e?.palavra, 'padrão');
+    assert.match(e?.titulo ?? '', /ninguém escolheu/i);
+  });
+
+  it('Claude nunca ganha etiqueta: o contrato não cobre, null não é "ninguém pediu"', () => {
+    // O Rica pediu `max` no Felipe — requested chega null porque o back do
+    // Claude não preenche. "padrão" ali seria a mentira que o caso 3 evita.
+    assert.equal(etiquetaDoEsforco({ value: 'max', requested: null, session_may_diverge: false }, false), null);
+    assert.equal(contratoSeparaPedido({ executor_kind: null, model_family: null }), false);
+    assert.equal(contratoSeparaPedido({ executor_kind: 'codex' }), true);
+    assert.equal(contratoSeparaPedido({ model_family: 'kimi' }), true);
+  });
+
+  it('leitura fraca não etiqueta: session_may_diverge derruba até divergência real', () => {
+    assert.equal(etiquetaDoEsforco({ value: 'xhigh', requested: 'high', session_may_diverge: true }, true), null);
+    assert.equal(etiquetaDoEsforco({ value: null, requested: 'high', session_may_diverge: false }, true), null);
+    assert.equal(etiquetaDoEsforco(null, true), null);
   });
 });

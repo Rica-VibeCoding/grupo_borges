@@ -7,7 +7,7 @@ import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { TETO_PCT } from '@/components/shell/medidor';
 import { Composer } from '@/components/shell/composer';
-import { leMotor } from '@/components/shell/motor';
+import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
 import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { FeedDaConversa } from './feed-da-conversa';
@@ -265,7 +265,12 @@ export default async function AgentePage({
         composer={
           // Sem `esforcoValor`/`esforcoPermitido`/`onEnviar`: o Composer busca o
           // painel e envia sozinho — ver o cabeçalho do próprio componente.
-          <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
+          <Composer
+            agentSlug={agente.slug}
+            agentName={agente.name}
+            motor={motor}
+            esforcoCobrePedido={contratoSeparaPedido(agente)}
+          />
         }
       >
         <FeedDaConversa agentSlug={agente.slug} />

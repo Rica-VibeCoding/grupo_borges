@@ -119,6 +119,67 @@ export function desfechoDaTrocaDeEsforco(resposta: {
   return 'aplicado';
 }
 
+/** Quais motores têm `requested` no contrato do painel: Kimi e Codex (commits
+ *  dac720c/f9a6bd8 do Daniel). No Claude o campo é SEMPRE null — lá, null
+ *  significa "o contrato não cobre", nunca "ninguém pediu". Sem esta pergunta,
+ *  todo Claude ganharia a etiqueta de default, inclusive o que está em `max`
+ *  porque o Rica pediu — a mentira que o caso 3 existe para evitar. */
+export function contratoSeparaPedido(agente: {
+  executor_kind?: string | null;
+  model_family?: string | null;
+}): boolean {
+  return agente.executor_kind === 'codex' || agente.model_family === 'kimi';
+}
+
+/** A etiqueta ao lado do valor do esforço — uma palavra, ou NADA.
+ *
+ *  O `painel.effort` carrega o valor EFETIVO ao lado do PEDIDO. Três estados,
+ *  e confundir dois deles é o erro que esta máquina existe para evitar:
+ *
+ *  1. **Convergiu** (pedido = efetivo): o caso normal. `null` — nenhuma
+ *     etiqueta, o painel não polui.
+ *  2. **Divergiu** (pediu `high`, a sessão roda outra coisa): `diverge`.
+ *  3. **Ninguém pediu** (`requested` null COM fonte viva): o valor é o default
+ *     do motor, não decisão de alguém — `padrão`, e o título diz "ninguém
+ *     escolheu". Dar a entender que alguém escolheu seria mentira.
+ *
+ *  Leitura fraca (`session_may_diverge`) ou motor que o contrato não cobre
+ *  devolvem `null`: etiqueta inventada sobre dado fraco é pior que ausência.
+ *
+ *  A explicação por extenso vai no `titulo` (title/aria) — texto explicativo
+ *  na tela foi revogado pelo Rica em 30/07 e continua revogado. */
+export type EtiquetaEsforco = {
+  /** A palavra curta ao lado do valor — mesma gramática da etiqueta `antigo`. */
+  palavra: string;
+  /** A explicação, para `title`/aria — nunca texto visível na tela. */
+  titulo: string;
+};
+
+export function etiquetaDoEsforco(
+  esforco: {
+    value: string | null;
+    requested?: string | null;
+    session_may_diverge: boolean;
+  } | null,
+  cobrePedido: boolean,
+): EtiquetaEsforco | null {
+  if (!esforco || !cobrePedido || esforco.session_may_diverge || esforco.value == null) return null;
+
+  if (esforco.requested == null) {
+    return {
+      palavra: 'padrão',
+      titulo: 'Ninguém escolheu este nível — é o padrão do motor.',
+    };
+  }
+
+  if (esforco.requested === esforco.value) return null;
+
+  return {
+    palavra: 'diverge',
+    titulo: `Pedido ${rotulaEsforco(esforco.requested)} — a sessão está rodando ${rotulaEsforco(esforco.value)}.`,
+  };
+}
+
 export function leMotor(entrada: {
   modeloSessao?: string | null;
   modeloPadrao?: string | null;
