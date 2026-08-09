@@ -231,6 +231,7 @@ describe('motor — modelo e esforço dentro do composer', () => {
   it('esforço sai em português', () => {
     assert.equal(rotulaEsforco('xhigh'), 'extra alto');
     assert.equal(rotulaEsforco('max'), 'máximo');
+    assert.equal(rotulaEsforco('auto'), 'automático');
     assert.equal(rotulaEsforco(null), null);
   });
 

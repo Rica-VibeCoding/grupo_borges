@@ -88,6 +88,10 @@ const ESFORCO: Record<string, string> = {
   high: 'alto',
   xhigh: 'extra alto',
   max: 'máximo',
+  // Fora da escala crescente: `auto` não é um degrau, é o Claude Code
+  // escolhendo o nível conforme a tarefa. Quem decide se ele entra no menu é
+  // o back (`effort.allowed`) — aqui mora só a tradução, não a oferta.
+  auto: 'automático',
 };
 
 export function rotulaEsforco(esforco: string | null | undefined): string | null {
