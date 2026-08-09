@@ -833,6 +833,37 @@ def test_agent_painel_patch_effort_invalido(tmp_path: Path, monkeypatch) -> None
     assert response.status_code == 422
 
 
+def test_agent_painel_nao_le_auto_como_nivel_da_statusline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """`auto` é argumento de `/effort`, não nível reportado.
+
+    A doc do statusline documenta `effort.level` como low/medium/high/xhigh/max
+    e trata `auto` como *reset to the model default* — a palavra nunca chega no
+    JSON (o `_poll_claude_effort` já dizia isso). Validar a leitura pela lista do
+    seletor, que oferece `auto`, faria o painel servir como nível em vigor uma
+    palavra que nenhum motor reporta.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    session_id = f"effort-auto-lido-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps({"updated_at": int(time.time()), "effort": {"level": "auto"}}),
+        encoding="utf-8",
+    )
+
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/agents/daniel/painel").json()
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert body["effort"]["value"] == "medium"
+    assert body["effort"]["source"] == str(tmp_path / ".claude" / "settings.json")
+
+
 def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) -> None:
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)

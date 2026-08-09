@@ -87,6 +87,13 @@ _CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
 # GET api.kimi.com/coding/v1/models.
 _KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
+# Domínio do que a statusline REPORTA, que não é o domínio do que a UI oferece.
+# A doc lista `effort.level` como low/medium/high/xhigh/max e trata `auto` só
+# como argumento ("reset to the model default") — a palavra nunca chega no JSON,
+# como `_poll_claude_effort` já descrevia. Validar leitura pela lista do seletor
+# aceitaria um `auto` que não existe e, do outro lado, descartaria o `xhigh` que
+# um agente Kimi de fato roda. São listas separadas de propósito.
+_STATUSLINE_REPORTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
 _CODEX_DEFAULT_SANDBOX = "danger-full-access"
 _TELECODEX_CONTROL_URL = os.environ.get(
@@ -814,7 +821,7 @@ async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
 def _cc_effort_level(payload: dict[str, Any] | None) -> str | None:
     effort = payload.get("effort") if isinstance(payload, dict) else None
     level = effort.get("level") if isinstance(effort, dict) else None
-    return level if level in _CLAUDE_PAINEL_ALLOWED_EFFORTS else None
+    return level if level in _STATUSLINE_REPORTED_EFFORTS else None
 
 
 async def _poll_claude_effort(
