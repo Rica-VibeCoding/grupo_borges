@@ -34,6 +34,7 @@ export function Statusline({
   agente,
   agora,
   curta = false,
+  larguraDaBarra,
 }: {
   agente: Agent;
   agora: number;
@@ -41,6 +42,11 @@ export function Statusline({
    *  tempo é o dado menos acionável dos três — sem ele, "Opus 5" para de ser
    *  truncado até virar "C". */
   curta?: boolean;
+  /** Largura da barra de contexto, em px. `null` = ocupa o campo inteiro — é o
+   *  modo da gaveta (09/08): a barra divide a linha com modelo e sessão e
+   *  estica até o percentual. Omitido, mantém a largura fixa da lista (56px) ou
+   *  da coluna (40px). */
+  larguraDaBarra?: number | null;
 }) {
   const ehCodex = agente.executor_kind === 'codex';
   const iniciou = ehCodex ? agente.session_started_at : agente.pane_session_started_at;
@@ -110,14 +116,23 @@ export function Statusline({
               : `contexto ${pct}% — teto da frota ${TETO_PCT}%`
           }
         >
-          <BarraDeContexto pct={pct} largura={curta ? LARGURA_NA_COLUNA : LARGURA_NA_LISTA} />
+          <BarraDeContexto
+            pct={pct}
+            largura={
+              larguraDaBarra !== undefined
+                ? (larguraDaBarra ?? undefined) // null → campo inteiro (gaveta)
+                : curta
+                  ? LARGURA_NA_COLUNA
+                  : LARGURA_NA_LISTA
+            }
+          />
           <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
             {pct}%
           </span>
           {/* A PALAVRA carrega o estado (§3/§9.7): número velho esmaecido ou de
-              outra cor continuaria lendo como medição de agora. Aqui não cabe a
-              idade junto — ela sai por extenso na gaveta, que é o degrau
-              seguinte do mesmo toque. */}
+              outra cor continuaria lendo como medição de agora. A idade completa
+              fica no `title` acima — a gaveta não repete a frase (09/08: o Rica
+              mandou retirar o texto corrido). */}
           {velho ? (
             <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
               antigo

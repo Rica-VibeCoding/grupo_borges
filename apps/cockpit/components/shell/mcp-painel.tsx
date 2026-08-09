@@ -131,9 +131,13 @@ export function PainelMcp({ agentSlug }: { agentSlug: string }) {
   const lista = servers ? servidoresMcp(servers).filter((s) => combinaBusca(s, busca)) : [];
 
   return (
+    // `flex-auto`, NÃO `flex-1` — a régua que o `Painel` da gaveta usa (02/08):
+    // base `auto` (contribui o conteúdo) em vez de base 0, senão o WebKit abre
+    // a gaveta com 0px de altura no iPhone. Desde 15ccf76 a tela nasceu sem
+    // consumidor; a gaveta é a porta, e este section preenche o campo dela.
     <section
       aria-label="MCPs do agente"
-      className="flex min-h-0 flex-col"
+      className="flex min-h-0 flex-auto flex-col"
       style={{ background: 'var(--ck-surface-mcp)', borderRadius: 'var(--ck-radius-caixa)' }}
     >
       <div style={{ padding: 'var(--ck-space-3)' }}>

@@ -1,79 +1,19 @@
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
-import { formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
-import { BarraDeContexto } from '@/components/shell/barra-de-contexto';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
-import { TETO_PCT } from '@/components/shell/medidor';
 import { Composer } from '@/components/shell/composer';
+import { PainelMcp } from '@/components/shell/mcp-painel';
 import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
+import { Statusline } from '@/components/shell/statusline';
 import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
-
-/** Aqui cabe o que não coube no card: a idade da medição por extenso.
- *
- *  Mesma régua do bloco de cota — o velho MOSTRA o número e diz que é velho.
- *  "dados antigos" sozinho não separa 6 minutos de um dia; por isso a idade vem
- *  junto, e quem não tem carimbo diz que veio de outra sessão em vez de calar.
- *
- *  O teto vem do `TETO_PCT`, não escrito à mão. Até 09/08 esta string tinha um
- *  `teto 30%` literal: o mesmo número que a tropa lia de uma constante, e que
- *  aqui viraria mentira no dia em que o Rica mudasse a ordem da frota. */
-function descreveContexto(agente: Agent): string | null {
-  if (agente.context_pct == null) return null;
-  const base = `${agente.context_pct}% · teto ${TETO_PCT}%`;
-  if (!agente.context_stale) return base;
-  const idade =
-    agente.context_updated_at !== null
-      ? formatElapsedShort(Math.floor(Date.now() / 1000) - agente.context_updated_at)
-      : null;
-  return idade ? `${base} · dados antigos · lido ${idade}` : `${base} · dados antigos`;
-}
-
-/** O campo Contexto, que ganha a barra que os outros cinco não têm.
- *
- *  Era o único campo da ficha que carregava um JULGAMENTO — "isto está alto?" —
- *  e o único que respondia só com texto, do jeito que o Rica reprovou em 09/08.
- *  A barra é a mesma da tropa, pela mesma régua: a gaveta é o degrau seguinte do
- *  toque no card, e dois desenhos diferentes para o mesmo número fazem a gaveta
- *  parecer outra medição. */
-function CampoContexto({ agente }: { agente: Agent }) {
-  const texto = descreveContexto(agente);
-  if (texto === null || agente.context_pct == null) return null;
-
-  return (
-    <div className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>
-      <span
-        style={{
-          fontSize: 'var(--ck-text-xs)',
-          textTransform: 'uppercase',
-          letterSpacing: 'var(--ck-track-overline)',
-          color: 'var(--ck-text-secondary)',
-        }}
-      >
-        Contexto
-      </span>
-      <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
-        <BarraDeContexto pct={agente.context_pct} />
-        <span
-          className="shrink-0"
-          style={{
-            fontFamily: 'var(--ck-font-mono)',
-            fontSize: 'var(--ck-text-sm)',
-            color: 'var(--ck-text-primary)',
-          }}
-        >
-          {texto}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 /** Linha do painel. Rótulo em sans (voz do produto), valor em mono (voz da
  *  máquina) — a divisão do contrato §4 aplicada no menor lugar possível. */
@@ -106,10 +46,54 @@ function Campo({ rotulo, valor }: { rotulo: string; valor: string | null }) {
   );
 }
 
+/** Rótulo de seção — a mesma overline dos `Campo` e do cabeçalho, em um lugar
+ *  só para a gaveta nova (09/08). */
+function Rotulo({ children }: { children: string }) {
+  return (
+    <span
+      className="ck-tabular"
+      style={{
+        fontSize: 'var(--ck-text-xs)',
+        textTransform: 'uppercase',
+        letterSpacing: 'var(--ck-track-overline)',
+        color: 'var(--ck-text-secondary)',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** A GAVETA — reescrita em 09/08 pelo que o Rica cravou, e não mais para
+ *  texto corrido:
+ *
+ *  - **Comandos** em primeiro lugar (a gaveta "é essencialmente para
+ *    comandos"): as ações rápidas, que ele chama de "ideia central do
+ *    painel", e o slot da lista de comandos que ele vai passar depois
+ *    ("te passo depois os comandos que temos que usar no painel de fato").
+ *    Nada é inventado aqui — o slot está pronto para a lista entrar sem
+ *    redesenho, e sem comando falso ocupando o lugar.
+ *  - **Statusline** no centro — o "lugar central para statusline e contexto":
+ *    modelo · sessão · contexto numa linha só, com a barra ocupando o campo
+ *    inteiro. O teto de 30% continua sendo a cor (nada é desenhado por cima),
+ *    e a observação sai no `title` da barra.
+ *  - **Ficha** — os quatro campos que ele listou: modelo / executor / sessão
+ *    tmux / workspace. Caiu o Papel e caiu a frase do contexto ("42% · teto
+ *    30% · dados antigos · lido 3h"), que era o texto corrido reprovado.
+ *  - **MCPs** na base — a porta para a tela do Vinicius (15ccf76), que até
+ *    aqui existia commitada sem consumidor.
+ *
+ *  O `flex-auto` (base no conteúdo) NÃO o `flex-1` (base 0) continua sendo a
+ *  régua da gaveta: o pai (`.ck-flutua`) tem altura vinda do CONTEÚDO, e item
+ *  com base 0 contribui 0 pro tamanho intrínseco do pai no WebKit — era a
+ *  gaveta com 0px de altura no iPhone do Rica (02/08). O `min-h-0` deixa o
+ *  item encolher quando o `max-height` do pai morde, que é o que faz a área de
+ *  baixo rolar em vez de estourar. */
 function Painel({
   agente,
   fecharHref,
   painelAberto,
+  agora,
 }: {
   agente: Agent;
   fecharHref: string;
@@ -117,16 +101,9 @@ function Painel({
    *  dentro do `PainelProvider` — é o que faz a re-busca do `/painel` começar
    *  no frame do clique, não 2s depois. */
   painelAberto: boolean;
+  agora: number;
 }) {
   return (
-    // `flex-auto` (base no conteúdo), NÃO `flex-1` (base 0) — 02/08. O `flex-1`
-    // do Tailwind é `flex: 1 1 0%`, e o pai (`.ck-flutua`) tem altura vinda do
-    // CONTEÚDO. Item com base 0 contribui 0 pro tamanho intrínseco do pai no
-    // WebKit, e a gaveta inteira nascia com 0px de altura no iPhone do Rica —
-    // visível, no lugar certo, largura certa e altura nenhuma. Com base `auto` a
-    // contribuição é o conteúdo de verdade, nos dois motores. O `min-h-0`
-    // continua deixando o item encolher quando o `max-height` do pai morde, que
-    // é o que faz a área de baixo rolar em vez de estourar.
     <div className="flex min-h-0 flex-auto flex-col">
       <div
         className="flex shrink-0 items-center justify-between border-b"
@@ -141,22 +118,10 @@ function Painel({
           borderColor: 'var(--ck-edge-light)',
         }}
       >
-        <span
-          style={{
-            fontSize: 'var(--ck-text-xs)',
-            textTransform: 'uppercase',
-            letterSpacing: 'var(--ck-track-overline)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          Detalhes
-        </span>
+        <Rotulo>Detalhes</Rotulo>
         {/* Fechar é navegar — e desde 30/07 também é otimista: o
             `LinkFechaPainel` vira o painel no mesmo frame e a URL alcança
-            atrás; sem JS é o Link de sempre. O `xl:hidden` que estava aqui
-            vinha de um plano em que a gaveta virava coluna fixa nas telas
-            grandes; ela nunca virou — é overlay em qualquer largura —, então
-            o botão sumia em `xl` e sobrava o véu como única saída. */}
+            atrás; sem JS é o Link de sempre. */}
         <LinkFechaPainel
           href={fecharHref}
           rotulo="detalhes"
@@ -179,18 +144,133 @@ function Painel({
           ancorar no topo e crescer pra baixo, ficar aqui significa ficar
           sempre à vista: cresça o conteúdo quanto crescer, quem rola são os
           campos de referência, não os controles. */}
-      <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
+      <section aria-label="Comandos" className="flex shrink-0 flex-col">
+        <div style={{ padding: 'var(--ck-space-3) var(--ck-space-4)' }}>
+          <Rotulo>Comandos</Rotulo>
+        </div>
+        <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
 
+        {/* O SLOT DA LISTA DE COMANDOS DO PAINEL — 09/08. O Rica passa a lista
+            depois; aqui entra sem redesenho. Vazio de propósito: inventar um
+            comando que ele não pediu seria a mentira de UI da §9. */}
+        <div
+          className="flex flex-col"
+          style={{
+            gap: 'var(--ck-space-2)',
+            padding: 'var(--ck-space-3) var(--ck-space-4)',
+            borderBottom: '1px solid var(--ck-edge-light)',
+          }}
+        >
+          <Rotulo>Comandos do painel</Rotulo>
+          <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
+            a lista de comandos do painel ainda não chegou
+          </p>
+        </div>
+      </section>
+
+      {/* STATUSLINE — o lugar central que o Rica pediu (09/08): telemetria
+          viva (modelo · sessão · contexto) numa linha só. A barra ocupa o
+          campo inteiro (`larguraDaBarra={null}`), e o teto de 30% continua
+          sendo a cor e o `title` — nada é desenhado por cima (ordem de 09/08:
+          "passou de 30% muda de cor"). */}
+      <section
+        aria-label="status do agente"
+        className="flex shrink-0 flex-col border-b"
+        style={{
+          gap: 'var(--ck-space-2)',
+          padding: 'var(--ck-space-4)',
+          borderColor: 'var(--ck-edge-light)',
+        }}
+      >
+        <Statusline agente={agente} agora={agora} larguraDaBarra={null} />
+      </section>
+
+      {/* A FICHA — os quatro campos que o Rica cravou. Rola por dentro; os
+          controles e o status ficam fixos (a ordem da §17). O contexto não
+          tem campo próprio aqui: ele mora na statusline, que é o lugar central
+          — e a frase "· teto 30% · dados antigos · lido 3h" foi retirada a
+          pedido dele. */}
       <div
         className="flex min-h-0 flex-auto flex-col overflow-y-auto"
         style={{ gap: 'var(--ck-space-4)', padding: 'var(--ck-space-4)' }}
       >
-        <Campo rotulo="Papel" valor={agente.role} />
         <Campo rotulo="Modelo" valor={agente.state_model ?? agente.model_default} />
         <Campo rotulo="Executor" valor={agente.state_cli ?? agente.cli_default} />
         <Campo rotulo="Sessão tmux" valor={agente.tmux_session} />
         <Campo rotulo="Workspace" valor={agente.workspace_path} />
-        <CampoContexto agente={agente} />
+      </div>
+
+      {/* ENTRADA DA TELA DE MCPs — a tela do Vinicius (15ccf76) estava
+          commitada e órfã; esta linha é a porta. Link de verdade (rota, não
+          estado): `?painel=mcps` abre direto por deep-link. */}
+      <Link
+        href={`${fecharHref}?painel=mcps`}
+        className="ck-veil flex shrink-0 items-center justify-between border-t"
+        style={{
+          gap: 'var(--ck-space-2)',
+          padding: 'var(--ck-space-3) var(--ck-space-4)',
+          minHeight: 'var(--ck-touch-min)',
+          borderColor: 'var(--ck-edge-hairline)',
+        }}
+      >
+        <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)' }}>MCPs</span>
+        <span aria-hidden style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-lg)', lineHeight: 1 }}>
+          ›
+        </span>
+      </Link>
+    </div>
+  );
+}
+
+/** A TELA DE MCPs dentro da gaveta — o mesmo cabeçalho de chrome, com um
+ *  caminho de volta para os detalhes no lugar do rótulo. O `PainelMcp`
+ *  preenche o campo com `flex-auto` (ver o cabeçalho daquele arquivo). */
+function VistaMcp({ agentSlug, fecharHref }: { agentSlug: string; fecharHref: string }) {
+  return (
+    <div className="flex min-h-0 flex-auto flex-col">
+      <div
+        className="flex shrink-0 items-center justify-between border-b"
+        style={{
+          gap: 'var(--ck-space-2)',
+          padding: 'var(--ck-space-3) var(--ck-space-4)',
+          borderColor: 'var(--ck-edge-light)',
+        }}
+      >
+        <Link
+          href={`${fecharHref}?painel=detalhes`}
+          aria-label="Voltar para os detalhes do agente"
+          className="ck-veil flex items-center justify-center"
+          style={{
+            minWidth: 'var(--ck-touch-min)',
+            minHeight: 'var(--ck-touch-min)',
+            marginLeft: 'calc(var(--ck-space-3) * -1)',
+            borderRadius: 'var(--ck-radius-chip)',
+            fontSize: 'var(--ck-text-lg)',
+            color: 'var(--ck-text-secondary)',
+          }}
+        >
+          ←
+        </Link>
+        <Rotulo>MCPs</Rotulo>
+        <LinkFechaPainel
+          href={fecharHref}
+          rotulo="detalhes do agente"
+          className="ck-veil flex items-center justify-center"
+          style={{
+            minWidth: 'var(--ck-touch-min)',
+            minHeight: 'var(--ck-touch-min)',
+            marginRight: 'calc(var(--ck-space-3) * -1)',
+            borderRadius: 'var(--ck-radius-chip)',
+            fontSize: 'var(--ck-text-lg)',
+            color: 'var(--ck-text-secondary)',
+          }}
+        >
+          ×
+        </LinkFechaPainel>
+      </div>
+
+      <div className="flex min-h-0 flex-auto flex-col">
+        <PainelMcp agentSlug={agentSlug} />
       </div>
     </div>
   );
@@ -213,6 +293,14 @@ export default async function AgentePage({
 
   const fecharHref = `/agente/${slug}`;
   const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
+  // Relógio do servidor, na mesma régua da rota `/`: `force-dynamic`
+  // re-renderiza a cada navegação, então a duração de sessão da statusline vem
+  // fresca ao abrir a gaveta.
+  const agora = Math.floor(Date.now() / 1000);
+  // Qual visão a gaveta desenha. `painel=mcps` = a tela de MCPs; qualquer outro
+  // valor (ou ausência) = os detalhes. O valor mora na URL, como a decisão nº 1
+  // do `app-shell.tsx` pede — deep-link direto na tela de MCPs funciona.
+  const modoPainel = sp.painel === 'mcps' ? 'mcps' : 'detalhes';
 
   return (
     <>
@@ -289,7 +377,11 @@ export default async function AgentePage({
         rotulo="detalhes do agente"
         aberto={false}
       >
-        <Painel agente={agente} fecharHref={fecharHref} painelAberto={false} />
+        {modoPainel === 'mcps' ? (
+          <VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} />
+        ) : (
+          <Painel agente={agente} fecharHref={fecharHref} painelAberto={false} agora={agora} />
+        )}
       </GavetaPainel>
     </>
   );
