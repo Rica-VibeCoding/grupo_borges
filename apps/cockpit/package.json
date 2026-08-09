@@ -11,7 +11,6 @@
     "test": "node --test lib/*.test.ts lib/spike/*.test.ts components/feed/*.test.ts components/renderers/*.test.ts components/shell/*.test.ts app/api/delegacoes/*.test.ts"
   },
   "dependencies": {
-    "@assistant-ui/react": "0.15.1",
     "@grupo_borges/cockpit-core": "workspace:*",
     "@tanstack/react-virtual": "3.14.9",
     "class-variance-authority": "^0.7.1",
@@ -22,7 +21,8 @@
     "react-dom": "19.2.6",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "2.6.0"
+    "tailwind-merge": "2.6.0",
+    "vaul": "1.1.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.0",
