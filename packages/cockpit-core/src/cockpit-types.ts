@@ -62,6 +62,9 @@ export type Agent = {
   status_line: string | null;
   active_task_label: string | null;
   context_pct: number | null;
+  /** Quando o `context_pct` foi medido, e se a medida já não vale como atual. */
+  context_updated_at: number | null;
+  context_stale: boolean;
   session_started_at: number | null;
   last_assistant_message: string | null;
   token_usage_json: string | null;
@@ -356,10 +359,19 @@ export type PainelCanalEntrega = {
   acao_recomendada: string;
 };
 
+export type PainelModel = {
+  value: string | null;
+  allowed: string[];
+  source: string;
+  session_may_diverge: boolean;
+  runtime_switch: boolean;
+};
+
 export type AgentPainelResponse = {
   slug: string;
   generated_at: number;
   contexto: PainelContexto;
+  model?: PainelModel | null;
   effort: PainelEffort;
   permission: PainelPermission;
   quotas: PainelQuotas;
