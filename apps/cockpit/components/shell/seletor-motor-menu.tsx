@@ -36,6 +36,10 @@ function estiloItemDoMenu(selecionado = false) {
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 'var(--ck-touch-min)',
+    // Sem gap, rótulo e valor encostam quando o texto enche a largura do menu:
+    // `space-between` só separa o que sobra, e "Esforço" + "extra alto" não
+    // sobrava nada — o Rica leu "Esforçoextra alto" na tela em 09/08.
+    gap: 'var(--ck-space-3)',
     padding: 'var(--ck-space-2) var(--ck-space-3)',
     borderRadius: 'var(--ck-radius-chip)',
     color: 'var(--ck-text-primary)',
