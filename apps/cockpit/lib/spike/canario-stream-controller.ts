@@ -79,18 +79,10 @@ export type CanarioStreamController = {
   dispose(): void;
 };
 
-/** Teto por RESULTADO DE FERRAMENTA pedido ao servidor, em caracteres.
- *
- *  Medido em 09/08 no replay do `daniel`: 1005 mensagens somam 4,67 MB, mas a
- *  mediana é 1,4 KB — SEIS `tool_result` carregam metade do peso, e o maior tem
- *  360 mil caracteres. No navegador isso vira 3,6s de JS bloqueado em 49 long
- *  tasks, contra 50ms de um agente leve; o Rica abre o feed pelo túnel, no
- *  celular.
- *
- *  32 mil não corta nada que a tela mostre: todos os renderers param em
- *  `LINHAS_DE_PRIMEIRA = 120`, e o "ver tudo" continua com folga de sobra. O
- *  corte é do V2 — o v1 lê o mesmo endpoint sem passar o parâmetro e recebe
- *  tudo, como sempre recebeu. */
+/** Teto por RESULTADO DE FERRAMENTA, em caracteres (09/08). Não corta nada que
+ *  a tela mostre: todo renderer para em `LINHAS_DE_PRIMEIRA = 120`. O porquê
+ *  medido está em `_corta_resultados_grandes`, no `apps/api/routers/agents.py`;
+ *  quem não passa o parâmetro — o v1 — recebe tudo, como sempre. */
 const TETO_RESULTADO_CHARS = 32_000;
 
 export const INITIAL_CANARIO_STREAM_STATE: CanarioStreamState = {

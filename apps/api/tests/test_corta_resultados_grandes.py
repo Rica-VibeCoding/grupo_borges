@@ -143,3 +143,35 @@ def test_teto_zero_tambem_preserva_a_imagem_inteira() -> None:
     _corta_resultados_grandes(evento, 0)
 
     assert evento["message"]["content"][0]["content"][0]["source"]["data"] == "A" * 500_000
+
+
+# --- espelho em forma de DICT ----------------------------------------------
+# Apontado pela auditoria do Canário (09/08) e confirmado no replay real: o
+# `tool_use_result` costuma ser dict, e texto longo aninhado nele escapava do
+# corte. Eram quatro no histórico do `daniel`, o maior com 199 mil caracteres.
+
+
+def test_corta_texto_longo_aninhado_no_espelho_dict() -> None:
+    evento = _com_tool_result("curto")
+    evento["tool_use_result"] = {
+        "type": "text",
+        "file": {"filePath": "/tmp/gigante.log", "content": "L" * 200_000},
+    }
+    _corta_resultados_grandes(evento, 32_000)
+
+    conteudo = evento["tool_use_result"]["file"]["content"]
+    assert conteudo.startswith("L" * 32_000)
+    assert "168000 caracteres omitidos" in conteudo
+    assert len(conteudo) < 33_000
+
+
+def test_campo_estrutural_curto_do_espelho_nao_e_tocado() -> None:
+    evento = _com_tool_result("curto")
+    evento["tool_use_result"] = {
+        "type": "text",
+        "file": {"filePath": "/tmp/gigante.log", "content": "L" * 200_000},
+    }
+    _corta_resultados_grandes(evento, 32_000)
+
+    assert evento["tool_use_result"]["type"] == "text"
+    assert evento["tool_use_result"]["file"]["filePath"] == "/tmp/gigante.log"

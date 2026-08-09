@@ -1910,30 +1910,31 @@ def _corta_resultados_grandes(canonical: dict[str, Any], max_chars: int) -> None
                 # os bytes. O que sai é só a carga que ninguém desenha.
                 fonte["data"] = ""
                 return
-            for valor in no.values():
-                varre(valor)
+            for chave, valor in list(no.items()):
+                # Texto passando de `max_chars` aqui dentro só pode ser conteúdo:
+                # campo estrutural (`type`, `filePath`, `media_type`) é curto por
+                # natureza. Sem isto, o espelho em forma de DICT escapava do
+                # corte — a auditoria do Canário apontou e o replay confirmou:
+                # quatro espelhos com texto acima do teto, o maior com 199 mil
+                # caracteres atravessando inteiro (09/08).
+                if isinstance(valor, str) and len(valor) > max_chars:
+                    no[chave] = _corta_texto(valor, max_chars)
+                else:
+                    varre(valor)
         elif isinstance(no, list):
             for item in no:
                 varre(item)
 
+    # `varre` sozinho cobre as três formas em que o conteúdo chega (string crua,
+    # lista de blocos, dict aninhado): tratar cada uma à parte, como estava
+    # antes, cortava o mesmo texto duas vezes.
     message = canonical.get("message")
     if isinstance(message, dict):
         partes = message.get("content")
         if isinstance(partes, list):
             for parte in partes:
-                if not isinstance(parte, dict) or parte.get("type") != "tool_result":
-                    continue
-                varre(parte)
-                conteudo = parte.get("content")
-                if isinstance(conteudo, str) and len(conteudo) > max_chars:
-                    parte["content"] = _corta_texto(conteudo, max_chars)
-                elif isinstance(conteudo, list):
-                    for bloco in conteudo:
-                        if not isinstance(bloco, dict):
-                            continue
-                        texto = bloco.get("text")
-                        if isinstance(texto, str) and len(texto) > max_chars:
-                            bloco["text"] = _corta_texto(texto, max_chars)
+                if isinstance(parte, dict) and parte.get("type") == "tool_result":
+                    varre(parte)
 
     resultado = canonical.get("tool_use_result")
     if isinstance(resultado, str) and len(resultado) > max_chars:
