@@ -17,10 +17,11 @@
  *    primário; valor que pode ter divergido vem em secundário, com a ressalva
  *    escrita no `title`/`aria-label`, não escondida.
  *
- * 2. **Escala de esforço é por família.** Kimi não tem `medium` nem `xhigh`;
- *    Codex não tem `max`. Oferecer no seletor um degrau que o back vai recusar
- *    com 400 é pior do que não oferecer — a lista vem do back (`effort.allowed`)
- *    e a pele só a traduz.
+ * 2. **Escala de esforço é por família.** Kimi não tem `medium` nem `xhigh`
+ *    (só `low`/`high`/`max`); o Codex ganhou `max` junto com o gpt-5.6-luna
+ *    (0.146+). Oferecer no seletor um degrau que o back vai recusar com 400 é
+ *    pior do que não oferecer — a lista vem do back (`effort.allowed`) e a pele
+ *    só a traduz.
  *
  * Módulo neutro de propósito: sem `'use client'`. É consumido por Server
  * Component (o cabeçalho lê o fleet no servidor) e por Client Component (o

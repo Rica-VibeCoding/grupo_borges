@@ -1,0 +1,277 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import {
+  AgentInputError,
+  fetchAgentPainel,
+  patchAgentEffort,
+  postAgentModel,
+  type ChatModelSlug,
+} from '@grupo_borges/cockpit-core/api';
+import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { rotulaEsforco, rotulaModelo, type Motor } from './motor';
+import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
+
+type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
+
+type SeletorMotorProps = {
+  agentSlug: string;
+  agentName: string;
+  motor: Motor;
+};
+
+function paraModeloClaude(valor: string): ChatModelSlug | null {
+  if (valor === 'fable' || valor === 'opus' || valor === 'sonnet' || valor === 'haiku') {
+    return valor;
+  }
+  return null;
+}
+
+function pedeConfirmacao(erro: unknown): boolean {
+  return (
+    erro instanceof AgentInputError &&
+    erro.status === 409 &&
+    erro.detail === 'agent_busy_confirm_required'
+  );
+}
+
+function usaTelaEstreita() {
+  const [estreita, setEstreita] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const atualizar = () => setEstreita(media.matches);
+    atualizar();
+    media.addEventListener('change', atualizar);
+    return () => media.removeEventListener('change', atualizar);
+  }, []);
+
+  return estreita;
+}
+
+export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps) {
+  const [painel, setPainel] = useState<PainelDoMotor | null>(null);
+  const [aberto, setAberto] = useState(false);
+  const [tela, setTela] = useState<TelaDoSeletor>('inicio');
+  const [modeloPendente, setModeloPendente] = useState<ChatModelSlug | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const telaEstreita = usaTelaEstreita();
+
+  useEffect(() => {
+    let vivo = true;
+    setPainel(null);
+    fetchAgentPainel(agentSlug)
+      .then((resposta) => {
+        if (vivo) setPainel({ model: resposta.model ?? null, effort: resposta.effort });
+      })
+      .catch(() => {
+        if (vivo) setPainel(null);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [agentSlug]);
+
+  const modelo = painel?.model ?? null;
+  const esforco = painel?.effort ?? null;
+  const rotuloModelo = modelo?.value ? rotulaModelo(modelo.value) : motor.modelo;
+  const rotuloDoEsforco = esforco?.value ? rotulaEsforco(esforco.value) : motor.esforco;
+  const temControle = Boolean(modelo?.allowed.length || esforco?.allowed.length);
+
+  function alterarAbertura(proximo: boolean) {
+    setAberto(proximo);
+    if (!proximo) {
+      setTela('inicio');
+      setModeloPendente(null);
+      setAviso(null);
+    }
+  }
+
+  function mostrarAviso(mensagem: string) {
+    setAviso(mensagem);
+    setTela('aviso');
+  }
+
+  async function trocarEsforco(valor: string) {
+    setSalvando(true);
+    setAviso(null);
+    try {
+      const resposta = await patchAgentEffort(agentSlug, valor);
+      setPainel((atual) =>
+        atual
+          ? {
+              ...atual,
+              effort: {
+                ...atual.effort,
+                value: resposta.effort,
+                source: resposta.source,
+                session_may_diverge: resposta.session_may_diverge,
+              },
+            }
+          : atual,
+      );
+      alterarAbertura(false);
+    } catch {
+      mostrarAviso('Não foi possível trocar o esforço.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function trocarModelo(valor: ChatModelSlug, forcar = false) {
+    setSalvando(true);
+    setAviso(null);
+    try {
+      const resposta = await postAgentModel(agentSlug, valor, { force: forcar });
+      if (!resposta.tmux_delivered) {
+        mostrarAviso('Não foi possível entregar a troca ao agente.');
+        return;
+      }
+      setPainel((atual) =>
+        atual?.model
+          ? {
+              ...atual,
+              model: {
+                ...atual.model,
+                value: resposta.model,
+                source: 'agent.state_model',
+                session_may_diverge: !resposta.confirmed,
+              },
+            }
+          : atual,
+      );
+      setModeloPendente(null);
+      if (resposta.confirmed) {
+        alterarAbertura(false);
+        return;
+      }
+      mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');
+    } catch (erro) {
+      if (!forcar && pedeConfirmacao(erro)) {
+        setModeloPendente(valor);
+        setTela('confirmacao');
+        return;
+      }
+      mostrarAviso('Não foi possível trocar o modelo.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  const opcoesModelo =
+    modelo?.allowed.flatMap((valor) => {
+      const slug = paraModeloClaude(valor);
+      if (!slug) return [];
+      return [
+        {
+          chave: valor,
+          rotulo: rotulaModelo(valor),
+          selecionado: modelo.value === valor,
+          aoSelecionar: () => void trocarModelo(slug),
+        },
+      ];
+    }) ?? [];
+
+  const opcoesEsforco =
+    esforco?.allowed.map((valor) => ({
+      chave: valor,
+      rotulo: rotulaEsforco(valor) ?? valor,
+      selecionado: esforco.value === valor,
+      aoSelecionar: () => void trocarEsforco(valor),
+    })) ?? [];
+
+  if (!temControle) {
+    return (
+      <div
+        className="flex min-w-0 items-center"
+        style={{ gap: '3px', fontSize: 'var(--ck-text-sm)' }}
+        title={`${rotuloModelo}${rotuloDoEsforco ? `, esforço ${rotuloDoEsforco}` : ''}`}
+      >
+        <span
+          className="truncate"
+          style={{
+            color:
+              motor.certeza === 'pode-divergir'
+                ? 'var(--ck-text-tertiary)'
+                : 'var(--ck-text-secondary)',
+          }}
+        >
+          {rotuloModelo}
+        </span>
+        {rotuloDoEsforco ? (
+          <span style={{ color: 'var(--ck-text-secondary)' }}>{rotuloDoEsforco}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <DropdownMenu open={aberto} onOpenChange={alterarAbertura}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Configurar modelo e esforço de ${agentName}`}
+          aria-haspopup="menu"
+          aria-expanded={aberto}
+          className="ck-seletor-motor ck-veil flex min-w-0 items-center"
+          style={{
+            height: '32px',
+            minHeight: '32px',
+            gap: 'var(--ck-space-1)',
+            marginBottom: 'calc(var(--ck-space-3) * -1)',
+            padding: '0 var(--ck-space-3)',
+            border: '1px solid var(--ck-edge-hairline)',
+            borderRadius: 'var(--ck-radius-pill)',
+            background: 'var(--ck-surface-composer-material)',
+            WebkitBackdropFilter: 'blur(var(--ck-veu-desfoque))',
+            backdropFilter: 'blur(var(--ck-veu-desfoque))',
+            boxShadow: 'inset 0 1px 0 0 var(--ck-edge-light)',
+            fontSize: 'var(--ck-text-base)',
+            fontWeight: 500,
+            color:
+              motor.certeza === 'pode-divergir'
+                ? 'var(--ck-text-tertiary)'
+                : 'var(--ck-text-secondary)',
+          }}
+        >
+          <span className="truncate">{rotuloModelo}</span>
+          {rotuloDoEsforco ? <span className="shrink-0">{rotuloDoEsforco}</span> : null}
+          <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>⌄</span>
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        className={`ck-menu-surge ${aberto ? 'ck-menu-aberto' : 'ck-menu-fechado'}`}
+        side="top"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        style={{ width: 'var(--ck-w-menu)' }}
+      >
+        <ConteudoDoSeletor
+          tela={tela}
+          opcoesModelo={opcoesModelo}
+          opcoesEsforco={opcoesEsforco}
+          rotuloModelo={rotuloModelo}
+          rotuloDoEsforco={rotuloDoEsforco}
+          salvando={salvando}
+          telaEstreita={telaEstreita}
+          modeloPendente={modeloPendente}
+          aviso={aviso}
+          aoMudarTela={setTela}
+          aoConfirmarTroca={() => {
+            if (modeloPendente) void trocarModelo(modeloPendente, true);
+          }}
+          aoFechar={() => alterarAbertura(false)}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
