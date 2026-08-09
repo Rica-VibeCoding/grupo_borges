@@ -195,6 +195,18 @@
    * texto atravessando bem mais apagado. */
   --ck-surface-composer-material: color-mix(in oklch, var(--ck-surface-raised) 60%, transparent);
 
+  /* A TELA DE MCPs (09/08, tarefa 8764d666) — token PRÓPRIO, não emprestado.
+   * Duas armadilhas que este token existe pra evitar (achado da rodada
+   * anterior, mesmo dia: `shared_token_estetico_vs_acessibilidade.md`):
+   * pendurar num token que carrega contrato de acessibilidade, ou pendurar em
+   * `--ck-surface-composer-material`, que é a receita CALIBRADA pro vidro do
+   * composer (§18) — mudar aquele parâmetro pra ajustar o composer não pode
+   * mexer nesta tela, e vice-versa. Referencia `raised` (o degrau que a §A já
+   * reserva pra "overlay") por CÓPIA de intenção, não por atalho: é o mesmo
+   * degrau que `.ck-menu-surface` usa pra flutuar sobre o app, só que opaco —
+   * a tela de MCPs não tem o desfoque do vidro, é lista, não composer. */
+  --ck-surface-mcp: var(--ck-surface-raised);
+
   /* O RODAPÉ — a faixa entre a base da caixa e a base da tela (o padding do
    * wrapper, 33px medidos). Ali o feed passava NÍTIDO até encostar no fim da
    * tela, e o Rica pediu *"abaixo dela pode embaçar o vidro um pouco"*.
