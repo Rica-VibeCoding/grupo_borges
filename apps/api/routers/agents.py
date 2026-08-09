@@ -79,7 +79,10 @@ _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # (docs: https://code.claude.com/docs/en/commands e /en/model-config).
 # Não misturar esta lista com Codex/Kimi — cada executor tem contrato próprio.
 _CLAUDE_PAINEL_ALLOWED_EFFORTS = [*_AGENT_PAINEL_ALLOWED_EFFORTS, "auto"]
-_CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh"]
+_AGENT_PAINEL_ALLOWED_MODELS = ["fable", "opus", "sonnet", "haiku"]
+# Codex 0.146+ expõe `max` para o gpt-5.6-luna (catálogo `codex debug models`;
+# Kimi já tinha max). Sem ele o PATCH rejeitava o teto que a UI oferece.
+_CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # Kimi K3 (assinatura Kimi Code): o endpoint expõe think_efforts low/high/max
 # (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
 # GET api.kimi.com/coding/v1/models.
@@ -135,6 +138,14 @@ class AgentPainelEffort(BaseModel):
     allowed: list[str] = Field(default_factory=lambda: list(_AGENT_PAINEL_ALLOWED_EFFORTS))
     source: str
     session_may_diverge: bool = True
+
+
+class AgentPainelModel(BaseModel):
+    value: str | None = None
+    allowed: list[str] = Field(default_factory=lambda: list(_AGENT_PAINEL_ALLOWED_MODELS))
+    source: str
+    session_may_diverge: bool = True
+    runtime_switch: bool = True
 
 
 class AgentPainelPermission(BaseModel):
@@ -202,6 +213,7 @@ class AgentPainelResponse(BaseModel):
     slug: str
     generated_at: int
     contexto: AgentPainelContexto
+    model: AgentPainelModel | None = None
     effort: AgentPainelEffort
     permission: AgentPainelPermission
     quotas: AgentPainelQuotas
@@ -389,6 +401,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             slug=slug,
             generated_at=int(time.time()),
             contexto=contexto,
+            model=_build_painel_model(agent, contexto),
             effort=_build_codex_painel_effort(agent),
             permission=_read_agent_permission(),
             quotas=_build_codex_painel_quotas(agent, thread),
@@ -425,6 +438,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         slug=slug,
         generated_at=int(time.time()),
         contexto=contexto,
+        model=_build_painel_model(agent, contexto),
         effort=effort,
         permission=permission,
         quotas=quotas,
@@ -897,6 +911,40 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
         updated_at=updated_at,
         available=True,
         stale=stale,
+    )
+
+
+def _claude_model_slug(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    lowered = value.lower()
+    return next((model for model in _AGENT_PAINEL_ALLOWED_MODELS if model in lowered), None)
+
+
+def _build_painel_model(
+    agent: dict[str, Any], contexto: AgentPainelContexto
+) -> AgentPainelModel | None:
+    if agent.get("executor_kind") == "codex" or agent.get("model_family") == "kimi":
+        return None
+
+    status_model = _claude_model_slug(contexto.model)
+    if status_model is not None and contexto.available and not contexto.stale:
+        return AgentPainelModel(
+            value=status_model,
+            source=contexto.source,
+            session_may_diverge=False,
+        )
+
+    state_model = _claude_model_slug(agent.get("state_model"))
+    if state_model is not None:
+        return AgentPainelModel(
+            value=state_model,
+            source="agent.state_model",
+        )
+
+    return AgentPainelModel(
+        value=_claude_model_slug(agent.get("model_default")),
+        source="agent.model_default",
     )
 
 

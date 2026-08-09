@@ -141,6 +141,13 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         assert body["contexto"]["context_window"] == 200_000
         assert body["contexto"]["model_family"] == "fable"
         assert body["contexto"]["stale"] is False
+        assert body["model"] == {
+            "value": "fable",
+            "allowed": ["fable", "opus", "sonnet", "haiku"],
+            "source": str(quota_path),
+            "session_may_diverge": False,
+            "runtime_switch": True,
+        }
         assert body["effort"]["value"] == "high"
         assert body["permission"]["mode"] == "plan"
     finally:
@@ -545,6 +552,13 @@ def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monke
         assert contexto["pct"] == 42
         assert contexto["tokens"]["total"] == 84_000
         assert contexto["source"] == f"/tmp/cc-status-{old_session}.json"
+        assert body["model"] == {
+            "value": "opus",
+            "allowed": ["fable", "opus", "sonnet", "haiku"],
+            "source": "agent.model_default",
+            "session_may_diverge": True,
+            "runtime_switch": True,
+        }
         # quotas herda o mesmo arquivo antigo: status "stale" (badge no front)
         assert body["quotas"]["status"] == "stale"
     finally:
@@ -837,20 +851,43 @@ def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) ->
     }
     assert painel.status_code == 200
     body = painel.json()
+    assert body["model"] is None
     assert body["effort"]["value"] == "xhigh"
-    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh"]
+    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh", "max"]
     assert body["codex_native"] is True
 
 
-def test_agent_painel_codex_effort_rejeita_max(tmp_path: Path, monkeypatch) -> None:
+def test_agent_painel_codex_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
+    """Codex 0.146+ — `max` é o teto do gpt-5.6-luna (catálogo `codex debug
+    models`), igual ao `_AGENT_PAINEL_ALLOWED_EFFORTS`. Espelha o caso Kimi."""
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.patch("/api/agents/tara/effort", json={"effort": "max"})
+        painel = client.get("/api/agents/tara/painel")
+
+    assert response.status_code == 200
+    assert response.json()["effort"] == "max"
+    assert painel.status_code == 200
+    body = painel.json()
+    assert body["effort"]["value"] == "max"
+    assert "max" in body["effort"]["allowed"]
+
+
+def test_agent_painel_codex_effort_rejeita_fora_da_lista(tmp_path: Path, monkeypatch) -> None:
+    """Valor fora da escada codex cai no 422 do SCHEMA (Pydantic, que já
+    aceitava max), nunca chega à allowlist do router."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/tara/effort", json={"effort": "ultra"})
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "codex_effort_not_allowed"
+    # detail é a lista de erros do Pydantic, não o código custom do router —
+    # com a allowlist == enum, a guarda codex_effort_not_allowed ficou inalcançável.
+    assert "codex_effort_not_allowed" not in str(response.json())
 
 
 def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
