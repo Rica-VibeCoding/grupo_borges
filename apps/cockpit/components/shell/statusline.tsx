@@ -29,46 +29,80 @@ import { formatCompactNumber, formatElapsedShort } from '@grupo_borges/cockpit-c
  *  pela mesma régua — teto é um só, ou o número mente diferente por linha. */
 export const TETO_PCT = 30;
 
+/** A régua do medidor: 10 células cobrindo até 50% da janela, 5% cada.
+ *
+ *  A escala para em 50, não em 100, porque a frota inteira vive entre 5% e 40%
+ *  — numa régua até 100 todo mundo acende o mesmo toquinho à esquerda. E não
+ *  vai a 60 (o dobro do teto) porque aí a zona além do limite ficava com metade
+ *  do desenho para um caso raro: sobrava um bloco apagado permanente ocupando
+ *  espaço que a coluna de 260px não tem de sobra.
+ *
+ *  A célula do teto sai DERIVADA das outras duas — mudar o teto da frota reajusta
+ *  o desenho sozinho, sem ninguém precisar lembrar de mexer aqui. */
+const ESCALA_PCT = 50;
+const CELULAS = 10;
+const PCT_POR_CELULA = ESCALA_PCT / CELULAS;
+/** Índice da primeira célula que já passou do teto. */
+const CELULA_DO_TETO = TETO_PCT / PCT_POR_CELULA;
+
+/**
+ * O medidor de contexto — 12 células, escala 0–60%, o teto no meio.
+ *
+ * A barra contínua que estava aqui foi reprovada pelo Rica (09/08): *"essa
+ * barra de statusline context fica visualmente apontando para o mesmo lugar"*.
+ * Ele tinha razão, e o culpado era o traço do teto: fixo em 30% da largura, ele
+ * caía na MESMA coordenada em todas as nove linhas e formava uma coluna branca
+ * vertical descendo a lista inteira. O olho lia a coluna, não o dado.
+ *
+ * A troca resolve pela estrutura, não pela cor:
+ *
+ * - **O teto virou respiro, não risco.** Depois da 6ª célula o vão é maior. Nada
+ *   é desenhado por cima do preenchimento, então não há mais linha repetida — e
+ *   o limite continua visível, porque um vão maior dentro de um ritmo regular é
+ *   impossível de não ver.
+ * - **Cada célula vale 5%**, então 7% acende duas e 25% acende cinco: a diferença
+ *   entre dois agentes finalmente aparece na forma, não só no número. Acima de
+ *   50% satura, e o percentual ao lado continua dizendo a verdade.
+ * - **Célula acesa além do teto sai em âmbar**, junto com o percentual. Cor onde
+ *   há decisão a tomar, e só ali.
+ *
+ * Nem `@shadcn/progress` nem `@shadcn/chart` entram aqui, e a razão é de peso:
+ * o primeiro é a mesma barra contínua que acabou de ser reprovada, e o segundo
+ * traz o Recharts inteiro para desenhar doze retângulos em nove linhas de uma
+ * coluna de 260px. Célula é `<span>` com fundo — zero dependência, e roda dentro
+ * do Server Component sem virar cliente.
+ *
+ * Herdado por quem dorme (`LinhaDormindo`): teto é um só, ou o número mente
+ * diferente por linha.
+ */
 export function Barra({ pct }: { pct: number }) {
-  const estourou = pct > TETO_PCT;
+  const acesas = Math.min(CELULAS, Math.ceil(pct / PCT_POR_CELULA));
   return (
-    // A caixa externa é mais alta que a barra de propósito: é ela que deixa o
-    // traço do teto ULTRAPASSAR a barra em cima e embaixo. Traço contido dentro
-    // da barra some no meio do preenchimento e lê como falha de renderização —
-    // ultrapassando, lê como marca de régua, que é o que ele é.
-    <span
-      className="relative flex shrink-0 items-center"
-      style={{ width: '3.25rem', height: '10px' }}
-    >
-      <span
-        className="relative block w-full overflow-hidden"
-        style={{ height: '4px', borderRadius: '2px', background: 'var(--ck-edge-hairline)' }}
-      >
-        {/* Abaixo do teto a barra é NEUTRA, não verde. Verde é julgamento, e
-            "10% de contexto" não pede julgamento nenhum: com nove agentes na
-            coluna, oito barras verdes viravam a única cor da tela e roubavam o
-            olho do único número que pede ação. Neutro embaixo, âmbar em cima —
-            a cor aparece onde há decisão a tomar, e só ali. */}
-        <span
-          className="absolute inset-y-0 left-0 block"
-          style={{
-            width: `${Math.min(100, pct)}%`,
-            borderRadius: '2px',
-            background: estourou ? 'var(--ck-state-attention)' : 'var(--ck-text-secondary)',
-          }}
-        />
-      </span>
-      <span
-        aria-hidden
-        className="absolute inset-y-0 block"
-        style={{
-          left: `${TETO_PCT}%`,
-          width: '1.5px',
-          borderRadius: '1px',
-          background: 'var(--ck-text-primary)',
-          opacity: estourou ? 1 : 0.7,
-        }}
-      />
+    <span aria-hidden className="flex shrink-0 items-center" style={{ height: '10px' }}>
+      {Array.from({ length: CELULAS }, (_, i) => {
+        const acesa = i < acesas;
+        const passouDoTeto = i >= CELULA_DO_TETO;
+        return (
+          <span
+            key={i}
+            className="block"
+            style={{
+              width: '3px',
+              height: '8px',
+              // O respiro do teto. Vai como margem DA CÉLULA seguinte pra não
+              // depender de `gap` — o vão extra tem de existir uma vez só, no
+              // meio, e não somado ao gap de todos os outros pares.
+              marginLeft: i === 0 ? 0 : i === CELULA_DO_TETO ? '5px' : '2px',
+              borderRadius: '1px',
+              background: acesa
+                ? passouDoTeto
+                  ? 'var(--ck-state-attention)'
+                  : 'var(--ck-text-secondary)'
+                : 'var(--ck-edge-hairline)',
+            }}
+          />
+        );
+      })}
     </span>
   );
 }
