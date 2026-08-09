@@ -24,7 +24,16 @@ import { usaCompact } from '@/lib/compact';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
-const HISTORICO_PADRAO = 1000;
+/** Era 1000 até 09/08. O Rica cortou a dúvida pela raiz: *"as mensagens ficam
+ *  nas sessões do CC, se eu precisar dou um resumo por lá — por mim não
+ *  guardaria nada"*. O histórico profundo não é o que ele vem ver aqui; o
+ *  arquivo morto é o JSONL da sessão.
+ *
+ *  Medido no replay do `daniel` no mesmo dia: 1000 mensagens = 2,82 MB contra
+ *  905 KB em 200 — **68% do peso por conversa que ele não rola**. Descer a 100
+ *  economiza só mais 250 KB e custa contexto de verdade, então o joelho da
+ *  curva é aqui. Bate com o `_MESSAGES_STREAM_LIMIT_DEFAULT` do backend. */
+const HISTORICO_PADRAO = 200;
 
 export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   // `geracao`: o backend emite `session-reset` quando um Restart sem contexto

@@ -21,7 +21,10 @@ export type FeedAoVivoProps = {
   limite?: number;
 };
 
-const HISTORICO_PADRAO = 1000;
+/** 200, não 1000 — mesma razão e mesma medição do `feed-da-conversa.tsx`:
+ *  o histórico profundo mora no JSONL da sessão, não nesta tela, e as 800
+ *  mensagens a mais custavam 68% do peso do replay. */
+const HISTORICO_PADRAO = 200;
 
 export function FeedAoVivo({ agentSlug, sessionId, limite = HISTORICO_PADRAO }: FeedAoVivoProps) {
   const { messages } = useCanarioStream({
