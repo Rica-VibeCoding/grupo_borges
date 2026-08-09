@@ -51,6 +51,32 @@ test('tool_use sozinho é visível — a linha de execução nasce antes do resu
   assert.equal(temConteudoVisivel(item), true);
 });
 
+function falaDoRica(texto: string): MessagePayload {
+  return {
+    id: 2,
+    kind: 'user',
+    uuid: 'u1',
+    parent_uuid: null,
+    is_sidechain: false,
+    timestamp: '2026-08-08T00:00:00Z',
+    created_at: 0,
+    message: { role: 'user', content: texto },
+  } as unknown as MessagePayload;
+}
+
+test('a linha de origem que o CC grava ao anexar a imagem não desenha', () => {
+  const [marcador] = buildRenderItems([
+    falaDoRica(
+      '[Image: source: /home/clawd/repos/grupo_borges/apps/api/uploads/agents/daniel/1786236851587-9f17120b8449.png]',
+    ),
+  ]);
+  assert.equal(marcador.kind, 'user');
+  assert.equal(temConteudoVisivel(marcador), false);
+
+  const [fala] = buildRenderItems([falaDoRica('Daniel, agora valendo')]);
+  assert.equal(temConteudoVisivel(fala), true);
+});
+
 // Prova contra as 52 famílias reais: o filtro nunca esconde um kind que não
 // seja `assistant` — user, chip, sidechain e synthetic sempre desenham algo.
 test('nenhum item não-assistant das 52 famílias reais é filtrado', () => {

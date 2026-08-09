@@ -13,7 +13,14 @@
 
 import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 
+import { ehMarcadorDeOrigem } from '../../components/feed/anexo-imagem.ts';
+
 export function temConteudoVisivel(item: RenderItem): boolean {
+  // Segundo caso, 08/08: o `[Image: source: /…/uploads/…]` que o CC grava
+  // depois de anexar a imagem sozinho vira uma linha `user` própria no JSONL.
+  // Desenhá-la põe o caminho absoluto na tela do Rica logo abaixo do envelope
+  // — dois balões de ruído no lugar da foto.
+  if (item.kind === 'user') return !ehMarcadorDeOrigem(item.text);
   if (item.kind !== 'assistant') return true;
   return item.parts.some((parte) => {
     switch (parte.type) {
