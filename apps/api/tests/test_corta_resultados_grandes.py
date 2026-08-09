@@ -33,7 +33,8 @@ def test_corta_tool_result_em_string_e_diz_quanto_omitiu() -> None:
     _corta_resultados_grandes(evento, 1_000)
 
     cortado = evento["message"]["content"][0]["content"]
-    assert cortado.startswith("x" * 1_000)
+    assert cortado.startswith("[… 4000 caracteres omitidos pelo cockpit]")
+    assert cortado.endswith("x" * 1_000)
     assert "4000 caracteres omitidos" in cortado
     assert len(cortado) < 1_200
 
@@ -43,7 +44,8 @@ def test_corta_tool_result_entregue_em_blocos_de_texto() -> None:
     _corta_resultados_grandes(evento, 1_000)
 
     bloco = evento["message"]["content"][0]["content"][0]
-    assert bloco["text"].startswith("y" * 1_000)
+    assert bloco["text"].startswith("[… 4000 caracteres omitidos pelo cockpit]")
+    assert bloco["text"].endswith("y" * 1_000)
     assert "4000 caracteres omitidos" in bloco["text"]
 
 
@@ -52,7 +54,8 @@ def test_corta_tool_use_result_que_espelha_o_mesmo_resultado() -> None:
     evento["tool_use_result"] = "z" * 5_000
     _corta_resultados_grandes(evento, 1_000)
 
-    assert evento["tool_use_result"].startswith("z" * 1_000)
+    assert evento["tool_use_result"].startswith("[… 4000 caracteres omitidos pelo cockpit]")
+    assert evento["tool_use_result"].endswith("z" * 1_000)
     assert "4000 caracteres omitidos" in evento["tool_use_result"]
 
 
@@ -160,7 +163,8 @@ def test_corta_texto_longo_aninhado_no_espelho_dict() -> None:
     _corta_resultados_grandes(evento, 32_000)
 
     conteudo = evento["tool_use_result"]["file"]["content"]
-    assert conteudo.startswith("L" * 32_000)
+    assert conteudo.startswith("[… 168000 caracteres omitidos pelo cockpit]")
+    assert conteudo.endswith("L" * 32_000)
     assert "168000 caracteres omitidos" in conteudo
     assert len(conteudo) < 33_000
 

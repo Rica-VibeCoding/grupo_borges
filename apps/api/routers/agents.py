@@ -1866,9 +1866,9 @@ async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
 
 
 def _corta_texto(texto: str, max_chars: int) -> str:
-    """Corta preservando o COMEÇO: é o topo do resultado que o feed desenha."""
+    """Corta preservando o COMEÇO após deixar o marcador de omissão no topo."""
     omitidos = len(texto) - max_chars
-    return f"{texto[:max_chars]}\n\n[… {omitidos} caracteres omitidos pelo cockpit]"
+    return f"[… {omitidos} caracteres omitidos pelo cockpit]\n\n{texto[:max_chars]}"
 
 
 def _corta_resultados_grandes(canonical: dict[str, Any], max_chars: int) -> None:
