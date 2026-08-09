@@ -225,12 +225,24 @@ function LinhaDormindo({
               fontSize: 'var(--ck-text-xs)',
               color: 'var(--ck-text-secondary)',
             }}
-            title={`contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`}
+            title={
+              agente.context_stale
+                ? `contexto ${pct}% de uma sessão anterior a esta — não é a leitura de quando ela fechou`
+                : `contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`
+            }
           >
             <Barra pct={pct} />
             <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
               {pct}%
             </span>
+            {/* Mesma etiqueta da statusline viva, pelo mesmo motivo: aqui o
+                número já é de quem dormiu, e sem a palavra ninguém separa "o
+                que ele tinha ao fechar" de "o que outro run tinha antes". */}
+            {agente.context_stale ? (
+              <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
+                antigo
+              </span>
+            ) : null}
           </span>
         ) : (
           // Rótulo gêmeo do da statusline viva: sessão que morreu sem gravar o

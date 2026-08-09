@@ -383,14 +383,12 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") == "codex":
-        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-        thread = await asyncio.to_thread(
-            codex_reader.find_latest_thread, cwd, _codex_db_path()
-        )
+        thread = await asyncio.to_thread(_resolve_codex_thread, agent)
+        contexto = _build_codex_painel_contexto(agent, thread)
         return AgentPainelResponse(
             slug=slug,
             generated_at=int(time.time()),
-            contexto=_build_codex_painel_contexto(agent, thread),
+            contexto=contexto,
             effort=_build_codex_painel_effort(agent),
             permission=_read_agent_permission(),
             quotas=_build_codex_painel_quotas(agent, thread),
@@ -644,11 +642,35 @@ def _num_or_none(value: Any) -> float | None:
     return float(value)
 
 
+def _resolve_codex_thread(agent: dict[str, Any]) -> codex_reader.CodexThread | None:
+    return codex_reader.resolve_thread(
+        thread_id=agent.get("codex_thread_id"),
+        cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
+        db_path=_codex_db_path() or codex_reader.STATE_DB,
+    )
+
+
+def _codex_contexto_stale(agent: dict[str, Any], observed_at: int | None) -> bool:
+    """Duas maneiras de o número estar velho — e nenhuma pode sair como `False`.
+
+    A idade em segundos é a régua óbvia. A outra é a que pegou este defeito:
+    medida ANTERIOR ao início da sessão é de outro run, mesmo que o relógio
+    ainda não tenha estourado o limite. Sem carimbo não há como afirmar frescor,
+    e afirmar é justamente o defeito grave — velho passa por atual.
+    """
+    if observed_at is None:
+        return True
+    session_started_at = _int_or_none(agent.get("session_started_at"))
+    if session_started_at is not None and observed_at < session_started_at:
+        return True
+    return int(time.time()) - observed_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
+
+
 def _build_codex_painel_contexto(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None,
 ) -> AgentPainelContexto:
-    usage_payload = _codex_token_usage_payload(agent, thread)
+    usage_payload, source = _codex_token_usage_payload(agent, thread)
     model = (
         thread.model
         if thread is not None and thread.model
@@ -658,19 +680,16 @@ def _build_codex_painel_contexto(
         tokens_used = _int_or_none(usage_payload.get("context_tokens")) or 0
         context_window = _int_or_none(usage_payload.get("model_context_window"))
         pct = _num_or_none(usage_payload.get("context_pct"))
-        source = "agent_state.token_usage_json"
         available = True
+        # O carimbo é o da MEDIDA (`observed_at`), não o da thread: a thread
+        # anda a cada item do turno e diria "de agora" sobre um número parado.
+        observed_at = _int_or_none(usage_payload.get("observed_at"))
     else:
         tokens_used = thread.tokens_used if thread is not None else 0
         context_window = None
         pct = None
-        source = codex_reader.SOURCE
         available = thread is not None
-    updated_at = (
-        int(thread.updated_at_ms / 1000)
-        if thread is not None and thread.updated_at_ms is not None
-        else None
-    )
+        observed_at = None
     return AgentPainelContexto(
         model=model,
         model_family=_model_family(model),
@@ -678,15 +697,23 @@ def _build_codex_painel_contexto(
         tokens=AgentPainelTokens(total=tokens_used),
         pct=pct,
         source=source,
-        updated_at=updated_at,
+        updated_at=observed_at,
         available=available,
+        stale=available and _codex_contexto_stale(agent, observed_at),
     )
 
 
 def _codex_token_usage_payload(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None = None,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, str]:
+    """Devolve o número E de onde ele veio.
+
+    O painel carimbava `agent_state.token_usage_json` nos dois caminhos. Só que
+    o `token_usage_json` escrito por `codex.turn.completed` é recusado logo
+    abaixo, e o valor sai do rollout — declarar a fonte errada mandou a
+    investigação deste defeito pro arquivo errado.
+    """
     raw = agent.get("token_usage_json")
     if not isinstance(raw, str) or not raw.strip():
         payload = None
@@ -696,10 +723,10 @@ def _codex_token_usage_payload(
         except (json.JSONDecodeError, ValueError):
             payload = None
     if isinstance(payload, dict) and payload.get("source") == "codex.event_msg.token_count":
-        return payload
+        return payload, "agent_state.token_usage_json"
     if thread is None:
-        return None
-    return codex_reader.read_latest_token_count(thread.rollout_path)
+        return None, "agent_state.token_usage_json"
+    return codex_reader.read_latest_token_count(thread.rollout_path), thread.rollout_path
 
 
 def _build_codex_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
@@ -1110,18 +1137,18 @@ def _build_codex_painel_quotas(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None = None,
 ) -> AgentPainelQuotas:
-    usage_payload = _codex_token_usage_payload(agent, thread)
+    usage_payload, source = _codex_token_usage_payload(agent, thread)
     if usage_payload is None:
         return AgentPainelQuotas(
             status="missing",
-            source="agent_state.token_usage_json",
+            source=source,
             stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         )
     rate_limits = usage_payload.get("rate_limits")
     if not isinstance(rate_limits, dict):
         return AgentPainelQuotas(
             status="missing",
-            source="agent_state.token_usage_json",
+            source=source,
             stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         )
 
@@ -1153,7 +1180,7 @@ def _build_codex_painel_quotas(
         status = "available"
     return AgentPainelQuotas(
         status=status,
-        source="agent_state.token_usage_json",
+        source=source,
         updated_at=observed_at,
         stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         five_hour=five_hour,

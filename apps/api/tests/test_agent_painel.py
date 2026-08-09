@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from types import SimpleNamespace
 import sys
 import time
@@ -354,6 +355,150 @@ def test_agent_painel_codex_cai_para_rollout_quando_state_nao_tem_token_count(
     assert body["contexto"]["context_window"] == 258_400
     assert body["contexto"]["pct"] == 22.8
     assert body["quotas"]["seven_day"]["used_percentage"] == 4.0
+
+
+def _escreve_rollout(path: Path, *, total_tokens: int, observed_at: int) -> None:
+    carimbo = datetime.fromtimestamp(observed_at, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    path.write_text(
+        json.dumps(
+            {
+                "type": "event_msg",
+                "timestamp": carimbo,
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {"total_tokens": total_tokens},
+                        "model_context_window": 258_400,
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _make_codex_state_db(tmp_path: Path, rows: list[tuple]) -> Path:
+    db = tmp_path / "state.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """
+        CREATE TABLE threads (
+            id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, cwd TEXT NOT NULL,
+            title TEXT NOT NULL, model TEXT, reasoning_effort TEXT,
+            tokens_used INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER, created_at_ms INTEGER
+        )
+        """
+    )
+    conn.executemany("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _cenario_dois_runs(tmp_path: Path, monkeypatch, agora: int) -> None:
+    """Thread do run anterior no workspace cadastrado × thread do run que roda agora.
+
+    Reproduz o mundo real: `tara-codex ... -C /repo/do/dia` cria a thread com o cwd
+    do RUN. O workspace cadastrado (`/tmp/tara`) fica com a thread do run passado.
+    """
+    morto = tmp_path / "rollout-morto.jsonl"
+    vivo = tmp_path / "rollout-vivo.jsonl"
+    _escreve_rollout(morto, total_tokens=220_911, observed_at=agora - 2_200)
+    _escreve_rollout(vivo, total_tokens=161_907, observed_at=agora - 30)
+    db = _make_codex_state_db(
+        tmp_path,
+        [
+            ("morto", str(morto), "/tmp/tara", "run anterior", "gpt-5.6-terra", None,
+             220_911, 0, 1, (agora - 2_200) * 1000, (agora - 9_000) * 1000),
+            ("vivo", str(vivo), "/tmp/repo-do-dia", "run atual", "gpt-5.6-luna", None,
+             161_907, 0, 2, (agora - 30) * 1000, (agora - 1_000) * 1000),
+        ],
+    )
+    monkeypatch.setenv("CODEX_STATE_DB", str(db))
+    monkeypatch.setattr(agents_router.codex_reader, "TELECODEX_CONTEXTS", tmp_path / "sem-telecodex.json")
+
+
+def test_agent_painel_codex_segue_a_thread_do_run_vivo(tmp_path: Path, monkeypatch) -> None:
+    """O card tem de mostrar o contexto de QUEM ESTÁ RODANDO.
+
+    A thread é escolhida pelo id que o `thread.started` do run entregou, não pelo
+    `workspace_path` cadastrado — o run roda em `-C <outro repo>` e a busca por cwd
+    devolvia a thread do run anterior, com o número e o modelo dela.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        session_started_at=agora - 1_000,
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    contexto = body["contexto"]
+    assert contexto["model"] == "gpt-5.6-luna"
+    assert contexto["tokens"]["total"] == 161_907
+    assert contexto["pct"] == 62.7
+    assert contexto["updated_at"] == agora - 30
+    assert contexto["stale"] is False
+
+
+def test_agent_painel_codex_marca_contexto_de_run_anterior_como_velho(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Sem id do run vivo, o painel ainda cai na thread por cwd — mas não mente.
+
+    Medida anterior ao início da sessão é de outro run: velha por definição, mesmo
+    que o relógio ainda não tenha passado do limite de idade. E o número CONTINUA
+    entregue — quem esconde dado deixa o Rica sem saber se é zero ou falta de leitura.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        session_started_at=agora - 1_000,
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    contexto = body["contexto"]
+    assert contexto["stale"] is True
+    assert contexto["pct"] == 85.5
+    assert contexto["updated_at"] == agora - 2_200
+
+
+def test_agent_painel_codex_contexto_declara_a_fonte_real(tmp_path: Path, monkeypatch) -> None:
+    """`source` carimbava `agent_state.token_usage_json` mesmo lendo o rollout.
+
+    O `token_usage_json` gravado por `codex.turn.completed` é recusado pelo filtro
+    de origem, e o número sai do JSONL — dizer o contrário mandou a investigação
+    deste defeito pro arquivo errado.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        token_usage_json=json.dumps({"source": "codex.turn.completed", "usage": {"input_tokens": 156_763_087}}),
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    assert body["contexto"]["source"] == str(tmp_path / "rollout-vivo.jsonl")
 
 
 def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monkeypatch) -> None:

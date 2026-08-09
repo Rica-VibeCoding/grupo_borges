@@ -22,7 +22,7 @@ import {
   resolveContextPct,
   shortModelName,
 } from '@grupo_borges/cockpit-core/cockpit-types';
-import { formatCompactNumber } from '@grupo_borges/cockpit-core/painel-format';
+import { formatCompactNumber, formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
 
 /** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta.
  *  Exportada: a `LinhaDormindo` (tropa.tsx) julga o contexto de quem dormiu
@@ -92,6 +92,13 @@ export function Statusline({
     shortModelName(agente.state_model ?? agente.model_default);
   const pct = resolveContextPct(agente);
   const tokens = ehCodex ? agente.codex_tokens_used : null;
+  // Número que o back mediu antes desta sessão (ou parado há muito) continua na
+  // tela — o que não pode é sair sem etiqueta, como se fosse leitura de agora.
+  const velho = agente.context_stale;
+  const idade =
+    agente.context_updated_at !== null
+      ? formatElapsedShort(agora - agente.context_updated_at)
+      : 'em sessão anterior';
 
   return (
     <span
@@ -135,12 +142,25 @@ export function Statusline({
         <span
           className="flex shrink-0 items-center"
           style={{ gap: 'var(--ck-space-1)' }}
-          title={`contexto ${pct}% — teto da frota ${TETO_PCT}%`}
+          title={
+            velho
+              ? `contexto ${pct}% medido ${idade} — não é a leitura desta sessão`
+              : `contexto ${pct}% — teto da frota ${TETO_PCT}%`
+          }
         >
           <Barra pct={pct} />
           <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
             {pct}%
           </span>
+          {/* A PALAVRA carrega o estado (§3/§9.7): número velho esmaecido ou de
+              outra cor continuaria lendo como medição de agora. Aqui não cabe a
+              idade junto — ela sai por extenso na gaveta, que é o degrau
+              seguinte do mesmo toque. */}
+          {velho ? (
+            <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
+              antigo
+            </span>
+          ) : null}
         </span>
       ) : tokens !== null ? (
         // Codex não expõe porcentagem de janela — mostra o que ele tem.

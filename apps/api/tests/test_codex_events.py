@@ -130,6 +130,39 @@ def test_codex_events_update_agent_state(tmp_path: Path) -> None:
     assert agent["lifecycle_status"] == "ocioso"
 
 
+def test_thread_started_guarda_o_id_do_run(tmp_path: Path) -> None:
+    """O `thread.started` é o único evento do `exec --json` que traz o thread_id.
+
+    Sem guardá-lo, o painel volta a procurar a thread pelo `workspace_path` — e o
+    run sai com `-C <repo do dia>`, então a busca acha a thread do run anterior.
+    """
+    db = _setup_db(tmp_path)
+    novo = "019fe7c0-5958-7a93-81ae-6281f51df69f"
+
+    db._update_agent_codex_state("tara", **_codex_state_update(_event(
+        "codex.thread.started", {"thread_id": "run-anterior", "started_at": 1_700_000_000}
+    )))
+    db._update_agent_codex_state("tara", **_codex_state_update(_event(
+        "codex.thread.started", {"thread_id": novo, "started_at": 1_700_009_000}
+    )))
+
+    agent = db._get_agent("tara")
+    assert agent["codex_thread_id"] == novo
+    assert agent["session_started_at"] == 1_700_009_000
+
+
+def test_thread_started_sem_id_nao_apaga_o_run_conhecido(tmp_path: Path) -> None:
+    """Evento truncado não pode zerar o id — sem ele o painel perde a thread certa."""
+    db = _setup_db(tmp_path)
+    db._update_agent_codex_state("tara", codex_thread_id="run-em-curso")
+
+    db._update_agent_codex_state("tara", **_codex_state_update(
+        _event("codex.thread.started", {"started_at": 1_700_000_000})
+    ))
+
+    assert db._get_agent("tara")["codex_thread_id"] == "run-em-curso"
+
+
 def test_codex_failed_marks_lifecycle_offline(tmp_path: Path) -> None:
     db = _setup_db(tmp_path)
 

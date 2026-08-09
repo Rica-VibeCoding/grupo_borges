@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
+import { formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
@@ -11,6 +12,22 @@ import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
+
+/** Aqui cabe o que não coube no card: a idade da medição por extenso.
+ *
+ *  Mesma régua do bloco de cota — o velho MOSTRA o número e diz que é velho.
+ *  "dados antigos" sozinho não separa 6 minutos de um dia; por isso a idade vem
+ *  junto, e quem não tem carimbo diz que veio de outra sessão em vez de calar. */
+function descreveContexto(agente: Agent): string | null {
+  if (agente.context_pct == null) return null;
+  const base = `${agente.context_pct}% · teto 30%`;
+  if (!agente.context_stale) return base;
+  const idade =
+    agente.context_updated_at !== null
+      ? formatElapsedShort(Math.floor(Date.now() / 1000) - agente.context_updated_at)
+      : null;
+  return idade ? `${base} · dados antigos · lido ${idade}` : `${base} · dados antigos`;
+}
 
 /** Linha do painel. Rótulo em sans (voz do produto), valor em mono (voz da
  *  máquina) — a divisão do contrato §4 aplicada no menor lugar possível. */
@@ -127,10 +144,7 @@ function Painel({
         <Campo rotulo="Executor" valor={agente.state_cli ?? agente.cli_default} />
         <Campo rotulo="Sessão tmux" valor={agente.tmux_session} />
         <Campo rotulo="Workspace" valor={agente.workspace_path} />
-        <Campo
-          rotulo="Contexto"
-          valor={agente.context_pct != null ? `${agente.context_pct}% · teto 30%` : null}
-        />
+        <Campo rotulo="Contexto" valor={descreveContexto(agente)} />
       </div>
     </div>
   );

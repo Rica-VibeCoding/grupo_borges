@@ -380,31 +380,74 @@ def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
     return max(candidates)[1]
 
 
-def _fetch_thread_by_id(conn: sqlite3.Connection, cwd: str, thread_id: str) -> sqlite3.Row | None:
+_THREAD_COLUMNS = """
+    SELECT id, rollout_path, cwd, title, model, reasoning_effort,
+           tokens_used, updated_at_ms, created_at_ms
+    FROM threads
+"""
+
+
+def _fetch_thread_by_id(
+    conn: sqlite3.Connection, thread_id: str, cwd: str | None = None
+) -> sqlite3.Row | None:
+    if cwd is None:
+        # Id do run em execução: nem cwd nem arquivamento entram como critério.
+        # O id já É a resposta — filtrar aqui devolveria o painel à heurística
+        # que servia a thread do run anterior.
+        return conn.execute(f"{_THREAD_COLUMNS} WHERE id = ? LIMIT 1", (thread_id,)).fetchone()
     return conn.execute(
-        """
-        SELECT id, rollout_path, cwd, title, model, reasoning_effort,
-               tokens_used, updated_at_ms, created_at_ms
-        FROM threads
-        WHERE id = ? AND cwd = ? AND archived = 0
-        LIMIT 1
-        """,
+        f"{_THREAD_COLUMNS} WHERE id = ? AND cwd = ? AND archived = 0 LIMIT 1",
         (thread_id, cwd),
     ).fetchone()
 
 
 def _fetch_latest_thread(conn: sqlite3.Connection, cwd: str) -> sqlite3.Row | None:
     return conn.execute(
-        """
-        SELECT id, rollout_path, cwd, title, model, reasoning_effort,
-               tokens_used, updated_at_ms, created_at_ms
-        FROM threads
+        f"""
+        {_THREAD_COLUMNS}
         WHERE cwd = ? AND archived = 0
         ORDER BY updated_at_ms DESC, updated_at DESC
         LIMIT 1
         """,
         (cwd,),
     ).fetchone()
+
+
+def _connect_ro(db_path: str | Path) -> sqlite3.Connection | None:
+    """Read-only via URI — defesa em profundidade contra escrita no banco do Codex."""
+    p = Path(db_path)
+    if not p.exists():
+        return None
+    conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=2.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def resolve_thread(
+    *,
+    thread_id: str | None,
+    cwd: str = TARA_CWD,
+    db_path: str | Path = STATE_DB,
+    telecodex_context_path: str | Path | None = TELECODEX_CONTEXTS,
+) -> CodexThread | None:
+    """Thread do run em execução: o id manda, o cwd é só o plano B.
+
+    O run é disparado com `-C <repo do dia>` e o Codex indexa a thread pelo cwd
+    REAL do run — procurar pelo workspace cadastrado do agente devolve o run
+    ANTERIOR, com o contexto e o modelo dele. O id vem do `thread.started` que o
+    próprio run emite; sem ele (agente que nunca reportou), a heurística antiga
+    ainda é melhor que painel vazio.
+    """
+    if thread_id:
+        conn = _connect_ro(db_path)
+        if conn is not None:
+            try:
+                row = _fetch_thread_by_id(conn, thread_id)
+            finally:
+                conn.close()
+            if row is not None:
+                return _row_to_thread(row)
+    return find_latest_thread(cwd, db_path, telecodex_context_path)
 
 
 def find_latest_thread(
@@ -417,18 +460,15 @@ def find_latest_thread(
     Abre o SQLite em modo read-only via URI — defesa em profundidade contra
     qualquer escrita acidental no banco do Codex.
     """
-    p = Path(db_path)
-    if not p.exists():
+    conn = _connect_ro(db_path)
+    if conn is None:
         return None
-    uri = f"file:{p}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, timeout=2.0)
     try:
-        conn.row_factory = sqlite3.Row
         row = None
         if telecodex_context_path is not None:
             thread_id = _read_telecodex_thread_id(cwd, telecodex_context_path)
             if thread_id is not None:
-                row = _fetch_thread_by_id(conn, cwd, thread_id)
+                row = _fetch_thread_by_id(conn, thread_id, cwd)
         if row is None:
             row = _fetch_latest_thread(conn, cwd)
     finally:

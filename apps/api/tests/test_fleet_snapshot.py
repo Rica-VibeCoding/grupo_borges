@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -205,7 +206,9 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
             {"daniel", "tara"}, {"daniel", "tara"}
         )
 
-    def fake_find_latest_thread(cwd: str):
+    def fake_resolve_thread(*, thread_id: str | None, cwd: str, **_kwargs):
+        # Agente que ainda não reportou `thread.started` continua caindo no cwd.
+        assert thread_id is None
         assert cwd == "/tmp/tara"
         return SimpleNamespace(tokens_used=9_712_154, rollout_path=rollout)
 
@@ -215,7 +218,7 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
         "list_session_inventory",
         fake_list_session_inventory,
     )
-    monkeypatch.setattr(fleet_router.codex_reader, "find_latest_thread", fake_find_latest_thread)
+    monkeypatch.setattr(fleet_router.codex_reader, "resolve_thread", fake_resolve_thread)
 
     app = FastAPI()
     app.state.db = db
@@ -229,6 +232,114 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
     assert agent["codex_tokens_used"] == 9_712_154
     assert agent["codex_next_fresh"] is True
     assert agent["context_pct"] == 22.8
+
+
+def _prepara_card_codex(tmp_path: Path, monkeypatch, *, medido_em: int, iniciou_em: int) -> FastAPI:
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+    db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="thread-do-run",
+        session_started_at=iniciou_em,
+    )
+    rollout = tmp_path / "rollout.jsonl"
+    rollout.write_text(
+        json.dumps(
+            {
+                "type": "event_msg",
+                "timestamp": datetime.fromtimestamp(medido_em, tz=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {"total_tokens": 161_907},
+                        "model_context_window": 258_400,
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory({"daniel", "tara"}, {"daniel", "tara"})
+
+    monkeypatch.setattr(
+        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
+    )
+    monkeypatch.setattr(
+        fleet_router.codex_reader,
+        "resolve_thread",
+        lambda **_kwargs: SimpleNamespace(tokens_used=161_907, rollout_path=rollout),
+    )
+
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(fleet_router.router, prefix="/api/fleet")
+    return app
+
+
+def test_fleet_card_marca_contexto_medido_antes_da_sessao_como_velho(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Metade (a): número de run anterior não pode sair do back com cara de atual."""
+    agora = int(time.time())
+    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 2_200, iniciou_em=agora - 1_000)
+
+    with TestClient(app) as client:
+        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
+
+    assert agent["context_stale"] is True
+    assert agent["context_updated_at"] == agora - 2_200
+    # O número segue entregue: esconder deixaria o card sem dizer se é zero ou falta de leitura.
+    assert agent["context_pct"] == 62.7
+
+
+def test_fleet_card_mantem_contexto_de_quem_trabalha_como_atual(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Metade (b): medida do run em curso continua valendo como atual."""
+    agora = int(time.time())
+    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 30, iniciou_em=agora - 1_000)
+
+    with TestClient(app) as client:
+        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
+
+    assert agent["context_stale"] is False
+    assert agent["context_pct"] == 62.7
+
+
+def test_fleet_card_marca_pct_sem_carimbo_como_velho(tmp_path: Path, monkeypatch) -> None:
+    """Run recém-começado ainda não mediu nada — o que sobra é o pct velho do banco.
+
+    Era o pior caso do defeito: número de outro run, sem idade nenhuma, saindo com
+    cara de leitura de agora.
+    """
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+    db._update_agent_codex_state("tara", executor_kind="codex", context_pct=100.0)
+
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory({"daniel", "tara"}, {"daniel", "tara"})
+
+    monkeypatch.setattr(
+        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
+    )
+    monkeypatch.setattr(fleet_router.codex_reader, "resolve_thread", lambda **_kwargs: None)
+
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(fleet_router.router, prefix="/api/fleet")
+
+    with TestClient(app) as client:
+        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
+
+    assert agent["context_pct"] == 100.0
+    assert agent["context_updated_at"] is None
+    assert agent["context_stale"] is True
 
 
 def test_fleet_lists_tmux_inventory_once_per_snapshot(tmp_path: Path, monkeypatch) -> None:

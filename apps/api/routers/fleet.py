@@ -21,6 +21,10 @@ from services import codex_reader, tmux_driver
 
 router = APIRouter()
 _CC_STATUS_PREFIX = "cc-status-"
+# Par do `_AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS` (routers/agents.py): mesmo
+# limiar do OFFLINE da frota, pra card e painel não julgarem o mesmo número com
+# réguas diferentes.
+CONTEXT_STALE_AFTER_SECONDS = 300
 
 AgentStatus = Literal["ocioso", "trabalhando", "aguardando", "offline"]
 
@@ -58,6 +62,10 @@ class FleetAgent(BaseModel):
     status_line: str | None = None
     active_task_label: str | None = None
     context_pct: float | None = None
+    # Quando o `context_pct` foi MEDIDO, e se essa medida já não vale como atual.
+    # Sem isto o card mostrava número de run morto com cara de leitura de agora.
+    context_updated_at: int | None = None
+    context_stale: bool = False
     session_started_at: int | None = None
     last_assistant_message: str | None = None
     token_usage_json: str | None = None
@@ -162,10 +170,16 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
         if agent.get("executor_kind") != "codex":
             agent["codex_tokens_used"] = None
             return
-        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-        thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
+        # Pelo id do run, não pelo workspace cadastrado: o run sai com
+        # `-C <repo do dia>` e a busca por cwd achava a thread do run anterior.
+        thread = await asyncio.to_thread(
+            codex_reader.resolve_thread,
+            thread_id=agent.get("codex_thread_id"),
+            cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
+        )
         agent["codex_tokens_used"] = thread.tokens_used if thread is not None else None
         stored_pct = None
+        stored_observed_at = None
         raw_usage = agent.get("token_usage_json")
         if isinstance(raw_usage, str) and raw_usage.strip():
             try:
@@ -178,19 +192,53 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
                 and stored_usage.get("context_pct") is not None
             ):
                 stored_pct = stored_usage["context_pct"]
+                stored_observed_at = _int_or_none(stored_usage.get("observed_at"))
         if thread is not None:
             snapshot = await asyncio.to_thread(codex_reader.read_latest_token_count, thread.rollout_path)
             if snapshot is not None:
-                agent["context_pct"] = (
-                    snapshot.get("context_pct")
-                    if snapshot.get("context_pct") is not None
-                    else stored_pct
+                usa_snapshot = snapshot.get("context_pct") is not None
+                agent["context_pct"] = snapshot["context_pct"] if usa_snapshot else stored_pct
+                agent["context_updated_at"] = (
+                    _int_or_none(snapshot.get("observed_at")) if usa_snapshot else stored_observed_at
                 )
                 return
         if stored_pct is not None:
             agent["context_pct"] = stored_pct
+            agent["context_updated_at"] = stored_observed_at
+        if agent.get("context_pct") is not None and agent.get("context_updated_at") is None:
+            # Codex sem carimbo é o `context_pct` que ficou no banco de algum run
+            # passado (a Tara tinha 100.0 parado lá). Não dá pra dizer a idade,
+            # mas dá pra não afirmar que é de agora.
+            agent["context_stale"] = True
 
     await asyncio.gather(*(hydrate(agent) for agent in agents))
+
+
+def _int_or_none(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _marca_contexto_velho(agents: list[dict]) -> None:
+    """A idade do número vai junto com o número — quem lê o card decide por ela.
+
+    Duas maneiras de estar velho, as mesmas do painel: medida anterior ao início
+    da sessão é de outro run, e medida parada além do limiar é de agente que
+    dormiu. O número CONTINUA na tela; o que muda é o que a tela afirma sobre ele.
+
+    Só age quando o carimbo é da mesma leitura que produziu o número — hoje, o
+    caminho Codex. No Claude Code o valor do card vem do pane, e carimbá-lo com
+    a idade do cc-status seria trocar uma afirmação errada por outra.
+    """
+    agora = int(time.time())
+    for agent in agents:
+        medido_em = _int_or_none(agent.get("context_updated_at"))
+        if agent.get("context_pct") is None or medido_em is None:
+            continue
+        iniciou = _int_or_none(agent.get("session_started_at"))
+        agent["context_stale"] = (
+            (iniciou is not None and medido_em < iniciou)
+            or agora - medido_em > CONTEXT_STALE_AFTER_SECONDS
+        )
 
 
 @router.get("", response_model=FleetSnapshot)
@@ -210,4 +258,5 @@ async def get_fleet(
     await _hydrate_pane_excerpts(snapshot["agents"])
     await _hydrate_codex_tokens_used(snapshot["agents"])
     await _hydrate_cc_context_pct(db, snapshot["agents"])
+    _marca_contexto_velho(snapshot["agents"])
     return snapshot

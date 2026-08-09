@@ -337,6 +337,7 @@ class GrupoBorgesDB:
                 ("codex_reasoning_effort", "TEXT"),
                 ("codex_sandbox", "TEXT"),
                 ("codex_next_fresh", "INTEGER"),
+                ("codex_thread_id", "TEXT"),
                 ("kimi_reasoning_effort", "TEXT"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
@@ -457,6 +458,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
+                       s.codex_thread_id,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
@@ -480,6 +482,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
+                       s.codex_thread_id,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
@@ -602,6 +605,7 @@ class GrupoBorgesDB:
             "codex_reasoning_effort",
             "codex_sandbox",
             "codex_next_fresh",
+            "codex_thread_id",
             "kimi_reasoning_effort",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
@@ -2791,6 +2795,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
+                       s.codex_thread_id,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
