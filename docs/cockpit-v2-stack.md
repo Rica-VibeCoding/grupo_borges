@@ -438,7 +438,8 @@ exatamente a prova que faltava.
 - **Dev:** `http://localhost:3008` — na máquina onde o `pnpm dev` está rodando.
   Tem que ser `localhost`. Por `127.0.0.1` ou pelo IP `100.x` o browser não trata como origem
   segura e **o modo voz some sem erro** (ver `components/shell/voz.ts`).
-- **Produção, o que o Rica usa:** `https://srv1061129.tailfe77db.ts.net:3444`
+- **Produção, o que o Rica usa:** `https://srv1061129.tailfe77db.ts.net:3446` — a
+  única publicada pra ele desde 08/08; a `:3444` (dev) saiu do `tailscale serve`.
 - **A :3445 ninguém abre no browser.** É o cano do front pro backend; aberta na mão devolve
   JSON cru e parece defeito.
 

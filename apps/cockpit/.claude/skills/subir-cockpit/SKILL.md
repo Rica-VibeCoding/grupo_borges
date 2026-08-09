@@ -69,10 +69,10 @@ ver `docs/cockpit-v2-ownership.md` §5. Se precisar de um ambiente extra, é
 ## Abrir no navegador
 
 - Local: `http://127.0.0.1:3009`
-- **O Rica olha o dev pela `:3444`** — durante a refatoração do v2 essa rota foi
-  apontada pro dev (3009) a pedido dele, pra ver a mudança acontecendo enquanto
-  usa. A produção (3008) ficou na `:3446`. Salvar código quebrado quebra a tela
-  na mão dele.
+- **O dev não é mais publicado na tailnet.** A `:3444` apontava pro 3009 e o Rica
+  a abria todo dia; ele mandou tirar em 08/08 — não quer mais ver trabalho pela
+  metade. A única porta dele é a `:3446` (produção, 3008). Quem valida o dev é o
+  agente, por `127.0.0.1:3009` ou Playwright.
 - A 3443 aponta para a 3007 (v1) e **não se mexe nela**.
 - ⚠️ Nunca pelo IP `100.x`: origem sem HTTPS não expõe microfone, e o modo voz
   simplesmente não existe lá.

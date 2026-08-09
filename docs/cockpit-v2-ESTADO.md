@@ -18,14 +18,16 @@
 ## 0. O que mudou desde 30/07 — leia isto antes das seções 1–10
 
 **A fase de medição acabou e o v2 está em PRODUÇÃO.** O Rica usa todo dia pela
-`:3444`. A pergunta da seção 1 ("quanto custa o nosso render por item") deixou de
+`:3446`. A pergunta da seção 1 ("quanto custa o nosso render por item") deixou de
 ser a pergunta viva — o feed próprio venceu e está no ar. O trabalho de agora é
 **polir o que ele toca**, não decidir arquitetura.
 
-**Portas** (a seção 8 tem números velhos): `:3443`→3007 v1 · **`:3444`→3009 dev**
-· `:3445`→8000 API · `:3446`→3008 produção v2. Dev e produção **não podem dividir
-o `.next`** — dev usa `COCKPIT_DIST_DIR=.next-dev`. Era isso que fazia o
-Turbopack servir CSS velho.
+**Portas** (a seção 8 tem números velhos): `:3443`→3007 v1 · `:3445`→8000 API ·
+**`:3446`→3008 produção v2, a única do Rica**. A `:3444` (dev 3009) saiu do
+`tailscale serve` em 08/08 — ele mandou tirar pra não ver mais obra em andamento;
+o dev continua vivo, só que em `127.0.0.1`. Dev e produção **não podem dividir o
+`.next`** — dev usa `COCKPIT_DIST_DIR=.next-dev`. Era isso que fazia o Turbopack
+servir CSS velho.
 
 **Units systemd (user):** `cockpit-api`, `cockpit-v2` (produção 3008),
 `cockpit-web` (v1 3007). `uv sync` seco no `apps/api` **remove pytest e ruff** —

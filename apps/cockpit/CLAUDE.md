@@ -7,7 +7,12 @@ produção deste app na **3008** (`cockpit-v2.service`). O cockpit **atual** é
 O Rica não alcança nenhuma dessas portas direto: elas escutam em `127.0.0.1` e
 quem publica é o `tailscale serve`, com TLS no nome do node. **Passar o IP da
 Tailscale quebra** — a URL é sempre `https://srv1061129.tailfe77db.ts.net:<porta>`,
-`:3443`→3007, `:3444`→3009 (é esta que ele abre), `:3445`→API 8000, `:3446`→3008.
+`:3443`→3007 v1, `:3445`→API 8000, **`:3446`→3008, a única do Rica**.
+
+⚠️ **A `:3444` (dev) foi retirada da tailnet em 08/08, a pedido dele.** Ele não
+olha mais trabalho em andamento: só vê o que está publicado na `:3446`. O dev
+continua na 3009, agora só em `127.0.0.1` — quem valida é você, por Playwright ou
+curl. Mandar `:3444` pra ele é mandar URL morta.
 
 ⚠️ Dev e produção **não podem dividir o `.next`** — dois processos escrevendo no
 mesmo diretório é o que fazia o Turbopack servir CSS velho, e um `rm -rf .next`
@@ -47,11 +52,8 @@ peça central está polindo 18% da tela.
    tarefa, não são um segundo pedido. A ordem da unit é `stop` → `reset-failed`
    → `systemd-run`; invertida, a transiente continua carregada e o `systemd-run`
    morre com *"already loaded or has a fragment file"* deixando a 3008 fora.
-   **Mas isso só vale pra 3008/:3446.** O Rica olha o cockpit pela `:3444`, que
-   aponta pro **dev na 3009** (Turbopack), não pra produção — código e arquivo
-   novo em `public/` aparecem sozinhos, sem build nem restart. Rodar
-   `pnpm build` + religar a unit achando que é obrigatório pra ele ver é
-   trabalho perdido (08/08).
+   Com a `:3444` fora do ar, **publicar é o único jeito de ele ver** — não existe
+   mais "ele acompanha pelo dev".
 
 ## Skills daqui
 

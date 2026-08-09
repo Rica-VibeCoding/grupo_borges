@@ -12,7 +12,7 @@ Cockpit web multi-agente que dirige a frota do Grupo Borges por tmux. Backend Fa
 - `apps/cockpit` — cockpit **v2**, o trabalho vivo. Produção na **3008** (`cockpit-v2.service`), dev na **3009**.
 - `apps/api` — backend FastAPI na **8000**, unit `cockpit-api.service`. Serve os dois fronts.
 
-Rotas HTTPS do `tailscale serve`: `:3443` → v1 · `:3444` → o que o Rica abre (durante a refatoração do v2, aponta pro dev) · `:3445` → API · `:3446` → produção do v2.
+Rotas HTTPS do `tailscale serve`: `:3443` → v1 · `:3445` → API · **`:3446` → produção do v2, a única que o Rica abre**. A `:3444` (dev, 3009) saiu do ar em 08/08 a pedido dele: trabalho em andamento não vai mais pra tailnet.
 
 ⚠️ `pkill next`, `pkill node` ou `next dev` sem porta derrubam o cockpit do Rica. Use a skill `subir-cockpit` (`apps/cockpit/.claude/skills/`).
 
