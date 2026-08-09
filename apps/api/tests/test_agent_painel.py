@@ -1050,6 +1050,88 @@ def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> No
     assert json.loads((settings_dir / "settings.json").read_text())["effortLevel"] == "medium"
 
 
+def _statusline_do_hiro(app, level: str | None) -> Path:
+    session_id = f"hiro-effort-{int(time.time() * 1000)}"
+    _insert_session_event(app.state.db, session_id, agent_slug="hiro")
+    path = Path(f"/tmp/cc-status-{session_id}.json")
+    corpo: dict = {"updated_at": int(time.time())}
+    if level is not None:
+        corpo["effort"] = {"level": level}
+    path.write_text(json.dumps(corpo), encoding="utf-8")
+    return path
+
+
+def test_agent_painel_kimi_mostra_o_nivel_da_sessao_mesmo_fora_da_trinca(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """O caso real do Hiro: pediram `high`, a sessão roda `xhigh`.
+
+    O `subir-frota.sh` só exporta `CLAUDE_CODE_EFFORT_LEVEL` quando a leitura do
+    cockpit devolve low/high/max; se ela falha na janela de boot, o `unset`
+    incondicional deixa a sessão no default do CC — que é `xhigh`. O painel
+    mostrava `high` com a mesma cara de quando o pedido pega.
+
+    `xhigh` não está no `allowed` do motor de propósito: o que a fonte reporta e
+    o que o seletor oferece são domínios diferentes. Filtrar a leitura pela
+    trinca apagaria justamente o estado que ninguém consegue escolher.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    status_path = _statusline_do_hiro(app, "xhigh")
+    app.state.db._update_agent_codex_state("hiro", kimi_reasoning_effort="high")
+
+    try:
+        with TestClient(app) as client:
+            effort = client.get("/api/agents/hiro/painel").json()["effort"]
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert effort["value"] == "xhigh"
+    assert effort["requested"] == "high"
+    assert effort["allowed"] == ["low", "high", "max"]
+    assert effort["source"] == str(status_path)
+
+
+def test_agent_painel_kimi_sem_pedido_registrado_nao_inventa_escolha(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Default por omissão não é decisão de ninguém.
+
+    Sem nada gravado em `agent_state`, o nível que a sessão roda é o default do
+    motor. `requested=None` é o que separa "a sua troca não pegou" de "ninguém
+    escolheu nada" — a UI não pode dar a entender que alguém pediu isto.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    status_path = _statusline_do_hiro(app, "xhigh")
+
+    try:
+        with TestClient(app) as client:
+            effort = client.get("/api/agents/hiro/painel").json()["effort"]
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert effort["value"] == "xhigh"
+    assert effort["requested"] is None
+
+
+def test_agent_painel_kimi_sem_statusline_cai_no_pedido(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Sessão sem statusline legível volta ao pedido, com a ressalva de sempre."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    app.state.db._update_agent_codex_state("hiro", kimi_reasoning_effort="high")
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/hiro/painel").json()["effort"]
+
+    assert effort["value"] == "high"
+    assert effort["requested"] is None
+    assert effort["source"] == "agent_state.kimi_reasoning_effort"
+    assert effort["session_may_diverge"] is True
+
+
 def test_agent_painel_kimi_effort_rejeita_medium(tmp_path: Path, monkeypatch) -> None:
     """Kimi (Hiro) — medium/xhigh não existem no motor (só low/high/max)."""
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})

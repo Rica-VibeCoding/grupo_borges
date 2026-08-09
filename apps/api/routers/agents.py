@@ -434,10 +434,11 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             kimi_usages = await _get_kimi_usages(kimi_api_key)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
-        # Kimi: effort persistido em agent_state (env var de boot), não o
-        # settings.json global — senão o card do Hiro mostraria o effort dos
-        # agentes Anthropic e os 5 níveis que o motor não tem.
-        asyncio.to_thread(_build_kimi_painel_effort, agent)
+        # Kimi: o pedido mora em agent_state (vira env var no próximo boot), mas
+        # o nível em vigor é o que a statusline da sessão reporta — o settings.json
+        # global mostraria o effort dos agentes Anthropic e os 5 níveis que o
+        # motor não tem.
+        asyncio.to_thread(_build_kimi_painel_effort, agent, cc_status)
         if is_kimi
         else asyncio.to_thread(_build_claude_painel_effort, agent, cc_status),
         asyncio.to_thread(_read_agent_permission),
@@ -794,15 +795,41 @@ def _build_codex_painel_effort(
     )
 
 
-def _build_kimi_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
-    value = agent.get("kimi_reasoning_effort")
-    if value not in _KIMI_PAINEL_ALLOWED_EFFORTS:
-        value = None
+def _build_kimi_painel_effort(
+    agent: dict[str, Any], cc_status: _CCStatus
+) -> AgentPainelEffort:
+    """O nível em vigor na sessão, com o pedido ao lado quando divergem.
+
+    O Kimi roda dentro do Claude Code, então a statusline dele reporta o esforço
+    vivo igual à de qualquer agente Anthropic. O `agent_state` guarda o pedido,
+    que o `subir-frota.sh` transforma em `CLAUDE_CODE_EFFORT_LEVEL` no boot
+    seguinte — e quando essa leitura falha na janela de boot, o `unset` deixa a
+    sessão no default do CC sem ninguém saber. Servir o pedido esconderia
+    exatamente esse caso.
+
+    O valor lido NÃO é filtrado pela trinca do motor: `xhigh` é um nível que o
+    seletor não oferece e que a sessão do Hiro de fato roda. Mostrar o estado
+    verdadeiro não obriga a poder pedi-lo — `allowed` segue sendo low/high/max.
+    """
+    requested = agent.get("kimi_reasoning_effort")
+    if requested not in _KIMI_PAINEL_ALLOWED_EFFORTS:
+        requested = None
+
+    effective = _cc_effort_level(cc_status.payload)
+    if effective is None or cc_status.path is None:
+        return AgentPainelEffort(
+            value=requested,
+            allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
+            source="agent_state.kimi_reasoning_effort",
+            session_may_diverge=True,
+        )
+
     return AgentPainelEffort(
-        value=value,
+        value=effective,
         allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
-        source="agent_state.kimi_reasoning_effort",
-        session_may_diverge=True,
+        source=str(cc_status.path),
+        session_may_diverge=cc_status.fell_back,
+        requested=requested,
     )
 
 
