@@ -1,14 +1,12 @@
 import { notFound } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
-import { AppShell } from '@/components/shell/app-shell';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
-import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
-import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
+import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
 
@@ -52,9 +50,9 @@ function Painel({
 }: {
   agente: Agent;
   fecharHref: string;
-  /** Valor do servidor. O `BlocoDeAcoes` usa como fallback e prefere o
-   *  otimista quando está dentro do `PainelProvider` — é o que faz a re-busca
-   *  do `/painel` começar no frame do clique, não 2s depois. */
+  /** Fallback da URL. O `BlocoDeAcoes` prefere o valor otimista quando está
+   *  dentro do `PainelProvider` — é o que faz a re-busca do `/painel` começar
+   *  no frame do clique, não 2s depois. */
   painelAberto: boolean;
 }) {
   return (
@@ -149,26 +147,15 @@ export default async function AgentePage({
 }) {
   const [{ slug }, sp] = await Promise.all([params, searchParams]);
   const fleet = await fetchFleet();
-  const agora = Math.floor(Date.now() / 1000);
   const agente = fleet.agents.find((a) => a.slug === slug);
 
   if (!agente) notFound();
 
-  const painelAberto = typeof sp.painel === 'string' && sp.painel.length > 0;
-  const navAberta = sp.nav === 'aberto';
   const fecharHref = `/agente/${slug}`;
   const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
 
   return (
-    <AppShell
-      nav={<TropaAoVivo slugSelecionado={slug} agora={agora} compacta />}
-      navAberta={navAberta}
-      fecharNavHref={fecharHref}
-      drawer={<Painel agente={agente} fecharHref={fecharHref} painelAberto={painelAberto} />}
-      painelAberto={painelAberto}
-      fecharPainelHref={fecharHref}
-      rotuloPainel="detalhes do agente"
-    >
+    <>
       {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
           painel à direita. §12.3/§13: dois controles na mesma faixa. */}
       <BarraDeTelas
@@ -177,10 +164,10 @@ export default async function AgentePage({
         // otimista, não pelo que a URL já refletiu.
         abrirNavHref={`${fecharHref}?nav=aberto`}
         fecharNavHref={fecharHref}
-        navAberta={navAberta}
+        navAberta={false}
         hrefAbrirPainel={`${fecharHref}?painel=detalhes`}
         hrefFecharPainel={fecharHref}
-        painelAberto={painelAberto}
+        painelAberto={false}
       />
 
       {/* Aqui morava o cabeçalho de identidade — retrato, nome e estado — e a
@@ -228,6 +215,17 @@ export default async function AgentePage({
           `app/api/regua/route.ts`: existe porque o Safari do iPhone é o único
           motor que eu não consigo rodar aqui. */}
       {sp.diag === '1' ? <Regua /> : null}
-    </AppShell>
+
+      {/* O shell agora vive no layout persistente. A gaveta continua na folha
+          porque seus campos dependem do agente da página; como é `fixed`, ela
+          conserva a mesma superfície visual fora do fluxo do palco. */}
+      <GavetaPainel
+        fecharHref={fecharHref}
+        rotulo="detalhes do agente"
+        aberto={false}
+      >
+        <Painel agente={agente} fecharHref={fecharHref} painelAberto={false} />
+      </GavetaPainel>
+    </>
   );
 }

@@ -38,9 +38,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   createContext,
+  Suspense,
   useContext,
   useOptimistic,
   useTransition,
@@ -69,16 +70,30 @@ const LIMITE_NAVEGACAO_MS = 1_200;
  *  painel), e um contexto só forçaria um estado compartilhado que a URL não tem.
  *  O preço é um provider a mais na árvore; o ganho é que nenhuma abertura mexe
  *  na outra. */
-function criaSuperficie() {
+function criaSuperficie(parametro: 'nav' | 'painel') {
   const Ctx = createContext<SuperficieCtx | null>(null);
 
   /** O `AppShell` envolve a árvore nisto. Rota que não tem a superfície
    *  simplesmente não consome o contexto, e o provider custa um nó e nada
    *  além. */
   function Provider({ aberto, children }: { aberto: boolean; children: ReactNode }) {
+    return (
+      <Suspense fallback={<Ctx.Provider value={null}>{children}</Ctx.Provider>}>
+        <ProviderComUrl aberto={aberto}>{children}</ProviderComUrl>
+      </Suspense>
+    );
+  }
+
+  function ProviderComUrl({ aberto, children }: { aberto: boolean; children: ReactNode }) {
+    const searchParams = useSearchParams();
+    const abertoDaUrl = searchParams
+      ? parametro === 'nav'
+        ? searchParams.get('nav') === 'aberto'
+        : searchParams.get('painel') !== null && searchParams.get('painel') !== ''
+      : aberto;
     const router = useRouter();
     const [, emTransicao] = useTransition();
-    const [abertoOtimo, marcaOtimo] = useOptimistic(aberto);
+    const [abertoOtimo, marcaOtimo] = useOptimistic(abertoDaUrl);
 
     /**
      * Rede de segurança da navegação — 02/08.
@@ -113,8 +128,8 @@ function criaSuperficie() {
   return { Ctx, Provider };
 }
 
-const painel = criaSuperficie();
-const tropa = criaSuperficie();
+const painel = criaSuperficie('painel');
+const tropa = criaSuperficie('nav');
 
 export const PainelProvider = painel.Provider;
 export const NavProvider = tropa.Provider;

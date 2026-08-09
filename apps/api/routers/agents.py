@@ -33,7 +33,7 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncGenerator, Literal, NamedTuple, get_args
+from typing import Annotated, Any, AsyncGenerator, Literal, NamedTuple, get_args
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
@@ -1676,6 +1676,20 @@ _MESSAGES_STREAM_LIMIT_MAX = 500
 # consegue pedir). Só morde junto com `recentes=1` — sem ele o `limit` continua
 # capado em `_MESSAGES_STREAM_LIMIT_MAX` e nada muda para quem já está no ar.
 _MESSAGES_STREAM_REPLAY_LIMIT_MAX = 5_000
+# Teto por RESULTADO DE FERRAMENTA, em caracteres. Medido em 09/08 no replay do
+# `daniel`: 1005 mensagens somam 4,67 MB, mas a mediana é 1,4 KB e SEIS
+# `tool_result` (0,8% do total) carregam metade do peso — o maior tem 360 mil
+# caracteres. No cliente isso vira 3,6s de JS bloqueado em 49 long tasks contra
+# 50ms de um agente leve, e o Rica abre o feed pelo túnel, no celular.
+#
+# Cortar é invisível: TODOS os renderers do feed já param em
+# `LINHAS_DE_PRIMEIRA = 120` (shell-output, file-content, fetch-result,
+# agent-result, linha-execucao). 32 mil caracteres continuam sendo várias
+# vezes o que o "ver tudo" chega a mostrar.
+#
+# Default 0 = NÃO corta. O v1 (`apps/web`) consome este mesmo endpoint e é a
+# tela que o Rica usa todo dia — quem pede o corte é quem passa o parâmetro.
+_MESSAGES_STREAM_MAX_RESULT_CHARS_DEFAULT = 0
 _MESSAGES_STREAM_POLL_S = 0.25
 _MESSAGES_STREAM_HEARTBEAT_S = 15.0
 _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S = 10.0
@@ -1851,6 +1865,83 @@ async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
     return EventSourceResponse(_pane_stream())
 
 
+def _corta_texto(texto: str, max_chars: int) -> str:
+    """Corta preservando o COMEÇO: é o topo do resultado que o feed desenha."""
+    omitidos = len(texto) - max_chars
+    return f"{texto[:max_chars]}\n\n[… {omitidos} caracteres omitidos pelo cockpit]"
+
+
+def _corta_resultados_grandes(canonical: dict[str, Any], max_chars: int) -> None:
+    """Encolhe resultado de ferramenta NO LUGAR, antes de virar bytes na rede.
+
+    Duas coisas engordam o replay, e a maior delas eu tinha chutado errado:
+
+    1. **Imagem em base64.** Medido em 09/08 no `daniel`: cinco imagens somam
+       1,15 MB — 27% de um replay de 4,28 MB. E o feed **não desenha nenhuma**:
+       `renderers/file-content.ts` marca o resultado como `binario` e devolve
+       `conteudo: ''`, mostrando só o aviso de arquivo binário; o `.tsx` não tem
+       `<img>` nem `src`. Ou seja, esse megabyte atravessa o túnel para o
+       navegador jogar fora. Some o `data` e a tela fica idêntica.
+
+    2. **Texto muito longo.** Todos os renderers param em
+       `LINHAS_DE_PRIMEIRA = 120`, então o que passa de `max_chars` (32 mil, com
+       folga de sobra sobre o "ver tudo") nunca chega à tela.
+
+    Fala do Rica, resposta do assistente e `thinking` passam inteiros por mais
+    longos que sejam: o peso do feed nunca esteve na conversa.
+
+    A varredura é recursiva porque a mesma imagem aparece em dois lugares com
+    formatos diferentes — `message.content[].content[]` e o espelho
+    `tool_use_result` (que é dict, não string, ao contrário do que o nome
+    sugere).
+    """
+    if max_chars <= 0:
+        return
+
+    def varre(no: Any) -> None:
+        if isinstance(no, dict):
+            fonte = no.get("source")
+            if (
+                no.get("type") == "image"
+                and isinstance(fonte, dict)
+                and isinstance(fonte.get("data"), str)
+            ):
+                # Mantém `type`/`media_type`: quem classifica olha a forma, não
+                # os bytes. O que sai é só a carga que ninguém desenha.
+                fonte["data"] = ""
+                return
+            for valor in no.values():
+                varre(valor)
+        elif isinstance(no, list):
+            for item in no:
+                varre(item)
+
+    message = canonical.get("message")
+    if isinstance(message, dict):
+        partes = message.get("content")
+        if isinstance(partes, list):
+            for parte in partes:
+                if not isinstance(parte, dict) or parte.get("type") != "tool_result":
+                    continue
+                varre(parte)
+                conteudo = parte.get("content")
+                if isinstance(conteudo, str) and len(conteudo) > max_chars:
+                    parte["content"] = _corta_texto(conteudo, max_chars)
+                elif isinstance(conteudo, list):
+                    for bloco in conteudo:
+                        if not isinstance(bloco, dict):
+                            continue
+                        texto = bloco.get("text")
+                        if isinstance(texto, str) and len(texto) > max_chars:
+                            bloco["text"] = _corta_texto(texto, max_chars)
+
+    resultado = canonical.get("tool_use_result")
+    if isinstance(resultado, str) and len(resultado) > max_chars:
+        canonical["tool_use_result"] = _corta_texto(resultado, max_chars)
+    else:
+        varre(resultado)
+
+
 def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | None:
     payload = event.get("payload")
     if not isinstance(payload, dict):
@@ -1930,6 +2021,12 @@ async def stream_agent_messages(
     limit: int = Query(default=_MESSAGES_STREAM_LIMIT_DEFAULT, ge=1),
     since_id: int = Query(default=0, ge=0),
     recentes: bool = Query(default=False),
+    # `Annotated` e não `Query(default=…)`: o default fica sendo um int de
+    # verdade, então a suíte — que chama esta função direto, sem o FastAPI
+    # resolver os parâmetros — recebe 0 em vez de um objeto `Query`.
+    max_result_chars: Annotated[
+        int, Query(ge=0, alias="maxResultChars")
+    ] = _MESSAGES_STREAM_MAX_RESULT_CHARS_DEFAULT,
 ) -> EventSourceResponse:
     """SSE canônico dos eventos JSONL de conversa de um agente.
 
@@ -1996,6 +2093,7 @@ async def stream_agent_messages(
                 last_id = max(last_id, int(event["id"]))
                 canonical = _canonical_jsonl_message_event(event)
                 if canonical is not None:
+                    _corta_resultados_grandes(canonical, max_result_chars)
                     yield _sse_json("message", canonical)
                 if index % _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY == 0:
                     now = time.monotonic()
@@ -2064,6 +2162,7 @@ async def stream_agent_messages(
                     last_id = max(last_id, int(event["id"]))
                     canonical = _canonical_jsonl_message_event(event)
                     if canonical is not None:
+                        _corta_resultados_grandes(canonical, max_result_chars)
                         yield _sse_json("message", canonical)
 
                 now = time.monotonic()

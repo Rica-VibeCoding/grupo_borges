@@ -79,6 +79,20 @@ export type CanarioStreamController = {
   dispose(): void;
 };
 
+/** Teto por RESULTADO DE FERRAMENTA pedido ao servidor, em caracteres.
+ *
+ *  Medido em 09/08 no replay do `daniel`: 1005 mensagens somam 4,67 MB, mas a
+ *  mediana é 1,4 KB — SEIS `tool_result` carregam metade do peso, e o maior tem
+ *  360 mil caracteres. No navegador isso vira 3,6s de JS bloqueado em 49 long
+ *  tasks, contra 50ms de um agente leve; o Rica abre o feed pelo túnel, no
+ *  celular.
+ *
+ *  32 mil não corta nada que a tela mostre: todos os renderers param em
+ *  `LINHAS_DE_PRIMEIRA = 120`, e o "ver tudo" continua com folga de sobra. O
+ *  corte é do V2 — o v1 lê o mesmo endpoint sem passar o parâmetro e recebe
+ *  tudo, como sempre recebeu. */
+const TETO_RESULTADO_CHARS = 32_000;
+
 export const INITIAL_CANARIO_STREAM_STATE: CanarioStreamState = {
   messages: [],
   isRunning: false,
@@ -94,7 +108,10 @@ function buildStreamUrl(
   sinceId: number | undefined,
   recentes: boolean,
 ): string {
-  const params = new URLSearchParams({ limit: String(limit) });
+  const params = new URLSearchParams({
+    limit: String(limit),
+    maxResultChars: String(TETO_RESULTADO_CHARS),
+  });
   if (sessionId) params.set('sessionId', sessionId);
   if (sinceId !== undefined) params.set('since_id', String(sinceId));
   // Só na PRIMEIRA conexão. Em reconexão existe cursor, e aí o que se quer é
