@@ -217,11 +217,9 @@ function BotaoRelancar({
 
 export type BlocoDeAcoesProps = {
   agentSlug: string;
-  /** O valor do SERVIDOR (`?painel=…`), usado no SSR e como fallback fora do
-   *  `PainelProvider`. Dentro dele quem manda é o valor otimista — ver o corpo
-   *  do componente. O painel fica SEMPRE montado (é o que compra a animação de
-   *  saída da §17), então este booleano é a única forma de o bloco saber que
-   *  voltou à tela — e cada volta re-busca. */
+  /** Fallback usado apenas fora do `PainelProvider`. Hoje o call-site passa
+   *  sempre `false`; dentro do provider, o gatilho real da re-busca é o valor
+   *  otimista do contexto. */
   aberto: boolean;
 };
 
