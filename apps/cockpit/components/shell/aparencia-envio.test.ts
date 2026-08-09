@@ -7,7 +7,7 @@ import {
   rotulaAcao,
   type FaseEnvio,
 } from './aparencia-envio.ts';
-import { descreveMotor, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
+import { descreveMotor, desfechoDaTrocaDeEsforco, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
 
 const TODAS: FaseEnvio[] = [
   'ocioso',
@@ -264,5 +264,37 @@ describe('motor — modelo e esforço dentro do composer', () => {
   it('o texto do controle cabe numa linha e some o esforço quando não há', () => {
     assert.equal(textoDoMotor(leMotor({ modeloSessao: 'claude-opus-5', esforco: 'xhigh' })), 'Opus 5 · extra alto');
     assert.equal(textoDoMotor(leMotor({ modeloSessao: 'claude-opus-5' })), 'Opus 5');
+  });
+});
+
+describe('desfecho da troca de esforço — 200 não é sinônimo de aplicado', () => {
+  it('written false ou entrega tmux falha é falha de entrega', () => {
+    assert.equal(desfechoDaTrocaDeEsforco({ written: false }), 'entrega-falhou');
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: false }),
+      'entrega-falhou',
+    );
+  });
+
+  it('entregue mas não confirmado é pendente — o card NÃO pode pintar o valor pedido', () => {
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: true, confirmed: false }),
+      'pendente',
+    );
+  });
+
+  it('confirmado é o único que aplica', () => {
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: true, confirmed: true }),
+      'aplicado',
+    );
+  });
+
+  it('Codex/Kimi não têm entrega tmux: campos null não derrubam a troca gravada', () => {
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: null, confirmed: null }),
+      'aplicado',
+    );
+    assert.equal(desfechoDaTrocaDeEsforco({ written: true }), 'aplicado');
   });
 });

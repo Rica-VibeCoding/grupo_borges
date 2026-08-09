@@ -99,6 +99,26 @@ export function rotulaEsforco(esforco: string | null | undefined): string | null
   return ESFORCO[esforco] ?? esforco;
 }
 
+/** No que a troca de esforço desaguou DE FATO, lido do corpo do PATCH. O back
+ *  é honesto: 200 não é sinônimo de aplicado — o /effort pode não ter sido
+ *  entregue à sessão tmux, ou ter sido entregue e ficado pendente porque o
+ *  agente estava no meio de um turno (a troca enfileira; o diálogo de
+ *  confirmação do CC pode até recusá-la). Só a confirmação da sessão pinta o
+ *  card. */
+export type DesfechoEsforco = 'aplicado' | 'entrega-falhou' | 'pendente';
+
+export function desfechoDaTrocaDeEsforco(resposta: {
+  written: boolean;
+  tmux_delivered?: boolean | null;
+  confirmed?: boolean | null;
+}): DesfechoEsforco {
+  // `=== false` e não falsy: os caminhos Codex/Kimi não têm entrega tmux — o
+  // campo chega null/ausente e NÃO pode derrubar uma troca que foi só gravada.
+  if (!resposta.written || resposta.tmux_delivered === false) return 'entrega-falhou';
+  if (resposta.confirmed === false) return 'pendente';
+  return 'aplicado';
+}
+
 export function leMotor(entrada: {
   modeloSessao?: string | null;
   modeloPadrao?: string | null;

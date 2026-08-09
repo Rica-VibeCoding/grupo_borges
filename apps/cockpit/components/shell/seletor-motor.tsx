@@ -15,7 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { rotulaEsforco, rotulaModelo, type Motor } from './motor';
+import { desfechoDaTrocaDeEsforco, rotulaEsforco, rotulaModelo, type Motor } from './motor';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 
 type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
@@ -105,12 +105,20 @@ export function SeletorMotor({ agentSlug, agentName, motor }: SeletorMotorProps)
     try {
       const resposta = await patchAgentEffort(agentSlug, valor);
       // 200 não é sinônimo de aplicado — o back sinaliza no corpo, igual à
-      // troca de modelo. Hoje o sinal é `written` (a gravação do arquivo de
-      // config); quando o PATCH passar a também ENTREGAR `/effort` na sessão
-      // tmux, a checagem da entrega entra neste mesmo ponto, espelhando o
-      // `tmux_delivered` de `trocarModelo` e o aviso de entrega falha.
-      if (!resposta.written) {
-        mostrarAviso('Não foi possível aplicar o esforço.');
+      // troca de modelo. A máquina de estados mora em motor.ts (testada);
+      // aqui ficam os textos. Os dois caminhos de não-aplicado NÃO fecham o
+      // menu e NÃO pintam o card com o valor pedido — enquanto a sessão não
+      // confirma, o valor honesto é o antigo, e o painel converge sozinho
+      // quando a statusline viva registrar a troca.
+      const desfecho = desfechoDaTrocaDeEsforco(resposta);
+      if (desfecho === 'entrega-falhou') {
+        mostrarAviso('Não foi possível entregar a troca ao agente.');
+        return;
+      }
+      if (desfecho === 'pendente') {
+        mostrarAviso(
+          'A troca foi entregue, mas o agente está no meio de um turno e ainda não a confirmou. O card segue no nível atual até a sessão confirmar.',
+        );
         return;
       }
       setPainel((atual) =>
