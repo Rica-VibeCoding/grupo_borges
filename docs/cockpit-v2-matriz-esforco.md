@@ -1,4 +1,4 @@
-# MATRIZ DE ESFORÇO POR MOTOR — como cada plataforma da frota pensa "esforço" (09/08/2026)
+# MATRIZ DE ESFORÇO POR MOTOR — como cada plataforma da frota pensa "esforço" (v2, 09/08/2026)
 
 > Pedido do Rica (09/08): levantar, com fonte, para cada motor da frota — Claude Code,
 > Codex, Kimi K3 e DeepSeek via OpenCode Go — os níveis reais de esforço, como se aplica,
@@ -6,215 +6,319 @@
 > vira a fase 2 da refatoração: **cada motor com níveis e mecanismo próprios**, em vez do
 > tratamento desencontrado de hoje.
 >
-> Régua: fonte citada (doc oficial, código do produto, ou comando que eu rodei e o que ele
-> respondeu) ou marcado como **não confirmado**. Nada inferido de graça.
+> **v2 (09/08, noite) — por que esta segunda passada existe:** a v1 nasceu desatualizada
+> porque a Tara estava corrigindo o backend enquanto o Canário documentava. O Rica conferiu
+> o código e deu a régua: **todo item marcado como resolvido cita onde se conferiu, com
+> caminho e linha — não confiar na palavra de ninguém** (ele mesmo errou hoje ao declarar
+> provado um teste no alvo errado). Esta versão reconferiu cada item no código atual do
+> repositório principal (`/home/clawd/repos/grupo_borges`, onde a produção e a Tara vivem;
+> o worktree canário espelha). Onde o Rica descreveu um estado e o código diz outro, está
+> marcado como **furo** — o caminho do Rica pediu isso explicitamente.
 >
 > Frente do Daniel e da Tara ficam paradas aqui: este documento é pesquisa, sem mudança de
 > código. Versões testadas: `claude` 2.1.226, `codex-cli` 0.146.0.
 
 ## 1. Em uma frase
 
-O "seletor de esforço" do cockpit não é um knob único: **cada motor tem níveis, mecanismo de
-aplicação e fonte de verdade próprios** — e hoje o cockpit trata três motores como se fossem
-um (um arquivo `~/.claude/settings.json` compartilhado) e dois como "persistência de próxima
-execução", sem nunca ler o valor que a sessão está usando de fato.
+O "seletor de esforço" do cockpit não é um knob único: **cada motor tem níveis, mecanismo
+de aplicação e fonte de verdade próprios**. Desde a v1, o Claude Code deixou de escrever o
+`~/.claude/settings.json` global: o PATCH agora **dirige `/effort` por tmux** (aplica ao
+vivo) e o painel **lê o efetivo da statusline**, não o arquivo. O que antes era a queixa
+central da v1 (§4 itens 1–3) morreu para o CC e **virou o ponto mais perigoso**: a troca em
+sessão viva pode **deixar o agente travado num modal de confirmação** que o cockpit não vê.
 
-## 2. A matriz — as 5 perguntas do Rica, por motor
+## 2. A matriz — as 5 perguntas do Rica, por motor (atualizada)
 
 | Motor (agentes) | Níveis reais | Como se aplica | Sessão viva? | Onde persiste | Como se lê o efetivo |
 |---|---|---|---|---|---|
-| **Claude Code** (Daniel, Felipe, Barsi, Lucas, Vinicius, Pavan) | `low, medium, high, xhigh, max` por modelo; `auto` = reset pro default (não é nível de raciocínio) | `/effort <nível>` (aplica + grava default); `CLAUDE_CODE_EFFORT_LEVEL` no boot; `--effort`; `effortLevel` no settings.json | **Sim** — `/effort` aplica na hora (low/medium/high/xhigh) e persiste; `max` só na sessão | `effortLevel` no settings.json do escopo em que o `/effort` rodou. **Hoje: um único `~/.claude/settings.json`, `effortLevel: xhigh`, compartilhado por todos** | statusline → `/tmp/cc-status-<sid>.json` → `effort.level` (reflete a sessão viva, inclusive mudanças mid-session). O painel lê o settings.json, não isto |
-| **Codex** (Tara, `gpt-5.6-*`) | `low, medium, high, xhigh, max` (model-dependent; docs também citam `none`/`minimal`) | `-c model_reasoning_effort=<v>` por invocação; `model_reasoning_effort` no `~/.codex/config.toml`. **Não há toggle em runtime** | N/A — `codex exec` é processo one-shot por delegação; a flag vale naquela execução ("próximo boot" = próxima delegação) | config.toml (default, hoje `max`); `agent_state.codex_reasoning_effort` (o pedido do cockpit); `threads.reasoning_effort` (o que a thread rodou) | `~/.codex/state_5.sqlite` → `threads.reasoning_effort` (já lido pelo `codex_reader`, mas o painel usa `agent_state`) |
-| **Kimi K3** (Hiro) | canônico `low, high, max`; endpoint aceita aliases (`max/ultra/xhigh`→max, `high/medium`→high, `low/minimum/light`→low) | `CLAUDE_CODE_EFFORT_LEVEL` no boot (lido pelo CLI claude) → adaptive thinking `output_config.effort` no request. `/effort` em sessão viva também vale (mesmo CLI) | env var = só boot; `/effort` = viva (não é dirigido pelo cockpit hoje) | `agent_state.kimi_reasoning_effort` → `subir_hiro` exporta a env var no boot. Quando vazio, o CLI cai no `settings.json` global (vazamento) | statusline `effort.level` (o que o CLI enviou). Mapa Kimi: `xhigh`→max, `high`/`medium`→high, `low`→low |
-| **DeepSeek V4-Flash via OpenCode Go** (Canário) | `low, high, xhigh, max` + `none` (off). Para o flash: `low`→low, `high`→high, `xhigh`→high, `max`→max. É **dica**, não knob exato | o CLI claude lê `effortLevel` do settings global no boot (xhigh) → `output_config.effort` → `https://opencode.ai/zen/go/v1/messages`. `CLAUDE_CODE_EFFORT_LEVEL` **não** é exportado no boot | igual CC (mesmo CLI) — `/effort` aplicaria; não é dirigido | **nada próprio** — herda o `settings.json` global (vazamento); `agent_state.canarinho` vazio | statusline `effort.level` (o que o CLI crê; hoje xhigh → DeepSeek aplica **high** no flash). Se o OpenCode Go repassa o campo: **não confirmado** |
+| **Claude Code** (Daniel, Felipe, Barsi, Lucas, Vinicius, Pavan) | `low, medium, high, xhigh, max` por modelo; `auto` = reset pro default (não é nível); `ultracode` = modo CC (envia xhigh + orquestração), session-only | PATCH `/effort` → **`/effort <v>` via tmux** (`agents.py:500`), Enter separado (`agents.py:506`), confirmação via `_poll_claude_effort` (`agents.py:820`) | **Sim — dirigido ao vivo agora** | o `/effort` do CLI grava o default na settings do escopo da sessão (medium/high/xhigh); `max`/`ultracode` session-only; env var lida no boot | statusline → `/tmp/cc-status-<sid>.json` → `effort.level`; painel lê **isto primeiro** (`agents.py:951`), settings global é só fallback (`agents.py:970`) |
+| **Codex** (Tara, `gpt-5.6-*`) | `low, medium, high, xhigh, max` (model-dependent; `none`/`minimal` citados na doc) | `-c model_reasoning_effort=<v>` por invocação (persistido em `agent_state`); `model_reasoning_effort` no `~/.codex/config.toml`. **Sem toggle em runtime** | N/A — `codex exec` é processo one-shot; "próximo boot" = próxima delegação | `agent_state.codex_reasoning_effort` (o pedido do cockpit); config.toml (default); `threads.reasoning_effort` (o que rodou) | `state_5.sqlite → threads.reasoning_effort` (já lido pelo `codex_reader`, mas o painel usa `agent_state` — **ver furo no item 4**) |
+| **Kimi K3** (Hiro) | canônico `low, high, max`; aliases (`max/ultra/xhigh`→max, `high/medium`→high, `low/minimum/light`→low) | PATCH `/effort` grava `agent_state.kimi_reasoning_effort` → `subir_hiro` exporta `CLAUDE_CODE_EFFORT_LEVEL` no boot (`subir-frota.sh:141-153`) | env var = só boot; `/effort` do CLI funcionaria (mesmo CLI) mas **não é dirigido** | `agent_state.kimi_reasoning_effort`; vazio → cai no settings global (vazamento) | statusline `effort.level` (o que o CLI enviou); painel lê `agent_state` (`agents.py:758`) — o **pedido**, não o efetivo |
+| **DeepSeek V4-Flash via OpenCode Go** (Canário) | `low, high, xhigh, max` + `none` (off); para o flash: `low`→low, `high`→high, `xhigh`→**high**, `max`→max. Dica, não knob | CLI claude lê `effortLevel` do settings global no boot (xhigh) → `output_config.effort` → `opencode.ai/zen/go`. `CLAUDE_CODE_EFFORT_LEVEL` **não** é exportada no boot | igual CC (mesmo CLI) — `/effort` aplicaria; não é dirigido | **nada próprio** — herda o settings global (vazamento); `agent_state.canarinho` vazio | statusline `effort.level` (o que o CLI crê; hoje xhigh → DeepSeek aplica **high** no flash). Se o Go repassa: **não confirmado** |
 
 ## 3. Detalhe por motor
 
 ### 3.1 Claude Code
 
-- **Níveis.** A doc de model-config lista por modelo: Fable 5 / Opus 5 / Sonnet 5 / Opus 4.8 /
-  Opus 4.7 → `low, medium, high, xhigh, max` (a frota usa Opus 4.8/5). Default da API: `high`
-  ("produces exactly the same behavior as omitting the effort parameter"). `auto` é **sentinela
-  de reset pro default do modelo** (válido em `/effort auto` e em `CLAUDE_CODE_EFFORT_LEVEL=auto`),
-  **não** é nível de raciocínio. `ultracode` é modo do CC (envia `xhigh` + orquestração),
-  session-only. Fonte: https://code.claude.com/docs/en/model-config.md
-- **Aplicar.** `/effort <low|medium|high|xhigh>` muda a sessão na hora **e** grava
-  `effortLevel` como default das próximas. Provado na sessão `lucas` (respondeu "Set effort
-  level to high (saved as your default for new sessions)" e a statusline mudou). `/effort max`
-  vale só na sessão atual. Precedência documentada: `CLAUDE_CODE_EFFORT_LEVEL` (env) >
-  `/effort`/settings > default do modelo. Fonte: https://code.claude.com/docs/en/settings.md
-- **Sessão viva?** Sim para `/effort`. Env var e settings só no boot.
-- **Onde persiste.** `effortLevel` em qualquer escopo de settings (local > projeto > user).
-  **Verificado na máquina:** nenhum projeto da frota tem `effortLevel`; o único é o global
-  `~/.claude/settings.json` → `effortLevel: xhigh`. Ou seja, o seletor de um agente hoje
-  escreve **o mesmo arquivo que todos os 6 leem** — e o Canário também.
-- **Ler o efetivo.** A statusline do CC expõe `effort.level` = **valor da sessão viva, incluindo
-  mudanças mid-session** ("Absent when the current model does not support the effort
-  parameter"). O cockpit **já lê** esse arquivo (`_load_cc_status`, `agents.py:697`) para
-  contexto/quotas — mas para effort lê o `settings.json` global (`_read_agent_effort`,
-  `agents.py:776`). Fonte: https://code.claude.com/docs/en/statusline.md
-- **Transmissão ao modelo.** Vira `output_config.effort` no corpo Anthropic Messages. Com
-  `ANTHROPIC_BASE_URL` customizado, o CC só envia se reconhecer o model ID como effort-capable
-  (padrões conhecidos) — para IDs custom, a doc aponta `CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1`
-  para forçar. A statusline do k3 e do deepseek-reporta effort, então o CLI os trata como
-  capazes. Fonte: https://code.claude.com/docs/en/env-vars.md e llm-gateway-protocol.md
-
-**Snapshot real (09/08 15:33, statusline das sessões vivas):** 6× `claude-opus-5` em `xhigh`,
-1× `claude-opus-5` em `max`, `k3` (Hiro) em `xhigh`, `deepseek-v4-flash[1m]` (Canário) em
-`xhigh`. O painel mostra `xhigh` para todos (o settings global) — o agente em `max` fica
-invisível.
+- **Níveis.** `low, medium, high, xhigh, max` por modelo; default da API `high` (mesmo que
+  omitido). `auto` é sentinela de reset pro default do modelo. `ultracode` é modo do CC
+  (envia `xhigh` + orquestração), session-only. Fonte: https://code.claude.com/docs/en/model-config.md
+  (seções *Adjust effort level* e *Ultracode*).
+- **Aplicar — mudou desde a v1.** O PATCH `/effort` de um agente CC agora **não escreve mais
+  `~/.claude/settings.json`** — envia `/effort <v>` ao tmux da sessão (`agents.py:500`),
+  manda Enter separado (`agents.py:506`) e confirma pelo `effort.level` da statusline
+  (`_poll_claude_effort`, `agents.py:820`). Comentário do código, `agents.py:487-489`:
+  *"O próprio comando persiste o default para novas sessões; escrever `~/.claude/settings.json`
+  aqui seria redundante e vazaria a escolha para os outros agentes."* → **o item 1 da v1
+  morreu para o CC.** O resíduo é a leitura: `_read_agent_effort` (`agents.py:979`) ainda lê
+  o global como **fallback** quando a sessão não tem statusline (`agents.py:968-976`).
+- **Sessão viva.** Sim, dirigido ao vivo. Resposta do PATCH carrega `tmux_delivered` e
+  `confirmed` (`agents.py:522-523`): entregue ao tmux ≠ aplicado. A distinção é o cerne do
+  §3.5 (o modal).
+- **Persistência por nível** (doc model-config): `low/medium/high/xhigh` persistem entre
+  sessões quando setados em sessão interativa; **`max` é session-only** — "applies to the
+  current session only, except when set through the `CLAUDE_CODE_EFFORT_LEVEL` environment
+  variable"; **`ultracode` é session-only** também; **`settings.json`/`effortLevel` não
+  aceita `max` nem `ultracode`** — só `low|medium|high|xhigh` ("not accepted here"). Isto
+  **mata definitivamente o item 9 da v1** (gravar `max` no settings era duplamente errado:
+  o caminho de escrita morreu E a doc proíbe).
+- **Ler o efetivo.** `_build_claude_painel_effort` (`agents.py:951`) lê a statusline viva
+  primeiro; `session_may_diverge` = `stale` (statusline caiu em fallback ou passou de
+  `_AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS`). **O item 2 da v1 morreu para o CC** — o
+  painel não mostra mais o arquivo quando a sessão está viva.
+- **Transmissão ao modelo.** `output_config.effort` no corpo Anthropic Messages; com
+  `ANTHROPIC_BASE_URL` custom, o CC só envia se reconhecer o model ID como effort-capable —
+  a doc aponta `CLAUDE_CODE_ALWAYS_ENABLE_EFFORT=1` para forçar, e `_SUPPORTED_CAPABILITIES`
+  para declarar `effort`/`xhigh_effort`/`max_effort` em IDs custom. Fonte:
+  https://code.claude.com/docs/en/model-config.md (seção *Supported capabilities*).
 
 ### 3.2 Codex (Tara)
 
 - **Níveis.** A doc oficial da API aceita, por modelo, `none, minimal, low, medium, high,
-  xhigh, max` (default `medium` quando omitido, em gpt-5.5/5.6). O CLI/API da OpenAI mapeia
-  `model_reasoning_effort` pro parâmetro por-requisição. Fonte:
+  xhigh, max` (default `medium` quando omitido). Fonte:
   https://developers.openai.com/api/docs/guides/reasoning
 - **Aplicar.** `-c model_reasoning_effort=<v>` por invocação (o `tara-codex` injeta isso na
-  próxima exec, `scripts/tara-codex:161-168`) ou `model_reasoning_effort` no `~/.codex/config.toml`.
-  **Verificado no disco:** o config global está em `model_reasoning_effort = "max"`.
-- **Sessão viva?** N/A. `codex exec` é um processo one-shot por delegação; não existe toggle
-  em runtime. O painel persiste para a próxima execução — conceito certo para Codex, ao
-  contrário dos CLIs claude.
-- **Onde persiste.** Três lugares distintos: (a) config.toml (default global), (b)
-  `agent_state.codex_reasoning_effort` (o pedido do cockpit), (c) `threads.reasoning_effort`
-  em `~/.codex/state_5.sqlite` (o que a thread de fato rodou). **Verificado no DB:** threads
-  reais com `max` (gpt-5.6-terra/luna), `high`, `low`, `medium`, `xhigh` (gpt-5.3-codex) e vazio
-  (sem flag). **Prova de divergência:** `agent_state.tara.codex_reasoning_effort = high`, mas
-  as threads atuais rodam `max` — o painel mostra `high`, a Tara pensa em `max`.
-- **Ler o efetivo.** `state_5.sqlite → threads.reasoning_effort` da última thread. O
-  `codex_reader` já expõe isso (`CodexThread.reasoning_effort`, `codex_reader.py:59`) e o
-  `_build_codex_painel_contexto` usa `thread.model` — mas o **effort** do painel vem de
-  `agent_state` (`_build_codex_painel_effort`, `agents.py:655`), ignorando o efetivo que já
-  está na mão.
+  próxima exec) ou `model_reasoning_effort` no `~/.codex/config.toml` (verificado: o config
+  global está em `max`). PATCH `/effort` grava `agent_state.codex_reasoning_effort`
+  (`agents.py:462-470`); **não há toggle em runtime.**
+- **O buraco do wrapper — FURO no que o Rica descreveu.** O Rica disse que o item 4 foi
+  corrigido: *"`scripts/tara-codex`, por volta da linha 164, agora casa
+  `^(low|medium|high|xhigh|max)$` e tem comentário citando o codex 0.146+"*. **Verificado no
+  código dos dois worktrees (principal e canário, idênticos): `scripts/tara-codex:164` é
+  `if [[ "$persisted_effort" =~ ^(low|medium|high)$ ]]` — SEM `xhigh`, SEM `max`, e não há
+  comentário de versão de codex em lugar nenhum do arquivo.** O backend passou a aceitar
+  `xhigh`/`max` (`_CODEX_PAINEL_ALLOWED_EFFORTS` com `max`, `agents.py:85`), então o painel
+  agora **oferece** níveis que o wrapper **não injeta**: persistir `xhigh`/`max` grava no
+  `agent_state`, o painel mostra, e a próxima delegação roda **sem flag nenhuma** — no-op
+  silencioso, agora com o agravante de o painel permitir. **Este item continua vivo e é o
+  maior furo de consistência do Codex.** (Se a intenção era aceitar `max`, o wrapper precisa
+  da regex; se não, o backend deveria filtrar — decisão de fase 2.)
+- **Sessão viva?** N/A. `codex exec` é one-shot; o conceito certo é persistir para a próxima
+  delegação.
+- **Ler o efetivo.** `threads.reasoning_effort` em `~/.codex/state_5.sqlite` — o que a thread
+  rodou de fato. O `codex_reader` já expõe (`CodexThread.reasoning_effort`, `codex_reader.py:59`)
+  mas o painel usa `agent_state` (`_build_codex_painel_effort`, `agents.py:746`). **Divergência
+  demonstrada:** `agent_state` = `high`, threads rodam `max`.
 
 ### 3.3 Kimi K3 (Hiro)
 
-- **Níveis.** Canônico `low, high, max` (assinatura Kimi Code). O endpoint aceita aliases:
-  `max`/`ultra`/`xhigh`→max, `high`/`medium`→high, `low`/`minimum`/`light`→low; desconhecido
-  retorna 400. Default: `high` (managed). O comentário do código valida `low/high/max` via
-  `GET api.kimi.com/coding/v1/models` (19/07, `agents.py:79-82`). K3 pensa sempre (não há modo
-  sem thinking). Fonte: https://platform.kimi.ai/docs/guide/use-thinking-models
-- **Aplicar.** `CLAUDE_CODE_EFFORT_LEVEL` no boot — o `subir_hiro` lê
-  `kimi_reasoning_effort` do cockpit e exporta a env var antes de subir o CLI
-  (`ze-shared/scripts/subir-frota.sh:141-153`). O CLI claude traduz em adaptive thinking
-  (`thinking.type=adaptive` + `output_config.effort`) no request ao endpoint
-  `api.kimi.com/coding/`.
-- **Sessão viva?** A env var é de boot. Mas o `/effort` em sessão viva funciona no mesmo CLI —
-  "vale no próximo boot" é **escolha de implementação do cockpit** (ele não dirige `/effort`),
-  não limite do motor.
-- **Onde persiste.** `agent_state.kimi_reasoning_effort`. **Vazamento verificado:** quando a
-  env var não é setada (ou o valor persistido é inválido), o CLI cai no `settings.json` global
-  (`effortLevel: xhigh`) — o `unset CLAUDE_CODE_EFFORT_LEVEL` do `subir_hiro` protege contra env
-  var herdada, **não** contra o default do arquivo. **Prova:** `agent_state.hiro.kimi_reasoning_effort
-  = high`, mas a sessão viva do k3 reporta `xhigh` na statusline → Kimi mapeia `xhigh`→max.
-- **Ler o efetivo.** statusline `effort.level` (o que o CLI enviou). O mapa Kimi (xhigh→max,
-  medium/high→high, low→low) é o que o endpoint aplica.
+- **Níveis.** Canônico `low, high, max` (endpoint aceita aliases; default `high`). K3 pensa
+  sempre. Fonte: https://platform.kimi.ai/docs/guide/use-thinking-models
+- **Aplicar.** PATCH `/effort` grava `agent_state.kimi_reasoning_effort` (`agents.py:477-480`);
+  o `subir_hiro` exporta `CLAUDE_CODE_EFFORT_LEVEL` no boot. Comentário do código
+  (`agents.py:471-473`): *"Kimi pensa sempre; o nível é env var lida no boot — persistir no
+  settings.json global não teria efeito e ainda vazaria pros outros agentes. Vale no próximo
+  boot, como o modelo."*
+- **Sessão viva?** Não é dirigido. O `/effort` do CLI funcionaria (mesmo CLI do CC), mas o
+  cockpit não envia — **o item 7 da v1 continua vivo para o Kimi** (ao contrário do CC).
+- **Ler o efetivo.** statusline `effort.level` (o que o CLI enviou); painel lê `agent_state`
+  (`agents.py:758`) — o **pedido**. **Vazamento verificado:** quando a env var não é setada,
+  o CLI cai no settings global (`effortLevel: xhigh`) — o `unset` do `subir_hiro` protege
+  contra env var herdada, não contra o default do arquivo. **Item 6 da v1 segue vivo.**
 
 ### 3.4 DeepSeek V4-Flash via OpenCode Go (Canário)
 
-- **Níveis.** Doc oficial DeepSeek: `low, high, xhigh, max` + `none` (off, via Anthropic
-  `reasoning.effort`); default thinking on, esforço default `high`. Para `deepseek-v4-flash`
-  (o modelo do Canário): `low`→low, `high`→high, `xhigh`→**high**, `max`→max. **Effort é dica
-  mapeada pelo modelo**, não knob exato. Fonte: https://api-docs.deepseek.com/guides/thinking_mode
-- **Aplicar.** O `subir_canario` sobe o CLI claude com `ANTHROPIC_BASE_URL=https://opencode.ai/zen/go`
+- **Níveis.** `low, high, xhigh, max` + `none` (off); para `deepseek-v4-flash`: `low`→low,
+  `high`→high, `xhigh`→**high**, `max`→max. Effort é dica. Fonte:
+  https://api-docs.deepseek.com/guides/thinking_mode
+- **Aplicar.** `subir_canario` sobe o CLI claude com `ANTHROPIC_BASE_URL=opencode.ai/zen/go`
   e `ANTHROPIC_MODEL=deepseek-v4-flash[1m]`, **sem** `CLAUDE_CODE_EFFORT_LEVEL`
-  (`subir-frota.sh:170-205`). O CLI lê o `effortLevel` do settings global (xhigh) no boot e
-  envia `output_config.effort`. Statusline da sessão atual reporta `effort.level: xhigh`.
+  (`subir-frota.sh:170-205`). O CLI lê o `effortLevel` do settings global (xhigh) e envia
+  `output_config.effort`. Statusline da sessão atual reporta `effort.level: xhigh`.
 - **Sessão viva?** Igual CC (mesmo CLI) — `/effort` aplicaria; não é dirigido.
-- **Onde persiste.** Nada próprio. Herda o settings global (mesmo vazamento dos 6 CC).
-  `agent_state.canarinho` está vazio e o `agents.yaml:185-193` registra que o canarinho **não
-  tem `model_family`** — o backend o trata como Anthropic (mesmo gotcha que o Kimi teve antes
-  do DS-69).
-- **Ler o efetivo.** statusline `effort.level` diz o que o CLI crê (xhigh). O que o DeepSeek
-  aplica no flash: `xhigh`→**high** — ou seja, o "extra alto" que o painel mostraria é
-  efetivamente `high` no modelo. Para esforço `max` real seria preciso `max`.
-- **Não confirmado:** se o endpoint OpenCode Go repassa/mapeia o `output_config.effort` pro
-  `reasoning_effort` do DeepSeek. A doc oficial de providers do OpenCode Zen não menciona
-  `/v1/messages` nem effort; a evidência de mapeamento vem de bridges da comunidade e relato
-  de fórum. Também não confirmado: o plano "Go" aplica os mesmos níveis da doc DeepSeek direct.
+- **Onde persiste.** Nada próprio — herda o settings global (mesmo vazamento dos 6 CC).
+  `agents.yaml:191-193` registra que o canarinho **não tem `model_family`** — o backend o
+  trata como Anthropic (escala de 5 níveis + leitura de statusline). **Item 10 da v1 segue
+  vivo** (conferido no `agents.yaml` do principal, linha 191).
+- **Ler o efetivo.** statusline `effort.level` (o que o CLI crê; hoje xhigh → DeepSeek aplica
+  **high** no flash).
+- **Não confirmado:** se o OpenCode Go repassa/mapeia o `output_config.effort` pro
+  `reasoning_effort` do DeepSeek (mesmo item da v1).
 
-## 4. Onde o cockpit assume errado hoje (a lista da fase 2)
+## 3.5 O que a troca de esforço faz com a SESSÃO do agente — o ponto que ninguém tinha mapeado
 
-1. **Um knob para todos.** `PATCH /{slug}/effort` escreve `effortLevel` no `~/.claude/settings.json`
-   global (`_write_agent_effort`, `agents.py:789`) — muda o default de **todos** os CLIs claude
-   da máquina (6 CC + Canário + fallback do Hiro). Não há escopo por agente.
-2. **Lê o pedido, não o valor.** Para CC lê o settings (default); para Codex/Kimi lê o
-   `agent_state` (o que foi pedido). O efetivo vivo existe e está à mão: `cc-status*.json`
-   `effort.level` (CC/Kimi/Canário) e `threads.reasoning_effort` (Codex). `session_may_diverge`
-   é admitido na resposta mas o painel **nem tenta** a fonte viva.
-3. **Não dirige `/effort` ao vivo.** O cockpit já dirige `/model` via tmux para CC
-   (`agents.py:3109`); o mesmo mecanismo serviria para `/effort <v>` (aplica na hora + persiste
-   por sessão, sem tocar no arquivo global). Em vez disso escreve o arquivo boot-only e vazado.
-4. **Codex: permite `xhigh` que o wrapper ignora.** `_CODEX_PAINEL_ALLOWED_EFFORTS` tem `xhigh`
-   (`agents.py:78`), mas o `tara-codex` só injeta `^(low|medium|high)$`
-   (`scripts/tara-codex:164`). Persistir `xhigh` → o painel mostra, a próxima exec **não recebe
-   flag nenhuma** (no-op silencioso).
-5. **Codex: proíbe `max` que é o real.** O default do config.toml é `max` e as threads rodam
-   `max`; o painel rejeita `max` (422) e não exibe o efetivo. A Tara pensa em `max` enquanto o
-   card diz `high` (ou nada).
-6. **Kimi: efetivo pode divergir do persistido.** `kimi_reasoning_effort=high` persistido, sessão
-   viva a `xhigh` (→ Kimi max). O painel não representa `xhigh`/`max` para Kimi (allowed só
-   `low/high/max`) e ignora o vazamento do settings global como fallback quando a env var não é
-   setada.
-7. **"Vale no próximo boot" é limitação do cockpit, não do motor.** O CLI claude lê env var no
-   boot, mas `/effort` em sessão viva funciona (aplica + persiste). O cockpit poderia dirigir
-   `/effort` por tmux para Hiro/Canário como faz `/model`; "só boot" é escolha de implementação.
-8. **`auto` não representável.** É um estado real do CLI (`/effort auto`, env var), mas não está
-   no `AgentPainelEffortValue` (`agents.py:104`), nem no `_AGENT_PAINEL_ALLOWED_EFFORTS`, nem no
-   mapa `ESFORCO` do front (`motor.ts:84`). Um agente em `auto` não tem como aparecer no painel.
-9. **`max` gravado no settings é questionável.** A doc do CC diz que o schema do `settings.json`
-   aceita só `low|medium|high|xhigh` (issue anthropics/claude-code#50670); `max` é session-only
-   (ou via env var). `_AGENT_PAINEL_ALLOWED_EFFORTS` inclui `max` e `_write_agent_effort` o grava
-   no arquivo — persistência não confirmada pelo motor.
-10. **Canário sem `model_family`.** `agents.yaml:185-193` marca o canarinho sem família; o backend
-    o trata como Anthropic (escala de 5 níveis + escrita no settings global). O gotcha que o Kimi
-    já teve (DS-69) está aberto para o canarinho.
-11. **Codex não é "sessão viva".** O `session_may_diverge` para Codex diz respeito à **thread**
-    (efetivo em `threads.reasoning_effort`), não a uma sessão tmux; o conceito de "mudar em
-    runtime" não se aplica igual. A fase 2 não pode tratar os 4 motores com a mesma UX.
+> Descoberto pelo Rica, medido no Felipe (09/08). A doc oficial confirma o mecanismo por trás
+> do modal. **Este é o item mais perigoso da lista da fase 2**: o cockpit hoje pode entregar
+> um `/effort` que deixa o agente **travado num modal** que o backend não vê.
 
-## 5. Não consegui confirmar
+### Os três estados de um PATCH `/effort` dirigido por tmux (medido pelo Rica)
+
+1. **Agente parado** → aplica na hora, sem diálogo. PATCH devolve `confirmed: true`.
+2. **Agente pensando** → o comando **fica preso na fila de input** do tmux e não aplica.
+   PATCH devolve `tmux_delivered: true, confirmed: false` — a entrega ao tmux foi confirmada,
+   a aplicação não.
+3. **Quando o turno acaba** → o comando enfileirado dispara e o Claude Code **abre um modal
+   `Change effort level?` com duas opções**, e a sessão fica **travada até alguém escolher**.
+   Dois PATCHes seguidos empilham dois modais.
+
+**O que o backend consegue (e não consegue) ver:** `_poll_claude_effort` (`agents.py:820`)
+dá 3× 0.5s de janela e devolve `confirmed=False` se a statusline não mudar. Ele **não tem
+como detectar o modal aberto** — o painel devolve "entregue, não confirmado" e o agente segue
+preso até um humano tocar no tmux. **É um deadlock invisível**: o cockpit acha que avisou, o
+agente está esperando decisão humana que ninguém sabe que é necessária.
+
+### O que a fonte oficial diz — confirma, não contradiz o Rica
+
+Da página **How Claude Code uses prompt caching** (https://code.claude.com/docs/en/prompt-caching):
+
+> "**Effort level**: each effort level has its own cache for the same model. Changing it
+> mid-session recomputes the entire request, and Claude Code asks you to confirm before
+> applying the change."
+
+> "**Changing effort level** … the next request reads the entire conversation history with no
+> cache hits. Once a conversation has started, Claude Code shows a confirmation dialog before
+> applying an effort change that would invalidate the cache. A change that resolves to the same
+> level already in effect, such as setting the model's default explicitly, skips the dialog and
+> keeps the cache."
+
+Ou seja: **o modal é comportamento documentado do CC** — a troca invalida o prefixo de cache
+daquela conversa e o CC pede confirmação. O Rica descreveu por quê ("a troca invalida o cache
+do prompt daquela conversa") e a doc confirma com as duas citações acima. E há uma **boa
+notícia na doc**: se a troca resolve para o **mesmo nível já em efeito**, o CC **pula o modal**
+e mantém o cache — um PATCH redundante para o nível atual não trava.
+
+A doc de **commands** (https://code.claude.com/docs/en/commands) diz que o `/effort`
+interativo "takes effect immediately without waiting for the current response to finish" —
+mas isso é o que o comando faz **quando é submetido**; na fila do tmux (estado 2 acima) ele
+só dispara no fim do turno, e então esbarra no modal. A doc não cobre o caminho "enfileirado
+durante turno", que é o que o Rica mediu no terminal.
+
+### Implicação para a fase 2 (decisão de desenho, não implementação)
+
+- O `confirmed: false` do PATCH é **alarme real**: ou a sessão está pensando (e o comando vai
+  travar no fim do turno), ou já travou no modal. O cockpit precisa de um **estado "aguardando
+  confirmação de esforço"** na UI, com o caminho de destravar (mandar a escolha no tmux —
+  Enter para confirmar, Esc/não para cancelar) e avisar que **dois PATCHes seguidos empilham
+  modais** (só o primeiro modal deve existir; os seguintes empilham).
+- **Mitigação barata (doc):** PATCH que resolve para o nível já em efeito **não abre modal**.
+  Um `GET` de leitura antes do PATCH (a statusline diz o nível atual) permite **no-op
+  silencioso** quando o alvo já é o atual — evita o modal sem custo.
+- **`max` não vira default**: responder do CLI é "this session only"; `medium`/`high`/`xhigh`
+  respondem "saved as your default for new sessions" (medido pelo Rica). A doc model-config
+  confirma: só `low/medium/high/xhigh` persistem; `max`/`ultracode` session-only.
+
+## 4. Onde o cockpit assume errado hoje — a lista da fase 2, REORDENADA por impacto real
+
+> v1 listava por ordem de descoberta; o Rica pediu por **impacto real** — o que dói mais
+> primeiro. Estado de cada item **reconferido no código** em 09/08 (caminho:linha). "FURO"
+> = o Rica descreveu um estado e o código diz outro.
+
+1. **A troca em sessão viva pode travar o agente num modal invisível** (NOVO, §3.5 — o mais
+   perigoso). PATCH com a sessão pensando → comando na fila → modal `Change effort level?`
+   quando o turno acaba → sessão presa até humano escolher; dois PATCHes empilham dois modais.
+   O `confirmed:false` do backend não distingue "pensando" de "travado". **Fonte do mecanismo:
+   doc oficial de prompt-caching** ("asks you to confirm before applying the change").
+2. **Codex: o painel oferece `xhigh`/`max` que o wrapper não injeta — FURO no que o Rica
+   disse ter corrigido.** `scripts/tara-codex:164` ainda casa só `^(low|medium|high)$` (sem
+   `xhigh`/`max`, sem comentário de codex 0.146 — conferido nos dois worktrees, idênticos).
+   O backend passou a aceitar `max` (`agents.py:85`), então persistir `xhigh`/`max` é **no-op
+   silencioso**: painel mostra, próxima delegação roda sem flag. **Continua vivo e piorou**:
+   a permissão do backend agravou a mentira de UI.
+3. **Kimi: painel mostra o pedido, não o efetivo, e o vazamento do settings global segue.**
+   `_build_kimi_painel_effort` lê `agent_state` (`agents.py:758`); sessão viva pode rodar em
+   `xhigh`→max com o card dizendo `high`. E quando a env var não é setada, o CLI cai no
+   settings global (`effortLevel: xhigh`) — o `unset` do `subir_hiro` não protege contra o
+   default do arquivo. **Vivo.**
+4. **Canário sem `model_family`** — `agents.yaml:191-193`, conferido. O backend o trata como
+   Anthropic (escala de 5 níveis + leitura de statusline); o DeepSeek flash mapeia `xhigh`→
+   **high**, então o "extra alto" exibido é efetivamente `high` no modelo. **Vivo.**
+5. **Codex: leitura do efetivo ignorada.** O painel usa `agent_state` (`agents.py:746`) em vez
+   de `threads.reasoning_effort` que o `codex_reader` já expõe. Demonstrado: `agent_state` diz
+   `high`, threads rodam `max`. **Vivo** (subitem do item 2, mas a leitura existe para
+   Codex mesmo sem o wrapper). 
+6. **Kimi: "vale no próximo boot" é escolha do cockpit, não limite do motor.** O `/effort` do
+   CLI (mesmo CLI do CC) funcionaria ao vivo; o cockpit só grava `agent_state` para o boot.
+   **Vivo para Kimi** (para CC morreu — o §3.1 dirige tmux).
+7. **`_write_agent_effort` ficou órfão** (NOVO, do Rica, confirmado): definido em
+   `agents.py:996`, **zero chamadores em todo `apps/api/`** (grep em 09/08). É a sobra do
+   caminho antigo que escrevia o settings global; o comentário do novo caminho (`agents.py:487`)
+   explica por que morreu. **Lixo morto — remover na fase 2** (junto do `_read_agent_effort`,
+   que ainda é fallback de leitura, `agents.py:979`).
+8. **Codex não é "sessão viva".** O `session_may_diverge` do Codex diz respeito à **thread**
+   (efetivo em `threads.reasoning_effort`), não a uma sessão tmux; "mudar em runtime" não se
+   aplica igual. A fase 2 não pode tratar os 4 motores com a mesma UX. **Vivo** (conceitual).
+
+**Resolvidos desde a v1 (conferido no código):**
+
+- **Item 3 (v1) — não dirige `/effort` ao vivo → MORTO.** PATCH CC envia `/effort <v>` via
+  tmux (`agents.py:500`) + Enter (`agents.py:506`) + confirmação pela statusline
+  (`agents.py:820`). (O Rica não o listou como morto, mas o código mostra; registrado aqui.)
+- **Item 5 (v1) — painel rejeita `max` no Codex → MORTO.** `_CODEX_PAINEL_ALLOWED_EFFORTS`
+  agora inclui `max` (`agents.py:85`).
+- **Item 8 (v1) — `auto` não representável → MORTO de ponta a ponta.** `AgentPainelEffortValue`
+  inclui `auto` (`agents.py:111`), `_CLAUDE_PAINEL_ALLOWED_EFFORTS` existe (`agents.py:81`),
+  front traduz `auto: 'automático'` (`motor.ts:94`), `_poll_claude_effort` trata `auto` como
+  caso especial (mudança do nível observado, `agents.py:853-859`).
+- **Item 9 (v1) — `max` no settings é questionável → MORTO por dois motivos.** (a) O caminho
+  de escrita morreu (PATCH vai por tmux, não mais por settings); (b) a doc model-config diz
+  que `effortLevel` **não aceita `max`/`ultracode`** — "not accepted here". O órfão
+  `_write_agent_effort` (item 7 acima) é a sobra disso.
+- **Item 1 (v1) — um knob para todos → MORTO para CC.** O PATCH não escreve mais o settings
+  global (comentário explícito `agents.py:487-489`); a leitura do painel vem da statusline
+  viva (`agents.py:951`), global só como fallback (`agents.py:970`).
+- **Item 2 (v1) — lê o pedido, não o valor → MORTO para CC.** `_build_claude_painel_effort`
+  lê `effort.level` da statusline; `session_may_diverge` = stale. **Continua vivo para
+  Codex/Kimi** (itens 3/5 acima).
+
+## 5. Não consegui confirmar (v2)
 
 - **OpenCode Zen/Go repassando o effort ao DeepSeek.** Doc oficial de providers não menciona
-  `/v1/messages` nem effort; o mapeamento `output_config.effort`→`reasoning_effort` é inferido de
-  bridges da comunidade e relato de fórum. Não testei o wire do canário.
-- **`ultra` como nível de Codex.** Aparece em docs de terceiros para `sol`/`terra`; a doc oficial
-  da OpenAI (`reasoning` guide) não o lista. Não confirmado.
-- **`/effort` em sessão viva não-Anthropic.** Não testei numa sessão Kimi/DeepSeek (não mexi na
-  sessão do Hiro nem na minha). O mecanismo do CLI é o mesmo, então é hipótese com fundamento,
-  não prova.
+  `/v1/messages` nem effort; o mapeamento `output_config.effort`→`reasoning_effort` é inferido.
+- **`ultra` como nível de Codex.** Aparece em docs de terceiros; a doc oficial não lista.
+- **Se o OpenCode Go aplica os mesmos níveis da doc DeepSeek direct.** Não testei o wire do
+  canário.
+- **O caminho de confirmação do modal no tmux** (Enter vs Esc e o que cada opção do
+  `Change effort level?` faz). O Rica mediu que **abre e trava**; a doc confirma que **pede
+  confirmação** e que troca para o mesmo nível **pula o modal**. O conjunto exato de teclas
+  para destravar no tmux não foi verificado (é comportamento do TUI do CC, não documentado no
+  nível de tecla).
 - **Origem da env var `CLAUDE_EFFORT=xhigh`** observada no env do canário (não é a
-  `CLAUDE_CODE_EFFORT_LEVEL`). Aparenta ser exposição interna do CLI a shells filhos; não
-  documentada — não confiar como fonte de leitura.
+  `CLAUDE_CODE_EFFORT_LEVEL`); não documentada — não confiar como fonte.
 
-## 6. Método e fontes
+## 6. Método e fontes (v2)
 
-**Comandos que rodei e o que responderam:**
-- `cat ~/.codex/config.toml` → `model = "gpt-5.6-luna"`, `model_reasoning_effort = "max"`.
-- `sqlite3 "file:$HOME/.codex/state_5.sqlite?mode=ro" "SELECT ... FROM threads ..."` → valores
-  `low/medium/high/xhigh/max` e vazio em threads reais; a thread ativa de hoje
-  (`019fe7c0`, gpt-5.6-luna) com `reasoning_effort=high`.
-- `sqlite3 grupo_borges.db "SELECT slug, codex_reasoning_effort, kimi_reasoning_effort FROM agent_state"`
-  → `tara|high|`, `hiro||high`, CC agents e canarinho vazios.
-- `cat ~/.claude/settings.json` → `effortLevel: "xhigh"` (única fonte dos 6 CC + Canário).
-- `grep effortLevel <projetos>/ze_claude/*/.claude/settings*.json` → nenhum projeto tem.
-- `/tmp/cc-status-<sid>.json` das sessões vivas → 6× opus-5 xhigh, 1× opus-5 max, k3 xhigh,
-  deepseek xhigh (15:33).
-- `claude --version` → 2.1.226 · `codex --version` → codex-cli 0.146.0.
-- `env | grep ...` no canário → `ANTHROPIC_BASE_URL=https://opencode.ai/zen/go`,
-  `ANTHROPIC_MODEL=deepseek-v4-flash[1m]`, sem `CLAUDE_CODE_EFFORT_LEVEL`.
+**Código conferido em 09/08 (repositório principal `/home/clawd/repos/grupo_borges`, onde
+vive a produção — não o worktree canário; os dois estão idênticos nos pontos citados):**
 
-**Docs oficiais:** CC model-config / settings / statusline / env-vars
-(code.claude.com/docs), OpenAI reasoning guide (developers.openai.com), Kimi thinking models
-(platform.kimi.ai), DeepSeek thinking mode (api-docs.deepseek.com).
+- `apps/api/routers/agents.py` — `:81` `_CLAUDE_PAINEL_ALLOWED_EFFORTS` (com `auto`) ·
+  `:85` `_CODEX_PAINEL_ALLOWED_EFFORTS` (com `max`) · `:111` `AgentPainelEffortValue` ·
+  `:462-470` PATCH codex grava agent_state · `:477-480` PATCH kimi grava agent_state ·
+  `:487-489` comentário "escrever settings seria redundante" · `:500` `_send_tmux_or_409`
+  `/effort` · `:506` press_enter · `:520-524` response com tmux_delivered/confirmed/
+  runtime_switch · `:746-755` `_build_codex_painel_effort` lê agent_state ·
+  `:758-767` `_build_kimi_painel_effort` lê agent_state · `:814-817` `_cc_effort_level` ·
+  `:820-861` `_poll_claude_effort` · `:951-976` `_build_claude_painel_effort` lê statusline,
+  fallback settings · `:979-989` `_read_agent_effort` · `:996-1010` `_write_agent_effort`
+  (órfão)
+- `scripts/tara-codex:164` — regex do effort **ainda `^(low|medium|high)$`** (conferido nos
+  dois worktrees, idênticos)
+- `apps/cockpit/components/shell/motor.ts:94` — `auto: 'automático'`
+- `agents.yaml:191-193` — canarinho sem `model_family`
+- `ze-shared/scripts/subir-frota.sh:141-153` (subir_hiro) e `:170-205` (subir_canario) — do
+  repositório ze_claude, não do canário
+- `~/.codex/config.toml` → `model_reasoning_effort = "max"` · `~/.claude/settings.json` →
+  `effortLevel: xhigh` · `~/.codex/state_5.sqlite → threads.reasoning_effort` → valores reais
+  de threads (low/medium/high/xhigh/max)
 
-**Código do produto:** `apps/api/routers/agents.py` (allowed lists, read/write, PATCHs),
-`scripts/tara-codex` (injeção do effort), `apps/api/services/codex_reader.py`
-(`CodexThread.reasoning_effort`), `apps/api/services/tmux_driver.py` (mapa de modelos),
-`ze-shared/scripts/subir-frota.sh` (`subir_hiro`/`subir_canario`), `agents.yaml`
-(canarinho sem model_family), `apps/cockpit/components/shell/motor.ts` (escala do front).
+**Docs oficiais (v2):**
 
-**Fonte empírica de sessão viva:** prova do `/effort high` na sessão `lucas` (feita pelo Rica
-antes desta pesquisa — "Set effort level to high (saved as your default for new sessions)" +
-statusline mudou na hora).
+- **Claude Code — commands**: https://code.claude.com/docs/en/commands — `/effort` aceita
+  `low|medium|high|xhigh|max|ultracode`; `max`/`ultracode` session-only; `auto` reseta; o
+  interativo "takes effect immediately".
+- **Claude Code — model config**: https://code.claude.com/docs/en/model-config.md —
+  `effortLevel`/env não aceitam `max`/`ultracode`; persistência cross-session só de
+  `low/medium/high/xhigh`; `_SUPPORTED_CAPABILITIES` para IDs custom.
+- **Claude Code — prompt caching**: https://code.claude.com/docs/en/prompt-caching — **a
+  fonte do modal**: *"Changing it mid-session recomputes the entire request, and Claude Code
+  asks you to confirm before applying the change"* e *"A change that resolves to the same
+  level already in effect … skips the dialog and keeps the cache."*
+- OpenAI reasoning guide · Kimi thinking models · DeepSeek thinking mode (mesmos da v1).
+
+**Empírico (v2, do Rica — medido no terminal, no Felipe):** os três estados do PATCH em
+sessão viva (§3.5), o texto do modal `Change effort level?`, `max` respondendo "this session
+only" vs `medium/high/xhigh` "saved as your default for new sessions", e dois PATCHes
+empilhando dois modais. O Rica pediu para seguir a doc se ela contradissesse — **ela
+confirma, não contradiz** (o modal é o comportamento documentado de confirmação de cache).
+
+**v1:** os itens da v1 não refeitos aqui (persistência/leitura de Codex por threads, wire do
+OpenCode Go) seguem nas fontes da v1 (§6 original); os que mudaram estão marcados acima.
