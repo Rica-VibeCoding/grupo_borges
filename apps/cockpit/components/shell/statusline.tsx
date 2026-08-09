@@ -23,30 +23,12 @@ import {
   shortModelName,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { formatCompactNumber, formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
+import { CELULA_DO_TETO, TETO_PCT, celulasDoMedidor } from './medidor';
 
-/** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta.
- *  Exportada: a `LinhaDormindo` (tropa.tsx) julga o contexto de quem dormiu
- *  pela mesma régua — teto é um só, ou o número mente diferente por linha. */
-export const TETO_PCT = 30;
-
-/** A régua do medidor: 10 células cobrindo até 50% da janela, 5% cada.
- *
- *  A escala para em 50, não em 100, porque a frota inteira vive entre 5% e 40%
- *  — numa régua até 100 todo mundo acende o mesmo toquinho à esquerda. E não
- *  vai a 60 (o dobro do teto) porque aí a zona além do limite ficava com metade
- *  do desenho para um caso raro: sobrava um bloco apagado permanente ocupando
- *  espaço que a coluna de 260px não tem de sobra.
- *
- *  A célula do teto sai DERIVADA das outras duas — mudar o teto da frota reajusta
- *  o desenho sozinho, sem ninguém precisar lembrar de mexer aqui. */
-const ESCALA_PCT = 50;
-const CELULAS = 10;
-const PCT_POR_CELULA = ESCALA_PCT / CELULAS;
-/** Índice da primeira célula que já passou do teto. */
-const CELULA_DO_TETO = TETO_PCT / PCT_POR_CELULA;
+export { TETO_PCT };
 
 /**
- * O medidor de contexto — 12 células, escala 0–60%, o teto no meio.
+ * O medidor de contexto — 10 células, escala 0–50%, o teto no vão da sexta.
  *
  * A barra contínua que estava aqui foi reprovada pelo Rica (09/08): *"essa
  * barra de statusline context fica visualmente apontando para o mesmo lugar"*.
@@ -61,48 +43,51 @@ const CELULA_DO_TETO = TETO_PCT / PCT_POR_CELULA;
  *   o limite continua visível, porque um vão maior dentro de um ritmo regular é
  *   impossível de não ver.
  * - **Cada célula vale 5%**, então 7% acende duas e 25% acende cinco: a diferença
- *   entre dois agentes finalmente aparece na forma, não só no número. Acima de
- *   50% satura, e o percentual ao lado continua dizendo a verdade.
+ *   entre dois agentes finalmente aparece na forma, não só no número.
  * - **Célula acesa além do teto sai em âmbar**, junto com o percentual. Cor onde
  *   há decisão a tomar, e só ali.
+ * - **A última célula ENGROSSA quando a régua acaba antes do valor** (acima de
+ *   50%). Sem isso, 55% e 95% desenhavam as mesmas dez células âmbar e a
+ *   diferença entre "passou do teto" e "vai compactar a qualquer momento" sumia
+ *   justamente no caso mais grave — achado do Daniel na revisão. Engrossar, e
+ *   não acender uma décima primeira, mantém a moldura fixa: lista onde umas
+ *   linhas têm mais caixinhas que outras lê como quebrada.
  *
  * Nem `@shadcn/progress` nem `@shadcn/chart` entram aqui, e a razão é de peso:
  * o primeiro é a mesma barra contínua que acabou de ser reprovada, e o segundo
- * traz o Recharts inteiro para desenhar doze retângulos em nove linhas de uma
+ * traz o Recharts inteiro para desenhar dez retângulos em nove linhas de uma
  * coluna de 260px. Célula é `<span>` com fundo — zero dependência, e roda dentro
  * do Server Component sem virar cliente.
+ *
+ * A aritmética mora em `medidor.ts`, com teste: os casos que mais importam são
+ * os que quase nunca estão na tela na hora em que se está olhando.
  *
  * Herdado por quem dorme (`LinhaDormindo`): teto é um só, ou o número mente
  * diferente por linha.
  */
 export function Barra({ pct }: { pct: number }) {
-  const acesas = Math.min(CELULAS, Math.ceil(pct / PCT_POR_CELULA));
   return (
     <span aria-hidden className="flex shrink-0 items-center" style={{ height: '10px' }}>
-      {Array.from({ length: CELULAS }, (_, i) => {
-        const acesa = i < acesas;
-        const passouDoTeto = i >= CELULA_DO_TETO;
-        return (
-          <span
-            key={i}
-            className="block"
-            style={{
-              width: '3px',
-              height: '8px',
-              // O respiro do teto. Vai como margem DA CÉLULA seguinte pra não
-              // depender de `gap` — o vão extra tem de existir uma vez só, no
-              // meio, e não somado ao gap de todos os outros pares.
-              marginLeft: i === 0 ? 0 : i === CELULA_DO_TETO ? '5px' : '2px',
-              borderRadius: '1px',
-              background: acesa
-                ? passouDoTeto
-                  ? 'var(--ck-state-attention)'
-                  : 'var(--ck-text-secondary)'
-                : 'var(--ck-edge-hairline)',
-            }}
-          />
-        );
-      })}
+      {celulasDoMedidor(pct).map((celula, i) => (
+        <span
+          key={i}
+          className="block"
+          style={{
+            width: celula.saturada ? '6px' : '3px',
+            height: '8px',
+            // O respiro do teto. Vai como margem DA CÉLULA seguinte pra não
+            // depender de `gap` — o vão extra tem de existir uma vez só, no
+            // meio, e não somado ao gap de todos os outros pares.
+            marginLeft: i === 0 ? 0 : i === CELULA_DO_TETO ? '5px' : '2px',
+            borderRadius: '1px',
+            background: celula.acesa
+              ? celula.alemDoTeto
+                ? 'var(--ck-state-attention)'
+                : 'var(--ck-text-secondary)'
+              : 'var(--ck-edge-hairline)',
+          }}
+        />
+      ))}
     </span>
   );
 }
