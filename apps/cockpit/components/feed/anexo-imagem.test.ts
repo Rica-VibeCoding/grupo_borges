@@ -61,6 +61,40 @@ describe('imagem enviada pelo cockpit — envelope para apresentação', () => {
     });
   });
 
+  // Auditoria de 09/08: a âncora do caminho não exigia a linha inteira, então
+  // uma fala que TERMINAVA num caminho de upload virava cartão de foto e o
+  // texto do Rica sumia da tela.
+  it('fala que termina num caminho de upload continua sendo fala', () => {
+    assert.equal(
+      leAnexoImagem(
+        'olha este arquivo /home/clawd/repos/grupo_borges/apps/api/uploads/agents/daniel/1786236851587-9f17120b8449.png',
+      ),
+      null,
+    );
+    assert.equal(
+      leAnexoImagem('achei em uploads/agents/daniel/1786236851587-9f17120b8449.png'),
+      null,
+    );
+  });
+
+  // Ramo descoberto pela mesma auditoria: com o prefixo do CC, o que sobra é
+  // legenda mesmo sem `Caption:` — é assim que o `[Image #N]` some da tela.
+  it('texto depois do prefixo do CC vira legenda mesmo sem Caption:', () => {
+    assert.deepEqual(leAnexoImagem('[Image #1]e isto aqui, o que é?'), {
+      filename: null,
+      legenda: 'e isto aqui, o que é?',
+    });
+  });
+
+  it('o caminho sozinho na linha continua valendo, com e sem barra inicial', () => {
+    assert.deepEqual(
+      leAnexoImagem(
+        'Imagem enviada via cockpit:\nuploads/agents/tara/1785888000000-a1b2c3d4e5f6.jpg',
+      ),
+      { filename: '1785888000000-a1b2c3d4e5f6.jpg', legenda: null },
+    );
+  });
+
   it('não engole texto comum nem envelope de outro tipo', () => {
     assert.equal(leAnexoImagem('texto comum do Rica'), null);
     assert.equal(leAnexoImagem('olha o [Image: source: /tmp/a.png] aí'), null);
