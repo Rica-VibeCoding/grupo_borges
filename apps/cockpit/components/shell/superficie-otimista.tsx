@@ -41,7 +41,6 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   createContext,
-  Suspense,
   useContext,
   useOptimistic,
   useTransition,
@@ -76,15 +75,17 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
   /** O `AppShell` envolve a árvore nisto. Rota que não tem a superfície
    *  simplesmente não consome o contexto, e o provider custa um nó e nada
    *  além. */
+  /** SEM `<Suspense>` em volta, e isso é medido, não gosto: o fallback tinha de
+   *  repetir `{children}`, e o HTML do SSR saía com a árvore inteira DUAS vezes
+   *  por boundary. Com os dois providers mais o da tropa, cada agente aparecia
+   *  **oito vezes** (2³) no HTML de 251 KB — a tropa era desenhada oito vezes
+   *  para o cliente descartar sete.
+   *
+   *  O boundary não fazia falta porque a rota é `force-dynamic`: `useSearchParams`
+   *  só suspende quando há prerender estático para adiar, e aqui não há. Quem
+   *  reintroduzir prerender nesta rota precisa reintroduzir o boundary junto —
+   *  e aí o fallback tem de ser leve, nunca `{children}`. */
   function Provider({ aberto, children }: { aberto: boolean; children: ReactNode }) {
-    return (
-      <Suspense fallback={<Ctx.Provider value={null}>{children}</Ctx.Provider>}>
-        <ProviderComUrl aberto={aberto}>{children}</ProviderComUrl>
-      </Suspense>
-    );
-  }
-
-  function ProviderComUrl({ aberto, children }: { aberto: boolean; children: ReactNode }) {
     const searchParams = useSearchParams();
     const abertoDaUrl = searchParams
       ? parametro === 'nav'
