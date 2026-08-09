@@ -1,5 +1,5 @@
 // Filtros puros do painel /mcp. Funções separadas pra fácil teste com node --test
-// (sem React Testing Library). Vide tests/mcp-filter.test.ts.
+// (sem React Testing Library). Vide mcp-filter.test.ts, ao lado.
 
 import type { McpServer } from './api.ts';
 

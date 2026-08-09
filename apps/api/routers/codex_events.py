@@ -129,10 +129,17 @@ def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
         return update
 
     if payload.kind == "codex.thread.started":
-        return {
+        update = {
             "executor_kind": "codex",
             "session_started_at": _int_timestamp(body.get("started_at"), fallback=now),
         }
+        # Único ponto do fluxo que diz QUAL thread é a do run que começou. Sem
+        # guardar isto o painel tinha de adivinhar pelo cwd — e o run sai com
+        # `-C <repo do dia>`, então adivinhava a thread do run anterior.
+        thread_id = payload.thread_id or _thread_id(body)
+        if thread_id is not None:
+            update["codex_thread_id"] = thread_id
+        return update
 
     if payload.kind == "codex.turn.started":
         update = {

@@ -163,10 +163,24 @@ export async function fetchAgentPainel(slug: string, signal?: AbortSignal): Prom
   return res.json();
 }
 
+export type AgentEffortChangeResponse = {
+  slug: string;
+  effort: string;
+  source: string;
+  session_may_diverge: boolean;
+  written: boolean;
+  // Presentes só no caminho Claude Code (runtime via /effort na sessão tmux,
+  // igual a AgentModelChangeResponse); null/ausentes nos caminhos persist-only
+  // de Codex e Kimi — espelha AgentPainelEffortPatchResponse do back.
+  tmux_delivered?: boolean | null;
+  confirmed?: boolean | null;
+  runtime_switch?: boolean | null;
+};
+
 export async function patchAgentEffort(
   slug: string,
   effort: string,
-): Promise<{ slug: string; effort: string; source: string; session_may_diverge: boolean; written: boolean }> {
+): Promise<AgentEffortChangeResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/effort`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

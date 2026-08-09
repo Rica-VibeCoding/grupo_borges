@@ -38,7 +38,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   createContext,
   useContext,
@@ -69,16 +69,32 @@ const LIMITE_NAVEGACAO_MS = 1_200;
  *  painel), e um contexto só forçaria um estado compartilhado que a URL não tem.
  *  O preço é um provider a mais na árvore; o ganho é que nenhuma abertura mexe
  *  na outra. */
-function criaSuperficie() {
+function criaSuperficie(parametro: 'nav' | 'painel') {
   const Ctx = createContext<SuperficieCtx | null>(null);
 
   /** O `AppShell` envolve a árvore nisto. Rota que não tem a superfície
    *  simplesmente não consome o contexto, e o provider custa um nó e nada
    *  além. */
+  /** SEM `<Suspense>` em volta, e isso é medido, não gosto: o fallback tinha de
+   *  repetir `{children}`, e o HTML do SSR saía com a árvore inteira DUAS vezes
+   *  por boundary. Com os dois providers mais o da tropa, cada agente aparecia
+   *  **oito vezes** (2³) no HTML de 251 KB — a tropa era desenhada oito vezes
+   *  para o cliente descartar sete.
+   *
+   *  O boundary não fazia falta porque a rota é `force-dynamic`: `useSearchParams`
+   *  só suspende quando há prerender estático para adiar, e aqui não há. Quem
+   *  reintroduzir prerender nesta rota precisa reintroduzir o boundary junto —
+   *  e aí o fallback tem de ser leve, nunca `{children}`. */
   function Provider({ aberto, children }: { aberto: boolean; children: ReactNode }) {
+    const searchParams = useSearchParams();
+    const abertoDaUrl = searchParams
+      ? parametro === 'nav'
+        ? searchParams.get('nav') === 'aberto'
+        : searchParams.get('painel') !== null && searchParams.get('painel') !== ''
+      : aberto;
     const router = useRouter();
     const [, emTransicao] = useTransition();
-    const [abertoOtimo, marcaOtimo] = useOptimistic(aberto);
+    const [abertoOtimo, marcaOtimo] = useOptimistic(abertoDaUrl);
 
     /**
      * Rede de segurança da navegação — 02/08.
@@ -113,8 +129,8 @@ function criaSuperficie() {
   return { Ctx, Provider };
 }
 
-const painel = criaSuperficie();
-const tropa = criaSuperficie();
+const painel = criaSuperficie('painel');
+const tropa = criaSuperficie('nav');
 
 export const PainelProvider = painel.Provider;
 export const NavProvider = tropa.Provider;

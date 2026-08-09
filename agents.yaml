@@ -167,7 +167,13 @@ agents:
     origin: japonês
     tmux_session: hiro
     # [2026-07-19 Pavan] Clone experimental do Daniel no promob-splitter (worktree hiro-teste). Backend NÃO-Anthropic (Kimi K3, assinatura Kimi Code). Controle via tmux (RC não existe nesse motor). Domínio próprio decidido pelo Rica 19/07.
-    workspace_path: /home/clawd/repos/promob-splitter-hiro
+    # [2026-08-09 Pavan] Passou a trabalhar no cockpit, no worktree
+    # `grupo_borges-hiro`, e o caminho aqui ficou para trás. Como
+    # `_slug_from_cwd` (routers/hooks.py) atribui evento por prefix-match do
+    # cwd, todo evento da sessão viva caía no vazio: sem esforço efetivo, sem
+    # context_pct e sem cota no painel. Não colide com o Daniel
+    # (`/home/clawd/repos/grupo_borges`) porque o match exige a barra final.
+    workspace_path: /home/clawd/repos/grupo_borges-hiro
     cli_default: claude_code
     model_default: k3
     # [2026-07-19 Hiro] Família de modelos do agente: drive o seletor do cockpit

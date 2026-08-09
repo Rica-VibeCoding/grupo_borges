@@ -16,18 +16,11 @@ import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/u
  * Por que o Avatar do Radix e não `<img onError>`: o `onError` do antigo esconde
  * a imagem DEPOIS de o browser já ter desenhado o ícone de imagem quebrada. O
  * Radix só monta o fallback quando a carga falha, então nunca há quebrado na
- * tela — só que pra quem SABE de antemão que não tem foto (ver `SEM_RETRATO`
- * abaixo), nem vale deixar a carga falhar: é 404 grátis no console por nada.
+ * tela.
  *
  * O fallback é a inicial em neutro, não uma cor por agente: o contrato §4 fecha a
  * paleta e cor por agente seria inventar fora dela.
  */
-// Slugs sem foto — hoje só o Canário (`agents.yaml`): gerador de carga
-// sintética do gate cockpit v2, "descartável... não corresponde a sessão
-// produtiva". Não é gente da tropa, e inventar retrato pra ele seria dar
-// identidade a quem não tem uma. Pular o `<AvatarImage>` pra estes slugs
-// troca o 404 (§14, achado pré-existente) por fallback direto, sem round-trip.
-const SEM_RETRATO = new Set(['canario']);
 export function Retrato({
   slug,
   nome,
@@ -59,13 +52,11 @@ export function Retrato({
         background: 'var(--ck-surface-raised)',
       }}
     >
-      {SEM_RETRATO.has(slug) ? null : (
-        <AvatarImage
-          src={`/avatars/${slug}.webp`}
-          alt=""
-          style={{ borderRadius: 'var(--ck-radius-chip)' }}
-        />
-      )}
+      <AvatarImage
+        src={`/avatars/${slug}.webp`}
+        alt=""
+        style={{ borderRadius: 'var(--ck-radius-chip)' }}
+      />
       <AvatarFallback
         style={{
           borderRadius: 'var(--ck-radius-chip)',

@@ -246,3 +246,38 @@ def test_find_latest_thread_falls_back_when_telecodex_context_is_stale(tmp_path:
 
 def test_find_latest_thread_missing_db_returns_none(tmp_path: Path) -> None:
     assert cr.find_latest_thread(cr.TARA_CWD, tmp_path / "nope.sqlite") is None
+
+
+def test_resolve_thread_por_id_ignora_cwd(tmp_path: Path) -> None:
+    """O run da Tara sai com `-C <repo do dia>`, não com o workspace cadastrado.
+
+    O Codex indexa a thread pelo cwd REAL do run, então a busca por cwd nunca
+    alcança quem está rodando — era o que fazia o painel servir a thread do run
+    anterior. Com o id do run em mãos, cwd deixa de ser critério.
+    """
+    db = _make_threads_db(tmp_path)
+
+    thread = cr.resolve_thread(thread_id="other", cwd=cr.TARA_CWD, db_path=db)
+
+    assert thread is not None
+    assert thread.thread_id == "other"
+    assert thread.cwd == "/outro/cwd"
+
+
+def test_resolve_thread_cai_no_cwd_quando_id_nao_existe(tmp_path: Path) -> None:
+    """Id sem thread (banco limpo, run de outra máquina) não pode zerar o painel."""
+    db = _make_threads_db(tmp_path)
+
+    thread = cr.resolve_thread(thread_id="fantasma", cwd=cr.TARA_CWD, db_path=db)
+
+    assert thread is not None
+    assert thread.thread_id == "new"
+
+
+def test_resolve_thread_sem_id_mantem_heuristica_de_cwd(tmp_path: Path) -> None:
+    db = _make_threads_db(tmp_path)
+
+    thread = cr.resolve_thread(thread_id=None, cwd=cr.TARA_CWD, db_path=db)
+
+    assert thread is not None
+    assert thread.thread_id == "new"

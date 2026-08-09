@@ -1,18 +1,79 @@
 import { notFound } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
-import { AppShell } from '@/components/shell/app-shell';
+import { formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
+import { BarraDeContexto } from '@/components/shell/barra-de-contexto';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
+import { TETO_PCT } from '@/components/shell/medidor';
 import { Composer } from '@/components/shell/composer';
-import { leMotor } from '@/components/shell/motor';
+import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
-import { LinkFechaPainel } from '@/components/shell/superficie-otimista';
-import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
+import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
+
+/** Aqui cabe o que não coube no card: a idade da medição por extenso.
+ *
+ *  Mesma régua do bloco de cota — o velho MOSTRA o número e diz que é velho.
+ *  "dados antigos" sozinho não separa 6 minutos de um dia; por isso a idade vem
+ *  junto, e quem não tem carimbo diz que veio de outra sessão em vez de calar.
+ *
+ *  O teto vem do `TETO_PCT`, não escrito à mão. Até 09/08 esta string tinha um
+ *  `teto 30%` literal: o mesmo número que a tropa lia de uma constante, e que
+ *  aqui viraria mentira no dia em que o Rica mudasse a ordem da frota. */
+function descreveContexto(agente: Agent): string | null {
+  if (agente.context_pct == null) return null;
+  const base = `${agente.context_pct}% · teto ${TETO_PCT}%`;
+  if (!agente.context_stale) return base;
+  const idade =
+    agente.context_updated_at !== null
+      ? formatElapsedShort(Math.floor(Date.now() / 1000) - agente.context_updated_at)
+      : null;
+  return idade ? `${base} · dados antigos · lido ${idade}` : `${base} · dados antigos`;
+}
+
+/** O campo Contexto, que ganha a barra que os outros cinco não têm.
+ *
+ *  Era o único campo da ficha que carregava um JULGAMENTO — "isto está alto?" —
+ *  e o único que respondia só com texto, do jeito que o Rica reprovou em 09/08.
+ *  A barra é a mesma da tropa, pela mesma régua: a gaveta é o degrau seguinte do
+ *  toque no card, e dois desenhos diferentes para o mesmo número fazem a gaveta
+ *  parecer outra medição. */
+function CampoContexto({ agente }: { agente: Agent }) {
+  const texto = descreveContexto(agente);
+  if (texto === null || agente.context_pct == null) return null;
+
+  return (
+    <div className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>
+      <span
+        style={{
+          fontSize: 'var(--ck-text-xs)',
+          textTransform: 'uppercase',
+          letterSpacing: 'var(--ck-track-overline)',
+          color: 'var(--ck-text-secondary)',
+        }}
+      >
+        Contexto
+      </span>
+      <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
+        <BarraDeContexto pct={agente.context_pct} />
+        <span
+          className="shrink-0"
+          style={{
+            fontFamily: 'var(--ck-font-mono)',
+            fontSize: 'var(--ck-text-sm)',
+            color: 'var(--ck-text-primary)',
+          }}
+        >
+          {texto}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /** Linha do painel. Rótulo em sans (voz do produto), valor em mono (voz da
  *  máquina) — a divisão do contrato §4 aplicada no menor lugar possível. */
@@ -52,9 +113,9 @@ function Painel({
 }: {
   agente: Agent;
   fecharHref: string;
-  /** Valor do servidor. O `BlocoDeAcoes` usa como fallback e prefere o
-   *  otimista quando está dentro do `PainelProvider` — é o que faz a re-busca
-   *  do `/painel` começar no frame do clique, não 2s depois. */
+  /** Fallback da URL. O `BlocoDeAcoes` prefere o valor otimista quando está
+   *  dentro do `PainelProvider` — é o que faz a re-busca do `/painel` começar
+   *  no frame do clique, não 2s depois. */
   painelAberto: boolean;
 }) {
   return (
@@ -129,10 +190,7 @@ function Painel({
         <Campo rotulo="Executor" valor={agente.state_cli ?? agente.cli_default} />
         <Campo rotulo="Sessão tmux" valor={agente.tmux_session} />
         <Campo rotulo="Workspace" valor={agente.workspace_path} />
-        <Campo
-          rotulo="Contexto"
-          valor={agente.context_pct != null ? `${agente.context_pct}% · teto 30%` : null}
-        />
+        <CampoContexto agente={agente} />
       </div>
     </div>
   );
@@ -149,26 +207,15 @@ export default async function AgentePage({
 }) {
   const [{ slug }, sp] = await Promise.all([params, searchParams]);
   const fleet = await fetchFleet();
-  const agora = Math.floor(Date.now() / 1000);
   const agente = fleet.agents.find((a) => a.slug === slug);
 
   if (!agente) notFound();
 
-  const painelAberto = typeof sp.painel === 'string' && sp.painel.length > 0;
-  const navAberta = sp.nav === 'aberto';
   const fecharHref = `/agente/${slug}`;
   const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
 
   return (
-    <AppShell
-      nav={<TropaAoVivo slugSelecionado={slug} agora={agora} compacta />}
-      navAberta={navAberta}
-      fecharNavHref={fecharHref}
-      drawer={<Painel agente={agente} fecharHref={fecharHref} painelAberto={painelAberto} />}
-      painelAberto={painelAberto}
-      fecharPainelHref={fecharHref}
-      rotuloPainel="detalhes do agente"
-    >
+    <>
       {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
           painel à direita. §12.3/§13: dois controles na mesma faixa. */}
       <BarraDeTelas
@@ -177,10 +224,10 @@ export default async function AgentePage({
         // otimista, não pelo que a URL já refletiu.
         abrirNavHref={`${fecharHref}?nav=aberto`}
         fecharNavHref={fecharHref}
-        navAberta={navAberta}
+        navAberta={false}
         hrefAbrirPainel={`${fecharHref}?painel=detalhes`}
         hrefFecharPainel={fecharHref}
-        painelAberto={painelAberto}
+        painelAberto={false}
       />
 
       {/* Aqui morava o cabeçalho de identidade — retrato, nome e estado — e a
@@ -218,7 +265,12 @@ export default async function AgentePage({
         composer={
           // Sem `esforcoValor`/`esforcoPermitido`/`onEnviar`: o Composer busca o
           // painel e envia sozinho — ver o cabeçalho do próprio componente.
-          <Composer agentSlug={agente.slug} agentName={agente.name} motor={motor} />
+          <Composer
+            agentSlug={agente.slug}
+            agentName={agente.name}
+            motor={motor}
+            esforcoCobrePedido={contratoSeparaPedido(agente)}
+          />
         }
       >
         <FeedDaConversa agentSlug={agente.slug} />
@@ -228,6 +280,17 @@ export default async function AgentePage({
           `app/api/regua/route.ts`: existe porque o Safari do iPhone é o único
           motor que eu não consigo rodar aqui. */}
       {sp.diag === '1' ? <Regua /> : null}
-    </AppShell>
+
+      {/* O shell agora vive no layout persistente. A gaveta continua na folha
+          porque seus campos dependem do agente da página; como é `fixed`, ela
+          conserva a mesma superfície visual fora do fluxo do palco. */}
+      <GavetaPainel
+        fecharHref={fecharHref}
+        rotulo="detalhes do agente"
+        aberto={false}
+      >
+        <Painel agente={agente} fecharHref={fecharHref} painelAberto={false} />
+      </GavetaPainel>
+    </>
   );
 }

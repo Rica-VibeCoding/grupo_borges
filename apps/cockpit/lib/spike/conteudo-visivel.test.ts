@@ -51,6 +51,26 @@ test('tool_use sozinho é visível — a linha de execução nasce antes do resu
   assert.equal(temConteudoVisivel(item), true);
 });
 
+test('tool_result é visível — o outro ramo do mesmo switch', () => {
+  const itens = buildRenderItems([
+    assistenteCom([{ type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'ls' } }]),
+    {
+      id: 3,
+      kind: 'user',
+      uuid: 'u2',
+      parent_uuid: null,
+      is_sidechain: false,
+      timestamp: '2026-08-09T00:00:00Z',
+      created_at: 0,
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 't2', content: 'arquivo.txt' }],
+      },
+    } as unknown as MessagePayload,
+  ]);
+  for (const item of itens) assert.equal(temConteudoVisivel(item), true);
+});
+
 function falaDoRica(texto: string): MessagePayload {
   return {
     id: 2,

@@ -9,8 +9,8 @@
  * Vinicius em 60% como "pouco mais da metade", quando 60% é o DOBRO do teto de
  * 30% que o próprio Rica cravou (ordem de 30/07, em `ze-shared/AGENTS.md`). Uma
  * barra que não conhece a regra do dono mente sobre o único número que decide
- * `/compact`. O traço no 30 é o instrumento inteiro desta tela: escala honesta
- * (0–100, igual ao número ao lado), julgamento visível.
+ * `/compact`. Aqui o teto está no desenho — não como traço, e sim como cor e
+ * como escala: ver `barra-de-contexto.tsx` e `medidor.ts`.
  *
  * Dono: Daniel (pele). Funções derivadas vêm do `cockpit-core` — as mesmas que o
  * cockpit antigo usa, então os dois leem o mundo pelo mesmo instrumento.
@@ -22,51 +22,13 @@ import {
   resolveContextPct,
   shortModelName,
 } from '@grupo_borges/cockpit-core/cockpit-types';
-import { formatCompactNumber } from '@grupo_borges/cockpit-core/painel-format';
-
-/** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta.
- *  Exportada: a `LinhaDormindo` (tropa.tsx) julga o contexto de quem dormiu
- *  pela mesma régua — teto é um só, ou o número mente diferente por linha. */
-export const TETO_PCT = 30;
-
-export function Barra({ pct }: { pct: number }) {
-  const estourou = pct > TETO_PCT;
-  return (
-    // A caixa externa é mais alta que a barra de propósito: é ela que deixa o
-    // traço do teto ULTRAPASSAR a barra em cima e embaixo. Traço contido dentro
-    // da barra some no meio do preenchimento e lê como falha de renderização —
-    // ultrapassando, lê como marca de régua, que é o que ele é.
-    <span
-      className="relative flex shrink-0 items-center"
-      style={{ width: '3.25rem', height: '10px' }}
-    >
-      <span
-        className="relative block w-full overflow-hidden"
-        style={{ height: '4px', borderRadius: '2px', background: 'var(--ck-edge-hairline)' }}
-      >
-        <span
-          className="absolute inset-y-0 left-0 block"
-          style={{
-            width: `${Math.min(100, pct)}%`,
-            borderRadius: '2px',
-            background: estourou ? 'var(--ck-state-attention)' : 'var(--ck-state-ok)',
-          }}
-        />
-      </span>
-      <span
-        aria-hidden
-        className="absolute inset-y-0 block"
-        style={{
-          left: `${TETO_PCT}%`,
-          width: '1.5px',
-          borderRadius: '1px',
-          background: 'var(--ck-text-primary)',
-          opacity: estourou ? 1 : 0.7,
-        }}
-      />
-    </span>
-  );
-}
+import { formatCompactNumber, formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
+import {
+  BarraDeContexto,
+  LARGURA_NA_COLUNA,
+  LARGURA_NA_LISTA,
+} from './barra-de-contexto';
+import { TETO_PCT } from './medidor';
 
 export function Statusline({
   agente,
@@ -92,6 +54,13 @@ export function Statusline({
     shortModelName(agente.state_model ?? agente.model_default);
   const pct = resolveContextPct(agente);
   const tokens = ehCodex ? agente.codex_tokens_used : null;
+  // Número que o back mediu antes desta sessão (ou parado há muito) continua na
+  // tela — o que não pode é sair sem etiqueta, como se fosse leitura de agora.
+  const velho = agente.context_stale;
+  const idade =
+    agente.context_updated_at !== null
+      ? formatElapsedShort(agora - agente.context_updated_at)
+      : 'em sessão anterior';
 
   return (
     <span
@@ -135,12 +104,25 @@ export function Statusline({
         <span
           className="flex shrink-0 items-center"
           style={{ gap: 'var(--ck-space-1)' }}
-          title={`contexto ${pct}% — teto da frota ${TETO_PCT}%`}
+          title={
+            velho
+              ? `contexto ${pct}% medido ${idade} — não é a leitura desta sessão`
+              : `contexto ${pct}% — teto da frota ${TETO_PCT}%`
+          }
         >
-          <Barra pct={pct} />
+          <BarraDeContexto pct={pct} largura={curta ? LARGURA_NA_COLUNA : LARGURA_NA_LISTA} />
           <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
             {pct}%
           </span>
+          {/* A PALAVRA carrega o estado (§3/§9.7): número velho esmaecido ou de
+              outra cor continuaria lendo como medição de agora. Aqui não cabe a
+              idade junto — ela sai por extenso na gaveta, que é o degrau
+              seguinte do mesmo toque. */}
+          {velho ? (
+            <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
+              antigo
+            </span>
+          ) : null}
         </span>
       ) : tokens !== null ? (
         // Codex não expõe porcentagem de janela — mostra o que ele tem.

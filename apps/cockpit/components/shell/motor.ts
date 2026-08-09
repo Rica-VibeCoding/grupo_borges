@@ -17,10 +17,11 @@
  *    primário; valor que pode ter divergido vem em secundário, com a ressalva
  *    escrita no `title`/`aria-label`, não escondida.
  *
- * 2. **Escala de esforço é por família.** Kimi não tem `medium` nem `xhigh`;
- *    Codex não tem `max`. Oferecer no seletor um degrau que o back vai recusar
- *    com 400 é pior do que não oferecer — a lista vem do back (`effort.allowed`)
- *    e a pele só a traduz.
+ * 2. **Escala de esforço é por família.** Kimi não tem `medium` nem `xhigh`
+ *    (só `low`/`high`/`max`); o Codex ganhou `max` junto com o gpt-5.6-luna
+ *    (0.146+). Oferecer no seletor um degrau que o back vai recusar com 400 é
+ *    pior do que não oferecer — a lista vem do back (`effort.allowed`) e a pele
+ *    só a traduz.
  *
  * Módulo neutro de propósito: sem `'use client'`. É consumido por Server
  * Component (o cabeçalho lê o fleet no servidor) e por Client Component (o
@@ -87,11 +88,96 @@ const ESFORCO: Record<string, string> = {
   high: 'alto',
   xhigh: 'extra alto',
   max: 'máximo',
+  // Fora da escala crescente: `auto` não é um degrau, é o Claude Code
+  // escolhendo o nível conforme a tarefa. Quem decide se ele entra no menu é
+  // o back (`effort.allowed`) — aqui mora só a tradução, não a oferta.
+  auto: 'automático',
 };
 
 export function rotulaEsforco(esforco: string | null | undefined): string | null {
   if (!esforco) return null;
   return ESFORCO[esforco] ?? esforco;
+}
+
+/** No que a troca de esforço desaguou DE FATO, lido do corpo do PATCH. O back
+ *  é honesto: 200 não é sinônimo de aplicado — o /effort pode não ter sido
+ *  entregue à sessão tmux, ou ter sido entregue e ficado pendente porque o
+ *  agente estava no meio de um turno (a troca enfileira; o diálogo de
+ *  confirmação do CC pode até recusá-la). Só a confirmação da sessão pinta o
+ *  card. */
+export type DesfechoEsforco = 'aplicado' | 'entrega-falhou' | 'pendente';
+
+export function desfechoDaTrocaDeEsforco(resposta: {
+  written: boolean;
+  tmux_delivered?: boolean | null;
+  confirmed?: boolean | null;
+}): DesfechoEsforco {
+  // `=== false` e não falsy: os caminhos Codex/Kimi não têm entrega tmux — o
+  // campo chega null/ausente e NÃO pode derrubar uma troca que foi só gravada.
+  if (!resposta.written || resposta.tmux_delivered === false) return 'entrega-falhou';
+  if (resposta.confirmed === false) return 'pendente';
+  return 'aplicado';
+}
+
+/** Quais motores têm `requested` no contrato do painel: Kimi e Codex (commits
+ *  dac720c/f9a6bd8 do Daniel). No Claude o campo é SEMPRE null — lá, null
+ *  significa "o contrato não cobre", nunca "ninguém pediu". Sem esta pergunta,
+ *  todo Claude ganharia a etiqueta de default, inclusive o que está em `max`
+ *  porque o Rica pediu — a mentira que o caso 3 existe para evitar. */
+export function contratoSeparaPedido(agente: {
+  executor_kind?: string | null;
+  model_family?: string | null;
+}): boolean {
+  return agente.executor_kind === 'codex' || agente.model_family === 'kimi';
+}
+
+/** A etiqueta ao lado do valor do esforço — uma palavra, ou NADA.
+ *
+ *  O `painel.effort` carrega o valor EFETIVO ao lado do PEDIDO. Três estados,
+ *  e confundir dois deles é o erro que esta máquina existe para evitar:
+ *
+ *  1. **Convergiu** (pedido = efetivo): o caso normal. `null` — nenhuma
+ *     etiqueta, o painel não polui.
+ *  2. **Divergiu** (pediu `high`, a sessão roda outra coisa): `diverge`.
+ *  3. **Ninguém pediu** (`requested` null COM fonte viva): o valor é o default
+ *     do motor, não decisão de alguém — `padrão`, e o título diz "ninguém
+ *     escolheu". Dar a entender que alguém escolheu seria mentira.
+ *
+ *  Leitura fraca (`session_may_diverge`) ou motor que o contrato não cobre
+ *  devolvem `null`: etiqueta inventada sobre dado fraco é pior que ausência.
+ *
+ *  A explicação por extenso vai no `titulo` (title/aria) — texto explicativo
+ *  na tela foi revogado pelo Rica em 30/07 e continua revogado. */
+export type EtiquetaEsforco = {
+  /** A palavra curta ao lado do valor — mesma gramática da etiqueta `antigo`. */
+  palavra: string;
+  /** A explicação, para `title`/aria — nunca texto visível na tela. */
+  titulo: string;
+};
+
+export function etiquetaDoEsforco(
+  esforco: {
+    value: string | null;
+    requested?: string | null;
+    session_may_diverge: boolean;
+  } | null,
+  cobrePedido: boolean,
+): EtiquetaEsforco | null {
+  if (!esforco || !cobrePedido || esforco.session_may_diverge || esforco.value == null) return null;
+
+  if (esforco.requested == null) {
+    return {
+      palavra: 'padrão',
+      titulo: 'Ninguém escolheu este nível — é o padrão do motor.',
+    };
+  }
+
+  if (esforco.requested === esforco.value) return null;
+
+  return {
+    palavra: 'diverge',
+    titulo: `Pedido ${rotulaEsforco(esforco.requested)} — a sessão está rodando ${rotulaEsforco(esforco.value)}.`,
+  };
 }
 
 export function leMotor(entrada: {

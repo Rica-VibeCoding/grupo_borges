@@ -79,6 +79,12 @@ export type CanarioStreamController = {
   dispose(): void;
 };
 
+/** Teto por RESULTADO DE FERRAMENTA, em caracteres (09/08). Não corta nada que
+ *  a tela mostre: todo renderer para em `LINHAS_DE_PRIMEIRA = 120`. O porquê
+ *  medido está em `_corta_resultados_grandes`, no `apps/api/routers/agents.py`;
+ *  quem não passa o parâmetro — o v1 — recebe tudo, como sempre. */
+const TETO_RESULTADO_CHARS = 32_000;
+
 export const INITIAL_CANARIO_STREAM_STATE: CanarioStreamState = {
   messages: [],
   isRunning: false,
@@ -94,7 +100,10 @@ function buildStreamUrl(
   sinceId: number | undefined,
   recentes: boolean,
 ): string {
-  const params = new URLSearchParams({ limit: String(limit) });
+  const params = new URLSearchParams({
+    limit: String(limit),
+    maxResultChars: String(TETO_RESULTADO_CHARS),
+  });
   if (sessionId) params.set('sessionId', sessionId);
   if (sinceId !== undefined) params.set('since_id', String(sinceId));
   // Só na PRIMEIRA conexão. Em reconexão existe cursor, e aí o que se quer é

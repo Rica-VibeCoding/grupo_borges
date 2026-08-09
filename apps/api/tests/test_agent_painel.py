@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from types import SimpleNamespace
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
+from services import tmux_driver
 
 
 DANIEL = {
@@ -139,6 +141,13 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         assert body["contexto"]["context_window"] == 200_000
         assert body["contexto"]["model_family"] == "fable"
         assert body["contexto"]["stale"] is False
+        assert body["model"] == {
+            "value": "fable",
+            "allowed": ["fable", "opus", "sonnet", "haiku"],
+            "source": str(quota_path),
+            "session_may_diverge": False,
+            "runtime_switch": True,
+        }
         assert body["effort"]["value"] == "high"
         assert body["permission"]["mode"] == "plan"
     finally:
@@ -231,6 +240,7 @@ def test_agent_painel_codex_usa_token_count_para_contexto_e_quotas(
         agents_router.codex_reader,
         "find_latest_thread",
         lambda *_args: SimpleNamespace(
+            reasoning_effort=None,
             model="gpt-5.6-sol",
             tokens_used=999_999_999,
             updated_at_ms=int(time.time() * 1000),
@@ -302,6 +312,7 @@ def test_agent_painel_codex_nao_carimba_cota_velha_como_atual(
         agents_router.codex_reader,
         "find_latest_thread",
         lambda *_args: SimpleNamespace(
+            reasoning_effort=None,
             model="gpt-5.6-sol",
             tokens_used=0,
             updated_at_ms=agora * 1000,
@@ -337,6 +348,7 @@ def test_agent_painel_codex_cai_para_rollout_quando_state_nao_tem_token_count(
         agents_router.codex_reader,
         "find_latest_thread",
         lambda *_args: SimpleNamespace(
+            reasoning_effort=None,
             model="gpt-5.6-sol",
             tokens_used=500_700,
             updated_at_ms=int(time.time() * 1000),
@@ -353,6 +365,249 @@ def test_agent_painel_codex_cai_para_rollout_quando_state_nao_tem_token_count(
     assert body["contexto"]["context_window"] == 258_400
     assert body["contexto"]["pct"] == 22.8
     assert body["quotas"]["seven_day"]["used_percentage"] == 4.0
+
+
+def _escreve_rollout(path: Path, *, total_tokens: int, observed_at: int) -> None:
+    carimbo = datetime.fromtimestamp(observed_at, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    path.write_text(
+        json.dumps(
+            {
+                "type": "event_msg",
+                "timestamp": carimbo,
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {"total_tokens": total_tokens},
+                        "model_context_window": 258_400,
+                    },
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _make_codex_state_db(tmp_path: Path, rows: list[tuple]) -> Path:
+    db = tmp_path / "state.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """
+        CREATE TABLE threads (
+            id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL, cwd TEXT NOT NULL,
+            title TEXT NOT NULL, model TEXT, reasoning_effort TEXT,
+            tokens_used INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER, created_at_ms INTEGER
+        )
+        """
+    )
+    conn.executemany("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _cenario_dois_runs(tmp_path: Path, monkeypatch, agora: int) -> None:
+    """Thread do run anterior no workspace cadastrado × thread do run que roda agora.
+
+    Reproduz o mundo real: `tara-codex ... -C /repo/do/dia` cria a thread com o cwd
+    do RUN. O workspace cadastrado (`/tmp/tara`) fica com a thread do run passado.
+    """
+    morto = tmp_path / "rollout-morto.jsonl"
+    vivo = tmp_path / "rollout-vivo.jsonl"
+    _escreve_rollout(morto, total_tokens=220_911, observed_at=agora - 2_200)
+    _escreve_rollout(vivo, total_tokens=161_907, observed_at=agora - 30)
+    db = _make_codex_state_db(
+        tmp_path,
+        [
+            ("morto", str(morto), "/tmp/tara", "run anterior", "gpt-5.6-terra", None,
+             220_911, 0, 1, (agora - 2_200) * 1000, (agora - 9_000) * 1000),
+            ("vivo", str(vivo), "/tmp/repo-do-dia", "run atual", "gpt-5.6-luna", None,
+             161_907, 0, 2, (agora - 30) * 1000, (agora - 1_000) * 1000),
+        ],
+    )
+    monkeypatch.setenv("CODEX_STATE_DB", str(db))
+    monkeypatch.setattr(agents_router.codex_reader, "TELECODEX_CONTEXTS", tmp_path / "sem-telecodex.json")
+
+
+def test_agent_painel_codex_segue_a_thread_do_run_vivo(tmp_path: Path, monkeypatch) -> None:
+    """O card tem de mostrar o contexto de QUEM ESTÁ RODANDO.
+
+    A thread é escolhida pelo id que o `thread.started` do run entregou, não pelo
+    `workspace_path` cadastrado — o run roda em `-C <outro repo>` e a busca por cwd
+    devolvia a thread do run anterior, com o número e o modelo dela.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        session_started_at=agora - 1_000,
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    contexto = body["contexto"]
+    assert contexto["model"] == "gpt-5.6-luna"
+    assert contexto["tokens"]["total"] == 161_907
+    assert contexto["pct"] == 62.7
+    assert contexto["updated_at"] == agora - 30
+    assert contexto["stale"] is False
+
+
+def _cenario_esforco_codex(tmp_path: Path, monkeypatch, agora: int, *, no_run: str) -> None:
+    """Um run vivo só, com o esforço que o Codex de fato gravou nele."""
+    rollout = tmp_path / "rollout-esforco.jsonl"
+    _escreve_rollout(rollout, total_tokens=1_000, observed_at=agora - 10)
+    db = _make_codex_state_db(
+        tmp_path,
+        [
+            ("vivo", str(rollout), "/tmp/repo-do-dia", "run atual", "gpt-5.6-luna",
+             no_run, 1_000, 0, 1, (agora - 10) * 1000, (agora - 100) * 1000),
+        ],
+    )
+    monkeypatch.setenv("CODEX_STATE_DB", str(db))
+    monkeypatch.setattr(
+        agents_router.codex_reader, "TELECODEX_CONTEXTS", tmp_path / "sem-telecodex.json"
+    )
+
+
+def test_agent_painel_codex_mostra_o_esforco_do_run_e_o_pedido_ao_lado(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Metade (a): a troca que não pegou fica visível.
+
+    O painel gravou `low` em `agent_state`, mas o run em execução foi criado com
+    `high`. Servir o `low` esconde exatamente o caso em que a escolha do Rica não
+    chegou ao motor — o número na tela tem de ser o do run, com o pedido ao lado.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_esforco_codex(tmp_path, monkeypatch, agora, no_run="high")
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        codex_reasoning_effort="low",
+        session_started_at=agora - 100,
+    )
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["value"] == "high"
+    assert effort["requested"] == "low"
+    assert effort["source"] == "codex.threads.reasoning_effort"
+    assert effort["session_may_diverge"] is False
+
+
+def test_agent_painel_codex_esforco_que_bate_nao_vira_divergencia(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Metade (b): quem está alinhado não passa a mostrar ressalva nenhuma.
+
+    Mesmo caminho de leitura do teste acima, com o run usando o que foi pedido —
+    `requested` e `value` iguais é o sinal de que não há nada a dizer.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_esforco_codex(tmp_path, monkeypatch, agora, no_run="max")
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        codex_reasoning_effort="max",
+        session_started_at=agora - 100,
+    )
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["value"] == "max"
+    assert effort["requested"] == "max"
+    assert effort["session_may_diverge"] is False
+
+
+def test_agent_painel_codex_sem_thread_legivel_cai_no_pedido(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Fonte viva ausente não pode piorar o que já se mostrava.
+
+    Sem thread para ler, o painel volta ao valor pedido e volta a avisar que a
+    sessão pode divergir — nunca fica em branco.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    monkeypatch.setenv("CODEX_STATE_DB", str(tmp_path / "state-que-nao-existe.sqlite"))
+    app.state.db._update_agent_codex_state(
+        "tara", executor_kind="codex", codex_reasoning_effort="high"
+    )
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["value"] == "high"
+    assert effort["requested"] is None
+    assert effort["source"] == "agent_state.codex_reasoning_effort"
+    assert effort["session_may_diverge"] is True
+
+
+def test_agent_painel_codex_marca_contexto_de_run_anterior_como_velho(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Sem id do run vivo, o painel ainda cai na thread por cwd — mas não mente.
+
+    Medida anterior ao início da sessão é de outro run: velha por definição, mesmo
+    que o relógio ainda não tenha passado do limite de idade. E o número CONTINUA
+    entregue — quem esconde dado deixa o Rica sem saber se é zero ou falta de leitura.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        session_started_at=agora - 1_000,
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    contexto = body["contexto"]
+    assert contexto["stale"] is True
+    assert contexto["pct"] == 85.5
+    assert contexto["updated_at"] == agora - 2_200
+
+
+def test_agent_painel_codex_contexto_declara_a_fonte_real(tmp_path: Path, monkeypatch) -> None:
+    """`source` carimbava `agent_state.token_usage_json` mesmo lendo o rollout.
+
+    O `token_usage_json` gravado por `codex.turn.completed` é recusado pelo filtro
+    de origem, e o número sai do JSONL — dizer o contrário mandou a investigação
+    deste defeito pro arquivo errado.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        token_usage_json=json.dumps({"source": "codex.turn.completed", "usage": {"input_tokens": 156_763_087}}),
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    assert body["contexto"]["source"] == str(tmp_path / "rollout-vivo.jsonl")
 
 
 def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monkeypatch) -> None:
@@ -399,6 +654,13 @@ def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monke
         assert contexto["pct"] == 42
         assert contexto["tokens"]["total"] == 84_000
         assert contexto["source"] == f"/tmp/cc-status-{old_session}.json"
+        assert body["model"] == {
+            "value": "opus",
+            "allowed": ["fable", "opus", "sonnet", "haiku"],
+            "source": "agent.model_default",
+            "session_may_diverge": True,
+            "runtime_switch": True,
+        }
         # quotas herda o mesmo arquivo antigo: status "stale" (badge no front)
         assert body["quotas"]["status"] == "stale"
     finally:
@@ -575,7 +837,9 @@ def test_agent_painel_404(tmp_path: Path, monkeypatch) -> None:
     assert response.status_code == 404
 
 
-def test_agent_painel_patch_effort_atualiza_settings(tmp_path: Path, monkeypatch) -> None:
+def test_agent_painel_patch_effort_claude_runtime_preserva_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
     settings = {
         "effortLevel": "medium",
         "theme": "dark",
@@ -583,24 +847,82 @@ def test_agent_painel_patch_effort_atualiza_settings(tmp_path: Path, monkeypatch
     }
     _write_settings(tmp_path, monkeypatch, settings)
     app = _build_app(tmp_path)
+    session_id = f"effort-runtime-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()),
+                "effort": {"level": "xhigh"},
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/daniel/effort", json={"effort": "xhigh"})
+    try:
+        with patch(
+            "routers.agents.tmux_driver.send_message",
+            return_value=tmux_driver.DELIVERED,
+        ) as send, patch(
+            "routers.agents.tmux_driver.press_enter", return_value=True
+        ):
+            with TestClient(app) as client:
+                response = client.patch(
+                    "/api/agents/daniel/effort", json={"effort": "xhigh"}
+                )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body == {
+            "slug": "daniel",
+            "effort": "xhigh",
+            "source": str(status_path),
+            "session_may_diverge": False,
+            "written": True,
+            "tmux_delivered": True,
+            "confirmed": True,
+            "runtime_switch": True,
+        }
+        send.assert_called_once_with("daniel", "/effort xhigh")
+        persisted = json.loads(
+            (tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8")
+        )
+        assert persisted == settings
+    finally:
+        status_path.unlink(missing_ok=True)
+
+
+def test_agent_painel_patch_effort_auto_eh_aceito_no_runtime(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    before = agents_router._CCStatus(
+        "effort-auto-session", None, {"updated_at": 1, "effort": {"level": "high"}}
+    )
+    after = agents_router._CCStatus(
+        "effort-auto-session",
+        Path("/tmp/cc-status-effort-auto-session.json"),
+        {"updated_at": 2, "effort": {"level": "xhigh"}},
+    )
+
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ) as send, patch(
+        "routers.agents.tmux_driver.press_enter", return_value=True
+    ), patch("routers.agents._load_cc_status", side_effect=[before, after]), patch(
+        "routers.agents.asyncio.sleep", new_callable=AsyncMock
+    ):
+        with TestClient(app) as client:
+            response = client.patch(
+                "/api/agents/daniel/effort", json={"effort": "auto"}
+            )
 
     assert response.status_code == 200
-    body = response.json()
-    settings_path = tmp_path / ".claude" / "settings.json"
-    assert body == {
-        "slug": "daniel",
-        "effort": "xhigh",
-        "source": str(settings_path),
-        "session_may_diverge": True,
-        "written": True,
-    }
-    persisted = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert persisted["effortLevel"] == "xhigh"
-    assert persisted["theme"] == "dark"
-    assert persisted["nested"] == {"keep": True}
+    assert response.json()["effort"] == "auto"
+    assert response.json()["confirmed"] is True
+    send.assert_called_once_with("daniel", "/effort auto")
 
 
 def test_agent_painel_patch_effort_invalido(tmp_path: Path, monkeypatch) -> None:
@@ -611,6 +933,37 @@ def test_agent_painel_patch_effort_invalido(tmp_path: Path, monkeypatch) -> None
         response = client.patch("/api/agents/daniel/effort", json={"effort": "ultra-high"})
 
     assert response.status_code == 422
+
+
+def test_agent_painel_nao_le_auto_como_nivel_da_statusline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """`auto` é argumento de `/effort`, não nível reportado.
+
+    A doc do statusline documenta `effort.level` como low/medium/high/xhigh/max
+    e trata `auto` como *reset to the model default* — a palavra nunca chega no
+    JSON (o `_poll_claude_effort` já dizia isso). Validar a leitura pela lista do
+    seletor, que oferece `auto`, faria o painel servir como nível em vigor uma
+    palavra que nenhum motor reporta.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    session_id = f"effort-auto-lido-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps({"updated_at": int(time.time()), "effort": {"level": "auto"}}),
+        encoding="utf-8",
+    )
+
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/agents/daniel/painel").json()
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert body["effort"]["value"] == "medium"
+    assert body["effort"]["source"] == str(tmp_path / ".claude" / "settings.json")
 
 
 def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) -> None:
@@ -631,20 +984,43 @@ def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) ->
     }
     assert painel.status_code == 200
     body = painel.json()
+    assert body["model"] is None
     assert body["effort"]["value"] == "xhigh"
-    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh"]
+    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh", "max"]
     assert body["codex_native"] is True
 
 
-def test_agent_painel_codex_effort_rejeita_max(tmp_path: Path, monkeypatch) -> None:
+def test_agent_painel_codex_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
+    """Codex 0.146+ — `max` é o teto do gpt-5.6-luna (catálogo `codex debug
+    models`), igual ao `_AGENT_PAINEL_ALLOWED_EFFORTS`. Espelha o caso Kimi."""
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.patch("/api/agents/tara/effort", json={"effort": "max"})
+        painel = client.get("/api/agents/tara/painel")
+
+    assert response.status_code == 200
+    assert response.json()["effort"] == "max"
+    assert painel.status_code == 200
+    body = painel.json()
+    assert body["effort"]["value"] == "max"
+    assert "max" in body["effort"]["allowed"]
+
+
+def test_agent_painel_codex_effort_rejeita_fora_da_lista(tmp_path: Path, monkeypatch) -> None:
+    """Valor fora da escada codex cai no 422 do SCHEMA (Pydantic, que já
+    aceitava max), nunca chega à allowlist do router."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/tara/effort", json={"effort": "ultra"})
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "codex_effort_not_allowed"
+    # detail é a lista de erros do Pydantic, não o código custom do router —
+    # com a allowlist == enum, a guarda codex_effort_not_allowed ficou inalcançável.
+    assert "codex_effort_not_allowed" not in str(response.json())
 
 
 def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
@@ -672,6 +1048,88 @@ def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> No
     assert body["effort"]["allowed"] == ["low", "high", "max"]
     # settings global intocado — o valor "medium" é dos agentes Anthropic.
     assert json.loads((settings_dir / "settings.json").read_text())["effortLevel"] == "medium"
+
+
+def _statusline_do_hiro(app, level: str | None) -> Path:
+    session_id = f"hiro-effort-{int(time.time() * 1000)}"
+    _insert_session_event(app.state.db, session_id, agent_slug="hiro")
+    path = Path(f"/tmp/cc-status-{session_id}.json")
+    corpo: dict = {"updated_at": int(time.time())}
+    if level is not None:
+        corpo["effort"] = {"level": level}
+    path.write_text(json.dumps(corpo), encoding="utf-8")
+    return path
+
+
+def test_agent_painel_kimi_mostra_o_nivel_da_sessao_mesmo_fora_da_trinca(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """O caso real do Hiro: pediram `high`, a sessão roda `xhigh`.
+
+    O `subir-frota.sh` só exporta `CLAUDE_CODE_EFFORT_LEVEL` quando a leitura do
+    cockpit devolve low/high/max; se ela falha na janela de boot, o `unset`
+    incondicional deixa a sessão no default do CC — que é `xhigh`. O painel
+    mostrava `high` com a mesma cara de quando o pedido pega.
+
+    `xhigh` não está no `allowed` do motor de propósito: o que a fonte reporta e
+    o que o seletor oferece são domínios diferentes. Filtrar a leitura pela
+    trinca apagaria justamente o estado que ninguém consegue escolher.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    status_path = _statusline_do_hiro(app, "xhigh")
+    app.state.db._update_agent_codex_state("hiro", kimi_reasoning_effort="high")
+
+    try:
+        with TestClient(app) as client:
+            effort = client.get("/api/agents/hiro/painel").json()["effort"]
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert effort["value"] == "xhigh"
+    assert effort["requested"] == "high"
+    assert effort["allowed"] == ["low", "high", "max"]
+    assert effort["source"] == str(status_path)
+
+
+def test_agent_painel_kimi_sem_pedido_registrado_nao_inventa_escolha(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Default por omissão não é decisão de ninguém.
+
+    Sem nada gravado em `agent_state`, o nível que a sessão roda é o default do
+    motor. `requested=None` é o que separa "a sua troca não pegou" de "ninguém
+    escolheu nada" — a UI não pode dar a entender que alguém pediu isto.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    status_path = _statusline_do_hiro(app, "xhigh")
+
+    try:
+        with TestClient(app) as client:
+            effort = client.get("/api/agents/hiro/painel").json()["effort"]
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert effort["value"] == "xhigh"
+    assert effort["requested"] is None
+
+
+def test_agent_painel_kimi_sem_statusline_cai_no_pedido(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Sessão sem statusline legível volta ao pedido, com a ressalva de sempre."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    app.state.db._update_agent_codex_state("hiro", kimi_reasoning_effort="high")
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/hiro/painel").json()["effort"]
+
+    assert effort["value"] == "high"
+    assert effort["requested"] is None
+    assert effort["source"] == "agent_state.kimi_reasoning_effort"
+    assert effort["session_may_diverge"] is True
 
 
 def test_agent_painel_kimi_effort_rejeita_medium(tmp_path: Path, monkeypatch) -> None:

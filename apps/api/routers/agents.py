@@ -33,7 +33,7 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncGenerator, Literal, NamedTuple, get_args
+from typing import Annotated, Any, AsyncGenerator, Literal, NamedTuple, get_args
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
@@ -75,11 +75,25 @@ _PLUGIN_ID_KEYS = ("id", "pluginId", "plugin_id")
 _CLAUDE_AI_PREFIX = "claude.ai "
 _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
-_CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh"]
+# Claude Code também aceita `auto`: ele restaura o default do modelo ativo
+# (docs: https://code.claude.com/docs/en/commands e /en/model-config).
+# Não misturar esta lista com Codex/Kimi — cada executor tem contrato próprio.
+_CLAUDE_PAINEL_ALLOWED_EFFORTS = [*_AGENT_PAINEL_ALLOWED_EFFORTS, "auto"]
+_AGENT_PAINEL_ALLOWED_MODELS = ["fable", "opus", "sonnet", "haiku"]
+# Codex 0.146+ expõe `max` para o gpt-5.6-luna (catálogo `codex debug models`;
+# Kimi já tinha max). Sem ele o PATCH rejeitava o teto que a UI oferece.
+_CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # Kimi K3 (assinatura Kimi Code): o endpoint expõe think_efforts low/high/max
 # (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
 # GET api.kimi.com/coding/v1/models.
 _KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
+# Domínio do que a statusline REPORTA, que não é o domínio do que a UI oferece.
+# A doc lista `effort.level` como low/medium/high/xhigh/max e trata `auto` só
+# como argumento ("reset to the model default") — a palavra nunca chega no JSON,
+# como `_poll_claude_effort` já descrevia. Validar leitura pela lista do seletor
+# aceitaria um `auto` que não existe e, do outro lado, descartaria o `xhigh` que
+# um agente Kimi de fato roda. São listas separadas de propósito.
+_STATUSLINE_REPORTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
 _CODEX_DEFAULT_SANDBOX = "danger-full-access"
 _TELECODEX_CONTROL_URL = os.environ.get(
@@ -101,7 +115,7 @@ _KIMI_USAGES_FAILURE_TTL_SECONDS = 30
 _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
 _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
-AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max"]
+AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "auto"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
 AgentCodexSandboxValue = Literal["read-only", "workspace-write", "danger-full-access"]
 
@@ -131,6 +145,19 @@ class AgentPainelEffort(BaseModel):
     allowed: list[str] = Field(default_factory=lambda: list(_AGENT_PAINEL_ALLOWED_EFFORTS))
     source: str
     session_may_diverge: bool = True
+    # O que o painel pediu, preenchido só quando `value` veio de fonte viva. A UI
+    # compara os dois: iguais não dizem nada, diferentes significam que a troca
+    # não pegou, e `requested=None` com `value` lido significa que ninguém
+    # escolheu — é o default do motor, não uma decisão de alguém.
+    requested: str | None = None
+
+
+class AgentPainelModel(BaseModel):
+    value: str | None = None
+    allowed: list[str] = Field(default_factory=lambda: list(_AGENT_PAINEL_ALLOWED_MODELS))
+    source: str
+    session_may_diverge: bool = True
+    runtime_switch: bool = True
 
 
 class AgentPainelPermission(BaseModel):
@@ -198,6 +225,7 @@ class AgentPainelResponse(BaseModel):
     slug: str
     generated_at: int
     contexto: AgentPainelContexto
+    model: AgentPainelModel | None = None
     effort: AgentPainelEffort
     permission: AgentPainelPermission
     quotas: AgentPainelQuotas
@@ -230,6 +258,11 @@ class AgentPainelEffortPatchResponse(BaseModel):
     source: str
     session_may_diverge: bool = True
     written: bool = True
+    # Presentes apenas no caminho Claude Code; opcionais preservam o contrato
+    # enxuto dos caminhos persist-only de Codex e Kimi.
+    tmux_delivered: bool | None = None
+    confirmed: bool | None = None
+    runtime_switch: bool | None = None
 
 
 class AgentPainelPermissionPatchResponse(BaseModel):
@@ -374,15 +407,14 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") == "codex":
-        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-        thread = await asyncio.to_thread(
-            codex_reader.find_latest_thread, cwd, _codex_db_path()
-        )
+        thread = await asyncio.to_thread(_resolve_codex_thread, agent)
+        contexto = _build_codex_painel_contexto(agent, thread)
         return AgentPainelResponse(
             slug=slug,
             generated_at=int(time.time()),
-            contexto=_build_codex_painel_contexto(agent, thread),
-            effort=_build_codex_painel_effort(agent),
+            contexto=contexto,
+            model=_build_painel_model(agent, contexto),
+            effort=_build_codex_painel_effort(agent, thread),
             permission=_read_agent_permission(),
             quotas=_build_codex_painel_quotas(agent, thread),
             subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
@@ -402,12 +434,13 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             kimi_usages = await _get_kimi_usages(kimi_api_key)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
-        # Kimi: effort persistido em agent_state (env var de boot), não o
-        # settings.json global — senão o card do Hiro mostraria o effort dos
-        # agentes Anthropic e os 5 níveis que o motor não tem.
-        asyncio.to_thread(_build_kimi_painel_effort, agent)
+        # Kimi: o pedido mora em agent_state (vira env var no próximo boot), mas
+        # o nível em vigor é o que a statusline da sessão reporta — o settings.json
+        # global mostraria o effort dos agentes Anthropic e os 5 níveis que o
+        # motor não tem.
+        asyncio.to_thread(_build_kimi_painel_effort, agent, cc_status)
         if is_kimi
-        else asyncio.to_thread(_read_agent_effort),
+        else asyncio.to_thread(_build_claude_painel_effort, agent, cc_status),
         asyncio.to_thread(_read_agent_permission),
         asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
         if kimi_usages is not None
@@ -418,6 +451,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         slug=slug,
         generated_at=int(time.time()),
         contexto=contexto,
+        model=_build_painel_model(agent, contexto),
         effort=effort,
         permission=permission,
         quotas=quotas,
@@ -426,7 +460,11 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     )
 
 
-@router.patch("/{slug}/effort", response_model=AgentPainelEffortPatchResponse)
+@router.patch(
+    "/{slug}/effort",
+    response_model=AgentPainelEffortPatchResponse,
+    response_model_exclude_none=True,
+)
 async def patch_agent_effort(
     slug: str,
     patch: AgentPainelEffortPatchRequest,
@@ -460,7 +498,44 @@ async def patch_agent_effort(
             session_may_diverge=True,
             written=True,
         )
-    return await asyncio.to_thread(_write_agent_effort, slug, patch.effort)
+
+    # Claude Code aplica esforço vivo pelo slash command. O próprio comando
+    # persiste o default para novas sessões; escrever ~/.claude/settings.json
+    # aqui seria redundante e vazaria a escolha para os outros agentes.
+    before = await _load_cc_status(request.app.state.db, slug)
+    session = agent["tmux_session"]
+    delivered = await _send_tmux_or_409(session, f"/effort {patch.effort}")
+    confirmed = False
+    confirmed_status: _CCStatus | None = None
+    if delivered:
+        # Igual ao endpoint /model: Enter separado cobre o picker/slider sem
+        # depender de o comando já ter sido submetido pelo driver.
+        await asyncio.sleep(0.3)
+        await tmux_driver.press_enter(session)
+        confirmed, confirmed_status = await _poll_claude_effort(
+            request.app.state.db,
+            slug,
+            patch.effort,
+            before,
+        )
+
+    source = (
+        str(confirmed_status.path)
+        if confirmed_status is not None and confirmed_status.path is not None
+        else str(before.path)
+        if before.path is not None
+        else "claude_code.runtime"
+    )
+    return AgentPainelEffortPatchResponse(
+        slug=slug,
+        effort=patch.effort,
+        source=source,
+        session_may_diverge=not confirmed,
+        written=True,
+        tmux_delivered=delivered,
+        confirmed=confirmed,
+        runtime_switch=True,
+    )
 
 
 @router.patch("/{slug}/codex-sandbox", response_model=AgentCodexSandboxPatchResponse)
@@ -588,17 +663,45 @@ def _int_or_none(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _string_or_none(value: Any) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
+
+
 def _num_or_none(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
 
 
+def _resolve_codex_thread(agent: dict[str, Any]) -> codex_reader.CodexThread | None:
+    return codex_reader.resolve_thread(
+        thread_id=agent.get("codex_thread_id"),
+        cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
+        db_path=_codex_db_path() or codex_reader.STATE_DB,
+    )
+
+
+def _codex_contexto_stale(agent: dict[str, Any], observed_at: int | None) -> bool:
+    """Duas maneiras de o número estar velho — e nenhuma pode sair como `False`.
+
+    A idade em segundos é a régua óbvia. A outra é a que pegou este defeito:
+    medida ANTERIOR ao início da sessão é de outro run, mesmo que o relógio
+    ainda não tenha estourado o limite. Sem carimbo não há como afirmar frescor,
+    e afirmar é justamente o defeito grave — velho passa por atual.
+    """
+    if observed_at is None:
+        return True
+    session_started_at = _int_or_none(agent.get("session_started_at"))
+    if session_started_at is not None and observed_at < session_started_at:
+        return True
+    return int(time.time()) - observed_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
+
+
 def _build_codex_painel_contexto(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None,
 ) -> AgentPainelContexto:
-    usage_payload = _codex_token_usage_payload(agent, thread)
+    usage_payload, source = _codex_token_usage_payload(agent, thread)
     model = (
         thread.model
         if thread is not None and thread.model
@@ -608,19 +711,16 @@ def _build_codex_painel_contexto(
         tokens_used = _int_or_none(usage_payload.get("context_tokens")) or 0
         context_window = _int_or_none(usage_payload.get("model_context_window"))
         pct = _num_or_none(usage_payload.get("context_pct"))
-        source = "agent_state.token_usage_json"
         available = True
+        # O carimbo é o da MEDIDA (`observed_at`), não o da thread: a thread
+        # anda a cada item do turno e diria "de agora" sobre um número parado.
+        observed_at = _int_or_none(usage_payload.get("observed_at"))
     else:
         tokens_used = thread.tokens_used if thread is not None else 0
         context_window = None
         pct = None
-        source = codex_reader.SOURCE
         available = thread is not None
-    updated_at = (
-        int(thread.updated_at_ms / 1000)
-        if thread is not None and thread.updated_at_ms is not None
-        else None
-    )
+        observed_at = None
     return AgentPainelContexto(
         model=model,
         model_family=_model_family(model),
@@ -628,15 +728,23 @@ def _build_codex_painel_contexto(
         tokens=AgentPainelTokens(total=tokens_used),
         pct=pct,
         source=source,
-        updated_at=updated_at,
+        updated_at=observed_at,
         available=available,
+        stale=available and _codex_contexto_stale(agent, observed_at),
     )
 
 
 def _codex_token_usage_payload(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None = None,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, str]:
+    """Devolve o número E de onde ele veio.
+
+    O painel carimbava `agent_state.token_usage_json` nos dois caminhos. Só que
+    o `token_usage_json` escrito por `codex.turn.completed` é recusado logo
+    abaixo, e o valor sai do rollout — declarar a fonte errada mandou a
+    investigação deste defeito pro arquivo errado.
+    """
     raw = agent.get("token_usage_json")
     if not isinstance(raw, str) or not raw.strip():
         payload = None
@@ -646,33 +754,82 @@ def _codex_token_usage_payload(
         except (json.JSONDecodeError, ValueError):
             payload = None
     if isinstance(payload, dict) and payload.get("source") == "codex.event_msg.token_count":
-        return payload
+        return payload, "agent_state.token_usage_json"
     if thread is None:
-        return None
-    return codex_reader.read_latest_token_count(thread.rollout_path)
+        return None, "agent_state.token_usage_json"
+    return codex_reader.read_latest_token_count(thread.rollout_path), thread.rollout_path
 
 
-def _build_codex_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
-    value = agent.get("codex_reasoning_effort")
-    if value not in _CODEX_PAINEL_ALLOWED_EFFORTS:
-        value = None
+def _build_codex_painel_effort(
+    agent: dict[str, Any], thread: codex_reader.CodexThread | None
+) -> AgentPainelEffort:
+    """O nível que o run está usando, com o pedido ao lado quando divergem.
+
+    `threads.reasoning_effort` é a configuração do run em execução; o
+    `agent_state` guarda o que alguém clicou, que só vale no run seguinte. Servir
+    o pedido como se fosse o estado esconde justamente o caso em que a troca não
+    pegou. O valor lido não passa por allowlist — quem o escreveu foi o próprio
+    Codex, e filtrá-lo pela lista do seletor repetiria o erro de `auto`.
+    """
+    requested = agent.get("codex_reasoning_effort")
+    if requested not in _CODEX_PAINEL_ALLOWED_EFFORTS:
+        requested = None
+
+    effective = _string_or_none(thread.reasoning_effort) if thread is not None else None
+    if effective is None:
+        # Sem thread legível não há o que reportar: cai no pedido, avisando que
+        # a sessão pode estar em outro lugar.
+        return AgentPainelEffort(
+            value=requested,
+            allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
+            source="agent_state.codex_reasoning_effort",
+            session_may_diverge=True,
+        )
+
     return AgentPainelEffort(
-        value=value,
+        value=effective,
         allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
-        source="agent_state.codex_reasoning_effort",
-        session_may_diverge=True,
+        source="codex.threads.reasoning_effort",
+        session_may_diverge=False,
+        requested=requested,
     )
 
 
-def _build_kimi_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
-    value = agent.get("kimi_reasoning_effort")
-    if value not in _KIMI_PAINEL_ALLOWED_EFFORTS:
-        value = None
+def _build_kimi_painel_effort(
+    agent: dict[str, Any], cc_status: _CCStatus
+) -> AgentPainelEffort:
+    """O nível em vigor na sessão, com o pedido ao lado quando divergem.
+
+    O Kimi roda dentro do Claude Code, então a statusline dele reporta o esforço
+    vivo igual à de qualquer agente Anthropic. O `agent_state` guarda o pedido,
+    que o `subir-frota.sh` transforma em `CLAUDE_CODE_EFFORT_LEVEL` no boot
+    seguinte — e quando essa leitura falha na janela de boot, o `unset` deixa a
+    sessão no default do CC sem ninguém saber. Servir o pedido esconderia
+    exatamente esse caso.
+
+    O valor lido NÃO é filtrado pela trinca do motor: `xhigh` é um nível que o
+    seletor não oferece e que a sessão do Hiro de fato roda. Mostrar o estado
+    verdadeiro não obriga a poder pedi-lo — `allowed` segue sendo low/high/max.
+    """
+    requested = agent.get("kimi_reasoning_effort")
+    if requested not in _KIMI_PAINEL_ALLOWED_EFFORTS:
+        requested = None
+
+    effective = _cc_effort_level(cc_status.payload)
+    if effective is None or cc_status.path is None:
+        return AgentPainelEffort(
+            value=requested,
+            allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
+            source="agent_state.kimi_reasoning_effort",
+            session_may_diverge=True,
+        )
+
     return AgentPainelEffort(
-        value=value,
+        value=effective,
         allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
-        source="agent_state.kimi_reasoning_effort",
-        session_may_diverge=True,
+        source=str(cc_status.path),
+        session_may_diverge=cc_status.fell_back,
+        requested=requested,
     )
 
 
@@ -718,6 +875,56 @@ async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
             continue
         return _CCStatus(session_id, path, payload, session_id != session_ids[0])
     return _CCStatus(session_ids[0], Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_ids[0]}.json", None)
+
+
+def _cc_effort_level(payload: dict[str, Any] | None) -> str | None:
+    effort = payload.get("effort") if isinstance(payload, dict) else None
+    level = effort.get("level") if isinstance(effort, dict) else None
+    return level if level in _STATUSLINE_REPORTED_EFFORTS else None
+
+
+async def _poll_claude_effort(
+    db: GrupoBorgesDB,
+    slug: str,
+    target: AgentPainelEffortValue,
+    before: _CCStatus,
+) -> tuple[bool, _CCStatus | None]:
+    """Confirma `/effort` no JSON da statusline da sessão alvo.
+
+    Schema documentado em https://code.claude.com/docs/en/statusline.
+
+    A statusline pode rodar em sessões simultâneas, então um arquivo de uma
+    sessão anterior nunca confirma a troca. `auto` é especial: o CC expõe no
+    JSON o nível efetivo do modelo, não a palavra `auto`; nesse caso exigimos
+    uma atualização do arquivo ou uma mudança do nível observado.
+    """
+    before_level = _cc_effort_level(before.payload)
+    before_updated_at = _int_or_none(before.payload.get("updated_at")) if before.payload else None
+    before_session_id = before.session_id if not before.fell_back else None
+    latest: _CCStatus | None = None
+
+    for _ in range(3):
+        await asyncio.sleep(0.5)
+        candidate = await _load_cc_status(db, slug)
+        latest = candidate
+        if candidate.fell_back or candidate.payload is None:
+            continue
+        if before_session_id is not None and candidate.session_id != before_session_id:
+            continue
+        level = _cc_effort_level(candidate.payload)
+        if level is None:
+            continue
+        if target != "auto" and level == target:
+            return True, candidate
+        if target == "auto":
+            updated_at = _int_or_none(candidate.payload.get("updated_at"))
+            if before_level is None or level != before_level or (
+                updated_at is not None
+                and (before_updated_at is None or updated_at > before_updated_at)
+            ):
+                return True, candidate
+
+    return False, latest
 
 
 def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelContexto:
@@ -773,13 +980,79 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
     )
 
 
+def _claude_model_slug(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    lowered = value.lower()
+    return next((model for model in _AGENT_PAINEL_ALLOWED_MODELS if model in lowered), None)
+
+
+def _build_painel_model(
+    agent: dict[str, Any], contexto: AgentPainelContexto
+) -> AgentPainelModel | None:
+    if agent.get("executor_kind") == "codex" or agent.get("model_family") == "kimi":
+        return None
+
+    status_model = _claude_model_slug(contexto.model)
+    if status_model is not None and contexto.available and not contexto.stale:
+        return AgentPainelModel(
+            value=status_model,
+            source=contexto.source,
+            session_may_diverge=False,
+        )
+
+    state_model = _claude_model_slug(agent.get("state_model"))
+    if state_model is not None:
+        return AgentPainelModel(
+            value=state_model,
+            source="agent.state_model",
+        )
+
+    return AgentPainelModel(
+        value=_claude_model_slug(agent.get("model_default")),
+        source="agent.model_default",
+    )
+
+
+def _build_claude_painel_effort(
+    agent: dict[str, Any], cc_status: _CCStatus
+) -> AgentPainelEffort:
+    value = _cc_effort_level(cc_status.payload)
+    if value is not None and cc_status.path is not None:
+        updated_at = _int_or_none(cc_status.payload.get("updated_at")) if cc_status.payload else None
+        stale = cc_status.fell_back or (
+            updated_at is not None
+            and int(time.time()) - updated_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
+        )
+        return AgentPainelEffort(
+            value=value,
+            allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
+            source=str(cc_status.path),
+            session_may_diverge=stale,
+        )
+
+    # Compatibilidade para sessões que ainda não produziram statusline: isto
+    # só lê o default global, nunca o escreve no caminho runtime acima.
+    settings = _read_agent_effort()
+    return AgentPainelEffort(
+        value=settings.value,
+        allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
+        source=settings.source,
+        session_may_diverge=True,
+    )
+
+
 def _read_agent_effort() -> AgentPainelEffort:
     settings_path = _agent_painel_settings_path()
     settings = _read_json_file(settings_path, {})
     value = settings.get("effortLevel") if isinstance(settings, dict) else None
     if value is not None:
         value = str(value)
-    return AgentPainelEffort(value=value, source=str(settings_path))
+    return AgentPainelEffort(
+        value=value,
+        allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
+        source=str(settings_path),
+    )
 
 
 def _agent_painel_settings_path() -> Path:
@@ -978,18 +1251,18 @@ def _build_codex_painel_quotas(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None = None,
 ) -> AgentPainelQuotas:
-    usage_payload = _codex_token_usage_payload(agent, thread)
+    usage_payload, source = _codex_token_usage_payload(agent, thread)
     if usage_payload is None:
         return AgentPainelQuotas(
             status="missing",
-            source="agent_state.token_usage_json",
+            source=source,
             stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         )
     rate_limits = usage_payload.get("rate_limits")
     if not isinstance(rate_limits, dict):
         return AgentPainelQuotas(
             status="missing",
-            source="agent_state.token_usage_json",
+            source=source,
             stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         )
 
@@ -1021,7 +1294,7 @@ def _build_codex_painel_quotas(
         status = "available"
     return AgentPainelQuotas(
         status=status,
-        source="agent_state.token_usage_json",
+        source=source,
         updated_at=observed_at,
         stale_after_seconds=_CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS,
         five_hour=five_hour,
@@ -1676,6 +1949,20 @@ _MESSAGES_STREAM_LIMIT_MAX = 500
 # consegue pedir). Só morde junto com `recentes=1` — sem ele o `limit` continua
 # capado em `_MESSAGES_STREAM_LIMIT_MAX` e nada muda para quem já está no ar.
 _MESSAGES_STREAM_REPLAY_LIMIT_MAX = 5_000
+# Teto por RESULTADO DE FERRAMENTA, em caracteres. Medido em 09/08 no replay do
+# `daniel`: 1005 mensagens somam 4,67 MB, mas a mediana é 1,4 KB e SEIS
+# `tool_result` (0,8% do total) carregam metade do peso — o maior tem 360 mil
+# caracteres. No cliente isso vira 3,6s de JS bloqueado em 49 long tasks contra
+# 50ms de um agente leve, e o Rica abre o feed pelo túnel, no celular.
+#
+# Cortar é invisível: TODOS os renderers do feed já param em
+# `LINHAS_DE_PRIMEIRA = 120` (shell-output, file-content, fetch-result,
+# agent-result, linha-execucao). 32 mil caracteres continuam sendo várias
+# vezes o que o "ver tudo" chega a mostrar.
+#
+# Default 0 = NÃO corta. O v1 (`apps/web`) consome este mesmo endpoint e é a
+# tela que o Rica usa todo dia — quem pede o corte é quem passa o parâmetro.
+_MESSAGES_STREAM_MAX_RESULT_CHARS_DEFAULT = 0
 _MESSAGES_STREAM_POLL_S = 0.25
 _MESSAGES_STREAM_HEARTBEAT_S = 15.0
 _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S = 10.0
@@ -1851,6 +2138,84 @@ async def stream_agent_pane(slug: str, request: Request) -> EventSourceResponse:
     return EventSourceResponse(_pane_stream())
 
 
+def _corta_texto(texto: str, max_chars: int) -> str:
+    """Corta preservando o COMEÇO após deixar o marcador de omissão no topo."""
+    omitidos = len(texto) - max_chars
+    return f"[… {omitidos} caracteres omitidos pelo cockpit]\n\n{texto[:max_chars]}"
+
+
+def _corta_resultados_grandes(canonical: dict[str, Any], max_chars: int) -> None:
+    """Encolhe resultado de ferramenta NO LUGAR, antes de virar bytes na rede.
+
+    Duas coisas engordam o replay, e a maior delas eu tinha chutado errado:
+
+    1. **Imagem em base64.** Medido em 09/08 no `daniel`: cinco imagens somam
+       1,15 MB — 27% de um replay de 4,28 MB. E o feed **não desenha nenhuma**:
+       `renderers/file-content.ts` marca o resultado como `binario` e devolve
+       `conteudo: ''`, mostrando só o aviso de arquivo binário; o `.tsx` não tem
+       `<img>` nem `src`. Ou seja, esse megabyte atravessa o túnel para o
+       navegador jogar fora. Some o `data` e a tela fica idêntica.
+
+    2. **Texto muito longo.** Todos os renderers param em
+       `LINHAS_DE_PRIMEIRA = 120`, então o que passa de `max_chars` (32 mil, com
+       folga de sobra sobre o "ver tudo") nunca chega à tela.
+
+    Fala do Rica, resposta do assistente e `thinking` passam inteiros por mais
+    longos que sejam: o peso do feed nunca esteve na conversa.
+
+    A varredura é recursiva porque a mesma imagem aparece em dois lugares com
+    formatos diferentes — `message.content[].content[]` e o espelho
+    `tool_use_result` (que é dict, não string, ao contrário do que o nome
+    sugere).
+    """
+    if max_chars <= 0:
+        return
+
+    def varre(no: Any) -> None:
+        if isinstance(no, dict):
+            fonte = no.get("source")
+            if (
+                no.get("type") == "image"
+                and isinstance(fonte, dict)
+                and isinstance(fonte.get("data"), str)
+            ):
+                # Mantém `type`/`media_type`: quem classifica olha a forma, não
+                # os bytes. O que sai é só a carga que ninguém desenha.
+                fonte["data"] = ""
+                return
+            for chave, valor in list(no.items()):
+                # Texto passando de `max_chars` aqui dentro só pode ser conteúdo:
+                # campo estrutural (`type`, `filePath`, `media_type`) é curto por
+                # natureza. Sem isto, o espelho em forma de DICT escapava do
+                # corte — a auditoria do Canário apontou e o replay confirmou:
+                # quatro espelhos com texto acima do teto, o maior com 199 mil
+                # caracteres atravessando inteiro (09/08).
+                if isinstance(valor, str) and len(valor) > max_chars:
+                    no[chave] = _corta_texto(valor, max_chars)
+                else:
+                    varre(valor)
+        elif isinstance(no, list):
+            for item in no:
+                varre(item)
+
+    # `varre` sozinho cobre as três formas em que o conteúdo chega (string crua,
+    # lista de blocos, dict aninhado): tratar cada uma à parte, como estava
+    # antes, cortava o mesmo texto duas vezes.
+    message = canonical.get("message")
+    if isinstance(message, dict):
+        partes = message.get("content")
+        if isinstance(partes, list):
+            for parte in partes:
+                if isinstance(parte, dict) and parte.get("type") == "tool_result":
+                    varre(parte)
+
+    resultado = canonical.get("tool_use_result")
+    if isinstance(resultado, str) and len(resultado) > max_chars:
+        canonical["tool_use_result"] = _corta_texto(resultado, max_chars)
+    else:
+        varre(resultado)
+
+
 def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | None:
     payload = event.get("payload")
     if not isinstance(payload, dict):
@@ -1930,6 +2295,12 @@ async def stream_agent_messages(
     limit: int = Query(default=_MESSAGES_STREAM_LIMIT_DEFAULT, ge=1),
     since_id: int = Query(default=0, ge=0),
     recentes: bool = Query(default=False),
+    # `Annotated` e não `Query(default=…)`: o default fica sendo um int de
+    # verdade, então a suíte — que chama esta função direto, sem o FastAPI
+    # resolver os parâmetros — recebe 0 em vez de um objeto `Query`.
+    max_result_chars: Annotated[
+        int, Query(ge=0, alias="maxResultChars")
+    ] = _MESSAGES_STREAM_MAX_RESULT_CHARS_DEFAULT,
 ) -> EventSourceResponse:
     """SSE canônico dos eventos JSONL de conversa de um agente.
 
@@ -1996,6 +2367,7 @@ async def stream_agent_messages(
                 last_id = max(last_id, int(event["id"]))
                 canonical = _canonical_jsonl_message_event(event)
                 if canonical is not None:
+                    _corta_resultados_grandes(canonical, max_result_chars)
                     yield _sse_json("message", canonical)
                 if index % _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY == 0:
                     now = time.monotonic()
@@ -2064,6 +2436,7 @@ async def stream_agent_messages(
                     last_id = max(last_id, int(event["id"]))
                     canonical = _canonical_jsonl_message_event(event)
                     if canonical is not None:
+                        _corta_resultados_grandes(canonical, max_result_chars)
                         yield _sse_json("message", canonical)
 
                 now = time.monotonic()

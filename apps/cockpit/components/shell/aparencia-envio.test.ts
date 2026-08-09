@@ -7,7 +7,7 @@ import {
   rotulaAcao,
   type FaseEnvio,
 } from './aparencia-envio.ts';
-import { descreveMotor, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
+import { contratoSeparaPedido, descreveMotor, desfechoDaTrocaDeEsforco, etiquetaDoEsforco, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
 
 const TODAS: FaseEnvio[] = [
   'ocioso',
@@ -231,6 +231,7 @@ describe('motor — modelo e esforço dentro do composer', () => {
   it('esforço sai em português', () => {
     assert.equal(rotulaEsforco('xhigh'), 'extra alto');
     assert.equal(rotulaEsforco('max'), 'máximo');
+    assert.equal(rotulaEsforco('auto'), 'automático');
     assert.equal(rotulaEsforco(null), null);
   });
 
@@ -263,5 +264,72 @@ describe('motor — modelo e esforço dentro do composer', () => {
   it('o texto do controle cabe numa linha e some o esforço quando não há', () => {
     assert.equal(textoDoMotor(leMotor({ modeloSessao: 'claude-opus-5', esforco: 'xhigh' })), 'Opus 5 · extra alto');
     assert.equal(textoDoMotor(leMotor({ modeloSessao: 'claude-opus-5' })), 'Opus 5');
+  });
+});
+
+describe('desfecho da troca de esforço — 200 não é sinônimo de aplicado', () => {
+  it('written false ou entrega tmux falha é falha de entrega', () => {
+    assert.equal(desfechoDaTrocaDeEsforco({ written: false }), 'entrega-falhou');
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: false }),
+      'entrega-falhou',
+    );
+  });
+
+  it('entregue mas não confirmado é pendente — o card NÃO pode pintar o valor pedido', () => {
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: true, confirmed: false }),
+      'pendente',
+    );
+  });
+
+  it('confirmado é o único que aplica', () => {
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: true, confirmed: true }),
+      'aplicado',
+    );
+  });
+
+  it('Codex/Kimi não têm entrega tmux: campos null não derrubam a troca gravada', () => {
+    assert.equal(
+      desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: null, confirmed: null }),
+      'aplicado',
+    );
+    assert.equal(desfechoDaTrocaDeEsforco({ written: true }), 'aplicado');
+  });
+});
+
+describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nada', () => {
+  it('divergiu: o pedido aparece no título, a palavra é "diverge"', () => {
+    // O caso real do Hiro em 09/08: pediram high, a sessão roda xhigh.
+    const e = etiquetaDoEsforco({ value: 'xhigh', requested: 'high', session_may_diverge: false }, true);
+    assert.equal(e?.palavra, 'diverge');
+    assert.match(e?.titulo ?? '', /pedido alto/i);
+    assert.match(e?.titulo ?? '', /extra alto/);
+  });
+
+  it('convergiu: nenhuma etiqueta — é o caso normal, não polui', () => {
+    assert.equal(etiquetaDoEsforco({ value: 'max', requested: 'max', session_may_diverge: false }, true), null);
+  });
+
+  it('ninguém pediu: "padrão", e o título deixa claro que não foi escolha', () => {
+    const e = etiquetaDoEsforco({ value: 'xhigh', requested: null, session_may_diverge: false }, true);
+    assert.equal(e?.palavra, 'padrão');
+    assert.match(e?.titulo ?? '', /ninguém escolheu/i);
+  });
+
+  it('Claude nunca ganha etiqueta: o contrato não cobre, null não é "ninguém pediu"', () => {
+    // O Rica pediu `max` no Felipe — requested chega null porque o back do
+    // Claude não preenche. "padrão" ali seria a mentira que o caso 3 evita.
+    assert.equal(etiquetaDoEsforco({ value: 'max', requested: null, session_may_diverge: false }, false), null);
+    assert.equal(contratoSeparaPedido({ executor_kind: null, model_family: null }), false);
+    assert.equal(contratoSeparaPedido({ executor_kind: 'codex' }), true);
+    assert.equal(contratoSeparaPedido({ model_family: 'kimi' }), true);
+  });
+
+  it('leitura fraca não etiqueta: session_may_diverge derruba até divergência real', () => {
+    assert.equal(etiquetaDoEsforco({ value: 'xhigh', requested: 'high', session_may_diverge: true }, true), null);
+    assert.equal(etiquetaDoEsforco({ value: null, requested: 'high', session_may_diverge: false }, true), null);
+    assert.equal(etiquetaDoEsforco(null, true), null);
   });
 });

@@ -177,6 +177,16 @@ export function IconeReenviar(props: IconeProps) {
   );
 }
 
+/** Lupa — campo de busca da tela de MCPs. */
+export function IconeBusca(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M19 19l-4.35-4.35" />
+    </Tracado>
+  );
+}
+
 export function IconeCopiar(props: IconeProps) {
   return (
     <Tracado {...props}>

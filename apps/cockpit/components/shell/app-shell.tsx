@@ -50,7 +50,7 @@
  *
  * Dono deste arquivo: frente `chrome` (docs/cockpit-v2-ownership.md §2).
  */
-import { GavetaNav, GavetaPainel, NavProvider, PainelProvider } from './superficie-otimista';
+import { GavetaNav, NavProvider, PainelProvider } from './superficie-otimista';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -61,13 +61,9 @@ type AppShellProps = {
    *  sempre à vista e este valor não muda nada. */
   navAberta?: boolean;
   fecharNavHref?: string;
-  drawer?: React.ReactNode;
   /** Vem de `?painel=...`. Fechado é o default — no celular a gaveta aberta
    *  esconde o chat, então ela nunca nasce aberta. */
   painelAberto?: boolean;
-  /** Para onde o véu e o botão de fechar apontam: a mesma rota, sem o param. */
-  fecharPainelHref?: string;
-  rotuloPainel?: string;
   /** `folha` recorta o palco sobre a mesa (chat). `mesa` entrega o children
    *  direto sobre o fundo, sem recorte — é a rota `/`, onde a tropa é a tela e
    *  uma folha vazia seria uma moldura em volta de nada. */
@@ -79,10 +75,7 @@ export function AppShell({
   nav,
   navAberta = false,
   fecharNavHref = '?',
-  drawer,
   painelAberto = false,
-  fecharPainelHref = '?',
-  rotuloPainel = 'painel',
   palco = 'folha',
 }: AppShellProps) {
   const folha = palco === 'folha';
@@ -95,9 +88,9 @@ export function AppShell({
     // existir sem que a tropa precise desenhar uma caixa para si.
     //
     // O provider do painel otimista envolve TUDO: o botão de abrir mora na
-    // `BarraDeTelas` (lá dentro do `main`, via children) e véu+aside moram
-    // aqui embaixo — os dois lados precisam do mesmo contexto. Fora de rota
-    // com painel ele só não é consumido.
+    // `BarraDeTelas` (lá dentro do `main`, via children) e a `GavetaPainel`
+    // mora no children da página do agente — os dois lados precisam do mesmo
+    // contexto. Fora de rota com painel ele só não é consumido.
     <PainelProvider aberto={painelAberto}>
       <NavProvider aberto={navAberta}>
       <div
@@ -123,27 +116,6 @@ export function AppShell({
         {children}
       </main>
 
-      {/* O painel. Repare no `drawer ?` em vez do antigo `mostrarGaveta ?`: ele
-          fica SEMPRE no DOM e o que muda é `data-aberto`.
-
-          Isto não é detalhe de implementação, é o que compra a animação de
-          SAÍDA: elemento REMOVIDO do DOM sai sem transição nenhuma — e removido
-          era o que ele era, porque a navegação `?painel=…` deixava de
-          renderizá-lo. Mantido montado, o React reconcilia o mesmo nó a cada
-          navegação e o CSS anima os dois lados. Ver `.ck-surge` no globals.css.
-
-          E é o que também compra a ABERTURA OTIMISTA: como o conteúdo já está
-          montado, o clique vira `data-aberto` no mesmo frame e a navegação só
-          sincroniza a URL atrás (ver `superficie-otimista.tsx`).
-
-          `inert` quando fechado: durante a saída o elemento ainda está visível
-          por ~200ms, e sem isto o conteúdo continuaria alcançável por Tab
-          nesse intervalo. */}
-      {drawer ? (
-        <GavetaPainel fecharHref={fecharPainelHref} rotulo={rotuloPainel} aberto={painelAberto}>
-          {drawer}
-        </GavetaPainel>
-      ) : null}
       </div>
       </NavProvider>
     </PainelProvider>

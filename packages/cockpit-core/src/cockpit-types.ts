@@ -62,6 +62,9 @@ export type Agent = {
   status_line: string | null;
   active_task_label: string | null;
   context_pct: number | null;
+  /** Quando o `context_pct` foi medido, e se a medida já não vale como atual. */
+  context_updated_at: number | null;
+  context_stale: boolean;
   session_started_at: number | null;
   last_assistant_message: string | null;
   token_usage_json: string | null;
@@ -277,6 +280,12 @@ export type PainelEffort = {
   allowed: string[];
   source: string;
   session_may_diverge: boolean;
+  // O que o painel pediu, preenchido só quando `value` veio de fonte viva e só
+  // nos motores cujo back separa pedido de efetivo (Kimi e Codex — no Claude o
+  // campo é sempre null). A UI compara os dois: iguais não dizem nada,
+  // diferentes significam que a troca não pegou, e `requested=null` com fonte
+  // viva significa que ninguém escolheu — é o default do motor.
+  requested?: string | null;
 };
 
 export type PainelPermissionMode = 'ask' | 'bypassPermissions' | 'plan' | 'acceptEdits';
@@ -356,10 +365,19 @@ export type PainelCanalEntrega = {
   acao_recomendada: string;
 };
 
+export type PainelModel = {
+  value: string | null;
+  allowed: string[];
+  source: string;
+  session_may_diverge: boolean;
+  runtime_switch: boolean;
+};
+
 export type AgentPainelResponse = {
   slug: string;
   generated_at: number;
   contexto: PainelContexto;
+  model?: PainelModel | null;
   effort: PainelEffort;
   permission: PainelPermission;
   quotas: PainelQuotas;

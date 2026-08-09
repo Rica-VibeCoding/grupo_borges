@@ -9,15 +9,10 @@
  *
  * 1. **Caixa alta com respiro**, não a linha fina que o v1 tinha. Os controles
  *    moram DENTRO dela, na base — não numa barra externa acima ou abaixo.
- * 2. **Modelo é texto, esforço é controle real.** O endpoint de esforço
- *    (`PATCH /{slug}/effort`) já existe e a lista de valores permitidos vem do
- *    back — então o seletor É funcional. O de modelo (`POST /{slug}/model`)
- *    também existe, mas troca de modelo tem consequência de sessão diferente
- *    por executor (Claude troca em runtime, Codex só na próxima execução —
- *    comentário do próprio `api.ts`), e decidir esse fluxo não é a camada
- *    visual desta rodada. Um controle que finge mudar o motor e não muda é
- *    pior que não ter controle (ordem explícita do Rica) — por isso o modelo
- *    aparece como VALOR REAL, não como botão morto fingindo interatividade.
+ * 2. **Modelo e esforço são controles reais.** O seletor abre um menu ancorado e
+ *    recebe do painel somente as opções que o servidor autoriza. Para Claude
+ *    Code, a troca de modelo acontece na sessão viva; se o agente estiver
+ *    trabalhando, o servidor exige a confirmação explícita antes de forçar.
  * 3. **O único elemento sólido é o envio.** Tudo ao redor — anexo, motor,
  *    microfone — é traço ou texto. É a hierarquia que a referência desenha:
  *    uma tela inteira de contorno com UM ponto de massa.
@@ -28,10 +23,8 @@
  * gerou texto pendurado sem aviso), e a distinção aqui não depende de ler
  * palavra nenhuma — depende do fio se mover, parar, ou sumir.
  *
- * ESFORÇO É AUTOSSUFICIENTE. A página que usa o Composer não precisa buscar
- * `/painel` antes: o próprio componente busca ao montar (`fetchAgentPainel`, a
- * mesma função que `cockpit-core` já expõe) e aplica a troca via
- * `patchAgentEffort`.
+ * O SELETOR É AUTOSSUFICIENTE. A página que usa o Composer não precisa buscar
+ * `/painel` antes: ele lê as opções ao montar e aplica as trocas pela API.
  *
  * NÃO EXISTE MODO DE DEMONSTRAÇÃO AQUI. O componente fala com o agente de
  * verdade e mostra o que ele está fazendo — nada de estado forçado, nada de
@@ -46,8 +39,6 @@ import {
   useState,
   type FormEvent,
 } from 'react';
-import { fetchAgentPainel, patchAgentEffort } from '@grupo_borges/cockpit-core/api';
-
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
@@ -68,7 +59,8 @@ import {
   type ItemDaFila,
 } from './fila-de-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
-import { descreveMotor, rotulaEsforco, type Motor } from './motor';
+import { type Motor } from './motor';
+import { SeletorMotor } from './seletor-motor';
 import { preparaEnvio } from './porta-de-envio';
 import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
 import { usaGravador } from './usa-gravador';
@@ -95,6 +87,9 @@ export type ComposerProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
+  /** Repasse direto para o SeletorMotor: Kimi/Codex têm `requested` no painel,
+   *  o Claude não (ver `contratoSeparaPedido` em motor.ts). */
+  esforcoCobrePedido: boolean;
 };
 
 const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.ReactElement> = {
@@ -137,9 +132,9 @@ export function Composer({
   agentSlug,
   agentName,
   motor,
+  esforcoCobrePedido,
 }: ComposerProps) {
   const [texto, setTexto] = useState('');
-  const [trocandoEsforco, setTrocandoEsforco] = useState(false);
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
@@ -216,42 +211,6 @@ export function Composer({
       cancelarCompact();
     }
   }, [faseLocal, estadoCompact.fase, cancelarCompact]);
-
-  // Busca `/painel` uma vez ao montar. Não há mais caminho "controlado": o
-  // valor na tela é sempre o do agente.
-  const [esforcoBuscado, setEsforcoBuscado] = useState<{
-    valor: string | null;
-    permitido: string[];
-  } | null>(null);
-
-  useEffect(() => {
-    let vivo = true;
-    fetchAgentPainel(agentSlug)
-      .then((painel) => {
-        if (vivo) setEsforcoBuscado({ valor: painel.effort.value, permitido: painel.effort.allowed });
-      })
-      .catch(() => {
-        // Painel indisponível: o controle nasce ausente, não fingido. Sem
-        // lista de valores permitidos não há o que oferecer.
-        if (vivo) setEsforcoBuscado({ valor: null, permitido: [] });
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [agentSlug]);
-
-  const esforcoValorEfetivo = esforcoBuscado?.valor ?? null;
-  const esforcoPermitidoEfetivo = esforcoBuscado?.permitido ?? [];
-
-  async function trocarEsforcoEfetivo(valor: string) {
-    const anterior = esforcoBuscado;
-    setEsforcoBuscado((atual) => (atual ? { ...atual, valor } : atual));
-    try {
-      await patchAgentEffort(agentSlug, valor);
-    } catch {
-      setEsforcoBuscado(anterior); // reverte — controle que erra e finge é pior
-    }
-  }
 
   // A CAIXA CRESCE COM O QUE ESTÁ ESCRITO. Efeito e não `onChange` porque o
   // campo tem três autores: o Rica digitando, a fila devolvendo um item ao
@@ -673,75 +632,18 @@ export function Composer({
               </span>
             )
           ) : (
-          <BotaoAnexo
-            estado={anexo.estado}
-            alternarGaveta={anexo.alternarGaveta}
-            desabilitado={travaCompact || emAndamento}
-            botaoRef={botaoAnexoRef}
-          />
+            <BotaoAnexo
+              estado={anexo.estado}
+              alternarGaveta={anexo.alternarGaveta}
+              desabilitado={travaCompact || emAndamento}
+              botaoRef={botaoAnexoRef}
+            />
           )}
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
-            {/* O motor — modelo em texto, esforço em controle real. Nunca bold:
-                a referência resolve hierarquia com espaço, não com peso.
-                Some durante a captura: escolher motor no meio de uma frase
-                falada não é uma decisão que alguém toma. */}
             {emCaptura ? null : (
-            <div
-              className="flex min-w-0 items-center"
-              style={{ gap: '3px', fontSize: 'var(--ck-text-sm)' }}
-              title={descreveMotor(motor)}
-            >
-              <span
-                className="truncate"
-                style={{
-                  color:
-                    motor.certeza === 'pode-divergir'
-                      ? 'var(--ck-text-tertiary)'
-                      : 'var(--ck-text-secondary)',
-                }}
-              >
-                {motor.modelo}
-              </span>
-              {esforcoPermitidoEfetivo.length > 0 ? (
-                <select
-                  aria-label={`Esforço de ${agentName}`}
-                  value={esforcoValorEfetivo ?? ''}
-                  disabled={trocandoEsforco}
-                  onChange={async (e) => {
-                    setTrocandoEsforco(true);
-                    try {
-                      await trocarEsforcoEfetivo(e.target.value);
-                    } finally {
-                      setTrocandoEsforco(false);
-                    }
-                  }}
-                  className="bg-transparent outline-none"
-                  style={{
-                    color: 'var(--ck-text-secondary)',
-                    fontFamily: 'var(--ck-font-sans)',
-                    fontSize: 'var(--ck-text-sm)',
-                    // `appearance: none` tiraria a seta nativa; mantemos a seta
-                    // do sistema — é a única pista de que isto é um `<select>`
-                    // e não texto, e substituí-la por um glifo custava mais do
-                    // que o problema pedia.
-                  }}
-                >
-                  {/* O VALOR vai cru pro back (`low`…`max`, é o contrato do
-                      endpoint), mas o RÓTULO é português — a referência mostra
-                      "Extra alto", não "xhigh", e quem lê esta linha é o Rica.
-                      O primeiro print pegou este defeito: o composer estava
-                      cantando "Opus high" no meio de uma tela em português. */}
-                  {esforcoPermitidoEfetivo.map((valor) => (
-                    <option key={valor} value={valor}>
-                      {rotulaEsforco(valor)}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-            </div>
+              <SeletorMotor agentSlug={agentSlug} agentName={agentName} motor={motor} esforcoCobrePedido={esforcoCobrePedido} />
             )}
-
             {/* O ÚNICO ELEMENTO SÓLIDO, e ele troca de função — a referência é
                 explícita nisso: na tela do Codex com o composer VAZIO, o botão
                 de massa não é a seta, é a onda. Faz sentido literal: sem texto

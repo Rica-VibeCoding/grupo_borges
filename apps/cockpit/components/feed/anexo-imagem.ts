@@ -34,8 +34,11 @@ const MARCADOR_DE_ORIGEM = /^\[Image: source: (.+)]$/;
 
 const ABERTURA = /^Imagem enviada via cockpit:/i;
 
+/** A linha inteira tem de ser o caminho: com `(?:^|[\\/])` bastava TERMINAR nele,
+ * e "olha este arquivo /…/uploads/agents/daniel/x.png" virava cartão de foto com
+ * a fala do Rica engolida (auditoria de 09/08). */
 const CAMINHO_DO_UPLOAD =
-  /(?:^|[\\/])uploads[\\/]agents[\\/][^\\/\s]+[\\/]([^\\/\s]+\.(?:jpg|png|webp))$/i;
+  /^(?:\S*[\\/])?uploads[\\/]agents[\\/][^\\/\s]+[\\/]([^\\/\s]+\.(?:jpg|png|webp))$/i;
 
 const LEGENDA = /^Caption:[ \t]*([\s\S]*)$/;
 
