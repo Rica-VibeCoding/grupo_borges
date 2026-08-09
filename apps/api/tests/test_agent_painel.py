@@ -240,6 +240,7 @@ def test_agent_painel_codex_usa_token_count_para_contexto_e_quotas(
         agents_router.codex_reader,
         "find_latest_thread",
         lambda *_args: SimpleNamespace(
+            reasoning_effort=None,
             model="gpt-5.6-sol",
             tokens_used=999_999_999,
             updated_at_ms=int(time.time() * 1000),
@@ -311,6 +312,7 @@ def test_agent_painel_codex_nao_carimba_cota_velha_como_atual(
         agents_router.codex_reader,
         "find_latest_thread",
         lambda *_args: SimpleNamespace(
+            reasoning_effort=None,
             model="gpt-5.6-sol",
             tokens_used=0,
             updated_at_ms=agora * 1000,
@@ -346,6 +348,7 @@ def test_agent_painel_codex_cai_para_rollout_quando_state_nao_tem_token_count(
         agents_router.codex_reader,
         "find_latest_thread",
         lambda *_args: SimpleNamespace(
+            reasoning_effort=None,
             model="gpt-5.6-sol",
             tokens_used=500_700,
             updated_at_ms=int(time.time() * 1000),
@@ -454,6 +457,105 @@ def test_agent_painel_codex_segue_a_thread_do_run_vivo(tmp_path: Path, monkeypat
     assert contexto["pct"] == 62.7
     assert contexto["updated_at"] == agora - 30
     assert contexto["stale"] is False
+
+
+def _cenario_esforco_codex(tmp_path: Path, monkeypatch, agora: int, *, no_run: str) -> None:
+    """Um run vivo só, com o esforço que o Codex de fato gravou nele."""
+    rollout = tmp_path / "rollout-esforco.jsonl"
+    _escreve_rollout(rollout, total_tokens=1_000, observed_at=agora - 10)
+    db = _make_codex_state_db(
+        tmp_path,
+        [
+            ("vivo", str(rollout), "/tmp/repo-do-dia", "run atual", "gpt-5.6-luna",
+             no_run, 1_000, 0, 1, (agora - 10) * 1000, (agora - 100) * 1000),
+        ],
+    )
+    monkeypatch.setenv("CODEX_STATE_DB", str(db))
+    monkeypatch.setattr(
+        agents_router.codex_reader, "TELECODEX_CONTEXTS", tmp_path / "sem-telecodex.json"
+    )
+
+
+def test_agent_painel_codex_mostra_o_esforco_do_run_e_o_pedido_ao_lado(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Metade (a): a troca que não pegou fica visível.
+
+    O painel gravou `low` em `agent_state`, mas o run em execução foi criado com
+    `high`. Servir o `low` esconde exatamente o caso em que a escolha do Rica não
+    chegou ao motor — o número na tela tem de ser o do run, com o pedido ao lado.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_esforco_codex(tmp_path, monkeypatch, agora, no_run="high")
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        codex_reasoning_effort="low",
+        session_started_at=agora - 100,
+    )
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["value"] == "high"
+    assert effort["requested"] == "low"
+    assert effort["source"] == "codex.threads.reasoning_effort"
+    assert effort["session_may_diverge"] is False
+
+
+def test_agent_painel_codex_esforco_que_bate_nao_vira_divergencia(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Metade (b): quem está alinhado não passa a mostrar ressalva nenhuma.
+
+    Mesmo caminho de leitura do teste acima, com o run usando o que foi pedido —
+    `requested` e `value` iguais é o sinal de que não há nada a dizer.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_esforco_codex(tmp_path, monkeypatch, agora, no_run="max")
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_thread_id="vivo",
+        codex_reasoning_effort="max",
+        session_started_at=agora - 100,
+    )
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["value"] == "max"
+    assert effort["requested"] == "max"
+    assert effort["session_may_diverge"] is False
+
+
+def test_agent_painel_codex_sem_thread_legivel_cai_no_pedido(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Fonte viva ausente não pode piorar o que já se mostrava.
+
+    Sem thread para ler, o painel volta ao valor pedido e volta a avisar que a
+    sessão pode divergir — nunca fica em branco.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    monkeypatch.setenv("CODEX_STATE_DB", str(tmp_path / "state-que-nao-existe.sqlite"))
+    app.state.db._update_agent_codex_state(
+        "tara", executor_kind="codex", codex_reasoning_effort="high"
+    )
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["value"] == "high"
+    assert effort["requested"] is None
+    assert effort["source"] == "agent_state.codex_reasoning_effort"
+    assert effort["session_may_diverge"] is True
 
 
 def test_agent_painel_codex_marca_contexto_de_run_anterior_como_velho(

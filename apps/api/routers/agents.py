@@ -145,6 +145,11 @@ class AgentPainelEffort(BaseModel):
     allowed: list[str] = Field(default_factory=lambda: list(_AGENT_PAINEL_ALLOWED_EFFORTS))
     source: str
     session_may_diverge: bool = True
+    # O que o painel pediu, preenchido só quando `value` veio de fonte viva. A UI
+    # compara os dois: iguais não dizem nada, diferentes significam que a troca
+    # não pegou, e `requested=None` com `value` lido significa que ninguém
+    # escolheu — é o default do motor, não uma decisão de alguém.
+    requested: str | None = None
 
 
 class AgentPainelModel(BaseModel):
@@ -409,7 +414,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             generated_at=int(time.time()),
             contexto=contexto,
             model=_build_painel_model(agent, contexto),
-            effort=_build_codex_painel_effort(agent),
+            effort=_build_codex_painel_effort(agent, thread),
             permission=_read_agent_permission(),
             quotas=_build_codex_painel_quotas(agent, thread),
             subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
@@ -657,6 +662,10 @@ def _int_or_none(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _string_or_none(value: Any) -> str | None:
+    return value.strip() or None if isinstance(value, str) else None
+
+
 def _num_or_none(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -750,15 +759,38 @@ def _codex_token_usage_payload(
     return codex_reader.read_latest_token_count(thread.rollout_path), thread.rollout_path
 
 
-def _build_codex_painel_effort(agent: dict[str, Any]) -> AgentPainelEffort:
-    value = agent.get("codex_reasoning_effort")
-    if value not in _CODEX_PAINEL_ALLOWED_EFFORTS:
-        value = None
+def _build_codex_painel_effort(
+    agent: dict[str, Any], thread: codex_reader.CodexThread | None
+) -> AgentPainelEffort:
+    """O nível que o run está usando, com o pedido ao lado quando divergem.
+
+    `threads.reasoning_effort` é a configuração do run em execução; o
+    `agent_state` guarda o que alguém clicou, que só vale no run seguinte. Servir
+    o pedido como se fosse o estado esconde justamente o caso em que a troca não
+    pegou. O valor lido não passa por allowlist — quem o escreveu foi o próprio
+    Codex, e filtrá-lo pela lista do seletor repetiria o erro de `auto`.
+    """
+    requested = agent.get("codex_reasoning_effort")
+    if requested not in _CODEX_PAINEL_ALLOWED_EFFORTS:
+        requested = None
+
+    effective = _string_or_none(thread.reasoning_effort) if thread is not None else None
+    if effective is None:
+        # Sem thread legível não há o que reportar: cai no pedido, avisando que
+        # a sessão pode estar em outro lugar.
+        return AgentPainelEffort(
+            value=requested,
+            allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
+            source="agent_state.codex_reasoning_effort",
+            session_may_diverge=True,
+        )
+
     return AgentPainelEffort(
-        value=value,
+        value=effective,
         allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
-        source="agent_state.codex_reasoning_effort",
-        session_may_diverge=True,
+        source="codex.threads.reasoning_effort",
+        session_may_diverge=False,
+        requested=requested,
     )
 
 
