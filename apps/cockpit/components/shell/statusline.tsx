@@ -9,8 +9,8 @@
  * Vinicius em 60% como "pouco mais da metade", quando 60% é o DOBRO do teto de
  * 30% que o próprio Rica cravou (ordem de 30/07, em `ze-shared/AGENTS.md`). Uma
  * barra que não conhece a regra do dono mente sobre o único número que decide
- * `/compact`. O traço no 30 é o instrumento inteiro desta tela: escala honesta
- * (0–100, igual ao número ao lado), julgamento visível.
+ * `/compact`. Aqui o teto está no desenho — não como traço, e sim como cor e
+ * como escala: ver `barra-de-contexto.tsx` e `medidor.ts`.
  *
  * Dono: Daniel (pele). Funções derivadas vêm do `cockpit-core` — as mesmas que o
  * cockpit antigo usa, então os dois leem o mundo pelo mesmo instrumento.
@@ -23,74 +23,12 @@ import {
   shortModelName,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { formatCompactNumber, formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
-import { CELULA_DO_TETO, TETO_PCT, celulasDoMedidor } from './medidor';
-
-export { TETO_PCT };
-
-/**
- * O medidor de contexto — 10 células, escala 0–50%, o teto no vão da sexta.
- *
- * A barra contínua que estava aqui foi reprovada pelo Rica (09/08): *"essa
- * barra de statusline context fica visualmente apontando para o mesmo lugar"*.
- * Ele tinha razão, e o culpado era o traço do teto: fixo em 30% da largura, ele
- * caía na MESMA coordenada em todas as nove linhas e formava uma coluna branca
- * vertical descendo a lista inteira. O olho lia a coluna, não o dado.
- *
- * A troca resolve pela estrutura, não pela cor:
- *
- * - **O teto virou respiro, não risco.** Depois da 6ª célula o vão é maior. Nada
- *   é desenhado por cima do preenchimento, então não há mais linha repetida — e
- *   o limite continua visível, porque um vão maior dentro de um ritmo regular é
- *   impossível de não ver.
- * - **Cada célula vale 5%**, então 7% acende duas e 25% acende cinco: a diferença
- *   entre dois agentes finalmente aparece na forma, não só no número.
- * - **Célula acesa além do teto sai em âmbar**, junto com o percentual. Cor onde
- *   há decisão a tomar, e só ali.
- * - **A última célula ENGROSSA quando a régua acaba antes do valor** (acima de
- *   50%). Sem isso, 55% e 95% desenhavam as mesmas dez células âmbar e a
- *   diferença entre "passou do teto" e "vai compactar a qualquer momento" sumia
- *   justamente no caso mais grave — achado do Daniel na revisão. Engrossar, e
- *   não acender uma décima primeira, mantém a moldura fixa: lista onde umas
- *   linhas têm mais caixinhas que outras lê como quebrada.
- *
- * Nem `@shadcn/progress` nem `@shadcn/chart` entram aqui, e a razão é de peso:
- * o primeiro é a mesma barra contínua que acabou de ser reprovada, e o segundo
- * traz o Recharts inteiro para desenhar dez retângulos em nove linhas de uma
- * coluna de 260px. Célula é `<span>` com fundo — zero dependência, e roda dentro
- * do Server Component sem virar cliente.
- *
- * A aritmética mora em `medidor.ts`, com teste: os casos que mais importam são
- * os que quase nunca estão na tela na hora em que se está olhando.
- *
- * Herdado por quem dorme (`LinhaDormindo`): teto é um só, ou o número mente
- * diferente por linha.
- */
-export function Barra({ pct }: { pct: number }) {
-  return (
-    <span aria-hidden className="flex shrink-0 items-center" style={{ height: '10px' }}>
-      {celulasDoMedidor(pct).map((celula, i) => (
-        <span
-          key={i}
-          className="block"
-          style={{
-            width: celula.saturada ? '6px' : '3px',
-            height: '8px',
-            // O respiro do teto. Vai como margem DA CÉLULA seguinte pra não
-            // depender de `gap` — o vão extra tem de existir uma vez só, no
-            // meio, e não somado ao gap de todos os outros pares.
-            marginLeft: i === 0 ? 0 : i === CELULA_DO_TETO ? '5px' : '2px',
-            borderRadius: '1px',
-            background: celula.acesa
-              ? celula.alemDoTeto
-                ? 'var(--ck-state-attention)'
-                : 'var(--ck-text-secondary)'
-              : 'var(--ck-edge-hairline)',
-          }}
-        />
-      ))}
-    </span>
-  );
-}
+import {
+  BarraDeContexto,
+  LARGURA_NA_COLUNA,
+  LARGURA_NA_LISTA,
+} from './barra-de-contexto';
+import { TETO_PCT } from './medidor';
 
 export function Statusline({
   agente,
@@ -172,7 +110,7 @@ export function Statusline({
               : `contexto ${pct}% — teto da frota ${TETO_PCT}%`
           }
         >
-          <Barra pct={pct} />
+          <BarraDeContexto pct={pct} largura={curta ? LARGURA_NA_COLUNA : LARGURA_NA_LISTA} />
           <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
             {pct}%
           </span>

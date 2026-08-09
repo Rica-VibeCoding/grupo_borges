@@ -42,7 +42,7 @@
  *    inteira repetindo o nome logo acima. Some quando é a casa, aparece quando
  *    não é. Deixou de ser rótulo e virou informação: quem exibe pasta está fora
  *    de casa.
- * 6. COR SÓ ONDE HÁ JULGAMENTO. Detalhe na `Barra` (statusline.tsx).
+ * 6. COR SÓ ONDE HÁ JULGAMENTO. Detalhe na `BarraDeContexto`.
  * 7. O PULSO DE 24H. O `/api/fleet` sempre entregou `sparkline` — 24 baldes de
  *    token por hora, por agente — e nenhuma tela do v2 lia. Sem ele, quem não
  *    gastou um token hoje pesa igual a quem gastou um milhão. Entra como marca
@@ -59,9 +59,11 @@ import type {
   SparklineBucket,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
+import { BarraDeContexto, LARGURA_NA_LISTA } from './barra-de-contexto';
 import { estadoDe } from './estado';
+import { TETO_PCT } from './medidor';
 import { Retrato } from './retrato';
-import { Barra, Statusline, TETO_PCT } from './statusline';
+import { Statusline } from './statusline';
 
 /**
  * A pasta em que o agente trabalha, sem a raiz que todos compartilham.
@@ -282,8 +284,9 @@ function LinhaDormindo({
             ("nenhum endereço do repositório ali") e SEM "há 20h" ("um timing
             que não me interessa") — a ordem de 02/08 valia pra tropa de pé; pra
             quem dorme, pasta e relógio viraram ruído na linha única.
-            O instrumento é o MESMO da statusline dos vivos (Barra + teto de
-            30%): dado velho lido com régua diferente mente duas vezes. O valor
+            O instrumento é o MESMO da statusline dos vivos (`BarraDeContexto` +
+            teto de 30%): dado velho lido com régua diferente mente duas vezes.
+            O valor
             é o último que o pane gravou antes de morrer — `resolveContextPct`
             cai no `context_pct` do banco quando o excerpt já não tem barra. */}
         {pct !== null ? (
@@ -307,7 +310,7 @@ function LinhaDormindo({
                 régua e conseguir ler de quem é o número, ler de quem é vem
                 primeiro — e o julgamento não se perde: o valor continua ao lado
                 do teto de 30%, em âmbar quando passa. Na tela cheia cabe tudo. */}
-            {compacta ? null : <Barra pct={pct} />}
+            {compacta ? null : <BarraDeContexto pct={pct} largura={LARGURA_NA_LISTA} />}
             <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
               {pct}%
             </span>

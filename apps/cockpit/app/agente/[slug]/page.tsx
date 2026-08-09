@@ -2,8 +2,10 @@ import { notFound } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
+import { BarraDeContexto } from '@/components/shell/barra-de-contexto';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
+import { TETO_PCT } from '@/components/shell/medidor';
 import { Composer } from '@/components/shell/composer';
 import { leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
@@ -17,16 +19,60 @@ export const dynamic = 'force-dynamic';
  *
  *  Mesma régua do bloco de cota — o velho MOSTRA o número e diz que é velho.
  *  "dados antigos" sozinho não separa 6 minutos de um dia; por isso a idade vem
- *  junto, e quem não tem carimbo diz que veio de outra sessão em vez de calar. */
+ *  junto, e quem não tem carimbo diz que veio de outra sessão em vez de calar.
+ *
+ *  O teto vem do `TETO_PCT`, não escrito à mão. Até 09/08 esta string tinha um
+ *  `teto 30%` literal: o mesmo número que a tropa lia de uma constante, e que
+ *  aqui viraria mentira no dia em que o Rica mudasse a ordem da frota. */
 function descreveContexto(agente: Agent): string | null {
   if (agente.context_pct == null) return null;
-  const base = `${agente.context_pct}% · teto 30%`;
+  const base = `${agente.context_pct}% · teto ${TETO_PCT}%`;
   if (!agente.context_stale) return base;
   const idade =
     agente.context_updated_at !== null
       ? formatElapsedShort(Math.floor(Date.now() / 1000) - agente.context_updated_at)
       : null;
   return idade ? `${base} · dados antigos · lido ${idade}` : `${base} · dados antigos`;
+}
+
+/** O campo Contexto, que ganha a barra que os outros cinco não têm.
+ *
+ *  Era o único campo da ficha que carregava um JULGAMENTO — "isto está alto?" —
+ *  e o único que respondia só com texto, do jeito que o Rica reprovou em 09/08.
+ *  A barra é a mesma da tropa, pela mesma régua: a gaveta é o degrau seguinte do
+ *  toque no card, e dois desenhos diferentes para o mesmo número fazem a gaveta
+ *  parecer outra medição. */
+function CampoContexto({ agente }: { agente: Agent }) {
+  const texto = descreveContexto(agente);
+  if (texto === null || agente.context_pct == null) return null;
+
+  return (
+    <div className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>
+      <span
+        style={{
+          fontSize: 'var(--ck-text-xs)',
+          textTransform: 'uppercase',
+          letterSpacing: 'var(--ck-track-overline)',
+          color: 'var(--ck-text-secondary)',
+        }}
+      >
+        Contexto
+      </span>
+      <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
+        <BarraDeContexto pct={agente.context_pct} />
+        <span
+          className="shrink-0"
+          style={{
+            fontFamily: 'var(--ck-font-mono)',
+            fontSize: 'var(--ck-text-sm)',
+            color: 'var(--ck-text-primary)',
+          }}
+        >
+          {texto}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 /** Linha do painel. Rótulo em sans (voz do produto), valor em mono (voz da
@@ -144,7 +190,7 @@ function Painel({
         <Campo rotulo="Executor" valor={agente.state_cli ?? agente.cli_default} />
         <Campo rotulo="Sessão tmux" valor={agente.tmux_session} />
         <Campo rotulo="Workspace" valor={agente.workspace_path} />
-        <Campo rotulo="Contexto" valor={descreveContexto(agente)} />
+        <CampoContexto agente={agente} />
       </div>
     </div>
   );

@@ -1,57 +1,70 @@
 /**
- * A régua do medidor de contexto — a aritmética, fora do componente.
+ * A régua do contexto — a aritmética, fora do componente.
  *
- * Mora num módulo próprio porque é lógica pura e precisa de teste: os casos que
- * mais importam (acima do teto, acima do fim da escala) são justamente os que
- * quase nunca aparecem na tela na hora em que se está olhando, e um desenho que
- * só se prova quando a frota coopera não se prova nunca.
+ * É o LUGAR CENTRAL pedido pelo Rica (09/08): statusline, tropa e gaveta leem o
+ * teto e a escala daqui. Antes o `30` aparecia escrito à mão na string da gaveta
+ * (`app/agente/[slug]/page.tsx`), e um teto escrito em dois lugares vira dois
+ * tetos no dia em que um deles muda.
  *
  * Módulo neutro de propósito — sem `'use client'`, igual ao `estado.ts`.
+ *
+ * ## Por que a régua não é linear
+ *
+ * A barra é contínua por ordem do Rica (*"eu prefiro a contínua"*), e aí as duas
+ * escalas óbvias falham, cada uma de um jeito:
+ *
+ * - **0 a 100 linear** desperdiça a barra inteira. A frota vive entre 5% e 40%:
+ *   todo mundo desenha um toquinho à esquerda e as nove linhas ficam idênticas —
+ *   exatamente o defeito que fez a primeira barra ser reprovada.
+ * - **0 a 50 linear** dá resolução na faixa certa, mas satura: 55% e 95%
+ *   encostam os dois no fim e desenham igual. A diferença entre "passou do teto"
+ *   e "vai compactar a qualquer momento" some no caso mais grave — achado do
+ *   Daniel, que vale igual aqui.
+ *
+ * Então a régua tem DOIS TRECHOS: a faixa de operação (0 até o teto) ocupa 70%
+ * da barra, e todo o resto (do teto até 100) divide os 30% finais. O ganho é
+ * duplo — resolução onde a frota realmente está, e função monótona até 100%, que
+ * é o que garante que dois valores diferentes nunca desenhem igual.
+ *
+ * A quebra de inclinação cai no teto, o mesmo ponto onde a cor muda. Não há nada
+ * desenhado ali: a mudança de trecho é invisível, quem marca o teto é a cor.
  */
 
 /** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta.
  *  Ordem do Rica de 30/07, escrita em `ze-shared/AGENTS.md`. */
 export const TETO_PCT = 30;
 
-/** Onde a régua termina. Para em 50, não em 100, porque a frota vive entre 5% e
- *  40%: numa escala até 100 todo mundo acendia o mesmo toquinho à esquerda e as
- *  nove linhas ficavam idênticas. E não vai a 60 (o dobro do teto) porque aí a
- *  zona além do limite ficava com metade do desenho para um caso raro. */
-export const ESCALA_PCT = 50;
+/** Quanto da barra a faixa de operação (0 → teto) toma para si. O resto da
+ *  escala inteira se espreme nos 30% que sobram — de propósito: ali o que
+ *  importa é ordenar "passou pouco" e "passou muito", não medir com precisão. */
+export const FATIA_ATE_O_TETO = 0.7;
 
-export const CELULAS = 10;
-export const PCT_POR_CELULA = ESCALA_PCT / CELULAS;
+/** Piso de desenho: 1% de contexto já é contexto, e um fio de 0,6px não aparece.
+ *  Mesmo princípio do `Math.ceil` que a régua de células usava — quem tem alguma
+ *  coisa mostra alguma coisa. */
+export const PISO_VISIVEL = 0.04;
 
-/** Índice da primeira célula que já passou do teto. DERIVADO: mudar o teto da
- *  frota reajusta o desenho sozinho, sem ninguém precisar lembrar deste arquivo. */
-export const CELULA_DO_TETO = TETO_PCT / PCT_POR_CELULA;
-
-export type CelulaMedidor = {
-  acesa: boolean;
-  /** Esta célula representa contexto acima do teto — acesa, sai em âmbar. */
-  alemDoTeto: boolean;
-  /** A régua acabou e o valor não. Só a última célula carrega isto. */
-  saturada: boolean;
-};
+/** Passou do teto? É isto que decide a cor do preenchimento — e é a única marca
+ *  do teto que existe, por ordem do Rica: *"essa barrinha na vertical é feio"*,
+ *  *"passou de 30% muda de cor"*. Nada é desenhado por cima da barra. */
+export function passouDoTeto(pct: number): boolean {
+  return pct > TETO_PCT;
+}
 
 /**
- * Quais células acendem, e como.
+ * Que fatia da barra o valor preenche, de 0 a 1.
  *
- * `Math.ceil` de propósito: 1% de contexto já é contexto, e uma célula apagada
- * diria "zero". Quem tem alguma coisa acende alguma coisa.
- *
- * A saturação existe porque encurtar a escala tem um custo, e ele cai no caso
- * mais grave: sem ela, 55% e 95% desenhavam as mesmas dez células âmbar, e a
- * diferença entre "passou do teto" e "vai compactar a qualquer momento"
- * desaparecia do desenho. A última célula muda de forma para dizer que a régua
- * acabou antes do valor — quanto exatamente, o percentual ao lado responde.
+ * Acima de 100% clampa: 100 é o fim real da janela do modelo, não há "além" para
+ * desenhar. Abaixo de 0 (dado torto vindo do pane) clampa em vazio em vez de
+ * inverter a barra.
  */
-export function celulasDoMedidor(pct: number): CelulaMedidor[] {
-  const acesas = Math.min(CELULAS, Math.ceil(pct / PCT_POR_CELULA));
-  const saturou = pct > ESCALA_PCT;
-  return Array.from({ length: CELULAS }, (_, i) => ({
-    acesa: i < acesas,
-    alemDoTeto: i >= CELULA_DO_TETO,
-    saturada: saturou && i === CELULAS - 1,
-  }));
+export function fracaoDoMedidor(pct: number): number {
+  if (!Number.isFinite(pct) || pct <= 0) return 0;
+
+  const bruta =
+    pct <= TETO_PCT
+      ? (pct / TETO_PCT) * FATIA_ATE_O_TETO
+      : FATIA_ATE_O_TETO + ((pct - TETO_PCT) / (100 - TETO_PCT)) * (1 - FATIA_ATE_O_TETO);
+
+  return Math.min(1, Math.max(PISO_VISIVEL, bruta));
 }
