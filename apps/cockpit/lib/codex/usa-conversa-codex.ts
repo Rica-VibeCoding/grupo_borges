@@ -36,9 +36,9 @@ import {
 
 const POLL_MS = 3_000;
 
-/** Mesmo teto do feed do CC (`HISTORICO_PADRAO`), pela mesma ordem do Rica em
- *  09/08: *"pode mandar 100 mensagens, no máximo"*. */
-const HISTORICO_PADRAO = 100;
+/** Mesmo teto do feed do CC (`HISTORICO_PADRAO`), acompanhando a ordem do Rica
+ *  em 10/08 de subir de 100 para 300. */
+const HISTORICO_PADRAO = 300;
 
 type RespostaCodex = {
   thread_id: string | null;

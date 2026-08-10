@@ -29,18 +29,18 @@ import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 
-/** Era 1000 até 09/08. O Rica cortou a dúvida pela raiz: *"as mensagens ficam
- *  nas sessões do CC, se eu precisar dou um resumo por lá — por mim não
- *  guardaria nada"*, e depois cravou o teto: *"pode mandar 100 mensagens, no
- *  máximo"*. O histórico profundo não é o que ele vem ver aqui; o arquivo morto
- *  da conversa é o JSONL da sessão.
+/** Era 1000 até 09/08, quando o Rica cravou 100 — *"as mensagens ficam nas
+ *  sessões do CC (…) pode mandar 100 mensagens, no máximo"*. Em 10/08 ele
+ *  subiu para 300: rolando o chat do Pavan para trás a conversa acabava antes
+ *  do começo da própria sessão, e 100 mensagens não cobriam nem uma tarde.
  *
- *  Medido no replay do `daniel` no mesmo dia: 1000 mensagens custavam 2,82 MB,
- *  200 custam 905 KB e 100 custam 652 KB — **77% de corte**. Eu tinha proposto
- *  200 (o ganho de 200→100 é só 250 KB, contra 1,9 MB de 1000→200); ele
- *  preferiu o teto menor, e quem decide quanto histórico serve é quem lê a
- *  tela. */
-const HISTORICO_PADRAO = 100;
+ *  Medido em 10/08 no replay de uma sessão longa do `pavan`: 100 mensagens
+ *  custam 220 KB e 300 custam 723 KB (~2,5 KB por mensagem a mais). Longe das
+ *  2,82 MB que o teto de 1000 custava, que foi o que motivou o corte.
+ *
+ *  Isto NÃO alcança o que veio antes de um `/clear`: o replay é filtrado pela
+ *  sessão atual, então o arquivo morto continua sendo o JSONL da sessão. */
+const HISTORICO_PADRAO = 300;
 
 /** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
  *  no mesmo `<Feed>`, com os mesmos itens e a mesma gramática. É a ordem do
