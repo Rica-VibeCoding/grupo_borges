@@ -147,7 +147,7 @@ agents:
     role: Executora pareada — Codex CLI
     emoji: "⭐"
     origin: sikh ("estrela")
-    tmux_session: tara-1
+    tmux_session: tara
     workspace_path: /home/clawd/repos/ze_claude/tara
     cli_default: codex
     model_default: codex-gpt-5-6-sol
