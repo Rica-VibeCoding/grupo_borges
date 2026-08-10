@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import {
+  ALERT_KINDS,
   mergeMarkdownClassName,
   normalizeMarkdownContent,
+  remarkCockpitAlerts,
   transformMarkdownUrl,
 } from './markdown.ts';
 
@@ -101,4 +107,72 @@ test('preserva classes semânticas produzidas pelo parser GFM', () => {
     'font-mono text-[13px] language-typescript',
   );
   assert.equal(mergeMarkdownClassName('list-disc'), 'list-disc');
+});
+
+// --- alerts -------------------------------------------------------------
+// Atravessam o pipeline REAL (react-markdown + remark-gfm), não uma árvore
+// montada à mão: o que precisa ser provado é justamente que o `hProperties`
+// sobrevive à conversão pra hast e chega como prop no componente.
+
+function renderMarkdown(markdown: string): string {
+  return renderToStaticMarkup(
+    createElement(
+      ReactMarkdown,
+      { remarkPlugins: [remarkGfm, remarkCockpitAlerts] },
+      markdown,
+    ),
+  );
+}
+
+test('cada um dos cinco alerts vira data-alert e perde o marcador literal', () => {
+  for (const kind of ALERT_KINDS) {
+    const html = renderMarkdown(`> [!${kind.toUpperCase()}]\n> Corpo do aviso.`);
+
+    assert.match(html, new RegExp(`data-alert="${kind}"`));
+    assert.equal(html.includes('[!'), false, `marcador vazou em ${kind}: ${html}`);
+    assert.match(html, /Corpo do aviso\./);
+  }
+});
+
+test('marcador em minúscula também pega — quem escreve é LLM', () => {
+  const html = renderMarkdown('> [!caution]\n> Some com tudo.');
+  assert.match(html, /data-alert="caution"/);
+  assert.equal(html.includes('[!'), false);
+});
+
+test('citação comum continua citação, sem data-alert', () => {
+  const html = renderMarkdown('> "não quero relatório longo"');
+  assert.equal(html.includes('data-alert'), false);
+  assert.match(html, /<blockquote>/);
+});
+
+test('citação que MENCIONA o marcador no meio não vira alerta', () => {
+  const html = renderMarkdown('> o Rica falou de [!NOTE] ontem');
+  assert.equal(html.includes('data-alert'), false);
+  assert.match(html, /\[!NOTE\]/);
+});
+
+test('marcador seguido de linha em branco não deixa parágrafo vazio', () => {
+  const html = renderMarkdown('> [!NOTE]\n>\n> Corpo.');
+  assert.match(html, /data-alert="note"/);
+  assert.equal(html.includes('<p></p>'), false, html);
+});
+
+test('marcador com quebra dura não deixa <br> órfão no topo', () => {
+  const html = renderMarkdown('> [!NOTE]  \n> Corpo.');
+  assert.match(html, /data-alert="note"/);
+  assert.equal(html.includes('<p><br/>'), false, html);
+});
+
+test('formatação depois do marcador sobrevive', () => {
+  const html = renderMarkdown('> [!WARNING]\n> **cuidado** com isso');
+  assert.match(html, /data-alert="warning"/);
+  assert.match(html, /<strong>cuidado<\/strong>/);
+  assert.equal(html.includes('[!'), false);
+});
+
+test('alerta dentro de item de lista também é marcado', () => {
+  const html = renderMarkdown('- item\n\n  > [!TIP]\n  > dica aninhada');
+  assert.match(html, /data-alert="tip"/);
+  assert.equal(html.includes('[!'), false);
 });

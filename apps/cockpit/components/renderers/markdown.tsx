@@ -5,7 +5,10 @@ import remarkGfm from 'remark-gfm';
 import {
   mergeMarkdownClassName,
   normalizeMarkdownContent,
+  parseAlertKind,
+  remarkCockpitAlerts,
   transformMarkdownUrl,
+  type AlertKind,
 } from '../../lib/markdown';
 import { CodeBlock } from './code-block';
 
@@ -14,7 +17,36 @@ export type AssistantMarkdownProps = {
   className?: string;
 };
 
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkCockpitAlerts];
+
+// Tokens próprios do alerta (`globals.css`), não os de estado do agente — vide
+// o comentário lá. Classe literal, nunca montada por template: nome de classe
+// que só existe em runtime não é visto pelo JIT do Tailwind 4 e some.
+const ALERT_BORDA: Record<AlertKind, string> = {
+  note: 'border-[var(--ck-alert-note)]',
+  tip: 'border-[var(--ck-alert-tip)]',
+  important: 'border-[var(--ck-alert-important)]',
+  warning: 'border-[var(--ck-alert-warning)]',
+  caution: 'border-[var(--ck-alert-caution)]',
+};
+
+const ALERT_ROTULO_COR: Record<AlertKind, string> = {
+  note: 'text-[var(--ck-alert-note)]',
+  tip: 'text-[var(--ck-alert-tip)]',
+  important: 'text-[var(--ck-alert-important)]',
+  warning: 'text-[var(--ck-alert-warning)]',
+  caution: 'text-[var(--ck-alert-caution)]',
+};
+
+// Sem a palavra, a barra colorida é adivinhação — e cor sozinha não passa em
+// leitor de tela. Português porque é o que o Rica lê.
+const ALERT_ROTULO: Record<AlertKind, string> = {
+  note: 'Nota',
+  tip: 'Dica',
+  important: 'Importante',
+  warning: 'Atenção',
+  caution: 'Cuidado',
+};
 
 const MARKDOWN_COMPONENTS: Components = {
   a({ children, ...props }) {
@@ -24,12 +56,27 @@ const MARKDOWN_COMPONENTS: Components = {
       </a>
     );
   },
-  blockquote({ children, ...props }) {
+  blockquote({ children, node, ...props }) {
+    const alerta = parseAlertKind((props as Record<string, unknown>)['data-alert']);
+
+    // Citação continua citação: cinza, texto secundário. Só o alerta ganha cor.
+    if (alerta === null) {
+      return (
+        <blockquote
+          className="border-l-2 border-[var(--ck-edge-functional)] pl-[var(--ck-space-3)] text-[var(--ck-text-secondary)]"
+          {...props}
+        >
+          {children}
+        </blockquote>
+      );
+    }
+
     return (
       <blockquote
-        className="border-l-2 border-[var(--ck-edge-functional)] pl-[var(--ck-space-3)] text-[var(--ck-text-secondary)]"
+        className={`space-y-[var(--ck-space-2)] border-l-2 pl-[var(--ck-space-3)] text-[var(--ck-text-primary)] ${ALERT_BORDA[alerta]}`}
         {...props}
       >
+        <p className={`font-medium ${ALERT_ROTULO_COR[alerta]}`}>{ALERT_ROTULO[alerta]}</p>
         {children}
       </blockquote>
     );

@@ -73,6 +73,19 @@
   --ck-diff-add-bg: color-mix(in oklch, var(--ck-diff-add) 12%, var(--ck-surface-canvas));
   --ck-diff-del-bg: color-mix(in oklch, var(--ck-diff-del) 12%, var(--ck-surface-canvas));
 
+  /* -- alerta: o `> [!NOTE]` que a skill `canal-cockpit` manda o agente escrever
+   * Nenhuma cor NOVA — cada valor é cópia literal do estado de mesma leitura, e
+   * o contraste ao lado é o já verificado pelo §3 da estética. Cópia, e não
+   * `var(--ck-state-*)`, é o ponto: estado descreve o AGENTE no painel, alerta
+   * descreve o TEXTO. Amarrados, mexer no âmbar do "espera humano" repintaria
+   * todo aviso escrito do cockpit sem ninguém ter pedido. Mesmo motivo que
+   * separou `--ck-edge-composer` de `--ck-edge-functional` em 08/08. --------- */
+  --ck-alert-note: oklch(0.78 0.13 220);         /* #36caf1  6.7:1  = state-running */
+  --ck-alert-tip: oklch(0.76 0.13 150);          /* #6fc884  6.3:1  = state-ok */
+  --ck-alert-important: oklch(0.73 0.14 285);    /* #9f9afc  5.2:1  = state-thinking */
+  --ck-alert-warning: oklch(0.82 0.14 78);       /* #f6b84d  7.3:1  = state-attention */
+  --ck-alert-caution: oklch(0.74 0.16 22);       /* #ff7d7c  5.2:1  = state-fail */
+
   /* -- bordas: luz, não sombra -------------------------------------------- */
   --ck-edge-functional: oklch(0.60 0 0);         /* #808080  3.29:1 sobre raised —
                                                     ≥3:1 OBRIGATÓRIO: input, botão,
