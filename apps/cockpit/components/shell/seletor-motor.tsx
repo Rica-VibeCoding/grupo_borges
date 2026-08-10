@@ -90,6 +90,15 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   const etiquetaEsforco = etiquetaDoEsforco(esforco, esforcoCobrePedido);
   const temControle = Boolean(modelo?.allowed.length || esforco?.allowed.length);
 
+  // DOIS DEGRAUS DE TINTA, não um — 10/08. Modelo e esforço dividiam a mesma
+  // cor, e o rótulo lia como um bloco só ("Opus extra alto"); a referência
+  // separa QUEM pensa de QUANTO pensa dando claro ao nome e cinza ao nível.
+  // `pode-divergir` continua sendo um degrau inteiro abaixo — a incerteza vale
+  // para o par, não só para o modelo —, e o degrau relativo sobrevive lá.
+  const divergindo = motor.certeza === 'pode-divergir';
+  const tintaModelo = divergindo ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)';
+  const tintaEsforco = divergindo ? 'var(--ck-text-tertiary)' : 'var(--ck-text-secondary)';
+
   function alterarAbertura(proximo: boolean) {
     setAberto(proximo);
     if (!proximo) {
@@ -220,20 +229,10 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
         style={{ gap: '3px', fontSize: 'var(--ck-text-sm)' }}
         title={`${rotuloModelo}${rotuloDoEsforco ? `, esforço ${rotuloDoEsforco}` : ''}`}
       >
-        <span
-          className="truncate"
-          style={{
-            color:
-              motor.certeza === 'pode-divergir'
-                ? 'var(--ck-text-tertiary)'
-                : 'var(--ck-text-secondary)',
-          }}
-        >
+        <span className="truncate" style={{ color: tintaModelo }}>
           {rotuloModelo}
         </span>
-        {rotuloDoEsforco ? (
-          <span style={{ color: 'var(--ck-text-secondary)' }}>{rotuloDoEsforco}</span>
-        ) : null}
+        {rotuloDoEsforco ? <span style={{ color: tintaEsforco }}>{rotuloDoEsforco}</span> : null}
         {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
       </div>
     );
@@ -274,14 +273,15 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
             borderRadius: 'var(--ck-radius-pill)',
             fontSize: 'var(--ck-text-base)',
             fontWeight: 500,
-            color:
-              motor.certeza === 'pode-divergir'
-                ? 'var(--ck-text-tertiary)'
-                : 'var(--ck-text-secondary)',
+            color: tintaModelo,
           }}
         >
           <span className="truncate">{rotuloModelo}</span>
-          {rotuloDoEsforco ? <span className="shrink-0">{rotuloDoEsforco}</span> : null}
+          {rotuloDoEsforco ? (
+            <span className="shrink-0" style={{ color: tintaEsforco }}>
+              {rotuloDoEsforco}
+            </span>
+          ) : null}
           {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
           <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>⌄</span>
         </button>
