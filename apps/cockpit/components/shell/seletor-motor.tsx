@@ -248,18 +248,30 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
           aria-haspopup="menu"
           aria-expanded={aberto}
           className="ck-seletor-motor ck-veil flex min-w-0 items-center"
+          // TEXTO SOLTO, não pílula — 10/08. A cápsula (borda + material +
+          // desfoque + fio de luz) desenhava uma segunda superfície dentro de
+          // uma superfície que já é material, e o rótulo do motor não é um
+          // controle de massa: ele é metadado do que está escrito. O raio fica
+          // porque o anel de `:focus-visible` é `inset` e sem ele o foco vira
+          // um retângulo em volta do texto.
+          //
+          // `marginBottom` casa com o do botão de onda (`--ck-space-1`), não com
+          // o padding da caixa: os dois têm 32px de altura e dividem o mesmo
+          // flex `items-center`, então margem diferente era 8px de desnível
+          // entre o rótulo e o único elemento sólido da linha.
           style={{
             height: '32px',
             minHeight: '32px',
             gap: 'var(--ck-space-1)',
-            marginBottom: 'calc(var(--ck-space-3) * -1)',
-            padding: '0 var(--ck-space-3)',
-            border: '1px solid var(--ck-edge-hairline)',
+            marginBottom: 'calc(var(--ck-space-1) * -1)',
+            // O `ck-veil` continua: em repouso não pinta nada, e é ele que dá
+            // hover e press ao rótulo agora que não há mais cápsula desenhada.
+            // O respiro de 8px existe para esse realce (e para o dedo) ter área;
+            // a margem negativa devolve os mesmos 8px, então a distância entre
+            // o texto e o botão de onda segue sendo o `gap` de 12px de antes.
+            padding: '0 var(--ck-space-2)',
+            marginRight: 'calc(var(--ck-space-2) * -1)',
             borderRadius: 'var(--ck-radius-pill)',
-            background: 'var(--ck-surface-composer-material)',
-            WebkitBackdropFilter: 'blur(var(--ck-veu-desfoque))',
-            backdropFilter: 'blur(var(--ck-veu-desfoque))',
-            boxShadow: 'inset 0 1px 0 0 var(--ck-edge-light)',
             fontSize: 'var(--ck-text-base)',
             fontWeight: 500,
             color:
