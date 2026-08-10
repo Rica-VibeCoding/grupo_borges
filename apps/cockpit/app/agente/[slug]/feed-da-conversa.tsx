@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 
 import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
+import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
@@ -26,6 +27,7 @@ import { usaCompact } from '@/lib/compact';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
+import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 
 /** Era 1000 até 09/08. O Rica cortou a dúvida pela raiz: *"as mensagens ficam
  *  nas sessões do CC, se eu precisar dou um resumo por lá — por mim não
@@ -57,11 +59,19 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   return ehCodex ? (
     <FeedCodex agentSlug={agentSlug} />
   ) : (
-    <FeedClaudeCode agentSlug={agentSlug} />
+    <FeedClaudeCode agentSlug={agentSlug} statusDaFrota={agente?.status ?? null} />
   );
 }
 
-function FeedClaudeCode({ agentSlug }: { agentSlug: string }) {
+function FeedClaudeCode({
+  agentSlug,
+  statusDaFrota,
+}: {
+  agentSlug: string;
+  /** O que a frota VIVA diz deste agente. Entra aqui só para desligar o
+   *  "Pensando" quando ele sai do ar — ver `linha-viva-da-conversa.ts`. */
+  statusDaFrota: AgentStatus | null;
+}) {
   // `geracao`: o backend emite `session-reset` quando um Restart sem contexto
   // zera o histórico — o hook a incrementa e nasce com `messages` vazias.
   // Ela vira `key` lá embaixo (padrão react.dev de reset): Feed, virtualizador
@@ -144,14 +154,23 @@ function FeedClaudeCode({ agentSlug }: { agentSlug: string }) {
   // O PRAZO DA LINHA VIVA. `isRunning` conta o que o log conta, e turno que
   // morre sem despedida (limite de uso, agente desligado, sessão derrubada)
   // não escreve nada — o "Pensando" ficava de pé sozinho. Ver o porquê medido
-  // em `linha-viva.ts`.
+  // em `linha-viva.ts`. Quem NÃO precisa esperar os cinco minutos é o
+  // desligamento: a frota viva conta isso em segundos, e a régua que cruza as
+  // duas fontes mora em `linha-viva-da-conversa.ts`.
   const desdeMs = useMemo(() => desdeDaLinhaViva(messages), [messages]);
   const vencida = usaLinhaVivaVencida(desdeMs);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];
-    if (isRunning && !vencida && !trabalhoEmVooNoFim(itensBase, lookup)) {
-      if (desdeMs !== null) lista = [...lista, { kind: 'linha-viva', desdeMs }];
+    const desdeLinhaViva = ancoraDaLinhaViva({
+      correndo: isRunning,
+      vencida,
+      trabalhoEmVooNoFim: trabalhoEmVooNoFim(itensBase, lookup),
+      desdeMs,
+      statusDaFrota,
+    });
+    if (desdeLinhaViva !== null) {
+      lista = [...lista, { kind: 'linha-viva', desdeMs: desdeLinhaViva }];
     }
     if (delegacoes.length > 0) {
       lista = [
@@ -165,7 +184,7 @@ function FeedClaudeCode({ agentSlug }: { agentSlug: string }) {
       ];
     }
     return lista;
-  }, [isRunning, vencida, desdeMs, itensBase, lookup, delegacoes]);
+  }, [isRunning, vencida, desdeMs, statusDaFrota, itensBase, lookup, delegacoes]);
 
   if (itensBase.length === 0) {
     // `connecting`/`replaying`: o histórico ainda não chegou — ficar em
