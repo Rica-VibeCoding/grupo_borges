@@ -336,7 +336,6 @@ export async function postAgentDestrava(
 export type RelaunchResponse = {
   tmux_delivered: boolean;
   attempted: boolean;
-  // `null` no boot limpo (`resume: false`) — não há JSONL nenhum consultado.
   session_id: string | null;
   sent_at: number;
 };
@@ -371,6 +370,53 @@ export async function postAgentRelaunch(
   });
   if (!res.ok) {
     const detail = await errorDetail(res, `postAgentRelaunch failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
+export type DesligarResponse = {
+  /** `false` só quando um scope resistiu ao `stop` — já desligado é sucesso. */
+  tmux_delivered: boolean;
+  /** `false` quando não havia sessão: o botão é idempotente. */
+  attempted: boolean;
+  sessao_encerrada: boolean;
+  /** Os cgroups da cerca da frota que foram parados — claude, MCPs e o `bun`
+   *  do plugin de uma vez. É o que `tmux kill-session` sozinho nunca alcançou. */
+  scopes_parados: string[];
+  scopes_resistiram: string[];
+  sent_at: number;
+};
+
+/**
+ * Desliga o agente e tudo que ele consome. Destrutivo: `confirm` obrigatório no
+ * corpo, mesma régua do relançar.
+ */
+export async function postAgentDesligar(slug: string): Promise<DesligarResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/desligar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentDesligar failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
+/**
+ * Liga o agente pelo boot canônico da frota, com `--continue`. Sem `confirm`:
+ * ligar não destrói nada, então é toque simples como o destrava.
+ */
+export async function postAgentLigar(
+  slug: string,
+): Promise<{ tmux_delivered: boolean; attempted: boolean; sent_at: number }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/ligar`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentLigar failed: ${res.status}`);
     throw new AgentInputError(detail, res.status, detail);
   }
   return res.json();

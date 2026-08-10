@@ -489,6 +489,11 @@ _CLI_COMMANDS = {
     "codex": _codex_command,
 }
 
+#: Como o Ligar retoma a conversa. `--continue` pega a última do workspace sem
+#: precisar de ID — diferente do `--resume <id>` do relaunch, que exige um JSONL
+#: já persistido e uma âncora visível no pane. Aqui não há pane pra conferir.
+_FLAG_CONTINUE = "--continue"
+
 #: Cerca de memória por sessão, espelhando `ze-shared/scripts/subir-frota.sh`.
 #: O slice é o teto do conjunto (`MemoryHigh=5G`/`MemoryMax=6G`); sem teto por
 #: sessão, uma só consome tudo e estrangula as outras. `MemoryHigh` é throttle,
@@ -1453,40 +1458,6 @@ def _restart_claude_with_resume_sync(
         lock.release()
 
 
-def _restart_claude_fresh_sync(
-    session_name: str,
-    workspace_path: str,
-    model: str,
-) -> dict[str, bool]:
-    """Troca a window do agente com boot limpo — sem `--resume`, sem checar
-    conversa antiga. Aqui perder o contexto é o ponto, não um risco a evitar,
-    então não há JSONL/âncora pra validar antes de agir."""
-    resolved_workspace, fresh_command = _prepare_cli_launch(
-        session_name, workspace_path, "claude_code", model,
-    )
-
-    server = _server_for(session_name)
-    if not server.has_session(session_name):
-        return {"attempted": False, "confirmed": False}
-
-    lock = _acquire_dispatch_lock(session_name)
-    try:
-        session = server.sessions.get(session_name=session_name)
-        old_pane = session.active_pane
-        current_cmd = (old_pane.pane_current_command or "").lower()
-        if current_cmd not in _EXPECTED_PANE_COMMANDS:
-            return {"attempted": False, "confirmed": False}
-
-        replacement_pane = _swap_window_and_launch(
-            server, session_name, session, old_pane, resolved_workspace, fresh_command,
-        )
-        if replacement_pane is None:
-            return {"attempted": False, "confirmed": False}
-        return _wait_for_cli_banner(replacement_pane, "claude_code")
-    finally:
-        lock.release()
-
-
 async def restart_claude_with_resume(
     session_name: str,
     workspace_path: str,
@@ -1500,20 +1471,6 @@ async def restart_claude_with_resume(
         workspace_path,
         model,
         resume_session_id,
-    )
-
-
-async def restart_claude_fresh(
-    session_name: str,
-    workspace_path: str,
-    model: str,
-) -> dict[str, bool]:
-    """Relança sem `--resume` — reseta o pane de propósito, perde o contexto."""
-    return await _run_tmux_operation(
-        _restart_claude_fresh_sync,
-        session_name,
-        workspace_path,
-        model,
     )
 
 
@@ -1657,6 +1614,227 @@ def _kill_session_if_exists_sync(session_name: str) -> bool:
 async def kill_session_if_exists(session_name: str) -> bool:
     """Mata a sessão tmux quando ela existe; False quando já não existe."""
     return await asyncio.to_thread(_kill_session_if_exists_sync, session_name)
+
+
+#: Nome de scope transiente criado por `systemd-run --user --scope`. O valor vem
+#: do `/proc`, nunca de entrada do Rica, mas casar o formato antes de entregar ao
+#: `systemctl` é barato e fecha a porta pra um cgroup adulterado virar argumento.
+_SCOPE_NAME_PATTERN = re.compile(r"run-r[0-9a-f]{1,64}\.scope")
+_SCOPE_STOP_TIMEOUT_S = 20.0
+#: Teto da varredura de descendentes do pane. Existe pra a busca terminar mesmo
+#: diante de uma árvore de processos absurda ou de um ciclo no `/proc`.
+_PANE_DESCENDANT_MAX = 512
+
+
+def _child_pids(pid: int) -> set[int]:
+    """Filhos diretos de `pid`, lidos do `/proc` (todas as threads dele)."""
+    children: set[int] = set()
+    try:
+        for task in Path(f"/proc/{pid}/task").iterdir():
+            children.update(int(item) for item in (task / "children").read_text().split())
+    except (OSError, ValueError):
+        pass
+    return children
+
+
+def _fleet_scope_of(pid: int) -> str | None:
+    """O scope da cerca da frota que contém `pid` — `None` se ele está fora."""
+    try:
+        raw = Path(f"/proc/{pid}/cgroup").read_text()
+    except OSError:
+        return None
+    for line in raw.splitlines():
+        if _MEMORY_FENCE_SLICE not in line:
+            continue
+        candidate = line.rsplit("/", 1)[-1].strip()
+        if _SCOPE_NAME_PATTERN.fullmatch(candidate):
+            return candidate
+    return None
+
+
+def _scopes_under_pane(pane_pid: int) -> set[str]:
+    """Os scopes da cerca alcançáveis a partir do shell do pane.
+
+    **O cgroup do `pane_pid` não serve.** `systemd-run --scope` move o processo
+    pra `borges-frota.slice` sem mexer na árvore: o `claude` continua FILHO do
+    shell do pane, mas mora noutro cgroup. O shell fica num
+    `app.slice/tmux-spawn-*.scope`, e parar esse leva o shell deixando de pé
+    exatamente o que se queria matar. Medido em 09/08: dois `bun server.ts` do
+    plugin telegram, órfãos de sessão morta, queimando 34% de CPU cada há nove
+    horas — `tmux kill-session` sozinho nunca os alcançou.
+
+    Descer até achar a cerca é o que devolve o scope certo, e o `stop` dele leva
+    `claude`, MCPs e `bun` de uma vez porque todos são descendentes que herdaram
+    o cgroup.
+    """
+    scopes: set[str] = set()
+    vistos: set[int] = set()
+    fila = [pane_pid]
+    while fila and len(vistos) < _PANE_DESCENDANT_MAX:
+        pid = fila.pop()
+        if pid in vistos:
+            continue
+        vistos.add(pid)
+        scope = _fleet_scope_of(pid)
+        if scope is not None:
+            scopes.add(scope)
+            # Achou a cerca: a subárvore inteira está DENTRO dela, e o `stop`
+            # leva tudo junto. Descer mais só reencontraria o mesmo nome.
+            continue
+        fila.extend(_child_pids(pid))
+    return scopes
+
+
+def _stop_scope(scope: str) -> bool:
+    """Para o scope da cerca e limpa o registro dele."""
+    if not _SCOPE_NAME_PATTERN.fullmatch(scope):
+        return False
+    try:
+        parado = subprocess.run(
+            ["systemctl", "--user", "stop", scope],
+            capture_output=True,
+            text=True,
+            timeout=_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    # Scope cujo processo morre em erro fica `failed` e CARREGADO — a listagem da
+    # slice já mostrava unidades mortas assim antes deste botão existir. O
+    # `reset-failed` é o que impede o desligar de acumular lixo a cada uso; ele
+    # é no-op quando o scope saiu limpo, então não se checa o retorno.
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "reset-failed", scope],
+            capture_output=True,
+            timeout=_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return parado.returncode == 0
+
+
+def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
+    """Desliga o agente: para a cerca dele e só então encerra a sessão tmux.
+
+    A ORDEM é o que faz o desligar funcionar. Matar a sessão primeiro apaga o
+    `pane_pid`, que é a única trilha até o scope — e o que sobrevive vira
+    exatamente o órfão que este botão existe pra não deixar para trás.
+
+    Varre TODAS as windows, não só a ativa: o relaunch cria window nova, e uma
+    antiga que resistiu ao `kill-window` ainda segura processo do agente.
+    """
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return {"attempted": False, "sessao_encerrada": False, "scopes_parados": []}
+
+    scopes: set[str] = set()
+    try:
+        session = server.sessions.get(session_name=session_name)
+        for window in session.windows:
+            for pane in window.panes:
+                try:
+                    scopes |= _scopes_under_pane(int(pane.pane_pid))
+                except (TypeError, ValueError):
+                    continue
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        # Sessão sumiu no meio da leitura, ou pane sem PID legível. Sem trilha
+        # pra cerca, mas ainda há sessão tmux a encerrar logo abaixo.
+        log.warning("desligar: falha ao inventariar panes de %s", session_name)
+
+    parados = {scope for scope in scopes if _stop_scope(scope)}
+    encerrada = _kill_session_if_exists_sync(session_name)
+    return {
+        "attempted": True,
+        "sessao_encerrada": encerrada,
+        "scopes_parados": sorted(parados),
+        "scopes_resistiram": sorted(scopes - parados),
+    }
+
+
+async def shutdown_agent(session_name: str) -> dict[str, object]:
+    """Desliga o agente e tudo que ele consome. Idempotente."""
+    return await _run_tmux_operation(_shutdown_agent_sync, session_name)
+
+
+#: O boot da frota, e a razão de o Ligar não montar comando nenhum. Ele conhece
+#: o que `_prepare_cli_launch` não tem como saber com o processo morto: o
+#: `TELEGRAM_STATE_DIR` de cada agente (sem ele o agente sobe respondendo no
+#: canal do Daniel, que é o default legado), a cerca de memória por sessão, e o
+#: env inteiro dos motores não-Anthropic — sem `ANTHROPIC_BASE_URL`/`API_KEY` o
+#: hiro e o canário sobem batendo na Anthropic de verdade.
+#:
+#: No relaunch essas duas coisas são COPIADAS do processo vivo
+#: (`_pane_channel_flags`, `_PRESERVED_ENV_VARS`). No Ligar não existe processo
+#: vivo pra copiar, e duplicar a tabela aqui em Python garantiria divergência no
+#: dia em que o Rica trocar o canal de alguém.
+_SUBIR_FROTA = Path("/home/clawd/repos/ze_claude/ze-shared/scripts/subir-frota.sh")
+#: Nome de sessão vem do `agents.yaml`, mas ele vira argumento de processo e de
+#: nome de unit — casar o formato mantém as duas fronteiras estreitas.
+_SESSION_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+#: Quanto o Ligar espera o CLI aparecer antes de devolver sem confirmação. A
+#: sessão tmux nasce em ~1s; o `claude` leva mais, e é ELE que prova que ligou.
+#: O script segue esperando canal e `/rename` por conta própria depois disso.
+_LIGAR_TIMEOUT_S = 40.0
+_LIGAR_POLL_INTERVAL_S = 0.75
+
+
+def _boot_agent_sync(session_name: str) -> dict[str, object]:
+    """Sobe o agente pelo script de boot da frota, retomando a conversa.
+
+    `--continue` é decisão de produto: desligar não pode custar conversa. Quem
+    quer recomeçar limpo usa `/clear` dentro do agente.
+    """
+    if not _SESSION_NAME_PATTERN.fullmatch(session_name):
+        raise ValueError(f"nome de sessão inválido: {session_name}")
+    if not _SUBIR_FROTA.is_file():
+        raise ValueError(f"script de boot ausente: {_SUBIR_FROTA}")
+
+    # Casca morta (sessão de pé, CLI morto) faria o script dizer "já up —
+    # pulando" e o Ligar viraria no-op silencioso. Derrubar antes é o que faz o
+    # botão funcionar justamente no estado em que ele é a ÚNICA saída: com o
+    # pane em bash cru, Destravar e Resume devolvem `attempted:false`.
+    _shutdown_agent_sync(session_name)
+
+    # `systemd-run` em vez de `Popen`: o script leva minutos esperando o canal
+    # carregar, e como filho da API ele morreria junto num restart do uvicorn,
+    # deixando o boot pela metade. A unit nomeada também dá o trava-duplo de
+    # graça — o segundo clique falha com "unit already exists" em vez de subir
+    # duas sessões. `--collect` remove a unit ao terminar, sem deixar rastro.
+    try:
+        lancado = subprocess.run(
+            [
+                "systemd-run",
+                "--user",
+                "--collect",
+                f"--unit=cockpit-ligar-{session_name}",
+                f"--setenv=FROTA_FLAGS_EXTRA={_FLAG_CONTINUE}",
+                str(_SUBIR_FROTA),
+                session_name,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        raise ValueError(f"não consegui disparar o boot: {exc}") from exc
+    if lancado.returncode != 0:
+        erro = (lancado.stderr or "").strip()
+        if "already exists" in erro:
+            raise TmuxSessionBusyError(f"boot de {session_name} já está em curso")
+        raise ValueError(f"o boot foi recusado: {erro or 'erro desconhecido'}")
+
+    deadline = time.monotonic() + _LIGAR_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if session_name in _list_session_inventory_sync().claude_process_sessions:
+            return {"attempted": True, "confirmed": True}
+        time.sleep(_LIGAR_POLL_INTERVAL_S)
+    # O script continua trabalhando — o que falta é a confirmação, não o boot.
+    return {"attempted": True, "confirmed": False}
+
+
+async def boot_agent(session_name: str) -> dict[str, object]:
+    """Liga o agente pelo boot canônico da frota, com a conversa retomada."""
+    return await _run_tmux_operation(_boot_agent_sync, session_name)
 
 
 def _load_tmux_buffer(server: libtmux.Server, text: str) -> str | None:

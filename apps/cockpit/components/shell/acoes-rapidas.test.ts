@@ -4,18 +4,23 @@ import { describe, it } from 'node:test';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
-  CONFIRMA_RELANCAR_MS,
+  CONFIRMA_ACAO_MS,
   RECIBO_MS,
+  descreveAcaoBruta,
   descreveControle,
-  descreveRelancar,
+  descreveLigar,
   diagnosticaAcao,
+  diagnosticaCicloDeVida,
   diagnosticaRelancar,
   ehCodex,
+  leiaDesligar,
   leiaDestrava,
+  leiaLigar,
   leiaRelancar,
   montaControles,
+  rotulaAcaoBruta,
   rotulaDestrava,
-  rotulaRelancar,
+  rotulaLigar,
   rotulaPermissao,
   rotulaSandbox,
 } from './acoes-rapidas.ts';
@@ -26,6 +31,7 @@ function painel(patch: Partial<AgentPainelResponse> = {}): AgentPainelResponse {
   return {
     slug: 'daniel',
     generated_at: 0,
+    vida: { sessao: true, processo: true },
     contexto: {
       model: null,
       model_family: null,
@@ -320,10 +326,10 @@ describe('falha — nunca só o diagnóstico, sempre a saída', () => {
   });
 });
 
-describe('relançar', () => {
+describe('ações brutas', () => {
   it('cada fase tem palavra própria — cor sozinha nunca carrega o significado', () => {
-    const fases = ['ocioso', 'confirmando', 'enviando', 'relancado'] as const;
-    const rotulos = fases.map((f) => rotulaRelancar(f));
+    const fases = ['ocioso', 'confirmando', 'enviando', 'concluido'] as const;
+    const rotulos = fases.map((f) => rotulaAcaoBruta(f));
     assert.equal(new Set(rotulos).size, fases.length, 'duas fases dizem a mesma coisa');
     for (const r of rotulos) assert.ok(r.length > 0);
   });
@@ -332,55 +338,74 @@ describe('relançar', () => {
     // Auditoria 03/08: a frase inteira ("Mata o turno atual — tocar de novo
     // confirma", 43 char) cortava em elipse dentro do botão, e a elipse nem
     // aparecia (text-overflow não se aplica a um flex container). O rótulo
-    // curto elimina o corte; a frase completa migrou pra `descreveRelancar`.
-    for (const fase of ['ocioso', 'confirmando', 'enviando', 'relancado'] as const) {
-      assert.ok(
-        rotulaRelancar(fase).length <= 12,
-        `"${rotulaRelancar(fase)}" (fase ${fase}) é longo demais pro botão`,
-      );
+    // curto elimina o corte; a frase completa migrou pra `descreveAcaoBruta`.
+    for (const fase of ['ocioso', 'confirmando', 'enviando', 'concluido'] as const) {
+      for (const acao of ['resume', 'desligar'] as const) {
+        assert.ok(
+          rotulaAcaoBruta(fase, acao).length <= 12,
+          `"${rotulaAcaoBruta(fase, acao)}" (${acao}/${fase}) é longo demais pro botão`,
+        );
+      }
     }
   });
 
   it('o ocioso é o rótulo curto pedido pelo Rica; a promessa da conversa mora na descrição', () => {
-    assert.equal(rotulaRelancar('ocioso'), 'Resume');
-    assert.match(descreveRelancar('ocioso'), /conversa/i);
+    assert.equal(rotulaAcaoBruta('ocioso'), 'Resume');
+    assert.match(descreveAcaoBruta('ocioso'), /conversa/i);
   });
 
   it('a confirmação avisa o que se perde, não só que é preciso confirmar — na DESCRIÇÃO, não no rótulo do botão', () => {
-    assert.match(descreveRelancar('confirmando'), /turno atual/);
-    assert.match(descreveRelancar('confirmando'), /tocar de novo/i);
+    assert.match(descreveAcaoBruta('confirmando'), /turno atual/);
+    assert.match(descreveAcaoBruta('confirmando'), /tocar de novo/i);
   });
 
   it('o nome acessível do ocioso contém o rótulo visível (WCAG 2.5.3)', () => {
     // "Resume" é o rótulo visível; o nome acessível estende, não substitui —
     // senão o comando de voz "clicar em Resume" não acha o botão.
-    assert.ok(descreveRelancar('ocioso').startsWith('Resume'));
-    assert.match(descreveRelancar('ocioso'), /turno em andamento é perdido/);
+    assert.ok(descreveAcaoBruta('ocioso').startsWith('Resume'));
+    assert.match(descreveAcaoBruta('ocioso'), /turno em andamento é perdido/);
   });
 
   it('o nome acessível de TODA fase começa pelo próprio rótulo do botão (WCAG 2.5.3), não só o ocioso', () => {
-    for (const fase of ['ocioso', 'confirmando', 'enviando', 'relancado'] as const) {
-      assert.ok(
-        descreveRelancar(fase).startsWith(rotulaRelancar(fase)),
-        `descrição de "${fase}" não começa pelo rótulo "${rotulaRelancar(fase)}"`,
-      );
+    for (const fase of ['ocioso', 'confirmando', 'enviando', 'concluido'] as const) {
+      for (const acao of ['resume', 'desligar'] as const) {
+        assert.ok(
+          descreveAcaoBruta(fase, acao).startsWith(rotulaAcaoBruta(fase, acao)),
+          `descrição de "${acao}/${fase}" não começa pelo rótulo`,
+        );
+      }
     }
   });
 
-  it('modo fresco avisa que perde a conversa INTEIRA, não só o turno — na descrição', () => {
-    assert.equal(rotulaRelancar('ocioso', 'fresco'), 'Restart');
-    assert.ok(descreveRelancar('ocioso', 'fresco').startsWith('Restart'));
-    assert.match(descreveRelancar('confirmando', 'fresco'), /apaga a conversa/i);
-    assert.match(descreveRelancar('ocioso', 'fresco'), /perde a conversa inteira/i);
+  it('desligar promete matar tudo que o agente consome E que a conversa sobrevive', () => {
+    // As duas metades importam: a primeira é o pedido do Rica ("desliga o
+    // agente e TUDO que o agente consome"), a segunda é o que faz o botão não
+    // assustar — Ligar sobe com `--continue`, então desligar não custa conversa.
+    assert.equal(rotulaAcaoBruta('ocioso', 'desligar'), 'Desligar');
+    assert.match(descreveAcaoBruta('ocioso', 'desligar'), /MCPs|canal/i);
+    assert.match(descreveAcaoBruta('ocioso', 'desligar'), /a conversa fica/i);
+    assert.match(descreveAcaoBruta('confirmando', 'desligar'), /tira o agente do ar/i);
   });
 
-  it('resume e fresco só precisam diferir no ocioso — os dois nunca ficam fora de ocioso ao mesmo tempo', () => {
-    // O hook único do componente (`useRelancar`) garante que só um `modo` por
-    // vez sai de "ocioso" — por isso "Confirmar?"/"Relançando…"/"Relançado"
-    // podem ser iguais nos dois modos sem ambiguidade visual: nunca aparecem
-    // nos dois botões ao mesmo tempo. Só o ocioso, onde os DOIS botões ficam
-    // visíveis e ativos simultaneamente, precisa mesmo diferir.
-    assert.notEqual(rotulaRelancar('ocioso', 'resume'), rotulaRelancar('ocioso', 'fresco'));
+  it('o Restart saiu — nenhum rótulo de ação bruta promete apagar a conversa', () => {
+    // Ordem do Rica em 10/08: *"Restart sai, destravar fica"*. O boot sem
+    // contexto virou `/clear` dentro do agente; nada na gaveta pode continuar
+    // oferecendo perder a conversa inteira.
+    for (const fase of ['ocioso', 'confirmando', 'enviando', 'concluido'] as const) {
+      for (const acao of ['resume', 'desligar'] as const) {
+        assert.doesNotMatch(rotulaAcaoBruta(fase, acao), /restart/i);
+        assert.doesNotMatch(descreveAcaoBruta(fase, acao), /perde a conversa inteira/i);
+      }
+    }
+  });
+
+  it('resume e desligar só precisam diferir no ocioso — as duas nunca ficam fora de ocioso ao mesmo tempo', () => {
+    // O hook único do componente (`useAcaoBruta`) garante que só uma `acao` por
+    // vez sai de "ocioso" — por isso "Confirmar?" pode ser igual nas duas sem
+    // ambiguidade visual: nunca aparece nos dois botões ao mesmo tempo. Só o
+    // ocioso, onde os DOIS botões ficam visíveis e ativos simultaneamente,
+    // precisa mesmo diferir.
+    assert.notEqual(rotulaAcaoBruta('ocioso', 'resume'), rotulaAcaoBruta('ocioso', 'desligar'));
   });
 
   it('200 com tmux_delivered false NÃO é sucesso', () => {
@@ -447,7 +472,103 @@ describe('relançar', () => {
   });
 
   it('a confirmação expira, e com folga para ler a frase', () => {
-    assert.ok(CONFIRMA_RELANCAR_MS >= 5_000, 'curta demais para ler o aviso');
-    assert.ok(CONFIRMA_RELANCAR_MS <= 10_000, 'longa demais: o dedo esquece o que armou');
+    assert.ok(CONFIRMA_ACAO_MS >= 5_000, 'curta demais para ler o aviso');
+    assert.ok(CONFIRMA_ACAO_MS <= 10_000, 'longa demais: o dedo esquece o que armou');
+  });
+});
+
+describe('desligar', () => {
+  it('já desligado é SUCESSO, não falha — o botão é idempotente', () => {
+    // O back devolve `attempted:false` quando não havia sessão. Isso não é
+    // erro: o estado final é o pedido. Avisar aqui faria o Rica achar que
+    // precisa tentar de novo um desligamento que já estava feito.
+    assert.equal(leiaDesligar({ tmux_delivered: true }), null);
+    assert.equal(leiaDesligar({ tmux_delivered: true, scopes_resistiram: [] }), null);
+  });
+
+  it('cgroup que resistiu vira aviso — é CPU queimando que ninguém vê', () => {
+    // O caso que deu origem ao botão: dois `bun server.ts` órfãos a 34% de CPU
+    // cada por nove horas. Se o `stop` não pegou, o Rica precisa saber.
+    const um = leiaDesligar({ tmux_delivered: false, scopes_resistiram: ['run-ra.scope'] });
+    assert.ok(um);
+    assert.match(um.resumo, /um processo/i);
+    assert.match(um.saida, /CPU/);
+
+    const varios = leiaDesligar({
+      tmux_delivered: false,
+      scopes_resistiram: ['run-ra.scope', 'run-rb.scope'],
+    });
+    assert.ok(varios);
+    assert.match(varios.resumo, /2 processos/);
+  });
+
+  it('a sessão encerrada é dita mesmo quando sobrou processo — meia-verdade confunde mais', () => {
+    const imp = leiaDesligar({ tmux_delivered: false, scopes_resistiram: ['run-ra.scope'] });
+    assert.ok(imp);
+    assert.match(imp.saida, /sessão foi encerrada/i);
+  });
+});
+
+describe('ligar', () => {
+  it('cada fase tem palavra própria e curta', () => {
+    const fases = ['ocioso', 'enviando', 'entregue'] as const;
+    const rotulos = fases.map((f) => rotulaLigar(f));
+    assert.equal(new Set(rotulos).size, fases.length, 'duas fases dizem a mesma coisa');
+    for (const r of rotulos) assert.ok(r.length > 0 && r.length <= 12, `"${r}" fora do limite`);
+  });
+
+  it('o nome acessível começa pelo rótulo visível (WCAG 2.5.3)', () => {
+    for (const fase of ['ocioso', 'enviando', 'entregue'] as const) {
+      assert.ok(descreveLigar(fase).startsWith(rotulaLigar(fase)));
+    }
+  });
+
+  it('o ocioso promete que a conversa volta — é o que faz desligar não assustar', () => {
+    assert.equal(rotulaLigar('ocioso'), 'Ligar');
+    assert.match(descreveLigar('ocioso'), /de onde ela parou/i);
+  });
+
+  it('200 com tmux_delivered false NÃO é sucesso, mas também não manda repetir', () => {
+    // O boot segue em curso quando o CLI ainda não apareceu — mandar clicar de
+    // novo subiria uma segunda sessão do mesmo agente.
+    assert.equal(leiaLigar({ tmux_delivered: true, attempted: true }), null);
+    const imp = leiaLigar({ tmux_delivered: false, attempted: true });
+    assert.ok(imp);
+    assert.match(imp.resumo, /ainda não apareceu/i);
+    assert.match(imp.saida, /em curso/i);
+    assert.doesNotMatch(imp.saida, /tente de novo/i);
+  });
+
+  it('boot já em curso é recusa explicada — o segundo clique não sobe outra sessão', () => {
+    const imp = diagnosticaCicloDeVida(new Error('409: ligar_em_curso: boot já está em curso'), 'ligar');
+    assert.match(imp.resumo, /já tem um boot/i);
+    assert.match(imp.saida, /duas sessões/i);
+  });
+
+  it('Codex é recusa explicada nas duas ações, não erro genérico', () => {
+    for (const acao of ['ligar', 'desligar'] as const) {
+      const imp = diagnosticaCicloDeVida(
+        new Error('409: ciclo_de_vida_somente_claude_code'),
+        acao,
+      );
+      assert.match(imp.resumo, /não tem sessão própria/i);
+      assert.match(imp.saida, /Codex/);
+    }
+  });
+
+  it('qualquer erro produz resumo e saída, inclusive os que não são Error', () => {
+    const casos: unknown[] = [new Error('Failed to fetch'), { message: '503' }, 'crua', null, undefined];
+    for (const acao of ['ligar', 'desligar'] as const) {
+      for (const erro of casos) {
+        const imp = diagnosticaCicloDeVida(erro, acao);
+        assert.ok(imp.resumo.length > 0, `sem resumo: ${String(erro)}`);
+        assert.ok(imp.saida.length > 0, `sem saída: ${String(erro)}`);
+      }
+    }
+  });
+
+  it('o caso geral do desligar garante que nada foi alterado; o do ligar aponta o log', () => {
+    assert.match(diagnosticaCicloDeVida(new Error('boom'), 'desligar').saida, /nada foi alterado/i);
+    assert.match(diagnosticaCicloDeVida(new Error('boom'), 'ligar').saida, /subir-frota\.log/);
   });
 });

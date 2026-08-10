@@ -43,7 +43,9 @@ import {
   fetchAgentPainel,
   patchAgentCodexSandbox,
   patchAgentPermissionMode,
+  postAgentDesligar,
   postAgentDestrava,
+  postAgentLigar,
   postAgentRelaunch,
 } from '@grupo_borges/cockpit-core/api';
 import type {
@@ -53,26 +55,31 @@ import type {
 } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
-  CONFIRMA_RELANCAR_MS,
+  CONFIRMA_ACAO_MS,
   RECIBO_MS,
   RETENTA_PAINEL_BASE_MS,
   RETENTA_PAINEL_TETO_MS,
+  descreveAcaoBruta,
   descreveControle,
-  descreveRelancar,
+  descreveLigar,
   diagnosticaAcao,
+  diagnosticaCicloDeVida,
   diagnosticaRelancar,
   ehCodex,
+  leiaDesligar,
   leiaDestrava,
+  leiaLigar,
   leiaRelancar,
   montaControles,
+  rotulaAcaoBruta,
   rotulaDestrava,
-  rotulaRelancar,
+  rotulaLigar,
+  type AcaoBruta,
   type AcaoId,
   type Controle,
+  type FaseBruta,
   type FaseDestrava,
-  type FaseRelancar,
   type Impedimento,
-  type ModoRelancar,
 } from './acoes-rapidas';
 import { BlocoDeCota } from './bloco-de-cota';
 import { IconeDescartar } from './icones';
@@ -95,28 +102,35 @@ const REDE = {
   gravaSandbox: patchAgentCodexSandbox,
   destrava: postAgentDestrava,
   relanca: postAgentRelaunch,
+  desliga: postAgentDesligar,
+  liga: postAgentLigar,
 };
 
 /**
- * O ciclo do relançar (armar → confirmar → enviar → recibo) pros DOIS botões
- * (Resume/Restart) de uma vez — um `estado` só, não uma instância por modo.
+ * O ciclo das ações brutas (armar → confirmar → enviar → recibo) pros DOIS
+ * botões (Resume/Desligar) de uma vez — um `estado` só, não uma instância por
+ * ação.
  *
  * Auditoria 03/08 achou a versão anterior (uma instância de hook por botão,
  * cada uma com sua própria `fase`) com uma brecha: nada impedia armar/disparar
  * os dois ao mesmo tempo (o back segura via lock e devolve 409, mas a
  * mensagem manda diagnosticar a infra quando o problema foi o dedo). Um
- * estado compartilhado fecha a brecha de graça: só um `modo` por vez pode
+ * estado compartilhado fecha a brecha de graça: só uma `acao` por vez pode
  * estar fora de `ocioso`, e o rótulo curto "Confirmar?" nunca aparece em dois
  * botões ao mesmo tempo — o botão inativo sempre mostra seu rótulo normal.
  *
  * `setFalha` vem de fora — o painel tem UM aviso de erro só, não um por botão.
+ * `aoConcluir` também: desligar muda a `vida` do agente, e sem re-buscar o
+ * painel o Rica ficaria olhando os botões do agente vivo depois de tirá-lo do
+ * ar — o botão certo (Ligar) só apareceria se ele fechasse e reabrisse a gaveta.
  */
-function useRelancar(
+function useAcaoBruta(
   agentSlug: string,
   aberto: boolean,
   setFalha: (falha: Impedimento | null) => void,
+  aoConcluir: () => void,
 ) {
-  const [estado, setEstado] = useState<{ modo: ModoRelancar; fase: FaseRelancar } | null>(null);
+  const [estado, setEstado] = useState<{ acao: AcaoBruta; fase: FaseBruta } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Painel fechado desarma. Confirmação armada é uma pergunta aberta na tela;
@@ -132,57 +146,67 @@ function useRelancar(
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  async function acionar(modo: ModoRelancar) {
-    // Qualquer relançamento em voo bloqueia os DOIS botões, não só o que foi
-    // clicado — é a mesma trava que impede o dedo de disparar dois ao mesmo
-    // tempo.
+  async function acionar(acao: AcaoBruta) {
+    // Qualquer ação em voo bloqueia os DOIS botões, não só o que foi clicado —
+    // é a mesma trava que impede o dedo de disparar duas ao mesmo tempo.
     if (estado?.fase === 'enviando') return;
 
-    // Primeiro toque ARMA. Clicar num modo diferente do que já estava armado
-    // reinicia a pergunta pro modo novo — o dedo mudou de ideia, não precisa
-    // de um terceiro toque pra "cancelar" o anterior.
-    if (estado?.modo !== modo || estado.fase !== 'confirmando') {
+    // Primeiro toque ARMA. Clicar numa ação diferente da que já estava armada
+    // reinicia a pergunta pra ação nova — o dedo mudou de ideia, não precisa
+    // de um terceiro toque pra "cancelar" a anterior.
+    if (estado?.acao !== acao || estado.fase !== 'confirmando') {
       setFalha(null);
-      setEstado({ modo, fase: 'confirmando' });
+      setEstado({ acao, fase: 'confirmando' });
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         setEstado((atual) => (atual?.fase === 'confirmando' ? null : atual));
-      }, CONFIRMA_RELANCAR_MS);
+      }, CONFIRMA_ACAO_MS);
       return;
     }
 
     if (timer.current) clearTimeout(timer.current);
     setFalha(null);
-    setEstado({ modo, fase: 'enviando' });
+    setEstado({ acao, fase: 'enviando' });
     try {
-      const resposta = await REDE.relanca(agentSlug, modo === 'resume');
-      const aviso = leiaRelancar(resposta);
+      const aviso =
+        acao === 'desligar'
+          ? leiaDesligar(await REDE.desliga(agentSlug))
+          : leiaRelancar(await REDE.relanca(agentSlug));
       if (aviso) {
         setFalha(aviso);
         setEstado(null);
+        // Desligar que avisou ainda pode ter encerrado a sessão — o aviso é
+        // sobre o que resistiu, não sobre nada ter acontecido. Reler é o que
+        // impede a tela de discordar do estado real da máquina.
+        if (acao === 'desligar') aoConcluir();
         return;
       }
-      setEstado({ modo, fase: 'relancado' });
+      setEstado({ acao, fase: 'concluido' });
+      if (acao === 'desligar') aoConcluir();
       timer.current = setTimeout(() => setEstado(null), RECIBO_MS);
     } catch (erro) {
       setEstado(null);
-      setFalha(diagnosticaRelancar(erro));
+      setFalha(
+        acao === 'desligar'
+          ? diagnosticaCicloDeVida(erro, 'desligar')
+          : diagnosticaRelancar(erro),
+      );
     }
   }
 
-  const faseDe = (modo: ModoRelancar): FaseRelancar => (estado?.modo === modo ? estado.fase : 'ocioso');
+  const faseDe = (acao: AcaoBruta): FaseBruta => (estado?.acao === acao ? estado.fase : 'ocioso');
   return { faseDe, acionar } as const;
 }
 
-/** Um dos dois botões de relançar (Resume/Restart) — mesmo pixel, mesma régua
- *  de cor, só o `modo` (e por consequência a `fase` e o rótulo) muda. */
-function BotaoRelancar({
+/** Um dos dois botões de ação bruta (Resume/Desligar) — mesmo pixel, mesma
+ *  régua de cor, só a `acao` (e por consequência a `fase` e o rótulo) muda. */
+function BotaoAcaoBruta({
   fase,
-  modo,
+  acao,
   onClick,
 }: {
-  fase: FaseRelancar;
-  modo: ModoRelancar;
+  fase: FaseBruta;
+  acao: AcaoBruta;
   onClick: () => void;
 }) {
   return (
@@ -190,7 +214,7 @@ function BotaoRelancar({
       type="button"
       onClick={onClick}
       aria-busy={fase === 'enviando'}
-      aria-label={descreveRelancar(fase, modo)}
+      aria-label={descreveAcaoBruta(fase, acao)}
       className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
       style={{
         minHeight: 'var(--ck-touch-min)',
@@ -204,13 +228,13 @@ function BotaoRelancar({
         color:
           fase === 'confirmando'
             ? 'var(--ck-state-attention)'
-            : fase === 'relancado'
+            : fase === 'concluido'
               ? 'var(--ck-state-ok)'
               : 'var(--ck-text-primary)',
         transition: 'color var(--ck-dur-fast) var(--ck-ease)',
       }}
     >
-      {rotulaRelancar(fase, modo)}
+      {rotulaAcaoBruta(fase, acao)}
     </button>
   );
 }
@@ -239,9 +263,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const [emVoo, setEmVoo] = useState<{ id: AcaoId; valor: string } | null>(null);
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
-  const { faseDe: faseRelancar, acionar: acionarRelancar } = useRelancar(agentSlug, aberto, setFalha);
-  const relancar = faseRelancar('resume');
-  const relancarFresco = faseRelancar('fresco');
+  const [ligar, setLigar] = useState<FaseDestrava>('ocioso');
   const [retentativa, setRetentativa] = useState(0);
 
   // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
@@ -296,6 +318,19 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     },
     [agentSlug],
   );
+
+  // Depois do `buscar` de propósito: ligar e desligar mudam a `vida` do agente,
+  // e é a re-leitura do painel que troca os botões na tela. O `signal` fica de
+  // fora — esta releitura não pertence à sessão de abertura da gaveta, ela é a
+  // consequência de uma ação que o Rica acabou de tomar.
+  const { faseDe: faseBruta, acionar: acionarBruta } = useAcaoBruta(
+    agentSlug,
+    aberto,
+    setFalha,
+    buscar,
+  );
+  const relancar = faseBruta('resume');
+  const desligar = faseBruta('desligar');
 
   // O controlador é da ABERTURA, não de uma leitura. Toda busca desta sessão de
   // painel — a primeira e cada retentativa — morre junto quando a gaveta fecha
@@ -441,11 +476,43 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     }
   }
 
+  async function acionarLigar() {
+    if (ligar === 'enviando') return;
+    setFalha(null);
+    setLigar('enviando');
+    try {
+      const aviso = leiaLigar(await REDE.liga(agentSlug));
+      // Relê o painel em qualquer desfecho: mesmo com o aviso de "ainda não
+      // apareceu de pé", o boot pode ter concluído entre a resposta e agora.
+      buscar();
+      if (aviso) {
+        setFalha(aviso);
+        setLigar('ocioso');
+        return;
+      }
+      setLigar('entregue');
+      if (reciboTimer.current) clearTimeout(reciboTimer.current);
+      reciboTimer.current = setTimeout(() => setLigar('ocioso'), RECIBO_MS);
+    } catch (erro) {
+      setLigar('ocioso');
+      setFalha(diagnosticaCicloDeVida(erro, 'ligar'));
+    }
+  }
+
   const controles = painel ? montaControles(painel) : [];
   // O back recusaria com 409 `relaunch_somente_claude_code`, mas oferecer um
   // botão que só existe para dar erro é pior do que não oferecer: `--resume` é
-  // conceito de Claude Code, e a Tara retoma thread por outro caminho.
+  // conceito de Claude Code, e a Tara retoma thread por outro caminho. Vale
+  // igual pro Desligar/Ligar: a Tara não fica de pé entre turnos, então não há
+  // o que desligar nem o que subir.
   const codex = painel ? ehCodex(painel) : false;
+
+  // O agente está DE PÉ? Só o painel lido responde — enquanto a busca não
+  // voltou, `painel` é `null` e as ações nem são renderizadas (`carga` ainda
+  // não é `pronto`). Casca morta (sessão viva, CLI morto) conta como fora do
+  // ar: lá o Destravar responde `pane_incompativel` e o Resume devolve
+  // `attempted:false`, então oferecer os dois seria oferecer botão morto.
+  const dePe = painel?.vida.processo ?? true;
 
   // Aviso de confirmação de largura cheia — o rótulo DENTRO do botão é sempre
   // curto ("Confirmar?"), a frase que explica o que se perde mora aqui embaixo
@@ -455,9 +522,9 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     confirmaCompact && compactEmVoo
       ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
       : relancar === 'confirmando'
-        ? descreveRelancar(relancar)
-        : relancarFresco === 'confirmando'
-          ? descreveRelancar(relancarFresco, 'fresco')
+        ? descreveAcaoBruta(relancar)
+        : desligar === 'confirmando'
+          ? descreveAcaoBruta(desligar, 'desligar')
           : null;
 
   return (
@@ -503,13 +570,41 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           />
         ))}
 
-        {carga === 'pronto' ? (
-          // Destravar + relançar (com e sem contexto) na MESMA linha — os três
-          // cabem lado a lado (ordem do Rica, 03/08). Um debaixo do outro
-          // empurrava o resto do painel pra baixo à toa; a ordem esquerda→direita
-          // continua sendo a escada de custo: Escape não custa nada, relançar com
-          // contexto custa o turno em voo, relançar sem contexto custa a conversa
-          // inteira.
+        {carga === 'pronto' && !dePe && !codex ? (
+          // AGENTE FORA DO AR — desligado ou casca morta. Destravar e Resume
+          // SOMEM: não há o que destravar nem o que retomar, e os dois falham em
+          // silêncio nesse estado (`pane_incompativel` / `attempted:false`), que
+          // é o clique sem resposta que o Rica levava sem entender. Sobra o
+          // Ligar, sozinho e de largura cheia — nunca quatro botões na linha.
+          <button
+            type="button"
+            onClick={() => void acionarLigar()}
+            aria-busy={ligar === 'enviando'}
+            aria-label={descreveLigar(ligar)}
+            className="ck-veil flex w-full items-center justify-center overflow-hidden border"
+            style={{
+              minHeight: 'var(--ck-touch-min)',
+              padding: '0 var(--ck-space-2)',
+              borderRadius: 'var(--ck-radius-frame)',
+              borderColor: 'var(--ck-edge-functional)',
+              fontSize: 'var(--ck-text-sm)',
+              whiteSpace: 'nowrap',
+              // Mesma régua dos outros: a PALAVRA muda junto com a cor (§3/§9.7).
+              color: ligar === 'entregue' ? 'var(--ck-state-ok)' : 'var(--ck-text-primary)',
+              transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+            }}
+          >
+            {rotulaLigar(ligar)}
+          </button>
+        ) : null}
+
+        {carga === 'pronto' && (dePe || codex) ? (
+          // Destravar + Resume + Desligar na MESMA linha — os três cabem lado a
+          // lado (ordem do Rica, 03/08). Um debaixo do outro empurrava o resto do
+          // painel pra baixo à toa; a ordem esquerda→direita continua sendo a
+          // escada de custo: Escape não custa nada, relançar custa o turno em
+          // voo, desligar tira o agente do ar. O Desligar ocupa o lugar exato
+          // que era do Restart (10/08).
           <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
             {/* A linha "Fecha modal que travou o campo…" saiu por ordem do Rica
                 (30/07): *"pode retirar os textos explicativos"*, citando-a pelo
@@ -557,25 +652,26 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
             {/* RELANÇAR (com contexto) — o degrau acima do destrava. Quando o
                 Escape não resolve porque o próprio Claude Code morreu, esta é a
                 saída que não custa a conversa: sobe outro processo com
-                `--resume`. Fica DEPOIS do destrava de propósito: é a ação mais
-                cara das três, e a ordem na tela é a ordem em que se deve tentar. */}
+                `--resume`. Fica DEPOIS do destrava de propósito: a ordem na tela
+                é a ordem em que se deve tentar. */}
             {!codex ? (
-              <BotaoRelancar
+              <BotaoAcaoBruta
                 fase={relancar}
-                modo="resume"
-                onClick={() => void acionarRelancar('resume')}
+                acao="resume"
+                onClick={() => void acionarBruta('resume')}
               />
             ) : null}
 
-            {/* RELANÇAR SEM CONTEXTO — o degrau mais caro dos três. Sobe um
-                Claude Code do zero, sem `--resume`: pro pane travado de um jeito
-                que nem o resume confirma (âncora não bate), ou pra quando
-                recomeçar do zero é o que se quer mesmo. */}
+            {/* DESLIGAR — o degrau mais bruto, no lugar exato que era do
+                Restart. Não relança nada: encerra o agente e tudo que ele
+                consome (processo, MCPs, o `bun` do canal), parando o cgroup
+                inteiro da cerca da frota. A conversa fica — o Ligar retoma com
+                `--continue`, então desligar não custa contexto. */}
             {!codex ? (
-              <BotaoRelancar
-                fase={relancarFresco}
-                modo="fresco"
-                onClick={() => void acionarRelancar('fresco')}
+              <BotaoAcaoBruta
+                fase={desligar}
+                acao="desligar"
+                onClick={() => void acionarBruta('desligar')}
               />
             ) : null}
           </div>

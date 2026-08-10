@@ -61,7 +61,7 @@ from routers.ask_user import (
     _public_event as _public_ask_user,
 )
 from services import codex_catalog, codex_reader, tmux_driver, workspace_reader
-from services.session_reset import publish_session_reset, session_reset_events_since
+from services.session_reset import session_reset_events_since
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -226,9 +226,29 @@ class AgentPainelCanalEntrega(BaseModel):
     acao_recomendada: str
 
 
+class AgentPainelVida(BaseModel):
+    """Se o agente está de pé — as DUAS metades, porque elas divergem.
+
+    O `TmuxSessionInventory` já separava as duas desde sempre; o painel é que
+    não expunha, e o front só tinha `offline` pra tudo. A diferença é o que
+    decide qual botão o Rica vê:
+
+    - `sessao=False` — DESLIGADO. Não há o que destravar nem o que retomar.
+    - `sessao=True, processo=False` — CASCA MORTA: a sessão tmux está de pé com
+      o pane em bash cru (foi o core dump que matou lucas, barsi e felipe em
+      09/08). Aqui Destravar e Resume devolvem `attempted:false` em silêncio —
+      o Rica clicava e não acontecia nada, sem erro na tela. Ligar é a saída.
+    - `sessao=True, processo=True` — VIVO.
+    """
+
+    sessao: bool
+    processo: bool
+
+
 class AgentPainelResponse(BaseModel):
     slug: str
     generated_at: int
+    vida: AgentPainelVida
     contexto: AgentPainelContexto
     model: AgentPainelModel | None = None
     effort: AgentPainelEffort
@@ -404,6 +424,28 @@ async def _send_tmux_or_409(session_name: str, text: str) -> bool:
         raise HTTPException(status_code=409, detail="agent_tmux_busy") from exc
 
 
+async def _build_painel_vida(agent: dict[str, Any]) -> AgentPainelVida:
+    """Lê o inventário do tmux e separa sessão de processo.
+
+    Falha de observação NÃO vira "desligado": o `list_session_inventory`
+    propaga erro de propósito para não marcar a frota inteira como offline por
+    um `list-panes` que não rodou, e aqui um falso desligado trocaria os botões
+    do Rica pelo Ligar bem no meio de um agente vivo. Sem leitura confiável, a
+    resposta é a que preserva os controles.
+    """
+    try:
+        inventario = await tmux_driver.list_session_inventory()
+    except libtmux_exc.LibTmuxException:
+        log.warning("painel: inventário tmux indisponível para %s", agent.get("slug"))
+        return AgentPainelVida(sessao=True, processo=True)
+
+    sessao = agent["tmux_session"]
+    return AgentPainelVida(
+        sessao=sessao in inventario.sessions,
+        processo=sessao in inventario.claude_process_sessions,
+    )
+
+
 @router.get(
     "/{slug}/painel",
     response_model=AgentPainelResponse,
@@ -411,12 +453,14 @@ async def _send_tmux_or_409(session_name: str, text: str) -> bool:
 async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
+    vida = await _build_painel_vida(agent)
     if agent.get("executor_kind") == "codex":
         thread = await asyncio.to_thread(_resolve_codex_thread, agent)
         contexto = _build_codex_painel_contexto(agent, thread)
         return AgentPainelResponse(
             slug=slug,
             generated_at=int(time.time()),
+            vida=vida,
             contexto=contexto,
             model=_build_painel_model(agent, contexto),
             effort=_build_codex_painel_effort(agent, thread),
@@ -455,6 +499,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     return AgentPainelResponse(
         slug=slug,
         generated_at=int(time.time()),
+        vida=vida,
         contexto=contexto,
         model=_build_painel_model(agent, contexto),
         effort=effort,
@@ -2063,9 +2108,10 @@ class InputResponse(BaseModel):
 
 class RelaunchRequest(BaseModel):
     confirm: StrictBool
-    # True (default) preserva a conversa via `--resume`. False sobe um Claude
-    # Code do zero na mesma window — perder o contexto é o ponto, não bug.
-    resume: StrictBool = True
+    # O campo `resume` saiu em 10/08 junto com o Restart (ordem do Rica:
+    # *"Restart sai, destravar fica"*). Relançar preserva a conversa, ponto —
+    # e um cliente velho mandando `resume:false` cai no mesmo caminho, que
+    # preserva em vez de apagar. Falha para o lado seguro.
 
 
 class ModelChangeRequest(BaseModel):
@@ -3876,16 +3922,15 @@ async def post_agent_relaunch(
     payload: RelaunchRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Relança o pane do Claude Code — com ``--resume`` (padrão) ou do zero.
+    """Relança o pane do Claude Code retomando a conversa (``--resume``).
 
     Esta operação mata o processo atual do pane. Por ser destrutiva, o payload
     exige o campo booleano obrigatório ``confirm`` e só aceita ``true``.
 
-    ``resume=true`` (padrão): o ID da conversa vem do último JSONL principal
-    persistido; sem ele o endpoint falha em vez de iniciar uma conversa nova e
-    perder silenciosamente o contexto. ``resume=false``: sobe um Claude Code
-    limpo na mesma window, sem checar JSONL nenhum — perder o contexto é o
-    pedido, não um risco a evitar.
+    O ID da conversa vem do último JSONL principal persistido; sem ele o
+    endpoint falha em vez de iniciar uma conversa nova e perder silenciosamente
+    o contexto. O boot limpo saiu com o Restart em 10/08 — quem precisa recomeçar
+    do zero usa ``/clear`` dentro do agente.
     """
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
@@ -3896,11 +3941,9 @@ async def post_agent_relaunch(
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     db: GrupoBorgesDB = request.app.state.db
-    session_id: str | None = None
-    if payload.resume:
-        session_id = await db.latest_jsonl_session_id(slug)
-        if session_id is None:
-            raise HTTPException(status_code=409, detail="resume_session_not_found")
+    session_id = await db.latest_jsonl_session_id(slug)
+    if session_id is None:
+        raise HTTPException(status_code=409, detail="resume_session_not_found")
 
     # Preserva o modelo trocado em runtime (`/model`, persistido em state_model);
     # sem isso o relaunch sempre revertia pro model_default fixo do agents.yaml
@@ -3908,29 +3951,12 @@ async def post_agent_relaunch(
     relaunch_model = agent.get("state_model") or agent["model_default"]
 
     try:
-        if payload.resume:
-            result = await tmux_driver.restart_claude_with_resume(
-                agent["tmux_session"],
-                agent["workspace_path"],
-                relaunch_model,
-                session_id,
-            )
-        else:
-            result = await tmux_driver.restart_claude_fresh(
-                agent["tmux_session"],
-                agent["workspace_path"],
-                relaunch_model,
-            )
-            deleted = await db.delete_jsonl_events(slug)
-            publish_session_reset(
-                slug,
-                {
-                    "slug": slug,
-                    "at": int(time.time()),
-                    "reason": "relaunch-fresh",
-                    "deleted": deleted,
-                },
-            )
+        result = await tmux_driver.restart_claude_with_resume(
+            agent["tmux_session"],
+            agent["workspace_path"],
+            relaunch_model,
+            session_id,
+        )
     except (
         ValueError,
         libtmux_exc.LibTmuxException,
@@ -3942,6 +3968,88 @@ async def post_agent_relaunch(
         "tmux_delivered": result["confirmed"],
         "attempted": result["attempted"],
         "session_id": session_id,
+        "sent_at": int(time.time()),
+    }
+
+
+def _recusa_ciclo_de_vida(agent: dict[str, Any]) -> None:
+    """Desligar/Ligar só existem pra quem tem sessão tmux própria.
+
+    Mesma fronteira do relaunch, e pelo mesmo motivo: a Tara não mora numa
+    sessão de pé — ela nasce e morre a cada `codex exec` disparado pela própria
+    API. Oferecer um botão que o back recusaria com 409 é o botão morto da §9
+    com outra roupa; o front já esconde os dois, isto é o cinto.
+    """
+    if agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex":
+        raise HTTPException(status_code=409, detail="ciclo_de_vida_somente_claude_code")
+
+
+@router.post("/{slug}/desligar")
+async def post_agent_desligar(
+    slug: str,
+    payload: RelaunchRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Desliga o agente e TUDO que ele consome — ordem literal do Rica.
+
+    ``tmux kill-session`` não basta: em 09/08 dois ``bun server.ts`` do plugin
+    telegram, órfãos de sessões já mortas, queimavam 34% de CPU cada há nove
+    horas. Quem os segurava era o scope de ``borges-frota.slice``, que sobrevive
+    à sessão. O driver para o scope ANTES de encerrar a sessão — na ordem
+    inversa o ``pane_pid`` some e leva junto a única trilha até ele.
+
+    Funciona também na casca morta (sessão de pé, CLI já morto): não há processo
+    a matar, mas há sessão tmux e pode haver scope de pé.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
+    _recusa_ciclo_de_vida(agent)
+
+    try:
+        result = await tmux_driver.shutdown_agent(agent["tmux_session"])
+    except (ValueError, libtmux_exc.LibTmuxException) as exc:
+        raise HTTPException(status_code=409, detail=f"desligar_failed: {exc}") from exc
+
+    resistiram = result.get("scopes_resistiram") or []
+    return {
+        # Já desligado é sucesso, não falha: o botão é idempotente e o estado
+        # final é o pedido. `attempted=False` só diz que não havia o que fazer.
+        "tmux_delivered": not resistiram,
+        "attempted": result["attempted"],
+        "sessao_encerrada": result["sessao_encerrada"],
+        "scopes_parados": result["scopes_parados"],
+        "scopes_resistiram": resistiram,
+        "sent_at": int(time.time()),
+    }
+
+
+@router.post("/{slug}/ligar")
+async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
+    """Liga o agente pelo boot canônico da frota, retomando a conversa.
+
+    Sem ``confirm``: ligar não destrói nada, então é toque simples como o
+    destrava. Sobe com ``--continue`` — desligar não pode custar conversa; quem
+    quer recomeçar limpo usa ``/clear`` dentro do agente.
+
+    Quem monta o comando é ``ze-shared/scripts/subir-frota.sh``, não este
+    endpoint: ele é a única fonte que sabe o ``TELEGRAM_STATE_DIR`` de cada
+    agente e o env dos motores não-Anthropic. Duplicar a tabela aqui garantiria
+    divergência no dia em que o Rica trocasse o canal de alguém.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    _recusa_ciclo_de_vida(agent)
+
+    try:
+        result = await tmux_driver.boot_agent(agent["tmux_session"])
+    except tmux_driver.TmuxSessionBusyError as exc:
+        raise HTTPException(status_code=409, detail=f"ligar_em_curso: {exc}") from exc
+    except (ValueError, libtmux_exc.LibTmuxException) as exc:
+        raise HTTPException(status_code=409, detail=f"ligar_failed: {exc}") from exc
+
+    return {
+        "tmux_delivered": result["confirmed"],
+        "attempted": result["attempted"],
         "sent_at": int(time.time()),
     }
 

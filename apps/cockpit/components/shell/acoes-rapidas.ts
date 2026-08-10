@@ -230,32 +230,39 @@ export function leiaDestrava(resposta: { tmux_delivered: boolean }): Impedimento
 // ---------------------------------------------------------------------------
 
 /**
- * O relançar mata o processo do Claude Code no pane e sobe outro no lugar —
- * `resume` mata qual variante: com `--resume <session_id>` (conversa
- * sobrevive, só o turno em andamento morre) ou do zero (perde a conversa
- * inteira, de propósito).
+ * As duas ações BRUTAS do painel — as que armam e pedem confirmação.
  *
- * Por isso ele NÃO é toque simples como o destrava. O destrava manda Escape,
- * idempotente — errar o toque não custa nada. Aqui errar o toque custa caro
- * nos dois modos (o resume perde o turno em voo, o fresco perde tudo). O
- * gesto é o mesmo já usado no destrava-durante-compact (armar e confirmar), e
- * não a pressão longa do cockpit antigo: pressão longa esconde a ação de quem
- * está com pressa, e este botão existe justamente para a hora em que o canal
- * do agente morreu e o Rica precisa dele de volta.
+ * - `resume` mata o processo do Claude Code no pane e sobe outro com
+ *   `--resume <session_id>`: a conversa sobrevive, só o turno em andamento
+ *   morre.
+ * - `desligar` encerra o agente e tudo que ele consome — o processo, os MCPs e
+ *   o `bun` do plugin de canal, parando o cgroup inteiro da cerca da frota.
  *
- * O `ModoRelancar` (`resume`/`fresco`) mora nas funções de tradução, não
- * neste tipo: as duas variantes são o mesmo botão com o mesmo ciclo de fase,
- * só mudando a régua e o `resume` que vai pro back — não duas máquinas. Os
- * dois modos também compartilham o MESMO estado no componente (`useRelancar`
- * em `bloco-de-acoes.tsx`), não duas instâncias — só um pode sair de `ocioso`
- * por vez, o que evita o dedo disparar os dois relançamentos ao mesmo tempo.
+ * Nenhuma das duas é toque simples como o destrava. O destrava manda Escape,
+ * idempotente — errar o toque não custa nada. Aqui errar custa caro nas duas
+ * (o resume perde o turno em voo, o desligar tira o agente do ar). O gesto é o
+ * mesmo já usado no destrava-durante-compact (armar e confirmar), e não a
+ * pressão longa do cockpit antigo: pressão longa esconde a ação de quem está
+ * com pressa, e estes botões existem justamente para a hora em que o agente
+ * deu problema e o Rica precisa agir.
+ *
+ * **O `fresco` saiu em 10/08 junto com o Restart** — ordem do Rica: *"Restart
+ * sai, destravar fica"*. O boot sem contexto era o degrau mais caro e o menos
+ * usado; quem precisa recomeçar do zero usa `/clear` dentro do agente. O
+ * Desligar ocupa o lugar exato que era dele na linha.
+ *
+ * As duas compartilham o MESMO estado no componente (`useAcaoBruta` em
+ * `bloco-de-acoes.tsx`), não duas instâncias — só uma pode sair de `ocioso` por
+ * vez, o que evita o dedo disparar duas ações brutas ao mesmo tempo.
  */
-export type FaseRelancar = 'ocioso' | 'confirmando' | 'enviando' | 'relancado';
+export type AcaoBruta = 'resume' | 'desligar';
 
-/** Quanto tempo a confirmação do relançar fica armada. Mais longa que a do
+export type FaseBruta = 'ocioso' | 'confirmando' | 'enviando' | 'concluido';
+
+/** Quanto tempo a confirmação fica armada. Mais longa que a do
  *  destrava-durante-compact (4s): ali o segundo toque é reflexo de quem já
- *  decidiu, aqui a frase avisa que o turno atual morre e merece ser lida. */
-export const CONFIRMA_RELANCAR_MS = 6_000;
+ *  decidiu, aqui a frase avisa o que se perde e merece ser lida. */
+export const CONFIRMA_ACAO_MS = 6_000;
 
 /** Espera da primeira retentativa do `/painel` depois de ele ter caído, e teto
  *  do crescimento. Painel fora do ar não pode virar estado permanente: um
@@ -266,39 +273,127 @@ export const CONFIRMA_RELANCAR_MS = 6_000;
 export const RETENTA_PAINEL_BASE_MS = 2_000;
 export const RETENTA_PAINEL_TETO_MS = 15_000;
 
-/** `fresco` é o boot sem `--resume` — perde a conversa inteira, não só o
- *  turno em voo, daí o aviso de confirmação ser mais forte que o do resume. */
-export type ModoRelancar = 'resume' | 'fresco';
-
-/** Rótulo SEMPRE curto — os três botões (Destravar/Resume/Restart) dividem
+/** Rótulo SEMPRE curto — os três botões (Destravar/Resume/Desligar) dividem
  *  ~110px na gaveta de 380px (§ auditoria 03/08: a frase longa de confirmação
  *  cortava em elipse, e `text-overflow` nem se aplica dentro de um flex —
  *  cortava sem reticências, sumindo com "tocar de novo confirma", que é
  *  justamente o aviso que evita o toque acidental). A frase completa mora só
- *  em `descreveRelancar` (aria-label + aviso visível de largura cheia,
+ *  em `descreveAcaoBruta` (aria-label + aviso visível de largura cheia,
  *  renderizado fora do botão). */
-export function rotulaRelancar(fase: FaseRelancar, modo: ModoRelancar = 'resume'): string {
+export function rotulaAcaoBruta(fase: FaseBruta, acao: AcaoBruta = 'resume'): string {
   if (fase === 'confirmando') return 'Confirmar?';
+  if (acao === 'desligar') {
+    if (fase === 'enviando') return 'Desligando…';
+    return fase === 'concluido' ? 'Desligado' : 'Desligar';
+  }
   if (fase === 'enviando') return 'Relançando…';
-  if (fase === 'relancado') return 'Relançado';
-  return modo === 'fresco' ? 'Restart' : 'Resume';
+  return fase === 'concluido' ? 'Relançado' : 'Resume';
 }
 
 /** A frase completa — SEMPRE, em toda fase (não só o ocioso). Serve dois
  *  papéis: nome acessível (WCAG 2.5.3, começa pelo rótulo curto do botão) e,
  *  quando `fase === 'confirmando'`, o texto do aviso visível de largura cheia
  *  que substitui o que cortava dentro do botão. */
-export function descreveRelancar(fase: FaseRelancar, modo: ModoRelancar = 'resume'): string {
-  const rotulo = rotulaRelancar(fase, modo);
-  if (fase === 'enviando' || fase === 'relancado') return rotulo;
+export function descreveAcaoBruta(fase: FaseBruta, acao: AcaoBruta = 'resume'): string {
+  const rotulo = rotulaAcaoBruta(fase, acao);
+  if (fase === 'enviando' || fase === 'concluido') return rotulo;
   if (fase === 'confirmando') {
-    return modo === 'fresco'
-      ? `${rotulo} Apaga a conversa e recomeça — tocar de novo confirma`
+    return acao === 'desligar'
+      ? `${rotulo} Tira o agente do ar — tocar de novo confirma`
       : `${rotulo} Mata o turno atual — tocar de novo confirma`;
   }
-  return modo === 'fresco'
-    ? `${rotulo}: relança o Claude Code do agente do zero — perde a conversa inteira, não só o turno em andamento`
+  return acao === 'desligar'
+    ? `${rotulo}: encerra o agente e tudo que ele consome — o processo, os MCPs e o canal. A conversa fica, e Ligar retoma de onde parou`
     : `${rotulo}: relança o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido`;
+}
+
+// ---------------------------------------------------------------------------
+// Ligar
+// ---------------------------------------------------------------------------
+
+/** Ligar reaproveita o ciclo do destrava (`ocioso → enviando → entregue`), não
+ *  o das ações brutas: subir um agente que estava fora do ar não destrói nada,
+ *  então pedir confirmação seria copiar a proteção sem o perigo — o mesmo erro
+ *  que a pressão longa do cockpit antigo cometia com o destrava. */
+export function rotulaLigar(fase: FaseDestrava): string {
+  if (fase === 'enviando') return 'Ligando…';
+  if (fase === 'entregue') return 'Ligado';
+  return 'Ligar';
+}
+
+export function descreveLigar(fase: FaseDestrava): string {
+  const rotulo = rotulaLigar(fase);
+  return fase === 'ocioso'
+    ? `${rotulo}: sobe o agente de volta retomando a conversa de onde ela parou`
+    : rotulo;
+}
+
+/** Mesma régua do `leiaRelancar`: 200 não é sucesso. O `confirmed` do back é o
+ *  processo do CLI visto de pé no pane, não "mandei o comando" — e o boot segue
+ *  em curso mesmo quando ele volta falso, daí a saída não mandar tentar de novo
+ *  na hora. */
+export function leiaLigar(resposta: {
+  tmux_delivered: boolean;
+  attempted: boolean;
+}): Impedimento | null {
+  if (resposta.tmux_delivered) return null;
+  return {
+    resumo: 'mandei ligar mas o agente ainda não apareceu de pé',
+    saida: 'o boot pode estar em curso — espere alguns segundos e recarregue o painel',
+  };
+}
+
+/** O desligar é idempotente: agente que já estava fora do ar é sucesso, não
+ *  falha. O único desfecho que merece aviso é um cgroup que resistiu ao `stop`,
+ *  porque aí sobrou processo consumindo CPU — que é exatamente o que este botão
+ *  existe pra não deixar para trás. */
+export function leiaDesligar(resposta: {
+  tmux_delivered: boolean;
+  scopes_resistiram?: string[];
+}): Impedimento | null {
+  if (resposta.tmux_delivered) return null;
+  const quantos = resposta.scopes_resistiram?.length ?? 0;
+  return {
+    resumo:
+      quantos > 1
+        ? `${quantos} processos do agente resistiram ao desligamento`
+        : 'um processo do agente resistiu ao desligamento',
+    saida: 'a sessão foi encerrada, mas sobrou coisa consumindo CPU — avise o Pavan',
+  };
+}
+
+/** Traduz as recusas de `POST /{slug}/desligar` e `/ligar`. Mesma técnica do
+ *  `diagnosticaRelancar`: substring do detail preservado pelo cliente. */
+export function diagnosticaCicloDeVida(erro: unknown, acao: 'desligar' | 'ligar'): Impedimento {
+  const texto = textoDoErro(erro);
+
+  if (texto.includes('ciclo_de_vida_somente_claude_code')) {
+    return {
+      resumo: 'este agente não tem sessão própria pra ligar ou desligar',
+      saida: 'a Tara é Codex — ela nasce e morre a cada turno, não fica de pé',
+    };
+  }
+  if (texto.includes('ligar_em_curso')) {
+    return {
+      resumo: 'já tem um boot deste agente em andamento',
+      saida: 'espere ele terminar — ligar duas vezes subiria duas sessões',
+    };
+  }
+  if (texto.includes('404')) {
+    return {
+      resumo: 'o agente sumiu da frota',
+      saida: 'volte para a lista e abra de novo',
+    };
+  }
+  return acao === 'ligar'
+    ? {
+        resumo: 'não consegui ligar o agente',
+        saida: 'o boot da frota recusou — confira o log em ~/logs/subir-frota.log',
+      }
+    : {
+        resumo: 'não consegui desligar o agente',
+        saida: 'nada foi alterado — tente de novo; se repetir, é infra',
+      };
 }
 
 /**

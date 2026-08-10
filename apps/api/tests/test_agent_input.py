@@ -330,7 +330,15 @@ def test_input_codex_next_fresh_armed_starts_new_thread_and_clears(tmp_path: Pat
     --resume-thread) e zera o flag depois de consumir."""
     app = _build_app(tmp_path, codex_for_tara=True)
     app.state.db._update_agent_codex_state("tara", codex_next_fresh=1)
+    # O inventário entra explícito porque o `/painel` passou a reportar `vida`
+    # (10/08) e o lê do tmux. `routers.agents.subprocess` É o módulo global, e o
+    # patch do `Popen` abaixo alcança o `libtmux` por tabela — sem isto o GET do
+    # painel morre num `communicate()` mockado, num erro que não fala do teste.
     with patch("routers.agents.codex_reader.find_latest_thread", return_value=None) as find_thread, \
+         patch(
+             "routers.agents.tmux_driver.list_session_inventory",
+             new=AsyncMock(return_value=tmux_driver.TmuxSessionInventory(set(), set())),
+         ), \
          patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
@@ -519,18 +527,24 @@ def test_relaunch_resumes_exact_session_and_reports_confirmation(tmp_path: Path)
     )
 
 
-def test_relaunch_with_resume_false_skips_jsonl_lookup_and_boots_fresh(
+def test_relaunch_de_cliente_velho_com_resume_false_preserva_a_conversa(
     tmp_path: Path,
 ) -> None:
-    """`resume: false` é o boot sem `--resume` — perder o contexto é o pedido,
-    então nem faz sentido consultar o JSONL antes (ele nem precisa existir)."""
+    """O Restart saiu em 10/08 e com ele o campo `resume`.
+
+    Uma aba antiga do cockpit ainda manda `resume: false` no corpo. O campo
+    deixou de existir no modelo, então o valor é ignorado e a requisição cai no
+    caminho ÚNICO — que retoma a conversa. Falha para o lado seguro: preserva em
+    vez de apagar, e nunca chama `delete_jsonl_events`.
+    """
     app = _build_app(tmp_path)
-    app.state.db.latest_jsonl_session_id = AsyncMock()
-    app.state.db.delete_jsonl_events = AsyncMock(return_value=7)
+    session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
+    app.state.db.latest_jsonl_session_id = AsyncMock(return_value=session_id)
+    app.state.db.delete_jsonl_events = AsyncMock()
     with patch(
-        "routers.agents.tmux_driver.restart_claude_fresh",
+        "routers.agents.tmux_driver.restart_claude_with_resume",
         new=AsyncMock(return_value={"attempted": True, "confirmed": True}),
-    ) as restart_fresh, patch("routers.agents.publish_session_reset") as publish_reset:
+    ) as restart:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/relaunch",
@@ -538,42 +552,9 @@ def test_relaunch_with_resume_false_skips_jsonl_lookup_and_boots_fresh(
             )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["tmux_delivered"] is True
-    assert body["attempted"] is True
-    assert body["session_id"] is None
-    app.state.db.latest_jsonl_session_id.assert_not_awaited()
-    app.state.db.delete_jsonl_events.assert_awaited_once_with("daniel")
-    publish_reset.assert_called_once_with(
-        "daniel",
-        {
-            "slug": "daniel",
-            "at": ANY,
-            "reason": "relaunch-fresh",
-            "deleted": 7,
-        },
-    )
-    restart_fresh.assert_awaited_once_with("daniel", "/tmp/daniel", "opus")
-
-
-def test_relaunch_fresh_failure_keeps_jsonl_and_does_not_publish_reset(
-    tmp_path: Path,
-) -> None:
-    app = _build_app(tmp_path)
-    app.state.db.delete_jsonl_events = AsyncMock()
-    with patch(
-        "routers.agents.tmux_driver.restart_claude_fresh",
-        new=AsyncMock(side_effect=agents_router.tmux_driver.TmuxSessionBusyError("busy")),
-    ), patch("routers.agents.publish_session_reset") as publish_reset:
-        with TestClient(app) as client:
-            response = client.post(
-                "/api/agents/daniel/relaunch",
-                json={"confirm": True, "resume": False},
-            )
-
-    assert response.status_code == 409
+    assert response.json()["session_id"] == session_id
+    restart.assert_awaited_once_with("daniel", "/tmp/daniel", "opus", session_id)
     app.state.db.delete_jsonl_events.assert_not_awaited()
-    publish_reset.assert_not_called()
 
 
 def test_relaunch_resume_defaults_to_true_when_field_omitted(tmp_path: Path) -> None:
@@ -589,3 +570,188 @@ def test_relaunch_resume_defaults_to_true_when_field_omitted(tmp_path: Path) -> 
 
     assert response.status_code == 200
     restart.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Desligar / Ligar — o ciclo de vida do agente (10/08)
+# ---------------------------------------------------------------------------
+
+
+def _inventario(sessoes: set[str], claudes: set[str]):
+    """Patch do inventário do tmux, que o `/painel` lê pra reportar `vida`."""
+    return patch(
+        "routers.agents.tmux_driver.list_session_inventory",
+        new=AsyncMock(return_value=tmux_driver.TmuxSessionInventory(sessoes, claudes)),
+    )
+
+
+def test_desligar_para_os_scopes_antes_de_encerrar_a_sessao(tmp_path: Path) -> None:
+    """O valor do botão está no que ele mata ALÉM da sessão tmux.
+
+    Em 09/08 dois `bun server.ts` do plugin telegram, órfãos de sessão já morta,
+    queimavam 34% de CPU cada há nove horas. O endpoint precisa reportar os
+    cgroups parados — é a prova de que o `kill-session` não foi tudo o que houve.
+    """
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.shutdown_agent",
+        new=AsyncMock(
+            return_value={
+                "attempted": True,
+                "sessao_encerrada": True,
+                "scopes_parados": ["run-rd7d84c.scope"],
+                "scopes_resistiram": [],
+            }
+        ),
+    ) as desliga:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/desligar", json={"confirm": True})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tmux_delivered"] is True
+    assert body["sessao_encerrada"] is True
+    assert body["scopes_parados"] == ["run-rd7d84c.scope"]
+    desliga.assert_awaited_once_with("daniel")
+
+
+def test_desligar_de_agente_ja_fora_do_ar_e_sucesso_idempotente(tmp_path: Path) -> None:
+    """`attempted:false` (não havia sessão) NÃO é falha: o estado final é o pedido."""
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.shutdown_agent",
+        new=AsyncMock(
+            return_value={
+                "attempted": False,
+                "sessao_encerrada": False,
+                "scopes_parados": [],
+            }
+        ),
+    ):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/desligar", json={"confirm": True})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["attempted"] is False
+    assert body["tmux_delivered"] is True
+
+
+def test_desligar_avisa_quando_um_scope_resiste(tmp_path: Path) -> None:
+    """Cgroup que sobreviveu ao `stop` é CPU queimando que ninguém vê."""
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.shutdown_agent",
+        new=AsyncMock(
+            return_value={
+                "attempted": True,
+                "sessao_encerrada": True,
+                "scopes_parados": [],
+                "scopes_resistiram": ["run-rteimoso.scope"],
+            }
+        ),
+    ):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/desligar", json={"confirm": True})
+
+    assert response.status_code == 200
+    assert response.json()["tmux_delivered"] is False
+
+
+def test_desligar_exige_confirmacao_explicita(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    with patch("routers.agents.tmux_driver.shutdown_agent", new=AsyncMock()) as desliga:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/desligar", json={"confirm": False})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "confirmacao_explicita_obrigatoria"
+    desliga.assert_not_awaited()
+
+
+def test_ciclo_de_vida_recusa_agente_codex(tmp_path: Path) -> None:
+    """A Tara não fica de pé entre turnos — não há o que ligar nem desligar."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    with patch("routers.agents.tmux_driver.shutdown_agent", new=AsyncMock()) as desliga, \
+         patch("routers.agents.tmux_driver.boot_agent", new=AsyncMock()) as liga:
+        with TestClient(app) as client:
+            desligou = client.post("/api/agents/tara/desligar", json={"confirm": True})
+            ligou = client.post("/api/agents/tara/ligar")
+
+    assert desligou.status_code == 409
+    assert ligou.status_code == 409
+    assert desligou.json()["detail"] == "ciclo_de_vida_somente_claude_code"
+    desliga.assert_not_awaited()
+    liga.assert_not_awaited()
+
+
+def test_ligar_nao_exige_confirmacao(tmp_path: Path) -> None:
+    """Ligar não destrói nada — é toque simples, como o destrava."""
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.boot_agent",
+        new=AsyncMock(return_value={"attempted": True, "confirmed": True}),
+    ) as liga:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/ligar")
+
+    assert response.status_code == 200
+    assert response.json()["tmux_delivered"] is True
+    liga.assert_awaited_once_with("daniel")
+
+
+def test_ligar_com_boot_ja_em_curso_devolve_409(tmp_path: Path) -> None:
+    """A unit nomeada do `systemd-run` é o trava-duplo: o segundo clique não
+    pode subir uma segunda sessão do mesmo agente."""
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.boot_agent",
+        new=AsyncMock(side_effect=agents_router.tmux_driver.TmuxSessionBusyError("já em curso")),
+    ):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/ligar")
+
+    assert response.status_code == 409
+    assert "ligar_em_curso" in response.json()["detail"]
+
+
+def test_painel_separa_desligado_de_casca_morta(tmp_path: Path) -> None:
+    """O `AgentStatus` só tem `offline` pra tudo; o painel precisa das DUAS
+    metades porque elas divergem — e é a segunda (sessão viva, CLI morto) que
+    fazia Destravar e Resume falharem em silêncio."""
+    app = _build_app(tmp_path)
+
+    with _inventario(set(), set()):
+        with TestClient(app) as client:
+            desligado = client.get("/api/agents/daniel/painel").json()
+
+    with _inventario({"daniel"}, set()):
+        with TestClient(app) as client:
+            casca_morta = client.get("/api/agents/daniel/painel").json()
+
+    with _inventario({"daniel"}, {"daniel"}):
+        with TestClient(app) as client:
+            vivo = client.get("/api/agents/daniel/painel").json()
+
+    assert desligado["vida"] == {"sessao": False, "processo": False}
+    assert casca_morta["vida"] == {"sessao": True, "processo": False}
+    assert vivo["vida"] == {"sessao": True, "processo": True}
+
+
+def test_painel_com_tmux_ilegivel_preserva_os_controles(tmp_path: Path) -> None:
+    """Falha de observação não pode virar "desligado".
+
+    Um `list-panes` que não rodou trocaria os botões do Rica pelo Ligar no meio
+    de um agente vivo — o mesmo motivo pelo qual o `list_session_inventory`
+    propaga erro em vez de devolver conjunto vazio.
+    """
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.list_session_inventory",
+        new=AsyncMock(side_effect=agents_router.libtmux_exc.LibTmuxException("sem server")),
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/agents/daniel/painel")
+
+    assert response.status_code == 200
+    assert response.json()["vida"] == {"sessao": True, "processo": True}

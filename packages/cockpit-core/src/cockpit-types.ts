@@ -373,9 +373,28 @@ export type PainelModel = {
   runtime_switch: boolean;
 };
 
+/**
+ * Se o agente está de pé — as DUAS metades, porque elas divergem e o
+ * `AgentStatus` (`offline` pra tudo) não as separa.
+ *
+ * - `sessao=false` — DESLIGADO. Não há o que destravar nem o que retomar.
+ * - `sessao=true, processo=false` — CASCA MORTA: sessão tmux viva com o pane em
+ *   bash cru (o core dump que matou lucas, barsi e felipe em 09/08). Medido em
+ *   10/08: o destrava responde `pane_incompativel` e o relançar devolve
+ *   `attempted:false` — o Rica clicava e não acontecia nada, sem erro na tela.
+ * - `sessao=true, processo=true` — VIVO.
+ *
+ * Os dois primeiros mostram Ligar; só o terceiro mostra as ações do agente vivo.
+ */
+export type PainelVida = {
+  sessao: boolean;
+  processo: boolean;
+};
+
 export type AgentPainelResponse = {
   slug: string;
   generated_at: number;
+  vida: PainelVida;
   contexto: PainelContexto;
   model?: PainelModel | null;
   effort: PainelEffort;
