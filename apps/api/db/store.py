@@ -184,7 +184,7 @@ def derive_agent_status(
         lifecycle_updated_at is not None
         and now - lifecycle_updated_at <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
     )
-    if lifecycle_status == "offline":
+    if lifecycle_status == "offline" and lifecycle_is_fresh:
         return "offline"
     if executor_kind == "codex":
         # A Tara é executor sob demanda (opção A, 10/08): nasce e morre a cada

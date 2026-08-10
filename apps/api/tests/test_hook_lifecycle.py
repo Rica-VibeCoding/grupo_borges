@@ -294,6 +294,38 @@ def test_codex_sem_lifecycle_e_ocioso() -> None:
     ) == "ocioso"
 
 
+def test_codex_offline_fresco_permanece_offline() -> None:
+    """`tara.exec.failed` recente é offline de verdade — o turno acabou de falhar."""
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        999,
+        session_present=False,
+        agent_process_present=False,
+        lifecycle_status="offline",
+        lifecycle_updated_at=999,
+        executor_kind="codex",
+        now=1_000,
+    ) == "offline"
+
+
+def test_codex_offline_velho_recupera_ocioso() -> None:
+    """Falha velha é história, não estado: a Tara é executor sob demanda e está
+    disponível pra receber o próximo turno. Era o que a deixava presa em
+    "offline junto com os desligados" depois de um `tara.exec.failed` (10/08)."""
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        100,
+        session_present=False,
+        agent_process_present=False,
+        lifecycle_status="offline",
+        lifecycle_updated_at=100,
+        executor_kind="codex",
+        now=1_000,
+    ) == "ocioso"
+
+
 def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:
     from db.store import derive_lifecycle_from_event
 
