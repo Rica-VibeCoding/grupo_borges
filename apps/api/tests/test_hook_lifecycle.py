@@ -229,7 +229,14 @@ def test_codex_fresh_lifecycle_does_not_require_tmux_session() -> None:
     ) == "trabalhando"
 
 
-def test_codex_stale_lifecycle_is_offline_without_tmux_session() -> None:
+def test_codex_stale_lifecycle_ocioso_nao_e_offline() -> None:
+    """Tara é executor sob demanda (opção A, 10/08): inatividade ≠ offline.
+
+    Um turno terminado há mais de 5 min sem evento novo é agente DISPONÍVEL pra
+    receber o próximo turno, não desligado — era o que derrubava a Tara no card
+    "junto com os desligados" (achado 10/08: lifecycle de `tara.exec.completed`
+    envelhecia e o status virava offline).
+    """
     from db.store import derive_agent_status
 
     assert derive_agent_status(
@@ -240,7 +247,51 @@ def test_codex_stale_lifecycle_is_offline_without_tmux_session() -> None:
         lifecycle_updated_at=100,
         executor_kind="codex",
         now=1_000,
-    ) == "offline"
+    ) == "ocioso"
+
+
+def test_codex_stale_lifecycle_trabalhando_vira_aguardando() -> None:
+    """Turno sem sinal há 5 min: aguardando, nunca offline."""
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        100,
+        session_present=False,
+        agent_process_present=False,
+        lifecycle_status="trabalhando",
+        lifecycle_updated_at=100,
+        executor_kind="codex",
+        now=1_000,
+    ) == "aguardando"
+
+
+def test_codex_stale_lifecycle_aguardando_permanece() -> None:
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        100,
+        session_present=False,
+        agent_process_present=False,
+        lifecycle_status="aguardando",
+        lifecycle_updated_at=100,
+        executor_kind="codex",
+        now=1_000,
+    ) == "aguardando"
+
+
+def test_codex_sem_lifecycle_e_ocioso() -> None:
+    """Nunca rodou no cockpit: disponível, não offline."""
+    from db.store import derive_agent_status
+
+    assert derive_agent_status(
+        None,
+        session_present=False,
+        agent_process_present=False,
+        lifecycle_status=None,
+        lifecycle_updated_at=None,
+        executor_kind="codex",
+        now=1_000,
+    ) == "ocioso"
 
 
 def test_derive_lifecycle_from_jsonl_assistant_end_turn() -> None:

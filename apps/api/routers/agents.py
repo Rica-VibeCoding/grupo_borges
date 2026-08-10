@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import tempfile
@@ -35,7 +36,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, AsyncGenerator, Literal, NamedTuple, get_args
 
-import httpx
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from libtmux import exc as libtmux_exc
@@ -96,10 +96,6 @@ _KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
 _STATUSLINE_REPORTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
 _CODEX_DEFAULT_SANDBOX = "danger-full-access"
-_TELECODEX_CONTROL_URL = os.environ.get(
-    "TELECODEX_CONTROL_URL",
-    "http://127.0.0.1:8787/control/new-thread",
-)
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
 # Codex é mais generoso porque a cota dele só chega em evento (webhook por
 # turno), não num arquivo de status reescrito de segundo em segundo como o CC.
@@ -259,6 +255,7 @@ class AgentPainelResponse(BaseModel):
     sandbox: AgentPainelSandbox | None = None
     codex_native: bool | None = None
     codex_next_fresh: bool | None = None
+    codex_turn_in_flight: bool | None = None
 
 
 class AgentPainelEffortPatchRequest(BaseModel):
@@ -471,6 +468,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             sandbox=_build_codex_painel_sandbox(agent),
             codex_native=True,
             codex_next_fresh=bool(agent.get("codex_next_fresh")),
+            codex_turn_in_flight=_codex_turn_in_flight(agent),
         )
 
     cc_status = await _load_cc_status(db, slug)
@@ -623,22 +621,18 @@ async def patch_agent_codex_new_thread(
     patch: AgentCodexNewThreadPatchRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Cria thread Codex nova imediatamente quando o executor local estiver disponível."""
+    """Arma a próxima conversa da Tara como thread NOVA (opção A, 10/08).
+
+    Antes pedia thread nova ao daemon telecodex (a sessão interativa do tmux);
+    com o cockpit headless, "Nova conversa" é um flag consumido no próximo
+    `/input` (`codex_next_fresh`), que o spawn usa pra nascer sem
+    `--resume-thread`. O telecodex tem canal próprio — o cockpit não compete.
+    """
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") != "codex":
         raise HTTPException(status_code=400, detail="not_a_codex_agent")
     db: GrupoBorgesDB = request.app.state.db
     if patch.armed:
-        started = await _telecodex_new_thread()
-        if started is not None:
-            await db.update_agent_codex_state(slug, codex_next_fresh=0)
-            return {
-                "slug": slug,
-                "armed": False,
-                "thread_started": not bool(started.get("pending")),
-                "thread_pending": bool(started.get("pending")),
-                "thread_id": started.get("threadId"),
-            }
         await db.update_agent_codex_state(slug, codex_next_fresh=1)
         return {"slug": slug, "armed": True, "thread_started": False, "thread_id": None}
     await db.update_agent_codex_state(slug, codex_next_fresh=0)
@@ -2192,22 +2186,13 @@ _CODEX_INPUT_LOCKS: dict[str, asyncio.Lock] = {}
 _CODEX_INPUT_LOCKS_GUARD = asyncio.Lock()
 _CODEX_BUSY_STATUS_LINES = ("iniciando", "processando turn", "rodando:")
 
-
-async def _telecodex_new_thread() -> dict[str, Any] | None:
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(_TELECODEX_CONTROL_URL, json={})
-        if not res.is_success:
-            log.warning("telecodex new-thread failed: HTTP %s", res.status_code)
-            return None
-        body = res.json()
-    except Exception as exc:
-        log.warning("telecodex new-thread failed: %s", exc)
-        return None
-    if isinstance(body, dict) and body.get("ok") is True:
-        return body
-    log.warning("telecodex new-thread returned unexpected body: %r", body)
-    return None
+# Os `Popen` dos turnos Codex em voo, por slug — a alça que a rota
+# `POST /{slug}/codex-stop` usa para derrubar um turno preso. O wrapper
+# (`scripts/tara-codex`) é disparado com `start_new_session=True`, então matar o
+# grupo inteiro leva junto o `codex exec` filho (opção A, 10/08 — a Tara é
+# headless por turno, não tem sessão tmux própria pra operar).
+_CODEX_RUN_PROCS: dict[str, subprocess.Popen] = {}
+_CODEX_RUN_PROCS_GUARD = asyncio.Lock()
 
 
 async def _codex_input_lock(slug: str) -> asyncio.Lock:
@@ -2232,6 +2217,7 @@ def _tara_codex_script_path() -> str:
 
 def _spawn_tara_codex_input(
     *,
+    slug: str,
     cwd: str,
     text: str,
     thread_id: str | None,
@@ -2252,7 +2238,7 @@ def _spawn_tara_codex_input(
     if image_path is not None:
         cmd.extend(["-i", image_path])
     cmd.extend(["--", text])
-    subprocess.Popen(
+    proc = subprocess.Popen(
         cmd,
         cwd=cwd,
         stdin=subprocess.DEVNULL,
@@ -2261,6 +2247,9 @@ def _spawn_tara_codex_input(
         start_new_session=True,
         close_fds=True,
     )
+    # A alça do `codex-stop`. Uma entrada por slug — um turno em voo não pode
+    # nascer outro (`codex_turn_in_flight` já barra no /input).
+    _CODEX_RUN_PROCS[slug] = proc
 
 
 async def _spawn_codex_agent_turn(
@@ -2281,19 +2270,102 @@ async def _spawn_codex_agent_turn(
         armed_fresh = bool(agent.get("codex_next_fresh"))
         effective_fresh = fresh or armed_fresh
         cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-        thread = None
+        # Opção A (10/08): a thread a retomar é a do DELEGATOR COCKPIT, lida do
+        # store por delegator que o wrapper grava (`~/.tara/threads/cockpit.txt`).
+        # O `codex_thread_id` do agent_state é único e qualquer delegator o
+        # sobrescreve — e `find_latest_thread` puxava a thread do telecodex
+        # (sessão interativa do tmux), que o lock por thread do codex recusa
+        # retomar (`~/.codex/thread-writer-locks/`): o `codex exec resume`
+        # morria em 2s com exit 1 e a mensagem do Rica nunca chegava (medido
+        # 10/08, thread 019fe514). O `resolve_thread` valida que a thread ainda
+        # existe no SQLite — sumiu (apagada/arquivada), nasce fresh.
+        thread_id = None
         if not effective_fresh:
-            thread = await asyncio.to_thread(codex_reader.find_latest_thread, cwd)
+            tid = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
+            if tid:
+                thread = await asyncio.to_thread(
+                    codex_reader.resolve_thread,
+                    thread_id=tid,
+                    cwd=cwd,
+                    db_path=_codex_db_path(),
+                )
+                if thread is not None and thread.thread_id == tid:
+                    thread_id = tid
         _spawn_tara_codex_input(
+            slug=slug,
             cwd=cwd,
             text=text,
-            thread_id=thread.thread_id if thread is not None else None,
+            thread_id=thread_id,
             fresh=effective_fresh,
             image_path=image_path,
         )
         if armed_fresh:
             db: GrupoBorgesDB = request.app.state.db
             await db.update_agent_codex_state(slug, codex_next_fresh=0)
+
+
+@router.post("/{slug}/codex-stop")
+async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
+    """Derruba o turno Codex em voo (botão "Parar turno" do painel, opção A).
+
+    O turno nasce como `bash scripts/tara-codex --delegator cockpit` com
+    `start_new_session=True` (grupo de processos próprio). Matar o grupo leva o
+    `codex exec` filho junto; sem isto, um `kill` no pai deixaria o run
+    escrevendo no rollout sem dono.
+
+    Idempotente: sem turno em voo, só reconcilia o lifecycle — um `trabalhando`
+    órfão (wrapper que morreu sem `tara.exec.completed`) volta a `ocioso`.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+
+    proc = await _codex_running_proc(slug)
+    if proc is None:
+        # Turno morto ou nunca existiu: reconcilia lifecycle órfão e sai.
+        if agent.get("lifecycle_status") == "trabalhando":
+            await db.update_agent_lifecycle(
+                slug,
+                status="ocioso",
+                detail="turno interrompido",
+                event="codex.turn.stopped",
+            )
+        return {"stopped": False, "reason": "no_turn_in_flight"}
+
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    await _codex_clear_running_proc(slug)
+    await db.update_agent_lifecycle(
+        slug,
+        status="ocioso",
+        detail="turno interrompido",
+        event="codex.turn.stopped",
+    )
+    return {"stopped": True}
+
+
+async def _codex_running_proc(slug: str) -> subprocess.Popen | None:
+    async with _CODEX_RUN_PROCS_GUARD:
+        proc = _CODEX_RUN_PROCS.get(slug)
+        if proc is None:
+            return None
+        if proc.poll() is not None:
+            _CODEX_RUN_PROCS.pop(slug, None)
+            return None
+        return proc
+
+
+async def _codex_clear_running_proc(slug: str) -> None:
+    async with _CODEX_RUN_PROCS_GUARD:
+        _CODEX_RUN_PROCS.pop(slug, None)
 
 
 @router.get("/{slug}/pane/stream")
@@ -3811,12 +3883,19 @@ async def _require_codex_agent(request: Request, slug: str) -> dict[str, Any]:
 
 @router.get("/{slug}/codex/thread", response_model=CodexThreadResponse)
 async def get_codex_thread(slug: str, request: Request) -> CodexThreadResponse:
-    """Resumo da thread Codex atual do agente (modelo, tokens, última atividade)."""
+    """Resumo da thread Codex atual do agente (modelo, tokens, última atividade).
+
+    Opção A (10/08): a thread do cockpit é a do `codex_thread_id` gravado pelo
+    wrapper — nunca o fallback do telecodex (sessão interativa do tmux).
+    """
     agent = await _require_codex_agent(request, slug)
     cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-    thread = await asyncio.to_thread(
-        codex_reader.find_latest_thread, cwd, _codex_db_path()
-    )
+    thread_id = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
+    thread = None
+    if thread_id:
+        thread = await asyncio.to_thread(
+            codex_reader.resolve_thread, thread_id=thread_id, cwd=cwd, db_path=_codex_db_path()
+        )
     return CodexThreadResponse(thread=thread.to_dict() if thread else None)
 
 
@@ -3832,11 +3911,19 @@ async def get_codex_messages(
     Por padrão devolve só bolhas visíveis (user/assistant reais); itens internos
     (developer/system/reasoning/tool) entram só na contagem `hidden_count`.
     `include_internal=true` adiciona marcadores internos SEM texto (nunca vaza).
+
+    Opção A (10/08): a thread do cockpit é a do `codex_thread_id` — sem o
+    fallback do telecodex, que mostraria a conversa da sessão interativa do tmux
+    como se fosse a do cockpit.
     """
     agent = await _require_codex_agent(request, slug)
     cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
+    thread_id = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
     thread, all_msgs = await asyncio.to_thread(
-        codex_reader.read_latest_conversation, cwd, _codex_db_path()
+        codex_reader.read_latest_conversation,
+        cwd,
+        _codex_db_path(),
+        thread_id=thread_id,
     )
 
     hidden_count = sum(1 for m in all_msgs if not m.visible)

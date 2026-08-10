@@ -187,9 +187,20 @@ def derive_agent_status(
     if lifecycle_status == "offline":
         return "offline"
     if executor_kind == "codex":
+        # A Tara é executor sob demanda (opção A, 10/08): nasce e morre a cada
+        # turno, sem sessão própria pra manter de pé. "Offline" é sinal de FALHA
+        # recente (o `tara.exec.failed` que o `if` acima devolveu), não de
+        # inatividade — um turno terminado sem evento novo não desliga o agente.
+        # Lifecycle velho:
+        #  - "ocioso" → ocioso (disponível pra receber o próximo turno)
+        #  - "trabalhando" → aguardando (turno sem sinal há 5min; não afirmar offline)
+        #  - "aguardando" → aguardando
+        #  - sem lifecycle → ocioso (nunca rodou; disponível)
         if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
             return lifecycle_status
-        return "offline"
+        if lifecycle_status == "trabalhando":
+            return "aguardando"
+        return lifecycle_status if lifecycle_status in {"ocioso", "aguardando"} else "ocioso"
     if not session_present or not agent_process_present:
         return "offline"
     if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:

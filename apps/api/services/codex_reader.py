@@ -27,6 +27,13 @@ STATE_DB = CODEX_HOME / "state_5.sqlite"
 TARA_CWD = "/home/clawd/repos/ze_claude/tara"
 TELECODEX_CONTEXTS = Path(TARA_CWD) / ".telecodex" / "contexts.json"
 
+# Thread store por delegator — o wrapper `scripts/tara-codex` grava
+# `~/.tara/threads/<delegator>.txt` quando o run emite `thread.started`. A
+# thread do COCKPIT é a do delegator `cockpit`, não a do `codex_thread_id` do
+# agent_state (único, sobrescrito por qualquer delegator — o Daniel rodando a
+# Tara por outro canal apontaria o cockpit pra thread alheia). Opção A, 10/08.
+COCKPIT_THREAD_FILE = Path.home() / ".tara" / "threads" / "cockpit.txt"
+
 SOURCE = "codex-local"
 
 # Mensagens role=user que na verdade são contexto injetado pelo runtime Codex,
@@ -418,6 +425,23 @@ def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
     return max(candidates)[1]
 
 
+def read_cockpit_thread_id(thread_file: str | Path = COCKPIT_THREAD_FILE) -> str | None:
+    """Thread do DELEGATOR COCKPIT, lida do store que o wrapper grava por run.
+
+    `None` quando o cockpit ainda não rodou turno nenhum (primeira conversa
+    nasce fresh). Quem decide se a thread ainda existe no SQLite é o chamador,
+    validando com `resolve_thread` — o arquivo é só o lembrete do último run.
+    """
+    p = Path(thread_file)
+    if not p.exists():
+        return None
+    try:
+        text = p.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    return text if text else None
+
+
 _THREAD_COLUMNS = """
     SELECT id, rollout_path, cwd, title, model, reasoning_effort,
            tokens_used, updated_at_ms, created_at_ms
@@ -515,9 +539,31 @@ def find_latest_thread(
 
 
 def read_latest_conversation(
-    cwd: str = TARA_CWD, db_path: str | Path = STATE_DB
+    cwd: str = TARA_CWD,
+    db_path: str | Path = STATE_DB,
+    *,
+    thread_id: str | None = None,
 ) -> tuple[CodexThread | None, list[CodexMessage]]:
-    """Atalho: thread atual + mensagens parseadas do rollout dela."""
+    """Atalho: thread atual + mensagens parseadas do rollout dela.
+
+    ``thread_id`` é a thread do DELEGATOR COCKPIT (o ``codex_thread_id`` que o
+    evento ``codex.thread.started`` do wrapper gravou no agent_state). Quando
+    vem explícita, a conversa é a do cockpit — sem cair no fallback do
+    telecodex, que puxaria a thread da sessão interativa do tmux (opção A,
+    10/08). Sem thread do cockpit ainda, devolve vazio: o cockpit não tem
+    conversa própria até a primeira mensagem.
+    """
+    if thread_id:
+        conn = _connect_ro(db_path)
+        if conn is not None:
+            try:
+                row = _fetch_thread_by_id(conn, thread_id)
+            finally:
+                conn.close()
+            if row is not None:
+                thread = _row_to_thread(row)
+                return thread, parse_rollout(thread.rollout_path, thread_id=thread.thread_id)
+        return None, []
     thread = find_latest_thread(cwd, db_path)
     if thread is None:
         return None, []

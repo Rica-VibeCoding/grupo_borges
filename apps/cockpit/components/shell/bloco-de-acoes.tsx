@@ -41,8 +41,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchAgentPainel,
+  patchAgentCodexNewThread,
   patchAgentCodexSandbox,
   patchAgentPermissionMode,
+  postAgentCodexStop,
   postAgentDesligar,
   postAgentDestrava,
   postAgentLigar,
@@ -105,6 +107,8 @@ const REDE = {
   relanca: postAgentRelaunch,
   desliga: postAgentDesligar,
   liga: postAgentLigar,
+  novaConversa: patchAgentCodexNewThread,
+  paraTurno: postAgentCodexStop,
 };
 
 /**
@@ -271,6 +275,11 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
   const [ligar, setLigar] = useState<FaseDestrava>('ocioso');
+  // Codex (opção A): os dois controles que fazem sentido pra Tara headless —
+  // "Nova conversa" arma `codex_next_fresh` (próximo turno nasce thread nova) e
+  // "Parar turno" derruba o `codex exec` em voo.
+  const [novaConversa, setNovaConversa] = useState<FaseDestrava>('ocioso');
+  const [pararTurno, setPararTurno] = useState<FaseDestrava>('ocioso');
   const [retentativa, setRetentativa] = useState(0);
 
   // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
@@ -506,6 +515,63 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     }
   }
 
+  /** "Nova conversa" — arma `codex_next_fresh`; o próximo turno nasce thread
+   *  nova. Toque simples como o Ligar: não destrói nada, a thread velha fica. */
+  async function acionarNovaConversa() {
+    if (novaConversa === 'enviando') return;
+    setFalha(null);
+    setNovaConversa('enviando');
+    try {
+      await REDE.novaConversa(agentSlug, true);
+      setNovaConversa('entregue');
+      // Relê o painel: o `codex_next_fresh` pintado depende do que o back gravou.
+      buscar();
+      if (reciboTimer.current) clearTimeout(reciboTimer.current);
+      reciboTimer.current = setTimeout(() => setNovaConversa('ocioso'), RECIBO_MS);
+    } catch (erro) {
+      setNovaConversa('ocioso');
+      setFalha({
+        resumo: 'não consegui armar uma conversa nova',
+        saida: 'tente de novo; a troca vale no próximo turno',
+      });
+    }
+  }
+
+  /** "Parar turno" — derruba o `codex exec` em voo (grupo do tara-codex). O
+   *  turno em andamento é perdido; a conversa fica. Desabilitado sem turno
+   *  rodando — parar nada seria recibo que não quer dizer nada. */
+  async function acionarPararTurno() {
+    if (pararTurno === 'enviando') return;
+    if (!painel?.codex_turn_in_flight) return;
+    setFalha(null);
+    setPararTurno('enviando');
+    try {
+      await REDE.paraTurno(agentSlug);
+      setPararTurno('entregue');
+      buscar();
+      if (reciboTimer.current) clearTimeout(reciboTimer.current);
+      reciboTimer.current = setTimeout(() => setPararTurno('ocioso'), RECIBO_MS);
+    } catch (erro) {
+      setPararTurno('ocioso');
+      setFalha({
+        resumo: 'não consegui parar o turno',
+        saida: 'tente de novo; se repetir, é infra — avise o Pavan',
+      });
+    }
+  }
+
+  function rotulaNovaConversa(fase: FaseDestrava): string {
+    if (fase === 'enviando') return 'Armando…';
+    if (fase === 'entregue') return 'Armada';
+    return 'Nova conversa';
+  }
+
+  function rotulaPararTurno(fase: FaseDestrava): string {
+    if (fase === 'enviando') return 'Parando…';
+    if (fase === 'entregue') return 'Parado';
+    return 'Parar turno';
+  }
+
   const controles = painel ? montaControles(painel) : [];
   // O back recusaria com 409 `relaunch_somente_claude_code`, mas oferecer um
   // botão que só existe para dar erro é pior do que não oferecer: `--resume` é
@@ -606,6 +672,64 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
         ) : null}
 
         {carga === 'pronto' && (dePe || codex) ? (
+          codex ? (
+            // TARA — Codex headless (opção A, 10/08). Destravar/Resume/Desligar
+            // são Claude Code; o back recusa os quatro pra ela. No lugar, os
+            // dois controles que operam um executor sob demanda: "Nova conversa"
+            // (arma thread nova pro próximo turno) e "Parar turno" (derruba o
+            // `codex exec` em voo — desabilitado sem turno rodando).
+            <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
+              <button
+                type="button"
+                onClick={() => void acionarNovaConversa()}
+                aria-busy={novaConversa === 'enviando'}
+                aria-label={
+                  novaConversa === 'ocioso'
+                    ? 'Nova conversa — o próximo turno começa uma thread nova'
+                    : rotulaNovaConversa(novaConversa)
+                }
+                className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+                style={{
+                  minHeight: 'var(--ck-touch-min)',
+                  padding: '0 var(--ck-space-2)',
+                  borderRadius: 'var(--ck-radius-frame)',
+                  borderColor: 'var(--ck-edge-functional)',
+                  fontSize: 'var(--ck-text-sm)',
+                  whiteSpace: 'nowrap',
+                  color: novaConversa === 'entregue' ? 'var(--ck-state-ok)' : 'var(--ck-text-primary)',
+                  transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+                }}
+              >
+                {rotulaNovaConversa(novaConversa)}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void acionarPararTurno()}
+                aria-busy={pararTurno === 'enviando'}
+                disabled={!painel?.codex_turn_in_flight && pararTurno === 'ocioso'}
+                aria-label={
+                  pararTurno === 'ocioso'
+                    ? 'Parar turno — derruba o codex em voo, o turno em andamento é perdido'
+                    : rotulaPararTurno(pararTurno)
+                }
+                className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
+                style={{
+                  minHeight: 'var(--ck-touch-min)',
+                  padding: '0 var(--ck-space-2)',
+                  borderRadius: 'var(--ck-radius-frame)',
+                  borderColor: 'var(--ck-edge-functional)',
+                  fontSize: 'var(--ck-text-sm)',
+                  whiteSpace: 'nowrap',
+                  color: pararTurno === 'entregue' ? 'var(--ck-state-ok)' : 'var(--ck-text-primary)',
+                  opacity: !painel?.codex_turn_in_flight && pararTurno === 'ocioso' ? 0.5 : 1,
+                  transition: 'color var(--ck-dur-fast) var(--ck-ease)',
+                }}
+              >
+                {rotulaPararTurno(pararTurno)}
+              </button>
+            </div>
+          ) : (
           // Destravar + Resume + Desligar na MESMA linha — os três cabem lado a
           // lado (ordem do Rica, 03/08). Um debaixo do outro empurrava o resto do
           // painel pra baixo à toa; a ordem esquerda→direita continua sendo a
@@ -682,6 +806,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
               />
             ) : null}
           </div>
+          )
         ) : null}
 
         {avisoConfirmacao ? (

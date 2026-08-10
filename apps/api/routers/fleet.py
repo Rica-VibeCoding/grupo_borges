@@ -189,11 +189,14 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
         if agent.get("executor_kind") != "codex":
             agent["codex_tokens_used"] = None
             return
-        # Pelo id do run, não pelo workspace cadastrado: o run sai com
-        # `-C <repo do dia>` e a busca por cwd achava a thread do run anterior.
+        # Pela thread do DELEGATOR COCKPIT (opção A, 10/08): o store por
+        # delegator que o wrapper grava, não o `codex_thread_id` do agent_state
+        # (único — o Daniel rodando a Tara por outro canal apontaria o card pra
+        # thread alheia). `resolve_thread` valida a existência no SQLite.
+        tid = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
         thread = await asyncio.to_thread(
             codex_reader.resolve_thread,
-            thread_id=agent.get("codex_thread_id"),
+            thread_id=tid,
             cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
         )
         agent["codex_tokens_used"] = thread.tokens_used if thread is not None else None

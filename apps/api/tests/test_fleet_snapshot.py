@@ -218,6 +218,9 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
         "list_session_inventory",
         fake_list_session_inventory,
     )
+    # Opção A (10/08): sem thread do delegator cockpit, o card segue no cwd —
+    # o arquivo real `~/.tara/threads/cockpit.txt` da máquina não pode vazar pro teste.
+    monkeypatch.setattr(fleet_router.codex_reader, "read_cockpit_thread_id", lambda: None)
     monkeypatch.setattr(fleet_router.codex_reader, "resolve_thread", fake_resolve_thread)
 
     app = FastAPI()

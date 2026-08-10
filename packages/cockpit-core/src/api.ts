@@ -237,6 +237,20 @@ export async function patchAgentCodexNewThread(
   return res.json();
 }
 
+// Painel Codex-nativo — derruba o turno em voo (o `codex exec` do tara-codex).
+export async function postAgentCodexStop(
+  slug: string,
+): Promise<{ stopped: boolean; reason?: string }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex-stop`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentCodexStop failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
 // ----- DS-2: chat / model endpoints --------------------------------------
 
 export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';

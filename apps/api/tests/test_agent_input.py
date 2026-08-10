@@ -1,6 +1,9 @@
 """DS-2 / SubB — testes do endpoint `POST /api/agents/{slug}/input`."""
 from __future__ import annotations
 
+import asyncio
+import os
+import signal
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -133,10 +136,19 @@ def test_input_requires_idempotency_key(tmp_path: Path) -> None:
 
 
 def test_input_codex_with_thread_spawns_resume_wrapper(tmp_path: Path) -> None:
-    """Tara Codex retoma a thread atual e retorna imediatamente."""
+    """Tara Codex retoma a thread do COCKPIT (`codex_thread_id`) e retorna já.
+
+    Opção A (10/08): a thread a retomar é a do delegator cockpit, gravada no
+    agent_state pelo evento `codex.thread.started` do wrapper — não a do
+    telecodex (`find_latest_thread`), que a sessão interativa do tmux segura por
+    lock (`~/.codex/thread-writer-locks/`) e recusa retomar.
+    """
     app = _build_app(tmp_path, codex_for_tara=True)
     thread = SimpleNamespace(thread_id="019e9077-ccf1-7ee1-b8bb-25202f1ed3e2")
-    with patch("routers.agents.codex_reader.find_latest_thread", return_value=thread) as find_thread, \
+    with patch(
+        "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
+    ), \
+         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
          patch("routers.agents.subprocess.Popen") as popen, \
          patch("routers.agents.tmux_driver.send_message") as send_message:
         with TestClient(app) as client:
@@ -147,7 +159,6 @@ def test_input_codex_with_thread_spawns_resume_wrapper(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["tmux_delivered"] is True
-    find_thread.assert_called_once_with("/tmp/tara")
     send_message.assert_not_called()
     popen.assert_called_once()
     cmd = popen.call_args.args[0]
@@ -266,10 +277,13 @@ def test_input_reads_event_boundary_before_codex_spawn(tmp_path: Path) -> None:
 def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
     """Áudio para Tara Codex vira prompt transcrito via tara-codex."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    fake_stt = SimpleNamespace(returncode=0, stdout="olá Tara\n", stderr="")
     thread = SimpleNamespace(thread_id="thread-voice")
+    fake_stt = SimpleNamespace(returncode=0, stdout="olá Tara\n", stderr="")
     with patch("routers.agents.subprocess.run", return_value=fake_stt), \
-         patch("routers.agents.codex_reader.find_latest_thread", return_value=thread), \
+         patch(
+            "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
+         ), \
+         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
          patch("routers.agents.subprocess.Popen") as popen, \
          patch("routers.agents.tmux_driver.send_message") as send_message:
         with TestClient(app) as client:
@@ -301,7 +315,10 @@ def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> 
         b"\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
     )
     with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
-         patch("routers.agents.codex_reader.find_latest_thread", return_value=thread), \
+         patch(
+            "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
+         ), \
+         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
          patch("routers.agents.subprocess.Popen") as popen, \
          patch("routers.agents.tmux_driver.send_message") as send_message:
         with TestClient(app) as client:
@@ -755,3 +772,86 @@ def test_painel_com_tmux_ilegivel_preserva_os_controles(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["vida"] == {"sessao": True, "processo": True}
+
+
+class _FakeCodexProc:
+    """Popen fake do turno em voo — `poll()` vivo, `wait()` limpo."""
+
+    def __init__(self, pid: int = 7777):
+        self.pid = pid
+        self.waited = False
+
+    def poll(self) -> None:
+        return None
+
+    def wait(self, timeout: int = 0) -> int:
+        self.waited = True
+        return 0
+
+
+def test_codex_stop_mata_turno_em_voo_e_reconcilia_lifecycle(tmp_path: Path) -> None:
+    """`POST /codex-stop` derruba o grupo do turno em voo e volta a ocioso.
+
+    O turno nasce com `start_new_session=True` (grupo próprio); matar o grupo
+    via `killpg` leva o `codex exec` filho junto — sem isto um kill no pai
+    deixaria o run escrevendo no rollout sem dono (opção A, 10/08).
+    """
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_lifecycle(
+        "tara", status="trabalhando", detail="turno iniciado", event="test.setup"
+    )
+    proc = _FakeCodexProc(pid=7777)
+    agents_router._CODEX_RUN_PROCS["tara"] = proc
+    with patch("routers.agents.os.killpg") as killpg, \
+         patch("routers.agents.os.getpgid", return_value=7777):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/tara/codex-stop")
+
+    assert response.status_code == 200
+    assert response.json() == {"stopped": True}
+    killpg.assert_called_once_with(7777, signal.SIGTERM)
+    assert proc.waited
+    assert agents_router._CODEX_RUN_PROCS.get("tara") is None
+    painel = asyncio.run(app.state.db.get_agent("tara"))
+    assert painel["lifecycle_status"] == "ocioso"
+
+
+def test_codex_stop_sem_turno_reconcilia_lifecycle_orfa(tmp_path: Path) -> None:
+    """Sem turno em voo, um `trabalhando` órfão volta a `ocioso` — idempotente."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_lifecycle(
+        "tara", status="trabalhando", detail="turno sem dono", event="test.setup"
+    )
+    with patch("routers.agents.os.killpg") as killpg:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/tara/codex-stop")
+
+    assert response.status_code == 200
+    assert response.json() == {"stopped": False, "reason": "no_turn_in_flight"}
+    killpg.assert_not_called()
+    painel = asyncio.run(app.state.db.get_agent("tara"))
+    assert painel["lifecycle_status"] == "ocioso"
+
+
+def test_codex_new_thread_arma_fresh_sem_telecodex(tmp_path: Path) -> None:
+    """'Nova conversa' (opção A) arma `codex_next_fresh` — sem depender do daemon
+    telecodex, que só controla a sessão interativa do tmux."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/tara/codex-new-thread", json={"armed": True})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["armed"] is True
+    assert body["thread_started"] is False
+    painel = asyncio.run(app.state.db.get_agent("tara"))
+    assert painel["codex_next_fresh"]
+
+
+def test_codex_new_thread_rejeita_nao_codex(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/daniel/codex-new-thread", json={"armed": True})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "not_a_codex_agent"

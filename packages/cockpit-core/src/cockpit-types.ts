@@ -407,6 +407,9 @@ export type AgentPainelResponse = {
   codex_native?: boolean | null;
   // true = "nova conversa" armada no painel; próximo turno começa thread fresh.
   codex_next_fresh?: boolean | null;
+  // true = há um `codex exec` do tara-codex em voo (turno rodando). Alimenta o
+  // botão "Parar turno" do painel.
+  codex_turn_in_flight?: boolean | null;
 };
 
 export type SubagentEntry = {
