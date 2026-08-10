@@ -16,6 +16,7 @@ import {
   type EventoEnvio,
   type FronteiraEnvio,
 } from './envio.ts';
+import { assinaEntrega } from './codex/eco-pendente.ts';
 
 type RespostaComFronteira = AgentInputResponse & {
   event_boundary_id: number;
@@ -80,6 +81,12 @@ export type ControleEnvio = {
    *  agente três minutos depois é caro. */
   enviarVoz(audio: Blob): Promise<string | null>;
   reenviar(): Promise<void>;
+  /** Recibo vindo de FORA do stream SSE. Existe porque o agente Codex não tem
+   *  eco em `/messages/stream` (responde `total: 0`): quem prova a entrega dele
+   *  é o texto aparecendo no rollout, visto pelo poll do feed
+   *  (`lib/codex/eco-pendente.ts`). Sem isto, TODA mensagem pra Tara expirava o
+   *  prazo de 12 s e terminava em âmbar, dizendo que podia não ter entrado. */
+  confirmarPorEco(texto: string): void;
   dispose(): void;
 };
 
@@ -455,6 +462,18 @@ export function createControleEnvio(
       if (estado.fase !== 'nao-confirmado') return;
       await executar(estado.texto);
     },
+    confirmarPorEco(texto) {
+      // Mesmo evento que o SSE publicaria — o redutor faz o resto, inclusive
+      // aceitar recibo TARDIO: `nao-confirmado` está na lista de fases que o
+      // eco ainda confirma. Por isso o âmbar da Tara se desfaz sozinho quando
+      // o rollout entrega, em vez de exigir que o Rica reenvie.
+      //
+      // `Date.now()` como id: o redutor exige `item.id > fronteira.id`, e a
+      // fronteira é o `event_boundary_id` do back (contador de eventos, ordens
+      // de grandeza menor que um instante em ms). Não vem do stream, então não
+      // pode colidir com o `cursor`.
+      publicar({ tipo: 'item-do-stream', item: { id: Date.now(), papel: 'user', texto } });
+    },
     dispose() {
       if (descartado) return;
       descartado = true;
@@ -482,6 +501,13 @@ export function usaEnvio(agentSlug: string): {
   useEffect(() => {
     return () => controle.dispose();
   }, [controle]);
+
+  // O recibo do agente Codex, que não tem eco no SSE. Assinar sempre é inócuo
+  // para o Claude Code: ninguém registra pendência lá, então nada é publicado.
+  useEffect(
+    () => assinaEntrega(agentSlug, (texto) => controle.confirmarPorEco(texto)),
+    [agentSlug, controle],
+  );
 
   return {
     estado,

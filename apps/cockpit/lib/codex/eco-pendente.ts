@@ -101,10 +101,12 @@ export function reconciliaPendentes(slug: string, textosReais: readonly string[]
   }
 
   const agora = Date.now();
+  const entregues: string[] = [];
   const sobrando = atual.filter((p) => {
     const restam = disponiveis.get(p.texto) ?? 0;
     if (restam > 0) {
       disponiveis.set(p.texto, restam - 1);
+      entregues.push(p.texto);
       return false;
     }
     return agora - p.emMs < PRAZO_MS;
@@ -114,10 +116,41 @@ export function reconciliaPendentes(slug: string, textosReais: readonly string[]
   // assinantes e o feed remontaria à toa.
   if (sobrando.length === atual.length) return;
   grava(slug, sobrando);
+  for (const texto of entregues) {
+    for (const fn of entregas.get(slug) ?? []) fn(texto);
+  }
+}
+
+/**
+ * O RECIBO DE ENTREGA, para a máquina de seis fases do composer.
+ *
+ * Ela espera o eco em `GET /messages/stream`, que para agente Codex responde
+ * `total: 0` — o mesmo buraco que deixava o chat vazio. Sem eco, o prazo de
+ * 12 s expira e TODA mensagem pra Tara terminava em âmbar dizendo *"não
+ * consegui confirmar se entrou — confira no chat antes de mandar de novo. Pode
+ * duplicar."*. Falso, e do tipo que convida a duplicar de verdade.
+ *
+ * O texto aparecer no rollout é prova melhor que o eco do stream: significa que
+ * o `codex exec` leu a mensagem e abriu o turno. É esse o recibo que sai daqui.
+ */
+const entregas = new Map<string, Set<(texto: string) => void>>();
+
+export function assinaEntrega(slug: string, fn: (texto: string) => void): () => void {
+  let conjunto = entregas.get(slug);
+  if (!conjunto) {
+    conjunto = new Set();
+    entregas.set(slug, conjunto);
+  }
+  conjunto.add(fn);
+  return () => {
+    conjunto.delete(fn);
+    if (conjunto.size === 0) entregas.delete(slug);
+  };
 }
 
 /** Só para teste. */
 export function limpaEcoPendente(): void {
   porAgente.clear();
   ouvintes.clear();
+  entregas.clear();
 }
