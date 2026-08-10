@@ -132,8 +132,10 @@ export function desfechoDaTrocaDeEsforco(resposta: {
  *    falha era o bug: a troca da Tara era gravada com sucesso e a tela dizia
  *    "não foi possível entregar".
  *
- *  `proximo-turno` não pinta o card, pelo mesmo motivo do esforço pendente: até
- *  o run seguinte começar, o modelo honesto é o que a thread está rodando. */
+ *  `proximo-turno` fecha o menu e pinta o card como o confirmado: a escolha foi
+ *  gravada e é a que vale daqui pra frente. A ressalva de que o run em
+ *  andamento segue no modelo antigo viaja no `session_may_diverge`, não num
+ *  aviso na tela — o Rica retirou esse aviso em 10/08. */
 export type DesfechoModelo = 'aplicado' | 'proximo-turno' | 'entrega-falhou';
 
 export function desfechoDaTrocaDeModelo(resposta: {

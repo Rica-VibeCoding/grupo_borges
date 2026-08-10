@@ -43,6 +43,7 @@ import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } f
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
+import { registraEcoPendente } from '../../lib/codex/eco-pendente';
 import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
@@ -384,6 +385,11 @@ export function Composer({
     if (efeito.limpaCampo) setTexto('');
     setTranscrito(null);
     setFalhaDaFala(null);
+    // O feed da Tara pinta esta bolha no gesto: o texto dela só existe no
+    // rollout 12 s depois, quando o `codex exec` sobe. Registrar sempre é de
+    // propósito — quem consome é só o ramo Codex, e o do CC ignora porque o eco
+    // dele volta pelo stream em milissegundos. Ver `lib/codex/eco-pendente.ts`.
+    registraEcoPendente(agentSlug, corpo);
     await envio.enviar(corpo);
     return true;
   }

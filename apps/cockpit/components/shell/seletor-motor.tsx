@@ -158,12 +158,6 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
         return;
       }
       setModeloPendente(null);
-      if (desfecho === 'proximo-turno') {
-        // Gravado, mas o motor não troca em sessão viva. Não pintar o card: até
-        // o run seguinte começar, o modelo verdadeiro é o que a thread roda.
-        mostrarAviso('A escolha foi gravada e vale no próximo turno — o que está em andamento segue no modelo atual.');
-        return;
-      }
       setPainel((atual) =>
         atual?.model
           ? {
@@ -177,7 +171,11 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
             }
           : atual,
       );
-      if (resposta.confirmed) {
+      // Codex/Kimi fecham igual ao confirmado: a escolha foi gravada e é a que
+      // vale daqui pra frente. O aviso de "vale no próximo turno" foi retirado
+      // a pedido do Rica (10/08) — a ressalva continua no `session_may_diverge`,
+      // que é o canal que já existe pra isso.
+      if (resposta.confirmed || desfecho === 'proximo-turno') {
         alterarAbertura(false);
         return;
       }

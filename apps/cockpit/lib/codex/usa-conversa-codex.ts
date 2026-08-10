@@ -22,11 +22,17 @@
  * a resposta é curta.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 import { criaAdaptadorCodex, type CodexMessage } from './adapta-mensagens.ts';
+import {
+  assinaPendentes,
+  lePendentes,
+  reconciliaPendentes,
+  type EcoPendente,
+} from './eco-pendente.ts';
 
 const POLL_MS = 3_000;
 
@@ -102,10 +108,59 @@ export function usaConversaCodex(slug: string, ativo: boolean): ConversaCodex {
     };
   }, [slug, ativo]);
 
-  const mensagens = useMemo(
+  const doRollout = useMemo(
     () => (ativo ? adaptadorRef.current!.adapta(brutas) : VAZIO),
     [brutas, ativo],
   );
 
+  // O ECO OTIMISTA. Entre o toque do Rica e o texto existir no rollout passam
+  // 12 s (medido em 10/08) — é o `codex exec` subindo. Sem isto o feed fica
+  // mudo nesse intervalo e parece que a mensagem se perdeu.
+  const assina = useMemo(() => (fn: () => void) => assinaPendentes(slug, fn), [slug]);
+  const le = useMemo(() => () => lePendentes(slug), [slug]);
+  // No servidor não há pendência nenhuma: a bolha otimista nasce de um gesto do
+  // browser. Devolver a MESMA lista vazia evita erro de hidratação.
+  const pendentes = useSyncExternalStore(assina, le, () => SEM_PENDENCIA);
+
+  // Chegou pelo rollout? A pendência cumpriu o papel e sai. Efeito, não cálculo
+  // no render: isto ESCREVE no store, e escrever durante o render é o que a
+  // doc do React proíbe.
+  useEffect(() => {
+    reconciliaPendentes(
+      slug,
+      doRollout.flatMap((m) =>
+        m.kind === 'user' && typeof m.message?.content === 'string' ? [m.message.content] : [],
+      ),
+    );
+  }, [slug, doRollout]);
+
+  const mensagens = useMemo(() => {
+    if (pendentes.length === 0) return doRollout;
+    const base = doRollout.length;
+    return [
+      ...doRollout,
+      ...pendentes.map((p, i) => criaBolhaOtimista(p, base + i)),
+    ];
+  }, [doRollout, pendentes]);
+
   return { mensagens, carregou, threadId };
+}
+
+const SEM_PENDENCIA: readonly EcoPendente[] = Object.freeze([]);
+
+/** A bolha do Rica antes de o Codex saber que ela existe. Mesma forma que o
+ *  adaptador produz — daqui pra baixo nenhuma peça do feed distingue as duas. */
+function criaBolhaOtimista(pendente: EcoPendente, ordinal: number): MessagePayload {
+  return {
+    id: ordinal,
+    kind: 'user',
+    uuid: `codex-otimista-${pendente.id}`,
+    parent_uuid: null,
+    session_id: null,
+    is_sidechain: false,
+    user_type: 'external',
+    timestamp: new Date(pendente.emMs).toISOString(),
+    created_at: pendente.emMs,
+    message: { role: 'user', content: pendente.texto },
+  };
 }
