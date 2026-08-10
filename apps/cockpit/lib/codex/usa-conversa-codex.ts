@@ -90,8 +90,19 @@ export function usaConversaCodex(slug: string, ativo: boolean): ConversaCodex {
         if (!res.ok || ignorar) return;
         const corpo = (await res.json()) as RespostaCodex;
         if (ignorar) return;
-        setBrutas(Array.isArray(corpo.messages) ? corpo.messages : []);
+        const mensagens = Array.isArray(corpo.messages) ? corpo.messages : [];
+        setBrutas(mensagens);
         setThreadId(corpo.thread_id ?? null);
+        // Reconcilia AQUI, com o array cru do fetch — não com `doRollout`.
+        // `doRollout` é estabilizado por identidade pelo adaptador (de
+        // propósito, ver `adapta-mensagens.ts`), e um `useEffect` que
+        // dependesse dele pararia de disparar assim que o agente ficasse
+        // ocioso: a pendência nunca expiraria e o composer travava em
+        // `aceito` para sempre (achado do canário, 09/08).
+        reconciliaPendentes(
+          slug,
+          mensagens.flatMap((m) => (m.role === 'user' ? [m.text] : [])),
+        );
       } catch {
         // Rede fora ou API caída: segura o último estado bom, igual
         // `usaDelegacoes`. Piscar o feed é pior que atrasar 3 s.
@@ -121,18 +132,6 @@ export function usaConversaCodex(slug: string, ativo: boolean): ConversaCodex {
   // No servidor não há pendência nenhuma: a bolha otimista nasce de um gesto do
   // browser. Devolver a MESMA lista vazia evita erro de hidratação.
   const pendentes = useSyncExternalStore(assina, le, () => SEM_PENDENCIA);
-
-  // Chegou pelo rollout? A pendência cumpriu o papel e sai. Efeito, não cálculo
-  // no render: isto ESCREVE no store, e escrever durante o render é o que a
-  // doc do React proíbe.
-  useEffect(() => {
-    reconciliaPendentes(
-      slug,
-      doRollout.flatMap((m) =>
-        m.kind === 'user' && typeof m.message?.content === 'string' ? [m.message.content] : [],
-      ),
-    );
-  }, [slug, doRollout]);
 
   const mensagens = useMemo(() => {
     if (pendentes.length === 0) return doRollout;

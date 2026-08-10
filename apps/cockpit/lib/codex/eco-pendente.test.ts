@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 
+import { criaAdaptadorCodex } from './adapta-mensagens.ts';
 import {
   assinaPendentes,
   lePendentes,
@@ -114,6 +115,53 @@ describe('temPendencia — o prazo do composer pergunta por aqui', () => {
   it('agente sem pendência não segura o alarme do vizinho', () => {
     registraEcoPendente('tara', 'só dela');
     assert.equal(temPendencia('daniel'), false);
+  });
+});
+
+describe('polling ocioso — por que reconciliar tem que vir do array CRU', () => {
+  it('reconciliar só quando o adaptado muda de referência nunca expira em agente ocioso', () => {
+    // Reproduz o bug do achado [1] da auditoria (09/08): `doRollout` é
+    // estabilizado por identidade pelo adaptador (ver adapta-mensagens.ts —
+    // "devolve o MESMO array quando o poll não trouxe novidade"). Um
+    // `useEffect(() => reconciliaPendentes(...), [doRollout])` só dispara
+    // quando essa referência muda — e se o agente fica ocioso e o texto nunca
+    // aparece no rollout, ela nunca muda de novo.
+    const adapta = criaAdaptadorCodex();
+    registraEcoPendente('tara', 'nunca chega');
+
+    let anterior: unknown;
+    for (let i = 0; i < 60; i++) {
+      const doRollout = adapta([]); // rollout sempre vazio — agente ocioso
+      if (doRollout !== anterior) {
+        anterior = doRollout;
+        reconciliaPendentes(
+          'tara',
+          doRollout.map((m) => String(m.message?.content ?? '')),
+        );
+      }
+    }
+
+    // O prazo de 3 min já estourou faz tempo...
+    const p = lePendentes('tara')[0] as { emMs: number };
+    p.emMs = Date.now() - 200_000;
+
+    // ...mas sem uma nova chamada de `reconciliaPendentes` ninguém checa: a
+    // pendência fica presa, e é ela quem trava `porta-de-envio.ts:112`.
+    assert.equal(temPendencia('tara'), true);
+  });
+
+  it('reconciliar com o texto do fetch cru, a cada poll, expira mesmo ocioso', () => {
+    // O fix: `usa-conversa-codex.ts` passou a chamar `reconciliaPendentes` de
+    // dentro do próprio poll de 3s (com o `CodexMessage[]` cru da resposta),
+    // não mais amarrado à identidade do `doRollout` adaptado.
+    registraEcoPendente('tara', 'nunca chega');
+
+    const p = lePendentes('tara')[0] as { emMs: number };
+    p.emMs = Date.now() - 200_000;
+
+    reconciliaPendentes('tara', []); // o poll ocioso chama assim mesmo
+
+    assert.equal(temPendencia('tara'), false);
   });
 });
 
