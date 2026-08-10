@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AgentInputError,
   fetchAgentPainel,
@@ -9,11 +9,8 @@ import {
 } from '@grupo_borges/cockpit-core/api';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent } from '../ui/dropdown-menu';
+import { esperaConvergenciaDoEsforco, type ControleConvergencia } from './convergencia-esforco';
 import { EtiquetaDoEsforco } from './etiqueta-esforco';
 import {
   desfechoDaTrocaDeEsforco,
@@ -23,6 +20,7 @@ import {
   rotulaModelo,
   type Motor,
 } from './motor';
+import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 
 type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
@@ -67,10 +65,13 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const telaEstreita = usaTelaEstreita();
+  const convergencia = useRef<ControleConvergencia | null>(null);
 
   useEffect(() => {
     let vivo = true;
     setPainel(null);
+    convergencia.current?.parar();
+    convergencia.current = null;
     fetchAgentPainel(agentSlug)
       .then((resposta) => {
         if (vivo) setPainel({ model: resposta.model ?? null, effort: resposta.effort });
@@ -80,6 +81,8 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
       });
     return () => {
       vivo = false;
+      convergencia.current?.parar();
+      convergencia.current = null;
     };
   }, [agentSlug]);
 
@@ -114,6 +117,10 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   }
 
   async function trocarEsforco(valor: string) {
+    // Uma nova troca supera qualquer convergência da troca anterior — sem
+    // isto, duas trocas seguidas deixariam dois polls escrevendo `painel` um
+    // por cima do outro.
+    convergencia.current?.parar();
     setSalvando(true);
     setAviso(null);
     try {
@@ -122,8 +129,7 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
       // troca de modelo. A máquina de estados mora em motor.ts (testada);
       // aqui ficam os textos. Os dois caminhos de não-aplicado NÃO fecham o
       // menu e NÃO pintam o card com o valor pedido — enquanto a sessão não
-      // confirma, o valor honesto é o antigo, e o painel converge sozinho
-      // quando a statusline viva registrar a troca.
+      // confirma, o valor honesto é o antigo.
       const desfecho = desfechoDaTrocaDeEsforco(resposta);
       if (desfecho === 'entrega-falhou') {
         mostrarAviso('Não foi possível entregar a troca ao agente.');
@@ -132,6 +138,16 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
       if (desfecho === 'pendente') {
         mostrarAviso(
           'A troca foi entregue, mas o agente está no meio de um turno e ainda não a confirmou. O card segue no nível atual até a sessão confirmar.',
+        );
+        // O painel NÃO converge sozinho — o efeito de montagem só busca uma
+        // vez por `agentSlug`. Aqui a máquina poll o `/painel` até o back
+        // confirmar o valor pedido (achado [3] da auditoria, 09/08).
+        convergencia.current?.parar();
+        convergencia.current = esperaConvergenciaDoEsforco(
+          valor,
+          () => fetchAgentPainel(agentSlug),
+          (resposta) =>
+            setPainel({ model: resposta.model ?? null, effort: resposta.effort }),
         );
         return;
       }
@@ -240,52 +256,15 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
 
   return (
     <DropdownMenu open={aberto} onOpenChange={alterarAbertura}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Configurar modelo e esforço de ${agentName}`}
-          aria-haspopup="menu"
-          aria-expanded={aberto}
-          className="ck-seletor-motor ck-veil flex min-w-0 items-center"
-          // TEXTO SOLTO, não pílula — 10/08. A cápsula (borda + material +
-          // desfoque + fio de luz) desenhava uma segunda superfície dentro de
-          // uma superfície que já é material, e o rótulo do motor não é um
-          // controle de massa: ele é metadado do que está escrito. O raio fica
-          // porque o anel de `:focus-visible` é `inset` e sem ele o foco vira
-          // um retângulo em volta do texto.
-          //
-          // `marginBottom` casa com o do botão de onda (`--ck-space-1`), não com
-          // o padding da caixa: os dois têm 32px de altura e dividem o mesmo
-          // flex `items-center`, então margem diferente era 8px de desnível
-          // entre o rótulo e o único elemento sólido da linha.
-          style={{
-            height: '32px',
-            minHeight: '32px',
-            gap: 'var(--ck-space-1)',
-            marginBottom: 'calc(var(--ck-space-1) * -1)',
-            // O `ck-veil` continua: em repouso não pinta nada, e é ele que dá
-            // hover e press ao rótulo agora que não há mais cápsula desenhada.
-            // O respiro de 8px existe para esse realce (e para o dedo) ter área;
-            // a margem negativa devolve os mesmos 8px, então a distância entre
-            // o texto e o botão de onda segue sendo o `gap` de 12px de antes.
-            padding: '0 var(--ck-space-2)',
-            marginRight: 'calc(var(--ck-space-2) * -1)',
-            borderRadius: 'var(--ck-radius-pill)',
-            fontSize: 'var(--ck-text-base)',
-            fontWeight: 500,
-            color: tintaModelo,
-          }}
-        >
-          <span className="truncate">{rotuloModelo}</span>
-          {rotuloDoEsforco ? (
-            <span className="shrink-0" style={{ color: tintaEsforco }}>
-              {rotuloDoEsforco}
-            </span>
-          ) : null}
-          {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
-          <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>⌄</span>
-        </button>
-      </DropdownMenuTrigger>
+      <GatilhoDoSeletor
+        agentName={agentName}
+        aberto={aberto}
+        rotuloModelo={rotuloModelo}
+        rotuloDoEsforco={rotuloDoEsforco}
+        etiquetaEsforco={etiquetaEsforco}
+        tintaModelo={tintaModelo}
+        tintaEsforco={tintaEsforco}
+      />
 
       <DropdownMenuContent
         className={`ck-menu-surge ${aberto ? 'ck-menu-aberto' : 'ck-menu-fechado'}`}
