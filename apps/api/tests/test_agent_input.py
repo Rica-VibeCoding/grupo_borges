@@ -15,9 +15,22 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import tmux_driver
+from services import codex_catalog, tmux_driver
 
 _RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
+
+
+@pytest.fixture(autouse=True)
+def _catalogo_codex_fora(monkeypatch):
+    """O painel lê o catálogo do binário `codex`, e este arquivo troca o
+    `subprocess.Popen` do módulo — que é o mesmo objeto global que o
+    `subprocess.run` do catálogo usa por dentro. Sem este corte, o teste do
+    `next_fresh` morria dentro do `codex debug models`, não no que ele testa.
+    """
+    codex_catalog.limpar_cache()
+    monkeypatch.setattr(codex_catalog, "_ler_do_cli", tuple)
+    yield
+    codex_catalog.limpar_cache()
 
 
 DANIEL = {

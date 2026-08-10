@@ -119,6 +119,36 @@ export function desfechoDaTrocaDeEsforco(resposta: {
   return 'aplicado';
 }
 
+/** No que a troca de MODELO desaguou, lido do corpo do POST.
+ *
+ *  Duas mecânicas diferentes atrás do mesmo botão, e o back separa as duas em
+ *  `runtime_switch`:
+ *
+ *  - **Claude Code** troca na sessão viva (`/model` via tmux). Entrega é
+ *    `tmux_delivered`; o que vale é a sessão ter confirmado.
+ *  - **Codex/Kimi** não trocam em sessão viva. O back grava a escolha
+ *    (`state_persisted`) e ela entra na PRÓXIMA execução — `tmux_delivered`
+ *    chega `false` sempre, porque não houve tmux nenhum. Ler esse `false` como
+ *    falha era o bug: a troca da Tara era gravada com sucesso e a tela dizia
+ *    "não foi possível entregar".
+ *
+ *  `proximo-turno` não pinta o card, pelo mesmo motivo do esforço pendente: até
+ *  o run seguinte começar, o modelo honesto é o que a thread está rodando. */
+export type DesfechoModelo = 'aplicado' | 'proximo-turno' | 'entrega-falhou';
+
+export function desfechoDaTrocaDeModelo(resposta: {
+  tmux_delivered: boolean;
+  state_persisted: boolean;
+  confirmed: boolean;
+  runtime_switch?: boolean;
+}): DesfechoModelo {
+  // `!== false`: contrato antigo (sem o campo) é Claude Code, que troca vivo.
+  if (resposta.runtime_switch !== false) {
+    return resposta.tmux_delivered ? 'aplicado' : 'entrega-falhou';
+  }
+  return resposta.state_persisted ? 'proximo-turno' : 'entrega-falhou';
+}
+
 /** Quais motores têm `requested` no contrato do painel: Kimi e Codex (commits
  *  dac720c/f9a6bd8 do Daniel). No Claude o campo é SEMPRE null — lá, null
  *  significa "o contrato não cobre", nunca "ninguém pediu". Sem esta pergunta,

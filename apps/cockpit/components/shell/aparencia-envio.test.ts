@@ -7,7 +7,7 @@ import {
   rotulaAcao,
   type FaseEnvio,
 } from './aparencia-envio.ts';
-import { contratoSeparaPedido, descreveMotor, desfechoDaTrocaDeEsforco, etiquetaDoEsforco, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
+import { contratoSeparaPedido, descreveMotor, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo, etiquetaDoEsforco, leMotor, rotulaEsforco, rotulaModelo, textoDoMotor } from './motor.ts';
 
 const TODAS: FaseEnvio[] = [
   'ocioso',
@@ -331,5 +331,68 @@ describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nad
     assert.equal(etiquetaDoEsforco({ value: 'xhigh', requested: 'high', session_may_diverge: true }, true), null);
     assert.equal(etiquetaDoEsforco({ value: null, requested: 'high', session_may_diverge: false }, true), null);
     assert.equal(etiquetaDoEsforco(null, true), null);
+  });
+});
+
+describe('desfecho da troca de MODELO — `tmux_delivered: false` não é falha na Tara', () => {
+  it('Codex/Kimi: gravado é sucesso, e o sucesso é "vale no próximo turno"', () => {
+    // O caminho que estava quebrado: a troca da Tara era gravada, o back
+    // devolvia 200 com `tmux_delivered: false` porque não houve tmux nenhum,
+    // e a tela dizia "não foi possível entregar a troca ao agente".
+    assert.equal(
+      desfechoDaTrocaDeModelo({
+        tmux_delivered: false,
+        state_persisted: true,
+        confirmed: false,
+        runtime_switch: false,
+      }),
+      'proximo-turno',
+    );
+  });
+
+  it('sem gravar não há troca nenhuma, mesmo sem runtime', () => {
+    assert.equal(
+      desfechoDaTrocaDeModelo({
+        tmux_delivered: false,
+        state_persisted: false,
+        confirmed: false,
+        runtime_switch: false,
+      }),
+      'entrega-falhou',
+    );
+  });
+
+  it('Claude Code: quem manda é a entrega tmux, não a gravação', () => {
+    assert.equal(
+      desfechoDaTrocaDeModelo({
+        tmux_delivered: true,
+        state_persisted: true,
+        confirmed: true,
+        runtime_switch: true,
+      }),
+      'aplicado',
+    );
+    assert.equal(
+      desfechoDaTrocaDeModelo({
+        tmux_delivered: false,
+        state_persisted: true,
+        confirmed: false,
+        runtime_switch: true,
+      }),
+      'entrega-falhou',
+    );
+  });
+
+  it('contrato antigo, sem o campo, segue lido como Claude Code', () => {
+    assert.equal(
+      desfechoDaTrocaDeModelo({ tmux_delivered: true, state_persisted: true, confirmed: true }),
+      'aplicado',
+    );
+  });
+});
+
+describe('rótulo do modelo — o menu da Tara não pode mostrar slug cru', () => {
+  it('traduz o modelo que 0.146 pôs no lugar do gpt-5.3-codex', () => {
+    assert.equal(rotulaModelo('codex-gpt-5-3-codex-spark'), 'GPT-5.3 Spark');
   });
 });

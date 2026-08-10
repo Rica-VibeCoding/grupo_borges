@@ -60,7 +60,7 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_reader, tmux_driver, workspace_reader
+from services import codex_catalog, codex_reader, tmux_driver, workspace_reader
 from services.session_reset import publish_session_reset, session_reset_events_since
 
 router = APIRouter()
@@ -115,7 +115,12 @@ _KIMI_USAGES_FAILURE_TTL_SECONDS = 30
 _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
 _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
-AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "auto"]
+# `ultra` só existe em parte do catálogo Codex (gpt-5.6-sol/terra) e chegou
+# depois desta lista. Quem decide o que é aceitável é a escala do modelo, lida
+# em `_codex_efforts_permitidos` — este Literal é só a porta de entrada, e uma
+# porta que barrasse `ultra` faria o painel oferecer um degrau que o PATCH
+# recusa com 422.
+AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "ultra", "auto"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
 AgentCodexSandboxValue = Literal["read-only", "workspace-write", "danger-full-access"]
 
@@ -472,7 +477,11 @@ async def patch_agent_effort(
 ) -> AgentPainelEffortPatchResponse:
     agent = await _get_agent_or_404(request, slug)
     if agent.get("executor_kind") == "codex":
-        if patch.effort not in _CODEX_PAINEL_ALLOWED_EFFORTS:
+        # A escala é a do modelo corrente, a mesma que o painel ofereceu — uma
+        # constante aqui recusaria o `ultra` do gpt-5.6-sol e aceitaria o `max`
+        # que o gpt-5.5 não tem.
+        thread = await asyncio.to_thread(_resolve_codex_thread, agent)
+        if patch.effort not in _codex_efforts_permitidos(agent, thread):
             raise HTTPException(status_code=422, detail="codex_effort_not_allowed")
         db: GrupoBorgesDB = request.app.state.db
         await db.update_agent_codex_state(slug, codex_reasoning_effort=patch.effort)
@@ -498,6 +507,11 @@ async def patch_agent_effort(
             session_may_diverge=True,
             written=True,
         )
+
+    # `ultra` entrou no Literal por causa do catálogo Codex; o Claude Code não
+    # tem esse degrau, e sem esta porta um `/effort ultra` chegaria à sessão viva.
+    if patch.effort not in _CLAUDE_PAINEL_ALLOWED_EFFORTS:
+        raise HTTPException(status_code=422, detail="claude_effort_not_allowed")
 
     # Claude Code aplica esforço vivo pelo slash command. O próprio comando
     # persiste o default para novas sessões; escrever ~/.claude/settings.json
@@ -770,9 +784,14 @@ def _build_codex_painel_effort(
     o pedido como se fosse o estado esconde justamente o caso em que a troca não
     pegou. O valor lido não passa por allowlist — quem o escreveu foi o próprio
     Codex, e filtrá-lo pela lista do seletor repetiria o erro de `auto`.
+
+    A escala OFERECIDA, porém, é a do modelo que está rodando, não uma constante:
+    `gpt-5.6-sol` vai até `ultra`, `gpt-5.5` para em `xhigh`. A lista fixa
+    oferecia `max` num modelo que não tem `max`.
     """
+    allowed = _codex_efforts_permitidos(agent, thread)
     requested = agent.get("codex_reasoning_effort")
-    if requested not in _CODEX_PAINEL_ALLOWED_EFFORTS:
+    if requested not in allowed:
         requested = None
 
     effective = _string_or_none(thread.reasoning_effort) if thread is not None else None
@@ -781,18 +800,60 @@ def _build_codex_painel_effort(
         # a sessão pode estar em outro lugar.
         return AgentPainelEffort(
             value=requested,
-            allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
+            allowed=list(allowed),
             source="agent_state.codex_reasoning_effort",
             session_may_diverge=True,
         )
 
     return AgentPainelEffort(
         value=effective,
-        allowed=list(_CODEX_PAINEL_ALLOWED_EFFORTS),
+        allowed=list(allowed),
         source="codex.threads.reasoning_effort",
         session_may_diverge=False,
         requested=requested,
     )
+
+
+def _codex_slug_canonico(valor: str | None) -> str | None:
+    """Normaliza pro `codex-*` do cockpit, venha cru ou já canônico.
+
+    As duas grafias existem de verdade: o rollout guarda o nome cru
+    (`gpt-5.6-luna`) e o `state_model` guarda o canônico
+    (`codex-gpt-5-6-luna`). Sem normalizar, o menu não marcaria como
+    selecionado o modelo que está rodando.
+    """
+    if valor is None:
+        return None
+    return valor if valor.startswith("codex-") else codex_catalog.canonical_slug(valor)
+
+
+def _codex_modelo_corrente(
+    agent: dict[str, Any], thread: codex_reader.CodexThread | None
+) -> str | None:
+    """Slug canônico do modelo que a Tara está rodando agora.
+
+    A thread ganha do estado persistido pelo mesmo motivo do esforço: o
+    persistido é o pedido, a thread é o fato.
+    """
+    da_thread = _codex_slug_canonico(_string_or_none(thread.model) if thread is not None else None)
+    if da_thread is not None:
+        return da_thread
+    return _codex_slug_canonico(_string_or_none(agent.get("state_model"))) or _codex_slug_canonico(
+        _string_or_none(agent.get("model_default"))
+    )
+
+
+def _codex_efforts_permitidos(
+    agent: dict[str, Any], thread: codex_reader.CodexThread | None
+) -> tuple[str, ...]:
+    """Escala do modelo corrente, com a lista histórica como rede.
+
+    Só cai na constante quando o catálogo não pôde ser lido ou o modelo não está
+    nele — sem rede, uma falha do CLI deixaria o Rica sem seletor de esforço
+    nenhum, o que é pior que oferecer um degrau a mais.
+    """
+    do_modelo = codex_catalog.efforts_do_modelo(_codex_modelo_corrente(agent, thread))
+    return do_modelo or tuple(_CODEX_PAINEL_ALLOWED_EFFORTS)
 
 
 def _build_kimi_painel_effort(
@@ -987,10 +1048,66 @@ def _claude_model_slug(value: Any) -> str | None:
     return next((model for model in _AGENT_PAINEL_ALLOWED_MODELS if model in lowered), None)
 
 
+def _build_codex_painel_model(
+    agent: dict[str, Any], contexto: AgentPainelContexto
+) -> AgentPainelModel | None:
+    """O que a Tara está rodando, ao lado do que o harness dela oferece.
+
+    Este bloco devolvia `None`, e por isso o seletor dela nunca teve menu: sem
+    `allowed`, a pele cai no rótulo estático da statusline e o Rica via um
+    modelo só. O catálogo é lido do CLI (`services.codex_catalog`) porque a
+    allowlist escrita à mão já tinha divergido do binário.
+
+    `value` prefere o modelo da THREAD (`contexto.model`, nome cru que o próprio
+    Codex gravou no rollout) sobre o `state_model` persistido: o persistido é o
+    que alguém clicou, e ele só vale no run seguinte. Servir o clique como se
+    fosse o estado esconderia justamente o caso em que a troca não pegou —
+    mesma régua já aplicada ao esforço em `_build_codex_painel_effort`.
+
+    `runtime_switch=False` porque o Codex CLI não troca de modelo em sessão
+    viva: quem aplica é o `-m` que o wrapper `tara-codex` injeta na próxima
+    execução.
+    """
+    permitidos = codex_catalog.listar_modelos()
+    if not permitidos:
+        # Catálogo ilegível: sem lista, o menu não pode ser oferecido. Ainda
+        # assim devolvemos o valor, para o painel dizer o que está rodando.
+        return AgentPainelModel(
+            value=_codex_slug_canonico(_string_or_none(agent.get("state_model"))),
+            allowed=[],
+            source="agent.state_model",
+            runtime_switch=False,
+        )
+
+    allowed = [modelo.slug for modelo in permitidos]
+
+    da_thread = (
+        _codex_slug_canonico(contexto.model) if contexto.available and contexto.model else None
+    )
+    if da_thread is not None:
+        return AgentPainelModel(
+            value=da_thread,
+            allowed=allowed,
+            source=contexto.source,
+            session_may_diverge=False,
+            runtime_switch=False,
+        )
+
+    return AgentPainelModel(
+        value=_codex_slug_canonico(_string_or_none(agent.get("state_model")))
+        or _codex_slug_canonico(_string_or_none(agent.get("model_default"))),
+        allowed=allowed,
+        source="agent.state_model",
+        runtime_switch=False,
+    )
+
+
 def _build_painel_model(
     agent: dict[str, Any], contexto: AgentPainelContexto
 ) -> AgentPainelModel | None:
-    if agent.get("executor_kind") == "codex" or agent.get("model_family") == "kimi":
+    if agent.get("executor_kind") == "codex":
+        return _build_codex_painel_model(agent, contexto)
+    if agent.get("model_family") == "kimi":
         return None
 
     status_model = _claude_model_slug(contexto.model)
@@ -1884,6 +2001,7 @@ async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
 # em passo 2 (send_message, capture_pane loop, upsert_agent_state, task_event).
 
 ChatModel = Literal["fable", "opus", "sonnet", "haiku"]
+_CHAT_MODEL_SLUGS = frozenset(get_args(ChatModel))
 
 # DS-69 — modelos Codex selecionáveis pra Tara. Slugs canônicos (id do backend);
 # a tradução pro nome cru do CLI (`gpt-5.5` etc) mora em
@@ -1899,6 +2017,18 @@ CodexModel = Literal[
     "codex-gpt-5-2",
 ]
 _CODEX_MODEL_SLUGS = frozenset(get_args(CodexModel))
+
+
+def _codex_model_slugs_permitidos() -> frozenset[str]:
+    """O que a Tara aceita hoje: o catálogo do CLI, com a lista fixa como rede.
+
+    A lista fixa acima é HISTÓRICA — em 0.146.0 ela ainda tinha `codex-gpt-5-2`
+    e `codex-gpt-5-3-codex`, que o binário não conhece mais, e não tinha o
+    `codex-gpt-5-3-codex-spark`, que ele passou a oferecer. Ela fica só para o
+    caso de o catálogo não poder ser lido: recusar toda troca porque o `codex
+    debug models` falhou seria pior que aceitar um slug antigo.
+    """
+    return codex_catalog.slugs_permitidos() or _CODEX_MODEL_SLUGS
 
 # Modelos Kimi (assinatura Kimi Code, endpoint api.kimi.com/coding/) pro Hiro.
 # Slugs canônicos; o de-para pro id cru do motor (`k3`, `kimi-for-coding`, …)
@@ -1939,7 +2069,12 @@ class RelaunchRequest(BaseModel):
 
 
 class ModelChangeRequest(BaseModel):
-    model: ChatModel | CodexModel | KimiModel
+    # `str` e não a união de Literals porque o catálogo Codex é lido do CLI em
+    # tempo de execução: o `gpt-5.3-codex-spark` que o binário 0.146 oferece não
+    # está no `CodexModel`, e um Literal congelado recusaria com 422 o modelo que
+    # o painel acabou de oferecer. A validação real mora no endpoint, por família
+    # — nenhum slug passa sem estar na allowlist da sua.
+    model: str = Field(min_length=1, max_length=128)
     force: bool = False
 
 
@@ -3456,12 +3591,13 @@ async def change_agent_model(
     target = payload.model
     from_model = agent.get("state_model") or agent.get("model_default")
 
-    # Allowlist cruzada: nunca aceitar slug de uma família em agente de outra.
-    if is_codex and target not in _CODEX_MODEL_SLUGS:
+    # Allowlist por família: nunca aceitar slug de uma família em agente de
+    # outra, e nunca aceitar slug que a família nenhuma reconhece.
+    if is_codex and target not in _codex_model_slugs_permitidos():
         raise HTTPException(status_code=422, detail="model_not_allowed_for_codex")
     if is_kimi and target not in _KIMI_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
-    if not is_codex and not is_kimi and target in (_CODEX_MODEL_SLUGS | _KIMI_MODEL_SLUGS):
+    if not is_codex and not is_kimi and target not in _CHAT_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
 
     if is_codex or is_kimi:

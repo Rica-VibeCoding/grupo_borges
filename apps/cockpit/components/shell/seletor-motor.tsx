@@ -6,7 +6,6 @@ import {
   fetchAgentPainel,
   patchAgentEffort,
   postAgentModel,
-  type ChatModelSlug,
 } from '@grupo_borges/cockpit-core/api';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
@@ -16,7 +15,14 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { EtiquetaDoEsforco } from './etiqueta-esforco';
-import { desfechoDaTrocaDeEsforco, etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor } from './motor';
+import {
+  desfechoDaTrocaDeEsforco,
+  desfechoDaTrocaDeModelo,
+  etiquetaDoEsforco,
+  rotulaEsforco,
+  rotulaModelo,
+  type Motor,
+} from './motor';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 
 type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
@@ -28,13 +34,6 @@ type SeletorMotorProps = {
   /** Kimi/Codex têm `requested` no painel; o Claude não (ver motor.ts). */
   esforcoCobrePedido: boolean;
 };
-
-function paraModeloClaude(valor: string): ChatModelSlug | null {
-  if (valor === 'fable' || valor === 'opus' || valor === 'sonnet' || valor === 'haiku') {
-    return valor;
-  }
-  return null;
-}
 
 function pedeConfirmacao(erro: unknown): boolean {
   return (
@@ -62,7 +61,9 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   const [painel, setPainel] = useState<PainelDoMotor | null>(null);
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDoSeletor>('inicio');
-  const [modeloPendente, setModeloPendente] = useState<ChatModelSlug | null>(null);
+  // `string` e não um Literal fechado: o catálogo Codex é lido do CLI em tempo
+  // de execução, então a pele não tem como enumerar os slugs em tipo.
+  const [modeloPendente, setModeloPendente] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const telaEstreita = usaTelaEstreita();
@@ -146,13 +147,21 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
     }
   }
 
-  async function trocarModelo(valor: ChatModelSlug, forcar = false) {
+  async function trocarModelo(valor: string, forcar = false) {
     setSalvando(true);
     setAviso(null);
     try {
       const resposta = await postAgentModel(agentSlug, valor, { force: forcar });
-      if (!resposta.tmux_delivered) {
+      const desfecho = desfechoDaTrocaDeModelo(resposta);
+      if (desfecho === 'entrega-falhou') {
         mostrarAviso('Não foi possível entregar a troca ao agente.');
+        return;
+      }
+      setModeloPendente(null);
+      if (desfecho === 'proximo-turno') {
+        // Gravado, mas o motor não troca em sessão viva. Não pintar o card: até
+        // o run seguinte começar, o modelo verdadeiro é o que a thread roda.
+        mostrarAviso('A escolha foi gravada e vale no próximo turno — o que está em andamento segue no modelo atual.');
         return;
       }
       setPainel((atual) =>
@@ -168,7 +177,6 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
             }
           : atual,
       );
-      setModeloPendente(null);
       if (resposta.confirmed) {
         alterarAbertura(false);
         return;
@@ -186,19 +194,18 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
     }
   }
 
+  // A lista vem inteira do back e não é mais filtrada aqui. O filtro anterior
+  // só deixava passar fable/opus/sonnet/haiku, então o `allowed` da Tara — que
+  // são slugs `codex-*` — era descartado por completo e o menu de modelo dela
+  // nascia vazio. Quem sabe o que cada motor aceita é o back (`model.allowed`);
+  // a pele só traduz o rótulo.
   const opcoesModelo =
-    modelo?.allowed.flatMap((valor) => {
-      const slug = paraModeloClaude(valor);
-      if (!slug) return [];
-      return [
-        {
-          chave: valor,
-          rotulo: rotulaModelo(valor),
-          selecionado: modelo.value === valor,
-          aoSelecionar: () => void trocarModelo(slug),
-        },
-      ];
-    }) ?? [];
+    modelo?.allowed.map((valor) => ({
+      chave: valor,
+      rotulo: rotulaModelo(valor),
+      selecionado: modelo.value === valor,
+      aoSelecionar: () => void trocarModelo(valor),
+    })) ?? [];
 
   const opcoesEsforco =
     esforco?.allowed.map((valor) => ({

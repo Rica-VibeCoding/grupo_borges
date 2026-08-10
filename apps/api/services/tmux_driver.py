@@ -22,6 +22,8 @@ from typing import Literal, NamedTuple, TypeVar
 import libtmux
 from libtmux import exc as libtmux_exc
 
+from services import codex_catalog
+
 # Orçamentos independentes: pane ocupada pode ficar temporariamente ilegível
 # antes do paste sem consumir o tempo reservado para provar a submissão.
 _LOAD_BUFFER_TIMEOUT_S = 5.0
@@ -473,7 +475,12 @@ _CODEX_MODEL_MAP = {
 def _codex_command(model: str) -> str:
     raw_model = _CODEX_MODEL_MAP.get(model)
     if raw_model is None:
-        raw_model = model.removeprefix("codex-").replace("-", ".")
+        # O de-para acima é histórico e não cobre o que o CLI passou a oferecer
+        # depois (`codex-gpt-5-3-codex-spark`). O fallback antigo trocava TODO
+        # hífen por ponto e produzia `gpt.5.3.codex.spark` — um `-m` que o Codex
+        # recusa. `codex_catalog` responde pelo nome que o próprio binário
+        # publicou.
+        raw_model = codex_catalog.raw_slug(model)
     return f"codex -m {shlex.quote(raw_model)}"
 
 

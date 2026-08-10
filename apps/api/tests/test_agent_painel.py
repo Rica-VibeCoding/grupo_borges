@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import tmux_driver
+from services import codex_catalog, tmux_driver
 
 
 DANIEL = {
@@ -60,6 +60,47 @@ HIRO = {
     "capabilities": [],
     "can_review": [],
 }
+
+
+# O catálogo Codex é lido do binário `codex` instalado. Deixar os testes do
+# painel dependerem dele torna o resultado função da máquina: numa sem o CLI, o
+# seletor da Tara viria vazio e metade destes testes falharia por ambiente. A
+# tabela abaixo é um recorte fiel do `codex debug models` de 0.146.0 — inclusive
+# o `gpt-5.5` sem `max`, que é o caso que a escala por modelo existe pra cobrir.
+CATALOGO_CODEX = (
+    codex_catalog.CodexModelo(
+        slug="codex-gpt-5-6-sol",
+        raw="gpt-5.6-sol",
+        display_name="GPT-5.6-Sol",
+        efforts=("low", "medium", "high", "xhigh", "max", "ultra"),
+        default_effort="low",
+        priority=1,
+    ),
+    codex_catalog.CodexModelo(
+        slug="codex-gpt-5-6-luna",
+        raw="gpt-5.6-luna",
+        display_name="GPT-5.6-Luna",
+        efforts=("low", "medium", "high", "xhigh", "max"),
+        default_effort="medium",
+        priority=3,
+    ),
+    codex_catalog.CodexModelo(
+        slug="codex-gpt-5-5",
+        raw="gpt-5.5",
+        display_name="GPT-5.5",
+        efforts=("low", "medium", "high", "xhigh"),
+        default_effort="medium",
+        priority=7,
+    ),
+)
+
+
+@pytest.fixture(autouse=True)
+def _catalogo_codex_fixo(monkeypatch):
+    codex_catalog.limpar_cache()
+    monkeypatch.setattr(codex_catalog, "_ler_do_cli", lambda: CATALOGO_CODEX)
+    yield
+    codex_catalog.limpar_cache()
 
 
 def _build_app(tmp_path: Path) -> FastAPI:
@@ -984,17 +1025,25 @@ def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) ->
     }
     assert painel.status_code == 200
     body = painel.json()
-    assert body["model"] is None
+    # O bloco `model` era `None` e por isso o seletor da Tara nunca teve menu.
+    # `model_default` da fixture é `gpt-5.5` (cru) — o painel devolve canônico.
+    assert body["model"]["value"] == "codex-gpt-5-5"
+    assert body["model"]["runtime_switch"] is False
     assert body["effort"]["value"] == "xhigh"
-    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh", "max"]
+    # Escala do gpt-5.5, que não tem `max`; a lista fixa oferecia.
+    assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh"]
     assert body["codex_native"] is True
 
 
 def test_agent_painel_codex_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
-    """Codex 0.146+ — `max` é o teto do gpt-5.6-luna (catálogo `codex debug
-    models`), igual ao `_AGENT_PAINEL_ALLOWED_EFFORTS`. Espelha o caso Kimi."""
+    """`max` é o teto do gpt-5.6-luna (catálogo `codex debug models`).
+
+    O agente precisa ESTAR no luna: a escala é do modelo, e a fixture nasce no
+    gpt-5.5, que para no `xhigh`.
+    """
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
+    app.state.db._upsert_agent_state("tara", None, "codex-gpt-5-6-luna", None, None, None)
 
     with TestClient(app) as client:
         response = client.patch("/api/agents/tara/effort", json={"effort": "max"})
@@ -1008,9 +1057,15 @@ def test_agent_painel_codex_effort_permite_max(tmp_path: Path, monkeypatch) -> N
     assert "max" in body["effort"]["allowed"]
 
 
-def test_agent_painel_codex_effort_rejeita_fora_da_lista(tmp_path: Path, monkeypatch) -> None:
-    """Valor fora da escada codex cai no 422 do SCHEMA (Pydantic, que já
-    aceitava max), nunca chega à allowlist do router."""
+def test_agent_painel_codex_effort_rejeita_degrau_que_o_modelo_nao_tem(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """`ultra` existe no catálogo (gpt-5.6-sol), mas não no gpt-5.5 da fixture.
+
+    Antes o Literal do schema barrava `ultra` para todo mundo e a guarda do
+    router ficava inalcançável. Com a escala por modelo é o router que decide —
+    e ele tem que recusar o degrau que ESTE modelo não oferece.
+    """
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
 
@@ -1018,9 +1073,60 @@ def test_agent_painel_codex_effort_rejeita_fora_da_lista(tmp_path: Path, monkeyp
         response = client.patch("/api/agents/tara/effort", json={"effort": "ultra"})
 
     assert response.status_code == 422
-    # detail é a lista de erros do Pydantic, não o código custom do router —
-    # com a allowlist == enum, a guarda codex_effort_not_allowed ficou inalcançável.
-    assert "codex_effort_not_allowed" not in str(response.json())
+    assert response.json()["detail"] == "codex_effort_not_allowed"
+
+
+def test_agent_painel_codex_effort_aceita_ultra_no_modelo_que_tem(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """O outro lado da mesma régua: no gpt-5.6-sol o `ultra` passa."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    app.state.db._upsert_agent_state("tara", None, "codex-gpt-5-6-sol", None, None, None)
+
+    with TestClient(app) as client:
+        response = client.patch("/api/agents/tara/effort", json={"effort": "ultra"})
+        painel = client.get("/api/agents/tara/painel")
+
+    assert response.status_code == 200
+    assert "ultra" in painel.json()["effort"]["allowed"]
+
+
+def test_agent_painel_codex_model_oferece_o_catalogo(tmp_path: Path, monkeypatch) -> None:
+    """O menu do modelo da Tara: lista inteira, na ordem do harness."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    assert body["model"]["allowed"] == [
+        "codex-gpt-5-6-sol",
+        "codex-gpt-5-6-luna",
+        "codex-gpt-5-5",
+    ]
+    # Codex não troca em sessão viva — quem aplica é o `-m` do run seguinte.
+    assert body["model"]["runtime_switch"] is False
+
+
+def test_agent_painel_codex_model_sem_catalogo_nao_inventa_lista(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """CLI ilegível: o painel diz o que está rodando e NÃO oferece menu.
+
+    Uma lista chutada aqui faria o Rica escolher um modelo que a Tara recusa.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    codex_catalog.limpar_cache()
+    monkeypatch.setattr(codex_catalog, "_ler_do_cli", lambda: ())
+    app = _build_app(tmp_path)
+    app.state.db._upsert_agent_state("tara", None, "codex-gpt-5-6-luna", None, None, None)
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    assert body["model"]["allowed"] == []
+    assert body["model"]["value"] == "codex-gpt-5-6-luna"
 
 
 def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> None:

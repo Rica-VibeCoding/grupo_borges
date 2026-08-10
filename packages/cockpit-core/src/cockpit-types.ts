@@ -445,6 +445,9 @@ export function shortModelName(model: string): string {
     'codex-gpt-5-5':      'GPT-5.5',
     'codex-gpt-5-4':      'GPT-5.4',
     'codex-gpt-5-4-mini': 'GPT-5.4m',
+    // 0.146.0 aposentou o `gpt-5.3-codex` e pôs este no lugar (`codex debug
+    // models`). Sem entrada aqui, o menu da Tara mostraria o slug cru.
+    'codex-gpt-5-3-codex-spark': 'GPT-5.3 Spark',
   };
   return map[model] ?? model;
 }

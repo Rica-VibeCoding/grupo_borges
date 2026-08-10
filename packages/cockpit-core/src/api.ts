@@ -415,7 +415,11 @@ export async function postAgentVoice(
 
 export async function postAgentModel(
   slug: string,
-  model: AnyModelSlug,
+  // `AnyModelSlug | (string & {})` mantém o autocompletar dos slugs conhecidos
+  // sem fechar a porta: o catálogo Codex é lido do `codex debug models` em
+  // tempo de execução, e um Literal fechado aqui recusaria em compilação o
+  // modelo que o back acabou de oferecer em `painel.model.allowed`.
+  model: AnyModelSlug | (string & {}),
   options?: { force?: boolean },
 ): Promise<AgentModelChangeResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/model`, {

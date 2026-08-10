@@ -103,20 +103,21 @@ fi
 
 # DS-69 — modelo escolhido pelo Rica no cockpit. Se o chamador NÃO passou
 # `-m/--model`, busca o `state_model` persistido da Tara e injeta `-m <raw>`.
-# Explícito da linha de comando sempre vence. De-para canônico→cru espelha
-# `apps/api/services/tmux_driver.py:_CODEX_MODEL_MAP` (fonte única lá).
+# Explícito da linha de comando sempre vence.
+#
+# O de-para era um `case` com os 8 slugs de DS-69 e `*) echo ""` no fim: modelo
+# novo no catálogo caía no vazio, nenhum `-m` era injetado e a Tara rodava o
+# default — a troca do Rica sumia sem uma linha de erro. A regra abaixo é
+# derivada, não enumerada: no nome canônico o único ponto do nome cru vira
+# hífen entre os dois números da versão (`codex-gpt-5-3-codex-spark` →
+# `gpt-5.3-codex-spark`). Espelha `services/codex_catalog.py:raw_slug`.
 codex_raw_model() {
-  case "$1" in
-    codex-gpt-5-6-sol)   echo "gpt-5.6-sol" ;;
-    codex-gpt-5-6-terra) echo "gpt-5.6-terra" ;;
-    codex-gpt-5-6-luna)  echo "gpt-5.6-luna" ;;
-    codex-gpt-5-5)      echo "gpt-5.5" ;;
-    codex-gpt-5-4)      echo "gpt-5.4" ;;
-    codex-gpt-5-4-mini) echo "gpt-5.4-mini" ;;
-    codex-gpt-5-3-codex) echo "gpt-5.3-codex" ;;
-    codex-gpt-5-2)      echo "gpt-5.2" ;;
-    *) echo "" ;;
-  esac
+  local slug="${1#codex-}"
+  [[ -z "$slug" ]] && { echo ""; return; }
+  # Sem `gpt-<maior>-<menor>` na frente não é slug de modelo Codex: melhor não
+  # injetar nada do que injetar um `-m` inventado.
+  [[ "$slug" =~ ^gpt-[0-9]+-[0-9]+ ]] || { echo ""; return; }
+  sed -E 's/^gpt-([0-9]+)-([0-9]+)/gpt-\1.\2/' <<<"$slug"
 }
 
 caller_set_model=0
@@ -161,7 +162,11 @@ fi
 if [[ "$caller_set_effort" -eq 0 ]]; then
   persisted_effort=$(printf '%s' "$persisted_agent_json" \
     | jq -r '.codex_reasoning_effort // empty' 2>/dev/null || true)
-  if [[ "$persisted_effort" =~ ^(low|medium|high)$ ]]; then
+  # A escala parava em `high`: o painel deixava o Rica escolher `xhigh`/`max`,
+  # o back gravava, e aqui o pedido era descartado calado. `ultra` entrou junto
+  # porque o gpt-5.6-sol/terra o oferecem. Quem recusa nível inválido é o
+  # PATCH /effort, contra a escala do modelo — aqui é só repasse.
+  if [[ "$persisted_effort" =~ ^(low|medium|high|xhigh|max|ultra)$ ]]; then
     CODEX_ARGS=(-c "model_reasoning_effort=$persisted_effort" "${CODEX_ARGS[@]}")
     echo "[tara-codex] effort do cockpit: model_reasoning_effort=$persisted_effort" >&2
   fi
