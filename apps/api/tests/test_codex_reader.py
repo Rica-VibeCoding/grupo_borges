@@ -281,3 +281,63 @@ def test_resolve_thread_sem_id_mantem_heuristica_de_cwd(tmp_path: Path) -> None:
 
     assert thread is not None
     assert thread.thread_id == "new"
+
+
+# --- Limpeza de marcação de transporte (09/08) ------------------------------
+# O chat da Tara estreou no cockpit em 09/08 e essas etiquetas foram parar na
+# tela do Rica: `[[voz]]` cru no meio da resposta, o envelope de anexo com o
+# caminho do .jpg, e o catálogo de plugins do runtime posando de fala dele.
+
+
+def test_marcador_de_voz_sai_e_o_que_ele_envolve_fica() -> None:
+    assert cr._strip_channel_envelopes("[[voz]]\nSim.\n[[/voz]]") == "Sim."
+
+
+def test_varios_blocos_de_voz_viram_texto_corrido_sem_buraco() -> None:
+    bruto = "[[voz]]\nPrimeira.\n[[/voz]]\n\n[[voz]]\nSegunda.\n[[/voz]]"
+
+    limpo = cr._strip_channel_envelopes(bruto)
+
+    assert "[[voz]]" not in limpo
+    assert "Primeira." in limpo and "Segunda." in limpo
+    # Tirar marcador no meio não pode deixar rombo de linhas em branco.
+    assert "\n\n\n" not in limpo
+
+
+def test_envelope_de_anexo_sai_e_o_pedido_do_rica_fica() -> None:
+    bruto = '<image name=[Image #1] path="/tmp/telecodex-file-abc.jpg">\n</image>\nmuito alto'
+
+    limpo = cr._strip_channel_envelopes(bruto)
+
+    assert limpo == "muito alto"
+    # O caminho do arquivo é ruído de transporte — não pode sobrar na bolha.
+    assert "telecodex-file" not in limpo
+
+
+def test_miolo_do_envelope_de_anexo_e_preservado() -> None:
+    """Hoje vem vazio; se um dia vier fala dentro, apagar seria perder o Rica."""
+    bruto = '<image name=[Image #1] path="/x.jpg">olha esse detalhe</image>'
+
+    assert cr._strip_channel_envelopes(bruto) == "olha esse detalhe"
+
+
+def test_texto_limpo_atravessa_intacto() -> None:
+    limpo = "Publiquei na 3008 e conferi o chunk servido."
+
+    assert cr._strip_channel_envelopes(limpo) == limpo
+
+
+def test_catalogo_de_plugins_do_runtime_nao_e_conversa() -> None:
+    bruto = "<recommended_plugins>\nHere is a list of plugins\n- Airtable\n"
+
+    role, visible = cr.classify_message("user", bruto)
+
+    assert role == "internal"
+    assert visible is False
+
+
+def test_bolha_interna_nao_passa_pela_limpeza_e_continua_sem_texto() -> None:
+    """A classificação lê o texto CRU: limpar antes apagaria a prova."""
+    role, visible = cr.classify_message("user", "<user_instructions>\nfaz X\n")
+
+    assert (role, visible) == ("internal", False)

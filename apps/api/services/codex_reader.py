@@ -15,6 +15,7 @@ Conversa real:
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -37,6 +38,9 @@ _INSTRUCTION_MARKERS = (
     "<environment_context>",
     "<permissions instructions>",
     "<system",
+    # Catálogo de plugins que o runtime injeta como se fosse fala do Rica —
+    # apareceu cru no chat da Tara em 09/08, com dezenas de linhas de lista.
+    "<recommended_plugins>",
 )
 
 # payload.type que, quando role=message, podem virar conversa visível.
@@ -104,6 +108,36 @@ def _strip_audio_skill_prefix(text: str) -> str:
     if rest.startswith(_AUDIO_TRANSCRIPT_PREFIX):
         return rest[len(_AUDIO_TRANSCRIPT_PREFIX) :].lstrip()
     return rest
+
+
+# Marcador da skill de áudio: delimita o trecho que vira fala, e some do texto
+# escrito. O que está DENTRO é resposta de verdade pro Rica — some o marcador,
+# nunca o conteúdo. `[[voz]]\nSim.\n[[/voz]]` tem que sobreviver como "Sim.".
+_VOICE_MARKER_RE = re.compile(r"\[\[/?voz\]\]")
+
+# Envelope de anexo do bridge telecodex: `<image name=[Image #1] path="...">`
+# seguido de `</image>`. As TAGS saem, o miolo fica — no caso comum o miolo é
+# vazio e o texto útil vem logo depois ("muito alto"), mas se um dia vier
+# conteúdo dentro, apagá-lo seria perder fala do Rica.
+_IMAGE_ENVELOPE_RE = re.compile(r"</?image\b[^>]*>", re.IGNORECASE)
+
+# Três quebras ou mais viram duas: tirar marcador no meio do texto deixa buraco.
+_EXTRA_BLANK_LINES_RE = re.compile(r"\n{3,}")
+
+
+def _strip_channel_envelopes(text: str) -> str:
+    """Tira marcação de transporte que não é fala, preservando o que é.
+
+    Vazava direto pra tela do Rica em 09/08 — `[[voz]]` cru no meio da resposta
+    e o envelope de anexo com o path do .jpg. Nenhum dos dois é conversa: são
+    etiquetas que a skill de áudio e o bridge telecodex põem no caminho.
+    """
+    if not text:
+        return text
+    limpo = _VOICE_MARKER_RE.sub("", text)
+    limpo = _IMAGE_ENVELOPE_RE.sub("", limpo)
+    limpo = _EXTRA_BLANK_LINES_RE.sub("\n\n", limpo)
+    return limpo.strip()
 
 
 def _extract_text(payload: dict[str, Any]) -> str:
@@ -184,7 +218,11 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
             if item_type == "message":
                 role_in = str(payload.get("role") or "")
                 text = _strip_audio_skill_prefix(_extract_text(payload))
+                # A classificação vem ANTES da limpeza, de propósito: quem
+                # decide "isto é contexto injetado" olha os marcadores do texto
+                # cru. Limpar primeiro apagaria a prova e o lixo viraria bolha.
                 role_out, visible = classify_message(role_in, text)
+                text = _strip_channel_envelopes(text) if visible else text
                 messages.append(
                     CodexMessage(
                         id=msg_id,
