@@ -4,6 +4,7 @@ import { beforeEach, describe, it } from 'node:test';
 import { criaAdaptadorCodex } from './adapta-mensagens.ts';
 import {
   assinaPendentes,
+  descartaEcoPendente,
   lePendentes,
   limpaEcoPendente,
   reconciliaPendentes,
@@ -162,6 +163,41 @@ describe('polling ocioso — por que reconciliar tem que vir do array CRU', () =
     reconciliaPendentes('tara', []); // o poll ocioso chama assim mesmo
 
     assert.equal(temPendencia('tara'), false);
+  });
+});
+
+describe('descarte por falha — a bolha que o POST provou que não saiu', () => {
+  it('sem descarte, uma pendência de tentativa que falhou fica órfã até o prazo de 3 min', () => {
+    // Reproduz o achado [2] da auditoria (09/08): `registraEcoPendente` roda
+    // em `composer.tsx:402`, ANTES do `await envio.enviar`. Quando o POST
+    // rejeita com erro HTTP real (409 "Tara ocupada", rede, 4xx/5xx), a
+    // máquina de envio vai pra `falhou` — mas nada nesta lista sabia disso.
+    registraEcoPendente('tara', 'texto que nunca saiu');
+
+    // O POST rejeitou (simulado — nada aqui reconcilia nem descarta), e a
+    // tela já mostra a faixa "não saiu". A bolha, sem intervenção, continua
+    // pintando "enviado" no feed.
+    assert.equal(temPendencia('tara'), true, 'a bolha ainda está lá, contradizendo a faixa de erro');
+  });
+
+  it('descartaEcoPendente remove só a pendência da tentativa que falhou, por id', () => {
+    const id1 = registraEcoPendente('tara', 'primeira tentativa');
+    const id2 = registraEcoPendente('tara', 'primeira tentativa'); // mesmo texto, reenvio
+    assert.ok(id1 && id2 && id1 !== id2, 'duas tentativas geram ids distintos mesmo com texto igual');
+
+    descartaEcoPendente('tara', id1!);
+
+    assert.deepEqual(
+      lePendentes('tara').map((p) => p.id),
+      [id2],
+      'só a tentativa que falhou some — a outra continua esperando o rollout',
+    );
+  });
+
+  it('descartar id que não existe (já reconciliado, já expirado) não explode nem mexe no resto', () => {
+    registraEcoPendente('tara', 'fica');
+    descartaEcoPendente('tara', 'eco-inexistente');
+    assert.equal(lePendentes('tara').length, 1);
   });
 });
 

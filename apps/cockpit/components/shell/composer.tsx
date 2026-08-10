@@ -43,7 +43,7 @@ import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } f
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
-import { registraEcoPendente } from '../../lib/codex/eco-pendente';
+import { descartaEcoPendente, registraEcoPendente } from '../../lib/codex/eco-pendente';
 import { usaFrota } from './frota-provider';
 import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
@@ -399,8 +399,15 @@ export function Composer({
     // Claude Code o eco volta pelo stream em milissegundos, e uma pendência
     // aberta ali afrouxaria o prazo de um alarme que lá é verdadeiro.
     // Ver `lib/codex/eco-pendente.ts`.
-    if (ehCodex) registraEcoPendente(agentSlug, corpo);
-    await envio.enviar(corpo);
+    const idEcoPendente = ehCodex ? registraEcoPendente(agentSlug, corpo) : null;
+    // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
+    // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
+    // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da
+    // auditoria, 09/08).
+    await envio.enviar(
+      corpo,
+      idEcoPendente ? () => descartaEcoPendente(agentSlug, idEcoPendente) : undefined,
+    );
     return true;
   }
 

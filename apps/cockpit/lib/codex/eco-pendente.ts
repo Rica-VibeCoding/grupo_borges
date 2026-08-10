@@ -56,13 +56,37 @@ function grava(slug: string, lista: readonly EcoPendente[]): void {
   avisa(slug);
 }
 
-/** Chamado no instante do despacho, não na resposta do POST. */
-export function registraEcoPendente(slug: string, texto: string): void {
+/** Chamado no instante do despacho, não na resposta do POST. Devolve o id da
+ *  pendência criada — quem despacha guarda para descartá-la se o POST provar
+ *  que não saiu (ver `descartaEcoPendente`). `null` quando o texto era só
+ *  espaço: não há pendência para descartar depois. */
+export function registraEcoPendente(slug: string, texto: string): string | null {
   const corpo = texto.trim();
-  if (!corpo) return;
+  if (!corpo) return null;
   contador += 1;
+  const id = `eco-${contador}`;
   const atual = porAgente.get(slug) ?? [];
-  grava(slug, [...atual, { id: `eco-${contador}`, texto: corpo, emMs: Date.now() }]);
+  grava(slug, [...atual, { id, texto: corpo, emMs: Date.now() }]);
+  return id;
+}
+
+/**
+ * Desfaz uma pendência ANTES da entrega — o POST provou que não saiu daqui
+ * (erro HTTP real, fase `falhou` em `envio.ts`). Sem isto a bolha otimista
+ * fica pintando "enviado" no feed por até 3 min enquanto a faixa do composer
+ * já diz que falhou — duas vozes contraditórias na mesma tela (achado [2] da
+ * auditoria, 09/08).
+ *
+ * Por id, não por texto: um reenvio do mesmo texto cria uma segunda
+ * pendência, e só a que falhou pode sair — a outra continua esperando o
+ * rollout normalmente.
+ */
+export function descartaEcoPendente(slug: string, id: string): void {
+  const atual = porAgente.get(slug);
+  if (!atual) return;
+  const sobrando = atual.filter((p) => p.id !== id);
+  if (sobrando.length === atual.length) return;
+  grava(slug, sobrando);
 }
 
 export function lePendentes(slug: string): readonly EcoPendente[] {

@@ -78,7 +78,11 @@ export type DependenciasEnvio = {
 export type ControleEnvio = {
   getEstado(): EstadoEnvio;
   subscribe(ouvinte: () => void): () => void;
-  enviar(texto: string): Promise<void>;
+  /** `aoFalhar` roda só quando o POST rejeita com erro HTTP real (fase
+   *  `falhou`) — é o gancho para quem registrou uma pendência otimista ANTES
+   *  do envio (`registraEcoPendente`, só Codex) desfazê-la, já que a máquina
+   *  acabou de provar que o texto não saiu daqui. */
+  enviar(texto: string, aoFalhar?: () => void): Promise<void>;
   /** Sobe o áudio, e o que o servidor TRANSCREVEU entra na mesma máquina de
    *  seis fases do texto. Devolve a transcrição para a tela mostrar o que o
    *  agente recebeu — STT erra, e descobrir isso pela resposta errada do
@@ -352,7 +356,7 @@ export function createControleEnvio(
     });
   }
 
-  async function executar(texto: string): Promise<void> {
+  async function executar(texto: string, aoFalhar?: () => void): Promise<void> {
     if (
       descartado ||
       !texto.trim() ||
@@ -404,6 +408,12 @@ export function createControleEnvio(
         erro !== null &&
         'status' in erro &&
         typeof erro.status === 'number';
+      // Só aqui a máquina SABE que não saiu — é o único gatilho correto para
+      // desfazer uma pendência otimista registrada antes do POST. Em
+      // `nao-confirmado` o texto pode ter entrado mesmo assim (ver o
+      // comentário longo acima, em `!resposta.tmux_delivered`), então a
+      // pendência segue esperando o rollout confirmar ou expirar sozinha.
+      if (rejeicaoHttp) aoFalhar?.();
       publicar(
         rejeicaoHttp ? { tipo: 'falhar', erro } : { tipo: 'nao-confirmar', erro },
       );
@@ -517,7 +527,7 @@ export function createControleEnvio(
 
 export function usaEnvio(agentSlug: string): {
   estado: EstadoEnvio;
-  enviar: (texto: string) => Promise<void>;
+  enviar: (texto: string, aoFalhar?: () => void) => Promise<void>;
   enviarVoz: (audio: Blob) => Promise<string | null>;
   reenviar: () => Promise<void>;
 } {
