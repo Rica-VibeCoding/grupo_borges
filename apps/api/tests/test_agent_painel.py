@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import codex_catalog, tmux_driver
+from services import codex_catalog, codex_reader, tmux_driver
 
 
 DANIEL = {
@@ -1630,3 +1630,50 @@ def test_agent_painel_subagents_descarta_job_velho(tmp_path: Path, monkeypatch) 
     assert response.status_code == 200
     subagents = response.json()["subagents"]
     assert subagents == {"count": 0, "active_count": 0, "items": []}
+
+
+def test_agent_painel_codex_pedido_fora_da_escala_do_modelo_nao_vira_padrao(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Escolha do Rica em outro modelo não pode virar "ninguém escolheu".
+
+    Ele pediu `ultra` com a Tara no Sol e depois trocou pro Luna, que não tem
+    esse degrau. Filtrar o `requested` pela escala do Luna zerava o campo, e a
+    etiqueta do painel passava a dizer `padrão`.
+    """
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    app.state.db._update_agent_codex_state("tara", codex_reasoning_effort="ultra")
+    # `requested` só é reportado quando há thread viva pra divergir DELE — sem
+    # thread o painel não tem o que comparar. A escala sai do modelo da thread.
+    thread = codex_reader.CodexThread(
+        thread_id="t-1",
+        rollout_path=str(tmp_path / "r.jsonl"),
+        cwd="/tmp/tara",
+        title="teste",
+        model="gpt-5.6-luna",
+        reasoning_effort="max",
+        tokens_used=0,
+        updated_at_ms=None,
+        created_at_ms=None,
+    )
+    monkeypatch.setattr(agents_router, "_resolve_codex_thread", lambda _agent: thread)
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["requested"] == "ultra"
+    assert "ultra" not in effort["allowed"], "o Luna continua sem oferecer o degrau"
+
+
+def test_agent_painel_codex_pedido_lixo_continua_zerado(tmp_path: Path, monkeypatch) -> None:
+    """A guarda não virou passe livre: o que não é nível de esforço em lugar
+    nenhum segue fora."""
+    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
+    app = _build_app(tmp_path)
+    app.state.db._update_agent_codex_state("tara", codex_reasoning_effort="turbo")
+
+    with TestClient(app) as client:
+        effort = client.get("/api/agents/tara/painel").json()["effort"]
+
+    assert effort["requested"] is None

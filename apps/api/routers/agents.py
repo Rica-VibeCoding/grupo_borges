@@ -835,8 +835,14 @@ def _build_codex_painel_effort(
     oferecia `max` num modelo que não tem `max`.
     """
     allowed = _codex_efforts_permitidos(agent, thread)
+    # O PEDIDO não passa pela escala do modelo CORRENTE, só pela lista do que é
+    # nível de esforço em algum lugar. O Rica escolheu `ultra` com a Tara no
+    # Sol e depois trocou pro Luna, que não tem esse degrau: filtrar aqui pela
+    # escala do Luna zerava o `requested` e a tela dizia "padrão" — isto é,
+    # "ninguém escolheu" — sobre uma escolha que ele fez. A escala estreita
+    # governa o que se OFERECE e o que o PATCH aceita, não o que foi gravado.
     requested = agent.get("codex_reasoning_effort")
-    if requested not in allowed:
+    if requested not in _codex_efforts_conhecidos():
         requested = None
 
     effective = _string_or_none(thread.reasoning_effort) if thread is not None else None
@@ -886,6 +892,16 @@ def _codex_modelo_corrente(
     return _codex_slug_canonico(_string_or_none(agent.get("state_model"))) or _codex_slug_canonico(
         _string_or_none(agent.get("model_default"))
     )
+
+
+def _codex_efforts_conhecidos() -> frozenset[str]:
+    """Tudo que é degrau de esforço em ALGUM modelo do catálogo.
+
+    Serve só para separar um nível real de lixo no banco. Não é o que se
+    oferece — isso é por modelo, em `_codex_efforts_permitidos`.
+    """
+    do_catalogo = {e for m in codex_catalog.listar_modelos() for e in m.efforts}
+    return frozenset(do_catalogo | set(_CODEX_PAINEL_ALLOWED_EFFORTS))
 
 
 def _codex_efforts_permitidos(
