@@ -20,9 +20,11 @@ import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
+import { usaConversaCodex } from '@/lib/codex/usa-conversa-codex.ts';
 import { usaCompact } from '@/lib/compact';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
+import { usaFrota } from '@/components/shell/frota-provider';
 
 /** Era 1000 até 09/08. O Rica cortou a dúvida pela raiz: *"as mensagens ficam
  *  nas sessões do CC, se eu precisar dou um resumo por lá — por mim não
@@ -37,7 +39,28 @@ import { useCanarioStream } from '@/lib/spike/use-canario-stream';
  *  tela. */
 const HISTORICO_PADRAO = 100;
 
+/** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
+ *  no mesmo `<Feed>`, com os mesmos itens e a mesma gramática. É a ordem do
+ *  Rica em 09/08, olhando o chat vazio da Tara — *"tem que seguir a mesma UI
+ *  que temos no CC"*.
+ *
+ *  Dois componentes irmãos em vez de um com `if`: o ramo do CC abre SSE e o da
+ *  Tara abre um `setInterval`, e nenhum dos dois pode nascer pendurado num hook
+ *  que às vezes roda. Montando um OU outro, cada um chama os seus hooks
+ *  incondicionalmente e o que não está na tela não tem conexão aberta. */
 export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
+  const { agents } = usaFrota();
+  const agente = agents.find((a) => a.slug === agentSlug);
+  const ehCodex = agente?.executor_kind === 'codex' || agente?.cli_default === 'codex';
+
+  return ehCodex ? (
+    <FeedCodex agentSlug={agentSlug} />
+  ) : (
+    <FeedClaudeCode agentSlug={agentSlug} />
+  );
+}
+
+function FeedClaudeCode({ agentSlug }: { agentSlug: string }) {
   // `geracao`: o backend emite `session-reset` quando um Restart sem contexto
   // zera o histórico — o hook a incrementa e nasce com `messages` vazias.
   // Ela vira `key` lá embaixo (padrão react.dev de reset): Feed, virtualizador
@@ -145,29 +168,7 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
     // esqueleto — só nada até o dado chegar.
     if (status !== 'live') return null;
 
-    return (
-      // A coluna de leitura não vem mais de um wrapper na página (ela desceu
-      // pra dentro do Feed, pra barra de rolagem encostar na borda da tela) —
-      // o estado vazio se centra sozinho na mesma medida. `key={geracao}` +
-      // `ck-feed-enter`: após um Restart, o "Sem conversa ainda." nasce com
-      // fade em vez de piscada dura.
-      <div
-        key={geracao}
-        className="ck-feed-enter mx-auto w-full"
-        style={{ maxWidth: 'var(--ck-read-wide)', padding: '0 var(--ck-space-4)' }}
-      >
-        <p
-          style={{
-            fontSize: 'var(--ck-text-hero)',
-            lineHeight: 'var(--ck-leading-hero)',
-            letterSpacing: 'var(--ck-track-hero)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          Sem conversa ainda.
-        </p>
-      </div>
-    );
+    return <SemConversa geracao={geracao} />;
   }
 
   // O wrapper existe pra `key` + fade da troca de geração sem tocar em
@@ -178,6 +179,69 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
       key={geracao}
       className="ck-feed-enter flex min-h-0 flex-1 flex-col"
     >
+      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />
+    </div>
+  );
+}
+
+/** A coluna de leitura não vem mais de um wrapper na página (ela desceu pra
+ *  dentro do Feed, pra barra de rolagem encostar na borda da tela) — o estado
+ *  vazio se centra sozinho na mesma medida. `key={geracao}` + `ck-feed-enter`:
+ *  após um Restart, o "Sem conversa ainda." nasce com fade em vez de piscada
+ *  dura. Virou peça própria quando a Tara ganhou o segundo ramo: os dois
+ *  precisam do MESMO vazio, e vazio duplicado é vazio que diverge. */
+function SemConversa({ geracao }: { geracao: number }) {
+  return (
+    <div
+      key={geracao}
+      className="ck-feed-enter mx-auto w-full"
+      style={{ maxWidth: 'var(--ck-read-wide)', padding: '0 var(--ck-space-4)' }}
+    >
+      <p
+        style={{
+          fontSize: 'var(--ck-text-hero)',
+          lineHeight: 'var(--ck-leading-hero)',
+          letterSpacing: 'var(--ck-track-hero)',
+          color: 'var(--ck-text-secondary)',
+        }}
+      >
+        Sem conversa ainda.
+      </p>
+    </div>
+  );
+}
+
+/** A TARA. Mesmo pipeline, outra fonte: `/codex/messages` por polling, traduzido
+ *  pra `MessagePayload` antes de entrar (`lib/codex/adapta-mensagens.ts`). Daqui
+ *  pra baixo nenhuma peça sabe que existe Codex.
+ *
+ *  O QUE ESTE RAMO NÃO TEM, e por quê:
+ *  - `usaCompact` — `/compact` é comando de sessão Claude Code; o turno do Codex
+ *    não tem esse ciclo.
+ *  - `usaDelegacoes` — a Tara é o ALVO de delegação, não delegadora. A pílula
+ *    "Tara trabalhando" pertence ao feed de quem a chamou.
+ *  - linha viva — depende do `isRunning` do stream, que aqui não existe. O sinal
+ *    equivalente é o `status_line` da frota; fica pra quando o Rica olhar a tela
+ *    cheia e disser se sente falta. */
+function FeedCodex({ agentSlug }: { agentSlug: string }) {
+  const { mensagens, carregou } = usaConversaCodex(agentSlug, true);
+
+  const incrementalRef = useRef<ReturnType<typeof createIncrementalRenderItems> | null>(null);
+  incrementalRef.current ??= createIncrementalRenderItems();
+
+  const itens = useMemo<readonly ItemDoFeed[]>(
+    () => [...incrementalRef.current!.update(mensagens)],
+    [mensagens],
+  );
+  const lookup = useMemo(() => buildToolResultLookup(mensagens), [mensagens]);
+
+  // Mesma honestidade do ramo do CC: em branco enquanto não perguntei. Dizer
+  // "Sem conversa ainda." antes da primeira resposta é a mentira que esta tela
+  // veio consertar.
+  if (itens.length === 0) return carregou ? <SemConversa geracao={0} /> : null;
+
+  return (
+    <div className="ck-feed-enter flex min-h-0 flex-1 flex-col">
       <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />
     </div>
   );

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start --port 3008",
     "type-check": "tsc --noEmit",
-    "test": "node --test lib/*.test.ts lib/spike/*.test.ts components/feed/*.test.ts components/renderers/*.test.ts components/shell/*.test.ts app/api/delegacoes/*.test.ts"
+    "test": "node --test lib/*.test.ts lib/codex/*.test.ts lib/spike/*.test.ts components/feed/*.test.ts components/renderers/*.test.ts components/shell/*.test.ts app/api/delegacoes/*.test.ts"
   },
   "dependencies": {
     "@grupo_borges/cockpit-core": "workspace:*",
