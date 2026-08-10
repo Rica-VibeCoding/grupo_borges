@@ -6,7 +6,9 @@ import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import type { AssistenteDeTrabalho, ItemDoFeed } from './grupo-ferramentas.ts';
 import {
+  VALIDADE_LINHA_VIVA_MS,
   desdeDaLinhaViva,
+  linhaVivaVenceu,
   rotuloDoTempo,
   trabalhoEmVooNoFim,
 } from './linha-viva.ts';
@@ -109,6 +111,27 @@ test('timestamp quebrado cai no created_at (epoch em segundos)', () => {
   const mensagens = mensagem('user', 'user', 'oi', 'não-é-data');
   mensagens.created_at = 1_750_000_000;
   assert.equal(desdeDaLinhaViva([mensagens]), 1_750_000_000_000);
+});
+
+/* -------------------------------------------------------------------------- */
+/* linhaVivaVenceu — o prazo que apaga o "Pensando" de turno morto             */
+/* -------------------------------------------------------------------------- */
+
+test('dentro do prazo a linha continua de pé', () => {
+  const desde = Date.parse('2026-08-10T12:00:00.000Z');
+  assert.equal(linhaVivaVenceu(desde, desde), false);
+  assert.equal(linhaVivaVenceu(desde, desde + VALIDADE_LINHA_VIVA_MS - 1), false);
+});
+
+test('no instante do prazo ela vence — turno que morreu sem despedida', () => {
+  const desde = Date.parse('2026-08-10T12:00:00.000Z');
+  assert.equal(linhaVivaVenceu(desde, desde + VALIDADE_LINHA_VIVA_MS), true);
+  assert.equal(linhaVivaVenceu(desde, desde + 60 * 60_000), true);
+});
+
+test('relógio do cliente atrasado não vence nada', () => {
+  const desde = Date.parse('2026-08-10T12:00:00.000Z');
+  assert.equal(linhaVivaVenceu(desde, desde - 10 * 60_000), false);
 });
 
 /* -------------------------------------------------------------------------- */

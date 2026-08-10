@@ -66,6 +66,25 @@ export function desdeDaLinhaViva(messages: readonly MessagePayload[]): number | 
   return ultima.created_at * 1000;
 }
 
+/** O PRAZO DE VALIDADE da linha viva.
+ *
+ *  A corrida em voo se lê do log, e há um caso que o log não conta: o turno que
+ *  morre sem despedida — limite de uso, agente desligado, sessão derrubada. Ali
+ *  o arquivo simplesmente para de crescer, nenhum fim de turno chega, e a linha
+ *  ficava contando "Pensando há 40 min" para ninguém.
+ *
+ *  Cinco minutos, e o número não é gosto: é o mesmo
+ *  `LIFECYCLE_FRESH_THRESHOLD_SECONDS = 300` com que o back decide se o sinal
+ *  de vida de um agente ainda vale (`apps/api/db/store.py`). Contra o silêncio
+ *  REAL entre mensagens de um mesmo turno — 126 mil gaps medidos nos JSONL da
+ *  frota em 10/08: p99 = 77 s, p99,9 = 460 s — o prazo corta 0,16% das esperas
+ *  legítimas, e nessas a linha volta assim que a próxima mensagem chega. */
+export const VALIDADE_LINHA_VIVA_MS = 300_000;
+
+export function linhaVivaVenceu(desdeMs: number, agoraMs: number): boolean {
+  return agoraMs - desdeMs >= VALIDADE_LINHA_VIVA_MS;
+}
+
 /** O tempo em português de conversa: segundos até um minuto, minutos depois.
  *  Negativo (relógio do cliente à frente do servidor) não existe — é zero. */
 export function rotuloDoTempo(decorridoMs: number): string {

@@ -20,6 +20,7 @@ import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
+import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { usaConversaCodex } from '@/lib/codex/usa-conversa-codex.ts';
 import { usaCompact } from '@/lib/compact';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
@@ -140,10 +141,16 @@ function FeedClaudeCode({ agentSlug }: { agentSlug: string }) {
   // fonte única, a mesma que a pílula do topo vai beber quando existir.
   const delegacoes = usaDelegacoes(agentSlug);
 
+  // O PRAZO DA LINHA VIVA. `isRunning` conta o que o log conta, e turno que
+  // morre sem despedida (limite de uso, agente desligado, sessão derrubada)
+  // não escreve nada — o "Pensando" ficava de pé sozinho. Ver o porquê medido
+  // em `linha-viva.ts`.
+  const desdeMs = useMemo(() => desdeDaLinhaViva(messages), [messages]);
+  const vencida = usaLinhaVivaVencida(desdeMs);
+
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];
-    if (isRunning && !trabalhoEmVooNoFim(itensBase, lookup)) {
-      const desdeMs = desdeDaLinhaViva(messages);
+    if (isRunning && !vencida && !trabalhoEmVooNoFim(itensBase, lookup)) {
       if (desdeMs !== null) lista = [...lista, { kind: 'linha-viva', desdeMs }];
     }
     if (delegacoes.length > 0) {
@@ -158,7 +165,7 @@ function FeedClaudeCode({ agentSlug }: { agentSlug: string }) {
       ];
     }
     return lista;
-  }, [isRunning, itensBase, lookup, messages, delegacoes]);
+  }, [isRunning, vencida, desdeMs, itensBase, lookup, delegacoes]);
 
   if (itensBase.length === 0) {
     // `connecting`/`replaying`: o histórico ainda não chegou — ficar em

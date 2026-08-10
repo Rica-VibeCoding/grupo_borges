@@ -16,11 +16,33 @@
 // do stream, calculada em `linha-viva.ts` — a mesma peça que decide QUANDO
 // esta linha existe.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 
-import { rotuloDoTempo } from './linha-viva.ts';
+import { VALIDADE_LINHA_VIVA_MS, linhaVivaVenceu, rotuloDoTempo } from './linha-viva.ts';
 
 const TICK_MS = 1_000;
+
+/** O DESPERTADOR DA VALIDADE — a linha viva venceu?
+ *
+ *  UM `setTimeout` marcado para o instante exato do vencimento, não um tick de
+ *  relógio: enquanto o prazo corre não há nada a redesenhar, e o feed é
+ *  virtualizado — pulso de um segundo aqui custaria por nada. O despertador
+ *  toca uma vez, o `useReducer` força o redesenho, e a linha sai.
+ *
+ *  `desdeMs` nulo (feed sem mensagem) nunca vence: sem âncora não há linha. */
+export function usaLinhaVivaVencida(desdeMs: number | null): boolean {
+  const [, redesenha] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    if (desdeMs === null) return;
+    const faltamMs = desdeMs + VALIDADE_LINHA_VIVA_MS - Date.now();
+    if (faltamMs <= 0) return;
+    const despertador = setTimeout(redesenha, faltamMs);
+    return () => clearTimeout(despertador);
+  }, [desdeMs]);
+
+  return desdeMs !== null && linhaVivaVenceu(desdeMs, Date.now());
+}
 
 export function LinhaVivaView({ desdeMs }: { desdeMs: number }) {
   const [agoraMs, setAgoraMs] = useState(() => Date.now());

@@ -1,6 +1,8 @@
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { createStreamCoalescer } from '@grupo_borges/cockpit-core/stream-coalescer';
 
+import { corridaEmVoo } from './corrida-em-voo.ts';
+
 export type CanarioStreamStatus =
   | 'connecting'
   | 'replaying'
@@ -112,18 +114,6 @@ function buildStreamUrl(
   return `/api/agents/${encodeURIComponent(slug)}/messages/stream?${params}`;
 }
 
-function responseIsRunning(previous: boolean, messages: readonly MessagePayload[]): boolean {
-  let running = previous;
-  for (const payload of messages) {
-    if (payload.message?.role === 'user') {
-      running = true;
-    } else if (payload.message?.role === 'assistant') {
-      running = payload.message.stop_reason !== 'end_turn';
-    }
-  }
-  return running;
-}
-
 export function createCanarioStream(
   options: CanarioStreamOptions,
 ): CanarioStreamController {
@@ -159,7 +149,7 @@ export function createCanarioStream(
       publish({
         ...state,
         messages: state.messages.concat(batch),
-        isRunning: responseIsRunning(state.isRunning, batch),
+        isRunning: corridaEmVoo(state.isRunning, batch),
       });
     },
   });
