@@ -211,6 +211,39 @@ post_raw_jsonl() {
     > /dev/null || true
 }
 
+# A régua de escrita do cockpit, que nos CC chega pelo hook UserPromptSubmit
+# (`ze-shared/hooks/cockpit-load-skill.sh`). Aqui não vai por hook, e a decisão
+# é medida, não preferência: o Codex 0.146 TEM `[[hooks.UserPromptSubmit]]` e o
+# `additionalContext` funciona — provei em CODEX_HOME isolado, o modelo devolveu
+# a palavra-chave injetada. Só que exige `--dangerously-bypass-hook-trust` em
+# toda invocação: sem a flag o hook é pulado EM SILÊNCIO (a doc: "skipped until
+# trusted"; sem TUI não há `/hooks` pra aprovar, e em headless nem o aviso sai).
+# Pior, o trust é gravado contra o HASH do hook — editar o script desarmaria a
+# régua da Tara sem uma linha de erro. Trocar isso por uma flag que a própria
+# OpenAI chama de DANGEROUS, e global pra toda sessão dela, sai caro por 10
+# linhas de prefixo.
+#
+# Em TODO turno vindo do cockpit, não só no que nasce a thread. A economia do
+# marker por sessão que o hook do CC faz não vale aqui: desde a unificação da
+# Tara (terminal + cockpit + Telegram na mesma thread) o cockpit resume uma
+# thread que pode ter nascido no terminal — condicionar a "thread nova" faria a
+# régua nunca chegar. São ~200 tokens por turno, e determinismo vale mais.
+if [[ "$DELEGATOR" == "cockpit" ]]; then
+  last_index=$((${#CODEX_ARGS[@]} - 1))
+  CODEX_ARGS[$last_index]="Esta mensagem chegou pelo cockpit do grupo_borges — a resposta vai ser LIDA NA TELA pelo Rica, quase sempre no celular. Formate assim:
+- Aviso com peso vira alerta do GitHub: \`> [!NOTE]\` \`> [!TIP]\` \`> [!IMPORTANT]\` \`> [!WARNING]\` \`> [!CAUTION]\` — a tela pinta e rotula sozinha. Com parcimônia; abusar tira força.
+- Comando pra executar vai em bloco cercado por crase tripla (só ele ganha botão de copiar). Inline é pro que se cita: path, flag, versão, porta.
+- Lista pra enumerar. Tabela só em comparação real — no celular ela rola de lado.
+- Negrito em palavra-chave, nunca em frase inteira. Header \`##\`/\`###\` quando passar de 5 linhas.
+- Pergunta simples = 1 a 3 linhas, sem enfeite. Relatório prolixo é falha de entrega.
+Régua completa (ler só se precisar): /home/clawd/repos/ze_claude/ze-shared/.claude/skills/canal-cockpit/SKILL.md
+
+---
+
+${CODEX_ARGS[$last_index]}"
+  echo "[tara-codex] régua do cockpit injetada no prompt (delegator=cockpit)" >&2
+fi
+
 EXEC_ARGS=(exec --json)
 if [[ -n "$RESUME_THREAD" ]]; then
   last_index=$((${#CODEX_ARGS[@]} - 1))
