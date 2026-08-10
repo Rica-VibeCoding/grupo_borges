@@ -81,6 +81,7 @@ import {
   type FaseDestrava,
   type Impedimento,
 } from './acoes-rapidas';
+import { BlocoDeComandos } from './bloco-de-comandos';
 import { BlocoDeCota } from './bloco-de-cota';
 import { IconeDescartar } from './icones';
 import { usaCompact } from '../../lib/compact';
@@ -718,6 +719,18 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           </div>
         ) : null}
       </section>
+
+      {/* OS COMANDOS — região própria, e não uma quarta cadeira na linha acima:
+          aquelas ações mexem no processo, estas mandam texto pro agente. Ver o
+          cabeçalho de `bloco-de-comandos.tsx`.
+
+          A condição é a mesma da linha de ações brutas, pelos mesmos dois
+          motivos: sem CLI de pé não há quem receba texto (`dePe`), e a Tara não
+          tem slash command — o `/input` dela vira prompt de um `codex exec`, ou
+          seja, ela LERIA "/compact" como recado em vez de compactar. */}
+      {carga === 'pronto' && dePe && !codex ? (
+        <BlocoDeComandos agentSlug={agentSlug} aberto={aberto} />
+      ) : null}
 
       {/* Cota é leitura, não ação — irmã da região, nunca dentro dela. Só
           aparece com o painel lido: fabricar "sem dados" enquanto a busca está
