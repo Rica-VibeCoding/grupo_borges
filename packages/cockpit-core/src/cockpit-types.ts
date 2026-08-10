@@ -486,11 +486,18 @@ export function parseContextPct(excerpt: string | null): number | null {
   return last ? parseInt(last[1]!, 10) : null;
 }
 
+/** O pane era a fonte de primeira até 10/08, e escondia um defeito: o texto do
+ *  terminal não diz de QUAL sessão ele é. Depois de um `/clear` a statusline
+ *  desenhada continua sendo a da conversa apagada até o CC redesenhar, e o card
+ *  publicava aquele percentual como se fosse de agora — o Rica viu 16% no
+ *  Canário com o contexto já zerado. O número da API vem amarrado ao
+ *  `sessionId` que está no ar e carimbado com a hora da medida, então é ele que
+ *  manda; o pane fica de reserva pra quem a API ainda não sabe responder. */
 export function resolveContextPct(
   agent: Pick<Agent, 'executor_kind' | 'pane_excerpt' | 'context_pct'>,
 ): number | null {
   if (agent.executor_kind === 'codex') return agent.context_pct;
-  return parseContextPct(agent.pane_excerpt) ?? agent.context_pct;
+  return agent.context_pct ?? parseContextPct(agent.pane_excerpt);
 }
 
 export function parseModelFromPane(excerpt: string | null): string | null {

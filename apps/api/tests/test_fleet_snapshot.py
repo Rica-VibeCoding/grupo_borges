@@ -370,3 +370,95 @@ def test_fleet_lists_tmux_inventory_once_per_snapshot(tmp_path: Path, monkeypatc
 
     assert response.status_code == 200
     assert calls == 1
+
+
+def test_fleet_nao_publica_contexto_de_sessao_morta(tmp_path: Path, monkeypatch) -> None:
+    """Depois do `/clear` a sessão nova ainda não escreveu statusline — e o
+    card publicava o percentual da sessão que morreu (o Rica viu 16% no
+    Canário). Sem número da sessão ATUAL, o honesto é zero."""
+    db = _setup_db(tmp_path)
+    morta = f"fleet-morta-{int(time.time())}"
+    viva = f"fleet-viva-{int(time.time())}"
+    for session_id in (morta, viva):
+        db._insert_task_event(
+            "jsonl:assistant",
+            task_id=None,
+            agent_slug="daniel",
+            instance_id=None,
+            payload={"uuid": f"uuid-{session_id}", "sessionId": session_id},
+            raw_jsonl=None,
+        )
+    status_path = Path(f"/tmp/cc-status-{morta}.json")
+    status_path.write_text(
+        json.dumps({"updated_at": 1786388459, "context_window": {"used_percentage": 16}}),
+        encoding="utf-8",
+    )
+
+    async def fake_capture(_session_name: str) -> str:
+        return "Opus 4.8 - 33:03 - [█░░░░░░░░░] 16%"
+
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory({"daniel"}, {"daniel"})
+
+    monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
+    monkeypatch.setattr(
+        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
+    )
+
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(fleet_router.router, prefix="/api/fleet")
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/fleet")
+        agent = _agent_from_snapshot(response.json(), "daniel")
+        assert agent["context_pct"] == 0
+    finally:
+        status_path.unlink(missing_ok=True)
+
+
+def test_fleet_carimba_a_hora_em_que_o_contexto_foi_medido(tmp_path: Path, monkeypatch) -> None:
+    """Número sem carimbo não pode envelhecer — era por isso que o card nunca
+    dizia 'antigo' no caminho Claude Code."""
+    db = _setup_db(tmp_path)
+    session_id = f"fleet-carimbo-{int(time.time())}"
+    db._insert_task_event(
+        "jsonl:assistant",
+        task_id=None,
+        agent_slug="daniel",
+        instance_id=None,
+        payload={"uuid": f"uuid-{session_id}", "sessionId": session_id},
+        raw_jsonl=None,
+    )
+    medido_em = int(time.time())
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps({"updated_at": medido_em, "context_window": {"used_percentage": 42}}),
+        encoding="utf-8",
+    )
+
+    async def fake_capture(_session_name: str) -> str:
+        return "Opus 4.8 - 01:00 - [█░░░░░░░░░] 9%"
+
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory({"daniel"}, {"daniel"})
+
+    monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
+    monkeypatch.setattr(
+        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
+    )
+
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(fleet_router.router, prefix="/api/fleet")
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/fleet")
+        agent = _agent_from_snapshot(response.json(), "daniel")
+        assert agent["context_pct"] == 42
+        assert agent["context_updated_at"] == medido_em
+        assert agent["context_stale"] is False
+    finally:
+        status_path.unlink(missing_ok=True)

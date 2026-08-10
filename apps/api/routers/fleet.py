@@ -133,34 +133,53 @@ def _num_or_none(value: object) -> float | None:
     return float(value)
 
 
-def _read_cc_context_pct(session_id: str) -> float | None:
+def _read_cc_context_pct(session_id: str) -> tuple[float | None, int | None]:
+    """O número E a hora em que ele foi medido — os dois ou nenhum.
+
+    Devolver só o percentual era o que deixava `_marca_contexto_velho` cego no
+    caminho Claude Code: sem carimbo não há como um número envelhecer.
+    """
     path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
+        return None, None
     if not isinstance(payload, dict):
-        return None
+        return None, None
     context_window = payload.get("context_window")
     if not isinstance(context_window, dict):
-        return None
-    return _num_or_none(context_window.get("used_percentage"))
+        return None, None
+    return _num_or_none(context_window.get("used_percentage")), _int_or_none(
+        payload.get("updated_at")
+    )
 
 
 async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None:
+    """O contexto é o da sessão que está NO AR — ou zero.
+
+    Andava pra trás nas sessões recentes até achar um arquivo legível, e era
+    isso que publicava o percentual de uma sessão morta como se fosse de agora:
+    depois do `/clear` a sessão nova leva minutos até escrever a primeira
+    statusline (medido no Canário em 10/08 — clear 16h01, arquivo só 16h24), e
+    nessa janela inteira o card mostrava os 16% da conversa que o Rica tinha
+    acabado de apagar.
+
+    Sem número da sessão atual o valor é zero, nunca o da anterior: ordem do
+    Rica — *"ou mostra a verdade, se o harness não entrega, então colocar 0"*.
+    E zero é o que o próprio harness diz nesse estado — sessão recém-aberta
+    grava `used_percentage: null` com `total_input_tokens: 0`.
+    """
     async def hydrate(agent: dict) -> None:
         if agent.get("executor_kind") == "codex":
             return
         if agent.get("context_pct") is not None:
             return
-        # Mesmo fallback do painel: última sessão pode não ter cc-status
-        # (curta/headless) — usa a mais recente que tenha arquivo legível.
         session_ids = await db.recent_jsonl_session_ids(agent["slug"])
-        for session_id in session_ids:
-            pct = await asyncio.to_thread(_read_cc_context_pct, session_id)
-            if pct is not None:
-                agent["context_pct"] = pct
-                return
+        if not session_ids:
+            return
+        pct, medido_em = await asyncio.to_thread(_read_cc_context_pct, session_ids[0])
+        agent["context_pct"] = pct if pct is not None else 0.0
+        agent["context_updated_at"] = medido_em
 
     await asyncio.gather(*(hydrate(agent) for agent in agents))
 
@@ -225,9 +244,11 @@ def _marca_contexto_velho(agents: list[dict]) -> None:
     da sessão é de outro run, e medida parada além do limiar é de agente que
     dormiu. O número CONTINUA na tela; o que muda é o que a tela afirma sobre ele.
 
-    Só age quando o carimbo é da mesma leitura que produziu o número — hoje, o
-    caminho Codex. No Claude Code o valor do card vem do pane, e carimbá-lo com
-    a idade do cc-status seria trocar uma afirmação errada por outra.
+    Só age quando o carimbo é da mesma leitura que produziu o número. Valia só
+    pro Codex enquanto o card do Claude Code bebia do pane — texto de terminal
+    não tem hora, e carimbá-lo com a idade do cc-status seria trocar uma
+    afirmação errada por outra. Desde 10/08 as duas pontas do CC vêm do mesmo
+    arquivo, então a régua passou a valer aqui também.
     """
     agora = int(time.time())
     for agent in agents:
