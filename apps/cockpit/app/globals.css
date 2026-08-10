@@ -724,6 +724,10 @@ body {
  * única quando o item some da vista ao rolar a lista. */
 .ck-aba {
   border-radius: var(--ck-radius-chip);
+  /* O respiro lateral mora aqui, e não no `style` inline de cada item, por uma
+     razão só: a aba do selecionado precisa DEVOLVER esse respiro do lado
+     direito (abaixo), e `style` inline não conhece media query. */
+  padding-inline: var(--ck-space-3);
 }
 
 /* As duas classes no seletor não são enfeite: `.ck-veil[data-selecionado]`
@@ -740,10 +744,16 @@ body {
     background-image: none;
     background-color: var(--ck-surface-canvas);
     border-radius: var(--ck-radius-chip) 0 0 var(--ck-radius-chip);
-    /* Avança sobre o respiro da faixa até a borda da folha. O conteúdo não se
-       mexe: quem cresce 8px é a caixa, o `padding-right` de 12px continua
-       valendo a partir da borda nova. */
+    /* Avança sobre o respiro da faixa até a borda da folha. */
     margin-right: calc(var(--ck-space-2) * -1);
+    /* E devolve ao conteúdo os 8px que a CAIXA avançou. Esta linha diz o que o
+       comentário antigo aqui afirmava sem cumprir ("o conteúdo não se mexe"):
+       o `padding-right` de 12px passava a valer a partir da borda nova, então o
+       conteúdo ia junto. Não aparecia enquanto tudo na linha era alinhado à
+       esquerda; com o percentual virando a última coluna, o número da linha
+       selecionada pousava 8px à direita do de todas as outras — a coluna
+       morrendo justamente na linha em que o olho está. */
+    padding-right: calc(var(--ck-space-3) + var(--ck-space-2));
   }
 }
 

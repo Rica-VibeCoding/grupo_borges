@@ -50,6 +50,34 @@
  *    quem não trabalhou simplesmente não desenha nada. A ausência é a
  *    informação.
  *
+ * QUARTA VERSÃO (10/08) — A COLUNA GANHA UMA VERTICAL. A ordem do Rica foi
+ * "melhore a UI da sidebar"; o que a medição mostrou é que a lista não tinha
+ * grade nenhuma. Cada linha se arranjava sozinha por flex, então barra e
+ * percentual pousavam onde o texto à esquerda tivesse terminado — medido no
+ * browser, o `%` caía em cinco `x` diferentes, com **72px** de dança na coluna
+ * de 260px e **84px** na tela cheia. É o que fazia a coluna serrilhar, e é o
+ * mesmo defeito que o Rica reprovou de olho no print de 09/08.
+ *
+ * A pesquisa do Canário (`docs/pesquisa-sidebar-tropa-canario.md`) chegou nisso
+ * por outro caminho, citando a Linear: *"alinhar labels, ícones e botões
+ * vertical e horizontalmente na sidebar"* é descrito lá como o trabalho que o
+ * usuário só sente depois de alguns minutos — nunca na primeira olhada. As
+ * quatro mudanças, todas a mesma tese:
+ *
+ * 8. O CONTEXTO ENCOSTA NA DIREITA e o número é a última coluna da linha, com
+ *    largura reservada (`ValorDoContexto`). Depois: dança **zero** nos dois
+ *    tamanhos. De quebra o modelo herda todo o espaço à esquerda e para de ser
+ *    cortado no meio da palavra.
+ * 9. A AUSÊNCIA VIRA TRAÇO. `sem contexto` tinha doze caracteres na coluna onde
+ *    os outros têm dois, e quem cedia era o nome do agente: `Lucas Marchetti`
+ *    precisava de 95px, tinha 80, e saía `Lucas Marc…`. O dado sumia para caber
+ *    a falta dele. Detalhe em `SemContexto`.
+ * 10. O RETRATO TEM COLUNA. O de quem dorme é menor (28 contra 34/40), e sem um
+ *    slot de largura fixa o nome dele começava 6px (coluna) e 12px (tela cheia)
+ *    à esquerda do nome de quem trabalha — a lista descia em ziguezague.
+ * 11. O PERCENTUAL É INTEIRO. Só a Tara vinha com casa decimal (`14.5%`) e ela
+ *    sozinha quebrava a coluna tabular. Detalhe em `ValorDoContexto`.
+ *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
 import Link from 'next/link';
@@ -59,7 +87,12 @@ import type {
   SparklineBucket,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
-import { BarraDeContexto, LARGURA_NA_LISTA } from './barra-de-contexto';
+import {
+  BarraDeContexto,
+  LARGURA_NA_LISTA,
+  SemContexto,
+  ValorDoContexto,
+} from './barra-de-contexto';
 import { estadoDe } from './estado';
 import { TETO_PCT } from './medidor';
 import { Retrato } from './retrato';
@@ -186,7 +219,9 @@ function CartaoVivo({
         style={{
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
-          padding: 'var(--ck-space-2) var(--ck-space-3)',
+          // Só o respiro VERTICAL: o lateral mora na `.ck-aba`, que é quem sabe
+          // devolvê-lo do lado direito quando a aba avança sobre a folha.
+          paddingBlock: 'var(--ck-space-2)',
           // Filete só marca SELEÇÃO. O estado já está dito duas vezes — título
           // da seção e ponto no retrato; uma terceira seria ruído.
           borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
@@ -261,15 +296,30 @@ function LinhaDormindo({
         style={{
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
-          padding: 'var(--ck-space-1) var(--ck-space-3)',
+          paddingBlock: 'var(--ck-space-1)',
           borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
         }}
       >
         {/* Retrato menor e esmaecido: quem dorme continua reconhecível de
             relance, sem competir por atenção com quem está de pé. A opacidade vai
             no próprio retrato — um `<span>` em volta virava item de flex, esticava
-            até a altura da linha e achatava a cara de todo mundo. */}
-        <Retrato slug={agente.slug} nome={agente.name} tamanho={28} opacidade={0.55} />
+            até a altura da linha e achatava a cara de todo mundo.
+
+            O `<span>` voltou, e agora é a COLUNA do retrato: ele reserva a
+            largura do retrato de quem está de pé e centraliza o menor dentro.
+            Sem isso o nome de quem dorme começava 6px (coluna) e 12px (tela
+            cheia) à esquerda do nome de quem trabalha, e a lista descia em
+            ziguezague — é o "alinhar labels e ícones vertical e horizontalmente"
+            que a Linear descreve como o trabalho que só se sente depois de
+            alguns minutos de uso. O achatamento de antes vinha do `stretch`
+            que o pai dá a todo item de flex; `self-center` sem altura própria é
+            o que o desliga. */}
+        <span
+          className="flex shrink-0 items-center self-center"
+          style={{ flexBasis: compacta ? '34px' : '40px' }}
+        >
+          <Retrato slug={agente.slug} nome={agente.name} tamanho={28} opacidade={0.55} />
+        </span>
 
         <span
           className="min-w-0 flex-1 truncate"
@@ -304,6 +354,17 @@ function LinhaDormindo({
                 : `contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`
             }
           >
+            {/* Mesma etiqueta da statusline viva, pelo mesmo motivo: aqui o
+                número já é de quem dormiu, e sem a palavra ninguém separa "o
+                que ele tinha ao fechar" de "o que outro run tinha antes".
+                Vem ANTES do número, como na grade dos vivos: depois dele, a
+                palavra empurrava o valor para dentro da linha e a Tara era a
+                única a sair da coluna — 69px à esquerda de todo mundo. */}
+            {agente.context_stale ? (
+              <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
+                antigo
+              </span>
+            ) : null}
             {/* Na coluna de 260px a barra sai e fica o número. Somados, barra +
                 percentual + a palavra "antigo" comiam 142 dos 188px úteis da
                 linha e sobrava "Tar…" no lugar de "Tara Kaur". Entre desenhar a
@@ -311,30 +372,21 @@ function LinhaDormindo({
                 primeiro — e o julgamento não se perde: o valor continua ao lado
                 do teto de 30%, em âmbar quando passa. Na tela cheia cabe tudo. */}
             {compacta ? null : <BarraDeContexto pct={pct} largura={LARGURA_NA_LISTA} />}
-            <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
-              {pct}%
-            </span>
-            {/* Mesma etiqueta da statusline viva, pelo mesmo motivo: aqui o
-                número já é de quem dormiu, e sem a palavra ninguém separa "o
-                que ele tinha ao fechar" de "o que outro run tinha antes". */}
-            {agente.context_stale ? (
-              <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
-                antigo
-              </span>
-            ) : null}
+            <ValorDoContexto pct={pct} />
           </span>
         ) : (
-          // Rótulo gêmeo do da statusline viva: sessão que morreu sem gravar o
-          // número diz "sem contexto", não inventa zero.
+          // Gêmeo do da statusline viva: sessão que morreu sem gravar o número
+          // não inventa zero — e a ausência mora na MESMA coluna do número, do
+          // tamanho dela. Enquanto era a frase "sem contexto", os doze
+          // caracteres cortavam o nome do agente ("Lucas Marc…") para caber.
           <span
-            className="shrink-0"
+            className="flex shrink-0 items-center"
             style={{
               fontFamily: 'var(--ck-font-mono)',
               fontSize: 'var(--ck-text-xs)',
-              color: 'var(--ck-text-tertiary)',
             }}
           >
-            sem contexto
+            <SemContexto />
           </span>
         )}
       </Link>

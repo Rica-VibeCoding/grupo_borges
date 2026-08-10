@@ -89,3 +89,80 @@ export function BarraDeContexto({
     </span>
   );
 }
+
+/** A coluna do número, medida em caracteres da PRÓPRIA mono: cabe `100%` e nada
+ *  além. Em `ch` e não em px porque quem manda na largura é o glifo — trocar a
+ *  fonte reajusta a coluna sozinha, em vez de desalinhar as nove linhas. */
+const COLUNA_DO_VALOR = '4ch';
+
+/**
+ * O percentual — sempre a ÚLTIMA coluna da linha, sempre na mesma vertical.
+ *
+ * Existe porque o número sem largura reservada não faz coluna: `7%`, `18%` e
+ * `100%` têm três larguras, e numa lista o olho lê a borda esquerda deles como
+ * se fosse uma vertical torta. Medido antes desta peça, na coluna de 260px: o
+ * `%` pousava em cinco `x` diferentes, com **72px** de dança entre a linha mais
+ * à esquerda e a mais à direita. `tabular-nums` (a `ck-tabular` do pai) resolve
+ * o dígito dançando dentro do número; a largura reservada resolve o número
+ * dançando dentro da linha. São dois problemas, e cada um tem o seu remédio.
+ *
+ * O back manda float (`14.5`) e a tela mostra INTEIRO. Não é perda: 14,5% e 15%
+ * mandam compactar no mesmo momento, e o teto de 30% é a única decisão que este
+ * número toma. O que a casa decimal custava era caro — cinco glifos onde todo o
+ * resto da coluna tem dois ou três, e a vírgula puxando o olho para o único
+ * agente que não tem nada de diferente.
+ */
+export function ValorDoContexto({ pct }: { pct: number }) {
+  const inteiro = Math.round(pct);
+
+  return (
+    <span
+      className="ck-tabular shrink-0"
+      style={{
+        width: COLUNA_DO_VALOR,
+        textAlign: 'right',
+        // O teto se lê no número EXIBIDO, não no cru: com 30,4% a tela diria
+        // "30%" pintado de âmbar e se contradiria na mesma linha.
+        color: passouDoTeto(inteiro) ? 'var(--ck-state-attention)' : undefined,
+      }}
+    >
+      {inteiro}%
+    </span>
+  );
+}
+
+/**
+ * A ausência de leitura — na MESMA coluna do número, e do tamanho dela.
+ *
+ * Era a frase `sem contexto`, e o custo dela estava medido: doze caracteres na
+ * coluna onde os outros têm dois, comendo tanta linha que o nome do agente
+ * cedia primeiro — `Lucas Marchetti` precisava de 95px, tinha 80, e virava
+ * `Lucas Marc…`. Quem some da tela é sempre o dado, nunca a falta dele: exatamente
+ * a troca errada.
+ *
+ * O travessão continua **não inventando zero**, que era o motivo de a frase
+ * existir. Ele só para de gritar: ausência ocupa o tamanho da ausência, a frase
+ * inteira fica no `title`, e o leitor de tela recebe a palavra pelo `sr-only` —
+ * a §3 proíbe cor como portadora única, e aqui o portador é a posição na coluna
+ * mais o texto acessível.
+ *
+ * `tertiary` a 12px era furo da §2.2 (`nunca corpo`) enquanto isto era frase.
+ * Como glifo de ausência é legítimo: o contrato libera `tertiary` justamente
+ * para ícone e separador.
+ */
+export function SemContexto() {
+  return (
+    <span
+      className="shrink-0"
+      style={{
+        width: COLUNA_DO_VALOR,
+        textAlign: 'right',
+        color: 'var(--ck-text-tertiary)',
+      }}
+      title="a sessão fechou sem gravar o contexto — não há leitura, e zero seria invenção"
+    >
+      <span aria-hidden>—</span>
+      <span className="sr-only">sem contexto</span>
+    </span>
+  );
+}

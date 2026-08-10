@@ -26,6 +26,8 @@ import {
   BarraDeContexto,
   LARGURA_NA_COLUNA,
   LARGURA_NA_LISTA,
+  SemContexto,
+  ValorDoContexto,
 } from './barra-de-contexto';
 import { TETO_PCT } from './medidor';
 import { rotulaModelo } from './motor';
@@ -80,6 +82,21 @@ export function Statusline({
       ? formatElapsedShort(agora - agente.context_updated_at)
       : 'em sessão anterior';
 
+  /** Barra de largura fixa = item de lista, e lista tem coluna a manter. Barra
+   *  elástica (`null`) é a gaveta: uma linha só, nada com que se alinhar. */
+  const emGrade = larguraDaBarra !== null;
+
+  /** A PALAVRA carrega o estado (§3/§9.7): número velho esmaecido ou de outra
+   *  cor continuaria lendo como medição de agora. A idade completa fica no
+   *  `title` — a gaveta não repete a frase (09/08: o Rica mandou retirar o texto
+   *  corrido). Sai como variável porque a grade a põe antes da barra e a gaveta
+   *  depois do número. */
+  const etiqueta = velho ? (
+    <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
+      antigo
+    </span>
+  ) : null;
+
   return (
     <span
       className="ck-tabular flex min-w-0 items-center"
@@ -114,20 +131,39 @@ export function Statusline({
         </>
       ) : null}
 
-      <span aria-hidden style={{ color: 'var(--ck-text-tertiary)' }}>
-        ·
-      </span>
+      {/* O contexto encosta na DIREITA, e o número é a última coluna da linha.
+          É o que dá à lista uma vertical em que o olho se apoia: medido antes
+          desta peça, o `%` pousava onde o nome do modelo tivesse terminado —
+          cinco `x` diferentes na coluna de 260px, 72px de dança entre a linha
+          mais à esquerda e a mais à direita. O modelo herda de quebra todo o
+          espaço à esquerda, e é o que tira `deepseek-v…` do meio da palavra.
+
+          Some junto o `·` que separava o tempo do contexto: com o rio no meio,
+          ele deixou de separar duas coisas vizinhas e passou a boiar sozinho.
+
+          Só na GRADE. Barra elástica (`larguraDaBarra: null`) é a gaveta — uma
+          linha só, sem coluna nenhuma a manter, e o layout dela o Rica aprovou
+          hoje. Lá o bloco continua no fluxo, com o `·` e a ordem de sempre. */}
+      {emGrade ? null : (
+        <span aria-hidden style={{ color: 'var(--ck-text-tertiary)' }}>
+          ·
+        </span>
+      )}
 
       {pct !== null ? (
         <span
           className="flex shrink-0 items-center"
-          style={{ gap: 'var(--ck-space-1)' }}
+          style={{ gap: 'var(--ck-space-1)', marginLeft: emGrade ? 'auto' : undefined }}
           title={
             velho
               ? `contexto ${pct}% medido ${idade} — não é a leitura desta sessão`
               : `contexto ${pct}% — teto da frota ${TETO_PCT}%`
           }
         >
+          {/* Na grade a etiqueta vem ANTES da barra: depois do número ela o
+              empurraria para dentro da linha e a coluna morreria justamente no
+              agente que mais precisa ser lido junto dos outros. */}
+          {emGrade ? etiqueta : null}
           <BarraDeContexto
             pct={pct}
             largura={
@@ -138,25 +174,17 @@ export function Statusline({
                   : LARGURA_NA_LISTA
             }
           />
-          <span style={{ color: pct > TETO_PCT ? 'var(--ck-state-attention)' : undefined }}>
-            {pct}%
-          </span>
-          {/* A PALAVRA carrega o estado (§3/§9.7): número velho esmaecido ou de
-              outra cor continuaria lendo como medição de agora. A idade completa
-              fica no `title` acima — a gaveta não repete a frase (09/08: o Rica
-              mandou retirar o texto corrido). */}
-          {velho ? (
-            <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
-              antigo
-            </span>
-          ) : null}
+          <ValorDoContexto pct={pct} />
+          {emGrade ? null : etiqueta}
         </span>
       ) : tokens !== null ? (
         // Codex não expõe porcentagem de janela — mostra o que ele tem.
-        <span className="shrink-0">{formatCompactNumber(tokens)} tk</span>
+        <span className="shrink-0" style={{ marginLeft: emGrade ? 'auto' : undefined }}>
+          {formatCompactNumber(tokens)} tk
+        </span>
       ) : (
-        <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
-          sem contexto
+        <span style={{ marginLeft: emGrade ? 'auto' : undefined }}>
+          <SemContexto />
         </span>
       )}
     </span>
