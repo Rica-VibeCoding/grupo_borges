@@ -8,7 +8,7 @@ import { Composer } from '@/components/shell/composer';
 import { PainelMcp } from '@/components/shell/mcp-painel';
 import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
-import { Statusline } from '@/components/shell/statusline';
+import { StatuslineAoVivo } from '@/components/shell/statusline-ao-vivo';
 import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
@@ -196,7 +196,7 @@ function Painel({
           borderColor: 'var(--ck-edge-light)',
         }}
       >
-        <Statusline agente={agente} agora={agora} larguraDaBarra={null} />
+        <StatuslineAoVivo agente={agente} agora={agora} larguraDaBarra={null} />
       </section>
 
       {/* ENTRADA DA TELA DE MCPs — a tela do Vinicius (15ccf76) estava
@@ -294,7 +294,9 @@ export default async function AgentePage({
   const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
   // Relógio do servidor, na mesma régua da rota `/`: `force-dynamic`
   // re-renderiza a cada navegação, então a duração de sessão da statusline vem
-  // fresca ao abrir a gaveta.
+  // fresca ao abrir a gaveta. Daqui pra frente quem faz o ponteiro ANDAR é o
+  // `StatuslineAoVivo`, que usa este valor como âncora e conta o resto pelo
+  // cronômetro do browser — nunca pela hora dele.
   const agora = Math.floor(Date.now() / 1000);
   // Qual visão a gaveta desenha. `painel=mcps` = a tela de MCPs; qualquer outro
   // valor (ou ausência) = os detalhes. O valor mora na URL, como a decisão nº 1
