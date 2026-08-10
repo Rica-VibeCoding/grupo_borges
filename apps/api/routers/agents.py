@@ -4036,6 +4036,9 @@ async def post_agent_desligar(
         "sessao_encerrada": result["sessao_encerrada"],
         "scopes_parados": result["scopes_parados"],
         "scopes_resistiram": resistiram,
+        # O boot da frota espera o canal por até 90s. Desligar dentro dessa
+        # janela cancela o script junto — sem isso ele trancava o Ligar seguinte.
+        "boot_cancelado": result.get("boot_cancelado", False),
         "sent_at": int(time.time()),
     }
 

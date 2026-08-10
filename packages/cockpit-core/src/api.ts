@@ -385,6 +385,8 @@ export type DesligarResponse = {
    *  do plugin de uma vez. É o que `tmux kill-session` sozinho nunca alcançou. */
   scopes_parados: string[];
   scopes_resistiram: string[];
+  /** `true` quando o desligar pegou um boot ainda em curso e o cancelou. */
+  boot_cancelado: boolean;
   sent_at: number;
 };
 

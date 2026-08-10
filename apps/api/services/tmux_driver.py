@@ -1713,6 +1713,39 @@ def _stop_scope(scope: str) -> bool:
     return parado.returncode == 0
 
 
+#: Nome de sessão vem do `agents.yaml`, mas ele vira argumento de processo e de
+#: nome de unit — casar o formato mantém as duas fronteiras estreitas.
+_SESSION_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+#: Unit transiente que carrega o script de boot de um agente. O nome sai da
+#: sessão de propósito: é por ele que o desligar acha um boot em curso.
+_BOOT_UNIT_PREFIX = "cockpit-ligar-"
+
+
+def _stop_boot_unit(session_name: str) -> bool:
+    """Cancela o boot em curso do agente. Diz se havia o que cancelar.
+
+    O script de boot espera o canal carregar por até 90s. Desligar o agente
+    dentro dessa janela deixava a unit viva, esperando um pane que não vai mais
+    aparecer — e o systemd RECUSAVA o Ligar seguinte por nome já registrado. Na
+    tela: botão certo, clique, nada. O Rica bateu nisso em 10/08 fazendo
+    ligar → desligar → ligar em meio minuto.
+    """
+    if not _SESSION_NAME_PATTERN.fullmatch(session_name):
+        return False
+    try:
+        parado = subprocess.run(
+            ["systemctl", "--user", "stop", f"{_BOOT_UNIT_PREFIX}{session_name}.service"],
+            capture_output=True,
+            text=True,
+            timeout=_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    # Unit ausente sai com código != 0 ("not loaded"), que é o caso normal: quem
+    # desliga um agente parado não tem boot nenhum a cancelar.
+    return parado.returncode == 0
+
+
 def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
     """Desliga o agente: para a cerca dele e só então encerra a sessão tmux.
 
@@ -1723,9 +1756,18 @@ def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
     Varre TODAS as windows, não só a ativa: o relaunch cria window nova, e uma
     antiga que resistiu ao `kill-window` ainda segura processo do agente.
     """
+    # Primeiro passo, e antes de checar sessão: boot em curso é consumo do
+    # agente e morre junto. Sem sessão é justamente quando a unit sobra.
+    boot_cancelado = _stop_boot_unit(session_name)
+
     server = _server_for(session_name)
     if not server.has_session(session_name):
-        return {"attempted": False, "sessao_encerrada": False, "scopes_parados": []}
+        return {
+            "attempted": False,
+            "sessao_encerrada": False,
+            "scopes_parados": [],
+            "boot_cancelado": boot_cancelado,
+        }
 
     scopes: set[str] = set()
     try:
@@ -1748,6 +1790,7 @@ def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
         "sessao_encerrada": encerrada,
         "scopes_parados": sorted(parados),
         "scopes_resistiram": sorted(scopes - parados),
+        "boot_cancelado": boot_cancelado,
     }
 
 
@@ -1768,9 +1811,6 @@ async def shutdown_agent(session_name: str) -> dict[str, object]:
 #: vivo pra copiar, e duplicar a tabela aqui em Python garantiria divergência no
 #: dia em que o Rica trocar o canal de alguém.
 _SUBIR_FROTA = Path("/home/clawd/repos/ze_claude/ze-shared/scripts/subir-frota.sh")
-#: Nome de sessão vem do `agents.yaml`, mas ele vira argumento de processo e de
-#: nome de unit — casar o formato mantém as duas fronteiras estreitas.
-_SESSION_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 #: Quanto o Ligar espera o CLI aparecer antes de devolver sem confirmação. A
 #: sessão tmux nasce em ~1s; o `claude` leva mais, e é ELE que prova que ligou.
 #: O script segue esperando canal e `/rename` por conta própria depois disso.
@@ -1798,8 +1838,8 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
     # `systemd-run` em vez de `Popen`: o script leva minutos esperando o canal
     # carregar, e como filho da API ele morreria junto num restart do uvicorn,
     # deixando o boot pela metade. A unit nomeada também dá o trava-duplo de
-    # graça — o segundo clique falha com "unit already exists" em vez de subir
-    # duas sessões. `--collect` remove a unit ao terminar, sem deixar rastro.
+    # graça — dois cliques na mesma batida não sobem duas sessões, o segundo é
+    # recusado. `--collect` remove a unit ao terminar, sem deixar rastro.
     try:
         lancado = subprocess.run(
             [
@@ -1819,7 +1859,11 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
         raise ValueError(f"não consegui disparar o boot: {exc}") from exc
     if lancado.returncode != 0:
         erro = (lancado.stderr or "").strip()
-        if "already exists" in erro:
+        # Duas frases pro mesmo estado, e o systemd escolhe qual usar: "already
+        # exists" com a unit rodando, "was already loaded or has a fragment
+        # file" com ela só registrada. Casar só a primeira vazava o texto cru do
+        # systemd pra tela do Rica.
+        if "already exists" in erro or "already loaded" in erro:
             raise TmuxSessionBusyError(f"boot de {session_name} já está em curso")
         raise ValueError(f"o boot foi recusado: {erro or 'erro desconhecido'}")
 
