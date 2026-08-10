@@ -15,39 +15,59 @@ import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
 
-/** Linha do painel. Rótulo em sans (voz do produto), valor em mono (voz da
- *  máquina) — a divisão do contrato §4 aplicada no menor lugar possível. */
-function Campo({ rotulo, valor }: { rotulo: string; valor: string | null }) {
-  if (!valor) return null;
+/**
+ * O TÍTULO DA GAVETA — o caminho do workspace do agente, no formato que o Rica
+ * escreveu: `Workspace - /home/clawd/repos/grupo_borges`. Ele subiu para cá em
+ * 09/08, ocupando o lugar da overline "Comandos", quando os quatro campos da
+ * ficha saíram ("já já temos eles" — modelo na statusline, sessão no chrome).
+ *
+ * **Trunca pelo COMEÇO**, ordem dele: o fim do caminho é o que identifica o
+ * repositório. Não é `.truncate` (que corta o fim) — é `direction: rtl` no
+ * contêiner, que joga transbordo e reticências para a esquerda.
+ *
+ * O `<bdi>` não é decoração: com `rtl` sozinho o algoritmo bidirecional trata a
+ * `/` inicial como neutra e a manda para o fim — `/home/clawd/repos` sai
+ * desenhado `home/clawd/repos/` (medido em 09/08, os três candidatos lado a
+ * lado no browser). O `unicode-bidi: plaintext` resolve a direção pelo primeiro
+ * caractere forte, o `h` latino, e o caminho volta a correr da esquerda para a
+ * direita dentro de um contêiner que transborda pela esquerda.
+ *
+ * O DOM guarda o caminho inteiro — o corte é só visual, então leitor de tela e
+ * cópia pegam tudo, e o `title` cobre o ponteiro no desktop.
+ */
+function TituloWorkspace({ caminho }: { caminho: string | null }) {
+  if (!caminho) return null;
   return (
-    <div className="flex flex-col" style={{ gap: '2px' }}>
+    <div
+      className="flex min-w-0 items-baseline"
+      style={{ gap: 'var(--ck-space-2)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
+      title={caminho}
+    >
       <span
-        style={{
-          fontSize: 'var(--ck-text-xs)',
-          textTransform: 'uppercase',
-          letterSpacing: 'var(--ck-track-overline)',
-          color: 'var(--ck-text-secondary)',
-        }}
+        className="shrink-0"
+        style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}
       >
-        {rotulo}
+        Workspace -
       </span>
       <span
-        className="truncate"
+        className="min-w-0 overflow-hidden"
         style={{
+          direction: 'rtl',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
           fontFamily: 'var(--ck-font-mono)',
           fontSize: 'var(--ck-text-sm)',
           color: 'var(--ck-text-primary)',
         }}
-        title={valor}
       >
-        {valor}
+        <bdi style={{ unicodeBidi: 'plaintext' }}>{caminho}</bdi>
       </span>
     </div>
   );
 }
 
-/** Rótulo de seção — a mesma overline dos `Campo` e do cabeçalho, em um lugar
- *  só para a gaveta nova (09/08). */
+/** Rótulo de seção — a mesma overline do cabeçalho, em um lugar só para a
+ *  gaveta nova (09/08). */
 function Rotulo({ children }: { children: string }) {
   return (
     <span
@@ -64,31 +84,40 @@ function Rotulo({ children }: { children: string }) {
   );
 }
 
-/** A GAVETA — reescrita em 09/08 pelo que o Rica cravou, e não mais para
- *  texto corrido:
+/** A GAVETA — a segunda passada de 09/08, com o Rica revendo item por item o
+ *  que a primeira tinha entregue. Quase tudo que eu ia ARRUMAR ele mandou
+ *  TIRAR, e o resultado é uma gaveta que perdeu quase metade da altura:
  *
- *  - **Comandos** em primeiro lugar (a gaveta "é essencialmente para
- *    comandos"): as ações rápidas, que ele chama de "ideia central do
- *    painel", e o slot da lista de comandos que ele vai passar depois
- *    ("te passo depois os comandos que temos que usar no painel de fato").
- *    Nada é inventado aqui — o slot está pronto para a lista entrar sem
- *    redesenho, e sem comando falso ocupando o lugar.
- *  - **Statusline** no centro — o "lugar central para statusline e contexto":
- *    modelo · sessão · contexto numa linha só, com a barra ocupando o campo
- *    inteiro. O teto de 30% continua sendo a cor (nada é desenhado por cima),
- *    e a observação sai no `title` da barra.
- *  - **Ficha** — os quatro campos que ele listou: modelo / executor / sessão
- *    tmux / workspace. Caiu o Papel e caiu a frase do contexto ("42% · teto
- *    30% · dados antigos · lido 3h"), que era o texto corrido reprovado.
- *  - **MCPs** na base — a porta para a tela do Vinicius (15ccf76), que até
- *    aqui existia commitada sem consumidor.
+ *  - **O título é o workspace** (`TituloWorkspace` acima), no lugar exato onde
+ *    estava a overline "Comandos".
+ *  - **Permissões** e os três botões — o que restou das ações rápidas. **O
+ *    esforço saiu**: *"já temos ele no input"*, e o input é o composer. Ver o
+ *    cabeçalho do `bloco-de-acoes.tsx`.
+ *  - **Cota usada**, irmã das ações e não parte delas (leitura, não comando).
+ *  - **Statusline** — modelo · sessão · contexto numa linha só, a barra
+ *    ocupando o campo inteiro. Com a ficha fora, ela é a ÚNICA fonte do modelo
+ *    na gaveta; foi por isso que o fallback dela deixou de ser o valor cru do
+ *    banco (ver o `statusline.tsx`). O teto de 30% continua sendo a cor — nada
+ *    é desenhado por cima da barra.
+ *  - **MCPs** na base — a porta para a tela do Vinicius (15ccf76).
+ *
+ *  O QUE SAIU, e por ordem dele: os quatro campos da ficha (*"já já temos
+ *  eles"* — modelo na statusline, sessão no chrome, e o workspace subiu pro
+ *  título); o slot "Comandos do painel", placeholder e tudo (*"quando ele
+ *  passar a lista, a gente cria de novo"* — reservar espaço para uma lista que
+ *  não existe é ocupar tela com promessa); e o rótulo "Detalhes", que virou
+ *  "Painel". A URL `?painel=detalhes` NÃO mudou junto, de propósito: ela é
+ *  deep-link publicado, e renomear valor de parâmetro por causa de rótulo
+ *  visível quebra link que já circulou.
  *
  *  O `flex-auto` (base no conteúdo) NÃO o `flex-1` (base 0) continua sendo a
  *  régua da gaveta: o pai (`.ck-flutua`) tem altura vinda do CONTEÚDO, e item
  *  com base 0 contribui 0 pro tamanho intrínseco do pai no WebKit — era a
- *  gaveta com 0px de altura no iPhone do Rica (02/08). O `min-h-0` deixa o
- *  item encolher quando o `max-height` do pai morde, que é o que faz a área de
- *  baixo rolar em vez de estourar. */
+ *  gaveta com 0px de altura no iPhone do Rica (02/08). Quem carrega o
+ *  `flex-auto` agora é o miolo (comandos + cota): a ficha era a área que
+ *  rolava, e sem ela a gaveta ficaria sem NENHUM item elástico — no iPhone
+ *  deitado, com o `max-height` mordendo, o conteúdo seria cortado sem rolagem
+ *  em vez de rolar. O `min-h-0` é o que deixa esse item encolher. */
 function Painel({
   agente,
   fecharHref,
@@ -118,7 +147,7 @@ function Painel({
           borderColor: 'var(--ck-edge-light)',
         }}
       >
-        <Rotulo>Detalhes</Rotulo>
+        <Rotulo>Painel</Rotulo>
         {/* Fechar é navegar — e desde 30/07 também é otimista: o
             `LinkFechaPainel` vira o painel no mesmo frame e a URL alcança
             atrás; sem JS é o Link de sempre. */}
@@ -139,34 +168,19 @@ function Painel({
         </LinkFechaPainel>
       </div>
 
-      {/* AS AÇÕES RÁPIDAS (§17) — no topo, e FORA da área que rola. O Rica as
-          chama de "ideia central do painel", e desde que a gaveta passou a
-          ancorar no topo e crescer pra baixo, ficar aqui significa ficar
-          sempre à vista: cresça o conteúdo quanto crescer, quem rola são os
-          campos de referência, não os controles. */}
-      <section aria-label="Comandos" className="flex shrink-0 flex-col">
-        <div style={{ padding: 'var(--ck-space-3) var(--ck-space-4)' }}>
-          <Rotulo>Comandos</Rotulo>
-        </div>
-        <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
+      {/* O TÍTULO — o workspace, no lugar da overline "Comandos" (09/08). */}
+      <div className="shrink-0">
+        <TituloWorkspace caminho={agente.workspace_path} />
+      </div>
 
-        {/* O SLOT DA LISTA DE COMANDOS DO PAINEL — 09/08. O Rica passa a lista
-            depois; aqui entra sem redesenho. Vazio de propósito: inventar um
-            comando que ele não pediu seria a mentira de UI da §9. */}
-        <div
-          className="flex flex-col"
-          style={{
-            gap: 'var(--ck-space-2)',
-            padding: 'var(--ck-space-3) var(--ck-space-4)',
-            borderBottom: '1px solid var(--ck-edge-light)',
-          }}
-        >
-          <Rotulo>Comandos do painel</Rotulo>
-          <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
-            a lista de comandos do painel ainda não chegou
-          </p>
-        </div>
-      </section>
+      {/* OS COMANDOS E A COTA — o miolo, e o único item elástico da gaveta.
+          Ele não rola no tamanho de hoje (o conteúdo cabe de sobra desde que o
+          esforço e a ficha saíram); é a rede para o iPhone deitado, onde o
+          `max-height` do `.ck-flutua` morde antes do conteúdo terminar. Sem
+          nenhum `flex-auto` na coluna, ali o fim seria cortado em silêncio. */}
+      <div className="flex min-h-0 flex-auto flex-col overflow-y-auto">
+        <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
+      </div>
 
       {/* STATUSLINE — o lugar central que o Rica pediu (09/08): telemetria
           viva (modelo · sessão · contexto) numa linha só. A barra ocupa o
@@ -175,7 +189,7 @@ function Painel({
           "passou de 30% muda de cor"). */}
       <section
         aria-label="status do agente"
-        className="flex shrink-0 flex-col border-b"
+        className="flex shrink-0 flex-col border-t"
         style={{
           gap: 'var(--ck-space-2)',
           padding: 'var(--ck-space-4)',
@@ -184,21 +198,6 @@ function Painel({
       >
         <Statusline agente={agente} agora={agora} larguraDaBarra={null} />
       </section>
-
-      {/* A FICHA — os quatro campos que o Rica cravou. Rola por dentro; os
-          controles e o status ficam fixos (a ordem da §17). O contexto não
-          tem campo próprio aqui: ele mora na statusline, que é o lugar central
-          — e a frase "· teto 30% · dados antigos · lido 3h" foi retirada a
-          pedido dele. */}
-      <div
-        className="flex min-h-0 flex-auto flex-col overflow-y-auto"
-        style={{ gap: 'var(--ck-space-4)', padding: 'var(--ck-space-4)' }}
-      >
-        <Campo rotulo="Modelo" valor={agente.state_model ?? agente.model_default} />
-        <Campo rotulo="Executor" valor={agente.state_cli ?? agente.cli_default} />
-        <Campo rotulo="Sessão tmux" valor={agente.tmux_session} />
-        <Campo rotulo="Workspace" valor={agente.workspace_path} />
-      </div>
 
       {/* ENTRADA DA TELA DE MCPs — a tela do Vinicius (15ccf76) estava
           commitada e órfã; esta linha é a porta. Link de verdade (rota, não

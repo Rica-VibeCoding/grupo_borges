@@ -20,7 +20,6 @@ import {
   formatDuration,
   parseModelFromPane,
   resolveContextPct,
-  shortModelName,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { formatCompactNumber, formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
 import {
@@ -29,6 +28,7 @@ import {
   LARGURA_NA_LISTA,
 } from './barra-de-contexto';
 import { TETO_PCT } from './medidor';
+import { rotulaModelo } from './motor';
 
 export function Statusline({
   agente,
@@ -55,9 +55,21 @@ export function Statusline({
   // O pane é a fonte VIVA: `parseModelFromPane` lê o que está rodando agora,
   // `state_model` é a última intenção salva e pode estar pendente. Mesma
   // precedência do cockpit antigo — o card reflete execução, não seleção.
+  //
+  // O FALLBACK usa `rotulaModelo`, não `shortModelName` — 09/08. A leitura do
+  // pane é INTERMITENTE (medido no `/api/fleet`: o mesmo agente alterna entre
+  // trazer e não trazer a linha da statusline do CC), e quando ela falha cai
+  // aqui. `shortModelName` só conhece os IDs longos (`claude-opus-5`), mas o
+  // `state_model` que o seletor grava é o ALIAS CURTO (`opus`) — o fallback
+  // devolvia o valor cru do banco, e o Rica via "Opus 5" virar "opus" sozinho.
+  // `rotulaModelo` já resolvia o alias para o composer (e cobre Kimi, que a
+  // tabela canônica não tem), delegando o resto ao mesmo `shortModelName`. Ele
+  // NÃO inventa a versão: `opus` vira "Opus", sem número, porque dizer "Opus 5"
+  // com a sessão em 4.8 seria mentira de UI. Com a ficha fora da gaveta (mesma
+  // data), esta linha é a única fonte do modelo lá dentro.
   const modelo =
     (ehCodex ? null : parseModelFromPane(agente.pane_excerpt)) ??
-    shortModelName(agente.state_model ?? agente.model_default);
+    rotulaModelo(agente.state_model ?? agente.model_default);
   const pct = resolveContextPct(agente);
   const tokens = ehCodex ? agente.codex_tokens_used : null;
   // Número que o back mediu antes desta sessão (ou parado há muito) continua na

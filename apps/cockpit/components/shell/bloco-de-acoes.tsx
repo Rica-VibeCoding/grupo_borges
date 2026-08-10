@@ -6,11 +6,13 @@
  * O Rica as chama de *"ideia central do painel"*, e as quatro decisões de forma
  * são dele, respondidas nesta rodada:
  *
- * 1. **O esforço entra aqui TAMBÉM**, mesmo já existindo no composer. A
- *    divergência que isso criaria (duas telas mostrando o mesmo valor, cada uma
- *    tendo buscado `/painel` uma vez) se resolve pelo `aberto`: toda abertura
- *    do painel re-busca. Custa uma chamada por abertura e nunca mostra valor
- *    velho — que é o defeito real, não a duplicação.
+ * 1. ~~**O esforço entra aqui TAMBÉM**, mesmo já existindo no composer.~~
+ *    **REVOGADO por ele em 09/08**, revendo a gaveta item por item: *"já temos
+ *    ele no input"*. O seletor de esforço mora no composer (`seletor-motor.tsx`)
+ *    e ter os dois era duplicata — a re-busca por abertura que resolvia a
+ *    divergência entre as duas telas deixou de ter duas telas para conciliar.
+ *    Ela continua valendo para o que ficou (permissão e sandbox), que é lido do
+ *    mesmo `/painel`.
  * 2. **Segmentado**, não `select`: um toque = uma troca, sem menu no meio.
  * 3. **No topo**, antes dos seis campos de detalhe. Casa com o `.ck-flutua`
  *    ancorado no topo (a borda de cima nunca se move): as ações ficam à vista
@@ -40,7 +42,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchAgentPainel,
   patchAgentCodexSandbox,
-  patchAgentEffort,
   patchAgentPermissionMode,
   postAgentDestrava,
   postAgentRelaunch,
@@ -84,13 +85,12 @@ import { usePainelAberto } from './superficie-otimista';
 const CONFIRMA_COMPACT_MS = 4_000;
 
 
-/** As seis chamadas que este bloco faz, contra o agente de verdade. Já foram
+/** As chamadas que este bloco faz, contra o agente de verdade. Já foram
  *  injetáveis por prop para a vitrine `/acoes` exercitar falha e demora sem
  *  back; a vitrine morreu em 02/08 e a injeção foi junto — o painel fala com o
  *  agente e ponto. */
 const REDE = {
   lePainel: fetchAgentPainel,
-  gravaEsforco: patchAgentEffort,
   gravaPermissao: patchAgentPermissionMode,
   gravaSandbox: patchAgentCodexSandbox,
   destrava: postAgentDestrava,
@@ -364,7 +364,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   function aplicaLocal(id: AcaoId, valor: string) {
     setPainel((atual) => {
       if (!atual) return atual;
-      if (id === 'esforco') return { ...atual, effort: { ...atual.effort, value: valor } };
       if (id === 'permissao') {
         return { ...atual, permission: { ...atual.permission, mode: valor as PainelPermissionMode } };
       }
@@ -386,8 +385,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
 
     try {
       const rede = REDE;
-      if (controle.id === 'esforco') await rede.gravaEsforco(agentSlug, valor);
-      else if (controle.id === 'permissao') {
+      if (controle.id === 'permissao') {
         await rede.gravaPermissao(agentSlug, valor as PainelPermissionMode);
       } else await rede.gravaSandbox(agentSlug, valor as PainelCodexSandbox);
     } catch (erro) {
@@ -484,10 +482,16 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           />
         ) : null}
 
-        {carga === 'carregando' && controles.length === 0 ? (
-          // Altura reservada: sem isto os seis campos sobem e descem quando os
-          // controles chegam, e o painel pisca a cada abertura.
-          <div aria-hidden style={{ height: '96px' }} />
+        {carga !== 'pronto' && carga !== 'indisponivel' && controles.length === 0 ? (
+          // Altura do que vem: segmentado (overline 16 + gap 8 + trilho 50) +
+          // linha de botões (gap 16 + 44). Medido no iPhone em 09/08, e as duas
+          // metades estavam erradas: 96px era MENOS que o conteúdo, e a condição
+          // era `carga === 'carregando'`, que só vale depois de a busca sair —
+          // nos ~2s de `ocioso` entre hidratação e fetch não havia reserva
+          // nenhuma. A gaveta abria em 244px e parava em 486, levando o **MCPs**
+          // (alvo de toque, logo abaixo) 240px pra baixo com o dedo no ar.
+          // `indisponivel` fica de fora: lá quem ocupa a altura é o `Recado`.
+          <div aria-hidden style={{ height: '134px' }} />
         ) : null}
 
         {controles.map((controle) => (
@@ -651,10 +655,14 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
  * O ativo perde o `.ck-veil` por obrigação, não por escolha: véu de interação
  * sobre `raised` derruba a borda funcional para 2.98:1 (proibição §9.11).
  *
- * O rótulo longo (`extra alto`) quebra em duas linhas em vez de encolher a
- * fonte ou truncar: com 380px de painel e cinco níveis, cada segmento tem ~69px
- * e é o único jeito de mostrar a palavra inteira sem inventar uma abreviação
- * que divergiria da tradução do `motor.ts`.
+ * A nota sobre o rótulo `extra alto` quebrando em duas linhas morreu com o
+ * esforço — e a premissa dela ("cinco níveis, ~69px") já tinha caducado antes:
+ * a sexta opção derrubou o segmento para 54px no iPhone, e aí "extra alto"
+ * empurrava a altura do trilho enquanto "máximo" encostava em "automático".
+ * Sobraram permissão (3 rótulos, 4 em `acceptEdits`) e sandbox (3): 111px por
+ * segmento, palavra inteira numa linha. **Segmentado horizontal com rótulo
+ * longo em pt-BR não escala além de quatro** — um quinto degrau pede outra
+ * forma, não mais uma coluna.
  */
 function Segmentado({
   controle,

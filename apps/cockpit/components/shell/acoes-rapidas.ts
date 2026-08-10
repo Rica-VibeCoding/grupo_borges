@@ -3,26 +3,31 @@
  *
  * O §17 do contrato de estética deixou esta metade em aberto e chamou pelo
  * nome: o Rica trata as ações como *"ideia central do painel"*. O back já
- * expõe as quatro rotas (`patchAgentEffort`, `patchAgentPermissionMode`,
- * `postAgentDestrava`, `patchAgentCodexSandbox`); o que faltava era a camada
+ * expõe as rotas (`patchAgentPermissionMode`, `postAgentDestrava`,
+ * `patchAgentCodexSandbox`, `postAgentRelaunch`); o que faltava era a camada
  * de cliente — estado, tradução e falha.
  *
  * TRÊS COISAS QUE ESTE MÓDULO DECIDE, e nenhuma cabe em JSX:
  *
- * 1. **Os quatro controles NUNCA aparecem juntos.** `sandbox` só existe em
- *    agente Codex (o back responde 400 `not_a_codex_agent` fora disso) e
- *    `permission-mode` escreve o settings do Claude Code, que não governa a
- *    Tara. Na prática são TRÊS por agente: esforço + permissão + destrava no
- *    CC, esforço + sandbox + destrava no Codex. Oferecer um controle que o
- *    back vai recusar com 400 é o botão morto da §9 com outra roupa.
+ * 1. **É UM controle por agente, e eles nunca aparecem juntos.** `sandbox` só
+ *    existe em agente Codex (o back responde 400 `not_a_codex_agent` fora
+ *    disso) e `permission-mode` escreve o settings do Claude Code, que não
+ *    governa a Tara. Oferecer um controle que o back vai recusar com 400 é o
+ *    botão morto da §9 com outra roupa.
+ *
+ *    **O esforço saiu daqui em 09/08**, por ordem do Rica: *"já temos ele no
+ *    input"*. Ele vive no composer (`seletor-motor.tsx`, que continua chamando
+ *    `patchAgentEffort`) e ter o mesmo seletor duas vezes na mesma tela é
+ *    duplicata, não redundância útil — a gaveta perdeu o bloco inteiro, não só
+ *    o desenho apertado que ela tinha com seis níveis.
  *
  * 2. **A ordem dos segmentos é a escada de risco, sempre crescente da esquerda
  *    para a direita** — nunca a ordem em que o back listou o `allowed`. Ler
  *    `Só planeja · Pergunta · Livre` ensina a escala de uma vez; ler a mesma
- *    lista embaralhada obriga a decorar posição. Vale igual para esforço
- *    (baixo→máximo) e sandbox (leitura→total). Valor desconhecido vai para o
- *    fim, na ordem em que veio: o back pode ganhar um degrau novo antes desta
- *    tabela, e sumir com ele seria pior do que mostrá-lo fora de escala.
+ *    lista embaralhada obriga a decorar posição. Vale igual para sandbox
+ *    (leitura→total). Valor desconhecido vai para o fim, na ordem em que veio:
+ *    o back pode ganhar um degrau novo antes desta tabela, e sumir com ele
+ *    seria pior do que mostrá-lo fora de escala.
  *
  * 3. ~~**A ressalva do back é texto na tela, não `title`.**~~ **REVOGADO pelo
  *    Rica em 30/07**, olhando o painel plugado: *"pode retirar os textos
@@ -36,9 +41,6 @@
  *    mandou tirar o texto explicativo da tela, não desligar o leitor de tela —
  *    e nada foi inventado no lugar do vazio.
  *
- * A tradução de esforço vem de `motor.ts`, importada, não copiada: duas cópias
- * da mesma tradução é como elas divergem em silêncio — a lição que o próprio
- * `motor.ts` documenta ter aprendido com `shortModelName`.
  */
 import type {
   AgentPainelResponse,
@@ -46,11 +48,7 @@ import type {
   PainelPermissionMode,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 
-// Extensão explícita: o `node --test` do `package.json` roda estes módulos sem
-// bundler e resolve como ESM. Mesma convenção do `gramatica.ts`.
-import { rotulaEsforco } from './motor.ts';
-
-export type AcaoId = 'esforco' | 'permissao' | 'sandbox';
+export type AcaoId = 'permissao' | 'sandbox';
 
 export type Opcao = {
   /** O que vai cru pro back — é o contrato do endpoint. */
@@ -119,13 +117,6 @@ const SANDBOX: Record<PainelCodexSandbox, { rotulo: string; descricao: string }>
 
 const ORDEM_SANDBOX: PainelCodexSandbox[] = ['read-only', 'workspace-write', 'danger-full-access'];
 
-const ORDEM_ESFORCO = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-/** Esforço não tem descrição própria por valor: `baixo`…`máximo` já é a escala
- *  inteira, e inventar prosa para cada degrau ("pensa um pouco mais") seria
- *  enfeite. A descrição diz o que o SELETOR faz. */
-const DESCRICAO_ESFORCO = 'Quanto o agente raciocina antes de responder.';
-
 export function rotulaPermissao(modo: string): string {
   return PERMISSAO[modo as PainelPermissionMode]?.rotulo ?? modo;
 }
@@ -157,21 +148,6 @@ export function ehCodex(painel: AgentPainelResponse): boolean {
 
 export function montaControles(painel: AgentPainelResponse): Controle[] {
   const controles: Controle[] = [];
-
-  const esforcos = pelaEscada(painel.effort?.allowed ?? [], ORDEM_ESFORCO);
-  if (esforcos.length > 0) {
-    controles.push({
-      id: 'esforco',
-      titulo: 'Esforço',
-      valor: painel.effort.value ?? null,
-      ressalva: painel.effort.session_may_diverge ? RESSALVA : null,
-      opcoes: esforcos.map((valor) => ({
-        valor,
-        rotulo: rotulaEsforco(valor) ?? valor,
-        descricao: DESCRICAO_ESFORCO,
-      })),
-    });
-  }
 
   if (ehCodex(painel)) {
     // Sandbox no lugar de permissão: é a troca que o `cockpit-types.ts` já
@@ -401,7 +377,6 @@ export type Impedimento = {
 };
 
 const NOME_DA_ACAO: Record<AcaoId, string> = {
-  esforco: 'o esforço',
   permissao: 'a permissão',
   sandbox: 'o sandbox',
 };
@@ -435,12 +410,12 @@ export function diagnosticaAcao(erro: unknown, id: AcaoId): Impedimento {
       saida: 'sandbox só existe na Tara — recarregue o painel para ver os controles certos',
     };
   }
-  if (texto.includes('not_allowed')) {
-    return {
-      resumo: `o back recusou esse nível para este motor`,
-      saida: 'cada família tem a escala dela — recarregue o painel para pegar a lista atual',
-    };
-  }
+  // O ramo `not_allowed` saiu com o esforço (09/08). Ele traduzia
+  // `codex_effort_not_allowed`/`kimi_effort_not_allowed`, e esses são os DOIS
+  // únicos `not_allowed` que o back devolve para as rotas deste bloco
+  // (`agents.py:476` e `:491`, conferido) — sem o segmentado de esforço aqui,
+  // nenhuma chamada daqui consegue mais provocá-lo. Quem recusa nível hoje é o
+  // composer, que tem tradução própria em `motor.ts`.
   if (texto.includes('404')) {
     return {
       resumo: 'o agente sumiu da frota',
