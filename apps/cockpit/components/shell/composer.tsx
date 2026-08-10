@@ -44,6 +44,7 @@ import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
 import { registraEcoPendente } from '../../lib/codex/eco-pendente';
+import { usaFrota } from './frota-provider';
 import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
@@ -140,6 +141,14 @@ export function Composer({
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
   // "enviado" mentiroso do painel antigo, só que mais bonito.
+  // Quem entrega por rollout (Codex) e quem entrega por stream (Claude Code)
+  // têm ecos com ordens de grandeza diferentes — 12 s contra milissegundos.
+  // A frota já está montada acima (o feed a lê pelo mesmo hook); ler daqui
+  // evita prop nova em `app/agente/[slug]/page.tsx`.
+  const { agents } = usaFrota();
+  const ehCodex = agents.some(
+    (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
+  );
   const envio = usaEnvio(agentSlug);
   const faseLocal = envio.estado.fase;
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
@@ -386,10 +395,11 @@ export function Composer({
     setTranscrito(null);
     setFalhaDaFala(null);
     // O feed da Tara pinta esta bolha no gesto: o texto dela só existe no
-    // rollout 12 s depois, quando o `codex exec` sobe. Registrar sempre é de
-    // propósito — quem consome é só o ramo Codex, e o do CC ignora porque o eco
-    // dele volta pelo stream em milissegundos. Ver `lib/codex/eco-pendente.ts`.
-    registraEcoPendente(agentSlug, corpo);
+    // rollout 12 s depois, quando o `codex exec` sobe. Só para Codex — no
+    // Claude Code o eco volta pelo stream em milissegundos, e uma pendência
+    // aberta ali afrouxaria o prazo de um alarme que lá é verdadeiro.
+    // Ver `lib/codex/eco-pendente.ts`.
+    if (ehCodex) registraEcoPendente(agentSlug, corpo);
     await envio.enviar(corpo);
     return true;
   }

@@ -69,6 +69,11 @@ export function lePendentes(slug: string): readonly EcoPendente[] {
   return porAgente.get(slug) ?? VAZIO;
 }
 
+/** Há entrega por rollout em curso? Quem pergunta é o prazo do composer. */
+export function temPendencia(slug: string): boolean {
+  return (porAgente.get(slug)?.length ?? 0) > 0;
+}
+
 export function assinaPendentes(slug: string, fn: () => void): () => void {
   let conjunto = ouvintes.get(slug);
   if (!conjunto) {

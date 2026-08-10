@@ -7,6 +7,8 @@ import {
   limpaEcoPendente,
   reconciliaPendentes,
   registraEcoPendente,
+  temPendencia,
+  assinaEntrega,
 } from './eco-pendente.ts';
 
 beforeEach(() => limpaEcoPendente());
@@ -95,5 +97,48 @@ describe('reconciliação — a pendência sai quando o rollout entrega', () => 
     desassina();
     registraEcoPendente('tara', 'depois de sair');
     assert.equal(avisos, 2);
+  });
+});
+
+describe('temPendencia — o prazo do composer pergunta por aqui', () => {
+  it('falso sem envio, verdadeiro com envio em curso, falso depois da entrega', () => {
+    assert.equal(temPendencia('tara'), false);
+
+    registraEcoPendente('tara', 'subindo');
+    assert.equal(temPendencia('tara'), true);
+
+    reconciliaPendentes('tara', ['subindo']);
+    assert.equal(temPendencia('tara'), false);
+  });
+
+  it('agente sem pendência não segura o alarme do vizinho', () => {
+    registraEcoPendente('tara', 'só dela');
+    assert.equal(temPendencia('daniel'), false);
+  });
+});
+
+describe('recibo de entrega — o que desfaz o âmbar', () => {
+  it('a entrega avisa com o TEXTO, que é o que a máquina casa', () => {
+    const recebidos: string[] = [];
+    assinaEntrega('tara', (t) => recebidos.push(t));
+
+    registraEcoPendente('tara', 'oi');
+    reconciliaPendentes('tara', ['oi']);
+
+    assert.deepEqual(recebidos, ['oi']);
+  });
+
+  it('pendência que só EXPIROU não vira recibo — nada provou a entrega', () => {
+    const recebidos: string[] = [];
+    assinaEntrega('tara', (t) => recebidos.push(t));
+
+    registraEcoPendente('tara', 'perdida');
+    // Envelhece à força: o prazo é de 3 min.
+    const p = lePendentes('tara')[0] as { emMs: number };
+    p.emMs = Date.now() - 200_000;
+    reconciliaPendentes('tara', ['outra coisa']);
+
+    assert.equal(lePendentes('tara').length, 0, 'saiu da lista');
+    assert.deepEqual(recebidos, [], 'mas NÃO foi anunciada como entregue');
   });
 });

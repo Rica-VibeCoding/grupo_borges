@@ -16,7 +16,11 @@ import {
   type EventoEnvio,
   type FronteiraEnvio,
 } from './envio.ts';
-import { assinaEntrega } from './codex/eco-pendente.ts';
+import { assinaEntrega, temPendencia } from './codex/eco-pendente.ts';
+
+/** Com que frequência reperguntar se o rollout já entregou. Um pouco acima do
+ *  tique do poll do feed (3 s), que é quem descobre. */
+const REEXAME_ROLLOUT_MS = 3_500;
 
 type RespostaComFronteira = AgentInputResponse & {
   event_boundary_id: number;
@@ -272,8 +276,34 @@ export function createControleEnvio(
     if (estado.fase !== 'aceito') return;
     timerPrazo = agendar(() => {
       timerPrazo = undefined;
+      // ENTREGA POR ROLLOUT ainda em curso: o prazo de 12 s foi calibrado para
+      // o eco do stream, que chega em milissegundos. No Codex a prova leva os
+      // mesmos ~12 s (o `codex exec` subindo) mais o tique do poll, então o
+      // alarme disparava sempre — e o texto dele manda o Rica reenviar, que é
+      // como se produz a duplicata que ele avisa. Enquanto a pendência existe,
+      // espera; ela mesma expira em 3 min se a mensagem nunca chegar, e aí o
+      // alarme volta a ser verdadeiro.
+      if (temPendencia(agentSlug)) {
+        armarPrazoDeRollout();
+        return;
+      }
       publicar({ tipo: 'tempo-passou', agoraMs: agora() });
     }, Math.max(0, estado.aceitoEmMs + PRAZO_ECO_MS - agora()));
+  }
+
+  /** Reexame curto enquanto o rollout não entrega — não é um prazo novo, é o
+   *  mesmo prazo perguntando de novo. */
+  function armarPrazoDeRollout(): void {
+    limparTimerPrazo();
+    if (estado.fase !== 'aceito') return;
+    timerPrazo = agendar(() => {
+      timerPrazo = undefined;
+      if (temPendencia(agentSlug)) {
+        armarPrazoDeRollout();
+        return;
+      }
+      publicar({ tipo: 'tempo-passou', agoraMs: agora() });
+    }, REEXAME_ROLLOUT_MS);
   }
 
   /**
