@@ -1861,7 +1861,21 @@ async def patch_agent_mcp(
 @router.post("/{slug}/mcp/reload", response_model=McpReloadResponse)
 async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
     agent = await _get_agent_or_404(request, slug)
-    delivered = await _send_tmux_or_409(agent["tmux_session"], "/reload-plugins")
+    session = agent["tmux_session"]
+    # `--force` não é zelo: sem ele o Claude Code RECUSA a recarga justamente
+    # quando ela mexe em servidor MCP — "This reload changes MCP tools (2 MCP
+    # servers) ... Run /reload-plugins --force to apply" — que é o único caso
+    # em que esta rota é chamada. O preço é o próximo turno reler a conversa
+    # em vez de usar o cache; sem o `--force` o botão não aplicaria nada.
+    delivered = await _send_tmux_or_409(session, "/reload-plugins --force")
+    if delivered:
+        # Enter separado, igual ao /effort e ao /model: o driver COLA o texto e
+        # não submete. Sem esta linha o `/reload-plugins` fica parado no input
+        # do agente enquanto a resposta diz `tmux_delivered=true` — o Rica
+        # clicou "Recarregar" duas vezes em 09/08 e viu os dois comandos
+        # empilhados no terminal, sem nada ter recarregado.
+        await asyncio.sleep(0.3)
+        await tmux_driver.press_enter(session)
     return McpReloadResponse(tmux_delivered=delivered)
 
 

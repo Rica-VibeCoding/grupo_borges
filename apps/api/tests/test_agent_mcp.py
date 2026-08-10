@@ -414,10 +414,21 @@ def test_patch_agent_user_returns_422(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_reload_mcp_sends_reload_plugins_to_tmux(tmp_path: Path, monkeypatch) -> None:
+    """As duas metades do envio, medidas no terminal em 09/08.
+
+    O `--force` porque o Claude Code RECUSA a recarga quando ela mexe em
+    servidor MCP, que é o único motivo desta rota existir. O Enter porque o
+    driver cola o texto e não submete — sem ele o comando fica parado no input
+    enquanto a resposta já diz `tmux_delivered=true`.
+    """
     request, _, _, _ = _build_request(tmp_path, monkeypatch)
 
-    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED) as send_message:
+    with (
+        patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED) as send_message,
+        patch("routers.agents.tmux_driver.press_enter") as press_enter,
+    ):
         response = _run(agents_router.reload_agent_mcp("daniel", request))
 
     assert response == agents_router.McpReloadResponse(tmux_delivered=True)
-    send_message.assert_called_once_with("daniel", "/reload-plugins")
+    send_message.assert_called_once_with("daniel", "/reload-plugins --force")
+    press_enter.assert_called_once_with("daniel")
