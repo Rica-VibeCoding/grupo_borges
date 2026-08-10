@@ -855,3 +855,52 @@ def test_codex_new_thread_rejeita_nao_codex(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"] == "not_a_codex_agent"
+
+
+def test_codex_messages_vazias_enquanto_nova_conversa_armada(tmp_path: Path) -> None:
+    """"Nova conversa" armada (`codex_next_fresh`) descarta a conversa atual na
+    UI: o feed devolve vazio até a próxima thread nascer — mesmo efeito do
+    /clear no CC (72e67bd/732f685). Sem o flag, o histórico da thread volta."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    db: GrupoBorgesDB = app.state.db
+    asyncio.run(db.update_agent_codex_state("tara", codex_next_fresh=1))
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/tara/codex/messages")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["thread_id"] is None
+    assert body["messages"] == []
+    assert body["hidden_count"] == 0
+
+
+def test_codex_messages_sem_flag_consultam_a_thread(tmp_path: Path) -> None:
+    """Sem nova conversa armada, o endpoint resolve a thread do cockpit (lida do
+    store) e devolve o histórico — o retorno-vazio do teste acima não pode
+    vazar para o caso normal."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    thread = SimpleNamespace(
+        thread_id="019e9077-ccf1-7ee1-b8bb-25202f1ed3e2",
+        rollout_path="",
+        cwd="/tmp/tara",
+        title="t",
+        model="gpt-5.6-terra",
+        reasoning_effort=None,
+        tokens_used=0,
+        updated_at_ms=None,
+        created_at_ms=None,
+    )
+
+    def _fake_conversation(*_a, **_k):
+        return thread, []
+
+    with patch("routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id), \
+         patch("routers.agents.codex_reader.read_latest_conversation", side_effect=_fake_conversation):
+        with TestClient(app) as client:
+            response = client.get("/api/agents/tara/codex/messages")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["thread_id"] == thread.thread_id
+    assert body["messages"] == []

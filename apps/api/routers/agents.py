@@ -3917,6 +3917,20 @@ async def get_codex_messages(
     como se fosse a do cockpit.
     """
     agent = await _require_codex_agent(request, slug)
+    # "Nova conversa" armada (`codex_next_fresh`): a conversa atual está
+    # descartada até a próxima thread nascer — mesmo efeito do /clear no CC
+    # (72e67bd/732f685). O feed limpa agora; o flag é consumido no próximo
+    # /input, que nasce thread nova.
+    if agent.get("codex_next_fresh"):
+        return CodexMessagesResponse(
+            source=codex_reader.SOURCE,
+            thread_id=None,
+            model=None,
+            tokens_used=None,
+            updated_at_ms=None,
+            messages=[],
+            hidden_count=0,
+        )
     cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
     thread_id = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
     thread, all_msgs = await asyncio.to_thread(

@@ -44,6 +44,7 @@ import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
 import { descartaEcoPendente, registraEcoPendente } from '../../lib/codex/eco-pendente';
+import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import { usaFrota } from './frota-provider';
 import { usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
@@ -105,6 +106,14 @@ const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.Reac
  *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
  *  frase. */
 const COMPACT_RE = /^\s*\/compact(?:\s|$)/;
+
+/** Comandos da TARA no composer — mesmo vocabulário do CC. `clear`/`/clear`
+ *  apaga a conversa da UI e arma uma thread nova (o botão "Nova conversa" da
+ *  gaveta faz o mesmo). Interceptado ANTES da porta: não é mensagem pro Codex,
+ *  é gesto de tela. */
+const COMANDOS_TARA: Record<string, 'nova-conversa'> = {
+  clear: 'nova-conversa',
+};
 
 // Teclado físico tem Shift previsível; teclado virtual (touch) não — o Enter dele é
 // a única tecla de "concluir campo", então usá-la pra enviar rouba a quebra de
@@ -308,6 +317,20 @@ export function Composer({
       ? gravador.impedimento ?? null
       : falhaDaFala;
 
+  /** "Clear"/"Nova conversa" da Tara: arma `codex_next_fresh` no back e zera o
+   *  feed local NA HORA (mesmo efeito do /clear do CC). Falha do POST é
+   *  silenciosa — o campo esvaziou, e o próximo turno continua a thread atual
+   *  sem drama. */
+  async function armarNovaConversaTara(): Promise<void> {
+    try {
+      const { patchAgentCodexNewThread } = await import('@grupo_borges/cockpit-core/api');
+      await patchAgentCodexNewThread(agentSlug, true);
+      publicaNovaConversa(agentSlug);
+    } catch {
+      // sem recibo — segue quieto.
+    }
+  }
+
   /**
    * `retomada` é o "Reenviar"/"Tentar de novo" da linha de estado: ali o gesto é
    * o TEXTO que ficou pendurado, e nunca o anexo — a foto na mão não é o que
@@ -315,6 +338,15 @@ export function Composer({
    * o Rica não pediu.
    */
   async function enviar(corpo: string, retomada = false): Promise<boolean> {
+    // COMANDOS DA TARA — mesmo efeito do /clear no CC. `clear`/`/clear` apaga
+    // a conversa da UI e arma uma thread nova; a próxima mensagem nasce limpa.
+    // Interceptado ANTES da porta: é gesto de tela, não texto pro Codex — a
+    // bolha otimista nem nasce.
+    if (ehCodex && COMANDOS_TARA[corpo.trim().toLowerCase().replace(/^\//, '')]) {
+      await armarNovaConversaTara();
+      setTexto('');
+      return true;
+    }
     // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
     // três `return` mudos recusavam DEPOIS de `setTexto('')` já ter rodado, e
     // em 05/08 uma mensagem do Rica morreu assim — sem requisição, sem aviso,

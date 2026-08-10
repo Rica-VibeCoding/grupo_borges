@@ -33,6 +33,10 @@ import {
   reconciliaPendentes,
   type EcoPendente,
 } from './eco-pendente.ts';
+import {
+  assinaNovaConversa,
+  leGeracaoNovaConversa,
+} from './nova-conversa.ts';
 
 const POLL_MS = 3_000;
 
@@ -61,6 +65,22 @@ export function usaConversaCodex(slug: string, ativo: boolean): ConversaCodex {
   const [brutas, setBrutas] = useState<CodexMessage[]>([]);
   const [carregou, setCarregou] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
+
+  // O "Nova conversa" (botão da gaveta ou comando `clear` no chat) zera a lista
+  // local NA HORA — mesmo efeito do /clear do CC (72e67bd/732f685). O poll
+  // seguinte confirma: com `codex_next_fresh` armado, o back devolve vazio até
+  // a thread nova nascer no próximo turno.
+  const geracaoNova = useSyncExternalStore(
+    (fn) => assinaNovaConversa(slug, fn),
+    () => leGeracaoNovaConversa(slug),
+    () => 0,
+  );
+  useEffect(() => {
+    if (geracaoNova === 0) return;
+    setBrutas([]);
+    setThreadId(null);
+    setCarregou(true);
+  }, [geracaoNova]);
 
   // Uma instância por slug: a memória de identidade do adaptador não pode
   // atravessar agentes, senão a conversa de um herda objeto do outro.

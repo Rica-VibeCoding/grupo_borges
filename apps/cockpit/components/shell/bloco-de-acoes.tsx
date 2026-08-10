@@ -50,6 +50,7 @@ import {
   postAgentLigar,
   postAgentRelaunch,
 } from '@grupo_borges/cockpit-core/api';
+import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import type {
   AgentPainelResponse,
   PainelCodexSandbox,
@@ -524,6 +525,9 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     try {
       await REDE.novaConversa(agentSlug, true);
       setNovaConversa('entregue');
+      // Zera o feed NA HORA (mesmo efeito do /clear do CC); o back devolve vazio
+      // enquanto o `codex_next_fresh` está armado.
+      publicaNovaConversa(agentSlug);
       // Relê o painel: o `codex_next_fresh` pintado depende do que o back gravou.
       buscar();
       if (reciboTimer.current) clearTimeout(reciboTimer.current);
