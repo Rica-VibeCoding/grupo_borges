@@ -121,9 +121,15 @@ const REDE = {
  * botões ao mesmo tempo — o botão inativo sempre mostra seu rótulo normal.
  *
  * `setFalha` vem de fora — o painel tem UM aviso de erro só, não um por botão.
- * `aoConcluir` também: desligar muda a `vida` do agente, e sem re-buscar o
- * painel o Rica ficaria olhando os botões do agente vivo depois de tirá-lo do
- * ar — o botão certo (Ligar) só apareceria se ele fechasse e reabrisse a gaveta.
+ * `aoConcluir` também: as duas ações mexem na `vida` do agente, e sem re-buscar
+ * o painel o Rica ficaria olhando os botões do estado anterior — o botão certo
+ * só apareceria se ele fechasse e reabrisse a gaveta.
+ *
+ * A releitura já foi PRIVILÉGIO DO DESLIGAR, e essa era metade do "cliquei e a
+ * tela não mudou" de 10/08: o Resume sobe outro processo com `--resume` — sessão
+ * nova, PID novo, contexto zerado —, e nada disso chegava à tela. Prova que
+ * fixou o defeito: `/painel` era lido 0 vez depois do relançamento (Playwright
+ * na 3009, com o `POST /relaunch` fingido).
  */
 function useAcaoBruta(
   agentSlug: string,
@@ -176,14 +182,14 @@ function useAcaoBruta(
       if (aviso) {
         setFalha(aviso);
         setEstado(null);
-        // Desligar que avisou ainda pode ter encerrado a sessão — o aviso é
-        // sobre o que resistiu, não sobre nada ter acontecido. Reler é o que
-        // impede a tela de discordar do estado real da máquina.
-        if (acao === 'desligar') aoConcluir();
+        // Ação que avisou ainda pode ter mexido na máquina — o aviso é sobre o
+        // que resistiu, não sobre nada ter acontecido. Reler é o que impede a
+        // tela de discordar do estado real.
+        aoConcluir();
         return;
       }
       setEstado({ acao, fase: 'concluido' });
-      if (acao === 'desligar') aoConcluir();
+      aoConcluir();
       timer.current = setTimeout(() => setEstado(null), RECIBO_MS);
     } catch (erro) {
       setEstado(null);
@@ -320,10 +326,10 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     [agentSlug],
   );
 
-  // Depois do `buscar` de propósito: ligar e desligar mudam a `vida` do agente,
-  // e é a re-leitura do painel que troca os botões na tela. O `signal` fica de
-  // fora — esta releitura não pertence à sessão de abertura da gaveta, ela é a
-  // consequência de uma ação que o Rica acabou de tomar.
+  // Depois do `buscar` de propósito: relançar, ligar e desligar mudam a `vida`
+  // do agente, e é a re-leitura do painel que troca os botões na tela. O
+  // `signal` fica de fora — esta releitura não pertence à sessão de abertura da
+  // gaveta, ela é a consequência de uma ação que o Rica acabou de tomar.
   const { faseDe: faseBruta, acionar: acionarBruta } = useAcaoBruta(
     agentSlug,
     aberto,
