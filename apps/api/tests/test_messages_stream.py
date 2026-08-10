@@ -1005,3 +1005,96 @@ def test_mark_stalled_keeps_native_subagent_inside_long_tool() -> None:
 
     assert stalled == []
     assert "subagent-long-tool" in jsonl_watcher._subagent_state.get("felipe", {})
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_reanchors_when_clear_opens_new_session(
+    tmp_path: Path,
+) -> None:
+    """`/clear` abre outra sessão no CC — o stream tem de segui-la.
+
+    Sem isto o gerador fica preso na sessão de quando o cliente conectou e a
+    tela do Rica congela até o F5.
+    """
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(db, session_id="sess-a", uuid="uuid-a", text="antes do clear")
+
+    real_sleep = asyncio.sleep
+    deu_clear = False
+
+    async def clear_no_meio(_: float) -> None:
+        nonlocal deu_clear
+        if not deu_clear:
+            deu_clear = True
+            _insert_jsonl(db, session_id="sess-b", uuid="uuid-b", text="/clear")
+        await real_sleep(0)
+
+    with patch("routers.agents._MESSAGES_STREAM_SESSION_SCAN_S", 0), patch(
+        "routers.agents.asyncio.sleep", new=clear_no_meio
+    ):
+        _, _, events = await _drive_stream(app, stop_after="session-reset")
+
+    assert events[-1][0] == "session-reset"
+    assert events[-1][1]["session_id"] == "sess-b"
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_entrega_a_sessao_nova_na_mesma_conexao(
+    tmp_path: Path,
+) -> None:
+    """Re-ancorar não é só avisar: o v1 não escuta `session-reset` e só
+    descongela se as mensagens novas vierem por este mesmo stream."""
+    app, db = _build_app(tmp_path)
+    id_antes = _insert_jsonl(db, session_id="sess-a", uuid="uuid-a", text="antes do clear")
+
+    real_sleep = asyncio.sleep
+    deu_clear = False
+
+    async def clear_no_meio(_: float) -> None:
+        nonlocal deu_clear
+        if not deu_clear:
+            deu_clear = True
+            _insert_jsonl(db, session_id="sess-b", uuid="uuid-b", text="depois do clear")
+        await real_sleep(0)
+
+    # `since_id` no evento anterior deixa o replay vazio — assim a primeira
+    # `message` do stream é necessariamente a que chegou DEPOIS do clear.
+    with patch("routers.agents._MESSAGES_STREAM_SESSION_SCAN_S", 0), patch(
+        "routers.agents.asyncio.sleep", new=clear_no_meio
+    ):
+        _, _, events = await _drive_stream(
+            app, since_id=id_antes, stop_after="message", max_wait_s=3.0
+        )
+
+    uuids = [payload["uuid"] for name, payload in events if name == "message"]
+    assert uuids == ["uuid-b"]
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_keeps_pinned_session_when_client_asked_for_one(
+    tmp_path: Path,
+) -> None:
+    """Cliente que pediu uma sessão quer AQUELA sessão — histórico não muda
+    debaixo de quem foi buscá-lo."""
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(db, session_id="sess-a", uuid="uuid-a", text="antes do clear")
+
+    real_sleep = asyncio.sleep
+    deu_clear = False
+
+    async def clear_no_meio(_: float) -> None:
+        nonlocal deu_clear
+        if not deu_clear:
+            deu_clear = True
+            _insert_jsonl(db, session_id="sess-b", uuid="uuid-b", text="/clear")
+        await real_sleep(0)
+
+    with patch("routers.agents._MESSAGES_STREAM_SESSION_SCAN_S", 0), patch(
+        "routers.agents._MESSAGES_STREAM_HEARTBEAT_S", 0.01
+    ), patch("routers.agents.asyncio.sleep", new=clear_no_meio):
+        _, _, events = await _drive_stream(
+            app, session_id="sess-a", stop_after="heartbeat"
+        )
+
+    assert [name for name, _ in events].count("session-reset") == 0
+    assert all(payload["uuid"] != "uuid-b" for name, payload in events if name == "message")

@@ -2177,6 +2177,10 @@ _MESSAGES_STREAM_MAX_RESULT_CHARS_DEFAULT = 0
 _MESSAGES_STREAM_POLL_S = 0.25
 _MESSAGES_STREAM_HEARTBEAT_S = 15.0
 _MESSAGES_STREAM_SUBAGENT_STALL_SCAN_S = 10.0
+# De quanto em quanto tempo perguntar se o CC trocou de sessão debaixo do
+# stream. Relógio próprio, e não o poll de 0,25 s: a pergunta só importa quando
+# a sessão que este gerador segue parou de dar sinal.
+_MESSAGES_STREAM_SESSION_SCAN_S = 2.0
 _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY = 50
 # 200 linhas (era 80) cobre respostas longas sem cortar o topo. Configurável
 # via env pro ops afinar sob carga sem deploy. `_PANE_STREAM_MAX_CHARS` foi a
@@ -2543,6 +2547,7 @@ async def stream_agent_messages(
     resolved_session_id = session_id or await db.latest_jsonl_session_id(slug)
 
     async def _message_stream() -> AsyncGenerator[dict[str, str] | ServerSentEvent, None]:
+        nonlocal resolved_session_id
         started_at = time.perf_counter()
         last_id = since_id
         last_heartbeat = time.monotonic()
@@ -2550,6 +2555,7 @@ async def stream_agent_messages(
         last_ask_user_seq = 0
         _, last_session_reset_seq = session_reset_events_since(slug, 0)
         last_stall_scan = time.monotonic()
+        last_session_scan = time.monotonic()
 
         try:
             try:
@@ -2651,6 +2657,41 @@ async def stream_agent_messages(
                         yield _sse_json("message", canonical)
 
                 now = time.monotonic()
+
+                # O `/clear` — e o boot limpo do Ligar — abrem OUTRA sessão no
+                # CC. Este gerador seguia a sessão de quando o cliente conectou,
+                # então a tela ficava na conversa morta até um F5. Trocar de
+                # fonte na MESMA conexão é o que a doc do sse-starlette
+                # recomenda para fonte que muda, e é o que salva o v1: ele não
+                # escuta `session-reset` e só descongela porque as mensagens
+                # novas passam a vir por aqui. O v2 usa o evento para zerar a
+                # lista e reabrir limpo.
+                #
+                # Só quando o poll não trouxe nada: enquanto a sessão atual fala,
+                # ela é a sessão certa, e o scan não custa nada a stream ativo.
+                # Quem pediu `sessionId` na mão está lendo histórico — aquela
+                # sessão não pode mudar debaixo dele.
+                if (
+                    session_id is None
+                    and not live_events
+                    and resolved_session_id is not None
+                    and now - last_session_scan >= _MESSAGES_STREAM_SESSION_SCAN_S
+                ):
+                    last_session_scan = now
+                    sessao_no_disco = await db.latest_jsonl_session_id(slug)
+                    if sessao_no_disco is not None and sessao_no_disco != resolved_session_id:
+                        resolved_session_id = sessao_no_disco
+                        last_id = 0
+                        yield _sse_json(
+                            "session-reset",
+                            {
+                                "slug": slug,
+                                "session_id": sessao_no_disco,
+                                "reason": "sessao-nova",
+                                "at": int(time.time()),
+                            },
+                        )
+
                 status_events, last_subagent_seq = subagent_status_events_since(
                     slug,
                     last_subagent_seq,
