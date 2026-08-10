@@ -59,6 +59,15 @@ _AUDIO_SKILL_PREFIX = (
 )
 _AUDIO_TRANSCRIPT_PREFIX = "Mensagem transcrita do áudio do Rica:"
 
+# Régua de formatação que o wrapper `tara-codex` injeta no prompt de TODO turno
+# com delegator=cockpit (`scripts/tara-codex`, bloco "régua do cockpit"). O Codex
+# grava o prompt completo como user message, então sem este corte o Rica via o
+# texto da skill inteira na bolha dele — e o `reconciliaPendentes` do front, que
+# casa por texto exato, nunca achava o que ele digitou (medido 10/08: "ola tara"
+# embutido no meio da régua, composer preso em 'aceito').
+_COCKPIT_REGUA_MARKER = "esta mensagem chegou pelo cockpit do grupo_borges"
+_COCKPIT_REGUA_SEPARATOR = "\n\n---\n\n"
+
 
 @dataclass(frozen=True)
 class CodexThread:
@@ -115,6 +124,22 @@ def _strip_audio_skill_prefix(text: str) -> str:
     if rest.startswith(_AUDIO_TRANSCRIPT_PREFIX):
         return rest[len(_AUDIO_TRANSCRIPT_PREFIX) :].lstrip()
     return rest
+
+
+def _strip_cockpit_regua(text: str) -> str:
+    """Tira a régua do cockpit de uma user message, deixando só a fala do Rica.
+
+    Conservador: sem o marcador ou sem o separador, devolve o texto intacto.
+    O marcador é o início fixo da régua (frase estável do wrapper); o separador
+    é o `\n\n---\n\n` que o wrapper injeta entre a régua e o prompt do usuário.
+    """
+    stripped = text.lstrip()
+    if not stripped.lower().startswith(_COCKPIT_REGUA_MARKER):
+        return text
+    idx = stripped.find(_COCKPIT_REGUA_SEPARATOR)
+    if idx == -1:
+        return text
+    return stripped[idx + len(_COCKPIT_REGUA_SEPARATOR) :].strip()
 
 
 # Marcador da skill de áudio: delimita o trecho que vira fala, e some do texto
@@ -225,6 +250,7 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
             if item_type == "message":
                 role_in = str(payload.get("role") or "")
                 text = _strip_audio_skill_prefix(_extract_text(payload))
+                text = _strip_cockpit_regua(text)
                 # A classificação vem ANTES da limpeza, de propósito: quem
                 # decide "isto é contexto injetado" olha os marcadores do texto
                 # cru. Limpar primeiro apagaria a prova e o lixo viraria bolha.

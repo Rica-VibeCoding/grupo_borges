@@ -341,3 +341,58 @@ def test_bolha_interna_nao_passa_pela_limpeza_e_continua_sem_texto() -> None:
     role, visible = cr.classify_message("user", "<user_instructions>\nfaz X\n")
 
     assert (role, visible) == ("internal", False)
+
+
+# --- Régua do cockpit injetada pelo wrapper `tara-codex` (10/08) -------------
+# O wrapper concatena a régua de formatação com o prompt do usuário e o Codex
+# grava o conjunto como user message. Sem o strip, o Rica via a skill inteira
+# na bolha dele e o `reconciliaPendentes` do front nunca casava o texto exato —
+# o composer ficava preso em 'aceito' e a segunda mensagem não saía da caixa.
+
+
+def test_regua_do_cockpit_sai_e_a_fala_do_rica_fica() -> None:
+    bruto = (
+        "Esta mensagem chegou pelo cockpit do grupo_borges — a resposta vai ser "
+        "LIDA NA TELA pelo Rica, quase sempre no celular. Formate assim:\n"
+        "- Aviso com peso vira alerta do GitHub: `> [!NOTE]`\n"
+        "Régua completa (ler só se precisar): /home/clawd/repos/ze_claude/ze-shared/.claude/skills/canal-cockpit/SKILL.md\n"
+        "\n---\n"
+        "\nola tara"
+    )
+
+    assert cr._strip_cockpit_regua(bruto) == "ola tara"
+
+
+def test_regua_e_removida_antes_da_classificacao() -> None:
+    """A user message do cockpit vira bolha 'user' com a FALA, não com a régua."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "r.jsonl"
+        path.write_text(
+            '{"type":"response_item","timestamp":"2026-08-10T20:00:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Esta mensagem chegou pelo cockpit do grupo_borges — Formate assim:\\n- Aviso\\nRégua completa (ler só se precisar): /home/clawd/repos/ze_claude/ze-shared/.claude/skills/canal-cockpit/SKILL.md\\n\\n---\\n\\nola tara"}]}}',
+            encoding="utf-8",
+        )
+        msgs = cr.parse_rollout(path, thread_id="r")
+
+    assert len(msgs) == 1
+    assert msgs[0].role == "user"
+    assert msgs[0].visible is True
+    assert msgs[0].text == "ola tara"
+
+
+def test_regua_mesmo_com_quebra_inicial_do_codex() -> None:
+    """O runtime do Codex às vezes prefixa a user message (ex.: catálogo de
+    plugins); sem o marcador no INÍCIO o strip não corta — conservador."""
+    bruto = "<recommended_plugins>\n- Airtable\n"
+
+    assert cr._strip_cockpit_regua(bruto) == bruto
+
+
+def test_texto_sem_regua_atravessa_intacto() -> None:
+    assert cr._strip_cockpit_regua("beleza, segue") == "beleza, segue"
+
+
+def test_regua_sem_separador_deixa_intacto() -> None:
+    bruto = "Esta mensagem chegou pelo cockpit do grupo_borges — sem separador"
+    assert cr._strip_cockpit_regua(bruto) == bruto
