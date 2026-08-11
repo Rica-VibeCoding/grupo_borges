@@ -7,7 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from db.store import GrupoBorgesDB
+from routers import codex_events as codex_events_router
 from routers.codex_events import CodexEventCreate, _codex_lifecycle, _codex_state_update
 
 
@@ -223,3 +227,64 @@ def test_fleet_snapshot_keeps_new_fields_null_for_claude_code(tmp_path: Path) ->
     assert daniel["session_started_at"] is None
     assert daniel["last_assistant_message"] is None
     assert daniel["token_usage_json"] is None
+
+
+def _build_app(tmp_path: Path) -> FastAPI:
+    db = _setup_db(tmp_path)
+    app = FastAPI()
+    app.state.db = db
+    app.state.agents_config = {"agents": [DANIEL, TARA]}
+    app.include_router(codex_events_router.router, prefix="/api/codex-events")
+    return app
+
+
+def _post(client: TestClient, delegator: str, kind: str, payload: dict | None = None) -> None:
+    body: dict = {
+        "kind": kind,
+        "delegator_agent_slug": delegator,
+        "target_agent_slug": "tara",
+    }
+    if payload is not None:
+        body["payload"] = payload
+    assert client.post("/api/codex-events", json=body).status_code == 201
+
+
+def test_run_de_outro_delegator_nao_mexe_no_painel(tmp_path: Path) -> None:
+    """Run despachado pelo Daniel não pode ocupar o card que é do Rica.
+
+    A Tara é headless por turno e o `agent_state` é único. Sem a régua de
+    delegator, o run do Daniel gravava `lifecycle_status=trabalhando` — e daí
+    `_codex_turn_in_flight` recusava a mensagem do Rica com 409 — e apontava o
+    `codex_thread_id` do painel pra thread alheia.
+    """
+    app = _build_app(tmp_path)
+    db: GrupoBorgesDB = app.state.db
+
+    with TestClient(app) as client:
+        _post(client, "cockpit", "codex.thread.started", {"thread_id": "thread-do-rica"})
+        _post(client, "cockpit", "codex.turn.completed")
+        _post(client, "daniel", "tara.exec.started", {"started_at": 1_700_000_000})
+        _post(client, "daniel", "codex.thread.started", {"thread_id": "thread-do-daniel"})
+        _post(client, "daniel", "codex.turn.started")
+
+    agent = db._get_agent("tara")
+    assert agent["codex_thread_id"] == "thread-do-rica"
+    assert agent["lifecycle_status"] == "ocioso"
+    assert agent["status_line"] != "processando turn"
+
+
+def test_evento_de_outro_delegator_continua_no_historico(tmp_path: Path) -> None:
+    """Filtrar o painel não pode cegar o histórico — o evento é legítimo."""
+    app = _build_app(tmp_path)
+    db: GrupoBorgesDB = app.state.db
+
+    with TestClient(app) as client:
+        _post(client, "daniel", "codex.turn.started")
+
+    do_daniel = [
+        evento
+        for evento in db._list_events_after(0, 50)
+        if (evento["payload"] or {}).get("delegator_agent_slug") == "daniel"
+    ]
+    assert len(do_daniel) == 1
+    assert do_daniel[0]["kind"] == "codex.turn.started"

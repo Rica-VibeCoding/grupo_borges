@@ -27,6 +27,10 @@ from util import redact_payload
 router = APIRouter()
 log = logging.getLogger(__name__)
 
+# `_spawn_tara_codex_input` dispara o wrapper com `--delegator cockpit`; é o
+# valor literal que separa "conversa do Rica" de run despachado por outro agente.
+_COCKPIT_DELEGATOR = "cockpit"
+
 CodexEventKind = Literal[
     # Lifecycle custom emitido pelo wrapper:
     "tara.exec.started",
@@ -272,24 +276,35 @@ async def receive_codex_event(payload: CodexEventCreate, request: Request) -> di
     )
 
     await db.upsert_agent_state(payload.target_agent_slug)
-    codex_state = _codex_state_update(payload)
-    if codex_state:
-        await db.update_agent_codex_state(payload.target_agent_slug, **codex_state)
-    lifecycle_status, lifecycle_detail = _codex_lifecycle(payload)
-    await db.update_agent_lifecycle(
-        payload.target_agent_slug,
-        status=lifecycle_status,
-        detail=lifecycle_detail,
-        event=payload.kind,
-    )
+    # O estado que o painel mostra é o da conversa do COCKPIT — só dela. A Tara
+    # é headless por turno e atende vários delegators (o Daniel a despacha pra
+    # refatorar enquanto o Rica fala com ela), e o `agent_state` é único: sem
+    # este filtro o run alheio gravava `lifecycle_status=trabalhando`, e
+    # `_codex_turn_in_flight` passava a recusar a mensagem do Rica com 409
+    # `codex_turn_in_flight`; o `codex_thread_id` apontava o painel pra thread
+    # do outro (medido 11/08 — thread 019ff31a do Daniel no card).
+    # O evento em si NÃO é filtrado: o histórico é legítimo e já carrega o
+    # `delegator_agent_slug` no payload. Heartbeat idem — ela está viva de fato,
+    # seja quem for que a chamou.
+    if payload.delegator_agent_slug == _COCKPIT_DELEGATOR:
+        codex_state = _codex_state_update(payload)
+        if codex_state:
+            await db.update_agent_codex_state(payload.target_agent_slug, **codex_state)
+        lifecycle_status, lifecycle_detail = _codex_lifecycle(payload)
+        await db.update_agent_lifecycle(
+            payload.target_agent_slug,
+            status=lifecycle_status,
+            detail=lifecycle_detail,
+            event=payload.kind,
+        )
+        await db.advance_task_from_lifecycle(
+            payload.target_agent_slug,
+            lifecycle_status=lifecycle_status,
+            source_event=payload.kind,
+        )
     await db.touch_agent_run_heartbeat(
         payload.target_agent_slug,
         source_kind=payload.kind,
-    )
-    await db.advance_task_from_lifecycle(
-        payload.target_agent_slug,
-        lifecycle_status=lifecycle_status,
-        source_event=payload.kind,
     )
 
     return {"received": True, "event_id": event_id}
