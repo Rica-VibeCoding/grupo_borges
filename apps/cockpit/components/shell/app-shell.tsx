@@ -51,6 +51,7 @@
  * Dono deste arquivo: frente `chrome` (docs/cockpit-v2-ownership.md §2).
  */
 import { GavetaNav, NavProvider, PainelProvider } from './superficie-otimista';
+import { SincronizaAlturaDoViewport } from './sincroniza-altura-do-viewport';
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -81,8 +82,8 @@ export function AppShell({
   const folha = palco === 'folha';
 
   return (
-    // `h-dvh` + `overflow-hidden`: a página inteira não rola: cada superfície rola
-    // por dentro. Sem isto o composer sobe junto com o feed e sai da tela.
+    // A altura sincronizada com o viewport visual + `overflow-hidden`: a página
+    // inteira não rola; cada superfície rola por dentro.
     //
     // O fundo é a cor da TROPA, não a do palco: é o que faz a faixa esquerda
     // existir sem que a tropa precise desenhar uma caixa para si.
@@ -93,9 +94,13 @@ export function AppShell({
     // contexto. Fora de rota com painel ele só não é consumido.
     <PainelProvider aberto={painelAberto}>
       <NavProvider aberto={navAberta}>
+      <SincronizaAlturaDoViewport />
       <div
-        className="relative flex h-dvh overflow-hidden"
-        style={{ background: 'var(--ck-surface-nav)' }}
+        className="relative flex overflow-hidden"
+        style={{
+          background: 'var(--ck-surface-nav)',
+          height: 'var(--ck-viewport-altura, 100dvh)',
+        }}
       >
       {/* A tropa. O véu e a faixa agora moram no `GavetaNav`, que é cliente:
           até 02/08 o `≡` era um `<Link>` seco e a tropa esperava a ida e volta

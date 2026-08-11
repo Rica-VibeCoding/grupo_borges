@@ -995,8 +995,7 @@ export function Composer({
       {/* O QUE O SERVIDOR ENTENDEU. STT erra, e o texto que subiu não passa
           pelo campo — sem isto o Rica só descobre o erro pela resposta errada
           do agente, minutos depois, sem saber que a culpa foi da transcrição. */}
-      {transcrito &&
-      (fase === 'aceito' || fase === 'confirmado' || fase === 'nao-confirmado') ? (
+      {transcrito && (fase === 'aceito' || fase === 'nao-confirmado') ? (
         <p
           className="mx-auto w-full"
           style={{
