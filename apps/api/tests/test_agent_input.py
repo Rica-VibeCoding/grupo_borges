@@ -835,6 +835,48 @@ def test_codex_stop_sem_turno_reconcilia_lifecycle_orfa(tmp_path: Path) -> None:
     assert painel["lifecycle_status"] == "ocioso"
 
 
+def test_codex_stop_limpa_status_line_de_ocupado(tmp_path: Path) -> None:
+    """Parar o turno destrava o `/input` seguinte — não só o lifecycle.
+
+    `_codex_turn_in_flight` tem duas réguas em OU. O stop consertava só o
+    lifecycle e deixava o `status_line` congelado em `rodando: <comando>`, o
+    último que a Tara executou antes do botão; daí todo `/input` levava 409 e o
+    botão trancava o que veio destravar (Tara, 11/08).
+    """
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_codex_state(
+        "tara", status_line='rodando: /bin/bash -lc "codex --help"'
+    )
+    proc = _FakeCodexProc(pid=7777)
+    agents_router._CODEX_RUN_PROCS["tara"] = proc
+    with patch("routers.agents.os.killpg"), \
+         patch("routers.agents.os.getpgid", return_value=7777):
+        with TestClient(app) as client:
+            assert client.post("/api/agents/tara/codex-stop").status_code == 200
+            # A régua que interessa: a próxima mensagem entra.
+            with patch("routers.agents.codex_reader.find_latest_thread"), \
+                 patch("routers.agents.subprocess.Popen"):
+                depois = client.post(
+                    "/api/agents/tara/input",
+                    json={"text": "continua", "idempotency_key": "k-stop"},
+                )
+
+    assert asyncio.run(app.state.db.get_agent("tara"))["status_line"] is None
+    assert depois.status_code != 409
+
+
+def test_codex_stop_preserva_status_line_que_nao_e_ocupado(tmp_path: Path) -> None:
+    """A última fala da Tara é vitrine do painel — o stop não pode apagá-la."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_codex_state("tara", status_line="validei a skill")
+    with patch("routers.agents.os.killpg"):
+        with TestClient(app) as client:
+            assert client.post("/api/agents/tara/codex-stop").status_code == 200
+
+    painel = asyncio.run(app.state.db.get_agent("tara"))
+    assert painel["status_line"] == "validei a skill"
+
+
 def test_codex_new_thread_arma_fresh_sem_telecodex(tmp_path: Path) -> None:
     """'Nova conversa' (opção A) arma `codex_next_fresh` — sem depender do daemon
     telecodex, que só controla a sessão interativa do tmux."""

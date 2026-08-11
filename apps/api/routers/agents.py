@@ -2231,6 +2231,24 @@ def _codex_turn_in_flight(agent: dict[str, Any]) -> bool:
     return any(status_line.startswith(marker) for marker in _CODEX_BUSY_STATUS_LINES)
 
 
+async def _clear_codex_busy_status_line(
+    db: GrupoBorgesDB, agent: dict[str, Any]
+) -> None:
+    """Zera o `status_line` quando ele ainda marca ocupado.
+
+    Ele é a SEGUNDA régua de `_codex_turn_in_flight`, e no fluxo normal quem o
+    limpa é a mensagem final do agente, que o sobrescreve com o próprio texto.
+    Turno interrompido não tem mensagem final: sem esta limpeza o campo fica
+    congelado em `rodando: <comando>` e todo `/input` seguinte leva 409 — o
+    botão "Parar turno" passa a trancar justamente o que veio destravar
+    (Tara, 11/08). Status que não marca ocupado é preservado: é a última fala
+    dela na vitrine do painel.
+    """
+    status_line = str(agent.get("status_line") or "").strip().lower()
+    if any(status_line.startswith(marker) for marker in _CODEX_BUSY_STATUS_LINES):
+        await db.update_agent_codex_state(agent["slug"], status_line=None)
+
+
 def _tara_codex_script_path() -> str:
     return str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex")
 
@@ -2335,8 +2353,10 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
     `codex exec` filho junto; sem isto, um `kill` no pai deixaria o run
     escrevendo no rollout sem dono.
 
-    Idempotente: sem turno em voo, só reconcilia o lifecycle — um `trabalhando`
-    órfão (wrapper que morreu sem `tara.exec.completed`) volta a `ocioso`.
+    Idempotente: sem turno em voo, só reconcilia o estado — um `trabalhando`
+    órfão (wrapper que morreu sem `tara.exec.completed`) volta a `ocioso`, e o
+    `status_line` de ocupado é zerado. Repetir o botão numa Tara já trancada
+    por um stop anterior é o caminho que a destrava.
     """
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
@@ -2351,6 +2371,7 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
                 detail="turno interrompido",
                 event="codex.turn.stopped",
             )
+        await _clear_codex_busy_status_line(db, agent)
         return {"stopped": False, "reason": "no_turn_in_flight"}
 
     try:
@@ -2371,6 +2392,7 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
         detail="turno interrompido",
         event="codex.turn.stopped",
     )
+    await _clear_codex_busy_status_line(db, agent)
     return {"stopped": True}
 
 
