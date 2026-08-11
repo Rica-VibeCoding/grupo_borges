@@ -78,15 +78,26 @@
  * 11. O PERCENTUAL É INTEIRO. Só a Tara vinha com casa decimal (`14.5%`) e ela
  *    sozinha quebrava a coluna tabular. Detalhe em `ValorDoContexto`.
  *
+ * QUINTA VERSÃO (11/08) — A POSIÇÃO PARA DE CARREGAR O ESTADO. Ordem do Rica:
+ * a coluna dançava — cada flip trabalhando↔ocioso movia a linha de seção, e a
+ * seção que esvaziava sumia junto com o título, empurrando todo mundo abaixo.
+ * Ele reprovou a experiência, e a correção saiu da boca dele: SÓ COMPORTAMENTO.
+ * Nada de chip, nada de componente novo, nada de pixel redesenhado. As seções
+ * morrem e a lista vira UMA ordem estável por nome (`ordenaTropa` em
+ * `lib/ordena-tropa.ts`); a palavra do estado sai da tela junto com os títulos —
+ * o ponto do retrato fica. Só `aguardando` continua subindo: é o único estado
+ * que chama o Rica (decisão 2). O visual de cada linha fica intocado — quem
+ * dorme continua linha rasa, porque isso é decisão POR LINHA, não por seção.
+ *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
 import Link from 'next/link';
 import type {
   Agent,
-  AgentStatus,
   SparklineBucket,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
+import { ordenaTropa } from '@/lib/ordena-tropa';
 import {
   BarraDeContexto,
   LARGURA_NA_LISTA,
@@ -394,46 +405,6 @@ function LinhaDormindo({
   );
 }
 
-/**
- * Título de seção. GRUDA no topo enquanto a seção rola.
- *
- * Não é efeito: com o chip fora da linha, é este título que carrega a palavra
- * do estado, e uma palavra que sai da tela deixa de carregar coisa alguma. Ele
- * fica onde o olho já está.
- *
- * As margens negativas existem porque o `<nav>` tem respiro lateral de 8px: sem
- * elas o fundo do título pararia antes da borda da coluna e as linhas passariam
- * por baixo pelas frestas. O texto não se mexe — o padding devolve os mesmos
- * 8+12px de recuo a partir da borda nova.
- */
-function Overline({
-  children,
-  cor = 'var(--ck-text-secondary)',
-}: {
-  children: React.ReactNode;
-  cor?: string;
-}) {
-  return (
-    <p
-      className="sticky top-0 flex items-baseline tracking-overline"
-      style={{
-        zIndex: 1,
-        gap: 'var(--ck-space-2)',
-        margin: '0 calc(var(--ck-space-2) * -1)',
-        padding: 'var(--ck-space-3) calc(var(--ck-space-2) + var(--ck-space-3)) var(--ck-space-1)',
-        background: 'var(--ck-surface-nav)',
-        fontSize: 'var(--ck-text-xs)',
-        textTransform: 'uppercase',
-        // tertiary dá 3.55:1 e o contrato o restringe a ícone/separador/texto
-        // ≥20px. Overline é label de 12px, então vai de secondary (6.0:1).
-        color: cor,
-      }}
-    >
-      {children}
-    </p>
-  );
-}
-
 export function Tropa({
   agents,
   slugSelecionado,
@@ -448,22 +419,11 @@ export function Tropa({
    *  layouts, e fingir o contrário foi o que cortou nome e modelo. */
   compacta?: boolean;
 }) {
-  const porNome = (a: Agent, b: Agent) => a.name.localeCompare(b.name, 'pt-BR');
-  // Uma passada só, e a ordem das seções sai da mesma tabela que ordenava a
-  // lista plana (`ESTADO[].ordem`) — a régua do que vem antes continua sendo
-  // uma, não duas.
-  const secoes = (['aguardando', 'trabalhando', 'ocioso', 'offline'] as AgentStatus[])
-    .map((status) => ({
-      status,
-      estado: estadoDe(status),
-      // Comparado pela ORDEM do estado resolvido, não pelo campo cru: status
-      // desconhecido cai em `offline` dentro do `estadoDe` e continua aparecendo.
-      // Filtrar por igualdade de string faria o agente sumir da tela em silêncio.
-      membros: agents
-        .filter((a) => estadoDe(a.status).ordem === estadoDe(status).ordem)
-        .sort(porNome),
-    }))
-    .filter((s) => s.membros.length > 0);
+  // Ordem ESTÁVEL (11/08): a posição carrega identidade, não estado. Antes cada
+  // estado era uma seção e qualquer flip trabalhando↔ocioso movia a linha — a
+  // "dança" que o Rica reprovou. Só `aguardando` sobe (é o único que o chama);
+  // o resto fica em ordem de nome, para sempre. Detalhe em `lib/ordena-tropa.ts`.
+  const agentesOrdenados = ordenaTropa(agents);
 
   // Frota vazia: o backend responde, só não há ninguém. Diferente de erro, e a
   // tela precisa dizer qual dos dois é — lista vazia e sem palavra nenhuma lê
@@ -491,39 +451,31 @@ export function Tropa({
       className="flex min-h-0 flex-col overflow-y-auto"
       style={{ padding: '0 var(--ck-space-2) var(--ck-space-4)' }}
     >
-      {/* O overline "Tropa" saiu daqui: ele nomeava o que o `aria-label` já
-          nomeia e o que a tela inteira já é. No lugar dele entram os títulos que
-          dizem algo — o estado e quantos estão nele. */}
-      {secoes.map(({ status, estado, membros }) => (
-        <section key={status}>
-          <Overline cor={status === 'aguardando' ? estado.cor : undefined}>
-            <span>{estado.rotulo}</span>
-            <span className="ck-tabular" style={{ opacity: 0.75 }}>
-              {membros.length}
-            </span>
-          </Overline>
-          <ul>
-            {membros.map((a) =>
-              status === 'offline' ? (
-                <LinhaDormindo
-                  key={a.slug}
-                  agente={a}
-                  selecionado={a.slug === slugSelecionado}
-                  compacta={compacta}
-                />
-              ) : (
-                <CartaoVivo
-                  key={a.slug}
-                  agente={a}
-                  selecionado={a.slug === slugSelecionado}
-                  agora={agora}
-                  compacta={compacta}
-                />
-              ),
-            )}
-          </ul>
-        </section>
-      ))}
+      {/* Lista única, ordem estável por nome (11/08). O overline "Tropa" não
+          existe desde a v3 e os títulos de estado morreram na v5 — a lista é a
+          lista. A escolha de cartão ou linha rasa é POR LINHA, pelo estado
+          resolvido (`estadoDe`): status desconhecido dorme como o offline, como
+          a v3 já fazia. */}
+      <ul>
+        {agentesOrdenados.map((a) =>
+          estadoDe(a.status).ordem === 3 ? (
+            <LinhaDormindo
+              key={a.slug}
+              agente={a}
+              selecionado={a.slug === slugSelecionado}
+              compacta={compacta}
+            />
+          ) : (
+            <CartaoVivo
+              key={a.slug}
+              agente={a}
+              selecionado={a.slug === slugSelecionado}
+              agora={agora}
+              compacta={compacta}
+            />
+          ),
+        )}
+      </ul>
     </nav>
   );
 }
