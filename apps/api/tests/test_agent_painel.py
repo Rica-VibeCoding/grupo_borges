@@ -868,6 +868,49 @@ def test_agent_painel_parse_quota_file(tmp_path: Path, monkeypatch) -> None:
         quota_path.unlink(missing_ok=True)
 
 
+def test_agent_painel_quota_com_reset_no_passado_vira_stale(tmp_path: Path, monkeypatch) -> None:
+    """`resets_at` já passado prova que o `used_percentage` é de uma consulta
+    velha do CC — o CLI não reconsulta rate_limits sozinho durante a sessão, só
+    quando ela nasce de novo. Mesmo com o arquivo reescrito agora (updated_at
+    fresco), o painel não pode carimbar isso como "available"."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    session_id = f"ds135-reset-passado-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    quota_path = Path(f"/tmp/cc-status-{session_id}.json")
+    quota_path.write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()),
+                "rate_limits": {
+                    "five_hour": {
+                        "resets_at": int(time.time()) - 7_200,
+                        "used_percentage": 97,
+                    },
+                    "seven_day": {
+                        "resets_at": int(time.time()) + 518_400,
+                        "used_percentage": 29,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/daniel/painel")
+
+    try:
+        assert response.status_code == 200
+        quotas = response.json()["quotas"]
+        assert quotas["status"] == "stale"
+        # o dado em si continua entregue — "stale" avisa, não esconde
+        assert quotas["five_hour"]["used_percentage"] == 97
+        assert quotas["seven_day"]["used_percentage"] == 29
+    finally:
+        quota_path.unlink(missing_ok=True)
+
+
 def test_agent_painel_404(tmp_path: Path, monkeypatch) -> None:
     _write_settings(tmp_path, monkeypatch, {})
     app = _build_app(tmp_path)

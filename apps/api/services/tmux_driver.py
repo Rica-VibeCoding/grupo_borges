@@ -2336,6 +2336,32 @@ async def press_enter(session_name: str) -> bool:
     return await asyncio.to_thread(_press_enter_sync, session_name)
 
 
+def _send_named_key_sync(session_name: str, key: str) -> bool:
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return False
+    try:
+        lock = _acquire_dispatch_lock(session_name)
+    except TmuxSessionBusyError:
+        return False
+    try:
+        session = server.sessions.get(session_name=session_name)
+        pane = session.active_pane
+        return _send_key(pane, key)
+    finally:
+        lock.release()
+
+
+async def send_named_key(session_name: str, key: str) -> bool:
+    """Envia uma tecla nomeada do `tmux send-keys` (ex.: `Escape`, `r`) no pane
+    ativo. Mesma semântica de `press_enter`, generalizada — usado pelo refresh
+    manual de cota (`/usage` + `r` + `Escape`, ver `_build_painel_quotas`).
+
+    Retorna False quando a sessão não existe ou libtmux falha — caller decide.
+    """
+    return await asyncio.to_thread(_send_named_key_sync, session_name, key)
+
+
 async def send_message(session_name: str, text: str) -> DeliveryResult:
     """Cola `text` no pane ativo via tmux paste-buffer e submete com Enter.
 

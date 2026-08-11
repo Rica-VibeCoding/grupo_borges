@@ -1378,6 +1378,19 @@ def _quota_window(raw: Any, now: int) -> AgentPainelQuotaWindow | None:
     )
 
 
+def _quota_window_expired(window: AgentPainelQuotaWindow | None, now: int) -> bool:
+    """`resets_at` no passado prova que o `used_percentage` veio de uma consulta
+    velha: o CC não reconsulta rate_limits sozinho durante a sessão, só quando
+    ela nasce de novo (ver shared_rate_limits_congela_ate_clear.md). Sinal
+    lógico, não heurístico — vale mesmo com o arquivo sendo reescrito agora."""
+    return (
+        window is not None
+        and window.resets_at is not None
+        and window.resets_at <= now
+        and window.used_percentage is not None
+    )
+
+
 def _build_painel_quotas(cc_status: _CCStatus) -> AgentPainelQuotas:
     if cc_status.session_id is None:
         return AgentPainelQuotas(status="missing")
@@ -1395,13 +1408,20 @@ def _build_painel_quotas(cc_status: _CCStatus) -> AgentPainelQuotas:
         status = "stale"
 
     rate_limits = payload.get("rate_limits") if isinstance(payload.get("rate_limits"), dict) else {}
+    five_hour = _quota_window(rate_limits.get("five_hour"), now)
+    seven_day = _quota_window(rate_limits.get("seven_day"), now)
+    if status == "available" and (
+        _quota_window_expired(five_hour, now) or _quota_window_expired(seven_day, now)
+    ):
+        status = "stale"
+
     return AgentPainelQuotas(
         status=status,
         source=source,
         session_id=cc_status.session_id,
         updated_at=updated_at,
-        five_hour=_quota_window(rate_limits.get("five_hour"), now),
-        seven_day=_quota_window(rate_limits.get("seven_day"), now),
+        five_hour=five_hour,
+        seven_day=seven_day,
     )
 
 
@@ -4226,6 +4246,72 @@ async def post_agent_clear(slug: str, request: Request) -> dict[str, Any]:
     agent = await _get_agent_or_404(request, slug)
     delivered = await _send_tmux_or_409(agent["tmux_session"], "/clear")
     return {"tmux_delivered": delivered, "sent_at": int(time.time())}
+
+
+# Marcador tolerante a locale: a tela abre em PT-BR no ambiente da frota
+# ("Limites de uso do plano..."), com o texto em inglês da doc oficial como
+# fallback caso o locale mude.
+_USAGE_SCREEN_MARKER = re.compile(r"Limites de uso|Usage limits", re.IGNORECASE)
+_USAGE_SCREEN_OPEN_ATTEMPTS = 8
+_USAGE_SCREEN_OPEN_INTERVAL_S = 0.5
+_USAGE_REFRESH_SETTLE_S = 1.5
+
+
+class QuotaRefreshResponse(BaseModel):
+    refreshed: bool
+    reason: str | None = None
+
+
+async def _pane_shows_usage_screen(session: str) -> bool:
+    excerpt = await tmux_driver.capture_pane_excerpt(session, line_limit=30, max_chars=3000)
+    return bool(excerpt and _USAGE_SCREEN_MARKER.search(excerpt))
+
+
+@router.post("/{slug}/quotas/refresh", response_model=QuotaRefreshResponse)
+async def refresh_agent_quota(slug: str, request: Request) -> QuotaRefreshResponse:
+    """Força o CC a reconsultar `rate_limits`: `/usage` + `r` — o retry
+    documentado em code.claude.com/docs/en/costs.md — e fecha com `Escape`.
+
+    O CC não reconsulta `rate_limits` sozinho durante a sessão (ver
+    shared_rate_limits_congela_ate_clear.md); esta é a única forma conhecida de
+    trazer o número real sem esperar a sessão nascer de novo.
+
+    Só roda com o agente ocioso: `/usage` no meio de um turno interrompe o que
+    ele está fazendo — mesmo guard do `/model` (linha ~3824). Uma vez que o
+    `/usage` foi confirmado entregue, o Escape final SEMPRE dispara, aberto ou
+    não: ele é no-op num prompt vazio, e um modal esquecido aberto é a próxima
+    falsa "trava" que a frota vai reportar.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if agent.get("lifecycle_status") == "trabalhando":
+        raise HTTPException(status_code=409, detail="agent_busy")
+
+    session = agent["tmux_session"]
+    delivered = await _send_tmux_or_409(session, "/usage")
+    if not delivered:
+        return QuotaRefreshResponse(refreshed=False, reason="tmux_indisponivel")
+
+    try:
+        opened = False
+        for _ in range(_USAGE_SCREEN_OPEN_ATTEMPTS):
+            await asyncio.sleep(_USAGE_SCREEN_OPEN_INTERVAL_S)
+            if await _pane_shows_usage_screen(session):
+                opened = True
+                break
+        if not opened:
+            return QuotaRefreshResponse(refreshed=False, reason="tela_nao_abriu")
+
+        await tmux_driver.send_named_key(session, "r")
+        # Sem sinal textual confiável de "retry terminou" — a barra troca de
+        # valor no lugar, não aparece marcador novo. Espera fixa e curta.
+        await asyncio.sleep(_USAGE_REFRESH_SETTLE_S)
+        return QuotaRefreshResponse(refreshed=True)
+    finally:
+        # Dois Escape: o primeiro fecha a tela de uso, um possível segundo
+        # fecha um estado de erro dela por baixo (retry falhou, "press r").
+        await tmux_driver.send_named_key(session, "Escape")
+        await asyncio.sleep(0.3)
+        await tmux_driver.send_named_key(session, "Escape")
 
 
 @router.get("/{slug}/subagents")

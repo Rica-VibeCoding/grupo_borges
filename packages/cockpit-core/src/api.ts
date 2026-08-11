@@ -451,6 +451,33 @@ export async function postAgentClear(
   return res.json();
 }
 
+export type QuotaRefreshResponse = {
+  refreshed: boolean;
+  reason: string | null;
+};
+
+/**
+ * Força o CC a reconsultar `rate_limits` — `/usage` + `r`, o retry
+ * documentado em code.claude.com/docs/en/costs.md — em vez de esperar o
+ * próximo `/clear`. A cota não se atualiza sozinha durante a sessão (ver
+ * shared_rate_limits_congela_ate_clear.md).
+ *
+ * `refreshed: false` com 200 é falha "normal" (canal indisponível, tela não
+ * abriu) — só 409 (`agent_busy`) vira `AgentInputError`, porque só esse caso
+ * tem uma causa acionável ("espera o agente ficar livre") pro chamador
+ * traduzir na tela.
+ */
+export async function postAgentQuotaRefresh(slug: string): Promise<QuotaRefreshResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/quotas/refresh`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentQuotaRefresh failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
 export async function postAgentVoice(
   slug: string,
   audioBlob: Blob,

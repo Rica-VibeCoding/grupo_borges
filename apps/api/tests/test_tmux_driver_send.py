@@ -1761,3 +1761,25 @@ def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Pat
 
     assert result == {"attempted": False, "confirmed": False}
     assert pane.respawn_calls == []
+
+
+def test_send_named_key_envia_tecla_generica() -> None:
+    """`send_named_key` generaliza `press_enter` pra qualquer tecla nomeada —
+    usado pelo refresh de cota (`/usage` + `r` + `Escape`)."""
+    pane = _FakePane("qualquer")
+    server = _FakeServer(pane)
+    with patch("services.tmux_driver._server_for", return_value=server):
+        assert asyncio.run(tmux_driver.send_named_key("pane-teste", "r")) is True
+        assert asyncio.run(tmux_driver.send_named_key("pane-teste", "Escape")) is True
+    assert pane.escape_count == 1
+
+
+def test_send_named_key_sem_sessao_retorna_false() -> None:
+    class _SemSessao:
+        socket_name = None
+
+        def has_session(self, _session_name: str) -> bool:
+            return False
+
+    with patch("services.tmux_driver._server_for", return_value=_SemSessao()):
+        assert asyncio.run(tmux_driver.send_named_key("pane-teste", "Escape")) is False

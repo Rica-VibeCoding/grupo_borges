@@ -871,7 +871,9 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           aparece com o painel lido: fabricar "sem dados" enquanto a busca está
           em voo ou caiu diria que o agente não reporta cota, quando o que caiu
           foi a rede. O recado da falha já está acima. */}
-      {carga === 'pronto' ? <BlocoDeCota quotas={painel?.quotas} /> : null}
+      {carga === 'pronto' ? (
+        <BlocoDeCota quotas={painel?.quotas} agentSlug={agentSlug} aoAtualizar={buscar} />
+      ) : null}
     </>
   );
 }

@@ -31,9 +31,12 @@
  * compreensível — e "71" sozinho tanto pode ser o usado quanto o que sobra.
  * Aqui as duas coisas entram. O v1 está congelado; não corrigi lá.
  */
+import { useState } from 'react';
+import { postAgentQuotaRefresh } from '@grupo_borges/cockpit-core/api';
 import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import { leiaCota, type JanelaDeCota } from './cota';
+import { IconeReenviar } from './icones';
 
 function Barra({ janela }: { janela: JanelaDeCota }) {
   return (
@@ -96,7 +99,78 @@ function Barra({ janela }: { janela: JanelaDeCota }) {
   );
 }
 
-export function BlocoDeCota({ quotas }: { quotas: PainelQuotas | null | undefined }) {
+type FaseRefresh = 'ocioso' | 'enviando' | 'falhou';
+
+/**
+ * Força o CC a reconsultar a cota — mesmo `/usage` + `r` que o Rica aciona à
+ * mão (ver `postAgentQuotaRefresh`). Só aparece junto do aviso "dados
+ * antigos": não há o que atualizar numa leitura que já está viva.
+ *
+ * A tela só reflete o valor novo na PRÓXIMA vez que a statusline do CC
+ * escrever o arquivo — não é instantâneo mesmo quando o back confirma
+ * `refreshed: true`. As duas rebuscas escalonadas depois do sucesso dão mais
+ * chance de pegar essa escrita sem o Rica precisar reabrir a gaveta; nenhuma
+ * delas bloqueia o botão, que já volta ao normal.
+ */
+function BotaoAtualizarCota({
+  agentSlug,
+  aoAtualizar,
+}: {
+  agentSlug: string;
+  aoAtualizar?: () => void;
+}) {
+  const [fase, setFase] = useState<FaseRefresh>('ocioso');
+
+  async function atualizar() {
+    if (fase === 'enviando') return;
+    setFase('enviando');
+    try {
+      const resposta = await postAgentQuotaRefresh(agentSlug);
+      setFase(resposta.refreshed ? 'ocioso' : 'falhou');
+      if (resposta.refreshed) {
+        aoAtualizar?.();
+        window.setTimeout(() => aoAtualizar?.(), 1_500);
+        window.setTimeout(() => aoAtualizar?.(), 3_500);
+      }
+    } catch {
+      setFase('falhou');
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void atualizar()}
+      disabled={fase === 'enviando'}
+      aria-busy={fase === 'enviando'}
+      aria-label="Forçar atualização da cota"
+      title={
+        fase === 'falhou'
+          ? 'não consegui atualizar — tente de novo'
+          : 'Forçar atualização da cota'
+      }
+      className="ck-veil flex shrink-0 items-center justify-center"
+      style={{
+        width: '18px',
+        height: '18px',
+        borderRadius: '9999px',
+        color: fase === 'falhou' ? 'var(--ck-state-attention)' : 'var(--ck-text-tertiary)',
+      }}
+    >
+      <IconeReenviar tamanho={11} />
+    </button>
+  );
+}
+
+export function BlocoDeCota({
+  quotas,
+  agentSlug,
+  aoAtualizar,
+}: {
+  quotas: PainelQuotas | null | undefined;
+  agentSlug: string;
+  aoAtualizar?: () => void;
+}) {
   const leitura = leiaCota(quotas);
 
   return (
@@ -121,15 +195,18 @@ export function BlocoDeCota({ quotas }: { quotas: PainelQuotas | null | undefine
           Cota usada
         </span>
         {leitura.estado === 'velha' ? (
-          // `role="status"`: a leitura envelhece sozinha entre duas aberturas do
-          // painel, e quem não vê a tela precisa ouvir que o número mudou de
-          // valia sem ter tocado em nada.
-          <span
-            role="status"
-            style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
-          >
-            {leitura.aviso}
-          </span>
+          <>
+            {/* `role="status"`: a leitura envelhece sozinha entre duas
+                aberturas do painel, e quem não vê a tela precisa ouvir que o
+                número mudou de valia sem ter tocado em nada. */}
+            <span
+              role="status"
+              style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
+            >
+              {leitura.aviso}
+            </span>
+            <BotaoAtualizarCota agentSlug={agentSlug} aoAtualizar={aoAtualizar} />
+          </>
         ) : null}
       </div>
 
