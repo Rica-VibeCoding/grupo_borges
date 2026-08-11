@@ -22,6 +22,7 @@ import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
+import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaConversaCodex } from '@/lib/codex/usa-conversa-codex.ts';
 import { usaCompact } from '@/lib/compact';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
@@ -186,16 +187,20 @@ function FeedClaudeCode({
     return lista;
   }, [isRunning, vencida, desdeMs, statusDaFrota, itensBase, lookup, delegacoes]);
 
-  if (itensBase.length === 0) {
-    // `connecting`/`replaying`: o histórico ainda não chegou — ficar em
-    // branco é honesto. "Sem conversa ainda." aqui seria mentira pra
-    // qualquer agente com histórico de verdade, só ainda não carregado.
-    // Mesmo convite do resto do app (bloco-de-acoes.tsx): sem spinner, sem
-    // esqueleto — só nada até o dado chegar.
-    if (status !== 'live') return null;
-
-    return <SemConversa geracao={geracao} />;
-  }
+  // O vazio virou função pura testada (`lib/decide-vazio.ts`, 11/08 — task
+  // 2dac8a8b). As duas intenções originais sobrevivem: branco enquanto o
+  // histórico não chegou (mesmo com delegação batendo na porta — ela
+  // entraria sozinha e o histórico a empurraria depois), e "Sem conversa
+  // ainda." só no vazio de verdade. A novidade: delegação conta como
+  // conteúdo — agente sem histórico que delegou mostra a linha de quem
+  // trabalha por ele em vez de mentir que não há nada.
+  const decisao = decideVazio({
+    temHistorico: itensBase.length > 0,
+    temDelegacao: delegacoes.length > 0,
+    status,
+  });
+  if (decisao === 'nada') return null;
+  if (decisao === 'sem-conversa') return <SemConversa geracao={geracao} />;
 
   // O wrapper existe pra `key` + fade da troca de geração sem tocar em
   // `components/feed/**` (território do Hiro): `flex column` + `min-h-0`
