@@ -4,7 +4,7 @@
   "private": true,
   "description": "Cockpit v2 — camada de apresentação nova, contra o mesmo back FastAPI. Porta 3008.",
   "scripts": {
-    "dev": "next dev --port 3008 --hostname 127.0.0.1",
+    "dev": "COCKPIT_DIST_DIR=.next-dev next dev --port 3009 --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --port 3008",
     "type-check": "tsc --noEmit",

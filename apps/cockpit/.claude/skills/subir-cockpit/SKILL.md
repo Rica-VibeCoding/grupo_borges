@@ -22,7 +22,7 @@ soltar o teclado.
 
 ```bash
 cd /home/clawd/repos/grupo_borges/apps/cockpit
-(setsid npx next dev --port 3009 --hostname 127.0.0.1 > /tmp/cockpit-v2-dev-3009.log 2>&1 &)
+(setsid env COCKPIT_DIST_DIR=.next-dev npx next dev --port 3009 --hostname 127.0.0.1 > /tmp/cockpit-v2-dev-3009.log 2>&1 &)
 sleep 8 && ss -tlnp | grep 3009
 ```
 

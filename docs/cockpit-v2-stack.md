@@ -39,25 +39,29 @@ de pacotes durante a migração troca duas variáveis ao mesmo tempo.
 ## 2. Onde o app vive, e em que porta
 
 - Caminho: **`apps/cockpit`**. Nunca `web2` — nome provisório vira fóssil.
-- Porta de dev: **3008**.
+- Produção: **3008**, pela unit `cockpit-v2.service`.
+- Desenvolvimento: **3009**, somente em `127.0.0.1`, com
+  `COCKPIT_DIST_DIR=.next-dev`.
 
-Portas já ocupadas nesta máquina (`srv1061129`), motivo de 3008 e não outra:
+Portas relevantes nesta máquina (`srv1061129`):
 
 | porta | quem | observação |
 |---|---|---|
 | 3000 | easypanel (docker) | `0.0.0.0`, não é nosso |
-| 3007 | `apps/web`, o cockpit **atual** | `next dev` de pé há 3 dias, ~248 MB |
+| 3007 | `apps/web`, cockpit v1 | congelado; o Rica ainda o usa |
+| 3008 | `apps/cockpit`, Cockpit v2 | produção, por `cockpit-v2.service` |
+| 3009 | `apps/cockpit`, Cockpit v2 | desenvolvimento local; não publicado |
 | 8000 | `apps/api` (uvicorn FastAPI) | `127.0.0.1` |
-| 3443 | `tailscale serve` → 3007 | é por aqui que o Rica abre |
-| 6080 | `tailscale serve` → 6080 | |
+| 3443 | `tailscale serve` → 3007 | Cockpit v1 |
+| 3445 | `tailscale serve` → 8000 | API para desenvolvimento remoto |
+| 3446 | `tailscale serve` → 3008 | produção do v2; única URL do Rica |
 
-**O cockpit atual roda em `next dev`, não em build de produção.** Isso importa por
-dois motivos: ele é mais frágil do que parece, e o gate numérico do v2 tem de
-medir contra **este** backend, não contra um `next build` idealizado.
+**A `:3444` não existe mais.** Ela publicava o desenvolvimento e foi retirada da
+tailnet em 08/08; trabalho em andamento é validado localmente, não pelo celular do
+Rica.
 
-Acesso: `https://srv1061129.tailfe77db.ts.net:3443` (Tailscale Serve, certificado
-Let's Encrypt real). **Nunca pelo IP `100.x`** — origem sem HTTPS não expõe
-microfone, e o modo voz simplesmente não existe lá.
+Produção: `https://srv1061129.tailfe77db.ts.net:3446`. **Nunca pelo IP `100.x`**
+— origem sem HTTPS não expõe microfone, e o modo voz simplesmente não existe lá.
 
 ---
 
@@ -286,7 +290,7 @@ errar**, não "seria legal ter":
 
 | skill | por que ela existe |
 |---|---|
-| `subir-cockpit` | subir/derrubar o dev **da porta 3008** sem tocar no 3007. `next dev` genérico ou `pkill next` já derrubou o cockpit da frota antes |
+| `subir-cockpit` | subir/derrubar o dev **da porta 3009** sem tocar na produção 3008 nem no 3007. `next dev` genérico ou `pkill next` já derrubou o cockpit da frota antes |
 | `novo-renderer` | são 23 tools e 24 formas de `tool_use_result`; adicionar renderer é o trabalho mais repetido do projeto, e errar o agrupamento não dá erro, dá tela torta |
 | `mexer-na-pele` | cor só existe em `globals.css`. A skill inclui a varredura de hex solto, que é o modo de falha real |
 | `checar-paridade` | roda o checklist de equivalência contra as fixtures gravadas antes de qualquer merge |
@@ -419,14 +423,13 @@ Antes disso a variável era exportada inline a cada `pnpm dev`. Era a causa do
 "local nunca funciona igual": com ela, funciona; sem ela, o front procura
 `127.0.0.1:8000`, que não existe no PC, e a tela quebra sem dizer por quê.
 
-### Por que a :3445 e não a :3444
+### Por que a :3445
 
 A **:3445 é rota dedicada pra API** (`tailscale serve --bg --https 3445 http://127.0.0.1:8000`).
 
-A :3444 aponta pro *front* da VPS (3008), que só então reescreve pra 8000 — dois saltos. Pior:
-esse primeiro salto derruba conexão longa. Foi medido em 04/08, quando um relaunch pela :3444
-devolveu `500 / socket hang up` enquanto o backend direto respondia 200. Relaunch e SSE são
-conexões longas; o dev local não tem por que herdar essa fragilidade.
+A `:3444` publicava o desenvolvimento e foi retirada da tailnet. Mesmo antes disso,
+ela acrescentava um proxy entre o front e a API; conexões longas como relançamento e
+SSE não devem herdar esse salto.
 
 **SSE pela :3445 foi validado, não deduzido** — o risco era o proxy a mais bufferizar e
 reproduzir o sintoma do §4 (replay em rajada e nada depois). Uma conexão de 95s recebeu
@@ -435,7 +438,7 @@ exatamente a prova que faltava.
 
 ### Qual URL abrir
 
-- **Dev:** `http://localhost:3008` — na máquina onde o `pnpm dev` está rodando.
+- **Dev:** `http://localhost:3009` — na máquina onde o desenvolvimento está rodando.
   Tem que ser `localhost`. Por `127.0.0.1` ou pelo IP `100.x` o browser não trata como origem
   segura e **o modo voz some sem erro** (ver `components/shell/voz.ts`).
 - **Produção, o que o Rica usa:** `https://srv1061129.tailfe77db.ts.net:3446` — a
