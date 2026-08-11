@@ -66,6 +66,25 @@ agents:
       - { name: fc_reunioes, db: ze, description: "Reuniões e feedbacks com usuários Fluyt" }
       - { name: email_historico_log, db: ze, description: "Log de emails enviados pelos agentes" }
 
+  # [2026-08-11 Pavan] Ferramenta, não pessoa: sem origem/sobrenome de propósito.
+  # Repo FORA do monorepo (github Rica-VibeCoding/maestro) pra ter memória própria
+  # por git root, isolada da dos outros. O ofício mora no ze-shared (skills
+  # orquestrar + casas), lido sob demanda — aqui só a persona.
+  - slug: maestro
+    name: Maestro
+    role: Orquestrador de casas
+    emoji: "🎼"
+    tmux_session: maestro
+    workspace_path: /home/clawd/repos/maestro
+    cli_default: claude_code
+    model_default: claude-opus-4-8
+    capabilities:
+      - orquestracao-multi-agente
+      - psmux-casas
+      - briefing-e-colheita
+    can_review: []
+    domain_tables: []
+
   - slug: vinicius
     name: Vinicius Zanella
     aka: Vini
