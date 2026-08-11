@@ -255,11 +255,39 @@ function FeedCodex({ agentSlug }: { agentSlug: string }) {
   const incrementalRef = useRef<ReturnType<typeof createIncrementalRenderItems> | null>(null);
   incrementalRef.current ??= createIncrementalRenderItems();
 
-  const itens = useMemo<readonly ItemDoFeed[]>(
+  const itensBase = useMemo<readonly ItemDoFeed[]>(
     () => [...incrementalRef.current!.update(mensagens)],
     [mensagens],
   );
   const lookup = useMemo(() => buildToolResultLookup(mensagens), [mensagens]);
+
+  // A LINHA VIVA ("| Pensando"), como no CC. O ramo do CC a liga pelo
+  // `isRunning` do stream; aqui não há stream, e a frota é o sinal
+  // equivalente — o comentário deste ramo já apontava o status da frota como
+  // substituto (10/08). Mesma régua de exibição (`ancoraDaLinhaViva`), mesma
+  // fonte de tempo (última mensagem). A diferença é que a frota LIGA e
+  // DESLIGA em vez de só desligar: sem `isRunning` não existe outra fonte de
+  // "trabalhando" — é o buraco que a borda azul tapava, agora na gramática do
+  // CC.
+  const { agents } = usaFrota();
+  const statusDaFrota = agents.find((a) => a.slug === agentSlug)?.status ?? null;
+  const desdeMs = useMemo(() => desdeDaLinhaViva(mensagens), [mensagens]);
+  const vencida = usaLinhaVivaVencida(desdeMs);
+
+  const itens = useMemo<readonly ItemDoFeed[]>(() => {
+    let lista = itensBase as ItemDoFeed[];
+    const desdeLinhaViva = ancoraDaLinhaViva({
+      correndo: statusDaFrota === 'trabalhando',
+      vencida,
+      trabalhoEmVooNoFim: trabalhoEmVooNoFim(itensBase, lookup),
+      desdeMs,
+      statusDaFrota,
+    });
+    if (desdeLinhaViva !== null) {
+      lista = [...lista, { kind: 'linha-viva', desdeMs: desdeLinhaViva }];
+    }
+    return lista;
+  }, [statusDaFrota, vencida, desdeMs, itensBase, lookup]);
 
   // Mesma honestidade do ramo do CC: em branco enquanto não perguntei. Dizer
   // "Sem conversa ainda." antes da primeira resposta é a mentira que esta tela
