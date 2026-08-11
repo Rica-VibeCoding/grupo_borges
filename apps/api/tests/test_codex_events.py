@@ -163,6 +163,24 @@ def test_thread_started_sem_id_nao_apaga_o_run_conhecido(tmp_path: Path) -> None
     assert db._get_agent("tara")["codex_thread_id"] == "run-em-curso"
 
 
+def test_thread_started_consome_a_nova_conversa_armada(tmp_path: Path) -> None:
+    """A "nova conversa" (`codex_next_fresh`) só consumiu quando a thread nova
+    NASCEU (`codex.thread.started`). É o que impede o piscar: enquanto o flag
+    está armado, `/codex/messages` devolve vazio — zerar antes mostraria a
+    thread velha no gap entre o spawn e o nascimento da nova (Rica, 10/08)."""
+    db = _setup_db(tmp_path)
+    novo = "019fe7c0-5958-7a93-81ae-6281f51df69f"
+    db._update_agent_codex_state("tara", codex_next_fresh=1)
+
+    db._update_agent_codex_state("tara", **_codex_state_update(
+        _event("codex.thread.started", {"thread_id": novo, "started_at": 1_700_000_000})
+    ))
+
+    agent = db._get_agent("tara")
+    assert agent["codex_thread_id"] == novo
+    assert agent["codex_next_fresh"] == 0
+
+
 def test_codex_failed_marks_lifecycle_offline(tmp_path: Path) -> None:
     db = _setup_db(tmp_path)
 

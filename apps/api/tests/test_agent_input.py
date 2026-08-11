@@ -342,9 +342,11 @@ def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> 
     assert cmd[-1] == "descreva"
 
 
-def test_input_codex_next_fresh_armed_starts_new_thread_and_clears(tmp_path: Path) -> None:
+def test_input_codex_next_fresh_armed_starts_new_thread_without_clearing_early(tmp_path: Path) -> None:
     """codex_next_fresh armado pelo painel → /input começa thread nova (sem
-    --resume-thread) e zera o flag depois de consumir."""
+    --resume-thread). O flag NÃO zera no spawn (b85613d): a "nova conversa" só
+    consumiu quando a thread nova nascer (`codex.thread.started`) — zerar aqui
+    faria o feed devolver a thread VELHA no gap, o piscar do Rica em 10/08."""
     app = _build_app(tmp_path, codex_for_tara=True)
     app.state.db._update_agent_codex_state("tara", codex_next_fresh=1)
     # O inventário entra explícito porque o `/painel` passou a reportar `vida`
@@ -367,12 +369,12 @@ def test_input_codex_next_fresh_armed_starts_new_thread_and_clears(tmp_path: Pat
             find_thread.assert_not_called()
             cmd = popen.call_args.args[0]
             assert "--resume-thread" not in cmd
-            # Flag consumido: painel volta a reportar não-armado (esse GET pode
-            # chamar find_thread — por isso o assert_not_called veio antes).
+            # Flag AINDA armado: a thread nova ainda não nasceu (o `codex exec`
+            # está subindo). Enquanto armado, o /codex/messages devolve vazio.
             painel = client.get("/api/agents/tara/painel")
 
     assert painel.status_code == 200
-    assert painel.json().get("codex_next_fresh") is False
+    assert painel.json().get("codex_next_fresh") is True
 
 
 def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:

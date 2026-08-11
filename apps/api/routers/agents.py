@@ -2299,9 +2299,11 @@ async def _spawn_codex_agent_turn(
             fresh=effective_fresh,
             image_path=image_path,
         )
-        if armed_fresh:
-            db: GrupoBorgesDB = request.app.state.db
-            await db.update_agent_codex_state(slug, codex_next_fresh=0)
+        # O flag `codex_next_fresh` NÃO zera aqui: a "nova conversa" só consumiu
+        # de verdade quando a thread nova nascer (evento `codex.thread.started`,
+        # que grava a thread no agent_state e zera o flag). Zerar no spawn faria
+        # o `/codex/messages` devolver a thread VELHA no gap entre o consumo e o
+        # nascimento da nova — o piscar que o Rica reportou em 10/08.
 
 
 @router.post("/{slug}/codex-stop")

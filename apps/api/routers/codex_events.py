@@ -139,6 +139,12 @@ def _codex_state_update(payload: CodexEventCreate) -> dict[str, Any]:
         thread_id = payload.thread_id or _thread_id(body)
         if thread_id is not None:
             update["codex_thread_id"] = thread_id
+            # A thread nova NASCEU — só agora a "nova conversa" armada consumiu.
+            # Zerar aqui (e não no spawn, b85613d) é o que impede o piscar: o
+            # `/codex/messages` devolve vazio enquanto o flag está armado, e se
+            # o spawn zerasse, o poll veria a thread VELHA no gap entre o
+            # consumo e o nascimento da nova.
+            update["codex_next_fresh"] = 0
         return update
 
     if payload.kind == "codex.turn.started":
