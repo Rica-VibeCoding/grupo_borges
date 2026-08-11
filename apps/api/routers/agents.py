@@ -2315,9 +2315,10 @@ def _spawn_tara_codex_input(
     # só chama `setsid()` (CPython, `Modules/_posixsubprocess.c`), que troca a
     # sessão POSIX e não mexe em cgroup. Mesmo padrão do
     # `ze-shared/scripts/subir-frota.sh`, que já protege as sessões da frota
-    # assim. Sem `--slice`: o scope cai em `app.slice`, onde a API já roda —
-    # `borges-frota.slice` tem teto de 5 GiB compartilhado com as seis sessões
-    # e estava em 4,48 GiB, e o turno não pode empurrar a frota pro reclaim.
+    # assim. Sem `--slice`: o scope cai em `app.slice`, onde a API já roda. A
+    # `borges-frota.slice` existe pra cercar SESSÃO DE AGENTE, que é o que trava
+    # a VPS; turno, build e dev server ficam fora dela (decisão do Pavan, 11/08,
+    # com o teto de 5 GiB mantido — a máquina toda tem 7 GB).
     # `systemd-run --scope` faz `exec()` no lugar do próprio processo (medido:
     # o PID do `Popen` é o do `bash` do wrapper), então `poll()`, `wait()` e o
     # `killpg` do `codex-stop` seguem valendo sobre o mesmo handle.
