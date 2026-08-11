@@ -22,7 +22,6 @@ agents:
     can_review:
       - daniel
       - felipe
-      - lucas
       - vinicius
       - barsi
     domain_tables:
@@ -66,24 +65,6 @@ agents:
       - { name: fc_changelog, db: ze, description: "Histórico de entregas Fluyt" }
       - { name: fc_reunioes, db: ze, description: "Reuniões e feedbacks com usuários Fluyt" }
       - { name: email_historico_log, db: ze, description: "Log de emails enviados pelos agentes" }
-
-  - slug: lucas
-    name: Lucas Marchetti
-    role: Diretor de Marketing — Líder de área
-    emoji: "🎯"
-    origin: italiano (Vêneto/Lombardia)
-    tmux_session: lucas
-    workspace_path: /home/clawd/repos/ze_claude/lucas
-    cli_default: claude_code
-    model_default: claude-opus-4-8
-    capabilities:
-      - marketing-multi-marca
-      - conecta
-      - woodpro
-      - fluyt-content
-    can_review: []
-    domain_tables:
-      - { name: cncta_contatos, db: ze, description: "CRM Conecta (read-only — usado pra circular, campanhas)" }
 
   - slug: vinicius
     name: Vinicius Zanella
