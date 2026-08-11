@@ -13,6 +13,10 @@
 > sozinha (§3 do `cockpit-v2-estetica.md`) · tokens `--ck-*` existentes ·
 > `Tropa` é Server Component (proposta com estado de cliente precisa dizer o
 > custo).
+>
+> **O 'antes' deste doc está em `docs/referencias-ui/sidebar-tropa-reprovada-09-08.png`**
+> — a coluna que o Rica reprovou em 09/08 (a dança da posição por estado,
+> consertada em 11/08: ordem estável por nome).
 
 ## 0. Ferramenta indisponível — declarada
 
