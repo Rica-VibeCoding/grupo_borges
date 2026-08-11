@@ -158,12 +158,6 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
-  // Borda azul enquanto o AGENTE trabalha, não só durante o envio. No CC o
-  // input fica aceso o turno inteiro; na Tara a fase de envio confirmava em
-  // ~12 s (rollout) e a borda morria antes do turno acabar. O status da frota
-  // (derivado do lifecycle) é quem diz "trabalhando".
-  const agenteNaFrota = agents.find((a) => a.slug === agentSlug);
-  const agenteTrabalhando = agenteNaFrota?.status === 'trabalhando';
   const envio = usaEnvio(agentSlug);
   const faseLocal = envio.estado.fase;
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
@@ -260,6 +254,14 @@ export function Composer({
     fase === 'nao-confirmado' || fase === 'falhou',
   );
   const aparencia = aparenciaDe(fase, agentName, { canalBloqueado, destravaFalhou });
+  // Na Tara o `aceito`/`enviando` confirmam pelo eco do rollout (~12 s); o CC
+  // confirma em ms pelo stream. O filete azul do progresso é o "input azul
+  // direto" que o Rica apontou em 10/08 — na Tara ele fica aceso o tempo do
+  // rollout, no CC é um piscar. O progresso já tem o fio da base; na Tara a
+  // borda fica neutra e o "trabalhando" vai pra linha "| Pensando" do feed,
+  // como no CC. Os estados de insucesso (âmbar/vermelho) não passam por aqui:
+  // `fio` deles não é `correndo`.
+  const fileteDoEstado = ehCodex && aparencia.fio === 'correndo' ? null : aparencia.filete;
 
   // ---- voz ----------------------------------------------------------------
   // O áudio termina na MESMA máquina de seis fases do texto, e isso não é
@@ -574,13 +576,7 @@ export function Composer({
           // recurso do envio, e aqui ele carrega o aviso de que soltar agora
           // descarta. Cor de estado na borda alcança a visão periférica; o
           // olho está no que está sendo falado, não no composer.
-          borderColor:
-            vozAparencia.tinta ??
-            aparencia.filete ??
-            // O turno em voo segura a borda acesa depois que o envio confirmou:
-            // sem isto o azul da Tara morria em ~12 s (rollout) e o turno
-            // seguia mudo — o azul "preso à fase de envio" que o Rica notou.
-            (agenteTrabalhando ? 'var(--ck-state-running)' : 'var(--ck-edge-composer)'),
+          borderColor: vozAparencia.tinta ?? fileteDoEstado ?? 'var(--ck-edge-composer)',
           // A borda inteira (não só um filete de 2px) muda de cor no estado
           // quente: o composer é a única superfície de INPUT da tela, e ali a
           // convenção do filete lateral (linha de execução, mensagem) compete
