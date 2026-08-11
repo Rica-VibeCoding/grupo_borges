@@ -2213,6 +2213,7 @@ _CODEX_BUSY_STATUS_LINES = ("iniciando", "processando turn", "rodando:")
 # headless por turno, não tem sessão tmux própria pra operar).
 _CODEX_RUN_PROCS: dict[str, subprocess.Popen] = {}
 _CODEX_RUN_PROCS_GUARD = asyncio.Lock()
+_CODEX_SCOPE_STOP_TIMEOUT_S = 20.0
 
 
 async def _codex_input_lock(slug: str) -> asyncio.Lock:
@@ -2253,6 +2254,49 @@ def _tara_codex_script_path() -> str:
     return str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex")
 
 
+def _codex_turn_scope_unit(slug: str) -> str:
+    """Nome da unit do scope que carrega o turno — determinístico por slug.
+
+    Determinístico porque ele é a SEGUNDA alça do `codex-stop`: o
+    `_CODEX_RUN_PROCS` é memória do processo, e o turno agora sobrevive ao
+    restart que zera esse dicionário. Um turno em voo por slug já é garantido
+    pelo 409 de `_codex_turn_in_flight`, então o nome não colide — e scope de
+    turno encerrado é coletado pelo systemd, o que libera o nome pro próximo.
+    """
+    return f"cockpit-codex-turn-{slug}.scope"
+
+
+def _stop_codex_turn_scope(slug: str) -> bool:
+    """Derruba o turno pela unit do scope; False quando não havia nada ativo.
+
+    Caminho de quem perdeu o handle do `Popen` — o restart da API. O `is-active`
+    antes do `stop` é o que separa "turno vivo sem handle" de "turno que já
+    terminou": sem ele o botão relataria `stopped` em cima de nada.
+    """
+    unit = _codex_turn_scope_unit(slug)
+    try:
+        ativo = subprocess.run(
+            ["systemctl", "--user", "is-active", unit],
+            capture_output=True,
+            text=True,
+            timeout=_CODEX_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if ativo.stdout.strip() != "active":
+        return False
+    try:
+        parado = subprocess.run(
+            ["systemctl", "--user", "stop", unit],
+            capture_output=True,
+            text=True,
+            timeout=_CODEX_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return parado.returncode == 0
+
+
 def _spawn_tara_codex_input(
     *,
     slug: str,
@@ -2262,9 +2306,30 @@ def _spawn_tara_codex_input(
     fresh: bool = False,
     image_path: str | None = None,
 ) -> None:
-    # Via `bash <script>` em vez de exec direto: o bit +x pode cair em edição/
-    # linter, e um PermissionError aqui viraria 500 silencioso no /input.
+    # O turno vive num scope transiente PRÓPRIO, não no cgroup do
+    # `cockpit-api.service`. A unit roda com `KillMode=control-group`, e o
+    # `man systemd.kill` é literal: no stop, "all remaining processes in the
+    # control group of this unit will be killed" — todo restart da API que
+    # pegasse turno em voo o matava (três em 11/08, o das 16:49 no meio de uma
+    # resposta ao Rica). O `start_new_session=True` abaixo NÃO cobria isso: ele
+    # só chama `setsid()` (CPython, `Modules/_posixsubprocess.c`), que troca a
+    # sessão POSIX e não mexe em cgroup. Mesmo padrão do
+    # `ze-shared/scripts/subir-frota.sh`, que já protege as sessões da frota
+    # assim. Sem `--slice`: o scope cai em `app.slice`, onde a API já roda —
+    # `borges-frota.slice` tem teto de 5 GiB compartilhado com as seis sessões
+    # e estava em 4,48 GiB, e o turno não pode empurrar a frota pro reclaim.
+    # `systemd-run --scope` faz `exec()` no lugar do próprio processo (medido:
+    # o PID do `Popen` é o do `bash` do wrapper), então `poll()`, `wait()` e o
+    # `killpg` do `codex-stop` seguem valendo sobre o mesmo handle.
     cmd = [
+        "systemd-run",
+        "--user",
+        "--scope",
+        "--quiet",
+        f"--unit={_codex_turn_scope_unit(slug)}",
+        # Via `bash <script>` em vez de exec direto: o bit +x pode cair em
+        # edição/linter, e um PermissionError aqui viraria 500 silencioso no
+        # /input.
         "bash",
         _tara_codex_script_path(),
         "--delegator",
@@ -2353,6 +2418,11 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
     `codex exec` filho junto; sem isto, um `kill` no pai deixaria o run
     escrevendo no rollout sem dono.
 
+    Duas alças, nesta ordem: o `Popen` guardado em memória e, quando ele não
+    existe mais, a unit do scope (`_stop_codex_turn_scope`). A segunda passou a
+    ser necessária quando o turno saiu do cgroup da API — ele sobrevive ao
+    restart, o dicionário não.
+
     Idempotente: sem turno em voo, só reconcilia o estado — um `trabalhando`
     órfão (wrapper que morreu sem `tara.exec.completed`) volta a `ocioso`, e o
     `status_line` de ocupado é zerado. Repetir o botão numa Tara já trancada
@@ -2362,7 +2432,27 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
     db: GrupoBorgesDB = request.app.state.db
 
     proc = await _codex_running_proc(slug)
-    if proc is None:
+    if proc is not None:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        await _codex_clear_running_proc(slug)
+        parado = True
+    else:
+        # Sem handle em memória o turno ainda pode estar VIVO: ele mora num
+        # scope próprio e sobrevive ao restart que zerou o `_CODEX_RUN_PROCS`.
+        # A unit é a alça que resta.
+        parado = await asyncio.to_thread(_stop_codex_turn_scope, slug)
+
+    if not parado:
         # Turno morto ou nunca existiu: reconcilia lifecycle órfão e sai.
         if agent.get("lifecycle_status") == "trabalhando":
             await db.update_agent_lifecycle(
@@ -2374,18 +2464,6 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
         await _clear_codex_busy_status_line(db, agent)
         return {"stopped": False, "reason": "no_turn_in_flight"}
 
-    try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        pass
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-    await _codex_clear_running_proc(slug)
     await db.update_agent_lifecycle(
         slug,
         status="ocioso",

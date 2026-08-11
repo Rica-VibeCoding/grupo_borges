@@ -21,6 +21,8 @@ from routers import agents as agents_router
 from services import codex_catalog, tmux_driver
 
 _RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
+#: Guardada no import porque `_scope_do_turno_fora` troca o nome no módulo.
+_STOP_SCOPE_REAL = agents_router._stop_codex_turn_scope
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +36,18 @@ def _catalogo_codex_fora(monkeypatch):
     monkeypatch.setattr(codex_catalog, "_ler_do_cli", tuple)
     yield
     codex_catalog.limpar_cache()
+
+
+@pytest.fixture(autouse=True)
+def _scope_do_turno_fora(monkeypatch):
+    """Nenhum teste toca o systemd da máquina.
+
+    Sem handle de `Popen`, o `codex-stop` cai na segunda alça e roda
+    `systemctl --user stop cockpit-codex-turn-tara.scope` — o nome REAL do
+    scope da Tara. Rodar a suíte com um turno em voo o mataria. Quem precisa
+    exercitar a alça faz o próprio `patch`, que vence esta fixture.
+    """
+    monkeypatch.setattr(agents_router, "_stop_codex_turn_scope", lambda slug: False)
 
 
 DANIEL = {
@@ -163,7 +177,10 @@ def test_input_codex_with_thread_spawns_resume_wrapper(tmp_path: Path) -> None:
     popen.assert_called_once()
     cmd = popen.call_args.args[0]
     # Invocado via `bash <script>` — robusto a perda do bit +x em edição/linter.
-    assert cmd[:4] == [
+    # O prefixo do `systemd-run` que carrega isso tem teste próprio
+    # (`test_input_codex_nasce_em_scope_proprio_fora_do_cgroup_da_api`).
+    inicio = cmd.index("bash")
+    assert cmd[inicio : inicio + 4] == [
         "bash",
         str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex"),
         "--delegator",
@@ -875,6 +892,86 @@ def test_codex_stop_preserva_status_line_que_nao_e_ocupado(tmp_path: Path) -> No
 
     painel = asyncio.run(app.state.db.get_agent("tara"))
     assert painel["status_line"] == "validei a skill"
+
+
+def test_input_codex_nasce_em_scope_proprio_fora_do_cgroup_da_api(tmp_path: Path) -> None:
+    """O turno nasce num scope transiente — não no cgroup do `cockpit-api`.
+
+    `KillMode=control-group` (o default, `man systemd.kill`) mata TODO processo
+    do cgroup da unit no restart, e `start_new_session=True` não protege: ele só
+    chama `setsid()` (CPython, `Modules/_posixsubprocess.c`), que muda a sessão
+    POSIX e não o cgroup. Três restarts em 11/08 mataram turno em voo.
+    """
+    app = _build_app(tmp_path, codex_for_tara=True)
+    thread = SimpleNamespace(thread_id="thread-scope")
+    with patch(
+        "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
+    ), \
+         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
+         patch("routers.agents.subprocess.Popen") as popen, \
+         patch("routers.agents.tmux_driver.send_message"):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/input",
+                json={"text": "sobrevive", "idempotency_key": "k-scope"},
+            )
+
+    assert response.status_code == 200
+    cmd = popen.call_args.args[0]
+    assert cmd[:4] == ["systemd-run", "--user", "--scope", "--quiet"]
+    # Nome determinístico: é a alça que o `codex-stop` usa quando o handle do
+    # `Popen` morreu junto com o processo da API.
+    assert cmd[4] == "--unit=cockpit-codex-turn-tara.scope"
+    assert cmd[5:9] == [
+        "bash",
+        str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex"),
+        "--delegator",
+        "cockpit",
+    ]
+    # O `--` que delimita o texto continua sendo um só: o do wrapper.
+    assert cmd.count("--") == 1
+
+
+def test_codex_stop_alcanca_turno_que_sobreviveu_a_restart_da_api(tmp_path: Path) -> None:
+    """Turno vivo sem handle em memória ainda é parado — pela unit do scope.
+
+    Depois que o turno passou a morar em scope próprio, um restart da API deixa
+    ele VIVO com o `_CODEX_RUN_PROCS` zerado. Sem a segunda alça, o botão
+    "Parar turno" responderia `no_turn_in_flight` com o turno rodando.
+    """
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_lifecycle(
+        "tara", status="trabalhando", detail="turno iniciado", event="test.setup"
+    )
+    agents_router._CODEX_RUN_PROCS.pop("tara", None)
+    with patch("routers.agents._stop_codex_turn_scope", return_value=True) as stop_scope:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/tara/codex-stop")
+
+    assert response.status_code == 200
+    assert response.json() == {"stopped": True}
+    stop_scope.assert_called_once_with("tara")
+    painel = asyncio.run(app.state.db.get_agent("tara"))
+    assert painel["lifecycle_status"] == "ocioso"
+
+
+def test_stop_codex_turn_scope_nao_chama_systemctl_com_scope_inativo() -> None:
+    """Sem scope ativo, o stop não dispara `systemctl stop` — devolve False.
+
+    O `is-active` é o que separa "turno vivo sem handle" de "turno que já
+    terminou": sem ele o botão relataria `stopped` em cima de nada.
+    """
+    with patch("routers.agents.subprocess.run") as run:
+        run.return_value = SimpleNamespace(returncode=3, stdout="inactive\n", stderr="")
+        assert _STOP_SCOPE_REAL("tara") is False
+
+    assert run.call_count == 1
+    assert run.call_args.args[0] == [
+        "systemctl",
+        "--user",
+        "is-active",
+        "cockpit-codex-turn-tara.scope",
+    ]
 
 
 def test_codex_new_thread_arma_fresh_sem_telecodex(tmp_path: Path) -> None:
