@@ -19,16 +19,28 @@
  * ninguém lê. Então a distinção é por MOVIMENTO, que é o sinal que o olho pega
  * sem foco:
  *
- *   enviando/aceito → um fio percorre a base da mensagem. A máquina ainda está
- *                     observando. Nada acabou.
- *   confirmado      → o fio some, o texto acende de `secondary` para `primary`,
- *                     e a superfície ganha o fio de luz (`.ck-lit`).
+ *   enviando/aceito → nada no composer. Ver abaixo.
+ *   confirmado      → o texto acende de `secondary` para `primary` e a
+ *                     superfície ganha o fio de luz (`.ck-lit`).
  *   nao-confirmado  → o fio PARA no meio do caminho e não completa. A máquina
  *                     não observou o desfecho e não inventa qual foi.
  *
- * São quatro sinais simultâneos entre `aceito` e `confirmado` — movimento,
- * luminância do texto, fio de luz e filete —, e o único que exige leitura é a
- * palavra, que vem por cima e não no lugar deles.
+ * ── O caminho feliz é MUDO no composer (Rica, 11/08) ─────────────────────
+ *
+ * `enviando` e `aceito` não acendem borda nem fio. O desenho anterior dava aos
+ * dois o azul do estado, e ele só funcionava num CC: lá a confirmação vem do
+ * eco do stream em milissegundos. Na Tara ela espera o texto aparecer no
+ * rollout — medi 14 s de borda acesa (11/08), e a mesma peça que era um piscar
+ * virava um holofote. Igualar por cima (todos acesos) mantinha a distorção;
+ * igualar por baixo é o que deixa os seis agentes idênticos.
+ *
+ * O que se perde aqui não se perde na tela: a mensagem já está no feed quando o
+ * composer se cala, e é lá que a espera acontece — a bolha, a linha "| Pensando".
+ * O composer é o lugar de escrever, e volta a ser só isso.
+ *
+ * O INSUCESSO continua gritando: âmbar e vermelho mantêm filete, fio travado,
+ * frase e ações. Era para isso que o vocabulário existia, e é a área que precisa
+ * do olho quando algo fica sem confirmação.
  *
  * ── Por que `confirmado` não diz nada ────────────────────────────────────
  *
@@ -116,22 +128,24 @@ export function aparenciaDe(
 
     case 'enviando':
       return {
-        filete: 'var(--ck-state-running)',
+        filete: null,
         assentada: false,
-        fio: 'correndo',
+        fio: 'nenhum',
         // Sem frase: o POST costuma durar menos que o tempo de ler uma palavra,
         // e texto que pisca por 200ms é ruído, não informação.
         frase: null,
         acoes: [],
+        // O leitor de tela CONTINUA anunciando. Ele não tem a bolha do feed a
+        // que o olho recorre, e o silêncio visual não é silêncio de fato.
         anuncio: 'Enviando.',
         urgencia: 'polite',
       };
 
     case 'aceito':
       return {
-        filete: 'var(--ck-state-running)',
+        filete: null,
         assentada: false,
-        fio: 'correndo',
+        fio: 'nenhum',
         frase: `esperando ${nomeDoAgente} ver`,
         acoes: [],
         anuncio: `O texto chegou ao terminal. Esperando ${nomeDoAgente} ver.`,

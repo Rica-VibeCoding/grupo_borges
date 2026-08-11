@@ -254,14 +254,10 @@ export function Composer({
     fase === 'nao-confirmado' || fase === 'falhou',
   );
   const aparencia = aparenciaDe(fase, agentName, { canalBloqueado, destravaFalhou });
-  // Na Tara o `aceito`/`enviando` confirmam pelo eco do rollout (~12 s); o CC
-  // confirma em ms pelo stream. O filete azul do progresso é o "input azul
-  // direto" que o Rica apontou em 10/08 — na Tara ele fica aceso o tempo do
-  // rollout, no CC é um piscar. O progresso já tem o fio da base; na Tara a
-  // borda fica neutra e o "trabalhando" vai pra linha "| Pensando" do feed,
-  // como no CC. Os estados de insucesso (âmbar/vermelho) não passam por aqui:
-  // `fio` deles não é `correndo`.
-  const fileteDoEstado = ehCodex && aparencia.fio === 'correndo' ? null : aparencia.filete;
+  // O caminho feliz não pinta mais a borda — `enviando`/`aceito` devolvem
+  // `filete: null` desde 11/08, para os seis agentes (o porquê está em
+  // `aparencia-envio.ts`). O que chega aqui colorido é só insucesso.
+  const fileteDoEstado = aparencia.filete;
 
   // ---- voz ----------------------------------------------------------------
   // O áudio termina na MESMA máquina de seis fases do texto, e isso não é
@@ -830,11 +826,16 @@ export function Composer({
             própria moldura (`overflow:hidden` do form recorta a ponta). Só
             `transform` anima: o compositor não recalcula layout.
 
+            O ENVIO DE TEXTO NÃO O ACENDE MAIS (Rica, 11/08): quando a mensagem
+            sai, ela já está no feed, e a espera se acompanha por lá. Sobraram os
+            dois casos em que o composer é a ÚNICA tela do assunto — o fio
+            travado do `nao-confirmado`, e a voz.
+
             A TRANSCRIÇÃO REUSA O MESMO FIO, e isso é o oposto de economia: o
             STT roda no servidor e existe um tempo morto entre soltar o dedo e o
-            texto existir. Inventar um segundo indicador pra esse intervalo
-            ensinaria duas linguagens para a mesma pergunta — "a máquina está
-            trabalhando?". É um fio só, do começo da fala até o agente receber. */}
+            texto existir. Nesse intervalo não há bolha nenhuma no feed — o
+            texto ainda não existe —, então aqui o fio continua sendo a resposta
+            a "a máquina está trabalhando?". */}
         {aparencia.fio !== 'nenhum' || faseVoz === 'transcrevendo' || faseVoz === 'pedindo' ? (
           <div
             aria-hidden
@@ -850,9 +851,7 @@ export function Composer({
           >
             <div
               className={
-                aparencia.fio === 'correndo' || faseVoz === 'transcrevendo' || faseVoz === 'pedindo'
-                  ? 'ck-fio-percorre'
-                  : ''
+                faseVoz === 'transcrevendo' || faseVoz === 'pedindo' ? 'ck-fio-percorre' : ''
               }
               style={{
                 width: '30%',

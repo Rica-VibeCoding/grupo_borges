@@ -19,20 +19,42 @@ const TODAS: FaseEnvio[] = [
 ];
 
 describe('aceito × confirmado — o defeito de hoje é os dois parecerem a mesma coisa', () => {
-  it('difere em QUATRO sinais, e nenhum deles exige ler texto', () => {
+  it('difere no que sobrou depois que o composer emudeceu', () => {
     const a = aparenciaDe('aceito', 'Daniel');
     const c = aparenciaDe('confirmado', 'Daniel');
 
-    assert.notEqual(a.fio, c.fio, 'movimento: o que se mexe ainda não chegou');
     assert.notEqual(a.assentada, c.assentada, 'fio de luz + peso do texto');
-    assert.notEqual(a.filete, c.filete, 'filete de estado à esquerda');
+    assert.notEqual(a.frase, c.frase, 'a palavra, que antes vinha por cima dos sinais');
   });
 
   it('aceito NÃO pode parecer sucesso — é espera', () => {
     const a = aparenciaDe('aceito', 'Daniel');
     assert.equal(a.assentada, false);
-    assert.equal(a.fio, 'correndo');
     assert.match(a.frase ?? '', /esperando/);
+  });
+
+  it('o caminho feliz não pinta o composer — igual nos seis agentes', () => {
+    // Era azul nos dois estados. Num CC isso piscava; na Tara ficava 14 s aceso
+    // (medido 11/08), porque ela confirma pelo eco do rollout. O Rica mandou
+    // tirar de todos: quando o texto sai, a espera se acompanha no feed.
+    for (const fase of ['enviando', 'aceito'] as const) {
+      const a = aparenciaDe(fase, 'Daniel');
+      assert.equal(a.filete, null, `${fase}: sem borda de estado`);
+      assert.equal(a.fio, 'nenhum', `${fase}: sem fio na base`);
+    }
+  });
+
+  it('o insucesso continua gritando — era para isso que os sinais existiam', () => {
+    assert.equal(aparenciaDe('nao-confirmado', 'Daniel').fio, 'travado');
+    assert.notEqual(aparenciaDe('nao-confirmado', 'Daniel').filete, null);
+    assert.notEqual(aparenciaDe('falhou', 'Daniel').filete, null);
+  });
+
+  it('quem não vê a tela continua sendo avisado do envio', () => {
+    // O silêncio é VISUAL. O leitor de tela não tem a bolha do feed a que o
+    // olho recorre — tirar o anúncio junto seria tirar o único sinal dele.
+    assert.match(aparenciaDe('enviando', 'Daniel').anuncio, /enviando/i);
+    assert.match(aparenciaDe('aceito', 'Daniel').anuncio, /esperando/i);
   });
 
   it('confirmado é o único que canta sucesso, e canta calado', () => {
