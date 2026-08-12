@@ -1,7 +1,5 @@
 export type OpcoesAlturaViewport = {
-  alturaVisual?: number;
   alturaDaJanela: number;
-  tecladoAberto?: boolean;
 };
 
 function medidaValida(medida: number | undefined): medida is number {
@@ -9,15 +7,15 @@ function medidaValida(medida: number | undefined): medida is number {
 }
 
 /** Altura da app **no aplicativo instalado** — no navegador quem manda é o
- *  `100dvh` do CSS, e a decisão de nem publicar mora no componente. */
-export function alturaDoViewport({
-  alturaVisual,
-  alturaDaJanela,
-  tecladoAberto = false,
-}: OpcoesAlturaViewport): number {
-  // O teclado encolhe o viewport visual e não toca no layout viewport. Como
-  // ninguém desloca a página no modo instalado, encolher junto é a única forma
-  // de o composer não ficar atrás do teclado.
-  const altura = tecladoAberto && medidaValida(alturaVisual) ? alturaVisual : alturaDaJanela;
-  return medidaValida(altura) ? Math.round(altura) : 0;
+ *  `100dvh` do CSS, e a decisão de nem publicar mora no componente.
+ *
+ *  A régua é a janela, nunca o viewport visual. Medido no iPhone do Rica em
+ *  12/08, com o teclado aberto: janela 655, viewport visual 449, deslocamento
+ *  216. O iOS encolhe o layout **e** desloca a página; o viewport visual já
+ *  vem descontado do deslocamento, então publicá-lo tira 206px que existem —
+ *  a app encolhe demais e o deslocamento a joga para fora por cima. O `100dvh`
+ *  erra para o outro lado: fica em 793 e enfia o composer atrás do teclado,
+ *  que foi o defeito que o `9e522ab` veio consertar. */
+export function alturaDoViewport({ alturaDaJanela }: OpcoesAlturaViewport): number {
+  return medidaValida(alturaDaJanela) ? Math.round(alturaDaJanela) : 0;
 }

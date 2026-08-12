@@ -11,15 +11,6 @@ function modoAplicativoInstalado(): boolean {
   );
 }
 
-function campoEmFoco(): boolean {
-  const ativo = document.activeElement;
-  return (
-    ativo instanceof HTMLInputElement ||
-    ativo instanceof HTMLTextAreaElement ||
-    ativo?.getAttribute('contenteditable') === 'true'
-  );
-}
-
 export function SincronizaAlturaDoViewport() {
   useEffect(() => {
     // No navegador a altura certa é o `100dvh` do CSS, e ele é o único que a
@@ -31,14 +22,13 @@ export function SincronizaAlturaDoViewport() {
     // sem que nada tivesse remontado: só o número era velho.
     if (!modoAplicativoInstalado()) return;
 
+    // No aplicativo instalado a janela responde ao teclado sozinha — medido no
+    // iPhone do Rica: 852 fechado, 655 aberto. O `visualViewport` continua
+    // escutado porque é ele quem avisa primeiro que o teclado se mexeu.
     const visualViewport = window.visualViewport;
 
     const publicaAltura = () => {
-      const altura = alturaDoViewport({
-        alturaVisual: visualViewport?.height,
-        alturaDaJanela: window.innerHeight,
-        tecladoAberto: campoEmFoco(),
-      });
+      const altura = alturaDoViewport({ alturaDaJanela: window.innerHeight });
       if (altura > 0) {
         document.documentElement.style.setProperty('--ck-viewport-altura', `${altura}px`);
       }

@@ -31,6 +31,11 @@ JANELA = 900
 COM_TECLADO = 380
 # A barra do Safari retraída dá uma janela mais alta do que a que volta depois.
 BARRA_RETRAIDA = 1010
+# Medidos no iPhone do Rica em 12/08, aplicativo instalado, teclado aberto: o
+# iOS encolhe a janela E desloca a página, e o viewport visual já vem descontado
+# do deslocamento. Quem publica o visual tira 206px que existem.
+APP_JANELA = 655
+APP_VISUAL = 449
 
 
 # Roda antes do bundle: o componente lê `matchMedia` uma vez, na montagem.
@@ -70,9 +75,14 @@ def abre(nav, standalone: bool):
 def com_teclado(nav, standalone: bool) -> dict:
     pag = abre(nav, standalone)
     pag.locator("textarea").first.click()
+    # No navegador a janela não se mexe; no aplicativo instalado ela encolhe
+    # junto, e é ela a régua.
+    janela = f"window.__alturaDaJanela = {APP_JANELA};" if standalone else ""
+    visual = APP_VISUAL if standalone else COM_TECLADO
     pag.evaluate(
-        f"window.__alturaVisual = {COM_TECLADO};"
-        "window.visualViewport.dispatchEvent(new Event('resize'))"
+        f"{janela}window.__alturaVisual = {visual};"
+        "window.visualViewport.dispatchEvent(new Event('resize'));"
+        "window.dispatchEvent(new Event('resize'))"
     )
     pag.wait_for_timeout(300)
     medida = pag.evaluate(MEDE)
@@ -106,11 +116,11 @@ def main() -> None:
         ("teclado no navegador nao abre rolagem", navegador["folgaDeRolagem"] == 0),
         ("barra do Safari nao estica a app", velho["app"] == JANELA),
         ("barra do Safari nao abre rolagem", velho["folgaDeRolagem"] == 0),
-        ("aplicativo instalado ainda encolhe", aplicativo["app"] == COM_TECLADO),
+        ("aplicativo encolhe pela janela, nao pelo visual", aplicativo["app"] == APP_JANELA),
     ]
     print(f"navegador com teclado : {navegador}, esperado app {JANELA}")
     print(f"navegador com o numero velho : {velho}, esperado app {JANELA}")
-    print(f"aplicativo com teclado : {aplicativo}, esperado app {COM_TECLADO}")
+    print(f"aplicativo com teclado : {aplicativo}, esperado app {APP_JANELA}")
     for rotulo, passou in metades:
         print(f"{'OK    ' if passou else 'FALHOU'} {rotulo}")
     raise SystemExit(0 if all(passou for _, passou in metades) else 1)
