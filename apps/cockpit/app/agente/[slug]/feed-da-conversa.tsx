@@ -83,7 +83,6 @@ function FeedClaudeCode({
     limit: HISTORICO_PADRAO,
     recentes: true,
   });
-
   // O FIM do `/compact` é daqui: o composer sabe quando o compact sai, mas só
   // o stream sabe quando o resumo CHEGA. A mensagem-resumo com timestamp
   // posterior ao início conclui a espera — e o `concluir` da máquina mede a
@@ -96,7 +95,6 @@ function FeedClaudeCode({
   } = usaCompact(agentSlug);
   const faseCompact = estadoCompact.fase;
   const marcoCompactMs = estadoCompact.marcoServidorMs;
-
   // A HORA DO SERVIDOR, entregue por quem a tem. É a única peça da tela que vê
   // `timestamp` de mensagem, e é dela que sai a linha de base do compact.
   useEffect(() => {
@@ -105,7 +103,6 @@ function FeedClaudeCode({
       registrarRelogioDoServidor(Date.parse(m.timestamp));
     }
   }, [messages, registrarRelogioDoServidor]);
-
   useEffect(() => {
     if (faseCompact !== 'compactando' && faseCompact !== 'sem-retorno') return;
     for (const m of messages) {
@@ -124,7 +121,6 @@ function FeedClaudeCode({
       }
     }
   }, [messages, faseCompact, marcoCompactMs, concluirCompact]);
-
   // Instância estável POR GERAÇÃO — mesma razão do FeedAoVivo: recriar por
   // render jogaria fora o estado incremental do classificador. Na troca de
   // geração (session-reset), recriar é exatamente o pedido: o classificador
@@ -136,10 +132,8 @@ function FeedClaudeCode({
   if (incrementalRef.current === null || incrementalRef.current.geracao !== geracao) {
     incrementalRef.current = { geracao, instance: createIncrementalRenderItems() };
   }
-
   const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(messages)], [messages]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
-
   // A LINHA VIVA. A corrida está de pé (`isRunning`) mas o fim do feed não
   // tem trabalho em voo — o buraco entre o Rica mandar e a primeira
   // ferramenta, que antes era tela muda. Ela entra como ÚLTIMO ITEM, na
@@ -151,7 +145,6 @@ function FeedClaudeCode({
   // ("Tara trabalhando · há 4 min"). O poll de 3 s mora no `usaDelegacoes` —
   // fonte única, a mesma que a pílula do topo vai beber quando existir.
   const delegacoes = usaDelegacoes(agentSlug);
-
   // O PRAZO DA LINHA VIVA. `isRunning` conta o que o log conta, e turno que
   // morre sem despedida (limite de uso, agente desligado, sessão derrubada)
   // não escreve nada — o "Pensando" ficava de pé sozinho. Ver o porquê medido
@@ -210,7 +203,7 @@ function FeedClaudeCode({
       key={geracao}
       className="ck-feed-enter flex min-h-0 flex-1 flex-col"
     >
-      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />
+      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
     </div>
   );
 }

@@ -1141,11 +1141,28 @@ body {
   0%, 100% { opacity: 1;    transform: scale(1); }
   50%      { opacity: 0.45; transform: scale(0.82); }
 }
-.ck-pulso[data-estado='trabalhando'] { animation: ck-respira 2.4s var(--ck-ease) infinite; }
+.ck-pulso[data-estado='trabalhando'],
+.ck-cursor-streaming.ck-pulso[data-estado='trabalhando'] > :last-child::after {
+  animation: ck-respira 2.4s var(--ck-ease) infinite;
+}
 .ck-pulso[data-estado='aguardando']  { animation: ck-chama 1.1s var(--ck-ease) infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   .ck-pulso[data-estado] { animation: none; }
+}
+
+/* Cursor de streaming: o conteúdo fica vazio para continuar puramente
+ * decorativo; o traço vem da borda. A classe de pulso marca o estado, mas só
+ * o pseudo-elemento respira — o texto do agente não pode pulsar junto. */
+.ck-cursor-streaming.ck-pulso[data-estado='trabalhando'] { animation: none; }
+.ck-cursor-streaming.ck-pulso[data-estado='trabalhando'] > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  margin-inline-start: var(--ck-space-1);
+  vertical-align: -0.12em;
+  border-inline-start: 1px solid var(--ck-text-primary);
 }
 
 /* Fio de envio na base do composer (contrato §3.1 / `aparencia-envio.ts`):

@@ -30,7 +30,12 @@ import { LinhaVivaView } from './linha-viva.tsx';
 import { leAnexoImagem } from './anexo-imagem';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
 
-type Props = { item: ItemDoFeed; lookup?: ToolResultLookup; agentSlug?: string };
+type Props = {
+  item: ItemDoFeed;
+  lookup?: ToolResultLookup;
+  agentSlug?: string;
+  estaRodando?: boolean;
+};
 
 /* -------------------------------------------------------------------------- */
 /* Formas menores — uma linha, sem moldura                                    */
@@ -97,11 +102,21 @@ function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
   );
 }
 
-function Parte({ parte, lookup }: { parte: ContentPart; lookup?: ToolResultLookup }) {
+function Parte({
+  parte,
+  lookup,
+  cursorNoFim = false,
+}: {
+  parte: ContentPart;
+  lookup?: ToolResultLookup;
+  cursorNoFim?: boolean;
+}) {
   switch (parte.type) {
     case 'text':
       // Texto vazio não vira parágrafo fantasma com moldura.
-      return parte.text.length > 0 ? <AssistantMarkdown>{parte.text}</AssistantMarkdown> : null;
+      return parte.text.length > 0 ? (
+        <AssistantMarkdown cursorNoFim={cursorNoFim}>{parte.text}</AssistantMarkdown>
+      ) : null;
     case 'thinking':
       return <Thinking content={parte.thinking} />;
     case 'tool_use':
@@ -122,7 +137,7 @@ function Parte({ parte, lookup }: { parte: ContentPart; lookup?: ToolResultLooku
 /* Item                                                                        */
 /* -------------------------------------------------------------------------- */
 
-export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
+export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
   switch (item.kind) {
     case 'compact-summary':
       // O resumo do /compact NÃO é fala do Rica — é evento da máquina e tem
@@ -193,10 +208,20 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
         .map((parte) => (parte.type === 'text' ? parte.text : ''))
         .join('\n')
         .trim();
+      const ultimoTexto = item.parts.reduce(
+        (ultimo, parte, indice) =>
+          parte.type === 'text' && /\S/.test(parte.text) ? indice : ultimo,
+        -1,
+      );
       return (
         <>
           {item.parts.map((parte, indice) => (
-            <Parte key={indice} parte={parte} lookup={lookup} />
+            <Parte
+              key={indice}
+              parte={parte}
+              lookup={lookup}
+              cursorNoFim={estaRodando && indice === ultimoTexto}
+            />
           ))}
           {falado.length > 0 && agentSlug ? (
             <BolhaVoz texto={falado} agentSlug={agentSlug} />

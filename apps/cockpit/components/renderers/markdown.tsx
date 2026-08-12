@@ -15,6 +15,7 @@ import { CodeBlock } from './code-block';
 export type AssistantMarkdownProps = {
   children: unknown;
   className?: string;
+  cursorNoFim?: boolean;
 };
 
 const REMARK_PLUGINS = [remarkGfm, remarkCockpitAlerts];
@@ -205,7 +206,11 @@ const MARKDOWN_COMPONENTS: Components = {
   },
 };
 
-export function AssistantMarkdown({ children, className = '' }: AssistantMarkdownProps) {
+export function AssistantMarkdown({
+  children,
+  className = '',
+  cursorNoFim = false,
+}: AssistantMarkdownProps) {
   const content = normalizeMarkdownContent(children);
   if (content === null) return null;
 
@@ -214,7 +219,8 @@ export function AssistantMarkdown({ children, className = '' }: AssistantMarkdow
       // Corpo do chat = 15px (`--ck-text-base`, contrato §4), não 13 — 13px é
       // metadado. O respiro entre parágrafos (space-4) é o que separa o texto
       // corrido de um bloco de log.
-      className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-4)] overflow-hidden font-sans text-base leading-body text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${className}`}
+      className={`min-w-0 max-w-[var(--ck-read-mid)] space-y-[var(--ck-space-4)] overflow-hidden font-sans text-base leading-body text-[var(--ck-text-primary)] [&_li>p]:inline [&_p]:break-words ${cursorNoFim ? 'ck-cursor-streaming ck-pulso' : ''} ${className}`}
+      data-estado={cursorNoFim ? 'trabalhando' : undefined}
     >
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}

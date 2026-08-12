@@ -31,6 +31,7 @@ export type FeedProps = {
   /** O cartão do `/compact` lê a duração medida na máquina do agente — sem
    *  slug ele nasce estático (teste). */
   agentSlug?: string;
+  estaRodando?: boolean;
 };
 
 /** Itens fora da janela mantidos montados — mesmo número do esqueleto, para a
@@ -67,8 +68,17 @@ const SOBRA = 6;
  */
 const ALTURA_ITEM = 44;
 
-export function Feed({ itens, lookup, agentSlug }: FeedProps) {
+export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
+  const ultimoTextoDoAssistente = useMemo(() => {
+    for (let indice = itens.length - 1; indice >= 0; indice--) {
+      const item = itens[indice];
+      if (item?.kind === 'assistant' && item.parts.some((parte) => parte.type === 'text' && /\S/.test(parte.text))) {
+        return indice;
+      }
+    }
+    return -1;
+  }, [itens]);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const coladoRef = useRef(true);
@@ -249,7 +259,7 @@ export function Feed({ itens, lookup, agentSlug }: FeedProps) {
                     overflowWrap: 'anywhere',
                   }}
                 >
-                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} /> : null}
+                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando && virtual.index === ultimoTextoDoAssistente} /> : null}
                 </div>
               </div>
             );
