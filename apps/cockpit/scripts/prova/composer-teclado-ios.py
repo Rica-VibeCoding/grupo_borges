@@ -36,6 +36,8 @@ BARRA_RETRAIDA = 1010
 # do deslocamento. Quem publica o visual tira 206px que existem.
 APP_JANELA = 655
 APP_VISUAL = 449
+# A janela do aplicativo ainda abrindo: no iPhone do Rica, 793 numa tela de 852.
+ABRINDO = 793
 
 
 # Roda antes do bundle: o componente lê `matchMedia` uma vez, na montagem.
@@ -102,6 +104,27 @@ def com_numero_velho(nav) -> dict:
     return medida
 
 
+def janela_cresce_calada(nav) -> dict:
+    """A janela do aplicativo termina de abrir depois da primeira medida e não
+    dispara `resize` — o Rica tinha de puxar a tela com o dedo para acertar. O
+    elemento raiz acompanha o viewport, então mexer nele é o sinal que sobra."""
+    pag = nav.new_page(viewport={"width": 393, "height": JANELA})
+    pag.add_init_script(preparo(standalone=True))
+    pag.add_init_script(f"window.__alturaDaJanela = {ABRINDO};")
+    pag.goto(URL, wait_until="domcontentloaded")
+    pag.locator("textarea").first.wait_for(state="visible", timeout=15000)
+    # A janela termina de abrir. Nenhum evento de janela é emitido: o único
+    # sinal é o elemento raiz mudando de tamanho.
+    pag.evaluate(
+        "window.__alturaDaJanela = undefined;"
+        "document.documentElement.style.minHeight = '1px'"
+    )
+    pag.wait_for_timeout(300)
+    medida = pag.evaluate(MEDE)
+    pag.close()
+    return medida
+
+
 def main() -> None:
     SAIDA.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
@@ -109,6 +132,7 @@ def main() -> None:
         navegador = com_teclado(nav, standalone=False)
         velho = com_numero_velho(nav)
         aplicativo = com_teclado(nav, standalone=True)
+        crescendo = janela_cresce_calada(nav)
         nav.close()
 
     metades = [
@@ -117,10 +141,12 @@ def main() -> None:
         ("barra do Safari nao estica a app", velho["app"] == JANELA),
         ("barra do Safari nao abre rolagem", velho["folgaDeRolagem"] == 0),
         ("aplicativo encolhe pela janela, nao pelo visual", aplicativo["app"] == APP_JANELA),
+        ("janela que cresce calada e alcancada", crescendo["app"] == JANELA),
     ]
     print(f"navegador com teclado : {navegador}, esperado app {JANELA}")
     print(f"navegador com o numero velho : {velho}, esperado app {JANELA}")
     print(f"aplicativo com teclado : {aplicativo}, esperado app {APP_JANELA}")
+    print(f"janela crescendo calada : {crescendo}, esperado app {JANELA}")
     for rotulo, passou in metades:
         print(f"{'OK    ' if passou else 'FALHOU'} {rotulo}")
     raise SystemExit(0 if all(passou for _, passou in metades) else 1)
