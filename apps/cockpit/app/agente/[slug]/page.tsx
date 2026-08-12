@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { fetchFleet } from '@grupo_borges/cockpit-core/api';
+import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
@@ -285,8 +285,7 @@ export default async function AgentePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ slug }, sp] = await Promise.all([params, searchParams]);
-  const fleet = await fetchFleet();
-  const agente = fleet.agents.find((a) => a.slug === slug);
+  const agente = await fetchAgent(slug);
 
   if (!agente) notFound();
 

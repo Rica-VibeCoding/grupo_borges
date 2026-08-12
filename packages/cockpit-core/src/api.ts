@@ -1,5 +1,6 @@
 import type {
   ActiveTaskStatus,
+  Agent,
   AgentDocResolved,
   AgentDocsResponse,
   AgentPainelResponse,
@@ -58,6 +59,21 @@ export async function fetchFleet(): Promise<FleetResponse> {
   const res = await fetch(`${SERVER_API_BASE}/api/fleet`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`fetchFleet failed: ${res.status}`);
   return res.json();
+}
+
+export async function fetchAgent(slug: string): Promise<Agent | null> {
+  const res = await fetch(`${SERVER_API_BASE}/api/agents/${encodeURIComponent(slug)}`, {
+    cache: 'no-store',
+  });
+  // 404 = agente inexistente, caso normal de URL velha: vira notFound() na rota.
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`fetchAgent failed: ${res.status}`);
+  const agent = (await res.json()) as Omit<Agent, 'status' | 'sparkline'>;
+  // O endpoint não deriva `status` nem `sparkline` (só o fleet.py os calcula).
+  // Defaults neutros são seguros aqui: nada na rota do agente lê esses dois
+  // campos do retrato do servidor — o `StatuslineAoVivo` troca pelo agente vivo
+  // da frota (`usaFrota()`) no primeiro tick do cliente.
+  return { ...agent, status: 'offline', sparkline: [] };
 }
 
 export async function fetchTasks(): Promise<Task[]> {
