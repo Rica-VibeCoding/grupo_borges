@@ -37,15 +37,12 @@ export function SincronizaAlturaDoViewport() {
     publicaAltura();
     const frame = window.requestAnimationFrame(publicaAltura);
 
-    // A janela do aplicativo termina de abrir DEPOIS da primeira medida e não
-    // avisa: medido no iPhone do Rica em 12/08, a app nasce com 793 numa tela
-    // de 852 e o composer fica 59px acima do lugar até ele puxar a tela com o
-    // dedo — o gesto é que dispara o evento que ninguém mandou. Como o `html`
-    // tem `height: 100%`, o elemento raiz acompanha o viewport, e observá-lo
-    // pega a expansão como mudança de layout, que é o único sinal que ela dá.
-    const observador = new ResizeObserver(publicaAltura);
-    observador.observe(document.documentElement);
-
+    // REVERTIDO em 12/08 (era `ff8cce5`): observar o `documentElement` para
+    // pegar a janela que cresce calada realimenta a si mesmo — a altura sai
+    // daqui e volta como mudança de layout do próprio elemento observado. No
+    // iPhone do Rica deu tela piscando e remontagem: *"ele pisca, refaz a tela
+    // [...] pus para compactar, a compactação sumiu"*. O composer nascer
+    // deslocado continua aberto, e o conserto dele não passa por aqui.
     visualViewport?.addEventListener('resize', publicaAltura);
     window.addEventListener('resize', publicaAltura);
     window.addEventListener('orientationchange', publicaAltura);
@@ -54,7 +51,6 @@ export function SincronizaAlturaDoViewport() {
 
     return () => {
       window.cancelAnimationFrame(frame);
-      observador.disconnect();
       visualViewport?.removeEventListener('resize', publicaAltura);
       window.removeEventListener('resize', publicaAltura);
       window.removeEventListener('orientationchange', publicaAltura);
