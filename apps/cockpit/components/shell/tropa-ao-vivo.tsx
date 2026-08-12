@@ -1,9 +1,11 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { useOptimistic } from 'react';
 
 import { usaFrota } from './frota-provider';
-import { Tropa } from './tropa';
+import { usaNavegacaoDaTropa } from './superficie-otimista';
+import { Tropa, type EscolheAgente } from './tropa';
 
 type TropaAoVivoProps = {
   /** Fallback para usos fora de uma rota `/agente/[slug]`, como a `/`. */
@@ -16,7 +18,8 @@ function TropaComSlug({
   slugSelecionado,
   agora,
   compacta = false,
-}: TropaAoVivoProps) {
+  aoEscolher,
+}: TropaAoVivoProps & { aoEscolher?: EscolheAgente }) {
   const { agents } = usaFrota();
   return (
     <Tropa
@@ -24,6 +27,7 @@ function TropaComSlug({
       slugSelecionado={slugSelecionado}
       agora={agora}
       compacta={compacta}
+      aoEscolher={aoEscolher}
     />
   );
 }
@@ -39,6 +43,41 @@ export function TropaAoVivo(props: TropaAoVivoProps) {
   const slugDaRota = pathname.startsWith(prefixo)
     ? pathname.slice(prefixo.length).split('/')[0]
     : undefined;
+  const slugDaUrl = slugDaRota || props.slugSelecionado;
 
-  return <TropaComSlug {...props} slugSelecionado={slugDaRota || props.slugSelecionado} />;
+  /**
+   * A escolha de agente responde ao TOQUE, não à volta do servidor — 12/08.
+   *
+   * O item era `<Link>` seco e o `selecionado` vinha do `usePathname`, que só
+   * muda quando a navegação COMMITA. Medido na 3008 com screencast do CDP
+   * (passo de 40ms), tocando num agente: os primeiros **299ms** a tela é pixel
+   * a pixel a anterior — nada nela sabe que houve um toque —, e só então o
+   * `loading.tsx` pinta a tela vazia por mais 500ms. O Rica descreveu os dois
+   * juntos como *"ele pisca, refaz a tela"*.
+   *
+   * O `loading.tsx` nunca cobriu esse primeiro trecho: ele entra DEPOIS dele.
+   * O vão é commit de navegação + hidratação + pintura, não servidor — o RSC
+   * desta rota responde em 9ms (p50, 20 amostras, load 4,16).
+   *
+   * Mesma mecânica das outras superfícies deste arquivo: `useOptimistic` sobre
+   * o valor da URL, virado dentro da transição que carrega o `router.push`.
+   * Navegação que morre reverte sozinha pro slug da rota.
+   */
+  const [slugOtimo, marcaSlug] = useOptimistic(slugDaUrl);
+  const navegacao = usaNavegacaoDaTropa();
+
+  return (
+    <TropaComSlug
+      {...props}
+      slugSelecionado={slugOtimo}
+      aoEscolher={
+        navegacao
+          ? // `false` fecha a gaveta no celular. No desktop a faixa é fundo
+            // permanente e o `data-aberto` dela não é lido — mesma chamada,
+            // sem efeito colateral. Ver `GavetaNav`.
+            (slug, href) => navegacao.ir(href, false, () => marcaSlug(slug))
+          : undefined
+      }
+    />
+  );
 }

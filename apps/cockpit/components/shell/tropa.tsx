@@ -96,6 +96,7 @@
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
 import Link from 'next/link';
+import type { MouseEvent } from 'react';
 import type {
   Agent,
   SparklineBucket,
@@ -112,6 +113,23 @@ import { estadoDe } from './estado';
 import { TETO_PCT } from './medidor';
 import { Retrato } from './retrato';
 import { Statusline } from './statusline';
+import { cliqueSimples } from './superficie-otimista';
+
+/** Quem sabe navegar sem esperar o servidor. `undefined` fora do provider da
+ *  tropa (e sem JavaScript): aí os itens são `<Link>` de verdade, como sempre
+ *  foram. */
+export type EscolheAgente = (slug: string, href: string) => void;
+
+/** O `onClick` dos dois formatos de item. Só intercepta clique primário sem
+ *  modificador — ctrl/cmd/shift continua abrindo noutra aba pelo navegador. */
+function escolheNoToque(slug: string, href: string, aoEscolher?: EscolheAgente) {
+  if (!aoEscolher) return undefined;
+  return (e: MouseEvent<HTMLAnchorElement>) => {
+    if (!cliqueSimples(e)) return;
+    e.preventDefault();
+    aoEscolher(slug, href);
+  };
+}
 
 /**
  * A pasta em que o agente trabalha, sem a raiz que todos compartilham.
@@ -216,18 +234,22 @@ function CartaoVivo({
   selecionado,
   agora,
   compacta,
+  aoEscolher,
 }: {
   agente: Agent;
   selecionado: boolean;
   agora: number;
   compacta: boolean;
+  aoEscolher?: EscolheAgente;
 }) {
   const estado = estadoDe(agente.status);
   const pasta = pastaCurta(agente.workspace_path, agente.slug);
+  const href = `/agente/${agente.slug}`;
   return (
     <li>
       <Link
-        href={`/agente/${agente.slug}`}
+        href={href}
+        onClick={escolheNoToque(agente.slug, href, aoEscolher)}
         className="ck-veil ck-aba relative flex items-center overflow-hidden"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
@@ -295,16 +317,20 @@ function LinhaDormindo({
   agente,
   selecionado,
   compacta,
+  aoEscolher,
 }: {
   agente: Agent;
   selecionado: boolean;
   compacta: boolean;
+  aoEscolher?: EscolheAgente;
 }) {
   const pct = resolveContextPct(agente);
+  const href = `/agente/${agente.slug}`;
   return (
     <li>
       <Link
-        href={`/agente/${agente.slug}`}
+        href={href}
+        onClick={escolheNoToque(agente.slug, href, aoEscolher)}
         className="ck-veil ck-aba flex items-center"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
@@ -414,6 +440,7 @@ export function Tropa({
   slugSelecionado,
   agora,
   compacta = false,
+  aoEscolher,
 }: {
   agents: Agent[];
   slugSelecionado?: string;
@@ -422,6 +449,7 @@ export function Tropa({
    *  celular, que é tela cheia. Não é o mesmo layout em duas larguras — são dois
    *  layouts, e fingir o contrário foi o que cortou nome e modelo. */
   compacta?: boolean;
+  aoEscolher?: EscolheAgente;
 }) {
   // Ordem DITADA pelo Rica (11/08): a posição carrega identidade, não estado.
   // Antes cada estado era uma seção e qualquer flip trabalhando↔ocioso movia a
@@ -468,6 +496,7 @@ export function Tropa({
               agente={a}
               selecionado={a.slug === slugSelecionado}
               compacta={compacta}
+              aoEscolher={aoEscolher}
             />
           ) : (
             <CartaoVivo
@@ -476,6 +505,7 @@ export function Tropa({
               selecionado={a.slug === slugSelecionado}
               agora={agora}
               compacta={compacta}
+              aoEscolher={aoEscolher}
             />
           ),
         )}

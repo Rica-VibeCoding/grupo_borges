@@ -58,8 +58,14 @@ type SuperficieCtx = {
   aberto: boolean;
   /** Vira a superfície na hora e empurra a URL atrás. `abrir` é explícito —
    *  cada gatilho sabe pra qual lado está indo; toggle por negação seria
-   *  ambíguo com dois cliques rápidos. */
-  ir: (href: string, abrir: boolean) => void;
+   *  ambíguo com dois cliques rápidos.
+   *
+   *  `tambem` roda DENTRO da mesma transição. Existe por causa da escolha de
+   *  agente na tropa, que precisa fechar a gaveta e acender o item tocado no
+   *  mesmo quadro: dois `useOptimistic` em transições separadas terminam em
+   *  instantes diferentes, e o que termina primeiro reverte sozinho — o item
+   *  apagaria e reacenderia no meio da navegação. */
+  ir: (href: string, abrir: boolean, tambem?: () => void) => void;
 };
 
 /** Duas superfícies, dois contextos SEPARADOS — de propósito. Painel e tropa
@@ -140,9 +146,10 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
       return () => atual?.cancela();
     }, []);
 
-    const ir = (href: string, abrir: boolean) => {
+    const ir = (href: string, abrir: boolean, tambem?: () => void) => {
       emTransicao(() => {
         marcaOtimo(abrir);
+        tambem?.();
         router.push(href);
       });
       rede.current?.arma(href);
@@ -168,9 +175,17 @@ export function usePainelAberto(fallback: boolean): boolean {
   return useContext(painel.Ctx)?.aberto ?? fallback;
 }
 
+/** A navegação da tropa, pra quem precisa dela FORA dos gatilhos daqui — hoje
+ *  só a escolha de agente (`tropa-ao-vivo.tsx`), que fecha a gaveta e acende o
+ *  item na mesma transição. Fora do provider devolve `null` e o chamador cai no
+ *  `<Link>` de sempre. */
+export function usaNavegacaoDaTropa(): SuperficieCtx | null {
+  return useContext(tropa.Ctx);
+}
+
 /** Clique de teclado/mouse primário SEM modificador é o que a gente intercepta;
  *  ctrl/cmd/shift/click do meio é "abrir noutra aba" e segue pro browser. */
-function cliqueSimples(e: MouseEvent<HTMLAnchorElement>): boolean {
+export function cliqueSimples(e: MouseEvent<HTMLAnchorElement>): boolean {
   return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 }
 
