@@ -40,6 +40,23 @@ describe('adaptaMensagensCodex', () => {
     assert.deepEqual(saida.map((m) => m.id), [0, 1]);
   });
 
+  it('carrega a proveniência de voz ao evento canônico', () => {
+    const adapta = criaAdaptadorCodex();
+    const saida = adapta([
+      bruta({
+        id: 't:voz',
+        role: 'user',
+        text: 'abre o relatório',
+        meta: { kind: 'stt', raw_text: '🎙 abre o relatório' },
+      }),
+    ]);
+
+    assert.deepEqual(saida[0].meta, {
+      kind: 'stt',
+      raw_text: '🎙 abre o relatório',
+    });
+  });
+
   it('deixa o internal de fora e não gasta ordinal com ele', () => {
     const adapta = criaAdaptadorCodex();
     const saida = adapta([

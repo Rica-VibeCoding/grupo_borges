@@ -82,6 +82,10 @@ _JSONL_QUEUE_OPERATION_KIND = "jsonl:queue-operation"
 # sessões que o caller pede.
 _RECENT_SESSION_SCAN_WINDOW = 4000
 
+# O eco do executor é imediato; 30 s cobre o watcher e timestamps truncados.
+# Depois disso, perder a proveniência é mais seguro que atribuí-la ao texto errado.
+MESSAGE_ORIGIN_MATCH_WINDOW_MS = 30_000
+
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:
     if not raw:
@@ -651,6 +655,162 @@ class GrupoBorgesDB:
             )
 
     # ---------- task_events ----------
+
+    # ---------- message_origins ----------
+
+    async def create_message_origin(
+        self,
+        *,
+        agent_slug: str,
+        executor_kind: str,
+        expected_text: str,
+        meta: dict[str, Any],
+    ) -> str:
+        """Persiste a origem antes de entregar texto a um executor externo.
+
+        O executor (tmux/Codex) não transporta campos próprios do cockpit no
+        seu eco. O registro é a correlação durável entre o POST e essa
+        mensagem futura; ``meta`` nunca é inferido do conteúdo ecoado.
+        """
+        return await asyncio.to_thread(
+            self._create_message_origin,
+            agent_slug,
+            executor_kind,
+            expected_text,
+            meta,
+        )
+
+    def _create_message_origin(
+        self,
+        agent_slug: str,
+        executor_kind: str,
+        expected_text: str,
+        meta: dict[str, Any],
+    ) -> str:
+        origin_id = str(uuid.uuid4())
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO message_origins
+                    (id, agent_slug, executor_kind, expected_text, meta_json, created_at_ms)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    origin_id,
+                    agent_slug,
+                    executor_kind,
+                    expected_text,
+                    json.dumps(meta, ensure_ascii=False),
+                    int(time.time() * 1000),
+                ),
+            )
+        return origin_id
+
+    async def discard_message_origin(self, origin_id: str) -> None:
+        """Remove a origem se o executor recusou a entrega antes do eco."""
+        await asyncio.to_thread(self._discard_message_origin, origin_id)
+
+    def _discard_message_origin(self, origin_id: str) -> None:
+        with self._connect() as conn, conn:
+            conn.execute("DELETE FROM message_origins WHERE id = ?", (origin_id,))
+
+    async def claim_message_origin(
+        self,
+        *,
+        agent_slug: str,
+        executor_kind: str,
+        expected_text: str,
+        message_key: str,
+        observed_at_ms: int,
+    ) -> dict[str, Any] | None:
+        """Associa uma origem pendente ao eco externo, uma única vez.
+
+        ``message_key`` torna a leitura idempotente: polling/replay devolve o
+        mesmo meta já associado, sem depender de estado em memória.
+        """
+        return await asyncio.to_thread(
+            self._claim_message_origin,
+            agent_slug,
+            executor_kind,
+            expected_text,
+            message_key,
+            observed_at_ms,
+        )
+
+    def _claim_message_origin(
+        self,
+        agent_slug: str,
+        executor_kind: str,
+        expected_text: str,
+        message_key: str,
+        observed_at_ms: int,
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn, conn:
+            existing = conn.execute(
+                """
+                SELECT meta_json FROM message_origins
+                WHERE agent_slug = ? AND executor_kind = ? AND message_key = ?
+                """,
+                (agent_slug, executor_kind, message_key),
+            ).fetchone()
+            if existing is not None:
+                try:
+                    value = json.loads(existing["meta_json"])
+                except (TypeError, json.JSONDecodeError):
+                    return None
+                return value if isinstance(value, dict) else None
+
+            oldest_match_ms = observed_at_ms - MESSAGE_ORIGIN_MATCH_WINDOW_MS
+            conn.execute(
+                """
+                DELETE FROM message_origins
+                WHERE agent_slug = ?
+                  AND executor_kind = ?
+                  AND message_key IS NULL
+                  AND created_at_ms < ?
+                """,
+                (agent_slug, executor_kind, oldest_match_ms),
+            )
+
+            # Alguns rollouts carimbam segundos inteiros; +1 s acomoda essa
+            # perda de precisão. O piso evita casar uma origem órfã antiga.
+            pending = conn.execute(
+                """
+                SELECT id, meta_json FROM message_origins
+                WHERE agent_slug = ?
+                  AND executor_kind = ?
+                  AND expected_text = ?
+                  AND message_key IS NULL
+                  AND created_at_ms >= ?
+                  AND created_at_ms <= ?
+                ORDER BY created_at_ms ASC
+                LIMIT 1
+                """,
+                (
+                    agent_slug,
+                    executor_kind,
+                    expected_text,
+                    oldest_match_ms,
+                    observed_at_ms + 1000,
+                ),
+            ).fetchone()
+            if pending is None:
+                return None
+
+            updated = conn.execute(
+                """
+                UPDATE message_origins SET message_key = ?
+                WHERE id = ? AND message_key IS NULL
+                """,
+                (message_key, pending["id"]),
+            )
+            if updated.rowcount != 1:
+                return None
+            try:
+                value = json.loads(pending["meta_json"])
+            except (TypeError, json.JSONDecodeError):
+                return None
+            return value if isinstance(value, dict) else None
 
     async def insert_task_event(
         self,

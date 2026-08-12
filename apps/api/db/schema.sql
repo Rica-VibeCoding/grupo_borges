@@ -166,6 +166,19 @@ CREATE TABLE IF NOT EXISTS task_events (
 );
 
 -- ============================================================
+-- message_origins — proveniência explícita de entradas enviadas ao executor
+-- ============================================================
+CREATE TABLE IF NOT EXISTS message_origins (
+    id              TEXT PRIMARY KEY,
+    agent_slug      TEXT NOT NULL REFERENCES agents(slug) ON DELETE CASCADE,
+    executor_kind   TEXT NOT NULL,
+    expected_text   TEXT NOT NULL,
+    meta_json       TEXT NOT NULL,
+    message_key     TEXT,
+    created_at_ms   INTEGER NOT NULL
+);
+
+-- ============================================================
 -- ask_user_pending — perguntas MCP ask-user aguardando resposta humana
 -- ============================================================
 CREATE TABLE IF NOT EXISTS ask_user_pending (
@@ -194,6 +207,12 @@ CREATE INDEX IF NOT EXISTS idx_events_task           ON task_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_events_agent          ON task_events(agent_slug, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_kind           ON task_events(kind, created_at);
 CREATE INDEX IF NOT EXISTS idx_instances_agent       ON agent_instances(agent_slug, status);
+CREATE INDEX IF NOT EXISTS idx_message_origins_pending
+    ON message_origins(agent_slug, executor_kind, expected_text, created_at_ms)
+    WHERE message_key IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_message_origins_message
+    ON message_origins(agent_slug, executor_kind, message_key)
+    WHERE message_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_ask_user_request      ON ask_user_pending(request_id);
 CREATE INDEX IF NOT EXISTS idx_ask_user_agent        ON ask_user_pending(agent_slug, created_at);
 

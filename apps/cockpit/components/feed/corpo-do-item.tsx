@@ -16,6 +16,7 @@ import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
 import { Thinking } from '@/components/renderers/thinking';
 
+import { BolhaVoz } from './bolha-voz.tsx';
 import { Execucao } from './execucao';
 import {
   execucaoDaParte,
@@ -184,14 +185,25 @@ export function CorpoDoItem({ item, lookup, agentSlug }: Props) {
     case 'meta-decision':
       return <Fala texto={item.text} tom="discreto" />;
 
-    case 'assistant':
+    case 'assistant': {
+      // A fala do agente ganha a bolha de voz embaixo do texto — o texto fica
+      // (decisão do Rica, 11/08). Só quando há texto: resposta que é só
+      // execução de ferramenta não tem o que falar.
+      const falado = item.parts
+        .map((parte) => (parte.type === 'text' ? parte.text : ''))
+        .join('\n')
+        .trim();
       return (
         <>
           {item.parts.map((parte, indice) => (
             <Parte key={indice} parte={parte} lookup={lookup} />
           ))}
+          {falado.length > 0 && agentSlug ? (
+            <BolhaVoz texto={falado} agentSlug={agentSlug} />
+          ) : null}
         </>
       );
+    }
 
     case 'chip':
       return item.classifierKind === 'tool' ? (

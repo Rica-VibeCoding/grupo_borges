@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from orchestrator.synthetic_message import detect_synthetic_kind
+from orchestrator.synthetic_message import detect_synthetic_kind, explicit_synthetic_meta
 
 
 @pytest.mark.parametrize(
@@ -15,7 +15,6 @@ from orchestrator.synthetic_message import detect_synthetic_kind
     [
         ("<<autonomous-loop-dynamic>>", "wakeup-dynamic", "<<autonomous-loop-dynamic>>"),
         ("<<autonomous-loop>>", "wakeup-cron", "<<autonomous-loop>>"),
-        ("🎙 abrir relatório", "stt", "🎙 abrir relatório"),
     ],
 )
 def test_detects_synthetic_kind_from_string_content(
@@ -72,8 +71,12 @@ def test_wakeup_matching_ignores_surrounding_whitespace(
     }
 
 
-def test_stt_prefix_without_transcribed_text_still_matches() -> None:
-    assert detect_synthetic_kind({"content": "🎙 "}) == {
+def test_stt_requires_explicit_origin_metadata() -> None:
+    assert detect_synthetic_kind({"content": "🎙 abrir relatório"}) is None
+    assert explicit_synthetic_meta({
         "kind": "stt",
-        "raw_text": "🎙 ",
+        "raw_text": "🎙 abrir relatório",
+    }) == {
+        "kind": "stt",
+        "raw_text": "🎙 abrir relatório",
     }

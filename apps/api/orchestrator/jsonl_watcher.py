@@ -28,6 +28,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,20 @@ def _content_blocks(payload: dict) -> list[dict]:
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _timestamp_ms(value: object) -> int:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value * 1000)
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return _now_ms()
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp() * 1000)
+    return _now_ms()
 
 
 def _jsonl_bool(payload: dict, *keys: str) -> bool:
@@ -826,6 +841,20 @@ class JsonlWatcher:
             payload = parse_dict_or_none(line)
             event_type = str((payload or {}).get("type") or "unknown")
             update_subagent_state_from_jsonl(slug, payload, event_type)
+            if isinstance(payload, dict) and event_type == "user":
+                message = payload.get("message")
+                text = _message_text(payload)
+                message_uuid = payload.get("uuid")
+                if isinstance(message, dict) and text and isinstance(message_uuid, str):
+                    meta = await self._db.claim_message_origin(
+                        agent_slug=slug,
+                        executor_kind="tmux",
+                        expected_text=text,
+                        message_key=message_uuid,
+                        observed_at_ms=_timestamp_ms(payload.get("timestamp")),
+                    )
+                    if meta is not None:
+                        payload["meta"] = meta
             await self._db.insert_task_event(
                 kind=f"jsonl:{event_type}",
                 agent_slug=slug,

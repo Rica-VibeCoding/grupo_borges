@@ -54,7 +54,11 @@ from orchestrator.jsonl_watcher import (
     subagent_active_snapshot,
     subagent_status_events_since,
 )
-from orchestrator.synthetic_message import detect_synthetic_kind
+from orchestrator.synthetic_message import (
+    SyntheticMeta,
+    detect_synthetic_kind,
+    explicit_synthetic_meta,
+)
 from routers.ask_user import (
     ask_user_active_snapshot,
     ask_user_events_since,
@@ -408,17 +412,47 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     return agent
 
 
-async def _send_tmux_or_409(session_name: str, text: str) -> bool:
+class _InputOrigin(NamedTuple):
+    meta: SyntheticMeta
+
+
+async def _send_tmux_or_409(
+    session_name: str,
+    text: str,
+    *,
+    input_origin: _InputOrigin | None = None,
+    db: GrupoBorgesDB | None = None,
+    agent_slug: str | None = None,
+) -> bool:
     """Envia ao pane ou distingue contenção transitória de pane indisponível.
 
     Reduz o resultado a bool porque o contrato HTTP destes endpoints é bool. O
     motivo e o desfecho (recusado × incerto) ficam no log do canal e em
     ``get_delivery_channel_state``; enriquecer a resposta é outro commit.
     """
+    origin_id: str | None = None
+    if input_origin is not None:
+        if db is None or agent_slug is None:
+            raise RuntimeError("input_origin requer db e agent_slug")
+        origin_id = await db.create_message_origin(
+            agent_slug=agent_slug,
+            executor_kind="tmux",
+            expected_text=text,
+            meta=input_origin.meta,
+        )
     try:
-        return (await tmux_driver.send_message(session_name, text)).delivered
+        delivered = (await tmux_driver.send_message(session_name, text)).delivered
     except tmux_driver.TmuxSessionBusyError as exc:
+        if origin_id is not None:
+            await db.discard_message_origin(origin_id)
         raise HTTPException(status_code=409, detail="agent_tmux_busy") from exc
+    except Exception:
+        if origin_id is not None:
+            await db.discard_message_origin(origin_id)
+        raise
+    if not delivered and origin_id is not None:
+        await db.discard_message_origin(origin_id)
+    return delivered
 
 
 async def _build_painel_vida(agent: dict[str, Any]) -> AgentPainelVida:
@@ -1509,6 +1543,18 @@ def _parse_iso_epoch(value: Any) -> int | None:
     return int(dt.timestamp())
 
 
+def _parse_iso_epoch_ms(value: Any) -> int | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
 def _is_recent(updated_at_iso: Any, window_seconds: int) -> bool:
     if not isinstance(updated_at_iso, str):
         return False
@@ -2363,6 +2409,7 @@ async def _spawn_codex_agent_turn(
     text: str,
     fresh: bool = False,
     image_path: str | None = None,
+    input_origin: _InputOrigin | None = None,
 ) -> None:
     lock = await _codex_input_lock(slug)
     async with lock:
@@ -2395,14 +2442,27 @@ async def _spawn_codex_agent_turn(
                 )
                 if thread is not None and thread.thread_id == tid:
                     thread_id = tid
-        _spawn_tara_codex_input(
-            slug=slug,
-            cwd=cwd,
-            text=text,
-            thread_id=thread_id,
-            fresh=effective_fresh,
-            image_path=image_path,
-        )
+        origin_id: str | None = None
+        if input_origin is not None:
+            origin_id = await request.app.state.db.create_message_origin(
+                agent_slug=slug,
+                executor_kind="codex",
+                expected_text=text,
+                meta=input_origin.meta,
+            )
+        try:
+            _spawn_tara_codex_input(
+                slug=slug,
+                cwd=cwd,
+                text=text,
+                thread_id=thread_id,
+                fresh=effective_fresh,
+                image_path=image_path,
+            )
+        except Exception:
+            if origin_id is not None:
+                await request.app.state.db.discard_message_origin(origin_id)
+            raise
         # O flag `codex_next_fresh` NÃO zera aqui: a "nova conversa" só consumiu
         # de verdade quando a thread nova nascer (evento `codex.thread.started`,
         # que grava a thread no agent_state e zera o flag). Zerar no spawn faria
@@ -2669,7 +2729,12 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
         "agent_id": payload.get("agentId"),
         "tool_use_result": payload.get("toolUseResult"),
     }
-    meta = detect_synthetic_kind(canonical["message"])
+    # Voz chega marcada pelo POST e pelo watcher; nunca pela forma do texto.
+    # Wakeups continuam sendo sentinelas do próprio runtime e podem ser
+    # reconhecidos pelo conteúdo, porque não são fala humana.
+    meta = explicit_synthetic_meta(payload.get("meta")) or detect_synthetic_kind(
+        canonical["message"]
+    )
     if meta is not None:
         canonical["meta"] = meta
     return canonical
@@ -3581,11 +3646,15 @@ async def post_agent_voice(
             int((time.monotonic() - stt_started_at) * 1000),
         )
 
+        input_origin = _InputOrigin(
+            meta={"kind": "stt", "raw_text": f"🎙 {transcribed}"}
+        )
         if agent.get("executor_kind") == "codex":
             await _spawn_codex_agent_turn(
                 slug,
                 request,
                 text=transcribed,
+                input_origin=input_origin,
             )
             duration_ms = int((time.monotonic() - started_at) * 1000)
             return {
@@ -3596,7 +3665,11 @@ async def post_agent_voice(
             }
 
         delivered = await _send_tmux_or_409(
-            agent["tmux_session"], f"🎙 {transcribed}"
+            agent["tmux_session"],
+            f"🎙 {transcribed}",
+            input_origin=input_origin,
+            db=db,
+            agent_slug=slug,
         )
         duration_ms = int((time.monotonic() - started_at) * 1000)
         return {
@@ -3981,13 +4054,31 @@ class CodexThreadResponse(BaseModel):
     thread: dict[str, Any] | None
 
 
+class CodexMessageMeta(BaseModel):
+    kind: Literal["wakeup-dynamic", "wakeup-cron", "stt"]
+    raw_text: str
+
+
+class CodexMessageResponse(BaseModel):
+    id: str
+    role: Literal["user", "assistant", "internal"]
+    text: str
+    timestamp: str
+    item_type: str
+    visible: bool
+    # O campo precisa ficar AUSENTE quando a origem não existe. O decorator da
+    # rota usa `response_model_exclude_unset=True`; por isso o chamador só o
+    # passa abaixo quando há meta explícito, em vez de passar `None`.
+    meta: CodexMessageMeta | None = None
+
+
 class CodexMessagesResponse(BaseModel):
     source: str
     thread_id: str | None
     model: str | None
     tokens_used: int | None
     updated_at_ms: int | None
-    messages: list[dict[str, Any]]
+    messages: list[CodexMessageResponse]
     hidden_count: int
 
 
@@ -4022,7 +4113,11 @@ async def get_codex_thread(slug: str, request: Request) -> CodexThreadResponse:
     return CodexThreadResponse(thread=thread.to_dict() if thread else None)
 
 
-@router.get("/{slug}/codex/messages", response_model=CodexMessagesResponse)
+@router.get(
+    "/{slug}/codex/messages",
+    response_model=CodexMessagesResponse,
+    response_model_exclude_unset=True,
+)
 async def get_codex_messages(
     slug: str,
     request: Request,
@@ -4067,13 +4162,31 @@ async def get_codex_messages(
     selected = all_msgs if include_internal else [m for m in all_msgs if m.visible]
     selected = selected[-limit:]
 
+    db: GrupoBorgesDB = request.app.state.db
+    messages: list[CodexMessageResponse] = []
+    for message in selected:
+        payload = message.to_dict()
+        observed_at_ms = _parse_iso_epoch_ms(message.timestamp)
+        if message.role == "user" and observed_at_ms is not None:
+            meta = await db.claim_message_origin(
+                agent_slug=slug,
+                executor_kind="codex",
+                expected_text=message.text,
+                message_key=message.id,
+                observed_at_ms=observed_at_ms,
+            )
+            explicit_meta = explicit_synthetic_meta(meta)
+            if explicit_meta is not None:
+                payload["meta"] = explicit_meta
+        messages.append(CodexMessageResponse(**payload))
+
     return CodexMessagesResponse(
         source=codex_reader.SOURCE,
         thread_id=thread.thread_id if thread else None,
         model=thread.model if thread else None,
         tokens_used=thread.tokens_used if thread else None,
         updated_at_ms=thread.updated_at_ms if thread else None,
-        messages=[m.to_dict() for m in selected],
+        messages=messages,
         hidden_count=hidden_count,
     )
 

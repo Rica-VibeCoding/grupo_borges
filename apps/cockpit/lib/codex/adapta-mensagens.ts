@@ -31,7 +31,7 @@
  * muda — e o mesmo ARRAY quando nada mudou.
  */
 
-import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+import type { MessagePayload, SyntheticMeta } from '@grupo_borges/cockpit-core/messages-types';
 
 /** O que `GET /api/agents/{slug}/codex/messages` devolve em `messages[]`
  *  (`apps/api/services/codex_reader.py`, `CodexMessage.to_dict`). */
@@ -42,6 +42,7 @@ export type CodexMessage = {
   timestamp: string;
   item_type: string;
   visible: boolean;
+  meta?: SyntheticMeta;
 };
 
 /** POR QUE `internal` FICA DE FORA. O reader marca `function_call` como
@@ -62,9 +63,18 @@ function instanteDe(timestamp: string): number {
 /** Duas mensagens com a mesma chave e o mesmo texto são a mesma mensagem — o
  *  rollout é append-only, mas um turno em voo pode ter a última linha crescendo
  *  entre um poll e outro. */
-function mudou(anterior: MessagePayload, texto: string, ts: string): boolean {
+function mesmaMeta(a: SyntheticMeta | undefined, b: SyntheticMeta | undefined): boolean {
+  return a?.kind === b?.kind && a?.raw_text === b?.raw_text;
+}
+
+function mudou(
+  anterior: MessagePayload,
+  texto: string,
+  ts: string,
+  meta: SyntheticMeta | undefined,
+): boolean {
   const corpo = anterior.message?.content;
-  return corpo !== texto || anterior.timestamp !== ts;
+  return corpo !== texto || anterior.timestamp !== ts || !mesmaMeta(anterior.meta, meta);
 }
 
 export type AdaptadorCodex = (brutas: readonly CodexMessage[]) => MessagePayload[];
@@ -89,7 +99,7 @@ export function criaAdaptadorCodex(): AdaptadorCodex {
       vistas.add(chave);
 
       const anterior = traduzidas.get(chave);
-      if (anterior && !mudou(anterior, bruta.text, bruta.timestamp)) {
+      if (anterior && !mudou(anterior, bruta.text, bruta.timestamp, bruta.meta)) {
         lista.push(anterior);
         if (ultimaLista[ordinal] !== anterior) igualAAnterior = false;
         continue;
@@ -111,6 +121,7 @@ export function criaAdaptadorCodex(): AdaptadorCodex {
           content: bruta.text,
           stop_reason: papel === 'assistant' ? 'end_turn' : undefined,
         },
+        ...(bruta.meta ? { meta: bruta.meta } : {}),
       };
       traduzidas.set(chave, traduzida);
       lista.push(traduzida);

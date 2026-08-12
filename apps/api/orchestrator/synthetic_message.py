@@ -4,7 +4,6 @@ from typing import Literal, TypedDict
 
 WAKEUP_DYNAMIC = "<<autonomous-loop-dynamic>>"
 WAKEUP_CRON = "<<autonomous-loop>>"
-STT_PREFIX = "🎙 "
 
 SyntheticKind = Literal["wakeup-dynamic", "wakeup-cron", "stt"]
 
@@ -12,6 +11,19 @@ SyntheticKind = Literal["wakeup-dynamic", "wakeup-cron", "stt"]
 class SyntheticMeta(TypedDict):
     kind: SyntheticKind
     raw_text: str
+
+
+def explicit_synthetic_meta(value: object) -> SyntheticMeta | None:
+    """Valida meta que já veio da origem, sem classificar texto de usuário."""
+    if not isinstance(value, dict):
+        return None
+    kind = value.get("kind")
+    raw_text = value.get("raw_text")
+    if kind not in {"wakeup-dynamic", "wakeup-cron", "stt"}:
+        return None
+    if not isinstance(raw_text, str):
+        return None
+    return {"kind": kind, "raw_text": raw_text}
 
 
 def _first_text_content(content: object) -> str | None:
@@ -48,6 +60,4 @@ def detect_synthetic_kind(message: dict | None) -> SyntheticMeta | None:
         return {"kind": "wakeup-dynamic", "raw_text": raw_text}
     if stripped == WAKEUP_CRON:
         return {"kind": "wakeup-cron", "raw_text": raw_text}
-    if raw_text.startswith(STT_PREFIX):
-        return {"kind": "stt", "raw_text": raw_text}
     return None
