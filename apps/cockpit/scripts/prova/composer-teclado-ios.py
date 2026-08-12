@@ -49,7 +49,7 @@ def preparo(standalone: bool) -> str:
     }});
     Object.defineProperty(window, 'innerHeight', {{
       configurable: true,
-      get: () => window.__alturaDaJanela ?? {JANELA},
+      get: () => window.__alturaDaJanela ?? window.outerHeight,
     }});
     const real = window.matchMedia.bind(window);
     window.matchMedia = (q) =>
@@ -57,6 +57,9 @@ def preparo(standalone: bool) -> str:
         addEventListener() {{}}, removeEventListener() {{}} }} : real(q);
     """
 
+
+ALTURA_PUBLICADA = """() => document.documentElement.style
+  .getPropertyValue('--ck-viewport-altura').trim() !== ''"""
 
 MEDE = """() => ({
   app: Math.round(
@@ -104,21 +107,23 @@ def com_numero_velho(nav) -> dict:
     return medida
 
 
-def janela_cresce_calada(nav) -> dict:
-    """A janela do aplicativo termina de abrir depois da primeira medida e não
-    dispara `resize` — o Rica tinha de puxar a tela com o dedo para acertar. O
-    elemento raiz acompanha o viewport, então mexer nele é o sinal que sobra."""
-    pag = nav.new_page(viewport={"width": 393, "height": JANELA})
+def janela_que_cresce(nav) -> dict:
+    """A app acompanha a janela que cresce depois da montagem.
+
+    ATENÇÃO: aqui a janela cresce de verdade, e no Chromium isso dispara
+    `resize`. O caso do Rica é o oposto — a janela do aplicativo termina de
+    abrir SEM emitir evento de janela, e ele tinha de puxar a tela com o dedo.
+    Esse caso não é reproduzível em navegador sem cabeça: mock de `innerHeight`
+    não mexe no layout, e mexer no layout de verdade dispara justamente o
+    evento que falta. O `ResizeObserver` no elemento raiz é a rede para ele, e
+    quem a prova é o vídeo no aparelho — não este arquivo.
+    """
+    pag = nav.new_page(viewport={"width": 393, "height": ABRINDO})
     pag.add_init_script(preparo(standalone=True))
-    pag.add_init_script(f"window.__alturaDaJanela = {ABRINDO};")
     pag.goto(URL, wait_until="domcontentloaded")
     pag.locator("textarea").first.wait_for(state="visible", timeout=15000)
-    # A janela termina de abrir. Nenhum evento de janela é emitido: o único
-    # sinal é o elemento raiz mudando de tamanho.
-    pag.evaluate(
-        "window.__alturaDaJanela = undefined;"
-        "document.documentElement.style.minHeight = '1px'"
-    )
+    pag.wait_for_function(ALTURA_PUBLICADA, timeout=15000)
+    pag.set_viewport_size({"width": 393, "height": JANELA})
     pag.wait_for_timeout(300)
     medida = pag.evaluate(MEDE)
     pag.close()
@@ -132,7 +137,7 @@ def main() -> None:
         navegador = com_teclado(nav, standalone=False)
         velho = com_numero_velho(nav)
         aplicativo = com_teclado(nav, standalone=True)
-        crescendo = janela_cresce_calada(nav)
+        crescendo = janela_que_cresce(nav)
         nav.close()
 
     metades = [
@@ -141,12 +146,12 @@ def main() -> None:
         ("barra do Safari nao estica a app", velho["app"] == JANELA),
         ("barra do Safari nao abre rolagem", velho["folgaDeRolagem"] == 0),
         ("aplicativo encolhe pela janela, nao pelo visual", aplicativo["app"] == APP_JANELA),
-        ("janela que cresce calada e alcancada", crescendo["app"] == JANELA),
+        ("app acompanha a janela que cresce", crescendo["app"] == JANELA),
     ]
     print(f"navegador com teclado : {navegador}, esperado app {JANELA}")
     print(f"navegador com o numero velho : {velho}, esperado app {JANELA}")
     print(f"aplicativo com teclado : {aplicativo}, esperado app {APP_JANELA}")
-    print(f"janela crescendo calada : {crescendo}, esperado app {JANELA}")
+    print(f"janela que cresce : {crescendo}, esperado app {JANELA}")
     for rotulo, passou in metades:
         print(f"{'OK    ' if passou else 'FALHOU'} {rotulo}")
     raise SystemExit(0 if all(passou for _, passou in metades) else 1)
