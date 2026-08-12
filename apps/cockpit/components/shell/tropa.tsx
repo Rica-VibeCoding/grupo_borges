@@ -480,6 +480,19 @@ export function Tropa({
           ),
         )}
       </ul>
+
+      {/* No aplicativo instalado não existe barra de endereço: esta é a única
+          porta para a tela de medição. Fora dela, digitar a URL resolve. */}
+      <Link
+        href="/diagnostico"
+        style={{
+          padding: 'var(--ck-space-4) var(--ck-space-2)',
+          fontSize: 'var(--ck-text-sm)',
+          color: 'var(--ck-text-secondary)',
+        }}
+      >
+        Diagnóstico do aparelho
+      </Link>
     </nav>
   );
 }
