@@ -56,7 +56,8 @@ function usaTelaEstreita() {
 }
 
 export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }: SeletorMotorProps) {
-  const [painel, setPainel] = useState<PainelDoMotor | null>(null);
+  // `undefined` = ainda não voltou; `null` = voltou sem nada. Ver `!temControle`.
+  const [painel, setPainel] = useState<PainelDoMotor | null | undefined>(undefined);
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDoSeletor>('inicio');
   // `string` e não um Literal fechado: o catálogo Codex é lido do CLI em tempo
@@ -69,7 +70,7 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
 
   useEffect(() => {
     let vivo = true;
-    setPainel(null);
+    setPainel(undefined);
     convergencia.current?.parar();
     convergencia.current = null;
     fetchAgentPainel(agentSlug)
@@ -238,7 +239,9 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
       aoSelecionar: () => void trocarEsforco(valor),
     })) ?? [];
 
-  if (!temControle) {
+  // Veredito só DEPOIS da resposta: dado antes, o rótulo nascia texto pequeno e
+  // cinza e virava botão quando o painel voltava — o pulo filmado em 12/08.
+  if (!temControle && painel !== undefined) {
     return (
       <div
         className="flex min-w-0 items-center"
@@ -255,7 +258,8 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   }
 
   return (
-    <DropdownMenu open={aberto} onOpenChange={alterarAbertura}>
+    // Esperando não há opção para listar; o toque abre quando o painel vem.
+    <DropdownMenu open={aberto && temControle} onOpenChange={alterarAbertura}>
       <GatilhoDoSeletor
         agentName={agentName}
         aberto={aberto}
