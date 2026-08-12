@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { abrePorta, preparaEnvio } from './porta-de-envio.ts';
+import { LIMITE_DE_TEXTO, abrePorta, preparaEnvio } from './porta-de-envio.ts';
 
 /**
  * A ESPINHA: o campo nunca esvazia sem que o texto vá para ALGUM lugar visível.
@@ -286,4 +286,54 @@ test('fase confirmada ou falhada não segura a próxima mensagem', () => {
       `${faseEnvio} não pode virar trava`,
     );
   }
+});
+
+test('texto no limite exato passa pela porta', () => {
+  const texto = 'a'.repeat(LIMITE_DE_TEXTO);
+
+  assert.equal(
+    abrePorta({ texto, compactando: false, faseEnvio: 'ocioso' }).libera,
+    true,
+  );
+});
+
+test('um caractere acima do limite é recusado, com o campo preservado', () => {
+  const texto = 'a'.repeat(LIMITE_DE_TEXTO + 1);
+  const porta = abrePorta({ texto, compactando: false, faseEnvio: 'ocioso' });
+  const efeito = preparaEnvio({ texto, compactando: false, faseEnvio: 'ocioso' });
+
+  assert.equal(porta.libera, false);
+  assert.equal(porta.libera === false && porta.motivo, 'longo-demais');
+  // O recado precisa dizer os DOIS números: sem o teto, "longo demais" não diz
+  // quanto cortar. Montado do limite real para não congelar aqui um número que
+  // o backend já mudou uma vez.
+  assert.equal(
+    porta.libera === false && porta.recado,
+    `texto longo demais — ${(LIMITE_DE_TEXTO + 1).toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
+  );
+  assert.equal(efeito.despacha, false);
+  assert.equal(efeito.limpaCampo, false, 'a recusa mantém o texto editável no campo');
+});
+
+test('o log colado que o limite do stub recusava agora passa', () => {
+  // 8192 era o valor do stub (ffae5d7). Este teste é a régua do gesto real do
+  // Rica — colar um trecho grande — e falha se alguém devolver o teto antigo.
+  const texto = 'x'.repeat(20000);
+
+  assert.equal(
+    abrePorta({ texto, compactando: false, faseEnvio: 'ocioso' }).libera,
+    true,
+  );
+});
+
+test('emoji fora do BMP ocupa duas unidades UTF-16 e é barrado conservadoramente', () => {
+  const texto = `${'a'.repeat(LIMITE_DE_TEXTO - 1)}😀`;
+
+  assert.equal([...texto].length, LIMITE_DE_TEXTO, 'o emoji é um único code point');
+  assert.equal(texto.length, LIMITE_DE_TEXTO + 1, 'String.length conta unidades UTF-16');
+  assert.equal(
+    abrePorta({ texto, compactando: false, faseEnvio: 'ocioso' }).libera,
+    false,
+    'a guarda por UTF-16 é conservadora diante do limite por code points do backend',
+  );
 });

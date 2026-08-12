@@ -17,9 +17,16 @@
  */
 import type { FaseEnvio } from '../../lib/envio.ts';
 
+// Espelha o `max_length` do endpoint em apps/api/routers/agents.py — o motivo
+// do número mora lá, medido. Mexeu num, mexe no outro: acima deste teto o
+// backend responde 422 e a mensagem não sai.
+export const LIMITE_DE_TEXTO = 65536;
+
 export type MotivoRecusa =
   /** Não há gesto: nem texto escrito, nem arquivo anexado. */
   | 'vazio'
+  /** O backend recusa textos acima de `LIMITE_DE_TEXTO`. */
+  | 'longo-demais'
   /** O `/compact` está em voo e uma mensagem agora corta o resumo ao meio. */
   | 'compactando'
   /** A mensagem anterior ainda não foi confirmada pelo eco. */
@@ -63,19 +70,28 @@ const RECADO_ANEXO_EM_VOO =
 const RECADO_COMPACT_COM_ANEXO =
   'compactando — o anexo continua aqui, toque em enviar quando a barra sumir';
 
+type MotivoComRecado = Exclude<MotivoRecusa, 'vazio' | 'anexo-em-voo'>;
+type RecadosPorMidia = Record<Exclude<MotivoComRecado, 'longo-demais'>, string> & {
+  'longo-demais': (tamanho: number) => string;
+};
+
 const RECADO: Record<
   'texto' | 'voz',
-  Record<Exclude<MotivoRecusa, 'vazio' | 'anexo-em-voo'>, string>
+  RecadosPorMidia
 > = {
   texto: {
     compactando: 'compactando — sua mensagem continua aqui e sai quando a barra sumir',
     'envio-em-voo':
       'a mensagem anterior ainda não voltou confirmada — sua mensagem continua aqui',
+    'longo-demais': (tamanho) =>
+      `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
   },
   voz: {
     compactando: 'compactando — o áudio não foi enviado, grave de novo quando a barra sumir',
     'envio-em-voo':
       'a mensagem anterior ainda não voltou confirmada — o áudio não foi enviado',
+    'longo-demais': (tamanho) =>
+      `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
   },
 };
 
@@ -102,6 +118,13 @@ export function abrePorta(entrada: {
   // 05/08 renascendo da invariante que o matou.
   if (entrada.texto !== undefined && !entrada.texto.trim() && !entrada.temAnexo) {
     return { libera: false, motivo: 'vazio', recado: null };
+  }
+  if (entrada.texto !== undefined && entrada.texto.length > LIMITE_DE_TEXTO) {
+    return {
+      libera: false,
+      motivo: 'longo-demais',
+      recado: recado['longo-demais'](entrada.texto.length),
+    };
   }
   if (entrada.compactando) {
     return { libera: false, motivo: 'compactando', recado: recado.compactando };

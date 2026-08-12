@@ -117,14 +117,31 @@ def _build_app(
 
 
 def test_input_validates_max_length(tmp_path: Path) -> None:
-    """`text` > 8192 chars → 422 (Pydantic, antes da impl real)."""
+    """`text` > 65536 chars → 422 (Pydantic, antes da impl real)."""
     app = _build_app(tmp_path)
     with TestClient(app) as client:
         response = client.post(
             "/api/agents/daniel/input",
-            json={"text": "x" * 8193, "idempotency_key": "k1"},
+            json={"text": "x" * 65537, "idempotency_key": "k1"},
         )
         assert response.status_code == 422
+
+
+def test_input_aceita_um_log_colado(tmp_path: Path) -> None:
+    """O tamanho que o limite antigo recusava calado tem que passar.
+
+    8192 era o valor do stub e barrava colar um log; o teto real do caminho é o
+    `MAX_ARG_STRLEN` do kernel, 128 KiB. Este teste é a régua do que o Rica faz
+    de verdade — colar um trecho grande — e falha se alguém reduzir o limite sem
+    medir o caminho de entrega de novo.
+    """
+    app = _build_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agents/daniel/input",
+            json={"text": "x" * 20000, "idempotency_key": "k-log"},
+        )
+        assert response.status_code != 422
 
 
 def test_input_rejects_empty_text(tmp_path: Path) -> None:

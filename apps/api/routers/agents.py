@@ -2183,7 +2183,17 @@ class PaneStreamEvent(BaseModel):
 
 
 class InputRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=8192)
+    # 65536 é medido, não escolhido. Os 8192 anteriores nasceram no stub das
+    # rotas (ffae5d7, 15/05) sem motivo técnico, e recusavam colar um log
+    # inteiro. O teto DURO do caminho é o `MAX_ARG_STRLEN` do kernel
+    # (`PAGE_SIZE * 32` = 128 KiB), porque o caminho da Tara passa o texto como
+    # UM elemento de argv. O caminho do tmux não limita: 65.012 caracteres
+    # colados num leitor em modo raw (o modo que a TUI do agente usa) voltaram
+    # byte a byte idênticos. 64 KiB de caracteres deixa ~2x de folga em bytes.
+    #
+    # Espelhado em `apps/cockpit/components/shell/porta-de-envio.ts`, que barra
+    # ANTES de limpar o campo — os dois números têm que andar juntos.
+    text: str = Field(min_length=1, max_length=65536)
     idempotency_key: str = Field(min_length=1, max_length=128)
     fresh: bool = False
 
