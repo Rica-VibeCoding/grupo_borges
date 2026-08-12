@@ -42,7 +42,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   createContext,
   useContext,
+  useEffect,
   useOptimistic,
+  useRef,
   useTransition,
   type CSSProperties,
   type MouseEvent,
@@ -50,6 +52,7 @@ import {
 } from 'react';
 
 import { IconeMenu, IconePainel } from './icones';
+import { criaRedeDeNavegacao, type RedeDeNavegacao } from './rede-de-navegacao';
 
 type SuperficieCtx = {
   aberto: boolean;
@@ -58,11 +61,6 @@ type SuperficieCtx = {
    *  ambíguo com dois cliques rápidos. */
   ir: (href: string, abrir: boolean) => void;
 };
-
-/** Quanto se espera pela navegação do roteador antes de apelar pro navegador.
- *  1,2s é folgado pra uma navegação que normalmente é instantânea (a URL troca
- *  no mesmo frame do otimista) e curto o bastante pra não parecer travamento. */
-const LIMITE_NAVEGACAO_MS = 1_200;
 
 /** Duas superfícies, dois contextos SEPARADOS — de propósito. Painel e tropa
  *  abrem e fecham independentes (dá pra estar com a tropa aberta e tocar no
@@ -93,17 +91,25 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
         : searchParams.get('painel') !== null && searchParams.get('painel') !== ''
       : aberto;
     const router = useRouter();
-    const [, emTransicao] = useTransition();
+    const [navegando, emTransicao] = useTransition();
     const [abertoOtimo, marcaOtimo] = useOptimistic(abertoDaUrl);
 
+    /** O pendente do React lido no INSTANTE do exame. A rede olha a URL 1,2s
+     *  depois do toque, e o valor de então é o que separa "navegação em voo" de
+     *  "navegação que morreu" — capturar no fechamento daria sempre `true`. */
+    const navegandoRef = useRef(navegando);
+    useEffect(() => {
+      navegandoRef.current = navegando;
+    }, [navegando]);
+
     /**
-     * Rede de segurança da navegação — 02/08.
+     * Rede de segurança da navegação — 02/08, consertada em 12/08.
      *
      * `router.push` não devolve promessa utilizável, então não dá pra esperar
-     * por ela. O que dá pra observar é o efeito: se depois de
-     * `LIMITE_NAVEGACAO_MS` a URL não mudou, a navegação não aconteceu, e aí a
-     * gente sai do roteador e usa o navegador. Recarrega a página — mais lento
-     * que o otimista, e infinitamente melhor que um botão que não faz nada.
+     * por ela. O que dá pra observar é o efeito: se a URL não mudou e a
+     * transição já terminou, a navegação não aconteceu, e aí a gente sai do
+     * roteador e usa o navegador. Recarrega a página — mais lento que o
+     * otimista, e infinitamente melhor que um botão que não faz nada.
      *
      * Cobre o caso da aba velha depois que o app foi reconstruído: o
      * `preventDefault()` dos gatilhos mata o plano B assim que a página hidrata,
@@ -111,16 +117,35 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
      * responde" faria o toque sumir no vazio. (Isto NÃO era o bug do iPhone —
      * aquele era altura zero, ver §17 da estética. Esta rede entrou junto na
      * caçada e fica por mérito próprio.)
+     *
+     * O porquê da transição entrar na conta, e o que ela conserta, está no
+     * cabeçalho de `rede-de-navegacao.ts` — resumo: sem ela, navegação lenta
+     * virava reload duro no caminho feliz.
      */
+    const rede = useRef<RedeDeNavegacao | null>(null);
+    if (rede.current === null) {
+      rede.current = criaRedeDeNavegacao({
+        hrefAtual: () => window.location.href,
+        navegando: () => navegandoRef.current,
+        recarrega: (href) => window.location.assign(href),
+        agendar: (callback, atrasoMs) => window.setTimeout(callback, atrasoMs),
+        cancelar: (id) => window.clearTimeout(id),
+      });
+    }
+
+    // Desmontar com a rede armada deixaria um `location.assign` marcado para
+    // uma tela que já saiu.
+    useEffect(() => {
+      const atual = rede.current;
+      return () => atual?.cancela();
+    }, []);
+
     const ir = (href: string, abrir: boolean) => {
-      const antes = window.location.href;
       emTransicao(() => {
         marcaOtimo(abrir);
         router.push(href);
       });
-      window.setTimeout(() => {
-        if (window.location.href === antes) window.location.assign(href);
-      }, LIMITE_NAVEGACAO_MS);
+      rede.current?.arma(href);
     };
 
     return <Ctx.Provider value={{ aberto: abertoOtimo, ir }}>{children}</Ctx.Provider>;
