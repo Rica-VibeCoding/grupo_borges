@@ -65,6 +65,37 @@ teto não está em achar a cauda, está em emitir os eventos. Medido em
 ele é outra: teto de histórico e tamanho do primeiro lote pintado não precisam
 ser o mesmo número.
 
+## Picote do rótulo do motor — 12/08, `5323982` + `8c1cb54`
+
+Régua: `picote-do-rotulo-do-motor.py`. 4 repetições por par, 3008, dev derrubado.
+
+O rótulo do composer pintava em duas etapas: nascia sem o nível de esforço, e o
+nível chegava no `/painel` (Claude 52ms, **Codex 1,77s**). Duas causas somadas —
+a rota não repassava o esforço que já tinha, e o cliente dava o veredito de "não
+tem controle" antes da resposta, o que fazia o rótulo nascer `div` de texto e
+virar botão.
+
+| par | antes | depois |
+|---|---|---|
+| daniel→pavan (Claude) | `'Opus'` → `'Opus extra alto ⌄'`, 187–296ms | `'Opus ⌄'` → `'Opus extra alto ⌄'`, 280–385ms |
+| daniel→tara (Codex) | *não medido com a sonda correta* | **uma etapa em 4/4** |
+
+Prova sem browser, no HTML servido: tara `'GPT-5.6 Terra máximo ⌄'`, hiro
+`'K3 alto ⌄'`, pavan `'Opus ⌄'`.
+
+Três coisas que este quadro NÃO deixa dizer:
+
+- **No Claude o intervalo não caiu — subiu ~50ms** (mediana 275 → 328). O que
+  mudou lá foi a natureza do pulo: antes trocavam forma, fonte, cor e conteúdo;
+  agora troca só a palavra do nível. Chamar isso de melhora de tempo seria
+  mentira; a melhora é de amplitude, e ela não está medida em número.
+- **O antes do par Codex não existe com a sonda correta.** Rodei o build antes
+  de colher — o mesmo erro de sequência de manhã, agora com o par que prova a
+  metade do servidor. O "uma etapa em 4/4" fica valendo contra o HTML servido,
+  não contra um antes medido.
+- **O Claude é o caso comum, não a exceção**: a maioria da tropa é Claude, e lá
+  o picote de ~328ms continua em 4/4.
+
 ## Em aberto
 
 **~540ms sem dono.** A conexão só abre depois do commit (398ms) e o primeiro byte
