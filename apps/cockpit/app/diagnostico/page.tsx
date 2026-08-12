@@ -33,6 +33,9 @@ export default function Diagnostico() {
     const modoAplicativo = window.matchMedia('(display-mode: standalone)').matches || apple === true;
 
     setRegime([
+      // Carimbo do carregamento: dois prints com o MESMO carimbo são a mesma
+      // sessão, e aí um deles não é o caminho que se pensou estar testando.
+      { rotulo: 'abriu às', valor: new Date().toLocaleTimeString('pt-BR') },
       { rotulo: 'display-mode', valor: modoAtivo ?? '(nenhum)' },
       { rotulo: 'navigator.standalone', valor: String(apple) },
       { rotulo: 'o app vai', valor: modoAplicativo ? 'MEDIR a altura' : 'usar o 100dvh do CSS' },
