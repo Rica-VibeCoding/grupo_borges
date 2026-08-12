@@ -1,21 +1,22 @@
-"""Prova dirigida — o composer sumia da tela ao receber o teclado no iPhone.
+"""Prova dirigida — o composer saía da tela quando o teclado abria no iPhone.
 
-Quando o teclado cobriria o campo focado, o Safari desloca a página inteira para
-cima. A conta desse deslocamento é feita contra a app do tamanho da tela; se a
-app encolher logo depois — era o que o `--ck-viewport-altura` fazia ao seguir o
-viewport visual — o deslocamento já aplicado a joga para fora por cima, e sobra
-o `body` vazio na tela.
+Dois defeitos, a mesma causa: publicar em `--ck-viewport-altura` um número medido
+em JS enquanto o navegador tem `100dvh`, que ele mantém certo sozinho.
 
-As duas metades:
-  1. o defeito sumiu  — no navegador a app continua do tamanho da janela
-  2. o recurso vive   — no aplicativo instalado ela ainda encolhe com o teclado
+  1. teclado — o número seguia o viewport visual e encolhia a app. No Safari
+     quem tira o campo de trás do teclado é o próprio browser, deslocando a
+     página; encolher depois disso joga a app para fora por cima.
+  2. número velho — a barra do Safari cresce e encolhe sem disparar `resize`
+     confiável, então o número envelhece calado. A app fica mais alta que a área
+     visível, o documento ganha rolagem, e é por ela que o composer sobe. Era o
+     que o Rica via ao voltar de outro agente: nada remontou, só o número era de
+     antes. Puxar a página para baixo devolvia a barra ao estado medido.
 
-O teclado do sistema não existe em navegador sem cabeça: o que se força é a
-altura que o `visualViewport` reportaria com ele aberto, e o foco no campo é
-real. `display-mode: standalone` também não é emulável — o `matchMedia` é
-trocado pelo mesmo caminho que o componente lê.
+Nenhum dos dois existe em navegador sem cabeça: o que se força é o que o
+`visualViewport` e o `innerHeight` reportariam. `display-mode: standalone`
+também não é emulável — o `matchMedia` é trocado pelo caminho que o componente lê.
 
-    PROVA_URL=http://127.0.0.1:3008/agente/daniel  # a 3008 reprova a metade 1
+    PROVA_URL=http://127.0.0.1:3008/agente/daniel  # a 3008 de antes reprova
 """
 
 import os
@@ -28,15 +29,20 @@ SAIDA = Path(os.environ.get("PROVA_SAIDA", "/home/clawd/provas")) / "cockpit-tec
 
 JANELA = 900
 COM_TECLADO = 380
+# A barra do Safari retraída dá uma janela mais alta do que a que volta depois.
+BARRA_RETRAIDA = 1010
 
 
-# Roda antes do bundle: o componente lê `visualViewport.height` e `matchMedia`
-# uma vez só, na montagem.
+# Roda antes do bundle: o componente lê `matchMedia` uma vez, na montagem.
 def preparo(standalone: bool) -> str:
     return f"""
     Object.defineProperty(window.visualViewport, 'height', {{
       configurable: true,
       get: () => window.__alturaVisual ?? window.innerHeight,
+    }});
+    Object.defineProperty(window, 'innerHeight', {{
+      configurable: true,
+      get: () => window.__alturaDaJanela ?? {JANELA},
     }});
     const real = window.matchMedia.bind(window);
     window.matchMedia = (q) =>
@@ -45,43 +51,69 @@ def preparo(standalone: bool) -> str:
     """
 
 
-def altura_da_app(pag) -> int:
+MEDE = """() => ({
+  app: Math.round(
+    document.querySelector('main').parentElement.getBoundingClientRect().height),
+  folgaDeRolagem: Math.round(
+    document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight),
+})"""
+
+
+def abre(nav, standalone: bool):
+    pag = nav.new_page(viewport={"width": 393, "height": JANELA})
+    pag.add_init_script(preparo(standalone))
     pag.goto(URL, wait_until="domcontentloaded")
-    campo = pag.locator("textarea").first
-    campo.wait_for(state="visible", timeout=15000)
-    campo.click()
-    # O teclado sobe: o viewport visual encolhe e o componente é notificado.
+    pag.locator("textarea").first.wait_for(state="visible", timeout=15000)
+    return pag
+
+
+def com_teclado(nav, standalone: bool) -> dict:
+    pag = abre(nav, standalone)
+    pag.locator("textarea").first.click()
     pag.evaluate(
         f"window.__alturaVisual = {COM_TECLADO};"
         "window.visualViewport.dispatchEvent(new Event('resize'))"
     )
     pag.wait_for_timeout(300)
-    return pag.evaluate(
-        "() => Math.round("
-        "document.querySelector('main').parentElement.getBoundingClientRect().height)"
-    )
+    medida = pag.evaluate(MEDE)
+    pag.close()
+    return medida
+
+
+def com_numero_velho(nav) -> dict:
+    pag = abre(nav, standalone=False)
+    # A app nasce com a barra retraída e a barra volta sem avisar ninguém.
+    pag.evaluate(f"window.__alturaDaJanela = {BARRA_RETRAIDA}")
+    pag.evaluate("window.dispatchEvent(new Event('resize'))")
+    pag.evaluate("window.__alturaDaJanela = undefined")
+    pag.wait_for_timeout(300)
+    medida = pag.evaluate(MEDE)
+    pag.close()
+    return medida
 
 
 def main() -> None:
     SAIDA.mkdir(parents=True, exist_ok=True)
-    medida = {}
     with sync_playwright() as p:
         nav = p.chromium.launch()
-        for rotulo, standalone in (("navegador", False), ("aplicativo", True)):
-            pag = nav.new_page(viewport={"width": 393, "height": JANELA})
-            pag.add_init_script(preparo(standalone))
-            medida[rotulo] = altura_da_app(pag)
-            pag.screenshot(path=str(SAIDA / f"{rotulo}.png"))
-            pag.close()
+        navegador = com_teclado(nav, standalone=False)
+        velho = com_numero_velho(nav)
+        aplicativo = com_teclado(nav, standalone=True)
         nav.close()
 
-    metade1 = medida["navegador"] == JANELA
-    metade2 = medida["aplicativo"] == COM_TECLADO
-    print(f"navegador  : app com {medida['navegador']}px, esperado {JANELA}")
-    print(f"aplicativo : app com {medida['aplicativo']}px, esperado {COM_TECLADO}")
-    print(f"1. defeito sumiu (navegador nao encolhe) : {'OK' if metade1 else 'FALHOU'}")
-    print(f"2. recurso vive (aplicativo encolhe)     : {'OK' if metade2 else 'FALHOU'}")
-    raise SystemExit(0 if metade1 and metade2 else 1)
+    metades = [
+        ("teclado no navegador nao encolhe a app", navegador["app"] == JANELA),
+        ("teclado no navegador nao abre rolagem", navegador["folgaDeRolagem"] == 0),
+        ("barra do Safari nao estica a app", velho["app"] == JANELA),
+        ("barra do Safari nao abre rolagem", velho["folgaDeRolagem"] == 0),
+        ("aplicativo instalado ainda encolhe", aplicativo["app"] == COM_TECLADO),
+    ]
+    print(f"navegador com teclado : {navegador}, esperado app {JANELA}")
+    print(f"navegador com o numero velho : {velho}, esperado app {JANELA}")
+    print(f"aplicativo com teclado : {aplicativo}, esperado app {COM_TECLADO}")
+    for rotulo, passou in metades:
+        print(f"{'OK    ' if passou else 'FALHOU'} {rotulo}")
+    raise SystemExit(0 if all(passou for _, passou in metades) else 1)
 
 
 if __name__ == "__main__":
