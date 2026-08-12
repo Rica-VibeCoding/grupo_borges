@@ -15,7 +15,13 @@ export function alturaDoViewport({
   modoAplicativo = false,
   tecladoAberto = false,
 }: OpcoesAlturaViewport): number {
-  const usaViewportVisual = !modoAplicativo || tecladoAberto;
+  // O teclado encolhe o viewport visual e não toca no layout viewport. No
+  // navegador quem tira o campo de trás dele é o próprio Safari, deslocando a
+  // página para cima — e essa conta é feita contra a app do tamanho da tela.
+  // Encolher a app depois disso a joga para fora por cima: sobra o rodapé do
+  // composer no alto e o resto da tela vazio. No aplicativo instalado ninguém
+  // desloca nada, e aí encolher é a única saída.
+  const usaViewportVisual = modoAplicativo && tecladoAberto;
   const altura = usaViewportVisual && medidaValida(alturaVisual) ? alturaVisual : alturaDaJanela;
   return medidaValida(altura) ? Math.round(altura) : 0;
 }

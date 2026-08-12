@@ -3,8 +3,16 @@ import { test } from 'node:test';
 
 import { alturaDoViewport } from './altura-do-viewport.ts';
 
-test('prioriza a altura do viewport visual quando ela existe', () => {
-  assert.equal(alturaDoViewport({ alturaVisual: 780, alturaDaJanela: 844 }), 780);
+test('no navegador com o teclado aberto fica com a janela inteira', () => {
+  assert.equal(
+    alturaDoViewport({
+      alturaVisual: 380,
+      alturaDaJanela: 733,
+      modoAplicativo: false,
+      tecladoAberto: true,
+    }),
+    733,
+  );
 });
 
 test('usa a altura da janela como reserva', () => {
@@ -12,7 +20,15 @@ test('usa a altura da janela como reserva', () => {
 });
 
 test('arredonda medidas fracionárias para uma altura CSS estável', () => {
-  assert.equal(alturaDoViewport({ alturaVisual: 779.6, alturaDaJanela: 844 }), 780);
+  assert.equal(
+    alturaDoViewport({
+      alturaVisual: 779.6,
+      alturaDaJanela: 844,
+      modoAplicativo: true,
+      tecladoAberto: true,
+    }),
+    780,
+  );
 });
 
 test('aplicativo instalado usa a janela inteira quando o teclado está fechado', () => {
