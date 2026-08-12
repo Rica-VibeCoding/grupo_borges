@@ -82,9 +82,11 @@ _JSONL_QUEUE_OPERATION_KIND = "jsonl:queue-operation"
 # sessões que o caller pede.
 _RECENT_SESSION_SCAN_WINDOW = 4000
 
-# O eco do executor é imediato; 30 s cobre o watcher e timestamps truncados.
+# Claude Code enfileira uma entrada enquanto a sessão está ocupada; o `user`
+# que o watcher consome só aparece depois do `dequeue`. Dez minutos cobrem a
+# maior espera medida (366,788 s) com margem, sem deixar a correlação aberta.
 # Depois disso, perder a proveniência é mais seguro que atribuí-la ao texto errado.
-MESSAGE_ORIGIN_MATCH_WINDOW_MS = 30_000
+MESSAGE_ORIGIN_MATCH_WINDOW_MS = 600_000
 
 
 def _parse_csv_statuses(raw: str | None) -> list[str]:

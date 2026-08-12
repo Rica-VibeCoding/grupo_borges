@@ -13,11 +13,10 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from db.store import GrupoBorgesDB
+from db.store import MESSAGE_ORIGIN_MATCH_WINDOW_MS, GrupoBorgesDB
 from orchestrator.jsonl_watcher import JsonlWatcher, encoded_cwd
 from routers import agents as agents_router
 from services import codex_reader
-
 
 TARA = {
     "slug": "tara",
@@ -197,6 +196,35 @@ async def test_voice_tmux_persists_explicit_meta_for_canonical_event(tmp_path: P
     canonical = agents_router._canonical_jsonl_message_event(events[-1])
     assert canonical is not None
     assert canonical["meta"] == {"kind": "stt", "raw_text": text}
+
+
+async def test_claim_message_origin_keeps_queued_echo_for_ten_minutes(tmp_path: Path) -> None:
+    """A janela cobre o eco de uma voz que Claude Code só processa após a fila."""
+    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
+    db._apply_schema()
+    db._sync_agents([TARA])
+    chosen_window_ms = 10 * 60 * 1000
+    assert MESSAGE_ORIGIN_MATCH_WINDOW_MS == chosen_window_ms
+    observed_at_ms = 1_800_000_000_000
+    queued_at_ms = observed_at_ms - chosen_window_ms
+
+    with patch("db.store.time.time", return_value=queued_at_ms / 1000):
+        await db.create_message_origin(
+            agent_slug="tara",
+            executor_kind="codex",
+            expected_text="pode subir",
+            meta={"kind": "stt", "raw_text": "🎙 pode subir"},
+        )
+
+    claimed = await db.claim_message_origin(
+        agent_slug="tara",
+        executor_kind="codex",
+        expected_text="pode subir",
+        message_key="thread:queued-voice",
+        observed_at_ms=observed_at_ms,
+    )
+
+    assert claimed == {"kind": "stt", "raw_text": "🎙 pode subir"}
 
 
 async def test_claim_message_origin_prunes_old_orphan_without_claiming_it(tmp_path: Path) -> None:
