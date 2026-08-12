@@ -117,7 +117,7 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
   }, [faseRep, começa]);
 
   const faseRev = faseDaRevelacao(est);
-  const pele = aparenciaDaBolha(faseRev, faseRep, { posicaoSeg: posicao, est });
+  const pele = aparenciaDaBolha(faseRev, faseRep, { posicaoSeg: posicao, est, nome: agentSlug });
   const alturas = alturasDasBarras(est);
   const reais = barrasReais(est);
   const cabeça = faseRep === 'parada' && faseRev === 'fantasma' ? -1 : indiceDoPlayhead(posicao, est);

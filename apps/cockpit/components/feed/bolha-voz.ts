@@ -196,7 +196,9 @@ export function aparenciaDaBolha(
 ): AparenciaBolha {
   const posicao = ctx.posicaoSeg ?? 0;
   const referencia = duracaoDeReferencia(ctx.est);
-  const nome = ctx.nome ?? 'o agente';
+  // "de um agente" e não "de o agente": a frase é lida em voz alta pelo leitor
+  // de tela, e a contração errada aparece exatamente onde ninguém olha.
+  const nome = ctx.nome ?? 'um agente';
 
   let rotuloTempo: string;
   if (faseRev !== 'completa') {
