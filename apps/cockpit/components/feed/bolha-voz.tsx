@@ -36,6 +36,13 @@ import { pedeFala, type FalaEmCurso } from './stream-voz.ts';
  * pra ouvir. E o toque é o mesmo gesto que destrava o áudio no iPhone, então o
  * caminho feliz não precisa de um "permitir som" separado.
  *
+ * NUNCA TOQUE SOZINHO — nem quando a mensagem do Rica veio por voz. A ideia é
+ * tentadora (o Telegram responde áudio pra quem mandou áudio, e o feed até sabe
+ * quem falou como, pelo `syntheticKind === 'stt'`), e eu propus isso a ele em
+ * 11/08. Ele recusou: *"aqui é eu que escolho, então não muda caminho áudio e
+ * ou texto, eu decido ouvir ou ler sempre"*. A porta de entrada da mensagem não
+ * decide a porta de saída — quem decide é o dedo dele, toda vez.
+ *
  * NÃO tem seek nesta versão. O modelo puro suporta (`destinoDeSeek`), mas o
  * áudio chega em sentenças separadas e buscar no meio exige mapear segundo →
  * sentença; sem isso, tocar na onda mentiria sobre onde iria parar.
