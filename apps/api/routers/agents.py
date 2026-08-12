@@ -761,8 +761,20 @@ def _num_or_none(value: Any) -> float | None:
 
 
 def _resolve_codex_thread(agent: dict[str, Any]) -> codex_reader.CodexThread | None:
+    """A thread que o painel descreve é a do delegator COCKPIT — só ela.
+
+    Lê o store por delegator (`~/.tara/threads/cockpit.txt`), como o resto do
+    painel já faz, em vez do `codex_thread_id` do agent_state: aquele campo é
+    único, e bastava um caminho novo escrevê-lo pra gaveta voltar a descrever o
+    run de outro delegator (era o que acontecia até 4cc2bc7).
+
+    Só a FONTE do id muda. Sem thread do cockpit, `resolve_thread` segue caindo
+    na busca por cwd — decisão de desenho deste painel, que prefere número
+    velho carimbado de `stale` a gaveta vazia (o `/codex/messages` escolhe o
+    contrário porque bolha errada não tem como se carimbar).
+    """
     return codex_reader.resolve_thread(
-        thread_id=agent.get("codex_thread_id"),
+        thread_id=codex_reader.read_cockpit_thread_id(),
         cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
         db_path=_codex_db_path() or codex_reader.STATE_DB,
     )

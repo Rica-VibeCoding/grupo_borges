@@ -451,14 +451,18 @@ def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
     return max(candidates)[1]
 
 
-def read_cockpit_thread_id(thread_file: str | Path = COCKPIT_THREAD_FILE) -> str | None:
+def read_cockpit_thread_id(thread_file: str | Path | None = None) -> str | None:
     """Thread do DELEGATOR COCKPIT, lida do store que o wrapper grava por run.
 
     `None` quando o cockpit ainda não rodou turno nenhum (primeira conversa
     nasce fresh). Quem decide se a thread ainda existe no SQLite é o chamador,
     validando com `resolve_thread` — o arquivo é só o lembrete do último run.
+
+    O default sai de `COCKPIT_THREAD_FILE` em runtime, não na assinatura: como
+    valor padrão ele congelaria no import e o módulo deixaria de ser
+    redirecionável por teste, igual `TELECODEX_CONTEXTS` já é.
     """
-    p = Path(thread_file)
+    p = Path(thread_file if thread_file is not None else COCKPIT_THREAD_FILE)
     if not p.exists():
         return None
     try:

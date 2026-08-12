@@ -429,6 +429,30 @@ def _escreve_rollout(path: Path, *, total_tokens: int, observed_at: int) -> None
     )
 
 
+@pytest.fixture(autouse=True)
+def _store_do_cockpit_hermetico(tmp_path: Path, monkeypatch):
+    """Nenhum teste pode ler o `~/.tara/threads/cockpit.txt` da máquina.
+
+    O painel resolve a thread por esse arquivo. Sem redirecionar, a suíte passa
+    a depender do disco de quem roda — o caso pego aqui foi um teste esperando
+    `gpt-5.6-sol` e recebendo o modelo da conversa real do Rica.
+    """
+    monkeypatch.setattr(
+        agents_router.codex_reader, "COCKPIT_THREAD_FILE", tmp_path / "sem-cockpit.txt"
+    )
+
+
+def _thread_do_cockpit(tmp_path: Path, monkeypatch, thread_id: str) -> None:
+    """Aponta o store por delegator do cockpit pra thread do cenário.
+
+    O painel resolve a thread por este arquivo, não pelo `codex_thread_id` do
+    agent_state — que é único e qualquer delegator escreveria.
+    """
+    arquivo = tmp_path / "cockpit.txt"
+    arquivo.write_text(thread_id, encoding="utf-8")
+    monkeypatch.setattr(agents_router.codex_reader, "COCKPIT_THREAD_FILE", arquivo)
+
+
 def _make_codex_state_db(tmp_path: Path, rows: list[tuple]) -> Path:
     db = tmp_path / "state.sqlite"
     conn = sqlite3.connect(db)
@@ -482,6 +506,7 @@ def test_agent_painel_codex_segue_a_thread_do_run_vivo(tmp_path: Path, monkeypat
     app = _build_app(tmp_path)
     agora = int(time.time())
     _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    _thread_do_cockpit(tmp_path, monkeypatch, "vivo")
     app.state.db._update_agent_codex_state(
         "tara",
         executor_kind="codex",
@@ -515,6 +540,7 @@ def _cenario_esforco_codex(tmp_path: Path, monkeypatch, agora: int, *, no_run: s
     monkeypatch.setattr(
         agents_router.codex_reader, "TELECODEX_CONTEXTS", tmp_path / "sem-telecodex.json"
     )
+    _thread_do_cockpit(tmp_path, monkeypatch, "vivo")
 
 
 def test_agent_painel_codex_mostra_o_esforco_do_run_e_o_pedido_ao_lado(
@@ -530,6 +556,7 @@ def test_agent_painel_codex_mostra_o_esforco_do_run_e_o_pedido_ao_lado(
     app = _build_app(tmp_path)
     agora = int(time.time())
     _cenario_esforco_codex(tmp_path, monkeypatch, agora, no_run="high")
+    _thread_do_cockpit(tmp_path, monkeypatch, "vivo")
     app.state.db._update_agent_codex_state(
         "tara",
         executor_kind="codex",
@@ -559,6 +586,7 @@ def test_agent_painel_codex_esforco_que_bate_nao_vira_divergencia(
     app = _build_app(tmp_path)
     agora = int(time.time())
     _cenario_esforco_codex(tmp_path, monkeypatch, agora, no_run="max")
+    _thread_do_cockpit(tmp_path, monkeypatch, "vivo")
     app.state.db._update_agent_codex_state(
         "tara",
         executor_kind="codex",
@@ -638,6 +666,7 @@ def test_agent_painel_codex_contexto_declara_a_fonte_real(tmp_path: Path, monkey
     app = _build_app(tmp_path)
     agora = int(time.time())
     _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    _thread_do_cockpit(tmp_path, monkeypatch, "vivo")
     app.state.db._update_agent_codex_state(
         "tara",
         executor_kind="codex",
