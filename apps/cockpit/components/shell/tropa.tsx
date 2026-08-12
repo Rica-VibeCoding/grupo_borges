@@ -83,11 +83,15 @@
  * seção que esvaziava sumia junto com o título, empurrando todo mundo abaixo.
  * Ele reprovou a experiência, e a correção saiu da boca dele: SÓ COMPORTAMENTO.
  * Nada de chip, nada de componente novo, nada de pixel redesenhado. As seções
- * morrem e a lista vira UMA ordem estável por nome (`ordenaTropa` em
- * `lib/ordena-tropa.ts`); a palavra do estado sai da tela junto com os títulos —
- * o ponto do retrato fica. Só `aguardando` continua subindo: é o único estado
- * que chama o Rica (decisão 2). O visual de cada linha fica intocado — quem
- * dorme continua linha rasa, porque isso é decisão POR LINHA, não por seção.
+ * morrem e a lista vira UMA ordem só (`ordenaTropa` em `lib/ordena-tropa.ts`);
+ * a palavra do estado sai da tela junto com os títulos — o ponto do retrato
+ * fica. O visual de cada linha fica intocado — quem dorme continua linha rasa,
+ * porque isso é decisão POR LINHA, não por seção.
+ *
+ * SEXTA VERSÃO (11/08) — A ORDEM VIRA DITADA. O alfabeto matou a dança mas
+ * embaralhava a leitura: quem estava de pé ficava separado por quem dorme. O
+ * Rica ditou a sequência agente a agente e ela vale sempre, viva ou morta a
+ * sessão. `aguardando` deixou de subir junto — ordem fixa não tem exceção.
  *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
@@ -419,10 +423,10 @@ export function Tropa({
    *  layouts, e fingir o contrário foi o que cortou nome e modelo. */
   compacta?: boolean;
 }) {
-  // Ordem ESTÁVEL (11/08): a posição carrega identidade, não estado. Antes cada
-  // estado era uma seção e qualquer flip trabalhando↔ocioso movia a linha — a
-  // "dança" que o Rica reprovou. Só `aguardando` sobe (é o único que o chama);
-  // o resto fica em ordem de nome, para sempre. Detalhe em `lib/ordena-tropa.ts`.
+  // Ordem DITADA pelo Rica (11/08): a posição carrega identidade, não estado.
+  // Antes cada estado era uma seção e qualquer flip trabalhando↔ocioso movia a
+  // linha — a "dança" que ele reprovou. A sequência mora em
+  // `lib/ordena-tropa.ts` e nenhum estado a altera.
   const agentesOrdenados = ordenaTropa(agents);
 
   // Frota vazia: o backend responde, só não há ninguém. Diferente de erro, e a
@@ -451,7 +455,7 @@ export function Tropa({
       className="flex min-h-0 flex-col overflow-y-auto"
       style={{ padding: '0 var(--ck-space-2) var(--ck-space-4)' }}
     >
-      {/* Lista única, ordem estável por nome (11/08). O overline "Tropa" não
+      {/* Lista única, ordem ditada (11/08). O overline "Tropa" não
           existe desde a v3 e os títulos de estado morreram na v5 — a lista é a
           lista. A escolha de cartão ou linha rasa é POR LINHA, pelo estado
           resolvido (`estadoDe`): status desconhecido dorme como o offline, como

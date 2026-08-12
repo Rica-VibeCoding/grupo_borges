@@ -9,49 +9,50 @@ function agente(slug: string, status: Agent['status'], name = slug): Agent {
   return { slug, name, status } as unknown as Agent;
 }
 
-test('ordena por nome, ignorando o estado entre vivos', () => {
-  const entrada = [
-    agente('zeca', 'ocioso', 'Zeca'),
-    agente('ana', 'trabalhando', 'Ana'),
-    agente('bia', 'ocioso', 'Bia'),
-  ];
-  const primeira = ordenaTropa(entrada).map((a) => a.slug);
-  // O flip trabalhando↔ocioso não pode mover ninguém: mesma entrada, dois
-  // estados trocados, mesma ordem — é a regressão da "dança" que o Rica
-  // reprovou em 11/08.
-  const invertida = ordenaTropa([
-    agente('zeca', 'trabalhando', 'Zeca'),
-    agente('ana', 'ocioso', 'Ana'),
-    agente('bia', 'trabalhando', 'Bia'),
-  ]).map((a) => a.slug);
-  assert.deepEqual(primeira, ['ana', 'bia', 'zeca']);
-  assert.deepEqual(invertida, primeira);
+const TROPA = [
+  agente('canarinho', 'trabalhando', 'Canário'),
+  agente('daniel', 'trabalhando', 'Daniel Singh'),
+  agente('felipe', 'offline', 'Felipe Conti'),
+  agente('hiro', 'ocioso', 'Hiro Nakamura'),
+  agente('pavan', 'trabalhando', 'José Pavan'),
+  agente('barsi', 'offline', 'Luiz Barsi'),
+  agente('tara', 'ocioso', 'Tara Kaur'),
+  agente('vinicius', 'offline', 'Vinicius Zanella'),
+];
+
+const DITADA = ['pavan', 'daniel', 'tara', 'vinicius', 'felipe', 'barsi', 'hiro', 'canarinho'];
+
+test('entrega a ordem ditada pelo Rica, não a do backend', () => {
+  assert.deepEqual(ordenaTropa(TROPA).map((a) => a.slug), DITADA);
 });
 
-test('aguardando sobe ao topo, e o resto segue por nome', () => {
+test('nenhum estado move ninguém — nem aguardando', () => {
+  // A "dança" que o Rica reprovou em 11/08: flip trabalhando↔ocioso movia a
+  // linha. E `aguardando` deixou de ser exceção quando a ordem virou fixa —
+  // quem sobe, dança. O âmbar continua no ponto do retrato.
+  const trocada = TROPA.map((a) =>
+    agente(a.slug, a.status === 'trabalhando' ? 'ocioso' : 'aguardando', a.name),
+  );
+  assert.deepEqual(ordenaTropa(trocada).map((a) => a.slug), DITADA);
+});
+
+test('a ordem não depende da ordem de chegada', () => {
+  const invertida = ordenaTropa([...TROPA].reverse()).map((a) => a.slug);
+  assert.deepEqual(invertida, DITADA);
+});
+
+test('agente fora da lista vai pro fim, por nome, sem sumir', () => {
   const ordem = ordenaTropa([
-    agente('zeca', 'ocioso', 'Zeca'),
-    agente('ana', 'aguardando', 'Ana'),
-    agente('bia', 'trabalhando', 'Bia'),
+    agente('zeca', 'trabalhando', 'Zeca'),
+    agente('daniel', 'ocioso', 'Daniel Singh'),
+    agente('alvaro', 'aguardando', 'Álvaro'),
   ]).map((a) => a.slug);
-  assert.deepEqual(ordem, ['ana', 'bia', 'zeca']);
+  assert.deepEqual(ordem, ['daniel', 'alvaro', 'zeca']);
 });
 
-test('nome com acento compara em pt-BR', () => {
+test('nome com acento compara em pt-BR no desempate do fim da lista', () => {
   const ordem = ordenaTropa([agente('b', 'ocioso', 'Beto'), agente('a', 'ocioso', 'Álvaro')]).map(
     (a) => a.slug,
   );
-  // pt-BR: "Álvaro" vem antes de "Beto" (e antes de um "A" cru, mas aqui o
-  // caso é só a ordem do acento à frente do B).
   assert.deepEqual(ordem, ['a', 'b']);
-});
-
-test('status desconhecido fica na ordem de nome, sem subir', () => {
-  const ordem = ordenaTropa([
-    agente('zeca', 'ocioso', 'Zeca'),
-    agente('estranho', 'inexistente' as Agent['status'], 'Estranho'),
-  ]).map((a) => a.slug);
-  // estadoDe desconhecido cai em offline (ordem 3) — não é aguardando, então
-  // não sobe; segue alfabética.
-  assert.deepEqual(ordem, ['estranho', 'zeca']);
 });
