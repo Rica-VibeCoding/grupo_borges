@@ -86,6 +86,14 @@ export function faseDaRevelacao(est: EstadoRevelacao): FaseRevelacao {
   return est.peaks.length === 0 ? 'fantasma' : 'revelando';
 }
 
+/** Repouso: ninguém pediu esta fala ainda — não existe áudio, nem pedido em
+ *  voo. É o único estado em que a bolha é só o ícone; a partir do toque ela
+ *  cresce pro lado e nunca mais encolhe. Uma definição só, usada pelo anúncio
+ *  e pela pele, pra as duas não discordarem sobre o que é repouso. */
+export function emRepouso(faseRev: FaseRevelacao, faseRep: FaseReproducao): boolean {
+  return faseRev === 'fantasma' && faseRep === 'parada';
+}
+
 /** A duração que governa a escala: real acumulada mais a estimativa do que
  *  ainda falta. CONVERGE em vez de saltar — quando a última sentença chega, a
  *  escala já é a real, e o `done` confirma. O salto único (estimada até o fim,
@@ -177,8 +185,10 @@ export function proximaVelocidade(atual: number): number {
 import { duracaoLegivel } from '../shell/voz.ts';
 
 export type AparenciaBolha = {
-  /** O que o botão redondo mostra e faz. `falha` é o "toque para ouvir". */
-  botao: 'tocar' | 'pausar' | 'falha';
+  /** O que o botão redondo mostra e faz. `ouvir` é o repouso — alto-falante, e
+   *  não o triângulo de play: em repouso não existe áudio nenhum pra tocar, o
+   *  toque é que manda gerar. `falha` é o "toque para ouvir". */
+  botao: 'ouvir' | 'tocar' | 'pausar' | 'falha';
   /** O número da linha: decorrido durante a revelação, restante quando a
    *  duração real existe e algo toca, duração em repouso. Nunca se corrige. */
   rotuloTempo: string;
@@ -209,17 +219,29 @@ export function aparenciaDaBolha(
     rotuloTempo = duracaoLegivel(referencia);
   }
 
+  const repouso = emRepouso(faseRev, faseRep);
+
   const botao =
-    faseRep === 'falha' ? 'falha' : faseRep === 'tocando' ? 'pausar' : 'tocar';
+    faseRep === 'falha'
+      ? 'falha'
+      : faseRep === 'tocando'
+        ? 'pausar'
+        : repouso
+          ? 'ouvir'
+          : 'tocar';
 
   const instrucao = faseRep === 'falha' ? 'não consegui tocar — toque para ouvir' : '';
 
   const anuncio =
     faseRep === 'falha'
       ? `a resposta em áudio de ${nome} não tocou. Toque para ouvir.`
-      : faseRev === 'completa'
-        ? `resposta em áudio de ${nome}, ${duracaoLegivel(referencia)}`
-        : `resposta em áudio de ${nome} chegando`;
+      : repouso
+        ? // Em repouso não há áudio: o toque é que manda gerar. Anunciar "áudio
+          // de fulano" prometeria um arquivo que ainda não existe.
+          `ouvir a resposta de ${nome} em voz alta`
+        : faseRev === 'completa'
+          ? `resposta em áudio de ${nome}, ${duracaoLegivel(referencia)}`
+          : `resposta em áudio de ${nome} chegando`;
 
   return {
     botao,

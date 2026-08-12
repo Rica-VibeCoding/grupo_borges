@@ -9,18 +9,28 @@ import {
   alturasDasBarras,
   aparenciaDaBolha,
   barrasReais,
-  duracaoDeReferencia,
+  emRepouso,
   faseDaRevelacao,
   indiceDoPlayhead,
   type EstadoRevelacao,
   type FaseReproducao,
 } from './bolha-voz.ts';
+import { IconeAltoFalante } from '../shell/icones.tsx';
+
 import { destravaNoGesto, iniciaSequencia, pausa, retoma } from './reprodutor-unico.ts';
 import { pedeFala, type FalaEmCurso } from './stream-voz.ts';
 
 /**
  * A resposta do agente, falada. O texto continua na tela — a bolha é o áudio
  * ao lado dele, não no lugar dele (decisão do Rica, 11/08).
+ *
+ * EM REPOUSO É SÓ O ÍCONE, e ele CRESCE PRO LADO. A primeira versão era a bolha
+ * cheia em toda resposta: 52px de altura por mensagem, e o Rica leu isso como
+ * *"deixa a UI bem fracionada"* (11/08). Ele pediu um ícone de uma linha que
+ * *"clicou, desenvolve"* — e desenvolver pro lado, não pra baixo, é o que
+ * mantém a altura da linha igual cheia e vazia. Clicar no meio do feed não
+ * empurra o que está embaixo. Uma forma só: ele descartou ter duas variantes
+ * conforme a mensagem tenha vindo por voz ou por teclado.
  *
  * A síntese só começa no toque: nada é gerado pra mensagem que ninguém pediu
  * pra ouvir. E o toque é o mesmo gesto que destrava o áudio no iPhone, então o
@@ -117,64 +127,73 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
   }, [faseRep, começa]);
 
   const faseRev = faseDaRevelacao(est);
+  const repouso = emRepouso(faseRev, faseRep);
   const pele = aparenciaDaBolha(faseRev, faseRep, { posicaoSeg: posicao, est, nome: agentSlug });
   const alturas = alturasDasBarras(est);
   const reais = barrasReais(est);
-  const cabeça = faseRep === 'parada' && faseRev === 'fantasma' ? -1 : indiceDoPlayhead(posicao, est);
-  const referencia = duracaoDeReferencia(est);
+  const cabeça = repouso ? -1 : indiceDoPlayhead(posicao, est);
 
   return (
-    <div
-      className="flex w-fit max-w-full items-center gap-3 rounded-[var(--ck-radius-pill)] px-3 py-2"
-      style={{ background: 'var(--ck-surface-raised)' }}
-    >
+    <div className="flex w-fit max-w-full items-center gap-2">
       <button
         type="button"
         onClick={aoTocar}
         aria-label={pele.anuncio}
-        className="grid size-9 shrink-0 place-items-center rounded-full"
-        style={{ background: 'var(--ck-overlay-hover)', color: 'var(--ck-text-primary)' }}
+        className="grid shrink-0 place-items-center rounded-full"
+        style={{
+          // 28px é a altura da onda (TETO_BARRA_PX). Igualar os dois é o que faz
+          // a linha ter a MESMA altura vazia e cheia: crescer pro lado não
+          // empurra nada pra baixo, e o Rica pode clicar no meio do feed sem a
+          // página pular embaixo do olho dele.
+          width: TETO_BARRA_PX,
+          height: TETO_BARRA_PX,
+          color: repouso ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)',
+        }}
       >
         <Icone botao={pele.botao} />
       </button>
 
-      <svg
-        width={BARRAS * 3}
-        height={TETO_BARRA_PX}
-        viewBox={`0 0 ${BARRAS * 3} ${TETO_BARRA_PX}`}
-        className="min-w-0 shrink"
-        aria-hidden="true"
-      >
-        {alturas.map((altura, i) => {
-          const h = Math.max(PISO_BARRA_PX, altura * TETO_BARRA_PX);
-          const revelada = i < reais;
-          return (
-            <rect
-              key={i}
-              x={i * 3}
-              y={(TETO_BARRA_PX - h) / 2}
-              width={2}
-              height={h}
-              rx={1}
-              fill={
-                i <= cabeça && revelada
-                  ? 'var(--ck-text-primary)'
-                  : revelada
-                    ? 'var(--ck-text-secondary)'
-                    : 'var(--ck-text-tertiary)'
-              }
-              opacity={revelada ? 1 : 0.35}
-            />
-          );
-        })}
-      </svg>
+      {repouso ? null : (
+        <>
+          <svg
+            width={BARRAS * 3}
+            height={TETO_BARRA_PX}
+            viewBox={`0 0 ${BARRAS * 3} ${TETO_BARRA_PX}`}
+            className="min-w-0 shrink"
+            aria-hidden="true"
+          >
+            {alturas.map((altura, i) => {
+              const h = Math.max(PISO_BARRA_PX, altura * TETO_BARRA_PX);
+              const revelada = i < reais;
+              return (
+                <rect
+                  key={i}
+                  x={i * 3}
+                  y={(TETO_BARRA_PX - h) / 2}
+                  width={2}
+                  height={h}
+                  rx={1}
+                  fill={
+                    i <= cabeça && revelada
+                      ? 'var(--ck-text-primary)'
+                      : revelada
+                        ? 'var(--ck-text-secondary)'
+                        : 'var(--ck-text-tertiary)'
+                  }
+                  opacity={revelada ? 1 : 0.35}
+                />
+              );
+            })}
+          </svg>
 
-      <span
-        className="shrink-0 tabular-nums"
-        style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-xs)' }}
-      >
-        {referencia > 0 || faseRev !== 'fantasma' ? pele.rotuloTempo : 'ouvir'}
-      </span>
+          <span
+            className="shrink-0 tabular-nums"
+            style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-xs)' }}
+          >
+            {pele.rotuloTempo}
+          </span>
+        </>
+      )}
 
       {degradada ? (
         <span
@@ -198,7 +217,10 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
   );
 }
 
-function Icone({ botao }: { botao: 'tocar' | 'pausar' | 'falha' }) {
+function Icone({ botao }: { botao: 'ouvir' | 'tocar' | 'pausar' | 'falha' }) {
+  // Em repouso o áudio ainda NÃO existe — o toque é que manda gerar. Triângulo
+  // de play prometeria um arquivo pronto; o alto-falante oferece a leitura.
+  if (botao === 'ouvir') return <IconeAltoFalante tamanho={17} />;
   if (botao === 'pausar') {
     return (
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">

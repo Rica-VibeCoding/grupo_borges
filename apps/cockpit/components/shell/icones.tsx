@@ -139,6 +139,18 @@ export function IconeOnda({ tamanho = 15, ...props }: IconeProps) {
   );
 }
 
+/** Alto-falante: "me lê isto em voz alta". Traço e não sólido — pela gramática
+ *  do composer, sólido é o botão que conclui a ação, e este só OFERECE. Uma onda
+ *  só: duas viram borrão no tamanho em que ele vive (16px na linha do feed). */
+export function IconeAltoFalante(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M4 9.5h3l4-3.2v11.4l-4-3.2H4z" />
+      <path d="M15 9.6a3.6 3.6 0 0 1 0 4.8" />
+    </Tracado>
+  );
+}
+
 /** Quadrado cheio: parar e mandar o que já foi falado. Sólido pelo mesmo
  *  motivo da onda — é o botão que conclui a ação. */
 export function IconeParar({ tamanho = 13, ...props }: IconeProps) {

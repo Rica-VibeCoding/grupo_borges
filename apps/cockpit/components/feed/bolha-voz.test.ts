@@ -11,6 +11,7 @@ import {
   barrasReais,
   destinoDeSeek,
   duracaoDeReferencia,
+  emRepouso,
   faseDaRevelacao,
   indiceDoPlayhead,
   proximaVelocidade,
@@ -232,5 +233,30 @@ describe('a aparência — o par de fases combinado', () => {
   it('o anúncio diz "chegando" enquanto revela — a máquina não está muda no tempo morto', () => {
     const ap = aparenciaDaBolha('revelando', 'tocando', { est: estado(METADE), nome: 'Daniel' });
     assert.match(ap.anuncio, /chegando/);
+  });
+});
+
+describe('o repouso — antes de alguém pedir a fala', () => {
+  const NADA = estado([]);
+
+  it('só o repouso é repouso: um pedido em voo já saiu dele', () => {
+    assert.equal(emRepouso('fantasma', 'parada'), true);
+    assert.equal(emRepouso('fantasma', 'tocando'), false, 'pediu, esperando a 1ª sentença');
+    assert.equal(emRepouso('completa', 'parada'), false, 'já ouviu: a onda fica na tela');
+  });
+
+  it('o botão é alto-falante e não play — em repouso não existe áudio pra tocar', () => {
+    assert.equal(aparenciaDaBolha('fantasma', 'parada', { est: NADA }).botao, 'ouvir');
+    assert.equal(
+      aparenciaDaBolha('fantasma', 'tocando', { est: NADA }).botao,
+      'pausar',
+      'do toque em diante é um tocador comum',
+    );
+  });
+
+  it('o anúncio oferece a leitura em vez de prometer um arquivo que não existe', () => {
+    const ap = aparenciaDaBolha('fantasma', 'parada', { est: NADA, nome: 'Daniel' });
+    assert.match(ap.anuncio, /ouvir a resposta de Daniel em voz alta/);
+    assert.doesNotMatch(ap.anuncio, /chegando/, 'nada está chegando: ninguém pediu');
   });
 });
