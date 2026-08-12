@@ -70,6 +70,11 @@ export type Agent = {
   token_usage_json: string | null;
   codex_tokens_used: number | null;
   codex_next_fresh: boolean | null;
+  /** Esforço gravado na config do agente, por família de executor — só um dos
+   *  dois vem preenchido. O Claude não tem equivalente aqui: o nível dele mora
+   *  no `cc_status` e só chega pelo `/painel`. */
+  codex_reasoning_effort: string | null;
+  kimi_reasoning_effort: string | null;
   lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
   lifecycle_event: string | null;

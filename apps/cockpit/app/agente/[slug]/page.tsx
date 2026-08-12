@@ -290,7 +290,16 @@ export default async function AgentePage({
   if (!agente) notFound();
 
   const fecharHref = `/agente/${slug}`;
-  const motor = leMotor({ modeloSessao: agente.state_model, modeloPadrao: agente.model_default });
+  // O esforço entra JUNTO com o modelo, na mesma renderização do servidor. Sem
+  // ele o rótulo nasce só com o nome e o nível chega no segundo pedido, o
+  // `/painel` — 1,8s no Codex, medido em 12/08. O nome andava para a esquerda
+  // quando o nível aparecia, e é esse pulo que o Rica filmou na troca de
+  // agente. Os dois campos são mutuamente exclusivos (um por família).
+  const motor = leMotor({
+    modeloSessao: agente.state_model,
+    modeloPadrao: agente.model_default,
+    esforco: agente.codex_reasoning_effort ?? agente.kimi_reasoning_effort,
+  });
   // Relógio do servidor, na mesma régua da rota `/`: `force-dynamic`
   // re-renderiza a cada navegação, então a duração de sessão da statusline vem
   // fresca ao abrir a gaveta. Daqui pra frente quem faz o ponteiro ANDAR é o
