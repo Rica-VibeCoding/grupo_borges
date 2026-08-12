@@ -45,20 +45,34 @@ export default function Diagnostico() {
       { rotulo: 'pixels por ponto', valor: String(window.devicePixelRatio) },
     ]);
 
+    // O valor de agora não responde a pergunta que interessa: no aplicativo
+    // instalado a altura encolhe quando o teclado abre e pode NÃO voltar ao
+    // fechar. Guardando o menor e o maior já vistos, uma foto só depois de
+    // abrir e fechar o teclado conta a história inteira — se o valor de agora
+    // não é o maior que ele já foi, a janela não voltou.
+    const vistos = new Map<string, { min: number; max: number }>();
+    const faixa = (rotulo: string, valor: number): Medida => {
+      const antes = vistos.get(rotulo);
+      const min = antes ? Math.min(antes.min, valor) : valor;
+      const max = antes ? Math.max(antes.max, valor) : valor;
+      vistos.set(rotulo, { min, max });
+      return { rotulo, valor: min === max ? `${valor}` : `${valor}   (viu ${min}–${max})` };
+    };
+
     const lê = () => {
       const doc = document.scrollingElement;
       const publicada =
         document.documentElement.style.getPropertyValue('--ck-viewport-altura') || '(não publicada)';
       setMedidas([
-        { rotulo: 'innerHeight', valor: `${window.innerHeight}` },
-        { rotulo: 'viewport visual', valor: `${Math.round(window.visualViewport?.height ?? 0)}` },
-        { rotulo: 'deslocamento do visual', valor: `${Math.round(window.visualViewport?.offsetTop ?? 0)}` },
-        { rotulo: '100dvh', valor: `${Math.round(dvh.current?.getBoundingClientRect().height ?? 0)}` },
-        { rotulo: '100svh', valor: `${Math.round(svh.current?.getBoundingClientRect().height ?? 0)}` },
-        { rotulo: '100lvh', valor: `${Math.round(lvh.current?.getBoundingClientRect().height ?? 0)}` },
+        faixa('innerHeight', window.innerHeight),
+        faixa('viewport visual', Math.round(window.visualViewport?.height ?? 0)),
+        faixa('deslocamento do visual', Math.round(window.visualViewport?.offsetTop ?? 0)),
+        faixa('100dvh', Math.round(dvh.current?.getBoundingClientRect().height ?? 0)),
+        faixa('100svh', Math.round(svh.current?.getBoundingClientRect().height ?? 0)),
+        faixa('100lvh', Math.round(lvh.current?.getBoundingClientRect().height ?? 0)),
         { rotulo: '--ck-viewport-altura', valor: publicada },
-        { rotulo: 'rolagem sobrando', valor: `${Math.round((doc?.scrollHeight ?? 0) - (doc?.clientHeight ?? 0))}` },
-        { rotulo: 'rolado em', valor: `${Math.round(window.scrollY)}` },
+        faixa('rolagem sobrando', Math.round((doc?.scrollHeight ?? 0) - (doc?.clientHeight ?? 0))),
+        faixa('rolado em', Math.round(window.scrollY)),
       ]);
     };
 
