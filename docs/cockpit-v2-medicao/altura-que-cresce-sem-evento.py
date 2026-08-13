@@ -1,14 +1,22 @@
-"""A janela cresce e NENHUM evento avisa — a variável acompanha?
+"""O aparelho do Rica em bancada: a janela é 852, e o `innerHeight` MENTE 793.
 
-O `61d9846` passou a reler `window.innerHeight` por ~1s depois de cada evento,
-partindo de que sempre existe um evento por perto. O vídeo do Rica (IMG_7701,
-13/08 00h11, aplicativo instalado) mostra que nem sempre existe: por 2,2s o
-composer fica 60pt acima do fundo, e só volta ao lugar quando ele ARRASTA a tela
-— o arraste é que dispara o evento que abre a releitura. Parado, fica errado.
+Quatro rodadas do mesmo defeito (9e522ab → dd23112 → 61d9846 → 6f0fd4c) até a
+causa fechar: depois que o teclado do aplicativo instalado fecha, o WebKit deixa
+`window.innerHeight` preso em 793 (852 − 59, a faixa da status bar em
+`black-translucent` — developer.apple.com, Configuring Web Applications) até o
+próximo GESTO na tela. A pintura volta sozinha; o número não. É família
+conhecida no WebKit (bugs 301857, 170595) e nenhum evento dispara na volta.
 
-Esta bancada reproduz esse cenário no Chromium: a janela muda de tamanho com os
-eventos engolidos antes de o componente vê-los, que é o que o WebKit faz de graça
-quando devolve a altura depois da janela de releitura ter expirado.
+Toda variante que copiava `innerHeight` para a variável — no evento, por 1s,
+em ronda de 500ms — só copiava a mentira mais depressa. O vídeo do Rica
+(IMG_7701, 13/08): composer 60pt acima do fundo em repouso, voltando no
+instante do arraste.
+
+O contrato novo que esta bancada prova: SEM campo focado, a variável não
+existe e quem manda é o `100dvh` do CSS — que a pintura do aparelho comprova
+correto em repouso ("no início funcionava": o layout foi `h-dvh` puro de
+526aba7 até 9e522ab sem composer subido). A app tem que medir a JANELA, não o
+número mentiroso.
 
 Uso: python3 altura-que-cresce-sem-evento.py <porta> [segundos-de-espera]
 """
@@ -20,18 +28,17 @@ from playwright.sync_api import sync_playwright
 porta = sys.argv[1]
 espera = int(sys.argv[2]) if len(sys.argv) > 2 else 3
 
-ALTURA_ENCOLHIDA = 793  # o que o iPhone do Rica reporta antes de devolver
-ALTURA_DEVOLVIDA = 852  # o que ele reporta depois, calado
+JANELA_REAL = 852  # o que o iPhone 15 pinta em repouso
+MENTIRA = 793  # o que window.innerHeight reporta no estado preso
 
-# Dois enxertos, ambos antes de qualquer script da página:
-#
-# 1. `navigator.standalone` — sem ele o componente fica no ramo do navegador e
-#    nem publica a variável (lá quem manda é o `100dvh` do CSS).
-# 2. Os engolidores — listener em CAPTURA registrado antes do componente, então
-#    roda antes e corta a propagação. É assim que se reproduz "cresce calada"
-#    num navegador que, ao contrário do WebKit, avisa direito.
-FINGE_APLICATIVO_SURDO = f"""
+# Antes de qualquer script da página:
+# - `navigator.standalone` põe o componente no ramo do aplicativo instalado;
+# - `innerHeight` passa a devolver a mentira do estado preso;
+# - os engolidores em CAPTURA cortam todo aviso antes de o componente ver,
+#   que é o silêncio real do WebKit (lá o evento simplesmente não existe).
+FINGE_ESTADO_PRESO = f"""
 Object.defineProperty(navigator, 'standalone', {{ get: () => true }});
+Object.defineProperty(window, 'innerHeight', {{ get: () => {MENTIRA} }});
 window.__engoliu = 0;
 const engole = (e) => {{ window.__engoliu++; e.stopImmediatePropagation(); }};
 for (const nome of ['resize', 'orientationchange', 'focusin', 'focusout',
@@ -47,40 +54,35 @@ if (window.visualViewport) {{
 
 with sync_playwright() as p:
     navegador = p.chromium.launch()
-    ctx = navegador.new_context(viewport={"width": 390, "height": ALTURA_ENCOLHIDA})
-    ctx.add_init_script(FINGE_APLICATIVO_SURDO)
+    ctx = navegador.new_context(viewport={"width": 390, "height": JANELA_REAL})
+    ctx.add_init_script(FINGE_ESTADO_PRESO)
     pagina = ctx.new_page()
     pagina.goto(f"http://127.0.0.1:{porta}/agente/pavan", wait_until="domcontentloaded")
     pagina.wait_for_timeout(espera * 1000)
 
-    def publicada() -> str:
-        return pagina.evaluate(
-            "() => document.documentElement.style.getPropertyValue('--ck-viewport-altura')"
-        ).strip()
-
-    antes = publicada()
-    janela_antes = pagina.evaluate("() => window.innerHeight")
-
-    # A janela cresce. Os eventos são engolidos no caminho, exatamente como no
-    # aparelho — lá eles simplesmente não chegam.
-    pagina.set_viewport_size({"width": 390, "height": ALTURA_DEVOLVIDA})
-    pagina.wait_for_timeout(espera * 1000)
-
-    depois = publicada()
-    janela_depois = pagina.evaluate("() => window.innerHeight")
+    variavel = pagina.evaluate(
+        "() => document.documentElement.style.getPropertyValue('--ck-viewport-altura')"
+    ).strip()
+    # A régua é o quadro que o Rica vê: a caixa da app — a div que CONSOME a
+    # variável. O `body ` na frente importa: quando a variável está publicada,
+    # ela mora no style do `<html>`, e um seletor sem escopo mede o html.
+    app = pagina.evaluate(
+        "() => Math.round(document.querySelector('body [style*=\"--ck-viewport-altura\"]')"
+        ".getBoundingClientRect().height)"
+    )
     engoliu = pagina.evaluate("() => window.__engoliu")
 
     ctx.close()
     navegador.close()
 
-vao = janela_depois - int(depois.replace("px", "") or 0)
+vao = JANELA_REAL - app
 
-print(f"== a janela cresceu sem avisar (porta {porta})")
+print(f"== repouso com innerHeight mentindo {MENTIRA} numa janela de {JANELA_REAL} (porta {porta})")
 print(f"   eventos engolidos no caminho: {engoliu}")
-print(f"   antes    janela {janela_antes}   variável {antes or '(vazia)'}")
-print(f"   depois   janela {janela_depois}   variável {depois or '(vazia)'}")
+print(f"   variável publicada: {variavel or '(ausente — CSS no comando)'}")
+print(f"   altura da app: {app}px   janela: {JANELA_REAL}px")
 print(f"\n   sobra embaixo da app: {vao}px")
-print("   " + ("ACOMPANHOU" if depois == f"{janela_depois}px" else
-               f"FICOU PRESA — é o composer subindo {vao}pt, como no vídeo"))
+print("   " + ("APP NA JANELA — imune à mentira" if vao == 0 else
+               f"COMPOSER SUBIDO {vao}pt — copiou a mentira, como nas 4 rodadas"))
 
-sys.exit(0 if depois == f"{janela_depois}px" else 1)
+sys.exit(0 if vao == 0 else 1)

@@ -11,51 +11,73 @@ function modoAplicativoInstalado(): boolean {
   );
 }
 
+/** Teclado virtual só existe com um campo de texto focado — o foco é o único
+ *  sinal que não depende das medidas de janela, que são justamente o que o
+ *  WebKit reporta errado depois do teclado. */
+function campoDeTextoFocado(): boolean {
+  const el = document.activeElement;
+  if (!el) return false;
+  return (
+    el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || (el as HTMLElement).isContentEditable
+  );
+}
+
 export function SincronizaAlturaDoViewport() {
   useEffect(() => {
     // No navegador a altura certa é o `100dvh` do CSS, e ele é o único que a
     // mantém certa sozinha: a barra do Safari cresce e encolhe sem disparar
     // `resize` confiável, então qualquer número medido aqui envelhece calado.
-    // A app fica mais alta que a área visível, o documento ganha rolagem, e o
-    // Safari usa essa rolagem para abrir espaço ao teclado — levando o composer
-    // junto para fora da tela. É o que o Rica via ao voltar de outro agente,
-    // sem que nada tivesse remontado: só o número era velho.
     if (!modoAplicativoInstalado()) return;
 
-    // No aplicativo instalado a janela responde ao teclado sozinha — medido no
-    // iPhone do Rica: 852 fechado, 655 aberto. O `visualViewport` continua
-    // escutado porque é ele quem avisa primeiro que o teclado se mexeu.
+    // NO APLICATIVO INSTALADO O JS SÓ MANDA ENQUANTO O TECLADO ESTÁ EM CENA.
+    //
+    // A régua do que aconteceu em quatro rodadas (9e522ab → dd23112 → 61d9846 →
+    // 6f0fd4c): antes da variável existir, o layout era `100dvh` puro e o
+    // composer NUNCA subia em repouso — o defeito de então era só o teclado
+    // aberto, onde o dvh fica em 793 e enfia o composer atrás do teclado. A
+    // variável consertou o teclado aberto copiando `window.innerHeight`, e
+    // IMPORTOU um defeito novo: depois que o teclado fecha, o WebKit deixa o
+    // `innerHeight` preso em 793 (852 − 59, exatamente a faixa da status bar
+    // com `black-translucent`) até o próximo GESTO na tela. Nenhum evento
+    // avisa quando ele volta — releitura por 1s (61d9846) e ronda de 500ms
+    // (6f0fd4c) só copiavam o número mentiroso mais depressa. O vídeo do Rica
+    // (IMG_7701, 13/08): composer 60pt acima do fundo em repouso, e voltando
+    // no instante em que ele ARRASTA a tela.
+    //
+    // Então cada regime fica com o motor que comprovadamente acerta nele:
+    // - campo focado (teclado em cena) → variável = `innerHeight`, que com o
+    //   teclado aberto é honesto (655 medido no aparelho);
+    // - sem foco (repouso) → variável REMOVIDA, e o `height` cai no fallback
+    //   `100dvh` do CSS — o motor que o histórico prova que se corrige sozinho.
     const visualViewport = window.visualViewport;
+    const raiz = document.documentElement;
     let ultima = 0;
 
     const publicaAltura = () => {
+      if (!campoDeTextoFocado()) {
+        if (ultima === 0) return;
+        ultima = 0;
+        raiz.style.removeProperty('--ck-viewport-altura');
+        // O gesto sintético. O WebKit destrava as medidas no primeiro arraste
+        // (o vídeo prova); zerar a rolagem do documento é o arraste que dá
+        // para fazer por código — e neste app a página inteira nunca rola
+        // (overflow-hidden, cada superfície rola por dentro), então zerar uma
+        // rolagem fantasma nunca desloca nada que o Rica esteja vendo.
+        window.requestAnimationFrame(() => window.scrollTo(0, 0));
+        return;
+      }
       const altura = alturaDoViewport({ alturaDaJanela: window.innerHeight });
-      // Só escreve quando o número muda. É o que permite reler a janela sessenta
-      // vezes sem custo e sem risco: escrita repetida seria trabalho de layout à
-      // toa, e foi escrita em laço que fez o `ff8cce5` piscar a tela.
+      // Só escreve quando o número muda — escrita em laço foi o que fez o
+      // `ff8cce5` piscar a tela.
       if (altura > 0 && altura !== ultima) {
         ultima = altura;
-        document.documentElement.style.setProperty('--ck-viewport-altura', `${altura}px`);
+        raiz.style.setProperty('--ck-viewport-altura', `${altura}px`);
       }
     };
 
-    // A JANELA CRESCE CALADA — medido no iPhone do Rica em 12/08 (iOS 18.7), na
-    // tela `/diagnostico`, com o teclado JÁ fechado: `innerHeight` de volta em
-    // 852 e `--ck-viewport-altura` presa em 793. A altura volta; o último evento
-    // é que chega antes dela e nada mais avisa. Os 59px de diferença são o
-    // composer subindo — o defeito que o Rica relatou hoje.
-    //
-    // Em vez de observar o elemento raiz (`ff8cce5`, revertido no mesmo dia
-    // porque a escrita voltava como mudança de layout do elemento observado),
-    // relemos a janela por ~1s depois de cada evento. Ler `innerHeight` não
-    // realimenta nada.
-    //
-    // ⚠️ SÓ ISSO NÃO BASTA — o `61d9846` apostou que sempre existe um evento por
-    // perto, e o vídeo do Rica (IMG_7701, 13/08) mostra que não: o composer fica
-    // 60pt acima do fundo por segundos a fio e só volta quando ele ARRASTA a
-    // tela. O arraste é o evento; parado, nada avisa e a releitura já expirou.
-    // Por isso a verificação periódica lá embaixo, que é a única que não depende
-    // de o WebKit ter avisado.
+    // Cada evento abre ~1s de releitura em `requestAnimationFrame`: o evento
+    // diz que ALGO se mexeu, não que a janela parou de se mexer, e a animação
+    // do teclado muda o número no meio do caminho. Ler não realimenta.
     let frame = 0;
     let restantes = 0;
     const relePorUmSegundo = () => {
@@ -69,30 +91,26 @@ export function SincronizaAlturaDoViewport() {
     };
 
     publicaAltura();
-    relePorUmSegundo();
 
-    // Cada evento abre uma janela de releitura em vez de publicar uma vez: o
-    // evento diz que ALGO se mexeu, não que a janela parou de se mexer.
     visualViewport?.addEventListener('resize', relePorUmSegundo);
     window.addEventListener('resize', relePorUmSegundo);
     window.addEventListener('orientationchange', relePorUmSegundo);
     window.addEventListener('focusin', relePorUmSegundo);
     window.addEventListener('focusout', relePorUmSegundo);
-    // Voltar do segundo plano é o outro jeito de a altura mudar sem `resize`:
-    // o iOS congela a página e a devolve já com outro tamanho.
+    // Voltar do segundo plano muda a altura sem `resize` — o iOS congela a
+    // página e a devolve já com outro tamanho.
     window.addEventListener('pageshow', relePorUmSegundo);
     document.addEventListener('visibilitychange', relePorUmSegundo);
 
-    // A rede embaixo de tudo. Duas leituras por segundo de `window.innerHeight`,
-    // e escrita só quando o número muda — nenhum evento precisa ter acontecido.
-    // É o que separa "a app conserta quando você encosta nela" de "a app está
-    // certa". O laço de ~1s acima continua para a animação do teclado, onde meio
-    // segundo de atraso seria um pulo visível.
+    // A rede embaixo dos eventos, para o teclado que fecha sem tirar o foco
+    // (arraste que o iOS usa para recolher o teclado): duas verificações por
+    // segundo, escrita só na mudança.
     const ronda = window.setInterval(publicaAltura, 500);
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
       window.clearInterval(ronda);
+      raiz.style.removeProperty('--ck-viewport-altura');
       visualViewport?.removeEventListener('resize', relePorUmSegundo);
       window.removeEventListener('resize', relePorUmSegundo);
       window.removeEventListener('orientationchange', relePorUmSegundo);

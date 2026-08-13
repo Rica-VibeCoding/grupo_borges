@@ -1,17 +1,19 @@
-"""A releitura da altura estabiliza, ou vira laço de escrita?
+"""O contrato dos dois regimes do aplicativo instalado, e o custo de mantê-lo.
 
-O `ff8cce5` observou o elemento raiz para pegar a janela que cresce calada, e
-realimentou: a escrita voltava como mudança de layout do próprio observado. O
-Rica viu a tela piscando e perdeu uma compactação. Foi revertido no mesmo dia.
+Regime de repouso (nenhum campo focado): a variável NÃO existe — quem manda é
+o `100dvh` do CSS, o único motor que o aparelho comprova correto em repouso.
+Regime de teclado (campo focado): a variável existe e copia `window.innerHeight`,
+que com o teclado aberto é honesto (655 medido no iPhone do Rica).
 
-O substituto relê `window.innerHeight` por ~1s depois de cada evento e só escreve
-quando o número MUDA. Esta bancada existe para provar a parte que dá para provar
-sem o iPhone: que a variável para de mudar, e que a página não fica reescrevendo
-o `style` da raiz para sempre.
+A bancada prova as três transições — carga, foco, desfoco — e que nada disso
+vira laço de escrita: a raiz é amostrada em `requestAnimationFrame` e cada
+mudança de valor da variável conta. (Amostra em rAF, não MutationObserver: no
+`add_init_script` o `documentElement` ainda não existe, e a primeira versão
+desta bancada reportou "0 escritas" com o observador que nunca foi instalado.)
 
-O ramo do aplicativo instalado é escolhido por `navigator.standalone`, então dá
-para entrar nele num Chromium — o que NÃO dá para reproduzir aqui é o
-crescimento silencioso da janela, que é comportamento do WebKit.
+O ramo do aplicativo é escolhido por `navigator.standalone`, então dá para
+entrar nele num Chromium — o que NÃO reproduz aqui é o `innerHeight` preso do
+WebKit, que tem bancada própria (`altura-que-cresce-sem-evento.py`).
 
 Uso: python3 altura-no-aplicativo-instalado.py <porta> [segundos]
 """
@@ -23,13 +25,6 @@ from playwright.sync_api import sync_playwright
 porta = sys.argv[1]
 segundos = int(sys.argv[2]) if len(sys.argv) > 2 else 6
 
-# Antes de qualquer script da página: é `navigator.standalone` que faz o
-# componente sair do ramo do navegador e passar a publicar a altura.
-#
-# A amostragem é em `requestAnimationFrame`, não `MutationObserver`: neste ponto
-# do carregamento o `document.documentElement` ainda não existe, e o `observe`
-# num alvo nulo lança — a primeira versão desta bancada reportou "0 escritas"
-# porque o observador nunca chegou a ser instalado, e a variável estava lá.
 FINGE_APLICATIVO = """
 Object.defineProperty(navigator, 'standalone', { get: () => true });
 window.__escritas = [];
@@ -56,27 +51,61 @@ with sync_playwright() as p:
     pagina.goto(f"http://127.0.0.1:{porta}/agente/pavan", wait_until="domcontentloaded")
     pagina.wait_for_timeout(segundos * 1000)
 
-    escritas = pagina.evaluate("() => window.__escritas")
-    altura = pagina.evaluate(
-        "() => getComputedStyle(document.documentElement).getPropertyValue('--ck-viewport-altura')"
-    )
-    janela = pagina.evaluate("() => window.innerHeight")
+    def estado(rotulo: str) -> dict:
+        return {
+            "rotulo": rotulo,
+            "variavel": pagina.evaluate(
+                "() => document.documentElement.style.getPropertyValue('--ck-viewport-altura')"
+            ).strip(),
+            "app": pagina.evaluate(
+                "() => Math.round(document.querySelector('body [style*=\"--ck-viewport-altura\"]')"
+                ".getBoundingClientRect().height)"
+            ),
+            "janela": pagina.evaluate("() => window.innerHeight"),
+            "escritas": len(pagina.evaluate("() => window.__escritas")),
+        }
 
-    # Focar o campo dispara a mesma janela de releitura que o teclado dispararia.
-    marca = len(escritas)
+    repouso = estado("carga em repouso")
+
     campo = pagina.query_selector("textarea")
     if campo:
         campo.click()
-        pagina.wait_for_timeout(3_000)
-    depois = pagina.evaluate("() => window.__escritas")
+        pagina.wait_for_timeout(2_000)
+    focado = estado("campo focado")
+
+    pagina.evaluate("() => document.activeElement && document.activeElement.blur()")
+    pagina.wait_for_timeout(2_000)
+    desfocado = estado("desfocado")
 
     ctx.close()
     navegador.close()
 
-print(f"== altura no ramo do aplicativo instalado (porta {porta})")
-print(f"   mudanças de valor em {segundos}s de carga: {len(escritas)}")
-for e in escritas[:8]:
-    print(f"      {e['t']:8.0f} ms  {e['valor']}")
-print(f"   mudanças depois de focar o campo (3s): {len(depois) - marca}")
-print(f"\n   `--ck-viewport-altura` = {altura.strip() or '(vazia)'}   innerHeight = {janela}")
-print("   " + ("BATEM" if altura.strip() == f"{janela}px" else "NÃO BATEM — a variável ficou velha"))
+print(f"== os dois regimes do aplicativo instalado (porta {porta})")
+falhas = []
+for e in (repouso, focado, desfocado):
+    print(
+        f"   {e['rotulo']:18s} variável {e['variavel'] or '(ausente)':10s} "
+        f"app {e['app']:4d}  janela {e['janela']:4d}  mudanças acumuladas {e['escritas']}"
+    )
+
+if repouso["variavel"]:
+    falhas.append("em repouso a variável deveria estar ausente (CSS no comando)")
+if repouso["app"] != repouso["janela"]:
+    falhas.append("em repouso a app não mede a janela")
+if focado["variavel"] != f"{focado['janela']}px":
+    falhas.append("com foco a variável deveria copiar a janela")
+if desfocado["variavel"]:
+    falhas.append("depois do desfoco a variável deveria sumir")
+if desfocado["app"] != desfocado["janela"]:
+    falhas.append("depois do desfoco a app não voltou à janela")
+if desfocado["escritas"] > 6:
+    falhas.append(f"{desfocado['escritas']} mudanças de valor — cheiro de laço de escrita")
+
+print()
+if falhas:
+    for f in falhas:
+        print(f"   FALHA: {f}")
+else:
+    print("   CONTRATO INTEIRO DE PÉ — repouso no CSS, teclado no JS, sem laço")
+
+sys.exit(1 if falhas else 0)
