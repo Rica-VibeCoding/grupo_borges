@@ -67,7 +67,7 @@ with sync_playwright() as p:
     # variável. O `body ` na frente importa: quando a variável está publicada,
     # ela mora no style do `<html>`, e um seletor sem escopo mede o html.
     app = pagina.evaluate(
-        "() => Math.round(document.querySelector('body [style*=\"--ck-viewport-altura\"]')"
+        "() => Math.round(document.querySelector('body .ck-janela')"
         ".getBoundingClientRect().height)"
     )
     engoliu = pagina.evaluate("() => window.__engoliu")

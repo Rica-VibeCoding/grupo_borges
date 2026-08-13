@@ -33,3 +33,45 @@ test('arredonda medidas fracionárias para uma altura CSS estável', () => {
 test('medida inválida não vira altura', () => {
   assert.equal(alturaDoViewport({ alturaVisual: Number.NaN, alturaDaJanela: 0 }), 0);
 });
+
+test('janela encolhida: a app continua ancorada na TELA', () => {
+  // O modo de 793 do WebKit em `standalone`: a janela perde a faixa da status
+  // bar e o visual encolhe junto (449 − 59 = 390). Sem a correção a app
+  // publicaria 606 e o composer pararia 59px acima do teclado.
+  assert.equal(
+    alturaDoViewport({
+      alturaVisual: 390,
+      deslocamentoVisual: 216,
+      alturaDaJanela: 852,
+      alturaDaTela: 852,
+      alturaDaJanelaCss: 793,
+    }),
+    665,
+  );
+});
+
+test('janela inteira: a correção vale zero e a conta é a de sempre', () => {
+  assert.equal(
+    alturaDoViewport({
+      alturaVisual: 449,
+      deslocamentoVisual: 216,
+      alturaDaJanela: 852,
+      alturaDaTela: 852,
+      alturaDaJanelaCss: 852,
+    }),
+    665,
+  );
+});
+
+test('tela menor que a janela não encolhe a app', () => {
+  assert.equal(
+    alturaDoViewport({
+      alturaVisual: 449,
+      deslocamentoVisual: 216,
+      alturaDaJanela: 852,
+      alturaDaTela: 700,
+      alturaDaJanelaCss: 852,
+    }),
+    665,
+  );
+});

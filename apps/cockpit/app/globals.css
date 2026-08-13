@@ -648,6 +648,32 @@ body {
   }
 }
 
+/* A ALTURA DA APP. Com o teclado em cena manda a variável medida em JS
+ * (`sincroniza-altura-do-viewport.tsx`); em repouso ela não existe e o fallback
+ * é quem decide — e ele é DIFERENTE no navegador e no aplicativo instalado:
+ *
+ *   - navegador: `dvh`, porque a barra de endereço do Safari entra e sai e a
+ *     altura útil muda de verdade;
+ *   - aplicativo instalado: `lvh`, porque não há barra nenhuma para retrair e
+ *     o `dvh` MENTE. Medido na `/diagnostico` do iPhone do Rica em 13/08, em
+ *     repouso e com a tela parada: `100dvh` 852 mas "viu 793–852", `100svh`
+ *     793 fixo, `100lvh` 852 fixo. Os 59px de diferença são a faixa da status
+ *     bar (`black-translucent`), e é a app inteira encolhendo — o composer
+ *     subia 59px do fundo em metade dos quadros do vídeo IMG_7706.
+ *
+ * `lvh` é a tela toda, que é exatamente o que `black-translucent` +
+ * `viewport-fit=cover` pedem: a app ocupa até embaixo, e quem reserva o espaço
+ * da home bar é o `safe-area-inset-bottom` do composer. */
+.ck-janela {
+  height: var(--ck-viewport-altura, 100dvh);
+}
+
+@media (display-mode: standalone) {
+  .ck-janela {
+    height: var(--ck-viewport-altura, 100lvh);
+  }
+}
+
 /* ===== A MESA E A FOLHA ====================================================
  *
  * Ordem do Rica (§13): *"sidebar fica ao fundo da tela do chat, igual o

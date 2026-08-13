@@ -61,7 +61,7 @@ with sync_playwright() as p:
                 "() => document.documentElement.style.getPropertyValue('--ck-viewport-altura')"
             ).strip(),
             "app": pagina.evaluate(
-                "() => Math.round(document.querySelector('body [style*=\"--ck-viewport-altura\"]')"
+                "() => Math.round(document.querySelector('body .ck-janela')"
                 ".getBoundingClientRect().height)"
             ),
             "janela": pagina.evaluate("() => window.innerHeight"),

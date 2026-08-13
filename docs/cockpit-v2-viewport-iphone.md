@@ -24,7 +24,7 @@ App servida na `:3446` com `black-translucent` + `viewport-fit=cover`.
 - **655 / 449 / 216** — com o teclado aberto (12/08): `innerHeight` 655,
   `visualViewport.height` 449, `visualViewport.offsetTop` 216
 
-## As três verdades do WebKit standalone (todas medidas, não teorizadas)
+## As quatro verdades do WebKit standalone (todas medidas, não teorizadas)
 
 1. **`window.innerHeight` é ATRASADO NAS DUAS DIREÇÕES.** Ele só atualiza em
    gesto do usuário. Depois do teclado fechar, fica preso em 793 até um arraste
@@ -40,19 +40,33 @@ App servida na `:3446` com `black-translucent` + `viewport-fit=cover`.
    `visualViewport.height` e `visualViewport.offsetTop` atualizam na hora e têm
    eventos (`resize` e `scroll`). O "role para revelar o campo" do WebKit é
    panorâmica do layout viewport (muda o `offsetTop`), não rolagem do documento.
+4. **`100dvh` MENTE junto — quem não mente é `100lvh`.** Na `/diagnostico` do
+   IMG_7704, em repouso e com a tela parada: `100dvh` 852 mas "viu 793–852",
+   `100svh` 793 fixo, `100lvh` **852 fixo**. Não é a API: é a janela inteira
+   alternando entre os dois modos, e a app desenhada com 793 dentro de uma tela
+   de 852 deixa 59px de fundo aparecendo embaixo. No IMG_7706 (13/08) o
+   composer alternou entre 122,5pt e 63,9pt de sobra em quadros do MESMO vídeo
+   — os 58,6pt de diferença são esta janela. `lvh` é a única medida imune, e é
+   a certa aqui: em `standalone` não existe barra de navegador para retrair.
 
 ## A fórmula
 
 ```
 campo de texto focado (teclado em cena):
-    --ck-viewport-altura = round(visualViewport.height + visualViewport.offsetTop)
+    --ck-viewport-altura = round(visualViewport.height + visualViewport.offsetTop
+                                 + max(0, 100lvh − 100dvh))
     → "fundo da app = fundo da área visível", panorâmica compensada por
-      construção (449 + 216 = 665 = topo do teclado; com pan 0 idem)
+      construção (449 + 216 = 665 = topo do teclado; com pan 0 idem), e o
+      último termo devolve os 59px quando a janela está no modo encolhido
+      (390 + 216 + 59 = 665). Janela inteira → o termo é zero e a conta é a
+      mesma de antes; não há caminho em que ele subtraia.
 
 nenhum campo focado (repouso):
-    variável REMOVIDA → height cai no fallback 100dvh do CSS
-    → o motor que o aparelho prova correto em repouso; nenhum número
-      atrasado é lido, então nenhum pode envenenar
+    variável REMOVIDA → height cai no fallback do CSS, e o fallback é
+    100dvh no navegador · 100lvh no aplicativo instalado (`.ck-janela`)
+    → no navegador a barra do Safari muda a altura útil DE VERDADE; no
+      aplicativo instalado não há barra nenhuma e o dvh só oscila por
+      defeito
 ```
 
 Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
@@ -82,7 +96,8 @@ Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
 | 4 | `6f0fd4c` | ronda de 500ms + pageshow/visibilitychange | idem — a fonte continuava mentirosa |
 | 5 | `dad4317` | **repouso = CSS, JS só com foco** (fechou o repouso) | com foco ainda lia `innerHeight`, que não desce com teclado |
 | 5b | `f993596` | estabilização + scrollTo pós-escrita | firmava 852 (o atrasado); o scrollTo pós-escrita era no-op (o revelar é pan, não scroll) |
-| 6 | `e1197c5` | **teclado = `vv.height + vv.offsetTop`** | — no ar; pendente de validação no aparelho |
+| 6 | `e1197c5` | **teclado = `vv.height + vv.offsetTop`** | aprovado pelo Rica ("temos avanços"), mas sobrou folga nos dois regimes |
+| 7 | — | **âncora na TELA**: `100lvh` no repouso (CSS) e `+ (lvh − dvh)` no teclado | — no ar; pendente de validação no aparelho |
 
 ## As provas (docs/cockpit-v2-medicao/)
 
@@ -93,6 +108,10 @@ Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
 - `altura-com-teclado-de-pe.py` — o teclado do aparelho encenado:
   `visualViewport` fake com 449/216, `innerHeight` atrasado em 852. A variável
   tem que firmar 665px. Quem copiar `innerHeight` publica 852 e reprova.
+- `altura-com-a-janela-encolhida.py` — o modo de 793 com o teclado de pé:
+  visual 390, panorâmica 216 e a sonda do `100dvh` presa em 793 enquanto a do
+  `100lvh` mede a tela. A app tem que publicar 665 assim mesmo. Sem a âncora
+  publicaria 606 — os 59px de folga do IMG_7706.
 - `altura-no-aplicativo-instalado.py` — o contrato das transições: carga em
   repouso sem variável e app na janela; foco publica; desfoco remove; sem laço
   de escrita nem de rolagem.
@@ -119,11 +138,15 @@ Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
 
 ## O que ainda está aberto
 
-- Validação da rodada 6 no aparelho: chat → focar o campo → teclado sobe → o
-  composer tem que ficar logo acima do teclado. Se reprovar, o próximo vídeo
-  que decide é a **`/diagnostico` com o teclado aberto** (tocar no "toque
-  aqui" de lá): os números ao vivo + min/max fecham a causa sem rodada às
-  cegas.
+- Validação da rodada 7 no aparelho, nos dois regimes. Se ainda sobrar folga, o
+  vídeo que decide é a **`/diagnostico` com o teclado aberto** (tocar no "toque
+  aqui" de lá): os números ao vivo + min/max dizem em que modo a janela estava
+  quando o teclado subiu, e é o único dado que ainda falta do modelo.
+- **O respiro que sobra é design, não defeito.** Abaixo da caixa do composer
+  há 67px medidos em bancada: 12 de padding, 34 do `safe-area-inset-bottom` (a
+  barra de gestos do iOS, intocável) e ~21 da régua embaixo. Era isso e mais os
+  59 do bug que somavam os 122,5pt do IMG_7706. Se o Rica ainda achar alto
+  depois da rodada 7, o que dá para apertar são os 12.
 - Plano B documentado (não aplicado): `statusBarStyle: 'black'` — janela fixa
   793, sem modo duplo, bug estruturalmente impossível; custa a faixa preta no
   topo e 59pt de tela.

@@ -96,11 +96,8 @@ export function AppShell({
       <NavProvider aberto={navAberta}>
       <SincronizaAlturaDoViewport />
       <div
-        className="relative flex overflow-hidden"
-        style={{
-          background: 'var(--ck-surface-nav)',
-          height: 'var(--ck-viewport-altura, 100dvh)',
-        }}
+        className="ck-janela relative flex overflow-hidden"
+        style={{ background: 'var(--ck-surface-nav)' }}
       >
       {/* A tropa. O véu e a faixa agora moram no `GavetaNav`, que é cliente:
           até 02/08 o `≡` era um `<Link>` seco e a tropa esperava a ida e volta

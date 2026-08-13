@@ -64,11 +64,28 @@ export function SincronizaAlturaDoViewport() {
     let ultima = 0;
     let candidata = 0;
     let firmeHa = 0;
+    let firmada = 0;
+
+    // As duas sondas: a TELA (`100lvh`, só muda quando o aparelho gira) e a
+    // JANELA dinâmica (`100dvh`, que encolhe 59px e volta). São medidas uma
+    // única vez por escrita — `getBoundingClientRect` força layout, e fazer
+    // isso 60×/s durante a animação do teclado é o custo que a estabilização
+    // existe para evitar.
+    const sonda = (altura: string, papel: string) => {
+      const el = document.createElement('div');
+      el.dataset.sonda = papel;
+      el.style.cssText = `position:fixed;top:0;left:0;width:1px;height:${altura};visibility:hidden;pointer-events:none`;
+      document.body.appendChild(el);
+      return el;
+    };
+    const sondaDaTela = sonda('100lvh', 'tela');
+    const sondaDaJanela = sonda('100dvh', 'janela');
 
     const publicaAltura = () => {
       if (!campoDeTextoFocado()) {
         candidata = 0;
         firmeHa = 0;
+        firmada = 0;
         if (ultima === 0) return;
         ultima = 0;
         raiz.style.removeProperty('--ck-viewport-altura');
@@ -80,21 +97,32 @@ export function SincronizaAlturaDoViewport() {
         window.requestAnimationFrame(() => window.scrollTo(0, 0));
         return;
       }
-      const altura = alturaDoViewport({
+      const medidaDoCompositor = {
         alturaVisual: visualViewport?.height,
         deslocamentoVisual: visualViewport?.offsetTop,
         alturaDaJanela: window.innerHeight,
-      });
-      if (altura <= 0 || altura === ultima) return;
+      };
+      const crua = alturaDoViewport(medidaDoCompositor);
+      if (crua <= 0 || crua === firmada) return;
       // Escrita só depois de o número FIRMAR (mesmo valor por alguns quadros):
       // um re-layout só, quando o teclado assenta — escrever 60×/s durante a
       // animação re-layouta a app sob os pés do "revelar" do WebKit.
-      if (altura !== candidata) {
-        candidata = altura;
+      if (crua !== candidata) {
+        candidata = crua;
         firmeHa = 0;
         return;
       }
       if (++firmeHa < 5) return;
+      firmada = crua;
+      // Firmou: agora, e só agora, as duas sondas. Se a janela dinâmica estiver
+      // no modo encolhido, a soma do compositor veio 59px curta e é aqui que
+      // ela volta a apontar o topo do teclado na TELA.
+      const altura = alturaDoViewport({
+        ...medidaDoCompositor,
+        alturaDaTela: sondaDaTela.getBoundingClientRect().height,
+        alturaDaJanelaCss: sondaDaJanela.getBoundingClientRect().height,
+      });
+      if (altura === ultima) return;
       ultima = altura;
       raiz.style.setProperty('--ck-viewport-altura', `${altura}px`);
     };
@@ -138,6 +166,8 @@ export function SincronizaAlturaDoViewport() {
       if (frame) window.cancelAnimationFrame(frame);
       window.clearInterval(ronda);
       raiz.style.removeProperty('--ck-viewport-altura');
+      sondaDaTela.remove();
+      sondaDaJanela.remove();
       visualViewport?.removeEventListener('resize', relePorUmSegundo);
       visualViewport?.removeEventListener('scroll', relePorUmSegundo);
       window.removeEventListener('resize', relePorUmSegundo);
