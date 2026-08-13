@@ -45,10 +45,20 @@ export function SincronizaAlturaDoViewport() {
     // no instante em que ele ARRASTA a tela.
     //
     // Então cada regime fica com o motor que comprovadamente acerta nele:
-    // - campo focado (teclado em cena) → variável = `innerHeight`, que com o
-    //   teclado aberto é honesto (655 medido no aparelho);
+    // - campo focado (teclado em cena) → variável = viewport visual + o seu
+    //   deslocamento, os dois números que o COMPOSITOR atualiza na hora;
     // - sem foco (repouso) → variável REMOVIDA, e o `height` cai no fallback
     //   `100dvh` do CSS — o motor que o histórico prova que se corrige sozinho.
+    //
+    // POR QUE NÃO `innerHeight` NO TECLADO: ele é atrasado nas DUAS direções.
+    // A prova está no min/max da `/diagnostico` filmada no IMG_7704: com o
+    // teclado tendo aberto na sessão, o `innerHeight` "viu 793–852" — o 655
+    // NUNCA apareceu. A escrita firmava 852, a app não encolhia e o composer
+    // ficava atrás do teclado (IMG_7705, 11s sem aparecer). Já o par
+    // `visualViewport.height + offsetTop` mediu 449 + 216 = 665 no aparelho
+    // (12/08): "fundo da app = fundo da área visível", com o "role para
+    // revelar" do WebKit já compensado por construção — panorâmica de 216 ou
+    // de 0, a soma aponta o topo do teclado.
     const visualViewport = window.visualViewport;
     const raiz = document.documentElement;
     let ultima = 0;
@@ -70,13 +80,15 @@ export function SincronizaAlturaDoViewport() {
         window.requestAnimationFrame(() => window.scrollTo(0, 0));
         return;
       }
-      const altura = alturaDoViewport({ alturaDaJanela: window.innerHeight });
+      const altura = alturaDoViewport({
+        alturaVisual: visualViewport?.height,
+        deslocamentoVisual: visualViewport?.offsetTop,
+        alturaDaJanela: window.innerHeight,
+      });
       if (altura <= 0 || altura === ultima) return;
-      // Escrita só depois de o número FIRMAR (mesmo valor por alguns quadros).
-      // Escrever no meio da subida do teclado re-layouta a app sob os pés do
-      // "role para revelar o campo" do WebKit, e as rolagens se somam — vídeo
-      // IMG_7704, 13/08: a app inteira voava para fora da tela, composer
-      // atravessado na status bar, enquanto o teclado estava de pé.
+      // Escrita só depois de o número FIRMAR (mesmo valor por alguns quadros):
+      // um re-layout só, quando o teclado assenta — escrever 60×/s durante a
+      // animação re-layouta a app sob os pés do "revelar" do WebKit.
       if (altura !== candidata) {
         candidata = altura;
         firmeHa = 0;
@@ -85,10 +97,6 @@ export function SincronizaAlturaDoViewport() {
       if (++firmeHa < 5) return;
       ultima = altura;
       raiz.style.setProperty('--ck-viewport-altura', `${altura}px`);
-      // O teclado assentou e a app ganhou a altura final. O que tiver sobrado
-      // de "revelar o campo" (rolagem fantasma do documento) sai de cena — o
-      // composer fica acima do teclado pela ALTURA da app, nunca por rolagem.
-      window.requestAnimationFrame(() => window.scrollTo(0, 0));
     };
 
     // Cada evento abre ~1s de releitura em `requestAnimationFrame`: o evento
@@ -109,6 +117,9 @@ export function SincronizaAlturaDoViewport() {
     publicaAltura();
 
     visualViewport?.addEventListener('resize', relePorUmSegundo);
+    // O "role para revelar o campo" é panorâmica, não redimensionamento: muda
+    // o `offsetTop` e só avisa por aqui.
+    visualViewport?.addEventListener('scroll', relePorUmSegundo);
     window.addEventListener('resize', relePorUmSegundo);
     window.addEventListener('orientationchange', relePorUmSegundo);
     window.addEventListener('focusin', relePorUmSegundo);
@@ -128,6 +139,7 @@ export function SincronizaAlturaDoViewport() {
       window.clearInterval(ronda);
       raiz.style.removeProperty('--ck-viewport-altura');
       visualViewport?.removeEventListener('resize', relePorUmSegundo);
+      visualViewport?.removeEventListener('scroll', relePorUmSegundo);
       window.removeEventListener('resize', relePorUmSegundo);
       window.removeEventListener('orientationchange', relePorUmSegundo);
       window.removeEventListener('focusin', relePorUmSegundo);
