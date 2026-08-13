@@ -66,13 +66,25 @@ agents:
       - { name: fc_reunioes, db: ze, description: "Reuniões e feedbacks com usuários Fluyt" }
       - { name: email_historico_log, db: ze, description: "Log de emails enviados pelos agentes" }
 
-  # [2026-08-11 Pavan] Maestro entrou e saiu do cockpit no mesmo dia, por ordem
-  # do Rica: "ele tem que ser ferramenta, não agente ligado à tropa". Ele atua
-  # dentro de projeto, quando chamado — não tem card, canal Telegram nem boot
-  # com a frota. Vive em /home/clawd/repos/maestro (fora do monorepo) e sobe por
-  # `subir-frota.sh maestro`, normalmente pelo motor `[9] maestro` do comando
-  # `agente` no PC. Devolver ao painel = recriar o bloco AQUI e reiniciar a API,
-  # mas o card só some/volta de verdade com o banco (ver reference de sync).
+  # [2026-08-11 Pavan] Saiu do cockpit no mesmo dia em que entrou, por ordem
+  # do Rica: "ele tem que ser ferramenta, não agente ligado à tropa". Continua
+  # fora do monorepo (/home/clawd/repos/maestro, repo próprio) e sem persona
+  # de família (sem sobrenome, sem origem) — isso não mudou.
+  # [2026-08-13 Rica] Card de volta: precisa de visibilidade pra acompanhar o
+  # dev remoto do apps/pos, que está travando. can_review vazio de propósito —
+  # ele não entra na malha de revisão da tropa.
+  - slug: maestro
+    name: Maestro
+    role: Ferramenta de orquestração — casas remotas (PC)
+    emoji: "🎼"
+    tmux_session: maestro
+    workspace_path: /home/clawd/repos/maestro
+    cli_default: claude_code
+    model_default: claude-opus-4-8
+    capabilities:
+      - orquestracao-casas-psmux
+      - dev-remoto-pc
+    can_review: []
 
   - slug: vinicius
     name: Vinicius Zanella
