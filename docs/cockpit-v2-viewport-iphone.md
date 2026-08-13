@@ -4,6 +4,9 @@
 > Este arquivo é a fonte única do assunto: o que o aparelho faz, por que cada
 > rodada falhou, o desenho que está no ar e como se valida. Quem for mexer em
 > altura/teclado/viewport lê ISTO antes de escrever a primeira linha.
+>
+> Para mexer na **peça** — quem manda em quê, o que não se toca, como fatiar o
+> `composer.tsx` — o par deste arquivo é `cockpit-v2-composer.md`.
 
 ## O problema em uma frase
 

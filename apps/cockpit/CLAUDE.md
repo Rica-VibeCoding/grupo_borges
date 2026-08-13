@@ -32,6 +32,7 @@ peça central está polindo 18% da tela.
 | escolher versão, porta, configuração de build | `../../docs/cockpit-v2-stack.md` |
 | tocar cor, espaço, tipografia, estado visual | `../../docs/cockpit-v2-estetica.md` |
 | renderizar payload, mexer no feed, no envio ou no SSE | `../../docs/cockpit-v2-data-contract.md` |
+| tocar no composer, em altura, respiro ou teclado | `../../docs/cockpit-v2-composer.md` |
 | criar arquivo, ou não sabe se o arquivo é seu | `../../docs/cockpit-v2-ownership.md` |
 | mexer em `packages/cockpit-core` | `../../packages/cockpit-core/CIRURGIAS.md` |
 | entender por que o plano é este | `../../docs/cockpit-v2-playbook.md` |
