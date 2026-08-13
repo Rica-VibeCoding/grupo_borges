@@ -96,11 +96,50 @@ Três coisas que este quadro NÃO deixa dizer:
 - **O Claude é o caso comum, não a exceção**: a maioria da tropa é Claude, e lá
   o picote de ~328ms continua em 4/4.
 
-## Em aberto
+## O branco morreu — 12/08, pré-aquecimento no toque
 
-**~540ms sem dono.** A conexão só abre depois do commit (398ms) e o primeiro byte
-chega em 33–272ms, o que põe a primeira mensagem por volta de 500ms. Ela chega em
-1041. A diferença não está explicada e não deve ser preenchida por especulação.
+Régua: a mesma `troca-de-agente.py`. O vão que estava "em aberto" tinha dono, e
+era a ORDEM dos eventos: o `EventSource` da conversa nascia dentro do
+`FeedDaConversa`, que só monta depois da navegação commitar. Servidor e cliente
+em série. Agora o toque abre o stream (`lib/preaquece-conversa.ts`) e a
+navegação corre por cima dele.
+
+Medido em processos igualmente novos, alternados, duas rodadas de 5 — a 3011
+serve o build sem a mudança, a 3010 o build com ela. Medianas em ms:
+
+| | item acende | URL commita | 1ª mensagem | branco |
+|---|---|---|---|---|
+| sem (3011) | 63 / 70 | 214 / 223 | 694 / 701 | **~478** |
+| com (3010) | 76 / 60 | 685 / 593 | 685 / 593 | **0** |
+
+**A primeira mensagem passou a pintar no MESMO quadro do commit, em 22/22
+repetições.** O que o Rica via como salto — tela anterior, branco, conversa —
+virou tela anterior, conversa.
+
+### O que isso custou, e onde o custo mora
+
+**O commit da URL atrasou ~420ms** (218 → 640). O custo é do SERVIDOR, não do
+browser, e está isolado: o RSC de `/agente/[slug]` responde em **0,40–0,44s**
+sozinho e em **0,65–1,13s** com um replay SSE em curso (3 amostras cada, curl
+direto). O Next faz o proxy do SSE no mesmo processo Node — o replay de 790 KB
+disputa o event loop com a navegação.
+
+O saldo é o que a tabela mostra: a conversa chega no mesmo instante ou antes, e
+o branco sai. Mas dizer que "ficou mais rápido" seria mentira — o que mudou foi
+a ordem, e o total ficou igual.
+
+**Não custou conexão.** `conta-eventsources.py` nos dois builds: 3 construídas,
+2 abertas, URLs idênticas. A chave do cache bate — é o que o teste
+`lib/preaquece-conversa.test.ts` prende.
+
+### As duas alavancas que sobraram, com número
+
+- **O RSC custa 0,42s antes de qualquer disputa.** A rota espera a frota inteira
+  (o mesmo `fetchFleet` de 0,4–10,5s do `rede-de-navegacao.ts`). É o piso do
+  commit hoje, e não tem nada a ver com o feed.
+- **O primeiro lote não precisa ser o teto de histórico.** Direção já cravada
+  pelo Rica nesta mesma régua. Um replay menor no primeiro lote encurtaria a
+  disputa acima sem tocar no teto de 300.
 
 ## Conexões SSE — sem defeito, medido
 

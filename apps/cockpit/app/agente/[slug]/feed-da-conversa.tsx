@@ -25,23 +25,11 @@ import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaConversaCodex } from '@/lib/codex/usa-conversa-codex.ts';
 import { usaCompact } from '@/lib/compact';
+import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
-
-/** Era 1000 até 09/08, quando o Rica cravou 100 — *"as mensagens ficam nas
- *  sessões do CC (…) pode mandar 100 mensagens, no máximo"*. Em 10/08 ele
- *  subiu para 300: rolando o chat do Pavan para trás a conversa acabava antes
- *  do começo da própria sessão, e 100 mensagens não cobriam nem uma tarde.
- *
- *  Medido em 10/08 no replay de uma sessão longa do `pavan`: 100 mensagens
- *  custam 220 KB e 300 custam 723 KB (~2,5 KB por mensagem a mais). Longe das
- *  2,82 MB que o teto de 1000 custava, que foi o que motivou o corte.
- *
- *  Isto NÃO alcança o que veio antes de um `/clear`: o replay é filtrado pela
- *  sessão atual, então o arquivo morto continua sendo o JSONL da sessão. */
-const HISTORICO_PADRAO = 300;
 
 /** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
  *  no mesmo `<Feed>`, com os mesmos itens e a mesma gramática. É a ordem do

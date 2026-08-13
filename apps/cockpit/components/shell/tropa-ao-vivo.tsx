@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { useOptimistic } from 'react';
 
+import { preaqueceConversa } from '@/lib/preaquece-conversa';
 import { usaFrota } from './frota-provider';
 import { usaNavegacaoDaTropa } from './superficie-otimista';
 import { Tropa, type EscolheAgente } from './tropa';
@@ -72,10 +73,17 @@ export function TropaAoVivo(props: TropaAoVivoProps) {
       slugSelecionado={slugOtimo}
       aoEscolher={
         navegacao
-          ? // `false` fecha a gaveta no celular. No desktop a faixa é fundo
-            // permanente e o `data-aberto` dela não é lido — mesma chamada,
-            // sem efeito colateral. Ver `GavetaNav`.
-            (slug, href) => navegacao.ir(href, false, () => marcaSlug(slug))
+          ? (slug, href) => {
+              // A CONVERSA COMEÇA A CHEGAR AGORA, não quando a navegação
+              // commitar. Antes o `EventSource` nascia dentro do feed, que só
+              // monta depois do commit — servidor e cliente em série. Ver
+              // `lib/preaquece-conversa.ts` para o vão medido.
+              preaqueceConversa(slug);
+              // `false` fecha a gaveta no celular. No desktop a faixa é fundo
+              // permanente e o `data-aberto` dela não é lido — mesma chamada,
+              // sem efeito colateral. Ver `GavetaNav`.
+              navegacao.ir(href, false, () => marcaSlug(slug));
+            }
           : undefined
       }
     />
