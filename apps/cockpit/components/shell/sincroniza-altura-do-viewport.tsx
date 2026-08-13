@@ -89,6 +89,7 @@ export function SincronizaAlturaDoViewport() {
         if (ultima === 0) return;
         ultima = 0;
         raiz.style.removeProperty('--ck-viewport-altura');
+        raiz.style.removeProperty('--ck-safe-bottom');
         // O gesto sintético. O WebKit destrava as medidas no primeiro arraste
         // (o vídeo prova); zerar a rolagem do documento é o arraste que dá
         // para fazer por código — e neste app a página inteira nunca rola
@@ -125,6 +126,10 @@ export function SincronizaAlturaDoViewport() {
       if (altura === ultima) return;
       ultima = altura;
       raiz.style.setProperty('--ck-viewport-altura', `${altura}px`);
+      // O teclado cobre a barra de gestos: reservar espaço para ela embaixo do
+      // composer, com ela fora de cena, é folga morta entre a caixa e o
+      // teclado. O `env()` do `:root` volta a valer no desfoco.
+      raiz.style.setProperty('--ck-safe-bottom', '0px');
     };
 
     // Cada evento abre ~1s de releitura em `requestAnimationFrame`: o evento

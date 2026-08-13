@@ -96,7 +96,13 @@ export function PalcoDaConversa({
         className="absolute inset-x-0 bottom-0"
         style={{
           padding: 'var(--ck-space-3) var(--ck-space-4)',
-          paddingBottom: 'calc(var(--ck-space-3) + var(--ck-safe-bottom))',
+          // A folga embaixo já vem paga: a coluna do composer termina num
+          // reservador de 17px (mais 4 de gap) que segura o lugar da linha de
+          // status antes de ela existir. Somar o `safe-bottom` inteiro depois
+          // dele empilhava 67px abaixo da caixa — o app do Claude, que o Rica
+          // mandou como régua em 13/08, deixa 34, que é a barra de gestos e
+          // nada mais. Então o que se soma aqui é o que FALTA para a barra.
+          paddingBottom: 'max(var(--ck-space-2), calc(var(--ck-safe-bottom) - 21px))',
         }}
       >
         {composer}
