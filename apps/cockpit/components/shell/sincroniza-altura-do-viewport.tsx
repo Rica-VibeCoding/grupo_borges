@@ -49,6 +49,13 @@ export function SincronizaAlturaDoViewport() {
     // porque a escrita voltava como mudança de layout do elemento observado),
     // relemos a janela por ~1s depois de cada evento. Ler `innerHeight` não
     // realimenta nada.
+    //
+    // ⚠️ SÓ ISSO NÃO BASTA — o `61d9846` apostou que sempre existe um evento por
+    // perto, e o vídeo do Rica (IMG_7701, 13/08) mostra que não: o composer fica
+    // 60pt acima do fundo por segundos a fio e só volta quando ele ARRASTA a
+    // tela. O arraste é o evento; parado, nada avisa e a releitura já expirou.
+    // Por isso a verificação periódica lá embaixo, que é a única que não depende
+    // de o WebKit ter avisado.
     let frame = 0;
     let restantes = 0;
     const relePorUmSegundo = () => {
@@ -71,14 +78,28 @@ export function SincronizaAlturaDoViewport() {
     window.addEventListener('orientationchange', relePorUmSegundo);
     window.addEventListener('focusin', relePorUmSegundo);
     window.addEventListener('focusout', relePorUmSegundo);
+    // Voltar do segundo plano é o outro jeito de a altura mudar sem `resize`:
+    // o iOS congela a página e a devolve já com outro tamanho.
+    window.addEventListener('pageshow', relePorUmSegundo);
+    document.addEventListener('visibilitychange', relePorUmSegundo);
+
+    // A rede embaixo de tudo. Duas leituras por segundo de `window.innerHeight`,
+    // e escrita só quando o número muda — nenhum evento precisa ter acontecido.
+    // É o que separa "a app conserta quando você encosta nela" de "a app está
+    // certa". O laço de ~1s acima continua para a animação do teclado, onde meio
+    // segundo de atraso seria um pulo visível.
+    const ronda = window.setInterval(publicaAltura, 500);
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
+      window.clearInterval(ronda);
       visualViewport?.removeEventListener('resize', relePorUmSegundo);
       window.removeEventListener('resize', relePorUmSegundo);
       window.removeEventListener('orientationchange', relePorUmSegundo);
       window.removeEventListener('focusin', relePorUmSegundo);
       window.removeEventListener('focusout', relePorUmSegundo);
+      window.removeEventListener('pageshow', relePorUmSegundo);
+      document.removeEventListener('visibilitychange', relePorUmSegundo);
     };
   }, []);
 
