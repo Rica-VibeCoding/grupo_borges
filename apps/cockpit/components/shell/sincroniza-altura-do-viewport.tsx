@@ -52,9 +52,13 @@ export function SincronizaAlturaDoViewport() {
     const visualViewport = window.visualViewport;
     const raiz = document.documentElement;
     let ultima = 0;
+    let candidata = 0;
+    let firmeHa = 0;
 
     const publicaAltura = () => {
       if (!campoDeTextoFocado()) {
+        candidata = 0;
+        firmeHa = 0;
         if (ultima === 0) return;
         ultima = 0;
         raiz.style.removeProperty('--ck-viewport-altura');
@@ -67,12 +71,24 @@ export function SincronizaAlturaDoViewport() {
         return;
       }
       const altura = alturaDoViewport({ alturaDaJanela: window.innerHeight });
-      // Só escreve quando o número muda — escrita em laço foi o que fez o
-      // `ff8cce5` piscar a tela.
-      if (altura > 0 && altura !== ultima) {
-        ultima = altura;
-        raiz.style.setProperty('--ck-viewport-altura', `${altura}px`);
+      if (altura <= 0 || altura === ultima) return;
+      // Escrita só depois de o número FIRMAR (mesmo valor por alguns quadros).
+      // Escrever no meio da subida do teclado re-layouta a app sob os pés do
+      // "role para revelar o campo" do WebKit, e as rolagens se somam — vídeo
+      // IMG_7704, 13/08: a app inteira voava para fora da tela, composer
+      // atravessado na status bar, enquanto o teclado estava de pé.
+      if (altura !== candidata) {
+        candidata = altura;
+        firmeHa = 0;
+        return;
       }
+      if (++firmeHa < 5) return;
+      ultima = altura;
+      raiz.style.setProperty('--ck-viewport-altura', `${altura}px`);
+      // O teclado assentou e a app ganhou a altura final. O que tiver sobrado
+      // de "revelar o campo" (rolagem fantasma do documento) sai de cena — o
+      // composer fica acima do teclado pela ALTURA da app, nunca por rolagem.
+      window.requestAnimationFrame(() => window.scrollTo(0, 0));
     };
 
     // Cada evento abre ~1s de releitura em `requestAnimationFrame`: o evento

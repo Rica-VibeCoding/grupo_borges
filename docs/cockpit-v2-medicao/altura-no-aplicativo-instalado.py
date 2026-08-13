@@ -28,6 +28,9 @@ segundos = int(sys.argv[2]) if len(sys.argv) > 2 else 6
 FINGE_APLICATIVO = """
 Object.defineProperty(navigator, 'standalone', { get: () => true });
 window.__escritas = [];
+window.__rolagens = [];
+const scrollToOriginal = window.scrollTo.bind(window);
+window.scrollTo = (...args) => { window.__rolagens.push(args); return scrollToOriginal(...args); };
 (() => {
   let anterior = null;
   const passo = () => {
@@ -76,6 +79,7 @@ with sync_playwright() as p:
     pagina.evaluate("() => document.activeElement && document.activeElement.blur()")
     pagina.wait_for_timeout(2_000)
     desfocado = estado("desfocado")
+    pagina_rolagens = pagina.evaluate("() => window.__rolagens")
 
     ctx.close()
     navegador.close()
@@ -100,6 +104,11 @@ if desfocado["app"] != desfocado["janela"]:
     falhas.append("depois do desfoco a app não voltou à janela")
 if desfocado["escritas"] > 6:
     falhas.append(f"{desfocado['escritas']} mudanças de valor — cheiro de laço de escrita")
+rolagens = pagina_rolagens
+if not rolagens:
+    falhas.append("nenhum scrollTo(0,0) — o gesto anti-reveal não disparou no ciclo focar/desfocar")
+elif len(rolagens) > 8:
+    falhas.append(f"{len(rolagens)} chamadas de scrollTo — cheiro de laço de rolagem")
 
 print()
 if falhas:
