@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
+import type { PainelContexto, PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
-import { leiaCota } from './cota.ts';
+import { leiaConta, leiaCota, leiaRodape } from './cota.ts';
 
 /** Relógio fixo — a idade da leitura velha é a única coisa aqui que depende do
  *  tempo, e teste que depende de `Date.now()` real muda de resposta sozinho. */
@@ -114,5 +114,76 @@ describe('leitura torta do back não vira NaN na tela', () => {
     const leitura = leiaCota(quotas({ status: 'stale' }), AGORA);
     if (leitura.estado !== 'velha') throw new Error('estado errado');
     assert.equal(leitura.aviso, 'dados antigos');
+  });
+});
+
+describe('de quem é a cota', () => {
+  it('o nome de exibição ganha do email — é o rótulo que o Rica reconhece', () => {
+    assert.equal(
+      leiaConta(quotas({ conta: { display_name: 'Wood Pro', email: 'woodpromais@gmail.com' } })),
+      'Wood Pro',
+    );
+  });
+
+  it('sem nome de exibição, sobra o que vem antes do @', () => {
+    assert.equal(leiaConta(quotas({ conta: { email: 'ricardo.incasa@gmail.com' } })), 'ricardo.incasa');
+  });
+
+  it('conta ausente ou vazia não inventa rótulo', () => {
+    assert.equal(leiaConta(quotas()), null);
+    assert.equal(leiaConta(quotas({ conta: { email: '', display_name: '' } })), null);
+    assert.equal(leiaConta(null), null);
+  });
+});
+
+describe('o rodapé do card', () => {
+  function contexto(patch: Partial<PainelContexto> = {}): PainelContexto {
+    return {
+      model: 'Opus 5',
+      model_family: 'opus',
+      context_window: 1_000_000,
+      tokens: { input: 2, output: 3, cache_creation: 1_013, cache_read: 53_599, total: 54_617 },
+      pct: 5,
+      source: '/tmp/cc-status-x.json',
+      updated_at: AGORA,
+      available: true,
+      stale: false,
+      ...patch,
+    };
+  }
+
+  it('entrada soma cache: mostrar só o `input` cru daria 2 numa sessão de 54 mil', () => {
+    const rodape = leiaRodape(contexto());
+    assert.equal(rodape?.entrada, '54.6k');
+    assert.equal(rodape?.saida, '3');
+  });
+
+  it('sessão sem nome vem como null — quem escolhe a palavra é a UI', () => {
+    assert.equal(leiaRodape(contexto())?.sessao, null);
+    assert.equal(leiaRodape(contexto({ session_name: 'Daniel' }))?.sessao, 'Daniel');
+  });
+
+  it('só `true` desenha a marca dos 200k: `false` e `null` são coisas diferentes de "cruzou"', () => {
+    assert.equal(leiaRodape(contexto({ exceeds_200k: true }))?.cruzou200k, true);
+    assert.equal(leiaRodape(contexto({ exceeds_200k: false }))?.cruzou200k, false);
+    assert.equal(leiaRodape(contexto({ exceeds_200k: null }))?.cruzou200k, false);
+  });
+
+  it('contexto indisponível não desenha rodapé nenhum', () => {
+    assert.equal(leiaRodape(contexto({ available: false })), null);
+    assert.equal(leiaRodape(null), null);
+  });
+
+  it('janela não contada mostra traço, não "0 ↑ 0 ↓" — depois do /compact o zero mente', () => {
+    const zerado = { input: 0, output: 0, cache_creation: 0, cache_read: 0, total: 0 };
+    const rodape = leiaRodape(contexto({ tokens: zerado, session_name: 'Maestro' }));
+    assert.equal(rodape?.sessao, 'Maestro');
+    assert.equal(rodape?.entrada, null);
+    assert.equal(rodape?.saida, null);
+  });
+
+  it('sem nome e sem contagem o rodapé some — faixa vazia não é informação', () => {
+    const zerado = { input: 0, output: 0, cache_creation: 0, cache_read: 0, total: 0 };
+    assert.equal(leiaRodape(contexto({ tokens: zerado })), null);
   });
 });

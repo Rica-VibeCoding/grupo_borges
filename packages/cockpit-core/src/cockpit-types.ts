@@ -278,6 +278,10 @@ export type PainelContexto = {
   updated_at: number | null;
   available: boolean;
   stale: boolean;
+  /** Nome dado com `/rename`. Ausente até alguém nomear a sessão. */
+  session_name?: string | null;
+  /** `null` = a statusline daquele agente ainda não reporta o campo — não é `false`. */
+  exceeds_200k?: boolean | null;
 };
 
 export type PainelEffort = {
@@ -307,6 +311,11 @@ export type PainelQuotaWindow = {
   used_percentage?: number | null;
 };
 
+export type PainelConta = {
+  email?: string | null;
+  display_name?: string | null;
+};
+
 export type PainelQuotas = {
   status: 'available' | 'missing' | 'stale' | 'unknown';
   source?: string | null;
@@ -315,6 +324,8 @@ export type PainelQuotas = {
   stale_after_seconds: number;
   five_hour?: PainelQuotaWindow | null;
   seven_day?: PainelQuotaWindow | null;
+  /** Quem paga esta cota. Só no Claude — Kimi e Codex têm login próprio. */
+  conta?: PainelConta | null;
 };
 
 export type PainelSubagentEntry = {

@@ -13,8 +13,17 @@
  * o `remaining_seconds` de uma leitura velha ficam como o back leu — descontar
  * a idade inventaria precisão que o dado não tem. Quem conta a idade é o aviso.
  */
-import type { PainelQuotaWindow, PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
-import { clampPct, formatElapsedShort, formatRemainingShort } from '@grupo_borges/cockpit-core/painel-format';
+import type {
+  PainelContexto,
+  PainelQuotaWindow,
+  PainelQuotas,
+} from '@grupo_borges/cockpit-core/cockpit-types';
+import {
+  clampPct,
+  formatCompactNumber,
+  formatElapsedShort,
+  formatRemainingShort,
+} from '@grupo_borges/cockpit-core/painel-format';
 
 export type JanelaDeCota = {
   /** Rótulo visível, curto — a gaveta tem 380px. */
@@ -43,6 +52,63 @@ const JANELAS = [
   { rotulo: '5h', nome: 'Cota usada nas últimas 5 horas', campo: 'five_hour' },
   { rotulo: '7d', nome: 'Cota usada nos últimos 7 dias', campo: 'seven_day' },
 ] as const;
+
+/**
+ * De quem é a cota — "Wood Pro", "Ricardo". O `displayName` da conta é o rótulo
+ * que o Rica reconhece; o email inteiro não cabe nos 380px da gaveta, então o
+ * fallback é só o que vem antes do `@`.
+ *
+ * A conta é UMA por máquina, não por agente: o CC segue o `.credentials.json`
+ * do disco em tempo real, e um `/login` troca todos os agentes vivos de uma vez.
+ * Por isso o campo repete igual nos seis cards — e isso é a verdade, não bug.
+ */
+export function leiaConta(quotas: PainelQuotas | null | undefined): string | null {
+  const conta = quotas?.conta;
+  if (!conta) return null;
+  if (typeof conta.display_name === 'string' && conta.display_name) return conta.display_name;
+  if (typeof conta.email === 'string' && conta.email) return conta.email.split('@')[0] || null;
+  return null;
+}
+
+export type RodapeDeCota = {
+  /** Nome dado com `/rename`, ou `null` enquanto ninguém nomeou a sessão. */
+  sessao: string | null;
+  /**
+   * `null` quando a janela ainda não foi contada. O Claude Code entrega
+   * `current_usage` vazio antes da primeira resposta da API **e de novo depois
+   * de um `/compact`** — daqui, zero de verdade e zero por falta de leitura são
+   * indistinguíveis. Escrever "0 ↑ 0 ↓" numa sessão que acabou de compactar
+   * afirma que não há nada em contexto, e isso é falso; o traço não afirma nada.
+   */
+  entrada: string | null;
+  saida: string | null;
+  /** Só `true` desenha a marca: `false` é "não cruzou", `null` é "não sei". */
+  cruzou200k: boolean;
+};
+
+/**
+ * A linha de baixo do card: nome da sessão e o tamanho do que está em contexto.
+ *
+ * `entrada` soma os três campos de entrada porque é assim que o Claude Code
+ * define `total_input_tokens` — cache lido continua sendo entrada, e mostrar só
+ * o `input` cru daria 2 tokens numa sessão com 54 mil dentro.
+ */
+export function leiaRodape(contexto: PainelContexto | null | undefined): RodapeDeCota | null {
+  if (!contexto?.available) return null;
+  const { input, output, cache_creation, cache_read } = contexto.tokens;
+  const entrada = input + cache_creation + cache_read;
+  const contou = entrada > 0 || output > 0;
+  const sessao = contexto.session_name ?? null;
+  // Rodapé sem nome e sem contagem não tem o que dizer — some em vez de virar
+  // uma faixa vazia embaixo das barras.
+  if (!contou && sessao === null) return null;
+  return {
+    sessao,
+    entrada: contou ? formatCompactNumber(entrada) : null,
+    saida: contou ? formatCompactNumber(output) : null,
+    cruzou200k: contexto.exceeds_200k === true,
+  };
+}
 
 function leiaJanela(
   janela: PainelQuotaWindow | null | undefined,

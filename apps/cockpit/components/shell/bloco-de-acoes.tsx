@@ -872,7 +872,12 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           em voo ou caiu diria que o agente não reporta cota, quando o que caiu
           foi a rede. O recado da falha já está acima. */}
       {carga === 'pronto' ? (
-        <BlocoDeCota quotas={painel?.quotas} agentSlug={agentSlug} aoAtualizar={buscar} />
+        <BlocoDeCota
+          quotas={painel?.quotas}
+          contexto={painel?.contexto}
+          agentSlug={agentSlug}
+          aoAtualizar={buscar}
+        />
       ) : null}
     </>
   );

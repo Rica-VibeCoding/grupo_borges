@@ -143,6 +143,12 @@ class AgentPainelContexto(BaseModel):
     updated_at: int | None = None
     available: bool
     stale: bool = False
+    #: O nome que o Rica deu com `/rename`. Ausente até alguém nomear a sessão —
+    #: o nome de exibição padrão (`my-app-3f`) não preenche o campo.
+    session_name: str | None = None
+    #: `None` = a statusline daquele agente ainda não reporta o campo. Distinguir
+    #: de `False` importa: `False` é "não cruzou", `None` é "não sei".
+    exceeds_200k: bool | None = None
 
 
 class AgentPainelEffort(BaseModel):
@@ -184,6 +190,11 @@ class AgentPainelQuotaWindow(BaseModel):
     remaining_seconds: int | None = None
 
 
+class AgentPainelConta(BaseModel):
+    email: str | None = None
+    display_name: str | None = None
+
+
 class AgentPainelQuotas(BaseModel):
     status: Literal["available", "missing", "stale", "unknown"]
     source: str | None = None
@@ -192,6 +203,9 @@ class AgentPainelQuotas(BaseModel):
     stale_after_seconds: int = _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS
     five_hour: AgentPainelQuotaWindow | None = None
     seven_day: AgentPainelQuotaWindow | None = None
+    #: Quem paga esta cota. Mora junto da cota porque é a mesma pergunta.
+    #: Só no Claude: Kimi e Codex têm login próprio, fora do `.claude.json`.
+    conta: AgentPainelConta | None = None
 
 
 class AgentPainelSubagentEntry(BaseModel):
@@ -1099,6 +1113,10 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
         or agent.get("model_default")
     )
     updated_at = _int_or_none(payload.get("updated_at"))
+    session_name = payload.get("session_name")
+    session_name = session_name if isinstance(session_name, str) and session_name else None
+    exceeds = payload.get("exceeds_200k_tokens")
+    exceeds = exceeds if isinstance(exceeds, bool) else None
     context_window_block = payload.get("context_window")
     if not isinstance(context_window_block, dict):
         return AgentPainelContexto(
@@ -1109,6 +1127,8 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
             source=str(cc_status.path) if cc_status.path else "cc_status:missing",
             updated_at=updated_at,
             available=False,
+            session_name=session_name,
+            exceeds_200k=exceeds,
         )
     stale = cc_status.fell_back or (
         updated_at is not None
@@ -1139,6 +1159,8 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
         updated_at=updated_at,
         available=True,
         stale=stale,
+        session_name=session_name,
+        exceeds_200k=exceeds,
     )
 
 
@@ -1437,12 +1459,61 @@ def _quota_window_expired(window: AgentPainelQuotaWindow | None, now: int) -> bo
     )
 
 
+#: `~/.claude.json` tem ~100KB e parsear custa 4ms no caso bom, 36ms no ruim —
+#: caro demais pra repetir a cada `/painel`. O arquivo só muda no `/login`, que
+#: é raro, então a chave do cache é `(mtime_ns, size)`: um `stat` custa
+#: microssegundos e pega qualquer reescrita.
+_CLAUDE_CONFIG_PATH = Path.home() / ".claude.json"
+_conta_cache: tuple[tuple[int, int], AgentPainelConta | None] | None = None
+
+
+def _ler_conta_claude() -> AgentPainelConta | None:
+    """A conta Claude ativa da máquina — uma só, global.
+
+    Não é por sessão: o CC segue o `.credentials.json` do disco em tempo real,
+    e um `/login` troca a conta de todos os agentes vivos sem reiniciar
+    ninguém (medido em 14/08 — duas sessões de horas antes migraram sozinhas).
+    """
+    global _conta_cache
+    try:
+        stat = _CLAUDE_CONFIG_PATH.stat()
+    except OSError:
+        return None
+
+    chave = (stat.st_mtime_ns, stat.st_size)
+    if _conta_cache is not None and _conta_cache[0] == chave:
+        return _conta_cache[1]
+
+    conta: AgentPainelConta | None = None
+    try:
+        with _CLAUDE_CONFIG_PATH.open(encoding="utf-8") as handle:
+            oauth = json.load(handle).get("oauthAccount")
+    except (OSError, ValueError):
+        oauth = None
+    if isinstance(oauth, dict):
+        email = oauth.get("emailAddress")
+        display = oauth.get("displayName")
+        if isinstance(email, str) or isinstance(display, str):
+            conta = AgentPainelConta(
+                email=email if isinstance(email, str) else None,
+                display_name=display if isinstance(display, str) else None,
+            )
+
+    _conta_cache = (chave, conta)
+    return conta
+
+
 def _build_painel_quotas(cc_status: _CCStatus) -> AgentPainelQuotas:
+    # A conta entra mesmo sem leitura de cota: quem paga não depende de o agente
+    # ter reportado a linha de status.
+    conta = _ler_conta_claude()
     if cc_status.session_id is None:
-        return AgentPainelQuotas(status="missing")
+        return AgentPainelQuotas(status="missing", conta=conta)
     source = str(cc_status.path) if cc_status.path else None
     if cc_status.payload is None:
-        return AgentPainelQuotas(status="missing", source=source, session_id=cc_status.session_id)
+        return AgentPainelQuotas(
+            status="missing", source=source, session_id=cc_status.session_id, conta=conta
+        )
 
     payload = cc_status.payload
     now = int(time.time())
@@ -1468,6 +1539,7 @@ def _build_painel_quotas(cc_status: _CCStatus) -> AgentPainelQuotas:
         updated_at=updated_at,
         five_hour=five_hour,
         seven_day=seven_day,
+        conta=conta,
     )
 
 

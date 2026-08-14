@@ -195,6 +195,92 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         quota_path.unlink(missing_ok=True)
 
 
+def test_agent_painel_carimba_sessao_conta_e_limiar_de_200k(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A ficha do card de cota: nome da sessão, conta ativa e o flag dos 200k.
+
+    `exceeds_200k` é `bool | None` de propósito — `False` é "não cruzou" e
+    `None` é "a statusline daquele agente ainda não reporta". Achatar os dois
+    faria o painel afirmar que uma sessão desconhecida está abaixo do limiar.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    session_id = f"ds135-ficha-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+
+    config_path = tmp_path / "claude.json"
+    config_path.write_text(
+        json.dumps({"oauthAccount": {"emailAddress": "quem@paga.com", "displayName": "Quem Paga"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(agents_router, "_CLAUDE_CONFIG_PATH", config_path)
+    monkeypatch.setattr(agents_router, "_conta_cache", None)
+
+    quota_path = Path(f"/tmp/cc-status-{session_id}.json")
+    quota_path.write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()),
+                "session_name": "Daniel",
+                "exceeds_200k_tokens": True,
+                "model": {"id": "claude-opus-5", "display_name": "Opus 5"},
+                "context_window": {"context_window_size": 1_000_000, "used_percentage": 21},
+                "rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": 9_999_999_999}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/agents/daniel/painel").json()
+
+        assert body["contexto"]["session_name"] == "Daniel"
+        assert body["contexto"]["exceeds_200k"] is True
+        assert body["quotas"]["conta"] == {"email": "quem@paga.com", "display_name": "Quem Paga"}
+
+        # Sem o campo no arquivo, o painel diz "não sei" — nunca "não cruzou".
+        payload = json.loads(quota_path.read_text(encoding="utf-8"))
+        del payload["exceeds_200k_tokens"]
+        del payload["session_name"]
+        quota_path.write_text(json.dumps(payload), encoding="utf-8")
+        with TestClient(app) as client:
+            body = client.get("/api/agents/daniel/painel").json()
+
+        assert body["contexto"]["exceeds_200k"] is None
+        assert body["contexto"]["session_name"] is None
+    finally:
+        quota_path.unlink(missing_ok=True)
+        agents_router._conta_cache = None
+
+
+def test_agent_painel_rele_a_conta_quando_o_arquivo_muda(tmp_path: Path, monkeypatch) -> None:
+    """O cache da conta é `(mtime_ns, size)`: um `/login` tem de aparecer no ato.
+
+    Cache por TTL seguraria a conta velha por segundos depois da troca — e a
+    troca vale para todos os agentes vivos de uma vez, sem reinício.
+    """
+    config_path = tmp_path / "claude.json"
+    config_path.write_text(
+        json.dumps({"oauthAccount": {"emailAddress": "antes@conta.com"}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(agents_router, "_CLAUDE_CONFIG_PATH", config_path)
+    monkeypatch.setattr(agents_router, "_conta_cache", None)
+    try:
+        assert agents_router._ler_conta_claude().email == "antes@conta.com"
+
+        config_path.write_text(
+            json.dumps({"oauthAccount": {"emailAddress": "depois@conta.com"}}), encoding="utf-8"
+        )
+        assert agents_router._ler_conta_claude().email == "depois@conta.com"
+
+        config_path.unlink()
+        assert agents_router._ler_conta_claude() is None
+    finally:
+        agents_router._conta_cache = None
+
+
 def test_agent_painel_expoe_canal_de_entrega_bloqueado(
     tmp_path: Path, monkeypatch
 ) -> None:
