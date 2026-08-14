@@ -447,6 +447,76 @@ def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:
             assert isinstance(body["sent_at"], int)
 
 
+def test_input_clear_arma_rename_apos_clear_em_background(tmp_path: Path) -> None:
+    """`/clear` literal arma `_rename_apos_clear` sem esperar a sessão nova nascer.
+
+    Pedido do Rica (14/08): o `/clear` cria sessão nova no CC e o `/rename` de
+    antes fica órfão — quer que a sessão reapareça já com o nome do agente,
+    sozinho, sem campo pra digitar.
+    """
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ) as send_message, patch(
+        "routers.agents._rename_apos_clear", new=AsyncMock()
+    ) as rename_apos_clear:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "/clear", "idempotency_key": "k-clear"},
+            )
+
+    assert response.status_code == 200
+    send_message.assert_called_once_with("daniel", "/clear")
+    rename_apos_clear.assert_called_once_with(app.state.db, "daniel", "daniel", "Daniel Singh", None)
+
+
+def test_input_texto_comum_nao_arma_rename_apos_clear(tmp_path: Path) -> None:
+    """Só o `/clear` literal dispara o rename automático — texto comum não."""
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ), patch("routers.agents._rename_apos_clear", new=AsyncMock()) as rename_apos_clear:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "oi Daniel", "idempotency_key": "k-oi"},
+            )
+
+    assert response.status_code == 200
+    rename_apos_clear.assert_not_called()
+
+
+def test_rename_apos_clear_manda_rename_quando_sessao_nova_aparece(monkeypatch) -> None:
+    """Espera o `sessionId` mudar e só então manda `/rename <nome do agente>`."""
+    monkeypatch.setattr(agents_router, "_CLEAR_RENAME_POLL_S", 0.01)
+    monkeypatch.setattr(agents_router, "_CLEAR_RENAME_TIMEOUT_S", 1.0)
+    db = SimpleNamespace(
+        latest_jsonl_session_id=AsyncMock(side_effect=["antigo", "antigo", "novo-id"])
+    )
+    with patch(
+        "routers.agents.tmux_driver.send_message", new=AsyncMock(return_value=tmux_driver.DELIVERED)
+    ) as send_message:
+        asyncio.run(
+            agents_router._rename_apos_clear(db, "daniel", "daniel", "Daniel Singh", "antigo")
+        )
+
+    send_message.assert_called_once_with("daniel", "/rename Daniel Singh")
+
+
+def test_rename_apos_clear_desiste_apos_timeout_sem_sessao_nova(monkeypatch) -> None:
+    """Sessão nunca troca de id (pane travado, `/clear` não pegou) → desiste sem mandar nada."""
+    monkeypatch.setattr(agents_router, "_CLEAR_RENAME_POLL_S", 0.01)
+    monkeypatch.setattr(agents_router, "_CLEAR_RENAME_TIMEOUT_S", 0.05)
+    db = SimpleNamespace(latest_jsonl_session_id=AsyncMock(return_value="antigo"))
+    with patch("routers.agents.tmux_driver.send_message", new=AsyncMock()) as send_message:
+        asyncio.run(
+            agents_router._rename_apos_clear(db, "daniel", "daniel", "Daniel Singh", "antigo")
+        )
+
+    send_message.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("driver_result", "expected_delivered"),
     [

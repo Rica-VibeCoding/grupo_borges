@@ -3099,6 +3099,38 @@ async def stream_agent_messages(
     )
 
 
+_CLEAR_RENAME_POLL_S = 0.5
+_CLEAR_RENAME_TIMEOUT_S = 20.0
+
+
+async def _rename_apos_clear(
+    db: GrupoBorgesDB,
+    slug: str,
+    tmux_session: str,
+    agent_name: str,
+    session_antes: str | None,
+) -> None:
+    """Reaplica `/rename <nome do agente>` na sessão nova que o `/clear` abre.
+
+    O `/clear` do Claude Code começa um `sessionId` novo — o `/rename` de antes
+    fica preso ao antigo, e o rodapé do card (`RodapeDeCota.sessao`) voltava a
+    "sem nome" até alguém digitar de novo (pedido do Rica, 14/08: "recomeça a
+    sessão com o nome correto do agente", sem campo pra digitar). O sinal de
+    "sessão nova apareceu" é o mesmo que a SSE usa pro evento `session-reset`:
+    o `sessionId` mais recente em `task_events` mudou.
+    """
+    deadline = time.monotonic() + _CLEAR_RENAME_TIMEOUT_S
+    while time.monotonic() < deadline:
+        await asyncio.sleep(_CLEAR_RENAME_POLL_S)
+        atual = await db.latest_jsonl_session_id(slug)
+        if atual is not None and atual != session_antes:
+            await tmux_driver.send_message(tmux_session, f"/rename {agent_name}")
+            return
+    log.warning(
+        "clear-rename: sessão nova não apareceu para %s em %.0fs", slug, _CLEAR_RENAME_TIMEOUT_S
+    )
+
+
 @router.post("/{slug}/input", response_model=InputResponse)
 async def send_agent_input(
     slug: str, payload: InputRequest, request: Request
@@ -3118,6 +3150,8 @@ async def send_agent_input(
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.
+    - `/clear` literal (botão do painel ou digitado) arma `_rename_apos_clear`
+      em background: a resposta não espera a sessão nova nascer.
     """
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
@@ -3130,9 +3164,15 @@ async def send_agent_input(
             fresh=payload.fresh,
         )
     else:
+        is_clear = payload.text.strip() == "/clear"
+        session_antes = await db.latest_jsonl_session_id(slug) if is_clear else None
         delivered = await _send_tmux_or_409(agent["tmux_session"], payload.text)
         if not delivered:
             raise HTTPException(status_code=409, detail="agent_pane_unavailable")
+        if is_clear:
+            asyncio.create_task(
+                _rename_apos_clear(db, slug, agent["tmux_session"], agent["name"], session_antes)
+            )
 
     return InputResponse(
         tmux_delivered=True,
