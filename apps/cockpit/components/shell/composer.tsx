@@ -65,6 +65,7 @@ import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
 import { SeletorMotor } from './seletor-motor';
 import { preparaEnvio } from './porta-de-envio';
+import { prefixaPesquisa } from './pesquisa-canario';
 import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
 import { usaGravador } from './usa-gravador';
 import {
@@ -76,6 +77,7 @@ import {
   type Impedimento,
 } from './voz';
 import {
+  IconeBusca,
   IconeCadeado,
   IconeCopiar,
   IconeDescartar,
@@ -146,6 +148,8 @@ export function Composer({
   esforcoCobrePedido,
 }: ComposerProps) {
   const [texto, setTexto] = useState('');
+  const [pesquisaAtiva, setPesquisaAtiva] = useState(false);
+  const podePesquisar = agentSlug === 'canarinho';
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
@@ -358,11 +362,15 @@ export function Composer({
    * o Rica não pediu.
    */
   async function enviar(corpo: string, retomada = false): Promise<boolean> {
+    // O toggle altera só o gesto que nasceu AGORA no campo. O corpo de uma
+    // retomada já foi decidido quando entrou na fila ou na máquina de envio;
+    // prefixá-lo aqui de novo mudaria a tentativa que o Rica está reabrindo.
+    const corpoParaEnviar = prefixaPesquisa(corpo, podePesquisar && pesquisaAtiva, retomada);
     // COMANDOS DA TARA — mesmo efeito do /clear no CC. `clear`/`/clear` apaga
     // a conversa da UI e arma uma thread nova; a próxima mensagem nasce limpa.
     // Interceptado ANTES da porta: é gesto de tela, não texto pro Codex — a
     // bolha otimista nem nasce.
-    if (ehCodex && COMANDOS_TARA[corpo.trim().toLowerCase().replace(/^\//, '')]) {
+    if (ehCodex && COMANDOS_TARA[corpoParaEnviar.trim().toLowerCase().replace(/^\//, '')]) {
       await armarNovaConversaTara();
       setTexto('');
       return true;
@@ -377,7 +385,7 @@ export function Composer({
     // resumo ao meio — exatamente o que a porta impede para o texto.
     const anexar = retidoAnexo !== null && !retomada;
     const efeito = preparaEnvio({
-      texto: corpo,
+      texto: corpoParaEnviar,
       temAnexo: anexar,
       // Só trava o gesto que LEVA o arquivo. Reenviar um texto pendurado
       // enquanto uma foto sobe não duplica nada e não tem por que esperar.
@@ -403,7 +411,7 @@ export function Composer({
     // quando a espera terminar.
     if (efeito.enfileira) {
       contadorFila.current += 1;
-      const item = { id: `fila-${contadorFila.current}`, texto: corpo };
+      const item = { id: `fila-${contadorFila.current}`, texto: corpoParaEnviar };
       setFila((atual) => enfileira(atual, item));
       if (efeito.limpaCampo) setTexto('');
       return false;
@@ -420,7 +428,7 @@ export function Composer({
       // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
-      if (await anexo.enviar(corpo)) {
+      if (await anexo.enviar(corpoParaEnviar)) {
         setTexto('');
       } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
@@ -434,7 +442,7 @@ export function Composer({
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
     // barra precisa nascer com o clique, não com o 200.
-    if (COMPACT_RE.test(corpo)) {
+    if (COMPACT_RE.test(corpoParaEnviar)) {
       compactPendenteRef.current = true;
       iniciarCompact();
     }
@@ -451,13 +459,13 @@ export function Composer({
     // Claude Code o eco volta pelo stream em milissegundos, e uma pendência
     // aberta ali afrouxaria o prazo de um alarme que lá é verdadeiro.
     // Ver `lib/codex/eco-pendente.ts`.
-    const idEcoPendente = ehCodex ? registraEcoPendente(agentSlug, corpo) : null;
+    const idEcoPendente = ehCodex ? registraEcoPendente(agentSlug, corpoParaEnviar) : null;
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
     // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
     // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da
     // auditoria, 09/08).
     await envio.enviar(
-      corpo,
+      corpoParaEnviar,
       idEcoPendente ? () => descartaEcoPendente(agentSlug, idEcoPendente) : undefined,
     );
     return true;
@@ -717,7 +725,34 @@ export function Composer({
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
             {emCaptura ? null : (
-              <SeletorMotor agentSlug={agentSlug} agentName={agentName} motor={motor} esforcoCobrePedido={esforcoCobrePedido} />
+              <>
+                {podePesquisar ? (
+                  <button
+                    type="button"
+                    onClick={() => setPesquisaAtiva((ativa) => !ativa)}
+                    aria-pressed={pesquisaAtiva}
+                    aria-label={pesquisaAtiva ? 'Desativar pesquisa do Canarinho' : 'Ativar pesquisa do Canarinho'}
+                    title={pesquisaAtiva ? 'Desativar pesquisa' : 'Ativar pesquisa'}
+                    data-selecionado={pesquisaAtiva ? 'true' : 'false'}
+                    className="ck-veil flex shrink-0 items-center justify-center"
+                    style={{
+                      minWidth: 'var(--ck-touch-min)',
+                      minHeight: 'var(--ck-touch-min)',
+                      marginBottom: 'calc(var(--ck-space-1) * -1)',
+                      borderRadius: 'var(--ck-radius-chip)',
+                      color: pesquisaAtiva ? 'var(--ck-alert-warning)' : 'var(--ck-text-secondary)',
+                    }}
+                  >
+                    <IconeBusca tamanho={17} />
+                  </button>
+                ) : null}
+                <SeletorMotor
+                  agentSlug={agentSlug}
+                  agentName={agentName}
+                  motor={motor}
+                  esforcoCobrePedido={esforcoCobrePedido}
+                />
+              </>
             )}
             {/* O ÚNICO ELEMENTO SÓLIDO, e ele troca de função — a referência é
                 explícita nisso: na tela do Codex com o composer VAZIO, o botão
