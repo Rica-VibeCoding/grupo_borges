@@ -1082,8 +1082,22 @@ _CHANNEL_FLAGS = ("--channels", "--dangerously-load-development-channels")
 #: absorvente (ver `_pane_channel_flags`).
 _CANAL_PADRAO = "--channels plugin:telegram@claude-plugins-official"
 
+#: Agentes Claude Code que `subir-frota.sh` sobe SEM `--channels` de propósito
+#: (`subir_canario`: "Orquestrado só pelo Pavan via tmux/cockpit — sem canal
+#: Telegram próprio"). Pra estes, processo vivo sem canal é o estado CORRETO,
+#: não perda a recuperar — o piso canônico não pode se aplicar aqui.
+#:
+#: Achado 14/08: o Canário relançado (botão Resume) caía no piso canônico
+#: igual ao Daniel mudo, ganhando `--channels plugin:telegram@...` que nunca
+#: pediu. Sem `TELEGRAM_STATE_DIR` próprio (nunca setado, então nada pra
+#: `_PRESERVED_ENV_VARS` preservar), o plugin dele caiu no dir legado — o
+#: MESMO que o Daniel usa por não ter o seu (ver `_PRESERVED_ENV_VARS`). Dois
+#: agentes fazendo `getUpdates` no mesmo bot: o Telegram entrega cada
+#: atualização a um poller só, e o áudio do Rica ia ora pra um, ora pro outro.
+_AGENTES_SEM_CANAL_POR_DESENHO = frozenset({"canario"})
 
-def _pane_channel_flags(pane_pid: int) -> str:
+
+def _pane_channel_flags(pane_pid: int, session_name: str) -> str:
     """Lê do processo vivo as flags de canal, pra o relaunch não emudecer o agente.
 
     `_CLI_COMMANDS` monta o comando do zero e não conhece canal nenhum. Sem
@@ -1096,7 +1110,12 @@ def _pane_channel_flags(pane_pid: int) -> str:
 
     Ler do processo em vez de fixar no `agents.yaml` é de propósito — o Pavan
     carrega um canal de desenvolvimento a mais, e o que precisa voltar de pé
-    é exatamente o que estava rodando, não o que a config imagina.
+    é exatamente o que estava rodando, não o que a config imagina. Mas
+    "processo vivo sem canal" tem DOIS significados opostos que o `/proc`
+    sozinho não distingue: o Daniel perdeu o canal por acidente (bug a
+    corrigir); o Canário nunca teve um, por desenho (silêncio a preservar).
+    `session_name` resolve a ambiguidade pelos poucos agentes onde ela existe
+    — não é a mesma coisa que abandonar a leitura do processo.
     """
     candidate_pids = [pane_pid]
     try:
@@ -1129,9 +1148,12 @@ def _pane_channel_flags(pane_pid: int) -> str:
             recovered.append(f"{arg} {shlex.quote(value)}")
         if recovered:
             return " " + " ".join(recovered)
-    # Nada pra copiar — processo já estava mudo, ou o `/proc` não abriu. Devolver
-    # vazio aqui fazia o relaunch nascer mudo e a próxima leitura achar o mesmo
-    # vazio: quem caía nunca voltava sozinho, e relançar (o conserto) virava o
+    # Nada pra copiar — processo já estava mudo, ou o `/proc` não abriu. Pros
+    # agentes que nunca tiveram canal por desenho, mudo É o estado correto.
+    if session_name in _AGENTES_SEM_CANAL_POR_DESENHO:
+        return ""
+    # Devolver vazio aqui fazia o relaunch nascer mudo e a próxima leitura achar o
+    # mesmo vazio: quem caía nunca voltava sozinho, e relançar (o conserto) virava o
     # que mantinha a falta. O piso canônico quebra o ciclo. Continua valendo a
     # regra do docstring — o processo vivo manda; isto é último recurso, e por
     # isso não conhece canal de desenvolvimento, só o que os 7 sobem no boot.
@@ -1337,7 +1359,7 @@ def _swap_window_and_launch(
     old_process_ids = _pane_owner_pids(int(old_pane.pane_pid))
     # Lido ANTES do kill: depois que o processo morre o `/proc` some junto,
     # e com ele a única prova de quais canais/env o agente tinha ligado.
-    channel_flags = _pane_channel_flags(int(old_pane.pane_pid))
+    channel_flags = _pane_channel_flags(int(old_pane.pane_pid), session_name)
     env_snapshot = _pane_environment_snapshot(
         int(old_pane.pane_pid), _PRESERVED_ENV_VARS
     )

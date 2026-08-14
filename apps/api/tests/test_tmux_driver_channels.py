@@ -59,7 +59,7 @@ def test_recupera_canal_do_processo_vivo(monkeypatch: pytest.MonkeyPatch) -> Non
         "Path",
         _proc_falso({4242: ["claude", "--dangerously-skip-permissions", "--channels", CANAL]}),
     )
-    assert tmux_driver._pane_channel_flags(4242) == f" --channels {CANAL}"
+    assert tmux_driver._pane_channel_flags(4242, "daniel") == f" --channels {CANAL}"
 
 
 def test_processo_sem_canal_nao_devolve_vazio(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,7 +69,7 @@ def test_processo_sem_canal_nao_devolve_vazio(monkeypatch: pytest.MonkeyPatch) -
         "Path",
         _proc_falso({4242: ["claude", "--dangerously-skip-permissions"]}),
     )
-    recuperado = tmux_driver._pane_channel_flags(4242)
+    recuperado = tmux_driver._pane_channel_flags(4242, "daniel")
     assert recuperado != "", "sem canal no processo vivo, o relaunch precisa do valor canônico"
     assert CANAL in recuperado
 
@@ -77,7 +77,31 @@ def test_processo_sem_canal_nao_devolve_vazio(monkeypatch: pytest.MonkeyPatch) -
 def test_proc_ilegivel_nao_devolve_vazio(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sem `/proc` pra ler, o certo continua sendo subir com canal."""
     monkeypatch.setattr(tmux_driver, "Path", _proc_falso({}))
-    assert CANAL in tmux_driver._pane_channel_flags(4242)
+    assert CANAL in tmux_driver._pane_channel_flags(4242, "daniel")
+
+
+def test_agente_sem_canal_por_desenho_fica_mudo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O bug oposto: Canário nunca teve canal, e o piso canônico dava um a ele.
+
+    Achado 14/08 — áudio do Rica pro Daniel caindo no Canário. `subir_canario`
+    nunca inclui `--channels`; um relaunch (botão Resume) lia o processo vivo,
+    achava zero flags e caía no MESMO piso canônico do caso Daniel — dando
+    Telegram a um agente que nunca pediu, sem `TELEGRAM_STATE_DIR` isolado.
+    """
+    monkeypatch.setattr(
+        tmux_driver,
+        "Path",
+        _proc_falso({4242: ["claude", "--dangerously-skip-permissions"]}),
+    )
+    assert tmux_driver._pane_channel_flags(4242, "canario") == ""
+
+
+def test_agente_sem_canal_por_desenho_com_proc_ilegivel_tambem_fica_mudo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mesmo sem conseguir ler o `/proc`, o Canário não ganha canal de vontade própria."""
+    monkeypatch.setattr(tmux_driver, "Path", _proc_falso({}))
+    assert tmux_driver._pane_channel_flags(4242, "canario") == ""
 
 
 def test_canal_de_desenvolvimento_extra_sobrevive(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -97,6 +121,6 @@ def test_canal_de_desenvolvimento_extra_sobrevive(monkeypatch: pytest.MonkeyPatc
             }
         ),
     )
-    recuperado = tmux_driver._pane_channel_flags(4242)
+    recuperado = tmux_driver._pane_channel_flags(4242, "daniel")
     assert f"--channels {CANAL}" in recuperado
     assert "--dangerously-load-development-channels plugin:whatsapp-rica@local" in recuperado
