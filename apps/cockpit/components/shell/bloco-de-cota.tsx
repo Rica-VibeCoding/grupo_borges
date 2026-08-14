@@ -259,9 +259,20 @@ export function BlocoDeCota({
         {conta ? (
           // Encostada à direita, longe do título: é a ficha de quem paga, não
           // um estado do agente. O `ml-auto` come a folga que sobrar.
+          //
+          // Pílula em cinza NEUTRO, um degrau de superfície acima da gaveta
+          // (medido no DOM: o `<aside>` atrás pinta `surface-nav`). Destaca sem
+          // usar cor, que nesta tela pertence a estado — e o `ck-lit` põe o fio
+          // de luz no topo em vez de contorno, que é a assinatura da §A.
           <span
-            className="ml-auto truncate"
-            style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}
+            className="ck-lit ml-auto truncate"
+            style={{
+              fontSize: 'var(--ck-text-xs)',
+              color: 'var(--ck-text-secondary)',
+              background: 'var(--ck-surface-composer)',
+              borderRadius: 'var(--ck-radius-pill)',
+              padding: '2px var(--ck-space-2)',
+            }}
             title={`Conta Claude ativa: ${conta}`}
           >
             {conta}
