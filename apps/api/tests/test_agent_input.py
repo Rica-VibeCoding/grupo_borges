@@ -136,11 +136,14 @@ def test_input_aceita_um_log_colado(tmp_path: Path) -> None:
     medir o caminho de entrega de novo.
     """
     app = _build_app(tmp_path)
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/agents/daniel/input",
-            json={"text": "x" * 20000, "idempotency_key": "k-log"},
-        )
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "x" * 20000, "idempotency_key": "k-log"},
+            )
         assert response.status_code != 422
 
 
