@@ -3740,14 +3740,26 @@ async def post_agent_voice(
             int((time.monotonic() - stt_started_at) * 1000),
         )
 
-        input_origin = _InputOrigin(
-            meta={"kind": "stt", "raw_text": f"🎙 {transcribed}"}
-        )
+        # A MARCA DE ÁUDIO VALE PROS DOIS EXECUTORES. O ramo do Claude Code
+        # sempre entregou `🎙 {transcribed}`; o do Codex entregava a transcrição
+        # CRUA, indistinguível de texto digitado. Medido em 14/08: o áudio de
+        # 11,2 s virou turno (scope `cockpit-codex-turn-tara` no journal) e a
+        # transcrição entrou na thread — e ainda assim, perguntada se o áudio
+        # tinha chegado, a Tara respondeu *"aqui chegou apenas esta mensagem
+        # escrita"*. Ela não tinha como saber. O caminho do telecodex já
+        # marcava o dele (`_AUDIO_SKILL_PREFIX`, services/codex_reader.py); só
+        # o cockpit não marcava.
+        #
+        # `expected_text` do `message_origin` acompanha porque é casado contra o
+        # texto do rollout já saneado (`claim_message_origin`): marcar um lado
+        # só quebraria a origem `stt` da bolha.
+        falado = f"🎙 {transcribed}"
+        input_origin = _InputOrigin(meta={"kind": "stt", "raw_text": falado})
         if agent.get("executor_kind") == "codex":
             await _spawn_codex_agent_turn(
                 slug,
                 request,
-                text=transcribed,
+                text=falado,
                 input_origin=input_origin,
             )
             duration_ms = int((time.monotonic() - started_at) * 1000)
@@ -3760,7 +3772,7 @@ async def post_agent_voice(
 
         delivered = await _send_tmux_or_409(
             agent["tmux_session"],
-            f"🎙 {transcribed}",
+            falado,
             input_origin=input_origin,
             db=db,
             agent_slug=slug,

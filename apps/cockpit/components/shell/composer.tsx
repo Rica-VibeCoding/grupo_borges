@@ -46,7 +46,7 @@ import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
 import { descartaEcoPendente, registraEcoPendente } from '../../lib/codex/eco-pendente';
 import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import { usaFrota } from './frota-provider';
-import { usaEnvio } from '../../lib/usa-envio';
+import { MARCA_VOZ, usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
 import { BarraCompact } from './barra-compact';
@@ -289,7 +289,23 @@ export function Composer({
         // O que o servidor ENTENDEU aparece na tela. STT erra, e o Rica precisa
         // saber o que o agente recebeu — sem isso ele descobre pela resposta
         // errada do agente, três minutos depois.
-        setTranscrito(await envio.enviarVoz(audio));
+        const falado = await envio.enviarVoz(audio);
+        // A MESMA BOLHA OTIMISTA DO TEXTO (ver a chamada em `despacha`), que só
+        // o ramo escrito registrava. Sem ela o feed da Tara ficava mudo os ~12 s
+        // do `codex exec` subindo, e o prazo do composer — que decide olhando
+        // `temPendencia` — caía em âmbar dizendo que o áudio podia não ter
+        // entrado, num envio que entrou.
+        //
+        // Registrar COM a marca é requisito, não enfeite: o rollout guarda o
+        // texto marcado e `reconciliaPendentes` casa por texto exato. Sem ela a
+        // pendência ficaria sem par até expirar.
+        //
+        // Depois do `await` porque antes dele não existe transcrição — a bolha
+        // nasce no fim do STT, não no gesto. É o mais cedo possível aqui.
+        if (falado !== null && ehCodex) {
+          registraEcoPendente(agentSlug, `${MARCA_VOZ}${falado}`);
+        }
+        setTranscrito(falado);
       } catch (erro) {
         // O back só entrega DEPOIS de transcrever: falha aqui significa que
         // nada chegou ao agente. Por isso a fala tem aviso próprio em vez de
@@ -299,7 +315,7 @@ export function Composer({
         setFalhaDaFala(diagnosticaTranscricao(erro));
       }
     },
-    [envio, travaCompact],
+    [agentSlug, ehCodex, envio, travaCompact],
   );
 
   const gravador = usaGravador({ aoGravar: subirAudio });

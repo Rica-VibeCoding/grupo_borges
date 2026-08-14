@@ -309,7 +309,14 @@ def test_input_reads_event_boundary_before_codex_spawn(tmp_path: Path) -> None:
 
 
 def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
-    """Áudio para Tara Codex vira prompt transcrito via tara-codex."""
+    """Áudio para Tara Codex vira prompt transcrito e MARCADO via tara-codex.
+
+    A marca `🎙` entrou em 14/08: até então só o ramo do Claude Code a recebia,
+    e a Tara não tinha como separar fala de texto digitado — perguntada se o
+    áudio tinha chegado, respondeu *"aqui chegou apenas esta mensagem escrita"*
+    com a transcrição já na thread. O `meta.kind=stt` resolve a BOLHA (o feed
+    desenha a fala a partir do `raw_text`), não o prompt do agente.
+    """
     app = _build_app(tmp_path, codex_for_tara=True)
     thread = SimpleNamespace(thread_id="thread-voice")
     fake_stt = SimpleNamespace(returncode=0, stdout="olá Tara\n", stderr="")
@@ -335,7 +342,7 @@ def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
     cmd = popen.call_args.args[0]
     assert "--resume-thread" in cmd
     assert "thread-voice" in cmd
-    assert cmd[-4:] == ["-C", "/tmp/tara", "--", "olá Tara"]
+    assert cmd[-4:] == ["-C", "/tmp/tara", "--", "🎙 olá Tara"]
 
 
 def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> None:

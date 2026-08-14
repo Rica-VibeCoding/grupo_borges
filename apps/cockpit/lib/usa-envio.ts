@@ -39,6 +39,13 @@ type RespostaComFronteira = AgentInputResponse & {
  */
 export const PREFIXO_VOZ = /^🎙\s*/u;
 
+/** O literal que o back prepende na transcrição antes de entregar ao agente —
+ *  nos DOIS executores (`post_agent_voice`). O front precisa dele porque a
+ *  bolha otimista do Codex casa por texto EXATO com o que chega no rollout
+ *  (`reconciliaPendentes`): registrar sem a marca deixaria a pendência sem par
+ *  e o composer preso em `aceito` até o prazo de 3 min expirar. */
+export const MARCA_VOZ = '🎙 ';
+
 export type RespostaVoz = {
   transcribed: string;
   /** `false` é sinal negativo do próprio backend, não mera falta de eco. */

@@ -48,8 +48,15 @@ def _build_app(tmp_path: Path) -> FastAPI:
 def test_voice_codex_produces_canonical_stt_meta(tmp_path: Path) -> None:
     """A transcrição da rota /voice chega ao feed Codex como STT explícito.
 
-    O rollout da Tara guarda só o texto cru; portanto este contrato protege a
-    proveniência que nasce no POST, não um prefixo interpretado no texto.
+    A proveniência continua nascendo no POST — nunca de prefixo INTERPRETADO no
+    texto. É o que `test_typed_microphone_prefix_does_not_create_codex_stt_meta`
+    guarda: `🎙` digitado não vira voz, porque `/input` não cria origem nenhuma.
+
+    O que mudou em 14/08 é o outro lado: o rollout deixou de guardar o texto cru
+    e passa a guardar o texto MARCADO, porque é ele que a Tara lê. Sem isso ela
+    não distinguia fala de teclado. Como o `expected_text` é casado contra o
+    texto saneado do rollout, os dois lados carregam a marca — marcar um só
+    quebraria o vínculo da origem.
     """
     app = _build_app(tmp_path)
     transcript = "abre o relatório"
@@ -67,7 +74,7 @@ def test_voice_codex_produces_canonical_stt_meta(tmp_path: Path) -> None:
     rollout_message = codex_reader.CodexMessage(
         id="thread-voice:17",
         role="user",
-        text=transcript,
+        text=f"🎙 {transcript}",
         timestamp=(datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),
         item_type="message",
         visible=True,
