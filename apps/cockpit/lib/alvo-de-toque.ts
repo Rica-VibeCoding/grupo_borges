@@ -27,6 +27,24 @@ export const ALVO_DE_TOQUE: CSSProperties = {
 };
 
 /**
+ * Para o controle que já é largo (o seletor de motor, 188px) e que traz padding
+ * horizontal próprio: só a vertical cresce.
+ *
+ * Existe porque a primeira tentativa saiu TORTA e foi ao ar assim: espalhei o
+ * `ALVO_DE_TOQUE` no topo do objeto e o `padding: '0 var(--ck-space-2)'` do
+ * próprio componente, escrito depois, anulou o meu — sobrou a margem negativa
+ * sem o padding que a compensava, e o botão andou 6px pra cima e 6px pra
+ * esquerda. Shorthand escrito depois no mesmo objeto sempre ganha do spread;
+ * por isso aqui é `paddingBlock`/`marginBlock` e o componente usa
+ * `paddingInline` em vez do `padding` de duas pernas.
+ */
+export const ALVO_DE_TOQUE_VERTICAL: CSSProperties = {
+  boxSizing: 'content-box',
+  paddingBlock: FOLGA,
+  marginBlock: `calc(${FOLGA} * -1)`,
+};
+
+/**
  * A base do composer já subia os controles com `--ck-space-1` negativo para
  * casar com a linha do texto. A folga de toque entra somada, senão o botão
  * desce os 6px que o padding acrescentou.

@@ -1,7 +1,7 @@
 'use client';
 
 import { DropdownMenuTrigger } from '../ui/dropdown-menu';
-import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
+import { ALVO_DE_TOQUE_VERTICAL, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
 import { EtiquetaDoEsforco } from './etiqueta-esforco';
 import type { EtiquetaEsforco } from './motor';
 
@@ -47,7 +47,7 @@ export function GatilhoDoSeletor({
         // flex `items-center`, então margem diferente era 8px de desnível
         // entre o rótulo e o único elemento sólido da linha.
         style={{
-          ...ALVO_DE_TOQUE,
+          ...ALVO_DE_TOQUE_VERTICAL,
           height: '32px',
           minHeight: '32px',
           gap: 'var(--ck-space-1)',
@@ -57,7 +57,9 @@ export function GatilhoDoSeletor({
           // O respiro de 8px existe para esse realce (e para o dedo) ter área;
           // a margem negativa devolve os mesmos 8px, então a distância entre
           // o texto e o botão de onda segue sendo o `gap` de 12px de antes.
-          padding: '0 var(--ck-space-2)',
+          // `paddingInline`, não o `padding` de duas pernas: o shorthand
+          // apagaria o `paddingBlock` do alvo de toque espalhado acima.
+          paddingInline: 'var(--ck-space-2)',
           marginRight: 'calc(var(--ck-space-2) * -1)',
           borderRadius: 'var(--ck-radius-pill)',
           fontSize: 'var(--ck-text-base)',
