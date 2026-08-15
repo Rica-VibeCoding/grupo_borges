@@ -145,5 +145,9 @@ export function recadoDaFila(estado: EstadoDaFila): string {
   if (estado.pausa === 'envio-falhou') {
     return 'o envio anterior não confirmou — resolva acima ou envie mesmo assim';
   }
-  return 'na fila — sai quando o compact terminar';
+  // Sem nomear a espera: são duas (o compact e o eco da mensagem anterior) e
+  // cada uma já tem quem a anuncie na mesma tela — a `BarraCompact` logo acima,
+  // a linha de estado do composer logo abaixo. O que só esta frase sabe dizer é
+  // o destino do texto, e é isso que ela diz.
+  return 'na fila — sai sozinha quando liberar';
 }

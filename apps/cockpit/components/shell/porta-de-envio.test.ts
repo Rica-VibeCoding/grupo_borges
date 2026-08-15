@@ -90,18 +90,48 @@ test('só o TEXTO entra na fila — anexo, voz e retomada não têm onde ficar',
   );
 });
 
-test('as esperas de segundos não viram bloco na tela', () => {
-  // `envio-em-voo` dura uma viagem de rede e `anexo-em-voo` uma subida. Pendurar
-  // um bloco para isso é mais interrupção do que a própria espera.
+/**
+ * REVOGA a decisão anterior ("as esperas de segundos não viram bloco na tela",
+ * que exigia `enfileira: false` aqui). A premissa dela era que `envio-em-voo`
+ * dura uma viagem de rede — verdade no Claude Code, falsa na Tara, onde `aceito`
+ * espera o rollout do `codex exec` (14 s medidos em 11/08, em
+ * `aparencia-envio.ts`). Nesses segundos o texto ficava parado no campo com um
+ * aviso que o teclado do celular esconde, e da tela do Rica isso é a mensagem
+ * sendo engolida.
+ */
+test('mensagem escrita durante o envio anterior vai para a fila, não para o limbo', () => {
   for (const faseEnvio of ['enviando', 'aceito'] as const) {
     const efeito = preparaEnvio({ texto: 'e a segunda', compactando: false, faseEnvio });
-    assert.equal(efeito.enfileira, false);
-    assert.ok(efeito.aviso, 'e continuam falando, que é a invariante do módulo');
+    assert.equal(efeito.enfileira, true, `${faseEnvio} tem de pendurar o texto à vista`);
+    assert.equal(efeito.limpaCampo, true, 'o texto saiu das mãos — o campo fica livre para a próxima');
+    assert.equal(
+      efeito.aviso,
+      null,
+      'quem fala é o bloco da fila, com o texto à vista; repetir embaixo diria menos',
+    );
   }
 });
 
+test('a espera de uma SUBIDA continua sem bloco — o gesto carrega arquivo', () => {
+  const efeito = preparaEnvio({
+    texto: 'legenda',
+    temAnexo: true,
+    anexoEmVoo: true,
+    compactando: false,
+    faseEnvio: 'ocioso',
+  });
+  assert.equal(efeito.enfileira, false, 'a fila carrega texto, nunca arquivo');
+  assert.ok(efeito.aviso, 'e continua falando, que é a invariante do módulo');
+});
+
 test('recusa que não enfileira tem de falar, salvo campo vazio', () => {
-  assert.ok(preparaEnvio({ texto: 'oi', compactando: false, faseEnvio: 'aceito' }).aviso);
+  // O exemplo era `faseEnvio: 'aceito'`, que passou a enfileirar em 15/08. A
+  // invariante não mudou — mudou de quem ela precisa cobrar, e `longo-demais` é
+  // uma recusa definitiva: não há espera que a resolva, então ela só pode falar.
+  assert.ok(
+    preparaEnvio({ texto: 'x'.repeat(LIMITE_DE_TEXTO + 1), compactando: false, faseEnvio: 'ocioso' })
+      .aviso,
+  );
   assert.equal(preparaEnvio({ texto: '', compactando: false, faseEnvio: 'ocioso' }).aviso, null);
 });
 

@@ -201,8 +201,19 @@ export function preparaEnvio(entrada: {
   if (porta.libera) {
     return { despacha: true, enfileira: false, limpaCampo: !entrada.retomada, aviso: null };
   }
-  // A FILA. Só o texto puro, e só na espera do compact:
+  // A FILA. Só o texto puro, nas duas esperas que o Rica não controla:
   //
+  // - `compactando` — a espera do resumo.
+  // - `envio-em-voo` — a mensagem anterior ainda não voltou confirmada. Entrou
+  //   aqui em 15/08: a premissa antiga era que esta espera "dura o tempo de uma
+  //   viagem de rede", e isso só valia no Claude Code, onde o eco volta em
+  //   milissegundos. Na Tara ela espera o rollout do `codex exec` — 14 s medidos
+  //   em 11/08, registrados em `aparencia-envio.ts`. Nesses 14 s o Rica escrevia,
+  //   apertava Enter e o texto ficava parado no campo com um aviso que, no
+  //   celular com o teclado de pé, nasce fora da área visível. Da tela dele:
+  //   mensagem engolida. Agora ela sai das mãos, aparece no bloco acima do
+  //   composer — que o teclado não cobre — e é despachada sozinha quando o eco
+  //   da anterior chega.
   // - `temAnexo` fica de fora — a fila carrega texto, e pendurar um arquivo fora
   //   do composer inventaria um segundo lugar onde ele pode estar.
   // - `midia: 'voz'` fica de fora — o áudio recusado não tem onde ficar, e o
@@ -210,11 +221,10 @@ export function preparaEnvio(entrada: {
   // - `retomada` fica de fora — o corpo veio da máquina, que já o guarda com o
   //   botão de reenviar do lado; enfileirar criaria uma segunda cópia do mesmo
   //   texto em dois lugares que não sabem um do outro.
-  // - Os OUTROS motivos ficam de fora: `envio-em-voo` dura o tempo de uma
-  //   viagem de rede e `anexo-em-voo` o de uma subida — pendurar bloco para uma
-  //   espera de segundos é mais interrupção do que a espera.
+  // - `anexo-em-voo` continua de fora: é a espera de uma subida, e o gesto que
+  //   ela segura carrega arquivo — mesmo motivo do `temAnexo`.
   const vaiParaFila =
-    porta.motivo === 'compactando' &&
+    (porta.motivo === 'compactando' || porta.motivo === 'envio-em-voo') &&
     (entrada.midia ?? 'texto') === 'texto' &&
     !entrada.temAnexo &&
     !entrada.retomada;
