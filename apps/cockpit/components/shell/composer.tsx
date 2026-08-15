@@ -701,6 +701,22 @@ export function Composer({
               // editável, ele escreve durante a espera e manda com um toque quando
               // ela passa. É o que garante que o texto nunca evapora.
               onChange={(e) => setTexto(e.target.value)}
+              // COLAR IMAGEM. No iPhone, "copiar" numa foto e colar no campo é
+              // o gesto natural — e até 15/08 não fazia nada, nem erro: o
+              // clipboard trazia o arquivo e ninguém o pegava. Cai na MESMA
+              // máquina do botão de anexar, então a foto vira miniatura com o
+              // controle de remover e quem decide se ela parte continua sendo a
+              // porta. Print de tela chega sem nome; o `File` do clipboard já
+              // vem com um sintético do navegador, e a máquina de anexo lida
+              // com isso desde sempre.
+              onPaste={(e) => {
+                const arquivo = [...e.clipboardData.items]
+                  .find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+                  ?.getAsFile();
+                if (!arquivo) return; // texto colado segue o caminho normal
+                e.preventDefault();
+                anexo.escolher(arquivo);
+              }}
               // Com ANEXO na mão o Enter volta a enviar no touch. A quebra de linha
               // ficou pro texto puro, mas sem o envio a foto era um beco: o Shift
               // não existe no teclado virtual, e o "manda e não sai" do reporte de
