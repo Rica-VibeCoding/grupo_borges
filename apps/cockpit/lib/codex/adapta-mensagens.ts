@@ -29,9 +29,36 @@
  * Daí o adaptador ser uma FÁBRICA com memória, e não uma função solta: ele
  * guarda o que já traduziu e devolve o mesmo objeto enquanto o conteúdo não
  * muda — e o mesmo ARRAY quando nada mudou.
+ *
+ * PARTES TIPADAS (`bruta.parts`), quando o back já separa texto/imagem/
+ * contexto em vez do `text` achatado: a tradução continua produzindo só
+ * vocabulário que o CC já fala, pela mesma razão do parágrafo acima —
+ * nenhuma peça de render pode aprender que existe Codex.
+ *   - `image` vira o MESMO envelope de texto que `leAnexoImagem`
+ *     (`components/feed/anexo-imagem.ts`) já sabe ler pro CC — só que a
+ *     "linha do caminho" é a data-URL pronta, não um arquivo em `uploads/`.
+ *     `AnexoImagemView` desenha os dois sem saber a diferença.
+ *   - `context` (régua do cockpit, prefixo de skill de áudio) não é fala do
+ *     Rica e não pode se misturar com o que ele disse de verdade — mas
+ *     `MessagePayload` só tem UM `content`. A saída é abrir a mensagem em
+ *     DUAS: uma com `user_type: 'internal'` (o mesmo campo que já rebaixa
+ *     hook/sistema no CC pro balão discreto `user-internal`, sem caixa) só
+ *     com o contexto, e a de sempre com a fala real — nessa ordem, porque o
+ *     contexto é preâmbulo. Cada metade ganha sua própria chave de memória
+ *     (`<chave>:contexto` / `<chave>`), então a identidade de objeto vale
+ *     para as duas independentemente.
  */
 
 import type { MessagePayload, SyntheticMeta } from '@grupo_borges/cockpit-core/messages-types';
+
+/** Uma peça da mensagem, quando `GET /api/agents/{slug}/codex/messages`
+ *  já separa estrutura em vez do `text` achatado
+ *  (`apps/api/services/codex_reader.py`). `image_url` é uma data-URL em
+ *  base64 — a Tara nunca grava o anexo em `uploads/agents/**`. */
+export type CodexMessagePart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; image_url: string }
+  | { type: 'context'; text: string; source: 'developer' };
 
 /** O que `GET /api/agents/{slug}/codex/messages` devolve em `messages[]`
  *  (`apps/api/services/codex_reader.py`, `CodexMessage.to_dict`). */
@@ -43,7 +70,34 @@ export type CodexMessage = {
   item_type: string;
   visible: boolean;
   meta?: SyntheticMeta;
+  /** Presente só em quem já migrou pro contrato tipado — ausente cai no
+   *  fallback do `text` de sempre. Nunca some: back mantém os dois em
+   *  paralelo. */
+  parts?: CodexMessagePart[];
 };
+
+/** Empacota a imagem no MESMO envelope que `leAnexoImagem` já reconhece —
+ *  a URL da Tara chega pronta (data-URL), então a "linha do caminho" é a URL
+ *  inteira em vez de um relativo de `uploads/`; `leAnexoImagem` aceita as
+ *  duas formas (`components/feed/anexo-imagem.ts`). */
+function envelopeDeImagem(imageUrl: string, legenda: string): string {
+  return legenda.trim() ? `${imageUrl}\nCaption: ${legenda}` : imageUrl;
+}
+
+function ehParteDeTipo<T extends CodexMessagePart['type']>(
+  tipo: T,
+): (p: CodexMessagePart) => p is Extract<CodexMessagePart, { type: T }> {
+  return (p): p is Extract<CodexMessagePart, { type: T }> => p.type === tipo;
+}
+
+/** O `content` achatado da mensagem principal — texto real, com a imagem (se
+ *  houver) empacotada no envelope. O `context` NUNCA entra aqui: quem chama
+ *  já extraiu e mandou pra bolha própria antes. */
+function conteudoPrincipal(partes: readonly CodexMessagePart[]): string {
+  const imagem = partes.find(ehParteDeTipo('image'));
+  const texto = partes.filter(ehParteDeTipo('text')).map((p) => p.text).join('\n');
+  return imagem ? envelopeDeImagem(imagem.image_url, texto) : texto;
+}
 
 /** POR QUE `internal` FICA DE FORA. O reader marca `function_call` como
  *  `role: 'internal'` com um resumo do comando em `text` — texto, não a
@@ -88,37 +142,42 @@ export function criaAdaptadorCodex(): AdaptadorCodex {
     const vistas = new Set<string>();
     let igualAAnterior = true;
 
-    for (const bruta of brutas) {
-      if (!ehBolha(bruta)) continue;
-
-      // O `id` numérico é estrutural: índice do incremental e chave do
-      // virtualizador (`components/feed/chave.ts`). Ordinal da POSIÇÃO na lista
-      // já filtrada — estável porque o rollout só cresce no fim.
-      const ordinal = lista.length;
-      const chave = bruta.id || `codex-${ordinal}`;
+    // Uma chave, um lugar de memória: usado tanto pela bolha de contexto
+    // quanto pela fala principal, cada uma com seu próprio sufixo — ver
+    // comentário do topo do arquivo.
+    const emite = (
+      chave: string,
+      papel: 'user' | 'assistant',
+      conteudo: string,
+      interna: boolean,
+      bruta: CodexMessage,
+    ): void => {
       vistas.add(chave);
+      const ordinal = lista.length;
 
       const anterior = traduzidas.get(chave);
-      if (anterior && !mudou(anterior, bruta.text, bruta.timestamp, bruta.meta)) {
+      if (anterior && !mudou(anterior, conteudo, bruta.timestamp, bruta.meta)) {
         lista.push(anterior);
         if (ultimaLista[ordinal] !== anterior) igualAAnterior = false;
-        continue;
+        return;
       }
 
-      const papel = bruta.role === 'user' ? 'user' : 'assistant';
       const traduzida: MessagePayload = {
+        // O `id` numérico é estrutural: índice do incremental e chave do
+        // virtualizador (`components/feed/chave.ts`). Ordinal da POSIÇÃO na
+        // lista já filtrada — estável porque o rollout só cresce no fim.
         id: ordinal,
         kind: papel,
         uuid: `codex-${chave}`,
         parent_uuid: null,
         session_id: null,
         is_sidechain: false,
-        user_type: 'external',
+        user_type: interna ? 'internal' : 'external',
         timestamp: bruta.timestamp,
         created_at: instanteDe(bruta.timestamp),
         message: {
           role: papel,
-          content: bruta.text,
+          content: conteudo,
           stop_reason: papel === 'assistant' ? 'end_turn' : undefined,
         },
         ...(bruta.meta ? { meta: bruta.meta } : {}),
@@ -126,6 +185,26 @@ export function criaAdaptadorCodex(): AdaptadorCodex {
       traduzidas.set(chave, traduzida);
       lista.push(traduzida);
       igualAAnterior = false;
+    };
+
+    for (const bruta of brutas) {
+      if (!ehBolha(bruta)) continue;
+
+      const chave = bruta.id || `codex-${lista.length}`;
+      const papel = bruta.role === 'user' ? 'user' : 'assistant';
+
+      if (!bruta.parts) {
+        // Fallback de sempre: quem ainda não migrou manda só `text` achatado.
+        emite(chave, papel, bruta.text, false, bruta);
+        continue;
+      }
+
+      // O contexto só existe amarrado à fala do Rica (régua do cockpit,
+      // prefixo de skill de áudio) — nunca ao que o agente respondeu.
+      const contexto = papel === 'user' ? bruta.parts.find(ehParteDeTipo('context')) : undefined;
+      if (contexto) emite(`${chave}:contexto`, 'user', contexto.text, true, bruta);
+
+      emite(chave, papel, conteudoPrincipal(bruta.parts), false, bruta);
     }
 
     // Thread trocada (o Rica abriu conversa nova) deixaria lixo crescendo pra
