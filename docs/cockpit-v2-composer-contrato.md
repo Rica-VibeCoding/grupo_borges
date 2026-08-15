@@ -188,6 +188,24 @@ rendeu um `input_nao_observavel` e um `shared_turn_in_flight`, os dois lidos com
 falha do composer. Categoria que envia espera o agente ficar ocioso antes de
 medir.
 
+**Duas armadilhas de bancada mobile que queimaram medições em 15/08.** As duas
+produziram números plausíveis, que é o que as torna caras:
+
+- **Apertar Enter não envia em viewport mobile.** Com `pointer: coarse` o Enter
+  quebra linha por desenho (`usaTecladoTouch`). Duas rodadas deram "■ nunca em
+  60 s" sem que um único POST tivesse saído do browser. Em bancada mobile,
+  **clicar o botão**, nunca apertar Enter.
+- **Localizador largo pega o elemento errado.** Procurar o texto da mensagem em
+  qualquer elemento-folha casa com o conteúdo de dentro do próprio `textarea` —
+  virou "bolha em 0,06 s" de uma bolha que não existia. Mesmo erro de contar
+  `img` na página inteira em vez de dentro de `.ck-miniatura`: o localizador
+  precisa excluir o `form` do composer.
+
+**Pane sujo reprova conserto bom.** A prova do freio deu "■ nunca em 60 s" numa
+rodada e passou na seguinte, sem mudança de código: o pane do agente tinha texto
+**armado** de um envio anterior, e o driver recusa colar em campo ocupado. Antes
+de acusar a mudança, olhar o estado do alvo.
+
 **Pesquisa que não vira régua de teste não protege ninguém.**
 `docs/chat-patterns-research.md` já listava a atualização otimista como TOP 1,
 com a frase exata do conserto: *"input limpa na hora, bubble aparece na hora"*,
