@@ -152,8 +152,17 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
           // a linha ter a MESMA altura vazia e cheia: crescer pro lado não
           // empurra nada pra baixo, e o Rica pode clicar no meio do feed sem a
           // página pular embaixo do olho dele.
+          //
+          // O DESENHO fica em 28px; o ALVO cresce pros 44px que o contrato §3
+          // exige. `content-box` faz o padding somar por fora em vez de comer o
+          // ícone, e a margem negativa devolve os 8px ao layout — a linha
+          // continua com a mesma altura de antes. Auditoria de 15/08 achou sete
+          // destes em 28x28 na tela do Rica.
+          boxSizing: 'content-box',
           width: TETO_BARRA_PX,
           height: TETO_BARRA_PX,
+          padding: 'var(--ck-space-2)',
+          margin: 'calc(var(--ck-space-2) * -1)',
           color: repouso ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)',
         }}
       >
