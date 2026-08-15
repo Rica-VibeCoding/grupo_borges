@@ -1226,6 +1226,12 @@ def test_codex_new_thread_arma_fresh_sem_telecodex(tmp_path: Path) -> None:
     """'Nova conversa' (opção A) arma `codex_next_fresh` — sem depender do daemon
     telecodex, que só controla a sessão interativa do tmux."""
     app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_codex_state(
+        "tara",
+        codex_thread_id="thread-anterior",
+        context_pct=42,
+        token_usage_json=json.dumps({"source": "codex.event_msg.token_count"}),
+    )
     with TestClient(app) as client:
         response = client.patch("/api/agents/tara/codex-new-thread", json={"armed": True})
 
@@ -1235,6 +1241,10 @@ def test_codex_new_thread_arma_fresh_sem_telecodex(tmp_path: Path) -> None:
     assert body["thread_started"] is False
     painel = asyncio.run(app.state.db.get_agent("tara"))
     assert painel["codex_next_fresh"]
+    assert painel["codex_thread_id"] is None
+    assert painel["context_pct"] == 0
+    assert painel["session_started_at"] is None
+    assert painel["token_usage_json"] is None
 
 
 def test_codex_new_thread_rejeita_nao_codex(tmp_path: Path) -> None:

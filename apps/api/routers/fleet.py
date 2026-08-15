@@ -189,6 +189,12 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
         if agent.get("executor_kind") != "codex":
             agent["codex_tokens_used"] = None
             return
+        if agent.get("codex_next_fresh"):
+            agent["codex_tokens_used"] = 0
+            agent["context_pct"] = 0.0
+            agent["context_updated_at"] = None
+            agent["context_stale"] = False
+            return
         # Pela thread do DELEGATOR COCKPIT (opção A, 10/08): o store por
         # delegator que o wrapper grava, não o `codex_thread_id` do agent_state
         # (único — o Daniel rodando a Tara por outro canal apontaria o card pra

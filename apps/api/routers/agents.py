@@ -833,7 +833,14 @@ async def patch_agent_codex_new_thread(
         raise HTTPException(status_code=400, detail="not_a_codex_agent")
     db: GrupoBorgesDB = request.app.state.db
     if patch.armed:
-        await db.update_agent_codex_state(slug, codex_next_fresh=1)
+        await db.update_agent_codex_state(
+            slug,
+            codex_next_fresh=1,
+            codex_thread_id=None,
+            context_pct=0,
+            session_started_at=None,
+            token_usage_json=None,
+        )
         return {"slug": slug, "armed": True, "thread_started": False, "thread_id": None}
     await db.update_agent_codex_state(slug, codex_next_fresh=0)
     return {"slug": slug, "armed": False, "thread_started": False, "thread_id": None}
@@ -939,6 +946,8 @@ def _resolve_codex_thread(agent: dict[str, Any]) -> codex_reader.CodexThread | N
     velho carimbado de `stale` a gaveta vazia (o `/codex/messages` escolhe o
     contrário porque bolha errada não tem como se carimbar).
     """
+    if agent.get("codex_next_fresh"):
+        return None
     return codex_reader.resolve_thread(
         thread_id=codex_reader.read_cockpit_thread_id(),
         cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
@@ -966,6 +975,19 @@ def _build_codex_painel_contexto(
     agent: dict[str, Any],
     thread: codex_reader.CodexThread | None,
 ) -> AgentPainelContexto:
+    if agent.get("codex_next_fresh"):
+        model = agent.get("state_model") or agent.get("model_default")
+        return AgentPainelContexto(
+            model=model,
+            model_family=_model_family(model),
+            context_window=None,
+            tokens=AgentPainelTokens(total=0),
+            pct=0,
+            source="agent_state.codex_next_fresh",
+            updated_at=None,
+            available=True,
+            stale=False,
+        )
     usage_payload, source = _codex_token_usage_payload(agent, thread)
     model = (
         thread.model
@@ -983,9 +1005,11 @@ def _build_codex_painel_contexto(
     else:
         tokens_used = thread.tokens_used if thread is not None else 0
         context_window = None
-        pct = None
+        pct = 0.0 if thread is not None and tokens_used == 0 else None
         available = thread is not None
-        observed_at = None
+        observed_at = _int_or_none(agent.get("session_started_at")) if available else None
+        if thread is not None:
+            source = thread.rollout_path
     return AgentPainelContexto(
         model=model,
         model_family=_model_family(model),
@@ -1010,6 +1034,8 @@ def _codex_token_usage_payload(
     abaixo, e o valor sai do rollout — declarar a fonte errada mandou a
     investigação deste defeito pro arquivo errado.
     """
+    if agent.get("codex_next_fresh"):
+        return None, "agent_state.codex_next_fresh"
     raw = agent.get("token_usage_json")
     if not isinstance(raw, str) or not raw.strip():
         payload = None

@@ -611,6 +611,34 @@ def test_agent_painel_codex_segue_a_thread_do_run_vivo(tmp_path: Path, monkeypat
     assert contexto["stale"] is False
 
 
+def test_agent_painel_codex_nova_conversa_nao_herda_thread_anterior(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    agora = int(time.time())
+    _cenario_dois_runs(tmp_path, monkeypatch, agora)
+    _thread_do_cockpit(tmp_path, monkeypatch, "morto")
+    app.state.db._update_agent_codex_state(
+        "tara",
+        executor_kind="codex",
+        codex_reasoning_effort="high",
+        codex_next_fresh=1,
+        context_pct=85.5,
+        token_usage_json=_codex_token_usage_json(observed_at=agora - 2_200),
+    )
+
+    with TestClient(app) as client:
+        body = client.get("/api/agents/tara/painel").json()
+
+    assert body["contexto"]["pct"] == 0
+    assert body["contexto"]["tokens"]["total"] == 0
+    assert body["contexto"]["stale"] is False
+    assert body["model"]["value"] == "codex-gpt-5-5"
+    assert body["effort"]["value"] == "high"
+    assert body["codex_next_fresh"] is True
+
+
 def _cenario_esforco_codex(tmp_path: Path, monkeypatch, agora: int, *, no_run: str) -> None:
     """Um run vivo só, com o esforço que o Codex de fato gravou nele."""
     rollout = tmp_path / "rollout-esforco.jsonl"

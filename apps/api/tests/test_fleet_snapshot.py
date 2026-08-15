@@ -169,33 +169,15 @@ def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path
         status_path.unlink(missing_ok=True)
 
 
-def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Path, monkeypatch) -> None:
+def test_fleet_card_nova_conversa_nao_herda_thread_anterior(tmp_path: Path, monkeypatch) -> None:
     db = _setup_db(tmp_path)
     db._sync_agents([AGENT, TARA])
     db._update_agent_codex_state(
         "tara",
         executor_kind="codex",
         context_pct=100.0,
+        token_usage_json=json.dumps({"source": "codex.event_msg.token_count"}),
         codex_next_fresh=1,
-    )
-    rollout = tmp_path / "rollout.jsonl"
-    rollout.write_text(
-        json.dumps(
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "token_count",
-                    "info": {
-                        "last_token_usage": {
-                            "total_tokens": 58_798,
-                        },
-                        "model_context_window": 258_400,
-                    },
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
     )
 
     async def fake_capture(_session_name: str) -> str:
@@ -206,11 +188,8 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
             {"daniel", "tara"}, {"daniel", "tara"}
         )
 
-    def fake_resolve_thread(*, thread_id: str | None, cwd: str, **_kwargs):
-        # Agente que ainda não reportou `thread.started` continua caindo no cwd.
-        assert thread_id is None
-        assert cwd == "/tmp/tara"
-        return SimpleNamespace(tokens_used=9_712_154, rollout_path=rollout)
+    def fake_resolve_thread(**_kwargs):
+        raise AssertionError("nova conversa não pode reler a thread anterior")
 
     monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
     monkeypatch.setattr(
@@ -218,8 +197,6 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
         "list_session_inventory",
         fake_list_session_inventory,
     )
-    # Opção A (10/08): sem thread do delegator cockpit, o card segue no cwd —
-    # o arquivo real `~/.tara/threads/cockpit.txt` da máquina não pode vazar pro teste.
     monkeypatch.setattr(fleet_router.codex_reader, "read_cockpit_thread_id", lambda: None)
     monkeypatch.setattr(fleet_router.codex_reader, "resolve_thread", fake_resolve_thread)
 
@@ -232,9 +209,10 @@ def test_fleet_route_hydrates_codex_tokens_used_from_native_thread(tmp_path: Pat
 
     assert response.status_code == 200
     agent = _agent_from_snapshot(response.json(), "tara")
-    assert agent["codex_tokens_used"] == 9_712_154
+    assert agent["codex_tokens_used"] == 0
     assert agent["codex_next_fresh"] is True
-    assert agent["context_pct"] == 22.8
+    assert agent["context_pct"] == 0
+    assert agent["context_stale"] is False
 
 
 def _prepara_card_codex(tmp_path: Path, monkeypatch, *, medido_em: int, iniciou_em: int) -> FastAPI:
