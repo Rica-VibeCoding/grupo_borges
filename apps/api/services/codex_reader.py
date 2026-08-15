@@ -449,14 +449,32 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
                 # Só o COMANDO aparece. O output segue redigido no ramo de
                 # baixo, que é a decisão de segurança já valendo para
                 # `function_call_output`.
+                comando = _summarize_function_call(payload)
+                nome = payload.get("name")
+                chamada = payload.get("call_id") or msg_id
                 messages.append(
                     CodexMessage(
                         id=msg_id,
                         role="internal",
-                        text=_summarize_function_call(payload),
+                        text=comando,
                         timestamp=timestamp,
                         item_type=item_type,
                         visible=True,
+                        # A ESTRUTURA, não só o resumo. O front recusava
+                        # promover `internal` a bolha porque só recebia texto —
+                        # "viraria uma fala do agente que ele nunca disse", diz o
+                        # comentário do `adapta-mensagens.ts`, e ele está certo.
+                        # Com `tool_use` de verdade vira linha de execução, que é
+                        # o que o chat do CC desenha. A chave `command` é a que
+                        # `gramatica.ts` lê pra nomear a linha.
+                        parts=[
+                            {
+                                "type": "tool_use",
+                                "id": str(chamada),
+                                "name": nome if isinstance(nome, str) and nome.strip() else "exec",
+                                "input": {"command": comando},
+                            }
+                        ],
                     )
                 )
             else:
