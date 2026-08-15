@@ -35,8 +35,10 @@ import {
   useEffect,
   useEffectEvent,
   useId,
+  useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
 } from 'react';
 import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
@@ -47,6 +49,7 @@ import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
 import { usaRascunho } from '../../lib/usa-rascunho';
 import { descartaEcoPendente, registraEcoPendente } from '../../lib/codex/eco-pendente';
 import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
+import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
 import { usaFrota } from './frota-provider';
 import { MARCA_VOZ, usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
@@ -168,13 +171,24 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
-  // O AGENTE ESTÁ GERANDO? É a mesma leitura que pinta o card na lista da frota
-  // (`lifecycle_status`), e não uma sonda nova: o painel já a mantém fresca, e
-  // uma segunda fonte de verdade sobre "ele está trabalhando" divergiria da
-  // primeira em algum momento.
+  // O AGENTE ESTÁ GERANDO? Duas fontes, e a ordem entre elas é o conserto de
+  // 15/08. `lifecycle_status` era a única, escolhida porque é a mesma leitura
+  // que pinta o card na lista da frota — mas ele é alimentado por hook e por
+  // vigia de JSONL, e na medição daquele dia, com um agente Claude Code ocioso
+  // recebendo mensagem, **não virou `trabalhando` em 100 segundos**. O `■`
+  // simplesmente não existia na tela durante o turno inteiro.
+  //
+  // A segunda fonte é o `isRunning` do stream, publicado pelo feed em
+  // `lib/turno-vivo.ts` — o mesmo booleano que acende o "Pensando há 12 s" três
+  // centímetros acima. Com uma só das duas o freio some em algum cenário; com
+  // as duas em OU ele acompanha o que a tela já afirma.
   const trabalhando = agents.some(
     (a) => a.slug === agentSlug && a.lifecycle_status === 'trabalhando',
   );
+  const assinaTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);
+  const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
+  // No servidor não há turno nenhum: o valor nasce de um stream do browser.
+  const turnoVivo = useSyncExternalStore(assinaTurno, leTurno, () => false);
   const [parando, setParando] = useState(false);
   // O ■ SOME NO TOQUE, não quando o painel concorda. `lifecycle_status` é
   // alimentado por evento (JSONL no Claude Code, rollout no Codex) e chega
@@ -182,7 +196,7 @@ export function Composer({
   // continua oferecendo uma ação já executada é a mentira de UI da §9, e aqui
   // ela convida a um segundo toque num agente que já parou.
   const [interrompido, setInterrompido] = useState(false);
-  const gerando = trabalhando && !interrompido;
+  const gerando = (trabalhando || turnoVivo) && !interrompido;
 
   /** O `■`. Não pede confirmação: interromper é reversível — o texto continua no
    *  feed e mandar de novo recomeça — e um modal entre o dedo e o botão, no meio
@@ -503,12 +517,20 @@ export function Composer({
     if (efeito.limpaCampo) setTexto('');
     setTranscrito(null);
     setFalhaDaFala(null);
-    // O feed da Tara pinta esta bolha no gesto: o texto dela só existe no
-    // rollout 12 s depois, quando o `codex exec` sobe. Só para Codex — no
-    // Claude Code o eco volta pelo stream em milissegundos, e uma pendência
-    // aberta ali afrouxaria o prazo de um alarme que lá é verdadeiro.
-    // Ver `lib/codex/eco-pendente.ts`.
-    const idEcoPendente = ehCodex ? registraEcoPendente(agentSlug, corpoParaEnviar) : null;
+    // O feed pinta esta bolha no GESTO, nos dois motores. Até 15/08 só a Tara
+    // tinha isto, com a justificativa de que *"no Claude Code o eco volta pelo
+    // stream em milissegundos"* — premissa nunca medida. Medida naquele dia no
+    // `:3008`, com o agente ocioso: **18,9 s** entre o Enter e a bolha, contra
+    // 0,1 s do campo esvaziando. Dezoito segundos de tela muda são o "engoliu a
+    // mensagem" que o Rica reporta desde sempre, e são quase o dobro dos 10 s
+    // que a NN/g dá como limite de atenção.
+    //
+    // A mesma pendência conserta o alarme: `PRAZO_ECO_MS` são 12 s calibrados
+    // sobre um pior caso de 1,434 s, então ele estourava ANTES do eco real e
+    // toda mensagem para agente ocioso terminava em "não consegui confirmar se
+    // entrou". Ver `lib/codex/eco-pendente.ts` e o ramo do CC em
+    // `app/agente/[slug]/feed-da-conversa.tsx`.
+    const idEcoPendente = registraEcoPendente(agentSlug, corpoParaEnviar);
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
     // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
     // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da

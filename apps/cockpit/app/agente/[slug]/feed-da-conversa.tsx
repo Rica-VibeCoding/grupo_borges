@@ -12,11 +12,12 @@
 // `components/feed/**` é território do Hiro (cockpit-v2-ownership.md §2) —
 // este arquivo só CONSOME o que já é público de lá, nunca edita.
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
-import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+import { buildToolResultLookup, textoEnfileirado } from '@grupo_borges/cockpit-core/render-items';
 import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
@@ -25,6 +26,14 @@ import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaConversaCodex } from '@/lib/codex/usa-conversa-codex.ts';
 import { usaCompact } from '@/lib/compact';
+import {
+  assinaPendentes,
+  lePendentes,
+  reconciliaPendentes,
+  type EcoPendente,
+} from '@/lib/codex/eco-pendente.ts';
+import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
+import { textosDoUsuario } from '@/lib/textos-do-usuario.ts';
 import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
@@ -120,8 +129,51 @@ function FeedClaudeCode({
   if (incrementalRef.current === null || incrementalRef.current.geracao !== geracao) {
     incrementalRef.current = { geracao, instance: createIncrementalRenderItems() };
   }
-  const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(messages)], [messages]);
+  // O ECO OTIMISTA, agora TAMBÉM aqui. Este ramo passou meses sem ele apoiado
+  // numa frase que estava escrita como fato em dois arquivos — *"no Claude Code
+  // o eco volta pelo stream em milissegundos"*. Medi em 15/08 no `:3008`, com o
+  // agente OCIOSO: o campo esvazia em 0,1 s e a bolha só aparece **18,9 s**
+  // depois. São 18,8 segundos de tela muda entre o toque e qualquer sinal de
+  // que a mensagem existe — o que o Rica descreve como *"o composer engole a
+  // mensagem"*. A régua da NN/g põe o limite de atenção em 10 s
+  // (nngroup.com/articles/response-times-3-important-limits): entregávamos
+  // quase o dobro disso de nada.
+  //
+  // A pendência também segura o alarme de entrega, e isso é conserto, não
+  // efeito colateral: `PRAZO_ECO_MS` são 12 s, calibrados em 30/07 sobre uma
+  // amostra cujo pior caso era 1,434 s. Com o eco real em 18,9 s o prazo
+  // estourava ANTES da confirmação chegar, e toda mensagem para agente ocioso
+  // terminava em âmbar dizendo "não consegui confirmar se entrou — pode
+  // duplicar". Falso, e é o que pausa a fila e pendura a mensagem seguinte
+  // pedindo "enviar mesmo assim". Enquanto a pendência existe o prazo
+  // reexamina (`usa-envio.ts:297`); quando ela reconcilia, a máquina recebe o
+  // recibo por `assinaEntrega`. O teto de 3 min continua valendo para o caso
+  // em que a mensagem realmente não entrou.
+  const assina = useMemo(() => (fn: () => void) => assinaPendentes(agentSlug, fn), [agentSlug]);
+  const le = useMemo(() => () => lePendentes(agentSlug), [agentSlug]);
+  const pendentes = useSyncExternalStore(assina, le, () => SEM_PENDENCIA);
+  useEffect(() => {
+    reconciliaPendentes(agentSlug, textosDoUsuario(messages));
+  }, [agentSlug, messages]);
+
+  const comEco = useMemo(() => {
+    if (pendentes.length === 0) return messages;
+    const base = messages.length;
+    return [...messages, ...pendentes.map((p, i) => criaBolhaOtimista(p, base + i))];
+  }, [messages, pendentes]);
+
+  const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(comEco)], [comEco]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
+  // O FREIO PRECISA DESTE BOOLEANO. O `■` do composer nascia lendo
+  // `lifecycle_status`, e na mesma medição de 15/08 esse campo **não virou
+  // `trabalhando` em 100 s** — o botão de parar não existia na tela durante o
+  // turno inteiro. `isRunning` é o sinal que já acende o "Pensando" logo
+  // abaixo; publicá-lo faz a tela parar de dizer duas coisas sobre o mesmo
+  // instante. Ver `lib/turno-vivo.ts`.
+  useEffect(() => {
+    publicaTurnoVivo(agentSlug, isRunning);
+    return () => publicaTurnoVivo(agentSlug, false);
+  }, [agentSlug, isRunning]);
   // A LINHA VIVA. A corrida está de pé (`isRunning`) mas o fim do feed não
   // tem trabalho em voo — o buraco entre o Rica mandar e a primeira
   // ferramenta, que antes era tela muda. Ela entra como ÚLTIMO ITEM, na
@@ -194,6 +246,28 @@ function FeedClaudeCode({
       <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
     </div>
   );
+}
+
+const SEM_PENDENCIA: readonly EcoPendente[] = Object.freeze([]);
+
+/** A bolha do Rica antes de o log saber que ela existe. Mesma forma que o
+ *  stream produz — daqui pra baixo nenhuma peça do feed distingue as duas.
+ *  Gêmea da `criaBolhaOtimista` de `lib/codex/usa-conversa-codex.ts`; as duas
+ *  são pequenas e vivem em ramos que não se importam, e unificá-las custaria
+ *  um módulo a mais para poupar dez linhas. */
+function criaBolhaOtimista(pendente: EcoPendente, ordinal: number): MessagePayload {
+  return {
+    id: ordinal,
+    kind: 'user',
+    uuid: `cc-otimista-${pendente.id}`,
+    parent_uuid: null,
+    session_id: null,
+    is_sidechain: false,
+    user_type: 'external',
+    timestamp: new Date(pendente.emMs).toISOString(),
+    created_at: pendente.emMs,
+    message: { role: 'user', content: pendente.texto },
+  };
 }
 
 /** A coluna de leitura não vem mais de um wrapper na página (ela desceu pra
