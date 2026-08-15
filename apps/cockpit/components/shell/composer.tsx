@@ -163,6 +163,11 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
+  // Mesma condição que decide `aberta` dentro de `BolhaDeComandos` — duplicada
+  // aqui porque o Popover vive num Portal (subárvore separada do textarea) e
+  // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
+  // e apertar Enter mandava o `/` sozinho como mensagem pro agente.
+  const bolhaComandosAberta = !ehCodex && texto === '/';
   const envio = usaEnvio(agentSlug);
   const faseLocal = envio.estado.fase;
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
@@ -665,6 +670,11 @@ export function Composer({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && (!tecladoTouch || retidoAnexo !== null)) {
                   e.preventDefault();
+                  // Bolha aberta: Enter não é "enviar `/`", é ainda estar
+                  // escolhendo. Sem esta guarda o único jeito de sair do
+                  // gesto de digitar `/` e apertar Enter era mandar um `/`
+                  // sozinho pro agente.
+                  if (bolhaComandosAberta) return;
                   enviar(texto);
                 }
               }}

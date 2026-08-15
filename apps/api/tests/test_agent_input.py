@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -507,6 +508,24 @@ def test_list_agent_commands_varre_project_user_e_plugin(tmp_path: Path, monkeyp
         "---\ndescription: |\n  Prepara uma release\n---\n# Release\n",
         encoding="utf-8",
     )
+    # A varredura de plugin só entra pelo que está em `installed_plugins.json`
+    # (mesmo filtro do `list_agent_mcp`) — sem esta entrada o `/release` não
+    # aparece, porque não existe plugin "instalado" nenhum no fixture.
+    plugins_dir = user_claude / "plugins"
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+    (plugins_dir / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "meu-plugin@local": [
+                        {"scope": "user", "installPath": str(plugin_commands.parent)}
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(agents_router, "_CLAUDE_HOME", user_claude)
     app = _build_app(
         tmp_path,
@@ -522,6 +541,61 @@ def test_list_agent_commands_varre_project_user_e_plugin(tmp_path: Path, monkeyp
     assert comandos[("/deploy", "project")]["descricao"] == "Sobe a produção"
     assert comandos[("/revisar", "user")]["descricao"] == "Revisa o diff atual"
     assert comandos[("/release", "plugin")]["descricao"] == "Prepara uma release"
+
+
+def test_list_agent_commands_ignora_plugin_nao_instalado_e_desabilitado(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Clone de marketplace e plugin desligado não viram comando na bolha.
+
+    `_CONFIRMED` pela auditoria de 15/08: varrer `~/.claude/plugins/**` cru
+    listava clone de catálogo nunca instalado e duplicava plugin cacheado em
+    vários escopos — o filtro passa a exigir presença em
+    `installed_plugins.json` e `enabledPlugins` != false.
+    """
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    user_claude = tmp_path / "claude-user"
+    instalado_commands = user_claude / "plugins" / "cache" / "instalado" / "commands"
+    orfao_commands = user_claude / "plugins" / "marketplaces" / "catalogo" / "orfao" / "commands"
+    desligado_commands = user_claude / "plugins" / "cache" / "desligado" / "commands"
+    for commands_dir in (instalado_commands, orfao_commands, desligado_commands):
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "cmd.md").write_text(
+            "---\ndescription: teste\n---\n# Cmd\n", encoding="utf-8"
+        )
+
+    (user_claude / "plugins" / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "instalado@local": [
+                        {"scope": "user", "installPath": str(instalado_commands.parent)}
+                    ],
+                    "desligado@local": [
+                        {"scope": "user", "installPath": str(desligado_commands.parent)}
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (user_claude / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"desligado@local": False}}), encoding="utf-8"
+    )
+    monkeypatch.setattr(agents_router, "_CLAUDE_HOME", user_claude)
+    app = _build_app(
+        tmp_path,
+        extra_agents=[{**DANIEL, "slug": "comandos", "workspace_path": str(workspace)}],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/comandos/commands")
+
+    assert response.status_code == 200
+    comandos_plugin = [item for item in response.json() if item["origem"] == "plugin"]
+    assert len(comandos_plugin) == 1
+    assert comandos_plugin[0]["comando"] == "/cmd"
 
 
 def test_input_texto_comum_nao_arma_rename_apos_clear(tmp_path: Path) -> None:

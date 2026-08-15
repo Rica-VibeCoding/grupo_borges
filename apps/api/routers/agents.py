@@ -502,16 +502,50 @@ def _comandos_de_arquivos(paths: list[Path], origem: Literal["project", "user", 
     ]
 
 
+def _comandos_de_plugins_instalados(workspace: Path) -> list[dict[str, str | None]]:
+    """Comandos de plugin restritos ao que está INSTALADO e HABILITADO.
+
+    Espelha o filtro que `list_agent_mcp` já aplica pro mesmo recurso (plugin)
+    — sem isso a bolha varria `~/.claude/plugins` inteiro e misturava clone de
+    marketplace nunca instalado com cache duplicado do mesmo plugin em vários
+    escopos, listando comando repetido 2-3x e comando de plugin inexistente.
+    """
+    settings = _read_json_file(_CLAUDE_HOME / "settings.json", {})
+    enabled_plugins = settings.get("enabledPlugins") if isinstance(settings, dict) else {}
+    if not isinstance(enabled_plugins, dict):
+        enabled_plugins = {}
+    local_settings = _read_json_file(workspace / ".claude" / "settings.local.json", {})
+    local_ep = local_settings.get("enabledPlugins") if isinstance(local_settings, dict) else {}
+    if isinstance(local_ep, dict):
+        enabled_plugins = {**enabled_plugins, **local_ep}
+
+    installed = _read_json_file(_CLAUDE_HOME / "plugins" / "installed_plugins.json", {})
+    comandos: list[dict[str, str | None]] = []
+    for plugin_id, install_path, _metadata in _iter_installed_plugins(installed):
+        if enabled_plugins.get(plugin_id, True) is False:
+            continue
+        if install_path is None:
+            continue
+        comandos.extend(
+            _comandos_de_arquivos(
+                _arquivos_de_comando(install_path / "commands", "*.md"),
+                "plugin",
+            )
+        )
+    return comandos
+
+
 def _listar_comandos_do_agente(workspace_path: str) -> list[dict[str, str | None]]:
     """Lista comandos próprios, do usuário, de plugins e os nativos do CC."""
     comandos: list[dict[str, str | None]] = [
         {"comando": comando, "descricao": descricao, "origem": "native"}
         for comando, descricao in _NATIVE_SLASH_COMMANDS
     ]
-    if workspace_path:
+    workspace = Path(workspace_path) if workspace_path else None
+    if workspace:
         comandos.extend(
             _comandos_de_arquivos(
-                _arquivos_de_comando(Path(workspace_path) / ".claude" / "commands", "*.md"),
+                _arquivos_de_comando(workspace / ".claude" / "commands", "*.md"),
                 "project",
             )
         )
@@ -521,12 +555,8 @@ def _listar_comandos_do_agente(workspace_path: str) -> list[dict[str, str | None
             "user",
         )
     )
-    comandos.extend(
-        _comandos_de_arquivos(
-            _arquivos_de_comando(_CLAUDE_HOME / "plugins", "**/commands/*.md"),
-            "plugin",
-        )
-    )
+    if workspace:
+        comandos.extend(_comandos_de_plugins_instalados(workspace))
     return comandos
 
 
