@@ -286,6 +286,25 @@ def _known_developer_context(text: str) -> dict[str, str] | None:
     return None
 
 
+_COMANDO_NO_INPUT_RE = re.compile(r'"(?:cmd|command|shell_command)"\s*:\s*("(?:[^"\\]|\\.)*")')
+
+
+def _comando_no_input(entrada: str) -> str | None:
+    """Tira o comando de dentro do JS de um `custom_tool_call`.
+
+    A chave vem escapada como JSON dentro da string, então quem desescapa é o
+    próprio `json.loads` — desfazer `\\"` à mão erra em comando com aspas.
+    """
+    achou = _COMANDO_NO_INPUT_RE.search(entrada)
+    if not achou:
+        return None
+    try:
+        valor = json.loads(achou.group(1))
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return valor.strip() if isinstance(valor, str) and valor.strip() else None
+
+
 def _summarize_function_call(payload: dict[str, Any]) -> str:
     name = payload.get("name")
     if not isinstance(name, str) or not name.strip():
@@ -300,6 +319,17 @@ def _summarize_function_call(payload: dict[str, Any]) -> str:
             arguments = {"arguments": arguments}
     if not isinstance(arguments, dict):
         arguments = {}
+
+    # `custom_tool_call` não traz `arguments`: traz `input`, que é o código JS
+    # que o Codex vai rodar — `await tools.exec_command({"cmd":"…"})`. O comando
+    # está lá dentro, escapado como JSON.
+    if not arguments:
+        entrada = payload.get("input")
+        if isinstance(entrada, str) and entrada.strip():
+            comando = _comando_no_input(entrada)
+            if comando:
+                return comando[:240]
+            return entrada.strip()[:240]
 
     for key in ("cmd", "command", "shell_command"):
         value = arguments.get(key)
@@ -408,7 +438,17 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
                         parts=parts or None,
                     )
                 )
-            elif item_type == "function_call":
+            elif item_type in ("function_call", "custom_tool_call"):
+                # `custom_tool_call` é o tipo que o rollout REAL emite — medido
+                # em 15/08 numa sessão da Tara: nenhum `function_call`, cinco
+                # `custom_tool_call`. Caindo no `else`, toda ferramenta que ela
+                # executa virava entrada sem texto, e o chat dela não mostrava
+                # nada do que ela fez enquanto o do CC mostrava tudo. É o
+                # desalinhamento que o Rica cobrou.
+                #
+                # Só o COMANDO aparece. O output segue redigido no ramo de
+                # baixo, que é a decisão de segurança já valendo para
+                # `function_call_output`.
                 messages.append(
                     CodexMessage(
                         id=msg_id,

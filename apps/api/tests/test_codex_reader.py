@@ -528,3 +528,35 @@ def test_texto_sem_regua_atravessa_intacto() -> None:
 def test_regua_sem_separador_deixa_intacto() -> None:
     bruto = "Esta mensagem chegou pelo cockpit do grupo_borges — sem separador"
     assert cr._strip_cockpit_regua(bruto) == bruto
+
+
+def test_parse_rollout_expoe_comando_de_custom_tool_call(tmp_path: Path) -> None:
+    """O rollout real do Codex emite `custom_tool_call`, não `function_call`.
+
+    Colhido de `~/.codex/sessions/2026/08/15/` em 15/08: toda ferramenta que a
+    Tara executa chega com esse tipo, caía no ramo `else` e virava entrada
+    interna sem texto. Efeito na tela: o chat do Claude Code mostra o que o
+    agente executou e o da Tara não mostra nada — o desalinhamento que o Rica
+    cobriu com "não existe alinhamento entre como aparece o Codex e o CC".
+
+    O comando aparece; o OUTPUT continua redigido, que é a decisão de segurança
+    já valendo para `function_call_output` (SEGREDO-OUTPUT).
+    """
+    rollout = tmp_path / "custom-tool.jsonl"
+    rollout.write_text(
+        """
+{"type":"response_item","timestamp":"2026-08-15T11:09:00Z","payload":{"type":"custom_tool_call","id":"ctc_1","status":"completed","call_id":"call_1","name":"exec","input":"const r = await tools.exec_command({\\"cmd\\":\\"sed -n '1,240p' memory/MEMORY.md\\",\\"workdir\\":\\"/home/clawd/repos/ze_claude/tara\\"});\\ntext(r.output);\\n"}}
+{"type":"response_item","timestamp":"2026-08-15T11:09:01Z","payload":{"type":"custom_tool_call_output","id":"ctco_1","call_id":"call_1","output":[{"type":"input_text","text":"SEGREDO-OUTPUT não pode aparecer"}]}}
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    msgs = cr.parse_rollout(rollout, thread_id="custom")
+
+    chamada = [m for m in msgs if m.item_type == "custom_tool_call"]
+    assert len(chamada) == 1, "a chamada de ferramenta precisa sobreviver ao parse"
+    assert chamada[0].visible is True
+    assert "sed -n '1,240p' memory/MEMORY.md" in chamada[0].text
+
+    for m in msgs:
+        assert "SEGREDO-OUTPUT" not in m.text
