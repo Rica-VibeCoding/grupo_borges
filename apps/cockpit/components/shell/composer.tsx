@@ -43,6 +43,7 @@ import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } f
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
+import { usaRascunho } from '../../lib/usa-rascunho';
 import { descartaEcoPendente, registraEcoPendente } from '../../lib/codex/eco-pendente';
 import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import { usaFrota } from './frota-provider';
@@ -148,7 +149,10 @@ export function Composer({
   motor,
   esforcoCobrePedido,
 }: ComposerProps) {
-  const [texto, setTexto] = useState('');
+  // O campo é PERSISTIDO por agente: recarregar a página (no iPhone, puxar a
+  // tela pra baixo) não pode apagar o que ele escreveu e não mandou. Ver
+  // `lib/usa-rascunho.ts`.
+  const [texto, setTexto] = usaRascunho(agentSlug);
   const [pesquisaAtiva, setPesquisaAtiva] = useState(false);
   const podePesquisar = agentSlug === 'canarinho';
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
@@ -163,6 +167,39 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
+  // O AGENTE ESTÁ GERANDO? É a mesma leitura que pinta o card na lista da frota
+  // (`lifecycle_status`), e não uma sonda nova: o painel já a mantém fresca, e
+  // uma segunda fonte de verdade sobre "ele está trabalhando" divergiria da
+  // primeira em algum momento.
+  const trabalhando = agents.some(
+    (a) => a.slug === agentSlug && a.lifecycle_status === 'trabalhando',
+  );
+  const [parando, setParando] = useState(false);
+  // O ■ SOME NO TOQUE, não quando o painel concorda. `lifecycle_status` é
+  // alimentado por evento (JSONL no Claude Code, rollout no Codex) e chega
+  // atrasado — no Codex ele ainda OSCILA entre um poll e o seguinte. Botão que
+  // continua oferecendo uma ação já executada é a mentira de UI da §9, e aqui
+  // ela convida a um segundo toque num agente que já parou.
+  const [interrompido, setInterrompido] = useState(false);
+  const gerando = trabalhando && !interrompido;
+
+  /** O `■`. Não pede confirmação: interromper é reversível — o texto continua no
+   *  feed e mandar de novo recomeça — e um modal entre o dedo e o botão, no meio
+   *  de uma geração que já desandou, é obstáculo, não proteção. */
+  async function interromper(): Promise<void> {
+    setParando(true);
+    try {
+      const { postAgentInterromper } = await import('@grupo_borges/cockpit-core/api');
+      await postAgentInterromper(agentSlug);
+      setInterrompido(true);
+    } catch {
+      // Sem recibo: o sinal honesto é o próprio agente parando de trabalhar, que
+      // o `lifecycle_status` já reporta. Uma faixa de erro aqui competiria com
+      // ele e envelheceria sozinha.
+    } finally {
+      setParando(false);
+    }
+  }
   // Mesma condição que decide `aberta` dentro de `BolhaDeComandos` — duplicada
   // aqui porque o Popover vive num Portal (subárvore separada do textarea) e
   // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
@@ -423,6 +460,11 @@ export function Composer({
       return false;
     }
     if (!efeito.despacha) return false;
+    // A marca de "eu mandei parar" morre AQUI, no gesto que inequivocamente
+    // abre um turno novo — e não num efeito que observa `trabalhando` cair.
+    // Aquela versão tinha corrida: no Codex a fase pisca entre dois polls, a
+    // marca era apagada no vale e o ■ ressuscitava sobre um agente já parado.
+    setInterrompido(false);
     // UM GESTO, UMA ENTREGA: o arquivo sobe com o texto como legenda, no mesmo
     // multipart. Não existe mensagem de texto separada — duas requisições dariam
     // duas entregas ao tmux, e o agente veria a legenda antes ou depois do
@@ -668,7 +710,19 @@ export function Composer({
               // não parecer morto.
               enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && (!tecladoTouch || retidoAnexo !== null)) {
+                // `isComposing` guarda a ACENTUAÇÃO. Segurar a tecla no teclado
+                // do iPhone para escolher "ã"/"ç" abre uma sessão de composição,
+                // e o Enter que confirma a escolha chega aqui como um Enter
+                // comum (o navegador ainda emite `keydown`, com `keyCode` 229).
+                // Sem esta guarda, escrever "não" ou "ação" despacha a mensagem
+                // no meio da palavra. Em português isso não é caso de borda: é
+                // quase toda frase.
+                if (
+                  e.key === 'Enter' &&
+                  !e.nativeEvent.isComposing &&
+                  !e.shiftKey &&
+                  (!tecladoTouch || retidoAnexo !== null)
+                ) {
                   e.preventDefault();
                   // Bolha aberta: Enter não é "enviar `/`", é ainda estar
                   // escolhendo. Sem esta guarda o único jeito de sair do
@@ -737,7 +791,17 @@ export function Composer({
             <BotaoAnexo
               estado={anexo.estado}
               alternarGaveta={anexo.alternarGaveta}
-              desabilitado={travaCompact || emAndamento}
+              // `emAndamento` SAIU daqui (15/08). Abrir a gaveta e escolher um
+              // arquivo é gesto LOCAL: nada sobe, o arquivo fica retido na
+              // miniatura e quem decide se ele pode partir continua sendo a
+              // porta, no toque de enviar. Desabilitar por causa do envio
+              // ANTERIOR fazia o `+` morrer nos segundos em que o Rica mais o
+              // usa — enquanto lê a resposta e quer mandar a foto do assunto —
+              // e botão morto não responde nem diz por quê, que é o defeito da
+              // §9 que este composer inteiro existe para não cometer. É a mesma
+              // razão pela qual o botão de ENVIAR fica habilitado mesmo quando
+              // a porta vai recusar.
+              desabilitado={travaCompact}
               botaoRef={botaoAnexoRef}
             />
           )}
@@ -830,6 +894,33 @@ export function Composer({
                   <IconeOnda />
                 </button>
               )
+            ) : gerando ? (
+              // O ■ NO LUGAR DA SETA — é a referência do Rica (app ChatGPT),
+              // e a razão é literal: enquanto ele gera, a ação que o alvo
+              // grande precisa servir é PARAR, não mandar. O campo continua
+              // editável e a fila continua aceitando (ver a porta), então
+              // escrever durante a geração não se perde; o que faltava era o
+              // freio. Mesma peça de 32px do envio: é o único elemento sólido
+              // da caixa, e trocar a função dele é o que a referência faz.
+              <button
+                key="interromper"
+                type="button"
+                onClick={() => void interromper()}
+                disabled={parando}
+                aria-label={`Parar ${agentName}`}
+                title="Parar"
+                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  borderRadius: 'var(--ck-radius-pill)',
+                  background: 'var(--ck-text-primary)',
+                  color: 'var(--ck-surface-canvas)',
+                }}
+              >
+                <IconeParar />
+              </button>
             ) : texto.trim() || retidoAnexo ? (
               // A FOTO SOZINHA JÁ É GESTO. Sem `retidoAnexo` aqui, anexar sem
               // escrever legenda deixava o microfone no lugar do envio — a foto

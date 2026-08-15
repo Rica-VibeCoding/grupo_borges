@@ -363,6 +363,25 @@ export async function postAgentDestrava(
   return res.json();
 }
 
+/**
+ * Para a geração em curso — o `■` do composer. Não é destrutivo: a sessão e a
+ * conversa continuam de pé, e mandar de novo recomeça. Por baixo é `Escape` no
+ * pane (Claude Code) ou `/control/abort` (Codex); o front não precisa saber
+ * qual, e é o backend que decide pelo motor do agente.
+ */
+export async function postAgentInterromper(
+  slug: string,
+): Promise<{ motor: string; parado: boolean }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/interromper`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`postAgentInterromper ${res.status}: ${txt}`);
+  }
+  return res.json();
+}
+
 export type RelaunchResponse = {
   tmux_delivered: boolean;
   attempted: boolean;

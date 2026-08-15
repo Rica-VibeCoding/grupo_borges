@@ -4656,6 +4656,41 @@ async def post_agent_destrava(slug: str, request: Request) -> dict[str, Any]:
     return {**result, "sent_at": int(time.time())}
 
 
+@router.post("/{slug}/interromper")
+async def post_agent_interromper(slug: str, request: Request) -> dict[str, Any]:
+    """Para a geração em curso — o ``■`` do composer.
+
+    Até hoje a única saída para um turno que desandou era esperá-lo terminar ou
+    relançar o pane, que mata a conversa. Este endpoint é o gesto do meio, e é o
+    que qualquer chat de 2026 oferece: interromper sem perder nada.
+
+    Cada motor tem o seu freio, e nenhum dos dois é destrutivo:
+
+    - **Claude Code** — ``Escape`` no pane, que é como se para o turno pelo
+      teclado. A sessão continua viva e a conversa inteira permanece.
+    - **Codex** — ``/control/abort`` do telecodex, que já existia para o
+      ``/abort`` do Telegram e nunca tinha sido oferecido na tela.
+
+    Não exige confirmação de propósito: interromper é reversível (basta mandar
+    de novo) e a confirmação, no meio de uma geração que já desandou, seria um
+    obstáculo entre o Rica e o botão que ele quer apertar. Compare com
+    ``/relaunch``, que mata o processo e por isso pede ``confirm``.
+    """
+    agent = await _get_agent_or_404(request, slug)
+
+    if _agente_codex(agent):
+        try:
+            resultado = await telecodex_client.abort()
+        except telecodex_client.TeleCodexUnavailable as erro:
+            raise HTTPException(status_code=503, detail=str(erro)) from erro
+        except telecodex_client.TeleCodexControlError as erro:
+            raise HTTPException(status_code=502, detail=str(erro)) from erro
+        return {"motor": "codex", "parado": bool(resultado.get("stopped", True))}
+
+    parado = await tmux_driver.send_named_key(agent["tmux_session"], "Escape")
+    return {"motor": "claude_code", "parado": parado}
+
+
 @router.post("/{slug}/relaunch")
 async def post_agent_relaunch(
     slug: str,
