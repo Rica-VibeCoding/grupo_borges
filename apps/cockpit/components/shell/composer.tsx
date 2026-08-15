@@ -894,33 +894,6 @@ export function Composer({
                   <IconeOnda />
                 </button>
               )
-            ) : gerando ? (
-              // O ■ NO LUGAR DA SETA — é a referência do Rica (app ChatGPT),
-              // e a razão é literal: enquanto ele gera, a ação que o alvo
-              // grande precisa servir é PARAR, não mandar. O campo continua
-              // editável e a fila continua aceitando (ver a porta), então
-              // escrever durante a geração não se perde; o que faltava era o
-              // freio. Mesma peça de 32px do envio: é o único elemento sólido
-              // da caixa, e trocar a função dele é o que a referência faz.
-              <button
-                key="interromper"
-                type="button"
-                onClick={() => void interromper()}
-                disabled={parando}
-                aria-label={`Parar ${agentName}`}
-                title="Parar"
-                className="flex shrink-0 items-center justify-center disabled:opacity-40"
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  marginBottom: 'calc(var(--ck-space-1) * -1)',
-                  borderRadius: 'var(--ck-radius-pill)',
-                  background: 'var(--ck-text-primary)',
-                  color: 'var(--ck-surface-canvas)',
-                }}
-              >
-                <IconeParar />
-              </button>
             ) : texto.trim() || retidoAnexo ? (
               // A FOTO SOZINHA JÁ É GESTO. Sem `retidoAnexo` aqui, anexar sem
               // escrever legenda deixava o microfone no lugar do envio — a foto
@@ -949,6 +922,39 @@ export function Composer({
                 }}
               >
                 <IconeEnviar />
+              </button>
+            ) : gerando ? (
+              // O ■ — mas SÓ com o campo vazio, e a ordem destes ramos é a
+              // regra inteira. A referência do Rica (app ChatGPT) troca a seta
+              // pelo quadrado enquanto gera; copiar isso ao pé da letra criou um
+              // beco no celular, que eu só vi medindo: com texto escrito e o ■
+              // no lugar do envio, não sobrava gesto nenhum para despachar — o
+              // Enter do teclado virtual quebra linha de propósito, e o Shift
+              // não existe ali. A fila que este composer ganhou hoje ficaria
+              // inalcançável justamente no aparelho em que ela mais serve.
+              //
+              // Então: escreveu, o alvo é ENVIAR (e a porta enfileira se ele
+              // ainda estiver ocupado); campo vazio durante a geração, o alvo é
+              // PARAR. Cada estado oferece a única ação que faz sentido nele, e
+              // nenhuma das duas cobre a outra.
+              <button
+                key="interromper"
+                type="button"
+                onClick={() => void interromper()}
+                disabled={parando}
+                aria-label={`Parar ${agentName}`}
+                title="Parar"
+                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  borderRadius: 'var(--ck-radius-pill)',
+                  background: 'var(--ck-text-primary)',
+                  color: 'var(--ck-surface-canvas)',
+                }}
+              >
+                <IconeParar />
               </button>
             ) : (
               <button
