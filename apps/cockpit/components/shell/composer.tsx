@@ -39,6 +39,7 @@ import {
   useState,
   type FormEvent,
 } from 'react';
+import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
 import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
@@ -940,9 +941,10 @@ export function Composer({
                   (sinalRecusa ? ' ck-sacudir' : '')
                 }
                 style={{
+                  ...ALVO_DE_TOQUE,
                   width: '32px',
                   height: '32px',
-                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
                   background: 'var(--ck-text-primary)',
                   color: 'var(--ck-surface-canvas)',
@@ -973,9 +975,10 @@ export function Composer({
                 title="Parar"
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
+                  ...ALVO_DE_TOQUE,
                   width: '32px',
                   height: '32px',
-                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
                   background: 'var(--ck-text-primary)',
                   color: 'var(--ck-surface-canvas)',
@@ -992,9 +995,10 @@ export function Composer({
                 aria-label={`Segure para falar com ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
+                  ...ALVO_DE_TOQUE,
                   width: '32px',
                   height: '32px',
-                  marginBottom: 'calc(var(--ck-space-1) * -1)',
+                  marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
                   background: 'var(--ck-text-primary)',
                   color: 'var(--ck-surface-canvas)',

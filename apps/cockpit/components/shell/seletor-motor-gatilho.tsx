@@ -1,6 +1,7 @@
 'use client';
 
 import { DropdownMenuTrigger } from '../ui/dropdown-menu';
+import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
 import { EtiquetaDoEsforco } from './etiqueta-esforco';
 import type { EtiquetaEsforco } from './motor';
 
@@ -46,10 +47,11 @@ export function GatilhoDoSeletor({
         // flex `items-center`, então margem diferente era 8px de desnível
         // entre o rótulo e o único elemento sólido da linha.
         style={{
+          ...ALVO_DE_TOQUE,
           height: '32px',
           minHeight: '32px',
           gap: 'var(--ck-space-1)',
-          marginBottom: 'calc(var(--ck-space-1) * -1)',
+          marginBottom: MARGEM_INFERIOR_DA_BASE,
           // O `ck-veil` continua: em repouso não pinta nada, e é ele que dá
           // hover e press ao rótulo agora que não há mais cápsula desenhada.
           // O respiro de 8px existe para esse realce (e para o dedo) ter área;
