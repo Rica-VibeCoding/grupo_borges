@@ -10,6 +10,8 @@
 // A tese do cockpit v2 é que 82% do que passa por aqui é `tool_use` — então o
 // caminho quente é `LinhaExecucao`, e ela nasce colapsada.
 
+import { useState } from 'react';
+
 import type { ContentPart } from '@grupo_borges/cockpit-core/messages-types';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
@@ -29,6 +31,7 @@ import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
 import { leAnexoImagem } from './anexo-imagem';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
+import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
 
 type Props = {
   item: ItemDoFeed;
@@ -62,18 +65,19 @@ function Fala({ texto, tom }: { texto: string; tom?: 'discreto' }) {
 /** Linha de sistema, sem a caixinha — ordem do Rica, 02/08: "sem borda, sem
  *  fundo, sem badge". O rótulo é overline (12px, uppercase, tracking largo):
  *  lê-se como legenda, não como chip. Corpo em secondary — tertiary em texto
- *  de corpo é reprovação direta do contrato (3.55:1). */
+ *  de corpo é reprovação direta do contrato (3.55:1).
+ *
+ *  Uma linha continua sendo o desenho certo, mas ela deixou de ser MUDA sobre
+ *  o que esconde: medido no chat do Rica em 15/08, viewport de iPhone, 23px
+ *  visíveis de 555px reais — 4% do texto. Ele leu o conjunto como "tudo sai
+ *  truncado". Quando há mais atrás das reticências, a linha inteira vira alvo
+ *  e abre no lugar; corpo curto ("60 passos") não ganha controle nenhum. */
 function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 'var(--ck-space-2)',
-        alignItems: 'baseline',
-        minWidth: 0,
-        color: 'var(--ck-text-secondary)',
-      }}
-    >
+  const [aberta, setAberta] = useState(false);
+  const podeAbrir = temMaisParaMostrar(corpo);
+
+  const miolo = (
+    <>
       <span
         style={{
           flexShrink: 0,
@@ -87,18 +91,42 @@ function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
       {corpo ? (
         <span
           style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            fontSize: 'var(--ck-text-sm)',
             minWidth: 0,
             flex: 1,
-            fontSize: 'var(--ck-text-sm)',
+            ...(aberta
+              ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+              : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
           }}
         >
-          {corpo}
+          {aberta ? corpo : resumoDeUmaLinha(corpo)}
         </span>
       ) : null}
-    </div>
+    </>
+  );
+
+  const forma = {
+    display: 'flex',
+    gap: 'var(--ck-space-2)',
+    alignItems: aberta ? 'flex-start' : 'baseline',
+    minWidth: 0,
+    width: '100%',
+    textAlign: 'left' as const,
+    color: 'var(--ck-text-secondary)',
+  };
+
+  if (!podeAbrir) return <div style={forma}>{miolo}</div>;
+
+  return (
+    <button
+      type="button"
+      onClick={() => setAberta((estava) => !estava)}
+      aria-expanded={aberta}
+      aria-label={aberta ? `Fechar ${rotulo}` : `Abrir ${rotulo} por inteiro`}
+      style={{ ...forma, minHeight: 'var(--ck-touch-min)', alignItems: aberta ? 'flex-start' : 'center' }}
+    >
+      {miolo}
+    </button>
   );
 }
 
