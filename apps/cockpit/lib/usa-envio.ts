@@ -287,13 +287,18 @@ export function createControleEnvio(
     if (estado.fase !== 'aceito') return;
     timerPrazo = agendar(() => {
       timerPrazo = undefined;
-      // ENTREGA POR ROLLOUT ainda em curso: o prazo de 12 s foi calibrado para
-      // o eco do stream, que chega em milissegundos. No Codex a prova leva os
-      // mesmos ~12 s (o `codex exec` subindo) mais o tique do poll, então o
-      // alarme disparava sempre — e o texto dele manda o Rica reenviar, que é
-      // como se produz a duplicata que ele avisa. Enquanto a pendência existe,
-      // espera; ela mesma expira em 3 min se a mensagem nunca chegar, e aí o
-      // alarme volta a ser verdadeiro.
+      // ENTREGA AINDA EM CURSO: os 12 s foram calibrados sobre uma amostra
+      // local de 30/07 cujo pior caso era 1,434 s, e nenhum dos dois motores
+      // cabe nisso. No Codex a prova leva ~12 s (o `codex exec` subindo) mais o
+      // tique do poll; no Claude Code o eco medido em 15/08 é de **18,9 s**. O
+      // alarme disparava sempre, e o texto dele manda o Rica reenviar — é assim
+      // que se produz a duplicata que ele existe para avisar.
+      //
+      // Daqui em diante os 12 s são só a CADÊNCIA do reexame; quem decide o
+      // alarme é o teto da pendência, e ele é por motor: 45 s no Claude Code,
+      // 3 min no Codex (`PRAZO_CC_MS` / `PRAZO_CODEX_MS`, com o porquê da
+      // diferença escrito lá). Expirou a pendência, o alarme volta a ser
+      // verdadeiro.
       if (temPendencia(agentSlug)) {
         armarPrazoDeRollout();
         return;

@@ -11,6 +11,8 @@ import {
   registraEcoPendente,
   temPendencia,
   assinaEntrega,
+  PRAZO_CC_MS,
+  PRAZO_CODEX_MS,
 } from './eco-pendente.ts';
 
 beforeEach(() => limpaEcoPendente());
@@ -210,6 +212,33 @@ describe('recibo de entrega — o que desfaz o âmbar', () => {
     reconciliaPendentes('tara', ['oi']);
 
     assert.deepEqual(recebidos, ['oi']);
+  });
+
+  it('o teto é por MOTOR: no Claude Code a bolha morre aos 45s, no Codex aos 3 min', () => {
+    // A pendência segura o prazo do alarme de entrega, então o teto dela é o
+    // tempo que o Rica fica com a mensagem na tela sem ninguém dizer se ela
+    // entrou. Se este caso ficar vermelho porque alguém uniformizou os dois,
+    // leia o porquê em `PRAZO_CC_MS`: no CC herdar os 3 min troca um aviso
+    // falso aos 12 s por silêncio de três minutos.
+    registraEcoPendente('canarinho', 'no claude code', PRAZO_CC_MS);
+    registraEcoPendente('tara', 'no codex', PRAZO_CODEX_MS);
+    const envelhece = (slug: string, ms: number) => {
+      const p = lePendentes(slug)[0] as { emMs: number };
+      p.emMs = Date.now() - ms;
+    };
+
+    envelhece('canarinho', 60_000);
+    envelhece('tara', 60_000);
+    reconciliaPendentes('canarinho', ['outra coisa']);
+    reconciliaPendentes('tara', ['outra coisa']);
+
+    assert.equal(lePendentes('canarinho').length, 0, 'CC: 60s já passou dos 45s');
+    assert.equal(lePendentes('tara').length, 1, 'Codex: 60s ainda cabe nos 3 min');
+  });
+
+  it('quem não diz o prazo herda o do Codex — é o chamador antigo', () => {
+    registraEcoPendente('tara', 'sem prazo declarado');
+    assert.equal((lePendentes('tara')[0] as { prazoMs: number }).prazoMs, PRAZO_CODEX_MS);
   });
 
   it('pendência que só EXPIROU não vira recibo — nada provou a entrega', () => {

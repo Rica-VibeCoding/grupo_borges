@@ -6,10 +6,17 @@
  *
  * O `■` nasceu lendo `lifecycle_status` da frota, e essa escolha está medida
  * como errada: em 15/08, no `:3008`, mandei uma mensagem para um agente Claude
- * Code OCIOSO e o `lifecycle_status` **não virou `trabalhando` em 100 segundos**
- * — o freio simplesmente não existia na tela durante todo o turno. Ele é
- * alimentado por hook (`routers/hooks.py`) e por vigia de JSONL, chega atrasado
- * e, quando o hook não está armado naquele workspace, não chega.
+ * Code OCIOSO e **o botão não apareceu na tela em 100 segundos** — o freio
+ * simplesmente não existia durante todo o turno.
+ *
+ * Ressalva honesta sobre a CAUSA, porque errei a primeira apuração: eu tinha
+ * concluído que o `lifecycle_status` não acendia, e a função que "provou" isso
+ * lia `/api/fleet` como lista quando a rota devolve `{agents: [...]}` — o
+ * `except` engolia o erro e devolvia `null` em toda amostra. Com o parser certo
+ * ele acende. O campo não é morto; é alimentado por hook (`routers/hooks.py`) e
+ * por vigia de JSONL, e chega no tempo do PAINEL, não no tempo do gesto. Para
+ * uma leitura de card isso basta; para um botão que precisa existir no instante
+ * em que a pessoa quer usá-lo, não.
  *
  * A fonte certa estava na mesma tela o tempo inteiro: o `isRunning` do stream,
  * que é o que acende o "Pensando há 7 s" da linha viva. Se a tela afirma que o

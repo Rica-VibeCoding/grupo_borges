@@ -29,13 +29,30 @@ export type EcoPendente = {
   id: string;
   texto: string;
   emMs: number;
+  /** Quanto esta pendência pode viver. Vem de quem registrou porque os dois
+   *  motores medem diferente — ver `PRAZO_CODEX_MS` e `PRAZO_CC_MS`. */
+  prazoMs: number;
 };
 
-/** Teto de vida da bolha otimista. Turno de Codex leva minutos, mas o ECO do
+/** Teto de vida da bolha otimista no Codex. O turno leva minutos, mas o ECO do
  *  texto do Rica é o começo do turno, não o fim — 12 s medidos, 3 min de folga.
  *  Passou disso, o envio não chegou, e manter a bolha diria que chegou. Quem
  *  avisa que a entrega falhou é o composer, que tem a máquina de seis fases. */
-const PRAZO_MS = 180_000;
+export const PRAZO_CODEX_MS = 180_000;
+
+/**
+ * Teto no Claude Code, e ele é MAIS CURTO de propósito.
+ *
+ * A pendência segura o prazo do alarme (`usa-envio.ts:297`), então o teto dela é
+ * na prática o tempo que o Rica fica com a mensagem na tela sem ninguém dizer
+ * se ela entrou. Herdar os 3 min do Codex trocaria um aviso falso aos 12 s por
+ * silêncio de três minutos — e silêncio é a queixa original.
+ *
+ * 45 s são 2,4× o eco real medido em 15/08 (18,9 s), com a mesma folga
+ * proporcional que os 12 s originais tinham sobre a amostra em que foram
+ * calibrados. Passou disso, alguma coisa aconteceu, e é hora de falar.
+ */
+export const PRAZO_CC_MS = 45_000;
 
 const porAgente = new Map<string, EcoPendente[]>();
 const ouvintes = new Map<string, Set<() => void>>();
@@ -60,13 +77,17 @@ function grava(slug: string, lista: readonly EcoPendente[]): void {
  *  pendência criada — quem despacha guarda para descartá-la se o POST provar
  *  que não saiu (ver `descartaEcoPendente`). `null` quando o texto era só
  *  espaço: não há pendência para descartar depois. */
-export function registraEcoPendente(slug: string, texto: string): string | null {
+export function registraEcoPendente(
+  slug: string,
+  texto: string,
+  prazoMs: number = PRAZO_CODEX_MS,
+): string | null {
   const corpo = texto.trim();
   if (!corpo) return null;
   contador += 1;
   const id = `eco-${contador}`;
   const atual = porAgente.get(slug) ?? [];
-  grava(slug, [...atual, { id, texto: corpo, emMs: Date.now() }]);
+  grava(slug, [...atual, { id, texto: corpo, emMs: Date.now(), prazoMs }]);
   return id;
 }
 
@@ -138,7 +159,7 @@ export function reconciliaPendentes(slug: string, textosReais: readonly string[]
       entregues.push(p.texto);
       return false;
     }
-    return agora - p.emMs < PRAZO_MS;
+    return agora - p.emMs < p.prazoMs;
   });
 
   // Mesmo array quando nada saiu: sem isto, todo poll de 3 s notificaria os

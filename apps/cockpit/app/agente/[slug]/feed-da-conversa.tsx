@@ -165,11 +165,12 @@ function FeedClaudeCode({
   const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(comEco)], [comEco]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
   // O FREIO PRECISA DESTE BOOLEANO. O `■` do composer nascia lendo
-  // `lifecycle_status`, e na mesma medição de 15/08 esse campo **não virou
-  // `trabalhando` em 100 s** — o botão de parar não existia na tela durante o
-  // turno inteiro. `isRunning` é o sinal que já acende o "Pensando" logo
-  // abaixo; publicá-lo faz a tela parar de dizer duas coisas sobre o mesmo
-  // instante. Ver `lib/turno-vivo.ts`.
+  // `lifecycle_status`, e na mesma medição de 15/08 **o botão não apareceu na
+  // tela em 100 s** — o freio não existia durante o turno inteiro. Aquele campo
+  // chega no tempo do painel, não no do gesto; `isRunning` é o sinal que já
+  // acende o "Pensando" logo acima. Publicá-lo faz a tela parar de dizer duas
+  // coisas sobre o mesmo instante. Ver `lib/turno-vivo.ts`, inclusive a
+  // ressalva sobre a primeira apuração da causa, que eu errei.
   useEffect(() => {
     publicaTurnoVivo(agentSlug, isRunning);
     return () => publicaTurnoVivo(agentSlug, false);

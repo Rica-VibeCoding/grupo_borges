@@ -47,7 +47,12 @@ import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
 import { usaRascunho } from '../../lib/usa-rascunho';
-import { descartaEcoPendente, registraEcoPendente } from '../../lib/codex/eco-pendente';
+import {
+  descartaEcoPendente,
+  registraEcoPendente,
+  PRAZO_CC_MS,
+  PRAZO_CODEX_MS,
+} from '../../lib/codex/eco-pendente';
 import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
 import { usaFrota } from './frota-provider';
@@ -171,12 +176,12 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
-  // O AGENTE ESTÁ GERANDO? Duas fontes, e a ordem entre elas é o conserto de
-  // 15/08. `lifecycle_status` era a única, escolhida porque é a mesma leitura
-  // que pinta o card na lista da frota — mas ele é alimentado por hook e por
-  // vigia de JSONL, e na medição daquele dia, com um agente Claude Code ocioso
-  // recebendo mensagem, **não virou `trabalhando` em 100 segundos**. O `■`
-  // simplesmente não existia na tela durante o turno inteiro.
+  // O AGENTE ESTÁ GERANDO? Duas fontes, e ter as duas é o conserto de 15/08.
+  // `lifecycle_status` era a única, escolhida porque é a mesma leitura que
+  // pinta o card na lista da frota — mas ele é alimentado por hook e por vigia
+  // de JSONL, e chega no tempo do painel. Medido naquele dia, com um agente
+  // Claude Code ocioso recebendo mensagem: **o `■` não apareceu na tela em 100
+  // segundos**. O freio não existia durante o turno inteiro.
   //
   // A segunda fonte é o `isRunning` do stream, publicado pelo feed em
   // `lib/turno-vivo.ts` — o mesmo booleano que acende o "Pensando há 12 s" três
@@ -530,7 +535,15 @@ export function Composer({
     // toda mensagem para agente ocioso terminava em "não consegui confirmar se
     // entrou". Ver `lib/codex/eco-pendente.ts` e o ramo do CC em
     // `app/agente/[slug]/feed-da-conversa.tsx`.
-    const idEcoPendente = registraEcoPendente(agentSlug, corpoParaEnviar);
+    const idEcoPendente = registraEcoPendente(
+      agentSlug,
+      corpoParaEnviar,
+      // O teto é o tempo que ele fica com a mensagem na tela sem ninguém dizer
+      // se entrou — a pendência segura o prazo do alarme. Herdar os 3 min do
+      // Codex aqui trocaria um aviso falso aos 12 s por silêncio de três
+      // minutos, e silêncio é a queixa original.
+      ehCodex ? PRAZO_CODEX_MS : PRAZO_CC_MS,
+    );
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
     // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
     // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da
