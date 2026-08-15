@@ -21,6 +21,7 @@ import contextlib
 import json
 import logging
 import sqlite3
+import threading
 import time
 import uuid
 from collections import Counter
@@ -50,6 +51,9 @@ _TOKEN_SUM_SQL = """SUM(
         ELSE 0
     END
 )"""
+
+# Validade da sparkline do painel. Ver `GrupoBorgesDB._sparkline`.
+SPARKLINE_TTL_SECONDS = 30.0
 
 # Janela de frescor do lifecycle. Para Claude, presença online exige sessão tmux
 # e um CLI de agente vivo no foreground; lifecycle velho então significa ocioso.
@@ -307,6 +311,13 @@ def derive_lifecycle_from_event(
 class GrupoBorgesDB:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        # (since_unix, contagem, tokens, vence_em) — ver `_sparkline`.
+        self._sparkline_cache: (
+            tuple[int, dict[str, dict[str, int]], dict[str, dict[str, int]], float] | None
+        ) = None
+        # `_fleet_snapshot` roda em `asyncio.to_thread`: duas atualizações do
+        # painel podem entrar juntas.
+        self._sparkline_guard = threading.Lock()
 
     @contextlib.contextmanager
     def _connect(self):
@@ -2954,6 +2965,60 @@ class GrupoBorgesDB:
             active_claude_process_sessions,
         )
 
+    def _sparkline(
+        self, conn: sqlite3.Connection, since_unix: int
+    ) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]]:
+        """Contagem e tokens por hora, com validade curta.
+
+        DS-58: a sparkline mostra TOKENS (input+output) por hora;
+        `cache_read_input_tokens` NÃO entra na altura — Rica pediu tokens reais.
+
+        A validade existe porque esta é, de longe, a consulta mais cara da casa:
+        o `json_extract` sobre `payload` derruba o índice de cobertura e o
+        GROUP BY cai numa B-tree temporária em disco. Medido em 15/08, no
+        processo certo do uvicorn: **229 MB escritos e 1,2 s por chamada de
+        `/api/fleet`** — e o painel aberto bate nela a cada ~1,7 s, o que
+        sozinho sustentava ~50 MB/s de escrita e a maior parte da CPU da API.
+
+        Trinta segundos não mudam o desenho: o agregado é por HORA, numa janela
+        de 24 h. `since_unix` faz parte da chave, então a virada de hora
+        invalida sozinha.
+        """
+        agora = time.monotonic()
+        with self._sparkline_guard:
+            cache = self._sparkline_cache
+            if cache is not None and cache[0] == since_unix and cache[3] > agora:
+                return cache[1], cache[2]
+
+        rows = conn.execute(
+            f"""
+            SELECT agent_slug,
+                   strftime(?, created_at, 'unixepoch') AS hour_bucket,
+                   COUNT(*) AS cnt,
+                   {_TOKEN_SUM_SQL} AS tokens
+            FROM task_events
+            WHERE agent_slug IS NOT NULL AND created_at >= ?
+            GROUP BY agent_slug, hour_bucket
+            """,
+            (HOUR_BUCKET_FMT, since_unix),
+        ).fetchall()
+        por_slug: dict[str, dict[str, int]] = {}
+        tokens_por_slug: dict[str, dict[str, int]] = {}
+        for row in rows:
+            por_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
+            tokens_por_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = (
+                row["tokens"] or 0
+            )
+
+        with self._sparkline_guard:
+            self._sparkline_cache = (
+                since_unix,
+                por_slug,
+                tokens_por_slug,
+                agora + SPARKLINE_TTL_SECONDS,
+            )
+        return por_slug, tokens_por_slug
+
     def _fleet_snapshot(
         self,
         sparkline_hours: int,
@@ -2983,27 +3048,7 @@ class GrupoBorgesDB:
             ).fetchall()
             agents = [self._row_to_agent(r) for r in agent_rows]
 
-            # DS-58: sparkline mostra TOKENS (input+output) por hora.
-            # cache_read_input_tokens NÃO entra na altura — Rica pediu "tokens" reais.
-            spark_rows = conn.execute(
-                f"""
-                SELECT agent_slug,
-                       strftime(?, created_at, 'unixepoch') AS hour_bucket,
-                       COUNT(*) AS cnt,
-                       {_TOKEN_SUM_SQL} AS tokens
-                FROM task_events
-                WHERE agent_slug IS NOT NULL AND created_at >= ?
-                GROUP BY agent_slug, hour_bucket
-                """,
-                (HOUR_BUCKET_FMT, since_unix),
-            ).fetchall()
-            spark_by_slug: dict[str, dict[str, int]] = {}
-            spark_tokens_by_slug: dict[str, dict[str, int]] = {}
-            for row in spark_rows:
-                spark_by_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
-                spark_tokens_by_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = (
-                    row["tokens"] or 0
-                )
+            spark_by_slug, spark_tokens_by_slug = self._sparkline(conn, since_unix)
 
             latest_event_rows = conn.execute(
                 """

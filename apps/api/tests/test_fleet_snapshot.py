@@ -465,3 +465,49 @@ def test_fleet_carimba_a_hora_em_que_o_contexto_foi_medido(tmp_path: Path, monke
         assert agent["context_stale"] is False
     finally:
         status_path.unlink(missing_ok=True)
+
+
+# A sparkline é a consulta mais cara da casa: 229 MB de escrita e 1,2 s por
+# chamada de /api/fleet, medido em 15/08 no processo do uvicorn. O painel bate
+# nela a cada ~1,7 s. Os três testes seguram as duas metades do conserto: não
+# recalcular à toa, e nunca servir gráfico de outra janela.
+#
+# A régua é o próprio cache: recalcular SEMPRE reescreve a tupla, então a tupla
+# intacta prova que a consulta não rodou. Comparar o desenho não provaria — ele
+# é igual nos dois casos, que é justamente o motivo de existir validade.
+def test_sparkline_nao_recalcula_dentro_da_validade(tmp_path: Path) -> None:
+    db = _setup_db(tmp_path)
+
+    db._fleet_snapshot(24, {"daniel"}, {"daniel"})
+    antes = db._sparkline_cache
+    db._fleet_snapshot(24, {"daniel"}, {"daniel"})
+
+    assert db._sparkline_cache is antes
+
+
+def test_sparkline_vencida_recalcula(tmp_path: Path) -> None:
+    db = _setup_db(tmp_path)
+
+    db._fleet_snapshot(24, {"daniel"}, {"daniel"})
+    since, contagem, tokens, _ = db._sparkline_cache
+    vencido = (since, contagem, tokens, 0.0)
+    db._sparkline_cache = vencido
+    db._fleet_snapshot(24, {"daniel"}, {"daniel"})
+
+    assert db._sparkline_cache is not vencido
+    assert db._sparkline_cache[3] > 0.0
+
+
+def test_sparkline_de_outra_janela_nao_e_reaproveitada(tmp_path: Path) -> None:
+    """Na virada da hora o `since_unix` muda: servir o cache velho desenharia
+    24 h que já não são as últimas 24 h."""
+    db = _setup_db(tmp_path)
+
+    db._fleet_snapshot(24, {"daniel"}, {"daniel"})
+    _, contagem, tokens, vence = db._sparkline_cache
+    de_outra_janela = (0, contagem, tokens, vence)
+    db._sparkline_cache = de_outra_janela
+    db._fleet_snapshot(24, {"daniel"}, {"daniel"})
+
+    assert db._sparkline_cache is not de_outra_janela
+    assert db._sparkline_cache[0] != 0
