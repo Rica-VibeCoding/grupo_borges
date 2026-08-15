@@ -743,3 +743,64 @@ fronteiras.
 ⚠️ Não conferi: 3 (Safari/iOS), 17 (idempotência ponta a ponta), 23 (fallback de
 tipo desconhecido), 27 e 34-42 (truncamento fora do CSS), 43-60. **Não confundir
 "não conferido" com "passa"** — a lista acima diz o que foi medido, e só.
+
+---
+
+## 10. O contrato da fila — acordado, não começado
+
+⛔ **Nada disto está construído.** O Rica ainda não disse se a fila é a frente
+agora, e nem o Pavan nem eu escrevemos linha de código para ela. Está aqui porque
+o desenho já custou uma conversa e não pode evaporar junto com as sessões.
+
+**A divisão.** Pavan faz a fila no servidor — tabela por sessão, drenagem amarrada
+ao evento terminal do NDJSON de cada motor (`result` no Claude Code,
+`turn.completed` no Codex). Daniel expõe `queue: [...]` no polling e desenha o
+espelho no painel — itens numerados acima do composer, cancelar por item,
+sobrevivendo ao reload porque vêm do servidor. O encontro é **teste de contrato
+contra fixture**, não integração: cada lado anda sem esperar o outro.
+
+**A forma de um item:**
+
+```json
+{
+  "id": "uuid v7",
+  "sessao": "canarinho",
+  "origem": "telegram | web | whatsapp",
+  "endereco_retorno": { "chat_id": "<id do canal>", "reply_to": 6655 },
+  "texto": "...",
+  "anexos": [{ "tipo": "imagem", "caminho": "/abs/..." }],
+  "ancora": { "canal": "telegram", "ref": "6654" },
+  "client_request_id": "...",
+  "estado": "pendente | drenando | entregue | cancelada",
+  "criado_em": "2026-08-15T19:44:59Z",
+  "motivo_falha": null
+}
+```
+
+Quatro decisões dentro dele que não são cosméticas — todas do Pavan:
+
+1. **A âncora é por canal, não global.** Eu tinha escrito "o id da última mensagem
+   visível quando o texto foi escrito" e estava meio passo curto: quando o Rica
+   escreve do celular, a última mensagem visível **para ele** é do Telegram, não
+   do painel. Carimbar o id da conversa do painel num item nascido no Telegram
+   produz âncora confiantemente errada — pior que âncora nenhuma, porque o item
+   chega parecendo responder algo que ele nunca viu. Daí o par `canal` + `ref`, e
+   quem drena resolve a referência no espaço de quem escreveu.
+2. **`origem` e `endereco_retorno` viajam separados.** Origem é de onde veio;
+   endereço é para onde a resposta volta. A invariante da casa é que a resposta
+   sai pelo canal de entrada — item do Telegram drenado sem `chat_id` e `reply_to`
+   responde no painel, e o Rica nunca vê. Defeito que só aparece em produção.
+3. **`posicao` não existe no registro — é derivada na leitura.** Posição gravada
+   obriga a reescrever todos os itens de baixo a cada cancelamento, e duas
+   drenagens concorrentes brigam. A ordem sai do `id` v7, que já é ordenável por
+   tempo. O espelho numera na renderização.
+4. **`drenando` é estado de primeira classe.** Sem ele, processo que morre no meio
+   da entrega reentrega no próximo boot — a duplicata que a máquina de seis fases
+   inteira existe para impedir. Item preso em `drenando` além do prazo vira
+   `motivo_falha` **à vista**, nunca de volta para `pendente` em silêncio.
+
+**Em aberto, e é do meu lado que dói:** por quanto tempo um item `entregue`
+continua na fila. O espelho precisa saber quando parar de desenhá-lo, ou o Rica vê
+a mensagem duas vezes — uma na fila, outra no feed. E `drenando` preso precisa de
+desenho próprio, senão vira um item parado sem explicação. Nenhum dos dois é
+decisão de servidor; são minhas, e ficam para quando a frente abrir.
