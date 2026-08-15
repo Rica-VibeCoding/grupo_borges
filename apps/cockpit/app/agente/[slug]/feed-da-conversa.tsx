@@ -164,17 +164,6 @@ function FeedClaudeCode({
 
   const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(comEco)], [comEco]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
-  // O FREIO PRECISA DESTE BOOLEANO. O `■` do composer nascia lendo
-  // `lifecycle_status`, e na mesma medição de 15/08 **o botão não apareceu na
-  // tela em 100 s** — o freio não existia durante o turno inteiro. Aquele campo
-  // chega no tempo do painel, não no do gesto; `isRunning` é o sinal que já
-  // acende o "Pensando" logo acima. Publicá-lo faz a tela parar de dizer duas
-  // coisas sobre o mesmo instante. Ver `lib/turno-vivo.ts`, inclusive a
-  // ressalva sobre a primeira apuração da causa, que eu errei.
-  useEffect(() => {
-    publicaTurnoVivo(agentSlug, isRunning);
-    return () => publicaTurnoVivo(agentSlug, false);
-  }, [agentSlug, isRunning]);
   // A LINHA VIVA. A corrida está de pé (`isRunning`) mas o fim do feed não
   // tem trabalho em voo — o buraco entre o Rica mandar e a primeira
   // ferramenta, que antes era tela muda. Ela entra como ÚLTIMO ITEM, na
@@ -194,6 +183,27 @@ function FeedClaudeCode({
   // duas fontes mora em `linha-viva-da-conversa.ts`.
   const desdeMs = useMemo(() => desdeDaLinhaViva(messages), [messages]);
   const vencida = usaLinhaVivaVencida(desdeMs);
+
+  // O FREIO BEBE DA MESMA ÁGUA QUE O "PENSANDO", e a terceira rodada de 15/08
+  // foi aprender que "mesma fonte" não bastava: eu publicava `isRunning` CRU,
+  // enquanto a linha viva o consome com prazo e com corte por frota. Resultado
+  // medido pelo Daniel no canarinho — `Pensando=False` e `■=True` na mesma tela,
+  // com o agente `status=ocioso`. Duas afirmações contraditórias a três
+  // centímetros uma da outra, que é exatamente o que este módulo veio consertar.
+  //
+  // `isRunning` conta o que o log conta, e turno que morre sem despedida não
+  // escreve o fim: fica de pé para sempre. As mesmas duas guardas da linha viva
+  // resolvem — o prazo (`vencida`) e o desligamento visto pela frota.
+  //
+  // O que NÃO entra aqui, e é a única diferença entre as duas réguas, é o
+  // `trabalhoEmVooNoFim`: ele silencia a linha viva quando o último item do feed
+  // já está no gerúndio, para não dizer "pensando" duas vezes. Ali é redundância
+  // de texto; aqui seria apagar o freio no instante em que o agente mais está
+  // trabalhando.
+  useEffect(() => {
+    publicaTurnoVivo(agentSlug, isRunning && !vencida && statusDaFrota !== 'offline');
+    return () => publicaTurnoVivo(agentSlug, false);
+  }, [agentSlug, isRunning, vencida, statusDaFrota]);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];

@@ -176,33 +176,32 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
-  // O AGENTE ESTÁ GERANDO? Duas fontes, e ter as duas é o conserto de 15/08.
-  // `lifecycle_status` era a única, escolhida porque é a mesma leitura que
-  // pinta o card na lista da frota — mas ele é alimentado por hook e por vigia
-  // de JSONL, e chega no tempo do painel. Medido naquele dia, com um agente
-  // Claude Code ocioso recebendo mensagem: **o `■` não apareceu na tela em 100
-  // segundos**. O freio não existia durante o turno inteiro.
+  // O AGENTE ESTÁ GERANDO? Duas fontes, e escolher as duas certas levou três
+  // rodadas em 15/08. O histórico, porque cada uma caiu por um motivo diferente:
   //
-  // A segunda fonte é o `isRunning` do stream, publicado pelo feed em
-  // `lib/turno-vivo.ts` — o mesmo booleano que acende o "Pensando há 12 s" três
-  // centímetros acima. Com uma só das duas o freio some em algum cenário; com
-  // as duas em OU ele acompanha o que a tela já afirma.
+  // 1. `lifecycle_status` sozinho, que era o original. Ele é alimentado por hook
+  //    e por vigia de JSONL, e chega no tempo do PAINEL: com um agente Claude
+  //    Code ocioso recebendo mensagem, **o ■ não apareceu na tela em 100 s**.
+  //    O freio não existia durante o turno inteiro.
+  // 2. `lifecycle_status` com guarda de `status !== 'offline'`. Pegou os cinco
+  //    agentes MORTOS que o `/api/fleet` jurava estarem `trabalhando`, e não
+  //    pegou os VIVOS E OCIOSOS: o canarinho ficou `status=ocioso` com
+  //    `lifecycle=trabalhando` preso, e o ■ pendurado no repouso — comendo o
+  //    lugar do microfone no chat que o Rica mais usa. Achado do Daniel.
   //
-  // E as duas passam por uma GUARDA DE VIDA. Medido em 15/08 pelo Daniel: cinco
-  // dos nove agentes da frota não tinham processo nenhum — nem em `ps`, nem em
-  // `tmux ls` — e o `/api/fleet` devolvia `lifecycle_status: trabalhando` para
-  // todos eles. Na tela isso virava o ■ oferecendo freio para um turno que não
-  // existe, e o toque devolvia `200` com `parado: false` sem dizer nada. É a
-  // mentira de UI da §9 no controle mais visível da caixa.
+  // O que os dois casos têm em comum: `lifecycle_status` é histórico de EVENTO e
+  // não expira. Turno que morre sem despedida limpa — agente desligado, limite
+  // de uso, sessão derrubada — deixa `trabalhando` para sempre. Ele serve para
+  // pintar card; não serve para decidir se um controle existe.
   //
-  // O `status` do mesmo payload já sabe a verdade (`offline`), porque ele cruza
-  // sessão e processo; o `lifecycle_status` é histórico de evento e não expira
-  // quando o agente morre sem despedida. Agente offline não gera, ponto — e
-  // com o campo vazio o alvo volta a ser o microfone, que é o que faz sentido
-  // ali.
+  // Então a fonte lenta passou a ser o `status`, que cruza sessão e processo e
+  // sabe dizer `offline` e `ocioso`; e a fonte RÁPIDA é o `isRunning` do stream,
+  // publicado pelo feed em `lib/turno-vivo.ts` — o mesmo booleano que acende o
+  // "Pensando há 12 s" três centímetros acima. Uma cobre o que a outra atrasa, e
+  // nenhuma das duas herda o campo que não expira.
   const daFrota = agents.find((a) => a.slug === agentSlug);
   const vivo = daFrota !== undefined && daFrota.status !== 'offline';
-  const trabalhando = vivo && daFrota.lifecycle_status === 'trabalhando';
+  const trabalhando = vivo && daFrota.status === 'trabalhando';
   const assinaTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);
   const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
   // No servidor não há turno nenhum: o valor nasce de um stream do browser.
