@@ -117,4 +117,27 @@ describe('imagem enviada pelo cockpit — envelope para apresentação', () => {
       '/api/agents/tara%20teste%2Fum/file/foto%20final.jpg',
     );
   });
+
+  // Imagem da Tara (Codex): chega como data-URL já pronta — não passou pelo
+  // disco de uploads, então não há caminho relativo pra reconhecer.
+  it('reconhece a URL embutida (data-URL) como a imagem inteira', () => {
+    assert.deepEqual(leAnexoImagem('data:image/png;base64,iVBORw0KGgo='), {
+      filename: 'data:image/png;base64,iVBORw0KGgo=',
+      legenda: null,
+    });
+  });
+
+  it('URL embutida com legenda separa as duas', () => {
+    assert.deepEqual(
+      leAnexoImagem('data:image/png;base64,iVBORw0KGgo=\nCaption: print do erro'),
+      { filename: 'data:image/png;base64,iVBORw0KGgo=', legenda: 'print do erro' },
+    );
+  });
+
+  it('urlDoAnexoImagem devolve a URL embutida direto, sem montar rota de arquivo', () => {
+    assert.equal(
+      urlDoAnexoImagem('tara', 'data:image/png;base64,iVBORw0KGgo='),
+      'data:image/png;base64,iVBORw0KGgo=',
+    );
+  });
 });
