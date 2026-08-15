@@ -93,6 +93,46 @@ test('classifyMessage — texto normal do Rica continua plain', () => {
   assert.equal(classifyMessage(userText(6, 'manda balanço')).kind, 'plain');
 });
 
+// Notificação real colhida do JSONL do Daniel em 15/08. O `<tool-use-id>` não
+// veio — o CC só o emite quando a notificação nasce de um tool_use rastreado.
+// Sem ele o parser devolvia `null`, a mensagem caía em `plain` e os 36 mil
+// caracteres de XML viravam balão do Rica na tela.
+const NOTIFICACAO_SEM_TOOL_USE_ID =
+  '<task-notification>\n' +
+  '<task-id>aceb5201684839f40</task-id>\n' +
+  '<output-file>/tmp/claude-1001/tasks/aceb5201684839f40.output</output-file>\n' +
+  '<status>completed</status>\n' +
+  '<summary>Agent "Research chat composer best practices" finished</summary>\n' +
+  '<result>relatório longo do subagente…</result>\n' +
+  '<usage><subagent_tokens>144803</subagent_tokens></usage>\n' +
+  '</task-notification>';
+
+test('classifyMessage — notificação sem tool-use-id vira chip, não balão de XML', () => {
+  const payload = classifyMessage(userText(8, NOTIFICACAO_SEM_TOOL_USE_ID));
+  assert.equal(payload.kind, 'task-notification');
+  if (payload.kind !== 'task-notification') return;
+  assert.match(payload.chip.summary, /completed/);
+});
+
+test('buildRenderItems — notificação enfileirada não despeja XML na bolha', () => {
+  // O caminho que o Rica viu: a notificação chega com o agente ocupado, entra
+  // como `queue-operation`, e o montador a normaliza em entrada de usuário.
+  const items = buildRenderItems([
+    {
+      ...baseMessage,
+      id: 9,
+      uuid: 'uuid-9',
+      kind: 'queued',
+      message: null,
+      content: NOTIFICACAO_SEM_TOOL_USE_ID,
+    } as unknown as MessagePayload,
+  ]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'chip');
+  if (items[0].kind !== 'chip') return;
+  assert.equal(items[0].classifierKind, 'task-notification');
+});
+
 test('buildRenderItems — compact-summary vira item próprio, nunca bolha do Rica', () => {
   const items = buildRenderItems([userText(7, RESUMO_REAL)]);
   assert.equal(items.length, 1);

@@ -13,8 +13,11 @@ type TaskNotificationTag = 'task-id' | 'tool-use-id' | 'output-file' | 'status' 
 export type BackgroundTaskNotification = {
   kind: 'background';
   taskId: string;
-  toolUseId: string;
-  outputFile: string;
+  /** Opcionais: o CC só os emite quando a notificação nasce de um tool_use
+   *  rastreado. Exigi-los reprovava a notificação inteira e o envelope caía em
+   *  `plain` — 36 mil caracteres de XML como balão do Rica na tela (15/08). */
+  toolUseId?: string;
+  outputFile?: string;
   status: string;
   summary: string;
   raw: string;
@@ -51,13 +54,15 @@ function parseBackgroundTaskNotification(
   const status = tags.status;
   const summary = tags.summary;
 
-  if (!taskId || !toolUseId || !outputFile || !status || !summary) return null;
+  // O que IDENTIFICA a notificação é a tarefa e o desfecho. Correlação de
+  // tool_use e caminho do arquivo de saída são acessórios.
+  if (!taskId || !status || !summary) return null;
 
   return {
     kind: 'background',
     taskId,
-    toolUseId,
-    outputFile,
+    ...(toolUseId ? { toolUseId } : {}),
+    ...(outputFile ? { outputFile } : {}),
     status,
     summary,
     raw: raw.trim(),
