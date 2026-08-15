@@ -167,15 +167,21 @@ diferentes (`isDisabled` × `isSendDisabled`, este último documentado como *"in
 stays usable"* — o campo continua utilizável). No repositório do Claude Code,
 perder a capacidade de digitar durante o trabalho está aberto como **regressão**.
 
-Vale registrar a armadilha que nos pegou: o *snippet* da doc do Vercel AI SDK usa
-`disabled={status !== 'ready'}`, enquanto a biblioteca de componentes da própria
-Vercel (`ai-elements`) não desabilita nada. Quem copiou o exemplo da doc herdou o
-defeito nº 4 — e o nosso desenho é exatamente esse.
+Vale registrar a armadilha que pega quase todo mundo, e que **nós escapamos**: o
+*snippet* da doc do Vercel AI SDK usa `disabled={status !== 'ready'}`, enquanto a
+biblioteca de componentes da própria Vercel (`ai-elements`) não desabilita nada.
+Quem copiou o exemplo da doc herdou o defeito. Aqui o `textarea` nunca é
+desabilitado, por decisão consciente — o comentário em `composer.tsx:745` diz o
+porquê e é melhor que a justificativa da literatura: no iPhone, `disabled` tira o
+elemento do alcance do foco e **fecha o teclado no meio da digitação**.
 
-Consequência prática para esta lista: consertar F2 (achar por que o campo estava
-ocupado) continua valendo, mas **não é o alvo final**. O alvo é a fila do servidor
-descrita na §8, que torna a recusa desnecessária. Cada 409 que hoje vira vermelho
-deveria virar item de fila à vista. Rodada própria — não é o trabalho de hoje.
+O que nos separa do estado da arte é o passo seguinte, e é onde F1/F2/F5 moram: o
+campo aceita, mas a **porta** recusa, e a recusa vira vermelho em vez de virar
+fila. O texto do Rica não evapora — ele fica lá, o que já é meio caminho. Falta o
+outro meio: ter para onde mandá-lo. Consertar F2 (achar por que o campo do agente
+estava ocupado) continua valendo, mas **não é o alvo final**. O alvo é a fila do
+servidor descrita na §8, que torna a recusa desnecessária. Rodada própria — não é
+o trabalho de hoje.
 
 ---
 
@@ -678,3 +684,54 @@ anterior a isto — atualização otimista e `useOptimistic` do React 19.
 - Geometria no iPhone, a saga inteira — `cockpit-v2-viewport-iphone.md`
 - Doc de biblioteca externa: **Context7 antes de codar**, nunca memória de
   treino. Foi assim que o número do `backdrop-filter` saiu certo.
+
+---
+
+## 9. O placar — o checklist rodado contra o que está no ar
+
+O relatório fecha com **60 verificações objetivas**, cada uma com veredito
+conferível em vez de opinião. Marcadas `[BLOQ]` as que, falhando, são defeito de
+produto. Rodei uma parte contra o código publicado em 15/08, às 16h50. Este é o
+instrumento de ir eliminando — quem retomar continua daqui, não do zero.
+
+**Passa, conferido (11).** Os bloqueantes primeiro:
+
+- **1 [BLOQ] · o campo nunca é desabilitado** — `composer.tsx:745`, com a razão
+  escrita: no iPhone `disabled` fecha o teclado no meio da digitação.
+- **12 [BLOQ] · o botão vira Parar** durante o trabalho, não fica apagado.
+- **20 [BLOQ] · o motor não vaza para o desenho** — `git grep "isCodex\|isClaude\|provider ==="`
+  nos componentes de feed e shell volta **vazio**. A diferença mora só no adaptador.
+- **21 [BLOQ] · a mensagem não é string solta** — união discriminada com 14
+  variantes (`text`, `thinking`, `tool_use`, `tool_result`, `compact-summary`,
+  `user`, `channel`, `delegacao`, `synthetic`…) e um mapa tipo → componente.
+- **30 [BLOQ] · a cadeia flex está inteira em `min: 0px`** — medido no painel
+  vivo, do corpo da mensagem até o `main`. Nenhum nó pedindo `min-w-0`/`min-h-0`.
+- 2 [BLOQ] guarda de composição com `isComposing` **e** `keyCode === 229` (as duas
+  bordas) · 22 adaptador do Codex com teste · 7 colar imagem · 9 `revokeObjectURL`
+  em pé de igualdade com `createObjectURL` (2:2) · 28 nenhuma propriedade de corte
+  no corpo · 29 nenhum ancestral recortando indevidamente.
+
+**O que isso elimina.** O ramo de CSS do truncamento (§C.1 do relatório) está
+descartado por medição, não por leitura: os dois ancestrais que recortam são o
+próprio rolador e o vidro do rodapé (`pointer-events-none`, 2048px de propósito
+para o desfoque não ter borda). Se voltar a truncar, **não procure em CSS** —
+comece pela bissecção por camada da §C.0, que mede o comprimento nas seis
+fronteiras.
+
+**Falta (e nenhum é surpresa):**
+
+- **11, 13, 14, 15, 16, 18, 19 — a fila inteira.** É o F5 e o rumo descrito no
+  fim da §2. Sete itens que caem juntos quando a fila do servidor existir.
+- **8 · arrastar e soltar arquivo no composer não existe.** Nenhum `onDrop`.
+  Barato, e o Rica trabalha muito no desktop.
+- **5 · `enterkeyhint` é condicional** — só aparece com anexo retido em toque.
+- **A imagem é a exceção do item 21.** Todas as outras variantes são tipadas; a
+  foto é reconhecida por **gramática de texto** — regex sobre `[Image #N]Caption:`
+  e `[Image: source:]`. O F3 foi consertado assim, e funciona, mas é remendo
+  sobre string: uma variante `kind: 'image'` vinda do adaptador seria o certo, e
+  tornaria `juntaMetadesDoAnexo` desnecessária. Não é urgente — é o que explica
+  por que o anexo deu tanto trabalho para uma coisa tão simples.
+
+⚠️ Não conferi: 3 (Safari/iOS), 17 (idempotência ponta a ponta), 23 (fallback de
+tipo desconhecido), 27 e 34-42 (truncamento fora do CSS), 43-60. **Não confundir
+"não conferido" com "passa"** — a lista acima diz o que foi medido, e só.
