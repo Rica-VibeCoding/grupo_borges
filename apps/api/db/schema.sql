@@ -230,3 +230,24 @@ CREATE INDEX IF NOT EXISTS idx_events_latest_session
         json_extract(payload, '$.isSidechain') IS NULL
         OR json_extract(payload, '$.isSidechain') != 1
       );
+
+-- ============================================================
+-- delivery_attempts — uma linha por tentativa de entrega no pane
+--
+-- Existe porque a taxa de falha de entrega era IMPOSSIVEL de medir (15/08):
+-- o registro do canal vivia so em memoria do processo e sumia em todo restart
+-- da API (quatro num dia), e o access log do uvicorn nao tem timestamp, entao
+-- nao dava pra ligar um envio a um residuo no pane. Sem denominador nao existe
+-- antes/depois, e sem antes/depois nao se conserta nada com regua.
+--
+-- ADITIVA: ninguem le daqui pra decidir. E' so o denominador.
+-- Teto em REGISTROS, nao em tempo — painel aberto o dia todo cresce sem fim.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS delivery_attempts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_name  TEXT NOT NULL,
+    outcome       TEXT NOT NULL,
+    reason        TEXT,
+    at_ms         INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_attempts_at ON delivery_attempts (at_ms);

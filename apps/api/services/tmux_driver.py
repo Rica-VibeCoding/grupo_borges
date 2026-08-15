@@ -22,7 +22,7 @@ from typing import Literal, NamedTuple, TypeVar
 import libtmux
 from libtmux import exc as libtmux_exc
 
-from services import codex_catalog
+from services import codex_catalog, delivery_log
 
 # Orçamentos independentes: pane ocupada pode ficar temporariamente ilegível
 # antes do paste sem consumir o tempo reservado para provar a submissão.
@@ -146,6 +146,24 @@ class DeliveryResult:
 DELIVERED = DeliveryResult(outcome="delivered")
 
 
+def _anota_tentativa(
+    session_name: str, desfecho: delivery_log.Desfecho, motivo: str | None
+) -> None:
+    """Grava a tentativa pro denominador. Aditivo — nunca atrapalha a entrega.
+
+    O caminho do banco é lido aqui, e não guardado no módulo, porque o teste
+    aponta pra um arquivo temporário. Custa uma leitura de env por entrega.
+    """
+    try:
+        from config import get_settings
+
+        delivery_log.registra_tentativa(
+            get_settings().db_path, session_name, desfecho, motivo
+        )
+    except Exception:  # noqa: BLE001 — telemetria não derruba mensagem do Rica
+        log.exception("falhei ao anotar a tentativa de entrega: session=%s", session_name)
+
+
 def _record_delivery_refusal(session_name: str, reason: str) -> DeliveryResult:
     """Memoriza, alarma e devolve a recusa com o motivo que já era calculado."""
     now = time.time()
@@ -178,6 +196,7 @@ def _record_delivery_refusal(session_name: str, reason: str) -> DeliveryResult:
         consecutive_refusals,
         blocked_for_seconds,
     )
+    _anota_tentativa(session_name, "recusado" if outcome == "refused" else "incerto", reason)
     return DeliveryResult(outcome=outcome, reason=reason)
 
 
@@ -191,6 +210,7 @@ def _record_delivery_success(session_name: str) -> DeliveryResult:
             blocked_since=None,
             last_attempt_at=now,
         )
+    _anota_tentativa(session_name, "entregue", None)
     return DELIVERED
 
 
