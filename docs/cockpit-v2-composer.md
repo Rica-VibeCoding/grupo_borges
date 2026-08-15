@@ -45,6 +45,16 @@ Publicado em 15/08: `0b62a75`, `dfddaaa`, `59348cb`, `ce37d05`, `ce5d39f`,
 espalhamento, `7fe89d0` (Daniel). Commitado e **não** publicado: `fe1ebc6`
 (tabela `delivery_attempts`).
 
+**Fora do composer, mas provavelmente dentro do "longe do ideal":** cada
+atualização do `/api/fleet` escrevia **229,5 MB** e levava **1.221 ms** — o
+gráfico de barrinhas recalculado do zero, a cada segundo e meio, sobre 124 mil
+eventos. Validade de 30 s em `279cf27`; no processo isolado deu 0,1 MB e 314 ms,
+e na máquina real (medição do Pavan, amostragem de 2 em 2 segundos por 40 s) a
+escrita caiu de 34 MB/s para 2,7 MB/s — **92%**. O que sobra, medido por mim às
+16h35: uma rajada de ~167 MB concentrada em 1 segundo a cada 30 s, que é o
+recálculo em si — some quando o total de tokens virar coluna materializada, em
+vez de sair de `json_extract` no caminho de leitura. Rodada própria.
+
 ### O que não deu certo
 
 O caro do dia não foi o produto — foi o instrumento. **Sete vezes** em 15/08 a
@@ -84,6 +94,20 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
       imediato) devolve 200. A condição é mais estreita que "mandar logo depois
       do Escape" e **a causa ainda não é conhecida** — não tratar como fechado.
       **Dono: Daniel.**
+
+      **Hipóteses vivas, e como decidir entre elas.** Duas caíram na medição e
+      uma nasceu. (1) *Sugestão fantasma do próprio Claude Code lida como
+      digitação* — **caiu**: rodei o classificador do próprio driver sobre os
+      dois casos capturados e ele acertou nos dois (texto todo esmaecido →
+      `empty`; texto real → `armed`). (2) *Colisão com a bancada do Pavan* —
+      **viva, mas não confirmada**: `docs/cockpit-v2-medicao/bateria-do-composer.py:192`
+      escreve `parar<rótulo><marca>: conte devagar de 1 até 300` no campo dos
+      alvos `canarinho` e `tara`, e foi esse o texto encontrado preso. Só que a
+      bancada roda **sob demanda**, não em laço — se a recusa dele caiu num
+      momento sem bancada, colisão não explica. O desempate é barato agora que
+      `delivery_attempts` está viva: na próxima recusa, cruzar o horário
+      registrado com o da última execução da bancada. Não coincidiu, a colisão
+      cai junto com a sugestão fantasma e sobram menos hipóteses.
 - [ ] **F3 · O anexo renderiza diferente em cada motor.** Na Tara: uma bolha só,
       foto em cima e legenda embaixo, dentro da mesma caixa — *"a forma como
       renderiza na Tara foi aprovada"*. No Canário: a legenda vira bolha à
@@ -131,6 +155,27 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
 - [ ] **F9 · `composer.tsx` tem ~1060 linhas**, mais de três vezes o teto de 300
       do `CLAUDE.md`. A ordem de fatiar está na §5 — da menor para a maior chance
       de estragar. Não é urgente; é o que torna tudo acima mais barato.
+
+### O rumo que a literatura aponta — e ele contraria o nosso desenho
+
+F1, F2 e F5 são o mesmo defeito visto de três ângulos: **o composer recusa**. A
+pesquisa da §8 mostra que a recusa em si é o erro de desenho, não o 409 que a
+causou — nenhuma implementação de referência desabilita o campo enquanto o
+agente trabalha; elas trocam o botão Enviar por Parar e **enfileiram**. A
+`ExternalStoreAdapter` do assistant-ui chega a separar os dois estados em campos
+diferentes (`isDisabled` × `isSendDisabled`, este último documentado como *"input
+stays usable"* — o campo continua utilizável). No repositório do Claude Code,
+perder a capacidade de digitar durante o trabalho está aberto como **regressão**.
+
+Vale registrar a armadilha que nos pegou: o *snippet* da doc do Vercel AI SDK usa
+`disabled={status !== 'ready'}`, enquanto a biblioteca de componentes da própria
+Vercel (`ai-elements`) não desabilita nada. Quem copiou o exemplo da doc herdou o
+defeito nº 4 — e o nosso desenho é exatamente esse.
+
+Consequência prática para esta lista: consertar F2 (achar por que o campo estava
+ocupado) continua valendo, mas **não é o alvo final**. O alvo é a fila do servidor
+descrita na §8, que torna a recusa desnecessária. Cada 409 que hoje vira vermelho
+deveria virar item de fila à vista. Rodada própria — não é o trabalho de hoje.
 
 ---
 
@@ -594,10 +639,34 @@ aberto justamente por isso.
 
 ## 8. Onde pesquisar
 
-- Padrões de chat, com a atualização otimista em primeiro lugar —
-  `docs/chat-patterns-research.md` §2, e `useOptimistic` do React 19
-- Double-texting e a estratégia `enqueue` —
-  [docs.langchain.com/langgraph-platform/double-texting](https://docs.langchain.com/langgraph-platform/double-texting)
+**Comece por `docs/cockpit-v2-composer-pesquisa.md`.** É o levantamento de 15/08,
+com fonte em cada recomendação — cerca de 130 referências entre doc oficial,
+código-fonte lido direto (Vercel `ai-elements`, assistant-ui, LibreChat, Open
+WebUI) e issue de repositório. Cinco frentes: (A) fila durante o trabalho do
+agente, (B) o que não pode faltar no composer, (C) catálogo de causas de
+truncamento com ordem de triagem, (D) como fazer dois motores renderizarem igual,
+(E) identidade de objeto no React 19 com dados chegando por consulta periódica.
+
+Os quatro achados que mudam decisão, para quem não for ler os dois:
+
+1. **Desabilitar o campo é anti-padrão**, com quatro provas independentes — §A.3
+   do relatório. Isso reenquadra F1, F2 e F5 (veja o fim da §2).
+2. **O problema tem nome: *double texting*** (texto duplo — usuário manda de novo
+   antes de o agente terminar) e taxonomia estabelecida de quatro estratégias,
+   sendo `enqueue` (enfileirar) o padrão da LangGraph —
+   [docs.langchain.com/langgraph-platform/double-texting](https://docs.langchain.com/langgraph-platform/double-texting).
+   *Steering* (dirigir — injetar no turno em curso) e *queueing* (enfileirar —
+   guardar para o próximo turno) são intenções **diferentes**, não uma só.
+3. **A fila tem de morar no servidor**, não no estado React do painel — §A.4. A
+   mensagem do Telegram nunca passa pelo React; com a fila no cliente, ela não
+   tem onde entrar. É a raiz do F5.
+4. **Fim de turno real ≠ próxima pausa do modelo** — §A.5. Drenar a fila na pausa
+   entre chamadas de ferramenta entrega a mensagem no meio da tarefa. Ao
+   enfileirar, carimbar a âncora: a que ponto da conversa aquele texto respondia.
+
+A recomendação fechada para este produto, em seis linhas, está em §A.10 do
+relatório. `docs/chat-patterns-research.md` continua valendo para o que é
+anterior a isto — atualização otimista e `useOptimistic` do React 19.
 - Limites de tempo de resposta (0,1 s · 1 s · 10 s) —
   [nngroup.com/articles/response-times-3-important-limits](https://www.nngroup.com/articles/response-times-3-important-limits/)
 - Parar geração como recurso de primeira classe —
