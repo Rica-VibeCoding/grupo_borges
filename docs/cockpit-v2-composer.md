@@ -67,6 +67,16 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
       **(a)** a recusa que aconteceu — item F2 abaixo; **(b)** a máquina de seis
       fases não sabe voltar de `falhou` sem gesto externo. O (b) é o que dói: ele
       bate de novo no próximo 409 de qualquer origem. **Dono: Pavan.**
+
+      **No ar desde 15/08 (`4fbc8ab`), esperando o teste dele.** O (b) está
+      feito: `agent_pane_unavailable` e `shared_turn_in_flight` esperam 1,2 s e
+      3 s antes de virar vermelho, e durante a espera a fase continua
+      `enviando` — então o que ele escrever nesses segundos vai para a fila, à
+      vista, em vez de bater num vermelho que já não vale. Provado na tela com
+      o 409 injetado (`recusa-que-passa-sozinha.py`), **os dois lados**: com
+      recusa só na primeira, 2 POSTs e nenhum "Tentar de novo"; com recusa
+      sempre, 3 POSTs e o vermelho de volta. O segundo caso é o que separa
+      consertar de esconder. O (a) segue com o Daniel, no F2.
 - [ ] **F2 · `409 agent_pane_unavailable` logo depois do parar, no motor Claude
       Code.** Sequência no `/tmp/cockpit-api.log`: `input 200` ×3 → `interromper
       200` → **`input 409`** → `interromper 200` → `input 200`. ⚠️ **Não
@@ -116,6 +126,7 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
 python3 docs/cockpit-v2-medicao/bateria-do-composer.py
 python3 docs/cockpit-v2-medicao/tela-muda-depois-do-enter.py canarinho:cc tara:codex
 python3 docs/cockpit-v2-medicao/freio-no-repouso-e-gerando.py
+python3 docs/cockpit-v2-medicao/recusa-que-passa-sozinha.py
 ```
 
 A bateria roda a tela de verdade na `:3008`, em viewport de iPhone, **nos dois
@@ -548,6 +559,22 @@ complexidade baixa, ROI alto. Foi feita e ficou na gaveta.
 
 **Bancada verde não é aprovação.** Claude Code 30/30 e o Rica achou quatro
 defeitos em cinco minutos. O que a bancada não encena, ela não reprova.
+
+**A rede de teste certa pega o defeito antes da tela — e não é a bancada.** No
+conserto do anexo, a junção do par funcionava no primeiro desenho e se desfazia
+em qualquer `update` seguinte sem mensagem nova: a fronteira do incremental é
+`previous.length - 1`, que é exatamente o meio de um par no fim da conversa. Na
+tela isso apareceria como *"a legenda sumiu sozinha depois de um tempo"* —
+sintoma que bancada de composer nenhuma encena, porque nenhuma delas fica
+olhando uma conversa parada. Quem pegou foi o oráculo de prefixo do teste de
+paridade. Bancada prova caminho; oráculo prova invariante, e os dois defeitos de
+hoje que mais custariam vieram de invariante quebrada.
+
+**Injetar a falha é legítimo quando o que está sob teste é a REAÇÃO a ela.** O
+409 do pane não reproduz por caminho nenhum conhecido, e esperar a condição real
+para provar a recuperação seria não provar nunca. O que a injeção não pode fazer
+é virar prova da causa — ela mede o composer, não o driver, e o F2 continua
+aberto justamente por isso.
 
 ---
 
