@@ -29,6 +29,7 @@ import {
   SemContexto,
   ValorDoContexto,
 } from './barra-de-contexto';
+import { Off } from './etiqueta-off';
 import { TETO_PCT } from './medidor';
 import { rotulaModelo } from './motor';
 
@@ -90,8 +91,15 @@ export function Statusline({
    *  cor continuaria lendo como medição de agora. A idade completa fica no
    *  `title` — a gaveta não repete a frase (09/08: o Rica mandou retirar o texto
    *  corrido). Sai como variável porque a grade a põe antes da barra e a gaveta
-   *  depois do número. */
-  const etiqueta = velho ? (
+   *  depois do número.
+   *
+   *  O DESLIGADO tem precedência sobre o "antigo" (15/08): quando o agente cai,
+   *  a etiqueta vira o chip OFF — o estado é a leitura certa, não a velhice do
+   *  número (que num agente deitado é sempre velha por definição). "antigo"
+   *  sobrevive só para quem está DE PÉ mostrando dado de outro run. */
+  const etiqueta = agente.status === 'offline' ? (
+    <Off />
+  ) : velho ? (
     <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
       antigo
     </span>

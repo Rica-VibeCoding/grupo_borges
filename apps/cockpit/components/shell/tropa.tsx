@@ -110,6 +110,7 @@ import {
   ValorDoContexto,
 } from './barra-de-contexto';
 import { estadoDe } from './estado';
+import { Off } from './etiqueta-off';
 import { TETO_PCT } from './medidor';
 import { Retrato } from './retrato';
 import { Statusline } from './statusline';
@@ -395,17 +396,17 @@ function LinhaDormindo({
                 : `contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`
             }
           >
-            {/* Mesma etiqueta da statusline viva, pelo mesmo motivo: aqui o
-                número já é de quem dormiu, e sem a palavra ninguém separa "o
-                que ele tinha ao fechar" de "o que outro run tinha antes".
-                Vem ANTES do número, como na grade dos vivos: depois dele, a
-                palavra empurrava o valor para dentro da linha e a Tara era a
+            {/* O chip OFF no lugar do "antigo" (15/08): o número desta linha é
+                sempre de sessão morta, então "antigo" não distingue nada —
+                dizia a velhice como se fosse exceção, e o Rica leu o rótulo
+                num agente recém-desligado como se a leitura de agora estivesse
+                atrasada. Quem está nesta linha está DESLIGADO por definição:
+                a palavra é o estado. A origem do número (fechou assim ou
+                veio de run antigo) continua no `title` do contêiner acima.
+                Vem ANTES do número, como a etiqueta de sempre: depois dele, o
+                chip empurrava o valor para dentro da linha e a Tara era a
                 única a sair da coluna — 69px à esquerda de todo mundo. */}
-            {agente.context_stale ? (
-              <span className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
-                antigo
-              </span>
-            ) : null}
+            <Off />
             {/* Na coluna de 260px a barra sai e fica o número. Somados, barra +
                 percentual + a palavra "antigo" comiam 142 dos 188px úteis da
                 linha e sobrava "Tar…" no lugar de "Tara Kaur". Entre desenhar a
