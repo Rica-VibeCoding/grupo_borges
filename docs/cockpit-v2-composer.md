@@ -819,22 +819,41 @@ o número: `drenando` cobre só o intervalo entre pegar o item e o POST ser acei
 30 s é folga larga. Se um dia `drenando` passar a cobrir o eco, este número muda
 junto.
 
-⚠️ **A correlação acima não tem por onde acontecer hoje — é pré-requisito, não
-detalhe.** O `client_request_id` morre no caminho, e eu conferi os três pontos:
-`postAgentInput` (`packages/cockpit-core/src/api.ts:316`) gera o UUID **dentro da
-própria função**, então nem o chamador o conhece; na API ele existe só como campo
-de validação (`agents.py:2433`), não é gravado nem devolvido; e a mensagem que
-aparece no feed vem do **JSONL do próprio agente**, que nunca soube do id — o
-texto é colado no tmux como texto puro. Duas saídas:
+⚠️ **Por que o casamento é por conteúdo, e não por id — a razão, não só a
+decisão.** Eu propus fazer o `client_request_id` viajar até o feed. Não dá, e o
+motivo é estrutural: **nenhum id atravessa o tmux.** A API cola **texto puro** num
+terminal; o agente não recebe envelope com metadado, recebe caracteres, e o que
+ele grava no JSONL é o que leu. Não existe campo onde um id pudesse reaparecer —
+construir o trilho não conserta, porque não há trilho a construir. Conferido dos
+dois lados: `postAgentInput` (`packages/cockpit-core/src/api.ts:316`) gera o UUID
+dentro da própria função e ninguém mais o vê; na API o `idempotency_key` só existe
+no mundo de handoff/task (`store.py:1643-1785`), nada ligado ao `/input`; e o feed
+é o JSONL, via `jsonl_watcher`.
 
-- **(a) Fazer o id viajar de verdade.** `postAgentInput` passa a aceitá-lo de
-  fora, a API o grava junto do evento de entrega e o devolve no polling. É o certo,
-  e é trabalho no lado do servidor — não dá para eu resolver sozinho no painel.
-- **(b) Reusar o que já existe.** `lib/codex/eco-pendente.ts` **já resolve este
-  mesmo casamento**, um nível abaixo: casa a bolha otimista com o eco real por
-  `texto.trim()`, com prazo de vida por motor (12 s medidos no Codex, 3 min de
-  folga). Barato, de pé, e com a limitação conhecida — duas mensagens idênticas
-  na mesma sessão são indistinguíveis, e o Rica manda "ok" repetido com
-  frequência.
+**Escopo honesto de cada peça, então:**
 
-Recomendo (a) se a frente abrir, com (b) como ponte enquanto o campo não existe.
+- `client_request_id` serve para **dedupe de retentativa** e para o painel saber
+  qual item é qual. **Não** serve para saber que a mensagem chegou ao feed. Fica
+  no contrato — o `/input` passa a aceitá-lo de fora e o polling o devolve.
+- **Fila ↔ feed: só por conteúdo.** Não há outra.
+
+**E o casamento por conteúdo é do servidor, não do painel** (Pavan). A limitação
+do `eco-pendente` — dois "ok" seguidos são indistinguíveis — é real **no painel**,
+que só vê texto. No servidor não é: ele tem o instante exato e a **ordem** de cada
+entrega. Fila sequencial e entregas sequenciais ⇒ o casamento é posicional — a
+n-ésima ocorrência daquele texto no JSONL depois da n-ésima entrega é a certa, e
+os dois "ok" deixam de competir porque cada um casa com a sua vez. Não é esperteza
+de desenho: é informação que só existe de um lado. O `eco-pendente` fica onde
+está, fazendo bem o que faz um nível abaixo — não vira base da fila.
+
+⚠️ **O caso que isso ainda não cobre, e é justo o que motivou a fila: mensagem de
+canal não aparece no JSONL como o texto que a pessoa escreveu.** Ela chega
+embrulhada — `<channel source="telegram" …>texto</channel>` — e é por isso que
+existe `components/feed/envelope-de-canal.ts`. Um item com `origem: telegram` e
+`texto: "olha essa foto"` comparado cru contra a linha do JSONL **nunca** casa:
+ficaria pendurado até o teto de 5 minutos, sempre, e justamente os itens do
+Telegram. O casamento tem de rodar contra o texto **extraído** do envelope. Isso
+põe a mesma gramática em dois lugares — o parser em TypeScript no painel e a
+extração em Python no servidor — e duas gramáticas do mesmo formato divergem com
+o tempo. Se a frente abrir, decidir na entrada quem é dono dela; o candidato
+natural é o servidor entregar o texto já extraído, e o painel parar de desembrulhar.
