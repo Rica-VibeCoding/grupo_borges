@@ -18,7 +18,7 @@ export type EnvelopeDeCanal = {
   /** O que a pessoa realmente escreveu — é isto que vai pra bolha. */
   texto: string;
   /** Anexo declarado no envelope, quando há. */
-  anexo?: { tipo: string; nome?: string; mime?: string };
+  anexo?: { tipo: string; nome?: string; mime?: string; caminho?: string };
 };
 
 const ENVELOPE_RE = /<channel\s+([^>]*)>([\s\S]*?)<\/channel>/;
@@ -34,7 +34,13 @@ export function leEnvelopeDeCanal(raw: string): EnvelopeDeCanal | null {
   const origem = attrs.source;
   if (!origem) return null;
 
-  const tipo = attrs.attachment_kind ?? tipoPeloMime(attrs.attachment_mime);
+  // Foto do Telegram vem em `image_path`; os demais anexos, em
+  // `attachment_path`. Sem ler nenhum dos dois, o feed desenhava o corpo da
+  // mensagem — a palavra literal `(photo)` — e a imagem não aparecia em lugar
+  // nenhum (print do Rica, 15/08). A rota que serve esse caminho já existia na
+  // API desde o v1: `GET /api/agents/{slug}/channel-attachment`.
+  const caminho = attrs.image_path || attrs.attachment_path;
+  const tipo = attrs.attachment_kind ?? tipoPeloMime(attrs.attachment_mime) ?? (attrs.image_path ? 'image' : undefined);
 
   return {
     origem,
@@ -46,6 +52,7 @@ export function leEnvelopeDeCanal(raw: string): EnvelopeDeCanal | null {
             tipo,
             ...(attrs.attachment_name ? { nome: attrs.attachment_name } : {}),
             ...(attrs.attachment_mime ? { mime: attrs.attachment_mime } : {}),
+            ...(caminho ? { caminho } : {}),
           },
         }
       : {}),

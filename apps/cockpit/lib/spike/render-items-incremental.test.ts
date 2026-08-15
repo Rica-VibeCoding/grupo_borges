@@ -4,11 +4,13 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 import {
   buildRenderItems,
   coalesceSidechainGroups,
 } from '@grupo_borges/cockpit-core/render-items';
 
+import { juntaMetadesDoAnexo } from '../../components/feed/anexo-imagem.ts';
 import { agrupaFerramentas } from '../../components/feed/grupo-ferramentas.ts';
 import { temConteudoVisivel } from './conteudo-visivel.ts';
 import {
@@ -24,11 +26,35 @@ const fixtures: Fixture[] = readdirSync(FIXTURE_DIR)
   .map((file) => JSON.parse(readFileSync(join(FIXTURE_DIR, file), 'utf8')) as Fixture);
 
 // O pipeline de produto inteiro, na ordem: o que não tem conteúdo não desenha
-// (temConteudoVisivel), sidechains agrupam, linhas de trabalho agrupam (§7).
+// (temConteudoVisivel), as duas metades do anexo picado remontam, sidechains
+// agrupam, linhas de trabalho agrupam (§7).
 // O incremental tem de ser idêntico a isto em CADA prefixo — é a régua do teste.
+//
+// A remontagem é reescrita aqui de propósito, e não importada do incremental:
+// régua que chama a implementação que ela mede não mede nada. O que as duas
+// compartilham é só a gramática do envelope (`juntaMetadesDoAnexo`), que tem
+// teste próprio em `components/feed/anexo-imagem.test.ts`.
+function juntaAnexos(itens: readonly RenderItem[]): RenderItem[] {
+  const saida: RenderItem[] = [];
+  for (let i = 0; i < itens.length; i++) {
+    const atual = itens[i];
+    const proximo = itens[i + 1];
+    if (atual.kind === 'user' && proximo?.kind === 'user') {
+      const inteiro = juntaMetadesDoAnexo(atual.text, proximo.text);
+      if (inteiro !== null) {
+        saida.push({ ...atual, text: inteiro });
+        i++;
+        continue;
+      }
+    }
+    saida.push(atual);
+  }
+  return saida;
+}
+
 function full(messages: readonly MessagePayload[]) {
   return agrupaFerramentas(
-    coalesceSidechainGroups(buildRenderItems([...messages]).filter(temConteudoVisivel)),
+    coalesceSidechainGroups(juntaAnexos(buildRenderItems([...messages]).filter(temConteudoVisivel))),
   );
 }
 
@@ -123,6 +149,45 @@ test('fila e eco: o rewind mantém a paridade com o rebuild em cada prefixo', ()
   const bolhas = incremental.update(messages).filter((item) => item.kind === 'user');
   assert.equal(bolhas.length, 1);
   assert.equal(bolhas[0].kind === 'user' && bolhas[0].enfileirada, undefined);
+});
+
+// Print do Rica em 15/08, canário: a legenda saiu num balão e a foto caiu
+// solta embaixo, enquanto a Tara desenhava um cartão só. As duas metades
+// chegam em mensagens SEPARADAS, então a borda da cauda pode cair no meio do
+// par — por isso a paridade é medida em cada prefixo, não só no fim.
+test('anexo picado: as duas metades viram um cartão só, em qualquer prefixo', () => {
+  const trabalho = fixtures.find((fixture) => fixture.evento.kind === 'assistant' && !fixture.evento.is_sidechain);
+  assert.ok(trabalho);
+  const caminho =
+    '/home/clawd/repos/grupo_borges/apps/api/uploads/agents/canarinho/1786819169359-c0919295ee39.jpg';
+  const legenda = {
+    ...trabalho.evento,
+    id: 7_200_001,
+    kind: 'user',
+    uuid: 'metade-legenda',
+    message: { role: 'user', content: '[Image #1]Caption: Teste, apenas "oi"' },
+  } as unknown as MessagePayload;
+  const origem = {
+    ...trabalho.evento,
+    id: 7_200_002,
+    kind: 'user',
+    uuid: 'metade-caminho',
+    message: { role: 'user', content: `[Image: source: ${caminho}]` },
+  } as unknown as MessagePayload;
+
+  const messages = [legenda, origem];
+  const incremental = createIncrementalRenderItems();
+  for (let length = 1; length <= messages.length; length++) {
+    const prefix = messages.slice(0, length);
+    assert.deepEqual(incremental.update(prefix), full(prefix), `divergência no prefixo ${length}`);
+  }
+
+  // A régua do produto: um item só, e com as duas coisas dentro dele.
+  const itens = incremental.update(messages).filter((item) => item.kind === 'user');
+  assert.equal(itens.length, 1);
+  const texto = itens[0].kind === 'user' ? itens[0].text : '';
+  assert.match(texto, /1786819169359-c0919295ee39\.jpg/);
+  assert.match(texto, /Teste, apenas "oi"/);
 });
 
 // O caminho que o canário mostrou ao vivo em 07/08: a fila drenou DENTRO do

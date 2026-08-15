@@ -12,9 +12,12 @@ import { urlDoAnexoImagem } from './anexo-imagem';
 export function AnexoImagemView({
   anexo,
   agentSlug,
+  procedencia,
 }: {
   anexo: AnexoComFoto;
   agentSlug: string;
+  /** De onde a mensagem veio, quando não foi daqui (`telegram · Ricardo`). */
+  procedencia?: string;
 }) {
   // O sweep de retenção (apps/api/orchestrator/uploads_sweeper.py) apaga
   // upload velho do disco; o evento no feed continua existindo. Sem isso o
@@ -44,9 +47,24 @@ export function AnexoImagemView({
       className="min-w-0 self-end overflow-hidden rounded-[var(--ck-radius-caixa)]"
       style={{
         width: 'min(66vw, calc(var(--ck-read-wide) / 3))',
-        background: anexo.legenda || expirado ? 'var(--ck-surface-raised)' : undefined,
+        background:
+          anexo.legenda || procedencia || expirado ? 'var(--ck-surface-raised)' : undefined,
       }}
     >
+      {procedencia ? (
+        <div
+          style={{
+            padding: 'var(--ck-space-3) var(--ck-space-3) 0',
+            color: 'var(--ck-text-secondary)',
+            fontSize: 'var(--ck-text-xs)',
+            letterSpacing: 'var(--ck-track-overline)',
+            textTransform: 'uppercase',
+          }}
+        >
+          {procedencia}
+        </div>
+      ) : null}
+
       {expirado ? (
         <div
           style={{

@@ -59,3 +59,33 @@ test('leEnvelopeDeCanal — texto que não é envelope devolve null, não meio-p
   assert.equal(leEnvelopeDeCanal('mensagem normal do Rica'), null);
   assert.equal(leEnvelopeDeCanal('<channel sem source>oi</channel>'), null);
 });
+
+// O print do Rica de 15/08: a foto que ele mandou do celular virava a palavra
+// literal `(photo)` no feed, porque ninguém lia o `image_path` do envelope.
+test('leEnvelopeDeCanal — foto do Telegram traz o caminho e o tipo imagem', () => {
+  const e = leEnvelopeDeCanal(
+    '<channel source="plugin:telegram:telegram" user="Ricardo_nBorges"'
+      + ' image_path="/home/clawd/.claude/channels/telegram/inbox/1786819933379-AQADeAxr.jpg">'
+      + '(photo)</channel>',
+  );
+  assert.equal(e?.anexo?.tipo, 'image');
+  assert.equal(
+    e?.anexo?.caminho,
+    '/home/clawd/.claude/channels/telegram/inbox/1786819933379-AQADeAxr.jpg',
+  );
+});
+
+test('leEnvelopeDeCanal — anexo do WhatsApp traz o caminho pelo attachment_path', () => {
+  const e = leEnvelopeDeCanal(
+    '<channel source="whatsapp" attachment_kind="image"'
+      + ' attachment_path="/home/clawd/.claude/channels/whatsapp/inbox/foto.png">olha</channel>',
+  );
+  assert.equal(e?.anexo?.caminho, '/home/clawd/.claude/channels/whatsapp/inbox/foto.png');
+});
+
+test('leEnvelopeDeCanal — envelope sem caminho não ganha campo vazio', () => {
+  const e = leEnvelopeDeCanal(
+    '<channel source="telegram" attachment_kind="audio">manda status</channel>',
+  );
+  assert.equal(e?.anexo?.caminho, undefined);
+});

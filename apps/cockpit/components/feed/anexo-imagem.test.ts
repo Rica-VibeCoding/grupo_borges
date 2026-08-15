@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { leAnexoImagem, urlDoAnexoImagem } from './anexo-imagem.ts';
+import { juntaMetadesDoAnexo, leAnexoImagem, urlDoAnexoImagem } from './anexo-imagem.ts';
+
+const CAMINHO = '/home/clawd/repos/grupo_borges/apps/api/uploads/agents/canarinho/1786819169359-c0919295ee39.jpg';
 
 describe('imagem enviada pelo cockpit — envelope para apresentação', () => {
   it('extrai o nome gravado e preserva a legenda inteira', () => {
@@ -138,6 +140,60 @@ describe('imagem enviada pelo cockpit — envelope para apresentação', () => {
     assert.equal(
       urlDoAnexoImagem('tara', 'data:image/png;base64,iVBORw0KGgo='),
       'data:image/png;base64,iVBORw0KGgo=',
+    );
+  });
+});
+
+describe('as duas metades do envelope picado pelo CC', () => {
+  it('remontadas viram UM envelope, com foto e legenda no mesmo cartão', () => {
+    const inteiro = juntaMetadesDoAnexo(
+      '[Image #1]Caption: Teste, apenas "oi"',
+      `[Image: source: ${CAMINHO}]`,
+    );
+
+    assert.notEqual(inteiro, null);
+    assert.deepEqual(leAnexoImagem(inteiro as string), {
+      filename: '1786819169359-c0919295ee39.jpg',
+      legenda: 'Teste, apenas "oi"',
+    });
+  });
+
+  it('metade de legenda sem `Caption:` também remonta — o CC come o rótulo às vezes', () => {
+    const inteiro = juntaMetadesDoAnexo('[Image #2]olha o rodapé', `[Image: source: ${CAMINHO}]`);
+
+    assert.equal(leAnexoImagem(inteiro as string)?.legenda, 'olha o rodapé');
+  });
+
+  it('não junta duas falas comuns — o par tem de ser legenda-sozinha e caminho-sozinho', () => {
+    assert.equal(juntaMetadesDoAnexo('primeira frase', 'segunda frase'), null);
+    assert.equal(juntaMetadesDoAnexo('[Image #1]Caption: legenda', 'segunda frase'), null);
+    assert.equal(juntaMetadesDoAnexo('frase comum', `[Image: source: ${CAMINHO}]`), null);
+  });
+
+  it('caminho fora de uploads/ não vira cartão — não existe rota que o sirva', () => {
+    assert.equal(
+      juntaMetadesDoAnexo('[Image #1]Caption: legenda', '[Image: source: /tmp/qualquer.png]'),
+      null,
+    );
+  });
+
+  it('a fala do Rica que só MENCIONA um caminho continua sendo fala dele', () => {
+    assert.equal(juntaMetadesDoAnexo('[Image #1]Caption: x', `olha este arquivo ${CAMINHO}`), null);
+  });
+});
+
+describe('foto que chegou por canal', () => {
+  it('vai pela rota de anexo de canal, não pela de upload', () => {
+    assert.equal(
+      urlDoAnexoImagem('daniel', '/home/clawd/.claude/channels/telegram/inbox/foto.jpg'),
+      '/api/agents/daniel/channel-attachment?path=%2Fhome%2Fclawd%2F.claude%2Fchannels%2Ftelegram%2Finbox%2Ffoto.jpg',
+    );
+  });
+
+  it('upload comum continua na rota de arquivo do agente', () => {
+    assert.equal(
+      urlDoAnexoImagem('daniel', '1786819169359-c0919295ee39.jpg'),
+      '/api/agents/daniel/file/1786819169359-c0919295ee39.jpg',
     );
   });
 });

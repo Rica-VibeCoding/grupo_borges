@@ -82,10 +82,43 @@ export function leAnexoImagem(texto: string): AnexoImagem | null {
   return { filename, legenda: legenda[1]?.trim() || null };
 }
 
+/**
+ * Remonta as duas metades do envelope picado numa mensagem só.
+ *
+ * Sem isso, o CC desenha o mesmo gesto em duas bolhas — a legenda num balão à
+ * direita e a foto solta embaixo — enquanto a Tara, que manda o envelope
+ * inteiro, desenha um cartão só. O Rica testou os dois lado a lado em 15/08:
+ * *"já não existe um padrão, a forma com renderiza na tara, com a mansagem em
+ * baixo foi aprovada"*. Esta função é o que faz o ramo do CC chegar lá.
+ *
+ * Devolve o envelope canônico (o mesmo que a fila entrega inteiro), para o
+ * resto do caminho não precisar saber que houve remendo. `null` quando o par
+ * não é legenda-sozinha seguida de caminho-sozinho — qualquer outra dupla de
+ * mensagens continua sendo duas mensagens.
+ */
+export function juntaMetadesDoAnexo(legendaCrua: string, caminhoCru: string): string | null {
+  const legenda = leAnexoImagem(legendaCrua);
+  if (!legenda || legenda.filename || !legenda.legenda) return null;
+
+  // O caminho tem de vir da linha de origem, não de um texto que só termina
+  // num caminho: `MARCADOR_DE_ORIGEM` exige a linha inteira.
+  const caminho = caminhoCru.trim().match(MARCADOR_DE_ORIGEM)?.[1];
+  if (!caminho || !CAMINHO_DO_UPLOAD.test(caminho)) return null;
+
+  return `Imagem enviada via cockpit:\n${caminho}\nCaption: ${legenda.legenda}`;
+}
+
+/** Foto que chegou por canal (Telegram/WhatsApp): o arquivo mora no inbox do
+ *  canal, fora de `uploads/`, e quem o serve é outra rota. */
+const CAMINHO_DE_CANAL = /^\/home\/[^/]+\/\.claude\/channels\//;
+
 export function urlDoAnexoImagem(agentSlug: string, filename: string): string {
   // A URL embutida já é a imagem — não existe rota de arquivo pra montar em
   // cima dela, e `encodeURIComponent` destruiria o `data:` codificando as
   // barras e o `+`/`=` do base64.
   if (URL_DE_IMAGEM_EMBUTIDA.test(filename)) return filename;
+  if (CAMINHO_DE_CANAL.test(filename)) {
+    return `/api/agents/${encodeURIComponent(agentSlug)}/channel-attachment?path=${encodeURIComponent(filename)}`;
+  }
   return `/api/agents/${encodeURIComponent(agentSlug)}/file/${encodeURIComponent(filename)}`;
 }

@@ -7,6 +7,7 @@ import {
   resolucaoDaFila,
 } from '@grupo_borges/cockpit-core/render-items';
 
+import { juntaMetadesDoAnexo } from '../../components/feed/anexo-imagem.ts';
 import {
   agrupaFerramentas,
   ehLinhaDeTrabalho,
@@ -91,6 +92,22 @@ function rewindAcrossCoalescedRun(entries: readonly RawEntry[], boundary: number
   while (index > 0 && entries[index - 1].end >= boundary) index--;
   while (index > 0 && entries[index - 1].item.kind === 'sidechain-group') index--;
   return index < entries.length ? Math.min(boundary, entries[index].start) : boundary;
+}
+
+// A metade com o caminho da imagem só vira cartão ao lado da metade com a
+// legenda. Se a fronteira cai ENTRE as duas, a cauda reprocessada enxerga só o
+// caminho, a legenda fica presa na parte estável e o par se desfaz na tela —
+// acontece em qualquer `update` que não traga mensagem nova, porque a
+// fronteira vira `previous.length - 1`, exatamente o meio de um par no fim da
+// conversa. Trazer a fronteira para a primeira metade mantém as duas na janela.
+function rewindAtravesDoAnexoPicado(entries: readonly RawEntry[], boundary: number): number {
+  if (boundary <= 0) return boundary;
+  const primeira = entries.find((entry) => entry.start === boundary - 1);
+  const segunda = entries.find((entry) => entry.start === boundary);
+  if (primeira?.item.kind !== 'user' || segunda?.item.kind !== 'user') return boundary;
+  return juntaMetadesDoAnexo(primeira.item.text, segunda.item.text) === null
+    ? boundary
+    : primeira.start;
 }
 
 function rewindAcrossClassifierConsumption(entries: readonly RawEntry[], boundary: number): number {
@@ -189,6 +206,24 @@ function coalesceEntries(entries: readonly RawEntry[]): OutputEntry[] {
   let index = 0;
   while (index < entries.length) {
     const entry = entries[index];
+    // O CC pica o envelope da imagem em DUAS mensagens (a legenda numa, o
+    // caminho na outra) e o feed desenhava as duas: balão de texto em cima,
+    // foto solta embaixo. Remontadas aqui, viram o cartão único da Tara —
+    // forma aprovada pelo Rica em 15/08. A posição é a da primeira metade,
+    // que é onde a fala dele entrou na conversa.
+    const proxima = entries[index + 1];
+    if (entry.item.kind === 'user' && proxima?.item.kind === 'user') {
+      const inteiro = juntaMetadesDoAnexo(entry.item.text, proxima.item.text);
+      if (inteiro !== null) {
+        output.push({
+          item: { ...entry.item, text: inteiro },
+          start: Math.min(entry.start, proxima.start),
+          end: Math.max(entry.end, proxima.end),
+        });
+        index += 2;
+        continue;
+      }
+    }
     // Duas famílias agrupam (§7): runs de sidechain viram cluster, runs de
     // linha de trabalho viram grupo de ferramentas. Uma run é sempre de UMA
     // família, então uma passagem basta — equivale a aplicar os dois
@@ -270,6 +305,7 @@ export function createIncrementalRenderItems(): {
           boundary = rewindForQueuedEcho(messages, boundary);
         }
         boundary = rewindAcrossClassifierConsumption(rawEntries, boundary);
+        boundary = rewindAtravesDoAnexoPicado(rawEntries, boundary);
         boundary = rewindAcrossCoalescedRun(rawEntries, boundary);
         if (sidechainMayChange || messages.slice(boundary).some((message) => message.is_sidechain)) {
           boundary = rewindToWholeSidechainGroups(messages, boundary);

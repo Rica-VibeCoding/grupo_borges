@@ -303,6 +303,20 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       // caminho não existe no v2 e prometer um vídeo que não toca é pior.
       const envelope = leEnvelopeDeCanal(item.raw);
       if (!envelope) return <LinhaSeca rotulo="canal" corpo={item.raw} />;
+      // Foto que ele mandou de fora: mesmo cartão do anexo daqui — imagem em
+      // cima, o que ele escreveu embaixo. É a forma que ele aprovou em 15/08,
+      // olhando o chat da Tara. `(photo)` é o corpo que o plugin escreve
+      // quando a mensagem é só a imagem: legenda dele, não é.
+      if (envelope.anexo?.caminho && envelope.anexo.tipo === 'image' && agentSlug) {
+        const legenda = envelope.texto === '(photo)' ? null : envelope.texto || null;
+        return (
+          <AnexoImagemView
+            anexo={{ filename: envelope.anexo.caminho, legenda }}
+            agentSlug={agentSlug}
+            procedencia={procedencia(envelope)}
+          />
+        );
+      }
       return (
         <div
           className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
