@@ -164,6 +164,27 @@ test('rejeição HTTP do POST é falha real, e ali a tela afirma que não saiu',
   assert.match(aparenciaDe(fase, 'Tara').frase ?? '', /não saiu/i);
 });
 
+test('409 incerto preserva a pendência e não afirma que a mensagem falhou', async () => {
+  const erro = Object.assign(new Error('envio_nao_confirmado'), {
+    status: 409,
+    deliveryOutcome: 'uncertain',
+    safeToResend: false,
+  });
+  let pendenciasDesfeitas = 0;
+  const controle = createControleEnvio('tara', {
+    postar: async () => {
+      throw erro;
+    },
+  });
+
+  await controle.enviar('faz isso', () => {
+    pendenciasDesfeitas += 1;
+  });
+
+  assert.equal(controle.getEstado().fase, 'nao-confirmado');
+  assert.equal(pendenciasDesfeitas, 0);
+});
+
 // `tmux_delivered: false` é ausência de prova, não erro: o `send_message` só
 // devolve `true` com prova observável no pane, e pane em turno ativo não mostra
 // essa prova embora o texto entre na fila. Mandar isso pra `falhou` era pior
@@ -228,6 +249,33 @@ test('mandar de novo só atua em não confirmado e preserva a proteção de text
   assert.equal(controle.getEstado().fase, 'aceito');
   fonte.instancias[1]!.emitirMensagem(13, 'user', 'ok');
   assert.equal(controle.getEstado().fase, 'confirmado');
+});
+
+test('falha HTTP do reenvio desfaz a pendência otimista', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  let chamadas = 0;
+  let pendenciasDesfeitas = 0;
+  const controle = createControleEnvio('tara', {
+    postar: async () => {
+      chamadas += 1;
+      if (chamadas === 1) return resposta(10);
+      throw Object.assign(new Error('agent_pane_unavailable'), { status: 409 });
+    },
+    FonteEventos: fonte.FonteEventos,
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('ok');
+  relogio.avancar(PRAZO_ECO_MS);
+  await controle.reenviar(() => {
+    pendenciasDesfeitas += 1;
+  });
+
+  assert.equal(controle.getEstado().fase, 'falhou');
+  assert.equal(pendenciasDesfeitas, 1);
 });
 
 test('dispose fecha fonte, mata timers e ignora POST que termina depois', async () => {

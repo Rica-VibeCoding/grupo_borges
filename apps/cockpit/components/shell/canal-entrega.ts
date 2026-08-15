@@ -65,11 +65,14 @@ export function leCanalBloqueado(painel: unknown): CanalBloqueado | null {
 
   const janela = canal as {
     estado?: unknown;
+    outcome?: unknown;
+    safe_to_resend?: unknown;
     mensagem?: unknown;
     recusas_consecutivas?: unknown;
     bloqueado_ha_segundos?: unknown;
   };
   if (janela.estado !== 'bloqueado') return null;
+  if (janela.outcome !== 'refused' || janela.safe_to_resend !== true) return null;
   // Sem mensagem não há o que dizer de melhor que a frase genérica, e um
   // bloqueio mudo na tela seria pior que a dúvida honesta que ele substituiria.
   if (typeof janela.mensagem !== 'string' || janela.mensagem.trim() === '') return null;

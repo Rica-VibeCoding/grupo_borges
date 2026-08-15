@@ -213,6 +213,8 @@ class AgentPainelSubagents(BaseModel):
 class AgentPainelCanalEntrega(BaseModel):
     estado: Literal["entregando", "bloqueado", "sem_dados"]
     entregando: bool | None
+    outcome: Literal["delivered", "refused", "uncertain"] | None
+    safe_to_resend: bool
     motivo: str | None = None
     mensagem: str
     recusas_consecutivas: int
@@ -408,17 +410,17 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     return agent
 
 
-async def _send_tmux_or_409(session_name: str, text: str) -> bool:
-    """Envia ao pane ou distingue contenção transitória de pane indisponível.
-
-    Reduz o resultado a bool porque o contrato HTTP destes endpoints é bool. O
-    motivo e o desfecho (recusado × incerto) ficam no log do canal e em
-    ``get_delivery_channel_state``; enriquecer a resposta é outro commit.
-    """
+async def _send_tmux_result_or_409(
+    session_name: str, text: str
+) -> tmux_driver.DeliveryResult:
     try:
-        return (await tmux_driver.send_message(session_name, text)).delivered
+        return await tmux_driver.send_message(session_name, text)
     except tmux_driver.TmuxSessionBusyError as exc:
         raise HTTPException(status_code=409, detail="agent_tmux_busy") from exc
+
+
+async def _send_tmux_or_409(session_name: str, text: str) -> bool:
+    return (await _send_tmux_result_or_409(session_name, text)).delivered
 
 
 async def _build_painel_vida(agent: dict[str, Any]) -> AgentPainelVida:
@@ -2870,9 +2872,17 @@ async def send_agent_input(
             fresh=payload.fresh,
         )
     else:
-        delivered = await _send_tmux_or_409(agent["tmux_session"], payload.text)
-        if not delivered:
-            raise HTTPException(status_code=409, detail="agent_pane_unavailable")
+        result = await _send_tmux_result_or_409(agent["tmux_session"], payload.text)
+        if not result.delivered:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "agent_pane_unavailable",
+                    "delivery_outcome": result.outcome,
+                    "reason": result.reason,
+                    "safe_to_resend": result.safe_to_resend,
+                },
+            )
 
     return InputResponse(
         tmux_delivered=True,

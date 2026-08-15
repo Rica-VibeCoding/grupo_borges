@@ -17,9 +17,12 @@
  */
 import type { FaseEnvio } from '../../lib/envio.ts';
 
+export const LIMITE_TEXTO_ENVIO = 8192;
+
 export type MotivoRecusa =
   /** Não há gesto: nem texto escrito, nem arquivo anexado. */
   | 'vazio'
+  | 'texto-longo'
   /** O `/compact` está em voo e uma mensagem agora corta o resumo ao meio. */
   | 'compactando'
   /** A mensagem anterior ainda não foi confirmada pelo eco. */
@@ -52,6 +55,8 @@ export type PortaDeEnvio =
  */
 const RECADO_ANEXO_EM_VOO =
   'o arquivo anterior ainda está subindo — sua mensagem continua aqui';
+const RECADO_TEXTO_LONGO =
+  'a mensagem passou de 8.192 caracteres — reduza o texto antes de enviar';
 
 /**
  * O compact com ARQUIVO na mão. O texto puro vai para a fila e sai sozinho (ver
@@ -65,7 +70,7 @@ const RECADO_COMPACT_COM_ANEXO =
 
 const RECADO: Record<
   'texto' | 'voz',
-  Record<Exclude<MotivoRecusa, 'vazio' | 'anexo-em-voo'>, string>
+  Record<Exclude<MotivoRecusa, 'vazio' | 'texto-longo' | 'anexo-em-voo'>, string>
 > = {
   texto: {
     compactando: 'compactando — sua mensagem continua aqui e sai quando a barra sumir',
@@ -78,6 +83,15 @@ const RECADO: Record<
       'a mensagem anterior ainda não voltou confirmada — o áudio não foi enviado',
   },
 };
+
+function excedeLimite(texto: string): boolean {
+  let tamanho = 0;
+  for (const _caractere of texto) {
+    tamanho += 1;
+    if (tamanho > LIMITE_TEXTO_ENVIO) return true;
+  }
+  return false;
+}
 
 /**
  * `texto` ausente é o caminho da VOZ: ali o texto só existe depois do STT, e
@@ -102,6 +116,13 @@ export function abrePorta(entrada: {
   // 05/08 renascendo da invariante que o matou.
   if (entrada.texto !== undefined && !entrada.texto.trim() && !entrada.temAnexo) {
     return { libera: false, motivo: 'vazio', recado: null };
+  }
+  if (
+    entrada.texto !== undefined &&
+    !entrada.temAnexo &&
+    excedeLimite(entrada.texto)
+  ) {
+    return { libera: false, motivo: 'texto-longo', recado: RECADO_TEXTO_LONGO };
   }
   if (entrada.compactando) {
     return { libera: false, motivo: 'compactando', recado: recado.compactando };

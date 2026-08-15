@@ -85,6 +85,13 @@ import {
   IconeReenviar,
 } from './icones';
 import { usaCanalEntrega } from './usa-canal-entrega';
+import {
+  deveEnviarPorEnter,
+  deveIniciarCompact,
+  envioVeioDaFila,
+  textoDepoisDaEntregaDoAnexo,
+} from './regras-do-composer';
+import { usaRascunho } from './rascunho';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -101,11 +108,6 @@ const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.Reac
   'tentar-de-novo': IconeReenviar,
   destravar: IconeCadeado,
 };
-
-/** O `/compact` com argumentos (`/compact foca no deploy`) também é compact —
- *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
- *  frase. */
-const COMPACT_RE = /^\s*\/compact(?:\s|$)/;
 
 /** Comandos da TARA no composer — mesmo vocabulário do CC. `clear`/`/clear`
  *  apaga a conversa da UI e arma uma thread nova (o botão "Nova conversa" da
@@ -145,7 +147,7 @@ export function Composer({
   motor,
   esforcoCobrePedido,
 }: ComposerProps) {
-  const [texto, setTexto] = useState('');
+  const [texto, setTexto] = usaRascunho(agentSlug);
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
@@ -253,7 +255,11 @@ export function Composer({
     agentSlug,
     fase === 'nao-confirmado' || fase === 'falhou',
   );
-  const aparencia = aparenciaDe(fase, agentName, { canalBloqueado, destravaFalhou });
+  const aparencia = aparenciaDe(fase, agentName, {
+    canalBloqueado,
+    destravaFalhou,
+    emFila: envioVeioDaFila(envio.estado),
+  });
   // Na Tara o `aceito`/`enviando` confirmam pelo eco do rollout (~12 s); o CC
   // confirma em ms pelo stream. O filete azul do progresso é o "input azul
   // direto" que o Rica apontou em 10/08 — na Tara ele fica aceso o tempo do
@@ -409,7 +415,7 @@ export function Composer({
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
       if (await anexo.enviar(corpo)) {
-        setTexto('');
+        setTexto((atual) => textoDepoisDaEntregaDoAnexo(atual, corpo));
       } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
         // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então
@@ -422,7 +428,7 @@ export function Composer({
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
     // barra precisa nascer com o clique, não com o 200.
-    if (COMPACT_RE.test(corpo)) {
+    if (deveIniciarCompact(corpo, ehCodex)) {
       compactPendenteRef.current = true;
       iniciarCompact();
     }
@@ -527,7 +533,14 @@ export function Composer({
     // anterior pode ter sido entregue e conta o eco ambíguo em vez de confirmar
     // o reenvio com o eco do primeiro. `falhou` é reenvio comum.
     if (fase === 'nao-confirmado') {
-      void envio.reenviar();
+      const idEcoPendente = ehCodex
+        ? registraEcoPendente(agentSlug, ultimoEnviado)
+        : null;
+      void envio.reenviar(
+        idEcoPendente
+          ? () => descartaEcoPendente(agentSlug, idEcoPendente)
+          : undefined,
+      );
       return;
     }
     void enviar(ultimoEnviado, true);
@@ -635,7 +648,15 @@ export function Composer({
           // não parecer morto.
           enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && (!tecladoTouch || retidoAnexo !== null)) {
+            if (
+              deveEnviarPorEnter({
+                key: e.key,
+                shiftKey: e.shiftKey,
+                tecladoTouch,
+                temAnexo: retidoAnexo !== null,
+                isComposing: e.nativeEvent.isComposing,
+              })
+            ) {
               e.preventDefault();
               enviar(texto);
             }

@@ -88,7 +88,7 @@ export type ControleEnvio = {
    *  agente recebeu — STT erra, e descobrir isso pela resposta errada do
    *  agente três minutos depois é caro. */
   enviarVoz(audio: Blob): Promise<string | null>;
-  reenviar(): Promise<void>;
+  reenviar(aoFalhar?: () => void): Promise<void>;
   /** Recibo vindo de FORA do stream SSE. Existe porque o agente Codex não tem
    *  eco em `/messages/stream` (responde `total: 0`): quem prova a entrega dele
    *  é o texto aparecendo no rollout, visto pelo poll do feed
@@ -408,14 +408,20 @@ export function createControleEnvio(
         erro !== null &&
         'status' in erro &&
         typeof erro.status === 'number';
+      const entregaIncerta =
+        rejeicaoHttp &&
+        'deliveryOutcome' in erro &&
+        erro.deliveryOutcome === 'uncertain';
       // Só aqui a máquina SABE que não saiu — é o único gatilho correto para
       // desfazer uma pendência otimista registrada antes do POST. Em
       // `nao-confirmado` o texto pode ter entrado mesmo assim (ver o
       // comentário longo acima, em `!resposta.tmux_delivered`), então a
       // pendência segue esperando o rollout confirmar ou expirar sozinha.
-      if (rejeicaoHttp) aoFalhar?.();
+      if (rejeicaoHttp && !entregaIncerta) aoFalhar?.();
       publicar(
-        rejeicaoHttp ? { tipo: 'falhar', erro } : { tipo: 'nao-confirmar', erro },
+        rejeicaoHttp && !entregaIncerta
+          ? { tipo: 'falhar', erro }
+          : { tipo: 'nao-confirmar', erro },
       );
     }
   }
@@ -498,9 +504,9 @@ export function createControleEnvio(
     },
     enviar: executar,
     enviarVoz: executarVoz,
-    async reenviar() {
+    async reenviar(aoFalhar?: () => void) {
       if (estado.fase !== 'nao-confirmado') return;
-      await executar(estado.texto);
+      await executar(estado.texto, aoFalhar);
     },
     confirmarPorEco(texto) {
       // Mesmo evento que o SSE publicaria — o redutor faz o resto, inclusive
@@ -529,7 +535,7 @@ export function usaEnvio(agentSlug: string): {
   estado: EstadoEnvio;
   enviar: (texto: string, aoFalhar?: () => void) => Promise<void>;
   enviarVoz: (audio: Blob) => Promise<string | null>;
-  reenviar: () => Promise<void>;
+  reenviar: (aoFalhar?: () => void) => Promise<void>;
 } {
   const controle = useMemo(() => createControleEnvio(agentSlug), [agentSlug]);
   const estado = useSyncExternalStore(

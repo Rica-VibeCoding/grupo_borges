@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { abrePorta, preparaEnvio } from './porta-de-envio.ts';
+import { abrePorta, LIMITE_TEXTO_ENVIO, preparaEnvio } from './porta-de-envio.ts';
 
 /**
  * A ESPINHA: o campo nunca esvazia sem que o texto vá para ALGUM lugar visível.
@@ -181,6 +181,28 @@ test('sem texto E sem anexo continua sendo o vazio de sempre', () => {
   const porta = abrePorta({ texto: '', temAnexo: false, compactando: false, faseEnvio: 'ocioso' });
   assert.equal(porta.libera, false);
   assert.equal(porta.libera === false && porta.motivo, 'vazio');
+});
+
+test('texto acima do limite fica no campo com recado acionável', () => {
+  const efeito = preparaEnvio({
+    texto: 'a'.repeat(LIMITE_TEXTO_ENVIO + 1),
+    compactando: false,
+    faseEnvio: 'ocioso',
+  });
+
+  assert.equal(efeito.despacha, false);
+  assert.equal(efeito.limpaCampo, false);
+  assert.match(efeito.aviso ?? '', /8\.192/);
+});
+
+test('limite conta caracteres Unicode como o servidor Python', () => {
+  const porta = abrePorta({
+    texto: '🟢'.repeat(LIMITE_TEXTO_ENVIO),
+    compactando: false,
+    faseEnvio: 'ocioso',
+  });
+
+  assert.equal(porta.libera, true);
 });
 
 /**

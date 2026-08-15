@@ -355,6 +355,7 @@ export default async function AgentePage({
           // Sem `esforcoValor`/`esforcoPermitido`/`onEnviar`: o Composer busca o
           // painel e envia sozinho — ver o cabeçalho do próprio componente.
           <Composer
+            key={agente.slug}
             agentSlug={agente.slug}
             agentName={agente.name}
             motor={motor}

@@ -805,6 +805,8 @@ def test_send_occupied_input_marks_channel_blocked_and_logs_error(caplog) -> Non
     assert delivered is False
     assert channel["estado"] == "bloqueado"
     assert channel["entregando"] is False
+    assert channel["outcome"] == "refused"
+    assert channel["safe_to_resend"] is True
     assert channel["motivo"] == "input_ocupado_ou_travado"
     assert channel["recusas_consecutivas"] == 1
     assert channel["bloqueado_ha_segundos"] >= 0
@@ -847,6 +849,9 @@ def test_entrega_devolve_os_tres_desfechos_e_nao_so_dois() -> None:
     assert incerto.safe_to_resend is False, (
         "o texto foi colado e o Enter foi dado: reenviar duplicaria a mensagem no agente"
     )
+    canal_incerto = tmux_driver.get_delivery_channel_state("pane-desfecho-incerto")
+    assert canal_incerto["outcome"] == "uncertain"
+    assert canal_incerto["safe_to_resend"] is False
 
 
 def test_todo_motivo_de_recusa_tem_desfecho_e_frase() -> None:
@@ -958,6 +963,8 @@ def test_recover_confirmed_steps_clear_channel_without_claiming_delivery(
     assert result["tmux_delivered"] is True
     assert channel["estado"] == "entregando"
     assert channel["entregando"] is True
+    assert channel["outcome"] == "delivered"
+    assert channel["safe_to_resend"] is False
     assert channel["motivo"] is None
     assert channel["recusas_consecutivas"] == 0
     assert channel["bloqueado_desde"] is None

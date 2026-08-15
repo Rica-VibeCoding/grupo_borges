@@ -11,6 +11,8 @@ function painelBloqueado(extra: Record<string, unknown> = {}) {
     canal_entrega: {
       estado: 'bloqueado',
       entregando: false,
+      outcome: 'refused',
+      safe_to_resend: true,
       motivo: 'input_ocupado_ou_travado',
       mensagem: 'O campo de mensagem do agente está ocupado ou travado.',
       recusas_consecutivas: 2,
@@ -37,6 +39,28 @@ describe('leCanalBloqueado — só um bloqueio de verdade troca o que está na t
     for (const estado of ['entregando', 'sem_dados']) {
       assert.equal(leCanalBloqueado(painelBloqueado({ estado })), null, estado);
     }
+  });
+
+  it('não afirma que o texto ficou de fora quando o desfecho é incerto', () => {
+    assert.equal(
+      leCanalBloqueado(
+        painelBloqueado({ outcome: 'uncertain', safe_to_resend: false }),
+      ),
+      null,
+    );
+  });
+
+  it('painel antigo sem prova de reenvio seguro mantém a dúvida honesta', () => {
+    assert.equal(
+      leCanalBloqueado({
+        canal_entrega: {
+          ...painelBloqueado().canal_entrega,
+          outcome: undefined,
+          safe_to_resend: undefined,
+        },
+      }),
+      null,
+    );
   });
 
   it('devolve null quando o campo nem existe — painel antigo não pode quebrar a faixa', () => {
