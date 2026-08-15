@@ -353,3 +353,52 @@ describe('adaptaMensagensCodex — o que chega em corpo-do-item.tsx depois do cl
     if (itens[0].kind === 'user') assert.equal(itens[0].text, 'bom dia');
   });
 });
+
+describe('adaptaMensagensCodex — chamada de ferramenta vira linha de execução', () => {
+  // O rollout real do Codex emite `custom_tool_call`. Até 15/08 o reader o
+  // jogava fora e o adaptador recusava `internal`, então o chat da Tara não
+  // mostrava NADA do que ela executou — enquanto o do Claude Code mostrava
+  // tudo. É o "cada chat parece um app diferente" que o Rica cobrou.
+  const chamada = {
+    id: 'ctc_1',
+    role: 'internal' as const,
+    text: "sed -n '1,240p' memory/MEMORY.md",
+    timestamp: '2026-08-15T11:09:00Z',
+    item_type: 'custom_tool_call',
+    visible: true,
+    parts: [
+      {
+        type: 'tool_use' as const,
+        id: 'call_1',
+        name: 'exec',
+        input: { command: "sed -n '1,240p' memory/MEMORY.md" },
+      },
+    ],
+  };
+
+  it('promove a chamada a bolha de assistant com `tool_use` estruturado', () => {
+    const adapta = criaAdaptadorCodex();
+    const [item] = adapta([chamada]);
+    assert.equal(item.kind, 'assistant');
+    assert.deepEqual(item.message?.content, [chamada.parts[0]]);
+    assert.equal(item.message?.stop_reason, 'tool_use');
+  });
+
+  it('`internal` SEM estrutura continua fora — texto viraria fala inventada', () => {
+    const adapta = criaAdaptadorCodex();
+    const semParts = { ...chamada, parts: undefined };
+    assert.deepEqual(adapta([semParts]), []);
+  });
+
+  it('`internal` invisível não entra mesmo trazendo estrutura', () => {
+    const adapta = criaAdaptadorCodex();
+    assert.deepEqual(adapta([{ ...chamada, visible: false }]), []);
+  });
+
+  it('preserva identidade do objeto entre polls — senão o feed reclassifica tudo', () => {
+    const adapta = criaAdaptadorCodex();
+    const primeira = adapta([chamada]);
+    const segunda = adapta([chamada]);
+    assert.equal(primeira[0], segunda[0]);
+  });
+});
