@@ -4408,9 +4408,14 @@ class CodexMessageResponse(BaseModel):
     timestamp: str
     item_type: str
     visible: bool
-    # Estrutura opcional: texto, imagem data-URL ou os dois contextos developer
-    # explicitamente liberados para o cockpit. `text` segue como fallback.
-    parts: list[dict[str, str]] | None = None
+    # Estrutura opcional: texto, imagem data-URL, os dois contextos developer
+    # explicitamente liberados para o cockpit, ou a chamada de ferramenta.
+    # `text` segue como fallback.
+    #
+    # O valor é `Any` e não `str` por causa do `tool_use`: seu `input` é um
+    # objeto (`{"command": "…"}`), que é a forma que o renderer de execução lê.
+    # Preso a `str`, o endpoint devolvia 500 na serialização.
+    parts: list[dict[str, Any]] | None = None
     # O campo precisa ficar AUSENTE quando a origem não existe. O decorator da
     # rota usa `response_model_exclude_unset=True`; por isso o chamador só o
     # passa abaixo quando há meta explícito, em vez de passar `None`.

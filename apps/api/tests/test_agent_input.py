@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import codex_catalog, tmux_driver
+from services import codex_catalog, codex_reader, tmux_driver
 
 _RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
 #: Guardada no import porque `_scope_do_turno_fora` troca o nome no módulo.
@@ -1293,3 +1293,57 @@ def test_codex_messages_sem_flag_consultam_a_thread(tmp_path: Path) -> None:
     body = response.json()
     assert body["thread_id"] == thread.thread_id
     assert body["messages"] == []
+
+
+def test_codex_messages_serializa_execucao_sem_500(tmp_path: Path) -> None:
+    """Regressão: `parts[].input` do `tool_use` é OBJETO, não string.
+
+    O schema nasceu como `list[dict[str, str]]`, quando `parts` só carregava
+    texto e data-URL. Ao expor a chamada de ferramenta (15/08), o `input` virou
+    `{"command": "…"}` e a rota passou a devolver 500 na serialização —
+    `ValidationError: parts.0.input Input should be a valid string`.
+
+    As 497 provas da API não pegaram porque testam o READER, não a
+    serialização da ROTA. Este teste fecha exatamente esse vão: exercita o
+    endpoint de ponta a ponta com a estrutura que o front consome.
+    """
+    app = _build_app(tmp_path, codex_for_tara=True)
+    thread = SimpleNamespace(
+        thread_id="019e9077-ccf1-7ee1-b8bb-25202f1ed3e2",
+        rollout_path="",
+        cwd="/tmp/tara",
+        title="t",
+        model="gpt-5.6-terra",
+        reasoning_effort=None,
+        tokens_used=0,
+        updated_at_ms=None,
+        created_at_ms=None,
+    )
+    execucao = codex_reader.CodexMessage(
+        id="ctc_1",
+        role="internal",
+        text="sed -n '1,240p' memory/MEMORY.md",
+        timestamp="2026-08-15T11:09:00Z",
+        item_type="custom_tool_call",
+        visible=True,
+        parts=[
+            {
+                "type": "tool_use",
+                "id": "call_1",
+                "name": "exec",
+                "input": {"command": "sed -n '1,240p' memory/MEMORY.md"},
+            }
+        ],
+    )
+
+    def _fake_conversation(*_a, **_k):
+        return thread, [execucao]
+
+    with patch("routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id), \
+         patch("routers.agents.codex_reader.read_latest_conversation", side_effect=_fake_conversation):
+        with TestClient(app) as client:
+            response = client.get("/api/agents/tara/codex/messages")
+
+    assert response.status_code == 200, response.text
+    parts = response.json()["messages"][0]["parts"]
+    assert parts[0]["input"] == {"command": "sed -n '1,240p' memory/MEMORY.md"}
