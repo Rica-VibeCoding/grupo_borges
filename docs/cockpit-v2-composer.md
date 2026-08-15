@@ -773,6 +773,7 @@ contra fixture**, não integração: cada lado anda sem esperar o outro.
   "client_request_id": "...",
   "estado": "pendente | drenando | entregue | cancelada",
   "criado_em": "2026-08-15T19:44:59Z",
+  "drenando_desde": null,
   "motivo_falha": null
 }
 ```
@@ -799,8 +800,41 @@ Quatro decisões dentro dele que não são cosméticas — todas do Pavan:
    inteira existe para impedir. Item preso em `drenando` além do prazo vira
    `motivo_falha` **à vista**, nunca de volta para `pendente` em silêncio.
 
-**Em aberto, e é do meu lado que dói:** por quanto tempo um item `entregue`
-continua na fila. O espelho precisa saber quando parar de desenhá-lo, ou o Rica vê
-a mensagem duas vezes — uma na fila, outra no feed. E `drenando` preso precisa de
-desenho próprio, senão vira um item parado sem explicação. Nenhum dos dois é
-decisão de servidor; são minhas, e ficam para quando a frente abrir.
+**Quando o item sai da fila — por correlação, não por relógio** (Pavan). Qualquer
+prazo seria arbitrário e erraria nos dois sentidos: curto demais pisca, longo
+demais duplica. O espelho esconde da fila todo item cujo `client_request_id` já
+esteja presente no feed daquela sessão — a troca fica limpa por construção,
+porque o item só some no instante em que o substituto aparece. O servidor segura
+o `entregue` até ver a correlação, com teto de segurança de **5 minutos** para o
+caso de ela nunca acontecer; esse número é escolha de projeto, não medição, como
+os 1,2 s e 3 s da retentativa.
+
+**Item preso em `drenando` — avaliação na leitura, ninguém varre** (Pavan).
+Varredor é mais uma peça para morrer calada. Daí o `drenando_desde` no item, com
+prazo de **30 s**: vencido, o painel desenha como falho na hora, sem esperar
+ninguém carimbar, e a gravação do `motivo_falha` acontece na próxima escrita que
+passar por ali — idempotente, sem processo dedicado. O raciocínio importa mais que
+o número: `drenando` cobre só o intervalo entre pegar o item e o POST ser aceito,
+**não** o turno do agente; com a retentativa do 409 somando 4,2 s mais latência,
+30 s é folga larga. Se um dia `drenando` passar a cobrir o eco, este número muda
+junto.
+
+⚠️ **A correlação acima não tem por onde acontecer hoje — é pré-requisito, não
+detalhe.** O `client_request_id` morre no caminho, e eu conferi os três pontos:
+`postAgentInput` (`packages/cockpit-core/src/api.ts:316`) gera o UUID **dentro da
+própria função**, então nem o chamador o conhece; na API ele existe só como campo
+de validação (`agents.py:2433`), não é gravado nem devolvido; e a mensagem que
+aparece no feed vem do **JSONL do próprio agente**, que nunca soube do id — o
+texto é colado no tmux como texto puro. Duas saídas:
+
+- **(a) Fazer o id viajar de verdade.** `postAgentInput` passa a aceitá-lo de
+  fora, a API o grava junto do evento de entrega e o devolve no polling. É o certo,
+  e é trabalho no lado do servidor — não dá para eu resolver sozinho no painel.
+- **(b) Reusar o que já existe.** `lib/codex/eco-pendente.ts` **já resolve este
+  mesmo casamento**, um nível abaixo: casa a bolha otimista com o eco real por
+  `texto.trim()`, com prazo de vida por motor (12 s medidos no Codex, 3 min de
+  folga). Barato, de pé, e com a limitação conhecida — duas mensagens idênticas
+  na mesma sessão são indistinguíveis, e o Rica manda "ok" repetido com
+  frequência.
+
+Recomendo (a) se a frente abrir, com (b) como ponte enquanto o campo não existe.
