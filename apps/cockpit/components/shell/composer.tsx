@@ -332,7 +332,11 @@ export function Composer({
     agentSlug,
     fase === 'nao-confirmado' || fase === 'falhou',
   );
-  const aparencia = aparenciaDe(fase, agentName, { canalBloqueado, destravaFalhou });
+  const aparencia = aparenciaDe(fase, agentName, {
+    canalBloqueado,
+    destravaFalhou,
+    emFila: envio.estado.fase === 'confirmado' && envio.estado.fila === true,
+  });
   // O caminho feliz não pinta mais a borda — `enviando`/`aceito` devolvem
   // `filete: null` desde 11/08, para os seis agentes (o porquê está em
   // `aparencia-envio.ts`). O que chega aqui colorido é só insucesso.
@@ -509,7 +513,7 @@ export function Composer({
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
       if (await anexo.enviar(corpoParaEnviar)) {
-        setTexto('');
+        setTexto((atual) => (atual === corpoParaEnviar ? '' : atual));
       } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
         // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então
@@ -522,7 +526,7 @@ export function Composer({
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
     // barra precisa nascer com o clique, não com o 200.
-    if (COMPACT_RE.test(corpoParaEnviar)) {
+    if (!ehCodex && COMPACT_RE.test(corpoParaEnviar)) {
       compactPendenteRef.current = true;
       iniciarCompact();
     }
@@ -643,7 +647,14 @@ export function Composer({
     // anterior pode ter sido entregue e conta o eco ambíguo em vez de confirmar
     // o reenvio com o eco do primeiro. `falhou` é reenvio comum.
     if (fase === 'nao-confirmado') {
-      void envio.reenviar();
+      const idEcoPendente = ehCodex
+        ? registraEcoPendente(agentSlug, ultimoEnviado)
+        : null;
+      void envio.reenviar(
+        idEcoPendente
+          ? () => descartaEcoPendente(agentSlug, idEcoPendente)
+          : undefined,
+      );
       return;
     }
     void enviar(ultimoEnviado, true);

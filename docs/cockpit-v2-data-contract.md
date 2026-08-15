@@ -127,11 +127,12 @@ useAgentSend(slug: string, agentName: string): {
 Os três caminhos já convergem: cada um bate no seu endpoint, todos checam
 `res.tmux_delivered` e caem no mesmo tratamento de erro. O que o v2 herda de graça:
 
-- **`tmux_delivered: false` é sinal negativo real** — a sessão tmux não aceitou
-  a entrega. No endpoint de texto isso chega como HTTP 409; voz ainda pode devolver
-  o booleano num 200, e o cliente precisa tratá-lo como falha.
-- **HTTP 409 com `detail: 'agent_pane_unavailable'`** tem mensagem própria: o
-  agente está num shell auxiliar em vez do Claude/Codex.
+- **`tmux_delivered: false` não basta para afirmar falha** — o driver pode ter
+  colado e acionado Enter sem conseguir observar o resultado. O cliente trata
+  essa ausência de prova como `nao-confirmado`.
+- **HTTP 409 do endpoint de texto preserva o desfecho do driver**: `refused`
+  prova que o pane não foi tocado; `uncertain` significa que o texto pode ter
+  entrado. O formato está detalhado na §3.1.
 - `sendText` **repropaga** a exceção depois de mostrar o toast, de propósito: quem
   chama precisa marcar a mensagem otimista como `error`.
 
@@ -179,16 +180,42 @@ type FaseEnvio =
   | 'aceito'        // 200 do back: colou. NÃO é "entregue" — o eco ainda não voltou
   | 'confirmado'    // o texto reapareceu no stream: o agente recebeu. ÚNICO estado feliz
   | 'nao-confirmado' // o prazo estourou ou a resposta se perdeu: pode ter sido entregue
-  | 'falhou';       // rejeição HTTP / tmux_delivered=false: sinal negativo real
+  | 'falhou';       // recusa comprovada ou outra rejeição HTTP
 ```
 
 - **`aceito` é estado de espera, e a tela precisa mostrar isso** — não pode parecer sucesso.
 - **`nao-confirmado` não é erro, é incerteza observável**: a entrega pode ter acontecido,
   mas o painel não conseguiu prová-la. A tela manda conferir o chat e avisa que mandar de
   novo pode duplicar. O novo envio é **decisão do Rica**, nunca automática.
-- **`falhou` exige sinal negativo real**: resposta HTTP de rejeição (incluindo sessão tmux
-  ausente) ou `tmux_delivered=false`. Ausência de eco e perda da resposta não bastam.
+- **`falhou` exige sinal negativo real**: `delivery_outcome: 'refused'` ou outra
+  rejeição HTTP que aconteceu antes de uma entrega possível. Ausência de eco,
+  perda da resposta, `tmux_delivered=false` e `delivery_outcome: 'uncertain'`
+  não bastam.
 - **`confirmado` é o único estado que pode cantar sucesso.**
+
+Quando o driver não confirma a entrega, `POST /api/agents/{slug}/input` responde
+409 com `detail` estruturado:
+
+```json
+{
+  "detail": {
+    "code": "agent_pane_unavailable",
+    "delivery_outcome": "refused",
+    "reason": "input_ocupado_ou_travado",
+    "safe_to_resend": true
+  }
+}
+```
+
+`delivery_outcome` é `refused` ou `uncertain`; `safe_to_resend` só é verdadeiro
+no primeiro caso. O cliente mantém o texto ou eco otimista no segundo caso e
+avisa sobre risco de duplicação. O `GET /api/agents/{slug}/painel` expõe os
+mesmos campos em `canal_entrega`; a tela só pode afirmar “não entrou” quando
+`safe_to_resend` for verdadeiro.
+
+`idempotency_key` ainda é apenas validada nesse endpoint. Deduplicação real
+depende de registro persistente e regra de concorrência e não deve ser inferida
+do campo presente na requisição.
 
 O prazo entre `aceito` e `nao-confirmado` é **12 s**. A amostra local de 30/07 teve pior
 caso de 1,434 s após o `200`, mas o incidente real de 02/08 mostrou que 3 s não cobre agente

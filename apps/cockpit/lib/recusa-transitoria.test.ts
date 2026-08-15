@@ -22,6 +22,30 @@ test('a mensagem serve de fallback quando não há detail', () => {
   assert.equal(ehRecusaTransitoria(erro), true);
 });
 
+test('desfecho incerto estruturado não recebe retentativa', () => {
+  assert.equal(
+    ehRecusaTransitoria({
+      status: 409,
+      detail: 'agent_pane_unavailable',
+      deliveryOutcome: 'uncertain',
+      safeToResend: false,
+    }),
+    false,
+  );
+});
+
+test('recusa estruturada e segura mantém a retentativa', () => {
+  assert.equal(
+    ehRecusaTransitoria({
+      status: 409,
+      detail: 'agent_pane_unavailable',
+      deliveryOutcome: 'refused',
+      safeToResend: true,
+    }),
+    true,
+  );
+});
+
 // A regra da máquina é não repetir entrega que PODE ter acontecido. Um 409 sem
 // detalhe conhecido não diz se o texto entrou, então continua sendo falha
 // terminal — retentar ali é a duplicata que a máquina inteira existe para

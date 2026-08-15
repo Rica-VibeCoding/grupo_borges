@@ -17,11 +17,12 @@
  * acontecido — reenviar um texto que entrou faz o agente rodar o mesmo comando
  * duas vezes (ver o comentário longo de `tmux_delivered` em `usa-envio.ts`).
  *
- * Os dois detalhes abaixo são a exceção porque o backend AFIRMA a não-entrega,
+ * Os dois detalhes abaixo são a exceção quando o backend afirma a não-entrega,
  * e não apenas deixa de prová-la:
  *
- * - `agent_pane_unavailable` — `send_agent_input` levanta quando
- *   `_send_tmux_or_409` devolve `False`; o driver não colou nada no pane.
+ * - `agent_pane_unavailable` — no contrato novo só retenta se vier como
+ *   `deliveryOutcome: 'refused'` com `safeToResend: true`; respostas antigas
+ *   mantêm o comportamento legado pelo detalhe.
  * - `shared_turn_in_flight` — o TeleCodex recusa o turno antes de abri-lo,
  *   porque a conversa da Tara é compartilhada com o Telegram.
  *
@@ -49,9 +50,9 @@
  */
 
 /**
- * Só recusas em que o back afirma a não-entrega. Nada aqui é chute sobre
- * semântica de HTTP: um 409 genérico continua sendo falha terminal, porque
- * "conflito" sem o detalhe do back não diz se o texto entrou.
+ * Só recusas em que o back afirma a não-entrega. Quando há recibo estruturado,
+ * ele vence o texto legado. Um 409 genérico continua sendo falha terminal,
+ * porque "conflito" sem o detalhe do back não diz se o texto entrou.
  */
 const DETALHES_TRANSITORIOS = ['agent_pane_unavailable', 'shared_turn_in_flight'] as const;
 
@@ -62,14 +63,22 @@ const DETALHES_TRANSITORIOS = ['agent_pane_unavailable', 'shared_turn_in_flight'
 export const ATRASOS_DA_RETENTATIVA_MS = [1_200, 3_000] as const;
 
 /**
- * O `detail` é a fonte; a `message` é o fallback porque o `AgentInputError`
- * nasce com o mesmo texto nos dois campos (`new AgentInputError(detail, status,
- * detail)`), e um erro montado à mão em teste costuma ter só a mensagem.
+ * O recibo estruturado vence. Sem ele, `detail` é a fonte e `message` é o
+ * fallback porque erros legados podem trazer só a mensagem.
  */
 export function ehRecusaTransitoria(erro: unknown): boolean {
   if (typeof erro !== 'object' || erro === null) return false;
-  const bruto = erro as { status?: unknown; detail?: unknown; message?: unknown };
+  const bruto = erro as {
+    status?: unknown;
+    detail?: unknown;
+    message?: unknown;
+    deliveryOutcome?: unknown;
+    safeToResend?: unknown;
+  };
   if (bruto.status !== 409) return false;
+  if (bruto.deliveryOutcome !== undefined) {
+    return bruto.deliveryOutcome === 'refused' && bruto.safeToResend === true;
+  }
   const texto =
     typeof bruto.detail === 'string'
       ? bruto.detail

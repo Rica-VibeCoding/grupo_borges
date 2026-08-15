@@ -22,6 +22,9 @@ from routers import agents as agents_router
 from services import codex_catalog, codex_reader, tmux_driver
 
 _RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
+_INCERTO = tmux_driver.DeliveryResult(
+    outcome="uncertain", reason="envio_nao_confirmado"
+)
 #: Guardada no import porque `_scope_do_turno_fora` troca o nome no módulo.
 _STOP_SCOPE_REAL = agents_router._stop_codex_turn_scope
 
@@ -408,18 +411,34 @@ def test_input_codex_next_fresh_armed_entra_fresh_no_telecodex(tmp_path: Path) -
     assert painel.json().get("codex_next_fresh") is True
 
 
-def test_input_returns_409_when_pane_offline(tmp_path: Path) -> None:
-    """Quando `tmux_driver.send_message` retorna False (pane fora do CLI esperado),
-    endpoint deve devolver 409 — não 200/500.
-    """
+@pytest.mark.parametrize(
+    ("resultado", "desfecho", "motivo", "seguro_reenviar"),
+    [
+        (_RECUSADO, "refused", "sessao_ausente", True),
+        (_INCERTO, "uncertain", "envio_nao_confirmado", False),
+    ],
+)
+def test_input_returns_structured_409_when_delivery_fails(
+    tmp_path: Path,
+    resultado: tmux_driver.DeliveryResult,
+    desfecho: str,
+    motivo: str,
+    seguro_reenviar: bool,
+) -> None:
     app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message", return_value=_RECUSADO):
+    with patch("routers.agents.tmux_driver.send_message", return_value=resultado):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/input",
                 json={"text": "oi", "idempotency_key": "k1"},
             )
             assert response.status_code == 409
+            assert response.json()["detail"] == {
+                "code": "agent_pane_unavailable",
+                "delivery_outcome": desfecho,
+                "reason": motivo,
+                "safe_to_resend": seguro_reenviar,
+            }
 
 
 def test_input_returns_tmux_delivered_true(tmp_path: Path) -> None:

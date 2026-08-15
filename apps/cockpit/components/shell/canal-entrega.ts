@@ -8,19 +8,17 @@
  * cada recusa real de entrega e expõe o motivo em linguagem de operação no
  * `GET /api/agents/{slug}/painel`, campo `canal_entrega`.
  *
- * Quando esse campo diz `bloqueado`, a faixa deixa de ser uma dúvida e vira um
- * diagnóstico com ação: o texto NÃO entrou, o motivo é este, e o gesto que
- * resolve é destravar o agente. É a diferença entre o Rica reenviar às cegas —
- * e duplicar, que é o dano que a faixa existe para impedir — e ele destravar
- * uma vez e mandar com o canal aberto.
+ * Só `bloqueado` com `outcome: 'refused'` e `safe_to_resend: true` deixa a
+ * faixa trocar dúvida por diagnóstico: aí o texto NÃO entrou, o motivo é este,
+ * e o gesto que resolve é destravar o agente. Um bloqueio `uncertain` ainda
+ * pode ter deixado texto no agente e conserva o aviso de duplicação.
  *
  * ── Por que ler o painel em vez do POST ──────────────────────────────────
  *
- * O `POST /{slug}/file` devolve `canal_entrega` junto do `tmux_delivered`, mas
- * o `POST /{slug}/input` do TEXTO não devolve: quando o driver recusa, ele
- * levanta 409 e o corpo não carrega estado nenhum. Ler o `/painel` é o único
- * caminho que serve aos dois gestos, e a Tara o documentou como a fonte do
- * estado desde a última tentativa. Uma fonte, um caminho.
+ * O `POST /{slug}/file` devolve `canal_entrega` junto do `tmux_delivered`; o
+ * `POST /{slug}/input` devolve o recibo estruturado na própria recusa. O
+ * painel continua sendo a fonte comum aos dois gestos e ao estado persistente
+ * da última tentativa.
  *
  * ── Fronteira de sistema ─────────────────────────────────────────────────
  *
@@ -51,8 +49,9 @@ function inteiroNaoNegativo(valor: unknown): number {
 }
 
 /**
- * Devolve `null` em tudo que não for um bloqueio legível: canal entregando,
- * sem dados, campo ausente, resposta de formato inesperado.
+ * Devolve `null` em tudo que não for uma recusa comprovada e legível: canal
+ * entregando, bloqueio incerto, sem dados, campo ausente, resposta de formato
+ * inesperado.
  *
  * `null` não é falha a reportar — é o caso NORMAL, e é o que mantém a faixa na
  * frase genérica. Só um bloqueio de verdade, com mensagem de verdade, tem
@@ -65,11 +64,14 @@ export function leCanalBloqueado(painel: unknown): CanalBloqueado | null {
 
   const janela = canal as {
     estado?: unknown;
+    outcome?: unknown;
+    safe_to_resend?: unknown;
     mensagem?: unknown;
     recusas_consecutivas?: unknown;
     bloqueado_ha_segundos?: unknown;
   };
   if (janela.estado !== 'bloqueado') return null;
+  if (janela.outcome !== 'refused' || janela.safe_to_resend !== true) return null;
   // Sem mensagem não há o que dizer de melhor que a frase genérica, e um
   // bloqueio mudo na tela seria pior que a dúvida honesta que ele substituiria.
   if (typeof janela.mensagem !== 'string' || janela.mensagem.trim() === '') return null;

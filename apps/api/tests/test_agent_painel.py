@@ -293,6 +293,8 @@ def test_agent_painel_expoe_canal_de_entrega_bloqueado(
     channel = {
         "estado": "bloqueado",
         "entregando": False,
+        "outcome": "refused",
+        "safe_to_resend": True,
         "motivo": "input_ocupado_ou_travado",
         "mensagem": "O campo de mensagem do agente está ocupado ou travado.",
         "recusas_consecutivas": 3,

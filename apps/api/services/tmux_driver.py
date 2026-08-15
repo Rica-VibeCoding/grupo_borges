@@ -253,6 +253,8 @@ def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str 
         return {
             "estado": "sem_dados",
             "entregando": None,
+            "outcome": None,
+            "safe_to_resend": False,
             "motivo": None,
             "mensagem": "Ainda não houve tentativa de entrega desde que a API iniciou.",
             "recusas_consecutivas": 0,
@@ -271,6 +273,8 @@ def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str 
         return {
             "estado": "entregando",
             "entregando": True,
+            "outcome": "delivered",
+            "safe_to_resend": False,
             "motivo": None,
             "mensagem": message,
             "recusas_consecutivas": 0,
@@ -281,9 +285,12 @@ def get_delivery_channel_state(session_name: str) -> dict[str, bool | int | str 
         }
 
     blocked_since = record.blocked_since or record.last_attempt_at
+    outcome = "refused" if record.reason in _REFUSALS_BEFORE_PASTE else "uncertain"
     return {
         "estado": "bloqueado",
         "entregando": False,
+        "outcome": outcome,
+        "safe_to_resend": outcome == "refused",
         "motivo": record.reason,
         "mensagem": _DELIVERY_FAILURE_MESSAGES.get(
             record.reason or "", "Falha desconhecida no canal."

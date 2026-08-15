@@ -372,6 +372,8 @@ export type PainelSandbox = {
 export type PainelCanalEntrega = {
   estado: 'entregando' | 'bloqueado' | 'sem_dados';
   entregando: boolean | null;
+  outcome?: 'delivered' | 'refused' | 'uncertain' | null;
+  safe_to_resend?: boolean;
   motivo?: string | null;
   mensagem: string;
   recusas_consecutivas: number;

@@ -20,7 +20,7 @@ import type {
   TaskEvent,
   TaskStatus,
 } from './cockpit-types';
-import { safeUUID } from './ids';
+import { safeUUID } from './ids.ts';
 
 const SERVER_API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
 
@@ -302,10 +302,56 @@ export type AgentModelChangeResponse = {
 };
 
 export class AgentInputError extends Error {
-  constructor(message: string, readonly status: number, readonly detail: string | null) {
+  readonly status: number;
+  readonly detail: string | null;
+  readonly deliveryOutcome: 'refused' | 'uncertain' | null;
+  readonly reason: string | null;
+  readonly safeToResend: boolean | null;
+
+  constructor(
+    message: string,
+    status: number,
+    detail: string | null,
+    delivery?: {
+      outcome: 'refused' | 'uncertain';
+      reason: string | null;
+      safeToResend: boolean;
+    },
+  ) {
     super(message);
     this.name = 'AgentInputError';
+    this.status = status;
+    this.detail = detail;
+    this.deliveryOutcome = delivery?.outcome ?? null;
+    this.reason = delivery?.reason ?? null;
+    this.safeToResend = delivery?.safeToResend ?? null;
   }
+}
+
+async function agentInputError(res: Response): Promise<AgentInputError> {
+  const fallback = `postAgentInput failed: ${res.status}`;
+  try {
+    const body = await res.json();
+    const detail = body?.detail;
+    if (typeof detail === 'string') {
+      return new AgentInputError(detail, res.status, detail);
+    }
+    if (
+      typeof detail?.code === 'string' &&
+      (detail.delivery_outcome === 'refused' || detail.delivery_outcome === 'uncertain') &&
+      (typeof detail.reason === 'string' || detail.reason === null) &&
+      typeof detail.safe_to_resend === 'boolean'
+    ) {
+      return new AgentInputError(detail.code, res.status, detail.code, {
+        outcome: detail.delivery_outcome,
+        reason: detail.reason,
+        safeToResend: detail.safe_to_resend,
+      });
+    }
+  } catch {
+    return new AgentInputError(fallback, res.status, fallback);
+  }
+  return new AgentInputError(fallback, res.status, fallback);
 }
 
 export async function postAgentInput(
@@ -320,8 +366,7 @@ export async function postAgentInput(
     body: JSON.stringify({ text, idempotency_key, fresh: options?.fresh ?? false }),
   });
   if (!res.ok) {
-    const detail = await errorDetail(res, `postAgentInput failed: ${res.status}`);
-    throw new AgentInputError(detail, res.status, detail);
+    throw await agentInputError(res);
   }
   return res.json();
 }

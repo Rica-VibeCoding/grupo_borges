@@ -233,6 +233,8 @@ class AgentPainelSubagents(BaseModel):
 class AgentPainelCanalEntrega(BaseModel):
     estado: Literal["entregando", "bloqueado", "sem_dados"]
     entregando: bool | None
+    outcome: Literal["delivered", "refused", "uncertain"] | None
+    safe_to_resend: bool
     motivo: str | None = None
     mensagem: str
     recusas_consecutivas: int
@@ -572,20 +574,14 @@ class _InputOrigin(NamedTuple):
     meta: SyntheticMeta
 
 
-async def _send_tmux_or_409(
+async def _send_tmux_result_or_409(
     session_name: str,
     text: str,
     *,
     input_origin: _InputOrigin | None = None,
     db: GrupoBorgesDB | None = None,
     agent_slug: str | None = None,
-) -> bool:
-    """Envia ao pane ou distingue contenção transitória de pane indisponível.
-
-    Reduz o resultado a bool porque o contrato HTTP destes endpoints é bool. O
-    motivo e o desfecho (recusado × incerto) ficam no log do canal e em
-    ``get_delivery_channel_state``; enriquecer a resposta é outro commit.
-    """
+) -> tmux_driver.DeliveryResult:
     origin_id: str | None = None
     if input_origin is not None:
         if db is None or agent_slug is None:
@@ -597,7 +593,7 @@ async def _send_tmux_or_409(
             meta=input_origin.meta,
         )
     try:
-        delivered = (await tmux_driver.send_message(session_name, text)).delivered
+        result = await tmux_driver.send_message(session_name, text)
     except tmux_driver.TmuxSessionBusyError as exc:
         if origin_id is not None:
             await db.discard_message_origin(origin_id)
@@ -606,9 +602,27 @@ async def _send_tmux_or_409(
         if origin_id is not None:
             await db.discard_message_origin(origin_id)
         raise
-    if not delivered and origin_id is not None:
+    if not result.delivered and origin_id is not None:
         await db.discard_message_origin(origin_id)
-    return delivered
+    return result
+
+
+async def _send_tmux_or_409(
+    session_name: str,
+    text: str,
+    *,
+    input_origin: _InputOrigin | None = None,
+    db: GrupoBorgesDB | None = None,
+    agent_slug: str | None = None,
+) -> bool:
+    result = await _send_tmux_result_or_409(
+        session_name,
+        text,
+        input_origin=input_origin,
+        db=db,
+        agent_slug=agent_slug,
+    )
+    return result.delivered
 
 
 async def _build_painel_vida(agent: dict[str, Any]) -> AgentPainelVida:
@@ -3361,9 +3375,17 @@ async def send_agent_input(
     else:
         nome_apos_clear = _nome_apos_clear(payload.text, agent["name"])
         session_antes = await db.latest_jsonl_session_id(slug) if nome_apos_clear else None
-        delivered = await _send_tmux_or_409(agent["tmux_session"], payload.text)
-        if not delivered:
-            raise HTTPException(status_code=409, detail="agent_pane_unavailable")
+        result = await _send_tmux_result_or_409(agent["tmux_session"], payload.text)
+        if not result.delivered:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "agent_pane_unavailable",
+                    "delivery_outcome": result.outcome,
+                    "reason": result.reason,
+                    "safe_to_resend": result.safe_to_resend,
+                },
+            )
         if nome_apos_clear:
             asyncio.create_task(
                 _rename_apos_clear(db, slug, agent["tmux_session"], nome_apos_clear, session_antes)
