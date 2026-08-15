@@ -64,7 +64,7 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_catalog, codex_reader, tmux_driver, workspace_reader
+from services import codex_catalog, codex_reader, telecodex_client, tmux_driver, workspace_reader
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -2505,63 +2505,34 @@ async def _spawn_codex_agent_turn(
     image_path: str | None = None,
     input_origin: _InputOrigin | None = None,
 ) -> None:
-    lock = await _codex_input_lock(slug)
-    async with lock:
-        agent = await _get_agent_or_404(request, slug)
-        if _codex_turn_in_flight(agent):
-            raise HTTPException(status_code=409, detail="codex_turn_in_flight")
-        # "Nova conversa" armada pelo painel (codex_next_fresh) — consome aqui:
-        # próximo turno começa thread fresh e o flag é zerado.
-        armed_fresh = bool(agent.get("codex_next_fresh"))
-        effective_fresh = fresh or armed_fresh
-        cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-        # Opção A (10/08): a thread a retomar é a do DELEGATOR COCKPIT, lida do
-        # store por delegator que o wrapper grava (`~/.tara/threads/cockpit.txt`).
-        # O `codex_thread_id` do agent_state é único e qualquer delegator o
-        # sobrescreve — e `find_latest_thread` puxava a thread do telecodex
-        # (sessão interativa do tmux), que o lock por thread do codex recusa
-        # retomar (`~/.codex/thread-writer-locks/`): o `codex exec resume`
-        # morria em 2s com exit 1 e a mensagem do Rica nunca chegava (medido
-        # 10/08, thread 019fe514). O `resolve_thread` valida que a thread ainda
-        # existe no SQLite — sumiu (apagada/arquivada), nasce fresh.
-        thread_id = None
-        if not effective_fresh:
-            tid = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
-            if tid:
-                thread = await asyncio.to_thread(
-                    codex_reader.resolve_thread,
-                    thread_id=tid,
-                    cwd=cwd,
-                    db_path=_codex_db_path(),
-                )
-                if thread is not None and thread.thread_id == tid:
-                    thread_id = tid
-        origin_id: str | None = None
-        if input_origin is not None:
-            origin_id = await request.app.state.db.create_message_origin(
-                agent_slug=slug,
-                executor_kind="codex",
-                expected_text=text,
-                meta=input_origin.meta,
-            )
-        try:
-            _spawn_tara_codex_input(
-                slug=slug,
-                cwd=cwd,
-                text=text,
-                thread_id=thread_id,
-                fresh=effective_fresh,
-                image_path=image_path,
-            )
-        except Exception:
-            if origin_id is not None:
-                await request.app.state.db.discard_message_origin(origin_id)
-            raise
-        # O flag `codex_next_fresh` NÃO zera aqui: a "nova conversa" só consumiu
-        # de verdade quando a thread nova nascer (evento `codex.thread.started`,
-        # que grava a thread no agent_state e zera o flag). Zerar no spawn faria
-        # o `/codex/messages` devolver a thread VELHA no gap entre o consumo e o
-        # nascimento da nova — o piscar que o Rica reportou em 10/08.
+    agent = await _get_agent_or_404(request, slug)
+    effective_fresh = fresh or bool(agent.get("codex_next_fresh"))
+    origin_id: str | None = None
+    if input_origin is not None:
+        origin_id = await request.app.state.db.create_message_origin(
+            agent_slug=slug,
+            executor_kind="codex",
+            expected_text=text,
+            meta=input_origin.meta,
+        )
+    try:
+        await telecodex_client.send_prompt(
+            text=text,
+            fresh=effective_fresh,
+            image_path=image_path,
+        )
+    except telecodex_client.TeleCodexControlError as exc:
+        if origin_id is not None:
+            await request.app.state.db.discard_message_origin(origin_id)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except telecodex_client.TeleCodexUnavailable as exc:
+        if origin_id is not None:
+            await request.app.state.db.discard_message_origin(origin_id)
+        raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
+    except Exception:
+        if origin_id is not None:
+            await request.app.state.db.discard_message_origin(origin_id)
+        raise
 
 
 @router.post("/{slug}/codex-stop")
@@ -2585,6 +2556,25 @@ async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
     """
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
+
+    try:
+        shared_result = await telecodex_client.abort()
+    except telecodex_client.TeleCodexUnavailable:
+        shared_result = None
+    except telecodex_client.TeleCodexControlError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    if shared_result is not None:
+        stopped = bool(shared_result.get("stopped"))
+        if stopped:
+            await db.update_agent_lifecycle(
+                slug,
+                status="ocioso",
+                detail="turno interrompido",
+                event="codex.turn.stopped",
+            )
+            await _clear_codex_busy_status_line(db, agent)
+        return {"stopped": stopped} if stopped else {"stopped": False, "reason": "no_turn_in_flight"}
 
     proc = await _codex_running_proc(slug)
     if proc is not None:
@@ -3139,14 +3129,13 @@ async def send_agent_input(
 
     - 404 quando agente não existe
     - 422 (Pydantic) em text vazio/>8KB ou idempotency_key vazio/>128
-    - Codex: dispara `scripts/tara-codex` detached, retomando thread atual
-      quando existir; 409 `codex_turn_in_flight` se Tara já está em turno.
+    - Codex: encaminha ao TeleCodex persistente, que é o dono da conversa
+      compartilhada com o Telegram; 409 `shared_turn_in_flight` se já há turno.
     - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
       CLI esperado — guard do tmux_driver, ex: user trocou window) no Claude Code
-    - 200 + `tmux_delivered=True` no caminho feliz. Esse campo indica apenas
-      que a colagem no tmux foi despachada; NÃO prova submissão nem entrega ao
-      agente. A prova de submissão é o eco do item `user` no stream, acima do
-      `event_boundary_id` (contrato: §3.1 de docs/cockpit-v2-data-contract.md).
+    - 200 + `tmux_delivered=True` no caminho feliz, mantido por compatibilidade
+      do painel. Para Codex, 200 significa que o TeleCodex aceitou o turno; a
+      execução real chega pelo fluxo de eventos.
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.

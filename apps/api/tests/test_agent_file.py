@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -292,13 +292,14 @@ def test_file_returns_409_when_tmux_session_busy(tmp_path: Path) -> None:
 
 
 def test_file_document_for_codex_puts_path_in_prompt(tmp_path: Path) -> None:
-    """Documento para Tara Codex vai pelo wrapper, sem `-i` (que só aceita imagem)."""
+    """Documento para Tara Codex entra no prompt do dono persistente."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    thread = SimpleNamespace(thread_id="thread-file")
     with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
-         patch("routers.agents.codex_reader.find_latest_thread", return_value=thread), \
-         patch("routers.agents.subprocess.Popen") as popen, \
-         patch("routers.agents.tmux_driver.send_message") as send_message:
+         patch(
+             "routers.agents.telecodex_client.send_prompt",
+             new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-file"}),
+         ) as send_prompt, \
+         patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/file",
@@ -310,21 +311,24 @@ def test_file_document_for_codex_puts_path_in_prompt(tmp_path: Path) -> None:
     body = response.json()
     assert body["kind"] == "document"
     assert body["tmux_delivered"] is True
-    send_message.assert_not_called()
-    popen.assert_called_once()
-    cmd = popen.call_args.args[0]
-    assert "-i" not in cmd
-    assert body["path"] in cmd[-1]
-    assert cmd[-1].endswith("Caption: resume isso")
+    send_prompt.assert_awaited_once_with(
+        text=send_prompt.call_args.kwargs["text"],
+        fresh=False,
+        image_path=None,
+    )
+    assert body["path"] in send_prompt.call_args.kwargs["text"]
+    assert send_prompt.call_args.kwargs["text"].endswith("Caption: resume isso")
+    popen.assert_not_called()
 
 
 def test_file_image_for_codex_still_uses_image_flag(tmp_path: Path) -> None:
-    """Imagem pela rota nova mantém o `-i <path>` antes do separador `--`."""
+    """Imagem pela rota nova chega ao dono persistente com o caminho separado."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    thread = SimpleNamespace(thread_id="thread-file-image")
     with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
-         patch("routers.agents.codex_reader.find_latest_thread", return_value=thread), \
-         patch("routers.agents.subprocess.Popen") as popen:
+         patch(
+             "routers.agents.telecodex_client.send_prompt",
+             new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-file-image"}),
+         ) as send_prompt:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/file",
@@ -334,11 +338,7 @@ def test_file_image_for_codex_still_uses_image_flag(tmp_path: Path) -> None:
 
     assert response.status_code == 200, response.text
     body = response.json()
-    cmd = popen.call_args.args[0]
-    image_index = cmd.index("-i")
-    assert image_index < cmd.index("--")
-    assert cmd[image_index + 1] == body["path"]
-    assert cmd[-1] == "descreva"
+    send_prompt.assert_awaited_once_with(text="descreva", fresh=False, image_path=body["path"])
 
 
 # ---- EXIF Orientation ----------------------------------------------------

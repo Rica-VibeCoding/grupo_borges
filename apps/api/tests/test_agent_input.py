@@ -50,6 +50,21 @@ def _scope_do_turno_fora(monkeypatch):
     monkeypatch.setattr(agents_router, "_stop_codex_turn_scope", lambda slug: False)
 
 
+@pytest.fixture(autouse=True)
+def _telecodex_control_fora(monkeypatch):
+    """Nenhum teste de rota aciona a conversa real do serviço TeleCodex."""
+    monkeypatch.setattr(
+        agents_router.telecodex_client,
+        "send_prompt",
+        AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-test"}),
+    )
+    monkeypatch.setattr(
+        agents_router.telecodex_client,
+        "abort",
+        AsyncMock(side_effect=agents_router.telecodex_client.TeleCodexUnavailable()),
+    )
+
+
 DANIEL = {
     "slug": "daniel",
     "name": "Daniel Singh",
@@ -170,21 +185,12 @@ def test_input_requires_idempotency_key(tmp_path: Path) -> None:
 
 
 def test_input_codex_with_thread_spawns_resume_wrapper(tmp_path: Path) -> None:
-    """Tara Codex retoma a thread do COCKPIT (`codex_thread_id`) e retorna já.
-
-    Opção A (10/08): a thread a retomar é a do delegator cockpit, gravada no
-    agent_state pelo evento `codex.thread.started` do wrapper — não a do
-    telecodex (`find_latest_thread`), que a sessão interativa do tmux segura por
-    lock (`~/.codex/thread-writer-locks/`) e recusa retomar.
-    """
+    """Tara Codex entrega o turno ao TeleCodex persistente."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    thread = SimpleNamespace(thread_id="019e9077-ccf1-7ee1-b8bb-25202f1ed3e2")
     with patch(
-        "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
-    ), \
-         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
-         patch("routers.agents.subprocess.Popen") as popen, \
-         patch("routers.agents.tmux_driver.send_message") as send_message:
+        "routers.agents.telecodex_client.send_prompt",
+        new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-shared"}),
+    ) as send_prompt, patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/input",
@@ -193,32 +199,40 @@ def test_input_codex_with_thread_spawns_resume_wrapper(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["tmux_delivered"] is True
-    send_message.assert_not_called()
-    popen.assert_called_once()
-    cmd = popen.call_args.args[0]
-    # Invocado via `bash <script>` — robusto a perda do bit +x em edição/linter.
-    # O prefixo do `systemd-run` que carrega isso tem teste próprio
-    # (`test_input_codex_nasce_em_scope_proprio_fora_do_cgroup_da_api`).
-    inicio = cmd.index("bash")
-    assert cmd[inicio : inicio + 4] == [
-        "bash",
-        str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex"),
-        "--delegator",
-        "cockpit",
-    ]
-    assert "--resume-thread" in cmd
-    assert "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2" in cmd
-    assert cmd[-4:] == ["-C", "/tmp/tara", "--", "oi Tara"]
+    send_prompt.assert_awaited_once_with(text="oi Tara", fresh=False, image_path=None)
+    popen.assert_not_called()
+
+
+def test_input_codex_entra_no_dono_compartilhado_do_telecodex(tmp_path: Path) -> None:
+    """Cockpit envia ao dono persistente do TeleCodex, sem criar outro Codex."""
+    app = _build_app(tmp_path, codex_for_tara=True)
+    with patch(
+        "routers.agents.telecodex_client.send_prompt",
+        new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-shared"}),
+    ) as send_prompt, patch("routers.agents.subprocess.Popen") as popen:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/input",
+                json={"text": "oi Tara", "idempotency_key": "shared-1"},
+            )
+
+    assert response.status_code == 200
+    assert response.json()["tmux_delivered"] is True
+    send_prompt.assert_awaited_once_with(text="oi Tara", fresh=False, image_path=None)
+    popen.assert_not_called()
 
 
 def test_input_codex_turn_in_flight_returns_409(tmp_path: Path) -> None:
-    """Tara trabalhando não aceita outro turno concorrente."""
+    """O dono persistente recusa um segundo turno concorrente."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    app.state.db._update_agent_lifecycle(
-        "tara", status="trabalhando", detail="turno iniciado", event="test.setup"
-    )
-    with patch("routers.agents.codex_reader.find_latest_thread") as find_thread, \
-         patch("routers.agents.subprocess.Popen") as popen:
+    with patch(
+        "routers.agents.telecodex_client.send_prompt",
+        new=AsyncMock(
+            side_effect=agents_router.telecodex_client.TeleCodexControlError(
+                409, "shared_turn_in_flight"
+            )
+        ),
+    ) as send_prompt, patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/input",
@@ -226,8 +240,8 @@ def test_input_codex_turn_in_flight_returns_409(tmp_path: Path) -> None:
             )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "codex_turn_in_flight"
-    find_thread.assert_not_called()
+    assert response.json()["detail"] == "shared_turn_in_flight"
+    send_prompt.assert_awaited_once()
     popen.assert_not_called()
 
 
@@ -311,8 +325,8 @@ def test_input_reads_event_boundary_before_codex_spawn(tmp_path: Path) -> None:
     assert order == ["boundary", "spawn"]
 
 
-def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
-    """Áudio para Tara Codex vira prompt transcrito e MARCADO via tara-codex.
+def test_voice_codex_entra_na_conversa_compartilhada(tmp_path: Path) -> None:
+    """Áudio para Tara Codex vira prompt marcado no TeleCodex persistente.
 
     A marca `🎙` entrou em 14/08: até então só o ramo do Claude Code a recebia,
     e a Tara não tinha como separar fala de texto digitado — perguntada se o
@@ -321,15 +335,13 @@ def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
     desenha a fala a partir do `raw_text`), não o prompt do agente.
     """
     app = _build_app(tmp_path, codex_for_tara=True)
-    thread = SimpleNamespace(thread_id="thread-voice")
     fake_stt = SimpleNamespace(returncode=0, stdout="olá Tara\n", stderr="")
     with patch("routers.agents.subprocess.run", return_value=fake_stt), \
          patch(
-            "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
-         ), \
-         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
-         patch("routers.agents.subprocess.Popen") as popen, \
-         patch("routers.agents.tmux_driver.send_message") as send_message:
+            "routers.agents.telecodex_client.send_prompt",
+            new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-voice"}),
+         ) as send_prompt, \
+         patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/voice",
@@ -340,18 +352,13 @@ def test_voice_codex_spawns_wrapper_not_tmux(tmp_path: Path) -> None:
     body = response.json()
     assert body["transcribed"] == "olá Tara"
     assert body["tmux_delivered"] is True
-    send_message.assert_not_called()
-    popen.assert_called_once()
-    cmd = popen.call_args.args[0]
-    assert "--resume-thread" in cmd
-    assert "thread-voice" in cmd
-    assert cmd[-4:] == ["-C", "/tmp/tara", "--", "🎙 olá Tara"]
+    send_prompt.assert_awaited_once_with(text="🎙 olá Tara", fresh=False, image_path=None)
+    popen.assert_not_called()
 
 
-def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> None:
-    """Imagem para Tara Codex passa `-i <path>` antes do separador `--`."""
+def test_image_codex_entra_na_conversa_compartilhada(tmp_path: Path) -> None:
+    """Imagem para Tara Codex entra na mesma conversa persistente."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    thread = SimpleNamespace(thread_id="thread-image")
     png_1x1 = (
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
         b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
@@ -360,11 +367,10 @@ def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> 
     )
     with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
          patch(
-            "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
-         ), \
-         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
-         patch("routers.agents.subprocess.Popen") as popen, \
-         patch("routers.agents.tmux_driver.send_message") as send_message:
+            "routers.agents.telecodex_client.send_prompt",
+            new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-image"}),
+         ) as send_prompt, \
+         patch("routers.agents.subprocess.Popen") as popen:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/image",
@@ -376,45 +382,25 @@ def test_image_codex_spawns_wrapper_with_image_before_prompt(tmp_path: Path) -> 
     body = response.json()
     assert body["tmux_delivered"] is True
     assert body["path"].endswith(".png")
-    send_message.assert_not_called()
-    popen.assert_called_once()
-    cmd = popen.call_args.args[0]
-    separator_index = cmd.index("--")
-    image_index = cmd.index("-i")
-    assert image_index < separator_index
-    assert cmd[image_index + 1] == body["path"]
-    assert cmd[-1] == "descreva"
+    send_prompt.assert_awaited_once_with(text="descreva", fresh=False, image_path=body["path"])
+    popen.assert_not_called()
 
 
-def test_input_codex_next_fresh_armed_starts_new_thread_without_clearing_early(tmp_path: Path) -> None:
-    """codex_next_fresh armado pelo painel → /input começa thread nova (sem
-    --resume-thread). O flag NÃO zera no spawn (b85613d): a "nova conversa" só
-    consumiu quando a thread nova nascer (`codex.thread.started`) — zerar aqui
-    faria o feed devolver a thread VELHA no gap, o piscar do Rica em 10/08."""
+def test_input_codex_next_fresh_armed_entra_fresh_no_telecodex(tmp_path: Path) -> None:
+    """`codex_next_fresh` chega ao dono persistente como início novo."""
     app = _build_app(tmp_path, codex_for_tara=True)
     app.state.db._update_agent_codex_state("tara", codex_next_fresh=1)
-    # O inventário entra explícito porque o `/painel` passou a reportar `vida`
-    # (10/08) e o lê do tmux. `routers.agents.subprocess` É o módulo global, e o
-    # patch do `Popen` abaixo alcança o `libtmux` por tabela — sem isto o GET do
-    # painel morre num `communicate()` mockado, num erro que não fala do teste.
-    with patch("routers.agents.codex_reader.find_latest_thread", return_value=None) as find_thread, \
-         patch(
-             "routers.agents.tmux_driver.list_session_inventory",
-             new=AsyncMock(return_value=tmux_driver.TmuxSessionInventory(set(), set())),
-         ), \
-         patch("routers.agents.subprocess.Popen") as popen:
+    with patch(
+        "routers.agents.telecodex_client.send_prompt",
+        new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-fresh"}),
+    ) as send_prompt:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/tara/input",
                 json={"text": "começa do zero", "idempotency_key": "kf"},
             )
             assert response.status_code == 200
-            # Fresh: não busca thread anterior nem passa --resume-thread.
-            find_thread.assert_not_called()
-            cmd = popen.call_args.args[0]
-            assert "--resume-thread" not in cmd
-            # Flag AINDA armado: a thread nova ainda não nasceu (o `codex exec`
-            # está subindo). Enquanto armado, o /codex/messages devolve vazio.
+            send_prompt.assert_awaited_once_with(text="começa do zero", fresh=True, image_path=None)
             painel = client.get("/api/agents/tara/painel")
 
     assert painel.status_code == 200
@@ -991,42 +977,20 @@ def test_codex_stop_preserva_status_line_que_nao_e_ocupado(tmp_path: Path) -> No
     assert painel["status_line"] == "validei a skill"
 
 
-def test_input_codex_nasce_em_scope_proprio_fora_do_cgroup_da_api(tmp_path: Path) -> None:
-    """O turno nasce num scope transiente — não no cgroup do `cockpit-api`.
-
-    `KillMode=control-group` (o default, `man systemd.kill`) mata TODO processo
-    do cgroup da unit no restart, e `start_new_session=True` não protege: ele só
-    chama `setsid()` (CPython, `Modules/_posixsubprocess.c`), que muda a sessão
-    POSIX e não o cgroup. Três restarts em 11/08 mataram turno em voo.
-    """
+def test_codex_stop_usa_o_dono_compartilhado(tmp_path: Path) -> None:
+    """Parar a Tara chama o controle persistente, não mata um processo local."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    thread = SimpleNamespace(thread_id="thread-scope")
     with patch(
-        "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
-    ), \
-         patch("routers.agents.codex_reader.resolve_thread", return_value=thread), \
-         patch("routers.agents.subprocess.Popen") as popen, \
-         patch("routers.agents.tmux_driver.send_message"):
+        "routers.agents.telecodex_client.abort",
+        new=AsyncMock(return_value={"contextKey": "7262275215", "stopped": True}),
+    ) as abort, patch("routers.agents.os.killpg") as killpg:
         with TestClient(app) as client:
-            response = client.post(
-                "/api/agents/tara/input",
-                json={"text": "sobrevive", "idempotency_key": "k-scope"},
-            )
+            response = client.post("/api/agents/tara/codex-stop")
 
     assert response.status_code == 200
-    cmd = popen.call_args.args[0]
-    assert cmd[:4] == ["systemd-run", "--user", "--scope", "--quiet"]
-    # Nome determinístico: é a alça que o `codex-stop` usa quando o handle do
-    # `Popen` morreu junto com o processo da API.
-    assert cmd[4] == "--unit=cockpit-codex-turn-tara.scope"
-    assert cmd[5:9] == [
-        "bash",
-        str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex"),
-        "--delegator",
-        "cockpit",
-    ]
-    # O `--` que delimita o texto continua sendo um só: o do wrapper.
-    assert cmd.count("--") == 1
+    assert response.json() == {"stopped": True}
+    abort.assert_awaited_once_with()
+    killpg.assert_not_called()
 
 
 def test_codex_stop_alcanca_turno_que_sobreviveu_a_restart_da_api(tmp_path: Path) -> None:

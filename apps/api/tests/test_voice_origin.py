@@ -6,8 +6,9 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,15 @@ from db.store import MESSAGE_ORIGIN_MATCH_WINDOW_MS, GrupoBorgesDB
 from orchestrator.jsonl_watcher import JsonlWatcher, encoded_cwd
 from routers import agents as agents_router
 from services import codex_reader
+
+
+@pytest.fixture(autouse=True)
+def _telecodex_control_fora(monkeypatch):
+    monkeypatch.setattr(
+        agents_router.telecodex_client,
+        "send_prompt",
+        AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-test"}),
+    )
 
 TARA = {
     "slug": "tara",
