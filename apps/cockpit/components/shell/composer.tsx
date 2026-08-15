@@ -710,16 +710,27 @@ export function Composer({
               // não parecer morto.
               enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
               onKeyDown={(e) => {
-                // `isComposing` guarda a ACENTUAÇÃO. Segurar a tecla no teclado
-                // do iPhone para escolher "ã"/"ç" abre uma sessão de composição,
-                // e o Enter que confirma a escolha chega aqui como um Enter
-                // comum (o navegador ainda emite `keydown`, com `keyCode` 229).
-                // Sem esta guarda, escrever "não" ou "ação" despacha a mensagem
-                // no meio da palavra. Em português isso não é caso de borda: é
-                // quase toda frase.
+                // A ACENTUAÇÃO não pode virar envio. Segurar a tecla no iPhone
+                // para escolher "ã"/"ç" — ou usar tecla morta no teclado físico
+                // — abre uma sessão de composição, e o Enter que confirma a
+                // escolha chega aqui como um Enter comum. Sem guarda, escrever
+                // "não" ou "ação" despacha a mensagem no meio da palavra; em
+                // português isso não é caso de borda, é quase toda frase.
+                //
+                // O TESTE É DUPLO, e a segunda metade não é redundância: a MDN
+                // é explícita em que `isComposing` vale `false` no PRIMEIRO e no
+                // ÚLTIMO caractere da composição — "compositionstart may fire
+                // after keydown… In these cases, isComposing is false even when
+                // the event is part of composition". A receita publicada lá é
+                // literalmente `if (event.isComposing || event.keyCode === 229)
+                // return;`, e o 229 é normativo: o W3C UI Events (§7.2.1) manda
+                // "If an Input Method Editor is processing key input and the
+                // event is keydown, return 229". Minha primeira versão checava
+                // só `isComposing` e deixava passar exatamente as duas bordas.
+                const compondo = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
                 if (
                   e.key === 'Enter' &&
-                  !e.nativeEvent.isComposing &&
+                  !compondo &&
                   !e.shiftKey &&
                   (!tecladoTouch || retidoAnexo !== null)
                 ) {
