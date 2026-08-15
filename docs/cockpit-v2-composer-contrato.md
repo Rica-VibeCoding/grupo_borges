@@ -105,14 +105,29 @@ com o agente ocupado.
 30. Segurar para falar, com trava para gravação longa.
 31. A transcrição volta para a tela antes de virar mensagem — STT erra, e
     descobrir isso pela resposta errada do agente três minutos depois é caro.
-32. **Pendente:** o microfone hoje fica desabilitado enquanto o envio anterior
-    está em trânsito. É o mesmo defeito do `+` do item 23 — gravar é gesto local
-    — e no Codex esse trânsito chega a minutos.
+32. **Pendente:** o microfone fica desabilitado enquanto o envio anterior está em
+    trânsito. É parente do defeito do `+` do item 23 — gravar é gesto local — e
+    no Codex esse trânsito chega a minutos, o que dói mais aqui do que ali,
+    porque o Rica fala muito mais do que digita.
+
+    Não foi consertado junto com o `+`, e o motivo é diferença de risco, não
+    esquecimento: escolher arquivo não toca a máquina de envio, enquanto soltar o
+    microfone dispara `enviarVoz` na **mesma** máquina de seis fases que já está
+    ocupada com o envio anterior. Habilitar sem antes decidir o que acontece com
+    duas entregas concorrentes trocaria um botão morto por um estado ambíguo.
+    Precisa de rodada própria.
+
+33. **Pendente:** a bolha otimista da voz só é registrada para o Codex
+    (`composer.tsx`, dentro de `subirAudio`), mesmo depois de o texto passar a
+    registrá-la nos dois motores. Fica junto do item 32: casar a marca de voz
+    com o que o stream do Claude Code grava é o que precisa ser conferido antes,
+    e sem essa conferência a pendência ficaria sem par até o teto.
 
 ### Acessibilidade
 
-33. Botão de enviar com nome acessível.
-34. Existe região viva anunciando mudança de estado.
+34. Botão de enviar com nome acessível.
+35. Existe região viva anunciando mudança de estado.
+36. Alvo de toque conforme WCAG 2.2 §2.5.8.
 
 ## O que já custou caro (para não repetir)
 
