@@ -58,7 +58,10 @@ def test_parse_rollout_hides_injected_context_and_internals() -> None:
 
 def test_parse_rollout_never_leaks_secrets() -> None:
     msgs = cr.parse_rollout(FIXTURE, thread_id="t1")
-    blob = "\n".join(m.text for m in msgs)
+    blob = "\n".join(
+        [m.text for m in msgs]
+        + [part.get("text", "") for m in msgs for part in (m.parts or [])]
+    )
     for marker in SECRET_MARKERS:
         assert marker not in blob, f"vazou conteúdo sensível: {marker!r}"
 
@@ -85,6 +88,108 @@ def test_parse_rollout_strips_audio_skill_prefix(tmp_path: Path) -> None:
     assert len(msgs) == 1
     assert msgs[0].role == "user"
     assert msgs[0].text == "Teste de áudio agora."
+    assert msgs[0].parts == [{"type": "text", "text": "Teste de áudio agora."}]
+
+
+def test_parse_rollout_exposes_known_audio_developer_context_separately(tmp_path: Path) -> None:
+    rollout = tmp_path / "audio-developer.jsonl"
+    rollout.write_text(
+        "\n".join(
+            [
+                '{"type":"response_item","timestamp":"2026-08-15T01:00:00Z","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"'
+                + cr._AUDIO_SKILL_PREFIX
+                + '"}]}}',
+                '{"type":"response_item","timestamp":"2026-08-15T01:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Mensagem transcrita do áudio do Rica:\\nconfere a foto"}]}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    context, user = cr.parse_rollout(rollout, thread_id="audio-developer")
+
+    assert context.role == "internal"
+    assert context.visible is True
+    assert context.text == ""
+    assert context.parts == [
+        {"type": "context", "text": cr._AUDIO_SKILL_PREFIX, "source": "developer"}
+    ]
+    assert user.role == "user"
+    assert user.text == "confere a foto"
+    assert user.parts == [{"type": "text", "text": user.text}]
+
+
+def test_parse_rollout_keeps_unknown_developer_message_redacted(tmp_path: Path) -> None:
+    rollout = tmp_path / "developer-secret.jsonl"
+    rollout.write_text(
+        '{"type":"response_item","timestamp":"2026-08-15T01:00:00Z","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"SEGREDO-DEV nao mostrar"}]}}',
+        encoding="utf-8",
+    )
+
+    [message] = cr.parse_rollout(rollout, thread_id="developer-secret")
+
+    assert message.role == "internal"
+    assert message.visible is False
+    assert message.text == ""
+    assert message.parts is None
+    assert "parts" not in message.to_dict()
+
+
+def test_parse_rollout_exposes_known_cockpit_developer_context_only(tmp_path: Path) -> None:
+    rollout = tmp_path / "cockpit-developer.jsonl"
+    context_text = (
+        "Esta mensagem chegou pelo cockpit do grupo_borges. "
+        "Use a habilidade canal-cockpit antes de responder."
+    )
+    rollout.write_text(
+        '{"type":"response_item","timestamp":"2026-08-15T01:00:00Z","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"'
+        + context_text
+        + '"}]}}',
+        encoding="utf-8",
+    )
+
+    [message] = cr.parse_rollout(rollout, thread_id="cockpit-developer")
+
+    assert message.role == "internal"
+    assert message.visible is True
+    assert message.parts == [
+        {"type": "context", "text": context_text, "source": "developer"}
+    ]
+
+
+def test_parse_rollout_preserves_input_image_as_data_url_part(tmp_path: Path) -> None:
+    rollout = tmp_path / "image.jsonl"
+    image_url = "data:image/jpeg;base64,ZmFrZS1pbWFnZQ=="
+    rollout.write_text(
+        '{"type":"response_item","timestamp":"2026-08-15T01:00:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Olha essa peça"},{"type":"input_image","image_url":"'
+        + image_url
+        + '","detail":"high"}]}}',
+        encoding="utf-8",
+    )
+
+    [message] = cr.parse_rollout(rollout, thread_id="image")
+
+    assert message.role == "user"
+    assert message.text == "Olha essa peça"
+    assert message.parts == [
+        {"type": "text", "text": "Olha essa peça"},
+        {"type": "image", "image_url": image_url},
+    ]
+
+
+def test_parse_rollout_hides_synthetic_image_only_prompt_but_keeps_photo(tmp_path: Path) -> None:
+    rollout = tmp_path / "image-only.jsonl"
+    image_url = "data:image/png;base64,aW1hZ2U="
+    rollout.write_text(
+        '{"type":"response_item","timestamp":"2026-08-15T01:00:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Analyze the uploaded image."},{"type":"input_image","image_url":"'
+        + image_url
+        + '"}]}}',
+        encoding="utf-8",
+    )
+
+    [message] = cr.parse_rollout(rollout, thread_id="image-only")
+
+    assert message.text == ""
+    assert message.parts == [{"type": "image", "image_url": image_url}]
 
 
 def test_read_latest_token_count_normaliza_contexto_e_rate_limits(tmp_path: Path) -> None:

@@ -4387,8 +4387,9 @@ async def change_agent_model(
 # ----- TK-25: leitura read-only do Codex local (Tara) ---------------------
 # Card/chat da Tara não têm pane Claude Code; os dados reais vivem no
 # `~/.codex/state_5.sqlite` + rollout JSONL. Endpoints abaixo são SÓ leitura:
-# nunca escrevem no SQLite do Codex e nunca expõem prompt de sistema/dev,
-# reasoning ou tool I/O (filtrado em `services.codex_reader`).
+# nunca escrevem no SQLite do Codex e nunca expõem prompt de sistema,
+# developer não autorizado, reasoning ou tool I/O (filtrado em
+# `services.codex_reader`).
 
 
 class CodexThreadResponse(BaseModel):
@@ -4407,6 +4408,9 @@ class CodexMessageResponse(BaseModel):
     timestamp: str
     item_type: str
     visible: bool
+    # Estrutura opcional: texto, imagem data-URL ou os dois contextos developer
+    # explicitamente liberados para o cockpit. `text` segue como fallback.
+    parts: list[dict[str, str]] | None = None
     # O campo precisa ficar AUSENTE quando a origem não existe. O decorator da
     # rota usa `response_model_exclude_unset=True`; por isso o chamador só o
     # passa abaixo quando há meta explícito, em vez de passar `None`.
@@ -4467,9 +4471,10 @@ async def get_codex_messages(
 ) -> CodexMessagesResponse:
     """Histórico read-only da última thread Codex.
 
-    Por padrão devolve só bolhas visíveis (user/assistant reais); itens internos
-    (developer/system/reasoning/tool) entram só na contagem `hidden_count`.
-    `include_internal=true` adiciona marcadores internos SEM texto (nunca vaza).
+    Por padrão devolve as bolhas visíveis, inclusive os dois contextos developer
+    explicitamente aprovados. Os demais itens internos (developer/system/
+    reasoning/tool) entram só na contagem `hidden_count`. `include_internal=true`
+    adiciona marcadores internos SEM texto (nunca vaza).
 
     Opção A (10/08): a thread do cockpit é a do `codex_thread_id` — sem o
     fallback do telecodex, que mostraria a conversa da sessão interativa do tmux

@@ -88,6 +88,7 @@ def test_voice_codex_produces_canonical_stt_meta(tmp_path: Path) -> None:
         timestamp=(datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),
         item_type="message",
         visible=True,
+        parts=[{"type": "text", "text": f"🎙 {transcript}"}],
     )
     stt = SimpleNamespace(returncode=0, stdout=f"{transcript}\n", stderr="")
 
@@ -119,6 +120,7 @@ def test_voice_codex_produces_canonical_stt_meta(tmp_path: Path) -> None:
             "kind": "stt",
             "raw_text": f"🎙 {transcript}",
         }
+        assert message["parts"] == [{"type": "text", "text": f"🎙 {transcript}"}]
     finally:
         agents_router._CODEX_RUN_PROCS.pop("tara", None)
 
@@ -159,6 +161,53 @@ def test_typed_microphone_prefix_does_not_create_codex_stt_meta(tmp_path: Path) 
     body = response.json()
     assert body["model"] is None
     assert "meta" not in body["messages"][0]
+
+
+def test_codex_messages_exposes_input_image_data_url_part(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    image_url = "data:image/jpeg;base64,ZmFrZS1pbWFnZQ=="
+    thread = SimpleNamespace(
+        thread_id="thread-image",
+        rollout_path="/tmp/thread-image.jsonl",
+        cwd="/tmp/tara",
+        title="foto",
+        model=None,
+        reasoning_effort=None,
+        tokens_used=0,
+        updated_at_ms=None,
+        created_at_ms=None,
+    )
+    image_message = codex_reader.CodexMessage(
+        id="thread-image:5",
+        role="user",
+        text="",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        item_type="message",
+        visible=True,
+        parts=[{"type": "image", "image_url": image_url}],
+    )
+
+    with patch(
+        "routers.agents.codex_reader.read_cockpit_thread_id", return_value=thread.thread_id
+    ), patch(
+        "routers.agents.codex_reader.read_latest_conversation",
+        return_value=(thread, [image_message]),
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/agents/tara/codex/messages")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["messages"] == [
+        {
+            "id": "thread-image:5",
+            "role": "user",
+            "text": "",
+            "timestamp": image_message.timestamp,
+            "item_type": "message",
+            "visible": True,
+            "parts": [{"type": "image", "image_url": image_url}],
+        }
+    ]
 
 
 async def test_voice_tmux_persists_explicit_meta_for_canonical_event(tmp_path: Path) -> None:

@@ -53,10 +53,16 @@ _INSTRUCTION_MARKERS = (
 # payload.type que, quando role=message, podem virar conversa visível.
 _VISIBLE_ROLES = ("user", "assistant")
 
-_AUDIO_SKILL_PREFIX = (
+_LEGACY_AUDIO_SKILL_PREFIX = (
     "Use $audio-telegram-resumo nesta sessão. A entrada veio por áudio do Rica; "
     "responda em áudios curtos por etapa até a demanda encerrar."
 )
+_AUDIO_SKILL_PREFIX = (
+    "Use $audio-telegram-resumo nesta sessão. A entrada veio por áudio do Rica; "
+    "escreva a resposta final com blocos [[voz]]...[[/voz]] (cada bloco vira uma "
+    "mensagem de voz curta) e deixe detalhe técnico em texto fora dos blocos."
+)
+_AUDIO_SKILL_PREFIXES = (_LEGACY_AUDIO_SKILL_PREFIX, _AUDIO_SKILL_PREFIX)
 _AUDIO_TRANSCRIPT_PREFIX = "Mensagem transcrita do áudio do Rica:"
 
 # Régua de formatação que o wrapper `tara-codex` injeta no prompt de TODO turno
@@ -67,6 +73,7 @@ _AUDIO_TRANSCRIPT_PREFIX = "Mensagem transcrita do áudio do Rica:"
 # embutido no meio da régua, composer preso em 'aceito').
 _COCKPIT_REGUA_MARKER = "esta mensagem chegou pelo cockpit do grupo_borges"
 _COCKPIT_REGUA_SEPARATOR = "\n\n---\n\n"
+_IMAGE_ONLY_PROMPT = "Analyze the uploaded image."
 
 
 @dataclass(frozen=True)
@@ -101,9 +108,17 @@ class CodexMessage:
     timestamp: str
     item_type: str  # 'message' | 'reasoning' | 'function_call' | 'function_call_output' | ...
     visible: bool
+    # Estrutura nova para o cockpit v2. `text` continua como fallback achatado
+    # para consumidores que ainda não renderizam partes.
+    parts: list[dict[str, str]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # A rota usa response_model_exclude_unset=True. Não emitir `parts: null`
+        # preserva o contrato opcional para itens internos antigos.
+        if self.parts is None:
+            data.pop("parts")
+        return data
 
 
 def _looks_like_injected_context(text: str) -> bool:
@@ -125,12 +140,19 @@ def classify_message(role: str, text: str) -> tuple[str, bool]:
 
 def _strip_audio_skill_prefix(text: str) -> str:
     stripped = text.strip()
-    if not stripped.startswith(_AUDIO_SKILL_PREFIX):
+    for prefix in _AUDIO_SKILL_PREFIXES:
+        if not stripped.startswith(prefix):
+            continue
+        rest = stripped[len(prefix) :].lstrip()
+        return _strip_audio_transcript_prefix(rest)
+    return _strip_audio_transcript_prefix(text)
+
+
+def _strip_audio_transcript_prefix(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith(_AUDIO_TRANSCRIPT_PREFIX):
         return text
-    rest = stripped[len(_AUDIO_SKILL_PREFIX) :].lstrip()
-    if rest.startswith(_AUDIO_TRANSCRIPT_PREFIX):
-        return rest[len(_AUDIO_TRANSCRIPT_PREFIX) :].lstrip()
-    return rest
+    return stripped[len(_AUDIO_TRANSCRIPT_PREFIX) :].lstrip()
 
 
 def _strip_cockpit_regua(text: str) -> str:
@@ -179,20 +201,89 @@ def _strip_channel_envelopes(text: str) -> str:
     return limpo.strip()
 
 
-def _extract_text(payload: dict[str, Any]) -> str:
-    """Junta os pedaços de texto de `payload.content[]` (input_text/output_text)."""
+def _extract_parts(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """Extrai conteúdo seguro e renderizável do payload de uma message.
+
+    O bridge TeleCodex usa `local_image`; o rollout do Codex o persiste como
+    `input_image` com `image_url` data-URL. O leitor anterior achava só texto e
+    deixava essa foto invisível para o cockpit.
+    """
     content = payload.get("content")
     if isinstance(content, str):
-        return content
+        return [{"type": "text", "text": content}] if content else []
     if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
+        return []
+    parts: list[dict[str, str]] = []
     for item in content:
-        if isinstance(item, dict):
-            chunk = item.get("text") or item.get("output_text") or ""
-            if isinstance(chunk, str) and chunk:
-                parts.append(chunk)
-    return "\n".join(parts)
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "input_image":
+            image_url = item.get("image_url")
+            # `input_image` vem do rollout local, mas limitar a data URLs de
+            # imagem mantém o endpoint de leitura incapaz de transportar URL
+            # arbitrária para o browser.
+            if isinstance(image_url, str) and image_url.startswith("data:image/"):
+                parts.append({"type": "image", "image_url": image_url})
+            continue
+        chunk = item.get("text") or item.get("output_text") or ""
+        if isinstance(chunk, str) and chunk:
+            parts.append({"type": "text", "text": chunk})
+    return parts
+
+
+def _parts_text(parts: list[dict[str, str]]) -> str:
+    return "\n".join(part["text"] for part in parts if part.get("type") == "text")
+
+
+def _replace_text_parts(parts: list[dict[str, str]], text: str) -> list[dict[str, str]]:
+    """Troca os segmentos de texto sem perder a ordem nem os anexos."""
+    replacement: list[dict[str, str]] = []
+    inserted = False
+    saw_text = False
+    for part in parts:
+        if part.get("type") != "text":
+            replacement.append(part)
+            continue
+        saw_text = True
+        if text and not inserted:
+            replacement.append({"type": "text", "text": text})
+            inserted = True
+    if text and not saw_text:
+        replacement.insert(0, {"type": "text", "text": text})
+    return replacement
+
+
+def _without_image_only_prompt(parts: list[dict[str, str]]) -> list[dict[str, str]]:
+    """O texto padrão do bridge não é fala do Rica em foto sem legenda."""
+    has_image = any(part.get("type") == "image" for part in parts)
+    if has_image and _parts_text(parts).strip() == _IMAGE_ONLY_PROMPT:
+        return [part for part in parts if part.get("type") != "text"]
+    return parts
+
+
+def _extract_text(payload: dict[str, Any]) -> str:
+    """Compatibilidade: texto achatado dos pedaços de conteúdo."""
+    return _parts_text(_extract_parts(payload))
+
+
+def _known_developer_context(text: str) -> dict[str, str] | None:
+    """Expõe só os dois contextos de produto aprovados para a UI.
+
+    Outros developer messages podem carregar instruções, permissões ou segredos;
+    continuam internos e redigidos. A régua do cockpit precisa conter a skill e
+    não pode trazer o separador de uma user message concatenada.
+    """
+    stripped = text.strip()
+    if stripped in _AUDIO_SKILL_PREFIXES:
+        return {"type": "context", "text": stripped, "source": "developer"}
+    lower = stripped.lower()
+    if (
+        lower.startswith(_COCKPIT_REGUA_MARKER)
+        and "canal-cockpit" in lower
+        and _COCKPIT_REGUA_SEPARATOR not in stripped
+    ):
+        return {"type": "context", "text": stripped, "source": "developer"}
+    return None
 
 
 def _summarize_function_call(payload: dict[str, Any]) -> str:
@@ -256,13 +347,56 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
 
             if item_type == "message":
                 role_in = str(payload.get("role") or "")
-                text = _strip_audio_skill_prefix(_extract_text(payload))
-                text = _strip_cockpit_regua(text)
-                # A classificação vem ANTES da limpeza, de propósito: quem
-                # decide "isto é contexto injetado" olha os marcadores do texto
-                # cru. Limpar primeiro apagaria a prova e o lixo viraria bolha.
+                raw_parts = _extract_parts(payload)
+                raw_text = _parts_text(raw_parts)
+
+                # Developer é redigido por padrão. As duas instruções de produto
+                # explicitamente aprovadas viram metadata visível, nunca fala do
+                # usuário nem conteúdo developer genérico.
+                if role_in == "developer":
+                    context = _known_developer_context(raw_text)
+                    if context is not None:
+                        messages.append(
+                            CodexMessage(
+                                id=msg_id,
+                                role="internal",
+                                text="",
+                                timestamp=timestamp,
+                                item_type="message",
+                                visible=True,
+                                parts=[context],
+                            )
+                        )
+                    else:
+                        messages.append(
+                            CodexMessage(
+                                id=msg_id,
+                                role="internal",
+                                text="",
+                                timestamp=timestamp,
+                                item_type="message",
+                                visible=False,
+                            )
+                        )
+                    continue
+
+                text = raw_text
+                if role_in == "user":
+                    # Compatibilidade com turnos históricos e com a frente que
+                    # ainda concatena a régua no prompt do cockpit.
+                    text = _strip_audio_skill_prefix(text)
+                    text = _strip_cockpit_regua(text)
+
+                # A classificação acontece antes de remover envelopes: é ela que
+                # impede contexto injetado pelo runtime de virar fala na UI.
                 role_out, visible = classify_message(role_in, text)
-                text = _strip_channel_envelopes(text) if visible else text
+                parts = None
+                if visible:
+                    text = _strip_channel_envelopes(text)
+                    parts = _replace_text_parts(raw_parts, text)
+                    if role_out == "user":
+                        parts = _without_image_only_prompt(parts)
+                    text = _parts_text(parts)
                 messages.append(
                     CodexMessage(
                         id=msg_id,
@@ -271,6 +405,7 @@ def parse_rollout(path: str | Path, *, thread_id: str = "") -> list[CodexMessage
                         timestamp=timestamp,
                         item_type="message",
                         visible=visible,
+                        parts=parts or None,
                     )
                 )
             elif item_type == "function_call":
