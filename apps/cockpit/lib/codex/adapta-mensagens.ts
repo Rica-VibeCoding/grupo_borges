@@ -49,7 +49,11 @@
  *     para as duas independentemente.
  */
 
-import type { MessagePayload, SyntheticMeta } from '@grupo_borges/cockpit-core/messages-types';
+import type {
+  ContentPart,
+  MessagePayload,
+  SyntheticMeta,
+} from '@grupo_borges/cockpit-core/messages-types';
 
 /** Uma peça da mensagem, quando `GET /api/agents/{slug}/codex/messages`
  *  já separa estrutura em vez do `text` achatado
@@ -58,7 +62,11 @@ import type { MessagePayload, SyntheticMeta } from '@grupo_borges/cockpit-core/m
 export type CodexMessagePart =
   | { type: 'text'; text: string }
   | { type: 'image'; image_url: string }
-  | { type: 'context'; text: string; source: 'developer' };
+  | { type: 'context'; text: string; source: 'developer' }
+  /** Chamada de ferramenta. Mesma forma do `tool_use` do Claude Code, de
+   *  propósito: é o que deixa a linha de execução ser desenhada pelo mesmo
+   *  renderer nos dois motores. */
+  | { type: 'tool_use'; id: string; name: string; input: unknown };
 
 /** O que `GET /api/agents/{slug}/codex/messages` devolve em `messages[]`
  *  (`apps/api/services/codex_reader.py`, `CodexMessage.to_dict`). */
@@ -99,14 +107,26 @@ function conteudoPrincipal(partes: readonly CodexMessagePart[]): string {
   return imagem ? envelopeDeImagem(imagem.image_url, texto) : texto;
 }
 
-/** POR QUE `internal` FICA DE FORA. O reader marca `function_call` como
- *  `role: 'internal'` com um resumo do comando em `text` — texto, não a
- *  estrutura `{id, name, input}` que `execucao-do-item.ts` precisa pra desenhar
- *  uma linha de ferramenta. Promovido a bolha, viraria uma fala do agente que
- *  ele nunca disse; é mentira visual, e pior que a ausência. Fora, portanto,
- *  até o back expor a estrutura de verdade. */
+/** POR QUE `internal` FICAVA DE FORA, e o que mudou em 15/08. O reader marcava
+ *  `function_call` como `role: 'internal'` com um resumo do comando em `text` —
+ *  texto, não a estrutura `{id, name, input}` que `execucao-do-item.ts` precisa
+ *  pra desenhar uma linha de ferramenta. Promovido a bolha, viraria uma fala do
+ *  agente que ele nunca disse; é mentira visual, e pior que a ausência.
+ *
+ *  A condição escrita aqui era "até o back expor a estrutura de verdade". O back
+ *  passou a expor: `custom_tool_call` (o tipo que o rollout REALMENTE emite —
+ *  `function_call` não aparece nenhuma vez em sessão real) agora vem com
+ *  `parts: [{type:'tool_use', id, name, input}]`. Então entra, e entra como
+ *  execução, não como fala. Sem a estrutura, continua fora. */
 function ehBolha(m: CodexMessage): boolean {
-  return m.role === 'user' || m.role === 'assistant';
+  return m.role === 'user' || m.role === 'assistant' || execucaoDe(m) !== undefined;
+}
+
+/** O `tool_use` de uma chamada de ferramenta, quando o back mandou a estrutura. */
+function execucaoDe(m: CodexMessage): ContentPart | undefined {
+  if (m.role !== 'internal' || !m.visible || !m.parts) return undefined;
+  const parte = m.parts.find((p) => p.type === 'tool_use');
+  return parte as ContentPart | undefined;
 }
 
 function instanteDe(timestamp: string): number {
@@ -187,11 +207,53 @@ export function criaAdaptadorCodex(): AdaptadorCodex {
       igualAAnterior = false;
     };
 
+    /** Chamada de ferramenta: `content` é `ContentPart[]`, não string, porque é
+     *  assim que `buildRenderItems` reconhece `tool_use` e manda pra
+     *  `LinhaExecucao`. Mesma memoização por chave do `emite` — sem ela o
+     *  objeto nasce novo a cada poll de 3s e o feed reclassifica a conversa
+     *  inteira. */
+    const emiteExecucao = (chave: string, parte: ContentPart, bruta: CodexMessage): void => {
+      vistas.add(chave);
+      const ordinal = lista.length;
+
+      const anterior = traduzidas.get(chave);
+      if (anterior && anterior.timestamp === bruta.timestamp) {
+        lista.push(anterior);
+        if (ultimaLista[ordinal] !== anterior) igualAAnterior = false;
+        return;
+      }
+
+      const traduzida: MessagePayload = {
+        id: ordinal,
+        kind: 'assistant',
+        uuid: `codex-${chave}`,
+        parent_uuid: null,
+        session_id: null,
+        is_sidechain: false,
+        user_type: 'external',
+        timestamp: bruta.timestamp,
+        created_at: instanteDe(bruta.timestamp),
+        message: { role: 'assistant', content: [parte], stop_reason: 'tool_use' },
+      };
+      traduzidas.set(chave, traduzida);
+      lista.push(traduzida);
+      igualAAnterior = false;
+    };
+
     for (const bruta of brutas) {
       if (!ehBolha(bruta)) continue;
 
       const chave = bruta.id || `codex-${lista.length}`;
       const papel = bruta.role === 'user' ? 'user' : 'assistant';
+
+      // Chamada de ferramenta vira LINHA DE EXECUÇÃO, do mesmo jeito que no
+      // chat do Claude Code — é o que faz os dois pararem de parecer apps
+      // diferentes. Não passa pelo `emite`, que só carrega texto.
+      const execucao = execucaoDe(bruta);
+      if (execucao) {
+        emiteExecucao(chave, execucao, bruta);
+        continue;
+      }
 
       if (!bruta.parts) {
         // Fallback de sempre: quem ainda não migrou manda só `text` achatado.
