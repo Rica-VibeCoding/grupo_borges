@@ -112,6 +112,14 @@ export function BolhaDeComandos({
       <PopoverContent
         side="top"
         align="start"
+        // A âncora é o campo, não a caixa do composer — o `sideOffset` padrão
+        // (8px) mede a partir do topo do TEXTAREA, que já nasce recuado pelo
+        // padding da caixa (`--ck-space-3`, 12px) mais a borda (1px). Sem
+        // compensar isso a bolha sobra 5px DENTRO da caixa em vez de flutuar
+        // acima dela — foi o que o Rica viu como "truncando" (15/08). 21 = 1
+        // (borda) + 12 (`--ck-space-3`) + 8 (`--ck-space-2`, o mesmo respiro
+        // que a gaveta do "+" usa em `.ck-gaveta-acima`).
+        sideOffset={21}
         onOpenAutoFocus={(evento) => evento.preventDefault()}
         style={{ width: 'var(--radix-popover-trigger-width)' }}
       >
