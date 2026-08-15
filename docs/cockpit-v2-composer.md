@@ -409,12 +409,78 @@ validação final é o Rica no aparelho.
 
 ## 6. Anexo de imagem
 
-> **Seção do Daniel.** Enquanto ela não estiver preenchida, o plano completo de
-> execução (HEIC do iPhone, valor do `accept`, as três frentes, as etapas) está
-> em `anexo-imagem-composer-PLANO.md` — que sai do repo quando esta seção
-> encher. Aqui entram: como o envelope de imagem chega em cada motor, por que a
-> Tara renderiza aprovada e o Canário não (F3), e onde a foto de canal vira
-> `(photo)` (F4).
+A imagem entra por três portas e, até 15/08, cada porta desenhava de um jeito.
+O Rica testou as três em cinco minutos e resumiu: *"já não existe um padrão, a
+forma com renderiza na tara, com a mansagem em baixo foi aprovada"*. O alvo,
+daqui pra frente, é o cartão da Tara — **foto em cima, o que ele escreveu
+embaixo, uma caixa só**. Não é um quarto desenho conciliando os três.
+
+### Como o envelope chega, por porta
+
+**Upload pelo cockpit, motor Codex (Tara).** `POST /file` grava em
+`uploads/agents/<slug>/` e o turno nasce com `image_path`; o adaptador
+(`lib/codex/adapta-mensagens.ts`) embute a foto como data-URL na própria
+mensagem. Chega **inteira, numa mensagem só** — daí o cartão único. É a porta
+que funciona, e funciona por acidente de formato, não por desenho compartilhado.
+
+**Upload pelo cockpit, motor Claude Code (Canário, Daniel…).** O mesmo `POST
+/file` grava o arquivo, mas quem anexa a imagem é o CC, e ele **pica o envelope
+em duas mensagens**: a primeira perde a linha que cita a imagem e ganha o
+prefixo `[Image #N]` (às vezes sobra só `[Image #N]Caption: …`); a segunda é uma
+linha só, `[Image: source: /caminho]`. Duas mensagens no JSONL viravam dois
+itens no feed: balão de texto à direita e foto solta embaixo, sem caixa e sem
+alinhamento. **Pôr o nome do arquivo no cabeçalho não resolve** — já foi
+tentado, o CC come a linha do cabeçalho junto por citar a imagem.
+
+**Foto vinda de canal (Telegram/WhatsApp).** Não passa por `uploads/`: o plugin
+grava no inbox do canal e injeta `<channel … image_path="…">` com o corpo
+`(photo)`. O feed do v2 desenhava o corpo — a palavra literal `(photo)` — e a
+imagem não aparecia em lugar nenhum.
+
+### O que foi consertado (`4320e03`)
+
+- **F3.** `juntaMetadesDoAnexo` remonta as duas metades no envelope canônico
+  antes de desenhar, e o pipeline incremental costura o par. O ramo do CC passa
+  a produzir o mesmo cartão da Tara.
+- **F4.** `leEnvelopeDeCanal` lê `image_path` (Telegram) e `attachment_path`
+  (WhatsApp); a URL sai por `GET /api/agents/{slug}/channel-attachment`. Essa
+  rota **já existia na API desde o v1** — o comentário do `envelope-de-canal.ts`
+  afirmava que o v2 não tinha rota de anexo e por isso não desenhava mídia.
+  Afirmação errada, sustentada por meses; só faltava o front chamar.
+- O cartão ganhou linha de procedência, para a foto de canal usar o **mesmo**
+  desenho em vez de inaugurar um quarto.
+
+**Armadilha que o teste pegou e nenhuma bancada pegaria.** A junção funcionava
+no primeiro desenho e se desfazia depois: em qualquer `update` que não traz
+mensagem nova, a fronteira do incremental vira `previous.length - 1` — exatamente
+o meio de um par no fim da conversa —, a cauda enxerga só o caminho e a legenda
+some. Na tela isso apareceria como *"a legenda sumiu sozinha"*, minutos depois,
+sem ninguém tocar em nada. Quem pegou foi o oráculo de paridade por prefixo, não
+o Playwright. Daí o `rewindAtravesDoAnexoPicado`.
+
+### Aberto — com decisão já tomada, faltando execução
+
+**O `accept` do seletor está errado e é bug vivo, não hipótese.**
+`apps/cockpit/lib/anexo.ts:118` usa `image: 'image/*'`. A regra do WebKit (bug
+212489) só transcodifica HEIC quando o `accept` traz **um MIME concreto que o
+CoreGraphics saiba escrever** — `image/*` não é concreto e não dispara nada. No
+Mac, foto HEIC continua HEIC. E `image/heic` no `accept` faz o Safari 17+ agir ao
+contrário, devolvendo `.heic` para um JPEG de verdade (Apple 743049): **nunca
+pôr**.
+
+O lado do servidor **já está pronto**: `pillow-heif` 1.5.0 instalado no `.venv`,
+`_IMAGE_HEIF_MIMES` aceito pela `/file` e convertido na gravação, no mesmo ponto
+onde a orientação EXIF já é normalizada. Quem chega em HEIC hoje **entra**.
+
+Por isso a troca do `accept` não é a linha óbvia que parece: restringir para
+`image/jpeg,image/png,image/webp` faria o Safari converter no Mac, mas pode
+**apagar o `.heic` da lista** ao escolher pelo app Arquivos — e aí ele deixa de
+conseguir anexar o que hoje anexa. É uma troca que se mede no aparelho dele,
+com o Rica escolhendo uma foto do iCloud, não se decide no papel.
+
+**O resto do plano** (miniatura no composer, colar e arrastar, medidas das
+capturas de referência, as fontes de cada decisão) segue em
+`anexo-imagem-composer-PLANO.md`, com as etapas e a régua de pronto.
 
 ---
 
