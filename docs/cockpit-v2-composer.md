@@ -55,6 +55,14 @@ escrita caiu de 34 MB/s para 2,7 MB/s — **92%**. O que sobra, medido por mim �
 recálculo em si — some quando o total de tokens virar coluna materializada, em
 vez de sair de `json_extract` no caminho de leitura. Rodada própria.
 
+⚠️ O piso entre rajadas **os dois mediram e deu diferente**: 475 KB/s (Pavan, 18
+janelas de 2 s) contra 12–111 KB/s (Daniel, janelas de 5 s) — fator de 4 a 40.
+Nenhuma das duas colheitas foi com o painel fechado, então provavelmente são
+cargas diferentes em horários diferentes, e não um erro de um dos lados. O que
+está fechado é só a conclusão: **não existe fonte desconhecida de 78 GB/dia**. A
+linha de base sem painel aberto nunca foi colhida; quem for atrás disso colhe
+primeiro.
+
 ### O que não deu certo
 
 O caro do dia não foi o produto — foi o instrumento. **Sete vezes** em 15/08 a
