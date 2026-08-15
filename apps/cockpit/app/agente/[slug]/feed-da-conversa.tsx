@@ -280,9 +280,21 @@ function FeedCodex({ agentSlug }: { agentSlug: string }) {
   // veio consertar.
   if (itens.length === 0) return carregou ? <SemConversa geracao={0} /> : null;
 
+  // O cursor no fim da última fala é o que faz o chat da Tara parecer o mesmo
+  // app que o do CC — ordem do Rica, 15/08: "todos tem que ficar com a UI igual
+  // ficou definido para a tara", "eu tenho que pensar que estou no mesmo app e
+  // não cada chat parecer um app diferente". O ramo do CC passa isto desde
+  // sempre (linha 194); o do Codex nunca passou.
+  //
+  // A fonte NÃO é `statusDaFrota` cru: no Codex ele oscila entre polls e o
+  // cursor piscaria no vale. É a presença da linha viva — que já nasce
+  // amortecida por `ancoraDaLinhaViva` (vencida + trabalho em voo) e é sempre
+  // o último item quando existe.
+  const estaRodando = itens[itens.length - 1]?.kind === 'linha-viva';
+
   return (
     <div className="ck-feed-enter flex min-h-0 flex-1 flex-col">
-      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} />
+      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando} />
     </div>
   );
 }
