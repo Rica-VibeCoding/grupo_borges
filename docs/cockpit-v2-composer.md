@@ -92,10 +92,24 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
       (`[Image #N]Caption:` numa, `[Image: source:]` noutra) e vira dois itens no
       feed; a Tara vem inteira numa mensagem só, com data-URL.
       **Alvo: a renderização da Tara, que é a aprovada. Dono: Daniel.**
+
+      **No ar desde 15/08 (`4320e03`), provado na tela, esperando o teste dele.**
+      Upload real pelo mesmo caminho que ele usou, no chat do Canário: **um**
+      cartão de 256px, imagem carregada de verdade (`naturalWidth` 1000, não só
+      o elemento existindo) e a legenda dentro da mesma caixa. Captura em
+      `/tmp/audit/anexo-canarinho.png`.
 - [ ] **F4 · Foto que chega pelo Telegram aparece como a palavra `(photo)`.** No
       chat do Daniel, mensagem do Rica com texto + foto virou duas bolhas de
       canal: uma com o texto, outra com o literal `(photo)`. Nenhuma imagem.
       **Dono: Daniel.**
+
+      **No ar desde 15/08 (`4320e03`), mas ⚠️ NÃO provado na tela ainda.** O que
+      está provado: o parse do `image_path` (teste), a URL saindo pela rota de
+      canal (teste) e a rota servindo a foto exata do teste dele — 200,
+      `image/jpeg`, 69.125 bytes, com travessia recusada em 400 (curl). O que
+      falta é ver o `<img>` desenhado: a mensagem dele das 15h50 já **saiu da
+      janela** que o feed carrega, e rolar até o topo não a alcança. Fecha na
+      próxima foto que ele mandar pelo Telegram — não antes.
 
 ### Herdados, com desenho pronto
 
