@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -108,22 +108,38 @@ def test_model_codex_rejects_claude_slug(tmp_path: Path) -> None:
         assert response.json()["detail"] == "model_not_allowed_for_codex"
 
 
-def test_model_codex_persists_without_runtime_switch(tmp_path: Path) -> None:
-    """DS-69 — Codex aceita slug próprio, persiste state_model, NÃO toca o tmux,
-    e sinaliza runtime_switch=False (vale na próxima execução)."""
+def test_model_codex_reconfigures_shared_thread(tmp_path: Path) -> None:
+    """DS-69 — Codex aplica o modelo na thread persistente do TeleCodex."""
     app = _build_app(tmp_path, codex_for_tara=True)
     with patch("routers.agents.tmux_driver.send_message") as send:
-        with TestClient(app) as client:
-            response = client.post(
-                "/api/agents/tara/model",
-                json={"model": "codex-gpt-5-6-terra"},
+        with patch(
+            "routers.agents.telecodex_client.reconfigure_session",
+            new=AsyncMock(
+                return_value={
+                    "contextKey": "7262275215",
+                    "threadId": "thread-1",
+                    "model": "gpt-5.6-terra",
+                    "reasoningEffort": "max",
+                }
+            ),
+            create=True,
+        ) as reconfigure:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/agents/tara/model",
+                    json={"model": "codex-gpt-5-6-terra"},
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert body["runtime_switch"] is True
+                assert body["tmux_delivered"] is True
+                assert body["confirmed"] is True
+                assert body["state_persisted"] is True
+                assert body["model"] == "codex-gpt-5-6-terra"
+            reconfigure.assert_awaited_once_with(
+                model="gpt-5.6-terra",
+                reasoning_effort=None,
             )
-            assert response.status_code == 200
-            body = response.json()
-            assert body["runtime_switch"] is False
-            assert body["tmux_delivered"] is False
-            assert body["state_persisted"] is True
-            assert body["model"] == "codex-gpt-5-6-terra"
         # Codex nunca recebe /model no pane.
         send.assert_not_called()
     # state_model persistido reflete a escolha. asyncio.run cria loop próprio —

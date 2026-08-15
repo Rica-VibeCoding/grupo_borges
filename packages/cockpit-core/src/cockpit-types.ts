@@ -426,6 +426,9 @@ export type AgentPainelResponse = {
   // true = há um `codex exec` do tara-codex em voo (turno rodando). Alimenta o
   // botão "Parar turno" do painel.
   codex_turn_in_flight?: boolean | null;
+  // false = a sessão viva do TeleCodex foi fechada pelo painel; a thread fica
+  // persistida para o botão "Ligar" reabri-la no mesmo contexto.
+  codex_runtime_enabled?: boolean | null;
 };
 
 export type SubagentEntry = {

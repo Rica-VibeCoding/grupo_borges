@@ -41,6 +41,25 @@ async def abort() -> dict[str, Any]:
     return await _post("/control/abort", {})
 
 
+async def close_session() -> dict[str, Any]:
+    return await _post("/control/session/close", {})
+
+
+async def reopen_session() -> dict[str, Any]:
+    return await _post("/control/session/reopen", {})
+
+
+async def reconfigure_session(
+    *,
+    model: str,
+    reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"model": model}
+    if reasoning_effort is not None:
+        body["reasoningEffort"] = reasoning_effort
+    return await _post("/control/session/reconfigure", body)
+
+
 async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=_CONTROL_TIMEOUT_SECONDS) as client:

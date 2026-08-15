@@ -355,6 +355,7 @@ class GrupoBorgesDB:
                 ("codex_sandbox", "TEXT"),
                 ("codex_next_fresh", "INTEGER"),
                 ("codex_thread_id", "TEXT"),
+                ("codex_runtime_enabled", "INTEGER NOT NULL DEFAULT 1"),
                 ("kimi_reasoning_effort", "TEXT"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
@@ -476,6 +477,7 @@ class GrupoBorgesDB:
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
                        s.codex_thread_id,
+                       s.codex_runtime_enabled,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
@@ -500,6 +502,7 @@ class GrupoBorgesDB:
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
                        s.codex_thread_id,
+                       s.codex_runtime_enabled,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
@@ -623,6 +626,7 @@ class GrupoBorgesDB:
             "codex_sandbox",
             "codex_next_fresh",
             "codex_thread_id",
+            "codex_runtime_enabled",
             "kimi_reasoning_effort",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}

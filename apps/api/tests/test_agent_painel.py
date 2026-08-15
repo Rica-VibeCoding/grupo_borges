@@ -1169,24 +1169,31 @@ def test_agent_painel_codex_effort_permite_xhigh(tmp_path: Path, monkeypatch) ->
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
 
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/tara/effort", json={"effort": "xhigh"})
-        painel = client.get("/api/agents/tara/painel")
+    with patch(
+        "routers.agents.telecodex_client.reconfigure_session",
+        new=AsyncMock(return_value={}),
+    ):
+        with TestClient(app) as client:
+            response = client.patch("/api/agents/tara/effort", json={"effort": "xhigh"})
+            painel = client.get("/api/agents/tara/painel")
 
     assert response.status_code == 200
     assert response.json() == {
         "slug": "tara",
         "effort": "xhigh",
-        "source": "agent_state.codex_reasoning_effort",
-        "session_may_diverge": True,
+        "source": "telecodex.session",
+        "session_may_diverge": False,
         "written": True,
+        "tmux_delivered": True,
+        "confirmed": True,
+        "runtime_switch": True,
     }
     assert painel.status_code == 200
     body = painel.json()
     # O bloco `model` era `None` e por isso o seletor da Tara nunca teve menu.
     # `model_default` da fixture é `gpt-5.5` (cru) — o painel devolve canônico.
     assert body["model"]["value"] == "codex-gpt-5-5"
-    assert body["model"]["runtime_switch"] is False
+    assert body["model"]["runtime_switch"] is True
     assert body["effort"]["value"] == "xhigh"
     # Escala do gpt-5.5, que não tem `max`; a lista fixa oferecia.
     assert body["effort"]["allowed"] == ["low", "medium", "high", "xhigh"]
@@ -1203,9 +1210,13 @@ def test_agent_painel_codex_effort_permite_max(tmp_path: Path, monkeypatch) -> N
     app = _build_app(tmp_path)
     app.state.db._upsert_agent_state("tara", None, "codex-gpt-5-6-luna", None, None, None)
 
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/tara/effort", json={"effort": "max"})
-        painel = client.get("/api/agents/tara/painel")
+    with patch(
+        "routers.agents.telecodex_client.reconfigure_session",
+        new=AsyncMock(return_value={}),
+    ):
+        with TestClient(app) as client:
+            response = client.patch("/api/agents/tara/effort", json={"effort": "max"})
+            painel = client.get("/api/agents/tara/painel")
 
     assert response.status_code == 200
     assert response.json()["effort"] == "max"
@@ -1242,9 +1253,13 @@ def test_agent_painel_codex_effort_aceita_ultra_no_modelo_que_tem(
     app = _build_app(tmp_path)
     app.state.db._upsert_agent_state("tara", None, "codex-gpt-5-6-sol", None, None, None)
 
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/tara/effort", json={"effort": "ultra"})
-        painel = client.get("/api/agents/tara/painel")
+    with patch(
+        "routers.agents.telecodex_client.reconfigure_session",
+        new=AsyncMock(return_value={}),
+    ):
+        with TestClient(app) as client:
+            response = client.patch("/api/agents/tara/effort", json={"effort": "ultra"})
+            painel = client.get("/api/agents/tara/painel")
 
     assert response.status_code == 200
     assert "ultra" in painel.json()["effort"]["allowed"]
@@ -1263,8 +1278,7 @@ def test_agent_painel_codex_model_oferece_o_catalogo(tmp_path: Path, monkeypatch
         "codex-gpt-5-6-luna",
         "codex-gpt-5-5",
     ]
-    # Codex não troca em sessão viva — quem aplica é o `-m` do run seguinte.
-    assert body["model"]["runtime_switch"] is False
+    assert body["model"]["runtime_switch"] is True
 
 
 def test_agent_painel_codex_model_sem_catalogo_nao_inventa_lista(

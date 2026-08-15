@@ -577,11 +577,8 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   }
 
   const controles = painel ? montaControles(painel) : [];
-  // O back recusaria com 409 `relaunch_somente_claude_code`, mas oferecer um
-  // botão que só existe para dar erro é pior do que não oferecer: `--resume` é
-  // conceito de Claude Code, e a Tara retoma thread por outro caminho. Vale
-  // igual pro Desligar/Ligar: a Tara não fica de pé entre turnos, então não há
-  // o que desligar nem o que subir.
+  // Resume continua exclusivo do Claude Code. O ciclo Desligar/Ligar do Codex
+  // opera a sessão persistente do TeleCodex e aparece no ramo próprio abaixo.
   const codex = painel ? ehCodex(painel) : false;
 
   // O agente está DE PÉ? Só o painel lido responde — enquanto a busca não
@@ -590,6 +587,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   // ar: lá o Destravar responde `pane_incompativel` e o Resume devolve
   // `attempted:false`, então oferecer os dois seria oferecer botão morto.
   const dePe = painel?.vida.processo ?? true;
+  const runtimeCodexLigado = codex ? painel?.codex_runtime_enabled !== false : dePe;
 
   // Aviso de confirmação de largura cheia — o rótulo DENTRO do botão é sempre
   // curto ("Confirmar?"), a frase que explica o que se perde mora aqui embaixo
@@ -647,7 +645,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           />
         ))}
 
-        {carga === 'pronto' && !dePe && !codex ? (
+        {carga === 'pronto' && !runtimeCodexLigado ? (
           // AGENTE FORA DO AR — desligado ou casca morta. Destravar e Resume
           // SOMEM: não há o que destravar nem o que retomar, e os dois falham em
           // silêncio nesse estado (`pane_incompativel` / `attempted:false`), que
@@ -675,13 +673,11 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           </button>
         ) : null}
 
-        {carga === 'pronto' && (dePe || codex) ? (
+        {carga === 'pronto' && runtimeCodexLigado ? (
           codex ? (
-            // TARA — Codex headless (opção A, 10/08). Destravar/Resume/Desligar
-            // são Claude Code; o back recusa os quatro pra ela. No lugar, os
-            // dois controles que operam um executor sob demanda: "Nova conversa"
-            // (arma thread nova pro próximo turno) e "Parar turno" (derruba o
-            // `codex exec` em voo — desabilitado sem turno rodando).
+            // TARA — o botão Desligar fecha a sessão do TeleCodex, sem criar um
+            // segundo escritor da mesma thread. Ligar reabre essa thread; Nova
+            // conversa continua sendo a escolha explícita de começar outra.
             <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
               <button
                 type="button"
@@ -732,6 +728,12 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
               >
                 {rotulaPararTurno(pararTurno)}
               </button>
+
+              <BotaoAcaoBruta
+                fase={desligar}
+                acao="desligar"
+                onClick={() => void acionarBruta('desligar')}
+              />
             </div>
           ) : (
           // Destravar + Resume + Desligar na MESMA linha — os três cabem lado a

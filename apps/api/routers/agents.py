@@ -276,6 +276,7 @@ class AgentPainelResponse(BaseModel):
     codex_native: bool | None = None
     codex_next_fresh: bool | None = None
     codex_turn_in_flight: bool | None = None
+    codex_runtime_enabled: bool | None = None
 
 
 class AgentPainelEffortPatchRequest(BaseModel):
@@ -639,8 +640,9 @@ async def _build_painel_vida(agent: dict[str, Any]) -> AgentPainelVida:
 async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
-    vida = await _build_painel_vida(agent)
-    if agent.get("executor_kind") == "codex":
+    if _agente_codex(agent):
+        runtime_enabled = agent.get("codex_runtime_enabled", 1) != 0
+        vida = AgentPainelVida(sessao=runtime_enabled, processo=runtime_enabled)
         thread = await asyncio.to_thread(_resolve_codex_thread, agent)
         contexto = _build_codex_painel_contexto(agent, thread)
         return AgentPainelResponse(
@@ -658,8 +660,10 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             codex_native=True,
             codex_next_fresh=bool(agent.get("codex_next_fresh")),
             codex_turn_in_flight=_codex_turn_in_flight(agent),
+            codex_runtime_enabled=runtime_enabled,
         )
 
+    vida = await _build_painel_vida(agent)
     cc_status = await _load_cc_status(db, slug)
     is_kimi = agent.get("model_family") == "kimi"
     kimi_usages = None
@@ -708,21 +712,28 @@ async def patch_agent_effort(
     request: Request,
 ) -> AgentPainelEffortPatchResponse:
     agent = await _get_agent_or_404(request, slug)
-    if agent.get("executor_kind") == "codex":
+    if _agente_codex(agent):
         # A escala é a do modelo corrente, a mesma que o painel ofereceu — uma
         # constante aqui recusaria o `ultra` do gpt-5.6-sol e aceitaria o `max`
         # que o gpt-5.5 não tem.
         thread = await asyncio.to_thread(_resolve_codex_thread, agent)
         if patch.effort not in _codex_efforts_permitidos(agent, thread):
             raise HTTPException(status_code=422, detail="codex_effort_not_allowed")
+        model = _codex_modelo_corrente(agent, thread)
+        if model is None:
+            raise HTTPException(status_code=409, detail="codex_model_unavailable")
+        await _reconfigure_codex_session(agent, model=model, reasoning_effort=patch.effort)
         db: GrupoBorgesDB = request.app.state.db
         await db.update_agent_codex_state(slug, codex_reasoning_effort=patch.effort)
         return AgentPainelEffortPatchResponse(
             slug=slug,
             effort=patch.effort,
-            source="agent_state.codex_reasoning_effort",
-            session_may_diverge=True,
+            source="telecodex.session",
+            session_may_diverge=False,
             written=True,
+            tmux_delivered=True,
+            confirmed=True,
+            runtime_switch=True,
         )
     if agent.get("model_family") == "kimi":
         # Kimi pensa sempre; o nível é env var (CLAUDE_CODE_EFFORT_LEVEL) lida
@@ -791,7 +802,7 @@ async def patch_agent_codex_sandbox(
     request: Request,
 ) -> AgentCodexSandboxPatchResponse:
     agent = await _get_agent_or_404(request, slug)
-    if agent.get("executor_kind") != "codex":
+    if not _agente_codex(agent):
         raise HTTPException(status_code=400, detail="not_a_codex_agent")
     db: GrupoBorgesDB = request.app.state.db
     await db.update_agent_codex_state(slug, codex_sandbox=patch.sandbox)
@@ -818,7 +829,7 @@ async def patch_agent_codex_new_thread(
     `--resume-thread`. O telecodex tem canal próprio — o cockpit não compete.
     """
     agent = await _get_agent_or_404(request, slug)
-    if agent.get("executor_kind") != "codex":
+    if not _agente_codex(agent):
         raise HTTPException(status_code=400, detail="not_a_codex_agent")
     db: GrupoBorgesDB = request.app.state.db
     if patch.armed:
@@ -1089,6 +1100,24 @@ def _codex_modelo_corrente(
     )
 
 
+async def _reconfigure_codex_session(
+    agent: dict[str, Any],
+    *,
+    model: str,
+    reasoning_effort: str | None,
+) -> dict[str, Any]:
+    del agent
+    try:
+        return await telecodex_client.reconfigure_session(
+            model=codex_catalog.raw_slug(model),
+            reasoning_effort=reasoning_effort,
+        )
+    except telecodex_client.TeleCodexControlError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except telecodex_client.TeleCodexUnavailable as exc:
+        raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
+
+
 def _codex_efforts_conhecidos() -> frozenset[str]:
     """Tudo que é degrau de esforço em ALGUM modelo do catálogo.
 
@@ -1322,15 +1351,9 @@ def _build_codex_painel_model(
     modelo só. O catálogo é lido do CLI (`services.codex_catalog`) porque a
     allowlist escrita à mão já tinha divergido do binário.
 
-    `value` prefere o modelo da THREAD (`contexto.model`, nome cru que o próprio
-    Codex gravou no rollout) sobre o `state_model` persistido: o persistido é o
-    que alguém clicou, e ele só vale no run seguinte. Servir o clique como se
-    fosse o estado esconderia justamente o caso em que a troca não pegou —
-    mesma régua já aplicada ao esforço em `_build_codex_painel_effort`.
-
-    `runtime_switch=False` porque o Codex CLI não troca de modelo em sessão
-    viva: quem aplica é o `-m` que o wrapper `tara-codex` injeta na próxima
-    execução.
+    `value` prefere a configuração persistida pelo TeleCodex quando ela aponta
+    para a mesma thread. O rollout SQLite pode manter o modelo original da
+    conversa mesmo depois de a sessão persistente ser reaberta com outro modelo.
     """
     permitidos = codex_catalog.listar_modelos()
     if not permitidos:
@@ -1340,7 +1363,7 @@ def _build_codex_painel_model(
             value=_codex_slug_canonico(_string_or_none(agent.get("state_model"))),
             allowed=[],
             source="agent.state_model",
-            runtime_switch=False,
+            runtime_switch=True,
         )
 
     allowed = [modelo.slug for modelo in permitidos]
@@ -1354,7 +1377,7 @@ def _build_codex_painel_model(
             allowed=allowed,
             source=contexto.source,
             session_may_diverge=False,
-            runtime_switch=False,
+            runtime_switch=True,
         )
 
     return AgentPainelModel(
@@ -1362,14 +1385,14 @@ def _build_codex_painel_model(
         or _codex_slug_canonico(_string_or_none(agent.get("model_default"))),
         allowed=allowed,
         source="agent.state_model",
-        runtime_switch=False,
+        runtime_switch=True,
     )
 
 
 def _build_painel_model(
     agent: dict[str, Any], contexto: AgentPainelContexto
 ) -> AgentPainelModel | None:
-    if agent.get("executor_kind") == "codex":
+    if _agente_codex(agent):
         return _build_codex_painel_model(agent, contexto)
     if agent.get("model_family") == "kimi":
         return None
@@ -2440,8 +2463,8 @@ class ModelChangeResponse(BaseModel):
     state_persisted: bool
     confirmed: bool
     model: str
-    # DS-69 — True quando a troca vale na sessão viva (Claude Code via /model);
-    # False quando só vale na PRÓXIMA execução (Codex CLI não troca em runtime).
+    # DS-69 — True quando a troca vale na sessão viva (Claude Code via /model ou
+    # Codex via reabertura controlada da thread persistente).
     runtime_switch: bool = True
 
 
@@ -2511,6 +2534,10 @@ def _codex_turn_in_flight(agent: dict[str, Any]) -> bool:
         return True
     status_line = str(agent.get("status_line") or "").strip().lower()
     return any(status_line.startswith(marker) for marker in _CODEX_BUSY_STATUS_LINES)
+
+
+def _agente_codex(agent: dict[str, Any]) -> bool:
+    return agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex"
 
 
 async def _clear_codex_busy_status_line(
@@ -2647,6 +2674,8 @@ async def _spawn_codex_agent_turn(
     input_origin: _InputOrigin | None = None,
 ) -> None:
     agent = await _get_agent_or_404(request, slug)
+    if agent.get("codex_runtime_enabled", 1) == 0:
+        raise HTTPException(status_code=409, detail="codex_session_offline")
     effective_fresh = fresh or bool(agent.get("codex_next_fresh"))
     origin_id: str | None = None
     if input_origin is not None:
@@ -3296,7 +3325,7 @@ async def send_agent_input(
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
     event_boundary_id = await db.max_event_id()
-    if agent.get("executor_kind") == "codex":
+    if _agente_codex(agent):
         await _spawn_codex_agent_turn(
             slug,
             request,
@@ -3935,7 +3964,7 @@ async def post_agent_voice(
         # só quebraria a origem `stt` da bolha.
         falado = f"🎙 {transcribed}"
         input_origin = _InputOrigin(meta={"kind": "stt", "raw_text": falado})
-        if agent.get("executor_kind") == "codex":
+        if _agente_codex(agent):
             await _spawn_codex_agent_turn(
                 slug,
                 request,
@@ -4026,7 +4055,7 @@ async def post_agent_image(
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"
 
-    if agent.get("executor_kind") == "codex":
+    if _agente_codex(agent):
         prompt = caption_text or "Veja a imagem anexa."
         await _spawn_codex_agent_turn(
             slug,
@@ -4133,7 +4162,7 @@ async def post_agent_file(
     caption_text = (caption or "").strip()
     text = _agent_file_message(kind, absolute_path, original_name, caption_text)
 
-    if agent.get("executor_kind") == "codex":
+    if _agente_codex(agent):
         if kind == "image":
             await _spawn_codex_agent_turn(
                 slug,
@@ -4230,10 +4259,11 @@ async def change_agent_model(
     - caminho feliz: envia `/model`, picker idempotente, poll de confirmação,
       persiste state_model só se delivered=True, emite task_event. runtime_switch=True.
 
-    **Codex (Tara)** — NÃO troca em sessão viva (sem `/model`):
+    **Codex (Tara)** — reconfigura a sessão persistente do TeleCodex, preservando
+    a mesma thread:
     - 422 `model_not_allowed_for_codex` se vier slug Claude
-    - persiste state_model (escolha do Rica), emite task_event, runtime_switch=False.
-      O wrapper `tara-codex` injeta `-m <modelo>` na PRÓXIMA execução.
+    - aplica o modelo e o esforço pedido ao reabrir a thread, persiste state_model
+      e emite task_event com runtime_switch=True.
 
     **Kimi (Hiro)** — NÃO troca em sessão viva (motor é fixo por env var no
     boot; `/model` do CC só lista aliases Anthropic, todos mapeados pro mesmo
@@ -4242,7 +4272,7 @@ async def change_agent_model(
     e o wrapper `hiro-k3`, lendo o estado persistido.
     """
     agent = await _get_agent_or_404(request, slug)
-    is_codex = agent.get("executor_kind") == "codex"
+    is_codex = _agente_codex(agent)
     is_kimi = agent.get("model_family") == "kimi"
     db: GrupoBorgesDB = request.app.state.db
     target = payload.model
@@ -4257,10 +4287,35 @@ async def change_agent_model(
     if not is_codex and not is_kimi and target not in _CHAT_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
 
-    if is_codex or is_kimi:
-        # Persiste a escolha como estado do agente; vale na próxima execução
-        # (Codex) ou no próximo boot da sessão (Kimi — env var de modelo é
-        # lida só na subida do processo).
+    if is_codex:
+        await _reconfigure_codex_session(
+            agent,
+            model=target,
+            reasoning_effort=_string_or_none(agent.get("codex_reasoning_effort")),
+        )
+        await db.upsert_agent_state(slug, model=target)
+        await db.insert_task_event(
+            kind="agent.model_change",
+            agent_slug=slug,
+            payload={
+                "from": from_model,
+                "to": target,
+                "actor": "cockpit",
+                "confirmed": True,
+                "runtime_switch": True,
+            },
+        )
+        return ModelChangeResponse(
+            tmux_delivered=True,
+            state_persisted=True,
+            confirmed=True,
+            runtime_switch=True,
+            model=target,
+        )
+
+    if is_kimi:
+        # Kimi continua sendo configurado no próximo boot; o motor é fixo por
+        # env var e não há daemon compartilhado para reabrir a sessão.
         await db.upsert_agent_state(slug, model=target)
         await db.insert_task_event(
             kind="agent.model_change",
@@ -4375,7 +4430,7 @@ def _codex_db_path() -> str | None:
 
 async def _require_codex_agent(request: Request, slug: str) -> dict[str, Any]:
     agent = await _get_agent_or_404(request, slug)
-    is_codex = agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex"
+    is_codex = _agente_codex(agent)
     if not is_codex:
         raise HTTPException(status_code=400, detail="not_a_codex_agent")
     return agent
@@ -4615,7 +4670,7 @@ async def post_agent_relaunch(
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
-    if agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex":
+    if _agente_codex(agent):
         raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
     if agent.get("model_family") not in {None, "anthropic", "kimi"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
@@ -4652,18 +4707,6 @@ async def post_agent_relaunch(
     }
 
 
-def _recusa_ciclo_de_vida(agent: dict[str, Any]) -> None:
-    """Desligar/Ligar só existem pra quem tem sessão tmux própria.
-
-    Mesma fronteira do relaunch, e pelo mesmo motivo: a Tara não mora numa
-    sessão de pé — ela nasce e morre a cada `codex exec` disparado pela própria
-    API. Oferecer um botão que o back recusaria com 409 é o botão morto da §9
-    com outra roupa; o front já esconde os dois, isto é o cinto.
-    """
-    if agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex":
-        raise HTTPException(status_code=409, detail="ciclo_de_vida_somente_claude_code")
-
-
 @router.post("/{slug}/desligar")
 async def post_agent_desligar(
     slug: str,
@@ -4671,6 +4714,9 @@ async def post_agent_desligar(
     request: Request,
 ) -> dict[str, Any]:
     """Desliga o agente e TUDO que ele consome — ordem literal do Rica.
+
+    No Codex, fecha a sessão do TeleCodex e mantém a thread persistida. Nos
+    agentes Claude Code, preserva o desligamento dos scopes e da sessão tmux.
 
     ``tmux kill-session`` não basta: em 09/08 dois ``bun server.ts`` do plugin
     telegram, órfãos de sessões já mortas, queimavam 34% de CPU cada há nove
@@ -4684,7 +4730,36 @@ async def post_agent_desligar(
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
-    _recusa_ciclo_de_vida(agent)
+
+    if _agente_codex(agent):
+        try:
+            result = await telecodex_client.close_session()
+        except telecodex_client.TeleCodexControlError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        except telecodex_client.TeleCodexUnavailable as exc:
+            raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
+
+        await request.app.state.db.update_agent_codex_state(
+            slug,
+            codex_runtime_enabled=0,
+        )
+        await request.app.state.db.update_agent_lifecycle(
+            slug,
+            status="offline",
+            detail="sessão Codex fechada pelo painel",
+            event="codex.session.closed",
+        )
+        return {
+            "runtime": "codex",
+            "tmux_delivered": True,
+            "attempted": bool(result.get("closed")),
+            "sessao_encerrada": bool(result.get("closed")),
+            "scopes_parados": [],
+            "scopes_resistiram": [],
+            "boot_cancelado": False,
+            "thread_id": result.get("threadId"),
+            "sent_at": int(time.time()),
+        }
 
     try:
         result = await tmux_driver.shutdown_agent(agent["tmux_session"])
@@ -4709,7 +4784,10 @@ async def post_agent_desligar(
 
 @router.post("/{slug}/ligar")
 async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
-    """Liga o agente pelo boot canônico da frota, retomando a conversa.
+    """Liga o agente retomando a conversa persistida.
+
+    No Codex, reabre a sessão do TeleCodex com o threadId e as configurações
+    salvas. Nos agentes Claude Code, usa o boot canônico da frota.
 
     Sem ``confirm``: ligar não destrói nada, então é toque simples como o
     destrava. Sobe com ``--continue`` — desligar não pode custar conversa; quem
@@ -4721,7 +4799,32 @@ async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
     divergência no dia em que o Rica trocasse o canal de alguém.
     """
     agent = await _get_agent_or_404(request, slug)
-    _recusa_ciclo_de_vida(agent)
+
+    if _agente_codex(agent):
+        try:
+            result = await telecodex_client.reopen_session()
+        except telecodex_client.TeleCodexControlError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        except telecodex_client.TeleCodexUnavailable as exc:
+            raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
+
+        await request.app.state.db.update_agent_codex_state(
+            slug,
+            codex_runtime_enabled=1,
+        )
+        await request.app.state.db.update_agent_lifecycle(
+            slug,
+            status="ocioso",
+            detail="sessão Codex reaberta",
+            event="codex.session.reopened",
+        )
+        return {
+            "runtime": "codex",
+            "tmux_delivered": True,
+            "attempted": bool(result.get("reopened")),
+            "thread_id": result.get("threadId"),
+            "sent_at": int(time.time()),
+        }
 
     try:
         result = await tmux_driver.boot_agent(agent["tmux_session"])

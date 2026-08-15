@@ -215,6 +215,33 @@ def test_find_latest_thread_prefers_telecodex_context(tmp_path: Path) -> None:
     assert thread.tokens_used == 10
 
 
+def test_find_latest_thread_uses_persisted_telecodex_configuration(tmp_path: Path) -> None:
+    db = _make_threads_db(tmp_path)
+    contexts = tmp_path / "contexts.json"
+    contexts.write_text(
+        """
+        [
+          {
+            "contextKey": "7262275215",
+            "threadId": "new",
+            "workspace": "/home/clawd/repos/ze_claude/tara",
+            "model": "gpt-5.6-terra",
+            "reasoningEffort": "max",
+            "updatedAt": 1784492021977
+          }
+        ]
+        """,
+        encoding="utf-8",
+    )
+
+    thread = cr.find_latest_thread(cr.TARA_CWD, db, telecodex_context_path=contexts)
+
+    assert thread is not None
+    assert thread.thread_id == "new"
+    assert thread.model == "gpt-5.6-terra"
+    assert thread.reasoning_effort == "max"
+
+
 def test_find_latest_thread_falls_back_when_telecodex_context_is_stale(tmp_path: Path) -> None:
     db = _make_threads_db(tmp_path)
     contexts = tmp_path / "contexts.json"

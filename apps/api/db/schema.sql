@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS agent_state (
     lifecycle_detail  TEXT,                                 -- detalhe curto pra UI (tool, subagent, outcome)
     lifecycle_event   TEXT,                                 -- último evento bruto que alimentou lifecycle
     lifecycle_updated_at INTEGER,                           -- unix timestamp do último microestado
+    codex_runtime_enabled INTEGER NOT NULL DEFAULT 1,        -- 0 = sessão Codex fechada pelo painel, thread continua persistida
     instance_count    INTEGER NOT NULL DEFAULT 0            -- nº de instâncias ativas (subagents incluídos)
 );
 

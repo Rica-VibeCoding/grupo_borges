@@ -926,20 +926,69 @@ def test_desligar_exige_confirmacao_explicita(tmp_path: Path) -> None:
     desliga.assert_not_awaited()
 
 
-def test_ciclo_de_vida_recusa_agente_codex(tmp_path: Path) -> None:
-    """A Tara não fica de pé entre turnos — não há o que ligar nem desligar."""
+def test_desligar_e_ligar_preservam_a_sessao_codex(tmp_path: Path) -> None:
+    """O ciclo Codex fecha o objeto vivo e reabre a mesma thread persistida."""
     app = _build_app(tmp_path, codex_for_tara=True)
-    with patch("routers.agents.tmux_driver.shutdown_agent", new=AsyncMock()) as desliga, \
-         patch("routers.agents.tmux_driver.boot_agent", new=AsyncMock()) as liga:
+    with patch(
+        "routers.agents.telecodex_client.close_session",
+        new=AsyncMock(return_value={"contextKey": "7262275215", "closed": True, "threadId": "thread-1"}),
+    ) as desliga, patch(
+        "routers.agents.telecodex_client.reopen_session",
+        new=AsyncMock(return_value={"contextKey": "7262275215", "reopened": True, "threadId": "thread-1"}),
+    ) as liga:
         with TestClient(app) as client:
             desligou = client.post("/api/agents/tara/desligar", json={"confirm": True})
             ligou = client.post("/api/agents/tara/ligar")
 
-    assert desligou.status_code == 409
-    assert ligou.status_code == 409
-    assert desligou.json()["detail"] == "ciclo_de_vida_somente_claude_code"
-    desliga.assert_not_awaited()
-    liga.assert_not_awaited()
+    assert desligou.status_code == 200
+    assert desligou.json()["tmux_delivered"] is True
+    assert desligou.json()["thread_id"] == "thread-1"
+    assert ligou.status_code == 200
+    assert ligou.json()["tmux_delivered"] is True
+    assert ligou.json()["thread_id"] == "thread-1"
+    desliga.assert_awaited_once()
+    liga.assert_awaited_once()
+
+    estado = asyncio.run(app.state.db.get_agent("tara"))
+    assert estado["codex_runtime_enabled"] == 1
+
+
+def test_input_codex_recusa_sessao_desligada(tmp_path: Path) -> None:
+    app = _build_app(tmp_path, codex_for_tara=True)
+    app.state.db._update_agent_codex_state("tara", codex_runtime_enabled=0)
+    with patch("routers.agents.telecodex_client.send_prompt", new=AsyncMock()) as enviar:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/tara/input",
+                json={"text": "não envie", "idempotency_key": "offline-1"},
+            )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "codex_session_offline"
+    enviar.assert_not_awaited()
+
+
+def test_painel_codex_reflete_sessao_fechada_e_reaberta(tmp_path: Path) -> None:
+    app = _build_app(tmp_path, codex_for_tara=True)
+    with patch(
+        "routers.agents.telecodex_client.close_session",
+        new=AsyncMock(return_value={"closed": True, "threadId": "thread-1"}),
+    ), patch(
+        "routers.agents.telecodex_client.reopen_session",
+        new=AsyncMock(return_value={"reopened": True, "threadId": "thread-1"}),
+    ):
+        with TestClient(app) as client:
+            fechado = client.post("/api/agents/tara/desligar", json={"confirm": True})
+            painel_fechado = client.get("/api/agents/tara/painel")
+            reaberto = client.post("/api/agents/tara/ligar")
+            painel_reaberto = client.get("/api/agents/tara/painel")
+
+    assert fechado.status_code == 200
+    assert painel_fechado.json()["codex_runtime_enabled"] is False
+    assert painel_fechado.json()["vida"] == {"sessao": False, "processo": False}
+    assert reaberto.status_code == 200
+    assert painel_reaberto.json()["codex_runtime_enabled"] is True
+    assert painel_reaberto.json()["vida"] == {"sessao": True, "processo": True}
 
 
 def test_ligar_nao_exige_confirmacao(tmp_path: Path) -> None:

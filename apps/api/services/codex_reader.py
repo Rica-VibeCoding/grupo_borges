@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -84,6 +84,13 @@ class CodexThread:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class TeleCodexContext:
+    thread_id: str
+    model: str | None
+    reasoning_effort: str | None
 
 
 @dataclass(frozen=True)
@@ -422,6 +429,14 @@ def _row_to_thread(row: sqlite3.Row) -> CodexThread:
 
 
 def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
+    context = read_telecodex_context(cwd, context_path)
+    return context.thread_id if context is not None else None
+
+
+def read_telecodex_context(
+    cwd: str = TARA_CWD,
+    context_path: str | Path = TELECODEX_CONTEXTS,
+) -> TeleCodexContext | None:
     p = Path(context_path)
     if not p.exists():
         return None
@@ -432,11 +447,9 @@ def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
     if not isinstance(data, list):
         return None
 
-    candidates: list[tuple[int, str]] = []
+    candidates: list[tuple[int, TeleCodexContext]] = []
     for entry in data:
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("workspace") != cwd:
+        if not isinstance(entry, dict) or entry.get("workspace") != cwd:
             continue
         thread_id = entry.get("threadId")
         if not isinstance(thread_id, str) or not thread_id.strip():
@@ -444,11 +457,40 @@ def _read_telecodex_thread_id(cwd: str, context_path: str | Path) -> str | None:
         updated_at = entry.get("updatedAt")
         if not isinstance(updated_at, int):
             updated_at = 0
-        candidates.append((updated_at, thread_id.strip()))
+        model = entry.get("model") if isinstance(entry.get("model"), str) else None
+        reasoning_effort = (
+            entry.get("reasoningEffort") if isinstance(entry.get("reasoningEffort"), str) else None
+        )
+        candidates.append(
+            (
+                updated_at,
+                TeleCodexContext(
+                    thread_id=thread_id.strip(),
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                ),
+            )
+        )
 
-    if not candidates:
-        return None
-    return max(candidates)[1]
+    return max(candidates, key=lambda candidate: candidate[0])[1] if candidates else None
+
+
+def _apply_telecodex_configuration(
+    thread: CodexThread,
+    *,
+    cwd: str,
+    context_path: str | Path | None,
+) -> CodexThread:
+    if context_path is None:
+        return thread
+    context = read_telecodex_context(cwd, context_path)
+    if context is None or context.thread_id != thread.thread_id:
+        return thread
+    return replace(
+        thread,
+        model=context.model or thread.model,
+        reasoning_effort=context.reasoning_effort or thread.reasoning_effort,
+    )
 
 
 def read_cockpit_thread_id(thread_file: str | Path | None = None) -> str | None:
@@ -538,7 +580,9 @@ def resolve_thread(
             finally:
                 conn.close()
             if row is not None:
-                return _row_to_thread(row)
+                return _apply_telecodex_configuration(
+                    _row_to_thread(row), cwd=cwd, context_path=telecodex_context_path
+                )
     return find_latest_thread(cwd, db_path, telecodex_context_path)
 
 
@@ -565,7 +609,11 @@ def find_latest_thread(
             row = _fetch_latest_thread(conn, cwd)
     finally:
         conn.close()
-    return _row_to_thread(row) if row else None
+    if row is None:
+        return None
+    return _apply_telecodex_configuration(
+        _row_to_thread(row), cwd=cwd, context_path=telecodex_context_path
+    )
 
 
 def read_latest_conversation(
@@ -573,6 +621,7 @@ def read_latest_conversation(
     db_path: str | Path = STATE_DB,
     *,
     thread_id: str | None = None,
+    telecodex_context_path: str | Path | None = TELECODEX_CONTEXTS,
 ) -> tuple[CodexThread | None, list[CodexMessage]]:
     """Atalho: thread atual + mensagens parseadas do rollout dela.
 
@@ -591,7 +640,9 @@ def read_latest_conversation(
             finally:
                 conn.close()
             if row is not None:
-                thread = _row_to_thread(row)
+                thread = _apply_telecodex_configuration(
+                    _row_to_thread(row), cwd=cwd, context_path=telecodex_context_path
+                )
                 return thread, parse_rollout(thread.rollout_path, thread_id=thread.thread_id)
         return None, []
     thread = find_latest_thread(cwd, db_path)
