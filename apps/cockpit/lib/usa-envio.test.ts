@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { aparenciaDe } from '../components/shell/aparencia-envio.ts';
 import { PRAZO_ECO_MS } from './envio.ts';
+import { ATRASOS_DA_RETENTATIVA_MS } from './recusa-transitoria.ts';
 import {
   createControleEnvio,
   type ConstrutorFonteEventosEnvio,
@@ -149,8 +150,12 @@ test('erro de rede sem resposta fica não confirmado e não abre o stream', asyn
 // `falhou` não foi aposentado quando o `tmux_delivered` saiu de lá: erro HTTP
 // real continua sendo dele, e é a única fase em que a tela AFIRMA que a
 // mensagem não saiu — porque ali ela sabe.
+//
+// O detalhe MUDOU em 15/08: um 409 que o back afirma não ter entregue passa
+// primeiro pela retentativa (ver os três testes abaixo). Este caso usa um erro
+// HTTP sem detalhe conhecido, que continua indo direto para o vermelho.
 test('rejeição HTTP do POST é falha real, e ali a tela afirma que não saiu', async () => {
-  const erro = Object.assign(new Error('agent_pane_unavailable'), { status: 409 });
+  const erro = Object.assign(new Error('coisa nova'), { status: 500 });
   const controle = createControleEnvio('tara', {
     postar: async () => {
       throw erro;
@@ -162,6 +167,98 @@ test('rejeição HTTP do POST é falha real, e ali a tela afirma que não saiu',
   const fase = controle.getEstado().fase;
   assert.equal(fase, 'falhou');
   assert.match(aparenciaDe(fase, 'Tara').frase ?? '', /não saiu/i);
+});
+
+// O DEFEITO QUE O RICA VIVEU: mandou, deu parar, mandou de novo, e o 409 do
+// pane pintou a tela de vermelho pedindo intervenção — quando a entrega
+// seguinte, sem conserto nenhum, voltou 200. O composer agora insiste sozinho.
+test('409 do pane não pinta a tela: a máquina espera e tenta de novo', async () => {
+  const relogio = relogioFake();
+  const fonte = fonteFake();
+  let chamadas = 0;
+  const controle = createControleEnvio('canarinho', {
+    postar: async () => {
+      chamadas += 1;
+      if (chamadas === 1) {
+        throw Object.assign(new Error('agent_pane_unavailable'), {
+          status: 409,
+          detail: 'agent_pane_unavailable',
+        });
+      }
+      return resposta(70);
+    },
+    FonteEventos: fonte.FonteEventos,
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('conta de 1 a 10');
+  // Continua em `enviando`, e é o ponto: a porta segue recusando `envio-em-voo`,
+  // então o que ele escrever nesses segundos vai para a fila, não para o
+  // vermelho.
+  assert.equal(controle.getEstado().fase, 'enviando');
+
+  relogio.avancar(ATRASOS_DA_RETENTATIVA_MS[0]);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(chamadas, 2);
+  assert.equal(controle.getEstado().fase, 'aceito');
+});
+
+test('esgotadas as tentativas, o vermelho volta — a recuperação não esconde o defeito', async () => {
+  const relogio = relogioFake();
+  let chamadas = 0;
+  const controle = createControleEnvio('canarinho', {
+    postar: async () => {
+      chamadas += 1;
+      throw Object.assign(new Error('agent_pane_unavailable'), {
+        status: 409,
+        detail: 'agent_pane_unavailable',
+      });
+    },
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('faz isso');
+  for (const atraso of ATRASOS_DA_RETENTATIVA_MS) {
+    relogio.avancar(atraso);
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  assert.equal(chamadas, ATRASOS_DA_RETENTATIVA_MS.length + 1);
+  assert.equal(controle.getEstado().fase, 'falhou');
+});
+
+// Timer solto depois do dispose reabriria um POST para um agente que a tela já
+// deixou — e a bolha otimista dele foi desfeita há muito.
+test('dispose durante a espera cancela a retentativa', async () => {
+  const relogio = relogioFake();
+  let chamadas = 0;
+  const controle = createControleEnvio('canarinho', {
+    postar: async () => {
+      chamadas += 1;
+      throw Object.assign(new Error('agent_pane_unavailable'), {
+        status: 409,
+        detail: 'agent_pane_unavailable',
+      });
+    },
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('faz isso');
+  controle.dispose();
+  relogio.avancar(ATRASOS_DA_RETENTATIVA_MS[0]);
+  await Promise.resolve();
+
+  assert.equal(chamadas, 1);
+  assert.equal(relogio.quantidade(), 0);
 });
 
 // `tmux_delivered: false` é ausência de prova, não erro: o `send_message` só

@@ -17,6 +17,7 @@ import {
   type FronteiraEnvio,
 } from './envio.ts';
 import { assinaEntrega, temPendencia } from './codex/eco-pendente.ts';
+import { atrasoDaRetentativa, ehRecusaTransitoria } from './recusa-transitoria.ts';
 
 /** Com que frequência reperguntar se o rollout já entregou. Um pouco acima do
  *  tique do poll do feed (3 s), que é quem descobre. */
@@ -189,6 +190,7 @@ export function createControleEnvio(
   let fonte: FonteEventosEnvio | null = null;
   let timerPrazo: Timer | undefined;
   let timerReconexao: Timer | undefined;
+  let timerRetentativa: Timer | undefined;
   let cursor = 0;
   /** A tentativa corrente veio de voz — só nela o prefixo do back é descascado. */
   let vozEmVoo = false;
@@ -212,6 +214,12 @@ export function createControleEnvio(
     if (timerReconexao === undefined) return;
     cancelar(timerReconexao);
     timerReconexao = undefined;
+  }
+
+  function limparTimerRetentativa(): void {
+    if (timerRetentativa === undefined) return;
+    cancelar(timerRetentativa);
+    timerRetentativa = undefined;
   }
 
   function fecharFonte(): void {
@@ -380,8 +388,26 @@ export function createControleEnvio(
     vozEmVoo = false;
     limparTimerPrazo();
     limparTimerReconexao();
+    limparTimerRetentativa();
     fecharFonte();
     publicar({ tipo: 'enviar', texto });
+    await entregar(texto, aoFalhar, 0);
+  }
+
+  /**
+   * O POST em si, separado de `executar` para que a retentativa não precise
+   * atravessar a guarda de entrada — que recusa `enviando`, exatamente a fase
+   * em que a espera acontece.
+   *
+   * Ficar em `enviando` durante a espera é o ponto: a porta continua recusando
+   * `envio-em-voo`, e o que o Rica escrever nesses segundos vai para a FILA, à
+   * vista, em vez de bater num vermelho que já não vale. Era esse o defeito.
+   */
+  async function entregar(
+    texto: string,
+    aoFalhar: (() => void) | undefined,
+    jaTentadas: number,
+  ): Promise<void> {
     try {
       const resposta = await postar(agentSlug, texto);
       if (descartado) return;
@@ -420,6 +446,22 @@ export function createControleEnvio(
         erro !== null &&
         'status' in erro &&
         typeof erro.status === 'number';
+      // A RECUSA QUE PASSA SOZINHA. O back afirmou que não entregou, e a
+      // condição costuma já não valer no instante seguinte — insistir aqui é
+      // o que evita cobrar do Rica um gesto de conserto por algo que se
+      // resolve em segundos. O porquê de ser seguro, e por que só nestes dois
+      // detalhes, está em `recusa-transitoria.ts`.
+      const atraso = ehRecusaTransitoria(erro) ? atrasoDaRetentativa(jaTentadas) : null;
+      if (atraso !== null) {
+        timerRetentativa = agendar(() => {
+          timerRetentativa = undefined;
+          // A fase pode ter mudado na espera — outro envio, um dispose, uma
+          // retomada. Quem saiu de `enviando` já não é esta tentativa.
+          if (descartado || estado.fase !== 'enviando') return;
+          void entregar(texto, aoFalhar, jaTentadas + 1);
+        }, atraso);
+        return;
+      }
       // Só aqui a máquina SABE que não saiu — é o único gatilho correto para
       // desfazer uma pendência otimista registrada antes do POST. Em
       // `nao-confirmado` o texto pode ter entrado mesmo assim (ver o
@@ -447,6 +489,7 @@ export function createControleEnvio(
     }
     limparTimerPrazo();
     limparTimerReconexao();
+    limparTimerRetentativa();
     fecharFonte();
 
     const fronteiraSondada = await sondarFronteira();
@@ -458,6 +501,10 @@ export function createControleEnvio(
     try {
       const resposta = await postarVoz(agentSlug, audio);
       transcrito = resposta.transcribed;
+      // ⚠️ A voz NÃO tem a retentativa do texto, e é escolha: cada tentativa
+      // re-sobe o áudio inteiro e refaz o STT no servidor, então repetir aqui
+      // custa banda e transcrição, não só um POST. Enquanto isso não for
+      // decidido, um 409 na voz continua caindo direto em `falhou`.
       entregueNoTmux = resposta.tmux_delivered !== false;
       fronteira =
         typeof resposta.event_boundary_id === 'number'
@@ -531,6 +578,7 @@ export function createControleEnvio(
       descartado = true;
       limparTimerPrazo();
       limparTimerReconexao();
+      limparTimerRetentativa();
       fecharFonte();
       ouvintes.clear();
     },
@@ -554,8 +602,10 @@ export function usaEnvio(agentSlug: string): {
     return () => controle.dispose();
   }, [controle]);
 
-  // O recibo do agente Codex, que não tem eco no SSE. Assinar sempre é inócuo
-  // para o Claude Code: ninguém registra pendência lá, então nada é publicado.
+  // O recibo que não vem do SSE. Nasceu para o Codex, que não tem eco no
+  // stream (`total: 0`), e desde 15/08 o Claude Code também registra pendência
+  // — o eco dele leva 18,9 s medidos, e a bolha otimista não podia esperar por
+  // isso. Assinar vale para os dois; quem não tiver pendência não publica nada.
   useEffect(
     () => assinaEntrega(agentSlug, (texto) => controle.confirmarPorEco(texto)),
     [agentSlug, controle],
