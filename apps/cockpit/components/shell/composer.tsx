@@ -87,6 +87,7 @@ import {
   IconeReenviar,
 } from './icones';
 import { usaCanalEntrega } from './usa-canal-entrega';
+import { BolhaDeComandos } from './bolha-de-comandos';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -630,50 +631,58 @@ export function Composer({
             niveis={niveisVoz}
           />
         ) : (
-        <textarea
-          ref={textareaRef}
-          // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
-          // referência: "queria que o input de texto tivesse uma linha só,
-          // igual a do CC, e não duas linhas … conforme eu vou digitando e
-          // pulando linha, ela vai aumentando na altura". Revoga a §12 da
-          // estética, que mandava caixa alta; os controles continuam dentro.
-          rows={1}
-          value={texto}
-          // SEM `disabled`, de propósito. A doc do React descreve `disabled`
-          // como "will not be interactive and will appear dimmed": o elemento
-          // sai do alcance do foco, e no iPhone isso fecha o teclado no meio
-          // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
-          // editável, ele escreve durante a espera e manda com um toque quando
-          // ela passa. É o que garante que o texto nunca evapora.
-          onChange={(e) => setTexto(e.target.value)}
-          // Com ANEXO na mão o Enter volta a enviar no touch. A quebra de linha
-          // ficou pro texto puro, mas sem o envio a foto era um beco: o Shift
-          // não existe no teclado virtual, e o "manda e não sai" do reporte de
-          // 08/08 era o Enter virando newline com a foto retida — o único
-          // gesto de enviar que o Rica tinha ali. `enterKeyHint` troca a tecla
-          // do teclado virtual pra "Enviar" exatamente nesse caso, pra o toque
-          // não parecer morto.
-          enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && (!tecladoTouch || retidoAnexo !== null)) {
-              e.preventDefault();
-              enviar(texto);
-            }
-          }}
-          // "aguarde" era a mesma promessa vazia da faixa: dizia para esperar
-          // sem dizer o que aconteceria com o que ele escrevesse. Agora entra
-          // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
-          placeholder={
-            travaCompact ? 'compactando… pode escrever, entra na fila' : `Mensagem para ${agentName}`
-          }
-          className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
-          style={{
-            fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
-            // Teto para o crescimento: passando disto o composer comeria a
-            // conversa. Rolagem interna assume, que é o que o CC faz.
-            maxHeight: 'var(--ck-h-campo-max)',
-          }}
-        />
+          <BolhaDeComandos
+            agentSlug={agentSlug}
+            texto={texto}
+            aoSelecionar={setTexto}
+            campoRef={textareaRef}
+            ativa={!ehCodex}
+          >
+            <textarea
+              ref={textareaRef}
+              // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
+              // referência: "queria que o input de texto tivesse uma linha só,
+              // igual a do CC, e não duas linhas … conforme eu vou digitando e
+              // pulando linha, ela vai aumentando na altura". Revoga a §12 da
+              // estética, que mandava caixa alta; os controles continuam dentro.
+              rows={1}
+              value={texto}
+              // SEM `disabled`, de propósito. A doc do React descreve `disabled`
+              // como "will not be interactive and will appear dimmed": o elemento
+              // sai do alcance do foco, e no iPhone isso fecha o teclado no meio
+              // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
+              // editável, ele escreve durante a espera e manda com um toque quando
+              // ela passa. É o que garante que o texto nunca evapora.
+              onChange={(e) => setTexto(e.target.value)}
+              // Com ANEXO na mão o Enter volta a enviar no touch. A quebra de linha
+              // ficou pro texto puro, mas sem o envio a foto era um beco: o Shift
+              // não existe no teclado virtual, e o "manda e não sai" do reporte de
+              // 08/08 era o Enter virando newline com a foto retida — o único
+              // gesto de enviar que o Rica tinha ali. `enterKeyHint` troca a tecla
+              // do teclado virtual pra "Enviar" exatamente nesse caso, pra o toque
+              // não parecer morto.
+              enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && (!tecladoTouch || retidoAnexo !== null)) {
+                  e.preventDefault();
+                  enviar(texto);
+                }
+              }}
+              // "aguarde" era a mesma promessa vazia da faixa: dizia para esperar
+              // sem dizer o que aconteceria com o que ele escrevesse. Agora entra
+              // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
+              placeholder={
+                travaCompact ? 'compactando… pode escrever, entra na fila' : `Mensagem para ${agentName}`
+              }
+              className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
+              style={{
+                fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
+                // Teto para o crescimento: passando disto o composer comeria a
+                // conversa. Rolagem interna assume, que é o que o CC faz.
+                maxHeight: 'var(--ck-h-campo-max)',
+              }}
+            />
+          </BolhaDeComandos>
         )}
 
         {/* Base do composer: os controles moram AQUI, dentro da caixa — §12.1. */}

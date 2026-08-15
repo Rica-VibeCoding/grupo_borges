@@ -460,6 +460,70 @@ def test_input_clear_arma_rename_apos_clear_em_background(tmp_path: Path) -> Non
     rename_apos_clear.assert_called_once_with(app.state.db, "daniel", "daniel", "Daniel Singh", None)
 
 
+def test_input_clear_com_nome_arma_rename_customizado_em_background(tmp_path: Path) -> None:
+    """`/clear <nome>` reaplica o nome pedido na sessão nova, não o do agente."""
+    app = _build_app(tmp_path)
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ) as send_message, patch(
+        "routers.agents._rename_apos_clear", new=AsyncMock()
+    ) as rename_apos_clear:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "/clear revisão do deploy", "idempotency_key": "k-clear-nome"},
+            )
+
+    assert response.status_code == 200
+    send_message.assert_called_once_with("daniel", "/clear revisão do deploy")
+    rename_apos_clear.assert_called_once_with(
+        app.state.db,
+        "daniel",
+        "daniel",
+        "revisão do deploy",
+        None,
+    )
+
+
+def test_list_agent_commands_varre_project_user_e_plugin(tmp_path: Path, monkeypatch) -> None:
+    """O composer recebe os comandos efetivos do workspace, usuário e plugins."""
+    workspace = tmp_path / "workspace"
+    project_commands = workspace / ".claude" / "commands"
+    user_claude = tmp_path / "claude-user"
+    user_commands = user_claude / "commands"
+    plugin_commands = user_claude / "plugins" / "meu-plugin" / "commands"
+    for commands_dir in (project_commands, user_commands, plugin_commands):
+        commands_dir.mkdir(parents=True)
+
+    (project_commands / "deploy.md").write_text(
+        "---\ndescription: Sobe a produção\n---\n# Deploy\n",
+        encoding="utf-8",
+    )
+    (user_commands / "revisar.md").write_text(
+        "---\ndescription: Revisa o diff atual\n---\n# Revisar\n",
+        encoding="utf-8",
+    )
+    (plugin_commands / "release.md").write_text(
+        "---\ndescription: |\n  Prepara uma release\n---\n# Release\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(agents_router, "_CLAUDE_HOME", user_claude)
+    app = _build_app(
+        tmp_path,
+        extra_agents=[{**DANIEL, "slug": "comandos", "workspace_path": str(workspace)}],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/comandos/commands")
+
+    assert response.status_code == 200
+    comandos = {(item["comando"], item["origem"]): item for item in response.json()}
+    assert comandos[("/clear", "native")]["descricao"]
+    assert comandos[("/deploy", "project")]["descricao"] == "Sobe a produção"
+    assert comandos[("/revisar", "user")]["descricao"] == "Revisa o diff atual"
+    assert comandos[("/release", "plugin")]["descricao"] == "Prepara uma release"
+
+
 def test_input_texto_comum_nao_arma_rename_apos_clear(tmp_path: Path) -> None:
     """Só o `/clear` literal dispara o rename automático — texto comum não."""
     app = _build_app(tmp_path)

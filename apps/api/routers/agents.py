@@ -5,6 +5,7 @@ GET  /api/agents/{slug}/sparkline      — eventos por hora (mini-chart de ativi
 GET  /api/agents/{slug}/skills         — skills do workspace (.claude/skills/*/SKILL.md)
 GET  /api/agents/{slug}/docs           — docs do workspace (lista + resolved com @include)
 GET  /api/agents/{slug}/tables         — tabelas do domínio do agente (de agents.yaml)
+GET  /api/agents/{slug}/commands       — comandos de barra do Claude Code (projeto, usuário e plugins)
 GET  /api/agents/{slug}/pane/stream    — DS-2: SSE com excerpt do pane (poll 1 Hz, dedupe sha1)
 POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-buffer
 POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
@@ -36,6 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, AsyncGenerator, Literal, NamedTuple, get_args
 
+import yaml
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from libtmux import exc as libtmux_exc
@@ -424,6 +426,115 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     return agent
+
+
+class AgentCommandResponse(BaseModel):
+    """Um comando de barra disponível para o agente no Claude Code."""
+
+    comando: str
+    descricao: str | None = None
+    origem: Literal["native", "project", "user", "plugin"]
+
+
+_NATIVE_SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
+    ("/clear", "Inicia uma conversa nova e limpa o contexto atual."),
+    ("/compact", "Compacta o contexto da conversa atual."),
+    ("/context", "Mostra o uso de contexto da sessão."),
+    ("/help", "Abre a ajuda de comandos do Claude Code."),
+    ("/model", "Escolhe o modelo ativo para a sessão."),
+    ("/rename", "Renomeia a sessão atual."),
+)
+
+
+def _descricao_de_comando(path: Path) -> str | None:
+    """Lê `description` do frontmatter YAML de um comando Markdown.
+
+    A lista abre no gesto de digitar `/`, portanto faz uma leitura pequena e
+    tolera arquivo incompleto ou YAML inválido em vez de deixar um comando ruim
+    esconder os demais.
+    """
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as command_file:
+            head = command_file.read(4096)
+    except OSError:
+        return None
+
+    lines = head.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+
+    frontmatter: list[str] = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        frontmatter.append(line)
+    else:
+        return None
+
+    try:
+        metadata = yaml.safe_load("\n".join(frontmatter))
+    except yaml.YAMLError:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    descricao = metadata.get("description")
+    return descricao.strip() if isinstance(descricao, str) and descricao.strip() else None
+
+
+def _arquivos_de_comando(root: Path, pattern: str) -> list[Path]:
+    """Encontra Markdown sem deixar permissão ruim interromper a lista."""
+    try:
+        if not root.is_dir():
+            return []
+        return sorted((path for path in root.glob(pattern) if path.is_file()), key=lambda path: str(path))
+    except OSError:
+        return []
+
+
+def _comandos_de_arquivos(paths: list[Path], origem: Literal["project", "user", "plugin"]):
+    return [
+        {
+            "comando": f"/{path.stem}",
+            "descricao": _descricao_de_comando(path),
+            "origem": origem,
+        }
+        for path in paths
+    ]
+
+
+def _listar_comandos_do_agente(workspace_path: str) -> list[dict[str, str | None]]:
+    """Lista comandos próprios, do usuário, de plugins e os nativos do CC."""
+    comandos: list[dict[str, str | None]] = [
+        {"comando": comando, "descricao": descricao, "origem": "native"}
+        for comando, descricao in _NATIVE_SLASH_COMMANDS
+    ]
+    if workspace_path:
+        comandos.extend(
+            _comandos_de_arquivos(
+                _arquivos_de_comando(Path(workspace_path) / ".claude" / "commands", "*.md"),
+                "project",
+            )
+        )
+    comandos.extend(
+        _comandos_de_arquivos(
+            _arquivos_de_comando(_CLAUDE_HOME / "commands", "*.md"),
+            "user",
+        )
+    )
+    comandos.extend(
+        _comandos_de_arquivos(
+            _arquivos_de_comando(_CLAUDE_HOME / "plugins", "**/commands/*.md"),
+            "plugin",
+        )
+    )
+    return comandos
+
+
+@router.get("/{slug}/commands", response_model=list[AgentCommandResponse])
+async def list_agent_commands(slug: str, request: Request) -> list[dict[str, str | None]]:
+    """Comandos de barra que o composer pode sugerir para este workspace."""
+    agent = await _get_agent_or_404(request, slug)
+    return await asyncio.to_thread(_listar_comandos_do_agente, agent["workspace_path"])
 
 
 class _InputOrigin(NamedTuple):
@@ -3091,6 +3202,16 @@ async def stream_agent_messages(
 
 _CLEAR_RENAME_POLL_S = 0.5
 _CLEAR_RENAME_TIMEOUT_S = 20.0
+_CLEAR_COMMAND_RE = re.compile(r"^\s*/clear(?:[ \t]+(?P<nome>[^\r\n]*?))?\s*$")
+
+
+def _nome_apos_clear(texto: str, nome_padrao: str) -> str | None:
+    """Devolve o nome da sessão pedida por `/clear [nome]`, se houver."""
+    match = _CLEAR_COMMAND_RE.match(texto)
+    if match is None:
+        return None
+    nome_customizado = (match.group("nome") or "").strip()
+    return nome_customizado or nome_padrao
 
 
 async def _rename_apos_clear(
@@ -3139,8 +3260,8 @@ async def send_agent_input(
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.
-    - `/clear` literal (botão do painel ou digitado) arma `_rename_apos_clear`
-      em background: a resposta não espera a sessão nova nascer.
+    - `/clear [nome]` arma `_rename_apos_clear` em background: a resposta não
+      espera a sessão nova nascer; sem nome, reaplica o nome do agente.
     """
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
@@ -3153,14 +3274,14 @@ async def send_agent_input(
             fresh=payload.fresh,
         )
     else:
-        is_clear = payload.text.strip() == "/clear"
-        session_antes = await db.latest_jsonl_session_id(slug) if is_clear else None
+        nome_apos_clear = _nome_apos_clear(payload.text, agent["name"])
+        session_antes = await db.latest_jsonl_session_id(slug) if nome_apos_clear else None
         delivered = await _send_tmux_or_409(agent["tmux_session"], payload.text)
         if not delivered:
             raise HTTPException(status_code=409, detail="agent_pane_unavailable")
-        if is_clear:
+        if nome_apos_clear:
             asyncio.create_task(
-                _rename_apos_clear(db, slug, agent["tmux_session"], agent["name"], session_antes)
+                _rename_apos_clear(db, slug, agent["tmux_session"], nome_apos_clear, session_antes)
             )
 
     return InputResponse(
