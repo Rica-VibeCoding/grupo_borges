@@ -31,6 +31,7 @@ import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
 import { leAnexoImagem } from './anexo-imagem';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
+import { leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
 import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
 
 type Props = {
@@ -292,8 +293,40 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       ) : (
         <LinhaSeca rotulo={item.syntheticKind} corpo={item.rawText} />
       );
-    case 'channel':
-      return <LinhaSeca rotulo="canal" corpo={item.raw} />;
+    case 'channel': {
+      // Mensagem que ele mandou de fora é ELE falando — mesma bolha do texto
+      // digitado aqui, ordem de 30/07 ("o meu vai em balão") e a de 15/08
+      // ("tenho que pensar que estou no mesmo app"). Antes desta linha o feed
+      // desenhava o XML inteiro numa linha cortada, e ele leu como "quebrado".
+      // A procedência vira legenda discreta; o anexo, quando o envelope
+      // declara, sai como metadado — sem player, porque a rota de mídia deste
+      // caminho não existe no v2 e prometer um vídeo que não toca é pior.
+      const envelope = leEnvelopeDeCanal(item.raw);
+      if (!envelope) return <LinhaSeca rotulo="canal" corpo={item.raw} />;
+      return (
+        <div
+          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
+          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
+        >
+          <div
+            style={{
+              color: 'var(--ck-text-secondary)',
+              fontSize: 'var(--ck-text-xs)',
+              letterSpacing: 'var(--ck-track-overline)',
+              textTransform: 'uppercase',
+            }}
+          >
+            {procedencia(envelope)}
+          </div>
+          {envelope.anexo ? (
+            <div style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)' }}>
+              {envelope.anexo.nome ?? envelope.anexo.tipo}
+            </div>
+          ) : null}
+          {envelope.texto ? <Fala texto={envelope.texto} /> : null}
+        </div>
+      );
+    }
 
     case 'sidechain-group':
       return (
