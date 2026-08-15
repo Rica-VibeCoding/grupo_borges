@@ -40,6 +40,13 @@ const ABERTURA = /^Imagem enviada via cockpit:/i;
 const CAMINHO_DO_UPLOAD =
   /^(?:\S*[\\/])?uploads[\\/]agents[\\/][^\\/\s]+[\\/]([^\\/\s]+\.(?:jpg|png|webp))$/i;
 
+/** A outra forma de "linha inteira é a imagem": uma URL já pronta, sem passar
+ *  pelo disco de uploads (data-URL em base64). Quem manda a foto embutida na
+ *  própria mensagem — hoje só a Tara, `lib/codex/adapta-mensagens.ts` — usa
+ *  esta linha em vez do caminho relativo; `urlDoAnexoImagem` reconhece o
+ *  prefixo e devolve a URL direto, sem montar rota de arquivo. */
+const URL_DE_IMAGEM_EMBUTIDA = /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/]+=*$/i;
+
 const LEGENDA = /^Caption:[ \t]*([\s\S]*)$/;
 
 /** Só reconhece o envelope inteiro. Texto comum que apenas menciona o prefixo
@@ -59,7 +66,10 @@ export function leAnexoImagem(texto: string): AnexoImagem | null {
   // Cabeçalho e caminho são do envelope, não da fala: saem os dois quando
   // estão lá. Depois do CC, pode não ter sobrado nenhum dos dois.
   if (ABERTURA.test(linhas[0] ?? '')) linhas.shift();
-  const filename = (linhas[0] ?? '').trim().match(CAMINHO_DO_UPLOAD)?.[1] ?? null;
+  const primeiraLinha = (linhas[0] ?? '').trim();
+  const filename =
+    primeiraLinha.match(CAMINHO_DO_UPLOAD)?.[1]
+    ?? (URL_DE_IMAGEM_EMBUTIDA.test(primeiraLinha) ? primeiraLinha : null);
   if (filename) linhas.shift();
   if (!anexada && !filename) return null;
 
@@ -73,5 +83,9 @@ export function leAnexoImagem(texto: string): AnexoImagem | null {
 }
 
 export function urlDoAnexoImagem(agentSlug: string, filename: string): string {
+  // A URL embutida já é a imagem — não existe rota de arquivo pra montar em
+  // cima dela, e `encodeURIComponent` destruiria o `data:` codificando as
+  // barras e o `+`/`=` do base64.
+  if (URL_DE_IMAGEM_EMBUTIDA.test(filename)) return filename;
   return `/api/agents/${encodeURIComponent(agentSlug)}/file/${encodeURIComponent(filename)}`;
 }

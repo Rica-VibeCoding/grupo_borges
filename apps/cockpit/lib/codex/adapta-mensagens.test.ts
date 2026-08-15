@@ -10,7 +10,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { criaAdaptadorCodex, type CodexMessage } from './adapta-mensagens.ts';
+import { buildRenderItems } from '@grupo_borges/cockpit-core/render-items';
+
+import { criaAdaptadorCodex, type CodexMessage, type CodexMessagePart } from './adapta-mensagens.ts';
+import { leAnexoImagem } from '../../components/feed/anexo-imagem.ts';
+import { temConteudoVisivel } from '../spike/conteudo-visivel.ts';
 
 function bruta(over: Partial<CodexMessage> & { id: string }): CodexMessage {
   return {
@@ -138,5 +142,214 @@ describe('adaptaMensagensCodex', () => {
 
     assert.deepEqual(primeira, []);
     assert.equal(primeira, segunda);
+  });
+});
+
+describe('adaptaMensagensCodex — partes tipadas (bruta.parts)', () => {
+  it('parte text vira o content de sempre, sem envelope nenhum', () => {
+    const adapta = criaAdaptadorCodex();
+    const saida = adapta([
+      bruta({
+        id: 't:0',
+        role: 'user',
+        parts: [{ type: 'text', text: 'roda o teste' }],
+      }),
+    ]);
+
+    assert.equal(saida.length, 1);
+    assert.equal(saida[0].message?.content, 'roda o teste');
+    assert.equal(saida[0].user_type, 'external');
+  });
+
+  it('parte image vira o envelope que leAnexoImagem já lê pro CC', () => {
+    const adapta = criaAdaptadorCodex();
+    const url = 'data:image/png;base64,iVBORw0KGgo=';
+    const saida = adapta([
+      bruta({
+        id: 't:0',
+        role: 'user',
+        parts: [
+          { type: 'image', image_url: url },
+          { type: 'text', text: 'compara com o mockup' },
+        ],
+      }),
+    ]);
+
+    assert.equal(saida.length, 1);
+    const content = saida[0].message?.content;
+    assert.equal(typeof content, 'string');
+    // Prova de integração: o que o adaptador produz é exatamente o que
+    // `anexo-imagem.ts` (território do Hiro) já sabe desenhar — sem precisar
+    // ensinar `corpo-do-item.tsx` a reconhecer Codex.
+    assert.deepEqual(leAnexoImagem(content as string), {
+      filename: url,
+      legenda: 'compara com o mockup',
+    });
+  });
+
+  it('parte image sozinha (sem legenda) ainda vira envelope reconhecível', () => {
+    const adapta = criaAdaptadorCodex();
+    const url = 'data:image/png;base64,iVBORw0KGgo=';
+    const saida = adapta([
+      bruta({ id: 't:0', role: 'user', parts: [{ type: 'image', image_url: url }] }),
+    ]);
+
+    assert.deepEqual(leAnexoImagem(saida[0].message?.content as string), {
+      filename: url,
+      legenda: null,
+    });
+  });
+
+  it('parte context abre uma SEGUNDA bolha, interna e antes da fala', () => {
+    const adapta = criaAdaptadorCodex();
+    const parts: CodexMessagePart[] = [
+      {
+        type: 'context',
+        text: 'esta mensagem chegou pelo cockpit do grupo_borges',
+        source: 'developer',
+      },
+      { type: 'text', text: 'ola tara' },
+    ];
+    const saida = adapta([bruta({ id: 't:0', role: 'user', parts })]);
+
+    assert.equal(saida.length, 2);
+    assert.equal(saida[0].user_type, 'internal');
+    assert.equal(saida[0].message?.content, 'esta mensagem chegou pelo cockpit do grupo_borges');
+    assert.equal(saida[1].user_type, 'external');
+    assert.equal(saida[1].message?.content, 'ola tara');
+    // Ids sequenciais: a bolha de contexto entra ANTES da fala no incremental.
+    assert.deepEqual(saida.map((m) => m.id), [0, 1]);
+  });
+
+  it('context nunca aparece dentro do content da fala principal', () => {
+    const adapta = criaAdaptadorCodex();
+    const saida = adapta([
+      bruta({
+        id: 't:0',
+        role: 'user',
+        parts: [
+          { type: 'context', text: 'régua do cockpit', source: 'developer' },
+          { type: 'text', text: 'oi' },
+        ],
+      }),
+    ]);
+
+    const fala = saida.find((m) => m.user_type === 'external');
+    assert.ok(fala);
+    assert.doesNotMatch(String(fala.message?.content), /régua do cockpit/);
+  });
+
+  it('context em mensagem do assistant é ignorado — só a fala do Rica carrega preâmbulo', () => {
+    const adapta = criaAdaptadorCodex();
+    const saida = adapta([
+      bruta({
+        id: 't:0',
+        role: 'assistant',
+        parts: [
+          { type: 'context', text: 'nao deveria existir aqui', source: 'developer' },
+          { type: 'text', text: 'resposta da tara' },
+        ],
+      }),
+    ]);
+
+    assert.equal(saida.length, 1);
+    assert.equal(saida[0].message?.content, 'resposta da tara');
+  });
+
+  it('sem parts, cai no fallback de text achatado — comportamento antigo intacto', () => {
+    const adapta = criaAdaptadorCodex();
+    const saida = adapta([bruta({ id: 't:0', role: 'user', text: 'sem parts ainda' })]);
+
+    assert.equal(saida.length, 1);
+    assert.equal(saida[0].message?.content, 'sem parts ainda');
+  });
+
+  it('identidade de objeto sobrevive entre polls quando as parts se repetem', () => {
+    const adapta = criaAdaptadorCodex();
+    const parts = (): CodexMessagePart[] => [
+      { type: 'context', text: 'régua', source: 'developer' },
+      { type: 'text', text: 'oi' },
+    ];
+
+    const primeira = adapta([bruta({ id: 't:0', role: 'user', parts: parts() })]);
+    // Array novo, parts novo (objeto fresco do fetch seguinte) — mas o
+    // CONTEÚDO é idêntico, e é isso que o `samePrefix` do incremental exige.
+    const segunda = adapta([bruta({ id: 't:0', role: 'user', parts: parts() })]);
+
+    assert.equal(primeira[0], segunda[0]);
+    assert.equal(primeira[1], segunda[1]);
+  });
+});
+
+// Prova de ponta a ponta: o que o adaptador produz, passado pelo MESMO
+// classificador puro que o CC usa (`buildRenderItems`, core — nunca editado
+// aqui), tem de separar as três partes na tela sem `corpo-do-item.tsx`
+// aprender que existe Codex. Se esta suíte quebrar, a UI quebrou.
+describe('adaptaMensagensCodex — o que chega em corpo-do-item.tsx depois do classificador', () => {
+  it('context + text viram DOIS RenderItem: user-internal discreto e user de verdade', () => {
+    const adapta = criaAdaptadorCodex();
+    const mensagens = adapta([
+      bruta({
+        id: 't:0',
+        role: 'user',
+        parts: [
+          {
+            type: 'context',
+            text: 'esta mensagem chegou pelo cockpit do grupo_borges',
+            source: 'developer',
+          },
+          { type: 'text', text: 'ola tara' },
+        ],
+      }),
+    ]);
+
+    const itens = buildRenderItems(mensagens).filter(temConteudoVisivel);
+    assert.equal(itens.length, 2);
+    assert.equal(itens[0].kind, 'user-internal');
+    assert.equal(itens[1].kind, 'user');
+    // `user-internal` desenha em `<Fala tom="discreto">`, sem caixa — nunca a
+    // bolha da fala. Ver `corpo-do-item.tsx`, casos 'user-internal' e 'user'.
+    if (itens[0].kind === 'user-internal') {
+      assert.match(itens[0].text, /chegou pelo cockpit/);
+    }
+    if (itens[1].kind === 'user') {
+      assert.equal(itens[1].text, 'ola tara');
+    }
+  });
+
+  it('image + caption vira UM RenderItem que temConteudoVisivel aceita e leAnexoImagem decompõe', () => {
+    const adapta = criaAdaptadorCodex();
+    const url = 'data:image/jpeg;base64,ZmFrZQ==';
+    const mensagens = adapta([
+      bruta({
+        id: 't:0',
+        role: 'user',
+        parts: [
+          { type: 'image', image_url: url },
+          { type: 'text', text: 'olha essa tela' },
+        ],
+      }),
+    ]);
+
+    const itens = buildRenderItems(mensagens).filter(temConteudoVisivel);
+    assert.equal(itens.length, 1);
+    assert.equal(itens[0].kind, 'user');
+    if (itens[0].kind === 'user') {
+      // A mesma leitura que `corpo-do-item.tsx` faz antes de montar
+      // `<AnexoImagemView>` — nenhum código de render precisa mudar.
+      assert.deepEqual(leAnexoImagem(itens[0].text), { filename: url, legenda: 'olha essa tela' });
+    }
+  });
+
+  it('texto puro continua um único user comum — nada de Codex vaza pro classificador', () => {
+    const adapta = criaAdaptadorCodex();
+    const mensagens = adapta([
+      bruta({ id: 't:0', role: 'user', parts: [{ type: 'text', text: 'bom dia' }] }),
+    ]);
+
+    const itens = buildRenderItems(mensagens).filter(temConteudoVisivel);
+    assert.equal(itens.length, 1);
+    assert.equal(itens[0].kind, 'user');
+    if (itens[0].kind === 'user') assert.equal(itens[0].text, 'bom dia');
   });
 });
