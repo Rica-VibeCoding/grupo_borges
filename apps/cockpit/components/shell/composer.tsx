@@ -187,9 +187,22 @@ export function Composer({
   // `lib/turno-vivo.ts` — o mesmo booleano que acende o "Pensando há 12 s" três
   // centímetros acima. Com uma só das duas o freio some em algum cenário; com
   // as duas em OU ele acompanha o que a tela já afirma.
-  const trabalhando = agents.some(
-    (a) => a.slug === agentSlug && a.lifecycle_status === 'trabalhando',
-  );
+  //
+  // E as duas passam por uma GUARDA DE VIDA. Medido em 15/08 pelo Daniel: cinco
+  // dos nove agentes da frota não tinham processo nenhum — nem em `ps`, nem em
+  // `tmux ls` — e o `/api/fleet` devolvia `lifecycle_status: trabalhando` para
+  // todos eles. Na tela isso virava o ■ oferecendo freio para um turno que não
+  // existe, e o toque devolvia `200` com `parado: false` sem dizer nada. É a
+  // mentira de UI da §9 no controle mais visível da caixa.
+  //
+  // O `status` do mesmo payload já sabe a verdade (`offline`), porque ele cruza
+  // sessão e processo; o `lifecycle_status` é histórico de evento e não expira
+  // quando o agente morre sem despedida. Agente offline não gera, ponto — e
+  // com o campo vazio o alvo volta a ser o microfone, que é o que faz sentido
+  // ali.
+  const daFrota = agents.find((a) => a.slug === agentSlug);
+  const vivo = daFrota !== undefined && daFrota.status !== 'offline';
+  const trabalhando = vivo && daFrota.lifecycle_status === 'trabalhando';
   const assinaTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);
   const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
   // No servidor não há turno nenhum: o valor nasce de um stream do browser.
@@ -201,7 +214,7 @@ export function Composer({
   // continua oferecendo uma ação já executada é a mentira de UI da §9, e aqui
   // ela convida a um segundo toque num agente que já parou.
   const [interrompido, setInterrompido] = useState(false);
-  const gerando = (trabalhando || turnoVivo) && !interrompido;
+  const gerando = vivo && (trabalhando || turnoVivo) && !interrompido;
 
   /** O `■`. Não pede confirmação: interromper é reversível — o texto continua no
    *  feed e mandar de novo recomeça — e um modal entre o dedo e o botão, no meio

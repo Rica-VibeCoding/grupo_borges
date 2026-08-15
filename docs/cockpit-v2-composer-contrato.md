@@ -123,11 +123,37 @@ com o agente ocupado.
     com o que o stream do Claude Code grava é o que precisa ser conferido antes,
     e sem essa conferência a pendência ficaria sem par até o teto.
 
+### Fila que atravessa canais — **o próximo alvo grande, ainda aberto**
+
+34. **Reprovado hoje, e é o que sobra de maior.** A fila do composer só conhece o
+    envio em voo **daquela aba**. A conversa da Tara é compartilhada com o
+    Telegram: turno aberto por outro canal, por outra aba, ou por um envio que a
+    aba recém-carregada não viu passa direto pela porta, e o backend recusa com
+    `409 shared_turn_in_flight` (`apps/api/routers/agents.py`, `send_agent_input`).
+    A tela então vai para `falhou` e oferece "Tentar de novo".
+
+    É o cenário comum do Rica: falar com a Tara pelo Telegram e depois abrir o
+    cockpit. A mensagem não se perde — mas ela **deveria entrar na fila**, que já
+    existe e já drena sozinha, em vez de virar erro que pede gesto novo.
+    Desenho proposto: o `catch` de `usa-envio.ts` distinguir o 409 de turno
+    concorrente dos demais erros HTTP e devolver isso ao composer, que reenfileira
+    em vez de publicar `falhar`. Não entrou em 15/08 por escolha de risco — mexer
+    na máquina de seis fases com o Rica a caminho da tela, no fim de um dia com
+    quatro publicações, troca um defeito conhecido por um desconhecido.
+
+    Medido: 2 ocorrências na bateria de 15/08, ambas com o teste já isolando as
+    categorias — ou seja, não é artefato de instrumento.
+
 ### Acessibilidade
 
-34. Botão de enviar com nome acessível.
-35. Existe região viva anunciando mudança de estado.
-36. Alvo de toque conforme WCAG 2.2 §2.5.8.
+35. Botão de enviar com nome acessível.
+36. Existe região viva anunciando mudança de estado.
+37. Alvo de toque conforme WCAG 2.2 §2.5.8.
+38. **Agente offline não oferece freio.** O `■` lia só `lifecycle_status`, que é
+    histórico de evento e não expira quando o agente morre sem despedida: cinco
+    dos nove da frota apareciam como `trabalhando` sem processo nenhum, e o toque
+    devolvia `200` com `parado: false` calado. A guarda é o `status` do mesmo
+    payload, que cruza sessão e processo.
 
 ## O que já custou caro (para não repetir)
 
