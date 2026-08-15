@@ -855,5 +855,21 @@ ficaria pendurado até o teto de 5 minutos, sempre, e justamente os itens do
 Telegram. O casamento tem de rodar contra o texto **extraído** do envelope. Isso
 põe a mesma gramática em dois lugares — o parser em TypeScript no painel e a
 extração em Python no servidor — e duas gramáticas do mesmo formato divergem com
-o tempo. Se a frente abrir, decidir na entrada quem é dono dela; o candidato
-natural é o servidor entregar o texto já extraído, e o painel parar de desembrulhar.
+o tempo. **Decidido: o dono é o servidor** — e hoje existe **uma** gramática, a do
+painel (`envelope-de-canal.ts`); em Python há só um comentário citando o XML
+(`agents.py:4546`). Ou seja, não é consolidar duas, é impedir a segunda de nascer.
+O painel aposenta o parser quando o servidor entregar. Duas condições (Pavan):
+
+1. **A entrega é estruturada, não "texto desembrulhado".** Só o texto limpo mata o
+   crachá — e o crachá é o que prova ao Rica que aquilo veio do celular dele, não
+   do painel. O feed passa a entregar `texto` + `origem` + `endereco_retorno`, que
+   é **a mesma forma dos três campos do item de fila**. A simetria não é estética:
+   é o que faz o casamento posicional comparar coisas iguais.
+2. **Falha de desembrulho é ruidosa.** Gramática que não casar (atributo novo,
+   formato mudado) entrega o texto **cru** com o campo marcado como não
+   reconhecido. Sem isso o modo de falha é texto de máquina na tela do Rica — já
+   aconteceu com anexo — ou item de Telegram apodrecendo até o teto de 5 minutos,
+   que é o sintoma que ninguém liga à causa.
+
+Como o desembrulho acontece na leitura, ele vale retroativamente para o JSONL já
+gravado: sem migração.
