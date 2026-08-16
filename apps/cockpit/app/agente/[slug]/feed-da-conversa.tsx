@@ -12,13 +12,14 @@
 // `components/feed/**` é território do Hiro (cockpit-v2-ownership.md §2) —
 // este arquivo só CONSOME o que já é público de lá, nunca edita.
 
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { buildToolResultLookup, textoEnfileirado } from '@grupo_borges/cockpit-core/render-items';
 import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
+import { Retrato } from '@/components/shell/retrato.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
@@ -244,7 +245,7 @@ function FeedClaudeCode({
     status,
   });
   if (decisao === 'nada') return null;
-  if (decisao === 'sem-conversa') return <SemConversa geracao={geracao} />;
+  if (decisao === 'sem-conversa') return <SemConversa geracao={geracao} agentSlug={agentSlug} />;
 
   // O wrapper existe pra `key` + fade da troca de geração sem tocar em
   // `components/feed/**` (território do Hiro): `flex column` + `min-h-0`
@@ -284,25 +285,42 @@ function criaBolhaOtimista(pendente: EcoPendente, ordinal: number): MessagePaylo
 /** A coluna de leitura não vem mais de um wrapper na página (ela desceu pra
  *  dentro do Feed, pra barra de rolagem encostar na borda da tela) — o estado
  *  vazio se centra sozinho na mesma medida. `key={geracao}` + `ck-feed-enter`:
- *  após um Restart, o "Sem conversa ainda." nasce com fade em vez de piscada
- *  dura. Virou peça própria quando a Tara ganhou o segundo ramo: os dois
- *  precisam do MESMO vazio, e vazio duplicado é vazio que diverge. */
-function SemConversa({ geracao }: { geracao: number }) {
+ *  após um Restart, a saudação nasce com fade em vez de piscada dura. Virou
+ *  peça própria quando a Tara ganhou o segundo ramo: os dois precisam do MESMO
+ *  vazio, e vazio duplicado é vazio que diverge.
+ *
+ *  16/08 — saudação estilo Claude (referência que o Rica mandou): o retrato do
+ *  agente como marca + "Boa tarde, Rica" centralizados, no lugar do "Sem
+ *  conversa ainda." no topo. A hora se resolve DEPOIS do mount (useEffect): o
+ *  componente é pré-renderizado no servidor, e `getHours()` no corpo daria HTML
+ *  do servidor ≠ do cliente — hydration mismatch. Primeiro paint é só o
+ *  retrato; o texto entra no primeiro efeito. */
+function SemConversa({ geracao, agentSlug }: { geracao: number; agentSlug: string }) {
+  const [saudacao, setSaudacao] = useState<string | null>(null);
+  useEffect(() => {
+    const hora = new Date().getHours();
+    setSaudacao(hora < 5 || hora >= 18 ? 'Boa noite, Rica' : hora < 12 ? 'Bom dia, Rica' : 'Boa tarde, Rica');
+  }, []);
+
   return (
     <div
       key={geracao}
-      className="ck-feed-enter mx-auto w-full"
-      style={{ maxWidth: 'var(--ck-read-wide)', padding: '0 var(--ck-space-4)' }}
+      className="ck-feed-enter flex min-h-0 flex-1 flex-col items-center justify-center"
+      style={{ gap: 'var(--ck-space-5)', padding: '0 var(--ck-space-4)' }}
     >
+      <Retrato slug={agentSlug} nome={agentSlug} tamanho={56} />
       <p
         style={{
+          margin: 0,
+          minHeight: 'calc(var(--ck-text-hero) * var(--ck-leading-hero))',
           fontSize: 'var(--ck-text-hero)',
           lineHeight: 'var(--ck-leading-hero)',
           letterSpacing: 'var(--ck-track-hero)',
           color: 'var(--ck-text-secondary)',
+          textAlign: 'center',
         }}
       >
-        Sem conversa ainda.
+        {saudacao}
       </p>
     </div>
   );
@@ -363,7 +381,7 @@ function FeedCodex({ agentSlug }: { agentSlug: string }) {
   // Mesma honestidade do ramo do CC: em branco enquanto não perguntei. Dizer
   // "Sem conversa ainda." antes da primeira resposta é a mentira que esta tela
   // veio consertar.
-  if (itens.length === 0) return carregou ? <SemConversa geracao={0} /> : null;
+  if (itens.length === 0) return carregou ? <SemConversa geracao={0} agentSlug={agentSlug} /> : null;
 
   // O cursor no fim da última fala é o que faz o chat da Tara parecer o mesmo
   // app que o do CC — ordem do Rica, 15/08: "todos tem que ficar com a UI igual

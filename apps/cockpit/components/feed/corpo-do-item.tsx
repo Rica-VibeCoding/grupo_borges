@@ -209,8 +209,12 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       // só o fundo separava. O lado é o que distingue quem falou antes de ler.
       return (
         <div
-          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
-          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
+          // Desenho novo (16/08, referências Claude/ChatGPT do Rica): a bolha
+          // veste `--ck-radius-caixa` — o token criado pra "superfície que
+          // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
+          // `frame` (8px) continua pra conteúdo que MOSTRA saída.
+          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-caixa)]"
+          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
           {item.enfileirada ? (
             // O composer já avisa "entrou na fila" (usa-envio.ts:113); esta é
@@ -285,8 +289,12 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       // `raw_text` e é o que distingue as duas portas — não precisa de rótulo.
       return item.syntheticKind === 'stt' ? (
         <div
-          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
-          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
+          // Desenho novo (16/08, referências Claude/ChatGPT do Rica): a bolha
+          // veste `--ck-radius-caixa` — o token criado pra "superfície que
+          // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
+          // `frame` (8px) continua pra conteúdo que MOSTRA saída.
+          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-caixa)]"
+          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
           <Fala texto={item.rawText} />
         </div>
@@ -319,8 +327,12 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       }
       return (
         <div
-          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-frame)]"
-          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3)' }}
+          // Desenho novo (16/08, referências Claude/ChatGPT do Rica): a bolha
+          // veste `--ck-radius-caixa` — o token criado pra "superfície que
+          // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
+          // `frame` (8px) continua pra conteúdo que MOSTRA saída.
+          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-caixa)]"
+          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
           <div
             style={{

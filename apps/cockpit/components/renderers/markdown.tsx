@@ -97,14 +97,22 @@ const MARKDOWN_COMPONENTS: Components = {
   },
   h1({ children, ...props }) {
     return (
-      <h1 className="font-semibold text-[var(--ck-text-lg)] leading-hero" {...props}>
+      // pt-2: o título precisa desgrudar do parágrafo anterior mais que o
+      // respiro padrão entre blocos — é o "mini-título" das referências.
+      <h1
+        className="pt-[var(--ck-space-2)] font-semibold text-[var(--ck-text-lg)] leading-hero"
+        {...props}
+      >
         {children}
       </h1>
     );
   },
   h2({ children, ...props }) {
     return (
-      <h2 className="font-semibold text-[var(--ck-text-md)] leading-hero" {...props}>
+      <h2
+        className="pt-[var(--ck-space-2)] font-semibold text-[var(--ck-text-md)] leading-hero"
+        {...props}
+      >
         {children}
       </h2>
     );
@@ -147,7 +155,9 @@ const MARKDOWN_COMPONENTS: Components = {
   },
   ol({ children, ...props }) {
     return (
-      <ol className="list-decimal space-y-[var(--ck-space-1)] pl-[var(--ck-space-5)]" {...props}>
+      // space-y-2 desde 16/08 (facelift do texto, referência Claude/ChatGPT):
+      // item de lista com 4px colava um no outro e lia como parágrafo único.
+      <ol className="list-decimal space-y-[var(--ck-space-2)] pl-[var(--ck-space-5)]" {...props}>
         {children}
       </ol>
     );
@@ -195,13 +205,23 @@ const MARKDOWN_COMPONENTS: Components = {
     return (
       <ul
         className={mergeMarkdownClassName(
-          'list-disc space-y-[var(--ck-space-1)] pl-[var(--ck-space-5)]',
+          'list-disc space-y-[var(--ck-space-2)] pl-[var(--ck-space-5)]',
           className,
         )}
         {...props}
       >
         {children}
       </ul>
+    );
+  },
+  strong({ children, ...props }) {
+    return (
+      // Explícito desde 16/08: o default do browser é `bolder`, que herda o
+      // peso do pai — dentro de um h2 (600) o negrito sumia. `semibold` crava
+      // o contraste em qualquer contexto.
+      <strong className="font-semibold" {...props}>
+        {children}
+      </strong>
     );
   },
 };
