@@ -1,6 +1,6 @@
 /**
  * O que o Rica JÁ mandou, extraído do stream na forma que a reconciliação da
- * bolha otimista compara: texto puro, na ordem em que apareceu.
+ * bolha otimista compara: texto e instante, na ordem em que apareceram.
  *
  * Mora fora do `.tsx` pelo motivo de sempre nesta casa — o `node --test` prova
  * a régua sem transpilar JSX.
@@ -20,19 +20,22 @@
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { textoEnfileirado } from '@grupo_borges/cockpit-core/render-items';
+import type { MensagemReal } from './codex/eco-pendente.ts';
 
-export function textosDoUsuario(messages: readonly MessagePayload[]): string[] {
-  const textos: string[] = [];
+export function textosDoUsuario(messages: readonly MessagePayload[]): MensagemReal[] {
+  const textos: MensagemReal[] = [];
   for (const m of messages) {
+    const timestamp = Date.parse(m.timestamp);
+    const criadoEmMs = Number.isFinite(timestamp) ? timestamp : m.created_at * 1_000;
     const daFila = textoEnfileirado(m);
     if (daFila !== null) {
-      textos.push(daFila);
+      textos.push({ texto: daFila, criadoEmMs });
       continue;
     }
     if (m.kind !== 'user' || m.message?.role !== 'user') continue;
     const conteudo = m.message.content;
     if (typeof conteudo === 'string') {
-      textos.push(conteudo);
+      textos.push({ texto: conteudo, criadoEmMs });
       continue;
     }
     if (!Array.isArray(conteudo)) continue;
@@ -42,7 +45,7 @@ export function textosDoUsuario(messages: readonly MessagePayload[]): string[] {
     const texto = conteudo
       .map((parte) => (parte && parte.type === 'text' ? parte.text : ''))
       .join('');
-    if (texto) textos.push(texto);
+    if (texto) textos.push({ texto, criadoEmMs });
   }
   return textos;
 }

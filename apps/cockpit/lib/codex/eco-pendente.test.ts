@@ -17,6 +17,11 @@ import {
 
 beforeEach(() => limpaEcoPendente());
 
+function mensagensReais(...textos: string[]): Array<{ texto: string; criadoEmMs: number }> {
+  const criadoEmMs = Date.now() + 1_000;
+  return textos.map((texto) => ({ texto, criadoEmMs }));
+}
+
 describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', () => {
   it('registra e devolve na ordem em que foi mandado', () => {
     registraEcoPendente('tara', 'primeira');
@@ -53,7 +58,7 @@ describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', ()
     registraEcoPendente('tara', 'teste', PRAZO_CODEX_MS, envelope);
 
     assert.equal(lePendentes('tara')[0]?.conteudo, envelope);
-    reconciliaPendentes('tara', ['teste']);
+    reconciliaPendentes('tara', mensagensReais('teste'));
     assert.equal(lePendentes('tara').length, 0);
   });
 });
@@ -61,7 +66,7 @@ describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', ()
 describe('reconciliação — a pendência sai quando o rollout entrega', () => {
   it('mensagem que chegou pelo rollout some da lista otimista', () => {
     registraEcoPendente('tara', 'oi');
-    reconciliaPendentes('tara', ['conversa velha', 'oi']);
+    reconciliaPendentes('tara', mensagensReais('conversa velha', 'oi'));
 
     assert.equal(lePendentes('tara').length, 0);
   });
@@ -69,14 +74,23 @@ describe('reconciliação — a pendência sai quando o rollout entrega', () => 
   it('duas iguais em sequência: o rollout com uma só derruba UMA', () => {
     registraEcoPendente('tara', 'ok');
     registraEcoPendente('tara', 'ok');
-    reconciliaPendentes('tara', ['ok']);
+    reconciliaPendentes('tara', mensagensReais('ok'));
+
+    assert.equal(lePendentes('tara').length, 1);
+  });
+
+  it('mensagem antiga com a mesma legenda não remove o anexo novo', () => {
+    registraEcoPendente('tara', 'teste');
+    const envio = lePendentes('tara')[0]!;
+
+    reconciliaPendentes('tara', [{ texto: 'teste', criadoEmMs: envio.emMs - 1 }]);
 
     assert.equal(lePendentes('tara').length, 1);
   });
 
   it('rollout sem a mensagem preserva a bolha — é o caso dos 12s', () => {
     registraEcoPendente('tara', 'ainda subindo');
-    reconciliaPendentes('tara', ['conversa velha']);
+    reconciliaPendentes('tara', mensagensReais('conversa velha'));
 
     assert.equal(lePendentes('tara').length, 1);
   });
@@ -87,8 +101,8 @@ describe('reconciliação — a pendência sai quando o rollout entrega', () => 
     assinaPendentes('tara', () => (avisos += 1));
 
     const antes = lePendentes('tara');
-    reconciliaPendentes('tara', ['outra coisa']);
-    reconciliaPendentes('tara', ['outra coisa']);
+    reconciliaPendentes('tara', mensagensReais('outra coisa'));
+    reconciliaPendentes('tara', mensagensReais('outra coisa'));
 
     assert.equal(avisos, 0);
     assert.equal(lePendentes('tara'), antes, 'mesmo array, não só igual');
@@ -97,7 +111,7 @@ describe('reconciliação — a pendência sai quando o rollout entrega', () => 
   it('reconciliar sem pendência nenhuma não explode nem notifica', () => {
     let avisos = 0;
     assinaPendentes('tara', () => (avisos += 1));
-    reconciliaPendentes('tara', ['qualquer coisa']);
+    reconciliaPendentes('tara', mensagensReais('qualquer coisa'));
     assert.equal(avisos, 0);
   });
 
@@ -108,7 +122,7 @@ describe('reconciliação — a pendência sai quando o rollout entrega', () => 
     registraEcoPendente('tara', 'oi');
     assert.equal(avisos, 1);
 
-    reconciliaPendentes('tara', ['oi']);
+    reconciliaPendentes('tara', mensagensReais('oi'));
     assert.equal(avisos, 2);
 
     desassina();
@@ -124,7 +138,7 @@ describe('temPendencia — o prazo do composer pergunta por aqui', () => {
     registraEcoPendente('tara', 'subindo');
     assert.equal(temPendencia('tara'), true);
 
-    reconciliaPendentes('tara', ['subindo']);
+    reconciliaPendentes('tara', mensagensReais('subindo'));
     assert.equal(temPendencia('tara'), false);
   });
 
@@ -152,7 +166,10 @@ describe('polling ocioso — por que reconciliar tem que vir do array CRU', () =
         anterior = doRollout;
         reconciliaPendentes(
           'tara',
-          doRollout.map((m) => String(m.message?.content ?? '')),
+          doRollout.map((m) => ({
+            texto: String(m.message?.content ?? ''),
+            criadoEmMs: m.created_at ?? 0,
+          })),
         );
       }
     }
@@ -222,7 +239,7 @@ describe('recibo de entrega — o que desfaz o âmbar', () => {
     assinaEntrega('tara', (t) => recebidos.push(t));
 
     registraEcoPendente('tara', 'oi');
-    reconciliaPendentes('tara', ['oi']);
+    reconciliaPendentes('tara', mensagensReais('oi'));
 
     assert.deepEqual(recebidos, ['oi']);
   });
@@ -242,8 +259,8 @@ describe('recibo de entrega — o que desfaz o âmbar', () => {
 
     envelhece('canarinho', 60_000);
     envelhece('tara', 60_000);
-    reconciliaPendentes('canarinho', ['outra coisa']);
-    reconciliaPendentes('tara', ['outra coisa']);
+    reconciliaPendentes('canarinho', mensagensReais('outra coisa'));
+    reconciliaPendentes('tara', mensagensReais('outra coisa'));
 
     assert.equal(lePendentes('canarinho').length, 0, 'CC: 60s já passou dos 45s');
     assert.equal(lePendentes('tara').length, 1, 'Codex: 60s ainda cabe nos 3 min');
@@ -262,7 +279,7 @@ describe('recibo de entrega — o que desfaz o âmbar', () => {
     // Envelhece à força: o prazo é de 3 min.
     const p = lePendentes('tara')[0] as { emMs: number };
     p.emMs = Date.now() - 200_000;
-    reconciliaPendentes('tara', ['outra coisa']);
+    reconciliaPendentes('tara', mensagensReais('outra coisa'));
 
     assert.equal(lePendentes('tara').length, 0, 'saiu da lista');
     assert.deepEqual(recebidos, [], 'mas NÃO foi anunciada como entregue');

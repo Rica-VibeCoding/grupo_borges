@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it } from 'node:test';
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
+import {
+  lePendentes,
+  limpaEcoPendente,
+  reconciliaPendentes,
+  registraEcoPendente,
+} from './codex/eco-pendente.ts';
 import { textosDoUsuario } from './textos-do-usuario.ts';
+
+beforeEach(() => limpaEcoPendente());
 
 function base(id: number): Omit<MessagePayload, 'kind' | 'message'> {
   return {
@@ -22,11 +30,15 @@ function doUsuario(id: number, texto: string): MessagePayload {
   return { ...base(id), kind: 'user', message: { role: 'user', content: texto } };
 }
 
+function real(id: number, texto: string): { texto: string; criadoEmMs: number } {
+  return { texto, criadoEmMs: id * 1_000 };
+}
+
 describe('textos do usuário — o que encerra a bolha otimista', () => {
   it('devolve o que o Rica escreveu, na ordem', () => {
     assert.deepEqual(
       textosDoUsuario([doUsuario(1, 'primeira'), doUsuario(2, 'segunda')]),
-      ['primeira', 'segunda'],
+      [real(1, 'primeira'), real(2, 'segunda')],
     );
   });
 
@@ -50,7 +62,7 @@ describe('textos do usuário — o que encerra a bolha otimista', () => {
       message: null,
       content: 'mandei com ele ocupado',
     };
-    assert.deepEqual(textosDoUsuario([enfileirada]), ['mandei com ele ocupado']);
+    assert.deepEqual(textosDoUsuario([enfileirada]), [real(4, 'mandei com ele ocupado')]);
   });
 
   it('conteúdo em blocos: junta o texto e descarta o resto', () => {
@@ -66,7 +78,7 @@ describe('textos do usuário — o que encerra a bolha otimista', () => {
         ] as MessagePayload['message'] extends { content: infer C } ? C : never,
       },
     };
-    assert.deepEqual(textosDoUsuario([emBlocos]), ['olha a foto']);
+    assert.deepEqual(textosDoUsuario([emBlocos]), [real(5, 'olha a foto')]);
   });
 
   it('mensagem sem texto nenhum não vira string vazia na lista', () => {
@@ -81,5 +93,23 @@ describe('textos do usuário — o que encerra a bolha otimista', () => {
       },
     };
     assert.deepEqual(textosDoUsuario([soFerramenta]), []);
+  });
+
+  it('eco antigo com texto repetido não confirma o envio novo no Claude Code', () => {
+    registraEcoPendente('canarinho', 'teste');
+    const envio = lePendentes('canarinho')[0]!;
+
+    reconciliaPendentes('canarinho', textosDoUsuario([doUsuario(1, 'teste')]));
+    assert.equal(lePendentes('canarinho').length, 1);
+
+    const instanteNovo = envio.emMs + 1;
+    const nova: MessagePayload = {
+      ...doUsuario(2, 'teste'),
+      timestamp: new Date(instanteNovo).toISOString(),
+      created_at: instanteNovo / 1_000,
+    };
+    reconciliaPendentes('canarinho', textosDoUsuario([doUsuario(1, 'teste'), nova]));
+
+    assert.equal(lePendentes('canarinho').length, 0);
   });
 });

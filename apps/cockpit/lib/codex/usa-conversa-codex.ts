@@ -121,7 +121,11 @@ export function usaConversaCodex(slug: string, ativo: boolean): ConversaCodex {
         // `aceito` para sempre (achado do canário, 09/08).
         reconciliaPendentes(
           slug,
-          mensagens.flatMap((m) => (m.role === 'user' ? [m.text] : [])),
+          mensagens.flatMap((m) => {
+            if (m.role !== 'user') return [];
+            const criadoEmMs = Date.parse(m.timestamp);
+            return [{ texto: m.text, criadoEmMs: Number.isFinite(criadoEmMs) ? criadoEmMs : 0 }];
+          }),
         );
       } catch {
         // Rede fora ou API caída: segura o último estado bom, igual

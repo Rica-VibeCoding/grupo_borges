@@ -37,6 +37,11 @@ export type EcoPendente = {
   prazoMs: number;
 };
 
+export type MensagemReal = {
+  texto: string;
+  criadoEmMs: number;
+};
+
 /** Teto de vida da bolha otimista no Codex. O turno leva minutos, mas o ECO do
  *  texto do Rica é o começo do turno, não o fim — 12 s medidos, 3 min de folga.
  *  Passou disso, o envio não chegou, e manter a bolha diria que chegou. Quem
@@ -139,27 +144,33 @@ export function assinaPendentes(slug: string, fn: () => void): () => void {
 /**
  * Some com o que já chegou pelo rollout, e com o que passou do prazo.
  *
- * A comparação é por TEXTO porque a bolha otimista não tem id do Codex — ela
- * nasce antes de existir do lado de lá. Casar o texto exato é suficiente:
- * duas mensagens idênticas em sequência derrubam a primeira pendência e a
- * segunda continua esperando a sua, que é o comportamento certo.
+ * A bolha otimista não tem o id que o Codex criará, então a reconciliação usa
+ * texto + ordem temporal. Só mensagens reais posteriores ao gesto participam:
+ * sem essa fronteira, uma legenda repetida encontra a ocorrência antiga no
+ * histórico e a prévia nova some até o próximo rollout.
  */
-export function reconciliaPendentes(slug: string, textosReais: readonly string[]): void {
+export function reconciliaPendentes(slug: string, mensagensReais: readonly MensagemReal[]): void {
   const atual = porAgente.get(slug);
   if (!atual || atual.length === 0) return;
 
-  const disponiveis = new Map<string, number>();
-  for (const t of textosReais) {
-    const chave = t.trim();
-    disponiveis.set(chave, (disponiveis.get(chave) ?? 0) + 1);
+  const disponiveis = new Map<string, number[]>();
+  for (const mensagem of mensagensReais) {
+    const chave = mensagem.texto.trim();
+    const tempos = disponiveis.get(chave) ?? [];
+    tempos.push(mensagem.criadoEmMs);
+    disponiveis.set(chave, tempos);
   }
+  for (const tempos of disponiveis.values()) tempos.sort((a, b) => a - b);
 
   const agora = Date.now();
   const entregues: string[] = [];
+  const cursores = new Map<string, number>();
   const sobrando = atual.filter((p) => {
-    const restam = disponiveis.get(p.texto) ?? 0;
-    if (restam > 0) {
-      disponiveis.set(p.texto, restam - 1);
+    const tempos = disponiveis.get(p.texto) ?? [];
+    let cursor = cursores.get(p.texto) ?? 0;
+    while (cursor < tempos.length && tempos[cursor]! < p.emMs) cursor += 1;
+    if (cursor < tempos.length) {
+      cursores.set(p.texto, cursor + 1);
       entregues.push(p.texto);
       return false;
     }
