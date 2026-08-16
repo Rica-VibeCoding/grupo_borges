@@ -1,8 +1,18 @@
+import { execSync } from 'node:child_process';
 import type { NextConfig } from 'next';
 
 const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
 
+function getDeploymentId(): string | undefined {
+  try {
+    return execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
 const config: NextConfig = {
+  deploymentId: getDeploymentId(),
   devIndicators: false,
   allowedDevOrigins: [
     '127.0.0.1',

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { SseProvider } from '../components/sse-provider';
+import { StaleClientGuard } from '../components/stale-client-guard';
 import { TtsProvider } from '../lib/tts-context';
 import './globals.css';
 
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="/theme-restore.js" />
       </head>
       <body data-sse="on" data-load="off">
+        <StaleClientGuard />
         <TtsProvider><SseProvider>{children}</SseProvider></TtsProvider>
       </body>
     </html>
