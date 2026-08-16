@@ -29,6 +29,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from orchestrator.lifecycle_ruido import eh_ruido_de_lifecycle
+
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 logger = logging.getLogger(__name__)
 
@@ -279,15 +281,23 @@ def derive_lifecycle_from_event(
         message = data.get("message")
         if isinstance(message, dict):
             content = message.get("content")
+            texto = None
             if isinstance(content, str) and content.strip():
-                return "trabalhando", "mensagem do usuário"
-            if isinstance(content, list) and any(
-                isinstance(block, dict)
-                and block.get("type") == "text"
-                and isinstance(block.get("text"), str)
-                and block.get("text", "").strip()
-                for block in content
-            ):
+                texto = content
+            elif isinstance(content, list):
+                juntado = "".join(
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict)
+                    and block.get("type") == "text"
+                    and isinstance(block.get("text"), str)
+                )
+                if juntado.strip():
+                    texto = juntado
+            # Mesma guarda de `_jsonl_lifecycle` (jsonl_watcher.py) — este
+            # ramo é fallback pra banco sem a coluna gravada, mas a régua de
+            # "isso não é turno" tem que ser a mesma dos dois lados.
+            if texto is not None and not eh_ruido_de_lifecycle(texto):
                 return "trabalhando", "mensagem do usuário"
         return None, None
     if kind == "jsonl:assistant":

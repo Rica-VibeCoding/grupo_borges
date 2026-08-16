@@ -35,6 +35,7 @@ from typing import Any
 from watchfiles import Change, awatch
 
 from orchestrator.checkpoint_parser import checkpoint_hash, parse_checkpoint
+from orchestrator.lifecycle_ruido import eh_ruido_de_lifecycle
 from util import parse_dict_or_none
 
 logger = logging.getLogger(__name__)
@@ -651,14 +652,23 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
         message = payload.get("message")
         if isinstance(message, dict):
             content = message.get("content")
+            texto = None
             if isinstance(content, str) and content.strip():
-                return "trabalhando", "mensagem do usuário"
-            if any(
-                block.get("type") == "text"
-                and isinstance(block.get("text"), str)
-                and block.get("text", "").strip()
-                for block in _content_blocks(payload)
-            ):
+                texto = content
+            else:
+                juntado = "".join(
+                    block.get("text", "")
+                    for block in _content_blocks(payload)
+                    if block.get("type") == "text" and isinstance(block.get("text"), str)
+                )
+                if juntado.strip():
+                    texto = juntado
+            # `/rename`, `/clear`, `/compact` e o system-reminder que o boot
+            # injeta gravam `role: user` sem que nada tenha sido pedido ao
+            # modelo — sem esta guarda, o lifecycle liga "trabalhando" e não
+            # desliga nunca, porque comando local não gera `end_turn`. Achado
+            # de 16/08 (Maestro preso depois do `/rename` do boot).
+            if texto is not None and not eh_ruido_de_lifecycle(texto):
                 return "trabalhando", "mensagem do usuário"
         return None, None
     if event_type == "summary":
