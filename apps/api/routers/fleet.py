@@ -236,6 +236,7 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
         )
         agent["codex_tokens_used"] = thread.tokens_used if thread is not None else None
         stored_pct = None
+        stored_tokens = None
         stored_observed_at = None
         raw_usage = agent.get("token_usage_json")
         if isinstance(raw_usage, str) and raw_usage.strip():
@@ -249,18 +250,27 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
                 and stored_usage.get("context_pct") is not None
             ):
                 stored_pct = stored_usage["context_pct"]
+                stored_tokens = _int_or_none(stored_usage.get("context_tokens"))
                 stored_observed_at = _int_or_none(stored_usage.get("observed_at"))
         if thread is not None:
             snapshot = await asyncio.to_thread(codex_reader.read_latest_token_count, thread.rollout_path)
             if snapshot is not None:
                 usa_snapshot = snapshot.get("context_pct") is not None
                 agent["context_pct"] = snapshot["context_pct"] if usa_snapshot else stored_pct
+                # O tamanho do contexto vem DAQUI, nunca do `codex_tokens_used`:
+                # aquele é o cumulativo da thread no SQLite do Codex (chega a
+                # centenas de milhões) e a pílula do composer nasceria com seis
+                # dígitos, discordando do painel do agente no mesmo instante.
+                agent["context_tokens"] = (
+                    _int_or_none(snapshot.get("context_tokens")) if usa_snapshot else stored_tokens
+                )
                 agent["context_updated_at"] = (
                     _int_or_none(snapshot.get("observed_at")) if usa_snapshot else stored_observed_at
                 )
                 return
         if stored_pct is not None:
             agent["context_pct"] = stored_pct
+            agent["context_tokens"] = stored_tokens
             agent["context_updated_at"] = stored_observed_at
         if agent.get("context_pct") is not None and agent.get("context_updated_at") is None:
             # Codex sem carimbo é o `context_pct` que ficou no banco de algum run

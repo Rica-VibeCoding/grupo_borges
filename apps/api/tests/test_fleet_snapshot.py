@@ -260,10 +260,13 @@ def _prepara_card_codex(tmp_path: Path, monkeypatch, *, medido_em: int, iniciou_
     monkeypatch.setattr(
         fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
     )
+    # O `tokens_used` da thread é o CUMULATIVO do SQLite do Codex e não tem
+    # relação com o tamanho do contexto — por isso a ordem de grandeza diferente
+    # do rollout acima. Os dois iguais escondiam a troca de um pelo outro.
     monkeypatch.setattr(
         fleet_router.codex_reader,
         "resolve_thread",
-        lambda **_kwargs: SimpleNamespace(tokens_used=161_907, rollout_path=rollout),
+        lambda **_kwargs: SimpleNamespace(tokens_used=158_506_696, rollout_path=rollout),
     )
 
     app = FastAPI()
@@ -285,6 +288,24 @@ def test_fleet_expoe_processamento_real_da_sessao_codex(tmp_path: Path, monkeypa
         agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
 
     assert agent["codex_session_processing"] is True
+
+
+def test_fleet_codex_publica_o_contexto_e_nao_o_cumulativo_da_thread(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A pílula do composer mostra contexto; a thread guarda o gasto da vida toda.
+
+    Trocar um pelo outro põe seis dígitos na pílula (`158507`) e faz o composer
+    discordar do painel do agente no mesmo instante.
+    """
+    agora = int(time.time())
+    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 30, iniciou_em=agora - 1_000)
+
+    with TestClient(app) as client:
+        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
+
+    assert agent["context_tokens"] == 161_907
+    assert agent["codex_tokens_used"] == 158_506_696
 
 
 def test_fleet_card_marca_contexto_medido_antes_da_sessao_como_velho(

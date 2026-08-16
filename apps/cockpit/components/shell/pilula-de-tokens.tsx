@@ -21,19 +21,17 @@
  * remonta a cada turno, e o número do retrato de navegação congelaria no valor
  * de quando a página abriu. É o mesmo motivo da `statusline-ao-vivo.tsx`.
  */
-import { resolveContextTokens } from '@grupo_borges/cockpit-core/cockpit-types';
-
 import { usaFrota } from './frota-provider';
 
 export function PilulaDeTokens({ agentSlug }: { agentSlug: string }) {
   const { agents } = usaFrota();
-  const agente = agents.find((a) => a.slug === agentSlug);
-  const tokens = agente ? resolveContextTokens(agente) : null;
-  // Sem medida a pílula não aparece. Zero aqui seria afirmar "contexto vazio"
-  // num agente que só não respondeu ainda. `typeof` e não `=== null`: a API
-  // reinicia depois do front, e nessa janela o campo chega AUSENTE — o `null`
-  // sozinho deixava passar `undefined` e derrubava a página inteira em 500.
-  if (typeof tokens !== 'number') return null;
+  const tokens = agents.find((a) => a.slug === agentSlug)?.context_tokens;
+  // ZERO TAMBÉM É AUSÊNCIA, não medida. O back soma os quatro campos com `or 0`,
+  // então sessão recém-aberta e campo renomeado no harness caem os dois em zero
+  // — e "0" na tela afirmaria contexto vazio com a mesma cara de quem mediu.
+  // O falsy cobre junto o `undefined` da janela em que a API ainda não
+  // reiniciou, que sem guarda nenhuma derrubava a página em 500.
+  if (!tokens) return null;
 
   return (
     <span
