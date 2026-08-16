@@ -4,6 +4,9 @@ import type {
   AgentActivityState,
   TaskEvent,
 } from '@grupo_borges/cockpit-core/cockpit-types';
+import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+
+import { efeitoNaCorrida } from './spike/corrida-em-voo.ts';
 
 export const ACTIVITY_MIN_VISIBLE_MS: Record<AgentActivityState, number> = {
   trabalhando: 2_500,
@@ -79,14 +82,35 @@ function activityFromNamedEvent(kind: string): AgentActivityState | null {
   return null;
 }
 
+/** Payload cru do watcher pro formato que `efeitoNaCorrida` espera. Só existe
+ *  se tiver `message` reconhecível — sem isso o caller cai no fallback de
+ *  sempre. `isSidechain` (camelCase) é como o JSONL do CC grava; a régua
+ *  reusada do feed lê `is_sidechain` (canônico) — sem este mapa a guarda de
+ *  sidechain nunca dispara aqui. */
+function payloadParaCorrida(payload: TaskEvent['payload']): MessagePayload | null {
+  if (!payload) return null;
+  const message = payload.message;
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
+  return {
+    ...payload,
+    is_sidechain: payload.is_sidechain === true || payload.isSidechain === true,
+  } as unknown as MessagePayload;
+}
+
 export function activityFromTaskEvent(event: TaskEvent): AgentActivityState | null {
-  if (event.kind === 'jsonl:user') return 'trabalhando';
-  if (event.kind === 'jsonl:assistant') {
-    const message = event.payload?.message;
-    if (!message || typeof message !== 'object' || Array.isArray(message)) return 'trabalhando';
-    return (message as Record<string, unknown>).stop_reason === 'end_turn'
-      ? 'ocioso'
-      : 'trabalhando';
+  if (event.kind === 'jsonl:user' || event.kind === 'jsonl:assistant') {
+    const payload = payloadParaCorrida(event.payload);
+    // Sem `message` reconhecível: fallback pessimista de sempre — melhor
+    // acender "trabalhando" à toa do que perder um card preso de verdade.
+    if (!payload) return 'trabalhando';
+    // Mesma régua do "Pensando" na linha viva do feed (`corrida-em-voo.ts`,
+    // 10/08): comando local (`/rename`, `/clear`, `/compact`) e
+    // system-reminder puro não são turno, `null` não mexe no estado atual.
+    // Achado de 16/08: o card do fleet tinha a régua velha (`jsonl:user`
+    // sempre acende), presa depois do `/rename` que o boot injeta.
+    const efeito = efeitoNaCorrida(payload);
+    if (efeito === null) return null;
+    return efeito ? 'trabalhando' : 'ocioso';
   }
   if (event.kind === 'jsonl:system' && event.payload?.subtype === 'turn_duration') {
     return 'ocioso';
