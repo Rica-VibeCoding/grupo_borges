@@ -12,6 +12,11 @@
  * pro lado num viewport de 390px, e o sobrenome não desambigua ninguém: a
  * tropa não tem dois Daniel.
  *
+ * IRMÃ DA PASTILHA DE TELAS. O desenho — trilho, miolo, altura, cor — sai todo
+ * de `pastilha-do-chrome.ts`, e é de lá que se muda: *"sempre que uma mudar a
+ * outra vai mudar também"* (Rica, 16/08). Daqui só sai o que é próprio desta:
+ * o retrato e o respiro menor à esquerda pra ele caber.
+ *
  * O ALVO É 44px, A CÁPSULA NÃO. A §3 da estética pede 44×44 de alvo de toque e
  * a §7 pede densidade — os dois cabem porque o link tem a altura da faixa e o
  * fundo pintado é o `<span>` de dentro, do tamanho do conteúdo. Mesmo arranjo
@@ -23,6 +28,12 @@
  * OTIMISTA (`LinkAbrePainel`) porque `<Link>` seco custaria os 2,0–2,7s de ida
  * e volta antes de a gaveta se mover — a espera que o Rica pegou ao vivo.
  */
+import {
+  MIOLO_ACESO,
+  MIOLO_DA_PASTILHA,
+  RETRATO_NA_PASTILHA,
+  TRILHO_DA_PASTILHA,
+} from './pastilha-do-chrome';
 import { Retrato } from './retrato';
 import { LinkAbrePainel } from './superficie-otimista';
 
@@ -44,21 +55,21 @@ export function CapsulaDoAgente({
       className="flex min-w-0 shrink items-center"
       style={{ minHeight: 'var(--ck-touch-min)' }}
     >
-      <span
-        className="flex min-w-0 items-center"
-        style={{
-          gap: 'var(--ck-space-2)',
-          padding: '3px 12px 3px 3px',
-          borderRadius: 'var(--ck-radius-pill)',
-          background: 'var(--ck-surface-nav)',
-        }}
-      >
-        <Retrato slug={slug} nome={nome} tamanho={28} />
+      <span className="flex min-w-0 items-center" style={TRILHO_DA_PASTILHA}>
         <span
-          className="truncate"
-          style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)' }}
+          className="flex min-w-0 items-center"
+          style={{
+            ...MIOLO_DA_PASTILHA,
+            background: MIOLO_ACESO,
+            // O respiro da esquerda é o do retrato, não o do texto: 14px antes
+            // da foto empurrariam o nome pra fora da tela no celular.
+            paddingLeft: '4px',
+            gap: 'var(--ck-space-2)',
+            color: 'var(--ck-text-primary)',
+          }}
         >
-          {primeiroNome}
+          <Retrato slug={slug} nome={nome} tamanho={RETRATO_NA_PASTILHA} />
+          <span className="truncate">{primeiroNome}</span>
         </span>
       </span>
     </LinkAbrePainel>

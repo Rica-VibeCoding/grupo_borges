@@ -38,6 +38,7 @@
  * ganha companhia no dia em que houver pra onde ir.
  */
 import { CapsulaDoAgente } from './capsula-do-agente';
+import { MIOLO_ACESO, MIOLO_DA_PASTILHA, TRILHO_DA_PASTILHA } from './pastilha-do-chrome';
 import { BotaoNav, BotaoPainel } from './superficie-otimista';
 
 export type Tela = { rotulo: string; ativa: boolean };
@@ -89,25 +90,20 @@ export function BarraDeTelas({
       {/* Pill contido, centralizado — ativo em superfície elevada, inativo só
           texto, exatamente como a referência (§12.3). O fundo do trilho é
           `nav`: ele precisa ser mais claro que o palco em que repousa, e desde
-          que a barra perdeu a cor própria o `canvas` de antes desapareceria. */}
+          que a barra perdeu a cor própria o `canvas` de antes desapareceria.
+          Trilho, miolo e altura vêm de `pastilha-do-chrome.ts` — mexer neles
+          aqui move a cápsula do agente junto, que é o combinado (16/08). */}
       <div
         className="flex min-w-0 shrink-0 items-center"
-        style={{
-          gap: '2px',
-          padding: '3px',
-          borderRadius: 'var(--ck-radius-pill)',
-          background: 'var(--ck-surface-nav)',
-        }}
+        style={{ ...TRILHO_DA_PASTILHA, gap: '2px' }}
       >
         {telas.map((tela) => (
           <span
             key={tela.rotulo}
-            className="truncate"
+            className="flex min-w-0 items-center truncate"
             style={{
-              padding: '5px 14px',
-              borderRadius: 'var(--ck-radius-pill)',
-              fontSize: 'var(--ck-text-sm)',
-              background: tela.ativa ? 'var(--ck-surface-raised)' : 'transparent',
+              ...MIOLO_DA_PASTILHA,
+              background: tela.ativa ? MIOLO_ACESO : 'transparent',
               color: tela.ativa ? 'var(--ck-text-primary)' : 'var(--ck-text-secondary)',
             }}
           >
