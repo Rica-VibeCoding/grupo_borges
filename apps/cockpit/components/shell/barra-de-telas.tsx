@@ -1,9 +1,15 @@
 /**
  * BarraDeTelas — o chrome do topo (§12.3 e §13, correção do menu à esquerda).
  *
- * Três controles na mesma faixa, como na referência do Codex desktop:
+ * Quatro controles na mesma faixa, como na referência do Codex desktop:
  *
- *   [≡ tropa]        [ pill de telas, centralizado ]        [⧉ painel]
+ *   [≡ tropa] [cápsula do agente]   [ pill de telas ]   [⧉ painel]
+ *
+ * O centro é GRID, não `justify-between`: com a cápsula entrando à esquerda em
+ * 16/08, o espaço distribuído entre pontas de larguras diferentes empurrava o
+ * pill pra direita, e ele deixava de ser o centro da folha. `minmax(0, 1fr)` nas
+ * pontas e `auto` no meio prendem o pill no meio de verdade — e o nome longo
+ * trunca na coluna dele em vez de roubar o lugar de quem está ao lado.
  *
  * O `≡` some no desktop, e não é economia de pixel: lá a tropa é o fundo
  * permanente da tela (`app-shell.tsx`), então o botão abriria o que já está
@@ -31,12 +37,16 @@
  * ocupa o mesmo lugar da referência, porque é o rótulo de ONDE você está, e
  * ganha companhia no dia em que houver pra onde ir.
  */
+import { CapsulaDoAgente } from './capsula-do-agente';
 import { BotaoNav, BotaoPainel } from './superficie-otimista';
 
 export type Tela = { rotulo: string; ativa: boolean };
 
 type BarraDeTelasProps = {
   telas: Tela[];
+  /** Quem está do outro lado da conversa — retrato e primeiro nome, na cápsula
+   *  ao lado do `≡`. */
+  agente: { slug: string; nome: string };
   /** Os DOIS destinos do `≡`, pelo mesmo motivo do painel: o `BotaoNav` escolhe
    *  conforme o estado otimista, que pode correr à frente da URL. */
   abrirNavHref: string;
@@ -51,6 +61,7 @@ type BarraDeTelasProps = {
 
 export function BarraDeTelas({
   telas,
+  agente,
   abrirNavHref,
   fecharNavHref,
   navAberta,
@@ -60,8 +71,9 @@ export function BarraDeTelas({
 }: BarraDeTelasProps) {
   return (
     <div
-      className="flex shrink-0 items-center justify-between"
+      className="grid shrink-0 items-center"
       style={{
+        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         gap: 'var(--ck-space-2)',
         padding: 'var(--ck-space-2) var(--ck-space-3)',
         paddingTop: 'calc(var(--ck-space-2) + var(--ck-safe-top))',
@@ -69,16 +81,10 @@ export function BarraDeTelas({
         paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
       }}
     >
-      <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
-
-      {/* Contrapeso do botão de painel — sem ele, o `≡` sumindo no desktop
-          puxaria o pill para a esquerda e ele deixaria de estar centralizado
-          na folha. Largura = alvo de toque menos a margem negativa do botão. */}
-      <span
-        aria-hidden
-        className="hidden shrink-0 md:block"
-        style={{ width: 'calc(var(--ck-touch-min) - var(--ck-space-3))' }}
-      />
+      <div className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
+        <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
+        <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
+      </div>
 
       {/* Pill contido, centralizado — ativo em superfície elevada, inativo só
           texto, exatamente como a referência (§12.3). O fundo do trilho é
@@ -110,11 +116,13 @@ export function BarraDeTelas({
         ))}
       </div>
 
-      <BotaoPainel
-        hrefAbrir={hrefAbrirPainel}
-        hrefFechar={hrefFecharPainel}
-        aberto={painelAberto}
-      />
+      <div className="flex min-w-0 items-center justify-end">
+        <BotaoPainel
+          hrefAbrir={hrefAbrirPainel}
+          hrefFechar={hrefFecharPainel}
+          aberto={painelAberto}
+        />
+      </div>
     </div>
   );
 }

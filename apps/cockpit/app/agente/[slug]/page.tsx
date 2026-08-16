@@ -317,6 +317,7 @@ export default async function AgentePage({
           painel à direita. §12.3/§13: dois controles na mesma faixa. */}
       <BarraDeTelas
         telas={[{ rotulo: 'Chat', ativa: true }]}
+        agente={{ slug: agente.slug, nome: agente.name }}
         // Os dois destinos separados: o `BotaoNav` alterna pelo estado
         // otimista, não pelo que a URL já refletiu.
         abrirNavHref={`${fecharHref}?nav=aberto`}
@@ -337,7 +338,11 @@ export default async function AgentePage({
           Nenhum substituto entra agora, e isso é literal: *"se sentir falta de
           uma identidade dentro do chat eu aviso, mas não seria o que está"*.
           Inventar uma marca d'água ou um nome discreto aqui seria trocar o que
-          ele mandou tirar por uma versão menor da mesma coisa. */}
+          ele mandou tirar por uma versão menor da mesma coisa.
+
+          Ele avisou em 16/08, e a identidade voltou onde ele pediu: dentro da
+          `BarraDeTelas` acima, como cápsula ao lado do `≡`. Aqui continua não
+          entrando nada — o que ele reprovou era a faixa, não a foto. */}
 
       {/* O FEED DE VERDADE. Até 02/08 esta rota mostrava só o último recado do
           assistente + o pedaço cru do pane, e o `<FeedDaConversa>` vivia numa

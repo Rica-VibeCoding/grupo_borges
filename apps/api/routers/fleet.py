@@ -62,6 +62,9 @@ class FleetAgent(BaseModel):
     status_line: str | None = None
     active_task_label: str | None = None
     context_pct: float | None = None
+    # O mesmo contexto em tokens. Vive ao lado do percentual porque a pílula do
+    # composer mostra o tamanho, não a fração (Rica, 16/08: "sem teto, só tokens").
+    context_tokens: int | None = None
     # Quando o `context_pct` foi MEDIDO, e se essa medida já não vale como atual.
     # Sem isto o card mostrava número de run morto com cara de leitura de agora.
     context_updated_at: int | None = None
@@ -134,24 +137,44 @@ def _num_or_none(value: object) -> float | None:
     return float(value)
 
 
-def _read_cc_context_pct(session_id: str) -> tuple[float | None, int | None]:
-    """O número E a hora em que ele foi medido — os dois ou nenhum.
+def _read_cc_context(session_id: str) -> tuple[float | None, int | None, int | None]:
+    """O percentual, o TAMANHO em tokens e a hora em que foram medidos.
 
     Devolver só o percentual era o que deixava `_marca_contexto_velho` cego no
     caminho Claude Code: sem carimbo não há como um número envelhecer.
+
+    Os tokens saem da soma de `current_usage`, e não do `total_input_tokens` ao
+    lado: é a conta que o painel do agente já faz (`agents.py`), e o mesmo
+    contexto não pode render dois números diferentes em duas telas do cockpit.
     """
     path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_id}.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None, None
+        return None, None, None
     if not isinstance(payload, dict):
-        return None, None
+        return None, None, None
     context_window = payload.get("context_window")
     if not isinstance(context_window, dict):
-        return None, None
-    return _num_or_none(context_window.get("used_percentage")), _int_or_none(
-        payload.get("updated_at")
+        return None, None, None
+    usage = context_window.get("current_usage")
+    tokens = (
+        sum(
+            _int_or_none(usage.get(campo)) or 0
+            for campo in (
+                "input_tokens",
+                "output_tokens",
+                "cache_creation_input_tokens",
+                "cache_read_input_tokens",
+            )
+        )
+        if isinstance(usage, dict)
+        else None
+    )
+    return (
+        _num_or_none(context_window.get("used_percentage")),
+        tokens,
+        _int_or_none(payload.get("updated_at")),
     )
 
 
@@ -173,12 +196,17 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
     async def hydrate(agent: dict) -> None:
         if agent.get("executor_kind") == "codex":
             return
-        if agent.get("context_pct") is not None:
-            return
         session_ids = await db.recent_jsonl_session_ids(agent["slug"])
         if not session_ids:
             return
-        pct, medido_em = await asyncio.to_thread(_read_cc_context_pct, session_ids[0])
+        pct, tokens, medido_em = await asyncio.to_thread(_read_cc_context, session_ids[0])
+        # O tamanho em tokens vem do arquivo mesmo quando o percentual já veio do
+        # banco: o `context_pct` gravado tem caminho próprio (o POST do hook) e
+        # sair antes daqui deixaria a pílula do composer vazia justo no agente
+        # que está reportando.
+        agent["context_tokens"] = tokens
+        if agent.get("context_pct") is not None:
+            return
         agent["context_pct"] = pct if pct is not None else 0.0
         agent["context_updated_at"] = medido_em
 

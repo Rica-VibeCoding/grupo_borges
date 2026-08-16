@@ -62,6 +62,9 @@ export type Agent = {
   status_line: string | null;
   active_task_label: string | null;
   context_pct: number | null;
+  /** O mesmo contexto em tokens, do Claude Code. O Codex tem o dele em
+   *  `codex_tokens_used` — quem escolhe entre os dois é `resolveContextTokens`. */
+  context_tokens: number | null;
   /** Quando o `context_pct` foi medido, e se a medida já não vale como atual. */
   context_updated_at: number | null;
   context_stale: boolean;
@@ -523,6 +526,16 @@ export function resolveContextPct(
 ): number | null {
   if (agent.executor_kind === 'codex') return agent.context_pct;
   return agent.context_pct ?? parseContextPct(agent.pane_excerpt);
+}
+
+/** O tamanho do contexto em TOKENS, que é o que a pílula do composer mostra.
+ *  Cada motor guarda o seu num campo próprio e não há fallback pelo pane: o
+ *  terminal desenha percentual, nunca o número. Sem medida a pílula não aparece
+ *  — inventar zero seria afirmar contexto vazio num agente que não respondeu. */
+export function resolveContextTokens(
+  agent: Pick<Agent, 'executor_kind' | 'context_tokens' | 'codex_tokens_used'>,
+): number | null {
+  return agent.executor_kind === 'codex' ? agent.codex_tokens_used : agent.context_tokens;
 }
 
 export function parseModelFromPane(excerpt: string | null): string | null {

@@ -135,6 +135,12 @@ def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path
             {
                 "context_window": {
                     "used_percentage": 42,
+                    "current_usage": {
+                        "input_tokens": 12,
+                        "output_tokens": 200,
+                        "cache_creation_input_tokens": 800,
+                        "cache_read_input_tokens": 154_000,
+                    },
                 },
             }
         ),
@@ -165,6 +171,9 @@ def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path
         assert response.status_code == 200
         agent = _agent_from_snapshot(response.json(), "daniel")
         assert agent["context_pct"] == 42
+        # A pílula do composer mostra tamanho, não fração: os quatro campos de
+        # `current_usage` somados, que é a mesma conta do painel do agente.
+        assert agent["context_tokens"] == 155_012
     finally:
         status_path.unlink(missing_ok=True)
 

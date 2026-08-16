@@ -272,6 +272,47 @@ export function LinkFechaPainel({
   );
 }
 
+/** O irmão de cima, pro lado que ABRE — hoje a cápsula do agente no chrome.
+ *  Existe pelo mesmo motivo do `BotaoPainel`: `<Link>` seco levaria os 2,0–2,7s
+ *  de ida e volta antes de a gaveta começar a se mover, e é essa espera que o
+ *  Rica pegou ao vivo. Sem `data-selecionado` de propósito — quem abre não
+ *  precisa refletir estado, o gatilho de fechar é o próprio painel. */
+export function LinkAbrePainel({
+  href,
+  rotulo,
+  className,
+  style,
+  children,
+}: {
+  href: string;
+  rotulo: string;
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+}) {
+  const ctx = useContext(painel.Ctx);
+
+  return (
+    <Link
+      href={href}
+      onClick={
+        ctx
+          ? (e) => {
+              if (!cliqueSimples(e)) return;
+              e.preventDefault();
+              ctx.ir(href, true);
+            }
+          : undefined
+      }
+      aria-label={`Abrir ${rotulo}`}
+      className={className}
+      style={style}
+    >
+      {children}
+    </Link>
+  );
+}
+
 /** Véu + aside do painel. O conteúdo (`children`) chega pronto do servidor e
  *  permanece montado; o que o cliente faz é virar `data-aberto`/`inert` sem
  *  esperar a navegação. O `inert` virando no mesmo frame também FECHA a
