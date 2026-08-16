@@ -701,6 +701,46 @@ def test_destrava_reports_the_step_that_resolved_or_failed(
     recover.assert_awaited_once_with("daniel")
 
 
+@pytest.mark.parametrize(
+    ("driver_result", "expect_cleared"),
+    [
+        ({"tmux_delivered": True, "degrau": 2, "acao": "input_vazio"}, True),
+        ({"tmux_delivered": True, "degrau": 3, "acao": "enter"}, True),
+        ({"tmux_delivered": True, "degrau": 4, "acao": "recolar_enter"}, True),
+        (
+            {"tmux_delivered": False, "degrau": 5, "acao": "submissao_nao_confirmada"},
+            False,
+        ),
+    ],
+)
+def test_destrava_limpa_lifecycle_preso_so_quando_confirmado(
+    tmp_path: Path,
+    driver_result: dict[str, bool | int | str],
+    expect_cleared: bool,
+) -> None:
+    """Achado de 16/08 (Maestro): o pane pode ser recuperado com o card ainda
+    preso em `trabalhando` — `lifecycle_status` não expira sozinho. Falha do
+    degrau preserva o estado: não afirmar que o agente está livre quando o
+    pane não confirmou."""
+    app = _build_app(tmp_path)
+    app.state.db._update_agent_lifecycle(
+        "daniel", status="trabalhando", detail="mensagem do usuário", event="jsonl:user"
+    )
+    with patch(
+        "routers.agents.tmux_driver.recover_input",
+        new=AsyncMock(return_value=driver_result),
+    ):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/destrava")
+
+    assert response.status_code == 200
+    with app.state.db._connect() as conn:
+        row = conn.execute(
+            "SELECT lifecycle_status FROM agent_state WHERE slug = 'daniel'"
+        ).fetchone()
+    assert (row["lifecycle_status"] is None) is expect_cleared
+
+
 def test_relaunch_requires_explicit_confirmation(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
     with TestClient(app) as client:

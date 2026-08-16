@@ -4698,14 +4698,24 @@ async def post_agent_destrava(slug: str, request: Request) -> dict[str, Any]:
     - Escape fecha modal; input vazio confirma que o destravamento funcionou
     - input armado recebe Enter e, se necessário, é recapturado/recolado igual
     - 200 sempre informa ``degrau``, ``acao`` e ``tmux_delivered`` observados
-    - um desfecho confirmado também limpa o bloqueio do canal no painel; falhas
-      preservam o estado bloqueado para não liberar um input ainda inseguro
+    - um desfecho confirmado também limpa o bloqueio do canal no painel e o
+      microestado (``lifecycle_status``) preso; falhas preservam os dois para
+      não liberar um input ainda inseguro nem apagar um "trabalhando" real
 
     O front atual lê apenas ``tmux_delivered``; por isso o degrau 2 retorna
     ``true`` quando Escape cumpriu o papel e não havia texto armado a submeter.
+
+    Achado de 16/08: o pane pode estar limpo (Escape/Enter resolvem) enquanto
+    o card do painel segue preso em ``trabalhando`` — ``lifecycle_status`` é
+    histórico de evento que não expira, e sem mensagem nova pro agente nenhum
+    evento vem desligá-lo. Antes deste fix, ``destrava`` mexia só no pane; o
+    banco ficava preso do mesmo jeito. Ver ``clear_agent_lifecycle`` (store).
     """
     agent = await _get_agent_or_404(request, slug)
     result = await tmux_driver.recover_input(agent["tmux_session"])
+    if tmux_driver.recovery_confirmado(result):
+        db: GrupoBorgesDB = request.app.state.db
+        await db.clear_agent_lifecycle(slug)
     return {**result, "sent_at": int(time.time())}
 
 

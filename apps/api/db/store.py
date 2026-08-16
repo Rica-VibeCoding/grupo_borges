@@ -627,6 +627,31 @@ class GrupoBorgesDB:
                 (now, status, clean_detail, event, now, slug),
             )
 
+    async def clear_agent_lifecycle(self, slug: str) -> None:
+        await asyncio.to_thread(self._clear_agent_lifecycle, slug)
+
+    def _clear_agent_lifecycle(self, slug: str) -> None:
+        """Apaga o microestado preso — usado pelo `/destrava` confirmado.
+
+        NULL, não "ocioso": não houve evento novo que prove o estado real, só
+        o gesto do Rica destravando o pane. NULL cai no fallback natural de
+        `derive_agent_status` (ocioso quando o processo está presente), sem
+        inventar um evento que nunca aconteceu — se o agente estiver
+        trabalhando de verdade, o próximo evento real regrava em segundos.
+        """
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                UPDATE agent_state
+                SET lifecycle_status = NULL,
+                    lifecycle_detail = NULL,
+                    lifecycle_event = NULL,
+                    lifecycle_updated_at = NULL
+                WHERE slug = ?
+                """,
+                (slug,),
+            )
+
     async def update_agent_codex_state(
         self,
         slug: str,

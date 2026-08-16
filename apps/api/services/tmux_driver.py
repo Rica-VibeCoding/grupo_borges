@@ -233,12 +233,20 @@ def _record_delivery_recovery(session_name: str) -> None:
         )
 
 
+def recovery_confirmado(result: dict[str, bool | int | str]) -> bool:
+    """`True` só para os três desfechos positivos do degrau — a mesma checagem
+    que decide se o canal de entrega se recupera decide também se o lifecycle
+    preso pode ser limpo (router `destrava`, `agents.py`). Uma função só pros
+    dois lados não divergirem."""
+    outcome = (result.get("degrau"), result.get("acao"))
+    return result.get("tmux_delivered") is True and outcome in _RECOVERY_SUCCESS_OUTCOMES
+
+
 def _record_confirmed_recovery(
     session_name: str, result: dict[str, bool | int | str]
 ) -> dict[str, bool | int | str]:
     """Limpa o bloqueio apenas para os três desfechos positivos conhecidos."""
-    outcome = (result.get("degrau"), result.get("acao"))
-    if result.get("tmux_delivered") is True and outcome in _RECOVERY_SUCCESS_OUTCOMES:
+    if recovery_confirmado(result):
         _record_delivery_recovery(session_name)
     return result
 
