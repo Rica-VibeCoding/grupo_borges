@@ -69,6 +69,7 @@ export type Agent = {
   last_assistant_message: string | null;
   token_usage_json: string | null;
   codex_tokens_used: number | null;
+  codex_session_processing: boolean | null;
   codex_next_fresh: boolean | null;
   /** Esforço gravado na config do agente, por família de executor — só um dos
    *  dois vem preenchido. O Claude não tem equivalente aqui: o nível dele mora

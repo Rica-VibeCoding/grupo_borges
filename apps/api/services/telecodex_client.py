@@ -33,6 +33,10 @@ async def send_prompt(
     return await _post("/control/prompt", body)
 
 
+async def get_status() -> dict[str, Any]:
+    return await _request("GET", "/control/status")
+
+
 async def start_fresh_thread() -> dict[str, Any]:
     return await _post("/control/new-thread", {})
 
@@ -61,9 +65,20 @@ async def reconfigure_session(
 
 
 async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    return await _request("POST", path, body)
+
+
+async def _request(
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=_CONTROL_TIMEOUT_SECONDS) as client:
-            response = await client.post(f"{_CONTROL_URL}{path}", json=body)
+            if body is None:
+                response = await client.request(method, f"{_CONTROL_URL}{path}")
+            else:
+                response = await client.request(method, f"{_CONTROL_URL}{path}", json=body)
     except httpx.HTTPError as exc:
         raise TeleCodexUnavailable("telecodex_control_unavailable") from exc
 

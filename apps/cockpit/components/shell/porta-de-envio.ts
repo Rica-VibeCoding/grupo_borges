@@ -31,6 +31,8 @@ export type MotivoRecusa =
   | 'compactando'
   /** A mensagem anterior ainda não foi confirmada pelo eco. */
   | 'envio-em-voo'
+  /** A sessão do agente ainda está processando o turno anterior. */
+  | 'turno-em-voo'
   /** Um arquivo ainda está subindo — o segundo toque mandaria o mesmo arquivo
    *  duas vezes ao agente. */
   | 'anexo-em-voo';
@@ -83,6 +85,7 @@ const RECADO: Record<
     compactando: 'compactando — sua mensagem continua aqui e sai quando a barra sumir',
     'envio-em-voo':
       'a mensagem anterior ainda não voltou confirmada — sua mensagem continua aqui',
+    'turno-em-voo': 'o agente ainda está respondendo — sua mensagem continua aqui',
     'longo-demais': (tamanho) =>
       `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
   },
@@ -90,6 +93,7 @@ const RECADO: Record<
     compactando: 'compactando — o áudio não foi enviado, grave de novo quando a barra sumir',
     'envio-em-voo':
       'a mensagem anterior ainda não voltou confirmada — o áudio não foi enviado',
+    'turno-em-voo': 'o agente ainda está respondendo — o áudio não foi enviado',
     'longo-demais': (tamanho) =>
       `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
   },
@@ -106,6 +110,7 @@ export function abrePorta(entrada: {
   /** Um upload já está em voo. É a fase da máquina do ANEXO — a de texto não se
    *  move durante uma subida, então `faseEnvio` não cobre este caso. */
   anexoEmVoo?: boolean;
+  turnoEmVoo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';
@@ -134,6 +139,9 @@ export function abrePorta(entrada: {
   // o campo, então a recusa devolve o texto em vez de engoli-lo.
   if (entrada.faseEnvio === 'enviando' || entrada.faseEnvio === 'aceito') {
     return { libera: false, motivo: 'envio-em-voo', recado: recado['envio-em-voo'] };
+  }
+  if (entrada.turnoEmVoo) {
+    return { libera: false, motivo: 'turno-em-voo', recado: recado['turno-em-voo'] };
   }
   // A trava do duplo envio de arquivo, que a máquina do anexo já fazia CALADA.
   // Ela continua lá como defesa (o `disabled` do botão pode sumir num
@@ -181,6 +189,7 @@ export function preparaEnvio(entrada: {
   texto?: string;
   temAnexo?: boolean;
   anexoEmVoo?: boolean;
+  turnoEmVoo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   midia?: 'texto' | 'voz';

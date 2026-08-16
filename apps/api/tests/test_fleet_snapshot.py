@@ -263,6 +263,21 @@ def _prepara_card_codex(tmp_path: Path, monkeypatch, *, medido_em: int, iniciou_
     return app
 
 
+def test_fleet_expoe_processamento_real_da_sessao_codex(tmp_path: Path, monkeypatch) -> None:
+    agora = int(time.time())
+    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 30, iniciou_em=agora - 100)
+
+    async def fake_status() -> dict:
+        return {"contextKey": "telegram:1", "processing": True}
+
+    monkeypatch.setattr(fleet_router.telecodex_client, "get_status", fake_status)
+
+    with TestClient(app) as client:
+        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
+
+    assert agent["codex_session_processing"] is True
+
+
 def test_fleet_card_marca_contexto_medido_antes_da_sessao_como_velho(
     tmp_path: Path, monkeypatch
 ) -> None:

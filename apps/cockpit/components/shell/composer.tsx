@@ -202,6 +202,7 @@ export function Composer({
   const daFrota = agents.find((a) => a.slug === agentSlug);
   const vivo = daFrota !== undefined && daFrota.status !== 'offline';
   const trabalhando = vivo && daFrota.status === 'trabalhando';
+  const sessaoCodexProcessando = ehCodex && daFrota?.codex_session_processing === true;
   const assinaTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);
   const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
   // No servidor não há turno nenhum: o valor nasce de um stream do browser.
@@ -213,7 +214,8 @@ export function Composer({
   // continua oferecendo uma ação já executada é a mentira de UI da §9, e aqui
   // ela convida a um segundo toque num agente que já parou.
   const [interrompido, setInterrompido] = useState(false);
-  const gerando = vivo && (trabalhando || turnoVivo) && !interrompido;
+  const gerando =
+    !interrompido && (sessaoCodexProcessando || (vivo && (trabalhando || turnoVivo)));
 
   /** O `■`. Não pede confirmação: interromper é reversível — o texto continua no
    *  feed e mandar de novo recomeça — e um modal entre o dedo e o botão, no meio
@@ -291,10 +293,16 @@ export function Composer({
     // A lista é a dos IMPEDIMENTOS, e o anexo em voo entrou nela junto com o
     // recado dele. Sem esta linha o "ainda está subindo" ficaria na tela depois
     // que o arquivo já chegou — aviso que sobrevive ao motivo vira mentira.
-    if (!travaCompact && faseLocal !== 'enviando' && faseLocal !== 'aceito' && !anexoEmVoo) {
+    if (
+      !travaCompact &&
+      faseLocal !== 'enviando' &&
+      faseLocal !== 'aceito' &&
+      !anexoEmVoo &&
+      !gerando
+    ) {
       setAvisoDaPorta(null);
     }
-  }, [travaCompact, faseLocal, anexoEmVoo]);
+  }, [travaCompact, faseLocal, anexoEmVoo, gerando]);
 
   useEffect(() => {
     if (estadoCompact.fase === 'concluindo' || estadoCompact.fase === 'sem-retorno') {
@@ -360,6 +368,7 @@ export function Composer({
       const efeito = preparaEnvio({
         compactando: travaCompact,
         faseEnvio: envio.estado.fase,
+        turnoEmVoo: gerando,
         midia: 'voz',
       });
       if (!efeito.despacha) {
@@ -398,7 +407,7 @@ export function Composer({
         setFalhaDaFala(diagnosticaTranscricao(erro));
       }
     },
-    [agentSlug, ehCodex, envio, travaCompact],
+    [agentSlug, ehCodex, envio, gerando, travaCompact],
   );
 
   const gravador = usaGravador({ aoGravar: subirAudio });
@@ -469,6 +478,7 @@ export function Composer({
       // Só trava o gesto que LEVA o arquivo. Reenviar um texto pendurado
       // enquanto uma foto sobe não duplica nada e não tem por que esperar.
       anexoEmVoo: anexar && anexoEmVoo,
+      turnoEmVoo: gerando,
       compactando: travaCompact,
       faseEnvio: faseLocal,
       // Quem decide se o campo pode esvaziar é a porta, e para decidir ela

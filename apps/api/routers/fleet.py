@@ -17,7 +17,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
-from services import codex_reader, tmux_driver
+from services import codex_reader, telecodex_client, tmux_driver
 
 router = APIRouter()
 _CC_STATUS_PREFIX = "cc-status-"
@@ -70,6 +70,7 @@ class FleetAgent(BaseModel):
     last_assistant_message: str | None = None
     token_usage_json: str | None = None
     codex_tokens_used: int | None = None
+    codex_session_processing: bool | None = None
     codex_next_fresh: bool | None = None
     lifecycle_status: str | None = None
     lifecycle_detail: str | None = None
@@ -242,6 +243,21 @@ async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
     await asyncio.gather(*(hydrate(agent) for agent in agents))
 
 
+async def _hydrate_codex_session_processing(agents: list[dict]) -> None:
+    codex_agents = [agent for agent in agents if agent.get("executor_kind") == "codex"]
+    if not codex_agents:
+        return
+    try:
+        status = await telecodex_client.get_status()
+    except (telecodex_client.TeleCodexControlError, telecodex_client.TeleCodexUnavailable):
+        return
+    processing = status.get("processing")
+    if not isinstance(processing, bool):
+        return
+    for agent in codex_agents:
+        agent["codex_session_processing"] = processing
+
+
 def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
@@ -287,6 +303,7 @@ async def get_fleet(
     snapshot["health"]["stale_threshold_seconds"] = RUN_STALE_THRESHOLD_SECONDS
     await _hydrate_pane_excerpts(snapshot["agents"])
     await _hydrate_codex_tokens_used(snapshot["agents"])
+    await _hydrate_codex_session_processing(snapshot["agents"])
     await _hydrate_cc_context_pct(db, snapshot["agents"])
     _marca_contexto_velho(snapshot["agents"])
     return snapshot

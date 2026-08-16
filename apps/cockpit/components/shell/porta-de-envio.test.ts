@@ -165,6 +165,24 @@ test('mensagem em rajada com a anterior sem confirmação é recusada COM recado
   }
 });
 
+test('turno real do Codex barra o segundo gesto antes do POST e preserva o campo', () => {
+  const entrada = {
+    texto: 'segunda mensagem',
+    turnoEmVoo: true,
+    compactando: false,
+    faseEnvio: 'confirmado',
+  } as Parameters<typeof preparaEnvio>[0];
+  const efeito = preparaEnvio(entrada);
+  let posts = 0;
+  if (efeito.despacha) posts += 1;
+
+  assert.equal(posts, 0, 'o segundo POST nunca pode alcançar o backend durante isProcessing');
+  assert.equal(efeito.despacha, false);
+  assert.equal(efeito.enfileira, false);
+  assert.equal(efeito.limpaCampo, false, 'o texto recusado continua no campo');
+  assert.ok(efeito.aviso, 'a recusa preventiva precisa explicar por que o texto ficou');
+});
+
 /** A invariante do módulo. Qualquer motivo novo nasce obrigado a falar — é o
  *  que impede o próximo portão de repetir o incidente. */
 test('toda recusa com texto na mão tem recado; só o campo vazio pode calar', () => {
