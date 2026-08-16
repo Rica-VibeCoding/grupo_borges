@@ -43,6 +43,19 @@ describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', ()
     // leitura; `deepEqual` passaria exatamente no caso que quebra.
     assert.equal(lePendentes('tara'), lePendentes('tara'));
   });
+
+  it('anexo mostra o envelope da imagem e reconcilia pela legenda', () => {
+    const envelope =
+      'Imagem enviada via cockpit:\n' +
+      '/uploads/agents/tara/1786839427177-af0d6873f9d9.png\n' +
+      'Caption: teste';
+
+    registraEcoPendente('tara', 'teste', PRAZO_CODEX_MS, envelope);
+
+    assert.equal(lePendentes('tara')[0]?.conteudo, envelope);
+    reconciliaPendentes('tara', ['teste']);
+    assert.equal(lePendentes('tara').length, 0);
+  });
 });
 
 describe('reconciliação — a pendência sai quando o rollout entrega', () => {

@@ -28,6 +28,9 @@ export type EcoPendente = {
   /** Chave estável da bolha otimista; não colide com as do rollout. */
   id: string;
   texto: string;
+  /** Conteúdo que a bolha desenha quando difere do texto usado para casar o
+   *  rollout. A imagem usa o envelope visual; a reconciliação usa a legenda. */
+  conteudo?: string;
   emMs: number;
   /** Quanto esta pendência pode viver. Vem de quem registrou porque os dois
    *  motores medem diferente — ver `PRAZO_CODEX_MS` e `PRAZO_CC_MS`. */
@@ -81,13 +84,14 @@ export function registraEcoPendente(
   slug: string,
   texto: string,
   prazoMs: number = PRAZO_CODEX_MS,
+  conteudo?: string,
 ): string | null {
   const corpo = texto.trim();
   if (!corpo) return null;
   contador += 1;
   const id = `eco-${contador}`;
   const atual = porAgente.get(slug) ?? [];
-  grava(slug, [...atual, { id, texto: corpo, emMs: Date.now(), prazoMs }]);
+  grava(slug, [...atual, { id, texto: corpo, emMs: Date.now(), prazoMs, ...(conteudo ? { conteudo } : {}) }]);
   return id;
 }
 

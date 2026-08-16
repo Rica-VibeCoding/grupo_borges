@@ -512,7 +512,19 @@ export function Composer({
       // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
-      if (await anexo.enviar(corpoParaEnviar)) {
+      if (await anexo.enviar(corpoParaEnviar, (resposta) => {
+        if (!ehCodex || resposta.kind !== 'image') return;
+        const legenda = corpoParaEnviar.trim();
+        const envelope =
+          `Imagem enviada via cockpit:\n${resposta.path}` +
+          (legenda ? `\nCaption: ${legenda}` : '');
+        registraEcoPendente(
+          agentSlug,
+          legenda || 'Veja a imagem anexa.',
+          PRAZO_CODEX_MS,
+          envelope,
+        );
+      })) {
         setTexto((atual) => (atual === corpoParaEnviar ? '' : atual));
       } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A

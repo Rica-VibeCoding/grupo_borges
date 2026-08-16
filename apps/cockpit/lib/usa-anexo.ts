@@ -98,7 +98,7 @@ export type ControleAnexo = {
    *  volta ao chamador abriria a porta para subir um arquivo diferente do que a
    *  miniatura está mostrando. `true` quando ele chegou ao agente, que é o sinal
    *  para o composer esvaziar o campo. */
-  enviar(caption: string): Promise<boolean>;
+  enviar(caption: string, aoEntregar?: (resposta: RespostaAnexo) => void): Promise<boolean>;
   alternarGaveta(): void;
   fecharGaveta(): void;
   limpar(): void;
@@ -169,7 +169,7 @@ export function createControleAnexo(
       publicar({ fase: 'escolhido', arquivo, especie: veredito.especie, gaveta: false });
     },
 
-    async enviar(caption) {
+    async enviar(caption, aoEntregar) {
       // A trava do duplo envio mora aqui e não só no `disabled` do botão: o
       // `disabled` some se o React re-renderizar por outro motivo, e o input
       // de arquivo também dispara `change` por caminhos que não passam pelo
@@ -186,6 +186,7 @@ export function createControleAnexo(
       try {
         const resposta = await subir(agentSlug, retido.arquivo, caption);
         if (descartado) return true;
+        aoEntregar?.(resposta);
         publicar({
           fase: 'sucesso',
           nome: retido.arquivo.name,
@@ -271,7 +272,7 @@ export function createControleAnexo(
 export function usaAnexo(agentSlug: string): {
   estado: EstadoAnexo;
   escolher: (arquivo: File) => void;
-  enviar: (caption: string) => Promise<boolean>;
+  enviar: (caption: string, aoEntregar?: (resposta: RespostaAnexo) => void) => Promise<boolean>;
   alternarGaveta: () => void;
   fecharGaveta: () => void;
   limpar: () => void;

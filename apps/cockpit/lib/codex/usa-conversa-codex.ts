@@ -180,6 +180,6 @@ function criaBolhaOtimista(pendente: EcoPendente, ordinal: number): MessagePaylo
     user_type: 'external',
     timestamp: new Date(pendente.emMs).toISOString(),
     created_at: pendente.emMs,
-    message: { role: 'user', content: pendente.texto },
+    message: { role: 'user', content: pendente.conteudo ?? pendente.texto },
   };
 }

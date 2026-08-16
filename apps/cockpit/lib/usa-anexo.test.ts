@@ -415,6 +415,22 @@ test('a legenda digitada chega ao upload', async () => {
   assert.equal(vista, 'compara com o print anterior');
 });
 
+test('a resposta do upload chega ao chamador antes de o anexo sair do composer', async () => {
+  const resposta = respostaOk();
+  let recebida: RespostaAnexo | null = null;
+  const controle = createControleAnexo('minha-agente', {
+    subir: async () => resposta,
+  });
+  controle.escolher(arquivo());
+
+  const entregue = await controle.enviar('legenda', (valor) => {
+    recebida = valor;
+  });
+
+  assert.equal(entregue, true);
+  assert.equal(recebida, resposta);
+});
+
 test('o slug do controle é o que vai pro upload', async () => {
   let vista = '';
   const controle = createControleAnexo('minha-agente', {
