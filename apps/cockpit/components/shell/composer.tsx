@@ -844,9 +844,8 @@ export function Composer({
               // "aguarde" era a mesma promessa vazia da faixa: dizia para esperar
               // sem dizer o que aconteceria com o que ele escrevesse. Agora entra
               // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
-              placeholder={
-                travaCompact ? 'compactando… pode escrever, entra na fila' : `Mensagem para ${agentName}`
-              }
+              aria-label={`Mensagem para ${agentName}`}
+              placeholder={travaCompact ? 'compactando… pode escrever, entra na fila' : undefined}
               className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
               style={{
                 fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
