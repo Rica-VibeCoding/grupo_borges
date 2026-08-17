@@ -39,6 +39,13 @@ import { estadoDaBolinha, FALA_DA_BOLINHA, type EstadoBolinha } from './bolinha-
  *  Um pouco mais que a animação (0,62 s) para o olho alcançar o fim dela. */
 const DURACAO_PRONTO_MS = 900;
 
+/** Piso de exibição do "respondendo". Medido na `:3008` em 17/08: escrevendo
+ *  entre duas ferramentas, o estado durou **0,7 s** — o fim do feed vira texto e
+ *  logo volta a ser `tool_use`. A régua está certa; o que não serve é a troca de
+ *  cara passar rápido demais para ser vista. O piso não inventa estado nenhum:
+ *  só segura o que realmente aconteceu pelo tempo de alguém enxergar. */
+const PISO_FALANDO_MS = 1100;
+
 type Props = {
   status: AgentStatus | undefined;
   turnoVivo: boolean;
@@ -66,7 +73,22 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
     return () => window.clearTimeout(id);
   }, [estavel]);
 
-  const estado: EstadoBolinha = comemorando && estavel === 'parado' ? 'pronto' : estavel;
+  const [segurandoFala, setSegurandoFala] = useState(false);
+  useEffect(() => {
+    if (estavel !== 'falando') return;
+    setSegurandoFala(true);
+    const id = window.setTimeout(() => setSegurandoFala(false), PISO_FALANDO_MS);
+    return () => window.clearTimeout(id);
+  }, [estavel]);
+
+  // A ordem aqui é a mesma da régua: quem chama uma pessoa nunca é encoberto,
+  // e o piso da fala só empresta tempo de quem ainda está no mesmo turno.
+  const estado: EstadoBolinha =
+    comemorando && estavel === 'parado'
+      ? 'pronto'
+      : segurandoFala && estavel === 'pensando'
+        ? 'falando'
+        : estavel;
 
   // Piscada, olhar e toque: DOM direto, fora do ciclo de render.
   useEffect(() => {
