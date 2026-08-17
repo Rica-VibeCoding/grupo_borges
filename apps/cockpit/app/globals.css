@@ -1307,27 +1307,19 @@ body {
  * olhar que vagueia escreve `style` inline no `.ck-bolinha-rosto`, e animação
  * CSS vence inline no MESMO nó. Separados, os dois convivem.
  *
- * A INCLINAÇÃO É DECLARATIVA E A VARREDURA É QUE ANIMA — e essa divisão é o que
- * faz a volta pra frente ser um movimento em vez de um corte. `transition` NÃO
- * observa a saída de uma animação: ela interpola mudança do valor ESPECIFICADO,
- * e animação vive numa origem de cascata acima dele. Medido no Chromium em
- * 17/08 com a versão antiga (a inclinação dentro do keyframe): trocar o
- * `data-estado` levava o transform de `matrix(…, 2.15, -10.2)` a `none` em UM
- * frame, com a `transition` de 0,5 s intacta e sem efeito nenhum. Com a
- * inclinação aqui, subir e descer são transição de verdade — nos dois sentidos.
- * Pedido do Rica em 17/08: "boa transição entre esse olhar para cima e o olhar
- * de frente". */
+ * A INCLINAÇÃO É DECLARATIVA, NÃO KEYFRAME, e isso é o que faz a volta pra frente
+ * ser um movimento em vez de um corte. `transition` NÃO observa a saída de uma
+ * animação: ela interpola mudança do valor ESPECIFICADO, e animação vive numa
+ * origem de cascata acima dele. Medido no Chromium em 17/08 com a versão antiga
+ * (a pose dentro do keyframe): trocar o `data-estado` levava o transform de
+ * `matrix(…, 2.15, -10.2)` a `none` em UM frame, com a `transition` de 0,5 s
+ * intacta e sem efeito nenhum. Declarativa, subir e descer são transição de
+ * verdade — nos dois sentidos. Pedido do Rica em 17/08: "boa transição entre
+ * esse olhar para cima e o olhar de frente". */
 .ck-bolinha-vista {
   transform-box: fill-box;
   transform-origin: center;
   transition: transform 0.5s cubic-bezier(0.34, 0.01, 0.2, 1);
-}
-/* Nó da varredura, filho da inclinação: o que ele anima é o DELTA em cima da
- * pose inclinada, então sair da animação salta no máximo o tamanho do delta —
- * e não os 9 px + 10° da cabeça inteira, que é o que se via. */
-.ck-bolinha-varre {
-  transform-box: fill-box;
-  transform-origin: center;
 }
 /* `transform-box` obrigatório: um `<g>` sem ele escala a partir do canto (0,0) do
  * viewBox — o "arregalar" vira os olhos escorregando pro canto de baixo. */
@@ -1344,24 +1336,6 @@ body {
 @keyframes ck-bolinha-sombra {
   0%, 100% { transform: scaleX(1); opacity: 0.4; }
   50% { transform: scaleX(0.88); opacity: 0.29; }
-}
-/* LER É VARRER DEVAGAR E VOLTAR DE UM SALTO. O retorno rápido (a sacada) é o que
- * separa "acompanhando um texto" de "balançando a cabeça", e a pausa no fim é a
- * linha nova chegando. Os olhos SOBEM quase até o topo da esfera e o eixo TOMBA:
- * medido na bancada em 17/08, subir sem tombar lê como "olhos revirados", e
- * achatar o par (que seria o encurtamento de perspectiva correto) lê como
- * sonolento — a leitura vence a geometria.
- *
- * Estes valores são o DELTA em cima da pose inclinada do `.ck-bolinha-vista` —
- * somados a ela dão exatamente a pose que a bancada validou. A soma é direta
- * porque os dois nós giram em torno do MESMO centro (`fill-box` sobre o mesmo
- * bbox de olhos); medido em 17/08 contra a pose antiga escrita à mão, o desvio
- * do par de olhos deu 0,00 px nos dois quadros-chave. */
-@keyframes ck-bolinha-lendo {
-  0% { transform: translate(0, 0) rotate(0deg); }
-  60% { transform: translate(6.2px, -1.5px) rotate(-7deg); }
-  68% { transform: translate(0, 0) rotate(0deg); }
-  100% { transform: translate(0, 0) rotate(0deg); }
 }
 @keyframes ck-bolinha-pulinho {
   0% { transform: translateY(0) scale(1); }
@@ -1400,10 +1374,14 @@ body {
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-infla { animation-duration: 3.3s; }
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-cabeca { transform: rotate(-5deg); }
 
-/* EXECUTANDO — olha em 45° pro texto que está saindo, que na tela nasce ACIMA
- * dele. Se a linha viva mudar de lugar, o ângulo aqui muda junto. */
+/* EXECUTANDO — ASSISTE, não lê. Olha em 45° pro texto que está saindo, que na
+ * tela nasce ACIMA dele, e SUSTENTA o olhar ali. A primeira versão varria de um
+ * lado ao outro como quem acompanha uma linha de texto, e o Rica recusou em
+ * 17/08 com vídeo: *"ele não poderia olhar como quem estivesse percorrendo a
+ * linha, e sim assistindo"*. Quem dá vida aqui não é o olhar — é a respiração,
+ * que acelera, e a piscada, que é sorteada e continua rodando em todo estado.
+ * Se a linha viva mudar de lugar, o ângulo aqui muda junto. */
 .ck-bolinha[data-estado='executando'] .ck-bolinha-vista { transform: translate(-2.8px, -9px) rotate(-10deg); }
-.ck-bolinha[data-estado='executando'] .ck-bolinha-varre { animation: ck-bolinha-lendo 3.2s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
 .ck-bolinha[data-estado='executando'] .ck-bolinha-olhos { transform: scale(1.06, 0.94); }
 .ck-bolinha[data-estado='executando'] .ck-bolinha-infla { animation-duration: 2.4s; }
 
