@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS agent_state (
     lifecycle_event   TEXT,                                 -- último evento bruto que alimentou lifecycle
     lifecycle_updated_at INTEGER,                           -- unix timestamp do último microestado
     codex_runtime_enabled INTEGER NOT NULL DEFAULT 1,        -- 0 = sessão Codex fechada pelo painel, thread continua persistida
-    instance_count    INTEGER NOT NULL DEFAULT 0            -- nº de instâncias ativas (subagents incluídos)
+    instance_count    INTEGER NOT NULL DEFAULT 0,           -- nº de instâncias ativas (subagents incluídos)
+    ordem             INTEGER                               -- posição na sidebar, arrastada pelo Rica; NULL = nunca arrastou, o front usa a ordem ditada
 );
 
 -- ============================================================

@@ -85,6 +85,9 @@ export type Agent = {
   lifecycle_event: string | null;
   lifecycle_updated_at: number | null;
   pane_session_started_at: number | null;
+  /** Posição na sidebar, arrastada pelo Rica. `null` = nunca foi arrastado, e
+   *  aí quem decide a posição é a ordem ditada em `lib/ordena-tropa.ts`. */
+  ordem: number | null;
   status: AgentStatus;
   sparkline: SparklineBucket[];
 };

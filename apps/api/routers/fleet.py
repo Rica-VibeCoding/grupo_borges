@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
@@ -80,6 +80,9 @@ class FleetAgent(BaseModel):
     lifecycle_event: str | None = None
     lifecycle_updated_at: int | None = None
     pane_session_started_at: int | None = None
+    # Posição na sidebar, arrastada pelo Rica. NULL = nunca foi arrastado, e aí
+    # quem decide a posição é a ordem ditada que o front carrega.
+    ordem: int | None = None
     # campos derivados/hidratados pelo snapshot
     status: AgentStatus
     sparkline: list[SparklineBucket]
@@ -345,3 +348,41 @@ async def get_fleet(
     await _hydrate_cc_context_pct(db, snapshot["agents"])
     _marca_contexto_velho(snapshot["agents"])
     return snapshot
+
+
+class OrdemDaTropaRequest(BaseModel):
+    slugs: list[str] = Field(
+        min_length=1,
+        description="A tropa inteira, na ordem nova. Posição = índice.",
+    )
+
+
+class OrdemDaTropaResponse(BaseModel):
+    slugs: list[str]
+    source: str = "agent_state.ordem"
+    written: bool = True
+
+
+@router.patch("/ordem", response_model=OrdemDaTropaResponse)
+async def patch_ordem_da_tropa(patch: OrdemDaTropaRequest, request: Request):
+    """Recebe a lista COMPLETA, não o item que se moveu.
+
+    Arrastar uma linha muda a posição de todas as outras; mandar só a que se
+    moveu deixaria o resto sem número e o front teria de desempatar contra a
+    ordem ditada. A lista inteira mantém uma fonte só.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+    slugs = patch.slugs
+
+    if len(set(slugs)) != len(slugs):
+        raise HTTPException(status_code=422, detail="slug repetido na ordem")
+
+    conhecidos = {agente["slug"] for agente in await db.list_agents()}
+    desconhecidos = [slug for slug in slugs if slug not in conhecidos]
+    if desconhecidos:
+        raise HTTPException(
+            status_code=422, detail=f"slug fora da frota: {', '.join(desconhecidos)}"
+        )
+
+    await db.set_ordem_da_tropa(slugs)
+    return OrdemDaTropaResponse(slugs=slugs)

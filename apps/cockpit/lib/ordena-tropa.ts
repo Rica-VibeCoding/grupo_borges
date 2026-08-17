@@ -16,7 +16,11 @@
  */
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 
-/** Ordem literal do Rica, por slug — o nome é o rótulo, o slug é a chave. */
+/** Ordem literal do Rica, por slug — o nome é o rótulo, o slug é a chave.
+ *
+ *  Continua sendo a ordem de fábrica: vale até o primeiro arrasto, e volta a
+ *  valer se o banco for zerado. Deixou de ser a última palavra em 17/08, quando
+ *  a sidebar virou arrastável — a posição agora é do Rica, não do arquivo. */
 const ORDEM_DA_TROPA = [
   'pavan',
   'daniel',
@@ -28,13 +32,27 @@ const ORDEM_DA_TROPA = [
   'canarinho',
 ];
 
+const FIM_DA_FILA = Number.MAX_SAFE_INTEGER;
+
 export function ordenaTropa(agentes: Agent[]): Agent[] {
-  // Agente fora da lista (frota nova, slug renomeado) cai no fim em ordem de
-  // nome, nunca some e nunca cai no meio de quem tem posição ditada.
+  // Ou a lista inteira usa o número do banco, ou nenhuma usa. O `PATCH
+  // /api/fleet/ordem` grava a tropa toda de uma vez, então "metade arrastada"
+  // não é estado que exista — e misturar as duas réguas empataria a posição 0
+  // ditada com a posição 0 arrastada.
+  const foiArrastada = agentes.some((agente) => typeof agente.ordem === 'number');
+
   const posicao = (agente: Agent) => {
+    // `typeof`, não `??` nem truthiness: `ordem: 0` é o topo da lista, e um
+    // teste de verdade mandaria o primeiro agente pro fim.
+    if (foiArrastada) {
+      return typeof agente.ordem === 'number' ? agente.ordem : FIM_DA_FILA;
+    }
+    // Agente fora da lista (frota nova, slug renomeado) cai no fim em ordem de
+    // nome, nunca some e nunca cai no meio de quem tem posição ditada.
     const i = ORDEM_DA_TROPA.indexOf(agente.slug);
-    return i === -1 ? ORDEM_DA_TROPA.length : i;
+    return i === -1 ? FIM_DA_FILA : i;
   };
+
   return [...agentes].sort(
     (a, b) => posicao(a) - posicao(b) || a.name.localeCompare(b.name, 'pt-BR'),
   );

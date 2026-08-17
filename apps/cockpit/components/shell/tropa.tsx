@@ -93,16 +93,34 @@
  * Rica ditou a sequência agente a agente e ela vale sempre, viva ou morta a
  * sessão. `aguardando` deixou de subir junto — ordem fixa não tem exceção.
  *
+ * SÉTIMA VERSÃO (17/08) — A ORDEM DITADA VIRA ORDEM ARRASTADA. Ordem do Rica:
+ * *"eu quero poder arrastar eles como se fosse um kanban, para cima, para
+ * baixo"*. A sequência da v6 não morre: ela vira a ordem de fábrica, e vale até
+ * o primeiro arrasto (`lib/ordena-tropa.ts`). O que muda de dono é a posição —
+ * era do arquivo, passa a ser dele, gravada em `agent_state.ordem`.
+ *
+ * O gesto entra por uma ALÇA à direita, não pela linha: cada item é um `<Link>`
+ * que navega e a coluna rola no dedo, então arrastar a linha inteira poria três
+ * gestos disputando o mesmo toque. O porquê detalhado, com o que foi medido,
+ * está em `arrasto-da-tropa.tsx`.
+ *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
+'use client';
+
 import Link from 'next/link';
-import type { MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import type {
   Agent,
   SparklineBucket,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
+import { patchOrdemDaTropa } from '@grupo_borges/cockpit-core/api';
 import { ordenaTropa } from '@/lib/ordena-tropa';
+import { aplicaOrdem, novaOrdem, ordemJaChegou } from '@/lib/ordem-arrastada';
+import { AlcaDeArraste, TIPO_ARRASTO, TracoDeSoltura, usaArrastoDaLinha } from './arrasto-da-tropa';
 import {
   BarraDeContexto,
   LARGURA_NA_LISTA,
@@ -236,22 +254,32 @@ function CartaoVivo({
   agora,
   compacta,
   aoEscolher,
+  aoMover,
 }: {
   agente: Agent;
   selecionado: boolean;
   agora: number;
   compacta: boolean;
   aoEscolher?: EscolheAgente;
+  aoMover: (direcao: -1 | 1) => void;
 }) {
   const estado = estadoDe(agente.status);
   const pasta = pastaCurta(agente.workspace_path, agente.slug);
   const href = `/agente/${agente.slug}`;
+  const { liRef, alcaRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
   return (
-    <li>
+    <li
+      ref={liRef}
+      className="relative flex items-center"
+      // A linha carregada esmaece no lugar de origem: é o que diz "esta é a que
+      // está na sua mão" quando o preview nativo cobre o dedo no celular.
+      style={{ opacity: arrastando ? 0.4 : undefined }}
+    >
+      <TracoDeSoltura borda={borda} />
       <Link
         href={href}
         onClick={escolheNoToque(agente.slug, href, aoEscolher)}
-        className="ck-veil ck-aba relative flex items-center overflow-hidden"
+        className="ck-veil ck-aba relative flex min-w-0 flex-1 items-center overflow-hidden"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
@@ -310,6 +338,7 @@ function CartaoVivo({
           ) : null}
         </span>
       </Link>
+      <AlcaDeArraste ref={alcaRef} nomeDoAgente={agente.name} aoMover={aoMover} />
     </li>
   );
 }
@@ -319,20 +348,28 @@ function LinhaDormindo({
   selecionado,
   compacta,
   aoEscolher,
+  aoMover,
 }: {
   agente: Agent;
   selecionado: boolean;
   compacta: boolean;
   aoEscolher?: EscolheAgente;
+  aoMover: (direcao: -1 | 1) => void;
 }) {
   const pct = resolveContextPct(agente);
   const href = `/agente/${agente.slug}`;
+  const { liRef, alcaRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
   return (
-    <li>
+    <li
+      ref={liRef}
+      className="relative flex items-center"
+      style={{ opacity: arrastando ? 0.4 : undefined }}
+    >
+      <TracoDeSoltura borda={borda} />
       <Link
         href={href}
         onClick={escolheNoToque(agente.slug, href, aoEscolher)}
-        className="ck-veil ck-aba flex items-center"
+        className="ck-veil ck-aba flex min-w-0 flex-1 items-center"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
@@ -432,6 +469,7 @@ function LinhaDormindo({
           </span>
         )}
       </Link>
+      <AlcaDeArraste ref={alcaRef} nomeDoAgente={agente.name} aoMover={aoMover} />
     </li>
   );
 }
@@ -452,11 +490,67 @@ export function Tropa({
   compacta?: boolean;
   aoEscolher?: EscolheAgente;
 }) {
-  // Ordem DITADA pelo Rica (11/08): a posição carrega identidade, não estado.
-  // Antes cada estado era uma seção e qualquer flip trabalhando↔ocioso movia a
-  // linha — a "dança" que ele reprovou. A sequência mora em
-  // `lib/ordena-tropa.ts` e nenhum estado a altera.
-  const agentesOrdenados = ordenaTropa(agents);
+  // A posição carrega identidade, não estado (11/08): nenhum flip
+  // trabalhando↔ocioso move linha nenhuma — a "dança" que o Rica reprovou.
+  // Desde 17/08 a sequência vem do banco quando ele já arrastou; a lista ditada
+  // em `lib/ordena-tropa.ts` virou a ordem de fábrica.
+  const doServidor = useMemo(() => ordenaTropa(agents), [agents]);
+
+  // A ordem que a tela mostra enquanto o servidor não confirma. O `/api/fleet`
+  // só é relido no poll seguinte (5s), e sem isto a linha voltaria pro lugar
+  // antigo assim que o dedo saísse da tela.
+  const [ordemOtimista, setOrdemOtimista] = useState<string[] | null>(null);
+  const agentesOrdenados = useMemo(
+    () => aplicaOrdem(doServidor, ordemOtimista),
+    [doServidor, ordemOtimista],
+  );
+
+  // Chegou a confirmação: a ordem otimista cumpriu o papel e sai de cena. Sem
+  // isto ela seguiria mandando e a coluna pararia de refletir o banco.
+  useEffect(() => {
+    if (ordemJaChegou(doServidor, ordemOtimista)) setOrdemOtimista(null);
+  }, [doServidor, ordemOtimista]);
+
+  const gravaOrdem = useCallback((nova: string[]) => {
+    setOrdemOtimista(nova);
+    // Falhou a gravação: devolve a ordem do servidor em vez de deixar a tela
+    // mentindo uma posição que o banco não tem.
+    patchOrdemDaTropa(nova).catch(() => setOrdemOtimista(null));
+  }, []);
+
+  const move = useCallback(
+    (slug: string, direcao: -1 | 1) => {
+      const slugs = agentesOrdenados.map((a) => a.slug);
+      const destino = slugs.indexOf(slug) + direcao;
+      if (destino < 0 || destino >= slugs.length) return;
+      gravaOrdem(novaOrdem(slugs, slug, slugs[destino], direcao === 1 ? 'bottom' : 'top'));
+    },
+    [agentesOrdenados, gravaOrdem],
+  );
+
+  // Um monitor pra lista inteira, não um por linha: quem sabe a ordem completa
+  // é a lista, e o alvo de soltura só sabe de si mesmo.
+  useEffect(
+    () =>
+      monitorForElements({
+        canMonitor: ({ source }) => source.data.tipo === TIPO_ARRASTO,
+        onDrop: ({ source, location }) => {
+          const alvo = location.current.dropTargets[0];
+          if (!alvo) return;
+          const slugs = agentesOrdenados.map((a) => a.slug);
+          const reordenada = novaOrdem(
+            slugs,
+            String(source.data.slug),
+            String(alvo.data.slug),
+            extractClosestEdge(alvo.data) as 'top' | 'bottom' | null,
+          );
+          // Soltou onde já estava: não gasta requisição nem pisca a lista.
+          if (reordenada === slugs) return;
+          gravaOrdem(reordenada);
+        },
+      }),
+    [agentesOrdenados, gravaOrdem],
+  );
 
   // Frota vazia: o backend responde, só não há ninguém. Diferente de erro, e a
   // tela precisa dizer qual dos dois é — lista vazia e sem palavra nenhuma lê
@@ -498,6 +592,7 @@ export function Tropa({
               selecionado={a.slug === slugSelecionado}
               compacta={compacta}
               aoEscolher={aoEscolher}
+              aoMover={(direcao) => move(a.slug, direcao)}
             />
           ) : (
             <CartaoVivo
@@ -507,6 +602,7 @@ export function Tropa({
               agora={agora}
               compacta={compacta}
               aoEscolher={aoEscolher}
+              aoMover={(direcao) => move(a.slug, direcao)}
             />
           ),
         )}

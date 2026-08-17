@@ -534,3 +534,76 @@ def test_sparkline_de_outra_janela_nao_e_reaproveitada(tmp_path: Path) -> None:
 
     assert db._sparkline_cache is not de_outra_janela
     assert db._sparkline_cache[0] != 0
+
+
+def _app_com_tmux_falso(db: GrupoBorgesDB, monkeypatch) -> FastAPI:
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory(set(), set())
+
+    monkeypatch.setattr(
+        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
+    )
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(fleet_router.router, prefix="/api/fleet")
+    return app
+
+
+def test_sem_ordem_gravada_o_snapshot_nao_inventa_posicao(tmp_path: Path, monkeypatch) -> None:
+    """A metade que prova que nada quebrou: quem nunca arrastou vê o de sempre."""
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        response = client.get("/api/fleet")
+
+    assert response.status_code == 200
+    corpo = response.json()
+    assert [a["slug"] for a in corpo["agents"]] == ["daniel", "tara"]
+    assert all(a["ordem"] is None for a in corpo["agents"])
+
+
+def test_ordem_arrastada_persiste_e_o_snapshot_sai_na_ordem_nova(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        patch = client.patch("/api/fleet/ordem", json={"slugs": ["tara", "daniel"]})
+        assert patch.status_code == 200
+        assert patch.json()["source"] == "agent_state.ordem"
+
+        response = client.get("/api/fleet")
+
+    corpo = response.json()
+    # Alfabético devolveria daniel primeiro; a ordem arrastada é que manda.
+    assert [a["slug"] for a in corpo["agents"]] == ["tara", "daniel"]
+    assert _agent_from_snapshot(corpo, "tara")["ordem"] == 0
+    assert _agent_from_snapshot(corpo, "daniel")["ordem"] == 1
+
+
+def test_ordem_recusa_slug_fora_da_frota_e_nao_grava_nada(tmp_path: Path, monkeypatch) -> None:
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        recusa = client.patch("/api/fleet/ordem", json={"slugs": ["tara", "fantasma"]})
+        assert recusa.status_code == 422
+        assert "fantasma" in recusa.json()["detail"]
+
+        # Recusa é tudo-ou-nada: a posição do `tara` que veio no mesmo pedido
+        # não pode ter sido gravada.
+        corpo = client.get("/api/fleet").json()
+
+    assert all(a["ordem"] is None for a in corpo["agents"])
+
+
+def test_ordem_recusa_slug_repetido(tmp_path: Path, monkeypatch) -> None:
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        recusa = client.patch("/api/fleet/ordem", json={"slugs": ["tara", "tara"]})
+
+    assert recusa.status_code == 422

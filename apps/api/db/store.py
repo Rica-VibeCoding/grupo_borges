@@ -378,6 +378,7 @@ class GrupoBorgesDB:
                 ("codex_thread_id", "TEXT"),
                 ("codex_runtime_enabled", "INTEGER NOT NULL DEFAULT 1"),
                 ("kimi_reasoning_effort", "TEXT"),
+                ("ordem", "INTEGER"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
 
@@ -704,6 +705,28 @@ class GrupoBorgesDB:
                 WHERE slug = ?
                 """,
                 values,
+            )
+
+    async def set_ordem_da_tropa(self, slugs: list[str]) -> None:
+        await asyncio.to_thread(self._set_ordem_da_tropa, slugs)
+
+    def _set_ordem_da_tropa(self, slugs: list[str]) -> None:
+        """Grava a lista inteira, 0..N-1, numa transação só.
+
+        Reordenar é atômico por natureza: arrastar UMA linha muda a posição de
+        todas as outras, e persistir só a que se moveu deixaria o resto sem
+        número — estado misto que o front teria de desempatar contra a ordem
+        ditada. Recebendo a lista completa, ou todo mundo tem posição ou
+        ninguém tem.
+
+        Não passa por ``_update_agent_codex_state`` de propósito: aquele toca
+        ``last_seen``, e arrastar a linha de um agente desligado não é sinal de
+        vida dele.
+        """
+        with self._connect() as conn, conn:
+            conn.executemany(
+                "UPDATE agent_state SET ordem = ? WHERE slug = ?",
+                [(posicao, slug) for posicao, slug in enumerate(slugs)],
             )
 
     # ---------- task_events ----------
@@ -3075,10 +3098,14 @@ class GrupoBorgesDB:
                        s.codex_thread_id,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
-                       s.lifecycle_updated_at
+                       s.lifecycle_updated_at,
+                       s.ordem
                 FROM agents a
                 LEFT JOIN agent_state s ON s.slug = a.slug
-                ORDER BY a.slug
+                -- Quem nunca foi arrastado tem `ordem` NULL e vai pro fim, onde o
+                -- front resolve pela ordem ditada. Enquanto ninguém arrastar, isto
+                -- devolve o mesmo alfabético de sempre.
+                ORDER BY s.ordem IS NULL, s.ordem, a.slug
                 """
             ).fetchall()
             agents = [self._row_to_agent(r) for r in agent_rows]

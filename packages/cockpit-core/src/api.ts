@@ -206,6 +206,20 @@ export async function patchAgentEffort(
   return res.json();
 }
 
+/** A tropa inteira na ordem nova — posição é o índice. Ver o porquê de mandar
+ *  a lista completa em `routers/fleet.py`, `patch_ordem_da_tropa`. */
+export async function patchOrdemDaTropa(
+  slugs: string[],
+): Promise<{ slugs: string[]; source: string; written: boolean }> {
+  const res = await fetch('/api/fleet/ordem', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slugs }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchOrdemDaTropa failed: ${res.status}`));
+  return res.json();
+}
+
 export async function patchAgentPermissionMode(
   slug: string,
   mode: PainelPermissionMode,

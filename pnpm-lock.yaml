@@ -10,6 +10,12 @@ importers:
 
   apps/cockpit:
     dependencies:
+      '@atlaskit/pragmatic-drag-and-drop':
+        specifier: ^3.0.0
+        version: 3.0.0
+      '@atlaskit/pragmatic-drag-and-drop-hitbox':
+        specifier: ^2.0.1
+        version: 2.0.1
       '@grupo_borges/cockpit-core':
         specifier: workspace:*
         version: link:../../packages/cockpit-core
@@ -83,6 +89,16 @@ packages:
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
     engines: {node: '>=10'}
+
+  '@atlaskit/pragmatic-drag-and-drop-hitbox@2.0.1':
+    resolution: {integrity: sha512-S8451pCqJ2XBeu2StsGw0W1RlcjwzzCIBP5uq89RQ3TXDFo+Qy3obCj5Bh3vvRTb7zSw9D9rnY/yqnw0rBYbaA==}
+
+  '@atlaskit/pragmatic-drag-and-drop@3.0.0':
+    resolution: {integrity: sha512-EEKBELv757wrvhMHBAoFcXjfzGZ4Y2FJ2xnSsWovsOKywkN1Q4IWRH52hQpPmJnATLcmO9viVhoXWSXFBLKSLQ==}
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
+    engines: {node: '>=6.9.0'}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -1146,6 +1162,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
+  bind-event-listener@3.0.0:
+    resolution: {integrity: sha512-PJvH288AWQhKs2v9zyfYdPzlPqf5bXbGMmhmUIY9x4dAUGIWgomO771oBQNwJnMQSnUIXhKu6sgzpBRXTlvb8Q==}
+
   caniuse-lite@1.0.30001806:
     resolution: {integrity: sha512-72Cuvd95zbSYPKq6Fhg8eDJRlzgWDf7/mtoZv6Qe/DYNCEBdNxoA3+rZAU2ZhGCpZlns3EssFavaZomckT5Uuw==}
 
@@ -1532,6 +1551,9 @@ packages:
       '@types/react-dom':
         optional: true
 
+  raf-schd@4.0.3:
+    resolution: {integrity: sha512-tQkJl2GRWh83ui2DiPTJz9wEiMN20syf+5oKfB03yYP7ioZcJwsIK8FjrtLwH1m7C7e+Tt2yYBlrOpdT+dyeIQ==}
+
   react-dom@19.2.6:
     resolution: {integrity: sha512-0prMI+hvBbPjsWnxDLxlCGyM8PN6UuWjEUCYmZhO67xIV9Xasa/r/vDnq+Xyq4Lo27g8QSbO5YzARu0D1Sps3g==}
     peerDependencies:
@@ -1713,6 +1735,19 @@ packages:
 snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
+
+  '@atlaskit/pragmatic-drag-and-drop-hitbox@2.0.1':
+    dependencies:
+      '@atlaskit/pragmatic-drag-and-drop': 3.0.0
+      '@babel/runtime': 7.29.7
+
+  '@atlaskit/pragmatic-drag-and-drop@3.0.0':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      bind-event-listener: 3.0.0
+      raf-schd: 4.0.3
+
+  '@babel/runtime@7.29.7': {}
 
   '@emnapi/runtime@1.11.3':
     dependencies:
@@ -2752,6 +2787,8 @@ snapshots:
 
   baseline-browser-mapping@2.11.7: {}
 
+  bind-event-listener@3.0.0: {}
+
   caniuse-lite@1.0.30001806: {}
 
   ccount@2.0.1: {}
@@ -3381,6 +3418,8 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.2
       '@types/react-dom': 19.2.1(@types/react@19.2.2)
+
+  raf-schd@4.0.3: {}
 
   react-dom@19.2.6(react@19.2.6):
     dependencies:
