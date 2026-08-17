@@ -24,6 +24,11 @@
  * 4. O SQUISH DO TOQUE TEM NÓ PRÓPRIO (`.ck-bolinha-toque`). Animação CSS vence
  *    `style` inline no MESMO elemento — sem esse `<g>`, tocar na bolinha
  *    enquanto ela chama por você não faria nada.
+ * 5. O OLHAR TEM ENDEREÇO (expressões ditadas pelo Rica, 17/08). Vagueia só
+ *    quando pensa; olha pra frente quando está parado; sobe em 45° quando o
+ *    texto está saindo, porque a linha viva nasce ACIMA dele na tela. E
+ *    desligado não tem olhos — a cor é a mesma de parado, então quem separa
+ *    "não tem ninguém" de "está quieto" é o rosto.
  *
  * Cor, keyframes e estados moram em `globals.css` (§ A BOLINHA): componente não
  * carrega cor, e keyframe não é território de utility do Tailwind.
@@ -90,6 +95,13 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
         ? 'falando'
         : estavel;
 
+  // O olhar volta pra frente no instante em que ele para de pensar. Sem isto o
+  // vaguear só reagendaria em até 4 s, e o repouso ficaria com o olhar torto do
+  // último sorteio — que é justamente o que "olha pra frente" desmente.
+  useEffect(() => {
+    if (estado !== 'pensando' && rostoRef.current) rostoRef.current.style.transform = '';
+  }, [estado]);
+
   // Piscada, olhar e toque: DOM direto, fora do ciclo de render.
   useEffect(() => {
     const svg = svgRef.current;
@@ -129,13 +141,13 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
     }, 2400 + Math.random() * 4100);
     agendaPiscada();
 
-    // O olhar vagueia sozinho — deslocamento pequeno de propósito: olho que anda
-    // demais vira desenho animado. Quando pensa, ele olha um pouco pra cima.
+    // O olhar vagueia SÓ enquanto ele pensa (Rica, 17/08): parado é olhar
+    // parado, olhando pra frente. Deslocamento pequeno de propósito — olho que
+    // anda demais vira desenho animado.
     const vagueia = () => {
-      if (!calmo) {
+      if (!calmo && svg.dataset.estado === 'pensando') {
         const dx = (Math.random() * 2 - 1) * 2.4;
-        const paraCima = svg.dataset.estado === 'pensando' ? -1.4 : 0;
-        const dy = (Math.random() * 2 - 1) * 1.4 + paraCima;
+        const dy = (Math.random() * 2 - 1) * 1.4;
         rosto.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px)`;
       }
       espera(vagueia, 1600 + Math.random() * 2600);
@@ -195,9 +207,11 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
                   transform="rotate(-24 24 20)"
                 />
                 <g className="ck-bolinha-rosto" ref={rostoRef}>
-                  <g className="ck-bolinha-olhos">
-                    <circle className="ck-bolinha-olho" cx="24" cy="31" r="3.1" />
-                    <circle className="ck-bolinha-olho" cx="40" cy="31" r="3.1" />
+                  <g className="ck-bolinha-vista">
+                    <g className="ck-bolinha-olhos">
+                      <circle className="ck-bolinha-olho" cx="24" cy="31" r="3.1" />
+                      <circle className="ck-bolinha-olho" cx="40" cy="31" r="3.1" />
+                    </g>
                   </g>
                 </g>
               </g>

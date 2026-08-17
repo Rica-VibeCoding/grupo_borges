@@ -1303,12 +1303,22 @@ body {
  * este `<g>` o squish não apareceria enquanto o agente responde ou chama. */
 .ck-bolinha-toque { transform-origin: 32px 32px; }
 .ck-bolinha-rosto { transition: transform 0.5s cubic-bezier(0.34, 0.01, 0.2, 1); }
+/* Nó SÓ da inclinação da cabeça, pelo mesmo motivo do `.ck-bolinha-toque`: o
+ * olhar que vagueia escreve `style` inline no `.ck-bolinha-rosto`, e animação
+ * CSS vence inline no MESMO nó. Separados, os dois convivem. */
+.ck-bolinha-vista {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.5s cubic-bezier(0.34, 0.01, 0.2, 1);
+}
 /* `transform-box` obrigatório: um `<g>` sem ele escala a partir do canto (0,0) do
  * viewBox — o "arregalar" vira os olhos escorregando pro canto de baixo. */
 .ck-bolinha-olhos {
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 0.45s cubic-bezier(0.34, 0.01, 0.2, 1);
+  transition:
+    transform 0.45s cubic-bezier(0.34, 0.01, 0.2, 1),
+    opacity 0.35s ease;
 }
 
 @keyframes ck-bolinha-flutua { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2.6px); } }
@@ -1317,12 +1327,17 @@ body {
   0%, 100% { transform: scaleX(1); opacity: 0.4; }
   50% { transform: scaleX(0.88); opacity: 0.29; }
 }
-/* Falar sem boca é tremor fino e RÁPIDO, de amplitude pequena: é voz, não
- * terremoto. Assimétrico porque ciclo simétrico lê como VU meter. */
-@keyframes ck-bolinha-voz {
-  0%, 100% { transform: scale(1, 1); }
-  35% { transform: scale(1.015, 1.055); }
-  70% { transform: scale(0.99, 1.02); }
+/* LER É VARRER DEVAGAR E VOLTAR DE UM SALTO. O retorno rápido (a sacada) é o que
+ * separa "acompanhando um texto" de "balançando a cabeça", e a pausa no fim é a
+ * linha nova chegando. Os olhos SOBEM quase até o topo da esfera e o eixo TOMBA:
+ * medido na bancada em 17/08, subir sem tombar lê como "olhos revirados", e
+ * achatar o par (que seria o encurtamento de perspectiva correto) lê como
+ * sonolento — a leitura vence a geometria. */
+@keyframes ck-bolinha-lendo {
+  0% { transform: translate(-2.8px, -9px) rotate(-10deg); }
+  60% { transform: translate(3.4px, -10.5px) rotate(-17deg); }
+  68% { transform: translate(-2.8px, -9px) rotate(-10deg); }
+  100% { transform: translate(-2.8px, -9px) rotate(-10deg); }
 }
 @keyframes ck-bolinha-pulinho {
   0% { transform: translateY(0) scale(1); }
@@ -1342,17 +1357,37 @@ body {
 
 .ck-bolinha[data-piscando='true'] .ck-bolinha-olho { transform: scaleY(0.09); }
 
+/* DESLIGADO — sem olhos e sem um movimento sequer (Rica, 17/08). O que separa
+ * desligado de parado é o ROSTO, não a cor: uma bolinha cinza continuaria
+ * respirando, e é a respiração que diz "tem alguém aí". */
+.ck-bolinha[data-estado='offline'] .ck-bolinha-olhos { opacity: 0; }
+.ck-bolinha[data-estado='offline'] .ck-bolinha-voa,
+.ck-bolinha[data-estado='offline'] .ck-bolinha-infla,
+.ck-bolinha[data-estado='offline'] .ck-bolinha-sombra { animation: none; }
+
+/* PARADO — olha pra frente e quase não se mexe. "Quase" de propósito: a
+ * respiração lenta é o único sinal que sobrou pra separar de desligado. Quem
+ * congela é o OLHAR, e isso mora no TSX (o vaguear só existe em `pensando`). */
+.ck-bolinha[data-estado='parado'] .ck-bolinha-voa,
+.ck-bolinha[data-estado='parado'] .ck-bolinha-sombra { animation-duration: 6.4s; }
+.ck-bolinha[data-estado='parado'] .ck-bolinha-infla { animation-duration: 7.6s; }
+
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-voa { animation-duration: 2.4s; }
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-infla { animation-duration: 3.3s; }
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-cabeca { transform: rotate(-5deg); }
 
-.ck-bolinha[data-estado='falando'] .ck-bolinha-cabeca { animation: ck-bolinha-voz 0.5s cubic-bezier(0.3, 0.7, 0.4, 1) infinite; }
-.ck-bolinha[data-estado='falando'] .ck-bolinha-infla { animation-duration: 1.5s; }
+/* EXECUTANDO — olha em 45° pro texto que está saindo, que na tela nasce ACIMA
+ * dele. Se a linha viva mudar de lugar, o ângulo aqui muda junto. */
+.ck-bolinha[data-estado='falando'] .ck-bolinha-vista { animation: ck-bolinha-lendo 3.2s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
+.ck-bolinha[data-estado='falando'] .ck-bolinha-olhos { transform: scale(1.06, 0.94); }
+.ck-bolinha[data-estado='falando'] .ck-bolinha-infla { animation-duration: 2.4s; }
 
 .ck-bolinha[data-estado='pronto'] .ck-bolinha-cabeca { animation: ck-bolinha-pulinho 0.62s cubic-bezier(0.3, 1.4, 0.5, 1) 1; }
 
 .ck-bolinha[data-estado='atencao'] .ck-bolinha-cabeca { animation: ck-bolinha-coracao 1.9s ease-in-out infinite; }
-.ck-bolinha[data-estado='atencao'] .ck-bolinha-olhos { transform: scale(1.16); }
+/* 1,26 e não 1,16: na bancada, em 42 px, o arregalar discreto não se distingue
+ * do repouso — e este é o único estado que precisa de alguém. */
+.ck-bolinha[data-estado='atencao'] .ck-bolinha-olhos { transform: scale(1.26); }
 
 @media (prefers-reduced-motion: reduce) {
   .ck-bolinha,
