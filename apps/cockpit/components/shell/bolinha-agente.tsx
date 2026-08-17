@@ -42,15 +42,16 @@ const DURACAO_PRONTO_MS = 900;
 type Props = {
   status: AgentStatus | undefined;
   turnoVivo: boolean;
+  escrevendo: boolean;
 };
 
-export function BolinhaAgente({ status, turnoVivo }: Props) {
+export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
   const gradId = `ck-bolinha-${useId()}`;
   const svgRef = useRef<SVGSVGElement>(null);
   const rostoRef = useRef<SVGGElement>(null);
   const toqueRef = useRef<SVGGElement>(null);
 
-  const estavel = estadoDaBolinha({ status, turnoVivo });
+  const estavel = estadoDaBolinha({ status, turnoVivo, escrevendo });
   // "Terminou" é transição, não estado: só existe para quem lembra o valor
   // anterior. O pulinho é a única coisa nesta peça que precisa de re-render —
   // duas por turno, contra as centenas que a piscada custaria.

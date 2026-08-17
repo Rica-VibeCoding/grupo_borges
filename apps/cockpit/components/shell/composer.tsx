@@ -55,6 +55,7 @@ import {
 } from '../../lib/codex/eco-pendente';
 import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
+import { assinaEscritaViva, leEscritaViva } from '../../lib/escrita-viva';
 import { usaFrota } from './frota-provider';
 import { MARCA_VOZ, usaEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
@@ -209,6 +210,11 @@ export function Composer({
   const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
   // No servidor não há turno nenhum: o valor nasce de um stream do browser.
   const turnoVivo = useSyncExternalStore(assinaTurno, leTurno, () => false);
+  // O segundo sinal do feed, só para a bolinha: pensar e responder têm caras
+  // diferentes, e é a troca de cara que a faz valer sozinha.
+  const assinaEscrita = useMemo(() => (fn: () => void) => assinaEscritaViva(agentSlug, fn), [agentSlug]);
+  const leEscrita = useMemo(() => () => leEscritaViva(agentSlug), [agentSlug]);
+  const escrevendo = useSyncExternalStore(assinaEscrita, leEscrita, () => false);
   const [parando, setParando] = useState(false);
   // O ■ SOME NO TOQUE, não quando o painel concorda. `lifecycle_status` é
   // alimentado por evento (JSONL no Claude Code, rollout no Codex) e chega
@@ -692,7 +698,7 @@ export function Composer({
           empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
           texto no feed, isto é alguém do outro lado. As duas fontes são as
           mesmas do `■` logo abaixo, e por isso não abre conexão nova. */}
-      <BolinhaAgente status={daFrota?.status} turnoVivo={turnoVivo} />
+      <BolinhaAgente status={daFrota?.status} turnoVivo={turnoVivo} escrevendo={escrevendo} />
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />

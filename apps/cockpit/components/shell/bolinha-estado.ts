@@ -16,10 +16,6 @@
  */
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 
-/** `falando` existe no vocabulário visual mas ainda não tem produtor: exigiria o
- *  feed publicar "o texto do assistente está crescendo agora", que hoje só vive
- *  dentro dele (`cursorNoFim`). Fica declarado para o dia em que esse sinal sair
- *  do feed — o CSS já sabe desenhá-lo. */
 export type EstadoBolinha = 'offline' | 'parado' | 'pensando' | 'falando' | 'pronto' | 'atencao';
 
 export type EntradaDaBolinha = {
@@ -27,6 +23,8 @@ export type EntradaDaBolinha = {
   status: AgentStatus | undefined;
   /** `isRunning` do stream, publicado pelo feed. */
   turnoVivo: boolean;
+  /** O fim do feed é texto crescendo — `lib/escrita-viva.ts`. */
+  escrevendo: boolean;
 };
 
 /** A palavra que a legenda anuncia — o `aria-label` do SVG é estável de
@@ -40,11 +38,18 @@ export const FALA_DA_BOLINHA: Record<EstadoBolinha, string> = {
   atencao: 'esperando você',
 };
 
-export function estadoDaBolinha({ status, turnoVivo }: EntradaDaBolinha): EstadoBolinha {
+export function estadoDaBolinha({
+  status,
+  turnoVivo,
+  escrevendo,
+}: EntradaDaBolinha): EstadoBolinha {
   if (status === undefined || status === 'offline') return 'offline';
   // Quem chama uma pessoa vence quem está ocupado: é o único estado que precisa
   // de humano, e a bolinha não pode escondê-lo atrás de um turno em voo.
   if (status === 'aguardando') return 'atencao';
+  // Escrever é um caso PARTICULAR de estar em turno, então vem antes: quem já
+  // está respondendo não deve continuar com cara de quem está pensando.
+  if (escrevendo) return 'falando';
   if (turnoVivo || status === 'trabalhando') return 'pensando';
   return 'parado';
 }

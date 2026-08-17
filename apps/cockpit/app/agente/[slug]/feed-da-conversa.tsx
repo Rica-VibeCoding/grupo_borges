@@ -34,6 +34,7 @@ import {
   type EcoPendente,
 } from '@/lib/codex/eco-pendente.ts';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
+import { escrevendoNoFim, publicaEscritaViva } from '@/lib/escrita-viva.ts';
 import { textosDoUsuario } from '@/lib/textos-do-usuario.ts';
 import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
@@ -205,6 +206,18 @@ function FeedClaudeCode({
     publicaTurnoVivo(agentSlug, isRunning && !vencida && statusDaFrota !== 'offline');
     return () => publicaTurnoVivo(agentSlug, false);
   }, [agentSlug, isRunning, vencida, statusDaFrota]);
+
+  // PENSAR E RESPONDER SÃO CARAS DIFERENTES. O freio acima só quer saber se há
+  // turno em voo; a bolinha do composer precisa da distinção, porque é ela que
+  // vai ficar no lugar do "Pensando há 12 s". As mesmas guardas do turno vivo
+  // valem aqui — prazo e desligamento visto pela frota —, com uma régua a mais:
+  // o fim do feed ser texto crescendo, e não ferramenta em voo.
+  useEffect(() => {
+    const escrevendo =
+      isRunning && !vencida && statusDaFrota !== 'offline' && escrevendoNoFim(itensBase);
+    publicaEscritaViva(agentSlug, escrevendo);
+    return () => publicaEscritaViva(agentSlug, false);
+  }, [agentSlug, isRunning, vencida, statusDaFrota, itensBase]);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];
