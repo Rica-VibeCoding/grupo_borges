@@ -118,6 +118,25 @@ def test_voice_returns_transcribed_and_delivered(tmp_path: Path) -> None:
             assert args[1] == "🎙 olá mundo"
 
 
+def test_transcription_returns_draft_without_delivery(tmp_path: Path) -> None:
+    app = _build_app(tmp_path)
+    fake = _fake_completed(stdout="texto para revisar\n")
+
+    with patch("routers.agents.subprocess.run", return_value=fake), patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ) as mock_send:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/transcription",
+                files={"audio": ("voice.webm", b"fakebytes", "audio/webm")},
+            )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["text"] == "texto para revisar"
+    assert isinstance(response.json()["duration_ms"], int)
+    mock_send.assert_not_awaited()
+
+
 def test_voice_reads_event_boundary_before_stt(tmp_path: Path) -> None:
     """Evento inserido durante o STT fica acima da fronteira devolvida."""
     app = _build_app(tmp_path)

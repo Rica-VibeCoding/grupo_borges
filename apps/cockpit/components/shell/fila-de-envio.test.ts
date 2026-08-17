@@ -18,7 +18,10 @@ const ESPERANDO: FasesDoDespacho = { compact: 'compactando', envio: 'ocioso' };
 const LIVRE: FasesDoDespacho = { compact: 'ocioso', envio: 'ocioso' };
 
 function comItens(...textos: string[]): EstadoDaFila {
-  return textos.reduce((fila, texto, i) => enfileira(fila, { id: `f${i}`, texto }), FILA_VAZIA);
+  return textos.reduce(
+    (fila, texto, i) => enfileira(fila, { id: `f${i}`, texto, origem: 'text' }),
+    FILA_VAZIA,
+  );
 }
 
 describe('as duas metades da régua de pronto', () => {
@@ -111,7 +114,7 @@ describe('despacha em conclusão, PAUSA em falha', () => {
     // A ordem em que ele escreveu é dado. Reenfileirar no fim entregaria as
     // mensagens fora de ordem ao agente, que é pior que não entregar.
     const fila = comItens('dois', 'três');
-    const devolvida = devolveAoInicio(fila, { id: 'f0', texto: 'um' });
+    const devolvida = devolveAoInicio(fila, { id: 'f0', texto: 'um', origem: 'text' });
     assert.deepEqual(
       devolvida.itens.map((i) => i.texto),
       ['um', 'dois', 'três'],
@@ -149,6 +152,11 @@ describe('nada que saia da fila evapora', () => {
       estado.itens.map((i) => i.texto),
       ['dois'],
     );
+  });
+
+  it('retirar preserva a origem de voz do rascunho', () => {
+    const fila = enfileira(FILA_VAZIA, { id: 'voz', texto: 'revisto', origem: 'stt' });
+    assert.equal(retira(fila, 'voz').item?.origem, 'stt');
   });
 
   it('retirar um id que não existe não mexe na fila nem inventa texto', () => {

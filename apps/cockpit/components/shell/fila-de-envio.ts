@@ -28,7 +28,11 @@
 import type { EstadoCompact } from '../../lib/compact.ts';
 import type { FaseEnvio } from '../../lib/envio.ts';
 
-export type ItemDaFila = { id: string; texto: string };
+export type ItemDaFila = {
+  id: string;
+  texto: string;
+  origem: 'text' | 'stt';
+};
 
 export type MotivoDaPausa =
   /** O compact estourou os 6min sem dar sinal. Ele PODE estar vivo. */

@@ -42,7 +42,7 @@ import {
   type FormEvent,
 } from 'react';
 import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
-import { aparenciaDe, emTransito, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
+import { aparenciaDe, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
@@ -57,7 +57,7 @@ import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
 import { assinaEscritaViva, leEscritaViva } from '../../lib/escrita-viva';
 import { usaFrota } from './frota-provider';
-import { MARCA_VOZ, usaEnvio } from '../../lib/usa-envio';
+import { MARCA_VOZ, usaEnvio, type OrigemEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
 import { PilulaDeTokens } from './pilula-de-tokens';
@@ -72,7 +72,6 @@ import {
   reagiuAsFases,
   retira,
   soltaPausa,
-  type ItemDaFila,
 } from './fila-de-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
@@ -86,6 +85,8 @@ import {
   capturando,
   diagnosticaMicrofone,
   diagnosticaTranscricao,
+  mesclaTranscricao,
+  origemDepoisDaEdicao,
   type FaseVoz,
   type Impedimento,
 } from './voz';
@@ -164,7 +165,11 @@ export function Composer({
   // O campo é PERSISTIDO por agente: recarregar a página (no iPhone, puxar a
   // tela pra baixo) não pode apagar o que ele escreveu e não mandou. Ver
   // `lib/usa-rascunho.ts`.
-  const [texto, setTexto] = usaRascunho(agentSlug);
+  const [texto, setTexto, origemDoRascunho, setOrigemDoRascunho] = usaRascunho(agentSlug);
+  const textoAtualRef = useRef(texto);
+  textoAtualRef.current = texto;
+  const substituicaoIntegralRef = useRef(false);
+  const origemDoUltimoEnvio = useRef<OrigemEnvio>('text');
   const [pesquisaAtiva, setPesquisaAtiva] = useState(false);
   const podePesquisar = agentSlug === 'canarinho';
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
@@ -359,63 +364,28 @@ export function Composer({
   const fileteDoEstado = aparencia.filete;
 
   // ---- voz ----------------------------------------------------------------
-  // O áudio termina na MESMA máquina de seis fases do texto, e isso não é
-  // economia: o back faz STT e entrega por `send-keys` no mesmo POST, então ele
-  // devolve o mesmo `tmux_delivered` literal que mente pro texto. Dar à voz um
-  // caminho próprio de confirmação seria reproduzir o defeito num lugar novo.
-  const [transcrito, setTranscrito] = useState<string | null>(null);
   const [falhaDaFala, setFalhaDaFala] = useState<Impedimento | null>(null);
 
   const subirAudio = useCallback(
     async (audio: Blob) => {
-      // A trava do compact vale pra voz também: uma gravação começada ANTES
-      // do `/compact` termina DEPOIS dele, e soltar esse texto no meio da
-      // espera corta o resumo do mesmo jeito. A recusa continua; o que muda é
-      // que ela FALA — descartar áudio calado é o mesmo defeito do texto, e
-      // pior, porque o áudio não tem campo onde ficar.
-      const efeito = preparaEnvio({
-        compactando: travaCompact,
-        faseEnvio: envio.estado.fase,
-        turnoEmVoo: gerando,
-        midia: 'voz',
-      });
-      if (!efeito.despacha) {
-        setAvisoDaPorta(efeito.aviso);
-        return;
-      }
       setAvisoDaPorta(null);
       setFalhaDaFala(null);
       try {
-        // O que o servidor ENTENDEU aparece na tela. STT erra, e o Rica precisa
-        // saber o que o agente recebeu — sem isso ele descobre pela resposta
-        // errada do agente, três minutos depois.
-        const falado = await envio.enviarVoz(audio);
-        // A MESMA BOLHA OTIMISTA DO TEXTO (ver a chamada em `despacha`), que só
-        // o ramo escrito registrava. Sem ela o feed da Tara ficava mudo os ~12 s
-        // do `codex exec` subindo, e o prazo do composer — que decide olhando
-        // `temPendencia` — caía em âmbar dizendo que o áudio podia não ter
-        // entrado, num envio que entrou.
-        //
-        // Registrar COM a marca é requisito, não enfeite: o rollout guarda o
-        // texto marcado e `reconciliaPendentes` casa por texto exato. Sem ela a
-        // pendência ficaria sem par até expirar.
-        //
-        // Depois do `await` porque antes dele não existe transcrição — a bolha
-        // nasce no fim do STT, não no gesto. É o mais cedo possível aqui.
-        if (falado !== null && ehCodex) {
-          registraEcoPendente(agentSlug, `${MARCA_VOZ}${falado}`);
-        }
-        setTranscrito(falado);
+        const { postAgentTranscription } = await import('@grupo_borges/cockpit-core/api');
+        const { text: falado } = await postAgentTranscription(agentSlug, audio);
+        setTexto((atual) => mesclaTranscricao(atual, falado));
+        setOrigemDoRascunho('stt');
+        requestAnimationFrame(() => {
+          const campo = textareaRef.current;
+          if (!campo) return;
+          campo.focus();
+          campo.setSelectionRange(campo.value.length, campo.value.length);
+        });
       } catch (erro) {
-        // O back só entrega DEPOIS de transcrever: falha aqui significa que
-        // nada chegou ao agente. Por isso a fala tem aviso próprio em vez de
-        // virar `falhou` da máquina de envio — ali "reenviar" não teria texto
-        // nenhum para reenviar, e botão que não responde é o defeito da §9.
-        setTranscrito(null);
         setFalhaDaFala(diagnosticaTranscricao(erro));
       }
     },
-    [agentSlug, ehCodex, envio, gerando, travaCompact],
+    [agentSlug, setOrigemDoRascunho, setTexto],
   );
 
   const gravador = usaGravador({ aoGravar: subirAudio });
@@ -457,7 +427,14 @@ export function Composer({
    * falhou, e mandá-la com a legenda de outra mensagem seria despachar algo que
    * o Rica não pediu.
    */
-  async function enviar(corpo: string, retomada = false): Promise<boolean> {
+  async function enviar(
+    corpo: string,
+    retomada = false,
+    origemRetomada: OrigemEnvio = 'text',
+  ): Promise<boolean> {
+    const origem: OrigemEnvio = retomada
+      ? origemRetomada
+      : origemDoRascunho;
     // O toggle altera só o gesto que nasceu AGORA no campo. O corpo de uma
     // retomada já foi decidido quando entrou na fila ou na máquina de envio;
     // prefixá-lo aqui de novo mudaria a tentativa que o Rica está reabrindo.
@@ -469,6 +446,7 @@ export function Composer({
     if (ehCodex && COMANDOS_TARA[corpoParaEnviar.trim().toLowerCase().replace(/^\//, '')]) {
       await armarNovaConversaTara();
       setTexto('');
+      setOrigemDoRascunho('text');
       return true;
     }
     // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
@@ -508,9 +486,12 @@ export function Composer({
     // quando a espera terminar.
     if (efeito.enfileira) {
       contadorFila.current += 1;
-      const item = { id: `fila-${contadorFila.current}`, texto: corpoParaEnviar };
+      const item = { id: `fila-${contadorFila.current}`, texto: corpoParaEnviar, origem };
       setFila((atual) => enfileira(atual, item));
-      if (efeito.limpaCampo) setTexto('');
+      if (efeito.limpaCampo) {
+        setTexto('');
+        setOrigemDoRascunho('text');
+      }
       return false;
     }
     if (!efeito.despacha) return false;
@@ -543,7 +524,10 @@ export function Composer({
           envelope,
         );
       })) {
-        setTexto((atual) => (atual === corpoParaEnviar ? '' : atual));
+        if (textoAtualRef.current === corpoParaEnviar) {
+          setTexto('');
+          setOrigemDoRascunho('text');
+        }
       } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
         // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então
@@ -565,8 +549,10 @@ export function Composer({
     // viagem de rede, e um segundo Enter ali duplica a mensagem. Daqui em
     // diante quem guarda o texto é a máquina (`estado.texto`), que precisa
     // dele para casar o eco e para oferecer novo envio se o eco não vier.
-    if (efeito.limpaCampo) setTexto('');
-    setTranscrito(null);
+    if (efeito.limpaCampo) {
+      setTexto('');
+      setOrigemDoRascunho('text');
+    }
     setFalhaDaFala(null);
     // O feed pinta esta bolha no GESTO, nos dois motores. Até 15/08 só a Tara
     // tinha isto, com a justificativa de que *"no Claude Code o eco volta pelo
@@ -583,20 +569,23 @@ export function Composer({
     // `app/agente/[slug]/feed-da-conversa.tsx`.
     const idEcoPendente = registraEcoPendente(
       agentSlug,
-      corpoParaEnviar,
+      origem === 'stt' ? `${MARCA_VOZ}${corpoParaEnviar}` : corpoParaEnviar,
       // O teto é o tempo que ele fica com a mensagem na tela sem ninguém dizer
       // se entrou — a pendência segura o prazo do alarme. Herdar os 3 min do
       // Codex aqui trocaria um aviso falso aos 12 s por silêncio de três
       // minutos, e silêncio é a queixa original.
       ehCodex ? PRAZO_CODEX_MS : PRAZO_CC_MS,
+      origem === 'stt' ? corpoParaEnviar : undefined,
     );
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
     // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
     // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da
     // auditoria, 09/08).
+    origemDoUltimoEnvio.current = origem;
     await envio.enviar(
       corpoParaEnviar,
       idEcoPendente ? () => descartaEcoPendente(agentSlug, idEcoPendente) : undefined,
+      origem,
     );
     return true;
   }
@@ -625,7 +614,7 @@ export function Composer({
     // `retomada: true`: o corpo não veio do campo. É o que impede a fila de
     // comer o que ele escreveu DEPOIS — e o que impede a foto retida de sair
     // de carona numa mensagem que não é dela.
-    void enviar(proximo.texto, true).then((saiu) => {
+    void enviar(proximo.texto, true, proximo.origem).then((saiu) => {
       if (!saiu) setFila((atual) => devolveAoInicio(atual, proximo));
     });
   });
@@ -648,6 +637,7 @@ export function Composer({
     if (!item) return;
     setFila(estado);
     setTexto((atual) => (atual.trim() ? `${item.texto}\n${atual}` : item.texto));
+    setOrigemDoRascunho((atual) => (atual === 'stt' || item.origem === 'stt' ? 'stt' : 'text'));
     textareaRef.current?.focus();
   }
 
@@ -677,8 +667,14 @@ export function Composer({
     // anterior pode ter sido entregue e conta o eco ambíguo em vez de confirmar
     // o reenvio com o eco do primeiro. `falhou` é reenvio comum.
     if (fase === 'nao-confirmado') {
+      const origem = origemDoUltimoEnvio.current;
       const idEcoPendente = ehCodex
-        ? registraEcoPendente(agentSlug, ultimoEnviado)
+        ? registraEcoPendente(
+            agentSlug,
+            origem === 'stt' ? `${MARCA_VOZ}${ultimoEnviado}` : ultimoEnviado,
+            PRAZO_CODEX_MS,
+            origem === 'stt' ? ultimoEnviado : undefined,
+          )
         : null;
       void envio.reenviar(
         idEcoPendente
@@ -687,10 +683,8 @@ export function Composer({
       );
       return;
     }
-    void enviar(ultimoEnviado, true);
+    void enviar(ultimoEnviado, true, origemDoUltimoEnvio.current);
   }
-
-  const emAndamento = emTransito(fase);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
@@ -775,7 +769,10 @@ export function Composer({
           <BolhaDeComandos
             agentSlug={agentSlug}
             texto={texto}
-            aoSelecionar={setTexto}
+            aoSelecionar={(valor) => {
+              setTexto(valor);
+              setOrigemDoRascunho('text');
+            }}
             campoRef={textareaRef}
             ativa={!ehCodex}
           >
@@ -794,7 +791,22 @@ export function Composer({
               // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
               // editável, ele escreve durante a espera e manda com um toque quando
               // ela passa. É o que garante que o texto nunca evapora.
-              onChange={(e) => setTexto(e.target.value)}
+              onChange={(e) => {
+                setTexto(e.target.value);
+                setOrigemDoRascunho((atual) =>
+                  origemDepoisDaEdicao(
+                    atual,
+                    e.target.value,
+                    substituicaoIntegralRef.current,
+                  ),
+                );
+                substituicaoIntegralRef.current = false;
+              }}
+              onBeforeInput={(e) => {
+                const campo = e.currentTarget;
+                substituicaoIntegralRef.current =
+                  campo.selectionStart === 0 && campo.selectionEnd === campo.value.length;
+              }}
               // COLAR IMAGEM. No iPhone, "copiar" numa foto e colar no campo é
               // o gesto natural — e até 15/08 não fazia nada, nem erro: o
               // clipboard trazia o arquivo e ninguém o pegava. Cai na MESMA
@@ -1083,7 +1095,7 @@ export function Composer({
               <button
                 key="voz"
                 type="button"
-                disabled={emAndamento || travaCompact || faseVoz === 'transcrevendo'}
+                disabled={faseVoz === 'transcrevendo'}
                 {...gravador.handlers}
                 aria-label={`Segure para falar com ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
@@ -1280,24 +1292,6 @@ export function Composer({
         >
           {vozAparencia.instrucao}
         </span>
-      ) : null}
-
-      {/* O QUE O SERVIDOR ENTENDEU. STT erra, e o texto que subiu não passa
-          pelo campo — sem isto o Rica só descobre o erro pela resposta errada
-          do agente, minutos depois, sem saber que a culpa foi da transcrição. */}
-      {transcrito && (fase === 'aceito' || fase === 'nao-confirmado') ? (
-        <p
-          className="mx-auto w-full"
-          style={{
-            maxWidth: 'var(--ck-w-composer)',
-            margin: 0,
-            padding: '0 var(--ck-space-2)',
-            fontSize: 'var(--ck-text-xs)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          🎙 {transcrito}
-        </p>
       ) : null}
 
       {/* Frase de estado + ações. Só existe fora do `ocioso`/`confirmado` —

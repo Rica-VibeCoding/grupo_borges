@@ -47,16 +47,7 @@ export const PREFIXO_VOZ = /^🎙\s*/u;
  *  e o composer preso em `aceito` até o prazo de 3 min expirar. */
 export const MARCA_VOZ = '🎙 ';
 
-export type RespostaVoz = {
-  transcribed: string;
-  /** `false` é sinal negativo do próprio backend, não mera falta de eco. */
-  tmux_delivered?: boolean;
-  /** Ausente hoje: `POST /{slug}/voice` não devolve a barreira que `/input`
-   *  devolve. Enquanto não devolver, ela é sondada no servidor antes do POST —
-   *  ver `sondarFronteira`. O campo já é lido para que a troca no back seja
-   *  suficiente, sem tocar no cliente. */
-  event_boundary_id?: number;
-};
+export type OrigemEnvio = 'text' | 'stt';
 
 type EventoSse = { data: string };
 type OuvinteSse = (evento: EventoSse) => void;
@@ -74,8 +65,11 @@ export interface ConstrutorFonteEventosEnvio {
 type Timer = ReturnType<typeof setTimeout>;
 
 export type DependenciasEnvio = {
-  postar?: (agentSlug: string, texto: string) => Promise<RespostaComFronteira>;
-  postarVoz?: (agentSlug: string, audio: Blob) => Promise<RespostaVoz>;
+  postar?: (
+    agentSlug: string,
+    texto: string,
+    origem: OrigemEnvio,
+  ) => Promise<RespostaComFronteira>;
   FonteEventos?: ConstrutorFonteEventosEnvio;
   agora?: () => number;
   agendar?: (callback: () => void, atrasoMs: number) => Timer;
@@ -90,12 +84,7 @@ export type ControleEnvio = {
    *  `falhou`) — é o gancho para quem registrou uma pendência otimista ANTES
    *  do envio (`registraEcoPendente`, só Codex) desfazê-la, já que a máquina
    *  acabou de provar que o texto não saiu daqui. */
-  enviar(texto: string, aoFalhar?: () => void): Promise<void>;
-  /** Sobe o áudio, e o que o servidor TRANSCREVEU entra na mesma máquina de
-   *  seis fases do texto. Devolve a transcrição para a tela mostrar o que o
-   *  agente recebeu — STT erra, e descobrir isso pela resposta errada do
-   *  agente três minutos depois é caro. */
-  enviarVoz(audio: Blob): Promise<string | null>;
+  enviar(texto: string, aoFalhar?: () => void, origem?: OrigemEnvio): Promise<void>;
   reenviar(aoFalhar?: () => void): Promise<void>;
   /** Recibo vindo de FORA do stream SSE. Existe porque o agente Codex não tem
    *  eco em `/messages/stream` (responde `total: 0`): quem prova a entrega dele
@@ -105,10 +94,6 @@ export type ControleEnvio = {
   confirmarPorEco(texto: string): void;
   dispose(): void;
 };
-
-/** Teto da sondagem de fronteira. Estourou, segue sem barreira do servidor:
- *  perder a confirmação é ruim, travar o áudio do Rica é pior. */
-const PRAZO_SONDA_MS = 4_000;
 
 function respostaTemFronteira(
   resposta: AgentInputResponse,
@@ -160,9 +145,9 @@ export function createControleEnvio(
 ): ControleEnvio {
   const postar =
     dependencias.postar ??
-    (async (slug, texto) => {
+    (async (slug, texto, origem) => {
       const { postAgentInput } = await import('@grupo_borges/cockpit-core/api');
-      const resposta = await postAgentInput(slug, texto);
+      const resposta = await postAgentInput(slug, texto, { origin: origem });
       if (!respostaTemFronteira(resposta)) {
         throw new Error('Resposta de envio sem event_boundary_id válido');
       }
@@ -178,13 +163,6 @@ export function createControleEnvio(
   const cancelar = dependencias.cancelar ?? clearTimeout;
   const atrasoReconexaoMs = dependencias.atrasoReconexaoMs ?? 1_000;
 
-  const postarVoz =
-    dependencias.postarVoz ??
-    (async (slug, audio) => {
-      const { postAgentVoice } = await import('@grupo_borges/cockpit-core/api');
-      return (await postAgentVoice(slug, audio)) as RespostaVoz;
-    });
-
   let estado = estadoInicialEnvio;
   let descartado = false;
   let fonte: FonteEventosEnvio | null = null;
@@ -192,8 +170,9 @@ export function createControleEnvio(
   let timerReconexao: Timer | undefined;
   let timerRetentativa: Timer | undefined;
   let cursor = 0;
-  /** A tentativa corrente veio de voz — só nela o prefixo do back é descascado. */
+  /** A tentativa corrente preserva a origem STT até o eco voltar. */
   let vozEmVoo = false;
+  let origemEmVoo: OrigemEnvio = 'text';
   const ouvintes = new Set<() => void>();
 
   function publicar(evento: EventoEnvio): void {
@@ -330,53 +309,11 @@ export function createControleEnvio(
     }, REEXAME_ROLLOUT_MS);
   }
 
-  /**
-   * Fronteira do servidor quando o POST não a devolve — o caso da voz hoje.
-   *
-   * Não é o mesmo que "o último evento que o cliente viu": o `id` sai do
-   * servidor, lido do servidor, antes de o áudio sequer subir. `recentes=1&
-   * limit=1` existe no endpoint justamente para entregar a PONTA do histórico
-   * em vez do começo, então isto é uma leitura curta, não um replay.
-   *
-   * A janela entre a leitura e a entrega é grande de propósito e inofensiva: o
-   * STT roda no servidor e leva segundos, e a barreira só serve para descartar
-   * ecos ANTERIORES ao envio. Um item que entre no meio só confundiria se
-   * tivesse exatamente o mesmo texto da transcrição.
-   */
-  function sondarFronteira(): Promise<FronteiraEnvio | null> {
-    if (!FonteEventos) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      let maior = 0;
-      let respondeu = false;
-      const sonda = new FonteEventos(
-        `/api/agents/${encodeURIComponent(agentSlug)}/messages/stream?since_id=0&limit=1&recentes=1`,
-      );
-      // `completa` separa "o servidor respondeu e o histórico acabou" de "a
-      // sonda morreu no meio". Só o primeiro caso autoriza a fronteira 0 —
-      // agente sem nenhum evento tem barreira legítima em 0, e tratar isso como
-      // falha penduraria todo primeiro áudio de uma sessão nova.
-      const terminar = (completa: boolean) => {
-        if (respondeu) return;
-        respondeu = true;
-        cancelar(timerSonda);
-        sonda.close();
-        resolve(completa || maior > 0 ? fronteiraDo(maior) : null);
-      };
-      const timerSonda = agendar(() => terminar(false), PRAZO_SONDA_MS);
-      sonda.addEventListener('message', (evento) => {
-        try {
-          const payload = JSON.parse(evento.data) as MessagePayload;
-          if (Number.isSafeInteger(payload.id)) maior = Math.max(maior, payload.id);
-        } catch {
-          // Evento malformado não invalida a sonda.
-        }
-      });
-      sonda.addEventListener('replay-end', () => terminar(true));
-      sonda.onerror = () => terminar(false);
-    });
-  }
-
-  async function executar(texto: string, aoFalhar?: () => void): Promise<void> {
+  async function executar(
+    texto: string,
+    aoFalhar?: () => void,
+    origem: OrigemEnvio = 'text',
+  ): Promise<void> {
     if (
       descartado ||
       !texto.trim() ||
@@ -385,13 +322,14 @@ export function createControleEnvio(
     ) {
       return;
     }
-    vozEmVoo = false;
+    origemEmVoo = origem;
+    vozEmVoo = origem === 'stt';
     limparTimerPrazo();
     limparTimerReconexao();
     limparTimerRetentativa();
     fecharFonte();
     publicar({ tipo: 'enviar', texto });
-    await entregar(texto, aoFalhar, 0);
+    await entregar(texto, aoFalhar, 0, origem);
   }
 
   /**
@@ -407,9 +345,10 @@ export function createControleEnvio(
     texto: string,
     aoFalhar: (() => void) | undefined,
     jaTentadas: number,
+    origem: OrigemEnvio,
   ): Promise<void> {
     try {
-      const resposta = await postar(agentSlug, texto);
+      const resposta = await postar(agentSlug, texto, origem);
       if (descartado) return;
       // `tmux_delivered: false` é AUSÊNCIA DE PROVA, não erro. O `send_message`
       // só devolve `true` com prova observável no pane (input vazio ou linha
@@ -465,7 +404,7 @@ export function createControleEnvio(
           // A fase pode ter mudado na espera — outro envio, um dispose, uma
           // retomada. Quem saiu de `enviando` já não é esta tentativa.
           if (descartado || estado.fase !== 'enviando') return;
-          void entregar(texto, aoFalhar, jaTentadas + 1);
+          void entregar(texto, aoFalhar, jaTentadas + 1, origem);
         }, atraso);
         return;
       }
@@ -483,81 +422,6 @@ export function createControleEnvio(
     }
   }
 
-  /**
-   * O áudio entra na MESMA máquina de seis fases do texto — não é economia de
-   * código: o `/voice` devolve o mesmo `tmux_delivered` literal que mente para
-   * o texto (prova a colagem no pane, não que o agente recebeu). Dar à voz uma
-   * confirmação própria reproduziria o defeito num lugar novo.
-   *
-   * A ordem aqui é a única possível: só existe texto DEPOIS do STT. Por isso a
-   * fronteira é sondada ANTES do POST — depois dele o eco já pode ter passado.
-   */
-  async function executarVoz(audio: Blob): Promise<string | null> {
-    if (descartado || estado.fase === 'enviando' || estado.fase === 'aceito') {
-      return null;
-    }
-    limparTimerPrazo();
-    limparTimerReconexao();
-    limparTimerRetentativa();
-    fecharFonte();
-
-    const fronteiraSondada = await sondarFronteira();
-    if (descartado) return null;
-
-    let transcrito: string;
-    let fronteira: FronteiraEnvio | null;
-    let entregueNoTmux: boolean;
-    try {
-      const resposta = await postarVoz(agentSlug, audio);
-      transcrito = resposta.transcribed;
-      // ⚠️ A voz NÃO tem a retentativa do texto, e é escolha: cada tentativa
-      // re-sobe o áudio inteiro e refaz o STT no servidor, então repetir aqui
-      // custa banda e transcrição, não só um POST. Enquanto isso não for
-      // decidido, um 409 na voz continua caindo direto em `falhou`.
-      entregueNoTmux = resposta.tmux_delivered !== false;
-      fronteira =
-        typeof resposta.event_boundary_id === 'number'
-          ? fronteiraDo(resposta.event_boundary_id)
-          : fronteiraSondada;
-    } catch (erro) {
-      // Não sujar a máquina de envio: sem transcrição não existe texto, e um
-      // `falhou` com texto vazio ofereceria "reenviar"/"copiar" sobre nada —
-      // botão que não responde, o defeito da §9 com outra roupa. Falha de STT
-      // é problema da CAPTURA e é a captura que sabe explicá-la, então o erro
-      // sobe para quem gravou.
-      throw erro;
-    }
-
-    if (descartado) return transcrito;
-    vozEmVoo = true;
-    publicar({ tipo: 'enviar', texto: transcrito, fronteira: fronteira ?? undefined });
-    // Mesma regra do texto (ver o comentário em `executar`): `tmux_delivered`
-    // falso é ausência de prova, não erro, e `falhou` afirmaria que o áudio não
-    // saiu daqui. Deixar a voz gritando "não recebeu" enquanto texto e anexo já
-    // falam de incerteza seria três linguagens para o mesmo fato.
-    if (!entregueNoTmux) {
-      publicar({
-        tipo: 'nao-confirmar',
-        erro: new Error('O backend não conseguiu provar a entrega no pane — o áudio pode ter entrado'),
-      });
-      return transcrito;
-    }
-    if (fronteira) {
-      publicar({ tipo: 'aceitar', agoraMs: agora(), fronteira });
-      observar(fronteira);
-      armarPrazo();
-    } else {
-      // Sem barreira não há como distinguir o eco do envio de um item anterior.
-      // Confirmar assim mesmo seria adivinhar, e adivinhar aqui é exatamente o
-      // "enviado" mentiroso que esta máquina existe para matar. Fica não
-      // confirmado:
-      // entregue, sem confirmação observável — que é a verdade.
-      publicar({ tipo: 'aceitar', agoraMs: agora(), fronteira: fronteiraDo(0) });
-      publicar({ tipo: 'tempo-passou', agoraMs: agora() + PRAZO_ECO_MS });
-    }
-    return transcrito;
-  }
-
   return {
     getEstado: () => estado,
     subscribe(ouvinte) {
@@ -565,10 +429,9 @@ export function createControleEnvio(
       return () => ouvintes.delete(ouvinte);
     },
     enviar: executar,
-    enviarVoz: executarVoz,
     async reenviar(aoFalhar?: () => void) {
       if (estado.fase !== 'nao-confirmado') return;
-      await executar(estado.texto, aoFalhar);
+      await executar(estado.texto, aoFalhar, origemEmVoo);
     },
     confirmarPorEco(texto) {
       // Mesmo evento que o SSE publicaria — o redutor faz o resto, inclusive
@@ -580,7 +443,14 @@ export function createControleEnvio(
       // fronteira é o `event_boundary_id` do back (contador de eventos, ordens
       // de grandeza menor que um instante em ms). Não vem do stream, então não
       // pode colidir com o `cursor`.
-      publicar({ tipo: 'item-do-stream', item: { id: Date.now(), papel: 'user', texto } });
+      publicar({
+        tipo: 'item-do-stream',
+        item: {
+          id: Date.now(),
+          papel: 'user',
+          texto: vozEmVoo ? texto.replace(PREFIXO_VOZ, '') : texto,
+        },
+      });
     },
     dispose() {
       if (descartado) return;
@@ -596,8 +466,7 @@ export function createControleEnvio(
 
 export function usaEnvio(agentSlug: string): {
   estado: EstadoEnvio;
-  enviar: (texto: string, aoFalhar?: () => void) => Promise<void>;
-  enviarVoz: (audio: Blob) => Promise<string | null>;
+  enviar: (texto: string, aoFalhar?: () => void, origem?: OrigemEnvio) => Promise<void>;
   reenviar: (aoFalhar?: () => void) => Promise<void>;
 } {
   const controle = useMemo(() => createControleEnvio(agentSlug), [agentSlug]);
@@ -623,7 +492,6 @@ export function usaEnvio(agentSlug: string): {
   return {
     estado,
     enviar: controle.enviar,
-    enviarVoz: controle.enviarVoz,
     reenviar: controle.reenviar,
   };
 }

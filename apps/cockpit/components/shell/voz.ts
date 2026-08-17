@@ -27,10 +27,8 @@
  * em que a única saída seja um movimento secreto.
  */
 
-/** Fases da CAPTURA. Depois de `transcrevendo` a mensagem entra na máquina de
- *  ENVIO (`aparencia-envio.ts`) como qualquer texto — voz não tem um caminho
- *  paralelo de confirmação, e não deve ter: o defeito do `tmux_delivered`
- *  literal é o mesmo nos dois. */
+/** Fases da CAPTURA. Depois de `transcrevendo`, o resultado vira rascunho
+ *  editável; só o envio explícito entra na máquina de entrega. */
 export type FaseVoz =
   | 'ociosa'
   | 'pedindo'
@@ -123,7 +121,7 @@ export type Impedimento = {
  * entregou; nesse caso a tela assume incerteza para não induzir duplicação.
  *
  * Os detalhes vêm crus do `detail` do FastAPI, embutidos na mensagem do erro
- * que `postAgentVoice` lança. Casar por substring é frágil de propósito: se o
+ * que `postAgentTranscription` lança. Casar por substring é frágil de propósito: se o
  * back mudar o rótulo, cai no caso geral, que continua acionável.
  */
 export function diagnosticaTranscricao(erro: unknown): Impedimento {
@@ -320,6 +318,22 @@ export function assinaturaDoContainer(
 export function duracaoLegivel(segundos: number): string {
   const s = Math.max(0, Math.floor(segundos));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+export function mesclaTranscricao(rascunho: string, transcricao: string): string {
+  const atual = rascunho.trimEnd();
+  const falado = transcricao.trim();
+  if (!atual) return falado;
+  if (!falado) return atual;
+  return `${atual}\n${falado}`;
+}
+
+export function origemDepoisDaEdicao(
+  origem: 'text' | 'stt',
+  texto: string,
+  substituiuTudo: boolean,
+): 'text' | 'stt' {
+  return origem === 'stt' && texto && !substituiuTudo ? 'stt' : 'text';
 }
 
 export type AparenciaVoz = {

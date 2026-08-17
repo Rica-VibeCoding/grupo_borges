@@ -30,7 +30,7 @@
  * agente recarrega do zero — por isso `slugCarregado` guarda QUAL slug foi
  * carregado, e não um booleano.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const PREFIXO = 'ck:rascunho:';
 
@@ -44,9 +44,42 @@ function chave(agentSlug: string): string {
  *  o dobro cobre o texto legítimo com folga e ainda protege a cota. */
 const TETO = 131072;
 
+export type OrigemRascunho = 'text' | 'stt';
+
+export type RascunhoPersistido = {
+  texto: string;
+  origem: OrigemRascunho;
+};
+
+export function codificaRascunho(rascunho: RascunhoPersistido): string {
+  return JSON.stringify({
+    versao: 1,
+    texto: rascunho.texto.slice(0, TETO),
+    origem: rascunho.origem,
+  });
+}
+
+export function decodificaRascunho(salvo: string | null): RascunhoPersistido {
+  if (!salvo) return { texto: '', origem: 'text' };
+  try {
+    const valor = JSON.parse(salvo) as Record<string, unknown>;
+    if (
+      valor.versao === 1 &&
+      typeof valor.texto === 'string' &&
+      (valor.origem === 'text' || valor.origem === 'stt')
+    ) {
+      return { texto: valor.texto, origem: valor.origem };
+    }
+  } catch {
+    // Formato anterior: o valor inteiro era o texto.
+  }
+  return { texto: salvo, origem: 'text' };
+}
+
 export function usaRascunho(agentSlug: string) {
   const [texto, setTexto] = useState('');
-  const slugCarregado = useRef<string | null>(null);
+  const [origem, setOrigem] = useState<OrigemRascunho>('text');
+  const [slugCarregado, setSlugCarregado] = useState<string | null>(null);
 
   useEffect(() => {
     let salvo: string | null = null;
@@ -56,21 +89,25 @@ export function usaRascunho(agentSlug: string) {
       // Modo privativo do Safari e cota estourada lançam aqui. Perder a
       // persistência é aceitável; derrubar o composer não é.
     }
-    // Só semeia se houver algo salvo: sobrescrever com `''` apagaria o que o
-    // Rica digitou entre a montagem e este efeito.
-    if (salvo) setTexto(salvo);
-    slugCarregado.current = agentSlug;
+    const rascunho = decodificaRascunho(salvo);
+    setTexto((atual) => (slugCarregado === null && !salvo ? atual : rascunho.texto));
+    setOrigem(rascunho.origem);
+    setSlugCarregado(agentSlug);
   }, [agentSlug]);
 
   useEffect(() => {
-    if (slugCarregado.current !== agentSlug) return;
+    if (slugCarregado !== agentSlug) return;
     try {
-      if (texto) window.localStorage.setItem(chave(agentSlug), texto.slice(0, TETO));
-      else window.localStorage.removeItem(chave(agentSlug));
+      if (texto) {
+        window.localStorage.setItem(
+          chave(agentSlug),
+          codificaRascunho({ texto, origem }),
+        );
+      } else window.localStorage.removeItem(chave(agentSlug));
     } catch {
       // idem
     }
-  }, [texto, agentSlug]);
+  }, [texto, origem, agentSlug, slugCarregado]);
 
-  return [texto, setTexto] as const;
+  return [texto, setTexto, origem, setOrigem] as const;
 }

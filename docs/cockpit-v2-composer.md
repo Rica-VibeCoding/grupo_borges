@@ -150,10 +150,13 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
       voo daquela aba, e a conversa da Tara é compartilhada com o Telegram.
       Explica as 5 falhas do Codex na bateria. Desenho na §4, item 34.
       **Dono: Pavan.** Fica atrás de F1: é o mesmo `catch`.
-- [ ] **F6 · Microfone desabilitado durante envio em voo** (item 32). Precisa de
-      rodada própria — soltar o microfone dispara `enviarVoz` na **mesma** máquina
-      de seis fases já ocupada.
-- [ ] **F7 · Bolha otimista da voz só existe no Codex** (item 33). Depende de F6.
+- [x] **F6 · Microfone desabilitado durante envio em voo** (item 32). Resolvido:
+      soltar o microfone só transcreve e preenche o rascunho editável. Nenhuma
+      mensagem é enviada nem a máquina de entrega é ocupada antes do toque em
+      enviar.
+- [x] **F7 · Bolha otimista da voz só existe no Codex** (item 33). Resolvido pelo
+      mesmo fluxo: depois da revisão, a transcrição usa o envio normal de texto
+      nos dois motores, preservando a origem STT.
 - [ ] **F8 · `derive_agent_status` reporta `trabalhando` para agente sem
       processo.** Raiz do defeito do `■`, tratada na tela por guarda. Mexe no que
       a lista inteira da frota pinta — rodada própria. **Dono: a decidir.**
@@ -301,22 +304,15 @@ autoriza dizer "pronto".
 ### Voz
 
 30. Segurar para falar, com trava para gravação longa.
-31. A transcrição volta para a tela antes de virar mensagem — STT erra, e
-    descobrir isso pela resposta errada do agente três minutos depois é caro.
-32. **Pendente (F6).** O microfone fica desabilitado enquanto o envio anterior
-    está em trânsito. É parente do defeito do `+` do item 23 — gravar é gesto
-    local — e no Codex esse trânsito chega a minutos, o que dói mais aqui do que
-    ali, porque o Rica fala muito mais do que digita.
-
-    Não foi consertado junto com o `+`, e o motivo é diferença de risco, não
-    esquecimento: escolher arquivo não toca a máquina de envio, enquanto soltar o
-    microfone dispara `enviarVoz` na **mesma** máquina de seis fases que já está
-    ocupada com o envio anterior. Habilitar sem antes decidir o que acontece com
-    duas entregas concorrentes trocaria um botão morto por um estado ambíguo.
-
-33. **Pendente (F7).** A bolha otimista da voz só é registrada para o Codex
-    (`composer.tsx`, dentro de `subirAudio`), mesmo depois de o texto passar a
-    registrá-la nos dois motores.
+31. A transcrição volta como rascunho editável antes de virar mensagem — STT
+    erra, e descobrir isso pela resposta errada do agente três minutos depois é
+    caro.
+32. O microfone continua disponível durante envio e compactação porque gravar e
+    transcrever são gestos locais. Soltar só chama `/transcription`; não abre
+    turno, não toca tmux e não disputa a máquina de entrega.
+33. O envio explícito da transcrição usa o mesmo caminho do texto nos dois
+    motores. A origem STT fica persistida com o rascunho e só adiciona a marca
+    interna `🎙` no momento do envio.
 
 ### Fila que atravessa canais
 

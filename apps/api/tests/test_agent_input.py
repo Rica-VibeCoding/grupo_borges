@@ -265,6 +265,38 @@ def test_input_claude_still_uses_tmux_not_codex(tmp_path: Path) -> None:
     popen.assert_not_called()
 
 
+def test_input_stt_preserves_voice_origin_without_exposing_marker_in_draft(
+    tmp_path: Path,
+) -> None:
+    app = _build_app(tmp_path)
+    with patch.object(
+        app.state.db,
+        "create_message_origin",
+        new=AsyncMock(return_value="origin-stt"),
+    ) as create_origin, patch(
+        "routers.agents.tmux_driver.send_message",
+        return_value=tmux_driver.DELIVERED,
+    ) as send_message:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={
+                    "text": "texto revisado",
+                    "idempotency_key": "stt-revisado",
+                    "origin": "stt",
+                },
+            )
+
+    assert response.status_code == 200, response.text
+    send_message.assert_awaited_once_with("daniel", "🎙 texto revisado")
+    create_origin.assert_awaited_once_with(
+        agent_slug="daniel",
+        executor_kind="tmux",
+        expected_text="🎙 texto revisado",
+        meta={"kind": "stt", "raw_text": "🎙 texto revisado"},
+    )
+
+
 def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) -> None:
     """A fronteira é lida antes da operação que pode gerar o eco do envio."""
     app = _build_app(tmp_path)

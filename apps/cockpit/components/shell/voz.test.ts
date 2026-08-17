@@ -17,7 +17,9 @@ import {
   extensaoDe,
   gestoDe,
   impedimentoDeContexto,
+  mesclaTranscricao,
   normalizaMime,
+  origemDepoisDaEdicao,
   progressoDoGesto,
   type FaseVoz,
 } from './voz.ts';
@@ -31,6 +33,28 @@ const TODAS: FaseVoz[] = [
   'transcrevendo',
   'impedida',
 ];
+
+describe('transcrição vira rascunho', () => {
+  it('preenche o campo vazio sem marcador visível', () => {
+    assert.equal(mesclaTranscricao('', 'texto para revisar'), 'texto para revisar');
+  });
+
+  it('não apaga o que foi digitado enquanto o servidor transcrevia', () => {
+    assert.equal(
+      mesclaTranscricao('começo já escrito', 'continuação falada'),
+      'começo já escrito\ncontinuação falada',
+    );
+  });
+
+  it('mantém origem de voz durante revisão parcial', () => {
+    assert.equal(origemDepoisDaEdicao('stt', 'texto revisado', false), 'stt');
+  });
+
+  it('substituir o campo inteiro transforma o novo texto em digitado', () => {
+    assert.equal(origemDepoisDaEdicao('stt', '/clear', true), 'text');
+    assert.equal(origemDepoisDaEdicao('stt', '', false), 'text');
+  });
+});
 
 describe('o gesto — segurar, e as duas saídas', () => {
   it('parado no botão é só segurar', () => {
@@ -124,14 +148,14 @@ describe('microfone indisponível — nunca um botão que não responde', () => 
 
   it('STT que falha no servidor também sai com o que fazer, nunca só o problema', () => {
     for (const detalhe of ['stt_empty', 'stt_timeout', 'stt_failed', 'stt_script_not_found', '422', 'ruído']) {
-      const d = diagnosticaTranscricao(new Error(`postAgentVoice 502: {"detail":"${detalhe}"}`));
+      const d = diagnosticaTranscricao(new Error(`postAgentTranscription 502: {"detail":"${detalhe}"}`));
       assert.ok(d.resumo.length > 0, detalhe);
       assert.ok(d.saida.length > 0, detalhe);
     }
   });
 
   it('áudio mudo ensina o gesto certo — o começo da fala é o que se perde', () => {
-    const d = diagnosticaTranscricao(new Error('postAgentVoice 502: {"detail":"stt_empty"}'));
+    const d = diagnosticaTranscricao(new Error('postAgentTranscription 502: {"detail":"stt_empty"}'));
     assert.match(d.saida, /segure|espere/i);
     assert.equal(d.definitivo, false, 'falar de novo resolve');
   });

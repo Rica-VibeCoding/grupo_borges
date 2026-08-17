@@ -46,19 +46,6 @@ export type PortaDeEnvio =
       recado: string | null;
     };
 
-/**
- * O que a espera É e o que acontece com o que ele produziu. A segunda metade
- * não é gentileza: sem ela o Rica não sabe se pode sair da tela.
- *
- * Os recados da voz são OUTROS de propósito. O texto fica no campo e volta com
- * um toque; o áudio recusado não tem onde ficar — dizer a ele "continua aqui"
- * seria a mesma mentira de UI que este módulo existe para matar.
- */
-/**
- * Fora do `RECADO` por mídia porque a voz não carrega anexo: o gesto falado não
- * passa arquivo nenhum, e escrever a versão "voz" desta recusa seria inventar um
- * caminho que ninguém percorre.
- */
 const RECADO_ANEXO_EM_VOO =
   'o arquivo anterior ainda está subindo — sua mensagem continua aqui';
 
@@ -73,36 +60,19 @@ const RECADO_COMPACT_COM_ANEXO =
   'compactando — o anexo continua aqui, toque em enviar quando a barra sumir';
 
 type MotivoComRecado = Exclude<MotivoRecusa, 'vazio' | 'anexo-em-voo'>;
-type RecadosPorMidia = Record<Exclude<MotivoComRecado, 'longo-demais'>, string> & {
+type Recados = Record<Exclude<MotivoComRecado, 'longo-demais'>, string> & {
   'longo-demais': (tamanho: number) => string;
 };
 
-const RECADO: Record<
-  'texto' | 'voz',
-  RecadosPorMidia
-> = {
-  texto: {
-    compactando: 'compactando — sua mensagem continua aqui e sai quando a barra sumir',
-    'envio-em-voo':
-      'a mensagem anterior ainda não voltou confirmada — sua mensagem continua aqui',
-    'turno-em-voo': 'o agente ainda está respondendo — sua mensagem continua aqui',
-    'longo-demais': (tamanho) =>
-      `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
-  },
-  voz: {
-    compactando: 'compactando — o áudio não foi enviado, grave de novo quando a barra sumir',
-    'envio-em-voo':
-      'a mensagem anterior ainda não voltou confirmada — o áudio não foi enviado',
-    'turno-em-voo': 'o agente ainda está respondendo — o áudio não foi enviado',
-    'longo-demais': (tamanho) =>
-      `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
-  },
+const RECADO: Recados = {
+  compactando: 'compactando — sua mensagem continua aqui e sai quando a barra sumir',
+  'envio-em-voo':
+    'a mensagem anterior ainda não voltou confirmada — sua mensagem continua aqui',
+  'turno-em-voo': 'o agente ainda está respondendo — sua mensagem continua aqui',
+  'longo-demais': (tamanho) =>
+    `texto longo demais — ${tamanho.toLocaleString('pt-BR')} de ${LIMITE_DE_TEXTO.toLocaleString('pt-BR')} caracteres`,
 };
 
-/**
- * `texto` ausente é o caminho da VOZ: ali o texto só existe depois do STT, e
- * "campo vazio" não é uma recusa possível.
- */
 export function abrePorta(entrada: {
   texto?: string;
   /** Há arquivo retido no composer, esperando o toque de enviar. */
@@ -113,9 +83,7 @@ export function abrePorta(entrada: {
   turnoEmVoo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
-  midia?: 'texto' | 'voz';
 }): PortaDeEnvio {
-  const recado = RECADO[entrada.midia ?? 'texto'];
   // `vazio` é propriedade do GESTO, não do texto. Enquanto anexo e texto eram
   // caminhos separados isso dava no mesmo; com a foto retida no composer, não:
   // o Rica anexa, não escreve legenda nenhuma, toca em enviar — e cairia
@@ -128,20 +96,20 @@ export function abrePorta(entrada: {
     return {
       libera: false,
       motivo: 'longo-demais',
-      recado: recado['longo-demais'](entrada.texto.length),
+      recado: RECADO['longo-demais'](entrada.texto.length),
     };
   }
   if (entrada.compactando) {
-    return { libera: false, motivo: 'compactando', recado: recado.compactando };
+    return { libera: false, motivo: 'compactando', recado: RECADO.compactando };
   }
   // Espelha a guarda de `executar` em `lib/usa-envio.ts`. Ela continua lá como
   // defesa da máquina; a diferença é que agora alguém pergunta ANTES de limpar
   // o campo, então a recusa devolve o texto em vez de engoli-lo.
   if (entrada.faseEnvio === 'enviando' || entrada.faseEnvio === 'aceito') {
-    return { libera: false, motivo: 'envio-em-voo', recado: recado['envio-em-voo'] };
+    return { libera: false, motivo: 'envio-em-voo', recado: RECADO['envio-em-voo'] };
   }
   if (entrada.turnoEmVoo) {
-    return { libera: false, motivo: 'turno-em-voo', recado: recado['turno-em-voo'] };
+    return { libera: false, motivo: 'turno-em-voo', recado: RECADO['turno-em-voo'] };
   }
   // A trava do duplo envio de arquivo, que a máquina do anexo já fazia CALADA.
   // Ela continua lá como defesa (o `disabled` do botão pode sumir num
@@ -160,7 +128,7 @@ export type EfeitoEnvio = {
    * Não sai agora, mas SAI — fica pendurado à vista e o composer despacha
    * sozinho quando o compact terminar (`fila-de-envio.ts`).
    *
-   * Existe porque a frase de `RECADO.texto.compactando` era mentira: nada
+   * Existe porque a frase de `RECADO.compactando` era mentira: nada
    * reenviava, e o comentário do composer justificava a ausência de botão
    * dizendo que "não há algo a fazer além de esperar". Agora a promessa tem
    * quem a cumpra, e por isso este é o único caso em que o campo esvazia sem
@@ -192,7 +160,6 @@ export function preparaEnvio(entrada: {
   turnoEmVoo?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
-  midia?: 'texto' | 'voz';
   /**
    * O corpo veio da MÁQUINA, não do campo: é o "Reenviar"/"Tentar de novo" da
    * linha de estado, que despacha o texto pendurado de uma tentativa anterior.
@@ -225,8 +192,6 @@ export function preparaEnvio(entrada: {
   //   da anterior chega.
   // - `temAnexo` fica de fora — a fila carrega texto, e pendurar um arquivo fora
   //   do composer inventaria um segundo lugar onde ele pode estar.
-  // - `midia: 'voz'` fica de fora — o áudio recusado não tem onde ficar, e o
-  //   recado dele já é honesto ("grave de novo").
   // - `retomada` fica de fora — o corpo veio da máquina, que já o guarda com o
   //   botão de reenviar do lado; enfileirar criaria uma segunda cópia do mesmo
   //   texto em dois lugares que não sabem um do outro.
@@ -234,7 +199,6 @@ export function preparaEnvio(entrada: {
   //   ela segura carrega arquivo — mesmo motivo do `temAnexo`.
   const vaiParaFila =
     (porta.motivo === 'compactando' || porta.motivo === 'envio-em-voo') &&
-    (entrada.midia ?? 'texto') === 'texto' &&
     !entrada.temAnexo &&
     !entrada.retomada;
   if (vaiParaFila) {

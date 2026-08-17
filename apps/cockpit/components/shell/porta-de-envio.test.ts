@@ -57,7 +57,7 @@ test('texto recusado pelo compact vai para a fila, não fica preso no campo', ()
   );
 });
 
-test('só o TEXTO entra na fila — anexo, voz e retomada não têm onde ficar', () => {
+test('só o texto puro entra na fila — anexo e retomada não têm onde ficar', () => {
   const comFoto = preparaEnvio({
     texto: 'olha isso',
     temAnexo: true,
@@ -72,10 +72,6 @@ test('só o TEXTO entra na fila — anexo, voz e retomada não têm onde ficar',
     /sai quando/,
     'com anexo o envio continua manual — prometer despacho é a mentira que esta rodada matou',
   );
-
-  const voz = preparaEnvio({ compactando: true, faseEnvio: 'ocioso', midia: 'voz' });
-  assert.equal(voz.enfileira, false, 'áudio recusado não tem onde ficar; o recado dele é outro');
-  assert.ok(voz.aviso);
 
   const pendurado = preparaEnvio({
     texto: 'sobe o build',
@@ -288,15 +284,6 @@ test('sem arquivo em voo o gesto seguinte passa', () => {
     faseEnvio: 'ocioso',
   });
   assert.equal(porta.libera, true, 'anexo entregue não pode virar trava permanente');
-});
-
-test('a voz não tem campo, então "vazio" não é recusa possível pra ela', () => {
-  const gravando = abrePorta({ compactando: false, faseEnvio: 'ocioso' });
-  assert.equal(gravando.libera, true);
-
-  const noCompact = abrePorta({ compactando: true, faseEnvio: 'ocioso' });
-  assert.equal(noCompact.libera, false);
-  assert.ok(noCompact.libera === false && noCompact.recado, 'áudio descartado calado é o mesmo bug');
 });
 
 /**

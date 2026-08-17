@@ -371,16 +371,43 @@ async function agentInputError(res: Response): Promise<AgentInputError> {
 export async function postAgentInput(
   slug: string,
   text: string,
-  options?: { fresh?: boolean },
+  options?: { fresh?: boolean; origin?: 'text' | 'stt' },
 ): Promise<AgentInputResponse> {
   const idempotency_key = safeUUID();
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/input`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, idempotency_key, fresh: options?.fresh ?? false }),
+    body: JSON.stringify({
+      text,
+      idempotency_key,
+      fresh: options?.fresh ?? false,
+      origin: options?.origin ?? 'text',
+    }),
   });
   if (!res.ok) {
     throw await agentInputError(res);
+  }
+  return res.json();
+}
+
+export async function postAgentTranscription(
+  slug: string,
+  audioBlob: Blob,
+): Promise<{ text: string; duration_ms: number }> {
+  const fd = new FormData();
+  const ext = audioBlob.type.includes('mp4')
+    ? 'mp4'
+    : audioBlob.type.includes('ogg')
+      ? 'ogg'
+      : 'webm';
+  fd.append('audio', audioBlob, `voice.${ext}`);
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/transcription`, {
+    method: 'POST',
+    body: fd,
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`postAgentTranscription ${res.status}: ${txt}`);
   }
   return res.json();
 }
@@ -568,30 +595,6 @@ export async function postAgentQuotaRefresh(slug: string): Promise<QuotaRefreshR
   if (!res.ok) {
     const detail = await errorDetail(res, `postAgentQuotaRefresh failed: ${res.status}`);
     throw new AgentInputError(detail, res.status, detail);
-  }
-  return res.json();
-}
-
-export async function postAgentVoice(
-  slug: string,
-  audioBlob: Blob,
-): Promise<{ transcribed: string; tmux_delivered: boolean; duration_ms: number }> {
-  const fd = new FormData();
-  // Extensão segue o mime real do blob. Server confia no Content-Type, mas
-  // filename correto ajuda em debug/log.
-  const ext = audioBlob.type.includes('mp4')
-    ? 'mp4'
-    : audioBlob.type.includes('ogg')
-      ? 'ogg'
-      : 'webm';
-  fd.append('audio', audioBlob, `voice.${ext}`);
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/voice`, {
-    method: 'POST',
-    body: fd,
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`postAgentVoice ${res.status}: ${txt}`);
   }
   return res.json();
 }

@@ -2472,6 +2472,7 @@ class InputRequest(BaseModel):
     text: str = Field(min_length=1, max_length=65536)
     idempotency_key: str = Field(min_length=1, max_length=128)
     fresh: bool = False
+    origin: Literal["text", "stt"] = "text"
 
 
 class InputResponse(BaseModel):
@@ -3365,17 +3366,34 @@ async def send_agent_input(
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
     event_boundary_id = await db.max_event_id()
+    delivered_text = f"🎙 {payload.text}" if payload.origin == "stt" else payload.text
+    input_origin = (
+        _InputOrigin(meta={"kind": "stt", "raw_text": delivered_text})
+        if payload.origin == "stt"
+        else None
+    )
     if _agente_codex(agent):
         await _spawn_codex_agent_turn(
             slug,
             request,
-            text=payload.text,
+            text=delivered_text,
             fresh=payload.fresh,
+            input_origin=input_origin,
         )
     else:
-        nome_apos_clear = _nome_apos_clear(payload.text, agent["name"])
+        nome_apos_clear = (
+            _nome_apos_clear(payload.text, agent["name"])
+            if payload.origin == "text"
+            else None
+        )
         session_antes = await db.latest_jsonl_session_id(slug) if nome_apos_clear else None
-        result = await _send_tmux_result_or_409(agent["tmux_session"], payload.text)
+        result = await _send_tmux_result_or_409(
+            agent["tmux_session"],
+            delivered_text,
+            input_origin=input_origin,
+            db=db,
+            agent_slug=slug,
+        )
         if not result.delivered:
             raise HTTPException(
                 status_code=409,
@@ -3831,31 +3849,7 @@ def _agent_file_message(
     return text
 
 
-@router.post("/{slug}/voice")
-async def post_agent_voice(
-    slug: str, audio: UploadFile, request: Request
-) -> dict[str, Any]:
-    """Upload áudio → STT (gpt-4o-transcribe) → envia transcrito via send-keys.
-
-    - 404 quando agente não existe
-    - 422 quando mime não suportado ou tamanho > 10MB
-    - 502 `stt_failed` quando script STT retorna exit≠0
-    - 502 `stt_empty` quando transcrição vem vazia
-    - 504 `stt_timeout` quando STT estoura 30s
-    - 200 + {transcribed, tmux_delivered, duration_ms, event_boundary_id} no
-      caminho feliz. `tmux_delivered` indica apenas que a colagem no tmux foi
-      despachada; NÃO prova submissão nem entrega ao agente. A prova de
-      submissão é o eco do item `user` no stream, acima do
-      `event_boundary_id` (contrato: §3.1 de
-      docs/cockpit-v2-data-contract.md).
-    - `event_boundary_id` é o maior task_events.id observado imediatamente antes
-      do STT, impedindo que eventos chegados durante a transcrição caiam abaixo
-      da fronteira de confirmação do áudio.
-
-    Cleanup do arquivo temp acontece no `finally`.
-    """
-    agent = await _get_agent_or_404(request, slug)
-
+async def _transcribe_agent_audio(slug: str, audio: UploadFile) -> tuple[str, int]:
     base_mime = (audio.content_type or "").split(";")[0].strip()
     if base_mime not in _VOICE_ALLOWED_MIMES:
         raise HTTPException(
@@ -3866,8 +3860,6 @@ async def post_agent_voice(
     if len(content) > _VOICE_MAX_BYTES:
         raise HTTPException(status_code=422, detail="audio maior que 10MB")
 
-    db: GrupoBorgesDB = request.app.state.db
-    event_boundary_id = await db.max_event_id()
     started_at = time.monotonic()
     # stt-openai.sh só converte via ffmpeg extensões não reconhecidas (.oga, .opus…).
     # .webm vai direto pra OpenAI mas alguns encodings de browser falham. Salvar sempre
@@ -3996,56 +3988,62 @@ async def post_agent_voice(
             int((time.monotonic() - started_at) * 1000),
             int((time.monotonic() - stt_started_at) * 1000),
         )
-
-        # A MARCA DE ÁUDIO VALE PROS DOIS EXECUTORES. O ramo do Claude Code
-        # sempre entregou `🎙 {transcribed}`; o do Codex entregava a transcrição
-        # CRUA, indistinguível de texto digitado. Medido em 14/08: o áudio de
-        # 11,2 s virou turno (scope `cockpit-codex-turn-tara` no journal) e a
-        # transcrição entrou na thread — e ainda assim, perguntada se o áudio
-        # tinha chegado, a Tara respondeu *"aqui chegou apenas esta mensagem
-        # escrita"*. Ela não tinha como saber. O caminho do telecodex já
-        # marcava o dele (`_AUDIO_SKILL_PREFIX`, services/codex_reader.py); só
-        # o cockpit não marcava.
-        #
-        # `expected_text` do `message_origin` acompanha porque é casado contra o
-        # texto do rollout já saneado (`claim_message_origin`): marcar um lado
-        # só quebraria a origem `stt` da bolha.
-        falado = f"🎙 {transcribed}"
-        input_origin = _InputOrigin(meta={"kind": "stt", "raw_text": falado})
-        if _agente_codex(agent):
-            await _spawn_codex_agent_turn(
-                slug,
-                request,
-                text=falado,
-                input_origin=input_origin,
-            )
-            duration_ms = int((time.monotonic() - started_at) * 1000)
-            return {
-                "transcribed": transcribed,
-                "tmux_delivered": True,
-                "duration_ms": duration_ms,
-                "event_boundary_id": event_boundary_id,
-            }
-
-        delivered = await _send_tmux_or_409(
-            agent["tmux_session"],
-            falado,
-            input_origin=input_origin,
-            db=db,
-            agent_slug=slug,
-        )
-        duration_ms = int((time.monotonic() - started_at) * 1000)
-        return {
-            "transcribed": transcribed,
-            "tmux_delivered": delivered,
-            "duration_ms": duration_ms,
-            "event_boundary_id": event_boundary_id,
-        }
+        return transcribed, int((time.monotonic() - started_at) * 1000)
     finally:
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+@router.post("/{slug}/transcription")
+async def post_agent_transcription(
+    slug: str, audio: UploadFile, request: Request
+) -> dict[str, Any]:
+    await _get_agent_or_404(request, slug)
+    text, duration_ms = await _transcribe_agent_audio(slug, audio)
+    return {"text": text, "duration_ms": duration_ms}
+
+
+@router.post("/{slug}/voice")
+async def post_agent_voice(
+    slug: str, audio: UploadFile, request: Request
+) -> dict[str, Any]:
+    """Upload áudio → STT → envia transcrito, preservado para o cockpit v1."""
+    agent = await _get_agent_or_404(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+    event_boundary_id = await db.max_event_id()
+    transcribed, duration_ms = await _transcribe_agent_audio(slug, audio)
+
+    falado = f"🎙 {transcribed}"
+    input_origin = _InputOrigin(meta={"kind": "stt", "raw_text": falado})
+    if _agente_codex(agent):
+        await _spawn_codex_agent_turn(
+            slug,
+            request,
+            text=falado,
+            input_origin=input_origin,
+        )
+        return {
+            "transcribed": transcribed,
+            "tmux_delivered": True,
+            "duration_ms": duration_ms,
+            "event_boundary_id": event_boundary_id,
+        }
+
+    delivered = await _send_tmux_or_409(
+        agent["tmux_session"],
+        falado,
+        input_origin=input_origin,
+        db=db,
+        agent_slug=slug,
+    )
+    return {
+        "transcribed": transcribed,
+        "tmux_delivered": delivered,
+        "duration_ms": duration_ms,
+        "event_boundary_id": event_boundary_id,
+    }
 
 
 @router.post("/{slug}/image")
