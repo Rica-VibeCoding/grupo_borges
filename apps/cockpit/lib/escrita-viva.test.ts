@@ -6,7 +6,12 @@ import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import type { AssistenteDeTrabalho, ItemDoFeed } from '../components/feed/grupo-ferramentas.ts';
-import { escrevendoNoFim, saindoOutputNoFim } from './escrita-viva.ts';
+import {
+  escrevendoNoFim,
+  JANELA_OUTPUT_CODEX_MS,
+  saindoOutputNoCodex,
+  saindoOutputNoFim,
+} from './escrita-viva.ts';
 
 let proximoId = 0;
 
@@ -80,5 +85,32 @@ describe('saindoOutputNoFim', () => {
 
   it('feed vazio não tem output', () => {
     assert.equal(saindoOutputNoFim([]), false);
+  });
+});
+
+describe('saindoOutputNoCodex', () => {
+  const AGORA = Date.parse('2026-08-17T08:00:00.000Z');
+
+  it('o lookup do Codex é vazio por construção, e por isso a régua do CC gruda', () => {
+    // O DEFEITO DA FOTO DE 17/08, em uma linha: `function_call_output` chega
+    // com o texto redigido e `visible=False`, então o lookup nunca casa o
+    // `tool_use`. Vinte minutos depois do turno acabar, a régua do CC ainda diz
+    // que tem ferramenta em voo — e a bolinha ficava olhando pra cima.
+    const feed = [assistente([TEXTO, FERRAMENTA])];
+    assert.equal(saindoOutputNoFim(feed, new Map()), true);
+    assert.equal(saindoOutputNoCodex(AGORA - 20 * 60_000, AGORA), false);
+  });
+
+  it('rollout que acabou de crescer é output saindo', () => {
+    assert.equal(saindoOutputNoCodex(AGORA - 4_000, AGORA), true);
+  });
+
+  it('o silêncio desliga sozinho no fim da janela', () => {
+    assert.equal(saindoOutputNoCodex(AGORA - (JANELA_OUTPUT_CODEX_MS - 1), AGORA), true);
+    assert.equal(saindoOutputNoCodex(AGORA - JANELA_OUTPUT_CODEX_MS, AGORA), false);
+  });
+
+  it('conversa sem nenhuma mensagem não tem âncora — e não produz nada', () => {
+    assert.equal(saindoOutputNoCodex(null, AGORA), false);
   });
 });

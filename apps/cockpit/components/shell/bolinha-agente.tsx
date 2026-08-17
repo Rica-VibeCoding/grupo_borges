@@ -211,9 +211,11 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
                 />
                 <g className="ck-bolinha-rosto" ref={rostoRef}>
                   <g className="ck-bolinha-vista">
-                    <g className="ck-bolinha-olhos">
-                      <circle className="ck-bolinha-olho" cx="24" cy="31" r="3.1" />
-                      <circle className="ck-bolinha-olho" cx="40" cy="31" r="3.1" />
+                    <g className="ck-bolinha-varre">
+                      <g className="ck-bolinha-olhos">
+                        <circle className="ck-bolinha-olho" cx="24" cy="31" r="3.1" />
+                        <circle className="ck-bolinha-olho" cx="40" cy="31" r="3.1" />
+                      </g>
                     </g>
                   </g>
                 </g>

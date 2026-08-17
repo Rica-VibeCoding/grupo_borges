@@ -12,7 +12,7 @@
 // `components/feed/**` é território do Hiro (cockpit-v2-ownership.md §2) —
 // este arquivo só CONSOME o que já é público de lá, nunca edita.
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
@@ -34,7 +34,12 @@ import {
   type EcoPendente,
 } from '@/lib/codex/eco-pendente.ts';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
-import { publicaEscritaViva, saindoOutputNoFim } from '@/lib/escrita-viva.ts';
+import {
+  JANELA_OUTPUT_CODEX_MS,
+  publicaEscritaViva,
+  saindoOutputNoCodex,
+  saindoOutputNoFim,
+} from '@/lib/escrita-viva.ts';
 import { textosDoUsuario } from '@/lib/textos-do-usuario.ts';
 import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
@@ -381,12 +386,17 @@ function FeedCodex({ agentSlug }: { agentSlug: string }) {
   // turno — reportado pelo Rica com vídeo. O `isRunning` do stream não existe
   // neste ramo, então quem diz que o turno corre é a frota, igual à linha viva
   // logo abaixo.
+  //
+  // E a régua do "produzindo" é OUTRA, não a do CC: o Codex não entrega
+  // resultado de ferramenta, então `saindoOutputNoFim` gruda em `true` e a
+  // bolinha travava olhando pra cima (foto do Rica, 17/08). O porquê e o número
+  // moram em `saindoOutputNoCodex`.
+  const saindoOutput = usaOutputRecenteDoCodex(desdeMs);
   useEffect(() => {
-    const produzindo =
-      statusDaFrota === 'trabalhando' && !vencida && saindoOutputNoFim(itensBase, lookup);
+    const produzindo = statusDaFrota === 'trabalhando' && !vencida && saindoOutput;
     publicaEscritaViva(agentSlug, produzindo);
     return () => publicaEscritaViva(agentSlug, false);
-  }, [agentSlug, statusDaFrota, vencida, itensBase, lookup]);
+  }, [agentSlug, statusDaFrota, vencida, saindoOutput]);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];
@@ -425,4 +435,23 @@ function FeedCodex({ agentSlug }: { agentSlug: string }) {
       <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando} />
     </div>
   );
+}
+
+/** O prazo de `saindoOutputNoCodex` com despertador — mesmo desenho do
+ *  `usaLinhaVivaVencida`, e pela mesma razão: sem alguém para acordar o
+ *  componente, o prazo só venceria no próximo poll que trouxesse mensagem
+ *  nova, e um turno que acaba não traz nenhuma. É esse silêncio que deixava a
+ *  bolinha parada olhando pra cima. */
+function usaOutputRecenteDoCodex(desdeMs: number | null): boolean {
+  const [, redesenha] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    if (desdeMs === null) return;
+    const faltamMs = desdeMs + JANELA_OUTPUT_CODEX_MS - Date.now();
+    if (faltamMs <= 0) return;
+    const despertador = setTimeout(redesenha, faltamMs);
+    return () => clearTimeout(despertador);
+  }, [desdeMs]);
+
+  return saindoOutputNoCodex(desdeMs, Date.now());
 }

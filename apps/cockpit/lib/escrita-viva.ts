@@ -57,6 +57,33 @@ export function saindoOutputNoFim(
   return trabalhoEmVooNoFim(itens, lookup) || escrevendoNoFim(itens);
 }
 
+/** Quanto silêncio no rollout do Codex ainda conta como "output saindo".
+ *
+ *  Trinta segundos, medido: 3.140 intervalos entre eventos VISÍVEIS em 36
+ *  sessões do Codex (rollouts de 13 a 17/08) dão mediana 6,9 s e p90 = 23 s, e
+ *  30 s cobre 92,6% deles. Os 7,4% que sobram não são erro — silêncio de mais
+ *  de meio minuto sem nada sair É "pensando", que é justamente o outro estado
+ *  que a bolinha tem. O que este prazo garante é o fim: acabado o turno, ela
+ *  sai de "executando" em no máximo 30 s, sempre. */
+export const JANELA_OUTPUT_CODEX_MS = 30_000;
+
+/** A MESMA PERGUNTA, para o feed do Codex, onde a régua acima não funciona.
+ *
+ *  O Codex nunca entrega resultado de ferramenta ao front — `function_call_output`
+ *  é gravado com `visible=False` e o texto redigido, por decisão de segurança do
+ *  reader (`apps/api/services/codex_reader.py`). Sem resultado, `execucaoDaParte`
+ *  responde `running` para SEMPRE, e `saindoOutputNoFim` fica preso em `true`
+ *  desde a primeira ferramenta do turno: a bolinha da Tara travava olhando pra
+ *  cima até o prazo de 5 min da linha viva. Foto do Rica em 17/08.
+ *
+ *  Então aqui a pergunta muda de "a ferramenta voltou?" — que aquele ramo não
+ *  tem como responder — para "o rollout cresceu agora?", que é literalmente o
+ *  que "tem output saindo" quer dizer. `desdeMs` é a mesma âncora da linha viva:
+ *  o timestamp da última mensagem. */
+export function saindoOutputNoCodex(desdeMs: number | null, agoraMs: number): boolean {
+  return desdeMs !== null && agoraMs - desdeMs < JANELA_OUTPUT_CODEX_MS;
+}
+
 /** Chamado pelo feed a cada mudança. Só notifica na virada. */
 export function publicaEscritaViva(slug: string, escrevendo: boolean): void {
   if ((porAgente.get(slug) ?? false) === escrevendo) return;
