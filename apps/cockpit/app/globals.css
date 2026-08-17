@@ -1251,3 +1251,113 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ck-sacudir { animation: none; }
 }
+
+/* ---------------------------------------------------------------------------
+ * A BOLINHA — presença do agente na faixa entre o feed e o composer.
+ *
+ * SVG desenhado à mão, zero dependência: só o runtime do Rive pesa 717 KB
+ * (medido em 17/08, brotli), e nenhuma peça pronta da stack (spinner, skeleton)
+ * sabe dizer mais do que "está carregando".
+ *
+ * Off-white de COR ÚNICA — o gradiente é entre dois tons do mesmo off-white, o
+ * que dá volume de esfera sem a cor virar sinal. E o rosto é só dois pontos:
+ * boca e sobrancelha lêem como emoji nesse tamanho. Sem cor e sem boca, quem
+ * diz o estado é o RITMO, e é por isso que os keyframes abaixo são o componente
+ * de verdade — o TSX só escolhe a classe.
+ *
+ * Estado entra por `data-estado` no root do SVG, como no `.ck-pulso`. */
+.ck-bolinha {
+  --ck-bolinha-claro: oklch(0.988 0.007 88.6);  /* #fdfbf6 */
+  --ck-bolinha-escuro: oklch(0.900 0.019 83.1); /* #e4ddd0 */
+  --ck-bolinha-olho: oklch(0.180 0.022 237.3);  /* #08131a */
+  display: block;
+  overflow: visible;
+  width: 42px;
+  height: 45px;
+  flex: none;
+  touch-action: manipulation;
+}
+
+.ck-bolinha-sombra {
+  fill: #000;
+  opacity: 0.4;
+  transform-origin: 32px 60px;
+  animation: ck-bolinha-sombra 3.9s ease-in-out infinite;
+}
+.ck-bolinha-lustro { fill: #fff; opacity: 0.35; }
+.ck-bolinha-olho {
+  fill: var(--ck-bolinha-olho);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.11s ease;
+}
+
+/* `flutua` e `respira` moram em nós DIFERENTES: dois keyframes disputando o
+ * `transform` do mesmo elemento se sobrescrevem. E os períodos são desiguais de
+ * propósito (3,9 × 5,3 s) — iguais, entram em fase e colapsam num seno só, que é
+ * o metrônomo que a bolinha existe pra não ser. */
+.ck-bolinha-voa { transform-origin: 32px 32px; animation: ck-bolinha-flutua 3.9s ease-in-out infinite; }
+.ck-bolinha-infla { transform-origin: 32px 32px; animation: ck-bolinha-respira 5.3s ease-in-out infinite; }
+.ck-bolinha-cabeca { transform-origin: 32px 34px; transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.5, 1); }
+/* Nó SÓ do toque: animação CSS vence `style` inline no mesmo elemento, então sem
+ * este `<g>` o squish não apareceria enquanto o agente responde ou chama. */
+.ck-bolinha-toque { transform-origin: 32px 32px; }
+.ck-bolinha-rosto { transition: transform 0.5s cubic-bezier(0.34, 0.01, 0.2, 1); }
+/* `transform-box` obrigatório: um `<g>` sem ele escala a partir do canto (0,0) do
+ * viewBox — o "arregalar" vira os olhos escorregando pro canto de baixo. */
+.ck-bolinha-olhos {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.45s cubic-bezier(0.34, 0.01, 0.2, 1);
+}
+
+@keyframes ck-bolinha-flutua { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2.6px); } }
+@keyframes ck-bolinha-respira { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+@keyframes ck-bolinha-sombra {
+  0%, 100% { transform: scaleX(1); opacity: 0.4; }
+  50% { transform: scaleX(0.88); opacity: 0.29; }
+}
+/* Falar sem boca é tremor fino e RÁPIDO, de amplitude pequena: é voz, não
+ * terremoto. Assimétrico porque ciclo simétrico lê como VU meter. */
+@keyframes ck-bolinha-voz {
+  0%, 100% { transform: scale(1, 1); }
+  35% { transform: scale(1.015, 1.055); }
+  70% { transform: scale(0.99, 1.02); }
+}
+@keyframes ck-bolinha-pulinho {
+  0% { transform: translateY(0) scale(1); }
+  28% { transform: translateY(-9px) scale(1.06, 0.94); }
+  58% { transform: translateY(0) scale(0.94, 1.06); }
+  100% { transform: translateY(0) scale(1); }
+}
+/* Batida DUPLA com silêncio depois: lê como chamado, não como "processando". */
+@keyframes ck-bolinha-coracao {
+  0% { transform: scale(1); }
+  8% { transform: scale(1.05); }
+  16% { transform: scale(1); }
+  24% { transform: scale(1.075); }
+  34% { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+.ck-bolinha[data-piscando='true'] .ck-bolinha-olho { transform: scaleY(0.09); }
+
+.ck-bolinha[data-estado='pensando'] .ck-bolinha-voa { animation-duration: 2.4s; }
+.ck-bolinha[data-estado='pensando'] .ck-bolinha-infla { animation-duration: 3.3s; }
+.ck-bolinha[data-estado='pensando'] .ck-bolinha-cabeca { transform: rotate(-5deg); }
+
+.ck-bolinha[data-estado='falando'] .ck-bolinha-cabeca { animation: ck-bolinha-voz 0.5s cubic-bezier(0.3, 0.7, 0.4, 1) infinite; }
+.ck-bolinha[data-estado='falando'] .ck-bolinha-infla { animation-duration: 1.5s; }
+
+.ck-bolinha[data-estado='pronto'] .ck-bolinha-cabeca { animation: ck-bolinha-pulinho 0.62s cubic-bezier(0.3, 1.4, 0.5, 1) 1; }
+
+.ck-bolinha[data-estado='atencao'] .ck-bolinha-cabeca { animation: ck-bolinha-coracao 1.9s ease-in-out infinite; }
+.ck-bolinha[data-estado='atencao'] .ck-bolinha-olhos { transform: scale(1.16); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-bolinha,
+  .ck-bolinha * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

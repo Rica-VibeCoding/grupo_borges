@@ -62,6 +62,7 @@ import { MiniaturaAnexo } from './miniatura-anexo';
 import { PilulaDeTokens } from './pilula-de-tokens';
 import { BarraCompact } from './barra-compact';
 import { BlocoDaFila } from './bloco-da-fila';
+import { BolinhaAgente } from './bolinha-agente';
 import {
   FILA_VAZIA,
   devolveAoInicio,
@@ -687,6 +688,11 @@ export function Composer({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
+      {/* A BOLINHA — a presença do agente, no alto de tudo que o composer
+          empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
+          texto no feed, isto é alguém do outro lado. As duas fontes são as
+          mesmas do `■` logo abaixo, e por isso não abre conexão nova. */}
+      <BolinhaAgente status={daFrota?.status} turnoVivo={turnoVivo} />
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />

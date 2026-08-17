@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bolinha — duas direções (Hiro, 17/08)</title>
+<!--
+  Amostra das DUAS direções da resposta do Hiro ao Rica (17/08), sem tocar no
+  proto-bonequinho.html. Mesmas restrições: cor única off-white, sem anel, sem
+  partícula, zero dependência.
+
+  A — ORB ABSTRATO: sem rosto. O brilho especular deriva devagar — é o olhar
+  sem olho. O estado mora inteiro no ritmo (respiração, tremor de voz, squash
+  de aterrissagem, batida dupla de coração).
+  B — ROSTO MÍNIMO: só dois pontos. Sem brilho na pupila, sem boca, sem
+  sobrancelha. Mantém a piscada sorteada (o charme) e corta a leitura de emoji.
+
+  Os dois ciclam os cinco estados sozinhos, para comparar o vocabulário
+  inteiro sem tocar em nada. Toque na bolinha: ela responde.
+
+  Correções do Daniel (17/08), medidas com Playwright antes de mexer:
+  1. o brilho do A perdia a inclinação: `transform` do CSS descarta o atributo
+     `transform="rotate(-24 …)"` (computed devolvia matrix sem rotação). A órbita
+     virou um <g> próprio, e a elipse guarda a inclinação.
+  2. no B, `.olhos` sem `transform-box` escala a partir de (0,0) do viewBox: o
+     scale(1.18) do "precisa de você" empurrava os olhos 4,3 × 5,4 unidades pra
+     baixo e pra direita — arregalar virou escorregar.
+  3. o toque morria em falando/pronto/atenção: animação CSS vence style inline no
+     mesmo nó. O squash ganhou um <g> sem animação só dele.
+  4. as duas recomendações que o próprio Hiro me deu e não aplicou aqui: ouvir
+     `change` do matchMedia e anunciar o estado pela legenda com aria-live.
+-->
+<style>
+  :root {
+    --fundo: #09090b;
+    --superficie: #131317;
+    --borda: #26262e;
+    --texto: #e8e8ec;
+    --apagado: #8a8a95;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.55 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    padding: 22px 16px calc(28px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; letter-spacing: -.01em; }
+  p.sub { color: var(--apagado); font-size: 13px; margin: 0 0 20px; }
+
+  .dupla { display: grid; gap: 14px; }
+  @media (min-width: 700px) { .dupla { grid-template-columns: 1fr 1fr; } }
+
+  .cartao {
+    border: 1px solid var(--borda); border-radius: 18px; overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 50% 14%, rgba(255,255,255,.055), transparent 62%),
+      var(--superficie);
+    display: grid; place-items: center; padding: 26px 0 20px; position: relative;
+  }
+  .cartao .nome {
+    position: absolute; top: 12px; left: 14px;
+    font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--apagado);
+  }
+  .cartao .estado {
+    position: absolute; bottom: 10px; left: 0; right: 0; text-align: center;
+    font-size: 12.5px; color: var(--apagado);
+  }
+  .cartao .estado b { color: var(--texto); font-weight: 500; }
+
+  .bolinha { overflow: visible; display: block; touch-action: manipulation; width: 118px; height: 126px;
+    --corpo-claro: #fdfbf6; --corpo-escuro: #e4ddd0; }
+  .sombra { fill: #000; opacity: .4; transform-origin: 32px 60px; animation: bateSombra 3.9s ease-in-out infinite; }
+  .corpo  { transform-origin: 32px 32px; }
+  .lustro { fill: #fff; opacity: .35; }
+
+  /* Períodos INCOMENSURÁVEIS (3,9 × 5,3): mesma fase colapsa os dois num seno
+     só — o metrônomo disfarçado. Aplicado nos dois protótipos. */
+  .voa   { transform-origin: 32px 32px; animation: flutua 3.9s ease-in-out infinite; }
+  .infla { transform-origin: 32px 32px; animation: respira 5.3s ease-in-out infinite; }
+  .corpo-e-rosto { transform-origin: 32px 32px; }
+  /* nó só do toque: animação de estado vence style inline no mesmo nó, então o
+     squash precisa de um nó que nenhum keyframe dispute. */
+  .toque { transform-origin: 32px 32px; transition: transform .45s cubic-bezier(.34,1.3,.5,1); }
+
+  @keyframes flutua     { 0%,100% { transform: translateY(1px); } 50% { transform: translateY(-2.6px); } }
+  @keyframes respira    { 0%,100% { transform: scale(1); }        50% { transform: scale(1.035); } }
+  @keyframes bateSombra { 0%,100% { transform: scaleX(1); opacity: .4; } 50% { transform: scaleX(.88); opacity: .29; } }
+  @keyframes pulinho    { 0% { transform: translateY(0) scale(1); }
+                          28% { transform: translateY(-9px) scale(1.06,.94); }
+                          58% { transform: translateY(0) scale(.94,1.06); }
+                          100% { transform: translateY(0) scale(1); } }
+
+  /* ---------------- A: orb abstrato ---------------- */
+  /* O brilho vagueia numa órbita lenta — o "olhar" sem olho. */
+  .orb .lustro-orbita { animation: deriva 9.7s ease-in-out infinite; }
+  @keyframes deriva { 0%,100% { transform: translate(0,0); }
+                      30%     { transform: translate(2.6px,1.4px); }
+                      62%     { transform: translate(-1.8px,2.2px); } }
+  /* falando: tremor fino e rápido, assimétrico (abre rápido, fecha lento) —
+     amplitude pequena de propósito: é voz, não terremoto. */
+  @keyframes tremorVoz { 0%,100% { transform: scale(1,1); } 35% { transform: scale(1.015,1.055); } 70% { transform: scale(.99,1.02); } }
+  /* precisa-de-você: batida dupla de coração, com silêncio entre elas. */
+  @keyframes coracao { 0% { transform: scale(1); } 8% { transform: scale(1.05); } 16% { transform: scale(1); }
+                       24% { transform: scale(1.075); } 34% { transform: scale(1); } 100% { transform: scale(1); } }
+
+  .orb.est-pensando .infla { animation-duration: 2.6s; }
+  .orb.est-pensando .voa   { animation-duration: 3.3s; }
+  .orb.est-falando .corpo-e-rosto { animation: tremorVoz .5s cubic-bezier(.3,.7,.4,1) infinite; }
+  .orb.est-falando .infla { animation-duration: 2.1s; }
+  .orb.est-pronto  .corpo-e-rosto { animation: pulinho .62s cubic-bezier(.3,1.4,.5,1) 1; }
+  .orb.est-atencao .corpo-e-rosto { animation: coracao 1.9s ease-in-out infinite; }
+
+  /* ---------------- B: rosto mínimo ---------------- */
+  .olho { fill: #08131a; transform-box: fill-box; transform-origin: center; transition: transform .11s ease; }
+  .olhos { transform-box: fill-box; transform-origin: center; transition: transform .5s cubic-bezier(.34,.01,.2,1); }
+  .piscando .olho { transform: scaleY(.09); }
+
+  .min.est-pensando .infla { animation-duration: 2.6s; }
+  .min.est-pensando .voa   { animation-duration: 3.3s; }
+  .min.est-pensando .olhos { transform: translateY(-1.6px); } /* olhar pro alto: pensando */
+  .min.est-falando .infla  { animation-duration: 2.1s; }
+  .min.est-falando .corpo-e-rosto { animation: tremorVoz .5s cubic-bezier(.3,.7,.4,1) infinite; }
+  .min.est-pronto  .corpo-e-rosto { animation: pulinho .62s cubic-bezier(.3,1.4,.5,1) 1; }
+  .min.est-atencao .olhos  { transform: scale(1.18); } /* olho arregalado, sem sobrancelha */
+  .min.est-atencao .corpo-e-rosto { animation: coracao 1.9s ease-in-out infinite; }
+
+  .nota { font-size: 12.5px; color: var(--apagado); margin-top: 14px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sombra, .voa, .infla, .lustro-orbita, .corpo-e-rosto, .toque, .olhos, .olho { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<h1>A bolinha, duas direções</h1>
+<p class="sub">Mesma esfera off-white, mesmo palco. <b style="color:var(--texto)">A</b> não tem rosto — o brilho vagueia e o ritmo fala. <b style="color:var(--texto)">B</b> tem só dois pontos — a piscada fica, o emoji sai. Os dois ciclam os cinco estados sozinhos.</p>
+
+<div class="dupla">
+  <div class="cartao">
+    <span class="nome">A · orb abstrato</span>
+    <div id="bolaA"></div>
+    <div class="estado" id="estadoA" aria-live="polite"></div>
+  </div>
+  <div class="cartao">
+    <span class="nome">B · rosto mínimo</span>
+    <div id="bolaB"></div>
+    <div class="estado" id="estadoB" aria-live="polite"></div>
+  </div>
+</div>
+
+<p class="nota">Toque na bolinha: ela responde. Períodos 3,9 × 5,3 s (incomensuráveis, sem metrônomo). No tamanho real ela tem 42 px — aqui está ~3× para o rosto aparecer. Amostra do Hiro, 17/08, sem tocar no protótipo original.</p>
+
+<script>
+  const consultaCalmo = matchMedia('(prefers-reduced-motion: reduce)');
+  let calmo = consultaCalmo.matches;
+  consultaCalmo.addEventListener('change', (ev) => { calmo = ev.matches; });
+
+  function svg(idGrad, comOlhos) {
+    const rosto = comOlhos ? `
+          <g class="olhos">
+            <circle class="olho esq" cx="24" cy="30" r="3.1"/>
+            <circle class="olho dir" cx="40" cy="30" r="3.1"/>
+          </g>` : `
+          <g class="lustro-orbita"><ellipse class="lustro" cx="24" cy="20" rx="7.4" ry="4.9" transform="rotate(-24 24 20)"/></g>`;
+    return `
+      <svg class="bolinha" viewBox="0 0 64 68" role="img" aria-label="estado do agente">
+        <defs>
+          <radialGradient id="${idGrad}" cx="34%" cy="26%" r="78%">
+            <stop offset="0%" stop-color="var(--corpo-claro)"/>
+            <stop offset="100%" stop-color="var(--corpo-escuro)"/>
+          </radialGradient>
+        </defs>
+        <ellipse class="sombra" cx="32" cy="60" rx="15" ry="2.6"/>
+        <g class="voa"><g class="corpo-e-rosto"><g class="toque"><g class="infla">
+          <circle class="corpo" cx="32" cy="32" r="23.5" fill="url(#${idGrad})"/>
+          ${rosto}
+        </g></g></g></g>
+      </svg>`;
+  }
+
+  const NOMES = {
+    parado:   '<b>Parado</b> · esperando você',
+    pensando: '<b>Pensando</b> · respiração funda',
+    falando:  '<b>Respondendo</b> · tremor de voz',
+    pronto:   '<b>Terminou</b> · aterrissagem',
+    atencao:  '<b>Precisa de você</b> · batida dupla',
+  };
+  const ROTEIRO = ['parado', 'pensando', 'falando', 'pronto', 'atencao'];
+
+  function monta(destinoId, estadoId, classe, comOlhos, idGrad) {
+    const destino = document.getElementById(destinoId);
+    destino.innerHTML = svg(idGrad, comOlhos);
+    const el = destino.firstElementChild;
+    el.classList.add(classe);
+    const rotulo = document.getElementById(estadoId);
+    return { el, rotulo };
+  }
+
+  const A = monta('bolaA', 'estadoA', 'orb', false, 'gradA');
+  const B = monta('bolaB', 'estadoB', 'min', true, 'gradB');
+  const alvos = [A, B];
+
+  const TODAS = ['est-parado', 'est-pensando', 'est-falando', 'est-pronto', 'est-atencao'];
+  function aplica(alvo, estado) {
+    alvo.el.classList.remove(...TODAS);
+    if (estado === 'pronto') void alvo.el.getBoundingClientRect(); // rearmar o one-shot
+    if (estado !== 'parado') alvo.el.classList.add('est-' + estado);
+    alvo.rotulo.innerHTML = NOMES[estado];
+  }
+
+  // Ciclo contínuo: os dois andam juntos pra comparar o MESMO estado lado a lado.
+  let passo = 0;
+  function cicla() {
+    const estado = ROTEIRO[passo % ROTEIRO.length];
+    for (const alvo of alvos) aplica(alvo, estado);
+    passo++;
+    setTimeout(cicla, estado === 'parado' ? 2200 : 3400);
+  }
+  cicla();
+
+  // Piscada: só a B tem olhos. Sorteada, às vezes dupla — como no original.
+  function pisca() {
+    if (calmo) return;
+    B.el.classList.add('piscando');
+    setTimeout(() => B.el.classList.remove('piscando'), 135);
+    if (Math.random() < 0.22) setTimeout(pisca, 265);
+  }
+  (function agenda() { setTimeout(() => { pisca(); agenda(); }, 2400 + Math.random() * 4100); })();
+
+  // Toque: squash rápido nos dois; na B, pisca junto.
+  for (const alvo of alvos) {
+    alvo.el.addEventListener('pointerdown', () => {
+      if (calmo) return;
+      const nucleo = alvo.el.querySelector('.toque');
+      nucleo.style.transform = 'scale(.92)';
+      setTimeout(() => { nucleo.style.transform = ''; }, 190);
+      if (alvo === B) pisca();
+    });
+  }
+</script>
+</body>
+</html>

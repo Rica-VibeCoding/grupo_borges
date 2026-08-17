@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bolinha — protótipo do cockpit</title>
+<!--
+  Protótipo estático, servido de public/. NÃO entra no bundle do cockpit.
+  Tudo é SVG + CSS + um punhado de JS: zero dependência, zero WASM — contra 717 KB
+  só do runtime do Rive (medido em 17/08/2026, brotli via jsDelivr).
+
+  Quatro decisões que sobrevivem quando isto virar componente React:
+
+  1. A PISCADA É JS, NÃO KEYFRAME. Piscar em intervalo fixo lê como semáforo; olho vivo
+     pisca irregular, e às vezes duas vezes seguidas. O sorteio é o que separa "animação
+     tocando" de "tem alguém aí".
+  2. O ROSTO É SÓ DOIS PONTOS. Boca, sobrancelha e brilho na pupila saíram na revisão
+     estética do Hiro (17/08, aprovada pelo Rica): olho em pílula com brilho e boquinha
+     sorrindo é território de emoji, e indicador de agente moderno é abstrato. Sem boca,
+     quem diz o estado é o RITMO — respiração, tremor de voz, aterrissagem, batida dupla.
+     A piscada fica, porque é ela que separa "tem alguém aí" de "animação tocando".
+  3. AS DUAS BOLINHAS SÃO INSTÂNCIAS DE VERDADE, não `<use href>`. O clone do `<use>` vive
+     num shadow tree que os seletores de classe (`.est-pensando .cabeca`) não atravessam — a
+     cópia nasceria sem nenhuma animação de estado. Por isso o SVG é gerado por função.
+  4. O ESTADO É UMA CLASSE. No cockpit ela sai de `isRunning`, da linha viva e do status da
+     frota, que já existem em `feed-da-conversa.tsx`. Nada de estado novo, nada de backend.
+-->
+<style>
+  :root {
+    --fundo: #09090b;
+    --superficie: #131317;
+    --superficie-2: #1b1b21;
+    --borda: #26262e;
+    --texto: #e8e8ec;
+    --apagado: #8a8a95;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.55 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    padding: 22px 16px calc(28px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; letter-spacing: -.01em; }
+  p.sub { color: var(--apagado); font-size: 13px; margin: 0 0 18px; }
+  .rotulo { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--apagado); margin: 0 0 8px; }
+  .secao { margin-bottom: 26px; }
+
+  /* ---------------- palco ---------------- */
+  .palco {
+    position: relative; display: grid; place-items: center;
+    height: 214px; border: 1px solid var(--borda); border-radius: 18px;
+    background:
+      radial-gradient(120% 90% at 50% 14%, rgba(255,255,255,.055), transparent 62%),
+      var(--superficie);
+    overflow: hidden;
+  }
+  .estado-texto { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 12.5px; color: var(--apagado); }
+  .estado-texto b { color: var(--texto); font-weight: 500; }
+
+  /* ---------------- a bolinha ----------------
+     UMA COR SÓ, off-white (ordem do Rica, 17/08). O gradiente continua, mas entre dois
+     tons do mesmo off-white: é o que dá volume de esfera sem virar mudança de cor. Como
+     a cor não sinaliza mais o estado — e o rosto agora é só dois pontos —, quem carrega o
+     recado é o RITMO: respiração, tremor de voz, aterrissagem e os movimentos de uma
+     passada só. */
+  .bolinha {
+    overflow: visible; display: block; touch-action: manipulation;
+    --corpo-claro: #fdfbf6; --corpo-escuro: #e4ddd0;
+  }
+  .bolinha.grande { width: 136px; height: 145px; }
+  .bolinha.real   { width: 42px;  height: 45px; flex: none; }
+
+  .sombra { fill: #000; opacity: .4; transform-origin: 32px 60px; animation: bateSombra 3.9s ease-in-out infinite; }
+  .corpo  { transform-origin: 32px 32px; }
+  /* Em off-white o brilho branco quase some: o que dá a esfera agora é o próprio
+     gradiente, e o lustro entra só como um véu. */
+  .lustro { fill: #fff; opacity: .35; }
+
+  /* `flutua` e `respira` moram em nós DIFERENTES de propósito: dois keyframes mexendo no
+     `transform` do mesmo elemento se sobrescrevem. O grupo externo sobe e desce, o de
+     dentro infla — juntos dão um balanço que nenhum dos dois dá sozinho.
+     ⚠️ OS PERÍODOS SÃO PROPOSITALMENTE DESIGUAIS (3,9 / 5,3 s). Com o mesmo período eles
+     entram em fase e colapsam num seno só — o metrônomo que este protótipo existe pra
+     evitar. Achado do Hiro na revisão de 17/08. */
+  .voa   { transform-origin: 32px 32px; animation: flutua 3.9s ease-in-out infinite; }
+  .infla { transform-origin: 32px 32px; animation: respira 5.3s ease-in-out infinite; }
+  .cabeca { transform-origin: 32px 34px; transition: transform .45s cubic-bezier(.34,1.3,.5,1); }
+  /* Nó só do toque. Animação CSS vence `style` inline no MESMO nó: com `falando` e
+     `atenção` animando a cabeça sem parar, o squish do toque simplesmente não apareceria.
+     Medido em 17/08 no protótipo A/B — o nó extra é o preço de o toque nunca falhar. */
+  .toque { transform-origin: 32px 32px; transition: transform .45s cubic-bezier(.34,1.3,.5,1); }
+
+  .olho { fill: #08131a; transform-box: fill-box; transform-origin: center; transition: transform .11s ease; }
+  .rosto { transition: transform .5s cubic-bezier(.34,.01,.2,1); }
+  /* `transform-box` obrigatório: um `<g>` sem ele escala a partir do canto (0,0) do
+     viewBox, e o "arregalar" do estado de atenção vira os olhos escorregando pra baixo
+     e pra direita. Achado medindo o rascunho do Hiro, 17/08. */
+  .olhos { transform-box: fill-box; transform-origin: center; transition: transform .45s cubic-bezier(.34,.01,.2,1); }
+
+  @keyframes flutua     { 0%,100% { transform: translateY(1px); }   50% { transform: translateY(-2.6px); } }
+  @keyframes respira    { 0%,100% { transform: scale(1); }          50% { transform: scale(1.035); } }
+  @keyframes bateSombra { 0%,100% { transform: scaleX(1); opacity: .4; } 50% { transform: scaleX(.88); opacity: .29; } }
+  /* Sem boca, falar é um tremor fino e RÁPIDO no corpo inteiro — amplitude pequena de
+     propósito: é voz, não terremoto. Assimétrico pelo mesmo motivo que a boca era: um
+     ciclo simétrico lê como VU meter. (desenho do Hiro, 17/08) */
+  @keyframes tremorVoz  { 0%,100% { transform: scale(1,1); } 35% { transform: scale(1.015,1.055); } 70% { transform: scale(.99,1.02); } }
+  /* Atenção é batida DUPLA com silêncio depois — o padrão de coração é o que o olho lê
+     como chamado, e não como "ainda processando". */
+  @keyframes coracao    { 0% { transform: scale(1); } 8% { transform: scale(1.05); } 16% { transform: scale(1); }
+                          24% { transform: scale(1.075); } 34% { transform: scale(1); } 100% { transform: scale(1); } }
+  @keyframes pulinho    { 0% { transform: translateY(0) scale(1); }
+                          28% { transform: translateY(-9px) scale(1.06,.94); }
+                          58% { transform: translateY(0) scale(.94,1.06); }
+                          100% { transform: translateY(0) scale(1); } }
+  /* A piscada entra por classe, disparada pelo JS em intervalo sorteado. */
+  .piscando .olho { transform: scaleY(.09); }
+
+  /* ---------------- estados ----------------
+     Sem cor e sem boca, o estado mora inteiro no ritmo — e nos olhos, que só fazem duas
+     coisas: olhar pro alto quando pensa, arregalar quando chama. */
+  .est-pensando .voa    { animation-duration: 2.4s; }
+  .est-pensando .infla  { animation-duration: 3.3s; }
+  .est-pensando .cabeca { transform: rotate(-5deg); }
+
+  .est-falando .cabeca { animation: tremorVoz .5s cubic-bezier(.3,.7,.4,1) infinite; }
+  .est-falando .infla  { animation-duration: 1.5s; }
+
+  .est-pronto .cabeca { animation: pulinho .62s cubic-bezier(.3,1.4,.5,1) 1; }
+
+  .est-atencao .cabeca { animation: coracao 1.9s ease-in-out infinite; }
+  .est-atencao .olhos  { transform: scale(1.16); }
+
+  /* ---------------- moldura realista ---------------- */
+  .moldura { border: 1px solid var(--borda); border-radius: 14px; background: var(--superficie); overflow: hidden; }
+  .feed-falso { padding: 13px 13px 11px; border-bottom: 1px solid var(--borda); display: grid; gap: 7px; }
+  .bolha-msg { background: var(--superficie-2); border-radius: 13px; padding: 9px 12px; font-size: 13.5px; color: #cbcbd4; max-width: 82%; }
+  .bolha-msg.minha { background: #22323d; margin-left: auto; }
+  .faixa { display: flex; align-items: center; gap: 11px; padding: 8px 13px; min-height: 58px; border-bottom: 1px solid var(--borda); }
+  .legenda { font-size: 13px; color: var(--apagado); }
+  .legenda b { color: var(--texto); font-weight: 500; }
+  .composer-falso { display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: #5a5a64; font-size: 13.5px; }
+  .composer-falso .caixa { flex: 1; border: 1px solid var(--borda); border-radius: 10px; padding: 9px 12px; }
+
+  /* ---------------- peças prontas da stack (para comparar) ----------------
+     Réplica fiel: path do ícone `loader-2` do lucide 1.31.0 e as utilities do Tailwind 4
+     reescritas em CSS, porque este arquivo é HTML solto e não passa pelo build. */
+  .spinner-shadcn { width: 22px; height: 22px; flex: none; color: #d4d4d8; animation: girarUtility 1s linear infinite; }
+  .skeleton-shadcn { width: 96px; height: 22px; flex: none; border-radius: 6px; background: rgba(232,232,236,.1); animation: pulsarUtility 2s cubic-bezier(.4,0,.6,1) infinite; }
+  .pontinhos { display: inline-flex; gap: 5px; width: 42px; flex: none; justify-content: center; }
+  .pontinhos i { width: 7px; height: 7px; border-radius: 50%; background: #d4d4d8; animation: quicarUtility 1s infinite; }
+  .pontinhos i:nth-child(2) { animation-delay: .16s; }
+  .pontinhos i:nth-child(3) { animation-delay: .32s; }
+  @keyframes girarUtility  { to { transform: rotate(360deg); } }
+  @keyframes pulsarUtility { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+  @keyframes quicarUtility { 0%,100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(.8,0,1,1); }
+                             50% { transform: none; animation-timing-function: cubic-bezier(0,0,.2,1); } }
+
+  /* ---------------- controles ---------------- */
+  .botoes { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+  button {
+    font: inherit; font-size: 13px; color: var(--texto); background: var(--superficie);
+    border: 1px solid var(--borda); border-radius: 999px; padding: 8px 14px;
+    cursor: pointer; -webkit-tap-highlight-color: transparent; transition: border-color .2s, color .2s, background .2s;
+  }
+  button[aria-pressed="true"] { border-color: #7dd3fc; color: #7dd3fc; background: rgba(125,211,252,.10); }
+  button.destaque { border-color: #3f3f4a; color: #cfcfd8; }
+  .nota { font-size: 12.5px; color: var(--apagado); margin-top: 11px; }
+  .nota code { color: #b9c8d2; font-size: 12px; }
+
+  /* Ordem do sistema vence a estética: o iPhone tem esse ajuste, e animação eterna sem
+     freio é a reclamação clássica de PWA em celular. */
+  @media (prefers-reduced-motion: reduce) {
+    .sombra, .voa, .infla, .cabeca, .toque, .rosto, .olhos, .olho,
+    .spinner-shadcn, .skeleton-shadcn, .pontinhos i { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<h1>A bolinha</h1>
+<p class="sub">Off-white, cor única. Rosto mínimo: dois pontos, sem boca — o estado vem do ritmo. SVG e CSS à mão, sem biblioteca.</p>
+
+<div class="secao">
+  <div class="palco">
+    <div id="palco"></div>
+    <div class="estado-texto" id="estadoTexto" aria-live="polite"></div>
+  </div>
+
+  <div class="botoes" id="botoes">
+    <button data-estado="parado">Parado</button>
+    <button data-estado="pensando">Pensando</button>
+    <button data-estado="falando">Respondendo</button>
+    <button data-estado="pronto">Terminou</button>
+    <button data-estado="atencao">Precisa de você</button>
+  </div>
+  <div class="botoes">
+    <button class="destaque" id="btnTurno">▶︎ Simular um turno inteiro</button>
+  </div>
+  <p class="nota">Ele acompanha seu dedo e pisca em intervalo irregular. Sem cor e sem boca, o estado aparece no ritmo: respiração funda pensando, tremor fino falando, aterrissagem ao terminar, batida dupla quando precisa de você. No cockpit, a classe do estado sai de <code>isRunning</code>, da linha viva e do status da frota — nada de estado novo.</p>
+</div>
+
+<div class="secao">
+  <div class="rotulo">No tamanho real, entre o feed e o composer</div>
+  <div class="moldura">
+    <div class="feed-falso">
+      <div class="bolha-msg minha">qual o custo de esconder as ferramentas?</div>
+      <div class="bolha-msg">Custo 2 de 5 — o filtro cabe num ponto só.</div>
+    </div>
+    <div class="faixa">
+      <div id="real"></div>
+      <!-- Quem ANUNCIA a mudança de estado é esta legenda, não o `aria-label` do SVG:
+           trocar o rótulo de um `role="img"` não é lido por leitor de tela — é trabalho
+           morto. A bolinha fica com rótulo estável e o texto vivo entra por `aria-live`. -->
+      <span class="legenda" id="legendaReal" aria-live="polite"></span>
+    </div>
+    <div class="composer-falso"><span class="caixa">Escrever…</span><span>↑</span></div>
+  </div>
+  <p class="nota">É esta a escala que vale — e é ela que decidiu o desenho: em 42 px uma esfera lisa, sem os dois pontos, não diz nada que um spinner já não diga.</p>
+</div>
+
+<div class="secao">
+  <div class="rotulo">Comparação — as peças prontas da stack</div>
+  <!--
+    O que a stack REALMENTE tem hoje (apps/cockpit/components.json: shadcn new-york,
+    registry @shadcn, ícones lucide; UI instalada: avatar, badge, command, drawer,
+    dropdown-menu, popover, scroll-area). Fui no registry conferir em vez de supor:
+
+      • `spinner`  → `<Loader2Icon className="size-4 animate-spin" />`. É isso, o
+                     componente inteiro. (ui.shadcn.com/r/styles/new-york-v4/spinner.json)
+      • `skeleton` → `<div className="animate-pulse rounded-md bg-primary/10" />`.
+      • `avatar`   → Radix Avatar, já instalado aqui.
+
+    Abaixo estão os três, fiéis: o traço do spinner é o path real do ícone `loader-2`
+    do lucide 1.31.0, e as animações são as utilities do Tailwind 4 reescritas em CSS
+    (`animate-spin` = 1s linear infinite; `animate-pulse` = 2s cubic-bezier(.4,0,.6,1);
+    `animate-bounce` = 1s infinite). Nenhum deles tem rosto, estado ou reação — é essa
+    a comparação.
+  -->
+  <div class="moldura">
+    <div class="feed-falso">
+      <div class="bolha-msg minha">e com o que já vem pronto?</div>
+    </div>
+    <div class="faixa">
+      <svg class="spinner-shadcn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="status" aria-label="Loading">
+        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+      </svg>
+      <span class="legenda"><b>Spinner</b> · shadcn/ui, componente oficial</span>
+    </div>
+    <div class="faixa">
+      <div class="skeleton-shadcn"></div>
+      <span class="legenda"><b>Skeleton</b> · shadcn/ui, componente oficial</span>
+    </div>
+    <div class="faixa">
+      <span class="pontinhos" aria-label="digitando"><i></i><i></i><i></i></span>
+      <span class="legenda"><b>Três pontinhos</b> · não existe pronto — Tailwind na mão</span>
+    </div>
+    <div class="composer-falso"><span class="caixa">Escrever…</span><span>↑</span></div>
+  </div>
+  <p class="nota">O pronto da stack resolve "está carregando". Nenhuma peça sabe dizer <i>pensando</i>, <i>respondendo</i> ou <i>preciso de você</i>, e nenhuma tem para onde crescer: spinner é spinner. A bolinha custa as mesmas linhas e ainda carrega o estado.</p>
+</div>
+
+<script>
+  // A preferência é LIDA UMA VEZ e depois esquecida se ficar numa const: quem liga
+  // "reduzir movimento" com a tela aberta continuaria vendo tudo mexer. (Hiro, 17/08)
+  const consultaCalmo = matchMedia('(prefers-reduced-motion: reduce)');
+  let calmo = consultaCalmo.matches;
+  consultaCalmo.addEventListener('change', (ev) => { calmo = ev.matches; });
+
+  // Cada estado agora carrega só a frase: o desenho não muda mais, o que muda é o ritmo
+  // (o CSS resolve pela classe) e para onde os olhos apontam.
+  const ESTADOS = {
+    parado:   { texto: '<b>Parado</b> · esperando você' },
+    pensando: { texto: '<b>Pensando</b> · há 12 s' },
+    falando:  { texto: '<b>Respondendo</b> · escrevendo agora' },
+    pronto:   { texto: '<b>Terminou</b> · deu tudo certo' },
+    atencao:  { texto: '<b>Precisa de você</b> · esperando resposta' },
+  };
+
+  // O gradiente precisa de id próprio POR INSTÂNCIA: `stop-color: var(--corpo-claro)`
+  // resolve a variável no contexto do `<stop>`, então um gradiente compartilhado
+  // pintaria as duas bolinhas com a cor de quem foi declarado primeiro.
+  function desenha(destino, classe, idGrad) {
+    destino.innerHTML = `
+      <svg class="bolinha ${classe}" viewBox="0 0 64 68" role="img" aria-label="estado do agente">
+        <defs>
+          <radialGradient id="${idGrad}" cx="34%" cy="26%" r="78%">
+            <stop offset="0%" stop-color="var(--corpo-claro)"/>
+            <stop offset="100%" stop-color="var(--corpo-escuro)"/>
+          </radialGradient>
+        </defs>
+        <ellipse class="sombra" cx="32" cy="60" rx="15" ry="2.6"/>
+        <g class="voa"><g class="cabeca"><g class="toque"><g class="infla">
+          <circle class="corpo" cx="32" cy="32" r="23.5" fill="url(#${idGrad})"/>
+          <ellipse class="lustro" cx="24" cy="20" rx="7.4" ry="4.9" transform="rotate(-24 24 20)"/>
+          <g class="rosto">
+            <g class="olhos">
+              <circle class="olho esq" cx="24" cy="31" r="3.1"/>
+              <circle class="olho dir" cx="40" cy="31" r="3.1"/>
+            </g>
+          </g>
+        </g></g></g></g>
+      </svg>`;
+    const svg = destino.firstElementChild;
+    return {
+      svg,
+      rosto: svg.querySelector('.rosto'),
+      toque: svg.querySelector('.toque'),
+    };
+  }
+
+  const bolinhas = [
+    desenha(document.getElementById('palco'), 'grande', 'gradPalco'),
+    desenha(document.getElementById('real'), 'real', 'gradReal'),
+  ];
+  const estadoTexto = document.getElementById('estadoTexto');
+  const legendaReal = document.getElementById('legendaReal');
+  let estadoAtual = 'pensando';
+
+  function aplica(estado) {
+    const cfg = ESTADOS[estado];
+    if (!cfg) return;
+    estadoAtual = estado;
+
+    for (const b of bolinhas) {
+      // `est-pronto` e `est-atencao` tocam uma passada só: tirar e repor a classe
+      // (com um reflow no meio) é o que faz o pulinho acontecer de novo no 2º clique.
+      b.svg.classList.remove('est-parado', 'est-pensando', 'est-falando', 'est-pronto', 'est-atencao');
+      void b.svg.getBoundingClientRect();
+      b.svg.classList.add('est-' + estado);
+    }
+    estadoTexto.innerHTML = cfg.texto;
+    legendaReal.innerHTML = cfg.texto;
+    for (const botao of document.querySelectorAll('#botoes button')) {
+      botao.setAttribute('aria-pressed', String(botao.dataset.estado === estado));
+    }
+  }
+
+  document.getElementById('botoes').addEventListener('click', (ev) => {
+    const alvo = ev.target.closest('button');
+    if (alvo) aplica(alvo.dataset.estado);
+  });
+
+  // ---- piscada: intervalo sorteado, nunca metrônomo ----
+  function pisca() {
+    if (calmo) return;
+    for (const b of bolinhas) {
+      b.svg.classList.add('piscando');
+      setTimeout(() => b.svg.classList.remove('piscando'), 135);
+    }
+    if (Math.random() < 0.22) setTimeout(pisca, 265); // piscada dupla, como gente
+  }
+  (function agenda() {
+    setTimeout(() => { pisca(); agenda(); }, 2400 + Math.random() * 4100);
+  })();
+
+  // ---- olhar ----
+  // Sozinho ele vagueia; com o dedo por perto, acompanha. Deslocamento pequeno de
+  // propósito: olho que anda demais vira desenho animado.
+  let seguindo = false, ultimoToque = 0;
+  const move = (dx, dy) => {
+    for (const b of bolinhas) b.rosto.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px)`;
+  };
+
+  // ⚠️ O RECT É CACHEADO. `getBoundingClientRect()` dentro do handler de pointermove é
+  // uma consulta de layout a cada evento — 60-120 Hz, o dia inteiro, numa PWA que fica
+  // aberta. Era o maior gasto de bateria do arquivo (Hiro, 17/08). Agora o retângulo só
+  // é remedido quando algo pode tê-lo mudado, e o movimento é agendado por rAF: vários
+  // eventos no mesmo quadro viram uma escrita só.
+  let rectPalco = null;
+  const invalidaRect = () => { rectPalco = null; };
+  addEventListener('resize', invalidaRect, { passive: true });
+  addEventListener('scroll', invalidaRect, { passive: true });
+  addEventListener('orientationchange', invalidaRect, { passive: true });
+
+  let quadroAgendado = false, alvoPonteiro = null;
+  (function vagueia() {
+    if (!calmo && !seguindo) {
+      move((Math.random() * 2 - 1) * 2.6, (Math.random() * 2 - 1) * 1.5 + (estadoAtual === 'pensando' ? -1.4 : 0));
+    }
+    setTimeout(vagueia, 1500 + Math.random() * 2600);
+  })();
+
+  function olhaPara(x, y) {
+    if (calmo) return;
+    seguindo = true;
+    ultimoToque = Date.now();
+    alvoPonteiro = [x, y];
+    if (quadroAgendado) return;
+    quadroAgendado = true;
+    requestAnimationFrame(() => {
+      quadroAgendado = false;
+      if (!alvoPonteiro) return;
+      if (rectPalco === null) rectPalco = bolinhas[0].svg.getBoundingClientRect();
+      const [px, py] = alvoPonteiro;
+      const dx = Math.max(-1, Math.min(1, (px - (rectPalco.left + rectPalco.width / 2)) / 200));
+      const dy = Math.max(-1, Math.min(1, (py - (rectPalco.top + rectPalco.height / 2)) / 200));
+      move(dx * 3.1, dy * 2.1);
+    });
+    setTimeout(() => { if (Date.now() - ultimoToque > 1900) seguindo = false; }, 2000);
+  }
+  addEventListener('pointermove', (e) => olhaPara(e.clientX, e.clientY), { passive: true });
+  addEventListener('touchmove', (e) => { const t = e.touches[0]; if (t) olhaPara(t.clientX, t.clientY); }, { passive: true });
+
+  // Tocar nele responde — a micro-interação que faz parecer bicho, não widget.
+  for (const b of bolinhas) {
+    b.svg.addEventListener('pointerdown', () => {
+      if (calmo) return; // o squish inline escapava do freio de movimento reduzido
+      pisca();
+      b.toque.style.transform = 'scale(.92)';
+      setTimeout(() => { b.toque.style.transform = ''; }, 190);
+    });
+  }
+
+  // ---- turno inteiro: é assim que ele vai viver no cockpit ----
+  let roteiro = [];
+  document.getElementById('btnTurno').addEventListener('click', () => {
+    for (const t of roteiro) clearTimeout(t);
+    roteiro = [[0, 'parado'], [700, 'pensando'], [4200, 'falando'], [7600, 'pronto'], [10400, 'parado']]
+      .map(([ms, estado]) => setTimeout(() => aplica(estado), ms));
+  });
+
+  aplica('pensando');
+</script>
+</body>
+</html>
