@@ -8,6 +8,7 @@ import {
   PISO_SEGUNDOS,
   aoSoltar,
   aparenciaDaVoz,
+  assinaturaDoContainer,
   capturando,
   diagnosticaMicrofone,
   diagnosticaTranscricao,
@@ -283,5 +284,55 @@ describe('duração', () => {
   it('não mostra número negativo nem quebrado', () => {
     assert.equal(duracaoLegivel(-3), '0:00');
     assert.equal(duracaoLegivel(7.9), '0:07');
+  });
+});
+
+describe('assinatura do container', () => {
+  const bytes = (vals: number[]) => Uint8Array.from(vals);
+
+  it('webm íntegro começa no magic EBML — 1a 45 df a3', () => {
+    assert.equal(
+      assinaturaDoContainer('audio/webm', bytes([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81])),
+      true,
+    );
+  });
+
+  it('webm corrompido — começa no meio da fala — é rejeitado', () => {
+    // Cluster (1f 43 b6 75) sem header à frente: o blob que o bug produziu.
+    assert.equal(
+      assinaturaDoContainer('audio/webm', bytes([0x1f, 0x43, 0xb6, 0x75, 0x81, 0x01, 0x00, 0x00])),
+      false,
+    );
+  });
+
+  it('o parâmetro de codec não atrapalha a checagem', () => {
+    assert.equal(
+      assinaturaDoContainer('audio/webm;codecs=opus', bytes([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0])),
+      true,
+    );
+  });
+
+  it('mp4 íntegro carrega "ftyp" no offset 4', () => {
+    assert.equal(
+      assinaturaDoContainer('audio/mp4', bytes([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])),
+      true,
+    );
+  });
+
+  it('mp4 sem "ftyp" é rejeitado', () => {
+    assert.equal(
+      assinaturaDoContainer('audio/mp4', bytes([0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00])),
+      false,
+    );
+  });
+
+  it('formato sem assinatura conhecida passa — o back decide', () => {
+    assert.equal(assinaturaDoContainer('audio/ogg', bytes([0x4f, 0x67, 0x67, 0x53, 0, 0, 0, 0])), true);
+    assert.equal(assinaturaDoContainer(null, bytes([0, 0, 0, 0, 0, 0, 0, 0])), true);
+  });
+
+  it('cabeça curta demais nunca é saudável', () => {
+    assert.equal(assinaturaDoContainer('audio/webm', bytes([0x1a, 0x45])), false);
+    assert.equal(assinaturaDoContainer('audio/mp4', bytes([0, 0, 0, 0, 0x66, 0x74])), false);
   });
 });

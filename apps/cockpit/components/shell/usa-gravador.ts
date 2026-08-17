@@ -27,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   aoSoltar,
+  assinaturaDoContainer,
   diagnosticaMicrofone,
   escolheMime,
   extensaoDe,
@@ -214,7 +215,7 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       if (ev.data.size > 0) pedacosRef.current.push(ev.data);
     };
 
-    gravador.onstop = () => {
+    gravador.onstop = async () => {
       const descartar = descartarRef.current;
       const pedacos = pedacosRef.current;
       const bruto = gravador.mimeType || '';
@@ -242,6 +243,19 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       const audio = new File([new Blob(pedacos, { type: mime })], `voz.${extensaoDe(mime)}`, {
         type: mime,
       });
+      // Guarda de container: gravação corrompida não sobe. Em vez de gastar STT
+      // no servidor e devolver o enigmático "a transcrição falhou", diz a
+      // verdade — o defeito é do navegador, e regravar resolve.
+      const cabeca = new Uint8Array(await audio.slice(0, 8).arrayBuffer());
+      if (!assinaturaDoContainer(mime, cabeca)) {
+        setImpedimento({
+          resumo: 'a gravação saiu corrompida',
+          saida: 'grave de novo — o defeito é do navegador, não da fala',
+          definitivo: false,
+        });
+        setFase('impedida');
+        return;
+      }
       // O hook fecha o próprio ciclo: entra em `transcrevendo` e só sai quando
       // a promessa de quem recebeu o áudio resolve. Se o composer tivesse que
       // avisar de volta, ele precisaria referenciar o gravador de dentro do
@@ -251,17 +265,21 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       void Promise.resolve(aoGravar(audio)).finally(() => setFase('ociosa'));
     };
 
+    // SEM timeslice de propósito. Com `start(100)` o browser entrega o áudio em
+    // dezenas de pedaços e quem monta o blob final é este hook — e em gravação
+    // longa o muxer pode largar/atrasar um pedaço, às vezes o primeiro, o que
+    // carrega o header EBML: o "webm" que sobe começa no meio da fala, o ffprobe
+    // do back devolve "Invalid data found" e o STT morre com 502. Sem timeslice
+    // o browser muxa o arquivo INTEIRO e entrega num `dataavailable` único,
+    // finalizado, com duração no header. A onda não depende dos pedaços — usa o
+    // AnalyserNode — então nada se perde.
     try {
-      gravador.start(100);
-    } catch {
-      try {
-        gravador.start();
-      } catch (erro) {
-        solta();
-        setImpedimento(diagnosticaMicrofone(erro));
-        setFase('impedida');
-        return;
-      }
+      gravador.start();
+    } catch (erro) {
+      solta();
+      setImpedimento(diagnosticaMicrofone(erro));
+      setFase('impedida');
+      return;
     }
 
     setFase('gravando');

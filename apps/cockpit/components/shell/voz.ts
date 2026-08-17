@@ -287,6 +287,32 @@ export function extensaoDe(mime: string): string {
   return 'webm';
 }
 
+/** Assinaturas mínimas dos containers que o gravador entrega de verdade.
+ *  WebM começa no EBML magic; MP4 carrega "ftyp" no offset 4. Conferir ANTES
+ *  de subir: em gravação longa o muxer do navegador às vezes larga o primeiro
+ *  pedaço — o que carrega o header — e o "webm" começa no meio da fala. O back
+ *  vê "Invalid data found when processing input" e o STT morre com 502; aqui o
+ *  defeito vira "grave de novo", que é a verdade. */
+const ASSINATURAS: Readonly<Record<string, readonly number[]>> = {
+  'audio/webm': [0x1a, 0x45, 0xdf, 0xa3],
+  'audio/mp4': [0x66, 0x74, 0x79, 0x70],
+};
+
+/** `true` quando a cabeça do arquivo casa com o container que o mime declara.
+ *  Formato sem assinatura conhecida (ogg, mpeg) passa — conferir é opcional, o
+ *  back decide. Pede pelo menos 8 bytes porque o `ftyp` do MP4 mora no offset 4. */
+export function assinaturaDoContainer(
+  mime: string | null | undefined,
+  cabeca: Uint8Array,
+): boolean {
+  const base = (mime ?? '').split(';')[0].trim().toLowerCase();
+  const assinatura = ASSINATURAS[base];
+  if (!assinatura) return true;
+  if (cabeca.length < 8) return false;
+  const offset = base === 'audio/mp4' ? 4 : 0;
+  return assinatura.every((byte, i) => cabeca[offset + i] === byte);
+}
+
 // ---------------------------------------------------------------------------
 // Aparência
 // ---------------------------------------------------------------------------
