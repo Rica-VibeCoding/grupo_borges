@@ -142,3 +142,60 @@ test('buildRenderItems — compact-summary vira item próprio, nunca bolha do Ri
     assert.equal(items[0].compactMeta, undefined);
   }
 });
+
+/* ------------------------------------------------------------------------ */
+/* Slash custom — o corpo expandido (user is_meta) dobra dentro do chip      */
+/* ------------------------------------------------------------------------ */
+
+// O par real, copiado do JSONL da sessão do Hiro em 17/08: o envelope do
+// comando numa entrada, o ritual do .md (1476 chars) na seguinte, marcada
+// isMeta pelo CC. Até então os dois viravam "linha seca + bolha de textão".
+const ENVELOPE_ENCERRAR =
+  '<command-message>encerrar</command-message>\n<command-name>/encerrar</command-name>';
+const RITUAL_ENCERRAR =
+  'Sessão encerrada. Nesta ordem:\n\n1. `git log` + `git status` nos repos do turno.\n2. Salvar memórias novas.';
+
+function corpoExpandido(id: number, texto: string): MessagePayload {
+  return { ...userText(id, texto), is_meta: true };
+}
+
+test('classifyMessage — slash com corpo is_meta em seguida dobra o textão no chip', () => {
+  const payload = classifyMessage(
+    userText(10, ENVELOPE_ENCERRAR),
+    corpoExpandido(11, RITUAL_ENCERRAR),
+  );
+  assert.equal(payload.kind, 'slash');
+  if (payload.kind !== 'slash') return;
+  assert.equal(payload.chip.label, 'Slash: /encerrar');
+  assert.equal(payload.expandBody, RITUAL_ENCERRAR);
+  assert.equal(payload.consumesNext, true);
+});
+
+test('classifyMessage — slash SEM corpo is_meta continua como sempre foi', () => {
+  // Nativo ou custom sem expansão: nada muda (stdout vazio, sem consumesNext).
+  const payload = classifyMessage(userText(12, ENVELOPE_ENCERRAR), userText(13, 'mensagem digitada'));
+  assert.equal(payload.kind, 'slash');
+  if (payload.kind !== 'slash') return;
+  assert.equal(payload.expandBody, '');
+  assert.equal(payload.consumesNext, undefined);
+});
+
+test('buildRenderItems — o corpo expandido não vira bolha do Rica', () => {
+  const items = buildRenderItems([
+    userText(14, ENVELOPE_ENCERRAR),
+    corpoExpandido(15, RITUAL_ENCERRAR),
+  ]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'chip');
+  if (items[0].kind !== 'chip') return;
+  assert.equal(items[0].classifierKind, 'slash');
+  assert.equal(items[0].expandBody, RITUAL_ENCERRAR);
+});
+
+test('buildRenderItems — is_meta sem comando antes continua aparecendo', () => {
+  // Janela de histórico cortada (o envelope ficou fora): o corpo expandido
+  // órfão NÃO pode sumir — cai como texto, que é o que acontecia até 17/08.
+  const items = buildRenderItems([corpoExpandido(16, RITUAL_ENCERRAR)]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, 'user');
+});

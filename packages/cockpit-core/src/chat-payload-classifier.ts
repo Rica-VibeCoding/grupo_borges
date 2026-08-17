@@ -29,6 +29,10 @@ type ChipPayload = {
    *  `undefined` = chip neutro (idle). Consumido pelo OneLineChip via prop
    *  `tone`. Sem propagação aqui, a borda colorida só existia na rota dev. */
   tone?: OneLineChipTone;
+  /** Quando true, a mensagem SEGUINTE já foi dobrada neste chip (corpo
+   *  expandido de slash custom, resposta de skill) e o montador não a emite.
+   *  Generaliza o que até 17/08 era privativo do kind `skill`. */
+  consumesNext?: boolean;
 };
 
 type PlainPayload = {
@@ -237,11 +241,19 @@ export function classifyMessage(
         summary: truncate(firstLine(cleanStdout), 80),
       };
       if (accent) chip.accent = accent;
+      // O CC grava o corpo expandido de um comando custom (o ritual do .md)
+      // como `user` is_meta logo DEPOIS do envelope — até 17/08 esse textão
+      // caía em `plain` e o feed o desenhava como bolha digitada (a queixa do
+      // Rica: "comandos que abrem o textão"). Com a marca oficial a dobra é
+      // exata, sem heurística de proximidade: o corpo vira o expandBody do
+      // chip (a linha seca abre no toque) e a mensagem seguinte não renderiza.
+      const corpo = corpoExpandidoDeComando(nextMsg);
       return {
         kind: 'slash',
         chip,
-        expandBody: cleanStdout,
+        expandBody: corpo ?? cleanStdout,
         rawRef,
+        ...(corpo !== null ? { consumesNext: true } : {}),
       };
     }
 
@@ -465,6 +477,17 @@ function taskNotificationTone(status: string): OneLineChipTone | undefined {
 
 function firstLine(value: string): string {
   return value.trim().split(/\r?\n/, 1)[0] ?? '';
+}
+
+/** O corpo expandido de um slash custom é o `user` is_meta imediatamente
+ *  seguinte ao envelope do comando (verificado nos JSONL da frota, 17/08:
+ *  `<command-name>` em uma entrada, o ritual do .md na próxima, com
+ *  `isMeta: true`). Sem a marca ou sem texto, não há o que dobrar. */
+function corpoExpandidoDeComando(nextMsg?: MessagePayload): string | null {
+  if (!nextMsg || nextMsg.is_meta !== true) return null;
+  if (nextMsg.message?.role !== 'user') return null;
+  const corpo = textOf(nextMsg.message.content).trim();
+  return corpo || null;
 }
 
 // CC stdout pode trazer ANSI bruto (`\x1b[1mOpus 4.7\x1b[22m`) ou já mojibake

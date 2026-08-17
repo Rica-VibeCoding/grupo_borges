@@ -3032,6 +3032,14 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
     )
     if meta is not None:
         canonical["meta"] = meta
+    # O CC marca com isMeta a mensagem injetada pela máquina — em particular o
+    # corpo expandido de um slash custom (`/encerrar` → o ritual inteiro do
+    # .md) gravado como `user` logo depois do envelope do comando. Sem a marca
+    # o feed desenhava o textão como fala digitada; com ela o classificador
+    # dobra o corpo dentro do chip do comando (ordem do Rica, 17/08). Condicional
+    # como o `meta` acima: presente só quando verdadeira.
+    if payload.get("isMeta") is True:
+        canonical["is_meta"] = True
     return canonical
 
 

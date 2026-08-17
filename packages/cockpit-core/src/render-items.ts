@@ -552,7 +552,12 @@ export function buildRenderItems(messages: MessagePayload[]): RenderItem[] {
           classifierKind: payload.kind,
           tone: payload.tone,
         });
-        if (payload.kind === 'skill' && next) consumedByClassifier.add(next.uuid);
+        // `skill` sempre dobrou a própria mensagem (a resposta dela); desde
+        // 17/08 o slash custom sinaliza `consumesNext` quando dobrou o corpo
+        // expandido (user is_meta) — os dois caem na mesma supressão.
+        if (next && (payload.kind === 'skill' || payload.consumesNext === true)) {
+          consumedByClassifier.add(next.uuid);
+        }
         continue;
       }
       case 'channel-envelope': {

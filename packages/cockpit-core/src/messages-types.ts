@@ -114,6 +114,11 @@ export type MessagePayload = {
   timestamp: string;
   created_at: number;
   meta?: SyntheticMeta;
+  // Marca do CC para mensagem injetada pela máquina — o corpo expandido de um
+  // slash custom (`/encerrar` → o ritual do .md) chega como user is_meta logo
+  // depois do envelope do comando. Só presente quando verdadeira (o back
+  // repassa condicionalmente desde 17/08).
+  is_meta?: boolean;
   // Pode vir null em kinds como `attachment` / `summary` / `system` que não
   // carregam payload de chat (mesmo schema canônico do contrato).
   message: {
