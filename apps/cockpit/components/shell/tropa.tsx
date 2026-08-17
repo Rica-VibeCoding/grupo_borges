@@ -111,7 +111,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import type {
@@ -121,7 +121,13 @@ import type {
 import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
 import { patchOrdemDaTropa } from '@grupo_borges/cockpit-core/api';
 import { ordenaTropa } from '@/lib/ordena-tropa';
-import { aplicaOrdem, novaOrdem, ordemJaChegou } from '@/lib/ordem-arrastada';
+import {
+  aplicaOrdem,
+  mesmaOrdem,
+  moveUmaCasa,
+  novaOrdem,
+  ordemJaChegou,
+} from '@/lib/ordem-arrastada';
 import {
   AlcaDeArraste,
   ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
@@ -274,7 +280,7 @@ function CartaoVivo({
   const estado = estadoDe(agente.status);
   const pasta = pastaCurta(agente.workspace_path, agente.slug);
   const href = `/agente/${agente.slug}`;
-  const { liRef, alcaRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
+  const { liRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
   return (
     <li
       ref={liRef}
@@ -351,7 +357,7 @@ function CartaoVivo({
           ) : null}
         </span>
       </Link>
-      <AlcaDeArraste ref={alcaRef} nomeDoAgente={agente.name} aoMover={aoMover} />
+      <AlcaDeArraste nomeDoAgente={agente.name} aoMover={aoMover} />
     </li>
   );
 }
@@ -371,7 +377,7 @@ function LinhaDormindo({
 }) {
   const pct = resolveContextPct(agente);
   const href = `/agente/${agente.slug}`;
-  const { liRef, alcaRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
+  const { liRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
   return (
     <li
       ref={liRef}
@@ -484,7 +490,7 @@ function LinhaDormindo({
           </span>
         )}
       </Link>
-      <AlcaDeArraste ref={alcaRef} nomeDoAgente={agente.name} aoMover={aoMover} />
+      <AlcaDeArraste nomeDoAgente={agente.name} aoMover={aoMover} />
     </li>
   );
 }
@@ -515,6 +521,12 @@ export function Tropa({
   // só é relido no poll seguinte (5s), e sem isto a linha voltaria pro lugar
   // antigo assim que o dedo saísse da tela.
   const [ordemOtimista, setOrdemOtimista] = useState<string[] | null>(null);
+
+  // Mover pela seta não muda nada que um leitor de tela perceba sozinho: o
+  // foco fica no mesmo botão, com o mesmo rótulo, e a lista se reordena em
+  // silêncio. A região viva é o que transforma o movimento em confirmação —
+  // mesmo par `role="status"` + `aria-live` que o resto do shell já usa.
+  const [recadoDoMovimento, setRecadoDoMovimento] = useState('');
   const agentesOrdenados = useMemo(
     () => aplicaOrdem(doServidor, ordemOtimista),
     [doServidor, ordemOtimista],
@@ -526,19 +538,35 @@ export function Tropa({
     if (ordemJaChegou(doServidor, ordemOtimista)) setOrdemOtimista(null);
   }, [doServidor, ordemOtimista]);
 
+  // Segurar a seta dispara uma tecla a cada ~30ms, e cada uma virava um PATCH
+  // solto. Nada garantia que o último a sair fosse o último a gravar: bastava
+  // uma resposta antiga vencer pro banco ficar com ordem mais velha que a tela,
+  // sem se corrigir sozinho. A sequência descarta o que já foi ultrapassado —
+  // é a mesma proteção que a LEITURA já tem em `usa-frota-ao-vivo.ts`.
+  const sequenciaDaGravacao = useRef(0);
+
   const gravaOrdem = useCallback((nova: string[]) => {
     setOrdemOtimista(nova);
-    // Falhou a gravação: devolve a ordem do servidor em vez de deixar a tela
-    // mentindo uma posição que o banco não tem.
-    patchOrdemDaTropa(nova).catch(() => setOrdemOtimista(null));
+    const minhaVez = ++sequenciaDaGravacao.current;
+    patchOrdemDaTropa(nova).catch(() => {
+      // Falhou a gravação: devolve a ordem do servidor em vez de deixar a tela
+      // mentindo uma posição que o banco não tem. Só que a requisição vencida
+      // não manda mais em nada — limpar aqui apagaria a ordem de um PATCH
+      // POSTERIOR que ainda está no ar.
+      if (minhaVez === sequenciaDaGravacao.current) setOrdemOtimista(null);
+    });
   }, []);
 
   const move = useCallback(
     (slug: string, direcao: -1 | 1) => {
       const slugs = agentesOrdenados.map((a) => a.slug);
-      const destino = slugs.indexOf(slug) + direcao;
-      if (destino < 0 || destino >= slugs.length) return;
-      gravaOrdem(novaOrdem(slugs, slug, slugs[destino], direcao === 1 ? 'bottom' : 'top'));
+      const movida = moveUmaCasa(slugs, slug, direcao);
+      if (movida === slugs) return;
+      gravaOrdem(movida);
+      const posicao = movida.indexOf(slug) + 1;
+      setRecadoDoMovimento(
+        `${agentesOrdenados.find((a) => a.slug === slug)?.name ?? slug}, posição ${posicao} de ${movida.length}`,
+      );
     },
     [agentesOrdenados, gravaOrdem],
   );
@@ -560,7 +588,10 @@ export function Tropa({
             extractClosestEdge(alvo.data) as 'top' | 'bottom' | null,
           );
           // Soltou onde já estava: não gasta requisição nem pisca a lista.
-          if (reordenada === slugs) return;
+          // Compara CONTEÚDO, não referência — soltar na borda de cima do
+          // vizinho de baixo devolve a mesma sequência num array novo, e a
+          // comparação por referência deixava esse caso passar batido.
+          if (mesmaOrdem(reordenada, slugs)) return;
           gravaOrdem(reordenada);
         },
       }),
@@ -593,6 +624,14 @@ export function Tropa({
       className="flex min-h-0 flex-col overflow-y-auto"
       style={{ padding: '0 var(--ck-space-2) var(--ck-space-4)' }}
     >
+      {/* Só quem move pela seta enche isto — o arrasto por ponteiro já se
+          explica na tela. Fora da vista, mas na árvore de acessibilidade: a
+          região precisa existir ANTES do recado pra que o leitor de tela a
+          observe; criada junto com o texto, ela costuma não ser anunciada. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {recadoDoMovimento}
+      </span>
+
       {/* Lista única, ordem ditada (11/08). O overline "Tropa" não
           existe desde a v3 e os títulos de estado morreram na v5 — a lista é a
           lista. A escolha de cartão ou linha rasa é POR LINHA, pelo estado

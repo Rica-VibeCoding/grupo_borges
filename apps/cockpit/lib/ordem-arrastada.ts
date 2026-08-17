@@ -72,6 +72,37 @@ export function aplicaOrdem(agentes: Agent[], ordem: string[] | null): Agent[] {
  */
 export function ordemJaChegou(agentes: Agent[], ordem: string[] | null): boolean {
   if (!ordem) return true;
+  // Compara só quem existe dos dois lados, na sequência RELATIVA. Comparar o
+  // tamanho travava a camada pra sempre quando a frota mudava no meio: um
+  // agente que entra ou sai entre o arrasto e o poll fazia a contagem nunca
+  // mais bater, a ordem otimista nunca era descartada e o painel parava de
+  // refletir o banco até desmontar.
   const vindos = agentes.map((agente) => agente.slug);
-  return vindos.length === ordem.length && vindos.every((slug, i) => slug === ordem[i]);
+  const emAmbos = new Set(vindos.filter((slug) => ordem.includes(slug)));
+  const doServidor = vindos.filter((slug) => emAmbos.has(slug));
+  const daOtimista = ordem.filter((slug) => emAmbos.has(slug));
+  return (
+    doServidor.length === daOtimista.length &&
+    doServidor.every((slug, i) => slug === daOtimista[i])
+  );
+}
+
+/** As duas listas têm o mesmo conteúdo, na mesma sequência. */
+export function mesmaOrdem(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((slug, i) => slug === b[i]);
+}
+
+/**
+ * Move um slug uma casa pra cima (`-1`) ou pra baixo (`1`). É a entrada do
+ * teclado, e vive aqui pelo mesmo motivo que o resto: são dois deslocamentos
+ * que se cancelam — o vizinho de destino e a borda em que se encosta — e
+ * errar o sinal de um deles só apareceria no aparelho.
+ *
+ * Devolve a MESMA lista quando não há pra onde ir (primeiro subindo, último
+ * descendo): quem chama usa isso pra não gastar requisição.
+ */
+export function moveUmaCasa(slugs: string[], slug: string, direcao: -1 | 1): string[] {
+  const destino = slugs.indexOf(slug) + direcao;
+  if (slugs.indexOf(slug) === -1 || destino < 0 || destino >= slugs.length) return slugs;
+  return novaOrdem(slugs, slug, slugs[destino], direcao === 1 ? 'bottom' : 'top');
 }

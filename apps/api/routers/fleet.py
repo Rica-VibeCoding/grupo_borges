@@ -384,5 +384,17 @@ async def patch_ordem_da_tropa(patch: OrdemDaTropaRequest, request: Request):
             status_code=422, detail=f"slug fora da frota: {', '.join(desconhecidos)}"
         )
 
+    # Lista incompleta grava posição repetida: o UPDATE só toca quem veio, e
+    # quem ficou de fora mantém o número velho. Com `a=0,b=1,c=2` e um PATCH
+    # `["c","a"]` sobra `c=0, a=1, b=1` — duas linhas na mesma posição, cada
+    # ponta desempatando por critério diferente. Também é a defesa do agente
+    # que entrou no `agents.yaml` depois de a tela ter carregado.
+    faltando = sorted(conhecidos - set(slugs))
+    if faltando:
+        raise HTTPException(
+            status_code=422,
+            detail=f"a ordem tem que vir completa; faltou: {', '.join(faltando)}",
+        )
+
     await db.set_ordem_da_tropa(slugs)
     return OrdemDaTropaResponse(slugs=slugs)

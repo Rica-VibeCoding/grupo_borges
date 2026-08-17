@@ -6,13 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import fleet as fleet_router
 from services import tmux_driver
-
 
 AGENT = {
     "slug": "daniel",
@@ -116,6 +116,38 @@ def test_fleet_snapshot_uses_running_task_display_id(tmp_path: Path) -> None:
     snapshot = db._fleet_snapshot(24, {"daniel"}, {"daniel"})
 
     assert _agent_from_snapshot(snapshot, "daniel")["current_task_id"] == running["human_id"]
+
+
+@pytest.mark.parametrize(
+    ("lifecycle_status", "lifecycle_event", "snapshot_at"),
+    [
+        ("offline", "codex.session.closed", 1_301),
+        ("ocioso", "tara.exec.completed", 1_000),
+    ],
+    ids=["desligamento-velho", "evento-tardio"],
+)
+def test_fleet_mantem_codex_desligado_offline(
+    tmp_path: Path,
+    monkeypatch,
+    lifecycle_status: str,
+    lifecycle_event: str,
+    snapshot_at: int,
+) -> None:
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+    monkeypatch.setattr("db.store.time.time", lambda: 1_000)
+    db._update_agent_codex_state("tara", executor_kind="codex", codex_runtime_enabled=0)
+    db._update_agent_lifecycle(
+        "tara",
+        status=lifecycle_status,
+        detail=None,
+        event=lifecycle_event,
+    )
+    monkeypatch.setattr("db.store.time.time", lambda: snapshot_at)
+
+    snapshot = db._fleet_snapshot(24, set(), set())
+
+    assert _agent_from_snapshot(snapshot, "tara")["status"] == "offline"
 
 
 def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path, monkeypatch) -> None:
@@ -607,3 +639,50 @@ def test_ordem_recusa_slug_repetido(tmp_path: Path, monkeypatch) -> None:
         recusa = client.patch("/api/fleet/ordem", json={"slugs": ["tara", "tara"]})
 
     assert recusa.status_code == 422
+
+
+def test_agente_novo_sem_ordem_cai_no_fim_sem_bagunçar_quem_foi_arrastado(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A MISTURA: uns com posição gravada, outro que chegou depois com `NULL`.
+
+    É o caso real de quem entra no `agents.yaml` já com a ordem definida. O
+    `ORDER BY s.ordem IS NULL, s.ordem, a.slug` existe pra isto: quem tem número
+    manda, quem não tem vai pro fim — em vez de o `NULL` se comportar como zero
+    e roubar o topo.
+    """
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+
+    novo = dict(TARA, slug="hiro", name="Hiro Nakamura", tmux_session="hiro")
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        assert client.patch("/api/fleet/ordem", json={"slugs": ["tara", "daniel"]}).status_code == 200
+
+        db._sync_agents([AGENT, TARA, novo])
+        corpo = client.get("/api/fleet").json()
+
+    assert [a["slug"] for a in corpo["agents"]] == ["tara", "daniel", "hiro"]
+    assert [a["ordem"] for a in corpo["agents"]] == [0, 1, None]
+
+
+def test_ordem_recusa_lista_incompleta(tmp_path: Path, monkeypatch) -> None:
+    """Lista parcial gravaria posição REPETIDA.
+
+    O `UPDATE` só toca quem veio; quem ficou de fora mantém o número velho. Com
+    dois agentes em 0 e 1, um PATCH só com o segundo deixaria os dois em 0.
+    """
+    db = _setup_db(tmp_path)
+    db._sync_agents([AGENT, TARA])
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        assert client.patch("/api/fleet/ordem", json={"slugs": ["tara", "daniel"]}).status_code == 200
+
+        recusa = client.patch("/api/fleet/ordem", json={"slugs": ["daniel"]})
+        assert recusa.status_code == 422
+        assert "tara" in recusa.json()["detail"]
+
+        # A ordem anterior continua de pé — recusa não grava metade.
+        corpo = client.get("/api/fleet").json()
+
+    assert [a["ordem"] for a in corpo["agents"]] == [0, 1]

@@ -84,7 +84,6 @@ export const ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO: CSSProperties = {
 
 type Arrasto = {
   liRef: RefObject<HTMLLIElement | null>;
-  alcaRef: RefObject<HTMLButtonElement | null>;
   /** A própria linha está sendo carregada agora. */
   arrastando: boolean;
   /** Em qual borda desta linha o traço deve aparecer, se em alguma. */
@@ -93,7 +92,6 @@ type Arrasto = {
 
 export function usaArrastoDaLinha(slug: string): Arrasto {
   const liRef = useRef<HTMLLIElement | null>(null);
-  const alcaRef = useRef<HTMLButtonElement | null>(null);
   const [arrastando, setArrastando] = useState(false);
   const [borda, setBorda] = useState<BordaAlvo>(null);
 
@@ -125,7 +123,7 @@ export function usaArrastoDaLinha(slug: string): Arrasto {
     );
   }, [slug]);
 
-  return { liRef, alcaRef, arrastando, borda };
+  return { liRef, arrastando, borda };
 }
 
 /**
@@ -164,18 +162,15 @@ export function TracoDeSoltura({ borda }: { borda: BordaAlvo }) {
  * recebe foco, e aí o caminho de teclado deixaria de existir de fato.
  */
 export function AlcaDeArraste({
-  ref,
   nomeDoAgente,
   aoMover,
 }: {
-  ref: RefObject<HTMLButtonElement | null>;
   nomeDoAgente: string;
   aoMover: (direcao: -1 | 1) => void;
 }) {
   const [comFoco, setComFoco] = useState(false);
   return (
     <button
-      ref={ref}
       type="button"
       aria-label={`Mover ${nomeDoAgente} na lista`}
       onFocus={() => setComFoco(true)}
