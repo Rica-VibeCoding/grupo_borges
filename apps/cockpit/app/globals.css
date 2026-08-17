@@ -1374,14 +1374,21 @@ body {
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-infla { animation-duration: 3.3s; }
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-cabeca { transform: rotate(-5deg); }
 
-/* EXECUTANDO — ASSISTE, não lê. Olha em 45° pro texto que está saindo, que na
- * tela nasce ACIMA dele, e SUSTENTA o olhar ali. A primeira versão varria de um
- * lado ao outro como quem acompanha uma linha de texto, e o Rica recusou em
- * 17/08 com vídeo: *"ele não poderia olhar como quem estivesse percorrendo a
- * linha, e sim assistindo"*. Quem dá vida aqui não é o olhar — é a respiração,
- * que acelera, e a piscada, que é sorteada e continua rodando em todo estado.
- * Se a linha viva mudar de lugar, o ângulo aqui muda junto. */
-.ck-bolinha[data-estado='executando'] .ck-bolinha-vista { transform: translate(-2.8px, -9px) rotate(-10deg); }
+/* EXECUTANDO — ASSISTE, não lê. Olha em 45° pra CIMA E PRA DIREITA e SUSTENTA o
+ * olhar ali. A primeira versão varria de um lado ao outro como quem acompanha
+ * uma linha de texto, e o Rica recusou em 17/08 com vídeo: *"ele não poderia
+ * olhar como quem estivesse percorrendo a linha, e sim assistindo"*. Quem dá
+ * vida aqui não é o olhar — é a respiração, que acelera, e a piscada, que é
+ * sorteada e continua rodando em todo estado.
+ *
+ * ESTES NÚMEROS SÃO MEDIDOS NA FOTO QUE ELE APROVOU, não escolhidos. Ao colapsar
+ * o keyframe da varredura numa pose só eu peguei o quadro errado — o de repouso,
+ * que olhava pra ESQUERDA — e ele cobrou por áudio. Medindo o par de olhos na
+ * foto contra o centro e o raio da esfera: dx=+3,56 dy=−12,12 em unidades de
+ * viewBox, par inclinado −16,5°. É o quadro de 60% da varredura antiga. Se um
+ * dia alguém quiser mexer no ângulo, a régua é essa: medir a referência, não
+ * julgar no olho. */
+.ck-bolinha[data-estado='executando'] .ck-bolinha-vista { transform: translate(3.4px, -10.5px) rotate(-17deg); }
 .ck-bolinha[data-estado='executando'] .ck-bolinha-olhos { transform: scale(1.06, 0.94); }
 .ck-bolinha[data-estado='executando'] .ck-bolinha-infla { animation-duration: 2.4s; }
 
