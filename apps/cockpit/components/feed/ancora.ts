@@ -46,6 +46,17 @@ export function estaColado(metrica: Metrica, tolerancia: number = COLADO_PX): bo
 }
 
 /**
+ * Longe o bastante do fim para o botão "voltar ao fim" aparecer mesmo sem
+ * mensagem nova — facelift do texto, 17/08. O limiar é UM viewport: abaixo
+ * disso o fim está a um gesto de distância e um botão flutuante é ruído;
+ * acima, rolar de volta na unha é trabalho. É a forma do ChatGPT, que mostra
+ * a setinha pela distância, não só por item novo.
+ */
+export function longeDoFim(metrica: Metrica): boolean {
+  return distanciaDoFim(metrica) > metrica.clientHeight;
+}
+
+/**
  * O item que ocupa o topo do viewport — o primeiro que ainda não terminou antes
  * da dobra. É ele que o olho está usando como referência.
  *

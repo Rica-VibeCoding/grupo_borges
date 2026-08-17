@@ -162,9 +162,19 @@ const MARKDOWN_COMPONENTS: Components = {
       </ol>
     );
   },
-  pre({ children, ...props }) {
+  pre({ children, node, ...props }) {
+    // A linguagem do fence mora no filho `code` do hast (`pre > code
+    // .language-x`) — o CodeBlock não a enxerga sozinho. Caminho sem plugin:
+    // o override recebe o `node` (o override `blockquote` já o usa acima).
+    // Fence sem linguagem chega sem classe e o cabeçalho mostra só o copiar.
+    const filho = node?.children[0];
+    const classes = filho && filho.type === 'element' ? filho.properties?.className : undefined;
+    const primeira = Array.isArray(classes) ? classes[0] : classes;
+    const texto =
+      typeof primeira === 'string' || typeof primeira === 'number' ? String(primeira) : undefined;
+    const linguagem = texto ? /^language-(\S+)$/.exec(texto)?.[1] : undefined;
     return (
-      <CodeBlock {...props}>
+      <CodeBlock linguagem={linguagem} {...props}>
         {children}
       </CodeBlock>
     );

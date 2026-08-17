@@ -213,7 +213,13 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
           // veste `--ck-radius-caixa` — o token criado pra "superfície que
           // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
           // `frame` (8px) continua pra conteúdo que MOSTRA saída.
-          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-caixa)]"
+          //
+          // Teto RELATIVO desde 17/08 (leva 2, pergunta do Rica): a convenção
+          // documentada (shadcn Bubble: ≤80% do container) é a bolha do
+          // usuário mais estreita que a coluna do assistente — e aqui os dois
+          // tinham o MESMO teto de 640px, o que no iPhone deixava a fala dele
+          // pegar a tela quase toda. `w-fit` continua encolhendo ao texto.
+          className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
           {item.enfileirada ? (
@@ -293,7 +299,13 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
           // veste `--ck-radius-caixa` — o token criado pra "superfície que
           // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
           // `frame` (8px) continua pra conteúdo que MOSTRA saída.
-          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-caixa)]"
+          //
+          // Teto RELATIVO desde 17/08 (leva 2, pergunta do Rica): a convenção
+          // documentada (shadcn Bubble: ≤80% do container) é a bolha do
+          // usuário mais estreita que a coluna do assistente — e aqui os dois
+          // tinham o MESMO teto de 640px, o que no iPhone deixava a fala dele
+          // pegar a tela quase toda. `w-fit` continua encolhendo ao texto.
+          className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
           <Fala texto={item.rawText} />
@@ -331,7 +343,13 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
           // veste `--ck-radius-caixa` — o token criado pra "superfície que
           // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
           // `frame` (8px) continua pra conteúdo que MOSTRA saída.
-          className="w-fit max-w-[var(--ck-read-mid)] self-end rounded-[var(--ck-radius-caixa)]"
+          //
+          // Teto RELATIVO desde 17/08 (leva 2, pergunta do Rica): a convenção
+          // documentada (shadcn Bubble: ≤80% do container) é a bolha do
+          // usuário mais estreita que a coluna do assistente — e aqui os dois
+          // tinham o MESMO teto de 640px, o que no iPhone deixava a fala dele
+          // pegar a tela quase toda. `w-fit` continua encolhendo ao texto.
+          className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
           <div

@@ -6,6 +6,7 @@ import {
   capturaAncora,
   distanciaDoFim,
   estaColado,
+  longeDoFim,
   scrollTopParaAncora,
   type Faixa,
 } from './ancora.ts';
@@ -31,6 +32,24 @@ describe('âncora — estar colado no fim', () => {
 
   it('conteúdo menor que a janela não produz distância negativa', () => {
     assert.equal(distanciaDoFim({ scrollTop: 0, scrollHeight: 200, clientHeight: 600 }), 0);
+  });
+});
+
+describe('âncora — longe do fim (botão voltar, 17/08)', () => {
+  it('mais de um viewport de distância é longe', () => {
+    // distância = 1500 - 0 - 600 = 900 > 600
+    assert.equal(longeDoFim({ scrollTop: 0, scrollHeight: 1500, clientHeight: 600 }), true);
+  });
+
+  it('exatamente um viewport de distância NÃO é longe — o fim está a um gesto', () => {
+    // distância = 1500 - 300 - 600 = 600, o limiar é estrito
+    assert.equal(longeDoFim({ scrollTop: 300, scrollHeight: 1500, clientHeight: 600 }), false);
+  });
+
+  it('descolado mas perto não é longe — descolado e longe são perguntas diferentes', () => {
+    const metrica = { scrollTop: 800, scrollHeight: 1500, clientHeight: 600 };
+    assert.equal(estaColado(metrica), false);
+    assert.equal(longeDoFim(metrica), false);
   });
 });
 

@@ -20,7 +20,8 @@ import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
 
-import { capturaAncora, estaColado, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
+import { capturaAncora, estaColado, longeDoFim, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
+import { BotaoVoltaAoFim } from './botao-volta-ao-fim';
 import { chaveDe } from './chave';
 import { CorpoDoItem } from './corpo-do-item';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
@@ -85,6 +86,10 @@ export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProp
   const ancoraRef = useRef<Ancora | null>(null);
   const contagemRef = useRef(0);
   const [temNovas, setTemNovas] = useState(false);
+  // Facelift do texto, 17/08: o "voltar ao fim" não depende mais de mensagem
+  // nova — longe do fim (além de 1 viewport, `longeDoFim`) a setinha aparece
+  // mesmo com o feed parado, como na referência do ChatGPT.
+  const [longe, setLonge] = useState(false);
 
   // A doc pede `getItemKey` memoizado ("to avoid unnecessary recalculations"),
   // e o motivo está em virtual-core 3.17.7: ele é dependência do memo de
@@ -120,17 +125,20 @@ export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProp
   const aoRolar = useCallback(() => {
     const elemento = scrollerRef.current;
     if (!elemento) return;
-    const colado = estaColado({
+    const metrica = {
       scrollTop: elemento.scrollTop,
       scrollHeight: elemento.scrollHeight,
       clientHeight: elemento.clientHeight,
-    });
+    };
+    const colado = estaColado(metrica);
     coladoRef.current = colado;
     if (colado) {
       ancoraRef.current = null;
       setTemNovas(false);
+      setLonge(false);
       return;
     }
+    setLonge(longeDoFim(metrica));
     // Re-capturar a cada rolagem é de propósito: a âncora tem de ser o item que
     // o olho está usando AGORA, não o de quando ele saiu do fim.
     ancoraRef.current = capturaAncora(faixas(), elemento.scrollTop);
@@ -142,6 +150,7 @@ export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProp
     coladoRef.current = true;
     ancoraRef.current = null;
     setTemNovas(false);
+    setLonge(false);
     elemento.scrollTop = elemento.scrollHeight;
   }, []);
 
@@ -267,32 +276,7 @@ export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProp
         </div>
       </ScrollArea>
 
-      {temNovas ? (
-        <button
-          type="button"
-          data-gate-new-messages=""
-          onClick={irAoFim}
-          style={{
-            position: 'absolute',
-            left: '50%',
-            // Sobe junto com o composer flutuante — senão este botão nasce
-            // atrás dele, e um aviso de "mensagens novas" escondido é pior que
-            // aviso nenhum. Na referência do ChatGPT a setinha fica exatamente
-            // aqui: logo acima da caixa de escrever.
-            bottom: 'calc(var(--ck-composer-altura, 0px) + var(--ck-space-3))',
-            transform: 'translateX(-50%)',
-            minHeight: 'var(--ck-touch-min)',
-            padding: '0 var(--ck-space-4)',
-            borderRadius: 'var(--ck-radius-pill)',
-            border: '1px solid var(--ck-edge-functional)',
-            background: 'var(--ck-surface-raised)',
-            color: 'var(--ck-text-primary)',
-            fontSize: 'var(--ck-text-sm)',
-          }}
-        >
-          mensagens novas ↓
-        </button>
-      ) : null}
+      <BotaoVoltaAoFim temNovas={temNovas} longe={longe} onIrAoFim={irAoFim} />
     </div>
   );
 }
