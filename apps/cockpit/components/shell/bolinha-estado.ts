@@ -16,15 +16,23 @@
  */
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 
-export type EstadoBolinha = 'offline' | 'parado' | 'pensando' | 'falando' | 'pronto' | 'atencao';
+export type EstadoBolinha =
+  | 'offline'
+  | 'parado'
+  | 'pensando'
+  | 'executando'
+  | 'pronto'
+  | 'atencao';
 
 export type EntradaDaBolinha = {
   /** `status` do agente em `/api/fleet`; `undefined` = a frota ainda não respondeu. */
   status: AgentStatus | undefined;
   /** `isRunning` do stream, publicado pelo feed. */
   turnoVivo: boolean;
-  /** O fim do feed é texto crescendo — `lib/escrita-viva.ts`. */
-  escrevendo: boolean;
+  /** Tem output saindo no fim do feed — ferramenta em voo OU texto crescendo
+   *  (`lib/escrita-viva.ts`). É a mesma régua que escolhe entre a linha
+   *  "Executando <cmd>" e a "Pensando há 12 s". */
+  produzindo: boolean;
 };
 
 /** A palavra que a legenda anuncia — o `aria-label` do SVG é estável de
@@ -33,7 +41,7 @@ export const FALA_DA_BOLINHA: Record<EstadoBolinha, string> = {
   offline: 'desligado',
   parado: 'ocioso',
   pensando: 'pensando',
-  falando: 'respondendo',
+  executando: 'executando',
   pronto: 'terminou',
   atencao: 'esperando você',
 };
@@ -41,15 +49,16 @@ export const FALA_DA_BOLINHA: Record<EstadoBolinha, string> = {
 export function estadoDaBolinha({
   status,
   turnoVivo,
-  escrevendo,
+  produzindo,
 }: EntradaDaBolinha): EstadoBolinha {
   if (status === undefined || status === 'offline') return 'offline';
   // Quem chama uma pessoa vence quem está ocupado: é o único estado que precisa
   // de humano, e a bolinha não pode escondê-lo atrás de um turno em voo.
   if (status === 'aguardando') return 'atencao';
-  // Escrever é um caso PARTICULAR de estar em turno, então vem antes: quem já
-  // está respondendo não deve continuar com cara de quem está pensando.
-  if (escrevendo) return 'falando';
+  // Executar é um caso PARTICULAR de estar em turno, então vem antes: quem já
+  // está rodando ferramenta ou escrevendo não pode ficar com cara de quem
+  // ainda pensa — e é aí que o turno passa quase todo o tempo.
+  if (produzindo) return 'executando';
   if (turnoVivo || status === 'trabalhando') return 'pensando';
   return 'parado';
 }

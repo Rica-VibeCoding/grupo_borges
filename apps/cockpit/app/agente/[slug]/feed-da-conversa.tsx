@@ -34,7 +34,7 @@ import {
   type EcoPendente,
 } from '@/lib/codex/eco-pendente.ts';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
-import { escrevendoNoFim, publicaEscritaViva } from '@/lib/escrita-viva.ts';
+import { publicaEscritaViva, saindoOutputNoFim } from '@/lib/escrita-viva.ts';
 import { textosDoUsuario } from '@/lib/textos-do-usuario.ts';
 import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
@@ -207,17 +207,17 @@ function FeedClaudeCode({
     return () => publicaTurnoVivo(agentSlug, false);
   }, [agentSlug, isRunning, vencida, statusDaFrota]);
 
-  // PENSAR E RESPONDER SÃO CARAS DIFERENTES. O freio acima só quer saber se há
+  // PENSAR E EXECUTAR SÃO CARAS DIFERENTES. O freio acima só quer saber se há
   // turno em voo; a bolinha do composer precisa da distinção, porque é ela que
   // vai ficar no lugar do "Pensando há 12 s". As mesmas guardas do turno vivo
-  // valem aqui — prazo e desligamento visto pela frota —, com uma régua a mais:
-  // o fim do feed ser texto crescendo, e não ferramenta em voo.
+  // valem aqui — prazo e desligamento visto pela frota —, mais a régua do
+  // output: a MESMA que escolhe entre a linha "Executando" e a "Pensando".
   useEffect(() => {
-    const escrevendo =
-      isRunning && !vencida && statusDaFrota !== 'offline' && escrevendoNoFim(itensBase);
-    publicaEscritaViva(agentSlug, escrevendo);
+    const produzindo =
+      isRunning && !vencida && statusDaFrota !== 'offline' && saindoOutputNoFim(itensBase, lookup);
+    publicaEscritaViva(agentSlug, produzindo);
     return () => publicaEscritaViva(agentSlug, false);
-  }, [agentSlug, isRunning, vencida, statusDaFrota, itensBase]);
+  }, [agentSlug, isRunning, vencida, statusDaFrota, itensBase, lookup]);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];
@@ -375,6 +375,18 @@ function FeedCodex({ agentSlug }: { agentSlug: string }) {
   const statusDaFrota = agents.find((a) => a.slug === agentSlug)?.status ?? null;
   const desdeMs = useMemo(() => desdeDaLinhaViva(mensagens), [mensagens]);
   const vencida = usaLinhaVivaVencida(desdeMs);
+
+  // A BOLINHA VALE AQUI TAMBÉM (17/08). Sem isto o composer da Tara só sabia
+  // "trabalhando" pela frota, e a cara dela não mudava do começo ao fim do
+  // turno — reportado pelo Rica com vídeo. O `isRunning` do stream não existe
+  // neste ramo, então quem diz que o turno corre é a frota, igual à linha viva
+  // logo abaixo.
+  useEffect(() => {
+    const produzindo =
+      statusDaFrota === 'trabalhando' && !vencida && saindoOutputNoFim(itensBase, lookup);
+    publicaEscritaViva(agentSlug, produzindo);
+    return () => publicaEscritaViva(agentSlug, false);
+  }, [agentSlug, statusDaFrota, vencida, itensBase, lookup]);
 
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = itensBase as ItemDoFeed[];

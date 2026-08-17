@@ -25,10 +25,10 @@
  *    `style` inline no MESMO elemento — sem esse `<g>`, tocar na bolinha
  *    enquanto ela chama por você não faria nada.
  * 5. O OLHAR TEM ENDEREÇO (expressões ditadas pelo Rica, 17/08). Vagueia só
- *    quando pensa; olha pra frente quando está parado; sobe em 45° quando o
- *    texto está saindo, porque a linha viva nasce ACIMA dele na tela. E
- *    desligado não tem olhos — a cor é a mesma de parado, então quem separa
- *    "não tem ninguém" de "está quieto" é o rosto.
+ *    quando pensa; olha pra frente quando está parado; sobe em 45° quando há
+ *    output saindo — ferramenta em voo ou texto crescendo —, porque é ACIMA
+ *    dele que o feed escreve. E desligado não tem olhos: a cor é a mesma de
+ *    parado, então quem separa "não tem ninguém" de "está quieto" é o rosto.
  *
  * Cor, keyframes e estados moram em `globals.css` (§ A BOLINHA): componente não
  * carrega cor, e keyframe não é território de utility do Tailwind.
@@ -44,16 +44,18 @@ import { estadoDaBolinha, FALA_DA_BOLINHA, type EstadoBolinha } from './bolinha-
  *  Um pouco mais que a animação (0,62 s) para o olho alcançar o fim dela. */
 const DURACAO_PRONTO_MS = 900;
 
-/** Piso de exibição do "respondendo". Medido na `:3008` em 17/08: escrevendo
- *  entre duas ferramentas, o estado durou **0,7 s** — o fim do feed vira texto e
- *  logo volta a ser `tool_use`. A régua está certa; o que não serve é a troca de
- *  cara passar rápido demais para ser vista. O piso não inventa estado nenhum:
- *  só segura o que realmente aconteceu pelo tempo de alguém enxergar. */
-const PISO_FALANDO_MS = 1100;
+/** Piso de exibição do "executando". Medido na `:3008` em 17/08: entre duas
+ *  ferramentas o estado durou **0,7 s** — o fim do feed troca de dono e volta.
+ *  O piso não inventa estado nenhum: só segura o que realmente aconteceu pelo
+ *  tempo de alguém enxergar. */
+const PISO_EXECUTANDO_MS = 1100;
 
 type Props = {
   status: AgentStatus | undefined;
   turnoVivo: boolean;
+  /** Tem output saindo agora. O nome do prop guarda o do store
+   *  (`escrita-viva`), que é mais estreito que o sinal virou — renomear os dois
+   *  espera a Tara sair do `composer.tsx`, que é o único call site. */
   escrevendo: boolean;
 };
 
@@ -63,14 +65,15 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
   const rostoRef = useRef<SVGGElement>(null);
   const toqueRef = useRef<SVGGElement>(null);
 
-  const estavel = estadoDaBolinha({ status, turnoVivo, escrevendo });
+  const estavel = estadoDaBolinha({ status, turnoVivo, produzindo: escrevendo });
   // "Terminou" é transição, não estado: só existe para quem lembra o valor
   // anterior. O pulinho é a única coisa nesta peça que precisa de re-render —
   // duas por turno, contra as centenas que a piscada custaria.
   const [comemorando, setComemorando] = useState(false);
   const anterior = useRef(estavel);
   useEffect(() => {
-    const veioDeTrabalhar = anterior.current === 'pensando' || anterior.current === 'falando';
+    const veioDeTrabalhar =
+      anterior.current === 'pensando' || anterior.current === 'executando';
     anterior.current = estavel;
     if (!veioDeTrabalhar || estavel !== 'parado') return;
     setComemorando(true);
@@ -78,21 +81,21 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
     return () => window.clearTimeout(id);
   }, [estavel]);
 
-  const [segurandoFala, setSegurandoFala] = useState(false);
+  const [segurandoExecucao, setSegurandoExecucao] = useState(false);
   useEffect(() => {
-    if (estavel !== 'falando') return;
-    setSegurandoFala(true);
-    const id = window.setTimeout(() => setSegurandoFala(false), PISO_FALANDO_MS);
+    if (estavel !== 'executando') return;
+    setSegurandoExecucao(true);
+    const id = window.setTimeout(() => setSegurandoExecucao(false), PISO_EXECUTANDO_MS);
     return () => window.clearTimeout(id);
   }, [estavel]);
 
   // A ordem aqui é a mesma da régua: quem chama uma pessoa nunca é encoberto,
-  // e o piso da fala só empresta tempo de quem ainda está no mesmo turno.
+  // e o piso da execução só empresta tempo de quem ainda está no mesmo turno.
   const estado: EstadoBolinha =
     comemorando && estavel === 'parado'
       ? 'pronto'
-      : segurandoFala && estavel === 'pensando'
-        ? 'falando'
+      : segurandoExecucao && estavel === 'pensando'
+        ? 'executando'
         : estavel;
 
   // O olhar volta pra frente no instante em que ele para de pensar. Sem isto o

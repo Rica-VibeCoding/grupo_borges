@@ -5,7 +5,7 @@ import { estadoDaBolinha, type EntradaDaBolinha } from './bolinha-estado.ts';
 
 /** O repouso: agente vivo, sem turno e sem escrita. Cada teste muda só o que
  *  está sendo provado. */
-const PARADO: EntradaDaBolinha = { status: 'ocioso', turnoVivo: false, escrevendo: false };
+const PARADO: EntradaDaBolinha = { status: 'ocioso', turnoVivo: false, produzindo: false };
 
 describe('estadoDaBolinha', () => {
   it('nasce offline enquanto a frota não respondeu', () => {
@@ -20,7 +20,7 @@ describe('estadoDaBolinha', () => {
     // O âmbar é o único estado que precisa de humano: nem turno em voo nem
     // escrita podem escondê-lo, senão o pedido fica invisível na tela.
     assert.equal(
-      estadoDaBolinha({ status: 'aguardando', turnoVivo: true, escrevendo: true }),
+      estadoDaBolinha({ status: 'aguardando', turnoVivo: true, produzindo: true }),
       'atencao',
     );
   });
@@ -35,12 +35,12 @@ describe('estadoDaBolinha', () => {
     assert.equal(estadoDaBolinha({ ...PARADO, status: 'trabalhando' }), 'pensando');
   });
 
-  it('escrever é caso particular de estar em turno, e ganha do pensar', () => {
-    // Sem esta precedência, o agente responderia a mensagem inteira com cara de
-    // quem ainda está pensando — que é o que a bolinha existe pra desmentir.
+  it('executar é caso particular de estar em turno, e ganha do pensar', () => {
+    // Sem esta precedência a cara não muda: o turno é quase todo ferramenta
+    // rodando, e foi exatamente esse o defeito que o Rica filmou em 17/08.
     assert.equal(
-      estadoDaBolinha({ status: 'trabalhando', turnoVivo: true, escrevendo: true }),
-      'falando',
+      estadoDaBolinha({ status: 'trabalhando', turnoVivo: true, produzindo: true }),
+      'executando',
     );
   });
 

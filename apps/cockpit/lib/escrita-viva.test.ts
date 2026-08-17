@@ -3,8 +3,10 @@ import { describe, it } from 'node:test';
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
+import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+
 import type { AssistenteDeTrabalho, ItemDoFeed } from '../components/feed/grupo-ferramentas.ts';
-import { escrevendoNoFim } from './escrita-viva.ts';
+import { escrevendoNoFim, saindoOutputNoFim } from './escrita-viva.ts';
 
 let proximoId = 0;
 
@@ -56,5 +58,27 @@ describe('escrevendoNoFim', () => {
   it('último item que não é do assistente não conta', () => {
     const doUsuario = { kind: 'user', payload: mensagem('user', 'oi') } as unknown as ItemDoFeed;
     assert.equal(escrevendoNoFim([assistente([TEXTO]), doUsuario]), false);
+  });
+});
+
+describe('saindoOutputNoFim', () => {
+  it('ferramenta em voo é output saindo — o defeito que o Rica filmou em 17/08', () => {
+    // Este é O caso: a bolinha ficava com cara de "pensando" o turno inteiro
+    // porque o turno é quase todo ferramenta rodando, e a régua antiga só
+    // olhava texto. Sem lookup não há resultado casado, então ela está em voo.
+    assert.equal(saindoOutputNoFim([assistente([TEXTO, FERRAMENTA])]), true);
+  });
+
+  it('ferramenta que já voltou não é output saindo', () => {
+    const lookup: ToolResultLookup = new Map([['tu-1', { content: 'ok', isError: false }]]);
+    assert.equal(saindoOutputNoFim([assistente([TEXTO, FERRAMENTA])], lookup), false);
+  });
+
+  it('texto crescendo continua contando, sem ferramenta nenhuma', () => {
+    assert.equal(saindoOutputNoFim([assistente([TEXTO])]), true);
+  });
+
+  it('feed vazio não tem output', () => {
+    assert.equal(saindoOutputNoFim([]), false);
   });
 });

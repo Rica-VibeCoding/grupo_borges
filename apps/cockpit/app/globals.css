@@ -1378,9 +1378,9 @@ body {
 
 /* EXECUTANDO — olha em 45° pro texto que está saindo, que na tela nasce ACIMA
  * dele. Se a linha viva mudar de lugar, o ângulo aqui muda junto. */
-.ck-bolinha[data-estado='falando'] .ck-bolinha-vista { animation: ck-bolinha-lendo 3.2s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
-.ck-bolinha[data-estado='falando'] .ck-bolinha-olhos { transform: scale(1.06, 0.94); }
-.ck-bolinha[data-estado='falando'] .ck-bolinha-infla { animation-duration: 2.4s; }
+.ck-bolinha[data-estado='executando'] .ck-bolinha-vista { animation: ck-bolinha-lendo 3.2s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
+.ck-bolinha[data-estado='executando'] .ck-bolinha-olhos { transform: scale(1.06, 0.94); }
+.ck-bolinha[data-estado='executando'] .ck-bolinha-infla { animation-duration: 2.4s; }
 
 .ck-bolinha[data-estado='pronto'] .ck-bolinha-cabeca { animation: ck-bolinha-pulinho 0.62s cubic-bezier(0.3, 1.4, 0.5, 1) 1; }
 

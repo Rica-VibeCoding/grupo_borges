@@ -1,24 +1,32 @@
 'use client';
 
 /**
- * O AGENTE ESTÁ ESCREVENDO A RESPOSTA AGORA? — o segundo sinal que só o feed
- * tem, no mesmo molde de `lib/turno-vivo.ts` e pelo mesmo motivo: quem abre o
- * SSE é o feed, quem precisa saber é o composer, e abrir uma segunda conexão
- * para ler um booleano seria pagar o stream duas vezes.
+ * ESTÁ SAINDO OUTPUT AGORA? — o segundo sinal que só o feed tem, no mesmo molde
+ * de `lib/turno-vivo.ts` e pelo mesmo motivo: quem abre o SSE é o feed, quem
+ * precisa saber é o composer, e abrir uma segunda conexão para ler um booleano
+ * seria pagar o stream duas vezes.
  *
  * Por que não bastava o turno vivo: ele responde "há um turno em voo", e é com
- * ele que a bolinha pensa. Mas pensar e responder são coisas diferentes na
- * tela — enquanto o agente lê arquivo e roda comando, o fim do feed é execução;
- * quando ele começa a escrever, o fim vira texto que cresce. Sem separar os
- * dois, o mascote fica com uma cara só para o turno inteiro, e é justamente a
- * troca de cara que faz a bolinha substituir o "Pensando há 12 s".
+ * ele que a bolinha pensa. Mas o turno é quase todo execução — sem separar,
+ * o mascote fica com uma cara só do começo ao fim, que foi exatamente o que o
+ * Rica reportou em 17/08 ("não muda, a não ser quando o agente para").
+ *
+ * A RÉGUA ERRADA QUE ISTO CORRIGE: a primeira versão acendia só em texto
+ * crescendo, e ferramenta rodando caía em "pensando". Só que "Executando" é a
+ * palavra que o PRÓPRIO cockpit escreve na linha viva quando roda ferramenta —
+ * o vocabulário do produto já existia e o sinal estava ligado na coisa errada.
+ * Agora vale para os dois: ferramenta em voo OU texto crescendo, que é o que
+ * "observando o que está sendo escrito" quer dizer na tela.
  *
  * IDENTIDADE DE SNAPSHOT é requisito do `useSyncExternalStore`: o valor é um
  * booleano primitivo, e a gravação só notifica na VIRADA — senão todo flush do
  * stream (que chega a cada token) acordaria o composer à toa.
  */
 
+import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
+
 import type { ItemDoFeed } from '../components/feed/grupo-ferramentas';
+import { trabalhoEmVooNoFim } from '../components/feed/linha-viva.ts';
 
 const porAgente = new Map<string, boolean>();
 const ouvintes = new Map<string, Set<() => void>>();
@@ -34,6 +42,19 @@ export function escrevendoNoFim(itens: readonly ItemDoFeed[]): boolean {
   if (!ultimo || ultimo.kind !== 'assistant') return false;
   const ultimaParte = ultimo.parts[ultimo.parts.length - 1];
   return ultimaParte?.type === 'text';
+}
+
+/** Tem output saindo no fim do feed — ferramenta em voo OU texto crescendo.
+ *
+ *  As duas metades são exatamente as que a linha viva já usa para escolher entre
+ *  "Executando <cmd>" e "Pensando há 12 s": `trabalhoEmVooNoFim` é a mesma peça,
+ *  importada, não recopiada. A bolinha e a linha azul precisam contar a MESMA
+ *  história — se divergirem, uma das duas está mentindo na mesma tela. */
+export function saindoOutputNoFim(
+  itens: readonly ItemDoFeed[],
+  lookup?: ToolResultLookup,
+): boolean {
+  return trabalhoEmVooNoFim(itens, lookup) || escrevendoNoFim(itens);
 }
 
 /** Chamado pelo feed a cada mudança. Só notifica na virada. */
