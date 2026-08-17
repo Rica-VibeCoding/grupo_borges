@@ -78,7 +78,6 @@ import { type Motor } from './motor';
 import { SeletorMotor } from './seletor-motor';
 import { preparaEnvio } from './porta-de-envio';
 import { prefixaPesquisa } from './pesquisa-canario';
-import { AlvoDeTrava, PainelDeCaptura } from './captura-voz';
 import { usaGravador } from './usa-gravador';
 import {
   aparenciaDaVoz,
@@ -118,6 +117,30 @@ const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.Reac
   'tentar-de-novo': IconeReenviar,
   destravar: IconeCadeado,
 };
+
+function OndaCompacta({ niveis, tinta }: { niveis: number[]; tinta: string }) {
+  return (
+    <div
+      aria-hidden
+      className="flex min-w-0 flex-1 items-center justify-end overflow-hidden"
+      style={{ gap: '3px', height: '24px' }}
+    >
+      {niveis.map((nivel, indice) => (
+        <span
+          key={indice}
+          style={{
+            width: '2px',
+            flex: '0 0 2px',
+            height: `${Math.max(2, Math.round((nivel / 100) * 20))}px`,
+            borderRadius: '1px',
+            background: tinta,
+            opacity: 0.45 + (nivel / 100) * 0.55,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 /** O `/compact` com argumentos (`/compact foca no deploy`) também é compact —
  *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
@@ -728,11 +751,7 @@ export function Composer({
           // sem opacar nenhuma das duas, e é por isso que o texto do feed
           // atravessa POR DENTRO dela. Ver §18 da estética.
           background: 'var(--ck-surface-composer-material)',
-          // Em captura a moldura inteira assume a cor do estado — é o mesmo
-          // recurso do envio, e aqui ele carrega o aviso de que soltar agora
-          // descarta. Cor de estado na borda alcança a visão periférica; o
-          // olho está no que está sendo falado, não no composer.
-          borderColor: vozAparencia.tinta ?? fileteDoEstado ?? 'var(--ck-edge-composer)',
+          borderColor: fileteDoEstado ?? 'var(--ck-edge-composer)',
           // A borda inteira (não só um filete de 2px) muda de cor no estado
           // quente: o composer é a única superfície de INPUT da tela, e ali a
           // convenção do filete lateral (linha de execução, mensagem) compete
@@ -752,31 +771,22 @@ export function Composer({
         }}
       >
         {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
-            baixo em vez de flutuar sobre ele, e o composer cresce. Fica fora do
-            `emCaptura` de propósito — o anexo escolhido não some porque o
-            microfone abriu. Ela fica na tela do primeiro toque até a entrega,
-            atravessando a subida — ver o cabeçalho de `miniatura-anexo.tsx`. */}
+            baixo em vez de flutuar sobre ele, e o composer cresce. O anexo
+            escolhido não some porque o microfone abriu. Ela fica na tela do
+            primeiro toque até a entrega — ver `miniatura-anexo.tsx`. */}
         <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} />
 
-        {emCaptura ? (
-          <PainelDeCaptura
-            fase={faseVoz}
-            aparencia={vozAparencia}
-            segundos={segundosVoz}
-            niveis={niveisVoz}
-          />
-        ) : (
-          <BolhaDeComandos
-            agentSlug={agentSlug}
-            texto={texto}
-            aoSelecionar={(valor) => {
-              setTexto(valor);
-              setOrigemDoRascunho('text');
-            }}
-            campoRef={textareaRef}
-            ativa={!ehCodex}
-          >
-            <textarea
+        <BolhaDeComandos
+          agentSlug={agentSlug}
+          texto={texto}
+          aoSelecionar={(valor) => {
+            setTexto(valor);
+            setOrigemDoRascunho('text');
+          }}
+          campoRef={textareaRef}
+          ativa={!ehCodex}
+        >
+          <textarea
               ref={textareaRef}
               // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
               // referência: "queria que o input de texto tivesse uma linha só,
@@ -791,6 +801,7 @@ export function Composer({
               // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
               // editável, ele escreve durante a espera e manda com um toque quando
               // ela passa. É o que garante que o texto nunca evapora.
+              readOnly={emCaptura}
               onChange={(e) => {
                 setTexto(e.target.value);
                 setOrigemDoRascunho((atual) =>
@@ -869,7 +880,13 @@ export function Composer({
               // sem dizer o que aconteceria com o que ele escrevesse. Agora entra
               // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
               aria-label={`Mensagem para ${agentName}`}
-              placeholder={travaCompact ? 'compactando… pode escrever, entra na fila' : undefined}
+              placeholder={
+                emCaptura
+                  ? 'Ouvindo…'
+                  : travaCompact
+                    ? 'compactando… pode escrever, entra na fila'
+                    : undefined
+              }
               className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
               style={{
                 fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
@@ -877,49 +894,38 @@ export function Composer({
                 // conversa. Rolagem interna assume, que é o que o CC faz.
                 maxHeight: 'var(--ck-h-campo-max)',
               }}
-            />
-          </BolhaDeComandos>
-        )}
+          />
+        </BolhaDeComandos>
 
         {/* Base do composer: os controles moram AQUI, dentro da caixa — §12.1. */}
-        <div className="flex items-end justify-between" style={{ gap: 'var(--ck-space-2)' }}>
-          {emCaptura ? (
-            // Durante a fala, o canto esquerdo carrega a INSTRUÇÃO do gesto.
-            // É onde ela precisa estar: o polegar está na direita, e o olho
-            // percorre da esquerda. Anexo e motor saem — nenhum dos dois faz
-            // sentido enquanto o microfone está aberto.
-            travada ? (
-              <button
-                type="button"
-                onClick={gravador.descartarTravada}
-                aria-label="Descartar áudio"
-                className="ck-veil flex shrink-0 items-center"
-                style={{
-                  gap: '5px',
-                  minHeight: 'var(--ck-touch-min)',
-                  padding: '0 var(--ck-space-2)',
-                  marginLeft: 'calc(var(--ck-space-2) * -1)',
-                  marginBottom: 'calc(var(--ck-space-2) * -1)',
-                  borderRadius: 'var(--ck-radius-chip)',
-                  fontSize: 'var(--ck-text-sm)',
-                  color: 'var(--ck-text-secondary)',
-                }}
-              >
-                <IconeDescartar tamanho={15} />
-                Descartar
-              </button>
-            ) : (
-              <span
-                style={{
-                  fontSize: 'var(--ck-text-xs)',
-                  color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
-                  paddingBottom: 'var(--ck-space-1)',
-                }}
-              >
-                {vozAparencia.instrucao}
-              </span>
-            )
-          ) : (
+        <div
+          className="flex items-end justify-between"
+          style={{
+            gap: 'var(--ck-space-2)',
+            minHeight: 'calc(var(--ck-touch-min) - var(--ck-space-2))',
+          }}
+        >
+          {travada ? (
+            <button
+              type="button"
+              onClick={gravador.descartarTravada}
+              aria-label="Descartar áudio"
+              className="ck-veil flex shrink-0 items-center"
+              style={{
+                gap: '5px',
+                minHeight: 'var(--ck-touch-min)',
+                padding: '0 var(--ck-space-2)',
+                marginLeft: 'calc(var(--ck-space-2) * -1)',
+                marginBottom: 'calc(var(--ck-space-2) * -1)',
+                borderRadius: 'var(--ck-radius-chip)',
+                fontSize: 'var(--ck-text-sm)',
+                color: 'var(--ck-text-secondary)',
+              }}
+            >
+              <IconeDescartar tamanho={15} />
+              Descartar
+            </button>
+          ) : emCaptura ? null : (
             <BotaoAnexo
               estado={anexo.estado}
               alternarGaveta={anexo.alternarGaveta}
@@ -939,7 +945,12 @@ export function Composer({
           )}
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
-            {emCaptura ? null : (
+            {emCaptura ? (
+              <OndaCompacta
+                niveis={niveisVoz}
+                tinta={vozAparencia.tinta ?? 'var(--ck-state-running)'}
+              />
+            ) : (
               <>
                 {podePesquisar ? (
                   <button
@@ -982,51 +993,25 @@ export function Composer({
                 o `type` do mesmo nó, e o clique que rodou o `onClick` cai no
                 submit do form logo em seguida — o áudio começaria e a mensagem
                 vazia sairia junto. */}
-            {emCaptura || travada ? (
-              travada ? (
-                <button
-                  key="parar"
-                  type="button"
-                  onClick={gravador.enviarTravada}
-                  aria-label={`Enviar áudio para ${agentName}`}
-                  className="flex shrink-0 items-center justify-center"
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    marginBottom: 'calc(var(--ck-space-1) * -1)',
-                    borderRadius: 'var(--ck-radius-pill)',
-                    background: 'var(--ck-text-primary)',
-                    color: 'var(--ck-surface-canvas)',
-                  }}
-                >
-                  <IconeParar />
-                </button>
-              ) : (
-                <button
-                  key="voz"
-                  type="button"
-                  {...gravador.handlers}
-                  aria-label={vozAparencia.anuncio}
-                  className="flex shrink-0 items-center justify-center"
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    marginBottom: 'calc(var(--ck-space-1) * -1)',
-                    borderRadius: 'var(--ck-radius-pill)',
-                    background: vozAparencia.tinta ?? 'var(--ck-text-primary)',
-                    color: 'var(--ck-surface-canvas)',
-                    // O gesto não pode virar rolagem nem seleção de texto: no
-                    // iOS, segurar sem isto abre o menu de contexto no meio da
-                    // fala e o `pointermove` some.
-                    touchAction: 'none',
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                    WebkitTouchCallout: 'none',
-                  }}
-                >
-                  <IconeOnda />
-                </button>
-              )
+            {travada ? (
+              <button
+                key="parar"
+                type="button"
+                onClick={gravador.enviarTravada}
+                aria-label={`Enviar áudio para ${agentName}`}
+                className="flex shrink-0 items-center justify-center"
+                style={{
+                  ...ALVO_DE_TOQUE,
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: MARGEM_INFERIOR_DA_BASE,
+                  borderRadius: 'var(--ck-radius-pill)',
+                  background: 'var(--ck-text-primary)',
+                  color: 'var(--ck-surface-canvas)',
+                }}
+              >
+                <IconeParar />
+              </button>
             ) : texto.trim() || retidoAnexo ? (
               // A FOTO SOZINHA JÁ É GESTO. Sem `retidoAnexo` aqui, anexar sem
               // escrever legenda deixava o microfone no lugar do envio — a foto
@@ -1097,7 +1082,7 @@ export function Composer({
                 type="button"
                 disabled={faseVoz === 'transcrevendo'}
                 {...gravador.handlers}
-                aria-label={`Segure para falar com ${agentName}`}
+                aria-label={emCaptura ? vozAparencia.anuncio : `Segure para falar com ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
                   ...ALVO_DE_TOQUE,
@@ -1105,7 +1090,9 @@ export function Composer({
                   height: '32px',
                   marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
-                  background: 'var(--ck-text-primary)',
+                  background: emCaptura
+                    ? vozAparencia.tinta ?? 'var(--ck-state-running)'
+                    : 'var(--ck-text-primary)',
                   color: 'var(--ck-surface-canvas)',
                   touchAction: 'none',
                   userSelect: 'none',
@@ -1118,12 +1105,6 @@ export function Composer({
             )}
           </div>
         </div>
-
-        {/* O alvo de trava só existe DURANTE o gesto: um cadeado parado na tela
-            o tempo todo seria um controle a mais para ignorar. */}
-        {emCaptura && !travada ? (
-          <AlvoDeTrava progresso={gravador.progresso} armado={gravador.gesto === 'travar'} />
-        ) : null}
 
         {/* O fio — ver `aparencia-envio.ts`. Track de 2px na base, dentro da
             própria moldura (`overflow:hidden` do form recorta a ponta). Só

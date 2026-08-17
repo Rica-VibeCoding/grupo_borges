@@ -35,6 +35,7 @@ import {
   impedimentoDeContexto,
   normalizaMime,
   progressoDoGesto,
+  suavizaNiveis,
   type FaseVoz,
   type Gesto,
   type Impedimento,
@@ -121,13 +122,12 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
     const passo = Math.floor(dados.length / BARRAS) || 1;
     const tick = () => {
       analisador.getByteFrequencyData(dados);
-      setNiveis(
-        Array.from({ length: BARRAS }, (_, i) => {
-          let soma = 0;
-          for (let j = 0; j < passo; j++) soma += dados[i * passo + j] ?? 0;
-          return Math.round((soma / passo / 255) * 100);
-        }),
-      );
+      const atuais = Array.from({ length: BARRAS }, (_, i) => {
+        let soma = 0;
+        for (let j = 0; j < passo; j++) soma += dados[i * passo + j] ?? 0;
+        return Math.round((soma / passo / 255) * 100);
+      });
+      setNiveis((anteriores) => suavizaNiveis(anteriores, atuais));
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);

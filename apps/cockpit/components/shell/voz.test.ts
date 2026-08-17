@@ -21,6 +21,7 @@ import {
   normalizaMime,
   origemDepoisDaEdicao,
   progressoDoGesto,
+  suavizaNiveis,
   type FaseVoz,
 } from './voz.ts';
 
@@ -53,6 +54,12 @@ describe('transcrição vira rascunho', () => {
   it('substituir o campo inteiro transforma o novo texto em digitado', () => {
     assert.equal(origemDepoisDaEdicao('stt', '/clear', true), 'text');
     assert.equal(origemDepoisDaEdicao('stt', '', false), 'text');
+  });
+});
+
+describe('onda da captura', () => {
+  it('amortece picos bruscos sem congelar a resposta à fala', () => {
+    assert.deepEqual(suavizaNiveis([0, 100], [100, 0]), [42, 82]);
   });
 });
 

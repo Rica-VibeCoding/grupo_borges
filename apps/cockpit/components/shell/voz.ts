@@ -320,6 +320,14 @@ export function duracaoLegivel(segundos: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+export function suavizaNiveis(anteriores: readonly number[], atuais: readonly number[]): number[] {
+  return atuais.map((atual, indice) => {
+    const anterior = anteriores[indice] ?? 0;
+    const ganho = atual > anterior ? 0.42 : 0.18;
+    return Math.round(anterior + (atual - anterior) * ganho);
+  });
+}
+
 export function mesclaTranscricao(rascunho: string, transcricao: string): string {
   const atual = rascunho.trimEnd();
   const falado = transcricao.trim();
