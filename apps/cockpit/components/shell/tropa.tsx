@@ -99,10 +99,12 @@
  * o primeiro arrasto (`lib/ordena-tropa.ts`). O que muda de dono é a posição —
  * era do arquivo, passa a ser dele, gravada em `agent_state.ordem`.
  *
- * O gesto entra por uma ALÇA à direita, não pela linha: cada item é um `<Link>`
- * que navega e a coluna rola no dedo, então arrastar a linha inteira poria três
- * gestos disputando o mesmo toque. O porquê detalhado, com o que foi medido,
- * está em `arrasto-da-tropa.tsx`.
+ * O gesto entra pela LINHA INTEIRA. A primeira tentativa punha o arrasto numa
+ * alça de pontinhos à direita; o teste no iPhone do Rica mostrou que ele não
+ * achava a alça e que o pedido dele era o oposto — *"clicar direto no card sem
+ * ter esses pontinhos"*. Toque curto abre o agente, toque-e-segure carrega a
+ * linha, deslize rola a coluna: a separação é do iOS, não nossa. O porquê
+ * detalhado, com fonte de cada decisão, está em `arrasto-da-tropa.tsx`.
  *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
@@ -120,7 +122,13 @@ import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
 import { patchOrdemDaTropa } from '@grupo_borges/cockpit-core/api';
 import { ordenaTropa } from '@/lib/ordena-tropa';
 import { aplicaOrdem, novaOrdem, ordemJaChegou } from '@/lib/ordem-arrastada';
-import { AlcaDeArraste, TIPO_ARRASTO, TracoDeSoltura, usaArrastoDaLinha } from './arrasto-da-tropa';
+import {
+  AlcaDeArraste,
+  ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
+  TIPO_ARRASTO,
+  TracoDeSoltura,
+  usaArrastoDaLinha,
+} from './arrasto-da-tropa';
 import {
   BarraDeContexto,
   LARGURA_NA_LISTA,
@@ -279,10 +287,15 @@ function CartaoVivo({
       <Link
         href={href}
         onClick={escolheNoToque(agente.slug, href, aoEscolher)}
+        // Link nasce arrastável, e é isso que roubava o gesto no iPhone: o
+        // `dragstart` saía com o `<a>` como alvo, que a lib não registrou, e
+        // ela devolvia sem reordenar nada. Em `false`, o gesto sobe pro `<li>`.
+        draggable={false}
         className="ck-veil ck-aba relative flex min-w-0 flex-1 items-center overflow-hidden"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
+          ...ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
           // Só o respiro VERTICAL: o lateral mora na `.ck-aba`, que é quem sabe
@@ -369,10 +382,12 @@ function LinhaDormindo({
       <Link
         href={href}
         onClick={escolheNoToque(agente.slug, href, aoEscolher)}
+        draggable={false}
         className="ck-veil ck-aba flex min-w-0 flex-1 items-center"
         data-selecionado={selecionado ? 'true' : 'false'}
         aria-current={selecionado ? 'page' : undefined}
         style={{
+          ...ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
           gap: 'var(--ck-space-3)',
           minHeight: 'var(--ck-touch-min)',
           paddingBlock: 'var(--ck-space-1)',
