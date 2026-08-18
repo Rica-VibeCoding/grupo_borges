@@ -37,6 +37,7 @@ import type { PainelContexto, PainelQuotas } from '@grupo_borges/cockpit-core/co
 
 import { leiaConta, leiaCota, leiaRodape, type JanelaDeCota, type RodapeDeCota } from './cota';
 import { IconeReenviar } from './icones';
+import { SeletorDeConta } from './seletor-conta';
 
 function Barra({ janela }: { janela: JanelaDeCota }) {
   return (
@@ -260,23 +261,11 @@ export function BlocoDeCota({
           // Encostada à direita, longe do título: é a ficha de quem paga, não
           // um estado do agente. O `ml-auto` come a folga que sobrar.
           //
-          // Pílula em cinza NEUTRO, um degrau de superfície acima da gaveta
-          // (medido no DOM: o `<aside>` atrás pinta `surface-nav`). Destaca sem
-          // usar cor, que nesta tela pertence a estado — e o `ck-lit` põe o fio
-          // de luz no topo em vez de contorno, que é a assinatura da §A.
-          <span
-            className="ck-lit ml-auto truncate"
-            style={{
-              fontSize: 'var(--ck-text-xs)',
-              color: 'var(--ck-text-secondary)',
-              background: 'var(--ck-surface-composer)',
-              borderRadius: 'var(--ck-radius-pill)',
-              padding: '2px var(--ck-space-2)',
-            }}
-            title={`Conta Claude ativa: ${conta}`}
-          >
-            {conta}
-          </span>
+          // Desde 18/08 a pílula é o SELETOR: tocar abre a troca da conta da
+          // máquina inteira (nunca "deste agente"). O desenho da pílula —
+          // cinza neutro um degrau acima da gaveta, `ck-lit` no topo — mora no
+          // gatilho do seletor e não mudou.
+          <SeletorDeConta contaDoPainel={conta} aoTrocou={aoAtualizar} />
         ) : null}
       </div>
 

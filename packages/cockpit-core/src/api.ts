@@ -599,6 +599,61 @@ export async function postAgentQuotaRefresh(slug: string): Promise<QuotaRefreshR
   return res.json();
 }
 
+// ----- Troca de conta Claude da MÁQUINA (frota inteira) -------------------
+
+export type ContaDaMaquina = {
+  id: string;
+  email: string;
+  rotulo: string;
+  /** Fração 0..1 da janela já gasta, ou null quando o back não tem leitura
+   *  daquela conta (a inativa pode nunca ter sido consultada). */
+  cota_5h: number | null;
+  cota_7d: number | null;
+};
+
+export type ContasResponse = {
+  ativa: { email: string; display_name: string | null } | null;
+  contas: ContaDaMaquina[];
+};
+
+export type ContaTrocadaResponse = {
+  ok: true;
+  ativa: { email: string; display_name: string | null };
+};
+
+/**
+ * As contas Claude da máquina e qual está ativa. A conta é UMA por máquina —
+ * o `.credentials.json` é do usuário, não da sessão — então esta lista não é
+ * por agente, e a cota das duas vem junto porque é com esse número que o Rica
+ * escolhe pra qual trocar.
+ */
+export async function fetchContas(signal?: AbortSignal): Promise<ContasResponse> {
+  const res = await fetch('/api/contas', { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchContas failed: ${res.status}`));
+  return res.json();
+}
+
+/**
+ * Troca a conta ativa da MÁQUINA inteira, não de um agente. Ação sensível:
+ * a confirmação de verdade é o segundo toque na tela do seletor. O 409 traz
+ * `detail` legível e ele vai inteiro pra tela, mesma régua do relançar.
+ *
+ * Quem já está rodando não é mexido — o Rica reinicia os agentes na mão,
+ * escalonado, quando quiser. Nem o back nem o front orquestram restart.
+ */
+export async function postContaAtiva(contaId: string): Promise<ContaTrocadaResponse> {
+  const res = await fetch('/api/contas/ativa', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conta_id: contaId }),
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postContaAtiva failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
 export async function postAgentModel(
   slug: string,
   // `AnyModelSlug | (string & {})` mantém o autocompletar dos slugs conhecidos
