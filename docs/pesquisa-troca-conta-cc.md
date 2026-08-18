@@ -94,9 +94,10 @@ troca, estava com `7d-utilization` em **0,81**.
 
 ### O que continua NÃO medido
 
-1. **Sessão viva migra?** Escrever no `.credentials.json` real encosta nos 7
-   agentes; não testei sem aval do Rica. Com `/login` já se observou migração sem
-   restart (commit `783c3f6`), mas escrita direta é outro caminho.
+1. ~~**Sessão viva migra?**~~ **Deixou de ser requisito em 18/08.** O Rica decidiu
+   (voz) que dá o restart na mão, agente por agente: quem ele não reinicia continua
+   na chave antiga, quem ele reinicia vem pra nova — e ele quer justamente esse
+   controle. O botão não precisa orquestrar restart nem garantir migração a quente.
 2. **MCP sob scope reduzido.** O `setup-token` entrega só `user:inference`; o
    login normal traz 5 scopes, incluindo `user:mcp_servers` e `user:file_upload`.
    Se algum agente perder MCP depois da troca, a causa é essa.
@@ -118,14 +119,14 @@ sincronizado). Bug de desenho do plugin oficial, não nosso. Não gerou
 2. ~~Provar que o token é válido isolado.~~ ✅ 18/08.
 3. ~~Provar que o token escrito dentro do `.credentials.json` é aceito.~~ ✅ 18/08,
    com controle negativo.
-4. **Aberto — precisa de aval do Rica:** gerar o token da segunda conta
-   (`ricardo.incasa`) pela mesma receita, e então desenhar o endpoint que reescreve
+4. **Aberto — autorizado pelo Rica em 18/08; chave pedida ao Pavan.** Gerar o
+   token da segunda conta (`ricardo.incasa`) pela mesma receita, e então desenhar o endpoint que reescreve
    o `.credentials.json` compartilhado (backup antes, confirmação de qual conta
    ficou ativa por `/api/oauth/profile` depois). A pílula de conta em
    `apps/cockpit/components/shell/bloco-de-cota.tsx` vira o gatilho.
-5. Na primeira troca real, medir se as sessões vivas migram sozinhas. Se não
-   migrarem, o botão precisa disparar o restart da frota junto — o que muda a
-   dificuldade de 2 pra 3.
+5. ~~Medir se as sessões vivas migram sozinhas.~~ Fora de escopo por decisão do
+   Rica (18/08) — o restart é manual e escalonado, por vontade dele. A dificuldade
+   fica em 2.
 
 ## Dificuldade estimada
 
