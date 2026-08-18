@@ -93,6 +93,11 @@ def prune(db_path: Path, days: int, dry_run: bool, do_vacuum: bool) -> int:
         except sqlite3.OperationalError as exc:
             # VACUUM precisa de lock exclusivo — a API pode estar escrevendo.
             print(f"vacuum    falhou ({exc}) — reservar janela com a API parada")
+        else:
+            # O VACUUM reescreve o banco inteiro pelo WAL, que fica do tamanho
+            # do arquivo até o próximo checkpoint. Sem isto o relatório soma o
+            # WAL e anuncia que o banco DOBROU logo depois de encolher.
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     conn.close()
     size_after = db_size(db_path)
