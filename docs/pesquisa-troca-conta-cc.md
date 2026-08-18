@@ -119,11 +119,14 @@ sincronizado). Bug de desenho do plugin oficial, não nosso. Não gerou
 2. ~~Provar que o token é válido isolado.~~ ✅ 18/08.
 3. ~~Provar que o token escrito dentro do `.credentials.json` é aceito.~~ ✅ 18/08,
    com controle negativo.
-4. **Aberto — autorizado pelo Rica em 18/08; chave pedida ao Pavan.** Gerar o
-   token da segunda conta (`ricardo.incasa`) pela mesma receita, e então desenhar o endpoint que reescreve
-   o `.credentials.json` compartilhado (backup antes, confirmação de qual conta
-   ficou ativa por `/api/oauth/profile` depois). A pílula de conta em
-   `apps/cockpit/components/shell/bloco-de-cota.tsx` vira o gatilho.
+4. ~~Segunda conta + endpoint + gatilho na pílula.~~ ✅ 18/08, no ar (`72c3656`).
+   `GET/POST /api/contas` em `apps/api/routers/contas.py`; a pílula de
+   `bloco-de-cota.tsx` virou o seletor. Dois detalhes que a pesquisa não previa:
+   a chave do `setup-token` **não responde** `/api/oauth/profile` (só tem escopo
+   `user:inference`), então a identidade vem do header `anthropic-organization-id`
+   de uma inferência mínima — que de quebra traz a cota; e a escrita tem que ir
+   nas **duas** fontes, porque a pílula lê o `oauthAccount` do `~/.claude.json`,
+   não a credencial.
 5. ~~Medir se as sessões vivas migram sozinhas.~~ Fora de escopo por decisão do
    Rica (18/08) — o restart é manual e escalonado, por vontade dele. A dificuldade
    fica em 2.
