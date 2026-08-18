@@ -53,13 +53,16 @@ _CACHE_TTL_S = 60
 
 
 class ContaAtiva(BaseModel):
-    email: str | None = None
+    # `email` é obrigatório de propósito: o front deriva o nome curto com
+    # `email.split('@')`, e um nulo aqui viraria erro de runtime na tela. Sem
+    # e-mail legível, a resposta traz `ativa: null` — que a tela sabe tratar.
+    email: str
     display_name: str | None = None
 
 
 class ContaDisponivel(BaseModel):
     id: str
-    email: str | None = None
+    email: str
     rotulo: str
     cota_5h: float | None = None
     cota_7d: float | None = None
@@ -151,10 +154,10 @@ def _ler_conta_ativa() -> ContaAtiva | None:
         return None
     email = oauth.get("emailAddress")
     display = oauth.get("displayName")
-    if not isinstance(email, str) and not isinstance(display, str):
+    if not isinstance(email, str) or not email:
         return None
     return ContaAtiva(
-        email=email if isinstance(email, str) else None,
+        email=email,
         display_name=display if isinstance(display, str) else None,
     )
 
@@ -201,7 +204,7 @@ def listar_contas() -> ContasResposta:
         contas.append(
             ContaDisponivel(
                 id=conta_id,
-                email=_EMAIL_POR_ID.get(conta_id),
+                email=_EMAIL_POR_ID.get(conta_id, conta_id),
                 rotulo=_EMAIL_POR_ID.get(conta_id, conta_id),
                 cota_5h=cota_5h,
                 cota_7d=cota_7d,
@@ -295,5 +298,6 @@ def trocar_conta(pedido: TrocaPedido) -> TrocaResposta:
     _cota_cache.pop(pedido.conta_id, None)
     return TrocaResposta(
         ok=True,
-        ativa=_ler_conta_ativa() or ContaAtiva(email=email, display_name=email),
+        ativa=_ler_conta_ativa()
+        or ContaAtiva(email=email or pedido.conta_id, display_name=email),
     )

@@ -84,3 +84,22 @@ def test_chave_morta_nao_encosta_na_credencial_da_frota(
 
     assert erro.value.status_code == 409
     assert json.loads(credenciais.read_text())["claudeAiOauth"]["accessToken"] == "sk-ant-oat01-viva"
+
+
+def test_email_nunca_vem_nulo_pro_front(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """O front faz `email.split('@')`; nulo aqui vira erro de runtime na tela.
+
+    Conta sem e-mail mapeado se identifica pelo próprio id.
+    """
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    (secrets / "cc-oauth-token-contanova-2026-08-18.txt").write_text("sk-ant-oat01-x\n")
+
+    monkeypatch.setattr(contas, "_SECRETS_DIR", secrets)
+    monkeypatch.setattr(contas, "_CLAUDE_CONFIG_PATH", tmp_path / "sem-config.json")
+    monkeypatch.setattr(contas, "_cota_com_cache", lambda *a: (None, None))
+
+    resposta = contas.listar_contas()
+
+    assert resposta.ativa is None
+    assert [c.email for c in resposta.contas] == ["contanova"]
