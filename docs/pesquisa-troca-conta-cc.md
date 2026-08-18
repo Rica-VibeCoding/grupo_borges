@@ -1,6 +1,6 @@
 # Pesquisa — trocar a conta CC da tropa pelo cockpit
 
-> Estado: pesquisa concluída, implementação NÃO começada. Pausado 16/08 a pedido do Rica — retomar por aqui. `tropa_task` aponta pra este arquivo.
+> Estado: mecanismo PROVADO em 18/08, implementação NÃO começada. `tropa_task` aponta pra este arquivo.
 
 ## Objetivo
 
@@ -64,11 +64,43 @@ Ricardo), mas em ambas colou pra mim o **código intermediário do callback OAut
 mostrar o token impresso. Testei os dois valores isolado: **401 Invalid bearer
 token** nas duas contas, confirmando que não são tokens válidos.
 
-**Retomar por aqui:** Rica precisa rodar `claude setup-token` de novo, dessa
-vez redirecionando a saída pra um arquivo (`tee` ou similar) pra garantir que
-capturamos o token final mesmo que a UI feche rápido. Sem isso, a hipótese
-central (escrever no `.credentials.json` funciona sem restart) segue sem
-validar.
+**Resolvido em 18/08 (Pavan).** O `tee` não era o problema — o que quebrava era
+o processo do `setup-token` morrer do lado de quem aprova. Receita que funcionou:
+rodar o comando numa tmux nossa com `CLAUDE_CONFIG_DIR` isolado, mandar só a URL
+pro Rica, e colar o código que ele devolve no pane **VIVO** por `send-keys`.
+Token da conta WOODPRO em `~/.claude/secrets/cc-oauth-token-woodpro-2026-08-18.txt`
+(chmod 600, 1 ano). Os dois arquivos de 16/08 estão renomeados pra
+`.INVALIDO-codigo-intermediario`.
+
+## Hipótese central VALIDADA (18/08, Daniel)
+
+O passo 3 da lista abaixo era o risco real do projeto — e passou:
+
+- `.credentials.json` sintético num `CLAUDE_CONFIG_DIR` isolado, com o token
+  `sk-ant-oat01-…` no campo `accessToken`, `refreshToken` vazio, `expiresAt` a
+  360 dias, `scopes: ["user:inference"]` → `claude -p` autenticou e respondeu.
+- **Controle negativo:** com os 8 últimos caracteres do token trocados por
+  `XXXXXXXX`, o mesmo comando deu `401 OAuth access token is invalid`. É isso que
+  prova que a autenticação veio do arquivo, e não de um fallback silencioso.
+- Scope reduzido não quebrou visão: o mesmo `claude -p` leu uma imagem local e
+  descreveu.
+- Identidade do token confirmada por fora do que o Pavan afirmou: header
+  `anthropic-organization-id` = `a7ce47e0-…` = Max woodpromais.
+
+**Estado das contas no dia do teste:** a frota rodava em `ricardo.incasa@gmail.com`
+(org `60094366-…`, via `/api/oauth/profile`) — atenção, o `subscriptionType` do
+arquivo dizia `"max"` e levaria à conta errada. A WOODPRO, conta de destino da
+troca, estava com `7d-utilization` em **0,81**.
+
+### O que continua NÃO medido
+
+1. **Sessão viva migra?** Escrever no `.credentials.json` real encosta nos 7
+   agentes; não testei sem aval do Rica. Com `/login` já se observou migração sem
+   restart (commit `783c3f6`), mas escrita direta é outro caminho.
+2. **MCP sob scope reduzido.** O `setup-token` entrega só `user:inference`; o
+   login normal traz 5 scopes, incluindo `user:mcp_servers` e `user:file_upload`.
+   Se algum agente perder MCP depois da troca, a causa é essa.
+3. **`refreshToken` vazio** — não há renovação automática; vale o prazo do token.
 
 ## Achado lateral (não bloqueia isto, registrado à parte)
 
@@ -82,14 +114,18 @@ sincronizado). Bug de desenho do plugin oficial, não nosso. Não gerou
 
 ## Próximos passos (nesta ordem)
 
-1. Rica gera os dois `setup-token` de novo, capturando a saída em arquivo.
-2. Testar no ambiente isolado (`CLAUDE_CONFIG_DIR` de teste) se o token
-   funciona como `CLAUDE_CODE_OAUTH_TOKEN` (prova que o token em si é válido).
-3. Testar se escrever esse token dentro de um `.credentials.json` sintético
-   (no formato achado pela pesquisa 1) é aceito pelo CC — hipótese ainda não
-   validada, pode não ser tecnicamente viável.
-4. Só depois de 2 e 3 provados: desenhar o botão no cockpit (endpoint que
-   troca o arquivo compartilhado + confirma qual conta ficou ativa).
+1. ~~Gerar o `setup-token` capturando a saída.~~ ✅ 18/08 — WOODPRO.
+2. ~~Provar que o token é válido isolado.~~ ✅ 18/08.
+3. ~~Provar que o token escrito dentro do `.credentials.json` é aceito.~~ ✅ 18/08,
+   com controle negativo.
+4. **Aberto — precisa de aval do Rica:** gerar o token da segunda conta
+   (`ricardo.incasa`) pela mesma receita, e então desenhar o endpoint que reescreve
+   o `.credentials.json` compartilhado (backup antes, confirmação de qual conta
+   ficou ativa por `/api/oauth/profile` depois). A pílula de conta em
+   `apps/cockpit/components/shell/bloco-de-cota.tsx` vira o gatilho.
+5. Na primeira troca real, medir se as sessões vivas migram sozinhas. Se não
+   migrarem, o botão precisa disparar o restart da frota junto — o que muda a
+   dificuldade de 2 pra 3.
 
 ## Dificuldade estimada
 
