@@ -884,6 +884,61 @@ body {
   transform: translateX(calc(32px + var(--ck-space-3)));
 }
 
+/* A TROCA DA FALA — a onda e os chips no mesmo lugar, com um fade entre eles.
+ *
+ * Rica, 20/08, vendo o ciclo gravado: *"a transição entre uma coisa e outra,
+ * ela tem que respeitar um certo slow, que é o que a gente tem na hora que a
+ * gente abre o painel, senão fica duro"*. O painel que ele cita é o
+ * `.ck-surge` logo abaixo, e a onda era a última peça do composer que aparecia
+ * de estalo — pelo motivo de sempre: era um ternário, e o lado que sai era
+ * REMOVIDO do DOM.
+ *
+ * Os dois lados vivem empilhados na MESMA célula de grade. Isso é o que torna
+ * a troca gratuita em layout: a fileira já tinha a largura dos chips e o piso
+ * de 40px da linha, e continua com os dois nas quatro fases — nada recalcula,
+ * nada empurra a conversa, e o `faixa-da-voz-nao-empurra.py` mede exatamente
+ * essa borda. Quem anima é só `opacity` (§9.4).
+ *
+ * Duração e curva são as do `.ck-surge`, sem exceção: superfície que entra, na
+ * casa inteira, entra com o mesmo slow. */
+.ck-troca-da-fala {
+  display: grid;
+  /* `minmax(0, 1fr)` e não `auto`: trilha automática tem piso de min-content, e
+     o rótulo do motor empurraria o microfone na tela de 390px em vez de truncar
+     como sempre truncou. */
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  flex: 1;
+}
+
+.ck-troca-da-fala-face {
+  grid-area: 1 / 1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ck-space-3);
+  visibility: visible;
+  opacity: 1;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
+    visibility 0s;
+}
+
+/* O lado fora de cena. `visibility` só vira no fim do fade — some no primeiro
+   quadro e a animação rodaria no vazio, o mesmo raciocínio do `.ck-surge`. E
+   `pointer-events` é cinto sobre suspensório: durante os 200ms da saída o
+   elemento ainda pinta, e nesse intervalo ele PODE receber o dedo. */
+.ck-troca-da-fala[data-onda='false'] > [data-face='onda'],
+.ck-troca-da-fala[data-onda='true'] > [data-face='acoes'] {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    visibility 0s linear var(--ck-dur-enter, 200ms);
+}
+
 .ck-surge {
   visibility: visible;
   opacity: 1;

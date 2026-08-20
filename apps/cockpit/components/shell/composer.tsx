@@ -460,6 +460,11 @@ export function Composer({
   // funções de aparência que o repo já usa. `gerando` fica de fora em qualquer
   // hipótese: é estado do AGENTE e mora na linha da bolinha.
   const modo = modoDaFala({ faseVoz, falaFalhou: avisoDaVoz !== null });
+  // O ÚNICO recado da voz que ainda se vê. Gravação travada passando de 20s é
+  // o teto de 30s do STT chegando: a moldura vira âmbar, e cor sem motivo
+  // escrito é enfeite. O resto do que `aparenciaDaVoz` diz virou narração de
+  // fase e não aparece mais — ver a linha da voz, abaixo.
+  const avisoDoTetoDoStt = modo === 'travada' && vozAparencia.longa;
   // O SLOT DE DESPACHO ESTÁ EM CENA? Em `travada` o gesto que fecha é o do
   // áudio, no slot de entrada — não há texto a mandar enquanto a gravação
   // espera. Fora daí, quem manda o botão existir é haver o que despachar.
@@ -798,7 +803,13 @@ export function Composer({
           pode passar de uma linha. Daí `minHeight`, que é piso e não teto. O
           `flex-col` está aqui por causa do strut: em bloco comum a linha vazia
           herdaria o corpo de 16px e ficaria mais alta que o texto de 12px que
-          ela reserva. */}
+          ela reserva.
+
+          DEPOIS DE 20/08 a reserva guarda MENOS gente: a narração de fase
+          virou `sr-only` e não ocupa mais espaço nenhum. Quem ainda monta e
+          desmonta aqui é o aviso do microfone e o teto de 30s do STT — ambos
+          raros, ambos com botão ou moldura junto, e é para eles que a linha
+          continua reservada. */}
       <div
         className="mx-auto flex w-full flex-col"
         style={{
@@ -843,29 +854,44 @@ export function Composer({
           </div>
         ) : null}
 
-        {/* A VOZ FALANDO DE FORA DA CAIXA. Dois casos que a primeira versão desta
-            peça deixou mudos:
+        {/* A VOZ FALANDO DE FORA DA CAIXA — agora só quando tem RECADO, nunca
+            para narrar a fase. Rica, 20/08, vendo o ciclo gravado: *"na hora
+            que eu clico aparece tipo umas frases em cima do composer, eu acho
+            que não precisaria ter essa UI"*.
 
-            1. `transcrevendo` — o fio corre na base, mas fio sozinho não
-               distingue "subindo áudio" de "enviando texto". O despacho foi
-               explícito: o STT roda no servidor e a tela não pode ficar muda no
-               tempo morto. Fio é ritmo; a palavra é o que diz DE QUE espera se
-               trata.
-            2. `travada` com áudio longo — a duração muda de cor e a moldura
-               também, mas com a gravação travada o canto esquerdo é ocupado
-               pelo botão Descartar e o aviso não tinha onde aparecer. Cor sem
-               motivo é enfeite: quem vê o âmbar precisa saber que é o teto de
-               30s do STT chegando. */}
-        {vozAparencia.instrucao &&
-        faseVoz !== 'impedida' &&
-        (!emCaptura(modo) || (modo === 'travada' && vozAparencia.longa)) ? (
+            Ele está certo sobre a narração: `liberando o microfone…` passa num
+            quadro e ninguém lê, e `transcrevendo…` repete o que o fio na base
+            da caixa já está dizendo com o próprio movimento. Duas peças para o
+            mesmo recado, e a de cima é a que empurra a conversa.
+
+            SOME DOS OLHOS, NÃO DA ÁRVORE DE ACESSIBILIDADE. Quem não enxerga o
+            fio depende desta linha para saber que existe um tempo morto de STT
+            — é literalmente o motivo pelo qual `visibility: hidden` foi
+            recusado na reserva acima. `sr-only` mantém o nó no lugar e o
+            `aria-live` falando; o que ele tira é a tinta.
+
+            O ÚNICO que continua à vista é `travada` com áudio longo: ali a
+            moldura vira âmbar, e cor sem motivo escrito é enfeite — quem vê o
+            âmbar precisa saber que é o teto de 30s do STT chegando. Não é
+            fase passando, é aviso, e aviso se lê. */}
+        {vozAparencia.instrucao && faseVoz !== 'impedida' ? (
           <span
             role="status"
             aria-live="polite"
-            style={{
-              fontSize: 'var(--ck-text-xs)',
-              color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
-            }}
+            // O punho da bancada. Há outras regiões `status` na tela (a bolinha
+            // do agente é uma), e `troca-da-fala-nao-e-de-estalo.py` precisa
+            // pegar ESTA para provar que ela ficou muda aos olhos e viva no
+            // leitor de tela.
+            data-linha="voz"
+            className={avisoDoTetoDoStt ? undefined : 'sr-only'}
+            style={
+              avisoDoTetoDoStt
+                ? {
+                    fontSize: 'var(--ck-text-xs)',
+                    color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
+                  }
+                : undefined
+            }
           >
             {vozAparencia.instrucao}
           </span>
@@ -911,7 +937,11 @@ export function Composer({
           borderRadius: 'var(--ck-radius-caixa)',
           position: 'relative',
           overflow: 'hidden',
-          transition: `border-color var(--ck-dur-fast) var(--ck-ease)`,
+          // O mesmo slow do resto da troca. Em `--ck-dur-fast` (120ms) a
+          // moldura chegava na cor nova antes de o microfone chegar na dele, e
+          // a caixa mudava em duas etapas — o estado da fala é UM, e muda como
+          // um só gesto.
+          transition: `border-color var(--ck-dur-enter, 200ms) var(--ck-ease)`,
         }}
       >
         {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
@@ -1105,13 +1135,31 @@ export function Composer({
             data-despacho={despachoEmCena ? 'em-cena' : 'oculto'}
             style={{ gap: 'var(--ck-space-3)' }}
           >
-            {emCaptura(modo) ? (
-              <OndaCompacta
-                niveis={niveisVoz}
-                tinta={vozAparencia.tinta ?? 'var(--ck-state-running)'}
-              />
-            ) : (
-              <>
+            {/* A TROCA DA FALA. Rica, 20/08, no mesmo vídeo: *"a transição
+                entre uma coisa e outra tem que respeitar um certo slow, que é
+                o que a gente tem na hora que a gente abre o painel, senão fica
+                duro"*. A onda entrava e saía de estalo porque isto era um
+                ternário — e saída não se anima com o elemento sendo REMOVIDO
+                do DOM, que é a regra que fez a gaveta virar `data-aberto` em
+                vez de desmontar.
+
+                Agora os dois lados ficam montados, empilhados na mesma célula
+                de grade, e quem troca é o `data-onda`. A fileira não muda de
+                largura nem de altura na passagem, quem anima é só `opacity`
+                (§9.4), e fora de cena é `visibility` — não pinta, não recebe
+                toque, não entra em leitor de tela. Regra em
+                `.ck-troca-da-fala`. */}
+            <div
+              className="ck-troca-da-fala"
+              data-onda={emCaptura(modo) ? 'true' : 'false'}
+            >
+              <div className="ck-troca-da-fala-face" data-face="onda">
+                <OndaCompacta
+                  niveis={niveisVoz}
+                  tinta={vozAparencia.tinta ?? 'var(--ck-state-running)'}
+                />
+              </div>
+              <div className="ck-troca-da-fala-face" data-face="acoes">
                 {podePesquisar ? (
                   <button
                     type="button"
@@ -1139,8 +1187,8 @@ export function Composer({
                   motor={motor}
                   esforcoCobrePedido={esforcoCobrePedido}
                 />
-              </>
-            )}
+              </div>
+            </div>
             {/* DOIS SLOTS, UM ASSUNTO CADA. Até 20/08 havia um só, com quatro
                 donos em cascata, e a cascata é que produzia os becos: o ■ comeu
                 o microfone de madrugada (`678f598`), e antes disso o microfone
@@ -1211,6 +1259,13 @@ export function Composer({
                     emCaptura(modo) || !temConteudo
                       ? 'var(--ck-surface-canvas)'
                       : 'var(--ck-text-secondary)',
+                  // A tinta troca no tempo da casa, não de estalo: o disco
+                  // claro virando ciano é a mudança mais visível do ciclo
+                  // inteiro. `background` e `color` não custam layout — a
+                  // proibição §9.4 é sobre `width`/`height`/`top`/`left`, e a
+                  // borda da caixa aqui do lado já transiciona assim.
+                  transition:
+                    'background var(--ck-dur-enter, 200ms) var(--ck-ease), color var(--ck-dur-enter, 200ms) var(--ck-ease)',
                   touchAction: 'none',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
