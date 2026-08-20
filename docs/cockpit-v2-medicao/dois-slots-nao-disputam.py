@@ -43,6 +43,10 @@ with sync_playwright() as p:
     navegador = p.chromium.launch(channel="chrome")
     contexto = navegador.new_context(viewport=VIEWPORT)
     pagina = contexto.new_page()
+    # A F3 abre um canal ao vivo com a OpenAI ao começar a gravar. Esta bancada
+    # mede TELA, não fala: recusar o bilhete derruba o composer no caminho de
+    # arquivo, que é exatamente o que ela sempre mediu.
+    pagina.route("**/transcription/live-token", lambda rota: rota.abort())
     # `domcontentloaded`, nunca `networkidle`: o cockpit segura SSE aberto e a
     # rede nunca fica ociosa.
     pagina.goto(f"http://127.0.0.1:{porta}/agente/{slug}", wait_until="domcontentloaded")

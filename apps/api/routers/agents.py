@@ -31,6 +31,7 @@ import sqlite3
 import subprocess
 import tempfile
 import time
+import httpx
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -3576,6 +3577,19 @@ def _resolve_stt_script() -> str:
 
 _VOICE_STT_SCRIPT = _resolve_stt_script()
 _VOICE_STT_TIMEOUT_S = 30
+# Fala AO VIVO (F3) — outro caminho, não outro modelo do mesmo caminho. O de
+# cima recebe arquivo fechado e devolve texto no fim; este cunha um bilhete
+# curto e sai de cena, porque o áudio vai do NAVEGADOR direto pro fornecedor.
+# Por isso este back continua sem WebSocket nenhum.
+#
+# `gpt-live-transcribe` medido em 20/08 contra `gpt-realtime-whisper`: mesmo
+# preço, mesma latência, e este acerta a pontuação em pt-BR que o outro come.
+# A taxa é 24000 cravada — a API recusa 16k e 48k com "expected <= 24000".
+_LIVE_STT_MODEL = "gpt-live-transcribe"
+_LIVE_STT_RATE = 24_000
+_LIVE_STT_MINT_URL = "https://api.openai.com/v1/realtime/client_secrets"
+_LIVE_STT_MINT_TIMEOUT_S = 10.0
+_LIVE_STT_KEY_FILE = Path.home() / ".claude" / "secrets" / "openai-api-key.txt"
 _VOICE_MIME_SUFFIX = {
     "audio/ogg": ".oga",
     "audio/webm": ".webm",
@@ -4153,6 +4167,76 @@ async def post_agent_transcription(
     await _get_agent_or_404(request, slug)
     text, duration_ms = await _transcribe_agent_audio(slug, audio)
     return {"text": text, "duration_ms": duration_ms}
+
+
+def _live_stt_key(request: Request) -> str:
+    """Mesma precedência do `stt-openai.sh` que a rota de cima já executa: env
+    primeiro, arquivo do cofre depois. Sem isso a chave existiria em dois
+    lugares e girar uma deixaria a outra viva."""
+    settings = getattr(request.app.state, "settings", None)
+    from_env = (getattr(settings, "openai_api_key", "") or "").strip()
+    if from_env:
+        return from_env
+    try:
+        return _LIVE_STT_KEY_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+@router.post("/{slug}/transcription/live-token")
+async def post_agent_live_transcription_token(
+    slug: str, request: Request
+) -> dict[str, Any]:
+    """Cunha o bilhete de curta duração que o navegador usa pra abrir o canal
+    de fala ao vivo direto na OpenAI.
+
+    A chave permanente não sai daqui: o navegador recebe só o `ek_...`, que
+    morre sozinho. Quem falha aqui não quebra a voz — o composer cai no
+    caminho de arquivo, que é o de sempre —, então o 503 é informação, não
+    incidente.
+    """
+    await _get_agent_or_404(request, slug)
+    key = _live_stt_key(request)
+    if not key:
+        raise HTTPException(status_code=503, detail="sem chave OpenAI para a fala ao vivo")
+
+    corpo = {
+        "session": {
+            "type": "transcription",
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": _LIVE_STT_RATE},
+                    "transcription": {"model": _LIVE_STT_MODEL, "language": "pt"},
+                }
+            },
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=_LIVE_STT_MINT_TIMEOUT_S) as client:
+            resposta = await client.post(
+                _LIVE_STT_MINT_URL,
+                headers={"Authorization": f"Bearer {key}"},
+                json=corpo,
+            )
+    except httpx.HTTPError as erro:
+        raise HTTPException(status_code=503, detail=f"fala ao vivo indisponível: {erro}") from erro
+
+    if resposta.status_code != 200:
+        # O texto do fornecedor entra no detail porque ele diz a causa real
+        # (modelo desconhecido, cota, chave girada) e sem isso o front só
+        # saberia "deu errado". A chave não aparece na resposta dele.
+        raise HTTPException(
+            status_code=503,
+            detail=f"a OpenAI recusou o bilhete ({resposta.status_code}): {resposta.text[:300]}",
+        )
+
+    dados = resposta.json()
+    return {
+        "token": dados["value"],
+        "expires_at": dados["expires_at"],
+        "model": _LIVE_STT_MODEL,
+        "rate": _LIVE_STT_RATE,
+    }
 
 
 @router.post("/{slug}/voice")

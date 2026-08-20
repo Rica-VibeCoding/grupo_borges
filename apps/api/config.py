@@ -87,6 +87,14 @@ class Settings(BaseSettings):
     # mensal). É a MESMA chave que o boot exporta em ANTHROPIC_API_KEY.
     opencode_api_key: str | None = None
 
+    # OpenAI — usada só pra CUNHAR o bilhete curto da fala ao vivo do composer
+    # (POST /v1/realtime/client_secrets). Vazia por padrão de propósito: a
+    # chave já mora em ~/.claude/secrets/openai-api-key.txt, que é de onde o
+    # `stt-openai.sh` lê, e duplicar segredo é criar uma cópia pra alguém
+    # esquecer de girar. Preencher GB_OPENAI_API_KEY só se o host não tiver o
+    # arquivo do cofre.
+    openai_api_key: str = ""
+
     # TTS — engine preferido Google Chirp3-HD (voz da frota), fallback edge-tts.
     # tts_voice é só o default edge usado quando não há voz da frota nem key.
     google_tts_api_key: str = ""

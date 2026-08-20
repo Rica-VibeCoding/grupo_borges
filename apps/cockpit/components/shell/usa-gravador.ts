@@ -44,6 +44,7 @@ import {
   type Gesto,
   type Impedimento,
 } from './voz';
+import type { FalaAoVivo } from './usa-fala-ao-vivo';
 
 export const BARRAS = 24;
 
@@ -51,6 +52,10 @@ type Opcoes = {
   /** Recebe o áudio pronto. Quem chama decide o que fazer com ele (subir,
    *  descartar, guardar) — o gravador não conhece rede. */
   aoGravar: (audio: Blob) => void | Promise<void>;
+  /** Canal de fala ao vivo, opcional. Quando ele entrega o texto, o arquivo
+   *  NÃO sobe: seria transcrever a mesma fala duas vezes. Ausente ou falho, o
+   *  caminho de arquivo assume inteiro — é a rede de segurança. */
+  aoVivo?: FalaAoVivo;
 };
 
 export type Gravador = {
@@ -76,7 +81,7 @@ export type Gravador = {
   limparImpedimento: () => void;
 };
 
-export function usaGravador({ aoGravar }: Opcoes): Gravador {
+export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
   const [fase, setFase] = useState<FaseVoz>('ociosa');
   const [segundos, setSegundos] = useState(0);
   const [niveis, setNiveis] = useState<number[]>(() => Array(BARRAS).fill(0));
@@ -150,11 +155,14 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       if (gravador && gravador.state !== 'inactive') {
         gravador.stop(); // o `onstop` cuida do resto
       } else {
+        // Nunca chegou a gravar (stream recusado, gesto morto no meio): o
+        // canal ao vivo pode ter aberto assim mesmo, e ninguém o fecharia.
+        void aoVivo?.fecha(true);
         solta();
         setFase('ociosa');
       }
     },
-    [solta],
+    [aoVivo, solta],
   );
 
   const comeca = useCallback(async () => {
@@ -236,9 +244,22 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       const descartar = descartarRef.current;
       const pedacos = pedacosRef.current;
       const bruto = gravador.mimeType || '';
+      // `solta` PRIMEIRO: o microfone fecha no instante em que o dedo sai, e
+      // não fica aberto os segundos que o texto definitivo leva pra chegar. O
+      // preço é o último bloco do worklet (~43ms) ficar pra trás.
       solta();
 
+      // O canal ao vivo fecha antes de qualquer decisão sobre o arquivo — e
+      // fecha também quando é descarte, porque é ele quem apaga da tela o que
+      // já tinha aparecido.
+      if (!descartar && aoVivo) setFase('transcrevendo');
+      const entregueAoVivo = aoVivo ? await aoVivo.fecha(descartar) : false;
+
       if (descartar || pedacos.length === 0) {
+        setFase('ociosa');
+        return;
+      }
+      if (entregueAoVivo) {
         setFase('ociosa');
         return;
       }
@@ -299,6 +320,10 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       return;
     }
 
+    // Depois do `start` de propósito: os caminhos de erro acima saem sem ter
+    // aberto canal nenhum, então não precisam desfazer nada.
+    void aoVivo?.liga(stream, contexto);
+
     setFase(travadaRef.current ? 'travada' : 'gravando');
     desenhaOnda(analisador);
     let contados = 0;
@@ -307,7 +332,7 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       segundosRef.current = contados;
       setSegundos(contados);
     }, 1000);
-  }, [aoGravar, desenhaOnda, solta]);
+  }, [aoGravar, aoVivo, desenhaOnda, solta]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {

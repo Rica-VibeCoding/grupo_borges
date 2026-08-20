@@ -475,6 +475,22 @@ export async function postAgentTranscription(
   return res.json();
 }
 
+/** Cunha o bilhete curto da fala ao vivo. Quem falha aqui NÃO perde a voz: o
+ *  composer cai no `postAgentTranscription` acima, que é o caminho de sempre. */
+export async function postAgentLiveToken(
+  slug: string,
+): Promise<{ token: string; expires_at: number; model: string; rate: number }> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(slug)}/transcription/live-token`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`postAgentLiveToken ${res.status}: ${txt}`);
+  }
+  return res.json();
+}
+
 export async function postAgentImage(
   slug: string,
   file: File,

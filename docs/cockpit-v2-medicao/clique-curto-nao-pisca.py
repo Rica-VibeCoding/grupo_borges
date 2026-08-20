@@ -84,6 +84,10 @@ with sync_playwright() as p:
     )
     contexto = navegador.new_context(viewport=VIEWPORT, permissions=["microphone"])
     pagina = contexto.new_page()
+    # A F3 abre um canal ao vivo com a OpenAI ao começar a gravar. Esta bancada
+    # mede TELA, não fala: recusar o bilhete derruba o composer no caminho de
+    # arquivo, que é exatamente o que ela sempre mediu.
+    pagina.route("**/transcription/live-token", lambda rota: rota.abort())
     # Nada de STT nesta bancada — e nada de `abort` tampouco: rota abortada
     # fabricaria a falha da fala, e o aviso que ela acende contaminaria a
     # contagem. Toda rodada sai pelo Descartar, então nenhum áudio parte.

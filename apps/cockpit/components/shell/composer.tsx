@@ -78,6 +78,7 @@ import { type Motor } from './motor';
 import { SeletorMotor } from './seletor-motor';
 import { type MotivoRecusa, preparaEnvio, recusaPersiste } from './porta-de-envio';
 import { prefixaPesquisa } from './pesquisa-canario';
+import { usaFalaAoVivo } from './usa-fala-ao-vivo';
 import { usaGravador } from './usa-gravador';
 import {
   aparenciaDaVoz,
@@ -433,7 +434,38 @@ export function Composer({
     [agentSlug, setOrigemDoRascunho, setTexto],
   );
 
-  const gravador = usaGravador({ aoGravar: subirAudio });
+  // ---- fala ao vivo (F3) ---------------------------------------------------
+  // O texto chega palavra por palavra e é REMONTADO a cada pedaço a partir do
+  // que já estava escrito. Remontar da base em vez de ir acrescentando é o que
+  // deixa o final (que vem revisado, com pontuação) simplesmente substituir o
+  // provisório, sem sobra na tela e sem diff de texto.
+  const baseDaFalaRef = useRef('');
+  const textoRef = useRef(texto);
+  useEffect(() => {
+    textoRef.current = texto;
+  }, [texto]);
+
+  const aoComecarFala = useCallback(() => {
+    baseDaFalaRef.current = textoRef.current;
+  }, []);
+
+  const aoTextoAoVivo = useCallback(
+    (falado: string) => {
+      setRecusa(null);
+      setFalhaDaFala(null);
+      setTexto(mesclaTranscricao(baseDaFalaRef.current, falado));
+      setOrigemDoRascunho('stt');
+    },
+    [setOrigemDoRascunho, setTexto],
+  );
+
+  const falaAoVivo = usaFalaAoVivo({
+    agentSlug,
+    aoComecar: aoComecarFala,
+    aoTexto: aoTextoAoVivo,
+  });
+
+  const gravador = usaGravador({ aoGravar: subirAudio, aoVivo: falaAoVivo });
   const faseVoz = gravador.fase;
   const segundosVoz = gravador.segundos;
   const vozAparencia = aparenciaDaVoz(faseVoz, {
