@@ -296,6 +296,10 @@ export function Composer({
   // O arquivo na mão atravessa três fases (`escolhido`, `enviando` e o `erro`
   // de upload) — por isso a pergunta não se responde por uma fase só.
   const retidoAnexo = arquivoRetido(anexo.estado);
+  // HÁ GESTO PARA DESPACHAR? A foto sozinha já é um — sem `retidoAnexo` aqui,
+  // anexar sem escrever legenda deixava a imagem na tela e nenhum botão que a
+  // mandasse. Vale para os dois slots, e é a única pergunta que ambos fazem.
+  const temConteudo = texto.trim() !== '' || retidoAnexo !== null;
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
   // devolve o foco ao botão que abriu.
@@ -1020,21 +1024,32 @@ export function Composer({
                 />
               </>
             )}
-            {/* O ÚNICO ELEMENTO SÓLIDO, e ele troca de função — a referência é
-                explícita nisso: na tela do Codex com o composer VAZIO, o botão
-                de massa não é a seta, é a onda. Faz sentido literal: sem texto
-                não há o que enviar, e transformar o alvo grande naquilo que
-                serve é melhor que deixá-lo apagado ao lado de um microfone
-                minúsculo. Foi o que matou o microfone antigo — 17px de traço
-                para o gesto MAIS usado do Rica.
+            {/* DOIS SLOTS, UM ASSUNTO CADA. Até 20/08 havia um só, com quatro
+                donos em cascata, e a cascata é que produzia os becos: o ■ comeu
+                o microfone de madrugada (`678f598`), e antes disso o microfone
+                tinha comido o envio (15/08). Cada conserto empurrava o defeito
+                para o vizinho porque o lugar era um e os assuntos, três.
 
-                `key` distinta em cada ramo NÃO é detalhe: sem ela o React muta
-                o `type` do mesmo nó, e o clique que rodou o `onClick` cai no
-                submit do form logo em seguida — o áudio começaria e a mensagem
-                vazia sairia junto. */}
+                Agora a posição na árvore é a identidade — a documentação
+                oferece as duas formas de separar estado, `key` explícita ou
+                posições diferentes, e esta fase escolhe a segunda
+                (`react.dev/learn/preserving-and-resetting-state`). A `key` de
+                cada ramo continua onde estava: dentro de um slot ela ainda
+                impede o React de mutar o `type` do mesmo nó, que é o que fazia
+                o clique do microfone cair no submit logo em seguida.
+
+                O que ISTO destrava, e não era o objetivo: com o microfone em
+                lugar próprio, dá para falar com texto já escrito no campo. Não
+                dava — o botão de voz só existia quando o campo estava vazio, e
+                `mesclaTranscricao` já sabia costurar a fala no que havia antes.
+                A tela é que não deixava chegar lá. */}
+
+            {/* SLOT DE ENTRADA. Nunca some, nunca cede lugar. Em `travada` o
+                gesto acabou e a gravação não: o mesmo pixel que abriu é o que
+                fecha e despacha o áudio. */}
             {modo === 'travada' ? (
               <button
-                key="parar"
+                key="enviar-audio"
                 type="button"
                 onClick={gravador.enviarTravada}
                 aria-label={`Enviar áudio para ${agentName}`}
@@ -1051,16 +1066,60 @@ export function Composer({
               >
                 <IconeParar />
               </button>
-            ) : texto.trim() || retidoAnexo ? (
-              // A FOTO SOZINHA JÁ É GESTO. Sem `retidoAnexo` aqui, anexar sem
-              // escrever legenda deixava o microfone no lugar do envio — a foto
-              // na tela e nenhum botão que a mandasse.
-              //
-              // ESTE SLOT É DO GESTO DE ENTRADA, e só. O ■ morava aqui e
-              // vencia o microfone com o campo vazio durante a geração — o
-              // Rica testou em 20/08, quis falar a segunda mensagem e não
-              // achou o microfone. Parar mudou para a linha da bolinha, que já
-              // é onde o estado do agente é anunciado.
+            ) : (
+              <button
+                key="voz"
+                type="button"
+                disabled={faseVoz === 'transcrevendo'}
+                {...gravador.handlers}
+                aria-label={emCaptura(modo) ? vozAparencia.anuncio : `Segure para falar com ${agentName}`}
+                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                style={{
+                  ...ALVO_DE_TOQUE,
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: MARGEM_INFERIOR_DA_BASE,
+                  borderRadius: 'var(--ck-radius-pill)',
+                  // DOIS DISCOS ESCUROS LADO A LADO é o defeito que o ■ já
+                  // evitou uma vez ("o dedo que mira um acha o outro",
+                  // `bolinha-agente.tsx`). Com o slot de despacho ocupado, o
+                  // alvo de massa é o de despachar e o microfone recua para
+                  // contorno — continua com os 44px de alvo, perde só a tinta.
+                  background: emCaptura(modo)
+                    ? vozAparencia.tinta ?? 'var(--ck-state-running)'
+                    : temConteudo
+                      ? 'transparent'
+                      : 'var(--ck-text-primary)',
+                  color:
+                    emCaptura(modo) || !temConteudo
+                      ? 'var(--ck-surface-canvas)'
+                      : 'var(--ck-text-secondary)',
+                  touchAction: 'none',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  WebkitTouchCallout: 'none',
+                }}
+              >
+                <IconeOnda />
+              </button>
+            )}
+
+            {/* SLOT DE DESPACHO. Vazio ele não vira botão morto — a recusa por
+                `vazio` é a única sem recado no módulo da porta, então um alvo
+                aqui não teria o que responder ao toque (§9). Vira espaço
+                reservado: o microfone não pula de lugar a cada tecla, que é a
+                mesma razão da F2.4 logo abaixo. */}
+            {!temConteudo || modo === 'travada' ? (
+              <div
+                aria-hidden
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  marginBottom: MARGEM_INFERIOR_DA_BASE,
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
               <button
                 key="enviar"
                 type="submit"
@@ -1086,32 +1145,6 @@ export function Composer({
                 }}
               >
                 <IconeEnviar />
-              </button>
-            ) : (
-              <button
-                key="voz"
-                type="button"
-                disabled={faseVoz === 'transcrevendo'}
-                {...gravador.handlers}
-                aria-label={emCaptura(modo) ? vozAparencia.anuncio : `Segure para falar com ${agentName}`}
-                className="flex shrink-0 items-center justify-center disabled:opacity-40"
-                style={{
-                  ...ALVO_DE_TOQUE,
-                  width: '32px',
-                  height: '32px',
-                  marginBottom: MARGEM_INFERIOR_DA_BASE,
-                  borderRadius: 'var(--ck-radius-pill)',
-                  background: emCaptura(modo)
-                    ? vozAparencia.tinta ?? 'var(--ck-state-running)'
-                    : 'var(--ck-text-primary)',
-                  color: 'var(--ck-surface-canvas)',
-                  touchAction: 'none',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  WebkitTouchCallout: 'none',
-                }}
-              >
-                <IconeOnda />
               </button>
             )}
           </div>
