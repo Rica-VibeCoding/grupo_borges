@@ -179,6 +179,63 @@ test('turno real do Codex barra o segundo gesto antes do POST e preserva o campo
   assert.ok(efeito.aviso, 'a recusa preventiva precisa explicar por que o texto ficou');
 });
 
+/**
+ * O outro motor. `turno-em-voo` nasceu para o Codex (`257d0f9`, 16/08), onde o
+ * TeleCodex recusa com 409 `shared_turn_in_flight` e não há fila do outro lado
+ * — mas `gerando`, no composer, vale para os dois, e o portão vazou para o
+ * Claude Code, onde a fila EXISTE: o CLI enfileira o texto colado num pane
+ * ocupado (`queue-operation`/`enqueue` no JSONL) e o stream devolve
+ * `kind: "queued"`, que o painel já lê como confirmação de entrega — melhor que
+ * o eco, porque prova que o texto entrou na caixa dele (`lib/envio.ts`,
+ * `lib/usa-envio.ts`, `aparencia-envio.ts` com a frase "entrou na fila").
+ *
+ * Medido em 20/08 no banco vivo: 1.267 `enqueue` em ~3,5 dias, nenhum da Tara.
+ * Entre eles, envios saídos deste composer — o `🎙 ` é carimbo de
+ * `send_agent_input` para `origin=stt`, então aquele caminho foi POST → tmux →
+ * fila do CLI, entregue, sem 409.
+ *
+ * Recusar aqui é negar no cliente uma entrega que o destino aceita.
+ */
+test('motor que enfileira sozinho não é barrado por turno em voo', () => {
+  const porta = abrePorta({
+    texto: 'segunda mensagem',
+    turnoEmVoo: true,
+    motorEnfileiraSozinho: true,
+    compactando: false,
+    faseEnvio: 'confirmado',
+  });
+  assert.equal(porta.libera, true, 'o CLI enfileira do outro lado — a porta não tem o que segurar');
+});
+
+test('com fila do outro lado o gesto despacha e o campo esvazia', () => {
+  const efeito = preparaEnvio({
+    texto: 'segunda mensagem',
+    turnoEmVoo: true,
+    motorEnfileiraSozinho: true,
+    compactando: false,
+    faseEnvio: 'confirmado',
+  });
+  assert.equal(efeito.despacha, true, 'o POST tem de alcançar o backend');
+  assert.equal(efeito.limpaCampo, true, 'despachou: o texto saiu do campo para o feed');
+  assert.equal(efeito.enfileira, false, 'a fila local é do compact — esta é a do CLI');
+  assert.equal(efeito.aviso, null, 'não é recusa, não há o que avisar');
+});
+
+/**
+ * A trava não some para quem não tem fila: sem `motorEnfileiraSozinho` o portão
+ * continua inteiro, porque do outro lado o 409 é real.
+ */
+test('sem fila do outro lado o turno em voo continua barrando', () => {
+  const porta = abrePorta({
+    texto: 'segunda mensagem',
+    turnoEmVoo: true,
+    compactando: false,
+    faseEnvio: 'confirmado',
+  });
+  assert.equal(porta.libera, false, 'no Codex a recusa continua sendo o desenho certo');
+  assert.equal(porta.libera === false && porta.motivo, 'turno-em-voo');
+});
+
 /** A invariante do módulo. Qualquer motivo novo nasce obrigado a falar — é o
  *  que impede o próximo portão de repetir o incidente. */
 test('toda recusa com texto na mão tem recado; só o campo vazio pode calar', () => {

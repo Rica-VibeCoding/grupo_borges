@@ -31,7 +31,8 @@ export type MotivoRecusa =
   | 'compactando'
   /** A mensagem anterior ainda não foi confirmada pelo eco. */
   | 'envio-em-voo'
-  /** A sessão do agente ainda está processando o turno anterior. */
+  /** A sessão do agente ainda está processando o turno anterior E o motor do
+   *  outro lado não tem fila própria — ver `motorEnfileiraSozinho`. */
   | 'turno-em-voo'
   /** Um arquivo ainda está subindo — o segundo toque mandaria o mesmo arquivo
    *  duas vezes ao agente. */
@@ -81,6 +82,21 @@ export function abrePorta(entrada: {
    *  move durante uma subida, então `faseEnvio` não cobre este caso. */
   anexoEmVoo?: boolean;
   turnoEmVoo?: boolean;
+  /**
+   * O motor do outro lado enfileira sozinho o que chega durante um turno.
+   *
+   * O Claude Code faz: texto colado num pane ocupado vira
+   * `queue-operation`/`enqueue` no JSONL e o stream devolve `kind: "queued"` —
+   * recibo que a máquina de envio já lê como confirmação (`lib/envio.ts`,
+   * campo `fila`). O Codex não faz: o TeleCodex recusa com 409
+   * `shared_turn_in_flight`, e a conversa dele é compartilhada com o Telegram.
+   *
+   * Por isso `turno-em-voo` nasceu (`257d0f9`, 16/08) — para o Codex. Vinha
+   * sendo aplicado aos dois motores, e no Claude Code recusava, no cliente,
+   * uma entrega que o destino aceita. Falta de informação mantém o portão de
+   * pé: só a certeza de que há fila lá fora o levanta.
+   */
+  motorEnfileiraSozinho?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
 }): PortaDeEnvio {
@@ -108,7 +124,7 @@ export function abrePorta(entrada: {
   if (entrada.faseEnvio === 'enviando' || entrada.faseEnvio === 'aceito') {
     return { libera: false, motivo: 'envio-em-voo', recado: RECADO['envio-em-voo'] };
   }
-  if (entrada.turnoEmVoo) {
+  if (entrada.turnoEmVoo && !entrada.motorEnfileiraSozinho) {
     return { libera: false, motivo: 'turno-em-voo', recado: RECADO['turno-em-voo'] };
   }
   // A trava do duplo envio de arquivo, que a máquina do anexo já fazia CALADA.
@@ -158,6 +174,7 @@ export function preparaEnvio(entrada: {
   temAnexo?: boolean;
   anexoEmVoo?: boolean;
   turnoEmVoo?: boolean;
+  motorEnfileiraSozinho?: boolean;
   compactando: boolean;
   faseEnvio: FaseEnvio;
   /**

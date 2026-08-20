@@ -207,6 +207,12 @@ export function Composer({
   const ehCodex = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
   );
+  // Positivo, não `!ehCodex`: com a frota ainda não carregada os dois são
+  // falsos, e a porta continua segurando — errar fechado aqui devolve o
+  // comportamento de ontem, errar aberto manda um POST que o TeleCodex recusa.
+  const motorEnfileiraSozinho = agents.some(
+    (a) => a.slug === agentSlug && (a.executor_kind ?? a.cli_default) === 'claude_code',
+  );
   // O AGENTE ESTÁ GERANDO? Duas fontes, e escolher as duas certas levou três
   // rodadas em 15/08. O histórico, porque cada uma caiu por um motivo diferente:
   //
@@ -488,6 +494,7 @@ export function Composer({
       // enquanto uma foto sobe não duplica nada e não tem por que esperar.
       anexoEmVoo: anexar && anexoEmVoo,
       turnoEmVoo: gerando,
+      motorEnfileiraSozinho,
       compactando: travaCompact,
       faseEnvio: faseLocal,
       // Quem decide se o campo pode esvaziar é a porta, e para decidir ela
