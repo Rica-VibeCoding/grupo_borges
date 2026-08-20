@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LIMITE_DE_TEXTO, abrePorta, preparaEnvio } from './porta-de-envio.ts';
+import { LIMITE_DE_TEXTO, abrePorta, preparaEnvio, recusaPersiste } from './porta-de-envio.ts';
 
 /**
  * A ESPINHA: o campo nunca esvazia sem que o texto vá para ALGUM lugar visível.
@@ -133,7 +133,13 @@ test('recusa que não enfileira tem de falar, salvo campo vazio', () => {
 
 test('liberado despacha e esvazia o campo no mesmo instante', () => {
   const efeito = preparaEnvio({ texto: 'vai', compactando: false, faseEnvio: 'ocioso' });
-  assert.deepEqual(efeito, { despacha: true, enfileira: false, limpaCampo: true, aviso: null });
+  assert.deepEqual(efeito, {
+    despacha: true,
+    enfileira: false,
+    limpaCampo: true,
+    aviso: null,
+    motivo: null,
+  });
 });
 
 /**
@@ -428,4 +434,93 @@ test('emoji fora do BMP ocupa duas unidades UTF-16 e é barrado conservadorament
     false,
     'a guarda por UTF-16 é conservadora diante do limite por code points do backend',
   );
+});
+
+/**
+ * A VALIDADE DO AVISO. Estes testes são por GATILHO, não por implementação:
+ * cada aviso continua nascendo do mesmo toque e sumindo na mesma condição que
+ * hoje. O que muda por baixo é quem apaga — antes um efeito com quatro flags
+ * no composer, agora a própria porta respondendo de novo.
+ */
+test('a recusa vale enquanto a condição que a criou valer', () => {
+  const casos = [
+    { motivo: 'compactando' as const, vivo: { compactando: true }, morto: { compactando: false } },
+    {
+      motivo: 'envio-em-voo' as const,
+      vivo: { faseEnvio: 'enviando' as const },
+      morto: { faseEnvio: 'ocioso' as const },
+    },
+    {
+      motivo: 'turno-em-voo' as const,
+      vivo: { turnoEmVoo: true },
+      morto: { turnoEmVoo: false },
+    },
+    {
+      motivo: 'anexo-em-voo' as const,
+      vivo: { anexoEmVoo: true },
+      morto: { anexoEmVoo: false },
+    },
+  ];
+
+  for (const caso of casos) {
+    const base = { texto: 'a mensagem', compactando: false, faseEnvio: 'ocioso' as const };
+    assert.equal(
+      recusaPersiste(caso.motivo, { ...base, ...caso.vivo }),
+      true,
+      `${caso.motivo}: o aviso sumiu com o motivo ainda de pé`,
+    );
+    assert.equal(
+      recusaPersiste(caso.motivo, { ...base, ...caso.morto }),
+      false,
+      `${caso.motivo}: o aviso sobreviveu ao motivo — vira mentira na tela`,
+    );
+  }
+});
+
+/**
+ * O caso que o efeito antigo NÃO cobria: ele olhava compact, fase do envio,
+ * anexo em voo e geração — nenhuma delas muda quando o Rica apaga texto. O
+ * "texto longo demais" ficava na tela com o campo já curto.
+ */
+test('o aviso de texto longo cai quando o texto encurta', () => {
+  const base = { compactando: false, faseEnvio: 'ocioso' as const };
+  const gigante = 'x'.repeat(LIMITE_DE_TEXTO + 1);
+
+  assert.equal(recusaPersiste('longo-demais', { ...base, texto: gigante }), true);
+  assert.equal(recusaPersiste('longo-demais', { ...base, texto: 'agora cabe' }), false);
+});
+
+test('motivo novo não reescreve o aviso do motivo antigo', () => {
+  // Recusado por texto grande; enquanto ele olha o aviso, o agente começa a
+  // responder. A recusa guardada é de OUTRO motivo e não vale mais — nenhum
+  // recado novo aparece sem um toque novo.
+  const condicoes = {
+    texto: 'agora cabe',
+    compactando: false,
+    faseEnvio: 'ocioso' as const,
+    turnoEmVoo: true,
+  };
+
+  assert.equal(recusaPersiste('longo-demais', condicoes), false);
+  assert.equal(abrePorta(condicoes).libera, false);
+});
+
+test('o motivo viaja no efeito para quem guarda a recusa', () => {
+  const recusado = preparaEnvio({
+    texto: 'com foto durante o compact',
+    temAnexo: true,
+    compactando: true,
+    faseEnvio: 'ocioso',
+  });
+  assert.equal(recusado.motivo, 'compactando');
+  assert.notEqual(recusado.aviso, null);
+
+  const liberado = preparaEnvio({ texto: 'vai', compactando: false, faseEnvio: 'ocioso' });
+  assert.equal(liberado.motivo, null);
+
+  // A fila não avisa — o bloco acima do composer já mostra o texto — então
+  // não há recusa para guardar.
+  const enfileirado = preparaEnvio({ texto: 'espera o resumo', compactando: true, faseEnvio: 'ocioso' });
+  assert.equal(enfileirado.enfileira, true);
+  assert.equal(enfileirado.motivo, null);
 });

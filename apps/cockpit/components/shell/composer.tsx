@@ -76,7 +76,7 @@ import {
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
 import { SeletorMotor } from './seletor-motor';
-import { preparaEnvio } from './porta-de-envio';
+import { type MotivoRecusa, preparaEnvio, recusaPersiste } from './porta-de-envio';
 import { prefixaPesquisa } from './pesquisa-canario';
 import { usaGravador } from './usa-gravador';
 import {
@@ -324,27 +324,39 @@ export function Composer({
   // Por que a recusa não foi despachada. Não tem botão de dispensar de
   // propósito: ela descreve um impedimento do INSTANTE, não um erro a ser
   // reconhecido — quando o motivo passa, o aviso vai junto.
-  const [avisoDaPorta, setAvisoDaPorta] = useState<string | null>(null);
+  //
+  // O que fica guardado é o GESTO recusado — motivo e recado, como nasceram.
+  // Se ele ainda descreve o instante é pergunta de render, logo abaixo.
+  const [recusa, setRecusa] = useState<{ motivo: MotivoRecusa; aviso: string } | null>(null);
   // O SINAL DE RECUSA. A porta recusou um toque com recado — o botão de enviar
   // sacode pra o Rica sentir o "não" mesmo quando o aviso da faixa fica
   // escondido atrás do teclado do iPhone. Estado e não classe persistente:
   // `onAnimationEnd` limpa, então o próximo toque recusado re-sacode.
   const [sinalRecusa, setSinalRecusa] = useState(false);
   const anexoEmVoo = anexo.estado.fase === 'enviando';
-  useEffect(() => {
-    // A lista é a dos IMPEDIMENTOS, e o anexo em voo entrou nela junto com o
-    // recado dele. Sem esta linha o "ainda está subindo" ficaria na tela depois
-    // que o arquivo já chegou — aviso que sobrevive ao motivo vira mentira.
-    if (
-      !travaCompact &&
-      faseLocal !== 'enviando' &&
-      faseLocal !== 'aceito' &&
-      !anexoEmVoo &&
-      !gerando
-    ) {
-      setAvisoDaPorta(null);
-    }
-  }, [travaCompact, faseLocal, anexoEmVoo, gerando]);
+  // O AVISO É CALCULADO, não guardado. Aviso que sobrevive ao motivo vira
+  // mentira na tela, e até 20/08 quem o apagava era um efeito que listava
+  // quatro impedimentos à mão. A lista tinha buraco: `longo-demais` não estava
+  // nela e nenhuma daquelas quatro flags muda quando o Rica apaga texto, então
+  // o "texto longo demais" ficava preso com o campo já curto.
+  //
+  // Agora a pergunta é refeita à mesma porta, com as condições de agora. Não há
+  // lista para manter em dia, e o efeito — que a documentação nomeia como
+  // anti-padrão (`react.dev/learn/you-might-not-need-an-effect`, "Adjusting
+  // state on prop change in an Effect") — deixa de existir.
+  const avisoDaPorta =
+    recusa &&
+    recusaPersiste(recusa.motivo, {
+      texto,
+      temAnexo: retidoAnexo !== null,
+      anexoEmVoo,
+      turnoEmVoo: gerando,
+      motorEnfileiraSozinho,
+      compactando: travaCompact,
+      faseEnvio: faseLocal,
+    })
+      ? recusa.aviso
+      : null;
 
   useEffect(() => {
     if (estadoCompact.fase === 'concluindo' || estadoCompact.fase === 'sem-retorno') {
@@ -397,7 +409,7 @@ export function Composer({
 
   const subirAudio = useCallback(
     async (audio: Blob) => {
-      setAvisoDaPorta(null);
+      setRecusa(null);
       setFalhaDaFala(null);
       try {
         const { postAgentTranscription } = await import('@grupo_borges/cockpit-core/api');
@@ -511,7 +523,11 @@ export function Composer({
       // e o campo guarda a mensagem NOVA que o Rica escreveu esperando.
       retomada,
     });
-    setAvisoDaPorta(efeito.aviso);
+    setRecusa(
+      efeito.aviso !== null && efeito.motivo !== null
+        ? { motivo: efeito.motivo, aviso: efeito.aviso }
+        : null,
+    );
     // A recusa com recado é um toque que não saiu. O aviso da faixa pode ficar
     // atrás do teclado no iPhone — quem sente é o botão, sacudindo. Só o toque
     // DIRETO (`!retomada`): o despacho da fila já mostra o recuo no bloco, e o

@@ -167,6 +167,13 @@ export type EfeitoEnvio = {
    */
   limpaCampo: boolean;
   aviso: string | null;
+  /**
+   * Por que recusou. Viaja junto com o `aviso` porque quem o mostra precisa
+   * conferir, a cada render, se a recusa ainda descreve o instante — ver
+   * `recusaPersiste`. `null` quando a porta liberou ou quando o gesto virou
+   * fila, que são os dois casos sem aviso.
+   */
+  motivo: MotivoRecusa | null;
 };
 
 export function preparaEnvio(entrada: {
@@ -192,7 +199,13 @@ export function preparaEnvio(entrada: {
 }): EfeitoEnvio {
   const porta = abrePorta(entrada);
   if (porta.libera) {
-    return { despacha: true, enfileira: false, limpaCampo: !entrada.retomada, aviso: null };
+    return {
+      despacha: true,
+      enfileira: false,
+      limpaCampo: !entrada.retomada,
+      aviso: null,
+      motivo: null,
+    };
   }
   // A FILA. Só o texto puro, nas duas esperas que o Rica não controla:
   //
@@ -222,9 +235,31 @@ export function preparaEnvio(entrada: {
     // Sem aviso: o bloco da fila JÁ diz o que vai acontecer, com o texto à
     // vista. Repetir a frase embaixo dele seria dizer duas vezes a mesma coisa
     // em dois lugares — e a segunda, sem o texto, diria menos.
-    return { despacha: false, enfileira: true, limpaCampo: true, aviso: null };
+    return { despacha: false, enfileira: true, limpaCampo: true, aviso: null, motivo: null };
   }
   const aviso =
     porta.motivo === 'compactando' && entrada.temAnexo ? RECADO_COMPACT_COM_ANEXO : porta.recado;
-  return { despacha: false, enfileira: false, limpaCampo: false, aviso };
+  return { despacha: false, enfileira: false, limpaCampo: false, aviso, motivo: porta.motivo };
+}
+
+/**
+ * A recusa guardada ainda descreve o instante?
+ *
+ * O aviso da porta não pode sobreviver ao motivo — um "o agente ainda está
+ * respondendo" parado na tela depois que o agente parou é mentira. Até 20/08
+ * quem apagava era um efeito no composer olhando quatro flags combinadas, e
+ * `longo-demais` ficava de fora dessas quatro: o aviso de texto grande ficava
+ * preso mesmo depois de o texto encurtar, até o toque seguinte.
+ *
+ * Aqui não há lista para manter em dia. A pergunta é a mesma que o gesto fez,
+ * refeita com as condições de agora: se a porta recusaria de novo pelo MESMO
+ * motivo, o aviso continua verdadeiro. Motivo diferente não reescreve o aviso
+ * sozinho — sem gesto novo, não há recado novo.
+ */
+export function recusaPersiste(
+  motivo: MotivoRecusa,
+  entrada: Parameters<typeof abrePorta>[0],
+): boolean {
+  const porta = abrePorta(entrada);
+  return !porta.libera && porta.motivo === motivo;
 }
