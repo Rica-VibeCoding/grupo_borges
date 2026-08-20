@@ -1,0 +1,135 @@
+{
+  "descricao": "Contrato da fila server-side (§10 do cockpit-v2-composer.md). O servidor produz `itens`; o painel deriva `espelho_esperado`. Os dois lados testam contra este arquivo, sem integração.",
+  "agora": "2026-08-20T12:00:30.000Z",
+  "prazo_drenando_ms": 30000,
+  "itens": [
+    {
+      "id": "0198c0a1-0500-7000-8000-000000000005",
+      "sessao": "canarinho",
+      "origem": "web",
+      "endereco_retorno": null,
+      "texto": "o quinto na ordem de escrita",
+      "anexos": [],
+      "ancora": null,
+      "client_request_id": "req-05",
+      "estado": "pendente",
+      "criado_em": "2026-08-20T12:00:05.000Z",
+      "drenando_desde": null,
+      "motivo_falha": null
+    },
+    {
+      "id": "0198c0a1-0100-7000-8000-000000000001",
+      "sessao": "canarinho",
+      "origem": "telegram",
+      "endereco_retorno": {
+        "chat_id": "5581234567",
+        "reply_to": 6655
+      },
+      "texto": "veio do celular e volta pro celular",
+      "anexos": [],
+      "ancora": {
+        "canal": "telegram",
+        "ref": "6654"
+      },
+      "client_request_id": "req-01",
+      "estado": "drenando",
+      "criado_em": "2026-08-20T12:00:01.000Z",
+      "drenando_desde": "2026-08-20T12:00:20.000Z",
+      "motivo_falha": null
+    },
+    {
+      "id": "0198c0a1-0200-7000-8000-000000000002",
+      "sessao": "canarinho",
+      "origem": "web",
+      "endereco_retorno": null,
+      "texto": "preso drenando ha 40s",
+      "anexos": [],
+      "ancora": null,
+      "client_request_id": "req-02",
+      "estado": "drenando",
+      "criado_em": "2026-08-20T12:00:02.000Z",
+      "drenando_desde": "2026-08-19T11:59:50.000Z",
+      "motivo_falha": null
+    },
+    {
+      "id": "0198c0a1-0300-7000-8000-000000000003",
+      "sessao": "canarinho",
+      "origem": "web",
+      "endereco_retorno": null,
+      "texto": "ja chegou no feed, o servidor casou",
+      "anexos": [],
+      "ancora": null,
+      "client_request_id": "req-03",
+      "estado": "entregue",
+      "criado_em": "2026-08-20T12:00:03.000Z",
+      "drenando_desde": null,
+      "motivo_falha": null
+    },
+    {
+      "id": "0198c0a1-0400-7000-8000-000000000004",
+      "sessao": "canarinho",
+      "origem": "web",
+      "endereco_retorno": null,
+      "texto": "o Rica tirou da fila",
+      "anexos": [],
+      "ancora": null,
+      "client_request_id": "req-04",
+      "estado": "cancelada",
+      "criado_em": "2026-08-20T12:00:04.000Z",
+      "drenando_desde": null,
+      "motivo_falha": null
+    },
+    {
+      "id": "0198c0a1-0600-7000-8000-000000000006",
+      "sessao": "canarinho",
+      "origem": "whatsapp",
+      "endereco_retorno": {
+        "chat_id": "5581999999",
+        "reply_to": null
+      },
+      "texto": "falhou com motivo ja carimbado",
+      "anexos": [],
+      "ancora": null,
+      "client_request_id": "req-06",
+      "estado": "drenando",
+      "criado_em": "2026-08-20T12:00:06.000Z",
+      "drenando_desde": "2026-08-20T11:59:00.000Z",
+      "motivo_falha": "pane_incompativel",
+      "_nota": "drenando vencido COM motivo: o carimbo do servidor vence a frase generica do painel"
+    }
+  ],
+  "espelho_esperado": [
+    {
+      "id": "0198c0a1-0100-7000-8000-000000000001",
+      "posicao": 1,
+      "texto": "veio do celular e volta pro celular",
+      "origem": "telegram",
+      "situacao": "drenando",
+      "motivo": null
+    },
+    {
+      "id": "0198c0a1-0200-7000-8000-000000000002",
+      "posicao": 2,
+      "texto": "preso drenando ha 40s",
+      "origem": "web",
+      "situacao": "falho",
+      "motivo": "passou de 30s entregando — nao saiu"
+    },
+    {
+      "id": "0198c0a1-0500-7000-8000-000000000005",
+      "posicao": 3,
+      "texto": "o quinto na ordem de escrita",
+      "origem": "web",
+      "situacao": "pendente",
+      "motivo": null
+    },
+    {
+      "id": "0198c0a1-0600-7000-8000-000000000006",
+      "posicao": 4,
+      "texto": "falhou com motivo ja carimbado",
+      "origem": "whatsapp",
+      "situacao": "falho",
+      "motivo": "pane_incompativel"
+    }
+  ]
+}
