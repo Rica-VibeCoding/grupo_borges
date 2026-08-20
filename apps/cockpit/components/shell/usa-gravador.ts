@@ -8,9 +8,11 @@
  * Portado de `apps/web/lib/use-voice-recorder.ts` (v1), com as correções que a
  * peça exige:
  *
- * 1. **Gesto em vez de toggle.** O v1 alterna com um toque e CANCELA no
- *    segundo toque do mesmo botão — o áudio some quando a mão esperava parar.
- *    Aqui é segurar, e as duas saídas são gestos com rótulo na tela.
+ * 1. **Toque e gesto, cada um com um destino.** O v1 alterna com um toque e
+ *    CANCELA no segundo toque do mesmo botão — o áudio some quando a mão
+ *    esperava parar. Aqui o toque curto ABRE a gravação travada e o segundo
+ *    toque DESPACHA; segurar é o push-to-talk, com as duas saídas rotuladas na
+ *    tela. Nenhum dos dois joga áudio fora sem alguém ter pedido.
  *
  * 2. **O diálogo de permissão não come a gravação.** Na primeira vez o
  *    `getUserMedia` abre um diálogo do sistema; o dedo solta pra tocar em
@@ -20,8 +22,9 @@
  *    deixa o microfone aberto) e a tela pede pra segurar de novo. Sem isso, a
  *    primeira tentativa gravaria zero segundo e pareceria um botão morto.
  *
- * 3. **Piso de duração.** Toque acidental vira `stt_empty` (502) no back e a
- *    tela mostraria falha de sistema para o que foi um dedo escorregando.
+ * 3. **Piso de duração.** Áudio de milissegundos vira `stt_empty` (502) no
+ *    back e a tela mostraria falha de sistema para o que foi um dedo
+ *    escorregando. O piso decide se o áudio PARTE, nunca se a gravação existe.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -94,6 +97,11 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
   /** Decidido no `onstop`: sem isto o handler não sabe se veio de um envio ou
    *  de um descarte, e mandaria o áudio cancelado assim mesmo. */
   const descartarRef = useRef(false);
+  /** O dedo soltou e a gravação FICOU. Existe porque num clique curto o
+   *  `pointerup` chega ANTES do `getUserMedia` voltar, e `comeca` precisa
+   *  saber que aquele soltar travou em vez de abortar — senão a gravação que
+   *  acabou de nascer seria desligada pela continuação do próprio gesto. */
+  const travadaRef = useRef(false);
 
   const solta = useCallback(() => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -108,6 +116,7 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
     pedacosRef.current = [];
     origemRef.current = null;
     pressionadoRef.current = false;
+    travadaRef.current = false;
     gestoRef.current = 'segurando';
     segundosRef.current = 0;
     setNiveis(Array(BARRAS).fill(0));
@@ -148,17 +157,6 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
     [solta],
   );
 
-  /** Mesmo desfecho nos dois caminhos que podem despachar cedo demais: o gesto
-   *  solto antes do piso e o botão de enviar da gravação travada. */
-  const descartaPorCurto = useCallback(
-    (saida: string) => {
-      encerra(true);
-      setImpedimento({ resumo: 'muito curto', saida, definitivo: false });
-      setFase('impedida');
-    },
-    [encerra],
-  );
-
   const comeca = useCallback(async () => {
     // `mediaDevices` não existe fora de contexto seguro. No nosso caso isso
     // acontece de verdade: abrir o cockpit pelo IP 100.x em vez do nome
@@ -181,7 +179,14 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
 
     // O dedo soltou enquanto o diálogo estava aberto (ou antes do stream vir).
     // Encerrar AGORA: microfone aberto sem gravação é o pior dos dois mundos.
-    if (!pressionadoRef.current) {
+    //
+    // `travadaRef` é a exceção, e é ela que faz o CLIQUE CURTO existir: num
+    // clique de 120ms o `pointerup` chega antes do stream, e sem esta guarda o
+    // gesto que acabou de pedir "grava sem segurar" desligaria o microfone que
+    // ele mesmo abriu. Vale também para o primeiro uso, quando o dedo solta
+    // para tocar em "Permitir": permissão dada, gravação travada, e ninguém
+    // precisa fazer o gesto de novo.
+    if (!pressionadoRef.current && !travadaRef.current) {
       stream.getTracks().forEach((t) => t.stop());
       setFase('ociosa');
       return;
@@ -294,7 +299,7 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       return;
     }
 
-    setFase('gravando');
+    setFase(travadaRef.current ? 'travada' : 'gravando');
     desenhaOnda(analisador);
     let contados = 0;
     timerRef.current = setInterval(() => {
@@ -314,6 +319,9 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       // botão — e sair do botão É o gesto de cancelar.
       e.currentTarget.setPointerCapture?.(e.pointerId);
       pressionadoRef.current = true;
+      // Um gesto anterior pode ter morrido sem passar pelo `solta` — o
+      // microfone recusado sai por `setFase('impedida')` e nada mais.
+      travadaRef.current = false;
       origemRef.current = { x: e.clientX, y: e.clientY };
       gestoRef.current = 'segurando';
       setGesto('segurando');
@@ -360,6 +368,7 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
         : aoSoltar(gestoRef.current, segundosRef.current);
 
       if (desfecho === 'continuar') {
+        travadaRef.current = true;
         setFase('travada');
         setGesto('segurando');
         setProgresso(0);
@@ -369,13 +378,9 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
         encerra(false);
         return;
       }
-      if (desfecho === 'descartar-curto') {
-        descartaPorCurto('segure o botão enquanto fala');
-        return;
-      }
       encerra(true);
     },
-    [descartaPorCurto, encerra],
+    [encerra],
   );
 
   return {
@@ -392,11 +397,12 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       onPointerCancel: (e) => finaliza(e, true),
     },
     enviarTravada: () => {
-      if (aoEnviarTravada(segundosRef.current) === 'enviar') {
-        encerra(false);
-        return;
-      }
-      descartaPorCurto('grave alguns segundos antes de enviar');
+      // Abaixo do piso encerra CALADO. O aviso "muito curto" que morava aqui é
+      // metade do pisca que o Rica reprovou: ele acendia em cima da caixa e só
+      // apagava no gesto seguinte. Quem tocou em ⏹ um instante depois de abrir
+      // já sabe o que fez — e o piso continua impedindo o despacho, que é o
+      // trabalho dele.
+      encerra(aoEnviarTravada(segundosRef.current) !== 'enviar');
     },
     descartarTravada: () => encerra(true),
     limparImpedimento: () => {

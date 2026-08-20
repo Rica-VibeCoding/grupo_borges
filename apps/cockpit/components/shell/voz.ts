@@ -25,6 +25,13 @@
  * Quando trava, o gesto acabou e a tela volta a ter botões de verdade: ⏹ para
  * enviar e um X para descartar, lado a lado, sem gesto nenhum. Não há estado
  * em que a única saída seja um movimento secreto.
+ *
+ * E O TOQUE CURTO NÃO É UM SEGURAR QUE FALHOU — 20/08. Soltar antes do piso
+ * cai na MESMA trava, com os mesmos dois botões: o toque é a porta de entrada
+ * dela, não um gesto rejeitado. É o que a doc do React Aria descreve para
+ * pressão curta e longa no mesmo alvo (`useLongPress`), e é o gesto do
+ * claude.ai. O que o v1 fazia de errado continua fora: lá o segundo toque
+ * CANCELAVA; aqui ele despacha.
  */
 
 /** Fases da CAPTURA. Depois de `transcrevendo`, o resultado vira rascunho
@@ -81,11 +88,27 @@ export const AVISO_SEGUNDOS = 150;
 export type Desfecho = 'enviar' | 'descartar-curto' | 'descartar-cancelado' | 'continuar';
 
 /** O que acontece quando o dedo solta. `continuar` é a trava: soltar não
- *  encerra nada. */
+ *  encerra nada.
+ *
+ * SOLTAR CEDO NÃO JOGA FORA — TRAVA. Até 20/08 o gesto curto caía em
+ * `descartar-curto`, e era isso que fazia a tela ir e voltar num clique:
+ * abria a gravação, o piso a matava no `pointerup` e o aviso "muito curto"
+ * acendia em cima da caixa. Rica, vendo: *"se eu der um clique curto, ele não
+ * pode piscar desse jeito, eu não vi nenhum chat que faz isso"*.
+ *
+ * A doc do React Aria (`react-aria.adobe.com/useLongPress`) trata pressão
+ * curta e longa como DUAS AÇÕES no mesmo alvo — o exemplo dela mescla
+ * `usePress` e `useLongPress` num botão só. Curta nunca é uma longa que
+ * falhou. Aqui a curta é "gravar sem segurar", que é o estado `travada` que
+ * esta peça já tinha, e é o gesto do claude.ai que o Rica usa de referência.
+ *
+ * O piso continua fazendo o trabalho dele: ele decide se o áudio pode PARTIR,
+ * nunca se a gravação existe. Áudio de milissegundos segue sem chegar ao STT
+ * — só que agora por não ter sido despachado, e não por ter sido destruído. */
 export function aoSoltar(gesto: Gesto, segundos: number): Desfecho {
   if (gesto === 'cancelar') return 'descartar-cancelado';
   if (gesto === 'travar') return 'continuar';
-  return segundos >= PISO_SEGUNDOS ? 'enviar' : 'descartar-curto';
+  return segundos >= PISO_SEGUNDOS ? 'enviar' : 'continuar';
 }
 
 /** O piso de `aoSoltar` não alcançava a gravação travada: ela sai por botão

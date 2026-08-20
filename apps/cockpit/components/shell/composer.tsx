@@ -1237,7 +1237,16 @@ export function Composer({
                 type="button"
                 disabled={faseVoz === 'transcrevendo'}
                 {...gravador.handlers}
-                aria-label={emCaptura(modo) ? vozAparencia.anuncio : `Segure para falar com ${agentName}`}
+                // Os DOIS gestos no rótulo, porque agora são dois: toque curto
+                // grava sem segurar, segurar é push-to-talk. React Aria manda
+                // anunciar a pressão longa a quem não vê a tela
+                // (`accessibilityDescription`, em `useLongPress`) — sem isso o
+                // arrastar-para-cancelar não existe para o leitor de tela.
+                aria-label={
+                  emCaptura(modo)
+                    ? vozAparencia.anuncio
+                    : `Segure para falar com ${agentName}, ou toque para gravar sem segurar`
+                }
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
                   ...ALVO_DE_TOQUE,

@@ -117,10 +117,12 @@ describe('soltar o dedo', () => {
     assert.equal(aoSoltar('travar', 2), 'continuar');
   });
 
-  it('toque acidental é descartado em vez de virar 502 do servidor', () => {
-    // O back devolve `stt_empty` para silêncio, e a tela mostraria FALHA DE
-    // SISTEMA para o que foi um dedo escorregando.
-    assert.equal(aoSoltar('segurando', PISO_SEGUNDOS - 0.5), 'descartar-curto');
+  it('soltar antes do piso TRAVA — é o clique curto, não um gesto rejeitado', () => {
+    // A regra que matou o pisca de 20/08: descartar aqui fazia a tela abrir e
+    // fechar dentro de um clique, com o aviso "muito curto" acendendo em cima
+    // da caixa. Quem decide se o áudio parte é o piso do DESPACHO
+    // (`aoEnviarTravada`), não o de soltar o dedo.
+    assert.equal(aoSoltar('segurando', PISO_SEGUNDOS - 0.5), 'continuar');
     assert.equal(aoSoltar('segurando', PISO_SEGUNDOS), 'enviar');
   });
 
