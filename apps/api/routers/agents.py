@@ -3547,6 +3547,13 @@ async def send_agent_input(
 
 _VOICE_ALLOWED_MIMES = {"audio/ogg", "audio/webm", "audio/mp4", "audio/mpeg"}
 _VOICE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+# Piso de duração. Um toque que abre e fecha o microfone produz ~43ms de
+# nada (medido em 20/08): a OpenAI recusa com 400, o fallback local queima
+# 22s e volta vazio. E áudio curto que passa não volta vazio — volta
+# INVENTADO: 500ms de ruído fraco devolveram "Arkadaşlar," em bancada,
+# com `language=pt` no pedido. Barrar aqui é mais barato que explicar
+# depois por que a fala do Rica virou turco.
+_VOICE_MIN_DURATION_MS = 400
 def _resolve_stt_script() -> str:
     """Resolve o script de STT nos dois ambientes sem depender de .env.
 
@@ -4002,6 +4009,20 @@ async def _transcribe_agent_audio(slug: str, audio: UploadFile) -> tuple[str, in
         tmp.close()
 
         audio_duration_ms = await asyncio.to_thread(_probe_audio_duration_ms, tmp_path)
+        # Duração ausente não bloqueia: WebM do MediaRecorder às vezes não
+        # finaliza o header, e recusar por falta de medida calaria gravação boa.
+        if audio_duration_ms is not None and audio_duration_ms < _VOICE_MIN_DURATION_MS:
+            voice_log.info(
+                "voice_stt_too_short slug=%s filename=%r mime=%s size_bytes=%d "
+                "audio_duration_ms=%d floor_ms=%d",
+                slug,
+                audio.filename,
+                base_mime,
+                len(content),
+                audio_duration_ms,
+                _VOICE_MIN_DURATION_MS,
+            )
+            raise HTTPException(status_code=422, detail="audio_curto_demais")
         voice_log.info(
             "voice_stt_started slug=%s filename=%r mime=%s size_bytes=%d "
             "audio_duration_ms=%s script=%s",

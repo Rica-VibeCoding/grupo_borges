@@ -88,6 +88,14 @@ export function aoSoltar(gesto: Gesto, segundos: number): Desfecho {
   return segundos >= PISO_SEGUNDOS ? 'enviar' : 'descartar-curto';
 }
 
+/** O piso de `aoSoltar` não alcançava a gravação travada: ela sai por botão
+ *  próprio, e travar e tocar em enviar despachava uma gravação de
+ *  milissegundos. Medido no log da API em 20/08 — `audio_duration_ms=43`
+ *  virou HTTP 400 na OpenAI, 22s de fallback local e transcrição vazia. */
+export function aoEnviarTravada(segundos: number): Desfecho {
+  return segundos >= PISO_SEGUNDOS ? 'enviar' : 'descartar-curto';
+}
+
 // ---------------------------------------------------------------------------
 // Microfone indisponível — o item 4 do despacho.
 // ---------------------------------------------------------------------------

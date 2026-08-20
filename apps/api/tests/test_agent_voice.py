@@ -169,7 +169,7 @@ def test_voice_handles_stt_failure_502(tmp_path: Path) -> None:
     """STT exit≠0 → 502 com motivo da última linha do stderr."""
     app = _build_app(tmp_path)
     fake = _fake_completed(stdout="", stderr="key inválida\n", returncode=1)
-    with patch("routers.agents._probe_audio_duration_ms", return_value=250), patch(
+    with patch("routers.agents._probe_audio_duration_ms", return_value=1250), patch(
         "routers.agents.subprocess.run", return_value=fake
     ):
         with TestClient(app) as client:
@@ -312,3 +312,44 @@ def test_voice_logs_empty_transcription(tmp_path: Path, caplog) -> None:
     assert response.json()["detail"] == "stt_empty"
     assert "voice_stt_empty" in caplog.text
     assert "stderr='modelo não retornou texto'" in caplog.text
+
+
+def test_voice_rejects_audio_below_duration_floor(tmp_path: Path) -> None:
+    """Áudio abaixo do piso → 422 sem gastar STT.
+
+    Medido no log da API em 20/08: `audio_duration_ms=43` foi recusado com HTTP
+    400 pela OpenAI, caiu no Whisper local, queimou 22,4s e voltou vazio. Pior
+    que o desperdício é o que acontece quando o áudio passa raspando: em bancada,
+    500ms de ruído fraco voltaram `Arkadaşlar,` — o modelo inventa frase em
+    língua aleatória, e `language=pt` no pedido não impede.
+    """
+    app = _build_app(tmp_path)
+    with patch("routers.agents._probe_audio_duration_ms", return_value=43), patch(
+        "routers.agents.subprocess.run"
+    ) as run:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/voice",
+                files={"audio": ("voice.webm", b"x", "audio/webm")},
+            )
+
+    assert response.status_code == 422
+    assert "curto" in response.json()["detail"]
+    run.assert_not_called()
+
+
+def test_voice_accepts_audio_when_duration_is_unknown(tmp_path: Path) -> None:
+    """Duração ausente não bloqueia: WebM do MediaRecorder às vezes não finaliza
+    o header, e recusar por falta de medida calaria gravação boa."""
+    app = _build_app(tmp_path)
+    fake = _fake_completed(stdout="oi", returncode=0)
+    with patch("routers.agents._probe_audio_duration_ms", return_value=None), patch(
+        "routers.agents.subprocess.run", return_value=fake
+    ):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/transcription",
+                files={"audio": ("voice.webm", b"x", "audio/webm")},
+            )
+
+    assert response.status_code == 200

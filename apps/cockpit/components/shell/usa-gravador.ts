@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  aoEnviarTravada,
   aoSoltar,
   assinaturaDoContainer,
   diagnosticaMicrofone,
@@ -145,6 +146,17 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       }
     },
     [solta],
+  );
+
+  /** Mesmo desfecho nos dois caminhos que podem despachar cedo demais: o gesto
+   *  solto antes do piso e o botão de enviar da gravação travada. */
+  const descartaPorCurto = useCallback(
+    (saida: string) => {
+      encerra(true);
+      setImpedimento({ resumo: 'muito curto', saida, definitivo: false });
+      setFase('impedida');
+    },
+    [encerra],
   );
 
   const comeca = useCallback(async () => {
@@ -358,18 +370,12 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
         return;
       }
       if (desfecho === 'descartar-curto') {
-        encerra(true);
-        setImpedimento({
-          resumo: 'muito curto',
-          saida: 'segure o botão enquanto fala',
-          definitivo: false,
-        });
-        setFase('impedida');
+        descartaPorCurto('segure o botão enquanto fala');
         return;
       }
       encerra(true);
     },
-    [encerra],
+    [descartaPorCurto, encerra],
   );
 
   return {
@@ -385,7 +391,13 @@ export function usaGravador({ aoGravar }: Opcoes): Gravador {
       onPointerUp: (e) => finaliza(e, false),
       onPointerCancel: (e) => finaliza(e, true),
     },
-    enviarTravada: () => encerra(false),
+    enviarTravada: () => {
+      if (aoEnviarTravada(segundosRef.current) === 'enviar') {
+        encerra(false);
+        return;
+      }
+      descartaPorCurto('grave alguns segundos antes de enviar');
+    },
     descartarTravada: () => encerra(true),
     limparImpedimento: () => {
       setImpedimento(null);

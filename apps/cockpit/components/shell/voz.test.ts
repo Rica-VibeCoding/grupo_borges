@@ -6,6 +6,7 @@ import {
   LIMIAR_CANCELA,
   LIMIAR_TRAVA,
   PISO_SEGUNDOS,
+  aoEnviarTravada,
   aoSoltar,
   aparenciaDaVoz,
   assinaturaDoContainer,
@@ -125,6 +126,15 @@ describe('soltar o dedo', () => {
 
   it('cancelar vence o piso: quem cancelou não quis mandar, curto ou longo', () => {
     assert.equal(aoSoltar('cancelar', 0), 'descartar-cancelado');
+  });
+
+  it('o botão de enviar da travada obedece o MESMO piso do gesto solto', () => {
+    // A trava tem porta própria: `enviarTravada` não passa por `aoSoltar`, e
+    // sem piso ali um toque de travar seguido de enviar despacha uma gravação
+    // de milissegundos. O log da API registrou `audio_duration_ms=43` em 20/08:
+    // a OpenAI recusou com 400, o fallback local queimou 22s e voltou vazio.
+    assert.equal(aoEnviarTravada(0), 'descartar-curto');
+    assert.equal(aoEnviarTravada(PISO_SEGUNDOS), 'enviar');
   });
 });
 
