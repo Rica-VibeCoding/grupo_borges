@@ -38,7 +38,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 
+import { ALVO_DE_TOQUE } from '../../lib/alvo-de-toque';
 import { estadoDaBolinha, FALA_DA_BOLINHA, type EstadoBolinha } from './bolinha-estado';
+import { IconeParar } from './icones';
 
 /** Quanto tempo o pulinho de "terminou" fica no ar antes de voltar ao repouso.
  *  Um pouco mais que a animação (0,62 s) para o olho alcançar o fim dela. */
@@ -57,9 +59,34 @@ type Props = {
    *  (`escrita-viva`), que é mais estreito que o sinal virou — renomear os dois
    *  espera a Tara sair do `composer.tsx`, que é o único call site. */
   escrevendo: boolean;
+  /**
+   * O ■ MORA AQUI, e não no composer. Ele viveu no slot de ação da caixa até
+   * 20/08, disputando lugar com o gesto de ENTRADA — e o slot só tem um alvo.
+   * Com o campo vazio durante a geração o ■ vencia e comia o MICROFONE: quem
+   * fala, que é o caso do Rica, ficava sem como começar a próxima mensagem.
+   * A fila que o composer ganhou no mesmo dia era real e ficou inalcançável
+   * por voz, que é justamente o gesto que ele mais usa.
+   *
+   * A régua que sai daí: o slot da caixa é do gesto de ENTRADA (microfone com
+   * campo vazio, enviar com conteúdo). Parar é sobre o ESTADO DO AGENTE, e o
+   * estado do agente é o que esta linha já anuncia.
+   *
+   * `undefined` = não há o que parar; o botão não nasce.
+   */
+  aoParar?: (() => void) | undefined;
+  /** O toque já saiu e a resposta não voltou — evita o segundo toque. */
+  parando?: boolean;
+  nomeDoAgente: string;
 };
 
-export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
+export function BolinhaAgente({
+  status,
+  turnoVivo,
+  escrevendo,
+  aoParar,
+  parando = false,
+  nomeDoAgente,
+}: Props) {
   const gradId = `ck-bolinha-${useId()}`;
   const svgRef = useRef<SVGSVGElement>(null);
   const rostoRef = useRef<SVGGElement>(null);
@@ -225,6 +252,35 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
       <span className="sr-only" aria-live="polite">
         {FALA_DA_BOLINHA[estado]}
       </span>
+      {aoParar ? (
+        <button
+          type="button"
+          onClick={aoParar}
+          disabled={parando}
+          aria-label={`Parar ${nomeDoAgente}`}
+          title="Parar"
+          // COLADO NA BOLINHA, não na ponta da linha. Os dois são a mesma
+          // frase — "ele está trabalhando" e "pare" — e lidos juntos dizem o
+          // que nenhum diz sozinho. Na borda direita o ■ cairia logo acima do
+          // microfone, dois discos escuros empilhados, e o dedo que mira um
+          // acha o outro.
+          //
+          // Nada de utility de margem aqui: `ALVO_DE_TOQUE` traz `margin`
+          // SHORTHAND inline, e inline vence classe — um `ml-auto` seria
+          // ignorado em silêncio. Cheguei a escrever e só a bancada mostrou.
+          className="flex shrink-0 items-center justify-center disabled:opacity-40"
+          style={{
+            ...ALVO_DE_TOQUE,
+            width: '32px',
+            height: '32px',
+            borderRadius: 'var(--ck-radius-pill)',
+            background: 'var(--ck-text-primary)',
+            color: 'var(--ck-surface-canvas)',
+          }}
+        >
+          <IconeParar />
+        </button>
+      ) : null}
     </span>
   );
 }

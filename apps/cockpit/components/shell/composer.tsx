@@ -722,7 +722,14 @@ export function Composer({
           empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
           texto no feed, isto é alguém do outro lado. As duas fontes são as
           mesmas do `■` logo abaixo, e por isso não abre conexão nova. */}
-      <BolinhaAgente status={daFrota?.status} turnoVivo={turnoVivo} escrevendo={escrevendo} />
+      <BolinhaAgente
+        status={daFrota?.status}
+        turnoVivo={turnoVivo}
+        escrevendo={escrevendo}
+        nomeDoAgente={agentName}
+        aoParar={gerando ? () => void interromper() : undefined}
+        parando={parando}
+      />
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />
@@ -1023,6 +1030,12 @@ export function Composer({
               // A FOTO SOZINHA JÁ É GESTO. Sem `retidoAnexo` aqui, anexar sem
               // escrever legenda deixava o microfone no lugar do envio — a foto
               // na tela e nenhum botão que a mandasse.
+              //
+              // ESTE SLOT É DO GESTO DE ENTRADA, e só. O ■ morava aqui e
+              // vencia o microfone com o campo vazio durante a geração — o
+              // Rica testou em 20/08, quis falar a segunda mensagem e não
+              // achou o microfone. Parar mudou para a linha da bolinha, que já
+              // é onde o estado do agente é anunciado.
               <button
                 key="enviar"
                 type="submit"
@@ -1048,40 +1061,6 @@ export function Composer({
                 }}
               >
                 <IconeEnviar />
-              </button>
-            ) : gerando ? (
-              // O ■ — mas SÓ com o campo vazio, e a ordem destes ramos é a
-              // regra inteira. A referência do Rica (app ChatGPT) troca a seta
-              // pelo quadrado enquanto gera; copiar isso ao pé da letra criou um
-              // beco no celular, que eu só vi medindo: com texto escrito e o ■
-              // no lugar do envio, não sobrava gesto nenhum para despachar — o
-              // Enter do teclado virtual quebra linha de propósito, e o Shift
-              // não existe ali. A fila que este composer ganhou hoje ficaria
-              // inalcançável justamente no aparelho em que ela mais serve.
-              //
-              // Então: escreveu, o alvo é ENVIAR (e a porta enfileira se ele
-              // ainda estiver ocupado); campo vazio durante a geração, o alvo é
-              // PARAR. Cada estado oferece a única ação que faz sentido nele, e
-              // nenhuma das duas cobre a outra.
-              <button
-                key="interromper"
-                type="button"
-                onClick={() => void interromper()}
-                disabled={parando}
-                aria-label={`Parar ${agentName}`}
-                title="Parar"
-                className="flex shrink-0 items-center justify-center disabled:opacity-40"
-                style={{
-                  ...ALVO_DE_TOQUE,
-                  width: '32px',
-                  height: '32px',
-                  marginBottom: MARGEM_INFERIOR_DA_BASE,
-                  borderRadius: 'var(--ck-radius-pill)',
-                  background: 'var(--ck-text-primary)',
-                  color: 'var(--ck-surface-canvas)',
-                }}
-              >
-                <IconeParar />
               </button>
             ) : (
               <button
