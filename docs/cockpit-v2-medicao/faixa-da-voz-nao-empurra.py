@@ -24,6 +24,11 @@ Encena o ciclo inteiro sem gastar STT e sem despachar nada para o agente:
 
 O texto transcrito cai no rascunho e fica lá: esta bancada nunca aperta enviar.
 
+ELA NÃO BASTA SOZINHA. A primeira reserva que fiz ficou verde aqui e reprovou
+`folga-embaixo-do-composer.py`: reservar a linha EMBAIXO da caixa cumpre esta
+régua e estoura a outra, porque debaixo da caixa o espaço é orçado contra a
+barra de gestos do iPhone. As duas rodam juntas.
+
 Uso: python3 faixa-da-voz-nao-empurra.py <porta> [slug]
 """
 

@@ -774,6 +774,103 @@ export function Composer({
         aoEditar={editarDaFila}
         aoForcar={() => setFila(soltaPausa(fila))}
       />
+      {/* A LINHA DA VOZ — sempre no layout, inclusive quando não há nada a
+          dizer. As duas mensagens daqui montavam e desmontavam várias vezes por
+          gesto (existem em `pedindo` e `transcrevendo`, somem em `gravando`), e
+          como o composer está ancorado embaixo cada troca subia e descia 22,6px
+          de TUDO que está acima. É o solavanco que o Rica sente ao SOLTAR o
+          dedo — medido em `docs/cockpit-v2-medicao/faixa-da-voz-nao-empurra.py`,
+          que reprova o build sem esta reserva.
+
+          E ela mora ACIMA da caixa, não embaixo, embora fale do botão que está
+          embaixo. Debaixo da caixa o orçamento já está fechado e é contado:
+          `palco-da-conversa.tsx` desconta 21px do `safe-bottom` porque sabe que
+          o reservador da linha de status está ali, e a conta existe para a
+          caixa terminar a 34px do fundo — a barra de gestos do iPhone, régua
+          que o Rica mandou em 13/08. Uma reserva permanente a mais ali empurra
+          a caixa para cima do fundo da tela e nenhum padding traz de volta
+          (`folga-embaixo-do-composer.py` reprova em 57px). Acima da caixa não
+          há orçamento nenhum: quem cede o espaço é a conversa, que rola.
+
+          `visibility: hidden` reservaria o espaço, mas some da árvore de
+          acessibilidade — e esta linha existe justamente para AVISAR. Altura
+          fixa também não serve: o aviso do microfone traz botão de dispensar e
+          pode passar de uma linha. Daí `minHeight`, que é piso e não teto. O
+          `flex-col` está aqui por causa do strut: em bloco comum a linha vazia
+          herdaria o corpo de 16px e ficaria mais alta que o texto de 12px que
+          ela reserva. */}
+      <div
+        className="mx-auto flex w-full flex-col"
+        style={{
+          maxWidth: 'var(--ck-w-composer)',
+          padding: '0 var(--ck-space-2)',
+          minHeight: 'calc(var(--ck-text-xs) * var(--ck-leading-body))',
+        }}
+      >
+        {/* MICROFONE INDISPONÍVEL. Nunca um botão que não responde — o defeito
+            que esta rodada consertou no envio, aqui com outra roupa. Sempre duas
+            coisas: o que aconteceu e o que fazer a respeito. A saída é a parte
+            que importa; "permissão negada" sozinho manda o Rica adivinhar em
+            qual das telas de ajuste do iPhone ele mexe. */}
+        {avisoDaVoz ? (
+          <div
+            className="flex w-full items-start justify-between"
+            style={{ gap: 'var(--ck-space-3)' }}
+          >
+            <span
+              role="status"
+              aria-live="assertive"
+              style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
+            >
+              {avisoDaVoz.resumo} — {avisoDaVoz.saida}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setFalhaDaFala(null);
+                gravador.limparImpedimento();
+              }}
+              aria-label="Dispensar aviso do microfone"
+              className="ck-veil flex shrink-0 items-center"
+              style={{
+                padding: '4px',
+                borderRadius: 'var(--ck-radius-chip)',
+                color: 'var(--ck-text-secondary)',
+              }}
+            >
+              <IconeDescartar tamanho={13} />
+            </button>
+          </div>
+        ) : null}
+
+        {/* A VOZ FALANDO DE FORA DA CAIXA. Dois casos que a primeira versão desta
+            peça deixou mudos:
+
+            1. `transcrevendo` — o fio corre na base, mas fio sozinho não
+               distingue "subindo áudio" de "enviando texto". O despacho foi
+               explícito: o STT roda no servidor e a tela não pode ficar muda no
+               tempo morto. Fio é ritmo; a palavra é o que diz DE QUE espera se
+               trata.
+            2. `travada` com áudio longo — a duração muda de cor e a moldura
+               também, mas com a gravação travada o canto esquerdo é ocupado
+               pelo botão Descartar e o aviso não tinha onde aparecer. Cor sem
+               motivo é enfeite: quem vê o âmbar precisa saber que é o teto de
+               30s do STT chegando. */}
+        {vozAparencia.instrucao &&
+        faseVoz !== 'impedida' &&
+        (!emCaptura(modo) || (modo === 'travada' && vozAparencia.longa)) ? (
+          <span
+            role="status"
+            aria-live="polite"
+            style={{
+              fontSize: 'var(--ck-text-xs)',
+              color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
+            }}
+          >
+            {vozAparencia.instrucao}
+          </span>
+        ) : null}
+      </div>
       {/* O INVÓLUCRO DA ÂNCORA. Existe por uma razão só: dar à gaveta um
           `position: relative` que meça exatamente a caixa do composer. Se o
           `bottom: 100%` dela medisse a coluna inteira (que também tem as linhas
@@ -1267,93 +1364,6 @@ export function Composer({
         </span>
       ) : null}
 
-      {/* A LINHA DA VOZ — sempre no layout, inclusive quando não há nada a
-          dizer. As duas mensagens daqui montavam e desmontavam várias vezes por
-          gesto (existem em `pedindo` e `transcrevendo`, somem em `gravando`), e
-          como o composer está ancorado embaixo cada troca subia e descia 22,6px
-          de TUDO que está acima. É o solavanco que o Rica sente ao SOLTAR o
-          dedo — medido em `docs/cockpit-v2-medicao/faixa-da-voz-nao-empurra.py`,
-          que reprova o build sem esta reserva.
-
-          `visibility: hidden` reservaria o espaço, mas some da árvore de
-          acessibilidade — e esta linha existe justamente para AVISAR. Altura
-          fixa também não serve: o aviso do microfone traz botão de dispensar e
-          pode passar de uma linha. Daí `minHeight`, que é piso e não teto. O
-          `flex-col` está aqui por causa do strut: em bloco comum a linha vazia
-          herdaria o corpo de 16px e ficaria mais alta que o texto de 12px que
-          ela reserva. */}
-      <div
-        className="mx-auto flex w-full flex-col"
-        style={{
-          maxWidth: 'var(--ck-w-composer)',
-          padding: '0 var(--ck-space-2)',
-          minHeight: 'calc(var(--ck-text-xs) * var(--ck-leading-body))',
-        }}
-      >
-        {/* MICROFONE INDISPONÍVEL. Nunca um botão que não responde — o defeito
-            que esta rodada consertou no envio, aqui com outra roupa. Sempre duas
-            coisas: o que aconteceu e o que fazer a respeito. A saída é a parte
-            que importa; "permissão negada" sozinho manda o Rica adivinhar em
-            qual das telas de ajuste do iPhone ele mexe. */}
-        {avisoDaVoz ? (
-          <div
-            className="flex w-full items-start justify-between"
-            style={{ gap: 'var(--ck-space-3)' }}
-          >
-            <span
-              role="status"
-              aria-live="assertive"
-              style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
-            >
-              {avisoDaVoz.resumo} — {avisoDaVoz.saida}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setFalhaDaFala(null);
-                gravador.limparImpedimento();
-              }}
-              aria-label="Dispensar aviso do microfone"
-              className="ck-veil flex shrink-0 items-center"
-              style={{
-                padding: '4px',
-                borderRadius: 'var(--ck-radius-chip)',
-                color: 'var(--ck-text-secondary)',
-              }}
-            >
-              <IconeDescartar tamanho={13} />
-            </button>
-          </div>
-        ) : null}
-
-        {/* A VOZ FALANDO DE FORA DA CAIXA. Dois casos que a primeira versão desta
-            peça deixou mudos:
-
-            1. `transcrevendo` — o fio corre na base, mas fio sozinho não
-               distingue "subindo áudio" de "enviando texto". O despacho foi
-               explícito: o STT roda no servidor e a tela não pode ficar muda no
-               tempo morto. Fio é ritmo; a palavra é o que diz DE QUE espera se
-               trata.
-            2. `travada` com áudio longo — a duração muda de cor e a moldura
-               também, mas com a gravação travada o canto esquerdo é ocupado
-               pelo botão Descartar e o aviso não tinha onde aparecer. Cor sem
-               motivo é enfeite: quem vê o âmbar precisa saber que é o teto de
-               30s do STT chegando. */}
-        {vozAparencia.instrucao &&
-        faseVoz !== 'impedida' &&
-        (!emCaptura(modo) || (modo === 'travada' && vozAparencia.longa)) ? (
-          <span
-            role="status"
-            aria-live="polite"
-            style={{
-              fontSize: 'var(--ck-text-xs)',
-              color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
-            }}
-          >
-            {vozAparencia.instrucao}
-          </span>
-        ) : null}
-      </div>
 
       {/* Frase de estado + ações. Só existe fora do `ocioso`/`confirmado` —
           sucesso é silêncio, igual à linha de ferramenta (§7). */}
