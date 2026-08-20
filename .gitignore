@@ -10,9 +10,12 @@ venv/
 node_modules/
 .next/
 .next-dev/
-# Dists nomeados usados por execuções simultâneas de dev/reprodução.
+# Dists nomeados usados por execuções simultâneas de dev/reprodução, e o de
+# estágio, onde o build novo é compilado e medido antes de tomar o lugar do
+# `.next` que está no ar.
 .next-dev-*/
 .next-repro-*/
+.next-estagio/
 .turbo/
 dist/
 
