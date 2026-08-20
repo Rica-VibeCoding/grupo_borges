@@ -1,4 +1,8 @@
 import type {
+  ItemDaFilaDoServidor,
+  RespostaDaFilaDoServidor,
+} from './fila-types.ts';
+import type {
   ActiveTaskStatus,
   Agent,
   AgentDocResolved,
@@ -148,6 +152,48 @@ export async function fetchEvents(limit = 50): Promise<TaskEvent[]> {
 }
 
 // Client-side (modal): usa rewrite do next.config.ts pra /api/* → backend.
+/**
+ * A FILA DO SERVIDOR — rota própria por sessão, não campo do snapshot da frota.
+ *
+ * O snapshot é lido pela frota inteira a cada poll; pendurar nele uma lista que
+ * só interessa a quem está com a sessão aberta engorda o payload de todo mundo
+ * para servir um. A fila muda por gesto de UMA pessoa numa sessão, e é lida
+ * exatamente ali.
+ *
+ * Contrato completo (incluindo o lado que ainda não existe) em
+ * `fixtures/cockpit-v2/fila/CONTRATO.md`.
+ */
+export async function fetchFilaDaSessao(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<RespostaDaFilaDoServidor> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/fila`, {
+    cache: 'no-store',
+    signal,
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchFilaDaSessao failed: ${res.status}`));
+  return res.json();
+}
+
+/**
+ * Tira um item da fila. Não existe descarte: quem chama devolve o texto ao
+ * campo, como `BlocoDaFila` já faz na fila local — cancelar e editar são o
+ * mesmo gesto, e o que sai da fila volta para as mãos dele.
+ *
+ * 409 quando o item já saiu de `pendente`: entre o desenho da tela e o toque, o
+ * servidor pode ter começado a drenar. Cancelar o que já está a caminho seria
+ * prometer o que não dá para cumprir.
+ */
+export async function deleteItemDaFila(
+  slug: string,
+  itemId: string,
+): Promise<{ cancelada: boolean; item: ItemDaFilaDoServidor }> {
+  const url = `/api/agents/${encodeURIComponent(slug)}/fila/${encodeURIComponent(itemId)}`;
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) throw new Error(await errorDetail(res, `deleteItemDaFila failed: ${res.status}`));
+  return res.json();
+}
+
 export async function fetchAgentSkills(slug: string, signal?: AbortSignal): Promise<AgentSkillsResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/skills`, { cache: 'no-store', signal });
   if (!res.ok) throw new Error(`fetchAgentSkills failed: ${res.status}`);
