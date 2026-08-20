@@ -460,6 +460,10 @@ export function Composer({
   // funções de aparência que o repo já usa. `gerando` fica de fora em qualquer
   // hipótese: é estado do AGENTE e mora na linha da bolinha.
   const modo = modoDaFala({ faseVoz, falaFalhou: avisoDaVoz !== null });
+  // O SLOT DE DESPACHO ESTÁ EM CENA? Em `travada` o gesto que fecha é o do
+  // áudio, no slot de entrada — não há texto a mandar enquanto a gravação
+  // espera. Fora daí, quem manda o botão existir é haver o que despachar.
+  const despachoEmCena = temConteudo && modo !== 'travada';
 
   /** "Clear"/"Nova conversa" da Tara: arma `codex_next_fresh` no back e zera o
    *  feed local NA HORA (mesmo efeito do /clear do CC). Falha do POST é
@@ -987,7 +991,18 @@ export function Composer({
             />
           )}
 
-          <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
+          <div
+            // O DESLOCAMENTO. Sem despacho em cena a fileira desliza para a
+            // direita pela largura do slot: o microfone encosta na borda e o
+            // botão sai pela beirada, onde o `overflow: hidden` da caixa o
+            // recorta. Digitar traz a fileira de volta e o botão aparece no
+            // lugar que abriu — o movimento em vez do buraco (Rica, 20/08:
+            // *"parecendo uma boca com um dente a menos"*). Regra em
+            // `.ck-fileira-acoes`.
+            className="ck-fileira-acoes flex min-w-0 flex-1 items-center justify-end"
+            data-despacho={despachoEmCena ? 'em-cena' : 'oculto'}
+            style={{ gap: 'var(--ck-space-3)' }}
+          >
             {emCaptura(modo) ? (
               <OndaCompacta
                 niveis={niveisVoz}
@@ -1104,49 +1119,48 @@ export function Composer({
               </button>
             )}
 
-            {/* SLOT DE DESPACHO. Vazio ele não vira botão morto — a recusa por
-                `vazio` é a única sem recado no módulo da porta, então um alvo
-                aqui não teria o que responder ao toque (§9). Vira espaço
-                reservado: o microfone não pula de lugar a cada tecla, que é a
-                mesma razão da F2.4 logo abaixo. */}
-            {!temConteudo || modo === 'travada' ? (
-              <div
-                aria-hidden
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  marginBottom: MARGEM_INFERIOR_DA_BASE,
-                  flexShrink: 0,
-                }}
-              />
-            ) : (
-              <button
-                key="enviar"
-                type="submit"
-                // Habilitado mesmo quando a porta vai recusar: desabilitado ele
-                // não responde ao toque e não diz por quê, que é o botão morto
-                // da §9. Tocar agora devolve o motivo na faixa abaixo — e, se a
-                // faixa estiver escondida atrás do teclado, o botão sacode
-                // (`sinalRecusa` + `.ck-sacudir`) pra o toque não parecer morto.
-                onAnimationEnd={() => setSinalRecusa(false)}
-                aria-label={`Enviar para ${agentName}`}
-                className={
-                  'flex shrink-0 items-center justify-center disabled:opacity-40' +
-                  (sinalRecusa ? ' ck-sacudir' : '')
-                }
-                style={{
-                  ...ALVO_DE_TOQUE,
-                  width: '32px',
-                  height: '32px',
-                  marginBottom: MARGEM_INFERIOR_DA_BASE,
-                  borderRadius: 'var(--ck-radius-pill)',
-                  background: 'var(--ck-text-primary)',
-                  color: 'var(--ck-surface-canvas)',
-                }}
-              >
-                <IconeEnviar />
-              </button>
-            )}
+            {/* SLOT DE DESPACHO. Nunca é buraco: quando não há o que mandar,
+                quem some é ELE, saindo pela borda com a fileira — e não um vão
+                reservado no meio da barra. Um alvo visível e mudo aqui também
+                não serviria: `vazio` é a única recusa sem recado no módulo da
+                porta, e botão que não responde nem diz por quê é a §9. */}
+            <button
+              key="enviar"
+              type="submit"
+              // Habilitado mesmo quando a porta vai recusar: desabilitado ele
+              // não responde ao toque e não diz por quê, que é o botão morto
+              // da §9. Tocar agora devolve o motivo na faixa abaixo — e, se a
+              // faixa estiver escondida atrás do teclado, o botão sacode
+              // (`sinalRecusa` + `.ck-sacudir`) pra o toque não parecer morto.
+              //
+              // FORA DE CENA ele não é botão morto: não pinta, não recebe
+              // toque, não é anunciado e não entra na ordem de tabulação — não
+              // é um alvo que ignora o dedo, é um alvo que não está lá. Fica no
+              // DOM porque é a largura dele que a fileira desliza, e porque um
+              // botão que nasce e morre a cada tecla não teria o que animar.
+              onAnimationEnd={() => setSinalRecusa(false)}
+              aria-label={`Enviar para ${agentName}`}
+              aria-hidden={!despachoEmCena}
+              tabIndex={despachoEmCena ? undefined : -1}
+              className={
+                'flex shrink-0 items-center justify-center' +
+                (sinalRecusa ? ' ck-sacudir' : '')
+              }
+              style={{
+                ...ALVO_DE_TOQUE,
+                width: '32px',
+                height: '32px',
+                marginBottom: MARGEM_INFERIOR_DA_BASE,
+                borderRadius: 'var(--ck-radius-pill)',
+                background: 'var(--ck-text-primary)',
+                color: 'var(--ck-surface-canvas)',
+                opacity: despachoEmCena ? 1 : 0,
+                pointerEvents: despachoEmCena ? undefined : 'none',
+                transition: 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease)',
+              }}
+            >
+              <IconeEnviar />
+            </button>
           </div>
         </div>
 

@@ -851,6 +851,39 @@ body {
  *
  * Só `opacity` e `transform` animam de verdade (proibição §9.4), então isto não
  * custa layout nem briga com o streaming do feed. */
+/* A FILEIRA DE AÇÕES DO COMPOSER — o movimento no lugar do buraco.
+ *
+ * A F2.3 separou microfone e envio em slots próprios, e a primeira versão
+ * reservava o espaço do envio mesmo vazio, para o microfone não pular de lugar
+ * a cada tecla. O vão ficou à vista: *"um buraco em branco parecendo uma boca
+ * com um dente a menos"* (Rica, 20/08). Ele pediu o contrário do espaço
+ * guardado — que os elementos se desloquem e o botão SURJA no lugar que abriu,
+ * com a leveza do painel que já abre assim.
+ *
+ * Sem despacho em cena a fileira inteira desliza para a direita pela largura do
+ * slot: o microfone encosta na borda e o botão sai pela beirada, onde o
+ * `overflow: hidden` da caixa o recorta. Digitar traz a fileira de volta, e os
+ * elementos andam para a esquerda enquanto o botão aparece.
+ *
+ * NADA DE LARGURA (§9.4): quem anima é `transform` aqui e `opacity` no botão —
+ * o layout não recalcula um pixel, e por isso o movimento não briga com o
+ * streaming do feed. A alternativa óbvia seria animar a largura do slot de 0 a
+ * 44px, e é exatamente o que a proibição existe para impedir.
+ *
+ * Duração e curva são as da gaveta, por ordem antiga do Rica: superfície que
+ * entra, na casa inteira, entra com o mesmo `slow`. */
+.ck-fileira-acoes {
+  transform: translateX(0);
+  transition: transform var(--ck-dur-enter, 200ms) var(--ck-ease);
+}
+
+/* 32px do slot mais o gap da fileira. O botão ocupa 32px de LAYOUT: os 44px de
+   alvo entram como padding e saem como margem negativa igual, que é o que
+   `alvo-de-toque.ts` faz para não inflar a caixa visual. */
+.ck-fileira-acoes[data-despacho='oculto'] {
+  transform: translateX(calc(32px + var(--ck-space-3)));
+}
+
 .ck-surge {
   visibility: visible;
   opacity: 1;
