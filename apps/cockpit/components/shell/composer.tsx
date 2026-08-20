@@ -81,7 +81,6 @@ import { prefixaPesquisa } from './pesquisa-canario';
 import { usaGravador } from './usa-gravador';
 import {
   aparenciaDaVoz,
-  capturando,
   diagnosticaMicrofone,
   diagnosticaTranscricao,
   mesclaTranscricao,
@@ -89,6 +88,7 @@ import {
   type FaseVoz,
   type Impedimento,
 } from './voz';
+import { emCaptura, modoDaFala } from './modo-da-fala';
 import {
   IconeBusca,
   IconeCadeado,
@@ -426,8 +426,6 @@ export function Composer({
     impedimento: gravador.impedimento ?? undefined,
   });
   const niveisVoz = gravador.niveis;
-  const emCaptura = capturando(faseVoz);
-  const travada = faseVoz === 'travada';
   // Dois problemas, uma linha só: microfone que não abre e transcrição que não
   // veio. São momentos diferentes do mesmo gesto e nunca coexistem — dar duas
   // faixas de aviso ensinaria dois lugares para olhar quando a fala falha.
@@ -435,6 +433,17 @@ export function Composer({
     faseVoz === 'impedida'
       ? gravador.impedimento ?? null
       : falhaDaFala;
+
+  // O MODO DA FALA — um valor calculado, em vez dos cinco predicados que o JSX
+  // recombinava à mão em dez pontos. Equivalente exato ao que os ternários
+  // montavam: `emCaptura(modo)` = `capturando(faseVoz)`, e `modo === 'travada'`
+  // = `faseVoz === 'travada'`.
+  //
+  // Só a fala: `compactando` e `enviando` CONVIVEM com o microfone aberto, e
+  // enum é para estado que se exclui — eles seguem em eixo próprio, com as
+  // funções de aparência que o repo já usa. `gerando` fica de fora em qualquer
+  // hipótese: é estado do AGENTE e mora na linha da bolinha.
+  const modo = modoDaFala({ faseVoz, falaFalhou: avisoDaVoz !== null });
 
   /** "Clear"/"Nova conversa" da Tara: arma `codex_next_fresh` no back e zera o
    *  feed local NA HORA (mesmo efeito do /clear do CC). Falha do POST é
@@ -815,7 +824,7 @@ export function Composer({
               // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
               // editável, ele escreve durante a espera e manda com um toque quando
               // ela passa. É o que garante que o texto nunca evapora.
-              readOnly={emCaptura}
+              readOnly={emCaptura(modo)}
               onChange={(e) => {
                 setTexto(e.target.value);
                 setOrigemDoRascunho((atual) =>
@@ -895,7 +904,7 @@ export function Composer({
               // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
               aria-label={`Mensagem para ${agentName}`}
               placeholder={
-                emCaptura
+                emCaptura(modo)
                   ? 'Ouvindo…'
                   : travaCompact
                     ? 'compactando… pode escrever, entra na fila'
@@ -919,7 +928,7 @@ export function Composer({
             minHeight: 'calc(var(--ck-touch-min) - var(--ck-space-2))',
           }}
         >
-          {travada ? (
+          {modo === 'travada' ? (
             <button
               type="button"
               onClick={gravador.descartarTravada}
@@ -939,7 +948,7 @@ export function Composer({
               <IconeDescartar tamanho={15} />
               Descartar
             </button>
-          ) : emCaptura ? null : (
+          ) : emCaptura(modo) ? null : (
             <BotaoAnexo
               estado={anexo.estado}
               alternarGaveta={anexo.alternarGaveta}
@@ -959,7 +968,7 @@ export function Composer({
           )}
 
           <div className="flex min-w-0 flex-1 items-center justify-end" style={{ gap: 'var(--ck-space-3)' }}>
-            {emCaptura ? (
+            {emCaptura(modo) ? (
               <OndaCompacta
                 niveis={niveisVoz}
                 tinta={vozAparencia.tinta ?? 'var(--ck-state-running)'}
@@ -1007,7 +1016,7 @@ export function Composer({
                 o `type` do mesmo nó, e o clique que rodou o `onClick` cai no
                 submit do form logo em seguida — o áudio começaria e a mensagem
                 vazia sairia junto. */}
-            {travada ? (
+            {modo === 'travada' ? (
               <button
                 key="parar"
                 type="button"
@@ -1068,7 +1077,7 @@ export function Composer({
                 type="button"
                 disabled={faseVoz === 'transcrevendo'}
                 {...gravador.handlers}
-                aria-label={emCaptura ? vozAparencia.anuncio : `Segure para falar com ${agentName}`}
+                aria-label={emCaptura(modo) ? vozAparencia.anuncio : `Segure para falar com ${agentName}`}
                 className="flex shrink-0 items-center justify-center disabled:opacity-40"
                 style={{
                   ...ALVO_DE_TOQUE,
@@ -1076,7 +1085,7 @@ export function Composer({
                   height: '32px',
                   marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
-                  background: emCaptura
+                  background: emCaptura(modo)
                     ? vozAparencia.tinta ?? 'var(--ck-state-running)'
                     : 'var(--ck-text-primary)',
                   color: 'var(--ck-surface-canvas)',
@@ -1245,7 +1254,7 @@ export function Composer({
              30s do STT chegando. */}
       {vozAparencia.instrucao &&
       faseVoz !== 'impedida' &&
-      (!emCaptura || (travada && vozAparencia.longa)) ? (
+      (!emCaptura(modo) || (modo === 'travada' && vozAparencia.longa)) ? (
         <span
           role="status"
           aria-live="polite"
