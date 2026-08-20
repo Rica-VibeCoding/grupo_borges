@@ -350,6 +350,20 @@ export function createControleEnvio(
     try {
       const resposta = await postar(agentSlug, texto, origem);
       if (descartado) return;
+      // O 202: o servidor guardou o texto na fila dele. Tem de vir ANTES da
+      // guarda de baixo, porque nesse caminho `tmux_delivered` vem `false` — e
+      // lido como ausência de prova ele levaria a máquina a `nao-confirmado`,
+      // que é vermelho na tela por uma entrega que está garantida.
+      //
+      // Sem `armarPrazo`: o recibo JÁ é a confirmação e não há eco a esperar
+      // agora. Mas com `observar`, porque o eco chega quando a fila drenar —
+      // minutos depois — e é ele que apaga a marca `fila`.
+      if (resposta.enfileirada === true) {
+        const fronteira = fronteiraDo(resposta.event_boundary_id);
+        publicar({ tipo: 'enfileirar', fronteira });
+        observar(fronteira);
+        return;
+      }
       // `tmux_delivered: false` é AUSÊNCIA DE PROVA, não erro. O `send_message`
       // só devolve `true` com prova observável no pane (input vazio ou linha
       // transcrita, tetos de 8s e 6s); pane em turno ativo não mostra essa prova

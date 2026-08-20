@@ -5,8 +5,10 @@ Aqui ficam as **rotas** e o que cada lado promete. A fixture ao lado
 (`espelho-do-painel.json`) é o teste de contrato: os dois lados leem o mesmo
 arquivo, ninguém espera o outro subir.
 
-**Estado em 20/08:** o lado do painel existe (`fila-types.ts`, `fila-do-servidor.ts`,
-`api.ts`). O lado do servidor **não** — nenhuma rota abaixo responde ainda.
+**Estado em 20/08:** o lado do painel está pronto — `fila-types.ts`,
+`fila-do-servidor.ts`, `api.ts` e a máquina de envio já tratando o 202. O lado do
+servidor **não existe**: nenhuma rota abaixo responde ainda, e enquanto não
+responder o código novo do painel fica inerte (ninguém devolve `enfileirada`).
 
 ## Por que Codex-first
 
@@ -69,18 +71,33 @@ vez de levantar 409.
 > mais nada, pinta a fila de erro. O sucesso precisa de discriminante que a
 > máquina de seis fases reconheça **antes** dessas duas guardas.
 
-Duas saídas, e a escolha é de desenho, não de gosto:
+**Decidido em 20/08 (Pavan): 202.** "Aceito e enfileirado" é semanticamente o
+que aconteceu; 409 diz conflito, e não há conflito nenhum — o texto foi
+guardado. A alternativa (manter 409 e o painel consultar `GET .../fila`) fica
+registrada só para não ser reproposta: dava mais ida de rede e deixava a fila do
+Codex com cara diferente da do Claude Code na tela.
 
-1. **`/input` devolve 202 com o item**, e `usa-envio` ganha um desfecho terminal
-   novo, de sucesso, reusando a marca `fila` que a fase `confirmado` já carrega
-   para o `kind: "queued"` do Claude Code (`lib/envio.ts:49`). Simetria entre os
-   dois motores: "entrou na fila" passa a ter um só significado na tela.
-2. **`/input` continua com 409** e o painel, ao receber `shared_turn_in_flight`,
-   consulta `GET .../fila`. Menos mudança na máquina de envio, mais ida de rede,
-   e a fila do Codex fica com uma cara diferente da do Claude Code.
+```json
+{
+  "enfileirada": true,
+  "tmux_delivered": false,
+  "sent_at": 1755710000,
+  "event_boundary_id": 918273,
+  "item_da_fila": { /* ItemDaFilaDoServidor */ }
+}
+```
 
-Prefiro a 1 — mas ela mexe na máquina de seis fases, e isso não se faz sem o
-contrato fechado.
+`event_boundary_id` é **obrigatório no 202**, e não é enfeite: é ele que deixa o
+eco da drenagem — que chega minutos depois, quando o TeleCodex finalmente
+entrega — ser reconhecido pela máquina de envio e apagar a marca "entrou na
+fila". Sem ele a promessa fica na tela para sempre.
+
+**Feito no painel** (20/08): a máquina de envio ganhou o evento `enfileirar`,
+que vai de `enviando` direto a `confirmado` com `fila: true` e `ecoId: null` —
+sem passar por `aceito`, porque `aceito` é a espera do eco e aqui não há eco a
+esperar. O prazo de 12s não se arma. Quando a drenagem chega, o eco `user`
+apaga a marca e preenche o `ecoId`, pelo mesmo caminho que o Claude Code já
+usa. A frase na tela é a mesma nos dois motores: **"entrou na fila"**.
 
 ## O que o painel promete
 

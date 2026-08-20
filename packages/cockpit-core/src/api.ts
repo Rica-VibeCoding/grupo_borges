@@ -350,6 +350,19 @@ export type AnyModelSlug = ChatModelSlug | CodexModelSlug | KimiModelSlug;
 export type AgentInputResponse = {
   tmux_delivered: boolean;
   sent_at: number;
+  /**
+   * `true` no 202: o servidor guardou o texto na fila dele em vez de entregar
+   * agora, porque o motor do outro lado não enfileira sozinho (Codex). O
+   * `event_boundary_id` vem junto — é ele que deixa o eco da drenagem, minutos
+   * depois, ser reconhecido pela máquina de envio.
+   *
+   * Ausente no 200 de sempre. Quem consome tem de olhar ESTE campo antes de
+   * `tmux_delivered`, que vem `false` no caminho da fila e seria lido como
+   * ausência de prova — ver `lib/usa-envio.ts`.
+   */
+  enfileirada?: boolean;
+  /** Só com `enfileirada: true`. */
+  item_da_fila?: ItemDaFilaDoServidor;
 };
 
 export type AgentModelChangeResponse = {
@@ -417,7 +430,7 @@ async function agentInputError(res: Response): Promise<AgentInputError> {
 export async function postAgentInput(
   slug: string,
   text: string,
-  options?: { fresh?: boolean; origin?: 'text' | 'stt' },
+  options?: { fresh?: boolean; origin?: 'text' | 'stt'; clientRequestId?: string },
 ): Promise<AgentInputResponse> {
   const idempotency_key = safeUUID();
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/input`, {
@@ -428,6 +441,10 @@ export async function postAgentInput(
       idempotency_key,
       fresh: options?.fresh ?? false,
       origin: options?.origin ?? 'text',
+      // Serve para dedupe de retentativa e para o painel saber qual item da
+      // fila é qual. NÃO serve para casar com o feed: nenhum id atravessa o
+      // tmux, e quem casa fila com feed é o servidor, por conteúdo.
+      ...(options?.clientRequestId ? { client_request_id: options.clientRequestId } : {}),
     }),
   });
   if (!res.ok) {

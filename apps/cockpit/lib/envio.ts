@@ -46,13 +46,23 @@ export type EstadoEnvio =
   | ({
       fase: 'confirmado';
       fronteira: FronteiraEnvio;
-      ecoId: number;
-      /** Presente quando a confirmação veio da FILA (`kind: "queued"` do
-       *  stream) e não do eco: o agente estava ocupado e o CLI enfileirou a
-       *  mensagem — que é recibo de entrega MELHOR que o eco, porque prova
-       *  que o texto entrou na caixa de entrada dele. O eco `user` chega
-       *  depois, quando a fila drena, e só apaga esta marca — nunca
-       *  reconfirma (uma entrega, uma notificação). */
+      /**
+       * `null` quando a confirmação veio do RECIBO DA FILA DO SERVIDOR (202 do
+       * `/input`) e nenhum eco foi visto ainda: ali o texto está guardado no
+       * banco, não colado no pane, e não existe item de stream a apontar. O eco
+       * chega quando a fila drena e preenche este campo — ver a marca `fila`.
+       */
+      ecoId: number | null;
+      /** Presente quando a confirmação veio de uma FILA e não do eco — o
+       *  agente estava ocupado e a mensagem ficou guardada. Recibo de entrega
+       *  MELHOR que o eco, porque prova que o texto entrou na caixa dele. O
+       *  eco `user` chega depois, quando a fila drena, e só apaga esta marca —
+       *  nunca reconfirma (uma entrega, uma notificação).
+       *
+       *  Duas filas a produzem, e a tela não as distingue de propósito: a do
+       *  CLI do Claude Code (`kind: "queued"` do stream) e a do servidor, para
+       *  o Codex (202 do `/input`). Para o Rica é a mesma frase e a mesma
+       *  promessa; o que muda é só onde o texto está guardado. */
       fila?: true;
     } & BaseEnvio)
   | ({
@@ -86,6 +96,12 @@ export type EventoEnvio =
       agoraMs: number;
       fronteira?: FronteiraEnvio;
     }
+  /**
+   * O 202 do `/input`: o servidor guardou o texto na fila dele em vez de
+   * entregar agora. Diferente de `aceitar`, não abre espera de eco — o recibo
+   * JÁ é a confirmação, e não há prazo a estourar.
+   */
+  | { tipo: 'enfileirar'; fronteira?: FronteiraEnvio }
   | { tipo: 'nao-confirmar'; erro: unknown }
   | { tipo: 'falhar'; erro: unknown }
   | {
@@ -147,6 +163,18 @@ export function reduzEnvio(
       return { ...base, fase: 'confirmado', fronteira, ecoId: ecoCandidatoId };
     }
     return { ...estado, fase: 'aceito', fronteira, aceitoEmMs: evento.agoraMs };
+  }
+
+  if (evento.tipo === 'enfileirar') {
+    if (estado.fase !== 'enviando') return estado;
+    const fronteira = evento.fronteira ?? estado.fronteira;
+    if (fronteira === undefined) return estado;
+    // Vai direto a `confirmado`, sem passar por `aceito`: `aceito` é a espera
+    // do eco, e aqui não há eco a esperar — o texto está no banco do servidor,
+    // não colado num pane. Armar prazo aqui viraria `nao-confirmado` em 12s
+    // sobre uma entrega que está garantida.
+    const { ecoCandidatoId: _, ...base } = estado;
+    return { ...base, fase: 'confirmado', fronteira, ecoId: null, fila: true };
   }
 
   if (evento.tipo === 'nao-confirmar') {

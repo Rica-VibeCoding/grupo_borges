@@ -252,3 +252,71 @@ test('eco tardio recupera um envio não confirmado', () => {
   });
   assert.equal(ecoTardio.fase, 'confirmado');
 });
+
+/**
+ * A FILA DO SERVIDOR (202), que é o caminho do Codex. Diferente do
+ * `kind: "queued"` do Claude Code, aqui o recibo chega no PRÓPRIO POST — não há
+ * item de stream a esperar, porque o texto está no banco do servidor e não
+ * colado num pane.
+ */
+test('202 confirma na hora, marcado como fila e sem eco ainda', () => {
+  const estado = reduzEnvio(enviando(), { tipo: 'enfileirar' });
+  assert.equal(estado.fase, 'confirmado');
+  assert.equal(estado.fase === 'confirmado' && estado.fila, true);
+  assert.equal(
+    estado.fase === 'confirmado' && estado.ecoId,
+    null,
+    'não há eco a apontar: o texto está no banco, não no pane',
+  );
+});
+
+/**
+ * O ponto que separa consertar de esconder. Se o 202 caísse em `aceito`, o
+ * prazo de 12s o levaria a `nao-confirmado` — vermelho na tela por uma entrega
+ * garantida, que é o defeito que a fila existe para matar.
+ */
+test('o 202 não fica preso ao prazo do eco', () => {
+  const enfileirado = reduzEnvio(enviando(), { tipo: 'enfileirar' });
+  const muitoDepois = reduzEnvio(enfileirado, {
+    tipo: 'tempo-passou',
+    agoraMs: PRAZO_ECO_MS * 100,
+  });
+  assert.equal(muitoDepois.fase, 'confirmado', 'entrega garantida não expira');
+});
+
+/** Quando a fila drena, o eco chega e só APAGA a marca — não reconfirma. Uma
+ *  entrega, uma notificação. */
+test('o eco da drenagem apaga a marca de fila e preenche o ecoId', () => {
+  const enfileirado = reduzEnvio(enviando('faz isso', 10), { tipo: 'enfileirar' });
+  const drenado = reduzEnvio(enfileirado, {
+    tipo: 'item-do-stream',
+    item: { id: 42, texto: 'faz isso', papel: 'user' },
+  });
+  assert.equal(drenado.fase, 'confirmado');
+  assert.equal(drenado.fase === 'confirmado' && drenado.fila, undefined, 'a marca sai');
+  assert.equal(drenado.fase === 'confirmado' && drenado.ecoId, 42);
+});
+
+test('eco de outro texto não apaga a marca de fila', () => {
+  const enfileirado = reduzEnvio(enviando('faz isso', 10), { tipo: 'enfileirar' });
+  const outro = reduzEnvio(enfileirado, {
+    tipo: 'item-do-stream',
+    item: { id: 42, texto: 'faz outra coisa', papel: 'user' },
+  });
+  assert.equal(outro.fase === 'confirmado' && outro.fila, true, 'a promessa continua de pé');
+});
+
+/** A guarda de fase: `enfileirar` fora de `enviando` é evento fora de hora, e
+ *  aplicá-lo reescreveria um estado que já concluiu. */
+test('enfileirar só vale saindo de enviando', () => {
+  const aceito = reduzEnvio(enviando(), { tipo: 'aceitar', agoraMs: 1_000 });
+  assert.equal(reduzEnvio(aceito, { tipo: 'enfileirar' }), aceito);
+  assert.equal(reduzEnvio(estadoInicialEnvio, { tipo: 'enfileirar' }), estadoInicialEnvio);
+});
+
+/** Sem fronteira não há como reconhecer o eco da drenagem depois — e confirmar
+ *  sem esse fio deixaria a marca `fila` presa para sempre. */
+test('enfileirar sem fronteira nenhuma não confirma', () => {
+  const semFronteira = reduzEnvio(estadoInicialEnvio, { tipo: 'enviar', texto: 'faz isso' });
+  assert.equal(reduzEnvio(semFronteira, { tipo: 'enfileirar' }), semFronteira);
+});

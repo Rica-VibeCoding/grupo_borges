@@ -495,3 +495,85 @@ test('rascunho transcrito preserva origem de voz depois da revisão', async () =
   assert.equal(estado.fase, 'confirmado');
   assert.equal('texto' in estado ? estado.texto : null, 'texto revisado');
 });
+
+/**
+ * A RESTRIÇÃO QUE O CONTRATO CARREGA. O 202 vem com `tmux_delivered: false` —
+ * o texto não foi colado em pane nenhum, foi guardado no banco. Sem tratar o
+ * `enfileirada` ANTES, a guarda de baixo leria isso como ausência de prova e
+ * levaria a máquina a `nao-confirmado`: vermelho na tela do Rica por uma
+ * entrega garantida, que é exatamente o defeito que a fila existe para matar.
+ *
+ * Este teste é o que impede alguém de reordenar as duas guardas.
+ */
+test('202 da fila do servidor confirma, e não cai em não confirmado', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = createControleEnvio('tara', {
+    postar: async () => ({
+      tmux_delivered: false,
+      sent_at: 123,
+      event_boundary_id: 40,
+      enfileirada: true,
+    }),
+    FonteEventos: fonte.FonteEventos,
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('faz isso');
+
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'confirmado');
+  assert.equal(estado.fase === 'confirmado' && estado.fila, true);
+  assert.equal(aparenciaDe(estado.fase, 'Tara', { emFila: true }).frase, 'entrou na fila');
+});
+
+/** Sem prazo armado: o recibo já é a confirmação, e um timer aqui viraria
+ *  `nao-confirmado` sozinho em 12s. */
+test('o 202 não arma prazo de eco', async () => {
+  const fonte = fonteFake();
+  const relogio = relogioFake();
+  const controle = createControleEnvio('tara', {
+    postar: async () => ({
+      tmux_delivered: false,
+      sent_at: 123,
+      event_boundary_id: 40,
+      enfileirada: true,
+    }),
+    FonteEventos: fonte.FonteEventos,
+    agora: relogio.agora,
+    agendar: relogio.agendar,
+    cancelar: relogio.cancelar,
+  });
+
+  await controle.enviar('faz isso');
+  relogio.avancar(PRAZO_ECO_MS * 10);
+  assert.equal(controle.getEstado().fase, 'confirmado');
+});
+
+/**
+ * O stream continua sendo observado: a drenagem acontece minutos depois, e é o
+ * eco dela que apaga a marca. Sem `observar`, a promessa "entrou na fila"
+ * ficaria na tela para sempre.
+ */
+test('o 202 abre o stream na fronteira, para ver a drenagem chegar', async () => {
+  const fonte = fonteFake();
+  const controle = createControleEnvio('tara', {
+    postar: async () => ({
+      tmux_delivered: false,
+      sent_at: 123,
+      event_boundary_id: 40,
+      enfileirada: true,
+    }),
+    FonteEventos: fonte.FonteEventos,
+  });
+
+  await controle.enviar('faz isso');
+  assert.match(fonte.instancias[0]!.url, /since_id=40/);
+
+  fonte.instancias[0]!.emitirMensagem(41, 'user', 'faz isso');
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'confirmado');
+  assert.equal(estado.fase === 'confirmado' && estado.fila, undefined, 'drenou: a marca sai');
+});
