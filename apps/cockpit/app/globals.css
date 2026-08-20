@@ -1279,19 +1279,13 @@ body {
   border-inline-start: 1px solid var(--ck-text-primary);
 }
 
-/* Fio de envio na base do composer (contrato §3.1 / `aparencia-envio.ts`):
-   percorre enquanto a mensagem está em trânsito (`enviando`/`aceito`) e É
-   ESTÁTICO, parado na metade, quando pendura — a posição fixa em vez de
-   animação é a imagem exata de "ficou pelo caminho". Só `transform` anima. */
-@keyframes ck-percorre {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
-}
-.ck-fio-percorre { animation: ck-percorre 1.6s linear infinite; }
-
-@media (prefers-reduced-motion: reduce) {
-  .ck-fio-percorre { animation: none; }
-}
+/* O FIO QUE PERCORRIA A BASE DO COMPOSER SAIU EM 20/08, a pedido do Rica:
+   *"esse raio azul que passa embaixo do composer eu queria tirar de todo
+   mundo"*. Sobrou só o fio ESTÁTICO do `nao-confirmado` — âmbar, parado na
+   metade do trajeto, que é a imagem literal do "ficou pelo caminho". Ele é
+   inline no `composer.tsx` e não precisa de animação nenhuma, então o
+   `@keyframes ck-percorre` e a classe `.ck-fio-percorre` foram embora junto com
+   o último uso. */
 
 /* Barra de rolagem do feed (shadcn ScrollArea, `components/ui/scroll-area.tsx`).
  * A cor mora aqui, não no componente — mesma regra de sempre. O polegar é

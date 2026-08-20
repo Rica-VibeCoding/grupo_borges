@@ -378,7 +378,16 @@ export function origemDepoisDaEdicao(
 export type AparenciaVoz = {
   /** A frase que aparece na base do composer durante a captura. */
   instrucao: string;
-  /** Cor do indicador, ou `null` quando não há captura. */
+  /** Cor do indicador, ou `null` quando não há captura.
+   *
+   * SEM AZUL (Rica, 20/08, depois de ver a fala ao vivo no ar): *"nada de azul,
+   * nada de raiozinho, nada de borda azulada, neon"*. O ciano de `running` e o
+   * roxo de `thinking` saíram daqui. É a mesma regra do §13 do `globals.css`,
+   * que já tinha zerado o croma das superfícies: matiz fica reservado a quem
+   * significa alguma coisa. Falar não é um estado de máquina que precise de cor
+   * — o que a captura precisa dizer, ela diz com a onda, a frase e o
+   * cronômetro. Continua colorido só o que AVISA: âmbar no áudio longo,
+   * vermelho no prestes-a-cancelar. */
   tinta: string | null;
   /** A onda só existe quando há som entrando de fato. */
   mostraOnda: boolean;
@@ -401,7 +410,7 @@ export function aparenciaDaVoz(
     case 'pedindo':
       return {
         instrucao: 'liberando o microfone…',
-        tinta: 'var(--ck-state-thinking)',
+        tinta: 'var(--ck-text-secondary)',
         mostraOnda: false,
         longa: false,
         botao: 'nenhum',
@@ -412,7 +421,7 @@ export function aparenciaDaVoz(
         instrucao: longa
           ? 'áudio longo pode estourar o tempo de transcrição'
           : '← arraste para cancelar · ↑ para travar',
-        tinta: longa ? 'var(--ck-state-attention)' : 'var(--ck-state-running)',
+        tinta: longa ? 'var(--ck-state-attention)' : 'var(--ck-text-primary)',
         mostraOnda: true,
         longa,
         botao: 'nenhum',
@@ -432,7 +441,7 @@ export function aparenciaDaVoz(
         instrucao: longa
           ? 'áudio longo pode estourar o tempo de transcrição'
           : 'gravando sem segurar',
-        tinta: longa ? 'var(--ck-state-attention)' : 'var(--ck-state-running)',
+        tinta: longa ? 'var(--ck-state-attention)' : 'var(--ck-text-primary)',
         mostraOnda: true,
         longa,
         botao: 'enviar-audio',
@@ -445,7 +454,7 @@ export function aparenciaDaVoz(
       // literalmente tudo que ela deve.
       return {
         instrucao: 'transcrevendo…',
-        tinta: 'var(--ck-state-thinking)',
+        tinta: 'var(--ck-text-secondary)',
         mostraOnda: false,
         longa: false,
         botao: 'nenhum',

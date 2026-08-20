@@ -1367,16 +1367,21 @@ export function Composer({
             `transform` anima: o compositor não recalcula layout.
 
             O ENVIO DE TEXTO NÃO O ACENDE MAIS (Rica, 11/08): quando a mensagem
-            sai, ela já está no feed, e a espera se acompanha por lá. Sobraram os
-            dois casos em que o composer é a ÚNICA tela do assunto — o fio
-            travado do `nao-confirmado`, e a voz.
+            sai, ela já está no feed, e a espera se acompanha por lá.
 
-            A TRANSCRIÇÃO REUSA O MESMO FIO, e isso é o oposto de economia: o
-            STT roda no servidor e existe um tempo morto entre soltar o dedo e o
-            texto existir. Nesse intervalo não há bolha nenhuma no feed — o
-            texto ainda não existe —, então aqui o fio continua sendo a resposta
-            a "a máquina está trabalhando?". */}
-        {aparencia.fio !== 'nenhum' || faseVoz === 'transcrevendo' || faseVoz === 'pedindo' ? (
+            E A VOZ TAMBÉM NÃO O ACENDE MAIS (Rica, 20/08): *"esse raio azul que
+            passa embaixo do composer eu queria tirar de todo mundo"*. O fio
+            corria a cada fala, e o que ele anunciava — "o STT está trabalhando"
+            — a fala ao vivo tornou visível de um jeito melhor: as palavras
+            entram no rascunho enquanto ele fala. Quando o canal ao vivo não
+            entrega e o arquivo assume, quem responde "estou trabalhando" é a
+            frase `transcrevendo…` ali em cima, que diz DE QUE se espera — coisa
+            que um fio correndo nunca disse.
+
+            Sobrou o único caso em que o composer é a ÚNICA tela do assunto: o
+            fio TRAVADO do `nao-confirmado`, que é âmbar, é estático e existe
+            pra ser visto. */}
+        {aparencia.fio !== 'nenhum' ? (
           <div
             aria-hidden
             style={{
@@ -1390,13 +1395,10 @@ export function Composer({
             }}
           >
             <div
-              className={
-                faseVoz === 'transcrevendo' || faseVoz === 'pedindo' ? 'ck-fio-percorre' : ''
-              }
               style={{
                 width: '30%',
                 height: '100%',
-                background: vozAparencia.tinta ?? aparencia.filete ?? 'var(--ck-state-running)',
+                background: aparencia.filete ?? 'var(--ck-state-attention)',
                 // Travado: parado na METADE do trajeto — é a imagem literal do
                 // "ficou pelo caminho", não uma barra de progresso genérica.
                 transform: aparencia.fio === 'travado' ? 'translateX(120%)' : undefined,

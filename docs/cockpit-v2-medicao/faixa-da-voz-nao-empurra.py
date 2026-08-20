@@ -107,18 +107,25 @@ with sync_playwright() as p:
     microfone = pagina.locator('button[aria-label*="Segure para falar"]').first
 
     def fase_na_tela() -> str:
-        """A fase lida de FORA, por sinais que não são a faixa em julgamento.
-        Ler o texto da faixa aqui seria régua circular: quando ela passar a
-        existir sempre, com o espaço reservado, o probe leria a fase errada."""
+        """A fase lida de FORA, sem entrar na medida que está em julgamento.
+
+        Até 20/08 `pedindo` se reconhecia pelo fio que corria na base da caixa.
+        O fio SAIU a pedido do Rica ("nada de azul"), e sem ele `pedindo` e
+        `ociosa` ficam idênticas aos olhos — o que sobra é a linha
+        `data-linha="voz"`, que existe sempre no DOM (é `sr-only` fora do aviso
+        de teto) e troca de TEXTO a cada fase. Ler esse texto não reintroduz a
+        régua circular que o comentário antigo temia: o que esta bancada mede é
+        a GEOMETRIA da caixa e da coluna, e o texto não entra em medida
+        nenhuma. `text_content` e não `inner_text` porque o nó está escondido
+        aos olhos, e texto invisível não volta pelo segundo."""
         if pagina.locator('form button[aria-label^="gravando."]').count():
             return "gravando"
         # Só `transcrevendo` desabilita o microfone — a fase em que nada
         # depende do dedo.
         if pagina.locator('form button[aria-label*="Segure para falar"][disabled]').count():
             return "transcrevendo"
-        # O fio corre em `pedindo` e em `transcrevendo`; a linha acima já tirou
-        # a segunda de campo.
-        if pagina.locator(".ck-fio-percorre").count():
+        linha = pagina.locator('[data-linha="voz"]')
+        if linha.count() and "liberando" in (linha.first.text_content() or ""):
             return "pedindo"
         if pagina.locator('form button[aria-label*="Segure para falar"]').count():
             return "ociosa"
