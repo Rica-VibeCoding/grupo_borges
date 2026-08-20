@@ -2,8 +2,9 @@
  * A régua da cota usada — que número aparece, com que palavra, e quando o
  * painel diz "isto está velho". Sem React e sem pixel, como `acoes-rapidas.ts`.
  *
- * O back entrega `PainelQuotas` com quatro estados e duas janelas (5h e 7d), e
- * as duas podem vir separadamente vazias: a Tara hoje devolve `five_hour: null`
+ * O back entrega `PainelQuotas` com quatro estados e duas janelas fixas (5h e
+ * 7d) mais a mensal, que só existe em plano com teto de mês (o Canário, no
+ * OpenCode Go). As janelas podem vir separadamente vazias: a Tara hoje devolve `five_hour: null`
  * com `seven_day` preenchido. Janela vazia não some — vira "sem leitura", senão
  * o painel mostraria uma cota só e ninguém saberia se a outra é zero ou é falta
  * de dado.
@@ -52,6 +53,15 @@ const JANELAS = [
   { rotulo: '5h', nome: 'Cota usada nas últimas 5 horas', campo: 'five_hour' },
   { rotulo: '7d', nome: 'Cota usada nos últimos 7 dias', campo: 'seven_day' },
 ] as const;
+
+/**
+ * A janela do mês entra só quando o back manda — plano Anthropic, Codex e Kimi
+ * não têm teto mensal. Campo ausente não é "sem leitura": é uma janela que
+ * aquele plano não tem, e desenhar a linha vazia inventaria um limite.
+ */
+const JANELA_MENSAL = { rotulo: 'mês', nome: 'Cota usada no mês', campo: 'monthly' } as const;
+
+type MoldeDeJanela = (typeof JANELAS)[number] | typeof JANELA_MENSAL;
 
 /**
  * De quem é a cota — "Wood Pro", "Ricardo". O `displayName` da conta é o rótulo
@@ -112,7 +122,7 @@ export function leiaRodape(contexto: PainelContexto | null | undefined): RodapeD
 
 function leiaJanela(
   janela: PainelQuotaWindow | null | undefined,
-  molde: (typeof JANELAS)[number],
+  molde: MoldeDeJanela,
 ): JanelaDeCota {
   const bruto = janela?.used_percentage;
   if (janela == null || typeof bruto !== 'number' || !Number.isFinite(bruto)) {
@@ -157,7 +167,8 @@ export function leiaCota(
     };
   }
 
-  const janelas = JANELAS.map((molde) => leiaJanela(quotas[molde.campo], molde));
+  const moldes: readonly MoldeDeJanela[] = quotas.monthly ? [...JANELAS, JANELA_MENSAL] : JANELAS;
+  const janelas = moldes.map((molde) => leiaJanela(quotas[molde.campo], molde));
   if (quotas.status !== 'stale') return { estado: 'viva', janelas, aviso: null };
 
   const lida = quotas.updated_at;

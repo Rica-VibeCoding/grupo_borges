@@ -198,9 +198,9 @@ agents:
   # Slug ficou "canarinho" de propósito: já existe "canario" abaixo (gerador de
   # carga sintética do gate, nome consagrado em dezenas de arquivos do cockpit —
   # NÃO renomear aquele). O Rica chama este de "Canário" no dia a dia; o slug
-  # técnico é só pra não colidir. Sem model_family ainda — o painel mostra
-  # contexto/effort como se fosse Anthropic (mesmo gotcha que o Kimi teve antes
-  # do DS-69; corrigir quando alguém tiver tempo de estender o backend).
+  # técnico é só pra não colidir. `model_family: opencode` liga a cota do
+  # plano Go no painel (20/08); contexto/effort ainda são lidos como se fosse
+  # Anthropic — mesmo gotcha que o Kimi teve antes do DS-69.
   - slug: canarinho
     name: Canário
     role: Executor de implementação — Cockpit V2, motor DeepSeek V4-Flash (Go)
@@ -209,6 +209,7 @@ agents:
     workspace_path: /home/clawd/repos/grupo_borges-canario
     cli_default: claude_code
     model_default: deepseek-v4-flash
+    model_family: opencode
     capabilities:
       - dev-fullstack
       - cockpit-v2

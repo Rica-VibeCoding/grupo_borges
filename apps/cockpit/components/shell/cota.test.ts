@@ -73,6 +73,51 @@ describe('os quatro status — nenhum deles pode derrubar o painel', () => {
   });
 });
 
+describe('a janela do mês — só de quem tem teto mensal', () => {
+  it('com `monthly` no payload, a terceira barra entra depois das duas fixas', () => {
+    const leitura = leiaCota(
+      quotas({
+        five_hour: { used_percentage: 14, remaining_seconds: 7_800 },
+        seven_day: { used_percentage: 37, remaining_seconds: 398_929 },
+        monthly: { used_percentage: 18, remaining_seconds: 2_592_000 },
+      }),
+      AGORA,
+    );
+
+    assert.equal(leitura.estado, 'viva');
+    assert.deepEqual(
+      leitura.janelas.map((j) => [j.rotulo, j.pct]),
+      [
+        ['5h', 14],
+        ['7d', 37],
+        ['mês', 18],
+      ],
+    );
+  });
+
+  it('sem `monthly`, o painel segue com duas — ausência não é "sem leitura"', () => {
+    const leitura = leiaCota(
+      quotas({ five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 16 } }),
+      AGORA,
+    );
+
+    assert.equal(leitura.estado, 'viva');
+    assert.deepEqual(
+      leitura.janelas.map((j) => j.rotulo),
+      ['5h', '7d'],
+    );
+  });
+
+  it('a barra do mês fala o nome dela — "18" sozinho não diz de que janela é', () => {
+    const leitura = leiaCota(quotas({ monthly: { used_percentage: 18, remaining_seconds: 60 } }), AGORA);
+
+    assert.equal(leitura.estado, 'viva');
+    const mes = leitura.janelas.at(-1);
+    assert.equal(mes?.nome, 'Cota usada no mês');
+    assert.equal(mes?.valorFalado, '18% usada, reset em 1m');
+  });
+});
+
 describe('o que o leitor de tela ouve', () => {
   it('o `meter` tem nome próprio e valor falado — o percentual sozinho mente', () => {
     const leitura = leiaCota(

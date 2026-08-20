@@ -112,6 +112,13 @@ _CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS = 300
 _KIMI_USAGES_URL = "https://api.kimi.com/coding/v1/usages"
 _KIMI_USAGES_CACHE_TTL_SECONDS = 60
 _KIMI_USAGES_FAILURE_TTL_SECONDS = 30
+# OpenCode Go: o plano tem teto em dólar por janela ($12/5h, $30/semana,
+# $60/mês) e o endpoint devolve os três já em percentual. É a única fonte —
+# o motor não é Anthropic, então o `cc-status` do Canário nunca traz
+# `rate_limits` (medido 20/08: campo ausente nas sessões deepseek e k3).
+_OPENCODE_USAGE_URL = "https://opencode.ai/zen/go/v1/usage"
+_OPENCODE_USAGE_CACHE_TTL_SECONDS = 60
+_OPENCODE_USAGE_FAILURE_TTL_SECONDS = 30
 # Contexto: cc-status só atualiza em turno; idade > 5min = agente dormindo
 # (mesmo limiar do OFFLINE da frota) -> UI marca "dados antigos".
 _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
@@ -205,6 +212,11 @@ class AgentPainelQuotas(BaseModel):
     stale_after_seconds: int = _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS
     five_hour: AgentPainelQuotaWindow | None = None
     seven_day: AgentPainelQuotaWindow | None = None
+    #: Terceira janela, só de quem tem plano com teto mensal (OpenCode Go).
+    #: `None` significa "esta família não tem janela mensal" e o painel não
+    #: desenha a linha — diferente de janela presente sem leitura, que vira
+    #: "sem leitura". Anthropic, Codex e Kimi nunca preenchem.
+    monthly: AgentPainelQuotaWindow | None = None
     #: Quem paga esta cota. Mora junto da cota porque é a mesma pergunta.
     #: Só no Claude: Kimi e Codex têm login próprio, fora do `.claude.json`.
     conta: AgentPainelConta | None = None
@@ -686,6 +698,22 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         kimi_api_key = getattr(kimi_api_key, "kimi_api_key", None)
         if kimi_api_key:
             kimi_usages = await _get_kimi_usages(kimi_api_key)
+    is_opencode = agent.get("model_family") == "opencode"
+    opencode_usage = None
+    if is_opencode:
+        opencode_api_key = getattr(request.app.state, "settings", None)
+        opencode_api_key = getattr(opencode_api_key, "opencode_api_key", None)
+        if opencode_api_key:
+            opencode_usage = await _get_opencode_usage(opencode_api_key)
+    # OpenCode entra mesmo com leitura vazia: cair no leitor do Claude
+    # devolveria a conta da máquina e duas janelas em branco, atribuindo ao
+    # Canário uma cota que não é a dele.
+    if is_opencode:
+        quotas_task = asyncio.to_thread(_build_opencode_painel_quotas, opencode_usage)
+    elif kimi_usages is not None:
+        quotas_task = asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
+    else:
+        quotas_task = asyncio.to_thread(_build_painel_quotas, cc_status)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
         # Kimi: o pedido mora em agent_state (vira env var no próximo boot), mas
@@ -696,9 +724,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         if is_kimi
         else asyncio.to_thread(_build_claude_painel_effort, agent, cc_status),
         asyncio.to_thread(_read_agent_permission),
-        asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
-        if kimi_usages is not None
-        else asyncio.to_thread(_build_painel_quotas, cc_status),
+        quotas_task,
         asyncio.to_thread(_build_agent_subagents, agent.get("workspace_path")),
     )
     return AgentPainelResponse(
@@ -1634,6 +1660,101 @@ def _build_kimi_painel_quotas(kimi_usages: dict[str, Any]) -> AgentPainelQuotas:
         updated_at=now,
         five_hour=five_hour,
         seven_day=_kimi_quota_window(kimi_usages.get("usage"), now),
+    )
+
+
+_opencode_usage_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def _fetch_opencode_usage_sync(api_key: str) -> dict[str, Any] | None:
+    """GET /zen/go/v1/usage da assinatura OpenCode Go.
+
+    Devolve `{"usage": {"rolling"|"weekly"|"monthly": {"percent", "resetsAt"}}}`
+    — percentual já calculado, reset em ISO 8601. Qualquer falha -> None, e o
+    painel mostra "indisponível" em vez de número inventado.
+    """
+    request = urllib.request.Request(
+        _OPENCODE_USAGE_URL,
+        headers={
+            "authorization": f"Bearer {api_key}",
+            "accept": "application/json",
+            # Sem `user-agent` próprio o Cloudflare do opencode.ai devolve 403
+            # (erro 1010, "browser signature") pro `Python-urllib/3.x` padrão —
+            # e a falha só apareceria como cota vazia, sem dizer o motivo.
+            "user-agent": "grupo-borges-cockpit/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+async def _get_opencode_usage(api_key: str) -> dict[str, Any] | None:
+    now = time.time()
+    cached = _opencode_usage_cache.get("opencode")
+    if cached is not None:
+        fetched_at, payload = cached
+        ttl = (
+            _OPENCODE_USAGE_CACHE_TTL_SECONDS
+            if payload is not None
+            else _OPENCODE_USAGE_FAILURE_TTL_SECONDS
+        )
+        if now - fetched_at < ttl:
+            return payload
+    payload = await asyncio.to_thread(_fetch_opencode_usage_sync, api_key)
+    _opencode_usage_cache["opencode"] = (now, payload)
+    return payload
+
+
+def _opencode_quota_window(raw: Any, now: int) -> AgentPainelQuotaWindow | None:
+    if not isinstance(raw, dict):
+        return None
+    used_percentage = _num_or_none(raw.get("percent"))
+    if used_percentage is None:
+        return None
+    resets_at = _parse_iso_epoch(raw.get("resetsAt"))
+    return AgentPainelQuotaWindow(
+        used_percentage=used_percentage,
+        resets_at=resets_at,
+        remaining_seconds=max(0, resets_at - now) if resets_at is not None else None,
+    )
+
+
+def _build_opencode_painel_quotas(usage_payload: dict[str, Any] | None) -> AgentPainelQuotas:
+    """Mapeia as 3 janelas do plano Go pro shape do painel.
+
+    `rolling` é a janela de 5h e `weekly` a de 7 dias — os mesmos dois campos
+    que o Claude preenche, pra barra ficar comparável entre agentes. `monthly`
+    não tem par no plano Anthropic e por isso só existe aqui.
+
+    Sem `conta`: quem paga esta cota é a assinatura OpenCode, não a conta
+    Claude da máquina. Mostrar a pílula do `.claude.json` aqui atribuiria o
+    consumo a quem não pagou por ele.
+    """
+    usage = usage_payload.get("usage") if isinstance(usage_payload, dict) else None
+    if not isinstance(usage, dict):
+        return AgentPainelQuotas(status="missing", source=_OPENCODE_USAGE_URL)
+
+    now = int(time.time())
+    five_hour = _opencode_quota_window(usage.get("rolling"), now)
+    seven_day = _opencode_quota_window(usage.get("weekly"), now)
+    monthly = _opencode_quota_window(usage.get("monthly"), now)
+    if five_hour is None and seven_day is None and monthly is None:
+        return AgentPainelQuotas(status="missing", source=_OPENCODE_USAGE_URL)
+
+    # `available` sem ressalva: o percentual foi medido pelo servidor no
+    # instante da chamada, e a chamada é desta requisição (cache de 60s). Não
+    # existe aqui o congelamento que obriga o Claude a marcar `stale`.
+    return AgentPainelQuotas(
+        status="available",
+        source=_OPENCODE_USAGE_URL,
+        updated_at=now,
+        five_hour=five_hour,
+        seven_day=seven_day,
+        monthly=monthly,
     )
 
 
@@ -4781,7 +4902,7 @@ async def post_agent_relaunch(
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
     if _agente_codex(agent):
         raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
-    if agent.get("model_family") not in {None, "anthropic", "kimi"}:
+    if agent.get("model_family") not in {None, "anthropic", "kimi", "opencode"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     db: GrupoBorgesDB = request.app.state.db

@@ -61,6 +61,20 @@ HIRO = {
     "can_review": [],
 }
 
+CANARIO = {
+    "slug": "canarinho",
+    "name": "Canário",
+    "role": "executor",
+    "emoji": "🐤",
+    "tmux_session": "canario",
+    "workspace_path": "/tmp/canario",
+    "cli_default": "claude_code",
+    "model_default": "deepseek-v4-flash",
+    "model_family": "opencode",
+    "capabilities": [],
+    "can_review": [],
+}
+
 
 # O catálogo Codex é lido do binário `codex` instalado. Deixar os testes do
 # painel dependerem dele torna o resultado função da máquina: numa sem o CLI, o
@@ -106,11 +120,11 @@ def _catalogo_codex_fixo(monkeypatch):
 def _build_app(tmp_path: Path) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA, HIRO])
+    db._sync_agents([DANIEL, TARA, HIRO, CANARIO])
     db._update_agent_codex_state("tara", executor_kind="codex")
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
+    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO, CANARIO]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -931,6 +945,134 @@ def test_agent_painel_quotas_kimi_falha_no_fetch_cai_pro_cc_status(
 
     assert response.status_code == 200
     assert response.json()["quotas"]["status"] == "missing"
+
+
+def test_agent_painel_quotas_opencode_mapeia_tres_janelas(tmp_path: Path, monkeypatch) -> None:
+    """Canário (família opencode): as três janelas do plano Go viram 5h, 7d e
+    mês. `rolling` e `weekly` ocupam os campos que o Claude já usa; `monthly`
+    só existe aqui e é o que faz o painel desenhar a terceira barra."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    app.state.settings = SimpleNamespace(opencode_api_key="sk-AZyN-teste")
+    _insert_session_event(app.state.db, "ds135-opencode-quota", agent_slug="canarinho")
+
+    async def fake_usage(api_key: str) -> dict:
+        assert api_key == "sk-AZyN-teste"
+        return {
+            "usage": {
+                "rolling": {"status": "ok", "percent": 14, "resetsAt": "2026-08-20T07:26:59.835Z"},
+                "weekly": {"status": "ok", "percent": 37, "resetsAt": "2026-08-24T00:00:00.835Z"},
+                "monthly": {"status": "ok", "percent": 18, "resetsAt": "2026-09-19T03:02:03.835Z"},
+            }
+        }
+
+    monkeypatch.setattr(agents_router, "_get_opencode_usage", fake_usage)
+    with TestClient(app) as client:
+        response = client.get("/api/agents/canarinho/painel")
+
+    assert response.status_code == 200
+    quotas = response.json()["quotas"]
+    assert quotas["status"] == "available"
+    assert quotas["source"] == "https://opencode.ai/zen/go/v1/usage"
+    assert quotas["five_hour"]["used_percentage"] == 14
+    assert quotas["five_hour"]["resets_at"] == int(
+        datetime(2026, 8, 20, 7, 26, 59, tzinfo=timezone.utc).timestamp()
+    )
+    assert quotas["seven_day"]["used_percentage"] == 37
+    assert quotas["monthly"]["used_percentage"] == 18
+    assert quotas["monthly"]["resets_at"] == int(
+        datetime(2026, 9, 19, 3, 2, 3, tzinfo=timezone.utc).timestamp()
+    )
+    # A conta Claude da máquina não paga esta cota — a pílula não pode aparecer
+    # atribuindo o consumo do plano Go a quem assinou o Claude.
+    assert quotas["conta"] is None
+
+
+def test_agent_painel_quotas_opencode_falha_no_fetch_nao_cai_pro_cc_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Endpoint fora: `missing` com a origem apontada, e nenhuma janela.
+
+    O que NÃO pode acontecer é cair no leitor do Claude: o cc-status do Canário
+    nunca traz `rate_limits`, então o painel mostraria a conta da máquina com
+    duas barras em branco — dado de outro pagador no card errado.
+    """
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    app.state.settings = SimpleNamespace(opencode_api_key="sk-AZyN-teste")
+    _insert_session_event(app.state.db, "ds135-opencode-down", agent_slug="canarinho")
+
+    async def fake_usage_down(api_key: str) -> None:
+        return None
+
+    monkeypatch.setattr(agents_router, "_get_opencode_usage", fake_usage_down)
+    with TestClient(app) as client:
+        response = client.get("/api/agents/canarinho/painel")
+
+    assert response.status_code == 200
+    quotas = response.json()["quotas"]
+    assert quotas["status"] == "missing"
+    assert quotas["source"] == "https://opencode.ai/zen/go/v1/usage"
+    assert quotas["five_hour"] is None
+    assert quotas["monthly"] is None
+    assert quotas["conta"] is None
+
+
+def test_fetch_opencode_usage_manda_user_agent_proprio(monkeypatch) -> None:
+    """O Cloudflare do opencode.ai barra o `Python-urllib` com 403/1010, e o
+    leitor engole erro de rede — sem este header a cota some calada."""
+    capturado: dict[str, object] = {}
+
+    class _Resposta:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"usage": {"rolling": {"percent": 5}}}).encode("utf-8")
+
+    def fake_urlopen(request, timeout=None):
+        capturado["headers"] = dict(request.headers)
+        return _Resposta()
+
+    monkeypatch.setattr(agents_router.urllib.request, "urlopen", fake_urlopen)
+    payload = agents_router._fetch_opencode_usage_sync("sk-AZyN-teste")
+
+    assert payload == {"usage": {"rolling": {"percent": 5}}}
+    # `urllib` capitaliza as chaves ao montar o Request.
+    assert capturado["headers"]["User-agent"] == "grupo-borges-cockpit/1.0"
+    assert capturado["headers"]["Authorization"] == "Bearer sk-AZyN-teste"
+
+
+def test_agent_painel_quotas_claude_nao_ganha_janela_mensal(tmp_path: Path, monkeypatch) -> None:
+    """Agente Anthropic segue com duas janelas: `monthly` nulo é o que segura a
+    terceira barra fora do painel de quem não tem teto de mês."""
+    _write_settings(tmp_path, monkeypatch, {})
+    app = _build_app(tmp_path)
+    session_id = f"ds135-sem-mensal-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    Path(f"/tmp/cc-status-{session_id}.json").write_text(
+        json.dumps(
+            {
+                "updated_at": int(time.time()),
+                "rate_limits": {
+                    "five_hour": {"used_percentage": 10, "resets_at": int(time.time()) + 3600},
+                    "seven_day": {"used_percentage": 16, "resets_at": int(time.time()) + 86400},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/agents/daniel/painel")
+
+    assert response.status_code == 200
+    quotas = response.json()["quotas"]
+    assert quotas["five_hour"]["used_percentage"] == 10
+    assert quotas["monthly"] is None
 
 
 def test_agent_painel_contexto_arquivo_velho_marca_stale(tmp_path: Path, monkeypatch) -> None:

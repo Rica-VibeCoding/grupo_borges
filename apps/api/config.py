@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # /coding/v1/usages que alimenta o bloco Quotas do painel (5h + semanal).
     kimi_api_key: str | None = None
 
+    # OpenCode Go (assinatura do Canário) — chave sk-AZyN... pro endpoint
+    # /zen/go/v1/usage, única fonte das 3 janelas do plano (5h, semanal,
+    # mensal). É a MESMA chave que o boot exporta em ANTHROPIC_API_KEY.
+    opencode_api_key: str | None = None
+
     # TTS — engine preferido Google Chirp3-HD (voz da frota), fallback edge-tts.
     # tts_voice é só o default edge usado quando não há voz da frota nem key.
     google_tts_api_key: str = ""

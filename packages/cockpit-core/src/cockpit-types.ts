@@ -332,6 +332,9 @@ export type PainelQuotas = {
   stale_after_seconds: number;
   five_hour?: PainelQuotaWindow | null;
   seven_day?: PainelQuotaWindow | null;
+  /** Terceira janela, só de plano com teto mensal (OpenCode Go). Ausente =
+   *  a família não tem essa janela, e o painel não desenha a linha. */
+  monthly?: PainelQuotaWindow | null;
   /** Quem paga esta cota. Só no Claude — Kimi e Codex têm login próprio. */
   conta?: PainelConta | null;
 };

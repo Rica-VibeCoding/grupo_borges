@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * BlocoDeCota — quanto da cota já foi gasto, nas duas janelas (5h e 7d).
+ * BlocoDeCota — quanto da cota já foi gasto, janela por janela (5h e 7d em
+ * todo mundo; mais a do mês em quem tem teto mensal).
  *
  * O dado já chegava: o `/painel` devolve `quotas` e o `BlocoDeAcoes` guardava a
  * resposta inteira sem ler esse campo. Até 07/08 só o v1 congelado desenhava
