@@ -132,6 +132,10 @@ export type Impedimento = {
   /** `true` quando insistir no mesmo lugar não resolve (precisa mexer em
    *  ajuste do sistema ou trocar de URL) — a tela esconde o "tentar de novo". */
   definitivo: boolean;
+  /** A MÁQUINA NÃO TEM MICROFONE. Não é impedimento a explicar, é controle que
+   *  não deveria estar na tela: quem lê isto retira o botão em vez de escrever
+   *  um aviso (ver a nota do slot de entrada em `composer.tsx`). */
+  semAparelho?: boolean;
 };
 
 /** Contexto não-seguro: `navigator.mediaDevices` simplesmente não existe.
@@ -232,11 +236,15 @@ export function diagnosticaMicrofone(erro: unknown): Impedimento {
         definitivo: true,
       };
     case 'NotFoundError':
-    case 'OverconstrainedError':
+      // `OverconstrainedError` morava junto e SAIU: ele diz "o aparelho existe,
+      // as exigências é que não fecham", e a exigência daqui é `{ audio: true }`
+      // — a mais frouxa que existe. Agrupar os dois faria um aparelho presente
+      // ser tratado como ausente e o botão sumir por engano.
       return {
         resumo: 'nenhum microfone encontrado',
         saida: 'conecte um microfone ou use o teclado',
         definitivo: true,
+        semAparelho: true,
       };
     case 'NotReadableError':
       return {

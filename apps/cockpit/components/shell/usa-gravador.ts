@@ -66,6 +66,8 @@ export type Gravador = {
   /** 0→1 rumo ao limiar do gesto em curso. Alimenta o alvo de trava. */
   progresso: number;
   impedimento: Impedimento | null;
+  /** A máquina não tem microfone. Quem lê isto RETIRA o botão da tela. */
+  semAparelho: boolean;
   /** Ligar no botão de voz. Já inclui `onPointerCancel` — sem ele, uma
    *  notificação chegando no meio do gesto deixaria o microfone aberto. */
   handlers: {
@@ -88,6 +90,30 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
   const [gesto, setGesto] = useState<Gesto>('segurando');
   const [progresso, setProgresso] = useState(0);
   const [impedimento, setImpedimento] = useState<Impedimento | null>(null);
+  const [semAparelho, setSemAparelho] = useState(false);
+
+  // A VARREDURA DE ENTRADA, para o botão não precisar falhar uma vez antes de
+  // sumir. `enumerateDevices` responde sem permissão, com os rótulos vazios —
+  // e é só a CONTAGEM que interessa aqui.
+  //
+  // A guarda do `length` é o que torna isto seguro no iPhone: se o browser
+  // devolver lista VAZIA (Safari faz isso em algumas versões antes da primeira
+  // permissão), não concluímos nada e o microfone continua na tela. Só uma
+  // lista com aparelhos e NENHUM `audioinput` prova a ausência.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
+    let vivo = true;
+    void navigator.mediaDevices
+      .enumerateDevices()
+      .then((aparelhos) => {
+        if (!vivo || aparelhos.length === 0) return;
+        if (!aparelhos.some((a) => a.kind === 'audioinput')) setSemAparelho(true);
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   const gravadorRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -180,7 +206,17 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (erro) {
-      setImpedimento(diagnosticaMicrofone(erro));
+      const diagnostico = diagnosticaMicrofone(erro);
+      // MÁQUINA SEM MICROFONE não vira aviso: vira botão retirado. É o único
+      // dos diagnósticos que não descreve um contratempo — descreve uma
+      // máquina que não tem a peça, e explicar isso toda vez é a frase que o
+      // Rica mandou tirar em 21/08.
+      if (diagnostico.semAparelho) {
+        setSemAparelho(true);
+        setFase('ociosa');
+        return;
+      }
+      setImpedimento(diagnostico);
       setFase('impedida');
       return;
     }
@@ -415,6 +451,7 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
     gesto,
     progresso,
     impedimento,
+    semAparelho,
     handlers: {
       onPointerDown,
       onPointerMove,

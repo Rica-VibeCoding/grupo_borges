@@ -155,6 +155,18 @@ describe('microfone indisponível — nunca um botão que não responde', () => 
     assert.equal(d.definitivo, true, 'insistir no mesmo lugar não resolve');
   });
 
+  it('máquina sem microfone marca `semAparelho` — a tela retira o botão, não escreve aviso', () => {
+    assert.equal(diagnosticaMicrofone({ name: 'NotFoundError' }).semAparelho, true);
+  });
+
+  it('exigência impossível NÃO é aparelho ausente — a nossa é `{ audio: true }`', () => {
+    // Agrupado com `NotFoundError` até 21/08. Com o novo significado do flag,
+    // o agrupamento faria um microfone PRESENTE sumir da tela.
+    const d = diagnosticaMicrofone({ name: 'OverconstrainedError' });
+    assert.notEqual(d.semAparelho, true);
+    assert.ok(d.saida.length > 0);
+  });
+
   it('microfone ocupado é temporário: vale tentar de novo', () => {
     assert.equal(diagnosticaMicrofone({ name: 'NotReadableError' }).definitivo, false);
   });
