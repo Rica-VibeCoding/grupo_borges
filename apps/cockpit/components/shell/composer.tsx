@@ -501,6 +501,12 @@ export function Composer({
   // áudio, no slot de entrada — não há texto a mandar enquanto a gravação
   // espera. Fora daí, quem manda o botão existir é haver o que despachar.
   const despachoEmCena = temConteudo && modo !== 'travada';
+  // O ■ SOME DURANTE A CAPTURA. Em `travada` o slot de entrada já mostra um ■
+  // — encerrar a gravação e mandar o áudio — e dois quadrados brancos na mesma
+  // fileira são dois recados diferentes com o mesmo desenho. Enquanto o dedo
+  // está numa gravação a base da caixa é do gesto de voz, como já é dos chips,
+  // que dão lugar à onda.
+  const pararEmCena = gerando && !emCaptura(modo);
 
   /** "Clear"/"Nova conversa" da Tara: arma `codex_next_fresh` no back e zera o
    *  feed local NA HORA (mesmo efeito do /clear do CC). Falha do POST é
@@ -790,15 +796,12 @@ export function Composer({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
       {/* A BOLINHA — a presença do agente, no alto de tudo que o composer
           empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
-          texto no feed, isto é alguém do outro lado. As duas fontes são as
-          mesmas do `■` logo abaixo, e por isso não abre conexão nova. */}
+          texto no feed, isto é alguém do outro lado. Presença e nada mais: o ■
+          que morava colado nela desceu para a base da caixa em 21/08. */}
       <BolinhaAgente
         status={daFrota?.status}
         turnoVivo={turnoVivo}
         escrevendo={escrevendo}
-        nomeDoAgente={agentName}
-        aoParar={gerando ? () => void interromper() : undefined}
-        parando={parando}
       />
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
@@ -1221,7 +1224,7 @@ export function Composer({
                 />
               </div>
             </div>
-            {/* DOIS SLOTS, UM ASSUNTO CADA. Até 20/08 havia um só, com quatro
+            {/* TRÊS SLOTS, UM ASSUNTO CADA. Até 20/08 havia um só, com quatro
                 donos em cascata, e a cascata é que produzia os becos: o ■ comeu
                 o microfone de madrugada (`678f598`), e antes disso o microfone
                 tinha comido o envio (15/08). Cada conserto empurrava o defeito
@@ -1240,6 +1243,63 @@ export function Composer({
                 dava — o botão de voz só existia quando o campo estava vazio, e
                 `mesclaTranscricao` já sabia costurar a fala no que havia antes.
                 A tela é que não deixava chegar lá. */}
+
+            {/* SLOT DE ESTADO. O ■ voltou para dentro da caixa em 21/08 —
+                *"precisamos reposicionar o componente parar, que está
+                erradamente ao lado do mascote"*. Ele passou 20/08 colado na
+                bolinha porque o slot da caixa era um só e ele comia o
+                microfone; com três slots, um assunto cada, o beco não reabre:
+                este alvo nunca é o do gesto de entrada nem o do despacho.
+
+                Fora de cena ele fica no DOM mas NÃO COBRA LARGURA. O irmão do
+                despacho cobra — ele guarda os 44px e a fileira desliza por cima
+                —, e aqui isso não serve: a fileira já vive no limite em 390px,
+                e 44px permanentes a menos deixavam o rótulo do motor em
+                *"extra a"* mesmo com o agente parado. Medido no estágio antes
+                de trocar. A margem negativa some com o espaço; em cena ela
+                volta a zero e os chips cedem lugar.
+
+                O TEMPO DA MARGEM É O TRUQUE DO `visibility`, não uma animação
+                de largura (§9.4 continua valendo — nada interpola quadro a
+                quadro): ela vira em `0s` na entrada, para o botão nascer no
+                lugar dele, e na saída espera o fade inteiro, para os chips só
+                reclamarem o espaço depois que ele apagou.
+
+                Não pinta, não recebe toque, não é anunciado, não tabula: fora
+                de cena não é botão morto, é botão que não está lá. */}
+            <button
+              key="parar"
+              type="button"
+              onClick={() => void interromper()}
+              disabled={parando}
+              aria-label={`Parar ${agentName}`}
+              aria-hidden={!pararEmCena}
+              tabIndex={pararEmCena ? undefined : -1}
+              title="Parar"
+              className="flex shrink-0 items-center justify-center disabled:opacity-40"
+              style={{
+                ...ALVO_DE_TOQUE,
+                width: '32px',
+                height: '32px',
+                marginBottom: MARGEM_INFERIOR_DA_BASE,
+                borderRadius: 'var(--ck-radius-pill)',
+                background: 'var(--ck-text-primary)',
+                color: 'var(--ck-surface-canvas)',
+                opacity: pararEmCena ? 1 : 0,
+                pointerEvents: pararEmCena ? undefined : 'none',
+                // Longhand DEPOIS do spread, como o `marginBottom` acima: o
+                // `margin` shorthand de `ALVO_DE_TOQUE` apagaria isto se viesse
+                // por último. Cancela os 32px do disco mais o gap da fileira.
+                marginInlineEnd: pararEmCena
+                  ? undefined
+                  : 'calc((var(--ck-touch-min) - 32px) / -2 - 32px - var(--ck-space-3))',
+                transition: pararEmCena
+                  ? 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease), margin-inline-end 0s'
+                  : 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit), margin-inline-end 0s linear var(--ck-dur-enter, 200ms)',
+              }}
+            >
+              <IconeParar />
+            </button>
 
             {/* SLOT DE ENTRADA. Nunca some, nunca cede lugar. Em `travada` o
                 gesto acabou e a gravação não: o mesmo pixel que abriu é o que
@@ -1286,18 +1346,18 @@ export function Composer({
                   height: '32px',
                   marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
-                  // DOIS DISCOS ESCUROS LADO A LADO é o defeito que o ■ já
-                  // evitou uma vez ("o dedo que mira um acha o outro",
-                  // `bolinha-agente.tsx`). Com o slot de despacho ocupado, o
-                  // alvo de massa é o de despachar e o microfone recua para
-                  // contorno — continua com os 44px de alvo, perde só a tinta.
+                  // DOIS DISCOS CHEIOS LADO A LADO é o defeito que o ■ já
+                  // evitou uma vez ("o dedo que mira um acha o outro"). Com
+                  // qualquer vizinho de massa em cena — o despacho à direita ou
+                  // o ■ à esquerda — o microfone recua para contorno: continua
+                  // com os 44px de alvo, perde só a tinta.
                   background: emCaptura(modo)
                     ? vozAparencia.tinta ?? 'var(--ck-state-running)'
-                    : temConteudo
+                    : temConteudo || pararEmCena
                       ? 'transparent'
                       : 'var(--ck-text-primary)',
                   color:
-                    emCaptura(modo) || !temConteudo
+                    emCaptura(modo) || !(temConteudo || pararEmCena)
                       ? 'var(--ck-surface-canvas)'
                       : 'var(--ck-text-secondary)',
                   // A tinta troca no tempo da casa, não de estalo: o disco

@@ -59,6 +59,16 @@ export function GatilhoDoSeletor({
           // o texto e o botão de onda segue sendo o `gap` de 12px de antes.
           // `paddingInline`, não o `padding` de duas pernas: o shorthand
           // apagaria o `paddingBlock` do alvo de toque espalhado acima.
+          // NADA ESCAPA DAQUI. `rotuloDoEsforco` e o `⌄` são `shrink-0` de
+          // propósito — o esforço é o que o Rica regula, o nome do modelo cede
+          // primeiro —, mas `shrink-0` sem recorte no pai é transbordo: no
+          // iPhone o rótulo já saía do botão e ficava por cima do vizinho
+          // (visível no print de 21/08, *"( extra alto"*, com o nome do modelo
+          // reduzido a um parêntese). Com o ■ ocupando o terceiro slot da
+          // fileira o vizinho virou o MICROFONE, e o transbordo comia o toque
+          // dele — `elementFromPoint` no centro do microfone devolvia este
+          // `span`. O anel de foco é `inset`, então recortar não o corta.
+          overflow: 'hidden',
           paddingInline: 'var(--ck-space-2)',
           marginRight: 'calc(var(--ck-space-2) * -1)',
           borderRadius: 'var(--ck-radius-pill)',
@@ -67,9 +77,20 @@ export function GatilhoDoSeletor({
           color: tintaModelo,
         }}
       >
-        <span className="truncate">{rotuloModelo}</span>
+        {/* QUEM CEDE PRIMEIRO É O NOME DO MODELO, e a ordem virou número em
+            21/08: antes o esforço era `shrink-0`, o que resolvia a prioridade
+            mas transbordava quando nem assim cabia. Com `999` contra o `1` do
+            esforço, o flex esvazia este span inteiro antes de encostar no
+            outro — mesma prioridade de antes, agora com um fim que o recorte
+            do pai sabe tratar. */}
+        <span className="truncate" style={{ flexShrink: 999 }}>
+          {rotuloModelo}
+        </span>
         {rotuloDoEsforco ? (
-          <span className="shrink-0" style={{ color: tintaEsforco }}>
+          // `truncate` no lugar de `shrink-0`: quando o nome do modelo já sumiu
+          // e ainda falta espaço, o esforço termina em reticências em vez de
+          // ser cortado no meio da palavra pela borda do botão.
+          <span className="truncate" style={{ color: tintaEsforco }}>
             {rotuloDoEsforco}
           </span>
         ) : null}

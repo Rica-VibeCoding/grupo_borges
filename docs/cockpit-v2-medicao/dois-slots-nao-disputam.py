@@ -8,7 +8,9 @@ cada conserto empurrava o defeito para o vizinho:
 - 15/08: com texto escrito, o microfone comia o envio.
 - 20/08 (`678f598`): com o campo vazio durante a geração, o ■ comia o
   microfone. É o defeito que a bancada irmã (`microfone-sobrevive-a-geracao`)
-  trava, e ela continua valendo — o ■ segue na linha da bolinha.
+  trava, e ela continua valendo. O ■ voltou para a caixa em 21/08, mas como
+  TERCEIRO slot, com assunto próprio — o que reabriria o beco é o slot com
+  vários donos, não a vizinhança.
 
 A régua daqui é a que a separação criou e nenhuma bancada cobria: **o microfone
 não some quando há texto no campo**. Não somia por acaso; era impossível falar
@@ -39,6 +41,29 @@ VIEWPORT = {"width": 390, "height": 844}
 
 falhas: list[str] = []
 
+def quem_esta_no_centro(pagina, seletor: str) -> str:
+    """Quem o DEDO acha ao mirar o centro deste botão.
+
+    `bounding_box` prova onde o alvo ESTÁ; não prova que ele é alcançável. Um
+    vizinho que transborda por cima passa despercebido nas duas medidas de
+    caixa e rouba o toque — foi o que aconteceu em 21/08, quando o ■ apertou a
+    fileira em 44px e o rótulo de esforço (`shrink-0`, sem recorte no botão)
+    saiu por cima do microfone. `elementFromPoint` é a única das três que
+    responde a pergunta que interessa.
+    """
+    return pagina.evaluate(
+        """(sel) => {
+          const alvo = document.querySelector(sel);
+          if (!alvo) return 'ausente';
+          const r = alvo.getBoundingClientRect();
+          const topo = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          if (!topo) return 'nada';
+          return alvo.contains(topo) ? 'ok' : (topo.closest('button,a')?.getAttribute('aria-label') || topo.tagName);
+        }""",
+        seletor,
+    )
+
+
 with sync_playwright() as p:
     navegador = p.chromium.launch(channel="chrome")
     contexto = navegador.new_context(viewport=VIEWPORT)
@@ -63,6 +88,27 @@ with sync_playwright() as p:
     except Exception:
         pagina.screenshot(path=f"/tmp/prova-slots-inconclusiva-{porta}.png")
         print("INCONCLUSIVO: microfone ausente no repouso — nada foi provado")
+        navegador.close()
+        sys.exit(2)
+
+    # A SEGUNDA PRÉ-CONDIÇÃO, e ela nasceu de um verde que mentiu ao contrário
+    # — 21/08. Esta bancada mede o REPOUSO, e desde que o ■ desceu para a
+    # fileira ele desloca tudo 44px quando entra em cena. Ela não encena nada
+    # (de propósito: mede a tela como ela vem), então bastava o canarinho estar
+    # trabalhando de verdade para a régua de "sem vão" reprovar um layout
+    # correto. Aconteceu na primeira rodada. Sem agente parado não há repouso
+    # para medir, e dizer isso é mais honesto do que medir outra coisa.
+    try:
+        pagina.wait_for_function(
+            """() => {
+              const b = document.querySelector('button[aria-label^="Parar"]');
+              return !b || parseFloat(getComputedStyle(b).opacity) < 0.1;
+            }""",
+            timeout=30_000,
+        )
+    except Exception:
+        pagina.screenshot(path=f"/tmp/prova-slots-inconclusiva-{porta}.png")
+        print("INCONCLUSIVO: o agente está gerando — não há repouso para medir")
         navegador.close()
         sys.exit(2)
 
@@ -158,6 +204,32 @@ with sync_playwright() as p:
             falhas.append(f"slot transborda a caixa (x={direita:.0f} > form={formulario['x'] + formulario['width']:.0f})")
         else:
             print("ok  os dois slots cabem na caixa em 390px")
+
+
+    # 9. EM REPOUSO O ■ NÃO COBRA LARGURA. Ele fica no DOM, mas com margem
+    #    negativa que cancela o slot inteiro — senão os chips perderiam 44px
+    #    permanentes e o rótulo do motor, que já vive no limite em 390px, ficava
+    #    em "extra a" com o agente parado. Medido no estágio em 21/08, antes de
+    #    a margem entrar. A prova é que os chips encostam no microfone.
+    chips = pagina.locator('.ck-troca-da-fala-face[data-face="acoes"]').first
+    if chips.count() and microfone.count():
+        caixa_chips = chips.bounding_box()
+        vao_chips = microfone.first.bounding_box()["x"] - (caixa_chips["x"] + caixa_chips["width"])
+        if vao_chips > 16:
+            falhas.append(
+                f"vão de {vao_chips:.0f}px entre os chips e o microfone em repouso — "
+                f"o ■ fora de cena está cobrando largura"
+            )
+        else:
+            print(f"ok  em repouso o ■ não cobra largura ({vao_chips:.0f}px até o microfone)")
+
+    # O DEDO ACHA O MICROFONE? As caixas provam posição, não alcance — ver a
+    # docstring de `quem_esta_no_centro`.
+    intruso = quem_esta_no_centro(pagina, 'button[aria-label*="Segure para falar"]')
+    if intruso != "ok":
+        falhas.append(f"algo cobre o centro do microfone: {intruso}")
+    else:
+        print("ok  o centro do microfone pertence ao microfone")
 
     caminho = f"/tmp/prova-dois-slots-{porta}.png"
     pagina.screenshot(path=caminho)
