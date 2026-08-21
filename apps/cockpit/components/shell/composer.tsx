@@ -1298,23 +1298,10 @@ export function Composer({
               <IconeParar />
             </InputGroupButton>
 
-            {/* SLOT DE ENTRADA. Não cede lugar a vizinho nenhum — em `travada`
-                o gesto acabou e a gravação não, e o mesmo pixel que abriu é o
-                que fecha e despacha o áudio.
-
-                SOME EM UMA ÚNICA HIPÓTESE: a máquina não tem microfone. Antes
-                ele ficava, e a tela escrevia `nenhum microfone encontrado —
-                conecte um microfone ou use o teclado` na linha de cima. O Rica
-                mandou tirar a frase em 21/08 (*"já tínhamos retirado, e parece
-                que ela voltou"* — o que saiu em 20/08 foi a narração de fase,
-                esta tinha ficado de propósito).
-
-                Tirar só a frase deixaria um botão que não responde nem diz por
-                quê, que é a §9 com outra roupa. Capacidade que não existe não
-                se explica: não se oferece. Vale só para o PC dele; o iPhone
-                nunca cai aqui, e a varredura em `usa-gravador` é guardada para
-                não concluir ausência de uma lista vazia. */}
-            {gravador.semAparelho ? null : modo === 'travada' ? (
+            {/* SLOT DE ENTRADA. Nunca some, nunca cede lugar. Em `travada` o
+                gesto acabou e a gravação não: o mesmo pixel que abriu é o que
+                fecha e despacha o áudio. */}
+            {modo === 'travada' ? (
               <InputGroupButton
                 key="enviar-audio"
                 variant="default"
