@@ -42,6 +42,7 @@ import {
   type FormEvent,
 } from 'react';
 import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
+import { InputGroupButton } from '../ui/input-group';
 import { aparenciaDe, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
@@ -1267,24 +1268,20 @@ export function Composer({
 
                 Não pinta, não recebe toque, não é anunciado, não tabula: fora
                 de cena não é botão morto, é botão que não está lá. */}
-            <button
+            <InputGroupButton
               key="parar"
-              type="button"
+              variant="default"
               onClick={() => void interromper()}
               disabled={parando}
               aria-label={`Parar ${agentName}`}
               aria-hidden={!pararEmCena}
               tabIndex={pararEmCena ? undefined : -1}
               title="Parar"
-              className="flex shrink-0 items-center justify-center disabled:opacity-40"
+              className="disabled:opacity-40"
               style={{
                 ...ALVO_DE_TOQUE,
-                width: '32px',
-                height: '32px',
                 marginBottom: MARGEM_INFERIOR_DA_BASE,
                 borderRadius: 'var(--ck-radius-pill)',
-                background: 'var(--ck-text-primary)',
-                color: 'var(--ck-surface-canvas)',
                 opacity: pararEmCena ? 1 : 0,
                 pointerEvents: pararEmCena ? undefined : 'none',
                 // Longhand DEPOIS do spread, como o `marginBottom` acima: o
@@ -1299,34 +1296,28 @@ export function Composer({
               }}
             >
               <IconeParar />
-            </button>
+            </InputGroupButton>
 
             {/* SLOT DE ENTRADA. Nunca some, nunca cede lugar. Em `travada` o
                 gesto acabou e a gravação não: o mesmo pixel que abriu é o que
                 fecha e despacha o áudio. */}
             {modo === 'travada' ? (
-              <button
+              <InputGroupButton
                 key="enviar-audio"
-                type="button"
+                variant="default"
                 onClick={gravador.enviarTravada}
                 aria-label={`Enviar áudio para ${agentName}`}
-                className="flex shrink-0 items-center justify-center"
                 style={{
                   ...ALVO_DE_TOQUE,
-                  width: '32px',
-                  height: '32px',
                   marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
-                  background: 'var(--ck-text-primary)',
-                  color: 'var(--ck-surface-canvas)',
                 }}
               >
                 <IconeParar />
-              </button>
+              </InputGroupButton>
             ) : (
-              <button
+              <InputGroupButton
                 key="voz"
-                type="button"
                 disabled={faseVoz === 'transcrevendo'}
                 {...gravador.handlers}
                 // Os DOIS gestos no rótulo, porque agora são dois: toque curto
@@ -1339,11 +1330,9 @@ export function Composer({
                     ? vozAparencia.anuncio
                     : `Segure para falar com ${agentName}, ou toque para gravar sem segurar`
                 }
-                className="flex shrink-0 items-center justify-center disabled:opacity-40"
+                className="disabled:opacity-40"
                 style={{
                   ...ALVO_DE_TOQUE,
-                  width: '32px',
-                  height: '32px',
                   marginBottom: MARGEM_INFERIOR_DA_BASE,
                   borderRadius: 'var(--ck-radius-pill)',
                   // DOIS DISCOS CHEIOS LADO A LADO é o defeito que o ■ já
@@ -1351,7 +1340,13 @@ export function Composer({
                   // qualquer vizinho de massa em cena — o despacho à direita ou
                   // o ■ à esquerda — o microfone recua para contorno: continua
                   // com os 44px de alvo, perde só a tinta.
-                  background: emCaptura(modo)
+                  // `backgroundColor`, NUNCA o atalho `background`: o
+                  // atalho reescreve a família inteira e devolve
+                  // `background-clip` ao inicial, apagando o `content-box` que
+                  // veio no `ALVO_DE_TOQUE` — o disco voltava a pintar 44px só
+                  // aqui, e só na tinta. Mesmo pisão do `margin` que a nota do
+                  // `alvo-de-toque.ts` já conta, em outra família.
+                  backgroundColor: emCaptura(modo)
                     ? vozAparencia.tinta ?? 'var(--ck-state-running)'
                     : temConteudo || pararEmCena
                       ? 'transparent'
@@ -1366,7 +1361,7 @@ export function Composer({
                   // proibição §9.4 é sobre `width`/`height`/`top`/`left`, e a
                   // borda da caixa aqui do lado já transiciona assim.
                   transition:
-                    'background var(--ck-dur-enter, 200ms) var(--ck-ease), color var(--ck-dur-enter, 200ms) var(--ck-ease)',
+                    'background-color var(--ck-dur-enter, 200ms) var(--ck-ease), color var(--ck-dur-enter, 200ms) var(--ck-ease)',
                   touchAction: 'none',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
@@ -1374,7 +1369,7 @@ export function Composer({
                 }}
               >
                 <IconeOnda />
-              </button>
+              </InputGroupButton>
             )}
 
             {/* SLOT DE DESPACHO. Nunca é buraco: quando não há o que mandar,
@@ -1382,9 +1377,10 @@ export function Composer({
                 reservado no meio da barra. Um alvo visível e mudo aqui também
                 não serviria: `vazio` é a única recusa sem recado no módulo da
                 porta, e botão que não responde nem diz por quê é a §9. */}
-            <button
+            <InputGroupButton
               key="enviar"
               type="submit"
+              variant="default"
               // Habilitado mesmo quando a porta vai recusar: desabilitado ele
               // não responde ao toque e não diz por quê, que é o botão morto
               // da §9. Tocar agora devolve o motivo na faixa abaixo — e, se a
@@ -1400,25 +1396,18 @@ export function Composer({
               aria-label={`Enviar para ${agentName}`}
               aria-hidden={!despachoEmCena}
               tabIndex={despachoEmCena ? undefined : -1}
-              className={
-                'flex shrink-0 items-center justify-center' +
-                (sinalRecusa ? ' ck-sacudir' : '')
-              }
+              className={sinalRecusa ? 'ck-sacudir' : undefined}
               style={{
                 ...ALVO_DE_TOQUE,
-                width: '32px',
-                height: '32px',
                 marginBottom: MARGEM_INFERIOR_DA_BASE,
                 borderRadius: 'var(--ck-radius-pill)',
-                background: 'var(--ck-text-primary)',
-                color: 'var(--ck-surface-canvas)',
                 opacity: despachoEmCena ? 1 : 0,
                 pointerEvents: despachoEmCena ? undefined : 'none',
                 transition: 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease)',
               }}
             >
               <IconeEnviar />
-            </button>
+            </InputGroupButton>
           </div>
         </div>
 

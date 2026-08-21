@@ -24,6 +24,15 @@ export const ALVO_DE_TOQUE: CSSProperties = {
   boxSizing: 'content-box',
   padding: FOLGA,
   margin: `calc(${FOLGA} * -1)`,
+  // O `content-box` acima segura o LAYOUT em 32px, e era só isso que a conta
+  // original olhava. `background` não obedece a ele: pinta até a borda do
+  // padding, então o disco branco saía com 44px de diâmetro enquanto o
+  // `width` computado continuava dizendo 32 — 37% maior que o desenho, e foi
+  // assim que foi ao ar. Quem viu foi o Rica, na foto do próprio iPhone
+  // (21/08): *"parece um pouco maior do que deveria pro contexto da UI"*.
+  // Trava em `docs/cockpit-v2-medicao/disco-do-composer-tem-32px.py`, que mede
+  // PIXEL — nenhuma leitura de `width` acusaria isto.
+  backgroundClip: 'content-box',
 };
 
 /**
