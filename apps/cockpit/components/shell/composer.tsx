@@ -794,7 +794,23 @@ export function Composer({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
+    <>
+      {/* A BORDA PROGRESSIVA — o feed se dissolve da cabeça do mascote ao fim
+          da tela, num efeito só (substitui o rodapé de vidro). Irmã ANTERIOR
+          da coluna, que é `relative`: entre posicionados sem z-index vale a
+          ordem do DOM, então as camadas pintam atrás de tudo que o composer
+          desenha e na frente do feed. As cinco filhas anônimas são a escada de
+          desfoque (raios dobrando), a nomeada é a tinta que escurece a névoa —
+          desenho, números e porquês no globals.css. */}
+      <div aria-hidden className="ck-borda-progressiva">
+        <div />
+        <div />
+        <div />
+        <div />
+        <div />
+        <div className="ck-borda-tinta" />
+      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)', position: 'relative' }}>
       {/* A BOLINHA — a presença do agente, no alto de tudo que o composer
           empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
           texto no feed, isto é alguém do outro lado. Presença e nada mais: o ■
@@ -1457,21 +1473,6 @@ export function Composer({
         ) : null}
       </form>
 
-        {/* O RODAPÉ DE VIDRO. Ancorado na base da caixa (`top: 100%`) e descendo
-            além do fim da tela — quem recorta é o `overflow: hidden` do palco,
-            e é por isso que este elemento não precisa conhecer o padding do
-            wrapper que o Pavan escolheu. O tint é na cor do CANVAS: some quando
-            não há nada atrás (que é o estado do fim da rolagem, o mais comum de
-            todos) e continua apagando quando há texto passando, porque quem faz
-            esse trabalho é o desfoque. Ver §18 da estética.
-            `aria-hidden` porque não há nada a anunciar, e sem eventos para não
-            roubar o toque de quem mira o fim do feed. */}
-        <div
-          aria-hidden
-          className="ck-rodape-vidro pointer-events-none absolute"
-          style={{ top: '100%', left: '-50vw', right: '-50vw', height: '50vh' }}
-        />
-
         {/* A GAVETA. Irmã do form, dentro do invólucro ancorado — sobe a partir
             do "+" e nunca é recortada pelo `overflow` da caixa. */}
         <PainelAnexo
@@ -1563,5 +1564,6 @@ export function Composer({
         <div aria-hidden style={{ height: '17px' }} />
       )}
     </div>
+    </>
   );
 }

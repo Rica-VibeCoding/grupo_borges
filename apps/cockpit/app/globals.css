@@ -220,9 +220,9 @@
    * a tela de MCPs não tem o desfoque do vidro, é lista, não composer. */
   --ck-surface-mcp: var(--ck-surface-raised);
 
-  /* O RODAPÉ — a faixa entre a base da caixa e a base da tela (o padding do
-   * wrapper, 33px medidos). Ali o feed passava NÍTIDO até encostar no fim da
-   * tela, e o Rica pediu *"abaixo dela pode embaçar o vidro um pouco"*.
+  /* O MATERIAL DO FECHO — nasceu como tint do rodapé de vidro; desde 24/08 é o
+   * PÉ do gradiente da borda progressiva (`.ck-borda-tinta`), que fecha a tela
+   * da cabeça do mascote para baixo.
    *
    * ⚠️ O TINT É `canvas`, E ISSO NÃO É DETALHE — é a correção de um desastre.
    * A primeira versão usou `raised` a 80%, que é a superfície MAIS CLARA da
@@ -231,22 +231,11 @@
    * (*"desastre total, ficou pior que estava"*, revertido em `624c612`).
    *
    * `canvas` sobre `canvas` dá `canvas` em QUALQUER percentual: quando não há
-   * nada atrás, o rodapé some por construção — não por sorte de valor. E quando
-   * há texto passando, quem apaga é o desfoque, que é o trabalho dele desde
-   * sempre (WCAG G18). É o que a Apple já dizia e eu tinha lido sem aplicar:
-   * *"If the underlying content is sufficiently dark… you don't need to apply a
-   * dimming layer."*
-   *
-   * ⚠️ O DESFOQUE É MENOR QUE O DA CAIXA, e também é contraintuitivo: numa
-   * faixa de 33px, mais desfoque BORRA MENOS. Medido em cena congelada,
-   * desvio-padrão do mesmo recorte com uma linha atravessando: sem filtro 77.9
-   * → 6px 22.3 → **12px 20.2** → 20px 22.2 → 36px 32.6. A curva tem fundo e
-   * volta a subir. A leitura provável é a duplicação de borda: o raio passa
-   * muito da altura da faixa, não há backdrop abaixo para misturar, e o que
-   * entra na conta é a réplica da própria beirada. (Causa é hipótese; a curva
-   * é medição.) */
+   * nada atrás, o fecho some por construção — não por sorte de valor. E quando
+   * há texto passando, quem apaga é o desfoque (WCAG G18); a tinta entra para
+   * ESCURECER a névoa que o desfoque espalha do texto claro — foi a névoa sem
+   * tinta que virou a "tarja" reprovada de 24/08. */
   --ck-rodape-material: color-mix(in oklch, var(--ck-surface-canvas) 70%, transparent);
-  --ck-rodape-desfoque: 12px;
 
   /* ===== §B ESQUELETO — Pavan ==============================================
    * Medida e ritmo. Onde a §A responde "que cor", esta responde "quanto" e
@@ -585,16 +574,79 @@ body {
   backdrop-filter: blur(var(--ck-veu-desfoque));
 }
 
-/* O FECHO DA TELA. Vive ancorado na base da caixa e desce até o fim do palco,
- * transbordando de propósito: quem recorta é o `overflow: hidden` do `.ck-palco`,
- * então esta faixa nunca precisa saber quanto padding o wrapper do composer tem
- * — e é o mesmo recorte que a impede de vazar sobre a coluna da tropa, que é
- * outra superfície. Não é ancestral da caixa nem do feed: não forma Backdrop
- * Root para ninguém. */
-.ck-rodape-vidro {
-  background: var(--ck-rodape-material);
-  -webkit-backdrop-filter: blur(var(--ck-rodape-desfoque));
-  backdrop-filter: blur(var(--ck-rodape-desfoque));
+/* A BORDA PROGRESSIVA — o fecho da tela inteiro, da cabeça do mascote ao fim
+ * do palco, num efeito só (Rica, 24/08: aprovou o desenho unificado depois de
+ * reprovar o véu de camada única — *"a cor fica uma tarja, não tá disfarçado...
+ * abaixo do composer não tem o mesmo efeito"*).
+ *
+ * A referência é o efeito de borda do iOS 26 (scroll edge effect): o conteúdo
+ * se DISSOLVE ao entrar na zona dos controles flutuantes, sem linha dura. A
+ * engenharia é a técnica canônica de desfoque progressivo na web: CAMADAS
+ * empilhadas de blur fraco com raios dobrando (1→2→4→8→16) e máscaras
+ * trapezoidais sobrepostas — cada camada enxerga as anteriores já pintadas,
+ * então o raio percebido cresce de contínuo. Uma camada única forte é o que
+ * produz tarja: texto claro a 36px vira névoa com fronteira (a rampa curta da
+ * máscara não disfarça um raio grande).
+ *
+ * Teto de 16px DE PROPÓSITO: é o `backdrop-blur-lg` do composer do ChatGPT
+ * (playbook §258) e a ordem de grandeza do rodapé aprovado (12px) — não os
+ * 36px da caixa, que ali são pagos pelo contraste WCAG e emoldurados pela
+ * borda. A TINTA é um gradiente até o material do rodapé de sempre (`canvas`
+ * a 70%): escurece a névoa que o desfoque espalha — a função que o tint do
+ * rodapé sempre cumpriu — e continua invisível quando não há nada atrás,
+ * porque canvas sobre canvas dá canvas.
+ *
+ * O contêiner é LIMPO (só posição): mask/filter nele o fariam Backdrop Root e
+ * as filhas passariam a desfocar o nada. Ancorado no wrapper do palco: o topo
+ * acompanha a coluna (fila/compact empurram a bolinha e a zona vai junto), e o
+ * transbordo é recortado pelo `overflow: hidden` do `.ck-palco`, como o rodapé
+ * antigo fazia. As distâncias das máscaras são em px DO TOPO DA ZONA: a
+ * dissolução mora nos primeiros ~120px (rampa acima da cabeça → boca da
+ * caixa); dali para baixo a última camada e a tinta seguram o cheio. */
+.ck-borda-progressiva {
+  position: absolute;
+  top: calc(-1 * var(--ck-space-2));
+  bottom: -50vh;
+  left: -50vw;
+  right: -50vw;
+  pointer-events: none;
+}
+.ck-borda-progressiva > div {
+  position: absolute;
+  inset: 0;
+}
+.ck-borda-progressiva > div:nth-child(1) {
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 12px, black 36px, transparent 48px);
+  mask-image: linear-gradient(to bottom, transparent 0, black 12px, black 36px, transparent 48px);
+}
+.ck-borda-progressiva > div:nth-child(2) {
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 24px, black 40px, black 56px, transparent 72px);
+  mask-image: linear-gradient(to bottom, transparent 24px, black 40px, black 56px, transparent 72px);
+}
+.ck-borda-progressiva > div:nth-child(3) {
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 48px, black 64px, black 80px, transparent 96px);
+  mask-image: linear-gradient(to bottom, transparent 48px, black 64px, black 80px, transparent 96px);
+}
+.ck-borda-progressiva > div:nth-child(4) {
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 72px, black 88px, black 104px, transparent 120px);
+  mask-image: linear-gradient(to bottom, transparent 72px, black 88px, black 104px, transparent 120px);
+}
+.ck-borda-progressiva > div:nth-child(5) {
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 96px, black 120px);
+  mask-image: linear-gradient(to bottom, transparent 96px, black 120px);
+}
+.ck-borda-tinta {
+  background: linear-gradient(to bottom, transparent 32px, var(--ck-rodape-material) 160px);
 }
 
 /* A ROLAGEM DE DENTRO DA CAIXA. Nasceu em 08/08 com o campo que cresce até
@@ -641,10 +693,11 @@ body {
   .ck-sobre-material {
     background: var(--ck-surface-composer) !important;
   }
-  /* No rodapé o opaco é a intenção: `canvas` cheio continua indistinguível do
-   * canvas nos dois estados, e ali nada é para ser lido. */
-  .ck-rodape-vidro {
-    background: var(--ck-surface-canvas) !important;
+  /* Sem blur a dissolução não existe; o que dá para honrar é o FECHO: a tinta
+   * desce até canvas OPACO, que é o que o rodapé antigo fazia no mesmo caso —
+   * indistinguível do canvas quando não há nada atrás. */
+  .ck-borda-tinta {
+    background: linear-gradient(to bottom, transparent 32px, var(--ck-surface-canvas) 200px) !important;
   }
 }
 
