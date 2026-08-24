@@ -194,7 +194,7 @@
    * contraste passa a ser medido sobre fundo variável, ver §18. */
   --ck-veu-tint: color-mix(in oklch, var(--ck-surface-nav) 16%, transparent);
   --ck-veu-desfoque: 36px;   /* é o desfoque que segura o contraste (WCAG G18) */
-  --ck-veu-fade: 24px;       /* rampa do véu da bolinha: de nítido a embaçado */
+  --ck-veu-fade: 64px;       /* altura da ESCADA DE DESFOQUE no topo da faixa */
 
   /* A caixa. `raised` é o tint porque é o topo da escada de luz — o campo é o
    * que está mais perto do olho.
@@ -568,43 +568,6 @@ body {
 .ck-caixa {
   -webkit-backdrop-filter: blur(var(--ck-veu-desfoque));
   backdrop-filter: blur(var(--ck-veu-desfoque));
-}
-
-/* O VÉU DA BOLINHA — o vidro sobe até a cabeça do mascote (Rica, 24/08: *"que
- * ele ficasse embaçado logo a partir da cabeça do bichinho"*). O feed passava
- * NÍTIDO por trás dela, e o rosto disputava leitura com o log rolando.
- *
- * SEM TINT, e é isso que o separa da faixa que o Rica reprovou em 08/08 ("como
- * se a transparência fosse um quadrado inteiro"): aquela tinha cor própria
- * (canvas a 72%) e aparecia como placa. Este é só desfoque mascarado — sem
- * nada atrás, não existe; quando o texto entra, desbota ao longo de
- * `--ck-veu-fade` e cruza a cabeça da bolinha já embaçado. A técnica
- * (backdrop-filter + máscara no MESMO elemento) é a da v2 (`fd8dcaa`), que
- * rodou no iPhone — o que reprovou lá foi o tint, não o mecanismo. A máscara
- * faz DESTE elemento um Backdrop Root, mas isso só cortaria o efeito de um
- * FILHO dele — e ele não tem nenhum.
- *
- * Ancorado no wrapper do palco com `top` NEGATIVO: a rampa mora dentro do
- * feed, acima da cabeça (a conta: padding de `--ck-space-3` do wrapper + ~6px
- * até o topo do círculo ≈ 18px; −8px + rampa de 24px = cheio a 16px, na
- * cabeça). O topo do wrapper acompanha a coluna — fila, compact e campo
- * crescido empurram a bolinha para cima e o véu vai junto. Abaixo da caixa ele
- * passa por trás do rodapé de vidro, que pinta depois e continua mandando ali.
- * Largura sangrada como a do rodapé: quem recorta é o `overflow: hidden` do
- * `.ck-palco`. Sem `@supports`: máquina sem blur fica sem véu, que é o
- * comportamento de sempre — a placa opaca do fallback da caixa aqui taparia o
- * feed. */
-.ck-veu-bolinha {
-  position: absolute;
-  top: calc(-1 * var(--ck-space-2));
-  bottom: 0;
-  left: -50vw;
-  right: -50vw;
-  pointer-events: none;
-  -webkit-backdrop-filter: blur(var(--ck-veu-desfoque));
-  backdrop-filter: blur(var(--ck-veu-desfoque));
-  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0) 0, rgb(0 0 0 / 1) var(--ck-veu-fade));
-  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0) 0, rgb(0 0 0 / 1) var(--ck-veu-fade));
 }
 
 /* TEXTO DO COMPOSER QUE FICA FORA DA CAIXA — barra do compact, bloco da fila.
