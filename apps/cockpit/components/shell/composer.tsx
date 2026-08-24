@@ -794,7 +794,13 @@ export function Composer({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)' }}>
+    <>
+      {/* O VÉU DA BOLINHA — o feed desbota antes de cruzar o mascote. Irmão
+          ANTERIOR da coluna, que é `relative`: entre posicionados sem z-index
+          vale a ordem do DOM, então o véu pinta atrás de tudo que o composer
+          desenha e na frente do feed. Geometria e porquês no globals.css. */}
+      <div aria-hidden className="ck-veu-bolinha" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ck-space-1)', position: 'relative' }}>
       {/* A BOLINHA — a presença do agente, no alto de tudo que o composer
           empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
           texto no feed, isto é alguém do outro lado. Presença e nada mais: o ■
@@ -1563,5 +1569,6 @@ export function Composer({
         <div aria-hidden style={{ height: '17px' }} />
       )}
     </div>
+    </>
   );
 }
