@@ -71,6 +71,9 @@ _RELIGA_ESPERA_INICIAL_SEGUNDOS = 1.0
 _RELIGA_ESPERA_MAX_SEGUNDOS = 30.0
 # Sobreviveu a isso, a queda seguinte é evento novo — não continuação de surto.
 _RELIGA_RESET_SEGUNDOS = 60.0
+# Linha que falha isto tudo não é lock passageiro: é defeito nela. Descartar UMA
+# custa um evento; insistir para o feed inteiro que vem atrás dela.
+_TENTATIVAS_POR_LINHA = 5
 
 
 def encoded_cwd(workspace_path: str) -> str:
@@ -752,6 +755,8 @@ class JsonlWatcher:
         # F4-3 A4 — último JSONL processado por slug. Mudança = nova sessão
         # CC → reseta subagent state pro slug pra não carregar fantasmas.
         self._last_jsonl_by_slug: dict[str, str] = {}
+        # path → (offset da linha, falhas seguidas nela). Ver `_desistir_da_linha`.
+        self._falhas_por_linha: dict[str, tuple[int | None, int]] = {}
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -862,14 +867,13 @@ class JsonlWatcher:
             return
         last_offset = self._offsets.get(str(path), 0)
         try:
-            new_lines, new_offset = await asyncio.to_thread(
-                _read_appended, path, last_offset
-            )
+            # o fim da rajada não interessa mais: quem manda no offset agora é
+            # cada linha, marcada só depois de gravada
+            new_lines, _ = await asyncio.to_thread(_read_appended, path, last_offset)
         except FileNotFoundError:
             return
         if not new_lines:
             return
-        self._offsets[str(path)] = new_offset
 
         # F4-3 A4 — detecta sessão CC nova (JSONL path diferente do último
         # visto pro slug) e zera subagent state antes de processar a
@@ -879,53 +883,78 @@ class JsonlWatcher:
             reset_subagent_state_for_slug(slug)
         self._last_jsonl_by_slug[slug] = str(path)
 
-        for line in new_lines:
-            payload = parse_dict_or_none(line)
-            event_type = str((payload or {}).get("type") or "unknown")
-            update_subagent_state_from_jsonl(slug, payload, event_type)
-            if isinstance(payload, dict) and event_type == "user":
-                message = payload.get("message")
-                text = _message_text(payload)
-                message_uuid = payload.get("uuid")
-                if isinstance(message, dict) and text and isinstance(message_uuid, str):
-                    meta = await self._db.claim_message_origin(
-                        agent_slug=slug,
-                        executor_kind="tmux",
-                        expected_text=text,
-                        message_key=message_uuid,
-                        observed_at_ms=_timestamp_ms(payload.get("timestamp")),
-                    )
-                    if meta is not None:
-                        payload["meta"] = meta
-            await self._db.insert_task_event(
-                kind=f"jsonl:{event_type}",
-                agent_slug=slug,
-                payload=payload,
-                raw_jsonl=line,
-            )
-            lifecycle_status, lifecycle_detail = _jsonl_lifecycle(payload, event_type)
-            if lifecycle_status is not None:
-                await self._db.update_agent_lifecycle(
-                    slug,
-                    status=lifecycle_status,
-                    detail=lifecycle_detail,
-                    event=f"jsonl:{event_type}",
+        for line, offset_depois in new_lines:
+            try:
+                await self._processar_linha(slug, line)
+            except Exception:
+                if not self._desistir_da_linha(str(path), offset_depois):
+                    raise  # o supervisor religa e reprocessa ESTA linha
+                logger.exception(
+                    "JSONL: linha descartada depois de %d tentativas (%s @ %d) — "
+                    "segurá-la mais tempo travaria todo o feed atrás dela",
+                    _TENTATIVAS_POR_LINHA,
+                    path.name,
+                    offset_depois,
                 )
-            await self._db.touch_agent_run_heartbeat(
-                slug,
-                source_kind=f"jsonl:{event_type}",
-            )
-            if lifecycle_status is not None:
-                await self._db.advance_task_from_lifecycle(
-                    slug,
-                    lifecycle_status=lifecycle_status,
-                    source_event=f"jsonl:{event_type}",
-                )
-            # Fonte 3 (JSONL lossless): detectar STATE: em texto de mensagens assistant
-            if event_type == "assistant" and payload:
-                await self._try_detect_checkpoint(slug, payload)
+            # Só agora a linha conta como lida. Marcar antes de gravar foi o que
+            # tornou permanente o buraco de 01/09: nem religar nem reiniciar volta.
+            self._offsets[str(path)] = offset_depois
 
+        self._falhas_por_linha.pop(str(path), None)
         await self._db.upsert_agent_state(slug, jsonl_path=str(path))
+
+    def _desistir_da_linha(self, path: str, offset: int) -> bool:
+        """Conta falhas seguidas na MESMA linha; zera quando o offset anda."""
+        anterior, tentativas = self._falhas_por_linha.get(path, (None, 0))
+        tentativas = tentativas + 1 if anterior == offset else 1
+        self._falhas_por_linha[path] = (offset, tentativas)
+        return tentativas >= _TENTATIVAS_POR_LINHA
+
+    async def _processar_linha(self, slug: str, line: str) -> None:
+        payload = parse_dict_or_none(line)
+        event_type = str((payload or {}).get("type") or "unknown")
+        update_subagent_state_from_jsonl(slug, payload, event_type)
+        if isinstance(payload, dict) and event_type == "user":
+            message = payload.get("message")
+            text = _message_text(payload)
+            message_uuid = payload.get("uuid")
+            if isinstance(message, dict) and text and isinstance(message_uuid, str):
+                meta = await self._db.claim_message_origin(
+                    agent_slug=slug,
+                    executor_kind="tmux",
+                    expected_text=text,
+                    message_key=message_uuid,
+                    observed_at_ms=_timestamp_ms(payload.get("timestamp")),
+                )
+                if meta is not None:
+                    payload["meta"] = meta
+        await self._db.insert_task_event(
+            kind=f"jsonl:{event_type}",
+            agent_slug=slug,
+            payload=payload,
+            raw_jsonl=line,
+        )
+        lifecycle_status, lifecycle_detail = _jsonl_lifecycle(payload, event_type)
+        if lifecycle_status is not None:
+            await self._db.update_agent_lifecycle(
+                slug,
+                status=lifecycle_status,
+                detail=lifecycle_detail,
+                event=f"jsonl:{event_type}",
+            )
+        await self._db.touch_agent_run_heartbeat(
+            slug,
+            source_kind=f"jsonl:{event_type}",
+        )
+        if lifecycle_status is not None:
+            await self._db.advance_task_from_lifecycle(
+                slug,
+                lifecycle_status=lifecycle_status,
+                source_event=f"jsonl:{event_type}",
+            )
+        # Fonte 3 (JSONL lossless): detectar STATE: em texto de mensagens assistant
+        if event_type == "assistant" and payload:
+            await self._try_detect_checkpoint(slug, payload)
 
     async def _try_detect_checkpoint(self, slug: str, payload: dict) -> None:
         """Detecta STATE: no texto de mensagem assistant e aciona record_checkpoint."""
@@ -977,8 +1006,12 @@ def _extract_assistant_text(payload: dict) -> str | None:
     return None
 
 
-def _read_appended(path: Path, offset: int) -> tuple[list[str], int]:
-    """Lê do offset até o último \\n do arquivo. Retorna (linhas_completas, novo_offset).
+def _read_appended(path: Path, offset: int) -> tuple[list[tuple[str, int]], int]:
+    """Lê do offset até o último \\n. Retorna ([(linha, offset_depois_dela)], novo_offset).
+
+    O offset por linha existe pra quem consome poder avançar só o que já gravou:
+    marcar o arquivo inteiro como lido antes de gravar perde a rajada em caso de
+    erro, e nem o restart volta nela.
 
     Linha incompleta no final (CC ainda escrevendo) fica pra próxima iteração.
     Se o arquivo encolheu (truncado/recriado), reinicia do zero.
@@ -999,6 +1032,14 @@ def _read_appended(path: Path, offset: int) -> tuple[list[str], int]:
         return [], offset  # nada completo ainda
     consumed_bytes = data[: last_newline + 1]
     new_offset = offset + len(consumed_bytes)
-    text = consumed_bytes.decode("utf-8", errors="replace")
-    lines = [ln for ln in text.split("\n") if ln.strip()]
+    # O offset de cada linha sai da contagem de BYTES, antes de decodificar:
+    # `errors="replace"` troca byte inválido por um caractere de outro tamanho, e
+    # linha em branco é pulada — recontar pelo texto erraria a posição.
+    lines: list[tuple[str, int]] = []
+    posicao = offset
+    for bruta in consumed_bytes.split(b"\n")[:-1]:  # o split deixa b"" no fim
+        posicao += len(bruta) + 1  # +1 do "\n" consumido
+        texto = bruta.decode("utf-8", errors="replace")
+        if texto.strip():
+            lines.append((texto, posicao))
     return lines, new_offset
