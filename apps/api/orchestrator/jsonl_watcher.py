@@ -65,6 +65,14 @@ _subagent_agent_to_parent: dict[str, dict[str, str]] = {}
 _subagent_pending_close: dict[str, set[str]] = {}
 
 
+# Religamento do watcher: começa rápido porque a maioria dos locks é curta, e
+# teto baixo porque feed parado é sintoma que o Rica vê na tela.
+_RELIGA_ESPERA_INICIAL_SEGUNDOS = 1.0
+_RELIGA_ESPERA_MAX_SEGUNDOS = 30.0
+# Sobreviveu a isso, a queda seguinte é evento novo — não continuação de surto.
+_RELIGA_RESET_SEGUNDOS = 60.0
+
+
 def encoded_cwd(workspace_path: str) -> str:
     return _NON_ENCODED_CHAR.sub("-", workspace_path)
 
@@ -794,23 +802,47 @@ class JsonlWatcher:
             )
 
     async def _run(self) -> None:
+        """Supervisiona o `awatch`: exceção aqui não pode ser fim de linha.
+
+        Em 01/09 um `database is locked` transitório saiu do laço e o feed
+        ficou mudo por 1h19 — a API respondendo 200 o tempo todo, ninguém
+        acusando. Escrita no sqlite falha de vez em quando por desenho
+        (`busy_timeout` é espera com prazo, e a poda segura lock pra `VACUUM`);
+        o que não pode é a falha ser terminal.
+        """
         if not self._root.exists():
             return  # já avisado em _prepopulate_offsets
-        try:
-            async for changes in awatch(
-                str(self._root),
-                stop_event=self._stop,
-                watch_filter=self._filter,
-                recursive=True,
-            ):
-                for change_type, raw_path in changes:
-                    if change_type != Change.modified:
-                        continue
-                    await self._process_jsonl(Path(raw_path))
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("JSONL watcher crashed")
+        espera = _RELIGA_ESPERA_INICIAL_SEGUNDOS
+        while not self._stop.is_set():
+            nasceu_em = time.monotonic()
+            try:
+                await self._observar()
+                return  # `stop_event` encerrou o awatch — saída limpa
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("JSONL watcher caiu — religando em %.0fs", espera)
+            # Quem viveu bem e caiu agora religa rápido; quem cai em sequência
+            # para de martelar um banco que já está em apuros.
+            if time.monotonic() - nasceu_em > _RELIGA_RESET_SEGUNDOS:
+                espera = _RELIGA_ESPERA_INICIAL_SEGUNDOS
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=espera)
+                return  # pediram parada durante a espera
+            except TimeoutError:
+                espera = min(espera * 2, _RELIGA_ESPERA_MAX_SEGUNDOS)
+
+    async def _observar(self) -> None:
+        async for changes in awatch(
+            str(self._root),
+            stop_event=self._stop,
+            watch_filter=self._filter,
+            recursive=True,
+        ):
+            for change_type, raw_path in changes:
+                if change_type != Change.modified:
+                    continue
+                await self._process_jsonl(Path(raw_path))
 
     def _filter(self, change: Change, path: str) -> bool:
         if not path.endswith(".jsonl"):

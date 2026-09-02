@@ -318,6 +318,11 @@ def derive_lifecycle_from_event(
     return None, None
 
 
+# Espera por lock antes de desistir. Casado com o `timeout` da poda, que é quem
+# mais segura o banco (`scripts/prune_task_events.py`).
+_BUSY_TIMEOUT_SEGUNDOS = 30.0
+
+
 class GrupoBorgesDB:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -332,11 +337,17 @@ class GrupoBorgesDB:
     @contextlib.contextmanager
     def _connect(self):
         # isolation_level default (deferred) → `with conn:` faz BEGIN/COMMIT
-        conn = sqlite3.connect(self.db_path)
+        #
+        # `timeout=` é o busy_timeout, e vale desde a abertura — o `PRAGMA
+        # busy_timeout` que estava aqui era no-op: o default do módulo já é 5s,
+        # e o PRAGMA só chegava DEPOIS da instrução que carrega o schema, que é
+        # justamente onde o lock estoura. Os 5s é que eram curtos: a poda segura
+        # lock exclusivo pra `VACUUM` e usa 30s do outro lado (scripts/
+        # prune_task_events.py) — este lado esperava menos que o escritor demora.
+        conn = sqlite3.connect(self.db_path, timeout=_BUSY_TIMEOUT_SEGUNDOS)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute("PRAGMA foreign_keys=ON")
             yield conn
         finally:
