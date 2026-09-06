@@ -442,6 +442,9 @@ export type AgentPainelResponse = {
   // false = a sessão viva do TeleCodex foi fechada pelo painel; a thread fica
   // persistida para o botão "Ligar" reabri-la no mesmo contexto.
   codex_runtime_enabled?: boolean | null;
+  // false = o `POST /relaunch` recusa este agente; o botão Relançar não entra.
+  // Ausente vale como `true`: é o que o painel fazia antes do campo existir.
+  relaunch_suportado?: boolean | null;
 };
 
 export type SubagentEntry = {

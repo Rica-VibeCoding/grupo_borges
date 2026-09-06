@@ -292,6 +292,10 @@ class AgentPainelResponse(BaseModel):
     codex_next_fresh: bool | None = None
     codex_turn_in_flight: bool | None = None
     codex_runtime_enabled: bool | None = None
+    # false = o botão Relançar não entra na gaveta. Default `True` porque é o
+    # que o painel fazia antes deste campo existir — payload sem ele não muda
+    # a tela de ninguém.
+    relaunch_suportado: bool = True
 
 
 class AgentPainelEffortPatchRequest(BaseModel):
@@ -688,6 +692,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
             codex_next_fresh=bool(agent.get("codex_next_fresh")),
             codex_turn_in_flight=_codex_turn_in_flight(agent),
             codex_runtime_enabled=runtime_enabled,
+            relaunch_suportado=False,
         )
 
     vida = await _build_painel_vida(agent)
@@ -745,6 +750,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         quotas=quotas,
         subagents=subagents,
         canal_entrega=tmux_driver.get_delivery_channel_state(agent["tmux_session"]),
+        relaunch_suportado=_relanca_com_resume(agent),
     )
 
 
@@ -2714,6 +2720,19 @@ def _codex_turn_in_flight(agent: dict[str, Any]) -> bool:
 
 def _agente_codex(agent: dict[str, Any]) -> bool:
     return agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex"
+
+
+def _relanca_com_resume(agent: dict[str, Any]) -> bool:
+    """Se o `POST /{slug}/relaunch` atende este agente — a regra das recusas.
+
+    Serve à guarda E ao painel de propósito: o botão precisa sumir pela MESMA
+    régua que a API usa para recusar, senão o Rica descobre o limite clicando.
+    O porquê de cada família ficar de fora está nos comentários das duas
+    recusas em `post_agent_relaunch`.
+    """
+    if _agente_codex(agent):
+        return False
+    return agent.get("model_family") in {None, "anthropic", "kimi", "opencode"}
 
 
 async def _clear_codex_busy_status_line(
@@ -5044,7 +5063,7 @@ async def post_agent_relaunch(
     # carrega com `set -a; . $envf` no shell do pane. A Tara voltaria muda nos
     # MCPs e sem teto de janela, sem erro nenhum na tela. Desligar + Ligar passa
     # pelo script e é o caminho dela.
-    if agent.get("model_family") not in {None, "anthropic", "kimi", "opencode"}:
+    if not _relanca_com_resume(agent):
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     db: GrupoBorgesDB = request.app.state.db

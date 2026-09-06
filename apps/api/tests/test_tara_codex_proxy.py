@@ -322,6 +322,29 @@ def test_relaunch_recusa_codex_proxy(tmp_path: Path) -> None:
     assert resposta.json()["detail"] == "relaunch_requer_backend_anthropic_nativo"
 
 
+def test_painel_da_tara_nao_manda_o_botao_relancar(tmp_path: Path) -> None:
+    """A recusa acima só chegava DEPOIS do clique — e o clique é o que mata o pane.
+
+    Nenhuma pista do payload distinguia a Tara de um agente Anthropic: ela É
+    Claude Code, então `codex_native` vem ausente e `sandbox` também, que são
+    as duas coisas em que o front se apoiava para esconder o botão.
+    """
+    client = TestClient(_build_app(tmp_path))
+
+    corpo = client.get("/api/agents/tara/painel").json()
+
+    assert corpo["relaunch_suportado"] is False
+
+
+def test_painel_de_agente_anthropic_mantem_o_botao_relancar(tmp_path: Path) -> None:
+    """A trava é de família, não faxina geral — quem o relaunch atende segue com ele."""
+    client = TestClient(_build_app(tmp_path))
+
+    corpo = client.get("/api/agents/daniel/painel").json()
+
+    assert corpo["relaunch_suportado"] is True
+
+
 def test_sync_limpa_state_model_de_quem_virou_codex_proxy(tmp_path: Path) -> None:
     """Terceiro resíduo do Codex CLI no `agent_state`, irmão dos dois de cima.
 

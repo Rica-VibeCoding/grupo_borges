@@ -146,6 +146,16 @@ export function ehCodex(painel: AgentPainelResponse): boolean {
   return Boolean(painel.codex_native) || painel.sandbox != null;
 }
 
+/** Relançar (`--resume`) só aparece pra quem o back atende. Quem decide é o
+ *  back: a Tara roda Claude Code contra o proxy do Codex, então nenhuma pista
+ *  local (`ehCodex`, `sandbox`, nome do modelo) a distingue de um agente
+ *  Anthropic — só o `model_family`, que o painel não expõe. `!== false` de
+ *  propósito: payload antigo sem o campo mantém o botão, e a tradução da
+ *  recusa em `diagnosticaRelancar` segue sendo a rede embaixo. */
+export function podeRelancar(painel: AgentPainelResponse): boolean {
+  return painel.relaunch_suportado !== false;
+}
+
 export function montaControles(painel: AgentPainelResponse): Controle[] {
   const controles: Controle[] = [];
 

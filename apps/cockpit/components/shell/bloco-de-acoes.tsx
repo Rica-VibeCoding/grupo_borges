@@ -69,6 +69,7 @@ import {
   diagnosticaCicloDeVida,
   diagnosticaRelancar,
   ehCodex,
+  podeRelancar,
   leiaDesligar,
   leiaDestrava,
   leiaLigar,
@@ -580,6 +581,10 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   // Resume continua exclusivo do Claude Code. O ciclo Desligar/Ligar do Codex
   // opera a sessão persistente do TeleCodex e aparece no ramo próprio abaixo.
   const codex = painel ? ehCodex(painel) : false;
+  // A Tara cai aqui: `codex` é false (ela roda Claude Code), mas o `/relaunch`
+  // a recusa. O Desligar NÃO some junto — Desligar + Ligar É o caminho dela.
+  // Sem painel lido não há o que afirmar, então o botão fica.
+  const relancarDisponivel = painel === null || podeRelancar(painel);
 
   // O agente está DE PÉ? Só o painel lido responde — enquanto a busca não
   // voltou, `painel` é `null` e as ações nem são renderizadas (`carga` ainda
@@ -791,7 +796,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
                 saída que não custa a conversa: sobe outro processo com
                 `--resume`. Fica DEPOIS do destrava de propósito: a ordem na tela
                 é a ordem em que se deve tentar. */}
-            {!codex ? (
+            {!codex && relancarDisponivel ? (
               <BotaoAcaoBruta
                 fase={relancar}
                 acao="resume"

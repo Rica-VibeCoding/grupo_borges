@@ -18,6 +18,7 @@ import {
   leiaLigar,
   leiaRelancar,
   montaControles,
+  podeRelancar,
   rotulaAcaoBruta,
   rotulaDestrava,
   rotulaLigar,
@@ -116,6 +117,26 @@ describe('quais controles existem — é UM por agente, e nunca os dois', () => 
   it('Codex sem sandbox no payload não inventa o controle', () => {
     const ids = montaControles(painel({ codex_native: true })).map((c) => c.id);
     assert.deepEqual(ids, []);
+  });
+});
+
+describe('quem mostra o Relançar — a régua é do back, não do formato do payload', () => {
+  it('Tara: Claude Code, sem sandbox, e MESMO ASSIM sem Relançar', () => {
+    // O caso que nenhuma pista local pegava: ela não é `ehCodex`, o payload é
+    // igual ao de um agente Anthropic, e o `POST /relaunch` a recusa. Antes do
+    // campo o botão aparecia e o Rica descobria o limite clicando — clique que
+    // mata o pane antes de errar.
+    const p = painel({ slug: 'tara', relaunch_suportado: false });
+    assert.equal(ehCodex(p), false);
+    assert.equal(podeRelancar(p), false);
+  });
+
+  it('agente que o back atende segue com o botão', () => {
+    assert.equal(podeRelancar(painel({ relaunch_suportado: true })), true);
+  });
+
+  it('payload sem o campo mantém o botão — esconder é afirmação', () => {
+    assert.equal(podeRelancar(painel()), true);
   });
 });
 
