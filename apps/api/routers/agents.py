@@ -3892,6 +3892,15 @@ def _normaliza_imagem(content: bytes) -> tuple[bytes, str]:
             if not heif and imagem.getexif().get(_EXIF_ORIENTATION) in (None, 1):
                 return content, extensao
             formato = "JPEG" if heif else imagem.format
+            if heif:
+                # pillow_heif zera a tag 274 pra 1 no `_open` (evita dupla
+                # rotação quando o container já vem com `irot`) e guarda o
+                # valor real em `info["original_orientation"]` — sem repor
+                # aqui, o exif_transpose abaixo roda contra uma tag que já
+                # vale 1 e não gira pixel nenhum.
+                orientacao_heif = imagem.info.get("original_orientation")
+                if orientacao_heif:
+                    imagem.getexif()[_EXIF_ORIENTATION] = orientacao_heif
             ImageOps.exif_transpose(imagem, in_place=True)
             if heif and imagem.mode not in ("RGB", "L"):
                 # JPEG não tem canal alfa: sem isto o `save` levanta e a foto

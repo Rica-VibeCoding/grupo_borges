@@ -516,6 +516,65 @@ def test_file_mp4_declarado_como_heic_continua_recusado(tmp_path: Path) -> None:
     send_message.assert_not_called()
 
 
+# ---- HEIC Orientation (b8eeede9) ------------------------------------------
+#
+# `exif_transpose` é inerte no ramo HEIC: `pillow_heif` em modo plugin chama
+# `set_orientation(self.info)` no `_open`, que ZERA a tag EXIF 274 pra 1 sem
+# girar pixel nenhum e guarda o valor real em `info["original_orientation"]`.
+# Quando `_normaliza_imagem` chega no `exif_transpose`, a tag já vale 1 — o
+# transpose roda e não faz nada.
+
+
+def _heic_com_orientation(largura: int, altura: int, orientation: int) -> bytes:
+    """HEIC real com pixel CRU (sem `irot`) e a tag EXIF Orientation intacta.
+
+    `_heic()` (acima) não reproduz o bug: `Image.new(...).save(buffer, "HEIF",
+    exif=exif)` deriva `image_orientation` do próprio EXIF e o encoder BAKEIA
+    a rotação no container — o `Image.open()` de volta já sai no tamanho
+    corrigido, sem o `exif_transpose` do router fazer nada. Descendo pro
+    `CtxEncode` de baixo nível, `image_orientation` (container) e `exif`
+    (metadata) são parâmetros independentes: dá pra gravar o pixel cru com a
+    tag Orientation de pé, do jeito que uma foto real de iPhone chega.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+    from pillow_heif.constants import HeifCompressionFormat
+    from pillow_heif.misc import CtxEncode
+
+    exif = Image.Exif()
+    exif[274] = orientation
+    raw = Image.new("RGB", (largura, altura), "white").tobytes()
+
+    ctx = CtxEncode(HeifCompressionFormat.HEVC, quality=90)
+    ctx.add_image(
+        (largura, altura), "RGB", raw, image_orientation=1, exif=exif.tobytes(), primary=True
+    )
+    buffer = BytesIO()
+    ctx.save(buffer)
+    return buffer.getvalue()
+
+
+def test_normaliza_imagem_aplica_orientation_no_ramo_heic() -> None:
+    """Round-trip 200x100 + Orientation=6 (TRANSPOSE) pela `_normaliza_imagem` — tem que sair 100x200.
+
+    Chama a função direto, não a rota: o bug é do `_normaliza_imagem`, e o
+    round-trip por `_post_file` só adicionaria `db/store.py` e o tmux driver
+    ao caminho sem provar nada a mais.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    heic = _heic_com_orientation(200, 100, orientation=6)
+
+    conteudo, extensao = agents_router._normaliza_imagem(heic)
+
+    assert extensao == ".jpg"
+    with Image.open(BytesIO(conteudo)) as imagem:
+        assert imagem.size == (100, 200)
+
+
 # ---- GET do upload -------------------------------------------------------
 #
 # Até aqui o upload era via de mão única: o arquivo ia pro disco e a única marca
