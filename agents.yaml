@@ -146,18 +146,30 @@ agents:
       - { name: fin_categorias, db: ze, description: "Categorias de classificação financeira" }
       - { name: fin_fornecedores, db: ze, description: "Fornecedores e recebedores" }
 
+  # [2026-09-06 Daniel] Saiu do Codex CLI e entrou no harness do Claude Code,
+  # como Hiro e Canarinho já estavam — decisão do Rica pra deixar o cockpit
+  # uniforme, sem um backend e um front por LLM. O motor continua sendo a
+  # assinatura ChatGPT: quem traduz `/v1/messages` pro backend Codex é o
+  # `claude-code-proxy` local, com o OAuth de sempre (nenhuma chave de API
+  # paga entrou nisso). Medições e o que sobreviveu à troca:
+  # `ze_claude/daniel/docs/codex-sinergia.md`.
+  #
+  # `model_family: codex-proxy` é o que separa esta Tara das duas famílias que
+  # já existiam. Ela NÃO precisa do trilho do Kimi: `/effort` e `/model` trocam
+  # em sessão viva aqui (medido 06/09), então effort segue pelo caminho Claude
+  # nativo. A cota é que não vem de graça — ver `scripts/codex-cota`.
   - slug: tara
     name: Tara Kaur
-    role: Executora pareada — Codex CLI
+    role: Executora pareada — motor GPT via harness do Claude Code
     emoji: "⭐"
     origin: sikh ("estrela")
     tmux_session: tara
     workspace_path: /home/clawd/repos/ze_claude/tara
-    cli_default: codex
-    model_default: codex-gpt-5-6-sol
+    cli_default: claude_code
+    model_default: gpt-5.6-sol[1m]
+    model_family: codex-proxy
     kind: executor
     capabilities:
-      - codex-exec
       - refactor-mecânico
       - smoke-e2e
       - executora-pareada-daniel

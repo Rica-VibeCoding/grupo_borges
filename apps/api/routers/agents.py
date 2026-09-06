@@ -42,7 +42,7 @@ import yaml
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from libtmux import exc as libtmux_exc
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from db.store import GrupoBorgesDB, build_hour_series, hour_window
@@ -709,7 +709,13 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     # OpenCode entra mesmo com leitura vazia: cair no leitor do Claude
     # devolveria a conta da máquina e duas janelas em branco, atribuindo ao
     # Canário uma cota que não é a dele.
-    if is_opencode:
+    # Mesma razão pro codex-proxy (Tara): a assinatura é do ChatGPT, e o leitor
+    # do Claude mostraria a cota da máquina no lugar dela. O snapshot vem do
+    # `scripts/codex-cota`, e o construtor é o MESMO do Codex CLI — o formato
+    # de `rate_limits` não mudou com a saída do CLI, só a origem.
+    if agent.get("model_family") == "codex-proxy":
+        quotas_task = asyncio.to_thread(_build_codex_painel_quotas, agent, None)
+    elif is_opencode:
         quotas_task = asyncio.to_thread(_build_opencode_painel_quotas, opencode_usage)
     elif kimi_usages is not None:
         quotas_task = asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
@@ -1462,6 +1468,13 @@ def _build_painel_model(
     if _agente_codex(agent):
         return _build_codex_painel_model(agent, contexto)
     if agent.get("model_family") == "kimi":
+        return None
+    # codex-proxy (Tara) cai junto do Kimi, por um motivo MEDIDO em 06/09: o
+    # `/model` do CC responde *"saved as your default for new sessions"* e grava
+    # o campo `model` no `~/.claude/settings.json` GLOBAL — um toque no painel
+    # trocaria o modelo padrão da frota inteira, e só apareceria no próximo boot
+    # de outro agente. Quem manda no motor dela é o `ANTHROPIC_MODEL` do boot.
+    if agent.get("model_family") == "codex-proxy":
         return None
 
     status_model = _claude_model_slug(contexto.model)
@@ -4569,6 +4582,12 @@ async def change_agent_model(
 
     # Allowlist por família: nunca aceitar slug de uma família em agente de
     # outra, e nunca aceitar slug que a família nenhuma reconhece.
+    #
+    # codex-proxy não tem allowlist porque não tem troca: o painel nem oferece
+    # o seletor (`_build_painel_model` devolve None). Fechar aqui também é o que
+    # impede um POST direto de gravar no `settings.json` global da máquina.
+    if agent.get("model_family") == "codex-proxy":
+        raise HTTPException(status_code=409, detail="model_fixo_no_boot_para_codex_proxy")
     if is_codex and target not in _codex_model_slugs_permitidos():
         raise HTTPException(status_code=422, detail="model_not_allowed_for_codex")
     if is_kimi and target not in _KIMI_MODEL_SLUGS:
@@ -5016,7 +5035,7 @@ async def post_agent_relaunch(
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
     if _agente_codex(agent):
         raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
-    if agent.get("model_family") not in {None, "anthropic", "kimi", "opencode"}:
+    if agent.get("model_family") not in {None, "anthropic", "kimi", "opencode", "codex-proxy"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     db: GrupoBorgesDB = request.app.state.db
@@ -5279,3 +5298,48 @@ async def list_agent_subagents(
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
 
     return subagent_active_snapshot(slug, task_id=task_id)
+
+
+class QuotaSnapshotRequest(BaseModel):
+    """Corpo cru de `GET chatgpt.com/backend-api/wham/usage`.
+
+    O `scripts/codex-cota` só faz o GET e repassa — a normalização mora aqui
+    porque é ela que tem teste, e porque o script não deve saber o schema do
+    banco. Campos extras do endpoint (`email`, `user_id`, `plan_type`) chegam
+    e são descartados por `normalize_wham_usage_payload`.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
+@router.post("/{slug}/quota-snapshot")
+async def post_agent_quota_snapshot(
+    slug: str,
+    payload: QuotaSnapshotRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Grava a cota da assinatura ChatGPT lida de fora do cockpit.
+
+    Existe porque o agente no harness do CC com backend Codex não tem de onde a
+    API tirar isso sozinha: o proxy descarta o frame `codex.rate_limits` antes
+    do cliente, e o Claude Code não conhece cota que não seja da Anthropic.
+
+    Só para `model_family: codex-proxy` — em qualquer outro agente o número
+    seria de outra conta, e cota errada no painel é pior que cota ausente.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if agent.get("model_family") != "codex-proxy":
+        raise HTTPException(status_code=409, detail="quota_snapshot_somente_codex_proxy")
+
+    snapshot = codex_reader.normalize_wham_usage_payload(
+        payload.model_dump(),
+        observed_at=int(time.time()),
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=422, detail="quota_snapshot_sem_rate_limit")
+
+    db: GrupoBorgesDB = request.app.state.db
+    await db.update_agent_codex_state(
+        slug, token_usage_json=json.dumps(snapshot, ensure_ascii=False)
+    )
+    return {"slug": slug, "observed_at": snapshot["observed_at"]}

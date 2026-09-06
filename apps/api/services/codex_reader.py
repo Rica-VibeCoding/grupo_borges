@@ -526,6 +526,56 @@ def _epoch_or_none(value: Any) -> int | None:
     return None
 
 
+def _wham_window(raw: Any) -> dict[str, Any] | None:
+    """Uma janela do `/wham/usage` no vocabulário que o painel já lê.
+
+    Três nomes mudam entre as duas pontas e é só isso: `limit_window_seconds`
+    (segundos) vira `window_minutes`, porque é por ele que o painel separa a
+    janela de 5h da de 7 dias; e `reset_at` vira `resets_at`, no plural.
+    """
+    if not isinstance(raw, dict):
+        return None
+    window_seconds = _int_or_none(raw.get("limit_window_seconds"))
+    return {
+        "used_percent": raw.get("used_percent"),
+        "window_minutes": window_seconds // 60 if window_seconds else None,
+        "resets_at": _int_or_none(raw.get("reset_at")),
+    }
+
+
+def normalize_wham_usage_payload(
+    payload: dict[str, Any],
+    *,
+    observed_at: int | None = None,
+) -> dict[str, Any] | None:
+    """Converte o retorno de `GET chatgpt.com/backend-api/wham/usage`.
+
+    É o endpoint que o binário oficial do Codex chama pra desenhar o `/status`
+    da TUI. Não é documentado, mas quando a Tara saiu do Codex CLI ele virou a
+    única fonte de cota da assinatura: o `claude-code-proxy` recebe o frame
+    `codex.rate_limits` e o descarta antes de chegar no cliente.
+
+    Devolve o MESMO shape de `normalize_token_count_payload` de propósito — o
+    painel não distingue as duas origens, e o campo `usage`/contexto fica de
+    fora porque no harness do Claude Code quem mede contexto é a statusline.
+
+    ⚠️ O corpo real traz `email` e `user_id` da conta. Nada aqui os copia, e
+    nada deve: o que sai desta função vai parar no banco do cockpit.
+    """
+    rate_limit = payload.get("rate_limit")
+    if not isinstance(rate_limit, dict):
+        return None
+    primary = _wham_window(rate_limit.get("primary_window"))
+    secondary = _wham_window(rate_limit.get("secondary_window"))
+    if primary is None and secondary is None:
+        return None
+    return {
+        "source": "codex.event_msg.token_count",
+        "rate_limits": {"primary": primary, "secondary": secondary},
+        "observed_at": observed_at,
+    }
+
+
 def normalize_token_count_payload(
     payload: dict[str, Any],
     *,

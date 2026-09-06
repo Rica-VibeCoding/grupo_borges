@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Lê a cota da assinatura ChatGPT e entrega ao cockpit.
+
+Quando a Tara saiu do Codex CLI (06/09/2026), a cota deixou de chegar sozinha:
+o `claude-code-proxy` recebe o frame `codex.rate_limits` do backend e o descarta
+antes do cliente, e o Claude Code só sabe ler cota da Anthropic. Este script
+fecha esse buraco batendo no mesmo endpoint que o binário oficial do Codex usa
+pra desenhar o `/status` da TUI.
+
+Uso (cron de 5 em 5 minutos, ou laço do boot):
+
+    scripts/codex-cota                 # lê e publica
+    scripts/codex-cota --dry-run       # só mostra, não publica
+
+⚠️ `wham/usage` não é endpoint documentado. Se a OpenAI mudá-lo, o Codex CLI
+oficial quebra junto — é o mesmo caminho. O corpo traz `email` e `user_id`:
+o `--dry-run` já os esconde, e quem normaliza pro banco (a API, em
+`normalize_wham_usage_payload`) não os copia.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+COCKPIT_URL = os.environ.get("COCKPIT_URL", "http://127.0.0.1:8002")
+SLUG = os.environ.get("CODEX_COTA_SLUG", "tara")
+# O User-Agent estilo CLI evita o desafio de JavaScript que o endpoint aplica a
+# tráfego de navegador — sem ele a resposta vem HTML, não JSON.
+USER_AGENT = "codex_cli_rs/0.147.0 (Ubuntu 24.04; aarch64) tmux"
+
+
+def _token_do_proxy() -> str | None:
+    """Token do `claude-code-proxy` — a fonte viva depois da migração.
+
+    É ele que renova o OAuth a cada turno; o `~/.codex/auth.json` só continua
+    fresco enquanto alguém ainda rodar o Codex CLI.
+    """
+    config_dir = os.environ.get("CCP_CONFIG_DIR")
+    candidatos = [Path(config_dir)] if config_dir else []
+    candidatos.append(Path.home() / ".config" / "claude-code-proxy")
+    for base in candidatos:
+        try:
+            dados = json.loads((base / "codex" / "auth.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(dados.get("access"), str):
+            return dados["access"]
+    return None
+
+
+def _token_do_codex_cli() -> str | None:
+    try:
+        dados = json.loads((Path.home() / ".codex" / "auth.json").read_text())
+    except (OSError, ValueError):
+        return None
+    tokens = dados.get("tokens") if isinstance(dados.get("tokens"), dict) else dados
+    access = tokens.get("access_token")
+    return access if isinstance(access, str) else None
+
+
+def ler_token() -> str:
+    token = _token_do_proxy() or _token_do_codex_cli()
+    if not token:
+        sys.exit(
+            "sem token OAuth: procurei em $CCP_CONFIG_DIR/codex/auth.json, "
+            "~/.config/claude-code-proxy/codex/auth.json e ~/.codex/auth.json"
+        )
+    return token
+
+
+def _post_json(url: str, corpo: dict, headers: dict) -> dict:
+    req = urllib.request.Request(
+        url, data=json.dumps(corpo).encode(), headers=headers, method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read())
+
+
+def buscar_uso(token: str) -> dict:
+    req = urllib.request.Request(
+        USAGE_URL,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        sys.exit(f"wham/usage devolveu HTTP {exc.code} — token vencido ou endpoint mudou")
+    except (urllib.error.URLError, ValueError) as exc:
+        sys.exit(f"wham/usage não respondeu JSON: {exc}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dry-run", action="store_true", help="mostra sem publicar")
+    parser.add_argument("--slug", default=SLUG, help=f"agente no cockpit (default: {SLUG})")
+    args = parser.parse_args()
+
+    uso = buscar_uso(ler_token())
+    if args.dry_run:
+        # Sem `email`/`user_id`: este comando é o que alguém roda pra depurar,
+        # e o retorno costuma ser colado em canal ou relatório.
+        print(json.dumps({"rate_limit": uso.get("rate_limit")}, indent=2, ensure_ascii=False))
+        return
+
+    resposta = _post_json(
+        f"{COCKPIT_URL}/api/agents/{args.slug}/quota-snapshot",
+        uso,
+        {"Content-Type": "application/json"},
+    )
+    print(json.dumps(resposta, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

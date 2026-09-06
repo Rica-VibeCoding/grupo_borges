@@ -489,6 +489,17 @@ class GrupoBorgesDB:
                     """,
                     (a["slug"],),
                 )
+                # `executor_kind` é escrito pelo webhook de eventos do Codex
+                # (`routers/codex_events.py`), não derivado daqui — então um agente
+                # que SAIU do Codex ficava com o carimbo antigo no agent_state e
+                # `_agente_codex()` continuava dando `True` mesmo com o yaml já
+                # dizendo `claude_code`. O yaml é a fonte; quem contradiz, cede.
+                if a.get("cli_default", "claude_code") != "codex":
+                    conn.execute(
+                        "UPDATE agent_state SET executor_kind = NULL "
+                        "WHERE slug = ? AND executor_kind = 'codex'",
+                        (a["slug"],),
+                    )
                 # Bootstrap do counter de human_id (prefix imutável após primeira gravação
                 # pra não invalidar IDs já emitidos — DO NOTHING preserva o existente).
                 conn.execute(
