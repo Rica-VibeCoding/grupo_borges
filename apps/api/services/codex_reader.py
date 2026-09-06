@@ -535,10 +535,19 @@ def _wham_window(raw: Any) -> dict[str, Any] | None:
     """
     if not isinstance(raw, dict):
         return None
+    # O percentual é o único campo que o painel exibe como número; sem janela
+    # ele também não classifica 5h contra 7 dias. Faltando qualquer um dos dois,
+    # a janela inteira não vale — devolver dicionário meio preenchido só empurra
+    # a decisão pra frente e engorda o `token_usage_json` com o que veio.
+    used_percent = raw.get("used_percent")
+    if isinstance(used_percent, bool) or not isinstance(used_percent, (int, float)):
+        return None
     window_seconds = _int_or_none(raw.get("limit_window_seconds"))
+    if not window_seconds:
+        return None
     return {
-        "used_percent": raw.get("used_percent"),
-        "window_minutes": window_seconds // 60 if window_seconds else None,
+        "used_percent": used_percent,
+        "window_minutes": window_seconds // 60,
         "resets_at": _int_or_none(raw.get("reset_at")),
     }
 

@@ -128,6 +128,67 @@ def test_wham_usage_sem_rate_limit_devolve_none() -> None:
     ) is None
 
 
+def test_wham_usage_recusa_used_percent_que_nao_e_numero() -> None:
+    """Era o único campo copiado cru — os outros dois já passavam por `_int_or_none`.
+
+    Com `extra="allow"` no corpo do POST e sem limite de tamanho, um
+    `used_percent` de 10 MB de texto era serializado inteiro pro
+    `agent_state.token_usage_json` e voltava em todo `/painel`. Na leitura o
+    painel rejeitava e mostrava "sem leitura" — honesto —, mas o banco já tinha
+    engordado. O gatilho realista não é ataque: é o `wham/usage` mudar de forma.
+    """
+    entulho = {
+        "rate_limit": {
+            "primary_window": {
+                "used_percent": "x" * 10_000,
+                "limit_window_seconds": 604800,
+            },
+            "secondary_window": None,
+        }
+    }
+
+    assert codex_reader.normalize_wham_usage_payload(entulho, observed_at=1) is None
+
+
+def test_wham_usage_aceita_percentual_fracionado() -> None:
+    """Recusar o que não é número não pode recusar número legítimo: o endpoint
+    já devolveu inteiro, mas nada promete que seguirá assim."""
+    saida = codex_reader.normalize_wham_usage_payload(
+        {
+            "rate_limit": {
+                "primary_window": {"used_percent": 39.5, "limit_window_seconds": 604800},
+                "secondary_window": None,
+            }
+        },
+        observed_at=1,
+    )
+
+    assert saida is not None
+    assert saida["rate_limits"]["primary"]["used_percent"] == 39.5
+
+
+def test_quota_snapshot_nao_engorda_o_banco_com_used_percent_de_texto(tmp_path: Path) -> None:
+    """A porta recusa antes de gravar — o banco não vê o entulho."""
+    app = _build_app(tmp_path)
+    client = TestClient(app)
+
+    resposta = client.post(
+        "/api/agents/tara/quota-snapshot",
+        json={
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": "y" * 10_000,
+                    "limit_window_seconds": 604800,
+                },
+                "secondary_window": None,
+            }
+        },
+    )
+
+    assert resposta.status_code == 422
+    assert app.state.db._get_agent("tara")["token_usage_json"] is None
+
+
 # --------------------------------------------------------------------------
 # executor_kind: o yaml é a fonte
 # --------------------------------------------------------------------------
