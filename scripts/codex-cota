@@ -76,11 +76,24 @@ def ler_token() -> str:
 
 
 def _post_json(url: str, corpo: dict, headers: dict) -> dict:
+    """Simétrico ao `buscar_uso`: falha vira uma linha, nunca traceback.
+
+    Isto roda no cron a cada 3 minutos. Cockpit fora do ar — um restart da API
+    basta — despejava um traceback inteiro no log a cada passagem, escondendo as
+    linhas que importam entre paredes de stack. Uma cota perdida não é problema:
+    a próxima passagem republica em 3 minutos.
+    """
     req = urllib.request.Request(
         url, data=json.dumps(corpo).encode(), headers=headers, method="POST"
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        detalhe = exc.read(500).decode(errors="replace").strip()
+        sys.exit(f"cockpit recusou o snapshot: HTTP {exc.code} {detalhe}")
+    except (urllib.error.URLError, ValueError) as exc:
+        sys.exit(f"cockpit não respondeu: {exc}")
 
 
 def buscar_uso(token: str) -> dict:
