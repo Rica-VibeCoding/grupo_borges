@@ -239,18 +239,64 @@ def test_quota_snapshot_recusa_corpo_sem_rate_limit(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_relaunch_nao_barra_mais_a_familia_codex_proxy(tmp_path: Path) -> None:
-    """O guard existe pra motor que o `--resume` do CC não sabe religar.
+def test_relaunch_recusa_codex_proxy(tmp_path: Path) -> None:
+    """O relaunch remonta o comando DENTRO da API — e o env da Tara não cabe lá.
 
-    A Tara nova é uma sessão Claude Code comum — o que muda é o `ANTHROPIC_BASE_URL`
-    do boot, que o relaunch preserva. Passar do guard é o que este teste fixa; o
-    409 seguinte é de sessão inexistente no ambiente de teste, não da família.
+    Eu tinha aberto este guard achando que ela era "uma sessão CC comum". Não é:
+    `_swap_window_and_launch` abre window nova e repõe só `_PRESERVED_ENV_VARS`.
+    Fora dessa lista ficam o `ANTHROPIC_AUTH_TOKEN`, o teto de 272k da assinatura
+    ChatGPT e — pior — as credenciais dos 6 MCPs, que no boot vêm de um
+    `set -a; . $envf` no shell do pane e não sobrevivem à troca de window.
+
+    Quem sabe montar esse ambiente é o `subir-frota.sh`, e o docstring do
+    `/ligar` já diz por que ele é a fonte única. Então o caminho da Tara é
+    Desligar + Ligar, que passa por lá; o `--resume` fica para quem o env cabe
+    em quatro variáveis.
     """
     client = TestClient(_build_app(tmp_path))
 
     resposta = client.post("/api/agents/tara/relaunch", json={"confirm": True})
 
-    assert resposta.json().get("detail") != "relaunch_requer_backend_anthropic_nativo"
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == "relaunch_requer_backend_anthropic_nativo"
+
+
+def test_sync_limpa_state_model_de_quem_virou_codex_proxy(tmp_path: Path) -> None:
+    """Terceiro resíduo do Codex CLI no `agent_state`, irmão dos dois de cima.
+
+    O slug persistido era `codex-gpt-5-6-sol` — id do catálogo do CLI, escrito
+    pelo `POST /model` de quando ela era Codex. Para família `codex-proxy` esse
+    campo tem de ser NULL por construção: o `/model` responde 409 e quem manda
+    no modelo é o `ANTHROPIC_MODEL` do boot. Enquanto ficava, `_build_painel_contexto`
+    caía nele sempre que a statusline do CC faltasse, e o `/api/fleet` publicava
+    o slug morto no card.
+    """
+    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
+    db._apply_schema()
+    db._sync_agents([TARA_PROXY])
+    with db._connect() as conn, conn:
+        conn.execute(
+            "UPDATE agent_state SET model = ? WHERE slug = ?",
+            ("codex-gpt-5-6-sol", "tara"),
+        )
+    assert db._get_agent("tara")["state_model"] == "codex-gpt-5-6-sol"
+
+    db._sync_agents([TARA_PROXY])
+
+    assert db._get_agent("tara")["state_model"] is None
+
+
+def test_sync_nao_mexe_no_state_model_de_familia_anthropic(tmp_path: Path) -> None:
+    """O `/model` do painel é legítimo fora do `codex-proxy` — não é faxina geral."""
+    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
+    db._apply_schema()
+    db._sync_agents([DANIEL])
+    with db._connect() as conn, conn:
+        conn.execute("UPDATE agent_state SET model = ? WHERE slug = ?", ("sonnet", "daniel"))
+
+    db._sync_agents([DANIEL])
+
+    assert db._get_agent("daniel")["state_model"] == "sonnet"
 
 
 # --------------------------------------------------------------------------

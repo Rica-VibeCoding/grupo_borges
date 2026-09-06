@@ -427,7 +427,17 @@ export function diagnosticaRelancar(erro: unknown): Impedimento {
   if (texto.includes('relaunch_somente_claude_code')) {
     return {
       resumo: 'este agente não roda Claude Code',
-      saida: 'a Tara é Codex — relançar preservando conversa só existe no Claude Code',
+      saida: 'relançar preservando conversa é do harness do Claude Code — no Codex CLI não existe',
+    };
+  }
+  // A Tara caiu aqui em 06/09, já migrada pro harness do CC: o `--resume` remonta
+  // o comando dentro da API e não sabe repor o env que o boot da frota monta pra
+  // ela (token do proxy, teto de janela, credenciais dos MCPs). A saída existe e
+  // é equivalente — o Ligar sobe com `--continue`, então a conversa volta igual.
+  if (texto.includes('relaunch_requer_backend_anthropic_nativo')) {
+    return {
+      resumo: 'este agente não relança por aqui',
+      saida: 'o ambiente dele é montado pelo boot da frota — use Desligar e depois Ligar, que a conversa volta',
     };
   }
   if (texto.includes('resume_session_not_found')) {

@@ -432,6 +432,15 @@ describe('ações brutas', () => {
     assert.match(imp.saida, /Codex/);
   });
 
+  it('motor não-Anthropic manda o Rica pro Desligar+Ligar, não pro "tente de novo"', () => {
+    // O genérico dizia "tente de novo; se repetir, é infra" — conselho errado
+    // pra recusa permanente. A Tara no proxy do Codex cai exatamente aqui.
+    const imp = diagnosticaRelancar(new Error('409: relaunch_requer_backend_anthropic_nativo'));
+    assert.match(imp.saida, /Desligar/);
+    assert.match(imp.saida, /Ligar/);
+    assert.doesNotMatch(imp.saida, /tente de novo/);
+  });
+
   it('sem conversa para retomar, a tela diz que NÃO relançou', () => {
     const imp = diagnosticaRelancar(new Error('postAgentRelaunch failed: 409: resume_session_not_found'));
     assert.match(imp.resumo, /não achei a conversa/);

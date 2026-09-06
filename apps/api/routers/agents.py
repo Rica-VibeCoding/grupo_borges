@@ -5035,7 +5035,16 @@ async def post_agent_relaunch(
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
     if _agente_codex(agent):
         raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
-    if agent.get("model_family") not in {None, "anthropic", "kimi", "opencode", "codex-proxy"}:
+    # `codex-proxy` fica DE FORA de propósito, e o motivo é o mesmo que o
+    # docstring do `/ligar` dá para não montar comando aqui: quem conhece o
+    # ambiente dos motores não-Anthropic é o `subir-frota.sh`. O relaunch remonta
+    # o comando nesta função e repõe só `_PRESERVED_ENV_VARS` na window nova —
+    # de fora ficam o `ANTHROPIC_AUTH_TOKEN`, o `CLAUDE_CODE_AUTO_COMPACT_WINDOW`
+    # de 272k da assinatura ChatGPT e as credenciais dos MCPs da Tara, que o boot
+    # carrega com `set -a; . $envf` no shell do pane. A Tara voltaria muda nos
+    # MCPs e sem teto de janela, sem erro nenhum na tela. Desligar + Ligar passa
+    # pelo script e é o caminho dela.
+    if agent.get("model_family") not in {None, "anthropic", "kimi", "opencode"}:
         raise HTTPException(status_code=409, detail="relaunch_requer_backend_anthropic_nativo")
 
     db: GrupoBorgesDB = request.app.state.db

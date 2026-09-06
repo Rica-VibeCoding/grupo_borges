@@ -489,7 +489,7 @@ class GrupoBorgesDB:
                     """,
                     (a["slug"],),
                 )
-                # Dois campos do agent_state são escritos pelo caminho do Codex
+                # Três campos do agent_state são escritos pelo caminho do Codex
                 # CLI, não derivados daqui — e sobreviviam à saída do agente:
                 #
                 #  - `executor_kind` (webhook `routers/codex_events.py`):
@@ -500,6 +500,12 @@ class GrupoBorgesDB:
                 #    Preso em 1, faz `_codex_token_usage_payload` devolver `None`
                 #    e a cota do painel morre em `missing` — pego na validação de
                 #    pé de 06/09, com a Tara já migrada.
+                #  - `model` (`POST /{slug}/model`): guardava `codex-gpt-5-6-sol`,
+                #    id do catálogo do CLI. Em `codex-proxy` o campo tem de ser
+                #    NULL por construção — aquele POST responde 409 e quem manda
+                #    no modelo é o `ANTHROPIC_MODEL` do boot. Enquanto ficava,
+                #    `_build_painel_contexto` caía nele sempre que a statusline
+                #    do CC faltasse, e o `/api/fleet` publicava o slug morto.
                 #
                 # O yaml é a fonte; quem contradiz, cede.
                 if a.get("cli_default", "claude_code") != "codex":
@@ -511,6 +517,11 @@ class GrupoBorgesDB:
                     conn.execute(
                         "UPDATE agent_state SET codex_next_fresh = 0 "
                         "WHERE slug = ? AND codex_next_fresh = 1",
+                        (a["slug"],),
+                    )
+                if a.get("model_family") == "codex-proxy":
+                    conn.execute(
+                        "UPDATE agent_state SET model = NULL WHERE slug = ?",
                         (a["slug"],),
                     )
                 # Bootstrap do counter de human_id (prefix imutável após primeira gravação
