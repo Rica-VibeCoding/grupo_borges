@@ -180,6 +180,7 @@ def derive_agent_status(
     lifecycle_updated_at: int | None = None,
     current_task_id: str | None = None,
     executor_kind: str | None = None,
+    codex_runtime_enabled: int | None = None,
     now: int | None = None,
 ) -> str:
     """Deriva status do agente a partir da presença tmux + lifecycle.
@@ -196,6 +197,9 @@ def derive_agent_status(
         lifecycle_updated_at is not None
         and now - lifecycle_updated_at <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
     )
+    if executor_kind == "codex" and codex_runtime_enabled == 0:
+        # Desligar é uma decisão persistida; eventos tardios e estados antigos não religam a Tara.
+        return "offline"
     if lifecycle_status == "offline" and lifecycle_is_fresh:
         return "offline"
     if executor_kind == "codex":
@@ -3107,6 +3111,7 @@ class GrupoBorgesDB:
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
                        s.codex_thread_id,
+                       s.codex_runtime_enabled,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at,
@@ -3224,6 +3229,7 @@ class GrupoBorgesDB:
                 lifecycle_updated_at=agent.get("lifecycle_updated_at"),
                 current_task_id=agent.get("current_task_id"),
                 executor_kind=agent.get("executor_kind"),
+                codex_runtime_enabled=agent.get("codex_runtime_enabled"),
                 now=now,
             )
             agent["sparkline"] = build_hour_series(
