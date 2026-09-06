@@ -1,7 +1,11 @@
 import { execSync } from 'node:child_process';
 import type { NextConfig } from 'next';
 
-const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
+// 8002 e NÃO 8000 — a 8000 desta VPS é do Coolify. O destino do rewrite é
+// gravado no `.next/routes-manifest.json` NA COMPILAÇÃO, então um `next build`
+// sem `API_BACKEND_URL` exportado publica o front inteiro apontando pro lugar
+// errado, com o build verde. Mesma armadilha do `apps/cockpit/next.config.ts`.
+const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
 
 function getDeploymentId(): string | undefined {
   try {

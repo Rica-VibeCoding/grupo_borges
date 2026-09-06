@@ -1,4 +1,6 @@
-const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
+// 8002, não 8000: a 8000 desta VPS é do Coolify. Porquê completo no
+// `apps/cockpit/next.config.ts`.
+const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
 
 function isLoopbackApiBase(value: string): boolean {
   try {

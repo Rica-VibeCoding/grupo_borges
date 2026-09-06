@@ -20,7 +20,9 @@ import type {
 } from './cockpit-types';
 import { safeUUID } from './ids';
 
-const SERVER_API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
+// 8002, não 8000: a 8000 desta VPS é do Coolify. Porquê completo no
+// `apps/cockpit/next.config.ts`.
+const SERVER_API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
 
 export type TaskPatchStatus = Exclude<TaskStatus, 'archived'>;
 

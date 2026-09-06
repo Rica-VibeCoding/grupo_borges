@@ -164,7 +164,7 @@ async rewrites() {
     { source: '/uploads/agents/:path*', destination: `${API_BASE}/uploads/agents/:path*` },
   ];
 }
-// API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000'
+// API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002'
 ```
 
 O front **não** fala com o FastAPI por URL absoluta: ele chama `/api/...` no
@@ -421,11 +421,11 @@ perceber. O `.env.development.example` versionado ao lado é a cópia pra quem c
 
 Antes disso a variável era exportada inline a cada `pnpm dev`. Era a causa do
 "local nunca funciona igual": com ela, funciona; sem ela, o front procura
-`127.0.0.1:8000`, que não existe no PC, e a tela quebra sem dizer por quê.
+`127.0.0.1:8002`, que não existe no PC, e a tela quebra sem dizer por quê.
 
 ### Por que a :3445
 
-A **:3445 é rota dedicada pra API** (`tailscale serve --bg --https 3445 http://127.0.0.1:8000`).
+A **:3445 é rota dedicada pra API** (`tailscale serve --bg --https 3445 http://127.0.0.1:8002`).
 
 A `:3444` publicava o desenvolvimento e foi retirada da tailnet. Mesmo antes disso,
 ela acrescentava um proxy entre o front e a API; conexões longas como relançamento e

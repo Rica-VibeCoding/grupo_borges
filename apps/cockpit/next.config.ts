@@ -1,7 +1,14 @@
 import { execSync } from 'node:child_process';
 import type { NextConfig } from 'next';
 
-const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8000';
+// 8002 e NÃO 8000 — a 8000 desta VPS é do Coolify. Este default é o que sobra
+// quando alguém roda `next build` sem exportar `API_BACKEND_URL`, e o destino do
+// rewrite é gravado no `.next/routes-manifest.json` NA COMPILAÇÃO: o
+// `Environment=` da unit systemd só vale pro processo de runtime, chega tarde.
+// Com o número errado aqui, o cockpit inteiro passa a bater no Coolify — painel
+// respondendo "não consegui ler os controles", feed vazio — e o build sai VERDE.
+// Foi assim que a 3446 caiu em 06/09.
+const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
 
 /**
  * O ID DE DEPLOY — o anti-version-skew. Rebuild publicado com a aba do Rica
