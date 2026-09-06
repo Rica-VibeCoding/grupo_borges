@@ -157,7 +157,7 @@ test('todo item da gaveta anuncia o teto da sua espécie', () => {
 // número que o proxy realmente aceita: se alguém subir o teto do vídeo sem
 // subir o do proxy, a promessa volta a ser maior que o transporte.
 test('o teto do vídeo cabe no que o proxy do Next aceita', async () => {
-  const { default: config } = await import('../next.config.ts');
+  const { config } = await import('../next.config.ts');
   const limite = config.experimental?.proxyClientMaxBodySize;
   assert.equal(typeof limite, 'string', 'o proxy precisa de limite explícito — o default é 10MB');
   const limiteBytes = Number(String(limite).replace(/mb$/i, '')) * 1024 * 1024;

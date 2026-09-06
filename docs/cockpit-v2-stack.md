@@ -171,6 +171,20 @@ O front **não** fala com o FastAPI por URL absoluta: ele chama `/api/...` no
 próprio host e o Next faz o proxy. É isso que faz o SSE atravessar o Tailscale sem
 CORS e sem porta extra exposta.
 
+> ⚠️ **Esse destino é gravado no `.next/routes-manifest.json` na COMPILAÇÃO.** O
+> `Environment=API_BACKEND_URL=...` das units systemd só vale pro processo de
+> runtime — chega tarde. Um `pnpm build` com o endereço errado publica o front
+> inteiro apontando pro lugar errado **com o build passando verde**: foi assim que
+> a :3446 caiu em 06/09, com o default de então (`:8000`) caindo no Coolify.
+>
+> Por isso o `next build` agora **aborta** se o `/health` do endereço que vai ser
+> assado não devolver a assinatura `grupo_borges-api` — a régua é o corpo, porque
+> o endereço errado também responde de pé. Pra compilar onde a API não é alcançável:
+> `COCKPIT_BUILD_SEM_BACKEND=1 pnpm build`.
+>
+> Conferir o que ficou gravado:
+> `python3 -c "import json;print(json.load(open('.next/routes-manifest.json'))['rewrites'])"`
+
 ---
 
 ## 5. Tailwind 4 EXIGE `@tailwindcss/postcss` — eu errei aqui

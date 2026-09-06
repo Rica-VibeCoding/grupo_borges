@@ -1,5 +1,6 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import type { NextConfig } from 'next';
+import { PHASE_PRODUCTION_BUILD } from 'next/constants.js';
 
 // 8002 e NÃO 8000 — a 8000 desta VPS é do Coolify. Este default é o que sobra
 // quando alguém roda `next build` sem exportar `API_BACKEND_URL`, e o destino do
@@ -9,6 +10,51 @@ import type { NextConfig } from 'next';
 // respondendo "não consegui ler os controles", feed vazio — e o build sai VERDE.
 // Foi assim que a 3446 caiu em 06/09.
 const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
+
+/**
+ * A FALHA BARULHENTA — quem confere o endereço é o BUILD, porque é ele que grava.
+ *
+ * A régua é o CORPO da resposta, não o código: a 8000 desta VPS está de pé e
+ * responde: um teste de "porta aberta" (ou de 2xx) passaria verde no endereço
+ * errado, que é exatamente o que aconteceu em 06/09. `grupo_borges-api` é a
+ * assinatura que só a nossa API devolve.
+ *
+ * Aborta em vez de avisar. Aviso em log de build é o que ninguém lê — o build de
+ * 06/09 saiu VERDE e quem descobriu foi o Rica, pelo painel morto no celular.
+ *
+ * `COCKPIT_BUILD_SEM_BACKEND=1` pula, pro build de verificação em máquina que não
+ * alcança a API (`docs/cockpit-v2-playbook.md`). Pular é escolha declarada; o
+ * silêncio de antes não era.
+ */
+function exigeBackendVivo(base: string): void {
+  if (process.env.COCKPIT_BUILD_SEM_BACKEND === '1') return;
+
+  const alvo = `${base}/health`;
+  const origem = process.env.API_BACKEND_URL ? 'API_BACKEND_URL' : 'default deste arquivo';
+  const comoConsertar =
+    `  Endereço em uso: ${base}  (${origem})\n` +
+    `  É ele que vai ser gravado no rewrite do bundle — errado aqui, o cockpit\n` +
+    `  inteiro bate no lugar errado com o build passando verde.\n\n` +
+    `  Conferir a API:  systemctl --user status cockpit-api.service\n` +
+    `  Build sem back:  COCKPIT_BUILD_SEM_BACKEND=1 pnpm build\n`;
+
+  let corpo: string;
+  try {
+    corpo = execFileSync('curl', ['-fsS', '--max-time', '5', alvo], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    throw new Error(`\n\n  BUILD ABORTADO — ${alvo} não respondeu.\n\n${comoConsertar}`);
+  }
+
+  if (!corpo.includes('grupo_borges-api')) {
+    throw new Error(
+      `\n\n  BUILD ABORTADO — ${alvo} respondeu, mas NÃO é a nossa API.\n` +
+        `  (devolveu: ${corpo.slice(0, 120).replace(/\s+/g, ' ').trim()})\n\n${comoConsertar}`,
+    );
+  }
+}
 
 /**
  * O ID DE DEPLOY — o anti-version-skew. Rebuild publicado com a aba do Rica
@@ -36,7 +82,10 @@ function idDoDeploy(): string {
   }
 }
 
-const config: NextConfig = {
+// Exportado à parte do default: o `anexo.test.ts` amarra o teto do vídeo ao
+// `proxyClientMaxBodySize` daqui, e precisa LER a config sem executar a fase — se
+// tivesse de chamar a função, o teste passaria a depender da API estar de pé.
+export const config: NextConfig = {
   devIndicators: false,
   deploymentId: idDoDeploy(),
 
@@ -106,4 +155,10 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+// Forma de função pra enxergar a `phase`: a checagem tem de rodar SÓ no
+// `next build`. Em `next start` ela transformaria uma API momentaneamente fora do
+// ar em cockpit que não sobe — trocaria uma tela quebrada por nenhuma tela.
+export default (phase: string): NextConfig => {
+  if (phase === PHASE_PRODUCTION_BUILD) exigeBackendVivo(API_BASE);
+  return config;
+};
