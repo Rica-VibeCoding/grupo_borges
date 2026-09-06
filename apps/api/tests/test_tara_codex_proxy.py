@@ -152,6 +152,38 @@ def test_sync_limpa_executor_kind_de_quem_saiu_do_codex(tmp_path: Path) -> None:
     assert db._get_agent("tara")["executor_kind"] is None
 
 
+def test_sync_limpa_codex_next_fresh_de_quem_saiu_do_codex(tmp_path: Path) -> None:
+    """`codex_next_fresh` preso em 1 mata a cota do painel, sem erro nenhum.
+
+    Ele significa "a próxima thread nasce limpa" — conceito do Codex CLI. Com o
+    campo em 1, `_codex_token_usage_payload` devolve `None` e o painel responde
+    `status: missing` com fonte `agent_state.codex_next_fresh`. Foi exatamente
+    o que apareceu na validação de pé de 06/09, com a Tara já migrada.
+    """
+    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
+    db._apply_schema()
+    tara_codex = {**TARA_PROXY, "cli_default": "codex", "model_family": None}
+    db._sync_agents([tara_codex])
+    db._update_agent_codex_state("tara", codex_next_fresh=1)
+    assert db._get_agent("tara")["codex_next_fresh"] == 1
+
+    db._sync_agents([TARA_PROXY])
+
+    assert db._get_agent("tara")["codex_next_fresh"] == 0
+
+
+def test_quota_snapshot_chega_ao_painel_com_o_residuo_limpo(tmp_path: Path) -> None:
+    """O caminho inteiro: yaml migrado, snapshot publicado, painel mostrando."""
+    app = _build_app(tmp_path)
+    client = TestClient(app)
+    client.post("/api/agents/tara/quota-snapshot", json=WHAM_USAGE_VIVO)
+
+    quotas = client.get("/api/agents/tara/painel").json()["quotas"]
+
+    assert quotas["status"] == "available"
+    assert quotas["seven_day"]["used_percentage"] == 39
+
+
 def test_sync_preserva_executor_kind_de_quem_continua_no_codex(tmp_path: Path) -> None:
     """A limpeza vale só para quem o yaml já mudou — não é faxina geral."""
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))

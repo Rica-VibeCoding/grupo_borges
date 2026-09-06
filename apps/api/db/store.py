@@ -489,15 +489,28 @@ class GrupoBorgesDB:
                     """,
                     (a["slug"],),
                 )
-                # `executor_kind` é escrito pelo webhook de eventos do Codex
-                # (`routers/codex_events.py`), não derivado daqui — então um agente
-                # que SAIU do Codex ficava com o carimbo antigo no agent_state e
-                # `_agente_codex()` continuava dando `True` mesmo com o yaml já
-                # dizendo `claude_code`. O yaml é a fonte; quem contradiz, cede.
+                # Dois campos do agent_state são escritos pelo caminho do Codex
+                # CLI, não derivados daqui — e sobreviviam à saída do agente:
+                #
+                #  - `executor_kind` (webhook `routers/codex_events.py`):
+                #    `_agente_codex()` seguia dando `True` pela linha velha, com o
+                #    yaml já dizendo `claude_code`;
+                #  - `codex_next_fresh` (`/control/new-thread`): significa "a
+                #    próxima thread nasce limpa", conceito que só existe no CLI.
+                #    Preso em 1, faz `_codex_token_usage_payload` devolver `None`
+                #    e a cota do painel morre em `missing` — pego na validação de
+                #    pé de 06/09, com a Tara já migrada.
+                #
+                # O yaml é a fonte; quem contradiz, cede.
                 if a.get("cli_default", "claude_code") != "codex":
                     conn.execute(
                         "UPDATE agent_state SET executor_kind = NULL "
                         "WHERE slug = ? AND executor_kind = 'codex'",
+                        (a["slug"],),
+                    )
+                    conn.execute(
+                        "UPDATE agent_state SET codex_next_fresh = 0 "
+                        "WHERE slug = ? AND codex_next_fresh = 1",
                         (a["slug"],),
                     )
                 # Bootstrap do counter de human_id (prefix imutável após primeira gravação
