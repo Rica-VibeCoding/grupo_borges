@@ -11,7 +11,7 @@
 set -uo pipefail
 
 LIMIT="${1:-50}"
-COCKPIT_URL="${COCKPIT_URL:-http://127.0.0.1:8000}"
+COCKPIT_URL="${COCKPIT_URL:-http://127.0.0.1:8002}"
 
 REPO_TOP=$(git rev-parse --show-toplevel)
 REPO=$(basename "$REPO_TOP")

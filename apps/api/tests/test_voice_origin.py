@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -34,24 +33,17 @@ TARA = {
 }
 
 
-def _build_app(tmp_path: Path) -> FastAPI:
-    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
-    db._apply_schema()
-    db._sync_agents([TARA])
-    db._update_agent_runtime_state("tara", status_line="ocioso")
-
-    app = FastAPI()
-    app.state.db = db
-    app.state.agents_config = {"agents": [TARA]}
-    app.include_router(agents_router.router, prefix="/api/agents")
-    return app
-
-
 async def test_voice_tmux_persists_explicit_meta_for_canonical_event(tmp_path: Path) -> None:
     """O eco tmux recebe a origem persistida, sem reclassificar seu prefixo."""
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    tmux_agent = {**TARA, "slug": "daniel", "tmux_session": "daniel", "cli_default": "claude_code"}
+    tmux_agent = {
+        **TARA,
+        "slug": "daniel",
+        "tmux_session": "daniel",
+        "cli_default": "claude_code",
+        "model_family": None,
+    }
     db._sync_agents([tmux_agent])
     app = FastAPI()
     app.state.db = db

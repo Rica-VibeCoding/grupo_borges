@@ -13,7 +13,7 @@
 
 set -uo pipefail
 
-COCKPIT_URL="${COCKPIT_URL:-http://127.0.0.1:8000}"
+COCKPIT_URL="${COCKPIT_URL:-http://127.0.0.1:8002}"
 LOG_FILE="${TMPDIR:-/tmp}/git-hook-link-commit.log"
 
 # Repo é o basename do toplevel (grupo_borges, fluyt, ze_claude...).
