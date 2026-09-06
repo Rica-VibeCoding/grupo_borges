@@ -1,6 +1,6 @@
 # AGENTS.md — manual de implementação do `grupo_borges`
 
-Lido pelo Codex CLI e pelos Claude Codes que mexem neste repo. Só entra aqui o que evita erro recorrente — detalhe vai pro doc específico, listado abaixo.
+Lido pelos Claude Codes que mexem neste repo (a Tara inclusive, desde que saiu do Codex CLI em 06/09/2026). Só entra aqui o que evita erro recorrente — detalhe vai pro doc específico, listado abaixo.
 
 ## O que este repo é
 
@@ -75,9 +75,9 @@ Lista de endpoints não mora em documento: ela desatualiza em dias. Leia `apps/a
 
 Conventional commits (`feat(scope)`, `fix(scope)`, `docs(scope)`, `chore:`). `git pull --rebase` antes de edição longa. Push aqui **não publica**: quem serve produção são as units, que rodam build próprio.
 
-## Tara Kaur — a parceira Codex
+## Tara Kaur — a parceira executora
 
-Codex CLI, modelo da família `gpt-5.6`. Ela lê **este arquivo**, não `CLAUDE.md` — o que ela precisa pra codar bem tem que estar aqui.
+Harness do Claude Code desde 06/09/2026, com motor GPT da família `gpt-5.6` — quem traduz é o `claude-code-proxy` local, sobre a assinatura ChatGPT. Antes disso era Codex CLI. Este repo não tem `CLAUDE.md`: o que ela precisa pra codar bem tem que estar **neste arquivo**.
 
 - Prompt curto vence prompt empilhado. Instrução amontoada degrada o resultado
 - Paralelismo com outro agente só com território disjunto. Dois editando o mesmo arquivo, não
