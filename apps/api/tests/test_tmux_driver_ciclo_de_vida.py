@@ -57,7 +57,61 @@ def test_desligar_de_agente_ja_parado_ainda_cancela_o_boot_pendurado() -> None:
 
     assert resultado["boot_cancelado"] is True
     assert resultado["attempted"] is False
-    assert diario == ["systemctl --user stop cockpit-ligar-felipe.service"]
+    assert diario == [
+        "systemctl --user stop cockpit-ligar-felipe.service",
+        # Sem sessão a unit durável ainda pode estar `activating` — é o intervalo
+        # em que ela repõe o agente. Perguntar custa uma chamada sem sudo.
+        "systemctl is-active borges-clawd@felipe.service",
+    ]
+
+
+def _desliga_com_unit_ativa(session_name: str, diario: list[str]) -> dict[str, object]:
+    def registra(argv, **_kwargs):
+        diario.append(" ".join(argv))
+        ativa = argv[:2] == ["systemctl", "is-active"]
+        return subprocess.CompletedProcess(argv, 0, "active\n" if ativa else "", "")
+
+    with (
+        patch("services.tmux_driver.subprocess.run", side_effect=registra),
+        patch("services.tmux_driver._server_for", return_value=_servidor(True, diario)),
+    ):
+        return tmux_driver._shutdown_agent_sync(session_name)
+
+
+def test_desligar_para_a_unit_duravel_antes_de_encerrar_a_sessao() -> None:
+    """Incidente 06/09/2026: o agente religava sozinho seis segundos depois.
+
+    A frota migrada pra Oracle roda sob `borges-clawd@<agente>.service`, que tem
+    `Restart=always`. Matar a sessão tmux era, pro systemd, o agente caindo — e
+    ele repunha. O journal do barsi guardou as três tentativas do Rica em
+    `Scheduled restart job, restart counter is at 3`.
+    """
+    diario: list[str] = []
+    resultado = _desliga_com_unit_ativa("barsi", diario)
+
+    assert resultado["unit_parada"] is True
+    parada = diario.index("sudo -n systemctl stop borges-clawd@barsi.service")
+    # Antes do kill-session, senão o supervisor repõe o que acabamos de matar.
+    assert parada < diario.index("kill-session barsi")
+
+
+def test_agente_sem_unit_duravel_nao_gasta_sudo() -> None:
+    """Quem ainda não migrou desliga pelo caminho de sempre: tmux + scopes."""
+    diario: list[str] = []
+
+    def sem_unit(argv, **_kwargs):
+        diario.append(" ".join(argv))
+        ativa = argv[:2] == ["systemctl", "is-active"]
+        return subprocess.CompletedProcess(argv, 0 if ativa else 5, "inactive\n" if ativa else "", "")
+
+    with (
+        patch("services.tmux_driver.subprocess.run", side_effect=sem_unit),
+        patch("services.tmux_driver._server_for", return_value=_servidor(True, diario)),
+    ):
+        resultado = tmux_driver._shutdown_agent_sync("lucas")
+
+    assert resultado["unit_parada"] is False
+    assert not any(linha.startswith("sudo") for linha in diario)
 
 
 def test_desligar_sem_boot_em_curso_nao_inventa_cancelamento() -> None:

@@ -1803,6 +1803,52 @@ def _stop_boot_unit(session_name: str) -> bool:
     return parado.returncode == 0
 
 
+#: Unit DURÁVEL da frota migrada pra Oracle (`/etc/systemd/system/borges-clawd@.service`).
+#: Ela é de sistema, não `--user`, e tem `Restart=always` com `RestartSec=5`.
+_FROTA_UNIT_TEMPLATE = "borges-clawd@{}.service"
+
+
+def _stop_frota_unit(session_name: str) -> bool:
+    """Para a unit durável do agente. Diz se havia unit ativa a parar.
+
+    Sem isto o Desligar não desliga: a unit é o supervisor da sessão tmux, e o
+    `Restart=always` repunha o agente cinco segundos depois de o botão matá-la.
+    Em 06/09 o Rica viu isso três vezes seguidas no barsi — o journal registrou
+    `Scheduled restart job, restart counter is at 3`. `systemctl stop` também
+    cancela um restart já agendado, então é o único jeito de a parada colar.
+
+    Agente ainda não migrado não tem unit: `is-active` devolve `inactive` e o
+    desligar segue inteiro pelo caminho de tmux + scopes.
+    """
+    if not _SESSION_NAME_PATTERN.fullmatch(session_name):
+        return False
+    unit = _FROTA_UNIT_TEMPLATE.format(session_name)
+    try:
+        # `is-active` primeiro: não gasta sudo em agente sem unit, e é o que
+        # torna honesto o booleano devolvido — `stop` numa unit já parada
+        # também sai com zero.
+        estado = subprocess.run(
+            ["systemctl", "is-active", unit],
+            capture_output=True,
+            text=True,
+            timeout=_SCOPE_STOP_TIMEOUT_S,
+        )
+        if estado.stdout.strip() not in {"active", "activating", "reloading"}:
+            return False
+        parado = subprocess.run(
+            ["sudo", "-n", "systemctl", "stop", unit],
+            capture_output=True,
+            text=True,
+            timeout=_SCOPE_STOP_TIMEOUT_S,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if parado.returncode != 0:
+        log.warning("desligar: unit %s resistiu — %s", unit, (parado.stderr or "").strip())
+        return False
+    return True
+
+
 def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
     """Desliga o agente: para a cerca dele e só então encerra a sessão tmux.
 
@@ -1819,10 +1865,13 @@ def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
 
     server = _server_for(session_name)
     if not server.has_session(session_name):
+        # Sem sessão não quer dizer sem supervisor: a unit fica `activating`
+        # entre um restart e outro, e é justamente aí que ela repõe o agente.
         return {
             "attempted": False,
             "sessao_encerrada": False,
             "scopes_parados": [],
+            "unit_parada": _stop_frota_unit(session_name),
             "boot_cancelado": boot_cancelado,
         }
 
@@ -1841,12 +1890,17 @@ def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
         log.warning("desligar: falha ao inventariar panes de %s", session_name)
 
     parados = {scope for scope in scopes if _stop_scope(scope)}
+    # Depois do inventário e antes de encerrar, pela mesma razão da ordem acima:
+    # o `ExecStop` da unit é um `kill-server`, então pará-la primeiro apagaria o
+    # `pane_pid` que é a única trilha até os scopes.
+    unit_parada = _stop_frota_unit(session_name)
     encerrada = _kill_session_if_exists_sync(session_name)
     return {
         "attempted": True,
         "sessao_encerrada": encerrada,
         "scopes_parados": sorted(parados),
         "scopes_resistiram": sorted(scopes - parados),
+        "unit_parada": unit_parada,
         "boot_cancelado": boot_cancelado,
     }
 
