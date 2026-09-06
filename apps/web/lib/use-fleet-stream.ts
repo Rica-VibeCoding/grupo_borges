@@ -128,8 +128,6 @@ function activityFromEvent(ev: TaskEvent): AgentActivityState | null {
   if (
     kind === 'hook:PostToolUseFailure' ||
     kind === 'hook:StopFailure' ||
-    kind === 'codex.turn.failed' ||
-    kind === 'codex.error' ||
     kind === 'tara.exec.failed' ||
     kind === 'lifecycle.blocked' ||
     kind === 'dispatch.failed'
@@ -138,7 +136,6 @@ function activityFromEvent(ev: TaskEvent): AgentActivityState | null {
     kind === 'hook:Stop' ||
     kind === 'Stop' ||
     kind === 'tara.exec.completed' ||
-    kind === 'codex.turn.completed' ||
     kind === 'lifecycle.review' ||
     kind === 'lifecycle.done'
   ) return 'ocioso';
@@ -152,10 +149,6 @@ function activityFromEvent(ev: TaskEvent): AgentActivityState | null {
     kind === 'UserPromptSubmit' ||
     kind === 'SessionStart' ||
     kind === 'tara.exec.started' ||
-    kind === 'codex.turn.started' ||
-    kind === 'codex.item.started' ||
-    kind === 'codex.item.updated' ||
-    kind === 'codex.item.completed' ||
     kind === 'dispatch' ||
     kind === 'handoff' ||
     kind === 'status.changed'
@@ -306,13 +299,6 @@ export function useFleetStream(initial: FleetState): FleetStreamState {
       'tara.exec.started',
       'tara.exec.completed',
       'tara.exec.failed',
-      'codex.turn.started',
-      'codex.item.started',
-      'codex.item.updated',
-      'codex.item.completed',
-      'codex.turn.completed',
-      'codex.turn.failed',
-      'codex.error',
       'dispatch',
       'dispatch.failed',
       'lifecycle.review',

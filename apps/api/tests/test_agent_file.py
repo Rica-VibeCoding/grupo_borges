@@ -32,12 +32,13 @@ DANIEL = {
 TARA = {
     "slug": "tara",
     "name": "Tara Kaur",
-    "role": "codex",
+    "role": "executor",
     "emoji": "TK",
     "tmux_session": "tara",
     "workspace_path": "/tmp/tara",
-    "cli_default": "codex",
-    "model_default": "codex-gpt-5-6-sol",
+    "cli_default": "claude_code",
+    "model_default": "gpt-5.6-sol[1m]",
+    "model_family": "codex-proxy",
     "capabilities": [],
     "can_review": [],
 }
@@ -55,17 +56,11 @@ DOCX_BYTES = b"PK\x03\x04" + b"\x00" * 64
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
+def _build_app(tmp_path: Path) -> FastAPI:
     agents = [DANIEL, TARA]
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
     db._sync_agents(agents)
-    if codex_for_tara:
-        db._update_agent_codex_state(
-            "tara",
-            executor_kind="codex",
-            status_line="ocioso",
-        )
     app = FastAPI()
     app.state.db = db
     app.state.agents_config = {"agents": agents}
@@ -289,56 +284,6 @@ def test_file_returns_409_when_tmux_session_busy(tmp_path: Path) -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == "agent_tmux_busy"
-
-
-def test_file_document_for_codex_puts_path_in_prompt(tmp_path: Path) -> None:
-    """Documento para Tara Codex entra no prompt do dono persistente."""
-    app = _build_app(tmp_path, codex_for_tara=True)
-    with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
-         patch(
-             "routers.agents.telecodex_client.send_prompt",
-             new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-file"}),
-         ) as send_prompt, \
-         patch("routers.agents.subprocess.Popen") as popen:
-        with TestClient(app) as client:
-            response = client.post(
-                "/api/agents/tara/file",
-                data={"caption": "resume isso"},
-                files={"file": ("contrato.pdf", PDF_BYTES, "application/pdf")},
-            )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["kind"] == "document"
-    assert body["tmux_delivered"] is True
-    send_prompt.assert_awaited_once_with(
-        text=send_prompt.call_args.kwargs["text"],
-        fresh=False,
-        image_path=None,
-    )
-    assert body["path"] in send_prompt.call_args.kwargs["text"]
-    assert send_prompt.call_args.kwargs["text"].endswith("Caption: resume isso")
-    popen.assert_not_called()
-
-
-def test_file_image_for_codex_still_uses_image_flag(tmp_path: Path) -> None:
-    """Imagem pela rota nova chega ao dono persistente com o caminho separado."""
-    app = _build_app(tmp_path, codex_for_tara=True)
-    with patch("routers.agents._AGENT_UPLOADS_BASE", tmp_path / "uploads"), \
-         patch(
-             "routers.agents.telecodex_client.send_prompt",
-             new=AsyncMock(return_value={"contextKey": "7262275215", "threadId": "thread-file-image"}),
-         ) as send_prompt:
-        with TestClient(app) as client:
-            response = client.post(
-                "/api/agents/tara/file",
-                data={"caption": "descreva"},
-                files={"file": ("image.png", PNG_1X1, "image/png")},
-            )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    send_prompt.assert_awaited_once_with(text="descreva", fresh=False, image_path=body["path"])
 
 
 # ---- EXIF Orientation ----------------------------------------------------

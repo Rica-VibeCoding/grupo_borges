@@ -29,7 +29,7 @@ type SeletorMotorProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
-  /** Kimi/Codex têm `requested` no painel; o Claude não (ver motor.ts). */
+  /** O Kimi tem `requested` no painel; o Claude não (ver motor.ts). */
   esforcoCobrePedido: boolean;
 };
 
@@ -60,7 +60,7 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   const [painel, setPainel] = useState<PainelDoMotor | null | undefined>(undefined);
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDoSeletor>('inicio');
-  // `string` e não um Literal fechado: o catálogo Codex é lido do CLI em tempo
+  // `string` e não um Literal fechado: o catálogo de cada motor é lido em tempo
   // de execução, então a pele não tem como enumerar os slugs em tipo.
   const [modeloPendente, setModeloPendente] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -197,7 +197,7 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
             }
           : atual,
       );
-      // Codex/Kimi fecham igual ao confirmado: a escolha foi gravada e é a que
+      // O Kimi fecha igual ao confirmado: a escolha foi gravada e é a que
       // vale daqui pra frente. O aviso de "vale no próximo turno" foi retirado
       // a pedido do Rica (10/08) — a ressalva continua no `session_may_diverge`,
       // que é o canal que já existe pra isso.
@@ -219,10 +219,10 @@ export function SeletorMotor({ agentSlug, agentName, motor, esforcoCobrePedido }
   }
 
   // A lista vem inteira do back e não é mais filtrada aqui. O filtro anterior
-  // só deixava passar fable/opus/sonnet/haiku, então o `allowed` da Tara — que
-  // são slugs `codex-*` — era descartado por completo e o menu de modelo dela
-  // nascia vazio. Quem sabe o que cada motor aceita é o back (`model.allowed`);
-  // a pele só traduz o rótulo.
+  // só deixava passar fable/opus/sonnet/haiku, e descartava por completo o
+  // `allowed` de quem roda outro motor — o menu de modelo nascia vazio. Quem
+  // sabe o que cada motor aceita é o back (`model.allowed`); a pele só traduz
+  // o rótulo.
   const opcoesModelo =
     modelo?.allowed.map((valor) => ({
       chave: valor,

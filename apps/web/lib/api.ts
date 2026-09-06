@@ -3,7 +3,6 @@ import type {
   AgentDocResolved,
   AgentDocsResponse,
   AgentPainelResponse,
-  PainelCodexSandbox,
   PainelPermissionMode,
   AgentSkillsResponse,
   AgentTablesResponse,
@@ -189,59 +188,13 @@ export async function patchAgentPermissionMode(
   return res.json();
 }
 
-// Painel Codex-nativo — sandbox da Tara (no lugar de bypass/plan do CC).
-export async function patchAgentCodexSandbox(
-  slug: string,
-  sandbox: PainelCodexSandbox,
-): Promise<{ slug: string; sandbox: PainelCodexSandbox; written: boolean }> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex-sandbox`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sandbox }),
-  });
-  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentCodexSandbox failed: ${res.status}`));
-  return res.json();
-}
-
-// Painel Codex-nativo — arma "nova conversa" pro próximo turno (consumido no /input).
-export async function patchAgentCodexNewThread(
-  slug: string,
-  armed: boolean,
-): Promise<{
-  slug: string;
-  armed: boolean;
-  thread_started?: boolean;
-  thread_pending?: boolean;
-  thread_id?: string | null;
-}> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex-new-thread`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ armed }),
-  });
-  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentCodexNewThread failed: ${res.status}`));
-  return res.json();
-}
-
 // ----- DS-2: chat / model endpoints --------------------------------------
 
 export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
-// DS-69 — slugs canônicos dos modelos Codex (espelham allowlist do backend e
-// `tmux_driver._CODEX_MODEL_MAP`). Tara troca por estes; Claude Code não.
-export type CodexModelSlug =
-  | 'codex-gpt-5-6-sol'
-  | 'codex-gpt-5-6-terra'
-  | 'codex-gpt-5-6-luna'
-  | 'codex-gpt-5-5'
-  | 'codex-gpt-5-4'
-  | 'codex-gpt-5-4-mini'
-  | 'codex-gpt-5-3-codex'
-  | 'codex-gpt-5-2';
-
 export type KimiModelSlug = 'kimi-k3' | 'kimi-k2.7-code' | 'kimi-k2.7-code-highspeed';
 
-export type AnyModelSlug = ChatModelSlug | CodexModelSlug | KimiModelSlug;
+export type AnyModelSlug = ChatModelSlug | KimiModelSlug;
 
 export type AgentInputResponse = {
   tmux_delivered: boolean;
@@ -253,7 +206,7 @@ export type AgentModelChangeResponse = {
   state_persisted: boolean;
   confirmed: boolean;
   model: string;
-  // DS-69 — false quando a troca só vale na próxima execução (Codex).
+  // DS-69 — false quando a troca só vale na próxima execução (Kimi).
   runtime_switch: boolean;
 };
 
@@ -374,8 +327,8 @@ export async function postAgentModel(
 }
 
 // Mapeia state_model/model_default longo (claude-opus-4-7, etc) pro slug curto
-// aceito pelo POST /model (whitelist fable|opus|sonnet|haiku). Codex retorna null —
-// caller decide se renderiza dropdown (não renderiza pra Codex).
+// aceito pelo POST /model (whitelist fable|opus|sonnet|haiku). Fora dela, null —
+// o caller decide se renderiza dropdown.
 export function toShortModelSlug(model: string | null | undefined): ChatModelSlug | null {
   if (!model) return null;
   if (model.includes('fable')) return 'fable';
@@ -383,24 +336,6 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('haiku')) return 'haiku';
   return null;
-}
-
-// DS-69 — slugs Codex são canônicos (state_model já vem como `codex-gpt-*`).
-// Valida contra a lista fechada; qualquer coisa fora vira null (UI cai no default).
-const CODEX_MODEL_SLUGS: readonly CodexModelSlug[] = [
-  'codex-gpt-5-6-sol',
-  'codex-gpt-5-6-terra',
-  'codex-gpt-5-6-luna',
-  'codex-gpt-5-5',
-  'codex-gpt-5-4',
-  'codex-gpt-5-4-mini',
-  'codex-gpt-5-3-codex',
-  'codex-gpt-5-2',
-];
-
-export function toCodexModelSlug(model: string | null | undefined): CodexModelSlug | null {
-  if (!model) return null;
-  return CODEX_MODEL_SLUGS.find((slug) => slug === model) ?? null;
 }
 
 const KIMI_MODEL_SLUGS: readonly KimiModelSlug[] = [
@@ -418,65 +353,6 @@ const KIMI_RAW_MODEL_TO_SLUG: Record<string, KimiModelSlug> = {
 export function toKimiModelSlug(model: string | null | undefined): KimiModelSlug | null {
   if (!model) return null;
   return KIMI_MODEL_SLUGS.find((slug) => slug === model) ?? KIMI_RAW_MODEL_TO_SLUG[model] ?? null;
-}
-
-// ----- TK-25: leitura read-only do Codex local (Tara) --------------------
-
-export type CodexThreadSummary = {
-  thread_id: string;
-  rollout_path: string;
-  cwd: string;
-  title: string;
-  model: string | null;
-  reasoning_effort: string | null;
-  tokens_used: number;
-  updated_at_ms: number | null;
-  created_at_ms: number | null;
-  source: 'codex-local';
-};
-
-export type CodexMessage = {
-  id: string;
-  role: 'user' | 'assistant' | 'internal';
-  text: string;
-  timestamp: string;
-  item_type: string;
-  visible: boolean;
-};
-
-export type CodexMessagesResponse = {
-  source: 'codex-local';
-  thread_id: string | null;
-  model: string | null;
-  tokens_used: number | null;
-  updated_at_ms: number | null;
-  messages: CodexMessage[];
-  hidden_count: number;
-};
-
-export async function getCodexThread(
-  slug: string,
-  signal?: AbortSignal,
-): Promise<CodexThreadSummary | null> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex/thread`, {
-    cache: 'no-store',
-    signal,
-  });
-  if (!res.ok) throw new Error(`getCodexThread failed: ${res.status}`);
-  const body = (await res.json()) as { thread: CodexThreadSummary | null };
-  return body.thread;
-}
-
-export async function getCodexMessages(
-  slug: string,
-  signal?: AbortSignal,
-): Promise<CodexMessagesResponse> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/codex/messages`, {
-    cache: 'no-store',
-    signal,
-  });
-  if (!res.ok) throw new Error(`getCodexMessages failed: ${res.status}`);
-  return res.json();
 }
 
 export async function listAgentTasks(

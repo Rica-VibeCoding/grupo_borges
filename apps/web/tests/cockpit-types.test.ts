@@ -24,7 +24,6 @@ test('parseModelFromPane mantém o formato amigável do Opus 5', () => {
 
 test('resolveContextPct prioriza o percentual do painel', () => {
   const contextPct = resolveContextPct({
-    executor_kind: null,
     pane_excerpt: 'Opus 4.8 - [███░░░░░░░] 32%',
     context_pct: 28,
   });
@@ -34,18 +33,7 @@ test('resolveContextPct prioriza o percentual do painel', () => {
 
 test('resolveContextPct usa o percentual da API quando a captura oscila', () => {
   const contextPct = resolveContextPct({
-    executor_kind: null,
     pane_excerpt: 'captura parcial sem a linha de contexto',
-    context_pct: 28,
-  });
-
-  assert.equal(contextPct, 28);
-});
-
-test('resolveContextPct usa percentual real do Codex quando a API envia', () => {
-  const contextPct = resolveContextPct({
-    executor_kind: 'codex',
-    pane_excerpt: 'Opus 4.8 - [███░░░░░░░] 32%',
     context_pct: 28,
   });
 

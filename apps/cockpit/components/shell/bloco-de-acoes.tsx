@@ -11,8 +11,8 @@
  *    ele no input"*. O seletor de esforço mora no composer (`seletor-motor.tsx`)
  *    e ter os dois era duplicata — a re-busca por abertura que resolvia a
  *    divergência entre as duas telas deixou de ter duas telas para conciliar.
- *    Ela continua valendo para o que ficou (permissão e sandbox), que é lido do
- *    mesmo `/painel`.
+ *    Ela continua valendo para o que ficou (permissão), que é lido do mesmo
+ *    `/painel`.
  * 2. **Segmentado**, não `select`: um toque = uma troca, sem menu no meio.
  * 3. **No topo**, antes dos seis campos de detalhe. Casa com o `.ck-flutua`
  *    ancorado no topo (a borda de cima nunca se move): as ações ficam à vista
@@ -41,19 +41,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchAgentPainel,
-  patchAgentCodexNewThread,
-  patchAgentCodexSandbox,
   patchAgentPermissionMode,
-  postAgentCodexStop,
   postAgentDesligar,
   postAgentDestrava,
   postAgentLigar,
   postAgentRelaunch,
 } from '@grupo_borges/cockpit-core/api';
-import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
 import type {
   AgentPainelResponse,
-  PainelCodexSandbox,
   PainelPermissionMode,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 
@@ -68,7 +63,6 @@ import {
   diagnosticaAcao,
   diagnosticaCicloDeVida,
   diagnosticaRelancar,
-  ehCodex,
   podeRelancar,
   leiaDesligar,
   leiaDestrava,
@@ -96,7 +90,6 @@ import { usePainelAberto } from './superficie-otimista';
  *  ninguém num estado que ele já esqueceu. */
 const CONFIRMA_COMPACT_MS = 4_000;
 
-
 /** As chamadas que este bloco faz, contra o agente de verdade. Já foram
  *  injetáveis por prop para a vitrine `/acoes` exercitar falha e demora sem
  *  back; a vitrine morreu em 02/08 e a injeção foi junto — o painel fala com o
@@ -104,13 +97,10 @@ const CONFIRMA_COMPACT_MS = 4_000;
 const REDE = {
   lePainel: fetchAgentPainel,
   gravaPermissao: patchAgentPermissionMode,
-  gravaSandbox: patchAgentCodexSandbox,
   destrava: postAgentDestrava,
   relanca: postAgentRelaunch,
   desliga: postAgentDesligar,
   liga: postAgentLigar,
-  novaConversa: patchAgentCodexNewThread,
-  paraTurno: postAgentCodexStop,
 };
 
 /**
@@ -277,11 +267,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
   const [ligar, setLigar] = useState<FaseDestrava>('ocioso');
-  // Codex (opção A): os dois controles que fazem sentido pra Tara headless —
-  // "Nova conversa" arma `codex_next_fresh` (próximo turno nasce thread nova) e
-  // "Parar turno" derruba o `codex exec` em voo.
-  const [novaConversa, setNovaConversa] = useState<FaseDestrava>('ocioso');
-  const [pararTurno, setPararTurno] = useState<FaseDestrava>('ocioso');
   const [retentativa, setRetentativa] = useState(0);
 
   // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
@@ -420,9 +405,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
       if (id === 'permissao') {
         return { ...atual, permission: { ...atual.permission, mode: valor as PainelPermissionMode } };
       }
-      if (id === 'sandbox' && atual.sandbox) {
-        return { ...atual, sandbox: { ...atual.sandbox, value: valor as PainelCodexSandbox } };
-      }
       return atual;
     });
   }
@@ -437,10 +419,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     aplicaLocal(controle.id, valor);
 
     try {
-      const rede = REDE;
-      if (controle.id === 'permissao') {
-        await rede.gravaPermissao(agentSlug, valor as PainelPermissionMode);
-      } else await rede.gravaSandbox(agentSlug, valor as PainelCodexSandbox);
+      await REDE.gravaPermissao(agentSlug, valor as PainelPermissionMode);
     } catch (erro) {
       // O aviso vale sempre — o Rica precisa saber que a troca não pegou
       // mesmo quando o dedo já tocou em outro controle antes desta responder.
@@ -517,73 +496,10 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
     }
   }
 
-  /** "Nova conversa" — arma `codex_next_fresh`; o próximo turno nasce thread
-   *  nova. Toque simples como o Ligar: não destrói nada, a thread velha fica. */
-  async function acionarNovaConversa() {
-    if (novaConversa === 'enviando') return;
-    setFalha(null);
-    setNovaConversa('enviando');
-    try {
-      await REDE.novaConversa(agentSlug, true);
-      setNovaConversa('entregue');
-      // Zera o feed NA HORA (mesmo efeito do /clear do CC); o back devolve vazio
-      // enquanto o `codex_next_fresh` está armado.
-      publicaNovaConversa(agentSlug);
-      // Relê o painel: o `codex_next_fresh` pintado depende do que o back gravou.
-      buscar();
-      if (reciboTimer.current) clearTimeout(reciboTimer.current);
-      reciboTimer.current = setTimeout(() => setNovaConversa('ocioso'), RECIBO_MS);
-    } catch (erro) {
-      setNovaConversa('ocioso');
-      setFalha({
-        resumo: 'não consegui armar uma conversa nova',
-        saida: 'tente de novo; a troca vale no próximo turno',
-      });
-    }
-  }
-
-  /** "Parar turno" — derruba o `codex exec` em voo (grupo do tara-codex). O
-   *  turno em andamento é perdido; a conversa fica. Desabilitado sem turno
-   *  rodando — parar nada seria recibo que não quer dizer nada. */
-  async function acionarPararTurno() {
-    if (pararTurno === 'enviando') return;
-    if (!painel?.codex_turn_in_flight) return;
-    setFalha(null);
-    setPararTurno('enviando');
-    try {
-      await REDE.paraTurno(agentSlug);
-      setPararTurno('entregue');
-      buscar();
-      if (reciboTimer.current) clearTimeout(reciboTimer.current);
-      reciboTimer.current = setTimeout(() => setPararTurno('ocioso'), RECIBO_MS);
-    } catch (erro) {
-      setPararTurno('ocioso');
-      setFalha({
-        resumo: 'não consegui parar o turno',
-        saida: 'tente de novo; se repetir, é infra — avise o Pavan',
-      });
-    }
-  }
-
-  function rotulaNovaConversa(fase: FaseDestrava): string {
-    if (fase === 'enviando') return 'Armando…';
-    if (fase === 'entregue') return 'Armada';
-    return 'Nova conversa';
-  }
-
-  function rotulaPararTurno(fase: FaseDestrava): string {
-    if (fase === 'enviando') return 'Parando…';
-    if (fase === 'entregue') return 'Parado';
-    return 'Parar turno';
-  }
-
   const controles = painel ? montaControles(painel) : [];
-  // Resume continua exclusivo do Claude Code. O ciclo Desligar/Ligar do Codex
-  // opera a sessão persistente do TeleCodex e aparece no ramo próprio abaixo.
-  const codex = painel ? ehCodex(painel) : false;
-  // A Tara cai aqui: `codex` é false (ela roda Claude Code), mas o `/relaunch`
-  // a recusa. O Desligar NÃO some junto — Desligar + Ligar É o caminho dela.
-  // Sem painel lido não há o que afirmar, então o botão fica.
+  // A Tara cai aqui: o payload dela é igual ao de um agente Anthropic, mas o
+  // `/relaunch` a recusa. O Desligar NÃO some junto — Desligar + Ligar É o
+  // caminho dela. Sem painel lido não há o que afirmar, então o botão fica.
   const relancarDisponivel = painel === null || podeRelancar(painel);
 
   // O agente está DE PÉ? Só o painel lido responde — enquanto a busca não
@@ -592,7 +508,6 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   // ar: lá o Destravar responde `pane_incompativel` e o Resume devolve
   // `attempted:false`, então oferecer os dois seria oferecer botão morto.
   const dePe = painel?.vida.processo ?? true;
-  const runtimeCodexLigado = codex ? painel?.codex_runtime_enabled !== false : dePe;
 
   // Aviso de confirmação de largura cheia — o rótulo DENTRO do botão é sempre
   // curto ("Confirmar?"), a frase que explica o que se perde mora aqui embaixo
@@ -650,7 +565,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           />
         ))}
 
-        {carga === 'pronto' && !runtimeCodexLigado ? (
+        {carga === 'pronto' && !dePe ? (
           // AGENTE FORA DO AR — desligado ou casca morta. Destravar e Resume
           // SOMEM: não há o que destravar nem o que retomar, e os dois falham em
           // silêncio nesse estado (`pane_incompativel` / `attempted:false`), que
@@ -678,69 +593,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           </button>
         ) : null}
 
-        {carga === 'pronto' && runtimeCodexLigado ? (
-          codex ? (
-            // TARA — o botão Desligar fecha a sessão do TeleCodex, sem criar um
-            // segundo escritor da mesma thread. Ligar reabre essa thread; Nova
-            // conversa continua sendo a escolha explícita de começar outra.
-            <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
-              <button
-                type="button"
-                onClick={() => void acionarNovaConversa()}
-                aria-busy={novaConversa === 'enviando'}
-                aria-label={
-                  novaConversa === 'ocioso'
-                    ? 'Nova conversa — o próximo turno começa uma thread nova'
-                    : rotulaNovaConversa(novaConversa)
-                }
-                className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
-                style={{
-                  minHeight: 'var(--ck-touch-min)',
-                  padding: '0 var(--ck-space-2)',
-                  borderRadius: 'var(--ck-radius-frame)',
-                  borderColor: 'var(--ck-edge-functional)',
-                  fontSize: 'var(--ck-text-sm)',
-                  whiteSpace: 'nowrap',
-                  color: novaConversa === 'entregue' ? 'var(--ck-state-ok)' : 'var(--ck-text-primary)',
-                  transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-                }}
-              >
-                {rotulaNovaConversa(novaConversa)}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void acionarPararTurno()}
-                aria-busy={pararTurno === 'enviando'}
-                disabled={!painel?.codex_turn_in_flight && pararTurno === 'ocioso'}
-                aria-label={
-                  pararTurno === 'ocioso'
-                    ? 'Parar turno — derruba o codex em voo, o turno em andamento é perdido'
-                    : rotulaPararTurno(pararTurno)
-                }
-                className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
-                style={{
-                  minHeight: 'var(--ck-touch-min)',
-                  padding: '0 var(--ck-space-2)',
-                  borderRadius: 'var(--ck-radius-frame)',
-                  borderColor: 'var(--ck-edge-functional)',
-                  fontSize: 'var(--ck-text-sm)',
-                  whiteSpace: 'nowrap',
-                  color: pararTurno === 'entregue' ? 'var(--ck-state-ok)' : 'var(--ck-text-primary)',
-                  opacity: !painel?.codex_turn_in_flight && pararTurno === 'ocioso' ? 0.5 : 1,
-                  transition: 'color var(--ck-dur-fast) var(--ck-ease)',
-                }}
-              >
-                {rotulaPararTurno(pararTurno)}
-              </button>
-
-              <BotaoAcaoBruta
-                fase={desligar}
-                acao="desligar"
-                onClick={() => void acionarBruta('desligar')}
-              />
-            </div>
-          ) : (
+        {carga === 'pronto' && dePe ? (
           // Destravar + Resume + Desligar na MESMA linha — os três cabem lado a
           // lado (ordem do Rica, 03/08). Um debaixo do outro empurrava o resto do
           // painel pra baixo à toa; a ordem esquerda→direita continua sendo a
@@ -796,7 +649,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
                 saída que não custa a conversa: sobe outro processo com
                 `--resume`. Fica DEPOIS do destrava de propósito: a ordem na tela
                 é a ordem em que se deve tentar. */}
-            {!codex && relancarDisponivel ? (
+            {relancarDisponivel ? (
               <BotaoAcaoBruta
                 fase={relancar}
                 acao="resume"
@@ -809,15 +662,12 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
                 consome (processo, MCPs, o `bun` do canal), parando o cgroup
                 inteiro da cerca da frota. A conversa fica — o Ligar retoma com
                 `--continue`, então desligar não custa contexto. */}
-            {!codex ? (
-              <BotaoAcaoBruta
-                fase={desligar}
-                acao="desligar"
-                onClick={() => void acionarBruta('desligar')}
-              />
-            ) : null}
+            <BotaoAcaoBruta
+              fase={desligar}
+              acao="desligar"
+              onClick={() => void acionarBruta('desligar')}
+            />
           </div>
-          )
         ) : null}
 
         {avisoConfirmacao ? (
@@ -866,11 +716,9 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           aquelas ações mexem no processo, estas mandam texto pro agente. Ver o
           cabeçalho de `bloco-de-comandos.tsx`.
 
-          A condição é a mesma da linha de ações brutas, pelos mesmos dois
-          motivos: sem CLI de pé não há quem receba texto (`dePe`), e a Tara não
-          tem slash command — o `/input` dela vira prompt de um `codex exec`, ou
-          seja, ela LERIA "/compact" como recado em vez de compactar. */}
-      {carga === 'pronto' && dePe && !codex ? (
+          A condição é a mesma da linha de ações brutas, pelo mesmo motivo: sem
+          CLI de pé não há quem receba texto (`dePe`). */}
+      {carga === 'pronto' && dePe ? (
         <BlocoDeComandos agentSlug={agentSlug} aberto={aberto} />
       ) : null}
 
@@ -917,8 +765,8 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
  * esforço — e a premissa dela ("cinco níveis, ~69px") já tinha caducado antes:
  * a sexta opção derrubou o segmento para 54px no iPhone, e aí "extra alto"
  * empurrava a altura do trilho enquanto "máximo" encostava em "automático".
- * Sobraram permissão (3 rótulos, 4 em `acceptEdits`) e sandbox (3): 111px por
- * segmento, palavra inteira numa linha. **Segmentado horizontal com rótulo
+ * Sobrou a permissão (3 rótulos, 4 em `acceptEdits`): 111px por segmento,
+ * palavra inteira numa linha. **Segmentado horizontal com rótulo
  * longo em pt-BR não escala além de quatro** — um quinto degrau pede outra
  * forma, não mais uma coluna.
  */

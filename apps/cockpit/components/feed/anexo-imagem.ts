@@ -42,8 +42,8 @@ const CAMINHO_DO_UPLOAD =
 
 /** A outra forma de "linha inteira é a imagem": uma URL já pronta, sem passar
  *  pelo disco de uploads (data-URL em base64). Quem manda a foto embutida na
- *  própria mensagem — hoje só a Tara, `lib/codex/adapta-mensagens.ts` — usa
- *  esta linha em vez do caminho relativo; `urlDoAnexoImagem` reconhece o
+ *  própria mensagem usa esta linha em vez do caminho relativo, e o
+ *  `urlDoAnexoImagem` reconhece o
  *  prefixo e devolve a URL direto, sem montar rota de arquivo. */
 const URL_DE_IMAGEM_EMBUTIDA = /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/]+=*$/i;
 

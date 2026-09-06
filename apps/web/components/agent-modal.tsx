@@ -63,31 +63,10 @@ export function AgentModal() {
   const { selectedSlug, close } = useSelectedAgent();
   const { fleet } = useFleet();
   const isMobile = useIsMobile();
-  const [codexNextFreshBySlug, setCodexNextFreshBySlug] = useState<Record<string, boolean>>({});
   const agent: Agent | null = selectedSlug
     ? fleet.agents.find((a) => a.slug === selectedSlug) ?? null
     : null;
   const open = agent !== null;
-  const codexNextFresh = agent
-    ? codexNextFreshBySlug[agent.slug] ?? Boolean(agent.codex_next_fresh)
-    : false;
-
-  const updateCodexNextFresh = useCallback((slug: string, armed: boolean) => {
-    setCodexNextFreshBySlug((current) => {
-      if (current[slug] === armed) return current;
-      return { ...current, [slug]: armed };
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!agent || codexNextFreshBySlug[agent.slug] === undefined) return;
-    const persisted = Boolean(agent.codex_next_fresh);
-    if (codexNextFreshBySlug[agent.slug] !== persisted) return;
-    setCodexNextFreshBySlug((current) => {
-      const { [agent.slug]: _removed, ...rest } = current;
-      return rest;
-    });
-  }, [agent, codexNextFreshBySlug]);
 
   // Swipe-right-to-close (mobile only). Ativo somente quando o gesto começa
   // no header — evita conflito com scroll vertical do conteúdo, scroll
@@ -232,20 +211,10 @@ export function AgentModal() {
                     (globals.css:196), então não vaza visual nem rouba foco. Outras abas
                     seguem default (mount on activate) pra não disparar 5 fetches no open. */}
                 <Tabs.Content value="chat" className="agent-modal-panel" forceMount>
-                  <ChatPanel
-                    agent={agent}
-                    serverNow={fleet.health.server_now}
-                    codexNextFresh={codexNextFresh}
-                    onCodexNextFreshChange={(armed) => updateCodexNextFresh(agent.slug, armed)}
-                  />
+                  <ChatPanel agent={agent} serverNow={fleet.health.server_now} />
                 </Tabs.Content>
                 <Tabs.Content value="painel" className="agent-modal-panel">
-                  <PainelPanel
-                    slug={agent.slug}
-                    agent={agent}
-                    codexNextFresh={codexNextFresh}
-                    onCodexNextFreshChange={(armed) => updateCodexNextFresh(agent.slug, armed)}
-                  />
+                  <PainelPanel slug={agent.slug} agent={agent} />
                 </Tabs.Content>
                 <Tabs.Content value="inf" className="agent-modal-panel">
                   <MissaoPanel agent={agent} serverNow={fleet.health.server_now} />
@@ -368,11 +337,8 @@ function HandoffPanel({ agent }: { agent: Agent }) {
  * EXECUTOR só aparece se ≠ 'claude_code' (default suprimido).
  */
 function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) {
-  const sessionStarted = agent.executor_kind === 'codex'
-    ? agent.session_started_at
-    : agent.pane_session_started_at;
+  const sessionStarted = agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
-  const isCodexExec = agent.executor_kind === 'codex';
   const seenAbs = formatUnixDateTime(agent.last_seen);
 
   const hasTaskInfo = Boolean(
@@ -406,12 +372,11 @@ function MissaoPanel({ agent, serverNow }: { agent: Agent; serverNow: number }) 
         <KV k="TMUX" v={agent.tmux_session} />
         <KV k="CLI" v={agent.state_cli ?? agent.cli_default} />
         <KV k="MODELO" v={shortModelName(agent.state_model ?? agent.model_default)} />
-        {isCodexExec && <KV k="EXECUTOR" v="codex" />}
       </MissaoSection>
 
       <MissaoSection title="SESSÃO">
         <KV k="STATUS" v={STATUS_LABEL[agent.status]} />
-        {!isCodexExec && agent.context_pct !== null && <KV k="CONTEXTO" v={`${agent.context_pct}%`} />}
+        {agent.context_pct !== null && <KV k="CONTEXTO" v={`${agent.context_pct}%`} />}
         {sessionSecs !== null && <KV k="DURAÇÃO" v={formatDuration(sessionSecs)} />}
         {sessionStarted !== null && <KV k="INÍCIO" v={formatUnixDateTime(sessionStarted)} />}
         <KV k="VISTO EM" v={formatLastSeen(agent.last_seen, serverNow)} title={seenAbs} />

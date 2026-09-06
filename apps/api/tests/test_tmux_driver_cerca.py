@@ -48,12 +48,3 @@ def test_resume_fica_do_lado_do_claude_nao_do_systemd_run() -> None:
     assert "--resume" not in antes
     assert depois.endswith(f"--resume {session_id}")
 
-
-def test_codex_tambem_entra_na_cerca() -> None:
-    _, comando = tmux_driver._prepare_cli_launch(
-        "tara", WORKSPACE, "codex", "codex-gpt-5-6-sol",
-    )
-    assert comando.startswith(
-        "systemd-run --user --scope --slice=borges-frota.slice "
-        "-p MemoryHigh=1500M -- codex "
-    )

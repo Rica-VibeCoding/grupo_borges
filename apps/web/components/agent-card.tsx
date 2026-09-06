@@ -27,9 +27,6 @@ function deriveActivityState(agent: Agent): AgentActivityState {
 }
 
 function formatLifecycle(agent: Agent): string {
-  if (agent.executor_kind === 'codex') {
-    return agent.status_line ?? agent.lifecycle_detail ?? agent.lifecycle_status ?? '—';
-  }
   if (!agent.lifecycle_status && !agent.lifecycle_detail) return '—';
   return agent.lifecycle_detail ? agent.lifecycle_detail : (agent.lifecycle_status ?? '—');
 }
@@ -61,7 +58,6 @@ export function AgentCard({
   const isAskingUser = useAskUserPending(agent.slug);
   const task = agent.current_task_id ?? null;
   const cli = agent.state_cli ?? agent.cli_default;
-  const isCodexExecutor = agent.executor_kind === 'codex';
   const lifecycle = formatLifecycle(agent);
   const activityOverride = activityOverrides[agent.slug];
   const activityState = activityOverride?.state ?? deriveActivityState(agent);
@@ -143,7 +139,7 @@ export function AgentCard({
           <div className="card-strip" aria-hidden="true">
             <span className="card-task">
               <span className="m-key">TAREFA</span>
-              <span className="m-val">{(isCodexExecutor && agent.active_task_label) || task || '—'}</span>
+              <span className="m-val">{task || '—'}</span>
             </span>
             <AgentStatusline agent={agent} serverNow={serverNow} variant="inline" />
             <span className="card-actions" onClick={(e) => e.stopPropagation()} />

@@ -20,7 +20,7 @@ export type SparklineBucket = {
   tokens: number;
 };
 
-export type AgentCli = 'claude_code' | 'codex';
+export type AgentCli = 'claude_code';
 
 export type AgentModel =
   | 'claude-fable-5'
@@ -29,15 +29,7 @@ export type AgentModel =
   | 'claude-opus-4-7'
   | 'claude-sonnet-5'
   | 'claude-sonnet-4-6'
-  | 'claude-haiku-4-5'
-  | 'codex-gpt-5-6-sol'
-  | 'codex-gpt-5-6-terra'
-  | 'codex-gpt-5-6-luna'
-  | 'codex-gpt-5-5'
-  | 'codex-gpt-5-4'
-  | 'codex-gpt-5-4-mini'
-  | 'codex-gpt-5-3-codex'
-  | 'codex-gpt-5-2';
+  | 'claude-haiku-4-5';
 
 export type Agent = {
   slug: string;
@@ -62,9 +54,7 @@ export type Agent = {
   status_line: string | null;
   active_task_label: string | null;
   context_pct: number | null;
-  /** O mesmo contexto em tokens, já normalizado pelos dois motores no back.
-   *  NÃO confundir com `codex_tokens_used` logo abaixo: aquele é o cumulativo
-   *  da thread do Codex (centenas de milhões), não o tamanho do contexto. */
+  /** O mesmo contexto em tokens, já normalizado no back. */
   context_tokens: number | null;
   /** Quando o `context_pct` foi medido, e se a medida já não vale como atual. */
   context_updated_at: number | null;
@@ -72,13 +62,8 @@ export type Agent = {
   session_started_at: number | null;
   last_assistant_message: string | null;
   token_usage_json: string | null;
-  codex_tokens_used: number | null;
-  codex_session_processing: boolean | null;
-  codex_next_fresh: boolean | null;
-  /** Esforço gravado na config do agente, por família de executor — só um dos
-   *  dois vem preenchido. O Claude não tem equivalente aqui: o nível dele mora
-   *  no `cc_status` e só chega pelo `/painel`. */
-  codex_reasoning_effort: string | null;
+  /** Esforço gravado na config do agente. O Claude não tem equivalente aqui:
+   *  o nível dele mora no `cc_status` e só chega pelo `/painel`. */
   kimi_reasoning_effort: string | null;
   lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
@@ -298,8 +283,8 @@ export type PainelEffort = {
   source: string;
   session_may_diverge: boolean;
   // O que o painel pediu, preenchido só quando `value` veio de fonte viva e só
-  // nos motores cujo back separa pedido de efetivo (Kimi e Codex — no Claude o
-  // campo é sempre null). A UI compara os dois: iguais não dizem nada,
+  // nos motores cujo back separa pedido de efetivo (Kimi — no Claude o campo
+  // é sempre null). A UI compara os dois: iguais não dizem nada,
   // diferentes significam que a troca não pegou, e `requested=null` com fonte
   // viva significa que ninguém escolheu — é o default do motor.
   requested?: string | null;
@@ -335,7 +320,7 @@ export type PainelQuotas = {
   /** Terceira janela, só de plano com teto mensal (OpenCode Go). Ausente =
    *  a família não tem essa janela, e o painel não desenha a linha. */
   monthly?: PainelQuotaWindow | null;
-  /** Quem paga esta cota. Só no Claude — Kimi e Codex têm login próprio. */
+  /** Quem paga esta cota. Só no Claude — Kimi e OpenCode têm login próprio. */
   conta?: PainelConta | null;
 };
 
@@ -357,19 +342,6 @@ export type PainelSubagents = {
   count: number;
   active_count: number;
   items: PainelSubagentEntry[];
-};
-
-// Painel Codex-nativo (Tara). Quando codex_native=true, o frontend troca os
-// controles de CC: effort usa níveis Codex, FUNÇÕES vira sandbox, e Quotas/Subagents
-// (sem equivalente no Codex) são ocultados. Shape espelha o backend (top-level,
-// igual effort/permission/quotas).
-export type PainelCodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access';
-
-export type PainelSandbox = {
-  value: PainelCodexSandbox;
-  allowed: string[];
-  source: string;
-  session_may_diverge: boolean;
 };
 
 // O que o driver do tmux sabe sobre a ÚLTIMA tentativa de entrega — não sobre a
@@ -431,17 +403,6 @@ export type AgentPainelResponse = {
   quotas: PainelQuotas;
   subagents: PainelSubagents;
   canal_entrega: PainelCanalEntrega;
-  // Presentes apenas quando o agente é Codex (executor_kind='codex').
-  sandbox?: PainelSandbox | null;
-  codex_native?: boolean | null;
-  // true = "nova conversa" armada no painel; próximo turno começa thread fresh.
-  codex_next_fresh?: boolean | null;
-  // true = há um `codex exec` do tara-codex em voo (turno rodando). Alimenta o
-  // botão "Parar turno" do painel.
-  codex_turn_in_flight?: boolean | null;
-  // false = a sessão viva do TeleCodex foi fechada pelo painel; a thread fica
-  // persistida para o botão "Ligar" reabri-la no mesmo contexto.
-  codex_runtime_enabled?: boolean | null;
   // false = o `POST /relaunch` recusa este agente; o botão Relançar não entra.
   // Ausente vale como `true`: é o que o painel fazia antes do campo existir.
   relaunch_suportado?: boolean | null;
@@ -496,15 +457,6 @@ export function shortModelName(model: string): string {
     'claude-sonnet-5':    'Sonnet 5',
     'claude-sonnet-4-6':  'Sonnet 4.6',
     'claude-haiku-4-5':   'Haiku 4.5',
-    'codex-gpt-5-6-sol':   'GPT-5.6 Sol',
-    'codex-gpt-5-6-terra': 'GPT-5.6 Terra',
-    'codex-gpt-5-6-luna':  'GPT-5.6 Luna',
-    'codex-gpt-5-5':      'GPT-5.5',
-    'codex-gpt-5-4':      'GPT-5.4',
-    'codex-gpt-5-4-mini': 'GPT-5.4m',
-    // 0.146.0 aposentou o `gpt-5.3-codex` e pôs este no lugar (`codex debug
-    // models`). Sem entrada aqui, o menu da Tara mostraria o slug cru.
-    'codex-gpt-5-3-codex-spark': 'GPT-5.3 Spark',
   };
   return map[model] ?? model;
 }
@@ -532,9 +484,8 @@ export function parseContextPct(excerpt: string | null): number | null {
  *  `sessionId` que está no ar e carimbado com a hora da medida, então é ele que
  *  manda; o pane fica de reserva pra quem a API ainda não sabe responder. */
 export function resolveContextPct(
-  agent: Pick<Agent, 'executor_kind' | 'pane_excerpt' | 'context_pct'>,
+  agent: Pick<Agent, 'pane_excerpt' | 'context_pct'>,
 ): number | null {
-  if (agent.executor_kind === 'codex') return agent.context_pct;
   return agent.context_pct ?? parseContextPct(agent.pane_excerpt);
 }
 

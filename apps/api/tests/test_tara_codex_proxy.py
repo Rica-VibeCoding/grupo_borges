@@ -194,45 +194,6 @@ def test_quota_snapshot_nao_engorda_o_banco_com_used_percent_de_texto(tmp_path: 
 # --------------------------------------------------------------------------
 
 
-def test_sync_limpa_executor_kind_de_quem_saiu_do_codex(tmp_path: Path) -> None:
-    """O carimbo é escrito pelo webhook de eventos, não derivado do yaml.
-
-    Sem esta limpeza, `_agente_codex()` seguia dando `True` pela linha antiga do
-    `agent_state` e o painel da Tara continuava no caminho do Codex CLI depois
-    da migração — bug que só apareceria no primeiro restart.
-    """
-    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
-    db._apply_schema()
-    tara_codex = {**TARA_PROXY, "cli_default": "codex", "model_family": None}
-    db._sync_agents([tara_codex])
-    db._update_agent_codex_state("tara", executor_kind="codex")
-    assert db._get_agent("tara")["executor_kind"] == "codex"
-
-    db._sync_agents([TARA_PROXY])
-
-    assert db._get_agent("tara")["executor_kind"] is None
-
-
-def test_sync_limpa_codex_next_fresh_de_quem_saiu_do_codex(tmp_path: Path) -> None:
-    """`codex_next_fresh` preso em 1 mata a cota do painel, sem erro nenhum.
-
-    Ele significa "a próxima thread nasce limpa" — conceito do Codex CLI. Com o
-    campo em 1, `_codex_token_usage_payload` devolve `None` e o painel responde
-    `status: missing` com fonte `agent_state.codex_next_fresh`. Foi exatamente
-    o que apareceu na validação de pé de 06/09, com a Tara já migrada.
-    """
-    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
-    db._apply_schema()
-    tara_codex = {**TARA_PROXY, "cli_default": "codex", "model_family": None}
-    db._sync_agents([tara_codex])
-    db._update_agent_codex_state("tara", codex_next_fresh=1)
-    assert db._get_agent("tara")["codex_next_fresh"] == 1
-
-    db._sync_agents([TARA_PROXY])
-
-    assert db._get_agent("tara")["codex_next_fresh"] == 0
-
-
 def test_quota_snapshot_chega_ao_painel_com_o_residuo_limpo(tmp_path: Path) -> None:
     """O caminho inteiro: yaml migrado, snapshot publicado, painel mostrando."""
     app = _build_app(tmp_path)
@@ -243,19 +204,6 @@ def test_quota_snapshot_chega_ao_painel_com_o_residuo_limpo(tmp_path: Path) -> N
 
     assert quotas["status"] == "available"
     assert quotas["seven_day"]["used_percentage"] == 39
-
-
-def test_sync_preserva_executor_kind_de_quem_continua_no_codex(tmp_path: Path) -> None:
-    """A limpeza vale só para quem o yaml já mudou — não é faxina geral."""
-    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
-    db._apply_schema()
-    tara_codex = {**TARA_PROXY, "cli_default": "codex", "model_family": None}
-    db._sync_agents([tara_codex])
-    db._update_agent_codex_state("tara", executor_kind="codex")
-
-    db._sync_agents([tara_codex])
-
-    assert db._get_agent("tara")["executor_kind"] == "codex"
 
 
 # --------------------------------------------------------------------------

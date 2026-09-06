@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
-from services import codex_reader, telecodex_client, tmux_driver
+from services import tmux_driver
 
 router = APIRouter()
 _CC_STATUS_PREFIX = "cc-status-"
@@ -72,9 +72,6 @@ class FleetAgent(BaseModel):
     session_started_at: int | None = None
     last_assistant_message: str | None = None
     token_usage_json: str | None = None
-    codex_tokens_used: int | None = None
-    codex_session_processing: bool | None = None
-    codex_next_fresh: bool | None = None
     lifecycle_status: str | None = None
     lifecycle_detail: str | None = None
     lifecycle_event: str | None = None
@@ -197,8 +194,6 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
     grava `used_percentage: null` com `total_input_tokens: 0`.
     """
     async def hydrate(agent: dict) -> None:
-        if agent.get("executor_kind") == "codex":
-            return
         session_ids = await db.recent_jsonl_session_ids(agent["slug"])
         if not session_ids:
             return
@@ -216,89 +211,6 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
     await asyncio.gather(*(hydrate(agent) for agent in agents))
 
 
-async def _hydrate_codex_tokens_used(agents: list[dict]) -> None:
-    async def hydrate(agent: dict) -> None:
-        if agent.get("executor_kind") != "codex":
-            agent["codex_tokens_used"] = None
-            return
-        if agent.get("codex_next_fresh"):
-            agent["codex_tokens_used"] = 0
-            agent["context_pct"] = 0.0
-            agent["context_updated_at"] = None
-            agent["context_stale"] = False
-            return
-        # Pela thread do DELEGATOR COCKPIT (opção A, 10/08): o store por
-        # delegator que o wrapper grava, não o `codex_thread_id` do agent_state
-        # (único — o Daniel rodando a Tara por outro canal apontaria o card pra
-        # thread alheia). `resolve_thread` valida a existência no SQLite.
-        tid = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
-        thread = await asyncio.to_thread(
-            codex_reader.resolve_thread,
-            thread_id=tid,
-            cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
-        )
-        agent["codex_tokens_used"] = thread.tokens_used if thread is not None else None
-        stored_pct = None
-        stored_tokens = None
-        stored_observed_at = None
-        raw_usage = agent.get("token_usage_json")
-        if isinstance(raw_usage, str) and raw_usage.strip():
-            try:
-                stored_usage = json.loads(raw_usage)
-            except (json.JSONDecodeError, ValueError):
-                stored_usage = None
-            if (
-                isinstance(stored_usage, dict)
-                and stored_usage.get("source") == "codex.event_msg.token_count"
-                and stored_usage.get("context_pct") is not None
-            ):
-                stored_pct = stored_usage["context_pct"]
-                stored_tokens = _int_or_none(stored_usage.get("context_tokens"))
-                stored_observed_at = _int_or_none(stored_usage.get("observed_at"))
-        if thread is not None:
-            snapshot = await asyncio.to_thread(codex_reader.read_latest_token_count, thread.rollout_path)
-            if snapshot is not None:
-                usa_snapshot = snapshot.get("context_pct") is not None
-                agent["context_pct"] = snapshot["context_pct"] if usa_snapshot else stored_pct
-                # O tamanho do contexto vem DAQUI, nunca do `codex_tokens_used`:
-                # aquele é o cumulativo da thread no SQLite do Codex (chega a
-                # centenas de milhões) e a pílula do composer nasceria com seis
-                # dígitos, discordando do painel do agente no mesmo instante.
-                agent["context_tokens"] = (
-                    _int_or_none(snapshot.get("context_tokens")) if usa_snapshot else stored_tokens
-                )
-                agent["context_updated_at"] = (
-                    _int_or_none(snapshot.get("observed_at")) if usa_snapshot else stored_observed_at
-                )
-                return
-        if stored_pct is not None:
-            agent["context_pct"] = stored_pct
-            agent["context_tokens"] = stored_tokens
-            agent["context_updated_at"] = stored_observed_at
-        if agent.get("context_pct") is not None and agent.get("context_updated_at") is None:
-            # Codex sem carimbo é o `context_pct` que ficou no banco de algum run
-            # passado (a Tara tinha 100.0 parado lá). Não dá pra dizer a idade,
-            # mas dá pra não afirmar que é de agora.
-            agent["context_stale"] = True
-
-    await asyncio.gather(*(hydrate(agent) for agent in agents))
-
-
-async def _hydrate_codex_session_processing(agents: list[dict]) -> None:
-    codex_agents = [agent for agent in agents if agent.get("executor_kind") == "codex"]
-    if not codex_agents:
-        return
-    try:
-        status = await telecodex_client.get_status()
-    except (telecodex_client.TeleCodexControlError, telecodex_client.TeleCodexUnavailable):
-        return
-    processing = status.get("processing")
-    if not isinstance(processing, bool):
-        return
-    for agent in codex_agents:
-        agent["codex_session_processing"] = processing
-
-
 def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
@@ -310,11 +222,10 @@ def _marca_contexto_velho(agents: list[dict]) -> None:
     da sessão é de outro run, e medida parada além do limiar é de agente que
     dormiu. O número CONTINUA na tela; o que muda é o que a tela afirma sobre ele.
 
-    Só age quando o carimbo é da mesma leitura que produziu o número. Valia só
-    pro Codex enquanto o card do Claude Code bebia do pane — texto de terminal
-    não tem hora, e carimbá-lo com a idade do cc-status seria trocar uma
-    afirmação errada por outra. Desde 10/08 as duas pontas do CC vêm do mesmo
-    arquivo, então a régua passou a valer aqui também.
+    Só age quando o carimbo é da mesma leitura que produziu o número — enquanto
+    o card bebia do pane isso não valia, porque texto de terminal não tem hora e
+    carimbá-lo com a idade do cc-status seria trocar uma afirmação errada por
+    outra. Desde 10/08 as duas pontas vêm do mesmo arquivo.
     """
     agora = int(time.time())
     for agent in agents:
@@ -343,8 +254,6 @@ async def get_fleet(
     )
     snapshot["health"]["stale_threshold_seconds"] = RUN_STALE_THRESHOLD_SECONDS
     await _hydrate_pane_excerpts(snapshot["agents"])
-    await _hydrate_codex_tokens_used(snapshot["agents"])
-    await _hydrate_codex_session_processing(snapshot["agents"])
     await _hydrate_cc_context_pct(db, snapshot["agents"])
     _marca_contexto_velho(snapshot["agents"])
     return snapshot

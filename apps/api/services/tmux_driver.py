@@ -22,7 +22,7 @@ from typing import Literal, NamedTuple, TypeVar
 import libtmux
 from libtmux import exc as libtmux_exc
 
-from services import codex_catalog, delivery_log
+from services import delivery_log
 
 # Orçamentos independentes: pane ocupada pode ficar temporariamente ilegível
 # antes do paste sem consumir o tempo reservado para provar a submissão.
@@ -60,7 +60,7 @@ _TMUX_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cockpit-t
 # Comandos esperados no pane ativo do agente. Se o user trocou de window (ex:
 # abriu shell auxiliar), `active_pane` aponta pra outra coisa — paste no shell
 # pode executar parte do envelope como comando. Guard aborta nesse caso.
-_EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
+_EXPECTED_PANE_COMMANDS = {"claude", "node"}
 _CLAUDE_PANE_COMMANDS = {"claude", "node"}
 
 
@@ -340,7 +340,7 @@ async def _run_tmux_operation(func: Callable[..., _T], *args: object) -> _T:
     call = functools.partial(func, *args)
     return await loop.run_in_executor(_TMUX_EXECUTOR, call)
 
-AgentCli = Literal["claude_code", "codex"]
+AgentCli = Literal["claude_code"]
 
 # Socket tmux por sessão. Na Hostinger a frota inteira vive no socket default.
 # Na Oracle o boot systemd (borges-agent@%i) sobe UM server tmux por agente em
@@ -492,36 +492,10 @@ _SESSION_ID_PATTERN = re.compile(
 )
 _BANNER_PATTERNS: dict[AgentCli, re.Pattern[str]] = {
     "claude_code": re.compile(r"╭|Claude Code v\d"),
-    "codex": re.compile("›"),
 }
-
-_CODEX_MODEL_MAP = {
-    "codex-gpt-5-6-sol": "gpt-5.6-sol",
-    "codex-gpt-5-6-terra": "gpt-5.6-terra",
-    "codex-gpt-5-6-luna": "gpt-5.6-luna",
-    "codex-gpt-5-5": "gpt-5.5",
-    "codex-gpt-5-4": "gpt-5.4",
-    "codex-gpt-5-4-mini": "gpt-5.4-mini",
-    "codex-gpt-5-3-codex": "gpt-5.3-codex",
-    "codex-gpt-5-2": "gpt-5.2",
-}
-
-
-def _codex_command(model: str) -> str:
-    raw_model = _CODEX_MODEL_MAP.get(model)
-    if raw_model is None:
-        # O de-para acima é histórico e não cobre o que o CLI passou a oferecer
-        # depois (`codex-gpt-5-3-codex-spark`). O fallback antigo trocava TODO
-        # hífen por ponto e produzia `gpt.5.3.codex.spark` — um `-m` que o Codex
-        # recusa. `codex_catalog` responde pelo nome que o próprio binário
-        # publicou.
-        raw_model = codex_catalog.raw_slug(model)
-    return f"codex -m {shlex.quote(raw_model)}"
-
 
 _CLI_COMMANDS = {
     "claude_code": lambda m: f"claude --dangerously-skip-permissions --model {shlex.quote(m)}",
-    "codex": _codex_command,
 }
 
 #: Como o Ligar retoma a conversa. `--continue` pega a última do workspace sem
@@ -1368,7 +1342,7 @@ def _wait_for_resumed_claude_tui(
 async def bootstrap_cli_in_session(
     session: str, workspace_path: str, cli: AgentCli, model: str
 ) -> dict[str, bool]:
-    """Booteia Claude Code/Codex no pane ativo e confirma readiness por banner."""
+    """Booteia o Claude Code no pane ativo e confirma readiness por banner."""
     return await asyncio.to_thread(
         _bootstrap_cli_in_session_sync, session, workspace_path, cli, model
     )
@@ -1595,8 +1569,8 @@ _CC_SESSION_TIME = re.compile(
 def parse_session_elapsed_from_pane(excerpt: str | None) -> int | None:
     """Extrai tempo (segundos) da sessão CC a partir do statusline no excerpt.
 
-    Pega o último match — statusline vive no fim do pane. Codex tem outro
-    formato e retorna None (caller deve cair em outro fallback).
+    Pega o último match — statusline vive no fim do pane. Sem match, None
+    (caller deve cair em outro fallback).
     """
     if not excerpt:
         return None
@@ -1616,7 +1590,7 @@ def parse_model_from_pane(excerpt: str | None) -> str | None:
 
     Server-side port do `parseModelFromPane` do agent-card.tsx. Usado pelo
     `POST /api/agents/{slug}/model` pra confirmar que a troca via `/model`
-    propagou pra statusline. Retorna None pro Codex (formato diferente).
+    propagou pra statusline.
     """
     if not excerpt:
         return None

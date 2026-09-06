@@ -88,13 +88,12 @@ export function abrePorta(entrada: {
    * O Claude Code faz: texto colado num pane ocupado vira
    * `queue-operation`/`enqueue` no JSONL e o stream devolve `kind: "queued"` —
    * recibo que a máquina de envio já lê como confirmação (`lib/envio.ts`,
-   * campo `fila`). O Codex não faz: o TeleCodex recusa com 409
-   * `shared_turn_in_flight`, e a conversa dele é compartilhada com o Telegram.
+   * campo `fila`). Motor que não faz responde 409 e o texto se perde.
    *
-   * Por isso `turno-em-voo` nasceu (`257d0f9`, 16/08) — para o Codex. Vinha
-   * sendo aplicado aos dois motores, e no Claude Code recusava, no cliente,
-   * uma entrega que o destino aceita. Falta de informação mantém o portão de
-   * pé: só a certeza de que há fila lá fora o levanta.
+   * Por isso `turno-em-voo` nasceu (`257d0f9`, 16/08). Ele vinha sendo aplicado
+   * a todo mundo, e no Claude Code recusava, no cliente, uma entrega que o
+   * destino aceita. Falta de informação mantém o portão de pé: só a certeza de
+   * que há fila lá fora o levanta — com a frota ainda não carregada, segura.
    */
   motorEnfileiraSozinho?: boolean;
   compactando: boolean;
@@ -213,8 +212,8 @@ export function preparaEnvio(entrada: {
   // - `envio-em-voo` — a mensagem anterior ainda não voltou confirmada. Entrou
   //   aqui em 15/08: a premissa antiga era que esta espera "dura o tempo de uma
   //   viagem de rede", e isso só valia no Claude Code, onde o eco volta em
-  //   milissegundos. Na Tara ela espera o rollout do `codex exec` — 14 s medidos
-  //   em 11/08, registrados em `aparencia-envio.ts`. Nesses 14 s o Rica escrevia,
+  //   milissegundos. Onde o eco demora — 14 s medidos em 11/08, registrados em
+  //   `aparencia-envio.ts` — o Rica escrevia,
   //   apertava Enter e o texto ficava parado no campo com um aviso que, no
   //   celular com o teclado de pé, nasce fora da área visível. Da tela dele:
   //   mensagem engolida. Agora ela sai das mãos, aparece no bloco acima do

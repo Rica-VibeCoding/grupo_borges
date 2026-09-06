@@ -4,18 +4,12 @@
  * O §17 do contrato de estética deixou esta metade em aberto e chamou pelo
  * nome: o Rica trata as ações como *"ideia central do painel"*. O back já
  * expõe as rotas (`patchAgentPermissionMode`, `postAgentDestrava`,
- * `patchAgentCodexSandbox`, `postAgentRelaunch`); o que faltava era a camada
- * de cliente — estado, tradução e falha.
+ * `postAgentRelaunch`); o que faltava era a camada de cliente — estado,
+ * tradução e falha.
  *
- * TRÊS COISAS QUE ESTE MÓDULO DECIDE, e nenhuma cabe em JSX:
+ * DUAS COISAS QUE ESTE MÓDULO DECIDE, e nenhuma cabe em JSX:
  *
- * 1. **É UM controle por agente, e eles nunca aparecem juntos.** `sandbox` só
- *    existe em agente Codex (o back responde 400 `not_a_codex_agent` fora
- *    disso) e `permission-mode` escreve o settings do Claude Code, que não
- *    governa a Tara. Oferecer um controle que o back vai recusar com 400 é o
- *    botão morto da §9 com outra roupa.
- *
- *    **O esforço saiu daqui em 09/08**, por ordem do Rica: *"já temos ele no
+ * 1. **O esforço saiu daqui em 09/08**, por ordem do Rica: *"já temos ele no
  *    input"*. Ele vive no composer (`seletor-motor.tsx`, que continua chamando
  *    `patchAgentEffort`) e ter o mesmo seletor duas vezes na mesma tela é
  *    duplicata, não redundância útil — a gaveta perdeu o bloco inteiro, não só
@@ -24,8 +18,8 @@
  * 2. **A ordem dos segmentos é a escada de risco, sempre crescente da esquerda
  *    para a direita** — nunca a ordem em que o back listou o `allowed`. Ler
  *    `Só planeja · Pergunta · Livre` ensina a escala de uma vez; ler a mesma
- *    lista embaralhada obriga a decorar posição. Vale igual para sandbox
- *    (leitura→total). Valor desconhecido vai para o fim, na ordem em que veio:
+ *    lista embaralhada obriga a decorar posição. Valor desconhecido vai para o
+ *    fim, na ordem em que veio:
  *    o back pode ganhar um degrau novo antes desta tabela, e sumir com ele
  *    seria pior do que mostrá-lo fora de escala.
  *
@@ -44,11 +38,10 @@
  */
 import type {
   AgentPainelResponse,
-  PainelCodexSandbox,
   PainelPermissionMode,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 
-export type AcaoId = 'permissao' | 'sandbox';
+export type AcaoId = 'permissao';
 
 export type Opcao = {
   /** O que vai cru pro back — é o contrato do endpoint. */
@@ -103,26 +96,8 @@ const ORDEM_PERMISSAO: PainelPermissionMode[] = ['plan', 'ask', 'acceptEdits', '
  *  estado. Oferecer um quarto degrau que ninguém pediu é o outro erro. */
 const PERMISSAO_PADRAO: PainelPermissionMode[] = ['plan', 'ask', 'bypassPermissions'];
 
-const SANDBOX: Record<PainelCodexSandbox, { rotulo: string; descricao: string }> = {
-  'read-only': { rotulo: 'Leitura', descricao: 'Só lê. Não escreve nada.' },
-  'workspace-write': {
-    rotulo: 'Workspace',
-    descricao: 'Escreve dentro do repositório, não fora dele.',
-  },
-  'danger-full-access': {
-    rotulo: 'Total',
-    descricao: 'Escreve em qualquer lugar da máquina.',
-  },
-};
-
-const ORDEM_SANDBOX: PainelCodexSandbox[] = ['read-only', 'workspace-write', 'danger-full-access'];
-
 export function rotulaPermissao(modo: string): string {
   return PERMISSAO[modo as PainelPermissionMode]?.rotulo ?? modo;
-}
-
-export function rotulaSandbox(valor: string): string {
-  return SANDBOX[valor as PainelCodexSandbox]?.rotulo ?? valor;
 }
 
 /** Ordena pela escada canônica; o que não está nela vai pro fim, preservando a
@@ -138,17 +113,9 @@ function pelaEscada(valores: string[], escada: string[]): string[] {
 // Montagem
 // ---------------------------------------------------------------------------
 
-/** Codex se reconhece pelo `sandbox` no payload — o back só o inclui quando
- *  `executor_kind='codex'`. `codex_native` diz a mesma coisa e é opcional;
- *  usar os dois é cinto e suspensório barato, e o payload real já veio com um
- *  deles ausente em agente antigo. */
-export function ehCodex(painel: AgentPainelResponse): boolean {
-  return Boolean(painel.codex_native) || painel.sandbox != null;
-}
-
 /** Relançar (`--resume`) só aparece pra quem o back atende. Quem decide é o
  *  back: a Tara roda Claude Code contra o proxy do Codex, então nenhuma pista
- *  local (`ehCodex`, `sandbox`, nome do modelo) a distingue de um agente
+ *  local (nome do modelo, formato do payload) a distingue de um agente
  *  Anthropic — só o `model_family`, que o painel não expõe. `!== false` de
  *  propósito: payload antigo sem o campo mantém o botão, e a tradução da
  *  recusa em `diagnosticaRelancar` segue sendo a rede embaixo. */
@@ -158,30 +125,6 @@ export function podeRelancar(painel: AgentPainelResponse): boolean {
 
 export function montaControles(painel: AgentPainelResponse): Controle[] {
   const controles: Controle[] = [];
-
-  if (ehCodex(painel)) {
-    // Sandbox no lugar de permissão: é a troca que o `cockpit-types.ts` já
-    // descreve ("FUNÇÕES vira sandbox"), e não é cosmética — o endpoint de
-    // permissão escreve o settings do Claude Code, que não governa a Tara.
-    const sandbox = painel.sandbox;
-    if (sandbox) {
-      const valores = pelaEscada(sandbox.allowed ?? [], ORDEM_SANDBOX);
-      if (valores.length > 0) {
-        controles.push({
-          id: 'sandbox',
-          titulo: 'Sandbox',
-          valor: sandbox.value ?? null,
-          ressalva: sandbox.session_may_diverge ? RESSALVA : null,
-          opcoes: valores.map((valor) => ({
-            valor,
-            rotulo: rotulaSandbox(valor),
-            descricao: SANDBOX[valor as PainelCodexSandbox]?.descricao ?? valor,
-          })),
-        });
-      }
-    }
-    return controles;
-  }
 
   const modoAtual = painel.permission?.mode ?? null;
   const modos = [...PERMISSAO_PADRAO];
@@ -377,12 +320,6 @@ export function leiaDesligar(resposta: {
 export function diagnosticaCicloDeVida(erro: unknown, acao: 'desligar' | 'ligar'): Impedimento {
   const texto = textoDoErro(erro);
 
-  if (texto.includes('ciclo_de_vida_somente_claude_code')) {
-    return {
-      resumo: 'este agente não tem sessão própria pra ligar ou desligar',
-      saida: 'a Tara é Codex — ela nasce e morre a cada turno, não fica de pé',
-    };
-  }
   if (texto.includes('ligar_em_curso')) {
     return {
       resumo: 'já tem um boot deste agente em andamento',
@@ -434,12 +371,6 @@ export function leiaRelancar(resposta: {
 export function diagnosticaRelancar(erro: unknown): Impedimento {
   const texto = textoDoErro(erro);
 
-  if (texto.includes('relaunch_somente_claude_code')) {
-    return {
-      resumo: 'este agente não roda Claude Code',
-      saida: 'relançar preservando conversa é do harness do Claude Code — no Codex CLI não existe',
-    };
-  }
   // A Tara caiu aqui em 06/09, já migrada pro harness do CC: o `--resume` remonta
   // o comando dentro da API e não sabe repor o env que o boot da frota monta pra
   // ela (token do proxy, teto de janela, credenciais dos MCPs). A saída existe e
@@ -493,7 +424,6 @@ export type Impedimento = {
 
 const NOME_DA_ACAO: Record<AcaoId, string> = {
   permissao: 'a permissão',
-  sandbox: 'o sandbox',
 };
 
 /**
@@ -519,18 +449,11 @@ export function diagnosticaAcao(erro: unknown, id: AcaoId): Impedimento {
   const texto = textoDoErro(erro);
   const alvo = NOME_DA_ACAO[id];
 
-  if (texto.includes('not_a_codex_agent')) {
-    return {
-      resumo: 'este agente não é Codex',
-      saida: 'sandbox só existe na Tara — recarregue o painel para ver os controles certos',
-    };
-  }
   // O ramo `not_allowed` saiu com o esforço (09/08). Ele traduzia
-  // `codex_effort_not_allowed`/`kimi_effort_not_allowed`, e esses são os DOIS
-  // únicos `not_allowed` que o back devolve para as rotas deste bloco
-  // (`agents.py:476` e `:491`, conferido) — sem o segmentado de esforço aqui,
-  // nenhuma chamada daqui consegue mais provocá-lo. Quem recusa nível hoje é o
-  // composer, que tem tradução própria em `motor.ts`.
+  // `kimi_effort_not_allowed`, o único `not_allowed` que o back devolve para as
+  // rotas deste bloco — sem o segmentado de esforço aqui, nenhuma chamada daqui
+  // consegue mais provocá-lo. Quem recusa nível hoje é o composer, que tem
+  // tradução própria em `motor.ts`.
   if (texto.includes('404')) {
     return {
       resumo: 'o agente sumiu da frota',

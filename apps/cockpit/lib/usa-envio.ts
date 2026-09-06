@@ -16,7 +16,7 @@ import {
   type EventoEnvio,
   type FronteiraEnvio,
 } from './envio.ts';
-import { assinaEntrega, temPendencia } from './codex/eco-pendente.ts';
+import { assinaEntrega, temPendencia } from './eco-pendente.ts';
 import { atrasoDaRetentativa, ehRecusaTransitoria } from './recusa-transitoria.ts';
 
 /** Com que frequência reperguntar se o rollout já entregou. Um pouco acima do
@@ -41,10 +41,10 @@ type RespostaComFronteira = AgentInputResponse & {
 export const PREFIXO_VOZ = /^🎙\s*/u;
 
 /** O literal que o back prepende na transcrição antes de entregar ao agente —
- *  nos DOIS executores (`post_agent_voice`). O front precisa dele porque a
- *  bolha otimista do Codex casa por texto EXATO com o que chega no rollout
- *  (`reconciliaPendentes`): registrar sem a marca deixaria a pendência sem par
- *  e o composer preso em `aceito` até o prazo de 3 min expirar. */
+ *  (`post_agent_voice`). O front precisa dele porque a bolha otimista casa por
+ *  texto EXATO com o que volta no eco (`reconciliaPendentes`): registrar sem a
+ *  marca deixaria a pendência sem par e o composer preso em `aceito` até o
+ *  prazo expirar. */
 export const MARCA_VOZ = '🎙 ';
 
 export type OrigemEnvio = 'text' | 'stt';
@@ -82,15 +82,13 @@ export type ControleEnvio = {
   subscribe(ouvinte: () => void): () => void;
   /** `aoFalhar` roda só quando o POST rejeita com erro HTTP real (fase
    *  `falhou`) — é o gancho para quem registrou uma pendência otimista ANTES
-   *  do envio (`registraEcoPendente`, só Codex) desfazê-la, já que a máquina
+   *  do envio (`registraEcoPendente`) desfazê-la, já que a máquina
    *  acabou de provar que o texto não saiu daqui. */
   enviar(texto: string, aoFalhar?: () => void, origem?: OrigemEnvio): Promise<void>;
   reenviar(aoFalhar?: () => void): Promise<void>;
-  /** Recibo vindo de FORA do stream SSE. Existe porque o agente Codex não tem
-   *  eco em `/messages/stream` (responde `total: 0`): quem prova a entrega dele
-   *  é o texto aparecendo no rollout, visto pelo poll do feed
-   *  (`lib/codex/eco-pendente.ts`). Sem isto, TODA mensagem pra Tara expirava o
-   *  prazo de 12 s e terminava em âmbar, dizendo que podia não ter entrado. */
+  /** Recibo vindo de FORA do stream SSE, para quem prova a entrega por outro
+   *  caminho (`lib/eco-pendente.ts`). Sem isto a mensagem expira o prazo e
+   *  termina em âmbar, dizendo que podia não ter entrado. */
   confirmarPorEco(texto: string): void;
   dispose(): void;
 };
@@ -275,17 +273,14 @@ export function createControleEnvio(
     timerPrazo = agendar(() => {
       timerPrazo = undefined;
       // ENTREGA AINDA EM CURSO: os 12 s foram calibrados sobre uma amostra
-      // local de 30/07 cujo pior caso era 1,434 s, e nenhum dos dois motores
-      // cabe nisso. No Codex a prova leva ~12 s (o `codex exec` subindo) mais o
-      // tique do poll; no Claude Code o eco medido em 15/08 é de **18,9 s**. O
-      // alarme disparava sempre, e o texto dele manda o Rica reenviar — é assim
-      // que se produz a duplicata que ele existe para avisar.
+      // local de 30/07 cujo pior caso era 1,434 s, e o eco real não cabe nisso
+      // — medido em 15/08, são **18,9 s**. O alarme disparava sempre, e o texto
+      // dele manda o Rica reenviar: é assim que se produz a duplicata que ele
+      // existe para avisar.
       //
       // Daqui em diante os 12 s são só a CADÊNCIA do reexame; quem decide o
-      // alarme é o teto da pendência, e ele é por motor: 45 s no Claude Code,
-      // 3 min no Codex (`PRAZO_CC_MS` / `PRAZO_CODEX_MS`, com o porquê da
-      // diferença escrito lá). Expirou a pendência, o alarme volta a ser
-      // verdadeiro.
+      // alarme é o teto da pendência (`PRAZO_CC_MS`, com o porquê escrito lá).
+      // Expirou a pendência, o alarme volta a ser verdadeiro.
       if (temPendencia(agentSlug)) {
         armarPrazoDeRollout();
         return;
@@ -494,10 +489,9 @@ export function usaEnvio(agentSlug: string): {
     return () => controle.dispose();
   }, [controle]);
 
-  // O recibo que não vem do SSE. Nasceu para o Codex, que não tem eco no
-  // stream (`total: 0`), e desde 15/08 o Claude Code também registra pendência
-  // — o eco dele leva 18,9 s medidos, e a bolha otimista não podia esperar por
-  // isso. Assinar vale para os dois; quem não tiver pendência não publica nada.
+  // O recibo que não vem do SSE. O eco do stream leva 18,9 s medidos, e a
+  // bolha otimista não podia esperar por isso. Quem não tiver pendência não
+  // publica nada.
   useEffect(
     () => assinaEntrega(agentSlug, (texto) => controle.confirmarPorEco(texto)),
     [agentSlug, controle],

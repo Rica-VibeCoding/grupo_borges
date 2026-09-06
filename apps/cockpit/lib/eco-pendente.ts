@@ -1,17 +1,13 @@
 'use client';
 
 /**
- * O QUE O RICA ACABOU DE MANDAR PRA TARA, antes de existir no rollout.
+ * O QUE O RICA ACABOU DE MANDAR, antes de o eco voltar do servidor.
  *
- * Medido na `:3008` em 10/08: entre o `POST /input` voltar 200 e o texto
- * aparecer em `GET /codex/messages` passam **12 segundos**. Não é lentidão de
- * rede nem do poll de 3 s — é o `codex exec` subindo e retomando a thread antes
- * de escrever a primeira linha. Doze segundos de tela parada depois do toque
- * foi o que o Rica reportou: *"eu mando texto, ela não mostra que recebeu"*.
- *
- * O ramo do Claude Code não sofre disso porque o eco dele volta pelo stream em
- * milissegundos. Como a ordem foi "mesma UI do CC", a bolha do Rica tem que
- * nascer no gesto — o feed pinta o texto e o poll depois o substitui pelo real.
+ * A bolha nasce no GESTO: medido no `:3008` em 15/08, com o agente ocioso,
+ * passam **18,9 s** entre o Enter e a bolha real chegando pelo stream, contra
+ * 0,1 s do campo esvaziando. Dezoito segundos de tela muda são o *"eu mando
+ * texto, ela não mostra que recebeu"* que o Rica reporta desde sempre. O feed
+ * pinta o texto na hora e o eco depois o substitui pelo real.
  *
  * POR QUE UM STORE DE MÓDULO e não uma prop: o `Composer` e o `FeedDaConversa`
  * são irmãos em `app/agente/[slug]/page.tsx`, que é território do Daniel. Um
@@ -19,9 +15,7 @@
  *
  * IDENTIDADE DE OBJETO É REQUISITO, não estilo: quem lê é `useSyncExternalStore`,
  * e a doc do React diz nos Caveats para devolver *"a cached last snapshot"*
- * quando nada mudou — devolver array novo a cada leitura dá laço infinito. O
- * mesmo motivo pelo qual o adaptador do feed é fábrica com memória
- * (`adapta-mensagens.ts`).
+ * quando nada mudou — devolver array novo a cada leitura dá laço infinito.
  */
 
 export type EcoPendente = {
@@ -32,8 +26,7 @@ export type EcoPendente = {
    *  rollout. A imagem usa o envelope visual; a reconciliação usa a legenda. */
   conteudo?: string;
   emMs: number;
-  /** Quanto esta pendência pode viver. Vem de quem registrou porque os dois
-   *  motores medem diferente — ver `PRAZO_CODEX_MS` e `PRAZO_CC_MS`. */
+  /** Quanto esta pendência pode viver — ver `PRAZO_CC_MS`. */
   prazoMs: number;
 };
 
@@ -42,19 +35,13 @@ export type MensagemReal = {
   criadoEmMs: number;
 };
 
-/** Teto de vida da bolha otimista no Codex. O turno leva minutos, mas o ECO do
- *  texto do Rica é o começo do turno, não o fim — 12 s medidos, 3 min de folga.
- *  Passou disso, o envio não chegou, e manter a bolha diria que chegou. Quem
- *  avisa que a entrega falhou é o composer, que tem a máquina de seis fases. */
-export const PRAZO_CODEX_MS = 180_000;
-
 /**
- * Teto no Claude Code, e ele é MAIS CURTO de propósito.
+ * Teto de vida da bolha otimista.
  *
  * A pendência segura o prazo do alarme (`usa-envio.ts:297`), então o teto dela é
  * na prática o tempo que o Rica fica com a mensagem na tela sem ninguém dizer
- * se ela entrou. Herdar os 3 min do Codex trocaria um aviso falso aos 12 s por
- * silêncio de três minutos — e silêncio é a queixa original.
+ * se ela entrou. Passou disso, o envio não chegou, e manter a bolha diria que
+ * chegou; quem avisa da falha é o composer, com a máquina de seis fases.
  *
  * 45 s são 2,4× o eco real medido em 15/08 (18,9 s), com a mesma folga
  * proporcional que os 12 s originais tinham sobre a amostra em que foram
@@ -88,7 +75,7 @@ function grava(slug: string, lista: readonly EcoPendente[]): void {
 export function registraEcoPendente(
   slug: string,
   texto: string,
-  prazoMs: number = PRAZO_CODEX_MS,
+  prazoMs: number = PRAZO_CC_MS,
   conteudo?: string,
 ): string | null {
   const corpo = texto.trim();
@@ -103,13 +90,13 @@ export function registraEcoPendente(
 /**
  * Desfaz uma pendência ANTES da entrega — o POST provou que não saiu daqui
  * (erro HTTP real, fase `falhou` em `envio.ts`). Sem isto a bolha otimista
- * fica pintando "enviado" no feed por até 3 min enquanto a faixa do composer
- * já diz que falhou — duas vozes contraditórias na mesma tela (achado [2] da
- * auditoria, 09/08).
+ * fica pintando "enviado" no feed até o prazo estourar enquanto a faixa do
+ * composer já diz que falhou — duas vozes contraditórias na mesma tela
+ * (achado [2] da auditoria, 09/08).
  *
  * Por id, não por texto: um reenvio do mesmo texto cria uma segunda
- * pendência, e só a que falhou pode sair — a outra continua esperando o
- * rollout normalmente.
+ * pendência, e só a que falhou pode sair — a outra continua esperando o eco
+ * normalmente.
  */
 export function descartaEcoPendente(slug: string, id: string): void {
   const atual = porAgente.get(slug);
@@ -142,12 +129,12 @@ export function assinaPendentes(slug: string, fn: () => void): () => void {
 }
 
 /**
- * Some com o que já chegou pelo rollout, e com o que passou do prazo.
+ * Some com o que já chegou pelo eco, e com o que passou do prazo.
  *
- * A bolha otimista não tem o id que o Codex criará, então a reconciliação usa
- * texto + ordem temporal. Só mensagens reais posteriores ao gesto participam:
- * sem essa fronteira, uma legenda repetida encontra a ocorrência antiga no
- * histórico e a prévia nova some até o próximo rollout.
+ * A bolha otimista não tem o id que o servidor criará, então a reconciliação
+ * usa texto + ordem temporal. Só mensagens reais posteriores ao gesto
+ * participam: sem essa fronteira, uma legenda repetida encontra a ocorrência
+ * antiga no histórico e a prévia nova some até o próximo eco.
  */
 export function reconciliaPendentes(slug: string, mensagensReais: readonly MensagemReal[]): void {
   const atual = porAgente.get(slug);
@@ -177,7 +164,7 @@ export function reconciliaPendentes(slug: string, mensagensReais: readonly Mensa
     return agora - p.emMs < p.prazoMs;
   });
 
-  // Mesmo array quando nada saiu: sem isto, todo poll de 3 s notificaria os
+  // Mesmo array quando nada saiu: sem isto, toda reconciliação notificaria os
   // assinantes e o feed remontaria à toa.
   if (sobrando.length === atual.length) return;
   grava(slug, sobrando);
@@ -189,14 +176,10 @@ export function reconciliaPendentes(slug: string, mensagensReais: readonly Mensa
 /**
  * O RECIBO DE ENTREGA, para a máquina de seis fases do composer.
  *
- * Ela espera o eco em `GET /messages/stream`, que para agente Codex responde
- * `total: 0` — o mesmo buraco que deixava o chat vazio. Sem eco, o prazo de
- * 12 s expira e TODA mensagem pra Tara terminava em âmbar dizendo *"não
- * consegui confirmar se entrou — confira no chat antes de mandar de novo. Pode
- * duplicar."*. Falso, e do tipo que convida a duplicar de verdade.
- *
- * O texto aparecer no rollout é prova melhor que o eco do stream: significa que
- * o `codex exec` leu a mensagem e abriu o turno. É esse o recibo que sai daqui.
+ * Existe para quem prova a entrega FORA do `GET /messages/stream`: sem recibo,
+ * o prazo expira e a mensagem termina em âmbar dizendo *"não consegui confirmar
+ * se entrou — confira no chat antes de mandar de novo. Pode duplicar."*, que é
+ * falso e do tipo que convida a duplicar de verdade.
  */
 const entregas = new Map<string, Set<(texto: string) => void>>();
 

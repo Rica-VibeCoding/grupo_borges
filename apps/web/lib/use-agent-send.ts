@@ -35,7 +35,7 @@ export function useAgentSend(slug: string, agentName: string): UseAgentSendResul
       fire({
         kind: 'warn',
         msg: 'agente fora do CLI esperado',
-        sub: 'verifique se ele tá no Claude/Codex e não em shell auxiliar',
+        sub: 'verifique se ele tá no Claude e não em shell auxiliar',
         ttlMs: 6000,
       });
     } else {

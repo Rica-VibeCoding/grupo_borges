@@ -27,7 +27,7 @@
  * irmãos em `app/agente/[slug]/page.tsx`. Quem sabe do `isRunning` é o feed
  * (é ele que abre o SSE); quem precisa saber é o composer. Abrir uma segunda
  * conexão SSE só para ler um booleano seria pagar o stream duas vezes — o
- * mesmo raciocínio, e o mesmo padrão, de `lib/codex/eco-pendente.ts`.
+ * mesmo raciocínio, e o mesmo padrão, de `lib/eco-pendente.ts`.
  *
  * IDENTIDADE DE SNAPSHOT é requisito: quem lê é `useSyncExternalStore`, e a doc
  * do React exige devolver o mesmo valor enquanto nada muda. Aqui o valor é um

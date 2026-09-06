@@ -20,7 +20,7 @@
 
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { textoEnfileirado } from '@grupo_borges/cockpit-core/render-items';
-import type { MensagemReal } from './codex/eco-pendente.ts';
+import type { MensagemReal } from './eco-pendente.ts';
 
 export function textosDoUsuario(messages: readonly MessagePayload[]): MensagemReal[] {
   const textos: MensagemReal[] = [];

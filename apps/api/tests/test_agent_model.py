@@ -1,6 +1,6 @@
 """DS-2 / SubB — TDD pytest pro endpoint `POST /api/agents/{slug}/model`.
 
-Stubs cobrem 422 (whitelist + Codex). Testes `xfail` marcam comportamento que
+Stubs cobrem 422 (whitelist). Testes `xfail` marcam comportamento que
 depende da impl real (gate `agent_busy_confirm_required`, persistência condicional,
 emissão de `task_event` `agent.model_change`, detecção via regex no pane).
 """
@@ -41,12 +41,13 @@ DANIEL = {
 TARA = {
     "slug": "tara",
     "name": "Tara Kaur",
-    "role": "codex",
+    "role": "executor",
     "emoji": "TK",
     "tmux_session": "tara",
     "workspace_path": "/tmp/tara",
-    "cli_default": "codex",
-    "model_default": "codex-gpt-5-6-sol",
+    "cli_default": "claude_code",
+    "model_default": "gpt-5.6-sol[1m]",
+    "model_family": "codex-proxy",
     "capabilities": [],
     "can_review": [],
 }
@@ -67,17 +68,10 @@ HIRO = {
 }
 
 
-def _build_app(tmp_path: Path, *, codex_for_tara: bool = False) -> FastAPI:
+def _build_app(tmp_path: Path) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
     db._sync_agents([DANIEL, TARA, HIRO])
-    if codex_for_tara:
-        # Marca Tara como executor codex no agent_state — necessário pro gate 422.
-        db._update_agent_codex_state(
-            "tara",
-            executor_kind="codex",
-            status_line="ocioso",
-        )
     app = FastAPI()
     app.state.db = db
     app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
@@ -96,71 +90,6 @@ def test_model_rejects_invalid_slug(tmp_path: Path) -> None:
         assert response.status_code == 422
 
 
-def test_model_codex_rejects_claude_slug(tmp_path: Path) -> None:
-    """DS-69 — slug Claude (opus/sonnet/haiku) em agente Codex → 422."""
-    app = _build_app(tmp_path, codex_for_tara=True)
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/agents/tara/model",
-            json={"model": "sonnet"},
-        )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "model_not_allowed_for_codex"
-
-
-def test_model_codex_reconfigures_shared_thread(tmp_path: Path) -> None:
-    """DS-69 — Codex aplica o modelo na thread persistente do TeleCodex."""
-    app = _build_app(tmp_path, codex_for_tara=True)
-    with patch("routers.agents.tmux_driver.send_message") as send:
-        with patch(
-            "routers.agents.telecodex_client.reconfigure_session",
-            new=AsyncMock(
-                return_value={
-                    "contextKey": "7262275215",
-                    "threadId": "thread-1",
-                    "model": "gpt-5.6-terra",
-                    "reasoningEffort": "max",
-                }
-            ),
-            create=True,
-        ) as reconfigure:
-            with TestClient(app) as client:
-                response = client.post(
-                    "/api/agents/tara/model",
-                    json={"model": "codex-gpt-5-6-terra"},
-                )
-                assert response.status_code == 200
-                body = response.json()
-                assert body["runtime_switch"] is True
-                assert body["tmux_delivered"] is True
-                assert body["confirmed"] is True
-                assert body["state_persisted"] is True
-                assert body["model"] == "codex-gpt-5-6-terra"
-            reconfigure.assert_awaited_once_with(
-                model="gpt-5.6-terra",
-                reasoning_effort=None,
-            )
-        # Codex nunca recebe /model no pane.
-        send.assert_not_called()
-    # state_model persistido reflete a escolha. asyncio.run cria loop próprio —
-    # get_event_loop() quebra na suíte completa (sem loop atual no 3.12).
-    import asyncio
-    agent = asyncio.run(app.state.db.get_agent("tara"))
-    assert agent["state_model"] == "codex-gpt-5-6-terra"
-
-
-def test_model_claude_rejects_codex_slug(tmp_path: Path) -> None:
-    """DS-69 — slug Codex em agente Claude Code → 422 (não mistura seletor)."""
-    app = _build_app(tmp_path)
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/agents/daniel/model",
-            json={"model": "codex-gpt-5-6-sol"},
-        )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "model_not_allowed_for_claude_code"
-
-
 def test_model_kimi_rejects_claude_slug(tmp_path: Path) -> None:
     """Kimi (Hiro) — slug Claude (opus/sonnet/…) em agente Kimi → 422."""
     app = _build_app(tmp_path)
@@ -168,19 +97,6 @@ def test_model_kimi_rejects_claude_slug(tmp_path: Path) -> None:
         response = client.post(
             "/api/agents/hiro/model",
             json={"model": "opus"},
-        )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "model_not_allowed_for_kimi"
-
-
-def test_model_kimi_rejects_codex_slug(tmp_path: Path) -> None:
-    """Kimi (Hiro) — slug Codex em agente Kimi → 422 com detail da família kimi
-    (o gate Anthropic não pode capturar antes e rotular errado)."""
-    app = _build_app(tmp_path)
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/agents/hiro/model",
-            json={"model": "codex-gpt-5-6-sol"},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "model_not_allowed_for_kimi"

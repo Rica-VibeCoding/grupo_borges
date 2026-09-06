@@ -23,7 +23,7 @@
  * - `agent_pane_unavailable` — no contrato novo só retenta se vier como
  *   `deliveryOutcome: 'refused'` com `safeToResend: true`; respostas antigas
  *   mantêm o comportamento legado pelo detalhe.
- * - `shared_turn_in_flight` — o TeleCodex recusa o turno antes de abri-lo,
+ * - `shared_turn_in_flight` — o back recusa o turno antes de abri-lo,
  *   porque a conversa da Tara é compartilhada com o Telegram.
  *
  * Sem primeira cópia não há duplicata, e é isso que autoriza a máquina a

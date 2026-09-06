@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 
-import { criaAdaptadorCodex } from './adapta-mensagens.ts';
 import {
   assinaPendentes,
   descartaEcoPendente,
@@ -12,7 +11,6 @@ import {
   temPendencia,
   assinaEntrega,
   PRAZO_CC_MS,
-  PRAZO_CODEX_MS,
 } from './eco-pendente.ts';
 
 beforeEach(() => limpaEcoPendente());
@@ -22,7 +20,7 @@ function mensagensReais(...textos: string[]): Array<{ texto: string; criadoEmMs:
   return textos.map((texto) => ({ texto, criadoEmMs }));
 }
 
-describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', () => {
+describe('eco pendente — a bolha que nasce no gesto, antes de o eco voltar', () => {
   it('registra e devolve na ordem em que foi mandado', () => {
     registraEcoPendente('tara', 'primeira');
     registraEcoPendente('tara', 'segunda');
@@ -55,7 +53,7 @@ describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', ()
       '/uploads/agents/tara/1786839427177-af0d6873f9d9.png\n' +
       'Caption: teste';
 
-    registraEcoPendente('tara', 'teste', PRAZO_CODEX_MS, envelope);
+    registraEcoPendente('tara', 'teste', PRAZO_CC_MS, envelope);
 
     assert.equal(lePendentes('tara')[0]?.conteudo, envelope);
     reconciliaPendentes('tara', mensagensReais('teste'));
@@ -63,15 +61,15 @@ describe('eco pendente — a bolha que nasce no gesto, 12s antes do rollout', ()
   });
 });
 
-describe('reconciliação — a pendência sai quando o rollout entrega', () => {
-  it('mensagem que chegou pelo rollout some da lista otimista', () => {
+describe('reconciliação — a pendência sai quando o eco entrega', () => {
+  it('mensagem que chegou pelo eco some da lista otimista', () => {
     registraEcoPendente('tara', 'oi');
     reconciliaPendentes('tara', mensagensReais('conversa velha', 'oi'));
 
     assert.equal(lePendentes('tara').length, 0);
   });
 
-  it('duas iguais em sequência: o rollout com uma só derruba UMA', () => {
+  it('duas iguais em sequência: o eco com uma só derruba UMA', () => {
     registraEcoPendente('tara', 'ok');
     registraEcoPendente('tara', 'ok');
     reconciliaPendentes('tara', mensagensReais('ok'));
@@ -88,7 +86,7 @@ describe('reconciliação — a pendência sai quando o rollout entrega', () => 
     assert.equal(lePendentes('tara').length, 1);
   });
 
-  it('rollout sem a mensagem preserva a bolha — é o caso dos 12s', () => {
+  it('eco sem a mensagem preserva a bolha — é o caso da espera', () => {
     registraEcoPendente('tara', 'ainda subindo');
     reconciliaPendentes('tara', mensagensReais('conversa velha'));
 
@@ -148,51 +146,24 @@ describe('temPendencia — o prazo do composer pergunta por aqui', () => {
   });
 });
 
-describe('polling ocioso — por que reconciliar tem que vir do array CRU', () => {
-  it('reconciliar só quando o adaptado muda de referência nunca expira em agente ocioso', () => {
-    // Reproduz o bug do achado [1] da auditoria (09/08): `doRollout` é
-    // estabilizado por identidade pelo adaptador (ver adapta-mensagens.ts —
-    // "devolve o MESMO array quando o poll não trouxe novidade"). Um
-    // `useEffect(() => reconciliaPendentes(...), [doRollout])` só dispara
-    // quando essa referência muda — e se o agente fica ocioso e o texto nunca
-    // aparece no rollout, ela nunca muda de novo.
-    const adapta = criaAdaptadorCodex();
+describe('pendência que ninguém reconcilia fica presa — e é ela que trava a porta', () => {
+  it('sem uma nova chamada de reconciliaPendentes o prazo não é checado', () => {
+    // Achado [1] da auditoria (09/08): a expiração não roda sozinha. Enquanto
+    // ninguém reconcilia, a pendência sobrevive ao próprio prazo — e é ela quem
+    // trava `porta-de-envio.ts:112`.
     registraEcoPendente('tara', 'nunca chega');
-
-    let anterior: unknown;
-    for (let i = 0; i < 60; i++) {
-      const doRollout = adapta([]); // rollout sempre vazio — agente ocioso
-      if (doRollout !== anterior) {
-        anterior = doRollout;
-        reconciliaPendentes(
-          'tara',
-          doRollout.map((m) => ({
-            texto: String(m.message?.content ?? ''),
-            criadoEmMs: m.created_at ?? 0,
-          })),
-        );
-      }
-    }
-
-    // O prazo de 3 min já estourou faz tempo...
     const p = lePendentes('tara')[0] as { emMs: number };
     p.emMs = Date.now() - 200_000;
 
-    // ...mas sem uma nova chamada de `reconciliaPendentes` ninguém checa: a
-    // pendência fica presa, e é ela quem trava `porta-de-envio.ts:112`.
     assert.equal(temPendencia('tara'), true);
   });
 
-  it('reconciliar com o texto do fetch cru, a cada poll, expira mesmo ocioso', () => {
-    // O fix: `usa-conversa-codex.ts` passou a chamar `reconciliaPendentes` de
-    // dentro do próprio poll de 3s (com o `CodexMessage[]` cru da resposta),
-    // não mais amarrado à identidade do `doRollout` adaptado.
+  it('reconciliar mesmo sem mensagem nova é o que expira', () => {
     registraEcoPendente('tara', 'nunca chega');
-
     const p = lePendentes('tara')[0] as { emMs: number };
     p.emMs = Date.now() - 200_000;
 
-    reconciliaPendentes('tara', []); // o poll ocioso chama assim mesmo
+    reconciliaPendentes('tara', []); // o caso ocioso chama assim mesmo
 
     assert.equal(temPendencia('tara'), false);
   });
@@ -222,7 +193,7 @@ describe('descarte por falha — a bolha que o POST provou que não saiu', () =>
     assert.deepEqual(
       lePendentes('tara').map((p) => p.id),
       [id2],
-      'só a tentativa que falhou some — a outra continua esperando o rollout',
+      'só a tentativa que falhou some — a outra continua esperando o eco',
     );
   });
 
@@ -244,31 +215,23 @@ describe('recibo de entrega — o que desfaz o âmbar', () => {
     assert.deepEqual(recebidos, ['oi']);
   });
 
-  it('o teto é por MOTOR: no Claude Code a bolha morre aos 45s, no Codex aos 3 min', () => {
+  it('a bolha morre aos 45s — o teto é o silêncio que o Rica aguenta', () => {
     // A pendência segura o prazo do alarme de entrega, então o teto dela é o
     // tempo que o Rica fica com a mensagem na tela sem ninguém dizer se ela
-    // entrou. Se este caso ficar vermelho porque alguém uniformizou os dois,
-    // leia o porquê em `PRAZO_CC_MS`: no CC herdar os 3 min troca um aviso
-    // falso aos 12 s por silêncio de três minutos.
+    // entrou. Se este caso ficar vermelho porque alguém esticou o número, leia
+    // o porquê em `PRAZO_CC_MS`.
     registraEcoPendente('canarinho', 'no claude code', PRAZO_CC_MS);
-    registraEcoPendente('tara', 'no codex', PRAZO_CODEX_MS);
-    const envelhece = (slug: string, ms: number) => {
-      const p = lePendentes(slug)[0] as { emMs: number };
-      p.emMs = Date.now() - ms;
-    };
+    const p = lePendentes('canarinho')[0] as { emMs: number };
+    p.emMs = Date.now() - 60_000;
 
-    envelhece('canarinho', 60_000);
-    envelhece('tara', 60_000);
     reconciliaPendentes('canarinho', mensagensReais('outra coisa'));
-    reconciliaPendentes('tara', mensagensReais('outra coisa'));
 
-    assert.equal(lePendentes('canarinho').length, 0, 'CC: 60s já passou dos 45s');
-    assert.equal(lePendentes('tara').length, 1, 'Codex: 60s ainda cabe nos 3 min');
+    assert.equal(lePendentes('canarinho').length, 0, '60s já passou dos 45s');
   });
 
-  it('quem não diz o prazo herda o do Codex — é o chamador antigo', () => {
+  it('quem não diz o prazo herda o do Claude Code', () => {
     registraEcoPendente('tara', 'sem prazo declarado');
-    assert.equal((lePendentes('tara')[0] as { prazoMs: number }).prazoMs, PRAZO_CODEX_MS);
+    assert.equal((lePendentes('tara')[0] as { prazoMs: number }).prazoMs, PRAZO_CC_MS);
   });
 
   it('pendência que só EXPIROU não vira recibo — nada provou a entrega', () => {

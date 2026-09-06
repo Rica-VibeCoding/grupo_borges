@@ -28,14 +28,13 @@ function ctxTier(pct: number): 'low' | 'mid' | 'high' {
 // Família do modelo pra colorir o label (CSS lê via data-model). Casa por
 // substring case-insensitive — funciona tanto pra "Opus 4.7" quanto pro
 // slug bruto "claude-opus-4-7".
-function modelFamilyOf(label: string, raw: string, isCodex: boolean): string {
-  if (isCodex) return 'codex';
+function modelFamilyOf(label: string, raw: string): string {
   const s = `${label} ${raw}`.toLowerCase();
   if (s.includes('fable')) return 'fable';
   if (s.includes('opus')) return 'opus';
   if (s.includes('sonnet')) return 'sonnet';
   if (s.includes('haiku')) return 'haiku';
-  if (s.includes('gpt')) return 'codex';
+  if (s.includes('gpt')) return 'gpt';
   return 'other';
 }
 
@@ -44,7 +43,7 @@ function modelFamilyOf(label: string, raw: string, isCodex: boolean): string {
  *
  * Variant "card" — bloco do `agent-card.tsx` extraído ipsis literis (DS-2 sub A).
  *   Mesma marcação, mesmas classes CSS (`pane pane-session`, `ps-*`); ANSI/parse
- *   continuam vindo do `parseContextPct` / `parseModelFromPane` / Codex direto.
+ *   continuam vindo do `parseContextPct` / `parseModelFromPane`.
  *
  * Variant "modal" — expandida (DS-2 sub D): chips horizontais com status,
  *   executor_kind, model, time, ctx%, visto-em-rel. Usada na aba CHAT do
@@ -62,18 +61,15 @@ export function AgentStatusline({
   extra?: ReactNode;
 }) {
   const model = agent.state_model ?? agent.model_default;
-  const isCodexExecutor = agent.executor_kind === 'codex';
-  const sessionStarted = isCodexExecutor
-    ? agent.session_started_at
-    : agent.pane_session_started_at;
+  const sessionStarted = agent.pane_session_started_at;
   const sessionSecs = sessionStarted !== null ? Math.max(0, serverNow - sessionStarted) : null;
   const contextPct = resolveContextPct(agent);
   // Modelo REAL da sessão = pane_excerpt (tmux capture), alinhado com o %.
   // state_model é a última intenção persistida (POST /model) — pode estar
   // pendente de propagação no CC. Card reflete execução, não a seleção.
-  const paneModel = isCodexExecutor ? null : parseModelFromPane(agent.pane_excerpt);
+  const paneModel = parseModelFromPane(agent.pane_excerpt);
   const modelLabel = paneModel ?? shortModelName(model);
-  const modelFamily = modelFamilyOf(modelLabel, model, isCodexExecutor);
+  const modelFamily = modelFamilyOf(modelLabel, model);
 
   const barCells = variant === 'inline' ? 6 : 10;
 

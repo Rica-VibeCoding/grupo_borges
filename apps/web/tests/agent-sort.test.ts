@@ -31,8 +31,6 @@ function agent(overrides: Partial<Agent> & Pick<Agent, 'slug' | 'name' | 'status
     session_started_at: null,
     last_assistant_message: null,
     token_usage_json: null,
-    codex_tokens_used: null,
-    codex_next_fresh: null,
     lifecycle_status: null,
     lifecycle_detail: null,
     lifecycle_event: null,

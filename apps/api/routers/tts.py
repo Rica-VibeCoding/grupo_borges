@@ -1,7 +1,7 @@
 """POST /api/tts/synth — síntese de voz da frota. JP-21.
 
 Engine preferido: Google Cloud TTS (Chirp3-HD) — mesma voz que cada agente já
-usa no Telegram/telecodex (mapa canônico em ze-shared/.claude/skills/voz/
+usa no Telegram (mapa canônico em ze-shared/.claude/skills/voz/
 scripts/tts-google.sh). Fallback: Microsoft edge-tts quando o Google falha ou
 não há API key. A voz é resolvida por `slug` do agente, então a tropa soa no
 cockpit com a mesma identidade vocal de sempre.
@@ -72,7 +72,7 @@ _PEAK_INTERVAL_MS = 50
 # Google (SynthesisInput) e dos 4.096 bytes do particionamento do edge.
 _SENTENCE_BYTE_LIMIT = 4000
 
-# --- strip markdown (port de telecodex/src/voice-out.ts) ---
+# --- strip markdown ---
 _CODE_BLOCK = re.compile(r'```[\s\S]*?```')
 _INLINE_CODE = re.compile(r'`([^`]+)`')
 _HTML_TAG = re.compile(r'</?[a-zA-Z][^>]*>')

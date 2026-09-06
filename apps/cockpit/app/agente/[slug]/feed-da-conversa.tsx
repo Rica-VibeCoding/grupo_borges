@@ -25,19 +25,16 @@ import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { decideVazio } from '@/lib/decide-vazio.ts';
-import { usaConversaCodex } from '@/lib/codex/usa-conversa-codex.ts';
 import { usaCompact } from '@/lib/compact';
 import {
   assinaPendentes,
   lePendentes,
   reconciliaPendentes,
   type EcoPendente,
-} from '@/lib/codex/eco-pendente.ts';
+} from '@/lib/eco-pendente.ts';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
 import {
-  JANELA_OUTPUT_CODEX_MS,
   publicaEscritaViva,
-  saindoOutputNoCodex,
   saindoOutputNoFim,
 } from '@/lib/escrita-viva.ts';
 import { textosDoUsuario } from '@/lib/textos-do-usuario.ts';
@@ -52,20 +49,14 @@ import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
  *  Rica em 09/08, olhando o chat vazio da Tara — *"tem que seguir a mesma UI
  *  que temos no CC"*.
  *
- *  Dois componentes irmãos em vez de um com `if`: o ramo do CC abre SSE e o da
- *  Tara abre um `setInterval`, e nenhum dos dois pode nascer pendurado num hook
- *  que às vezes roda. Montando um OU outro, cada um chama os seus hooks
- *  incondicionalmente e o que não está na tela não tem conexão aberta. */
+ *  O status da frota entra por prop, e não por hook lá dentro: o feed já lê a
+ *  frota aqui para resolver o agente, e uma segunda assinatura do mesmo store
+ *  dentro do filho só multiplicaria render. */
 export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   const { agents } = usaFrota();
   const agente = agents.find((a) => a.slug === agentSlug);
-  const ehCodex = agente?.executor_kind === 'codex' || agente?.cli_default === 'codex';
 
-  return ehCodex ? (
-    <FeedCodex agentSlug={agentSlug} />
-  ) : (
-    <FeedClaudeCode agentSlug={agentSlug} statusDaFrota={agente?.status ?? null} />
-  );
+  return <FeedClaudeCode agentSlug={agentSlug} statusDaFrota={agente?.status ?? null} />;
 }
 
 function FeedClaudeCode({
@@ -282,7 +273,7 @@ const SEM_PENDENCIA: readonly EcoPendente[] = Object.freeze([]);
 
 /** A bolha do Rica antes de o log saber que ela existe. Mesma forma que o
  *  stream produz — daqui pra baixo nenhuma peça do feed distingue as duas.
- *  Gêmea da `criaBolhaOtimista` de `lib/codex/usa-conversa-codex.ts`; as duas
+ *  Gêmea da bolha otimista do composer; as duas
  *  são pequenas e vivem em ramos que não se importam, e unificá-las custaria
  *  um módulo a mais para poupar dez linhas. */
 function criaBolhaOtimista(pendente: EcoPendente, ordinal: number): MessagePayload {
@@ -342,116 +333,4 @@ function SemConversa({ geracao, agentSlug }: { geracao: number; agentSlug: strin
       </p>
     </div>
   );
-}
-
-/** A TARA. Mesmo pipeline, outra fonte: `/codex/messages` por polling, traduzido
- *  pra `MessagePayload` antes de entrar (`lib/codex/adapta-mensagens.ts`). Daqui
- *  pra baixo nenhuma peça sabe que existe Codex.
- *
- *  O QUE ESTE RAMO NÃO TEM, e por quê:
- *  - `usaCompact` — `/compact` é comando de sessão Claude Code; o turno do Codex
- *    não tem esse ciclo.
- *  - `usaDelegacoes` — a Tara é o ALVO de delegação, não delegadora. A pílula
- *    "Tara trabalhando" pertence ao feed de quem a chamou.
- *  - linha viva — depende do `isRunning` do stream, que aqui não existe. O sinal
- *    equivalente é o `status_line` da frota; fica pra quando o Rica olhar a tela
- *    cheia e disser se sente falta. */
-function FeedCodex({ agentSlug }: { agentSlug: string }) {
-  const { mensagens, carregou } = usaConversaCodex(agentSlug, true);
-
-  const incrementalRef = useRef<ReturnType<typeof createIncrementalRenderItems> | null>(null);
-  incrementalRef.current ??= createIncrementalRenderItems();
-
-  const itensBase = useMemo<readonly ItemDoFeed[]>(
-    () => [...incrementalRef.current!.update(mensagens)],
-    [mensagens],
-  );
-  const lookup = useMemo(() => buildToolResultLookup(mensagens), [mensagens]);
-
-  // A LINHA VIVA ("| Pensando"), como no CC. O ramo do CC a liga pelo
-  // `isRunning` do stream; aqui não há stream, e a frota é o sinal
-  // equivalente — o comentário deste ramo já apontava o status da frota como
-  // substituto (10/08). Mesma régua de exibição (`ancoraDaLinhaViva`), mesma
-  // fonte de tempo (última mensagem). A diferença é que a frota LIGA e
-  // DESLIGA em vez de só desligar: sem `isRunning` não existe outra fonte de
-  // "trabalhando" — é o buraco que a borda azul tapava, agora na gramática do
-  // CC.
-  const { agents } = usaFrota();
-  const statusDaFrota = agents.find((a) => a.slug === agentSlug)?.status ?? null;
-  const desdeMs = useMemo(() => desdeDaLinhaViva(mensagens), [mensagens]);
-  const vencida = usaLinhaVivaVencida(desdeMs);
-
-  // A BOLINHA VALE AQUI TAMBÉM (17/08). Sem isto o composer da Tara só sabia
-  // "trabalhando" pela frota, e a cara dela não mudava do começo ao fim do
-  // turno — reportado pelo Rica com vídeo. O `isRunning` do stream não existe
-  // neste ramo, então quem diz que o turno corre é a frota, igual à linha viva
-  // logo abaixo.
-  //
-  // E a régua do "produzindo" é OUTRA, não a do CC: o Codex não entrega
-  // resultado de ferramenta, então `saindoOutputNoFim` gruda em `true` e a
-  // bolinha travava olhando pra cima (foto do Rica, 17/08). O porquê e o número
-  // moram em `saindoOutputNoCodex`.
-  const saindoOutput = usaOutputRecenteDoCodex(desdeMs);
-  useEffect(() => {
-    const produzindo = statusDaFrota === 'trabalhando' && !vencida && saindoOutput;
-    publicaEscritaViva(agentSlug, produzindo);
-    return () => publicaEscritaViva(agentSlug, false);
-  }, [agentSlug, statusDaFrota, vencida, saindoOutput]);
-
-  const itens = useMemo<readonly ItemDoFeed[]>(() => {
-    let lista = itensBase as ItemDoFeed[];
-    const desdeLinhaViva = ancoraDaLinhaViva({
-      correndo: statusDaFrota === 'trabalhando',
-      vencida,
-      trabalhoEmVooNoFim: trabalhoEmVooNoFim(itensBase, lookup),
-      desdeMs,
-      statusDaFrota,
-    });
-    if (desdeLinhaViva !== null) {
-      lista = [...lista, { kind: 'linha-viva', desdeMs: desdeLinhaViva }];
-    }
-    return lista;
-  }, [statusDaFrota, vencida, desdeMs, itensBase, lookup]);
-
-  // Mesma honestidade do ramo do CC: em branco enquanto não perguntei. Dizer
-  // "Sem conversa ainda." antes da primeira resposta é a mentira que esta tela
-  // veio consertar.
-  if (itens.length === 0) return carregou ? <SemConversa geracao={0} agentSlug={agentSlug} /> : null;
-
-  // O cursor no fim da última fala é o que faz o chat da Tara parecer o mesmo
-  // app que o do CC — ordem do Rica, 15/08: "todos tem que ficar com a UI igual
-  // ficou definido para a tara", "eu tenho que pensar que estou no mesmo app e
-  // não cada chat parecer um app diferente". O ramo do CC passa isto desde
-  // sempre (linha 194); o do Codex nunca passou.
-  //
-  // A fonte NÃO é `statusDaFrota` cru: no Codex ele oscila entre polls e o
-  // cursor piscaria no vale. É a presença da linha viva — que já nasce
-  // amortecida por `ancoraDaLinhaViva` (vencida + trabalho em voo) e é sempre
-  // o último item quando existe.
-  const estaRodando = itens[itens.length - 1]?.kind === 'linha-viva';
-
-  return (
-    <div className="ck-feed-enter flex min-h-0 flex-1 flex-col">
-      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando} />
-    </div>
-  );
-}
-
-/** O prazo de `saindoOutputNoCodex` com despertador — mesmo desenho do
- *  `usaLinhaVivaVencida`, e pela mesma razão: sem alguém para acordar o
- *  componente, o prazo só venceria no próximo poll que trouxesse mensagem
- *  nova, e um turno que acaba não traz nenhuma. É esse silêncio que deixava a
- *  bolinha parada olhando pra cima. */
-function usaOutputRecenteDoCodex(desdeMs: number | null): boolean {
-  const [, redesenha] = useReducer((n: number) => n + 1, 0);
-
-  useEffect(() => {
-    if (desdeMs === null) return;
-    const faltamMs = desdeMs + JANELA_OUTPUT_CODEX_MS - Date.now();
-    if (faltamMs <= 0) return;
-    const despertador = setTimeout(redesenha, faltamMs);
-    return () => clearTimeout(despertador);
-  }, [desdeMs]);
-
-  return saindoOutputNoCodex(desdeMs, Date.now());
 }

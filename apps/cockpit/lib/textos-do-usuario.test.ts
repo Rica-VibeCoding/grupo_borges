@@ -8,7 +8,7 @@ import {
   limpaEcoPendente,
   reconciliaPendentes,
   registraEcoPendente,
-} from './codex/eco-pendente.ts';
+} from './eco-pendente.ts';
 import { textosDoUsuario } from './textos-do-usuario.ts';
 
 beforeEach(() => limpaEcoPendente());

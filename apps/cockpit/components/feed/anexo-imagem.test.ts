@@ -120,7 +120,7 @@ describe('imagem enviada pelo cockpit — envelope para apresentação', () => {
     );
   });
 
-  // Imagem da Tara (Codex): chega como data-URL já pronta — não passou pelo
+  // Imagem que chega como data-URL já pronta — não passou pelo
   // disco de uploads, então não há caminho relativo pra reconhecer.
   it('reconhece a URL embutida (data-URL) como a imagem inteira', () => {
     assert.deepEqual(leAnexoImagem('data:image/png;base64,iVBORw0KGgo='), {

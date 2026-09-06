@@ -19,7 +19,7 @@
 //
 // O QUE ESTA PEÇA NÃO FAZ: as ações rápidas continuam com o `/painel` delas
 // (`bloco-de-acoes.tsx`). Aquela fonte é mais fresca (~2 s, lida direto do
-// cc-status) e traz o que a frota não tem — permissão, sandbox, cota, vida. As
+// cc-status) e traz o que a frota não tem — permissão, cota, vida. As
 // duas convivem de propósito: telemetria pela frota, botão pelo painel.
 
 import { useEffect, useState } from 'react';

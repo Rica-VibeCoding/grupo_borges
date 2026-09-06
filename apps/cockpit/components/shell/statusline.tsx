@@ -51,8 +51,7 @@ export function Statusline({
    *  da coluna (40px). */
   larguraDaBarra?: number | null;
 }) {
-  const ehCodex = agente.executor_kind === 'codex';
-  const iniciou = ehCodex ? agente.session_started_at : agente.pane_session_started_at;
+  const iniciou = agente.pane_session_started_at;
   const segundos = iniciou !== null ? Math.max(0, agora - iniciou) : null;
 
   // O pane é a fonte VIVA: `parseModelFromPane` lê o que está rodando agora,
@@ -71,10 +70,9 @@ export function Statusline({
   // com a sessão em 4.8 seria mentira de UI. Com a ficha fora da gaveta (mesma
   // data), esta linha é a única fonte do modelo lá dentro.
   const modelo =
-    (ehCodex ? null : parseModelFromPane(agente.pane_excerpt)) ??
+    parseModelFromPane(agente.pane_excerpt) ??
     rotulaModelo(agente.state_model ?? agente.model_default);
   const pct = resolveContextPct(agente);
-  const tokens = ehCodex ? agente.codex_tokens_used : null;
   // Número que o back mediu antes desta sessão (ou parado há muito) continua na
   // tela — o que não pode é sair sem etiqueta, como se fosse leitura de agora.
   const velho = agente.context_stale;
@@ -184,11 +182,6 @@ export function Statusline({
           />
           <ValorDoContexto pct={pct} />
           {emGrade ? null : etiqueta}
-        </span>
-      ) : tokens !== null ? (
-        // Codex não expõe porcentagem de janela — mostra o que ele tem.
-        <span className="shrink-0" style={{ marginLeft: emGrade ? 'auto' : undefined }}>
-          {formatCompactNumber(tokens)} tk
         </span>
       ) : (
         <span style={{ marginLeft: emGrade ? 'auto' : undefined }}>

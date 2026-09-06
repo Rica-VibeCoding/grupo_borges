@@ -37,7 +37,6 @@ from orchestrator.worktree import SubsessionSweeper, sweep_orphan_worktrees_sync
 from routers import agents as agents_router
 from routers import contas as contas_router
 from routers import ask_user as ask_user_router
-from routers import codex_events as codex_events_router
 from routers import events as events_router
 from routers import fleet as fleet_router
 from routers import hooks as hooks_router
@@ -217,7 +216,6 @@ app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(tasks_router.reviews_router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(task_commits_router.router, prefix="/api/task-commits", tags=["tasks"])
 app.include_router(events_router.router, prefix="/api/events", tags=["events"])
-app.include_router(codex_events_router.router, prefix="/api/codex-events", tags=["codex"])
 app.include_router(hooks_router.router, prefix="/hooks", tags=["hooks"])
 app.include_router(stream_router.router, prefix="/api/stream", tags=["stream"])
 app.include_router(tts_router.router, prefix="/api", tags=["tts"])

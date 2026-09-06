@@ -12,7 +12,6 @@ import {
   diagnosticaAcao,
   diagnosticaCicloDeVida,
   diagnosticaRelancar,
-  ehCodex,
   leiaDesligar,
   leiaDestrava,
   leiaLigar,
@@ -23,7 +22,6 @@ import {
   rotulaDestrava,
   rotulaLigar,
   rotulaPermissao,
-  rotulaSandbox,
 } from './acoes-rapidas.ts';
 
 /** Payload mínimo do `/painel`, no shape que o back devolve. Os campos que
@@ -71,31 +69,6 @@ describe('quais controles existem — é UM por agente, e nunca os dois', () => 
     assert.deepEqual(ids, ['permissao']);
   });
 
-  it('agente Codex: só sandbox, e NENHUMA permissão', () => {
-    const ids = montaControles(
-      painel({
-        codex_native: true,
-        sandbox: {
-          value: 'workspace-write',
-          allowed: ['read-only', 'workspace-write', 'danger-full-access'],
-          source: 'teste',
-          session_may_diverge: true,
-        },
-      }),
-    ).map((c) => c.id);
-    // Permissão fora não é economia de tela: o endpoint escreve o settings do
-    // Claude Code, que não governa a Tara.
-    assert.deepEqual(ids, ['sandbox']);
-  });
-
-  it('Codex se reconhece pelo sandbox mesmo sem a flag `codex_native`', () => {
-    const p = painel({
-      sandbox: { value: 'read-only', allowed: ['read-only'], source: 'teste', session_may_diverge: false },
-    });
-    assert.equal(ehCodex(p), true);
-    assert.equal(ehCodex(painel()), false);
-  });
-
   it('o esforço NÃO nasce aqui, por mais que o back o ofereça', () => {
     // Ordem do Rica em 09/08: *"já temos ele no input"*. O payload continua
     // trazendo `effort` (o composer o consome) — quem não o desenha mais é a
@@ -114,21 +87,15 @@ describe('quais controles existem — é UM por agente, e nunca os dois', () => 
     assert.deepEqual(ids, ['permissao']);
   });
 
-  it('Codex sem sandbox no payload não inventa o controle', () => {
-    const ids = montaControles(painel({ codex_native: true })).map((c) => c.id);
-    assert.deepEqual(ids, []);
-  });
 });
 
 describe('quem mostra o Relançar — a régua é do back, não do formato do payload', () => {
-  it('Tara: Claude Code, sem sandbox, e MESMO ASSIM sem Relançar', () => {
-    // O caso que nenhuma pista local pegava: ela não é `ehCodex`, o payload é
+  it('Tara: payload igual ao de um Anthropic, e MESMO ASSIM sem Relançar', () => {
+    // O caso que nenhuma pista local pegava: ela roda Claude Code, o payload é
     // igual ao de um agente Anthropic, e o `POST /relaunch` a recusa. Antes do
     // campo o botão aparecia e o Rica descobria o limite clicando — clique que
     // mata o pane antes de errar.
-    const p = painel({ slug: 'tara', relaunch_suportado: false });
-    assert.equal(ehCodex(p), false);
-    assert.equal(podeRelancar(p), false);
+    assert.equal(podeRelancar(painel({ slug: 'tara', relaunch_suportado: false })), false);
   });
 
   it('agente que o back atende segue com o botão', () => {
@@ -149,46 +116,6 @@ describe('a ordem é a escada, não o que o back listou', () => {
     );
   });
 
-  it('sandbox sobe de leitura a total', () => {
-    const sandbox = montaControles(
-      painel({
-        codex_native: true,
-        sandbox: {
-          value: 'read-only',
-          allowed: ['danger-full-access', 'read-only', 'workspace-write'],
-          source: 'teste',
-          session_may_diverge: false,
-        },
-      }),
-    )[0];
-    assert.deepEqual(
-      sandbox.opcoes.map((o) => o.valor),
-      ['read-only', 'workspace-write', 'danger-full-access'],
-    );
-  });
-
-  it('degrau que a escada não conhece vai pro FIM, na ordem em que veio', () => {
-    // O back pode ganhar um nível novo antes desta tabela. Sumir com ele
-    // esconderia um valor válido; embaralhar a ordem trocaria o segmento de
-    // lugar entre um render e outro.
-    const [sandbox] = montaControles(
-      painel({
-        codex_native: true,
-        sandbox: {
-          value: 'read-only',
-          // `allowed` é `string[]` no contrato — de propósito: é a lista que o
-          // back monta, e ele pode ganhar um degrau antes desta tabela.
-          allowed: ['jaula', 'workspace-write', 'bunker', 'read-only'],
-          source: 'teste',
-          session_may_diverge: false,
-        },
-      }),
-    );
-    assert.deepEqual(
-      sandbox.opcoes.map((o) => o.valor),
-      ['read-only', 'workspace-write', 'jaula', 'bunker'],
-    );
-  });
 });
 
 describe('o modo em que o agente ESTÁ sempre aparece', () => {
@@ -225,16 +152,13 @@ describe('tradução — português na tela, valor cru pro back', () => {
     );
   });
 
-  it('permissão e sandbox têm rótulo em português', () => {
+  it('permissão tem rótulo em português', () => {
     assert.equal(rotulaPermissao('bypassPermissions'), 'Livre');
     assert.equal(rotulaPermissao('plan'), 'Só planeja');
-    assert.equal(rotulaSandbox('danger-full-access'), 'Total');
-    assert.equal(rotulaSandbox('workspace-write'), 'Workspace');
   });
 
   it('valor desconhecido aparece cru — melhor que sumir, e o back é quem manda', () => {
     assert.equal(rotulaPermissao('modoNovo'), 'modoNovo');
-    assert.equal(rotulaSandbox('sandbox-novo'), 'sandbox-novo');
   });
 
   it('toda opção carrega descrição — ela vira title E aria-label', () => {
@@ -272,24 +196,6 @@ describe('a ressalva do back — some da tela, fica no leitor de tela', () => {
     assert.match(texto, /sessão em execução pode estar em outro valor/);
   });
 
-  it('sem valor, o anúncio diz que não há — não chuta', () => {
-    // Montado à mão, não por `montaControles`: `valor: null` é um estado que o
-    // código trata (o back pode omitir o campo) mas que o TIPO do payload
-    // proíbe — `PainelSandbox.value` e `PainelPermission.mode` são fechados.
-    // Passar pelo payload exigiria um cast que só serviria para enganar o
-    // compilador; `descreveControle` recebe `Controle`, e é ele que está sob
-    // teste.
-    assert.equal(
-      descreveControle({
-        id: 'sandbox',
-        titulo: 'Sandbox',
-        valor: null,
-        ressalva: null,
-        opcoes: [{ valor: 'read-only', rotulo: 'Leitura', descricao: 'Só lê.' }],
-      }),
-      'Sandbox: sem valor',
-    );
-  });
 });
 
 describe('destrava — o 200 não é sucesso', () => {
@@ -320,7 +226,7 @@ describe('destrava — o 200 não é sucesso', () => {
 describe('falha — nunca só o diagnóstico, sempre a saída', () => {
   it('todo caminho devolve resumo E saída preenchidos', () => {
     const casos: unknown[] = [
-      new Error('patchAgentCodexSandbox failed: 400: not_a_codex_agent'),
+      new Error('patchAgentPermissionMode failed: 400: modo_desconhecido'),
       new Error('kimi_effort_not_allowed'),
       new Error('patchAgentEffort failed: 404'),
       new Error('500 Internal Server Error'),
@@ -335,15 +241,9 @@ describe('falha — nunca só o diagnóstico, sempre a saída', () => {
     }
   });
 
-  it('agente que deixou de ser Codex manda recarregar, não "tente de novo"', () => {
-    const imp = diagnosticaAcao(new Error('400: not_a_codex_agent'), 'sandbox');
-    assert.match(imp.saida, /recarregue o painel/);
-  });
-
   it('o caso geral nomeia a ação e avisa que o valor voltou', () => {
     assert.match(diagnosticaAcao(new Error('boom'), 'permissao').resumo, /a permissão/);
-    assert.match(diagnosticaAcao(new Error('boom'), 'sandbox').resumo, /o sandbox/);
-    assert.match(diagnosticaAcao(new Error('boom'), 'sandbox').saida, /voltou ao que era/);
+    assert.match(diagnosticaAcao(new Error('boom'), 'permissao').saida, /voltou ao que era/);
   });
 });
 
@@ -447,15 +347,9 @@ describe('ações brutas', () => {
     assert.match(nemTentou.saida, /viva/);
   });
 
-  it('Codex é recusa explicada, não erro genérico', () => {
-    const imp = diagnosticaRelancar(new Error('409: relaunch_somente_claude_code'));
-    assert.match(imp.resumo, /não roda Claude Code/);
-    assert.match(imp.saida, /Codex/);
-  });
-
   it('motor não-Anthropic manda o Rica pro Desligar+Ligar, não pro "tente de novo"', () => {
     // O genérico dizia "tente de novo; se repetir, é infra" — conselho errado
-    // pra recusa permanente. A Tara no proxy do Codex cai exatamente aqui.
+    // pra recusa permanente. A Tara cai exatamente aqui.
     const imp = diagnosticaRelancar(new Error('409: relaunch_requer_backend_anthropic_nativo'));
     assert.match(imp.saida, /Desligar/);
     assert.match(imp.saida, /Ligar/);
@@ -575,14 +469,11 @@ describe('ligar', () => {
     assert.match(imp.saida, /duas sessões/i);
   });
 
-  it('Codex é recusa explicada nas duas ações, não erro genérico', () => {
+  it('boot em curso é recusa explicada nas duas ações, não erro genérico', () => {
     for (const acao of ['ligar', 'desligar'] as const) {
-      const imp = diagnosticaCicloDeVida(
-        new Error('409: ciclo_de_vida_somente_claude_code'),
-        acao,
-      );
-      assert.match(imp.resumo, /não tem sessão própria/i);
-      assert.match(imp.saida, /Codex/);
+      const imp = diagnosticaCicloDeVida(new Error('409: ligar_em_curso'), acao);
+      assert.match(imp.resumo, /boot deste agente em andamento/i);
+      assert.match(imp.saida, /espere ele terminar/i);
     }
   });
 

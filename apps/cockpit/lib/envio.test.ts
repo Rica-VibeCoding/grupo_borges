@@ -254,7 +254,7 @@ test('eco tardio recupera um envio não confirmado', () => {
 });
 
 /**
- * A FILA DO SERVIDOR (202), que é o caminho do Codex. Diferente do
+ * A FILA DO SERVIDOR (202). Diferente do
  * `kind: "queued"` do Claude Code, aqui o recibo chega no PRÓPRIO POST — não há
  * item de stream a esperar, porque o texto está no banco do servidor e não
  * colado num pane.

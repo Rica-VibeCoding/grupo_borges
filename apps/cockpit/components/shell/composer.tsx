@@ -52,9 +52,7 @@ import {
   descartaEcoPendente,
   registraEcoPendente,
   PRAZO_CC_MS,
-  PRAZO_CODEX_MS,
-} from '../../lib/codex/eco-pendente';
-import { publicaNovaConversa } from '../../lib/codex/nova-conversa';
+} from '../../lib/eco-pendente';
 import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
 import { assinaEscritaViva, leEscritaViva } from '../../lib/escrita-viva';
 import { usaFrota } from './frota-provider';
@@ -108,7 +106,7 @@ export type ComposerProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
-  /** Repasse direto para o SeletorMotor: Kimi/Codex têm `requested` no painel,
+  /** Repasse direto para o SeletorMotor: o Kimi tem `requested` no painel,
    *  o Claude não (ver `contratoSeparaPedido` em motor.ts). */
   esforcoCobrePedido: boolean;
 };
@@ -148,14 +146,6 @@ function OndaCompacta({ niveis, tinta }: { niveis: number[]; tinta: string }) {
  *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
  *  frase. */
 const COMPACT_RE = /^\s*\/compact(?:\s|$)/;
-
-/** Comandos da TARA no composer — mesmo vocabulário do CC. `clear`/`/clear`
- *  apaga a conversa da UI e arma uma thread nova (o botão "Nova conversa" da
- *  gaveta faz o mesmo). Interceptado ANTES da porta: não é mensagem pro Codex,
- *  é gesto de tela. */
-const COMANDOS_TARA: Record<string, 'nova-conversa'> = {
-  clear: 'nova-conversa',
-};
 
 // Teclado físico tem Shift previsível; teclado virtual (touch) não — o Enter dele é
 // a única tecla de "concluir campo", então usá-la pra enviar rouba a quebra de
@@ -201,17 +191,12 @@ export function Composer({
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
   // "enviado" mentiroso do painel antigo, só que mais bonito.
-  // Quem entrega por rollout (Codex) e quem entrega por stream (Claude Code)
-  // têm ecos com ordens de grandeza diferentes — 12 s contra milissegundos.
   // A frota já está montada acima (o feed a lê pelo mesmo hook); ler daqui
   // evita prop nova em `app/agente/[slug]/page.tsx`.
   const { agents } = usaFrota();
-  const ehCodex = agents.some(
-    (a) => a.slug === agentSlug && (a.executor_kind === 'codex' || a.cli_default === 'codex'),
-  );
-  // Positivo, não `!ehCodex`: com a frota ainda não carregada os dois são
-  // falsos, e a porta continua segurando — errar fechado aqui devolve o
-  // comportamento de ontem, errar aberto manda um POST que o TeleCodex recusa.
+  // Positivo, e não uma negação: com a frota ainda não carregada isto é falso e
+  // a porta continua segurando. Errar fechado aqui é o comportamento de ontem;
+  // errar aberto manda um POST que o back recusa.
   const motorEnfileiraSozinho = agents.some(
     (a) => a.slug === agentSlug && (a.executor_kind ?? a.cli_default) === 'claude_code',
   );
@@ -241,7 +226,6 @@ export function Composer({
   const daFrota = agents.find((a) => a.slug === agentSlug);
   const vivo = daFrota !== undefined && daFrota.status !== 'offline';
   const trabalhando = vivo && daFrota.status === 'trabalhando';
-  const sessaoCodexProcessando = ehCodex && daFrota?.codex_session_processing === true;
   const assinaTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);
   const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
   // No servidor não há turno nenhum: o valor nasce de um stream do browser.
@@ -253,13 +237,11 @@ export function Composer({
   const escrevendo = useSyncExternalStore(assinaEscrita, leEscrita, () => false);
   const [parando, setParando] = useState(false);
   // O ■ SOME NO TOQUE, não quando o painel concorda. `lifecycle_status` é
-  // alimentado por evento (JSONL no Claude Code, rollout no Codex) e chega
-  // atrasado — no Codex ele ainda OSCILA entre um poll e o seguinte. Botão que
-  // continua oferecendo uma ação já executada é a mentira de UI da §9, e aqui
-  // ela convida a um segundo toque num agente que já parou.
+  // alimentado por evento (JSONL) e chega atrasado. Botão que continua
+  // oferecendo uma ação já executada é a mentira de UI da §9, e aqui ela
+  // convida a um segundo toque num agente que já parou.
   const [interrompido, setInterrompido] = useState(false);
-  const gerando =
-    !interrompido && (sessaoCodexProcessando || (vivo && (trabalhando || turnoVivo)));
+  const gerando = !interrompido && vivo && (trabalhando || turnoVivo);
 
   /** O `■`. Não pede confirmação: interromper é reversível — o texto continua no
    *  feed e mandar de novo recomeça — e um modal entre o dedo e o botão, no meio
@@ -282,7 +264,7 @@ export function Composer({
   // aqui porque o Popover vive num Portal (subárvore separada do textarea) e
   // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
   // e apertar Enter mandava o `/` sozinho como mensagem pro agente.
-  const bolhaComandosAberta = !ehCodex && texto === '/';
+  const bolhaComandosAberta = texto === '/';
   const envio = usaEnvio(agentSlug);
   const faseLocal = envio.estado.fase;
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
@@ -509,20 +491,6 @@ export function Composer({
   // que dão lugar à onda.
   const pararEmCena = gerando && !emCaptura(modo);
 
-  /** "Clear"/"Nova conversa" da Tara: arma `codex_next_fresh` no back e zera o
-   *  feed local NA HORA (mesmo efeito do /clear do CC). Falha do POST é
-   *  silenciosa — o campo esvaziou, e o próximo turno continua a thread atual
-   *  sem drama. */
-  async function armarNovaConversaTara(): Promise<void> {
-    try {
-      const { patchAgentCodexNewThread } = await import('@grupo_borges/cockpit-core/api');
-      await patchAgentCodexNewThread(agentSlug, true);
-      publicaNovaConversa(agentSlug);
-    } catch {
-      // sem recibo — segue quieto.
-    }
-  }
-
   /**
    * `retomada` é o "Reenviar"/"Tentar de novo" da linha de estado: ali o gesto é
    * o TEXTO que ficou pendurado, e nunca o anexo — a foto na mão não é o que
@@ -541,16 +509,6 @@ export function Composer({
     // retomada já foi decidido quando entrou na fila ou na máquina de envio;
     // prefixá-lo aqui de novo mudaria a tentativa que o Rica está reabrindo.
     const corpoParaEnviar = prefixaPesquisa(corpo, podePesquisar && pesquisaAtiva, retomada);
-    // COMANDOS DA TARA — mesmo efeito do /clear no CC. `clear`/`/clear` apaga
-    // a conversa da UI e arma uma thread nova; a próxima mensagem nasce limpa.
-    // Interceptado ANTES da porta: é gesto de tela, não texto pro Codex — a
-    // bolha otimista nem nasce.
-    if (ehCodex && COMANDOS_TARA[corpoParaEnviar.trim().toLowerCase().replace(/^\//, '')]) {
-      await armarNovaConversaTara();
-      setTexto('');
-      setOrigemDoRascunho('text');
-      return true;
-    }
     // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
     // três `return` mudos recusavam DEPOIS de `setTexto('')` já ter rodado, e
     // em 05/08 uma mensagem do Rica morreu assim — sem requisição, sem aviso,
@@ -604,8 +562,8 @@ export function Composer({
     if (!efeito.despacha) return false;
     // A marca de "eu mandei parar" morre AQUI, no gesto que inequivocamente
     // abre um turno novo — e não num efeito que observa `trabalhando` cair.
-    // Aquela versão tinha corrida: no Codex a fase pisca entre dois polls, a
-    // marca era apagada no vale e o ■ ressuscitava sobre um agente já parado.
+    // Aquela versão tinha corrida: a fase pisca entre dois polls, a marca era
+    // apagada no vale e o ■ ressuscitava sobre um agente já parado.
     setInterrompido(false);
     // UM GESTO, UMA ENTREGA: o arquivo sobe com o texto como legenda, no mesmo
     // multipart. Não existe mensagem de texto separada — duas requisições dariam
@@ -618,19 +576,7 @@ export function Composer({
       // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
       // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
       // sozinho não cobre.
-      if (await anexo.enviar(corpoParaEnviar, (resposta) => {
-        if (!ehCodex || resposta.kind !== 'image') return;
-        const legenda = corpoParaEnviar.trim();
-        const envelope =
-          `Imagem enviada via cockpit:\n${resposta.path}` +
-          (legenda ? `\nCaption: ${legenda}` : '');
-        registraEcoPendente(
-          agentSlug,
-          legenda || 'Veja a imagem anexa.',
-          PRAZO_CODEX_MS,
-          envelope,
-        );
-      })) {
+      if (await anexo.enviar(corpoParaEnviar)) {
         if (textoAtualRef.current === corpoParaEnviar) {
           setTexto('');
           setOrigemDoRascunho('text');
@@ -647,7 +593,7 @@ export function Composer({
     // `/compact` é mensagem comum pro back, mas pra ESTA tela é também o
     // gatilho da espera: inicia a máquina ANTES do POST voltar, porque a
     // barra precisa nascer com o clique, não com o 200.
-    if (!ehCodex && COMPACT_RE.test(corpoParaEnviar)) {
+    if (COMPACT_RE.test(corpoParaEnviar)) {
       compactPendenteRef.current = true;
       iniciarCompact();
     }
@@ -672,16 +618,12 @@ export function Composer({
     // A mesma pendência conserta o alarme: `PRAZO_ECO_MS` são 12 s calibrados
     // sobre um pior caso de 1,434 s, então ele estourava ANTES do eco real e
     // toda mensagem para agente ocioso terminava em "não consegui confirmar se
-    // entrou". Ver `lib/codex/eco-pendente.ts` e o ramo do CC em
+    // entrou". Ver `lib/eco-pendente.ts` e o ramo do CC em
     // `app/agente/[slug]/feed-da-conversa.tsx`.
     const idEcoPendente = registraEcoPendente(
       agentSlug,
       origem === 'stt' ? `${MARCA_VOZ}${corpoParaEnviar}` : corpoParaEnviar,
-      // O teto é o tempo que ele fica com a mensagem na tela sem ninguém dizer
-      // se entrou — a pendência segura o prazo do alarme. Herdar os 3 min do
-      // Codex aqui trocaria um aviso falso aos 12 s por silêncio de três
-      // minutos, e silêncio é a queixa original.
-      ehCodex ? PRAZO_CODEX_MS : PRAZO_CC_MS,
+      PRAZO_CC_MS,
       origem === 'stt' ? corpoParaEnviar : undefined,
     );
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
@@ -774,20 +716,7 @@ export function Composer({
     // anterior pode ter sido entregue e conta o eco ambíguo em vez de confirmar
     // o reenvio com o eco do primeiro. `falhou` é reenvio comum.
     if (fase === 'nao-confirmado') {
-      const origem = origemDoUltimoEnvio.current;
-      const idEcoPendente = ehCodex
-        ? registraEcoPendente(
-            agentSlug,
-            origem === 'stt' ? `${MARCA_VOZ}${ultimoEnviado}` : ultimoEnviado,
-            PRAZO_CODEX_MS,
-            origem === 'stt' ? ultimoEnviado : undefined,
-          )
-        : null;
-      void envio.reenviar(
-        idEcoPendente
-          ? () => descartaEcoPendente(agentSlug, idEcoPendente)
-          : undefined,
-      );
+      void envio.reenviar();
       return;
     }
     void enviar(ultimoEnviado, true, origemDoUltimoEnvio.current);
@@ -982,7 +911,7 @@ export function Composer({
           // "borda fininha, igual nós temos no CC" — engrossar era um segundo
           // portador para o mesmo recado, e o que ele nota é a espessura.
           borderWidth: '1px',
-          // Raio próprio, maior que o do resto (§adendo): a referência do Codex
+          // Raio próprio, maior que o do resto (§adendo): a referência
           // arredonda a caixa de fala bem mais do que os blocos de conteúdo, e
           // `--ck-radius-frame` veste código/diff/thinking, onde macio demais
           // rouba leitura. Ver o comentário do token em `globals.css`.
@@ -1010,7 +939,6 @@ export function Composer({
             setOrigemDoRascunho('text');
           }}
           campoRef={textareaRef}
-          ativa={!ehCodex}
         >
           <textarea
               ref={textareaRef}

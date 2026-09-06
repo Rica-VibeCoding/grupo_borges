@@ -39,17 +39,14 @@ logger = logging.getLogger(__name__)
 HOUR_BUCKET_FMT = "%Y-%m-%dT%H:00:00Z"
 
 # DS-58: SUM(input+output tokens) por bucket. Cobre `jsonl:assistant` (Claude,
-# $.message.usage.*) e `codex.turn.completed` (Codex, $.body.usage.*). Outros
-# kinds não somam. Constante única usada em 2 queries (fleet_snapshot +
-# event_tokens_per_hour) pra evitar divergência silenciosa se o payload mudar.
+# $.message.usage.*). Outros kinds não somam. Constante única usada em 2 queries
+# (fleet_snapshot + event_tokens_per_hour) pra evitar divergência silenciosa se
+# o payload mudar.
 _TOKEN_SUM_SQL = """SUM(
     CASE
         WHEN kind = 'jsonl:assistant' THEN
             COALESCE(json_extract(payload, '$.message.usage.input_tokens'), 0)
             + COALESCE(json_extract(payload, '$.message.usage.output_tokens'), 0)
-        WHEN kind = 'codex.turn.completed' THEN
-            COALESCE(json_extract(payload, '$.body.usage.input_tokens'), 0)
-            + COALESCE(json_extract(payload, '$.body.usage.output_tokens'), 0)
         ELSE 0
     END
 )"""
@@ -179,15 +176,12 @@ def derive_agent_status(
     lifecycle_status: str | None = None,
     lifecycle_updated_at: int | None = None,
     current_task_id: str | None = None,
-    executor_kind: str | None = None,
-    codex_runtime_enabled: int | None = None,
     now: int | None = None,
 ) -> str:
     """Deriva status do agente a partir da presença tmux + lifecycle.
 
-    Contrato: ``offline`` significa ausência de sinal fresco. Para Claude Code,
-    sessão tmux + CLI de agente no foreground são pré-requisitos; para Codex, o
-    wrapper observável é a presença.
+    Contrato: ``offline`` significa ausência de sinal fresco — sessão tmux + CLI
+    de agente no foreground são pré-requisitos.
 
     ``last_seen`` e ``current_task_id`` permanecem na assinatura por
     compatibilidade do contrato de derivação, mas não definem presença online.
@@ -197,26 +191,8 @@ def derive_agent_status(
         lifecycle_updated_at is not None
         and now - lifecycle_updated_at <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
     )
-    if executor_kind == "codex" and codex_runtime_enabled == 0:
-        # Desligar é uma decisão persistida; eventos tardios e estados antigos não religam a Tara.
-        return "offline"
     if lifecycle_status == "offline" and lifecycle_is_fresh:
         return "offline"
-    if executor_kind == "codex":
-        # A Tara é executor sob demanda (opção A, 10/08): nasce e morre a cada
-        # turno, sem sessão própria pra manter de pé. "Offline" é sinal de FALHA
-        # recente (o `tara.exec.failed` que o `if` acima devolveu), não de
-        # inatividade — um turno terminado sem evento novo não desliga o agente.
-        # Lifecycle velho:
-        #  - "ocioso" → ocioso (disponível pra receber o próximo turno)
-        #  - "trabalhando" → aguardando (turno sem sinal há 5min; não afirmar offline)
-        #  - "aguardando" → aguardando
-        #  - sem lifecycle → ocioso (nunca rodou; disponível)
-        if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
-            return lifecycle_status
-        if lifecycle_status == "trabalhando":
-            return "aguardando"
-        return lifecycle_status if lifecycle_status in {"ocioso", "aguardando"} else "ocioso"
     if not session_present or not agent_process_present:
         return "offline"
     if lifecycle_is_fresh and lifecycle_status in {"ocioso", "trabalhando", "aguardando"}:
@@ -261,25 +237,6 @@ def derive_lifecycle_from_event(
         from routers.hooks import _hook_lifecycle
 
         return _hook_lifecycle(clean_kind, data)
-
-    if kind == "tara.exec.started":
-        return "trabalhando", "tara-codex iniciado"
-    if kind == "tara.exec.completed":
-        return "ocioso", "tara-codex concluído"
-    if kind == "tara.exec.failed":
-        return "offline", "tara-codex falhou"
-    if kind == "codex.turn.started":
-        return "trabalhando", "turno iniciado"
-    if kind == "codex.turn.completed":
-        return "ocioso", "turno concluído"
-    if kind in {"codex.turn.failed", "codex.error"}:
-        return "aguardando", "erro codex"
-    if kind in {"codex.item.started", "codex.item.updated"}:
-        body = data.get("body") if isinstance(data.get("body"), dict) else data
-        detail = _short_text(body.get("label"), limit=80) or _short_text(body.get("name"), limit=80)
-        return "trabalhando", detail or "item em execução"
-    if kind == "codex.item.completed":
-        return "trabalhando", "item concluído"
 
     if kind == "jsonl:user":
         message = data.get("message")
@@ -387,11 +344,6 @@ class GrupoBorgesDB:
                 ("session_started_at", "INTEGER"),
                 ("last_assistant_message", "TEXT"),
                 ("token_usage_json", "TEXT"),
-                ("codex_reasoning_effort", "TEXT"),
-                ("codex_sandbox", "TEXT"),
-                ("codex_next_fresh", "INTEGER"),
-                ("codex_thread_id", "TEXT"),
-                ("codex_runtime_enabled", "INTEGER NOT NULL DEFAULT 1"),
                 ("kimi_reasoning_effort", "TEXT"),
                 ("ordem", "INTEGER"),
             ):
@@ -489,36 +441,14 @@ class GrupoBorgesDB:
                     """,
                     (a["slug"],),
                 )
-                # Três campos do agent_state são escritos pelo caminho do Codex
-                # CLI, não derivados daqui — e sobreviviam à saída do agente:
-                #
-                #  - `executor_kind` (webhook `routers/codex_events.py`):
-                #    `_agente_codex()` seguia dando `True` pela linha velha, com o
-                #    yaml já dizendo `claude_code`;
-                #  - `codex_next_fresh` (`/control/new-thread`): significa "a
-                #    próxima thread nasce limpa", conceito que só existe no CLI.
-                #    Preso em 1, faz `_codex_token_usage_payload` devolver `None`
-                #    e a cota do painel morre em `missing` — pego na validação de
-                #    pé de 06/09, com a Tara já migrada.
-                #  - `model` (`POST /{slug}/model`): guardava `codex-gpt-5-6-sol`,
-                #    id do catálogo do CLI. Em `codex-proxy` o campo tem de ser
-                #    NULL por construção — aquele POST responde 409 e quem manda
-                #    no modelo é o `ANTHROPIC_MODEL` do boot. Enquanto ficava,
-                #    `_build_painel_contexto` caía nele sempre que a statusline
-                #    do CC faltasse, e o `/api/fleet` publicava o slug morto.
-                #
-                # O yaml é a fonte; quem contradiz, cede.
-                if a.get("cli_default", "claude_code") != "codex":
-                    conn.execute(
-                        "UPDATE agent_state SET executor_kind = NULL "
-                        "WHERE slug = ? AND executor_kind = 'codex'",
-                        (a["slug"],),
-                    )
-                    conn.execute(
-                        "UPDATE agent_state SET codex_next_fresh = 0 "
-                        "WHERE slug = ? AND codex_next_fresh = 1",
-                        (a["slug"],),
-                    )
+                # `state_model` é escrito pelo `POST /{slug}/model` e sobrevive
+                # à troca de família. Na Tara guardava `codex-gpt-5-6-sol`, id do
+                # catálogo do CLI que ela deixou de usar. Em `codex-proxy` o
+                # campo tem de ser NULL por construção — aquele POST responde 409
+                # e quem manda no modelo é o `ANTHROPIC_MODEL` do boot. Enquanto
+                # ficava, `_build_painel_contexto` caía nele sempre que a
+                # statusline do CC faltasse, e o `/api/fleet` publicava o slug
+                # morto no card. O yaml é a fonte; quem contradiz, cede.
                 if a.get("model_family") == "codex-proxy":
                     conn.execute(
                         "UPDATE agent_state SET model = NULL WHERE slug = ?",
@@ -547,9 +477,6 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
-                       s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
-                       s.codex_thread_id,
-                       s.codex_runtime_enabled,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
@@ -572,9 +499,6 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
-                       s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
-                       s.codex_thread_id,
-                       s.codex_runtime_enabled,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
@@ -703,14 +627,14 @@ class GrupoBorgesDB:
                 (slug,),
             )
 
-    async def update_agent_codex_state(
+    async def update_agent_runtime_state(
         self,
         slug: str,
         **fields: Any,
     ) -> None:
-        await asyncio.to_thread(self._update_agent_codex_state, slug, **fields)
+        await asyncio.to_thread(self._update_agent_runtime_state, slug, **fields)
 
-    def _update_agent_codex_state(self, slug: str, **fields: Any) -> None:
+    def _update_agent_runtime_state(self, slug: str, **fields: Any) -> None:
         allowed = {
             "executor_kind",
             "status_line",
@@ -719,11 +643,6 @@ class GrupoBorgesDB:
             "session_started_at",
             "last_assistant_message",
             "token_usage_json",
-            "codex_reasoning_effort",
-            "codex_sandbox",
-            "codex_next_fresh",
-            "codex_thread_id",
-            "codex_runtime_enabled",
             "kimi_reasoning_effort",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
@@ -769,7 +688,7 @@ class GrupoBorgesDB:
         ditada. Recebendo a lista completa, ou todo mundo tem posição ou
         ninguém tem.
 
-        Não passa por ``_update_agent_codex_state`` de propósito: aquele toca
+        Não passa por ``_update_agent_runtime_state`` de propósito: aquele toca
         ``last_seen``, e arrastar a linha de um agente desligado não é sinal de
         vida dele.
         """
@@ -793,7 +712,7 @@ class GrupoBorgesDB:
     ) -> str:
         """Persiste a origem antes de entregar texto a um executor externo.
 
-        O executor (tmux/Codex) não transporta campos próprios do cockpit no
+        O executor (o pane tmux) não transporta campos próprios do cockpit no
         seu eco. O registro é a correlação durável entre o POST e essa
         mensagem futura; ``meta`` nunca é inferido do conteúdo ecoado.
         """
@@ -2156,21 +2075,12 @@ class GrupoBorgesDB:
         # do trigger de review — disparavam a cada fim de turno do CC, marcando
         # task como done/review prematuramente. Caminho explícito (STATE: DONE
         # no transcript → record_state_event em store.py:1006) cobre CC.
-        # tara/codex.*.completed são genuinamente terminais (exec one-shot).
-        if source_event in {
-            "tara.exec.completed",
-            "codex.turn.completed",
-        }:
+        if source_event == "tara.exec.completed":
             next_status = "review"
             run_status = "done"
             outcome = "awaiting_review"
             event_kind = "lifecycle.review"
-        elif source_event in {
-            "hook:StopFailure",
-            "tara.exec.failed",
-            "codex.turn.failed",
-            "codex.error",
-        }:
+        elif source_event in {"hook:StopFailure", "tara.exec.failed"}:
             next_status = "blocked"
             run_status = "blocked"
             outcome = "lifecycle_failed"
@@ -3030,8 +2940,8 @@ class GrupoBorgesDB:
     ) -> dict[str, int]:
         """SUM(input+output tokens) por hora UTC pros eventos de um agente.
 
-        Cobre `jsonl:assistant` (Claude, $.message.usage.*) e `codex.turn.completed`
-        (Codex, $.body.usage.*). Outros kinds não somam. DS-58.
+        Cobre `jsonl:assistant` (Claude, $.message.usage.*). Outros kinds não
+        somam. DS-58.
         """
         return await asyncio.to_thread(self._event_tokens_per_hour, agent_slug, since_unix)
 
@@ -3144,9 +3054,6 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
-                       s.codex_reasoning_effort, s.codex_sandbox, s.codex_next_fresh,
-                       s.codex_thread_id,
-                       s.codex_runtime_enabled,
                        s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at,
@@ -3263,8 +3170,6 @@ class GrupoBorgesDB:
                 lifecycle_status=agent.get("lifecycle_status"),
                 lifecycle_updated_at=agent.get("lifecycle_updated_at"),
                 current_task_id=agent.get("current_task_id"),
-                executor_kind=agent.get("executor_kind"),
-                codex_runtime_enabled=agent.get("codex_runtime_enabled"),
                 now=now,
             )
             agent["sparkline"] = build_hour_series(

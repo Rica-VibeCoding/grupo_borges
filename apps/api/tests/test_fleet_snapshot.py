@@ -30,12 +30,13 @@ AGENT = {
 TARA = {
     "slug": "tara",
     "name": "Tara Kaur",
-    "role": "codex",
+    "role": "executor",
     "emoji": "TK",
     "tmux_session": "tara",
     "workspace_path": "/tmp/tara",
-    "cli_default": "codex",
-    "model_default": "codex-gpt-5-6-sol",
+    "cli_default": "claude_code",
+    "model_default": "gpt-5.6-sol[1m]",
+    "model_family": "codex-proxy",
     "capabilities": [],
     "can_review": [],
 }
@@ -118,38 +119,6 @@ def test_fleet_snapshot_uses_running_task_display_id(tmp_path: Path) -> None:
     assert _agent_from_snapshot(snapshot, "daniel")["current_task_id"] == running["human_id"]
 
 
-@pytest.mark.parametrize(
-    ("lifecycle_status", "lifecycle_event", "snapshot_at"),
-    [
-        ("offline", "codex.session.closed", 1_301),
-        ("ocioso", "tara.exec.completed", 1_000),
-    ],
-    ids=["desligamento-velho", "evento-tardio"],
-)
-def test_fleet_mantem_codex_desligado_offline(
-    tmp_path: Path,
-    monkeypatch,
-    lifecycle_status: str,
-    lifecycle_event: str,
-    snapshot_at: int,
-) -> None:
-    db = _setup_db(tmp_path)
-    db._sync_agents([AGENT, TARA])
-    monkeypatch.setattr("db.store.time.time", lambda: 1_000)
-    db._update_agent_codex_state("tara", executor_kind="codex", codex_runtime_enabled=0)
-    db._update_agent_lifecycle(
-        "tara",
-        status=lifecycle_status,
-        detail=None,
-        event=lifecycle_event,
-    )
-    monkeypatch.setattr("db.store.time.time", lambda: snapshot_at)
-
-    snapshot = db._fleet_snapshot(24, set(), set())
-
-    assert _agent_from_snapshot(snapshot, "tara")["status"] == "offline"
-
-
 def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path, monkeypatch) -> None:
     db = _setup_db(tmp_path)
     session_id = f"fleet-context-{int(time.time())}"
@@ -208,196 +177,6 @@ def test_fleet_route_hydrates_claude_context_pct_from_status_file(tmp_path: Path
         assert agent["context_tokens"] == 155_012
     finally:
         status_path.unlink(missing_ok=True)
-
-
-def test_fleet_card_nova_conversa_nao_herda_thread_anterior(tmp_path: Path, monkeypatch) -> None:
-    db = _setup_db(tmp_path)
-    db._sync_agents([AGENT, TARA])
-    db._update_agent_codex_state(
-        "tara",
-        executor_kind="codex",
-        context_pct=100.0,
-        token_usage_json=json.dumps({"source": "codex.event_msg.token_count"}),
-        codex_next_fresh=1,
-    )
-
-    async def fake_capture(_session_name: str) -> str:
-        return "GPT-5.6 Sol - 00:03:03"
-
-    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
-        return tmux_driver.TmuxSessionInventory(
-            {"daniel", "tara"}, {"daniel", "tara"}
-        )
-
-    def fake_resolve_thread(**_kwargs):
-        raise AssertionError("nova conversa não pode reler a thread anterior")
-
-    monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
-    monkeypatch.setattr(
-        fleet_router.tmux_driver,
-        "list_session_inventory",
-        fake_list_session_inventory,
-    )
-    monkeypatch.setattr(fleet_router.codex_reader, "read_cockpit_thread_id", lambda: None)
-    monkeypatch.setattr(fleet_router.codex_reader, "resolve_thread", fake_resolve_thread)
-
-    app = FastAPI()
-    app.state.db = db
-    app.include_router(fleet_router.router, prefix="/api/fleet")
-
-    with TestClient(app) as client:
-        response = client.get("/api/fleet")
-
-    assert response.status_code == 200
-    agent = _agent_from_snapshot(response.json(), "tara")
-    assert agent["codex_tokens_used"] == 0
-    assert agent["codex_next_fresh"] is True
-    assert agent["context_pct"] == 0
-    assert agent["context_stale"] is False
-
-
-def _prepara_card_codex(tmp_path: Path, monkeypatch, *, medido_em: int, iniciou_em: int) -> FastAPI:
-    db = _setup_db(tmp_path)
-    db._sync_agents([AGENT, TARA])
-    db._update_agent_codex_state(
-        "tara",
-        executor_kind="codex",
-        codex_thread_id="thread-do-run",
-        session_started_at=iniciou_em,
-    )
-    rollout = tmp_path / "rollout.jsonl"
-    rollout.write_text(
-        json.dumps(
-            {
-                "type": "event_msg",
-                "timestamp": datetime.fromtimestamp(medido_em, tz=timezone.utc)
-                .isoformat()
-                .replace("+00:00", "Z"),
-                "payload": {
-                    "type": "token_count",
-                    "info": {
-                        "last_token_usage": {"total_tokens": 161_907},
-                        "model_context_window": 258_400,
-                    },
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
-        return tmux_driver.TmuxSessionInventory({"daniel", "tara"}, {"daniel", "tara"})
-
-    monkeypatch.setattr(
-        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
-    )
-    # O `tokens_used` da thread é o CUMULATIVO do SQLite do Codex e não tem
-    # relação com o tamanho do contexto — por isso a ordem de grandeza diferente
-    # do rollout acima. Os dois iguais escondiam a troca de um pelo outro.
-    monkeypatch.setattr(
-        fleet_router.codex_reader,
-        "resolve_thread",
-        lambda **_kwargs: SimpleNamespace(tokens_used=158_506_696, rollout_path=rollout),
-    )
-
-    app = FastAPI()
-    app.state.db = db
-    app.include_router(fleet_router.router, prefix="/api/fleet")
-    return app
-
-
-def test_fleet_expoe_processamento_real_da_sessao_codex(tmp_path: Path, monkeypatch) -> None:
-    agora = int(time.time())
-    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 30, iniciou_em=agora - 100)
-
-    async def fake_status() -> dict:
-        return {"contextKey": "telegram:1", "processing": True}
-
-    monkeypatch.setattr(fleet_router.telecodex_client, "get_status", fake_status)
-
-    with TestClient(app) as client:
-        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
-
-    assert agent["codex_session_processing"] is True
-
-
-def test_fleet_codex_publica_o_contexto_e_nao_o_cumulativo_da_thread(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """A pílula do composer mostra contexto; a thread guarda o gasto da vida toda.
-
-    Trocar um pelo outro põe seis dígitos na pílula (`158507`) e faz o composer
-    discordar do painel do agente no mesmo instante.
-    """
-    agora = int(time.time())
-    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 30, iniciou_em=agora - 1_000)
-
-    with TestClient(app) as client:
-        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
-
-    assert agent["context_tokens"] == 161_907
-    assert agent["codex_tokens_used"] == 158_506_696
-
-
-def test_fleet_card_marca_contexto_medido_antes_da_sessao_como_velho(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Metade (a): número de run anterior não pode sair do back com cara de atual."""
-    agora = int(time.time())
-    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 2_200, iniciou_em=agora - 1_000)
-
-    with TestClient(app) as client:
-        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
-
-    assert agent["context_stale"] is True
-    assert agent["context_updated_at"] == agora - 2_200
-    # O número segue entregue: esconder deixaria o card sem dizer se é zero ou falta de leitura.
-    assert agent["context_pct"] == 62.7
-
-
-def test_fleet_card_mantem_contexto_de_quem_trabalha_como_atual(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Metade (b): medida do run em curso continua valendo como atual."""
-    agora = int(time.time())
-    app = _prepara_card_codex(tmp_path, monkeypatch, medido_em=agora - 30, iniciou_em=agora - 1_000)
-
-    with TestClient(app) as client:
-        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
-
-    assert agent["context_stale"] is False
-    assert agent["context_pct"] == 62.7
-
-
-def test_fleet_card_marca_pct_sem_carimbo_como_velho(tmp_path: Path, monkeypatch) -> None:
-    """Run recém-começado ainda não mediu nada — o que sobra é o pct velho do banco.
-
-    Era o pior caso do defeito: número de outro run, sem idade nenhuma, saindo com
-    cara de leitura de agora.
-    """
-    db = _setup_db(tmp_path)
-    db._sync_agents([AGENT, TARA])
-    db._update_agent_codex_state("tara", executor_kind="codex", context_pct=100.0)
-
-    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
-        return tmux_driver.TmuxSessionInventory({"daniel", "tara"}, {"daniel", "tara"})
-
-    monkeypatch.setattr(
-        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
-    )
-    monkeypatch.setattr(fleet_router.codex_reader, "resolve_thread", lambda **_kwargs: None)
-
-    app = FastAPI()
-    app.state.db = db
-    app.include_router(fleet_router.router, prefix="/api/fleet")
-
-    with TestClient(app) as client:
-        agent = _agent_from_snapshot(client.get("/api/fleet").json(), "tara")
-
-    assert agent["context_pct"] == 100.0
-    assert agent["context_updated_at"] is None
-    assert agent["context_stale"] is True
 
 
 def test_fleet_lists_tmux_inventory_once_per_snapshot(tmp_path: Path, monkeypatch) -> None:

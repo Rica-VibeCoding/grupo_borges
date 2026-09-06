@@ -6,8 +6,6 @@ import { fetchAgentPainel } from '../lib/api';
 import { ContextoBloco } from './contexto-bloco';
 import { EffortBloco } from './effort-bloco';
 import { PermissionBloco } from './permission-bloco';
-import { SandboxBloco } from './sandbox-bloco';
-import { ConversaBloco } from './conversa-bloco';
 import { QuotasBloco } from './quotas-bloco';
 import { SubagentsBloco } from './subagents-bloco';
 import { useFleet } from '../lib/fleet-context';
@@ -15,16 +13,9 @@ import { useFleet } from '../lib/fleet-context';
 type PainelPanelProps = {
   slug: string;
   agent: Agent;
-  codexNextFresh?: boolean;
-  onCodexNextFreshChange?: (armed: boolean) => void;
 };
 
-export function PainelPanel({
-  slug,
-  agent: _agent,
-  codexNextFresh,
-  onCodexNextFreshChange,
-}: PainelPanelProps) {
+export function PainelPanel({ slug, agent: _agent }: PainelPanelProps) {
   const { mutate } = useFleet();
   const [data, setData] = useState<AgentPainelResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,11 +91,6 @@ export function PainelPanel({
     void mutate();
   }
 
-  function handleConversationChange(armed: boolean) {
-    onCodexNextFreshChange?.(armed);
-    handlePermissionChange();
-  }
-
   const updatedAgo =
     lastUpdated === null ? null : `${Math.max(0, Math.floor((now - lastUpdated) / 1000))}s`;
 
@@ -127,28 +113,14 @@ export function PainelPanel({
           erro: {error}
         </div>
       )}
-      {data && data.codex_native && data.sandbox ? (
+      {data && (
         <>
           <ContextoBloco data={data.contexto} />
           <EffortBloco data={data.effort} slug={slug} onChange={handleEffortChange} />
-          <SandboxBloco data={data.sandbox} slug={slug} onChange={handlePermissionChange} />
+          <PermissionBloco data={data.permission} slug={slug} onChange={handlePermissionChange} />
           <QuotasBloco data={data.quotas} />
-          <ConversaBloco
-            slug={slug}
-            armed={codexNextFresh ?? Boolean(data.codex_next_fresh)}
-            onChange={handleConversationChange}
-          />
+          <SubagentsBloco data={data.subagents} />
         </>
-      ) : (
-        data && (
-          <>
-            <ContextoBloco data={data.contexto} />
-            <EffortBloco data={data.effort} slug={slug} onChange={handleEffortChange} />
-            <PermissionBloco data={data.permission} slug={slug} onChange={handlePermissionChange} />
-            <QuotasBloco data={data.quotas} />
-            <SubagentsBloco data={data.subagents} />
-          </>
-        )
       )}
     </div>
   );

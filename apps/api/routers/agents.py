@@ -11,9 +11,7 @@ POST /api/agents/{slug}/input          — DS-2: envia texto pro pane via paste-
 POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-transcribe) → send-keys
 POST /api/agents/{slug}/image          — DS-54: upload imagem → path absoluto → send-keys
 POST /api/agents/{slug}/file           — upload imagem/vídeo/documento → path absoluto → send-keys
-POST /api/agents/{slug}/model          — DS-2/DS-69: troca modelo (Claude /model em runtime · Codex persiste pra próxima exec)
-GET  /api/agents/{slug}/codex/thread   — TK-25: resumo read-only da thread Codex atual (modelo/tokens/atividade)
-GET  /api/agents/{slug}/codex/messages — TK-25: histórico read-only sanitizado da última thread Codex
+POST /api/agents/{slug}/model          — DS-2: troca modelo (Claude Code `/model` em runtime)
 POST /api/agents/{slug}/subagents/spawn — LB-9: tool MCP spawn_subsession via HTTP
 GET  /api/agents/{slug}/subagents      — LB-9: snapshot de subsessões ativas (polling REST 5s)
 """
@@ -67,7 +65,7 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_catalog, codex_reader, telecodex_client, tmux_driver, workspace_reader
+from services import codex_reader, tmux_driver, workspace_reader
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -84,12 +82,9 @@ _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # Claude Code também aceita `auto`: ele restaura o default do modelo ativo
 # (docs: https://code.claude.com/docs/en/commands e /en/model-config).
-# Não misturar esta lista com Codex/Kimi — cada executor tem contrato próprio.
+# Não misturar esta lista com a do Kimi — cada executor tem contrato próprio.
 _CLAUDE_PAINEL_ALLOWED_EFFORTS = [*_AGENT_PAINEL_ALLOWED_EFFORTS, "auto"]
 _AGENT_PAINEL_ALLOWED_MODELS = ["fable", "opus", "sonnet", "haiku"]
-# Codex 0.146+ expõe `max` para o gpt-5.6-luna (catálogo `codex debug models`;
-# Kimi já tinha max). Sem ele o PATCH rejeitava o teto que a UI oferece.
-_CODEX_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # Kimi K3 (assinatura Kimi Code): o endpoint expõe think_efforts low/high/max
 # (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
 # GET api.kimi.com/coding/v1/models.
@@ -101,12 +96,10 @@ _KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
 # aceitaria um `auto` que não existe e, do outro lado, descartaria o `xhigh` que
 # um agente Kimi de fato roda. São listas separadas de propósito.
 _STATUSLINE_REPORTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
-_CODEX_ALLOWED_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"]
-_CODEX_DEFAULT_SANDBOX = "danger-full-access"
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
-# Codex é mais generoso porque a cota dele só chega em evento (webhook por
-# turno), não num arquivo de status reescrito de segundo em segundo como o CC.
-# Com 20s a Tara apareceria "stale" entre um turno e o seguinte, trabalhando.
+# A cota da assinatura ChatGPT é mais generosa porque não é medida aqui: quem a
+# lê é o cron do `scripts/codex-cota`, de 3 em 3 minutos. Com os 20s do CC a
+# Tara apareceria "stale" entre uma passada e a seguinte, trabalhando.
 _CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS = 300
 # Kimi: mesmo endpoint do `/usage` do Kimi Code CLI — janela de 5h + cota
 # semanal da assinatura. Cache curto: o painel faz poll e a cota anda devagar.
@@ -125,14 +118,8 @@ _OPENCODE_USAGE_FAILURE_TTL_SECONDS = 30
 _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS = 300
 _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
-# `ultra` só existe em parte do catálogo Codex (gpt-5.6-sol/terra) e chegou
-# depois desta lista. Quem decide o que é aceitável é a escala do modelo, lida
-# em `_codex_efforts_permitidos` — este Literal é só a porta de entrada, e uma
-# porta que barrasse `ultra` faria o painel oferecer um degrau que o PATCH
-# recusa com 422.
-AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "ultra", "auto"]
+AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "auto"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
-AgentCodexSandboxValue = Literal["read-only", "workspace-write", "danger-full-access"]
 
 
 class AgentPainelTokens(BaseModel):
@@ -187,13 +174,6 @@ class AgentPainelPermission(BaseModel):
     session_may_diverge: bool = True
 
 
-class AgentPainelSandbox(BaseModel):
-    value: AgentCodexSandboxValue
-    allowed: list[str] = Field(default_factory=lambda: list(_CODEX_ALLOWED_SANDBOXES))
-    source: str
-    session_may_diverge: bool = True
-
-
 class AgentPainelQuotaWindow(BaseModel):
     used_percentage: float | None = None
     resets_at: int | None = None
@@ -216,10 +196,10 @@ class AgentPainelQuotas(BaseModel):
     #: Terceira janela, só de quem tem plano com teto mensal (OpenCode Go).
     #: `None` significa "esta família não tem janela mensal" e o painel não
     #: desenha a linha — diferente de janela presente sem leitura, que vira
-    #: "sem leitura". Anthropic, Codex e Kimi nunca preenchem.
+    #: "sem leitura". Anthropic e Kimi nunca preenchem.
     monthly: AgentPainelQuotaWindow | None = None
     #: Quem paga esta cota. Mora junto da cota porque é a mesma pergunta.
-    #: Só no Claude: Kimi e Codex têm login próprio, fora do `.claude.json`.
+    #: Só no Claude: Kimi e OpenCode têm login próprio, fora do `.claude.json`.
     conta: AgentPainelConta | None = None
 
 
@@ -287,11 +267,6 @@ class AgentPainelResponse(BaseModel):
     quotas: AgentPainelQuotas
     subagents: AgentPainelSubagents
     canal_entrega: AgentPainelCanalEntrega
-    sandbox: AgentPainelSandbox | None = None
-    codex_native: bool | None = None
-    codex_next_fresh: bool | None = None
-    codex_turn_in_flight: bool | None = None
-    codex_runtime_enabled: bool | None = None
     # false = o botão Relançar não entra na gaveta. Default `True` porque é o
     # que o painel fazia antes deste campo existir — payload sem ele não muda
     # a tela de ninguém.
@@ -306,14 +281,6 @@ class AgentPainelPermissionPatchRequest(BaseModel):
     mode: AgentPainelPermissionMode
 
 
-class AgentCodexSandboxPatchRequest(BaseModel):
-    sandbox: AgentCodexSandboxValue
-
-
-class AgentCodexNewThreadPatchRequest(BaseModel):
-    armed: bool = True
-
-
 class AgentPainelEffortPatchResponse(BaseModel):
     slug: str
     effort: str
@@ -321,7 +288,7 @@ class AgentPainelEffortPatchResponse(BaseModel):
     session_may_diverge: bool = True
     written: bool = True
     # Presentes apenas no caminho Claude Code; opcionais preservam o contrato
-    # enxuto dos caminhos persist-only de Codex e Kimi.
+    # enxuto do caminho persist-only do Kimi.
     tmux_delivered: bool | None = None
     confirmed: bool | None = None
     runtime_switch: bool | None = None
@@ -330,14 +297,6 @@ class AgentPainelEffortPatchResponse(BaseModel):
 class AgentPainelPermissionPatchResponse(BaseModel):
     slug: str
     mode: AgentPainelPermissionMode
-    source: str
-    session_may_diverge: bool = True
-    written: bool = True
-
-
-class AgentCodexSandboxPatchResponse(BaseModel):
-    slug: str
-    sandbox: AgentCodexSandboxValue
     source: str
     session_may_diverge: bool = True
     written: bool = True
@@ -671,30 +630,6 @@ async def _build_painel_vida(agent: dict[str, Any]) -> AgentPainelVida:
 async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     db: GrupoBorgesDB = request.app.state.db
     agent = await _get_agent_or_404(request, slug)
-    if _agente_codex(agent):
-        runtime_enabled = agent.get("codex_runtime_enabled", 1) != 0
-        vida = AgentPainelVida(sessao=runtime_enabled, processo=runtime_enabled)
-        thread = await asyncio.to_thread(_resolve_codex_thread, agent)
-        contexto = _build_codex_painel_contexto(agent, thread)
-        return AgentPainelResponse(
-            slug=slug,
-            generated_at=int(time.time()),
-            vida=vida,
-            contexto=contexto,
-            model=_build_painel_model(agent, contexto),
-            effort=_build_codex_painel_effort(agent, thread),
-            permission=_read_agent_permission(),
-            quotas=_build_codex_painel_quotas(agent, thread),
-            subagents=AgentPainelSubagents(count=0, active_count=0, items=[]),
-            canal_entrega=tmux_driver.get_delivery_channel_state(agent["tmux_session"]),
-            sandbox=_build_codex_painel_sandbox(agent),
-            codex_native=True,
-            codex_next_fresh=bool(agent.get("codex_next_fresh")),
-            codex_turn_in_flight=_codex_turn_in_flight(agent),
-            codex_runtime_enabled=runtime_enabled,
-            relaunch_suportado=False,
-        )
-
     vida = await _build_painel_vida(agent)
     cc_status = await _load_cc_status(db, slug)
     is_kimi = agent.get("model_family") == "kimi"
@@ -716,10 +651,9 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     # Canário uma cota que não é a dele.
     # Mesma razão pro codex-proxy (Tara): a assinatura é do ChatGPT, e o leitor
     # do Claude mostraria a cota da máquina no lugar dela. O snapshot vem do
-    # `scripts/codex-cota`, e o construtor é o MESMO do Codex CLI — o formato
-    # de `rate_limits` não mudou com a saída do CLI, só a origem.
+    # `scripts/codex-cota`.
     if agent.get("model_family") == "codex-proxy":
-        quotas_task = asyncio.to_thread(_build_codex_painel_quotas, agent, None)
+        quotas_task = asyncio.to_thread(_build_codex_painel_quotas, agent)
     elif is_opencode:
         quotas_task = asyncio.to_thread(_build_opencode_painel_quotas, opencode_usage)
     elif kimi_usages is not None:
@@ -765,37 +699,14 @@ async def patch_agent_effort(
     request: Request,
 ) -> AgentPainelEffortPatchResponse:
     agent = await _get_agent_or_404(request, slug)
-    if _agente_codex(agent):
-        # A escala é a do modelo corrente, a mesma que o painel ofereceu — uma
-        # constante aqui recusaria o `ultra` do gpt-5.6-sol e aceitaria o `max`
-        # que o gpt-5.5 não tem.
-        thread = await asyncio.to_thread(_resolve_codex_thread, agent)
-        if patch.effort not in _codex_efforts_permitidos(agent, thread):
-            raise HTTPException(status_code=422, detail="codex_effort_not_allowed")
-        model = _codex_modelo_corrente(agent, thread)
-        if model is None:
-            raise HTTPException(status_code=409, detail="codex_model_unavailable")
-        await _reconfigure_codex_session(agent, model=model, reasoning_effort=patch.effort)
-        db: GrupoBorgesDB = request.app.state.db
-        await db.update_agent_codex_state(slug, codex_reasoning_effort=patch.effort)
-        return AgentPainelEffortPatchResponse(
-            slug=slug,
-            effort=patch.effort,
-            source="telecodex.session",
-            session_may_diverge=False,
-            written=True,
-            tmux_delivered=True,
-            confirmed=True,
-            runtime_switch=True,
-        )
     if agent.get("model_family") == "kimi":
         # Kimi pensa sempre; o nível é env var (CLAUDE_CODE_EFFORT_LEVEL) lida
         # no boot — persistir no settings.json global não teria efeito e ainda
         # vazaria pros outros agentes. Vale no próximo boot, como o modelo.
         if patch.effort not in _KIMI_PAINEL_ALLOWED_EFFORTS:
             raise HTTPException(status_code=422, detail="kimi_effort_not_allowed")
-        db = request.app.state.db
-        await db.update_agent_codex_state(slug, kimi_reasoning_effort=patch.effort)
+        db: GrupoBorgesDB = request.app.state.db
+        await db.update_agent_runtime_state(slug, kimi_reasoning_effort=patch.effort)
         return AgentPainelEffortPatchResponse(
             slug=slug,
             effort=patch.effort,
@@ -804,8 +715,6 @@ async def patch_agent_effort(
             written=True,
         )
 
-    # `ultra` entrou no Literal por causa do catálogo Codex; o Claude Code não
-    # tem esse degrau, e sem esta porta um `/effort ultra` chegaria à sessão viva.
     if patch.effort not in _CLAUDE_PAINEL_ALLOWED_EFFORTS:
         raise HTTPException(status_code=422, detail="claude_effort_not_allowed")
 
@@ -846,57 +755,6 @@ async def patch_agent_effort(
         confirmed=confirmed,
         runtime_switch=True,
     )
-
-
-@router.patch("/{slug}/codex-sandbox", response_model=AgentCodexSandboxPatchResponse)
-async def patch_agent_codex_sandbox(
-    slug: str,
-    patch: AgentCodexSandboxPatchRequest,
-    request: Request,
-) -> AgentCodexSandboxPatchResponse:
-    agent = await _get_agent_or_404(request, slug)
-    if not _agente_codex(agent):
-        raise HTTPException(status_code=400, detail="not_a_codex_agent")
-    db: GrupoBorgesDB = request.app.state.db
-    await db.update_agent_codex_state(slug, codex_sandbox=patch.sandbox)
-    return AgentCodexSandboxPatchResponse(
-        slug=slug,
-        sandbox=patch.sandbox,
-        source="agent_state.codex_sandbox",
-        session_may_diverge=True,
-        written=True,
-    )
-
-
-@router.patch("/{slug}/codex-new-thread")
-async def patch_agent_codex_new_thread(
-    slug: str,
-    patch: AgentCodexNewThreadPatchRequest,
-    request: Request,
-) -> dict[str, Any]:
-    """Arma a próxima conversa da Tara como thread NOVA (opção A, 10/08).
-
-    Antes pedia thread nova ao daemon telecodex (a sessão interativa do tmux);
-    com o cockpit headless, "Nova conversa" é um flag consumido no próximo
-    `/input` (`codex_next_fresh`), que o spawn usa pra nascer sem
-    `--resume-thread`. O telecodex tem canal próprio — o cockpit não compete.
-    """
-    agent = await _get_agent_or_404(request, slug)
-    if not _agente_codex(agent):
-        raise HTTPException(status_code=400, detail="not_a_codex_agent")
-    db: GrupoBorgesDB = request.app.state.db
-    if patch.armed:
-        await db.update_agent_codex_state(
-            slug,
-            codex_next_fresh=1,
-            codex_thread_id=None,
-            context_pct=0,
-            session_started_at=None,
-            token_usage_json=None,
-        )
-        return {"slug": slug, "armed": True, "thread_started": False, "thread_id": None}
-    await db.update_agent_codex_state(slug, codex_next_fresh=0)
-    return {"slug": slug, "armed": False, "thread_started": False, "thread_id": None}
 
 
 @router.patch("/{slug}/permission-mode", response_model=AgentPainelPermissionPatchResponse)
@@ -966,7 +824,7 @@ def _model_family(model: str | None) -> str | None:
     # Motor Kimi: id cru `k3` / slugs `kimi-*` — agrupa tudo como "kimi" no painel.
     if "kimi" in lowered or lowered.startswith("k3"):
         return "kimi"
-    for family in ("fable", "opus", "sonnet", "haiku", "codex", "gpt"):
+    for family in ("fable", "opus", "sonnet", "haiku", "gpt"):
         if family in lowered:
             return family
     return model
@@ -984,240 +842,6 @@ def _num_or_none(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
-
-
-def _resolve_codex_thread(agent: dict[str, Any]) -> codex_reader.CodexThread | None:
-    """A thread que o painel descreve é a do delegator COCKPIT — só ela.
-
-    Lê o store por delegator (`~/.tara/threads/cockpit.txt`), como o resto do
-    painel já faz, em vez do `codex_thread_id` do agent_state: aquele campo é
-    único, e bastava um caminho novo escrevê-lo pra gaveta voltar a descrever o
-    run de outro delegator (era o que acontecia até 4cc2bc7).
-
-    Só a FONTE do id muda. Sem thread do cockpit, `resolve_thread` segue caindo
-    na busca por cwd — decisão de desenho deste painel, que prefere número
-    velho carimbado de `stale` a gaveta vazia (o `/codex/messages` escolhe o
-    contrário porque bolha errada não tem como se carimbar).
-    """
-    if agent.get("codex_next_fresh"):
-        return None
-    return codex_reader.resolve_thread(
-        thread_id=codex_reader.read_cockpit_thread_id(),
-        cwd=agent.get("workspace_path") or codex_reader.TARA_CWD,
-        db_path=_codex_db_path() or codex_reader.STATE_DB,
-    )
-
-
-def _codex_contexto_stale(agent: dict[str, Any], observed_at: int | None) -> bool:
-    """Duas maneiras de o número estar velho — e nenhuma pode sair como `False`.
-
-    A idade em segundos é a régua óbvia. A outra é a que pegou este defeito:
-    medida ANTERIOR ao início da sessão é de outro run, mesmo que o relógio
-    ainda não tenha estourado o limite. Sem carimbo não há como afirmar frescor,
-    e afirmar é justamente o defeito grave — velho passa por atual.
-    """
-    if observed_at is None:
-        return True
-    session_started_at = _int_or_none(agent.get("session_started_at"))
-    if session_started_at is not None and observed_at < session_started_at:
-        return True
-    return int(time.time()) - observed_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
-
-
-def _build_codex_painel_contexto(
-    agent: dict[str, Any],
-    thread: codex_reader.CodexThread | None,
-) -> AgentPainelContexto:
-    if agent.get("codex_next_fresh"):
-        model = agent.get("state_model") or agent.get("model_default")
-        return AgentPainelContexto(
-            model=model,
-            model_family=_model_family(model),
-            context_window=None,
-            tokens=AgentPainelTokens(total=0),
-            pct=0,
-            source="agent_state.codex_next_fresh",
-            updated_at=None,
-            available=True,
-            stale=False,
-        )
-    usage_payload, source = _codex_token_usage_payload(agent, thread)
-    model = (
-        thread.model
-        if thread is not None and thread.model
-        else agent.get("state_model") or agent.get("model_default")
-    )
-    if usage_payload is not None:
-        tokens_used = _int_or_none(usage_payload.get("context_tokens")) or 0
-        context_window = _int_or_none(usage_payload.get("model_context_window"))
-        pct = _num_or_none(usage_payload.get("context_pct"))
-        available = True
-        # O carimbo é o da MEDIDA (`observed_at`), não o da thread: a thread
-        # anda a cada item do turno e diria "de agora" sobre um número parado.
-        observed_at = _int_or_none(usage_payload.get("observed_at"))
-    else:
-        tokens_used = thread.tokens_used if thread is not None else 0
-        context_window = None
-        pct = 0.0 if thread is not None and tokens_used == 0 else None
-        available = thread is not None
-        observed_at = _int_or_none(agent.get("session_started_at")) if available else None
-        if thread is not None:
-            source = thread.rollout_path
-    return AgentPainelContexto(
-        model=model,
-        model_family=_model_family(model),
-        context_window=context_window,
-        tokens=AgentPainelTokens(total=tokens_used),
-        pct=pct,
-        source=source,
-        updated_at=observed_at,
-        available=available,
-        stale=available and _codex_contexto_stale(agent, observed_at),
-    )
-
-
-def _codex_token_usage_payload(
-    agent: dict[str, Any],
-    thread: codex_reader.CodexThread | None = None,
-) -> tuple[dict[str, Any] | None, str]:
-    """Devolve o número E de onde ele veio.
-
-    O painel carimbava `agent_state.token_usage_json` nos dois caminhos. Só que
-    o `token_usage_json` escrito por `codex.turn.completed` é recusado logo
-    abaixo, e o valor sai do rollout — declarar a fonte errada mandou a
-    investigação deste defeito pro arquivo errado.
-    """
-    if agent.get("codex_next_fresh"):
-        return None, "agent_state.codex_next_fresh"
-    raw = agent.get("token_usage_json")
-    if not isinstance(raw, str) or not raw.strip():
-        payload = None
-    else:
-        try:
-            payload = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            payload = None
-    if isinstance(payload, dict) and payload.get("source") == "codex.event_msg.token_count":
-        return payload, "agent_state.token_usage_json"
-    if thread is None:
-        return None, "agent_state.token_usage_json"
-    return codex_reader.read_latest_token_count(thread.rollout_path), thread.rollout_path
-
-
-def _build_codex_painel_effort(
-    agent: dict[str, Any], thread: codex_reader.CodexThread | None
-) -> AgentPainelEffort:
-    """O nível que o run está usando, com o pedido ao lado quando divergem.
-
-    `threads.reasoning_effort` é a configuração do run em execução; o
-    `agent_state` guarda o que alguém clicou, que só vale no run seguinte. Servir
-    o pedido como se fosse o estado esconde justamente o caso em que a troca não
-    pegou. O valor lido não passa por allowlist — quem o escreveu foi o próprio
-    Codex, e filtrá-lo pela lista do seletor repetiria o erro de `auto`.
-
-    A escala OFERECIDA, porém, é a do modelo que está rodando, não uma constante:
-    `gpt-5.6-sol` vai até `ultra`, `gpt-5.5` para em `xhigh`. A lista fixa
-    oferecia `max` num modelo que não tem `max`.
-    """
-    allowed = _codex_efforts_permitidos(agent, thread)
-    # O PEDIDO não passa pela escala do modelo CORRENTE, só pela lista do que é
-    # nível de esforço em algum lugar. O Rica escolheu `ultra` com a Tara no
-    # Sol e depois trocou pro Luna, que não tem esse degrau: filtrar aqui pela
-    # escala do Luna zerava o `requested` e a tela dizia "padrão" — isto é,
-    # "ninguém escolheu" — sobre uma escolha que ele fez. A escala estreita
-    # governa o que se OFERECE e o que o PATCH aceita, não o que foi gravado.
-    requested = agent.get("codex_reasoning_effort")
-    if requested not in _codex_efforts_conhecidos():
-        requested = None
-
-    effective = _string_or_none(thread.reasoning_effort) if thread is not None else None
-    if effective is None:
-        # Sem thread legível não há o que reportar: cai no pedido, avisando que
-        # a sessão pode estar em outro lugar.
-        return AgentPainelEffort(
-            value=requested,
-            allowed=list(allowed),
-            source="agent_state.codex_reasoning_effort",
-            session_may_diverge=True,
-        )
-
-    return AgentPainelEffort(
-        value=effective,
-        allowed=list(allowed),
-        source="codex.threads.reasoning_effort",
-        session_may_diverge=False,
-        requested=requested,
-    )
-
-
-def _codex_slug_canonico(valor: str | None) -> str | None:
-    """Normaliza pro `codex-*` do cockpit, venha cru ou já canônico.
-
-    As duas grafias existem de verdade: o rollout guarda o nome cru
-    (`gpt-5.6-luna`) e o `state_model` guarda o canônico
-    (`codex-gpt-5-6-luna`). Sem normalizar, o menu não marcaria como
-    selecionado o modelo que está rodando.
-    """
-    if valor is None:
-        return None
-    return valor if valor.startswith("codex-") else codex_catalog.canonical_slug(valor)
-
-
-def _codex_modelo_corrente(
-    agent: dict[str, Any], thread: codex_reader.CodexThread | None
-) -> str | None:
-    """Slug canônico do modelo que a Tara está rodando agora.
-
-    A thread ganha do estado persistido pelo mesmo motivo do esforço: o
-    persistido é o pedido, a thread é o fato.
-    """
-    da_thread = _codex_slug_canonico(_string_or_none(thread.model) if thread is not None else None)
-    if da_thread is not None:
-        return da_thread
-    return _codex_slug_canonico(_string_or_none(agent.get("state_model"))) or _codex_slug_canonico(
-        _string_or_none(agent.get("model_default"))
-    )
-
-
-async def _reconfigure_codex_session(
-    agent: dict[str, Any],
-    *,
-    model: str,
-    reasoning_effort: str | None,
-) -> dict[str, Any]:
-    del agent
-    try:
-        return await telecodex_client.reconfigure_session(
-            model=codex_catalog.raw_slug(model),
-            reasoning_effort=reasoning_effort,
-        )
-    except telecodex_client.TeleCodexControlError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    except telecodex_client.TeleCodexUnavailable as exc:
-        raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
-
-
-def _codex_efforts_conhecidos() -> frozenset[str]:
-    """Tudo que é degrau de esforço em ALGUM modelo do catálogo.
-
-    Serve só para separar um nível real de lixo no banco. Não é o que se
-    oferece — isso é por modelo, em `_codex_efforts_permitidos`.
-    """
-    do_catalogo = {e for m in codex_catalog.listar_modelos() for e in m.efforts}
-    return frozenset(do_catalogo | set(_CODEX_PAINEL_ALLOWED_EFFORTS))
-
-
-def _codex_efforts_permitidos(
-    agent: dict[str, Any], thread: codex_reader.CodexThread | None
-) -> tuple[str, ...]:
-    """Escala do modelo corrente, com a lista histórica como rede.
-
-    Só cai na constante quando o catálogo não pôde ser lido ou o modelo não está
-    nele — sem rede, uma falha do CLI deixaria o Rica sem seletor de esforço
-    nenhum, o que é pior que oferecer um degrau a mais.
-    """
-    do_modelo = codex_catalog.efforts_do_modelo(_codex_modelo_corrente(agent, thread))
-    return do_modelo or tuple(_CODEX_PAINEL_ALLOWED_EFFORTS)
 
 
 def _build_kimi_painel_effort(
@@ -1255,17 +879,6 @@ def _build_kimi_painel_effort(
         source=str(cc_status.path),
         session_may_diverge=cc_status.fell_back,
         requested=requested,
-    )
-
-
-def _build_codex_painel_sandbox(agent: dict[str, Any]) -> AgentPainelSandbox:
-    value = agent.get("codex_sandbox")
-    if value not in _CODEX_ALLOWED_SANDBOXES:
-        value = _CODEX_DEFAULT_SANDBOX
-    return AgentPainelSandbox(
-        value=value,
-        source="agent_state.codex_sandbox",
-        session_may_diverge=True,
     )
 
 
@@ -1420,59 +1033,9 @@ def _claude_model_slug(value: Any) -> str | None:
     return next((model for model in _AGENT_PAINEL_ALLOWED_MODELS if model in lowered), None)
 
 
-def _build_codex_painel_model(
-    agent: dict[str, Any], contexto: AgentPainelContexto
-) -> AgentPainelModel | None:
-    """O que a Tara está rodando, ao lado do que o harness dela oferece.
-
-    Este bloco devolvia `None`, e por isso o seletor dela nunca teve menu: sem
-    `allowed`, a pele cai no rótulo estático da statusline e o Rica via um
-    modelo só. O catálogo é lido do CLI (`services.codex_catalog`) porque a
-    allowlist escrita à mão já tinha divergido do binário.
-
-    `value` prefere a configuração persistida pelo TeleCodex quando ela aponta
-    para a mesma thread. O rollout SQLite pode manter o modelo original da
-    conversa mesmo depois de a sessão persistente ser reaberta com outro modelo.
-    """
-    permitidos = codex_catalog.listar_modelos()
-    if not permitidos:
-        # Catálogo ilegível: sem lista, o menu não pode ser oferecido. Ainda
-        # assim devolvemos o valor, para o painel dizer o que está rodando.
-        return AgentPainelModel(
-            value=_codex_slug_canonico(_string_or_none(agent.get("state_model"))),
-            allowed=[],
-            source="agent.state_model",
-            runtime_switch=True,
-        )
-
-    allowed = [modelo.slug for modelo in permitidos]
-
-    da_thread = (
-        _codex_slug_canonico(contexto.model) if contexto.available and contexto.model else None
-    )
-    if da_thread is not None:
-        return AgentPainelModel(
-            value=da_thread,
-            allowed=allowed,
-            source=contexto.source,
-            session_may_diverge=False,
-            runtime_switch=True,
-        )
-
-    return AgentPainelModel(
-        value=_codex_slug_canonico(_string_or_none(agent.get("state_model")))
-        or _codex_slug_canonico(_string_or_none(agent.get("model_default"))),
-        allowed=allowed,
-        source="agent.state_model",
-        runtime_switch=True,
-    )
-
-
 def _build_painel_model(
     agent: dict[str, Any], contexto: AgentPainelContexto
 ) -> AgentPainelModel | None:
-    if _agente_codex(agent):
-        return _build_codex_painel_model(agent, contexto)
     if agent.get("model_family") == "kimi":
         return None
     # codex-proxy (Tara) cai junto do Kimi, por um motivo MEDIDO em 06/09: o
@@ -1902,11 +1465,25 @@ def _codex_quota_window(raw: Any, now: int) -> AgentPainelQuotaWindow | None:
     )
 
 
-def _build_codex_painel_quotas(
-    agent: dict[str, Any],
-    thread: codex_reader.CodexThread | None = None,
-) -> AgentPainelQuotas:
-    usage_payload, source = _codex_token_usage_payload(agent, thread)
+def _build_codex_painel_quotas(agent: dict[str, Any]) -> AgentPainelQuotas:
+    """A cota da assinatura ChatGPT, do jeito que o `/quota-snapshot` a gravou.
+
+    Fonte única desde que a Tara saiu do Codex CLI: o rollout do CLI e o evento
+    `codex.turn.completed` sumiram junto com ele, e o que sobra é o que o cron
+    do `scripts/codex-cota` publica. O `source` continua sendo o campo do
+    payload porque é ele que distingue um snapshot do `wham/usage` de qualquer
+    outro resíduo que ainda esteja no `token_usage_json`.
+    """
+    source = "agent_state.token_usage_json"
+    raw = agent.get("token_usage_json")
+    usage_payload = None
+    if isinstance(raw, str) and raw.strip():
+        try:
+            candidato = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            candidato = None
+        if isinstance(candidato, dict) and candidato.get("source") == "codex.event_msg.token_count":
+            usage_payload = candidato
     if usage_payload is None:
         return AgentPainelQuotas(
             status="missing",
@@ -2553,37 +2130,10 @@ async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
 ChatModel = Literal["fable", "opus", "sonnet", "haiku"]
 _CHAT_MODEL_SLUGS = frozenset(get_args(ChatModel))
 
-# DS-69 — modelos Codex selecionáveis pra Tara. Slugs canônicos (id do backend);
-# a tradução pro nome cru do CLI (`gpt-5.5` etc) mora em
-# `tmux_driver._CODEX_MODEL_MAP` — fonte única do de-para, não duplicar aqui.
-CodexModel = Literal[
-    "codex-gpt-5-6-sol",
-    "codex-gpt-5-6-terra",
-    "codex-gpt-5-6-luna",
-    "codex-gpt-5-5",
-    "codex-gpt-5-4",
-    "codex-gpt-5-4-mini",
-    "codex-gpt-5-3-codex",
-    "codex-gpt-5-2",
-]
-_CODEX_MODEL_SLUGS = frozenset(get_args(CodexModel))
-
-
-def _codex_model_slugs_permitidos() -> frozenset[str]:
-    """O que a Tara aceita hoje: o catálogo do CLI, com a lista fixa como rede.
-
-    A lista fixa acima é HISTÓRICA — em 0.146.0 ela ainda tinha `codex-gpt-5-2`
-    e `codex-gpt-5-3-codex`, que o binário não conhece mais, e não tinha o
-    `codex-gpt-5-3-codex-spark`, que ele passou a oferecer. Ela fica só para o
-    caso de o catálogo não poder ser lido: recusar toda troca porque o `codex
-    debug models` falhou seria pior que aceitar um slug antigo.
-    """
-    return codex_catalog.slugs_permitidos() or _CODEX_MODEL_SLUGS
-
 # Modelos Kimi (assinatura Kimi Code, endpoint api.kimi.com/coding/) pro Hiro.
 # Slugs canônicos; o de-para pro id cru do motor (`k3`, `kimi-for-coding`, …)
 # mora em `ze-shared/scripts/kimi-models.sh` — fonte única consumida pelos
-# wrappers bash (subir-frota.sh, hiro-k3), espelho do padrão `_CODEX_MODEL_MAP`.
+# wrappers bash (subir-frota.sh, hiro-k3).
 # Lista validada 19/07 via GET /v1/models: só esses 3 existem na assinatura.
 KimiModel = Literal[
     "kimi-k3",
@@ -2631,11 +2181,8 @@ class RelaunchRequest(BaseModel):
 
 
 class ModelChangeRequest(BaseModel):
-    # `str` e não a união de Literals porque o catálogo Codex é lido do CLI em
-    # tempo de execução: o `gpt-5.3-codex-spark` que o binário 0.146 oferece não
-    # está no `CodexModel`, e um Literal congelado recusaria com 422 o modelo que
-    # o painel acabou de oferecer. A validação real mora no endpoint, por família
-    # — nenhum slug passa sem estar na allowlist da sua.
+    # `str` e não a união de Literals: a validação real mora no endpoint, por
+    # família — nenhum slug passa sem estar na allowlist da sua.
     model: str = Field(min_length=1, max_length=128)
     force: bool = False
 
@@ -2645,8 +2192,7 @@ class ModelChangeResponse(BaseModel):
     state_persisted: bool
     confirmed: bool
     model: str
-    # DS-69 — True quando a troca vale na sessão viva (Claude Code via /model ou
-    # Codex via reabertura controlada da thread persistente).
+    # DS-69 — True quando a troca vale na sessão viva (Claude Code via `/model`).
     runtime_switch: bool = True
 
 
@@ -2688,316 +2234,16 @@ _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY = 50
 # stream (bandwidth real precisa ser medido em prod — backlog Fase 2).
 _PANE_STREAM_LINE_LIMIT = int(os.getenv("COCKPIT_PANE_LINE_LIMIT", "200"))
 _PANE_STREAM_MAX_CHARS = int(os.getenv("COCKPIT_PANE_MAX_CHARS", "20000"))
-_CODEX_INPUT_LOCKS: dict[str, asyncio.Lock] = {}
-_CODEX_INPUT_LOCKS_GUARD = asyncio.Lock()
-_CODEX_BUSY_STATUS_LINES = ("iniciando", "processando turn", "rodando:")
-
-# Os `Popen` dos turnos Codex em voo, por slug — a alça que a rota
-# `POST /{slug}/codex-stop` usa para derrubar um turno preso. O wrapper
-# (`scripts/tara-codex`) é disparado com `start_new_session=True`, então matar o
-# grupo inteiro leva junto o `codex exec` filho (opção A, 10/08 — a Tara é
-# headless por turno, não tem sessão tmux própria pra operar).
-_CODEX_RUN_PROCS: dict[str, subprocess.Popen] = {}
-_CODEX_RUN_PROCS_GUARD = asyncio.Lock()
-_CODEX_SCOPE_STOP_TIMEOUT_S = 20.0
-
-
-async def _codex_input_lock(slug: str) -> asyncio.Lock:
-    async with _CODEX_INPUT_LOCKS_GUARD:
-        lock = _CODEX_INPUT_LOCKS.get(slug)
-        if lock is None:
-            lock = asyncio.Lock()
-            _CODEX_INPUT_LOCKS[slug] = lock
-        return lock
-
-
-def _codex_turn_in_flight(agent: dict[str, Any]) -> bool:
-    if agent.get("lifecycle_status") == "trabalhando":
-        return True
-    status_line = str(agent.get("status_line") or "").strip().lower()
-    return any(status_line.startswith(marker) for marker in _CODEX_BUSY_STATUS_LINES)
-
-
-def _agente_codex(agent: dict[str, Any]) -> bool:
-    return agent.get("executor_kind") == "codex" or agent.get("cli_default") == "codex"
-
 
 def _relanca_com_resume(agent: dict[str, Any]) -> bool:
-    """Se o `POST /{slug}/relaunch` atende este agente — a regra das recusas.
+    """Se o `POST /{slug}/relaunch` atende este agente — a regra da recusa.
 
     Serve à guarda E ao painel de propósito: o botão precisa sumir pela MESMA
     régua que a API usa para recusar, senão o Rica descobre o limite clicando.
-    O porquê de cada família ficar de fora está nos comentários das duas
-    recusas em `post_agent_relaunch`.
+    O porquê de a família ficar de fora está no comentário da recusa em
+    `post_agent_relaunch`.
     """
-    if _agente_codex(agent):
-        return False
     return agent.get("model_family") in {None, "anthropic", "kimi", "opencode"}
-
-
-async def _clear_codex_busy_status_line(
-    db: GrupoBorgesDB, agent: dict[str, Any]
-) -> None:
-    """Zera o `status_line` quando ele ainda marca ocupado.
-
-    Ele é a SEGUNDA régua de `_codex_turn_in_flight`, e no fluxo normal quem o
-    limpa é a mensagem final do agente, que o sobrescreve com o próprio texto.
-    Turno interrompido não tem mensagem final: sem esta limpeza o campo fica
-    congelado em `rodando: <comando>` e todo `/input` seguinte leva 409 — o
-    botão "Parar turno" passa a trancar justamente o que veio destravar
-    (Tara, 11/08). Status que não marca ocupado é preservado: é a última fala
-    dela na vitrine do painel.
-    """
-    status_line = str(agent.get("status_line") or "").strip().lower()
-    if any(status_line.startswith(marker) for marker in _CODEX_BUSY_STATUS_LINES):
-        await db.update_agent_codex_state(agent["slug"], status_line=None)
-
-
-def _tara_codex_script_path() -> str:
-    return str(Path(__file__).resolve().parents[3] / "scripts" / "tara-codex")
-
-
-def _codex_turn_scope_unit(slug: str) -> str:
-    """Nome da unit do scope que carrega o turno — determinístico por slug.
-
-    Determinístico porque ele é a SEGUNDA alça do `codex-stop`: o
-    `_CODEX_RUN_PROCS` é memória do processo, e o turno agora sobrevive ao
-    restart que zera esse dicionário. Um turno em voo por slug já é garantido
-    pelo 409 de `_codex_turn_in_flight`, então o nome não colide — e scope de
-    turno encerrado é coletado pelo systemd, o que libera o nome pro próximo.
-    """
-    return f"cockpit-codex-turn-{slug}.scope"
-
-
-def _stop_codex_turn_scope(slug: str) -> bool:
-    """Derruba o turno pela unit do scope; False quando não havia nada ativo.
-
-    Caminho de quem perdeu o handle do `Popen` — o restart da API. O `is-active`
-    antes do `stop` é o que separa "turno vivo sem handle" de "turno que já
-    terminou": sem ele o botão relataria `stopped` em cima de nada.
-    """
-    unit = _codex_turn_scope_unit(slug)
-    try:
-        ativo = subprocess.run(
-            ["systemctl", "--user", "is-active", unit],
-            capture_output=True,
-            text=True,
-            timeout=_CODEX_SCOPE_STOP_TIMEOUT_S,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    if ativo.stdout.strip() != "active":
-        return False
-    try:
-        parado = subprocess.run(
-            ["systemctl", "--user", "stop", unit],
-            capture_output=True,
-            text=True,
-            timeout=_CODEX_SCOPE_STOP_TIMEOUT_S,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    return parado.returncode == 0
-
-
-def _spawn_tara_codex_input(
-    *,
-    slug: str,
-    cwd: str,
-    text: str,
-    thread_id: str | None,
-    fresh: bool = False,
-    image_path: str | None = None,
-) -> None:
-    # O turno vive num scope transiente PRÓPRIO, não no cgroup do
-    # `cockpit-api.service`. A unit roda com `KillMode=control-group`, e o
-    # `man systemd.kill` é literal: no stop, "all remaining processes in the
-    # control group of this unit will be killed" — todo restart da API que
-    # pegasse turno em voo o matava (três em 11/08, o das 16:49 no meio de uma
-    # resposta ao Rica). O `start_new_session=True` abaixo NÃO cobria isso: ele
-    # só chama `setsid()` (CPython, `Modules/_posixsubprocess.c`), que troca a
-    # sessão POSIX e não mexe em cgroup. Mesmo padrão do
-    # `ze-shared/scripts/subir-frota.sh`, que já protege as sessões da frota
-    # assim. Sem `--slice`: o scope cai em `app.slice`, onde a API já roda. A
-    # `borges-frota.slice` existe pra cercar SESSÃO DE AGENTE, que é o que trava
-    # a VPS; turno, build e dev server ficam fora dela (decisão do Pavan, 11/08,
-    # com o teto de 5 GiB mantido — a máquina toda tem 7 GB).
-    # `systemd-run --scope` faz `exec()` no lugar do próprio processo (medido:
-    # o PID do `Popen` é o do `bash` do wrapper), então `poll()`, `wait()` e o
-    # `killpg` do `codex-stop` seguem valendo sobre o mesmo handle.
-    cmd = [
-        "systemd-run",
-        "--user",
-        "--scope",
-        "--quiet",
-        f"--unit={_codex_turn_scope_unit(slug)}",
-        # Via `bash <script>` em vez de exec direto: o bit +x pode cair em
-        # edição/linter, e um PermissionError aqui viraria 500 silencioso no
-        # /input.
-        "bash",
-        _tara_codex_script_path(),
-        "--delegator",
-        "cockpit",
-    ]
-    if thread_id and not fresh:
-        cmd.extend(["--resume-thread", thread_id])
-    cmd.extend(["-C", cwd])
-    if image_path is not None:
-        cmd.extend(["-i", image_path])
-    cmd.extend(["--", text])
-    proc = subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-        close_fds=True,
-    )
-    # A alça do `codex-stop`. Uma entrada por slug — um turno em voo não pode
-    # nascer outro (`codex_turn_in_flight` já barra no /input).
-    _CODEX_RUN_PROCS[slug] = proc
-
-
-async def _spawn_codex_agent_turn(
-    slug: str,
-    request: Request,
-    *,
-    text: str,
-    fresh: bool = False,
-    image_path: str | None = None,
-    input_origin: _InputOrigin | None = None,
-) -> None:
-    agent = await _get_agent_or_404(request, slug)
-    if agent.get("codex_runtime_enabled", 1) == 0:
-        raise HTTPException(status_code=409, detail="codex_session_offline")
-    effective_fresh = fresh or bool(agent.get("codex_next_fresh"))
-    origin_id: str | None = None
-    if input_origin is not None:
-        origin_id = await request.app.state.db.create_message_origin(
-            agent_slug=slug,
-            executor_kind="codex",
-            expected_text=text,
-            meta=input_origin.meta,
-        )
-    try:
-        await telecodex_client.send_prompt(
-            text=text,
-            fresh=effective_fresh,
-            image_path=image_path,
-        )
-    except telecodex_client.TeleCodexControlError as exc:
-        if origin_id is not None:
-            await request.app.state.db.discard_message_origin(origin_id)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    except telecodex_client.TeleCodexUnavailable as exc:
-        if origin_id is not None:
-            await request.app.state.db.discard_message_origin(origin_id)
-        raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
-    except Exception:
-        if origin_id is not None:
-            await request.app.state.db.discard_message_origin(origin_id)
-        raise
-
-
-@router.post("/{slug}/codex-stop")
-async def stop_codex_turn(slug: str, request: Request) -> dict[str, Any]:
-    """Derruba o turno Codex em voo (botão "Parar turno" do painel, opção A).
-
-    O turno nasce como `bash scripts/tara-codex --delegator cockpit` com
-    `start_new_session=True` (grupo de processos próprio). Matar o grupo leva o
-    `codex exec` filho junto; sem isto, um `kill` no pai deixaria o run
-    escrevendo no rollout sem dono.
-
-    Duas alças, nesta ordem: o `Popen` guardado em memória e, quando ele não
-    existe mais, a unit do scope (`_stop_codex_turn_scope`). A segunda passou a
-    ser necessária quando o turno saiu do cgroup da API — ele sobrevive ao
-    restart, o dicionário não.
-
-    Idempotente: sem turno em voo, só reconcilia o estado — um `trabalhando`
-    órfão (wrapper que morreu sem `tara.exec.completed`) volta a `ocioso`, e o
-    `status_line` de ocupado é zerado. Repetir o botão numa Tara já trancada
-    por um stop anterior é o caminho que a destrava.
-    """
-    agent = await _get_agent_or_404(request, slug)
-    db: GrupoBorgesDB = request.app.state.db
-
-    try:
-        shared_result = await telecodex_client.abort()
-    except telecodex_client.TeleCodexUnavailable:
-        shared_result = None
-    except telecodex_client.TeleCodexControlError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-
-    if shared_result is not None:
-        stopped = bool(shared_result.get("stopped"))
-        if stopped:
-            await db.update_agent_lifecycle(
-                slug,
-                status="ocioso",
-                detail="turno interrompido",
-                event="codex.turn.stopped",
-            )
-            await _clear_codex_busy_status_line(db, agent)
-        return {"stopped": stopped} if stopped else {"stopped": False, "reason": "no_turn_in_flight"}
-
-    proc = await _codex_running_proc(slug)
-    if proc is not None:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-        await _codex_clear_running_proc(slug)
-        parado = True
-    else:
-        # Sem handle em memória o turno ainda pode estar VIVO: ele mora num
-        # scope próprio e sobrevive ao restart que zerou o `_CODEX_RUN_PROCS`.
-        # A unit é a alça que resta.
-        parado = await asyncio.to_thread(_stop_codex_turn_scope, slug)
-
-    if not parado:
-        # Turno morto ou nunca existiu: reconcilia lifecycle órfão e sai.
-        if agent.get("lifecycle_status") == "trabalhando":
-            await db.update_agent_lifecycle(
-                slug,
-                status="ocioso",
-                detail="turno interrompido",
-                event="codex.turn.stopped",
-            )
-        await _clear_codex_busy_status_line(db, agent)
-        return {"stopped": False, "reason": "no_turn_in_flight"}
-
-    await db.update_agent_lifecycle(
-        slug,
-        status="ocioso",
-        detail="turno interrompido",
-        event="codex.turn.stopped",
-    )
-    await _clear_codex_busy_status_line(db, agent)
-    return {"stopped": True}
-
-
-async def _codex_running_proc(slug: str) -> subprocess.Popen | None:
-    async with _CODEX_RUN_PROCS_GUARD:
-        proc = _CODEX_RUN_PROCS.get(slug)
-        if proc is None:
-            return None
-        if proc.poll() is not None:
-            _CODEX_RUN_PROCS.pop(slug, None)
-            return None
-        return proc
-
-
-async def _codex_clear_running_proc(slug: str) -> None:
-    async with _CODEX_RUN_PROCS_GUARD:
-        _CODEX_RUN_PROCS.pop(slug, None)
 
 
 @router.get("/{slug}/pane/stream")
@@ -3512,13 +2758,10 @@ async def send_agent_input(
 
     - 404 quando agente não existe
     - 422 (Pydantic) em text vazio/>8KB ou idempotency_key vazio/>128
-    - Codex: encaminha ao TeleCodex persistente, que é o dono da conversa
-      compartilhada com o Telegram; 409 `shared_turn_in_flight` se já há turno.
     - 409 `agent_pane_unavailable` quando send_message=False (pane fora do
-      CLI esperado — guard do tmux_driver, ex: user trocou window) no Claude Code
+      CLI esperado — guard do tmux_driver, ex: user trocou window)
     - 200 + `tmux_delivered=True` no caminho feliz, mantido por compatibilidade
-      do painel. Para Codex, 200 significa que o TeleCodex aceitou o turno; a
-      execução real chega pelo fluxo de eventos.
+      do painel.
     - `event_boundary_id` é o maior task_events.id observado imediatamente antes
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.
@@ -3534,42 +2777,33 @@ async def send_agent_input(
         if payload.origin == "stt"
         else None
     )
-    if _agente_codex(agent):
-        await _spawn_codex_agent_turn(
-            slug,
-            request,
-            text=delivered_text,
-            fresh=payload.fresh,
-            input_origin=input_origin,
+    nome_apos_clear = (
+        _nome_apos_clear(payload.text, agent["name"])
+        if payload.origin == "text"
+        else None
+    )
+    session_antes = await db.latest_jsonl_session_id(slug) if nome_apos_clear else None
+    result = await _send_tmux_result_or_409(
+        agent["tmux_session"],
+        delivered_text,
+        input_origin=input_origin,
+        db=db,
+        agent_slug=slug,
+    )
+    if not result.delivered:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "agent_pane_unavailable",
+                "delivery_outcome": result.outcome,
+                "reason": result.reason,
+                "safe_to_resend": result.safe_to_resend,
+            },
         )
-    else:
-        nome_apos_clear = (
-            _nome_apos_clear(payload.text, agent["name"])
-            if payload.origin == "text"
-            else None
+    if nome_apos_clear:
+        asyncio.create_task(
+            _rename_apos_clear(db, slug, agent["tmux_session"], nome_apos_clear, session_antes)
         )
-        session_antes = await db.latest_jsonl_session_id(slug) if nome_apos_clear else None
-        result = await _send_tmux_result_or_409(
-            agent["tmux_session"],
-            delivered_text,
-            input_origin=input_origin,
-            db=db,
-            agent_slug=slug,
-        )
-        if not result.delivered:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "agent_pane_unavailable",
-                    "delivery_outcome": result.outcome,
-                    "reason": result.reason,
-                    "safe_to_resend": result.safe_to_resend,
-                },
-            )
-        if nome_apos_clear:
-            asyncio.create_task(
-                _rename_apos_clear(db, slug, agent["tmux_session"], nome_apos_clear, session_antes)
-            )
 
     return InputResponse(
         tmux_delivered=True,
@@ -4292,20 +3526,6 @@ async def post_agent_voice(
 
     falado = f"🎙 {transcribed}"
     input_origin = _InputOrigin(meta={"kind": "stt", "raw_text": falado})
-    if _agente_codex(agent):
-        await _spawn_codex_agent_turn(
-            slug,
-            request,
-            text=falado,
-            input_origin=input_origin,
-        )
-        return {
-            "transcribed": transcribed,
-            "tmux_delivered": True,
-            "duration_ms": duration_ms,
-            "event_boundary_id": event_boundary_id,
-        }
-
     delivered = await _send_tmux_or_409(
         agent["tmux_session"],
         falado,
@@ -4376,22 +3596,6 @@ async def post_agent_image(
     if caption_text:
         text = f"{text}\nCaption: {caption_text}"
 
-    if _agente_codex(agent):
-        prompt = caption_text or "Veja a imagem anexa."
-        await _spawn_codex_agent_turn(
-            slug,
-            request,
-            text=prompt,
-            image_path=str(absolute_path),
-        )
-        duration_ms = int((time.monotonic() - started_at) * 1000)
-        log.info("agent %s: imagem salva %s", slug, absolute_path)
-        return {
-            "path": str(absolute_path),
-            "tmux_delivered": True,
-            "duration_ms": duration_ms,
-        }
-
     delivered = await _send_tmux_or_409(agent["tmux_session"], text)
     duration_ms = int((time.monotonic() - started_at) * 1000)
     log.info("agent %s: imagem salva %s", slug, absolute_path)
@@ -4459,8 +3663,8 @@ async def post_agent_file(
         # abaixo de 4ms; na 6ª ela vai a ~4s, ou seja, a API inteira congela,
         # incluindo os streams e o `_get_agent_or_404` desta própria rota. Não é
         # degradação gradual, é precipício — e o pool ainda é dividido com o
-        # sweep de worktrees e a leitura do Codex, então o teto real é menor que
-        # 6. Dois de cada vez são os 2 vCPU da máquina.
+        # sweep de worktrees, então o teto real é menor que 6. Dois de cada vez
+        # são os 2 vCPU da máquina.
         async with _SEMAFORO_IMAGEM:
             content, ext = await asyncio.to_thread(_normaliza_imagem, content)
 
@@ -4483,21 +3687,7 @@ async def post_agent_file(
     caption_text = (caption or "").strip()
     text = _agent_file_message(kind, absolute_path, original_name, caption_text)
 
-    if _agente_codex(agent):
-        if kind == "image":
-            await _spawn_codex_agent_turn(
-                slug,
-                request,
-                text=caption_text or "Veja a imagem anexa.",
-                image_path=str(absolute_path),
-            )
-        else:
-            # O wrapper só anexa imagem em `image_path`; vídeo e documento vão
-            # com o path dentro do próprio prompt.
-            await _spawn_codex_agent_turn(slug, request, text=text)
-        delivered = True
-    else:
-        delivered = await _send_tmux_or_409(agent["tmux_session"], text)
+    delivered = await _send_tmux_or_409(agent["tmux_session"], text)
 
     log.info("agent %s: %s salvo %s", slug, kind, absolute_path)
     return {
@@ -4571,29 +3761,21 @@ async def change_agent_model(
 ) -> ModelChangeResponse:
     """Troca modelo do agente.
 
-    Dois caminhos por `executor_kind` (DS-69):
+    Dois caminhos por família (DS-69):
 
     **Claude Code** — troca em runtime via `/model <slug>`:
     - 422 (Pydantic) quando model fora do whitelist fable/opus/sonnet/haiku
-    - 422 `model_not_allowed_for_claude_code` se vier slug Codex
     - 409 `agent_busy_confirm_required` quando lifecycle=trabalhando sem force
     - caminho feliz: envia `/model`, picker idempotente, poll de confirmação,
       persiste state_model só se delivered=True, emite task_event. runtime_switch=True.
 
-    **Codex (Tara)** — reconfigura a sessão persistente do TeleCodex, preservando
-    a mesma thread:
-    - 422 `model_not_allowed_for_codex` se vier slug Claude
-    - aplica o modelo e o esforço pedido ao reabrir a thread, persiste state_model
-      e emite task_event com runtime_switch=True.
-
     **Kimi (Hiro)** — NÃO troca em sessão viva (motor é fixo por env var no
     boot; `/model` do CC só lista aliases Anthropic, todos mapeados pro mesmo
-    id Kimi). Mesmo contrato do Codex: persiste state_model, emite task_event,
-    runtime_switch=False. Quem aplica é o boot (`subir-frota.sh subir_hiro`)
-    e o wrapper `hiro-k3`, lendo o estado persistido.
+    id Kimi). Persiste state_model, emite task_event, runtime_switch=False.
+    Quem aplica é o boot (`subir-frota.sh subir_hiro`) e o wrapper `hiro-k3`,
+    lendo o estado persistido.
     """
     agent = await _get_agent_or_404(request, slug)
-    is_codex = _agente_codex(agent)
     is_kimi = agent.get("model_family") == "kimi"
     db: GrupoBorgesDB = request.app.state.db
     target = payload.model
@@ -4607,38 +3789,10 @@ async def change_agent_model(
     # impede um POST direto de gravar no `settings.json` global da máquina.
     if agent.get("model_family") == "codex-proxy":
         raise HTTPException(status_code=409, detail="model_fixo_no_boot_para_codex_proxy")
-    if is_codex and target not in _codex_model_slugs_permitidos():
-        raise HTTPException(status_code=422, detail="model_not_allowed_for_codex")
     if is_kimi and target not in _KIMI_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
-    if not is_codex and not is_kimi and target not in _CHAT_MODEL_SLUGS:
+    if not is_kimi and target not in _CHAT_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
-
-    if is_codex:
-        await _reconfigure_codex_session(
-            agent,
-            model=target,
-            reasoning_effort=_string_or_none(agent.get("codex_reasoning_effort")),
-        )
-        await db.upsert_agent_state(slug, model=target)
-        await db.insert_task_event(
-            kind="agent.model_change",
-            agent_slug=slug,
-            payload={
-                "from": from_model,
-                "to": target,
-                "actor": "cockpit",
-                "confirmed": True,
-                "runtime_switch": True,
-            },
-        )
-        return ModelChangeResponse(
-            tmux_delivered=True,
-            state_persisted=True,
-            confirmed=True,
-            runtime_switch=True,
-            model=target,
-        )
 
     if is_kimi:
         # Kimi continua sendo configurado no próximo boot; o motor é fixo por
@@ -4708,164 +3862,6 @@ async def change_agent_model(
         confirmed=confirmed,
         runtime_switch=True,
         model=target,
-    )
-
-
-# ----- TK-25: leitura read-only do Codex local (Tara) ---------------------
-# Card/chat da Tara não têm pane Claude Code; os dados reais vivem no
-# `~/.codex/state_5.sqlite` + rollout JSONL. Endpoints abaixo são SÓ leitura:
-# nunca escrevem no SQLite do Codex e nunca expõem prompt de sistema,
-# developer não autorizado, reasoning ou tool I/O (filtrado em
-# `services.codex_reader`).
-
-
-class CodexThreadResponse(BaseModel):
-    thread: dict[str, Any] | None
-
-
-class CodexMessageMeta(BaseModel):
-    kind: Literal["wakeup-dynamic", "wakeup-cron", "stt"]
-    raw_text: str
-
-
-class CodexMessageResponse(BaseModel):
-    id: str
-    role: Literal["user", "assistant", "internal"]
-    text: str
-    timestamp: str
-    item_type: str
-    visible: bool
-    # Estrutura opcional: texto, imagem data-URL, os dois contextos developer
-    # explicitamente liberados para o cockpit, ou a chamada de ferramenta.
-    # `text` segue como fallback.
-    #
-    # O valor é `Any` e não `str` por causa do `tool_use`: seu `input` é um
-    # objeto (`{"command": "…"}`), que é a forma que o renderer de execução lê.
-    # Preso a `str`, o endpoint devolvia 500 na serialização.
-    parts: list[dict[str, Any]] | None = None
-    # O campo precisa ficar AUSENTE quando a origem não existe. O decorator da
-    # rota usa `response_model_exclude_unset=True`; por isso o chamador só o
-    # passa abaixo quando há meta explícito, em vez de passar `None`.
-    meta: CodexMessageMeta | None = None
-
-
-class CodexMessagesResponse(BaseModel):
-    source: str
-    thread_id: str | None
-    model: str | None
-    tokens_used: int | None
-    updated_at_ms: int | None
-    messages: list[CodexMessageResponse]
-    hidden_count: int
-
-
-def _codex_db_path() -> str | None:
-    # Override por env facilita teste/instância alternativa; default é o real.
-    return os.environ.get("CODEX_STATE_DB") or str(codex_reader.STATE_DB)
-
-
-async def _require_codex_agent(request: Request, slug: str) -> dict[str, Any]:
-    agent = await _get_agent_or_404(request, slug)
-    is_codex = _agente_codex(agent)
-    if not is_codex:
-        raise HTTPException(status_code=400, detail="not_a_codex_agent")
-    return agent
-
-
-@router.get("/{slug}/codex/thread", response_model=CodexThreadResponse)
-async def get_codex_thread(slug: str, request: Request) -> CodexThreadResponse:
-    """Resumo da thread Codex atual do agente (modelo, tokens, última atividade).
-
-    Opção A (10/08): a thread do cockpit é a do `codex_thread_id` gravado pelo
-    wrapper — nunca o fallback do telecodex (sessão interativa do tmux).
-    """
-    agent = await _require_codex_agent(request, slug)
-    cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-    thread_id = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
-    thread = None
-    if thread_id:
-        thread = await asyncio.to_thread(
-            codex_reader.resolve_thread, thread_id=thread_id, cwd=cwd, db_path=_codex_db_path()
-        )
-    return CodexThreadResponse(thread=thread.to_dict() if thread else None)
-
-
-@router.get(
-    "/{slug}/codex/messages",
-    response_model=CodexMessagesResponse,
-    response_model_exclude_unset=True,
-)
-async def get_codex_messages(
-    slug: str,
-    request: Request,
-    limit: int = Query(default=200, ge=1, le=1000),
-    include_internal: bool = Query(default=False),
-) -> CodexMessagesResponse:
-    """Histórico read-only da última thread Codex.
-
-    Por padrão devolve as bolhas visíveis, inclusive os dois contextos developer
-    explicitamente aprovados. Os demais itens internos (developer/system/
-    reasoning/tool) entram só na contagem `hidden_count`. `include_internal=true`
-    adiciona marcadores internos SEM texto (nunca vaza).
-
-    Opção A (10/08): a thread do cockpit é a do `codex_thread_id` — sem o
-    fallback do telecodex, que mostraria a conversa da sessão interativa do tmux
-    como se fosse a do cockpit.
-    """
-    agent = await _require_codex_agent(request, slug)
-    # "Nova conversa" armada (`codex_next_fresh`): a conversa atual está
-    # descartada até a próxima thread nascer — mesmo efeito do /clear no CC
-    # (72e67bd/732f685). O feed limpa agora; o flag é consumido no próximo
-    # /input, que nasce thread nova.
-    if agent.get("codex_next_fresh"):
-        return CodexMessagesResponse(
-            source=codex_reader.SOURCE,
-            thread_id=None,
-            model=None,
-            tokens_used=None,
-            updated_at_ms=None,
-            messages=[],
-            hidden_count=0,
-        )
-    cwd = agent.get("workspace_path") or codex_reader.TARA_CWD
-    thread_id = await asyncio.to_thread(codex_reader.read_cockpit_thread_id)
-    thread, all_msgs = await asyncio.to_thread(
-        codex_reader.read_latest_conversation,
-        cwd,
-        _codex_db_path(),
-        thread_id=thread_id,
-    )
-
-    hidden_count = sum(1 for m in all_msgs if not m.visible)
-    selected = all_msgs if include_internal else [m for m in all_msgs if m.visible]
-    selected = selected[-limit:]
-
-    db: GrupoBorgesDB = request.app.state.db
-    messages: list[CodexMessageResponse] = []
-    for message in selected:
-        payload = message.to_dict()
-        observed_at_ms = _parse_iso_epoch_ms(message.timestamp)
-        if message.role == "user" and observed_at_ms is not None:
-            meta = await db.claim_message_origin(
-                agent_slug=slug,
-                executor_kind="codex",
-                expected_text=message.text,
-                message_key=message.id,
-                observed_at_ms=observed_at_ms,
-            )
-            explicit_meta = explicit_synthetic_meta(meta)
-            if explicit_meta is not None:
-                payload["meta"] = explicit_meta
-        messages.append(CodexMessageResponse(**payload))
-
-    return CodexMessagesResponse(
-        source=codex_reader.SOURCE,
-        thread_id=thread.thread_id if thread else None,
-        model=thread.model if thread else None,
-        tokens_used=thread.tokens_used if thread else None,
-        updated_at_ms=thread.updated_at_ms if thread else None,
-        messages=messages,
-        hidden_count=hidden_count,
     )
 
 
@@ -5006,12 +4002,8 @@ async def post_agent_interromper(slug: str, request: Request) -> dict[str, Any]:
     relançar o pane, que mata a conversa. Este endpoint é o gesto do meio, e é o
     que qualquer chat de 2026 oferece: interromper sem perder nada.
 
-    Cada motor tem o seu freio, e nenhum dos dois é destrutivo:
-
-    - **Claude Code** — ``Escape`` no pane, que é como se para o turno pelo
-      teclado. A sessão continua viva e a conversa inteira permanece.
-    - **Codex** — ``/control/abort`` do telecodex, que já existia para o
-      ``/abort`` do Telegram e nunca tinha sido oferecido na tela.
+    O freio não é destrutivo: ``Escape`` no pane, que é como se para o turno
+    pelo teclado. A sessão continua viva e a conversa inteira permanece.
 
     Não exige confirmação de propósito: interromper é reversível (basta mandar
     de novo) e a confirmação, no meio de uma geração que já desandou, seria um
@@ -5019,16 +4011,6 @@ async def post_agent_interromper(slug: str, request: Request) -> dict[str, Any]:
     ``/relaunch``, que mata o processo e por isso pede ``confirm``.
     """
     agent = await _get_agent_or_404(request, slug)
-
-    if _agente_codex(agent):
-        try:
-            resultado = await telecodex_client.abort()
-        except telecodex_client.TeleCodexUnavailable as erro:
-            raise HTTPException(status_code=503, detail=str(erro)) from erro
-        except telecodex_client.TeleCodexControlError as erro:
-            raise HTTPException(status_code=502, detail=str(erro)) from erro
-        return {"motor": "codex", "parado": bool(resultado.get("stopped", True))}
-
     parado = await tmux_driver.send_named_key(agent["tmux_session"], "Escape")
     return {"motor": "claude_code", "parado": parado}
 
@@ -5052,8 +4034,6 @@ async def post_agent_relaunch(
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
-    if _agente_codex(agent):
-        raise HTTPException(status_code=409, detail="relaunch_somente_claude_code")
     # `codex-proxy` fica DE FORA de propósito, e o motivo é o mesmo que o
     # docstring do `/ligar` dá para não montar comando aqui: quem conhece o
     # ambiente dos motores não-Anthropic é o `subir-frota.sh`. O relaunch remonta
@@ -5106,9 +4086,6 @@ async def post_agent_desligar(
 ) -> dict[str, Any]:
     """Desliga o agente e TUDO que ele consome — ordem literal do Rica.
 
-    No Codex, fecha a sessão do TeleCodex e mantém a thread persistida. Nos
-    agentes Claude Code, preserva o desligamento dos scopes e da sessão tmux.
-
     ``tmux kill-session`` não basta: em 09/08 dois ``bun server.ts`` do plugin
     telegram, órfãos de sessões já mortas, queimavam 34% de CPU cada há nove
     horas. Quem os segurava era o scope de ``borges-frota.slice``, que sobrevive
@@ -5121,36 +4098,6 @@ async def post_agent_desligar(
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
-
-    if _agente_codex(agent):
-        try:
-            result = await telecodex_client.close_session()
-        except telecodex_client.TeleCodexControlError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-        except telecodex_client.TeleCodexUnavailable as exc:
-            raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
-
-        await request.app.state.db.update_agent_codex_state(
-            slug,
-            codex_runtime_enabled=0,
-        )
-        await request.app.state.db.update_agent_lifecycle(
-            slug,
-            status="offline",
-            detail="sessão Codex fechada pelo painel",
-            event="codex.session.closed",
-        )
-        return {
-            "runtime": "codex",
-            "tmux_delivered": True,
-            "attempted": bool(result.get("closed")),
-            "sessao_encerrada": bool(result.get("closed")),
-            "scopes_parados": [],
-            "scopes_resistiram": [],
-            "boot_cancelado": False,
-            "thread_id": result.get("threadId"),
-            "sent_at": int(time.time()),
-        }
 
     try:
         result = await tmux_driver.shutdown_agent(agent["tmux_session"])
@@ -5175,10 +4122,7 @@ async def post_agent_desligar(
 
 @router.post("/{slug}/ligar")
 async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
-    """Liga o agente retomando a conversa persistida.
-
-    No Codex, reabre a sessão do TeleCodex com o threadId e as configurações
-    salvas. Nos agentes Claude Code, usa o boot canônico da frota.
+    """Liga o agente retomando a conversa persistida, pelo boot canônico da frota.
 
     Sem ``confirm``: ligar não destrói nada, então é toque simples como o
     destrava. Sobe com ``--continue`` — desligar não pode custar conversa; quem
@@ -5190,33 +4134,6 @@ async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
     divergência no dia em que o Rica trocasse o canal de alguém.
     """
     agent = await _get_agent_or_404(request, slug)
-
-    if _agente_codex(agent):
-        try:
-            result = await telecodex_client.reopen_session()
-        except telecodex_client.TeleCodexControlError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-        except telecodex_client.TeleCodexUnavailable as exc:
-            raise HTTPException(status_code=503, detail="telecodex_control_unavailable") from exc
-
-        await request.app.state.db.update_agent_codex_state(
-            slug,
-            codex_runtime_enabled=1,
-        )
-        await request.app.state.db.update_agent_lifecycle(
-            slug,
-            status="ocioso",
-            detail="sessão Codex reaberta",
-            event="codex.session.reopened",
-        )
-        return {
-            "runtime": "codex",
-            "tmux_delivered": True,
-            "attempted": bool(result.get("reopened")),
-            "thread_id": result.get("threadId"),
-            "sent_at": int(time.time()),
-        }
-
     try:
         result = await tmux_driver.boot_agent(agent["tmux_session"])
     except tmux_driver.TmuxSessionBusyError as exc:
@@ -5367,7 +4284,7 @@ async def post_agent_quota_snapshot(
         raise HTTPException(status_code=422, detail="quota_snapshot_sem_rate_limit")
 
     db: GrupoBorgesDB = request.app.state.db
-    await db.update_agent_codex_state(
+    await db.update_agent_runtime_state(
         slug, token_usage_json=json.dumps(snapshot, ensure_ascii=False)
     )
     return {"slug": slug, "observed_at": snapshot["observed_at"]}

@@ -3,10 +3,9 @@
  *
  * Por que isto existe como módulo puro: a referência do Rica mostra `5.6 Sol
  * Extra alto` embaixo, à direita, a um toque de onde se escreve. Nós já temos
- * três famílias de modelo (Anthropic, Codex, Kimi) com escalas de esforço
- * DIFERENTES, e o nome cru que o back guarda (`claude-opus-5`,
- * `codex-gpt-5-6-sol`, `kimi-for-coding-highspeed`) não é o que se põe numa
- * linha de 390px. A tradução mora aqui, testada, e não espalhada em JSX.
+ * famílias de modelo com escalas de esforço DIFERENTES, e o nome cru que o
+ * back guarda (`claude-opus-5`, `kimi-for-coding-highspeed`) não é o que se põe
+ * numa linha de 390px. A tradução mora aqui, testada, e não espalhada em JSX.
  *
  * Duas regras que vieram do próprio back e que a pele não pode desobedecer:
  *
@@ -18,10 +17,9 @@
  *    escrita no `title`/`aria-label`, não escondida.
  *
  * 2. **Escala de esforço é por família.** Kimi não tem `medium` nem `xhigh`
- *    (só `low`/`high`/`max`); o Codex ganhou `max` junto com o gpt-5.6-luna
- *    (0.146+). Oferecer no seletor um degrau que o back vai recusar com 400 é
- *    pior do que não oferecer — a lista vem do back (`effort.allowed`) e a pele
- *    só a traduz.
+ *    (só `low`/`high`/`max`). Oferecer no seletor um degrau que o back vai
+ *    recusar com 400 é pior do que não oferecer — a lista vem do back
+ *    (`effort.allowed`) e a pele só a traduz.
  *
  * Módulo neutro de propósito: sem `'use client'`. É consumido por Server
  * Component (o cabeçalho lê o fleet no servidor) e por Client Component (o
@@ -41,7 +39,7 @@ export type Motor = {
 
 /** Kimi chega em duas grafias: o slug do cockpit e o nome cru do provedor. A
  *  tabela canônica (`shortModelName`, abaixo) não cobre Kimi — só Anthropic e
- *  Codex —, então esta parte é genuinamente nova, não duplicada. */
+ *  outro motor —, então esta parte é genuinamente nova, não duplicada. */
 const KIMI: Record<string, string> = {
   'kimi-k3': 'K3',
   k3: 'K3',
@@ -73,12 +71,11 @@ export function rotulaModelo(modelo: string | null | undefined): string {
   const alias = ALIAS_CURTO[modelo];
   if (alias) return alias;
 
-  // Anthropic e Codex vêm da MESMA tabela que a tropa/statusline já usa
-  // (`shortModelName`, `cockpit-core/cockpit-types.ts`). Eu tinha desenhado
-  // uma tabela própria aqui e ela divergiu da canônica sem eu perceber —
-  // `codex-gpt-5-6-sol` virava "5.6 Sol" nesta peça e "GPT-5.6 Sol" em todo
-  // o resto do cockpit. Reusar a fonte única é a mesma lição da `estado.ts`:
-  // duas cópias da mesma tradução é como elas divergem em silêncio.
+  // Vem da MESMA tabela que a tropa/statusline já usa (`shortModelName`,
+  // `cockpit-core/cockpit-types.ts`). Eu tinha desenhado uma tabela própria
+  // aqui e ela divergiu da canônica sem eu perceber, mostrando um nome nesta
+  // peça e outro em todo o resto do cockpit. Reusar a fonte única é a mesma
+  // lição da `estado.ts`: duas cópias da mesma tradução divergem em silêncio.
   return shortModelName(modelo);
 }
 
@@ -112,7 +109,7 @@ export function desfechoDaTrocaDeEsforco(resposta: {
   tmux_delivered?: boolean | null;
   confirmed?: boolean | null;
 }): DesfechoEsforco {
-  // `=== false` e não falsy: os caminhos Codex/Kimi não têm entrega tmux — o
+  // `=== false` e não falsy: o caminho do Kimi não tem entrega tmux — o
   // campo chega null/ausente e NÃO pode derrubar uma troca que foi só gravada.
   if (!resposta.written || resposta.tmux_delivered === false) return 'entrega-falhou';
   if (resposta.confirmed === false) return 'pendente';
@@ -126,7 +123,7 @@ export function desfechoDaTrocaDeEsforco(resposta: {
  *
  *  - **Claude Code** troca na sessão viva (`/model` via tmux). Entrega é
  *    `tmux_delivered`; o que vale é a sessão ter confirmado.
- *  - **Codex/Kimi** não trocam em sessão viva. O back grava a escolha
+ *  - **Kimi** não troca em sessão viva. O back grava a escolha
  *    (`state_persisted`) e ela entra na PRÓXIMA execução — `tmux_delivered`
  *    chega `false` sempre, porque não houve tmux nenhum. Ler esse `false` como
  *    falha era o bug: a troca da Tara era gravada com sucesso e a tela dizia
@@ -151,16 +148,15 @@ export function desfechoDaTrocaDeModelo(resposta: {
   return resposta.state_persisted ? 'proximo-turno' : 'entrega-falhou';
 }
 
-/** Quais motores têm `requested` no contrato do painel: Kimi e Codex (commits
- *  dac720c/f9a6bd8 do Daniel). No Claude o campo é SEMPRE null — lá, null
- *  significa "o contrato não cobre", nunca "ninguém pediu". Sem esta pergunta,
- *  todo Claude ganharia a etiqueta de default, inclusive o que está em `max`
+/** Quais motores têm `requested` no contrato do painel: o Kimi (commit
+ *  dac720c do Daniel). No Claude o campo é SEMPRE null — lá, null significa
+ *  "o contrato não cobre", nunca "ninguém pediu". Sem esta pergunta, todo
+ *  Claude ganharia a etiqueta de default, inclusive o que está em `max`
  *  porque o Rica pediu — a mentira que o caso 3 existe para evitar. */
 export function contratoSeparaPedido(agente: {
-  executor_kind?: string | null;
   model_family?: string | null;
 }): boolean {
-  return agente.executor_kind === 'codex' || agente.model_family === 'kimi';
+  return agente.model_family === 'kimi';
 }
 
 /** A etiqueta ao lado do valor do esforço — uma palavra, ou NADA.

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-// Espelha o WAVEFORM_BARS do chat-panel (CC). Hook extraído pra o CodexChat
+// Espelha o WAVEFORM_BARS do chat-panel (CC). Hook extraído pra ser
 // reusar a gravação robusta (edge cases iOS/WebKit) sem duplicar inline. O
 // ChatInput do CC ainda tem a cópia inline — refator dele pra usar este hook
 // fica como melhoria futura (não tocar o componente crítico nesta fatia).

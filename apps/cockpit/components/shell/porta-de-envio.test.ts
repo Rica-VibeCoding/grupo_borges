@@ -90,7 +90,7 @@ test('só o texto puro entra na fila — anexo e retomada não têm onde ficar',
  * REVOGA a decisão anterior ("as esperas de segundos não viram bloco na tela",
  * que exigia `enfileira: false` aqui). A premissa dela era que `envio-em-voo`
  * dura uma viagem de rede — verdade no Claude Code, falsa na Tara, onde `aceito`
- * espera o rollout do `codex exec` (14 s medidos em 11/08, em
+ * espera um eco lento (14 s medidos em 11/08, em
  * `aparencia-envio.ts`). Nesses segundos o texto ficava parado no campo com um
  * aviso que o teclado do celular esconde, e da tela do Rica isso é a mensagem
  * sendo engolida.
@@ -167,7 +167,7 @@ test('mensagem em rajada com a anterior sem confirmação é recusada COM recado
   }
 });
 
-test('turno real do Codex barra o segundo gesto antes do POST e preserva o campo', () => {
+test('turno em voo sem fila do outro lado barra o segundo gesto e preserva o campo', () => {
   const entrada = {
     texto: 'segunda mensagem',
     turnoEmVoo: true,
@@ -186,8 +186,8 @@ test('turno real do Codex barra o segundo gesto antes do POST e preserva o campo
 });
 
 /**
- * O outro motor. `turno-em-voo` nasceu para o Codex (`257d0f9`, 16/08), onde o
- * TeleCodex recusa com 409 `shared_turn_in_flight` e não há fila do outro lado
+ * O outro caso. `turno-em-voo` nasceu em `257d0f9` (16/08), para o motor que
+ * recusa com 409 `shared_turn_in_flight` e não tem fila do outro lado
  * — mas `gerando`, no composer, vale para os dois, e o portão vazou para o
  * Claude Code, onde a fila EXISTE: o CLI enfileira o texto colado num pane
  * ocupado (`queue-operation`/`enqueue` no JSONL) e o stream devolve
@@ -238,7 +238,7 @@ test('sem fila do outro lado o turno em voo continua barrando', () => {
     compactando: false,
     faseEnvio: 'confirmado',
   });
-  assert.equal(porta.libera, false, 'no Codex a recusa continua sendo o desenho certo');
+  assert.equal(porta.libera, false, 'sem fila lá fora a recusa continua sendo o desenho certo');
   assert.equal(porta.libera === false && porta.motivo, 'turno-em-voo');
 });
 

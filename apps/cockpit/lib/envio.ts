@@ -61,7 +61,7 @@ export type EstadoEnvio =
        *
        *  Duas filas a produzem, e a tela não as distingue de propósito: a do
        *  CLI do Claude Code (`kind: "queued"` do stream) e a do servidor, para
-       *  o Codex (202 do `/input`). Para o Rica é a mesma frase e a mesma
+       *  a fila do servidor (202 do `/input`). Para o Rica é a mesma frase e a mesma
        *  promessa; o que muda é só onde o texto está guardado. */
       fila?: true;
     } & BaseEnvio)

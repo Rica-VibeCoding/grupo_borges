@@ -31,10 +31,9 @@ test('sem nenhuma das duas fontes não se inventa número', () => {
   assert.equal(resolveContextPct(agente({})), null);
 });
 
-test('no Codex a API é a única fonte — ele não tem statusline no pane', () => {
+test('a API vence o pane — o texto do terminal não diz de qual sessão é', () => {
   const pct = resolveContextPct(
     agente({
-      executor_kind: 'codex',
       pane_excerpt: 'Opus 5 - 33:03 - [█░░░░░░░░░] 16%',
       context_pct: 62.7,
     }),

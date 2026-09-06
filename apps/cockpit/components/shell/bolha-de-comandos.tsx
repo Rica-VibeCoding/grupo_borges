@@ -19,7 +19,7 @@ export type BolhaDeComandosProps = {
   aoSelecionar: (comando: string) => void;
   campoRef: RefObject<HTMLTextAreaElement | null>;
   children: ReactElement;
-  /** Rica pediu Claude Code primeiro, Codex só depois de validado (14/08). */
+  /** Desligada quando o motor do agente não tem slash command. */
   ativa?: boolean;
 };
 
@@ -59,7 +59,7 @@ export function BolhaDeComandos({
 
   // O único gatilho desta primeira fase é uma barra num campo vazio. Ao seguir
   // digitando, não há filtro ainda: a bolha fecha para o campo voltar a ser a
-  // fonte de verdade até a fase de busca existir. `ativa=false` (Codex, por
+  // fonte de verdade até a fase de busca existir. `ativa=false` (por
   // ora) nunca abre — a lista de nativos é do Claude Code, não faz sentido lá.
   useEffect(() => {
     setAberta(ativa && texto === '/');

@@ -24,9 +24,7 @@ export const FLEET_SSE_EVENT_KINDS = [
   'hook:SubagentStart', 'hook:SubagentStop', 'hook:Stop', 'hook:StopFailure',
   'PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart',
   'tara.exec.started', 'tara.exec.completed', 'tara.exec.failed',
-  'codex.turn.started', 'codex.item.started', 'codex.item.updated',
-  'codex.item.completed', 'codex.turn.completed', 'codex.turn.failed',
-  'codex.error', 'dispatch', 'dispatch.failed', 'lifecycle.review',
+  'dispatch', 'dispatch.failed', 'lifecycle.review',
   'lifecycle.blocked', 'status.changed', 'handoff',
   // O watcher publica o tipo cru do JSONL como nome do evento. Estes são hoje
   // o caminho real do Claude Code entre um envio e o snapshot seguinte.
@@ -60,13 +58,12 @@ export function eventDetail(event: TaskEvent): string | null {
 function activityFromNamedEvent(kind: string): AgentActivityState | null {
   if (
     kind === 'hook:PostToolUseFailure' || kind === 'hook:StopFailure' ||
-    kind === 'codex.turn.failed' || kind === 'codex.error' ||
     kind === 'tara.exec.failed' || kind === 'lifecycle.blocked' ||
     kind === 'dispatch.failed'
   ) return 'aguardando';
   if (
     kind === 'hook:Stop' || kind === 'Stop' ||
-    kind === 'tara.exec.completed' || kind === 'codex.turn.completed' ||
+    kind === 'tara.exec.completed' ||
     kind === 'lifecycle.review' || kind === 'lifecycle.done'
   ) return 'ocioso';
   if (
@@ -74,9 +71,7 @@ function activityFromNamedEvent(kind: string): AgentActivityState | null {
     kind === 'hook:UserPromptSubmit' || kind === 'hook:SessionStart' ||
     kind === 'hook:SubagentStart' || kind === 'hook:SubagentStop' ||
     kind === 'UserPromptSubmit' || kind === 'SessionStart' ||
-    kind === 'tara.exec.started' || kind === 'codex.turn.started' ||
-    kind === 'codex.item.started' || kind === 'codex.item.updated' ||
-    kind === 'codex.item.completed' || kind === 'dispatch' ||
+    kind === 'tara.exec.started' || kind === 'dispatch' ||
     kind === 'handoff' || kind === 'status.changed'
   ) return 'trabalhando';
   return null;

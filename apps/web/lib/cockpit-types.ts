@@ -20,7 +20,7 @@ export type SparklineBucket = {
   tokens: number;
 };
 
-export type AgentCli = 'claude_code' | 'codex';
+export type AgentCli = 'claude_code';
 
 export type AgentModel =
   | 'claude-fable-5'
@@ -29,15 +29,7 @@ export type AgentModel =
   | 'claude-opus-4-7'
   | 'claude-sonnet-5'
   | 'claude-sonnet-4-6'
-  | 'claude-haiku-4-5'
-  | 'codex-gpt-5-6-sol'
-  | 'codex-gpt-5-6-terra'
-  | 'codex-gpt-5-6-luna'
-  | 'codex-gpt-5-5'
-  | 'codex-gpt-5-4'
-  | 'codex-gpt-5-4-mini'
-  | 'codex-gpt-5-3-codex'
-  | 'codex-gpt-5-2';
+  | 'claude-haiku-4-5';
 
 export type Agent = {
   slug: string;
@@ -65,8 +57,6 @@ export type Agent = {
   session_started_at: number | null;
   last_assistant_message: string | null;
   token_usage_json: string | null;
-  codex_tokens_used: number | null;
-  codex_next_fresh: boolean | null;
   lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
   lifecycle_event: string | null;
@@ -323,19 +313,6 @@ export type PainelSubagents = {
   items: PainelSubagentEntry[];
 };
 
-// Painel Codex-nativo (Tara). Quando codex_native=true, o frontend troca os
-// controles de CC: effort usa níveis Codex, FUNÇÕES vira sandbox, e Quotas/Subagents
-// (sem equivalente no Codex) são ocultados. Shape espelha o backend (top-level,
-// igual effort/permission/quotas).
-export type PainelCodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access';
-
-export type PainelSandbox = {
-  value: PainelCodexSandbox;
-  allowed: string[];
-  source: string;
-  session_may_diverge: boolean;
-};
-
 export type AgentPainelResponse = {
   slug: string;
   generated_at: number;
@@ -344,11 +321,6 @@ export type AgentPainelResponse = {
   permission: PainelPermission;
   quotas: PainelQuotas;
   subagents: PainelSubagents;
-  // Presentes apenas quando o agente é Codex (executor_kind='codex').
-  sandbox?: PainelSandbox | null;
-  codex_native?: boolean | null;
-  // true = "nova conversa" armada no painel; próximo turno começa thread fresh.
-  codex_next_fresh?: boolean | null;
 };
 
 export type SubagentEntry = {
@@ -409,12 +381,6 @@ export function shortModelName(model: string): string {
     'claude-sonnet-5':    'Sonnet 5',
     'claude-sonnet-4-6':  'Sonnet 4.6',
     'claude-haiku-4-5':   'Haiku 4.5',
-    'codex-gpt-5-6-sol':   'GPT-5.6 Sol',
-    'codex-gpt-5-6-terra': 'GPT-5.6 Terra',
-    'codex-gpt-5-6-luna':  'GPT-5.6 Luna',
-    'codex-gpt-5-5':      'GPT-5.5',
-    'codex-gpt-5-4':      'GPT-5.4',
-    'codex-gpt-5-4-mini': 'GPT-5.4m',
   };
   return map[model] ?? model;
 }
@@ -435,9 +401,8 @@ export function parseContextPct(excerpt: string | null): number | null {
 }
 
 export function resolveContextPct(
-  agent: Pick<Agent, 'executor_kind' | 'pane_excerpt' | 'context_pct'>,
+  agent: Pick<Agent, 'pane_excerpt' | 'context_pct'>,
 ): number | null {
-  if (agent.executor_kind === 'codex') return agent.context_pct;
   return parseContextPct(agent.pane_excerpt) ?? agent.context_pct;
 }
 

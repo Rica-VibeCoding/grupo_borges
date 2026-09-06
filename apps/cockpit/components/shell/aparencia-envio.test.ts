@@ -232,10 +232,9 @@ describe('canal bloqueado — a faixa deixa de perguntar e passa a responder', (
 });
 
 describe('motor — modelo e esforço dentro do composer', () => {
-  it('traduz as três famílias para o nome que o Rica usa — mesma tabela da tropa', () => {
+  it('traduz as duas famílias para o nome que o Rica usa — mesma tabela da tropa', () => {
     assert.equal(rotulaModelo('claude-opus-5'), 'Opus 5');
     assert.equal(rotulaModelo('claude-opus-4-8'), 'Opus 4.8');
-    assert.equal(rotulaModelo('codex-gpt-5-6-sol'), 'GPT-5.6 Sol');
     assert.equal(rotulaModelo('kimi-for-coding-highspeed'), 'K2.7 rápido');
     assert.equal(rotulaModelo('k3'), 'K3');
   });
@@ -312,7 +311,7 @@ describe('desfecho da troca de esforço — 200 não é sinônimo de aplicado', 
     );
   });
 
-  it('Codex/Kimi não têm entrega tmux: campos null não derrubam a troca gravada', () => {
+  it('Kimi não tem entrega tmux: campos null não derrubam a troca gravada', () => {
     assert.equal(
       desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: null, confirmed: null }),
       'aplicado',
@@ -344,8 +343,7 @@ describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nad
     // O Rica pediu `max` no Felipe — requested chega null porque o back do
     // Claude não preenche. "padrão" ali seria a mentira que o caso 3 evita.
     assert.equal(etiquetaDoEsforco({ value: 'max', requested: null, session_may_diverge: false }, false), null);
-    assert.equal(contratoSeparaPedido({ executor_kind: null, model_family: null }), false);
-    assert.equal(contratoSeparaPedido({ executor_kind: 'codex' }), true);
+    assert.equal(contratoSeparaPedido({ model_family: null }), false);
     assert.equal(contratoSeparaPedido({ model_family: 'kimi' }), true);
   });
 
@@ -357,7 +355,7 @@ describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nad
 });
 
 describe('desfecho da troca de MODELO — `tmux_delivered: false` não é falha na Tara', () => {
-  it('Codex/Kimi: gravado é sucesso, e o sucesso é "vale no próximo turno"', () => {
+  it('Kimi: gravado é sucesso, e o sucesso é "vale no próximo turno"', () => {
     // O caminho que estava quebrado: a troca da Tara era gravada, o back
     // devolvia 200 com `tmux_delivered: false` porque não houve tmux nenhum,
     // e a tela dizia "não foi possível entregar a troca ao agente".
@@ -410,11 +408,5 @@ describe('desfecho da troca de MODELO — `tmux_delivered: false` não é falha 
       desfechoDaTrocaDeModelo({ tmux_delivered: true, state_persisted: true, confirmed: true }),
       'aplicado',
     );
-  });
-});
-
-describe('rótulo do modelo — o menu da Tara não pode mostrar slug cru', () => {
-  it('traduz o modelo que 0.146 pôs no lugar do gpt-5.3-codex', () => {
-    assert.equal(rotulaModelo('codex-gpt-5-3-codex-spark'), 'GPT-5.3 Spark');
   });
 });
