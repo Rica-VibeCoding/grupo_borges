@@ -729,13 +729,23 @@ async def patch_agent_effort(
         db: GrupoBorgesDB = request.app.state.db
         await db.update_agent_runtime_state(slug, codex_reasoning_effort=patch.effort)
 
-    # Claude Code aplica esforço vivo pelo slash command — e SÓ vivo: medido em
-    # 07/09, a sessão da Tara em `max` com o `~/.claude/settings.json` global
-    # ainda em `xhigh`. A premissa antiga ("o próprio comando persiste o default
-    # para novas sessões") era o que dispensava persistir aqui, e foi ela que
-    # deixou o esforço morrer a cada restart. Escrever no settings global segue
-    # fora de questão: vazaria a escolha pros outros agentes. Quem guarda é o
-    # banco, logo acima.
+    # O `/effort` do CC persiste, mas não do jeito que serve aqui — as três
+    # respostas dele, lidas no pane da Tara em 07/09:
+    #   /effort max   -> "Set effort level to max (this session only)"
+    #   /effort xhigh -> "(saved as your default for new sessions)"
+    #   /effort high  -> "CLAUDE_CODE_EFFORT_LEVEL=xhigh overrides this session"
+    # Ou seja: `max` NUNCA fica salvo, e o que fica salvo vai pro
+    # `~/.claude/settings.json` GLOBAL, que é o padrão da frota — trocar o
+    # esforço da Tara pelo painel mexia no de todo mundo. Era a premissa antiga
+    # ("o próprio comando persiste o default para novas sessões") que dispensava
+    # persistir aqui, e ela é verdadeira só para os níveis abaixo de `max`.
+    # Quem guarda por agente é o banco, logo acima.
+    #
+    # 🔴 E a terceira linha é o preço do conserto: com `CLAUDE_CODE_EFFORT_LEVEL`
+    # exportada no boot, o `/effort` daqui para de valer em runtime — o CC
+    # recusa e a resposta volta com `confirmed: false`. Os dois mecanismos são
+    # exclusivos por desenho do CC: ou `max` durável pela env, ou troca ao vivo
+    # com teto em `xhigh`. Decisão pendente com o Rica em 07/09.
     before = await _load_cc_status(request.app.state.db, slug)
     session = agent["tmux_session"]
     delivered = await _send_tmux_or_409(session, f"/effort {patch.effort}")

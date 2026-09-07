@@ -89,6 +89,24 @@ sessão viva pode **deixar o agente travado num modal de confirmação** que o c
   o log do boot dizia `[tara] effort do cockpit indisponível ('') — vale o default do CC`
   e ninguém era avisado. **Depois**, rodando a linha exata do script contra o endpoint:
   `codex_reasoning_effort = 'max'` → `export CLAUDE_CODE_EFFORT_LEVEL=max`.
+- 🔴 **O preço do conserto: os dois mecanismos são exclusivos.** Com
+  `CLAUDE_CODE_EFFORT_LEVEL` exportada no boot, o `/effort` do painel para de valer em
+  runtime. As três respostas do CC, lidas no pane da Tara em 07/09, na ordem em que
+  aconteceram:
+
+  ```
+  /effort max    → Set effort level to max (this session only)
+  /effort xhigh  → (saved as your default for new sessions)
+  /effort high   → CLAUDE_CODE_EFFORT_LEVEL=xhigh overrides this session
+  /effort max    → Not applied: CLAUDE_CODE_EFFORT_LEVEL=xhigh overrides effort this
+                   session, and max is session-only (nothing saved)
+  ```
+
+  Duas consequências que mudam a escolha de desenho: **`max` nunca fica salvo** (é
+  session-only por natureza), e o que fica salvo vai pro `~/.claude/settings.json`
+  **global**, o padrão da frota — foi assim que o `xhigh` da Tara virou o default de
+  todo mundo. Então: ou `max` durável pela env do boot, sem troca ao vivo; ou troca ao
+  vivo com teto em `xhigh`, que vaza pra frota. **Decisão pendente com o Rica.**
 - ⚠️ **A coluna tinha sumido do schema, não do banco.** Ela sobrevive no banco vivo
   desde o tempo do Codex CLI, mas o `a60da52` a tirou do `_apply_schema`: banco novo
   nascia sem ela. Quem pegou isso foi o pytest (`no such column`), não o servidor —
