@@ -25,17 +25,49 @@ cursor: composer-2.5, cursor; 0 cursor model aliases run `claude-code-proxy mode
 """
 
 
-def test_le_so_a_linha_do_rail_e_so_a_geracao_corrente() -> None:
-    """Quatro gerações na saída, uma no menu — 18 linhas não se leem no celular."""
+#: Saída real do build do `main` (55bf0b5) medida em 07/09/2026.
+SAIDA_COM_ASTRA = """codex: claude-fable-5, claude-haiku-4-5, claude-haiku-4-5-20251001, \
+claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-sonnet-4-6, claude-sonnet-5, fable, \
+gpt-5.2, gpt-5.2-fast, gpt-5.3-codex, gpt-5.3-codex-fast, gpt-5.3-codex-spark, \
+gpt-5.3-codex-spark-fast, gpt-5.4, gpt-5.4-fast, gpt-5.4-mini, gpt-5.4-mini-fast, gpt-5.5, \
+gpt-5.5-fast, gpt-5.6-luna, gpt-5.6-luna-fast, gpt-5.6-sol, gpt-5.6-sol-fast, gpt-5.6-terra, \
+gpt-5.6-terra-fast, gpt-6-astra, gpt-6-astra-fast, haiku, opus, sonnet
+kimi: k2.6, k3, kimi-for-coding
+"""
+
+
+def test_le_so_a_linha_do_rail_e_so_as_duas_geracoes_mais_novas() -> None:
+    """Quatro gerações na saída, duas no menu — 18 linhas não se leem no celular."""
     ids = proxy_catalog._ids_do_rail(SAIDA_REAL)
 
-    assert proxy_catalog.geracao_corrente(ids) == (
+    assert proxy_catalog.geracoes_recentes(ids) == (
+        "gpt-5.5[1m]",
         "gpt-5.6-luna[1m]",
         "gpt-5.6-luna-fast[1m]",
         "gpt-5.6-sol[1m]",
         "gpt-5.6-sol-fast[1m]",
         "gpt-5.6-terra[1m]",
         "gpt-5.6-terra-fast[1m]",
+    )
+
+
+def test_geracao_sem_minor_entra_sem_derrubar_a_anterior() -> None:
+    """`gpt-6-astra` estreou sem ponto e sozinho na geração.
+
+    Se só a maior versão entrasse, o menu viraria Astra e mais nada — e Sol,
+    Luna e Terra, que a Tara usa todo dia, sumiriam no dia do lançamento.
+    """
+    ids = proxy_catalog._ids_do_rail(SAIDA_COM_ASTRA)
+
+    assert proxy_catalog.geracoes_recentes(ids) == (
+        "gpt-5.6-luna[1m]",
+        "gpt-5.6-luna-fast[1m]",
+        "gpt-5.6-sol[1m]",
+        "gpt-5.6-sol-fast[1m]",
+        "gpt-5.6-terra[1m]",
+        "gpt-5.6-terra-fast[1m]",
+        "gpt-6-astra[1m]",
+        "gpt-6-astra-fast[1m]",
     )
 
 
@@ -58,12 +90,15 @@ def test_linha_de_outro_provedor_nao_entra() -> None:
 
 def test_saida_sem_o_rail_devolve_vazio_em_vez_de_chutar() -> None:
     assert proxy_catalog._ids_do_rail("kimi: k3\n") == []
-    assert proxy_catalog.geracao_corrente([]) == ()
+    assert proxy_catalog.geracoes_recentes([]) == ()
 
 
 def test_geracao_compara_numero_e_nao_texto() -> None:
-    """`5.10` > `5.9` só quando a comparação é numérica — ordenar string erraria."""
-    assert proxy_catalog.geracao_corrente(["gpt-5.9-sol", "gpt-5.10-sol"]) == ("gpt-5.10-sol[1m]",)
+    """`5.10` > `5.9` > `5.8` só quando a comparação é numérica — string poria a 5.10 no fim."""
+    assert proxy_catalog.geracoes_recentes(["gpt-5.8-sol", "gpt-5.9-sol", "gpt-5.10-sol"]) == (
+        "gpt-5.9-sol[1m]",
+        "gpt-5.10-sol[1m]",
+    )
 
 
 def test_e_do_rail_separa_id_vivo_do_residuo_do_cli() -> None:

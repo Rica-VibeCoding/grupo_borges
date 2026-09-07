@@ -243,6 +243,8 @@ describe('motor — modelo e esforço dentro do composer', () => {
     assert.equal(rotulaModelo('gpt-5.6-sol[1m]'), '5.6 Sol');
     assert.equal(rotulaModelo('gpt-5.6-sol'), '5.6 Sol');
     assert.equal(rotulaModelo('gpt-5.6-luna-fast[1m]'), '5.6 Luna rápido');
+    assert.equal(rotulaModelo('gpt-6-astra[1m]'), '6 Astra');
+    assert.equal(rotulaModelo('gpt-6-astra-fast[1m]'), '6 Astra rápido');
   });
 
   it('geração que ainda não existe também traduz — a regra é derivada, não tabelada', () => {

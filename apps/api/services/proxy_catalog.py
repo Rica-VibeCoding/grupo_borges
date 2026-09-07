@@ -9,10 +9,13 @@ clica.
 
 Duas regras que este módulo aplica, e o porquê de cada uma:
 
-1. **Só a geração corrente entra.** O rail devolve 18 ids `gpt-*` de quatro
-   gerações (5.2 a 5.6); menu de 18 linhas no celular não se lê. A régua é
-   DERIVADA da saída (a maior versão presente), não escrita aqui — quando o
-   provedor publicar a 5.7, o menu acompanha sozinho.
+1. **Só as duas gerações mais novas entram.** O rail devolve 20 ids `gpt-*`
+   de cinco gerações (5.2 a 6); menu de 20 linhas no celular não se lê. A
+   régua é DERIVADA da saída (as duas maiores versões presentes), não escrita
+   aqui — quando o provedor publicar a 6.1, o menu acompanha sozinho. Duas e
+   não uma porque geração nova estreia com um modelo só (a 6 chegou com o
+   Astra) enquanto a anterior segue sendo a de uso diário: cortar na maior
+   versão sumiria com Sol, Luna e Terra no dia em que o id novo aparecesse.
 2. **Alias Anthropic fica de fora.** O mesmo rail aceita `opus`, `sonnet`,
    `claude-opus-5` e mapeia tudo pro backend Codex. Oferecer isso faria o painel
    dizer "Opus 5" sobre um motor GPT — mentira de UI, e a etiqueta que o
@@ -51,7 +54,9 @@ _FAILURE_TTL_SECONDS = 60
 SUFIXO_JANELA = "[1m]"
 
 _LINHA_RAIL_RE = re.compile(rf"^{_RAIL}:\s*(.+)$", re.MULTILINE)
-_VERSAO_RE = re.compile(r"^gpt-(\d+)\.(\d+)")
+#: `gpt-6-astra` não tem minor — a 6 estreou sem ponto.
+_VERSAO_RE = re.compile(r"^gpt-(\d+)(?:\.(\d+))?")
+_GERACOES_NO_MENU = 2
 
 
 @dataclass
@@ -101,7 +106,7 @@ def _ler_do_binario() -> tuple[str, ...]:
         log.warning("proxy_catalog: `%s models` saiu %s", binario, saida.returncode)
         return ()
 
-    return geracao_corrente(_ids_do_rail(saida.stdout))
+    return geracoes_recentes(_ids_do_rail(saida.stdout))
 
 
 def _ids_do_rail(saida: str) -> list[str]:
@@ -115,18 +120,16 @@ def _ids_do_rail(saida: str) -> list[str]:
     return [item.strip() for item in itens if item.strip().startswith("gpt-")]
 
 
-def geracao_corrente(ids: list[str]) -> tuple[str, ...]:
-    """Os ids da maior versão presente, na ordem em que o binário os deu."""
-    versoes = {_versao(i) for i in ids} - {None}
-    if not versoes:
-        return ()
-    maior = max(v for v in versoes if v is not None)
-    return tuple(f"{i}{SUFIXO_JANELA}" for i in ids if _versao(i) == maior)
+def geracoes_recentes(ids: list[str]) -> tuple[str, ...]:
+    """Os ids das duas maiores versões presentes, na ordem em que o binário os deu."""
+    versoes = sorted({v for v in map(_versao, ids) if v is not None}, reverse=True)
+    entram = set(versoes[:_GERACOES_NO_MENU])
+    return tuple(f"{i}{SUFIXO_JANELA}" for i in ids if _versao(i) in entram)
 
 
 def _versao(model_id: str) -> tuple[int, int] | None:
     achado = _VERSAO_RE.match(model_id)
-    return (int(achado.group(1)), int(achado.group(2))) if achado else None
+    return (int(achado.group(1)), int(achado.group(2) or 0)) if achado else None
 
 
 def e_do_rail(model_id: str | None) -> bool:
