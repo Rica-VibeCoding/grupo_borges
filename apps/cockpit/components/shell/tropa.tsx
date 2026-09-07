@@ -144,6 +144,7 @@ import {
 import { estadoDe } from './estado';
 import { Off } from './etiqueta-off';
 import { TETO_PCT } from './medidor';
+import { BlocoDaVps } from './bloco-da-vps';
 import { Retrato } from './retrato';
 import { Statusline } from './statusline';
 import { cliqueSimples } from './superficie-otimista';
@@ -621,7 +622,11 @@ export function Tropa({
   return (
     <nav
       aria-label="Tropa"
-      className="flex min-h-0 flex-col overflow-y-auto"
+      // `flex-1`: a nav enche a faixa pra que o bloco da VPS, com `margin-top:
+      // auto`, pouse no pé da coluna quando a lista é curta — e role junto com
+      // ela quando não é. Na rota `/` o pai não tem altura fixa e o `flex-1`
+      // não muda nada.
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       style={{ padding: '0 var(--ck-space-2) var(--ck-space-4)' }}
     >
       {/* Só quem move pela seta enche isto — o arrasto por ponteiro já se
@@ -661,6 +666,11 @@ export function Tropa({
           ),
         )}
       </ul>
+
+      {/* Ordem do Rica (07/09): o consumo da máquina na sidebar. Rodapé, e
+          não cabeçalho: a tropa é o que ele abre pra ver; a máquina é o que
+          ele confere de relance. */}
+      <BlocoDaVps />
 
       {/* No aplicativo instalado não existe barra de endereço: esta é a única
           porta para a tela de medição. Fora dela, digitar a URL resolve. */}
