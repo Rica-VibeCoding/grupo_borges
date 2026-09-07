@@ -357,6 +357,10 @@ describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nad
     assert.equal(etiquetaDoEsforco({ value: 'max', requested: null, session_may_diverge: false }, false), null);
     assert.equal(contratoSeparaPedido({ model_family: null }), false);
     assert.equal(contratoSeparaPedido({ model_family: 'kimi' }), true);
+    // A Tara entrou em 07/09: o esforço dela também entra por
+    // CLAUDE_CODE_EFFORT_LEVEL no boot, então entre a escolha e o restart o
+    // pedido e o vivo divergem de direito — e a etiqueta é o que conta isso.
+    assert.equal(contratoSeparaPedido({ model_family: 'codex-proxy' }), true);
   });
 
   it('leitura fraca não etiqueta: session_may_diverge derruba até divergência real', () => {

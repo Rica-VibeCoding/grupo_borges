@@ -167,15 +167,18 @@ export function desfechoDaTrocaDeModelo(resposta: {
   return resposta.state_persisted ? 'proximo-turno' : 'entrega-falhou';
 }
 
-/** Quais motores têm `requested` no contrato do painel: o Kimi (commit
- *  dac720c do Daniel). No Claude o campo é SEMPRE null — lá, null significa
- *  "o contrato não cobre", nunca "ninguém pediu". Sem esta pergunta, todo
- *  Claude ganharia a etiqueta de default, inclusive o que está em `max`
- *  porque o Rica pediu — a mentira que o caso 3 existe para evitar. */
+/** Quais motores têm `requested` no contrato do painel: os que recebem o
+ *  esforço por `CLAUDE_CODE_EFFORT_LEVEL` no boot — o Kimi (commit dac720c do
+ *  Daniel) e a Tara (07/09). Neles o pedido e o nível vivo divergem de direito
+ *  entre a escolha e o próximo restart, e é essa distância que a etiqueta
+ *  conta. No Claude o campo é SEMPRE null — lá, null significa "o contrato não
+ *  cobre", nunca "ninguém pediu". Sem esta pergunta, todo Claude ganharia a
+ *  etiqueta de default, inclusive o que está em `max` porque o Rica pediu — a
+ *  mentira que o caso 3 existe para evitar. */
 export function contratoSeparaPedido(agente: {
   model_family?: string | null;
 }): boolean {
-  return agente.model_family === 'kimi';
+  return agente.model_family === 'kimi' || agente.model_family === 'codex-proxy';
 }
 
 /** A etiqueta ao lado do valor do esforço — uma palavra, ou NADA.

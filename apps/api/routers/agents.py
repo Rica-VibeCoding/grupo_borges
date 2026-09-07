@@ -662,12 +662,26 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         quotas_task = asyncio.to_thread(_build_painel_quotas, cc_status)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
-        # Kimi: o pedido mora em agent_state (vira env var no próximo boot), mas
-        # o nível em vigor é o que a statusline da sessão reporta — o settings.json
-        # global mostraria o effort dos agentes Anthropic e os 5 níveis que o
-        # motor não tem.
-        asyncio.to_thread(_build_kimi_painel_effort, agent, cc_status)
+        # Kimi e Tara: o pedido mora em agent_state (vira env var no próximo
+        # boot), mas o nível em vigor é o que a statusline da sessão reporta — o
+        # settings.json global mostraria o effort dos agentes Anthropic e, no
+        # Kimi, os 5 níveis que o motor não tem.
+        asyncio.to_thread(
+            _build_painel_effort_por_env_de_boot,
+            agent,
+            cc_status,
+            campo="kimi_reasoning_effort",
+            allowed=_KIMI_PAINEL_ALLOWED_EFFORTS,
+        )
         if is_kimi
+        else asyncio.to_thread(
+            _build_painel_effort_por_env_de_boot,
+            agent,
+            cc_status,
+            campo="codex_reasoning_effort",
+            allowed=_CLAUDE_PAINEL_ALLOWED_EFFORTS,
+        )
+        if agent.get("model_family") == "codex-proxy"
         else asyncio.to_thread(_build_claude_painel_effort, agent, cc_status),
         asyncio.to_thread(_read_agent_permission),
         quotas_task,
@@ -718,16 +732,22 @@ async def patch_agent_effort(
     if patch.effort not in _CLAUDE_PAINEL_ALLOWED_EFFORTS:
         raise HTTPException(status_code=422, detail="claude_effort_not_allowed")
 
-    # Aqui as DUAS pontas valem, e é o que separa este caminho do `/model`: a
-    # sessão de agora troca pelo tmux logo abaixo, e a PRÓXIMA nasce certa por
-    # causa desta linha — o `subir-frota.sh` lê `codex_reasoning_effort` do
-    # `GET /api/agents/{slug}` e é dele que sai o `CLAUDE_CODE_EFFORT_LEVEL` do
-    # boot. Sem isso o `/effort` morre junto com a sessão (medido 07/09).
-    # Grava antes de falar com o tmux de propósito: com a sessão fora do ar a
-    # escolha do painel ainda tem de valer no próximo boot.
     if agent.get("model_family") == "codex-proxy":
+        # Persist-only, como o `/model` dela — escolha do Rica em 07/09
+        # ("mantenha o máximo no boot"). O `subir-frota.sh` lê este campo do
+        # `GET /api/agents/{slug}` e é dele que sai o `CLAUDE_CODE_EFFORT_LEVEL`.
+        # Mandar o slash junto não seria só redundante, seria mentira: com a env
+        # exportada o CC recusa a troca, e o `confirmed: false` resultante fazia
+        # o painel pollar 60s por uma convergência que nunca vinha.
         db: GrupoBorgesDB = request.app.state.db
         await db.update_agent_runtime_state(slug, codex_reasoning_effort=patch.effort)
+        return AgentPainelEffortPatchResponse(
+            slug=slug,
+            effort=patch.effort,
+            source="agent_state.codex_reasoning_effort",
+            session_may_diverge=True,
+            written=True,
+        )
 
     # O `/effort` do CC persiste, mas não do jeito que serve aqui — as três
     # respostas dele, lidas no pane da Tara em 07/09:
@@ -869,38 +889,45 @@ def _num_or_none(value: Any) -> float | None:
     return float(value)
 
 
-def _build_kimi_painel_effort(
-    agent: dict[str, Any], cc_status: _CCStatus
+def _build_painel_effort_por_env_de_boot(
+    agent: dict[str, Any],
+    cc_status: _CCStatus,
+    *,
+    campo: str,
+    allowed: tuple[str, ...],
 ) -> AgentPainelEffort:
     """O nível em vigor na sessão, com o pedido ao lado quando divergem.
 
-    O Kimi roda dentro do Claude Code, então a statusline dele reporta o esforço
-    vivo igual à de qualquer agente Anthropic. O `agent_state` guarda o pedido,
-    que o `subir-frota.sh` transforma em `CLAUDE_CODE_EFFORT_LEVEL` no boot
-    seguinte — e quando essa leitura falha na janela de boot, o `unset` deixa a
-    sessão no default do CC sem ninguém saber. Servir o pedido esconderia
-    exatamente esse caso.
+    Vale para os motores cujo esforço entra por `CLAUDE_CODE_EFFORT_LEVEL` no
+    boot — Kimi desde o início, Tara desde 07/09. Os dois rodam dentro do Claude
+    Code, então a statusline reporta o esforço vivo igual à de qualquer agente
+    Anthropic. O `agent_state` guarda o pedido, que o `subir-frota.sh` transforma
+    na env var do boot seguinte — e quando essa leitura falha na janela de boot,
+    o `unset` deixa a sessão no default do CC sem ninguém saber. Servir o pedido
+    esconderia exatamente esse caso; servir só o vivo faria a escolha do Rica
+    parecer que não pegou, porque entre ela e o restart os dois divergem de
+    direito.
 
-    O valor lido NÃO é filtrado pela trinca do motor: `xhigh` é um nível que o
-    seletor não oferece e que a sessão do Hiro de fato roda. Mostrar o estado
-    verdadeiro não obriga a poder pedi-lo — `allowed` segue sendo low/high/max.
+    O valor lido NÃO é filtrado pela lista do motor: `xhigh` é um nível que o
+    seletor do Kimi não oferece e que a sessão do Hiro de fato roda. Mostrar o
+    estado verdadeiro não obriga a poder pedi-lo.
     """
-    requested = agent.get("kimi_reasoning_effort")
-    if requested not in _KIMI_PAINEL_ALLOWED_EFFORTS:
+    requested = agent.get(campo)
+    if requested not in allowed:
         requested = None
 
     effective = _cc_effort_level(cc_status.payload)
     if effective is None or cc_status.path is None:
         return AgentPainelEffort(
             value=requested,
-            allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
-            source="agent_state.kimi_reasoning_effort",
+            allowed=list(allowed),
+            source=f"agent_state.{campo}",
             session_may_diverge=True,
         )
 
     return AgentPainelEffort(
         value=effective,
-        allowed=list(_KIMI_PAINEL_ALLOWED_EFFORTS),
+        allowed=list(allowed),
         source=str(cc_status.path),
         session_may_diverge=cc_status.fell_back,
         requested=requested,

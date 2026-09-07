@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -88,6 +89,17 @@ def _build_app(tmp_path: Path) -> FastAPI:
     app.state.agents_config = {"agents": [DANIEL, TARA_PROXY]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
+
+
+def _insert_session_event(db: GrupoBorgesDB, session_id: str, agent_slug: str = "tara") -> None:
+    db._insert_task_event(
+        "jsonl:assistant",
+        task_id=None,
+        agent_slug=agent_slug,
+        instance_id=None,
+        payload={"uuid": f"uuid-{session_id}", "sessionId": session_id},
+        raw_jsonl=None,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -444,9 +456,14 @@ def test_patch_effort_da_tara_persiste_para_o_proximo_boot(tmp_path: Path) -> No
     indisponível" e a sessão nascia no `effortLevel` global da frota.
 
     Medido em 07/09: troquei a Tara pra `max`, o painel confirmou ao vivo, ela
-    reiniciou pelo modelo — e voltou no esforço de antes. Diferente do `/model`,
-    aqui as DUAS pontas valem: a sessão de agora muda pelo tmux, e a próxima
-    nasce certa por causa desta linha.
+    reiniciou pelo modelo — e voltou no esforço de antes.
+
+    E é persist-only, sem tocar no tmux, por escolha do Rica no mesmo dia
+    ("mantenha o máximo no boot"). Os dois mecanismos são exclusivos: com a env
+    exportada, o CC recusa o slash ("CLAUDE_CODE_EFFORT_LEVEL=xhigh overrides
+    effort this session"), e `max` nunca fica salvo por conta própria. Mandar o
+    slash mesmo assim só produzia um `confirmed: false` que o painel pollava por
+    60s sem nunca convergir.
     """
     app = _build_app(tmp_path)
 
@@ -457,11 +474,46 @@ def test_patch_effort_da_tara_persiste_para_o_proximo_boot(tmp_path: Path) -> No
             resposta = client.patch("/api/agents/tara/effort", json={"effort": "max"})
 
     assert resposta.status_code == 200
-    assert resposta.json()["runtime_switch"] is True
-    send.assert_called_once_with("tara", "/effort max")
+    corpo = resposta.json()
+    assert corpo["source"] == "agent_state.codex_reasoning_effort"
+    assert corpo["written"] is True
+    assert corpo["session_may_diverge"] is True
+    # Contrato enxuto, igual ao do Kimi: sem estes campos o `motor.ts` já
+    # classifica como "aplicado" e fecha o menu, sem poll de convergência.
+    assert "tmux_delivered" not in corpo
+    assert "confirmed" not in corpo
+    send.assert_not_called()
     # A ponta que o boot lê — e é o `GET /api/agents/{slug}`, não a coluna crua:
     # o campo faltava no SELECT, então gravar sem devolver não consertaria nada.
     assert app.state.db._get_agent("tara")["codex_reasoning_effort"] == "max"
+
+
+def test_painel_da_tara_mostra_o_vivo_com_o_pedido_ao_lado(tmp_path: Path) -> None:
+    """Servir o pedido esconderia o boot que nasceu no default — e servir só o
+    vivo faria a escolha do Rica parecer que não pegou.
+
+    Mesmo desenho do Kimi (`requested`), pela mesma razão: nos dois o esforço
+    entra por `CLAUDE_CODE_EFFORT_LEVEL` no boot, então entre a escolha e o
+    próximo restart os dois valores são legitimamente diferentes.
+    """
+    app = _build_app(tmp_path)
+    session_id = f"tara-effort-painel-{int(time.time())}"
+    _insert_session_event(app.state.db, session_id)
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps({"updated_at": int(time.time()), "effort": {"level": "xhigh"}}),
+        encoding="utf-8",
+    )
+
+    try:
+        with TestClient(app) as client:
+            client.patch("/api/agents/tara/effort", json={"effort": "max"})
+            painel = client.get("/api/agents/tara/painel").json()
+    finally:
+        status_path.unlink(missing_ok=True)
+
+    assert painel["effort"]["value"] == "xhigh"
+    assert painel["effort"]["requested"] == "max"
 
 
 def test_patch_effort_fora_do_codex_proxy_nao_grava_campo_do_codex(tmp_path: Path) -> None:
