@@ -729,9 +729,13 @@ async def patch_agent_effort(
         db: GrupoBorgesDB = request.app.state.db
         await db.update_agent_runtime_state(slug, codex_reasoning_effort=patch.effort)
 
-    # Claude Code aplica esforço vivo pelo slash command. O próprio comando
-    # persiste o default para novas sessões; escrever ~/.claude/settings.json
-    # aqui seria redundante e vazaria a escolha para os outros agentes.
+    # Claude Code aplica esforço vivo pelo slash command — e SÓ vivo: medido em
+    # 07/09, a sessão da Tara em `max` com o `~/.claude/settings.json` global
+    # ainda em `xhigh`. A premissa antiga ("o próprio comando persiste o default
+    # para novas sessões") era o que dispensava persistir aqui, e foi ela que
+    # deixou o esforço morrer a cada restart. Escrever no settings global segue
+    # fora de questão: vazaria a escolha pros outros agentes. Quem guarda é o
+    # banco, logo acima.
     before = await _load_cc_status(request.app.state.db, slug)
     session = agent["tmux_session"]
     delivered = await _send_tmux_or_409(session, f"/effort {patch.effort}")

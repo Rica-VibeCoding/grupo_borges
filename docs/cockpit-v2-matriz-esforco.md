@@ -32,7 +32,7 @@ sessão viva pode **deixar o agente travado num modal de confirmação** que o c
 | Motor (agentes) | Níveis reais | Como se aplica | Sessão viva? | Onde persiste | Como se lê o efetivo |
 |---|---|---|---|---|---|
 | **Claude Code** (Daniel, Felipe, Barsi, Lucas, Vinicius, Pavan) | `low, medium, high, xhigh, max` por modelo; `auto` = reset pro default (não é nível); `ultracode` = modo CC (envia xhigh + orquestração), session-only | PATCH `/effort` → **`/effort <v>` via tmux** (`agents.py:500`), Enter separado (`agents.py:506`), confirmação via `_poll_claude_effort` (`agents.py:820`) | **Sim — dirigido ao vivo agora** | o `/effort` do CLI grava o default na settings do escopo da sessão (medium/high/xhigh); `max`/`ultracode` session-only; env var lida no boot | statusline → `/tmp/cc-status-<sid>.json` → `effort.level`; painel lê **isto primeiro** (`agents.py:951`), settings global é só fallback (`agents.py:970`) |
-| **codex-proxy** (Tara, `gpt-5.6-*` / `gpt-6-*`) | `low, medium, high, xhigh, max` | PATCH `/effort` → **`/effort <v>` via tmux**, igual ao CC: ela é sessão Claude Code desde 06/09, com motor GPT pelo proxy | **Sim — medido 07/09**: PATCH numa sessão viva devolveu `tmux_delivered: true, confirmed: true, session_may_diverge: false` | statusline `/tmp/cc-status-<sid>.json`. **Nada persiste**: `agent_state.codex_reasoning_effort` NÃO existe (o `store.py` só tem `kimi_reasoning_effort`) | statusline `effort.level`, mesma fonte viva do CC |
+| **codex-proxy** (Tara, `gpt-5.6-*` / `gpt-6-*`) | `low, medium, high, xhigh, max` | PATCH `/effort` → **`/effort <v>` via tmux**, igual ao CC: ela é sessão Claude Code desde 06/09, com motor GPT pelo proxy | **Sim — medido 07/09**: PATCH numa sessão viva devolveu `tmux_delivered: true, confirmed: true, session_may_diverge: false` | statusline `/tmp/cc-status-<sid>.json`. **Persiste desde 07/09** em `agent_state.codex_reasoning_effort`, que é o campo lido pelo boot | statusline `effort.level`, mesma fonte viva do CC |
 | **Kimi K3** (Hiro) | canônico `low, high, max`; aliases (`max/ultra/xhigh`→max, `high/medium`→high, `low/minimum/light`→low) | PATCH `/effort` grava `agent_state.kimi_reasoning_effort` → `subir_hiro` exporta `CLAUDE_CODE_EFFORT_LEVEL` no boot (`subir-frota.sh:141-153`) | env var = só boot; `/effort` do CLI funcionaria (mesmo CLI) mas **não é dirigido** | `agent_state.kimi_reasoning_effort`; vazio → cai no settings global (vazamento) | statusline `effort.level` (o que o CLI enviou); painel lê `agent_state` (`agents.py:758`) — o **pedido**, não o efetivo |
 | **DeepSeek V4-Flash via OpenCode Go** (Canário) | `low, high, xhigh, max` + `none` (off); para o flash: `low`→low, `high`→high, `xhigh`→**high**, `max`→max. Dica, não knob | CLI claude lê `effortLevel` do settings global no boot (xhigh) → `output_config.effort` → `opencode.ai/zen/go`. `CLAUDE_CODE_EFFORT_LEVEL` **não** é exportada no boot | igual CC (mesmo CLI) — `/effort` aplicaria; não é dirigido | **nada próprio** — herda o settings global (vazamento); `agent_state.canarinho` vazio | statusline `effort.level` (o que o CLI crê; hoje xhigh → DeepSeek aplica **high** no flash). Se o Go repassa: **não confirmado** |
 
@@ -80,14 +80,19 @@ sessão viva pode **deixar o agente travado num modal de confirmação** que o c
 - **Aplicar.** PATCH `/effort` manda `/effort <v>` pelo tmux e confere, exatamente como no
   Claude Code — a Tara virou sessão CC em 06/09 e o motor GPT entra pelo proxy. **Há toggle
   em runtime**: medido em 07/09, `tmux_delivered: true, confirmed: true`.
-- 🔴 **O que NÃO existe: persistência.** O `subir_tara` (`subir-frota.sh`) lê
-  `codex_reasoning_effort` do cockpit, e esse campo não é coluna (`store.py` tem só
-  `kimi_reasoning_effort`) nem é escrito por endpoint nenhum. O boot registra
-  `[tara] effort do cockpit indisponível ('') — vale o default do CC` e segue.
-  **Consequência medida em 07/09:** troquei o modelo dela, reiniciei a sessão, o
-  `ANTHROPIC_MODEL` subiu certo e o effort **não** — precisei reaplicar pela API depois. Ou
-  seja, hoje o esforço da Tara não sobrevive a um restart, e ninguém é avisado quando ele
-  volta ao default. Conserto = criar o campo + escrever nele no PATCH.
+- ✅ **Persistência — consertada em 07/09.** O `subir_tara` (`subir-frota.sh`) lê
+  `codex_reasoning_effort` do `GET /api/agents/tara` e é dele que sai o
+  `CLAUDE_CODE_EFFORT_LEVEL` do boot. Faltavam três elos, todos do lado do cockpit: o
+  SELECT não devolvia a coluna, a allowlist de escrita não a aceitava, e o PATCH só
+  falava com o tmux — que morre com a sessão. **O sintoma medido antes do conserto:**
+  troquei o modelo dela, reiniciei, o `ANTHROPIC_MODEL` subiu certo e o effort **não**;
+  o log do boot dizia `[tara] effort do cockpit indisponível ('') — vale o default do CC`
+  e ninguém era avisado. **Depois**, rodando a linha exata do script contra o endpoint:
+  `codex_reasoning_effort = 'max'` → `export CLAUDE_CODE_EFFORT_LEVEL=max`.
+- ⚠️ **A coluna tinha sumido do schema, não do banco.** Ela sobrevive no banco vivo
+  desde o tempo do Codex CLI, mas o `a60da52` a tirou do `_apply_schema`: banco novo
+  nascia sem ela. Quem pegou isso foi o pytest (`no such column`), não o servidor —
+  medir só em produção teria deixado passar.
 - ~~**O buraco do wrapper**~~ — **VENCIDO em 07/09**: `scripts/tara-codex` não existe mais
   no repo (só em worktrees velhas), porque a Tara deixou de ser invocada por `codex exec`.
   O furo abaixo fica como histórico do que motivou a mudança, não como estado.
