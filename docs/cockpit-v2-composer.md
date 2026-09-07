@@ -422,7 +422,7 @@ Quem quiser recuperar aqueles pixels tem que resolver o pulo primeiro.
    juntos, sempre.
 6. **A régua do aparelho é a `/diagnostico`.** Em repouso ela tem que dizer
    `--ck-viewport-altura (não publicada)`; o min/max de cada métrica conta a
-   história da sessão inteira e já resolveu duas rodadas sozinho.
+   história da sessão inteira e já resolveu duas rodadas sozinho. A tela foi apagada em 07/09/2026 a pedido do Rica; refazê-la é o passo zero de quem for retomar esta medição.
 
 ### A lógica já está fatiada — o que sobrou é o desenho
 

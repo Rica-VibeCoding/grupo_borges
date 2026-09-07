@@ -121,7 +121,7 @@ Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
 - Régua de versão no aparelho: `/diagnostico` em repouso →
   `--ck-viewport-altura` = **"(não publicada)"**. Número parado = cache/versão
   velha, não conserto falhando. O min/max de cada métrica conta a história da
-  sessão inteira (foi ele que condenou o `innerHeight`).
+  sessão inteira (foi ele que condenou o `innerHeight`). A tela foi apagada em 07/09/2026 a pedido do Rica; refazê-la é o passo zero de quem for retomar esta medição.
 
 ## Fontes externas
 
@@ -144,7 +144,7 @@ Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
 - Validação da rodada 7 no aparelho, nos dois regimes. Se ainda sobrar folga, o
   vídeo que decide é a **`/diagnostico` com o teclado aberto** (tocar no "toque
   aqui" de lá): os números ao vivo + min/max dizem em que modo a janela estava
-  quando o teclado subiu, e é o único dado que ainda falta do modelo.
+  quando o teclado subiu, e é o único dado que ainda falta do modelo. A tela foi apagada em 07/09/2026 a pedido do Rica; refazê-la é o passo zero de quem for retomar esta medição.
 - **O respiro que sobra é design, não defeito.** Abaixo da caixa do composer
   há 67px medidos em bancada: 12 de padding, 34 do `safe-area-inset-bottom` (a
   barra de gestos do iOS, intocável) e ~21 da régua embaixo. Era isso e mais os
