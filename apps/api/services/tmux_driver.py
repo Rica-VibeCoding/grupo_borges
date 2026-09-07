@@ -1931,6 +1931,14 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
                 "systemd-run",
                 "--user",
                 "--collect",
+                # O `subir-frota.sh` cria o servidor tmux dentro deste cgroup, e
+                # o `KillMode=control-group` que o systemd assume mataria os dois
+                # quando o script terminasse — o agente caía minutos depois de
+                # ligar, sem rastro de erro (07/09/2026). Desligar não depende
+                # deste kill: `_shutdown_agent_sync` encerra sessão e scopes pelo
+                # nome.
+                "-p",
+                "KillMode=process",
                 f"--unit=cockpit-ligar-{session_name}",
                 f"--setenv=FROTA_FLAGS_EXTRA={_FLAG_CONTINUE}",
                 str(_SUBIR_FROTA),

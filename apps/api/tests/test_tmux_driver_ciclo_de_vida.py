@@ -156,3 +156,24 @@ def test_unit_ja_registrada_vira_boot_em_curso_e_nao_erro_cru() -> None:
             assert "já está em curso" in str(exc)
         else:  # pragma: no cover - o teste só passa pela exceção certa
             raise AssertionError("boot recusado devia virar TmuxSessionBusyError")
+
+
+def test_boot_nao_leva_o_servidor_tmux_junto_ao_terminar() -> None:
+    """Incidente 07/09/2026: o agente caía sozinho minutos depois de ligar.
+
+    O `subir-frota.sh` cria o servidor tmux DENTRO do cgroup da unit de boot.
+    Com o `KillMode=control-group` que o systemd assume por padrão, o fim do
+    script matava todo o cgroup — servidor tmux e agente junto. Daniel e Pavan
+    dividiam o socket `default`, então cada boot derrubava os dois.
+    """
+    with (
+        patch("services.tmux_driver._shutdown_agent_sync", return_value={}),
+        patch("services.tmux_driver.subprocess.run") as roda,
+        patch("services.tmux_driver._LIGAR_TIMEOUT_S", 0.0),
+    ):
+        roda.return_value = subprocess.CompletedProcess([], 0, "", "")
+        tmux_driver._boot_agent_sync("canario")
+
+    argv = roda.call_args.args[0]
+    assert "-p" in argv, "o boot precisa declarar propriedade na unit transiente"
+    assert argv[argv.index("-p") + 1] == "KillMode=process"
