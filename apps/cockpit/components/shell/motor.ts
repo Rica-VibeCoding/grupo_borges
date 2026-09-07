@@ -62,8 +62,27 @@ const ALIAS_CURTO: Record<string, string> = {
   fable: 'Fable',
 };
 
+/** `gpt-5.6-sol[1m]` -> `5.6 Sol`; `gpt-5.6-luna-fast[1m]` -> `5.6 Luna rápido`.
+ *
+ *  Derivado, não tabelado, e de propósito: o catálogo que o back oferece é lido
+ *  do binário do proxy e anda com o provedor. Uma tabela aqui nasceria velha na
+ *  primeira geração nova — o mesmo envelhecimento calado que tirou a allowlist
+ *  de modelos do código em 10/08. O sufixo `[1m]` não é nome: é a declaração de
+ *  janela que viaja junto do id até o `ANTHROPIC_MODEL` do boot. */
+const GPT_RE = /^gpt-(\d+\.\d+)-([a-z]+)(-fast)?(?:\[1m\])?$/;
+
+function rotulaGpt(modelo: string): string | null {
+  const achado = GPT_RE.exec(modelo);
+  if (!achado) return null;
+  const [, versao, nome, rapido] = achado;
+  return `${versao} ${nome!.charAt(0).toUpperCase()}${nome!.slice(1)}${rapido ? ' rápido' : ''}`;
+}
+
 export function rotulaModelo(modelo: string | null | undefined): string {
   if (!modelo) return 'sem modelo';
+
+  const gpt = rotulaGpt(modelo);
+  if (gpt) return gpt;
 
   const kimi = KIMI[modelo];
   if (kimi) return kimi;

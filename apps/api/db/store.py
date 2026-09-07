@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.lifecycle_ruido import eh_ruido_de_lifecycle
+from services import proxy_catalog
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 logger = logging.getLogger(__name__)
@@ -443,17 +444,22 @@ class GrupoBorgesDB:
                 )
                 # `state_model` é escrito pelo `POST /{slug}/model` e sobrevive
                 # à troca de família. Na Tara guardava `codex-gpt-5-6-sol`, id do
-                # catálogo do CLI que ela deixou de usar. Em `codex-proxy` o
-                # campo tem de ser NULL por construção — aquele POST responde 409
-                # e quem manda no modelo é o `ANTHROPIC_MODEL` do boot. Enquanto
-                # ficava, `_build_painel_contexto` caía nele sempre que a
-                # statusline do CC faltasse, e o `/api/fleet` publicava o slug
-                # morto no card. O yaml é a fonte; quem contradiz, cede.
+                # catálogo do CLI que ela deixou de usar — e enquanto ficava,
+                # `_build_painel_contexto` caía nele sempre que a statusline do
+                # CC faltasse, e o `/api/fleet` publicava o slug morto no card.
+                # O que sai é o RESÍDUO, não o campo: em `codex-proxy` o painel
+                # grava aqui a escolha que o boot exporta em `ANTHROPIC_MODEL`, e
+                # essa é legítima. A régua de quem fica é o formato do rail.
                 if a.get("model_family") == "codex-proxy":
-                    conn.execute(
-                        "UPDATE agent_state SET model = NULL WHERE slug = ?",
+                    guardado = conn.execute(
+                        "SELECT model FROM agent_state WHERE slug = ?",
                         (a["slug"],),
-                    )
+                    ).fetchone()
+                    if guardado and guardado[0] and not proxy_catalog.e_do_rail(guardado[0]):
+                        conn.execute(
+                            "UPDATE agent_state SET model = NULL WHERE slug = ?",
+                            (a["slug"],),
+                        )
                 # Bootstrap do counter de human_id (prefix imutável após primeira gravação
                 # pra não invalidar IDs já emitidos — DO NOTHING preserva o existente).
                 conn.execute(

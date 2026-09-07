@@ -65,7 +65,7 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_reader, tmux_driver, workspace_reader
+from services import codex_reader, proxy_catalog, tmux_driver, workspace_reader
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -1038,13 +1038,34 @@ def _build_painel_model(
 ) -> AgentPainelModel | None:
     if agent.get("model_family") == "kimi":
         return None
-    # codex-proxy (Tara) cai junto do Kimi, por um motivo MEDIDO em 06/09: o
-    # `/model` do CC responde *"saved as your default for new sessions"* e grava
-    # o campo `model` no `~/.claude/settings.json` GLOBAL — um toque no painel
-    # trocaria o modelo padrão da frota inteira, e só apareceria no próximo boot
-    # de outro agente. Quem manda no motor dela é o `ANTHROPIC_MODEL` do boot.
+    # codex-proxy (Tara): o seletor existe, mas a troca é DIFERIDA, como no Kimi.
+    # O motivo é medido (06/09): o `/model` do CC responde *"saved as your default
+    # for new sessions"* e grava o campo `model` no `~/.claude/settings.json`
+    # GLOBAL — trocar em sessão viva por ali mudaria o padrão da frota inteira, e
+    # só apareceria no próximo boot de outro agente. Quem manda no motor dela é o
+    # `ANTHROPIC_MODEL` do boot, então a escolha é gravada e o boot a lê.
+    # Fechar o seletor foi a salvaguarda do mesmo dia; ela cobria demais — o que
+    # a medição condena é aquele caminho de escrita, não mostrar o catálogo.
     if agent.get("model_family") == "codex-proxy":
-        return None
+        oferecidos = list(proxy_catalog.listar_modelos())
+        # `contexto.model` é o que a sessão reporta agora; só vale como leitura
+        # forte se estiver no catálogo — id de fora seria eco de config velha.
+        da_sessao = contexto.model if contexto.available and not contexto.stale else None
+        if da_sessao in oferecidos:
+            return AgentPainelModel(
+                value=da_sessao,
+                allowed=oferecidos,
+                source=contexto.source,
+                session_may_diverge=False,
+                runtime_switch=False,
+            )
+        escolhido = agent.get("state_model")
+        return AgentPainelModel(
+            value=escolhido or agent.get("model_default"),
+            allowed=oferecidos,
+            source="agent.state_model" if escolhido else "agent.model_default",
+            runtime_switch=False,
+        )
 
     status_model = _claude_model_slug(contexto.model)
     if status_model is not None and contexto.available and not contexto.stale:
@@ -3774,9 +3795,17 @@ async def change_agent_model(
     id Kimi). Persiste state_model, emite task_event, runtime_switch=False.
     Quem aplica é o boot (`subir-frota.sh subir_hiro`) e o wrapper `hiro-k3`,
     lendo o estado persistido.
+
+    **codex-proxy (Tara)** — mesmo desfecho diferido, motivo diferente: aqui o
+    `/model` até trocaria em sessão viva, mas grava o campo `model` no
+    `~/.claude/settings.json` GLOBAL e mudaria o padrão da frota. A escolha é
+    persistida e o `subir-frota.sh subir_tara` a exporta em `ANTHROPIC_MODEL`.
     """
     agent = await _get_agent_or_404(request, slug)
     is_kimi = agent.get("model_family") == "kimi"
+    is_codex_proxy = agent.get("model_family") == "codex-proxy"
+    #: As duas famílias que gravam e esperam o boot, em vez de falar com o tmux.
+    diferido = is_kimi or is_codex_proxy
     db: GrupoBorgesDB = request.app.state.db
     target = payload.model
     from_model = agent.get("state_model") or agent.get("model_default")
@@ -3784,19 +3813,20 @@ async def change_agent_model(
     # Allowlist por família: nunca aceitar slug de uma família em agente de
     # outra, e nunca aceitar slug que a família nenhuma reconhece.
     #
-    # codex-proxy não tem allowlist porque não tem troca: o painel nem oferece
-    # o seletor (`_build_painel_model` devolve None). Fechar aqui também é o que
-    # impede um POST direto de gravar no `settings.json` global da máquina.
-    if agent.get("model_family") == "codex-proxy":
-        raise HTTPException(status_code=409, detail="model_fixo_no_boot_para_codex_proxy")
+    # A do codex-proxy é o catálogo vivo do binário do proxy, não constante:
+    # allowlist escrita à mão sobre catálogo de terceiro envelhece calada, e a
+    # falha só aparece na hora em que o Rica clica.
+    if is_codex_proxy and target not in proxy_catalog.listar_modelos():
+        raise HTTPException(status_code=422, detail="model_not_allowed_for_codex_proxy")
     if is_kimi and target not in _KIMI_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
-    if not is_kimi and target not in _CHAT_MODEL_SLUGS:
+    if not diferido and target not in _CHAT_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
 
-    if is_kimi:
-        # Kimi continua sendo configurado no próximo boot; o motor é fixo por
-        # env var e não há daemon compartilhado para reabrir a sessão.
+    if diferido:
+        # Kimi e Tara continuam sendo configurados no próximo boot: num o motor
+        # é fixo por env var, no outro a troca viva contaminaria o settings
+        # global. Nenhum dos dois tem daemon compartilhado pra reabrir a sessão.
         await db.upsert_agent_state(slug, model=target)
         await db.insert_task_event(
             kind="agent.model_change",

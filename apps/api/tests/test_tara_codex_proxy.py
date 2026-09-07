@@ -297,11 +297,10 @@ def test_sync_limpa_state_model_de_quem_virou_codex_proxy(tmp_path: Path) -> Non
     """Terceiro resíduo do Codex CLI no `agent_state`, irmão dos dois de cima.
 
     O slug persistido era `codex-gpt-5-6-sol` — id do catálogo do CLI, escrito
-    pelo `POST /model` de quando ela era Codex. Para família `codex-proxy` esse
-    campo tem de ser NULL por construção: o `/model` responde 409 e quem manda
-    no modelo é o `ANTHROPIC_MODEL` do boot. Enquanto ficava, `_build_painel_contexto`
-    caía nele sempre que a statusline do CC faltasse, e o `/api/fleet` publicava
-    o slug morto no card.
+    pelo `POST /model` de quando ela era Codex. Enquanto ficava,
+    `_build_painel_contexto` caía nele sempre que a statusline do CC faltasse, e
+    o `/api/fleet` publicava o slug morto no card. Sai o resíduo, não o campo:
+    a régua é o formato do rail.
     """
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
@@ -318,6 +317,26 @@ def test_sync_limpa_state_model_de_quem_virou_codex_proxy(tmp_path: Path) -> Non
     assert db._get_agent("tara")["state_model"] is None
 
 
+def test_sync_preserva_a_escolha_feita_no_painel(tmp_path: Path) -> None:
+    """Id do rail é escolha viva do Rica — o sync do yaml não pode desfazê-la.
+
+    Sem esta metade, cada `_sync_agents` (roda no boot da API) devolvia a Tara
+    ao `model_default` e o painel esquecia a troca sem dizer nada.
+    """
+    db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
+    db._apply_schema()
+    db._sync_agents([TARA_PROXY])
+    with db._connect() as conn, conn:
+        conn.execute(
+            "UPDATE agent_state SET model = ? WHERE slug = ?",
+            ("gpt-5.6-terra[1m]", "tara"),
+        )
+
+    db._sync_agents([TARA_PROXY])
+
+    assert db._get_agent("tara")["state_model"] == "gpt-5.6-terra[1m]"
+
+
 def test_sync_nao_mexe_no_state_model_de_familia_anthropic(tmp_path: Path) -> None:
     """O `/model` do painel é legítimo fora do `codex-proxy` — não é faxina geral."""
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
@@ -332,29 +351,83 @@ def test_sync_nao_mexe_no_state_model_de_familia_anthropic(tmp_path: Path) -> No
 
 
 # --------------------------------------------------------------------------
-# /model: fechado, e por quê
+# /model: oferece o catálogo, grava, e NÃO fala com a sessão viva
 # --------------------------------------------------------------------------
 
+CATALOGO = ("gpt-5.6-sol[1m]", "gpt-5.6-terra[1m]", "gpt-5.6-luna-fast[1m]")
 
-def test_painel_nao_oferece_seletor_de_modelo(tmp_path: Path) -> None:
-    """Sem seletor no painel não há clique que troque o modelo da máquina."""
+
+@pytest.fixture
+def catalogo_fixo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O catálogo real sai de um subprocess; aqui o que importa é o contrato."""
+    monkeypatch.setattr(agents_router.proxy_catalog, "listar_modelos", lambda **_: CATALOGO)
+
+
+def test_painel_oferece_o_catalogo_do_rail(tmp_path: Path, catalogo_fixo: None) -> None:
+    """O seletor volta — o que a medição de 06/09 condena é o `/model`, não a lista.
+
+    `runtime_switch=False` é o que separa os dois: a pele lê esse campo para não
+    ler `tmux_delivered: false` como falha de entrega.
+    """
     client = TestClient(_build_app(tmp_path))
 
     corpo = client.get("/api/agents/tara/painel").json()
 
-    assert corpo["model"] is None
+    assert corpo["model"]["allowed"] == list(CATALOGO)
+    assert corpo["model"]["value"] == "gpt-5.6-sol[1m]"
+    assert corpo["model"]["source"] == "agent.model_default"
+    assert corpo["model"]["runtime_switch"] is False
 
 
-def test_patch_model_recusa_codex_proxy(tmp_path: Path) -> None:
-    """O `/model` do CC grava no `~/.claude/settings.json` GLOBAL.
+def test_painel_sem_catalogo_nao_promete_seletor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Binário do proxy fora do ar: `allowed` vazio, e a pele cai no rótulo.
 
-    Medido em 06/09: um `/model gpt-5.6-terra` numa sessão de teste trocou o
-    campo `model` da frota inteira, e só apareceria no próximo boot de outro
-    agente. O painel não oferece; esta porta fecha o POST direto.
+    Oferecer uma lista chutada faria o painel prometer modelo que a sessão não
+    sobe — o valor atual continua aparecendo, o menu é que não abre.
+    """
+    monkeypatch.setattr(agents_router.proxy_catalog, "listar_modelos", lambda **_: ())
+    client = TestClient(_build_app(tmp_path))
+
+    corpo = client.get("/api/agents/tara/painel").json()
+
+    assert corpo["model"]["allowed"] == []
+    assert corpo["model"]["value"] == "gpt-5.6-sol[1m]"
+
+
+def test_post_model_grava_sem_tocar_na_sessao(tmp_path: Path, catalogo_fixo: None) -> None:
+    """A escolha vale no próximo boot: quem exporta `ANTHROPIC_MODEL` é o script.
+
+    Medido em 06/09: um `/model` na sessão viva grava o campo `model` no
+    `~/.claude/settings.json` GLOBAL e trocaria o padrão da frota inteira. Por
+    isso `tmux_delivered` é False aqui — não houve tmux, e isso não é falha.
+    """
+    app = _build_app(tmp_path)
+    client = TestClient(app)
+
+    resposta = client.post("/api/agents/tara/model", json={"model": "gpt-5.6-terra[1m]"})
+
+    assert resposta.status_code == 200
+    assert resposta.json() == {
+        "tmux_delivered": False,
+        "state_persisted": True,
+        "confirmed": False,
+        "runtime_switch": False,
+        "model": "gpt-5.6-terra[1m]",
+    }
+    assert app.state.db._get_agent("tara")["state_model"] == "gpt-5.6-terra[1m]"
+
+
+def test_post_model_recusa_id_fora_do_catalogo(tmp_path: Path, catalogo_fixo: None) -> None:
+    """`opus` é alias que o rail aceita e mapeia pro backend Codex.
+
+    Deixar passar faria o painel anunciar "Opus 5" sobre um motor GPT — e o
+    boot exportaria um `ANTHROPIC_MODEL` que não é o que o cartão diz.
     """
     client = TestClient(_build_app(tmp_path))
 
     resposta = client.post("/api/agents/tara/model", json={"model": "opus"})
 
-    assert resposta.status_code == 409
-    assert resposta.json()["detail"] == "model_fixo_no_boot_para_codex_proxy"
+    assert resposta.status_code == 422
+    assert resposta.json()["detail"] == "model_not_allowed_for_codex_proxy"

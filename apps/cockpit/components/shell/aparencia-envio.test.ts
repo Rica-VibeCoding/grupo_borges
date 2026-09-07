@@ -239,6 +239,16 @@ describe('motor — modelo e esforço dentro do composer', () => {
     assert.equal(rotulaModelo('k3'), 'K3');
   });
 
+  it('id do rail codex vira nome curto, e o `[1m]` não é nome — é a janela do boot', () => {
+    assert.equal(rotulaModelo('gpt-5.6-sol[1m]'), '5.6 Sol');
+    assert.equal(rotulaModelo('gpt-5.6-sol'), '5.6 Sol');
+    assert.equal(rotulaModelo('gpt-5.6-luna-fast[1m]'), '5.6 Luna rápido');
+  });
+
+  it('geração que ainda não existe também traduz — a regra é derivada, não tabelada', () => {
+    assert.equal(rotulaModelo('gpt-9.1-nova[1m]'), '9.1 Nova');
+  });
+
   it('alias curto sem versão (visto em produção: state_model="opus") vira só a família', () => {
     assert.equal(rotulaModelo('opus'), 'Opus');
     assert.equal(rotulaModelo('sonnet'), 'Sonnet');
