@@ -23,6 +23,19 @@ class Recurso(BaseModel):
     pct: float = Field(description="usado / (usado + livre), a mesma conta do `df`")
 
 
+class Vilao(BaseModel):
+    nome: str = Field(description="nome do agente quando o cgroup entrega; senão o do processo")
+    pct: float
+    usado_mb: int
+
+
+class Vilaos(BaseModel):
+    """Quem mais come de cada coisa que trava a máquina. `null` = não deu pra medir."""
+
+    cpu: Vilao | None
+    ram: Vilao | None
+
+
 class VpsRecursos(BaseModel):
     cpu_pct: float | None = Field(
         description="média entre as duas últimas leituras; null quando não houve intervalo",
@@ -32,6 +45,7 @@ class VpsRecursos(BaseModel):
     ram: Recurso
     swap: Recurso | None = Field(description="null na máquina sem swap")
     disco: Recurso
+    vilao: Vilaos
     no_ar_segundos: int
     medido_em: int
 

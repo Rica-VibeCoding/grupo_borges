@@ -41,6 +41,28 @@ SwapFree:              0 kB
 """
 
 
+#: Linha real do `/proc/<pid>/stat` (comm com espaço e parêntese dentro, que é o
+#: caso que quebra o parse por split simples).
+STAT_DE_PROCESSO = (
+    "3454703 (Chrome (io)) S 1 3454 3454 0 -1 4194560 91234 0 12 0 "
+    "400 165 0 0 20 0 42 0 987654 2300000000 143132 " + "0 " * 30 + "\n"
+)
+
+#: Como o kernel entrega: com o `\n` no fim, que já derrubou o nome do agente.
+CGROUP_DO_DANIEL = "0::/borges.slice/borges-frota.slice/borges-clawd@daniel.service\n"
+
+
+CGROUP_DO_PAVAN = "0::/borges.slice/borges-frota.slice/borges-clawd@pavan.service\n"
+
+
+def _proc(
+    pid: int, comm: str, ticks: int, rss_paginas: int, cgroup: str = "0::/x\n"
+) -> vps_recursos.Processo:
+    return vps_recursos.Processo(
+        pid=pid, comm=comm, ticks=ticks, rss_paginas=rss_paginas, cgroup=cgroup.strip()
+    )
+
+
 def test_cpu_e_a_diferenca_entre_duas_leituras_e_iowait_conta_como_ocioso() -> None:
     antes = vps_recursos.amostra_cpu(STAT_ANTES)
     depois = vps_recursos.amostra_cpu(STAT_DEPOIS)
@@ -92,7 +114,15 @@ def test_carga_e_uptime_leem_o_primeiro_campo() -> None:
 
 
 def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
+    """A resposta que o rodapé da tropa consome, com a máquina inteira falsa."""
     leituras = iter([STAT_ANTES, STAT_DEPOIS])
+    # Daniel gastou 700 dos 1000 ticks da janela e é o maior residente.
+    varreduras = iter(
+        [
+            {7: _proc(7, "claude", 1000, 143132, CGROUP_DO_DANIEL)},
+            {7: _proc(7, "claude", 1700, 143132, CGROUP_DO_DANIEL)},
+        ]
+    )
 
     def le_falso(caminho: str) -> str:
         if caminho == vps_recursos.CAMINHO_STAT:
@@ -103,9 +133,14 @@ def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
             return "2.62 2.54 3.39 4/1486 4046398\n"
         if caminho == vps_recursos.CAMINHO_UPTIME:
             return "3024031.48 5338825.23\n"
+        if caminho.endswith("/cgroup"):
+            return CGROUP_DO_DANIEL
+        if caminho.endswith("/cmdline"):
+            return "claude\0--continue\0"
         raise AssertionError(caminho)
 
     monkeypatch.setattr(vps_recursos, "_le", le_falso)
+    monkeypatch.setattr(vps_recursos, "_varre_processos", lambda: next(varreduras))
     monkeypatch.setattr(vps_recursos, "_ultima_amostra", None)
     monkeypatch.setattr(vps_recursos, "RESPIRO_SEGUNDOS", 0)
     monkeypatch.setattr(
@@ -125,3 +160,92 @@ def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
     assert corpo["disco"]["livre_mb"] == 35464
     assert corpo["no_ar_segundos"] == 3024031
     assert corpo["nucleos"] >= 1
+    assert corpo["vilao"]["cpu"] == {"nome": "Daniel", "pct": 70.0, "usado_mb": 559}
+    assert corpo["vilao"]["ram"] == {"nome": "Daniel", "pct": 4.7, "usado_mb": 559}
+
+
+def test_stat_com_parentese_no_nome_nao_desalinha_os_campos() -> None:
+    p = vps_recursos.processo_do_stat(STAT_DE_PROCESSO)
+
+    assert p.pid == 3454703
+    assert p.comm == "Chrome (io)"
+    assert p.ticks == 565  # utime 400 + stime 165
+    assert p.rss_mb == 559  # 143132 páginas de 4 KB
+
+
+def test_o_cgroup_transforma_nove_claude_iguais_em_nome_de_agente() -> None:
+    """A regressão do `\\n`: sem `strip()` o pedaço vira `...service\\n` e ninguém casa."""
+    assert vps_recursos.nome_do_processo(CGROUP_DO_DANIEL, "claude", "") == "Daniel"
+
+
+def test_processo_de_unidade_comum_usa_o_nome_da_unidade() -> None:
+    cgroup = "0::/user.slice/user-1002.slice/user@1002.service/app.slice/cockpit-api.service\n"
+
+    assert vps_recursos.nome_do_processo(cgroup, "python", "") == "cockpit-api"
+
+
+def test_interpretador_generico_cede_o_nome_pro_primeiro_argumento() -> None:
+    """`python3` não informa nada; `homeassistant` informa tudo."""
+    cgroup = "0::/system.slice/docker-2e7c3a5b.scope\n"
+    cmdline = "python3\0-P\0-m\0homeassistant\0--config\0/config\0"
+
+    assert vps_recursos.nome_do_processo(cgroup, "python3", cmdline) == "homeassistant"
+
+
+def test_sem_cgroup_nem_argumento_sobra_o_comm() -> None:
+    assert vps_recursos.nome_do_processo("0::/\n", "go2rtc", "go2rtc\0") == "go2rtc"
+
+
+def test_o_consumo_soma_por_dono_e_nao_por_processo() -> None:
+    """O agente espalha o trabalho em subprocessos; sozinhos, nenhum é vilão.
+
+    Medido na Oracle: com a máquina a 55%, o maior PROCESSO tinha 5%. Somados
+    pelo cgroup, o agente aparece inteiro — que é a pergunta "quem está comendo".
+    """
+    antes = {
+        1: _proc(1, "claude", 100, 100_000, CGROUP_DO_PAVAN),
+        2: _proc(2, "rg", 100, 500, CGROUP_DO_PAVAN),
+        3: _proc(3, "python", 100, 1000, "0::/system.slice/outro.service\n"),
+    }
+    depois = {
+        1: _proc(1, "claude", 140, 100_000, CGROUP_DO_PAVAN),
+        2: _proc(2, "rg", 150, 500, CGROUP_DO_PAVAN),
+        3: _proc(3, "python", 160, 1000, "0::/system.slice/outro.service\n"),
+    }
+
+    donos = vps_recursos.por_dono(antes, depois)
+    achado = vps_recursos.vilao_de_cpu(donos, delta_total_ticks=200)
+
+    assert achado is not None
+    # 40 + 50 do Pavan batem os 60 do processo solitário do outro serviço.
+    assert achado[1] == 45.0
+    # O representante do grupo é o maior residente — o `claude`, não o `rg`.
+    assert achado[0].representante.comm == "claude"
+
+
+def test_pid_reciclado_nao_vira_consumo_e_recem_nascido_espera_a_proxima_janela() -> None:
+    """Delta negativo é outro dono no mesmo número; sem par não há janela."""
+    antes = {1: _proc(1, "morto", 900, 10)}
+    depois = {1: _proc(1, "novo", 5, 10), 2: _proc(2, "recem", 400, 10)}
+
+    donos = vps_recursos.por_dono(antes, depois)
+
+    assert vps_recursos.vilao_de_cpu(donos, delta_total_ticks=200) is None
+
+
+def test_vilao_de_ram_e_o_maior_residente_com_a_fatia_da_maquina() -> None:
+    processos = {
+        1: _proc(1, "claude", 0, 143132, CGROUP_DO_DANIEL),
+        2: _proc(2, "node", 0, 1000, "0::/outro\n"),
+    }
+
+    achado = vps_recursos.vilao_de_ram(vps_recursos.por_dono({}, processos), ram_total_mb=11927)
+
+    assert achado is not None
+    assert achado[0].representante.pid == 1
+    assert achado[1] == 4.7
+
+
+def test_maquina_sem_leitura_de_processo_nao_inventa_vilao() -> None:
+    assert vps_recursos.vilao_de_ram([], ram_total_mb=11927) is None
+    assert vps_recursos.vilao_de_cpu([], delta_total_ticks=200) is None

@@ -7,6 +7,7 @@ import {
   formataNoAr,
   formataTamanho,
   fracaoDaBarra,
+  linhasDeVilao,
   type RecursosDaVps,
 } from './recursos-da-vps.ts';
 
@@ -18,6 +19,10 @@ const ORACLE: RecursosDaVps = {
   ram: { usado_mb: 7467, livre_mb: 4460, total_mb: 11927, pct: 62.6 },
   swap: { usado_mb: 2983, livre_mb: 1112, total_mb: 4095, pct: 72.8 },
   disco: { usado_mb: 62641, livre_mb: 35464, total_mb: 98121, pct: 63.9 },
+  vilao: {
+    cpu: { nome: 'Daniel', pct: 41.5, usado_mb: 573 },
+    ram: { nome: 'Daniel', pct: 4.8, usado_mb: 2234 },
+  },
   no_ar_segundos: 3024031,
   medido_em: 1_788_000_000,
 };
@@ -58,4 +63,27 @@ test('a descrição de cada linha é o absoluto que a barra resume', () => {
   assert.equal(descreve('swap', ORACLE), '2,9 GB de 4,0 GB');
   assert.equal(descreve('disco', ORACLE), '35 GB livres de 96 GB');
   assert.equal(descreve('swap', { ...ORACLE, swap: null }), 'sem swap');
+});
+
+test('o mesmo dono comendo as duas coisas vira UMA linha', () => {
+  assert.deepEqual(linhasDeVilao(ORACLE), [{ nome: 'Daniel', detalhe: 'CPU 42% \u00b7 RAM 2,2 GB' }]);
+});
+
+test('donos diferentes ficam em linhas separadas', () => {
+  const dois = {
+    ...ORACLE,
+    vilao: {
+      cpu: { nome: 'cockpit-api', pct: 62, usado_mb: 127 },
+      ram: { nome: 'Pavan', pct: 4.5, usado_mb: 537 },
+    },
+  };
+
+  assert.deepEqual(linhasDeVilao(dois), [
+    { nome: 'cockpit-api', detalhe: 'CPU 62%' },
+    { nome: 'Pavan', detalhe: 'RAM 537 MB' },
+  ]);
+});
+
+test('sem medida de vilão a seção não inventa linha', () => {
+  assert.deepEqual(linhasDeVilao({ ...ORACLE, vilao: { cpu: null, ram: null } }), []);
 });

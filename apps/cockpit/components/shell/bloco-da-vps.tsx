@@ -35,6 +35,7 @@ import {
   formataNoAr,
   formataTamanho,
   fracaoDaBarra,
+  linhasDeVilao,
   type Medida,
   type RecursosDaVps,
 } from './recursos-da-vps';
@@ -158,6 +159,8 @@ export function BlocoDaVps() {
     };
   }, []);
 
+  const linhas = dados ? linhasDeVilao(dados) : [];
+
   return (
     <section
       aria-label="Recursos da VPS"
@@ -208,6 +211,32 @@ export function BlocoDaVps() {
           ? `carga ${formataCarga(dados.carga_1m)} · ${formataTamanho(dados.disco.livre_mb)} livres`
           : '\u00a0'}
       </p>
+
+      {/* O VILÃO — ordem do Rica (07/09): *"coloca o que estiver usando mais do
+          que nos importa"*. As quatro barras dizem QUANTO e nenhuma diz QUEM; era
+          pra saber quem que se abria o `htop`. O nome vem do cgroup, que é o que
+          separa nove processos `claude` idênticos em nove nomes de agente. */}
+      {linhas.length > 0 ? (
+        <ul className="flex flex-col" style={{ gap: '1px' }}>
+          {linhas.map((linha) => (
+            <li
+              key={linha.nome}
+              className="flex items-baseline"
+              style={{ gap: 'var(--ck-space-2)', fontSize: 'var(--ck-text-xs)' }}
+            >
+              <span className="min-w-0 truncate" style={{ color: 'var(--ck-text-primary)' }}>
+                {linha.nome}
+              </span>
+              <span
+                className="ck-tabular ml-auto shrink-0"
+                style={{ color: 'var(--ck-text-tertiary)' }}
+              >
+                {linha.detalhe}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
 }

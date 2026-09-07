@@ -15,6 +15,13 @@ export type Recurso = {
   pct: number;
 };
 
+/** Quem mais come de uma das coisas que travam a máquina. */
+export type Vilao = {
+  nome: string;
+  pct: number;
+  usado_mb: number;
+};
+
 /** O corpo do `GET /api/vps`. */
 export type RecursosDaVps = {
   cpu_pct: number | null;
@@ -23,6 +30,7 @@ export type RecursosDaVps = {
   ram: Recurso;
   swap: Recurso | null;
   disco: Recurso;
+  vilao: { cpu: Vilao | null; ram: Vilao | null };
   no_ar_segundos: number;
   medido_em: number;
 };
@@ -78,6 +86,28 @@ export function formataNoAr(segundos: number): string {
 
 export function formataCarga(carga: number): string {
   return carga.toFixed(1).replace('.', ',');
+}
+
+/**
+ * As linhas do vilão — ordem do Rica (07/09): *"o que estiver usando mais do
+ * que nos importa, menos de disco, só do que realmente trava"*.
+ *
+ * Quando o mesmo dono lidera CPU e RAM — que é o caso comum, um agente pensando
+ * grande — as duas viram UMA linha. Repetir o nome em duas linhas seguidas
+ * gastaria o dobro da altura pra dizer a mesma coisa, e ele pediu denso.
+ */
+export function linhasDeVilao(dados: RecursosDaVps): Array<{ nome: string; detalhe: string }> {
+  const { cpu, ram } = dados.vilao;
+  const deCpu = cpu ? `CPU ${Math.round(cpu.pct)}%` : null;
+  const deRam = ram ? `RAM ${formataTamanho(ram.usado_mb)}` : null;
+
+  if (cpu && ram && cpu.nome === ram.nome) {
+    return [{ nome: cpu.nome, detalhe: `${deCpu} · ${deRam}` }];
+  }
+  const linhas: Array<{ nome: string; detalhe: string }> = [];
+  if (cpu && deCpu) linhas.push({ nome: cpu.nome, detalhe: deCpu });
+  if (ram && deRam) linhas.push({ nome: ram.nome, detalhe: deRam });
+  return linhas;
 }
 
 /** O `title` de cada linha e o texto lido por leitor de tela: o absoluto que a
