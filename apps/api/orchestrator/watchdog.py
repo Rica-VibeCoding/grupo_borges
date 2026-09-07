@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import subprocess
 from typing import Any
 
@@ -120,11 +121,29 @@ class Watchdog:
             )
 
 
+def _base_tmux(tmux_session: str) -> list[str]:
+    """Comando tmux no socket do agente, com o compartilhado como plano B.
+
+    Cada agente ganhou servidor próprio (`-L borges-<sessao>`) em 07/09. Sem
+    isto o `capture-pane` volta `returncode != 0`, vira `None`, e o watchdog
+    para de fechar tarefa em silêncio — o sintoma é "tarefa nunca conclui",
+    não um erro.
+    """
+    sock = os.path.join(
+        os.environ.get("TMUX_TMPDIR", "/tmp"),
+        f"tmux-{os.getuid()}",
+        f"borges-{tmux_session}",
+    )
+    if os.path.exists(sock):
+        return ["tmux", "-L", f"borges-{tmux_session}"]
+    return ["tmux"]
+
+
 def _capture_pane(tmux_session: str) -> str | None:
     """Captura últimas ~200 linhas do pane tmux. Retorna None se sessão não existe."""
     try:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-p", "-t", tmux_session, "-S", "-200"],
+            [*_base_tmux(tmux_session), "capture-pane", "-p", "-t", tmux_session, "-S", "-200"],
             capture_output=True,
             text=True,
             timeout=3.0,
