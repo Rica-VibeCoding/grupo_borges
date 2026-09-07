@@ -345,6 +345,10 @@ class GrupoBorgesDB:
                 ("session_started_at", "INTEGER"),
                 ("last_assistant_message", "TEXT"),
                 ("token_usage_json", "TEXT"),
+                # Sobreviveu ao `a60da52`, que tirou o Codex CLI do cockpit: o
+                # banco vivo ainda tem a coluna, mas um banco novo nascia sem
+                # ela e o SELECT quebrava. Quem lê é o boot da Tara.
+                ("codex_reasoning_effort", "TEXT"),
                 ("kimi_reasoning_effort", "TEXT"),
                 ("ordem", "INTEGER"),
             ):
@@ -483,7 +487,7 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
-                       s.kimi_reasoning_effort,
+                       s.codex_reasoning_effort, s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -505,7 +509,7 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
-                       s.kimi_reasoning_effort,
+                       s.codex_reasoning_effort, s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -649,6 +653,7 @@ class GrupoBorgesDB:
             "session_started_at",
             "last_assistant_message",
             "token_usage_json",
+            "codex_reasoning_effort",
             "kimi_reasoning_effort",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
@@ -3060,7 +3065,7 @@ class GrupoBorgesDB:
                        s.executor_kind, s.status_line, s.active_task_label,
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
-                       s.kimi_reasoning_effort,
+                       s.codex_reasoning_effort, s.kimi_reasoning_effort,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at,
                        s.ordem

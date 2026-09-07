@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -24,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import codex_reader
+from services import codex_reader, tmux_driver
 
 
 TARA_PROXY = {
@@ -431,3 +432,47 @@ def test_post_model_recusa_id_fora_do_catalogo(tmp_path: Path, catalogo_fixo: No
 
     assert resposta.status_code == 422
     assert resposta.json()["detail"] == "model_not_allowed_for_codex_proxy"
+
+
+def test_patch_effort_da_tara_persiste_para_o_proximo_boot(tmp_path: Path) -> None:
+    """O `/effort` vivo não sobrevive ao restart — quem o repõe é o boot.
+
+    O `subir-frota.sh` lê `codex_reasoning_effort` do `GET /api/agents/tara` e
+    só então exporta `CLAUDE_CODE_EFFORT_LEVEL`. A coluna existia na tabela
+    desde o tempo do Codex CLI, mas nenhum caminho a escrevia e o SELECT do
+    endpoint não a devolvia: o boot lia vazio, logava "effort do cockpit
+    indisponível" e a sessão nascia no `effortLevel` global da frota.
+
+    Medido em 07/09: troquei a Tara pra `max`, o painel confirmou ao vivo, ela
+    reiniciou pelo modelo — e voltou no esforço de antes. Diferente do `/model`,
+    aqui as DUAS pontas valem: a sessão de agora muda pelo tmux, e a próxima
+    nasce certa por causa desta linha.
+    """
+    app = _build_app(tmp_path)
+
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ) as send, patch("routers.agents.tmux_driver.press_enter", return_value=True):
+        with TestClient(app) as client:
+            resposta = client.patch("/api/agents/tara/effort", json={"effort": "max"})
+
+    assert resposta.status_code == 200
+    assert resposta.json()["runtime_switch"] is True
+    send.assert_called_once_with("tara", "/effort max")
+    # A ponta que o boot lê — e é o `GET /api/agents/{slug}`, não a coluna crua:
+    # o campo faltava no SELECT, então gravar sem devolver não consertaria nada.
+    assert app.state.db._get_agent("tara")["codex_reasoning_effort"] == "max"
+
+
+def test_patch_effort_fora_do_codex_proxy_nao_grava_campo_do_codex(tmp_path: Path) -> None:
+    """Agente Anthropic não tem boot que leia isso — gravar seria dado inerte."""
+    app = _build_app(tmp_path)
+
+    with patch(
+        "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
+    ), patch("routers.agents.tmux_driver.press_enter", return_value=True):
+        with TestClient(app) as client:
+            resposta = client.patch("/api/agents/daniel/effort", json={"effort": "max"})
+
+    assert resposta.status_code == 200
+    assert app.state.db._get_agent("daniel")["codex_reasoning_effort"] is None

@@ -718,6 +718,17 @@ async def patch_agent_effort(
     if patch.effort not in _CLAUDE_PAINEL_ALLOWED_EFFORTS:
         raise HTTPException(status_code=422, detail="claude_effort_not_allowed")
 
+    # Aqui as DUAS pontas valem, e é o que separa este caminho do `/model`: a
+    # sessão de agora troca pelo tmux logo abaixo, e a PRÓXIMA nasce certa por
+    # causa desta linha — o `subir-frota.sh` lê `codex_reasoning_effort` do
+    # `GET /api/agents/{slug}` e é dele que sai o `CLAUDE_CODE_EFFORT_LEVEL` do
+    # boot. Sem isso o `/effort` morre junto com a sessão (medido 07/09).
+    # Grava antes de falar com o tmux de propósito: com a sessão fora do ar a
+    # escolha do painel ainda tem de valer no próximo boot.
+    if agent.get("model_family") == "codex-proxy":
+        db: GrupoBorgesDB = request.app.state.db
+        await db.update_agent_runtime_state(slug, codex_reasoning_effort=patch.effort)
+
     # Claude Code aplica esforço vivo pelo slash command. O próprio comando
     # persiste o default para novas sessões; escrever ~/.claude/settings.json
     # aqui seria redundante e vazaria a escolha para os outros agentes.
