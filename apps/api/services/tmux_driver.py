@@ -1915,13 +1915,19 @@ def _aguarda_unit_de_boot_sumir(session_name: str) -> None:
     """Espera o systemd descarregar a unit do boot anterior deste agente."""
     unit = f"{_BOOT_UNIT_PREFIX}{session_name}.service"
     deadline = time.monotonic() + _BOOT_UNIT_LIMPEZA_TIMEOUT_S
-    while time.monotonic() < deadline:
+    while True:
+        # O timeout de cada consulta é o que SOBRA do teto, não uma constante à
+        # parte: com um limite maior que o do laço, uma volta iniciada perto do
+        # fim ainda seguraria a thread do executor muito além dos 5s prometidos.
+        restante = deadline - time.monotonic()
+        if restante <= 0:
+            return
         try:
             estado = subprocess.run(
                 ["systemctl", "--user", "show", unit, "-p", "LoadState", "--value"],
                 capture_output=True,
                 text=True,
-                timeout=_SCOPE_STOP_TIMEOUT_S,
+                timeout=restante,
             )
         except (subprocess.TimeoutExpired, OSError):
             # Sem resposta do systemd não há o que esperar: quem decide se o nome

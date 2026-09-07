@@ -209,3 +209,31 @@ def test_boot_espera_a_unit_anterior_sair_do_registro() -> None:
     assert ordem.index("systemd-run") > ordem.index("consulta:not-found"), (
         "o `systemd-run` foi disparado com a unit anterior ainda registrada"
     )
+
+
+def test_espera_da_unit_nao_estoura_o_proprio_teto() -> None:
+    """O teto de 5s da espera vale pro laço INTEIRO, não por volta.
+
+    Cada consulta ao systemd tinha o timeout de parada de scope (20s), quatro
+    vezes o teto anunciado: com o gerente `--user` lento — que é justamente o
+    estado em que unit transiente se acumula sem descarregar — uma volta
+    iniciada em 4,99s ainda podia segurar uma das quatro threads do executor
+    por mais 20s.
+    """
+    limites: list[float] = []
+
+    def registra(argv, **kwargs):
+        if argv[:3] == ["systemctl", "--user", "show"]:
+            limites.append(kwargs.get("timeout"))
+            return subprocess.CompletedProcess(argv, 0, "loaded\n", "")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    with patch("services.tmux_driver.subprocess.run", side_effect=registra):
+        tmux_driver._aguarda_unit_de_boot_sumir("canario")
+
+    assert limites, "a espera não chegou a consultar o systemd"
+    assert all(t is not None for t in limites), "consulta sem timeout pendura o Ligar"
+    assert max(limites) <= tmux_driver._BOOT_UNIT_LIMPEZA_TIMEOUT_S, (
+        f"consulta com timeout de {max(limites)}s dentro de um teto de "
+        f"{tmux_driver._BOOT_UNIT_LIMPEZA_TIMEOUT_S}s"
+    )
