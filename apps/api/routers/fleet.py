@@ -203,7 +203,13 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
         # sair antes daqui deixaria a pílula do composer vazia justo no agente
         # que está reportando.
         agent["context_tokens"] = tokens
-        if agent.get("context_pct") is not None:
+        # Zero gravado é ausência de medida, não medida de ausência — é o valor
+        # que a linha de baixo escreve quando não há número. Persistido no banco
+        # por um caminho de escrita que já não existe, ele barrava a leitura do
+        # arquivo pra sempre: a Tara ficou em 0% no card com a sessão em 15%, e
+        # os tokens da MESMA leitura chegavam à tela logo acima.
+        gravado = agent.get("context_pct")
+        if gravado is not None and gravado > 0:
             return
         agent["context_pct"] = pct if pct is not None else 0.0
         agent["context_updated_at"] = medido_em

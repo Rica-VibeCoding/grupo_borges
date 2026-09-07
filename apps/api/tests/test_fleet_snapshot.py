@@ -465,3 +465,68 @@ def test_ordem_recusa_lista_incompleta(tmp_path: Path, monkeypatch) -> None:
         corpo = client.get("/api/fleet").json()
 
     assert [a["ordem"] for a in corpo["agents"]] == [0, 1]
+
+
+def test_fleet_ignora_zero_gravado_e_le_o_contexto_da_sessao_viva(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Zero no banco é ausência de medida, não medida de ausência.
+
+    A Tara passou dias com o card em 0% enquanto a sessão dela rodava em 15%:
+    `agent_state.context_pct` guardava um `0.0` de um caminho de escrita que
+    já não existe, e o guard da hidratação testava `is not None` — que o zero
+    satisfaz. O número certo estava no arquivo, e a prova de que ele era lido
+    aparecia ao lado, na mesma tela: os tokens vinham do MESMO arquivo, três
+    linhas antes do guard, e chegavam ao card.
+    """
+    db = _setup_db(tmp_path)
+    session_id = f"fleet-zero-{int(time.time())}"
+    db._insert_task_event(
+        "jsonl:assistant",
+        task_id=None,
+        agent_slug="daniel",
+        instance_id=None,
+        payload={"uuid": f"uuid-{session_id}", "sessionId": session_id},
+        raw_jsonl=None,
+    )
+    db._update_agent_runtime_state("daniel", context_pct=0.0)
+
+    medido_em = int(time.time())
+    status_path = Path(f"/tmp/cc-status-{session_id}.json")
+    status_path.write_text(
+        json.dumps(
+            {
+                "updated_at": medido_em,
+                "context_window": {
+                    "used_percentage": 15,
+                    "current_usage": {"input_tokens": 149_945},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_capture(_session_name: str) -> None:
+        return None
+
+    async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
+        return tmux_driver.TmuxSessionInventory({"daniel"}, {"daniel"})
+
+    monkeypatch.setattr(fleet_router.tmux_driver, "capture_pane_excerpt", fake_capture)
+    monkeypatch.setattr(
+        fleet_router.tmux_driver, "list_session_inventory", fake_list_session_inventory
+    )
+
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(fleet_router.router, prefix="/api/fleet")
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/fleet")
+        agent = _agent_from_snapshot(response.json(), "daniel")
+        assert agent["context_tokens"] == 149_945
+        assert agent["context_pct"] == 15
+        assert agent["context_updated_at"] == medido_em
+    finally:
+        status_path.unlink(missing_ok=True)
