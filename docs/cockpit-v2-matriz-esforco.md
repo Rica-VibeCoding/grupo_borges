@@ -32,7 +32,7 @@ sessão viva pode **deixar o agente travado num modal de confirmação** que o c
 | Motor (agentes) | Níveis reais | Como se aplica | Sessão viva? | Onde persiste | Como se lê o efetivo |
 |---|---|---|---|---|---|
 | **Claude Code** (Daniel, Felipe, Barsi, Lucas, Vinicius, Pavan) | `low, medium, high, xhigh, max` por modelo; `auto` = reset pro default (não é nível); `ultracode` = modo CC (envia xhigh + orquestração), session-only | PATCH `/effort` → **`/effort <v>` via tmux** (`agents.py:500`), Enter separado (`agents.py:506`), confirmação via `_poll_claude_effort` (`agents.py:820`) | **Sim — dirigido ao vivo agora** | o `/effort` do CLI grava o default na settings do escopo da sessão (medium/high/xhigh); `max`/`ultracode` session-only; env var lida no boot | statusline → `/tmp/cc-status-<sid>.json` → `effort.level`; painel lê **isto primeiro** (`agents.py:951`), settings global é só fallback (`agents.py:970`) |
-| **Codex** (Tara, `gpt-5.6-*`) | `low, medium, high, xhigh, max` (model-dependent; `none`/`minimal` citados na doc) | `-c model_reasoning_effort=<v>` por invocação (persistido em `agent_state`); `model_reasoning_effort` no `~/.codex/config.toml`. **Sem toggle em runtime** | N/A — `codex exec` é processo one-shot; "próximo boot" = próxima delegação | `agent_state.codex_reasoning_effort` (o pedido do cockpit); config.toml (default); `threads.reasoning_effort` (o que rodou) | `state_5.sqlite → threads.reasoning_effort` (já lido pelo `codex_reader`, mas o painel usa `agent_state` — **ver furo no item 4**) |
+| **codex-proxy** (Tara, `gpt-5.6-*` / `gpt-6-*`) | `low, medium, high, xhigh, max` | PATCH `/effort` → **`/effort <v>` via tmux**, igual ao CC: ela é sessão Claude Code desde 06/09, com motor GPT pelo proxy | **Sim — medido 07/09**: PATCH numa sessão viva devolveu `tmux_delivered: true, confirmed: true, session_may_diverge: false` | statusline `/tmp/cc-status-<sid>.json`. **Nada persiste**: `agent_state.codex_reasoning_effort` NÃO existe (o `store.py` só tem `kimi_reasoning_effort`) | statusline `effort.level`, mesma fonte viva do CC |
 | **Kimi K3** (Hiro) | canônico `low, high, max`; aliases (`max/ultra/xhigh`→max, `high/medium`→high, `low/minimum/light`→low) | PATCH `/effort` grava `agent_state.kimi_reasoning_effort` → `subir_hiro` exporta `CLAUDE_CODE_EFFORT_LEVEL` no boot (`subir-frota.sh:141-153`) | env var = só boot; `/effort` do CLI funcionaria (mesmo CLI) mas **não é dirigido** | `agent_state.kimi_reasoning_effort`; vazio → cai no settings global (vazamento) | statusline `effort.level` (o que o CLI enviou); painel lê `agent_state` (`agents.py:758`) — o **pedido**, não o efetivo |
 | **DeepSeek V4-Flash via OpenCode Go** (Canário) | `low, high, xhigh, max` + `none` (off); para o flash: `low`→low, `high`→high, `xhigh`→**high**, `max`→max. Dica, não knob | CLI claude lê `effortLevel` do settings global no boot (xhigh) → `output_config.effort` → `opencode.ai/zen/go`. `CLAUDE_CODE_EFFORT_LEVEL` **não** é exportada no boot | igual CC (mesmo CLI) — `/effort` aplicaria; não é dirigido | **nada próprio** — herda o settings global (vazamento); `agent_state.canarinho` vazio | statusline `effort.level` (o que o CLI crê; hoje xhigh → DeepSeek aplica **high** no flash). Se o Go repassa: **não confirmado** |
 
@@ -77,11 +77,21 @@ sessão viva pode **deixar o agente travado num modal de confirmação** que o c
 - **Níveis.** A doc oficial da API aceita, por modelo, `none, minimal, low, medium, high,
   xhigh, max` (default `medium` quando omitido). Fonte:
   https://developers.openai.com/api/docs/guides/reasoning
-- **Aplicar.** `-c model_reasoning_effort=<v>` por invocação (o `tara-codex` injeta isso na
-  próxima exec) ou `model_reasoning_effort` no `~/.codex/config.toml` (verificado: o config
-  global está em `max`). PATCH `/effort` grava `agent_state.codex_reasoning_effort`
-  (`agents.py:462-470`); **não há toggle em runtime.**
-- **O buraco do wrapper — FURO no que o Rica descreveu.** O Rica disse que o item 4 foi
+- **Aplicar.** PATCH `/effort` manda `/effort <v>` pelo tmux e confere, exatamente como no
+  Claude Code — a Tara virou sessão CC em 06/09 e o motor GPT entra pelo proxy. **Há toggle
+  em runtime**: medido em 07/09, `tmux_delivered: true, confirmed: true`.
+- 🔴 **O que NÃO existe: persistência.** O `subir_tara` (`subir-frota.sh`) lê
+  `codex_reasoning_effort` do cockpit, e esse campo não é coluna (`store.py` tem só
+  `kimi_reasoning_effort`) nem é escrito por endpoint nenhum. O boot registra
+  `[tara] effort do cockpit indisponível ('') — vale o default do CC` e segue.
+  **Consequência medida em 07/09:** troquei o modelo dela, reiniciei a sessão, o
+  `ANTHROPIC_MODEL` subiu certo e o effort **não** — precisei reaplicar pela API depois. Ou
+  seja, hoje o esforço da Tara não sobrevive a um restart, e ninguém é avisado quando ele
+  volta ao default. Conserto = criar o campo + escrever nele no PATCH.
+- ~~**O buraco do wrapper**~~ — **VENCIDO em 07/09**: `scripts/tara-codex` não existe mais
+  no repo (só em worktrees velhas), porque a Tara deixou de ser invocada por `codex exec`.
+  O furo abaixo fica como histórico do que motivou a mudança, não como estado.
+  O Rica disse que o item 4 foi
   corrigido: *"`scripts/tara-codex`, por volta da linha 164, agora casa
   `^(low|medium|high|xhigh|max)$` e tem comentário citando o codex 0.146+"*. **Verificado no
   código dos dois worktrees (principal e canário, idênticos): `scripts/tara-codex:164` é
@@ -93,8 +103,9 @@ sessão viva pode **deixar o agente travado num modal de confirmação** que o c
   silencioso, agora com o agravante de o painel permitir. **Este item continua vivo e é o
   maior furo de consistência do Codex.** (Se a intenção era aceitar `max`, o wrapper precisa
   da regex; se não, o backend deveria filtrar — decisão de fase 2.)
-- **Sessão viva?** N/A. `codex exec` é one-shot; o conceito certo é persistir para a próxima
-  delegação.
+- **Sessão viva?** Sim, desde 06/09 — é uma sessão CC como as outras. O conceito de
+  "persistir para a próxima delegação" morreu junto com o `codex exec`; o que falta agora é
+  persistir para o próximo BOOT, que é o furo acima.
 - **Ler o efetivo.** `threads.reasoning_effort` em `~/.codex/state_5.sqlite` — o que a thread
   rodou de fato. O `codex_reader` já expõe (`CodexThread.reasoning_effort`, `codex_reader.py:59`)
   mas o painel usa `agent_state` (`_build_codex_painel_effort`, `agents.py:746`). **Divergência
