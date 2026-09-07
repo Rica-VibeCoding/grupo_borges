@@ -1902,6 +1902,35 @@ _SUBIR_FROTA = Path("/home/clawd/repos/ze_claude/ze-shared/scripts/subir-frota.s
 _LIGAR_TIMEOUT_S = 40.0
 _LIGAR_POLL_INTERVAL_S = 0.75
 
+#: Quanto esperar a unit do boot ANTERIOR sair do registro do systemd. Com o
+#: `KillMode=process` abaixo ela sobrevive ao script segurando o servidor tmux no
+#: cgroup, e só é descarregada depois que o desligar mata esse servidor — ~50ms
+#: medidos em 07/09/2026. O `systemd-run` disparado dentro dessa janela é recusado
+#: por nome já registrado, e o Rica lia "boot já está em curso" num agente parado.
+_BOOT_UNIT_LIMPEZA_TIMEOUT_S = 5.0
+_BOOT_UNIT_LIMPEZA_POLL_S = 0.05
+
+
+def _aguarda_unit_de_boot_sumir(session_name: str) -> None:
+    """Espera o systemd descarregar a unit do boot anterior deste agente."""
+    unit = f"{_BOOT_UNIT_PREFIX}{session_name}.service"
+    deadline = time.monotonic() + _BOOT_UNIT_LIMPEZA_TIMEOUT_S
+    while time.monotonic() < deadline:
+        try:
+            estado = subprocess.run(
+                ["systemctl", "--user", "show", unit, "-p", "LoadState", "--value"],
+                capture_output=True,
+                text=True,
+                timeout=_SCOPE_STOP_TIMEOUT_S,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            # Sem resposta do systemd não há o que esperar: quem decide se o nome
+            # está livre é o `systemd-run` logo abaixo, e ele já trata a recusa.
+            return
+        if estado.stdout.strip() != "loaded":
+            return
+        time.sleep(_BOOT_UNIT_LIMPEZA_POLL_S)
+
 
 def _boot_agent_sync(session_name: str) -> dict[str, object]:
     """Sobe o agente pelo script de boot da frota, retomando a conversa.
@@ -1919,6 +1948,7 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
     # botão funcionar justamente no estado em que ele é a ÚNICA saída: com o
     # pane em bash cru, Destravar e Resume devolvem `attempted:false`.
     _shutdown_agent_sync(session_name)
+    _aguarda_unit_de_boot_sumir(session_name)
 
     # `systemd-run` em vez de `Popen`: o script leva minutos esperando o canal
     # carregar, e como filho da API ele morreria junto num restart do uvicorn,

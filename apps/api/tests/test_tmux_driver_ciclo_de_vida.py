@@ -177,3 +177,35 @@ def test_boot_nao_leva_o_servidor_tmux_junto_ao_terminar() -> None:
     argv = roda.call_args.args[0]
     assert "-p" in argv, "o boot precisa declarar propriedade na unit transiente"
     assert argv[argv.index("-p") + 1] == "KillMode=process"
+
+
+def test_boot_espera_a_unit_anterior_sair_do_registro() -> None:
+    """O `KillMode=process` deixa a unit do boot anterior carregada.
+
+    Ela segura o servidor tmux no cgroup e só sai do registro ~50ms depois de o
+    `_shutdown_agent_sync` acima matar esse servidor. Disparar o `systemd-run`
+    dentro dessa janela é recusado por nome já registrado, e o Rica via "boot já
+    está em curso" num agente parado — o botão só pegava no segundo clique.
+    """
+    ordem: list[str] = []
+    estados = iter(["loaded", "not-found"])
+
+    def registra(argv, **_kwargs):
+        if argv[:3] == ["systemctl", "--user", "show"]:
+            estado = next(estados, "not-found")
+            ordem.append(f"consulta:{estado}")
+            return subprocess.CompletedProcess(argv, 0, f"{estado}\n", "")
+        ordem.append(argv[0])
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    with (
+        patch("services.tmux_driver._shutdown_agent_sync", return_value={}),
+        patch("services.tmux_driver.subprocess.run", side_effect=registra),
+        patch("services.tmux_driver._LIGAR_TIMEOUT_S", 0.0),
+    ):
+        tmux_driver._boot_agent_sync("canario")
+
+    assert "consulta:loaded" in ordem, "o boot precisa conferir se a unit anterior saiu"
+    assert ordem.index("systemd-run") > ordem.index("consulta:not-found"), (
+        "o `systemd-run` foi disparado com a unit anterior ainda registrada"
+    )
