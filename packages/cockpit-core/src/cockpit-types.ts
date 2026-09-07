@@ -495,12 +495,23 @@ export function parseModelFromPane(excerpt: string | null): string | null {
   //   "Sonnet 4.6 - 40:26:47 - [███░] 32%"
   //   "Sonnet 4.6 (200k context) - [███░] 81%"
   //   "claude-opus-5 - 02:50:23 - [███░] 61%"
-  // Pega o último match — statusline fica no fim do pane.
   // Fable não tem decimal na versão ("Fable 5") — \d+(?:\.\d+)?
+  //
+  // A busca é na LINHA da statusline (a última com a barra de contexto), não no
+  // pane inteiro: quem não é família Claude não casa aqui, e aí qualquer modelo
+  // citado na tela virava o rótulo. Foi o "Sonnet 5" que o Rica viu no card da
+  // Tara em 07/09, com ela em `gpt-5.6-terra[1m]` — a frase veio da ajuda do
+  // `/effort`, que lista onde o nível existe. Sem statusline reconhecível o
+  // certo é devolver null e deixar o card cair no `state_model`.
+  const statusline = excerpt
+    .split('\n')
+    .filter((linha) => /]\s*\d+\s*%/.test(linha))
+    .at(-1);
+  if (statusline === undefined) return null;
   const re =
     /\b(?:(Fable|Opus|Sonnet|Haiku)\s+(\d+(?:\.\d+)?)|claude-(fable|opus|sonnet|haiku)-(\d+(?:-\d+)*))\b/g;
   let last: RegExpExecArray | null = null;
-  for (let m = re.exec(excerpt); m !== null; m = re.exec(excerpt)) {
+  for (let m = re.exec(statusline); m !== null; m = re.exec(statusline)) {
     last = m;
   }
   if (!last) return null;
