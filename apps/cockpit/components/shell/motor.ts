@@ -78,8 +78,9 @@ function rotulaGpt(modelo: string): string | null {
   return `${versao} ${nome!.charAt(0).toUpperCase()}${nome!.slice(1)}${rapido ? ' rápido' : ''}`;
 }
 
-export function rotulaModelo(modelo: string | null | undefined): string {
+export function rotulaModelo(modelo: string | null | undefined, labels?: Record<string, string>): string {
   if (!modelo) return 'sem modelo';
+  if (labels?.[modelo]) return labels[modelo];
 
   const gpt = rotulaGpt(modelo);
   if (gpt) return gpt;

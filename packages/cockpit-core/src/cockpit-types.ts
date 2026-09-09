@@ -367,6 +367,8 @@ export type PainelCanalEntrega = {
 };
 
 export type PainelModel = {
+  labels?: Record<string, string>;
+  context_length?: number | null;
   value: string | null;
   allowed: string[];
   source: string;

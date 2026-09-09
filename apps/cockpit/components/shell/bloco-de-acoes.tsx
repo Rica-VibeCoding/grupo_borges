@@ -38,7 +38,7 @@
  * cada falha diz — mora em `acoes-rapidas.ts`, testada. Aqui fica só estado,
  * rede e pixel.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAgentPainel,
   patchAgentPermissionMode,
@@ -85,6 +85,7 @@ import { BlocoDeMotor } from './bloco-de-motor';
 import { IconeDescartar } from './icones';
 import { usaCompact } from '../../lib/compact';
 import { usePainelAberto } from './superficie-otimista';
+import { publicarPainel } from './sincronizacao-painel';
 
 /** Tempo que a confirmação do destrava-durante-compact fica armada. Passou,
  *  o botão volta ao normal — confirmação que expira não prende o dedo de
@@ -302,25 +303,34 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const sequencia = useRef(0);
   const reciboTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const leituras = useMemo(() => ({ ativa: false, sequencia: 0 }), [agentSlug]);
+  useEffect(() => {
+    leituras.ativa = true;
+    return () => { leituras.ativa = false; leituras.sequencia += 1; };
+  }, [leituras]);
+
   const buscar = useCallback(
     (signal?: AbortSignal) => {
+      if (!leituras.ativa) return;
+      const minha = ++leituras.sequencia;
       setCarga((atual) => (atual === 'pronto' ? atual : 'carregando'));
       REDE
         .lePainel(agentSlug, signal)
         .then((novo) => {
-          if (signal?.aborted) return;
+          if (signal?.aborted || !leituras.ativa || minha !== leituras.sequencia || novo.slug !== agentSlug) return;
           setPainel(novo);
+          publicarPainel(novo);
           setCarga('pronto');
         })
         .catch(() => {
-          if (signal?.aborted) return;
+          if (signal?.aborted || !leituras.ativa || minha !== leituras.sequencia) return;
           // Painel fora do ar: os controles NÃO nascem fingidos. Mas também
           // não somem em silêncio — sumir sem dizer nada é o que faz o Rica
           // achar que o agente não tem controles.
           setCarga('indisponivel');
         });
     },
-    [agentSlug],
+    [agentSlug, leituras],
   );
 
   // Depois do `buscar` de propósito: relançar, ligar e desligar mudam a `vida`

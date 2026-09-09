@@ -31,7 +31,6 @@ import {
 } from './barra-de-contexto';
 import { Off } from './etiqueta-off';
 import { TETO_PCT } from './medidor';
-import { rotulaModelo } from './motor';
 
 export function Statusline({
   agente,
@@ -54,24 +53,7 @@ export function Statusline({
   const iniciou = agente.pane_session_started_at;
   const segundos = iniciou !== null ? Math.max(0, agora - iniciou) : null;
 
-  // O pane é a fonte VIVA: `parseModelFromPane` lê o que está rodando agora,
-  // `state_model` é a última intenção salva e pode estar pendente. Mesma
-  // precedência do cockpit antigo — o card reflete execução, não seleção.
-  //
-  // O FALLBACK usa `rotulaModelo`, não `shortModelName` — 09/08. A leitura do
-  // pane é INTERMITENTE (medido no `/api/fleet`: o mesmo agente alterna entre
-  // trazer e não trazer a linha da statusline do CC), e quando ela falha cai
-  // aqui. `shortModelName` só conhece os IDs longos (`claude-opus-5`), mas o
-  // `state_model` que o seletor grava é o ALIAS CURTO (`opus`) — o fallback
-  // devolvia o valor cru do banco, e o Rica via "Opus 5" virar "opus" sozinho.
-  // `rotulaModelo` já resolvia o alias para o composer (e cobre Kimi, que a
-  // tabela canônica não tem), delegando o resto ao mesmo `shortModelName`. Ele
-  // NÃO inventa a versão: `opus` vira "Opus", sem número, porque dizer "Opus 5"
-  // com a sessão em 4.8 seria mentira de UI. Com a ficha fora da gaveta (mesma
-  // data), esta linha é a única fonte do modelo lá dentro.
-  const modelo =
-    parseModelFromPane(agente.pane_excerpt) ??
-    rotulaModelo(agente.state_model ?? agente.model_default);
+  const modelo = parseModelFromPane(agente.pane_excerpt);
   const pct = resolveContextPct(agente);
   // Número que o back mediu antes desta sessão (ou parado há muito) continua na
   // tela — o que não pode é sair sem etiqueta, como se fosse leitura de agora.
@@ -115,7 +97,7 @@ export function Statusline({
     >
       {/* Modelo em SANS, não mono: é nome de produto, não dado tabular. Em mono
           o "O" de Opus fica idêntico ao zero e a primeira leitura vira "0pus". */}
-      <span
+      {modelo ? <span
         className="truncate"
         style={{
           fontFamily: 'var(--ck-font-sans)',
@@ -124,13 +106,13 @@ export function Statusline({
         }}
       >
         {modelo}
-      </span>
+      </span> : null}
 
       {segundos !== null && !curta ? (
         <>
-          <span aria-hidden style={{ color: 'var(--ck-text-tertiary)' }}>
+          {modelo ? <span aria-hidden style={{ color: 'var(--ck-text-tertiary)' }}>
             ·
-          </span>
+          </span> : null}
           <span className="shrink-0" title="tempo de sessão">
             {formatDuration(segundos, false)}
           </span>
@@ -150,7 +132,7 @@ export function Statusline({
           Só na GRADE. Barra elástica (`larguraDaBarra: null`) é a gaveta — uma
           linha só, sem coluna nenhuma a manter, e o layout dela o Rica aprovou
           hoje. Lá o bloco continua no fluxo, com o `·` e a ordem de sempre. */}
-      {emGrade ? null : (
+      {emGrade || (!modelo && (segundos === null || curta)) ? null : (
         <span aria-hidden style={{ color: 'var(--ck-text-tertiary)' }}>
           ·
         </span>

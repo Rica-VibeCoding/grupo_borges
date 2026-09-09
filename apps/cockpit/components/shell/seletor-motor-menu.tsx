@@ -20,7 +20,7 @@ type ConteudoDoSeletorProps = {
   tela: TelaDoSeletor;
   opcoesModelo: OpcaoDoMotor[];
   opcoesEsforco: OpcaoDoMotor[];
-  rotuloModelo: string;
+  rotuloModelo: string | null;
   rotuloDoEsforco: string | null;
   salvando: boolean;
   telaEstreita: boolean;
@@ -127,10 +127,9 @@ function MenuInicial({
   aoMudarTela,
 }: Omit<ConteudoDoSeletorProps, 'tela' | 'modeloPendente' | 'aviso' | 'aoConfirmarTroca' | 'aoFechar'>) {
   const estilo = estiloItemDoMenu();
-
   return (
     <>
-      {opcoesModelo.length ? (
+      {rotuloModelo !== null && opcoesModelo.length ? (
         telaEstreita ? (
           <DropdownMenuItem
             disabled={salvando}
@@ -160,7 +159,6 @@ function MenuInicial({
           </DropdownMenuSub>
         )
       ) : null}
-
       {opcoesEsforco.length ? (
         telaEstreita ? (
           <DropdownMenuItem

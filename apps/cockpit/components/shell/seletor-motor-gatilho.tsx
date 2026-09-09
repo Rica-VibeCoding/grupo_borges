@@ -8,7 +8,7 @@ import type { EtiquetaEsforco } from './motor';
 type GatilhoDoSeletorProps = {
   agentName: string;
   aberto: boolean;
-  rotuloModelo: string;
+  rotuloModelo: string | null;
   rotuloDoEsforco: string | null;
   etiquetaEsforco: EtiquetaEsforco | null;
   tintaModelo: string;
@@ -31,7 +31,7 @@ export function GatilhoDoSeletor({
     <DropdownMenuTrigger asChild>
       <button
         type="button"
-        aria-label={`Configurar modelo e esforço de ${agentName}`}
+        aria-label={`Configurar ${[rotuloModelo ? 'modelo' : null, rotuloDoEsforco ? 'esforço' : null].filter(Boolean).join(' e ')} de ${agentName}`}
         aria-haspopup="menu"
         aria-expanded={aberto}
         className="ck-seletor-motor ck-veil flex min-w-0 items-center"
@@ -83,9 +83,9 @@ export function GatilhoDoSeletor({
             esforço, o flex esvazia este span inteiro antes de encostar no
             outro — mesma prioridade de antes, agora com um fim que o recorte
             do pai sabe tratar. */}
-        <span className="truncate" style={{ flexShrink: 999 }}>
+        {rotuloModelo ? <span className="truncate" style={{ flexShrink: 999 }}>
           {rotuloModelo}
-        </span>
+        </span> : null}
         {rotuloDoEsforco ? (
           // `truncate` no lugar de `shrink-0`: quando o nome do modelo já sumiu
           // e ainda falta espaço, o esforço termina em reticências em vez de
