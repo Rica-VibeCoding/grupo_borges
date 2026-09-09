@@ -44,7 +44,12 @@ from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from db.store import GrupoBorgesDB, build_hour_series, hour_window
+from db.store import (
+    LIFECYCLE_FRESH_THRESHOLD_SECONDS,
+    GrupoBorgesDB,
+    build_hour_series,
+    hour_window,
+)
 from mcp_tools.spawn_subsession import (
     SkillNotFoundError,
     SpawnSubsessionInput,
@@ -455,6 +460,31 @@ async def _get_agent_or_404(request: Request, slug: str) -> dict[str, Any]:
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
     return agent
+
+
+def _esta_ocupado(agent: dict[str, Any]) -> bool:
+    """O agente está no meio de um turno AGORA — com a mesma régua da tela.
+
+    `lifecycle_status` sozinho não responde isso: ele só sai de `trabalhando`
+    por `end_turn`, `result` ou `turn_duration` (ver `derive_lifecycle_from_event`),
+    e turno interrompido não gera nenhum dos três. O campo fica preso para
+    sempre, e quem lê cru passa a recusar operação em agente parado.
+
+    Aconteceu com a Tara em 09/09: turno morto às 22:34 sem `end_turn`, e onze
+    minutos depois a operação única foi recusada TRÊS vezes seguidas com o
+    agente ocioso no prompt vazio. O card ao lado mostrava "ocioso" o tempo
+    todo, porque `derive_agent_status` sempre descartou lifecycle mais velho que
+    `LIFECYCLE_FRESH_THRESHOLD_SECONDS`. A divergência não era de opinião: era a
+    mesma coluna lida por duas réguas, e só uma delas tinha prazo de validade.
+    """
+    if agent.get("lifecycle_status") != "trabalhando":
+        return False
+    carimbo = agent.get("lifecycle_updated_at")
+    if not isinstance(carimbo, int):
+        # Sem carimbo não há como saber se é fresco. Vale a leitura literal:
+        # proteger o turno em voo é o motivo de a guarda existir.
+        return True
+    return int(time.time()) - carimbo <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
 
 
 class AgentCommandResponse(BaseModel):
@@ -4067,7 +4097,7 @@ async def change_agent_model(
             model=target,
         )
 
-    if agent.get("lifecycle_status") == "trabalhando" and not payload.force:
+    if _esta_ocupado(agent) and not payload.force:
         raise HTTPException(status_code=409, detail="agent_busy_confirm_required")
 
     session = agent["tmux_session"]
@@ -4426,7 +4456,7 @@ async def post_agent_aplicar_motor(
     agent = await _get_agent_or_404(request, slug)
     if not payload.confirm:
         raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
-    if agent.get("lifecycle_status") == "trabalhando" and not payload.force:
+    if _esta_ocupado(agent) and not payload.force:
         raise HTTPException(status_code=409, detail="agent_busy_confirm_required")
 
     session = agent["tmux_session"]
@@ -4508,7 +4538,7 @@ async def refresh_agent_quota(slug: str, request: Request) -> QuotaRefreshRespon
     falsa "trava" que a frota vai reportar.
     """
     agent = await _get_agent_or_404(request, slug)
-    if agent.get("lifecycle_status") == "trabalhando":
+    if _esta_ocupado(agent):
         raise HTTPException(status_code=409, detail="agent_busy")
 
     session = agent["tmux_session"]

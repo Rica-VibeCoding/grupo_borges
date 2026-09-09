@@ -10,6 +10,7 @@ antes (o `/desligar` NÃO ganhou guarda de agente ocupado).
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -20,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from db.store import GrupoBorgesDB
+from db.store import LIFECYCLE_FRESH_THRESHOLD_SECONDS, GrupoBorgesDB
 from routers import agents as agents_router
 from services import tmux_driver
 
@@ -187,3 +188,68 @@ def test_desligar_solto_continua_sem_guarda_de_turno(tmp_path: Path) -> None:
                 "/api/agents/canarinho/desligar", json={"confirm": True}
             )
     assert resposta.status_code == 200
+
+
+def _trabalhando_ha(app: FastAPI, segundos: int) -> None:
+    """Deixa o lifecycle em `trabalhando` com o carimbo `segundos` no passado.
+
+    Reproduz o estado real: o turno morreu sem `end_turn` e o classificador
+    nunca mais escreveu nada sobre este agente.
+    """
+    _trabalhando(app)
+    velho = int(time.time()) - segundos
+    with app.state.db._connect() as conn, conn:
+        conn.execute(
+            "UPDATE agent_state SET lifecycle_updated_at = ? WHERE slug = ?",
+            (velho, "canarinho"),
+        )
+
+
+def test_trabalhando_rancoso_nao_bloqueia_a_operacao(tmp_path: Path) -> None:
+    """`trabalhando` fora da janela de frescor não é agente ocupado.
+
+    O caso real (Tara, 09/09): o turno terminou sem `end_turn` no JSONL — o
+    classificador só sai de `trabalhando` por `end_turn`, `result` ou
+    `turn_duration`, e nenhum veio. O campo ficou preso por onze minutos com o
+    agente parado no prompt vazio, e a operação foi recusada TRÊS vezes.
+
+    A tela já lia isto certo: `derive_agent_status` descarta lifecycle mais
+    velho que `LIFECYCLE_FRESH_THRESHOLD_SECONDS` e mostra "ocioso". Quem lia o
+    campo cru era só a guarda — o servidor e o card discordavam sobre o mesmo
+    agente, e quem via a divergência era o Rica, clicando num botão que não
+    respondia.
+    """
+    app = _build_app(tmp_path)
+    _trabalhando_ha(app, LIFECYCLE_FRESH_THRESHOLD_SECONDS + 60)
+
+    with patch("routers.agents.tmux_driver.shutdown_agent", new_callable=AsyncMock, return_value=DESLIGADO), \
+         patch("routers.agents.tmux_driver.boot_agent", new_callable=AsyncMock, return_value=LIGADO):
+        with TestClient(app) as client:
+            resposta = client.post(
+                "/api/agents/canarinho/aplicar-motor", json={"confirm": True}
+            )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["religado"] is True
+
+
+def test_trabalhando_fresco_continua_protegido(tmp_path: Path) -> None:
+    """A outra metade: turno em voo DE VERDADE segue pedindo confirmação.
+
+    Sem esta, o conserto acima viraria "a guarda deixou de existir" — e o
+    ponto dela é justamente não matar trabalho em andamento.
+    """
+    app = _build_app(tmp_path)
+    _trabalhando_ha(app, LIFECYCLE_FRESH_THRESHOLD_SECONDS - 60)
+
+    with patch("routers.agents.tmux_driver.shutdown_agent", new_callable=AsyncMock) as desliga, \
+         patch("routers.agents.tmux_driver.boot_agent", new_callable=AsyncMock) as liga:
+        with TestClient(app) as client:
+            resposta = client.post(
+                "/api/agents/canarinho/aplicar-motor", json={"confirm": True}
+            )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == "agent_busy_confirm_required"
+    desliga.assert_not_called()
+    liga.assert_not_called()
