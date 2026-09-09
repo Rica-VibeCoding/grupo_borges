@@ -84,3 +84,12 @@ it('a pergunta do turno em voo não trava a tela — ela espera o toque dele', a
   assert.equal(b.operacao.leiaOperacao(SLUG).fase, 'confirmando');
   assert.equal(veus(b.arvore).length, 0, 'travar a tela sem estar aplicando nada é tela morta');
 });
+
+it('a espera do agrupamento não trava a tela — é nela que ele escolhe o resto', async () => {
+  const b = await montarBloco();
+  await b.act(async () => {
+    b.operacao.agendarAplicacao(SLUG, { aplicar: () => Promise.resolve({}), reler: () => {} });
+  });
+  assert.equal(b.operacao.leiaOperacao(SLUG).fase, 'agrupando');
+  assert.equal(veus(b.arvore).length, 0, 'véu durante a espera impediria a segunda escolha');
+});

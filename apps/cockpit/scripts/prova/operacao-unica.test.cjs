@@ -5,6 +5,12 @@
  * outra metade, a que ela não alcança: que a ESCOLHA na gaveta dispara a
  * operação, e só quando a escolha não vale na sessão viva. Sem isto, "aplica
  * sozinho" seria afirmação sobre código que ninguém executou.
+ *
+ * O que a escolha dispara é o AGRUPAMENTO, não o religar — modelo e esforço são
+ * duas escolhas para o mesmo boot, e uma por religar custava dois (Rica, 09/09).
+ * Quanto tempo ele espera e que sai um religar só é régua da máquina, provada
+ * com relógio falso no teste de lá; aqui vale que a escolha certa agenda e a
+ * que troca a quente não agenda nada.
  */
 const assert = require('node:assert/strict');
 const { beforeEach, it } = require('node:test');
@@ -35,8 +41,12 @@ it('modelo que só vale no boot dispara a operação; o que troca a quente NÃO'
       runtime_switch: false, model: 'k3',
     }),
   );
-  assert.equal(b.aplicacoes.length, 1, 'persist-only tem de religar');
-  assert.equal(b.aplicacoes[0].force, false, 'o primeiro toque nunca força');
+  assert.equal(
+    b.shell('operacao-de-motor').leiaOperacao('canarinho').fase,
+    'agrupando',
+    'persist-only tem de religar',
+  );
+  assert.equal(b.aplicacoes.length, 0, 'religar na hora é o que custava o segundo boot');
   await b.act(async () => arvoreFecha(b));
 
   const vivo = await montarSeletor('anthropic');
@@ -48,6 +58,11 @@ it('modelo que só vale no boot dispara a operação; o que troca a quente NÃO'
     }),
   );
   assert.equal(vivo.aplicacoes.length, 0, 'troca a quente não custa boot nenhum');
+  assert.equal(
+    vivo.shell('operacao-de-motor').leiaOperacao('canarinho').fase,
+    'ocioso',
+    'nem o relógio do agrupamento — não há nada para aplicar',
+  );
 });
 
 it('esforço que só vale no boot dispara; o que a sessão assume NÃO', async () => {
@@ -59,7 +74,8 @@ it('esforço que só vale no boot dispara; o que a sessão assume NÃO', async (
       session_may_diverge: true, written: true,
     }),
   );
-  assert.equal(b.aplicacoes.length, 1);
+  assert.equal(b.shell('operacao-de-motor').leiaOperacao('canarinho').fase, 'agrupando');
+  assert.equal(b.aplicacoes.length, 0);
   await b.act(async () => arvoreFecha(b));
 
   const vivo = await montarSeletor('anthropic');
@@ -71,6 +87,7 @@ it('esforço que só vale no boot dispara; o que a sessão assume NÃO', async (
     }),
   );
   assert.equal(vivo.aplicacoes.length, 0);
+  assert.equal(vivo.shell('operacao-de-motor').leiaOperacao('canarinho').fase, 'ocioso');
 });
 
 it('agente no meio de um turno: nada é desligado até o segundo toque', async () => {
@@ -82,6 +99,13 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
       runtime_switch: false, model: 'k3',
     }),
   );
+  // O relógio do agrupamento é de parede, e o timer falso não atravessa o `vm`
+  // onde a bancada carrega o módulo. Nove segundos parados custam menos que uma
+  // prova que não exercita o caminho da tela.
+  const { ESPERA_DE_AGRUPAMENTO_MS } = b.shell('operacao-de-motor');
+  await b.act(async () => esperar(ESPERA_DE_AGRUPAMENTO_MS + 500));
+  assert.equal(b.aplicacoes.length, 1, 'passado o relógio, o religar sai uma vez');
+
   const ocupado = Object.assign(new Error('busy'), {
     status: 409, detail: 'agent_busy_confirm_required',
   });
@@ -95,6 +119,10 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
   assert.ok(texto.includes('Confirmar?'), 'sem alvo, a pergunta ficaria sem resposta possível');
   assert.ok(texto.includes('meio de um turno'));
 });
+
+function esperar(ms) {
+  return new Promise((pronto) => setTimeout(pronto, ms));
+}
 
 function arvoreFecha(b) {
   b.arvore.unmount();

@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
+  ESPERA_DE_AGRUPAMENTO_MS,
   ESPERA_MINIMA_DO_BOOT_MS,
+  TEXTO_AGRUPANDO,
   TEXTO_APLICANDO,
   TEXTO_CONFIRMA_TURNO,
   TEXTO_FALHOU,
   TEXTO_NO_CHAO,
+  agendarAplicacao,
   aplicarMotor,
   assinarOperacao,
   convergiu,
@@ -196,5 +199,94 @@ describe('a trava sai quando a escolha entra em vigor', () => {
     restaurar();
 
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
+  });
+});
+
+describe('o agrupamento das escolhas num religar só', () => {
+  /** Os oito segundos de espera são relógio de parede. Com o timer falso o
+   *  teste anda no tempo em vez de dormir nele. */
+  function comRelogioFalso() {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    return () => mock.timers.reset();
+  }
+
+  /** A chamada agendada é `async`: o tick dispara, e a ida à rede só termina
+   *  na microtask seguinte. */
+  const assentar = () => new Promise((pronto) => setImmediate(pronto));
+
+  it('modelo e esforço escolhidos em seguida religam UMA vez', async () => {
+    const restaurar = comRelogioFalso();
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+
+    // O que o Rica fez em 09/09: trocou o modelo e, enquanto o primeiro boot
+    // ainda nem tinha razão de existir, trocou o esforço. Deu dois boots.
+    agendarAplicacao('canarinho', r);
+    mock.timers.tick(ESPERA_DE_AGRUPAMENTO_MS - 1);
+    agendarAplicacao('canarinho', r);
+    mock.timers.tick(ESPERA_DE_AGRUPAMENTO_MS - 1);
+    await assentar();
+    assert.deepEqual(forces, [], 'a segunda escolha reinicia o relógio');
+
+    mock.timers.tick(1);
+    await assentar();
+
+    assert.deepEqual(forces, [false], 'um religar só para as duas escolhas');
+    assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
+    restaurar();
+  });
+
+  it('a espera aparece na tela — e não é a trava', async () => {
+    const restaurar = comRelogioFalso();
+    const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
+
+    agendarAplicacao('canarinho', r);
+
+    // Fase própria: o véu só nasce em `aplicando`, e travar a tela enquanto ela
+    // espera mais escolhas mataria justamente o que o agrupamento serve.
+    assert.equal(leiaOperacao('canarinho').fase, 'agrupando');
+    assert.equal(leiaOperacao('canarinho').aviso, TEXTO_AGRUPANDO);
+    restaurar();
+  });
+
+  it('escolha nova NÃO apaga a pergunta do turno em voo', async () => {
+    const restaurar = comRelogioFalso();
+    const { rede: r } = rede(async () => {
+      throw erro(409, 'agent_busy_confirm_required');
+    });
+    agendarAplicacao('canarinho', r);
+    mock.timers.tick(ESPERA_DE_AGRUPAMENTO_MS);
+    await assentar();
+    assert.equal(leiaOperacao('canarinho').fase, 'confirmando');
+
+    // Reagendar aqui trocaria a pergunta por um relógio mudo — e o segundo
+    // toque que mata o turno em voo sairia sem ninguém ter confirmado nada. A
+    // gravação da escolha nova já está no banco; quem espera é o religar.
+    agendarAplicacao('canarinho', r);
+
+    assert.equal(leiaOperacao('canarinho').fase, 'confirmando');
+    assert.equal(leiaOperacao('canarinho').aviso, TEXTO_CONFIRMA_TURNO);
+    restaurar();
+  });
+
+  it('agente já religando não ganha um religar agendado por cima', async () => {
+    const restaurar = comRelogioFalso();
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+    await aplicarMotor('canarinho', r);
+    assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
+
+    agendarAplicacao('canarinho', r);
+    mock.timers.tick(ESPERA_DE_AGRUPAMENTO_MS);
+    await assentar();
+
+    assert.deepEqual(forces, [false], 'o segundo desligaria o agente no meio do próprio boot');
+    restaurar();
   });
 });

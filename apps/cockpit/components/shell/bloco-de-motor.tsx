@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
+import { agendarAplicacao, aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
   destinoDaTroca,
@@ -126,7 +126,11 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
       // agente que está rodando; quem aplica é o boot seguinte, e antes disto
       // ele era dois toques manuais depois — Desligar e Ligar — com a tela
       // mostrando o motor velho no meio do caminho.
-      void aplicar();
+      //
+      // Pelo relógio do agrupamento, e não na hora: trocar de família é o caso
+      // em que vem modelo novo atrás — a família nova traz outra lista — e cada
+      // escolha com o seu próprio religar custava um boot cada.
+      agendar();
     } catch {
       setFalhou(true);
     } finally {
@@ -134,11 +138,19 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
     }
   }
 
-  async function aplicar() {
-    await aplicarMotor(agentSlug, {
-      aplicar: (force) => postAgentAplicarMotor(agentSlug, { force }),
+  function redeDaOperacao() {
+    return {
+      aplicar: (force: boolean) => postAgentAplicarMotor(agentSlug, { force }),
       reler: () => aoAtualizar?.(),
-    });
+    };
+  }
+
+  async function aplicar() {
+    await aplicarMotor(agentSlug, redeDaOperacao());
+  }
+
+  function agendar() {
+    agendarAplicacao(agentSlug, redeDaOperacao());
   }
 
   return (

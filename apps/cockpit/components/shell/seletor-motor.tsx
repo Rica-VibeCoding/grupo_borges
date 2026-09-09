@@ -10,7 +10,7 @@ import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
 } from './motor';
-import { aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
+import { agendarAplicacao, aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { sincronizarPainel } from './sincronizacao-painel';
@@ -150,12 +150,9 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
     }
   }
 
-  /** A ESCOLHA APLICA SOZINHA (Rica, 09/09) — só quando ela não vale na sessão
-   *  viva. Nas famílias que trocam a quente não há nada a religar, e desligar o
-   *  agente ali seria custo puro. */
-  async function aplicar() {
-    await aplicarMotor(agentSlug, {
-      aplicar: (force) => postAgentAplicarMotor(agentSlug, { force }),
+  function redeDaOperacao() {
+    return {
+      aplicar: (force: boolean) => postAgentAplicarMotor(agentSlug, { force }),
       reler: () => {
         const controlador = new AbortController();
         leitura.current = controlador;
@@ -163,7 +160,20 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           .then((novo) => { if (novo.slug === agentSlug) setPainel(novo); })
           .catch(() => undefined);
       },
-    });
+    };
+  }
+
+  /** A ESCOLHA APLICA SOZINHA (Rica, 09/09) — só quando ela não vale na sessão
+   *  viva. Nas famílias que trocam a quente não há nada a religar, e desligar o
+   *  agente ali seria custo puro. */
+  async function aplicar() {
+    await aplicarMotor(agentSlug, redeDaOperacao());
+  }
+
+  /** Modelo e esforço são DUAS escolhas para o mesmo boot. Quem religa é o
+   *  relógio do agrupamento, para o segundo valor não custar um segundo boot. */
+  function agendar() {
+    agendarAplicacao(agentSlug, redeDaOperacao());
   }
 
   function mostrarAviso(mensagem: string) {
@@ -208,7 +218,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       // responde `session_may_diverge`. É o sinal de que a escolha não alcança
       // a sessão viva — e é ele, não a família, que decide religar (a régua de
       // quem aceita troca a quente mora no back).
-      if (resposta.session_may_diverge) void aplicar();
+      if (resposta.session_may_diverge) agendar();
     } catch {
       if (minha === geracao.current) mostrarAviso('Não foi possível trocar o esforço.');
     } finally {
@@ -239,7 +249,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         // `proximo-turno` é o modelo que virou env var de boot (`runtime_switch`
         // false): gravado, sem tocar a sessão. É exatamente o caso que a
         // operação única resolve.
-        if (desfecho === 'proximo-turno') void aplicar();
+        if (desfecho === 'proximo-turno') agendar();
         return;
       }
       mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');

@@ -79,7 +79,12 @@ it('Codex lista e atualiza modelo pelo identificador cru', async () => {
   // única trocou a frase pela AÇÃO: escolher já desliga e religa (pedido do
   // Rica). A ressalva não morreu — ela segue no painel que chega divergindo sem
   // ninguém ter acabado de escolher, que é o caso logo abaixo.
-  assert.ok(JSON.stringify(b.arvore.toJSON()).includes('Aplicando'));
+  //
+  // E a frase do momento seguinte à escolha é a da ESPERA, não a do religar: o
+  // boot sai uma vez só, depois que ele tiver escolhido o resto.
+  assert.ok(
+    JSON.stringify(b.arvore.toJSON()).includes(b.shell('operacao-de-motor').TEXTO_AGRUPANDO),
+  );
   await b.fechar();
 
   const parado = await montar();

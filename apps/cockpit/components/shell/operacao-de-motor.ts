@@ -21,7 +21,13 @@
 import { ESPERAS_APOS_LIGAR_MS, RECIBO_MS } from './acoes-rapidas.ts';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
-export type FaseDaOperacao = 'ocioso' | 'confirmando' | 'aplicando' | 'concluido' | 'falhou';
+export type FaseDaOperacao =
+  | 'ocioso'
+  | 'agrupando'
+  | 'confirmando'
+  | 'aplicando'
+  | 'concluido'
+  | 'falhou';
 
 export type EstadoDaOperacao = {
   fase: FaseDaOperacao;
@@ -37,6 +43,9 @@ const OCIOSO: EstadoDaOperacao = { fase: 'ocioso', aviso: null };
  *  operação PARA e pergunta, em vez de assumir. */
 export const TEXTO_CONFIRMA_TURNO =
   'O agente está no meio de um turno — aplicar agora encerra o que ele está fazendo. Tocar de novo confirma.';
+
+export const TEXTO_AGRUPANDO =
+  'Escolha o resto agora — o agente religa uma vez só, em alguns segundos.';
 
 export const TEXTO_APLICANDO = 'Aplicando — desligando e religando o agente. Leva uns 15 segundos.';
 
@@ -83,6 +92,25 @@ export function convergiu(painel: AgentPainelResponse): boolean {
  * velha, ainda morrendo. A tela mostraria o agente de volta com ele no chão.
  */
 export const ESPERA_MINIMA_DO_BOOT_MS = 12_000;
+
+/**
+ * A JANELA DO AGRUPAMENTO — quanto tempo a operação espera por outra escolha
+ * antes de religar (pedido do Rica, 09/09: *"prefiro que ele aconteça
+ * automaticamente depois que eu escolher o modelo E o esforço"*).
+ *
+ * Até aqui cada escolha disparava o seu próprio religar, e trocar modelo mais
+ * esforço custava DOIS boots — medido na Tara em 09/09, `cockpit-ligar-tara` às
+ * 23:13:04 e 23:13:30. Ele tinha relatado isso antes de eu medir, e eu havia
+ * respondido que um religar levava os dois: o back de fato lê os três campos de
+ * uma vez, mas o GATILHO era um por escolha.
+ *
+ * Oito segundos porque o custo de errar é assimétrico e a gaveta fecha sozinha
+ * a cada escolha: curto demais e o segundo religar volta (é o defeito que isto
+ * conserta); longo demais só atrasa um boot que ele já está esperando. O tempo
+ * de reabrir a gaveta, entrar na tela do esforço e tocar o valor mora aqui
+ * dentro — e cada escolha nova reinicia a contagem.
+ */
+export const ESPERA_DE_AGRUPAMENTO_MS = 8_000;
 
 type Rede = {
   /** O POST da operação única. Ele DISPARA o desligar e o ligar e responde
@@ -188,6 +216,30 @@ export async function aplicarMotor(slug: string, rede: Rede): Promise<boolean> {
   );
   rede.reler();
   return true;
+}
+
+/**
+ * Escolha gravada que só vale no próximo boot: em vez de religar agora, espera
+ * a próxima. Cada chamada reinicia o relógio, e o religar sai uma vez só.
+ *
+ * Não atropela uma pergunta de turno em voo: a escolha nova já está gravada, e
+ * quem a pergunta espera é o toque dele, não outro relógio. Nem um agente que
+ * já está religando — ali o segundo desligaria o boot no meio.
+ */
+export function agendarAplicacao(slug: string, rede: Rede): void {
+  const fase = leiaOperacao(slug).fase;
+  if (fase === 'aplicando' || fase === 'confirmando') return;
+
+  limparTimers(slug);
+  publicar(slug, { fase: 'agrupando', aviso: TEXTO_AGRUPANDO });
+  sessaoDe(slug).timers = [
+    setTimeout(() => {
+      // A fase pode ter mudado debaixo do timer — operação disparada à mão pelo
+      // botão, ou gaveta que desarmou tudo.
+      if (leiaOperacao(slug).fase !== 'agrupando') return;
+      void aplicarMotor(slug, rede);
+    }, ESPERA_DE_AGRUPAMENTO_MS),
+  ];
 }
 
 function concluir(slug: string): void {
