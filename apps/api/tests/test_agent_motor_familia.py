@@ -78,21 +78,26 @@ def test_effective_model_family_override_ganha_do_yaml() -> None:
 
 
 def test_painel_motor_normaliza_e_rotula_fonte() -> None:
+    # Sem statusline: o que este teste afirma (família normalizada e rótulo da
+    # fonte) não depende da sessão viva. O segundo argumento passou a ser
+    # obrigatório de propósito — com default, quem esquecesse de passá-lo teria
+    # `session_may_diverge` preso em True, que é justamente o defeito.
+    sem_sessao = agents_router._CCStatus("teste", None, None)
     escolhido = agents_router._painel_motor(
-        {"model_family": "opencode", "motor_familia": "kimi"}
+        {"model_family": "opencode", "motor_familia": "kimi"}, sem_sessao
     )
     assert escolhido.familia == "kimi"
     assert escolhido.override == "kimi"
     assert escolhido.source == "agent_state.motor_familia"
 
-    herdado = agents_router._painel_motor({"model_family": "kimi", "motor_familia": None})
+    herdado = agents_router._painel_motor({"model_family": "kimi", "motor_familia": None}, sem_sessao)
     assert herdado.familia == "kimi"
     assert herdado.override is None
     assert herdado.source == "agents.model_family"
 
     # Anthropic no yaml é ausência de campo → painel devolve "anthropic" pras
     # quatro ficarem completas na UI, com override nulo (ninguém escolheu).
-    padrao = agents_router._painel_motor({"model_family": None, "motor_familia": None})
+    padrao = agents_router._painel_motor({"model_family": None, "motor_familia": None}, sem_sessao)
     assert padrao.familia == "anthropic"
     assert padrao.override is None
 

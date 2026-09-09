@@ -226,6 +226,14 @@ export const CONFIRMA_ACAO_MS = 6_000;
 export const RETENTA_PAINEL_BASE_MS = 2_000;
 export const RETENTA_PAINEL_TETO_MS = 15_000;
 
+/** Quando reler o painel DEPOIS do Ligar. O `POST /ligar` responde em ~1s, mas
+ *  ele só entregou o comando ao tmux: o boot leva 13 a 15 segundos (medido
+ *  09/09 — Ligar às 20:39:49, agente de pé às 20:40:02). Uma leitura única cai
+ *  no meio da subida, lê a ressalva de "vale no próximo boot" ainda verdadeira
+ *  e para de olhar — era ISSO que obrigava o Rica ao F5. Cinco leituras cobrem
+ *  o boot com folga e param sozinhas; não é polling, tem fim. */
+export const ESPERAS_APOS_LIGAR_MS = [3_000, 7_000, 12_000, 18_000, 25_000] as const;
+
 /** Rótulo SEMPRE curto — os três botões (Destravar/Resume/Desligar) dividem
  *  ~110px na gaveta de 380px (§ auditoria 03/08: a frase longa de confirmação
  *  cortava em elipse, e `text-overflow` nem se aplica dentro de um flex —

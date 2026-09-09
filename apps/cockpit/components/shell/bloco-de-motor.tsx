@@ -202,11 +202,14 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
         <p role="alert" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}>
           Não consegui gravar a troca — tente de novo.
         </p>
-      ) : (
+      ) : motor?.session_may_diverge !== false ? (
+        // `!== false`, não `=== true`: API antiga não manda o campo, e ali o
+        // certo é seguir avisando. Só o `false` explícito — a sessão viva já
+        // assumiu a família — apaga a ressalva.
         <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
           {TEXTO_VALE_NO_BOOT}
         </p>
-      )}
+      ) : null}
     </section>
   );
 }

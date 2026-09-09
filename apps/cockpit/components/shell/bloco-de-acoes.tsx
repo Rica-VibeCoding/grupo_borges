@@ -57,6 +57,7 @@ import {
   RECIBO_MS,
   RETENTA_PAINEL_BASE_MS,
   RETENTA_PAINEL_TETO_MS,
+  ESPERAS_APOS_LIGAR_MS,
   descreveAcaoBruta,
   descreveControle,
   descreveLigar,
@@ -303,6 +304,14 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const sequencia = useRef(0);
   const reciboTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Os timers que acompanham o boot depois do Ligar. `buscar` já se protege de
+  // rodar após o unmount (`leituras.ativa`), mas timer solto é vazamento.
+  const timersDoBoot = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => {
+    timersDoBoot.current.forEach(clearTimeout);
+    timersDoBoot.current = [];
+  }, []);
+
   const leituras = useMemo(() => ({ ativa: false, sequencia: 0 }), [agentSlug]);
   useEffect(() => {
     leituras.ativa = true;
@@ -493,6 +502,10 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
       // Relê o painel em qualquer desfecho: mesmo com o aviso de "ainda não
       // apareceu de pé", o boot pode ter concluído entre a resposta e agora.
       buscar();
+      // Essa primeira leitura quase sempre PERDE a corrida contra o boot — daí
+      // as seguintes, que é o que faz a tela convergir sem F5.
+      timersDoBoot.current.forEach(clearTimeout);
+      timersDoBoot.current = ESPERAS_APOS_LIGAR_MS.map((ms) => setTimeout(() => buscar(), ms));
       if (aviso) {
         setFalha(aviso);
         setLigar('ocioso');

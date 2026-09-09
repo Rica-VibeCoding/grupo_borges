@@ -171,3 +171,38 @@ def test_contexto_classifica_kimi_pelo_id_oficial(model):
     ctx = agents._build_painel_contexto({"motor_familia": "kimi"}, status)
     assert ctx.model_family == "kimi"
     assert ctx.model == model.display_name
+
+
+def status_com(modelo):
+    return agents._CCStatus("teste", Path("/tmp/teste"), {"model": {"id": modelo}})
+
+
+def test_aviso_de_boot_some_quando_a_sessao_ja_assumiu_a_familia():
+    """O `Vale no próximo boot` da UI se apaga por este campo.
+
+    Ele nascia com `True` fixo no modelo Pydantic e nenhum dos dois construtores
+    o sobrescrevia: era sempre verdadeiro, para todo agente, e o aviso ficava na
+    tela para sempre — inclusive depois de Desligar + Ligar ter aplicado.
+    """
+    agente = {"motor_familia": "codex-proxy"}
+    assert agents._painel_motor(agente, status_com("gpt-5.6-terra[1m]")).session_may_diverge is False
+
+
+def test_aviso_de_boot_fica_enquanto_a_sessao_roda_a_familia_ANTIGA():
+    """A outra metade: matar o aviso passaria o teste de cima sozinho."""
+    agente = {"motor_familia": "codex-proxy"}
+    assert agents._painel_motor(agente, status_com("claude-opus-5")).session_may_diverge is True
+
+
+def test_aviso_de_boot_fica_com_o_agente_desligado():
+    """Sem statusline não há sessão viva — a escolha ainda não está em vigor."""
+    agente = {"motor_familia": "kimi"}
+    assert agents._painel_motor(agente, agents._CCStatus("teste", None, None)).session_may_diverge is True
+
+
+def test_agente_sem_override_tambem_converge():
+    """Quem herda o yaml não fica com ressalva eterna: o `agents.model_family`
+    já está em vigor assim que a sessão roda um modelo da família."""
+    motor = agents._painel_motor({"model_family": "kimi"}, status_com("k3"))
+    assert motor.override is None
+    assert motor.session_may_diverge is False

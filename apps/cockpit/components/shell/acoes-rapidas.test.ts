@@ -5,6 +5,7 @@ import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-typ
 
 import {
   CONFIRMA_ACAO_MS,
+  ESPERAS_APOS_LIGAR_MS,
   RECIBO_MS,
   descreveAcaoBruta,
   descreveControle,
@@ -491,5 +492,32 @@ describe('ligar', () => {
   it('o caso geral do desligar garante que nada foi alterado; o do ligar aponta o log', () => {
     assert.match(diagnosticaCicloDeVida(new Error('boom'), 'desligar').saida, /nada foi alterado/i);
     assert.match(diagnosticaCicloDeVida(new Error('boom'), 'ligar').saida, /subir-frota\.log/);
+  });
+});
+
+
+describe('espera do painel depois do Ligar', () => {
+  // O boot medido em 09/09 levou 13 segundos (Ligar 20:39:49, de pé 20:40:02).
+  // Estes números são o que impede o F5 de voltar: encurtar a lista devolve o
+  // defeito, porque a leitura cai no meio da subida e para de olhar.
+  const BOOT_OBSERVADO_MS = 13_000;
+
+  it('a última leitura acontece DEPOIS de o boot típico ter terminado', () => {
+    const ultima = ESPERAS_APOS_LIGAR_MS[ESPERAS_APOS_LIGAR_MS.length - 1];
+    assert.ok(ultima > BOOT_OBSERVADO_MS, `última espera ${ultima}ms não cobre o boot`);
+  });
+
+  it('há leitura DENTRO da janela do boot, não só depois dele', () => {
+    // Sem isto, a tela só convergiria no fim: quem liga um agente que sobe
+    // rápido esperaria a lista inteira para ver o resultado.
+    assert.ok(ESPERAS_APOS_LIGAR_MS.some((ms) => ms < BOOT_OBSERVADO_MS));
+  });
+
+  it('as esperas crescem e têm fim — acompanhar boot não é pollar', () => {
+    const crescente = [...ESPERAS_APOS_LIGAR_MS].every(
+      (ms, i, todas) => i === 0 || ms > todas[i - 1],
+    );
+    assert.ok(crescente);
+    assert.ok(ESPERAS_APOS_LIGAR_MS.length <= 6);
   });
 });

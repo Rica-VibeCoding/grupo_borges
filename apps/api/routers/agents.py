@@ -687,7 +687,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     # na tela. Até o restart a sessão viva pode divergir (session_may_diverge);
     # o contexto, que vem da statusline, continua mostrando o motor que roda.
     agent["model_family"] = _effective_model_family(agent)
-    motor = _painel_motor(agent)
+    motor = _painel_motor(agent, cc_status)
     is_kimi = agent.get("model_family") == "kimi"
     kimi_usages = None
     modelos_kimi = ()
@@ -995,23 +995,38 @@ def _effective_model_family(agent: dict[str, Any]) -> str | None:
     return agent.get("model_family")
 
 
-def _painel_motor(agent: dict[str, Any]) -> AgentPainelMotor:
+def _painel_motor(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelMotor:
     """Bloco `motor` do painel: o que está em vigor e o que está escolhido.
 
     `familia` é a efetiva, normalizada pras quatro (None vira "anthropic" —
     é assim que o yaml representa o padrão). `override` é só a escolha
     persistida no card: `None` = ninguém escolheu, o agente herda o yaml.
+
+    `session_may_diverge` responde uma pergunta concreta: a sessão VIVA já
+    assumiu a família em vigor? Era um default fixo em `True` que nenhum dos
+    dois construtores sobrescrevia — sempre verdadeiro, para todo agente. A UI
+    lia dele e por isso o aviso "Vale no próximo boot" ficava na tela para
+    sempre, mesmo depois de Desligar + Ligar ter aplicado (Rica, 09/09). Quem
+    sabe responder é o modelo da statusline contra a família escolhida, que é
+    exatamente o que `_sessao_compativel` mede.
     """
     familia = _effective_model_family(agent)
     override = agent.get("motor_familia")
+    bloco = cc_status.payload.get("model") if cc_status.payload else None
+    modelo_vivo = (
+        (bloco.get("id") or bloco.get("display_name")) if isinstance(bloco, dict) else None
+    )
+    diverge = not _sessao_compativel(agent, modelo_vivo)
     if override:
         return AgentPainelMotor(
-            familia=familia, override=override, source="agent_state.motor_familia"
+            familia=familia, override=override, source="agent_state.motor_familia",
+            session_may_diverge=diverge,
         )
     return AgentPainelMotor(
         familia=familia or "anthropic",
         override=None,
         source="agents.model_family",
+        session_may_diverge=diverge,
     )
 
 
