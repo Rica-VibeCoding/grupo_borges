@@ -66,7 +66,7 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_reader, proxy_catalog, tmux_driver, workspace_reader
+from services import codex_reader, kimi_catalog, proxy_catalog, tmux_driver, workspace_reader
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -165,6 +165,8 @@ class AgentPainelEffort(BaseModel):
 
 
 class AgentPainelModel(BaseModel):
+    labels: dict[str, str] = Field(default_factory=dict)
+    context_length: int | None = None
     value: str | None = None
     allowed: list[str] = Field(default_factory=lambda: list(_AGENT_PAINEL_ALLOWED_MODELS))
     source: str
@@ -688,9 +690,11 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     motor = _painel_motor(agent)
     is_kimi = agent.get("model_family") == "kimi"
     kimi_usages = None
+    modelos_kimi = ()
     if is_kimi:
         kimi_api_key = getattr(request.app.state, "settings", None)
         kimi_api_key = getattr(kimi_api_key, "kimi_api_key", None)
+        modelos_kimi = await asyncio.to_thread(kimi_catalog.listar_modelos, kimi_api_key)
         if kimi_api_key:
             kimi_usages = await _get_kimi_usages(kimi_api_key)
     is_opencode = agent.get("model_family") == "opencode"
@@ -747,7 +751,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         vida=vida,
         contexto=contexto,
         motor=motor,
-        model=_build_painel_model(agent, contexto),
+        model=await asyncio.to_thread(_build_painel_model, agent, contexto, modelos_kimi),
         effort=effort,
         permission=permission,
         quotas=quotas,
@@ -768,6 +772,7 @@ async def patch_agent_effort(
     request: Request,
 ) -> AgentPainelEffortPatchResponse:
     agent = await _get_agent_or_404(request, slug)
+    agent["model_family"] = _effective_model_family(agent)
     if agent.get("model_family") == "kimi":
         # Kimi pensa sempre; o nível é env var (CLAUDE_CODE_EFFORT_LEVEL) lida
         # no boot — persistir no settings.json global não teria efeito e ainda
@@ -1031,32 +1036,25 @@ def _build_painel_effort_por_env_de_boot(
     campo: str,
     allowed: tuple[str, ...],
 ) -> AgentPainelEffort:
-    """O nível em vigor na sessão, com o pedido ao lado quando divergem.
-
-    Vale para os motores cujo esforço entra por `CLAUDE_CODE_EFFORT_LEVEL` no
-    boot — Kimi desde o início, Tara desde 07/09. Os dois rodam dentro do Claude
-    Code, então a statusline reporta o esforço vivo igual à de qualquer agente
-    Anthropic. O `agent_state` guarda o pedido, que o `subir-frota.sh` transforma
-    na env var do boot seguinte — e quando essa leitura falha na janela de boot,
-    o `unset` deixa a sessão no default do CC sem ninguém saber. Servir o pedido
-    esconderia exatamente esse caso; servir só o vivo faria a escolha do Rica
-    parecer que não pegou, porque entre ela e o restart os dois divergem de
-    direito.
-
-    O valor lido NÃO é filtrado pela lista do motor: `xhigh` é um nível que o
-    seletor do Kimi não oferece e que a sessão do Hiro de fato roda. Mostrar o
-    estado verdadeiro não obriga a poder pedi-lo.
-    """
     requested = agent.get(campo)
     if requested not in allowed:
         requested = None
 
     effective = _cc_effort_level(cc_status.payload)
-    if effective is None or cc_status.path is None:
+    model = (cc_status.payload or {}).get("model") or {}
+    model = (model.get("id") or model.get("display_name")) if isinstance(model, dict) else None
+    updated_at = _int_or_none((cc_status.payload or {}).get("updated_at"))
+    stale = cc_status.fell_back or (
+        updated_at is not None
+        and int(time.time()) - updated_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
+    )
+    if (effective not in allowed or cc_status.path is None or stale
+            or not _sessao_compativel(agent, model)):
         return AgentPainelEffort(
             value=requested,
             allowed=list(allowed),
             source=f"agent_state.{campo}",
+            requested=requested if effective is not None and cc_status.path is not None else None,
             session_may_diverge=True,
         )
 
@@ -1155,12 +1153,7 @@ async def _poll_claude_effort(
 def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelContexto:
     payload = cc_status.payload or {}
     model_block = payload.get("model") if isinstance(payload.get("model"), dict) else {}
-    model = (
-        model_block.get("display_name")
-        or model_block.get("id")
-        or agent.get("state_model")
-        or agent.get("model_default")
-    )
+    model = model_block.get("display_name") or model_block.get("id")
     updated_at = _int_or_none(payload.get("updated_at"))
     session_name = payload.get("session_name")
     session_name = session_name if isinstance(session_name, str) and session_name else None
@@ -1170,7 +1163,7 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
     if not isinstance(context_window_block, dict):
         return AgentPainelContexto(
             model=model,
-            model_family=_model_family(model),
+            model_family=_model_family(model_block.get("id") or model),
             tokens=AgentPainelTokens(),
             pct=None,
             source=str(cc_status.path) if cc_status.path else "cc_status:missing",
@@ -1194,7 +1187,7 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
     pct = _num_or_none(context_window_block.get("used_percentage"))
     return AgentPainelContexto(
         model=model,
-        model_family=_model_family(model),
+        model_family=_model_family(model_block.get("id") or model),
         context_window=context_window,
         tokens=AgentPainelTokens(
             input=input_tokens,
@@ -1216,62 +1209,69 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
 def _claude_model_slug(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
-    lowered = value.lower()
-    return next((model for model in _AGENT_PAINEL_ALLOWED_MODELS if model in lowered), None)
+    matched = re.fullmatch(r"(?:claude-)?(fable|opus|sonnet|haiku)(?:[- ][0-9][0-9.\-]*)?(?:\[1m\])?", value.strip().lower())
+    return matched.group(1) if matched else None
+
+
+def _sessao_compativel(agent: dict[str, Any], model: str | None) -> bool:
+    familia = _effective_model_family(agent) or "anthropic"
+    if not model:
+        return False
+    lowered = model.lower()
+    if familia == "anthropic":
+        return _claude_model_slug(model) is not None
+    if familia == "codex-proxy":
+        return lowered.startswith("gpt-")
+    if familia == "kimi":
+        return lowered.startswith(("kimi", "k3", "k2."))
+    if familia == "opencode":
+        return lowered.startswith("deepseek")
+    return False
 
 
 def _build_painel_model(
-    agent: dict[str, Any], contexto: AgentPainelContexto
+    agent: dict[str, Any], contexto: AgentPainelContexto,
+    modelos_kimi: tuple[kimi_catalog.Modelo, ...] = (),
 ) -> AgentPainelModel | None:
-    if agent.get("model_family") == "kimi":
+    familia = _effective_model_family(agent) or "anthropic"
+    if familia == "opencode":
         return None
-    # codex-proxy (Tara): o seletor existe, mas a troca é DIFERIDA, como no Kimi.
-    # O motivo é medido (06/09): o `/model` do CC responde *"saved as your default
-    # for new sessions"* e grava o campo `model` no `~/.claude/settings.json`
-    # GLOBAL — trocar em sessão viva por ali mudaria o padrão da frota inteira, e
-    # só apareceria no próximo boot de outro agente. Quem manda no motor dela é o
-    # `ANTHROPIC_MODEL` do boot, então a escolha é gravada e o boot a lê.
-    # Fechar o seletor foi a salvaguarda do mesmo dia; ela cobria demais — o que
-    # a medição condena é aquele caminho de escrita, não mostrar o catálogo.
-    if agent.get("model_family") == "codex-proxy":
-        oferecidos = list(proxy_catalog.listar_modelos())
-        # `contexto.model` é o que a sessão reporta agora; só vale como leitura
-        # forte se estiver no catálogo — id de fora seria eco de config velha.
+    if familia in ("kimi", "codex-proxy"):
+        oferecidos = ([m.id for m in modelos_kimi] if familia == "kimi"
+                      else list(proxy_catalog.listar_modelos()))
+        labels = {m.id: m.display_name for m in modelos_kimi} if familia == "kimi" else {}
+        janelas = {m.id: m.context_length for m in modelos_kimi} if familia == "kimi" else {}
         da_sessao = contexto.model if contexto.available and not contexto.stale else None
+        if familia == "kimi" and da_sessao:
+            da_sessao = da_sessao.removesuffix("[1m]")
+            da_sessao = next((m.id for m in modelos_kimi if da_sessao in (m.id, m.display_name)), da_sessao)
         if da_sessao in oferecidos:
             return AgentPainelModel(
-                value=da_sessao,
-                allowed=oferecidos,
-                source=contexto.source,
-                session_may_diverge=False,
-                runtime_switch=False,
+                value=da_sessao, allowed=oferecidos, labels=labels,
+                context_length=janelas.get(da_sessao),
+                source=contexto.source, session_may_diverge=False, runtime_switch=False,
             )
         escolhido = agent.get("state_model")
+        source = "agent.state_model"
+        if escolhido not in oferecidos:
+            escolhido = agent.get("model_default") if familia == "codex-proxy" else None
+            source = "agent.model_default"
         return AgentPainelModel(
-            value=escolhido or agent.get("model_default"),
-            allowed=oferecidos,
-            source="agent.state_model" if escolhido else "agent.model_default",
-            runtime_switch=False,
+            value=escolhido if escolhido in oferecidos else None,
+            allowed=oferecidos, labels=labels, source=source, runtime_switch=False,
+            context_length=janelas.get(escolhido),
         )
-
+    if familia != "anthropic":
+        return None
     status_model = _claude_model_slug(contexto.model)
     if status_model is not None and contexto.available and not contexto.stale:
         return AgentPainelModel(
-            value=status_model,
-            source=contexto.source,
-            session_may_diverge=False,
+            value=status_model, source=contexto.source, session_may_diverge=False,
         )
-
     state_model = _claude_model_slug(agent.get("state_model"))
-    if state_model is not None:
-        return AgentPainelModel(
-            value=state_model,
-            source="agent.state_model",
-        )
-
     return AgentPainelModel(
-        value=_claude_model_slug(agent.get("model_default")),
-        source="agent.model_default",
+        value=state_model or _claude_model_slug(agent.get("model_default")),
+        source="agent.state_model" if state_model else "agent.model_default",
     )
 
 
@@ -1279,7 +1279,10 @@ def _build_claude_painel_effort(
     agent: dict[str, Any], cc_status: _CCStatus
 ) -> AgentPainelEffort:
     value = _cc_effort_level(cc_status.payload)
-    if value is not None and cc_status.path is not None:
+    model = (cc_status.payload or {}).get("model") or {}
+    model = (model.get("id") or model.get("display_name")) if isinstance(model, dict) else None
+    compativel = _sessao_compativel(agent, model)
+    if value is not None and cc_status.path is not None and compativel:
         updated_at = _int_or_none(cc_status.payload.get("updated_at")) if cc_status.payload else None
         stale = cc_status.fell_back or (
             updated_at is not None
@@ -1296,7 +1299,7 @@ def _build_claude_painel_effort(
     # só lê o default global, nunca o escreve no caminho runtime acima.
     settings = _read_agent_effort()
     return AgentPainelEffort(
-        value=settings.value,
+        value=settings.value if (model is None or compativel) and settings.value in _CLAUDE_PAINEL_ALLOWED_EFFORTS else None,
         allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
         source=settings.source,
         session_may_diverge=True,
@@ -2337,19 +2340,6 @@ async def reload_agent_mcp(slug: str, request: Request) -> McpReloadResponse:
 
 ChatModel = Literal["fable", "opus", "sonnet", "haiku"]
 _CHAT_MODEL_SLUGS = frozenset(get_args(ChatModel))
-
-# Modelos Kimi (assinatura Kimi Code, endpoint api.kimi.com/coding/) pro Hiro.
-# Slugs canônicos; o de-para pro id cru do motor (`k3`, `kimi-for-coding`, …)
-# mora em `ze-shared/scripts/kimi-models.sh` — fonte única consumida pelos
-# wrappers bash (subir-frota.sh, hiro-k3).
-# Lista validada 19/07 via GET /v1/models: só esses 3 existem na assinatura.
-KimiModel = Literal[
-    "kimi-k3",
-    "kimi-k2.7-code",
-    "kimi-k2.7-code-highspeed",
-]
-_KIMI_MODEL_SLUGS = frozenset(get_args(KimiModel))
-
 
 class PaneStreamEvent(BaseModel):
     excerpt: str
@@ -3989,8 +3979,11 @@ async def change_agent_model(
     persistida e o `subir-frota.sh subir_tara` a exporta em `ANTHROPIC_MODEL`.
     """
     agent = await _get_agent_or_404(request, slug)
-    is_kimi = agent.get("model_family") == "kimi"
-    is_codex_proxy = agent.get("model_family") == "codex-proxy"
+    familia = _effective_model_family(agent) or "anthropic"
+    if familia == "opencode":
+        raise HTTPException(status_code=422, detail="model_not_supported_for_opencode")
+    is_kimi = familia == "kimi"
+    is_codex_proxy = familia == "codex-proxy"
     #: As duas famílias que gravam e esperam o boot, em vez de falar com o tmux.
     diferido = is_kimi or is_codex_proxy
     db: GrupoBorgesDB = request.app.state.db
@@ -4005,8 +3998,13 @@ async def change_agent_model(
     # falha só aparece na hora em que o Rica clica.
     if is_codex_proxy and target not in proxy_catalog.listar_modelos():
         raise HTTPException(status_code=422, detail="model_not_allowed_for_codex_proxy")
-    if is_kimi and target not in _KIMI_MODEL_SLUGS:
-        raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
+    if is_kimi:
+        api_key = getattr(getattr(request.app.state, "settings", None), "kimi_api_key", None)
+        modelos = await asyncio.to_thread(kimi_catalog.listar_modelos, api_key)
+        if not modelos:
+            raise HTTPException(status_code=503, detail="kimi_catalog_unavailable")
+        if target not in {m.id for m in modelos}:
+            raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
     if not diferido and target not in _CHAT_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
 

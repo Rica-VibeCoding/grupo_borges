@@ -395,18 +395,15 @@ def test_painel_oferece_o_catalogo_do_rail(tmp_path: Path, catalogo_fixo: None) 
 def test_painel_sem_catalogo_nao_promete_seletor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Binário do proxy fora do ar: `allowed` vazio, e a pele cai no rótulo.
-
-    Oferecer uma lista chutada faria o painel prometer modelo que a sessão não
-    sobe — o valor atual continua aparecendo, o menu é que não abre.
-    """
+    """Sem catálogo, nem a seleção nem as opções podem ser comprovadas."""
     monkeypatch.setattr(agents_router.proxy_catalog, "listar_modelos", lambda **_: ())
     client = TestClient(_build_app(tmp_path))
 
     corpo = client.get("/api/agents/tara/painel").json()
 
     assert corpo["model"]["allowed"] == []
-    assert corpo["model"]["value"] == "gpt-5.6-sol[1m]"
+    assert corpo["model"]["value"] is None
+    assert corpo["model"]["session_may_diverge"] is True
 
 
 def test_post_model_grava_sem_tocar_na_sessao(tmp_path: Path, catalogo_fixo: None) -> None:
@@ -501,7 +498,11 @@ def test_painel_da_tara_mostra_o_vivo_com_o_pedido_ao_lado(tmp_path: Path) -> No
     _insert_session_event(app.state.db, session_id)
     status_path = Path(f"/tmp/cc-status-{session_id}.json")
     status_path.write_text(
-        json.dumps({"updated_at": int(time.time()), "effort": {"level": "xhigh"}}),
+        json.dumps({
+            "updated_at": int(time.time()),
+            "model": {"id": "gpt-6-astra[1m]"},
+            "effort": {"level": "xhigh"},
+        }),
         encoding="utf-8",
     )
 

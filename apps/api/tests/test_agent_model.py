@@ -19,7 +19,18 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import tmux_driver
+from services import kimi_catalog, tmux_driver
+
+
+@pytest.fixture(autouse=True)
+def catalogo_kimi_fixo(monkeypatch: pytest.MonkeyPatch) -> None:
+    modelos = (
+        kimi_catalog.Modelo("kimi-for-coding", "K2.7 Coding", 262144),
+        kimi_catalog.Modelo("kimi-for-coding-highspeed", "K2.7 Coding Highspeed", 262144),
+        kimi_catalog.Modelo("k3", "K3", 1048576),
+        kimi_catalog.Modelo("k3-256k", "K3-256k", 262144),
+    )
+    monkeypatch.setattr(kimi_catalog, "listar_modelos", lambda api_key: modelos)
 
 _RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
 
@@ -110,18 +121,18 @@ def test_model_kimi_persists_without_runtime_switch(tmp_path: Path) -> None:
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/hiro/model",
-                json={"model": "kimi-k2.7-code"},
+                json={"model": "kimi-for-coding"},
             )
             assert response.status_code == 200
             body = response.json()
             assert body["runtime_switch"] is False
             assert body["tmux_delivered"] is False
             assert body["state_persisted"] is True
-            assert body["model"] == "kimi-k2.7-code"
+            assert body["model"] == "kimi-for-coding"
         send.assert_not_called()
     import asyncio
     agent = asyncio.run(app.state.db.get_agent("hiro"))
-    assert agent["state_model"] == "kimi-k2.7-code"
+    assert agent["state_model"] == "kimi-for-coding"
 
 
 def test_model_claude_rejects_kimi_slug(tmp_path: Path) -> None:

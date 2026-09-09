@@ -18,7 +18,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import tmux_driver
+from services import kimi_catalog, tmux_driver
+
+
+@pytest.fixture(autouse=True)
+def catalogo_kimi_fixo(monkeypatch: pytest.MonkeyPatch) -> None:
+    modelos = (
+        kimi_catalog.Modelo("kimi-for-coding", "K2.7 Coding", 262144),
+        kimi_catalog.Modelo("kimi-for-coding-highspeed", "K2.7 Coding Highspeed", 262144),
+        kimi_catalog.Modelo("k3", "K3", 1048576),
+        kimi_catalog.Modelo("k3-256k", "K3-256k", 262144),
+    )
+    monkeypatch.setattr(kimi_catalog, "listar_modelos", lambda api_key: modelos)
 
 
 DANIEL = {
@@ -158,6 +169,8 @@ def test_agent_painel_calcula_contexto(tmp_path: Path, monkeypatch) -> None:
         assert body["model"] == {
             "value": "fable",
             "allowed": ["fable", "opus", "sonnet", "haiku"],
+            "labels": {},
+            "context_length": None,
             "source": str(quota_path),
             "session_may_diverge": False,
             "runtime_switch": True,
@@ -351,6 +364,8 @@ def test_agent_painel_contexto_fallback_para_sessao_antiga(tmp_path: Path, monke
         assert body["model"] == {
             "value": "opus",
             "allowed": ["fable", "opus", "sonnet", "haiku"],
+            "labels": {},
+            "context_length": None,
             "source": "agent.model_default",
             "session_may_diverge": True,
             "runtime_switch": True,
@@ -869,19 +884,12 @@ def _statusline_do_hiro(app, level: str | None) -> Path:
     return path
 
 
-def test_agent_painel_kimi_mostra_o_nivel_da_sessao_mesmo_fora_da_trinca(
+def test_agent_painel_kimi_mostra_pedido_quando_vivo_fora_da_trinca(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """O caso real do Hiro: pediram `high`, a sessão roda `xhigh`.
+    """O esforço vivo fora da escala não vira seleção válida do Kimi.
 
-    O `subir-frota.sh` só exporta `CLAUDE_CODE_EFFORT_LEVEL` quando a leitura do
-    cockpit devolve low/high/max; se ela falha na janela de boot, o `unset`
-    incondicional deixa a sessão no default do CC — que é `xhigh`. O painel
-    mostrava `high` com a mesma cara de quando o pedido pega.
-
-    `xhigh` não está no `allowed` do motor de propósito: o que a fonte reporta e
-    o que o seletor oferece são domínios diferentes. Filtrar a leitura pela
-    trinca apagaria justamente o estado que ninguém consegue escolher.
+    O pedido válido aparece com divergência, sem afirmar que a sessão o aplicou.
     """
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
@@ -894,20 +902,19 @@ def test_agent_painel_kimi_mostra_o_nivel_da_sessao_mesmo_fora_da_trinca(
     finally:
         status_path.unlink(missing_ok=True)
 
-    assert effort["value"] == "xhigh"
+    assert effort["value"] == "high"
     assert effort["requested"] == "high"
     assert effort["allowed"] == ["low", "high", "max"]
-    assert effort["source"] == str(status_path)
+    assert effort["source"] == "agent_state.kimi_reasoning_effort"
+    assert effort["session_may_diverge"] is True
 
 
 def test_agent_painel_kimi_sem_pedido_registrado_nao_inventa_escolha(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """Default por omissão não é decisão de ninguém.
+    """Sem pedido registrado e com esforço vivo fora da escala, não há seleção.
 
-    Sem nada gravado em `agent_state`, o nível que a sessão roda é o default do
-    motor. `requested=None` é o que separa "a sua troca não pegou" de "ninguém
-    escolheu nada" — a UI não pode dar a entender que alguém pediu isto.
+    A ausência não pode dar a entender que alguém escolheu um nível do Kimi.
     """
     _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
     app = _build_app(tmp_path)
@@ -919,8 +926,10 @@ def test_agent_painel_kimi_sem_pedido_registrado_nao_inventa_escolha(
     finally:
         status_path.unlink(missing_ok=True)
 
-    assert effort["value"] == "xhigh"
+    assert effort["value"] is None
     assert effort["requested"] is None
+    assert effort["allowed"] == ["low", "high", "max"]
+    assert effort["session_may_diverge"] is True
 
 
 def test_agent_painel_kimi_sem_statusline_cai_no_pedido(
