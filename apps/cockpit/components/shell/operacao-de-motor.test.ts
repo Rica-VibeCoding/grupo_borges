@@ -4,6 +4,7 @@ import { afterEach, describe, it } from 'node:test';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
+  ESPERA_MINIMA_DO_BOOT_MS,
   TEXTO_APLICANDO,
   TEXTO_CONFIRMA_TURNO,
   TEXTO_FALHOU,
@@ -125,20 +126,44 @@ describe('o que a tela mostra em cada desfecho', () => {
 });
 
 describe('a trava sai quando a escolha entra em vigor', () => {
-  it('painel convergido conclui a operação', async () => {
+  /** O tempo é do relógio real; o teste empurra o disparo para trás em vez de
+   *  esperar 12 segundos parado. */
+  function envelhecer(ms = ESPERA_MINIMA_DO_BOOT_MS) {
+    const agora = Date.now;
+    Date.now = () => agora() + ms;
+    return () => { Date.now = agora; };
+  }
+
+  it('painel convergido conclui a operação — depois do piso do boot', async () => {
+    const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
+    await aplicarMotor('canarinho', r);
+
+    const restaurar = envelhecer();
+    sinalizarPainel(painel());
+    restaurar();
+
+    assert.equal(leiaOperacao('canarinho').fase, 'concluido');
+  });
+
+  it('painel convergido ANTES do piso não solta a trava', async () => {
+    // O caso que a prova ao vivo pegou: trocar só o modelo dentro da mesma
+    // família deixa o painel convergido desde antes do religamento. Aos 3s ele
+    // diria "pronto" sobre a sessão velha, ainda morrendo.
     const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
     await aplicarMotor('canarinho', r);
 
     sinalizarPainel(painel());
 
-    assert.equal(leiaOperacao('canarinho').fase, 'concluido');
+    assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
   });
 
   it('agente ainda no chão NÃO solta a trava', async () => {
     const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
     await aplicarMotor('canarinho', r);
 
+    const restaurar = envelhecer();
     sinalizarPainel(painel({ vida: { sessao: false, processo: false } }));
+    restaurar();
 
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
   });
@@ -147,11 +172,13 @@ describe('a trava sai quando a escolha entra em vigor', () => {
     const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
     await aplicarMotor('canarinho', r);
 
+    const restaurar = envelhecer();
     sinalizarPainel(
       painel({
         motor: { familia: 'kimi', override: 'kimi', source: 'agent_state.motor_familia', session_may_diverge: true },
       }),
     );
+    restaurar();
 
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
   });
@@ -164,7 +191,9 @@ describe('a trava sai quando a escolha entra em vigor', () => {
     const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
     await aplicarMotor('canarinho', r);
 
+    const restaurar = envelhecer();
     sinalizarPainel(painel({ slug: 'tara' }));
+    restaurar();
 
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
   });

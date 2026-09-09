@@ -72,9 +72,21 @@ export function convergiu(painel: AgentPainelResponse): boolean {
   return painel.vida.processo === true && painel.motor?.session_may_diverge === false;
 }
 
+/**
+ * O piso da trava. `[MEDIDO 09/09]` O POST volta em **1,6s** — ele dispara o
+ * boot e não espera o fim dele —, e a sessão nova só está pronta **14s** depois
+ * (unit `cockpit-ligar-canario` 21:47:32 → 21:47:46).
+ *
+ * Sem este piso a trava sairia na primeira releitura, aos 3s: o painel de um
+ * agente que troca só de MODELO dentro da mesma família já vem convergido
+ * ANTES do religamento, então `convergiu()` diria "pronto" sobre a sessão
+ * velha, ainda morrendo. A tela mostraria o agente de volta com ele no chão.
+ */
+export const ESPERA_MINIMA_DO_BOOT_MS = 12_000;
+
 type Rede = {
-  /** O POST da operação única. Já volta com o agente religado: o back espera o
-   *  CLI aparecer antes de responder. */
+  /** O POST da operação única. Ele DISPARA o desligar e o ligar e responde
+   *  logo — o boot continua correndo depois da resposta. */
   aplicar: (force: boolean) => Promise<unknown>;
   /** Releitura do painel — é ela que troca a tela sem F5. */
   reler: () => void;
@@ -83,6 +95,8 @@ type Rede = {
 type Sessao = {
   estado: EstadoDaOperacao;
   timers: ReturnType<typeof setTimeout>[];
+  /** Quando o POST voltou — o relógio do piso acima. */
+  disparadaEm: number;
 };
 
 const sessoes = new Map<string, Sessao>();
@@ -91,7 +105,7 @@ const ouvintes = new Map<string, Set<(estado: EstadoDaOperacao) => void>>();
 function sessaoDe(slug: string): Sessao {
   const atual = sessoes.get(slug);
   if (atual) return atual;
-  const nova: Sessao = { estado: OCIOSO, timers: [] };
+  const nova: Sessao = { estado: OCIOSO, timers: [], disparadaEm: 0 };
   sessoes.set(slug, nova);
   return nova;
 }
@@ -161,11 +175,11 @@ export async function aplicarMotor(slug: string, rede: Rede): Promise<boolean> {
     return false;
   }
 
-  // O POST já voltou com o agente de pé, mas a tela leva mais um pouco: a
-  // statusline e o `cc-status` da sessão nova não nascem no mesmo instante.
-  // Estas leituras são o que faz a gaveta convergir sem F5 — e a última é o
-  // TETO da trava: passou dela, solta de qualquer jeito.
+  // O boot continua correndo depois desta resposta. Estas leituras são o que
+  // faz a gaveta convergir sem F5 — e a última é o TETO da trava: passou dela,
+  // solta de qualquer jeito.
   const sessao = sessaoDe(slug);
+  sessao.disparadaEm = Date.now();
   sessao.timers = ESPERAS_APOS_LIGAR_MS.map((ms, indice) =>
     setTimeout(() => {
       rede.reler();
@@ -190,7 +204,11 @@ function concluir(slug: string): void {
  * véu por 25 segundos com o agente já trabalhando.
  */
 export function sinalizarPainel(painel: AgentPainelResponse): void {
-  if (leiaOperacao(painel.slug).fase !== 'aplicando') return;
+  const sessao = sessoes.get(painel.slug);
+  if (sessao?.estado.fase !== 'aplicando') return;
+  // O piso vem ANTES da convergência de propósito: um painel que já era
+  // convergido antes da troca responderia "sim" à pergunta errada.
+  if (Date.now() - sessao.disparadaEm < ESPERA_MINIMA_DO_BOOT_MS) return;
   if (!convergiu(painel)) return;
   concluir(painel.slug);
 }
