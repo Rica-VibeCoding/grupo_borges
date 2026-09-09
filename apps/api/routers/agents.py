@@ -12,6 +12,7 @@ POST /api/agents/{slug}/voice          — DS-54: upload áudio → STT (gpt-4o-
 POST /api/agents/{slug}/image          — DS-54: upload imagem → path absoluto → send-keys
 POST /api/agents/{slug}/file           — upload imagem/vídeo/documento → path absoluto → send-keys
 POST /api/agents/{slug}/model          — DS-2: troca modelo (Claude Code `/model` em runtime)
+PATCH /api/agents/{slug}/motor-familia — Fase 2: persiste a família escolhida (vale no próximo boot)
 POST /api/agents/{slug}/subagents/spawn — LB-9: tool MCP spawn_subsession via HTTP
 GET  /api/agents/{slug}/subagents      — LB-9: snapshot de subsessões ativas (polling REST 5s)
 """
@@ -120,6 +121,10 @@ _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
 AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "auto"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
+# Fase 2 (troca de motor): as quatro famílias da matriz cheia. `None` não é uma
+# família — é "herda o agents.yaml" (no yaml, Anthropic é a ausência do campo).
+AgentMotorFamiliaValue = Literal["anthropic", "kimi", "opencode", "codex-proxy"]
+_MOTOR_FAMILIAS = get_args(AgentMotorFamiliaValue)
 
 
 class AgentPainelTokens(BaseModel):
@@ -256,11 +261,31 @@ class AgentPainelVida(BaseModel):
     processo: bool
 
 
+class AgentPainelMotor(BaseModel):
+    """Família de motor do agente, como o painel a enxerga (Fase 2).
+
+    - `familia`: a efetiva — o `agent_state.motor_familia` escolhido no card
+      quando existe, senão o `agents.model_family` do yaml. Normalizada pras
+      quatro (o yaml representa o padrão Anthropic como ausência de campo, e o
+      painel devolve "anthropic" no lugar do `None`).
+    - `override`: só a escolha persistida no card. `None` = ninguém escolheu;
+      o agente herda o yaml e o painel roda no `model_family` de lá.
+    - `source`: de onde veio a família, pra UI avisar quando o override vale
+      só no próximo boot (Desligar + Ligar).
+    """
+
+    familia: str
+    override: str | None = None
+    source: str
+    session_may_diverge: bool = True
+
+
 class AgentPainelResponse(BaseModel):
     slug: str
     generated_at: int
     vida: AgentPainelVida
     contexto: AgentPainelContexto
+    motor: AgentPainelMotor
     model: AgentPainelModel | None = None
     effort: AgentPainelEffort
     permission: AgentPainelPermission
@@ -299,6 +324,30 @@ class AgentPainelPermissionPatchResponse(BaseModel):
     mode: AgentPainelPermissionMode
     source: str
     session_may_diverge: bool = True
+    written: bool = True
+
+
+class AgentPainelMotorPatchRequest(BaseModel):
+    """Escolha de família no card (Fase 2).
+
+    `familia: null` limpa o override — o agente volta a herdar o `agents.yaml`.
+    Só as quatro famílias da matriz cheia passam: `anthropic | kimi | opencode |
+    codex-proxy`. Nenhuma preferência de motor mora no código; quem escolhe é o
+    Rica, na hora, com a cota na frente.
+    """
+
+    familia: AgentMotorFamiliaValue | None = None
+
+
+class AgentPainelMotorPatchResponse(BaseModel):
+    slug: str
+    #: O override gravado em `agent_state.motor_familia` (`None` = herda o yaml).
+    override: str | None = None
+    source: str
+    #: Persist-only por desenho: sessão viva não troca de motor (medido —
+    #: thinking blocks não sobrevivem à troca de família). Quem aplica é o boot.
+    session_may_diverge: bool = True
+    runtime_switch: bool = False
     written: bool = True
 
 
@@ -632,6 +681,12 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     agent = await _get_agent_or_404(request, slug)
     vida = await _build_painel_vida(agent)
     cc_status = await _load_cc_status(db, slug)
+    # Fase 2 (troca de motor): o painel segue a família ESCOLHIDA no card quando
+    # existe — o override manda no próximo boot, e a régua é a cota dessa família
+    # na tela. Até o restart a sessão viva pode divergir (session_may_diverge);
+    # o contexto, que vem da statusline, continua mostrando o motor que roda.
+    agent["model_family"] = _effective_model_family(agent)
+    motor = _painel_motor(agent)
     is_kimi = agent.get("model_family") == "kimi"
     kimi_usages = None
     if is_kimi:
@@ -692,6 +747,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         generated_at=int(time.time()),
         vida=vida,
         contexto=contexto,
+        motor=motor,
         model=_build_painel_model(agent, contexto),
         effort=effort,
         permission=permission,
@@ -802,6 +858,52 @@ async def patch_agent_effort(
     )
 
 
+@router.patch(
+    "/{slug}/motor-familia",
+    response_model=AgentPainelMotorPatchResponse,
+)
+async def patch_agent_motor_familia(
+    slug: str,
+    payload: AgentPainelMotorPatchRequest,
+    request: Request,
+) -> AgentPainelMotorPatchResponse:
+    """Persiste a família escolhida no card (Fase 2) — persist-only.
+
+    Sessão viva NÃO troca de motor: é o achado que fundou o plano (thinking
+    blocks não sobrevivem à troca de família — `anthropics/claude-code#63229`,
+    fechado como not planned). Quem aplica é o boot seguinte: o `subir-frota.sh`
+    lê `motor_familia` do `GET /api/agents/{slug}` e monta o settings daquele
+    workspace. Até o boot, a sessão segue no motor antigo e o painel marca
+    `session_may_diverge`.
+
+    `familia: null` limpa a escolha — o agente volta a herdar o `agents.yaml`.
+    Matriz cheia, sem preferência: qualquer agente pode ir pra qualquer família.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+    de = agent.get("motor_familia") or agent.get("model_family")
+    para = payload.familia
+    await db.update_agent_runtime_state(slug, motor_familia=para)
+    await db.insert_task_event(
+        kind="agent.motor_change",
+        agent_slug=slug,
+        payload={
+            "from": de,
+            "to": para,
+            "actor": "cockpit",
+            "runtime_switch": False,
+        },
+    )
+    return AgentPainelMotorPatchResponse(
+        slug=slug,
+        override=para,
+        source="agent_state.motor_familia",
+        session_may_diverge=True,
+        runtime_switch=False,
+        written=True,
+    )
+
+
 @router.patch("/{slug}/permission-mode", response_model=AgentPainelPermissionPatchResponse)
 async def patch_agent_permission_mode(
     slug: str,
@@ -873,6 +975,40 @@ def _model_family(model: str | None) -> str | None:
         if family in lowered:
             return family
     return model
+
+
+def _effective_model_family(agent: dict[str, Any]) -> str | None:
+    """A família em vigor — o override do card quando existe, senão a do yaml.
+
+    `agents.model_family` é reescrito a cada boot a partir do agents.yaml e por
+    isso NÃO pode guardar a escolha do Rica (a armadilha da Fase 2). A escolha
+    mora em `agent_state.motor_familia`; quem aplica é o boot seguinte. `None`
+    quando nenhum dos dois diz nada = a família padrão (Anthropic).
+    """
+    override = agent.get("motor_familia")
+    if override:
+        return override
+    return agent.get("model_family")
+
+
+def _painel_motor(agent: dict[str, Any]) -> AgentPainelMotor:
+    """Bloco `motor` do painel: o que está em vigor e o que está escolhido.
+
+    `familia` é a efetiva, normalizada pras quatro (None vira "anthropic" —
+    é assim que o yaml representa o padrão). `override` é só a escolha
+    persistida no card: `None` = ninguém escolheu, o agente herda o yaml.
+    """
+    familia = _effective_model_family(agent)
+    override = agent.get("motor_familia")
+    if override:
+        return AgentPainelMotor(
+            familia=familia, override=override, source="agent_state.motor_familia"
+        )
+    return AgentPainelMotor(
+        familia=familia or "anthropic",
+        override=None,
+        source="agents.model_family",
+    )
 
 
 def _int_or_none(value: Any) -> int | None:

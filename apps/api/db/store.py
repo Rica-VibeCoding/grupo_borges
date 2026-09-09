@@ -350,6 +350,10 @@ class GrupoBorgesDB:
                 # ela e o SELECT quebrava. Quem lê é o boot da Tara.
                 ("codex_reasoning_effort", "TEXT"),
                 ("kimi_reasoning_effort", "TEXT"),
+                # Fase 2 (troca de motor): família escolhida no card. O `agents.model_family`
+                # é reescrito a cada boot a partir do agents.yaml; esta coluna é o override
+                # que o Rica grava e que o boot seguinte aplica — vazia/ausente = herda o yaml.
+                ("motor_familia", "TEXT"),
                 ("ordem", "INTEGER"),
             ):
                 self._add_column_if_missing(conn, "agent_state", col, definition)
@@ -488,6 +492,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.kimi_reasoning_effort,
+                       s.motor_familia,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -510,6 +515,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.kimi_reasoning_effort,
+                       s.motor_familia,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at
                 FROM agents a
@@ -655,6 +661,7 @@ class GrupoBorgesDB:
             "token_usage_json",
             "codex_reasoning_effort",
             "kimi_reasoning_effort",
+            "motor_familia",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
@@ -3066,6 +3073,7 @@ class GrupoBorgesDB:
                        s.context_pct, s.session_started_at,
                        s.last_assistant_message, s.token_usage_json,
                        s.codex_reasoning_effort, s.kimi_reasoning_effort,
+                       s.motor_familia,
                        s.lifecycle_status, s.lifecycle_detail, s.lifecycle_event,
                        s.lifecycle_updated_at,
                        s.ordem
