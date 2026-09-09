@@ -7,7 +7,6 @@ import {
   ESPERA_DE_AGRUPAMENTO_MS,
   ESPERA_MINIMA_DO_BOOT_MS,
   TEXTO_AGRUPANDO,
-  TEXTO_APLICANDO,
   TEXTO_CONFIRMA_TURNO,
   TEXTO_FALHOU,
   TEXTO_NO_CHAO,
@@ -19,6 +18,8 @@ import {
   esquecerTudo,
   leiaOperacao,
   sinalizarPainel,
+  textoDesligando,
+  textoSubindo,
 } from './operacao-de-motor.ts';
 
 afterEach(() => esquecerTudo());
@@ -100,9 +101,35 @@ describe('o que a tela mostra em cada desfecho', () => {
 
     await aplicarMotor('canarinho', r);
 
-    assert.equal(leiaOperacao('canarinho').aviso, TEXTO_APLICANDO);
-    assert.deepEqual(vistos, ['aplicando']);
+    assert.equal(leiaOperacao('canarinho').aviso, textoSubindo());
+    assert.deepEqual(vistos, ['aplicando', 'aplicando']);
     assert.equal(relidos.length, 1);
+  });
+
+  it('o aviso diz QUEM está religando e em que etapa — não uma frase só', async () => {
+    // [09/09] O Rica fotografou a frase antiga ocupando duas linhas: "Aplicando
+    // — desligando e religando o agente. Leva uns 15 segundos." Ela é longa,
+    // some com o nome do agente e diz as duas etapas de uma vez, então nunca
+    // corresponde ao que está acontecendo naquele instante.
+    const avisos: (string | null)[] = [];
+    assinarOperacao('canarinho', (estado) => avisos.push(estado.aviso));
+    const { rede: r } = rede(async () => {
+      // Dentro do POST: é aqui que o desligamento está de fato acontecendo.
+      assert.equal(leiaOperacao('canarinho').aviso, textoDesligando('Canário'));
+      return { desligado: true, religado: true };
+    });
+
+    await aplicarMotor('canarinho', r, 'Canário');
+
+    assert.deepEqual(avisos, [textoDesligando('Canário'), textoSubindo('Canário')]);
+    assert.ok(textoSubindo('Canário').includes('Canário'), 'sem o nome, "quem" fica sem resposta');
+    assert.ok(textoSubindo('Canário').length < 40, 'o que não cabe numa linha vira parágrafo');
+  });
+
+  it('sem nome o aviso não mente — fala do agente', async () => {
+    const { rede: r } = rede(async () => ({ desligado: true, religado: true }));
+    await aplicarMotor('canarinho', r);
+    assert.match(leiaOperacao('canarinho').aviso ?? '', /agente/);
   });
 
   it('religar que falhou DEPOIS do desligamento diz que o agente está no chão', async () => {

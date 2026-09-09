@@ -59,7 +59,7 @@ it('a trava nasce quando a operação começa e cobre o viewport inteiro', async
   assert.equal(veu.props['aria-modal'], true);
   assert.equal(
     veu.props['aria-label'],
-    b.shell('operacao-de-motor').TEXTO_APLICANDO,
+    b.shell('operacao-de-motor').textoDesligando(),
     'quem não vê a tela precisa ouvir o mesmo aviso',
   );
 });

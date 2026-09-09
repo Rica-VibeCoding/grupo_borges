@@ -167,13 +167,13 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
    *  viva. Nas famílias que trocam a quente não há nada a religar, e desligar o
    *  agente ali seria custo puro. */
   async function aplicar() {
-    await aplicarMotor(agentSlug, redeDaOperacao());
+    await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
   /** Modelo e esforço são DUAS escolhas para o mesmo boot. Quem religa é o
    *  relógio do agrupamento, para o segundo valor não custar um segundo boot. */
   function agendar() {
-    agendarAplicacao(agentSlug, redeDaOperacao());
+    agendarAplicacao(agentSlug, redeDaOperacao(), agentName);
   }
 
   function mostrarAviso(mensagem: string) {

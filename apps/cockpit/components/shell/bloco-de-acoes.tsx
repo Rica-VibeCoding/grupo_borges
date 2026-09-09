@@ -250,6 +250,8 @@ function BotaoAcaoBruta({
 
 export type BlocoDeAcoesProps = {
   agentSlug: string;
+  /** Só para o aviso da operação de motor dizer quem está religando. */
+  agentName?: string;
   /** Fallback usado apenas fora do `PainelProvider`. Hoje o call-site passa
    *  sempre `false`; dentro do provider, o gatilho real da re-busca é o valor
    *  otimista do contexto. */
@@ -258,7 +260,7 @@ export type BlocoDeAcoesProps = {
 
 type Carga = 'ocioso' | 'carregando' | 'pronto' | 'indisponivel';
 
-export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAcoesProps) {
+export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }: BlocoDeAcoesProps) {
   // O valor OTIMISTA, não o da URL. O painel abre no mesmo frame do clique
   // (`superficie-otimista.tsx`, do Hiro) enquanto a navegação `?painel=…` leva
   // 2,0–2,7s para voltar do servidor. Reagir à URL faria a busca do `/painel`
@@ -793,7 +795,12 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           override). Sem o bloco `motor` no painel (API antiga) o controle some
           em vez de nascer fingido. */}
       {carga === 'pronto' && painel?.motor ? (
-        <BlocoDeMotor agentSlug={agentSlug} motor={painel.motor} aoAtualizar={buscar} />
+        <BlocoDeMotor
+          agentSlug={agentSlug}
+          agentName={agentName}
+          motor={painel.motor}
+          aoAtualizar={buscar}
+        />
       ) : null}
 
       {/* Cota é leitura, não ação — irmã da região, nunca dentro dela. Só

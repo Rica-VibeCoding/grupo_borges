@@ -179,7 +179,7 @@ function Painel({
           `max-height` do `.ck-flutua` morde antes do conteúdo terminar. Sem
           nenhum `flex-auto` na coluna, ali o fim seria cortado em silêncio. */}
       <div className="flex min-h-0 flex-auto flex-col overflow-y-auto">
-        <BlocoDeAcoes agentSlug={agente.slug} aberto={painelAberto} />
+        <BlocoDeAcoes agentSlug={agente.slug} agentName={agente.name} aberto={painelAberto} />
       </div>
 
       {/* STATUSLINE — o lugar central que o Rica pediu (09/08): telemetria

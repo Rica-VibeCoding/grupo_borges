@@ -81,13 +81,16 @@ function ItemDeFamilia({
 
 type BlocoDeMotorProps = {
   agentSlug: string;
+  /** Só para o aviso da trava dizer quem está religando — o painel responde por
+   *  slug e não carrega o nome. */
+  agentName?: string;
   motor: PainelMotor | null;
   /** Releitura do painel depois da gravação — o bloco `motor` e a cota sobem
    *  juntos, pela régua normal da gaveta. */
   aoAtualizar?: () => void;
 };
 
-export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProps) {
+export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: BlocoDeMotorProps) {
   const [aberto, setAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [falhou, setFalhou] = useState(false);
@@ -146,11 +149,11 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
   }
 
   async function aplicar() {
-    await aplicarMotor(agentSlug, redeDaOperacao());
+    await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
   function agendar() {
-    agendarAplicacao(agentSlug, redeDaOperacao());
+    agendarAplicacao(agentSlug, redeDaOperacao(), agentName);
   }
 
   return (

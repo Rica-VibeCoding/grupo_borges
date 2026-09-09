@@ -47,7 +47,22 @@ export const TEXTO_CONFIRMA_TURNO =
 export const TEXTO_AGRUPANDO =
   'Escolha o resto agora — o agente religa uma vez só, em alguns segundos.';
 
-export const TEXTO_APLICANDO = 'Aplicando — desligando e religando o agente. Leva uns 15 segundos.';
+/**
+ * O aviso da trava, em DUAS etapas e com o nome de quem está religando.
+ *
+ * [09/09] Era uma frase só: "Aplicando — desligando e religando o agente. Leva
+ * uns 15 segundos." O Rica fotografou ela ocupando duas linhas e pediu o
+ * contrário do que ela fazia: mais curta, dizendo *quem* e *o que está
+ * acontecendo agora*. Anunciar as duas etapas de uma vez é o que a fazia estar
+ * sempre meio errada — no primeiro segundo o agente ainda nem tinha caído, e
+ * nos últimos catorze ele já estava subindo.
+ *
+ * Sem nome não se inventa um: o painel é aberto por slug em lugares que não
+ * carregam o nome, e "o agente" é verdade em todos eles.
+ */
+export const textoDesligando = (nome?: string) => `Desligando ${nome ?? 'o agente'}…`;
+
+export const textoSubindo = (nome?: string) => `Subindo ${nome ?? 'o agente'} — uns 15s.`;
 
 /** O único desfecho que deixa a máquina em estado pior do que começou: o
  *  desligamento passou e o boot não. Dizer "tente de novo" aqui esconderia que
@@ -181,13 +196,13 @@ export function esquecerConfirmacao(slug: string): void {
  * Devolve `true` quando a operação foi disparada de fato — `false` quando o
  * toque só ARMOU a pergunta do turno em voo (ou quando já havia uma em voo).
  */
-export async function aplicarMotor(slug: string, rede: Rede): Promise<boolean> {
+export async function aplicarMotor(slug: string, rede: Rede, nome?: string): Promise<boolean> {
   const anterior = leiaOperacao(slug);
   if (anterior.fase === 'aplicando') return false;
 
   const force = anterior.fase === 'confirmando';
   limparTimers(slug);
-  publicar(slug, { fase: 'aplicando', aviso: TEXTO_APLICANDO });
+  publicar(slug, { fase: 'aplicando', aviso: textoDesligando(nome) });
 
   try {
     await rede.aplicar(force);
@@ -206,6 +221,10 @@ export async function aplicarMotor(slug: string, rede: Rede): Promise<boolean> {
   // O boot continua correndo depois desta resposta. Estas leituras são o que
   // faz a gaveta convergir sem F5 — e a última é o TETO da trava: passou dela,
   // solta de qualquer jeito.
+  // O POST volta quando o desligamento passou e o boot foi disparado — daqui
+  // em diante o que está acontecendo é a subida, e o aviso conta isso.
+  publicar(slug, { fase: 'aplicando', aviso: textoSubindo(nome) });
+
   const sessao = sessaoDe(slug);
   sessao.disparadaEm = Date.now();
   sessao.timers = ESPERAS_APOS_LIGAR_MS.map((ms, indice) =>
@@ -226,7 +245,7 @@ export async function aplicarMotor(slug: string, rede: Rede): Promise<boolean> {
  * quem a pergunta espera é o toque dele, não outro relógio. Nem um agente que
  * já está religando — ali o segundo desligaria o boot no meio.
  */
-export function agendarAplicacao(slug: string, rede: Rede): void {
+export function agendarAplicacao(slug: string, rede: Rede, nome?: string): void {
   const fase = leiaOperacao(slug).fase;
   if (fase === 'aplicando' || fase === 'confirmando') return;
 
@@ -237,7 +256,7 @@ export function agendarAplicacao(slug: string, rede: Rede): void {
       // A fase pode ter mudado debaixo do timer — operação disparada à mão pelo
       // botão, ou gaveta que desarmou tudo.
       if (leiaOperacao(slug).fase !== 'agrupando') return;
-      void aplicarMotor(slug, rede);
+      void aplicarMotor(slug, rede, nome);
     }, ESPERA_DE_AGRUPAMENTO_MS),
   ];
 }
