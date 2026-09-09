@@ -78,12 +78,27 @@ function rotulaGpt(modelo: string): string | null {
   return `${versao} ${nome!.charAt(0).toUpperCase()}${nome!.slice(1)}${rapido ? ' rápido' : ''}`;
 }
 
+/** `deepseek-v4-flash[1m]` -> `DeepSeek V4-Flash`. Derivada, e não tabelada,
+ *  pelo mesmo motivo do GPT acima: a família tem um modelo hoje e o provedor
+ *  publica outros. O `[1m]` é declaração de janela, não parte do nome. */
+const DEEPSEEK_RE = /^deepseek-v(\d+(?:\.\d+)?)-([a-z]+)(?:\[1m\])?$/;
+
+function rotulaDeepSeek(modelo: string): string | null {
+  const achado = DEEPSEEK_RE.exec(modelo);
+  if (!achado) return null;
+  const [, versao, nome] = achado;
+  return `DeepSeek V${versao}-${nome!.charAt(0).toUpperCase()}${nome!.slice(1)}`;
+}
+
 export function rotulaModelo(modelo: string | null | undefined, labels?: Record<string, string>): string {
   if (!modelo) return 'sem modelo';
   if (labels?.[modelo]) return labels[modelo];
 
   const gpt = rotulaGpt(modelo);
   if (gpt) return gpt;
+
+  const deepseek = rotulaDeepSeek(modelo);
+  if (deepseek) return deepseek;
 
   const kimi = KIMI[modelo];
   if (kimi) return kimi;

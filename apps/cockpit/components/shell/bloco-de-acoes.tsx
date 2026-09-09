@@ -83,6 +83,7 @@ import {
 import { BlocoDeComandos } from './bloco-de-comandos';
 import { sinalizarPainel } from './operacao-de-motor.ts';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
+import { VeuDeOperacao } from './veu-de-operacao';
 import { BlocoDeCota } from './bloco-de-cota';
 import { BlocoDeMotor } from './bloco-de-motor';
 import { IconeDescartar } from './icones';
@@ -560,6 +561,12 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
 
   return (
     <>
+      {/* A TRAVA DE TELA. Mora aqui porque é este bloco que já assina a
+          operação; o `position: fixed` do véu tira ele da caixa da gaveta e o
+          põe sobre o viewport inteiro — inclusive sobre o composer, que na
+          primeira versão continuava aceitando mensagem no meio do religamento. */}
+      {aplicandoMotor && operacao.aviso ? <VeuDeOperacao aviso={operacao.aviso} /> : null}
+
       <section
         aria-label="ações rápidas"
         className="flex shrink-0 flex-col border-b"

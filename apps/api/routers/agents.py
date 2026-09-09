@@ -1250,7 +1250,21 @@ def _build_painel_model(
 ) -> AgentPainelModel | None:
     familia = _effective_model_family(agent) or "anthropic"
     if familia == "opencode":
-        return None
+        # A família tem um modelo só — o boot fixa `deepseek-v4-flash[1m]` pela
+        # tabela `MOTORES` —, então não há o que escolher. Devolver `None` por
+        # isso, porém, calava também o NOME do motor que está rodando: o Rica
+        # trocou o card para OpenCode em 09/09 e a tela não disse nada ("não
+        # entrou nome nenhum"). Com `allowed` vazio o composer mostra o rótulo
+        # como texto e não abre gaveta (`seletor-motor.tsx`, `temControle`).
+        # Sessão que ainda não assumiu a família continua sem bloco: inventar um
+        # nome antes do boot seria dizer que já trocou.
+        da_sessao = contexto.model if contexto.available and not contexto.stale else None
+        if not _sessao_compativel(agent, da_sessao):
+            return None
+        return AgentPainelModel(
+            value=da_sessao, allowed=[], source=contexto.source,
+            session_may_diverge=False, runtime_switch=False,
+        )
     if familia in ("kimi", "codex-proxy"):
         oferecidos = ([m.id for m in modelos_kimi] if familia == "kimi"
                       else list(proxy_catalog.listar_modelos()))

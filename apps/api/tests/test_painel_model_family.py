@@ -27,6 +27,23 @@ def test_opencode_nao_oferece_modelo():
     assert agents._build_painel_model({"motor_familia": "opencode"}, contexto("opus")) is None
 
 
+def test_opencode_mostra_o_modelo_que_a_sessao_roda():
+    """A família tem um modelo só, mas calar o NOME dele deixa a tela muda.
+
+    O Rica trocou o motor para OpenCode em 09/09 e reclamou: "não entrou nenhum
+    modelo, não entrou nome nenhum". Sem `allowed` a gaveta não abre seção de
+    modelo — o rótulo aparece como texto, que é o que ele pediu.
+    """
+    painel = agents._build_painel_model(
+        {"motor_familia": "opencode"}, contexto("deepseek-v4-flash[1m]")
+    )
+    assert painel is not None
+    assert painel.value == "deepseek-v4-flash[1m]"
+    assert painel.allowed == []
+    assert painel.runtime_switch is False
+    assert painel.session_may_diverge is False
+
+
 def test_codex_nao_recicla_modelo_de_outra_familia(monkeypatch):
     monkeypatch.setattr(agents.proxy_catalog, "listar_modelos", lambda: ("gpt-6-astra[1m]",))
     painel = agents._build_painel_model(
