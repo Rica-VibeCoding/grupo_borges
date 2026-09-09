@@ -17,6 +17,20 @@ genérico, derruba o cockpit do Rica na 3007).
 cd apps/cockpit && python3 scripts/prova/retentativa-painel.py
 ```
 
+As provas `.cjs` montam o componente em `react-test-renderer` e **não precisam da
+3009** — mas o pacote não é dependência do cockpit (ele está deprecado no React
+19 e não vale carregar no app). Instalar fora do repo e apontar:
+
+```bash
+npm install --prefix /tmp/rtr --no-save react-test-renderer@19.2.6 react@19.2.6
+cd apps/cockpit && REACT_TEST_RENDERER=/tmp/rtr/node_modules/react-test-renderer \
+  node --test scripts/prova/operacao-unica.test.cjs
+```
+
+⚠️ Sem essa variável o `node --test` morre em `Cannot find module` — e um arquivo
+de prova que ninguém consegue rodar é a bancada que passa vazia. Achado em 09/09:
+o `seletor-familia.test.cjs` estava nesse estado desde que entrou.
+
 Cada script imprime `✓` por metade verificada e estoura `AssertionError` na que
 falhar. Sai 0 só quando tudo passa.
 

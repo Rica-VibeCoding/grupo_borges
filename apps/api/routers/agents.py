@@ -2393,6 +2393,12 @@ class RelaunchRequest(BaseModel):
     # preserva em vez de apagar. Falha para o lado seguro.
 
 
+class AplicarMotorRequest(BaseModel):
+    confirm: StrictBool
+    # A guarda que o `/desligar` cru não tem. Ver o endpoint.
+    force: bool = False
+
+
 class ModelChangeRequest(BaseModel):
     # `str` e não a união de Literals: a validação real mora no endpoint, por
     # família — nenhum slug passa sem estar na allowlist da sua.
@@ -4374,6 +4380,70 @@ async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
     return {
         "tmux_delivered": result["confirmed"],
         "attempted": result["attempted"],
+        "sent_at": int(time.time()),
+    }
+
+
+@router.post("/{slug}/aplicar-motor")
+async def post_agent_aplicar_motor(
+    slug: str,
+    payload: AplicarMotorRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Desliga e religa numa operação só — é isto que APLICA a escolha de motor.
+
+    Família, modelo e esforço das famílias persist-only não valem na sessão
+    viva: o histórico carrega thinking block assinado por modelo, e reenviá-lo
+    sob outro motor faz a API recusar a conversa inteira. Por isso a escolha
+    espera o próximo boot — e até aqui esse boot era Desligar + Ligar na mão,
+    com a tela mostrando o estado velho no meio do caminho.
+
+    Os dois passos ficam no servidor de propósito. Entre eles o agente está no
+    chão; se a orquestração morasse no navegador, uma aba fechada no intervalo
+    deixaria o agente desligado sem ninguém para religá-lo.
+
+    A guarda que o `/desligar` cru não tem: agente `trabalhando` exige `force`.
+    Desligar mata o turno em voo — o `--continue` devolve a conversa, mas o
+    raciocínio em andamento e a ferramenta rodando não voltam. É o mesmo
+    contrato do `POST /model` (409 `agent_busy_confirm_required`), e não foi
+    para o `/desligar` porque lá o toque duplo do painel já é a confirmação
+    consciente; aqui o desligar é efeito colateral de escolher um modelo.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="confirmacao_explicita_obrigatoria")
+    if agent.get("lifecycle_status") == "trabalhando" and not payload.force:
+        raise HTTPException(status_code=409, detail="agent_busy_confirm_required")
+
+    session = agent["tmux_session"]
+    try:
+        desligado = await tmux_driver.shutdown_agent(session)
+    except (ValueError, libtmux_exc.LibTmuxException) as exc:
+        raise HTTPException(status_code=409, detail=f"desligar_failed: {exc}") from exc
+
+    try:
+        ligado = await tmux_driver.boot_agent(session)
+    except tmux_driver.TmuxSessionBusyError as exc:
+        # Prefixo próprio, e não o `ligar_em_curso` do endpoint solto: aqui o
+        # agente JÁ FOI DESLIGADO. Quem lê a falha precisa saber que o estado
+        # atual é "no chão", não "nada aconteceu" — senão o Rica fecha a gaveta
+        # achando que a troca não pegou e o agente fica fora do ar.
+        raise HTTPException(
+            status_code=409, detail=f"religar_falhou_agente_desligado: {exc}"
+        ) from exc
+    except (ValueError, libtmux_exc.LibTmuxException) as exc:
+        raise HTTPException(
+            status_code=409, detail=f"religar_falhou_agente_desligado: {exc}"
+        ) from exc
+
+    return {
+        "desligado": desligado["sessao_encerrada"],
+        "scopes_resistiram": desligado.get("scopes_resistiram") or [],
+        # `tmux_delivered` do boot: o CLI apareceu dentro da janela do driver.
+        # False não quer dizer que o boot falhou — o script segue subindo canal
+        # e `/rename` depois disso; quem confirma é a releitura do painel.
+        "religado": ligado["confirmed"],
+        "attempted": ligado["attempted"],
         "sent_at": int(time.time()),
     }
 

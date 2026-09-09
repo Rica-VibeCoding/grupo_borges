@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AgentInputError, fetchAgentPainel, patchAgentEffort, postAgentModel } from '@grupo_borges/cockpit-core/api';
+import { AgentInputError, fetchAgentPainel, patchAgentEffort, postAgentAplicarMotor, postAgentModel } from '@grupo_borges/cockpit-core/api';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { DropdownMenu, DropdownMenuContent } from '../ui/dropdown-menu';
 import { esperaConvergenciaDoEsforco, type ControleConvergencia } from './convergencia-esforco';
@@ -10,10 +10,12 @@ import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
 } from './motor';
+import { aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { sincronizarPainel } from './sincronizacao-painel';
 import { TEXTO_VALE_NO_BOOT } from './troca-de-motor';
+import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 
 type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort' | 'motor'>;
 type SeletorMotorProps = {
@@ -51,6 +53,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const telaEstreita = usaTelaEstreita();
+  const operacao = usaOperacaoDeMotor(agentSlug);
+  // Enquanto o agente religa, a gaveta não aceita outra escolha: a segunda
+  // desligaria um agente no meio do próprio boot.
+  const aplicando = operacao.fase === 'aplicando';
   const convergencia = useRef<ControleConvergencia | null>(null);
   const leitura = useRef<AbortController | null>(null);
   const geracao = useRef(0);
@@ -91,7 +97,42 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   const divergindo = Boolean(modelo?.session_may_diverge || esforco?.session_may_diverge);
   const tintaModelo = divergindo ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)';
   const tintaEsforco = divergindo ? 'var(--ck-text-tertiary)' : 'var(--ck-text-secondary)';
-  const ressalva = divergindo ? (
+  // A operação em curso manda na linha: ela conta o AGORA, e a ressalva do boot
+  // embaixo diria o contrário do que está acontecendo na frente dele.
+  const ressalva = operacao.aviso ? (
+    <span className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
+      <span
+        role={operacao.fase === 'aplicando' ? 'status' : 'alert'}
+        aria-live="polite"
+        className="truncate"
+        style={{
+          color: operacao.fase === 'aplicando' ? 'var(--ck-text-secondary)' : 'var(--ck-state-attention)',
+          fontSize: 'var(--ck-text-xs)',
+        }}
+      >
+        {operacao.aviso}
+      </span>
+      {operacao.fase === 'confirmando' ? (
+        // O alvo do segundo toque. A gaveta já fechou quando a gravação passou,
+        // e escolher o mesmo valor de novo não dispara nada.
+        <button
+          type="button"
+          onClick={() => void aplicar()}
+          className="ck-veil shrink-0 border"
+          style={{
+            minHeight: 'var(--ck-touch-min)',
+            padding: '0 var(--ck-space-2)',
+            borderRadius: 'var(--ck-radius-chip)',
+            borderColor: 'var(--ck-edge-functional)',
+            color: 'var(--ck-state-attention)',
+            fontSize: 'var(--ck-text-xs)',
+          }}
+        >
+          Confirmar?
+        </button>
+      ) : null}
+    </span>
+  ) : divergindo ? (
     <span role="status" style={{ color: 'var(--ck-state-attention)', fontSize: 'var(--ck-text-xs)' }}>
       {TEXTO_VALE_NO_BOOT}
     </span>
@@ -103,7 +144,26 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       setTela('inicio');
       setModeloPendente(null);
       setAviso(null);
+      // Pergunta fora da tela é pergunta caducada — reabrir e achar o "tocar de
+      // novo confirma" armado faria um toque distraído matar o turno em voo.
+      esquecerConfirmacao(agentSlug);
     }
+  }
+
+  /** A ESCOLHA APLICA SOZINHA (Rica, 09/09) — só quando ela não vale na sessão
+   *  viva. Nas famílias que trocam a quente não há nada a religar, e desligar o
+   *  agente ali seria custo puro. */
+  async function aplicar() {
+    await aplicarMotor(agentSlug, {
+      aplicar: (force) => postAgentAplicarMotor(agentSlug, { force }),
+      reler: () => {
+        const controlador = new AbortController();
+        leitura.current = controlador;
+        void fetchAgentPainel(agentSlug, controlador.signal)
+          .then((novo) => { if (novo.slug === agentSlug) setPainel(novo); })
+          .catch(() => undefined);
+      },
+    });
   }
 
   function mostrarAviso(mensagem: string) {
@@ -144,6 +204,11 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         },
       } : atual);
       alterarAbertura(false);
+      // Kimi e Codex recebem o esforço por env var de boot: o back grava e
+      // responde `session_may_diverge`. É o sinal de que a escolha não alcança
+      // a sessão viva — e é ele, não a família, que decide religar (a régua de
+      // quem aceita troca a quente mora no back).
+      if (resposta.session_may_diverge) void aplicar();
     } catch {
       if (minha === geracao.current) mostrarAviso('Não foi possível trocar o esforço.');
     } finally {
@@ -171,6 +236,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       } : atual);
       if (resposta.confirmed || desfecho === 'proximo-turno') {
         alterarAbertura(false);
+        // `proximo-turno` é o modelo que virou env var de boot (`runtime_switch`
+        // false): gravado, sem tocar a sessão. É exatamente o caso que a
+        // operação única resolve.
+        if (desfecho === 'proximo-turno') void aplicar();
         return;
       }
       mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');
@@ -226,7 +295,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           <ConteudoDoSeletor
             tela={tela} opcoesModelo={opcoesModelo} opcoesEsforco={opcoesEsforco}
             rotuloModelo={rotuloModelo} rotuloDoEsforco={rotuloDoEsforco}
-            salvando={salvando} telaEstreita={telaEstreita} modeloPendente={modeloPendente}
+            salvando={salvando || aplicando} telaEstreita={telaEstreita} modeloPendente={modeloPendente}
             aviso={aviso} aoMudarTela={setTela}
             aoConfirmarTroca={() => { if (modeloPendente) void trocarModelo(modeloPendente, true); }}
             aoFechar={() => alterarAbertura(false)}

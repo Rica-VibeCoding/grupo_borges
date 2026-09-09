@@ -15,7 +15,7 @@
  */
 import { Fragment, useState } from 'react';
 
-import { patchAgentMotorFamilia } from '@grupo_borges/cockpit-core/api';
+import { patchAgentMotorFamilia, postAgentAplicarMotor } from '@grupo_borges/cockpit-core/api';
 import type { PainelMotor } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
   destinoDaTroca,
@@ -32,6 +33,7 @@ import {
   rotulaFamilia,
   type OpcaoDeFamilia,
 } from './troca-de-motor';
+import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 
 function estiloItemDoMenu(selecionado = false) {
   return {
@@ -89,14 +91,23 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
   const [aberto, setAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [falhou, setFalhou] = useState(false);
+  const operacao = usaOperacaoDeMotor(agentSlug);
+  // Trocar de família NUNCA vale na sessão viva, então a gaveta fica travada
+  // enquanto o agente religa — inclusive contra uma segunda escolha, que
+  // desligaria um agente no meio do próprio boot.
+  const aplicando = operacao.fase === 'aplicando';
 
   const atual = motor?.familia ?? null;
   const rotulo = rotulaFamilia(atual);
 
   function alterarAbertura(proximo: boolean) {
-    if (salvando && !proximo) return;
+    if ((salvando || aplicando) && !proximo) return;
     setAberto(proximo);
     setFalhou(false);
+    // Pergunta que saiu da tela é pergunta caducada: reabrir a gaveta e achar
+    // o "tocar de novo confirma" armado faria um toque distraído matar o turno
+    // em voo do agente. Mesma régua das ações brutas.
+    if (!proximo) esquecerConfirmacao(agentSlug);
   }
 
   async function escolher(opcao: OpcaoDeFamilia) {
@@ -111,11 +122,23 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
       await patchAgentMotorFamilia(agentSlug, destino.familia);
       setAberto(false);
       aoAtualizar?.();
+      // A ESCOLHA APLICA SOZINHA (Rica, 09/09). A gravação não muda nada no
+      // agente que está rodando; quem aplica é o boot seguinte, e antes disto
+      // ele era dois toques manuais depois — Desligar e Ligar — com a tela
+      // mostrando o motor velho no meio do caminho.
+      void aplicar();
     } catch {
       setFalhou(true);
     } finally {
       setSalvando(false);
     }
+  }
+
+  async function aplicar() {
+    await aplicarMotor(agentSlug, {
+      aplicar: (force) => postAgentAplicarMotor(agentSlug, { force }),
+      reler: () => aoAtualizar?.(),
+    });
   }
 
   return (
@@ -146,9 +169,14 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
               type="button"
               aria-haspopup="menu"
               aria-expanded={aberto}
-              aria-busy={salvando}
-              aria-label={`Motor ${rotulo}. Trocar vale no próximo boot — Desligar e Ligar aplicam.`}
-              title={`Motor ${rotulo} — a troca vale no próximo boot`}
+              disabled={aplicando}
+              aria-busy={salvando || aplicando}
+              aria-label={
+                aplicando
+                  ? `Motor ${rotulo}. Aplicando — o agente está religando.`
+                  : `Motor ${rotulo}. Escolher aplica sozinho: o cockpit desliga e religa o agente.`
+              }
+              title={aplicando ? 'Aplicando — o agente está religando' : `Motor ${rotulo}`}
               className="ck-lit ck-veil ml-auto flex min-w-0 shrink-0 items-center"
               style={{
                 fontSize: 'var(--ck-text-sm)',
@@ -159,7 +187,9 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
                 gap: '2px',
               }}
             >
-              <span className="truncate">{salvando ? 'gravando…' : rotulo}</span>
+              <span className="truncate">
+                {salvando ? 'gravando…' : aplicando ? 'aplicando…' : rotulo}
+              </span>
               <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>
                 ⌄
               </span>
@@ -179,7 +209,7 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
                 <ItemDeFamilia
                   key={opcao.chave}
                   opcao={opcao}
-                  desabilitado={salvando}
+                  desabilitado={salvando || aplicando}
                   aoEscolher={() => void escolher(opcao)}
                 />
               );
@@ -202,6 +232,23 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
         <p role="alert" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}>
           Não consegui gravar a troca — tente de novo.
         </p>
+      ) : operacao.aviso ? (
+        // A operação em curso (ou a pergunta do turno em voo, ou a falha dela)
+        // manda na linha: ela é sobre o AGORA, e a ressalva do boot embaixo
+        // ficaria dizendo o contrário do que está acontecendo na frente dele.
+        <p
+          role={operacao.fase === 'aplicando' ? 'status' : 'alert'}
+          aria-live="polite"
+          style={{
+            fontSize: 'var(--ck-text-xs)',
+            color:
+              operacao.fase === 'aplicando'
+                ? 'var(--ck-text-secondary)'
+                : 'var(--ck-state-attention)',
+          }}
+        >
+          {operacao.aviso}
+        </p>
       ) : motor?.session_may_diverge !== false ? (
         // `!== false`, não `=== true`: API antiga não manda o campo, e ali o
         // certo é seguir avisando. Só o `false` explícito — a sessão viva já
@@ -209,6 +256,27 @@ export function BlocoDeMotor({ agentSlug, motor, aoAtualizar }: BlocoDeMotorProp
         <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
           {TEXTO_VALE_NO_BOOT}
         </p>
+      ) : null}
+
+      {operacao.fase === 'confirmando' ? (
+        // O alvo do segundo toque. Sem ele a pergunta do turno em voo ficaria
+        // sem resposta possível: a gaveta já fechou quando a gravação passou, e
+        // escolher a mesma família de novo não dispara nada (`destinoDaTroca`
+        // devolve `nenhuma`).
+        <button
+          type="button"
+          onClick={() => void aplicar()}
+          className="ck-veil flex w-full items-center justify-center border"
+          style={{
+            minHeight: 'var(--ck-touch-min)',
+            borderRadius: 'var(--ck-radius-frame)',
+            borderColor: 'var(--ck-edge-functional)',
+            fontSize: 'var(--ck-text-sm)',
+            color: 'var(--ck-state-attention)',
+          }}
+        >
+          Confirmar?
+        </button>
       ) : null}
     </section>
   );

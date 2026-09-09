@@ -606,6 +606,46 @@ export async function postAgentLigar(
   return res.json();
 }
 
+export type AplicarMotorResponse = {
+  /** A sessão tmux foi encerrada. Já desligado conta como sucesso. */
+  desligado: boolean;
+  scopes_resistiram: string[];
+  /** O CLI apareceu dentro da janela do driver. `false` NÃO quer dizer que o
+   *  boot falhou — o script segue subindo canal e `/rename` depois disso; quem
+   *  confirma de verdade é a releitura do painel. */
+  religado: boolean;
+  attempted: boolean;
+  sent_at: number;
+};
+
+/**
+ * A OPERAÇÃO ÚNICA: desliga e religa o agente de uma vez, que é o que aplica a
+ * escolha de família, modelo e esforço das famílias persist-only.
+ *
+ * Os dois passos moram no servidor de propósito — entre eles o agente está no
+ * chão, e uma aba fechada no intervalo o deixaria desligado sem ninguém para
+ * religá-lo.
+ *
+ * `force` é a resposta ao 409 `agent_busy_confirm_required`: o agente está no
+ * meio de um turno e desligar mata o que ele está fazendo. Sem confirmação
+ * explícita do Rica na tela, nunca.
+ */
+export async function postAgentAplicarMotor(
+  slug: string,
+  options?: { force?: boolean },
+): Promise<AplicarMotorResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/aplicar-motor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true, force: options?.force ?? false }),
+  });
+  if (!res.ok) {
+    const detail = await errorDetail(res, `postAgentAplicarMotor failed: ${res.status}`);
+    throw new AgentInputError(detail, res.status, detail);
+  }
+  return res.json();
+}
+
 export async function postAgentClear(
   slug: string,
 ): Promise<{ tmux_delivered: boolean; sent_at: number }> {

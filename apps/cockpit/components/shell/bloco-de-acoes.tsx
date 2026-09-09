@@ -81,6 +81,8 @@ import {
   type Impedimento,
 } from './acoes-rapidas';
 import { BlocoDeComandos } from './bloco-de-comandos';
+import { sinalizarPainel } from './operacao-de-motor.ts';
+import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 import { BlocoDeCota } from './bloco-de-cota';
 import { BlocoDeMotor } from './bloco-de-motor';
 import { IconeDescartar } from './icones';
@@ -271,6 +273,12 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
   const [ligar, setLigar] = useState<FaseDestrava>('ocioso');
   const [retentativa, setRetentativa] = useState(0);
+  // Desligar e Ligar SOMEM enquanto a operação única roda: ela é exatamente um
+  // desligar seguido de um ligar, e um toque no meio disso desligaria o agente
+  // durante o próprio boot. Sumir o controle é a trava — o mesmo que este bloco
+  // já faz com Destravar/Resume no agente fora do ar.
+  const operacao = usaOperacaoDeMotor(agentSlug);
+  const aplicandoMotor = operacao.fase === 'aplicando';
 
   // Destravar DURANTE um `/compact` interrompe o resumo — foi o acidente de
   // 02/08. O destrava continua acessível (agente travado é pior que compact
@@ -329,6 +337,10 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           if (signal?.aborted || !leituras.ativa || minha !== leituras.sequencia || novo.slug !== agentSlug) return;
           setPainel(novo);
           publicarPainel(novo);
+          // A trava da operação única sai por AQUI: é a leitura do painel que
+          // prova que o agente voltou com a escolha em vigor. Sem isto ela só
+          // sairia no teto de 25s, com o agente já trabalhando na tela.
+          sinalizarPainel(novo);
           setCarga('pronto');
         })
         .catch(() => {
@@ -589,7 +601,30 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           />
         ))}
 
-        {carga === 'pronto' && !dePe ? (
+        {carga === 'pronto' && aplicandoMotor ? (
+          // No LUGAR da linha de ações, não por cima dela: véu que só apaga o
+          // controle continua alcançável por teclado, e aqui o toque custa o
+          // boot inteiro.
+          <p
+            role="status"
+            aria-live="polite"
+            aria-busy
+            className="flex w-full items-center justify-center border"
+            style={{
+              minHeight: 'var(--ck-touch-min)',
+              padding: '0 var(--ck-space-3)',
+              borderRadius: 'var(--ck-radius-frame)',
+              borderColor: 'var(--ck-edge-functional)',
+              fontSize: 'var(--ck-text-sm)',
+              color: 'var(--ck-text-secondary)',
+              textAlign: 'center',
+            }}
+          >
+            {operacao.aviso}
+          </p>
+        ) : null}
+
+        {carga === 'pronto' && !dePe && !aplicandoMotor ? (
           // AGENTE FORA DO AR — desligado ou casca morta. Destravar e Resume
           // SOMEM: não há o que destravar nem o que retomar, e os dois falham em
           // silêncio nesse estado (`pane_incompativel` / `attempted:false`), que
@@ -617,7 +652,7 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           </button>
         ) : null}
 
-        {carga === 'pronto' && dePe ? (
+        {carga === 'pronto' && dePe && !aplicandoMotor ? (
           // Destravar + Resume + Desligar na MESMA linha — os três cabem lado a
           // lado (ordem do Rica, 03/08). Um debaixo do outro empurrava o resto do
           // painel pra baixo à toa; a ordem esquerda→direita continua sendo a

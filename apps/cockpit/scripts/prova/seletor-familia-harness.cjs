@@ -37,7 +37,7 @@ function painel(familia = 'kimi', slug = 'canarinho') {
 
 function bancada() {
   const cache = new Map();
-  const leituras = [], esforcos = [], modelos = [], convergencias = [];
+  const leituras = [], esforcos = [], modelos = [], convergencias = [], aplicacoes = [], familias = [];
   class AgentInputError extends Error {}
   const api = {
     AgentInputError,
@@ -49,6 +49,14 @@ function bancada() {
     },
     postAgentModel(slug, value) {
       const espera = pendente(); modelos.push({ slug, value, ...espera }); return espera.promise;
+    },
+    postAgentAplicarMotor(slug, options) {
+      const espera = pendente();
+      aplicacoes.push({ slug, force: options?.force ?? false, ...espera });
+      return espera.promise;
+    },
+    patchAgentMotorFamilia(slug, familia) {
+      const espera = pendente(); familias.push({ slug, familia, ...espera }); return espera.promise;
     },
   };
   const ui = new Proxy({}, { get: (_, nome) => function Item(props) {
@@ -89,6 +97,6 @@ function bancada() {
   const props = { agentSlug: 'canarinho', agentName: 'Canário',
     motor: { modelo: 'YAML INCOMPATÍVEL', esforco: 'extra alto', certeza: 'pode-divergir' },
     esforcoCobrePedido: false };
-  return { React, renderer, shell, props, leituras, esforcos, modelos, convergencias, api };
+  return { React, renderer, shell, props, leituras, esforcos, modelos, convergencias, aplicacoes, familias, api };
 }
 module.exports = { bancada, painel };

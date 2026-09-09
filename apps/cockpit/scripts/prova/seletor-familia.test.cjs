@@ -75,8 +75,20 @@ it('Codex lista e atualiza modelo pelo identificador cru', async () => {
   await b.renderer.act(async () => b.modelos[0].resolve({ model: 'gpt-5.6-sol[1m]',
     runtime_switch: false, state_persisted: true, tmux_delivered: false, confirmed: false }));
   assert.equal(b.gatilho().rotuloModelo, '5.6 Sol');
-  assert.ok(JSON.stringify(b.arvore.toJSON()).includes('Vale no próximo boot'));
+  // [09/09] Era "Vale no próximo boot — Desligar e Ligar aplicam". A operação
+  // única trocou a frase pela AÇÃO: escolher já desliga e religa (pedido do
+  // Rica). A ressalva não morreu — ela segue no painel que chega divergindo sem
+  // ninguém ter acabado de escolher, que é o caso logo abaixo.
+  assert.ok(JSON.stringify(b.arvore.toJSON()).includes('Aplicando'));
   await b.fechar();
+
+  const parado = await montar();
+  await parado.receber({
+    ...painel('codex-proxy'),
+    model: { ...painel('codex-proxy').model, session_may_diverge: true },
+  });
+  assert.ok(JSON.stringify(parado.arvore.toJSON()).includes('Vale no próximo boot'));
+  await parado.fechar();
 });
 
 for (const tipo of ['modelo', 'esforco']) {
