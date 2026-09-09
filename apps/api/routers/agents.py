@@ -124,7 +124,6 @@ AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptE
 # Fase 2 (troca de motor): as quatro famílias da matriz cheia. `None` não é uma
 # família — é "herda o agents.yaml" (no yaml, Anthropic é a ausência do campo).
 AgentMotorFamiliaValue = Literal["anthropic", "kimi", "opencode", "codex-proxy"]
-_MOTOR_FAMILIAS = get_args(AgentMotorFamiliaValue)
 
 
 class AgentPainelTokens(BaseModel):

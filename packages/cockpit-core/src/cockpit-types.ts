@@ -392,11 +392,34 @@ export type PainelVida = {
   processo: boolean;
 };
 
+/** As quatro famílias de motor da matriz cheia (troca de motor, Fase 2).
+ *  O `agents.yaml` representa o padrão Anthropic como AUSÊNCIA de campo; o
+ *  contrato do painel e do `motor_familia` usa a palavra `anthropic` no lugar
+ *  desse vazio. Não existe quinto valor — nenhuma preferência mora no código,
+ *  quem escolhe é o operador na hora. */
+export type MotorFamilia = 'anthropic' | 'kimi' | 'opencode' | 'codex-proxy';
+
+/** A família de motor do agente, como o painel a enxerga (Fase 2).
+ *  `familia` é a efetiva (o `agent_state.motor_familia` escolhido, senão o
+ *  `agents.model_family` do yaml). `override` é só a escolha persistida:
+ *  `null` = ninguém escolheu, o agente herda o yaml. Quando `override` difere
+ *  do que a sessão roda hoje, a troca só entra no próximo boot — `source`
+ *  conta de onde veio o valor. */
+export type PainelMotor = {
+  familia: MotorFamilia;
+  override: MotorFamilia | null;
+  source: string;
+  session_may_diverge?: boolean;
+};
+
 export type AgentPainelResponse = {
   slug: string;
   generated_at: number;
   vida: PainelVida;
   contexto: PainelContexto;
+  /** Presente quando o back é novo (Fase 2). Ausente = API antiga, e o controle
+   *  de motor some em vez de nascer fingido. */
+  motor?: PainelMotor;
   model?: PainelModel | null;
   effort: PainelEffort;
   permission: PainelPermission;

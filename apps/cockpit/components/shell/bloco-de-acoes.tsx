@@ -81,6 +81,7 @@ import {
 } from './acoes-rapidas';
 import { BlocoDeComandos } from './bloco-de-comandos';
 import { BlocoDeCota } from './bloco-de-cota';
+import { BlocoDeMotor } from './bloco-de-motor';
 import { IconeDescartar } from './icones';
 import { usaCompact } from '../../lib/compact';
 import { usePainelAberto } from './superficie-otimista';
@@ -720,6 +721,14 @@ export function BlocoDeAcoes({ agentSlug, aberto: abertoDoServidor }: BlocoDeAco
           CLI de pé não há quem receba texto (`dePe`). */}
       {carga === 'pronto' && dePe ? (
         <BlocoDeComandos agentSlug={agentSlug} aberto={aberto} />
+      ) : null}
+
+      {/* MOTOR DA FAMÍLIA — imediatamente acima da cota, porque a barra que
+          desce já é a da família ESCOLHIDA (o despacho do back segue o
+          override). Sem o bloco `motor` no painel (API antiga) o controle some
+          em vez de nascer fingido. */}
+      {carga === 'pronto' && painel?.motor ? (
+        <BlocoDeMotor agentSlug={agentSlug} motor={painel.motor} aoAtualizar={buscar} />
       ) : null}
 
       {/* Cota é leitura, não ação — irmã da região, nunca dentro dela. Só

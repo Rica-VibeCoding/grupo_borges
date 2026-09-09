@@ -8,6 +8,7 @@ import type {
   AgentDocResolved,
   AgentDocsResponse,
   AgentPainelResponse,
+  MotorFamilia,
   PainelPermissionMode,
   AgentSkillsResponse,
   AgentTablesResponse,
@@ -277,6 +278,33 @@ export async function patchAgentPermissionMode(
     body: JSON.stringify({ mode }),
   });
   if (!res.ok) throw new Error(await errorDetail(res, `patchAgentPermissionMode failed: ${res.status}`));
+  return res.json();
+}
+
+export type AgentMotorFamiliaChangeResponse = {
+  slug: string;
+  /** O override gravado em `agent_state.motor_familia`. `null` = herda o yaml. */
+  override: MotorFamilia | null;
+  source: string;
+  session_may_diverge: boolean;
+  /** Sempre `false`: sessão viva não troca de motor — vale no próximo boot. */
+  runtime_switch: boolean;
+  written: boolean;
+};
+
+/** Troca a família de motor do agente (Fase 2) — persist-only. `familia: null`
+ *  limpa a escolha e o agente volta a herdar o `agents.yaml`. A sessão viva não
+ *  muda: quem aplica é o boot (Desligar + Ligar). */
+export async function patchAgentMotorFamilia(
+  slug: string,
+  familia: MotorFamilia | null,
+): Promise<AgentMotorFamiliaChangeResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/motor-familia`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ familia }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentMotorFamilia failed: ${res.status}`));
   return res.json();
 }
 
