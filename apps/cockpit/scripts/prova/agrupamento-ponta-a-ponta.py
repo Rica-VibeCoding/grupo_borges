@@ -31,7 +31,12 @@ BASE = 'http://127.0.0.1:3008'
 # Claude nativo é o destino de ida: ele não depende de proxy nenhum de pé, e
 # trocar para ele é o que esvazia o modelo e o esforço no painel (a sessão viva
 # está num motor de outra família) — o caso exato que o Rica gravou na tela.
-DESTINO = ('anthropic', 'Anthropic')
+# Kimi é o destino de ida porque é nele que o painel consegue REFLETIR a escolha:
+# o modelo persiste em `state_model` e volta no painel. Em Claude nativo a Tara
+# fica num estado que o back não consegue descrever — a sessão viva é Codex (ver
+# `BOOT_IGNORA_FAMILIA`), e com modelo incompatível `_build_claude_painel_effort`
+# devolve branco para sempre, então nenhuma escolha de esforço fecha o pacote.
+DESTINO = ('kimi', 'Kimi')
 ROTULO_DA_FAMILIA = {'anthropic': 'Anthropic', 'codex-proxy': 'Codex',
                      'kimi': 'Kimi', 'opencode': 'OpenCode'}
 
@@ -202,62 +207,67 @@ def itens(menu):
             if '‹' not in (i.inner_text() or '')]
 
 
-def clicar_em(pg, escolher_item, descricao, tentativas=20):
-    """Toca no item que `escolher_item` apontar, re-localizando a cada tentativa.
+def item_focado(pg):
+    """O texto do ITEM em foco — vazio se o foco está no menu e não num item.
 
-    O menu re-renderiza a cada aviso que muda, e um handle guardado de um render
-    anterior morre com ele ("Element is not attached to the DOM"). Quem procura
-    tem de procurar de novo na hora de clicar.
+    A distinção custou uma rodada: ao abrir, o foco fica no `[role=menu]`, cujo
+    `innerText` contém todos os rótulos. Procurar o campo ali dá sempre positivo,
+    e a seta nunca desce.
     """
-    for _ in range(tentativas):
-        try:
-            item = escolher_item([i for menu in menus_abertos(pg) for i in itens(menu)])
-            if item is None:
-                pg.wait_for_timeout(250)
-                continue
-            texto = ' '.join((item.inner_text() or '').split())
-            item.click()
-            return texto
-        except ErroDeTela as erro:
-            if 'not attached' not in str(erro):
-                raise
-            pg.wait_for_timeout(250)
-    na_tela = [' '.join((i.inner_text() or '').split())
-               for menu in menus_abertos(pg) for i in menu.query_selector_all('[role="menuitem"]')]
-    raise AssertionError(f'não consegui tocar em {descricao} — na gaveta havia {na_tela}')
+    return ' '.join((pg.evaluate('''() => {
+        const alvo = document.activeElement;
+        const papel = alvo && alvo.getAttribute && alvo.getAttribute('role');
+        return (papel === 'menuitem' || papel === 'menuitemradio') ? alvo.innerText : '';
+    }''') or '').split())
+
+
+def focar_item(pg, contendo, passos=10):
+    """Desce pelo menu com a seta até o item pedido ficar em foco."""
+    for _ in range(passos):
+        if contendo in item_focado(pg):
+            return True
+        pg.keyboard.press('ArrowDown')
+        pg.wait_for_timeout(250)
+    return contendo in item_focado(pg)
 
 
 def escolher_campo(pg, campo):
-    """Abre a gaveta, entra no campo e toca na primeira opção diferente da atual.
+    """Abre a gaveta e escolhe, pelo TECLADO, o primeiro valor diferente do atual.
+
+    Por teclado e não por ponteiro: o submenu do Radix (`DropdownMenuSubTrigger`)
+    abre no hover e fecha quando o ponteiro sai do par trigger/conteúdo, e depois
+    de uma interação por teclado — qualquer Escape antes — ele para de abrir no
+    hover. Seta e Enter são o caminho que o Radix garante, e é um caminho real de
+    quem usa a tela.
 
     Abre de novo para cada campo de propósito: fechar a gaveta não religa mais
-    nada, e é justamente isso que custou as duas versões anteriores. Em tela larga
-    o campo abre SUBMENU (outro `[role=menu]` por cima), em tela estreita troca o
-    conteúdo do mesmo — então o que vale é o item sem '›', venha de onde vier.
+    nada, e é justamente isso que custou as duas versões anteriores.
     """
-    assert esperar_ponteiro_livre(pg), 'a tela ficou presa com um menu aberto'
-    abrir_gaveta_do_composer(pg)
-
-    # A gaveta pode ter reaberto numa tela interna (lista de opções, ou o aviso de
-    # troca não confirmada): o '‹' volta para a inicial, onde os campos moram.
-    for _ in range(3):
-        voltar = next((i for menu in menus_abertos(pg)
-                       for i in menu.query_selector_all('[role="menuitem"]')
-                       if '‹' in (i.inner_text() or '')), None)
-        if not voltar:
+    for tentativa in range(3):
+        assert esperar_ponteiro_livre(pg), 'a tela ficou presa com um menu aberto'
+        abrir_gaveta_do_composer(pg)
+        if any('›' in (i.inner_text() or '') for i in opcoes(pg)):
             break
-        voltar.click()
-        pg.wait_for_timeout(400)
+        pg.wait_for_timeout(1_000)
+    else:
+        raise AssertionError('a gaveta do composer abriu sem os campos de motor')
 
-    clicar_em(pg, lambda itens_: next(
-        (i for i in itens_ if campo in (i.inner_text() or '') and '›' in (i.inner_text() or '')), None),
-        f'na linha {campo}')
+    assert focar_item(pg, campo), f'a gaveta não ofereceu {campo}'
+    pg.keyboard.press('ArrowRight')
+    pg.wait_for_timeout(700)
 
-    escolhido = clicar_em(pg, lambda itens_: next(
-        (i for i in itens_ if '›' not in (i.inner_text() or '') and '✓' not in (i.inner_text() or '')), None),
-        f'numa opção de {campo}')
+    opcoes_do_campo = [' '.join((i.inner_text() or '').split()) for i in opcoes(pg)
+                       if '›' not in (i.inner_text() or '')]
+    assert opcoes_do_campo, f'a lista de {campo} não abriu — na gaveta havia ' \
+        f'{[" ".join((i.inner_text() or "").split()) for i in opcoes(pg)]}'
+    alvo = next((o for o in opcoes_do_campo if '✓' not in o), None)
+    assert alvo, f'{campo} só oferece o valor que já está valendo'
+
+    assert focar_item(pg, alvo, passos=len(opcoes_do_campo) + 2), \
+        f'não consegui chegar em {alvo}'
+    pg.keyboard.press('Enter')
     pg.wait_for_timeout(1_500)
-    return escolhido
+    return alvo
 
 
 def aviso_da_tela(pg):
@@ -324,6 +334,16 @@ def campos_em_branco(p):
     return falta
 
 
+def pane_do_agente(slug):
+    """O pane tmux do agente — socket por agente, nunca o `default` (sem `-L` o
+    tmux obedece ao `$TMUX` de quem chama e mostra outra sessão)."""
+    try:
+        return subprocess.run(['tmux', '-L', f'borges-{slug}', 'capture-pane', '-p', '-t', slug],
+                              capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
 def conferir_llm(pg, slug, processo):
     """Manda uma mensagem e confere que o LLM que respondeu é o do processo novo.
 
@@ -333,7 +353,16 @@ def conferir_llm(pg, slug, processo):
     mensagem que o CC fabrica sem chamar LLM nenhum.
     """
     respondeu = falar_com_o_agente(pg, slug)
-    assert respondeu, 'o agente não respondeu nada depois do religar'
+    if not respondeu:
+        # Distinguir "o cockpit não entregou" de "o provedor está fora" — sem isso
+        # uma queda do upstream parece defeito da troca de motor.
+        pane = pane_do_agente(slug)
+        entregou = 'Teste automático do cockpit' in pane
+        provedor = 'API error' in pane or 'Retrying' in pane
+        raise AssertionError(
+            f'o agente não respondeu. A mensagem {"CHEGOU" if entregou else "não chegou"} ao pane'
+            + (' e o provedor está recusando (API error no pane) — isto é upstream,'
+               ' não o cockpit.' if provedor else '.'))
     esperado = (processo['modelo'] or '').removesuffix('[1m]')
     assert esperado and esperado in respondeu, (
         f'o processo subiu com {processo["modelo"]} e a resposta veio de {respondeu}')
@@ -372,9 +401,11 @@ def ciclo(pg, slug, familia, rotulo, etapa):
             if falta[n + 1:]:
                 assert boots_desde(slug, marco) == 0, (
                     f'religou faltando {falta[n + 1:]} — é a reiniciada a mais que ele viu')
-                print(f'• {campo} escolhido: {escolhidos[-1]} — sem religar, ainda falta {falta[n + 1:]}')
+                print(f'• {campo} escolhido: {escolhidos[-1]} — sem religar, ainda falta {falta[n + 1:]}'
+                      f' | tela: {aviso_da_tela(pg)!r}')
             else:
-                print(f'• {campo} escolhido: {escolhidos[-1]} — pacote fechado')
+                print(f'• {campo} escolhido: {escolhidos[-1]} — pacote fechado'
+                      f' | tela: {aviso_da_tela(pg)!r}')
     else:
         # Pacote já completo: a régua dele é religar no toque, "imediatamente".
         print('✓ nada em branco — este ciclo prova o religar imediato')
