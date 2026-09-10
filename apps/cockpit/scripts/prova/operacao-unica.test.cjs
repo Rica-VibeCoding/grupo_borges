@@ -6,11 +6,11 @@
  * operação, e só quando a escolha não vale na sessão viva. Sem isto, "aplica
  * sozinho" seria afirmação sobre código que ninguém executou.
  *
- * O que a escolha dispara é o AGRUPAMENTO, não o religar — modelo e esforço são
+ * O que a escolha dispara é a PENDÊNCIA, não o religar — modelo e esforço são
  * duas escolhas para o mesmo boot, e uma por religar custava dois (Rica, 09/09).
- * Quanto tempo ele espera e que sai um religar só é régua da máquina, provada
- * com relógio falso no teste de lá; aqui vale que a escolha certa agenda e a
- * que troca a quente não agenda nada.
+ * Quem aplica é o fechamento da gaveta; aqui vale que a escolha certa marca a
+ * pendência, que a que troca a quente não marca nada, e que fechar aplica uma
+ * vez só.
  */
 const assert = require('node:assert/strict');
 const { beforeEach, it } = require('node:test');
@@ -99,12 +99,9 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
       runtime_switch: false, model: 'k3',
     }),
   );
-  // O relógio do agrupamento é de parede, e o timer falso não atravessa o `vm`
-  // onde a bancada carrega o módulo. Nove segundos parados custam menos que uma
-  // prova que não exercita o caminho da tela.
-  const { ESPERA_DE_AGRUPAMENTO_MS } = b.shell('operacao-de-motor');
-  await b.act(async () => esperar(ESPERA_DE_AGRUPAMENTO_MS + 500));
-  assert.equal(b.aplicacoes.length, 1, 'passado o relógio, o religar sai uma vez');
+  // Quem aplica é o fechamento da gaveta — é o gatilho que a tela dá.
+  await b.act(async () => b.menu().aoFechar());
+  assert.equal(b.aplicacoes.length, 1, 'fechada a gaveta, o religar sai uma vez');
 
   const ocupado = Object.assign(new Error('busy'), {
     status: 409, detail: 'agent_busy_confirm_required',
@@ -119,10 +116,6 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
   assert.ok(texto.includes('Confirmar?'), 'sem alvo, a pergunta ficaria sem resposta possível');
   assert.ok(texto.includes('meio de um turno'));
 });
-
-function esperar(ms) {
-  return new Promise((pronto) => setTimeout(pronto, ms));
-}
 
 function arvoreFecha(b) {
   b.arvore.unmount();

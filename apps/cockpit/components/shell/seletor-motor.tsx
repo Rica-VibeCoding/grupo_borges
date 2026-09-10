@@ -10,7 +10,7 @@ import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
 } from './motor';
-import { agendarAplicacao, aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
+import { aplicarMotor, aplicarSePendente, esquecerConfirmacao, marcarPendente } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { sincronizarPainel } from './sincronizacao-painel';
@@ -82,7 +82,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       invalidar();
       setPainel(novo);
       setSalvando(false);
-      alterarAbertura(false);
+      alterarAbertura(false, false);
     }, () => setPainel(null));
     return () => { parar(); invalidar(); };
   }, [agentSlug]);
@@ -138,7 +138,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
     </span>
   ) : null;
 
-  function alterarAbertura(proximo: boolean) {
+  function alterarAbertura(proximo: boolean, dele = true) {
     setAberto(proximo);
     if (!proximo) {
       setTela('inicio');
@@ -147,6 +147,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       // Pergunta fora da tela é pergunta caducada — reabrir e achar o "tocar de
       // novo confirma" armado faria um toque distraído matar o turno em voo.
       esquecerConfirmacao(agentSlug);
+      // FECHAR A GAVETA É DIZER "ESCOLHI" (Rica, 09/09) — e só o fechamento
+      // DELE conta. Painel relido também fecha a gaveta, por outro motivo:
+      // aplicar ali religaria o agente no meio da escolha.
+      if (dele) void aplicarSePendente(agentSlug);
     }
   }
 
@@ -170,10 +174,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  /** Modelo e esforço são DUAS escolhas para o mesmo boot. Quem religa é o
-   *  relógio do agrupamento, para o segundo valor não custar um segundo boot. */
-  function agendar() {
-    agendarAplicacao(agentSlug, redeDaOperacao(), agentName);
+  /** Modelo e esforço são DUAS escolhas para o mesmo boot. A escolha fica
+   *  guardada e quem religa é o fechamento da gaveta — um boot para as duas. */
+  function marcar() {
+    marcarPendente(agentSlug, redeDaOperacao(), agentName);
   }
 
   function mostrarAviso(mensagem: string) {
@@ -213,12 +217,19 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           session_may_diverge: resposta.session_may_diverge,
         },
       } : atual);
-      alterarAbertura(false);
       // Kimi e Codex recebem o esforço por env var de boot: o back grava e
       // responde `session_may_diverge`. É o sinal de que a escolha não alcança
       // a sessão viva — e é ele, não a família, que decide religar (a régua de
       // quem aceita troca a quente mora no back).
-      if (resposta.session_may_diverge) agendar();
+      //
+      // A gaveta fica ABERTA aqui: é dentro dela que ele escolhe o resto. O que
+      // volta é a tela inicial, com o valor novo já no lugar.
+      if (resposta.session_may_diverge) {
+        setTela('inicio');
+        marcar();
+      } else {
+        alterarAbertura(false);
+      }
     } catch {
       if (minha === geracao.current) mostrarAviso('Não foi possível trocar o esforço.');
     } finally {
@@ -245,11 +256,15 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           session_may_diverge: !resposta.confirmed },
       } : atual);
       if (resposta.confirmed || desfecho === 'proximo-turno') {
-        alterarAbertura(false);
         // `proximo-turno` é o modelo que virou env var de boot (`runtime_switch`
         // false): gravado, sem tocar a sessão. É exatamente o caso que a
-        // operação única resolve.
-        if (desfecho === 'proximo-turno') agendar();
+        // operação única resolve — e a gaveta segue aberta para o esforço.
+        if (desfecho === 'proximo-turno') {
+          setTela('inicio');
+          marcar();
+        } else {
+          alterarAbertura(false);
+        }
         return;
       }
       mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');

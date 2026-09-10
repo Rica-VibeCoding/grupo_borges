@@ -1,11 +1,11 @@
 /**
  * O AGRUPAMENTO DE PONTA A PONTA — do toque na gaveta ao boot do agente.
  *
- * As outras provas param na borda: `operacao-de-motor.test.ts` mede o relógio
- * com timer falso, `operacao-unica.test.cjs` monta o componente com a rede
- * fingida. Nenhuma das duas responde "trocar modelo e esforço na tela custa
- * quantos boots de verdade?" — que é a pergunta do Rica em 09/09, e a que eu
- * já errei uma vez respondendo por leitura de código.
+ * As outras provas param na borda: `operacao-de-motor.test.ts` mede a régua sem
+ * React, `operacao-unica.test.cjs` monta o componente com a rede fingida.
+ * Nenhuma das duas responde "trocar modelo e esforço na tela custa quantos
+ * boots de verdade?" — que é a pergunta do Rica em 09/09, e a que eu já errei
+ * uma vez respondendo por leitura de código.
  *
  * Aqui o componente é o de verdade, o cliente é o de `cockpit-core`, o servidor
  * é a 3008 publicada, o agente é um agente real e a contagem sai do journal do
@@ -111,19 +111,20 @@ async function main() {
   assert.equal(
     operacao.leiaOperacao(SLUG).fase,
     'agrupando',
-    'a primeira escolha tinha de armar o relógio, não religar',
+    'a primeira escolha tinha de guardar a pendência, não religar',
   );
   assert.equal(bootsDesde(marco), 0, 'religou na primeira escolha — é o defeito de volta');
-  console.log('✓ a primeira escolha agendou, sem boot');
+  console.log('✓ a primeira escolha ficou guardada, sem boot');
 
   await b.renderer.act(async () => esforcoNovo.aoSelecionar());
   await b.renderer.act(async () => esperar(1200));
   assert.equal(bootsDesde(marco), 0, 'a segunda escolha não pode cobrar o seu próprio boot');
-  console.log('✓ a segunda escolha entrou na mesma janela');
+  console.log('✓ a segunda escolha entrou com a gaveta ainda aberta');
 
-  const espera = operacao.ESPERA_DE_AGRUPAMENTO_MS + 25_000;
-  console.log(`• esperando ${Math.round(espera / 1000)}s pelo relógio e pelo boot`);
-  await b.renderer.act(async () => esperar(espera));
+  // O gatilho: fechar a gaveta é dizer "escolhi".
+  await b.renderer.act(async () => menu().aoFechar());
+  console.log('• gaveta fechada — esperando o boot');
+  await b.renderer.act(async () => esperar(25_000));
 
   const boots = bootsDesde(marco);
   assert.equal(boots, 1, `duas escolhas, ${boots} boots — era um`);

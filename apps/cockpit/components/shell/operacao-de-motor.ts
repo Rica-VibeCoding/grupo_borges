@@ -44,8 +44,7 @@ const OCIOSO: EstadoDaOperacao = { fase: 'ocioso', aviso: null };
 export const TEXTO_CONFIRMA_TURNO =
   'O agente está no meio de um turno — aplicar agora encerra o que ele está fazendo. Tocar de novo confirma.';
 
-export const TEXTO_AGRUPANDO =
-  'Escolha o resto agora — o agente religa uma vez só, em alguns segundos.';
+export const TEXTO_AGRUPANDO = 'Religa quando você fechar a gaveta.';
 
 /**
  * O aviso da trava, em DUAS etapas e com o nome de quem está religando.
@@ -108,25 +107,6 @@ export function convergiu(painel: AgentPainelResponse): boolean {
  */
 export const ESPERA_MINIMA_DO_BOOT_MS = 12_000;
 
-/**
- * A JANELA DO AGRUPAMENTO — quanto tempo a operação espera por outra escolha
- * antes de religar (pedido do Rica, 09/09: *"prefiro que ele aconteça
- * automaticamente depois que eu escolher o modelo E o esforço"*).
- *
- * Até aqui cada escolha disparava o seu próprio religar, e trocar modelo mais
- * esforço custava DOIS boots — medido na Tara em 09/09, `cockpit-ligar-tara` às
- * 23:13:04 e 23:13:30. Ele tinha relatado isso antes de eu medir, e eu havia
- * respondido que um religar levava os dois: o back de fato lê os três campos de
- * uma vez, mas o GATILHO era um por escolha.
- *
- * Oito segundos porque o custo de errar é assimétrico e a gaveta fecha sozinha
- * a cada escolha: curto demais e o segundo religar volta (é o defeito que isto
- * conserta); longo demais só atrasa um boot que ele já está esperando. O tempo
- * de reabrir a gaveta, entrar na tela do esforço e tocar o valor mora aqui
- * dentro — e cada escolha nova reinicia a contagem.
- */
-export const ESPERA_DE_AGRUPAMENTO_MS = 8_000;
-
 type Rede = {
   /** O POST da operação única. Ele DISPARA o desligar e o ligar e responde
    *  logo — o boot continua correndo depois da resposta. */
@@ -137,6 +117,9 @@ type Rede = {
 
 type Sessao = {
   estado: EstadoDaOperacao;
+  /** A escolha gravada que a gaveta ainda não fechou — é ela que o fechamento
+   *  aplica, e é por existir que duas escolhas custam um religar só. */
+  pendente: { rede: Rede; nome?: string } | null;
   timers: ReturnType<typeof setTimeout>[];
   /** Quando o POST voltou — o relógio do piso acima. */
   disparadaEm: number;
@@ -148,7 +131,7 @@ const ouvintes = new Map<string, Set<(estado: EstadoDaOperacao) => void>>();
 function sessaoDe(slug: string): Sessao {
   const atual = sessoes.get(slug);
   if (atual) return atual;
-  const nova: Sessao = { estado: OCIOSO, timers: [], disparadaEm: 0 };
+  const nova: Sessao = { estado: OCIOSO, pendente: null, timers: [], disparadaEm: 0 };
   sessoes.set(slug, nova);
   return nova;
 }
@@ -201,6 +184,7 @@ export async function aplicarMotor(slug: string, rede: Rede, nome?: string): Pro
   if (anterior.fase === 'aplicando') return false;
 
   const force = anterior.fase === 'confirmando';
+  sessaoDe(slug).pendente = null;
   limparTimers(slug);
   publicar(slug, { fase: 'aplicando', aviso: textoDesligando(nome) });
 
@@ -238,27 +222,38 @@ export async function aplicarMotor(slug: string, rede: Rede, nome?: string): Pro
 }
 
 /**
- * Escolha gravada que só vale no próximo boot: em vez de religar agora, espera
- * a próxima. Cada chamada reinicia o relógio, e o religar sai uma vez só.
+ * A ESCOLHA ESPERA A GAVETA (Rica, 09/09).
+ *
+ * Escolha que só vale no próximo boot fica guardada aqui em vez de religar na
+ * hora: modelo e esforço são duas escolhas para o mesmo boot, e uma por religar
+ * custava dois — medido na Tara, `cockpit-ligar-tara` às 23:13:04 e 23:13:30.
+ *
+ * A primeira tentativa foi um relógio de oito segundos. Ele gravou a tela: os
+ * segundos correram enquanto ele fechava o painel para abrir a gaveta do
+ * modelo, e o agente religou antes da segunda escolha. *"Não, mano, é gaveta.
+ * Vamos fazer um negócio escalável"* — quem sabe que ele terminou de escolher é
+ * a gaveta fechando, não um cronômetro chutado. Vale para dois controles e para
+ * cinco, e nunca corre enquanto ele está decidindo.
  *
  * Não atropela uma pergunta de turno em voo: a escolha nova já está gravada, e
- * quem a pergunta espera é o toque dele, não outro relógio. Nem um agente que
- * já está religando — ali o segundo desligaria o boot no meio.
+ * quem a pergunta espera é o toque dele. Nem um agente que já está religando.
  */
-export function agendarAplicacao(slug: string, rede: Rede, nome?: string): void {
+export function marcarPendente(slug: string, rede: Rede, nome?: string): void {
   const fase = leiaOperacao(slug).fase;
   if (fase === 'aplicando' || fase === 'confirmando') return;
 
-  limparTimers(slug);
+  sessaoDe(slug).pendente = { rede, nome };
   publicar(slug, { fase: 'agrupando', aviso: TEXTO_AGRUPANDO });
-  sessaoDe(slug).timers = [
-    setTimeout(() => {
-      // A fase pode ter mudado debaixo do timer — operação disparada à mão pelo
-      // botão, ou gaveta que desarmou tudo.
-      if (leiaOperacao(slug).fase !== 'agrupando') return;
-      void aplicarMotor(slug, rede, nome);
-    }, ESPERA_DE_AGRUPAMENTO_MS),
-  ];
+}
+
+/** A gaveta fechou: aplica o que ficou guardado, de uma vez. Sem pendência não
+ *  faz nada — fechar gaveta sem ter escolhido nada não pode religar ninguém. */
+export async function aplicarSePendente(slug: string): Promise<void> {
+  const sessao = sessoes.get(slug);
+  const pendente = sessao?.pendente;
+  if (!pendente || sessao?.estado.fase !== 'agrupando') return;
+  sessao.pendente = null;
+  await aplicarMotor(slug, pendente.rede, pendente.nome);
 }
 
 function concluir(slug: string): void {

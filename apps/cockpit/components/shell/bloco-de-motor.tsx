@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { agendarAplicacao, aplicarMotor, esquecerConfirmacao } from './operacao-de-motor.ts';
+import { aplicarMotor, aplicarSePendente, esquecerConfirmacao, marcarPendente } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
   destinoDaTroca,
@@ -110,7 +110,11 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     // Pergunta que saiu da tela é pergunta caducada: reabrir a gaveta e achar
     // o "tocar de novo confirma" armado faria um toque distraído matar o turno
     // em voo do agente. Mesma régua das ações brutas.
-    if (!proximo) esquecerConfirmacao(agentSlug);
+    if (!proximo) {
+      esquecerConfirmacao(agentSlug);
+      // Fechar a gaveta é dizer "escolhi": aplica o que ficou guardado.
+      void aplicarSePendente(agentSlug);
+    }
   }
 
   async function escolher(opcao: OpcaoDeFamilia) {
@@ -123,17 +127,15 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     setFalhou(false);
     try {
       await patchAgentMotorFamilia(agentSlug, destino.familia);
-      setAberto(false);
       aoAtualizar?.();
       // A ESCOLHA APLICA SOZINHA (Rica, 09/09). A gravação não muda nada no
       // agente que está rodando; quem aplica é o boot seguinte, e antes disto
       // ele era dois toques manuais depois — Desligar e Ligar — com a tela
       // mostrando o motor velho no meio do caminho.
       //
-      // Pelo relógio do agrupamento, e não na hora: trocar de família é o caso
-      // em que vem modelo novo atrás — a família nova traz outra lista — e cada
-      // escolha com o seu próprio religar custava um boot cada.
-      agendar();
+      // A gaveta NÃO fecha aqui: a família nova traz outra lista de modelos, e
+      // é dentro dela que ele escolhe o resto. Quem religa é o fechamento.
+      marcar();
     } catch {
       setFalhou(true);
     } finally {
@@ -152,8 +154,8 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  function agendar() {
-    agendarAplicacao(agentSlug, redeDaOperacao(), agentName);
+  function marcar() {
+    marcarPendente(agentSlug, redeDaOperacao(), agentName);
   }
 
   return (
