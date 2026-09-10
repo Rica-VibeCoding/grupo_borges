@@ -10,7 +10,7 @@ import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
 } from './motor';
-import { aplicarMotor, conferirPacote, esquecerConfirmacao, registrarEscolha } from './operacao-de-motor.ts';
+import { aplicarMotor, esquecerConfirmacao, fecharSePronto, registrarEscolha, revisarFaltas } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { sincronizarPainel } from './sincronizacao-painel';
@@ -83,8 +83,8 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       setPainel(novo);
       setSalvando(false);
       alterarAbertura(false);
-      // Painel novo é a resposta do back sobre o que ainda falta escolher.
-      void conferirPacote(agentSlug, novo);
+      // Painel novo conta o que ainda falta — e só isso: releitura não religa.
+      revisarFaltas(agentSlug, novo);
     }, () => setPainel(null));
     return () => { parar(); invalidar(); };
   }, [agentSlug]);
@@ -237,7 +237,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         // Trocou a quente: não há o que religar por ESTA escolha. Mas ela pode ser
         // o campo que faltava para uma troca de MOTOR já guardada — e era aqui que
         // o pacote ficava pendurado para sempre, com o motor novo nunca entrando.
-        if (comEsforco) void conferirPacote(agentSlug, comEsforco);
+        if (comEsforco) void fecharSePronto(agentSlug, comEsforco);
         alterarAbertura(false);
       }
     } catch {
@@ -276,7 +276,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         } else {
           // Ver o comentário gêmeo em `trocarEsforco`: escolha que vale a quente
           // ainda pode fechar o pacote de uma troca de motor guardada.
-          if (comModelo) void conferirPacote(agentSlug, comModelo);
+          if (comModelo) void fecharSePronto(agentSlug, comModelo);
           alterarAbertura(false);
         }
         return;

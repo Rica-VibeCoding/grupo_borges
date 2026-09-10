@@ -10,13 +10,14 @@ import {
   TEXTO_NO_CHAO,
   aplicarMotor,
   assinarOperacao,
-  conferirPacote,
+  fecharSePronto,
   convergiu,
   esquecerConfirmacao,
   esquecerTudo,
   faltaEscolher,
   leiaOperacao,
   registrarEscolha,
+  revisarFaltas,
   sinalizarPainel,
   textoFalta,
   textoDesligando,
@@ -306,10 +307,10 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     await registrarEscolha('canarinho', { rede: r, nome: 'Canário' });
     assert.deepEqual(forces, []);
 
-    await conferirPacote('canarinho', pacote(null, 'high'));
+    await fecharSePronto('canarinho', pacote(null, 'high'));
     assert.deepEqual(forces, [], 'painel com o modelo em branco não religa');
 
-    await conferirPacote('canarinho', pacote('kimi-k3', 'high'));
+    await fecharSePronto('canarinho', pacote('kimi-k3', 'high'));
     assert.deepEqual(forces, [false]);
   });
 
@@ -329,7 +330,7 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
       confirma: (painel) => painel.motor?.familia === 'anthropic',
     });
     const vivo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as unknown as PainelDoMotor;
-    await conferirPacote('canarinho', vivo);
+    await fecharSePronto('canarinho', vivo);
 
     assert.deepEqual(forces, [false], 'o motor escolhido precisa do boot mesmo assim');
   });
@@ -351,16 +352,39 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     });
 
     const velho = { ...pacote('kimi-k3', 'high'), motor: { familia: 'kimi' } } as unknown as PainelDoMotor;
-    await conferirPacote('canarinho', velho);
+    await fecharSePronto('canarinho', velho);
     assert.deepEqual(forces, [], 'painel do motor anterior não pode disparar nada');
 
     const novo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as unknown as PainelDoMotor;
-    await conferirPacote('canarinho', novo);
+    await fecharSePronto('canarinho', novo);
     assert.deepEqual(forces, [false], 'o painel que já vê a escolha é o que decide');
   });
 
+  it('RELEITURA não religa — ela só conta o que falta', async () => {
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+
+    // [10/09] O painel oscila: depois de um boot, enquanto a statusline nova não
+    // existe, o esforço volta do `settings.json` global e o campo que estava em
+    // branco aparece preenchido. Na versão anterior essa leitura fechava o pacote
+    // sozinha e religava o agente no meio da escolha — três leituras do mesmo
+    // painel, respostas diferentes, medido na prova de navegador.
+    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote(null, null) });
+    assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o modelo', 'o esforço']));
+
+    revisarFaltas('canarinho', pacote('kimi-k3', 'high'));
+    assert.deepEqual(forces, [], 'quem religa é o toque dele, não uma leitura');
+    assert.equal(leiaOperacao('canarinho').fase, 'agrupando');
+
+    await fecharSePronto('canarinho', pacote('kimi-k3', 'high'));
+    assert.deepEqual(forces, [false]);
+  });
+
   it('painel chegando sem ninguém ter escolhido nada não religa agente parado', async () => {
-    await conferirPacote('canarinho', pacote('kimi-k3', 'high'));
+    await fecharSePronto('canarinho', pacote('kimi-k3', 'high'));
     assert.equal(leiaOperacao('canarinho').fase, 'ocioso');
   });
 

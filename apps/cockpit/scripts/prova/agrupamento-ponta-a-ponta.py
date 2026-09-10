@@ -222,7 +222,9 @@ def clicar_em(pg, escolher_item, descricao, tentativas=20):
             if 'not attached' not in str(erro):
                 raise
             pg.wait_for_timeout(250)
-    raise AssertionError(f'não consegui tocar em {descricao}')
+    na_tela = [' '.join((i.inner_text() or '').split())
+               for menu in menus_abertos(pg) for i in menu.query_selector_all('[role="menuitem"]')]
+    raise AssertionError(f'não consegui tocar em {descricao} — na gaveta havia {na_tela}')
 
 
 def escolher_campo(pg, campo):
@@ -235,6 +237,17 @@ def escolher_campo(pg, campo):
     """
     assert esperar_ponteiro_livre(pg), 'a tela ficou presa com um menu aberto'
     abrir_gaveta_do_composer(pg)
+
+    # A gaveta pode ter reaberto numa tela interna (lista de opções, ou o aviso de
+    # troca não confirmada): o '‹' volta para a inicial, onde os campos moram.
+    for _ in range(3):
+        voltar = next((i for menu in menus_abertos(pg)
+                       for i in menu.query_selector_all('[role="menuitem"]')
+                       if '‹' in (i.inner_text() or '')), None)
+        if not voltar:
+            break
+        voltar.click()
+        pg.wait_for_timeout(400)
 
     clicar_em(pg, lambda itens_: next(
         (i for i in itens_ if campo in (i.inner_text() or '') and '›' in (i.inner_text() or '')), None),
@@ -281,6 +294,9 @@ def falar_com_o_agente(pg, slug):
     desde = time.time()
     assert esperar_sem_veu(pg), 'a trava de tela não saiu depois do religar'
     assert esperar_ponteiro_livre(pg), 'a tela ficou presa com um menu aberto'
+    # A gaveta de detalhes cobre o composer inteiro — o Enviar fica atrás dela.
+    if clicar_no_topo(pg, 'a[aria-label^="Fechar detalhes"]'):
+        pg.wait_for_timeout(800)
     pg.wait_for_selector('textarea[aria-label^="Mensagem para"]', timeout=20_000)
     pg.fill('textarea[aria-label^="Mensagem para"]',
             'Teste automático do cockpit: responda só OK, sem usar ferramenta.')
@@ -324,14 +340,25 @@ def conferir_llm(pg, slug, processo):
     print(f'✓ o agente respondeu, e o LLM foi {respondeu} — o mesmo do processo')
 
 
-def ciclo(pg, slug, rotulo, etapa):
+def esperar_familia(slug, familia, tentativas=20):
+    """A gravação tem de estar no back antes de medir qualquer coisa. Sem esta
+    espera, um toque que não pegou viraria leitura do painel ANTIGO — com tudo
+    preenchido — e a prova concluiria 'nada em branco' sobre o motor errado."""
+    for _ in range(tentativas):
+        if painel(slug)['motor']['familia'] == familia:
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def ciclo(pg, slug, familia, rotulo, etapa):
     """Leva o motor até `rotulo` pela tela e confere o custo em reiniciadas."""
     print(f'\n=== {etapa}: motor → {rotulo} ===')
     marco = agora()
     time.sleep(1)
 
     trocar_motor(pg, rotulo)
-    time.sleep(2)
+    assert esperar_familia(slug, familia), f'o toque em {rotulo} não gravou o motor'
     falta = campos_em_branco(painel(slug))
     print(f'• depois da troca, o back diz que falta: {falta or "nada"}')
     print(f'  tela: {aviso_da_tela(pg)!r}')
@@ -386,13 +413,13 @@ def main():
         pg.goto(f'{BASE}/agente/{slug}', wait_until='networkidle')
         print(f'✓ cockpit aberto — dpl {dpl}')
 
-        processo = ciclo(pg, slug, DESTINO[1], 'IDA')
+        processo = ciclo(pg, slug, DESTINO[0], DESTINO[1], 'IDA')
         conferir_llm(pg, slug, processo)
         if slug in BOOT_IGNORA_FAMILIA:
             print(f'⚠ {slug}: a família escolhida não chega ao boot — {BOOT_IGNORA_FAMILIA[slug]}')
 
         # A volta prova o outro sentido e devolve o agente ao que era.
-        processo = ciclo(pg, slug, volta, 'VOLTA')
+        processo = ciclo(pg, slug, origem, volta, 'VOLTA')
         conferir_llm(pg, slug, processo)
         navegador.close()
 

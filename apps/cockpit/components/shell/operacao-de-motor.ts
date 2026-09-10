@@ -306,30 +306,52 @@ export async function registrarEscolha(
   const { rede, nome, painel, confirma } = escolha;
   sessaoDe(slug).pendente = { rede, nome, confirma };
   publicar(slug, { fase: 'agrupando', aviso: TEXTO_GUARDANDO });
-  if (painel) await conferirPacote(slug, painel);
+  if (painel) await fecharSePronto(slug, painel);
+}
+
+/** A pendência que este painel pode decidir — ou nada, se ele é de antes da
+ *  escolha (ver `pendente.confirma`). */
+function pendenteQueEstePainelDecide(slug: string, painel: PainelDoMotor) {
+  const sessao = sessoes.get(slug);
+  const pendente = sessao?.pendente;
+  if (!pendente || sessao?.estado.fase !== 'agrupando') return null;
+  if (pendente.confirma && !pendente.confirma(painel)) return null;
+  return { sessao, pendente };
 }
 
 /**
- * Cada painel lido passa por aqui: fechou o pacote, a escolha guardada aplica na
- * hora; ainda falta campo, a linha diz qual.
+ * O TOQUE DELE fecha o pacote — releitura nenhuma religa.
  *
- * Sem pendência não faz nada — painel chegando não pode religar um agente que
- * ninguém mandou trocar.
+ * Chamado só de onde houve escolha com o painel em mão. A separação não é
+ * estética: o painel OSCILA. Logo depois de um boot, enquanto a statusline nova
+ * não existe, `_build_claude_painel_effort` cai no `settings.json` global e
+ * devolve um esforço onde antes havia branco — e na versão anterior isso fechava
+ * o pacote sozinho, religando o agente no meio da escolha. Medido em 10/09, três
+ * leituras do mesmo painel com respostas diferentes.
  */
-export async function conferirPacote(slug: string, painel: PainelDoMotor): Promise<void> {
-  const sessao = sessoes.get(slug);
-  const pendente = sessao?.pendente;
-  if (!pendente || sessao?.estado.fase !== 'agrupando') return;
-  // Painel que ainda não enxerga a escolha é painel de antes dela.
-  if (pendente.confirma && !pendente.confirma(painel)) return;
+export async function fecharSePronto(slug: string, painel: PainelDoMotor): Promise<void> {
+  const alvo = pendenteQueEstePainelDecide(slug, painel);
+  if (!alvo) return;
 
   const falta = faltaEscolher(painel);
   if (falta.length) {
     publicar(slug, { fase: 'agrupando', aviso: textoFalta(falta) });
     return;
   }
-  sessao.pendente = null;
-  await aplicarMotor(slug, pendente.rede, pendente.nome);
+  alvo.sessao.pendente = null;
+  await aplicarMotor(slug, alvo.pendente.rede, alvo.pendente.nome);
+}
+
+/** Painel lido: só conta o que ainda falta. Nunca religa — quem religa é o toque
+ *  dele, em `fecharSePronto`. */
+export function revisarFaltas(slug: string, painel: PainelDoMotor): void {
+  const alvo = pendenteQueEstePainelDecide(slug, painel);
+  if (!alvo) return;
+  const falta = faltaEscolher(painel);
+  publicar(slug, {
+    fase: 'agrupando',
+    aviso: falta.length ? textoFalta(falta) : TEXTO_GUARDANDO,
+  });
 }
 
 function concluir(slug: string): void {
@@ -350,7 +372,7 @@ export function sinalizarPainel(painel: AgentPainelResponse): void {
   // Mesma leitura, duas perguntas: na fase `agrupando` ela diz se o pacote
   // fechou; na `aplicando`, se o agente já voltou.
   if (sessao?.estado.fase === 'agrupando') {
-    void conferirPacote(painel.slug, painel);
+    revisarFaltas(painel.slug, painel);
     return;
   }
   if (sessao?.estado.fase !== 'aplicando') return;
