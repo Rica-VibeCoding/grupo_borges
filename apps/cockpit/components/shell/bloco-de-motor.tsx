@@ -131,8 +131,10 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
       //
       // Sem painel de propósito: trocar o motor esvazia o modelo e o esforço no
       // back, e quem ainda não sabe disso é esta tela. Quem decide é a releitura
-      // que o `aoAtualizar` acima acabou de pedir.
-      registrar();
+      // que o `aoAtualizar` acima acabou de pedir — e só ela, porque uma leitura
+      // disparada ANTES desta gravação chega depois e ainda descreve o motor
+      // velho, com tudo preenchido.
+      registrar(destino.familia);
     } catch {
       setFalhou(true);
     } finally {
@@ -151,8 +153,12 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  function registrar() {
-    void registrarEscolha(agentSlug, redeDaOperacao(), agentName);
+  function registrar(familia: string | null) {
+    void registrarEscolha(agentSlug, {
+      rede: redeDaOperacao(),
+      nome: agentName,
+      confirma: (painel) => painel.motor?.familia === familia,
+    });
   }
 
   return (

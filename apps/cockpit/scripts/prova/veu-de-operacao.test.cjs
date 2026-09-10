@@ -90,10 +90,11 @@ it('a escolha guardada não trava a tela — é com ela aberta que ele escolhe o
   await b.act(async () => {
     // Pacote ainda aberto: o modelo em branco é o que o back devolve depois de
     // trocar o motor, e é nesse intervalo que ele escolhe o resto.
-    b.operacao.registrarEscolha(
-      SLUG, { aplicar: () => Promise.resolve({}), reler: () => {} }, undefined,
-      { model: { value: null, allowed: ['k3'] }, effort: { value: 'high', allowed: ['low', 'high'] } },
-    );
+    b.operacao.registrarEscolha(SLUG, {
+      rede: { aplicar: () => Promise.resolve({}), reler: () => {} },
+      painel: { model: { value: null, allowed: ['k3'] },
+        effort: { value: 'high', allowed: ['low', 'high'] } },
+    });
   });
   assert.equal(b.operacao.leiaOperacao(SLUG).fase, 'agrupando');
   assert.equal(veus(b.arvore).length, 0, 'véu antes de aplicar impediria a segunda escolha');

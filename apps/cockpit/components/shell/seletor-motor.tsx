@@ -179,8 +179,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
    *  guardada e religa quando o pacote fechar — um boot para todas. O painel vai
    *  junto porque aqui o valor novo já está em mão: se era o último campo em
    *  branco, religa neste toque. */
-  function registrar(painelNovo: PainelDoMotor) {
-    void registrarEscolha(agentSlug, redeDaOperacao(), agentName, painelNovo);
+  function registrar(painelNovo: PainelDoMotor, confirma: (p: PainelDoMotor) => boolean) {
+    void registrarEscolha(agentSlug, {
+      rede: redeDaOperacao(), nome: agentName, painel: painelNovo, confirma,
+    });
   }
 
   function mostrarAviso(mensagem: string) {
@@ -230,7 +232,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       // volta é a tela inicial, com o valor novo já no lugar.
       if (resposta.session_may_diverge) {
         setTela('inicio');
-        if (comEsforco) registrar(comEsforco);
+        if (comEsforco) registrar(comEsforco, (p) => p.effort?.value === resposta.effort);
       } else {
         alterarAbertura(false);
       }
@@ -266,7 +268,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         // operação única resolve — e a gaveta segue aberta para o esforço.
         if (desfecho === 'proximo-turno') {
           setTela('inicio');
-          if (comModelo) registrar(comModelo);
+          if (comModelo) registrar(comModelo, (p) => p.model?.value === resposta.model);
         } else {
           alterarAbertura(false);
         }

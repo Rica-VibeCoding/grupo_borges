@@ -136,7 +136,8 @@ export function convergiu(painel: AgentPainelResponse): boolean {
 export const ESPERA_MINIMA_DO_BOOT_MS = 12_000;
 
 /** O pedaço do painel que a régua do pacote lê. */
-export type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
+export type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'> &
+  Partial<Pick<AgentPainelResponse, 'motor'>>;
 
 type Rede = {
   /** O POST da operação única. Ele DISPARA o desligar e o ligar e responde
@@ -149,8 +150,14 @@ type Rede = {
 type Sessao = {
   estado: EstadoDaOperacao;
   /** A escolha gravada que ainda espera o pacote fechar — é por ela existir
-   *  que trocar motor, modelo e esforço custa um religar só. */
-  pendente: { rede: Rede; nome?: string } | null;
+   *  que trocar motor, modelo e esforço custa um religar só.
+   *
+   *  `confirma` é a guarda contra painel VELHO: uma leitura disparada antes da
+   *  gravação chega depois dela, ainda descrevendo o motor antigo com todos os
+   *  campos preenchidos, e fecharia o pacote no meio da escolha. Medido em 10/09
+   *  na prova de navegador: a tela já dizia "Subindo Tara" antes de eu escolher
+   *  o modelo. Só painel que JÁ reflete a escolha decide. */
+  pendente: { rede: Rede; nome?: string; confirma?: (painel: PainelDoMotor) => boolean } | null;
   timers: ReturnType<typeof setTimeout>[];
   /** Quando o POST voltou — o relógio do piso acima. */
   disparadaEm: number;
@@ -284,14 +291,20 @@ export async function aplicarMotor(slug: string, rede: Rede, nome?: string): Pro
  */
 export async function registrarEscolha(
   slug: string,
-  rede: Rede,
-  nome?: string,
-  painel?: PainelDoMotor,
+  escolha: {
+    rede: Rede;
+    nome?: string;
+    /** O painel com o valor novo já em mão, quando o controle o tem. */
+    painel?: PainelDoMotor;
+    /** Reconhece o painel que já enxerga esta escolha — ver `pendente.confirma`. */
+    confirma?: (painel: PainelDoMotor) => boolean;
+  },
 ): Promise<void> {
   const fase = leiaOperacao(slug).fase;
   if (fase === 'aplicando' || fase === 'confirmando') return;
 
-  sessaoDe(slug).pendente = { rede, nome };
+  const { rede, nome, painel, confirma } = escolha;
+  sessaoDe(slug).pendente = { rede, nome, confirma };
   publicar(slug, { fase: 'agrupando', aviso: TEXTO_GUARDANDO });
   if (painel) await conferirPacote(slug, painel);
 }
@@ -307,6 +320,8 @@ export async function conferirPacote(slug: string, painel: PainelDoMotor): Promi
   const sessao = sessoes.get(slug);
   const pendente = sessao?.pendente;
   if (!pendente || sessao?.estado.fase !== 'agrupando') return;
+  // Painel que ainda não enxerga a escolha é painel de antes dela.
+  if (pendente.confirma && !pendente.confirma(painel)) return;
 
   const falta = faltaEscolher(painel);
   if (falta.length) {
