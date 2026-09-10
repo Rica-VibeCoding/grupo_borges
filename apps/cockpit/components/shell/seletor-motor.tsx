@@ -234,6 +234,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         setTela('inicio');
         if (comEsforco) registrar(comEsforco, (p) => p.effort?.value === resposta.effort);
       } else {
+        // Trocou a quente: não há o que religar por ESTA escolha. Mas ela pode ser
+        // o campo que faltava para uma troca de MOTOR já guardada — e era aqui que
+        // o pacote ficava pendurado para sempre, com o motor novo nunca entrando.
+        if (comEsforco) void conferirPacote(agentSlug, comEsforco);
         alterarAbertura(false);
       }
     } catch {
@@ -270,6 +274,9 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           setTela('inicio');
           if (comModelo) registrar(comModelo, (p) => p.model?.value === resposta.model);
         } else {
+          // Ver o comentário gêmeo em `trocarEsforco`: escolha que vale a quente
+          // ainda pode fechar o pacote de uma troca de motor guardada.
+          if (comModelo) void conferirPacote(agentSlug, comModelo);
           alterarAbertura(false);
         }
         return;

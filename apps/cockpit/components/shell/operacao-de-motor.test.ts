@@ -21,6 +21,7 @@ import {
   textoFalta,
   textoDesligando,
   textoSubindo,
+  type PainelDoMotor,
 } from './operacao-de-motor.ts';
 
 afterEach(() => esquecerTudo());
@@ -41,11 +42,11 @@ function painel(patch: Partial<AgentPainelResponse> = {}): AgentPainelResponse {
 
 /** O painel como o back o devolve: `value: null` é campo que a tela mostra em
  *  branco, e `allowed` é o que aquele motor oferece. */
-function pacote(modelo: string | null, esforco: string | null) {
+function pacote(modelo: string | null, esforco: string | null): PainelDoMotor {
   return {
     model: { value: modelo, allowed: ['kimi-k3', 'kimi-k3-turbo'], labels: {} },
     effort: { value: esforco, allowed: ['low', 'high'] },
-  } as never;
+  } as unknown as PainelDoMotor;
 }
 
 function rede(aplicar: (force: boolean) => Promise<unknown>) {
@@ -312,6 +313,27 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     assert.deepEqual(forces, [false]);
   });
 
+  it('escolha que vale A QUENTE ainda fecha o pacote do motor guardado', async () => {
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+
+    // [10/09] Trocar para Claude nativo deixa modelo e esforço em branco, mas lá
+    // os dois trocam na sessão VIVA — e esses caminhos não guardavam pendência
+    // nenhuma. O pacote da troca de motor ficava pendurado para sempre, e o motor
+    // novo nunca entrava. A prova de navegador parou exatamente aqui.
+    await registrarEscolha('canarinho', {
+      rede: r,
+      confirma: (painel) => painel.motor?.familia === 'anthropic',
+    });
+    const vivo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as unknown as PainelDoMotor;
+    await conferirPacote('canarinho', vivo);
+
+    assert.deepEqual(forces, [false], 'o motor escolhido precisa do boot mesmo assim');
+  });
+
   it('painel VELHO não fecha o pacote — ele ainda descreve o motor de antes', async () => {
     const forces: boolean[] = [];
     const { rede: r } = rede(async (force) => {
@@ -328,11 +350,11 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
       confirma: (painel) => painel.motor?.familia === 'anthropic',
     });
 
-    const velho = { ...pacote('kimi-k3', 'high'), motor: { familia: 'kimi' } } as never;
+    const velho = { ...pacote('kimi-k3', 'high'), motor: { familia: 'kimi' } } as unknown as PainelDoMotor;
     await conferirPacote('canarinho', velho);
     assert.deepEqual(forces, [], 'painel do motor anterior não pode disparar nada');
 
-    const novo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as never;
+    const novo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as unknown as PainelDoMotor;
     await conferirPacote('canarinho', novo);
     assert.deepEqual(forces, [false], 'o painel que já vê a escolha é o que decide');
   });
@@ -345,7 +367,9 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
   it('controle que o motor não oferece não conta como campo em branco', () => {
     // OpenCode tem um modelo só: `allowed` vazio. Esperar escolha ali seria
     // esperar para sempre num controle que a tela não mostra.
-    assert.deepEqual(faltaEscolher({ model: { value: null, allowed: [] }, effort: { value: 'high', allowed: ['low', 'high'] } } as never), []);
+    assert.deepEqual(faltaEscolher({
+      model: { value: null, allowed: [] }, effort: { value: 'high', allowed: ['low', 'high'] },
+    } as unknown as PainelDoMotor), []);
     assert.deepEqual(faltaEscolher(pacote(null, 'high')), ['o modelo']);
   });
 
