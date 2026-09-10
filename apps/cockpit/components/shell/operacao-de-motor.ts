@@ -145,19 +145,17 @@ type Rede = {
   aplicar: (force: boolean) => Promise<unknown>;
   /** Releitura do painel — é ela que troca a tela sem F5. */
   reler: () => void;
+  /** O painel AGORA, lido na hora da decisão. É o que distingue "ele acabou de
+   *  escolher" de "chegou uma leitura qualquer": a gravação já voltou quando esta
+   *  leitura sai, então ela descreve o motor com a escolha dentro. */
+  lePainel: () => Promise<PainelDoMotor>;
 };
 
 type Sessao = {
   estado: EstadoDaOperacao;
   /** A escolha gravada que ainda espera o pacote fechar — é por ela existir
-   *  que trocar motor, modelo e esforço custa um religar só.
-   *
-   *  `confirma` é a guarda contra painel VELHO: uma leitura disparada antes da
-   *  gravação chega depois dela, ainda descrevendo o motor antigo com todos os
-   *  campos preenchidos, e fecharia o pacote no meio da escolha. Medido em 10/09
-   *  na prova de navegador: a tela já dizia "Subindo Tara" antes de eu escolher
-   *  o modelo. Só painel que JÁ reflete a escolha decide. */
-  pendente: { rede: Rede; nome?: string; confirma?: (painel: PainelDoMotor) => boolean } | null;
+   *  que trocar motor, modelo e esforço custa um religar só. */
+  pendente: { rede: Rede; nome?: string } | null;
   timers: ReturnType<typeof setTimeout>[];
   /** Quando o POST voltou — o relógio do piso acima. */
   disparadaEm: number;
@@ -294,59 +292,59 @@ export async function registrarEscolha(
   escolha: {
     rede: Rede;
     nome?: string;
-    /** O painel com o valor novo já em mão, quando o controle o tem. */
-    painel?: PainelDoMotor;
-    /** Reconhece o painel que já enxerga esta escolha — ver `pendente.confirma`. */
-    confirma?: (painel: PainelDoMotor) => boolean;
+    /** `true` quando o toque que gravou é dele e a decisão é agora — o caso
+     *  normal. `false` só onde a gravação não é uma escolha de motor. */
+    decidirAgora?: boolean;
   },
 ): Promise<void> {
   const fase = leiaOperacao(slug).fase;
   if (fase === 'aplicando' || fase === 'confirmando') return;
 
-  const { rede, nome, painel, confirma } = escolha;
-  sessaoDe(slug).pendente = { rede, nome, confirma };
+  sessaoDe(slug).pendente = { rede: escolha.rede, nome: escolha.nome };
   publicar(slug, { fase: 'agrupando', aviso: TEXTO_GUARDANDO });
-  if (painel) await fecharSePronto(slug, painel);
-}
-
-/** A pendência que este painel pode decidir — ou nada, se ele é de antes da
- *  escolha (ver `pendente.confirma`). */
-function pendenteQueEstePainelDecide(slug: string, painel: PainelDoMotor) {
-  const sessao = sessoes.get(slug);
-  const pendente = sessao?.pendente;
-  if (!pendente || sessao?.estado.fase !== 'agrupando') return null;
-  if (pendente.confirma && !pendente.confirma(painel)) return null;
-  return { sessao, pendente };
+  if (escolha.decidirAgora !== false) await fecharSePronto(slug);
 }
 
 /**
  * O TOQUE DELE fecha o pacote — releitura nenhuma religa.
  *
- * Chamado só de onde houve escolha com o painel em mão. A separação não é
- * estética: o painel OSCILA. Logo depois de um boot, enquanto a statusline nova
- * não existe, `_build_claude_painel_effort` cai no `settings.json` global e
- * devolve um esforço onde antes havia branco — e na versão anterior isso fechava
- * o pacote sozinho, religando o agente no meio da escolha. Medido em 10/09, três
- * leituras do mesmo painel com respostas diferentes.
+ * Lê o painel na hora, de propósito, e é esta a diferença que fez o desenho
+ * fechar: o painel de um componente pode estar velho em OUTRO campo (a gaveta do
+ * composer não sabe que o motor mudou, se a do painel estava fechada), e o painel
+ * que chega por publicação pode ser de antes da gravação. Leitura na hora da
+ * decisão é posterior à gravação por construção — o POST já voltou.
+ *
+ * A leitura também OSCILA se chega no meio de um boot: enquanto a statusline nova
+ * não existe, `_build_claude_painel_effort` devolve o esforço do `settings.json`
+ * global onde havia branco. Por isso quem decide é só o toque dele, nunca uma
+ * releitura de fundo — três leituras do mesmo painel davam respostas diferentes
+ * (medido em 10/09, na prova de navegador).
  */
-export async function fecharSePronto(slug: string, painel: PainelDoMotor): Promise<void> {
-  const alvo = pendenteQueEstePainelDecide(slug, painel);
-  if (!alvo) return;
+export async function fecharSePronto(slug: string): Promise<void> {
+  const sessao = sessoes.get(slug);
+  const pendente = sessao?.pendente;
+  if (!pendente || sessao?.estado.fase !== 'agrupando') return;
+
+  const painel = await pendente.rede.lePainel().catch(() => null);
+  // Sem saber o que falta, não se religa: a escolha fica guardada e o próximo
+  // toque dele resolve. Religar no escuro é o que ele recusou duas vezes.
+  if (!painel) return;
+  if (sessaoDe(slug).pendente !== pendente) return;
 
   const falta = faltaEscolher(painel);
   if (falta.length) {
     publicar(slug, { fase: 'agrupando', aviso: textoFalta(falta) });
     return;
   }
-  alvo.sessao.pendente = null;
-  await aplicarMotor(slug, alvo.pendente.rede, alvo.pendente.nome);
+  sessao.pendente = null;
+  await aplicarMotor(slug, pendente.rede, pendente.nome);
 }
 
 /** Painel lido: só conta o que ainda falta. Nunca religa — quem religa é o toque
  *  dele, em `fecharSePronto`. */
 export function revisarFaltas(slug: string, painel: PainelDoMotor): void {
-  const alvo = pendenteQueEstePainelDecide(slug, painel);
-  if (!alvo) return;
+  const sessao = sessoes.get(slug);
+  if (!sessao?.pendente || sessao.estado.fase !== 'agrupando') return;
   const falta = faltaEscolher(painel);
   publicar(slug, {
     fase: 'agrupando',

@@ -88,12 +88,17 @@ it('a pergunta do turno em voo não trava a tela — ela espera o toque dele', a
 it('a escolha guardada não trava a tela — é com ela aberta que ele escolhe o resto', async () => {
   const b = await montarBloco();
   await b.act(async () => {
-    // Pacote ainda aberto: o modelo em branco é o que o back devolve depois de
-    // trocar o motor, e é nesse intervalo que ele escolhe o resto.
     b.operacao.registrarEscolha(SLUG, {
-      rede: { aplicar: () => Promise.resolve({}), reler: () => {} },
-      painel: { model: { value: null, allowed: ['k3'] },
-        effort: { value: 'high', allowed: ['low', 'high'] } },
+      rede: {
+        aplicar: () => Promise.resolve({}),
+        reler: () => {},
+        // Pacote ainda aberto: o modelo em branco é o que o back devolve depois
+        // de trocar o motor, e é nesse intervalo que ele escolhe o resto.
+        lePainel: async () => ({
+          model: { value: null, allowed: ['k3'] },
+          effort: { value: 'high', allowed: ['low', 'high'] },
+        }),
+      },
     });
   });
   assert.equal(b.operacao.leiaOperacao(SLUG).fase, 'agrupando');

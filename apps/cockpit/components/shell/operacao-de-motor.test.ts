@@ -27,6 +27,14 @@ import {
 
 afterEach(() => esquecerTudo());
 
+/** A mesma rede, respondendo um painel conhecido na hora da decisão. */
+function redeComPainel(
+  r: { aplicar: (force: boolean) => Promise<unknown>; reler: () => unknown },
+  painel: PainelDoMotor,
+) {
+  return { ...r, lePainel: async () => painel };
+}
+
 function erro(status: number, detail: string) {
   return Object.assign(new Error(detail), { status, detail });
 }
@@ -50,10 +58,16 @@ function pacote(modelo: string | null, esforco: string | null): PainelDoMotor {
   } as unknown as PainelDoMotor;
 }
 
-function rede(aplicar: (force: boolean) => Promise<unknown>) {
+function rede(aplicar: (force: boolean) => Promise<unknown>, pagina?: () => PainelDoMotor) {
   const relidos: number[] = [];
   return {
-    rede: { aplicar, reler: () => relidos.push(Date.now()) },
+    rede: {
+      aplicar,
+      reler: () => relidos.push(Date.now()),
+      // O painel que a decisão vai LER na hora. Sem `pagina`, o pacote está
+      // fechado — é o caso dos testes que não falam de campo em branco.
+      lePainel: async () => (pagina ?? (() => pacote('kimi-k3', 'high')))(),
+    },
     relidos,
   };
 }
@@ -250,7 +264,7 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     });
 
     // Trocar o motor esvazia o modelo no back — é este painel que chega.
-    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote(null, 'high') });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote(null, 'high')), nome: 'Canário' });
 
     assert.deepEqual(forces, [], 'religar aqui é religar no meio da escolha');
     assert.equal(leiaOperacao('canarinho').fase, 'agrupando');
@@ -266,15 +280,15 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
 
     // O caminho do Rica: trocou o motor (os dois em branco), escolheu o modelo,
     // escolheu o esforço. O religar sai no último, sem gesto de tela nenhum.
-    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote(null, null) });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote(null, null)), nome: 'Canário' });
     assert.deepEqual(forces, []);
     assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o modelo', 'o esforço']));
 
-    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote('kimi-k3', null) });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote('kimi-k3', null)), nome: 'Canário' });
     assert.deepEqual(forces, [], 'falta o esforço — ainda não é a hora');
     assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o esforço']));
 
-    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote('kimi-k3', 'low') });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote('kimi-k3', 'low')), nome: 'Canário' });
 
     assert.deepEqual(forces, [false], 'um religar para as três escolhas');
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
@@ -289,75 +303,64 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
 
     // Mexer só no esforço não abre espera: o pacote já está fechado, e a régua
     // dele é "imediatamente depois que os dois estiverem escolhidos".
-    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote('kimi-k3', 'low') });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote('kimi-k3', 'low')), nome: 'Canário' });
 
     assert.deepEqual(forces, [false]);
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
   });
 
-  it('a releitura do painel é que fecha o pacote da troca de motor', async () => {
+  it('a troca de motor decide RELENDO o painel, não com o que a tela tinha', async () => {
     const forces: boolean[] = [];
+    let resposta = pacote(null, 'high');
     const { rede: r } = rede(async (force) => {
       forces.push(force);
       return { desligado: true, religado: true };
-    });
+    }, () => resposta);
 
-    // A gaveta do motor não tem o painel em mão na hora da gravação: ela grava,
-    // pede a releitura e é ela quem decide.
+    // A gaveta do motor não tem o valor novo em mão — ela grava e a decisão lê o
+    // painel na hora. Com o modelo em branco, a escolha só fica guardada.
     await registrarEscolha('canarinho', { rede: r, nome: 'Canário' });
     assert.deepEqual(forces, []);
+    assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o modelo']));
 
-    await fecharSePronto('canarinho', pacote(null, 'high'));
-    assert.deepEqual(forces, [], 'painel com o modelo em branco não religa');
-
-    await fecharSePronto('canarinho', pacote('kimi-k3', 'high'));
+    // Ele escolhe o modelo: o toque seguinte relê e encontra o pacote fechado.
+    resposta = pacote('kimi-k3', 'high');
+    await fecharSePronto('canarinho');
     assert.deepEqual(forces, [false]);
   });
 
   it('escolha que vale A QUENTE ainda fecha o pacote do motor guardado', async () => {
     const forces: boolean[] = [];
+    let resposta = pacote(null, null);
     const { rede: r } = rede(async (force) => {
       forces.push(force);
       return { desligado: true, religado: true };
-    });
+    }, () => resposta);
 
     // [10/09] Trocar para Claude nativo deixa modelo e esforço em branco, mas lá
     // os dois trocam na sessão VIVA — e esses caminhos não guardavam pendência
-    // nenhuma. O pacote da troca de motor ficava pendurado para sempre, e o motor
-    // novo nunca entrava. A prova de navegador parou exatamente aqui.
-    await registrarEscolha('canarinho', {
-      rede: r,
-      confirma: (painel) => painel.motor?.familia === 'anthropic',
-    });
-    const vivo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as unknown as PainelDoMotor;
-    await fecharSePronto('canarinho', vivo);
+    // nenhuma. O pacote do motor ficava pendurado para sempre e o motor novo nunca
+    // entrava. A prova de navegador parou exatamente aqui.
+    await registrarEscolha('canarinho', { rede: r, nome: 'Canário' });
+    assert.deepEqual(forces, []);
 
+    resposta = pacote('opus', 'high');
+    await fecharSePronto('canarinho');
     assert.deepEqual(forces, [false], 'o motor escolhido precisa do boot mesmo assim');
   });
 
-  it('painel VELHO não fecha o pacote — ele ainda descreve o motor de antes', async () => {
+  it('leitura que falha na hora da decisão NÃO religa no escuro', async () => {
     const forces: boolean[] = [];
     const { rede: r } = rede(async (force) => {
       forces.push(force);
       return { desligado: true, religado: true };
     });
+    const semRede = { ...r, lePainel: () => Promise.reject(new Error('sem rede')) };
 
-    // [10/09] A prova de navegador pegou isto: a leitura do painel disparada
-    // ANTES da gravação do motor chega DEPOIS dela, descrevendo o motor velho com
-    // modelo e esforço preenchidos. Sem esta guarda o pacote fechava sozinho e a
-    // tela dizia "Subindo Tara" antes de eu ter escolhido o modelo.
-    await registrarEscolha('canarinho', {
-      rede: r,
-      confirma: (painel) => painel.motor?.familia === 'anthropic',
-    });
+    await registrarEscolha('canarinho', { rede: semRede, nome: 'Canário' });
 
-    const velho = { ...pacote('kimi-k3', 'high'), motor: { familia: 'kimi' } } as unknown as PainelDoMotor;
-    await fecharSePronto('canarinho', velho);
-    assert.deepEqual(forces, [], 'painel do motor anterior não pode disparar nada');
-
-    const novo = { ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as unknown as PainelDoMotor;
-    await fecharSePronto('canarinho', novo);
-    assert.deepEqual(forces, [false], 'o painel que já vê a escolha é o que decide');
+    assert.deepEqual(forces, [], 'sem saber o que falta, não se desliga ninguém');
+    assert.equal(leiaOperacao('canarinho').fase, 'agrupando', 'a escolha fica guardada');
   });
 
   it('RELEITURA não religa — ela só conta o que falta', async () => {
@@ -372,19 +375,24 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     // branco aparece preenchido. Na versão anterior essa leitura fechava o pacote
     // sozinha e religava o agente no meio da escolha — três leituras do mesmo
     // painel, respostas diferentes, medido na prova de navegador.
-    await registrarEscolha('canarinho', { rede: r, nome: 'Canário', painel: pacote(null, null) });
+    let resposta = pacote(null, null);
+    const comLeitura = { ...r, lePainel: async () => resposta };
+    await registrarEscolha('canarinho', { rede: comLeitura, nome: 'Canário' });
     assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o modelo', 'o esforço']));
 
+    // Uma leitura de fundo trazendo tudo preenchido: a linha acompanha, o agente
+    // não cai.
     revisarFaltas('canarinho', pacote('kimi-k3', 'high'));
     assert.deepEqual(forces, [], 'quem religa é o toque dele, não uma leitura');
     assert.equal(leiaOperacao('canarinho').fase, 'agrupando');
 
-    await fecharSePronto('canarinho', pacote('kimi-k3', 'high'));
+    resposta = pacote('kimi-k3', 'high');
+    await fecharSePronto('canarinho');
     assert.deepEqual(forces, [false]);
   });
 
-  it('painel chegando sem ninguém ter escolhido nada não religa agente parado', async () => {
-    await fecharSePronto('canarinho', pacote('kimi-k3', 'high'));
+  it('sem ninguém ter escolhido nada, fechar pacote não religa agente parado', async () => {
+    await fecharSePronto('canarinho');
     assert.equal(leiaOperacao('canarinho').fase, 'ocioso');
   });
 
@@ -407,12 +415,12 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     const { rede: r } = rede(async () => {
       throw erro(409, 'agent_busy_confirm_required');
     });
-    await registrarEscolha('canarinho', { rede: r, painel: pacote('kimi-k3', 'high') });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote('kimi-k3', 'high')) });
     assert.equal(leiaOperacao('canarinho').fase, 'confirmando');
 
     // Guardar outra escolha aqui trocaria a pergunta por uma espera muda, e o
     // segundo toque que mata o turno em voo sairia sem ninguém confirmar nada.
-    await registrarEscolha('canarinho', { rede: r, painel: pacote('kimi-k3', 'low') });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote('kimi-k3', 'low')) });
 
     assert.equal(leiaOperacao('canarinho').fase, 'confirmando');
     assert.equal(leiaOperacao('canarinho').aviso, TEXTO_CONFIRMA_TURNO);
@@ -427,7 +435,7 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     await aplicarMotor('canarinho', r);
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
 
-    await registrarEscolha('canarinho', { rede: r, painel: pacote('kimi-k3', 'low') });
+    await registrarEscolha('canarinho', { rede: redeComPainel(r, pacote('kimi-k3', 'low')) });
 
     assert.deepEqual(forces, [false], 'o segundo desligaria o agente no meio do próprio boot');
   });

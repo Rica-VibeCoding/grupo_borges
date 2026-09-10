@@ -83,6 +83,11 @@ it('Codex lista e atualiza modelo pelo identificador cru', async () => {
   // E a frase do momento seguinte à escolha diz o que está acontecendo AGORA:
   // aqui o pacote fechou no toque (o esforço deste painel já tem valor), então
   // o que a tela mostra é o religar em curso, com o nome de quem está caindo.
+  // A decisão do pacote lê o painel na hora: é esta leitura que ela dispara.
+  for (let volta = 0; volta < 20 && b.leituras.length < 2; volta += 1) {
+    await b.renderer.act(async () => {});
+  }
+  await b.renderer.act(async () => b.leituras[b.leituras.length - 1].resolve(painel('codex-proxy')));
   assert.ok(
     JSON.stringify(b.arvore.toJSON()).includes(b.shell('operacao-de-motor').textoDesligando('Canário')),
   );

@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { aplicarMotor, esquecerConfirmacao, registrarEscolha, type PainelDoMotor } from './operacao-de-motor.ts';
+import { aplicarMotor, esquecerConfirmacao, registrarEscolha } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
   destinoDaTroca,
@@ -124,12 +124,6 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     try {
       await patchAgentMotorFamilia(agentSlug, destino.familia);
       aoAtualizar?.();
-      // Leitura FRESCA, depois da gravação: é ela que diz o que o motor novo
-      // deixou em branco. A releitura da gaveta não serve para decidir — ela pode
-      // ter saído antes desta gravação, e nenhuma releitura religa mais nada.
-      // Falhou a leitura? A escolha fica guardada e o próximo toque dele resolve;
-      // religar sem saber o que falta é o que ele viu duas vezes e recusou.
-      const fresco = await fetchAgentPainel(agentSlug).catch(() => null);
       // A ESCOLHA APLICA SOZINHA (Rica, 09/09). A gravação não muda nada no
       // agente que está rodando; quem aplica é o boot seguinte, e antes disto
       // ele era dois toques manuais depois — Desligar e Ligar — com a tela
@@ -140,7 +134,7 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
       // que o `aoAtualizar` acima acabou de pedir — e só ela, porque uma leitura
       // disparada ANTES desta gravação chega depois e ainda descreve o motor
       // velho, com tudo preenchido.
-      registrar(destino.familia, fresco);
+      registrar();
     } catch {
       setFalhou(true);
     } finally {
@@ -151,6 +145,7 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
   function redeDaOperacao() {
     return {
       aplicar: (force: boolean) => postAgentAplicarMotor(agentSlug, { force }),
+      lePainel: () => fetchAgentPainel(agentSlug),
       reler: () => aoAtualizar?.(),
     };
   }
@@ -159,13 +154,8 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  function registrar(familia: string | null, painel: PainelDoMotor | null) {
-    void registrarEscolha(agentSlug, {
-      rede: redeDaOperacao(),
-      nome: agentName,
-      painel: painel ?? undefined,
-      confirma: (lido) => lido.motor?.familia === familia,
-    });
+  function registrar() {
+    void registrarEscolha(agentSlug, { rede: redeDaOperacao(), nome: agentName });
   }
 
   return (
