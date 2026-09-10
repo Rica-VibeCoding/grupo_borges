@@ -44,7 +44,35 @@ const OCIOSO: EstadoDaOperacao = { fase: 'ocioso', aviso: null };
 export const TEXTO_CONFIRMA_TURNO =
   'O agente está no meio de um turno — aplicar agora encerra o que ele está fazendo. Tocar de novo confirma.';
 
-export const TEXTO_AGRUPANDO = 'Religa quando você fechar a gaveta.';
+/** O instante entre gravar a escolha e ler o painel que diz o que falta. A
+ *  releitura vem em seguida; este texto existe para a linha não piscar vazia. */
+export const TEXTO_GUARDANDO = 'Guardando a escolha…';
+
+/** O que a tela diz enquanto o pacote não fechou. Curto e específico, porque é
+ *  ele que explica por que o agente AINDA não religou — o Rica fotografou o
+ *  aviso antigo de 62 caracteres em duas linhas e pediu o contrário (09/09). */
+export function textoFalta(campos: readonly string[]): string {
+  return `Falta escolher ${campos.join(' e ')}.`;
+}
+
+/**
+ * OS CAMPOS DE MOTOR QUE A TELA AINDA MOSTRA EM BRANCO.
+ *
+ * Quem responde é o back, não a UI: `_build_painel_model` devolve `value: null`
+ * quando o modelo gravado não pertence ao motor escolhido (`agents.py`), e o
+ * esforço faz o mesmo quando a sessão viva é de outra família. Trocar o motor,
+ * então, esvazia os dois — e é esse estado, não um gesto de tela, que diz se
+ * ele terminou de escolher.
+ *
+ * `allowed` vazio não é campo em branco: a família OpenCode tem um modelo só, e
+ * esperar escolha num controle que não existe travaria a operação para sempre.
+ */
+export function faltaEscolher(painel: PainelDoMotor): string[] {
+  const falta: string[] = [];
+  if (painel.model?.allowed.length && !painel.model.value) falta.push('o modelo');
+  if (painel.effort?.allowed.length && !painel.effort.value) falta.push('o esforço');
+  return falta;
+}
 
 /**
  * O aviso da trava, em DUAS etapas e com o nome de quem está religando.
@@ -107,6 +135,9 @@ export function convergiu(painel: AgentPainelResponse): boolean {
  */
 export const ESPERA_MINIMA_DO_BOOT_MS = 12_000;
 
+/** O pedaço do painel que a régua do pacote lê. */
+export type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort'>;
+
 type Rede = {
   /** O POST da operação única. Ele DISPARA o desligar e o ligar e responde
    *  logo — o boot continua correndo depois da resposta. */
@@ -117,8 +148,8 @@ type Rede = {
 
 type Sessao = {
   estado: EstadoDaOperacao;
-  /** A escolha gravada que a gaveta ainda não fechou — é ela que o fechamento
-   *  aplica, e é por existir que duas escolhas custam um religar só. */
+  /** A escolha gravada que ainda espera o pacote fechar — é por ela existir
+   *  que trocar motor, modelo e esforço custa um religar só. */
   pendente: { rede: Rede; nome?: string } | null;
   timers: ReturnType<typeof setTimeout>[];
   /** Quando o POST voltou — o relógio do piso acima. */
@@ -222,36 +253,66 @@ export async function aplicarMotor(slug: string, rede: Rede, nome?: string): Pro
 }
 
 /**
- * A ESCOLHA ESPERA A GAVETA (Rica, 09/09).
+ * A ESCOLHA ESPERA O PACOTE FECHAR (Rica, 10/09).
  *
- * Escolha que só vale no próximo boot fica guardada aqui em vez de religar na
- * hora: modelo e esforço são duas escolhas para o mesmo boot, e uma por religar
- * custava dois — medido na Tara, `cockpit-ligar-tara` às 23:13:04 e 23:13:30.
+ * Motor, modelo e esforço são escolhas para o MESMO boot, e uma reiniciada por
+ * escolha custava três — medido na Tara, `cockpit-ligar-tara` às 23:13:04 e
+ * 23:13:30. A escolha fica guardada aqui até não faltar campo nenhum.
  *
- * A primeira tentativa foi um relógio de oito segundos. Ele gravou a tela: os
- * segundos correram enquanto ele fechava o painel para abrir a gaveta do
- * modelo, e o agente religou antes da segunda escolha. *"Não, mano, é gaveta.
- * Vamos fazer um negócio escalável"* — quem sabe que ele terminou de escolher é
- * a gaveta fechando, não um cronômetro chutado. Vale para dois controles e para
- * cinco, e nunca corre enquanto ele está decidindo.
+ * Duas tentativas anteriores erraram o gatilho, e as duas foram rejeitadas na
+ * tela por ele. Um relógio de oito segundos: os segundos corriam enquanto ele
+ * fechava o painel para abrir a gaveta do modelo, e o agente religava antes da
+ * segunda escolha. Depois o fechamento da gaveta: *"na hora que eu clico em
+ * escolher modelo, a gaveta fecha e ela já começa a entrar em modo de
+ * desligamento"* — sair do menu do motor para ir ao modelo fechava uma gaveta, e
+ * aquilo disparava o religar no meio da escolha.
+ *
+ * A régua que ele deu, por extenso, nunca foi sobre gesto de tela: *"ele está
+ * esperando a escolha de um modelo e de uma força; só depois que os dois
+ * estiverem escolhidos, imediatamente, ele entra no modo"*. Então quem decide é
+ * `faltaEscolher()` — estado do painel, vindo do back. Vale para dois controles
+ * e para cinco, não corre enquanto ele decide, e atravessa as duas gavetas
+ * porque a pendência é do AGENTE.
+ *
+ * `painel` é opcional porque as duas portas sabem coisas diferentes no momento
+ * da gravação: a gaveta do composer já tem o valor novo em mão e decide na hora
+ * (é o "imediatamente"); a do motor só descobre o que ficou em branco na
+ * releitura, e para ela quem decide é o `conferirPacote` seguinte.
  *
  * Não atropela uma pergunta de turno em voo: a escolha nova já está gravada, e
  * quem a pergunta espera é o toque dele. Nem um agente que já está religando.
  */
-export function marcarPendente(slug: string, rede: Rede, nome?: string): void {
+export async function registrarEscolha(
+  slug: string,
+  rede: Rede,
+  nome?: string,
+  painel?: PainelDoMotor,
+): Promise<void> {
   const fase = leiaOperacao(slug).fase;
   if (fase === 'aplicando' || fase === 'confirmando') return;
 
   sessaoDe(slug).pendente = { rede, nome };
-  publicar(slug, { fase: 'agrupando', aviso: TEXTO_AGRUPANDO });
+  publicar(slug, { fase: 'agrupando', aviso: TEXTO_GUARDANDO });
+  if (painel) await conferirPacote(slug, painel);
 }
 
-/** A gaveta fechou: aplica o que ficou guardado, de uma vez. Sem pendência não
- *  faz nada — fechar gaveta sem ter escolhido nada não pode religar ninguém. */
-export async function aplicarSePendente(slug: string): Promise<void> {
+/**
+ * Cada painel lido passa por aqui: fechou o pacote, a escolha guardada aplica na
+ * hora; ainda falta campo, a linha diz qual.
+ *
+ * Sem pendência não faz nada — painel chegando não pode religar um agente que
+ * ninguém mandou trocar.
+ */
+export async function conferirPacote(slug: string, painel: PainelDoMotor): Promise<void> {
   const sessao = sessoes.get(slug);
   const pendente = sessao?.pendente;
   if (!pendente || sessao?.estado.fase !== 'agrupando') return;
+
+  const falta = faltaEscolher(painel);
+  if (falta.length) {
+    publicar(slug, { fase: 'agrupando', aviso: textoFalta(falta) });
+    return;
+  }
   sessao.pendente = null;
   await aplicarMotor(slug, pendente.rede, pendente.nome);
 }
@@ -271,6 +332,12 @@ function concluir(slug: string): void {
  */
 export function sinalizarPainel(painel: AgentPainelResponse): void {
   const sessao = sessoes.get(painel.slug);
+  // Mesma leitura, duas perguntas: na fase `agrupando` ela diz se o pacote
+  // fechou; na `aplicando`, se o agente já voltou.
+  if (sessao?.estado.fase === 'agrupando') {
+    void conferirPacote(painel.slug, painel);
+    return;
+  }
   if (sessao?.estado.fase !== 'aplicando') return;
   // O piso vem ANTES da convergência de propósito: um painel que já era
   // convergido antes da troca responderia "sim" à pergunta errada.

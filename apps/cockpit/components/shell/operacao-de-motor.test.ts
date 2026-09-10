@@ -5,19 +5,20 @@ import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-typ
 
 import {
   ESPERA_MINIMA_DO_BOOT_MS,
-  TEXTO_AGRUPANDO,
   TEXTO_CONFIRMA_TURNO,
   TEXTO_FALHOU,
   TEXTO_NO_CHAO,
   aplicarMotor,
-  aplicarSePendente,
   assinarOperacao,
+  conferirPacote,
   convergiu,
   esquecerConfirmacao,
   esquecerTudo,
+  faltaEscolher,
   leiaOperacao,
-  marcarPendente,
+  registrarEscolha,
   sinalizarPainel,
+  textoFalta,
   textoDesligando,
   textoSubindo,
 } from './operacao-de-motor.ts';
@@ -36,6 +37,15 @@ function painel(patch: Partial<AgentPainelResponse> = {}): AgentPainelResponse {
     motor: { familia: 'kimi', override: 'kimi', source: 'agent_state.motor_familia', session_may_diverge: false },
     ...patch,
   } as AgentPainelResponse;
+}
+
+/** O painel como o back o devolve: `value: null` é campo que a tela mostra em
+ *  branco, e `allowed` é o que aquele motor oferece. */
+function pacote(modelo: string | null, esforco: string | null) {
+  return {
+    model: { value: modelo, allowed: ['kimi-k3', 'kimi-k3-turbo'], labels: {} },
+    effort: { value: esforco, allowed: ['low', 'high'] },
+  } as never;
 }
 
 function rede(aplicar: (force: boolean) => Promise<unknown>) {
@@ -229,64 +239,107 @@ describe('a trava sai quando a escolha entra em vigor', () => {
   });
 });
 
-describe('a gaveta manda — o religar sai quando ela fecha', () => {
-  it('escolher marca a pendência e NÃO religa nada', async () => {
+describe('o pacote manda — religa quando não falta mais campo', () => {
+  it('escolher com campo em branco guarda e NÃO religa nada', async () => {
     const forces: boolean[] = [];
     const { rede: r } = rede(async (force) => {
       forces.push(force);
       return { desligado: true, religado: true };
     });
 
-    marcarPendente('canarinho', r, 'Canário');
+    // Trocar o motor esvazia o modelo no back — é este painel que chega.
+    await registrarEscolha('canarinho', r, 'Canário', pacote(null, 'high'));
 
-    // [09/09] A primeira versão disto era um relógio de oito segundos. O Rica
-    // gravou a tela: os segundos correram enquanto ele fechava o painel para
-    // abrir a outra gaveta, e o agente religou antes de ele escolher o modelo.
-    // *"Não, mano, é gaveta"* — enquanto ela está aberta, ele está escolhendo.
-    assert.deepEqual(forces, []);
+    assert.deepEqual(forces, [], 'religar aqui é religar no meio da escolha');
     assert.equal(leiaOperacao('canarinho').fase, 'agrupando');
-    assert.equal(leiaOperacao('canarinho').aviso, TEXTO_AGRUPANDO);
+    assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o modelo']));
   });
 
-  it('modelo e esforço na mesma gaveta: um religar quando ela fecha', async () => {
+  it('modelo e esforço: um religar só, no toque que fecha o pacote', async () => {
     const forces: boolean[] = [];
     const { rede: r } = rede(async (force) => {
       forces.push(force);
       return { desligado: true, religado: true };
     });
 
-    marcarPendente('canarinho', r, 'Canário');
-    marcarPendente('canarinho', r, 'Canário');
-    assert.deepEqual(forces, [], 'nenhuma escolha religa por si');
+    // O caminho do Rica: trocou o motor (os dois em branco), escolheu o modelo,
+    // escolheu o esforço. O religar sai no último, sem gesto de tela nenhum.
+    await registrarEscolha('canarinho', r, 'Canário', pacote(null, null));
+    assert.deepEqual(forces, []);
+    assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o modelo', 'o esforço']));
 
-    await aplicarSePendente('canarinho');
+    await registrarEscolha('canarinho', r, 'Canário', pacote('kimi-k3', null));
+    assert.deepEqual(forces, [], 'falta o esforço — ainda não é a hora');
+    assert.equal(leiaOperacao('canarinho').aviso, textoFalta(['o esforço']));
 
-    assert.deepEqual(forces, [false], 'um religar só para as duas escolhas');
+    await registrarEscolha('canarinho', r, 'Canário', pacote('kimi-k3', 'low'));
+
+    assert.deepEqual(forces, [false], 'um religar para as três escolhas');
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
   });
 
-  it('fechar gaveta sem escolha nenhuma não religa agente parado', async () => {
-    await aplicarSePendente('canarinho');
+  it('escolha única com o resto preenchido religa na hora', async () => {
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+
+    // Mexer só no esforço não abre espera: o pacote já está fechado, e a régua
+    // dele é "imediatamente depois que os dois estiverem escolhidos".
+    await registrarEscolha('canarinho', r, 'Canário', pacote('kimi-k3', 'low'));
+
+    assert.deepEqual(forces, [false]);
+    assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
+  });
+
+  it('a releitura do painel é que fecha o pacote da troca de motor', async () => {
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+
+    // A gaveta do motor não tem o painel em mão na hora da gravação: ela grava,
+    // pede a releitura e é ela quem decide.
+    await registrarEscolha('canarinho', r, 'Canário');
+    assert.deepEqual(forces, []);
+
+    await conferirPacote('canarinho', pacote(null, 'high'));
+    assert.deepEqual(forces, [], 'painel com o modelo em branco não religa');
+
+    await conferirPacote('canarinho', pacote('kimi-k3', 'high'));
+    assert.deepEqual(forces, [false]);
+  });
+
+  it('painel chegando sem ninguém ter escolhido nada não religa agente parado', async () => {
+    await conferirPacote('canarinho', pacote('kimi-k3', 'high'));
     assert.equal(leiaOperacao('canarinho').fase, 'ocioso');
   });
 
-  it('o aviso da espera nomeia quem vai religar', () => {
-    const { rede: r } = rede(async () => ({}));
-    marcarPendente('canarinho', r, 'Canário');
-    assert.ok(leiaOperacao('canarinho').aviso?.includes('fechar'), 'a régua tem de estar na frase');
+  it('controle que o motor não oferece não conta como campo em branco', () => {
+    // OpenCode tem um modelo só: `allowed` vazio. Esperar escolha ali seria
+    // esperar para sempre num controle que a tela não mostra.
+    assert.deepEqual(faltaEscolher({ model: { value: null, allowed: [] }, effort: { value: 'high', allowed: ['low', 'high'] } } as never), []);
+    assert.deepEqual(faltaEscolher(pacote(null, 'high')), ['o modelo']);
+  });
+
+  it('o aviso diz o que falta, curto e sem jargão', () => {
+    assert.equal(textoFalta(['o modelo']), 'Falta escolher o modelo.');
+    assert.equal(textoFalta(['o modelo', 'o esforço']), 'Falta escolher o modelo e o esforço.');
+    assert.ok(textoFalta(['o modelo', 'o esforço']).length < 40, 'o aviso de 62 caracteres ocupou duas linhas na tela dele');
   });
 
   it('escolha nova NÃO apaga a pergunta do turno em voo', async () => {
     const { rede: r } = rede(async () => {
       throw erro(409, 'agent_busy_confirm_required');
     });
-    marcarPendente('canarinho', r);
-    await aplicarSePendente('canarinho');
+    await registrarEscolha('canarinho', r, undefined, pacote('kimi-k3', 'high'));
     assert.equal(leiaOperacao('canarinho').fase, 'confirmando');
 
-    // Reagendar aqui trocaria a pergunta por uma espera muda, e o segundo toque
-    // que mata o turno em voo sairia sem ninguém ter confirmado nada.
-    marcarPendente('canarinho', r);
+    // Guardar outra escolha aqui trocaria a pergunta por uma espera muda, e o
+    // segundo toque que mata o turno em voo sairia sem ninguém confirmar nada.
+    await registrarEscolha('canarinho', r, undefined, pacote('kimi-k3', 'low'));
 
     assert.equal(leiaOperacao('canarinho').fase, 'confirmando');
     assert.equal(leiaOperacao('canarinho').aviso, TEXTO_CONFIRMA_TURNO);
@@ -301,8 +354,7 @@ describe('a gaveta manda — o religar sai quando ela fecha', () => {
     await aplicarMotor('canarinho', r);
     assert.equal(leiaOperacao('canarinho').fase, 'aplicando');
 
-    marcarPendente('canarinho', r);
-    await aplicarSePendente('canarinho');
+    await registrarEscolha('canarinho', r, undefined, pacote('kimi-k3', 'low'));
 
     assert.deepEqual(forces, [false], 'o segundo desligaria o agente no meio do próprio boot');
   });

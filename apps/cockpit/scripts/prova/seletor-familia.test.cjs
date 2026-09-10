@@ -80,10 +80,11 @@ it('Codex lista e atualiza modelo pelo identificador cru', async () => {
   // Rica). A ressalva não morreu — ela segue no painel que chega divergindo sem
   // ninguém ter acabado de escolher, que é o caso logo abaixo.
   //
-  // E a frase do momento seguinte à escolha é a da ESPERA, não a do religar: o
-  // boot sai uma vez só, depois que ele tiver escolhido o resto.
+  // E a frase do momento seguinte à escolha diz o que está acontecendo AGORA:
+  // aqui o pacote fechou no toque (o esforço deste painel já tem valor), então
+  // o que a tela mostra é o religar em curso, com o nome de quem está caindo.
   assert.ok(
-    JSON.stringify(b.arvore.toJSON()).includes(b.shell('operacao-de-motor').TEXTO_AGRUPANDO),
+    JSON.stringify(b.arvore.toJSON()).includes(b.shell('operacao-de-motor').textoDesligando('Canário')),
   );
   await b.fechar();
 

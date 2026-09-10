@@ -10,7 +10,7 @@ import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
 } from './motor';
-import { aplicarMotor, aplicarSePendente, esquecerConfirmacao, marcarPendente } from './operacao-de-motor.ts';
+import { aplicarMotor, conferirPacote, esquecerConfirmacao, registrarEscolha } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { sincronizarPainel } from './sincronizacao-painel';
@@ -82,7 +82,9 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       invalidar();
       setPainel(novo);
       setSalvando(false);
-      alterarAbertura(false, false);
+      alterarAbertura(false);
+      // Painel novo é a resposta do back sobre o que ainda falta escolher.
+      void conferirPacote(agentSlug, novo);
     }, () => setPainel(null));
     return () => { parar(); invalidar(); };
   }, [agentSlug]);
@@ -138,7 +140,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
     </span>
   ) : null;
 
-  function alterarAbertura(proximo: boolean, dele = true) {
+  function alterarAbertura(proximo: boolean) {
     setAberto(proximo);
     if (!proximo) {
       setTela('inicio');
@@ -147,10 +149,9 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       // Pergunta fora da tela é pergunta caducada — reabrir e achar o "tocar de
       // novo confirma" armado faria um toque distraído matar o turno em voo.
       esquecerConfirmacao(agentSlug);
-      // FECHAR A GAVETA É DIZER "ESCOLHI" (Rica, 09/09) — e só o fechamento
-      // DELE conta. Painel relido também fecha a gaveta, por outro motivo:
-      // aplicar ali religaria o agente no meio da escolha.
-      if (dele) void aplicarSePendente(agentSlug);
+      // Fechar a gaveta NÃO aplica nada: quem religa é o pacote fechando
+      // (`conferirPacote`). Era o gatilho até 10/09, e ele viu o religar
+      // disparar ao sair do menu do motor para escolher o modelo.
     }
   }
 
@@ -174,10 +175,12 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  /** Modelo e esforço são DUAS escolhas para o mesmo boot. A escolha fica
-   *  guardada e quem religa é o fechamento da gaveta — um boot para as duas. */
-  function marcar() {
-    marcarPendente(agentSlug, redeDaOperacao(), agentName);
+  /** Motor, modelo e esforço são escolhas para o MESMO boot. A escolha fica
+   *  guardada e religa quando o pacote fechar — um boot para todas. O painel vai
+   *  junto porque aqui o valor novo já está em mão: se era o último campo em
+   *  branco, religa neste toque. */
+  function registrar(painelNovo: PainelDoMotor) {
+    void registrarEscolha(agentSlug, redeDaOperacao(), agentName, painelNovo);
   }
 
   function mostrarAviso(mensagem: string) {
@@ -209,14 +212,15 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         );
         return;
       }
-      setPainel((atual) => atual ? {
-        ...atual,
+      const comEsforco = painel ? {
+        ...painel,
         effort: {
-          ...atual.effort, value: resposta.effort, source: resposta.source,
-          requested: cobrePedido ? valor : atual.effort.requested,
+          ...painel.effort, value: resposta.effort, source: resposta.source,
+          requested: cobrePedido ? valor : painel.effort.requested,
           session_may_diverge: resposta.session_may_diverge,
         },
-      } : atual);
+      } : null;
+      if (comEsforco) setPainel(comEsforco);
       // Kimi e Codex recebem o esforço por env var de boot: o back grava e
       // responde `session_may_diverge`. É o sinal de que a escolha não alcança
       // a sessão viva — e é ele, não a família, que decide religar (a régua de
@@ -226,7 +230,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       // volta é a tela inicial, com o valor novo já no lugar.
       if (resposta.session_may_diverge) {
         setTela('inicio');
-        marcar();
+        if (comEsforco) registrar(comEsforco);
       } else {
         alterarAbertura(false);
       }
@@ -250,18 +254,19 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         return;
       }
       setModeloPendente(null);
-      setPainel((atual) => atual?.model ? {
-        ...atual,
-        model: { ...atual.model, value: resposta.model, source: 'agent.state_model',
+      const comModelo = painel?.model ? {
+        ...painel,
+        model: { ...painel.model, value: resposta.model, source: 'agent.state_model',
           session_may_diverge: !resposta.confirmed },
-      } : atual);
+      } : null;
+      if (comModelo) setPainel(comModelo);
       if (resposta.confirmed || desfecho === 'proximo-turno') {
         // `proximo-turno` é o modelo que virou env var de boot (`runtime_switch`
         // false): gravado, sem tocar a sessão. É exatamente o caso que a
         // operação única resolve — e a gaveta segue aberta para o esforço.
         if (desfecho === 'proximo-turno') {
           setTela('inicio');
-          marcar();
+          if (comModelo) registrar(comModelo);
         } else {
           alterarAbertura(false);
         }

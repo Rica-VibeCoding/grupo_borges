@@ -35,16 +35,11 @@ function painel(familia = 'kimi', slug = 'canarinho') {
   };
 }
 
-/**
- * `opcoes.apiDeVerdade` troca o cliente falso pelo de `cockpit-core` — é o que
- * permite a prova que atravessa do toque na gaveta até o boot do agente
- * (`agrupamento-ponta-a-ponta.cjs`). Sem ele a bancada nunca sai da memória.
- */
-function bancada(opcoes = {}) {
+function bancada() {
   const cache = new Map();
   const leituras = [], esforcos = [], modelos = [], convergencias = [], aplicacoes = [], familias = [];
   class AgentInputError extends Error {}
-  let api = {
+  const api = {
     AgentInputError,
     fetchAgentPainel(slug, signal) {
       const espera = pendente(); leituras.push({ slug, signal, ...espera }); return espera.promise;
@@ -97,9 +92,6 @@ function bancada(opcoes = {}) {
     }).outputText;
     vm.runInThisContext(`(function(require,module,exports){${codigo}\n})`, { filename: arquivo })(importar, modulo, modulo.exports);
     return modulo.exports;
-  }
-  if (opcoes.apiDeVerdade) {
-    api = carregar(path.join(app, '../../packages/cockpit-core/src/api.ts'));
   }
   const shell = (nome) => carregar(path.join(app, 'components/shell', nome));
   const props = { agentSlug: 'canarinho', agentName: 'Canário',

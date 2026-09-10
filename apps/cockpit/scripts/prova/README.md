@@ -17,6 +17,20 @@ genérico, derruba o cockpit do Rica na 3007).
 cd apps/cockpit && python3 scripts/prova/retentativa-painel.py
 ```
 
+⚠️ **O Playwright não vinha instalado na Oracle** — todas as provas `.py` daqui
+morriam em `No module named 'playwright'`, e foi isso que me fez dar o teste de
+clique real como impossível nesta máquina por dois dias. Não há `python3-venv`
+(o `venv` cria a pasta SEM pip e ainda sai com código 0), então vai no usuário:
+
+```bash
+python3 -m pip install --user --break-system-packages playwright
+~/.local/bin/playwright install chromium
+```
+
+Os scripts já apontam o `site-packages` do usuário, então depois disso o
+`python3` do sistema roda. `chromium` headless sobe sem `playwright install-deps`
+(que pediria sudo).
+
 As provas `.cjs` montam o componente em `react-test-renderer` e **não precisam da
 3009** — mas o pacote não é dependência do cockpit (ele está deprecado no React
 19 e não vale carregar no app). Instalar fora do repo e apontar:

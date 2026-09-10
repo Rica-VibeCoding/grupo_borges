@@ -25,7 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { aplicarMotor, aplicarSePendente, esquecerConfirmacao, marcarPendente } from './operacao-de-motor.ts';
+import { aplicarMotor, esquecerConfirmacao, registrarEscolha } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
   destinoDaTroca,
@@ -110,11 +110,7 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     // Pergunta que saiu da tela é pergunta caducada: reabrir a gaveta e achar
     // o "tocar de novo confirma" armado faria um toque distraído matar o turno
     // em voo do agente. Mesma régua das ações brutas.
-    if (!proximo) {
-      esquecerConfirmacao(agentSlug);
-      // Fechar a gaveta é dizer "escolhi": aplica o que ficou guardado.
-      void aplicarSePendente(agentSlug);
-    }
+    if (!proximo) esquecerConfirmacao(agentSlug);
   }
 
   async function escolher(opcao: OpcaoDeFamilia) {
@@ -133,9 +129,10 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
       // ele era dois toques manuais depois — Desligar e Ligar — com a tela
       // mostrando o motor velho no meio do caminho.
       //
-      // A gaveta NÃO fecha aqui: a família nova traz outra lista de modelos, e
-      // é dentro dela que ele escolhe o resto. Quem religa é o fechamento.
-      marcar();
+      // Sem painel de propósito: trocar o motor esvazia o modelo e o esforço no
+      // back, e quem ainda não sabe disso é esta tela. Quem decide é a releitura
+      // que o `aoAtualizar` acima acabou de pedir.
+      registrar();
     } catch {
       setFalhou(true);
     } finally {
@@ -154,8 +151,8 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  function marcar() {
-    marcarPendente(agentSlug, redeDaOperacao(), agentName);
+  function registrar() {
+    void registrarEscolha(agentSlug, redeDaOperacao(), agentName);
   }
 
   return (
