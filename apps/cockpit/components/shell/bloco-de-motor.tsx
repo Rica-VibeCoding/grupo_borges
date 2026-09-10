@@ -134,7 +134,7 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
       // que o `aoAtualizar` acima acabou de pedir — e só ela, porque uma leitura
       // disparada ANTES desta gravação chega depois e ainda descreve o motor
       // velho, com tudo preenchido.
-      registrar();
+      registrar(destino.familia);
     } catch {
       setFalhou(true);
     } finally {
@@ -154,8 +154,12 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     await aplicarMotor(agentSlug, redeDaOperacao(), agentName);
   }
 
-  function registrar() {
-    void registrarEscolha(agentSlug, { rede: redeDaOperacao(), nome: agentName });
+  function registrar(familia: string | null) {
+    void registrarEscolha(agentSlug, {
+      rede: redeDaOperacao(),
+      nome: agentName,
+      confere: (painel) => painel.motor?.familia === familia,
+    });
   }
 
   return (

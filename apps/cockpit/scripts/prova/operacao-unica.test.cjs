@@ -41,7 +41,7 @@ it('modelo que só vale no boot dispara a operação; o que troca a quente NÃO'
       runtime_switch: false, model: 'k3',
     }),
   );
-  await decisaoLe(b, painel('kimi'));
+  await decisaoLe(b, painelCom('kimi', { modelo: 'k3' }));
   assert.equal(
     b.shell('operacao-de-motor').leiaOperacao('canarinho').fase,
     'aplicando',
@@ -75,7 +75,7 @@ it('esforço que só vale no boot dispara; o que a sessão assume NÃO', async (
       session_may_diverge: true, written: true,
     }),
   );
-  await decisaoLe(b, painel('kimi'));
+  await decisaoLe(b, painelCom('kimi', { esforco: 'low' }));
   assert.equal(b.shell('operacao-de-motor').leiaOperacao('canarinho').fase, 'aplicando');
   assert.equal(b.aplicacoes.length, 1);
   await b.act(async () => arvoreFecha(b));
@@ -116,7 +116,7 @@ it('com o modelo em branco, escolher o esforço NÃO religa — o modelo fecha o
     }),
   );
   const operacao = b.shell('operacao-de-motor');
-  await decisaoLe(b, semModelo);
+  await decisaoLe(b, { ...semModelo, effort: { ...semModelo.effort, value: 'low' } });
   assert.equal(operacao.leiaOperacao('canarinho').fase, 'agrupando');
   assert.equal(b.aplicacoes.length, 0, 'religar aqui é religar no meio da escolha');
   assert.equal(
@@ -132,7 +132,7 @@ it('com o modelo em branco, escolher o esforço NÃO religa — o modelo fecha o
       runtime_switch: false, model: 'k3',
     }),
   );
-  await decisaoLe(b, painel('kimi'));
+  await decisaoLe(b, painelCom('kimi', { modelo: 'k3', esforco: 'low' }));
   assert.equal(b.aplicacoes.length, 1, 'duas escolhas, um religar só');
   arvore.unmount();
   operacao.esquecerTudo();
@@ -148,7 +148,7 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
     }),
   );
   // O pacote fecha no próprio toque: o painel desta bancada tem esforço.
-  await decisaoLe(b, painel('kimi'));
+  await decisaoLe(b, painelCom('kimi', { modelo: 'k3' }));
   assert.equal(b.aplicacoes.length, 1, 'o religar sai uma vez');
 
   const ocupado = Object.assign(new Error('busy'), {
@@ -164,6 +164,17 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
   assert.ok(texto.includes('Confirmar?'), 'sem alvo, a pergunta ficaria sem resposta possível');
   assert.ok(texto.includes('meio de um turno'));
 });
+
+/** O painel como o back o devolve DEPOIS da escolha — é ele que a decisão exige
+ *  ver antes de religar (`painelQueJaViu`). */
+function painelCom(familia, campos) {
+  const base = painel(familia);
+  return {
+    ...base,
+    model: campos.modelo === undefined ? base.model : { ...base.model, value: campos.modelo },
+    effort: campos.esforco === undefined ? base.effort : { ...base.effort, value: campos.esforco },
+  };
+}
 
 /** A decisão do pacote LÊ o painel na hora (`fecharSePronto`): esta é a leitura
  *  que ela dispara, e é aqui que o teste escolhe o que o back responde. */

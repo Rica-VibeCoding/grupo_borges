@@ -87,7 +87,10 @@ it('Codex lista e atualiza modelo pelo identificador cru', async () => {
   for (let volta = 0; volta < 20 && b.leituras.length < 2; volta += 1) {
     await b.renderer.act(async () => {});
   }
-  await b.renderer.act(async () => b.leituras[b.leituras.length - 1].resolve(painel('codex-proxy')));
+  const comEscolha = painel('codex-proxy');
+  await b.renderer.act(async () => b.leituras[b.leituras.length - 1].resolve({
+    ...comEscolha, model: { ...comEscolha.model, value: 'gpt-5.6-sol[1m]' },
+  }));
   assert.ok(
     JSON.stringify(b.arvore.toJSON()).includes(b.shell('operacao-de-motor').textoDesligando('Canário')),
   );

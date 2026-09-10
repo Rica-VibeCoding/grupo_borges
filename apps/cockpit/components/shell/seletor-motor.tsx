@@ -10,7 +10,7 @@ import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
 } from './motor';
-import { aplicarMotor, esquecerConfirmacao, fecharSePronto, registrarEscolha, revisarFaltas } from './operacao-de-motor.ts';
+import { aplicarMotor, esquecerConfirmacao, fecharSePronto, registrarEscolha, revisarFaltas, type PainelDoMotor as PainelDaDecisao } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { sincronizarPainel } from './sincronizacao-painel';
@@ -180,8 +180,8 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
    *  guardada e religa quando o pacote fechar — um boot para todas. O painel vai
    *  junto porque aqui o valor novo já está em mão: se era o último campo em
    *  branco, religa neste toque. */
-  function registrar() {
-    void registrarEscolha(agentSlug, { rede: redeDaOperacao(), nome: agentName });
+  function registrar(confere: (painel: PainelDaDecisao) => boolean) {
+    void registrarEscolha(agentSlug, { rede: redeDaOperacao(), nome: agentName, confere });
   }
 
   function mostrarAviso(mensagem: string) {
@@ -231,12 +231,12 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       // volta é a tela inicial, com o valor novo já no lugar.
       if (resposta.session_may_diverge) {
         setTela('inicio');
-        registrar();
+        registrar((p) => p.effort?.value === resposta.effort);
       } else {
         // Trocou a quente: não há o que religar por ESTA escolha. Mas ela pode ser
         // o campo que faltava para uma troca de MOTOR já guardada — e era aqui que
         // o pacote ficava pendurado para sempre, com o motor novo nunca entrando.
-        void fecharSePronto(agentSlug);
+        void fecharSePronto(agentSlug, (p) => p.effort?.value === resposta.effort);
         alterarAbertura(false);
       }
     } catch {
@@ -271,11 +271,11 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         // operação única resolve — e a gaveta segue aberta para o esforço.
         if (desfecho === 'proximo-turno') {
           setTela('inicio');
-          registrar();
+          registrar((p) => p.model?.value === resposta.model);
         } else {
           // Ver o comentário gêmeo em `trocarEsforco`: escolha que vale a quente
           // ainda pode fechar o pacote de uma troca de motor guardada.
-          void fecharSePronto(agentSlug);
+          void fecharSePronto(agentSlug, (p) => p.model?.value === resposta.model);
           alterarAbertura(false);
         }
         return;

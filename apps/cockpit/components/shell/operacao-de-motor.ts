@@ -155,7 +155,14 @@ type Sessao = {
   estado: EstadoDaOperacao;
   /** A escolha gravada que ainda espera o pacote fechar — é por ela existir
    *  que trocar motor, modelo e esforço custa um religar só. */
-  pendente: { rede: Rede; nome?: string } | null;
+  pendente: {
+    rede: Rede;
+    nome?: string;
+    /** Reconhece o painel que já viu esta escolha. O PATCH voltar não garante que
+     *  a próxima leitura do painel já a mostre, e decidir sobre o painel de antes
+     *  é religar com a conta errada do que falta. */
+    confere?: (painel: PainelDoMotor) => boolean;
+  } | null;
   timers: ReturnType<typeof setTimeout>[];
   /** Quando o POST voltou — o relógio do piso acima. */
   disparadaEm: number;
@@ -292,17 +299,40 @@ export async function registrarEscolha(
   escolha: {
     rede: Rede;
     nome?: string;
-    /** `true` quando o toque que gravou é dele e a decisão é agora — o caso
-     *  normal. `false` só onde a gravação não é uma escolha de motor. */
-    decidirAgora?: boolean;
+    /** Reconhece o painel que já viu esta escolha — ver `pendente.confere`. */
+    confere?: (painel: PainelDoMotor) => boolean;
   },
 ): Promise<void> {
   const fase = leiaOperacao(slug).fase;
   if (fase === 'aplicando' || fase === 'confirmando') return;
 
-  sessaoDe(slug).pendente = { rede: escolha.rede, nome: escolha.nome };
+  sessaoDe(slug).pendente = {
+    rede: escolha.rede, nome: escolha.nome, confere: escolha.confere,
+  };
   publicar(slug, { fase: 'agrupando', aviso: TEXTO_GUARDANDO });
-  if (escolha.decidirAgora !== false) await fecharSePronto(slug);
+  await fecharSePronto(slug);
+}
+
+const espera = (ms: number) => new Promise((pronto) => setTimeout(pronto, ms));
+
+/** O painel que JÁ mostra as escolhas em questão, insistindo enquanto o back não
+ *  as publica. Oito tentativas de 250ms: a janela medida é de um ciclo só, e
+ *  passar disso é sinal de que a gravação não pegou — aí não se religa nada. */
+async function painelQueJaViu(
+  pendente: NonNullable<Sessao['pendente']>,
+  tambem?: (painel: PainelDoMotor) => boolean,
+): Promise<PainelDoMotor | null> {
+  let ultimo: PainelDoMotor | null = null;
+  for (let tentativa = 0; tentativa < 8; tentativa += 1) {
+    const painel = await pendente.rede.lePainel().catch(() => null);
+    if (!painel) return null;
+    ultimo = painel;
+    const viu = (!pendente.confere || pendente.confere(painel))
+      && (!tambem || tambem(painel));
+    if (viu) return painel;
+    await espera(250);
+  }
+  return ultimo ? null : null;
 }
 
 /**
@@ -320,14 +350,19 @@ export async function registrarEscolha(
  * releitura de fundo — três leituras do mesmo painel davam respostas diferentes
  * (medido em 10/09, na prova de navegador).
  */
-export async function fecharSePronto(slug: string): Promise<void> {
+export async function fecharSePronto(
+  slug: string,
+  /** Reconhece o painel que já viu a escolha DESTE toque, quando ela é outra que
+   *  não a da pendência (o esforço fechando o pacote de uma troca de motor). */
+  tambem?: (painel: PainelDoMotor) => boolean,
+): Promise<void> {
   const sessao = sessoes.get(slug);
   const pendente = sessao?.pendente;
   if (!pendente || sessao?.estado.fase !== 'agrupando') return;
 
-  const painel = await pendente.rede.lePainel().catch(() => null);
-  // Sem saber o que falta, não se religa: a escolha fica guardada e o próximo
-  // toque dele resolve. Religar no escuro é o que ele recusou duas vezes.
+  const painel = await painelQueJaViu(pendente, tambem);
+  // Sem um painel que já veja a escolha, não se religa: ela fica guardada e o
+  // próximo toque dele resolve. Religar no escuro é o que ele recusou duas vezes.
   if (!painel) return;
   if (sessaoDe(slug).pendente !== pendente) return;
 

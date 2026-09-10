@@ -349,6 +349,39 @@ describe('o pacote manda — religa quando não falta mais campo', () => {
     assert.deepEqual(forces, [false], 'o motor escolhido precisa do boot mesmo assim');
   });
 
+  it('o painel que ainda não viu a escolha não decide — a leitura insiste', async () => {
+    const forces: boolean[] = [];
+    const { rede: r } = rede(async (force) => {
+      forces.push(force);
+      return { desligado: true, religado: true };
+    });
+
+    // [10/09] O PATCH voltar não garante que a leitura seguinte já mostre a
+    // gravação: há uma janela no back. A prova de navegador caiu nela — a decisão
+    // leu o painel do motor ANTIGO, com tudo preenchido, e religou antes de ele
+    // escolher o que o motor novo deixou em branco.
+    let leituras = 0;
+    const atrasada = {
+      ...r,
+      lePainel: async () => {
+        leituras += 1;
+        // As duas primeiras leituras ainda descrevem o motor velho.
+        return leituras > 2
+          ? ({ ...pacote('opus', 'high'), motor: { familia: 'anthropic' } } as PainelDoMotor)
+          : ({ ...pacote('kimi-k3', 'high'), motor: { familia: 'kimi' } } as PainelDoMotor);
+      },
+    };
+
+    await registrarEscolha('canarinho', {
+      rede: atrasada,
+      nome: 'Canário',
+      confere: (painel) => painel.motor?.familia === 'anthropic',
+    });
+
+    assert.ok(leituras > 2, 'a decisão tem de insistir, não aceitar a primeira leitura');
+    assert.deepEqual(forces, [false], 'e decidir sobre o painel que já viu a escolha');
+  });
+
   it('leitura que falha na hora da decisão NÃO religa no escuro', async () => {
     const forces: boolean[] = [];
     const { rede: r } = rede(async (force) => {
