@@ -18,6 +18,7 @@ import {
 import { IconeAltoFalante } from '../shell/icones.tsx';
 
 import { destravaNoGesto, iniciaSequencia, pausa, retoma } from './reprodutor-unico.ts';
+import { falaGuardada, guardaFala } from './falas-guardadas.ts';
 import { pedeFala, type FalaEmCurso } from './stream-voz.ts';
 
 /**
@@ -63,13 +64,25 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
   const [posicao, setPosicao] = useState(0);
   const [degradada, setDegradada] = useState(false);
   const falaRef = useRef<FalaEmCurso | null>(null);
-  const urlsRef = useRef<string[]>([]);
+  // A revelação também vive num ref porque quem guarda a fala pro retoque é o
+  // `done`, e de dentro dele o `est` do render seria o de antes da última
+  // sentença — guardaria uma onda com um pedaço faltando.
+  const estRef = useRef<EstadoRevelacao>(VAZIO);
+  // URLs da fala EM CURSO: as que ainda não viraram fala guardada. Quem revoga
+  // o que já está guardado é o `falas-guardadas.ts`; a bolha só limpa o que é
+  // dela, senão o retoque encontraria URL de objeto morta — que não toca e não
+  // avisa.
+  const pendentesRef = useRef<string[]>([]);
 
-  // As URLs de objeto seguram o MP3 na memória até serem revogadas.
+  const revela = useCallback((passo: (atual: EstadoRevelacao) => EstadoRevelacao) => {
+    estRef.current = passo(estRef.current);
+    setEst(estRef.current);
+  }, []);
+
   useEffect(
     () => () => {
       falaRef.current?.cancela();
-      for (const url of urlsRef.current) URL.revokeObjectURL(url);
+      for (const url of pendentesRef.current) URL.revokeObjectURL(url);
     },
     [],
   );
@@ -78,7 +91,6 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
     // SÍNCRONO no gesto: é o que compra a ativação do áudio no Safari.
     destravaNoGesto();
     setFaseRep('tocando');
-    setEst(VAZIO);
     setPosicao(0);
 
     const sequencia = iniciaSequencia({
@@ -87,10 +99,34 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
       aoFalhar: () => setFaseRep('falha'),
     });
 
+    // O ÁUDIO DESTE TEXTO PODE JÁ ESTAR PAGO. A `GOOGLE_TTS_API_KEY` é uma só
+    // pra frota e o Google cobra por caractere, então reabrir o stream pra uma
+    // fala que já existe na aba é a MESMA resposta cobrada de novo.
+    const guardada = falaGuardada(texto);
+    if (guardada !== null) {
+      // A onda, o rótulo e o aviso de voz alternativa são os da síntese que
+      // gerou estes MP3 — o playhead corre de novo pela mesma onda que ele já
+      // viu tocar. Por isso o estado NÃO volta pro `VAZIO` aqui.
+      estRef.current = guardada.est;
+      setEst(guardada.est);
+      setDegradada(guardada.degradada);
+      for (const url of guardada.urls) sequencia.enfileira(url);
+      sequencia.fecha();
+      return;
+    }
+
+    // Sobra de uma fala que caiu no meio: ninguém mais vai tocar isso.
+    for (const url of pendentesRef.current) URL.revokeObjectURL(url);
+    pendentesRef.current = [];
+    estRef.current = VAZIO;
+    setEst(VAZIO);
+    let degradadaDaFala = false;
+
     falaRef.current = pedeFala(texto, agentSlug, {
       aoMeta: (meta) => {
+        degradadaDaFala = meta.degraded;
         setDegradada(meta.degraded);
-        setEst((atual) => ({
+        revela((atual) => ({
           ...atual,
           duracaoEstimada: meta.duration_estimate,
           peaksPorSegundo: meta.peaks_per_second,
@@ -98,18 +134,26 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
         }));
       },
       aoPeaks: (_id, duracao, peaks) => {
-        setEst((atual) => ({
+        revela((atual) => ({
           ...atual,
           peaks: [...atual.peaks, ...peaks],
           duracoesReais: [...atual.duracoesReais, duracao],
         }));
       },
       aoAudio: (_id, url) => {
-        urlsRef.current.push(url);
+        pendentesRef.current.push(url);
         sequencia.enfileira(url);
       },
       aoFim: (duracaoReal) => {
-        setEst((atual) => ({ ...atual, duracaoReal }));
+        revela((atual) => ({ ...atual, duracaoReal }));
+        // Só fala COMPLETA entra: meia fala guardada terminaria antes da
+        // resposta acabar no retoque, e isso lê como defeito.
+        guardaFala(texto, {
+          urls: pendentesRef.current,
+          est: estRef.current,
+          degradada: degradadaDaFala,
+        });
+        pendentesRef.current = [];
         sequencia.fecha();
       },
       aoErro: () => {
@@ -117,7 +161,7 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
         setFaseRep('falha');
       },
     });
-  }, [texto, agentSlug]);
+  }, [texto, agentSlug, revela]);
 
   const aoTocar = useCallback(() => {
     if (faseRep === 'tocando') {
