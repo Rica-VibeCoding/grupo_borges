@@ -42,6 +42,8 @@ _VOICE_RE = re.compile(r'^[a-z]{2,}-[A-Z]{2,}(?:-[A-Za-z0-9]+)+$')
 FLEET_VOICES: dict[str, str] = {
     "daniel": "pt-BR-Wavenet-E",
     "maestro": "pt-BR-Wavenet-B",
+    # O caseiro desceu junto e DIVIDE a voz com o maestro: só existem duas.
+    "caseiro": "pt-BR-Wavenet-B",
     "tara": "pt-BR-Chirp3-HD-Orus",
     "pavan": "pt-BR-Chirp3-HD-Algieba",
     "lucas": "pt-BR-Chirp3-HD-Algenib",
@@ -70,6 +72,7 @@ def _is_google_voice(voice: str) -> bool:
 EDGE_FALLBACK_VOICES: dict[str, str] = {
     "daniel": "pt-BR-AntonioNeural",
     "maestro": "pt-BR-AntonioNeural",
+    "caseiro": "pt-BR-AntonioNeural",
     "tara": "pt-BR-FranciscaNeural",
     "pavan": "pt-BR-AntonioNeural",
     "lucas": "pt-BR-AntonioNeural",

@@ -121,6 +121,8 @@ def test_mapa_da_frota_poe_daniel_e_maestro_no_wavenet() -> None:
     # do Chirp3-HD é por caractere, e agosto fechou em 1.239.745.
     assert tts.FLEET_VOICES["daniel"] == "pt-BR-Wavenet-E"
     assert tts.FLEET_VOICES["maestro"] == "pt-BR-Wavenet-B"
+    # o caseiro divide a voz com o maestro: pt-BR só tem duas WaveNet masculinas
+    assert tts.FLEET_VOICES["caseiro"] == "pt-BR-Wavenet-B"
 
 
 def test_portao_do_motor_aceita_wavenet_e_chirp_e_recusa_edge() -> None:
