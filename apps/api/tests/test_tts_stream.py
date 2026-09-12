@@ -79,6 +79,40 @@ def test_estimate_duration_usa_regua() -> None:
     assert tts._estimate_duration(texto) == pytest.approx(len(texto) / 16.0)
 
 
+# --- contador de uso (fatura de agosto) -----------------------------------
+
+
+def test_registra_uso_grava_linha_por_sintese(tmp_path, monkeypatch) -> None:
+    # A chave do Google é uma só pra frota: sem este arquivo não existe número
+    # por origem. Duas sínteses = duas linhas (append-only, nunca sobrescreve).
+    alvo = tmp_path / "metrics" / "tts-uso.jsonl"
+    monkeypatch.setattr(tts, "_USO_LOG", alvo)
+
+    tts._registra_uso("cockpit-stream", "daniel", "pt-BR-Chirp3-HD-Orus", "Olá, coração.")
+    tts._registra_uso("cockpit-synth", "pavan", "pt-BR-Chirp3-HD-Algieba", "Oi.")
+
+    linhas = [json.loads(l) for l in alvo.read_text(encoding="utf-8").splitlines()]
+    assert len(linhas) == 2
+    assert set(linhas[0]) == {"ts", "origem", "slug", "voz", "chars", "engine", "http"}
+    # o Google cobra por CODEPOINT com espaço incluído, não por byte UTF-8:
+    # "Olá, coração." tem 13 codepoints e 15 bytes.
+    assert linhas[0]["chars"] == 13
+    assert linhas[0]["origem"] == "cockpit-stream"
+    assert linhas[0]["slug"] == "daniel"
+    assert linhas[1]["origem"] == "cockpit-synth"
+    assert linhas[0]["engine"] == "google" and linhas[0]["http"] == 200
+
+
+def test_registra_uso_nao_derruba_a_fala(tmp_path, monkeypatch) -> None:
+    # Contador é observabilidade: log inacessível (aqui, um arquivo no lugar do
+    # diretório) não pode levantar dentro da síntese.
+    bloqueio = tmp_path / "bloqueio"
+    bloqueio.write_text("não sou diretório")
+    monkeypatch.setattr(tts, "_USO_LOG", bloqueio / "tts-uso.jsonl")
+
+    tts._registra_uso("cockpit-synth", "daniel", "pt-BR-Chirp3-HD-Orus", "texto")
+
+
 # --- fallback edge declarado (defeito 2) ----------------------------------
 
 

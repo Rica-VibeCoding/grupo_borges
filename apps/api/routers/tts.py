@@ -16,6 +16,8 @@ import json
 import re
 import subprocess
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
+from pathlib import Path
 
 import edge_tts
 import httpx
@@ -151,7 +153,40 @@ def _resolve_voice(body: TtsSynthRequest, settings) -> str:
     return settings.tts_voice or DEFAULT_GOOGLE_VOICE
 
 
-async def _synth_google(text: str, voice: str, api_key: str) -> bytes:
+# Contador de caracteres por origem. A GOOGLE_TTS_API_KEY é UMA pra frota
+# inteira, então o painel do Google não separa quem gastou — este arquivo é o
+# único lugar onde o gasto tem dono, e a soma de `chars` é o número que a fatura
+# cobra (o Google conta codepoint Unicode, espaço incluído). Caminho absoluto de
+# propósito: os quatro produtores que batem na mesma chave (skill voz, estas
+# duas rotas, telecodex e orcamento-inteligente) precisam cair no MESMO arquivo.
+_USO_LOG = Path("/home/clawd/.claude/metrics/tts-uso.jsonl")
+
+
+def _registra_uso(origem: str, slug: str, voice: str, text: str) -> None:
+    """Uma linha por síntese que o Google ACEITOU — é o que ele cobra. Falhar
+    aqui nunca pode derrubar a fala: contador é observabilidade, não requisito."""
+    try:
+        _USO_LOG.parent.mkdir(parents=True, exist_ok=True)
+        linha = json.dumps(
+            {
+                "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "origem": origem,
+                "slug": slug,
+                "voz": voice,
+                "chars": len(text),
+                "engine": "google",
+                "http": 200,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        with _USO_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(linha + "\n")
+    except Exception:
+        pass
+
+
+async def _synth_google(text: str, voice: str, api_key: str, origem: str, slug: str) -> bytes:
     """Google Cloud TTS REST v1 — mesmo payload do tts-google.sh."""
     language_code = "-".join(voice.split("-")[:2])  # pt-BR-Chirp3-HD-Orus → pt-BR
     async with httpx.AsyncClient(timeout=20.0) as client:
@@ -168,6 +203,7 @@ async def _synth_google(text: str, voice: str, api_key: str) -> bytes:
     audio_content = res.json().get("audioContent")
     if not audio_content:
         raise RuntimeError("Google TTS sem audioContent")
+    _registra_uso(origem, slug, voice, text)
     return base64.b64decode(audio_content)
 
 
@@ -301,7 +337,9 @@ async def _stream_tts(
     first_mp3: bytes | None = None
     if use_google:
         try:
-            first_mp3 = await _synth_google(sentences[0], voice, api_key)
+            first_mp3 = await _synth_google(
+                sentences[0], voice, api_key, "cockpit-stream", body.slug
+            )
         except Exception:
             use_google = False
 
@@ -355,7 +393,7 @@ async def _stream_tts(
     for i, sent in enumerate(sentences[1:], start=1):
         try:
             if current_engine == "google":
-                mp3 = await _synth_google(sent, voice, api_key)
+                mp3 = await _synth_google(sent, voice, api_key, "cockpit-stream", body.slug)
             else:
                 mp3 = await _synth_edge(sent, edge_voice, rate, pitch)
         except Exception as exc:
@@ -402,7 +440,7 @@ async def tts_synth(body: TtsSynthRequest, request: Request) -> Response:
     # Engine preferido: Google Chirp3-HD (voz da frota). Sem key ou falha → edge.
     if api_key and voice.startswith("pt-BR-Chirp3-HD"):
         try:
-            audio_bytes = await _synth_google(text, voice, api_key)
+            audio_bytes = await _synth_google(text, voice, api_key, "cockpit-synth", body.slug)
         except Exception as exc:
             google_err = str(exc)
 
