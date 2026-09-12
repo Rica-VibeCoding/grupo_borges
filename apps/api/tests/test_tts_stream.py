@@ -125,6 +125,12 @@ def test_mapa_da_frota_poe_daniel_e_maestro_no_wavenet() -> None:
     assert tts.FLEET_VOICES["caseiro"] == "pt-BR-Wavenet-B"
 
 
+def test_tara_fala_no_cockpit_com_a_voz_do_telegram() -> None:
+    # Mesma agente com duas vozes conforme a tela é defeito de identidade, não
+    # de motor: o mapa aqui se declara espelho do tts-google.sh, e lá ela é Aoede.
+    assert tts.FLEET_VOICES["tara"] == "pt-BR-Chirp3-HD-Aoede"
+
+
 def test_portao_do_motor_aceita_wavenet_e_chirp_e_recusa_edge() -> None:
     assert tts._is_google_voice("pt-BR-Wavenet-E") is True
     assert tts._is_google_voice("pt-BR-Chirp3-HD-Algieba") is True
