@@ -1,10 +1,11 @@
 """POST /api/tts/synth — síntese de voz da frota. JP-21.
 
-Engine preferido: Google Cloud TTS (Chirp3-HD) — mesma voz que cada agente já
-usa no Telegram (mapa canônico em ze-shared/.claude/skills/voz/
-scripts/tts-google.sh). Fallback: Microsoft edge-tts quando o Google falha ou
-não há API key. A voz é resolvida por `slug` do agente, então a tropa soa no
-cockpit com a mesma identidade vocal de sempre.
+Engine preferido: Google Cloud TTS — mesma voz que cada agente já usa no
+Telegram (mapa canônico em ze-shared/.claude/skills/voz/
+scripts/tts-google.sh), em dois degraus: Chirp3-HD pra tropa e WaveNet pra quem
+fala muito (Daniel e maestro, ordem do Rica em 12/09). Fallback: Microsoft
+edge-tts quando o Google falha ou não há API key. A voz é resolvida por `slug`
+do agente, então a tropa soa no cockpit com a mesma identidade vocal de sempre.
 """
 from __future__ import annotations
 
@@ -33,10 +34,14 @@ router = APIRouter()
 # no SSML (`<voice name='{voice}'>`), então `'/><inject>` passaria.
 _VOICE_RE = re.compile(r'^[a-z]{2,}-[A-Z]{2,}(?:-[A-Za-z0-9]+)+$')
 
-# Mapa canônico de vozes da frota (Google Chirp3-HD) — espelha o tts-google.sh.
-# Resolve a voz pelo slug do agente dono do chat. Sem entrada → default.
+# Mapa canônico de vozes da frota — espelha o tts-google.sh. Resolve a voz pelo
+# slug do agente dono do chat. Sem entrada → default.
+# Daniel e maestro falam no degrau WaveNet desde 12/09 (ordem do Rica): são os
+# dois que mais gastam, e a fatura do Chirp3-HD é por caractere. Wavenet-B e
+# Wavenet-E são as duas únicas masculinas de pt-BR no voices.list da API.
 FLEET_VOICES: dict[str, str] = {
-    "daniel": "pt-BR-Chirp3-HD-Orus",
+    "daniel": "pt-BR-Wavenet-E",
+    "maestro": "pt-BR-Wavenet-B",
     "tara": "pt-BR-Chirp3-HD-Orus",
     "pavan": "pt-BR-Chirp3-HD-Algieba",
     "lucas": "pt-BR-Chirp3-HD-Algenib",
@@ -46,6 +51,17 @@ FLEET_VOICES: dict[str, str] = {
 }
 DEFAULT_GOOGLE_VOICE = "pt-BR-Chirp3-HD-Orus"
 
+# Prefixos que o Google atende — o portão que decide o motor. Voz de fora desta
+# lista vai pro edge, e ir pro edge é trocar a voz do agente: quando o Daniel
+# desceu pro WaveNet, o portão antigo (só `pt-BR-Chirp3-HD`) mandava a fala dele
+# inteira pro edge-tts, calado. Mexer numa voz da frota é mexer aqui junto.
+_GOOGLE_VOICE_PREFIXES = ("pt-BR-Chirp3-HD", "pt-BR-Wavenet")
+
+
+def _is_google_voice(voice: str) -> bool:
+    return voice.startswith(_GOOGLE_VOICE_PREFIXES)
+
+
 # Fallback edge estável por slug: as vozes Chirp3-HD não existem no edge (só
 # pt-BR-AntonioNeural e pt-BR-FranciscaNeural), então a correspondência é uma
 # escolha de produto, não um espelho do mapa Google. Sem slug → settings.tts_voice
@@ -53,6 +69,7 @@ DEFAULT_GOOGLE_VOICE = "pt-BR-Chirp3-HD-Orus"
 # da auditoria: nunca trocar a voz em silêncio).
 EDGE_FALLBACK_VOICES: dict[str, str] = {
     "daniel": "pt-BR-AntonioNeural",
+    "maestro": "pt-BR-AntonioNeural",
     "tara": "pt-BR-FranciscaNeural",
     "pavan": "pt-BR-AntonioNeural",
     "lucas": "pt-BR-AntonioNeural",
@@ -332,8 +349,9 @@ async def _stream_tts(
     pitch = body.pitch or settings.tts_pitch
 
     # Engine decidida pela primeira sentença (a voz não muda no meio da fala).
-    # Sem key Google ou voz não-Chirp3, já nasce no edge e `degraded` fica true.
-    use_google = bool(api_key and voice.startswith("pt-BR-Chirp3-HD"))
+    # Sem key Google ou voz que o Google não atende, já nasce no edge e
+    # `degraded` fica true.
+    use_google = bool(api_key and _is_google_voice(voice))
     first_mp3: bytes | None = None
     if use_google:
         try:
@@ -437,8 +455,8 @@ async def tts_synth(body: TtsSynthRequest, request: Request) -> Response:
     audio_bytes = b""
     google_err: str | None = None
 
-    # Engine preferido: Google Chirp3-HD (voz da frota). Sem key ou falha → edge.
-    if api_key and voice.startswith("pt-BR-Chirp3-HD"):
+    # Engine preferido: Google (voz da frota). Sem key ou falha → edge.
+    if api_key and _is_google_voice(voice):
         try:
             audio_bytes = await _synth_google(text, voice, api_key, "cockpit-synth", body.slug)
         except Exception as exc:

@@ -113,6 +113,64 @@ def test_registra_uso_nao_derruba_a_fala(tmp_path, monkeypatch) -> None:
     tts._registra_uso("cockpit-synth", "daniel", "pt-BR-Chirp3-HD-Orus", "texto")
 
 
+# --- portão do motor: qual voz o Google atende ----------------------------
+
+
+def test_mapa_da_frota_poe_daniel_e_maestro_no_wavenet() -> None:
+    # Ordem do Rica em 12/09: os dois que mais falam descem de degrau. A fatura
+    # do Chirp3-HD é por caractere, e agosto fechou em 1.239.745.
+    assert tts.FLEET_VOICES["daniel"] == "pt-BR-Wavenet-E"
+    assert tts.FLEET_VOICES["maestro"] == "pt-BR-Wavenet-B"
+
+
+def test_portao_do_motor_aceita_wavenet_e_chirp_e_recusa_edge() -> None:
+    assert tts._is_google_voice("pt-BR-Wavenet-E") is True
+    assert tts._is_google_voice("pt-BR-Chirp3-HD-Algieba") is True
+    assert tts._is_google_voice("pt-BR-AntonioNeural") is False
+
+
+def test_stream_com_voz_wavenet_fala_pelo_google(monkeypatch) -> None:
+    """O portão decide o MOTOR por prefixo da voz. Enquanto ele só conhecia
+    `pt-BR-Chirp3-HD`, descer o Daniel pro WaveNet jogava a fala inteira no
+    edge-tts — voz trocada em silêncio, o defeito que esta rota existe pra não
+    repetir. Aqui o edge é proibido: se o portão fechar, o teste estoura."""
+    mp3 = _mp3_teste()
+    vozes_pedidas: list[str] = []
+
+    async def _google_ok(_text, voice, _key, _origem, _slug):
+        vozes_pedidas.append(voice)
+        return mp3
+
+    async def _edge_proibido(*_a, **_k):
+        raise AssertionError("voz do Google caiu no edge — portão fechado")
+
+    monkeypatch.setattr(tts, "_synth_google", _google_ok)
+    monkeypatch.setattr(tts, "_synth_edge", _edge_proibido)
+
+    body = _FakeBody()
+    body.slug = "daniel"
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "chave-de-teste"
+    sents = tts._split_sentences(tts.strip_for_tts(body.text))
+
+    events: dict[str, list[dict]] = {}
+
+    async def _coletar() -> None:
+        async for ev in tts._stream_tts(sents, "pt-BR-Wavenet-E", body, settings):
+            e = ev.split("\n", 1)[0].replace("event: ", "").strip()
+            d = json.loads(ev.split("data: ", 1)[1].strip())
+            events.setdefault(e, []).append(d)
+
+    asyncio.run(_coletar())
+
+    meta = events["meta"][0]
+    assert meta["engine"] == "google"
+    assert meta["degraded"] is False
+    assert meta["voice"] == "pt-BR-Wavenet-E"
+    assert vozes_pedidas == ["pt-BR-Wavenet-E"] * len(sents)
+    assert "degraded" not in events  # nada a declarar: a voz é a que ele pediu
+
+
 # --- fallback edge declarado (defeito 2) ----------------------------------
 
 
