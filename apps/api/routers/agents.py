@@ -71,7 +71,14 @@ from routers.ask_user import (
     ask_user_events_since,
     _public_event as _public_ask_user,
 )
-from services import codex_reader, kimi_catalog, proxy_catalog, tmux_driver, workspace_reader
+from services import (
+    codex_reader,
+    desligamento_deliberado,
+    kimi_catalog,
+    proxy_catalog,
+    tmux_driver,
+    workspace_reader,
+)
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -4384,6 +4391,15 @@ async def post_agent_desligar(
     except (ValueError, libtmux_exc.LibTmuxException) as exc:
         raise HTTPException(status_code=409, detail=f"desligar_failed: {exc}") from exc
 
+    # Carimbo de "foi de propósito", pro vigia não contar isto como morte e
+    # devolver o agente com um WhatsApp em cima. Depois do desligar, nunca
+    # antes: desligar que falha não é desligamento. Ver `desligamento_deliberado`.
+    #
+    # Pela SESSÃO tmux, nunca pelo slug: o vigia indexa por sessão, e os dois
+    # nomes divergem de verdade na frota — `canarinho` mora na sessão `canario`.
+    # Carimbar o slug ali deixaria o carimbo eternamente sem par.
+    await asyncio.to_thread(desligamento_deliberado.marcar, agent["tmux_session"])
+
     resistiram = result.get("scopes_resistiram") or []
     return {
         # Já desligado é sucesso, não falha: o botão é idempotente e o estado
@@ -4420,6 +4436,12 @@ async def post_agent_ligar(slug: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=409, detail=f"ligar_em_curso: {exc}") from exc
     except (ValueError, libtmux_exc.LibTmuxException) as exc:
         raise HTTPException(status_code=409, detail=f"ligar_failed: {exc}") from exc
+
+    # O agente voltou por vontade do Rica: o carimbo de "desligado de propósito"
+    # morre aqui. O vigia também limpa sozinho ao ver a sessão viva — esta porta
+    # é a que fecha a janela de até 5 min entre o boot e o próximo ciclo dele.
+    # Pela sessão tmux, pela mesma razão do `/desligar`.
+    await asyncio.to_thread(desligamento_deliberado.desmarcar, agent["tmux_session"])
 
     return {
         "tmux_delivered": result["confirmed"],
