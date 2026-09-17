@@ -115,6 +115,10 @@ def test_kimi_leitura_velha_usa_pedido():
 
 @pytest.mark.parametrize("familia,modelo,esperado", [
     ("anthropic", "Opus 5", "opus"),
+    # A janela de 1M vira sufixo no display_name, e é o display que o contexto
+    # entrega. Sem casar aqui, o "Vale no próximo boot" ficava preso na tela de
+    # todo agente com `[1m]` — Rica viu no Caseiro, 17/09.
+    ("anthropic", "Opus 5 (1M context)", "opus"),
     ("codex-proxy", "gpt-6-astra[1m]", "gpt-6-astra[1m]"),
 ])
 def test_familias_existentes_preservam_leitura(familia, modelo, esperado, monkeypatch):

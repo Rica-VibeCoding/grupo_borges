@@ -1261,7 +1261,10 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
 def _claude_model_slug(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
-    matched = re.fullmatch(r"(?:claude-)?(fable|opus|sonnet|haiku)(?:[- ][0-9][0-9.\-]*)?(?:\[1m\])?", value.strip().lower())
+    # A janela de 1M aparece de DUAS formas: `[1m]` no `id` e ` (1M context)` no
+    # `display_name`. O painel do contexto prefere o display (`_build_painel_contexto`),
+    # então só o segundo formato chegava aqui — e não casava.
+    matched = re.fullmatch(r"(?:claude-)?(fable|opus|sonnet|haiku)(?:[- ][0-9][0-9.\-]*)?(?:\[1m\]| \(1m context\))?", value.strip().lower())
     return matched.group(1) if matched else None
 
 
