@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -111,6 +112,55 @@ def test_kimi_leitura_velha_usa_pedido():
     )
     assert painel.value == "k3-256k"
     assert painel.session_may_diverge
+
+
+def test_agente_ocioso_nao_acende_o_aviso_de_boot():
+    """Agente parado não reescreve a statusline, e o arquivo velho é DELE.
+
+    Até 17/09 o painel lia `stale` como divergência: passados cinco minutos sem
+    turno, o "Vale no próximo boot" voltava para a tela de todo agente Anthropic
+    ocioso — vinicius, felipe e caseiro ao mesmo tempo.
+    """
+    ctx = contexto("Opus 5")
+    ctx.stale = True
+    painel = agents._build_painel_model({"motor_familia": "anthropic"}, ctx)
+    assert painel.value == "opus"
+    assert painel.session_may_diverge is False
+
+
+def test_leitura_de_outra_sessao_ainda_acende_o_aviso():
+    """A outra metade: apagar o aviso sempre passaria o teste de cima sozinho.
+
+    Statusline de uma sessão ANTERIOR não descreve a viva — ali o painel não
+    sabe o que está rodando, e a ressalva é verdadeira."""
+    ctx = contexto("Opus 5")
+    ctx.stale = True
+    ctx.de_outra_sessao = True
+    painel = agents._build_painel_model(
+        {"motor_familia": "anthropic", "state_model": "sonnet"}, ctx,
+    )
+    assert painel.value == "sonnet"
+    assert painel.session_may_diverge is True
+
+
+def status_anthropic_velho(fell_back):
+    return agents._CCStatus("teste", Path("/tmp/teste"), {
+        "model": {"id": "claude-opus-5[1m]", "display_name": "Opus 5 (1M context)"},
+        "effort": {"level": "xhigh"},
+        "updated_at": int(time.time()) - 6 * 3600,
+    }, fell_back)
+
+
+@pytest.mark.parametrize("fell_back,diverge", [(False, False), (True, True)])
+def test_esforco_segue_a_mesma_regua_do_modelo(fell_back, diverge):
+    """`/effort` só muda dentro de um turno, e turno reescreve a statusline —
+    então arquivo de seis horas atrás da PRÓPRIA sessão continua verdadeiro. O
+    aviso fica só quando a leitura é de outra sessão."""
+    painel = agents._build_claude_painel_effort(
+        {"motor_familia": "anthropic"}, status_anthropic_velho(fell_back),
+    )
+    assert painel.value == "xhigh"
+    assert painel.session_may_diverge is diverge
 
 
 @pytest.mark.parametrize("familia,modelo,esperado", [

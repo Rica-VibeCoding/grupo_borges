@@ -156,6 +156,10 @@ class AgentPainelContexto(BaseModel):
     updated_at: int | None = None
     available: bool
     stale: bool = False
+    #: Leitura de uma sessão ANTERIOR — a viva não escreveu statusline. Separado
+    #: de `stale`, que é leitura da PRÓPRIA sessão, só velha: agente ocioso não
+    #: reescreve o arquivo, e o que está nele segue sendo o último turno dele.
+    de_outra_sessao: bool = False
     #: O nome que o Rica deu com `/rename`. Ausente até alguém nomear a sessão —
     #: o nome de exibição padrão (`my-app-3f`) não preenche o campo.
     session_name: str | None = None
@@ -1221,6 +1225,7 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
             source=str(cc_status.path) if cc_status.path else "cc_status:missing",
             updated_at=updated_at,
             available=False,
+            de_outra_sessao=cc_status.fell_back,
             session_name=session_name,
             exceeds_200k=exceeds,
         )
@@ -1253,6 +1258,7 @@ def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> Agent
         updated_at=updated_at,
         available=True,
         stale=stale,
+        de_outra_sessao=cc_status.fell_back,
         session_name=session_name,
         exceeds_200k=exceeds,
     )
@@ -1333,7 +1339,12 @@ def _build_painel_model(
     if familia != "anthropic":
         return None
     status_model = _claude_model_slug(contexto.model)
-    if status_model is not None and contexto.available and not contexto.stale:
+    # Leitura velha da PRÓPRIA sessão vale: aqui a troca é em runtime, o agente
+    # ocioso não reescreve a statusline, e o que está nela é o último turno que
+    # ele rodou. Usar `stale` acendia o "Vale no próximo boot" em todo agente
+    # parado há mais de cinco minutos (Rica, 17/09). Só leitura de OUTRA sessão
+    # deixa o painel sem saber o que a viva roda.
+    if status_model is not None and contexto.available and not contexto.de_outra_sessao:
         return AgentPainelModel(
             value=status_model, source=contexto.source, session_may_diverge=False,
         )
@@ -1352,16 +1363,13 @@ def _build_claude_painel_effort(
     model = (model.get("id") or model.get("display_name")) if isinstance(model, dict) else None
     compativel = _sessao_compativel(agent, model)
     if value is not None and cc_status.path is not None and compativel:
-        updated_at = _int_or_none(cc_status.payload.get("updated_at")) if cc_status.payload else None
-        stale = cc_status.fell_back or (
-            updated_at is not None
-            and int(time.time()) - updated_at > _AGENT_PAINEL_CONTEXTO_STALE_AFTER_SECONDS
-        )
+        # Mesma régua do modelo acima: idade do arquivo não é divergência —
+        # `/effort` só muda dentro de um turno, e turno reescreve a statusline.
         return AgentPainelEffort(
             value=value,
             allowed=list(_CLAUDE_PAINEL_ALLOWED_EFFORTS),
             source=str(cc_status.path),
-            session_may_diverge=stale,
+            session_may_diverge=cc_status.fell_back,
         )
 
     # Compatibilidade para sessões que ainda não produziram statusline: isto
