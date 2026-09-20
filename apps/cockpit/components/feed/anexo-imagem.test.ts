@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { juntaMetadesDoAnexo, leAnexoImagem, urlDoAnexoImagem } from './anexo-imagem.ts';
+import {
+  juntaMetadesDoAnexo,
+  leAnexoImagem,
+  semEnvelopeDeColagem,
+  urlDoAnexoImagem,
+} from './anexo-imagem.ts';
 
 const CAMINHO = '/home/clawd/repos/grupo_borges/apps/api/uploads/agents/canarinho/1786819169359-c0919295ee39.jpg';
 
@@ -195,5 +200,18 @@ describe('foto que chegou por canal', () => {
       urlDoAnexoImagem('daniel', '1786819169359-c0919295ee39.jpg'),
       '/api/agents/daniel/file/1786819169359-c0919295ee39.jpg',
     );
+  });
+});
+
+describe('envelope de colagem que o CC embrulha sozinho', () => {
+  it('tira a etiqueta e devolve só o que o Rica escreveu', () => {
+    assert.equal(
+      semEnvelopeDeColagem('<pasted_content id="8c39">\nDesligue o pc e q tv\n</pasted_content id="8c39">'),
+      'Desligue o pc e q tv',
+    );
+  });
+
+  it('texto sem envelope passa intacto', () => {
+    assert.equal(semEnvelopeDeColagem('Desligue o pc e q tv'), 'Desligue o pc e q tv');
   });
 });

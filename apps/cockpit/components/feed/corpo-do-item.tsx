@@ -29,7 +29,7 @@ import { DelegacaoView } from './delegacoes.tsx';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
-import { leAnexoImagem } from './anexo-imagem';
+import { leAnexoImagem, semEnvelopeDeColagem } from './anexo-imagem';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
 import { leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
 import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
@@ -191,7 +191,10 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       if (anexo?.filename && agentSlug) {
         return (
           <AnexoImagemView
-            anexo={{ filename: anexo.filename, legenda: anexo.legenda }}
+            anexo={{
+              filename: anexo.filename,
+              legenda: anexo.legenda ? semEnvelopeDeColagem(anexo.legenda) : anexo.legenda,
+            }}
             agentSlug={agentSlug}
           />
         );
@@ -230,7 +233,7 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
               na fila
             </div>
           ) : null}
-          <Fala texto={anexo?.legenda ?? item.text} />
+          <Fala texto={semEnvelopeDeColagem(anexo?.legenda ?? item.text)} />
         </div>
       );
     }

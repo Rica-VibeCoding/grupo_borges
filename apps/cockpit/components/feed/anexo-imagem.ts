@@ -108,6 +108,19 @@ export function juntaMetadesDoAnexo(legendaCrua: string, caminhoCru: string): st
   return `Imagem enviada via cockpit:\n${caminho}\nCaption: ${legenda.legenda}`;
 }
 
+/** O CC envolve texto que chegou como colagem (Ctrl+V, inclusive o que o
+ *  composer do cockpit manda de uma vez) em `<pasted_content id="...">`. É
+ *  marcação interna do harness, não fala do Rica — mostrar a etiqueta crua faz
+ *  o balão parecer com o texto duplicado (achado 20/09, print dele).
+ */
+const ENVELOPE_DE_COLAGEM =
+  /^<pasted_content id="[^"]*">\r?\n([\s\S]*?)\r?\n<\/pasted_content id="[^"]*">$/;
+
+export function semEnvelopeDeColagem(texto: string): string {
+  const m = texto.trim().match(ENVELOPE_DE_COLAGEM);
+  return m ? m[1] : texto;
+}
+
 /** Foto que chegou por canal (Telegram/WhatsApp): o arquivo mora no inbox do
  *  canal, fora de `uploads/`, e quem o serve é outra rota. */
 const CAMINHO_DE_CANAL = /^\/home\/[^/]+\/\.claude\/channels\//;
