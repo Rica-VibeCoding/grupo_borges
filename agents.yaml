@@ -113,6 +113,7 @@ agents:
     name: Felipe Conti
     aka: Fe
     role: Especialista — futuro líder
+    emoji: "🌲"
     origin: italiano (norte)
     tmux_session: felipe
     workspace_path: /home/clawd/repos/ze_claude/felipe
