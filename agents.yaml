@@ -117,7 +117,7 @@ agents:
     tmux_session: felipe
     workspace_path: /home/clawd/repos/ze_claude/felipe
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - comercial-fluyt-b2b
       - woodpro
@@ -176,56 +176,53 @@ agents:
     can_review:
       - daniel
 
-  - slug: hiro
-    name: Hiro Nakamura
-    role: Dev par de teste — motor Kimi K3
-    emoji: "🧪"
-    origin: japonês
-    tmux_session: hiro
-    # [2026-07-19 Pavan] Clone experimental do Daniel no promob-splitter (worktree hiro-teste). Backend NÃO-Anthropic (Kimi K3, assinatura Kimi Code). Controle via tmux (RC não existe nesse motor). Domínio próprio decidido pelo Rica 19/07.
-    # [2026-08-09 Pavan] Passou a trabalhar no cockpit, no worktree
-    # `grupo_borges-hiro`, e o caminho aqui ficou para trás. Como
-    # `_slug_from_cwd` (routers/hooks.py) atribui evento por prefix-match do
-    # cwd, todo evento da sessão viva caía no vazio: sem esforço efetivo, sem
-    # context_pct e sem cota no painel. Não colide com o Daniel
-    # (`/home/clawd/repos/grupo_borges`) porque o match exige a barra final.
-    workspace_path: /home/clawd/repos/grupo_borges-hiro
+  # [2026-09-11 Rica] Hiro saiu da tropa (sessão e histórico de eventos
+  # apagados do banco do cockpit). Caseiro entra no lugar dele — única função:
+  # especialista do Home Assistant (casa do Rica). Repo próprio, fora do
+  # monorepo, igual ao Maestro; sessão tmux já existe e roda de verdade
+  # (ver `/home/clawd/repos/caseiro/CLAUDE.md`), só passou a ficar visível
+  # no painel agora.
+  - slug: caseiro
+    name: Caseiro
+    role: Especialista — casa do Rica (Home Assistant)
+    emoji: "🏠"
+    tmux_session: caseiro
+    workspace_path: /home/clawd/repos/caseiro
     cli_default: claude_code
-    model_default: k3
-    # [2026-07-19 Hiro] Família de modelos do agente: drive o seletor do cockpit
-    # (POST /model vira persist-only, effort low/high/max). Sem o campo = Anthropic.
-    model_family: kimi
+    model_default: claude-opus-4-8
     capabilities:
-      - dev-fullstack
-      - promob-splitter
-      - fluyt
-      - teste-motor-kimi-k3
-      - refactor
-    can_review:
-      - daniel
+      - home-assistant
+      - automacao-residencial
+    can_review: []
 
-  # [2026-08-08 Pavan] Executor de implementação do Cockpit V2, motor DeepSeek
-  # V4-Flash via assinatura OpenCode Go (não-Anthropic — mesmo padrão do Hiro/
-  # Kimi). Orquestrado pelo Pavan, worktree isolado (nunca o checkout do Daniel).
+  # [2026-08-08 Pavan] Motor DeepSeek V4-Flash via assinatura OpenCode Go
+  # (não-Anthropic — mesmo padrão do Hiro/Kimi). `model_family: opencode` liga a
+  # cota do plano Go no painel (20/08); contexto/effort ainda são lidos como se
+  # fosse Anthropic — mesmo gotcha que o Kimi teve antes do DS-69.
   # Slug ficou "canarinho" de propósito: já existe "canario" abaixo (gerador de
   # carga sintética do gate, nome consagrado em dezenas de arquivos do cockpit —
   # NÃO renomear aquele). O Rica chama este de "Canário" no dia a dia; o slug
-  # técnico é só pra não colidir. `model_family: opencode` liga a cota do
-  # plano Go no painel (20/08); contexto/effort ainda são lidos como se fosse
-  # Anthropic — mesmo gotcha que o Kimi teve antes do DS-69.
+  # técnico é só pra não colidir.
+  #
+  # [2026-09-20 Pavan] PAPEL MUDOU: era executor de implementação do Cockpit V2,
+  # virou o agente de pesquisa da tropa (decisão do Rica). `workspace_path` saiu
+  # do worktree `grupo_borges-canario` pra casa dele — o worktree existia pra
+  # implementar, e a persona nunca carregava lá (não havia CLAUDE.md nenhum no
+  # caminho da sessão; medido 20/09 no JSONL, zero menção à persona). Pesquisar
+  # não exige checkout. O worktree segue no disco, sem dono.
   - slug: canarinho
     name: Canário
-    role: Executor de implementação — Cockpit V2, motor DeepSeek V4-Flash (Go)
+    role: Agente de pesquisa — fonte primária, doc oficial, ACHADO/EVIDÊNCIA/RISCO/RECOMENDAÇÃO
     emoji: "🐤"
     tmux_session: canario
-    workspace_path: /home/clawd/repos/grupo_borges-canario
+    workspace_path: /home/clawd/repos/ze_claude/canario
     cli_default: claude_code
     model_default: deepseek-v4-flash
     model_family: opencode
     capabilities:
-      - dev-fullstack
-      - cockpit-v2
-      - polimento-ui
+      - pesquisa-tecnica
+      - doc-oficial-context7
+      - pesquisa-de-mercado
       - motor-deepseek-opencode-go
     can_review: []
 
