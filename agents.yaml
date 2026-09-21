@@ -13,7 +13,7 @@ agents:
     tmux_session: pavan
     workspace_path: /home/clawd/repos/ze_claude/pavan
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - meta-orquestracao
       - palavra-final
@@ -53,7 +53,7 @@ agents:
     # back resolve o diretório de JSONL. Divergência não dá erro: dá agente ocioso.
     workspace_path: /home/clawd/repos/ze_claude/daniel
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - dev-fullstack
       - fluyt
@@ -83,7 +83,7 @@ agents:
     tmux_session: maestro
     workspace_path: /home/clawd/repos/maestro
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - orquestracao-casas-psmux
       - dev-remoto-pc
@@ -93,11 +93,12 @@ agents:
     name: Vinicius Zanella
     aka: Vini
     role: Especialista — futuro líder
+    emoji: "😎"
     origin: italiano (Vêneto)
     tmux_session: vinicius
     workspace_path: /home/clawd/repos/ze_claude/vinicius
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - movelmar
       - lojistas-conecta
@@ -132,11 +133,12 @@ agents:
   - slug: barsi
     name: Luiz Barsi
     role: Especialista — futuro líder
+    emoji: "💰"
     origin: italiano (Emilia-Romagna)
     tmux_session: barsi
     workspace_path: /home/clawd/repos/ze_claude/barsi
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - cfo-read-only
       - monitor-financeiro
@@ -190,7 +192,7 @@ agents:
     tmux_session: caseiro
     workspace_path: /home/clawd/repos/caseiro
     cli_default: claude_code
-    model_default: claude-opus-4-8
+    model_default: claude-opus-5
     capabilities:
       - home-assistant
       - automacao-residencial
