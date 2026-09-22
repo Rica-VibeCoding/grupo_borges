@@ -106,7 +106,7 @@ export type ComposerProps = {
   agentSlug: string;
   agentName: string;
   motor: Motor;
-  /** Repasse direto para o SeletorMotor: o Kimi tem `requested` no painel,
+  /** Repasse direto para o SeletorMotor: a Tara tem `requested` no painel,
    *  o Claude não (ver `contratoSeparaPedido` em motor.ts). */
   esforcoCobrePedido: boolean;
 };

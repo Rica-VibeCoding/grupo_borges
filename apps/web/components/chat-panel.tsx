@@ -15,10 +15,7 @@ import {
   postAgentDestrava,
   postAgentModel,
   toShortModelSlug,
-  toKimiModelSlug,
   type ChatModelSlug,
-  type KimiModelSlug,
-  type AnyModelSlug,
 } from '../lib/api';
 import { formatCompactNumber } from '../lib/painel-format';
 import { useAgentSend } from '../lib/use-agent-send';
@@ -48,18 +45,6 @@ const MODEL_LABEL: Record<ChatModelSlug, string> = {
   opus: 'Opus 5',
   sonnet: 'Sonnet 5',
   haiku: 'Haiku 4.5',
-};
-
-const KIMI_MODEL_OPTIONS: Array<{ value: KimiModelSlug; label: string }> = [
-  { value: 'kimi-k3', label: 'Kimi K3 · 1M' },
-  { value: 'kimi-k2.7-code', label: 'Kimi K2.7 Code' },
-  { value: 'kimi-k2.7-code-highspeed', label: 'Kimi K2.7 HS' },
-];
-
-const KIMI_MODEL_LABEL: Record<KimiModelSlug, string> = {
-  'kimi-k3': 'Kimi K3 · 1M',
-  'kimi-k2.7-code': 'Kimi K2.7 Code',
-  'kimi-k2.7-code-highspeed': 'Kimi K2.7 HS',
 };
 
 /**
@@ -1099,32 +1084,23 @@ function StopIcon() {
 function ModelChip({ agent }: { agent: Agent }) {
   const { mutate } = useFleet();
   const { fire } = useToast();
-  // DS-69 — o Kimi usa allowlist e fluxo próprios: a troca não vale em runtime,
-  // só no próximo boot. Claude Code segue o /model de sempre.
-  const isKimi = agent.model_family === 'kimi';
-  const options = isKimi ? KIMI_MODEL_OPTIONS : MODEL_OPTIONS;
-  const fallbackSlug: AnyModelSlug = isKimi ? 'kimi-k3' : 'opus';
+  const options = MODEL_OPTIONS;
+  const fallbackSlug: ChatModelSlug = 'opus';
   const labelOf = useCallback(
-    (slug: AnyModelSlug): string =>
-      isKimi
-        ? KIMI_MODEL_LABEL[slug as KimiModelSlug] ?? slug
-        : MODEL_LABEL[slug as ChatModelSlug] ?? slug,
-    [isKimi],
+    (slug: ChatModelSlug): string => MODEL_LABEL[slug] ?? slug,
+    [],
   );
-  const currentSlug: AnyModelSlug | null = useMemo(
-    () =>
-      isKimi
-        ? toKimiModelSlug(agent.state_model ?? agent.model_default)
-        : toShortModelSlug(agent.state_model ?? agent.model_default),
-    [isKimi, agent.state_model, agent.model_default],
+  const currentSlug: ChatModelSlug | null = useMemo(
+    () => toShortModelSlug(agent.state_model ?? agent.model_default),
+    [agent.state_model, agent.model_default],
   );
 
-  const [pending, setPending] = useState<AnyModelSlug | null>(null);
+  const [pending, setPending] = useState<ChatModelSlug | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirmTarget, setConfirmTarget] = useState<AnyModelSlug | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<ChatModelSlug | null>(null);
 
   const sendChange = useCallback(
-    async (target: AnyModelSlug, force: boolean) => {
+    async (target: ChatModelSlug, force: boolean) => {
       setBusy(true);
       setPending(target);
       try {
@@ -1132,9 +1108,7 @@ function ModelChip({ agent }: { agent: Agent }) {
         if (!res.runtime_switch) {
           fire({
             kind: 'success',
-            msg: isKimi
-              ? `${agent.name} usa ${labelOf(target)} no próximo boot`
-              : `${agent.name} usa ${labelOf(target)} na próxima execução`,
+            msg: `${agent.name} usa ${labelOf(target)} na próxima execução`,
           });
         } else if (!res.tmux_delivered) {
           fire({ kind: 'warn', msg: 'troca não entregue', sub: 'pane fora do CLI esperado', ttlMs: 6000 });
@@ -1152,22 +1126,21 @@ function ModelChip({ agent }: { agent: Agent }) {
         setPending(null);
       }
     },
-    [agent.name, agent.slug, fire, isKimi, labelOf, mutate],
+    [agent.name, agent.slug, fire, labelOf, mutate],
   );
 
   const onSelect = useCallback(
     (next: string) => {
-      const slug = next as AnyModelSlug;
+      const slug = next as ChatModelSlug;
       if (busy) return;
       if (slug === currentSlug) return;
-      // O Kimi não toca a sessão viva — persiste direto.
-      if (!isKimi && agent.status === 'trabalhando') {
+      if (agent.status === 'trabalhando') {
         setConfirmTarget(slug);
         return;
       }
       void sendChange(slug, false);
     },
-    [agent.status, busy, currentSlug, isKimi, sendChange],
+    [agent.status, busy, currentSlug, sendChange],
   );
 
   const displaySlug = pending ?? currentSlug ?? fallbackSlug;
@@ -1185,18 +1158,13 @@ function ModelChip({ agent }: { agent: Agent }) {
           className="model-chip"
           aria-label="Modelo"
           aria-busy={busy}
-          title={isKimi ? 'Modelo do próximo boot do Hiro' : 'Trocar modelo'}
+          title="Trocar modelo"
         >
           <Select.Value>{displayLabel}</Select.Value>
           <Select.Icon className="model-chip-caret" aria-hidden="true">▾</Select.Icon>
         </Select.Trigger>
         <Select.Portal>
           <Select.Content className="select-content" position="popper" sideOffset={4}>
-            {isKimi && (
-              <div className="select-hint" role="note">
-                vale no próximo boot
-              </div>
-            )}
             <Select.Viewport>
               {options.map((opt) => (
                 <Select.Item key={opt.value} value={opt.value} className="select-item">

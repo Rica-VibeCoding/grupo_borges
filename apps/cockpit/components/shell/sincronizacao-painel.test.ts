@@ -3,7 +3,7 @@ import { it } from 'node:test';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { publicarPainel, sincronizarPainel } from './sincronizacao-painel.ts';
 
-const painel = (slug: string, familia = 'kimi') => ({
+const painel = (slug: string, familia = 'codex-proxy') => ({
   slug, motor: { familia }, model: null, effort: { value: 'high' },
 }) as AgentPainelResponse;
 

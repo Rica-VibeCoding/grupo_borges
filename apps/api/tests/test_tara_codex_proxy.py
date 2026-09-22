@@ -475,7 +475,7 @@ def test_patch_effort_da_tara_persiste_para_o_proximo_boot(tmp_path: Path) -> No
     assert corpo["source"] == "agent_state.codex_reasoning_effort"
     assert corpo["written"] is True
     assert corpo["session_may_diverge"] is True
-    # Contrato enxuto, igual ao do Kimi: sem estes campos o `motor.ts` já
+    # Contrato enxuto: sem estes campos o `motor.ts` já
     # classifica como "aplicado" e fecha o menu, sem poll de convergência.
     assert "tmux_delivered" not in corpo
     assert "confirmed" not in corpo
@@ -489,7 +489,7 @@ def test_painel_da_tara_mostra_o_vivo_com_o_pedido_ao_lado(tmp_path: Path) -> No
     """Servir o pedido esconderia o boot que nasceu no default — e servir só o
     vivo faria a escolha do Rica parecer que não pegou.
 
-    Mesmo desenho do Kimi (`requested`), pela mesma razão: nos dois o esforço
+    Desenho do `requested`, pela razão de sempre: aqui o esforço
     entra por `CLAUDE_CODE_EFFORT_LEVEL` no boot, então entre a escolha e o
     próximo restart os dois valores são legitimamente diferentes.
     """

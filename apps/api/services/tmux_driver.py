@@ -1086,7 +1086,7 @@ def _pane_owner_pids(pane_pid: int) -> set[int]:
 _CHANNEL_FLAGS = ("--channels", "--dangerously-load-development-channels")
 
 #: Canal que TODO agente da frota sobe no boot — `ze-shared/scripts/subir-frota.sh`
-#: usa este literal nas duas linhas de lançamento (Claude e Kimi). Serve de piso
+#: usa este literal nas linhas de lançamento. Serve de piso
 #: quando o processo vivo não tem nada pra copiar; sem ele, mudez vira estado
 #: absorvente (ver `_pane_channel_flags`).
 _CANAL_PADRAO = "--channels plugin:telegram@claude-plugins-official"
@@ -1177,8 +1177,8 @@ def _pane_channel_flags(pane_pid: int, session_name: str) -> str:
 #: na string do comando — um lugar só pra crescer a lista, sem função nova
 #: por variável nem `shlex.quote` acumulando por cada entrada.
 #:
-#: As 7 `ANTHROPIC_*` são o roteamento inteiro do Hiro pro Kimi (sem elas o
-#: `claude` relançado bate na API da Anthropic de verdade, não no `k3`).
+#: As 7 `ANTHROPIC_*` são o roteamento inteiro dos motores não-Anthropic
+#: (sem elas o `claude` relançado bate na API da Anthropic de verdade).
 #: Agente sem essas vars simplesmente não as tem no `/proc/<pid>/environ` —
 #: `_pane_environment_snapshot` não força vazio, e o loop chamador faz
 #: `unset_environment` (no-op se a sessão nunca teve a var).
@@ -1888,8 +1888,8 @@ async def shutdown_agent(session_name: str) -> dict[str, object]:
 #: o que `_prepare_cli_launch` não tem como saber com o processo morto: o
 #: `TELEGRAM_STATE_DIR` de cada agente (sem ele o agente sobe respondendo no
 #: canal do Daniel, que é o default legado), a cerca de memória por sessão, e o
-#: env inteiro dos motores não-Anthropic — sem `ANTHROPIC_BASE_URL`/`API_KEY` o
-#: hiro e o canário sobem batendo na Anthropic de verdade.
+#: env inteiro dos motores não-Anthropic — sem `ANTHROPIC_BASE_URL`/`API_KEY` a
+#: Tara e o canário sobem batendo na Anthropic de verdade.
 #:
 #: No relaunch essas duas coisas são COPIADAS do processo vivo
 #: (`_pane_channel_flags`, `_PRESERVED_ENV_VARS`). No Ligar não existe processo

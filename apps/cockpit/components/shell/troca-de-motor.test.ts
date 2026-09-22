@@ -15,18 +15,18 @@ function motor(patch: Partial<PainelMotor> = {}): PainelMotor {
 }
 
 describe('matriz cheia e neutra — nenhuma preferência de motor no código', () => {
-  it('a lista tem as quatro famílias em ordem alfabética, sem item extra', () => {
+  it('a lista tem as famílias em ordem alfabética, sem item extra', () => {
     const opcoes = opcoesDeFamilia(motor());
     assert.deepEqual(
       opcoes.map((o) => o.chave),
-      ['anthropic', 'codex-proxy', 'kimi', 'opencode'],
+      ['anthropic', 'codex-proxy', 'opencode'],
     );
   });
 
   it('sem override, o selecionado é a família do yaml e não há "voltar ao padrão"', () => {
-    const opcoes = opcoesDeFamilia(motor({ familia: 'kimi', override: null }));
+    const opcoes = opcoesDeFamilia(motor({ familia: 'opencode', override: null }));
     const selecionado = opcoes.filter((o) => o.selecionado).map((o) => o.chave);
-    assert.deepEqual(selecionado, ['kimi']);
+    assert.deepEqual(selecionado, ['opencode']);
     assert.equal(opcoes.some((o) => o.chave === 'herda'), false);
   });
 
@@ -37,7 +37,7 @@ describe('matriz cheia e neutra — nenhuma preferência de motor no código', (
   });
 
   it('a palavra do padrão Anthropic (ausência no yaml) é o rótulo correto', () => {
-    assert.equal(rotulaFamilia('kimi'), 'Kimi');
+    assert.equal(rotulaFamilia('opencode'), 'OpenCode');
     assert.equal(rotulaFamilia('codex-proxy'), 'Codex');
     assert.equal(rotulaFamilia(null), 'Padrão (Anthropic)');
     // Família que o catálogo ainda não conhece: mostra o nome cru, não estoura.
@@ -48,7 +48,7 @@ describe('matriz cheia e neutra — nenhuma preferência de motor no código', (
 describe('destino da troca — o clique manda só o que muda alguma coisa', () => {
   it('escolher a família que já é o override atual não dispara nada', () => {
     // Com override, o back devolve `familia === override` — os dois andam juntos.
-    const destino = destinoDaTroca(motor({ familia: 'kimi', override: 'kimi' }), 'kimi');
+    const destino = destinoDaTroca(motor({ familia: 'opencode', override: 'opencode' }), 'opencode');
     assert.deepEqual(destino, { acao: 'nenhuma' });
   });
 

@@ -79,7 +79,7 @@ test('diretório inexistente é lista vazia, não erro', async () => {
 });
 
 test('órfã de pid morto, corrompida e sem dono saem; a boa fica', async () => {
-  const { delegador: _omitido, ...semDono } = marca({ alvo: 'hiro', quem: 'Hiro K3' });
+  const { delegador: _omitido, ...semDono } = marca({ alvo: 'caseiro', quem: 'Caseiro' });
   const dir = await diretorioCom({
     '111.json': JSON.stringify(marca()),
     '222.json': JSON.stringify(marca({ pid: MORTO, quem: 'Fantasma' })),
@@ -131,7 +131,7 @@ test('?agente devolve só as daquele delegador, com inicio cru em segundos', asy
   const dir = await diretorioCom({
     '111.json': JSON.stringify(marca({ delegador: 'daniel', quem: 'Tara', inicio: 100 })),
     '222.json': JSON.stringify(
-      marca({ delegador: 'hiro', quem: 'Hiro K3', alvo: 'hiro', inicio: 200 }),
+      marca({ delegador: 'caseiro', quem: 'Caseiro', alvo: 'caseiro', inicio: 200 }),
     ),
   });
   try {
@@ -151,7 +151,7 @@ test('?agente devolve só as daquele delegador, com inicio cru em segundos', asy
 test('sem ?agente devolve todas as vivas; agente sem delegação recebe lista vazia', async () => {
   const dir = await diretorioCom({
     '111.json': JSON.stringify(marca({ delegador: 'daniel' })),
-    '222.json': JSON.stringify(marca({ delegador: 'hiro', quem: 'Hiro K3' })),
+    '222.json': JSON.stringify(marca({ delegador: 'caseiro', quem: 'Caseiro' })),
   });
   try {
     await comDelegDir(dir, async () => {

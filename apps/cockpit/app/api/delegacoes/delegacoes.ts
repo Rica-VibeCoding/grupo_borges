@@ -26,7 +26,7 @@ export const DIR_PADRAO = '/tmp/cc-deleg';
 /** Uma marca válida e viva. `inicio` é epoch em SEGUNDOS, cru — o decorrido é
  *  conta do cliente, com o relógio dele. */
 export type Delegacao = {
-  /** Rótulo pra exibir ("Tara", "Hiro K3"). */
+  /** Rótulo pra exibir ("Tara"). */
   quem: string;
   /** Slug do agente que delegou — é por ele que o chat filtra. */
   delegador: string;

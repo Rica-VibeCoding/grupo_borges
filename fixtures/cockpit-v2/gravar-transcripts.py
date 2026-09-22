@@ -62,7 +62,7 @@ def grava(slug: str) -> dict:
 
 def main() -> int:
     os.makedirs(DEST, exist_ok=True)
-    slugs = sys.argv[1:] or ["pavan", "daniel", "miga", "tara", "hiro"]
+    slugs = sys.argv[1:] or ["pavan", "daniel", "miga", "tara"]
     todos = []
     for slug in slugs:
         try:

@@ -40,7 +40,7 @@ export type Agent = {
   workspace_path: string;
   cli_default: string;
   model_default: string;
-  model_family?: string | null; // família de modelos do agente ("kimi" no Hiro; null = Anthropic).
+  model_family?: string | null; // família de modelos do agente (null = Anthropic).
   capabilities: string[];
   created_at: number;
   updated_at: number;

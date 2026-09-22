@@ -18,14 +18,13 @@ const TROPA = [
   agente('canarinho', 'trabalhando', 'Canário'),
   agente('daniel', 'trabalhando', 'Daniel Singh'),
   agente('felipe', 'offline', 'Felipe Conti'),
-  agente('hiro', 'ocioso', 'Hiro Nakamura'),
   agente('pavan', 'trabalhando', 'José Pavan'),
   agente('barsi', 'offline', 'Luiz Barsi'),
   agente('tara', 'ocioso', 'Tara Kaur'),
   agente('vinicius', 'offline', 'Vinicius Zanella'),
 ];
 
-const DITADA = ['pavan', 'daniel', 'tara', 'vinicius', 'felipe', 'barsi', 'hiro', 'canarinho'];
+const DITADA = ['pavan', 'daniel', 'tara', 'vinicius', 'felipe', 'barsi', 'canarinho'];
 
 test('entrega a ordem ditada pelo Rica, não a do backend', () => {
   assert.deepEqual(ordenaTropa(TROPA).map((a) => a.slug), DITADA);

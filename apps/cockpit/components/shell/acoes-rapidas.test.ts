@@ -228,7 +228,7 @@ describe('falha — nunca só o diagnóstico, sempre a saída', () => {
   it('todo caminho devolve resumo E saída preenchidos', () => {
     const casos: unknown[] = [
       new Error('patchAgentPermissionMode failed: 400: modo_desconhecido'),
-      new Error('kimi_effort_not_allowed'),
+      new Error('effort_not_allowed'),
       new Error('patchAgentEffort failed: 404'),
       new Error('500 Internal Server Error'),
       new Error('Failed to fetch'),

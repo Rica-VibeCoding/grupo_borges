@@ -222,7 +222,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         },
       } : null;
       if (comEsforco) setPainel(comEsforco);
-      // Kimi e Codex recebem o esforço por env var de boot: o back grava e
+      // O Codex recebe o esforço por env var de boot: o back grava e
       // responde `session_may_diverge`. É o sinal de que a escolha não alcança
       // a sessão viva — e é ele, não a família, que decide religar (a régua de
       // quem aceita troca a quente mora no back).

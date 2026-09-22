@@ -28,7 +28,6 @@ const ORDEM_DA_TROPA = [
   'vinicius',
   'felipe',
   'barsi',
-  'hiro',
   'canarinho',
 ];
 

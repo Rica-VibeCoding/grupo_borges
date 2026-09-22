@@ -235,7 +235,7 @@ export type AgentEffortChangeResponse = {
   written: boolean;
   // Presentes só no caminho Claude Code (runtime via /effort na sessão tmux,
   // igual a AgentModelChangeResponse); null/ausentes no caminho persist-only
-  // do Kimi — espelha AgentPainelEffortPatchResponse do back.
+  // diferido — espelha AgentPainelEffortPatchResponse do back.
   tmux_delivered?: boolean | null;
   confirmed?: boolean | null;
   runtime_switch?: boolean | null;
@@ -312,10 +312,6 @@ export async function patchAgentMotorFamilia(
 
 export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
-export type KimiModelSlug = 'kimi-k3' | 'kimi-k2.7-code' | 'kimi-k2.7-code-highspeed';
-
-export type AnyModelSlug = ChatModelSlug | KimiModelSlug;
-
 export type AgentInputResponse = {
   tmux_delivered: boolean;
   sent_at: number;
@@ -339,7 +335,7 @@ export type AgentModelChangeResponse = {
   state_persisted: boolean;
   confirmed: boolean;
   model: string;
-  // DS-69 — false quando a troca só vale na próxima execução (Kimi).
+  // DS-69 — false quando a troca só vale na próxima execução.
   runtime_switch: boolean;
 };
 
@@ -743,10 +739,10 @@ export async function postContaAtiva(contaId: string): Promise<ContaTrocadaRespo
 
 export async function postAgentModel(
   slug: string,
-  // `AnyModelSlug | (string & {})` mantém o autocompletar dos slugs conhecidos
+  // `ChatModelSlug | (string & {})` mantém o autocompletar dos slugs conhecidos
   // sem fechar a porta: um Literal fechado aqui recusaria em compilação o
   // modelo que o back acabou de oferecer em `painel.model.allowed`.
-  model: AnyModelSlug | (string & {}),
+  model: ChatModelSlug | (string & {}),
   options?: { force?: boolean },
 ): Promise<AgentModelChangeResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/model`, {
@@ -771,23 +767,6 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('haiku')) return 'haiku';
   return null;
-}
-
-const KIMI_MODEL_SLUGS: readonly KimiModelSlug[] = [
-  'kimi-k3',
-  'kimi-k2.7-code',
-  'kimi-k2.7-code-highspeed',
-];
-
-const KIMI_RAW_MODEL_TO_SLUG: Record<string, KimiModelSlug> = {
-  k3: 'kimi-k3',
-  'kimi-for-coding': 'kimi-k2.7-code',
-  'kimi-for-coding-highspeed': 'kimi-k2.7-code-highspeed',
-};
-
-export function toKimiModelSlug(model: string | null | undefined): KimiModelSlug | null {
-  if (!model) return null;
-  return KIMI_MODEL_SLUGS.find((slug) => slug === model) ?? KIMI_RAW_MODEL_TO_SLUG[model] ?? null;
 }
 
 export async function listAgentTasks(

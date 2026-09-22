@@ -4,7 +4,7 @@
  * Por que isto existe como módulo puro: a referência do Rica mostra `5.6 Sol
  * Extra alto` embaixo, à direita, a um toque de onde se escreve. Nós já temos
  * famílias de modelo com escalas de esforço DIFERENTES, e o nome cru que o
- * back guarda (`claude-opus-5`, `kimi-for-coding-highspeed`) não é o que se põe
+ * back guarda (`claude-opus-5`, `gpt-5.6-sol[1m]`) não é o que se põe
  * numa linha de 390px. A tradução mora aqui, testada, e não espalhada em JSX.
  *
  * Duas regras que vieram do próprio back e que a pele não pode desobedecer:
@@ -16,9 +16,8 @@
  *    primário; valor que pode ter divergido vem em secundário, com a ressalva
  *    escrita no `title`/`aria-label`, não escondida.
  *
- * 2. **Escala de esforço é por família.** Kimi não tem `medium` nem `xhigh`
- *    (só `low`/`high`/`max`). Oferecer no seletor um degrau que o back vai
- *    recusar com 400 é pior do que não oferecer — a lista vem do back
+ * 2. **Escala de esforço é por família.** Oferecer no seletor um degrau que o
+ *    back vai recusar com 400 é pior do que não oferecer — a lista vem do back
  *    (`effort.allowed`) e a pele só a traduz.
  *
  * Módulo neutro de propósito: sem `'use client'`. É consumido por Server
@@ -30,23 +29,11 @@ import { shortModelName } from '@grupo_borges/cockpit-core/cockpit-types';
 export type GrauDeCerteza = 'lido' | 'pode-divergir';
 
 export type Motor = {
-  /** `Opus 5`, `5.6 Sol`, `K2.7 code`. Nunca o slug cru. */
+  /** `Opus 5`, `5.6 Sol`, `DeepSeek V4-Flash`. Nunca o slug cru. */
   modelo: string;
   /** `alto`, `extra alto`. `null` quando o back não sabe. */
   esforco: string | null;
   certeza: GrauDeCerteza;
-};
-
-/** Kimi chega em duas grafias: o slug do cockpit e o nome cru do provedor. A
- *  tabela canônica (`shortModelName`, abaixo) não cobre Kimi — só Anthropic e
- *  outro motor —, então esta parte é genuinamente nova, não duplicada. */
-const KIMI: Record<string, string> = {
-  'kimi-k3': 'K3',
-  k3: 'K3',
-  'kimi-k2.7-code': 'K2.7 code',
-  'kimi-for-coding': 'K2.7 code',
-  'kimi-k2.7-code-highspeed': 'K2.7 rápido',
-  'kimi-for-coding-highspeed': 'K2.7 rápido',
 };
 
 /** `state_model` às vezes chega como ALIAS CURTO — vi isto ao rodar a página
@@ -100,9 +87,6 @@ export function rotulaModelo(modelo: string | null | undefined, labels?: Record<
   const deepseek = rotulaDeepSeek(modelo);
   if (deepseek) return deepseek;
 
-  const kimi = KIMI[modelo];
-  if (kimi) return kimi;
-
   const alias = ALIAS_CURTO[modelo];
   if (alias) return alias;
 
@@ -144,7 +128,7 @@ export function desfechoDaTrocaDeEsforco(resposta: {
   tmux_delivered?: boolean | null;
   confirmed?: boolean | null;
 }): DesfechoEsforco {
-  // `=== false` e não falsy: o caminho do Kimi não tem entrega tmux — o
+  // `=== false` e não falsy: o caminho diferido não tem entrega tmux — o
   // campo chega null/ausente e NÃO pode derrubar uma troca que foi só gravada.
   if (!resposta.written || resposta.tmux_delivered === false) return 'entrega-falhou';
   if (resposta.confirmed === false) return 'pendente';
@@ -158,7 +142,7 @@ export function desfechoDaTrocaDeEsforco(resposta: {
  *
  *  - **Claude Code** troca na sessão viva (`/model` via tmux). Entrega é
  *    `tmux_delivered`; o que vale é a sessão ter confirmado.
- *  - **Kimi** não troca em sessão viva. O back grava a escolha
+ *  - **Tara** não troca em sessão viva. O back grava a escolha
  *    (`state_persisted`) e ela entra na PRÓXIMA execução — `tmux_delivered`
  *    chega `false` sempre, porque não houve tmux nenhum. Ler esse `false` como
  *    falha era o bug: a troca da Tara era gravada com sucesso e a tela dizia
@@ -184,8 +168,8 @@ export function desfechoDaTrocaDeModelo(resposta: {
 }
 
 /** Quais motores têm `requested` no contrato do painel: os que recebem o
- *  esforço por `CLAUDE_CODE_EFFORT_LEVEL` no boot — o Kimi (commit dac720c do
- *  Daniel) e a Tara (07/09). Neles o pedido e o nível vivo divergem de direito
+ *  esforço por `CLAUDE_CODE_EFFORT_LEVEL` no boot — hoje só a Tara (07/09).
+ *  Neles o pedido e o nível vivo divergem de direito
  *  entre a escolha e o próximo restart, e é essa distância que a etiqueta
  *  conta. No Claude o campo é SEMPRE null — lá, null significa "o contrato não
  *  cobre", nunca "ninguém pediu". Sem esta pergunta, todo Claude ganharia a
@@ -194,7 +178,7 @@ export function desfechoDaTrocaDeModelo(resposta: {
 export function contratoSeparaPedido(agente: {
   model_family?: string | null;
 }): boolean {
-  return agente.model_family === 'kimi' || agente.model_family === 'codex-proxy';
+  return agente.model_family === 'codex-proxy';
 }
 
 /** A etiqueta ao lado do valor do esforço — uma palavra, ou NADA.

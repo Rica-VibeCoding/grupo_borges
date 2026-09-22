@@ -70,8 +70,8 @@ def test_effective_model_family_override_ganha_do_yaml() -> None:
     )
     # Sem override → o yaml.
     assert (
-        agents_router._effective_model_family({"model_family": "kimi", "motor_familia": None})
-        == "kimi"
+        agents_router._effective_model_family({"model_family": "opencode", "motor_familia": None})
+        == "opencode"
     )
     # Nenhum dos dois → None (o padrão Anthropic, que o yaml representa ausente).
     assert agents_router._effective_model_family({"model_family": None, "motor_familia": None}) is None
@@ -84,19 +84,19 @@ def test_painel_motor_normaliza_e_rotula_fonte() -> None:
     # `session_may_diverge` preso em True, que é justamente o defeito.
     sem_sessao = agents_router._CCStatus("teste", None, None)
     escolhido = agents_router._painel_motor(
-        {"model_family": "opencode", "motor_familia": "kimi"}, sem_sessao
+        {"model_family": "opencode", "motor_familia": "codex-proxy"}, sem_sessao
     )
-    assert escolhido.familia == "kimi"
-    assert escolhido.override == "kimi"
+    assert escolhido.familia == "codex-proxy"
+    assert escolhido.override == "codex-proxy"
     assert escolhido.source == "agent_state.motor_familia"
 
-    herdado = agents_router._painel_motor({"model_family": "kimi", "motor_familia": None}, sem_sessao)
-    assert herdado.familia == "kimi"
+    herdado = agents_router._painel_motor({"model_family": "codex-proxy", "motor_familia": None}, sem_sessao)
+    assert herdado.familia == "codex-proxy"
     assert herdado.override is None
     assert herdado.source == "agents.model_family"
 
     # Anthropic no yaml é ausência de campo → painel devolve "anthropic" pras
-    # quatro ficarem completas na UI, com override nulo (ninguém escolheu).
+    # famílias ficarem completas na UI, com override nulo (ninguém escolheu).
     padrao = agents_router._painel_motor({"model_family": None, "motor_familia": None}, sem_sessao)
     assert padrao.familia == "anthropic"
     assert padrao.override is None
@@ -132,14 +132,14 @@ def test_override_sobrevive_a_resincronizacao_de_boot(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
     with TestClient(app) as client:
         assert client.patch(
-            "/api/agents/canarinho/motor-familia", json={"familia": "kimi"}
+            "/api/agents/canarinho/motor-familia", json={"familia": "codex-proxy"}
         ).status_code == 200
 
         # Simula o que o startup da API faz: re-sincroniza os agentes do yaml.
         app.state.db._sync_agents([DANIEL, CANARIO])
 
         raiz = client.get("/api/agents/canarinho").json()
-        assert raiz["motor_familia"] == "kimi"
+        assert raiz["motor_familia"] == "codex-proxy"
         # O model_family do yaml (reescrito no boot) continua opencode — os dois
         # convivem: o yaml diz o que o agente É por padrão, o override o que o
         # Rica escolheu.
@@ -192,5 +192,5 @@ def test_familia_fora_da_matriz_e_recusada(tmp_path: Path) -> None:
 def test_motor_familia_em_agente_inexistente_e_404(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
     with TestClient(app) as client:
-        resposta = client.patch("/api/agents/quem/motor-familia", json={"familia": "kimi"})
+        resposta = client.patch("/api/agents/quem/motor-familia", json={"familia": "anthropic"})
         assert resposta.status_code == 404

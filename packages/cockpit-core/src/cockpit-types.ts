@@ -40,7 +40,7 @@ export type Agent = {
   workspace_path: string;
   cli_default: string;
   model_default: string;
-  model_family?: string | null; // família de modelos do agente ("kimi" no Hiro; null = Anthropic).
+  model_family?: string | null; // família de modelos do agente (null = Anthropic).
   capabilities: string[];
   created_at: number;
   updated_at: number;
@@ -64,7 +64,7 @@ export type Agent = {
   token_usage_json: string | null;
   /** Esforço gravado na config do agente. O Claude não tem equivalente aqui:
    *  o nível dele mora no `cc_status` e só chega pelo `/painel`. */
-  kimi_reasoning_effort: string | null;
+  codex_reasoning_effort: string | null;
   lifecycle_status: AgentLifecycleStatus | null;
   lifecycle_detail: string | null;
   lifecycle_event: string | null;
@@ -283,7 +283,7 @@ export type PainelEffort = {
   source: string;
   session_may_diverge: boolean;
   // O que o painel pediu, preenchido só quando `value` veio de fonte viva e só
-  // nos motores cujo back separa pedido de efetivo (Kimi — no Claude o campo
+  // nos motores cujo back separa pedido de efetivo (a Tara — no Claude o campo
   // é sempre null). A UI compara os dois: iguais não dizem nada,
   // diferentes significam que a troca não pegou, e `requested=null` com fonte
   // viva significa que ninguém escolheu — é o default do motor.
@@ -320,7 +320,7 @@ export type PainelQuotas = {
   /** Terceira janela, só de plano com teto mensal (OpenCode Go). Ausente =
    *  a família não tem essa janela, e o painel não desenha a linha. */
   monthly?: PainelQuotaWindow | null;
-  /** Quem paga esta cota. Só no Claude — Kimi e OpenCode têm login próprio. */
+  /** Quem paga esta cota. Só no Claude — o OpenCode tem login próprio. */
   conta?: PainelConta | null;
 };
 
@@ -399,7 +399,7 @@ export type PainelVida = {
  *  contrato do painel e do `motor_familia` usa a palavra `anthropic` no lugar
  *  desse vazio. Não existe quinto valor — nenhuma preferência mora no código,
  *  quem escolhe é o operador na hora. */
-export type MotorFamilia = 'anthropic' | 'kimi' | 'opencode' | 'codex-proxy';
+export type MotorFamilia = 'anthropic' | 'opencode' | 'codex-proxy';
 
 /** A família de motor do agente, como o painel a enxerga (Fase 2).
  *  `familia` é a efetiva (o `agent_state.motor_familia` escolhido, senão o

@@ -16,7 +16,7 @@ const assert = require('node:assert/strict');
 const { beforeEach, it } = require('node:test');
 const { bancada, painel } = require('./seletor-familia-harness.cjs');
 
-async function montarSeletor(familia = 'kimi') {
+async function montarSeletor(familia = 'codex-proxy') {
   const b = bancada();
   b.shell('operacao-de-motor').esquecerTudo();
   const { SeletorMotor } = b.shell('seletor-motor');
@@ -33,7 +33,7 @@ async function montarSeletor(familia = 'kimi') {
 beforeEach(() => bancada().shell('operacao-de-motor').esquecerTudo());
 
 it('modelo que só vale no boot dispara a operação; o que troca a quente NÃO', async () => {
-  const b = await montarSeletor('kimi');
+  const b = await montarSeletor('codex-proxy');
   await b.act(async () => b.menu().opcoesModelo[1].aoSelecionar());
   await b.act(async () =>
     b.modelos[0].resolve({
@@ -41,7 +41,7 @@ it('modelo que só vale no boot dispara a operação; o que troca a quente NÃO'
       runtime_switch: false, model: 'k3',
     }),
   );
-  await decisaoLe(b, painelCom('kimi', { modelo: 'k3' }));
+  await decisaoLe(b, painelCom('codex-proxy', { modelo: 'gpt-6-astra[1m]' }));
   assert.equal(
     b.shell('operacao-de-motor').leiaOperacao('canarinho').fase,
     'aplicando',
@@ -67,15 +67,15 @@ it('modelo que só vale no boot dispara a operação; o que troca a quente NÃO'
 });
 
 it('esforço que só vale no boot dispara; o que a sessão assume NÃO', async () => {
-  const b = await montarSeletor('kimi');
+  const b = await montarSeletor('codex-proxy');
   await b.act(async () => b.menu().opcoesEsforco[0].aoSelecionar());
   await b.act(async () =>
     b.esforcos[0].resolve({
-      slug: 'canarinho', effort: 'low', source: 'agent_state.kimi_reasoning_effort',
+      slug: 'canarinho', effort: 'low', source: 'agent_state.codex_reasoning_effort',
       session_may_diverge: true, written: true,
     }),
   );
-  await decisaoLe(b, painelCom('kimi', { esforco: 'low' }));
+  await decisaoLe(b, painelCom('codex-proxy', { esforco: 'low' }));
   assert.equal(b.shell('operacao-de-motor').leiaOperacao('canarinho').fase, 'aplicando');
   assert.equal(b.aplicacoes.length, 1);
   await b.act(async () => arvoreFecha(b));
@@ -95,7 +95,7 @@ it('esforço que só vale no boot dispara; o que a sessão assume NÃO', async (
 it('com o modelo em branco, escolher o esforço NÃO religa — o modelo fecha o pacote', async () => {
   // É o caminho que ele gravou: trocar o motor esvazia o modelo no back, e o
   // religar não pode sair antes de ele escolher o que ficou em branco.
-  const semModelo = painel('kimi');
+  const semModelo = painel('codex-proxy');
   semModelo.model = { ...semModelo.model, value: null };
   const b = bancada();
   b.shell('operacao-de-motor').esquecerTudo();
@@ -111,7 +111,7 @@ it('com o modelo em branco, escolher o esforço NÃO religa — o modelo fecha o
   await b.renderer.act(async () => menu().opcoesEsforco[0].aoSelecionar());
   await b.renderer.act(async () =>
     b.esforcos[0].resolve({
-      slug: 'canarinho', effort: 'low', source: 'agent_state.kimi_reasoning_effort',
+      slug: 'canarinho', effort: 'low', source: 'agent_state.codex_reasoning_effort',
       session_may_diverge: true, written: true,
     }),
   );
@@ -132,14 +132,14 @@ it('com o modelo em branco, escolher o esforço NÃO religa — o modelo fecha o
       runtime_switch: false, model: 'k3',
     }),
   );
-  await decisaoLe(b, painelCom('kimi', { modelo: 'k3', esforco: 'low' }));
+  await decisaoLe(b, painelCom('codex-proxy', { modelo: 'gpt-6-astra[1m]', esforco: 'low' }));
   assert.equal(b.aplicacoes.length, 1, 'duas escolhas, um religar só');
   arvore.unmount();
   operacao.esquecerTudo();
 });
 
 it('agente no meio de um turno: nada é desligado até o segundo toque', async () => {
-  const b = await montarSeletor('kimi');
+  const b = await montarSeletor('codex-proxy');
   await b.act(async () => b.menu().opcoesModelo[1].aoSelecionar());
   await b.act(async () =>
     b.modelos[0].resolve({
@@ -148,7 +148,7 @@ it('agente no meio de um turno: nada é desligado até o segundo toque', async (
     }),
   );
   // O pacote fecha no próprio toque: o painel desta bancada tem esforço.
-  await decisaoLe(b, painelCom('kimi', { modelo: 'k3' }));
+  await decisaoLe(b, painelCom('codex-proxy', { modelo: 'gpt-6-astra[1m]' }));
   assert.equal(b.aplicacoes.length, 1, 'o religar sai uma vez');
 
   const ocupado = Object.assign(new Error('busy'), {

@@ -1417,9 +1417,9 @@ def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
     assert ("TELEGRAM_STATE_DIR", None) in server.env_calls
 
 
-def test_restart_preserves_kimi_routing_vars_of_hiro(tmp_path: Path) -> None:
-    """Sem as 7 `ANTHROPIC_*`, o relaunch do Hiro bateria na Anthropic de verdade
-    em vez do `k3` — preservar é o que torna seguro liberar o guard de model_family."""
+def test_restart_preserves_routing_vars_of_canario(tmp_path: Path) -> None:
+    """Sem as 7 `ANTHROPIC_*`, o relaunch do Canário bateria na Anthropic de verdade
+    em vez do OpenCode — preservar é o que torna seguro liberar o guard de model_family."""
     old_pane = _BootstrapPane()
     anchor = "pergunta anterior única do relaunch"
     old_pane.visible_context = anchor
@@ -1432,15 +1432,15 @@ def test_restart_preserves_kimi_routing_vars_of_hiro(tmp_path: Path) -> None:
         '{"type":"user","message":{"role":"user","content":'
         f'"{anchor}"}}}}\n'
     )
-    kimi_env = {
+    motor_env = {
         "PATH": "/test/bin:/usr/bin",
-        "ANTHROPIC_API_KEY": "sk-kimi-test",
-        "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
-        "ANTHROPIC_MODEL": "k3",
-        "ANTHROPIC_DEFAULT_FABLE_MODEL": "k3",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "k3",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "k3",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "k3",
+        "ANTHROPIC_API_KEY": "sk-opencode-test",
+        "ANTHROPIC_BASE_URL": "https://opencode.ai/zen/go/",
+        "ANTHROPIC_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_FABLE_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
     }
     with (
         patch("services.tmux_driver._server_for", return_value=server),
@@ -1448,21 +1448,21 @@ def test_restart_preserves_kimi_routing_vars_of_hiro(tmp_path: Path) -> None:
         patch("services.tmux_driver._pane_owner_pids", return_value={111, 112}),
         patch(
             "services.tmux_driver._pane_environment_snapshot",
-            return_value=kimi_env,
+            return_value=motor_env,
         ),
         patch("services.tmux_driver._wait_for_processes_exit", return_value=True),
         patch.object(tmux_driver, "_BOOTSTRAP_POLL_INTERVAL_S", 0.001),
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
-            "hiro",
+            "canarinho",
             "/home/clawd/repos/grupo_borges",
-            "k3",
+            "deepseek-v4-flash",
             session_id,
         )
 
     assert result == {"attempted": True, "confirmed": True}
     expected_env_calls = {
-        (name, kimi_env.get(name)) for name in tmux_driver._PRESERVED_ENV_VARS
+        (name, motor_env.get(name)) for name in tmux_driver._PRESERVED_ENV_VARS
     }
     assert set(server.env_calls) == expected_env_calls
     # nenhuma das 7 vars vira `unset` — todas estavam presentes no processo antigo

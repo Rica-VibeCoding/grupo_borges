@@ -18,18 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import kimi_catalog, tmux_driver
-
-
-@pytest.fixture(autouse=True)
-def catalogo_kimi_fixo(monkeypatch: pytest.MonkeyPatch) -> None:
-    modelos = (
-        kimi_catalog.Modelo("kimi-for-coding", "K2.7 Coding", 262144),
-        kimi_catalog.Modelo("kimi-for-coding-highspeed", "K2.7 Coding Highspeed", 262144),
-        kimi_catalog.Modelo("k3", "K3", 1048576),
-        kimi_catalog.Modelo("k3-256k", "K3-256k", 262144),
-    )
-    monkeypatch.setattr(kimi_catalog, "listar_modelos", lambda api_key: modelos)
+from services import tmux_driver
 
 
 DANIEL = {
@@ -59,20 +48,6 @@ TARA = {
     "can_review": [],
 }
 
-HIRO = {
-    "slug": "hiro",
-    "name": "Hiro Nakamura",
-    "role": "dev",
-    "emoji": "🧪",
-    "tmux_session": "hiro",
-    "workspace_path": "/tmp/hiro",
-    "cli_default": "claude_code",
-    "model_default": "k3",
-    "model_family": "kimi",
-    "capabilities": [],
-    "can_review": [],
-}
-
 CANARIO = {
     "slug": "canarinho",
     "name": "Canário",
@@ -91,10 +66,10 @@ CANARIO = {
 def _build_app(tmp_path: Path) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA, HIRO, CANARIO])
+    db._sync_agents([DANIEL, TARA, CANARIO])
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO, CANARIO]}
+    app.state.agents_config = {"agents": [DANIEL, TARA, CANARIO]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -395,67 +370,6 @@ def test_agent_painel_contexto_indisponivel_sem_arquivo_em_nenhuma_sessao(
     assert contexto["stale"] is False
 
 
-def test_agent_painel_quotas_kimi_mapeia_usages(tmp_path: Path, monkeypatch) -> None:
-    """Hiro (família kimi): quotas vêm do /coding/v1/usages — janela de 300min
-    vira 5h e o `usage` top-level vira 7d, mesmo shape do CC."""
-    _write_settings(tmp_path, monkeypatch, {})
-    app = _build_app(tmp_path)
-    app.state.settings = SimpleNamespace(kimi_api_key="sk-kimi-teste")
-    _insert_session_event(app.state.db, "ds135-kimi-quota", agent_slug="hiro")
-    reset_5h = "2026-07-24T18:50:40.377739Z"
-    reset_7d = "2026-07-26T03:50:40.377739Z"
-
-    async def fake_usages(api_key: str) -> dict:
-        assert api_key == "sk-kimi-teste"
-        return {
-            "usage": {"limit": "100", "used": "90", "remaining": "10", "resetTime": reset_7d},
-            "limits": [
-                {
-                    "window": {"duration": 300, "timeUnit": "TIME_UNIT_MINUTE"},
-                    "detail": {"limit": "100", "used": "20", "remaining": "80", "resetTime": reset_5h},
-                }
-            ],
-        }
-
-    monkeypatch.setattr(agents_router, "_get_kimi_usages", fake_usages)
-    with TestClient(app) as client:
-        response = client.get("/api/agents/hiro/painel")
-
-    assert response.status_code == 200
-    quotas = response.json()["quotas"]
-    assert quotas["status"] == "available"
-    assert quotas["source"] == "https://api.kimi.com/coding/v1/usages"
-    assert quotas["five_hour"]["used_percentage"] == 20.0
-    assert quotas["five_hour"]["resets_at"] == int(
-        datetime(2026, 7, 24, 18, 50, 40, tzinfo=timezone.utc).timestamp()
-    )
-    assert quotas["seven_day"]["used_percentage"] == 90.0
-    assert quotas["seven_day"]["resets_at"] == int(
-        datetime(2026, 7, 26, 3, 50, 40, tzinfo=timezone.utc).timestamp()
-    )
-
-
-def test_agent_painel_quotas_kimi_falha_no_fetch_cai_pro_cc_status(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Fetch do usages quebrado: cai no caminho antigo (cc-status -> missing)."""
-    _write_settings(tmp_path, monkeypatch, {})
-    app = _build_app(tmp_path)
-    app.state.settings = SimpleNamespace(kimi_api_key="sk-kimi-teste")
-    _insert_session_event(app.state.db, "ds135-kimi-down", agent_slug="hiro")
-    Path("/tmp/cc-status-ds135-kimi-down.json").unlink(missing_ok=True)
-
-    async def fake_usages_down(api_key: str) -> None:
-        return None
-
-    monkeypatch.setattr(agents_router, "_get_kimi_usages", fake_usages_down)
-    with TestClient(app) as client:
-        response = client.get("/api/agents/hiro/painel")
-
-    assert response.status_code == 200
-    assert response.json()["quotas"]["status"] == "missing"
-
-
 def test_agent_painel_quotas_opencode_mapeia_tres_janelas(tmp_path: Path, monkeypatch) -> None:
     """Canário (família opencode): as três janelas do plano Go viram 5h, 7d e
     mês. `rolling` e `weekly` ocupam os campos que o Claude já usa; `monthly`
@@ -589,13 +503,13 @@ def test_agent_painel_contexto_arquivo_velho_marca_stale(tmp_path: Path, monkeyp
     _write_settings(tmp_path, monkeypatch, {})
     app = _build_app(tmp_path)
     session_id = f"ds135-oldfile-{int(time.time())}"
-    _insert_session_event(app.state.db, session_id, agent_slug="hiro")
+    _insert_session_event(app.state.db, session_id, agent_slug="canarinho")
     cc_path = Path(f"/tmp/cc-status-{session_id}.json")
     cc_path.write_text(
         json.dumps(
             {
                 "updated_at": int(time.time()) - 600,
-                "model": {"id": "k3", "display_name": "k3"},
+                "model": {"id": "deepseek-v4-flash", "display_name": "DeepSeek V4 Flash"},
                 "context_window": {
                     "context_window_size": 1_048_576,
                     "used_percentage": 5,
@@ -613,7 +527,7 @@ def test_agent_painel_contexto_arquivo_velho_marca_stale(tmp_path: Path, monkeyp
 
     try:
         with TestClient(app) as client:
-            response = client.get("/api/agents/hiro/painel")
+            response = client.get("/api/agents/canarinho/painel")
 
         assert response.status_code == 200
         contexto = response.json()["contexto"]
@@ -844,121 +758,6 @@ def test_agent_painel_nao_le_auto_como_nivel_da_statusline(
 
     assert body["effort"]["value"] == "medium"
     assert body["effort"]["source"] == str(tmp_path / ".claude" / "settings.json")
-
-
-def test_agent_painel_kimi_effort_permite_max(tmp_path: Path, monkeypatch) -> None:
-    """Kimi (Hiro) — effort persiste em agent_state (env de boot), allowed é a
-    trinca do motor (low/high/max), NÃO toca o settings.json global."""
-    settings_dir = tmp_path / ".claude"
-    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
-    app = _build_app(tmp_path)
-
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/hiro/effort", json={"effort": "max"})
-        painel = client.get("/api/agents/hiro/painel")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "slug": "hiro",
-        "effort": "max",
-        "source": "agent_state.kimi_reasoning_effort",
-        "session_may_diverge": True,
-        "written": True,
-    }
-    assert painel.status_code == 200
-    body = painel.json()
-    assert body["effort"]["value"] == "max"
-    assert body["effort"]["allowed"] == ["low", "high", "max"]
-    # settings global intocado — o valor "medium" é dos agentes Anthropic.
-    assert json.loads((settings_dir / "settings.json").read_text())["effortLevel"] == "medium"
-
-
-def _statusline_do_hiro(app, level: str | None) -> Path:
-    session_id = f"hiro-effort-{int(time.time() * 1000)}"
-    _insert_session_event(app.state.db, session_id, agent_slug="hiro")
-    path = Path(f"/tmp/cc-status-{session_id}.json")
-    corpo: dict = {"updated_at": int(time.time())}
-    if level is not None:
-        corpo["effort"] = {"level": level}
-    path.write_text(json.dumps(corpo), encoding="utf-8")
-    return path
-
-
-def test_agent_painel_kimi_mostra_pedido_quando_vivo_fora_da_trinca(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """O esforço vivo fora da escala não vira seleção válida do Kimi.
-
-    O pedido válido aparece com divergência, sem afirmar que a sessão o aplicou.
-    """
-    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
-    app = _build_app(tmp_path)
-    status_path = _statusline_do_hiro(app, "xhigh")
-    app.state.db._update_agent_runtime_state("hiro", kimi_reasoning_effort="high")
-
-    try:
-        with TestClient(app) as client:
-            effort = client.get("/api/agents/hiro/painel").json()["effort"]
-    finally:
-        status_path.unlink(missing_ok=True)
-
-    assert effort["value"] == "high"
-    assert effort["requested"] == "high"
-    assert effort["allowed"] == ["low", "high", "max"]
-    assert effort["source"] == "agent_state.kimi_reasoning_effort"
-    assert effort["session_may_diverge"] is True
-
-
-def test_agent_painel_kimi_sem_pedido_registrado_nao_inventa_escolha(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Sem pedido registrado e com esforço vivo fora da escala, não há seleção.
-
-    A ausência não pode dar a entender que alguém escolheu um nível do Kimi.
-    """
-    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
-    app = _build_app(tmp_path)
-    status_path = _statusline_do_hiro(app, "xhigh")
-
-    try:
-        with TestClient(app) as client:
-            effort = client.get("/api/agents/hiro/painel").json()["effort"]
-    finally:
-        status_path.unlink(missing_ok=True)
-
-    assert effort["value"] is None
-    assert effort["requested"] is None
-    assert effort["allowed"] == ["low", "high", "max"]
-    assert effort["session_may_diverge"] is True
-
-
-def test_agent_painel_kimi_sem_statusline_cai_no_pedido(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """Sessão sem statusline legível volta ao pedido, com a ressalva de sempre."""
-    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
-    app = _build_app(tmp_path)
-    app.state.db._update_agent_runtime_state("hiro", kimi_reasoning_effort="high")
-
-    with TestClient(app) as client:
-        effort = client.get("/api/agents/hiro/painel").json()["effort"]
-
-    assert effort["value"] == "high"
-    assert effort["requested"] is None
-    assert effort["source"] == "agent_state.kimi_reasoning_effort"
-    assert effort["session_may_diverge"] is True
-
-
-def test_agent_painel_kimi_effort_rejeita_medium(tmp_path: Path, monkeypatch) -> None:
-    """Kimi (Hiro) — medium/xhigh não existem no motor (só low/high/max)."""
-    _write_settings(tmp_path, monkeypatch, {"effortLevel": "medium"})
-    app = _build_app(tmp_path)
-
-    with TestClient(app) as client:
-        response = client.patch("/api/agents/hiro/effort", json={"effort": "medium"})
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == "kimi_effort_not_allowed"
 
 
 def test_agent_painel_patch_effort_404(tmp_path: Path, monkeypatch) -> None:

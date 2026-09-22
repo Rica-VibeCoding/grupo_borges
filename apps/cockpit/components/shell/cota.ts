@@ -55,8 +55,8 @@ const JANELAS = [
 ] as const;
 
 /**
- * A janela do mês entra só quando o back manda — plano Anthropic e Kimi
- * não têm teto mensal. Campo ausente não é "sem leitura": é uma janela que
+ * A janela do mês entra só quando o back manda — o plano Anthropic não tem
+ * teto mensal. Campo ausente não é "sem leitura": é uma janela que
  * aquele plano não tem, e desenhar a linha vazia inventaria um limite.
  */
 const JANELA_MENSAL = { rotulo: 'mês', nome: 'Cota usada no mês', campo: 'monthly' } as const;

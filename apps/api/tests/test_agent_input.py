@@ -57,16 +57,16 @@ TARA = {
 }
 
 
-HIRO = {
-    "slug": "hiro",
-    "name": "Hiro Nakamura",
+CANARIO = {
+    "slug": "canarinho",
+    "name": "Canário",
     "role": "dev",
-    "emoji": "HN",
-    "tmux_session": "hiro",
-    "workspace_path": "/tmp/hiro",
+    "emoji": "CN",
+    "tmux_session": "canarinho",
+    "workspace_path": "/tmp/canarinho",
     "cli_default": "claude_code",
-    "model_default": "k3",
-    "model_family": "kimi",
+    "model_default": "deepseek-v4-flash",
+    "model_family": "opencode",
     "capabilities": [],
     "can_review": [],
 }
@@ -77,7 +77,7 @@ def _build_app(
     *,
     extra_agents: list[dict] | None = None,
 ) -> FastAPI:
-    agents = [DANIEL, TARA, HIRO, *(extra_agents or [])]
+    agents = [DANIEL, TARA, CANARIO, *(extra_agents or [])]
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
     db._sync_agents(agents)
@@ -563,9 +563,9 @@ def test_relaunch_fails_without_resumable_conversation(tmp_path: Path) -> None:
 
 
 def test_relaunch_rejects_non_native_model_backend_before_lookup(tmp_path: Path) -> None:
-    """`model_family` fora de {None, anthropic, kimi} — família hipotética sem
-    mecanismo de preservação de env conhecido — segue barrada antes do lookup."""
-    gpt_agent = {**HIRO, "slug": "gpt-agent", "model_family": "gpt"}
+    """`model_family` fora de {None, anthropic, opencode} — família hipotética
+    sem mecanismo de preservação de env conhecido — segue barrada antes do lookup."""
+    gpt_agent = {**CANARIO, "slug": "gpt-agent", "model_family": "gpt"}
     app = _build_app(tmp_path, extra_agents=[gpt_agent])
     app.state.db.latest_jsonl_session_id = AsyncMock()
     with patch(
@@ -581,9 +581,9 @@ def test_relaunch_rejects_non_native_model_backend_before_lookup(tmp_path: Path)
     restart.assert_not_awaited()
 
 
-def test_relaunch_allows_kimi_model_family_past_the_guard(tmp_path: Path) -> None:
-    """Hiro (`model_family: kimi`) não é mais barrado aqui — as 7 `ANTHROPIC_*`
-    agora viajam como env preservada (ver `_PRESERVED_ENV_VARS` no tmux_driver),
+def test_relaunch_allows_opencode_model_family_past_the_guard(tmp_path: Path) -> None:
+    """Canário (`model_family: opencode`) não é barrado aqui — as 7 `ANTHROPIC_*`
+    viajam como env preservada (ver `_PRESERVED_ENV_VARS` no tmux_driver),
     então o guard só precisa proteger famílias sem esse mecanismo."""
     app = _build_app(tmp_path)
     app.state.db.latest_jsonl_session_id = AsyncMock(return_value="019e9077-ccf1-7ee1-b8bb-25202f1ed3e2")
@@ -592,11 +592,11 @@ def test_relaunch_allows_kimi_model_family_past_the_guard(tmp_path: Path) -> Non
         new=AsyncMock(return_value={"confirmed": True, "attempted": True}),
     ) as restart:
         with TestClient(app) as client:
-            response = client.post("/api/agents/hiro/relaunch", json={"confirm": True})
+            response = client.post("/api/agents/canarinho/relaunch", json={"confirm": True})
 
     assert response.status_code == 200
     assert response.json()["tmux_delivered"] is True
-    app.state.db.latest_jsonl_session_id.assert_awaited_once_with("hiro")
+    app.state.db.latest_jsonl_session_id.assert_awaited_once_with("canarinho")
     restart.assert_awaited_once()
 
 

@@ -31,14 +31,16 @@ BASE = 'http://127.0.0.1:3008'
 # Claude nativo é o destino de ida: ele não depende de proxy nenhum de pé, e
 # trocar para ele é o que esvazia o modelo e o esforço no painel (a sessão viva
 # está num motor de outra família) — o caso exato que o Rica gravou na tela.
-# Kimi é o destino de ida porque é nele que o painel consegue REFLETIR a escolha:
-# o modelo persiste em `state_model` e volta no painel. Em Claude nativo a Tara
-# fica num estado que o back não consegue descrever — a sessão viva é Codex (ver
-# `BOOT_IGNORA_FAMILIA`), e com modelo incompatível `_build_claude_painel_effort`
-# devolve branco para sempre, então nenhuma escolha de esforço fecha o pacote.
-DESTINO = ('kimi', 'Kimi')
+# Codex é o destino de ida porque é nele que o painel consegue REFLETIR a
+# escolha: o modelo persiste em `state_model` e volta no painel. Em Claude nativo
+# a Tara fica num estado que o back não consegue descrever — a sessão viva é
+# Codex (ver `BOOT_IGNORA_FAMILIA`), e com modelo incompatível
+# `_build_claude_painel_effort` devolve branco para sempre, então nenhuma escolha
+# de esforço fecha o pacote. Não rodar com `tara` como alvo: para ela o destino
+# já é a família de origem.
+DESTINO = ('codex-proxy', 'Codex')
 ROTULO_DA_FAMILIA = {'anthropic': 'Anthropic', 'codex-proxy': 'Codex',
-                     'kimi': 'Kimi', 'opencode': 'OpenCode'}
+                     'opencode': 'OpenCode'}
 
 # Agentes cujo boot NÃO lê a família escolhida no cockpit — a gaveta Motor grava,
 # e o religar sobe no motor de sempre. Na Tara é `subir_tara()` (`subir-frota.sh`):

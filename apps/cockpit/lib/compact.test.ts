@@ -62,7 +62,7 @@ test('iniciar — entra em compactando com o ETA padrão e persiste o início', 
   const relogio = relogioFalso();
   const agendador = agendadorFalso();
   const storage = storageFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogio.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -74,7 +74,7 @@ test('iniciar — entra em compactando com o ETA padrão e persiste o início', 
   assert.equal(estado.fase, 'compactando');
   assert.equal(estado.desdeMs, 1_000_000);
   assert.equal(estado.etaMs, ETA_COMPACT_PADRAO_MS);
-  assert.match(storage.mapa.get('cockpit:compact:v1:hiro') ?? '', /"inicio":1000000/);
+  assert.match(storage.mapa.get('cockpit:compact:v1:caseiro') ?? '', /"inicio":1000000/);
   c.dispose();
 });
 
@@ -82,7 +82,7 @@ test('concluir — mede do envio ao timestamp do resumo, segura 400ms e volta ao
   const relogio = relogioFalso();
   const agendador = agendadorFalso();
   const storage = storageFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogio.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -102,7 +102,7 @@ test('concluir — mede do envio ao timestamp do resumo, segura 400ms e volta ao
   assert.deepEqual(estado.ultimoConcluido, { uuid: 'uuid-resumo', duracaoMs: 132_000 });
 
   // A duração real entrou no histórico e o início foi limpo.
-  const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:hiro') ?? '{}') as {
+  const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:caseiro') ?? '{}') as {
     duracoes: number[];
     inicio: number | null;
   };
@@ -126,7 +126,7 @@ test('ETA da rodada seguinte sai da mediana das últimas 5 durações reais', ()
   const relogio = relogioFalso();
   const agendador = agendadorFalso();
   const storage = storageFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogio.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -150,7 +150,7 @@ test('ETA da rodada seguinte sai da mediana das últimas 5 durações reais', ()
 test('escape — 6min sem resumo vira sem-retorno, e um resumo tardio ainda conclui', () => {
   const relogio = relogioFalso();
   const agendador = agendadorFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogio.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -177,7 +177,7 @@ test('cancelar — volta ao ocioso, limpa o início e não registra duração', 
   const relogio = relogioFalso();
   const agendador = agendadorFalso();
   const storage = storageFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogio.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -187,7 +187,7 @@ test('cancelar — volta ao ocioso, limpa o início e não registra duração', 
   c.iniciar();
   c.cancelar();
   assert.equal(c.getEstado().fase, 'ocioso');
-  const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:hiro') ?? '{}') as {
+  const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:caseiro') ?? '{}') as {
     duracoes?: number[];
     inicio: number | null;
   };
@@ -197,7 +197,7 @@ test('cancelar — volta ao ocioso, limpa o início e não registra duração', 
 });
 
 test('concluir fora da espera é ignorado — resumo antigo do replay não dispara nada', () => {
-  const c = createControleCompact('hiro', { storage: null });
+  const c = createControleCompact('caseiro', { storage: null });
   c.concluir('uuid-antigo');
   assert.equal(c.getEstado().fase, 'ocioso');
   assert.equal(c.getEstado().ultimoConcluido, null);
@@ -207,13 +207,13 @@ test('concluir fora da espera é ignorado — resumo antigo do replay não dispa
 test('retomada — início jovem no storage reabre em compactando com escape pelo restante', () => {
   const storage = storageFalso();
   storage.setItem(
-    'cockpit:compact:v1:hiro',
+    'cockpit:compact:v1:caseiro',
     JSON.stringify({ duracoes: [], inicio: 900_000 }),
   );
   const relogio = relogioFalso(1_000_000); // 100s depois do início
   const agendador = agendadorFalso();
 
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogio.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -236,16 +236,16 @@ test('retomada — início jovem no storage reabre em compactando com escape pel
 test('retomada — início velho demais é limpo e a máquina nasce ociosa', () => {
   const storage = storageFalso();
   storage.setItem(
-    'cockpit:compact:v1:hiro',
+    'cockpit:compact:v1:caseiro',
     JSON.stringify({ duracoes: [], inicio: 1_000 }),
   );
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: () => 1_000 + ESCAPE_COMPACT_MS + 1,
     storage,
   });
   c.retomarDoStorage();
   assert.equal(c.getEstado().fase, 'ocioso');
-  const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:hiro') ?? '{}') as {
+  const gravado = JSON.parse(storage.mapa.get('cockpit:compact:v1:caseiro') ?? '{}') as {
     inicio: number | null;
   };
   assert.equal(gravado.inicio, null);
@@ -254,8 +254,8 @@ test('retomada — início velho demais é limpo e a máquina nasce ociosa', () 
 
 test('storage quebrado (JSON inválido, durações sujas) não derruba a máquina', () => {
   const storage = storageFalso();
-  storage.setItem('cockpit:compact:v1:hiro', '{não é json');
-  const c = createControleCompact('hiro', { storage });
+  storage.setItem('cockpit:compact:v1:caseiro', '{não é json');
+  const c = createControleCompact('caseiro', { storage });
   assert.equal(c.getEstado().fase, 'ocioso');
   assert.equal(c.getEstado().etaMs, ETA_COMPACT_PADRAO_MS);
   c.dispose();
@@ -263,7 +263,7 @@ test('storage quebrado (JSON inválido, durações sujas) não derruba a máquin
 
 test('dispose — timers param de agir e transições não notificam mais', () => {
   const agendador = agendadorFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
     storage: null,
@@ -298,7 +298,7 @@ test('celular adiantado 3 min não impede o resumo de concluir o compact', () =>
   const DERIVA_MS = 180_000;
   const relogioDoBrowser = relogioFalso(1_000_000 + DERIVA_MS);
   const agendador = agendadorFalso();
-  const c = createControleCompact('hiro', {
+  const c = createControleCompact('caseiro', {
     agora: relogioDoBrowser.agora,
     agendar: agendador.agendar,
     cancelar: agendador.cancelar,
@@ -330,12 +330,12 @@ test('retomada após refresh traz o marco do servidor junto do início', () => {
     storage,
   };
 
-  const antes = createControleCompact('hiro', dependencias);
+  const antes = createControleCompact('caseiro', dependencias);
   antes.registrarRelogioDoServidor(999_000);
   antes.iniciar();
   antes.dispose();
 
-  const depois = createControleCompact('hiro', dependencias);
+  const depois = createControleCompact('caseiro', dependencias);
   // NASCE OCIOSA — este é o conserto do hydration mismatch de estrutura
   // (3c58b8ec). No servidor não existe `localStorage`, então a máquina lá
   // nasce ociosa; se aqui ela nascesse `compactando`, a `BarraCompact`

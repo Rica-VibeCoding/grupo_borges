@@ -19,18 +19,8 @@ from fastapi.testclient import TestClient
 
 from db.store import GrupoBorgesDB
 from routers import agents as agents_router
-from services import kimi_catalog, tmux_driver
+from services import tmux_driver
 
-
-@pytest.fixture(autouse=True)
-def catalogo_kimi_fixo(monkeypatch: pytest.MonkeyPatch) -> None:
-    modelos = (
-        kimi_catalog.Modelo("kimi-for-coding", "K2.7 Coding", 262144),
-        kimi_catalog.Modelo("kimi-for-coding-highspeed", "K2.7 Coding Highspeed", 262144),
-        kimi_catalog.Modelo("k3", "K3", 1048576),
-        kimi_catalog.Modelo("k3-256k", "K3-256k", 262144),
-    )
-    monkeypatch.setattr(kimi_catalog, "listar_modelos", lambda api_key: modelos)
 
 _RECUSADO = tmux_driver.DeliveryResult(outcome="refused", reason="sessao_ausente")
 
@@ -64,28 +54,13 @@ TARA = {
 }
 
 
-HIRO = {
-    "slug": "hiro",
-    "name": "Hiro Nakamura",
-    "role": "dev",
-    "emoji": "🧪",
-    "tmux_session": "hiro",
-    "workspace_path": "/tmp/hiro",
-    "cli_default": "claude_code",
-    "model_default": "k3",
-    "model_family": "kimi",
-    "capabilities": [],
-    "can_review": [],
-}
-
-
 def _build_app(tmp_path: Path) -> FastAPI:
     db = GrupoBorgesDB(str(tmp_path / "grupo_borges.db"))
     db._apply_schema()
-    db._sync_agents([DANIEL, TARA, HIRO])
+    db._sync_agents([DANIEL, TARA])
     app = FastAPI()
     app.state.db = db
-    app.state.agents_config = {"agents": [DANIEL, TARA, HIRO]}
+    app.state.agents_config = {"agents": [DANIEL, TARA]}
     app.include_router(agents_router.router, prefix="/api/agents")
     return app
 
@@ -101,47 +76,13 @@ def test_model_rejects_invalid_slug(tmp_path: Path) -> None:
         assert response.status_code == 422
 
 
-def test_model_kimi_rejects_claude_slug(tmp_path: Path) -> None:
-    """Kimi (Hiro) — slug Claude (opus/sonnet/…) em agente Kimi → 422."""
-    app = _build_app(tmp_path)
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/agents/hiro/model",
-            json={"model": "opus"},
-        )
-        assert response.status_code == 422
-        assert response.json()["detail"] == "model_not_allowed_for_kimi"
-
-
-def test_model_kimi_persists_without_runtime_switch(tmp_path: Path) -> None:
-    """Kimi (Hiro) — aceita slug próprio, persiste state_model, NÃO toca o tmux
-    (modelo é env var de boot, /model do CC não alcança o motor)."""
-    app = _build_app(tmp_path)
-    with patch("routers.agents.tmux_driver.send_message") as send:
-        with TestClient(app) as client:
-            response = client.post(
-                "/api/agents/hiro/model",
-                json={"model": "kimi-for-coding"},
-            )
-            assert response.status_code == 200
-            body = response.json()
-            assert body["runtime_switch"] is False
-            assert body["tmux_delivered"] is False
-            assert body["state_persisted"] is True
-            assert body["model"] == "kimi-for-coding"
-        send.assert_not_called()
-    import asyncio
-    agent = asyncio.run(app.state.db.get_agent("hiro"))
-    assert agent["state_model"] == "kimi-for-coding"
-
-
-def test_model_claude_rejects_kimi_slug(tmp_path: Path) -> None:
-    """Slug Kimi em agente Claude Code → 422 (família não vaza entre cards)."""
+def test_model_claude_rejects_slug_de_outra_familia(tmp_path: Path) -> None:
+    """Slug de outra família em agente Claude Code → 422 (não vaza entre cards)."""
     app = _build_app(tmp_path)
     with TestClient(app) as client:
         response = client.post(
             "/api/agents/daniel/model",
-            json={"model": "kimi-k3"},
+            json={"model": "deepseek-v4-flash"},
         )
         assert response.status_code == 422
         assert response.json()["detail"] == "model_not_allowed_for_claude_code"

@@ -31,7 +31,7 @@ rodada **vazou um `file_id` do Telegram** — daí a heurística `_opaca()` em
 
 ```bash
 # 1. grava os SSE crus (back precisa estar de pé em :8000)
-python3 fixtures/cockpit-v2/gravar-transcripts.py pavan daniel tara hiro vinicius
+python3 fixtures/cockpit-v2/gravar-transcripts.py pavan daniel tara vinicius
 
 # 2. inventaria as famílias (contagens, sem conteúdo)
 python3 fixtures/cockpit-v2/inventario-familias.py

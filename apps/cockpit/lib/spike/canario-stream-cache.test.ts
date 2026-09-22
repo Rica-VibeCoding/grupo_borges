@@ -105,7 +105,7 @@ test('revisita dentro do TTL preserva histórico e reutiliza a conexão', () => 
   const unsubscribeAgain = revisita.subscribe(() => {});
   assert.equal(fake.instances.length, 1, 'revisita não abre outro EventSource');
 
-  const outro = cache.get({ ...options, slug: 'hiro' });
+  const outro = cache.get({ ...options, slug: 'caseiro' });
   const unsubscribeOther = outro.subscribe(() => {});
   assert.equal(fake.instances.length, 2, 'outro slug ganha conexão própria');
   assert.deepEqual(outro.getSnapshot().messages, []);
@@ -156,9 +156,9 @@ test('session-reset zera e reconecta só o slug atingido', () => {
     clearTimeoutFn: clock.clearTimeout,
   };
   const pavan = cache.get({ ...base, slug: 'pavan' });
-  const hiro = cache.get({ ...base, slug: 'hiro' });
+  const caseiro = cache.get({ ...base, slug: 'caseiro' });
   pavan.subscribe(() => {});
-  hiro.subscribe(() => {});
+  caseiro.subscribe(() => {});
   for (const source of fake.instances) {
     source.emit('replay-start');
     source.emit('message', MESSAGE);
@@ -169,8 +169,8 @@ test('session-reset zera e reconecta só o slug atingido', () => {
 
   assert.equal(pavan.getSnapshot().geracao, 1);
   assert.deepEqual(pavan.getSnapshot().messages, []);
-  assert.equal(hiro.getSnapshot().geracao, 0);
-  assert.deepEqual(hiro.getSnapshot().messages, [MESSAGE]);
+  assert.equal(caseiro.getSnapshot().geracao, 0);
+  assert.deepEqual(caseiro.getSnapshot().messages, [MESSAGE]);
   assert.equal(fake.instances.length, 3);
   assert.equal(fake.instances[0].closed, true);
   assert.equal(fake.instances[1].closed, false);

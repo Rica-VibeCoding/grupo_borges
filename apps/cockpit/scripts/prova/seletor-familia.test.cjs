@@ -31,7 +31,7 @@ it('carregamento, ausência e falha nunca exibem preferência YAML', async () =>
 
 it('mesmo slug atualiza os três campos sem releitura; outro slug e GET velho não vencem', async () => {
   const b = await montar();
-  await b.publicar(painel('kimi', 'daniel'));
+  await b.publicar(painel('codex-proxy', 'daniel'));
   assert.ok(!JSON.stringify(b.arvore.toJSON()).includes('K2.7 Coding'));
   await b.publicar(painel());
   assert.equal(b.gatilho().rotuloModelo, 'K2.7 Coding');
@@ -110,7 +110,7 @@ for (const tipo of ['modelo', 'esforco']) {
     it(`${tipo}: ignora ${resultado} de mutação da família anterior`, async () => {
       const b = await montar(); await b.receber(painel('anthropic'));
       await b.renderer.act(async () => (tipo === 'modelo' ? b.menu().opcoesModelo : b.menu().opcoesEsforco)[0].aoSelecionar());
-      await b.publicar(painel('kimi'));
+      await b.publicar(painel('codex-proxy'));
       const pedido = (tipo === 'modelo' ? b.modelos : b.esforcos)[0];
       await b.renderer.act(async () => resultado === 'erro' ? pedido.reject(new Error('antigo')) : pedido.resolve({
         model: 'opus', effort: 'xhigh', written: true, confirmed: true, tmux_delivered: true,
@@ -146,9 +146,9 @@ it('BlocoDeAcoes publica somente a leitura mais recente e não publica após des
   await b.renderer.act(async () => b.leituras[0].resolve(painel('anthropic')));
   const atualizar = arvore.root.findByType('BlocoDeMotor').props.aoAtualizar;
   await b.renderer.act(async () => { atualizar(); atualizar(); });
-  await b.renderer.act(async () => b.leituras[2].resolve(painel('kimi')));
+  await b.renderer.act(async () => b.leituras[2].resolve(painel('codex-proxy')));
   await b.renderer.act(async () => b.leituras[1].resolve(painel('anthropic')));
-  assert.deepEqual(recebidos.map((p) => p.motor.familia), ['anthropic', 'kimi']);
+  assert.deepEqual(recebidos.map((p) => p.motor.familia), ['anthropic', 'codex-proxy']);
   await b.renderer.act(async () => atualizar());
   await b.renderer.act(async () => arvore.unmount());
   await b.renderer.act(async () => b.leituras[3].resolve(painel('opencode')));

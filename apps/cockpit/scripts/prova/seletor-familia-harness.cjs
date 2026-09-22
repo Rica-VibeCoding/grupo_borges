@@ -17,15 +17,15 @@ function pendente() {
   return { promise, resolve, reject };
 }
 
-function painel(familia = 'kimi', slug = 'canarinho') {
-  const modelos = familia === 'kimi' ? ['kimi-for-coding', 'k3', 'k3-256k']
-    : familia === 'codex-proxy' ? ['gpt-6-astra[1m]', 'gpt-5.6-sol[1m]'] : ['opus', 'sonnet'];
+function painel(familia = 'codex-proxy', slug = 'canarinho') {
+  const modelos = familia === 'codex-proxy' ? ['gpt-6-astra[1m]', 'gpt-5.6-sol[1m]']
+    : ['opus', 'sonnet'];
   return {
     slug, generated_at: 1,
     motor: { familia, override: familia, source: 'agent_state' },
     model: familia === 'opencode' ? null : {
       value: modelos[0], allowed: modelos, source: 'state_model',
-      labels: { 'kimi-for-coding': 'K2.7 Coding', 'k3-256k': 'K3-256k' },
+      labels: {},
       session_may_diverge: false, runtime_switch: familia === 'anthropic',
     },
     effort: { value: 'high', allowed: ['low', 'high', 'max'], requested: null,

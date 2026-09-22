@@ -2,7 +2,7 @@
 
 // AS DELEGAÇÕES — alguém trabalhando a pedido DESTE agente, no pé do feed.
 //
-// Quando o Daniel manda trabalho pra Tara ou pro Hiro, a execução é um
+// Quando o Daniel manda trabalho pra Tara, a execução é um
 // processo externo de minutos — e o chat parecia ocioso. Não é bloqueio, é
 // presença: "tem coisa rodando, e você pode falar comigo enquanto isso".
 //

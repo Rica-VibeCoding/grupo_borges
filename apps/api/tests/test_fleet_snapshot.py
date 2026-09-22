@@ -433,7 +433,7 @@ def test_agente_novo_sem_ordem_cai_no_fim_sem_bagunçar_quem_foi_arrastado(
     db = _setup_db(tmp_path)
     db._sync_agents([AGENT, TARA])
 
-    novo = dict(TARA, slug="hiro", name="Hiro Nakamura", tmux_session="hiro")
+    novo = dict(TARA, slug="caseiro", name="Caseiro", tmux_session="caseiro")
 
     with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
         assert client.patch("/api/fleet/ordem", json={"slugs": ["tara", "daniel"]}).status_code == 200
@@ -441,7 +441,7 @@ def test_agente_novo_sem_ordem_cai_no_fim_sem_bagunçar_quem_foi_arrastado(
         db._sync_agents([AGENT, TARA, novo])
         corpo = client.get("/api/fleet").json()
 
-    assert [a["slug"] for a in corpo["agents"]] == ["tara", "daniel", "hiro"]
+    assert [a["slug"] for a in corpo["agents"]] == ["tara", "daniel", "caseiro"]
     assert [a["ordem"] for a in corpo["agents"]] == [0, 1, None]
 
 

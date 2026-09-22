@@ -28,7 +28,7 @@ MEDICAO_HZ = 50
 MEDICAO_SEGUNDOS = 60
 LIMITE_REPLAY_SSE = 500  # teto vigente no endpoint canônico
 AGENTES_REAIS = {
-    "pavan", "vinicius", "felipe", "barsi", "daniel", "lucas", "miga", "hiro",
+    "pavan", "vinicius", "felipe", "barsi", "daniel", "lucas", "miga",
 }
 RAIZ = Path(__file__).resolve().parent
 FAMILIAS = RAIZ / "familias"

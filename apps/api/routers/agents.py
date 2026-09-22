@@ -74,7 +74,6 @@ from routers.ask_user import (
 from services import (
     codex_reader,
     desligamento_deliberado,
-    kimi_catalog,
     proxy_catalog,
     tmux_driver,
     workspace_reader,
@@ -95,34 +94,23 @@ _PLUGIN_DISABLED_PREFIX = "plugin:"
 _AGENT_PAINEL_ALLOWED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 # Claude Code também aceita `auto`: ele restaura o default do modelo ativo
 # (docs: https://code.claude.com/docs/en/commands e /en/model-config).
-# Não misturar esta lista com a do Kimi — cada executor tem contrato próprio.
 _CLAUDE_PAINEL_ALLOWED_EFFORTS = [*_AGENT_PAINEL_ALLOWED_EFFORTS, "auto"]
 _AGENT_PAINEL_ALLOWED_MODELS = ["fable", "opus", "sonnet", "haiku"]
-# Kimi K3 (assinatura Kimi Code): o endpoint expõe think_efforts low/high/max
-# (default high) — medium/xhigh NÃO existem no motor. Validado 19/07 via
-# GET api.kimi.com/coding/v1/models.
-_KIMI_PAINEL_ALLOWED_EFFORTS = ["low", "high", "max"]
 # Domínio do que a statusline REPORTA, que não é o domínio do que a UI oferece.
 # A doc lista `effort.level` como low/medium/high/xhigh/max e trata `auto` só
 # como argumento ("reset to the model default") — a palavra nunca chega no JSON,
 # como `_poll_claude_effort` já descrevia. Validar leitura pela lista do seletor
-# aceitaria um `auto` que não existe e, do outro lado, descartaria o `xhigh` que
-# um agente Kimi de fato roda. São listas separadas de propósito.
+# aceitaria um `auto` que não existe. São listas separadas de propósito.
 _STATUSLINE_REPORTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
 # A cota da assinatura ChatGPT é mais generosa porque não é medida aqui: quem a
 # lê é o cron do `scripts/codex-cota`, de 3 em 3 minutos. Com os 20s do CC a
 # Tara apareceria "stale" entre uma passada e a seguinte, trabalhando.
 _CODEX_PAINEL_QUOTA_STALE_AFTER_SECONDS = 300
-# Kimi: mesmo endpoint do `/usage` do Kimi Code CLI — janela de 5h + cota
-# semanal da assinatura. Cache curto: o painel faz poll e a cota anda devagar.
-_KIMI_USAGES_URL = "https://api.kimi.com/coding/v1/usages"
-_KIMI_USAGES_CACHE_TTL_SECONDS = 60
-_KIMI_USAGES_FAILURE_TTL_SECONDS = 30
 # OpenCode Go: o plano tem teto em dólar por janela ($12/5h, $30/semana,
 # $60/mês) e o endpoint devolve os três já em percentual. É a única fonte —
 # o motor não é Anthropic, então o `cc-status` do Canário nunca traz
-# `rate_limits` (medido 20/08: campo ausente nas sessões deepseek e k3).
+# `rate_limits` (medido 20/08: campo ausente na sessão deepseek).
 _OPENCODE_USAGE_URL = "https://opencode.ai/zen/go/v1/usage"
 _OPENCODE_USAGE_CACHE_TTL_SECONDS = 60
 _OPENCODE_USAGE_FAILURE_TTL_SECONDS = 30
@@ -133,9 +121,9 @@ _AGENT_PAINEL_SETTINGS_PATH = "settings.json"
 _CC_STATUS_PREFIX = "cc-status-"
 AgentPainelEffortValue = Literal["low", "medium", "high", "xhigh", "max", "auto"]
 AgentPainelPermissionMode = Literal["ask", "bypassPermissions", "plan", "acceptEdits"]
-# Fase 2 (troca de motor): as quatro famílias da matriz cheia. `None` não é uma
+# Fase 2 (troca de motor): as famílias da matriz cheia. `None` não é uma
 # família — é "herda o agents.yaml" (no yaml, Anthropic é a ausência do campo).
-AgentMotorFamiliaValue = Literal["anthropic", "kimi", "opencode", "codex-proxy"]
+AgentMotorFamiliaValue = Literal["anthropic", "opencode", "codex-proxy"]
 
 
 class AgentPainelTokens(BaseModel):
@@ -218,10 +206,10 @@ class AgentPainelQuotas(BaseModel):
     #: Terceira janela, só de quem tem plano com teto mensal (OpenCode Go).
     #: `None` significa "esta família não tem janela mensal" e o painel não
     #: desenha a linha — diferente de janela presente sem leitura, que vira
-    #: "sem leitura". Anthropic e Kimi nunca preenchem.
+    #: "sem leitura". Anthropic nunca preenche.
     monthly: AgentPainelQuotaWindow | None = None
     #: Quem paga esta cota. Mora junto da cota porque é a mesma pergunta.
-    #: Só no Claude: Kimi e OpenCode têm login próprio, fora do `.claude.json`.
+    #: Só no Claude: OpenCode tem login próprio, fora do `.claude.json`.
     conta: AgentPainelConta | None = None
 
 
@@ -330,7 +318,7 @@ class AgentPainelEffortPatchResponse(BaseModel):
     session_may_diverge: bool = True
     written: bool = True
     # Presentes apenas no caminho Claude Code; opcionais preservam o contrato
-    # enxuto do caminho persist-only do Kimi.
+    # enxuto do caminho persist-only da Tara.
     tmux_delivered: bool | None = None
     confirmed: bool | None = None
     runtime_switch: bool | None = None
@@ -348,7 +336,7 @@ class AgentPainelMotorPatchRequest(BaseModel):
     """Escolha de família no card (Fase 2).
 
     `familia: null` limpa o override — o agente volta a herdar o `agents.yaml`.
-    Só as quatro famílias da matriz cheia passam: `anthropic | kimi | opencode |
+    Só as famílias da matriz cheia passam: `anthropic | opencode |
     codex-proxy`. Nenhuma preferência de motor mora no código; quem escolhe é o
     Rica, na hora, com a cota na frente.
     """
@@ -729,15 +717,6 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
     # o contexto, que vem da statusline, continua mostrando o motor que roda.
     agent["model_family"] = _effective_model_family(agent)
     motor = _painel_motor(agent, cc_status)
-    is_kimi = agent.get("model_family") == "kimi"
-    kimi_usages = None
-    modelos_kimi = ()
-    if is_kimi:
-        kimi_api_key = getattr(request.app.state, "settings", None)
-        kimi_api_key = getattr(kimi_api_key, "kimi_api_key", None)
-        modelos_kimi = await asyncio.to_thread(kimi_catalog.listar_modelos, kimi_api_key)
-        if kimi_api_key:
-            kimi_usages = await _get_kimi_usages(kimi_api_key)
     is_opencode = agent.get("model_family") == "opencode"
     opencode_usage = None
     if is_opencode:
@@ -755,25 +734,14 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         quotas_task = asyncio.to_thread(_build_codex_painel_quotas, agent)
     elif is_opencode:
         quotas_task = asyncio.to_thread(_build_opencode_painel_quotas, opencode_usage)
-    elif kimi_usages is not None:
-        quotas_task = asyncio.to_thread(_build_kimi_painel_quotas, kimi_usages)
     else:
         quotas_task = asyncio.to_thread(_build_painel_quotas, cc_status)
     contexto, effort, permission, quotas, subagents = await asyncio.gather(
         asyncio.to_thread(_build_painel_contexto, agent, cc_status),
-        # Kimi e Tara: o pedido mora em agent_state (vira env var no próximo
-        # boot), mas o nível em vigor é o que a statusline da sessão reporta — o
-        # settings.json global mostraria o effort dos agentes Anthropic e, no
-        # Kimi, os 5 níveis que o motor não tem.
+        # Tara: o pedido mora em agent_state (vira env var no próximo boot),
+        # mas o nível em vigor é o que a statusline da sessão reporta — o
+        # settings.json global mostraria o effort dos agentes Anthropic.
         asyncio.to_thread(
-            _build_painel_effort_por_env_de_boot,
-            agent,
-            cc_status,
-            campo="kimi_reasoning_effort",
-            allowed=_KIMI_PAINEL_ALLOWED_EFFORTS,
-        )
-        if is_kimi
-        else asyncio.to_thread(
             _build_painel_effort_por_env_de_boot,
             agent,
             cc_status,
@@ -792,7 +760,7 @@ async def get_agent_painel(slug: str, request: Request) -> AgentPainelResponse:
         vida=vida,
         contexto=contexto,
         motor=motor,
-        model=await asyncio.to_thread(_build_painel_model, agent, contexto, modelos_kimi),
+        model=await asyncio.to_thread(_build_painel_model, agent, contexto),
         effort=effort,
         permission=permission,
         quotas=quotas,
@@ -814,22 +782,6 @@ async def patch_agent_effort(
 ) -> AgentPainelEffortPatchResponse:
     agent = await _get_agent_or_404(request, slug)
     agent["model_family"] = _effective_model_family(agent)
-    if agent.get("model_family") == "kimi":
-        # Kimi pensa sempre; o nível é env var (CLAUDE_CODE_EFFORT_LEVEL) lida
-        # no boot — persistir no settings.json global não teria efeito e ainda
-        # vazaria pros outros agentes. Vale no próximo boot, como o modelo.
-        if patch.effort not in _KIMI_PAINEL_ALLOWED_EFFORTS:
-            raise HTTPException(status_code=422, detail="kimi_effort_not_allowed")
-        db: GrupoBorgesDB = request.app.state.db
-        await db.update_agent_runtime_state(slug, kimi_reasoning_effort=patch.effort)
-        return AgentPainelEffortPatchResponse(
-            slug=slug,
-            effort=patch.effort,
-            source="agent_state.kimi_reasoning_effort",
-            session_may_diverge=True,
-            written=True,
-        )
-
     if patch.effort not in _CLAUDE_PAINEL_ALLOWED_EFFORTS:
         raise HTTPException(status_code=422, detail="claude_effort_not_allowed")
 
@@ -1013,9 +965,6 @@ def _model_family(model: str | None) -> str | None:
     if not model:
         return None
     lowered = model.lower()
-    # Motor Kimi: id cru `k3` / slugs `kimi-*` — agrupa tudo como "kimi" no painel.
-    if "kimi" in lowered or lowered.startswith("k3"):
-        return "kimi"
     for family in ("fable", "opus", "sonnet", "haiku", "gpt"):
         if family in lowered:
             return family
@@ -1283,8 +1232,6 @@ def _sessao_compativel(agent: dict[str, Any], model: str | None) -> bool:
         return _claude_model_slug(model) is not None
     if familia == "codex-proxy":
         return lowered.startswith("gpt-")
-    if familia == "kimi":
-        return lowered.startswith(("kimi", "k3", "k2."))
     if familia == "opencode":
         return lowered.startswith("deepseek")
     return False
@@ -1292,7 +1239,6 @@ def _sessao_compativel(agent: dict[str, Any], model: str | None) -> bool:
 
 def _build_painel_model(
     agent: dict[str, Any], contexto: AgentPainelContexto,
-    modelos_kimi: tuple[kimi_catalog.Modelo, ...] = (),
 ) -> AgentPainelModel | None:
     familia = _effective_model_family(agent) or "anthropic"
     if familia == "opencode":
@@ -1311,30 +1257,22 @@ def _build_painel_model(
             value=da_sessao, allowed=[], source=contexto.source,
             session_may_diverge=False, runtime_switch=False,
         )
-    if familia in ("kimi", "codex-proxy"):
-        oferecidos = ([m.id for m in modelos_kimi] if familia == "kimi"
-                      else list(proxy_catalog.listar_modelos()))
-        labels = {m.id: m.display_name for m in modelos_kimi} if familia == "kimi" else {}
-        janelas = {m.id: m.context_length for m in modelos_kimi} if familia == "kimi" else {}
+    if familia == "codex-proxy":
+        oferecidos = list(proxy_catalog.listar_modelos())
         da_sessao = contexto.model if contexto.available and not contexto.stale else None
-        if familia == "kimi" and da_sessao:
-            da_sessao = da_sessao.removesuffix("[1m]")
-            da_sessao = next((m.id for m in modelos_kimi if da_sessao in (m.id, m.display_name)), da_sessao)
         if da_sessao in oferecidos:
             return AgentPainelModel(
-                value=da_sessao, allowed=oferecidos, labels=labels,
-                context_length=janelas.get(da_sessao),
+                value=da_sessao, allowed=oferecidos,
                 source=contexto.source, session_may_diverge=False, runtime_switch=False,
             )
         escolhido = agent.get("state_model")
         source = "agent.state_model"
         if escolhido not in oferecidos:
-            escolhido = agent.get("model_default") if familia == "codex-proxy" else None
+            escolhido = agent.get("model_default")
             source = "agent.model_default"
         return AgentPainelModel(
             value=escolhido if escolhido in oferecidos else None,
-            allowed=oferecidos, labels=labels, source=source, runtime_switch=False,
-            context_length=janelas.get(escolhido),
+            allowed=oferecidos, source=source, runtime_switch=False,
         )
     if familia != "anthropic":
         return None
@@ -1448,89 +1386,6 @@ def _write_agent_permission_mode(
         source=str(settings_path),
         session_may_diverge=True,
         written=True,
-    )
-
-
-_kimi_usages_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
-
-
-def _fetch_kimi_usages_sync(api_key: str) -> dict[str, Any] | None:
-    """GET /coding/v1/usages da assinatura Kimi Code (fonte do `/usage` do CLI).
-
-    Devolve janela de 300min em `limits[]` e cota da assinatura em `usage`
-    (valores numéricos vêm como string). Qualquer falha -> None (quem chama
-    cai no comportamento antigo, baseado no cc-status).
-    """
-    request = urllib.request.Request(
-        _KIMI_USAGES_URL,
-        headers={"x-api-key": api_key, "accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-async def _get_kimi_usages(api_key: str) -> dict[str, Any] | None:
-    now = time.time()
-    cached = _kimi_usages_cache.get("kimi")
-    if cached is not None:
-        fetched_at, payload = cached
-        ttl = (
-            _KIMI_USAGES_CACHE_TTL_SECONDS
-            if payload is not None
-            else _KIMI_USAGES_FAILURE_TTL_SECONDS
-        )
-        if now - fetched_at < ttl:
-            return payload
-    payload = await asyncio.to_thread(_fetch_kimi_usages_sync, api_key)
-    _kimi_usages_cache["kimi"] = (now, payload)
-    return payload
-
-
-def _kimi_quota_window(detail: Any, now: int) -> AgentPainelQuotaWindow | None:
-    if not isinstance(detail, dict):
-        return None
-    try:
-        limit = float(detail.get("limit"))
-        used = float(detail.get("used"))
-    except (TypeError, ValueError):
-        return None
-    if limit <= 0:
-        return None
-    resets_at = _parse_iso_epoch(detail.get("resetTime"))
-    return AgentPainelQuotaWindow(
-        used_percentage=round(used / limit * 100, 1),
-        resets_at=resets_at,
-        remaining_seconds=max(0, resets_at - now) if resets_at is not None else None,
-    )
-
-
-def _build_kimi_painel_quotas(kimi_usages: dict[str, Any]) -> AgentPainelQuotas:
-    """Mapeia /coding/v1/usages pro mesmo shape 5h+7d que o CC mostra."""
-    now = int(time.time())
-    five_hour = None
-    limits = kimi_usages.get("limits")
-    entries = limits if isinstance(limits, list) else []
-    for entry in entries:
-        window = entry.get("window") if isinstance(entry, dict) else None
-        if (
-            isinstance(window, dict)
-            and window.get("duration") == 300
-            and window.get("timeUnit") == "TIME_UNIT_MINUTE"
-        ):
-            five_hour = _kimi_quota_window(entry.get("detail"), now)
-            break
-    if five_hour is None and entries and isinstance(entries[0], dict):
-        five_hour = _kimi_quota_window(entries[0].get("detail"), now)
-    return AgentPainelQuotas(
-        status="available",
-        source=_KIMI_USAGES_URL,
-        updated_at=now,
-        five_hour=five_hour,
-        seven_day=_kimi_quota_window(kimi_usages.get("usage"), now),
     )
 
 
@@ -2524,7 +2379,7 @@ def _relanca_com_resume(agent: dict[str, Any]) -> bool:
     O porquê de a família ficar de fora está no comentário da recusa em
     `post_agent_relaunch`.
     """
-    return agent.get("model_family") in {None, "anthropic", "kimi", "opencode"}
+    return agent.get("model_family") in {None, "anthropic", "opencode"}
 
 
 @router.get("/{slug}/pane/stream")
@@ -4050,13 +3905,7 @@ async def change_agent_model(
     - caminho feliz: envia `/model`, picker idempotente, poll de confirmação,
       persiste state_model só se delivered=True, emite task_event. runtime_switch=True.
 
-    **Kimi (Hiro)** — NÃO troca em sessão viva (motor é fixo por env var no
-    boot; `/model` do CC só lista aliases Anthropic, todos mapeados pro mesmo
-    id Kimi). Persiste state_model, emite task_event, runtime_switch=False.
-    Quem aplica é o boot (`subir-frota.sh subir_hiro`) e o wrapper `hiro-k3`,
-    lendo o estado persistido.
-
-    **codex-proxy (Tara)** — mesmo desfecho diferido, motivo diferente: aqui o
+    **codex-proxy (Tara)** — desfecho diferido: aqui o
     `/model` até trocaria em sessão viva, mas grava o campo `model` no
     `~/.claude/settings.json` GLOBAL e mudaria o padrão da frota. A escolha é
     persistida e o `subir-frota.sh subir_tara` a exporta em `ANTHROPIC_MODEL`.
@@ -4065,10 +3914,9 @@ async def change_agent_model(
     familia = _effective_model_family(agent) or "anthropic"
     if familia == "opencode":
         raise HTTPException(status_code=422, detail="model_not_supported_for_opencode")
-    is_kimi = familia == "kimi"
     is_codex_proxy = familia == "codex-proxy"
-    #: As duas famílias que gravam e esperam o boot, em vez de falar com o tmux.
-    diferido = is_kimi or is_codex_proxy
+    #: A família que grava e espera o boot, em vez de falar com o tmux.
+    diferido = is_codex_proxy
     db: GrupoBorgesDB = request.app.state.db
     target = payload.model
     from_model = agent.get("state_model") or agent.get("model_default")
@@ -4081,20 +3929,13 @@ async def change_agent_model(
     # falha só aparece na hora em que o Rica clica.
     if is_codex_proxy and target not in proxy_catalog.listar_modelos():
         raise HTTPException(status_code=422, detail="model_not_allowed_for_codex_proxy")
-    if is_kimi:
-        api_key = getattr(getattr(request.app.state, "settings", None), "kimi_api_key", None)
-        modelos = await asyncio.to_thread(kimi_catalog.listar_modelos, api_key)
-        if not modelos:
-            raise HTTPException(status_code=503, detail="kimi_catalog_unavailable")
-        if target not in {m.id for m in modelos}:
-            raise HTTPException(status_code=422, detail="model_not_allowed_for_kimi")
     if not diferido and target not in _CHAT_MODEL_SLUGS:
         raise HTTPException(status_code=422, detail="model_not_allowed_for_claude_code")
 
     if diferido:
-        # Kimi e Tara continuam sendo configurados no próximo boot: num o motor
-        # é fixo por env var, no outro a troca viva contaminaria o settings
-        # global. Nenhum dos dois tem daemon compartilhado pra reabrir a sessão.
+        # A Tara continua sendo configurada no próximo boot: a troca viva
+        # contaminaria o settings global, e ela não tem daemon compartilhado
+        # pra reabrir a sessão.
         await db.upsert_agent_state(slug, model=target)
         await db.insert_task_event(
             kind="agent.model_change",

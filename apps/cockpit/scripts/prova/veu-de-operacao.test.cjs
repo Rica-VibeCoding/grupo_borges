@@ -30,7 +30,7 @@ async function montarBloco() {
       b.React.createElement(BlocoDeAcoes, { agentSlug: SLUG, aberto: true }),
     );
   });
-  await b.renderer.act(async () => b.leituras[0].resolve(painel('kimi', SLUG)));
+  await b.renderer.act(async () => b.leituras[0].resolve(painel('codex-proxy', SLUG)));
   return { ...b, operacao, arvore, act: b.renderer.act };
 }
 

@@ -298,7 +298,7 @@ export default async function AgentePage({
   const motor = leMotor({
     modeloSessao: agente.state_model,
     modeloPadrao: agente.model_default,
-    esforco: agente.kimi_reasoning_effort,
+    esforco: agente.codex_reasoning_effort,
   });
   // Relógio do servidor, na mesma régua da rota `/`: `force-dynamic`
   // re-renderiza a cada navegação, então a duração de sessão da statusline vem

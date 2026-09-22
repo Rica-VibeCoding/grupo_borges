@@ -73,7 +73,7 @@ describe('não confirmado — diagnóstico, não erro', () => {
   });
 
   it('não afirma entrega nem falha e manda conferir o chat', () => {
-    const p = aparenciaDe('nao-confirmado', 'Hiro');
+    const p = aparenciaDe('nao-confirmado', 'Tara');
     assert.match(p.frase ?? '', /não consegui confirmar/i);
     assert.match(p.frase ?? '', /confira no chat/i);
     assert.doesNotMatch(p.frase ?? '', /não saiu|nada foi entregue/i);
@@ -235,8 +235,7 @@ describe('motor — modelo e esforço dentro do composer', () => {
   it('traduz as duas famílias para o nome que o Rica usa — mesma tabela da tropa', () => {
     assert.equal(rotulaModelo('claude-opus-5'), 'Opus 5');
     assert.equal(rotulaModelo('claude-opus-4-8'), 'Opus 4.8');
-    assert.equal(rotulaModelo('kimi-for-coding-highspeed'), 'K2.7 rápido');
-    assert.equal(rotulaModelo('k3'), 'K3');
+    assert.equal(rotulaModelo('deepseek-v4-flash'), 'DeepSeek V4-Flash');
   });
 
   it('id do rail codex vira nome curto, e o `[1m]` não é nome — é a janela do boot', () => {
@@ -323,7 +322,7 @@ describe('desfecho da troca de esforço — 200 não é sinônimo de aplicado', 
     );
   });
 
-  it('Kimi não tem entrega tmux: campos null não derrubam a troca gravada', () => {
+  it('caminho diferido não tem entrega tmux: campos null não derrubam a troca gravada', () => {
     assert.equal(
       desfechoDaTrocaDeEsforco({ written: true, tmux_delivered: null, confirmed: null }),
       'aplicado',
@@ -334,7 +333,7 @@ describe('desfecho da troca de esforço — 200 não é sinônimo de aplicado', 
 
 describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nada', () => {
   it('divergiu: o pedido aparece no título, a palavra é "diverge"', () => {
-    // O caso real do Hiro em 09/08: pediram high, a sessão roda xhigh.
+    // O caso real medido em 09/08: pediram high, a sessão roda xhigh.
     const e = etiquetaDoEsforco({ value: 'xhigh', requested: 'high', session_may_diverge: false }, true);
     assert.equal(e?.palavra, 'diverge');
     assert.match(e?.titulo ?? '', /pedido alto/i);
@@ -356,8 +355,7 @@ describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nad
     // Claude não preenche. "padrão" ali seria a mentira que o caso 3 evita.
     assert.equal(etiquetaDoEsforco({ value: 'max', requested: null, session_may_diverge: false }, false), null);
     assert.equal(contratoSeparaPedido({ model_family: null }), false);
-    assert.equal(contratoSeparaPedido({ model_family: 'kimi' }), true);
-    // A Tara entrou em 07/09: o esforço dela também entra por
+    // A Tara entrou em 07/09: o esforço dela entra por
     // CLAUDE_CODE_EFFORT_LEVEL no boot, então entre a escolha e o restart o
     // pedido e o vivo divergem de direito — e a etiqueta é o que conta isso.
     assert.equal(contratoSeparaPedido({ model_family: 'codex-proxy' }), true);
@@ -371,7 +369,7 @@ describe('etiqueta do esforço — efetivo ao lado do pedido, uma palavra ou nad
 });
 
 describe('desfecho da troca de MODELO — `tmux_delivered: false` não é falha na Tara', () => {
-  it('Kimi: gravado é sucesso, e o sucesso é "vale no próximo turno"', () => {
+  it('diferido: gravado é sucesso, e o sucesso é "vale no próximo turno"', () => {
     // O caminho que estava quebrado: a troca da Tara era gravada, o back
     // devolvia 200 com `tmux_delivered: false` porque não houve tmux nenhum,
     // e a tela dizia "não foi possível entregar a troca ao agente".

@@ -457,11 +457,9 @@ export function diagnosticaAcao(erro: unknown, id: AcaoId): Impedimento {
   const texto = textoDoErro(erro);
   const alvo = NOME_DA_ACAO[id];
 
-  // O ramo `not_allowed` saiu com o esforço (09/08). Ele traduzia
-  // `kimi_effort_not_allowed`, o único `not_allowed` que o back devolve para as
-  // rotas deste bloco — sem o segmentado de esforço aqui, nenhuma chamada daqui
-  // consegue mais provocá-lo. Quem recusa nível hoje é o composer, que tem
-  // tradução própria em `motor.ts`.
+  // O ramo `not_allowed` saiu com o esforço (09/08): sem o segmentado de
+  // esforço aqui, nenhuma chamada deste bloco consegue mais provocá-lo. Quem
+  // recusa nível hoje é o composer, que tem tradução própria em `motor.ts`.
   if (texto.includes('404')) {
     return {
       resumo: 'o agente sumiu da frota',

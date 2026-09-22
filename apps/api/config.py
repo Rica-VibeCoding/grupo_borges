@@ -78,10 +78,6 @@ class Settings(BaseSettings):
     uploads_retention_days: float = 30.0
     uploads_retention_days_canario: float = 2.0
 
-    # Kimi (assinatura Kimi Code do Hiro) — chave sk-kimi-... pro endpoint
-    # /coding/v1/usages que alimenta o bloco Quotas do painel (5h + semanal).
-    kimi_api_key: str | None = None
-
     # OpenCode Go (assinatura do Canário) — chave sk-AZyN... pro endpoint
     # /zen/go/v1/usage, única fonte das 3 janelas do plano (5h, semanal,
     # mensal). É a MESMA chave que o boot exporta em ANTHROPIC_API_KEY.

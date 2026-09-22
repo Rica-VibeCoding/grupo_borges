@@ -194,9 +194,6 @@ export async function patchAgentPermissionMode(
 
 export type ChatModelSlug = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
-export type KimiModelSlug = 'kimi-k3' | 'kimi-k2.7-code' | 'kimi-k2.7-code-highspeed';
-
-export type AnyModelSlug = ChatModelSlug | KimiModelSlug;
 
 export type AgentInputResponse = {
   tmux_delivered: boolean;
@@ -208,7 +205,7 @@ export type AgentModelChangeResponse = {
   state_persisted: boolean;
   confirmed: boolean;
   model: string;
-  // DS-69 — false quando a troca só vale na próxima execução (Kimi).
+  // DS-69 — false quando a troca só vale na próxima execução.
   runtime_switch: boolean;
 };
 
@@ -313,7 +310,7 @@ export async function postAgentVoice(
 
 export async function postAgentModel(
   slug: string,
-  model: AnyModelSlug,
+  model: ChatModelSlug,
   options?: { force?: boolean },
 ): Promise<AgentModelChangeResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/model`, {
@@ -338,23 +335,6 @@ export function toShortModelSlug(model: string | null | undefined): ChatModelSlu
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('haiku')) return 'haiku';
   return null;
-}
-
-const KIMI_MODEL_SLUGS: readonly KimiModelSlug[] = [
-  'kimi-k3',
-  'kimi-k2.7-code',
-  'kimi-k2.7-code-highspeed',
-];
-
-const KIMI_RAW_MODEL_TO_SLUG: Record<string, KimiModelSlug> = {
-  k3: 'kimi-k3',
-  'kimi-for-coding': 'kimi-k2.7-code',
-  'kimi-for-coding-highspeed': 'kimi-k2.7-code-highspeed',
-};
-
-export function toKimiModelSlug(model: string | null | undefined): KimiModelSlug | null {
-  if (!model) return null;
-  return KIMI_MODEL_SLUGS.find((slug) => slug === model) ?? KIMI_RAW_MODEL_TO_SLUG[model] ?? null;
 }
 
 export async function listAgentTasks(

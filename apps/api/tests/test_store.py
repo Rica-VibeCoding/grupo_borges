@@ -24,7 +24,7 @@ async def test_delete_jsonl_events_removes_only_target_agent_jsonl(tmp_path: Pat
                 "workspace_path": f"/tmp/{slug}",
                 "model_default": "opus",
             }
-            for slug in ("daniel", "hiro")
+            for slug in ("daniel", "caseiro")
         ]
     )
 
@@ -38,7 +38,7 @@ async def test_delete_jsonl_events_removes_only_target_agent_jsonl(tmp_path: Pat
         None,
     )
     db._insert_task_event("hook:stop", None, "daniel", None, {"type": "stop"}, None)
-    db._insert_task_event("jsonl:user", None, "hiro", None, {"type": "user"}, None)
+    db._insert_task_event("jsonl:user", None, "caseiro", None, {"type": "user"}, None)
 
     deleted = await db.delete_jsonl_events("daniel")
 
@@ -49,5 +49,5 @@ async def test_delete_jsonl_events_removes_only_target_agent_jsonl(tmp_path: Pat
         ).fetchall()
     assert [(row["agent_slug"], row["kind"]) for row in remaining] == [
         ("daniel", "hook:stop"),
-        ("hiro", "jsonl:user"),
+        ("caseiro", "jsonl:user"),
     ]

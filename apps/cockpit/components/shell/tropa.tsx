@@ -195,8 +195,8 @@ function pastaCurta(
     : limpo;
   // Quem está em `ze_claude/<slug>` está na própria casa, e dizer isso é
   // repetir o nome que está três pixels acima. O que informa é o DESVIO: o
-  // Daniel em `grupo_borges`, o Hiro em `promob-splitter-hiro`. Comparado
-  // contra o slug, não contra uma lista — agente novo entra sozinho.
+  // Daniel em `grupo_borges`. Comparado contra o slug, não contra uma
+  // lista — agente novo entra sozinho.
   return curta === `${CASA_DA_FROTA}${slug}` ? null : curta;
 }
 

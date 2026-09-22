@@ -22,20 +22,18 @@ import type {
 } from '@grupo_borges/cockpit-core/cockpit-types';
 
 /** Rótulo curto que cabe na linha da gaveta (390px). O padrão do yaml é a
- *  AUSÊNCIA de campo e representa o Anthropic — nunca inventar quinta família. */
+ *  AUSÊNCIA de campo e representa o Anthropic — nunca inventar família nova. */
 const ROTULOS: Record<MotorFamilia, string> = {
   anthropic: 'Anthropic',
   'codex-proxy': 'Codex',
-  kimi: 'Kimi',
   opencode: 'OpenCode',
 };
 
-/** As quatro famílias da matriz cheia, em ordem ALFABÉTICA — neutra de
- *  propósito. Não há caminho preferido nem agente amarrado a uma família. */
+/** As famílias da matriz cheia, em ordem ALFABÉTICA — neutra de propósito.
+ *  Não há caminho preferido nem agente amarrado a uma família. */
 export const ORDEM_DE_FAMILIAS: readonly MotorFamilia[] = [
   'anthropic',
   'codex-proxy',
-  'kimi',
   'opencode',
 ];
 
