@@ -6,7 +6,7 @@ produção deste app na **3008** (`cockpit-v2.service`). O cockpit **atual** é
 
 O Rica não alcança nenhuma dessas portas direto: elas escutam em `127.0.0.1` e
 quem publica é o `tailscale serve`, com TLS no nome do node. **Passar o IP da
-Tailscale quebra** — a URL é sempre `https://srv1061129.tailfe77db.ts.net:<porta>`,
+Tailscale quebra** — a URL é sempre `https://borges.tailfe77db.ts.net:<porta>`,
 `:3443`→3007 v1, `:3445`→API 8000, **`:3446`→3008, a única do Rica**.
 
 ⚠️ **A `:3444` (dev) foi retirada da tailnet em 08/08, a pedido dele.** Ele não
