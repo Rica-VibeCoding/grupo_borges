@@ -1,114 +1,31 @@
-# scripts/prova — o que só o navegador prova
+# scripts/prova — o que o `node --test` da suíte não monta sozinho
 
-Provas de comportamento que a suíte não alcança. `node --test` não tem DOM: ciclo
-de vida de efeito do React, foco, teclado e o que a tela realmente mostra só se
-verificam em navegador de verdade.
-
-Não substituem teste. **Régua de origem** (`daniel/AGENTS.md`): defeito tem teste
-que falha antes do fix; onde não cabe teste automatizado, define-se na entrada o
-comando que prova e roda-se ele no fim. Isto é esse comando.
+Provas de componente que precisam montar o React de verdade (`BlocoDeAcoes`,
+gaveta, véu de operação) num DOM simulado. Não substituem teste. **Régua de
+origem** (`daniel/AGENTS.md`): defeito tem teste que falha antes do fix; onde não
+cabe teste automatizado, define-se na entrada o comando que prova e roda-se ele
+no fim. Isto é esse comando.
 
 ## Rodar
 
-O dev da 3009 precisa estar de pé (skill `subir-cockpit` — **nunca** `next dev`
-genérico, derruba o cockpit do Rica na 3007).
-
 ```bash
-cd apps/cockpit && python3 scripts/prova/retentativa-painel.py
+cd apps/cockpit && node --test scripts/prova/*.test.cjs
 ```
-
-⚠️ **O Playwright não vinha instalado na Oracle** — todas as provas `.py` daqui
-morriam em `No module named 'playwright'`, e foi isso que me fez dar o teste de
-clique real como impossível nesta máquina por dois dias. Não há `python3-venv`
-(o `venv` cria a pasta SEM pip e ainda sai com código 0), então vai no usuário:
-
-```bash
-python3 -m pip install --user --break-system-packages playwright
-~/.local/bin/playwright install chromium
-```
-
-Os scripts já apontam o `site-packages` do usuário, então depois disso o
-`python3` do sistema roda. `chromium` headless sobe sem `playwright install-deps`
-(que pediria sudo).
-
-As provas `.cjs` montam o componente em `react-test-renderer` e **não precisam da
-3009** — mas o pacote não é dependência do cockpit (ele está deprecado no React
-19 e não vale carregar no app). Instalar fora do repo e apontar:
-
-```bash
-npm install --prefix /tmp/rtr --no-save react-test-renderer@19.2.6 react@19.2.6
-cd apps/cockpit && REACT_TEST_RENDERER=/tmp/rtr/node_modules/react-test-renderer \
-  node --test scripts/prova/operacao-unica.test.cjs
-```
-
-⚠️ Sem essa variável o `node --test` morre em `Cannot find module` — e um arquivo
-de prova que ninguém consegue rodar é a bancada que passa vazia. Achado em 09/09:
-o `seletor-familia.test.cjs` estava nesse estado desde que entrou.
-
-Cada script imprime `✓` por metade verificada e estoura `AssertionError` na que
-falhar. Sai 0 só quando tudo passa.
-
-## Duas regras que valem para toda prova nova
-
-**1. Falha se simula NO CLIENTE, nunca derrubando serviço.**
-
-```python
-pag.route("**/painel", lambda r: r.fulfill(status=503, body='{}'))
-```
-
-A `cockpit-api` é unit transiente: `systemctl --user stop` **apaga a unit** e o
-`start` seguinte responde `Unit not found` (07/08 — a API do Rica ficou fora e
-quem religou foi ele). Interceptar também impede o teste de despachar de verdade
-contra a sessão tmux de um agente real. Detalhe em
-`ze-shared/memory/shared_quem_matou_sobe.md`.
-
-**2. `time.sleep()` não existe aqui — use `pag.wait_for_timeout(ms)`.**
-
-No Playwright *sync* os handlers de `page.route` rodam no processo Python, e o
-`sleep` bloqueia o loop que os despacha: a requisição interceptada fica pendurada
-e o relógio do app não anda. Isso já fez um conserto **correto** ser lido como
-falho por duas corridas — o sinal foi o par vermelho/verde dar exatamente o mesmo
-número. Fix que não move a agulha nem um pouco = desconfiar da medição antes da
-hipótese.
 
 ## O que existe
 
-| script | prova |
-|---|---|
-| `retentativa-painel.py` | Painel fora do ar volta sozinho; backoff cresce (2s/4s/8s) e para ao fechar a gaveta. Bug `940d5c07`, commit `783b2be`. |
-| `composer-retomada.py` | "Tentar de novo" reenvia o texto pendurado sem comer o que está no campo. Bug `307c4624`, commit `c4ab92f`. |
-| `bolha-da-fila.py` | Mensagem enviada com o agente em turno vira bolha na hora, marcada "na fila"; a marca cai na drenagem e não nasce bolha duplicada. Bug `e615c350`. |
-| `cota-no-painel.py` | Painel mostra a cota das duas janelas com percentual e reset; cota velha vem marcada com a idade; `missing` vira recado sem comer os controles. Bug `294c5464`. |
-| `fila-do-compact.py` | O escrito durante o compact fica pendurado à vista e sai sozinho quando a espera termina — e NADA chega ao agente antes disso: o resumo nasce inteiro e gravado antes da fila. |
+- `operacao-unica.test.cjs` — escolher na gaveta aplica sozinho, e só quando a escolha não vale na sessão viva.
+- `veu-de-operacao.test.cjs` — a trava de tela nasce na fase `aplicando`, cobre o viewport e sai sozinha.
+- `seletor-familia.test.cjs` — o seletor de família do motor; bancada em `seletor-familia-harness.cjs`.
 
-**`fila-do-compact.py` também roda solto**, pelo mesmo motivo e com um a mais: o
-que se mede é a ORDEM em que duas coisas chegam ao agente (o resumo e a mensagem
-enfileirada), e um compact interceptado não tem resumo para nascer antes. Alvo é
-o `canario`, e não é escolha de conveniência — o compact apaga o contexto de quem
-o recebe.
+## Prova que precisa de navegador de verdade
 
-**Seletor que depende de estado é seletor que some na hora H:** o placeholder do
-composer MUDA durante o compact, e `get_by_placeholder("Mensagem para")` custou
-uma corrida inteira. Ancore no elemento (`locator("textarea")`), não no texto que
-a própria mudança altera.
+Foco, teclado e o que a tela realmente mostra: pela skill `browser-harness` da
+frota — Playwright não existe mais aqui. O dev da 3009 escuta só em `127.0.0.1`
+da Oracle, e o Chrome do agente mora no PC: expor a porta a ele é o primeiro
+passo quando a primeira prova dessas nascer.
 
-**Exceção à regra 1 em `bolha-da-fila.py`:** ele despacha DE VERDADE, sem
-interceptar. O que se mede é o caminho inteiro CLI → JSONL → SSE → feed, e um
-`fulfill` provaria só o desenho. O alvo é o `canario` (`agents.yaml`), agente
-descartável com casa própria — nunca um agente produtivo.
-
-**Terceira regra, aprendida nesse mesmo bug:** *espere o FATO, não o relógio.*
-Duas corridas erraram por cronômetro — uma leu como sucesso uma bolha que era o
-eco comum (o agente já tinha saído do turno), outra leu como defeito uma marca
-legítima (o turno ainda rodava). O laço espera a linha no JSONL.
-
-Screenshot **não** é versionado — é artefato de corrida e pesa. O que se versiona
-é o script que sabe tirá-lo de novo. Sai em `/home/clawd/provas/<nome>/`, ou onde
-`PROVA_SAIDA` apontar.
-
-## Dependência
-
-`playwright` Python + chromium, já instalados na VPS (`~/.local/lib/python3.12`).
-Fora das dependências do app de propósito: não são precisos para build nem para
-`npm test`, e adicioná-los ao `package.json` puxaria browser no `pnpm install` de
-quem só quer subir o cockpit.
+**Falha se simula NO CLIENTE, nunca derrubando serviço** (`Fetch.enable` +
+`Fetch.fulfillRequest` pelo `cdp(...)`). A `cockpit-api` é unit transiente:
+`systemctl --user stop` **apaga a unit** e o `start` seguinte responde `Unit not
+found` — detalhe em `ze-shared/memory/shared_quem_matou_sobe.md`.

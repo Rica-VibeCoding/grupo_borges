@@ -72,7 +72,7 @@ ver `docs/cockpit-v2-ownership.md` §5. Se precisar de um ambiente extra, é
 - **O dev não é mais publicado na tailnet.** A `:3444` apontava pro 3009 e o Rica
   a abria todo dia; ele mandou tirar em 08/08 — não quer mais ver trabalho pela
   metade. A única porta dele é a `:3446` (produção, 3008). Quem valida o dev é o
-  agente, por `127.0.0.1:3009` ou Playwright.
+  agente, por `127.0.0.1:3009`.
 - A 3443 aponta para a 3007 (v1) e **não se mexe nela**.
 - ⚠️ Nunca pelo IP `100.x`: origem sem HTTPS não expõe microfone, e o modo voz
   simplesmente não existe lá.

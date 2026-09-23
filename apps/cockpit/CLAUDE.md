@@ -11,7 +11,7 @@ Tailscale quebra** — a URL é sempre `https://srv1061129.tailfe77db.ts.net:<po
 
 ⚠️ **A `:3444` (dev) foi retirada da tailnet em 08/08, a pedido dele.** Ele não
 olha mais trabalho em andamento: só vê o que está publicado na `:3446`. O dev
-continua na 3009, agora só em `127.0.0.1` — quem valida é você, por Playwright ou
+continua na 3009, agora só em `127.0.0.1` — quem valida é você, por
 curl. Mandar `:3444` pra ele é mandar URL morta.
 
 ⚠️ Dev e produção **não podem dividir o `.next`** — dois processos escrevendo no
