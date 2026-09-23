@@ -32,6 +32,7 @@ test('parecer do Jev vira rótulo curto, e sem parecer não inventa', () => {
   assert.equal(rotuloVeredito({ jev_veredito: 'duplica', jev_duplica_de: 'a.md' }), 'Jev: duplica a.md');
   assert.equal(rotuloVeredito({ jev_veredito: 'duplica', jev_duplica_de: null }), 'Jev: duplica outro doc');
   assert.equal(rotuloVeredito({ jev_veredito: null, jev_duplica_de: null }), null);
+  assert.equal(rotuloVeredito({ jev_veredito: 'manter', jev_duplica_de: null, jev_probabilidade: 0.714 }), 'Jev: manter (71%)');
 });
 
 test('erro mostra o motivo que o executor gravou', () => {

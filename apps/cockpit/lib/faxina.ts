@@ -25,6 +25,8 @@ export type FaxinaItem = {
   jev_veredito: FaxinaVeredito | null;
   jev_motivo: string | null;
   jev_duplica_de: string | null;
+  /** Probabilidade do rótulo vencedor (0–1). Abaixo de 0,8 é parecer fraco. */
+  jev_probabilidade?: number | null;
   status: FaxinaStatus;
   erro: string | null;
   arquivado_para: string | null;
@@ -92,13 +94,16 @@ export function acoesPermitidas(status: FaxinaStatus): FaxinaAcao[] {
   return [];
 }
 
-export function rotuloVeredito(item: Pick<FaxinaItem, 'jev_veredito' | 'jev_duplica_de'>): string | null {
-  if (item.jev_veredito === 'manter') return 'Jev: manter';
-  if (item.jev_veredito === 'arquivar') return 'Jev: arquivar';
-  if (item.jev_veredito === 'duplica') {
-    return item.jev_duplica_de ? `Jev: duplica ${item.jev_duplica_de}` : 'Jev: duplica outro doc';
-  }
-  return null;
+export function rotuloVeredito(
+  item: Pick<FaxinaItem, 'jev_veredito' | 'jev_duplica_de' | 'jev_probabilidade'>,
+): string | null {
+  let rotulo: string;
+  if (item.jev_veredito === 'manter') rotulo = 'Jev: manter';
+  else if (item.jev_veredito === 'arquivar') rotulo = 'Jev: arquivar';
+  else if (item.jev_veredito === 'duplica') {
+    rotulo = item.jev_duplica_de ? `Jev: duplica ${item.jev_duplica_de}` : 'Jev: duplica outro doc';
+  } else return null;
+  return item.jev_probabilidade == null ? rotulo : `${rotulo} (${Math.round(item.jev_probabilidade * 100)}%)`;
 }
 
 export function rotuloStatus(item: Pick<FaxinaItem, 'status' | 'erro'>): string | null {
