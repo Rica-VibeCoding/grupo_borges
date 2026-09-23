@@ -54,6 +54,8 @@ async def content(item_id: int, request: Request) -> dict:
         caminho = item["arquivado_para"]
         if not caminho:
             raise HTTPException(status_code=409, detail="destino do arquivo não registrado")
+    if item["tipo"] == "skill":
+        caminho += "/SKILL.md"
     try:
         texto = await asyncio.to_thread(read_content, ZE_CLAUDE_ROOT, caminho)
     except OverflowError as exc:

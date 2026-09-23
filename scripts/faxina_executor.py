@@ -30,23 +30,35 @@ def git(repo: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def cited_indexes(repo: Path, caminho: str) -> list[str]:
-    target = safe_path(repo, caminho)
-    found = []
+def read_indexes(repo: Path) -> dict[str, str]:
+    indexes = {}
     paths = git(repo, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
     for relative in paths.split("\0"):
-        if not relative or Path(relative).name not in INDEX_NAMES or relative == caminho:
+        if not relative or Path(relative).name not in INDEX_NAMES:
             continue
         if "arquivo" in Path(relative).parts:
             continue
-        index = repo / relative
-        resolved = index.resolve()
-        if not resolved.is_relative_to(repo) or not resolved.is_file():
+        resolved = (repo / relative).resolve()
+        if resolved.is_relative_to(repo) and resolved.is_file():
+            indexes[relative] = unquote(resolved.read_text(encoding="utf-8", errors="replace"))
+    return indexes
+
+
+def cited_indexes(repo: Path, caminho: str, indexes: dict[str, str] | None = None) -> list[str]:
+    target = safe_path(repo, caminho)
+    found = []
+    for relative, text in (read_indexes(repo) if indexes is None else indexes).items():
+        if relative == caminho or Path(relative).is_relative_to(Path(caminho)):
             continue
-        text = unquote(resolved.read_text(encoding="utf-8", errors="replace"))
+        index = repo / relative
         references = {caminho, str(target), os.path.relpath(target, index.parent)}
         if any(reference in text for reference in references):
             found.append(relative)
+    if target.is_dir():
+        for relative in git(repo, "ls-files", "-z").split("\0"):
+            alias = repo / relative
+            if relative and alias.is_symlink() and alias.resolve().is_relative_to(target):
+                found.append(relative)
     return sorted(set(found))
 
 
@@ -75,7 +87,15 @@ def move_and_commit(repo: Path, item: dict, journal: Path) -> tuple[str, str]:
         cited = sorted(set(item["citado_em"]) | set(cited_indexes(repo, original)))
         if cited:
             raise ValueError("citado em " + ", ".join(cited))
-    if not source_path.is_file():
+    if item["tipo"] == "skill":
+        if not source_path.is_dir() or not (source_path / "SKILL.md").is_file():
+            raise ValueError("origem da skill não contém SKILL.md")
+        for child in source_path.rglob("*"):
+            if child.is_symlink() or (not child.is_dir() and not child.is_file()):
+                raise ValueError("skill contém link simbólico ou arquivo especial")
+        if git(repo, "ls-files", "--others", "--ignored", "--exclude-standard", "--", source):
+            raise ValueError("skill contém arquivos ignorados; conferir antes de arquivar")
+    elif not source_path.is_file():
         raise ValueError("origem não é arquivo regular")
     if destination_path.exists():
         raise ValueError("destino já existe")

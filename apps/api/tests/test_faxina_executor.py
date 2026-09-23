@@ -51,6 +51,34 @@ def archive(env):
     return results[0]
 
 
+def test_skill_inteira_arquivar_conteudo_desfazer(env, monkeypatch):
+    repo, db, _ = env
+    folder = repo / "tara/.claude/skills/antiga"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("# Habilidade antiga\n[apoio](apoio.md)")
+    (folder / "apoio.md").write_text("Referência da habilidade")
+    relative = str(folder.relative_to(repo))
+    executor.git(repo, "add", "--", relative)
+    executor.git(repo, "commit", "-m", "habilidade antiga", "--", relative)
+    item = asyncio.run(db.create_faxina_item(caminho=relative, workspace="tara", tipo="skill",
+        ultima_leitura=int(time.time()) - 30 * 86400))
+    monkeypatch.setattr(faxina, "ZE_CLAUDE_ROOT", repo)
+    app = FastAPI()
+    app.state.db = db
+    app.include_router(faxina.router, prefix="/api/faxina")
+    with TestClient(app) as client:
+        assert client.get(f"/api/faxina/{item['id']}/conteudo").json()["texto"].startswith("# Habilidade")
+        assert client.post(f"/api/faxina/{item['id']}/arquivar").status_code == 200
+        archived = executor.run_once(db.db_path, repo)[0]
+        assert archived["status"] == "arquivado", archived
+        assert (repo / archived["arquivado_para"] / "apoio.md").is_file()
+        assert client.get(f"/api/faxina/{item['id']}/conteudo").status_code == 200
+        client.post(f"/api/faxina/{item['id']}/desfazer")
+        assert executor.run_once(db.db_path, repo)[0]["status"] == "mantido"
+        assert (folder / "apoio.md").is_file()
+        assert executor.git(repo, "status", "--porcelain") == ""
+
+
 def test_ciclo_http_arquivar_desfazer(env, monkeypatch):
     repo, db, item = env
     monkeypatch.setattr(faxina, "ZE_CLAUDE_ROOT", repo)

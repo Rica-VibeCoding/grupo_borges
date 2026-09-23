@@ -442,7 +442,7 @@ class GrupoBorgesDB:
                 "SELECT MAX(decidido_em) FROM faxina_item WHERE caminho = ? AND status = 'mantido'",
                 (caminho,),
             ).fetchone()[0]
-            reference = max(ultima_leitura or ultimo_commit or now, kept or 0)
+            reference = max(ultima_leitura or 0, ultimo_commit or 0, kept or 0) or now
             days = max(0, (now - reference) // 86400)
             if days < 20:
                 return None
