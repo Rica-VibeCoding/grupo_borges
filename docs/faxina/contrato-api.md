@@ -39,6 +39,14 @@
 - `@caminho` e `@include caminho` em `CLAUDE.md`, inclusive referências transitivas, excluem arquivos carregados na inicialização. Citações comuns ficam no cartão.
 - Não existe promoção automática após sete dias: `persist()` cria apenas `pendente`. Uma política futura precisa de autorização separada antes de chamar `decide_faxina`.
 
+## Jev
+
+- A varredura madura consulta o Jev apenas para novos candidatos, antes de gravar. Duas perguntas `choice` por unidade: destino e motivo. Até 10 unidades e 24 KB por lote.
+- A chave OPENROUTER sai do cofre somente para a memória e o ambiente do processo filho do Jev. Erro de API interrompe sem inserir candidatos nem repetir a chamada; HTTP 402 é identificado explicitamente.
+- Por padrão só envia metadados. `--incluir-cabecalhos` existe, mas **não está habilitado na agenda e exige autorização do Rica**. Envia apenas linhas `#`, `##`, `###`; nunca prosa. Qualquer indicador de segredo no arquivo inteiro suprime todos os cabeçalhos daquele arquivo. Essa regra é conservadora, não uma garantia universal de anonimização. Arquivos maiores que 200 KiB ficam sem cabeçalhos.
+- Saída 2, `needs_review`, motivo incerto ou destino incerto resultam em parecer `null`. `jev_duplica_de` não é inventado: as duas perguntas não identificam um arquivo substituto.
+- O consumo devolvido pelo provedor fica no relatório da passagem em `jev_uso`.
+
 ## Validação isolada
 
 ```sh

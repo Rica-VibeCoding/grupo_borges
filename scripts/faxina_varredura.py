@@ -143,6 +143,13 @@ def collect(repo: Path, log: Path, now: int | None = None) -> dict:
             "novos": 0, "varredura_em": now}
 
 
+async def new_candidates(report: dict, db: GrupoBorgesDB) -> list[dict]:
+    existing = (await db.list_faxina("todos"))["itens"]
+    blocked = {item["caminho"] for item in existing if item["status"] != "mantido"
+               or (item["decidido_em"] or 0) > report["varredura_em"] - WINDOW}
+    return [item for item in report["candidatos"] if item["caminho"] not in blocked]
+
+
 async def persist(report: dict, db: GrupoBorgesDB, verdicts: dict | None = None) -> list[dict]:
     if report["modo"] != "aplicar":
         return []
@@ -166,14 +173,22 @@ def main() -> None:
     parser.add_argument("--leituras", type=Path, default=Path.home() / ".claude/metrics/leituras.jsonl")
     parser.add_argument("--db", default=get_settings().db_path)
     parser.add_argument("--aplicar", action="store_true")
+    parser.add_argument("--incluir-cabecalhos", action="store_true",
+                        help="Envio externo de cabeçalhos; só habilitar com aprovação do Rica.")
     args = parser.parse_args()
     report = collect(args.repo, args.leituras)
     if not args.aplicar:
         report["modo"] = "relatorio"
     if report["modo"] == "aplicar":
+        from faxina_jev import evaluate
+
         db = GrupoBorgesDB(args.db)
-        created = asyncio.run(persist(report, db))
+        report["candidatos"] = asyncio.run(new_candidates(report, db))
+        verdicts, usage = evaluate(report["candidatos"], repo=args.repo.resolve(),
+                                   include_headings=args.incluir_cabecalhos)
+        created = asyncio.run(persist(report, db, verdicts))
         report["novos"] = len(created)
+        report["jev_uso"] = usage
     print(json.dumps(report, ensure_ascii=False))
 
 
