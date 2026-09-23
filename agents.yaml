@@ -202,7 +202,7 @@ agents:
   # (`apps/com`). Clone próprio, fora do monorepo, igual ao Caseiro; persona no
   # `CLAUDE.local.md` (fora do git). Commit direto na main por ordem do Rica.
   - slug: fluytcom
-    name: FluytCom
+    name: Fluyt
     role: Especialista — Fluyt Comercial (apps/com)
     emoji: "📝"
     tmux_session: fluytcom
