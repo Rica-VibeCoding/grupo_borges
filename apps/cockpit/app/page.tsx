@@ -1,7 +1,9 @@
 import type { Viewport } from 'next';
+import Link from 'next/link';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
+import { fetchFaxina } from '@/lib/faxina';
 
 // Server Component de propósito: `fetchFleet` monta URL absoluta a partir de
 // `API_BACKEND_URL`, o que só resolve no servidor. No cliente o caminho é
@@ -23,6 +25,10 @@ export default async function Home() {
   const agora = Math.floor(Date.now() / 1000);
   const chamando = fleet.agents.filter((a) => a.status === 'aguardando').length;
   const trabalhando = fleet.agents.filter((a) => a.status === 'trabalhando').length;
+  // A faxina fora do ar não pode derrubar a raiz: sem resposta, o link some.
+  const faxinaPendentes = await fetchFaxina('pendente')
+    .then((lista) => lista.resumo.pendentes)
+    .catch(() => null);
 
   return (
     // `palco="mesa"`: aqui a tropa É a tela, então o palco não se recorta em
@@ -76,6 +82,18 @@ export default async function Home() {
                 </>
               ) : null}
             </p>
+            {faxinaPendentes !== null ? (
+              <Link
+                href="/faxina"
+                className="ck-tabular"
+                style={{
+                  fontSize: 'var(--ck-text-xs)',
+                  color: faxinaPendentes > 0 ? 'var(--ck-state-attention)' : 'var(--ck-text-tertiary)',
+                }}
+              >
+                Faxina{faxinaPendentes > 0 ? ` · ${faxinaPendentes} ${faxinaPendentes === 1 ? 'parado' : 'parados'}` : ''}
+              </Link>
+            ) : null}
           </header>
 
           <TropaAoVivo agora={agora} />
