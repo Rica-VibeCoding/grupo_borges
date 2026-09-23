@@ -33,6 +33,13 @@ def safe_path(root: Path, caminho: str) -> Path:
     return current
 
 
+def restricted_path(root: Path, caminho: str) -> bool:
+    path = (root / caminho).resolve()
+    return (not path.is_relative_to(root.resolve())
+            or path.is_relative_to((root / "ze-shared/vault").resolve())
+            or any(part.startswith(".env") for part in path.parts))
+
+
 def archive_path(caminho: str) -> str:
     relative = validate_relative_path(caminho)
     if relative.parts[1] == "arquivo":

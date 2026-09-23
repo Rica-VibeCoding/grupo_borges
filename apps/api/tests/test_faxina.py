@@ -145,6 +145,18 @@ def test_link_simbolico_recusado(env, tmp_path):
     assert client.get(f"/api/faxina/{item['id']}/conteudo").status_code == 403
 
 
+def test_probabilidade_e_migracao_do_banco_existente(env):
+    _, db, client = env
+    with db._connect() as conn, conn:
+        conn.execute("ALTER TABLE faxina_item DROP COLUMN jev_probabilidade")
+    asyncio.run(db.startup())
+    item = candidate(db, jev_veredito="manter", jev_probabilidade=0.63)
+    assert item["jev_probabilidade"] == 0.63
+    assert client.get("/api/faxina").json()["itens"][0]["jev_probabilidade"] == 0.63
+    asyncio.run(db.startup())
+    assert asyncio.run(db.get_faxina_item(item["id"]))["jev_probabilidade"] == 0.63
+
+
 def test_candidato_recente_ou_sem_data_nao_entra(env):
     _, db, _ = env
     assert candidate(db, ultima_leitura=int(time.time())) is None

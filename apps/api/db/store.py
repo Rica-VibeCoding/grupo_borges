@@ -328,6 +328,9 @@ class GrupoBorgesDB:
             # Migrações idempotentes: `executescript` fez commit implícito → ALTERs abaixo
             # rodam em autocommit. `_add_column_if_missing` engole "duplicate column" caso
             # dois startups concorrentes (ex: dev reload) racem na mesma coluna.
+            self._add_column_if_missing(
+                conn, "faxina_item", "jev_probabilidade", "REAL CHECK (jev_probabilidade BETWEEN 0 AND 1)",
+            )
             if self._add_column_if_missing(conn, "tasks", "human_id", "TEXT"):
                 conn.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_human_id "
@@ -412,15 +415,16 @@ class GrupoBorgesDB:
         ultima_leitura: int | None = None, ultimo_commit: int | None = None,
         citado_em: list[str] | None = None, jev_veredito: str | None = None,
         jev_motivo: str | None = None, jev_duplica_de: str | None = None,
+        jev_probabilidade: float | None = None,
     ) -> dict[str, Any] | None:
         return await asyncio.to_thread(
             self._create_faxina_item, caminho, workspace, tipo, ultima_leitura,
-            ultimo_commit, citado_em or [], jev_veredito, jev_motivo, jev_duplica_de,
+            ultimo_commit, citado_em or [], jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade,
         )
 
     def _create_faxina_item(
         self, caminho, workspace, tipo, ultima_leitura, ultimo_commit,
-        citado_em, jev_veredito, jev_motivo, jev_duplica_de,
+        citado_em, jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade,
     ) -> dict[str, Any] | None:
         from services.faxina import validate_relative_path
 
@@ -450,12 +454,12 @@ class GrupoBorgesDB:
                 """
                 INSERT INTO faxina_item (
                     caminho, workspace, tipo, ultima_leitura, ultimo_commit, dias_parado,
-                    citado_em, jev_veredito, jev_motivo, jev_duplica_de, criado_em
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *
+                    citado_em, jev_veredito, jev_motivo, jev_duplica_de, jev_probabilidade, criado_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *
                 """,
                 (caminho, workspace, tipo, ultima_leitura, ultimo_commit, days,
                  json.dumps(citado_em, ensure_ascii=False), jev_veredito, jev_motivo,
-                 jev_duplica_de, now),
+                 jev_duplica_de, jev_probabilidade, now),
             ).fetchone()
             return self._faxina_row(row)
 

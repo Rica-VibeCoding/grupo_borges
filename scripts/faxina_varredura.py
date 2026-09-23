@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 import re
+import shlex
 import sys
 import time
 
@@ -14,9 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/api"))
 from config import get_settings
 from db.store import GrupoBorgesDB
 from faxina_executor import cited_indexes, git, read_indexes
-from services.faxina import ZE_CLAUDE_ROOT
+from services.faxina import ZE_CLAUDE_ROOT, restricted_path
 
 WINDOW = 20 * 86400
+GLOBAL_SETTINGS = Path.home() / ".claude/settings.json"
 INCLUDE = re.compile(r"(?<![\w])@(?:include\s+)?([^\s`<>()\[\],;]+)")
 
 
@@ -24,20 +27,24 @@ def inventory(repo: Path) -> list[dict]:
     candidates = {}
     tracked = git(repo, "ls-files", "-z").split("\0")
     for name in tracked:
+        if any(0xD800 <= ord(char) <= 0xDFFF for char in name):
+            continue
         path = Path(name)
         if len(path.parts) < 3 or path.suffix.lower() != ".md" or "arquivo" in path.parts:
             continue
         if path.parts[1] != "docs" and path.parts[:2] != ("ze-shared", "planos"):
             continue
         resolved = (repo / path).resolve()
-        if not resolved.is_relative_to(repo) or not resolved.is_file():
+        if restricted_path(repo, str(resolved)) or not resolved.is_file():
             continue
         canonical = resolved.relative_to(repo).as_posix()
         candidates[canonical] = {"caminho": canonical, "workspace": Path(canonical).parts[0],
                                  "tipo": "plano" if path.parts[:2] == ("ze-shared", "planos") else "doc"}
     for skill in repo.glob("*/.claude/skills/*/SKILL.md"):
+        if any(0xD800 <= ord(char) <= 0xDFFF for char in str(skill)):
+            continue
         resolved = skill.resolve()
-        if not resolved.is_relative_to(repo) or not resolved.is_file():
+        if restricted_path(repo, str(resolved)) or not resolved.is_file():
             continue
         directory = resolved.parent
         canonical = directory.relative_to(repo).as_posix()
@@ -73,6 +80,43 @@ def included_at_boot(repo: Path, indexes: dict[str, str]) -> set[Path]:
             if target.resolve().is_relative_to(repo):
                 pending.append(target)
     return included
+
+
+def hook_sources(repo: Path) -> str:
+    commands = []
+    settings = [GLOBAL_SETTINGS, *repo.glob("*/.claude/settings.json"),
+                *repo.glob("*/.claude/settings.local.json")]
+    for config in settings:
+        if not config.is_file():
+            continue
+        data = json.loads(config.read_text())
+        for groups in data.get("hooks", {}).values():
+            for group in groups:
+                commands.extend(hook["command"] for hook in group.get("hooks", []) if hook.get("command"))
+    sources = set(repo.glob("ze-shared/hooks/*"))
+    for command in commands:
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            continue
+        for token in tokens:
+            path = Path(os.path.expandvars(token)).expanduser()
+            if path.is_absolute() and path.suffix in {".sh", ".py"}:
+                sources.add(path)
+    for source in sources:
+        if source.is_file() and not source.resolve().is_relative_to((repo / "ze-shared/vault").resolve()):
+            commands.append(source.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(commands)
+
+
+def used_by_hooks(item: dict, corpus: str) -> bool:
+    relative = item["caminho"]
+    if relative in corpus or str(Path(relative).relative_to(item["workspace"])) in corpus:
+        return True
+    if item["tipo"] == "skill":
+        return any(re.search(r"(?<![\w.-])" + re.escape(name) + r"(?![\w.-])", corpus)
+                   for name in item["nomes"])
+    return bool(re.search(r"(?<![\w./-])" + re.escape(Path(relative).name) + r"(?![\w./-])", corpus))
 
 
 def readings(log: Path, repo: Path, now: int) -> tuple[int | None, dict[str, int], dict[str, int]]:
@@ -113,9 +157,12 @@ def collect(repo: Path, log: Path, now: int | None = None) -> dict:
     first, files, skills = readings(log, repo, now)
     indexes = read_indexes(repo)
     includes = included_at_boot(repo, indexes)
+    hooks = hook_sources(repo)
     candidates = []
     items = inventory(repo)
     for item in items:
+        if used_by_hooks(item, hooks):
+            continue
         path = repo / item["caminho"]
         if path in includes or (item["tipo"] == "skill" and any(p.is_relative_to(path) for p in includes)):
             continue
@@ -173,8 +220,8 @@ def main() -> None:
     parser.add_argument("--leituras", type=Path, default=Path.home() / ".claude/metrics/leituras.jsonl")
     parser.add_argument("--db", default=get_settings().db_path)
     parser.add_argument("--aplicar", action="store_true")
-    parser.add_argument("--incluir-cabecalhos", action="store_true",
-                        help="Envio externo de cabeçalhos; só habilitar com aprovação do Rica.")
+    parser.add_argument("--somente-metadados", action="store_true",
+                        help="Desativa envio de título, cabeçalhos e trecho ao Jev.")
     args = parser.parse_args()
     report = collect(args.repo, args.leituras)
     if not args.aplicar:
@@ -185,7 +232,7 @@ def main() -> None:
         db = GrupoBorgesDB(args.db)
         report["candidatos"] = asyncio.run(new_candidates(report, db))
         verdicts, usage = evaluate(report["candidatos"], repo=args.repo.resolve(),
-                                   include_headings=args.incluir_cabecalhos)
+                                   include_content=not args.somente_metadados)
         created = asyncio.run(persist(report, db, verdicts))
         report["novos"] = len(created)
         report["jev_uso"] = usage

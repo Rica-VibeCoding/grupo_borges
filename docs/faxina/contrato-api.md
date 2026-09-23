@@ -36,16 +36,18 @@
 - `scripts/faxina_varredura.py` roda em modo relatório por padrão. `--aplicar` só grava após 20 dias desde o primeiro registro válido em `leituras.jsonl`.
 - Candidatos versionados: `*/docs/**/*.md`, `ze-shared/planos/**/*.md` e pastas canônicas de `*/.claude/skills/*/SKILL.md`. Cada skill conta como uma unidade; aliases são deduplicados.
 - Exige simultaneamente 20 dias sem leitura e sem commit. Leitura de qualquer arquivo interno ou invocação do nome/alias da skill conta como uso. Alterações locais excluem candidatos.
-- `@caminho` e `@include caminho` em `CLAUDE.md`, inclusive referências transitivas, excluem arquivos carregados na inicialização. Citações comuns ficam no cartão.
+- `@caminho` e `@include caminho` em `CLAUDE.md`, inclusive referências transitivas, excluem arquivos carregados na inicialização. Nomes/caminhos referenciados em ganchos registrados globalmente ou por espaço de trabalho e em `ze-shared/hooks/*` também são excluídos. Citações comuns ficam no cartão.
 - Não existe promoção automática após sete dias: `persist()` cria apenas `pendente`. Uma política futura precisa de autorização separada antes de chamar `decide_faxina`.
 
 ## Jev
 
 - A varredura madura consulta o Jev apenas para novos candidatos, antes de gravar. Duas perguntas `choice` por unidade: destino e motivo. Até 10 unidades e 24 KB por lote.
 - A chave OPENROUTER sai do cofre somente para a memória e o ambiente do processo filho do Jev. Erro de API interrompe sem inserir candidatos nem repetir a chamada; HTTP 402 é identificado explicitamente.
-- Por padrão só envia metadados. `--incluir-cabecalhos` existe, mas **não está habilitado na agenda e exige autorização do Rica**. Envia apenas linhas `#`, `##`, `###`; nunca prosa. Qualquer indicador de segredo no arquivo inteiro suprime todos os cabeçalhos daquele arquivo. Essa regra é conservadora, não uma garantia universal de anonimização. Arquivos maiores que 200 KiB ficam sem cabeçalhos.
-- Saída 2, `needs_review`, motivo incerto ou destino incerto resultam em parecer `null`. `jev_duplica_de` não é inventado: as duas perguntas não identificam um arquivo substituto.
-- O consumo devolvido pelo provedor fica no relatório da passagem em `jev_uso`.
+- Envio de conteúdo autorizado pelo Rica em 23/09/2026 e ligado por padrão: título, cabeçalhos e até 1.500 caracteres do corpo; para skill, trecho do próprio `SKILL.md`. `--somente-metadados` desliga o conteúdo. Linhas com indicadores de segredo são removidas da cópia, mantendo o restante. É redução de dano, não garantia universal de anonimização. Nunca envia cofre, `.env` ou destinos externos ao repositório. Arquivos maiores que 200 KiB ficam sem trecho.
+- Parecer é exibição, não autorização: devolve o rótulo concreto de maior probabilidade e `jev_probabilidade` (REAL entre 0 e 1, opcional). Se `incerto` liderar, só mostra o concreto quando ele supera o segundo concreto por pelo menos 0,15; caso contrário, parecer e probabilidade ficam `null`. Não renormaliza probabilidades. Motivo segue a mesma regra, independentemente do destino. Saída 2 de um lote não apaga respostas de outros documentos.
+- Os limiares originais 0,8 / 0,15 permanecem na avaliação conservadora gravada em `jev-decisoes.jsonl`, para eventual política futura de automação. Nenhuma automação de arquivamento está habilitada.
+- `jev_duplica_de` não é inventado: as duas perguntas não identificam um arquivo substituto.
+- O consumo devolvido pelo provedor fica no relatório da passagem em `jev_uso` e em `${XDG_STATE_HOME:-$HOME/.local/state}/faxina-frota/jev-uso.jsonl`, sem documentos nem credenciais.
 
 ## Agenda semanal
 

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS faxina_item (
     citado_em TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(citado_em) AND json_type(citado_em) = 'array'),
     jev_veredito TEXT CHECK (jev_veredito IN ('manter', 'arquivar', 'duplica')),
     jev_motivo TEXT,
+    jev_probabilidade REAL CHECK (jev_probabilidade BETWEEN 0 AND 1),
     jev_duplica_de TEXT,
     status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN (
         'pendente', 'mantido', 'arquivar_pedido', 'arquivado', 'desfazer_pedido', 'erro'

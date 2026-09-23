@@ -16,7 +16,8 @@ import faxina_varredura as scan
 
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path, monkeypatch):
+    monkeypatch.setattr(scan, "GLOBAL_SETTINGS", tmp_path / "settings-global.json")
     repo = tmp_path / "ze_claude"
     repo.mkdir()
     scan.git(repo, "init", "-b", "main")
@@ -192,6 +193,18 @@ def test_relatorio_nao_chama_jev_nem_notificacao(env, monkeypatch, capsys):
     report = json.loads(capsys.readouterr().out)
     assert report["modo"] == "relatorio"
     assert report["novos"] == 0
+
+
+def test_documentos_carregados_por_ganchos_nao_sao_candidatos(env, monkeypatch):
+    repo, log, _, now = env
+    global_settings = repo.parent / "settings-global.json"
+    hook = repo / "ze-shared/hooks/carrega.sh"
+    hook.parent.mkdir(parents=True)
+    hook.write_text("carregar tara/docs/antigo.md e a skill apelido")
+    global_settings.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": f"bash {hook}"}]}]}}))
+    monkeypatch.setattr(scan, "GLOBAL_SETTINGS", global_settings, raising=False)
+    assert names(scan.collect(repo, log, now)) == {"ze-shared/planos/antigo.md"}
 
 
 def test_nome_invalido_fora_do_escopo_nao_interrompe_varredura(env):
