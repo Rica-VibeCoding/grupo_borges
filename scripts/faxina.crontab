@@ -1,2 +1,2 @@
-# 08h BRT (cron da Oracle ignora CRON_TZ)
-0 11 * * 1 /usr/bin/bash /home/clawd/repos/grupo_borges/scripts/faxina-semanal.sh
+# sábado 10h BRT (cron da Oracle ignora CRON_TZ)
+0 13 * * 6 /usr/bin/bash /home/clawd/repos/grupo_borges/scripts/faxina-semanal.sh

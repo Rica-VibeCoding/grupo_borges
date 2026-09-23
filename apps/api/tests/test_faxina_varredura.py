@@ -222,3 +222,24 @@ def test_jsonl_malformado_e_futuro_nao_criam_historico(env):
     report = scan.collect(repo, log, now)
     assert report["modo"] == "relatorio"
     assert report["historico_desde"] is None
+
+
+def test_sem_resposta_em_7_dias_arquiva_so_o_que_o_jev_mandou_com_80(env):
+    _, _, db, now = env
+    criar = lambda caminho, veredito, prob: asyncio.run(db.create_faxina_item(
+        caminho=caminho, workspace=caminho.split("/")[0], tipo="doc",
+        ultimo_commit=now - 30 * 86400, jev_veredito=veredito, jev_probabilidade=prob))
+    forte = criar("tara/docs/forte.md", "arquivar", 0.85)
+    fraco = criar("tara/docs/fraco.md", "arquivar", 0.79)
+    manter = criar("tara/docs/manter.md", "manter", 0.95)
+    tocado = criar("tara/docs/tocado.md", "arquivar", 0.9)
+    asyncio.run(db.decide_faxina(tocado["id"], "manter"))
+
+    assert asyncio.run(scan.arquivar_sem_resposta(db, now + 6 * 86400)) == []
+    pedidos = asyncio.run(scan.arquivar_sem_resposta(db, now + 7 * 86400 - 60))
+
+    assert [item["caminho"] for item in pedidos] == ["tara/docs/forte.md"]
+    status = {item["caminho"]: item["status"] for item in asyncio.run(db.list_faxina("todos"))["itens"]}
+    assert status == {"tara/docs/forte.md": "arquivar_pedido", "tara/docs/fraco.md": "pendente",
+                      "tara/docs/manter.md": "pendente", "tara/docs/tocado.md": "mantido"}
+    assert fraco and manter and forte

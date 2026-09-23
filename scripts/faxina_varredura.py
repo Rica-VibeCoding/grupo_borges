@@ -19,6 +19,11 @@ from faxina_executor import cited_indexes, git, read_indexes
 from services.faxina import ZE_CLAUDE_ROOT, restricted_path
 
 WINDOW = 20 * 86400
+# Ordem do Rica (23/09): cartão sem toque em 7 dias segue o Jev — mas só quando
+# o Jev disse arquivar com 80%+. A folga de 1h cobre a varredura desta semana
+# rodar segundos antes do horário em que o cartão nasceu na semana passada.
+PRAZO_SEM_RESPOSTA = 7 * 86400 - 3600
+LIMIAR_AUTOMATICO = 0.8
 GLOBAL_SETTINGS = Path.home() / ".claude/settings.json"
 INCLUDE = re.compile(r"(?<![\w])@(?:include\s+)?([^\s`<>()\[\],;]+)")
 
@@ -197,6 +202,21 @@ async def new_candidates(report: dict, db: GrupoBorgesDB) -> list[dict]:
     return [item for item in report["candidatos"] if item["caminho"] not in blocked]
 
 
+async def arquivar_sem_resposta(db: GrupoBorgesDB, now: int) -> list[dict]:
+    """Pede o arquivamento do cartão pendente há 7 dias que o Jev mandou arquivar com 80%+.
+
+    Só muda o status para `arquivar_pedido`: quem move é o executor, com as mesmas
+    travas do toque manual (citado em índice vira erro, e dá para desfazer).
+    """
+    pedidos = []
+    for item in (await db.list_faxina("pendente"))["itens"]:
+        if (item["jev_veredito"] == "arquivar"
+                and (item.get("jev_probabilidade") or 0) >= LIMIAR_AUTOMATICO
+                and item["criado_em"] <= now - PRAZO_SEM_RESPOSTA):
+            pedidos.append(await db.decide_faxina(item["id"], "arquivar"))
+    return pedidos
+
+
 async def persist(report: dict, db: GrupoBorgesDB, verdicts: dict | None = None) -> list[dict]:
     if report["modo"] != "aplicar":
         return []
@@ -205,7 +225,6 @@ async def persist(report: dict, db: GrupoBorgesDB, verdicts: dict | None = None)
     created = []
     for candidate in report["candidatos"]:
         fields = {key: value for key, value in candidate.items() if key != "dias_parado"}
-        # A idade não autoriza mover: promoção automática exige decisão separada do Rica.
         item = await db.create_faxina_item(**fields, **(verdicts or {}).get(candidate["caminho"], {}))
         if item is not None and item["id"] not in ids:
             created.append(item)
@@ -215,7 +234,7 @@ async def persist(report: dict, db: GrupoBorgesDB, verdicts: dict | None = None)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Varredura da Faxina, sem arquivamento automático.")
+    parser = argparse.ArgumentParser(description="Varredura da Faxina e arquivamento dos cartões sem resposta em 7 dias.")
     parser.add_argument("--repo", type=Path, default=ZE_CLAUDE_ROOT)
     parser.add_argument("--leituras", type=Path, default=Path.home() / ".claude/metrics/leituras.jsonl")
     parser.add_argument("--db", default=get_settings().db_path)
@@ -223,7 +242,11 @@ def main() -> None:
     parser.add_argument("--somente-metadados", action="store_true",
                         help="Desativa envio de título, cabeçalhos e trecho ao Jev.")
     args = parser.parse_args()
+    if args.aplicar:
+        pedidos = asyncio.run(arquivar_sem_resposta(GrupoBorgesDB(args.db), int(time.time())))
     report = collect(args.repo, args.leituras)
+    if args.aplicar:
+        report["arquivados_sem_resposta"] = [item["caminho"] for item in pedidos]
     if not args.aplicar:
         report["modo"] = "relatorio"
     if report["modo"] == "aplicar":
