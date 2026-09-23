@@ -8,6 +8,37 @@ PRAGMA busy_timeout  = 5000;
 PRAGMA foreign_keys  = ON;
 PRAGMA temp_store    = MEMORY;
 
+CREATE TABLE IF NOT EXISTS faxina_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caminho TEXT NOT NULL,
+    workspace TEXT NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('doc', 'skill', 'plano')),
+    ultima_leitura INTEGER,
+    ultimo_commit INTEGER,
+    dias_parado INTEGER NOT NULL CHECK (dias_parado >= 0),
+    citado_em TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(citado_em) AND json_type(citado_em) = 'array'),
+    jev_veredito TEXT CHECK (jev_veredito IN ('manter', 'arquivar', 'duplica')),
+    jev_motivo TEXT,
+    jev_duplica_de TEXT,
+    status TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN (
+        'pendente', 'mantido', 'arquivar_pedido', 'arquivado', 'desfazer_pedido', 'erro'
+    )),
+    erro TEXT,
+    arquivado_para TEXT,
+    commit_sha TEXT,
+    decidido_em INTEGER,
+    criado_em INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_faxina_caminho_ativo ON faxina_item(caminho)
+    WHERE status IN ('pendente', 'arquivar_pedido', 'arquivado', 'desfazer_pedido', 'erro');
+CREATE INDEX IF NOT EXISTS idx_faxina_status ON faxina_item(status);
+
+CREATE TABLE IF NOT EXISTS faxina_estado (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    ultima_varredura INTEGER
+);
+INSERT OR IGNORE INTO faxina_estado(id) VALUES (1);
+
 -- ============================================================
 -- agents — 6 agentes da frota. Source of truth = agents.yaml.
 -- Sincronizado em cada startup (UPSERT). Usado pra lookups rápidos.

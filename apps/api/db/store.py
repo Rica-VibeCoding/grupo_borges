@@ -397,6 +397,160 @@ class GrupoBorgesDB:
         # No-op: connection-per-call não mantém estado pra fechar
         return
 
+    # ---------- faxina ----------
+
+    @staticmethod
+    def _faxina_row(row) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        item = dict(row)
+        item["citado_em"] = json.loads(item["citado_em"])
+        return item
+
+    async def create_faxina_item(
+        self, *, caminho: str, workspace: str, tipo: str,
+        ultima_leitura: int | None = None, ultimo_commit: int | None = None,
+        citado_em: list[str] | None = None, jev_veredito: str | None = None,
+        jev_motivo: str | None = None, jev_duplica_de: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._create_faxina_item, caminho, workspace, tipo, ultima_leitura,
+            ultimo_commit, citado_em or [], jev_veredito, jev_motivo, jev_duplica_de,
+        )
+
+    def _create_faxina_item(
+        self, caminho, workspace, tipo, ultima_leitura, ultimo_commit,
+        citado_em, jev_veredito, jev_motivo, jev_duplica_de,
+    ) -> dict[str, Any] | None:
+        from services.faxina import validate_relative_path
+
+        relative = validate_relative_path(caminho)
+        if relative.parts[0] != workspace:
+            raise ValueError("workspace diferente do caminho")
+        if not all(isinstance(index, str) for index in citado_em):
+            raise ValueError("citado_em deve conter caminhos")
+        now = int(time.time())
+        with self._connect() as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT * FROM faxina_item WHERE caminho = ? AND status != 'mantido'",
+                (caminho,),
+            ).fetchone()
+            if existing:
+                return self._faxina_row(existing)
+            kept = conn.execute(
+                "SELECT MAX(decidido_em) FROM faxina_item WHERE caminho = ? AND status = 'mantido'",
+                (caminho,),
+            ).fetchone()[0]
+            reference = max(ultima_leitura or ultimo_commit or now, kept or 0)
+            days = max(0, (now - reference) // 86400)
+            if days < 20:
+                return None
+            row = conn.execute(
+                """
+                INSERT INTO faxina_item (
+                    caminho, workspace, tipo, ultima_leitura, ultimo_commit, dias_parado,
+                    citado_em, jev_veredito, jev_motivo, jev_duplica_de, criado_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *
+                """,
+                (caminho, workspace, tipo, ultima_leitura, ultimo_commit, days,
+                 json.dumps(citado_em, ensure_ascii=False), jev_veredito, jev_motivo,
+                 jev_duplica_de, now),
+            ).fetchone()
+            return self._faxina_row(row)
+
+    async def get_faxina_item(self, item_id: int) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._get_faxina_item, item_id)
+
+    def _get_faxina_item(self, item_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            return self._faxina_row(conn.execute(
+                "SELECT * FROM faxina_item WHERE id = ?", (item_id,),
+            ).fetchone())
+
+    async def list_faxina(self, status: str = "pendente") -> dict[str, Any]:
+        return await asyncio.to_thread(self._list_faxina, status)
+
+    def _list_faxina(self, status: str) -> dict[str, Any]:
+        with self._connect() as conn, conn:
+            conn.execute("BEGIN")
+            rows = conn.execute(
+                "SELECT * FROM faxina_item WHERE (? = 'todos' OR status = ?) "
+                "ORDER BY criado_em DESC, id DESC", (status, status),
+            ).fetchall()
+            counts = dict(conn.execute(
+                "SELECT status, COUNT(*) FROM faxina_item GROUP BY status",
+            ).fetchall())
+            last_scan = conn.execute(
+                "SELECT ultima_varredura FROM faxina_estado WHERE id = 1",
+            ).fetchone()[0]
+            return {
+                "itens": [self._faxina_row(row) for row in rows],
+                "resumo": {"pendentes": counts.get("pendente", 0),
+                           "arquivados": counts.get("arquivado", 0),
+                           "ultima_varredura": last_scan},
+            }
+
+    async def record_faxina_scan(self, scanned_at: int) -> None:
+        await asyncio.to_thread(self._record_faxina_scan, scanned_at)
+
+    def _record_faxina_scan(self, scanned_at: int) -> None:
+        with self._connect() as conn, conn:
+            conn.execute(
+                "UPDATE faxina_estado SET ultima_varredura = ? WHERE id = 1", (scanned_at,),
+            )
+
+    async def decide_faxina(self, item_id: int, action: str) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self._decide_faxina, item_id, action)
+
+    def _decide_faxina(self, item_id: int, action: str) -> dict[str, Any] | None:
+        expected, target = {
+            "manter": ("pendente", "mantido"),
+            "arquivar": ("pendente", "arquivar_pedido"),
+            "desfazer": ("arquivado", "desfazer_pedido"),
+        }[action]
+        now = int(time.time())
+        with self._connect() as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM faxina_item WHERE id = ?", (item_id,)).fetchone()
+            if row is None:
+                return None
+            if row["status"] == target:
+                return self._faxina_row(row)
+            if row["status"] != expected:
+                raise ValueError(f"não é possível {action} um item com status {row['status']}")
+            row = conn.execute(
+                "UPDATE faxina_item SET status = ?, decidido_em = ?, erro = NULL, "
+                "dias_parado = CASE WHEN ? = 'mantido' THEN 0 ELSE dias_parado END "
+                "WHERE id = ? RETURNING *", (target, now, target, item_id),
+            ).fetchone()
+            return self._faxina_row(row)
+
+    async def finish_faxina(
+        self, item_id: int, expected: str, *, commit_sha: str | None = None,
+        arquivado_para: str | None = None, erro: str | None = None,
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._finish_faxina, item_id, expected, commit_sha, arquivado_para, erro,
+        )
+
+    def _finish_faxina(self, item_id, expected, commit_sha, arquivado_para, erro):
+        target = "erro" if erro is not None else {"arquivar_pedido": "arquivado", "desfazer_pedido": "mantido"}[expected]
+        now = int(time.time())
+        with self._connect() as conn, conn:
+            row = conn.execute(
+                """
+                UPDATE faxina_item SET status = ?, erro = ?,
+                    commit_sha = COALESCE(?, commit_sha),
+                    arquivado_para = COALESCE(?, arquivado_para),
+                    decidido_em = CASE WHEN ? = 'mantido' THEN ? ELSE decidido_em END,
+                    dias_parado = CASE WHEN ? = 'mantido' THEN 0 ELSE dias_parado END
+                WHERE id = ? AND status = ? RETURNING *
+                """,
+                (target, erro, commit_sha, arquivado_para, target, now, target, item_id, expected),
+            ).fetchone()
+            return self._faxina_row(row)
+
     # ---------- agents ----------
 
     async def sync_agents_from_yaml(self, agents: list[dict[str, Any]]) -> None:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Consulta decisões da Faxina a cada minuto
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Persistent=true
+Unit=faxina-executor.service
+
+[Install]
+WantedBy=timers.target

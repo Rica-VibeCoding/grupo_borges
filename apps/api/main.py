@@ -39,6 +39,7 @@ from routers import contas as contas_router
 from routers import ask_user as ask_user_router
 from routers import events as events_router
 from routers import fleet as fleet_router
+from routers import faxina as faxina_router
 from routers import hooks as hooks_router
 from routers import stream as stream_router
 from routers import task_commits as task_commits_router
@@ -212,6 +213,7 @@ async def health() -> dict:
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(ask_user_router.router, prefix="/api/ask_user", tags=["ask_user"])
 app.include_router(fleet_router.router, prefix="/api/fleet", tags=["fleet"])
+app.include_router(faxina_router.router, prefix="/api/faxina", tags=["faxina"])
 app.include_router(contas_router.router, prefix="/api/contas", tags=["contas"])
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(tasks_router.reviews_router, prefix="/api/reviews", tags=["reviews"])

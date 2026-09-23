@@ -1,0 +1,9 @@
+[Unit]
+Description=Executa decisões de arquivamento da Faxina
+After=cockpit-api.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/clawd/repos/grupo_borges/apps/api
+ExecStart=/home/clawd/repos/grupo_borges/apps/api/.venv/bin/python /home/clawd/repos/grupo_borges/scripts/faxina_executor.py
+TimeoutStartSec=5min
