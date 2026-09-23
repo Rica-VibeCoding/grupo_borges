@@ -23,7 +23,7 @@ from services.faxina import INDEX_NAMES, ZE_CLAUDE_ROOT, archive_path, safe_path
 def git(repo: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", "--literal-pathspecs", "-C", str(repo), *args],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", errors="surrogateescape", timeout=60,
     )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"git {args[0]} terminou com código {result.returncode}")
@@ -34,7 +34,8 @@ def read_indexes(repo: Path) -> dict[str, str]:
     indexes = {}
     paths = git(repo, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
     for relative in paths.split("\0"):
-        if not relative or Path(relative).name not in INDEX_NAMES:
+        if (not relative or Path(relative).name not in INDEX_NAMES
+                or any(0xD800 <= ord(char) <= 0xDFFF for char in relative)):
             continue
         if "arquivo" in Path(relative).parts:
             continue

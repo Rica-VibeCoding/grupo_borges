@@ -194,6 +194,14 @@ def test_relatorio_nao_chama_jev_nem_notificacao(env, monkeypatch, capsys):
     assert report["novos"] == 0
 
 
+def test_nome_invalido_fora_do_escopo_nao_interrompe_varredura(env):
+    repo, log, _, now = env
+    invalid = os.fsencode(repo) + b"/tara/arquivo-\x80"
+    with open(invalid, "wb") as target:
+        target.write(b"fora do escopo")
+    assert scan.collect(repo, log, now)["candidatos"]
+
+
 def test_jsonl_malformado_e_futuro_nao_criam_historico(env):
     repo, log, _, now = env
     log.write_text('{\n{"ts":"antigo"}\n')
