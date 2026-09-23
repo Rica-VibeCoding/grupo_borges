@@ -198,6 +198,21 @@ agents:
       - automacao-residencial
     can_review: []
 
+  # [2026-09-23 Pavan] FluytCom — agente dedicado ao app Comercial do Fluyt
+  # (`apps/com`). Clone próprio, fora do monorepo, igual ao Caseiro; persona no
+  # `CLAUDE.local.md` (fora do git). Commit direto na main por ordem do Rica.
+  - slug: fluytcom
+    name: FluytCom
+    role: Especialista — Fluyt Comercial (apps/com)
+    emoji: "📝"
+    tmux_session: fluytcom
+    workspace_path: /home/clawd/repos/fluytcom
+    cli_default: claude_code
+    model_default: claude-opus-5
+    capabilities:
+      - fluyt-comercial
+    can_review: []
+
   # [2026-08-08 Pavan] Motor DeepSeek V4-Flash via assinatura OpenCode Go
   # (não-Anthropic — mesmo padrão do Hiro/Kimi). `model_family: opencode` liga a
   # cota do plano Go no painel (20/08); contexto/effort ainda são lidos como se
