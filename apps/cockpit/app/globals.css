@@ -73,6 +73,14 @@
   --ck-diff-add-bg: color-mix(in oklch, var(--ck-diff-add) 12%, var(--ck-surface-canvas));
   --ck-diff-del-bg: color-mix(in oklch, var(--ck-diff-del) 12%, var(--ck-surface-canvas));
 
+  /* -- atalho de tela: a fileira da raiz (Faxina e as que vierem). Verde claro
+        a pedido do Rica (23/09): mesmo matiz do `state-ok`, fundo quase neutro
+        para não competir com o âmbar de quem está chamando. ---------------- */
+  --ck-atalho-fg: oklch(0.86 0.11 150);
+  --ck-atalho-bg: color-mix(in oklch, var(--ck-state-ok) 13%, var(--ck-surface-nav));
+  --ck-atalho-bg-hover: color-mix(in oklch, var(--ck-state-ok) 22%, var(--ck-surface-nav));
+  --ck-atalho-borda: color-mix(in oklch, var(--ck-state-ok) 32%, transparent);
+
   /* -- alerta: o `> [!NOTE]` que a skill `canal-cockpit` manda o agente escrever
    * Nenhuma cor NOVA — cada valor é cópia literal do estado de mesma leitura, e
    * o contraste ao lado é o já verificado pelo §3 da estética. Cópia, e não
@@ -1540,4 +1548,15 @@ body {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Atalho de tela da raiz: o hover mora aqui porque `style` inline não tem
+   pseudo-classe, e cor fora do globals.css reprova review. */
+.ck-atalho {
+  background: var(--ck-atalho-bg);
+  transition: background var(--ck-dur-fast) var(--ck-ease);
+}
+.ck-atalho:hover,
+.ck-atalho:focus-visible {
+  background: var(--ck-atalho-bg-hover);
 }

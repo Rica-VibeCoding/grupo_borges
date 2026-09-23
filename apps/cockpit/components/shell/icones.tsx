@@ -207,3 +207,15 @@ export function IconeCopiar(props: IconeProps) {
     </Tracado>
   );
 }
+
+/** Vassoura — o atalho da Faxina na raiz. */
+export function IconeVassoura(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M19 4 12.5 10.5" />
+      <path d="M10.5 9.5 14.5 13.5" />
+      <path d="M10.5 9.5C8 10 5.5 11.5 4 14l6 6c2.5-1.5 4-4 4.5-6.5" />
+      <path d="M7 17l2.5-2.5" />
+    </Tracado>
+  );
+}

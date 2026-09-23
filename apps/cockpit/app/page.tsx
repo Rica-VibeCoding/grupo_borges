@@ -1,8 +1,9 @@
 import type { Viewport } from 'next';
-import Link from 'next/link';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
+import { IconeVassoura } from '@/components/shell/icones';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
+import { AtalhosDeTelas } from '@/components/telas/atalhos-de-telas';
 import { fetchFaxina } from '@/lib/faxina';
 
 // Server Component de propósito: `fetchFleet` monta URL absoluta a partir de
@@ -25,7 +26,7 @@ export default async function Home() {
   const agora = Math.floor(Date.now() / 1000);
   const chamando = fleet.agents.filter((a) => a.status === 'aguardando').length;
   const trabalhando = fleet.agents.filter((a) => a.status === 'trabalhando').length;
-  // A faxina fora do ar não pode derrubar a raiz: sem resposta, o link some.
+  // A faxina fora do ar não pode derrubar a raiz: sem resposta, some só o selo.
   const faxinaPendentes = await fetchFaxina('pendente')
     .then((lista) => lista.resumo.pendentes)
     .catch(() => null);
@@ -82,19 +83,16 @@ export default async function Home() {
                 </>
               ) : null}
             </p>
-            {faxinaPendentes !== null ? (
-              <Link
-                href="/faxina"
-                className="ck-tabular"
-                style={{
-                  fontSize: 'var(--ck-text-xs)',
-                  color: faxinaPendentes > 0 ? 'var(--ck-state-attention)' : 'var(--ck-text-tertiary)',
-                }}
-              >
-                Faxina{faxinaPendentes > 0 ? ` · ${faxinaPendentes} ${faxinaPendentes === 1 ? 'parado' : 'parados'}` : ''}
-              </Link>
-            ) : null}
           </header>
+
+          {/* A faxina fora do ar tira só o selo: o atalho continua levando à tela. */}
+          <div style={{ padding: 'var(--ck-space-1) var(--ck-space-3) var(--ck-space-3)' }}>
+            <AtalhosDeTelas
+              atalhos={[
+                { href: '/faxina', rotulo: 'Faxina', icone: <IconeVassoura tamanho={16} />, contagem: faxinaPendentes },
+              ]}
+            />
+          </div>
 
           <TropaAoVivo agora={agora} />
         </div>
