@@ -47,6 +47,12 @@
 - Saída 2, `needs_review`, motivo incerto ou destino incerto resultam em parecer `null`. `jev_duplica_de` não é inventado: as duas perguntas não identificam um arquivo substituto.
 - O consumo devolvido pelo provedor fica no relatório da passagem em `jev_uso`.
 
+## Agenda semanal
+
+- `scripts/faxina-semanal.sh`: trava exclusiva, estado em `${XDG_STATE_HOME:-$HOME/.local/state}/faxina-frota`, marcador `YYYY-Www` somente após sucesso e registro com rotação de 1 MB.
+- `scripts/faxina.crontab`: segunda às 11h UTC, equivalente a 08h BRT. O cron Debian da Oracle ignora `CRON_TZ`; o script define `TZ=America/Sao_Paulo` para calcular a semana. Não depende das sessões dos agentes.
+- Falha não marca a semana concluída; nova execução manual pode repetir. A saída registra contagens, não o corpo dos documentos.
+
 ## Validação isolada
 
 ```sh

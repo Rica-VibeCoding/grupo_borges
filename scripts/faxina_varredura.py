@@ -189,6 +189,7 @@ def main() -> None:
         created = asyncio.run(persist(report, db, verdicts))
         report["novos"] = len(created)
         report["jev_uso"] = usage
+    report["candidatos"] = len(report["candidatos"])
     print(json.dumps(report, ensure_ascii=False))
 
 
