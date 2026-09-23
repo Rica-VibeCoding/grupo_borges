@@ -150,6 +150,50 @@ def test_manter_exige_nova_janela_e_commit_tambem(env):
         tipo="doc", ultima_leitura=now - 30 * 86400, ultimo_commit=now)) is None
 
 
+def test_execucao_com_jev_e_um_aviso_so_para_novos(env, monkeypatch, capsys):
+    import faxina_aviso
+    import faxina_jev
+
+    repo, log, db, _ = env
+    notices, batches = [], []
+
+    def evaluate(items, **kwargs):
+        batches.append(items)
+        return {}, [{"cost": 0.0001}]
+
+    monkeypatch.setattr(faxina_jev, "evaluate", evaluate)
+    monkeypatch.setattr(faxina_aviso, "notify", lambda count: notices.append(count) or 123)
+    monkeypatch.setattr(sys, "argv", ["faxina_varredura.py", "--repo", str(repo),
+        "--leituras", str(log), "--db", db.db_path, "--aplicar"])
+    scan.main()
+    report = json.loads(capsys.readouterr().out)
+    assert report["novos"] == 3
+    assert notices == [3]
+    scan.main()
+    assert json.loads(capsys.readouterr().out)["novos"] == 0
+    assert notices == [3]
+    assert batches[-1] == []
+
+
+def test_relatorio_nao_chama_jev_nem_notificacao(env, monkeypatch, capsys):
+    import faxina_jev
+
+    repo, log, db, now = env
+    log.write_text("")
+    record(log, repo, "Read", "tara/docs/incluido.md", now)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("não deve chamar API no período inicial")
+
+    monkeypatch.setattr(faxina_jev, "evaluate", forbidden)
+    monkeypatch.setattr(sys, "argv", ["faxina_varredura.py", "--repo", str(repo),
+        "--leituras", str(log), "--db", db.db_path, "--aplicar"])
+    scan.main()
+    report = json.loads(capsys.readouterr().out)
+    assert report["modo"] == "relatorio"
+    assert report["novos"] == 0
+
+
 def test_jsonl_malformado_e_futuro_nao_criam_historico(env):
     repo, log, _, now = env
     log.write_text('{\n{"ts":"antigo"}\n')

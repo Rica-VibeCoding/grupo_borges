@@ -53,6 +53,12 @@
 - `scripts/faxina.crontab`: segunda às 11h UTC, equivalente a 08h BRT. O cron Debian da Oracle ignora `CRON_TZ`; o script define `TZ=America/Sao_Paulo` para calcular a semana. Não depende das sessões dos agentes.
 - Falha não marca a semana concluída; nova execução manual pode repetir. A saída registra contagens, não o corpo dos documentos.
 
+## Aviso
+
+- Após criar candidatos novos, envia uma única mensagem MarkdownV2 ao chat `7262275215` pelo bot em `~/.claude/channels/telegram-auxiliar/.env`.
+- Destino: https://borges.tailfe77db.ts.net:3446/faxina. Só contagem e endereço, sem documentos.
+- Zero candidatos novos: não lê token nem envia mensagem. Falha de envio não repete automaticamente: os candidatos permanecem no banco e o registro exige conferir o Telegram antes de reenviar, evitando duplicata quando houve perda da resposta.
+
 ## Validação isolada
 
 ```sh

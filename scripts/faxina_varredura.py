@@ -189,6 +189,10 @@ def main() -> None:
         created = asyncio.run(persist(report, db, verdicts))
         report["novos"] = len(created)
         report["jev_uso"] = usage
+        if created:
+            from faxina_aviso import notify
+
+            report["aviso_message_id"] = notify(len(created))
     report["candidatos"] = len(report["candidatos"])
     print(json.dumps(report, ensure_ascii=False))
 
