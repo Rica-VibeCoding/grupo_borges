@@ -4,9 +4,11 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (26/09/2026 — atualizar a cada fase):** Fase 0 **fechada** (26/09). Próxima: **Fase 1** —
-> abrir as cadeiras lógica e tela com o contrato `lib/conversa/tipos.ts`. A rota de transcrição já
-> aceita WAV (`efda525`, API reiniciada e provada com gravação do iPhone).
+> **ESTADO (26/09/2026 — atualizar a cada fase):** Fase 0 **fechada**. **Fase 1 em curso** desde 19:45 BRT:
+> cadeiras `logica` (DeepSeek `deepseek-v4-pro[1m]`, Zen direto) e `tela` (`gpt-5.6-sol` pelo proxy da VPS
+> via túnel `ssh -R 18765`) em `psmux -L conversa` no PC, clone `projetos\grupo_borges`. Briefings em
+> `docs/modo-conversa/briefings/`; relatos saem em `docs/modo-conversa/relatos/` (no clone do PC).
+> O proxy NÃO tem chave OpenCode (`deepseek-v4-pro` pelo `:18765` dá 401) — por isso a lógica vai direto.
 
 ## O pedido
 
