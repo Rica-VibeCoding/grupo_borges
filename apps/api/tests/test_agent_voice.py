@@ -353,3 +353,19 @@ def test_voice_accepts_audio_when_duration_is_unknown(tmp_path: Path) -> None:
             )
 
     assert response.status_code == 200
+
+
+def test_transcription_accepts_wav_from_voice_detector(tmp_path: Path) -> None:
+    """O modo conversa manda WAV: o Silero entrega PCM e o `encodeWAV` embrulha."""
+    app = _build_app(tmp_path)
+    fake = _fake_completed(stdout="fala do modo conversa\n")
+
+    with patch("routers.agents.subprocess.run", return_value=fake):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/transcription",
+                files={"audio": ("voice.wav", b"fakebytes", "audio/wav")},
+            )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["text"] == "fala do modo conversa"

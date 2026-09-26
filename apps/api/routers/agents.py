@@ -2948,7 +2948,7 @@ async def send_agent_input(
     )
 
 
-_VOICE_ALLOWED_MIMES = {"audio/ogg", "audio/webm", "audio/mp4", "audio/mpeg"}
+_VOICE_ALLOWED_MIMES = {"audio/ogg", "audio/webm", "audio/mp4", "audio/mpeg", "audio/wav"}
 _VOICE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 # Piso de duração. Um toque que abre e fecha o microfone produz ~43ms de
 # nada (medido em 20/08): a OpenAI recusa com 400, o fallback local queima
