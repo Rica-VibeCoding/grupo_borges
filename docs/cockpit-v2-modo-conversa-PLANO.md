@@ -4,8 +4,9 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (26/09/2026 — atualizar a cada fase):** plano v2, pós-pesquisa. **Aguardando aprovação do Rica.**
-> Nenhuma cadeira aberta, nada de código escrito.
+> **ESTADO (26/09/2026 — atualizar a cada fase):** aprovado pelo Rica (áudio, 26/09). **Fase 0 em curso:**
+> transcrição medida e contrato escrito; falta o Silero no Chrome do PC e no Safari do iPhone, pela
+> sonda `https://borges.tailfe77db.ts.net:3447` (`/tmp/f0/`, fora do repo; log em `/tmp/f0/log.jsonl`).
 
 ## O pedido
 
@@ -51,8 +52,17 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
 ### Fase 0 — medir antes de construir (coordenação, ~1 h)
 - [ ] Silero (`vad-web`) no Chrome do PC e no Safari do iPhone: carrega, detecta início e fim, qual o
       peso dos arquivos (modelo ONNX + wasm) e onde eles moram (`public/`).
-- [ ] Rota de transcrição com falas de 5 s, 30 s e 60 s: latência e acerto.
-- [ ] Contrato `lib/conversa/tipos.ts` escrito (estados, eventos, tempos).
+- [x] Rota de transcrição com falas de 5 s, 30 s e 60 s: latência e acerto.
+      Medido 26/09 na `:8002`, Ogg/Opus: **5 s → 1,5 s · 30 s → 2,3 s · 60 s → 3,9 s**. Texto certo,
+      menos o nome próprio ("Fluyt" saiu "Fluid"/"Fluitt").
+      **Furo na decisão 7:** o Silero entrega `Float32Array` a 16 kHz e o caminho natural é
+      `utils.encodeWAV`; a rota responde **422 `mime não suportado: audio/wav`** (`_VOICE_ALLOWED_MIMES`,
+      `agents.py:2951`). Conserto proposto: incluir `audio/wav` na lista (o ffmpeg já converte).
+      WAV de 60 s a 16 kHz mono = 1,9 MB, longe do teto de 10 MB.
+- [ ] Peso medido no pacote (`vad-web` 0.0.31 + `onnxruntime-web` 1.30.0): motor
+      `ort-wasm-simd-threaded.wasm` **14,2 MB** + modelo `silero_vad_v5.onnx` **2,3 MB** + ~150 KB de JS
+      e worklet. Moram em `public/`. Falta medir a carga real nos dois aparelhos.
+- [x] Contrato `lib/conversa/tipos.ts` escrito (estados, eventos, efeitos, tempos).
 - **Fecha quando:** números anotados aqui, contrato commitado.
 
 ### Fase 1 — conversa meio-duplex sem clique
