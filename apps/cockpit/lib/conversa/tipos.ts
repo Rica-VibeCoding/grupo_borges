@@ -27,7 +27,8 @@ export type MotivoDeErro =
   | 'agenteOcupado'; // o Zé já estava num turno quando a fala chegou
 
 export type Evento =
-  | { tipo: 'comecar' } // o toque que destrava áudio, microfone e Wake Lock
+  | { tipo: 'comecar' } // o toque que destrava áudio, microfone e Wake Lock; repetido não faz nada
+  | { tipo: 'tique' } // a tela bate a cada ~250 ms; é o que move o relógio da espera
   | { tipo: 'parar' }
   | { tipo: 'falaIniciou' }
   | { tipo: 'falaDescartada' } // curta demais: o Silero chama de misfire
@@ -65,3 +66,23 @@ export const TEMPOS = {
   /** Sem nenhum texto do Zé até aqui → aviso falado de demora. */
   avisoDemora: 20_000,
 } as const;
+
+/**
+ * O estado completo da conversa. `estado` é o que a tela desenha; o resto é a
+ * memória que a máquina precisa (frase-ponte já dita neste turno etc.). Os
+ * campos além de `estado` e `motivo` são da trilha lógica e podem crescer.
+ */
+export type Conversa = {
+  estado: Estado;
+  motivo?: MotivoDeErro;
+};
+
+/**
+ * A máquina é PURA: o relógio entra por `agora` (ms, `performance.now()` na
+ * tela, número fixo no teste). Quem implementa: `lib/conversa/maquina.ts`.
+ */
+export type Avanca = (
+  conversa: Conversa,
+  evento: Evento,
+  agora: number,
+) => { conversa: Conversa; efeitos: Efeito[] };
