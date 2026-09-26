@@ -4,9 +4,9 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (26/09/2026 — atualizar a cada fase):** aprovado pelo Rica (áudio, 26/09). **Fase 0 em curso:**
-> transcrição medida e contrato escrito; falta o Silero no Chrome do PC e no Safari do iPhone, pela
-> sonda `https://borges.tailfe77db.ts.net:3447` (`/tmp/f0/`, fora do repo; log em `/tmp/f0/log.jsonl`).
+> **ESTADO (26/09/2026 — atualizar a cada fase):** Fase 0 **fechada** (26/09). Próxima: **Fase 1** —
+> abrir as cadeiras lógica e tela com o contrato `lib/conversa/tipos.ts`. A rota de transcrição já
+> aceita WAV (`efda525`, API reiniciada e provada com gravação do iPhone).
 
 ## O pedido
 
@@ -34,7 +34,8 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
    Não prometer conversa com o celular no bolso.
 6. **Cada texto do assistente vai para a voz assim que chega**, pela rota `POST /api/tts/synth/stream`,
    que já limpa markdown e bloco de código (`tts.py:117`).
-7. **Nenhuma mudança no backend.** A obra é só `apps/cockpit`.
+7. **Backend: só a rota de transcrição aceitar WAV** (fase 0 achou o 422; aprovado pelo Rica 26/09,
+   `efda525`). Fora isso, a obra é só `apps/cockpit`.
 
 ## O que já existe (mapa medido em 26/09, relativo a `apps/cockpit/`)
 
@@ -59,11 +60,22 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
       `utils.encodeWAV`; a rota responde **422 `mime não suportado: audio/wav`** (`_VOICE_ALLOWED_MIMES`,
       `agents.py:2951`). Conserto proposto: incluir `audio/wav` na lista (o ffmpeg já converte).
       WAV de 60 s a 16 kHz mono = 1,9 MB, longe do teto de 10 MB.
-- [ ] Peso medido no pacote (`vad-web` 0.0.31 + `onnxruntime-web` 1.30.0): motor
+- [x] Peso medido no pacote (`vad-web` 0.0.31 + `onnxruntime-web` 1.30.0): motor
       `ort-wasm-simd-threaded.wasm` **14,2 MB** + modelo `silero_vad_v5.onnx` **2,3 MB** + ~150 KB de JS
-      e worklet. Moram em `public/`. Falta medir a carga real nos dois aparelhos.
+      e worklet. Moram em `public/`. Com gzip o motor cai para **3,6 MB**.
+- [x] Silero no **Safari do iPhone** (iOS 18.7, 26/09, sonda fora do repo): carrega, detecta início e
+      fim, e as falas transcreveram certas pela rota, com a primeira sílaba inteira ("Estou na chácara.").
+      A fala chega ~0,9 s maior que o trecho entre início e fim — é a pré-gravação trabalhando.
+      **Primeira carga: ~28 s até ficar pronto** (motor de 13,9 MB baixado sem compressão).
+      **R2 fechado.** Chrome do PC não foi exercitado — é a plataforma de referência do `vad-web`, fica
+      para a tela real da fase 1.
+- **Dois achados que viram requisito da fase 1:**
+  1. **`comecar` tem de ser idempotente e o botão travar enquanto carrega.** Sem aviso de progresso o
+     Rica tocou quatro vezes, nasceram quatro detectores, e cada frase foi gravada e enviada 4×.
+  2. **Carga do motor:** servir o `.wasm` comprimido e começar a baixar ao abrir a tela, antes do toque,
+     com estado "preparando" visível. 28 s de tela muda é o que fez o Rica tocar de novo.
 - [x] Contrato `lib/conversa/tipos.ts` escrito (estados, eventos, efeitos, tempos).
-- **Fecha quando:** números anotados aqui, contrato commitado.
+- **Fecha quando:** números anotados aqui, contrato commitado. ✅ 26/09
 
 ### Fase 1 — conversa meio-duplex sem clique
 - Trilha **lógica** (`lib/conversa/`, puro, com teste): máquina de estados
@@ -97,7 +109,6 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
 ## Riscos que continuam abertos
 
 - **R1** iPhone: Modo de Baixo Consumo barra o autoplay; microfone morre com tela bloqueada.
-- **R2** Silero no Safari do iPhone ainda não medido (fase 0 decide).
 - **R3** Publicar depende de janela de build na VPS.
 - **R4** Resposta longa do Zé vira áudio longo: pode precisar de corte ou resumo falado (decidir na fase 1
   com a tela na mão).
