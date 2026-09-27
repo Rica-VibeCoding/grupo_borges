@@ -22,6 +22,13 @@ export type Vilao = {
   usado_mb: number;
 };
 
+/** Um dono somado por nome: agente, serviço ou container. CPU na escala da máquina. */
+export type Consumidor = {
+  nome: string;
+  cpu_pct: number;
+  ram_mb: number;
+};
+
 /** O corpo do `GET /api/vps`. */
 export type RecursosDaVps = {
   cpu_pct: number | null;
@@ -31,6 +38,8 @@ export type RecursosDaVps = {
   swap: Recurso | null;
   disco: Recurso;
   vilao: { cpu: Vilao | null; ram: Vilao | null };
+  /** Ausente em API antiga: aí a tela cai no vilão. */
+  consumidores?: Consumidor[];
   no_ar_segundos: number;
   medido_em: number;
 };
@@ -84,6 +93,11 @@ export function formataNoAr(segundos: number): string {
   return `há ${Math.floor(horas / 24)} d`;
 }
 
+/** `12%`, `4,5%`, `0,3%`: abaixo de 10 a casa decimal separa quem trabalha de quem dorme. */
+export function formataPct(pct: number): string {
+  return pct >= 10 ? `${Math.round(pct)}%` : `${pct.toFixed(1).replace('.', ',')}%`;
+}
+
 export function formataCarga(carga: number): string {
   return carga.toFixed(1).replace('.', ',');
 }
@@ -97,6 +111,14 @@ export function formataCarga(carga: number): string {
  * gastaria o dobro da altura pra dizer a mesma coisa, e ele pediu denso.
  */
 export function linhasDeVilao(dados: RecursosDaVps): Array<{ nome: string; detalhe: string }> {
+  // 27/09: um vilão só escondia a frota inteira trabalhando. Com a lista, cada
+  // dono aparece com os dois números, na ordem de quem mais come CPU.
+  if (dados.consumidores?.length) {
+    return dados.consumidores.map((c) => ({
+      nome: c.nome,
+      detalhe: `CPU ${formataPct(c.cpu_pct)} · RAM ${formataTamanho(c.ram_mb)}`,
+    }));
+  }
   const { cpu, ram } = dados.vilao;
   const deCpu = cpu ? `CPU ${Math.round(cpu.pct)}%` : null;
   const deRam = ram ? `RAM ${formataTamanho(ram.usado_mb)}` : null;

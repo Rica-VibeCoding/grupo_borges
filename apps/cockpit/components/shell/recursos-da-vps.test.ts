@@ -87,3 +87,17 @@ test('donos diferentes ficam em linhas separadas', () => {
 test('sem medida de vilão a seção não inventa linha', () => {
   assert.deepEqual(linhasDeVilao({ ...ORACLE, vilao: { cpu: null, ram: null } }), []);
 });
+
+test('com a lista de consumidores, cada dono vira uma linha com CPU e RAM', () => {
+  const comLista = {
+    ...ORACLE,
+    consumidores: [
+      { nome: 'cockpit-api', cpu_pct: 10.5, ram_mb: 119 },
+      { nome: 'Pavan', cpu_pct: 4.2, ram_mb: 668 },
+    ],
+  };
+  assert.deepEqual(linhasDeVilao(comLista), [
+    { nome: 'cockpit-api', detalhe: 'CPU 11% \u00b7 RAM 119 MB' },
+    { nome: 'Pavan', detalhe: 'CPU 4,2% \u00b7 RAM 668 MB' },
+  ]);
+});

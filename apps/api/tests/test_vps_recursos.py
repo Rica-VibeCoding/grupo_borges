@@ -266,3 +266,33 @@ def test_vilao_de_ram_e_o_maior_residente_com_a_fatia_da_maquina() -> None:
 def test_maquina_sem_leitura_de_processo_nao_inventa_vilao() -> None:
     assert vps_recursos.vilao_de_ram([], ram_total_mb=11927) is None
     assert vps_recursos.vilao_de_cpu([], delta_total_ticks=200) is None
+
+
+def test_consumidores_somam_por_nome_e_ordenam_por_cpu(monkeypatch) -> None:
+    """Dois containers `php` viram uma linha; quem gasta mais CPU vem primeiro."""
+    monkeypatch.setattr(vps_recursos, "_le", lambda caminho: "")
+    php = "0::/system.slice/docker-{}.scope\n"
+    antes = {
+        1: _proc(1, "php", 100, 1000, php.format("a")),
+        2: _proc(2, "php", 100, 1000, php.format("b")),
+        3: _proc(3, "claude", 100, 50000, CGROUP_DO_DANIEL),
+    }
+    depois = {
+        1: _proc(1, "php", 130, 1000, php.format("a")),
+        2: _proc(2, "php", 130, 1000, php.format("b")),
+        3: _proc(3, "claude", 110, 50000, CGROUP_DO_DANIEL),
+    }
+
+    linhas = vps_recursos.consumidores(vps_recursos.por_dono(antes, depois), delta_total_ticks=200)
+
+    assert linhas == [
+        {"nome": "php", "cpu_pct": 30.0, "ram_mb": 7},
+        {"nome": "Daniel", "cpu_pct": 5.0, "ram_mb": 195},
+    ]
+
+
+def test_scope_solto_do_usuario_se_chama_pelo_processo() -> None:
+    """Build ou backup num `run-u*.scope` fora da frota não vira "user@1002"."""
+    cgroup = "0::/user.slice/user-1002.slice/user@1002.service/app.slice/run-u9.scope\n"
+
+    assert vps_recursos.nome_do_processo(cgroup, "pg_dump", "pg_dump\0") == "pg_dump"

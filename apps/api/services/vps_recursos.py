@@ -244,7 +244,9 @@ def nome_do_processo(cgroup: str, comm: str, cmdline: str, environ: str = "") ->
                 socket = os.path.basename(variavel[len("TMUX=") :].split(",")[0])
                 if socket.startswith("borges-"):
                     return socket[len("borges-") :].capitalize()
-    if unidade:
+    # `user@1002` é o gerente de sessão do usuário, não um dono: o que roda num
+    # scope solto dele (build, backup) se chama pelo processo.
+    if unidade and not unidade.startswith("user@"):
         return unidade
     if comm in INTERPRETADORES:
         argumentos = [a for a in cmdline.split("\0") if a and not a.startswith("-")]
@@ -259,15 +261,14 @@ def _nomeia(dono: Dono) -> str:
         cmdline = _le(f"/proc/{representante.pid}/cmdline")
     except OSError:
         cmdline = ""
-    nome = nome_do_processo(representante.cgroup, representante.comm, cmdline)
-    # Só o agente em scope sai sem nome próprio; só ele paga a leitura do ambiente.
-    if nome.startswith("user@"):
+    environ = ""
+    # Só o agente em scope depende do ambiente pra ter nome; só ele paga a leitura.
+    if "/user@" in representante.cgroup and ".service/app.slice/" not in representante.cgroup:
         try:
             environ = _le(f"/proc/{representante.pid}/environ")
         except OSError:
-            return nome
-        nome = nome_do_processo(representante.cgroup, representante.comm, cmdline, environ)
-    return nome
+            pass
+    return nome_do_processo(representante.cgroup, representante.comm, cmdline, environ)
 
 
 def por_dono(antes: dict[int, Processo], depois: dict[int, Processo]) -> list[Dono]:
@@ -323,6 +324,34 @@ def vilao_de_ram(donos: list[Dono], ram_total_mb: int) -> tuple[Dono, float] | N
     return maior, pct
 
 
+#: Linhas da lista de consumo no rodapé: cabe na sidebar sem rolar.
+CONSUMIDORES_MAX = 6
+
+
+def consumidores(donos: list[Dono], delta_total_ticks: int) -> list[dict]:
+    """Os maiores consumidores, somados por NOME e ordenados por CPU, depois RAM.
+
+    Pedido do Rica (27/09): um vilão só escondia o resto — a frota inteira
+    trabalhando e o painel mostrando um nome. Somar por nome junta o que o
+    cgroup separa sem dizer nada ao Rica (dois containers `php`, o shell e o
+    `claude` do mesmo agente).
+    """
+    somados: dict[str, list[int]] = {}
+    for dono in donos:
+        par = somados.setdefault(_nomeia(dono), [0, 0])
+        par[0] += dono.ticks
+        par[1] += dono.rss_paginas
+    ordem = sorted(somados.items(), key=lambda item: (-item[1][0], -item[1][1]))
+    return [
+        {
+            "nome": nome,
+            "cpu_pct": round(100 * ticks / delta_total_ticks, 1) if delta_total_ticks > 0 else 0.0,
+            "ram_mb": paginas * PAGINA_BYTES // (1024 * 1024),
+        }
+        for nome, (ticks, paginas) in ordem[:CONSUMIDORES_MAX]
+    ]
+
+
 _ultima_amostra: tuple[AmostraCpu, dict[int, Processo], float] | None = None
 
 
@@ -362,6 +391,7 @@ async def ler() -> dict:
             "cpu": _publica_vilao(vilao_de_cpu(donos, cpu.total - base[0].total)),
             "ram": _publica_vilao(vilao_de_ram(donos, ram["total_mb"])),
         },
+        "consumidores": consumidores(donos, cpu.total - base[0].total),
         "no_ar_segundos": no_ar_segundos(_le(CAMINHO_UPTIME)),
         "medido_em": int(time.time()),
     }

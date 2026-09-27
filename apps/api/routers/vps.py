@@ -36,6 +36,12 @@ class Vilaos(BaseModel):
     ram: Vilao | None
 
 
+class Consumidor(BaseModel):
+    nome: str
+    cpu_pct: float = Field(description="na escala da máquina: 100% = todos os núcleos")
+    ram_mb: int
+
+
 class VpsRecursos(BaseModel):
     cpu_pct: float | None = Field(
         description="média entre as duas últimas leituras; null quando não houve intervalo",
@@ -46,6 +52,7 @@ class VpsRecursos(BaseModel):
     swap: Recurso | None = Field(description="null na máquina sem swap")
     disco: Recurso
     vilao: Vilaos
+    consumidores: list[Consumidor] = Field(default_factory=list, description="maiores por CPU, depois RAM")
     no_ar_segundos: int
     medido_em: int
 
