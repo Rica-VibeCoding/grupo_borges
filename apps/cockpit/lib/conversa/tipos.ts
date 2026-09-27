@@ -16,6 +16,7 @@ export type Estado =
   | 'transcrevendo'
   | 'esperandoZe'
   | 'falando'
+  | 'interrompendo' // fase 2: fala por cima detectada, voz do Zé pausada até confirmar ou descartar
   | 'erro';
 
 export type MotivoDeErro =
@@ -32,6 +33,8 @@ export type Evento =
   | { tipo: 'parar' }
   | { tipo: 'falaIniciou' }
   | { tipo: 'falaDescartada' } // curta demais: o Silero chama de misfire
+  | { tipo: 'falaConfirmada' } // fase 2: passou da fala mínima (o `onSpeechRealStart` do Silero)
+  | { tipo: 'fone'; ligado: boolean } // fase 2: chave "estou de fone"; só com ela existe fala por cima
   | { tipo: 'falaTerminou'; audio: Float32Array } // 16 kHz, mono, -1..1
   | { tipo: 'transcreveu'; texto: string }
   | { tipo: 'enviou' }
@@ -51,7 +54,10 @@ export type Efeito =
   | { tipo: 'tocarTique' }
   | { tipo: 'falarPonte' } // frase local enquanto o Zé não responde
   | { tipo: 'avisarDemora' }
-  | { tipo: 'avisarErro'; motivo: MotivoDeErro };
+  | { tipo: 'avisarErro'; motivo: MotivoDeErro }
+  | { tipo: 'pausarVoz' } // fase 2: fala por cima começou
+  | { tipo: 'retomarVoz' } // fase 2: era tosse — a voz continua de onde parou
+  | { tipo: 'descartarVoz' }; // fase 2: fala por cima confirmada — a fila do Zé é jogada fora
 
 /** Tempos em ms. Os do detector vêm da pesquisa §2 e se confirmam na fase 0. */
 export const TEMPOS = {
@@ -65,6 +71,10 @@ export const TEMPOS = {
   ponte: 5_000,
   /** Sem nenhum texto do Zé até aqui → aviso falado de demora. */
   avisoDemora: 20_000,
+  /** Fase 2: fala por cima só vale depois disso de fala contínua. */
+  confirmaFalaPorCima: 500,
+  /** Fase 2: sem confirmar até aqui, a fala por cima é descartada e a voz retoma. */
+  desclassificaFalaPorCima: 2_000,
 } as const;
 
 /**
