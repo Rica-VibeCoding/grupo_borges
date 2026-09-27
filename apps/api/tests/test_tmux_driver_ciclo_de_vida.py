@@ -136,104 +136,96 @@ def test_nome_de_sessao_forjado_nao_vira_argumento_de_systemctl() -> None:
     roda.assert_not_called()
 
 
-def test_unit_ja_registrada_vira_boot_em_curso_e_nao_erro_cru() -> None:
-    """O systemd tem duas frases pro mesmo estado; casar só uma vazava a outra."""
-    recusa = subprocess.CompletedProcess(
-        [],
-        1,
-        "",
-        "Failed to start transient service unit: Unit cockpit-ligar-canario.service "
-        "was already loaded or has a fragment file.",
-    )
+def test_ligar_recusado_pelo_systemd_vira_erro_legivel() -> None:
+    recusa = subprocess.CompletedProcess([], 1, "", "Unit borges-clawd@canario.service not found.")
 
     with (
+        patch("services.tmux_driver._write_continue_env_file"),
         patch("services.tmux_driver._shutdown_agent_sync", return_value={}),
         patch("services.tmux_driver.subprocess.run", return_value=recusa),
     ):
         try:
             tmux_driver._boot_agent_sync("canario")
-        except tmux_driver.TmuxSessionBusyError as exc:
-            assert "já está em curso" in str(exc)
+        except ValueError as exc:
+            assert "not found" in str(exc)
         else:  # pragma: no cover - o teste só passa pela exceção certa
-            raise AssertionError("boot recusado devia virar TmuxSessionBusyError")
+            raise AssertionError("start recusado devia virar ValueError")
 
 
-def test_boot_nao_leva_o_servidor_tmux_junto_ao_terminar() -> None:
-    """Incidente 07/09/2026: o agente caía sozinho minutos depois de ligar.
-
-    O `subir-frota.sh` cria o servidor tmux DENTRO do cgroup da unit de boot.
-    Com o `KillMode=control-group` que o systemd assume por padrão, o fim do
-    script matava todo o cgroup — servidor tmux e agente junto. Daniel e Pavan
-    dividiam o socket `default`, então cada boot derrubava os dois.
-    """
-    with (
-        patch("services.tmux_driver._shutdown_agent_sync", return_value={}),
-        patch("services.tmux_driver.subprocess.run") as roda,
-        patch("services.tmux_driver._LIGAR_TIMEOUT_S", 0.0),
-    ):
-        roda.return_value = subprocess.CompletedProcess([], 0, "", "")
-        tmux_driver._boot_agent_sync("canario")
-
-    argv = roda.call_args.args[0]
-    assert "-p" in argv, "o boot precisa declarar propriedade na unit transiente"
-    assert argv[argv.index("-p") + 1] == "KillMode=process"
-
-
-def test_boot_espera_a_unit_anterior_sair_do_registro() -> None:
-    """O `KillMode=process` deixa a unit do boot anterior carregada.
-
-    Ela segura o servidor tmux no cgroup e só sai do registro ~50ms depois de o
-    `_shutdown_agent_sync` acima matar esse servidor. Disparar o `systemd-run`
-    dentro dessa janela é recusado por nome já registrado, e o Rica via "boot já
-    está em curso" num agente parado — o botão só pegava no segundo clique.
+def test_ligar_escreve_o_env_de_continuar_antes_de_pedir_o_start(tmp_path) -> None:
+    """A unit lê `EnvironmentFile=-` no `ExecStart` — sem o arquivo no chão
+    antes do `systemctl start`, o agente reposto pelo `Restart=always` sobe
+    limpo em vez de retomar a conversa que estava em curso.
     """
     ordem: list[str] = []
-    estados = iter(["loaded", "not-found"])
+    escreve_de_verdade = tmux_driver._write_continue_env_file
 
     def registra(argv, **_kwargs):
-        if argv[:3] == ["systemctl", "--user", "show"]:
-            estado = next(estados, "not-found")
-            ordem.append(f"consulta:{estado}")
-            return subprocess.CompletedProcess(argv, 0, f"{estado}\n", "")
-        ordem.append(argv[0])
+        ordem.append(" ".join(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def escreve_e_registra(session_name):
+        ordem.append(f"env:{session_name}")
+        return escreve_de_verdade(session_name)
+
+    with (
+        patch("services.tmux_driver._FROTA_ENV_DIR", tmp_path),
+        patch("services.tmux_driver._shutdown_agent_sync", return_value={}),
+        patch("services.tmux_driver.subprocess.run", side_effect=registra),
+        patch("services.tmux_driver._LIGAR_TIMEOUT_S", 0.0),
+        patch(
+            "services.tmux_driver._write_continue_env_file",
+            side_effect=escreve_e_registra,
+        ),
+    ):
+        tmux_driver._boot_agent_sync("canario")
+
+    assert ordem[0] == "env:canario"
+    assert ordem[-1] == "sudo -n systemctl start borges-clawd@canario.service"
+    conteudo = (tmp_path / "canario.env").read_text(encoding="utf-8")
+    assert conteudo == "FROTA_FLAGS_EXTRA=--continue\n"
+    # A escrita é atômica: não pode sobrar arquivo temporário no diretório.
+    assert list(tmp_path.iterdir()) == [tmp_path / "canario.env"]
+
+
+def test_ligar_para_a_unit_e_derruba_sessao_crua_antes_do_start() -> None:
+    """Pré-condição do Ligar: sem isso, a sessão criada por fora da unit (agente
+    ainda não adotado, ou o boot da VPS que sobe por fora dela) disputa o mesmo
+    socket tmux com o `ExecStart` da unit durável.
+    """
+    ordem: list[str] = []
+
+    def registra(argv, **_kwargs):
+        ordem.append(" ".join(argv))
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     with (
-        patch("services.tmux_driver._shutdown_agent_sync", return_value={}),
+        patch("services.tmux_driver._write_continue_env_file"),
+        patch(
+            "services.tmux_driver._shutdown_agent_sync",
+            side_effect=lambda nome: ordem.append(f"shutdown:{nome}") or {},
+        ),
         patch("services.tmux_driver.subprocess.run", side_effect=registra),
         patch("services.tmux_driver._LIGAR_TIMEOUT_S", 0.0),
     ):
         tmux_driver._boot_agent_sync("canario")
 
-    assert "consulta:loaded" in ordem, "o boot precisa conferir se a unit anterior saiu"
-    assert ordem.index("systemd-run") > ordem.index("consulta:not-found"), (
-        "o `systemd-run` foi disparado com a unit anterior ainda registrada"
-    )
+    assert ordem == [
+        "shutdown:canario",
+        "sudo -n systemctl start borges-clawd@canario.service",
+    ]
 
 
-def test_espera_da_unit_nao_estoura_o_proprio_teto() -> None:
-    """O teto de 5s da espera vale pro laço INTEIRO, não por volta.
-
-    Cada consulta ao systemd tinha o timeout de parada de scope (20s), quatro
-    vezes o teto anunciado: com o gerente `--user` lento — que é justamente o
-    estado em que unit transiente se acumula sem descarregar — uma volta
-    iniciada em 4,99s ainda podia segurar uma das quatro threads do executor
-    por mais 20s.
-    """
-    limites: list[float] = []
-
-    def registra(argv, **kwargs):
-        if argv[:3] == ["systemctl", "--user", "show"]:
-            limites.append(kwargs.get("timeout"))
-            return subprocess.CompletedProcess(argv, 0, "loaded\n", "")
-        return subprocess.CompletedProcess(argv, 0, "", "")
-
-    with patch("services.tmux_driver.subprocess.run", side_effect=registra):
-        tmux_driver._aguarda_unit_de_boot_sumir("canario")
-
-    assert limites, "a espera não chegou a consultar o systemd"
-    assert all(t is not None for t in limites), "consulta sem timeout pendura o Ligar"
-    assert max(limites) <= tmux_driver._BOOT_UNIT_LIMPEZA_TIMEOUT_S, (
-        f"consulta com timeout de {max(limites)}s dentro de um teto de "
-        f"{tmux_driver._BOOT_UNIT_LIMPEZA_TIMEOUT_S}s"
-    )
+def test_nome_de_sessao_forjado_nao_dispara_boot() -> None:
+    with (
+        patch("services.tmux_driver._write_continue_env_file") as escreve,
+        patch("services.tmux_driver.subprocess.run") as roda,
+    ):
+        try:
+            tmux_driver._boot_agent_sync("canario; rm -rf /")
+        except ValueError:
+            pass
+        else:  # pragma: no cover - o teste só passa pela exceção certa
+            raise AssertionError("nome inválido devia virar ValueError")
+    escreve.assert_not_called()
+    roda.assert_not_called()

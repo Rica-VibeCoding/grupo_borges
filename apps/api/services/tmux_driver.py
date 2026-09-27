@@ -1781,6 +1781,32 @@ def _stop_boot_unit(session_name: str) -> bool:
 #: Ela é de sistema, não `--user`, e tem `Restart=always` com `RestartSec=5`.
 _FROTA_UNIT_TEMPLATE = "borges-clawd@{}.service"
 
+#: `/run` é tmpfs: o reboot da VPS zera o diretório sozinho, então a unit nasce
+#: limpa no boot da máquina sem nenhum código apagando nada. O Ligar escreve
+#: aqui ANTES do `systemctl start`, e o arquivo fica — se o `Restart=always`
+#: religar o agente depois de uma queda em pleno trabalho, ele tem que voltar
+#: com `--continue`, não limpo. Não é o `RuntimeDirectory=` da unit: aquele
+#: caminho some no `stop`, e o `stop` é exatamente o que o Desligar faz.
+_FROTA_ENV_DIR = Path("/run/borges-frota")
+_FROTA_ENV_VAR = "FROTA_FLAGS_EXTRA"
+
+
+def _write_continue_env_file(session_name: str) -> None:
+    """Grava `FROTA_FLAGS_EXTRA=--continue` pro `EnvironmentFile=-` da unit.
+
+    Escrita atômica (arquivo temporário no mesmo diretório + `os.replace`):
+    o systemd pode ler este arquivo no meio de uma escrita não-atômica, e um
+    `ExecStart` que dispara enquanto o conteúdo está pela metade sobe sem a
+    flag — silenciosamente, porque `EnvironmentFile=-` também ignora arquivo
+    corrompido.
+    """
+    _FROTA_ENV_DIR.mkdir(parents=True, exist_ok=True)
+    destino = _FROTA_ENV_DIR / f"{session_name}.env"
+    provisorio = _FROTA_ENV_DIR / f".{session_name}.env.{uuid.uuid4().hex[:8]}.tmp"
+    provisorio.write_text(f"{_FROTA_ENV_VAR}={_FLAG_CONTINUE}\n", encoding="utf-8")
+    provisorio.chmod(0o644)
+    os.replace(provisorio, destino)
+
 
 def _stop_frota_unit(session_name: str) -> bool:
     """Para a unit durável do agente. Diz se havia unit ativa a parar.
@@ -1884,102 +1910,36 @@ async def shutdown_agent(session_name: str) -> dict[str, object]:
     return await _run_tmux_operation(_shutdown_agent_sync, session_name)
 
 
-#: O boot da frota, e a razão de o Ligar não montar comando nenhum. Ele conhece
-#: o que `_prepare_cli_launch` não tem como saber com o processo morto: o
-#: `TELEGRAM_STATE_DIR` de cada agente (sem ele o agente sobe respondendo no
-#: canal do Daniel, que é o default legado), a cerca de memória por sessão, e o
-#: env inteiro dos motores não-Anthropic — sem `ANTHROPIC_BASE_URL`/`API_KEY` a
-#: Tara e o canário sobem batendo na Anthropic de verdade.
-#:
-#: No relaunch essas duas coisas são COPIADAS do processo vivo
-#: (`_pane_channel_flags`, `_PRESERVED_ENV_VARS`). No Ligar não existe processo
-#: vivo pra copiar, e duplicar a tabela aqui em Python garantiria divergência no
-#: dia em que o Rica trocar o canal de alguém.
-_SUBIR_FROTA = Path("/home/clawd/repos/ze_claude/ze-shared/scripts/subir-frota.sh")
 #: Quanto o Ligar espera o CLI aparecer antes de devolver sem confirmação. A
 #: sessão tmux nasce em ~1s; o `claude` leva mais, e é ELE que prova que ligou.
-#: O script segue esperando canal e `/rename` por conta própria depois disso.
+#: A unit segue esperando canal e `/rename` por conta própria depois disso.
 _LIGAR_TIMEOUT_S = 40.0
 _LIGAR_POLL_INTERVAL_S = 0.75
 
-#: Quanto esperar a unit do boot ANTERIOR sair do registro do systemd. Com o
-#: `KillMode=process` abaixo ela sobrevive ao script segurando o servidor tmux no
-#: cgroup, e só é descarregada depois que o desligar mata esse servidor — ~50ms
-#: medidos em 07/09/2026. O `systemd-run` disparado dentro dessa janela é recusado
-#: por nome já registrado, e o Rica lia "boot já está em curso" num agente parado.
-_BOOT_UNIT_LIMPEZA_TIMEOUT_S = 5.0
-_BOOT_UNIT_LIMPEZA_POLL_S = 0.05
-
-
-def _aguarda_unit_de_boot_sumir(session_name: str) -> None:
-    """Espera o systemd descarregar a unit do boot anterior deste agente."""
-    unit = f"{_BOOT_UNIT_PREFIX}{session_name}.service"
-    deadline = time.monotonic() + _BOOT_UNIT_LIMPEZA_TIMEOUT_S
-    while True:
-        # O timeout de cada consulta é o que SOBRA do teto, não uma constante à
-        # parte: com um limite maior que o do laço, uma volta iniciada perto do
-        # fim ainda seguraria a thread do executor muito além dos 5s prometidos.
-        restante = deadline - time.monotonic()
-        if restante <= 0:
-            return
-        try:
-            estado = subprocess.run(
-                ["systemctl", "--user", "show", unit, "-p", "LoadState", "--value"],
-                capture_output=True,
-                text=True,
-                timeout=restante,
-            )
-        except (subprocess.TimeoutExpired, OSError):
-            # Sem resposta do systemd não há o que esperar: quem decide se o nome
-            # está livre é o `systemd-run` logo abaixo, e ele já trata a recusa.
-            return
-        if estado.stdout.strip() != "loaded":
-            return
-        time.sleep(_BOOT_UNIT_LIMPEZA_POLL_S)
-
 
 def _boot_agent_sync(session_name: str) -> dict[str, object]:
-    """Sobe o agente pelo script de boot da frota, retomando a conversa.
+    """Sobe o agente pela unit durável da frota, retomando a conversa.
 
     `--continue` é decisão de produto: desligar não pode custar conversa. Quem
-    quer recomeçar limpo usa `/clear` dentro do agente.
+    quer recomeçar limpo usa `/clear` dentro do agente. A flag chega ao
+    `ExecStart` pelo `EnvironmentFile=-` da unit — este código só grava o
+    arquivo em `/run` antes de pedir o `start`, nunca monta o comando do CLI.
     """
     if not _SESSION_NAME_PATTERN.fullmatch(session_name):
         raise ValueError(f"nome de sessão inválido: {session_name}")
-    if not _SUBIR_FROTA.is_file():
-        raise ValueError(f"script de boot ausente: {_SUBIR_FROTA}")
 
-    # Casca morta (sessão de pé, CLI morto) faria o script dizer "já up —
-    # pulando" e o Ligar viraria no-op silencioso. Derrubar antes é o que faz o
-    # botão funcionar justamente no estado em que ele é a ÚNICA saída: com o
-    # pane em bash cru, Destravar e Resume devolvem `attempted:false`.
+    _write_continue_env_file(session_name)
+
+    # Casca morta (sessão de pé, CLI morto) ou sessão criada por fora da unit
+    # (agente ainda não adotado, ou o boot da VPS que sobe por fora dela) — as
+    # duas disputariam o mesmo socket tmux com o `ExecStart`. Derrubar antes é
+    # a pré-condição do Ligar: sem unit ativa e sem sessão crua no caminho.
     _shutdown_agent_sync(session_name)
-    _aguarda_unit_de_boot_sumir(session_name)
 
-    # `systemd-run` em vez de `Popen`: o script leva minutos esperando o canal
-    # carregar, e como filho da API ele morreria junto num restart do uvicorn,
-    # deixando o boot pela metade. A unit nomeada também dá o trava-duplo de
-    # graça — dois cliques na mesma batida não sobem duas sessões, o segundo é
-    # recusado. `--collect` remove a unit ao terminar, sem deixar rastro.
+    unit = _FROTA_UNIT_TEMPLATE.format(session_name)
     try:
         lancado = subprocess.run(
-            [
-                "systemd-run",
-                "--user",
-                "--collect",
-                # O `subir-frota.sh` cria o servidor tmux dentro deste cgroup, e
-                # o `KillMode=control-group` que o systemd assume mataria os dois
-                # quando o script terminasse — o agente caía minutos depois de
-                # ligar, sem rastro de erro (07/09/2026). Desligar não depende
-                # deste kill: `_shutdown_agent_sync` encerra sessão e scopes pelo
-                # nome.
-                "-p",
-                "KillMode=process",
-                f"--unit=cockpit-ligar-{session_name}",
-                f"--setenv=FROTA_FLAGS_EXTRA={_FLAG_CONTINUE}",
-                str(_SUBIR_FROTA),
-                session_name,
-            ],
+            ["sudo", "-n", "systemctl", "start", unit],
             capture_output=True,
             text=True,
             timeout=_SCOPE_STOP_TIMEOUT_S,
@@ -1988,12 +1948,6 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
         raise ValueError(f"não consegui disparar o boot: {exc}") from exc
     if lancado.returncode != 0:
         erro = (lancado.stderr or "").strip()
-        # Duas frases pro mesmo estado, e o systemd escolhe qual usar: "already
-        # exists" com a unit rodando, "was already loaded or has a fragment
-        # file" com ela só registrada. Casar só a primeira vazava o texto cru do
-        # systemd pra tela do Rica.
-        if "already exists" in erro or "already loaded" in erro:
-            raise TmuxSessionBusyError(f"boot de {session_name} já está em curso")
         raise ValueError(f"o boot foi recusado: {erro or 'erro desconhecido'}")
 
     deadline = time.monotonic() + _LIGAR_TIMEOUT_S

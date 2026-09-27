@@ -798,8 +798,8 @@ def test_ligar_nao_exige_confirmacao(tmp_path: Path) -> None:
 
 
 def test_ligar_com_boot_ja_em_curso_devolve_409(tmp_path: Path) -> None:
-    """A unit nomeada do `systemd-run` é o trava-duplo: o segundo clique não
-    pode subir uma segunda sessão do mesmo agente."""
+    """Contrato da rota: `TmuxSessionBusyError` do driver vira 409, qualquer
+    que seja a origem dela no `tmux_driver`."""
     app = _build_app(tmp_path)
     with patch(
         "routers.agents.tmux_driver.boot_agent",
