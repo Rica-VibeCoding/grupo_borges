@@ -7,14 +7,18 @@
 > **ESTADO (27/09/2026 ~21h30 BRT — atualizar a cada fase):** Fases 0 e 1 **fechadas** (`5ff9759`).
 > **Fase 2 em curso, NADA commitado dela:** o diff mora só no clone do PC (`projetos\grupo_borges`).
 > - `logica` **entregou** (31 testes verdes, `docs/modo-conversa/relatos/fase2-logica.md` no clone do PC).
-> - `tela` estava terminando o E2E (faltava repetir a 2ª fala longa com fone) — relato parcial em
->   `docs/modo-conversa/relatos/fase2-tela.md` no PC. Contexto dela passou de 50%: compactar antes de nova tarefa.
+> - `tela` **entregou** (971 testes verdes, E2E 4/4 com o `canarinho` em duas rodadas: sem fone, fala curta
+>   pausa e retoma na mesma posição, duas falas longas interrompem e viram mensagem) — relato em
+>   `docs/modo-conversa/relatos/fase2-tela.md` no PC. Tocou `reprodutor-unico.ts` (pausa/retoma na sequência).
+>   Contexto dela em 57%: `/new` (tecla a tecla, ver psmux.md) antes de nova tarefa.
+> - Decidir no commit: a `tela` deixou provas em `docs/modo-conversa/e2e/` (`fase2-tela.cjs`, `-provas.json`,
+>   `-mobile.png`); os `turno*.mp3` dessa pasta NÃO entram.
 > - Contrato da fase 2 já commitado (`f2c0ae3`). O `type-check` fica verde com a máquina do PC.
 > Provas físicas da fase 1 (eco, tela bloqueada) foram para a fase 3, no iPhone.
 >
 > **Retomar depois de `/clear` — nesta ordem:**
 > 1. Ler este banner e a seção "Mecânica das cadeiras" abaixo.
-> 2. Capturar as duas cadeiras (`cap-daniel.ps1`). `tela` ociosa → ler `fase2-tela.md` do PC.
+> 2. Capturar as duas cadeiras (`cap-daniel.ps1`) e ler os dois relatos `fase2-*.md` do PC.
 > 3. Trazer o diff do PC para a VPS, aplicar, `npm test` + `type-check`, `code-review` (subagente), consertos
 >    pela cadeira dona, commit a partir da VPS, sincronizar o PC. Receita na mecânica.
 > 4. Fechar a fase 2 aqui e seguir para a fase 3 (build com o Pavan + iPhone do Rica).
