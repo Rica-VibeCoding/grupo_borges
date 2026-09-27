@@ -265,7 +265,7 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
               cursorNoFim={estaRodando && indice === ultimoTexto}
             />
           ))}
-          <RodapeDaFala texto={falado} payload={item.payload} agentSlug={agentSlug} escrevendo={estaRodando} />
+          <RodapeDaFala texto={falado} payload={item.payload} agentSlug={agentSlug} />
         </>
       );
     }
