@@ -1,0 +1,64 @@
+# Rodada da voz — sete pedidos do Rica (27/09/2026, ditados na própria tela de voz)
+
+Levantados com o Rica testando a 3008 (`6bef077`). Nada implementado ainda: esta página é o ponto de partida da
+próxima rodada, com contexto limpo. Cada item diz o que ele pediu, o que já existe no código e o que falta decidir.
+O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira `teste` antes de qualquer link**
+(`briefings/fase3-cadeira-de-teste.md`), commit na VPS, build da 3008 e restart da API só com janela do Pavan.
+
+## 1. Silêncio que entrega a fala: 1,4 s → 2 s
+- Hoje: `TEMPOS.silencioFimDeFala = 1400` em `apps/cockpit/lib/conversa/tipos.ts` (o `redemptionMs` do Silero em
+  `use-detector-de-fala.ts`).
+- Pedido: 2 s. Recomendação dada e aceita: não passar de 2 s (cada resposta começa 0,6 s mais tarde).
+
+## 2. Segurar a tela para pensar sem entregar a fala
+- Pedido: no meio da própria vez, apertar e segurar a tela para parar a contagem do silêncio; soltar retoma os 2 s.
+- Conflito conhecido: **um toque para a conversa** (`43b23a4`, `pesquisa-toque.md`). Desenho proposto e aceito:
+  toque rápido continua parando; dedo **parado** por ≥ 0,5 s segura a vez; ao soltar volta a contar.
+- Cuidar da convivência com os gestos da voz (direita → chat, cima → configurações): segurar é dedo parado, gesto é
+  dedo que anda.
+- Palavra falada para segurar ("peraí") não dá: o detector é VAD (voz/silêncio), não entende palavra ao vivo. Encher a
+  pausa com "éééé" já segura hoje.
+
+## 3. Voz MiniMax só na tela de voz — uma voz para todos os agentes
+- Hoje: o áudio sai de `POST /api/tts/synth/stream` (`apps/api/routers/tts.py`, Google Chirp3-HD/WaveNet com
+  Edge de reserva), cliente `apps/cockpit/components/feed/stream-voz.ts` — a MESMA rota do "ouvir" do chat.
+- Pedido: MiniMax **só** no modo conversa; o resto da frota segue no Google. **Uma voz só** para todos os agentes, e
+  a escolha da voz é do Rica (levar opções para ele ouvir).
+- Antes de codar: confirmar com o Pavan onde está a chave MiniMax (ele tem; possivelmente no cofre) e registrar o
+  uso no contador `~/.claude/metrics/tts-uso.jsonl` como os outros motores. Context7/doc oficial da API MiniMax.
+- Como separar: a tela de voz pede o motor na mesma rota (campo no corpo), sem rota paralela.
+
+## 4. Hook + skill de conversa por voz
+- Pedido: quando a mensagem vem da tela de voz, o agente conversa de um jeito natural: avisa antes de tarefa longa
+  ("vou pesquisar e já volto"), responde curto e falado (sem lista, tabela nem código) e manda o que é de ler/detalhe
+  **pelo Telegram**, dizendo na voz "deixei os detalhes no Telegram".
+- Hoje: a fala chega ao agente com o prefixo `🎙 ` (`agents.py`, `send_message(sessão, f"🎙 {transcribed}")`); o
+  cockpit já carrega a skill `canal-cockpit` por hook (`ze-shared/hooks/cockpit-load-skill.sh`).
+- Falta: **distinguir a tela de voz do microfone do chat** — os dois chegam com `🎙` hoje. Marca própria para o modo
+  conversa, hook `UserPromptSubmit` que injeta a skill nova, skill em `ze-shared/.claude/skills/` (frota inteira).
+  Hook e skill moram no `ze_claude`, não neste repo.
+
+## 5. Foto do agente na tela de voz
+- Hoje a tela mostra o nome do agente e um ícone de chat. Pedido: a foto do agente, com cara da UI futurística.
+- Desenho aceito: retrato redondo, escurecido e dessaturado (não briga com a esfera), aro de luz na cor da moldura,
+  aro pulsa quando o agente fala. O ícone de chat sai (o gesto direita → chat já leva).
+- A foto é a mesma da cápsula do chat (`components/shell/capsula-do-agente.tsx`).
+
+## 6. Transcrição ao vivo na tela de voz
+- Hoje: a tela de voz espera o fim da fala e sobe o arquivo fechado (`POST /api/agents/{slug}/voice` →
+  `gpt-4o-transcribe` por script, com `ffmpeg`). Estimativa de 1 a 2 s só nisso — **medir antes**, não está medido.
+- Já existe o caminho ao vivo no microfone do chat: `components/shell/usa-fala-ao-vivo.ts` (WebSocket direto do
+  navegador para a OpenAI Realtime, `gpt-live-transcribe`, bilhete cunhado em `agents.py`, `_LIVE_STT_*`). O texto fica
+  pronto quando a fala acaba. Reusar na tela de voz.
+- Cuidado: o VAD que decide o fim da fala (itens 1 e 2) continua sendo o do cockpit; o ao vivo só adianta o texto.
+
+## 7. Legenda em tempo real da fala do agente
+- Pedido: com "Mostrar texto" ligado (folha de configurações, `configuracao-da-conversa.tsx`), a fala do agente
+  aparece como legenda enquanto ele fala.
+- Viável: o texto chega antes do áudio e a voz já é sintetizada frase por frase. Começar **por frase** (troca junto
+  com o áudio de cada frase). Palavra por palavra fica para depois — o tempo seria estimado e escorrega.
+
+## Ordem sugerida
+1 e 2 (lógica, pequenos) → 6 (latência, o maior ganho de experiência) → 7 → 5 → 3 (depende da chave e da escolha
+de voz do Rica) → 4 (fora deste repo). Medir a latência ponta a ponta (fim da fala → primeira sílaba do agente)
+antes do 6 e depois do 3, para o ganho ser número e não impressão.
