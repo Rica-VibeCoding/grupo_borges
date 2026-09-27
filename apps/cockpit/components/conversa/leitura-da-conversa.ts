@@ -59,12 +59,12 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
   }
 }
 
-/** O botão principal: o mesmo nome do começo ao fim de cada ação. */
+/** O nome do toque na tela (rótulo acessível, sem texto visível). */
 export function rotuloDaAcao(cena: Cena, preparacaoFalhou: boolean): string {
   if (preparacaoFalhou) return 'Detector indisponível';
   if (cena === 'preparando') return 'Preparando…';
   if (cena === 'parado') return 'Começar conversa';
-  if (cena === 'erro') return 'Retomar conversa';
+  if (cena === 'erro') return 'Tentar de novo';
   return 'Encerrar conversa';
 }
 

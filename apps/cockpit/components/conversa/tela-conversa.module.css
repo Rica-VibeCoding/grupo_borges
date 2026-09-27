@@ -1,5 +1,5 @@
-/* Tela de conversa: o visual atrás de tudo, um botão embaixo e, com "Mostrar
- * texto", o texto à esquerda. O texto fica a 32 px da borda: a Moldura só limita
+/* Tela de conversa: o visual atrás de tudo, a tela inteira como botão e, com
+ * "Mostrar texto", o texto à esquerda. O texto fica a 32 px da borda: a Moldura só limita
  * a luz a partir de 22 px, então a margem garante o contraste da §3 (ver
  * moldura-shader.ts). Sem texto, ela só limita a luz em volta do cabeçalho. */
 .tela {
@@ -28,6 +28,8 @@
 }
 
 .topo {
+  position: relative;
+  z-index: 2; /* acima do toque: Voltar e configurações ficam fora dele */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -177,30 +179,30 @@
   background: var(--ck-conversa-erro);
 }
 
-.acao {
-  min-height: 56px;
-  border: 1px solid var(--ck-edge-functional);
-  border-radius: var(--ck-radius-pill);
-  background: var(--ck-surface-canvas);
-  color: var(--ck-text-primary);
-  font: inherit;
-  font-size: var(--ck-text-md);
-  font-weight: 500;
+/* O toque: um botão de verdade (teclado e leitor de tela) por cima de tudo menos o
+ * cabeçalho, transparente — quem mostra o estado é o visual. Sem zoom de toque duplo,
+ * sem o cinza do toque no Safari e sem o menu de segurar. */
+.toque {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.acao[data-primaria] {
-  border-color: var(--ck-text-primary);
-  background: var(--ck-text-primary);
-  color: var(--ck-surface-canvas);
+.toque[aria-disabled='true'] {
+  cursor: progress;
 }
-.acao:disabled {
-  border-color: var(--ck-edge-hairline);
-  background: var(--ck-surface-composer);
-  color: var(--ck-text-secondary);
-  cursor: wait;
-}
-.acao:focus-visible {
+.toque:focus-visible {
   outline: 2px solid var(--ck-focus);
-  outline-offset: 2px;
+  outline-offset: -6px;
+  border-radius: var(--ck-radius-caixa);
 }
 
 /* Sem texto embaixo, a esfera tem o palco inteiro e fica no meio dele. */

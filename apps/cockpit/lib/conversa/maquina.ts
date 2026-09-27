@@ -5,16 +5,11 @@
  * na tela, número fixo no teste). O contrato está em `tipos.ts`; a tela executa os
  * efeitos que a máquina decide.
  *
- * Meio-duplex: sem fone, o detector só fica ligado em `ouvindo`. Em todos os outros
- * estados ele está desligado — e é assim de propósito, não só em `falando` como o
- * contrato pede: a frase-ponte e o aviso de demora tocam em `esperandoZe`, e um
- * detector ouvindo enquanto a própria página toca áudio captura eco (o Chrome não
- * cancela o áudio da página, pesquisa §3). Desligar já no `falaTerminou` evita esse
- * eco de graça.
- *
- * Fase 2 — fala por cima, só com fone: com a chave `fone` ligada, o detector volta a
- * ouvir também em `falando`, e uma fala detectada pausa a voz do Zé (`interrompendo`)
- * até confirmar (descartar a voz) ou desclassificar (retomar). Sem fone, nada muda.
+ * Meio-duplex: sem fone, o detector só fica ligado em `ouvindo` — desligado inclusive
+ * em `esperandoZe`, onde a frase-ponte toca e o Chrome não cancela o eco da própria
+ * página (pesquisa §3). Fase 2, com fone: ouve também em `falando`, e a fala detectada
+ * pausa a voz do Zé (`interrompendo`) até confirmar (descarta) ou desclassificar
+ * (retoma). Fase 3: parar com o turno em voo pede o freio no servidor (`frearZe`).
  */
 
 import { TEMPOS } from './tipos.ts';
@@ -28,8 +23,11 @@ type ConversaInterna = Conversa & {
   zeAcabou?: boolean; // `zeTerminou` já veio neste turno de `falando`/`interrompendo`
   vozAcabou?: boolean; // `vozTerminou` já veio neste turno de `falando`/`interrompendo`
   interrompeuEm?: number; // `agora` do `falaIniciou`; base do relógio de desclassificação
-  zeDescartado?: boolean; // turno do Zé descartado por fala confirmada; texto residual é ignorado
+  zeDescartado?: boolean; // turno do Zé descartado (fala por cima ou toque que parou); residual é ignorado
 };
+
+/** O turno em voo foi descartado: o texto que ainda vier dele não fala, e ele não é ocupação. */
+export const turnoDescartado = (c: Conversa): boolean => (c as ConversaInterna).zeDescartado === true;
 
 type Resultado = { conversa: Conversa; efeitos: Efeito[] };
 
@@ -100,19 +98,24 @@ export const avanca: Avanca = (conversa, evento, agora) => {
 };
 
 // O toque que destrava áudio, microfone e Wake Lock. Idempotente: repetido fora de
-// `parado`/`erro` não faz nada (a fase 0 mediu: 4 toques = 4 detectores).
+// `parado`/`erro` não faz nada (a fase 0 mediu: 4 toques = 4 detectores). A marca de
+// descarte atravessa: o turno freado ainda pode mandar texto depois do recomeço.
 function comecar(c: ConversaInterna): Resultado {
   if (c.estado === 'parado' || c.estado === 'erro') {
-    return novo(c, 'ouvindo', [LIGA]);
+    return novo(c, 'ouvindo', [LIGA], c.zeDescartado ? { zeDescartado: true } : {});
   }
   return noop(c);
 }
 
+// Com o turno do Zé em voo — esperando, ou falando antes do fim do stream — freia no
+// servidor e marca o descarte. Turno já descartado não freia de novo.
 function parar(c: ConversaInterna): Resultado {
   if (c.estado === 'parado') return noop(c);
-  // Desliga só se estava ligado — com fone, `falando`/`interrompendo` também acesos.
-  if (detectorLigado(c)) return novo(c, 'parado', [DESLIGA]);
-  return novo(c, 'parado');
+  const efeitos: Efeito[] = detectorLigado(c) ? [DESLIGA] : [];
+  const falandoAinda = (c.estado === 'falando' || c.estado === 'interrompendo') && !c.zeAcabou;
+  const emVoo = c.estado === 'esperandoZe' || falandoAinda;
+  if (emVoo && !c.zeDescartado) efeitos.push({ tipo: 'frearZe', antesDaResposta: c.estado === 'esperandoZe' });
+  return novo(c, 'parado', efeitos, emVoo || c.zeDescartado ? { zeDescartado: true } : {});
 }
 
 // Relógio da espera e da desclassificação, movido pelo tique da tela (~250 ms).
@@ -188,9 +191,7 @@ function textoDoZe(c: ConversaInterna, texto: string): Resultado {
 function zeTerminou(c: ConversaInterna): Resultado {
   // Turno do Zé descartado: este `zeTerminou` é o do turno velho. Só limpa a marca e
   // não muda o estado — o que vier depois é o turno novo (a resposta à fala do usuário).
-  if (c.zeDescartado) {
-    return preserva(c, [], { zeDescartado: false });
-  }
+  if (c.zeDescartado) return preserva(c, [], { zeDescartado: false });
   if (c.estado === 'falando') {
     // Sai de `falando` só quando a voz E o stream acabarem — um pode vir antes do outro.
     if (c.vozAcabou) return novo(c, 'ouvindo', [LIGA]);

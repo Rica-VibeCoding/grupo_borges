@@ -169,3 +169,64 @@ a Esfera (o Núcleo) como opção dentro da tela.
 ### Não fiz
 
 - Commit, build e publicação. Nada em `lib/conversa/`.
+
+## Toque na tela — um toque inicia, um toque para
+
+### Entreguei (`apps/cockpit/components/conversa/` e `lib/conversa/`)
+
+- **A tela inteira é o botão**, menos o cabeçalho e a folha aberta. É um `button` de verdade, sem texto
+  visível, com rótulo Começar conversa / Encerrar conversa / Tentar de novo. `touch-action: manipulation`.
+  O botão do rodapé saiu; a linha de aviso ficou.
+- **Regra do toque, pura** (`toque-da-conversa.ts`):
+  - parado e erro começam, no mesmo tick do clique;
+  - qualquer estado ativo para;
+  - com o detector preparando, o toque não faz nada (rótulo "Preparando…");
+  - um segundo toque em menos de 400 ms não conta.
+- **Freio do turno** (máquina, com teste): `parar` com o turno do Zé em voo pede `frearZe` e marca o turno como
+  descartado. Em voo quer dizer esperando o Zé, ou ele falando antes do fim do stream.
+  - Vale também em `interrompendo`: é o Zé falando com a voz pausada, e o turno segue vivo.
+  - A marca atravessa o recomeço e só sai no fim do turno freado. O texto que ainda chegar não fala.
+- **Envio logo depois do freio** (`envio-da-conversa.ts`):
+  - turno descartado não conta como "agente ocupado", nem na fala por cima com fone;
+  - `uncertain` segue como enviada, sem alarme e sem reenvio;
+  - `refused` com `safe_to_resend` insiste com as esperas de `recusa-transitoria.ts`.
+- **Stream lido na ordem** (`passosDoZeDepoisDe`): o fim de um turno e o começo do seguinte podem vir no
+  mesmo lote.
+- **Retorno sem texto:** dó→sol ao começar e sol→dó ao parar, diferentes do tique. Vibração só onde existe.
+
+### Provas
+
+- `npm test`: **1042 testes, 1042 passaram** (25 novos). `npm run type-check`: verde.
+- **E2E do toque** (`e2e/fase3-toque.cjs`, com o `canarinho`, toque por coordenada no meio da tela):
+  **5/5 com o Fio e 5/5 com a Matéria**. Os casos:
+  - **começar:** preparando ignora o toque; o cabeçalho fica fora; o toque duplo liga uma vez só.
+  - **parar ouvindo:** a fala em curso é jogada fora, sem transcrever.
+  - **parar antes da resposta:** o "Um." chega só no chat; a voz não volta depois do recomeço.
+  - **parar esperando** (o Zé lendo arquivos): `interromper` 200 e `[Request interrupted by user]` no
+    registro; o "pronto" nunca chegou.
+  - **parar falando:** a voz para, sai o freio e o final da resposta não chegou; recomeçando, nada volta.
+- **Regressão da fase 2** (`e2e/fase3-ui.cjs`): 4/4 com o Fio e 4/4 com a Matéria.
+- Provas e telas em `e2e/fase3-toque/`.
+- Fala nova de teste `e2e/turno-toque.mp3`, gerada pelo TTS do cockpit; o `turno1.mp3` não mudou.
+
+### Achados
+
+- 🔴 **Freio antes da primeira resposta trava o agente.** Com o Escape antes de o Zé escrever qualquer
+  linha, o Claude Code cancela o pedido e o devolve à caixa de entrada do pane, sem marca de fim no registro.
+  Visto no `canarinho` em 27/09. Três efeitos:
+  - o envio seguinte, de voz ou de texto, é recusado (`input_ocupado_ou_travado`);
+  - o cockpit acha que o agente segue trabalhando até outro turno terminar;
+  - o `destrava` não limpa com segurança: no teste respondeu `enter` e deixou uma quebra de linha solta, que a
+    coordenação apagou.
+
+  Por isso a tela **só freia depois que o Zé começou a responder**. Antes disso ela para sem frear, e a
+  resposta fica no chat de texto. Fechar o caso inteiro pede `apps/api`: o `interromper` limpar o pedido
+  devolvido quando é o nosso (o envio já prova posse do texto e usa C-u). O `■` do composer de texto tem o
+  mesmo risco.
+- **Tarefa em segundo plano do Zé sobrevive ao freio.** Com um `sleep` jogado para segundo plano, o aviso de
+  fim abriu um turno novo e ele respondeu. É do Claude Code; o E2E passou a usar leitura de arquivo.
+
+### Não fiz
+
+- Commit, build e publicação. Nada em `apps/api`.
+- Parar entre o tique e o "Pensando" não freia: a mensagem já saiu, e a resposta fica no chat.

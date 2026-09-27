@@ -30,7 +30,7 @@ export type MotivoDeErro =
 export type Evento =
   | { tipo: 'comecar' } // o toque que destrava áudio, microfone e Wake Lock; repetido não faz nada
   | { tipo: 'tique' } // a tela bate a cada ~250 ms; é o que move o relógio da espera
-  | { tipo: 'parar' }
+  | { tipo: 'parar' } // o toque que para; com o turno do Zé em voo, também o freia
   | { tipo: 'falaIniciou' }
   | { tipo: 'falaDescartada' } // curta demais: o Silero chama de misfire
   | { tipo: 'falaConfirmada' } // fase 2: passou da fala mínima (o `onSpeechRealStart` do Silero)
@@ -57,7 +57,11 @@ export type Efeito =
   | { tipo: 'avisarErro'; motivo: MotivoDeErro }
   | { tipo: 'pausarVoz' } // fase 2: fala por cima começou
   | { tipo: 'retomarVoz' } // fase 2: era tosse — a voz continua de onde parou
-  | { tipo: 'descartarVoz' }; // fase 2: fala por cima confirmada — a fila do Zé é jogada fora
+  | { tipo: 'descartarVoz' } // fase 2: fala por cima confirmada — a fila do Zé é jogada fora
+  // fase 3: parou com o turno em voo — freia no servidor (o `■` do composer). Antes da
+  // resposta, o Claude Code devolve o pedido à caixa de entrada e trava o próximo envio:
+  // a tela só freia depois que o Zé começou a responder.
+  | { tipo: 'frearZe'; antesDaResposta: boolean };
 
 /** Tempos em ms. Os do detector vêm da pesquisa §2 e se confirmam na fase 0. */
 export const TEMPOS = {

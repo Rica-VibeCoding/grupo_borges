@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
 import { EsferaConversa } from './esfera-conversa';
@@ -17,6 +17,7 @@ import type { Cena } from './moldura-estado';
 import { pecasDoVisual } from './preferencia-visual';
 import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
 import styles from './tela-conversa.module.css';
+import { acaoDoToque, toqueConta } from './toque-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
 import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
 
@@ -46,9 +47,10 @@ function Reticencias() {
 }
 
 /**
- * A tela limpa: o visual ocupa tudo, um botão embaixo e, no cabeçalho, Voltar e as
- * configurações. O texto (estado, sua fala, a resposta) só aparece com "Mostrar
- * texto" ligado; desligado, continua existindo para o leitor de tela.
+ * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
+ * toque para. Fora dele só o cabeçalho (Voltar e as configurações). O texto (estado,
+ * sua fala, a resposta) só aparece com "Mostrar texto"; sem ele, continua existindo
+ * para o leitor de tela.
  */
 export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   const [visual, escolheVisual] = useVisualConversa();
@@ -57,10 +59,11 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   const modo = useModoConversa(slug, fone);
   const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
+  const ultimoToqueRef = useRef<number | null>(null);
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
   const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
-  const ativa = cena !== 'parado' && cena !== 'erro' && cena !== 'preparando';
+  const acao = acaoDoToque(cena, preparacaoFalhou);
   const leitura = leituraDaConversa({
     cena,
     preparacaoFalhou,
@@ -80,8 +83,8 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
     wakeLockSuportado: modo.wakeLockSuportado,
     wakeLockFalhou: modo.wakeLockFalhou,
   });
-  // Com texto, o título já diz o erro; a linha junto do botão não repete.
-  const linhaDoBotao = texto && (cena === 'erro' || preparacaoFalhou) ? null : aviso;
+  // Com texto, o título já diz o erro; a linha do pé não repete.
+  const linhaDoAviso = texto && (cena === 'erro' || preparacaoFalhou) ? null : aviso;
   const notas = texto
     ? [
         modo.streamStatus === 'reconnecting' ? 'Reconectando ao agente…' : null,
@@ -91,6 +94,14 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
       ].filter(Boolean)
     : [];
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.ultimaTranscricao);
+
+  // Síncrono no clique: começar destrava áudio, microfone e Wake Lock no mesmo gesto.
+  const toca = (evento: MouseEvent<HTMLButtonElement>) => {
+    if (acao === 'nada' || !toqueConta(evento.timeStamp, ultimoToqueRef.current)) return;
+    ultimoToqueRef.current = evento.timeStamp;
+    if (acao === 'comecar') modo.comecar();
+    else modo.parar();
+  };
 
   return (
     <main
@@ -168,24 +179,20 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
         ) : null}
       </div>
 
-      <footer className={styles.dock}>
-        {linhaDoBotao ? <p role="alert" className={styles.aviso}>{linhaDoBotao}</p> : null}
-        {ativa ? (
-          <button type="button" onClick={modo.parar} className={styles.acao}>
-            Encerrar conversa
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={modo.comecar}
-            disabled={modo.preparacao !== 'pronto'}
-            className={styles.acao}
-            data-primaria=""
-          >
-            {rotuloDaAcao(cena, preparacaoFalhou)}
-          </button>
-        )}
-      </footer>
+      <button
+        type="button"
+        className={styles.toque}
+        aria-label={rotuloDaAcao(cena, preparacaoFalhou)}
+        aria-disabled={acao === 'nada' ? true : undefined}
+        data-acao={acao}
+        onClick={toca}
+      />
+
+      {linhaDoAviso ? (
+        <footer className={styles.dock}>
+          <p role="alert" className={styles.aviso}>{linhaDoAviso}</p>
+        </footer>
+      ) : null}
     </main>
   );
 }

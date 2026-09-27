@@ -1,12 +1,38 @@
 export type SonsLocais = {
   destrava(): void;
   tocaTique(): void;
+  /** Retorno do toque sem texto: duas notas subindo ao começar, descendo ao parar. */
+  sinalizaInicio(): void;
+  sinalizaFim(): void;
   fala(texto: string): void;
   cancelaFala(): void;
   encerra(): void;
 };
 
 type FraseComVolume = { volume: number };
+
+/** Bônus onde existe (Android): o iPhone não tem vibração na web, o som é o aviso. */
+export function vibraSePuder(padrao: number | number[]): void {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(padrao);
+}
+
+// Uma nota curta com ataque e queda rápidos, sem estalo: o timbre do tique.
+function nota(audio: AudioContext, frequencia: number, inicio: number, duracao: number): void {
+  const oscilador = audio.createOscillator();
+  const volume = audio.createGain();
+  oscilador.frequency.value = frequencia;
+  volume.gain.setValueAtTime(0.0001, inicio);
+  volume.gain.exponentialRampToValueAtTime(0.08, inicio + 0.008);
+  volume.gain.exponentialRampToValueAtTime(0.0001, inicio + duracao - 0.005);
+  oscilador.connect(volume);
+  volume.connect(audio.destination);
+  oscilador.start(inicio);
+  oscilador.stop(inicio + duracao);
+}
+
+// Dó e sol: um intervalo que não se confunde com o tique (lá, uma nota só).
+const GRAVE = 523;
+const AGUDA = 784;
 
 export function destravaSintese<T extends FraseComVolume>(
   sintese: { resume(): void; speak(frase: T): void },
@@ -43,17 +69,19 @@ export function criaSonsLocais(): SonsLocais {
     },
     tocaTique() {
       const audio = garanteContexto();
-      const inicio = audio.currentTime;
-      const oscilador = audio.createOscillator();
-      const volume = audio.createGain();
-      oscilador.frequency.value = 660;
-      volume.gain.setValueAtTime(0.0001, inicio);
-      volume.gain.exponentialRampToValueAtTime(0.08, inicio + 0.008);
-      volume.gain.exponentialRampToValueAtTime(0.0001, inicio + 0.075);
-      oscilador.connect(volume);
-      volume.connect(audio.destination);
-      oscilador.start(inicio);
-      oscilador.stop(inicio + 0.08);
+      nota(audio, 660, audio.currentTime, 0.08);
+    },
+    sinalizaInicio() {
+      const audio = garanteContexto();
+      nota(audio, GRAVE, audio.currentTime, 0.07);
+      nota(audio, AGUDA, audio.currentTime + 0.09, 0.09);
+      vibraSePuder(15);
+    },
+    sinalizaFim() {
+      const audio = garanteContexto();
+      nota(audio, AGUDA, audio.currentTime, 0.07);
+      nota(audio, GRAVE, audio.currentTime + 0.09, 0.11);
+      vibraSePuder([10, 60, 10]);
     },
     fala(texto) {
       if (!('speechSynthesis' in window)) return;

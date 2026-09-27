@@ -1,17 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { postAgentInput, postAgentTranscription } from '@grupo_borges/cockpit-core/api';
+import { postAgentInput, postAgentInterromper, postAgentTranscription } from '@grupo_borges/cockpit-core/api';
 
 import { destravaNoGesto } from '@/components/feed/reprodutor-unico';
-import { avanca, inicial } from '@/lib/conversa/maquina';
+import { avanca, inicial, turnoDescartado } from '@/lib/conversa/maquina';
 import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
+import { entregaFala } from './envio-da-conversa';
 import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
-import { maiorIdDasMensagens, textosDoZeDepoisDe } from './textos-do-ze';
+import { freiaNoServidor } from './toque-da-conversa';
+import { maiorIdDasMensagens, passosDoZeDepoisDe } from './textos-do-ze';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
 import { useWakeLock } from './use-wake-lock';
@@ -129,25 +131,24 @@ export function useModoConversa(slug: string, fone: boolean) {
         return;
       }
       case 'enviar': {
-        if (isRunningRef.current) {
+        // Turno descartado (toque ou fala por cima) não é ocupação: o Claude Code enfileira.
+        if (isRunningRef.current && !turnoDescartado(conversaRef.current)) {
           despachaRef.current({ tipo: 'falhou', motivo: 'agenteOcupado' });
           return;
         }
         const ciclo = cicloRef.current;
-        void postAgentInput(slug, efeito.texto, { origin: 'stt' })
-          .then(() => {
-            if (ciclo === cicloRef.current) despachaRef.current({ tipo: 'enviou' });
-          })
-          .catch((erro: unknown) => {
-            if (ciclo !== cicloRef.current) return;
-            const status = (erro as { status?: number }).status;
-            despachaRef.current({
-              tipo: 'falhou',
-              motivo: status === 409 ? 'agenteOcupado' : 'envioFalhou',
-            });
-          });
+        entregaFala({
+          posta: () => postAgentInput(slug, efeito.texto, { origin: 'stt' }),
+          vivo: () => ciclo === cicloRef.current,
+          enviou: () => despachaRef.current({ tipo: 'enviou' }),
+          falhou: (motivo) => despachaRef.current({ tipo: 'falhou', motivo }),
+        });
         return;
       }
+      case 'frearZe':
+        // O `■` do composer. Falhar (ou não frear) não é alarme: a resposta fica no chat de texto.
+        if (freiaNoServidor(efeito.antesDaResposta, respondeuRef.current)) void postAgentInterromper(slug).catch(() => {});
+        return;
       case 'falar':
         sons().cancelaFala();
         enfileiraFala(efeito.texto);
@@ -173,6 +174,7 @@ export function useModoConversa(slug: string, fone: boolean) {
   const cursorRef = useRef(0);
   const replayConcluidoRef = useRef(false);
   const rodandoAntesRef = useRef(false);
+  const respondeuRef = useRef(false); // o Zé já escreveu no turno em voo
   useEffect(() => {
     const maiorId = maiorIdDasMensagens(stream.messages, cursorRef.current);
     if (stream.status !== 'live') {
@@ -185,20 +187,21 @@ export function useModoConversa(slug: string, fone: boolean) {
       rodandoAntesRef.current = stream.isRunning;
       return;
     }
-
-    const textos = textosDoZeDepoisDe(stream.messages, cursorRef.current);
-    const rodava = rodandoAntesRef.current;
-    if (stream.isRunning && !rodava) abreTurno();
-    if (textos.length > 0 && !rodava && !stream.isRunning) abreTurno();
-    for (const { texto } of textos) despacha({ tipo: 'textoDoZe', texto });
-    if (textos.length > 0) setRespostaDoZe(textos[textos.length - 1].texto);
+    const passos = passosDoZeDepoisDe(stream.messages, cursorRef.current, rodandoAntesRef.current, stream.isRunning);
     cursorRef.current = maiorId;
-
-    if ((rodava && !stream.isRunning) || (textos.length > 0 && !stream.isRunning)) {
-      despacha({ tipo: 'zeTerminou' });
-      fechaTurno();
-    }
     rodandoAntesRef.current = stream.isRunning;
+    for (const passo of passos) {
+      if (passo.tipo === 'abre') abreTurno();
+      respondeuRef.current = passo.tipo === 'respondeu' || (passo.tipo !== 'abre' && respondeuRef.current);
+      if (passo.tipo === 'texto') {
+        despacha({ tipo: 'textoDoZe', texto: passo.texto });
+        if (!turnoDescartado(conversaRef.current)) setRespostaDoZe(passo.texto);
+      }
+      if (passo.tipo === 'fecha') {
+        despacha({ tipo: 'zeTerminou' });
+        fechaTurno();
+      }
+    }
   }, [abreTurno, despacha, fechaTurno, stream.isRunning, stream.messages, stream.status]);
 
   useEffect(() => {
@@ -241,7 +244,10 @@ export function useModoConversa(slug: string, fone: boolean) {
     executaGestoDeInicio({
       cancelaFalaLocal: () => sons().cancelaFala(),
       destravaReprodutor: destravaNoGesto,
-      destravaSons: () => sons().destrava(),
+      destravaSons: () => {
+        sons().destrava();
+        sons().sinalizaInicio();
+      },
       pedeWakeLock: wakeLock.pede,
       comeca: () => despacha({ tipo: 'comecar' }),
     });
@@ -253,6 +259,7 @@ export function useModoConversa(slug: string, fone: boolean) {
     iniciandoRef.current = false;
     cancelaFala();
     sons().cancelaFala();
+    sons().sinalizaFim();
     wakeLock.solta();
     despacha({ tipo: 'parar' });
   }, [cancelaFala, despacha, sons, wakeLock]);

@@ -47,7 +47,7 @@ describe('leitura da tela de conversa', () => {
   it('o botão mantém os nomes que o E2E e o Rica conhecem', () => {
     assert.equal(rotuloDaAcao('parado', false), 'Começar conversa');
     assert.equal(rotuloDaAcao('ouvindo', false), 'Encerrar conversa');
-    assert.equal(rotuloDaAcao('erro', false), 'Retomar conversa');
+    assert.equal(rotuloDaAcao('erro', false), 'Tentar de novo');
     assert.equal(rotuloDaAcao('preparando', false), 'Preparando…');
     assert.equal(rotuloDaAcao('parado', true), 'Detector indisponível');
   });
