@@ -27,6 +27,10 @@ código atual (ou você explica por que não reproduz). Teste que nunca vê o de
 - Captura a cada ~100 ms nos 2 s depois de soltar: **nunca** tela preta/vazia/branca, nunca salto seco.
 - Depois do gesto: a rolagem vertical do chat funciona, toques funcionam, o composer digita.
 - Erros no console e requisições que falharam.
+- A sequência do Rica (27/09), de ponta a ponta: direita abre a tropa · esquerda fecha · esquerda vai à voz ·
+  direita volta ao chat · direita abre a tropa · esquerda fecha · esquerda vai à voz · direita volta ao chat. Ao
+  fim, `history.length` igual ao do começo (gesto não empilha tela) e nenhum painel montado em dobro nem camada
+  sobrando por cima.
 
 ## Veredito
 Relatório em `docs/modo-conversa/relatos/fase3-teste.md`: lista por item (sem tabela), com números.

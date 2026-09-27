@@ -27,6 +27,20 @@ coordenação: **nenhuma troca de rota no gesto**.
 6. Some: `rostos-do-deslize.tsx`, `use-ida.ts`, o arrasto manual chat→voz e voz→chat, o `router.push` no fim da
    mola, e o que ficar órfão. `prefers-reduced-motion`: snap sem animação suave.
 
+## Adendo do Rica (27/09, 13:41) — a sequência exata e o histórico
+A sequência que ele quer, cada passo um dedo só:
+1. Chat, tropa fechada → **direita** abre a tropa.
+2. Tropa aberta → **esquerda** fecha a tropa (hoje não fecha pelo gesto). Fechar deixa no chat, não vai para a voz.
+3. Chat, tropa fechada → **esquerda** vai para a voz.
+4. Voz → **direita** volta para o chat. (Voz → cima continua abrindo as configurações.)
+
+"Parece que está acumulando um monte de tela, para voltar eu tenho que desvoltar um monte." Então:
+- Gesto **não empilha histórico**: chat ⇄ voz troca a URL com `replaceState`, não `pushState`, e abrir/fechar a
+  tropa pelo gesto também não cria entrada nova (confira o `?nav=aberto` do caminho otimista). O item 3 do desenho
+  acima fica com `replaceState`; `popstate` continua ouvido para o voltar do navegador.
+- "Enxuto, sem sobrepor tela": uma instância de cada painel, nada montado duas vezes, nenhuma camada órfã por cima
+  depois do gesto. A cadeira `teste` confere `history.length` e a contagem de camadas depois da sequência inteira.
+
 ## Limites e fecho
 Context7 (ou a doc oficial por WebFetch) antes de codar: scroll-snap e `scrollend` no Safari iOS, `pushState` no
 Next 16. Menor diff que entregue o desenho. `npm test`, `type-check` e E2E verdes. **Quem aprova é a cadeira
