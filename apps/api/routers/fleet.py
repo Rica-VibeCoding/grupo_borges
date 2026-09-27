@@ -203,10 +203,14 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
     grava `used_percentage: null` com `total_input_tokens: 0`.
     """
     async def hydrate(agent: dict) -> None:
-        session_ids = await db.recent_jsonl_session_ids(agent["slug"])
-        if not session_ids:
+        # Só a sessão mais nova importa aqui. `recent_jsonl_session_ids` varre
+        # até 4.000 eventos por agente pra montar uma lista que este laço jogava
+        # fora: era 90% da CPU do `/api/fleet`, que o cockpit chama a cada 5 s
+        # (medido 27/09: ~210 ms → ~10 ms na frota inteira, mesma sessão nos 10).
+        session_id = await db.latest_jsonl_session_id(agent["slug"])
+        if not session_id:
             return
-        pct, tokens, medido_em = await asyncio.to_thread(_read_cc_context, session_ids[0])
+        pct, tokens, medido_em = await asyncio.to_thread(_read_cc_context, session_id)
         # O tamanho em tokens vem do arquivo mesmo quando o percentual já veio do
         # banco: o `context_pct` gravado tem caminho próprio (o POST do hook) e
         # sair antes daqui deixaria a pílula do composer vazia justo no agente
