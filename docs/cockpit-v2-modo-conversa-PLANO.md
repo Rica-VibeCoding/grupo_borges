@@ -16,7 +16,11 @@
 >
 > **Retomar depois de `/clear` — nesta ordem:**
 > 1. Ler este banner, as fases 3 e 4 e a seção "Mecânica das cadeiras".
-> 2. Fase 3: subir a cadeira Opus 5.5 no PC, com briefing de pesquisa e desenho em `briefings/fase3-ui.md`.
+> 2. Fase 3 (nada começado): escrever `briefings/fase3-ui.md`, commitar, `git pull` no PC. Subir a sessão `ui`
+>    no `psmux -L conversa`, com Claude Code em `claude-opus-5-5`. A primeira entrega é pesquisa de referência
+>    e **2 ou 3 direções visuais em captura**, que vão ao Rica pelo Telegram ANTES de qualquer código. Só a
+>    direção aprovada vira código. A `tela` (57%) sai de cena ou recebe `/new`; a `logica` só entra se a UI
+>    pedir estado novo.
 > 3. Fase 4: combinar com o Pavan a janela de build da 3008 (R3), e o Rica testa no iPhone: 3 turnos, tela bloqueada, eco no alto-falante, fala por cima de fone, tosse. Defeito
 >    volta para a cadeira dona pela mecânica.
 
