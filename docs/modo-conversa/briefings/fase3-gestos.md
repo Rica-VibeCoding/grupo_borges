@@ -11,7 +11,9 @@ para a direita. Botão iniciar/retomar vira toque na tela." Configurações: ele
 3. **No chat** (`app/agente/[slug]/`), **arrastar para a direita** volta para `/conversa/{slug}`. Não pode
    brigar com rolagem horizontal (bloco de código, tabela), seleção de texto nem com o composer: só conta
    gesto claramente horizontal, acima de um limiar, que não começou dentro de algo rolável ou editável.
-4. **Arrastar para cima** na conversa abre a folha de configurações (visual, fone, mostrar texto). A folha
+4. **Arrastar para cima** na conversa abre a folha de configurações (visual, fone, mostrar texto). O
+   arrasto só conta se COMEÇAR acima da faixa de baixo (área segura + ~40 px): a borda de baixo é a do
+   iPhone, que manda o app para o fundo. `touch-action` e `overscroll-behavior` impedem o Safari de rolar a página. A folha
    fecha arrastando para baixo e tocando fora, como já fecha.
 5. Gesto nenhum pode disparar o toque de começar/parar: arrasto não é toque. Sair da tela com a conversa
    ativa encerra como o parar (freio incluso).
