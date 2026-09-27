@@ -1,9 +1,9 @@
 /**
  * Os gestos no lugar dos botões (fase 3, direções do Rica em 27/09): na conversa, arrastar
- * para a direita volta ao chat e arrastar para cima abre as configurações; no chat, arrastar
- * para a esquerda abre a conversa e para a direita abre a tropa. Arrasto não é toque: o dedo
- * que andou mais que um toque nunca começa nem para a conversa, mesmo quando não chega a ser
- * gesto nenhum.
+ * para cima abre as configurações. Arrasto não é toque: o dedo que andou mais que um toque
+ * nunca começa nem para a conversa, mesmo quando não chega a ser gesto nenhum. Os de lado
+ * não passam por aqui: chat ⇄ voz é a rolagem nativa do pager (`pager-do-agente.tsx`) e a
+ * tropa segue o dedo pela regra de `deslize.ts`.
  */
 
 export type Ponto = { x: number; y: number };
@@ -16,8 +16,6 @@ export const LIMIAR = {
   arrasto: 56,
   /** "Claramente" numa direção: o eixo do gesto vale pelo menos o dobro do outro. */
   dominancia: 2,
-  /** Nas bordas laterais (px) mora o voltar e o avançar do Safari: dali não começa gesto. */
-  borda: 24,
 } as const;
 
 export function leArrasto(inicio: Ponto, fim: Ponto): Leitura {
@@ -31,34 +29,20 @@ export function leArrasto(inicio: Ponto, fim: Ponto): Leitura {
   return 'indeciso';
 }
 
-const longeDasBordas = (x: number, largura: number) => x >= LIMIAR.borda && x <= largura - LIMIAR.borda;
-
-export type GestoDaConversa = 'toque' | 'chat' | 'configuracoes' | 'nada';
+export type GestoDaConversa = 'toque' | 'configuracoes' | 'nada';
 
 /**
+ * O que a conversa decide ao soltar: toque ou configurações. A direita, que volta ao chat,
+ * anda com o dedo e não passa por aqui.
+ *
  * `faixaDeBaixo` é o y (px) onde começa a faixa de baixo — a área segura mais ~40 px. A
  * borda de baixo é do iPhone (manda o app para o fundo): arrasto para cima começado
  * nela não abre nada.
  */
-export function gestoDaConversa(
-  inicio: Ponto,
-  fim: Ponto,
-  tela: { largura: number; faixaDeBaixo: number },
-): GestoDaConversa {
+export function gestoDaConversa(inicio: Ponto, fim: Ponto, faixaDeBaixo: number): GestoDaConversa {
   const leitura = leArrasto(inicio, fim);
   if (leitura === 'toque') return 'toque';
-  if (leitura === 'direita' && longeDasBordas(inicio.x, tela.largura)) return 'chat';
-  if (leitura === 'cima' && inicio.y < tela.faixaDeBaixo) return 'configuracoes';
-  return 'nada';
-}
-
-export type GestoDoChat = 'conversa' | 'tropa' | 'nada';
-
-export function gestoDoChat(inicio: Ponto, fim: Ponto, largura: number): GestoDoChat {
-  if (!longeDasBordas(inicio.x, largura)) return 'nada';
-  const leitura = leArrasto(inicio, fim);
-  if (leitura === 'esquerda') return 'conversa';
-  if (leitura === 'direita') return 'tropa';
+  if (leitura === 'cima' && inicio.y < faixaDeBaixo) return 'configuracoes';
   return 'nada';
 }
 

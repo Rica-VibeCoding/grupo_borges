@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
-import { ArrastoDoChat } from '@/components/conversa/arrasto-do-chat';
+import { PagerDoAgente } from '@/components/conversa/pager-do-agente';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
@@ -314,6 +314,11 @@ export default async function AgentePage({
 
   return (
     <>
+      {/* O chat e a voz na mesma tela (fase 3, pager): o chat é o painel da esquerda, a voz o
+          da direita, e o dedo passa de um ao outro pela rolagem nativa, sem trocar de rota.
+          `/conversa/{slug}` chega aqui com `?tela=voz` e abre na voz. A direita no chat abre
+          a tropa. */}
+      <PagerDoAgente slug={agente.slug} nome={agente.name} inicial={sp.tela === 'voz' ? 'voz' : 'chat'}>
       {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
           cápsula do agente na ponta direita. A cápsula abre o painel (§12.3/§13). */}
       <BarraDeTelas
@@ -376,14 +381,12 @@ export default async function AgentePage({
       >
         <FeedDaConversa agentSlug={agente.slug} />
       </PalcoDaConversa>
+      </PagerDoAgente>
 
       {/* Régua de medição — só com `?diag=1` na URL. Ver o cabeçalho de
           `app/api/regua/route.ts`: existe porque o Safari do iPhone é o único
           motor que eu não consigo rodar aqui. */}
       {sp.diag === '1' ? <Regua /> : null}
-
-      {/* Arrastar para a esquerda abre a conversa por voz; para a direita, a tropa (fase 3, gestos). */}
-      <ArrastoDoChat slug={agente.slug} />
 
       {/* O shell agora vive no layout persistente. A gaveta continua na folha
           porque seus campos dependem do agente da página; como é `fixed`, ela

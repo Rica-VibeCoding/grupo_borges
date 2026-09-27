@@ -52,7 +52,7 @@ import {
 } from 'react';
 
 import { IconeMenu } from './icones';
-import { criaRedeDeNavegacao, type RedeDeNavegacao } from './rede-de-navegacao';
+import { criaRedeDeNavegacao, levaAUrl, type RedeDeNavegacao } from './rede-de-navegacao';
 
 type SuperficieCtx = {
   aberto: boolean;
@@ -64,8 +64,10 @@ type SuperficieCtx = {
    *  agente na tropa, que precisa fechar a gaveta e acender o item tocado no
    *  mesmo quadro: dois `useOptimistic` em transições separadas terminam em
    *  instantes diferentes, e o que termina primeiro reverte sozinho — o item
-   *  apagaria e reacenderia no meio da navegação. */
-  ir: (href: string, abrir: boolean, tambem?: () => void) => void;
+   *  apagaria e reacenderia no meio da navegação.
+   *
+   *  `substitui` troca a entrada do histórico em vez de empilhar (`levaAUrl`). */
+  ir: (href: string, abrir: boolean, tambem?: () => void, substitui?: boolean) => void;
 };
 
 /** Duas superfícies, dois contextos SEPARADOS — de propósito. Painel e tropa
@@ -146,11 +148,17 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
       return () => atual?.cancela();
     }, []);
 
-    const ir = (href: string, abrir: boolean, tambem?: () => void) => {
+    // A URL mudou: a navegação chegou, e a rede desarma já. Esperar o exame
+    // de 1,2 s mordia o gesto da tropa (27/09): tocar fora e reabrir pelo dedo
+    // devolve a URL de partida (`?nav=aberto`), e a rede lia "não navegou" e
+    // recarregava a página — empilhando a tela que o toque não empilhou.
+    useEffect(() => rede.current?.cancela(), [searchParams]);
+
+    const ir = (href: string, abrir: boolean, tambem?: () => void, substitui = false) => {
       emTransicao(() => {
         marcaOtimo(abrir);
         tambem?.();
-        router.push(href);
+        levaAUrl(router, href, substitui);
       });
       rede.current?.arma(href);
     };
@@ -361,10 +369,13 @@ export function BotaoNav({
           ? (e) => {
               if (!cliqueSimples(e)) return;
               e.preventDefault();
-              ctx.ir(href, !abertoReal);
+              // Abrir e fechar a tropa trocam a entrada, não empilham — como o gesto e o
+              // toque fora (ordem do Rica, 27/09: não acumular tela).
+              ctx.ir(href, !abertoReal, undefined, true);
             }
           : undefined
       }
+      replace
       aria-label={abertoReal ? 'Fechar lista de agentes' : 'Abrir lista de agentes'}
       data-selecionado={abertoReal ? 'true' : 'false'}
       className="ck-veil flex shrink-0 items-center justify-center md:hidden"
@@ -411,7 +422,8 @@ export function GavetaNav({
     ? (e: MouseEvent<HTMLAnchorElement>) => {
         if (!cliqueSimples(e)) return;
         e.preventDefault();
-        ctx.ir(fecharHref, false);
+        // Tocar fora troca a entrada, não empilha: é o mesmo que o gesto de fechar (27/09).
+        ctx.ir(fecharHref, false, undefined, true);
       }
     : undefined;
 
@@ -423,6 +435,7 @@ export function GavetaNav({
           do painel: elemento removido não anima a saída. */}
       <Link
         href={fecharHref}
+        replace
         onClick={fechar}
         aria-label="Fechar lista de agentes"
         data-aberto={String(abertoReal)}

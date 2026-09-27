@@ -7,18 +7,18 @@ import { CHAVE_DICA_DOS_GESTOS } from './preferencias-da-conversa';
 
 /**
  * Os gestos de dedo da tela de conversa, lidos por Pointer Events no `<main>`. O
- * `touch-action: none` dele (no CSS) tira o dedo do Safari: nada rola, nada dá zoom, e o
- * arrasto chega inteiro até soltar. Mouse não faz gesto — no computador, clique é clique.
- * O gesto vale ao soltar o dedo; quem vê o que ele fez é a regra pura (`gesto-de-arrasto`).
+ * `touch-action: pan-x` dele (no CSS) deixa ao Safari só o arrasto de lado, que é do pager
+ * (a direita volta ao chat); o vertical e o toque chegam inteiros até soltar, sem rolar nem
+ * dar zoom. Quando o pager leva o dedo, chega `pointercancel` e o clique que sobrar não é
+ * toque. Mouse não faz gesto — no computador, clique é clique. O gesto vale ao soltar o dedo;
+ * quem vê o que ele fez é a regra pura (`gesto-de-arrasto`).
  */
 export function useGestosDaConversa({
   faixaDeBaixoRef,
-  aoChat,
   aoConfiguracoes,
 }: {
   /** O elemento que marca a faixa de baixo (área segura + ~40 px), medido no toque. */
   faixaDeBaixoRef: RefObject<HTMLElement | null>;
-  aoChat: () => void;
   aoConfiguracoes: () => void;
 }) {
   const inicioRef = useRef<(Ponto & { id: number }) | null>(null);
@@ -46,15 +46,12 @@ export function useGestosDaConversa({
       const inicio = inicioRef.current;
       if (inicio === null || evento.pointerId !== inicio.id) return;
       inicioRef.current = null;
-      const gesto = gestoDaConversa(inicio, { x: evento.clientX, y: evento.clientY }, {
-        largura: window.innerWidth,
-        faixaDeBaixo: faixaDeBaixoRef.current?.getBoundingClientRect().top ?? window.innerHeight,
-      });
+      const faixaDeBaixo = faixaDeBaixoRef.current?.getBoundingClientRect().top ?? window.innerHeight;
+      const gesto = gestoDaConversa(inicio, { x: evento.clientX, y: evento.clientY }, faixaDeBaixo);
       dedoAndouRef.current = gesto !== 'toque';
-      if (gesto === 'chat') aoChat();
       if (gesto === 'configuracoes') aoConfiguracoes();
     },
-    [aoChat, aoConfiguracoes, faixaDeBaixoRef],
+    [aoConfiguracoes, faixaDeBaixoRef],
   );
 
   const onPointerCancel = useCallback(() => {
@@ -75,12 +72,14 @@ export function useGestosDaConversa({
 export const DICA_DOS_GESTOS_MS = 2_000;
 
 /**
- * Sem o ícone de configurações à vista, a primeira vez que a tela abre mostra a dica por
- * 2 s. Só conta como vista quando some: sair antes disso mostra de novo na próxima.
+ * Sem o ícone de configurações à vista, a primeira vez que a tela aparece mostra a dica por
+ * 2 s. Só conta como vista quando some: sair antes disso mostra de novo na próxima. `ativa`
+ * é o painel da voz assentado no pager — montada fora da tela, a dica não corre.
  */
-export function useDicaDosGestos() {
+export function useDicaDosGestos(ativa: boolean) {
   const [visivel, setVisivel] = useState(false);
   useEffect(() => {
+    if (!ativa) return;
     try {
       if (window.localStorage.getItem(CHAVE_DICA_DOS_GESTOS) === '1') return;
     } catch {
@@ -99,6 +98,6 @@ export function useDicaDosGestos() {
       window.clearTimeout(relogio);
       setVisivel(false);
     };
-  }, []);
+  }, [ativa]);
   return visivel;
 }

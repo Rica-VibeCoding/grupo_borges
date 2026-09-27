@@ -521,3 +521,362 @@ a Esfera (o Núcleo) como opção dentro da tela.
 ### Não fiz
 
 - Commit, build da 3008 e publicação.
+
+## Gestos que deslizam — e a tropa que não abria no iPhone
+
+### Causa do defeito (direita no chat não abre a tropa)
+
+Provada em WebKit 26.6 (Playwright), com toque sintético pelos listeners reais, no código de `e4488f1`:
+
+- **Eliminadas:** o `usaNavegacaoDaTropa` existe nessa árvore (o layout `/agente` monta o `NavProvider`), a gaveta
+  abre e anima, e a origem não barra: num chat cheio (Daniel, Pavan), 0 de 248 pontos da tela recusam o gesto.
+  Do meio, em linha reta — o que o E2E fazia —, abre.
+- **Causa 1, a borda:** começando a menos de 24 px da borda esquerda, nada acontece. É lá que nasce o dedo que
+  abre uma lateral. A faixa existe para não brigar com o voltar do Safari, mas o Rica usa o app instalado
+  (`standalone`), onde esse gesto não existe: a faixa só engolia o dedo.
+- **Causa 2, o arco:** a regra pedia o eixo valendo o dobro do outro, medido do começo ao fim. O polegar faz
+  arco: um arrasto que sobe 0,6 do que anda de lado era recusado; 0,4 passava. Não dá para saber qual das duas
+  pegou o Rica; as duas estão reproduzidas e as duas saíram.
+
+### Entreguei (`components/conversa/` e uma linha em `app/agente/[slug]/page.tsx`)
+
+- **Os três gestos seguem o dedo** e assentam com a mola da folha: 500 ms, `cubic-bezier(0.32, 0.72, 0, 1)`,
+  lidos no vaul 1.1.2. Soltou antes da metade e sem pressa, volta. Passou da metade ou arremessou (0,4 px/ms,
+  o mesmo número da folha), vai. Abaixo de 56 px, o limiar de sempre, nunca vai. Arremessar de volta desiste.
+  - chat ⬅️ voz: o chat anda e a voz entra pela direita;
+  - chat ➡️ tropa: a gaveta sai da esquerda com o dedo. Ao soltar para ir, abre na hora pelo `ir()` do `≡`, o
+    mesmo estado otimista, e a mola só termina o movimento;
+  - voz ➡️ chat: a voz anda e o chat entra pela esquerda. O freio sai na soltura, antes da mola.
+- **O eixo trava nos primeiros 10 px** e fica: de lado se anda mais de lado que na vertical (até 45°). O arco
+  que vem depois não desfaz o gesto. Vertical, a rolagem do chat segue intocada.
+- **A borda vale só no Safari.** No app instalado, o gesto começa de qualquer ponto.
+- **Arquivos novos:**
+  - `deslize.ts` (regra pura) com teste;
+  - `mola.ts` (o `transform` no DOM, sem render do React);
+  - `rostos-do-deslize.tsx` e `deslize.module.css` (os rostos dos destinos);
+  - `use-ida.ts` (a troca de rota com a rede da tropa).
+- **Mudados:** `arrasto-do-chat.tsx`, `use-gestos-da-conversa.ts`, `tela-conversa.tsx`, `gesto-de-arrasto.ts`
+  (a direita da voz e o `gestoDoChat` saíram de lá, agora andam com o dedo). `page.tsx` passa o nome ao arrasto.
+  Nada em `components/shell/`.
+
+### Por que este caminho, e não View Transitions
+
+- Li no Context7 (Next 16.2.9) e conferi na instalação (16.2.6). O `<ViewTransition>` do React embutido existe,
+  e o `router.push` aceita `transitionTypes`.
+- Mas a transição de vista fotografa a tela velha e anima só depois do commit. Ela **não segue o dedo**: durante
+  o arrasto o destino de verdade ainda não existe, é outra rota. De um jeito ou de outro, algo tem de entrar pelo
+  lado enquanto o dedo arrasta.
+- Esse algo é o **rosto do destino**: uma camada com a cara da primeira pintura dele. O rosto da voz é o fundo e
+  o cabeçalho; o do chat, a barra de cima de verdade e a caixa do composer. Medi no pixel: posição e tamanho
+  iguais aos da tela real.
+- **A mola assenta no rosto, e só então a rota troca**, pré-carregada com `router.prefetch(kind: full)`:
+  - trocar no meio da mola seria o salto que o Rica reprovou;
+  - com View Transitions, a tela congelaria esperando o servidor. No dev da 3009, isso é segundo inteiro.
+  - com o rosto, o que aparece enquanto a rota chega é o próprio destino, sem branco nem vazio.
+- A voz é pré-carregada quando o chat abre (só leva o nome do agente). O chat, só quando o dedo trava rumo a
+  ele: carregado antes, chegaria com a âncora do relógio da statusline velha.
+- **Só `transform`, nada de layout:** o dedo escreve direto no estilo (um valor por quadro, sem render) e a mola
+  é transição de CSS, que roda no compositor.
+- **Achado no caminho:** a tela da voz está no fluxo da página. Andando para a direita, alargava o documento
+  (393 → 751 px) e o celular afastava o zoom no meio do gesto. Durante o arrasto ela fica presa ao vidro
+  (`position: fixed`) e a largura não muda mais. O E2E confere.
+
+### Provas
+
+- `npm test`: **1083 testes, 1083 passaram** (13 novos da soltura, os do gesto antigo ajustados).
+  `npm run type-check`: verde.
+- **E2E novo** (`e2e/fase3-deslize.cjs`, só o `canarinho`; o Daniel só aberto, para ter o que rolar). Tamanho do
+  iPhone 15. **14/14 em WebKit e 14/14 em Chromium**:
+  - no WebKit, o toque é sintético, pelos listeners reais;
+  - no Chromium, o dedo é de verdade, pelo CDP: passa pela rolagem e pelo `touch-action`.
+- **Os casos:**
+  - chat ⬅️ voz: volta com mola antes da metade, vai depois dela, e arremesso de 120 px vai;
+  - chat ➡️ tropa: volta e some, vai e fica aberta, com o CSS devolvido nos dois casos. Com a gaveta aberta,
+    gesto nenhum dispara;
+  - voz ➡️ chat: volta sem começar a conversa (arrasto não vira toque) e vai. Para cima segue abrindo as
+    configurações;
+  - o defeito: o arco abre a tropa. Da borda, nada no Safari; no app instalado, abre;
+  - o que não pode disparar: rolar (e o chat rola), diagonal íngreme, começo no composer;
+  - no chat cheio, de lado abre a tropa no meio dos blocos de ferramenta;
+  - movimento reduzido: nada anda com o dedo, e 80 px bastam;
+  - no meio do arrasto: o chat (ou a voz) anda, o rosto entra e a largura da página fica em 393.
+- **Regressão:** o E2E antigo (`fase3-gestos.cjs`: cabeçalho, cima, direita, chat) passou 4/4 no Chrome. "Sair
+  falando" não rodei: ele manda mensagem ao agente.
+- Resultados em `e2e/fase3-deslize/provas.json`. Sem vídeo, pelo adendo 2.
+
+### O que o E2E não prova
+
+- **O dedo do Rica.** O WebKit do Playwright não tem o voltar do Safari nem o polegar dele. O toque sintético
+  não passa pela rolagem nativa do iPhone.
+- **Os 60 fps no iPhone 15:** é só `transform`, mas só o aparelho mede.
+- **Roteiro no iPhone, no app instalado:**
+  - no chat, puxar da borda esquerda para a direita, devagar: a tropa vem colada no dedo. Soltar antes da metade
+    e ela volta; depois da metade, abre;
+  - no chat, arrastar para a esquerda: a voz entra pela direita. Soltar no meio do caminho volta;
+  - na voz, arrastar para a direita: o chat entra pela esquerda. Com a conversa andando, sair para;
+  - rolar o chat para cima e para baixo: nada mais pode se mexer de lado.
+
+### Assumi
+
+- **Travar o eixo a 45° nos primeiros 10 px** no lugar do dobro medido do começo ao fim. É o que deixa o arco
+  do polegar passar. A diagonal íngreme continua com a rolagem (E2E).
+- **Borda livre no app instalado**, pela leitura de `display-mode: standalone` e `navigator.standalone`. No Safari
+  a faixa de 24 px segue.
+
+### Divergi do combinado
+
+- **"Limiar para decidir que é gesto horizontal" mudou**, e de propósito: a regra antiga é a causa 2 do defeito.
+  O limiar de distância (56 px) e o do toque (10 px) seguem os mesmos.
+- **"Bordas do Safari" valem só no Safari:** no app instalado não há voltar pela borda, e a faixa era a causa 1.
+
+### Não fiz
+
+- Commit, build da 3008 e publicação. Nada em sessão viva: os E2E só abrem páginas, sem enviar nada.
+- O `next dev` da 3009 no PC ficou no ar, servindo este código.
+
+## Diagnóstico do gesto no iPhone (temporário, fora do commit)
+
+O Rica testou pelo dev (Safari, `:3447` → 3009 do PC): no chat, a esquerda só rola o texto e a direita não abre a
+tropa. Sem conserto no escuro: entrou um painel que só liga com `?diag=gesto`.
+
+- `components/conversa/diagnostico-do-gesto.tsx` (novo) e pontos de anotação em `arrasto-do-chat.tsx`. A decisão do
+  gesto não mudou. **Nada disto vai para commit.**
+- O painel fica fixo no topo e mostra, a cada arrasto no chat:
+  - se `pointerdown` e `touchstart` chegaram à página, e se o ouvinte do gesto rodou;
+  - o alvo e, se barrou, por quê: gaveta aberta, origem (qual elemento e medida), borda, seleção, desktop;
+  - o eixo travado, com dx, dy, ângulo e se o `touchmove` era cancelável;
+  - quantos `touchmove` vieram, quantos o gesto segurou e se houve rolagem;
+  - dx, dy, ângulo e velocidade finais, standalone (as duas leituras), e a decisão.
+- Conferido em WebKit e Chromium: rolar, arrasto curto que volta e arrasto que abre a tropa aparecem certos.
+
+## Conserto D1 e D2 (decisões do Rica, 27/09)
+
+### Entreguei
+
+- **D1, a mola roda sempre:**
+  - O defeito: um ramo navegava seco quando o dedo soltava antes de o React montar o rosto do destino. No dev
+    do iPhone isso acontecia com frequência, e parecia código concorrente.
+  - Os dois rostos agora montam na hidratação, fora da tela, e a ida é sempre pela mola: a rota só troca quando
+    ela termina, com ou sem rosto (`assentaJuntas` em `mola.ts`).
+  - A voz no desktop também anda com o dedo.
+  - A única troca direta que sobrou é a de movimento reduzido, por regra de acessibilidade do briefing.
+- **D2, sem faixa de borda:** o `comecoValido` e a `LIMIAR.borda` saíram. O gesto começa de qualquer ponto, no
+  Safari e no app instalado, no chat e na voz.
+- **O painel `?diag=gesto` saiu de dentro do gesto.** Virou `apps/cockpit/instrumentation-client.ts`, que o Next
+  carrega sozinho e que só observa de fora: ouvintes na `window` e posição das camadas a cada quadro. Nenhum
+  arquivo do gesto o importa.
+  - O painel mostra: se o toque chegou, o alvo, o motivo de barrar, o eixo, dx/dy/ângulo, a velocidade,
+    standalone, quantos quadros seguiram o dedo, quantos de mola, quando a rota trocou e a decisão.
+  - **Fora do commit:** `instrumentation-client.ts`.
+
+### Provas
+
+- **Testes que falharam antes** (`e2e/fase3-deslize.cjs`, resultado em `fase3-deslize/antes-do-conserto.json`):
+  8 de 8 falharam no código anterior, nos dois motores.
+  - `seca-chat` e `seca-voz`: arremesso mais rápido que a montagem da tela. Antes, 0 quadros de mola e a troca
+    aos 182–945 ms. Depois, 26 a 29 quadros de mola e o rosto assentado antes da troca.
+  - `defeito-borda-safari` (tropa a 6 px da borda esquerda, voz a 5 px da direita) e `borda-voz` (chat a 6 px).
+- **Depois:** `fase3-deslize.cjs` passou 17/17 no WebKit e 17/17 no Chromium. A bateria antiga `fase3-gestos.cjs`
+  passou 4/4, com as duas checagens da faixa de borda trocadas pela regra do D2.
+- `npm test`: **1081 testes, 1081 passaram** (saíram os 2 testes da faixa de borda). `npm run type-check`: verde.
+
+### Não fiz
+
+- Commit e build. O `next dev` da 3009 no PC está no ar com este código e o painel.
+
+## Pager chat ⇄ voz — substitui o deslize entre rotas
+
+Briefing `briefings/fase3-pager-chat-voz.md` (hoje em `~/briefing-pager.md`), com o adendo do Rica de 13:41.
+
+### Plano
+
+- **Uma árvore, uma instância de cada painel.** `pager-do-agente.tsx` (cliente) mora na página do chat: painel do
+  chat (barra + palco, do servidor) e painel da voz (`TelaConversa`, import dinâmico). `/conversa/[slug]` redireciona
+  para `/agente/[slug]?tela=voz`, e o pager troca a URL de volta para `/conversa/[slug]`. Nada se monta em dobro.
+  Sem piscar o chat na entrada direta: antes de hidratar, a voz vem primeiro por CSS; o efeito de layout desfaz e
+  posiciona antes da primeira pintura.
+- **Arrasto nativo:** `overflow-x: auto`, `scroll-snap-type: x mandatory`, `scroll-snap-stop: always`,
+  `overscroll-behavior-x: none`, barra escondida. Nenhum listener de toque entre chat e voz.
+- **URL sem navegar:** assentou (`scrollend`, iOS 26.2+; reserva por `IntersectionObserver` a 99%) →
+  `replaceState`, nunca `pushState`. `popstate` leva o pager ao painel da URL. O `replaceState` do Next 16 copia a
+  árvore do roteador e não pede nada ao servidor (lido no `app-router.js` instalado).
+- **Voz fora da tela:** `inert`, sem WebGL (moldura e esfera só montam com o painel à vista), sem microfone e sem
+  wake lock (os dois já só ligam no toque). A `TelaConversa` monta na primeira vez que o painel aparece; o chunk
+  pré-carrega em ocioso. Assentou no chat com a conversa andando → `parar()`, freio incluso.
+- **Voz dentro do pager:** `touch-action: pan-x` (a direita é do pager; cima e toque seguem nos Pointer Events). O
+  que era `fixed` na voz fica contido no painel (`contain`), e as alturas `100dvh` viram `100%` do painel.
+- **Tropa (sequência do adendo):** direita no chat, com o pager no começo, abre; esquerda com a tropa aberta fecha e
+  fica no chat. Segue o dedo com a mola da folha (`deslize.ts` + `mola.ts`, que ficam). O estado é o do `≡`, lido
+  da URL: o gesto troca `?nav=aberto` por `replaceState` — sem entrada nova no histórico e sem ida ao servidor.
+- **Disputa com o snap:** no começo do pager a direita não tem dono nativo (o pager não anda antes do começo e o
+  overscroll está desligado), então é da tropa; a esquerda é sempre do pager. Com a tropa aberta o dedo está na
+  gaveta ou no véu, fora do pager. O eixo trava nos primeiros 10 px; vertical é a rolagem do chat.
+- **Some:** `rostos-do-deslize.tsx`, `deslize.module.css`, `use-ida.ts`, `assentaJuntas`, o arrasto manual
+  chat→voz e voz→chat e o `router.push` no fim da mola. `use-gestos-da-conversa` volta a só toque e cima.
+- **Provas:** `npm test`, `type-check` e E2E novo `e2e/fase3-pager.cjs` (WebKit e Chromium com dedo de CDP),
+  incluindo a sequência do adendo com `history.length` e contagem de painéis.
+
+### Entreguei (`components/conversa/`, as duas páginas e uma linha em `components/shell/tropa-ao-vivo.tsx`)
+
+- **`pager-do-agente.tsx`** (novo, com `.module.css`): chat à esquerda, voz à direita, montados na mesma página.
+  - Arrasto nativo: `scroll-snap-type: x mandatory`, `scroll-snap-stop: always`, `overscroll-behavior-x: none`,
+    barra escondida. Nenhum listener de toque entre chat e voz.
+  - Assentou (`scrollend`, ou `IntersectionObserver` a 99% onde não há): o painel vira o ativo e a URL troca por
+    `replaceState` — `/agente/canarinho` ⇄ `/conversa/canarinho`, sem entrada nova. `popstate` leva o pager ao
+    painel da URL, sem animar.
+  - O painel de fora é `inert`. O link da voz na barra (teclado) e o ícone do chat na voz trocam de painel sem
+    navegar. Movimento reduzido: a troca pelo link e pelo ícone não anima.
+- **`rota-do-pager.ts`** (novo, puro, com teste): painel da URL, URL do painel, quando a rolagem assentou, a URL com
+  a tropa.
+- **`/conversa/[slug]`** agora redireciona para `/agente/[slug]?tela=voz`. Antes de hidratar, a voz vem primeiro por
+  CSS; o efeito de layout desfaz e posiciona no mesmo quadro. O pager devolve a URL para `/conversa/[slug]`.
+- **`tela-conversa.tsx`** ganhou `ativa`, `visivel` e `aoIrAoChat`:
+  - moldura e esfera (o WebGL) só montam com o painel à vista, a partir de 1%;
+  - assentou no chat com a conversa andando → `parar()`, freio incluso;
+  - a dica "Arraste para cima" só corre com a voz na tela.
+- **CSS da voz:** `touch-action: pan-x` (a direita é do pager; cima e toque seguem nos Pointer Events). O painel da
+  voz tem `contain: layout paint`, então o `fixed` da moldura, da esfera e da faixa de baixo anda com ele; as
+  alturas `100dvh` viraram `100%`. Saiu a regra `html:has(.tela)`: o documento não rola mais.
+- **Tropa** (`arrasto-do-chat.tsx`, reescrito): direita no chat com o pager no começo abre; esquerda com a tropa
+  aberta fecha e fica no chat. Segue o dedo e assenta com a mola da folha. Abrir e fechar trocam só o `?nav=aberto`
+  por `replaceState`: o estado otimista do `≡` lê essa URL, e nada vai ao histórico nem ao servidor.
+- **`use-gestos-da-conversa.ts`** voltou a só toque e cima; `gesto-de-arrasto.ts` sem o gesto do chat.
+- **`tropa-ao-vivo.tsx`:** o agente segue aceso na tropa com a URL `/conversa/{slug}` (no desktop ela está à vista).
+- **Saíram:** `rostos-do-deslize.tsx`, `deslize.module.css`, `use-ida.ts`, `assentaJuntas` (`mola.ts`), o arrasto
+  manual chat→voz e voz→chat e o `router.push` no fim da mola.
+- **Painel `?diag=gesto`** (fora do commit) agora mostra o pager: painel ativo, rolagem, quadros seguindo o dedo e
+  assentando, voz montada quantas vezes, `history.length` e a decisão (FOI para voz, ABRIU a tropa…).
+
+### Disputa da tropa com o snap
+
+- No começo do pager a direita não tem dono nativo: o pager não anda antes do chat e o `overscroll-behavior-x: none`
+  tira a mola da ponta. Então a direita, ali, é da tropa. A esquerda é sempre do pager.
+- Com a tropa aberta, o dedo cai na gaveta ou no véu, que estão fora do pager: a esquerda fecha sem disputa.
+- O eixo trava nos primeiros 10 px; vertical fica com a rolagem do chat.
+- Os ouvintes são passivos, de propósito: nenhum `touchmove` bloqueante fica na frente da rolagem do pager.
+- Achado no caminho: a checagem de "origem que rola de lado" barrava tudo, porque o próprio pager rola de lado. Ela
+  agora para no pager e só olha o que rola dentro do chat (bloco de código, tabela).
+
+### Provas
+
+- `npm test`: **1087 testes, 1087 passaram** (novo `rota-do-pager.test.ts`). `npm run type-check`: verde.
+- **E2E novo** (`e2e/fase3-pager.cjs`, só o `canarinho`; o Daniel só aberto, para rolar). iPhone 15 (393×852).
+  **10/10 no Chromium, 10/10 no Chromium com CPU 4× e 10/10 no WebKit.** Nenhum erro de console nem requisição que
+  falhou.
+  - Chromium com dedo de verdade pelo CDP, passando pela rolagem e pelo snap. No WebKit o toque sintético não rola;
+    lá o pager anda por `scrollTo` e a tropa vai pelo toque sintético.
+- **Os casos:**
+  - entrada direta pela `/conversa`: fica na `/conversa`, o chat não aparece em nenhum quadro antes da voz e o
+    histórico guarda o estado do Next;
+  - chat → voz → chat pelo dedo: URL certa, `history.length` igual, a voz monta uma vez e fica sem WebGL fora da tela,
+    o arrasto não vira toque e o composer digita depois;
+  - **do soltar à voz utilizável: 176 ms (CPU 4×: 180 ms), a volta ao chat 177 ms**, com 10 quadros de mola no
+    caminho, sem salto;
+  - arrasto curto volta; tropa curta volta, para abrir e para fechar;
+  - **a sequência do adendo, duas voltas** (direita abre · esquerda fecha · esquerda voz · direita chat): `history.length`
+    2 → 2, um pager, dois painéis, uma voz, zero WebGL fora da tela, gaveta sem estilo sobrando;
+  - voltar e avançar do navegador levam o pager ao painel certo;
+  - link da voz na barra (teclado) e ícone do chat trocam de painel sem navegar; movimento reduzido troca sem animar;
+  - rolar o chat não mexe no pager nem na tropa, e o chat rola;
+  - na voz, para cima abre as configurações sem começar a conversa (com o `pan-x`).
+- Resultados em `e2e/fase3-pager/provas-cpu1.json` e `provas-cpu4.json`. Capturas `393-*` e `1440-*` (chat e voz).
+
+### O que o E2E não prova
+
+- **O iPhone.** Chromium não é Safari, e o WebKit do Playwright não rola com toque sintético. Só o aparelho mostra:
+  - o snap do iOS assentando e o `scrollend` chegando (iOS 26.2+; antes disso vale a reserva a 99%);
+  - que a direita no começo do pager chega inteira aos ouvintes da tropa, sem o iOS entregar o dedo ao chat.
+- **"Sair falando"** não rodei: manda mensagem ao agente, e o briefing pede nada em sessão viva. O caminho é o
+  mesmo `parar()` de antes, agora disparado quando o pager assenta no chat.
+- **Roteiro no iPhone** (app instalado): a sequência do adendo duas vezes e depois o voltar do sistema, que deve sair
+  do cockpit sem "desvoltar" nada; rolar o chat; arrastar um bloco de código de lado.
+
+### Assumi
+
+- **`/conversa/{slug}` redireciona** para a página do chat com `?tela=voz`, em vez de montar outra árvore. É o que
+  garante uma instância só de cada painel quando algo navega de verdade (painel, tropa).
+- **No desktop a voz fica dentro da folha**, com a tropa à esquerda, como o chat. Antes ela ocupava a janela inteira.
+  É consequência do mesmo pager nas duas URLs.
+- **A voz aberta uma vez fica montada**, então fica também aberto o stream dela enquanto o chat está na tela.
+- **Sair da voz para no assentar**, não no soltar: com arrasto nativo, é o assentar que diz que ela saiu.
+
+### Divergi do combinado
+
+- Nada.
+
+### Não fiz
+
+- Commit e build da 3008. Nada em sessão viva.
+- Os E2E antigos `fase3-deslize.cjs` e `fase3-gestos.cjs` testam o desenho que saiu (rosto, troca de rota); ficaram
+  como histórico e não valem mais.
+- Fechar a tropa **tocando fora** ainda é o caminho do `≡` (`router.push`) e empilha uma entrada. O adendo fala do
+  gesto; se o Rica quiser o toque igual, é uma linha no `superficie-otimista.tsx`.
+
+PRONTO-PARA-TESTE — aguardando o veredito da cadeira `teste` (`relatos/fase3-teste.md`).
+
+### Veredito da cadeira `teste` (rodada 3, `relatos/fase3-teste.md`)
+
+- **APROVADO.** Três gestos, carga fria e quente, 5 repetições, WebKit e Chromium com CPU 4×: 30 idas e voltas,
+  zero falha.
+- Do soltar ao destino utilizável: 199–972 ms, nunca tela preta ou vazia, sem salto.
+- Sequência do adendo: `history.length` 2 → 2; camadas iguais no começo e no fim.
+- O controle positivo da tela preta não reproduz mais: a classe de defeito saiu com a troca de rota.
+- Lacunas, as mesmas daqui: o iPhone e "sair falando".
+
+FIM-DO-PAGER
+
+## Tocar fora fecha a tropa sem empilhar (aprovado pelo Daniel, 27/09)
+
+### Entreguei (`components/shell/superficie-otimista.tsx` e `rede-de-navegacao.ts`)
+
+- **O véu da tropa troca a entrada, não empilha.** O `ir()` ganhou `substitui`, e o véu passa `true`: `router.replace`
+  no lugar do `push`. O `<Link>` do véu ganhou `replace`, para o caminho sem JavaScript fazer o mesmo.
+- **`levaAUrl`** (novo, puro, em `rede-de-navegacao.ts`, com teste): decide entre `replace` e `push`.
+- **A rede de segurança desarma quando a URL muda.** Achado no caminho, e ela dizia que fazia isso, mas só
+  desarmava no desmonte:
+  - ela conferia 1,2 s depois se a URL tinha saído da de partida;
+  - tocar fora e reabrir pelo dedo na hora devolve a URL de partida (`?nav=aberto`);
+  - ela lia "não navegou" e **recarregava a página**, empilhando uma entrada e fechando a tropa;
+  - agora uma mudança de URL a desarma na hora. A aba velha sem servidor, que é o caso dela, segue coberta: lá a
+    URL não muda.
+- O `≡` abrindo continua empilhando, como antes; não foi pedido.
+
+### Provas
+
+- `npm test`: **1088 testes, 1088 passaram** (1 novo). `npm run type-check`: verde.
+- **E2E, antes e depois** (`e2e/fase3-pager.cjs`, casos novos):
+  - `tropa-toque-fora` (abrir pelo dedo e tocar fora, duas vezes): antes, `history.length` **2 → 4** nos dois motores
+    (`fase3-pager/antes-do-toque/`); depois, **2 → 2**;
+  - `tropa-toque-e-reabre` (tocar fora e reabrir pelo dedo na hora): sem o desarme, a página recarrega, a tropa fica
+    fechada e `history.length` vai **2 → 3**, nos dois motores (`fase3-pager/antes-do-desarme/`); com ele, sem recarga,
+    tropa aberta, **2 → 2**.
+- Bateria inteira do pager: **12/12 no Chromium e 12/12 no WebKit**.
+
+### Não fiz
+
+- Commit e build. Nada em sessão viva.
+
+FIM-DO-TOQUE
+
+## O `≡` também não empilha (aprovado pelo Daniel, 27/09)
+
+### Entreguei (`components/shell/superficie-otimista.tsx`)
+
+- O `BotaoNav` (`≡`) abre e fecha a tropa com `substitui`: `router.replace` no lugar do `push`, e `replace` no
+  `<Link>` para o caminho sem JavaScript. Revoga o "o `≡` abrindo continua empilhando" da seção anterior.
+- Agora nenhum caminho de abrir ou fechar a tropa empilha: gesto, `≡` e toque fora. Escolher um agente na tropa
+  segue empilhando, porque é outra tela.
+- Consequência: o voltar do navegador (e o do Android) não fecha mais a tropa; ele sai da tela, como o Rica pediu.
+
+### Provas
+
+- `npm test`: **1088 testes, 1088 passaram**. `npm run type-check`: verde.
+- **E2E, antes e depois** (`tropa-pelo-menu`: abrir pelo `≡` e fechar tocando fora, duas vezes): antes,
+  `history.length` **2 → 4** nos dois motores (`fase3-pager/antes-do-menu/`); depois, **2 → 2**.
+- Bateria inteira do pager: **13/13 no Chromium e 13/13 no WebKit**.
+
+### Não fiz
+
+- Commit e build. Nada em sessão viva.
+
+FIM-DO-MENU

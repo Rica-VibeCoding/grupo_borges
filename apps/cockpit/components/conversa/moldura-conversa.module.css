@@ -1,11 +1,12 @@
-/* A Moldura fica atrás de tudo, na altura da área visível (100dvh): o pé da
- * luz acompanha a barra do Safari quando ela aparece e some. */
+/* A Moldura fica atrás de tudo, na altura do painel da voz, que segue a área
+ * visível: o pé da luz acompanha a barra do Safari quando ela aparece e some.
+ * O `fixed` se prende ao painel (ele tem `contain`), não à tela. */
 .raiz {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
-  height: 100dvh;
+  height: 100%;
   z-index: -1;
   pointer-events: none;
 }

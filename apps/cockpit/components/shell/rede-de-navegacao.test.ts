@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { criaRedeDeNavegacao } from './rede-de-navegacao.ts';
+import { criaRedeDeNavegacao, levaAUrl } from './rede-de-navegacao.ts';
 
 const LIMITE = 1_200;
 
@@ -122,4 +122,15 @@ test('desarmar no desmonte não deixa disparo pendente', () => {
   b.transicaoTerminou();
   b.avanca(LIMITE * 5);
   assert.deepEqual(b.recarregou, []);
+});
+
+test('levaAUrl: substituir troca a entrada do histórico e não empilha; o padrão empilha', () => {
+  const chamadas: string[] = [];
+  const roteador = {
+    push: (href: string) => chamadas.push(`push ${href}`),
+    replace: (href: string) => chamadas.push(`replace ${href}`),
+  };
+  levaAUrl(roteador, '?', true);
+  levaAUrl(roteador, '/agente/canarinho?nav=aberto', false);
+  assert.deepEqual(chamadas, ['replace ?', 'push /agente/canarinho?nav=aberto']);
 });

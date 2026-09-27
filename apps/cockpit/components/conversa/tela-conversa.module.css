@@ -5,7 +5,9 @@
 .tela {
   position: relative;
   isolation: isolate;
-  min-height: 100dvh;
+  /* O painel da voz no pager: ele segue a área visível (a `.ck-janela`) e contém o que é
+   * `fixed` aqui dentro — moldura, esfera e faixa de baixo andam com ele. */
+  min-height: 100%;
   display: grid;
   grid-template-rows: 1fr auto;
   background: var(--ck-surface-canvas);
@@ -15,11 +17,9 @@
     calc(var(--ck-space-4) + var(--ck-safe-right))
     calc(var(--ck-space-4) + var(--ck-safe-bottom))
     calc(var(--ck-space-4) + var(--ck-safe-left));
-  /* O dedo é da tela (toque e gestos): o Safari não rola, não dá zoom nem puxa a página. */
-  touch-action: none;
-  overscroll-behavior: none;
-}
-:global(html):has(.tela) {
+  /* O dedo é da tela (toque e cima), menos o de lado, que é do pager: a direita volta ao
+   * chat. O Safari não rola na vertical, não dá zoom nem puxa a página. */
+  touch-action: pan-x;
   overscroll-behavior: none;
 }
 

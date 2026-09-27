@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
@@ -50,12 +49,28 @@ function Reticencias() {
 
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
- * toque para. Os botões viraram gestos: arrastar para a direita volta ao chat de texto,
- * para cima abre as configurações. No cabeçalho, só o ícone do chat (e o botão das
- * configurações, fora da vista até o teclado chegar). O texto (estado, sua fala, a
- * resposta) só aparece com "Mostrar texto"; sem ele, continua existindo para o leitor de tela.
+ * toque para. Os botões viraram gestos: arrastar para a direita volta ao chat de texto (é
+ * a rolagem do pager), para cima abre as configurações. No cabeçalho, só o ícone do chat (e
+ * o botão das configurações, fora da vista até o teclado chegar). O texto (estado, sua fala,
+ * a resposta) só aparece com "Mostrar texto"; sem ele, continua existindo para o leitor de tela.
+ *
+ * Mora no painel da direita do pager (`pager-do-agente.tsx`), montada também fora da tela.
+ * `visivel` é o painel com algum pedaço à vista: só então o visual liga o WebGL. `ativa` é o
+ * painel assentado: sair dele com a conversa andando é o parar, freio incluso.
  */
-export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
+export function TelaConversa({
+  slug,
+  nome,
+  ativa,
+  visivel,
+  aoIrAoChat,
+}: {
+  slug: string;
+  nome: string;
+  ativa: boolean;
+  visivel: boolean;
+  aoIrAoChat: () => void;
+}) {
   const [visual, escolheVisual] = useVisualConversa();
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
@@ -65,8 +80,7 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   const faixaDeBaixoRef = useRef<HTMLSpanElement>(null);
   const ultimoToqueRef = useRef<number | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
-  const router = useRouter();
-  const dica = useDicaDosGestos();
+  const dica = useDicaDosGestos(ativa);
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
   const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
@@ -102,23 +116,26 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
     : [];
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.ultimaTranscricao);
 
-  // Sair para o chat com a conversa andando é o parar, freio incluso — já no gesto, sem
-  // esperar a rota nova chegar (a saída por outro caminho para quando a tela desmonta).
+  // Sair para o chat com a conversa andando é o parar, freio incluso: quando o pager assenta
+  // no chat, pelo dedo, pelo ícone ou pelo voltar do navegador. A saída para outra página
+  // para quando a tela desmonta (`useModoConversa`).
   const chat = `/agente/${slug}`;
-  const { parar } = modo;
-  const paraAoSair = useCallback(() => {
-    if (acao === 'parar') parar();
-  }, [acao, parar]);
-  const vaiAoChat = useCallback(() => {
-    paraAoSair();
-    router.push(chat);
-  }, [chat, paraAoSair, router]);
-  // Ctrl/Cmd-clique abre o chat em outra aba: a conversa desta segue.
+  const pararAoSairRef = useRef(() => {});
+  pararAoSairRef.current = () => {
+    if (acao === 'parar') modo.parar();
+  };
+  useEffect(() => {
+    if (!ativa) pararAoSairRef.current();
+  }, [ativa]);
+  // O ícone leva o pager ao chat, sem navegar. Ctrl/Cmd-clique abre o chat em outra aba: a
+  // conversa desta segue.
   const clicaNoChat = (evento: MouseEvent<HTMLAnchorElement>) => {
-    if (!evento.metaKey && !evento.ctrlKey && !evento.shiftKey) paraAoSair();
+    if (evento.metaKey || evento.ctrlKey || evento.shiftKey || evento.button !== 0) return;
+    evento.preventDefault();
+    aoIrAoChat();
   };
   const abreConfiguracoes = useCallback(() => setConfigAberta(true), []);
-  const { gestos, cliqueConta } = useGestosDaConversa({ faixaDeBaixoRef, aoChat: vaiAoChat, aoConfiguracoes: abreConfiguracoes });
+  const { gestos, cliqueConta } = useGestosDaConversa({ faixaDeBaixoRef, aoConfiguracoes: abreConfiguracoes });
 
   // Síncrono no clique: começar destrava áudio, microfone e Wake Lock no mesmo gesto.
   const toca = (evento: MouseEvent<HTMLButtonElement>) => {
@@ -139,7 +156,7 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
       data-texto={texto ? 'visivel' : 'oculto'}
       {...gestos}
     >
-      {pecas.moldura ? (
+      {pecas.moldura && visivel ? (
         <MolduraConversa
           cena={pecas.moldura.cena}
           variacao={pecas.moldura.variacao}
@@ -170,7 +187,7 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
           </div>
         </header>
 
-        {pecas.esfera ? (
+        {pecas.esfera && visivel ? (
           <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel} />
         ) : null}
 

@@ -40,10 +40,9 @@ function TropaComSlug({
  *  `superficie-otimista`, dava oito cópias de cada agente num HTML de 251 KB. */
 export function TropaAoVivo(props: TropaAoVivoProps) {
   const pathname = usePathname();
-  const prefixo = '/agente/';
-  const slugDaRota = pathname.startsWith(prefixo)
-    ? pathname.slice(prefixo.length).split('/')[0]
-    : undefined;
+  // `/conversa/{slug}` é o mesmo agente, com o pager na voz (fase 3): a tropa segue acesa nele.
+  const prefixo = ['/agente/', '/conversa/'].find((p) => pathname.startsWith(p));
+  const slugDaRota = prefixo ? pathname.slice(prefixo.length).split('/')[0] : undefined;
   const slugDaUrl = slugDaRota || props.slugSelecionado;
 
   /**

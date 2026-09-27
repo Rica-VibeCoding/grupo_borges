@@ -1,18 +1,11 @@
-import { fetchAgent } from '@grupo_borges/cockpit-core/api';
-import { notFound } from 'next/navigation';
+import { redirect } from 'next/navigation';
 
-import { TelaConversa } from '@/components/conversa/tela-conversa';
-
-export const dynamic = 'force-dynamic';
-
-export default async function ConversaPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+/**
+ * A conversa por voz mora no pager da página do agente, ao lado do chat (fase 3): a mesma
+ * página, montada uma vez. Esta rota é só a entrada direta — leva ao pager com a voz primeiro,
+ * e o pager devolve a URL para `/conversa/{slug}` sem navegar.
+ */
+export default async function ConversaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const agente = await fetchAgent(slug);
-  if (!agente) notFound();
-
-  return <TelaConversa key={agente.slug} slug={agente.slug} nome={agente.name} />;
+  redirect(`/agente/${encodeURIComponent(slug)}?tela=voz`);
 }

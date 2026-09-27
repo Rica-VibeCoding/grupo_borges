@@ -90,3 +90,14 @@ export function criaRedeDeNavegacao(deps: DepsRedeDeNavegacao): RedeDeNavegacao 
 
   return { arma, cancela };
 }
+
+/**
+ * Como a URL alcança a tela: empilhando uma entrada no histórico (`push`) ou trocando a de
+ * agora (`replace`). A tropa troca, pelo `≡` e tocando fora — ordem do Rica (27/09) de não
+ * acumular tela, a mesma do gesto: abrir e fechar a gaveta não pode deixar o voltar do
+ * navegador "desvoltando" gaveta. Os outros gatilhos empilham, como sempre.
+ */
+export function levaAUrl(roteador: { push: (href: string) => void; replace: (href: string) => void }, href: string, substitui: boolean): void {
+  if (substitui) roteador.replace(href);
+  else roteador.push(href);
+}

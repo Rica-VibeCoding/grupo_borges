@@ -4,7 +4,6 @@ import { describe, it } from 'node:test';
 import {
   cliqueVale,
   gestoDaConversa,
-  gestoDoChat,
   leArrasto,
   LIMIAR,
   origemImpedeArrasto,
@@ -13,7 +12,7 @@ import {
 
 const MEIO = { x: 200, y: 450 };
 const anda = (dx: number, dy: number) => ({ x: MEIO.x + dx, y: MEIO.y + dy });
-const TELA = { largura: 393, faixaDeBaixo: 852 - 34 - 40 };
+const FAIXA = 852 - 34 - 40;
 
 function no(tagName: string, extra: Partial<NoDaOrigem> & { atributos?: Record<string, string> } = {}): NoDaOrigem {
   const { atributos = {}, ...resto } = extra;
@@ -56,43 +55,29 @@ describe('leitura do arrasto', () => {
 });
 
 describe('gestos da conversa', () => {
-  it('direita volta ao chat, cima abre as configurações, toque segue sendo toque', () => {
-    assert.equal(gestoDaConversa(MEIO, anda(150, 10), TELA), 'chat');
-    assert.equal(gestoDaConversa(MEIO, anda(5, -200), TELA), 'configuracoes');
-    assert.equal(gestoDaConversa(MEIO, anda(3, 3), TELA), 'toque');
+  it('cima abre as configurações, toque segue sendo toque', () => {
+    assert.equal(gestoDaConversa(MEIO, anda(5, -200), FAIXA), 'configuracoes');
+    assert.equal(gestoDaConversa(MEIO, anda(3, 3), FAIXA), 'toque');
   });
 
-  it('arrasto que não é gesto não vira toque — a esquerda, que levava ao chat, não dispara mais', () => {
-    assert.equal(gestoDaConversa(MEIO, anda(-150, 0), TELA), 'nada');
-    assert.equal(gestoDaConversa(MEIO, anda(0, 150), TELA), 'nada');
-    assert.equal(gestoDaConversa(MEIO, anda(-40, -30), TELA), 'nada');
+  it('arrasto que não é gesto não vira toque — os de lado são do pager e não passam por aqui', () => {
+    assert.equal(gestoDaConversa(MEIO, anda(150, 10), FAIXA), 'nada');
+    assert.equal(gestoDaConversa(MEIO, anda(-150, 0), FAIXA), 'nada');
+    assert.equal(gestoDaConversa(MEIO, anda(0, 150), FAIXA), 'nada');
+    assert.equal(gestoDaConversa(MEIO, anda(-40, -30), FAIXA), 'nada');
   });
 
   it('para cima só conta começado acima da faixa de baixo, a borda do iPhone', () => {
-    const naFaixa = { x: 200, y: TELA.faixaDeBaixo + 5 };
-    assert.equal(gestoDaConversa(naFaixa, { x: 200, y: naFaixa.y - 300 }, TELA), 'nada');
-    const acima = { x: 200, y: TELA.faixaDeBaixo - 1 };
-    assert.equal(gestoDaConversa(acima, { x: 200, y: acima.y - 300 }, TELA), 'configuracoes');
-  });
-
-  it('não depende da borda lateral: do meio funciona, da borda não começa', () => {
-    assert.equal(gestoDaConversa({ x: 150, y: 400 }, { x: 250, y: 400 }, TELA), 'chat');
-    assert.equal(gestoDaConversa({ x: 8, y: 400 }, { x: 200, y: 400 }, TELA), 'nada');
-    assert.equal(gestoDaConversa({ x: 10, y: 400 }, { x: 10, y: 200 }, TELA), 'configuracoes');
+    const naFaixa = { x: 200, y: FAIXA + 5 };
+    assert.equal(gestoDaConversa(naFaixa, { x: 200, y: naFaixa.y - 300 }, FAIXA), 'nada');
+    const acima = { x: 200, y: FAIXA - 1 };
+    assert.equal(gestoDaConversa(acima, { x: 200, y: acima.y - 300 }, FAIXA), 'configuracoes');
+    // A borda lateral não importa para cima.
+    assert.equal(gestoDaConversa({ x: 10, y: 400 }, { x: 10, y: 200 }, FAIXA), 'configuracoes');
   });
 });
 
-describe('gesto do chat', () => {
-  it('esquerda abre a voz, direita abre a tropa; o resto não', () => {
-    assert.equal(gestoDoChat({ x: 260, y: 500 }, { x: 120, y: 500 }, 393), 'conversa');
-    assert.equal(gestoDoChat({ x: 120, y: 500 }, { x: 260, y: 520 }, 393), 'tropa');
-    assert.equal(gestoDoChat({ x: 120, y: 500 }, { x: 200, y: 600 }, 393), 'nada');
-    assert.equal(gestoDoChat({ x: 200, y: 500 }, { x: 205, y: 300 }, 393), 'nada');
-    // Das bordas laterais não começa: é o voltar e o avançar do Safari.
-    assert.equal(gestoDoChat({ x: 8, y: 500 }, { x: 200, y: 500 }, 393), 'nada');
-    assert.equal(gestoDoChat({ x: 385, y: 500 }, { x: 200, y: 500 }, 393), 'nada');
-  });
-
+describe('origem do arrasto no chat', () => {
   it('a origem impede em campo, composer, gaveta, folha e no que rola de lado', () => {
     const livre = arvore(no('P'), no('DIV'), no('MAIN'));
     assert.equal(origemImpedeArrasto(livre, rolagem(new Map())), false);
