@@ -6,6 +6,7 @@ import {
   atrasoDaRetentativa,
   ehRecusaTransitoria,
 } from './recusa-transitoria.ts';
+import { AgentInputError } from '@grupo_borges/cockpit-core/api';
 
 test('409 que o back afirma não ter entregue é transitório', () => {
   for (const detail of ['agent_pane_unavailable', 'shared_turn_in_flight']) {
@@ -19,6 +20,14 @@ test('409 que o back afirma não ter entregue é transitório', () => {
 // automática em vermelho na tela do Rica.
 test('a mensagem serve de fallback quando não há detail', () => {
   const erro = Object.assign(new Error('agent_pane_unavailable'), { status: 409 });
+  assert.equal(ehRecusaTransitoria(erro), true);
+});
+
+// O erro de verdade, e não um objeto montado à mão: sem recibo estruturado o
+// `AgentInputError` guarda `deliveryOutcome: null`, e ler `null` como "há
+// recibo" fazia a bancada `recusa-que-passa-sozinha.py` sair com 1 POST só.
+test('AgentInputError sem recibo estruturado cai no detail legado', () => {
+  const erro = new AgentInputError('agent_pane_unavailable', 409, 'agent_pane_unavailable');
   assert.equal(ehRecusaTransitoria(erro), true);
 });
 

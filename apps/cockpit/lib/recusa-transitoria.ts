@@ -76,7 +76,8 @@ export function ehRecusaTransitoria(erro: unknown): boolean {
     safeToResend?: unknown;
   };
   if (bruto.status !== 409) return false;
-  if (bruto.deliveryOutcome !== undefined) {
+  // `!= null`: o `AgentInputError` sem recibo guarda `null`, não `undefined`.
+  if (bruto.deliveryOutcome != null) {
     return bruto.deliveryOutcome === 'refused' && bruto.safeToResend === true;
   }
   const texto =
