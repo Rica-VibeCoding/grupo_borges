@@ -51,7 +51,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { IconeMenu, IconePainel } from './icones';
+import { IconeMenu } from './icones';
 import { criaRedeDeNavegacao, type RedeDeNavegacao } from './rede-de-navegacao';
 
 type SuperficieCtx = {
@@ -189,51 +189,6 @@ export function cliqueSimples(e: MouseEvent<HTMLAnchorElement>): boolean {
   return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 }
 
-/** O botão do chrome (`BarraDeTelas`). Vira o painel na hora e reflete o
- *  estado otimista no `data-selecionado` — senão o painel abriria com o
- *  botão ainda pintado de fechado por ~2s. */
-export function BotaoPainel({
-  hrefAbrir,
-  hrefFechar,
-  aberto,
-}: {
-  hrefAbrir: string;
-  hrefFechar: string;
-  /** Valor do servidor — usado no SSR e como fallback fora do provider. */
-  aberto: boolean;
-}) {
-  const ctx = useContext(painel.Ctx);
-  const abertoReal = ctx?.aberto ?? aberto;
-  const href = abertoReal ? hrefFechar : hrefAbrir;
-
-  return (
-    <Link
-      href={href}
-      onClick={
-        ctx
-          ? (e) => {
-              if (!cliqueSimples(e)) return;
-              e.preventDefault();
-              ctx.ir(href, !abertoReal);
-            }
-          : undefined
-      }
-      aria-label={abertoReal ? 'Fechar detalhes' : 'Abrir detalhes do agente'}
-      data-selecionado={abertoReal ? 'true' : 'false'}
-      className="ck-veil flex shrink-0 items-center justify-center"
-      style={{
-        minWidth: 'var(--ck-touch-min)',
-        minHeight: 'var(--ck-touch-min)',
-        marginRight: 'calc(var(--ck-space-3) * -1)',
-        borderRadius: 'var(--ck-radius-chip)',
-        color: 'var(--ck-text-secondary)',
-      }}
-    >
-      <IconePainel tamanho={18} />
-    </Link>
-  );
-}
-
 /** Link de fechar otimista, pros gatilhos que NÃO precisam de `data-aberto`
  *  (o `×` do painel). Fora do provider é um `<Link>` comum. */
 export function LinkFechaPainel({
@@ -272,8 +227,8 @@ export function LinkFechaPainel({
   );
 }
 
-/** O irmão de cima, pro lado que ABRE — hoje a cápsula do agente no chrome.
- *  Existe pelo mesmo motivo do `BotaoPainel`: `<Link>` seco levaria os 2,0–2,7s
+/** O irmão de cima, pro lado que ABRE — a cápsula do agente no chrome, único
+ *  gatilho visível do painel desde 27/09. Otimista porque `<Link>` seco levaria os 2,0–2,7s
  *  de ida e volta antes de a gaveta começar a se mover, e é essa espera que o
  *  Rica pegou ao vivo. Sem `data-selecionado` de propósito — quem abre não
  *  precisa refletir estado, o gatilho de fechar é o próprio painel. */

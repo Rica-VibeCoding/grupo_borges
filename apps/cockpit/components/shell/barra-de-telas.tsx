@@ -1,9 +1,15 @@
 /**
  * BarraDeTelas — o chrome do topo (§12.3 e §13, correção do menu à esquerda).
  *
- * Cinco controles na mesma faixa, como na referência do Codex desktop:
+ * Três controles na mesma faixa, como na referência do Codex desktop:
  *
- *   [≡ tropa] [cápsula do agente] [voz]   [ pill de telas ]   [⧉ painel]
+ *   [≡ tropa] [cápsula do agente]   [ pill de telas ]   (vazio)
+ *
+ * A barra enxuta (fase 3, pedido do Rica em 27/09): o microfone e o ⧉ saíram
+ * da vista. A conversa por voz abre pelo gesto no chat; o painel, pela cápsula
+ * do agente, e fecha pelo × dele ou tocando fora. O link da voz segue no
+ * teclado e no leitor de tela, fora da vista até ganhar foco. A coluna da
+ * direita fica vazia de propósito: é ela que segura o pill no centro.
  *
  * O centro é GRID, não `justify-between`: com a cápsula entrando à esquerda em
  * 16/08, o espaço distribuído entre pontas de larguras diferentes empurrava o
@@ -25,9 +31,9 @@
  * a regra 1 do `app-shell.tsx` vale aqui também: o que está aberto mora na
  * URL (`?nav=aberto`, `?painel=...`), nunca em estado de cliente. Refresh,
  * deep link do Telegram e botão voltar do Android continuam funcionando de
- * graça. O botão do painel é a ÚNICA peça de cliente (`BotaoPainel`): desde
- * 30/07 a abertura é otimista — vira o painel no mesmo frame e empurra a
- * navegação atrás (`superficie-otimista.tsx`); sem JS ele é o Link de sempre.
+ * graça. As peças de cliente são o `≡` e a cápsula (`superficie-otimista.tsx`):
+ * a abertura é otimista — vira a superfície no mesmo frame e empurra a
+ * navegação atrás; sem JS elas são o Link de sempre.
  *
  * A PILL É HONESTA (§9 — botão que não leva a lugar nenhum é mentira de UI):
  * hoje só existe UM destino de produto (o chat do agente). A fase 2 (kanban)
@@ -42,7 +48,7 @@ import Link from 'next/link';
 import { CapsulaDoAgente } from './capsula-do-agente';
 import { IconeMicrofone } from './icones';
 import { MIOLO_ACESO, MIOLO_DA_PASTILHA, TRILHO_DA_PASTILHA } from './pastilha-do-chrome';
-import { BotaoNav, BotaoPainel } from './superficie-otimista';
+import { BotaoNav } from './superficie-otimista';
 
 export type Tela = { rotulo: string; ativa: boolean };
 
@@ -56,11 +62,8 @@ type BarraDeTelasProps = {
   abrirNavHref: string;
   fecharNavHref: string;
   navAberta: boolean;
-  /** Os DOIS destinos do botão do painel — o `BotaoPainel` escolhe conforme o
-   *  estado otimista do momento, que pode correr à frente da URL. */
+  /** Para onde a cápsula leva: a gaveta de detalhes aberta. */
   hrefAbrirPainel: string;
-  hrefFecharPainel: string;
-  painelAberto: boolean;
 };
 
 export function BarraDeTelas({
@@ -70,8 +73,6 @@ export function BarraDeTelas({
   fecharNavHref,
   navAberta,
   hrefAbrirPainel,
-  hrefFecharPainel,
-  painelAberto,
 }: BarraDeTelasProps) {
   return (
     <div
@@ -85,13 +86,14 @@ export function BarraDeTelas({
         paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
       }}
     >
-      <div className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
+      {/* `@container`: a cápsula mede ESTA coluna para saber se o nome cabe. */}
+      <div className="@container flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
         <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
         <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
         <Link
           href={`/conversa/${agente.slug}`}
           aria-label={`Começar conversa por voz com ${agente.nome}`}
-          className="ck-veil flex shrink-0 items-center justify-center"
+          className="ck-veil sr-only flex shrink-0 items-center justify-center focus-visible:not-sr-only"
           style={{
             minWidth: 'var(--ck-touch-min)',
             minHeight: 'var(--ck-touch-min)',
@@ -128,13 +130,7 @@ export function BarraDeTelas({
         ))}
       </div>
 
-      <div className="flex min-w-0 items-center justify-end">
-        <BotaoPainel
-          hrefAbrir={hrefAbrirPainel}
-          hrefFechar={hrefFecharPainel}
-          aberto={painelAberto}
-        />
-      </div>
+      <div aria-hidden />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 /**
- * Os gestos no lugar dos botões (fase 3): na conversa, arrastar para a esquerda leva ao
- * chat e arrastar para cima abre as configurações; no chat, arrastar para a direita volta
- * para a conversa. Arrasto não é toque: o dedo que andou mais que um toque nunca começa
- * nem para a conversa, mesmo quando não chega a ser gesto nenhum.
+ * Os gestos no lugar dos botões (fase 3, direções do Rica em 27/09): na conversa, arrastar
+ * para a direita volta ao chat e arrastar para cima abre as configurações; no chat, arrastar
+ * para a esquerda abre a conversa e para a direita abre a tropa. Arrasto não é toque: o dedo
+ * que andou mais que um toque nunca começa nem para a conversa, mesmo quando não chega a ser
+ * gesto nenhum.
  */
 
 export type Ponto = { x: number; y: number };
@@ -46,13 +47,19 @@ export function gestoDaConversa(
 ): GestoDaConversa {
   const leitura = leArrasto(inicio, fim);
   if (leitura === 'toque') return 'toque';
-  if (leitura === 'esquerda' && longeDasBordas(inicio.x, tela.largura)) return 'chat';
+  if (leitura === 'direita' && longeDasBordas(inicio.x, tela.largura)) return 'chat';
   if (leitura === 'cima' && inicio.y < tela.faixaDeBaixo) return 'configuracoes';
   return 'nada';
 }
 
-export function gestoDoChat(inicio: Ponto, fim: Ponto, largura: number): 'conversa' | 'nada' {
-  return leArrasto(inicio, fim) === 'direita' && longeDasBordas(inicio.x, largura) ? 'conversa' : 'nada';
+export type GestoDoChat = 'conversa' | 'tropa' | 'nada';
+
+export function gestoDoChat(inicio: Ponto, fim: Ponto, largura: number): GestoDoChat {
+  if (!longeDasBordas(inicio.x, largura)) return 'nada';
+  const leitura = leArrasto(inicio, fim);
+  if (leitura === 'esquerda') return 'conversa';
+  if (leitura === 'direita') return 'tropa';
+  return 'nada';
 }
 
 /** O pedaço do `Element` que a origem lê — o teste monta a árvore sem DOM. */

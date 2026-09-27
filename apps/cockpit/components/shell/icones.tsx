@@ -109,17 +109,6 @@ export function IconeMenu(props: IconeProps) {
   );
 }
 
-/** Retângulo com a faixa direita separada — o "painel" da referência, não um
- *  ícone de gaveta de arquivo. */
-export function IconePainel(props: IconeProps) {
-  return (
-    <Tracado {...props}>
-      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
-      <path d="M15 4.5v15" />
-    </Tracado>
-  );
-}
-
 /** Forma de onda — o segundo ícone SÓLIDO, e a referência é a razão.
  *
  * Na tela do Codex que o Rica mandou, com o composer VAZIO, o botão sólido da

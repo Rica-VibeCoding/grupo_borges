@@ -25,6 +25,11 @@ export const ALTURA_DO_MIOLO = 30;
  *  pouquinho"*), e encostada na borda ela lê como quadrado colado por fora. */
 export const RETRATO_NA_PASTILHA = 22;
 
+/** O respiro dos lados do miolo, em px — o do texto. O do retrato é menor, e só a
+ *  cápsula usa: 14px antes da foto empurrariam o nome pra fora da tela. */
+export const RESPIRO_DO_MIOLO = 14;
+export const RESPIRO_DO_RETRATO = 4;
+
 export const TRILHO_DA_PASTILHA = {
   padding: '3px',
   borderRadius: 'var(--ck-radius-pill)',
@@ -33,7 +38,7 @@ export const TRILHO_DA_PASTILHA = {
 
 export const MIOLO_DA_PASTILHA = {
   height: ALTURA_DO_MIOLO,
-  padding: '0 14px',
+  padding: `0 ${RESPIRO_DO_MIOLO}px`,
   borderRadius: 'var(--ck-radius-pill)',
   fontSize: 'var(--ck-text-sm)',
 } as const;

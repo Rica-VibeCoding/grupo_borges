@@ -314,8 +314,8 @@ export default async function AgentePage({
 
   return (
     <>
-      {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
-          painel à direita. §12.3/§13: dois controles na mesma faixa. */}
+      {/* Chrome do topo — nav overlay e cápsula do agente à esquerda, pill de
+          telas centralizado. A cápsula abre o painel (§12.3/§13). */}
       <BarraDeTelas
         telas={[{ rotulo: 'Chat', ativa: true }]}
         agente={{ slug: agente.slug, nome: agente.name }}
@@ -325,8 +325,6 @@ export default async function AgentePage({
         fecharNavHref={fecharHref}
         navAberta={false}
         hrefAbrirPainel={`${fecharHref}?painel=detalhes`}
-        hrefFecharPainel={fecharHref}
-        painelAberto={false}
       />
 
       {/* Aqui morava o cabeçalho de identidade — retrato, nome e estado — e a
@@ -384,7 +382,7 @@ export default async function AgentePage({
           motor que eu não consigo rodar aqui. */}
       {sp.diag === '1' ? <Regua /> : null}
 
-      {/* Arrastar para a direita volta para a conversa por voz (fase 3, gestos). */}
+      {/* Arrastar para a esquerda abre a conversa por voz; para a direita, a tropa (fase 3, gestos). */}
       <ArrastoDoChat slug={agente.slug} />
 
       {/* O shell agora vive no layout persistente. A gaveta continua na folha

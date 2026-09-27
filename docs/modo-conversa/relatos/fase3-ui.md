@@ -455,3 +455,69 @@ a Esfera (o Núcleo) como opção dentro da tela.
 ### Não fiz
 
 - Commit, build e publicação. Nada em `apps/api` nem em `packages/cockpit-core`.
+
+## Barra do chat enxuta — microfone, ⧉, retrato e gestos novos
+
+### Entreguei (`components/shell/`, `components/conversa/` e três linhas em `app/agente/[slug]/page.tsx`)
+
+- **Microfone fora da barra** (`barra-de-telas.tsx`). O link para `/conversa/{slug}` continua existindo para teclado
+  e leitor de tela, fora da vista até ganhar foco de teclado (`sr-only` + `focus-visible:not-sr-only`). Com Tab
+  depois da cápsula, ele aparece no lugar de antes.
+- **⧉ do painel fora.** Antes de tirar, provei que o painel fecha sem ele, nos dois tamanhos: pelo × da gaveta e
+  tocando fora. No celular a gaveta ocupa quase a largura toda, mas o toque abaixo dela e na faixa lateral fecha.
+  - A coluna da direita ficou vazia de propósito: é ela que mantém o pill "Chat" no centro (colunas iguais, medido
+    antes e depois).
+  - Órfãos que saíram junto: o `BotaoPainel` (`superficie-otimista.tsx`), o `IconePainel` (`icones.tsx`) e as
+    props `hrefFecharPainel`/`painelAberto` da barra. A página deixou de passá-las: são as duas linhas em `page.tsx`.
+- **Retrato desenquadrado** (`capsula-do-agente.tsx`, `pastilha-do-chrome.ts`):
+  - O que estava fora: no celular de 390 px, a foto ficava descentrada na pastilha. A coluna da cápsula tem ~144 px,
+    o nome truncava até sumir, mas o vão de 8 px e o respiro de 14 px à direita ficavam. A foto aparecia encostada
+    à esquerda de uma pílula meio vazia. Corte do rosto e círculo achatado não havia: a foto é 128×128 num quadro de
+    22×22.
+  - Conserto na causa: a cápsula mede a própria coluna (consulta de contêiner do Tailwind). A partir de 10rem
+    entra o nome; abaixo, só a foto, com 4 px dos dois lados, centrada numa cápsula redonda. O nome segue no rótulo
+    do link.
+  - No desktop nada muda: foto e nome, como antes. Em 393 px fica só a foto; em 430 px (Pro Max) o nome cabe e
+    aparece inteiro.
+- **Gestos, como o Rica definiu** (`gesto-de-arrasto.ts`, com teste, `arrasto-do-chat.tsx`):
+  - no chat, esquerda abre a voz e direita abre a tropa. A tropa abre pelo mesmo caminho otimista do `≡`, o
+    `ir()` da navegação da tropa, sem `<Link>` seco nem estado novo. No desktop (acima de `md`) a direita não faz
+    nada: lá a tropa é fundo permanente e o `≡` nem aparece;
+  - na voz, direita volta ao chat e a esquerda deixou de valer. Cima continua abrindo as configurações;
+  - limiar, bordas e origem (composer, gaveta, rolagem de lado, seleção) ficaram como estavam. Com gaveta aberta,
+    gesto nenhum dispara;
+  - comentários com a direção antiga atualizados, inclusive o da página.
+
+### Provas
+
+- `npm test`: **1072 testes, 1072 passaram**. `npm run type-check`: verde. O teste puro do gesto cobre as três
+  direções novas; a esquerda na voz e a direita no chat para a voz (as antigas) não disparam mais.
+- **E2E dos gestos** (`e2e/fase3-gestos.cjs`, casos reescritos). O dedo é simulado pelo CDP. **4/4 no Fio e 4/4 na
+  Matéria**:
+  - **direita** (na voz): leva ao chat sem começar nada. Com a conversa ouvindo, a esquerda não sai mais nem vira
+    toque, e da borda esquerda não começa. Do meio, sai para o chat e fecha o microfone;
+  - **chat:** esquerda abre a voz, parada. Direita abre a tropa (URL `?nav=aberto`), e com ela aberta nenhum gesto
+    dispara; tocar fora fecha. Não disparam, para nenhum dos lados: rolar, diagonal, curto, composer, bloco que
+    rola de lado (e o bloco rolou), texto selecionado, bordas;
+  - **cima** e **cabeçalho** seguem passando. A checagem "arrasto lateral não é toque" passou para a esquerda.
+  - "Sair falando" não rodei: ele envia mensagem ao canarinho, e o briefing pede nada em sessão viva. A saída que
+    ele testa (sair é parar) não mudou, só a direção do dedo, já trocada no roteiro.
+- "Antes" do gesto: os casos antigos rodados no código anterior (`gesto-antes-*`). "Depois": `gesto-depois-*`,
+  com a tropa aberta pelo gesto em `gesto-depois-*-chat-tropa.png`.
+- Capturas em `e2e/fase3-barra/`, `antes-*` e `depois-*`, em 390×844 e 1440×900, com Canário e Daniel:
+  - `*-barra.png` e `*-capsula.png`: a barra inteira e a cápsula ampliada;
+  - `*-painel-aberto.png` e `*-painel-fechado.png`: o painel abrindo pela cápsula e fechando;
+  - `depois-*-teclado.png`: o link da voz aparecendo com Tab;
+  - `depois-canarinho-393-barra.png` e `depois-canarinho-430-barra.png`: os dois tamanhos de iPhone;
+  - medidas e resultados em `antes-provas.json`, `depois-provas.json` e `depois-fora-celular-provas.json`.
+- Nada em sessão viva: as capturas só abrem a página do chat, sem enviar nada.
+
+### O que o E2E não prova
+
+- **É Chrome, não Safari.** No iPhone falta ver:
+  - no chat, a direita do meio abre a tropa sem brigar com o voltar do Safari (que é só da borda);
+  - na voz, a direita do meio volta ao chat.
+
+### Não fiz
+
+- Commit, build da 3008 e publicação.

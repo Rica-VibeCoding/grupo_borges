@@ -56,14 +56,14 @@ describe('leitura do arrasto', () => {
 });
 
 describe('gestos da conversa', () => {
-  it('esquerda leva ao chat, cima abre as configurações, toque segue sendo toque', () => {
-    assert.equal(gestoDaConversa(MEIO, anda(-150, 10), TELA), 'chat');
+  it('direita volta ao chat, cima abre as configurações, toque segue sendo toque', () => {
+    assert.equal(gestoDaConversa(MEIO, anda(150, 10), TELA), 'chat');
     assert.equal(gestoDaConversa(MEIO, anda(5, -200), TELA), 'configuracoes');
     assert.equal(gestoDaConversa(MEIO, anda(3, 3), TELA), 'toque');
   });
 
-  it('arrasto que não é gesto não vira toque', () => {
-    assert.equal(gestoDaConversa(MEIO, anda(150, 0), TELA), 'nada');
+  it('arrasto que não é gesto não vira toque — a esquerda, que levava ao chat, não dispara mais', () => {
+    assert.equal(gestoDaConversa(MEIO, anda(-150, 0), TELA), 'nada');
     assert.equal(gestoDaConversa(MEIO, anda(0, 150), TELA), 'nada');
     assert.equal(gestoDaConversa(MEIO, anda(-40, -30), TELA), 'nada');
   });
@@ -76,18 +76,21 @@ describe('gestos da conversa', () => {
   });
 
   it('não depende da borda lateral: do meio funciona, da borda não começa', () => {
-    assert.equal(gestoDaConversa({ x: 250, y: 400 }, { x: 150, y: 400 }, TELA), 'chat');
-    assert.equal(gestoDaConversa({ x: 385, y: 400 }, { x: 200, y: 400 }, TELA), 'nada');
+    assert.equal(gestoDaConversa({ x: 150, y: 400 }, { x: 250, y: 400 }, TELA), 'chat');
+    assert.equal(gestoDaConversa({ x: 8, y: 400 }, { x: 200, y: 400 }, TELA), 'nada');
     assert.equal(gestoDaConversa({ x: 10, y: 400 }, { x: 10, y: 200 }, TELA), 'configuracoes');
   });
 });
 
 describe('gesto do chat', () => {
-  it('direita do meio da tela volta para a conversa; o resto não', () => {
-    assert.equal(gestoDoChat({ x: 120, y: 500 }, { x: 260, y: 520 }, 393), 'conversa');
-    assert.equal(gestoDoChat({ x: 260, y: 500 }, { x: 120, y: 500 }, 393), 'nada');
+  it('esquerda abre a voz, direita abre a tropa; o resto não', () => {
+    assert.equal(gestoDoChat({ x: 260, y: 500 }, { x: 120, y: 500 }, 393), 'conversa');
+    assert.equal(gestoDoChat({ x: 120, y: 500 }, { x: 260, y: 520 }, 393), 'tropa');
     assert.equal(gestoDoChat({ x: 120, y: 500 }, { x: 200, y: 600 }, 393), 'nada');
+    assert.equal(gestoDoChat({ x: 200, y: 500 }, { x: 205, y: 300 }, 393), 'nada');
+    // Das bordas laterais não começa: é o voltar e o avançar do Safari.
     assert.equal(gestoDoChat({ x: 8, y: 500 }, { x: 200, y: 500 }, 393), 'nada');
+    assert.equal(gestoDoChat({ x: 385, y: 500 }, { x: 200, y: 500 }, 393), 'nada');
   });
 
   it('a origem impede em campo, composer, gaveta, folha e no que rola de lado', () => {

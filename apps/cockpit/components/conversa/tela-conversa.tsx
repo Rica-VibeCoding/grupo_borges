@@ -50,7 +50,7 @@ function Reticencias() {
 
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
- * toque para. Os botões viraram gestos: arrastar para a esquerda leva ao chat de texto,
+ * toque para. Os botões viraram gestos: arrastar para a direita volta ao chat de texto,
  * para cima abre as configurações. No cabeçalho, só o ícone do chat (e o botão das
  * configurações, fora da vista até o teclado chegar). O texto (estado, sua fala, a
  * resposta) só aparece com "Mostrar texto"; sem ele, continua existindo para o leitor de tela.
