@@ -4159,6 +4159,22 @@ async def post_agent_interromper(slug: str, request: Request) -> dict[str, Any]:
     if resultado["pedido_limpo"]:
         db: GrupoBorgesDB = request.app.state.db
         await db.clear_agent_lifecycle(slug)
+        # Nesse caso o CC não grava fim de turno no JSONL, e o stream seguiria "em voo"
+        # até outro turno acabar. A marca é a mesma que ele grava numa interrupção comum.
+        sessao = await db.latest_jsonl_session_id(slug)
+        if sessao:
+            await db.insert_task_event(
+                "jsonl:user",
+                agent_slug=slug,
+                payload={
+                    "type": "user",
+                    "uuid": str(uuid.uuid4()),
+                    "sessionId": sessao,
+                    "isSidechain": False,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "message": {"role": "user", "content": "[Request interrupted by user]"},
+                },
+            )
     return {"motor": "claude_code", **resultado}
 
 

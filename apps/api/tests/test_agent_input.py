@@ -853,3 +853,59 @@ def test_painel_com_tmux_ilegivel_preserva_os_controles(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["vida"] == {"sessao": True, "processo": True}
 
+
+
+def _grava_linha_do_jsonl(db: GrupoBorgesDB, sessao: str) -> None:
+    db._insert_task_event(
+        "jsonl:user",
+        None,
+        "daniel",
+        None,
+        {
+            "type": "user",
+            "uuid": "u-pedido",
+            "sessionId": sessao,
+            "message": {"role": "user", "content": "qual o status?"},
+        },
+        None,
+    )
+
+
+def _eventos_de_interrupcao(db: GrupoBorgesDB) -> list[dict]:
+    with db._connect() as conn:
+        rows = conn.execute(
+            "SELECT payload FROM task_events WHERE agent_slug = 'daniel' AND kind = 'jsonl:user'"
+        ).fetchall()
+    payloads = [json.loads(row["payload"]) for row in rows]
+    return [p for p in payloads if p["message"]["content"] == "[Request interrupted by user]"]
+
+
+@pytest.mark.parametrize("pedido_limpo", [True, False])
+def test_interromper_que_limpou_o_pedido_fecha_o_turno_no_stream(
+    tmp_path: Path, pedido_limpo: bool
+) -> None:
+    """Escape antes da primeira linha: o Claude Code não grava fim de turno no JSONL,
+    e o stream seguiria "em voo" até outro turno terminar (página nova dizia "ocupado").
+    Quando o freio limpou o pedido, o servidor grava a mesma marca que o CC grava numa
+    interrupção comum — e o card sai de `trabalhando`."""
+    app = _build_app(tmp_path)
+    db = app.state.db
+    _grava_linha_do_jsonl(db, "sessao-1")
+    db._update_agent_lifecycle("daniel", status="trabalhando", detail="mensagem", event="jsonl:user")
+    with patch(
+        "routers.agents.tmux_driver.interrupt",
+        new=AsyncMock(return_value={"parado": True, "pedido_limpo": pedido_limpo}),
+    ):
+        with TestClient(app) as client:
+            response = client.post("/api/agents/daniel/interromper")
+
+    assert response.status_code == 200
+    assert response.json() == {"motor": "claude_code", "parado": True, "pedido_limpo": pedido_limpo}
+    marcas = _eventos_de_interrupcao(db)
+    assert len(marcas) == (1 if pedido_limpo else 0)
+    if pedido_limpo:
+        assert marcas[0]["sessionId"] == "sessao-1"
+        assert marcas[0]["uuid"]
+    with db._connect() as conn:
+        row = conn.execute("SELECT lifecycle_status FROM agent_state WHERE slug = 'daniel'").fetchone()
+    assert (row["lifecycle_status"] is None) is pedido_limpo
