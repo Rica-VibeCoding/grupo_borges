@@ -101,3 +101,7 @@ fixtures/cockpit-v2/transcripts/
 # .claude/hooks/recado-entre-agentes.sh). Quem escreve entrega na máquina do
 # destinatário — versionar faria a entrega depender de commit + pull.
 .claude/recados/
+
+# Backups de build que o deploy guarda ao lado do .next, e capturas do Playwright MCP.
+.next-anterior-*/
+.playwright-mcp/
