@@ -49,8 +49,9 @@ function Reticencias() {
 
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
- * toque para. Os botões viraram gestos: arrastar para a direita volta ao chat de texto (é
- * a rolagem do pager), para cima abre as configurações. No cabeçalho, só o ícone do chat (e
+ * toque para; na vez do Rica, o dedo parado segura a vez. Os botões viraram gestos: arrastar
+ * para a direita volta ao chat de texto (é a rolagem do pager), para cima abre as
+ * configurações. No cabeçalho, só o ícone do chat (e
  * o botão das configurações, fora da vista até o teclado chegar). O texto (estado, sua fala,
  * a resposta) só aparece com "Mostrar texto"; sem ele, continua existindo para o leitor de tela.
  *
@@ -135,7 +136,17 @@ export function TelaConversa({
     aoIrAoChat();
   };
   const abreConfiguracoes = useCallback(() => setConfigAberta(true), []);
-  const { gestos, cliqueConta } = useGestosDaConversa({ faixaDeBaixoRef, aoConfiguracoes: abreConfiguracoes });
+  // Dedo parado 500 ms na vez do Rica segura a vez: a contagem do silêncio para até soltar.
+  const cenaRef = useRef(cena);
+  cenaRef.current = cena;
+  const { segura } = modo;
+  const { gestos, cliqueConta } = useGestosDaConversa({
+    faixaDeBaixoRef,
+    aoConfiguracoes: abreConfiguracoes,
+    leCena: () => cenaRef.current,
+    aoSegurar: () => segura(true),
+    aoSoltar: () => segura(false),
+  });
 
   // Síncrono no clique: começar destrava áudio, microfone e Wake Lock no mesmo gesto.
   const toca = (evento: MouseEvent<HTMLButtonElement>) => {
@@ -154,6 +165,7 @@ export function TelaConversa({
       data-opcao={visual.opcao}
       data-variacao={visual.variacao}
       data-texto={texto ? 'visivel' : 'oculto'}
+      data-segurando={modo.segurando ? 'sim' : undefined}
       {...gestos}
     >
       {pecas.moldura && visivel ? (

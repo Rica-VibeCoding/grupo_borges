@@ -208,6 +208,19 @@
   border-radius: var(--ck-radius-caixa);
 }
 
+/* Segurando a vez (fase 4): enquanto o dedo parado está na tela, a luz da esfera e da
+ * moldura baixa e desbota um pouco — a contagem do silêncio parou. O filtro vai no próprio
+ * desenho, nunca num pai dele: filtro num pai vira bloco de contenção do `fixed` e tira o
+ * desenho do lugar. */
+.tela [data-visual] canvas,
+.tela [data-visual] > div {
+  transition: filter var(--ck-dur-enter) var(--ck-ease);
+}
+.tela[data-segurando='sim'] [data-visual] canvas,
+.tela[data-segurando='sim'] [data-visual] > div {
+  filter: var(--ck-conversa-segurando);
+}
+
 /* A faixa de baixo — área segura mais 40 px — é a borda do iPhone, que manda o app para
  * o fundo: arrasto para cima começado nela não abre as configurações. Invisível; a tela
  * só mede onde ela começa. */

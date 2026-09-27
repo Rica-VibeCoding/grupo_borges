@@ -4,6 +4,8 @@ export type SonsLocais = {
   /** Retorno do toque sem texto: duas notas subindo ao começar, descendo ao parar. */
   sinalizaInicio(): void;
   sinalizaFim(): void;
+  /** Segurar a vez: uma nota grave e curta, que não se confunde com o tique nem com o começar. */
+  sinalizaSegurar(): void;
   fala(texto: string): void;
   cancelaFala(): void;
   encerra(): void;
@@ -33,6 +35,8 @@ function nota(audio: AudioContext, frequencia: number, inicio: number, duracao: 
 // Dó e sol: um intervalo que não se confunde com o tique (lá, uma nota só).
 const GRAVE = 523;
 const AGUDA = 784;
+// Sol uma oitava abaixo: o segurar, uma nota só e mais baixa que todas.
+const SEGURA = 392;
 
 export function destravaSintese<T extends FraseComVolume>(
   sintese: { resume(): void; speak(frase: T): void },
@@ -82,6 +86,11 @@ export function criaSonsLocais(): SonsLocais {
       nota(audio, AGUDA, audio.currentTime, 0.07);
       nota(audio, GRAVE, audio.currentTime + 0.09, 0.11);
       vibraSePuder([10, 60, 10]);
+    },
+    sinalizaSegurar() {
+      const audio = garanteContexto();
+      nota(audio, SEGURA, audio.currentTime, 0.06);
+      vibraSePuder(8);
     },
     fala(texto) {
       if (!('speechSynthesis' in window)) return;

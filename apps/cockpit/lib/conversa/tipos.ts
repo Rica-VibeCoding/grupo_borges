@@ -66,8 +66,12 @@ export type Efeito =
 
 /** Tempos em ms. Os do detector vêm da pesquisa §2 e se confirmam na fase 0. */
 export const TEMPOS = {
-  /** Silêncio que encerra a fala. 900 ms corta quem respira no meio da frase. */
-  silencioFimDeFala: 1400,
+  /**
+   * Silêncio que encerra a fala. 900 ms corta quem respira no meio da frase; 1,4 s ainda
+   * cortava quem pensa (Rica, 27/09). Não passar de 2 s: cada resposta começa esse tanto
+   * mais tarde. Para pensar mais que isso, o dedo parado na tela segura a vez (fase 4).
+   */
+  silencioFimDeFala: 2000,
   /** Áudio guardado antes do início detectado, para não perder a primeira sílaba. */
   preGravacao: 800,
   /** Fala mais curta que isso é tosse ou estalo, não pedido. */

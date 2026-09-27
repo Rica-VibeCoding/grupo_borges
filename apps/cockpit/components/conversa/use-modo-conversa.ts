@@ -15,6 +15,7 @@ import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { zeOcupado } from './toque-da-conversa';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
+import { useSegurarAVez } from './use-segurar-a-vez';
 import { useTurnoDoZe } from './use-turno-do-ze';
 import { useWakeLock } from './use-wake-lock';
 
@@ -68,6 +69,8 @@ export function useModoConversa(slug: string, fone: boolean) {
     sonsRef.current ??= criaSonsLocais();
     return sonsRef.current;
   }, []);
+  const somDeSegurar = useCallback(() => sons().sinalizaSegurar(), [sons]);
+  const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar });
 
   const despacha = useCallback((evento: Evento) => {
     const resultado = avanca(conversaRef.current, evento, performance.now());
@@ -273,6 +276,8 @@ export function useModoConversa(slug: string, fone: boolean) {
     wakeLockAtivo: wakeLock.ativo,
     wakeLockSuportado: wakeLock.suportado,
     wakeLockFalhou: wakeLock.falhou,
+    segurando: vez.segurando,
+    segura: vez.segura,
     comecar,
     parar,
   };

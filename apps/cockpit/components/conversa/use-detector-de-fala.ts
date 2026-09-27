@@ -7,6 +7,8 @@ import { TEMPOS, type Evento, type Conversa } from '@/lib/conversa/tipos';
 
 import {
   criaControladorDetector,
+  opcoesDoDetector,
+  seguraNoDetector,
   type ControladorDetector,
 } from './controlador-detector';
 import { criaVigiaDaEscuta, type VigiaDaEscuta } from './vigia-da-escuta';
@@ -45,13 +47,22 @@ export function useDetectorDeFala({
   const ligouEmRef = useRef(0);
   const geracaoRef = useRef(0);
   const vigiaRef = useRef<VigiaDaEscuta | null>(null);
+  /* O dedo parado na tela, na vez do Rica: o silêncio não encerra a fala enquanto ele segura. */
+  const segurandoRef = useRef(false);
   const ajustaDetector = useCallback(() => {
-    const porCima = conversaRef.current.estado === 'falando' || conversaRef.current.estado === 'interrompendo';
-    detectorRef.current?.setOptions({
-      minSpeechMs: porCima ? TEMPOS.confirmaFalaPorCima : TEMPOS.falaMinima,
-      redemptionMs: porCima ? TEMPOS.desclassificaFalaPorCima : TEMPOS.silencioFimDeFala,
-    });
+    detectorRef.current?.setOptions(opcoesDoDetector(conversaRef.current.estado, segurandoRef.current));
   }, [conversaRef]);
+
+  /** Segura ou solta a vez; devolve se mudou. Soltar recomeça os 2 s do zero, a partir de agora. */
+  const segura = useCallback(
+    (ligado: boolean) => {
+      if (segurandoRef.current === ligado) return false;
+      segurandoRef.current = ligado;
+      seguraNoDetector(detectorRef.current, conversaRef.current.estado, ligado);
+      return true;
+    },
+    [conversaRef],
+  );
 
   useEffect(() => {
     let vivo = true;
@@ -239,7 +250,9 @@ export function useDetectorDeFala({
   const criaWav = useCallback((audio: Float32Array) => {
     const utilitarios = utilsRef.current;
     if (utilitarios === null) return null;
-    return new Blob([utilitarios.encodeWAV(audio)], { type: 'audio/wav' });
+    // PCM de 16 bits, não o float de 32 do padrão: 32 KB/s, metade do tamanho. A fala segura
+    // cabe ~5 min nos 10 MB da rota (em float, 2 min 44 s); o servidor converte com ffmpeg.
+    return new Blob([utilitarios.encodeWAV(audio, 1, 16000, 1, 16)], { type: 'audio/wav' });
   }, []);
 
   return {
@@ -253,5 +266,6 @@ export function useDetectorDeFala({
     desliga,
     criaWav,
     ajustaDetector,
+    segura,
   };
 }

@@ -1,0 +1,139 @@
+# Fase 4 — cadeira `teste`: silêncio de 2 s e segurar para pensar
+
+Briefing: `briefings/fase4-teste-segurar.md`. Claude Code (Sonnet 5) · 27/09/2026 · sem commit, sem
+código de produto editado. Alvo: dev da 3009 (não subi nem derrubei). `E2E_ENVIO=simulado` em todo
+teste que envia — o canarinho está fora na VPS (409 `sessao_ausente`), como a `ui` já registrou.
+
+## Equipamento
+
+- `e2e/teste/fase4-segurar.cjs` (novo, meu — não importa nada do `e2e/fase4-segurar.cjs` da `ui`):
+  Chromium com dedo real por CDP (`Input.dispatchTouchEvent`) e WebKit com toque sintético,
+  reusando `equipamento.cjs` da fase 3. Espião próprio: injeta a fala real (`turno1.mp3`) num
+  microfone falso (Web Audio), mede o fim real da voz dentro do clipe (não a duração do arquivo,
+  que tem cauda de silêncio), e captura estado/segurando/notas por `MutationObserver` +
+  `performance.now()` (evento, não polling).
+- `e2e/teste/controle-positivo-segurar.mjs` (novo): chama a função REAL de produção
+  (`seguraNoDetector`/`zeraContagemDoSilencio`, `controlador-detector.ts`) contra um
+  `frameProcessor` fake, sem editar nada.
+- Achado de equipamento (não de produto): o Chrome com toque emulado perto da borda esquerda
+  aciona o "voltar" nativo por overscroll (edge swipe) e a aba cai pra `about:blank` — corrigido
+  com `--disable-features=OverscrollHistoryNavigation,PullToRefresh` no lançamento. Multitoque
+  sintético via `Input.dispatchTouchEvent` não preserva identidade estável entre dedos (o mapeamento
+  touch→pointer do Chrome embaralhou qual pointerId nativo é qual dedo do array) — o item "segundo
+  dedo" foi testado com `PointerEvent` sintético direto no elemento, que testa a mesma lógica do
+  componente sem essa ambiguidade.
+
+## 1. Silêncio de 2 s
+- **Pausa de 1,5 s no meio da fala não corta**: injetei a MESMA fala cortada no meio com 1,5 s de
+  silêncio real entre as partes — a cena ficou em `ouvindo` o tempo todo, uma transcrição e um
+  envio só. Chromium: PASS.
+- **Silêncio de ~2 s entrega**: a fala saiu **2083-2097 ms** depois do fim real da voz, medido em
+  3 rodadas (controle positivo, silêncio isolado, dentro do "segurar"). Chromium: PASS.
+
+## 2. Segurar
+- **Calar 1,5 s, segurar 5 s, soltar → uma transcrição, um envio ~2 s depois**: dois ciclos na
+  mesma sessão. Segurou em **505-512 ms** depois do dedo pousar (dentro de 450-900 ms); calar 5 s
+  segurando não entregou nada; soltou e a fala saiu **1955-1986 ms** depois (dentro de
+  1850-2700 ms); uma transcrição e um envio por ciclo. Chromium: PASS.
+- **Repetir segurando depois de silêncio longo (≥ 2 s) sem fala nova**: entre os dois ciclos,
+  esperei 2,3 s de silêncio parado em `ouvindo` (sem fala) — nada mudou sozinho — e o segundo
+  ciclo repetiu o mesmo comportamento do primeiro (segurou, soltou, saiu **1981 ms** depois), sem
+  resíduo do ciclo anterior. 2 envios no total. PASS.
+
+## 3. Controle positivo
+- **Isolado (fora da interface)**: `controle-positivo-segurar.mjs` chama a função real do zerar
+  contra um contador fake acumulado (fala + segurar = 172 quadros de 32 ms). Com o código real
+  (zera antes de soltar): precisa de ~63 quadros (~2016 ms) depois do soltar — bate com o medido.
+  Sem chamar o zerar (o defeito que o briefing descreve): o contador já está acima do novo limite
+  e a fala sairia no quadro seguinte (~32 ms). PASSOU.
+- **Na interface**: o instrumento (`MutationObserver`+`performance.now()`, não polling de 100 ms)
+  mede o tempo do fim da fala até `transcrevendo` com resolução de milissegundos. A diferença entre
+  "saiu certo" (~2000 ms) e "saiu no defeito" (~32 ms) é de duas ordens de grandeza — o assert de
+  janela (≥ 1850 ms) pegaria a diferença sem margem para dúvida. PASSOU.
+
+## 4. O que não pode quebrar (Chromium, dedo real)
+1. Dedo parado 1 s fora da vez (`parado`): não começa, não segura. PASS.
+2. Toque duplo em < 400 ms: só o primeiro conta (parou), o segundo foi ignorado (`parado`, não
+   voltou a `ouvindo`). PASS.
+3. Segurar e depois andar (> 200 px pra cima): não vira gesto — cena continuou `ouvindo`, não abriu
+   configurações, e o soltar devolveu a contagem (`segurando` voltou a `null`). PASS.
+4. Segundo dedo (via `PointerEvent` sintético, ver equipamento): pousar o segundo dedo não solta a
+   vez; soltar o segundo dedo (não o original) também não solta; só soltar o dedo original solta.
+   PASS.
+5. Arrasto pra cima ainda abre configurações (testado por último no caso: o drawer, `vaul`, não
+   fecha por Escape nem clique fora — só arrastando pra baixo dentro dele, achado de equipamento,
+   não de produto). PASS.
+6. Toque rápido para em estado normal (`ouvindo` → `parado`), com as notas certas
+   (523, 784 no comecar; 784, 523 no parar). PASS.
+7. Arrasto pra direita ainda leva ao chat (`/agente/canarinho`). PASS.
+
+Fora do Chromium: o item 3 e 4 dependem de CDP fino (touchmove/multitoque) e não foram repetidos em
+WebKit (ver "Limitações").
+
+## 5. Volta visual e som
+- Filtro no próprio desenho (`canvas`/`div` de `[data-visual]`): `saturate(0.5) brightness(0.72)`
+  enquanto segura, `none` ao soltar — bati o valor exato do token `--ck-conversa-segurando`.
+  Confirmado no caso "segurar" (Chromium). PASS.
+- Nenhuma amostra preta/vazia observada em nenhum dos casos (capturas via screenshot ao longo dos
+  testes). Nota de segurar (392 Hz) tocou nos dois ciclos.
+
+## 6. Sequência do Rica (regressão da fase 3)
+Direita abre a tropa → esquerda fecha (toque fora) → esquerda vai à voz → direita volta ao chat,
+2 voltas. `history.length` ficou **2 → 2** nos dois motores (Chromium e WebKit), camadas iguais no
+fim (1 pager, 2 painéis, 1 voz montada, 1 gaveta, 2 véus, 0 diálogo). Nada quebrou com o segurar.
+PASS nos dois motores.
+
+## 7. Envio
+`E2E_ENVIO=simulado` em todo caso que envia (`/input` e `/interromper` param no navegador com 200).
+A transcrição é real em todos os casos (WAV real enviado, texto real transcrito). Não provei a
+entrega de ponta a ponta no canarinho — mesma lacuna que a `ui` já registrou (sessão fora na VPS).
+
+## 8. Achado — responsividade sob CPU 4×
+
+Pedido do briefing ("também com CPU 4×"). Sem throttle, tudo acima passou. **Com
+`Emulation.setCPUThrottlingRate: 4`, três sintomas da mesma causa** (o VAD real — ONNX/Wasm —
+ocupa a thread principal, e o React fica preso atrás dele):
+
+1. **Segurar atrasa bem além dos 500 ms.** Medido isoladamente: o `pointerdown` chega ao browser em
+   ~38 ms, mas o handler React que arma o timer de 500 ms só é executado **~1,6 s depois** — a
+   thread estava ocupada. O timer em si dispara certinho 500 ms depois de armado; o atraso todo é
+   antes disso. Na prática, segurar por 500 ms sob essa carga não é garantia de ativar a tempo.
+2. **Toque simples (comecar/parar) também atrasa.** No caso "não pode quebrar" sob CPU 4×, o
+   primeiro toque (que devia parar) ainda não tinha efeito quando o segundo toque chegou 150 ms
+   depois — o segundo caiu fora da janela real de 400 ms (`JANELA_DO_TOQUE_MS`) porque o primeiro
+   já estava atrasado. Não é bug da trava do toque duplo; é o processamento de eventos atrasando.
+3. **Depois de alguns segundos de CPU 4× sustentada, a tela caiu em erro** ("O microfone desligou",
+   motivo `capturaCaiu`) com o microfone seguindo ativo. Pelo código (`vigia-da-escuta.ts`): sem
+   processar um quadro de áudio por 1 s (o normal é um a cada 32 ms), a vigia acha que a escuta
+   emudeceu e reabre o detector — sob CPU 4×, é a CPU lenta, não o microfone, que atrasa o
+   processamento dos quadros. A reabertura (ou o encerramento da trilha antiga que ela dispara)
+   terminou acionando o aviso de queda.
+
+Não tentei consertar (não é da minha faixa) nem confirmei se o throttling emulado do CDP reproduz
+fielmente um iPhone real sob carga — pode haver diferença de overhead entre o WASM headless deste
+PC e o Safari/iOS. Registro como achado para a `ui` avaliar; por decisão do Rica, isso não bloqueia
+esta rodada (sem throttle, 100% passou), mas é ressalva relevante para quem usa a voz num aparelho
+mais fraco ou com outros apps competindo por CPU.
+
+## Limitações
+
+- **WebKit headless deste Playwright não expõe `navigator.mediaDevices`** (getUserMedia) — mesmo em
+  contexto seguro (`127.0.0.1`), com ou sem emulação mobile, com ou sem permissão concedida. A tela
+  de voz nunca sai de "preparando" ali, então silêncio/segurar/controle positivo/os itens 3-4 de
+  "não pode quebrar" só foram provados em Chromium. A sequência do Rica (sem depender de
+  microfone) passou nos dois motores — é o "segundo parecer" desta rodada.
+- **iPhone de verdade**: mesma lacuna de sempre (Chromium e WebKit de desktop não são o aparelho).
+- Não rodei `npm test`/`type-check` de novo — é prova de escopo da `ui`, já reportada em
+  `relatos/fase4-ui.md` (1118/1118, type-check verde).
+
+## Veredito
+
+**APROVADO** — silêncio de 2 s (com pausa de 1,5 s não cortando), segurar (dois ciclos, calar 5 s
+segurando não entrega, repetir depois de silêncio longo sem resíduo), controle positivo (isolado e
+por sensibilidade do instrumento), os 7 itens de "não pode quebrar", filtro visual e som ao segurar/
+soltar, e a sequência do Rica sem regressão — todos confirmados de forma independente, sem CPU
+throttle. **Ressalva, não bloqueio** (decisão do Rica): sob CPU 4×, a responsividade ao toque
+(inclusive o segurar) degrada e a vigia do microfone pode disparar um erro falso — vale a `ui`
+olhar antes de publicar, mas não impede esta aprovação.
+
+FIM-DO-TESTE
