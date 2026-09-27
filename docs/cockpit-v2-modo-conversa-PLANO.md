@@ -20,8 +20,8 @@
 > fecha a tropa, gesto/toque fora/`≡` sem empilhar histórico (`6bef077`, briefing `fase3-pager-chat-voz.md`, publicado
 > na 3008). Nova regra: link de UI só vai ao Rica depois do APROVADO da cadeira `teste` (`fase3-cadeira-de-teste.md`,
 > relato `fase3-teste.md`). Rica aprovou no iPhone.
-> **Próxima rodada:** sete pedidos do Rica ditados na tela de voz (silêncio 2 s, segurar para pensar, MiniMax só na
-> voz, skill de conversa por voz, foto do agente, transcrição ao vivo, legenda) em `modo-conversa/fase4-rodada-da-voz.md`.
+> **Próxima rodada:** oito pedidos do Rica ditados na tela de voz (silêncio 2 s, segurar para pensar, MiniMax só na
+> voz, skill de conversa por voz, foto do agente, transcrição ao vivo, legenda, versão enxuta da voz para a Dani) em `modo-conversa/fase4-rodada-da-voz.md`.
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`

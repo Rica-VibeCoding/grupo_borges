@@ -1,4 +1,4 @@
-# Rodada da voz — sete pedidos do Rica (27/09/2026, ditados na própria tela de voz)
+# Rodada da voz — oito pedidos do Rica (27/09/2026, ditados na própria tela de voz)
 
 Levantados com o Rica testando a 3008 (`6bef077`). Nada implementado ainda: esta página é o ponto de partida da
 próxima rodada, com contexto limpo. Cada item diz o que ele pediu, o que já existe no código e o que falta decidir.
@@ -58,7 +58,14 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
 - Viável: o texto chega antes do áudio e a voz já é sintetizada frase por frase. Começar **por frase** (troca junto
   com o áudio de cada frase). Palavra por palavra fica para depois — o tempo seria estimado e escorrega.
 
+## 8. Versão enxuta só da voz, para a Dani falar com a Miga
+- Pedido: a tela de voz sozinha, sem o cockpit inteiro, num endereço próprio. O Rica instala o Tailscale no celular
+  da Dani e ela conversa com a Miga (que roda na Oracle, não na VPS).
+- Estimativa dada: cerca de um décimo do cockpit. Leva a tela e quatro serviços: transcrever a fala, entregar o texto
+  à sessão da agente, ler a resposta, gerar a voz. Fica de fora painel da frota, feed, tropa.
+- Entra depois dos itens 1–7, reaproveitando o que eles deixarem pronto (transcrição ao vivo, voz, legenda).
+
 ## Ordem sugerida
 1 e 2 (lógica, pequenos) → 6 (latência, o maior ganho de experiência) → 7 → 5 → 3 (depende da chave e da escolha
-de voz do Rica) → 4 (fora deste repo). Medir a latência ponta a ponta (fim da fala → primeira sílaba do agente)
+de voz do Rica) → 4 (fora deste repo) → 8. Medir a latência ponta a ponta (fim da fala → primeira sílaba do agente)
 antes do 6 e depois do 3, para o ganho ser número e não impressão.
