@@ -55,11 +55,16 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
       if (!alive || pollTimer) return;
       pollTimer = setTimeout(async () => {
         pollTimer = null;
-        try { await refetch(); } catch { /* a próxima rodada tenta de novo */ }
+        // Aba escondida não lê: cada leitura custa CPU na VPS, e ninguém está
+        // olhando. Voltar pra aba relê na hora (ouvinte abaixo).
+        if (!document.hidden) {
+          try { await refetch(); } catch { /* a próxima rodada tenta de novo */ }
+        }
         schedulePoll();
       }, POLL_INTERVAL_MS);
     };
     const scheduleRefetch = () => {
+      if (document.hidden) return;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => void refetch().catch(() => schedulePoll()), REFETCH_DEBOUNCE_MS);
     };
@@ -131,6 +136,11 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
       };
     };
 
+    const onVisibility = () => {
+      if (!document.hidden) scheduleRefetch();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     connect();
     // Mesmo com SSE aberto, o snapshot periódico fecha lacunas de eventos que
     // o backend ainda não nomeia no protocolo global. É a rede de segurança
@@ -138,6 +148,7 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
     schedulePoll();
     return () => {
       alive = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       closeSource();
       clearPoll();
       if (debounceTimer) clearTimeout(debounceTimer);

@@ -144,6 +144,8 @@ export function BlocoDaVps() {
   useEffect(() => {
     let vivo = true;
     const le = () =>
+      // Aba escondida não mede: a leitura varre o `/proc` inteiro na VPS.
+      !document.hidden &&
       leRecursos()
         .then((novo) => {
           if (vivo) setDados(novo);
@@ -153,9 +155,12 @@ export function BlocoDaVps() {
         });
     void le();
     const ronda = window.setInterval(le, INTERVALO_MS);
+    const aoVoltar = () => void le();
+    document.addEventListener('visibilitychange', aoVoltar);
     return () => {
       vivo = false;
       window.clearInterval(ronda);
+      document.removeEventListener('visibilitychange', aoVoltar);
     };
   }, []);
 
