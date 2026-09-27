@@ -6,11 +6,14 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
 (`briefings/fase3-cadeira-de-teste.md`), commit na VPS, build da 3008 e restart da API só com janela do Pavan.
 
 ## 1. Silêncio que entrega a fala: 1,4 s → 2 s
+- ✅ Feito (`eac75e1`, publicado na 3008 em 27/09, cadeira `teste` APROVADO, relatos `fase4-ui.md`/`fase4-teste.md`).
 - Hoje: `TEMPOS.silencioFimDeFala = 1400` em `apps/cockpit/lib/conversa/tipos.ts` (o `redemptionMs` do Silero em
   `use-detector-de-fala.ts`).
 - Pedido: 2 s. Recomendação dada e aceita: não passar de 2 s (cada resposta começa 0,6 s mais tarde).
 
 ## 2. Segurar a tela para pensar sem entregar a fala
+- ✅ Feito (`eac75e1`, mesmo relato). Ressalva: com CPU 4× o detector ocupa a thread principal ~1,6 s e o segurar
+  acende tarde; o vigia do microfone também pode dar alarme falso. Conferir no iPhone antes de mexer.
 - Pedido: no meio da própria vez, apertar e segurar a tela para parar a contagem do silêncio; soltar retoma os 2 s.
 - Conflito conhecido: **um toque para a conversa** (`43b23a4`, `pesquisa-toque.md`). Desenho proposto e aceito:
   toque rápido continua parando; dedo **parado** por ≥ 0,5 s segura a vez; ao soltar volta a contar.
