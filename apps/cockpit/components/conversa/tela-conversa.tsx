@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import type { Estado } from '@/lib/conversa/tipos';
 
-import { OndaConversa } from './onda-conversa';
+import { EsferaConversa } from './esfera-conversa';
 import { useModoConversa } from './use-modo-conversa';
 
 type Leitura = { titulo: string; detalhe: string };
@@ -30,6 +30,8 @@ function leituraDoEstado(
       return { titulo: 'O agente está pensando', detalhe: 'A resposta vai tocar assim que chegar.' };
     case 'falando':
       return { titulo: 'O agente está respondendo', detalhe: 'Quando ele terminar, volto a ouvir você.' };
+    case 'interrompendo':
+      return { titulo: 'Estou ouvindo você', detalhe: 'Pausei a resposta. Continue para interromper.' };
     case 'erro':
       return { titulo: 'A conversa parou', detalhe: 'Confira o aviso e toque para retomar.' };
   }
@@ -103,12 +105,24 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
         </div>
 
         <div className="w-full" style={{ margin: 'var(--ck-space-6) 0' }}>
-          <OndaConversa
+          <EsferaConversa
             estado={modo.conversa.estado}
             nivel={modo.nivel}
             preparando={preparando}
           />
         </div>
+
+        <label className="inline-flex items-center" style={{
+          minHeight: 'var(--ck-touch-min)', gap: 'var(--ck-space-2)',
+          marginBottom: 'var(--ck-space-4)', fontSize: 'var(--ck-text-md)',
+        }}>
+          <input type="checkbox" role="switch" checked={modo.fone}
+            onChange={(event) => modo.mudarFone(event.target.checked)} />
+          Estou de fone
+        </label>
+        <p style={{ marginBottom: 'var(--ck-space-4)', color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)' }}>
+          {modo.fone ? 'Você pode falar por cima para interromper a resposta.' : 'Espere a resposta terminar para falar.'}
+        </p>
 
         {ativa ? (
           <button

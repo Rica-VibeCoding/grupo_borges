@@ -75,6 +75,8 @@ export const TEMPOS = {
   confirmaFalaPorCima: 500,
   /** Fase 2: sem confirmar até aqui, a fala por cima é descartada e a voz retoma. */
   desclassificaFalaPorCima: 2_000,
+  /** Fase 2: rede de segurança da máquina — se o Silero perdeu o callback, desclassifica aqui. */
+  socorroFalaPorCima: 6_000,
 } as const;
 
 /**

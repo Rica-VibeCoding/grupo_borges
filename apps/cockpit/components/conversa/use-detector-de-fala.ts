@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { MicVAD } from '@ricky0123/vad-web';
 
-import { TEMPOS, type Evento } from '@/lib/conversa/tipos';
+import { TEMPOS, type Evento, type Conversa } from '@/lib/conversa/tipos';
 
 import {
   criaControladorDetector,
@@ -18,9 +18,11 @@ const ASSET_VAD = '/vad/';
 export function useDetectorDeFala({
   eventoRef,
   sessaoAtivaRef,
+  conversaRef,
 }: {
   eventoRef: RefObject<(evento: Evento) => void>;
   sessaoAtivaRef: RefObject<boolean>;
+  conversaRef: RefObject<Conversa>;
 }) {
   const [preparacao, setPreparacao] = useState<Preparacao>('preparando');
   const [erroPreparacao, setErroPreparacao] = useState<string | null>(null);
@@ -33,6 +35,14 @@ export function useDetectorDeFala({
   const utilsRef = useRef<VadUtils | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const pausandoRef = useRef(false);
+  const detectorRef = useRef<MicVAD | null>(null);
+  const ajustaDetector = useCallback(() => {
+    const porCima = conversaRef.current.estado === 'falando' || conversaRef.current.estado === 'interrompendo';
+    detectorRef.current?.setOptions({
+      minSpeechMs: porCima ? TEMPOS.confirmaFalaPorCima : TEMPOS.falaMinima,
+      redemptionMs: porCima ? TEMPOS.desclassificaFalaPorCima : TEMPOS.silencioFimDeFala,
+    });
+  }, [conversaRef]);
 
   useEffect(() => {
     let vivo = true;
@@ -70,21 +80,22 @@ export function useDetectorDeFala({
           if (!res.ok) throw new Error(`worklet HTTP ${res.status}`);
           await res.arrayBuffer();
         });
-        const criaDetector = (): Promise<MicVAD> => vad.MicVAD.new({
-          model: 'v5',
-          startOnLoad: false,
-          baseAssetPath: ASSET_VAD,
-          onnxWASMBasePath: ASSET_VAD,
-          redemptionMs: TEMPOS.silencioFimDeFala,
-          preSpeechPadMs: TEMPOS.preGravacao,
-          minSpeechMs: TEMPOS.falaMinima,
-          getStream: abreMicrofone,
-          pauseStream: async (captura) => {
-            pausandoRef.current = true;
-            captura.getTracks().forEach((track) => track.stop());
-            if (streamRef.current === captura) streamRef.current = null;
-            queueMicrotask(() => {
-              pausandoRef.current = false;
+        const criaDetector = async (): Promise<MicVAD> => {
+          const instancia = await vad.MicVAD.new({
+            model: 'v5',
+            startOnLoad: false,
+            baseAssetPath: ASSET_VAD,
+            onnxWASMBasePath: ASSET_VAD,
+            redemptionMs: TEMPOS.silencioFimDeFala,
+            preSpeechPadMs: TEMPOS.preGravacao,
+            minSpeechMs: TEMPOS.falaMinima,
+            getStream: abreMicrofone,
+            pauseStream: async (captura) => {
+              pausandoRef.current = true;
+              captura.getTracks().forEach((track) => track.stop());
+              if (streamRef.current === captura) streamRef.current = null;
+              queueMicrotask(() => {
+                pausandoRef.current = false;
             });
           },
           resumeStream: abreMicrofone,
@@ -92,6 +103,7 @@ export function useDetectorDeFala({
             setFalaDetectada(true);
             eventoRef.current({ tipo: 'falaIniciou' });
           },
+          onSpeechRealStart: () => eventoRef.current({ tipo: 'falaConfirmada' }),
           onSpeechEnd: (audio) => {
             setFalaDetectada(false);
             eventoRef.current({ tipo: 'falaTerminou', audio });
@@ -108,7 +120,11 @@ export function useDetectorDeFala({
             for (const amostra of quadro) soma += amostra * amostra;
             setNivel(Math.min(1, Math.sqrt(soma / quadro.length) * 8));
           },
-        });
+          });
+          detectorRef.current = instancia;
+          ajustaDetector();
+          return instancia;
+        };
         const detector = await criaDetector();
         try {
           await worklet;
@@ -136,12 +152,13 @@ export function useDetectorDeFala({
       streamRef.current?.getTracks().forEach((track) => track.stop());
       void controladorRef.current?.encerra();
     };
-  }, [eventoRef, sessaoAtivaRef]);
+  }, [eventoRef, sessaoAtivaRef, ajustaDetector]);
 
   const liga = useCallback(async () => {
     const controlador = controladorRef.current;
     if (controlador === null) throw new Error('detector ainda não está pronto');
     setAbrindoMicrofone(true);
+    ajustaDetector();
     try {
       await controlador.liga();
     } catch (erro) {
@@ -150,7 +167,7 @@ export function useDetectorDeFala({
     } finally {
       setAbrindoMicrofone(false);
     }
-  }, []);
+  }, [ajustaDetector]);
 
   const desliga = useCallback(() => {
     setFalaDetectada(false);
@@ -174,5 +191,6 @@ export function useDetectorDeFala({
     liga,
     desliga,
     criaWav,
+    ajustaDetector,
   };
 }

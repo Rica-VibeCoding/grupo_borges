@@ -8,6 +8,7 @@ import { avanca, inicial } from '@/lib/conversa/maquina';
 import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
+import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { maiorIdDasMensagens, textosDoZeDepoisDe } from './textos-do-ze';
@@ -18,29 +19,11 @@ import { useWakeLock } from './use-wake-lock';
 const FRASE_PONTE = 'Estou pensando. Já te respondo.';
 const FRASE_DEMORA = 'Ainda estou trabalhando nisso.';
 
-function mensagemDeErro(motivo: Conversa['motivo']): string {
-  switch (motivo) {
-    case 'microfoneNegado':
-      return 'O microfone não foi liberado. Autorize o acesso e tente novamente.';
-    case 'capturaCaiu':
-      return 'O microfone parou. Toque para retomar a conversa.';
-    case 'transcricaoFalhou':
-      return 'Não consegui entender o áudio. Toque para tentar novamente.';
-    case 'transcricaoVazia':
-      return 'Não ouvi uma frase completa.';
-    case 'envioFalhou':
-      return 'A mensagem não chegou ao agente. Toque para tentar novamente.';
-    case 'agenteOcupado':
-      return 'O agente já está atendendo outro turno. Tente novamente quando ele terminar.';
-    default:
-      return 'A conversa foi interrompida.';
-  }
-}
-
 export function useModoConversa(slug: string) {
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
   const [aviso, setAviso] = useState<string | null>(null);
   const [ultimaTranscricao, setUltimaTranscricao] = useState<string | null>(null);
+  const [fone, setFone] = useState(false);
 
   const conversaRef = useRef(conversa);
   const sessaoAtivaRef = useRef(false);
@@ -59,6 +42,9 @@ export function useModoConversa(slug: string) {
     enfileira: enfileiraFala,
     fechaTurno,
     cancela: cancelaFala,
+    pausa: pausaFala,
+    retoma: retomaFala,
+    nivel: nivelVoz,
   } = useFilaDeVoz({
     slug,
     aoTerminar: () => despachaRef.current({ tipo: 'vozTerminou' }),
@@ -73,7 +59,7 @@ export function useModoConversa(slug: string) {
     },
   });
   const wakeLock = useWakeLock(sessaoAtivaRef);
-  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef });
+  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef });
 
   const sons = useCallback(() => {
     sonsRef.current ??= criaSonsLocais();
@@ -110,6 +96,15 @@ export function useModoConversa(slug: string) {
         return;
       case 'desligarDetector':
         detector.desliga();
+        return;
+      case 'pausarVoz':
+        pausaFala();
+        return;
+      case 'retomarVoz':
+        retomaFala();
+        return;
+      case 'descartarVoz':
+        cancelaFala();
         return;
       case 'transcrever': {
         const audio = detector.criaWav(efeito.audio);
@@ -204,24 +199,26 @@ export function useModoConversa(slug: string) {
   }, [abreTurno, despacha, fechaTurno, stream.isRunning, stream.messages, stream.status]);
 
   useEffect(() => {
-    if (conversa.estado !== 'esperandoZe') return;
+    if (conversa.estado !== 'esperandoZe' && conversa.estado !== 'interrompendo') return;
     const timer = window.setInterval(() => despacha({ tipo: 'tique' }), 250);
     return () => window.clearInterval(timer);
   }, [conversa.estado, despacha]);
+
+  useEffect(() => detector.ajustaDetector(), [conversa.estado, detector.ajustaDetector]);
 
   useEffect(() => {
     const aoMudarVisibilidade = () => {
       if (
         document.visibilityState === 'hidden' &&
         sessaoAtivaRef.current &&
-        conversaRef.current.estado === 'ouvindo'
+        ['ouvindo', 'interrompendo', ...(fone ? ['falando'] : [])].includes(conversaRef.current.estado)
       ) {
         despachaRef.current({ tipo: 'capturaCaiu' });
       }
     };
     document.addEventListener('visibilitychange', aoMudarVisibilidade);
     return () => document.removeEventListener('visibilitychange', aoMudarVisibilidade);
-  }, []);
+  }, [fone]);
 
   const comecar = useCallback(() => {
     if (detector.preparacao !== 'pronto' || iniciandoRef.current) return;
@@ -264,7 +261,9 @@ export function useModoConversa(slug: string) {
     tempoCargaMs: detector.tempoCargaMs,
     falaDetectada: detector.falaDetectada,
     abrindoMicrofone: detector.abrindoMicrofone,
-    nivel: detector.nivel,
+    nivel: conversa.estado === 'falando' ? nivelVoz : detector.nivel,
+    fone,
+    mudarFone: (ligado: boolean) => { setFone(ligado); despacha({ tipo: 'fone', ligado }); },
     aviso,
     ultimaTranscricao,
     streamStatus: stream.status,

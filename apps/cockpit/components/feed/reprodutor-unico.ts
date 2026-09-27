@@ -45,6 +45,8 @@ export type Sequencia = {
   enfileira(url: string): void;
   /** Marca que não vêm mais sentenças — o fim da última encerra a fala. */
   fecha(): void;
+  pausa(): void;
+  retoma(): void;
   para(): void;
 };
 
@@ -75,6 +77,7 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
   let fechada = false;
   let vivo = true;
   let tocando = false;
+  let pausada = false;
 
   const meu = () => vivo && donoAtual === dono;
 
@@ -109,7 +112,7 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
   }
 
   async function toca() {
-    if (!meu() || tocando) return;
+    if (!meu() || tocando || pausada) return;
     const url = fila[indice];
     if (url === undefined) return;
     tocando = true;
@@ -117,7 +120,8 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
     try {
       await audio.play();
     } catch {
-      if (!meu()) return;
+      // Uma pausa intencional pode abortar a promessa de play ainda em voo.
+      if (!meu() || pausada) return;
       tocando = false;
       limpa();
       escuta.aoFalhar();
@@ -147,8 +151,23 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
         escuta.aoTerminar();
       }
     },
+    pausa() {
+      if (!meu()) return;
+      pausada = true;
+      audio.pause();
+    },
+    retoma() {
+      if (!meu()) return;
+      pausada = false;
+      if (!tocando) { void toca(); return; }
+      void audio.play().catch(() => {
+        if (!meu() || pausada) return;
+        limpa();
+        escuta.aoFalhar();
+      });
+    },
     para() {
-      if (pararAtual !== null) pararAtual();
+      if (meu() && pararAtual !== null) pararAtual();
     },
   };
 }

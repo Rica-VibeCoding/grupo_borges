@@ -1560,3 +1560,9 @@ body {
 .ck-atalho:focus-visible {
   background: var(--ck-atalho-bg-hover);
 }
+
+/* Modo conversa: esfera modulada pelo volume da fala. */
+:root {
+  --ck-conversa-esfera: radial-gradient(circle at 32% 25%, var(--ck-surface-canvas), currentColor 58%, var(--ck-surface-canvas) 100%);
+  --ck-conversa-esfera-sombra: 0 0 3rem color-mix(in srgb, currentColor 24%, transparent), inset -1rem -1.5rem 2rem color-mix(in srgb, var(--ck-surface-canvas) 60%, transparent);
+}

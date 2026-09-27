@@ -21,6 +21,10 @@ function roda(sequencia: Passo[]): { conversa: Conversa; efeitos: Efeito[] } {
 
 const soTipos = (efeitos: Efeito[]): string[] => efeitos.map((e) => e.tipo);
 
+// `fone` mora no tipo interno da máquina, não no contrato — a tela é a fonte da chave.
+const foneDe = (conversa: Conversa): boolean | undefined =>
+  (conversa as Conversa & { fone?: boolean }).fone;
+
 // Atalho: leva a conversa até `esperandoZe` (comecar → fala → transcrever → enviar).
 function ateEspera(agoraEnviou = 300): Passo[] {
   return [
@@ -313,4 +317,318 @@ test('efeitos carregam o payload certo', () => {
   assert.ok(transcrever && transcrever.tipo === 'transcrever' && transcrever.audio === audio);
   assert.ok(enviar && enviar.tipo === 'enviar' && enviar.texto === 'oi');
   assert.ok(falar && falar.tipo === 'falar' && falar.texto === 'resposta');
+});
+
+// ---- fase 2: fala por cima (só com fone) ----
+
+test('fone guarda a chave em qualquer estado, sem efeito — vale até em parado', () => {
+  const { conversa, efeitos } = roda([{ evento: { tipo: 'fone', ligado: true }, agora: 0 }]);
+  assert.equal(conversa.estado, 'parado');
+  assert.equal(foneDe(conversa), true);
+  assert.deepEqual(efeitos, []);
+
+  const b = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    { evento: { tipo: 'fone', ligado: false }, agora: 10 },
+  ]);
+  assert.equal(b.conversa.estado, 'parado');
+  assert.equal(foneDe(b.conversa), false);
+  assert.deepEqual(b.efeitos, []);
+});
+
+test('sem fone, falaIniciou em falando não interrompe (meio-duplex de sempre)', () => {
+  const { conversa, efeitos } = roda([
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+  ]);
+  assert.equal(conversa.estado, 'falando');
+  assert.ok(!soTipos(efeitos).includes('pausarVoz'));
+});
+
+test('com fone, entrar em falando liga o detector (para capturar fala por cima)', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+  ]);
+  assert.equal(conversa.estado, 'falando');
+  assert.equal(foneDe(conversa), true);
+  assert.deepEqual(soTipos(efeitos).slice(-2), ['ligarDetector', 'falar']);
+});
+
+test('com fone, falaIniciou pausa a voz e vai a interrompendo', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+  ]);
+  assert.equal(conversa.estado, 'interrompendo');
+  assert.deepEqual(soTipos(efeitos).slice(-1), ['pausarVoz']);
+});
+
+test('falaConfirmada descarta a voz e segue como fala normal', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+  ]);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.deepEqual(soTipos(efeitos).slice(-1), ['descartarVoz']);
+
+  // A fala do usuário segue o fluxo normal: falaTerminou leva a transcrevendo.
+  const fim = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
+    { evento: { tipo: 'transcreveu', texto: 'continua' }, agora: 800 },
+  ]);
+  assert.equal(fim.conversa.estado, 'transcrevendo');
+});
+
+test('falaDescartada retoma a voz de onde parou', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaDescartada' }, agora: 600 },
+  ]);
+  assert.equal(conversa.estado, 'falando');
+  assert.deepEqual(soTipos(efeitos).slice(-1), ['retomarVoz']);
+});
+
+test('o tique não desclassifica aos 2 s — a confirmação tardia ainda vale', () => {
+  // "hmm", 1,5 s calado, "espera": o Silero segue num segmento só (redemptionMs reinicia
+  // a cada quadro). A máquina não pode retomar aos 2 s do INÍCIO, senão a confirmação que
+  // chega depois viraria noop.
+  const { conversa } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'tique' }, agora: 2600 }, // 2,1 s: ainda interrompendo
+  ]);
+  assert.equal(conversa.estado, 'interrompendo');
+
+  const confirmou = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'tique' }, agora: 2600 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 3600 }, // confirmação tardia
+  ]);
+  assert.equal(confirmou.conversa.estado, 'ouvindo');
+  assert.deepEqual(soTipos(confirmou.efeitos).slice(-1), ['descartarVoz']);
+});
+
+test('o tique só desclassifica como socorro, bem depois (6 s)', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'tique' }, agora: 6700 }, // 6,2 s: Silero perdeu o callback
+  ]);
+  assert.equal(conversa.estado, 'falando');
+  assert.deepEqual(soTipos(efeitos).slice(-1), ['retomarVoz']);
+});
+
+test('textoDoZe em interrompendo enfileira sem tocar; confirmar descarta tudo', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'textoDoZe', texto: 'continuação' }, agora: 550 },
+  ]);
+  assert.equal(conversa.estado, 'interrompendo');
+  // O texto novo foi enfileirado (falar saiu), não se perdeu.
+  assert.deepEqual(soTipos(efeitos).slice(-1), ['falar']);
+  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 2);
+
+  // Confirmando, descartarVoz limpa a fila inteira.
+  const confirmou = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'textoDoZe', texto: 'continuação' }, agora: 550 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+  ]);
+  assert.equal(confirmou.conversa.estado, 'ouvindo');
+  assert.deepEqual(soTipos(confirmou.efeitos).slice(-1), ['descartarVoz']);
+});
+
+test('zeTerminou/vozTerminou em interrompendo só marcam; com os dois vai direto a ouvir', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'zeTerminou' }, agora: 600 },
+    { evento: { tipo: 'vozTerminou' }, agora: 700 },
+    { evento: { tipo: 'falaDescartada' }, agora: 800 },
+  ]);
+  assert.equal(conversa.estado, 'ouvindo');
+  // A pausa é sempre desfeita (retomarVoz), mas sem voz para tocar: vai direto a ouvir.
+  assert.deepEqual(soTipos(efeitos).slice(-2), ['retomarVoz', 'ligarDetector']);
+});
+
+test('falaIniciou preserva os flags de término — retomar ainda sai com os dois', () => {
+  const { conversa } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'zeTerminou' }, agora: 450 }, // stream caiu, voz ainda toca
+    { evento: { tipo: 'falaIniciou' }, agora: 500 }, // pausa curta
+    { evento: { tipo: 'falaDescartada' }, agora: 600 }, // tosse: retoma
+  ]);
+  assert.equal(conversa.estado, 'falando');
+
+  const fim = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'zeTerminou' }, agora: 450 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaDescartada' }, agora: 600 },
+    { evento: { tipo: 'vozTerminou' }, agora: 700 }, // a voz acaba depois do retomar
+  ]);
+  assert.equal(fim.conversa.estado, 'ouvindo');
+});
+
+test('ligar fone no meio de falando liga o detector', () => {
+  const { conversa, efeitos } = roda([
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 }, // sem fone: desliga
+    { evento: { tipo: 'fone', ligado: true }, agora: 500 }, // ligou fone: liga
+  ]);
+  assert.equal(conversa.estado, 'falando');
+  assert.equal(foneDe(conversa), true);
+  assert.deepEqual(soTipos(efeitos).slice(-1), ['ligarDetector']);
+});
+
+test('desligar fone no meio de interrompendo retoma a voz e desliga o detector', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'fone', ligado: false }, agora: 600 },
+  ]);
+  assert.equal(conversa.estado, 'falando');
+  assert.equal(foneDe(conversa), false);
+  assert.deepEqual(soTipos(efeitos).slice(-2), ['retomarVoz', 'desligarDetector']);
+});
+
+// ---- conserto pós-revisão ----
+
+test('captura cai em interrompendo descarta a voz para liberar o reprodutor pausado', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'capturaCaiu' }, agora: 600 },
+  ]);
+  assert.equal(conversa.estado, 'erro');
+  assert.equal(conversa.motivo, 'capturaCaiu');
+  // pausarVoz aconteceu; o erro precisa descartar a voz para destravar o áudio.
+  assert.deepEqual(soTipos(efeitos).slice(-3), ['descartarVoz', 'desligarDetector', 'avisarErro']);
+});
+
+test('falhou em interrompendo também descarta a voz antes de ir a erro', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falhou', motivo: 'capturaCaiu' }, agora: 600 },
+  ]);
+  assert.equal(conversa.estado, 'erro');
+  assert.deepEqual(soTipos(efeitos).slice(-3), ['descartarVoz', 'desligarDetector', 'avisarErro']);
+});
+
+test('falaConfirmada com Zé transmitindo ignora o textoDoZe residual até o zeTerminou', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 650 },
+  ]);
+  assert.equal(conversa.estado, 'ouvindo');
+  // Só o 'olá' virou falar; o 'residual' não voltou a falar por cima da fala do usuário.
+  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1);
+
+  // O zeTerminou do turno descartado limpa a marca; o próximo turno fala normal.
+  const fim = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 650 },
+    { evento: { tipo: 'zeTerminou' }, agora: 700 },
+    { evento: { tipo: 'textoDoZe', texto: 'novo turno' }, agora: 750 },
+  ]);
+  assert.equal(fim.conversa.estado, 'falando');
+  assert.equal(fim.efeitos.filter((e) => e.tipo === 'falar').length, 2);
+});
+
+test('a marca atravessa falaTerminou/enviou — residual e zeTerminou velho não atropelam', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
+    { evento: { tipo: 'transcreveu', texto: 'novo pedido' }, agora: 800 },
+    { evento: { tipo: 'enviou' }, agora: 900 },
+    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 950 }, // ignorado
+    { evento: { tipo: 'zeTerminou' }, agora: 1000 }, // velho: só limpa, não volta a ouvir
+  ]);
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1); // só o 'olá'
+
+  const fim = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
+    { evento: { tipo: 'transcreveu', texto: 'novo pedido' }, agora: 800 },
+    { evento: { tipo: 'enviou' }, agora: 900 },
+    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 950 },
+    { evento: { tipo: 'zeTerminou' }, agora: 1000 },
+    { evento: { tipo: 'textoDoZe', texto: 'resposta nova' }, agora: 1100 },
+  ]);
+  assert.equal(fim.conversa.estado, 'falando');
+  assert.equal(fim.efeitos.filter((e) => e.tipo === 'falar').length, 2);
+});
+
+test('a marca também atravessa transcricaoVazia de volta a ouvindo', () => {
+  const { conversa, efeitos } = roda([
+    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
+    ...ateEspera(),
+    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
+    { evento: { tipo: 'falaIniciou' }, agora: 500 },
+    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
+    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
+    { evento: { tipo: 'transcreveu', texto: '   ' }, agora: 800 }, // vazio → ouvindo
+    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 900 },
+  ]);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1); // só o 'olá'
 });

@@ -4,24 +4,21 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (27/09/2026 ~21h30 BRT — atualizar a cada fase):** Fases 0 e 1 **fechadas** (`5ff9759`).
-> **Fase 2 em curso, NADA commitado dela:** o diff mora só no clone do PC (`projetos\grupo_borges`).
-> - `logica` **entregou** (31 testes verdes, `docs/modo-conversa/relatos/fase2-logica.md` no clone do PC).
-> - `tela` **entregou** (971 testes verdes, E2E 4/4 com o `canarinho` em duas rodadas: sem fone, fala curta
->   pausa e retoma na mesma posição, duas falas longas interrompem e viram mensagem) — relato em
->   `docs/modo-conversa/relatos/fase2-tela.md` no PC. Tocou `reprodutor-unico.ts` (pausa/retoma na sequência).
->   Contexto dela em 57%: `/new` (tecla a tecla, ver psmux.md) antes de nova tarefa.
-> - Decidir no commit: a `tela` deixou provas em `docs/modo-conversa/e2e/` (`fase2-tela.cjs`, `-provas.json`,
->   `-mobile.png`); os `turno*.mp3` dessa pasta NÃO entram.
-> - Contrato da fase 2 já commitado (`f2c0ae3`). O `type-check` fica verde com a máquina do PC.
-> Provas físicas da fase 1 (eco, tela bloqueada) foram para a fase 3, no iPhone.
+> **ESTADO (26/09/2026 ~21h40 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas** (fase 2 no commit
+> que acompanha esta linha). **Próxima: fase 3, a UI dedicada** (Opus 5.5, ordem do Rica). Depois, fase 4: publicar a 3008 e testar no iPhone.
+> - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
+>   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
+>   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
+>   ficaram no PC, fora do repo.
+> - Cadeiras no PC: `logica` em 17%, `tela` em 57% (`/new` antes de nova tarefa).
+> - **Ordem do Rica (26/09): na VPS só a coordenação.** Teste e `type-check` rodam no PC; a VPS aplica o diff e
+>   commita. Poupar RAM.
 >
 > **Retomar depois de `/clear` — nesta ordem:**
-> 1. Ler este banner e a seção "Mecânica das cadeiras" abaixo.
-> 2. Capturar as duas cadeiras (`cap-daniel.ps1`) e ler os dois relatos `fase2-*.md` do PC.
-> 3. Trazer o diff do PC para a VPS, aplicar, `npm test` + `type-check`, `code-review` (subagente), consertos
->    pela cadeira dona, commit a partir da VPS, sincronizar o PC. Receita na mecânica.
-> 4. Fechar a fase 2 aqui e seguir para a fase 3 (build com o Pavan + iPhone do Rica).
+> 1. Ler este banner, as fases 3 e 4 e a seção "Mecânica das cadeiras".
+> 2. Fase 3: subir a cadeira Opus 5.5 no PC, com briefing de pesquisa e desenho em `briefings/fase3-ui.md`.
+> 3. Fase 4: combinar com o Pavan a janela de build da 3008 (R3), e o Rica testa no iPhone: 3 turnos, tela bloqueada, eco no alto-falante, fala por cima de fone, tosse. Defeito
+>    volta para a cadeira dona pela mecânica.
 
 ## O pedido
 
@@ -104,7 +101,7 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
   tela bloqueada e desbloqueada no meio (a queda é avisada); eco testado no alto-falante.
   ✅ 27/09: 957 testes verdes; 3 turnos seguidos com o `canarinho`, sem clique, envio → primeira voz
   4,4–6,9 s, detector desligado durante toda voz (relato `docs/modo-conversa/relatos/fase1-tela.md`).
-  Tela bloqueada e eco → fase 3, no iPhone.
+  Tela bloqueada e eco → fase 4, no iPhone.
 
 ### Fase 2 — esfera e fala por cima
 - Esfera reagindo ao volume de quem fala.
@@ -112,8 +109,19 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
   e retomar a voz de onde parou. Ligada só com a chave "estou de fone".
 - Toque mínimo em `reprodutor-unico.ts` (limpar a fila) — arquivo de outro dono, listar no relato.
 - **Fecha quando:** interromper a voz duas vezes de fone; tosse não interrompe.
+  ✅ 26/09: E2E 4/4 com o `canarinho` (sem fone, fala de 200 ms pausa e retoma na mesma posição, duas falas
+  longas interrompem e viram mensagem); 977 testes. Revisão: a captura que caía em `interrompendo` travava a
+  voz, e o resto do turno interrompido voltava a tocar. O `tique` desclassificava 2 s depois do começo da
+  fala, e não depois de 2 s de silêncio. Os três foram consertados.
 
-### Fase 3 — publicar e testar no aparelho do Rica
+### Fase 3 — UI dedicada (ordem do Rica, 26/09)
+- "A melhor UI possível, bem pesquisada, bonita, futurística — quero que me impressione." Feita por uma cadeira
+  **Opus 5.5** (pedido dele). Pesquisa de referência antes de desenhar; a esfera e os estados da fase 2 são o
+  esqueleto, e a lógica não muda.
+- Vem ANTES de publicar, para que o build na VPS saia uma vez só e o iPhone teste a tela final.
+- **Fecha quando:** o Rica aprova a tela, vendo no PC ou por captura; a suíte segue verde; o E2E 4/4 roda de novo.
+
+### Fase 4 — publicar e testar no aparelho do Rica
 - Build da 3008 na VPS em janela combinada com o Pavan (`next build` suspenso por memória desde 25/09).
 - Rica testa no iPhone. Ajustes voltam para a fase dona do defeito.
 
@@ -140,12 +148,19 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
 - **Diff PC → VPS:** no PC, `git add -N <novos>` + `git diff --binary -- <caminhos> > %TEMP%\x.patch` +
   `git reset -q -- <novos>`; `scp` do `AppData/Local/Temp/x.patch`; na VPS `git apply`. Depois do commit na VPS,
   no PC: `git checkout -- <modificados>`, apagar os novos, `git pull --ff-only`.
-- **Na VPS:** `pnpm install --frozen-lockfile` (o `postinstall` copia os 4 arquivos do motor para
-  `public/vad/`), `npm test` e `npm run type-check` em `apps/cockpit`. Não commitar `docs/modo-conversa/e2e/`.
+- **Na VPS só aplicar e commitar** (ordem do Rica, 26/09: poupar RAM). `npm test` e `npm run type-check` rodam
+  no PC, pela cadeira, e o PRONTO dela traz os números. Não commitar `docs/modo-conversa/e2e/`.
+- **O diff não está na árvore da VPS** enquanto a fase não fecha: trocar de patch é `git apply -R <velho>` e
+  depois `git apply <novo>`.
 - **E2E:** só com o agente `canarinho`. Chrome de teste minimizado não entrega a resposta (R5).
 - **Cadeira não commita**; commit é da coordenação, com `git commit -- <paths>`.
 
 ## Riscos que continuam abertos
+
+- **R6** Interromper o Zé para a VOZ, mas não o TURNO dele: o agente segue gerando o turno velho, e a fala nova
+  entra como mensagem no meio do turno (MURAL: `absorbed_mid_turn`). A máquina ignora o resto do turno velho até
+  o `zeTerminou` dele, mas a resposta à fala nova pode demorar ou vir colada. Medir no iPhone. Se pesar, a
+  interrupção passa a mandar Esc para o agente, o que mexe no backend e passa pelo Rica.
 
 - **R1** iPhone: Modo de Baixo Consumo barra o autoplay; microfone morre com tela bloqueada.
 - **R3** Publicar depende de janela de build na VPS.
