@@ -8,10 +8,10 @@ abre o painel (clicar na imagem do agente já abre o painel)".
 ## O que muda
 1. **Microfone sai da barra** (`components/shell/barra-de-telas.tsx`, o `<Link>` para `/conversa/{slug}`). Para
    leitor de tela e teclado o link continua existindo, visualmente oculto (mesma regra de `fase3-gestos.md` item 6).
-2. **Arrastar para a ESQUERDA no chat abre `/conversa/{slug}`.** Hoje é para a direita (`gestoDoChat` em
-   `components/conversa/gesto-de-arrasto.ts`, usado por `arrasto-do-chat.tsx`): troca a direção, a direita deixa
-   de valer. Limiar, bordas, origem (composer, gaveta, rolagem de lado, seleção) ficam como estão. Atualizar os
-   comentários que dizem "direita".
+2. **Arrastar para a ESQUERDA no chat também abre `/conversa/{slug}`.** Hoje só a direita abre (`gestoDoChat` em
+   `components/conversa/gesto-de-arrasto.ts`, usado por `arrasto-do-chat.tsx`): a direita CONTINUA valendo
+   (correção do Rica, 27/09), a esquerda passa a valer junto. Limiar, bordas, origem (composer, gaveta, rolagem de lado, seleção) ficam como estão. Atualizar os
+   comentários que dizem só "direita".
 3. **⧉ do painel sai** (`BotaoPainel` na coluna da direita da barra). A cápsula do agente já abre o mesmo painel.
    Antes de tirar, provar que o painel aberto FECHA sem ele (toque fora, botão da própria gaveta) no celular e no
    desktop. Se não fecha, pare e relate — não invente fechamento novo. O grid de 3 colunas tem de manter a pill
@@ -22,6 +22,6 @@ abre o painel (clicar na imagem do agente já abre o painel)".
 
 ## Limites e fecho
 Só `components/shell/` (barra, cápsula, retrato, pastilha), `components/conversa/gesto-de-arrasto*` e
-`arrasto-do-chat.tsx`. Menor diff. Teste puro do gesto atualizado (esquerda abre, direita não), `npm test` e
+`arrasto-do-chat.tsx`. Menor diff. Teste puro do gesto atualizado (esquerda e direita abrem), `npm test` e
 `type-check` verdes no PC, capturas antes/depois das 4 mudanças, relato em `relatos/fase3-ui.md`. Nada em sessão
 viva, sem build da 3008, sem commit. Última linha: `FIM-DA-BARRA`.
