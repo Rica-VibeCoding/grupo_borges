@@ -34,6 +34,7 @@ nulo nessa árvore, gaveta sem animar). Prove com o toque simulado em WebKit, n�
 ## Limites e fecho
 `components/conversa/` (gesto, arrastos, tela da conversa), `components/shell/` só o que a gaveta da tropa pedir, e
 o mínimo em `app/agente/[slug]/` e `app/conversa/`. Menor diff. Teste puro da decisão (metade, velocidade, volta),
-`npm test` e `type-check` verdes no PC, **vídeo** E2E com toque simulado dos três gestos (indo e voltando com mola)
-no tamanho do iPhone, relato em `relatos/fase3-ui.md`. Nada em sessão viva, sem build da 3008, sem commit.
+`npm test` e `type-check` verdes no PC, E2E com toque simulado dos três gestos (indo e voltando com mola) no
+tamanho do iPhone — **sem vídeo nem captura para o Rica** (ordem dele, 27/09: ele testa direto na UI). Ao fechar,
+deixe o `next dev` do PC no ar na 3009 e diga a porta no PRONTO: a coordenação expõe para o iPhone. Relato em `relatos/fase3-ui.md`. Nada em sessão viva, sem build da 3008, sem commit.
 Última linha: `FIM-DO-DESLIZE`.
