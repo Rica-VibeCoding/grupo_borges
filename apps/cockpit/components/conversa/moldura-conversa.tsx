@@ -34,20 +34,6 @@ const RAIO = 55;
 /** O brilho é macio: 0,6 da resolução basta e poupa a GPU. */
 const ESCALA = 0.6;
 
-function leMargensSeguras(dentro: HTMLElement) {
-  const sonda = document.createElement('div');
-  sonda.style.cssText =
-    'position:absolute;visibility:hidden;padding:0 var(--ck-safe-right) var(--ck-safe-bottom) var(--ck-safe-left)';
-  dentro.append(sonda);
-  const estilo = getComputedStyle(sonda);
-  const margens = {
-    pe: parseFloat(estilo.paddingBottom) || 0,
-    lado: Math.max(parseFloat(estilo.paddingLeft) || 0, parseFloat(estilo.paddingRight) || 0),
-  };
-  sonda.remove();
-  return margens;
-}
-
 /**
  * A borda da tela como indicador. Nenhum `setState` por quadro: o volume vem de
  * `leNivel()` (uma ref) e o desenho roda no `requestAnimationFrame`, que dorme
@@ -94,11 +80,9 @@ export function MolduraConversa({
     const { gl, u } = tela;
     const cores = leCoresDoTema(TOKENS);
     let esc = 1;
-    let margens = { pe: 0, lado: 0 };
     let zona = { topo: 0, base: 0 };
     const mede = () => {
       esc = tela.ajusta();
-      margens = leMargensSeguras(raiz);
       const caixa = zonaDoTexto.current?.getBoundingClientRect();
       const topo = canvas.getBoundingClientRect().top;
       zona = caixa ? { topo: caixa.top - topo - 48, base: caixa.bottom - topo + 48 } : { topo: 0, base: 0 };
@@ -133,8 +117,6 @@ export function MolduraConversa({
       gl.uniform2f(u('uRes'), canvas.width, canvas.height);
       gl.uniform1f(u('uEsc'), esc);
       gl.uniform1f(u('uRaio'), RAIO);
-      gl.uniform1f(u('uPe'), margens.pe);
-      gl.uniform1f(u('uLado'), margens.lado);
       gl.uniform1f(u('uZonaTopo'), zona.topo);
       gl.uniform1f(u('uZonaBase'), zona.base);
       gl.uniform1f(u('uT'), tempo);

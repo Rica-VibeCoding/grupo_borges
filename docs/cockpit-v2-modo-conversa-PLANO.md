@@ -11,7 +11,8 @@
 > esquerda vai ao chat, cima abre configurações, direita no chat volta). 1067 testes verdes; relatos em `relatos/fase3-ui.md`.
 > Na manhã de 27/09: o freio sai sempre — o `/interromper` limpa o pedido que o Claude Code devolve à caixa e grava o
 > fim no stream (`8bb6c2a`, `7d749a9`, API reiniciada) — e o fim sem fala espera 800 ms antes de fechar (`6a41df9`).
-> Esperando o teste dele no iPhone.
+> Depois, a moldura passou a colar no vidro nos quatro lados: antes o pé subia a faixa segura e sobrava parede embaixo (commit
+> desta data, ainda **sem build na 3008**). Esperando o teste dele no iPhone.
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`

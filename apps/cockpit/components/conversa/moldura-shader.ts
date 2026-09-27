@@ -1,8 +1,8 @@
 /**
  * Fragment shader da Moldura. Unidades em px CSS; y cresce para cima.
  *
- * - A moldura segue a área visível: o pé sobe o `--ck-safe-bottom` e as laterais
- *   entram o `--ck-safe-left/right`. Abaixo do pé fica só o halo.
+ * - A moldura cola no vidro nos quatro lados, com o canto do iPhone (`uRaio`); o
+ *   indicador de início do sistema passa por cima da luz, como nos apps nativos.
  * - A luz abraça a borda: some antes de ~60 px (Fio) ou ~110 px (Aurora).
  * - Contraste por construção: dentro da zona de texto (`uZonaTopo`..`uZonaBase`,
  *   a 22 px ou mais da borda, com rampa de 48 px fora do texto) a luminância final não passa de 0,05 — texto
@@ -13,7 +13,7 @@
 export const FRAG_MOLDURA = `
 precision highp float;
 uniform vec2 uRes;
-uniform float uEsc, uRaio, uPe, uLado, uZonaTopo, uZonaBase;
+uniform float uEsc, uRaio, uZonaTopo, uZonaBase;
 uniform float uT, uNivel, uProg, uJanela, uOrbita, uCauda, uPulso, uAurora;
 uniform vec4 uA, uB;
 uniform vec3 uFundo, uVoce, uZe, uPensa, uPrepara, uErro, uCorPulso;
@@ -28,8 +28,8 @@ vec3 paraSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1. / 2.4)) - .
 void main() {
   vec2 tam = uRes / uEsc;
   vec2 css = gl_FragCoord.xy / uEsc;
-  vec2 b = vec2(.5 * tam.x - uLado, .5 * (tam.y - uPe));
-  vec2 p = css - vec2(.5 * tam.x, uPe + b.y);
+  vec2 b = .5 * tam;
+  vec2 p = css - b;
   float sd = sdRR(p, b, uRaio);
   float d = abs(sd);
   float ang = atan(p.x, p.y);
