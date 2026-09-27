@@ -231,6 +231,22 @@ durante turno", que é o que o Rica mediu no terminal.
   respondem "saved as your default for new sessions" (medido pelo Rica). A doc model-config
   confirma: só `low/medium/high/xhigh` persistem; `max`/`ultracode` session-only.
 
+### Atualização 27/09 — CC 2.1.283, e o que o backend passou a fazer
+
+Medido numa sessão descartável (fixtures em `apps/api/tests/fixtures/pergunta_motor/`):
+o modal é o mesmo para modelo ("Switch model?") e esforço ("Change effort level?"); abre
+**com o agente ocioso também**, sempre que o modelo/nível atual já tem cache; no meio do turno
+ele abre na hora (não enfileira mais). Nasce com o foco em "1. Yes"; `1`/`2` escolhem direto,
+sem Enter e sem depender do foco; `Esc` cancela. Com o modal aberto a caixa de entrada some, e
+o `send_message` devolve `uncertain` — o envio que abre o modal nunca se prova "delivered".
+
+Backend (`routers/agents.py`, `services/pergunta_motor.py`): `PATCH /effort` e `POST /model`
+viram o mesmo caminho — nível/modelo igual ao atual não manda nada (`ja_estava`); ocupado
+devolve 409 `agent_busy_wait` sem tocar o tmux; ocioso manda o comando e só responde `1`
+depois de VER a pergunta com o destino pedido. Pergunta de outro destino fica aberta e aparece
+em `pergunta_motor` na `/api/fleet`; a barra do chat responde por
+`POST /api/agents/{slug}/confirmacao-motor`. Nenhum Enter cego sobra nesses dois endpoints.
+
 ## 4. Onde o cockpit assume errado hoje — a lista da fase 2, REORDENADA por impacto real
 
 > v1 listava por ordem de descoberta; o Rica pediu por **impacto real** — o que dói mais

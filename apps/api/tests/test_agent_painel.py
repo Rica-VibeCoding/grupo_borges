@@ -654,13 +654,25 @@ def test_agent_painel_patch_effort_claude_runtime_preserva_settings(
         encoding="utf-8",
     )
 
+    # A sessão estava em `high` antes do pedido: com o nível pedido igual ao
+    # atual o endpoint não manda nada (ver `..._ja_estava_nao_manda_nada`).
+    antes = agents_router._CCStatus(
+        session_id, status_path, {"updated_at": 1, "effort": {"level": "high"}}
+    )
+    carregar = agents_router._load_cc_status
+    chamadas = iter([antes])
+
+    async def load_cc_status(db, slug):
+        return next(chamadas, None) or await carregar(db, slug)
+
     try:
         with patch(
             "routers.agents.tmux_driver.send_message",
             return_value=tmux_driver.DELIVERED,
         ) as send, patch(
-            "routers.agents.tmux_driver.press_enter", return_value=True
-        ):
+            "routers.agents.tmux_driver.capture_pane_excerpt",
+            return_value="Sonnet 5 - 00:01 - [...] 1%",
+        ), patch("routers.agents._load_cc_status", side_effect=load_cc_status):
             with TestClient(app) as client:
                 response = client.patch(
                     "/api/agents/daniel/effort", json={"effort": "xhigh"}
@@ -677,6 +689,8 @@ def test_agent_painel_patch_effort_claude_runtime_preserva_settings(
             "tmux_delivered": True,
             "confirmed": True,
             "runtime_switch": True,
+            "ja_estava": False,
+            "pergunta_respondida": False,
         }
         send.assert_called_once_with("daniel", "/effort xhigh")
         persisted = json.loads(
@@ -736,7 +750,7 @@ def test_agent_painel_nao_le_auto_como_nivel_da_statusline(
 
     A doc do statusline documenta `effort.level` como low/medium/high/xhigh/max
     e trata `auto` como *reset to the model default* — a palavra nunca chega no
-    JSON (o `_poll_claude_effort` já dizia isso). Validar a leitura pela lista do
+    JSON (o `_claude_effort_convergiu` já dizia isso). Validar a leitura pela lista do
     seletor, que oferece `auto`, faria o painel servir como nível em vigor uma
     palavra que nenhum motor reporta.
     """

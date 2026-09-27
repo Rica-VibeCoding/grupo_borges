@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
 from services import tmux_driver
+from services.pergunta_motor import detecta_pergunta_motor
 
 router = APIRouter()
 _CC_STATUS_PREFIX = "cc-status-"
@@ -58,6 +59,11 @@ class FleetAgent(BaseModel):
     current_task_last_heartbeat: int | None = None
     last_seen: int | None
     pane_excerpt: str | None
+    # A pergunta "trocar mesmo?" do CC aberta na tela (`{tipo: 'modelo' |
+    # 'esforco', destino, opcao_em_foco}`), lida do MESMO `pane_excerpt` acima —
+    # nenhuma captura a mais. None = tela sem a pergunta. A barra do chat
+    # responde por `POST /api/agents/{slug}/confirmacao-motor`.
+    pergunta_motor: dict[str, str | None] | None = None
     executor_kind: str | None = None
     status_line: str | None = None
     active_task_label: str | None = None
@@ -134,6 +140,8 @@ async def _hydrate_pane_excerpts(agents: list[dict]) -> None:
     for agent in agents:
         excerpt = by_slug.get(agent["slug"])
         agent["pane_excerpt"] = excerpt
+        pergunta = detecta_pergunta_motor(excerpt)
+        agent["pergunta_motor"] = pergunta.como_dict() if pergunta is not None else None
         elapsed = tmux_driver.parse_session_elapsed_from_pane(excerpt)
         # statusline do CLI é mais fresco que agent_instances quando o usuário
         # fez /clear ou reiniciou o claude dentro da mesma tmux session.

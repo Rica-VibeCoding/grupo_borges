@@ -1,0 +1,50 @@
+  trinta e nove
+  quarenta
+  quarenta e um
+  quarenta e dois
+  quarenta e três
+  quarenta e quatro
+  quarenta e cinco
+  quarenta e seis
+  quarenta e sete
+  quarenta e oito
+  quarenta e nove
+  cinquenta
+  cinquenta e um
+  cinquenta e dois
+  cinquenta e três
+  cinquenta e quatro
+  cinquenta e cinco
+  cinquenta e seis
+  cinquenta e sete
+  cinquenta e oito
+  cinquenta e nove
+  sessenta
+
+✻ Sautéed for 3s · done 4:52 PM
+
+❯ escreva um poema de 40 linhas sobre o mar
+
+● O Mar
+
+  O mar não tem começo nem tem fim,
+  é linha que se dobra no horizonte,
+  espelho azul que guarda em si um monte
+  de histórias que a maré traz e retém.
+
+  Nas manhãs claras, dança devagar,
+  espuma branca a rir sobre as pedras,
+  enquanto o vento sopra e desordena
+  os cabelos de quem para ali a olhar.
+
+  À noite, o mar se veste de mistério,
+  prata líquida sob a lua cheia,
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Switch model?
+   Your next response will be slower and use more tokens
+
+   This conversation is cached for the current model. Switching to Haiku 4.5 means the full history gets re-read on your next message.
+
+   ❯ 1. Yes, switch to Haiku 4.5
+     2. No, go back
+

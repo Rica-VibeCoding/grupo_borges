@@ -78,6 +78,14 @@ from services import (
     tmux_driver,
     workspace_reader,
 )
+from services.pergunta_motor import (
+    TECLA_DA_RESPOSTA,
+    PerguntaMotor,
+    TipoPergunta,
+    destino_do_modelo,
+    detecta_pergunta_motor,
+    pergunta_e_do_pedido,
+)
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -99,7 +107,7 @@ _AGENT_PAINEL_ALLOWED_MODELS = ["fable", "opus", "sonnet", "haiku"]
 # Domínio do que a statusline REPORTA, que não é o domínio do que a UI oferece.
 # A doc lista `effort.level` como low/medium/high/xhigh/max e trata `auto` só
 # como argumento ("reset to the model default") — a palavra nunca chega no JSON,
-# como `_poll_claude_effort` já descrevia. Validar leitura pela lista do seletor
+# como `_claude_effort_convergiu` já descrevia. Validar leitura pela lista do seletor
 # aceitaria um `auto` que não existe. São listas separadas de propósito.
 _STATUSLINE_REPORTED_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 _AGENT_PAINEL_QUOTA_STALE_AFTER_SECONDS = 20
@@ -305,6 +313,33 @@ class AgentPainelResponse(BaseModel):
 
 class AgentPainelEffortPatchRequest(BaseModel):
     effort: AgentPainelEffortValue
+    # Mesmo contrato do `POST /model`: ocupado sem `force` é 409 e nada vai ao tmux.
+    force: bool = False
+
+
+class PerguntaMotorOut(BaseModel):
+    """A pergunta "trocar mesmo?" do Claude Code aberta na tela do agente.
+
+    `destino` vem como o CC escreve: "Haiku 4.5" no modelo, "medium" no esforço.
+    """
+
+    tipo: Literal["modelo", "esforco"]
+    destino: str
+    opcao_em_foco: Literal["sim", "nao"] | None = None
+
+
+class ConfirmacaoMotorRequest(BaseModel):
+    resposta: Literal["sim", "nao"]
+
+
+class ConfirmacaoMotorResponse(BaseModel):
+    #: A pergunta que estava na tela e foi respondida.
+    pergunta: PerguntaMotorOut
+    resposta: Literal["sim", "nao"]
+    #: A tecla saiu E a pergunta sumiu da tela depois dela.
+    respondida: bool
+    #: Só no `sim`: a statusline já mostra o destino (modelo) ou o nível (esforço).
+    confirmed: bool = False
 
 
 class AgentPainelPermissionPatchRequest(BaseModel):
@@ -322,6 +357,13 @@ class AgentPainelEffortPatchResponse(BaseModel):
     tmux_delivered: bool | None = None
     confirmed: bool | None = None
     runtime_switch: bool | None = None
+    # True = o nível pedido já era o da sessão: nada foi mandado ao tmux.
+    ja_estava: bool | None = None
+    # O cockpit respondeu "sim" sozinho à pergunta "trocar mesmo?" do CC.
+    pergunta_respondida: bool | None = None
+    # A pergunta ficou aberta na tela (destino diferente do pedido, ou a tecla
+    # não a fechou). A barra do chat responde por `POST /confirmacao-motor`.
+    pergunta_aberta: PerguntaMotorOut | None = None
 
 
 class AgentPainelPermissionPatchResponse(BaseModel):
@@ -484,6 +526,109 @@ def _esta_ocupado(agent: dict[str, Any]) -> bool:
         # proteger o turno em voo é o motivo de a guarda existir.
         return True
     return int(time.time()) - carimbo <= LIFECYCLE_FRESH_THRESHOLD_SECONDS
+
+
+# ----- Troca segura de modelo/esforço (27/09) ------------------------------
+# O CC 2.1.283 pergunta "Switch model?" / "Change effort level?" sempre que a
+# conversa tem cache no valor atual — com o agente ocioso também (medido em
+# 27/09, ver `services/pergunta_motor.py`). O Enter cego que vinha depois do
+# comando só funcionava porque o foco nasce no "Yes"; com o agente no meio do
+# turno o Rica ficava preso num modal que nenhuma tecla do cockpit alcançava.
+# Agora: ocupado não recebe nada (409 `agent_busy_wait`, o front espera e
+# reenvia); ocioso recebe o comando, e o cockpit só responde "sim" depois de
+# VER na tela a pergunta com o destino que ele mesmo pediu.
+
+_TROCA_LEITURA_INTERVALO_S = 0.25
+_TROCA_LEITURAS = 10
+_RESPOSTA_LEITURAS = 6
+
+
+class _DesfechoTroca(NamedTuple):
+    confirmed: bool
+    respondida: bool
+    #: A pergunta que ficou aberta no fim — None quando a tela está limpa.
+    pergunta: PerguntaMotor | None
+
+
+def _pergunta_out(pergunta: PerguntaMotor | None) -> PerguntaMotorOut | None:
+    return PerguntaMotorOut(**pergunta.como_dict()) if pergunta is not None else None
+
+
+async def _le_pergunta_motor(session: str) -> tuple[str | None, PerguntaMotor | None]:
+    excerpt = await tmux_driver.capture_pane_excerpt(session)
+    return excerpt, detecta_pergunta_motor(excerpt)
+
+
+def _recusa_pergunta_de_outro_destino(pergunta: PerguntaMotor) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": "pergunta_motor_aberta", "pergunta": pergunta.como_dict()},
+    )
+
+
+async def _conduz_troca(
+    session: str,
+    tipo: TipoPergunta,
+    alvo: str,
+    convergiu: Any,
+    *,
+    ja_respondida: bool = False,
+) -> _DesfechoTroca:
+    """Depois do comando entregue: lê a tela até a troca convergir.
+
+    Pergunta com o destino pedido → `1` (uma vez só; o dígito escolhe o "Yes"
+    sem depender do foco e sem Enter). Pergunta com OUTRO destino → para e
+    devolve, sem tocar em nada. Sem pergunta na tela → `convergiu(excerpt)`
+    decide pela statusline. Nunca lê a statusline com modal aberto: o
+    "Switching to Haiku 4.5" do corpo casaria com o regex do modelo e daria
+    confirmação falsa.
+    """
+    respondida = ja_respondida
+    pergunta: PerguntaMotor | None = None
+    for _ in range(_TROCA_LEITURAS):
+        await asyncio.sleep(_TROCA_LEITURA_INTERVALO_S)
+        excerpt, pergunta = await _le_pergunta_motor(session)
+        if pergunta is None:
+            if await convergiu(excerpt):
+                return _DesfechoTroca(True, respondida, None)
+            continue
+        if not pergunta_e_do_pedido(pergunta, tipo, alvo):
+            return _DesfechoTroca(False, respondida, pergunta)
+        if not respondida:
+            respondida = await tmux_driver.send_named_key(session, TECLA_DA_RESPOSTA["sim"])
+    return _DesfechoTroca(False, respondida, pergunta)
+
+
+async def _manda_comando_de_motor(session: str, comando: str) -> tmux_driver.DeliveryResult | None:
+    """Manda `/model X` ou `/effort X`. None = recusado, nada foi escrito.
+
+    `uncertain` conta como chegou, e não é otimismo: medido em 27/09, quando a
+    pergunta abre ela TOMA o lugar da caixa de entrada e esconde a linha do
+    comando no transcrito — as duas provas que o `send_message` procura. O
+    envio que abre o modal volta sempre `uncertain`. Quem decide depois é
+    `_conduz_troca`, que só age sobre o que VÊ na tela. `refused` prova que
+    nada foi escrito, e aí não há o que conduzir.
+    """
+    resultado = await _send_tmux_result_or_409(session, comando)
+    return None if resultado.outcome == "refused" else resultado
+
+
+def _entregue(
+    envio: tmux_driver.DeliveryResult | None, ja_respondida: bool, desfecho: _DesfechoTroca
+) -> bool:
+    return ja_respondida or (envio is not None and envio.delivered) or _chegou(desfecho)
+
+
+def _chegou(desfecho: _DesfechoTroca) -> bool:
+    """A tela provou que o comando chegou: convergiu, ou a pergunta apareceu."""
+    return desfecho.confirmed or desfecho.respondida or desfecho.pergunta is not None
+
+
+def _modelo_convergiu(alvo: str) -> Any:
+    async def convergiu(excerpt: str | None) -> bool:
+        return tmux_driver.parse_model_from_pane(excerpt) == alvo
+
+    return convergiu
 
 
 class AgentCommandResponse(BaseModel):
@@ -819,39 +964,72 @@ async def patch_agent_effort(
     # recusa e a resposta volta com `confirmed: false`. Os dois mecanismos são
     # exclusivos por desenho do CC: ou `max` durável pela env, ou troca ao vivo
     # com teto em `xhigh`. Decisão pendente com o Rica em 07/09.
-    before = await _load_cc_status(request.app.state.db, slug)
+    db: GrupoBorgesDB = request.app.state.db
     session = agent["tmux_session"]
-    delivered = await _send_tmux_or_409(session, f"/effort {patch.effort}")
-    confirmed = False
-    confirmed_status: _CCStatus | None = None
-    if delivered:
-        # Igual ao endpoint /model: Enter separado cobre o picker/slider sem
-        # depender de o comando já ter sido submetido pelo driver.
-        await asyncio.sleep(0.3)
-        await tmux_driver.press_enter(session)
-        confirmed, confirmed_status = await _poll_claude_effort(
-            request.app.state.db,
-            slug,
-            patch.effort,
-            before,
+    before = await _load_cc_status(db, slug)
+
+    def resposta(
+        *,
+        delivered: bool,
+        confirmed: bool,
+        status: _CCStatus | None,
+        ja_estava: bool = False,
+        respondida: bool = False,
+        pergunta: PerguntaMotor | None = None,
+    ) -> AgentPainelEffortPatchResponse:
+        fonte = status if status is not None and status.path is not None else before
+        return AgentPainelEffortPatchResponse(
+            slug=slug,
+            effort=patch.effort,
+            source=str(fonte.path) if fonte.path is not None else "claude_code.runtime",
+            session_may_diverge=not confirmed,
+            written=True,
+            tmux_delivered=delivered,
+            confirmed=confirmed,
+            runtime_switch=True,
+            ja_estava=ja_estava,
+            pergunta_respondida=respondida,
+            pergunta_aberta=_pergunta_out(pergunta),
         )
 
-    source = (
-        str(confirmed_status.path)
-        if confirmed_status is not None and confirmed_status.path is not None
-        else str(before.path)
-        if before.path is not None
-        else "claude_code.runtime"
+    # Pergunta já aberta na tela: se é a deste pedido, responder É a troca; se é
+    # de outro destino, quem decide é o Rica pela barra do chat, não este clique.
+    _, aberta = await _le_pergunta_motor(session)
+    ja_respondida = False
+    if aberta is not None:
+        if not pergunta_e_do_pedido(aberta, "esforco", patch.effort):
+            raise _recusa_pergunta_de_outro_destino(aberta)
+        if not await tmux_driver.send_named_key(session, TECLA_DA_RESPOSTA["sim"]):
+            return resposta(delivered=False, confirmed=False, status=None, pergunta=aberta)
+        ja_respondida = True
+    elif patch.effort != "auto" and _cc_effort_level(before.payload) == patch.effort:
+        # O nível pedido já é o da sessão: nada a mandar. `auto` fica fora — a
+        # statusline reporta o nível efetivo, nunca a palavra `auto`.
+        return resposta(delivered=False, confirmed=True, status=before, ja_estava=True)
+    elif _esta_ocupado(agent) and not patch.force:
+        raise HTTPException(status_code=409, detail="agent_busy_wait")
+
+    envio = None if ja_respondida else await _manda_comando_de_motor(session, f"/effort {patch.effort}")
+    if envio is None and not ja_respondida:
+        return resposta(delivered=False, confirmed=False, status=None)
+
+    ultimo: list[_CCStatus] = []
+
+    async def convergiu(_excerpt: str | None) -> bool:
+        ok, status = await _claude_effort_convergiu(db, slug, patch.effort, before)
+        if status is not None:
+            ultimo[:] = [status]
+        return ok
+
+    desfecho = await _conduz_troca(
+        session, "esforco", patch.effort, convergiu, ja_respondida=ja_respondida
     )
-    return AgentPainelEffortPatchResponse(
-        slug=slug,
-        effort=patch.effort,
-        source=source,
-        session_may_diverge=not confirmed,
-        written=True,
-        tmux_delivered=delivered,
-        confirmed=confirmed,
-        runtime_switch=True,
+    return resposta(
+        delivered=_entregue(envio, ja_respondida, desfecho),
+        confirmed=desfecho.confirmed,
+        status=ultimo[0] if ultimo else None,
+        respondida=desfecho.respondida,
+        pergunta=desfecho.pergunta,
     )
 
 
@@ -1111,15 +1289,16 @@ def _cc_effort_level(payload: dict[str, Any] | None) -> str | None:
     return level if level in _STATUSLINE_REPORTED_EFFORTS else None
 
 
-async def _poll_claude_effort(
+async def _claude_effort_convergiu(
     db: GrupoBorgesDB,
     slug: str,
     target: AgentPainelEffortValue,
     before: _CCStatus,
 ) -> tuple[bool, _CCStatus | None]:
-    """Confirma `/effort` no JSON da statusline da sessão alvo.
+    """Uma leitura: o JSON da statusline da sessão alvo já mostra `/effort`?
 
-    Schema documentado em https://code.claude.com/docs/en/statusline.
+    Schema documentado em https://code.claude.com/docs/en/statusline. Quem
+    repete a leitura é `_conduz_troca`, intercalada com a checagem do modal.
 
     A statusline pode rodar em sessões simultâneas, então um arquivo de uma
     sessão anterior nunca confirma a troca. `auto` é especial: o CC expõe no
@@ -1129,30 +1308,23 @@ async def _poll_claude_effort(
     before_level = _cc_effort_level(before.payload)
     before_updated_at = _int_or_none(before.payload.get("updated_at")) if before.payload else None
     before_session_id = before.session_id if not before.fell_back else None
-    latest: _CCStatus | None = None
 
-    for _ in range(3):
-        await asyncio.sleep(0.5)
-        candidate = await _load_cc_status(db, slug)
-        latest = candidate
-        if candidate.fell_back or candidate.payload is None:
-            continue
-        if before_session_id is not None and candidate.session_id != before_session_id:
-            continue
-        level = _cc_effort_level(candidate.payload)
-        if level is None:
-            continue
-        if target != "auto" and level == target:
-            return True, candidate
-        if target == "auto":
-            updated_at = _int_or_none(candidate.payload.get("updated_at"))
-            if before_level is None or level != before_level or (
-                updated_at is not None
-                and (before_updated_at is None or updated_at > before_updated_at)
-            ):
-                return True, candidate
-
-    return False, latest
+    candidate = await _load_cc_status(db, slug)
+    if candidate.fell_back or candidate.payload is None:
+        return False, candidate
+    if before_session_id is not None and candidate.session_id != before_session_id:
+        return False, candidate
+    level = _cc_effort_level(candidate.payload)
+    if level is None:
+        return False, candidate
+    if target != "auto":
+        return level == target, candidate
+    updated_at = _int_or_none(candidate.payload.get("updated_at"))
+    mudou = before_level is None or level != before_level or (
+        updated_at is not None
+        and (before_updated_at is None or updated_at > before_updated_at)
+    )
+    return mudou, candidate
 
 
 def _build_painel_contexto(agent: dict[str, Any], cc_status: _CCStatus) -> AgentPainelContexto:
@@ -2330,6 +2502,11 @@ class ModelChangeResponse(BaseModel):
     model: str
     # DS-69 — True quando a troca vale na sessão viva (Claude Code via `/model`).
     runtime_switch: bool = True
+    # Mesmos três campos do `PATCH /effort` — ver `AgentPainelEffortPatchResponse`.
+    # Só no caminho que fala com o tmux; o persist-only da Tara não os carrega.
+    ja_estava: bool | None = None
+    pergunta_respondida: bool | None = None
+    pergunta_aberta: PerguntaMotorOut | None = None
 
 
 _PANE_STREAM_POLL_S = 1.0
@@ -3891,7 +4068,7 @@ async def get_agent_file(slug: str, filename: str, request: Request) -> FileResp
     )
 
 
-@router.post("/{slug}/model", response_model=ModelChangeResponse)
+@router.post("/{slug}/model", response_model=ModelChangeResponse, response_model_exclude_none=True)
 async def change_agent_model(
     slug: str, payload: ModelChangeRequest, request: Request
 ) -> ModelChangeResponse:
@@ -3901,9 +4078,14 @@ async def change_agent_model(
 
     **Claude Code** — troca em runtime via `/model <slug>`:
     - 422 (Pydantic) quando model fora do whitelist fable/opus/sonnet/haiku
-    - 409 `agent_busy_confirm_required` quando lifecycle=trabalhando sem force
-    - caminho feliz: envia `/model`, picker idempotente, poll de confirmação,
-      persiste state_model só se delivered=True, emite task_event. runtime_switch=True.
+    - 409 `agent_busy_wait` quando lifecycle=trabalhando sem force (27/09: nada
+      vai ao tmux com turno em voo; o front espera o ocioso e reenvia)
+    - 409 `{code: pergunta_motor_aberta}` quando a tela já tem a pergunta
+      "Switch model?" com OUTRO destino
+    - modelo pedido = statusline atual → nada é mandado, `ja_estava=True`
+    - caminho feliz: envia `/model`, responde `1` só se VIR a pergunta com o
+      destino pedido (`_conduz_troca`), confirma pela statusline e só então
+      persiste state_model. runtime_switch=True.
 
     **codex-proxy (Tara)** — desfecho diferido: aqui o
     `/model` até trocaria em sessão viva, mas grava o campo `model` no
@@ -3956,34 +4138,59 @@ async def change_agent_model(
             model=target,
         )
 
-    if _esta_ocupado(agent) and not payload.force:
-        raise HTTPException(status_code=409, detail="agent_busy_confirm_required")
-
     session = agent["tmux_session"]
 
-    delivered = await _send_tmux_or_409(session, f"/model {target}")
+    # Pergunta já aberta na tela: se é a deste pedido, responder É a troca; se é
+    # de outro destino, quem decide é o Rica pela barra do chat, não este clique.
+    excerpt, aberta = await _le_pergunta_motor(session)
+    ja_respondida = False
+    if aberta is not None:
+        if not pergunta_e_do_pedido(aberta, "modelo", target):
+            raise _recusa_pergunta_de_outro_destino(aberta)
+        if not await tmux_driver.send_named_key(session, TECLA_DA_RESPOSTA["sim"]):
+            return ModelChangeResponse(
+                tmux_delivered=False,
+                state_persisted=False,
+                confirmed=False,
+                runtime_switch=True,
+                model=target,
+                ja_estava=False,
+                pergunta_respondida=False,
+                pergunta_aberta=_pergunta_out(aberta),
+            )
+        ja_respondida = True
+    elif tmux_driver.parse_model_from_pane(excerpt) == target:
+        # A statusline já mostra o modelo pedido: nada a mandar. O banco segue
+        # a tela — é o valor que a sessão prova estar rodando.
+        await db.upsert_agent_state(slug, model=target)
+        return ModelChangeResponse(
+            tmux_delivered=False,
+            state_persisted=True,
+            confirmed=True,
+            runtime_switch=True,
+            model=target,
+            ja_estava=True,
+            pergunta_respondida=False,
+        )
+    elif _esta_ocupado(agent) and not payload.force:
+        # Nada vai ao tmux com turno em voo: o front espera o ocioso e reenvia.
+        raise HTTPException(status_code=409, detail="agent_busy_wait")
 
+    envio = None if ja_respondida else await _manda_comando_de_motor(session, f"/model {target}")
+    desfecho = _DesfechoTroca(False, False, None)
+    if ja_respondida or envio is not None:
+        desfecho = await _conduz_troca(
+            session, "modelo", target, _modelo_convergiu(target), ja_respondida=ja_respondida
+        )
+    delivered = _entregue(envio, ja_respondida, desfecho)
+
+    # Só o que a statusline confirmou vira `agent_state.model`: pergunta aberta
+    # ou troca não convergida deixam o banco no modelo que a sessão ainda roda.
     state_persisted = False
-    confirmed = False
-
-    if delivered:
-        # Picker do /model pode parar em prompt de confirmação ("Switch to ... y/n").
-        # Enter idempotente: sem picker, cai em prompt vazio e o CC ignora.
-        await asyncio.sleep(0.3)
-        await tmux_driver.press_enter(session)
-
-        # Poll de confirmação em t+500/1000/1500ms (acumulado). Sai cedo no match.
-        for _ in range(3):
-            await asyncio.sleep(0.5)
-            excerpt = await tmux_driver.capture_pane_excerpt(session)
-            if tmux_driver.parse_model_from_pane(excerpt) == target:
-                confirmed = True
-                break
-
-        # Persistência só após delivered=True (v2: sem regressão silenciosa).
+    if desfecho.confirmed:
         await db.upsert_agent_state(slug, model=target)
         state_persisted = True
-
+    if delivered:
         await db.insert_task_event(
             kind="agent.model_change",
             agent_slug=slug,
@@ -3991,16 +4198,83 @@ async def change_agent_model(
                 "from": from_model,
                 "to": target,
                 "actor": "cockpit",
-                "confirmed": confirmed,
+                "confirmed": desfecho.confirmed,
+                "pergunta_respondida": desfecho.respondida,
             },
         )
 
     return ModelChangeResponse(
         tmux_delivered=delivered,
         state_persisted=state_persisted,
-        confirmed=confirmed,
+        confirmed=desfecho.confirmed,
         runtime_switch=True,
         model=target,
+        ja_estava=False,
+        pergunta_respondida=desfecho.respondida,
+        pergunta_aberta=_pergunta_out(desfecho.pergunta),
+    )
+
+
+@router.post("/{slug}/confirmacao-motor", response_model=ConfirmacaoMotorResponse)
+async def responder_confirmacao_motor(
+    slug: str, payload: ConfirmacaoMotorRequest, request: Request
+) -> ConfirmacaoMotorResponse:
+    """A barra "Trocar para X? Sim / Não" do chat — a rede de segurança.
+
+    Só age se a pergunta estiver DE FATO na tela agora (senão 409
+    `sem_pergunta_motor`): tecla solta num agente sem modal vira texto na caixa
+    dele. A resposta sai pelo dígito (`1`/`2`), que escolhe sem depender do foco
+    e sem Enter. No `sim` de modelo, `agent_state.model` só muda depois de a
+    statusline mostrar o destino.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    session = agent["tmux_session"]
+    _, pergunta = await _le_pergunta_motor(session)
+    if pergunta is None:
+        raise HTTPException(status_code=409, detail="sem_pergunta_motor")
+
+    if not await tmux_driver.send_named_key(session, TECLA_DA_RESPOSTA[payload.resposta]):
+        raise HTTPException(status_code=409, detail="tecla_nao_entregue")
+
+    respondida = False
+    confirmed = False
+    modelo = destino_do_modelo(pergunta.destino) if pergunta.tipo == "modelo" else None
+    for _ in range(_RESPOSTA_LEITURAS):
+        await asyncio.sleep(_TROCA_LEITURA_INTERVALO_S)
+        excerpt, ainda = await _le_pergunta_motor(session)
+        if ainda == pergunta:
+            continue
+        respondida = True
+        if payload.resposta == "nao" or ainda is not None:
+            break
+        if pergunta.tipo == "esforco":
+            nivel = _cc_effort_level((await _load_cc_status(request.app.state.db, slug)).payload)
+            confirmed = nivel == pergunta.destino.strip().lower()
+        else:
+            confirmed = modelo is not None and tmux_driver.parse_model_from_pane(excerpt) == modelo
+        if confirmed:
+            break
+
+    if confirmed and modelo is not None:
+        db: GrupoBorgesDB = request.app.state.db
+        await db.upsert_agent_state(slug, model=modelo)
+        await db.insert_task_event(
+            kind="agent.model_change",
+            agent_slug=slug,
+            payload={
+                "from": agent.get("state_model") or agent.get("model_default"),
+                "to": modelo,
+                "actor": "cockpit",
+                "confirmed": True,
+                "pergunta_respondida": True,
+            },
+        )
+
+    return ConfirmacaoMotorResponse(
+        pergunta=_pergunta_out(pergunta),
+        resposta=payload.resposta,
+        respondida=respondida,
+        confirmed=confirmed,
     )
 
 

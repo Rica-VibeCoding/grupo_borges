@@ -89,19 +89,23 @@ def test_model_claude_rejects_slug_de_outra_familia(tmp_path: Path) -> None:
 
 
 def test_model_busy_without_force_returns_409(tmp_path: Path) -> None:
-    """Agente `trabalhando` sem `force=true` → 409 `agent_busy_confirm_required`."""
+    """Agente `trabalhando` sem `force=true` → 409 `agent_busy_wait`, e NADA vai
+    ao tmux (27/09: o front espera o ocioso e reenvia)."""
     app = _build_app(tmp_path)
     # Coloca daniel em status `trabalhando` — caminho exato depende de fixture do DB
     app.state.db._update_agent_lifecycle(
         "daniel", status="trabalhando", detail=None, event="test.setup"
     )
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/agents/daniel/model",
-            json={"model": "sonnet"},
-        )
-        assert response.status_code == 409
-        assert response.json()["detail"] == "agent_busy_confirm_required"
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED) as send, \
+         patch("routers.agents.tmux_driver.capture_pane_excerpt", return_value="Opus 4.8 - 00:01 - [...] 1%"):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/model",
+                json={"model": "sonnet"},
+            )
+            assert response.status_code == 409
+            assert response.json()["detail"] == "agent_busy_wait"
+    send.assert_not_called()
 
 
 def test_model_busy_with_force_passes(tmp_path: Path) -> None:
@@ -166,9 +170,10 @@ def test_model_fable_confirmed_via_pane(tmp_path: Path) -> None:
     ("Fable 5 - ..." — diferente de "Opus 4.8"). Regex do parser cobre os dois."""
     app = _build_app(tmp_path)
     with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED), \
-         patch("routers.agents.tmux_driver.press_enter", return_value=True), \
          patch("routers.agents.tmux_driver.capture_pane_excerpt",
-               return_value="Fable 5 - 00:01 - [..........] 1%"):
+               side_effect=["Opus 4.8 - 00:01 - [..........] 1%",
+                            "Fable 5 - 00:01 - [..........] 1%"]), \
+         patch("routers.agents.asyncio.sleep", new_callable=AsyncMock):
         with TestClient(app) as client:
             response = client.post(
                 "/api/agents/daniel/model",

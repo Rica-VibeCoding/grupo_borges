@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.283
+▝▜██████▀  Haiku 4.5 · Claude Max
+ ▝▝   ▝▝   /tmp/maestro-teste-cc
+
+
+❯ /model sonnet
+  ⎿  Set model to Sonnet 5 and saved as your default for new sessions
+
+❯ responda apenas: ok
+
+● ok
+
+✻ Brewed for 1s · done 4:50 PM
+
+❯ /model haiku
+  ⎿  Kept model as Sonnet 5
+
+❯ /model haiku
+  ⎿  Kept model as Sonnet 5
+
+❯ /model haiku
+  ⎿  Set model to Haiku 4.5 and saved as your default for new sessions
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Haiku 4.5 - 01:17 - [█░░░░░░░░░] 17%
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 3 agents
