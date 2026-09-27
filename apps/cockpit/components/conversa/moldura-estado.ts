@@ -48,16 +48,23 @@ export function tomDaCena(cena: Cena): Tom {
   return 'pensa';
 }
 
-/** Aproxima os pesos do alvo; `dt = Infinity` salta direto (movimento reduzido). */
-export function aproxima(atual: Pesos, alvo: Pesos, dt: number, taxa = 7): Pesos {
-  const k = Number.isFinite(dt) ? 1 - Math.exp(-dt * taxa) : 1;
+/** Quanto andar rumo ao alvo neste quadro; `dt = Infinity` salta direto (movimento reduzido). */
+export function fatorDeAproximacao(dt: number, taxa = 7): number {
+  return Number.isFinite(dt) ? 1 - Math.exp(-dt * taxa) : 1;
+}
+
+/** Aproxima os pesos do alvo (serve à Moldura e à Esfera). */
+export function aproxima<T extends Record<string, number>>(atual: T, alvo: T, dt: number, taxa = 7): T {
+  const k = fatorDeAproximacao(dt, taxa);
   const novo = { ...atual };
-  for (const c of CAMADAS) novo[c] = atual[c] + (alvo[c] - atual[c]) * k;
+  for (const c of Object.keys(alvo) as (keyof T)[]) {
+    novo[c] = (atual[c] + (alvo[c] - atual[c]) * k) as T[keyof T];
+  }
   return novo;
 }
 
-export function assentou(atual: Pesos, alvo: Pesos, folga = 0.004): boolean {
-  return CAMADAS.every((c) => Math.abs(atual[c] - alvo[c]) <= folga);
+export function assentou<T extends Record<string, number>>(atual: T, alvo: T, folga = 0.004): boolean {
+  return Object.keys(alvo).every((c) => Math.abs(atual[c] - alvo[c]) <= folga);
 }
 
 /** Cenas que se mexem sozinhas. Parado e erro são quadros fixos: o laço dorme. */

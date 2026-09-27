@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import { ChaveDeVisual } from './chave-de-visual';
+import { EsferaConversa } from './esfera-conversa';
 import { falasVisiveis, leituraDaConversa, rotuloDaAcao } from './leitura-da-conversa';
-import { MolduraConversa, type VariacaoMoldura } from './moldura-conversa';
+import { MolduraConversa } from './moldura-conversa';
 import type { Cena } from './moldura-estado';
+import { pecasDoVisual } from './preferencia-visual';
 import styles from './tela-conversa.module.css';
 import { useModoConversa } from './use-modo-conversa';
 import { useVisualConversa } from './use-visual-conversa';
@@ -53,6 +55,7 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
     motivo: modo.conversa.motivo,
   });
   const falas = falasVisiveis(cena);
+  const pecas = pecasDoVisual(visual, cena);
   const segundos = useSegundosDeEspera(cena === 'esperandoZe');
   const aviso = [modo.aviso, preparacaoFalhou ? modo.erroPreparacao : null]
     .find((texto) => texto && texto !== leitura.detalhe);
@@ -66,13 +69,21 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   ].filter(Boolean);
 
   return (
-    <main className={styles.tela} data-estado={modo.conversa.estado} data-cena={cena}>
-      <MolduraConversa
-        cena={cena}
-        variacao={visual.variacao as VariacaoMoldura}
-        leNivel={modo.leNivel}
-        zonaDoTexto={zonaRef}
-      />
+    <main
+      className={styles.tela}
+      data-estado={modo.conversa.estado}
+      data-cena={cena}
+      data-opcao={visual.opcao}
+      data-variacao={visual.variacao}
+    >
+      {pecas.moldura ? (
+        <MolduraConversa
+          cena={pecas.moldura.cena}
+          variacao={pecas.moldura.variacao}
+          leNivel={modo.leNivel}
+          zonaDoTexto={zonaRef}
+        />
+      ) : null}
 
       <div ref={zonaRef} className={styles.zona}>
         <header className={styles.topo}>
@@ -87,6 +98,10 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
             <ChaveDeVisual visual={visual} escolhe={escolheVisual} />
           </div>
         </header>
+
+        {pecas.esfera ? (
+          <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel} />
+        ) : null}
 
         <section className={styles.leitura} aria-live="polite" aria-atomic="true">
           <div className={styles.linhaDoTitulo}>

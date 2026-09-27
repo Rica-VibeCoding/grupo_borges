@@ -17,8 +17,6 @@ import { CATALOGO, nomeDoVisual, type Visual } from './preferencia-visual';
 /**
  * O único lugar em que o Rica escolhe o visual. Discreta de propósito: um ícone
  * no cabeçalho que abre uma folha. A troca vale na hora, atrás da folha.
- * Opção ainda não entregue aparece como `aria-disabled` (nunca `disabled`): o
- * E2E espera a tela sem botão desabilitado para saber que o detector carregou.
  */
 export function ChaveDeVisual({ visual, escolhe }: { visual: Visual; escolhe: (visual: Visual) => void }) {
   const [aberta, setAberta] = useState(false);
@@ -41,30 +39,24 @@ export function ChaveDeVisual({ visual, escolhe }: { visual: Visual; escolhe: (v
           {CATALOGO.map((item) => (
             <section key={item.opcao} className={styles.grupo} aria-label={item.nome}>
               <h3 className={styles.nomeDoGrupo}>{item.nome}</h3>
-              {item.disponivel ? (
-                <div role="radiogroup" aria-label={item.nome} className={styles.variacoes}>
-                  {item.variacoes.map((v) => {
-                    const marcada = visual.opcao === item.opcao && visual.variacao === v.id;
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={marcada}
-                        className={styles.variacao}
-                        onClick={() => escolhe({ opcao: item.opcao, variacao: v.id })}
-                      >
-                        <span className={styles.nomeDaVariacao}>{v.nome}</span>
-                        <span className={styles.descricao}>{v.descricao}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className={styles.emBreve} aria-disabled="true">
-                  Chega na próxima entrega.
-                </p>
-              )}
+              <div role="radiogroup" aria-label={item.nome} className={styles.variacoes}>
+                {item.variacoes.map((v) => {
+                  const marcada = visual.opcao === item.opcao && visual.variacao === v.id;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={marcada}
+                      className={styles.variacao}
+                      onClick={() => escolhe({ opcao: item.opcao, variacao: v.id })}
+                    >
+                      <span className={styles.nomeDaVariacao}>{v.nome}</span>
+                      <span className={styles.descricao}>{v.descricao}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </section>
           ))}
         </div>

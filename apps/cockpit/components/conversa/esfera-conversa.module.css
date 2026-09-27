@@ -1,0 +1,52 @@
+/* O palco: o espaço entre o cabeçalho e as palavras, que a esfera ocupa. Fica
+ * com o que sobra da tela e encolhe quando a resposta do Zé cresce. */
+.palco {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  max-height: 520px;
+  pointer-events: none;
+}
+
+/* O desenho cobre a tela inteira, atrás de tudo (a luz só existe no palco):
+ * a esfera desliza quando o palco muda, sem ser cortada, e a Moldura aparece
+ * por trás quando as duas estão juntas. */
+.desenho {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  display: block;
+  width: 100%;
+  height: 100dvh;
+}
+
+/* Reserva sem WebGL: um círculo que ainda cresce com a voz. */
+.reserva {
+  --cor-da-esfera: var(--ck-conversa-prepara);
+  height: min(76%, 68vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 38% 32%,
+    color-mix(in oklch, var(--cor-da-esfera) 55%, var(--ck-surface-canvas)),
+    color-mix(in oklch, var(--cor-da-esfera) 14%, var(--ck-surface-canvas)) 72%
+  );
+  box-shadow: 0 0 calc(16px + var(--nivel-da-voz, 0.3) * 48px) color-mix(in oklch, var(--cor-da-esfera) 40%, transparent);
+  scale: calc(0.94 + var(--nivel-da-voz, 0) * 0.1);
+}
+.reserva[data-variacao='vidro'] {
+  background: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--cor-da-esfera) 60%, var(--ck-surface-canvas)) 0 18%,
+    var(--ck-surface-canvas) 46% 88%,
+    color-mix(in oklch, var(--cor-da-esfera) 50%, var(--ck-surface-canvas))
+  );
+}
+.reserva[data-tom='voce'] { --cor-da-esfera: var(--ck-conversa-voce); }
+.reserva[data-tom='ze'] { --cor-da-esfera: var(--ck-conversa-ze); }
+.reserva[data-tom='pensa'] { --cor-da-esfera: var(--ck-conversa-pensa); }
+.reserva[data-tom='erro'] { --cor-da-esfera: var(--ck-conversa-erro); }

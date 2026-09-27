@@ -66,3 +66,66 @@ a Esfera (o Núcleo) como opção dentro da tela.
 
 - A Esfera e a combinação (etapa 2b), à espera da coordenação.
 - Commit, build e publicação. Nada em `lib/conversa/`.
+
+## Etapa 2b — Esfera com duas variações e a combinação
+
+### Entreguei (`apps/cockpit/components/conversa/`)
+
+- `esfera-conversa.tsx` + `esfera-shader.ts` + `esfera-estado.ts`: a Esfera (o Núcleo do protótipo) em WebGL cru,
+  por raymarching. Duas variações:
+  - **Matéria**: corpo sólido com luz de frente. Ondula puxada para baixo quando você fala, solta ondas quando o Zé
+    fala, acende veios quando pensa, vira gema na interrupção, encolhe e racha no erro, enche e esvazia de luz
+    enquanto o detector baixa.
+  - **Vidro**: casca escura, borda acesa e a luz morando dentro. A luz desce para você quando você fala, pulsa em
+    anéis quando ele fala, vira duas luas orbitando quando pensa; no erro a fissura brilha.
+- **Esfera e moldura**, duas variações:
+  - **Juntas**: Matéria e Fio mostram o mesmo momento.
+  - **Divididas**: a borda é a sua vez e a esfera é a vez dele; cada uma descansa na vez da outra. Na interrupção
+    aparecem as duas: você sobe pela borda, ele congela na esfera.
+- `preferencia-visual.ts`: as três opções liberadas na chave; `pecasDoVisual` decide que peça desenha qual cena
+  (puro, testado). Saiu o "Chega na próxima entrega".
+- Tela: com esfera, ela ocupa o palco entre o cabeçalho e as palavras, que descem para perto dos comandos; o título
+  encolhe para 36 px (token novo `--ck-conversa-titulo-com-esfera`).
+
+### Como funciona, no que importa
+
+- Mesmo contrato da Moldura: volume em `ref`, zero `setState` por quadro, laço que dorme em parado e erro, contexto
+  liberado ao desmontar, reserva em CSS (um círculo que ainda cresce com a voz) e quadro fixo por estado no
+  movimento reduzido.
+- **30 fps quando pesa**: média móvel do intervalo entre quadros; passou de 24 ms, a Esfera desenha um quadro sim,
+  outro não, e fica assim (estável é melhor que oscilando).
+- **A luz só existe no palco.** O desenho cobre a tela inteira, atrás de tudo, mas some nos últimos 48 px do palco:
+  a esfera desliza quando a resposta do Zé cresce e encolhe o palco, sem ser cortada e sem passar por trás das
+  palavras. Medido nas capturas, logo acima do título: luminância até 0,018 com a Esfera sozinha (o fundo é 0,010) e
+  até 0,05 na combinação — o teto que a Moldura já garante.
+- Canvas da Esfera transparente (alfa pré-multiplicado): na combinação, a Moldura aparece por trás dela.
+
+### Provas
+
+- `npm test`: **1012 testes, 1012 passaram** (12 novos: `esfera-estado` e as peças de cada visual em
+  `preferencia-visual`). `npm run type-check`: verde.
+- E2E da fase 2 (`e2e/fase3-ui.cjs`, agora lendo todas as peças: o maior volume entre elas, `data-movimento` e
+  `data-desenho` em cada uma, a opção em `main[data-opcao]`): **4/4 em cada uma das seis variações** — Matéria,
+  Vidro, Juntas, Divididas, e de novo Fio e Aurora, porque o código comum mudou. A Juntas perdeu o `longa` na
+  primeira volta com 409 do backend ao semear o pedido (`agent_pane_unavailable`, antes de a conversa começar);
+  rodada inteira de novo, 4/4. Provas em `e2e/fase3-2b/e2e-*-provas.json`.
+- Capturas da tela real (393 × 852, estados vividos com o `canarinho`): mosaicos `e2e/fase3-2b/esfera-materia.png`,
+  `esfera-vidro.png`, `esferaMoldura-juntas.png`, `esferaMoldura-divididas.png`, os 24 quadros soltos e
+  `chave-de-visual.png` (as seis variações na folha). Mosaico feito por `e2e/mosaico.py`.
+
+### Achados
+
+- **Movimento reduzido pintava tudo de âmbar, inclusive a Moldura da 2a.** A regra global do reduzido dá transição
+  de 0,01 ms a todo elemento, e a leitura das cores dos tokens reaproveitava a mesma sonda: cada troca de cor virava
+  transição e a leitura devolvia a anterior. Todas as cores saíam iguais à primeira (âmbar), fundo inclusive.
+  Corrigido com uma sonda nova por token. O E2E da 2a só conferia o atributo `data-movimento`, por isso passou.
+- No dev (StrictMode), o efeito do WebGL roda duas vezes; o segundo pegava o mesmo canvas cujo contexto o primeiro
+  tinha liberado, e a Esfera caía para CSS. Agora cada montagem cria o seu canvas (vale para a Moldura também).
+- O halo da Esfera virava um disco com borda quando a voz subia (a conta mudava na esfera-limite da marcha) e um
+  anel no erro (usava raio fixo com a esfera encolhida). Agora é radial e parte do raio real da forma.
+- O dev da 3009 parou de novo de ver o `globals.css` (servia sem o token novo). Reiniciei só ele, com o mesmo comando.
+
+### Não fiz
+
+- Commit, build e publicação. Nada em `lib/conversa/`.
+- Aparelho de verdade: a medida de 30 fps e a barra do Safari ficam para a fase 4, no iPhone.

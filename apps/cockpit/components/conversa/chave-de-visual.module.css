@@ -63,14 +63,3 @@
   line-height: var(--ck-leading-body);
   color: var(--ck-text-secondary);
 }
-.emBreve {
-  display: flex;
-  align-items: center;
-  min-height: var(--ck-touch-min);
-  margin: 0;
-  padding: 0 var(--ck-space-3);
-  border: 1px dashed var(--ck-edge-hairline);
-  border-radius: var(--ck-radius-caixa);
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-sm);
-}

@@ -268,6 +268,18 @@
   outline-offset: 2px;
 }
 
+/* Com a esfera, ela ocupa o palco logo abaixo do cabeçalho e as palavras descem
+ * para perto dos comandos; o título encolhe para não disputar o olho com ela. */
+.tela[data-opcao^='esfera'] .leitura {
+  margin-top: var(--ck-space-2);
+}
+.tela[data-opcao^='esfera'] .titulo {
+  font-size: var(--ck-conversa-titulo-com-esfera);
+}
+.tela[data-opcao^='esfera'] .falas {
+  margin-top: var(--ck-space-5);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reticencias span { animation: none; opacity: 0.6; }
   .trilho, .trilho::after { transition: none; }

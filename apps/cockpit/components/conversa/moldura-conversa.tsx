@@ -17,10 +17,9 @@ import {
   type Pesos,
 } from './moldura-estado';
 import { FRAG_MOLDURA } from './moldura-shader';
+import type { VariacaoMoldura } from './preferencia-visual';
 import { useMovimentoReduzido } from './use-movimento-reduzido';
-import { criaTelaWebGL, leCoresDoTema } from './webgl-tela';
-
-export type VariacaoMoldura = 'fio' | 'aurora';
+import { criaPublicadorDeNivel, criaTelaWebGL, leCoresDoTema } from './webgl-tela';
 
 const TOKENS = {
   voce: '--ck-conversa-voce',
@@ -34,19 +33,6 @@ const TOKENS = {
 const RAIO = 55;
 /** O brilho é macio: 0,6 da resolução basta e poupa a GPU. */
 const ESCALA = 0.6;
-
-/** `data-nivel` a 10 Hz, só quando muda: é o que o E2E lê para provar que a luz segue a voz. */
-function criaPublicadorDeNivel(raiz: HTMLElement) {
-  let publicado = -1;
-  let publicadoEm = 0;
-  return (nivel: number, agora: number) => {
-    if (agora - publicadoEm < 100) return;
-    publicadoEm = agora;
-    const arredondado = Math.round(nivel * 100) / 100;
-    if (arredondado !== publicado) raiz.dataset.nivel = String(arredondado);
-    publicado = arredondado;
-  };
-}
 
 function leMargensSeguras(dentro: HTMLElement) {
   const sonda = document.createElement('div');
@@ -79,7 +65,6 @@ export function MolduraConversa({
   zonaDoTexto: RefObject<HTMLElement | null>;
 }) {
   const raizRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const cenaRef = useRef(cena);
   const trocaRef = useRef({ desde: 0, clarao: false });
   const acordaRef = useRef<() => void>(() => {});
@@ -94,11 +79,15 @@ export function MolduraConversa({
   }, [cena]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
     const raiz = raizRef.current;
-    if (!canvas || !raiz || semWebGL) return;
+    if (!raiz || semWebGL) return;
+    // Canvas novo a cada montagem: o contexto liberado de um canvas não volta,
+    // e reaproveitar o mesmo elemento (StrictMode, troca de variação) o deixaria morto.
+    const canvas = document.createElement('canvas');
+    raiz.append(canvas);
     const tela = criaTelaWebGL(canvas, FRAG_MOLDURA, ESCALA);
     if (!tela) {
+      canvas.remove();
       setSemWebGL(true);
       return;
     }
@@ -199,6 +188,7 @@ export function MolduraConversa({
       window.visualViewport?.removeEventListener('resize', aoMudarTamanho);
       canvas.removeEventListener('webglcontextlost', aoPerderContexto);
       tela.libera();
+      canvas.remove();
     };
   }, [variacao, reduzido, leNivel, zonaDoTexto, semWebGL]);
 
@@ -233,11 +223,7 @@ export function MolduraConversa({
       data-movimento={reduzido ? 'parado' : 'vivo'}
       data-desenho={semWebGL ? 'css' : 'webgl'}
     >
-      {semWebGL ? (
-        <div className={styles.reserva} data-tom={tomDaCena(cena)} />
-      ) : (
-        <canvas key={`${variacao}-${reduzido}`} ref={canvasRef} />
-      )}
+      {semWebGL ? <div className={styles.reserva} data-tom={tomDaCena(cena)} /> : null}
     </div>
   );
 }

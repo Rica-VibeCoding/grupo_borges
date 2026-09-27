@@ -4,10 +4,11 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (26/09/2026 ~22h30 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 em curso, etapa 2**
-> (cadeira `ui`, Opus 5.5): o Rica viu Núcleo, Moldura e Mostrador e escolheu a **Moldura primeiro**, com uma chave dentro
-> da tela para ele decidir depois entre Moldura, Esfera e Esfera + Moldura, 2 variações de cada (`briefings/fase3-ui-etapa2.md`,
-> com parada em 2a). Ele pediu menos opções por mensagem ("fico perdido"). Depois, fase 4: publicar a 3008 e testar no iPhone.
+> **ESTADO (26/09/2026 ~23h45 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
+> (2a em `7b16e84`, 2b no commit que acompanha esta linha): chave de visual na tela com Moldura (Fio, Aurora), Esfera
+> (Matéria, Vidro) e Esfera + Moldura (Juntas, Divididas); 1012 testes verdes e E2E 4/4 nas seis variações (relato
+> `relatos/fase3-ui.md`). O Rica escolhe o visual dentro da tela, no iPhone. **Próximo: fase 4**, que precisa do aval
+> dele para publicar a 3008 e da janela de build com o Pavan. Ele pediu menos opções por mensagem ("fico perdido").
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
@@ -18,7 +19,7 @@
 >
 > **Retomar depois de `/clear` — nesta ordem:**
 > 1. Ler este banner, as fases 3 e 4 e a seção "Mecânica das cadeiras".
-> 2. Fase 3 (etapa 1 feita, etapa 2 despachada à `ui`): ver o pane da `ui`; PRONTO 2a → revisar, mandar ao Rica UMA captura da Moldura e dizer para seguir para 2b. Histórico: escrever `briefings/fase3-ui.md`, commitar, `git pull` no PC. Subir a sessão `ui`
+> 2. Fase 3 (código completo; falta o Rica escolher o visual no iPhone). Histórico: escrever `briefings/fase3-ui.md`, commitar, `git pull` no PC. Subir a sessão `ui`
 >    no `psmux -L conversa`, com Claude Code em `claude-opus-5-5`. A primeira entrega é pesquisa de referência
 >    e **2 ou 3 direções visuais em captura**, que vão ao Rica pelo Telegram ANTES de qualquer código. Só a
 >    direção aprovada vira código. A `tela` (57%) sai de cena ou recebe `/new`; a `logica` só entra se a UI

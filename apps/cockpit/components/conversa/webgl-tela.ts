@@ -17,13 +17,16 @@ export type TelaWebGL = {
 
 const VERTICE = 'attribute vec2 a; void main() { gl_Position = vec4(a, 0., 1.); }';
 
+/** `transparente`: o canvas deixa ver o que está atrás (saída em alfa pré-multiplicado). */
 export function criaTelaWebGL(
   canvas: HTMLCanvasElement,
   fragmento: string,
   escala: number,
+  { transparente = false } = {},
 ): TelaWebGL | null {
   const gl = canvas.getContext('webgl', {
-    alpha: false,
+    alpha: transparente,
+    premultipliedAlpha: true,
     antialias: false,
     depth: false,
     stencil: false,
@@ -75,10 +78,15 @@ export function criaTelaWebGL(
     ajusta() {
       const caixa = canvas.getBoundingClientRect();
       const px = Math.min(2, window.devicePixelRatio || 1) * escala;
-      canvas.width = Math.max(1, Math.round(caixa.width * px));
-      canvas.height = Math.max(1, Math.round(caixa.height * px));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      return canvas.width / Math.max(1, caixa.width);
+      const largura = Math.max(1, Math.round(caixa.width * px));
+      const altura = Math.max(1, Math.round(caixa.height * px));
+      // Mudar o tamanho apaga e realoca o buffer: só quando mudou de fato.
+      if (canvas.width !== largura || canvas.height !== altura) {
+        canvas.width = largura;
+        canvas.height = altura;
+        gl.viewport(0, 0, largura, altura);
+      }
+      return largura / Math.max(1, caixa.width);
     },
     desenha() {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -90,6 +98,19 @@ export function criaTelaWebGL(
       gl.deleteShader(fs);
       perde();
     },
+  };
+}
+
+/** `data-nivel` a 10 Hz, só quando muda: é o que o E2E lê para provar que a luz segue a voz. */
+export function criaPublicadorDeNivel(raiz: HTMLElement) {
+  let publicado = -1;
+  let publicadoEm = 0;
+  return (nivel: number, agora: number) => {
+    if (agora - publicadoEm < 100) return;
+    publicadoEm = agora;
+    const arredondado = Math.round(nivel * 100) / 100;
+    if (arredondado !== publicado) raiz.dataset.nivel = String(arredondado);
+    publicado = arredondado;
   };
 }
 
@@ -105,12 +126,16 @@ export function leCoresDoTema<T extends string>(
   sonda.width = 1;
   sonda.height = 1;
   const ctx = sonda.getContext('2d', { willReadFrequently: true });
-  const amostra = document.createElement('span');
-  document.body.append(amostra);
   const cores = {} as Record<T, [number, number, number]>;
   for (const nome of Object.keys(tokens) as T[]) {
+    // Uma amostra nova por token: trocar a cor da mesma amostra dispara a
+    // transição global do movimento reduzido (0,01 ms), e a leitura sai com a
+    // cor anterior — tudo ficava da cor do primeiro token.
+    const amostra = document.createElement('span');
     amostra.style.color = `var(${tokens[nome]})`;
+    document.body.append(amostra);
     const cor = getComputedStyle(amostra).color;
+    amostra.remove();
     if (!ctx) {
       cores[nome] = [0.5, 0.5, 0.5];
       continue;
@@ -121,6 +146,5 @@ export function leCoresDoTema<T extends string>(
     const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
     cores[nome] = [r / 255, g / 255, b / 255];
   }
-  amostra.remove();
   return cores;
 }

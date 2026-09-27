@@ -1573,4 +1573,5 @@ body {
   --ck-conversa-prepara: var(--ck-text-secondary);  /* detector baixando, parado */
   --ck-conversa-titulo: 3rem;                       /* 48px: o estado lido de longe */
   --ck-conversa-titulo-leading: 1.05;
+  --ck-conversa-titulo-com-esfera: 2.25rem;         /* 36px: a esfera já chama o olho */
 }
