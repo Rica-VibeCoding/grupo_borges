@@ -11,7 +11,7 @@ type Passo = 'anda' | 'quinhentos';
 
 /** Um dedo inteiro: o que aconteceu com ele até soltar, e o que o soltar faz. */
 function dedo(cena: Cena, historia: Passo[], gesto: GestoDaConversa) {
-  let atual: Dedo = 'rapido';
+  let atual: Dedo = 'toque';
   let segurou = false;
   for (const passo of historia) {
     atual = passo === 'anda' ? dedoQueAnda(atual) : dedoAosQuinhentos(atual, cena);
@@ -36,9 +36,14 @@ describe('segurar a vez: gesto × estado', () => {
     assert.deepEqual(dedo('ouvindo', ['quinhentos'], 'toque'), { segurou: true, soltar: 'solta' });
   });
 
-  it('dedo parado 500 ms fora da vez não faz nada, nem no soltar', () => {
+  it('cena parado, dedo 800 ms sem andar, soltar → toque', () => {
+    assert.deepEqual(dedo('parado', ['quinhentos'], 'toque'), { segurou: false, soltar: 'toque' });
+  });
+
+  it('fora da vez, dedo parado é toque em toda cena, curto ou longo', () => {
     for (const cena of CENAS.filter((c) => c !== 'ouvindo')) {
-      assert.deepEqual(dedo(cena, ['quinhentos'], 'toque'), { segurou: false, soltar: 'nada' }, cena);
+      assert.deepEqual(dedo(cena, [], 'toque'), { segurou: false, soltar: 'toque' }, cena);
+      assert.deepEqual(dedo(cena, ['quinhentos'], 'toque'), { segurou: false, soltar: 'toque' }, cena);
     }
   });
 
@@ -63,13 +68,13 @@ describe('segurar a vez: gesto × estado', () => {
     assert.deepEqual(dedo('ouvindo', ['quinhentos', 'anda'], 'configuracoes'), { segurou: true, soltar: 'solta' });
   });
 
-  it('depois de parado fora da vez, andar também não vira gesto', () => {
-    assert.deepEqual(dedo('falando', ['quinhentos', 'anda'], 'configuracoes'), { segurou: false, soltar: 'nada' });
+  it('fora da vez, o dedo longo que anda depois dos 500 ms continua gesto', () => {
+    assert.deepEqual(dedo('falando', ['quinhentos', 'anda'], 'configuracoes'), { segurou: false, soltar: 'configuracoes' });
+    assert.deepEqual(dedo('parado', ['quinhentos', 'anda'], 'nada'), { segurou: false, soltar: 'nada' });
   });
 
-  it('os 500 ms contam uma vez só: o dedo já decidido não muda de ideia', () => {
+  it('o dedo já decidido não muda de ideia aos 500 ms', () => {
     assert.equal(dedoAosQuinhentos('segurando', 'falando'), 'segurando');
-    assert.equal(dedoAosQuinhentos('parado', 'ouvindo'), 'parado');
     assert.equal(dedoAosQuinhentos('andou', 'ouvindo'), 'andou');
   });
 });

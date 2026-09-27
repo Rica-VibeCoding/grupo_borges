@@ -36,7 +36,7 @@ export function useGestosDaConversa({
 }) {
   const inicioRef = useRef<(Ponto & { id: number; mouse: boolean }) | null>(null);
   const dedoAndouRef = useRef(false);
-  const dedoRef = useRef<Dedo>('rapido');
+  const dedoRef = useRef<Dedo>('toque');
   const relogioRef = useRef<number | null>(null);
   const acoesRef = useRef({ leCena, aoSegurar, aoSoltarAVez });
   acoesRef.current = { leCena, aoSegurar, aoSoltarAVez };
@@ -51,7 +51,7 @@ export function useGestosDaConversa({
     paraRelogio();
     inicioRef.current = null;
     const segurava = dedoRef.current === 'segurando';
-    dedoRef.current = 'rapido';
+    dedoRef.current = 'toque';
     if (segurava) acoesRef.current.aoSoltarAVez();
   }, [paraRelogio]);
 
@@ -83,7 +83,7 @@ export function useGestosDaConversa({
 
   const onPointerMove = useCallback((evento: PointerEvent<HTMLElement>) => {
     const inicio = inicioRef.current;
-    if (inicio === null || evento.pointerId !== inicio.id || dedoRef.current !== 'rapido') return;
+    if (inicio === null || evento.pointerId !== inicio.id || dedoRef.current !== 'toque') return;
     if (leArrasto(inicio, { x: evento.clientX, y: evento.clientY }) !== 'toque') dedoRef.current = dedoQueAnda(dedoRef.current);
   }, []);
 

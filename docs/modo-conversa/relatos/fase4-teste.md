@@ -115,6 +115,29 @@ PC e o Safari/iOS. Registro como achado para a `ui` avaliar; por decisão do Ric
 esta rodada (sem throttle, 100% passou), mas é ressalva relevante para quem usa a voz num aparelho
 mais fraco ou com outros apps competindo por CPU.
 
+## 9. Regra nova — fora de `ouvindo`, dedo parado é toque (curto ou longo)
+
+Briefing: `briefings/fase4-toque-longo-parado.md` (conserto do relato do Rica no iPhone,
+27/09 ~20h10: toque na tela parada não começava a conversa). Código do produto
+(`segurar-a-vez.ts`) já veio ajustado pela `ui` antes desta rodada. Meu caso
+`dedoparado1snaocomeca` (item 1 de `nao-quebra`, `e2e/teste/fase4-segurar.cjs`) mudou de
+sentido — testava "não começa"; agora testa que começa. Dev 3009, Chromium/CDP, dedo real.
+
+- **Toque de 100 ms no estado `parado` começa**: foi a `ouvindo`, sem virar `segurando`. PASS.
+- **Toque de 900 ms no estado `parado` também começa**: mesmo resultado do curto — vai a
+  `ouvindo`, sem `segurando` (só `ouvindo` segura). PASS.
+- **Dedo de 900 ms em `esperandoZe` para, com um único `interromper`**: novo caso
+  `toque-longo-esperando-ze` — fala real, chega a `esperandoZe`, segura 900 ms e solta;
+  virou `parado` com exatamente 1 POST `/interromper` (não 2, não 0). PASS.
+- **Segurar em `ouvindo` sem regressão**: caso `segurar` de novo, mesmos números de antes
+  (segurou em 503 ms, fala saiu 1953-1955 ms depois do soltar, filtro e nota 392 Hz certos,
+  1 transcrição + 1 envio por ciclo). PASS.
+- **Toque rápido e arrasto sem regressão**: os itens 2, 5, 6, 7 de `nao-quebra` (toque duplo
+  ignora o segundo, toque rápido para com as notas certas, arrasto à direita leva ao chat,
+  arrasto para cima abre configurações) repetiram o resultado de sempre. PASS.
+
+3/3 casos, sem falha. Sem commit, sem código de produto tocado — só o E2E.
+
 ## Limitações
 
 - **WebKit headless deste Playwright não expõe `navigator.mediaDevices`** (getUserMedia) — mesmo em
@@ -135,5 +158,10 @@ soltar, e a sequência do Rica sem regressão — todos confirmados de forma ind
 throttle. **Ressalva, não bloqueio** (decisão do Rica): sob CPU 4×, a responsividade ao toque
 (inclusive o segurar) degrada e a vigia do microfone pode disparar um erro falso — vale a `ui`
 olhar antes de publicar, mas não impede esta aprovação.
+
+**Rodada da regra nova (item 9, 27/09 noite)**: **APROVADO** — toque curto (100 ms) e longo
+(900 ms) no estado `parado` os dois começam, sem virar `segurando`; dedo longo (900 ms) em
+`esperandoZe` para com um único `interromper`; segurar em `ouvindo` e o conjunto de toque
+rápido/arrasto seguem sem regressão. 3/3 casos.
 
 FIM-DO-TESTE

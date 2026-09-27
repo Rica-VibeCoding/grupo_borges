@@ -5,8 +5,8 @@ import type { Cena } from './moldura-estado.ts';
  * Segurar a tela para pensar (fase 4, desenho aceito pelo Rica em 27/09). Na vez dele, o
  * dedo parado por 500 ms segura a vez: a contagem do silêncio para enquanto o dedo estiver
  * na tela, e soltar volta a contar os 2 s inteiros. O toque rápido continua parando a
- * conversa; o dedo que anda é gesto e não segura. Fora da vez dele, o dedo parado não faz
- * nada — e o soltar desse dedo também não vira toque.
+ * conversa; o dedo que anda é gesto e não segura. Fora da vez dele, dedo parado é toque,
+ * curto ou longo — um toque firme no iPhone passa de 500 ms fácil, e ele tem de começar.
  */
 export const SEGURAR_MS = 500;
 
@@ -16,30 +16,27 @@ export function podeSegurar(cena: Cena): boolean {
 }
 
 /**
- * A história do dedo até o soltar: `rapido` ainda não fez nada; `andou` passou do raio do
- * toque; `parado` ficou 500 ms fora da vez do Rica; `segurando` ficou 500 ms na vez dele.
+ * A história do dedo até o soltar: `toque` não andou nem segurou, dure o que durar; `andou`
+ * passou do raio do toque; `segurando` ficou 500 ms parado na vez do Rica.
  */
-export type Dedo = 'rapido' | 'andou' | 'parado' | 'segurando';
+export type Dedo = 'toque' | 'andou' | 'segurando';
 
-/** O dedo passou do raio do toque. Depois de parado ou segurando, andar não muda nada. */
+/** O dedo passou do raio do toque. Depois de segurar, andar não muda nada. */
 export function dedoQueAnda(dedo: Dedo): Dedo {
-  return dedo === 'rapido' ? 'andou' : dedo;
+  return dedo === 'toque' ? 'andou' : dedo;
 }
 
-/** Aos 500 ms de dedo na tela: parado na vez do Rica segura; em outra cena, só fica parado. */
+/** Aos 500 ms de dedo na tela: parado na vez do Rica segura; em outra cena, segue toque. */
 export function dedoAosQuinhentos(dedo: Dedo, cena: Cena): Dedo {
-  if (dedo !== 'rapido') return dedo;
-  return podeSegurar(cena) ? 'segurando' : 'parado';
+  return dedo === 'toque' && podeSegurar(cena) ? 'segurando' : dedo;
 }
 
 export type AoSoltar = 'solta' | GestoDaConversa;
 
 /**
- * O que o soltar faz: `solta` devolve a contagem do silêncio; o dedo parado não faz nada;
- * o rápido e o que andou são o gesto de sempre (toque, configurações ou nada).
+ * O que o soltar faz: `solta` devolve a contagem do silêncio; o resto é o gesto de sempre
+ * (toque, configurações ou nada).
  */
 export function aoSoltar(dedo: Dedo, gesto: GestoDaConversa): AoSoltar {
-  if (dedo === 'segurando') return 'solta';
-  if (dedo === 'parado') return 'nada';
-  return gesto;
+  return dedo === 'segurando' ? 'solta' : gesto;
 }

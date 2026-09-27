@@ -75,3 +75,55 @@ Briefing: `briefings/fase4-silencio-e-segurar.md`. Tudo no PC, sem commit.
   mesmo depois de reiniciar: limpei `.next-dev/dev/cache/turbopack` e subi de novo. Só o `.next-dev` do PC.
 
 FIM-DO-SEGURAR
+
+---
+
+# Fase 4 — cadeira `ui`: conserto do toque demorado com a conversa parada
+
+Briefing: `briefings/fase4-toque-longo-parado.md`. Tudo no PC, sem commit.
+
+## Entreguei
+
+- **Regra nova:** só em `ouvindo` o dedo parado segura a vez; em qualquer outra cena, dedo parado é toque, curto ou
+  longo (parado começa, ativos param, erro tenta de novo — o `acaoDoToque` de sempre). Dedo que andou segue gesto.
+- `segurar-a-vez.ts`: o estado `parado` do dedo saiu. `rapido` virou `toque` (um dedo de 900 ms não é rápido) e
+  fica `toque` depois dos 500 ms fora da vez; `aoSoltar` só desvia o `segurando`.
+- `use-gestos-da-conversa.ts`: só o nome do estado (`'rapido'` → `'toque'`, três linhas). Nenhuma mudança de fluxo.
+- `segurar-a-vez.test.ts`: caso novo do briefing, varredura "fora da vez, dedo parado é toque em toda cena", e o
+  dedo longo que anda depois dos 500 ms volta a ser gesto (antes ficava `nada`).
+- `e2e/fase4-segurar.cjs`: `longo-fora-da-vez` saiu; entraram `curto-comeca`, `longo-comeca` e
+  `longo-para-esperando`.
+
+## Provas
+
+- **Vermelho antes:** "cena parado, dedo 800 ms sem andar, soltar → toque" falhou no código do `eac75e1`
+  (`soltar: 'nada'`, esperado `'toque'`); 9 de 10 passaram.
+- `npm test`: **1119 testes, 1119 passaram**. `npm run type-check`: verde.
+- **E2E no dev 3009** (Chrome com dedo pelo CDP, perfil de celular, `E2E_ENVIO=simulado`): **6/6**.
+  - `curto-comeca`: dedo de 100 ms, parado → `ouvindo`; o toque seguinte para.
+  - `longo-comeca`: dedo de 900 ms sem andar, ainda `parado` com o dedo na tela, `ouvindo` ao soltar; não segurou;
+    microfone abriu uma vez; o toque seguinte para. Rastro: `pointerdown`, `pointerup`, `click`.
+  - `longo-para-esperando`: fala real transcrita, `esperandoZe`; dedo de 900 ms, ainda `esperandoZe` com o dedo na
+    tela, `parado` ao soltar; não segurou; **um** `/interromper`.
+  - `segurar` (em `ouvindo`, como antes): segurou **502 ms** depois do dedo; soltar → fala em **1980 ms**; filtro
+    `saturate(0.5) brightness(0.72)` segurando e `none` depois; nota de 392 Hz; uma transcrição, um envio; WAV de
+    16 bits, 13,15 s.
+  - `toque-para` (notas 523, 784, 784, 523) e `arrasto-chat` (`/agente/canarinho`, não segurou): iguais.
+
+## Assumi
+
+- O dedo longo fora da vez que anda depois dos 500 ms é gesto (configurações, chat ou nada), como era antes do
+  `eac75e1`. Na regra antiga ele virava `nada`.
+- O E2E é Chromium. O `click` depois de 900 ms saiu nele; no iPhone de verdade, a prova é o Rica.
+
+## Divergi do combinado
+
+Nada.
+
+## Não fiz
+
+- Commit e build da 3008.
+- 🟡 `e2e/teste/fase4-segurar.cjs` (da cadeira `teste`), `casoNaoQuebra` passo 1: afirma a regra antiga ("dedo
+  parado 1 s fora da vez não começa") e agora vai cair. Não é meu arquivo; ajuste é da `teste`.
+
+FIM-DO-TOQUE-LONGO
