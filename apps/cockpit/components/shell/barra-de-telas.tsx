@@ -1,9 +1,9 @@
 /**
  * BarraDeTelas — o chrome do topo (§12.3 e §13, correção do menu à esquerda).
  *
- * Quatro controles na mesma faixa, como na referência do Codex desktop:
+ * Cinco controles na mesma faixa, como na referência do Codex desktop:
  *
- *   [≡ tropa] [cápsula do agente]   [ pill de telas ]   [⧉ painel]
+ *   [≡ tropa] [cápsula do agente] [voz]   [ pill de telas ]   [⧉ painel]
  *
  * O centro é GRID, não `justify-between`: com a cápsula entrando à esquerda em
  * 16/08, o espaço distribuído entre pontas de larguras diferentes empurrava o
@@ -37,7 +37,10 @@
  * ocupa o mesmo lugar da referência, porque é o rótulo de ONDE você está, e
  * ganha companhia no dia em que houver pra onde ir.
  */
+import Link from 'next/link';
+
 import { CapsulaDoAgente } from './capsula-do-agente';
+import { IconeMicrofone } from './icones';
 import { MIOLO_ACESO, MIOLO_DA_PASTILHA, TRILHO_DA_PASTILHA } from './pastilha-do-chrome';
 import { BotaoNav, BotaoPainel } from './superficie-otimista';
 
@@ -85,6 +88,19 @@ export function BarraDeTelas({
       <div className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
         <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
         <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
+        <Link
+          href={`/conversa/${agente.slug}`}
+          aria-label={`Começar conversa por voz com ${agente.nome}`}
+          className="ck-veil flex shrink-0 items-center justify-center"
+          style={{
+            minWidth: 'var(--ck-touch-min)',
+            minHeight: 'var(--ck-touch-min)',
+            borderRadius: 'var(--ck-radius-chip)',
+            color: 'var(--ck-text-secondary)',
+          }}
+        >
+          <IconeMicrofone tamanho={18} />
+        </Link>
       </div>
 
       {/* Pill contido, centralizado — ativo em superfície elevada, inativo só
