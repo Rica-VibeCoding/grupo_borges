@@ -74,3 +74,33 @@ export function falasVisiveis(cena: Cena): { voce: 'cheia' | 'recuada' | null; z
   if (cena === 'transcrevendo' || cena === 'esperandoZe' || cena === 'erro') return { voce: 'cheia', ze: false };
   return { voce: null, ze: false };
 }
+
+/**
+ * Com o texto desligado, a tela só escreve o que pede ação dele, numa linha junto
+ * do botão. O resto (em que pé está a conversa) fica com a cor e a forma do visual.
+ */
+export type EntradaDoAviso = {
+  cena: Cena;
+  preparacaoFalhou: boolean;
+  motivo?: MotivoDeErro;
+  /** Falha da voz do Zé (o navegador impediu a reprodução, por exemplo). */
+  aviso: string | null;
+  wakeLockSuportado: boolean;
+  wakeLockFalhou: boolean;
+};
+
+export function avisoQuePedeAcao(e: EntradaDoAviso): string | null {
+  if (e.preparacaoFalhou) return 'O detector não carregou. Recarregue a página.';
+  if (e.cena === 'erro') return e.motivo ? TITULO_DO_ERRO[e.motivo] : 'A conversa parou';
+  if (e.cena === 'parado' || e.cena === 'preparando') return null;
+  if (e.aviso) return e.aviso;
+  if (e.wakeLockFalhou) return 'Não consegui manter a tela acesa.';
+  if (!e.wakeLockSuportado) return 'Este navegador não mantém a tela acesa.';
+  return null;
+}
+
+/** Sem o "Você disse" na tela, o leitor de tela ainda conta o que foi entendido. */
+export function voceDisseParaLeitor(cena: Cena, ultimaTranscricao: string | null): string | null {
+  if (cena === 'transcrevendo' || falasVisiveis(cena).voce !== 'cheia' || !ultimaTranscricao) return null;
+  return `Você disse: “${ultimaTranscricao}”`;
+}

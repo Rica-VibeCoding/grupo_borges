@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { falasVisiveis, leituraDaConversa, rotuloDaAcao } from './leitura-da-conversa.ts';
+import {
+  avisoQuePedeAcao,
+  falasVisiveis,
+  leituraDaConversa,
+  rotuloDaAcao,
+  voceDisseParaLeitor,
+} from './leitura-da-conversa.ts';
 import type { Cena } from './moldura-estado.ts';
 
 const base = { preparacaoFalhou: false, abrindoMicrofone: false, falaDetectada: false, fone: false };
@@ -51,5 +57,28 @@ describe('leitura da tela de conversa', () => {
     assert.deepEqual(falasVisiveis('esperandoZe'), { voce: 'cheia', ze: false });
     assert.deepEqual(falasVisiveis('falando'), { voce: 'recuada', ze: true });
     assert.deepEqual(falasVisiveis('interrompendo'), { voce: 'recuada', ze: true });
+  });
+
+  it('com o texto desligado, a linha junto do botão só aparece quando pede ação', () => {
+    const quieto = { preparacaoFalhou: false, aviso: null, wakeLockSuportado: true, wakeLockFalhou: false };
+    for (const cena of CENAS.filter((c) => c !== 'erro')) assert.equal(avisoQuePedeAcao({ ...quieto, cena }), null, cena);
+    assert.equal(avisoQuePedeAcao({ ...quieto, cena: 'erro', motivo: 'microfoneNegado' }), 'Sem acesso ao microfone');
+    assert.equal(avisoQuePedeAcao({ ...quieto, cena: 'erro' }), 'A conversa parou');
+    assert.match(avisoQuePedeAcao({ ...quieto, cena: 'parado', preparacaoFalhou: true }) ?? '', /detector não carregou/);
+    assert.match(avisoQuePedeAcao({ ...quieto, cena: 'ouvindo', wakeLockFalhou: true }) ?? '', /tela acesa/);
+    assert.match(avisoQuePedeAcao({ ...quieto, cena: 'falando', wakeLockSuportado: false }) ?? '', /tela acesa/);
+    assert.equal(avisoQuePedeAcao({ ...quieto, cena: 'falando', aviso: 'O navegador impediu a reprodução da resposta.' }), 'O navegador impediu a reprodução da resposta.');
+  });
+
+  it('parado não carrega aviso velho nem reclama da tela acesa', () => {
+    const velho = { preparacaoFalhou: false, aviso: 'O navegador impediu a reprodução da resposta.', wakeLockSuportado: false, wakeLockFalhou: true };
+    assert.equal(avisoQuePedeAcao({ ...velho, cena: 'parado' }), null);
+  });
+
+  it('o leitor de tela ouve o que foi entendido enquanto ele pensa, não o texto antigo', () => {
+    assert.equal(voceDisseParaLeitor('esperandoZe', 'Qual a previsão?'), 'Você disse: “Qual a previsão?”');
+    assert.equal(voceDisseParaLeitor('transcrevendo', 'frase anterior'), null);
+    assert.equal(voceDisseParaLeitor('ouvindo', 'frase anterior'), null);
+    assert.equal(voceDisseParaLeitor('esperandoZe', null), null);
   });
 });

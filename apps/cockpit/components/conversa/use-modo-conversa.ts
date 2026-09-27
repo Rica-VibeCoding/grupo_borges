@@ -19,12 +19,12 @@ import { useWakeLock } from './use-wake-lock';
 const FRASE_PONTE = 'Estou pensando. Já te respondo.';
 const FRASE_DEMORA = 'Ainda estou trabalhando nisso.';
 
-export function useModoConversa(slug: string) {
+/** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca. */
+export function useModoConversa(slug: string, fone: boolean) {
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
   const [aviso, setAviso] = useState<string | null>(null);
   const [ultimaTranscricao, setUltimaTranscricao] = useState<string | null>(null);
   const [respostaDoZe, setRespostaDoZe] = useState<string | null>(null);
-  const [fone, setFone] = useState(false);
 
   const conversaRef = useRef(conversa);
   const sessaoAtivaRef = useRef(false);
@@ -209,6 +209,14 @@ export function useModoConversa(slug: string) {
 
   useEffect(() => detector.ajustaDetector(), [conversa.estado, detector.ajustaDetector]);
 
+  // A máquina nasce sem fone; só uma troca de verdade vira evento.
+  const foneDaMaquinaRef = useRef(false);
+  useEffect(() => {
+    if (foneDaMaquinaRef.current === fone) return;
+    foneDaMaquinaRef.current = fone;
+    despacha({ tipo: 'fone', ligado: fone });
+  }, [despacha, fone]);
+
   useEffect(() => {
     const aoMudarVisibilidade = () => {
       if (
@@ -272,8 +280,6 @@ export function useModoConversa(slug: string) {
     falaDetectada: detector.falaDetectada,
     abrindoMicrofone: detector.abrindoMicrofone,
     leNivel,
-    fone,
-    mudarFone: (ligado: boolean) => { setFone(ligado); despacha({ tipo: 'fone', ligado }); },
     aviso,
     ultimaTranscricao,
     respostaDoZe,

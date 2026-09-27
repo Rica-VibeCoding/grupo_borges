@@ -129,3 +129,43 @@ a Esfera (o Núcleo) como opção dentro da tela.
 
 - Commit, build e publicação. Nada em `lib/conversa/`.
 - Aparelho de verdade: a medida de 30 fps e a barra do Safari ficam para a fase 4, no iPhone.
+
+## Ajuste pós-iPhone — tela limpa
+
+### Entreguei (`apps/cockpit/components/conversa/`)
+
+- Na tela ficam o visual, **um** botão (Começar / Encerrar / Retomar) e o cabeçalho com Voltar, o nome do agente e
+  o ícone de configurações.
+- `configuracao-da-conversa.tsx` (no lugar de `chave-de-visual.*`): a folha ganhou **Estou de fone** e **Mostrar
+  texto** (desligado), acima da escolha de visual. As duas ficam no aparelho (`ck-conversa-fone`,
+  `ck-conversa-texto`), lidas como o visual (`use-preferencias-conversa.ts`, no lugar de `use-visual-conversa.ts`).
+- `useModoConversa(slug, fone)`: o fone chega da folha e cada troca vira o mesmo evento `fone` da máquina. O
+  comportamento não mudou.
+- Texto só com "Mostrar texto": título, detalhe, "Você disse" e a resposta. Desligado, o estado continua no nó
+  `aria-live` (visualmente oculto), com "Você disse: “…”" enquanto ele pensa.
+- Linha junto do botão (`avisoQuePedeAcao`, puro e testado), só para o que pede ação: erro, detector que não
+  carregou, voz do Zé bloqueada pelo navegador, tela não mantida acesa.
+- Esfera sem texto: palco inteiro, no meio da tela.
+- Moldura sem texto: só segura a luz em volta do cabeçalho, então a borda aparece inteira nas laterais (antes
+  a luz era comprimida em toda a faixa do texto).
+
+### Provas
+
+- `npm test`: **1017 testes, 1017 passaram** (5 novos: as chaves guardadas no aparelho, a linha junto do botão e o
+  "Você disse" para o leitor de tela). `npm run type-check`: verde.
+- E2E (`e2e/fase3-ui.cjs`, agora conferindo a tela limpa, ligando o fone pela folha e lendo a transcrição no nó
+  `aria-live`): **4/4 com o Fio e 4/4 com a Matéria**. Provas em `e2e/fase3-limpa/e2e-*-provas.json`.
+- Capturas da tela real (393 × 852, estados vividos com o `canarinho`): mosaicos `e2e/fase3-limpa/moldura-fio.png`
+  e `esfera-materia.png`, os quadros soltos (mais o `parado` de cada uma) e `configuracoes.png` (a folha aberta).
+
+### Achados
+
+- **O `globals.css` velho no dev da 3009 era o cache do Turbopack**, não o observador de arquivos: reiniciar não
+  resolvia, porque o dev relia o CSS antigo de `.next-dev/dev/cache/turbopack`. Apagar só esse cache (é do dev, a
+  produção não usa) e subir de novo resolveu.
+- A sessão do `canarinho` caiu às 00:53 e o backend recusava o envio (`sessao_ausente`). O E2E esperou ela
+  voltar; nada da tela.
+
+### Não fiz
+
+- Commit, build e publicação. Nada em `lib/conversa/`.

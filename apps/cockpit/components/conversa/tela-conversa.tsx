@@ -3,15 +3,22 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
-import { ChaveDeVisual } from './chave-de-visual';
+import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
 import { EsferaConversa } from './esfera-conversa';
-import { falasVisiveis, leituraDaConversa, rotuloDaAcao } from './leitura-da-conversa';
+import {
+  avisoQuePedeAcao,
+  falasVisiveis,
+  leituraDaConversa,
+  rotuloDaAcao,
+  voceDisseParaLeitor,
+} from './leitura-da-conversa';
 import { MolduraConversa } from './moldura-conversa';
 import type { Cena } from './moldura-estado';
 import { pecasDoVisual } from './preferencia-visual';
+import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
 import styles from './tela-conversa.module.css';
 import { useModoConversa } from './use-modo-conversa';
-import { useVisualConversa } from './use-visual-conversa';
+import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
 
 /** Segundos de espera pelo Zé, uma atualização por segundo (não por quadro). */
 function useSegundosDeEspera(esperando: boolean) {
@@ -38,9 +45,17 @@ function Reticencias() {
   );
 }
 
+/**
+ * A tela limpa: o visual ocupa tudo, um botão embaixo e, no cabeçalho, Voltar e as
+ * configurações. O texto (estado, sua fala, a resposta) só aparece com "Mostrar
+ * texto" ligado; desligado, continua existindo para o leitor de tela.
+ */
 export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
-  const modo = useModoConversa(slug);
   const [visual, escolheVisual] = useVisualConversa();
+  const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
+  const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
+  const modo = useModoConversa(slug, fone);
+  const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
@@ -51,22 +66,31 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
     preparacaoFalhou,
     abrindoMicrofone: modo.abrindoMicrofone,
     falaDetectada: modo.falaDetectada,
-    fone: modo.fone,
+    fone,
     motivo: modo.conversa.motivo,
   });
   const falas = falasVisiveis(cena);
   const pecas = pecasDoVisual(visual, cena);
-  const segundos = useSegundosDeEspera(cena === 'esperandoZe');
-  const aviso = [modo.aviso, preparacaoFalhou ? modo.erroPreparacao : null]
-    .find((texto) => texto && texto !== leitura.detalhe);
-  const notas = [
-    modo.streamStatus === 'reconnecting' ? 'Reconectando ao agente…' : null,
-    ativa && !modo.wakeLockSuportado ? 'Este navegador não mantém a tela acesa.' : null,
-    ativa && modo.wakeLockFalhou ? 'Não consegui manter a tela acesa.' : null,
-    cena === 'parado' && modo.tempoCargaMs !== null
-      ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s`
-      : null,
-  ].filter(Boolean);
+  const segundos = useSegundosDeEspera(texto && cena === 'esperandoZe');
+  const aviso = avisoQuePedeAcao({
+    cena,
+    preparacaoFalhou,
+    motivo: modo.conversa.motivo,
+    aviso: modo.aviso,
+    wakeLockSuportado: modo.wakeLockSuportado,
+    wakeLockFalhou: modo.wakeLockFalhou,
+  });
+  // Com texto, o título já diz o erro; a linha junto do botão não repete.
+  const linhaDoBotao = texto && (cena === 'erro' || preparacaoFalhou) ? null : aviso;
+  const notas = texto
+    ? [
+        modo.streamStatus === 'reconnecting' ? 'Reconectando ao agente…' : null,
+        cena === 'parado' && modo.tempoCargaMs !== null
+          ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s`
+          : null,
+      ].filter(Boolean)
+    : [];
+  const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.ultimaTranscricao);
 
   return (
     <main
@@ -75,18 +99,19 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
       data-cena={cena}
       data-opcao={visual.opcao}
       data-variacao={visual.variacao}
+      data-texto={texto ? 'visivel' : 'oculto'}
     >
       {pecas.moldura ? (
         <MolduraConversa
           cena={pecas.moldura.cena}
           variacao={pecas.moldura.variacao}
           leNivel={modo.leNivel}
-          zonaDoTexto={zonaRef}
+          zonaDoTexto={texto ? zonaRef : topoRef}
         />
       ) : null}
 
       <div ref={zonaRef} className={styles.zona}>
-        <header className={styles.topo}>
+        <header ref={topoRef} className={styles.topo}>
           <Link href={`/agente/${slug}`} className={styles.voltar}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="m15 18-6-6 6-6" />
@@ -95,7 +120,14 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
           </Link>
           <div className={styles.direita}>
             <span className={styles.agente}>{nome}</span>
-            <ChaveDeVisual visual={visual} escolhe={escolheVisual} />
+            <ConfiguracaoDaConversa
+              visual={visual}
+              escolheVisual={escolheVisual}
+              fone={fone}
+              mudaFone={mudaFone}
+              texto={texto}
+              mudaTexto={mudaTexto}
+            />
           </div>
         </header>
 
@@ -103,59 +135,41 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
           <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel} />
         ) : null}
 
-        <section className={styles.leitura} aria-live="polite" aria-atomic="true">
+        <section className={texto ? styles.leitura : 'sr-only'} aria-live="polite" aria-atomic="true">
           <div className={styles.linhaDoTitulo}>
             <h1 className={styles.titulo}>{leitura.titulo}</h1>
             {cena === 'esperandoZe' && segundos > 0 ? <span className={styles.tempo}>{segundos} s</span> : null}
           </div>
           <p className={styles.detalhe}>{leitura.detalhe}</p>
+          {voceDisse ? <p>{voceDisse}</p> : null}
         </section>
 
-        <section className={styles.falas}>
-          {falas.voce && (cena === 'transcrevendo' || modo.ultimaTranscricao) ? (
-            <div className={styles.fala} data-fala="voce" data-forma={cena === 'transcrevendo' ? 'cheia' : falas.voce}>
-              <span className={styles.quem}>Você disse</span>
-              <p>{cena === 'transcrevendo' ? <Reticencias /> : `“${modo.ultimaTranscricao}”`}</p>
-            </div>
-          ) : null}
-          {falas.ze && modo.respostaDoZe ? (
-            <div className={styles.fala} data-fala="ze" data-forma={cena === 'interrompendo' ? 'pausada' : 'cheia'}>
-              <span className={styles.quem}>{nome}</span>
-              <p>{modo.respostaDoZe}</p>
-            </div>
-          ) : null}
-        </section>
+        {texto ? (
+          <section className={styles.falas}>
+            {falas.voce && (cena === 'transcrevendo' || modo.ultimaTranscricao) ? (
+              <div className={styles.fala} data-fala="voce" data-forma={cena === 'transcrevendo' ? 'cheia' : falas.voce}>
+                <span className={styles.quem}>Você disse</span>
+                <p>{cena === 'transcrevendo' ? <Reticencias /> : `“${modo.ultimaTranscricao}”`}</p>
+              </div>
+            ) : null}
+            {falas.ze && modo.respostaDoZe ? (
+              <div className={styles.fala} data-fala="ze" data-forma={cena === 'interrompendo' ? 'pausada' : 'cheia'}>
+                <span className={styles.quem}>{nome}</span>
+                <p>{modo.respostaDoZe}</p>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
-        {aviso || notas.length > 0 ? (
+        {notas.length > 0 ? (
           <div className={styles.notas}>
-            {aviso ? <p role="alert" className={styles.alerta}>{aviso}</p> : null}
             {notas.map((nota) => <p key={nota}>{nota}</p>)}
           </div>
         ) : null}
       </div>
 
       <footer className={styles.dock}>
-        <div className={styles.fone}>
-          <label className={styles.chaveFone}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M3 14v-2a9 9 0 0 1 18 0v2" />
-              <path d="M21 16a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3zM3 16a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H3z" />
-            </svg>
-            Estou de fone
-            <input
-              type="checkbox"
-              role="switch"
-              className={styles.interruptor}
-              checked={modo.fone}
-              onChange={(evento) => modo.mudarFone(evento.target.checked)}
-            />
-            <span className={styles.trilho} aria-hidden="true" />
-          </label>
-          <p className={styles.dica}>
-            {modo.fone ? 'Falar por cima interrompe a resposta.' : 'Espero a resposta terminar para ouvir.'}
-          </p>
-        </div>
-
+        {linhaDoBotao ? <p role="alert" className={styles.aviso}>{linhaDoBotao}</p> : null}
         {ativa ? (
           <button type="button" onClick={modo.parar} className={styles.acao}>
             Encerrar conversa

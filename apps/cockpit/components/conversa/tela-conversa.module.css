@@ -1,6 +1,7 @@
-/* Tela de conversa: texto à esquerda, comandos embaixo, visual atrás.
- * O texto fica a 32 px da borda: a Moldura só limita a luz a partir de 22 px,
- * então a margem garante o contraste da §3 (ver moldura-shader.ts). */
+/* Tela de conversa: o visual atrás de tudo, um botão embaixo e, com "Mostrar
+ * texto", o texto à esquerda. O texto fica a 32 px da borda: a Moldura só limita
+ * a luz a partir de 22 px, então a margem garante o contraste da §3 (ver
+ * moldura-shader.ts). Sem texto, ela só limita a luz em volta do cabeçalho. */
 .tela {
   position: relative;
   isolation: isolate;
@@ -148,19 +149,6 @@
 .notas p {
   margin: 0;
 }
-.alerta {
-  display: flex;
-  gap: var(--ck-space-2);
-  color: var(--ck-text-primary);
-}
-.alerta::before {
-  content: '';
-  flex: none;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--ck-conversa-erro);
-}
-
 /* Comandos: superfícies opacas, porque atrás delas a luz não tem teto. */
 .dock {
   display: grid;
@@ -170,76 +158,23 @@
   margin: 0 auto;
   padding-top: var(--ck-space-4);
 }
-.fone {
-  padding: var(--ck-space-1) var(--ck-space-4) var(--ck-space-3);
+.aviso {
+  display: flex;
+  gap: var(--ck-space-2);
+  margin: 0;
+  padding: var(--ck-space-2) var(--ck-space-3);
   border-radius: var(--ck-radius-caixa);
   background: var(--ck-surface-composer);
+  color: var(--ck-text-primary);
+  font-size: var(--ck-text-base);
+  line-height: var(--ck-leading-body);
 }
-.chaveFone {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--ck-space-3);
-  min-height: 48px;
-  font-size: var(--ck-text-md);
-  font-weight: 500;
-  cursor: pointer;
-}
-.chaveFone svg {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  color: var(--ck-text-secondary);
-}
-.interruptor {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  z-index: 1;
-  width: 51px;
-  height: 31px;
-  margin: 0;
-  opacity: 0;
-  translate: 0 -50%;
-  cursor: pointer;
-}
-.trilho {
-  position: relative;
-  flex: none;
-  width: 51px;
-  height: 31px;
-  margin-left: auto;
-  border-radius: var(--ck-radius-pill);
-  background: var(--ck-edge-hairline);
-  transition: background var(--ck-dur-fast) var(--ck-ease);
-}
-.trilho::after {
+.aviso::before {
   content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 27px;
-  height: 27px;
-  border-radius: 50%;
-  background: var(--ck-text-primary);
-  transition: translate var(--ck-dur-fast) var(--ck-ease);
-}
-.interruptor:checked + .trilho {
-  background: var(--ck-text-primary);
-}
-.interruptor:checked + .trilho::after {
-  background: var(--ck-surface-canvas);
-  translate: 20px 0;
-}
-.interruptor:focus-visible + .trilho {
-  outline: 2px solid var(--ck-focus);
-  outline-offset: 2px;
-}
-.dica {
-  margin: 0;
-  padding-left: calc(22px + var(--ck-space-3));
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-sm);
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--ck-conversa-erro);
 }
 
 .acao {
@@ -268,7 +203,12 @@
   outline-offset: 2px;
 }
 
-/* Com a esfera, ela ocupa o palco logo abaixo do cabeçalho e as palavras descem
+/* Sem texto embaixo, a esfera tem o palco inteiro e fica no meio dele. */
+.tela[data-texto='oculto'] [data-visual='esfera'] {
+  max-height: none;
+}
+
+/* Com texto, a esfera ocupa o palco logo abaixo do cabeçalho e as palavras descem
  * para perto dos comandos; o título encolhe para não disputar o olho com ela. */
 .tela[data-opcao^='esfera'] .leitura {
   margin-top: var(--ck-space-2);
@@ -282,5 +222,4 @@
 
 @media (prefers-reduced-motion: reduce) {
   .reticencias span { animation: none; opacity: 0.6; }
-  .trilho, .trilho::after { transition: none; }
 }
