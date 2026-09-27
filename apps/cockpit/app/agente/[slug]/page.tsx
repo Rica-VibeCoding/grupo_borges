@@ -314,8 +314,8 @@ export default async function AgentePage({
 
   return (
     <>
-      {/* Chrome do topo — nav overlay e cápsula do agente à esquerda, pill de
-          telas centralizado. A cápsula abre o painel (§12.3/§13). */}
+      {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
+          cápsula do agente na ponta direita. A cápsula abre o painel (§12.3/§13). */}
       <BarraDeTelas
         telas={[{ rotulo: 'Chat', ativa: true }]}
         agente={{ slug: agente.slug, nome: agente.name }}
@@ -340,7 +340,7 @@ export default async function AgentePage({
           ele mandou tirar por uma versão menor da mesma coisa.
 
           Ele avisou em 16/08, e a identidade voltou onde ele pediu: dentro da
-          `BarraDeTelas` acima, como cápsula ao lado do `≡`. Aqui continua não
+          `BarraDeTelas` acima, como cápsula (na ponta direita desde 27/09). Aqui continua não
           entrando nada — o que ele reprovou era a faixa, não a foto. */}
 
       {/* O FEED DE VERDADE. Até 02/08 esta rota mostrava só o último recado do
