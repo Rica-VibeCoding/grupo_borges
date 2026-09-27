@@ -12,7 +12,10 @@
 > Na manhã de 27/09: o freio sai sempre — o `/interromper` limpa o pedido que o Claude Code devolve à caixa e grava o
 > fim no stream (`8bb6c2a`, `7d749a9`, API reiniciada) — e o fim sem fala espera 800 ms antes de fechar (`6a41df9`).
 > Depois, a moldura passou a colar no vidro nos quatro lados: antes o pé subia a faixa segura e sobrava parede embaixo (`917e27f`,
-> publicado na 3008 com janela do Pavan). Esperando o teste dele no iPhone.
+> publicado na 3008 com janela do Pavan). Em seguida, a barra do chat enxugou — microfone e ⧉ fora, foto centrada
+> quando o nome não cabe — e os gestos passaram a ser os do Rica: no chat, esquerda abre a voz e direita abre a tropa;
+> na voz, direita volta ao chat (`e4488f1`, briefing `fase3-barra-do-chat.md`, publicado na 3008). Esperando o teste
+> dele no iPhone.
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
