@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import {
   Drawer,
@@ -21,6 +21,9 @@ type Props = {
   mudaFone: (ligado: boolean) => void;
   texto: boolean;
   mudaTexto: (ligado: boolean) => void;
+  /** Quem abre é a tela: o arrasto para cima e este botão. */
+  aberta: boolean;
+  mudaAberta: (aberta: boolean) => void;
 };
 
 function Chave({ icone, nome, dica, ligada, muda }: {
@@ -51,13 +54,13 @@ function Chave({ icone, nome, dica, ligada, muda }: {
 
 /**
  * Tudo que se ajusta na conversa mora aqui, fora da tela: o fone, o texto e o
- * visual. Um ícone no cabeçalho abre a folha; cada troca vale na hora e fica
+ * visual. Arrastar para cima abre a folha; o botão continua existindo para teclado e
+ * leitor de tela, fora da vista até ganhar foco. Cada troca vale na hora e fica
  * guardada no aparelho.
  */
-export function ConfiguracaoDaConversa({ visual, escolheVisual, fone, mudaFone, texto, mudaTexto }: Props) {
-  const [aberta, setAberta] = useState(false);
+export function ConfiguracaoDaConversa({ visual, escolheVisual, fone, mudaFone, texto, mudaTexto, aberta, mudaAberta }: Props) {
   return (
-    <Drawer open={aberta} onOpenChange={setAberta}>
+    <Drawer open={aberta} onOpenChange={mudaAberta}>
       <DrawerTrigger asChild>
         <button type="button" className={styles.gatilho} aria-label="Configurações da conversa">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">

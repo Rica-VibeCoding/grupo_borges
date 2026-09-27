@@ -15,6 +15,12 @@
     calc(var(--ck-space-4) + var(--ck-safe-right))
     calc(var(--ck-space-4) + var(--ck-safe-bottom))
     calc(var(--ck-space-4) + var(--ck-safe-left));
+  /* O dedo é da tela (toque e gestos): o Safari não rola, não dá zoom nem puxa a página. */
+  touch-action: none;
+  overscroll-behavior: none;
+}
+:global(html):has(.tela) {
+  overscroll-behavior: none;
 }
 
 .zona {
@@ -29,29 +35,26 @@
 
 .topo {
   position: relative;
-  z-index: 2; /* acima do toque: Voltar e configurações ficam fora dele */
+  z-index: 2; /* acima do toque: o ícone do chat fica fora dele */
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   min-height: var(--ck-touch-min);
   margin-right: calc(var(--ck-space-3) * -1);
 }
-.voltar {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ck-space-1);
-  min-height: var(--ck-touch-min);
-  padding: 0 var(--ck-space-3) 0 var(--ck-space-1);
-  margin-left: calc(var(--ck-space-2) * -1);
+.chat {
+  display: inline-grid;
+  place-items: center;
+  width: var(--ck-touch-min);
+  height: var(--ck-touch-min);
   border-radius: var(--ck-radius-caixa);
   color: var(--ck-text-secondary);
-  font-size: var(--ck-text-md);
 }
-.voltar svg {
+.chat svg {
   width: 22px;
   height: 22px;
 }
-.voltar:focus-visible {
+.chat:focus-visible {
   outline: 2px solid var(--ck-focus);
   outline-offset: 2px;
 }
@@ -205,6 +208,40 @@
   border-radius: var(--ck-radius-caixa);
 }
 
+/* A faixa de baixo — área segura mais 40 px — é a borda do iPhone, que manda o app para
+ * o fundo: arrasto para cima começado nela não abre as configurações. Invisível; a tela
+ * só mede onde ela começa. */
+.faixaDeBaixo {
+  position: fixed;
+  inset: auto 0 0;
+  height: calc(var(--ck-safe-bottom) + 40px);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* A dica da primeira vez: 2 s, logo acima da faixa de baixo, e some sozinha. */
+.dica {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: calc(var(--ck-safe-bottom) + 56px);
+  margin: 0;
+  padding: var(--ck-space-2) var(--ck-space-4);
+  border-radius: var(--ck-radius-caixa);
+  background: var(--ck-surface-composer);
+  color: var(--ck-text-primary);
+  font-size: var(--ck-text-base);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: dica 2s var(--ck-ease) both;
+}
+@keyframes dica {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  12%, 85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); }
+}
+
 /* Sem texto embaixo, a esfera tem o palco inteiro e fica no meio dele. */
 .tela[data-texto='oculto'] [data-visual='esfera'] {
   max-height: none;
@@ -224,4 +261,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .reticencias span { animation: none; opacity: 0.6; }
+  .dica { animation: none; }
 }

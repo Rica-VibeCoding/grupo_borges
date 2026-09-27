@@ -268,9 +268,11 @@ export function useModoConversa(slug: string, fone: boolean) {
     [nivelMicRef, nivelVozRef],
   );
 
+  const pararRef = useRef(parar);
+  pararRef.current = parar;
   useEffect(
     () => () => {
-      sessaoAtivaRef.current = false;
+      if (sessaoAtivaRef.current) pararRef.current(); // sair da tela é o parar, freio incluso
       sonsRef.current?.encerra();
     },
     [],

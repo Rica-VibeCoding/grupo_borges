@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
+import { ArrastoDoChat } from '@/components/conversa/arrasto-do-chat';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
@@ -382,6 +383,9 @@ export default async function AgentePage({
           `app/api/regua/route.ts`: existe porque o Safari do iPhone é o único
           motor que eu não consigo rodar aqui. */}
       {sp.diag === '1' ? <Regua /> : null}
+
+      {/* Arrastar para a direita volta para a conversa por voz (fase 3, gestos). */}
+      <ArrastoDoChat slug={agente.slug} />
 
       {/* O shell agora vive no layout persistente. A gaveta continua na folha
           porque seus campos dependem do agente da página; como é `fixed`, ela

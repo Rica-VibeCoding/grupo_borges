@@ -8,6 +8,8 @@
 export const CHAVE_FONE = 'ck-conversa-fone';
 export const CHAVE_TEXTO = 'ck-conversa-texto';
 export type ChaveLigada = typeof CHAVE_FONE | typeof CHAVE_TEXTO;
+/** A dica dos gestos já apareceu neste aparelho ("1"): não aparece mais. */
+export const CHAVE_DICA_DOS_GESTOS = 'ck-conversa-dica-gestos';
 
 const LIGADO = '1';
 

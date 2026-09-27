@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
 import { EsferaConversa } from './esfera-conversa';
@@ -18,6 +19,7 @@ import { pecasDoVisual } from './preferencia-visual';
 import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
 import styles from './tela-conversa.module.css';
 import { acaoDoToque, toqueConta } from './toque-da-conversa';
+import { useDicaDosGestos, useGestosDaConversa } from './use-gestos-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
 import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
 
@@ -48,9 +50,10 @@ function Reticencias() {
 
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
- * toque para. Fora dele só o cabeçalho (Voltar e as configurações). O texto (estado,
- * sua fala, a resposta) só aparece com "Mostrar texto"; sem ele, continua existindo
- * para o leitor de tela.
+ * toque para. Os botões viraram gestos: arrastar para a esquerda leva ao chat de texto,
+ * para cima abre as configurações. No cabeçalho, só o ícone do chat (e o botão das
+ * configurações, fora da vista até o teclado chegar). O texto (estado, sua fala, a
+ * resposta) só aparece com "Mostrar texto"; sem ele, continua existindo para o leitor de tela.
  */
 export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   const [visual, escolheVisual] = useVisualConversa();
@@ -59,7 +62,11 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   const modo = useModoConversa(slug, fone);
   const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
+  const faixaDeBaixoRef = useRef<HTMLSpanElement>(null);
   const ultimoToqueRef = useRef<number | null>(null);
+  const [configAberta, setConfigAberta] = useState(false);
+  const router = useRouter();
+  const dica = useDicaDosGestos();
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
   const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
@@ -95,8 +102,27 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
     : [];
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.ultimaTranscricao);
 
+  // Sair para o chat com a conversa andando é o parar, freio incluso — já no gesto, sem
+  // esperar a rota nova chegar (a saída por outro caminho para quando a tela desmonta).
+  const chat = `/agente/${slug}`;
+  const { parar } = modo;
+  const paraAoSair = useCallback(() => {
+    if (acao === 'parar') parar();
+  }, [acao, parar]);
+  const vaiAoChat = useCallback(() => {
+    paraAoSair();
+    router.push(chat);
+  }, [chat, paraAoSair, router]);
+  // Ctrl/Cmd-clique abre o chat em outra aba: a conversa desta segue.
+  const clicaNoChat = (evento: MouseEvent<HTMLAnchorElement>) => {
+    if (!evento.metaKey && !evento.ctrlKey && !evento.shiftKey) paraAoSair();
+  };
+  const abreConfiguracoes = useCallback(() => setConfigAberta(true), []);
+  const { gestos, cliqueConta } = useGestosDaConversa({ faixaDeBaixoRef, aoChat: vaiAoChat, aoConfiguracoes: abreConfiguracoes });
+
   // Síncrono no clique: começar destrava áudio, microfone e Wake Lock no mesmo gesto.
   const toca = (evento: MouseEvent<HTMLButtonElement>) => {
+    if (!cliqueConta(evento)) return;
     if (acao === 'nada' || !toqueConta(evento.timeStamp, ultimoToqueRef.current)) return;
     ultimoToqueRef.current = evento.timeStamp;
     if (acao === 'comecar') modo.comecar();
@@ -111,6 +137,7 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
       data-opcao={visual.opcao}
       data-variacao={visual.variacao}
       data-texto={texto ? 'visivel' : 'oculto'}
+      {...gestos}
     >
       {pecas.moldura ? (
         <MolduraConversa
@@ -123,12 +150,6 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
 
       <div ref={zonaRef} className={styles.zona}>
         <header ref={topoRef} className={styles.topo}>
-          <Link href={`/agente/${slug}`} className={styles.voltar}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            Voltar
-          </Link>
           <div className={styles.direita}>
             <span className={styles.agente}>{nome}</span>
             <ConfiguracaoDaConversa
@@ -138,7 +159,14 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
               mudaFone={mudaFone}
               texto={texto}
               mudaTexto={mudaTexto}
+              aberta={configAberta}
+              mudaAberta={setConfigAberta}
             />
+            <Link href={chat} className={styles.chat} aria-label={`Abrir o chat de texto com ${nome}`} onClick={clicaNoChat}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+              </svg>
+            </Link>
           </div>
         </header>
 
@@ -187,6 +215,13 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
         data-acao={acao}
         onClick={toca}
       />
+
+      {dica ? (
+        <p className={styles.dica} aria-hidden="true">
+          Arraste para cima: configurações
+        </p>
+      ) : null}
+      <span ref={faixaDeBaixoRef} className={styles.faixaDeBaixo} aria-hidden="true" />
 
       {linhaDoAviso ? (
         <footer className={styles.dock}>

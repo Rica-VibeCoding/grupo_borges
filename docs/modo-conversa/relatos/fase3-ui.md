@@ -303,3 +303,75 @@ a Esfera (o Núcleo) como opção dentro da tela.
 - A entrada da pergunta é o primeiro anexo depois do `queued`; o backend não diz o tipo do anexo. Se outro
   anexo vier antes do que traz a pergunta, o texto do turno velho entre os dois fala. Nas duas medições não
   veio nenhum.
+
+## Gestos no lugar dos botões — chat, voltar e configurações
+
+### Entreguei (`apps/cockpit/components/conversa/` e duas linhas em `app/agente/[slug]/page.tsx`)
+
+- **Regra pura dos gestos** (`gesto-de-arrasto.ts`, com teste):
+  - até 10 px o dedo não andou: é toque. Gesto a partir de 56 px no eixo, e o eixo vale o dobro do outro;
+  - gesto de lado não começa a menos de 24 px das bordas (o voltar e o avançar do Safari); do meio funciona;
+  - para cima só conta começado acima da faixa de baixo (área segura + 40 px), a borda do iPhone;
+  - no chat, não conta o que começou em campo, no composer (`form`), em gaveta (`aside`), em folha (`dialog`) ou
+    no que rola de lado;
+  - o clique que sobra de um arrasto não é toque; o do teclado sempre é.
+- **Na conversa** (`use-gestos-da-conversa.ts`, Pointer Events no `<main>`, só dedo; mouse segue sendo clique):
+  - esquerda → chat; cima → folha de configurações. O gesto vale ao soltar o dedo;
+  - `touch-action: none` e `overscroll-behavior: none` seguram o Safari: nada rola, nada dá zoom;
+  - o Voltar saiu. O canto superior direito virou o ícone do chat. O nome do agente ficou ao lado: na
+    captura, "Canário" + balão lê como "chat do Canário", sem ambiguidade;
+  - o botão das configurações segue para teclado e leitor de tela, fora da vista até ganhar foco de teclado;
+  - a folha fecha como antes, arrastando para baixo e tocando fora;
+  - dica "Arraste para cima: configurações" por 2 s na primeira vez, guardada no aparelho. Só conta como vista
+    quando some.
+- **Sair é parar** (`use-modo-conversa.ts`). Com a conversa ativa, o gesto e o ícone do chat param na hora, com
+  o freio se o Zé já respondia. Qualquer outra saída (voltar do navegador, tropa) para quando a tela desmonta.
+  Ctrl/Cmd-clique no ícone abre o chat em outra aba sem parar esta.
+- **No chat** (`arrasto-do-chat.tsx`): direita → `/conversa/{slug}`. Escuta Touch Events passivos, que seguem
+  chegando com o chat rolando, e decide ao soltar. Ignora com gaveta aberta e com texto selecionado. Enquanto o
+  chat está aberto, liga `overscroll-behavior-x: none` na raiz: no Chrome o arrasto de lado também é o "voltar"
+  do histórico. No Safari não muda nada.
+
+### Provas
+
+- `npm test`: **1067 testes, 1067 passaram** (10 novos). `npm run type-check`: verde.
+- **E2E dos gestos** (`e2e/fase3-gestos.cjs`, com o `canarinho`). O dedo é simulado pelo CDP e passa por
+  `touch-action`, Pointer Events e rolagem, como no celular. **5/5 com o Fio e 5/5 com a Matéria**:
+  - **cabeçalho:** a dica aparece e some em ~2 s e não volta; o ícone do chat está no canto; o Tab chega nas
+    configurações, que aparecem, e o Enter abre; o toque no ícone leva ao chat;
+  - **cima:** parado, abre a folha sem começar; fecha arrastando e tocando fora, e o toque de fora não começa;
+    da faixa de baixo não abre; com a conversa ouvindo, abre sem parar; arrasto indeciso ou para a direita não é
+    toque;
+  - **esquerda:** do meio leva ao chat sem começar; da borda direita não; com a conversa ouvindo, sair fecha o
+    microfone;
+  - **direita no chat:** do meio volta, sem começar a conversa. Não voltam: rolar, diagonal, arrasto curto,
+    composer, bloco que rola de lado (e o bloco rolou), texto selecionado, gaveta aberta;
+  - **sair falando:** o Zé falando com o turno em voo → gesto → a voz para, `interromper` 200,
+    `[Request interrupted by user]` no registro, turno sem fim normal, a voz não volta, microfone fechado.
+- **Regressão:** toque 5/5 e fase 2 (`fase3-ui.cjs`) 4/4, nos dois visuais. Os dois roteiros abriam as
+  configurações pelo botão; agora abrem por foco e Enter.
+- Provas e telas em `e2e/fase3-gestos/`.
+
+### O que o E2E não prova
+
+- **É Chrome, não Safari.** Só o iPhone confirma:
+  - que o Safari entrega o arrasto inteiro na conversa com `touch-action: none`;
+  - no chat, que o fim do toque chega com o feed rolando;
+  - que o arrasto para cima começado logo acima da faixa de baixo não briga com a barra do iPhone.
+- **Roteiro no iPhone:**
+  - na conversa, arrastar do meio para cima → folha; para a esquerda → chat;
+  - no chat, arrastar do meio para a direita → conversa. Rolar o chat e arrastar num bloco de código não voltam;
+  - com o Zé falando, arrastar para a esquerda → a voz para e a resposta fica só no chat.
+
+### Achados
+
+- **No Chrome, arrasto de lado no chat voltava o histórico**, além do gesto novo. Com o composer, o E2E voltou
+  para a página anterior sem o meu código agir. Resolvido com `overscroll-behavior-x` enquanto o chat está aberto.
+- **Na Matéria, "sair falando" falhou uma vez por um erro do roteiro.** O Zé já tinha começado o final da
+  resposta quando o freio chegou; o turno foi cortado no meio, com `[Request interrupted by user]`. A checagem
+  virou "turno sem fim normal e voz que não volta", que é o que o briefing pede. Na rodada seguinte passou.
+
+### Não fiz
+
+- Commit, build e publicação. Nada em `apps/api`.
+- A tela não acompanha o dedo durante o arrasto: o gesto vale ao soltar, sem animação intermediária.
