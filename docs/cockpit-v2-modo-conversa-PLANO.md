@@ -4,11 +4,20 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (27/09/2026 — atualizar a cada fase):** Fases 0 e 1 **fechadas** (`5ff9759`). Próxima: **Fase 2**.
-> As provas físicas da fase 1 que só o iPhone dá (eco no alto-falante, tela bloqueada) foram para o teste
-> da fase 3, porque a tela só fica alcançável pelo iPhone publicada. Cadeiras em `psmux -L conversa` no PC:
-> `logica` (DeepSeek `deepseek-v4-pro[1m]`, Zen direto) e `tela` — desde 26/09 21h **Codex CLI `gpt-6-sol`
-> `medium`** (ordem do Rica; o `gpt-6-sol` não existe no proxy). Túnel do proxy desligado.
+> **ESTADO (27/09/2026 ~21h30 BRT — atualizar a cada fase):** Fases 0 e 1 **fechadas** (`5ff9759`).
+> **Fase 2 em curso, NADA commitado dela:** o diff mora só no clone do PC (`projetos\grupo_borges`).
+> - `logica` **entregou** (31 testes verdes, `docs/modo-conversa/relatos/fase2-logica.md` no clone do PC).
+> - `tela` estava terminando o E2E (faltava repetir a 2ª fala longa com fone) — relato parcial em
+>   `docs/modo-conversa/relatos/fase2-tela.md` no PC. Contexto dela passou de 50%: compactar antes de nova tarefa.
+> - Contrato da fase 2 já commitado (`f2c0ae3`). O `type-check` fica verde com a máquina do PC.
+> Provas físicas da fase 1 (eco, tela bloqueada) foram para a fase 3, no iPhone.
+>
+> **Retomar depois de `/clear` — nesta ordem:**
+> 1. Ler este banner e a seção "Mecânica das cadeiras" abaixo.
+> 2. Capturar as duas cadeiras (`cap-daniel.ps1`). `tela` ociosa → ler `fase2-tela.md` do PC.
+> 3. Trazer o diff do PC para a VPS, aplicar, `npm test` + `type-check`, `code-review` (subagente), consertos
+>    pela cadeira dona, commit a partir da VPS, sincronizar o PC. Receita na mecânica.
+> 4. Fechar a fase 2 aqui e seguir para a fase 3 (build com o Pavan + iPhone do Rica).
 
 ## O pedido
 
@@ -110,6 +119,27 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
 - **tela** → Tara `gpt-5.6-sol`. Dona do lockfile: a única instalação (`vad-web`) é dela.
 - **Coordenação** (Daniel): contrato, despacho, revisão, commit. Não escreve código de produção.
 - Relatos e briefings: `docs/modo-conversa/` (briefings/, relatos/).
+
+## Mecânica das cadeiras (o que custou descobrir em 26/09)
+
+- **PC:** `ssh RicardoBorges@100.118.54.91` (Tailscale). Comando de psmux vai em `.ps1` por `scp`, nunca
+  aspas aninhadas. Na home do PC já existem: `cap-daniel.ps1 <sessao> <n>` (captura), `send.ps1 <sessao>
+  <arquivo.txt>` (texto com `-l` + Enter separado), `compact.ps1`, `clear.ps1`. Chamar com
+  `powershell -NoProfile -ExecutionPolicy Bypass -File <x>.ps1`.
+- **Sessões:** `psmux -L conversa`: `logica` = Claude Code com DeepSeek `deepseek-v4-pro[1m]` direto no
+  OpenCode Zen (chave do cofre `sk-AZyN…` passada por `-e` no `new-session`, nunca em arquivo; env com
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`/`AUTO_COMPACT_WINDOW=1048576`). `tela` = **Codex CLI** `codex.cmd -m gpt-6-sol
+  -c model_reasoning_effort=medium --dangerously-bypass-approvals-and-sandbox` (ordem do Rica 26/09; o
+  `gpt-6-sol` não existe no `claude-code-proxy`; chamar a `.cmd`, o `codex` sem extensão dá erro 193).
+- **Despacho:** briefing em `docs/modo-conversa/briefings/`, commitado e puxado no PC antes; mensagem de uma
+  linha, sem acento e sem `;`. Codex mostra "Waiting for background terminal" enquanto roda teste — não é ócio.
+- **Diff PC → VPS:** no PC, `git add -N <novos>` + `git diff --binary -- <caminhos> > %TEMP%\x.patch` +
+  `git reset -q -- <novos>`; `scp` do `AppData/Local/Temp/x.patch`; na VPS `git apply`. Depois do commit na VPS,
+  no PC: `git checkout -- <modificados>`, apagar os novos, `git pull --ff-only`.
+- **Na VPS:** `pnpm install --frozen-lockfile` (o `postinstall` copia os 4 arquivos do motor para
+  `public/vad/`), `npm test` e `npm run type-check` em `apps/cockpit`. Não commitar `docs/modo-conversa/e2e/`.
+- **E2E:** só com o agente `canarinho`. Chrome de teste minimizado não entrega a resposta (R5).
+- **Cadeira não commita**; commit é da coordenação, com `git commit -- <paths>`.
 
 ## Riscos que continuam abertos
 
