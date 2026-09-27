@@ -68,6 +68,12 @@ function doZe(id: number, texto: string, stop: string | null): MessagePayload {
   return { ...base, message: { ...base.message!, stop_reason: stop } } as MessagePayload;
 }
 
+const semLinha = (id: number, kind: MessagePayload['kind'], content?: string): MessagePayload =>
+  ({ ...mensagem(id, kind, ''), uuid: kind === 'queued' ? null : String(id), message: null, content }) as MessagePayload;
+const naFila = (id: number, texto: string) => semLinha(id, 'queued', texto);
+const anexo = (id: number) => semLinha(id, 'attachment');
+const resultado = (id: number) => mensagem(id, 'user', [{ type: 'tool_result', tool_use_id: `t${id}`, content: 'ok' }]);
+
 describe('passos do Zé na ordem do lote', () => {
   it('um turno inteiro: abre, cada texto, fecha no fim', () => {
     const lote = [
@@ -110,6 +116,53 @@ describe('passos do Zé na ordem do lote', () => {
   it('pedido e freio no mesmo lote ainda fecham o turno', () => {
     const lote = [mensagem(8, 'user', 'pedido'), mensagem(9, 'user', '[Request interrupted by user]')];
     assert.deepEqual(passosDoZeDepoisDe(lote, 7, false, false), [{ tipo: 'abre' }, { tipo: 'fecha' }]);
+  });
+
+  it('pergunta na fila do turno em voo: entra pelo anexo, sem fim entre os dois turnos', () => {
+    // O formato medido no canarinho em 27/09: `queued` na hora do envio, anexo na fronteira de ferramenta.
+    const lote = [
+      naFila(30, 'nova pergunta'),
+      doZe(31, '', 'tool_use'),
+      resultado(32),
+      anexo(33),
+      anexo(34),
+      doZe(35, 'Pronto. Dois.', 'end_turn'),
+    ];
+    assert.deepEqual(passosDoZeDepoisDe(lote, 29, true, false), [
+      { tipo: 'respondeu' },
+      { tipo: 'pedidoEntrou' },
+      { tipo: 'texto', texto: 'Pronto. Dois.' },
+      { tipo: 'fecha' },
+    ]);
+  });
+
+  it('o `queued` e o anexo em lotes diferentes: a fila é lida no histórico inteiro', () => {
+    const historico = [naFila(40, 'nova pergunta'), doZe(41, '', 'tool_use'), resultado(42), anexo(43), doZe(44, 'dois', null)];
+    assert.deepEqual(passosDoZeDepoisDe(historico.slice(0, 3), 39, true, true), [{ tipo: 'respondeu' }]);
+    assert.deepEqual(passosDoZeDepoisDe(historico, 42, true, true), [
+      { tipo: 'pedidoEntrou' },
+      { tipo: 'respondeu' },
+      { tipo: 'texto', texto: 'dois' },
+    ]);
+  });
+
+  it('turno que acaba antes: a fila drena como pedido novo e nenhum anexo conta como entrada', () => {
+    const lote = [
+      naFila(50, 'nova pergunta'),
+      doZe(51, 'resto velho', 'end_turn'),
+      mensagem(52, 'user', 'nova pergunta'),
+      anexo(53),
+      doZe(54, 'nova', 'end_turn'),
+    ];
+    assert.deepEqual(passosDoZeDepoisDe(lote, 49, true, false), [
+      { tipo: 'respondeu' },
+      { tipo: 'texto', texto: 'resto velho' },
+      { tipo: 'fecha' },
+      { tipo: 'abre' },
+      { tipo: 'respondeu' },
+      { tipo: 'texto', texto: 'nova' },
+      { tipo: 'fecha' },
+    ]);
   });
 
   it('o isRunning do stream vence quando o lote não explica a mudança', () => {

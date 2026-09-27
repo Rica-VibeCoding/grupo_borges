@@ -230,3 +230,76 @@ a Esfera (o Núcleo) como opção dentro da tela.
 
 - Commit, build e publicação. Nada em `apps/api`.
 - Parar entre o tique e o "Pensando" não freia: a mensagem já saiu, e a resposta fica no chat.
+
+## Escuta que emudece no iPhone — a vigia da escuta
+
+### Entreguei (`apps/cockpit/components/conversa/` e `lib/conversa/`)
+
+- **Reproduzi antes de consertar**, no código do 43b23a4, com o E2E novo (`e2e/fase3-escuta.cjs`):
+  - contexto de áudio do detector suspenso durante a resposta falada → tela em "Pode falar" e **nenhum POST
+    de `transcription`** depois, o sintoma do Rica;
+  - caso de borda do toque → a resposta nova não falou e a tela **ficou presa em "Pensando"**.
+- **O contexto de áudio do detector agora é nosso** (opção `audioContext` do MicVAD). Nasce no mesmo ponto em
+  que o MicVAD o criava, logo depois do microfone; o anterior fecha na troca. É nele que a vigia olha.
+- **Vigia da escuta** (`vigia-da-escuta.ts`, pura, com teste). Com o detector ligado, confere três sinais:
+  - o contexto fora de `running` (`suspended`, ou `interrupted`, que só o Safari tem);
+  - a faixa do microfone muda (`muted`);
+  - nenhum quadro de áudio processado há 1 s.
+
+  Confere na hora em que o detector liga (a volta de "falando" para "ouvindo"), a cada 250 ms e a cada
+  `statechange`, `mute` ou `unmute`. A escada:
+  - caiu → `resume()`;
+  - não voltou em ~1 s → reabre: detector, contexto e microfone novos (`reabre()` no controlador, com teste);
+  - não voltou em 4 s → erro **"Parei de te ouvir — O microfone ficou mudo. Toque para voltar a ouvir."**;
+  - no toque, o `resume()` sai síncrono, dentro do gesto, que é o que o iOS aceita.
+- **Caso de borda do toque** (máquina e `passosDoZeDepoisDe`, com teste). Parar antes da resposta não freia, e
+  a pergunta seguinte vai para a fila do Claude Code. Medido no canarinho: ela entra no turno velho como anexo,
+  numa fronteira de ferramenta, **sem fim entre os dois**. O stream agora lê o `queued` e o primeiro anexo
+  depois dele; nessa hora sai o evento novo `pedidoEntrou`, que limpa o descarte. O que o Zé escrever dali em
+  diante fala. Se o turno velho acabar antes, a fila drena como pedido novo, como já era. Vale também para a
+  fala por cima com fone, que descarta o turno do mesmo jeito.
+- **Contrato** (`tipos.ts`): evento `pedidoEntrou` e motivo `escutaMuda`.
+
+### Provas
+
+- `npm test`: **1057 testes, 1057 passaram** (15 novos). `npm run type-check`: verde.
+- **E2E da escuta** (`e2e/fase3-escuta.cjs`, com o `canarinho`). O Chrome simula a queda na hora em que a voz
+  do Zé começa. Depois de uma resposta falada, a fala seguinte tem de virar transcrição, envio e voz de novo.
+  **5/5 com o Fio e 5/5 com a Matéria**:
+  - **escuta suspensa:** o contexto volta a `running` na volta a ouvir, sem reabrir;
+  - **escuta com `resume()` recusado:** reabre em ~1,1 s (contexto novo);
+  - **faixa muda:** `mute` → reabre em ~1,1 s (microfone novo);
+  - **escuta perdida** (nada volta): "Parei de te ouvir" em ~5 s; o toque retoma no gesto e a fala passa;
+  - **pergunta emendada no turno velho:** `queued` sem fim entre os turnos, e o "Pronto. Dois." é falado.
+- **Regressão:** toque 5/5 e fase 2 4/4, nos dois visuais. Na Matéria, "parar falando" falhou uma vez
+  por um erro do roteiro: o recomeço saiu ~360 ms depois do toque que parou e caiu na regra do toque duplo
+  (400 ms). Com uma folga de 500 ms no `fase3-toque.cjs`, passou.
+- Provas em `e2e/fase3-escuta/` (`antes/` é o código do 43b23a4 falhando). Fala nova `e2e/turno-fila.mp3`.
+
+### O que o E2E não prova
+
+- **Só o iPhone confirma a causa.** O Chrome não suspende o contexto nem emudece a faixa sozinho: o E2E força
+  a queda e prova que a tela sai dela. Se o iOS mata a escuta de outro jeito, a vigia ainda pega pelos quadros
+  parados, mas não sei qual degrau resolve lá.
+- Também não sei se `resume()` fora do gesto funciona no iOS com o microfone aberto. Se não funcionar, a tela
+  reabre e, no pior caso, pede o toque.
+- **Roteiro no iPhone:** várias respostas seguidas com o `daniel`.
+  - Voltou a ouvir sozinho → um dos dois primeiros degraus resolveu.
+  - Apareceu "Parei de te ouvir" → a queda é a que só o toque destrava. Anotar depois de qual resposta.
+  - Nenhum dos dois, e mudo de novo → a vigia não enxerga a queda; o próximo passo é telemetria do aparelho.
+
+### Achados
+
+- **Resposta gravada em duas linhas, em lotes diferentes:** a primeira linha vazia com o fim chega antes do
+  texto. A tela vai de "Pensando" para "ouvindo", abre o microfone por ~200 ms e só então fala. Visto em todo
+  E2E. No iPhone, abrir e fechar o microfone logo antes da voz é suspeito de ajudar a travar o áudio. Consertar
+  pede uma folga curta antes de fechar o turno; fica para depois, fora deste briefing.
+- Antes do conserto, o caso de borda era pior que a resposta calada: a tela ficava em "Pensando" para sempre.
+
+### Não fiz
+
+- Commit, build e publicação. Nada em `apps/api`.
+- Telemetria do iPhone (o que caiu, qual degrau resolveu).
+- A entrada da pergunta é o primeiro anexo depois do `queued`; o backend não diz o tipo do anexo. Se outro
+  anexo vier antes do que traz a pergunta, o texto do turno velho entre os dois fala. Nas duas medições não
+  veio nenhum.

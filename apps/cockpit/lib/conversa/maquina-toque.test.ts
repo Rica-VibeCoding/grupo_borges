@@ -103,3 +103,24 @@ test('do erro, parar e tentar de novo não freiam', () => {
   assert.deepEqual(tipos(roda([{ tipo: 'parar' }], erro).efeitos), []);
   assert.deepEqual(tipos(roda([{ tipo: 'comecar' }], erro).efeitos), ['ligarDetector']);
 });
+
+test('pergunta nova emendada no turno descartado: quando ela entra, a resposta volta a falar', () => {
+  // Parou antes da resposta (sem freio), recomeçou e perguntou de novo: o Claude Code enfileira.
+  const parado = roda([...ATE_ESPERA, { tipo: 'parar' }]).conversa;
+  const esperando = roda(ATE_ESPERA, parado).conversa;
+  assert.equal(esperando.estado, 'esperandoZe');
+  assert.equal(turnoDescartado(esperando), true);
+  const residual = roda([{ tipo: 'textoDoZe', texto: 'resto velho' }], esperando);
+  assert.ok(!tipos(residual.efeitos).includes('falar'), 'antes da entrada, ainda é o turno velho');
+
+  const { conversa, efeitos } = roda([{ tipo: 'pedidoEntrou' }, { tipo: 'textoDoZe', texto: 'Pronto. Dois.' }], residual.conversa);
+  assert.equal(conversa.estado, 'falando');
+  assert.deepEqual(tipos(efeitos), ['desligarDetector', 'falar']);
+});
+
+test('pedido que entra sem turno descartado não muda nada', () => {
+  const espera = roda(ATE_ESPERA).conversa;
+  const { conversa, efeitos } = roda([{ tipo: 'pedidoEntrou' }], espera);
+  assert.deepEqual(conversa, espera);
+  assert.deepEqual(efeitos, []);
+});

@@ -45,6 +45,7 @@ export type PassoDoZe =
   | { tipo: 'abre' }
   | { tipo: 'respondeu' } // o assistente escreveu no turno (texto, ferramenta ou raciocínio)
   | { tipo: 'texto'; texto: string }
+  | { tipo: 'pedidoEntrou' } // a pergunta que esperava na fila do Claude Code entrou no turno em voo
   | { tipo: 'fecha' };
 
 /**
@@ -57,6 +58,12 @@ export type PassoDoZe =
  * quando começa outro pedido ou no fim do lote. `rodava` é o estado antes do lote;
  * `rodando`, o `isRunning` do stream depois dele, que vence quando diverge (mensagens
  * puladas numa reconexão).
+ *
+ * Pergunta feita com o turno rodando vai para a fila do Claude Code (`kind: 'queued'`, na
+ * hora do envio) e entra no turno numa fronteira de ferramenta, como anexo — o turno velho e
+ * o novo viram um só, sem fim entre os dois (medido no canarinho em 27/09). O primeiro anexo
+ * depois do `queued` é essa entrada; se o turno acabar antes, a fila drena como pedido novo.
+ * A fila é lida no histórico inteiro porque o `queued` e o anexo podem vir em lotes diferentes.
  */
 export function passosDoZeDepoisDe(
   mensagens: readonly MessagePayload[],
@@ -65,6 +72,7 @@ export function passosDoZeDepoisDe(
   rodando: boolean,
 ): PassoDoZe[] {
   const passos: PassoDoZe[] = [];
+  let naFila = false;
   let emVoo = rodava;
   let acabou = false;
   let respondeu = false;
@@ -74,8 +82,12 @@ export function passosDoZeDepoisDe(
     acabou = false;
   };
   for (const item of mensagens) {
+    const entrou = naFila && item.kind === 'attachment';
+    if (item.kind === 'queued') naFila = true;
+    else if (entrou || (naFila && efeitoNaCorrida(item) === false)) naFila = false;
     if (item.id <= depoisDe) continue;
     const efeito = efeitoNaCorrida(item);
+    if (entrou && emVoo) passos.push({ tipo: 'pedidoEntrou' });
     const textos = textosDe(item);
     const doZe = item.message?.role === 'assistant' && !item.is_sidechain;
     // Pedido novo (ou resultado de ferramenta): o turno que tinha acabado fecha agora.

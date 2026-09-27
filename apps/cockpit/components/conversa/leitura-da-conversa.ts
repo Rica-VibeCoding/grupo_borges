@@ -22,6 +22,7 @@ const TITULO_DO_ERRO: Record<MotivoDeErro, string> = {
   transcricaoVazia: 'Não ouvi uma frase',
   envioFalhou: 'A mensagem não saiu',
   agenteOcupado: 'O agente está ocupado',
+  escutaMuda: 'Parei de te ouvir',
 };
 
 export function leituraDaConversa(e: EntradaDaLeitura): Leitura {

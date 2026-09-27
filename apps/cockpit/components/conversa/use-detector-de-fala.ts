@@ -9,6 +9,7 @@ import {
   criaControladorDetector,
   type ControladorDetector,
 } from './controlador-detector';
+import { criaVigiaDaEscuta, type VigiaDaEscuta } from './vigia-da-escuta';
 
 type Preparacao = 'preparando' | 'pronto' | 'falhou';
 type VadUtils = typeof import('@ricky0123/vad-web')['utils'];
@@ -37,6 +38,13 @@ export function useDetectorDeFala({
   const streamRef = useRef<MediaStream | null>(null);
   const pausandoRef = useRef(false);
   const detectorRef = useRef<MicVAD | null>(null);
+  /* A escuta vigiada (a que emudecia no iPhone): o contexto de áudio do detector, a hora do
+     último quadro processado e a da última ligação. `geracaoRef` descarta ligação superada. */
+  const contextoRef = useRef<AudioContext | null>(null);
+  const ultimoQuadroRef = useRef(0);
+  const ligouEmRef = useRef(0);
+  const geracaoRef = useRef(0);
+  const vigiaRef = useRef<VigiaDaEscuta | null>(null);
   const ajustaDetector = useCallback(() => {
     const porCima = conversaRef.current.estado === 'falando' || conversaRef.current.estado === 'interrompendo';
     detectorRef.current?.setOptions({
@@ -69,9 +77,34 @@ export function useDetectorDeFala({
             eventoRef.current({ tipo: 'capturaCaiu' });
           }
         });
+        // Faixa muda não é faixa encerrada: o iOS entrega silêncio e só avisa por aqui.
+        track.addEventListener('mute', () => vigiaRef.current?.confere());
+        track.addEventListener('unmute', () => vigiaRef.current?.confere());
       }
       return captura;
     };
+
+    const vigia = criaVigiaDaEscuta({
+      leSinais: () => ({
+        contexto: contextoRef.current?.state ?? null,
+        faixaMuda: streamRef.current?.getAudioTracks().some((faixa) => faixa.muted) ?? false,
+        semQuadroHaMs: performance.now() - Math.max(ultimoQuadroRef.current, ligouEmRef.current),
+      }),
+      retoma: () => void contextoRef.current?.resume().catch(() => {}),
+      reabre: async () => {
+        const controlador = controladorRef.current;
+        if (controlador === null) throw new Error('detector encerrado');
+        await controlador.reabre();
+        ligouEmRef.current = performance.now();
+      },
+      desiste: () => eventoRef.current({ tipo: 'falhou', motivo: 'escutaMuda' }),
+      agora: () => performance.now(),
+      bate: (fn, ms) => {
+        const id = window.setInterval(fn, ms);
+        return () => window.clearInterval(id);
+      },
+    });
+    vigiaRef.current = vigia;
 
     void (async () => {
       try {
@@ -81,7 +114,23 @@ export function useDetectorDeFala({
           await res.arrayBuffer();
         });
         const criaDetector = async (): Promise<MicVAD> => {
-          const instancia = await vad.MicVAD.new({
+          let instancia: MicVAD | null = null;
+          // O contexto nasce onde o MicVAD o criaria (logo depois do microfone), mas é nosso: é
+          // nele que a vigia confere o estado e que o toque retoma. O do detector anterior, já
+          // destruído numa reabertura, fecha aqui — com contexto de fora, o MicVAD não fecha.
+          const abreComContexto = async () => {
+            const captura = await abreMicrofone();
+            void contextoRef.current?.close().catch(() => {});
+            const contexto = new AudioContext();
+            contexto.addEventListener('statechange', () => {
+              if (contextoRef.current === contexto) vigiaRef.current?.confere();
+            });
+            void contexto.resume().catch(() => {});
+            contextoRef.current = contexto;
+            if (instancia !== null) instancia.options.audioContext = contexto;
+            return captura;
+          };
+          instancia = await vad.MicVAD.new({
             model: 'v5',
             startOnLoad: false,
             baseAssetPath: ASSET_VAD,
@@ -89,7 +138,7 @@ export function useDetectorDeFala({
             redemptionMs: TEMPOS.silencioFimDeFala,
             preSpeechPadMs: TEMPOS.preGravacao,
             minSpeechMs: TEMPOS.falaMinima,
-            getStream: abreMicrofone,
+            getStream: abreComContexto,
             pauseStream: async (captura) => {
               pausandoRef.current = true;
               captura.getTracks().forEach((track) => track.stop());
@@ -113,6 +162,7 @@ export function useDetectorDeFala({
             eventoRef.current({ tipo: 'falaDescartada' });
           },
           onFrameProcessed: (_probabilidades, quadro) => {
+            ultimoQuadroRef.current = performance.now();
             let soma = 0;
             for (const amostra of quadro) soma += amostra * amostra;
             nivelRef.current = Math.min(1, Math.sqrt(soma / quadro.length) * 8);
@@ -146,14 +196,22 @@ export function useDetectorDeFala({
 
     return () => {
       vivo = false;
+      vigia.para();
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      void controladorRef.current?.encerra();
+      void Promise.resolve(controladorRef.current?.encerra())
+        .then(() => contextoRef.current?.close())
+        .catch(() => {});
     };
   }, [eventoRef, sessaoAtivaRef, ajustaDetector]);
 
   const liga = useCallback(async () => {
     const controlador = controladorRef.current;
     if (controlador === null) throw new Error('detector ainda não está pronto');
+    const geracao = ++geracaoRef.current;
+    // No toque ("Parei de te ouvir" → tentar de novo), o gesto é o que o iOS aceita para
+    // destravar o áudio: por isso o resume é síncrono, antes de qualquer await.
+    const contexto = contextoRef.current;
+    if (contexto !== null && contexto.state !== 'running') void contexto.resume().catch(() => {});
     setAbrindoMicrofone(true);
     ajustaDetector();
     try {
@@ -164,9 +222,15 @@ export function useDetectorDeFala({
     } finally {
       setAbrindoMicrofone(false);
     }
+    if (geracao !== geracaoRef.current) return;
+    // Voltando de "falando" para "ouvindo", confere já que o áudio chega — e segue vigiando.
+    ligouEmRef.current = performance.now();
+    vigiaRef.current?.comeca();
   }, [ajustaDetector]);
 
   const desliga = useCallback(() => {
+    geracaoRef.current += 1;
+    vigiaRef.current?.para();
     setFalaDetectada(false);
     nivelRef.current = 0;
     void controladorRef.current?.desliga().catch(() => {});

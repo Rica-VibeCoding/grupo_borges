@@ -12,6 +12,8 @@ export function mensagemDeErro(motivo: Conversa['motivo']): string {
       return 'Não ouvi uma frase completa.';
     case 'envioFalhou':
       return 'A mensagem não chegou ao agente. Toque para tentar novamente.';
+    case 'escutaMuda':
+      return 'O microfone ficou mudo. Toque para voltar a ouvir.';
     case 'agenteOcupado':
       return 'O agente já está atendendo outro turno. Tente novamente quando ele terminar.';
     default:

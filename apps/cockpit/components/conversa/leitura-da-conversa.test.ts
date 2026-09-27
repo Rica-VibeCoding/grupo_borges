@@ -34,6 +34,13 @@ describe('leitura da tela de conversa', () => {
     assert.equal(leituraDaConversa({ ...base, cena: 'erro' }).titulo, 'A conversa parou');
   });
 
+  it('a escuta que emudeceu pede o toque para voltar a ouvir', () => {
+    const leitura = leituraDaConversa({ ...base, cena: 'erro', motivo: 'escutaMuda' });
+    assert.equal(leitura.titulo, 'Parei de te ouvir');
+    assert.match(leitura.detalhe, /Toque para voltar a ouvir/);
+    assert.equal(rotuloDaAcao('erro', false), 'Tentar de novo');
+  });
+
   it('com fone, a resposta ensina a interromper', () => {
     assert.match(leituraDaConversa({ ...base, cena: 'falando', fone: true }).detalhe, /por cima/);
     assert.doesNotMatch(leituraDaConversa({ ...base, cena: 'falando' }).detalhe, /por cima/);

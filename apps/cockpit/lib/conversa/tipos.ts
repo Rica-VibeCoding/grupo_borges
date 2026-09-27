@@ -25,7 +25,8 @@ export type MotivoDeErro =
   | 'transcricaoFalhou'
   | 'transcricaoVazia'
   | 'envioFalhou'
-  | 'agenteOcupado'; // o Zé já estava num turno quando a fala chegou
+  | 'agenteOcupado' // o Zé já estava num turno quando a fala chegou
+  | 'escutaMuda'; // fase 3: o áudio do microfone parou de chegar e nem reabrir trouxe de volta (iOS)
 
 export type Evento =
   | { tipo: 'comecar' } // o toque que destrava áudio, microfone e Wake Lock; repetido não faz nada
@@ -40,6 +41,7 @@ export type Evento =
   | { tipo: 'enviou' }
   | { tipo: 'textoDoZe'; texto: string } // cada texto novo do assistente
   | { tipo: 'zeTerminou' } // `isRunning` do stream caiu
+  | { tipo: 'pedidoEntrou' } // fase 3: a pergunta que esperava na fila do Claude Code entrou no turno em voo
   | { tipo: 'vozTerminou' } // a fila do reprodutor esvaziou
   | { tipo: 'capturaCaiu' }
   | { tipo: 'falhou'; motivo: MotivoDeErro; detalhe?: string };

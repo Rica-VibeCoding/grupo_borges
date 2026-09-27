@@ -89,12 +89,8 @@ export function useModoConversa(slug: string, fone: boolean) {
           .catch((erro: unknown) => {
             iniciandoRef.current = false;
             const nome = erro instanceof DOMException ? erro.name : '';
-            despachaRef.current({
-              tipo: 'falhou',
-              motivo: nome === 'NotAllowedError' || nome === 'SecurityError'
-                ? 'microfoneNegado'
-                : 'capturaCaiu',
-            });
+            const negado = nome === 'NotAllowedError' || nome === 'SecurityError';
+            despachaRef.current({ tipo: 'falhou', motivo: negado ? 'microfoneNegado' : 'capturaCaiu' });
           });
         return;
       case 'desligarDetector':
@@ -197,6 +193,7 @@ export function useModoConversa(slug: string, fone: boolean) {
         despacha({ tipo: 'textoDoZe', texto: passo.texto });
         if (!turnoDescartado(conversaRef.current)) setRespostaDoZe(passo.texto);
       }
+      if (passo.tipo === 'pedidoEntrou') despacha({ tipo: 'pedidoEntrou' });
       if (passo.tipo === 'fecha') {
         despacha({ tipo: 'zeTerminou' });
         fechaTurno();
