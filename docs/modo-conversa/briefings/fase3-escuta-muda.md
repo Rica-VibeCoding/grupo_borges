@@ -19,3 +19,9 @@ em `sons-locais.ts`, `<audio>`/`AudioContext` da fila de voz). O `AudioContext` 
 3. Medir no relato o que o E2E NÃO prova: o comportamento real só se confirma no iPhone.
 
 Mesmos limites e fecho do `fase3-toque.md`. Última linha: `FIM-DA-ESCUTA`.
+
+**Junto, caso de borda do toque (revisão do 43b23a4):** parar esperando o Zé ANTES da resposta não freia; o
+turno velho segue e a marca `zeDescartado` atravessa o recomeço. Se ele recomeçar e perguntar outra coisa
+logo, o Claude Code enfileira e emenda o turno novo no velho — o stream pode não mostrar o fim do velho, e a
+resposta NOVA sair calada como se fosse descartada. Cubra no E2E: parar antes da resposta → recomeçar →
+nova pergunta → a resposta nova tem de ser falada.
