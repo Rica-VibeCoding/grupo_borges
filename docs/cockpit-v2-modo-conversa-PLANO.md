@@ -4,14 +4,14 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (27/09/2026 ~03h30 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
+> **ESTADO (27/09/2026 ~09h00 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
 > e **Fase 4 em curso** (tudo publicado na 3008, janelas do Pavan). Depois do primeiro teste no iPhone o Rica pediu, e
 > entrou: tela limpa (`bfbb44c`, fone e "Mostrar texto" na folha), um toque inicia e um toque para (`43b23a4`, pesquisa
 > `pesquisa-toque.md`), escuta que emudecia no iPhone volta sozinha (`803a1d9`) e gestos no lugar dos botões (`d14df38`:
 > esquerda vai ao chat, cima abre configurações, direita no chat volta). 1067 testes verdes; relatos em `relatos/fase3-ui.md`.
-> Esperando o teste dele no iPhone. Aberto: o freio antes da primeira resposta devolve o pedido à caixa do pane e trava
-> o envio seguinte — a tela só freia depois que o Zé começou; o conserto é em `apps/api` (`/interromper` limpar o
-> pedido devolvido), e o `■` do composer tem o mesmo risco.
+> Na manhã de 27/09: o freio sai sempre — o `/interromper` limpa o pedido que o Claude Code devolve à caixa e grava o
+> fim no stream (`8bb6c2a`, `7d749a9`, API reiniciada) — e o fim sem fala espera 800 ms antes de fechar (`6a41df9`).
+> Esperando o teste dele no iPhone.
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
