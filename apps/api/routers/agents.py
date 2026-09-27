@@ -4148,10 +4148,18 @@ async def post_agent_interromper(slug: str, request: Request) -> dict[str, Any]:
     de novo) e a confirmação, no meio de uma geração que já desandou, seria um
     obstáculo entre o Rica e o botão que ele quer apertar. Compare com
     ``/relaunch``, que mata o processo e por isso pede ``confirm``.
+
+    Escape antes da primeira linha do turno faz o Claude Code devolver o pedido à caixa,
+    e a caixa armada recusaria o envio seguinte: o driver apaga esse pedido quando prova
+    que é o último que o cockpit entregou (``pedido_limpo``), e o card sai de
+    ``trabalhando`` — nenhum evento de fim de turno chegaria para desligá-lo.
     """
     agent = await _get_agent_or_404(request, slug)
-    parado = await tmux_driver.send_named_key(agent["tmux_session"], "Escape")
-    return {"motor": "claude_code", "parado": parado}
+    resultado = await tmux_driver.interrupt(agent["tmux_session"])
+    if resultado["pedido_limpo"]:
+        db: GrupoBorgesDB = request.app.state.db
+        await db.clear_agent_lifecycle(slug)
+    return {"motor": "claude_code", **resultado}
 
 
 @router.post("/{slug}/relaunch")

@@ -2206,6 +2206,8 @@ def _send_message_sync(session_name: str, text: str) -> DeliveryResult:
                     max_enter_attempts=_SUBMIT_MAX_ENTER_ATTEMPTS,
                 )
                 if confirmed:
+                    with _ULTIMO_ENTREGUE_GUARD:
+                        _ULTIMO_ENTREGUE[session_name] = sanitized
                     return _record_delivery_success(session_name)
 
                 # Só limpa quando a pane ainda prova que o texto é o nosso.
@@ -2479,6 +2481,61 @@ def _send_named_key_sync(session_name: str, key: str) -> bool:
         return _send_key(pane, key)
     finally:
         lock.release()
+
+
+# O freio (`/interromper`). Escape antes da primeira linha do turno faz o Claude Code
+# cancelar e DEVOLVER o pedido à caixa de entrada; a caixa armada recusa o envio seguinte
+# (`input_ocupado_ou_travado`) — medido no canarinho em 27/09, pelo modo conversa. O freio
+# só limpa o que prova ser nosso: o último texto que o cockpit entregou àquela sessão,
+# idêntico, numa caixa que estava vazia antes do Escape (o mesmo critério do C-u do envio).
+_ULTIMO_ENTREGUE: dict[str, str] = {}
+_ULTIMO_ENTREGUE_GUARD = threading.Lock()
+_RECLAIM_TIMEOUT_S = 1.5
+
+
+def _interrupt_sync(session_name: str) -> dict[str, bool]:
+    server = _server_for(session_name)
+    if not server.has_session(session_name):
+        return {"parado": False, "pedido_limpo": False}
+    try:
+        lock = _acquire_dispatch_lock(session_name)
+    except TmuxSessionBusyError:
+        return {"parado": False, "pedido_limpo": False}
+    try:
+        pane = server.sessions.get(session_name=session_name).active_pane
+        antes = _capture_input_snapshot(pane)
+        if not _send_key(pane, "Escape"):
+            return {"parado": False, "pedido_limpo": False}
+        with _ULTIMO_ENTREGUE_GUARD:
+            nosso = _ULTIMO_ENTREGUE.get(session_name)
+        if antes.state != "empty" or not nosso or "\n" in nosso:
+            return {"parado": True, "pedido_limpo": False}
+        devolvido = _wait_for_input(
+            pane,
+            lambda snapshot: _snapshot_proves_owned_payload(snapshot, nosso),
+            time.monotonic() + _RECLAIM_TIMEOUT_S,
+        )
+        if devolvido is None or not _send_key(pane, "C-u"):
+            return {"parado": True, "pedido_limpo": False}
+        with _ULTIMO_ENTREGUE_GUARD:
+            if _ULTIMO_ENTREGUE.get(session_name) == nosso:
+                del _ULTIMO_ENTREGUE[session_name]
+        vazio = _wait_for_input(
+            pane,
+            lambda snapshot: snapshot.state == "empty",
+            time.monotonic() + _RECLAIM_TIMEOUT_S,
+        )
+        return {"parado": True, "pedido_limpo": vazio is not None}
+    except libtmux_exc.LibTmuxException:
+        return {"parado": False, "pedido_limpo": False}
+    finally:
+        lock.release()
+
+
+async def interrupt(session_name: str) -> dict[str, bool]:
+    """Escape no pane e, se o Claude Code devolveu à caixa o pedido que o cockpit
+    acabou de entregar, apaga-o — senão o envio seguinte fica recusado."""
+    return await asyncio.to_thread(_interrupt_sync, session_name)
 
 
 async def send_named_key(session_name: str, key: str) -> bool:

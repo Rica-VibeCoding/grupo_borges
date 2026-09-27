@@ -1790,3 +1790,90 @@ def test_send_named_key_sem_sessao_retorna_false() -> None:
 
     with patch("services.tmux_driver._server_for", return_value=_SemSessao()):
         assert asyncio.run(tmux_driver.send_named_key("pane-teste", "Escape")) is False
+
+
+# --- Freio (`/interromper`) que devolve o pedido à caixa — modo conversa, 27/09 ---
+
+
+class _EscapeDevolvePedidoPane(_FakePane):
+    """Escape antes da primeira linha do turno: o Claude Code cancela e DEVOLVE o
+    pedido à caixa de entrada (medido no canarinho em 27/09)."""
+
+    def __init__(self, devolvido: str, **kwargs: object) -> None:
+        super().__init__(devolvido, **kwargs)  # type: ignore[arg-type]
+
+    def cmd(self, *args: str) -> SimpleNamespace:
+        resultado = super().cmd(*args)
+        if args[:2] == ("send-keys", "Escape"):
+            self.state = "armed"
+            self.visible_text = self.payload
+        return resultado
+
+
+def _interrompe(pane: _FakePane, *, session_name: str) -> dict[str, bool]:
+    patches = _driver_patches(pane)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6]:
+        return tmux_driver._interrupt_sync(session_name)
+
+
+def test_freio_limpa_o_pedido_devolvido_quando_e_o_ultimo_entregue() -> None:
+    sessao = "freio-nosso"
+    assert _send(_FakePane("qual o status do deploy"), session_name=sessao) is True
+    pane = _EscapeDevolvePedidoPane("qual o status do deploy")
+
+    resultado = _interrompe(pane, session_name=sessao)
+
+    assert resultado == {"parado": True, "pedido_limpo": True}
+    assert pane.escape_count == 1
+    assert pane.clear_count == 1
+    assert pane.state == "empty"
+
+
+def test_freio_nao_apaga_texto_devolvido_que_nao_e_nosso() -> None:
+    sessao = "freio-alheio"
+    assert _send(_FakePane("pergunta do cockpit"), session_name=sessao) is True
+    pane = _EscapeDevolvePedidoPane("texto que o Rica digitou no terminal")
+
+    resultado = _interrompe(pane, session_name=sessao)
+
+    assert resultado == {"parado": True, "pedido_limpo": False}
+    assert pane.clear_count == 0
+    assert pane.state == "armed"
+
+
+def test_freio_nao_mexe_em_caixa_que_ja_tinha_texto_antes_do_escape() -> None:
+    sessao = "freio-caixa-armada"
+    assert _send(_FakePane("mesmo texto"), session_name=sessao) is True
+    pane = _FakePane("mesmo texto")
+    pane.state = "armed"
+
+    resultado = _interrompe(pane, session_name=sessao)
+
+    assert resultado == {"parado": True, "pedido_limpo": False}
+    assert pane.clear_count == 0
+
+
+def test_freio_com_resposta_ja_comecada_so_manda_escape() -> None:
+    sessao = "freio-normal"
+    assert _send(_FakePane("oi"), session_name=sessao) is True
+    pane = _FakePane("irrelevante")
+
+    with patch.object(tmux_driver, "_RECLAIM_TIMEOUT_S", 0.05):
+        resultado = _interrompe(pane, session_name=sessao)
+
+    assert resultado == {"parado": True, "pedido_limpo": False}
+    assert pane.escape_count == 1
+    assert pane.clear_count == 0
+
+
+def test_freio_so_reclama_uma_vez_o_mesmo_pedido() -> None:
+    sessao = "freio-uma-vez"
+    assert _send(_FakePane("repete"), session_name=sessao) is True
+    assert _interrompe(_EscapeDevolvePedidoPane("repete"), session_name=sessao)["pedido_limpo"] is True
+
+    segundo = _EscapeDevolvePedidoPane("repete")
+    with patch.object(tmux_driver, "_RECLAIM_TIMEOUT_S", 0.05):
+        resultado = _interrompe(segundo, session_name=sessao)
+
+    assert resultado == {"parado": True, "pedido_limpo": False}
+    assert segundo.clear_count == 0

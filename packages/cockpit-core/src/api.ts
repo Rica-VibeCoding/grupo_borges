@@ -500,7 +500,7 @@ export async function postAgentDestrava(
  */
 export async function postAgentInterromper(
   slug: string,
-): Promise<{ motor: string; parado: boolean }> {
+): Promise<{ motor: string; parado: boolean; pedido_limpo: boolean }> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/interromper`, {
     method: 'POST',
   });
