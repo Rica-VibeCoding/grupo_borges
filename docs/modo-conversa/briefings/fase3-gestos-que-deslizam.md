@@ -25,6 +25,12 @@ Os três gestos passam a **seguir o dedo** e **assentar com mola** ao soltar:
   gaveta, rolagem de lado, seleção), rolagem vertical do chat intacta, arrasto não vira toque na voz, gaveta aberta
   bloqueia gesto, `prefers-reduced-motion` sem animação.
 
+## Defeito relatado junto (Rica, 27/09, no iPhone)
+"Quando eu tô no chat e arrasto para a direita, não me parece que tá abrindo a sidebar." No E2E passou; no iPhone
+não. Ache a causa antes de refazer o gesto (hipóteses a eliminar: arrasto começado dentro de `LIMIAR.borda` — o
+dedo natural para a direita nasce perto da borda esquerda —, o voltar do Safari tomando o gesto, `usaNavegacaoDaTropa`
+nulo nessa árvore, gaveta sem animar). Prove com o toque simulado em WebKit, não só Chromium.
+
 ## Limites e fecho
 `components/conversa/` (gesto, arrastos, tela da conversa), `components/shell/` só o que a gaveta da tropa pedir, e
 o mínimo em `app/agente/[slug]/` e `app/conversa/`. Menor diff. Teste puro da decisão (metade, velocidade, volta),
