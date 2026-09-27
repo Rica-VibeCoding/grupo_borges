@@ -45,6 +45,8 @@ Lock e invalida o ciclo em voo antes de despachar `parar`.
 
 **ACHADO (PROVA).** Com o agente já rodando, o envio é **recusado no cliente**: `agenteOcupado`
 (`use-modo-conversa.ts:132-135`). O `enviar` da máquina não tem porta de entrada durante `falando`.
+**Nuance:** essa recusa é do modo conversa, não do servidor — o composer de texto, no mesmo instante,
+entrega e o Claude Code **enfileira** (ver §3). A tela nova é mais rígida que o backend.
 
 Proposta estado por estado:
 
@@ -93,16 +95,36 @@ só mexe no cliente. Logo, ao encerrar com o Zé pensando, **o turno continua ge
 chega depois no feed de texto — o R6 descrito no plano. O termo `absorbed_mid_turn` **não existe no
 código**: aparece só nos docs (é observação da frota, não constante).
 
-**ACHADO (PROVA).** Envio no meio de turno tem contrato próprio: `/input` devolve recibo estruturado
-com `delivery_outcome` (`refused`/`uncertain`) e `safe_to_resend` (`api.ts:377-387`), e há 409
-conhecidos (`agent_pane_unavailable`, `shared_turn_in_flight`, `apps/cockpit/lib/recusa-transitoria.ts:57`).
-Esse arquivo registra a sequência real vivida em 15/08: `input 200` ×3 → `interromper 200` → **`input 409`**
-→ `interromper 200` → `input 200` — isto é, **logo depois de um interrupt o envio seguinte pode ser
-recusado** e passa sozinho em segundos.
+**ACHADO (PROVA).** **A mensagem nova não é recusada por ocupação — ela é enfileirada pelo próprio
+Claude Code.** `/input` (`agents.py:2889`) cola o texto no pane por `paste-buffer` + Enter
+(`tmux_driver.py:2120`) e **não consulta ocupação nenhuma**; o CLI do CC transforma texto colado em
+pane ocupado em `queue-operation`/`enqueue` no JSONL e entrega quando o turno acaba — o servidor
+devolve isso como `kind: "queued"` (`agents.py:2524-2531`). O portão de "turno em voo" que recusava
+nasceu para o Codex e foi **removido em 20/08/2026** (commit `0dafa34`). É essa fila do CLI que o R6
+chama de `absorbed_mid_turn`.
 
-**RISCO.** Ligar Escape automático em todo `parar` aumenta a chance de o próximo envio cair no 409 —
-o cockpit já retenta esse caso (`recusa-transitoria.ts:63`, 1,2 s e 3 s), mas são números de projeto,
-nunca medidos (o próprio arquivo avisa).
+**ACHADO (PROVA).** **A resposta do turno antigo não se perde:** cada linha do JSONL vira registro em
+`task_events`, e o stream é SSE **com replay** (`agents.py:2604`; protocolo `replay-start → N message →
+replay-end → live` em `agents.py:2621`, replay em `:2661`). Encerrar a conversa e voltar depois mostra
+o que o Zé respondeu.
+
+**ACHADO (PROVA).** O servidor **tem** sinal de ocupação, mas não o publica: `_esta_ocupado`
+(`agents.py:464`) compara o carimbo de `lifecycle_status == "trabalhando"` com um limiar de
+**300 s** (`store.py:60`). Ele só é usado em `/model`, `/aplicar-motor` e `/quotas/refresh` — nunca no
+`/input`. Não existe campo `isRunning`/`busy` no JSON do servidor: o `isRunning` é derivado no
+**cliente**, do stream (`lib/spike/canario-stream-controller.ts:152`).
+
+**ACHADO (PROVA).** O recibo do envio é binário — `tmux_delivered` — e o 409 real de hoje é
+`agent_pane_unavailable` com `safe_to_resend: false` (`agents.py:2929`), que significa "não consegui
+PROVAR a entrega", não "não entrou": medido em 04/08, "2 de 3 envios voltaram `false` e chegaram nas
+duas vezes" (`apps/cockpit/lib/usa-envio.ts:362-366`). A sequência vivida em 15/08
+(`input 200` ×3 → `interromper 200` → **`input 409`** → `interromper 200` → `input 200`) está em
+`recusa-transitoria.ts:9-12`, que também avisa que os 1,2 s e 3 s de retentativa são projeto, nunca
+medição.
+
+**RISCO.** Ligar Escape automático em todo `parar` tende a fazer o envio seguinte voltar "não
+confirmado" — e a tela pinta alarme por algo que quase sempre entrou. O risco não é perder a fala, é
+**cobrar gesto do Rica por um falso negativo**.
 
 **RECOMENDAÇÃO.** Ao encerrar em `esperandoZe` ou `falando`, com `isRunning` verdadeiro, chamar
 `/interromper` **junto** com o `parar`. Sem isso, o "completo" que o Rica pediu não fecha: a conversa

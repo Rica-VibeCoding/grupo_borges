@@ -28,9 +28,11 @@ ouvindo" pelo toque (isso já é a fala por cima, com fone). Para calar o Zé e 
    desliga). Nada de segurar-para-confirmar.
 4. **Retorno sem texto:** som curto distinto para começar e para parar (o `AudioContext` já destravado),
    e a mudança do visual. Vibração só como bônus com detecção (`navigator.vibrate`); não existe no iPhone.
-5. **409 depois do freio:** logo após `interromper`, o próximo `/input` pode voltar 409
-   (`shared_turn_in_flight`) e passa em segundos. Se ele recomeçar e falar rápido, a fala não pode se
-   perder: reuse `apps/cockpit/lib/recusa-transitoria.ts`.
+5. **Envio logo depois do freio** (ver §3 da pesquisa, emenda do Canário): o `/input` não recusa por
+   ocupação, o Claude Code enfileira; o 409 real é `agent_pane_unavailable`, que quer dizer "entrega não
+   provada", e quase sempre entrou. Se ele recomeçar e falar logo depois de parar, a fala não pode virar
+   alarme falso nem ser reenviada em dobro: reuse `apps/cockpit/lib/recusa-transitoria.ts` e o que
+   `lib/usa-envio.ts` já faz com `safe_to_resend`.
 
 ## Limites
 Só `apps/cockpit/components/conversa/`, `lib/conversa/` se precisar (com teste), tokens em `globals.css`.
