@@ -4,7 +4,7 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (27/09/2026 ~09h00 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
+> **ESTADO (27/09/2026 ~17h00 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
 > e **Fase 4 em curso** (tudo publicado na 3008, janelas do Pavan). Depois do primeiro teste no iPhone o Rica pediu, e
 > entrou: tela limpa (`bfbb44c`, fone e "Mostrar texto" na folha), um toque inicia e um toque para (`43b23a4`, pesquisa
 > `pesquisa-toque.md`), escuta que emudecia no iPhone volta sozinha (`803a1d9`) e gestos no lugar dos botões (`d14df38`:
@@ -14,8 +14,12 @@
 > Depois, a moldura passou a colar no vidro nos quatro lados: antes o pé subia a faixa segura e sobrava parede embaixo (`917e27f`,
 > publicado na 3008 com janela do Pavan). Em seguida, a barra do chat enxugou — microfone e ⧉ fora, foto centrada
 > quando o nome não cabe — e os gestos passaram a ser os do Rica: no chat, esquerda abre a voz e direita abre a tropa;
-> na voz, direita volta ao chat (`e4488f1`, briefing `fase3-barra-do-chat.md`, publicado na 3008). Esperando o teste
-> dele no iPhone.
+> na voz, direita volta ao chat (`e4488f1`, briefing `fase3-barra-do-chat.md`, publicado na 3008). No iPhone o gesto
+> saiu "duro" e, refeito seguindo o dedo entre rotas, deixou tela preta (a rota chegava depois da mola). Às 16h52 de
+> 27/09: **chat e voz na mesma tela** — pager com scroll-snap nativo, URL por `replaceState`, direita abre e esquerda
+> fecha a tropa, gesto/toque fora/`≡` sem empilhar histórico (`6bef077`, briefing `fase3-pager-chat-voz.md`, publicado
+> na 3008). Nova regra: link de UI só vai ao Rica depois do APROVADO da cadeira `teste` (`fase3-cadeira-de-teste.md`,
+> relato `fase3-teste.md`). Rica aprovou no iPhone.
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
