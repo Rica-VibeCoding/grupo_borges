@@ -75,6 +75,22 @@ _RELIGA_RESET_SEGUNDOS = 60.0
 # custa um evento; insistir para o feed inteiro que vem atrás dela.
 _TENTATIVAS_POR_LINHA = 5
 
+# 01/09: o laço de religar (`_run`) segue "vivo" mesmo travado — só a task
+# terminar não denuncia isso. `_last_progress_ms` é o heartbeat real.
+#
+# Ele NÃO pode andar só quando chega linha de JSONL: com a frota inteira
+# ociosa (madrugada, domingo) nenhum arquivo muda por horas, e um heartbeat
+# preso a evento gritaria "doente" todo dia — alarme que grita à toa vira
+# alarme que ninguém lê (achado do Pavan, revisão de 27/09). O que precisa
+# provar é "o laço está girando", não "chegou dado": por isso `_observar`
+# chama `awatch(..., yield_on_timeout=True)`, que devolve um conjunto vazio
+# a cada `_RUST_TIMEOUT_SEGUNDOS` mesmo sem mudança nenhuma, e o heartbeat é
+# carimbado a cada volta do `async for`, com ou sem eventos.
+_RUST_TIMEOUT_SEGUNDOS = 30
+# Folga de várias voltas do laço antes de acusar doente — uma volta perdida
+# por GC pause ou scheduling não é sintoma; várias seguidas são.
+_SAUDE_SEM_PROGRESSO_SEGUNDOS = 180
+
 
 def encoded_cwd(workspace_path: str) -> str:
     return _NON_ENCODED_CHAR.sub("-", workspace_path)
@@ -759,10 +775,36 @@ class JsonlWatcher:
         self._falhas_por_linha: dict[str, tuple[int | None, int]] = {}
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
+        self._started_at_ms: int | None = None
+        self._last_progress_ms: int | None = None
 
     async def start(self) -> None:
         await asyncio.to_thread(self._prepopulate_offsets)
+        self._started_at_ms = _now_ms()
         self._task = asyncio.create_task(self._run(), name="jsonl-watcher")
+
+    def health(self) -> dict[str, Any]:
+        """Vivo = task não terminada E o laço `_observar` girando de fato.
+
+        `last_progress_ms` anda a cada volta do `async for` (com ou sem
+        mudança de arquivo, via `yield_on_timeout`) e a cada linha processada
+        — por isso frota ociosa não vira doente, só laço travado vira.
+
+        `last_progress_ms=None` (ainda na primeira volta) usa `started_at_ms`
+        como base do prazo — recém-subido não é doente só por não ter dado a
+        primeira volta ainda.
+        """
+        now = _now_ms()
+        task_viva = self._task is not None and not self._task.done()
+        referencia = self._last_progress_ms if self._last_progress_ms is not None else self._started_at_ms
+        sem_progresso_ms = (now - referencia) if referencia is not None else None
+        stale = sem_progresso_ms is None or sem_progresso_ms >= _SAUDE_SEM_PROGRESSO_SEGUNDOS * 1000
+        return {
+            "alive": task_viva and not stale,
+            "started_at_ms": self._started_at_ms,
+            "last_progress_ms": self._last_progress_ms,
+            "stale_after_seconds": _SAUDE_SEM_PROGRESSO_SEGUNDOS,
+        }
 
     async def stop(self) -> None:
         self._stop.set()
@@ -843,7 +885,13 @@ class JsonlWatcher:
             stop_event=self._stop,
             watch_filter=self._filter,
             recursive=True,
+            rust_timeout=int(_RUST_TIMEOUT_SEGUNDOS * 1000),
+            yield_on_timeout=True,
         ):
+            # Carimba MESMO sem mudanças (timeout devolve `set()`): é o que
+            # prova que o laço está girando, não que chegou dado. Ver
+            # `_SAUDE_SEM_PROGRESSO_SEGUNDOS` acima.
+            self._last_progress_ms = _now_ms()
             for change_type, raw_path in changes:
                 if change_type != Change.modified:
                     continue
@@ -899,6 +947,7 @@ class JsonlWatcher:
             # Só agora a linha conta como lida. Marcar antes de gravar foi o que
             # tornou permanente o buraco de 01/09: nem religar nem reiniciar volta.
             self._offsets[str(path)] = offset_depois
+            self._last_progress_ms = _now_ms()
 
         self._falhas_por_linha.pop(str(path), None)
         await self._db.upsert_agent_state(slug, jsonl_path=str(path))

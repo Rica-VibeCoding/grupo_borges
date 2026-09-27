@@ -104,6 +104,15 @@ class FleetHealth(BaseModel):
     server_now: int = Field(description="unix ts do servidor — UI calcula 'há Xs' contra isso")
     offline_threshold_seconds: int
     stale_threshold_seconds: int
+    # JsonlWatcher (jsonl_watcher.py): alimenta o feed de todos os agentes. Task
+    # viva não basta — em 01/09 o laço de religar ficou preso e a API seguiu
+    # respondendo 200 por 1h19 sem ninguém acusar. `watcher_alive` já cruza task
+    # viva com progresso recente; os dois campos abaixo são pro front explicar o
+    # "desde quando" sem reimplementar a conta.
+    watcher_alive: bool = False
+    watcher_started_at: int | None = None
+    watcher_last_progress_at: int | None = None
+    watcher_stale_after_seconds: int | None = None
 
 
 class FleetSnapshot(BaseModel):
@@ -221,6 +230,10 @@ def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _ms_to_s(value_ms: int | None) -> int | None:
+    return value_ms // 1000 if value_ms is not None else None
+
+
 def _marca_contexto_velho(agents: list[dict]) -> None:
     """A idade do número vai junto com o número — quem lê o card decide por ela.
 
@@ -259,6 +272,13 @@ async def get_fleet(
         active_claude_process_sessions=tmux_inventory.claude_process_sessions,
     )
     snapshot["health"]["stale_threshold_seconds"] = RUN_STALE_THRESHOLD_SECONDS
+    watcher = getattr(request.app.state, "watcher", None)
+    if watcher is not None:
+        watcher_health = watcher.health()
+        snapshot["health"]["watcher_alive"] = watcher_health["alive"]
+        snapshot["health"]["watcher_started_at"] = _ms_to_s(watcher_health["started_at_ms"])
+        snapshot["health"]["watcher_last_progress_at"] = _ms_to_s(watcher_health["last_progress_ms"])
+        snapshot["health"]["watcher_stale_after_seconds"] = watcher_health["stale_after_seconds"]
     await _hydrate_pane_excerpts(snapshot["agents"])
     await _hydrate_cc_context_pct(db, snapshot["agents"])
     _marca_contexto_velho(snapshot["agents"])

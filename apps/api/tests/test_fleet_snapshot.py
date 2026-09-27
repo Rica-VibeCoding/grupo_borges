@@ -347,6 +347,75 @@ def test_sparkline_de_outra_janela_nao_e_reaproveitada(tmp_path: Path) -> None:
     assert db._sparkline_cache[0] != 0
 
 
+def test_fleet_sem_watcher_no_state_nao_quebra_e_nao_afirma_vivo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """App sem `app.state.watcher` (não devia acontecer em prod, mas o router
+    não pode presumir) não derruba o snapshot nem finge que está tudo bem."""
+    db = _setup_db(tmp_path)
+
+    with TestClient(_app_com_tmux_falso(db, monkeypatch)) as client:
+        response = client.get("/api/fleet")
+
+    assert response.status_code == 200
+    health = response.json()["health"]
+    assert health["watcher_alive"] is False
+    assert health["watcher_last_progress_at"] is None
+
+
+def test_fleet_expoe_saude_do_watcher_vivo(tmp_path: Path, monkeypatch) -> None:
+    """`/api/fleet` é onde a UI vai ler se o JsonlWatcher está vivo e desde
+    quando — sem isso o buraco de 01/09 (feed mudo 1h19, API 200 o tempo
+    todo) fica invisível se o laço de religar falhar de outro jeito."""
+    db = _setup_db(tmp_path)
+
+    class WatcherFalsoVivo:
+        def health(self) -> dict:
+            return {
+                "alive": True,
+                "started_at_ms": 1_700_000_000_000,
+                "last_progress_ms": 1_700_000_123_000,
+                "stale_after_seconds": 600,
+            }
+
+    app = _app_com_tmux_falso(db, monkeypatch)
+    app.state.watcher = WatcherFalsoVivo()
+
+    with TestClient(app) as client:
+        response = client.get("/api/fleet")
+
+    assert response.status_code == 200
+    health = response.json()["health"]
+    assert health["watcher_alive"] is True
+    assert health["watcher_started_at"] == 1_700_000_000
+    assert health["watcher_last_progress_at"] == 1_700_000_123
+    assert health["watcher_stale_after_seconds"] == 600
+
+
+def test_fleet_expoe_saude_do_watcher_doente(tmp_path: Path, monkeypatch) -> None:
+    """A outra metade: watcher morto/travado tem que sair marcado no snapshot,
+    não só existir escondido dentro de `app.state`."""
+    db = _setup_db(tmp_path)
+
+    class WatcherFalsoDoente:
+        def health(self) -> dict:
+            return {
+                "alive": False,
+                "started_at_ms": 1_700_000_000_000,
+                "last_progress_ms": 1_700_000_000_500,
+                "stale_after_seconds": 600,
+            }
+
+    app = _app_com_tmux_falso(db, monkeypatch)
+    app.state.watcher = WatcherFalsoDoente()
+
+    with TestClient(app) as client:
+        response = client.get("/api/fleet")
+
+    assert response.status_code == 200
+    assert response.json()["health"]["watcher_alive"] is False
+
+
 def _app_com_tmux_falso(db: GrupoBorgesDB, monkeypatch) -> FastAPI:
     async def fake_list_session_inventory() -> tmux_driver.TmuxSessionInventory:
         return tmux_driver.TmuxSessionInventory(set(), set())
