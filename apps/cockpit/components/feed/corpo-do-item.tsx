@@ -18,7 +18,6 @@ import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { AssistantMarkdown } from '@/components/renderers/markdown';
 import { Thinking } from '@/components/renderers/thinking';
 
-import { BolhaVoz } from './bolha-voz.tsx';
 import { Execucao } from './execucao';
 import {
   execucaoDaParte,
@@ -29,6 +28,7 @@ import { DelegacaoView } from './delegacoes.tsx';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
+import { RodapeDaFala } from './rodape-da-fala.tsx';
 import { leAnexoImagem, semEnvelopeDeColagem } from './anexo-imagem';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
 import { leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
@@ -265,9 +265,7 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
               cursorNoFim={estaRodando && indice === ultimoTexto}
             />
           ))}
-          {falado.length > 0 && agentSlug ? (
-            <BolhaVoz texto={falado} agentSlug={agentSlug} />
-          ) : null}
+          <RodapeDaFala texto={falado} payload={item.payload} agentSlug={agentSlug} escrevendo={estaRodando} />
         </>
       );
     }
