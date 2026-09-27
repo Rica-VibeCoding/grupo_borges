@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Modo conversa · direção Mostrador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens: espelho do globals.css de hoje + os cinco propostos para a §A. */
+:root {
+  --ck-surface-canvas: #191919; --ck-surface-nav: #222222; --ck-surface-composer: #2a2a2a;
+  --ck-text-primary: #f2f2f2; --ck-text-secondary: #b1b1b1; --ck-text-tertiary: #868686;
+  --ck-state-thinking: #9f9afc; --ck-state-running: #36caf1; --ck-state-attention: #f6b84d; --ck-state-fail: #ff7d7c;
+  --ck-edge-functional: #808080; --ck-edge-hairline: #424242; --ck-focus: #40d1f7;
+  --ck-touch-min: 44px; --ck-radius-caixa: 16px;
+  --ck-dur-fast: 120ms; --ck-dur-calm: 320ms; --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --ck-conversa-voce: var(--ck-state-attention);
+  --ck-conversa-pensa: var(--ck-state-thinking);
+  --ck-conversa-ze: var(--ck-state-running);
+  --ck-conversa-erro: var(--ck-state-fail);
+  --ck-conversa-prepara: var(--ck-text-secondary);
+  --proto-mesa: #0e0e0e;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--proto-mesa); color: var(--ck-text-primary);
+  font-family: Geist, ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.palco { min-height: 100%; display: flex; align-items: center; justify-content: center; gap: 48px; padding: 32px; }
+.tela { position: relative; width: 393px; height: 852px; flex: none; overflow: hidden; border-radius: 55px;
+  background: var(--ck-surface-canvas); display: grid; grid-template-rows: 59px 44px auto 1fr auto 34px; }
+@media (max-width: 520px) {
+  .palco { padding: 0; } .painel { display: none; }
+  .tela { width: 100vw; height: 100dvh; border-radius: 0; }
+}
+.sem-painel .palco { padding: 0; } .sem-painel .painel { display: none; } .sem-painel .tela { border-radius: 0; }
+
+.ilha { position: absolute; top: 11px; left: 50%; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; }
+.hora { position: absolute; top: 21px; left: 50px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.inicio { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px;
+  background: var(--ck-text-primary); opacity: .85; }
+
+.topo { grid-row: 2; display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 12px; }
+.voltar { display: inline-flex; align-items: center; gap: 2px; min-height: var(--ck-touch-min); padding: 0 12px 0 6px;
+  border: 0; border-radius: 12px; background: transparent; color: var(--ck-text-secondary); font: inherit; font-size: 16px; }
+.voltar svg { width: 22px; height: 22px; }
+.agente { color: var(--ck-text-secondary); font-size: 15px; }
+
+.instrumento { grid-row: 3; position: relative; width: 304px; height: 304px; margin: 4px auto 0; }
+.instrumento canvas { width: 100%; height: 100%; display: block; }
+.leitor { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+.numero { font-family: "Geist Mono", ui-monospace, monospace; font-size: 40px; font-weight: 500; letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums; line-height: 1; }
+.rotulo-numero { margin-top: 8px; font-size: 13px; color: var(--ck-text-secondary); }
+.leitor svg { width: 44px; height: 44px; margin: 0 auto; color: var(--ck-conversa-erro); }
+
+.texto { grid-row: 4; padding: 14px 28px 0; text-align: center; overflow: hidden; }
+h1 { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 500; letter-spacing: -0.025em; }
+.detalhe { margin: 8px auto 0; max-width: 320px; font-size: 15px; line-height: 1.45; color: var(--ck-text-secondary); }
+#tempo { display: none; }
+.falas { margin-top: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; text-align: left; }
+.fala[hidden] { display: none; }
+.quem { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ck-text-secondary); margin-bottom: 4px; }
+.quem::before { content: ""; width: 14px; height: 2px; border-radius: 1px; background: currentColor; }
+#falaVoce .quem::before { background: var(--ck-conversa-voce); } #falaZe .quem::before { background: var(--ck-conversa-ze); }
+.fala p { margin: 0; font-size: 17px; line-height: 1.4; }
+.fala.recuada p, .fala.pausada p { color: var(--ck-text-secondary); font-size: 16px; }
+.fala.recuada p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reticencias span { display: inline-block; animation: pisca 1.2s infinite var(--ck-ease); }
+.reticencias span:nth-child(2) { animation-delay: .2s; } .reticencias span:nth-child(3) { animation-delay: .4s; }
+@keyframes pisca { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+
+.comandos { grid-row: 5; padding: 12px 20px 6px; display: grid; gap: 10px; }
+.fone { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 14px; border-radius: var(--ck-radius-caixa);
+  border: 1px solid var(--ck-edge-hairline); cursor: pointer; }
+.fone svg { width: 22px; height: 22px; flex: none; color: var(--ck-text-secondary); }
+.fone .rotulo { flex: 1; display: grid; gap: 1px; }
+.fone b { font-weight: 500; font-size: 16px; }
+.fone small { font-size: 13px; color: var(--ck-text-secondary); }
+.fone input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chave { position: relative; width: 51px; height: 31px; flex: none; border-radius: 16px; background: var(--ck-edge-hairline);
+  transition: background var(--ck-dur-fast) var(--ck-ease); }
+.chave::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: var(--ck-text-primary); transition: transform var(--ck-dur-fast) var(--ck-ease); }
+.fone input:checked + .chave { background: var(--ck-text-primary); }
+.fone input:checked + .chave::after { background: var(--ck-surface-canvas); transform: translateX(20px); }
+.fone input:focus-visible + .chave { outline: 2px solid var(--ck-focus); outline-offset: 2px; }
+.acao { min-height: 54px; border-radius: 27px; border: 1px solid var(--ck-edge-functional); background: transparent;
+  color: var(--ck-text-primary); font: inherit; font-size: 17px; font-weight: 500; }
+.acao.primaria { background: var(--ck-text-primary); border-color: var(--ck-text-primary); color: var(--ck-surface-canvas); }
+.acao:disabled { color: var(--ck-text-secondary); border-color: var(--ck-edge-hairline); background: var(--ck-surface-composer); }
+
+.painel { width: 260px; display: grid; gap: 8px; font-size: 14px; color: var(--ck-text-secondary); }
+.painel h2 { margin: 0 0 4px; font-size: 20px; font-weight: 500; color: var(--ck-text-primary); }
+.painel p { margin: 0 0 12px; line-height: 1.45; }
+.painel button { text-align: left; min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--ck-edge-hairline);
+  background: transparent; color: var(--ck-text-primary); font: inherit; }
+.painel button[aria-pressed="true"] { border-color: var(--ck-text-primary); }
+.painel label { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.painel a { color: var(--ck-text-primary); }
+@media (prefers-reduced-motion: reduce) { .reticencias span { animation: none; opacity: .6; } }
+.reduzido .reticencias span { animation: none; opacity: .6; }
+</style>
+</head>
+<body>
+<div class="palco">
+  <main class="tela" id="tela">
+    <div class="ilha" aria-hidden="true"></div><span class="hora" aria-hidden="true">21:40</span>
+    <header class="topo">
+      <button class="voltar" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Voltar</button>
+      <span class="agente">canarinho</span>
+    </header>
+    <div class="instrumento">
+      <canvas id="mostrador" aria-hidden="true"></canvas>
+      <div class="leitor" aria-hidden="true"><div class="numero" id="numero"></div><div class="rotulo-numero" id="rotuloNumero"></div>
+        <svg id="semMic" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.7"/><path d="M19 11a7 7 0 0 1-1.1 3.8M5 11a7 7 0 0 0 11.4 5.4M12 18v3M3 3l18 18"/></svg>
+      </div>
+    </div>
+    <section class="texto" aria-live="polite">
+      <h1 id="titulo">Conversa por voz</h1><span id="tempo"></span>
+      <p class="detalhe" id="detalhe"></p>
+      <div class="falas">
+        <div class="fala" id="falaVoce" hidden><span class="quem">Você disse</span><p id="textoVoce"></p></div>
+        <div class="fala" id="falaZe" hidden><span class="quem">canarinho</span><p id="textoZe"></p></div>
+      </div>
+    </section>
+    <footer class="comandos">
+      <label class="fone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 16a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3zM3 16a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H3z"/></svg>
+        <span class="rotulo"><b>Estou de fone</b><small id="foneDica"></small></span>
+        <input type="checkbox" role="switch" id="fone"><span class="chave" aria-hidden="true"></span>
+      </label>
+      <button class="acao" id="acao" type="button">Encerrar conversa</button>
+    </footer>
+    <div class="inicio" aria-hidden="true"></div>
+  </main>
+  <aside class="painel" id="painel">
+    <h2>Mostrador</h2>
+    <p>Um instrumento que mede a conversa. Barras para dentro: sua voz entrando. Barras para fora: a voz dele saindo. O arco do meio conta o tempo que importa.</p>
+  </aside>
+</div>
+
+<script>
+/* ===================== simulação (igual nas três direções) ===================== */
+const P = new URLSearchParams(location.search);
+if (P.get('painel') === '0') document.body.classList.add('sem-painel');
+const ESTADOS = ['parado', 'preparando', 'ouvindo', 'transcrevendo', 'esperandoZe', 'falando', 'interrompendo', 'erro'];
+const NOMES = { parado: 'parado', preparando: 'preparando', ouvindo: 'ouvindo', transcrevendo: 'transcrevendo',
+  esperandoZe: 'esperando o Zé', falando: 'falando', interrompendo: 'interrompendo', erro: 'erro' };
+const ROTEIROS = {
+  normal: [['parado', 1.2], ['preparando', 3.0], ['ouvindo', 4.4], ['transcrevendo', 0.8], ['esperandoZe', 2.8],
+    ['falando', 3.8], ['interrompendo', 1.8], ['erro', 2.6]],
+  rapido: [['preparando', 1.3], ['ouvindo', 2.3], ['transcrevendo', 0.4], ['esperandoZe', 1.4], ['falando', 2.0],
+    ['interrompendo', 1.2], ['erro', 1.2]],
+};
+const VOCE = '“Confere se o deploy do Fluyt subiu e me diz como ficou.”';
+const ZE = 'Subiu. O build levou dois minutos e a produção já responde na 3008.';
+const sim = { t: 0, estado: 'parado', tEstado: 0, nivel: 0, fone: false, fala: false, silencio: 0,
+  prog: 0, travado: P.get('estado'), roteiro: ROTEIROS[P.get('roteiro')] || ROTEIROS.normal, passoRoteiro: 0,
+  reduzido: matchMedia('(prefers-reduced-motion: reduce)').matches || P.get('movimento') === 'reduzido' };
+if (sim.reduzido) document.body.classList.add('reduzido');
+
+function ruido(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+  const h = (n) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+  return h(i) * (1 - u) + h(i + 1) * u; }
+function envelope(t, sem, ritmo) {
+  const silaba = Math.pow(Math.max(0, Math.sin(t * 6.2832 * ritmo + sem)), 0.6);
+  return Math.min(1, (0.22 + 0.78 * silaba) * (0.35 + 0.65 * ruido(t * 2.3 + sem * 10)) * (0.6 + 0.55 * ruido(t * 0.7 + sem * 20)));
+}
+/* janela de fala dentro de "ouvindo": [início, fim] em s; depois disso é o silêncio que encerra (1,4 s) */
+function janelaDeFala(dur) { return dur >= 4 ? [0.3, dur - 1.4] : [0.15, dur * 0.55]; }
+function duracaoAtual() { return sim.travado ? null : sim.roteiro[sim.passoRoteiro][1]; }
+function entra(estado) { sim.estado = estado; sim.tEstado = 0; sim.fone = estado !== 'preparando' && estado !== 'parado';
+  if (sim.travado === 'preparando') sim.fone = false; aoMudarEstado(); }
+function passo(dt) {
+  sim.t += dt; sim.tEstado += dt;
+  const dur = duracaoAtual();
+  if (dur !== null && sim.tEstado >= dur) {
+    sim.passoRoteiro = (sim.passoRoteiro + 1) % sim.roteiro.length; entra(sim.roteiro[sim.passoRoteiro][0]); }
+  let alvo = 0; sim.fala = false; sim.silencio = 0;
+  if (sim.estado === 'ouvindo') {
+    const ciclo = dur ?? 4.4; const tl = sim.travado ? sim.tEstado % ciclo : sim.tEstado;
+    const [a, b] = janelaDeFala(ciclo);
+    if (tl >= a && tl <= b) { sim.fala = true; alvo = envelope(sim.t, 1, 4.3); }
+    else if (tl > b) { sim.fala = true; sim.silencio = (tl - b) / (ciclo - b); alvo = 0.015; }
+  } else if (sim.estado === 'interrompendo') { alvo = envelope(sim.t, 2, 4.6); sim.fala = true; }
+  else if (sim.estado === 'falando') { alvo = 0.15 + 0.85 * envelope(sim.t, 3, 3.6); }
+  const k = alvo > sim.nivel ? 0.45 : 0.11;
+  sim.nivel += (alvo - sim.nivel) * (1 - Math.pow(1 - k, dt * 60));
+  if (sim.estado === 'preparando') sim.prog = Math.min(1, sim.tEstado / (dur ?? 8));
+  if (sim.reduzido) sim.nivel = alvo > 0.01 ? 0.5 : 0;
+  aoPasso(dt);
+}
+/* API da captura: avança o relógio simulado até T (em passos de 1/60 s) e desenha um quadro */
+window.__irPara = (T) => { while (sim.t < T - 1e-6) passo(Math.min(1 / 60, T - sim.t)); desenha(); atualizaNumeros(); window.__pronto = true; };
+function inicia() {
+  if (sim.travado) entra(sim.travado); else entra(sim.roteiro[0][0]);
+  preparaVisual();
+  if (P.get('manual') === '1') { window.__capturaPadrao = CAPTURA[sim.estado] ?? 1; window.__pronto = true; return; }
+  let antes = performance.now();
+  const laco = (agora) => { const dt = Math.min(0.05, (agora - antes) / 1000); antes = agora; passo(dt);
+    const seg = Math.floor(sim.t); if (!sim.reduzido || precisaRedesenhar || seg !== ultimoSegundo) { desenha(); precisaRedesenhar = false; ultimoSegundo = seg; }
+    atualizaNumeros(); requestAnimationFrame(laco); };
+  requestAnimationFrame(laco);
+}
+let precisaRedesenhar = true, ultimoSegundo = -1;
+
+/* painel de demonstração (só no PC) */
+function montaPainel() {
+  const painel = document.getElementById('painel');
+  const auto = document.createElement('button'); auto.textContent = 'Automático (roteiro)';
+  auto.setAttribute('aria-pressed', String(!sim.travado));
+  auto.onclick = () => { location.search = ''; }; painel.append(auto);
+  for (const e of ESTADOS) { const b = document.createElement('button'); b.textContent = NOMES[e];
+    b.setAttribute('aria-pressed', String(sim.travado === e));
+    b.onclick = () => { const q = new URLSearchParams(location.search); q.set('estado', e); location.search = q; }; painel.append(b); }
+  const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.checked = sim.reduzido;
+  c.onchange = () => { const q = new URLSearchParams(location.search); c.checked ? q.set('movimento', 'reduzido') : q.delete('movimento'); location.search = q; };
+  l.append(c, 'Movimento reduzido'); painel.append(l);
+  const o = document.createElement('p'); o.innerHTML = 'Outras: <a href="moldura.html">Moldura</a> · <a href="nucleo.html">Núcleo</a>'; painel.append(o);
+}
+
+/* ===================== textos (comuns) ===================== */
+const $ = (id) => document.getElementById(id);
+function textos() {
+  const e = sim.estado;
+  const T = {
+    parado: ['Conversa por voz', 'Um toque para começar. Depois é só falar.'],
+    preparando: ['Preparando', 'Baixando o detector de voz neste iPhone.'],
+    ouvindo: [sim.fala ? 'Estou ouvindo' : 'Pode falar', sim.fala ? 'Quando você parar, eu envio.' : 'O microfone está aberto.'],
+    transcrevendo: ['Entendendo', 'Passando sua fala para texto.'],
+    esperandoZe: ['Pensando', 'A resposta toca assim que chegar.'],
+    falando: ['Respondendo', 'Quando ele terminar, volto a ouvir.'],
+    interrompendo: ['Pausei a resposta', 'Continue falando para interromper. Se foi tosse, eu retomo.'],
+    erro: ['O microfone desligou', 'A tela bloqueou e o iPhone cortou o microfone.'],
+  };
+  return T[e];
+}
+let ultimoTitulo = '';
+function aoMudarEstado() {
+  const e = sim.estado; const [t, d] = textos(); ultimoTitulo = t; $('tela').dataset.estado = e;
+  $('titulo').textContent = t; $('detalhe').textContent = d;
+  $('fone').checked = sim.fone;
+  $('foneDica').textContent = sim.fone ? 'Falar por cima interrompe a resposta.' : 'Espero a resposta terminar.';
+  const voce = $('falaVoce'), ze = $('falaZe');
+  voce.hidden = !['transcrevendo', 'esperandoZe', 'falando', 'interrompendo', 'erro'].includes(e);
+  ze.hidden = !['falando', 'interrompendo'].includes(e);
+  $('textoVoce').innerHTML = e === 'transcrevendo' ? '<span class="reticencias"><span>•</span><span>•</span><span>•</span></span>' : VOCE;
+  $('textoZe').textContent = ZE;
+  voce.classList.toggle('recuada', e === 'falando' || e === 'interrompendo');
+  ze.classList.toggle('pausada', e === 'interrompendo');
+  const acao = $('acao');
+  acao.disabled = e === 'preparando';
+  acao.classList.toggle('primaria', e === 'parado' || e === 'erro');
+  acao.textContent = e === 'parado' ? 'Começar conversa' : e === 'erro' ? 'Retomar conversa' : e === 'preparando' ? 'Preparando…' : 'Encerrar conversa';
+  precisaRedesenhar = true; pulso = sim.reduzido ? 0 : 1;
+}
+let ultimoNumero = '';
+function atualizaNumeros() {
+  const e = sim.estado;
+  const n = e === 'preparando' ? `${Math.round(sim.prog * 100)}%` : e === 'esperandoZe' ? `${Math.floor(sim.tEstado)} s` : '';
+  if (n !== ultimoNumero) { $('tempo').textContent = n; ultimoNumero = n; }
+  if (e === 'preparando') { const mb = (sim.prog * 3.6).toFixed(1).replace('.', ',');
+    const d = `Baixando o detector de voz: ${mb} de 3,6 MB.`; if ($('detalhe').textContent !== d) $('detalhe').textContent = d; }
+  const [t] = textos(); if (t !== ultimoTitulo) { ultimoTitulo = t; $('titulo').textContent = t; $('detalhe').textContent = textos()[1]; }
+}
+
+/* ===================== visual do Mostrador: Canvas 2D ===================== */
+const CAPTURA = { preparando: 5, ouvindo: 3.55, transcrevendo: 0.5, esperandoZe: 7.3, falando: 3.4, interrompendo: 0.33, erro: 1, parado: 1 };
+const N = 96, TAM = 304, C = TAM / 2;
+const R_MARCA = 118, R_VOCE = 111, R_ZE = 127, R_ARCO = 72;
+const hist = new Float32Array(N), histZe = new Float32Array(N), FIXO = new Float32Array(N).fill(0.42);
+let ctx, cursor = 0, acumula = 0, varre = 0, tempoAnim = 0, pulso = 0;
+const COR = {};
+function corDe(token) { const el = document.createElement('i'); el.style.color = `var(${token})`; document.body.append(el);
+  const c = getComputedStyle(el).color; el.remove(); return c.match(/[\d.]+/g).slice(0, 3).map(Number); }
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const ang = (i) => (i / N) * Math.PI * 2 - Math.PI / 2;
+function preparaVisual() {
+  const cv = $('mostrador'); const dpr = Math.min(3, devicePixelRatio);
+  cv.width = TAM * dpr; cv.height = TAM * dpr; ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  Object.assign(COR, { voce: corDe('--ck-conversa-voce'), ze: corDe('--ck-conversa-ze'), pensa: corDe('--ck-conversa-pensa'),
+    prepara: corDe('--ck-conversa-prepara'), erro: corDe('--ck-conversa-erro'), marca: corDe('--ck-text-tertiary'),
+    trilho: corDe('--ck-edge-hairline'), texto: corDe('--ck-text-secondary') });
+  $('fone').onchange = (ev) => { sim.fone = ev.target.checked; $('foneDica').textContent = sim.fone ? 'Falar por cima interrompe a resposta.' : 'Espero a resposta terminar.'; };
+}
+let estadoAnterior = '';
+function semeia() {
+  for (let i = 0; i < N; i++) { const t = i / 24;
+    hist[i] = i > 4 && i < 70 ? envelope(t, 1, 4.3) : 0; histZe[i] = 0.15 + 0.85 * envelope(t, 3, 3.6); }
+  cursor = 70; }
+if (sim.travado && ['transcrevendo', 'esperandoZe', 'interrompendo', 'erro'].includes(sim.travado)) { estadoAnterior = sim.travado; semeia(); }
+function aoPasso(dt) {
+  const e = sim.estado;
+  if (e !== estadoAnterior) { if (e === 'ouvindo' && estadoAnterior !== 'interrompendo') hist.fill(0);
+    if (e === 'falando') histZe.fill(0); estadoAnterior = e; }
+  const vivo = !sim.reduzido && e !== 'erro' && e !== 'parado';
+  if (vivo) { tempoAnim += dt; varre = (varre + dt * (e === 'transcrevendo' ? 5 : 1.1)) % (Math.PI * 2);
+    acumula += dt;
+    while (acumula >= 1 / 24) { acumula -= 1 / 24; cursor = (cursor + 1) % N;
+      if (e === 'ouvindo' || e === 'interrompendo') hist[cursor] = sim.nivel;
+      if (e === 'falando') histZe[cursor] = sim.nivel; } }
+}
+function traco(a, r1, r2, cor, alfa, largura, brilho) {
+  const x = Math.cos(a), y = Math.sin(a);
+  if (brilho) { ctx.strokeStyle = rgba(cor, alfa * 0.22); ctx.lineWidth = largura * 3.2;
+    ctx.beginPath(); ctx.moveTo(C + x * r1, C + y * r1); ctx.lineTo(C + x * r2, C + y * r2); ctx.stroke(); }
+  ctx.strokeStyle = rgba(cor, alfa); ctx.lineWidth = largura;
+  ctx.beginPath(); ctx.moveTo(C + x * r1, C + y * r1); ctx.lineTo(C + x * r2, C + y * r2); ctx.stroke();
+}
+function arco(r, a0, a1, cor, alfa, largura, brilho) {
+  if (brilho) { ctx.strokeStyle = rgba(cor, alfa * 0.2); ctx.lineWidth = largura * 3.5; ctx.beginPath(); ctx.arc(C, C, r, a0, a1); ctx.stroke(); }
+  ctx.strokeStyle = rgba(cor, alfa); ctx.lineWidth = largura; ctx.beginPath(); ctx.arc(C, C, r, a0, a1); ctx.stroke();
+}
+function barras(h, cor, alfaBase, paraDentro, congelado) {
+  for (let i = 0; i < N; i++) { const v = h[i]; if (v < 0.02) continue;
+    const idade = ((cursor - i + N) % N) / N; const alfa = alfaBase * (congelado ? 1 : 0.35 + 0.65 * (1 - idade));
+    const len = paraDentro ? 4 + v * 34 : 4 + v * 22;
+    const r1 = paraDentro ? R_VOCE : R_ZE, r2 = paraDentro ? R_VOCE - len : R_ZE + len;
+    traco(ang(i), r1, r2, cor, alfa, 2, !congelado); }
+}
+function varredura(cor, alfa, r1, r2, abertura) {
+  const g = ctx.createConicGradient(varre - Math.PI / 2 - abertura, C, C);
+  g.addColorStop(0, rgba(cor, 0)); g.addColorStop(abertura / (Math.PI * 2), rgba(cor, alfa)); g.addColorStop(abertura / (Math.PI * 2) + 0.001, rgba(cor, 0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(C, C, r2, 0, Math.PI * 2); ctx.arc(C, C, r1, 0, Math.PI * 2, true); ctx.fill();
+  traco(varre - Math.PI / 2, r1, r2, cor, alfa * 2.2, 1.5, true);
+}
+const TOPO = -Math.PI / 2;
+function desenha() {
+  ctx.clearRect(0, 0, TAM, TAM); ctx.lineCap = 'round';
+  const e = sim.estado, morto = e === 'erro';
+  /* escala fixa: 96 marcas, maior a cada 8 */
+  for (let i = 0; i < N; i++) { const maior = i % 8 === 0;
+    traco(ang(i), R_MARCA - (maior ? 4 : 0), R_MARCA + (maior ? 6 : 3), COR.marca, morto ? 0.25 : maior ? 0.75 : 0.4, 1.2, false); }
+  arco(R_ARCO, 0, Math.PI * 2, COR.trilho, 1, 1, false);
+  if (e === 'preparando') {
+    const ate = Math.floor(sim.prog * N);
+    for (let i = 0; i < ate; i++) traco(ang(i), R_MARCA - 5, R_MARCA + 7, COR.prepara, i === ate - 1 ? 1 : 0.8, 1.6, i > ate - 4);
+    arco(R_ARCO, TOPO, TOPO + sim.prog * Math.PI * 2, COR.prepara, 0.9, 2.5, true);
+  }
+  if (e === 'ouvindo' || e === 'interrompendo') {
+    barras(sim.reduzido ? FIXO : hist, COR.voce, 1, true, sim.reduzido);
+    if (!sim.reduzido) traco(ang(cursor), R_VOCE + 2, R_VOCE - 46, COR.voce, 0.5, 1, false);
+    if (e === 'ouvindo' && sim.silencio > 0) arco(R_ARCO, TOPO, TOPO + sim.silencio * Math.PI * 2, COR.voce, 1, 3, true);
+  }
+  if (e === 'interrompendo') {
+    barras(sim.reduzido ? FIXO : histZe, COR.ze, 0.45, false, true);
+    const conf = Math.min(1, sim.tEstado / 0.5);
+    arco(R_ARCO, TOPO, TOPO + conf * Math.PI * 2, COR.voce, 1, 3, true);
+  }
+  if (e === 'transcrevendo' || e === 'esperandoZe') {
+    barras(sim.reduzido ? FIXO : hist, COR.voce, e === 'transcrevendo' ? 0.55 : 0.18, true, true);
+    if (!sim.reduzido) varredura(COR.pensa, 0.16, R_ARCO + 6, R_MARCA - 6, e === 'transcrevendo' ? 1.2 : 0.8);
+  }
+  if (e === 'esperandoZe') {
+    const f = Math.min(1, sim.tEstado / 20);
+    arco(R_ARCO, TOPO, TOPO + f * Math.PI * 2, COR.pensa, 1, 3, true);
+    for (const [seg, txt] of [[5, '5 s'], [20, '20 s']]) { const a = TOPO + (seg / 20) * Math.PI * 2; const feito = sim.tEstado >= seg;
+      traco(a, R_ARCO - 7, R_ARCO + 7, feito ? COR.pensa : COR.marca, 1, 1.5, false);
+      ctx.fillStyle = rgba(COR.texto, 1); ctx.font = '500 11px "Geist Mono", ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const rx = R_ARCO + 22; ctx.fillText(txt, C + Math.cos(a) * rx + (seg === 20 ? 18 : 0), C + Math.sin(a) * rx + (seg === 20 ? 4 : 0)); }
+  }
+  if (e === 'falando') {
+    barras(sim.reduzido ? FIXO : histZe, COR.ze, 1, false, sim.reduzido);
+    if (!sim.reduzido) for (let k = 0; k < 3; k++) { const fase = (tempoAnim * 0.7 + k / 3) % 1;
+      arco(R_ARCO + fase * (R_MARCA - R_ARCO - 10), 0, Math.PI * 2, COR.ze, (1 - fase) * (0.15 + 0.5 * sim.nivel), 1.5, false); }
+    arco(R_ARCO, 0, Math.PI * 2, COR.ze, 0.35 + 0.6 * sim.nivel, 2, true);
+  }
+  if (morto) {
+    const vao = 0.42, base = Math.PI / 2;
+    arco(R_ARCO, base + vao, base + Math.PI * 2 - vao, COR.erro, 1, 2.5, true);
+    for (const s of [-1, 1]) { const a = base + s * vao; traco(a, R_ARCO - 6, R_ARCO + 6, COR.erro, 1, 2, false); }
+  }
+  leitura();
+}
+let ultimaLeitura = '';
+function leitura() {
+  const e = sim.estado; let n = '', r = '';
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  if (e === 'preparando') { n = `${Math.round(sim.prog * 100)}%`; r = 'detector de voz'; }
+  else if (e === 'ouvindo') { if (sim.silencio > 0) { n = `${(1.4 * (1 - sim.silencio)).toFixed(1).replace('.', ',')} s`; r = 'para enviar'; }
+    else if (sim.fala) { n = mmss(sim.tEstado); r = 'sua fala'; } else { n = ''; r = 'pode falar'; } }
+  else if (e === 'transcrevendo') { n = '···'; r = 'transcrevendo'; }
+  else if (e === 'esperandoZe') { n = `${Math.floor(sim.tEstado)} s`; r = 'esperando'; }
+  else if (e === 'falando') { n = mmss(sim.tEstado); r = 'resposta'; }
+  else if (e === 'interrompendo') { n = `${Math.min(0.5, sim.tEstado).toFixed(1).replace('.', ',')} s`; r = sim.tEstado < 0.5 ? 'confirmando' : 'interrompido'; }
+  else if (e === 'erro') { r = 'microfone'; }
+  const chave = n + '|' + r + '|' + e;
+  if (chave === ultimaLeitura) return; ultimaLeitura = chave;
+  $('numero').textContent = n; $('rotuloNumero').textContent = r; $('semMic').style.display = e === 'erro' ? 'block' : 'none';
+  $('numero').style.color = e === 'erro' ? 'var(--ck-conversa-erro)' : '';
+}
+montaPainel();
+Promise.all([document.fonts.ready, document.fonts.load('500 11px "Geist Mono"')]).then(inicia);
+</script>
+</body>
+</html>

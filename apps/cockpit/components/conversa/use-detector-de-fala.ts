@@ -29,7 +29,8 @@ export function useDetectorDeFala({
   const [tempoCargaMs, setTempoCargaMs] = useState<number | null>(null);
   const [falaDetectada, setFalaDetectada] = useState(false);
   const [abrindoMicrofone, setAbrindoMicrofone] = useState(false);
-  const [nivel, setNivel] = useState(0);
+  /* Volume do microfone em ref: quem desenha lê no requestAnimationFrame, sem render. */
+  const nivelRef = useRef(0);
 
   const controladorRef = useRef<ControladorDetector | null>(null);
   const utilsRef = useRef<VadUtils | null>(null);
@@ -47,7 +48,6 @@ export function useDetectorDeFala({
   useEffect(() => {
     let vivo = true;
     const inicio = performance.now();
-    let ultimaOnda = 0;
 
     const abreMicrofone = async () => {
       const captura = await navigator.mediaDevices.getUserMedia({
@@ -113,12 +113,9 @@ export function useDetectorDeFala({
             eventoRef.current({ tipo: 'falaDescartada' });
           },
           onFrameProcessed: (_probabilidades, quadro) => {
-            const agora = performance.now();
-            if (agora - ultimaOnda < 80) return;
-            ultimaOnda = agora;
             let soma = 0;
             for (const amostra of quadro) soma += amostra * amostra;
-            setNivel(Math.min(1, Math.sqrt(soma / quadro.length) * 8));
+            nivelRef.current = Math.min(1, Math.sqrt(soma / quadro.length) * 8);
           },
           });
           detectorRef.current = instancia;
@@ -171,7 +168,7 @@ export function useDetectorDeFala({
 
   const desliga = useCallback(() => {
     setFalaDetectada(false);
-    setNivel(0);
+    nivelRef.current = 0;
     void controladorRef.current?.desliga().catch(() => {});
   }, []);
 
@@ -187,7 +184,7 @@ export function useDetectorDeFala({
     tempoCargaMs,
     falaDetectada,
     abrindoMicrofone,
-    nivel,
+    nivelRef,
     liga,
     desliga,
     criaWav,

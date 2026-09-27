@@ -23,6 +23,7 @@ export function useModoConversa(slug: string) {
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
   const [aviso, setAviso] = useState<string | null>(null);
   const [ultimaTranscricao, setUltimaTranscricao] = useState<string | null>(null);
+  const [respostaDoZe, setRespostaDoZe] = useState<string | null>(null);
   const [fone, setFone] = useState(false);
 
   const conversaRef = useRef(conversa);
@@ -44,7 +45,7 @@ export function useModoConversa(slug: string) {
     cancela: cancelaFala,
     pausa: pausaFala,
     retoma: retomaFala,
-    nivel: nivelVoz,
+    nivelRef: nivelVozRef,
   } = useFilaDeVoz({
     slug,
     aoTerminar: () => despachaRef.current({ tipo: 'vozTerminou' }),
@@ -117,6 +118,7 @@ export function useModoConversa(slug: string) {
           .then(({ text }) => {
             if (ciclo !== cicloRef.current) return;
             setUltimaTranscricao(text.trim() || null);
+            setRespostaDoZe(null);
             despachaRef.current({ tipo: 'transcreveu', texto: text });
           })
           .catch(() => {
@@ -189,6 +191,7 @@ export function useModoConversa(slug: string) {
     if (stream.isRunning && !rodava) abreTurno();
     if (textos.length > 0 && !rodava && !stream.isRunning) abreTurno();
     for (const { texto } of textos) despacha({ tipo: 'textoDoZe', texto });
+    if (textos.length > 0) setRespostaDoZe(textos[textos.length - 1].texto);
     cursorRef.current = maiorId;
 
     if ((rodava && !stream.isRunning) || (textos.length > 0 && !stream.isRunning)) {
@@ -246,6 +249,13 @@ export function useModoConversa(slug: string) {
     despacha({ tipo: 'parar' });
   }, [cancelaFala, despacha, sons, wakeLock]);
 
+  const nivelMicRef = detector.nivelRef;
+  /** Volume para o visual: a voz do Zé enquanto ele fala, o microfone no resto. */
+  const leNivel = useCallback(
+    () => (conversaRef.current.estado === 'falando' ? nivelVozRef.current : nivelMicRef.current),
+    [nivelMicRef, nivelVozRef],
+  );
+
   useEffect(
     () => () => {
       sessaoAtivaRef.current = false;
@@ -261,11 +271,12 @@ export function useModoConversa(slug: string) {
     tempoCargaMs: detector.tempoCargaMs,
     falaDetectada: detector.falaDetectada,
     abrindoMicrofone: detector.abrindoMicrofone,
-    nivel: conversa.estado === 'falando' ? nivelVoz : detector.nivel,
+    leNivel,
     fone,
     mudarFone: (ligado: boolean) => { setFone(ligado); despacha({ tipo: 'fone', ligado }); },
     aviso,
     ultimaTranscricao,
+    respostaDoZe,
     streamStatus: stream.status,
     wakeLockAtivo: wakeLock.ativo,
     wakeLockSuportado: wakeLock.suportado,

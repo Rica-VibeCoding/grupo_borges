@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { iniciaSequencia, type Sequencia } from '@/components/feed/reprodutor-unico';
 import { pedeFala, type FalaEmCurso } from '@/components/feed/stream-voz';
@@ -15,7 +15,8 @@ export function useFilaDeVoz({
   aoTerminar(): void;
   aoFalhar(mensagem: string): void;
 }) {
-  const [nivel, setNivel] = useState(0);
+  /* Volume da voz do Zé em ref: lido no requestAnimationFrame, sem render. */
+  const nivelRef = useRef(0);
   const geracaoRef = useRef(0);
   const pausadaRef = useRef(false);
   const envelopesRef = useRef<EnvelopeVoz[]>([]);
@@ -33,7 +34,7 @@ export function useFilaDeVoz({
     urlsRef.current = [];
     envelopesRef.current = [];
     duracaoRef.current = 0;
-    setNivel(0);
+    nivelRef.current = 0;
   }, []);
 
   const garanteSequencia = useCallback(() => {
@@ -42,7 +43,7 @@ export function useFilaDeVoz({
     const sequencia = iniciaSequencia({
       aoProgredir: (segundos) => {
         if (geracao !== geracaoRef.current || pausadaRef.current) return;
-        setNivel(nivelDaVoz(envelopesRef.current, segundos));
+        nivelRef.current = nivelDaVoz(envelopesRef.current, segundos);
       },
       aoTerminar: () => {
         if (geracao !== geracaoRef.current) return;
@@ -134,11 +135,11 @@ export function useFilaDeVoz({
   const pausa = useCallback(() => {
     pausadaRef.current = true;
     sequenciaRef.current?.pausa();
-    setNivel(0);
+    nivelRef.current = 0;
   }, []);
   const retoma = useCallback(() => {
     pausadaRef.current = false;
     sequenciaRef.current?.retoma();
   }, []);
-  return { abreTurno, enfileira, fechaTurno, cancela, pausa, retoma, nivel };
+  return { abreTurno, enfileira, fechaTurno, cancela, pausa, retoma, nivelRef };
 }

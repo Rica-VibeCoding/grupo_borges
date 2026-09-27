@@ -1,0 +1,44 @@
+/* A Moldura fica atrás de tudo, na altura da área visível (100dvh): o pé da
+ * luz acompanha a barra do Safari quando ela aparece e some. */
+.raiz {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100dvh;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.raiz canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Reserva sem WebGL: a borda e um gradiente curto, parados. Os gradientes
+ * ficam fora da zona de texto (pé = comandos opacos; topo = barra de status). */
+.reserva {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 2px var(--cor-da-moldura);
+}
+.reserva[data-tom='voce'] {
+  --cor-da-moldura: var(--ck-conversa-voce);
+  background: linear-gradient(
+    to top,
+    color-mix(in oklch, var(--ck-conversa-voce) calc(16% + var(--nivel-da-voz, 0.5) * 30%), transparent),
+    transparent 20%
+  );
+}
+.reserva[data-tom='ze'] {
+  --cor-da-moldura: var(--ck-conversa-ze);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--ck-conversa-ze) calc(16% + var(--nivel-da-voz, 0.5) * 30%), transparent),
+    transparent 6%
+  );
+}
+.reserva[data-tom='pensa'] { --cor-da-moldura: var(--ck-conversa-pensa); }
+.reserva[data-tom='prepara'] { --cor-da-moldura: var(--ck-edge-hairline); }
+.reserva[data-tom='erro'] { --cor-da-moldura: var(--ck-conversa-erro); }

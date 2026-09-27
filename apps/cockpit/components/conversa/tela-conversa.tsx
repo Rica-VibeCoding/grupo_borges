@@ -1,143 +1,148 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 
-import type { Estado } from '@/lib/conversa/tipos';
-
-import { EsferaConversa } from './esfera-conversa';
+import { ChaveDeVisual } from './chave-de-visual';
+import { falasVisiveis, leituraDaConversa, rotuloDaAcao } from './leitura-da-conversa';
+import { MolduraConversa, type VariacaoMoldura } from './moldura-conversa';
+import type { Cena } from './moldura-estado';
+import styles from './tela-conversa.module.css';
 import { useModoConversa } from './use-modo-conversa';
+import { useVisualConversa } from './use-visual-conversa';
 
-type Leitura = { titulo: string; detalhe: string };
+/** Segundos de espera pelo Zé, uma atualização por segundo (não por quadro). */
+function useSegundosDeEspera(esperando: boolean) {
+  const [segundos, setSegundos] = useState(0);
+  useEffect(() => {
+    if (!esperando) return;
+    const inicio = performance.now();
+    const relogio = window.setInterval(() => setSegundos(Math.floor((performance.now() - inicio) / 1000)), 1000);
+    return () => {
+      window.clearInterval(relogio);
+      setSegundos(0);
+    };
+  }, [esperando]);
+  return segundos;
+}
 
-function leituraDoEstado(
-  estado: Estado,
-  falaDetectada: boolean,
-  abrindoMicrofone: boolean,
-): Leitura {
-  if (abrindoMicrofone) {
-    return { titulo: 'Liberando o microfone', detalhe: 'Autorize o acesso para começar.' };
-  }
-  switch (estado) {
-    case 'parado':
-      return { titulo: 'Conversa por voz', detalhe: 'Um toque inicia. Depois, é só falar.' };
-    case 'ouvindo':
-      return falaDetectada
-        ? { titulo: 'Estou ouvindo você', detalhe: 'Pode continuar. Eu percebo quando a frase terminar.' }
-        : { titulo: 'Pode falar', detalhe: 'O microfone está aberto.' };
-    case 'transcrevendo':
-      return { titulo: 'Entendendo sua fala', detalhe: 'A conversa continua sozinha.' };
-    case 'esperandoZe':
-      return { titulo: 'O agente está pensando', detalhe: 'A resposta vai tocar assim que chegar.' };
-    case 'falando':
-      return { titulo: 'O agente está respondendo', detalhe: 'Quando ele terminar, volto a ouvir você.' };
-    case 'interrompendo':
-      return { titulo: 'Estou ouvindo você', detalhe: 'Pausei a resposta. Continue para interromper.' };
-    case 'erro':
-      return { titulo: 'A conversa parou', detalhe: 'Confira o aviso e toque para retomar.' };
-  }
+function Reticencias() {
+  return (
+    <span className={styles.reticencias} aria-label="transcrevendo">
+      <span>•</span>
+      <span>•</span>
+      <span>•</span>
+    </span>
+  );
 }
 
 export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
   const modo = useModoConversa(slug);
-  const preparando = modo.preparacao === 'preparando';
-  const ativa = modo.conversa.estado !== 'parado' && modo.conversa.estado !== 'erro';
-  const leitura = preparando
-    ? { titulo: 'Preparando a conversa', detalhe: 'Baixando o detector de voz neste aparelho.' }
-    : modo.preparacao === 'falhou'
-      ? { titulo: 'O detector não carregou', detalhe: 'Recarregue a página para tentar novamente.' }
-      : leituraDoEstado(modo.conversa.estado, modo.falaDetectada, modo.abrindoMicrofone);
-  const aviso = modo.aviso ?? modo.erroPreparacao;
+  const [visual, escolheVisual] = useVisualConversa();
+  const zonaRef = useRef<HTMLDivElement>(null);
+
+  const preparacaoFalhou = modo.preparacao === 'falhou';
+  const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
+  const ativa = cena !== 'parado' && cena !== 'erro' && cena !== 'preparando';
+  const leitura = leituraDaConversa({
+    cena,
+    preparacaoFalhou,
+    abrindoMicrofone: modo.abrindoMicrofone,
+    falaDetectada: modo.falaDetectada,
+    fone: modo.fone,
+    motivo: modo.conversa.motivo,
+  });
+  const falas = falasVisiveis(cena);
+  const segundos = useSegundosDeEspera(cena === 'esperandoZe');
+  const aviso = [modo.aviso, preparacaoFalhou ? modo.erroPreparacao : null]
+    .find((texto) => texto && texto !== leitura.detalhe);
+  const notas = [
+    modo.streamStatus === 'reconnecting' ? 'Reconectando ao agente…' : null,
+    ativa && !modo.wakeLockSuportado ? 'Este navegador não mantém a tela acesa.' : null,
+    ativa && modo.wakeLockFalhou ? 'Não consegui manter a tela acesa.' : null,
+    cena === 'parado' && modo.tempoCargaMs !== null
+      ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s`
+      : null,
+  ].filter(Boolean);
 
   return (
-    <main
-      className="flex flex-col"
-      style={{
-        minHeight: '100dvh',
-        background: 'var(--ck-surface-canvas)',
-        color: 'var(--ck-text-primary)',
-        paddingTop: 'calc(var(--ck-space-3) + var(--ck-safe-top))',
-        paddingRight: 'calc(var(--ck-space-4) + var(--ck-safe-right))',
-        paddingBottom: 'calc(var(--ck-space-4) + var(--ck-safe-bottom))',
-        paddingLeft: 'calc(var(--ck-space-4) + var(--ck-safe-left))',
-      }}
-    >
-      <header className="mx-auto flex w-full max-w-xl items-center justify-between">
-        <Link
-          href={`/agente/${slug}`}
-          className="ck-veil inline-flex items-center"
-          style={{
-            minHeight: 'var(--ck-touch-min)',
-            padding: '0 var(--ck-space-3)',
-            marginLeft: 'calc(var(--ck-space-3) * -1)',
-            borderRadius: 'var(--ck-radius-chip)',
-            color: 'var(--ck-text-secondary)',
-            fontSize: 'var(--ck-text-sm)',
-          }}
-        >
-          ← Voltar
-        </Link>
-        <span
-          className="truncate"
-          style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)' }}
-        >
-          {nome}
-        </span>
-      </header>
+    <main className={styles.tela} data-estado={modo.conversa.estado} data-cena={cena}>
+      <MolduraConversa
+        cena={cena}
+        variacao={visual.variacao as VariacaoMoldura}
+        leNivel={modo.leNivel}
+        zonaDoTexto={zonaRef}
+      />
 
-      <section className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center text-center">
-        <div aria-live="polite" aria-atomic="true">
-          <h1
-            className="leading-hero tracking-hero"
-            style={{ fontSize: 'var(--ck-text-hero)', fontWeight: 520 }}
-          >
-            {leitura.titulo}
-          </h1>
-          <p
-            className="mx-auto max-w-md"
-            style={{
-              marginTop: 'var(--ck-space-2)',
-              color: 'var(--ck-text-secondary)',
-              fontSize: 'var(--ck-text-base)',
-            }}
-          >
-            {leitura.detalhe}
+      <div ref={zonaRef} className={styles.zona}>
+        <header className={styles.topo}>
+          <Link href={`/agente/${slug}`} className={styles.voltar}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Voltar
+          </Link>
+          <div className={styles.direita}>
+            <span className={styles.agente}>{nome}</span>
+            <ChaveDeVisual visual={visual} escolhe={escolheVisual} />
+          </div>
+        </header>
+
+        <section className={styles.leitura} aria-live="polite" aria-atomic="true">
+          <div className={styles.linhaDoTitulo}>
+            <h1 className={styles.titulo}>{leitura.titulo}</h1>
+            {cena === 'esperandoZe' && segundos > 0 ? <span className={styles.tempo}>{segundos} s</span> : null}
+          </div>
+          <p className={styles.detalhe}>{leitura.detalhe}</p>
+        </section>
+
+        <section className={styles.falas}>
+          {falas.voce && (cena === 'transcrevendo' || modo.ultimaTranscricao) ? (
+            <div className={styles.fala} data-fala="voce" data-forma={cena === 'transcrevendo' ? 'cheia' : falas.voce}>
+              <span className={styles.quem}>Você disse</span>
+              <p>{cena === 'transcrevendo' ? <Reticencias /> : `“${modo.ultimaTranscricao}”`}</p>
+            </div>
+          ) : null}
+          {falas.ze && modo.respostaDoZe ? (
+            <div className={styles.fala} data-fala="ze" data-forma={cena === 'interrompendo' ? 'pausada' : 'cheia'}>
+              <span className={styles.quem}>{nome}</span>
+              <p>{modo.respostaDoZe}</p>
+            </div>
+          ) : null}
+        </section>
+
+        {aviso || notas.length > 0 ? (
+          <div className={styles.notas}>
+            {aviso ? <p role="alert" className={styles.alerta}>{aviso}</p> : null}
+            {notas.map((nota) => <p key={nota}>{nota}</p>)}
+          </div>
+        ) : null}
+      </div>
+
+      <footer className={styles.dock}>
+        <div className={styles.fone}>
+          <label className={styles.chaveFone}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 14v-2a9 9 0 0 1 18 0v2" />
+              <path d="M21 16a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3zM3 16a2 2 0 0 0 2 2h1a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1H3z" />
+            </svg>
+            Estou de fone
+            <input
+              type="checkbox"
+              role="switch"
+              className={styles.interruptor}
+              checked={modo.fone}
+              onChange={(evento) => modo.mudarFone(evento.target.checked)}
+            />
+            <span className={styles.trilho} aria-hidden="true" />
+          </label>
+          <p className={styles.dica}>
+            {modo.fone ? 'Falar por cima interrompe a resposta.' : 'Espero a resposta terminar para ouvir.'}
           </p>
         </div>
 
-        <div className="w-full" style={{ margin: 'var(--ck-space-6) 0' }}>
-          <EsferaConversa
-            estado={modo.conversa.estado}
-            nivel={modo.nivel}
-            preparando={preparando}
-          />
-        </div>
-
-        <label className="inline-flex items-center" style={{
-          minHeight: 'var(--ck-touch-min)', gap: 'var(--ck-space-2)',
-          marginBottom: 'var(--ck-space-4)', fontSize: 'var(--ck-text-md)',
-        }}>
-          <input type="checkbox" role="switch" checked={modo.fone}
-            onChange={(event) => modo.mudarFone(event.target.checked)} />
-          Estou de fone
-        </label>
-        <p style={{ marginBottom: 'var(--ck-space-4)', color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)' }}>
-          {modo.fone ? 'Você pode falar por cima para interromper a resposta.' : 'Espere a resposta terminar para falar.'}
-        </p>
-
         {ativa ? (
-          <button
-            type="button"
-            onClick={modo.parar}
-            className="ck-veil inline-flex items-center justify-center border"
-            style={{
-              minHeight: 'var(--ck-touch-min)',
-              padding: '0 var(--ck-space-5)',
-              borderRadius: 'var(--ck-radius-caixa)',
-              borderColor: 'var(--ck-edge-functional)',
-              color: 'var(--ck-text-primary)',
-              fontSize: 'var(--ck-text-md)',
-            }}
-          >
+          <button type="button" onClick={modo.parar} className={styles.acao}>
             Encerrar conversa
           </button>
         ) : (
@@ -145,80 +150,12 @@ export function TelaConversa({ slug, nome }: { slug: string; nome: string }) {
             type="button"
             onClick={modo.comecar}
             disabled={modo.preparacao !== 'pronto'}
-            className="inline-flex items-center justify-center border disabled:cursor-wait"
-            style={{
-              minHeight: 'var(--ck-touch-min)',
-              padding: '0 var(--ck-space-5)',
-              borderRadius: 'var(--ck-radius-caixa)',
-              borderColor: modo.preparacao === 'pronto'
-                ? 'var(--ck-text-primary)'
-                : 'var(--ck-edge-functional)',
-              background: modo.preparacao === 'pronto'
-                ? 'var(--ck-text-primary)'
-                : 'var(--ck-surface-composer)',
-              color: modo.preparacao === 'pronto'
-                ? 'var(--ck-surface-canvas)'
-                : 'var(--ck-text-secondary)',
-              fontSize: 'var(--ck-text-md)',
-              fontWeight: 600,
-            }}
+            className={styles.acao}
+            data-primaria=""
           >
-            {preparando
-              ? 'Preparando…'
-              : modo.preparacao === 'falhou'
-                ? 'Detector indisponível'
-                : modo.conversa.estado === 'erro'
-                  ? 'Tentar novamente'
-                  : 'Começar conversa'}
+            {rotuloDaAcao(cena, preparacaoFalhou)}
           </button>
         )}
-
-        {aviso ? (
-          <p
-            role="alert"
-            className="max-w-md"
-            style={{
-              marginTop: 'var(--ck-space-4)',
-              color: 'var(--ck-state-fail)',
-              fontSize: 'var(--ck-text-sm)',
-            }}
-          >
-            {aviso}
-          </p>
-        ) : null}
-
-        {modo.ultimaTranscricao ? (
-          <p
-            className="max-w-md"
-            style={{
-              marginTop: 'var(--ck-space-4)',
-              color: 'var(--ck-text-secondary)',
-              fontSize: 'var(--ck-text-sm)',
-            }}
-          >
-            Você: “{modo.ultimaTranscricao}”
-          </p>
-        ) : null}
-      </section>
-
-      <footer
-        className="mx-auto flex w-full max-w-xl flex-wrap items-center justify-center"
-        style={{ gap: 'var(--ck-space-3)', color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-xs)' }}
-      >
-        {modo.tempoCargaMs !== null ? (
-          <span>Detector pronto em {(modo.tempoCargaMs / 1000).toFixed(1)} s</span>
-        ) : null}
-        {ativa && modo.wakeLockSuportado ? (
-          <span>
-            {modo.wakeLockAtivo
-              ? 'Tela mantida acesa'
-              : modo.wakeLockFalhou
-                ? 'Não consegui manter a tela acesa'
-                : 'Mantendo a tela acesa…'}
-          </span>
-        ) : null}
-        {!modo.wakeLockSuportado ? <span>Este navegador não mantém a tela acesa</span> : null}
-        {modo.streamStatus === 'reconnecting' ? <span>Reconectando ao agente…</span> : null}
       </footer>
     </main>
   );

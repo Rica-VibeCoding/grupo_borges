@@ -1561,8 +1561,16 @@ body {
   background: var(--ck-atalho-bg-hover);
 }
 
-/* Modo conversa: esfera modulada pelo volume da fala. */
+/* Modo conversa (fase 3): a cor diz de quem é a vez — quente = sua, frio = dele.
+ * É a tese da estética §1.3 aplicada à voz. Nenhuma cor nova: os cinco apontam
+ * para os estados, cujo contraste já está calculado na §3. Os visuais (WebGL)
+ * leem estes tokens em tempo de execução; trocar aqui troca lá. */
 :root {
-  --ck-conversa-esfera: radial-gradient(circle at 32% 25%, var(--ck-surface-canvas), currentColor 58%, var(--ck-surface-canvas) 100%);
-  --ck-conversa-esfera-sombra: 0 0 3rem color-mix(in srgb, currentColor 24%, transparent), inset -1rem -1.5rem 2rem color-mix(in srgb, var(--ck-surface-canvas) 60%, transparent);
+  --ck-conversa-voce: var(--ck-state-attention);    /* ouvindo, interrompendo */
+  --ck-conversa-pensa: var(--ck-state-thinking);    /* transcrevendo, esperando o Zé */
+  --ck-conversa-ze: var(--ck-state-running);        /* o Zé respondendo */
+  --ck-conversa-erro: var(--ck-state-fail);
+  --ck-conversa-prepara: var(--ck-text-secondary);  /* detector baixando, parado */
+  --ck-conversa-titulo: 3rem;                       /* 48px: o estado lido de longe */
+  --ck-conversa-titulo-leading: 1.05;
 }
