@@ -6,7 +6,8 @@
  * dentro do chat eu aviso"*. Ele avisou em 16/08 — e o que voltou não é aquele
  * cabeçalho. Aquele era uma FAIXA: nome, estado e uma linha divisória cobrando
  * altura de tela pra separar o feed de nada. Esta é um controle na faixa que já
- * existe, entre o `≡` e o pill de telas, sem custo de altura nenhum.
+ * existe, na ponta direita (desde 27/09; antes ficava ao lado do `≡`), sem
+ * custo de altura nenhum.
  *
  * SÓ O PRIMEIRO NOME (pedido literal). "Daniel Singh" inteiro empurra o pill
  * pro lado num viewport de 390px, e o sobrenome não desambigua ninguém: a

@@ -3,17 +3,20 @@
  *
  * Três controles na mesma faixa, como na referência do Codex desktop:
  *
- *   [≡ tropa] [cápsula do agente]   [ pill de telas ]   (vazio)
+ *   [≡ tropa]   [ pill de telas ]   [cápsula do agente]
  *
  * A barra enxuta (fase 3, pedido do Rica em 27/09): o microfone e o ⧉ saíram
  * da vista. A conversa por voz abre pelo gesto no chat; o painel, pela cápsula
  * do agente, e fecha pelo × dele ou tocando fora. O link da voz segue no
- * teclado e no leitor de tela, fora da vista até ganhar foco. A coluna da
- * direita fica vazia de propósito: é ela que segura o pill no centro.
+ * teclado e no leitor de tela, fora da vista até ganhar foco.
  *
- * O centro é GRID, não `justify-between`: com a cápsula entrando à esquerda em
+ * A cápsula mora na PONTA DIREITA (pedido do Rica em 27/09: *"ela também abre
+ * o painel"*). No celular é só a fotinho; o nome entra quando a coluna tem
+ * lugar (`@container`, ver `capsula-do-agente.tsx`).
+ *
+ * O centro é GRID, não `justify-between`: com a cápsula entrando numa ponta em
  * 16/08, o espaço distribuído entre pontas de larguras diferentes empurrava o
- * pill pra direita, e ele deixava de ser o centro da folha. `minmax(0, 1fr)` nas
+ * pill pro lado, e ele deixava de ser o centro da folha. `minmax(0, 1fr)` nas
  * pontas e `auto` no meio prendem o pill no meio de verdade — e o nome longo
  * trunca na coluna dele em vez de roubar o lugar de quem está ao lado.
  *
@@ -55,7 +58,7 @@ export type Tela = { rotulo: string; ativa: boolean };
 type BarraDeTelasProps = {
   telas: Tela[];
   /** Quem está do outro lado da conversa — retrato e primeiro nome, na cápsula
-   *  ao lado do `≡`. */
+   *  na ponta direita da barra. */
   agente: { slug: string; nome: string };
   /** Os DOIS destinos do `≡`, pelo mesmo motivo do painel: o `BotaoNav` escolhe
    *  conforme o estado otimista, que pode correr à frente da URL. */
@@ -86,10 +89,8 @@ export function BarraDeTelas({
         paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
       }}
     >
-      {/* `@container`: a cápsula mede ESTA coluna para saber se o nome cabe. */}
-      <div className="@container flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
+      <div className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
         <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
-        <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
         <Link
           href={`/conversa/${agente.slug}`}
           aria-label={`Começar conversa por voz com ${agente.nome}`}
@@ -130,7 +131,10 @@ export function BarraDeTelas({
         ))}
       </div>
 
-      <div aria-hidden />
+      {/* `@container`: a cápsula mede ESTA coluna para saber se o nome cabe. */}
+      <div className="@container flex min-w-0 items-center justify-end">
+        <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
+      </div>
     </div>
   );
 }
