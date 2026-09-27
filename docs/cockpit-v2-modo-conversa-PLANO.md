@@ -4,11 +4,11 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (26/09/2026 — atualizar a cada fase):** Fase 0 **fechada**. **Fase 1 em curso** desde 19:45 BRT:
-> cadeiras `logica` (DeepSeek `deepseek-v4-pro[1m]`, Zen direto) e `tela` (`gpt-5.6-sol` pelo proxy da VPS
-> via túnel `ssh -R 18765`) em `psmux -L conversa` no PC, clone `projetos\grupo_borges`. Briefings em
-> `docs/modo-conversa/briefings/`; relatos saem em `docs/modo-conversa/relatos/` (no clone do PC).
-> O proxy NÃO tem chave OpenCode (`deepseek-v4-pro` pelo `:18765` dá 401) — por isso a lógica vai direto.
+> **ESTADO (27/09/2026 — atualizar a cada fase):** Fases 0 e 1 **fechadas** (`5ff9759`). Próxima: **Fase 2**.
+> As provas físicas da fase 1 que só o iPhone dá (eco no alto-falante, tela bloqueada) foram para o teste
+> da fase 3, porque a tela só fica alcançável pelo iPhone publicada. Cadeiras em `psmux -L conversa` no PC:
+> `logica` (DeepSeek `deepseek-v4-pro[1m]`, Zen direto) e `tela` — desde 26/09 21h **Codex CLI `gpt-6-sol`
+> `medium`** (ordem do Rica; o `gpt-6-sol` não existe no proxy). Túnel do proxy desligado.
 
 ## O pedido
 
@@ -89,6 +89,9 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
   transcrição, envio, voz; visual simples (estado escrito + onda).
 - **Fecha quando:** `npm test` e `type-check` verdes; conversa de 3 turnos com um Zé meu na 3009;
   tela bloqueada e desbloqueada no meio (a queda é avisada); eco testado no alto-falante.
+  ✅ 27/09: 957 testes verdes; 3 turnos seguidos com o `canarinho`, sem clique, envio → primeira voz
+  4,4–6,9 s, detector desligado durante toda voz (relato `docs/modo-conversa/relatos/fase1-tela.md`).
+  Tela bloqueada e eco → fase 3, no iPhone.
 
 ### Fase 2 — esfera e fala por cima
 - Esfera reagindo ao volume de quem fala.
@@ -112,5 +115,8 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
 
 - **R1** iPhone: Modo de Baixo Consumo barra o autoplay; microfone morre com tela bloqueada.
 - **R3** Publicar depende de janela de build na VPS.
+- **R5** Aba em segundo plano não recebe a resposta: o stream agrupa eventos ao vivo no
+  `requestAnimationFrame`, que não roda com a janela minimizada (medido no E2E da fase 1). No iPhone não
+  pesa (tela bloqueada já derruba o microfone); no PC, conversa com a janela minimizada fica muda.
 - **R4** Resposta longa do Zé vira áudio longo: pode precisar de corte ou resumo falado (decidir na fase 1
   com a tela na mão).
