@@ -4,11 +4,14 @@
 > vá para a primeira fase não fechada e siga. Fontes: pesquisa em `docs/modo-conversa/pesquisa-desenho.md`
 > (Canário, 26/09/2026); mapa do código no §"O que já existe".
 >
-> **ESTADO (26/09/2026 ~23h45 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
-> (2a em `7b16e84`, 2b no commit que acompanha esta linha): chave de visual na tela com Moldura (Fio, Aurora), Esfera
-> (Matéria, Vidro) e Esfera + Moldura (Juntas, Divididas); 1012 testes verdes e E2E 4/4 nas seis variações (relato
-> `relatos/fase3-ui.md`). **Fase 4 em curso:** publicada na 3008 em 26/09 ~23h50 BRT (aval do Rica, janela do Pavan, build de 46 s,
-> `build-TfctsWXpff2fKS`). Esperando o teste dele no iPhone e a escolha do visual. Ele pediu menos opções por mensagem ("fico perdido").
+> **ESTADO (27/09/2026 ~03h30 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
+> e **Fase 4 em curso** (tudo publicado na 3008, janelas do Pavan). Depois do primeiro teste no iPhone o Rica pediu, e
+> entrou: tela limpa (`bfbb44c`, fone e "Mostrar texto" na folha), um toque inicia e um toque para (`43b23a4`, pesquisa
+> `pesquisa-toque.md`), escuta que emudecia no iPhone volta sozinha (`803a1d9`) e gestos no lugar dos botões (`d14df38`:
+> esquerda vai ao chat, cima abre configurações, direita no chat volta). 1067 testes verdes; relatos em `relatos/fase3-ui.md`.
+> Esperando o teste dele no iPhone. Aberto: o freio antes da primeira resposta devolve o pedido à caixa do pane e trava
+> o envio seguinte — a tela só freia depois que o Zé começou; o conserto é em `apps/api` (`/interromper` limpar o
+> pedido devolvido), e o `■` do composer tem o mesmo risco.
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
