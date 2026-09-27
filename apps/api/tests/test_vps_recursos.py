@@ -178,6 +178,23 @@ def test_o_cgroup_transforma_nove_claude_iguais_em_nome_de_agente() -> None:
     assert vps_recursos.nome_do_processo(CGROUP_DO_DANIEL, "claude", "") == "Daniel"
 
 
+def test_agente_em_scope_da_frota_se_chama_pelo_socket_tmux() -> None:
+    """Scope transiente dentro do `user@1002.service`: sem o socket, virava "user@1002"."""
+    cgroup = (
+        "0::/user.slice/user-1002.slice/user@1002.service/borges.slice/"
+        "borges-frota.slice/run-u541.scope\n"
+    )
+    environ = "HOME=/home/clawd\0TMUX=/tmp/tmux-1002/borges-pavan,3087193,0\0"
+
+    assert vps_recursos.nome_do_processo(cgroup, "claude", "", environ) == "Pavan"
+
+
+def test_agente_de_unidade_de_sistema_usa_o_slug() -> None:
+    cgroup = "0::/system.slice/borges-agent@fred.service\n"
+
+    assert vps_recursos.nome_do_processo(cgroup, "claude", "") == "Fred"
+
+
 def test_processo_de_unidade_comum_usa_o_nome_da_unidade() -> None:
     cgroup = "0::/user.slice/user-1002.slice/user@1002.service/app.slice/cockpit-api.service\n"
 

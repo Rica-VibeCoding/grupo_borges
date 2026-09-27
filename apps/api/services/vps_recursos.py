@@ -217,7 +217,7 @@ def _varre_processos() -> dict[int, Processo]:
     return achados
 
 
-def nome_do_processo(cgroup: str, comm: str, cmdline: str) -> str:
+def nome_do_processo(cgroup: str, comm: str, cmdline: str, environ: str = "") -> str:
     """Quem é o dono, na palavra que o Rica usa pra ele.
 
     A frota inteira roda sob `borges-clawd@<slug>.service`, então o cgroup
@@ -231,8 +231,19 @@ def nome_do_processo(cgroup: str, comm: str, cmdline: str) -> str:
     for pedaco in cgroup.strip().split("/"):
         if pedaco.endswith(".service"):
             unidade = pedaco[: -len(".service")]
-    if unidade.startswith("borges-clawd@"):
-        return unidade[len("borges-clawd@") :].capitalize()
+    for prefixo in ("borges-clawd@", "borges-agent@"):
+        if unidade.startswith(prefixo):
+            return unidade[len(prefixo) :].capitalize()
+    # Desde o socket tmux por agente, cada um sobe num `run-*.scope` dentro do
+    # `user@1002.service`: o único `.service` do caminho é o do usuário, e a
+    # frota inteira aparecia como "user@1002". Quem diz o agente é o socket
+    # `borges-<nome>` que o tmux deixa no ambiente do processo.
+    if "borges-frota.slice" in cgroup:
+        for variavel in environ.split("\0"):
+            if variavel.startswith("TMUX="):
+                socket = os.path.basename(variavel[len("TMUX=") :].split(",")[0])
+                if socket.startswith("borges-"):
+                    return socket[len("borges-") :].capitalize()
     if unidade:
         return unidade
     if comm in INTERPRETADORES:
@@ -248,7 +259,15 @@ def _nomeia(dono: Dono) -> str:
         cmdline = _le(f"/proc/{representante.pid}/cmdline")
     except OSError:
         cmdline = ""
-    return nome_do_processo(representante.cgroup, representante.comm, cmdline)
+    nome = nome_do_processo(representante.cgroup, representante.comm, cmdline)
+    # Só o agente em scope sai sem nome próprio; só ele paga a leitura do ambiente.
+    if nome.startswith("user@"):
+        try:
+            environ = _le(f"/proc/{representante.pid}/environ")
+        except OSError:
+            return nome
+        nome = nome_do_processo(representante.cgroup, representante.comm, cmdline, environ)
+    return nome
 
 
 def por_dono(antes: dict[int, Processo], depois: dict[int, Processo]) -> list[Dono]:
