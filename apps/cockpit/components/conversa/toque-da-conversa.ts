@@ -16,14 +16,12 @@ export function acaoDoToque(cena: Cena, preparacaoFalhou: boolean): AcaoDoToque 
 }
 
 /**
- * O freio no servidor só sai quando o Zé já começou a responder. Antes disso, o Escape
- * faz o Claude Code cancelar e DEVOLVER o pedido à caixa de entrada do pane, e o envio
- * seguinte (de voz ou de texto) é recusado com "campo ocupado" — medido em 27/09 no
- * canarinho. Sem o freio, o turno termina e a resposta fica no chat de texto; a voz
- * dela não volta, porque a máquina já marcou o turno como descartado.
+ * A fala só é recusada por ocupação num turno que conta: descartado (toque ou fala por cima)
+ * não conta, o Claude Code enfileira. O freio sai sempre; antes da primeira linha do Zé, o
+ * servidor limpa o pedido devolvido à caixa e grava o fim no stream — o `isRunning` cai por ele.
  */
-export function freiaNoServidor(antesDaResposta: boolean, zeJaRespondeu: boolean): boolean {
-  return !antesDaResposta || zeJaRespondeu;
+export function zeOcupado(rodando: boolean, descartado: boolean): boolean {
+  return rodando && !descartado;
 }
 
 /** Toque duplo não liga e desliga: o que vem antes disso do último aceito é ignorado. */

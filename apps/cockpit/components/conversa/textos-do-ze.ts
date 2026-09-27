@@ -43,21 +43,36 @@ export function textosDoZeDepoisDe(
 
 export type PassoDoZe =
   | { tipo: 'abre' }
-  | { tipo: 'respondeu' } // o assistente escreveu no turno (texto, ferramenta ou raciocínio)
   | { tipo: 'texto'; texto: string }
   | { tipo: 'pedidoEntrou' } // a pergunta que esperava na fila do Claude Code entrou no turno em voo
-  | { tipo: 'fecha' };
+  | { tipo: 'fecha' }
+  | { tipo: 'fechaNaFolga' }; // o fim veio sem fala: fecha passada a folga, se o texto não chegar antes
 
 /**
- * As mensagens novas lidas NA ORDEM: o turno abre, o Zé responde, cada texto, o turno
- * fecha. Em ordem porque dois turnos cabem no mesmo lote — o fim de um turno descartado
- * e a mensagem que esperava na fila do Claude Code chegam colados.
+ * O turno antes do lote: parado (`false`), em voo (`true`) ou `'acabando'` — o fim já veio
+ * numa linha sem fala e o fechamento espera a folga.
+ */
+export type Voo = boolean | 'acabando';
+
+/**
+ * Quanto (ms) o fim sem fala espera pelo texto. As linhas de uma resposta são gravadas
+ * juntas, mas o servidor lê o banco a cada 250 ms: o texto pode vir um ou dois lotes depois.
+ */
+export const FOLGA_DO_FIM_MS = 800;
+
+/**
+ * As mensagens novas lidas NA ORDEM: o turno abre, cada texto, o turno fecha. Em ordem
+ * porque dois turnos cabem no mesmo lote — o fim de um turno descartado e a mensagem que
+ * esperava na fila do Claude Code chegam colados.
  *
  * O fim não fecha na hora: o Claude Code grava uma resposta em várias linhas, todas com
- * o `stop_reason` final — a primeira pode vir vazia e o texto na seguinte. O turno fecha
- * quando começa outro pedido ou no fim do lote. `rodava` é o estado antes do lote;
- * `rodando`, o `isRunning` do stream depois dele, que vence quando diverge (mensagens
- * puladas numa reconexão).
+ * o `stop_reason` final — a primeira pode vir vazia (o raciocínio) e o texto na seguinte,
+ * às vezes em lotes diferentes. O turno fecha quando começa outro pedido, ou no fim do
+ * lote se a linha do Zé que trouxe o fim tinha fala. Se não tinha, o lote termina com
+ * `fechaNaFolga`: quem chama espera `FOLGA_DO_FIM_MS` e passa `'acabando'` no lote
+ * seguinte, onde o texto que chegar entra no mesmo turno. `rodava` é o estado antes do
+ * lote; `rodando`, o `isRunning` do stream depois dele, que vence quando diverge
+ * (mensagens puladas numa reconexão).
  *
  * Pergunta feita com o turno rodando vai para a fila do Claude Code (`kind: 'queued'`, na
  * hora do envio) e entra no turno numa fronteira de ferramenta, como anexo — o turno velho e
@@ -68,14 +83,14 @@ export type PassoDoZe =
 export function passosDoZeDepoisDe(
   mensagens: readonly MessagePayload[],
   depoisDe: number,
-  rodava: boolean,
+  rodava: Voo,
   rodando: boolean,
 ): PassoDoZe[] {
   const passos: PassoDoZe[] = [];
   let naFila = false;
-  let emVoo = rodava;
-  let acabou = false;
-  let respondeu = false;
+  let emVoo = rodava !== false;
+  let acabou = rodava === 'acabando';
+  let fimSemFala = rodava === 'acabando';
   const fecha = () => {
     passos.push({ tipo: 'fecha' });
     emVoo = false;
@@ -95,16 +110,16 @@ export function passosDoZeDepoisDe(
     if (!emVoo && (efeito === true || textos.length > 0)) {
       passos.push({ tipo: 'abre' });
       emVoo = true;
-      respondeu = false;
-    }
-    if (emVoo && doZe && !respondeu) {
-      passos.push({ tipo: 'respondeu' });
-      respondeu = true;
     }
     for (const texto of textos) passos.push({ tipo: 'texto', texto });
-    if (emVoo && efeito !== null) acabou = efeito === false;
+    if (emVoo && efeito !== null) {
+      acabou = efeito === false;
+      // Só a linha do Zé promete mais linhas da mesma resposta; o freio do usuário é fim certo.
+      fimSemFala = doZe && textos.length === 0;
+    }
   }
-  if (acabou || (emVoo && !rodando)) fecha();
+  if (acabou && fimSemFala) passos.push({ tipo: 'fechaNaFolga' });
+  else if (acabou || (emVoo && !rodando)) fecha();
   if (!emVoo && rodando) passos.push({ tipo: 'abre' });
   return passos;
 }

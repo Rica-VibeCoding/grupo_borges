@@ -84,7 +84,6 @@ describe('passos do Zé na ordem do lote', () => {
     ];
     assert.deepEqual(passosDoZeDepoisDe(lote, 0, false, false), [
       { tipo: 'abre' },
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'vou olhar' },
       { tipo: 'texto', texto: 'pronto' },
       { tipo: 'fecha' },
@@ -94,11 +93,9 @@ describe('passos do Zé na ordem do lote', () => {
   it('dois turnos colados: o fim do descartado vem antes da fala que estava na fila', () => {
     const lote = [doZe(5, 'resto velho', 'end_turn'), mensagem(6, 'user', 'nova fala'), doZe(7, 'resposta', null)];
     assert.deepEqual(passosDoZeDepoisDe(lote, 4, true, true), [
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'resto velho' },
       { tipo: 'fecha' },
       { tipo: 'abre' },
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'resposta' },
     ]);
   });
@@ -107,10 +104,50 @@ describe('passos do Zé na ordem do lote', () => {
     const lote = [mensagem(20, 'user', 'pedido'), doZe(21, '', 'end_turn'), doZe(22, 'Um.', 'end_turn')];
     assert.deepEqual(passosDoZeDepoisDe(lote, 19, false, false), [
       { tipo: 'abre' },
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'Um.' },
       { tipo: 'fecha' },
     ]);
+  });
+
+  it('resposta partida em dois lotes: o fim sem fala espera a folga e o texto entra no mesmo turno', () => {
+    // Medido no canarinho: a linha vazia com o fim chega ~250 ms antes da linha com o texto.
+    const historico = [mensagem(60, 'user', 'pedido'), doZe(61, '', 'end_turn'), doZe(62, 'Um.', 'end_turn')];
+    assert.deepEqual(passosDoZeDepoisDe(historico.slice(0, 2), 59, false, false), [
+      { tipo: 'abre' },
+      { tipo: 'fechaNaFolga' },
+    ]);
+    assert.deepEqual(passosDoZeDepoisDe(historico, 61, 'acabando', false), [
+      { tipo: 'texto', texto: 'Um.' },
+      { tipo: 'fecha' },
+    ]);
+  });
+
+  it('a folga vale também no fim partido de um turno que já falou antes da ferramenta', () => {
+    const lote = [doZe(70, 'Vou ler.', 'tool_use'), resultado(71), doZe(72, '', 'end_turn')];
+    assert.deepEqual(passosDoZeDepoisDe(lote, 69, true, false), [
+      { tipo: 'texto', texto: 'Vou ler.' },
+      { tipo: 'fechaNaFolga' },
+    ]);
+  });
+
+  it('fim sem fala seguido de pedido novo: fecha na hora, sem esperar a folga', () => {
+    const lote = [mensagem(81, 'user', 'outro pedido'), doZe(82, 'Dois.', null)];
+    assert.deepEqual(passosDoZeDepoisDe(lote, 80, 'acabando', true), [
+      { tipo: 'fecha' },
+      { tipo: 'abre' },
+      { tipo: 'texto', texto: 'Dois.' },
+    ]);
+  });
+
+  it('lote sem nada novo durante a folga: o fim segue esperando', () => {
+    assert.deepEqual(passosDoZeDepoisDe([], 90, 'acabando', false), [{ tipo: 'fechaNaFolga' }]);
+  });
+
+  it('freio antes da resposta: a marca que o servidor grava fecha o turno na hora, sem folga', () => {
+    // O Claude Code não grava fim quando o Escape vem antes da primeira linha; o servidor grava esta.
+    assert.deepEqual(passosDoZeDepoisDe([mensagem(95, 'user', 'pedido')], 94, false, true), [{ tipo: 'abre' }]);
+    const marca = mensagem(96, 'user', '[Request interrupted by user]');
+    assert.deepEqual(passosDoZeDepoisDe([marca], 95, true, false), [{ tipo: 'fecha' }]);
   });
 
   it('pedido e freio no mesmo lote ainda fecham o turno', () => {
@@ -129,7 +166,6 @@ describe('passos do Zé na ordem do lote', () => {
       doZe(35, 'Pronto. Dois.', 'end_turn'),
     ];
     assert.deepEqual(passosDoZeDepoisDe(lote, 29, true, false), [
-      { tipo: 'respondeu' },
       { tipo: 'pedidoEntrou' },
       { tipo: 'texto', texto: 'Pronto. Dois.' },
       { tipo: 'fecha' },
@@ -138,10 +174,9 @@ describe('passos do Zé na ordem do lote', () => {
 
   it('o `queued` e o anexo em lotes diferentes: a fila é lida no histórico inteiro', () => {
     const historico = [naFila(40, 'nova pergunta'), doZe(41, '', 'tool_use'), resultado(42), anexo(43), doZe(44, 'dois', null)];
-    assert.deepEqual(passosDoZeDepoisDe(historico.slice(0, 3), 39, true, true), [{ tipo: 'respondeu' }]);
+    assert.deepEqual(passosDoZeDepoisDe(historico.slice(0, 3), 39, true, true), []);
     assert.deepEqual(passosDoZeDepoisDe(historico, 42, true, true), [
       { tipo: 'pedidoEntrou' },
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'dois' },
     ]);
   });
@@ -155,11 +190,9 @@ describe('passos do Zé na ordem do lote', () => {
       doZe(54, 'nova', 'end_turn'),
     ];
     assert.deepEqual(passosDoZeDepoisDe(lote, 49, true, false), [
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'resto velho' },
       { tipo: 'fecha' },
       { tipo: 'abre' },
-      { tipo: 'respondeu' },
       { tipo: 'texto', texto: 'nova' },
       { tipo: 'fecha' },
     ]);

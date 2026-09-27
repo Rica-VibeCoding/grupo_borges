@@ -12,10 +12,10 @@ import { entregaFala } from './envio-da-conversa';
 import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
-import { freiaNoServidor } from './toque-da-conversa';
-import { maiorIdDasMensagens, passosDoZeDepoisDe } from './textos-do-ze';
+import { zeOcupado } from './toque-da-conversa';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
+import { useTurnoDoZe } from './use-turno-do-ze';
 import { useWakeLock } from './use-wake-lock';
 
 const FRASE_PONTE = 'Estou pensando. Já te respondo.';
@@ -128,7 +128,7 @@ export function useModoConversa(slug: string, fone: boolean) {
       }
       case 'enviar': {
         // Turno descartado (toque ou fala por cima) não é ocupação: o Claude Code enfileira.
-        if (isRunningRef.current && !turnoDescartado(conversaRef.current)) {
+        if (zeOcupado(isRunningRef.current, turnoDescartado(conversaRef.current))) {
           despachaRef.current({ tipo: 'falhou', motivo: 'agenteOcupado' });
           return;
         }
@@ -142,8 +142,9 @@ export function useModoConversa(slug: string, fone: boolean) {
         return;
       }
       case 'frearZe':
-        // O `■` do composer. Falhar (ou não frear) não é alarme: a resposta fica no chat de texto.
-        if (freiaNoServidor(efeito.antesDaResposta, respondeuRef.current)) void postAgentInterromper(slug).catch(() => {});
+        // O `■` do composer, sempre: antes da primeira linha do Zé, o servidor limpa o pedido
+        // devolvido à caixa e grava o fim no stream. Falhar não é alarme: a resposta fica no chat de texto.
+        void postAgentInterromper(slug).catch(() => {});
         return;
       case 'falar':
         sons().cancelaFala();
@@ -167,39 +168,18 @@ export function useModoConversa(slug: string, fone: boolean) {
     }
   };
 
-  const cursorRef = useRef(0);
-  const replayConcluidoRef = useRef(false);
-  const rodandoAntesRef = useRef(false);
-  const respondeuRef = useRef(false); // o Zé já escreveu no turno em voo
-  useEffect(() => {
-    const maiorId = maiorIdDasMensagens(stream.messages, cursorRef.current);
-    if (stream.status !== 'live') {
-      cursorRef.current = maiorId;
-      return;
-    }
-    if (!replayConcluidoRef.current) {
-      replayConcluidoRef.current = true;
-      cursorRef.current = maiorId;
-      rodandoAntesRef.current = stream.isRunning;
-      return;
-    }
-    const passos = passosDoZeDepoisDe(stream.messages, cursorRef.current, rodandoAntesRef.current, stream.isRunning);
-    cursorRef.current = maiorId;
-    rodandoAntesRef.current = stream.isRunning;
-    for (const passo of passos) {
-      if (passo.tipo === 'abre') abreTurno();
-      respondeuRef.current = passo.tipo === 'respondeu' || (passo.tipo !== 'abre' && respondeuRef.current);
-      if (passo.tipo === 'texto') {
-        despacha({ tipo: 'textoDoZe', texto: passo.texto });
-        if (!turnoDescartado(conversaRef.current)) setRespostaDoZe(passo.texto);
-      }
-      if (passo.tipo === 'pedidoEntrou') despacha({ tipo: 'pedidoEntrou' });
-      if (passo.tipo === 'fecha') {
-        despacha({ tipo: 'zeTerminou' });
-        fechaTurno();
-      }
-    }
-  }, [abreTurno, despacha, fechaTurno, stream.isRunning, stream.messages, stream.status]);
+  useTurnoDoZe(stream, {
+    abre: abreTurno,
+    texto: (texto) => {
+      despacha({ tipo: 'textoDoZe', texto });
+      if (!turnoDescartado(conversaRef.current)) setRespostaDoZe(texto);
+    },
+    pedidoEntrou: () => despacha({ tipo: 'pedidoEntrou' }),
+    fecha: () => {
+      despacha({ tipo: 'zeTerminou' });
+      fechaTurno();
+    },
+  });
 
   useEffect(() => {
     if (conversa.estado !== 'esperandoZe' && conversa.estado !== 'interrompendo') return;

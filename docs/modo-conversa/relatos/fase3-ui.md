@@ -375,3 +375,83 @@ a Esfera (o Núcleo) como opção dentro da tela.
 
 - Commit, build e publicação. Nada em `apps/api`.
 - A tela não acompanha o dedo durante o arrasto: o gesto vale ao soltar, sem animação intermediária.
+
+## Freio sempre e folga antes de fechar o turno
+
+### Entreguei (`apps/cockpit/components/conversa/` e um comentário em `lib/conversa/tipos.ts`)
+
+- **Freio sempre.** Parar em "esperando" freia no servidor mesmo antes da primeira linha do Zé. Saiu a
+  restrição `freiaNoServidor`, junto com o teste dela.
+  - Freado antes da primeira linha, o Claude Code não grava fim nenhum desse turno. Desde o 7d749a9, o servidor
+    grava a marca `[Request interrupted by user]` quando limpa o pedido. A leitura dos passos fecha o turno com
+    ela na hora, porque é linha do usuário, e o `isRunning` cai pelo próprio stream.
+  - O conserto que eu tinha posto na tela para esse caso saiu (`freioSemFim` e o fim despachado no retorno do
+    `interromper`): com a marca no stream, o turno fecharia duas vezes. Fica só `zeOcupado` (turno descartado
+    não é ocupação), a mesma checagem de antes, agora pura e testada.
+- **Folga antes de fechar** (`textos-do-ze.ts`, com teste, e `use-turno-do-ze.ts`):
+  - o fim que vem numa linha do Zé sem fala espera **800 ms**, em vez de fechar no fim do lote;
+  - o texto que chega dentro dela entra no mesmo turno: a tela vai direto de "esperando" para a voz;
+  - pedido novo fecha na hora; a marca de interrupção, do Claude Code ou do servidor, também;
+  - a regra olha a linha que trouxe o fim, não o turno inteiro. Assim cobre também o turno que falou antes de uma
+    ferramenta e cuja resposta final chega partida. É um desvio consciente do "turno que já falou fecha como
+    hoje": fim com fala continua fechando na hora, então resposta normal não ganha espera.
+- A leitura do stream saiu de `use-modo-conversa.ts` para `use-turno-do-ze.ts`: com a folga, o hook passaria de
+  300 linhas. Saiu também o passo `respondeu`, que só servia à restrição do freio.
+
+### Por que 800 ms
+
+- As linhas de uma resposta são gravadas juntas. A primeira, vazia, é o raciocínio (`thinking`). O servidor lê o
+  banco a cada 250 ms.
+- Medi 8 respostas no canarinho. As linhas do fim chegaram juntas ou com até 21 ms de diferença. Quando partem
+  entre duas leituras, a diferença é ~240 ms: visto no E2E da escuta e, na medição, numa linha de ferramenta.
+- 800 ms cobrem três leituras. Só custam quando o fim vem mesmo sem fala, o que é raro: aí o "ouvindo" chega
+  800 ms depois.
+
+### Provas
+
+- `npm test`: **1072 testes, 1072 passaram**. `npm run type-check`: verde.
+- **E2E do toque** (`e2e/fase3-toque.cjs`, com o `canarinho`, servidor 7d749a9): **6/6 no Fio e 6/6 na Matéria**.
+  - **Parar antes da resposta**, com duas partes:
+    - na mesma página: toque em "esperando", sem linha do Zé → `interromper` 200 com `pedido_limpo: true`. A
+      `interromper` responde em 0,4 a 0,7 s e a marca chega pelo stream em seguida. A tela recomeça, o "dois" entra com 200 e o "Dois." é
+      falado, sem o microfone abrir antes da voz. O "um" nunca chega;
+    - freio de novo e página aberta do zero: nada de "ocupado". O "dois" entra e é respondido.
+  - **Folga** (caso novo). O roteiro parte a resposta como o servidor faz às vezes: segura por 300 ms as linhas
+    que vêm depois do fim sem fala. A tela vai de "esperando" para "falando" sem passar por "ouvindo" e sem abrir
+    o microfone.
+  - Começar, parar ouvindo, parar esperando e parar falando seguem passando. Parar falando passou na segunda
+    rodada; veja os achados.
+- **Regressão da fase 2** (`fase3-ui.cjs`, rodada antes da retirada do conserto, que não toca nesse caminho): 4/4
+  no Fio e 4/4 na Matéria. Nenhuma resposta passou por "ouvindo" entre a espera e a voz.
+- Provas em `e2e/fase3-freio/`:
+  - `fio-freio-antes-do-conserto-provas.json` é a primeira rodada, com servidor 8bb6c2a e a tela presa;
+  - `*-servidor-7d749a9-*` é a bateria com a marca do servidor;
+  - `e2e-parar-falando-*` é a segunda rodada desse caso.
+
+### O que o E2E não prova
+
+- **A resposta partida é simulada.** A de verdade é sorte: nas 8 medidas, nenhuma partiu entre leituras. O
+  roteiro reproduz o atraso medido (300 ms, contra ~240 ms reais).
+- **Que o áudio do iPhone deixa de travar.** A suspeita era o microfone abrir e fechar logo antes da voz. Isso
+  não acontece mais, mas só o iPhone confirma o efeito.
+- **Roteiro no iPhone:**
+  - perguntar algo de uma palavra várias vezes → a voz sai sempre, sem o anel de "ouvindo" piscar antes;
+  - tocar logo depois de perguntar, antes de qualquer resposta → recomeçar e perguntar de novo → ele responde;
+  - fazer o mesmo e fechar e reabrir a tela → a pergunta nova entra, sem "ocupado".
+
+### Achados
+
+- **Freio antes da resposta deixava o log sem fim.** Com o servidor 8bb6c2a, página nova logo depois do freio
+  dizia "O agente está ocupado" até outro turno terminar. Resolvido no servidor (7d749a9); o E2E da página nova
+  prova.
+- **Parar falando falhou duas vezes por corrida do roteiro, não da tela.** O canarinho escreve rápido:
+  - no Fio, o toque pegou o Zé no meio da parte final, que ficou no registro cortada e seguida da interrupção. É
+    a mesma corrida já vista nos gestos. A checagem virou "o turno freado não terminou";
+  - na Matéria, o Zé terminou as 20 linhas finais ~500 ms depois do toque, antes de o Escape chegar: turno
+    fechado normal, `pedido_limpo: false`. O pedido agora tem 60 linhas finais, para o toque cair com o turno em
+    voo;
+  - nas duas, a voz parou no toque e não voltou.
+
+### Não fiz
+
+- Commit, build e publicação. Nada em `apps/api` nem em `packages/cockpit-core`.

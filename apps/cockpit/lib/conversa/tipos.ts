@@ -60,9 +60,8 @@ export type Efeito =
   | { tipo: 'pausarVoz' } // fase 2: fala por cima começou
   | { tipo: 'retomarVoz' } // fase 2: era tosse — a voz continua de onde parou
   | { tipo: 'descartarVoz' } // fase 2: fala por cima confirmada — a fila do Zé é jogada fora
-  // fase 3: parou com o turno em voo — freia no servidor (o `■` do composer). Antes da
-  // resposta, o Claude Code devolve o pedido à caixa de entrada e trava o próximo envio:
-  // a tela só freia depois que o Zé começou a responder.
+  // fase 3: parou com o turno em voo — freia no servidor (o `■` do composer), sempre. Antes
+  // da resposta, o Claude Code devolve o pedido à caixa de entrada; o servidor o limpa.
   | { tipo: 'frearZe'; antesDaResposta: boolean };
 
 /** Tempos em ms. Os do detector vêm da pesquisa §2 e se confirmam na fase 0. */
