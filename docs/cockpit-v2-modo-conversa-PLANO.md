@@ -7,8 +7,8 @@
 > **ESTADO (26/09/2026 ~23h45 BRT — atualizar a cada fase):** Fases 0, 1 e 2 **fechadas**. **Fase 3 com código completo**
 > (2a em `7b16e84`, 2b no commit que acompanha esta linha): chave de visual na tela com Moldura (Fio, Aurora), Esfera
 > (Matéria, Vidro) e Esfera + Moldura (Juntas, Divididas); 1012 testes verdes e E2E 4/4 nas seis variações (relato
-> `relatos/fase3-ui.md`). O Rica escolhe o visual dentro da tela, no iPhone. **Próximo: fase 4**, que precisa do aval
-> dele para publicar a 3008 e da janela de build com o Pavan. Ele pediu menos opções por mensagem ("fico perdido").
+> `relatos/fase3-ui.md`). **Fase 4 em curso:** publicada na 3008 em 26/09 ~23h50 BRT (aval do Rica, janela do Pavan, build de 46 s,
+> `build-TfctsWXpff2fKS`). Esperando o teste dele no iPhone e a escolha do visual. Ele pediu menos opções por mensagem ("fico perdido").
 > - Fase 2: 977 testes e `type-check` verdes no PC; E2E 4/4 com o `canarinho` (relato `fase2-tela.md`). A revisão
 >   achou 3 defeitos na máquina, e a coordenação achou uma brecha no conserto; os quatro foram fechados com teste
 >   antes (`briefings/fase2-logica-conserto.md`, relato `fase2-logica.md`). As provas de `docs/modo-conversa/e2e/`
