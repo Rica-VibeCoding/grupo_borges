@@ -168,8 +168,9 @@ export function SeletorDeConta({
         sideOffset={6}
         collisionPadding={8}
         // Quase a largura da gaveta: as duas barras por conta precisam de
-        // respiro pra comparar de relance.
-        style={{ width: 'calc(var(--ck-w-drawer) - 4 * var(--ck-space-2))' }}
+        // respiro pra comparar de relance. Sem teto de altura: com ele, o menu no
+        // pé da gaveta do celular encolhe e rola em vez de virar pra cima.
+        style={{ width: 'calc(var(--ck-w-drawer) - 4 * var(--ck-space-2))', maxHeight: 'none' }}
       >
         <ConteudoDaConta
           tela={tela}

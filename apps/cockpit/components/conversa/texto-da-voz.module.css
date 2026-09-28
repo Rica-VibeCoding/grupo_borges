@@ -1,0 +1,147 @@
+/* O texto da tela de voz (fase 4): legenda do visual, não título. Pequeno, em meio-tom, rótulo em
+ * mono na cor de quem fala. As máscaras são a regra "só o agora brilha" (tokens em globals.css). */
+
+/* ── A legenda ───────────────────────────────────────────────────────── */
+.legenda {
+  display: grid;
+  gap: var(--ck-space-2);
+  width: 100%;
+  max-width: 21rem;
+  margin: 0 auto;
+  text-align: center;
+  pointer-events: none;
+}
+.trecho { --cor: var(--ck-conversa-voce); display: grid; gap: var(--ck-space-1); }
+.trecho[data-quem='ze'] { --cor: var(--ck-conversa-ze); }
+.quem {
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-text-sm);
+  /* Caixa-alta para o olho; o texto segue "Você disse" para o leitor de tela e para os testes. */
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.18em;
+  color: var(--cor);
+}
+.trecho[data-forma='pausada'] .quem { color: var(--ck-text-secondary); }
+.texto {
+  margin: 0;
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-conversa-legenda);
+  line-height: var(--ck-conversa-legenda-leading);
+  letter-spacing: var(--ck-track-title);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+/* A janela que corre, a sua fala e a dele: presa embaixo, três linhas; o começo da fala longa
+ * sai por cima, apagando. `relative`: a janela mede de onde o texto subiu. */
+.corre {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: calc(3em * var(--ck-conversa-legenda-leading));
+  overflow: hidden;
+  font-size: var(--ck-conversa-legenda);
+  -webkit-mask-image: var(--ck-conversa-some-acima);
+  mask-image: var(--ck-conversa-some-acima);
+}
+/* Cada palavra nova entra com fade e uma subida curta; a janela (`.corre`) é que sobe inteira
+ * quando nasce linha nova (`janela-que-corre.tsx`, só transform). */
+.palavra {
+  display: inline-block;
+  transition:
+    opacity var(--ck-dur-calm) var(--ck-ease),
+    translate var(--ck-dur-calm) var(--ck-mola);
+}
+@starting-style {
+  .palavra { opacity: 0; translate: 0 0.35em; }
+}
+/* Palavras ainda sem o texto firme, e a sua fala enquanto ele responde: o fio, não a leitura. */
+.parcial { color: var(--ck-text-tertiary); }
+.recuada {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ck-text-tertiary);
+  font-size: var(--ck-text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.reticencias span {
+  display: inline-block;
+  animation: pisca 1.2s infinite var(--ck-ease);
+}
+.reticencias span:nth-child(2) { animation-delay: 0.2s; }
+.reticencias span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pisca {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+/* ── O convite da tela parada ────────────────────────────────────────── */
+.convite {
+  margin: 0;
+  text-align: center;
+  color: var(--ck-text-secondary);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-text-xs);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+/* A linha não pisca: quem chama o toque é o anel. Ela só chega, subindo um fio. */
+.convite { transition: opacity var(--ck-dur-calm) var(--ck-ease), translate var(--ck-dur-calm) var(--ck-mola); }
+@starting-style {
+  .convite { opacity: 0; translate: 0 0.4em; }
+}
+
+/* ── O sinal do toque ────────────────────────────────────────────────── */
+.sinal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--lado-do-sinal);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+/* Na borda da esfera: o raio do desenho (`lugarNoPalco`: 36% da altura do palco, 31% da tela,
+ * até 150 px). O palco é o contêiner (`tela-conversa.module.css`). */
+.sinal[data-forma='esfera'] { --lado-do-sinal: min(72cqh, 62vw, 300px); }
+/* Sem nada no centro (só a moldura): um aro pequeno, com o ponto de tocar. */
+.sinal[data-forma='solto'] {
+  --lado-do-sinal: 64px;
+  border: 1px solid var(--ck-conversa-sinal);
+}
+.sinal[data-forma='solto']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background: var(--ck-conversa-prepara);
+}
+.sonar {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--ck-conversa-sinal);
+  border-radius: 50%;
+  opacity: 0;
+  animation: respiroDoAnel 3.6s ease-in-out infinite;
+}
+/* O convite ao toque é o anel respirando: cresce um fio e volta, no ritmo de quem espera. */
+@keyframes respiroDoAnel {
+  0%, 100% { transform: scale(1); opacity: 0.25; }
+  50% { transform: scale(1.04); opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reticencias span { animation: none; }
+  .convite,
+  .palavra { transition: none; }
+  .reticencias span { opacity: 0.6; }
+  .sonar { animation: none; opacity: 0.5; }
+}

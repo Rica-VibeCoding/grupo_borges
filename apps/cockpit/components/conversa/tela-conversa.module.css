@@ -1,7 +1,6 @@
-/* Tela de conversa: o visual atrás de tudo, a tela inteira como botão e, com
- * "Mostrar texto", o texto à esquerda. O texto fica a 32 px da borda: a Moldura só limita
- * a luz a partir de 22 px, então a margem garante o contraste da §3 (ver
- * moldura-shader.ts). Sem texto, ela só limita a luz em volta do cabeçalho. */
+/* Tela de conversa: o visual atrás de tudo e a tela inteira como botão. No alto, o agente e o
+ * estado; no meio, a animação e, logo abaixo dela, o texto — o convite ou, com "Mostrar texto", a
+ * legenda (`texto-da-voz`). Os dois formam um bloco só, no meio da altura que sobra. */
 .tela {
   position: relative;
   isolation: isolate;
@@ -35,130 +34,58 @@
 
 .topo {
   position: relative;
-  z-index: 2; /* acima do toque: o ícone do chat fica fora dele */
+  z-index: 2; /* acima do toque: o botão das configurações fica fora dele */
   display: flex;
   align-items: center;
   justify-content: flex-end;
   min-height: var(--ck-touch-min);
   margin-right: calc(var(--ck-space-3) * -1);
 }
-.chat {
-  display: inline-grid;
-  place-items: center;
-  width: var(--ck-touch-min);
-  height: var(--ck-touch-min);
-  border-radius: var(--ck-radius-caixa);
-  color: var(--ck-text-secondary);
+/* Entrada da tela (fase 4, animações): quando a voz aparece — pelo link, pelo dedo ou na entrada
+ * direta — o alto e o texto chegam em cascata curta; a esfera tem a sua entrada na troca de tela
+ * (`globals.css`). `backwards`: terminou, não sobra transform prendendo o `fixed` da folha. */
+.tela[data-visivel] .topo { animation: chegaNaTela var(--ck-dur-calm) var(--ck-mola) backwards; }
+.tela[data-visivel] .rodape { animation: chegaNaTela var(--ck-dur-calm) var(--ck-mola) 70ms backwards; }
+@keyframes chegaNaTela {
+  from { opacity: 0; transform: translateY(0.75rem); }
 }
-.chat svg {
-  width: 22px;
-  height: 22px;
+@media (prefers-reduced-motion: reduce) {
+  .tela[data-visivel] .topo,
+  .tela[data-visivel] .rodape { animation: none; }
 }
-.chat:focus-visible {
-  outline: 2px solid var(--ck-focus);
-  outline-offset: 2px;
+/* O núcleo é a esfera da Eclipse: o único nome da troca animada (`transicao-da-voz.ts`). */
+.tela[data-visivel] .palco[data-palco='nucleo'] { view-transition-name: ck-voz-esfera; }
+
+/* O palco: a animação (esfera, núcleo ou o aro solto). Tem teto para o texto não ficar longe
+ * dela; e é o contêiner que mede o sinal do toque e encolhe o núcleo em tela baixa. */
+.palco,
+.tela [data-visual='esfera'] {
+  margin-top: auto;
+  max-height: var(--ck-conversa-palco-max);
+  container-type: size;
 }
-.direita {
+.palco {
+  position: relative;
   display: flex;
+  flex: 1 1 0;
   align-items: center;
-  gap: var(--ck-space-1);
-  min-width: 0;
+  justify-content: center;
+  min-height: 140px;
+  pointer-events: none;
 }
-.agente {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-base);
-}
+/* Só a moldura (B): nada no centro — o palco é baixo, e o aro de tocar e a legenda ficam no meio. */
+.palco[data-palco='solto'] { min-height: 6rem; max-height: 10rem; }
 
-.leitura {
-  margin-top: clamp(var(--ck-space-5), 11dvh, 7rem);
-}
-.linhaDoTitulo {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: var(--ck-space-3);
-}
-.titulo {
-  margin: 0;
-  font-size: var(--ck-conversa-titulo);
-  font-weight: 500;
-  line-height: var(--ck-conversa-titulo-leading);
-  letter-spacing: var(--ck-track-hero);
-}
-.tempo {
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-lg);
-  font-variant-numeric: tabular-nums;
-}
-.detalhe {
-  max-width: 20em;
-  margin: var(--ck-space-3) 0 0;
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-md);
-  line-height: var(--ck-leading-body);
-}
-
-.falas {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--ck-space-5);
-  margin-top: var(--ck-space-6);
-}
-.quem {
-  display: block;
-  margin-bottom: var(--ck-space-1);
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-sm);
-}
-.fala p {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  font-size: var(--ck-text-lg);
-  line-height: var(--ck-leading-hero);
-  letter-spacing: var(--ck-track-title);
-}
-.fala[data-forma='recuada'] p {
-  -webkit-line-clamp: 1;
-  color: var(--ck-text-secondary);
-  font-size: var(--ck-text-base);
-}
-.fala[data-forma='pausada'] p {
-  color: var(--ck-text-secondary);
-}
-
-/* As palavras ao vivo (item 6): no lugar do título enquanto ele fala, a última linha sempre à
- * vista — o começo da fala longa sai por cima. Depois, esmaecidas até o texto firme chegar. */
-.aoVivo {
+/* O lugar do texto, logo abaixo da animação. Com texto, altura fixa: a animação não pula quando
+ * a legenda cresce ou some. */
+.rodape {
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  max-height: calc(5em * var(--ck-leading-hero));
-  margin-top: clamp(var(--ck-space-5), 11dvh, 7rem);
-  overflow: hidden;
-  font-size: var(--ck-conversa-titulo-com-esfera);
-  font-weight: 500;
-  line-height: var(--ck-leading-hero);
-  letter-spacing: var(--ck-track-title);
+  min-height: 2rem;
+  margin-bottom: auto;
+  padding-top: var(--ck-space-3);
 }
-.aoVivo p { margin: 0; overflow-wrap: anywhere; }
-.parcial { color: var(--ck-text-secondary); }
-
-.reticencias span {
-  display: inline-block;
-  animation: pisca 1.2s infinite var(--ck-ease);
-}
-.reticencias span:nth-child(2) { animation-delay: 0.2s; }
-.reticencias span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes pisca {
-  0%, 100% { opacity: 0.25; }
-  50% { opacity: 1; }
-}
+.tela[data-texto='visivel'] .rodape { height: var(--ck-conversa-legenda-altura); }
 
 .notas {
   display: grid;
@@ -190,6 +117,12 @@
   color: var(--ck-text-primary);
   font-size: var(--ck-text-base);
   line-height: var(--ck-leading-body);
+}
+.aviso small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-sm);
 }
 .aviso::before {
   content: '';
@@ -272,25 +205,18 @@
   100% { opacity: 0; transform: translate(-50%, 0); }
 }
 
-/* Sem texto embaixo, a esfera tem o palco inteiro e fica no meio dele. */
-.tela[data-texto='oculto'] [data-visual='esfera'] {
-  max-height: none;
-}
-
-/* Com texto, a esfera ocupa o palco logo abaixo do cabeçalho e as palavras descem
- * para perto dos comandos; o título encolhe para não disputar o olho com ela. */
-.tela[data-opcao^='esfera'] .leitura,
-.tela[data-opcao^='esfera'] .aoVivo {
-  margin-top: var(--ck-space-2);
-}
-.tela[data-opcao^='esfera'] .titulo {
-  font-size: var(--ck-conversa-titulo-com-esfera);
-}
-.tela[data-opcao^='esfera'] .falas {
-  margin-top: var(--ck-space-5);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .reticencias span { animation: none; opacity: 0.6; }
   .dica { animation: none; }
 }
+
+/* A foto do agente (fase 4, item 5). No alto, centrada: a pílula (B) ou a linha em mono (C). */
+.tela[data-direcao] .topo { justify-content: center; margin-right: 0; padding-top: var(--ck-space-2); }
+.tela[data-direcao='eclipse'] .topo { padding-top: var(--ck-space-5); }
+
+/* Na Eclipse o núcleo toma o palco da esfera: com a esfera escolhida, ela fica atrás e a luz dela
+ * vira a coroa; sem ela, um palco só dele. Em tela baixa (iPhone SE) o núcleo, de tamanho fixo,
+ * encolhe com o palco, em degraus. */
+.tela [data-visual='esfera'] > [data-retrato='nucleo'] { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+@container (max-height: 340px) { .tela [data-retrato='nucleo'] { scale: 0.8; } }
+@container (max-height: 270px) { .tela [data-retrato='nucleo'] { scale: 0.62; } }
+@container (max-height: 210px) { .tela [data-retrato='nucleo'] { scale: 0.48; } }

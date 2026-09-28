@@ -1,10 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { iniciaSequencia, type Sequencia } from '@/components/feed/reprodutor-unico';
 import { pedeFala, type FalaEmCurso } from '@/components/feed/stream-voz';
+import { audioTocando, falaDoZe, type AudioDaFrase, type FalaDoZe } from './frases-da-voz';
 import { nivelDaVoz, type EnvelopeVoz } from './nivel-da-voz';
+
+/** O áudio calado por mais que isto (ms) não é mais "falando": o `timeupdate` vem a cada ~250 ms. */
+const CALADO_MS = 450;
 
 export function useFilaDeVoz({
   slug,
@@ -15,11 +19,19 @@ export function useFilaDeVoz({
   aoTerminar(): void;
   aoFalhar(mensagem: string): void;
 }) {
+  /* A legenda dele: a frase do áudio que toca e o que já foi dito. Parada ou cancelada, fica. */
+  const [fala, setFala] = useState<FalaDoZe | null>(null);
+  /* Som saindo agora — a verdade do "falando". Sem progresso por CALADO_MS, calou. */
+  const [tocando, setTocando] = useState(false);
+  const caladoRef = useRef<number | undefined>(undefined);
   /* Volume da voz do Zé em ref: lido no requestAnimationFrame, sem render. */
   const nivelRef = useRef(0);
   const geracaoRef = useRef(0);
   const pausadaRef = useRef(false);
   const envelopesRef = useRef<EnvelopeVoz[]>([]);
+  /* De que texto e sentença é cada envelope: o índice do áudio que toca vira a frase da legenda. */
+  const audiosRef = useRef<AudioDaFrase[]>([]);
+  const tocandoRef = useRef(-1);
   const duracaoRef = useRef(0);
   const filaRef = useRef<string[]>([]);
   const falaRef = useRef<FalaEmCurso | null>(null);
@@ -28,11 +40,17 @@ export function useFilaDeVoz({
   const urlsRef = useRef<string[]>([]);
   const callbacksRef = useRef({ aoTerminar, aoFalhar });
   callbacksRef.current = { aoTerminar, aoFalhar };
+  const calou = useCallback(() => {
+    window.clearTimeout(caladoRef.current);
+    setTocando(false);
+  }, []);
 
   const limpaUrls = useCallback(() => {
     for (const url of urlsRef.current) URL.revokeObjectURL(url);
     urlsRef.current = [];
     envelopesRef.current = [];
+    audiosRef.current = [];
+    tocandoRef.current = -1;
     duracaoRef.current = 0;
     nivelRef.current = 0;
   }, []);
@@ -44,6 +62,14 @@ export function useFilaDeVoz({
       aoProgredir: (segundos) => {
         if (geracao !== geracaoRef.current || pausadaRef.current) return;
         nivelRef.current = nivelDaVoz(envelopesRef.current, segundos);
+        // O relógio só anda com som: entre frases com a próxima pronta ele nem para.
+        window.clearTimeout(caladoRef.current);
+        setTocando(true);
+        caladoRef.current = window.setTimeout(() => setTocando(false), CALADO_MS);
+        const audio = audioTocando(envelopesRef.current.map((e) => e.inicio), segundos);
+        if (audio === tocandoRef.current) return;
+        tocandoRef.current = audio;
+        setFala(falaDoZe(audiosRef.current, audio));
       },
       aoTerminar: () => {
         if (geracao !== geracaoRef.current) return;
@@ -76,9 +102,10 @@ export function useFilaDeVoz({
     const sequencia = garanteSequencia();
     falaRef.current = pedeFala(texto, slug, {
       aoMeta: () => {},
-      aoPeaks: (_id, duracao, peaks) => {
+      aoPeaks: (id, duracao, peaks) => {
         if (geracao !== geracaoRef.current) return;
         envelopesRef.current.push({ inicio: duracaoRef.current, duracao, peaks });
+        audiosRef.current.push({ texto, frase: id, duracao });
         duracaoRef.current += duracao;
       },
       aoAudio: (_id, url) => {
@@ -106,7 +133,9 @@ export function useFilaDeVoz({
 
   const abreTurno = useCallback(() => {
     turnoFechadoRef.current = false;
+    setFala(null);
   }, []);
+  const limpaLegenda = useCallback(() => setFala(null), []);
 
   const enfileira = useCallback((texto: string) => {
     filaRef.current.push(texto);
@@ -128,7 +157,8 @@ export function useFilaDeVoz({
     sequenciaRef.current?.para();
     sequenciaRef.current = null;
     limpaUrls();
-  }, [limpaUrls]);
+    calou();
+  }, [calou, limpaUrls]);
 
   useEffect(() => cancela, [cancela]);
 
@@ -136,10 +166,11 @@ export function useFilaDeVoz({
     pausadaRef.current = true;
     sequenciaRef.current?.pausa();
     nivelRef.current = 0;
-  }, []);
+    calou();
+  }, [calou]);
   const retoma = useCallback(() => {
     pausadaRef.current = false;
     sequenciaRef.current?.retoma();
   }, []);
-  return { abreTurno, enfileira, fechaTurno, cancela, pausa, retoma, nivelRef };
+  return { abreTurno, enfileira, fechaTurno, cancela, pausa, retoma, nivelRef, fala, tocando, limpaLegenda };
 }

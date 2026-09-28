@@ -6,6 +6,7 @@ import {
   buildThinkingRenderModel,
   type ThinkingRenderModel,
 } from '../../lib/thinking';
+import { Chevron } from './linha-execucao';
 import { AssistantMarkdown } from './markdown';
 
 export type ThinkingProps = {
@@ -26,6 +27,9 @@ function ThinkingDisclosure({
 }) {
   const { text, lineCount, initiallyExpanded } = thinking;
   const [open, setOpen] = useState<boolean>(initiallyExpanded);
+  // Mesma régua da linha de execução: só o corpo aberto pelo dedo chega com
+  // `.ck-chega`; o que nasce aberto aparece parado, e recolher segue seco.
+  const [abriuNoToque, setAbriuNoToque] = useState(false);
   const bodyId = useId();
 
   return (
@@ -36,7 +40,10 @@ function ThinkingDisclosure({
       <button
         type="button"
         className="ck-veil flex min-h-[44px] w-full min-w-0 items-center gap-[var(--ck-space-2)] px-[var(--ck-space-3)] text-left font-sans text-sm text-[var(--ck-text-primary)]"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen(!open);
+          setAbriuNoToque(!open);
+        }}
         aria-expanded={open}
         aria-controls={open ? bodyId : undefined}
       >
@@ -44,15 +51,15 @@ function ThinkingDisclosure({
         <span className="shrink-0 font-mono text-sm text-[var(--ck-text-secondary)]">
           {lineLabel(lineCount)}
         </span>
-        <span className="shrink-0 text-[var(--ck-state-thinking)]" aria-hidden="true">
-          {open ? '▴' : '▾'}
-        </span>
+        {/* O chevron que gira, o mesmo da linha e do grupo — era um glifo
+            ▴/▾ que trocava de estalo. */}
+        <Chevron aberto={open} />
       </button>
 
       {open ? (
         <div
           id={bodyId}
-          className="border-t border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-composer)] p-[var(--ck-space-3)]"
+          className={`${abriuNoToque ? 'ck-chega ' : ''}border-t border-[var(--ck-edge-hairline)] bg-[var(--ck-surface-composer)] p-[var(--ck-space-3)]`}
         >
           <AssistantMarkdown>{text}</AssistantMarkdown>
         </div>

@@ -160,6 +160,7 @@ function Botao({
       type="button"
       onClick={onClick}
       disabled={desabilitado}
+      className="ck-aperta"
       style={{
         minHeight: 'var(--ck-touch-min)',
         padding: '0 var(--ck-space-4)',
@@ -169,7 +170,10 @@ function Botao({
         color: destaque ? 'var(--ck-text-primary)' : 'var(--ck-text-secondary)',
         border: '1px solid var(--ck-edge-hairline)',
         opacity: desabilitado ? 0.5 : 1,
-        transition: 'background var(--ck-dur-fast) var(--ck-ease)',
+        // O `transform` do `.ck-aperta` entra junto: transição em linha
+        // vence a da classe, e sem ele o aperto seria de estalo.
+        transition:
+          'background var(--ck-dur-fast) var(--ck-ease), transform calc(var(--ck-dur-fast) * 0.75) var(--ck-ease)',
       }}
     >
       {rotulo}

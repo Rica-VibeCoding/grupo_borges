@@ -1,9 +1,10 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useOptimistic } from 'react';
+import { useLayoutEffect, useOptimistic } from 'react';
 
 import { preaqueceConversa } from '@/lib/preaquece-conversa';
+import { trocandoDeAgente } from '@/lib/troca-de-agente';
 import { preaquecePainel } from './sincronizacao-painel';
 import { usaFrota } from './frota-provider';
 import { usaNavegacaoDaTropa } from './superficie-otimista';
@@ -66,6 +67,22 @@ export function TropaAoVivo(props: TropaAoVivoProps) {
    */
   const [slugOtimo, marcaSlug] = useOptimistic(slugDaUrl);
   const navegacao = usaNavegacaoDaTropa();
+
+  // O palco que sai apaga enquanto a troca voa (`lib/troca-de-agente.ts`). O
+  // palco não é filho da tropa — mora na outra metade do `AppShell` —, então o
+  // recado vai por atributo no `<html>`, como o `data-voo` do envio. Efeito de
+  // LAYOUT: acende no mesmo quadro do toque e apaga no mesmo commit em que a
+  // página nova monta, sem um quadro do palco novo esmaecido. A limpeza do
+  // efeito cobre a tropa que desmonta no meio (a da raiz, ao chegar no agente).
+  const trocando = trocandoDeAgente(slugOtimo, slugDaUrl);
+  useLayoutEffect(() => {
+    if (!trocando) return;
+    const raiz = document.documentElement;
+    raiz.dataset.trocaAgente = '';
+    return () => {
+      delete raiz.dataset.trocaAgente;
+    };
+  }, [trocando]);
 
   return (
     <TropaComSlug

@@ -1,0 +1,257 @@
+/* A foto do agente na tela de voz (fase 4, item 5) — maquetes em
+ * docs/modo-conversa/fase4-direcoes/b.html e c.html. A cor é a da vez: âmbar é a sua,
+ * ciano é a dele, cinza é parado. Nada aqui recebe o dedo: a tela inteira é o botão. */
+.tom { --cor: var(--ck-conversa-prepara); }
+.tom[data-tom='voce'] { --cor: var(--ck-conversa-voce); }
+.tom[data-tom='ze'] { --cor: var(--ck-conversa-ze); }
+.tom[data-tom='pensa'] { --cor: var(--ck-conversa-pensa); }
+.tom[data-tom='erro'] { --cor: var(--ck-conversa-erro); }
+
+.foto {
+  flex: none;
+  border-radius: 50%;
+  background: var(--ck-surface-raised);
+}
+.imagem { object-fit: cover; }
+.inicial {
+  border-radius: 50%;
+  background: var(--ck-surface-raised);
+  color: var(--ck-text-secondary);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-text-md);
+}
+
+/* ── B: a pílula no alto ─────────────────────────────────────────────── */
+.pilula {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ck-space-3);
+  padding: 6px 18px 6px 6px;
+  border: 1px solid var(--ck-conversa-pilula-fio);
+  border-radius: 40px;
+  background: var(--ck-conversa-pilula);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  pointer-events: none;
+}
+.moldaPilula {
+  position: relative;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: none;
+}
+.pilula .imagem { filter: var(--ck-conversa-foto-pilula); }
+.aro,
+.onda {
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid var(--cor);
+  border-radius: 50%;
+  transition: opacity var(--ck-dur-enter) var(--ck-ease), border-color var(--ck-dur-enter) var(--ck-ease);
+}
+.aro { opacity: 0.4; }
+.onda { opacity: 0; }
+.pilula:not([data-cena='parado']):not([data-cena='preparando']) .aro { opacity: 0.85; }
+/* O brilho do aro mora num `::after` parado; o laço anima só a opacidade dele (revisão do Pavan:
+ * `box-shadow` animado repinta a cada quadro e come bateria no iPhone). */
+.aro::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  box-shadow: 0 0 20px var(--cor), 0 0 2px var(--cor) inset;
+  opacity: 0;
+}
+.pilula[data-cena='falando'] .aro { opacity: 1; }
+.pilula[data-cena='falando'] .aro::after { animation: respira 1s ease-in-out infinite; }
+.pilula[data-cena='falando'] .onda { animation: onda 1.8s cubic-bezier(0.2, 0, 0.2, 1) infinite; }
+.pilula[data-cena='falando'] .onda + .onda { animation-delay: -0.9s; }
+@keyframes respira {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+@keyframes onda {
+  from { transform: scale(1); opacity: 0.8; }
+  to { transform: scale(1.45); opacity: 0; }
+}
+.quem { display: grid; gap: 1px; min-width: 0; }
+.quem b {
+  font-size: var(--ck-text-lg);
+  font-weight: 500;
+  letter-spacing: var(--ck-track-title);
+  white-space: nowrap;
+}
+.quem small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-sm);
+}
+.barras { display: none; align-items: center; gap: 2px; height: 12px; }
+.barras i {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--cor);
+  animation: barra 0.9s ease-in-out infinite;
+}
+.barras i:nth-child(1) { height: 5px; animation-delay: -0.2s; }
+.barras i:nth-child(2) { height: 11px; animation-delay: -0.5s; }
+.barras i:nth-child(3) { height: 8px; animation-delay: -0.1s; }
+.barras i:nth-child(4) { height: 4px; animation-delay: -0.7s; }
+@keyframes barra { 50% { transform: scaleY(0.4); } }
+.pilula:is([data-cena='ouvindo'], [data-cena='falando'], [data-cena='interrompendo']) .barras { display: inline-flex; }
+
+/* ── C: a linha do alto e o núcleo ───────────────────────────────────── */
+.cabeca {
+  margin: 0;
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-text-xs);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ck-text-secondary);
+  white-space: nowrap;
+}
+.cabeca b { color: var(--ck-text-primary); font-weight: 500; }
+.cabeca i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 10px 1px;
+  border-radius: 50%;
+  background: var(--cor);
+  box-shadow: 0 0 8px var(--cor);
+  vertical-align: middle;
+}
+.cabeca:is([data-cena='parado'], [data-cena='preparando']) i { box-shadow: none; opacity: 0.5; }
+
+.nucleo {
+  position: relative;
+  width: calc(var(--lado) + 110px);
+  height: calc(var(--lado) + 110px);
+  flex: none;
+  pointer-events: none;
+}
+.nucleo > * { position: absolute; left: 50%; top: 50%; }
+.anel { color: var(--cor); }
+.janela {
+  width: var(--lado);
+  height: var(--lado);
+  margin: calc(var(--lado) / -2);
+  border-radius: 50%;
+  overflow: hidden;
+}
+.janela .foto { width: 100% !important; height: 100% !important; }
+.janela .imagem { filter: var(--ck-conversa-foto-nucleo); transform: scale(1.02); }
+/* A tinta da vez, bem leve; por cima, as linhas de varredura e a vinheta. */
+.janela::before,
+.janela::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+.janela::before {
+  z-index: 1;
+  background: var(--cor);
+  mix-blend-mode: color;
+  opacity: 0;
+  transition: opacity var(--ck-dur-enter) var(--ck-ease);
+}
+.nucleo:is([data-cena='ouvindo'], [data-cena='falando'], [data-cena='interrompendo']) .janela::before { opacity: 0.35; }
+.janela::after {
+  z-index: 2;
+  background:
+    repeating-linear-gradient(to bottom, var(--ck-conversa-foto-linhas) 0 1px, transparent 1px 3px),
+    radial-gradient(circle at 50% 40%, transparent 40%, var(--ck-conversa-foto-borda) 100%);
+}
+.aroNucleo {
+  width: calc(var(--lado) + 12px);
+  height: calc(var(--lado) + 12px);
+  margin: calc((var(--lado) + 12px) / -2);
+  border: 1.5px solid var(--cor);
+  border-radius: 50%;
+  opacity: 0.3;
+  box-shadow: 0 0 24px color-mix(in oklch, var(--cor) 40%, transparent);
+  transition: opacity var(--ck-dur-enter) var(--ck-ease);
+}
+.nucleo:not([data-cena='parado']):not([data-cena='preparando']) .aroNucleo { opacity: 0.8; }
+/* O pulso do aro: o aro só escala; o brilho forte é um `::after` parado que acende e apaga. */
+.aroNucleo::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  box-shadow: 0 0 40px var(--cor), inset 0 0 22px color-mix(in oklch, var(--cor) 50%, transparent);
+  opacity: 0;
+}
+.nucleo[data-cena='falando'] .aroNucleo { opacity: 1; animation: pulsa 1s ease-in-out infinite; }
+.nucleo[data-cena='falando'] .aroNucleo::after { animation: acende 1s ease-in-out infinite; }
+/* Trabalhando (usando ferramenta, sem voz): o aro bate mais rápido e sem crescer. */
+.nucleo[data-cena='trabalhando'] .aroNucleo { opacity: 0.95; animation: trabalha 0.8s ease-in-out infinite alternate; }
+@keyframes pulsa {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025); }
+}
+@keyframes acende {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+@keyframes trabalha {
+  from { opacity: 0.45; }
+  to { opacity: 0.95; }
+}
+.coroa {
+  width: calc(var(--lado) + 70px);
+  height: calc(var(--lado) + 70px);
+  margin: calc((var(--lado) + 70px) / -2);
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(circle, transparent 52%, color-mix(in oklch, var(--cor) 35%, transparent) 60%, transparent 72%);
+}
+.nucleo[data-cena='falando'] .coroa { opacity: 1; animation: pulsaCoroa 1s ease-in-out infinite; }
+@keyframes pulsaCoroa { 50% { transform: scale(1.06); opacity: 0.5; } }
+
+/* ── O estado: a palavra da vez (fase 4, texto da voz) ──────────────── */
+/* O título grande saiu da tela: quem diz o estado é esta palavra, acesa na cor da vez. */
+.estado {
+  display: inline-block;
+  transition:
+    color var(--ck-dur-enter) var(--ck-ease),
+    opacity var(--ck-dur-enter) var(--ck-ease),
+    translate var(--ck-dur-calm) var(--ck-mola);
+}
+/* A palavra do estado é remontada a cada troca (chave = a palavra): a nova sobe no lugar. */
+@starting-style {
+  .estado { opacity: 0; translate: 0 0.4em; }
+}
+.tom:not([data-cena='parado']):not([data-cena='preparando']) .estado { color: var(--cor); }
+.tempo { font-variant-numeric: tabular-nums; }
+
+/* Parado, um pulso lento nasce logo fora do anel: é ele que chama o toque, não a letra. */
+.sonar {
+  width: calc(var(--lado) + 52px);
+  height: calc(var(--lado) + 52px);
+  margin: calc((var(--lado) + 52px) / -2);
+  border: 1px solid var(--ck-conversa-sinal);
+  border-radius: 50%;
+  opacity: 0;
+}
+/* O convite ao toque é o anel respirando: cresce um fio e volta, sem onda que corre para fora. */
+.nucleo[data-cena='parado'] .sonar { animation: respiroDoAnel 3.6s ease-in-out infinite; }
+@keyframes respiroDoAnel {
+  0%, 100% { transform: scale(1); opacity: 0.25; }
+  50% { transform: scale(1.05); opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aro,
+  .aro::after,
+  .aroNucleo::after,
+  .onda,
+  .barras i,
+  .aroNucleo,
+  .coroa,
+  .sonar { animation: none !important; }
+}

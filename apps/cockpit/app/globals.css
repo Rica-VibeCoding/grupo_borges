@@ -319,6 +319,8 @@
   --ck-dur-calm: 320ms;    /* troca de superfície — ex: filete de running sumindo */
   --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);        /* entrada */
   --ck-ease-exit: cubic-bezier(0.4, 0, 1, 1);     /* saída — filete de running sumindo */
+  /* Mola amortecida (ζ 0,8): passa 1,5% do alvo e assenta. Entrada que tem peso — a tela de voz. */
+  --ck-mola: linear(0, 0.03 3%, 0.104 6%, 0.238 10%, 0.386 14%, 0.527 18%, 0.68 23%, 0.799 28%, 0.899 34%, 0.961 40%, 0.998 47%, 1.013 55%, 1.014 65%, 1.006 80%, 1);
   /* Bolha otimista de anexo com o upload em voo: a foto já chegou ao feed, a
    * confirmação não. Esmaecida o bastante para ler como espera, não como erro. */
   --ck-anexo-enviando-opacidade: 0.6;
@@ -1517,6 +1519,86 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
   to { opacity: 0; }
 }
 
+/* A TROCA DE TELA DA VOZ (fase 4, animações) — `components/conversa/transicao-da-voz.ts`. Um
+ * nome só, a esfera (`ck-voz-esfera`); o resto é a raiz. A que sai apaga rápido, a que entra
+ * aparece; fechando, a esfera encolhe. Abrindo, ela monta depois da foto e acende pelo CSS dela
+ * (`esfera-conversa.module.css`), e o alto e o texto chegam em cascata (`tela-conversa.module.css`). O `pointer-events` fica pelo que a spec
+ * promete, mas no Chrome (medido em 28/09) o toque cai no `html` durante a troca mesmo assim —
+ * por isso a troca de estado não passa por aqui. */
+html[data-voz-troca]::view-transition {
+  pointer-events: none;
+}
+html[data-voz-troca='tela']::view-transition-old(root) {
+  animation: ck-voz-some var(--ck-dur-enter) var(--ck-ease-exit) both;
+}
+html[data-voz-troca='tela']::view-transition-new(root) {
+  animation: ck-voz-aparece var(--ck-dur-calm) var(--ck-ease) both;
+}
+html[data-voz-troca='tela']::view-transition-old(ck-voz-esfera):only-child {
+  animation: ck-voz-esfera-encolhe var(--ck-dur-enter) var(--ck-ease-exit) both;
+}
+@keyframes ck-voz-some {
+  to { opacity: 0; }
+}
+@keyframes ck-voz-aparece {
+  from { opacity: 0; }
+}
+@keyframes ck-voz-esfera-encolhe {
+  to { opacity: 0; transform: scale(0.94); }
+}
+
+/* A TROCA DE AGENTE PELA TROPA (`lib/troca-de-agente.ts`). No toque, o palco
+ * que sai apaga para 0,6 — o toque pegou, a conversa nova está vindo. Quem liga
+ * é o `data-troca-agente` no `<html>`, derivado do `slugOtimo` da tropa: some
+ * sozinho quando a navegação chega OU morre, e nem acende quando o toque é no
+ * agente já aberto.
+ *
+ * Só `opacity` no palco, NUNCA `transform`: o palco é ancestral de peças
+ * `position: fixed`, e um `transform` nele vira o bloco de contenção delas —
+ * tudo o que é fixo passaria a se medir pelo palco (MDN, Containing block). O
+ * deslize da entrada mora um andar abaixo, na coluna do feed (`.ck-feed-chega`),
+ * que não tem nada fixo dentro. */
+.ck-palco {
+  transition: opacity var(--ck-dur-fast, 120ms) var(--ck-ease);
+}
+html[data-troca-agente] .ck-palco {
+  opacity: 0.6;
+}
+
+/* A coluna do feed que ENTRA — na troca de agente e no Restart. O gesto é o do
+ * `.ck-chega` (sobe 6px e acende), reaproveitando o keyframe. Substitui o
+ * `.ck-feed-enter` naquela div, não soma: as duas juntas animariam a opacidade
+ * em dobro. Fora do `prefers-reduced-motion: no-preference`, entra parada, como
+ * a antecessora. */
+@media (prefers-reduced-motion: no-preference) {
+  .ck-feed-chega {
+    animation: ck-chega var(--ck-dur-enter, 200ms) var(--ck-ease) both;
+  }
+}
+
+/* O APERTO. O botão tocado encolhe 4% enquanto o dedo está nele — o toque
+ * responde na hora, antes de qualquer rede. Mais curto que o `--ck-dur-fast`
+ * (três quartos dele, ~90ms): aperto que demora parece atraso, não resposta.
+ *
+ * Duas formas. `.ck-aperta` encolhe o próprio botão. `.ck-aperta-miolo`
+ * encolhe o que está DENTRO de um botão apertado — para botão que já tem
+ * `transform` seu (o enviar, com a sacudida da recusa), onde as duas regras
+ * disputariam a propriedade. `:active` não desce para os filhos: por isso o
+ * seletor lê o pai.
+ *
+ * No Safari do iOS, `:active` só acende se houver ouvinte de `touchstart` no
+ * elemento ou acima dele. Aqui há: o React registra `touchstart` na raiz do
+ * documento (a app router hidrata o `document` inteiro), e o
+ * `arrasto-do-chat.tsx` põe outro no `document`. Botão desabilitado não aperta. */
+.ck-aperta,
+.ck-aperta-miolo {
+  transition: transform calc(var(--ck-dur-fast, 120ms) * 0.75) var(--ck-ease);
+}
+.ck-aperta:active:not(:disabled),
+:active:not(:disabled) > .ck-aperta-miolo {
+  transform: scale(0.96);
+}
+
 /* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do
  * state-attention, que é o único com direito a animação persistente. */
 @media (prefers-reduced-motion: reduce) {
@@ -1889,10 +1971,25 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
   --ck-conversa-ze: var(--ck-state-running);        /* o Zé respondendo */
   --ck-conversa-erro: var(--ck-state-fail);
   --ck-conversa-prepara: var(--ck-text-secondary);  /* detector baixando, parado */
-  --ck-conversa-titulo: 3rem;                       /* 48px: o estado lido de longe */
-  --ck-conversa-titulo-leading: 1.05;
-  --ck-conversa-titulo-com-esfera: 2.25rem;         /* 36px: a esfera já chama o olho */
+  /* O texto da voz (fase 4): legenda do visual, não título. O estado é a palavra da pílula, na cor
+   * da vez; embaixo da animação, só a legenda — três linhas, e só o agora brilha: a máscara apaga
+   * a linha mais velha (em cima) ou a que ainda não foi dita (embaixo). 2,8em = duas linhas. */
+  --ck-conversa-legenda: 1.125rem;                  /* 18px: lida de perto, sem gritar */
+  --ck-conversa-legenda-leading: 1.4;
+  --ck-conversa-legenda-altura: 9rem;               /* lugar fixo: a animação não pula quando o texto muda */
+  --ck-conversa-some-acima: linear-gradient(to top, black 2.8em, transparent 4.2em);
+  --ck-conversa-some-abaixo: linear-gradient(to bottom, black 2.8em, transparent 4.2em);
+  --ck-conversa-palco-max: 22rem;                   /* 352px: esfera e núcleo inteiros, sem sobra que afaste o texto */
+  --ck-conversa-sinal: color-mix(in oklch, var(--ck-conversa-prepara) 60%, transparent); /* o pulso que chama o toque */
   --ck-conversa-segurando: saturate(0.5) brightness(0.72); /* dedo segurando a vez: a luz baixa, o silêncio parou */
+  /* A foto do agente na voz (fase 4, item 5): escurecida e sem cor, para não brigar com a
+   * esfera; quem acende é o aro, na cor da vez. */
+  --ck-conversa-foto-pilula: grayscale(0.9) brightness(0.5) contrast(1.15);
+  --ck-conversa-foto-nucleo: grayscale(1) brightness(0.42) contrast(1.25);
+  --ck-conversa-foto-linhas: rgb(0 0 0 / 0.22);     /* linhas de varredura do núcleo */
+  --ck-conversa-foto-borda: rgb(0 0 0 / 0.75);      /* vinheta: a foto some na borda */
+  --ck-conversa-pilula: rgb(0 0 0 / 0.45);          /* vidro escuro da pílula no alto */
+  --ck-conversa-pilula-fio: rgb(255 255 255 / 0.07); /* o fio em volta da pílula */
 }
 
 /* O PONTO DO AGORA no pulso do agente — respira só enquanto ele trabalha

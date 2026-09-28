@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
+import { CHAVE_DIRECAO, gravaDirecao, leDirecao, type Direcao } from './direcao-da-voz';
 import { gravaLigado, leLigado, type ChaveLigada } from './preferencias-da-conversa';
 import { CHAVE_VISUAL, gravaVisual, leVisual, type Visual } from './preferencia-visual';
 
@@ -54,4 +55,10 @@ export function useChaveDaConversa(chave: ChaveLigada): [boolean, (ligado: boole
   const [bruto, grava] = usePreferencia(chave);
   const muda = useCallback((ligado: boolean) => grava(gravaLigado(ligado)), [grava]);
   return [leLigado(bruto), muda];
+}
+
+export function useDirecaoDaVoz(): [Direcao, (direcao: Direcao) => void] {
+  const [bruto, grava] = usePreferencia(CHAVE_DIRECAO);
+  const escolhe = useCallback((nova: Direcao) => grava(gravaDirecao(nova)), [grava]);
+  return [leDirecao(bruto), escolhe];
 }

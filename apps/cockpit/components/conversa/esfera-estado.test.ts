@@ -5,6 +5,7 @@ import {
   FORMAS,
   REGULADOR_INICIAL,
   alvosDaEsfera,
+  aproximaRitmo,
   aproximaLugar,
   coresDaEsfera,
   lugarAssentou,
@@ -98,5 +99,19 @@ describe('Esfera: teto de quadros', () => {
     }
     assert.equal(r.pesado, true);
     assert.ok(desenhados >= 29 && desenhados <= 31, String(desenhados));
+  });
+});
+
+describe('o ritmo da esfera na troca de estado', () => {
+  it('muda sem salto: um quadro anda pouco, 0,4 s chega quase todo, nunca passa do alvo', () => {
+    const umQuadro = aproximaRitmo(1.8, 0.9, 1 / 60);
+    assert.ok(umQuadro < 1.8 && umQuadro > 1.7, String(umQuadro));
+    let r = 1.8;
+    for (let i = 0; i < 24; i += 1) r = aproximaRitmo(r, 0.9, 1 / 60);
+    assert.ok(r > 0.9 && r < 0.99, String(r));
+  });
+
+  it('movimento reduzido (dt infinito) salta direto', () => {
+    assert.equal(aproximaRitmo(1.8, 0.9, Number.POSITIVE_INFINITY), 0.9);
   });
 });

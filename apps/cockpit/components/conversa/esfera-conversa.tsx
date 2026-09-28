@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import styles from './esfera-conversa.module.css';
 import {
   REGULADOR_INICIAL,
   alvosDaEsfera,
+  aproximaRitmo,
   aproximaCor,
   aproximaLugar,
   coresDaEsfera,
@@ -56,10 +57,13 @@ export function EsferaConversa({
   cena,
   variacao,
   leNivel,
+  children,
 }: {
   cena: Cena;
   variacao: VariacaoEsfera;
   leNivel: () => number;
+  /** O que mora no centro do palco, por cima da luz (o núcleo da Eclipse). */
+  children?: ReactNode;
 }) {
   const palcoRef = useRef<HTMLDivElement>(null);
   const cenaRef = useRef(cena);
@@ -115,6 +119,7 @@ export function EsferaConversa({
     let pesos = alvosDaEsfera(cenaRef.current);
     let { corpo, borda } = coresDe(cenaRef.current);
     let nivel = 0, tempo = TEMPO_PARADO, clarao = 0;
+    let ritmo = ritmoDaEsfera(cenaRef.current);
     let quadro = 0, antes = 0;
     let regulador = REGULADOR_INICIAL;
     const publicaNivel = criaPublicadorDeNivel(palco);
@@ -139,7 +144,11 @@ export function EsferaConversa({
       if (lugar && alvoLugar) lugar = aproximaLugar(lugar, alvoLugar, fatorDeAproximacao(passoDt, 5));
       const comVoz = ouveVolume(c);
       nivel = reduzido ? (comVoz ? 0.5 : 0) : suavizaNivel(nivel, comVoz ? leNivel() : 0, dt);
-      if (!reduzido) tempo += dt * ritmoDaEsfera(c);
+      // A troca de estado muda a velocidade da matéria aos poucos: nada de tranco na esfera.
+      if (!reduzido) {
+        ritmo = aproximaRitmo(ritmo, ritmoDaEsfera(c), dt);
+        tempo += dt * ritmo;
+      }
       clarao = Math.max(0, clarao - dt * 1.8);
 
       const assentado =
@@ -244,6 +253,7 @@ export function EsferaConversa({
       data-desenho={semWebGL ? 'css' : 'webgl'}
     >
       {semWebGL ? <div className={styles.reserva} data-tom={tomDaCena(cena)} data-variacao={variacao} /> : null}
+      {children}
     </div>
   );
 }

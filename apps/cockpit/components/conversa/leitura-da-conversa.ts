@@ -45,6 +45,8 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
       return { titulo: 'Entendendo', detalhe: 'Passando sua fala para texto.' };
     case 'esperandoZe':
       return { titulo: 'Pensando', detalhe: 'A resposta toca assim que chegar.' };
+    case 'trabalhando':
+      return { titulo: 'Trabalhando', detalhe: 'Usando ferramentas para responder.' };
     case 'falando':
       return {
         titulo: 'Respondendo',
@@ -98,6 +100,18 @@ export function avisoQuePedeAcao(e: EntradaDoAviso): string | null {
   if (e.wakeLockFalhou) return 'Não consegui manter a tela acesa.';
   if (!e.wakeLockSuportado) return 'Este navegador não mantém a tela acesa.';
   return null;
+}
+
+/**
+ * O cartão do pé: o que pede ação dele, com ou sem texto (o título grande saiu da tela). Com
+ * "Mostrar texto", o erro ganha uma segunda linha com o que fazer — se ela não repetir o título.
+ */
+export function avisoDaTela(e: EntradaDoAviso, texto: boolean): { linha: string; detalhe: string | null } | null {
+  const linha = avisoQuePedeAcao(e);
+  if (!linha) return null;
+  if (!texto || e.cena !== 'erro' || e.preparacaoFalhou) return { linha, detalhe: null };
+  const detalhe = mensagemDeErro(e.motivo);
+  return { linha, detalhe: detalhe.startsWith(linha) ? null : detalhe };
 }
 
 /** Sem o "Você disse" na tela, o leitor de tela ainda conta o que foi entendido. */

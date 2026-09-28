@@ -323,6 +323,11 @@ export function LinhaExecucao({
   ...entrada
 }: LinhaExecucaoProps) {
   const [aberta, setAberta] = useState(abertaInicial);
+  // Só o corpo aberto pelo DEDO chega com `.ck-chega`. O que nasce aberto
+  // (histórico, remontagem pelo virtualizador ao rolar) aparece parado —
+  // animar ali seria a tela inteira se mexendo sem ninguém ter tocado.
+  // Recolher segue seco: o corpo sai do DOM e a altura não se anima (§9.4).
+  const [abriuNoToque, setAbriuNoToque] = useState(false);
   // `entrada` é o resto do spread — objeto novo a cada render, e memo preso a
   // ele nunca acertava. A dependência é o que `leExecucao` lê, campo a campo.
   const { toolName, args: argsCrus, result, isError, estado } = entrada;
@@ -379,7 +384,10 @@ export function LinhaExecucao({
     >
       <button
         type="button"
-        onClick={() => setAberta((v) => !v)}
+        onClick={() => {
+          setAberta(!aberta);
+          setAbriuNoToque(!aberta);
+        }}
         aria-expanded={aberta}
         aria-label={`${e.nome}: ${e.alvo}`}
         className="ck-veil flex w-full items-center text-left"
@@ -417,7 +425,11 @@ export function LinhaExecucao({
           // Falha NÃO pisca: a superfície perde o fio de luz e fica apagada
           // (§6, micro-momento 4). A metáfora é a mesma no sistema inteiro —
           // luz é vida.
-          className={e.desfecho === 'falhou' ? undefined : 'ck-lit'}
+          className={
+            [e.desfecho === 'falhou' ? '' : 'ck-lit', abriuNoToque ? 'ck-chega' : '']
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           style={{
             display: 'flex',
             flexDirection: 'column',

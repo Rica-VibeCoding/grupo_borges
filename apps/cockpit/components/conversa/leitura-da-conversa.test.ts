@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  avisoDaTela,
   avisoQuePedeAcao,
   falasVisiveis,
   leituraDaConversa,
@@ -80,6 +81,24 @@ describe('leitura da tela de conversa', () => {
   it('parado não carrega aviso velho nem reclama da tela acesa', () => {
     const velho = { preparacaoFalhou: false, aviso: 'O navegador impediu a reprodução da resposta.', wakeLockSuportado: false, wakeLockFalhou: true };
     assert.equal(avisoQuePedeAcao({ ...velho, cena: 'parado' }), null);
+  });
+
+  it('o aviso do pé: com o texto, o erro ganha o que fazer numa segunda linha, sem repetir o título', () => {
+    const quieto = { preparacaoFalhou: false, aviso: null, wakeLockSuportado: true, wakeLockFalhou: false };
+    const envio = { ...quieto, cena: 'erro' as const, motivo: 'envioFalhou' as const };
+    assert.deepEqual(avisoDaTela(envio, false), { linha: 'A mensagem não saiu', detalhe: null });
+    assert.deepEqual(avisoDaTela(envio, true), {
+      linha: 'A mensagem não saiu',
+      detalhe: 'A mensagem não chegou ao agente. Toque para tentar novamente.',
+    });
+    // "Não ouvi uma frase" + "Não ouvi uma frase completa." diria a mesma coisa duas vezes.
+    assert.deepEqual(avisoDaTela({ ...quieto, cena: 'erro', motivo: 'transcricaoVazia' }, true), {
+      linha: 'Não ouvi uma frase',
+      detalhe: null,
+    });
+    assert.equal(avisoDaTela({ ...quieto, cena: 'parado', preparacaoFalhou: true }, true)?.detalhe, null);
+    assert.equal(avisoDaTela({ ...quieto, cena: 'ouvindo', wakeLockFalhou: true }, true)?.detalhe, null);
+    assert.equal(avisoDaTela({ ...quieto, cena: 'falando' }, true), null);
   });
 
   it('o leitor de tela ouve o que foi entendido enquanto ele pensa, não o texto antigo', () => {
