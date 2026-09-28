@@ -234,3 +234,176 @@ Briefing: `briefings/fase4-transcricao-ao-vivo.md`. Tudo no PC, sem commit.
   `e2e/fase4-ao-vivo/`: `provas-dia-ruim.json` (bateria final, 15 casos) e `medicao-final/provas.json` (dia bom).
 
 FIM-DO-AO-VIVO
+
+# Fase 4 — cadeira `ui`: bug do iPhone, a causa (item 6, segunda volta — parcial, sem código)
+
+Parado a pedido, antes de implementar. Nenhum arquivo de código mudou.
+
+## Causa
+
+O "Você disse" da tela de erro não é da fala que falhou: é o texto de uma fala **anterior**, que a tela guarda para
+sempre. `falhou` e `transcreveu` não vieram da mesma fala.
+
+- `components/conversa/use-modo-conversa.ts:31` — `ultimaTranscricao` só é escrita em `:128` e nunca é limpa (nem no
+  começo da vez, nem no `comecar`, nem no erro). Em `:128` ela é escrita **antes** de a máquina aceitar o texto.
+- `components/conversa/leitura-da-conversa.ts:75` — em `erro` a fala do Rica aparece cheia; `tela-conversa.tsx:217-220`
+  mostra `ultimaTranscricao` ali. Resultado: qualquer erro depois de uma fala com texto mostra o texto velho.
+- A mesma fala não chama as duas coisas: `transcricao-da-fala.ts:59` decide uma vez só (`decidido`), e a máquina só abre
+  uma transcrição por vez do Rica (`lib/conversa/maquina.ts:148`).
+
+Caminho exato (log da API, vídeo quadro a quadro a 30 qps, prints do Telegram):
+
+1. 05:15, tentativa 1 (`live-token` na linha 1214 do log): o canal ao vivo transcreve "Melhor Estou aproveitando…" →
+   `transcreveu` → `:128` grava o texto → `enviar` → o `POST /input` **não chega à API** (nenhum `/input` do iPhone no
+   log) → erro de envio. O Rica para (print das 05:16 é a tela parada). A tela não desmontou: as linhas `recentes=1` entre
+   as tentativas são o SSE reconectando, não recarga.
+2. 05:17, tentativa 2 (`live-token` na linha 1364): 17,3 s de "Estou ouvindo" (moldura amarela contínua, sem outra fala).
+   Fim da fala → "Entendendo" por **~70 ms** → "Não entendi o áudio" (`use-modo-conversa.ts:132`), já com o "Você disse"
+   da tentativa 1. 70 ms é rápido demais para qualquer texto da OpenAI: o canal desta fala não trouxe nada (caiu ou
+   nem confirmou) e o WAV foi recusado no próprio aparelho — nenhum `/transcription` no log.
+3. Por que o iPhone perde os POSTs e não o canal: o canal é WebSocket direto na OpenAI; `/input`, `/transcription` e o
+   2º bilhete passam pela tailnet. As três reconexões de SSE entre as tentativas mostram a tailnet do iPhone oscilando
+   naquela hora. Isso é hipótese de rede (não tenho o iPhone); o bug da tela independe dela.
+
+## Plano do conserto (teste vermelho primeiro)
+
+- Regra pura nova `fala-da-vez.ts`: o texto da tela pertence à vez do Rica. Zera quando a máquina **entra** em `ouvindo`;
+  guarda o firme só se a máquina aceitou o `transcreveu` (estava em `transcrevendo`). Teste vermelho contra esboço do
+  comportamento de hoje: fala 1 com texto → vez nova → `falhou` ⇒ "Você disse" tem de ser nulo (hoje: o texto velho);
+  `falhou` e depois `transcreveu` atrasado ⇒ nulo.
+- `use-modo-conversa.ts`: usar a regra no lugar de `ultimaTranscricao`; despachar `transcreveu` e só então gravar.
+- E2E vermelho no Chrome (dev 3009), mesma página: fala 1 com canal falso dando texto e `/input` 500 → toque → fala 2
+  com canal mudo e `/transcription` abortado ⇒ "Não entendi" **sem** texto. Mais: fala normal chega ao `/input`;
+  OpenAI lenta + WAV falhando ⇒ o texto atrasado do canal vai ao `/input` (já funciona, vira caso fixo).
+- Fora do escopo, recomendo à coordenação: repetir uma vez o POST do WAV quando falha sem status (rede) — é idempotente.
+
+## Plano das palavras ao vivo
+
+- Medido no Chrome: os `delta` chegam durante a fala (~1 s de atraso na 1ª palavra), com o **mesmo `item_id`** que o
+  commit confirma depois; nenhum delta depois do commit.
+- `transcricao-da-fala.ts`: `leEventoDoCanal` passa a devolver `parcial` (item + texto). `use-canal-da-fala.ts`: acumula
+  por item e expõe o parcial da fala em curso; zera no `inicio`, no `descarte` (tosse limpa o canal) e ao fechar.
+  Continua: só o texto firme vai ao `/input`.
+- Tela: em `ouvindo` com parcial, as palavras no lugar de "Estou ouvindo / Quando você parar, eu envio."; em
+  `transcrevendo`, o parcial esmaecido no lugar das reticências até o firme substituir. Sem canal ou sem delta, fica
+  como hoje. Texto longo rola com a última linha à vista; só com "Mostrar texto" ligado (desligado, nada muda).
+- Erro de transcrição: parcial some, nada de texto na tela.
+
+## WebKit
+
+O WebKit do Playwright no Windows (26.6) não tem `AudioContext`, `MediaStream` nem `mediaDevices`: a tela de voz não
+roda nele como está. Plano: E2E WebKit com uma camada de microfone falsa injetada (AudioContext/AudioWorkletNode
+mínimos que entregam quadros de 16 kHz de um WAV), com o detector Silero real, fetch, WebSocket e React do WebKit.
+Prova a lógica e a rede no motor do Safari, não o áudio do iOS.
+
+## Estado e sobras
+
+- Sem commit, sem mudança de código. Sondas em `%TEMP%` (`sonda-chrome.cjs`, `sonda-webkit.cjs`, `video-rica/`).
+- ⚠️ Antes da ordem de parar, usei a VPS: ficaram `/tmp/webkit-e2e`, `/tmp/quadros-rica` e a imagem Docker
+  `mcr.microsoft.com/playwright:v1.63.0-noble` (~3,5 GB) em 100.116.1.44. Túnel encerrado e conferido. A limpeza é de
+  quem tem acesso: `sudo docker rmi mcr.microsoft.com/playwright:v1.63.0-noble` e `rm -rf` das duas pastas.
+- Pelo dev 3009 (API de produção, só leitura): baixei os 2 prints e 2 áudios do Telegram do Daniel e transcrevi os
+  áudios (2 chamadas de STT).
+
+FIM-DA-CAUSA
+
+# Fase 4 — cadeira `ui`: WAV que cai, texto velho e palavras ao vivo (item 6, segunda volta)
+
+Briefing: `briefings/fase4-ao-vivo-na-tela.md`, com o adendo. Sobre o código do item 6 do PC (`ce4bce7`; sem pull, o
+revert `32bb0a2` da origin não entrou). Sem VPS, sem commit.
+
+## Por que o WAV não sai no Safari
+
+**No motor do Safari, o WAV sai.** Rodei a tela de voz no WebKit do Playwright com detector Silero, canal, `fetch` e
+React de verdade; só o microfone é falso (esse WebKit não tem áudio). Os suspeitos do adendo, um a um:
+
+- `criaWav` nulo ou lançando: não. Com bilhete negado, o WAV sai na hora (244 KB, 7,6 s de fala) e o texto volta.
+- `efeito.audio` vazio por causa do espelho: não. O espelho só guarda referências; o detector entrega cópia.
+- `transcreveFala` decidindo `falhou` sem chamar o `arquivo`: não há caminho. `falhou` só sai depois de o WAV rejeitar.
+- Canal no Safari (subprotocolo, formato): abre com `realtime`, recebe parciais e firme, confirma. Canal mudo: WAV 1 s
+  depois da confirmação.
+
+O que sobra é o que o log mostrou: os POSTs do fim da fala **morrem sem resposta HTTP**. No WebKit isso é
+`TypeError: Load failed`, e o código tratava como definitivo: **uma queda, "Não entendi"**, sem segunda subida. É
+esse o defeito que o teste vermelho prova e o conserto cobre.
+
+Não provado daqui: por que o iPhone perde esses POSTs. Dois passos, para quem tem a VPS:
+
+- log do Next da 3008 (`cockpit-v2.service`) às 05:17 UTC: "Failed to proxy" = o pedido chegou ao Next e caiu a
+  caminho da API; nada = morreu antes (tailnet ou aparelho);
+- perguntar ao Rica se o Tailscale do iPhone usa exit node. Se usar, o canal (~64 KB/s de subida contínua) passa pelo
+  mesmo túnel dos POSTs, e o padrão fecha: o bilhete (antes do canal) chega, o que vem depois da fala não.
+
+Dois detalhes do vídeo: o navegador é o **Chrome do iPhone** (a Central de Controle mostra "Chrome"), WebKit por baixo.
+E a tentativa 1 pode nem ter saído do aparelho: com o Daniel ocupado (o Rica mandava áudio para ele no mesmo minuto),
+a tela para em "O agente está ocupado" sem POST nenhum. Sem o vídeo dela, não distingo.
+
+## Entreguei
+
+- **WAV que cai na rede sobe de novo** (`transcricao-da-fala.ts`). Rejeição sem status HTTP ("Load failed",
+  "Failed to fetch") → nova subida em 400 ms e depois em 1,2 s. Na espera, o canal ainda ganha (dentro da janela) ou
+  vale como último recurso. Status HTTP é definitivo: o STT da API já tem retentativa própria. Parou no meio: não sobe.
+  - O `/input` **não** repete: `postAgentInput` cria uma chave nova por chamada e a API não deduplica o `/input`.
+    Repetir numa queda poderia entregar a fala duas vezes.
+- **Texto velho** (`fala-da-vez.ts`, novo, puro). O texto da tela é da vez do Rica: zera quando a vez volta a ele; o
+  firme só entra quando a máquina aceita o `transcreveu`. Sai o `ultimaTranscricao` de `use-modo-conversa.ts`; o
+  `despacha` aplica a regra a cada evento.
+- **Palavras ao vivo.**
+  - `leEventoDoCanal` lê o parcial (`delta`) com o item. `parcial-do-canal.ts` (novo, puro) soma os pedaços por item.
+  - `use-canal-da-fala.ts` repassa o parcial à tela. Apaga quando o áudio sai do canal: tosse, fala recomeçada,
+    canal que caiu no meio.
+  - Tela, em `ouvindo`: as palavras no lugar de "Estou ouvindo / Quando você parar, eu envio.". 36 px (token da
+    esfera), últimas 5 linhas à vista; o começo da fala longa sai por cima.
+  - Em `transcrevendo`: o parcial esmaecido sob "Você disse" até o firme. Durante o envio, o firme (antes, reticências
+    até o envio acabar).
+  - Só com "Mostrar texto"; desligado, nada muda. Sem canal ou sem parcial, a tela fica como antes. O leitor de tela
+    segue ouvindo "Estou ouvindo"; o parcial não é anunciado.
+- E2E: `e2e/fase4-ao-vivo-2.cjs` (Chrome e WebKit), `e2e/microfone-falso-webkit.cjs`, `e2e/sonda-webkit-fala.cjs`.
+
+## Provas
+
+- **Vermelho antes.**
+  - Retentativa: 4 de 5 falharam. O 5º ("erro do servidor não repete") passa hoje e guarda o limite.
+  - Texto da vez, contra esboço do comportamento de hoje: 5 de 8 falharam. Três são o texto velho: fala anterior no
+    "Não entendi", texto atrasado recusado pela máquina, vez nova sem limpar. Dois são do parcial.
+  - E2E contra o código antigo (Chrome, arquivos voltados ao `HEAD` e restaurados; `provas-codigo-antigo-chromium.json`):
+    `texto-velho` **falhou com a tela exata do iPhone**, "Não entendi o áudio … Você disse “Canário, teste do modo
+    conversa…”" (texto da fala 1). `wav-cai-uma` falhou: uma queda do WAV virou erro.
+- `npm test`: **1183 testes, 1183 passaram** (18 novos). `type-check`: verde.
+- **E2E final, 8/8 — Chrome 4/4, WebKit 4/4** (dev 3009, `/input` sempre parado no navegador):
+  - `normal`: 12 a 17 atualizações de palavras durante a fala; a primeira ~1 s depois de dita, a fala inteira na tela
+    ~1 s antes de o detector encerrar. Firme ao `/input`, nenhum WAV.
+  - `lenta-sem-wav` (firme 3 s atrasado, WAV sempre caindo): 3 subidas caídas, texto atrasado do canal ao `/input`.
+  - `wav-cai-uma` (canal mudo): 2 subidas, 1 caída; `/input` com o texto do WAV.
+  - `texto-velho`: o erro de envio mostra o texto da própria fala; a fala 2 dá "Não entendi o áudio" **sem texto**.
+  - Nos oito, nenhum quadro com "Não entendi" e texto juntos.
+- Fala longa no WebKit (23 s): as 5 últimas linhas à vista durante a fala (`webkit-fala-longa-*.png`).
+- Canal real medido: depois de limpar uma tosse, a fala seguinte vem com item novo e nada do item limpo chega depois.
+- Regressão do item 6 (`fase4-ao-vivo.cjs`, Chrome): **7/7** (`aoVivo-1`, `arquivo-1`, `canal-cai`, `sem-firme`,
+  `tosse`, `segurar`, `dia-ruim`).
+- Tudo em `e2e/fase4-ao-vivo-2/`.
+
+## Assumi
+
+- "Palavras no lugar do título" vale com "Mostrar texto" ligado (o Rica usa ligado, visto no vídeo).
+- Duas novas subidas do WAV (400 ms e 1,2 s): cobre uma conexão velha no pool do iOS e uma queda curta de rede sem
+  segurar "Entendendo" mais de ~2 s a mais.
+
+## Não fiz
+
+- Commit, build e publicação: ordem desta volta.
+- iPhone real e a causa de rede no aparelho: sem VPS e sem o aparelho.
+- `/input` repetido na queda de rede: precisa de deduplicação no servidor antes.
+- 🟡 Recomendo, para o próximo teste no iPhone, o motivo da falha numa linha pequena da tela de erro ("rede" ou
+  "servidor 502"): separa aparelho de servidor numa gravação. Muda o que o Rica vê: decisão dele.
+
+## Estado do PC
+
+- Dev da 3009 no ar (não reiniciei).
+- Código: `transcricao-da-fala.ts`, `use-canal-da-fala.ts`, `use-modo-conversa.ts`, `tela-conversa.tsx` e `.module.css`
+  alterados; novos `fala-da-vez.ts`, `parcial-do-canal.ts`, e os testes `transcricao-retentativa`, `fala-da-vez`,
+  `parcial-do-canal`.
+- Pela API de produção, via dev 3009, só leitura: bilhetes do canal e ~10 transcrições de WAV. Nenhum `/input` real.
+- `%TEMP%`: minhas sondas e cópias removidas; as da volta anterior ficaram.
+
+FIM-DO-AO-VIVO-2
