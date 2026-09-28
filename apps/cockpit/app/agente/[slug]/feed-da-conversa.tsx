@@ -32,6 +32,12 @@ import {
   reconciliaPendentes,
   type EcoPendente,
 } from '@/lib/eco-pendente.ts';
+import {
+  assinaAnexosPendentes,
+  leAnexosPendentes,
+  reconciliaAnexosPendentes,
+  type AnexoPendente,
+} from '@/lib/anexo-pendente.ts';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
 import {
   publicaEscritaViva,
@@ -152,15 +158,28 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   const assina = useMemo(() => (fn: () => void) => assinaPendentes(agentSlug, fn), [agentSlug]);
   const le = useMemo(() => () => lePendentes(agentSlug), [agentSlug]);
   const pendentes = useSyncExternalStore(assina, le, () => SEM_PENDENCIA);
+  // O ANEXO tem store próprio (`anexo-pendente.ts`): ele não segura o alarme
+  // do texto, e casa pelo nome do arquivo no servidor, não pelo texto.
+  const assinaAnexos = useMemo(() => (fn: () => void) => assinaAnexosPendentes(agentSlug, fn), [agentSlug]);
+  const leAnexos = useMemo(() => () => leAnexosPendentes(agentSlug), [agentSlug]);
+  const anexosPendentes = useSyncExternalStore(assinaAnexos, leAnexos, () => SEM_ANEXO);
   useEffect(() => {
-    reconciliaPendentes(agentSlug, textosDoUsuario(messages));
-  }, [agentSlug, messages]);
+    const textos = textosDoUsuario(messages);
+    reconciliaPendentes(agentSlug, textos);
+    reconciliaAnexosPendentes(agentSlug, textos);
+  }, [agentSlug, messages, anexosPendentes]);
 
   const comEco = useMemo(() => {
-    if (pendentes.length === 0) return messages;
+    if (pendentes.length === 0 && anexosPendentes.length === 0) return messages;
     const base = messages.length;
-    return [...messages, ...pendentes.map((p, i) => criaBolhaOtimista(p, base + i))];
-  }, [messages, pendentes]);
+    // Na ordem do gesto: texto e anexo mandados em sequência aparecem na
+    // sequência em que o Rica os mandou.
+    const otimistas = [
+      ...pendentes.map((p) => ({ emMs: p.emMs, cria: (n: number) => criaBolhaOtimista(p, n) })),
+      ...anexosPendentes.map((p) => ({ emMs: p.emMs, cria: (n: number) => criaBolhaAnexoOtimista(p, n) })),
+    ].sort((a, b) => a.emMs - b.emMs);
+    return [...messages, ...otimistas.map((o, i) => o.cria(base + i))];
+  }, [messages, pendentes, anexosPendentes]);
 
   const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(comEco)], [comEco]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
@@ -272,6 +291,15 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
 });
 
 const SEM_PENDENCIA: readonly EcoPendente[] = Object.freeze([]);
+const SEM_ANEXO: readonly AnexoPendente[] = Object.freeze([]);
+
+/** A bolha do anexo antes do eco. O texto é só a legenda (ou o nome do
+ *  arquivo, para o item nunca nascer vazio); quem desenha a foto ou o vídeo é
+ *  `bolha-anexo-otimista.tsx`, pelo `uuid`. */
+function criaBolhaAnexoOtimista(pendente: AnexoPendente, ordinal: number): MessagePayload {
+  const texto = pendente.legenda || pendente.nome;
+  return criaBolhaOtimista({ id: pendente.id, texto, emMs: pendente.emMs, prazoMs: 0 }, ordinal);
+}
 
 /** A bolha do Rica antes de o log saber que ela existe. Mesma forma que o
  *  stream produz — daqui pra baixo nenhuma peça do feed distingue as duas.

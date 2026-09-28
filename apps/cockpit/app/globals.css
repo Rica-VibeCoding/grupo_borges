@@ -319,6 +319,9 @@
   --ck-dur-calm: 320ms;    /* troca de superfície — ex: filete de running sumindo */
   --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);        /* entrada */
   --ck-ease-exit: cubic-bezier(0.4, 0, 1, 1);     /* saída — filete de running sumindo */
+  /* Bolha otimista de anexo com o upload em voo: a foto já chegou ao feed, a
+   * confirmação não. Esmaecida o bastante para ler como espera, não como erro. */
+  --ck-anexo-enviando-opacidade: 0.6;
 
   /* -- camadas: nomeadas, porque z-index numérico solto vira leilão ------ */
   --ck-z-base: 0;
@@ -1204,6 +1207,13 @@ body {
     visibility 0s linear var(--ck-dur-enter, 200ms);
 }
 
+/* A miniatura que VOOU para a bolha (`voo-do-envio.ts`) sai sem o fade: quem
+   faz a saída é o voo, e o fade deixaria um fantasma dela no composer enquanto
+   a cópia viaja — a mesma foto em dois lugares. */
+.ck-miniatura[data-voou='true'] {
+  transition: none;
+}
+
 /* O véu acompanha, senão o preto entra de uma vez e denuncia que só a caixa
    está animando. */
 .ck-surge-veu {
@@ -1379,6 +1389,59 @@ body {
   text-decoration: underline;
   text-decoration-thickness: 1.5px;
   text-underline-offset: 2px;
+}
+
+/* O VOO DO ENVIO (`lib/voo-do-envio.ts`). O texto sai do campo e pousa na
+ * bolha: o grupo leva a caixa de um retângulo ao outro e as duas fotos se
+ * cruzam no caminho. `object-fit: none` + âncora à esquerda seguram a letra no
+ * tamanho real — o padrão do navegador esticaria as duas fotos até o tamanho
+ * do grupo, e o texto viajaria deformado. A raiz não anima neste voo: sem
+ * isso o navegador faria o fade da página inteira por baixo, e o feed
+ * piscaria. */
+html[data-voo='envio']::view-transition-old(root),
+html[data-voo='envio']::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(ck-envio) {
+  animation-duration: var(--ck-dur-calm);
+  animation-timing-function: var(--ck-ease);
+}
+/* As duas fotos NÃO se cruzam ao meio: o campo quebra a linha numa largura e
+ * a bolha em outra, e com as duas a 50% o texto aparece duplicado no meio do
+ * caminho. A troca acontece logo na decolagem: a do campo some no primeiro
+ * quarto, e quem faz a viagem é a bolha já formada. */
+::view-transition-old(ck-envio),
+::view-transition-new(ck-envio) {
+  height: 100%;
+  object-fit: none;
+  object-position: left center;
+  mix-blend-mode: normal;
+}
+::view-transition-old(ck-envio) {
+  animation: ck-voo-sai var(--ck-dur-calm) var(--ck-ease-exit) both;
+}
+::view-transition-new(ck-envio) {
+  animation: ck-voo-entra var(--ck-dur-calm) var(--ck-ease) both;
+}
+/* O VOO DO ANEXO: a miniatura quadrada do composer pousa no cartão da foto ou
+ * do vídeo. Aqui as fotos ESCALAM com o grupo (`cover`), que é o contrário do
+ * texto: foto em tamanho real viajaria como um recorte que cresce do nada. */
+html[data-voo='anexo']::view-transition-old(root),
+html[data-voo='anexo']::view-transition-new(root) {
+  animation: none;
+}
+html[data-voo='anexo']::view-transition-old(ck-envio),
+html[data-voo='anexo']::view-transition-new(ck-envio) {
+  object-fit: cover;
+  object-position: center;
+}
+@keyframes ck-voo-sai {
+  0% { opacity: 1; }
+  25%, 100% { opacity: 0; }
+}
+@keyframes ck-voo-entra {
+  0%, 10% { opacity: 0; }
+  40%, 100% { opacity: 1; }
 }
 
 /* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do

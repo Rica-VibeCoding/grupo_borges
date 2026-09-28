@@ -100,6 +100,12 @@ import {
   IconeReenviar,
 } from './icones';
 import { usaCanalEntrega } from './usa-canal-entrega';
+import { voaParaBolha } from '../../lib/voo-do-envio';
+import {
+  confirmaAnexoPendente,
+  descartaAnexoPendente,
+  registraAnexoPendente,
+} from '../../lib/anexo-pendente';
 import { BolhaDeComandos } from './bolha-de-comandos';
 
 export type ComposerProps = {
@@ -270,6 +276,8 @@ export function Composer({
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const vooEmCursoRef = useRef(false);
+  const quadroAnexoRef = useRef<HTMLDivElement>(null);
   const tecladoTouch = usaTecladoTouch();
 
   // O ANEXO tem máquina PRÓPRIA, não a de seis fases do texto. Ali a pergunta é
@@ -505,6 +513,11 @@ export function Composer({
     retomada = false,
     origemRetomada: OrigemEnvio = 'text',
   ): Promise<boolean> {
+    // O quadro do voo (`voaParaBolha`) separa o gesto do campo esvaziar: um
+    // segundo toque nesse meio acharia o texto ainda escrito e a porta livre, e
+    // a mensagem sairia duas vezes. Quem segura é esta marca, erguida antes do
+    // `await` e baixada depois dele.
+    if (!retomada && vooEmCursoRef.current) return false;
     const origem: OrigemEnvio = retomada
       ? origemRetomada
       : origemDoRascunho;
@@ -573,18 +586,52 @@ export function Composer({
     // duas entregas ao tmux, e o agente veria a legenda antes ou depois do
     // arquivo sem ordem garantida.
     if (anexar) {
-      // Aqui o campo esvazia na ENTREGA, não no aceite. `limpaCampo` é do texto
-      // puro, onde esperar o POST deixaria o campo cheio durante a viagem e um
-      // segundo Enter duplicaria a mensagem; no anexo quem barra o segundo toque
-      // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
-      // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
-      // sozinho não cobre.
-      if (await anexo.enviar(corpoParaEnviar)) {
-        if (textoAtualRef.current === corpoParaEnviar) {
+      // O VOO DO ANEXO (28/09): a miniatura decola do composer e pousa na bolha
+      // otimista do feed, que mostra o arquivo LOCAL com "enviando…" até o
+      // upload voltar. A legenda sai do campo no mesmo quadro — ela está na
+      // bolha. Se o upload falhar, a bolha sai, o arquivo volta para a
+      // miniatura com o motivo (`usa-anexo.ts`) e a legenda volta para o campo
+      // se ele ainda estiver vazio: nada evapora, nas duas metades.
+      //
+      // A marca do voo segura o segundo toque no quadro entre o gesto e o
+      // callback da View Transition; dali em diante a fase é `enviando` e quem
+      // segura é a porta (`anexo-em-voo`) e a trava muda do `usa-anexo.ts`.
+      vooEmCursoRef.current = true;
+      const retido = retidoAnexo;
+      let idAnexo: string | null = null;
+      let entrega: Promise<boolean> = Promise.resolve(false);
+      await voaParaBolha(
+        retido.especie === 'document' ? null : quadroAnexoRef.current,
+        () => {
           setTexto('');
           setOrigemDoRascunho('text');
+          // Documento não tem bolha visual: sobe como sempre subiu, sem voo e
+          // com a miniatura na caixa até a entrega.
+          if (retido.especie === 'image' || retido.especie === 'video') {
+            const id = registraAnexoPendente(agentSlug, {
+              url: URL.createObjectURL(retido.arquivo),
+              especie: retido.especie,
+              legenda: corpoParaEnviar,
+              nome: retido.arquivo.name,
+            });
+            idAnexo = id;
+            entrega = anexo.enviar(corpoParaEnviar, (resposta) =>
+              confirmaAnexoPendente(agentSlug, id, resposta),
+            );
+            return id;
+          }
+          entrega = anexo.enviar(corpoParaEnviar);
+          return null;
+        },
+        'anexo',
+      );
+      vooEmCursoRef.current = false;
+      if (!(await entrega)) {
+        if (idAnexo !== null) descartaAnexoPendente(agentSlug, idAnexo);
+        if (textoAtualRef.current.trim() === '') {
+          setTexto(corpo);
+          setOrigemDoRascunho(origem);
         }
-      } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
         // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então
         // quem responde ao toque é este sinal, a mesma resposta física da
@@ -605,30 +652,38 @@ export function Composer({
     // viagem de rede, e um segundo Enter ali duplica a mensagem. Daqui em
     // diante quem guarda o texto é a máquina (`estado.texto`), que precisa
     // dele para casar o eco e para oferecer novo envio se o eco não vier.
-    if (efeito.limpaCampo) {
-      setTexto('');
-      setOrigemDoRascunho('text');
-    }
-    setFalhaDaFala(null);
-    // O feed pinta esta bolha no GESTO, nos dois motores. Até 15/08 só a Tara
-    // tinha isto, com a justificativa de que *"no Claude Code o eco volta pelo
-    // stream em milissegundos"* — premissa nunca medida. Medida naquele dia no
-    // `:3008`, com o agente ocioso: **18,9 s** entre o Enter e a bolha, contra
-    // 0,1 s do campo esvaziando. Dezoito segundos de tela muda são o "engoliu a
-    // mensagem" que o Rica reporta desde sempre, e são quase o dobro dos 10 s
-    // que a NN/g dá como limite de atenção.
-    //
-    // A mesma pendência conserta o alarme: `PRAZO_ECO_MS` são 12 s calibrados
-    // sobre um pior caso de 1,434 s, então ele estourava ANTES do eco real e
-    // toda mensagem para agente ocioso terminava em "não consegui confirmar se
-    // entrou". Ver `lib/eco-pendente.ts` e o ramo do CC em
-    // `app/agente/[slug]/feed-da-conversa.tsx`.
-    const idEcoPendente = registraEcoPendente(
-      agentSlug,
-      origem === 'stt' ? `${MARCA_VOZ}${corpoParaEnviar}` : corpoParaEnviar,
-      PRAZO_CC_MS,
-      origem === 'stt' ? corpoParaEnviar : undefined,
-    );
+    // O VOO (28/09): esvaziar o campo e pintar a bolha acontecem no mesmo
+    // quadro, dentro da View Transition, e o texto voa de um para o outro. Só
+    // voa quando o texto SAIU do campo — numa retomada o campo guarda outra
+    // mensagem, e ela não é a que está indo. Ver `lib/voo-do-envio.ts`.
+    vooEmCursoRef.current = true;
+    const idEcoPendente = await voaParaBolha(efeito.limpaCampo ? textareaRef.current : null, () => {
+      if (efeito.limpaCampo) {
+        setTexto('');
+        setOrigemDoRascunho('text');
+      }
+      setFalhaDaFala(null);
+      // O feed pinta esta bolha no GESTO, nos dois motores. Até 15/08 só a Tara
+      // tinha isto, com a justificativa de que *"no Claude Code o eco volta pelo
+      // stream em milissegundos"* — premissa nunca medida. Medida naquele dia no
+      // `:3008`, com o agente ocioso: **18,9 s** entre o Enter e a bolha, contra
+      // 0,1 s do campo esvaziando. Dezoito segundos de tela muda são o "engoliu a
+      // mensagem" que o Rica reporta desde sempre, e são quase o dobro dos 10 s
+      // que a NN/g dá como limite de atenção.
+      //
+      // A mesma pendência conserta o alarme: `PRAZO_ECO_MS` são 12 s calibrados
+      // sobre um pior caso de 1,434 s, então ele estourava ANTES do eco real e
+      // toda mensagem para agente ocioso terminava em "não consegui confirmar se
+      // entrou". Ver `lib/eco-pendente.ts` e o ramo do CC em
+      // `app/agente/[slug]/feed-da-conversa.tsx`.
+      return registraEcoPendente(
+        agentSlug,
+        origem === 'stt' ? `${MARCA_VOZ}${corpoParaEnviar}` : corpoParaEnviar,
+        PRAZO_CC_MS,
+        origem === 'stt' ? corpoParaEnviar : undefined,
+      );
+    });
+    vooEmCursoRef.current = false;
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
     // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
     // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da
@@ -937,9 +992,10 @@ export function Composer({
       >
         {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
             baixo em vez de flutuar sobre ele, e o composer cresce. O anexo
-            escolhido não some porque o microfone abriu. Ela fica na tela do
-            primeiro toque até a entrega — ver `miniatura-anexo.tsx`. */}
-        <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} />
+            escolhido não some porque o microfone abriu. Foto e vídeo saem
+            dela no envio, voando para a bolha do feed; volta no erro — ver
+            `miniatura-anexo.tsx`. */}
+        <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} refQuadro={quadroAnexoRef} />
 
         <BolhaDeComandos
           agentSlug={agentSlug}

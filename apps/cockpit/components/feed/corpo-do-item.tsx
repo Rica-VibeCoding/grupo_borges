@@ -29,8 +29,11 @@ import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
 import { RodapeDaFala } from './rodape-da-fala.tsx';
-import { leAnexoImagem, semEnvelopeDeColagem } from './anexo-imagem';
+import { leAnexoImagem, semEnvelopeDeColagem, urlDoAnexoImagem } from './anexo-imagem';
+import { leAnexoVideo } from './anexo-video.ts';
+import { BolhaAnexoOtimista, PREFIXO_ANEXO_OTIMISTA } from './bolha-anexo-otimista.tsx';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
+import { AnexoVideoView } from './cartao-anexo-video.tsx';
 import { ehVoz, leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
 import { IconeMicrofone } from '@/components/shell/icones';
 import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
@@ -189,6 +192,13 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
       // metade desenha o que tem — foto com legenda quando as duas vieram
       // juntas (fila, envelope inteiro), foto sozinha e legenda sozinha
       // quando não. O que não tem nenhuma das duas já saiu no filtro.
+      //
+      // A bolha otimista de anexo vem antes de tudo: o texto dela é só a
+      // legenda, e o arquivo mora no store (`bolha-anexo-otimista.tsx`).
+      const uuid = item.payload.uuid;
+      if (agentSlug && uuid?.startsWith(PREFIXO_ANEXO_OTIMISTA)) {
+        return <BolhaAnexoOtimista agentSlug={agentSlug} uuid={uuid} />;
+      }
       const anexo = leAnexoImagem(item.text);
       if (anexo?.filename && agentSlug) {
         return (
@@ -202,6 +212,17 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
         );
       }
       if (anexo && !anexo.legenda) return null;
+      // O vídeo chega inteiro, numa mensagem só (`anexo-video.ts`). Antes daqui
+      // ele caía no balão de texto, com caminho absoluto e recado de ffmpeg.
+      const video = agentSlug ? leAnexoVideo(semEnvelopeDeColagem(item.text)) : null;
+      if (video && agentSlug) {
+        return (
+          <AnexoVideoView
+            url={urlDoAnexoImagem(agentSlug, video.filename)}
+            legenda={video.legenda}
+          />
+        );
+      }
       // Balão — ordem do Rica, 30/07: "o meu vai em balão, o de vcs fica
       // solto". `w-fit` segura a caixa no tamanho do texto dentro do
       // flex-column do feed; sem ele ela estica (`align-items: stretch` é o
@@ -226,6 +247,9 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
           // pegar a tela quase toda. `w-fit` continua encolhendo ao texto.
           className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
+          // A ponta de chegada do voo do envio (`lib/voo-do-envio.ts`): só a
+          // bolha otimista se marca, porque só ela nasce do toque no campo.
+          data-eco={item.payload.uuid?.startsWith('cc-otimista-') ? item.payload.uuid : undefined}
         >
           {item.enfileirada ? (
             // O composer já avisa "entrou na fila" (usa-envio.ts:113); esta é

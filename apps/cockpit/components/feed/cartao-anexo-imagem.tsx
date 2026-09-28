@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AnexoComFoto } from './anexo-imagem';
 import { urlDoAnexoImagem } from './anexo-imagem';
+import { RotuloEnviando } from './rotulo-enviando.tsx';
 
 /**
  * Um gesto, um cartão: foto em cima e legenda embaixo. A largura vem da medida
@@ -13,11 +14,17 @@ export function AnexoImagemView({
   anexo,
   agentSlug,
   procedencia,
+  eco,
+  enviando = false,
 }: {
   anexo: AnexoComFoto;
   agentSlug: string;
   /** De onde a mensagem veio, quando não foi daqui (`telegram · Ricardo`). */
   procedencia?: string;
+  /** Bolha otimista (`bolha-anexo-otimista.tsx`): a ponta de chegada do voo. */
+  eco?: string;
+  /** O upload ainda não voltou — a foto já está aqui, a entrega não. */
+  enviando?: boolean;
 }) {
   // O sweep de retenção (apps/api/orchestrator/uploads_sweeper.py) apaga
   // upload velho do disco; o evento no feed continua existindo. Sem isso o
@@ -44,11 +51,15 @@ export function AnexoImagemView({
   return (
     <article
       data-feed-image=""
+      data-eco={eco}
+      aria-busy={enviando || undefined}
       className="min-w-0 self-end overflow-hidden rounded-[var(--ck-radius-caixa)]"
       style={{
         width: 'min(66vw, calc(var(--ck-read-wide) / 3))',
         background:
           anexo.legenda || procedencia || expirado ? 'var(--ck-surface-raised)' : undefined,
+        opacity: enviando ? 'var(--ck-anexo-enviando-opacidade)' : undefined,
+        transition: 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease)',
       }}
     >
       {procedencia ? (
@@ -98,7 +109,9 @@ export function AnexoImagemView({
             ref={imgRef}
             src={url}
             alt="Imagem enviada por você"
-            loading="lazy"
+            // A otimista é um objectURL já na memória, e é o destino do voo:
+            // `lazy` adiaria a foto que o voo precisa pousar.
+            loading={eco ? 'eager' : 'lazy'}
             decoding="async"
             onError={() => setExpirado(true)}
             style={{
@@ -126,6 +139,7 @@ export function AnexoImagemView({
           {anexo.legenda}
         </p>
       ) : null}
+      {enviando ? <RotuloEnviando /> : null}
     </article>
   );
 }
