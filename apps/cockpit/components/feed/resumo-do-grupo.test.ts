@@ -5,7 +5,7 @@ import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/mes
 
 import type { EntradaDaExecucao } from './execucao-do-item.ts';
 import type { MembroDoGrupo } from './grupo-ferramentas.ts';
-import { entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
+import { duracaoCurta, duracaoDoGrupo, entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 
 function bash(command: string, result?: string, isError?: boolean): EntradaDaExecucao {
   return {
@@ -59,7 +59,7 @@ describe('resumo do grupo — a frase', () => {
       bash('npm test'), // sem resultado: rodando
     ]);
     assert.equal(resumo.estado, 'rodando');
-    assert.deepEqual(resumo.atual, { verbo: 'Executando', alvo: 'npm test' });
+    assert.deepEqual(resumo.atual, { verbo: 'Executando', alvo: 'npm test', frase: 'Executando npm test' });
   });
 
   it('a em voo é a ÚLTIMA — é a que acabou de começar', () => {
@@ -67,7 +67,7 @@ describe('resumo do grupo — a frase', () => {
       bash('primeiro'),
       { toolName: 'Read', args: { file_path: '/a.ts' }, estado: 'running' },
     ]);
-    assert.deepEqual(resumo.atual, { verbo: 'Lendo', alvo: '/a.ts' });
+    assert.deepEqual(resumo.atual, { verbo: 'Lendo', alvo: '/a.ts', frase: 'Lendo /a.ts' });
   });
 });
 
@@ -85,10 +85,27 @@ describe('resumo do grupo — estado e saldo', () => {
     assert.equal(resumo.estado, 'rodando');
   });
 
-  it('falha vence o silêncio do feito — e vira a palavra erro, não só cor', () => {
-    const resumo = resumeGrupo([bash('ls', 'stack', true), bash('pwd', '/tmp')]);
+  it('grupo que TERMINOU falhando é falha — e vira a palavra erro, não só cor', () => {
+    const resumo = resumeGrupo([bash('ls', 'a'), bash('pwd', 'stack', true)]);
     assert.equal(resumo.estado, 'falhou');
     assert.deepEqual(resumo.rendimento, { texto: 'erro' });
+    assert.equal(resumo.retentativas, 0);
+  });
+
+  it('erro no meio que o agente refez e seguiu é retentativa, não falha do grupo', () => {
+    const resumo = resumeGrupo([bash('ls', 'stack', true), bash('ls', 'a'), bash('pwd', '/tmp')]);
+    assert.equal(resumo.estado, 'feito');
+    assert.equal(resumo.retentativas, 1);
+    assert.equal(resumo.passos, 3);
+    assert.equal(resumo.rendimento, null);
+  });
+
+  it('a linha em voo mostra a intenção do Bash, nunca o comando cru', () => {
+    const resumo = resumeGrupo([
+      bash('ls', 'a'),
+      { toolName: 'Bash', args: { command: 'C=/home/x/chrome --shot', description: 'Tira o print do chat' }, estado: 'running' },
+    ]);
+    assert.equal(resumo.atual?.frase, 'Tira o print do chat');
   });
 
   it('o saldo soma os diffs estruturados dos membros', () => {
@@ -167,5 +184,31 @@ describe('entradas do grupo — o achatamento', () => {
     const entradas = entradasDoGrupo([chip]);
     assert.equal(entradas.length, 1);
     assert.equal(entradas[0].toolName, 'Grep');
+  });
+});
+
+describe('duração do grupo', () => {
+  function membro(timestamp: string): MembroDoGrupo {
+    return {
+      kind: 'assistant',
+      payload: { timestamp } as unknown as MessagePayload,
+      parts: [],
+    };
+  }
+
+  it('mede do primeiro ao último carimbo', () => {
+    const ms = duracaoDoGrupo([membro('2026-09-28T03:11:00Z'), membro('2026-09-28T03:11:20Z')]);
+    assert.equal(ms, 20_000);
+    assert.equal(duracaoCurta(ms!), '20 s');
+  });
+
+  it('grupo de um instante ou carimbo torto não inventa duração', () => {
+    assert.equal(duracaoDoGrupo([membro('2026-09-28T03:11:00Z'), membro('2026-09-28T03:11:00Z')]), null);
+    assert.equal(duracaoDoGrupo([membro('lixo'), membro('2026-09-28T03:11:00Z')]), null);
+  });
+
+  it('minutos e horas arredondados', () => {
+    assert.equal(duracaoCurta(70_000), '1 min');
+    assert.equal(duracaoCurta(2 * 3_600_000), '2 h');
   });
 });

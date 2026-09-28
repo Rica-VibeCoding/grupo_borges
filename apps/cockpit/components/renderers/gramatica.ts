@@ -77,6 +77,9 @@ export type Execucao = {
   nome: string;
   /** Frase em linguagem natural que o agente escreveu junto (só o Bash tem). */
   intencao: string | null;
+  /** O que a linha mostra: a intenção quando existe — o comando cru nunca vai
+   *  pra linha (pedido do Rica, 28/09) —, senão verbo e alvo. */
+  frase: string;
   rendimento: Rendimento | null;
   desfecho: Desfecho;
 };
@@ -410,16 +413,21 @@ export function leExecucao(entrada: EntradaExecucao): Execucao {
   // informa. Linha muda continua sendo o modo de falha proibido.
   const temAlvo = alvo.length > 0;
 
+  const verboDaLinha =
+    desfecho === 'rodando'
+      ? temAlvo ? verbo.gerundio : usos.gerundio
+      : temAlvo ? verbo.passado : usos.passado;
+  const alvoDaLinha = temAlvo ? alvo : nome;
+  // Só o Bash escreve isto, e são 738 frases em português. Desde 28/09 é ela
+  // que vai na linha no lugar do comando; o comando fica na expansão.
+  const intencao = entrada.toolName === 'Bash' ? texto(args.description) : null;
+
   return {
-    verbo:
-      desfecho === 'rodando'
-        ? temAlvo ? verbo.gerundio : usos.gerundio
-        : temAlvo ? verbo.passado : usos.passado,
-    alvo: temAlvo ? alvo : nome,
+    verbo: verboDaLinha,
+    alvo: alvoDaLinha,
     nome,
-    // Só o Bash escreve isto, e são 738 frases em português que hoje o painel
-    // joga fora. Não cabe na linha sem dobrar a altura — vai para a expansão.
-    intencao: entrada.toolName === 'Bash' ? texto(args.description) : null,
+    intencao,
+    frase: intencao ? umaLinha(intencao) : `${verboDaLinha} ${alvoDaLinha}`,
     rendimento:
       desfecho === 'rodando'
         ? null

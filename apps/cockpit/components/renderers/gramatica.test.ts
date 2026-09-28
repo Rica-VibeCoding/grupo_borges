@@ -163,13 +163,19 @@ describe('desfecho', () => {
 });
 
 describe('intenção', () => {
-  it('só o Bash escreve, e ela não some — vai para a expansão', () => {
+  it('só o Bash escreve, e é ela que vai na linha — o comando fica no alvo, pra expansão', () => {
     const e = leExecucao({
       toolName: 'Bash',
       args: { command: 'ls -la', description: 'Lista docs em andamento e de UI' },
     });
     assert.equal(e.intencao, 'Lista docs em andamento e de UI');
-    assert.equal(e.alvo, 'ls -la', 'a linha mostra o comando, não a frase');
+    assert.equal(e.alvo, 'ls -la');
+    assert.equal(e.frase, 'Lista docs em andamento e de UI', 'a linha mostra a frase, não o comando');
+  });
+
+  it('Bash sem description mantém verbo e comando na linha', () => {
+    const e = leExecucao({ toolName: 'Bash', args: { command: 'ls -la' }, estado: 'running' });
+    assert.equal(e.frase, 'Executando ls -la');
   });
 
   it('description de outra ferramenta não vira intenção — lá ela é o alvo', () => {

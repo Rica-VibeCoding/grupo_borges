@@ -59,12 +59,17 @@ export function entradasDoGrupo(
 
 export type ResumoDoGrupo = {
   /** O desfecho agregado. `aguarda` vence tudo (é o único estado que chama o
-   *  Rica); `rodando` vence `falhou` (a corrida continua); `falhou` vence o
-   *  silêncio do feito — sucesso nunca grita, falha nunca some. */
+   *  Rica); `rodando` vence `falhou` (a corrida continua). `falhou` só quando o
+   *  grupo TERMINOU falhando (a última execução falhou): passo com erro que o
+   *  agente refez e seguiu é retentativa, não falha do grupo. */
   estado: Desfecho;
-  /** A execução em voo, no tempo verbal dela — a linha viva. Null quando o
-   *  grupo terminou. */
-  atual: { verbo: string; alvo: string } | null;
+  /** A execução em voo — a linha viva. `frase` é o que a linha mostra (a
+   *  intenção do Bash quando existe). Null quando o grupo terminou. */
+  atual: { verbo: string; alvo: string; frase: string } | null;
+  /** Quantas execuções o grupo tem. */
+  passos: number;
+  /** Execuções que falharam sem ser a última — o agente refez e seguiu. */
+  retentativas: number;
   /** O resumo em passado, agregado por verbo — a linha quando terminou. */
   frase: string;
   /** Saldo de diff somado, quando algum membro tem. `erro` quando o grupo
@@ -89,14 +94,20 @@ export function resumeGrupo(entradas: readonly EntradaDaExecucao[]): ResumoDoGru
   for (const { lida } of lidas) {
     if (lida.desfecho === 'aguarda') { estado = 'aguarda'; break; }
     if (lida.desfecho === 'rodando') estado = 'rodando';
-    else if (lida.desfecho === 'falhou' && estado === 'feito') estado = 'falhou';
   }
+  const ultima = lidas[lidas.length - 1];
+  if (estado === 'feito' && ultima?.lida.desfecho === 'falhou') estado = 'falhou';
+  const retentativas = lidas.filter(
+    ({ lida }, indice) => lida.desfecho === 'falhou' && indice < lidas.length - 1,
+  ).length;
 
   // A última em voo é a que os olhos procuram — é a que acabou de começar.
   const emVoo = [...lidas].reverse().find(
     ({ lida }) => lida.desfecho === 'rodando' || lida.desfecho === 'aguarda',
   );
-  const atual = emVoo ? { verbo: emVoo.lida.verbo, alvo: emVoo.lida.alvo } : null;
+  const atual = emVoo
+    ? { verbo: emVoo.lida.verbo, alvo: emVoo.lida.alvo, frase: emVoo.lida.frase }
+    : null;
 
   // Contagem por verbo, na ordem de primeira aparição. Ferramentas com o
   // MESMO verbo (Bash+BashOutput, os Task*) fundem numa parte só — são a
@@ -132,5 +143,25 @@ export function resumeGrupo(entradas: readonly EntradaDaExecucao[]): ResumoDoGru
         ? { texto: `+${adicoes} −${remocoes}`, adicoes, remocoes }
         : null;
 
-  return { estado, atual, frase, rendimento };
+  return { estado, atual, frase, rendimento, passos: entradas.length, retentativas };
+}
+
+/** Do primeiro ao último membro, pelo carimbo de cada mensagem. É o tempo até
+ *  o ÚLTIMO pedido de ferramenta — o resultado dele não traz carimbo no lookup.
+ *  Null quando não há o que medir (carimbo torto, grupo de um instante). */
+export function duracaoDoGrupo(itens: readonly MembroDoGrupo[]): number | null {
+  if (itens.length === 0) return null;
+  const inicio = Date.parse(itens[0].payload.timestamp);
+  const fim = Date.parse(itens[itens.length - 1].payload.timestamp);
+  const ms = fim - inicio;
+  return Number.isFinite(ms) && ms >= 1000 ? ms : null;
+}
+
+/** "20 s", "1 min", "2 h" — a duração na linha do resumo. */
+export function duracaoCurta(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min`;
+  return `${Math.round(min / 60)} h`;
 }

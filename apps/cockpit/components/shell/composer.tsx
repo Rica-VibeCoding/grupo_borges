@@ -59,7 +59,6 @@ import { usaFrota } from './frota-provider';
 import { MARCA_VOZ, usaEnvio, type OrigemEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
 import { MiniaturaAnexo } from './miniatura-anexo';
-import { PilulaDeTokens } from './pilula-de-tokens';
 import { BarraCompact } from './barra-compact';
 import { BlocoDaFila } from './bloco-da-fila';
 import { BolinhaAgente } from './bolinha-agente';
@@ -1164,7 +1163,6 @@ export function Composer({
                     <IconeBusca tamanho={17} />
                   </button>
                 ) : null}
-                <PilulaDeTokens agentSlug={agentSlug} />
                 <SeletorMotor
                   agentSlug={agentSlug}
                   agentName={agentName}

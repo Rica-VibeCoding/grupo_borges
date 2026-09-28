@@ -18,7 +18,7 @@ import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { Chevron, SaldoDoRendimento } from '../renderers/linha-execucao';
 import { Execucao } from './execucao';
 import type { GrupoFerramentas } from './grupo-ferramentas.ts';
-import { entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
+import { duracaoCurta, duracaoDoGrupo, entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 
 const COR_DO_ESTADO = {
   rodando: 'var(--ck-state-running)',
@@ -42,15 +42,30 @@ export function GrupoFerramentasView({
   const aberto = preferencia ?? emVoo;
 
   const cor = COR_DO_ESTADO[resumo.estado];
+  const duracao = useMemo(() => duracaoDoGrupo(grupo.itens), [grupo.itens]);
+  // Terminou bem (28/09): linha neutra em cápsula, ✓ verde, passos + frase +
+  // duração. Erro que o agente refez e seguiu é selo âmbar, não a linha em
+  // coral — a cor de falha fica só pra quem TERMINOU falhando.
+  const terminouBem = resumo.estado === 'feito';
+  const frase = terminouBem
+    ? [
+        `${resumo.passos} passos`,
+        resumo.frase.charAt(0).toLowerCase() + resumo.frase.slice(1),
+        ...(duracao !== null ? [duracaoCurta(duracao)] : []),
+      ].join(' · ')
+    : resumo.frase;
 
   return (
     <div
       style={{
         // O filete de estado, mesma régua da linha individual: existe enquanto
-        // há estado ou enquanto aberto; feito e fechado é transparente.
-        borderLeft: `2px solid ${
-          resumo.estado !== 'feito' ? cor : aberto ? 'var(--ck-edge-hairline)' : 'transparent'
-        }`,
+        // há estado ou enquanto aberto; feito vira cápsula sem filete. Em voo,
+        // o dourado do pulso — o mesmo da linha individual.
+        borderLeft: terminouBem
+          ? undefined
+          : `2px solid ${resumo.estado === 'rodando' ? 'var(--ck-pulso-ouro)' : cor}`,
+        background: terminouBem ? 'var(--ck-surface-nav)' : undefined,
+        borderRadius: terminouBem ? 'var(--ck-radius-caixa)' : undefined,
       }}
     >
       <button
@@ -67,15 +82,28 @@ export function GrupoFerramentasView({
           lineHeight: 'var(--ck-leading-body)',
         }}
       >
+        {terminouBem ? (
+          <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-state-ok)' }}>
+            ✓
+          </span>
+        ) : null}
+
         <span
           className="ck-pulso min-w-0 flex-1 truncate"
           data-estado={emVoo ? 'trabalhando' : undefined}
           style={{ color: cor }}
         >
-          {emVoo && resumo.atual
-            ? `${resumo.atual.verbo} ${resumo.atual.alvo}`
-            : resumo.frase}
+          {emVoo && resumo.atual ? resumo.atual.frase : frase}
         </span>
+
+        {terminouBem && resumo.retentativas > 0 ? (
+          <span
+            className="shrink-0"
+            style={{ color: 'var(--ck-state-attention)', fontSize: 'var(--ck-text-xs)', whiteSpace: 'nowrap' }}
+          >
+            {resumo.retentativas === 1 ? '1 retentativa' : `${resumo.retentativas} retentativas`}
+          </span>
+        ) : null}
 
         {resumo.rendimento ? (
           <SaldoDoRendimento

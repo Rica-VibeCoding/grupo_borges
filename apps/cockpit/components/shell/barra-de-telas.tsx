@@ -1,6 +1,16 @@
 /**
  * BarraDeTelas — o chrome do topo (§12.3 e §13, correção do menu à esquerda).
  *
+ * REDESENHO DE 28/09 (mockup aprovado pelo Rica): o pill "Chat" saiu — com um
+ * destino só ele era rótulo, não controle — e a faixa virou
+ *
+ *   [≡] [retrato · nome / estado] ............ [pílula de tokens]
+ *
+ * A pílula é a mesma que morava no composer — tokens, sem % e sem teto
+ * (ordem do Rica de 16/08). O texto abaixo
+ * descreve o desenho anterior e fica como histórico das decisões que seguem
+ * valendo (fundo sem cor própria, Server Component, `≡` só no celular).
+ *
  * Três controles na mesma faixa, como na referência do Codex desktop:
  *
  *   [≡ tropa]   [ pill de telas ]   [cápsula do agente]
@@ -50,15 +60,12 @@ import Link from 'next/link';
 
 import { CapsulaDoAgente } from './capsula-do-agente';
 import { IconeMicrofone } from './icones';
-import { MIOLO_ACESO, MIOLO_DA_PASTILHA, TRILHO_DA_PASTILHA } from './pastilha-do-chrome';
+import { PilulaDeTokens } from './pilula-de-tokens';
 import { BotaoNav } from './superficie-otimista';
 
-export type Tela = { rotulo: string; ativa: boolean };
-
 type BarraDeTelasProps = {
-  telas: Tela[];
-  /** Quem está do outro lado da conversa — retrato e primeiro nome, na cápsula
-   *  na ponta direita da barra. */
+  /** Quem está do outro lado da conversa — retrato, primeiro nome e estado, à
+   *  esquerda da barra. */
   agente: { slug: string; nome: string };
   /** Os DOIS destinos do `≡`, pelo mesmo motivo do painel: o `BotaoNav` escolhe
    *  conforme o estado otimista, que pode correr à frente da URL. */
@@ -70,7 +77,6 @@ type BarraDeTelasProps = {
 };
 
 export function BarraDeTelas({
-  telas,
   agente,
   abrirNavHref,
   fecharNavHref,
@@ -79,9 +85,8 @@ export function BarraDeTelas({
 }: BarraDeTelasProps) {
   return (
     <div
-      className="grid shrink-0 items-center"
+      className="flex shrink-0 items-center"
       style={{
-        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         gap: 'var(--ck-space-2)',
         padding: 'var(--ck-space-2) var(--ck-space-3)',
         paddingTop: 'calc(var(--ck-space-2) + var(--ck-safe-top))',
@@ -89,52 +94,26 @@ export function BarraDeTelas({
         paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
       }}
     >
-      <div className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
-        <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
-        <Link
-          href={`/conversa/${agente.slug}`}
-          aria-label={`Começar conversa por voz com ${agente.nome}`}
-          className="ck-veil sr-only flex shrink-0 items-center justify-center focus-visible:not-sr-only"
-          style={{
-            minWidth: 'var(--ck-touch-min)',
-            minHeight: 'var(--ck-touch-min)',
-            borderRadius: 'var(--ck-radius-chip)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          <IconeMicrofone tamanho={18} />
-        </Link>
-      </div>
-
-      {/* Pill contido, centralizado — ativo em superfície elevada, inativo só
-          texto, exatamente como a referência (§12.3). O fundo do trilho é
-          `nav`: ele precisa ser mais claro que o palco em que repousa, e desde
-          que a barra perdeu a cor própria o `canvas` de antes desapareceria.
-          Trilho, miolo e altura vêm de `pastilha-do-chrome.ts` — mexer neles
-          aqui move a cápsula do agente junto, que é o combinado (16/08). */}
-      <div
-        className="flex min-w-0 shrink-0 items-center"
-        style={{ ...TRILHO_DA_PASTILHA, gap: '2px' }}
+      <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
+      <Link
+        href={`/conversa/${agente.slug}`}
+        aria-label={`Começar conversa por voz com ${agente.nome}`}
+        className="ck-veil sr-only flex shrink-0 items-center justify-center focus-visible:not-sr-only"
+        style={{
+          minWidth: 'var(--ck-touch-min)',
+          minHeight: 'var(--ck-touch-min)',
+          borderRadius: 'var(--ck-radius-chip)',
+          color: 'var(--ck-text-secondary)',
+        }}
       >
-        {telas.map((tela) => (
-          <span
-            key={tela.rotulo}
-            className="flex min-w-0 items-center truncate"
-            style={{
-              ...MIOLO_DA_PASTILHA,
-              background: tela.ativa ? MIOLO_ACESO : 'transparent',
-              color: tela.ativa ? 'var(--ck-text-primary)' : 'var(--ck-text-secondary)',
-            }}
-          >
-            {tela.rotulo}
-          </span>
-        ))}
-      </div>
+        <IconeMicrofone tamanho={18} />
+      </Link>
 
-      {/* `@container`: a cápsula mede ESTA coluna para saber se o nome cabe. */}
-      <div className="@container flex min-w-0 items-center justify-end">
+      <div className="flex min-w-0 flex-1 items-center">
         <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
       </div>
+
+      <PilulaDeTokens agentSlug={agente.slug} />
     </div>
   );
 }

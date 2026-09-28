@@ -31,7 +31,8 @@ import { LinhaVivaView } from './linha-viva.tsx';
 import { RodapeDaFala } from './rodape-da-fala.tsx';
 import { leAnexoImagem, semEnvelopeDeColagem } from './anexo-imagem';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
-import { leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
+import { ehVoz, leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
+import { IconeMicrofone } from '@/components/shell/icones';
 import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
 
 type Props = {
@@ -353,17 +354,20 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
           className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
         >
+          {/* Metadado discreto (28/09): microfone quando é voz + o canal pelo
+              nome. Duração não vai: o envelope não a traz. */}
           <div
+            className="flex items-center"
             style={{
+              gap: 'var(--ck-space-1)',
               color: 'var(--ck-text-secondary)',
               fontSize: 'var(--ck-text-xs)',
-              letterSpacing: 'var(--ck-track-overline)',
-              textTransform: 'uppercase',
             }}
           >
+            {ehVoz(envelope) ? <IconeMicrofone tamanho={12} /> : null}
             {procedencia(envelope)}
           </div>
-          {envelope.anexo ? (
+          {envelope.anexo && !ehVoz(envelope) ? (
             <div style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)' }}>
               {envelope.anexo.nome ?? envelope.anexo.tipo}
             </div>

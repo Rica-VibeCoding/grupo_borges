@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
+import { ehVoz, leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
 
 // Envelope real: o Rica mandou este vídeo em 15/08, com esse texto.
 const COM_VIDEO =
@@ -39,7 +39,7 @@ test('leEnvelopeDeCanal — envelope de texto puro não inventa anexo', () => {
   const e = leEnvelopeDeCanal(TELEGRAM_TEXTO);
   assert.equal(e?.texto, 'texto do telegram');
   assert.equal(e?.anexo, undefined);
-  assert.equal(procedencia(e!), 'telegram · Daniel');
+  assert.equal(procedencia(e!), 'Telegram');
 });
 
 test('leEnvelopeDeCanal — áudio do WhatsApp mantém o tipo declarado', () => {
@@ -88,4 +88,27 @@ test('leEnvelopeDeCanal — envelope sem caminho não ganha campo vazio', () => 
     '<channel source="telegram" attachment_kind="audio">manda status</channel>',
   );
   assert.equal(e?.anexo?.caminho, undefined);
+});
+
+// O print do Rica de 28/09: o cabeçalho saía "PLUGIN:TELEGRAM:TELEGRAM ·
+// RICARDO_NBO… voice (voice message)". O parser casava — o que vazava era o
+// `source` cru, o `attachment_kind` cru e o corpo-marcador do plugin.
+const TELEGRAM_VOZ =
+  '<channel source="plugin:telegram:telegram" chat_id="7262275215" message_id="4857" '
+  + 'user="Ricardo_nBorges" user_id="7262275215" ts="2026-07-28T04:10:21.000Z" '
+  + 'attachment_kind="voice" attachment_file_id="AwACAgEAAxkB" attachment_size="96577" '
+  + 'attachment_mime="audio/ogg">\n(voice message)\n</channel>';
+
+test('procedencia — nome do canal legível, sem o source cru nem o usuário', () => {
+  const e = leEnvelopeDeCanal(TELEGRAM_VOZ)!;
+  assert.equal(procedencia(e), 'Telegram');
+  assert.equal(procedencia(leEnvelopeDeCanal(WHATSAPP_AUDIO)!), 'WhatsApp');
+});
+
+test('leEnvelopeDeCanal — voz do Telegram: é voz, e o marcador do plugin não vira fala', () => {
+  const e = leEnvelopeDeCanal(TELEGRAM_VOZ)!;
+  assert.equal(ehVoz(e), true);
+  assert.equal(e.texto, '');
+  assert.equal(ehVoz(leEnvelopeDeCanal(WHATSAPP_AUDIO)!), true);
+  assert.equal(ehVoz(leEnvelopeDeCanal(COM_VIDEO)!), false);
 });

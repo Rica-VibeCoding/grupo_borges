@@ -20,15 +20,8 @@
 /** Altura do miolo, em px. O trilho soma 3px de cada lado. */
 export const ALTURA_DO_MIOLO = 30;
 
-/** O retrato dentro do miolo do agente. Menor que a altura de propósito: a foto
- *  tem que ficar DENTRO da bolha (*"mesmo que a foto tenha que diminuir um
- *  pouquinho"*), e encostada na borda ela lê como quadrado colado por fora. */
-export const RETRATO_NA_PASTILHA = 22;
-
-/** O respiro dos lados do miolo, em px — o do texto. O do retrato é menor, e só a
- *  cápsula usa: 14px antes da foto empurrariam o nome pra fora da tela. */
+/** O respiro dos lados do miolo, em px. */
 export const RESPIRO_DO_MIOLO = 14;
-export const RESPIRO_DO_RETRATO = 4;
 
 export const TRILHO_DA_PASTILHA = {
   padding: '3px',

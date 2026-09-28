@@ -42,10 +42,15 @@ export function leEnvelopeDeCanal(raw: string): EnvelopeDeCanal | null {
   const caminho = attrs.image_path || attrs.attachment_path;
   const tipo = attrs.attachment_kind ?? tipoPeloMime(attrs.attachment_mime) ?? (attrs.image_path ? 'image' : undefined);
 
+  // `(voice message)` é o corpo que o plugin escreve quando a mensagem é só o
+  // áudio — não é fala dele. Na tela vira o metadado de voz (28/09); a fala
+  // transcrita não viaja no envelope.
+  const corpo = casou[2].trim();
+
   return {
     origem,
     ...(attrs.user ? { autor: attrs.user } : {}),
-    texto: casou[2].trim(),
+    texto: corpo === '(voice message)' ? '' : corpo,
     ...(tipo
       ? {
           anexo: {
@@ -65,7 +70,17 @@ function tipoPeloMime(mime: string | undefined): string | undefined {
   return familia === 'image' || familia === 'audio' || familia === 'video' ? familia : 'documento';
 }
 
-/** Como anunciar a procedência sem competir com a fala. */
+/** Como anunciar a procedência sem competir com a fala: o nome do canal como
+ *  ele o chama. O `source` cru (`plugin:telegram:telegram`) e o usuário do
+ *  Telegram (`Ricardo_nBorges`) saíram da tela em 28/09 — quem manda é ele. */
 export function procedencia(envelope: EnvelopeDeCanal): string {
-  return envelope.autor ? `${envelope.origem} · ${envelope.autor}` : envelope.origem;
+  const origem = envelope.origem.toLowerCase();
+  if (origem.includes('telegram')) return 'Telegram';
+  if (origem.includes('whatsapp')) return 'WhatsApp';
+  return envelope.origem;
+}
+
+/** A mensagem é voz? O Telegram declara `voice`; o WhatsApp, `audio`. */
+export function ehVoz(envelope: EnvelopeDeCanal): boolean {
+  return envelope.anexo?.tipo === 'voice' || envelope.anexo?.tipo === 'audio';
 }

@@ -361,8 +361,12 @@ export function LinhaExecucao({
         // como uma coisa só quando abre. Concluído e FECHADO fica transparente —
         // um fio cinza em cada linha viraria a grade que a régua existe para não
         // ser. Aberto, o hairline ancora o bloco na linha que o abriu.
+        // Em voo, o fio é o dourado do pulso (28/09): o passo que está
+        // acontecendo agora se acende como o resto do "agora" do cockpit.
         borderLeft: `2px solid ${
-          e.desfecho !== 'feito' ? cor : aberta ? 'var(--ck-edge-hairline)' : 'transparent'
+          e.desfecho === 'rodando'
+            ? 'var(--ck-pulso-ouro)'
+            : e.desfecho !== 'feito' ? cor : aberta ? 'var(--ck-edge-hairline)' : 'transparent'
         }`,
       }}
     >
@@ -391,7 +395,7 @@ export function LinhaExecucao({
           data-estado={PULSO[e.desfecho]}
           style={{ color: cor }}
         >
-          {e.verbo} {e.alvo}
+          {e.frase}
         </span>
 
         {e.rendimento ? (

@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * A pílula de tokens — o tamanho do contexto da sessão, na faixa do composer.
+ * A pílula de tokens — o tamanho do contexto da sessão, na ponta direita do
+ * topo do chat (saiu da faixa do composer em 28/09).
  *
  * O NÚMERO É O TAMANHO, NÃO A FRAÇÃO (Rica, 16/08: *"sem teto, só tokens"*).
  * Ela não muda de cor aos 30%, não desenha barra e não compara com nada: a
@@ -18,7 +19,7 @@
  * dígito ele dança na horizontal ao lado do seletor de motor.
  *
  * Bebe da frota VIVA (`usaFrota`), não de prop do servidor — o composer não
- * remonta a cada turno, e o número do retrato de navegação congelaria no valor
+ * remonta a cada turno (nem a barra do topo), e o número do retrato de navegação congelaria no valor
  * de quando a página abriu. É o mesmo motivo da `statusline-ao-vivo.tsx`.
  */
 import { usaFrota } from './frota-provider';

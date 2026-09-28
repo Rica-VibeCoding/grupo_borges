@@ -268,10 +268,9 @@ export default async function AgentePage({
           `/conversa/{slug}` chega aqui com `?tela=voz` e abre na voz. A direita no chat abre
           a tropa. */}
       <PagerDoAgente slug={agente.slug} nome={agente.name} inicial={sp.tela === 'voz' ? 'voz' : 'chat'}>
-      {/* Chrome do topo — nav overlay à esquerda, pill de telas centralizado,
-          cápsula do agente na ponta direita. A cápsula abre o painel (§12.3/§13). */}
+      {/* Chrome do topo — nav overlay, cápsula do agente (retrato, nome, estado)
+          à esquerda e pílula de tokens à direita. A cápsula abre o painel. */}
       <BarraDeTelas
-        telas={[{ rotulo: 'Chat', ativa: true }]}
         agente={{ slug: agente.slug, nome: agente.name }}
         // Os dois destinos separados: o `BotaoNav` alterna pelo estado
         // otimista, não pelo que a URL já refletiu.
