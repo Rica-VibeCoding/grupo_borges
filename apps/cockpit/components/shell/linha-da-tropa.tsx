@@ -134,7 +134,9 @@ export function CartaoVivo({
             >
               {agente.name}
             </span>
-            <span className="sr-only">, {estado.rotulo}</span>
+            {/* Aguardando já diz a frase na 2ª linha, em texto visível: o
+                `sr-only` repetiria "aguarda você" duas vezes no leitor de tela. */}
+            {aguarda ? null : <span className="sr-only">, {estado.rotulo}</span>}
             <span className="ck-tabular flex shrink-0" style={ESTILO_DO_NUMERO}>
               <Contexto agente={agente} agora={agora} />
             </span>

@@ -90,9 +90,11 @@ export function BarraDeContexto({
   );
 }
 
-/** A coluna do número, medida em caracteres da PRÓPRIA mono: cabe `100%` e nada
- *  além. Em `ch` e não em px porque quem manda na largura é o glifo — trocar a
- *  fonte reajusta a coluna sozinha, em vez de desalinhar as nove linhas. */
+/** A coluna do número, medida em `ch` da fonte em que o número sai: cabe `100%`
+ *  e nada além. Na tropa, desde a v8, é a SANS tabular (`ck-tabular`), não mais
+ *  a mono — medido no DOM em 28/09, a 13px: coluna de 36px, `100%` ocupa 34px.
+ *  Em `ch` e não em px porque quem manda na largura é o glifo — trocar a fonte
+ *  reajusta a coluna sozinha, em vez de desalinhar as linhas. */
 const COLUNA_DO_VALOR = '4ch';
 
 /**
