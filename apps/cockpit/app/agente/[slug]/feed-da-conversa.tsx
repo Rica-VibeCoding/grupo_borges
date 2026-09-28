@@ -12,7 +12,7 @@
 // `components/feed/**` é território do Hiro (cockpit-v2-ownership.md §2) —
 // este arquivo só CONSOME o que já é público de lá, nunca edita.
 
-import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
@@ -51,7 +51,9 @@ import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
  *
  *  O status da frota entra por prop, e não por hook lá dentro: o feed já lê a
  *  frota aqui para resolver o agente, e uma segunda assinatura do mesmo store
- *  dentro do filho só multiplicaria render. */
+ *  dentro do filho só multiplicaria render. A frota muda a cada tique (relógio
+ *  no `pane_excerpt`) e só esta casca paga: o `FeedClaudeCode` é memo e recebe
+ *  o STATUS — tique que não muda o status deste agente não chega no feed. */
 export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   const { agents } = usaFrota();
   const agente = agents.find((a) => a.slug === agentSlug);
@@ -59,7 +61,7 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   return <FeedClaudeCode agentSlug={agentSlug} statusDaFrota={agente?.status ?? null} />;
 }
 
-function FeedClaudeCode({
+const FeedClaudeCode = memo(function FeedClaudeCode({
   agentSlug,
   statusDaFrota,
 }: {
@@ -267,7 +269,7 @@ function FeedClaudeCode({
       <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
     </div>
   );
-}
+});
 
 const SEM_PENDENCIA: readonly EcoPendente[] = Object.freeze([]);
 
