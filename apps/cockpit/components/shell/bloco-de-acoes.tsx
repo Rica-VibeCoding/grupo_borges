@@ -532,10 +532,10 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
         ) : null}
 
         {carga !== 'pronto' && carga !== 'indisponivel' ? (
-          // Reserva da faixa (86) + gap (16) + linha de botões (44), medida na
+          // Reserva da faixa (98) + gap (16) + linha de botões (44), medida na
           // 3008 em 28/09. Sem ela a gaveta cresce ~2s depois de abrir e leva o
           // **MCPs** pra baixo com o dedo no ar — o incidente de 09/08.
-          <div aria-hidden style={{ height: '146px' }} />
+          <div aria-hidden style={{ height: '158px' }} />
         ) : null}
 
         {carga === 'pronto' && dePe ? (
@@ -543,7 +543,7 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
             <FaixaDoPulso leitura={pulso.leitura} alturas={pulso.alturas} />
           ) : (
             // O `/pulso` é leitura separada e pode chegar depois do `/painel`.
-            <div aria-hidden style={{ height: '86px' }} />
+            <div aria-hidden style={{ height: '98px' }} />
           )
         ) : null}
 

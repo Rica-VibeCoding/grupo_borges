@@ -251,6 +251,17 @@
    * (docs/cockpit-v2-playbook.md), que são de DESKTOP — daí a escada.
    * ======================================================================= */
 
+  /* -- véu das gavetas e pulso do agente (28/09) ------------------------- */
+  /* O véu escurece e desfoca o que fica atrás da gaveta: conversa e composer
+   * embolavam com ela (Rica). Leve de propósito — é fundo, não modal. */
+  --ck-veu-gaveta: rgb(0 0 0 / 0.38);
+  --ck-veu-gaveta-desfoque: 6px;
+  /* O pulso é um fio de energia dourado, casado com a luz da tela de voz. */
+  --ck-pulso-ouro: oklch(0.85 0.14 82);          /* #f5c451 o traço */
+  --ck-pulso-ouro-claro: oklch(0.95 0.08 92);    /* #fdeaa8 o ponto do agora */
+  --ck-pulso-ouro-brilho: oklch(0.85 0.14 82 / 0.55);
+  --ck-pulso-ouro-area: oklch(0.85 0.14 82 / 0.22);
+
   /* -- espaço: escala de 4px, sem valor solto ---------------------------- */
   --ck-space-1: 0.25rem;   /*  4px */
   --ck-space-2: 0.5rem;    /*  8px */
@@ -1132,6 +1143,9 @@ body {
 .ck-surge-veu {
   visibility: visible;
   opacity: 1;
+  background: var(--ck-veu-gaveta);
+  -webkit-backdrop-filter: blur(var(--ck-veu-gaveta-desfoque));
+  backdrop-filter: blur(var(--ck-veu-gaveta-desfoque));
   transition:
     opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
     visibility 0s;
@@ -1185,6 +1199,20 @@ body {
   max-width: var(--ck-w-drawer);
   border-radius: var(--ck-radius-caixa);
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+
+/* NO CELULAR A GAVETA SOBE DE BAIXO — ordem do Rica, 28/09: *"a gaveta pode
+ * sair de baixo, no mobile"*. Fica ao alcance do polegar, e o véu desfoca a
+ * parte de cima da tela em vez de brigar com o composer. No desktop continua
+ * ancorada no topo, como a referência de 30/07. */
+@media (max-width: 640px) {
+  .ck-flutua {
+    top: auto;
+    bottom: calc(var(--ck-space-2) + var(--ck-safe-bottom));
+  }
+  .ck-surge.ck-flutua[data-aberto='false'] {
+    transform: translateY(24px);
+  }
 }
 
 /* A GAVETA DO "+" — a única superfície que abre para CIMA.
@@ -1575,4 +1603,19 @@ body {
   --ck-conversa-titulo-leading: 1.05;
   --ck-conversa-titulo-com-esfera: 2.25rem;         /* 36px: a esfera já chama o olho */
   --ck-conversa-segurando: saturate(0.5) brightness(0.72); /* dedo segurando a vez: a luz baixa, o silêncio parou */
+}
+
+/* O PONTO DO AGORA no pulso do agente — respira só enquanto ele trabalha
+ * (`data-vivo`). Um movimento só na gaveta, e ele diz "está vivo". */
+.ck-pulso-agora[data-vivo='true'] {
+  animation: ck-pulso-respira 1.6s var(--ck-ease) infinite;
+}
+
+@keyframes ck-pulso-respira {
+  0%, 100% { box-shadow: 0 0 4px 1px var(--ck-pulso-ouro-brilho); }
+  50% { box-shadow: 0 0 12px 4px var(--ck-pulso-ouro-brilho); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-pulso-agora[data-vivo='true'] { animation: none; }
 }

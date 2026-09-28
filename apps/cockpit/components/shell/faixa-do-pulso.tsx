@@ -17,10 +17,36 @@ import { alturasDoPulso, leiaPulso, type LeituraDoPulso, type TomDoPulso } from 
 const LEITURA_MS = 15_000;
 
 const COR: Record<TomDoPulso, string> = {
-  ativo: 'var(--ck-state-running)',
+  ativo: 'var(--ck-pulso-ouro)',
   parado: 'var(--ck-text-tertiary)',
   'sem-sinal': 'var(--ck-state-attention)',
 };
+
+/** Caixa do desenho. `preserveAspectRatio="none"` estica na largura da gaveta;
+ *  o traço não engrossa junto por causa do `non-scaling-stroke`. */
+const LARGURA = 300;
+const ALTURA = 40;
+const PISO = 38;
+const TOPO = 4;
+
+/** O fio: passa pelos pontos médios com cada balde de controle. Nunca
+ *  ultrapassa o maior vizinho — Catmull-Rom desenharia pico que não existiu
+ *  e vale abaixo do chão. */
+function caminhoDoPulso(alturas: number[]): { linha: string; area: string } {
+  const n = alturas.length;
+  const pts = alturas.map((h, i) => [
+    n === 1 ? LARGURA : (i / (n - 1)) * LARGURA,
+    PISO - h * (PISO - TOPO),
+  ]);
+  let linha = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < n; i++) {
+    const [x0, y0] = pts[i - 1];
+    const [x1, y1] = pts[i];
+    linha += ` Q${x0},${y0} ${(x0 + x1) / 2},${(y0 + y1) / 2}`;
+  }
+  linha += ` L${pts[n - 1][0]},${pts[n - 1][1]}`;
+  return { linha, area: `${linha} L${LARGURA},${ALTURA} L0,${ALTURA} Z` };
+}
 
 export function usaPulso(slug: string, aberto: boolean): {
   leitura: LeituraDoPulso | null;
@@ -67,6 +93,7 @@ export function usaPulso(slug: string, aberto: boolean): {
 export function FaixaDoPulso({ leitura, alturas }: { leitura: LeituraDoPulso; alturas: number[] }) {
   const cor = COR[leitura.tom];
   const minutos = alturas.length;
+  const desenho = alturas.length > 1 ? caminhoDoPulso(alturas) : { linha: '', area: '' };
   return (
     <div
       role="status"
@@ -87,20 +114,59 @@ export function FaixaDoPulso({ leitura, alturas }: { leitura: LeituraDoPulso; al
           <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>{leitura.ha}</span>
         ) : null}
       </p>
-      <div aria-hidden className="flex items-end" style={{ gap: '2px', height: '28px' }}>
-        {alturas.map((h, i) => (
+      {/* O FIO DE ENERGIA — pedido do Rica em 28/09: *"um raio dourado
+          mostrando o desempenho da gente, mais futurístico, pra casar com a
+          tela de voz"*. Área em degradê por baixo, traço com brilho, e o ponto
+          do agora na ponta. Parado, o fio apaga pro cinza: ouro é só pra vida. */}
+      <div aria-hidden className="relative" style={{ height: '40px' }}>
+        {alturas.length > 1 ? (
+          <svg
+            viewBox={`0 0 ${LARGURA} ${ALTURA}`}
+            preserveAspectRatio="none"
+            className="absolute inset-0 h-full w-full overflow-visible"
+            style={{ filter: leitura.tom === 'parado' ? undefined : `drop-shadow(0 0 4px ${cor})` }}
+          >
+            <defs>
+              <linearGradient id={`pulso-area-${leitura.tom}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={cor} stopOpacity={0.28} />
+                <stop offset="1" stopColor={cor} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id={`pulso-linha-${leitura.tom}`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor={cor} stopOpacity={0.25} />
+                <stop offset="0.7" stopColor={cor} stopOpacity={0.9} />
+                <stop offset="1" stopColor={cor} stopOpacity={1} />
+              </linearGradient>
+            </defs>
+            <line
+              x1={0} y1={PISO} x2={LARGURA} y2={PISO}
+              stroke="var(--ck-edge-hairline)" strokeWidth={1} vectorEffect="non-scaling-stroke"
+            />
+            <path d={desenho.area} fill={`url(#pulso-area-${leitura.tom})`} />
+            <path
+              d={desenho.linha}
+              fill="none"
+              stroke={`url(#pulso-linha-${leitura.tom})`}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        ) : null}
+        {alturas.length > 0 ? (
           <span
-            key={i}
-            className="flex-1"
+            className="ck-pulso-agora absolute rounded-full"
+            data-vivo={String(leitura.tom === 'ativo')}
             style={{
-              // Minuto vazio é chão de 2px na cor do fio: o vazio vira eixo,
-              // não buraco — é a linha reta que mostra o travamento.
-              height: h === 0 ? '2px' : `${Math.round(h * 100)}%`,
-              borderRadius: '1px',
-              background: h === 0 ? 'var(--ck-edge-hairline)' : cor,
+              right: '-3px',
+              // O ponto senta na ponta do fio: mesma conta do caminho, em %.
+              top: `calc(${((PISO - alturas[alturas.length - 1] * (PISO - TOPO)) / ALTURA) * 100}% - 3px)`,
+              width: '6px',
+              height: '6px',
+              background: leitura.tom === 'ativo' ? 'var(--ck-pulso-ouro-claro)' : cor,
             }}
           />
-        ))}
+        ) : null}
       </div>
       <p
         aria-hidden
