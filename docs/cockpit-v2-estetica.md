@@ -1212,7 +1212,20 @@ Consequência prática: separador **dentro** de superfície flutuante usa `--ck-
 `--ck-edge-hairline` (#424242, mais duro que a referência). O `hairline` continua valendo onde
 separa conteúdo no plano, sem elevação.
 
-### Aberto — e é a metade que falta
+### A gaveta hoje (28/09)
+
+- **Celular (até 640px): ancorada embaixo**, ao alcance do polegar. Desktop segue no topo.
+- **O véu escurece e desfoca** o que fica atrás (`--ck-veu-gaveta`, `--ck-veu-gaveta-desfoque`);
+  tocar nele fecha. Vale pras duas gavetas, porque é o mesmo `.ck-surge-veu`.
+- **Ordem, de cima pra baixo:** nome do agente · statusline (modelo, sessão, contexto) · pulso
+  com Destravar/Desligar · Comandos · Motor e Conta com a cota · MCPs.
+- **Contexto em três cores** (`corDoContexto`): neutro, âmbar a partir de 25%, vermelho acima de 30%.
+  **Cota** (`corDaCota`): âmbar a partir de 80%, vermelho a partir de 95%.
+- **Pulso** (`faixa-do-pulso.tsx`, rota `/api/agents/{slug}/pulso`): fio dourado dos últimos 30
+  min. "Sem sinal" = turno aberto e nada saindo há 5 min, e aí o Destravar ganha borda âmbar.
+- **Saíram por ordem do Rica:** Permissões, Resume, o caminho do workspace e a linha de tokens.
+
+### Aberto em 30/07 (histórico — as ações rápidas entraram depois)
 
 - **As ações rápidas não entraram.** O Rica as chama de *"ideia central do painel"*, e é peça
   própria: o back já expõe o que elas precisam (`patchAgentEffort`, `patchAgentPermissionMode`,
