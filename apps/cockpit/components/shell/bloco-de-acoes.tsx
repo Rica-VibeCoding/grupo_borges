@@ -44,7 +44,6 @@ import {
   postAgentDesligar,
   postAgentDestrava,
   postAgentLigar,
-  postAgentRelaunch,
 } from '@grupo_borges/cockpit-core/api';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
@@ -57,11 +56,9 @@ import {
   descreveAcaoBruta,
   descreveLigar,
   diagnosticaCicloDeVida,
-  diagnosticaRelancar,
   leiaDesligar,
   leiaDestrava,
   leiaLigar,
-  leiaRelancar,
   rotulaAcaoBruta,
   rotulaDestrava,
   rotulaLigar,
@@ -94,15 +91,15 @@ const CONFIRMA_COMPACT_MS = 4_000;
 const REDE = {
   lePainel: fetchAgentPainel,
   destrava: postAgentDestrava,
-  relanca: postAgentRelaunch,
   desliga: postAgentDesligar,
   liga: postAgentLigar,
 };
 
 /**
- * O ciclo das ações brutas (armar → confirmar → enviar → recibo) pros DOIS
- * botões (Resume/Desligar) de uma vez — um `estado` só, não uma instância por
- * ação.
+ * O ciclo da ação bruta (armar → confirmar → enviar → recibo). Nasceu pra
+ * DOIS botões (Resume/Desligar); o Resume saiu em 28/09 e o Desligar ficou
+ * sozinho, com a mesma máquina — o `acao` segue no estado porque é ele que diz
+ * de quem é a fase.
  *
  * Auditoria 03/08 achou a versão anterior (uma instância de hook por botão,
  * cada uma com sua própria `fase`) com uma brecha: nada impedia armar/disparar
@@ -167,10 +164,7 @@ function useAcaoBruta(
     setFalha(null);
     setEstado({ acao, fase: 'enviando' });
     try {
-      const aviso =
-        acao === 'desligar'
-          ? leiaDesligar(await REDE.desliga(agentSlug))
-          : leiaRelancar(await REDE.relanca(agentSlug));
+      const aviso = leiaDesligar(await REDE.desliga(agentSlug));
       if (aviso) {
         setFalha(aviso);
         setEstado(null);
@@ -185,11 +179,7 @@ function useAcaoBruta(
       timer.current = setTimeout(() => setEstado(null), RECIBO_MS);
     } catch (erro) {
       setEstado(null);
-      setFalha(
-        acao === 'desligar'
-          ? diagnosticaCicloDeVida(erro, 'desligar')
-          : diagnosticaRelancar(erro),
-      );
+      setFalha(diagnosticaCicloDeVida(erro, 'desligar'));
     }
   }
 
@@ -213,7 +203,7 @@ function BotaoAcaoBruta({
       type="button"
       onClick={onClick}
       aria-busy={fase === 'enviando'}
-      aria-label={descreveAcaoBruta(fase, acao)}
+      aria-label={descreveAcaoBruta(fase)}
       className="ck-veil flex flex-1 items-center justify-center overflow-hidden border"
       style={{
         minHeight: 'var(--ck-touch-min)',
@@ -233,7 +223,7 @@ function BotaoAcaoBruta({
         transition: 'color var(--ck-dur-fast) var(--ck-ease)',
       }}
     >
-      {rotulaAcaoBruta(fase, acao)}
+      {rotulaAcaoBruta(fase)}
     </button>
   );
 }
@@ -500,7 +490,7 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
     confirmaCompact && compactEmVoo
       ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
       : desligar === 'confirmando'
-        ? descreveAcaoBruta(desligar, 'desligar')
+        ? descreveAcaoBruta(desligar)
         : null;
 
   return (

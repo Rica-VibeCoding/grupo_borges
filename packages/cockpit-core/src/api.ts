@@ -577,48 +577,6 @@ export async function postAgentInterromper(
   return res.json();
 }
 
-export type RelaunchResponse = {
-  tmux_delivered: boolean;
-  attempted: boolean;
-  session_id: string | null;
-  sent_at: number;
-};
-
-/**
- * Relança o Claude Code do agente.
- *
- * `resume=true` (padrão): sobe com `--resume`, preservando a conversa — o
- * turno em andamento é perdido, o histórico não. `resume=false`: sobe um
- * Claude Code do zero na mesma window, sem checar conversa nenhuma — usado
- * quando o pane travou de um jeito que nem o resume confirma (âncora não
- * bate) ou quando perder o contexto é o que se quer.
- *
- * O `confirm: true` não é cerimônia do cliente: o back RECUSA (400) sem ele.
- * A confirmação de verdade — a que protege o Rica — é o segundo toque na
- * interface; este campo é o contrato que garante que ninguém chame a rota por
- * engano de um script ou de um `curl` de teste.
- *
- * Lança `AgentInputError` com o `detail` do back preservado: quem traduz o
- * motivo é `diagnosticaRelancar`, e ele casa por substring do detail
- * (`resume_session_not_found`, `relaunch_somente_claude_code`, …). Perder o
- * detail aqui deixaria a tela sem ter o que dizer além de "falhou".
- */
-export async function postAgentRelaunch(
-  slug: string,
-  resume = true,
-): Promise<RelaunchResponse> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/relaunch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ confirm: true, resume }),
-  });
-  if (!res.ok) {
-    const detail = await errorDetail(res, `postAgentRelaunch failed: ${res.status}`);
-    throw new AgentInputError(detail, res.status, detail);
-  }
-  return res.json();
-}
-
 export type DesligarResponse = {
   /** `false` só quando um scope resistiu ao `stop` — já desligado é sucesso. */
   tmux_delivered: boolean;

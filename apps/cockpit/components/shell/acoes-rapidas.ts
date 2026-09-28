@@ -3,8 +3,8 @@
  *
  * O §17 do contrato de estética deixou esta metade em aberto e chamou pelo
  * nome: o Rica trata as ações como *"ideia central do painel"*. O back já
- * expõe as rotas (`postAgentDestrava`,
- * `postAgentRelaunch`); o que faltava era a camada de cliente — estado,
+ * expõe as rotas (`postAgentDestrava`, `postAgentDesligar`,
+ * `postAgentLigar`); o que faltava era a camada de cliente — estado,
  * tradução e falha.
  *
  * DUAS COISAS QUE ESTE MÓDULO DECIDE, e nenhuma cabe em JSX:
@@ -54,21 +54,18 @@ export function leiaDestrava(resposta: { tmux_delivered: boolean }): Impedimento
 }
 
 // ---------------------------------------------------------------------------
-// Relançar
+// Desligar
 // ---------------------------------------------------------------------------
 
 /**
- * As duas ações BRUTAS do painel — as que armam e pedem confirmação.
+ * A ação BRUTA do painel — a que arma e pede confirmação. `desligar` encerra o
+ * agente e tudo que ele consome — o processo, os MCPs e o `bun` do plugin de
+ * canal, parando o cgroup inteiro da cerca da frota.
  *
- * - `resume` mata o processo do Claude Code no pane e sobe outro com
- *   `--resume <session_id>`: a conversa sobrevive, só o turno em andamento
- *   morre.
- * - `desligar` encerra o agente e tudo que ele consome — o processo, os MCPs e
- *   o `bun` do plugin de canal, parando o cgroup inteiro da cerca da frota.
+ * O `resume` saiu em 28/09, por ordem do Rica: ele nunca usava.
  *
- * Nenhuma das duas é toque simples como o destrava. O destrava manda Escape,
- * idempotente — errar o toque não custa nada. Aqui errar custa caro nas duas
- * (o resume perde o turno em voo, o desligar tira o agente do ar). O gesto é o
+ * Não é toque simples como o destrava. O destrava manda Escape, idempotente —
+ * errar o toque não custa nada. Aqui errar tira o agente do ar. O gesto é o
  * mesmo já usado no destrava-durante-compact (armar e confirmar), e não a
  * pressão longa do cockpit antigo: pressão longa esconde a ação de quem está
  * com pressa, e estes botões existem justamente para a hora em que o agente
@@ -78,12 +75,8 @@ export function leiaDestrava(resposta: { tmux_delivered: boolean }): Impedimento
  * sai, destravar fica"*. O boot sem contexto era o degrau mais caro e o menos
  * usado; quem precisa recomeçar do zero usa `/clear` dentro do agente. O
  * Desligar ocupa o lugar exato que era dele na linha.
- *
- * As duas compartilham o MESMO estado no componente (`useAcaoBruta` em
- * `bloco-de-acoes.tsx`), não duas instâncias — só uma pode sair de `ocioso` por
- * vez, o que evita o dedo disparar duas ações brutas ao mesmo tempo.
  */
-export type AcaoBruta = 'resume' | 'desligar';
+export type AcaoBruta = 'desligar';
 
 export type FaseBruta = 'ocioso' | 'confirmando' | 'enviando' | 'concluido';
 
@@ -109,38 +102,28 @@ export const RETENTA_PAINEL_TETO_MS = 15_000;
  *  o boot com folga e param sozinhas; não é polling, tem fim. */
 export const ESPERAS_APOS_LIGAR_MS = [3_000, 7_000, 12_000, 18_000, 25_000] as const;
 
-/** Rótulo SEMPRE curto — os três botões (Destravar/Resume/Desligar) dividem
+/** Rótulo SEMPRE curto — nasceu com três botões dividindo
  *  ~110px na gaveta de 380px (§ auditoria 03/08: a frase longa de confirmação
  *  cortava em elipse, e `text-overflow` nem se aplica dentro de um flex —
  *  cortava sem reticências, sumindo com "tocar de novo confirma", que é
  *  justamente o aviso que evita o toque acidental). A frase completa mora só
  *  em `descreveAcaoBruta` (aria-label + aviso visível de largura cheia,
  *  renderizado fora do botão). */
-export function rotulaAcaoBruta(fase: FaseBruta, acao: AcaoBruta = 'resume'): string {
+export function rotulaAcaoBruta(fase: FaseBruta): string {
   if (fase === 'confirmando') return 'Confirmar?';
-  if (acao === 'desligar') {
-    if (fase === 'enviando') return 'Desligando…';
-    return fase === 'concluido' ? 'Desligado' : 'Desligar';
-  }
-  if (fase === 'enviando') return 'Relançando…';
-  return fase === 'concluido' ? 'Relançado' : 'Resume';
+  if (fase === 'enviando') return 'Desligando…';
+  return fase === 'concluido' ? 'Desligado' : 'Desligar';
 }
 
 /** A frase completa — SEMPRE, em toda fase (não só o ocioso). Serve dois
  *  papéis: nome acessível (WCAG 2.5.3, começa pelo rótulo curto do botão) e,
  *  quando `fase === 'confirmando'`, o texto do aviso visível de largura cheia
  *  que substitui o que cortava dentro do botão. */
-export function descreveAcaoBruta(fase: FaseBruta, acao: AcaoBruta = 'resume'): string {
-  const rotulo = rotulaAcaoBruta(fase, acao);
+export function descreveAcaoBruta(fase: FaseBruta): string {
+  const rotulo = rotulaAcaoBruta(fase);
   if (fase === 'enviando' || fase === 'concluido') return rotulo;
-  if (fase === 'confirmando') {
-    return acao === 'desligar'
-      ? `${rotulo} Tira o agente do ar — tocar de novo confirma`
-      : `${rotulo} Mata o turno atual — tocar de novo confirma`;
-  }
-  return acao === 'desligar'
-    ? `${rotulo}: encerra o agente e tudo que ele consome — o processo, os MCPs e o canal. A conversa fica, e Ligar retoma de onde parou`
-    : `${rotulo}: relança o Claude Code do agente retomando a conversa atual — o turno em andamento é perdido`;
+  if (fase === 'confirmando') return `${rotulo} Tira o agente do ar — tocar de novo confirma`;
+  return `${rotulo}: encerra o agente e tudo que ele consome — o processo, os MCPs e o canal. A conversa fica, e Ligar retoma de onde parou`;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +147,7 @@ export function descreveLigar(fase: FaseDestrava): string {
     : rotulo;
 }
 
-/** Mesma régua do `leiaRelancar`: 200 não é sucesso. O `confirmed` do back é o
+/** Mesma régua do `leiaDestrava`: 200 não é sucesso. O `confirmed` do back é o
  *  processo do CLI visto de pé no pane, não "mandei o comando" — e o boot segue
  *  em curso mesmo quando ele volta falso, daí a saída não mandar tentar de novo
  *  na hora. */
@@ -199,7 +182,7 @@ export function leiaDesligar(resposta: {
 }
 
 /** Traduz as recusas de `POST /{slug}/desligar` e `/ligar`. Mesma técnica do
- *  `diagnosticaRelancar`: substring do detail preservado pelo cliente. */
+ *  que já traduzia o relançar (saiu em 28/09): substring do detail preservado pelo cliente. */
 export function diagnosticaCicloDeVida(erro: unknown, acao: 'desligar' | 'ligar'): Impedimento {
   const texto = textoDoErro(erro);
 
@@ -226,74 +209,6 @@ export function diagnosticaCicloDeVida(erro: unknown, acao: 'desligar' | 'ligar'
       };
 }
 
-/**
- * Mesma régua do `leiaDestrava`: 200 não é sucesso. O back devolve `attempted`
- * (mandou o comando) separado de `tmux_delivered` (viu o CC voltar de pé) —
- * dizer "relançado" com o segundo falso seria prometer um agente vivo que
- * pode ter ficado num pane morto, que é o pior lugar para mentir: o Rica só
- * descobriria ao mandar a próxima mensagem e não receber nada.
- */
-export function leiaRelancar(resposta: {
-  tmux_delivered: boolean;
-  attempted: boolean;
-}): Impedimento | null {
-  if (resposta.tmux_delivered) return null;
-  return resposta.attempted
-    ? {
-        resumo: 'mandei relançar mas o Claude Code não voltou de pé',
-        saida: 'abra o terminal do agente e veja o que ficou na tela antes de tentar de novo',
-      }
-    : {
-        resumo: 'o relançamento nem chegou a ser tentado',
-        saida: 'a sessão do agente pode estar fechada — confira se ela está viva',
-      };
-}
-
-/** Traduz as recusas do `POST /{slug}/relaunch`. Casa por substring do detail
- *  preservado pelo `postAgentRelaunch`. */
-export function diagnosticaRelancar(erro: unknown): Impedimento {
-  const texto = textoDoErro(erro);
-
-  // A Tara caiu aqui em 06/09, já migrada pro harness do CC: o `--resume` remonta
-  // o comando dentro da API e não sabe repor o env que o boot da frota monta pra
-  // ela (token do proxy, teto de janela, credenciais dos MCPs). A saída existe e
-  // é equivalente — o Ligar sobe com `--continue`, então a conversa volta igual.
-  if (texto.includes('relaunch_requer_backend_anthropic_nativo')) {
-    return {
-      resumo: 'este agente não relança por aqui',
-      saida: 'o ambiente dele é montado pelo boot da frota — use Desligar e depois Ligar, que a conversa volta',
-    };
-  }
-  if (texto.includes('resume_session_not_found')) {
-    return {
-      resumo: 'não achei a conversa para retomar',
-      saida: 'relançar agora começaria do zero, então não relancei — fale com o agente uma vez e tente de novo',
-    };
-  }
-  if (texto.includes('relaunch_failed')) {
-    return {
-      resumo: 'o tmux recusou o relançamento',
-      saida: 'a sessão pode ter sido fechada por fora — confira se ela está viva',
-    };
-  }
-  if (texto.includes('confirmacao_explicita_obrigatoria')) {
-    return {
-      resumo: 'o servidor não recebeu a confirmação',
-      saida: 'isso é defeito nosso, não seu — avise o Daniel',
-    };
-  }
-  if (texto.includes('404')) {
-    return {
-      resumo: 'o agente sumiu da frota',
-      saida: 'volte para a lista e abra de novo',
-    };
-  }
-  return {
-    resumo: 'não consegui relançar o agente',
-    saida: 'nada foi alterado — tente de novo; se repetir, é infra',
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Falha
 // ---------------------------------------------------------------------------
@@ -305,10 +220,8 @@ export type Impedimento = {
   saida: string;
 };
 
-/** O texto pesquisável de qualquer coisa que caia num `catch`. Nasceu em
- *  `diagnosticaAcao` (saiu com a permissão, 28/09) quando o relançar precisou da mesma leitura — dois
- *  diagnósticos casando substring sobre formas diferentes de erro dariam dois
- *  jeitos sutilmente diferentes de errar. */
+/** O texto pesquisável de qualquer coisa que caia num `catch` — um jeito só
+ *  de ler o erro, pra dois diagnósticos nunca errarem de jeitos diferentes. */
 function textoDoErro(erro: unknown): string {
   if (typeof erro === 'string') return erro;
   if (erro instanceof Error) return erro.message;
