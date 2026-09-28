@@ -43,6 +43,25 @@ function eComandoDeBarra(valor: unknown): valor is ComandoDeBarra {
   );
 }
 
+/**
+ * A última lista lida de cada agente, viva enquanto a página vive. A bolha abre
+ * com ela NA HORA e relê por baixo — antes, toda `/` esvaziava a lista e
+ * piscava "Carregando comandos…" até a rede voltar. Lista de comando velha não
+ * engana ninguém como cota velha engana: o pior caso é um comando novo do
+ * projeto aparecer uma releitura depois.
+ */
+const comandosLidos = new Map<string, ComandoDeBarra[]>();
+
+function mesmaLista(a: ComandoDeBarra[] | undefined, b: ComandoDeBarra[]): boolean {
+  if (!a || a.length !== b.length) return false;
+  return a.every(
+    (item, i) =>
+      item.comando === b[i].comando &&
+      item.descricao === b[i].descricao &&
+      item.origem === b[i].origem,
+  );
+}
+
 /** Sugestões de `/comando` ancoradas no próprio campo, sem busca nesta fase. */
 export function BolhaDeComandos({
   agentSlug,
@@ -52,25 +71,33 @@ export function BolhaDeComandos({
   children,
   ativa = true,
 }: BolhaDeComandosProps) {
-  const [aberta, setAberta] = useState(false);
-  const [comandos, setComandos] = useState<ComandoDeBarra[]>([]);
-  const [carregando, setCarregando] = useState(false);
-  const [falhou, setFalhou] = useState(false);
-
   // O único gatilho desta primeira fase é uma barra num campo vazio. Ao seguir
   // digitando, não há filtro ainda: a bolha fecha para o campo voltar a ser a
   // fonte de verdade até a fase de busca existir. `ativa=false` (por
   // ora) nunca abre — a lista de nativos é do Claude Code, não faz sentido lá.
-  useEffect(() => {
-    setAberta(ativa && texto === '/');
-  }, [texto, ativa]);
+  //
+  // Derivada no render, não copiada por efeito: o efeito custava um segundo
+  // render a cada tecla. O único estado é "fechada à mão" (Esc, toque fora,
+  // escolha), que zera assim que o campo deixa de ser só `/`.
+  const deveAbrir = ativa && texto === '/';
+  const [dispensada, setDispensada] = useState(false);
+  if (dispensada && !deveAbrir) setDispensada(false);
+  const aberta = deveAbrir && !dispensada;
+
+  const [, setLeituras] = useState(0);
+  const [falhou, setFalhou] = useState(false);
+  const guardados = comandosLidos.get(agentSlug);
+  // "Carregando" só existe na primeira leitura deste agente — e sai do render,
+  // não de um estado ligado por efeito, então nem um quadro de "Nenhum
+  // comando" escapa antes dele.
+  const carregando = guardados === undefined && !falhou;
+  const comandos = guardados ?? [];
 
   useEffect(() => {
     if (!aberta) return;
     const abortador = new AbortController();
-    setCarregando(true);
+    const temLista = comandosLidos.has(agentSlug);
     setFalhou(false);
-    setComandos([]);
 
     void fetch(`/api/agents/${encodeURIComponent(agentSlug)}/commands`, {
       cache: 'no-store',
@@ -83,20 +110,23 @@ export function BolhaDeComandos({
         return corpo.filter(eComandoDeBarra);
       })
       .then((lista) => {
-        if (!abortador.signal.aborted) setComandos(lista);
+        if (abortador.signal.aborted) return;
+        // Releitura igual à guardada não redesenha a bolha.
+        if (mesmaLista(comandosLidos.get(agentSlug), lista)) return;
+        comandosLidos.set(agentSlug, lista);
+        setLeituras((n) => n + 1);
       })
       .catch(() => {
-        if (!abortador.signal.aborted) setFalhou(true);
-      })
-      .finally(() => {
-        if (!abortador.signal.aborted) setCarregando(false);
+        // Com lista guardada na tela, a releitura que falha fica calada: a
+        // lista anterior continua servindo.
+        if (!abortador.signal.aborted && !temLista) setFalhou(true);
       });
 
     return () => abortador.abort();
   }, [aberta, agentSlug]);
 
   function selecionar(comando: string) {
-    setAberta(false);
+    setDispensada(true);
     aoSelecionar(`${comando} `);
     requestAnimationFrame(() => {
       const campo = campoRef.current;
@@ -107,7 +137,7 @@ export function BolhaDeComandos({
   }
 
   return (
-    <Popover open={aberta} onOpenChange={setAberta}>
+    <Popover open={aberta} onOpenChange={(abrir) => setDispensada(!abrir)}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
       <PopoverContent
         side="top"
