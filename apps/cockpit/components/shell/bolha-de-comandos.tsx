@@ -85,7 +85,10 @@ export function BolhaDeComandos({
   const aberta = deveAbrir && !dispensada;
 
   const [, setLeituras] = useState(0);
-  const [falhou, setFalhou] = useState(false);
+  // A falha é DO AGENTE que falhou: guardada com o slug, o `falhou` do A não
+  // aparece nem por um quadro no B (o componente não remonta na troca).
+  const [falhouEm, setFalhouEm] = useState<string | null>(null);
+  const falhou = falhouEm === agentSlug;
   const guardados = comandosLidos.get(agentSlug);
   // "Carregando" só existe na primeira leitura deste agente — e sai do render,
   // não de um estado ligado por efeito, então nem um quadro de "Nenhum
@@ -97,7 +100,7 @@ export function BolhaDeComandos({
     if (!aberta) return;
     const abortador = new AbortController();
     const temLista = comandosLidos.has(agentSlug);
-    setFalhou(false);
+    setFalhouEm(null);
 
     void fetch(`/api/agents/${encodeURIComponent(agentSlug)}/commands`, {
       cache: 'no-store',
@@ -119,7 +122,7 @@ export function BolhaDeComandos({
       .catch(() => {
         // Com lista guardada na tela, a releitura que falha fica calada: a
         // lista anterior continua servindo.
-        if (!abortador.signal.aborted && !temLista) setFalhou(true);
+        if (!abortador.signal.aborted && !temLista) setFalhouEm(agentSlug);
       });
 
     return () => abortador.abort();
