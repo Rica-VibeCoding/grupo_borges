@@ -973,6 +973,12 @@ body {
 .ck-caixa[data-linha='uma'] {
   flex-direction: row;
   align-items: flex-end;
+  /* ALTURA (Rica no iPhone, 28/09: mais baixa, mirando os 58px do mockup).
+   * 1 + 12 + 32 (disco) + 12 + 1 = 58. A fileira tem 28px de caixa de margem
+   * (o disco de 32 desce 4px pela `MARGEM_INFERIOR_DA_BASE`), então embaixo
+   * vão 16 para o disco ficar a 12 das duas bordas. `!important` porque o
+   * padding da caixa é inline no `composer.tsx` e vale nas duas fileiras. */
+  padding-block: var(--ck-space-3) calc(var(--ck-space-3) + var(--ck-space-1)) !important;
 }
 .ck-caixa[data-linha='uma'] > .ck-campo {
   order: 2;
@@ -984,6 +990,12 @@ body {
 }
 .ck-caixa[data-linha='uma'] > .ck-base-da-caixa > :not(.ck-fileira-acoes) {
   order: 1;
+  /* O `+` (e o Descartar da gravação travada) tem 44px de alvo com só 8px
+   * devolvidos embaixo: 36px de caixa, que ditariam a altura da fileira.
+   * Aqui ele devolve a folga igual aos discos (`alvo-de-toque.ts`): mesmo
+   * alvo de 44, mesma linha de centro, 28px de caixa. */
+  margin-top: calc((var(--ck-touch-min) - 32px) / -2) !important;
+  margin-bottom: calc(var(--ck-space-1) * -1 - (var(--ck-touch-min) - 32px) / 2) !important;
 }
 .ck-caixa[data-linha='uma'] > .ck-base-da-caixa > .ck-fileira-acoes {
   order: 3;

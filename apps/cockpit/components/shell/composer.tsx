@@ -1046,7 +1046,7 @@ export function Composer({
                   ? 'Ouvindo…'
                   : travaCompact
                     ? 'compactando… pode escrever, entra na fila'
-                    : `Fala com ${agentName.split(' ')[0] || agentName}…`
+                    : undefined
               }
               className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
               style={{
