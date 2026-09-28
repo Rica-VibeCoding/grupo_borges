@@ -301,6 +301,8 @@ test('200 com tmux_delivered falso não é sucesso, mas também não afirma que 
       if (!(erro instanceof ErroAnexo)) return false;
       const frase = (erro as Error).message;
       return (
+        (erro as ErroAnexo).incerto &&
+        (erro as ErroAnexo).resposta?.tmux_delivered === false &&
         /não deu para confirmar/.test(frase) &&
         /[Nn]ão reenvie/.test(frase) &&
         !/não recebeu|não chegou/.test(frase)
@@ -326,6 +328,7 @@ test('recusa explicada pelo canal_entrega usa a frase do backend, não a genéri
       if (!(erro instanceof ErroAnexo)) return false;
       const frase = (erro as Error).message;
       return (
+        !(erro as ErroAnexo).incerto &&
         /campo de mensagem do agente está ocupado/.test(frase) &&
         /toque em enviar de novo/.test(frase)
       );
@@ -340,6 +343,7 @@ test('rede caindo no meio não afirma que o arquivo não chegou', async () => {
         throw new TypeError('Failed to fetch');
       }) as unknown as typeof globalThis.fetch,
     }),
-    (erro: unknown) => erro instanceof ErroAnexo && /confira no agente/.test((erro as Error).message),
+    (erro: unknown) =>
+      erro instanceof ErroAnexo && erro.incerto && erro.resposta === null && /confira no agente/.test(erro.message),
   );
 });

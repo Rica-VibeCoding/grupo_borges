@@ -257,11 +257,13 @@ export function AvisoAnexo({
   // dentro da caixa, e uma linha de texto dizendo o mesmo seria eco.
   if (estado.fase === 'ocioso' || estado.fase === 'escolhido') return null;
 
-  const erro = estado.fase === 'erro';
+  // O não confirmado fala no mesmo âmbar do erro e se dispensa do mesmo jeito,
+  // como a faixa do texto.
+  const erro = estado.fase === 'erro' || estado.fase === 'nao-confirmado';
   const texto =
     estado.fase === 'enviando'
       ? `Enviando ${estado.arquivo.name}…`
-      : erro
+      : estado.fase === 'erro' || estado.fase === 'nao-confirmado'
         ? `${estado.nome}: ${estado.motivo}`
         : `${estado.nome} entregue`;
 

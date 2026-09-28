@@ -26,7 +26,9 @@ export function BolhaAnexoOtimista({ agentSlug, uuid }: { agentSlug: string; uui
   const pendente = useSyncExternalStore(assina, le, () => null);
   if (!pendente) return null;
 
-  const enviando = pendente.arquivoServidor === null;
+  // Pelo desfecho, não pelo nome: o não confirmado sem resposta não tem nome
+  // gravado e já não está enviando.
+  const enviando = pendente.confirmadoEmMs === null;
   const legenda = pendente.legenda || null;
   if (pendente.especie === 'video') {
     return <AnexoVideoView url={pendente.url} legenda={legenda} eco={uuid} enviando={enviando} />;

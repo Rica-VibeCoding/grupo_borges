@@ -6,9 +6,11 @@ import {
   assinaAnexosPendentes,
   confirmaAnexoPendente,
   descartaAnexoPendente,
+  devolveLegenda,
   leAnexoPendente,
   leAnexosPendentes,
   limpaAnexosPendentes,
+  naoConfirmaAnexoPendente,
   reconciliaAnexosPendentes,
   registraAnexoPendente,
 } from './anexo-pendente.ts';
@@ -84,6 +86,28 @@ describe('anexo pendente', () => {
     assert.equal(leAnexosPendentes('tara').length, 1);
   });
 
+  // Rede caindo depois do upload: sem nome gravado, a bolha fica (é o
+  // `nao-confirmado` do texto), para de dizer "enviando…" e só o prazo a tira.
+  it('não confirmada sem resposta fica até o prazo, e só o prazo a tira', () => {
+    const id = registraAnexoPendente('tara', foto);
+    naoConfirmaAnexoPendente('tara', id);
+    const p = leAnexoPendente('tara', id);
+    assert.notEqual(p?.confirmadoEmMs, null);
+    assert.equal(p?.arquivoServidor, null);
+    reconciliaAnexosPendentes('tara', [{ texto: 'qualquer coisa', criadoEmMs: 0 }]);
+    assert.ok(leAnexoPendente('tara', id), 'a bolha sumiu antes do prazo');
+    reconciliaAnexosPendentes('tara', [], Date.now() + PRAZO_ANEXO_MS);
+    assert.equal(leAnexoPendente('tara', id), null);
+    assert.deepEqual(revogadas, ['blob:x/1']);
+  });
+
+  it('não confirmar depois de confirmar não apaga o nome gravado', () => {
+    const id = registraAnexoPendente('tara', foto);
+    confirmaAnexoPendente('tara', id, RESPOSTA);
+    naoConfirmaAnexoPendente('tara', id);
+    assert.equal(leAnexoPendente('tara', id)?.arquivoServidor, '1727-abc123.png');
+  });
+
   it('lista vazia devolve SEMPRE a mesma instância (useSyncExternalStore)', () => {
     assert.equal(leAnexosPendentes('tara'), leAnexosPendentes('tara'));
     const id = registraAnexoPendente('tara', foto);
@@ -92,5 +116,25 @@ describe('anexo pendente', () => {
     assert.equal(leAnexosPendentes('tara'), lista);
     descartaAnexoPendente('tara', id);
     assert.equal(leAnexosPendentes('tara'), leAnexosPendentes('outro'));
+  });
+});
+
+describe('devolveLegenda — o upload falhou e a legenda volta ao campo', () => {
+  it('campo vazio recebe a legenda', () => {
+    assert.equal(devolveLegenda('olha o rodapé', ''), 'olha o rodapé');
+    assert.equal(devolveLegenda('olha o rodapé', '  '), 'olha o rodapé');
+  });
+
+  it('campo com texto novo junta: legenda, quebra de linha, texto atual', () => {
+    assert.equal(devolveLegenda('olha o rodapé', 'e o teto também'), 'olha o rodapé\ne o teto também');
+  });
+
+  it('não duplica quando o campo já tem a mesma legenda', () => {
+    assert.equal(devolveLegenda('olha o rodapé', 'olha o rodapé'), 'olha o rodapé');
+    assert.equal(devolveLegenda('olha o rodapé', ' olha o rodapé\n'), 'olha o rodapé');
+  });
+
+  it('sem legenda, o campo fica como está', () => {
+    assert.equal(devolveLegenda('', 'e o teto também'), 'e o teto também');
   });
 });

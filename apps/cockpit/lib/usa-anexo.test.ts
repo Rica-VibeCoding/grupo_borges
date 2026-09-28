@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ErroAnexo, type RespostaAnexo } from './anexo.ts';
-import { PRAZO_SUCESSO_MS, createControleAnexo, type ControleAnexo } from './usa-anexo.ts';
+import {
+  PRAZO_SUCESSO_MS,
+  arquivoRetido,
+  createControleAnexo,
+  type ControleAnexo,
+} from './usa-anexo.ts';
 
 type CallbackTimer = () => void;
 
@@ -257,6 +262,50 @@ test('o erro de upload devolve o arquivo à mão, com o recado ao lado', async (
     foto,
     'a foto sumiu da tela junto com o não — é o descarte silencioso com outra roupa',
   );
+});
+
+/** Sem prova de entrega o arquivo PODE ter chegado: é o `nao-confirmado` do
+ *  texto. O gesto conta como saído (a legenda não volta), o arquivo não volta
+ *  para reenviar e o chamador fica sabendo — com a resposta, quando ela veio. */
+test('entrega não confirmada não é falha: aviso fica, arquivo não volta, chamador sabe', async () => {
+  const resposta = { ...respostaOk(), tmux_delivered: false };
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      throw new ErroAnexo('não deu para confirmar', 200, { incerto: true, resposta });
+    },
+  });
+  controle.escolher(arquivo('foto.png'));
+  const recebidas: (RespostaAnexo | null)[] = [];
+  let entregues = 0;
+  const saiu = await controle.enviar(
+    'legenda',
+    () => (entregues += 1),
+    (valor) => recebidas.push(valor),
+  );
+
+  assert.equal(saiu, true);
+  assert.equal(entregues, 0);
+  assert.deepEqual(recebidas, [resposta]);
+  const estado = controle.getEstado();
+  assert.equal(estado.fase, 'nao-confirmado');
+  assert.equal(estado.fase === 'nao-confirmado' && estado.motivo, 'não deu para confirmar');
+  assert.equal(arquivoRetido(estado), null);
+
+  controle.dispensarAviso();
+  assert.equal(controle.getEstado().fase, 'ocioso');
+});
+
+test('rede caindo depois do upload também é não confirmado, sem resposta', async () => {
+  const controle = createControleAnexo('a', {
+    subir: async () => {
+      throw new ErroAnexo('A conexão caiu', undefined, { incerto: true });
+    },
+  });
+  controle.escolher(arquivo('clipe.mp4'));
+  const recebidas: (RespostaAnexo | null)[] = [];
+  assert.equal(await controle.enviar('', undefined, (valor) => recebidas.push(valor)), true);
+  assert.deepEqual(recebidas, [null]);
+  assert.equal(controle.getEstado().fase, 'nao-confirmado');
 });
 
 /** O outro erro não retém nada, e é o certo: um `.exe` não sobe nem tentando, e

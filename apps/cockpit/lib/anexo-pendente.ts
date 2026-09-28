@@ -110,6 +110,34 @@ export function confirmaAnexoPendente(
   if (mudou) grava(slug, proxima);
 }
 
+/** O upload terminou sem prova de entrega e sem resposta que traga o nome
+ *  gravado (rede caindo depois do upload). A bolha para de dizer "enviando…" e
+ *  fica até o prazo — como a do texto no `nao-confirmado`. Quando a resposta
+ *  veio (`tmux_delivered: false`), quem chama é `confirmaAnexoPendente`, e aí o
+ *  eco ainda pode tirá-la antes. */
+export function naoConfirmaAnexoPendente(slug: string, id: string): void {
+  const atual = porAgente.get(slug);
+  if (!atual) return;
+  let mudou = false;
+  const proxima = atual.map((p) => {
+    if (p.id !== id || p.confirmadoEmMs !== null) return p;
+    mudou = true;
+    return { ...p, confirmadoEmMs: Date.now() };
+  });
+  if (mudou) grava(slug, proxima);
+}
+
+/**
+ * A legenda que volta ao campo quando o upload falha. O que o Rica escreveu
+ * DEPOIS do gesto fica embaixo, como no `editarDaFila`: antes a legenda só
+ * voltava com o campo vazio, e com texto novo ela evaporava.
+ */
+export function devolveLegenda(legenda: string, atual: string): string {
+  if (!legenda.trim()) return atual;
+  if (!atual.trim() || atual.trim() === legenda.trim()) return legenda;
+  return `${legenda}\n${atual}`;
+}
+
 /** O upload falhou: a bolha sai e o arquivo volta para a mão do Rica. */
 export function descartaAnexoPendente(slug: string, id: string): void {
   const atual = porAgente.get(slug);
@@ -122,8 +150,8 @@ export function descartaAnexoPendente(slug: string, id: string): void {
 
 /**
  * Tira a bolha cujo arquivo já apareceu no feed, e a confirmada que passou do
- * prazo. A não confirmada NÃO vence: ela é o upload ainda em voo, e quem a tira
- * é o desfecho dele (`confirma` ou `descarta`).
+ * prazo. A que ainda não teve desfecho NÃO vence: ela é o upload em voo, e quem
+ * a tira é o desfecho dele (`confirma`, `naoConfirma` ou `descarta`).
  *
  * Por inclusão do nome, não por igualdade de texto: o envelope traz caminho
  * absoluto e legenda, e no CC chega picado em duas mensagens — a metade
@@ -138,9 +166,11 @@ export function reconciliaAnexosPendentes(
   if (!atual || atual.length === 0) return;
   const saindo: AnexoPendente[] = [];
   const sobrando = atual.filter((p) => {
-    if (p.arquivoServidor === null || p.confirmadoEmMs === null) return true;
+    if (p.confirmadoEmMs === null) return true;
     const nome = p.arquivoServidor;
-    const chegou = mensagensReais.some((m) => m.texto.includes(nome));
+    // Sem nome gravado (não confirmado sem resposta) não há o que casar: só o
+    // prazo tira.
+    const chegou = nome !== null && mensagensReais.some((m) => m.texto.includes(nome));
     if (chegou || agoraMs - p.confirmadoEmMs >= PRAZO_ANEXO_MS) {
       saindo.push(p);
       return false;

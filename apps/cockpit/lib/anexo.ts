@@ -240,11 +240,24 @@ export type RespostaAnexo = {
 
 export class ErroAnexo extends Error {
   readonly status: number | undefined;
+  /** `true` quando o arquivo PODE ter chegado: `tmux_delivered: false` sem
+   *  recusa explicada, ou rede caindo depois do upload. É o `nao-confirmado` do
+   *  texto — a bolha fica e o arquivo não volta para reenviar. */
+  readonly incerto: boolean;
+  /** A resposta do `/file` quando ela veio (o `tmux_delivered: false`): traz o
+   *  nome gravado, que é o que a bolha otimista casa com o eco. */
+  readonly resposta: RespostaAnexo | null;
 
-  constructor(mensagem: string, status?: number) {
+  constructor(
+    mensagem: string,
+    status?: number,
+    opcoes: { incerto?: boolean; resposta?: RespostaAnexo | null } = {},
+  ) {
     super(mensagem);
     this.name = 'ErroAnexo';
     this.status = status;
+    this.incerto = opcoes.incerto ?? false;
+    this.resposta = opcoes.resposta ?? null;
   }
 }
 
@@ -336,7 +349,9 @@ export async function enviaAnexo(
   } catch {
     // Rede caiu no meio: o arquivo PODE ter chegado. A frase não afirma que
     // não chegou — afirmar seria convidar a um reenvio duplicado.
-    throw new ErroAnexo('A conexão caiu durante o envio — confira no agente antes de repetir.');
+    throw new ErroAnexo('A conexão caiu durante o envio — confira no agente antes de repetir.', undefined, {
+      incerto: true,
+    });
   }
 
   if (!resposta.ok) {
@@ -352,7 +367,16 @@ export async function enviaAnexo(
     throw new ErroAnexo(detalheDoErro(corpo, alternativa), resposta.status);
   }
 
-  const dados = (await resposta.json()) as RespostaAnexo;
+  let dados: RespostaAnexo;
+  try {
+    dados = (await resposta.json()) as RespostaAnexo;
+  } catch {
+    // O 200 chegou e o corpo se partiu: o upload terminou, a prova é que não
+    // voltou inteira. Mesma incerteza da rede caindo.
+    throw new ErroAnexo('A conexão caiu durante o envio — confira no agente antes de repetir.', resposta.status, {
+      incerto: true,
+    });
+  }
   // `tmux_delivered: false` é o backend dizendo "NÃO CONSEGUI PROVAR", não "não
   // entregou". O `send_message` só devolve `true` com prova observável no pane
   // (input vazio ou linha transcrita, tetos de 8s e 6s), e pane em turno ativo
@@ -376,6 +400,9 @@ export async function enviaAnexo(
         ? `${canal} O arquivo ficou salvo, mas não chegou ao agente — toque em enviar de novo.`
         : 'enviado, mas não deu para confirmar que o agente viu. Não reenvie: o arquivo já está salvo e o agente alcança por ele — reenviar duplica.',
       resposta.status,
+      // Recusa explicada pelo canal é falha: o agente não recebeu e o arquivo
+      // volta para a mão. Sem ela, é ausência de prova.
+      { incerto: canal === null, resposta: dados },
     );
   }
   return dados;

@@ -104,6 +104,8 @@ import { voaParaBolha } from '../../lib/voo-do-envio';
 import {
   confirmaAnexoPendente,
   descartaAnexoPendente,
+  devolveLegenda,
+  naoConfirmaAnexoPendente,
   registraAnexoPendente,
 } from '../../lib/anexo-pendente';
 import { BolhaDeComandos } from './bolha-de-comandos';
@@ -590,8 +592,11 @@ export function Composer({
       // otimista do feed, que mostra o arquivo LOCAL com "enviando…" até o
       // upload voltar. A legenda sai do campo no mesmo quadro — ela está na
       // bolha. Se o upload falhar, a bolha sai, o arquivo volta para a
-      // miniatura com o motivo (`usa-anexo.ts`) e a legenda volta para o campo
-      // se ele ainda estiver vazio: nada evapora, nas duas metades.
+      // miniatura com o motivo (`usa-anexo.ts`) e a legenda volta para o campo,
+      // em cima do que foi escrito depois: nada evapora, nas duas metades. Se
+      // ele não CONFIRMAR (`tmux_delivered: false`, rede caindo depois do
+      // upload), é o `nao-confirmado` do texto: a bolha fica, o aviso âmbar
+      // fala, e nem arquivo nem legenda voltam — reenviar duplicaria.
       //
       // A marca do voo segura o segundo toque no quadro entre o gesto e o
       // callback da View Transition; dali em diante a fase é `enviando` e quem
@@ -615,8 +620,13 @@ export function Composer({
               nome: retido.arquivo.name,
             });
             idAnexo = id;
-            entrega = anexo.enviar(corpoParaEnviar, (resposta) =>
-              confirmaAnexoPendente(agentSlug, id, resposta),
+            entrega = anexo.enviar(
+              corpoParaEnviar,
+              (resposta) => confirmaAnexoPendente(agentSlug, id, resposta),
+              (resposta) =>
+                resposta
+                  ? confirmaAnexoPendente(agentSlug, id, resposta)
+                  : naoConfirmaAnexoPendente(agentSlug, id),
             );
             return id;
           }
@@ -628,9 +638,12 @@ export function Composer({
       vooEmCursoRef.current = false;
       if (!(await entrega)) {
         if (idAnexo !== null) descartaAnexoPendente(agentSlug, idAnexo);
-        if (textoAtualRef.current.trim() === '') {
-          setTexto(corpo);
-          setOrigemDoRascunho(origem);
+        const atual = textoAtualRef.current;
+        setTexto(devolveLegenda(corpo, atual));
+        if (corpo.trim()) {
+          setOrigemDoRascunho((vigente) =>
+            atual.trim() === '' ? origem : vigente === 'stt' || origem === 'stt' ? 'stt' : 'text',
+          );
         }
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
         // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então

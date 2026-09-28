@@ -35,11 +35,11 @@ import {
  *   já aparece no feed, este aviso só cobre o intervalo entre soltar o arquivo
  *   e ele existir por lá.
  *
- * Não é a máquina de seis fases do texto de propósito: ali a pergunta é "o
- * agente RECEBEU?", respondida só pelo eco no stream. Aqui o `POST /file`
- * devolve `tmux_delivered` e o próprio arquivo aparece no feed — não há eco de
- * anexo para casar, e inventar um `nao-confirmado` sem nada que o resolvesse
- * deixaria um estado do qual não se sai.
+ * - `nao-confirmado` é o `tmux_delivered: false` sem recusa explicada, ou a rede
+ *   caindo depois do upload: o arquivo PODE ter chegado. É o `nao-confirmado`
+ *   do texto — o recado âmbar fica, a bolha otimista fica, e o arquivo NÃO volta
+ *   para a mão, porque reenviar duplicaria a entrega. Sai por dispensar ou pelo
+ *   próximo gesto na gaveta.
  */
 /** O arquivo em mãos. Fica INTEIRO no estado: a miniatura precisa dele para o
  *  preview e o despacho precisa dele para subir — guardar só o nome obrigaria a
@@ -54,6 +54,7 @@ export type FaseAnexo =
    *  há arquivo enviável para segurar. Vindo de um upload que falhou, o arquivo
    *  continua na mão e o próximo toque em enviar é nova tentativa. */
   | { fase: 'erro'; nome: string; motivo: string; retido: Retido | null }
+  | { fase: 'nao-confirmado'; nome: string; motivo: string }
   | { fase: 'sucesso'; nome: string; especie: EspecieAnexo };
 
 /** O que a miniatura mostra e o que a porta conta como gesto — a pergunta "tem
@@ -96,9 +97,14 @@ export type ControleAnexo = {
   /** Sobe o arquivo que está na mão, com o texto do composer como legenda. Não
    *  recebe o `File` de fora porque quem o guarda é esta máquina — pedi-lo de
    *  volta ao chamador abriria a porta para subir um arquivo diferente do que a
-   *  miniatura está mostrando. `true` quando ele chegou ao agente, que é o sinal
-   *  para o composer esvaziar o campo. */
-  enviar(caption: string, aoEntregar?: (resposta: RespostaAnexo) => void): Promise<boolean>;
+   *  miniatura está mostrando. `true` quando ele saiu da mão — entregue ou não
+   *  confirmado —, que é o sinal para o composer NÃO devolver a legenda. O não
+   *  confirmado avisa por `aoNaoConfirmar`, com a resposta quando ela veio. */
+  enviar(
+    caption: string,
+    aoEntregar?: (resposta: RespostaAnexo) => void,
+    aoNaoConfirmar?: (resposta: RespostaAnexo | null) => void,
+  ): Promise<boolean>;
   alternarGaveta(): void;
   fecharGaveta(): void;
   limpar(): void;
@@ -169,7 +175,7 @@ export function createControleAnexo(
       publicar({ fase: 'escolhido', arquivo, especie: veredito.especie, gaveta: false });
     },
 
-    async enviar(caption, aoEntregar) {
+    async enviar(caption, aoEntregar, aoNaoConfirmar) {
       // A trava do duplo envio mora aqui e não só no `disabled` do botão: o
       // `disabled` some se o React re-renderizar por outro motivo, e o input
       // de arquivo também dispara `change` por caminhos que não passam pelo
@@ -203,6 +209,20 @@ export function createControleAnexo(
         }, PRAZO_SUCESSO_MS);
         return true;
       } catch (erro) {
+        // Incerto não é falha: a bolha fica (quem a resolve é o chamador, mesmo
+        // com o controle descartado — ela mora num store de módulo) e o arquivo
+        // não volta, porque reenviá-lo duplicaria a entrega.
+        if (erro instanceof ErroAnexo && erro.incerto) {
+          aoNaoConfirmar?.(erro.resposta);
+          if (descartado) return true;
+          publicar({
+            fase: 'nao-confirmado',
+            nome: retido.arquivo.name,
+            motivo: erro.message,
+            gaveta: estado.gaveta,
+          });
+          return true;
+        }
         if (descartado) return false;
         // `ErroAnexo` já vem com a frase pronta (do `detail` do backend ou da
         // validação local). Qualquer outra coisa é bug nosso, e mesmo aí a tela
@@ -233,7 +253,9 @@ export function createControleAnexo(
       // que não se apaga é o ARQUIVO: quem abriu a gaveta e desistiu no picker
       // volta com a foto ainda na mão, não com o composer vazio.
       const proximaFase: FaseAnexo =
-        estado.fase !== 'erro'
+        estado.fase === 'nao-confirmado'
+          ? { fase: 'ocioso' }
+          : estado.fase !== 'erro'
           ? estado
           : estado.retido
             ? { fase: 'escolhido', ...estado.retido }
@@ -254,7 +276,12 @@ export function createControleAnexo(
     },
 
     dispensarAviso() {
-      if (descartado || estado.fase !== 'erro') return;
+      if (descartado) return;
+      if (estado.fase === 'nao-confirmado') {
+        publicar({ fase: 'ocioso', gaveta: estado.gaveta });
+        return;
+      }
+      if (estado.fase !== 'erro') return;
       limparTimer();
       const retido = estado.retido;
       publicar(
@@ -276,7 +303,7 @@ export function createControleAnexo(
 export function usaAnexo(agentSlug: string): {
   estado: EstadoAnexo;
   escolher: (arquivo: File) => void;
-  enviar: (caption: string, aoEntregar?: (resposta: RespostaAnexo) => void) => Promise<boolean>;
+  enviar: ControleAnexo['enviar'];
   alternarGaveta: () => void;
   fecharGaveta: () => void;
   limpar: () => void;
