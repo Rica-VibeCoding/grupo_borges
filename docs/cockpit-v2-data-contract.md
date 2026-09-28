@@ -240,6 +240,19 @@ replay-start  →  N × message  →  replay-end  →  live: message | heartbeat
 - **`heartbeat` é sinal de vida, não dado.** Sumiço de heartbeat é o gatilho de
   "reconectando", que o gate exige aparecer em poucos segundos.
 
+### Parâmetros de corte — opt-in, o v1 não passa nenhum
+
+- `maxResultChars=N` — corta resultado de ferramenta acima de N caracteres e
+  zera o base64 de imagem (`_corta_resultados_grandes`, 09/08).
+- `enxuto=1` — tira `signature` dos blocos `thinking` (o bloco fica, com o
+  texto) e `message.usage` (28/09, `services/feed_enxuto.py`). Nenhuma tela do
+  feed lê as duas chaves; tokens e cota vêm do `GET /painel`. Replay de 300
+  mensagens: −16% a −23% de bytes. `tool_use_result` **não** é tocado — os
+  renderers ricos leem a forma estruturada.
+
+O v2 passa os dois (`canario-stream-controller.ts`). Renderer novo que precise
+de `usage` ou `signature` tira o `enxuto` da URL antes — não lê campo ausente.
+
 Números do baseline (sessão `pavan`, medidos, ver `fixtures/cockpit-v2/README.md`):
 replay de **15,9 MB em 3.080 eventos**, com o servidor gastando **202 ms**. O custo
 não está no back — está no cliente. Qualquer arquitetura de front que refaça

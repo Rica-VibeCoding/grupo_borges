@@ -86,6 +86,7 @@ from services.pergunta_motor import (
     detecta_pergunta_motor,
     pergunta_e_do_pedido,
 )
+from services.feed_enxuto import enxuga_para_feed
 from services.session_reset import session_reset_events_since
 
 router = APIRouter()
@@ -2828,6 +2829,11 @@ async def stream_agent_messages(
     max_result_chars: Annotated[
         int, Query(ge=0, alias="maxResultChars")
     ] = _MESSAGES_STREAM_MAX_RESULT_CHARS_DEFAULT,
+    # Tira `signature` do thinking e `message.usage`, que nenhuma tela do feed
+    # lê — ~21% do replay (ver `services/feed_enxuto.py`). Opt-in como o
+    # `maxResultChars`: sem ele o v1 recebe o evento inteiro. `Annotated` pelo
+    # mesmo motivo do parâmetro acima — `Query(...)` como default é truthy.
+    enxuto: Annotated[bool, Query()] = False,
 ) -> EventSourceResponse:
     """SSE canônico dos eventos JSONL de conversa de um agente.
 
@@ -2897,6 +2903,8 @@ async def stream_agent_messages(
                 canonical = _canonical_jsonl_message_event(event)
                 if canonical is not None:
                     _corta_resultados_grandes(canonical, max_result_chars)
+                    if enxuto:
+                        enxuga_para_feed(canonical)
                     yield _sse_json("message", canonical)
                 if index % _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY == 0:
                     now = time.monotonic()
@@ -2966,6 +2974,8 @@ async def stream_agent_messages(
                     canonical = _canonical_jsonl_message_event(event)
                     if canonical is not None:
                         _corta_resultados_grandes(canonical, max_result_chars)
+                        if enxuto:
+                            enxuga_para_feed(canonical)
                         yield _sse_json("message", canonical)
 
                 now = time.monotonic()

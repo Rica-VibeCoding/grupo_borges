@@ -203,6 +203,7 @@ async def _drive_stream(
     limit: int = 200,
     since_id: int = 0,
     recentes: bool = False,
+    enxuto: bool = False,
     stop_after: str,
     stop_after_status: str | None = None,
     max_wait_s: float = 3.0,
@@ -220,6 +221,7 @@ async def _drive_stream(
         limit=limit,
         since_id=since_id,
         recentes=recentes,
+        enxuto=enxuto,
     )
     body_chunks: list[bytes] = []
     direct_events: list[tuple[str, dict[str, Any]]] = []
@@ -1098,3 +1100,74 @@ async def test_messages_stream_keeps_pinned_session_when_client_asked_for_one(
 
     assert [name for name, _ in events].count("session-reset") == 0
     assert all(payload["uuid"] != "uuid-b" for name, payload in events if name == "message")
+
+
+_THINKING_ASSINADO = [
+    {"type": "thinking", "thinking": "", "signature": "s" * 500},
+    {"type": "text", "text": "resposta"},
+]
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_sem_enxuto_entrega_evento_inteiro(tmp_path: Path) -> None:
+    """O v1 não passa `enxuto`: recebe assinatura e usage como sempre."""
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(db, kind="assistant", uuid="uuid-1", content=_THINKING_ASSINADO)
+
+    _, _, events = await _drive_stream(app, session_id="sess-a", stop_after="replay-end")
+
+    message = next(data for name, data in events if name == "message")
+    assert message["message"]["usage"] == {"input_tokens": 1, "output_tokens": 2}
+    assert message["message"]["content"][0]["signature"] == "s" * 500
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_enxuto_tira_signature_e_usage_no_replay_e_no_live(
+    tmp_path: Path,
+) -> None:
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(db, kind="assistant", uuid="uuid-1", content=_THINKING_ASSINADO)
+
+    disconnected = False
+
+    async def is_disconnected() -> bool:
+        return disconnected
+
+    request = SimpleNamespace(app=app, is_disconnected=is_disconnected)
+    response = await agents_router.stream_agent_messages(
+        "daniel",
+        request,  # type: ignore[arg-type]
+        session_id="sess-a",
+        limit=200,
+        since_id=0,
+        recentes=False,
+        enxuto=True,
+    )
+    mensagens: list[dict[str, Any]] = []
+
+    async def collect() -> None:
+        live_inserido = False
+        async for chunk in response.body_iterator:
+            assert isinstance(chunk, dict)
+            if chunk["event"] == "message":
+                mensagens.append(json.loads(chunk["data"]))
+                if len(mensagens) == 2:
+                    return
+            elif chunk["event"] == "replay-end" and not live_inserido:
+                live_inserido = True
+                _insert_jsonl(db, kind="assistant", uuid="uuid-2", content=_THINKING_ASSINADO)
+
+    try:
+        await asyncio.wait_for(collect(), timeout=3.0)
+    finally:
+        disconnected = True
+        await response.body_iterator.aclose()
+
+    assert [m["uuid"] for m in mensagens] == ["uuid-1", "uuid-2"]
+    for m in mensagens:
+        assert "usage" not in m["message"]
+        assert m["message"]["stop_reason"] == "end_turn"
+        assert m["message"]["content"] == [
+            {"type": "thinking", "thinking": ""},
+            {"type": "text", "text": "resposta"},
+        ]
