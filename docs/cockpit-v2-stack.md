@@ -185,6 +185,26 @@ CORS e sem porta extra exposta.
 > Conferir o que ficou gravado:
 > `python3 -c "import json;print(json.load(open('.next/routes-manifest.json'))['rewrites'])"`
 
+### `deploymentId` — só muda quando o cockpit muda (28/09/2026)
+
+O Next compara o `deploymentId` do build com o da aba aberta: diferente, a aba
+recarrega inteira no próximo toque. Por isso o id **não** é o HEAD do monorepo
+(commit de doc ou da API recarregava a aba do Rica à toa). É o hash das árvores
+que entram no bundle: `apps/cockpit`, `packages/cockpit-core`, `package.json`,
+`pnpm-lock.yaml` e `pnpm-workspace.yaml` (`ENTRADAS_DO_BUILD` no `next.config.ts`).
+
+- Árvore suja nessas entradas ganha sufixo `-wip<único>` — o `tsconfig.json` e os
+  `.next*` ficam fora da checagem. Id com `-wip` em produção é publicação suja.
+- Sem `.git`, o id é `semgit<único>`: sempre recarrega, nunca serve cache velho.
+- No `next start`, o id é lido de `<distDir>/required-server-files.json`, o que o
+  build gravou — nunca recalculado do repo, que pode ter andado.
+- `scripts/copy-vad-assets.mjs` só copia os 16,5 MB da voz se o conteúdo mudou: a
+  cópia cega zerava o mtime e o ETag, e o celular baixava tudo de novo.
+
+Conferir depois de publicar — os dois têm de bater, sem `-wip`:
+`python3 -c "import json;print(json.load(open('.next/required-server-files.json'))['config']['deploymentId'])"`
+e o `data-dpl-id` da página.
+
 ---
 
 ## 5. Tailwind 4 EXIGE `@tailwindcss/postcss` — eu errei aqui
