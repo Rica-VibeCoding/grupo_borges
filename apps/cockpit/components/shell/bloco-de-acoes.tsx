@@ -732,7 +732,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
       {carga === 'pronto' ? (
         <BlocoDeCota
           quotas={painel?.quotas}
-          contexto={painel?.contexto}
           agentSlug={agentSlug}
           aoAtualizar={buscar}
         />

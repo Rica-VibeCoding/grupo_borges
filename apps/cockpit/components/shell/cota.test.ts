@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { PainelContexto, PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
+import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
-import { leiaConta, leiaCota, leiaRodape } from './cota.ts';
+import { corDaCota, leiaConta, leiaCota } from './cota.ts';
 
 /** Relógio fixo — a idade da leitura velha é a única coisa aqui que depende do
  *  tempo, e teste que depende de `Date.now()` real muda de resposta sozinho. */
@@ -181,54 +181,17 @@ describe('de quem é a cota', () => {
   });
 });
 
-describe('o rodapé do card', () => {
-  function contexto(patch: Partial<PainelContexto> = {}): PainelContexto {
-    return {
-      model: 'Opus 5',
-      model_family: 'opus',
-      context_window: 1_000_000,
-      tokens: { input: 2, output: 3, cache_creation: 1_013, cache_read: 53_599, total: 54_617 },
-      pct: 5,
-      source: '/tmp/cc-status-x.json',
-      updated_at: AGORA,
-      available: true,
-      stale: false,
-      ...patch,
-    };
-  }
-
-  it('entrada soma cache: mostrar só o `input` cru daria 2 numa sessão de 54 mil', () => {
-    const rodape = leiaRodape(contexto());
-    assert.equal(rodape?.entrada, '54.6k');
-    assert.equal(rodape?.saida, '3');
+describe('a cor da cota', () => {
+  it('neutra no dia a dia, âmbar perto do limite, vermelha no fim', () => {
+    assert.equal(corDaCota(79), 'var(--ck-text-secondary)');
+    assert.equal(corDaCota(80), 'var(--ck-state-attention)');
+    assert.equal(corDaCota(95), 'var(--ck-state-fail)');
   });
 
-  it('sessão sem nome vem como null — quem escolhe a palavra é a UI', () => {
-    assert.equal(leiaRodape(contexto())?.sessao, null);
-    assert.equal(leiaRodape(contexto({ session_name: 'Daniel' }))?.sessao, 'Daniel');
-  });
-
-  it('só `true` desenha a marca dos 200k: `false` e `null` são coisas diferentes de "cruzou"', () => {
-    assert.equal(leiaRodape(contexto({ exceeds_200k: true }))?.cruzou200k, true);
-    assert.equal(leiaRodape(contexto({ exceeds_200k: false }))?.cruzou200k, false);
-    assert.equal(leiaRodape(contexto({ exceeds_200k: null }))?.cruzou200k, false);
-  });
-
-  it('contexto indisponível não desenha rodapé nenhum', () => {
-    assert.equal(leiaRodape(contexto({ available: false })), null);
-    assert.equal(leiaRodape(null), null);
-  });
-
-  it('janela não contada mostra traço, não "0 ↑ 0 ↓" — depois do /compact o zero mente', () => {
-    const zerado = { input: 0, output: 0, cache_creation: 0, cache_read: 0, total: 0 };
-    const rodape = leiaRodape(contexto({ tokens: zerado, session_name: 'Maestro' }));
-    assert.equal(rodape?.sessao, 'Maestro');
-    assert.equal(rodape?.entrada, null);
-    assert.equal(rodape?.saida, null);
-  });
-
-  it('sem nome e sem contagem o rodapé some — faixa vazia não é informação', () => {
-    const zerado = { input: 0, output: 0, cache_creation: 0, cache_read: 0, total: 0 };
-    assert.equal(leiaRodape(contexto({ tokens: zerado })), null);
+  it('nome de conta que é e-mail vira só a parte antes do @', () => {
+    assert.equal(
+      leiaConta({ status: 'available', stale_after_seconds: 0, conta: { display_name: 'ricardo.incasa@gmail.com' } } as PainelQuotas),
+      'ricardo.incasa',
+    );
   });
 });

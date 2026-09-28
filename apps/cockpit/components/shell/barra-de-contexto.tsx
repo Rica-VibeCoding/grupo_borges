@@ -25,8 +25,8 @@
  * A primeira versão marcava os 30% com um traço vertical sobre o preenchimento.
  * O Rica reprovou duas vezes, e a segunda foi definitiva: *"essa barrinha na
  * vertical é feio"*, *"passou de 30% muda de cor"*. Então **nada** é desenhado
- * por cima da barra. Quem passou do teto pinta em âmbar, quem não passou pinta
- * neutro, e é só isso.
+ * por cima da barra. A cor é a régua (`corDoContexto`): neutro abaixo de 25%,
+ * âmbar de 25% até o teto, vermelho depois dele (28/09).
  *
  * Isso mata de graça o defeito que derrubou a versão anterior
  * (`reference_marca_fixa_em_lista_vira_coluna`): marca em coordenada fixa dentro
@@ -37,7 +37,7 @@
  * Elementos são `<span>` com `display:block` porque a statusline é um `<span>`:
  * `<div>` ali dentro é HTML inválido e vira mismatch de hidratação.
  */
-import { fracaoDoMedidor, passouDoTeto } from './medidor';
+import { AVISO_PCT, corDoContexto, fracaoDoMedidor } from './medidor';
 
 /** Largura na TROPA em tela cheia, em px. Curta de propósito: a barra divide a
  *  linha com o nome do agente, e quem perde a disputa por espaço vira "Tar…" no
@@ -58,7 +58,7 @@ export function BarraDeContexto({
   pct: number;
   largura?: number;
 }) {
-  const alemDoTeto = passouDoTeto(pct);
+  const cor = corDoContexto(pct);
 
   return (
     // `aria-hidden` porque o percentual sai ao lado em texto nos três usos: sem
@@ -83,7 +83,7 @@ export function BarraDeContexto({
           width: `${fracaoDoMedidor(pct) * 100}%`,
           height: '100%',
           borderRadius: 'var(--ck-radius-pill)',
-          background: alemDoTeto ? 'var(--ck-state-attention)' : 'var(--ck-text-secondary)',
+          background: cor,
         }}
       />
     </span>
@@ -123,7 +123,7 @@ export function ValorDoContexto({ pct }: { pct: number }) {
         textAlign: 'right',
         // O teto se lê no número EXIBIDO, não no cru: com 30,4% a tela diria
         // "30%" pintado de âmbar e se contradiria na mesma linha.
-        color: passouDoTeto(inteiro) ? 'var(--ck-state-attention)' : undefined,
+        color: inteiro >= AVISO_PCT ? corDoContexto(inteiro) : undefined,
       }}
     >
       {inteiro}%

@@ -16,57 +16,6 @@ import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * O TÍTULO DA GAVETA — o caminho do workspace do agente, no formato que o Rica
- * escreveu: `Workspace - /home/clawd/repos/grupo_borges`. Ele subiu para cá em
- * 09/08, ocupando o lugar da overline "Comandos", quando os quatro campos da
- * ficha saíram ("já já temos eles" — modelo na statusline, sessão no chrome).
- *
- * **Trunca pelo COMEÇO**, ordem dele: o fim do caminho é o que identifica o
- * repositório. Não é `.truncate` (que corta o fim) — é `direction: rtl` no
- * contêiner, que joga transbordo e reticências para a esquerda.
- *
- * O `<bdi>` não é decoração: com `rtl` sozinho o algoritmo bidirecional trata a
- * `/` inicial como neutra e a manda para o fim — `/home/clawd/repos` sai
- * desenhado `home/clawd/repos/` (medido em 09/08, os três candidatos lado a
- * lado no browser). O `unicode-bidi: plaintext` resolve a direção pelo primeiro
- * caractere forte, o `h` latino, e o caminho volta a correr da esquerda para a
- * direita dentro de um contêiner que transborda pela esquerda.
- *
- * O DOM guarda o caminho inteiro — o corte é só visual, então leitor de tela e
- * cópia pegam tudo, e o `title` cobre o ponteiro no desktop.
- */
-function TituloWorkspace({ caminho }: { caminho: string | null }) {
-  if (!caminho) return null;
-  return (
-    <div
-      className="flex min-w-0 items-baseline"
-      style={{ gap: 'var(--ck-space-2)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
-      title={caminho}
-    >
-      <span
-        className="shrink-0"
-        style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}
-      >
-        Workspace -
-      </span>
-      <span
-        className="min-w-0 overflow-hidden"
-        style={{
-          direction: 'rtl',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          fontFamily: 'var(--ck-font-mono)',
-          fontSize: 'var(--ck-text-sm)',
-          color: 'var(--ck-text-primary)',
-        }}
-      >
-        <bdi style={{ unicodeBidi: 'plaintext' }}>{caminho}</bdi>
-      </span>
-    </div>
-  );
-}
-
 /** Rótulo de seção — a mesma overline do cabeçalho, em um lugar só para a
  *  gaveta nova (09/08). */
 function Rotulo({ children }: { children: string }) {
@@ -87,10 +36,12 @@ function Rotulo({ children }: { children: string }) {
 
 /** A GAVETA — a segunda passada de 09/08, com o Rica revendo item por item o
  *  que a primeira tinha entregue. Quase tudo que eu ia ARRUMAR ele mandou
- *  TIRAR, e o resultado é uma gaveta que perdeu quase metade da altura:
+ *  TIRAR, e o resultado é uma gaveta que perdeu quase metade da altura.
+ *  **Revista em 28/09:** o título virou o NOME do agente (o workspace saiu),
+ *  a statusline subiu pra logo abaixo dele, e Permissões/Resume deram lugar
+ *  ao pulso. O registro de 09/08 segue abaixo:
  *
- *  - **O título é o workspace** (`TituloWorkspace` acima), no lugar exato onde
- *    estava a overline "Comandos".
+ *  - ~~O título é o workspace~~ — saiu em 28/09.
  *  - **Permissões** e os três botões — o que restou das ações rápidas. **O
  *    esforço saiu**: *"já temos ele no input"*, e o input é o composer. Ver o
  *    cabeçalho do `bloco-de-acoes.tsx`.
@@ -148,7 +99,14 @@ function Painel({
           borderColor: 'var(--ck-edge-light)',
         }}
       >
-        <Rotulo>Painel</Rotulo>
+        {/* O NOME DO AGENTE no lugar do "Painel" (28/09): o caminho do workspace
+            saiu, e era ele que dizia em qual agente a gaveta estava. */}
+        <span
+          className="truncate"
+          style={{ fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-text-primary)' }}
+        >
+          {agente.name}
+        </span>
         {/* Fechar é navegar — e desde 30/07 também é otimista: o
             `LinkFechaPainel` vira o painel no mesmo frame e a URL alcança
             atrás; sem JS é o Link de sempre. */}
@@ -169,10 +127,18 @@ function Painel({
         </LinkFechaPainel>
       </div>
 
-      {/* O TÍTULO — o workspace, no lugar da overline "Comandos" (09/08). */}
-      <div className="shrink-0">
-        <TituloWorkspace caminho={agente.workspace_path} />
-      </div>
+      {/* STATUSLINE — telemetria viva (modelo · sessão · contexto) numa linha
+          só, pedida pelo Rica em 09/08. Subiu do rodapé pra cá em 28/09 no
+          lugar do workspace: o contexto é o número da regra dos 30% e ficava
+          por último. A barra ocupa o campo inteiro (`larguraDaBarra={null}`) e
+          a cor é a régua do `corDoContexto` — nada desenhado por cima. */}
+      <section
+        aria-label="status do agente"
+        className="flex shrink-0 flex-col"
+        style={{ padding: 'var(--ck-space-3) var(--ck-space-4) 0' }}
+      >
+        <StatuslineAoVivo agente={agente} agora={agora} larguraDaBarra={null} />
+      </section>
 
       {/* OS COMANDOS E A COTA — o miolo, e o único item elástico da gaveta.
           Ele não rola no tamanho de hoje (o conteúdo cabe de sobra desde que o
@@ -182,23 +148,6 @@ function Painel({
       <div className="flex min-h-0 flex-auto flex-col overflow-y-auto">
         <BlocoDeAcoes agentSlug={agente.slug} agentName={agente.name} aberto={painelAberto} />
       </div>
-
-      {/* STATUSLINE — o lugar central que o Rica pediu (09/08): telemetria
-          viva (modelo · sessão · contexto) numa linha só. A barra ocupa o
-          campo inteiro (`larguraDaBarra={null}`), e o teto de 30% continua
-          sendo a cor e o `title` — nada é desenhado por cima (ordem de 09/08:
-          "passou de 30% muda de cor"). */}
-      <section
-        aria-label="status do agente"
-        className="flex shrink-0 flex-col border-t"
-        style={{
-          gap: 'var(--ck-space-2)',
-          padding: 'var(--ck-space-4)',
-          borderColor: 'var(--ck-edge-light)',
-        }}
-      >
-        <StatuslineAoVivo agente={agente} agora={agora} larguraDaBarra={null} />
-      </section>
 
       {/* ENTRADA DA TELA DE MCPs — a tela do Vinicius (15ccf76) estava
           commitada e órfã; esta linha é a porta. Link de verdade (rota, não

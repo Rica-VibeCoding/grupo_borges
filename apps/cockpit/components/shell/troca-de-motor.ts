@@ -63,7 +63,7 @@ export function opcoesDeFamilia(motor: PainelMotor | null | undefined): OpcaoDeF
     selecionado: atual === chave,
   }));
   if (motor?.override != null) {
-    opcoes.push({ chave: 'herda', rotulo: 'Voltar ao padrão do agents.yaml', selecionado: false });
+    opcoes.push({ chave: 'herda', rotulo: 'Voltar ao padrão do agente', selecionado: false });
   }
   return opcoes;
 }

@@ -34,9 +34,9 @@
  */
 import { useState } from 'react';
 import { postAgentQuotaRefresh } from '@grupo_borges/cockpit-core/api';
-import type { PainelContexto, PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
+import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
-import { leiaConta, leiaCota, leiaRodape, type JanelaDeCota, type RodapeDeCota } from './cota';
+import { corDaCota, leiaConta, leiaCota, type JanelaDeCota } from './cota';
 import { IconeReenviar } from './icones';
 import { SeletorDeConta } from './seletor-conta';
 
@@ -77,7 +77,7 @@ function Barra({ janela }: { janela: JanelaDeCota }) {
               style={{
                 width: `${janela.pct}%`,
                 height: '100%',
-                background: 'var(--ck-text-secondary)',
+                background: corDaCota(janela.pct),
               }}
             />
           </div>
@@ -164,63 +164,17 @@ function BotaoAtualizarCota({
   );
 }
 
-/**
- * A linha de baixo: quem é a sessão e quanto está dentro da janela.
- *
- * Fica no card da cota porque responde a mesma pergunta por outro ângulo — a
- * cota diz quanto do plano foi gasto, o rodapé diz o que está custando agora.
- */
-function Rodape({ rodape }: { rodape: RodapeDeCota }) {
-  return (
-    <div
-      className="flex items-center justify-between border-t"
-      style={{
-        gap: 'var(--ck-space-2)',
-        paddingTop: 'var(--ck-space-2)',
-        marginTop: 'var(--ck-space-1)',
-        borderColor: 'var(--ck-edge-light)',
-        fontSize: 'var(--ck-text-xs)',
-      }}
-    >
-      <span className="truncate" style={{ color: 'var(--ck-text-secondary)' }}>
-        {rodape.sessao ?? 'sessão sem nome'}
-        {rodape.cruzou200k ? (
-          // A PALAVRA carrega o estado, não a cor. Passar de 200k não encarece
-          // nada na assinatura — o que muda é a variante de modelo que o CC
-          // resolve, e é isso que a marca avisa.
-          <span style={{ color: 'var(--ck-text-tertiary)' }}> · 200k+</span>
-        ) : null}
-      </span>
-      {rodape.entrada !== null && rodape.saida !== null ? (
-        <span
-          className="shrink-0"
-          style={{ color: 'var(--ck-text-tertiary)', fontVariantNumeric: 'tabular-nums' }}
-        >
-          <span aria-hidden="true">{rodape.entrada} ↑</span>
-          <span className="sr-only">{rodape.entrada} de entrada</span>
-          {'  '}
-          <span aria-hidden="true">{rodape.saida} ↓</span>
-          <span className="sr-only">, {rodape.saida} de saída</span>
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 export function BlocoDeCota({
   quotas,
-  contexto,
   agentSlug,
   aoAtualizar,
 }: {
   quotas: PainelQuotas | null | undefined;
-  contexto?: PainelContexto | null;
   agentSlug: string;
   aoAtualizar?: () => void;
 }) {
   const leitura = leiaCota(quotas);
   const conta = leiaConta(quotas);
-  const rodape = leiaRodape(contexto);
 
   return (
     <section
@@ -229,6 +183,9 @@ export function BlocoDeCota({
       style={{
         gap: 'var(--ck-space-2)',
         padding: 'var(--ck-space-4)',
+        // Colado no Motor logo acima: as duas linhas (Motor, Conta) leem como
+        // um bloco só de "quem responde e com que cota" (28/09).
+        paddingTop: 'var(--ck-space-1)',
         borderColor: 'var(--ck-edge-light)',
       }}
     >
@@ -241,8 +198,10 @@ export function BlocoDeCota({
             color: 'var(--ck-text-secondary)',
           }}
         >
-          Cota usada
+          Conta
         </span>
+        {/* O chip empurra pra direita sozinho (`ml-auto` no seletor); o aviso
+            de leitura velha fica colado no rótulo. */}
         {leitura.estado === 'velha' ? (
           <>
             {/* `role="status"`: a leitura envelhece sozinha entre duas
@@ -278,7 +237,6 @@ export function BlocoDeCota({
         leitura.janelas.map((janela) => <Barra key={janela.rotulo} janela={janela} />)
       )}
 
-      {rodape ? <Rodape rodape={rodape} /> : null}
     </section>
   );
 }

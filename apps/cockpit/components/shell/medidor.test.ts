@@ -6,6 +6,7 @@ import {
   PISO_VISIVEL,
   TETO_PCT,
   fracaoDoMedidor,
+  corDoContexto,
   passouDoTeto,
 } from './medidor.ts';
 
@@ -22,6 +23,13 @@ describe('o teto manda na régua', () => {
   it('encostar no teto ainda não é passar dele', () => {
     assert.equal(passouDoTeto(TETO_PCT), false);
     assert.equal(passouDoTeto(TETO_PCT + 0.1), true);
+  });
+
+  it('avisa em âmbar antes do teto e fica vermelho depois dele', () => {
+    assert.equal(corDoContexto(24), 'var(--ck-text-secondary)');
+    assert.equal(corDoContexto(25), 'var(--ck-state-attention)');
+    assert.equal(corDoContexto(30), 'var(--ck-state-attention)');
+    assert.equal(corDoContexto(31), 'var(--ck-state-fail)');
   });
 });
 

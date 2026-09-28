@@ -51,6 +51,17 @@ export function passouDoTeto(pct: number): boolean {
   return pct > TETO_PCT;
 }
 
+/** Onde o âmbar começa: o aviso antes do teto (ordem do Rica, 28/09 — 🟡 aos
+ *  25%, 🔴 aos 30%). Chegar em 30% sem aviso era descobrir o teto já em cima. */
+export const AVISO_PCT = 25;
+
+/** A cor do contexto em três faixas. O teto continua sendo `passouDoTeto`. */
+export function corDoContexto(pct: number): string {
+  if (passouDoTeto(pct)) return 'var(--ck-state-fail)';
+  if (pct >= AVISO_PCT) return 'var(--ck-state-attention)';
+  return 'var(--ck-text-secondary)';
+}
+
 /**
  * Que fatia da barra o valor preenche, de 0 a 1.
  *

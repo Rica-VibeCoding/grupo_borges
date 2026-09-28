@@ -15,13 +15,11 @@
  * a idade inventaria precisão que o dado não tem. Quem conta a idade é o aviso.
  */
 import type {
-  PainelContexto,
   PainelQuotaWindow,
   PainelQuotas,
 } from '@grupo_borges/cockpit-core/cockpit-types';
 import {
   clampPct,
-  formatCompactNumber,
   formatElapsedShort,
   formatRemainingShort,
 } from '@grupo_borges/cockpit-core/painel-format';
@@ -75,49 +73,11 @@ type MoldeDeJanela = (typeof JANELAS)[number] | typeof JANELA_MENSAL;
 export function leiaConta(quotas: PainelQuotas | null | undefined): string | null {
   const conta = quotas?.conta;
   if (!conta) return null;
-  if (typeof conta.display_name === 'string' && conta.display_name) return conta.display_name;
+  // Nome que é e-mail vira só a parte antes do @: o chip divide a linha com o
+  // rótulo "Conta", e o domínio é sempre o mesmo gmail (28/09).
+  if (typeof conta.display_name === 'string' && conta.display_name) return conta.display_name.split('@')[0] || conta.display_name;
   if (typeof conta.email === 'string' && conta.email) return conta.email.split('@')[0] || null;
   return null;
-}
-
-export type RodapeDeCota = {
-  /** Nome dado com `/rename`, ou `null` enquanto ninguém nomeou a sessão. */
-  sessao: string | null;
-  /**
-   * `null` quando a janela ainda não foi contada. O Claude Code entrega
-   * `current_usage` vazio antes da primeira resposta da API **e de novo depois
-   * de um `/compact`** — daqui, zero de verdade e zero por falta de leitura são
-   * indistinguíveis. Escrever "0 ↑ 0 ↓" numa sessão que acabou de compactar
-   * afirma que não há nada em contexto, e isso é falso; o traço não afirma nada.
-   */
-  entrada: string | null;
-  saida: string | null;
-  /** Só `true` desenha a marca: `false` é "não cruzou", `null` é "não sei". */
-  cruzou200k: boolean;
-};
-
-/**
- * A linha de baixo do card: nome da sessão e o tamanho do que está em contexto.
- *
- * `entrada` soma os três campos de entrada porque é assim que o Claude Code
- * define `total_input_tokens` — cache lido continua sendo entrada, e mostrar só
- * o `input` cru daria 2 tokens numa sessão com 54 mil dentro.
- */
-export function leiaRodape(contexto: PainelContexto | null | undefined): RodapeDeCota | null {
-  if (!contexto?.available) return null;
-  const { input, output, cache_creation, cache_read } = contexto.tokens;
-  const entrada = input + cache_creation + cache_read;
-  const contou = entrada > 0 || output > 0;
-  const sessao = contexto.session_name ?? null;
-  // Rodapé sem nome e sem contagem não tem o que dizer — some em vez de virar
-  // uma faixa vazia embaixo das barras.
-  if (!contou && sessao === null) return null;
-  return {
-    sessao,
-    entrada: contou ? formatCompactNumber(entrada) : null,
-    saida: contou ? formatCompactNumber(output) : null,
-    cruzou200k: contexto.exceeds_200k === true,
-  };
 }
 
 function leiaJanela(
@@ -181,4 +141,12 @@ export function leiaCota(
     // junto, porque "antigo" sem número não diz se é de 6 minutos ou de um dia.
     aviso: idade ? `dados antigos · lida ${idade}` : 'dados antigos',
   };
+}
+
+/** A cor da barra de cota: âmbar a partir de 80%, vermelho a partir de 95%.
+ *  Abaixo disso neutro — cota gasta pela metade não é notícia (28/09). */
+export function corDaCota(pct: number): string {
+  if (pct >= 95) return 'var(--ck-state-fail)';
+  if (pct >= 80) return 'var(--ck-state-attention)';
+  return 'var(--ck-text-secondary)';
 }
