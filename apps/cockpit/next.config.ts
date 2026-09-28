@@ -1,6 +1,9 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { NextConfig } from 'next';
-import { PHASE_PRODUCTION_BUILD } from 'next/constants.js';
+import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from 'next/constants.js';
 
 // 8002 e NÃO 8000 — a 8000 desta VPS é do Coolify. Este default é o que sobra
 // quando alguém roda `next build` sem exportar `API_BACKEND_URL`, e o destino do
@@ -64,22 +67,96 @@ function exigeBackendVivo(base: string): void {
  * `deploymentId` o Next injeta o ID nos assets estáticos, nas respostas de
  * navegação e no `data-dpl-id` do `<html>`; o cliente que detectar divergência
  * força reload completo sozinho — sem o Rica saber que precisa de F5. Doc:
- * self-hosting.mdx (Version Skew), conferido via Context7 na 16.2.9.
+ * self-hosting.mdx (Version Skew), conferido via Context7 na 16.2.9. O BUILD_ID
+ * NÃO ajuda aqui: é o mesmo em todo build desde 10/09.
  *
- * O valor é a revisão curta do git, lida na hora em que o config é avaliado
- * (roda em Node, no build E no start). Muda a cada commit → muda a cada
- * deploy, sem exigir variável nova no boot da unit. Sem `.git` (build fora do
- * repo), cai num timestamp — raro, e o requisito do id variar entre deploys
- * continua de pé.
+ * O id muda quando o BUNDLE pode ter mudado, e só aí. Até 28/09 era o
+ * `git rev-parse --short HEAD`: commit de doc, da API ou de outro agente
+ * trocava o id e a aba do Rica recarregava inteira no toque seguinte. Agora é o
+ * hash das árvores git do que o build lê (`ENTRADAS_DO_BUILD`). Árvore suja
+ * nessas entradas — WIP que entra no bundle e que o hash do commit não vê —
+ * ganha sufixo único: nunca repete id com conteúdo diferente.
+ *
+ * O `next start` REAVALIA este arquivo. Recalcular lá seria errado: com vários
+ * agentes commitando, um commit no cockpit entre o build e o start daria ao
+ * servidor um id que o bundle não tem. Por isso o start LÊ o id que o build
+ * gravou: o Next escreve a config resolvida, `deploymentId` junto, em
+ * `<distDir>/required-server-files.json` (build/index.js:218 da 16.2.6), e o
+ * arquivo viaja com o diretório quando o estágio vira `.next`. Resolve-se pelo
+ * distDir DO START — o caminho do estágio gravado lá dentro é ignorado.
  */
-function idDoDeploy(): string {
+const DIST_DIR = process.env.COCKPIT_DIST_DIR ?? '.next';
+
+// Relativo à raiz do repo. Fora daqui o build não lê nada que vá pro bundle:
+// o core entra como source (`transpilePackages`), versão de lib vem do lockfile,
+// e env só vira bundle com prefixo NEXT_PUBLIC_, que o cockpit não usa.
+export const ENTRADAS_DO_BUILD = [
+  'apps/cockpit',
+  'packages/cockpit-core',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+];
+// Sujeira que não muda o bundle. O `next build`/`next dev` reescreve o `include`
+// do tsconfig a cada distDir novo (vive sujo no repo principal), e o próprio
+// diretório de estágio nasce fora do .gitignore — contá-lo daria `-wip` a todo
+// build feito com um estágio anterior ainda no disco.
+const SUJEIRA_QUE_NAO_CONTA = [
+  ':(exclude)apps/cockpit/tsconfig.json',
+  ':(exclude,glob)apps/cockpit/.next*/**',
+];
+
+function git(args: string[], cwd: string): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+}
+
+export function idDoCodigo(cwd: string = process.cwd()): string {
+  const unico = Date.now().toString(36);
   try {
-    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .trim();
+    const raiz = git(['rev-parse', '--show-toplevel'], cwd);
+    const arvores = git(['rev-parse', ...ENTRADAS_DO_BUILD.map((p) => `HEAD:${p}`)], raiz);
+    const sujos = git(
+      [
+        'status', '--porcelain', '--untracked-files=all', '--',
+        ...ENTRADAS_DO_BUILD,
+        ...SUJEIRA_QUE_NAO_CONTA,
+      ],
+      raiz,
+    );
+    const id = createHash('sha256').update(arvores).digest('hex').slice(0, 12);
+    return sujos ? `${id}-wip${unico}` : id;
   } catch {
-    return String(Date.now());
+    // Sem `.git` (build fora do repo): único por build, o requisito de variar
+    // quando o código muda continua de pé.
+    return `semgit${unico}`;
   }
+}
+
+export function idGravadoNoBuild(pastaDoBuild: string): string | undefined {
+  try {
+    const manifesto = JSON.parse(readFileSync(join(pastaDoBuild, 'required-server-files.json'), 'utf8'));
+    const id = manifesto?.config?.deploymentId;
+    return typeof id === 'string' && id ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// O Next avalia a config mais de uma vez por build, inclusive em processo
+// filho. Com árvore suja o sufixo é único POR AVALIAÇÃO — sem memória, um
+// mesmo build sairia com dois ids. A env herda para os filhos.
+function idDoCodigoDoProcesso(): string {
+  process.env.__COCKPIT_ID_DO_CODIGO ??= idDoCodigo();
+  return process.env.__COCKPIT_ID_DO_CODIGO;
+}
+
+function idDoDeploy(phase: string): string {
+  if (phase !== PHASE_PRODUCTION_SERVER) return idDoCodigoDoProcesso();
+  const gravado = idGravadoNoBuild(join(process.cwd(), DIST_DIR));
+  if (gravado) return gravado;
+  // Build sem o manifesto: o start sobe mesmo assim, com o comportamento antigo.
+  console.warn(`[cockpit] ${DIST_DIR}/required-server-files.json sem deploymentId — id recalculado no start`);
+  return idDoCodigoDoProcesso();
 }
 
 // Exportado à parte do default: o `anexo.test.ts` amarra o teto do vídeo ao
@@ -87,7 +164,6 @@ function idDoDeploy(): string {
 // tivesse de chamar a função, o teste passaria a depender da API estar de pé.
 export const config: NextConfig = {
   devIndicators: false,
-  deploymentId: idDoDeploy(),
 
   // ⚠️ O DEV NÃO DIVIDE DIRETÓRIO DE BUILD COM A PRODUÇÃO. O `next start` da
   // 3008 roda a partir deste mesmo `apps/cockpit` e serve `.next/`; um
@@ -96,7 +172,7 @@ export const config: NextConfig = {
   // HTML ainda em 200 (o servidor já está em memória). Foi assim que a 3008 caiu
   // em 04/08. Dev sobe com `COCKPIT_DIST_DIR=.next-dev`; a produção não define a
   // variável e continua em `.next`.
-  distDir: process.env.COCKPIT_DIST_DIR ?? '.next',
+  distDir: DIST_DIR,
 
   // O core é consumido como SOURCE (subpath exports apontando pra .ts), sem build
   // step. É isto que transpila.
@@ -160,5 +236,5 @@ export const config: NextConfig = {
 // ar em cockpit que não sobe — trocaria uma tela quebrada por nenhuma tela.
 export default (phase: string): NextConfig => {
   if (phase === PHASE_PRODUCTION_BUILD) exigeBackendVivo(API_BASE);
-  return config;
+  return { ...config, deploymentId: idDoDeploy(phase) };
 };
