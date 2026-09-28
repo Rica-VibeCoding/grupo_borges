@@ -312,6 +312,7 @@ test('recentes só vai na primeira conexão — em reconexão manda since_id', (
   const first = fake.instances[0];
   assert.match(first.url, /limit=250/);
   assert.match(first.url, /recentes=1/);
+  assert.match(first.url, /enxuto=1/);
   assert.ok(!first.url.includes('since_id'));
 
   first.emit('replay-start');
@@ -325,5 +326,7 @@ test('recentes só vai na primeira conexão — em reconexão manda since_id', (
   const second = fake.instances[1];
   assert.match(second.url, new RegExp(`since_id=${FIXTURE.evento.id}`));
   assert.ok(!second.url.includes('recentes'));
+  // O corte do que nenhuma tela lê vale também para o que chega na reconexão.
+  assert.match(second.url, /enxuto=1/);
   controller.dispose();
 });

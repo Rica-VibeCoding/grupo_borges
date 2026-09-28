@@ -105,6 +105,9 @@ function buildStreamUrl(
   const params = new URLSearchParams({
     limit: String(limit),
     maxResultChars: String(TETO_RESULTADO_CHARS),
+    // Sem `signature` do thinking nem `message.usage`: ~20% do replay que
+    // nenhuma tela lê (28/09). O porquê está em `services/feed_enxuto.py`.
+    enxuto: '1',
   });
   if (sessionId) params.set('sessionId', sessionId);
   if (sinceId !== undefined) params.set('since_id', String(sinceId));
