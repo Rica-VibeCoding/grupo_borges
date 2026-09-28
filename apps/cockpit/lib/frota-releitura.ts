@@ -58,3 +58,21 @@ export function mesmaFrota(atual: FleetResponse, nova: FleetResponse): boolean {
     JSON.stringify(atual.kpis) === JSON.stringify(nova.kpis)
   );
 }
+
+/**
+ * RELEITURA PEDIDA POR QUEM MEXEU NO AGENTE. A pergunta "trocar mesmo?" do CC
+ * (`pergunta_motor`) é lida da TELA e nasce sem evento nenhum: o JSONL só
+ * grava o `/model`/`/effort` quando ele se resolve (comando + stdout no mesmo
+ * segundo, conferido no banco em 28/09), e os hooks não chegam nesta VPS. Antes
+ * ela aparecia no poll ou de carona na releitura de um evento qualquer da
+ * frota; agora quem abre a pergunta — a troca de motor e o envio ao agente —
+ * avisa, e a frota relê na hora e de novo quando a tela já assentou.
+ */
+export const EVENTO_RELEIA_FROTA = 'frota:releia';
+/** Da segunda leitura: o modal do CC leva um instante pra desenhar após o envio. */
+export const RELEITURA_ASSENTOU_MS = 1_500;
+
+export function pedeReleituraDaFrota(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(EVENTO_RELEIA_FROTA));
+}

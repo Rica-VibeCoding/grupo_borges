@@ -133,6 +133,37 @@ def test_nao_comprime_por_cima_de_quem_ja_comprimiu() -> None:
     assert resposta.content == b"w" * 5000  # uma camada só
 
 
+def test_cabecalho_do_sse_sai_antes_do_primeiro_evento() -> None:
+    """O `/api/stream` fica mudo até haver evento ou ping: o cabeçalho não
+    pode esperar corpo, senão o `open` do EventSource atrasa até 15 s."""
+    enviados: list[dict] = []
+    liberado = asyncio.Event()
+
+    async def app_sse(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"text/event-stream; charset=utf-8")]})
+        await liberado.wait()
+        await send({"type": "http.response.body", "body": b"data: x\n\n", "more_body": False})
+
+    async def send(message):
+        enviados.append(message)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def cenario() -> list[str]:
+        scope = {"type": "http", "headers": [(b"accept-encoding", b"gzip")]}
+        tarefa = asyncio.ensure_future(GZipCorpoInteiro(app_sse)(scope, receive, send))
+        await asyncio.sleep(0.01)
+        antes_do_corpo = [m["type"] for m in enviados]
+        liberado.set()
+        await tarefa
+        return antes_do_corpo
+
+    assert asyncio.run(cenario()) == ["http.response.start"]
+    assert len(enviados) == 2
+
+
 def test_main_registra_o_gzip_por_dentro_dos_middlewares_http() -> None:
     import main
 

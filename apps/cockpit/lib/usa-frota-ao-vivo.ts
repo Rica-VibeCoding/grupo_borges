@@ -14,8 +14,10 @@ import {
 } from './frota-activity';
 import {
   atrasoDaReleitura,
+  EVENTO_RELEIA_FROTA,
   eventoPedeReleitura,
   mesmaFrota,
+  RELEITURA_ASSENTOU_MS,
   RELEITURA_ESPERA_MS,
 } from './frota-releitura';
 
@@ -58,6 +60,7 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
     let ultimaReleituraPorEvento: number | null = null;
+    let assentouTimer: ReturnType<typeof setTimeout> | null = null;
 
     const clearPoll = () => {
       if (pollTimer) clearTimeout(pollTimer);
@@ -166,6 +169,17 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
       if (!document.hidden) scheduleRefetch();
     };
     document.addEventListener('visibilitychange', onVisibility);
+    // Ação do Rica num agente (`pedeReleituraDaFrota`): lê já e de novo quando
+    // a tela assentou — é o caminho da pergunta de motor, que não tem evento.
+    const onPedido = () => {
+      scheduleRefetch();
+      if (assentouTimer) clearTimeout(assentouTimer);
+      assentouTimer = setTimeout(() => {
+        assentouTimer = null;
+        if (!document.hidden) void refetch().catch(() => undefined);
+      }, RELEITURA_ASSENTOU_MS);
+    };
+    window.addEventListener(EVENTO_RELEIA_FROTA, onPedido);
 
     connect();
     // Mesmo com SSE aberto, o snapshot periódico fecha lacunas de eventos que
@@ -175,6 +189,8 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
     return () => {
       alive = false;
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener(EVENTO_RELEIA_FROTA, onPedido);
+      if (assentouTimer) clearTimeout(assentouTimer);
       closeSource();
       clearPoll();
       if (debounceTimer) clearTimeout(debounceTimer);

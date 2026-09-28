@@ -64,8 +64,14 @@ class GZipCorpoInteiro:
         async def envia(message: Message) -> None:
             nonlocal inicio
             if message["type"] == "http.response.start":
-                # Segura o cabeçalho até ver o primeiro pedaço do corpo: é ele
-                # que diz se a resposta vem inteira ou em stream.
+                # Tipo que não se comprime (SSE, arquivo) segue NA HORA: o
+                # `/api/stream` não manda corpo ao conectar, e segurar o
+                # cabeçalho atrasava o `open` do EventSource até o primeiro ping.
+                if not _comprimivel(Headers(raw=message["headers"])):
+                    await send(message)
+                    return
+                # Candidato a gzip: segura o cabeçalho até o primeiro pedaço do
+                # corpo, que é quem diz se a resposta vem inteira ou em stream.
                 inicio = message
                 return
             if inicio is None:
@@ -76,7 +82,6 @@ class GZipCorpoInteiro:
                 message["type"] == "http.response.body"
                 and not message.get("more_body", False)
                 and len(message.get("body", b"")) >= self.tamanho_minimo
-                and _comprimivel(Headers(raw=cabecalho["headers"]))
             ):
                 corpo = gzip.compress(message["body"], compresslevel=self.nivel)
                 headers = MutableHeaders(raw=cabecalho["headers"])

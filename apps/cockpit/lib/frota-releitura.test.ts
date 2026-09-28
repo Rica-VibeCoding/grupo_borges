@@ -6,6 +6,7 @@ import type { FleetResponse, TaskEvent } from '@grupo_borges/cockpit-core/cockpi
 import { activityFromTaskEvent } from './frota-activity.ts';
 import {
   atrasoDaReleitura,
+  EVENTO_RELEIA_FROTA,
   eventoPedeReleitura,
   mesmaFrota,
   RELEITURA_ESPERA_MS,
@@ -74,4 +75,24 @@ function frota(status: 'ocioso' | 'trabalhando', serverNow: number): FleetRespon
 test('snapshot igual (só o relógio do servidor andou) não vira estado novo', () => {
   assert.equal(mesmaFrota(frota('ocioso', 1), frota('ocioso', 2)), true);
   assert.equal(mesmaFrota(frota('ocioso', 1), frota('trabalhando', 1)), false);
+});
+
+test('ação no agente pede releitura mesmo quando falha', async () => {
+  const alvo = new EventTarget();
+  (globalThis as { window?: EventTarget }).window = alvo;
+  let pedidos = 0;
+  alvo.addEventListener(EVENTO_RELEIA_FROTA, () => { pedidos += 1; });
+  try {
+    const { postAgentModel } = await import('./acoes-no-agente.ts');
+    const fetchOriginal = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('{}', { status: 500 })) as typeof fetch;
+    try {
+      await assert.rejects(postAgentModel('daniel', 'haiku'));
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+    assert.equal(pedidos, 1);
+  } finally {
+    delete (globalThis as { window?: EventTarget }).window;
+  }
 });

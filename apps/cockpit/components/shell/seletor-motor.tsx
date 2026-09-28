@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchAgentPainel, patchAgentEffort, postAgentAplicarMotor, postAgentModel } from '@grupo_borges/cockpit-core/api';
+import { fetchAgentPainel, postAgentAplicarMotor } from '@grupo_borges/cockpit-core/api';
+import { patchAgentEffort, postAgentModel } from '../../lib/acoes-no-agente.ts';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { DropdownMenu, DropdownMenuContent } from '../ui/dropdown-menu';
 import { esperaConvergenciaDoEsforco, type ControleConvergencia } from './convergencia-esforco';

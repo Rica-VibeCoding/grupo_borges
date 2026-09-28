@@ -144,7 +144,7 @@ export function createControleEnvio(
   const postar =
     dependencias.postar ??
     (async (slug, texto, origem) => {
-      const { postAgentInput } = await import('@grupo_borges/cockpit-core/api');
+      const { postAgentInput } = await import('./acoes-no-agente.ts');
       const resposta = await postAgentInput(slug, texto, { origin: origem });
       if (!respostaTemFronteira(resposta)) {
         throw new Error('Resposta de envio sem event_boundary_id válido');

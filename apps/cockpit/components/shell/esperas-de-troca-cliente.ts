@@ -3,7 +3,8 @@
  * rotas — ligada à rede de verdade. A regra mora em `esperas-de-troca.ts` e
  * `executor-de-troca.ts`, testáveis sem `fetch`.
  */
-import { fetchAgentPainel, patchAgentEffort, postAgentModel } from '@grupo_borges/cockpit-core/api';
+import { fetchAgentPainel } from '@grupo_borges/cockpit-core/api';
+import { patchAgentEffort, postAgentModel } from '../../lib/acoes-no-agente.ts';
 
 import { criaEsperasDeTroca } from './esperas-de-troca.ts';
 import { criaExecutorDeTroca } from './executor-de-troca.ts';

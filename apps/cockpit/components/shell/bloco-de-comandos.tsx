@@ -29,7 +29,7 @@
  *   que já leu o `/painel` — duas buscas do mesmo recurso divergiriam na tela.
  */
 import { useEffect, useRef, useState } from 'react';
-import { postAgentInput } from '@grupo_borges/cockpit-core/api';
+import { postAgentInput } from '../../lib/acoes-no-agente.ts';
 
 import { CONFIRMA_ACAO_MS, RECIBO_MS, type Impedimento } from './acoes-rapidas';
 import {
