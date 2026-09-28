@@ -70,7 +70,14 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         if (controlador.signal.aborted) throw new Error('leitura superada');
         return novo;
       });
-    }, (novo) => {
+    }, (novo, { fundo }) => {
+      if (fundo) {
+        // Painel de segundo plano (reenvio, convergência, barra do chat): só o
+        // dado. A gaveta que ele abriu agora e o "salvando" dele ficam.
+        setPainel(novo);
+        revisarFaltas(agentSlug, novo);
+        return;
+      }
       invalidar();
       setPainel(novo);
       setSalvando(false);

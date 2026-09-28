@@ -47,7 +47,7 @@ export function BarraPerguntaMotor({ agentSlug }: { agentSlug: string }) {
       setMemoria((atual) => depoisDoToque(atual, alvo, { tipo: 'resposta', respondida: corpo.respondida }));
       // O chip lê o painel, não a frota: sem isto ele seguia no modelo antigo
       // depois do "Sim" até a próxima releitura dele.
-      if (corpo.respondida) void fetchAgentPainel(agentSlug).then(publicarPainel).catch(() => undefined);
+      if (corpo.respondida) void fetchAgentPainel(agentSlug).then((painel) => publicarPainel(painel, { fundo: true })).catch(() => undefined);
     } catch (erro) {
       // 409 `sem_pergunta_motor` some sem erro; `pergunta_mudou` troca a barra
       // para a pergunta nova sem aplicar o toque. Rede caída: a barra fica.

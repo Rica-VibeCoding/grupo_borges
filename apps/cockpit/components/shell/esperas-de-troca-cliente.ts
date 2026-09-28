@@ -14,7 +14,8 @@ export const executorDeTroca = criaExecutorDeTroca({
   postModel: (slug, valor) => postAgentModel(slug, valor),
   patchEffort: (slug, valor) => patchAgentEffort(slug, valor),
   lePainel: (slug) => fetchAgentPainel(slug),
-  publicar: publicarPainel,
+  // Tudo que o executor publica é de segundo plano: ver `ContextoDoPainel`.
+  publicar: (painel) => publicarPainel(painel, { fundo: true }),
   fecharSePronto: (slug, tambem) => fecharSePronto(slug, tambem),
 });
 

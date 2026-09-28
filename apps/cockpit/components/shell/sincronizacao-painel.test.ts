@@ -48,3 +48,14 @@ it('leitura inicial não aceita painel de outro slug', async () => {
   parar();
   assert.deepEqual(recebidos, []);
 });
+
+it('publicação de fundo chega marcada; a da ação do Rica e a leitura inicial não (28/09)', async () => {
+  const contextos: unknown[] = [];
+  const parar = sincronizarPainel('canarinho', async () => painel('canarinho'), (_, contexto) => contextos.push(contexto), () => {});
+  await Promise.resolve();
+  await Promise.resolve();
+  publicarPainel(painel('canarinho'), { fundo: true });
+  publicarPainel(painel('canarinho'));
+  parar();
+  assert.deepEqual(contextos.slice(-2), [{ fundo: true }, { fundo: false }]);
+});
