@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fase 4 · Direção C — Eclipse</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Direção C — Eclipse. O retrato é o núcleo, grande e quase apagado, cercado por um anel de 96
+ * traços que é o medidor da voz: parado ele só "respira", ouvindo acende pela metade de baixo
+ * (a sua voz sobe do pé, como na moldura), falando acende inteiro e o aro pulsa.
+ * Estado por hash: #parado · #ouvindo · #falando (toque alterna). */
+:root {
+  --ck-surface-canvas: #191919; --ck-text-primary: #f2f2f2; --ck-text-secondary: #b1b1b1; --ck-text-tertiary: #868686;
+  --ck-conversa-voce: #f6b84d; --ck-conversa-ze: #36caf1; --ck-conversa-prepara: #b1b1b1;
+  --cor: var(--ck-conversa-prepara);
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+body.ouvindo { --cor: var(--ck-conversa-voce); }
+body.falando { --cor: var(--ck-conversa-ze); }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--ck-text-primary);
+  font-family: Geist, ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.tela { position: relative; width: 393px; height: 852px; overflow: hidden; isolation: isolate;
+  background: radial-gradient(90% 50% at 50% 40%, #1f1f1f, #141414 70%, #101010); }
+
+.moldura { position: absolute; inset: 0; border-radius: 55px; pointer-events: none; z-index: 3; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08); }
+body.ouvindo .moldura { box-shadow: inset 0 0 0 1.5px var(--cor), inset 0 0 22px color-mix(in oklch, var(--cor) 45%, transparent);
+  -webkit-mask: linear-gradient(to top, #000 45%, transparent 82%); mask: linear-gradient(to top, #000 45%, transparent 82%); }
+body.falando .moldura { box-shadow: inset 0 0 0 1.5px var(--cor), inset 0 0 26px color-mix(in oklch, var(--cor) 45%, transparent);
+  -webkit-mask: linear-gradient(to bottom, #000 40%, transparent 78%); mask: linear-gradient(to bottom, #000 40%, transparent 78%); }
+
+.ilha { position: absolute; top: 11px; left: 50%; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; z-index: 5; }
+.hora { position: absolute; top: 21px; left: 50px; font-size: 16px; font-weight: 600; z-index: 5; }
+.inicio { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: #f2f2f2; opacity: .85; z-index: 5; }
+
+.cabeca { position: absolute; top: 76px; left: 0; right: 0; text-align: center; z-index: 2; font-family: var(--mono);
+  font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--ck-text-secondary); }
+.cabeca b { color: var(--ck-text-primary); font-weight: 500; }
+.cabeca i { display: inline-block; width: 6px; height: 6px; margin: 0 10px 1px; border-radius: 50%; background: var(--cor); box-shadow: 0 0 8px var(--cor); vertical-align: middle; }
+body.parado .cabeca i { box-shadow: none; opacity: .5; }
+
+/* núcleo */
+.nucleo { position: absolute; left: 50%; top: 170px; width: 330px; height: 330px; margin-left: -165px; z-index: 1; }
+.anel { position: absolute; inset: 0; }
+.anel i { position: absolute; left: 50%; top: 50%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--cor);
+  transform-origin: 50% 0; opacity: .16; transition: opacity .3s; }
+.retrato { position: absolute; inset: 55px; border-radius: 50%; overflow: hidden; }
+.retrato img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) brightness(.42) contrast(1.25); transform: scale(1.02); }
+.retrato::before { /* tinta do estado, bem leve, e linhas de varredura */
+  content: ""; position: absolute; inset: 0; z-index: 1; mix-blend-mode: color; background: var(--cor); opacity: .0; transition: opacity .4s; }
+body.ouvindo .retrato::before, body.falando .retrato::before { opacity: .35; }
+.retrato::after { content: ""; position: absolute; inset: 0; z-index: 2;
+  background: repeating-linear-gradient(to bottom, rgb(0 0 0 / .22) 0 1px, transparent 1px 3px),
+              radial-gradient(circle at 50% 40%, transparent 40%, rgb(0 0 0 / .75) 100%); }
+.aro { position: absolute; inset: 49px; border-radius: 50%; border: 1.5px solid var(--cor); opacity: .3;
+  box-shadow: 0 0 24px color-mix(in oklch, var(--cor) 40%, transparent); }
+body.ouvindo .aro { opacity: .8; }
+body.falando .aro { opacity: 1; animation: pulsa 1s ease-in-out infinite; }
+@keyframes pulsa { 0%,100% { box-shadow: 0 0 14px var(--cor); transform: scale(1); } 50% { box-shadow: 0 0 40px var(--cor), inset 0 0 22px color-mix(in oklch, var(--cor) 50%, transparent); transform: scale(1.025); } }
+.corona { position: absolute; inset: 20px; border-radius: 50%; opacity: 0; z-index: -1;
+  background: radial-gradient(circle, transparent 52%, color-mix(in oklch, var(--cor) 35%, transparent) 60%, transparent 72%); }
+body.falando .corona { opacity: 1; animation: pulsa-corona 1s ease-in-out infinite; }
+@keyframes pulsa-corona { 50% { transform: scale(1.06); opacity: .5; } }
+
+/* texto */
+.convite { position: absolute; left: 0; right: 0; top: 560px; text-align: center; z-index: 2; }
+.convite b { display: block; font-size: 28px; font-weight: 300; letter-spacing: -0.03em; }
+.convite span { display: block; margin-top: 12px; font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--ck-text-tertiary); }
+body:not(.parado) .convite { display: none; }
+
+.legenda { position: absolute; left: 32px; right: 32px; top: 548px; z-index: 2; text-align: center; display: none;
+  font-size: 24px; line-height: 1.34; letter-spacing: -0.02em; font-weight: 300; }
+.legenda .firme { color: var(--ck-text-primary); }
+.legenda .provisorio { color: var(--ck-text-tertiary); }
+.legenda.ze { color: var(--ck-text-secondary); font-size: 20px; }
+body.ouvindo .legenda.voce, body.falando .legenda.ze { display: block; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body class="parado">
+<main class="tela" id="tela">
+  <div class="moldura"></div>
+  <div class="ilha"></div><span class="hora">21:40</span>
+
+  <div class="cabeca"><b>Daniel</b><i></i><span id="rotulo">em espera</span></div>
+
+  <div class="nucleo">
+    <div class="corona"></div>
+    <div class="anel" id="anel"></div>
+    <div class="retrato"><img src="../../../apps/cockpit/public/avatars/daniel.webp" alt=""></div>
+    <div class="aro"></div>
+  </div>
+
+  <div class="convite"><b>Toque e fale</b><span>a tela inteira é o botão</span></div>
+  <p class="legenda voce" aria-live="polite"><span class="firme">Confere se o deploy do Fluyt subiu</span> <span class="provisorio">e me diz como ficou</span></p>
+  <p class="legenda ze">Subiu. O build levou dois minutos e a produção já responde.</p>
+
+  <div class="inicio"></div>
+</main>
+<script>
+const ROTULO = { parado: 'em espera', ouvindo: 'ouvindo', falando: 'falando' };
+const ORDEM = ['parado', 'ouvindo', 'falando'];
+const N = 96, anel = document.getElementById('anel'), tracos = [];
+for (let k = 0; k < N; k++) { const i = document.createElement('i'); anel.append(i); tracos.push(i); }
+/* comprimento de cada traço: ruído determinístico, para a captura sair igual toda vez */
+const r = (x) => { const s = Math.sin(x * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+function desenha(e, t) {
+  tracos.forEach((i, k) => {
+    const a = k / N * Math.PI * 2;               // 0 no topo, sentido horário
+    const baixo = (1 - Math.cos(a)) / 2;         // 0 no topo, 1 no pé
+    let len = 6, op = .16;
+    if (e === 'ouvindo') { const v = r(k + Math.floor(t * 12)) * .7 + .3 * Math.sin(k * .5 + t * 6) ** 2;
+      len = 6 + Math.pow(baixo, 1.6) * 24 * v; op = .15 + .85 * Math.pow(baixo, 1.2); }
+    if (e === 'falando') { const v = r(k * 3 + Math.floor(t * 10)) * .6 + .4 * Math.abs(Math.sin(k * .26 + t * 5));
+      len = 7 + 20 * v; op = .45 + .55 * v; }
+    if (e === 'parado') { len = 5 + 3 * (k % 8 === 0); op = k % 8 === 0 ? .35 : .14; }
+    i.style.height = len + 'px'; i.style.opacity = op;
+    i.style.transform = `rotate(${a * 180 / Math.PI + 180}deg) translateY(124px)`;
+  });
+}
+let t = 0;
+function aplica() { const e = ORDEM.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'parado';
+  document.body.className = e; document.getElementById('rotulo').textContent = ROTULO[e]; desenha(e, 0.35); }
+addEventListener('hashchange', aplica); aplica();
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => { t += 1 / 20; if (!document.body.classList.contains('parado')) desenha(document.body.className, t); }, 50);
+document.getElementById('tela').onclick = () => { const i = ORDEM.indexOf(document.body.className); location.hash = ORDEM[(i + 1) % 3]; };
+</script>
+</body>
+</html>

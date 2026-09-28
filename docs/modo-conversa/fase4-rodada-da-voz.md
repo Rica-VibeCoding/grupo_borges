@@ -42,6 +42,9 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
   Hook e skill moram no `ze_claude`, não neste repo.
 
 ## 5. Foto do agente na tela de voz
+- 28/09 — Rica escolheu **B (Atividade ao vivo) e C (Eclipse)**, `fase4-direcoes/`, com uma chave em
+  "Configurações da conversa" para alternar. Junto: a tela parada nova (vale para as duas). Foto dos agentes tem
+  128 px — a C pede ≥ 512 px. Entra depois do conserto do item 6 (mesma tela).
 - Hoje a tela mostra o nome do agente e um ícone de chat. Pedido: a foto do agente, com cara da UI futurística.
 - Desenho aceito: retrato redondo, escurecido e dessaturado (não briga com a esfera), aro de luz na cor da moldura,
   aro pulsa quando o agente fala. O ícone de chat sai (o gesto direita → chat já leva).
