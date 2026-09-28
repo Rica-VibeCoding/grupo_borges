@@ -292,6 +292,11 @@ class GrupoBorgesDB:
         self._sparkline_cache: (
             tuple[int, dict[str, dict[str, int]], dict[str, dict[str, int]], float] | None
         ) = None
+        # (since_unix, hora_corrente_unix, contagem, tokens) das horas FECHADAS
+        # da janela — ver `_sparkline_horas_fechadas`.
+        self._sparkline_fechadas: (
+            tuple[int, int, dict[str, dict[str, int]], dict[str, dict[str, int]]] | None
+        ) = None
         # `_fleet_snapshot` roda em `asyncio.to_thread`: duas atualizações do
         # painel podem entrar juntas.
         self._sparkline_guard = threading.Lock()
@@ -3209,7 +3214,8 @@ class GrupoBorgesDB:
 
         Trinta segundos não mudam o desenho: o agregado é por HORA, numa janela
         de 24 h. `since_unix` faz parte da chave, então a virada de hora
-        invalida sozinha.
+        invalida sozinha. Vencida a validade, só a hora corrente é recontada —
+        as fechadas têm cache próprio (`_sparkline_horas_fechadas`).
         """
         agora = time.monotonic()
         with self._sparkline_guard:
@@ -3217,21 +3223,13 @@ class GrupoBorgesDB:
             if cache is not None and cache[0] == since_unix and cache[3] > agora:
                 return cache[1], cache[2]
 
-        rows = conn.execute(
-            f"""
-            SELECT agent_slug,
-                   strftime(?, created_at, 'unixepoch') AS hour_bucket,
-                   COUNT(*) AS cnt,
-                   {_TOKEN_SUM_SQL} AS tokens
-            FROM task_events
-            WHERE agent_slug IS NOT NULL AND created_at >= ?
-            GROUP BY agent_slug, hour_bucket
-            """,
-            (HOUR_BUCKET_FMT, since_unix),
-        ).fetchall()
-        por_slug: dict[str, dict[str, int]] = {}
-        tokens_por_slug: dict[str, dict[str, int]] = {}
-        for row in rows:
+        hora_corrente = int(time.time()) // 3600 * 3600
+        fechadas, tokens_fechadas = self._sparkline_horas_fechadas(
+            conn, since_unix, hora_corrente
+        )
+        por_slug = {slug: dict(horas) for slug, horas in fechadas.items()}
+        tokens_por_slug = {slug: dict(horas) for slug, horas in tokens_fechadas.items()}
+        for row in self._sparkline_rows(conn, max(since_unix, hora_corrente), None):
             por_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
             tokens_por_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = (
                 row["tokens"] or 0
@@ -3244,6 +3242,53 @@ class GrupoBorgesDB:
                 tokens_por_slug,
                 agora + SPARKLINE_TTL_SECONDS,
             )
+        return por_slug, tokens_por_slug
+
+    @staticmethod
+    def _sparkline_rows(
+        conn: sqlite3.Connection, desde: int, ate: int | None
+    ) -> list[sqlite3.Row]:
+        filtro_ate = "AND created_at < ?" if ate is not None else ""
+        parametros = (HOUR_BUCKET_FMT, desde) + ((ate,) if ate is not None else ())
+        return conn.execute(
+            f"""
+            SELECT agent_slug,
+                   strftime(?, created_at, 'unixepoch') AS hour_bucket,
+                   COUNT(*) AS cnt,
+                   {_TOKEN_SUM_SQL} AS tokens
+            FROM task_events
+            WHERE agent_slug IS NOT NULL AND created_at >= ? {filtro_ate}
+            GROUP BY agent_slug, hour_bucket
+            """,
+            parametros,
+        ).fetchall()
+
+    def _sparkline_horas_fechadas(
+        self, conn: sqlite3.Connection, since_unix: int, hora_corrente: int
+    ) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]]:
+        """As horas da janela que já fecharam, lidas UMA vez por hora.
+
+        Evento nasce com `created_at` = agora (`_insert_task_event`), então hora
+        fechada não ganha linha nova: recontá-la a cada 30 s era refazer a mesma
+        conta. Medido em 28/09 na cópia do banco: 24 h inteiras 328 ms, só a hora
+        corrente 40 ms — era o pico de ~0,46 s do `/api/fleet` quando a validade
+        vencia. A chave tem as duas pontas, então a virada da hora (ou outra
+        janela) refaz sozinha.
+        """
+        with self._sparkline_guard:
+            cache = self._sparkline_fechadas
+            if cache is not None and cache[0] == since_unix and cache[1] == hora_corrente:
+                return cache[2], cache[3]
+        por_slug: dict[str, dict[str, int]] = {}
+        tokens_por_slug: dict[str, dict[str, int]] = {}
+        if since_unix < hora_corrente:
+            for row in self._sparkline_rows(conn, since_unix, hora_corrente):
+                por_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = row["cnt"]
+                tokens_por_slug.setdefault(row["agent_slug"], {})[row["hour_bucket"]] = (
+                    row["tokens"] or 0
+                )
+        with self._sparkline_guard:
+            self._sparkline_fechadas = (since_unix, hora_corrente, por_slug, tokens_por_slug)
         return por_slug, tokens_por_slug
 
     def _fleet_snapshot(

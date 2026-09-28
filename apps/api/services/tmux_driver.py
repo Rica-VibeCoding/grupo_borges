@@ -1541,18 +1541,33 @@ def _capture_pane_excerpt_sync(
     max_chars: int,
     preserve_ansi: bool = False,
 ) -> str | None:
-    server = _server_for(session_name)
-    if not server.has_session(session_name):
-        return None
-    session = server.sessions.get(session_name=session_name)
-    pane = session.active_pane
-    lines = pane.capture_pane(
-        start=-line_limit,
-        end="-",
-        escape_sequences=True,
-        join_wrapped=True,
-    )
-    return _clean_pane_lines(lines, max_chars=max_chars, preserve_ansi=preserve_ansi)
+    """UM `capture-pane` por servidor tentado, com o alvo resolvido pelo tmux.
+
+    Era `_server_for` → `has_session` → `sessions.get` → `active_pane` →
+    `capture_pane`: cinco subprocessos por tela, e o `/api/fleet` captura a
+    frota inteira a cada leitura (medido 28/09: ~50 subprocessos tmux por
+    chamada). O alvo `=<sessão>:` é o mesmo pane de antes — `=` casa o nome
+    exato, como o `has-session` do libtmux, e `sessão:` sem janela é o pane
+    ativo da janela ativa, que é o que `session.active_pane` devolvia. A ordem
+    dos servidores é a do `_server_for`: socket nomeado primeiro, default de
+    reserva (subsessões do cockpit moram lá). Sessão ausente nos dois = None,
+    como o `has_session` falso de antes.
+    """
+    args = ("capture-pane", "-p", "-e", "-J", "-S", f"-{line_limit}", "-E", "-")
+    target = f"={session_name}:"
+    servers = []
+    if _TMUX_SOCKET_TEMPLATE:
+        servers.append(
+            libtmux.Server(socket_name=_TMUX_SOCKET_TEMPLATE.format(session=session_name))
+        )
+    servers.append(libtmux.Server())
+    for server in servers:
+        result = server.cmd(*args, target=target)
+        if result.returncode == 0:
+            return _clean_pane_lines(
+                result.stdout, max_chars=max_chars, preserve_ansi=preserve_ansi
+            )
+    return None
 
 
 # Statusline do Claude Code, variações observadas:

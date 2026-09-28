@@ -12,9 +12,14 @@ import {
   FLEET_SSE_EVENT_KINDS,
   pruneActivityOverrides,
 } from './frota-activity';
+import {
+  atrasoDaReleitura,
+  eventoPedeReleitura,
+  mesmaFrota,
+  RELEITURA_ESPERA_MS,
+} from './frota-releitura';
 
 const POLL_INTERVAL_MS = 5_000;
-const REFETCH_DEBOUNCE_MS = 250;
 const MAX_BACKOFF_SECONDS = 60;
 
 async function fetchFleetClient(): Promise<FleetResponse> {
@@ -32,11 +37,17 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
   const [fleet, setFleet] = useState(initialFleet);
   const [overrides, setOverrides] = useState<Record<string, AgentActivityOverride>>({});
   const requestSequence = useRef(0);
+  // O último snapshot do SERVIDOR (sem realce): é contra ele que um evento
+  // decide se há o que reler (`frota-releitura.ts`).
+  const fleetRef = useRef(initialFleet);
 
   const refetch = useCallback(async () => {
     const sequence = ++requestSequence.current;
     const next = await fetchFleetClient();
-    if (sequence === requestSequence.current) setFleet(next);
+    if (sequence !== requestSequence.current) return;
+    if (mesmaFrota(fleetRef.current, next)) return;
+    fleetRef.current = next;
+    setFleet(next);
   }, []);
 
   useEffect(() => {
@@ -46,6 +57,7 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
+    let ultimaReleituraPorEvento: number | null = null;
 
     const clearPoll = () => {
       if (pollTimer) clearTimeout(pollTimer);
@@ -63,15 +75,27 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
         schedulePoll();
       }, POLL_INTERVAL_MS);
     };
-    const scheduleRefetch = () => {
+    const scheduleRefetch = (atraso = RELEITURA_ESPERA_MS) => {
       if (document.hidden) return;
       if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => void refetch().catch(() => schedulePoll()), REFETCH_DEBOUNCE_MS);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        void refetch().catch(() => schedulePoll());
+      }, atraso);
     };
-    const ingest = (raw: string, fallbackKind: string) => {
+    // Releitura por evento: só quando o evento contradiz o snapshot, e sem
+    // empurrar a que já está marcada — rajada de eventos não adia a leitura.
+    const refetchPorEvento = () => {
+      if (document.hidden || debounceTimer) return;
+      const agora = Date.now();
+      const atraso = atrasoDaReleitura(agora, ultimaReleituraPorEvento);
+      ultimaReleituraPorEvento = agora + atraso;
+      scheduleRefetch(atraso);
+    };
+    const ingest = (raw: string, fallbackKind: string): boolean => {
       let partial: Partial<TaskEvent>;
-      try { partial = JSON.parse(raw) as Partial<TaskEvent>; } catch { return; }
-      if (typeof partial.id !== 'number' || !partial.agent_slug) return;
+      try { partial = JSON.parse(raw) as Partial<TaskEvent>; } catch { return false; }
+      if (typeof partial.id !== 'number' || !partial.agent_slug) return false;
       const kind = typeof partial.kind === 'string' ? partial.kind : fallbackKind;
       const event: TaskEvent = {
         id: partial.id,
@@ -83,7 +107,9 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
         created_at: partial.created_at ?? Math.floor(Date.now() / 1_000),
       };
       const activity = activityFromTaskEvent(event);
-      if (!activity) return;
+      if (!activity) return false;
+      const statusNoSnapshot = fleetRef.current.agents
+        .find((agent) => agent.slug === event.agent_slug)?.status;
       setOverrides((current) => {
         const now = Date.now();
         const existing = current[event.agent_slug!];
@@ -101,12 +127,12 @@ export function useFrotaAoVivo(initialFleet: FleetResponse): FleetResponse {
           },
         };
       });
+      return eventoPedeReleitura(activity, statusNoSnapshot);
     };
     const handlers: Array<[string, EventListener]> = FLEET_SSE_EVENT_KINDS.map((kind) => [
       kind,
       ((event: MessageEvent) => {
-        ingest(event.data, kind);
-        scheduleRefetch();
+        if (ingest(event.data, kind)) refetchPorEvento();
       }) as EventListener,
     ]);
     const closeSource = () => {

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
 from services import tmux_driver
 from services.pergunta_motor import detecta_pergunta_motor
+from services.voo_unico import VooUnico
 
 router = APIRouter()
 _CC_STATUS_PREFIX = "cc-status-"
@@ -127,10 +128,17 @@ class FleetSnapshot(BaseModel):
     health: FleetHealth
 
 
-async def _hydrate_pane_excerpts(agents: list[dict]) -> None:
+async def _hydrate_pane_excerpts(
+    agents: list[dict], sessoes_no_ar: set[str] | None = None
+) -> None:
+    """`sessoes_no_ar` é o inventário que o snapshot já leu: sessão fora dele
+    não tem tela, e perguntar ao tmux por ela custava subprocesso por agente
+    desligado a cada leitura da frota — pra devolver o mesmo None."""
     async def capture(agent: dict) -> tuple[str, str | None]:
         session_name = agent.get("tmux_session")
         if not session_name:
+            return agent["slug"], None
+        if sessoes_no_ar is not None and session_name not in sessoes_no_ar:
             return agent["slug"], None
         return agent["slug"], await tmux_driver.capture_pane_excerpt(session_name)
 
@@ -270,11 +278,28 @@ def _marca_contexto_velho(agents: list[dict]) -> None:
         )
 
 
+# Carona só em leitura que começou há menos disto — abaixo dos 250 ms que o front
+# espera depois de um evento do SSE antes de reler (`lib/usa-frota-ao-vivo.ts`).
+# Ver `services/voo_unico.py` pelo porquê de não haver cache depois da leitura.
+_FLEET_CARONA_MAX_S = 0.2
+
+
 @router.get("", response_model=FleetSnapshot)
 async def get_fleet(
     request: Request,
     sparkline_hours: int = Query(default=24, ge=1, le=168),
 ):
+    # Por app, não por módulo: cada app (e cada teste) tem o seu banco.
+    voo = getattr(request.app.state, "fleet_voo_unico", None)
+    if voo is None:
+        voo = VooUnico(idade_maxima_s=_FLEET_CARONA_MAX_S)
+        request.app.state.fleet_voo_unico = voo
+    return await voo.executa(
+        sparkline_hours, lambda: _monta_snapshot(request, sparkline_hours)
+    )
+
+
+async def _monta_snapshot(request: Request, sparkline_hours: int) -> dict:
     db: GrupoBorgesDB = request.app.state.db
     await db.mark_stale_runs()
     tmux_inventory = await tmux_driver.list_session_inventory()
@@ -291,7 +316,7 @@ async def get_fleet(
         snapshot["health"]["watcher_started_at"] = _ms_to_s(watcher_health["started_at_ms"])
         snapshot["health"]["watcher_last_progress_at"] = _ms_to_s(watcher_health["last_progress_ms"])
         snapshot["health"]["watcher_stale_after_seconds"] = watcher_health["stale_after_seconds"]
-    await _hydrate_pane_excerpts(snapshot["agents"])
+    await _hydrate_pane_excerpts(snapshot["agents"], tmux_inventory.sessions)
     await _hydrate_cc_context_pct(db, snapshot["agents"])
     _marca_contexto_velho(snapshot["agents"])
     return snapshot
