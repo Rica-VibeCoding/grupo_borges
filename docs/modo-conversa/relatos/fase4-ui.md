@@ -127,3 +127,110 @@ Nada.
   parado 1 s fora da vez não começa") e agora vai cair. Não é meu arquivo; ajuste é da `teste`.
 
 FIM-DO-TOQUE-LONGO
+
+
+---
+
+# Fase 4 — cadeira `ui`: transcrição ao vivo na tela de voz (item 6)
+
+Briefing: `briefings/fase4-transcricao-ao-vivo.md`. Tudo no PC, sem commit.
+
+## Entreguei
+
+- **O texto sai do canal ao vivo quando a fala acaba.** O detector de fala (itens 1 e 2) continua decidindo o fim;
+  o canal só adianta o texto: fim da fala → confirmação → texto firme → `/input` com `origin: "stt"` (chega como
+  `🎙 <texto>`, como antes). A API não mudou.
+- `espelho-da-fala.ts` (novo, puro): o que do microfone entra no canal. É o **mesmo trecho que o WAV levaria** — a
+  pré-gravação do detector (26 quadros), a fala e o silêncio até o fim; nada do silêncio de antes. Guarda a fala
+  enquanto o canal abre e despeja tudo quando ele abre. Qualquer quadro perdido (canal caiu no meio, espera acima de
+  60 s) tira a fala do caminho ao vivo. Fala descartada pelo detector, ou detector que para no meio, **limpa** o canal
+  (`input_audio_buffer.clear`); fala que recomeça sem fim também.
+- `transcricao-da-fala.ts` (novo, puro): de onde sai o texto, e a leitura dos eventos do canal (`item_id` casa o texto
+  firme com a fala confirmada, como a doc manda).
+  - O canal só vale **dentro de 1 s da confirmação** (a janela; dia bom medido: 471–777 ms).
+  - WAV **na hora** quando o canal está fora de jogo (bilhete negado, não abriu, caiu) ou desiste sem texto.
+  - WAV **quando a janela fecha** sem o texto firme; daí em diante o WAV decide. Texto atrasado do canal só serve se o
+    WAV falhar ou vier vazio.
+  - Depois de uma fala que o canal não deu a tempo, a próxima sobe o WAV **junto com a confirmação** (os dois correm,
+    vale o canal se vier dentro da janela). O canal ganhando de novo, a espera de 1 s volta.
+- `use-canal-da-fala.ts` (novo): bilhete (`/transcription/live-token`, o mesmo do chat), WebSocket direto para a
+  Realtime, confirmação manual. Sem captura própria: usa os quadros que o detector já processa (16 kHz) e reamostra
+  para 24 kHz com o `criaReamostrador` do chat. Abre quando a vez passa ao Rica (`ouvindo`), fecha quando a fala tem
+  destino ou a vez sai dele; fora de `ouvindo` não há canal.
+- `use-detector-de-fala.ts`: repassa quadro, início, descarte e fim ao canal (o fim antes da máquina, para a
+  confirmação sair junto) e descarta a fala do canal quando desliga. `use-modo-conversa.ts`: o efeito `transcrever`
+  passa por `transcreveFala`; o `/transcription` segue sendo a rede de segurança.
+- E2E novo `e2e/fase4-ao-vivo.cjs` (15 casos). O `e2e/fase4-segurar.cjs` (meu, da rodada passada) passou a negar o
+  bilhete de propósito, para seguir provando o caminho do WAV.
+
+## Provas
+
+- **Vermelho antes**, contra esboços com o comportamento anterior:
+  - espelho e caminho, contra "toda fala sobe o WAV": **10 de 20 falharam** (os 10 que passaram são os de "cai no WAV");
+  - espera por tempo, contra a espera sequencial: 1 passou, 3 falharam, 9 ficaram pendurados esperando o canal;
+  - memória da fala anterior, contra paciência fixa: 2 de 15 falharam;
+  - janela de 1 s, contra "vale o primeiro": 6 de 17 falharam.
+- `npm test`: **1148 testes, 1148 passaram** (29 novos: 12 do espelho, 17 da transcrição). `npm run type-check`: verde.
+- **Medição, mesmo instrumento nos dois caminhos** (dev 3009, Chrome com microfone falso de arquivo
+  `--use-file-for-fake-audio-capture=<wav>%noloop`, 5 falas pt-BR reais, uma por navegador, caminhos intercalados):
+  do fim da fala (a cena vira `transcrevendo`) até a resposta do envio (a cena vira `esperandoZe`). `/input`
+  simulado nos dois caminhos (mesmo custo nos dois).
+  - 🟢 **Dia bom, código final** (5 falas por caminho, depois que a OpenAI voltou ao normal; `medicao-final/`): ao
+    vivo **550–780 ms, mediana 756**; WAV (o de hoje) **1149–1677 ms, mediana 1333**. O canal ganhou as 5 dentro da
+    janela (texto firme 545–777 ms depois da confirmação).
+  - 🟢 **Dia bom, duas baterias anteriores** (10 falas por caminho, antes da janela; em todas o firme veio antes de 1 s,
+    então o código final faz o mesmo caminho): ao vivo **475–722 ms, mediana 628**; WAV **1176–1938 ms, mediana 1628**.
+  - **Ganho de 0,6 a 1,0 s por fala na mediana**, no PC. No iPhone o WAV (170–620 KB) ainda sobe pela rede móvel, então
+    o ganho tende a ser maior (não medido).
+  - 🟡 **Dia ruim** (bateria final, código final): da terceira bateria em diante a OpenAI passou a atrasar o texto ao
+    vivo em 5 a 7 s (sonda direta, 5 vezes: texto firme 6,2–7,5 s depois da confirmação, primeira palavra ~5 s depois
+    de falada) e, em 3 das 5, devolveu o texto **cortado** ("Agora", "Agora responda" para "Agora responda só com a
+    palavra dois."). O WAV ficou estável. Primeira fala da sessão: ao vivo **2188–3100 ms, mediana 2628** (WAV decide 1 s depois da
+    confirmação); WAV só **1194–1912 ms, mediana 1300**. Da segunda fala em diante o WAV sobe junto: caso `dia-ruim`,
+    1ª fala 2223 ms, **2ª fala 1306 ms** (igual a hoje).
+- **Quedas para o WAV provadas** (E2E, código final):
+  - bilhete negado (5 falas `arquivo-N`, live-token 503): nenhum canal, um `/transcription`, um `/input`;
+  - canal que cai no meio da fala (`canal-cai`, canal falso fecha no 15º envio): sem confirmação, WAV **na hora**;
+  - texto firme que não vem (`sem-firme`): WAV **1015 ms** depois da confirmação;
+  - dia ruim (`dia-ruim`): 1ª fala WAV 1015 ms depois da confirmação; 2ª fala WAV junto com ela.
+- `tosse` (estalo de 250 ms antes da fala): **uma limpeza** do canal antes da fala; texto sem resto do estalo.
+- `segurar` (cala 1,5 s, segura 4 s, solta): fim **2003 ms** depois do soltar, com o canal ligado; texto inteiro.
+- Confirmação sai **menos de 50 ms** depois do fim da fala, em todas; o canal abre ~1,0–1,8 s depois da vez começar
+  (a fala que chega antes espera e sobe inteira).
+- Regressão: `fase4-segurar.cjs` **6/6** (gestos, segurar, WAV de 16 bits).
+
+## Assumi
+
+- A tela de voz não usava o `/voice`: era `/transcription` + `/input`. "Sobe o WAV como hoje" ficou sendo esse par.
+- Fala por cima, com fone: a fala que começa com o agente falando fica guardada e sobe inteira quando a vez chega ao
+  Rica. É o mesmo áudio que o WAV levaria; o canal não abre fora de `ouvindo`.
+- Canal que cai com o Rica calado não reabre sozinho: a próxima fala vai pelo WAV e a próxima vez abre outro canal.
+- Só o texto firme vai ao agente; o texto parcial do canal é ignorado.
+- Cada vez do Rica cunha um bilhete (uma chamada à OpenAI pela API), mesmo sem fala.
+
+## Divergi do combinado
+
+- **Quando o WAV sobe.** O briefing: "texto firme não veio a tempo → WAV". Fiz a janela de 1 s, WAV decidindo depois
+  dela, e WAV junto desde o começo depois de uma fala perdida pelo canal. Motivo medido: no dia ruim, esperar 3 s e só
+  então subir o WAV custava **4,5 s por fala** (três vezes o de hoje); "vale o primeiro" deixaria passar texto cortado.
+  Custo: num dia ruim, cada fala é transcrita duas vezes (canal e WAV) e o iPhone sobe o WAV como hoje.
+
+## Não fiz
+
+- Commit e build da 3008.
+- Entrega real ao canarinho: não precisou. O envio é o mesmo `postAgentInput(..., { origin: 'stt' })` de antes.
+- 🟡 **Qualidade do modelo ao vivo** (`gpt-live-transcribe`, do bilhete): errou "package.json" nas três vezes em que
+  ganhou essa fala ("peca de ponto J", "peca de .json", "peca de ponto json"); o WAV (`gpt-4o-transcribe`) errou "TOC" por "toque" e "agentes.md" uma vez
+  cada. Parecido no geral, mas nome técnico falado é o ponto fraco do ao vivo. Recomendo testar `gpt-transcribe` só na
+  tela de voz (a doc o indica para o texto final de fala confirmada, que é o único que usamos) e/ou `keywords` (nomes
+  dos agentes, `agents.md`, `package.json`). As duas coisas mudam o corpo do bilhete na API: decisão de vocês.
+- 🟡 `e2e/teste/fase4-segurar.cjs` (cadeira `teste`) conta como transcrição toda URL com "transcription" — o bilhete
+  entra na conta. No dia bom passa por acaso (1 bilhete, 0 WAV); no dia ruim cai (bilhete + WAV). Ajuste é da `teste`.
+- iPhone real: o E2E é Chromium no PC.
+
+## Estado do PC
+
+- Dev da 3009 no ar (não reiniciei). WAVs de teste em `%TEMP%\fase4-ao-vivo-audio`. Provas em
+  `e2e/fase4-ao-vivo/`: `provas-dia-ruim.json` (bateria final, 15 casos) e `medicao-final/provas.json` (dia bom).
+
+FIM-DO-AO-VIVO

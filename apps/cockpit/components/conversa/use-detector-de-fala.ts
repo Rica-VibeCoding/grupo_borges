@@ -18,14 +18,25 @@ type VadUtils = typeof import('@ricky0123/vad-web')['utils'];
 
 const ASSET_VAD = '/vad/';
 
+/** Quem acompanha a fala quadro a quadro — o canal ao vivo (`use-canal-da-fala.ts`). */
+export type OuvinteDaFala = {
+  quadro(quadro: Float32Array): void;
+  inicio(): void;
+  /** Curta demais, ou o detector parou no meio: a fala some. */
+  descarte(): void;
+  fim(): void;
+};
+
 export function useDetectorDeFala({
   eventoRef,
   sessaoAtivaRef,
   conversaRef,
+  falaRef,
 }: {
   eventoRef: RefObject<(evento: Evento) => void>;
   sessaoAtivaRef: RefObject<boolean>;
   conversaRef: RefObject<Conversa>;
+  falaRef: RefObject<OuvinteDaFala | null>;
 }) {
   const [preparacao, setPreparacao] = useState<Preparacao>('preparando');
   const [erroPreparacao, setErroPreparacao] = useState<string | null>(null);
@@ -161,19 +172,23 @@ export function useDetectorDeFala({
           resumeStream: abreMicrofone,
           onSpeechStart: () => {
             setFalaDetectada(true);
+            falaRef.current?.inicio();
             eventoRef.current({ tipo: 'falaIniciou' });
           },
           onSpeechRealStart: () => eventoRef.current({ tipo: 'falaConfirmada' }),
           onSpeechEnd: (audio) => {
             setFalaDetectada(false);
+            falaRef.current?.fim(); // antes da máquina: a confirmação sai já, junto com o fim
             eventoRef.current({ tipo: 'falaTerminou', audio });
           },
           onVADMisfire: () => {
             setFalaDetectada(false);
+            falaRef.current?.descarte();
             eventoRef.current({ tipo: 'falaDescartada' });
           },
           onFrameProcessed: (_probabilidades, quadro) => {
             ultimoQuadroRef.current = performance.now();
+            falaRef.current?.quadro(quadro);
             let soma = 0;
             for (const amostra of quadro) soma += amostra * amostra;
             nivelRef.current = Math.min(1, Math.sqrt(soma / quadro.length) * 8);
@@ -213,7 +228,7 @@ export function useDetectorDeFala({
         .then(() => contextoRef.current?.close())
         .catch(() => {});
     };
-  }, [eventoRef, sessaoAtivaRef, ajustaDetector]);
+  }, [eventoRef, sessaoAtivaRef, falaRef, ajustaDetector]);
 
   const liga = useCallback(async () => {
     const controlador = controladorRef.current;
@@ -244,8 +259,10 @@ export function useDetectorDeFala({
     vigiaRef.current?.para();
     setFalaDetectada(false);
     nivelRef.current = 0;
+    // O `pause()` do MicVAD zera a fala em curso sem avisar: o canal descarta junto.
+    falaRef.current?.descarte();
     void controladorRef.current?.desliga().catch(() => {});
-  }, []);
+  }, [falaRef]);
 
   const criaWav = useCallback((audio: Float32Array) => {
     const utilitarios = utilsRef.current;

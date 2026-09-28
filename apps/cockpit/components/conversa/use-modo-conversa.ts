@@ -13,6 +13,8 @@ import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { zeOcupado } from './toque-da-conversa';
+import { transcreveFala } from './transcricao-da-fala';
+import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
 import { useSegurarAVez } from './use-segurar-a-vez';
@@ -63,7 +65,8 @@ export function useModoConversa(slug: string, fone: boolean) {
     },
   });
   const wakeLock = useWakeLock(sessaoAtivaRef);
-  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef });
+  const canal = useCanalDaFala(slug, conversa.estado);
+  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef, falaRef: canal.ouvinteRef });
 
   const sons = useCallback(() => {
     sonsRef.current ??= criaSonsLocais();
@@ -109,24 +112,25 @@ export function useModoConversa(slug: string, fone: boolean) {
         cancelaFala();
         return;
       case 'transcrever': {
-        const audio = detector.criaWav(efeito.audio);
-        if (audio === null) {
-          despachaRef.current({ tipo: 'falhou', motivo: 'transcricaoFalhou' });
-          return;
-        }
+        // O texto do canal ao vivo, já pronto; sem ele a tempo, o WAV sobe como sempre subiu.
         const ciclo = cicloRef.current;
-        void postAgentTranscription(slug, audio)
-          .then(({ text }) => {
-            if (ciclo !== cicloRef.current) return;
-            setUltimaTranscricao(text.trim() || null);
+        const fala = canal.terminaFala();
+        void transcreveFala({
+          aoVivo: fala.texto,
+          paciencia: fala.paciencia,
+          arquivo: async () => {
+            const audio = detector.criaWav(efeito.audio);
+            if (audio === null) throw new Error('detector sem utilitários de WAV');
+            return (await postAgentTranscription(slug, audio)).text;
+          },
+          vivo: () => ciclo === cicloRef.current,
+          transcreveu: (texto) => {
+            setUltimaTranscricao(texto.trim() || null);
             setRespostaDoZe(null);
-            despachaRef.current({ tipo: 'transcreveu', texto: text });
-          })
-          .catch(() => {
-            if (ciclo === cicloRef.current) {
-              despachaRef.current({ tipo: 'falhou', motivo: 'transcricaoFalhou' });
-            }
-          });
+            despachaRef.current({ tipo: 'transcreveu', texto });
+          },
+          falhou: () => despachaRef.current({ tipo: 'falhou', motivo: 'transcricaoFalhou' }),
+        }).then(fala.fecha);
         return;
       }
       case 'enviar': {

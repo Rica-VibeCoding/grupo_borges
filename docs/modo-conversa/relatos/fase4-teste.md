@@ -165,3 +165,67 @@ olhar antes de publicar, mas não impede esta aprovação.
 rápido/arrasto seguem sem regressão. 3/3 casos.
 
 FIM-DO-TESTE
+
+---
+
+# Fase 4 — cadeira `teste`: transcrição ao vivo na tela de voz (item 6)
+
+Briefing: `briefings/fase4-teste-ao-vivo.md`. Claude Code (Sonnet 5) · 28/09/2026 · sem commit, sem
+código de produto editado. Alvo: dev 3009. Roteiro próprio: `e2e/teste/fase4-ao-vivo.cjs` (novo —
+não importa nada de `e2e/fase4-ao-vivo.cjs`, que é da `ui`).
+
+## Equipamento
+- Bilhete real (`/transcription/live-token` chama a OpenAI de verdade). Canal FALSO por
+  `page.routeWebSocket` no lugar da Realtime: controla exatamente quando "confirmou" e o "texto
+  firme" chegam, sem depender da rede de verdade para a parte que é regra pura. O WAV
+  (`/transcription`) é sempre real — a rede de segurança de verdade, contra o backend de verdade.
+- **Achado de equipamento**: `page.routeWebSocket` intercepta a conexão ANTES do meu espião de
+  `window.WebSocket` na página — o espião nunca vê os eventos de uma conexão interceptada (só os
+  não-interceptados, como o WebSocket do HMR). Toda prova do canal falso (abriu/fechou, commit,
+  clear, append) vem do handler da própria rota, do lado Node — não do lado da página.
+- **Achado de equipamento (misfire)**: um estalo de 250 ms (o valor que a `ui` usa no dela) neste
+  harness já é tratado como fala real, não misfire — o microfone sintético (Web Audio, não captura
+  de arquivo pelo Chrome) deve ter uma dinâmica de amplitude um pouco diferente. 120 ms disparou o
+  misfire de forma confiável. O limite exato fica entre os dois; não é do produto.
+
+## 7 casos, 7/7 PASS (dev 3009, Chromium/CDP, dedo real)
+1. **Fala normal**: canal ganha, **0** WAV, **1** envio, `origin: "stt"`, texto igual ao do canal.
+2. **Bilhete negado**: 0 canal aberto, **1** WAV, **1** envio.
+3. **Canal cai no meio** (fecha depois de 10 `append`, antes de qualquer commit): 0 commit, **1**
+   WAV, **1** envio, sem duplicar.
+4. **Texto firme atrasado** (1300 ms, fora da janela de 1 s): **1** WAV, **1** envio — o texto do
+   WAV venceu; o atrasado (proposital, marcado para nunca poder passar sem eu notar) não chegou ao
+   agente.
+5. **Fala descartada** (estalo de 120 ms): misfire limpou o canal (1 `clear`), zero
+   transcrição/envio dele; a fala seguinte saiu limpa, **1** envio, texto exato — nada colou.
+6. **Segurar com canal ligado**: fim **1973-1975 ms** depois de soltar (dentro de 1850-2700 ms),
+   **0** WAV, **1** envio, texto inteiro (antes e depois do segurar).
+7. **Sair de `ouvindo` fecha o canal**: parar sem falar → 0 aberto; ciclo completo até
+   `esperandoZe` → 0 aberto. Nenhum WebSocket sobrou.
+
+## Ajuste pedido (contagem do bilhete)
+`e2e/teste/fase4-segurar.cjs` contava `/transcription/live-token` como transcrição do WAV. Corrigi
+negando o bilhete de propósito (rota 503) e tirando `live-token` da captura antes de qualquer
+contagem — o mesmo padrão que a `ui` usa no dela — para a regressão continuar determinística
+(sem depender de o canal ganhar ou não nesta rodada).
+
+## Regressão (`fase4-segurar.cjs`, meu, com o ajuste acima)
+Chromium: `silencio-2s`, `segurar`, `nao-quebra`, `controle-positivo`, `sequencia-do-rica` — **5/5
+PASS**, números iguais às rodadas anteriores (segurou ~503 ms, fala 1942-1986 ms depois de soltar,
+filtro e nota certos). WebKit: `sequencia-do-rica` — **1/1 PASS**.
+
+## Não fiz
+- `npm test`/`type-check`: prova de escopo da `ui`, já reportada em `relatos/fase4-ui.md`.
+- iPhone real.
+- Entrega real ao canarinho: sessão fora na VPS, mesma lacuna de sempre — não bloqueia (o `/input`
+  interceptado prova a borda; a transcrição em si é sempre real, WAV ou canal).
+
+## Veredito
+**APROVADO** — canal ganhando e adiantando o texto, as quatro quedas para o WAV (bilhete negado,
+canal caído, texto atrasado, sem confundir com o atrasado), fala descartada sem resíduo, segurar com
+canal ligado, e o canal fechando sempre que a vez sai de `ouvindo` — todos confirmados de forma
+independente. Regressão da fase 4 sem quebra.
+
+APROVADO
+
+FIM-DO-TESTE-AO-VIVO
