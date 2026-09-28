@@ -25,3 +25,14 @@ Publicado `ce4bce7` na 3008. Rica testou no iPhone (Safari), 28/09 ~05:17 UTC, c
 - E2E no dev 3009 em **WebKit** também (o bug é do Safari): fala normal chega ao `/input`; palavras aparecem durante a
   fala; OpenAI lenta e WAV falhando não dão "Não entendi" com texto na tela.
 - Sem commit. Relato em `relatos/fase4-ui.md` (seção nova). Última linha sozinha: `FIM-DO-AO-VIVO-2`.
+
+## Adendo 28/09 ~06:15 UTC — a causa da 1ª volta não fecha a conta
+- Relato `fase4-ui.md` ("bug do iPhone, a causa") achou o texto velho na tela (`ultimaTranscricao` nunca limpa):
+  vale, conserta. Mas a hipótese "tailnet do iPhone oscilando" **não se sustenta**: no Canário, 03:0x BRT, o log tem
+  **5 `live-token` 200 do iPhone seguidos e só 1 `/input`, zero `/transcription`**. O `live-token` passa pela mesma
+  tailnet e chega. Então, em várias falas no Safari, o canal não trouxe texto E o WAV não saiu do aparelho.
+- Antes do `ce4bce7` o iPhone subia `/transcription` normalmente (dezenas no log). Suspeitos no caminho novo:
+  `detector.criaWav(efeito.audio)` nulo/lançando no Safari; `efeito.audio` vazio porque o espelho consumiu os quadros;
+  o `transcreveFala` decidindo `falhou` sem chamar `arquivo`; o canal no Safari (WebSocket com subprotocolo, formato).
+- Prioridade: achar por que o WAV não sai no Safari (prova: teste que falha) e garantir que **qualquer** falha do canal
+  cai no WAV. Proibido usar a VPS (ssh, docker, túnel).
