@@ -1,5 +1,4 @@
 import { notFound } from 'next/navigation';
-import Link from 'next/link';
 import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { PagerDoAgente } from '@/components/conversa/pager-do-agente';
@@ -11,6 +10,7 @@ import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
 import { StatuslineAoVivo } from '@/components/shell/statusline-ao-vivo';
 import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
+import { LinkDaGaveta, VistaDaGaveta } from '@/components/shell/vista-da-gaveta';
 import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
 
@@ -152,7 +152,7 @@ function Painel({
       {/* ENTRADA DA TELA DE MCPs — a tela do Vinicius (15ccf76) estava
           commitada e órfã; esta linha é a porta. Link de verdade (rota, não
           estado): `?painel=mcps` abre direto por deep-link. */}
-      <Link
+      <LinkDaGaveta
         href={`${fecharHref}?painel=mcps`}
         className="ck-veil flex shrink-0 items-center justify-between border-t"
         style={{
@@ -166,7 +166,7 @@ function Painel({
         <span aria-hidden style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-lg)', lineHeight: 1 }}>
           ›
         </span>
-      </Link>
+      </LinkDaGaveta>
     </div>
   );
 }
@@ -185,7 +185,7 @@ function VistaMcp({ agentSlug, fecharHref }: { agentSlug: string; fecharHref: st
           borderColor: 'var(--ck-edge-light)',
         }}
       >
-        <Link
+        <LinkDaGaveta
           href={`${fecharHref}?painel=detalhes`}
           aria-label="Voltar para os detalhes do agente"
           className="ck-veil flex items-center justify-center"
@@ -199,7 +199,7 @@ function VistaMcp({ agentSlug, fecharHref }: { agentSlug: string; fecharHref: st
           }}
         >
           ←
-        </Link>
+        </LinkDaGaveta>
         <Rotulo>MCPs</Rotulo>
         <LinkFechaPainel
           href={fecharHref}
@@ -251,15 +251,14 @@ export default async function AgentePage({
     esforco: agente.codex_reasoning_effort,
   });
   // Relógio do servidor, na mesma régua da rota `/`: `force-dynamic`
-  // re-renderiza a cada navegação, então a duração de sessão da statusline vem
-  // fresca ao abrir a gaveta. Daqui pra frente quem faz o ponteiro ANDAR é o
+  // re-renderiza a cada navegação ao agente (abrir a gaveta não navega mais
+  // desde 28/09 — a gaveta fica montada). Daqui pra frente quem faz o ponteiro ANDAR é o
   // `StatuslineAoVivo`, que usa este valor como âncora e conta o resto pelo
   // cronômetro do browser — nunca pela hora dele.
   const agora = Math.floor(Date.now() / 1000);
-  // Qual visão a gaveta desenha. `painel=mcps` = a tela de MCPs; qualquer outro
-  // valor (ou ausência) = os detalhes. O valor mora na URL, como a decisão nº 1
-  // do `app-shell.tsx` pede — deep-link direto na tela de MCPs funciona.
-  const modoPainel = sp.painel === 'mcps' ? 'mcps' : 'detalhes';
+  // Qual visão a gaveta desenha NÃO se decide aqui desde 28/09: o `?painel=` é
+  // lido no cliente (`VistaDaGaveta`), e nada neste servidor lê `?painel`/`?nav`
+  // — é isso que deixa abrir e fechar a gaveta e a tropa sem ida ao servidor.
 
   return (
     <>
@@ -344,11 +343,13 @@ export default async function AgentePage({
         rotulo="detalhes do agente"
         aberto={false}
       >
-        {modoPainel === 'mcps' ? (
-          <VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} />
-        ) : (
-          <Painel agente={agente} fecharHref={fecharHref} painelAberto={false} agora={agora} />
-        )}
+        {/* As duas visões vão prontas; quem escolhe é o cliente, pela URL
+            (`VistaDaGaveta`) — abrir, fechar e trocar de visão não voltam ao
+            servidor. */}
+        <VistaDaGaveta
+          mcps={<VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} />}
+          detalhes={<Painel agente={agente} fecharHref={fecharHref} painelAberto={false} agora={agora} />}
+        />
       </GavetaPainel>
     </>
   );

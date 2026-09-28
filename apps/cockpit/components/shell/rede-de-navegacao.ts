@@ -101,3 +101,49 @@ export function levaAUrl(roteador: { push: (href: string) => void; replace: (hre
   if (substitui) roteador.replace(href);
   else roteador.push(href);
 }
+
+/**
+ * A GAVETA E A TROPA NÃO VÃO AO SERVIDOR (28/09). `?painel=` e `?nav=` só mudam o que o
+ * CLIENTE desenha: a visão da gaveta (`VistaDaGaveta`) e as duas superfícies leem a URL
+ * pelo `useSearchParams`, e nada no servidor lê esses dois parâmetros. Com `router.push`
+ * a página `force-dynamic` refazia o `fetchAgent` e baixava ~33 KB de RSC por toque
+ * (medido no dev em 28/09) só para devolver a mesma árvore.
+ *
+ * O caminho é o History API nativo, que o Next integra ao roteador: *"`pushState` and
+ * `replaceState` calls integrate into the Next.js Router, allowing you to sync with
+ * `usePathname` and `useSearchParams`"* (docs do Next 16.2.6, linking-and-navigating,
+ * "Native History API"). O voltar do navegador fecha a gaveta como antes: a entrada
+ * leva a árvore do roteador junto (`copyNextJsInternalHistoryState`) e o `popstate` é
+ * tratado pelo Next, sem recarregar.
+ *
+ * Só vale quando o destino difere do lugar atual APENAS em `painel`/`nav` — mesmo
+ * caminho, mesmos outros parâmetros (`tela`, `diag` o servidor lê). Qualquer outra
+ * coisa segue pelo roteador, com a rede de segurança armada como sempre.
+ */
+const SO_DO_CLIENTE = ['painel', 'nav'];
+
+export function soMudaOQueOClienteLe(href: string, atual: string): boolean {
+  const aqui = new URL(atual);
+  const destino = new URL(href, aqui);
+  if (destino.origin !== aqui.origin || destino.pathname !== aqui.pathname || destino.hash !== aqui.hash) return false;
+  const resto = (url: URL) => {
+    const p = new URLSearchParams(url.search);
+    SO_DO_CLIENTE.forEach((chave) => p.delete(chave));
+    p.sort();
+    return p.toString();
+  };
+  return resto(destino) === resto(aqui);
+}
+
+/** Leva a URL sem servidor quando `soMudaOQueOClienteLe`; devolve se levou. */
+export function levaSoNoCliente(
+  historia: Pick<History, 'pushState' | 'replaceState'>,
+  href: string,
+  atual: string,
+  substitui: boolean,
+): boolean {
+  if (!soMudaOQueOClienteLe(href, atual)) return false;
+  if (substitui) historia.replaceState(null, '', href);
+  else historia.pushState(null, '', href);
+  return true;
+}

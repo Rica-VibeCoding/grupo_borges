@@ -52,7 +52,7 @@ import {
 } from 'react';
 
 import { IconeMenu } from './icones';
-import { criaRedeDeNavegacao, levaAUrl, type RedeDeNavegacao } from './rede-de-navegacao';
+import { criaRedeDeNavegacao, levaAUrl, levaSoNoCliente, type RedeDeNavegacao } from './rede-de-navegacao';
 
 type SuperficieCtx = {
   aberto: boolean;
@@ -155,12 +155,17 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
     useEffect(() => rede.current?.cancela(), [searchParams]);
 
     const ir = (href: string, abrir: boolean, tambem?: () => void, substitui = false) => {
+      let noCliente = false;
       emTransicao(() => {
         marcaOtimo(abrir);
         tambem?.();
-        levaAUrl(router, href, substitui);
+        // Abrir/fechar gaveta e tropa não pede nada ao servidor (28/09): ver
+        // `levaSoNoCliente`. Troca de agente e o resto seguem pelo roteador.
+        noCliente = levaSoNoCliente(window.history, href, window.location.href, substitui);
+        if (!noCliente) levaAUrl(router, href, substitui);
       });
-      rede.current?.arma(href);
+      // A URL já mudou, na hora: não há navegação para a rede vigiar.
+      if (!noCliente) rede.current?.arma(href);
     };
 
     return <Ctx.Provider value={{ aberto: abertoOtimo, ir }}>{children}</Ctx.Provider>;

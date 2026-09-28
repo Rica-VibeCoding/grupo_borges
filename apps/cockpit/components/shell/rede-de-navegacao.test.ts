@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { criaRedeDeNavegacao, levaAUrl } from './rede-de-navegacao.ts';
+import { criaRedeDeNavegacao, levaAUrl, levaSoNoCliente, soMudaOQueOClienteLe } from './rede-de-navegacao.ts';
 
 const LIMITE = 1_200;
 
@@ -133,4 +133,33 @@ test('levaAUrl: substituir troca a entrada do histórico e não empilha; o padr�
   levaAUrl(roteador, '?', true);
   levaAUrl(roteador, '/agente/canarinho?nav=aberto', false);
   assert.deepEqual(chamadas, ['replace ?', 'push /agente/canarinho?nav=aberto']);
+});
+
+test('gaveta e tropa: só `painel`/`nav` mudando fica no cliente; o resto vai ao roteador (28/09)', () => {
+  const aqui = 'https://x.ts.net/agente/pavan';
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan?painel=detalhes', aqui), true);
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan?painel=mcps', `${aqui}?painel=detalhes`), true);
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan', `${aqui}?painel=mcps`), true, 'fechar');
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan?nav=aberto', aqui), true);
+  assert.equal(soMudaOQueOClienteLe('?', `${aqui}?nav=aberto`), true, 'o href relativo da tropa');
+  // Troca de agente, de rota ou de parâmetro que o SERVIDOR lê: roteador.
+  assert.equal(soMudaOQueOClienteLe('/agente/daniel', aqui), false);
+  assert.equal(soMudaOQueOClienteLe('/conversa/pavan', aqui), false);
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan?painel=detalhes', `${aqui}?tela=voz`), false, '`tela` sairia');
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan', `${aqui}?diag=1&painel=detalhes`), false, '`diag` sairia');
+  assert.equal(soMudaOQueOClienteLe('/agente/pavan?diag=1', `${aqui}?diag=1&painel=detalhes`), true);
+  assert.equal(soMudaOQueOClienteLe('https://outro.net/agente/pavan', aqui), false);
+});
+
+test('levaSoNoCliente: empilha ou substitui pelo History API e diz se levou; fora da regra não toca', () => {
+  const chamadas: string[] = [];
+  const historia = {
+    pushState: (_d: unknown, _t: string, url?: string | URL | null) => { chamadas.push(`push ${url}`); },
+    replaceState: (_d: unknown, _t: string, url?: string | URL | null) => { chamadas.push(`replace ${url}`); },
+  };
+  const aqui = 'https://x.ts.net/agente/pavan';
+  assert.equal(levaSoNoCliente(historia, '/agente/pavan?painel=detalhes', aqui, false), true);
+  assert.equal(levaSoNoCliente(historia, '/agente/pavan?nav=aberto', aqui, true), true);
+  assert.equal(levaSoNoCliente(historia, '/agente/daniel', aqui, false), false);
+  assert.deepEqual(chamadas, ['push /agente/pavan?painel=detalhes', 'replace /agente/pavan?nav=aberto']);
 });
