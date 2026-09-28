@@ -25,12 +25,15 @@ import { useEffect, useState } from 'react';
 import type { Delegacao } from '@/app/api/delegacoes/delegacoes.ts';
 
 import { rotuloDoTempo } from './linha-viva.ts';
+import { estabilizaDelegacoes } from './mesmas-delegacoes.ts';
 
 const POLL_MS = 3_000;
 const TICK_MS = 1_000;
 
 /** As delegações vivas cujo DELEGADOR é `slug`. Falha de rede não zera a
- *  lista — manter o último estado bom por 3 s é melhor que piscar. */
+ *  lista — manter o último estado bom por 3 s é melhor que piscar. Resposta
+ *  igual à anterior devolve a MESMA lista (sem render), e com a aba escondida
+ *  o poll não busca: volta a buscar na hora em que ela reaparece. */
 export function usaDelegacoes(slug: string): Delegacao[] {
   const [delegacoes, setDelegacoes] = useState<Delegacao[]>([]);
 
@@ -38,13 +41,15 @@ export function usaDelegacoes(slug: string): Delegacao[] {
     let montado = true;
 
     const busca = async () => {
+      if (document.hidden) return;
       try {
         const res = await fetch(`/api/delegacoes?agente=${encodeURIComponent(slug)}`, {
           cache: 'no-store',
         });
         if (!res.ok) return;
         const corpo = (await res.json()) as { delegacoes?: Delegacao[] };
-        if (montado) setDelegacoes(Array.isArray(corpo.delegacoes) ? corpo.delegacoes : []);
+        const nova = Array.isArray(corpo.delegacoes) ? corpo.delegacoes : [];
+        if (montado) setDelegacoes((atual) => estabilizaDelegacoes(atual, nova));
       } catch {
         // Rede caiu ou a API está fora: mantém o que já estava na tela.
       }
@@ -52,9 +57,12 @@ export function usaDelegacoes(slug: string): Delegacao[] {
 
     void busca();
     const timer = setInterval(() => void busca(), POLL_MS);
+    const aoVoltar = () => void busca();
+    document.addEventListener('visibilitychange', aoVoltar);
     return () => {
       montado = false;
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', aoVoltar);
     };
   }, [slug]);
 
