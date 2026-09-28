@@ -1818,8 +1818,18 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
  * respiração lenta é o único sinal que sobrou pra separar de desligado. Quem
  * congela é o OLHAR, e isso mora no TSX (o vaguear só existe em `pensando`). */
 .ck-bolinha[data-estado='parado'] .ck-bolinha-voa,
-.ck-bolinha[data-estado='parado'] .ck-bolinha-sombra { animation-duration: 6.4s; }
-.ck-bolinha[data-estado='parado'] .ck-bolinha-infla { animation-duration: 7.6s; }
+.ck-bolinha[data-estado='parado'] .ck-bolinha-sombra,
+.ck-bolinha[data-estado='ouvindo'] .ck-bolinha-voa,
+.ck-bolinha[data-estado='ouvindo'] .ck-bolinha-sombra { animation-duration: 6.4s; }
+.ck-bolinha[data-estado='parado'] .ck-bolinha-infla,
+.ck-bolinha[data-estado='ouvindo'] .ck-bolinha-infla { animation-duration: 7.6s; }
+
+/* OUVINDO — parado, com o Rica escrevendo: o olhar desce pra caixa, que fica
+ * logo abaixo dela, e a cabeça acompanha um nada. O resto é o repouso. A
+ * descida é a `transition` de 0,5 s que a `.ck-bolinha-vista` já tem, nos dois
+ * sentidos — apagar o rascunho devolve o olhar pra frente. */
+.ck-bolinha[data-estado='ouvindo'] .ck-bolinha-vista { transform: translate(0, 5.5px); }
+.ck-bolinha[data-estado='ouvindo'] .ck-bolinha-cabeca { transform: rotate(0deg) translateY(0.8px); }
 
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-voa { animation-duration: 2.4s; }
 .ck-bolinha[data-estado='pensando'] .ck-bolinha-infla { animation-duration: 3.3s; }

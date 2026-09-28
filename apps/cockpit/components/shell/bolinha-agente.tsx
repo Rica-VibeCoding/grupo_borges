@@ -38,6 +38,10 @@
  *    era ~2/3 da CPU da tela parada. Em caixa HTML o desenho é rasterizado uma
  *    vez e só se move. Dentro do SVG ficou o que é curto — piscada, olhar,
  *    pulinho, inclinação.
+ * 7. ELA ESCUTA (28/09, o Rica mandou escolher a melhor animação). Parada e com
+ *    texto na caixa, ela olha pra baixo, pra onde ele escreve — é um
+ *    `transform` com transição, nada que rode sem parar. Só vale pra parado:
+ *    ocupado continua mostrando o próprio trabalho.
  *
  * Cor, keyframes e estados moram em `globals.css` (§ A BOLINHA): componente não
  * carrega cor, e keyframe não é território de utility do Tailwind.
@@ -66,15 +70,19 @@ type Props = {
    *  (`escrita-viva`), que é mais estreito que o sinal virou — renomear os dois
    *  espera a Tara sair do `composer.tsx`, que é o único call site. */
   escrevendo: boolean;
+  /** O Rica tem texto na caixa do composer. */
+  ouvindo: boolean;
 };
 
-export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
+export function BolinhaAgente({ status, turnoVivo, escrevendo, ouvindo }: Props) {
   const gradId = `ck-bolinha-${useId()}`;
   const raizRef = useRef<HTMLSpanElement>(null);
   const rostoRef = useRef<SVGGElement>(null);
   const toqueRef = useRef<SVGGElement>(null);
 
-  const estavel = estadoDaBolinha({ status, turnoVivo, produzindo: escrevendo });
+  const estavel = estadoDaBolinha({ status, turnoVivo, produzindo: escrevendo, ouvindo });
+  // Escutar é parado com rascunho: pra comemoração e piso, conta como parado —
+  // o turno que termina com o Rica digitando também ganha o pulinho.
   // "Terminou" é transição, não estado: só existe para quem lembra o valor
   // anterior. O pulinho é a única coisa nesta peça que precisa de re-render —
   // duas por turno, contra as centenas que a piscada custaria.
@@ -84,7 +92,7 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
     const veioDeTrabalhar =
       anterior.current === 'pensando' || anterior.current === 'executando';
     anterior.current = estavel;
-    if (!veioDeTrabalhar || estavel !== 'parado') return;
+    if (!veioDeTrabalhar || (estavel !== 'parado' && estavel !== 'ouvindo')) return;
     setComemorando(true);
     const id = window.setTimeout(() => setComemorando(false), DURACAO_PRONTO_MS);
     return () => window.clearTimeout(id);
@@ -101,7 +109,7 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
   // A ordem aqui é a mesma da régua: quem chama uma pessoa nunca é encoberto,
   // e o piso da execução só empresta tempo de quem ainda está no mesmo turno.
   const estado: EstadoBolinha =
-    comemorando && estavel === 'parado'
+    comemorando && (estavel === 'parado' || estavel === 'ouvindo')
       ? 'pronto'
       : segurandoExecucao && estavel === 'pensando'
         ? 'executando'

@@ -806,6 +806,7 @@ export function Composer({
         status={daFrota?.status}
         turnoVivo={turnoVivo}
         escrevendo={escrevendo}
+        ouvindo={texto.trim() !== ''}
       />
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}

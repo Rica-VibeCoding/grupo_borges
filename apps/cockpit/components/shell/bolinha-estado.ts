@@ -19,6 +19,7 @@ import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 export type EstadoBolinha =
   | 'offline'
   | 'parado'
+  | 'ouvindo'
   | 'pensando'
   | 'executando'
   | 'pronto'
@@ -33,6 +34,9 @@ export type EntradaDaBolinha = {
    *  (`lib/escrita-viva.ts`). É a mesma régua que escolhe entre a linha
    *  "Executando <cmd>" e a "Pensando há 12 s". */
   produzindo: boolean;
+  /** O Rica tem texto na caixa. Só muda a cara de quem está PARADO: agente
+   *  ocupado continua mostrando o que faz, e quem chama continua chamando. */
+  ouvindo?: boolean;
 };
 
 /** A palavra que a legenda anuncia — o `aria-label` do SVG é estável de
@@ -40,6 +44,9 @@ export type EntradaDaBolinha = {
 export const FALA_DA_BOLINHA: Record<EstadoBolinha, string> = {
   offline: 'desligado',
   parado: 'ocioso',
+  // A MESMA palavra de parado, de propósito: a legenda é live region, e cada
+  // letra que começa um rascunho anunciaria "ouvindo" no leitor de tela.
+  ouvindo: 'ocioso',
   pensando: 'pensando',
   executando: 'executando',
   pronto: 'terminou',
@@ -50,6 +57,7 @@ export function estadoDaBolinha({
   status,
   turnoVivo,
   produzindo,
+  ouvindo = false,
 }: EntradaDaBolinha): EstadoBolinha {
   if (status === undefined || status === 'offline') return 'offline';
   // Quem chama uma pessoa vence quem está ocupado: é o único estado que precisa
@@ -60,5 +68,5 @@ export function estadoDaBolinha({
   // ainda pensa — e é aí que o turno passa quase todo o tempo.
   if (produzindo) return 'executando';
   if (turnoVivo || status === 'trabalhando') return 'pensando';
-  return 'parado';
+  return ouvindo ? 'ouvindo' : 'parado';
 }

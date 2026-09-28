@@ -47,4 +47,20 @@ describe('estadoDaBolinha', () => {
   it('vivo e sem turno é parado', () => {
     assert.equal(estadoDaBolinha(PARADO), 'parado');
   });
+
+  it('parado com texto na caixa escuta', () => {
+    assert.equal(estadoDaBolinha({ ...PARADO, ouvindo: true }), 'ouvindo');
+  });
+
+  it('escutar não esconde trabalho nem chamado', () => {
+    // O rascunho é do Rica; o que o agente está fazendo continua sendo a
+    // notícia — senão digitar apagaria "pensando" e "esperando você".
+    assert.equal(estadoDaBolinha({ ...PARADO, turnoVivo: true, ouvindo: true }), 'pensando');
+    assert.equal(
+      estadoDaBolinha({ status: 'trabalhando', turnoVivo: true, produzindo: true, ouvindo: true }),
+      'executando',
+    );
+    assert.equal(estadoDaBolinha({ ...PARADO, status: 'aguardando', ouvindo: true }), 'atencao');
+    assert.equal(estadoDaBolinha({ ...PARADO, status: 'offline', ouvindo: true }), 'offline');
+  });
 });
