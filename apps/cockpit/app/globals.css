@@ -956,6 +956,48 @@ body {
   transform: translateX(calc(32px + var(--ck-space-3)));
 }
 
+/* O COMPOSER EM REPOUSO É UMA LINHA (mockup aprovado pelo Rica, 28/09):
+ * [+] · campo · motor · voz, na mesma fileira. Com conteúdo (texto ou anexo) a
+ * caixa volta às duas fileiras de sempre — o texto em cima, os controles
+ * embaixo —, que é o que a §4 do composer permite quando o campo cresce.
+ *
+ * A base dos controles vira `display: contents` e os filhos dela entram na
+ * fileira da caixa por `order`. O alinhamento continua `flex-end`: as margens
+ * negativas dos botões (`alvo-de-toque.ts`) foram medidas contra a linha do
+ * texto nessa régua, e é ela que deixa o texto no centro dos discos.
+ *
+ * O despacho fora de cena não cobra largura aqui: em vez de deslizar a fileira,
+ * a margem negativa devolve os 32px + gap ao campo — em 390px eles são a
+ * diferença entre o placeholder caber ou não. O botão continua no DOM, com
+ * opacidade zero e recortado pelo `overflow: hidden` da caixa. */
+.ck-caixa[data-linha='uma'] {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.ck-caixa[data-linha='uma'] > .ck-campo {
+  order: 2;
+  flex: 1 0 8rem;
+  min-width: 0;
+}
+.ck-caixa[data-linha='uma'] > .ck-base-da-caixa {
+  display: contents;
+}
+.ck-caixa[data-linha='uma'] > .ck-base-da-caixa > :not(.ck-fileira-acoes) {
+  order: 1;
+}
+.ck-caixa[data-linha='uma'] > .ck-base-da-caixa > .ck-fileira-acoes {
+  order: 3;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ck-caixa[data-linha='uma'] .ck-fileira-acoes[data-despacho='oculto'] {
+  transform: none;
+  margin-inline-end: calc((32px + var(--ck-space-3)) * -1);
+}
+.ck-caixa[data-linha='uma'] > .ck-miniatura[data-aberto='false'] {
+  display: none;
+}
+
 /* A TROCA DA FALA — a onda e os chips no mesmo lugar, com um fade entre eles.
  *
  * Rica, 20/08, vendo o ciclo gravado: *"a transição entre uma coisa e outra,

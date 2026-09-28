@@ -284,6 +284,9 @@ export function Composer({
   // anexar sem escrever legenda deixava a imagem na tela e nenhum botão que a
   // mandasse. Vale para os dois slots, e é a única pergunta que ambos fazem.
   const temConteudo = texto.trim() !== '' || retidoAnexo !== null;
+  // Campo vazio e nada anexado: a caixa é UMA fileira (28/09). Com qualquer
+  // caractere, inclusive quebra de linha, volta às duas. Regra no globals.css.
+  const umaLinha = texto === '' && retidoAnexo === null;
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
   // devolve o foco ao botão que abriu.
@@ -894,6 +897,7 @@ export function Composer({
       <form
         onSubmit={aoSubmeter}
         className="ck-lit ck-caixa flex w-full flex-col border"
+        data-linha={umaLinha ? 'uma' : 'varias'}
         style={{
           padding: 'var(--ck-space-3)',
           gap: 'var(--ck-space-2)',
@@ -1042,7 +1046,7 @@ export function Composer({
                   ? 'Ouvindo…'
                   : travaCompact
                     ? 'compactando… pode escrever, entra na fila'
-                    : undefined
+                    : `Fala com ${agentName.split(' ')[0] || agentName}…`
               }
               className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
               style={{
@@ -1061,7 +1065,7 @@ export function Composer({
             encolhia toda vez que a onda entrava no lugar dos botões — a caixa
             perdia 4px na captura e a conversa andava junto. */}
         <div
-          className="flex items-end justify-between"
+          className="ck-base-da-caixa flex items-end justify-between"
           style={{
             gap: 'var(--ck-space-2)',
             minHeight: 'calc(var(--ck-touch-min) - var(--ck-space-1))',
