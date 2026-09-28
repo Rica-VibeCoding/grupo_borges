@@ -24,7 +24,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -49,7 +51,17 @@ _EMAIL_POR_ID = {
 }
 
 _API_URL = "https://api.anthropic.com/v1/messages"
+# Até aqui a cota é fresca e sai do cache sem sondar.
 _CACHE_TTL_S = 60
+# Vencida, mas até este teto, a cota sai NA HORA e a sonda roda por baixo
+# (stale-while-revalidate): o menu não espera 1,3 s por uma inferência a cada
+# minuto. Passou do teto — API ficou parada, rede caiu — o número é velho
+# demais pra mostrar sem aviso, e a leitura volta a esperar a sonda.
+_CACHE_VELHO_MAX_S = 600
+
+# As sondas são I/O puro (um POST cada): em paralelo, a leitura fria custa a
+# conta mais lenta, não a soma delas. O mesmo pool leva a revalidação de fundo.
+_SONDAS = ThreadPoolExecutor(max_workers=4, thread_name_prefix="contas-sonda")
 
 
 class ContaAtiva(BaseModel):
@@ -71,6 +83,9 @@ class ContaDisponivel(BaseModel):
 class ContasResposta(BaseModel):
     ativa: ContaAtiva | None = None
     contas: list[ContaDisponivel]
+    # Alguma cota saiu do cache vencido e a sonda dela ainda está em voo: o
+    # front relê daqui a pouco pra não deixar o número velho parado na tela.
+    revalidando: bool = False
 
 
 class TrocaPedido(BaseModel):
@@ -163,20 +178,48 @@ def _ler_conta_ativa() -> ContaAtiva | None:
 
 
 _cota_cache: dict[str, tuple[float, tuple[float | None, float | None]]] = {}
+# Conta com revalidação já em voo: toques seguidos no menu não empilham sonda.
+_revalidando: set[str] = set()
+_revalidando_trava = threading.Lock()
 
 
-def _cota_com_cache(conta_id: str, chave: str) -> tuple[float | None, float | None]:
+def _revalidar(conta_id: str, chave: str) -> None:
+    """Sonda de fundo. Falhou, o valor velho fica — o teto do cache é quem
+    decide quando ele deixa de valer."""
+    try:
+        cota = _sondar(chave)
+    except httpx.HTTPError:
+        return
+    finally:
+        with _revalidando_trava:
+            _revalidando.discard(conta_id)
+    _cota_cache[conta_id] = (time.monotonic(), cota)
+
+
+def _cota_com_cache(
+    conta_id: str, chave: str
+) -> tuple[tuple[float | None, float | None], bool]:
+    """A cota da conta e se ela saiu vencida (revalidando por baixo)."""
     agora = time.monotonic()
     guardado = _cota_cache.get(conta_id)
-    if guardado is not None and agora - guardado[0] < _CACHE_TTL_S:
-        return guardado[1]
+    if guardado is not None:
+        idade = agora - guardado[0]
+        if idade < _CACHE_TTL_S:
+            return guardado[1], False
+        if idade < _CACHE_VELHO_MAX_S:
+            with _revalidando_trava:
+                ja_em_voo = conta_id in _revalidando
+                _revalidando.add(conta_id)
+            if not ja_em_voo:
+                _SONDAS.submit(_revalidar, conta_id, chave)
+            return guardado[1], True
     try:
         cota = _sondar(chave)
     except httpx.HTTPError:
         # Sem rede a lista ainda serve: as contas aparecem, só sem número.
-        return (None, None)
-    _cota_cache[conta_id] = (agora, cota)
-    return cota
+        return (None, None), False
+    _cota_cache[conta_id] = (time.monotonic(), cota)
+    return cota, False
 
 
 def _escrever_atomico(caminho: Path, conteudo: str) -> None:
@@ -194,13 +237,16 @@ def _escrever_atomico(caminho: Path, conteudo: str) -> None:
 
 @router.get("", response_model=ContasResposta)
 def listar_contas() -> ContasResposta:
-    contas = []
+    legiveis: list[tuple[str, str]] = []
     for conta_id, arquivo in sorted(_chaves_disponiveis().items()):
         try:
-            chave = arquivo.read_text(encoding="utf-8").strip()
+            legiveis.append((conta_id, arquivo.read_text(encoding="utf-8").strip()))
         except OSError:
             continue
-        cota_5h, cota_7d = _cota_com_cache(conta_id, chave)
+    # `map` devolve na ordem de entrada: a lista continua em ordem de id.
+    cotas = list(_SONDAS.map(lambda par: _cota_com_cache(*par), legiveis))
+    contas = []
+    for (conta_id, _chave), ((cota_5h, cota_7d), _velha) in zip(legiveis, cotas, strict=True):
         contas.append(
             ContaDisponivel(
                 id=conta_id,
@@ -210,7 +256,11 @@ def listar_contas() -> ContasResposta:
                 cota_7d=cota_7d,
             )
         )
-    return ContasResposta(ativa=_ler_conta_ativa(), contas=contas)
+    return ContasResposta(
+        ativa=_ler_conta_ativa(),
+        contas=contas,
+        revalidando=any(velha for _cota, velha in cotas),
+    )
 
 
 @router.post("/ativa", response_model=TrocaResposta)

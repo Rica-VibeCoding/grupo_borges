@@ -721,6 +721,9 @@ export type ContaDaMaquina = {
 export type ContasResponse = {
   ativa: { email: string; display_name: string | null } | null;
   contas: ContaDaMaquina[];
+  /** Alguma cota saiu do cache vencido e a sonda dela segue em voo no back:
+   *  reler daqui a pouco traz o número novo. Ausente = back anterior. */
+  revalidando?: boolean;
 };
 
 export type ContaTrocadaResponse = {

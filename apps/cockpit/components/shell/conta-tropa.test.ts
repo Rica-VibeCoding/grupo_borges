@@ -4,7 +4,10 @@ import { describe, it } from 'node:test';
 import { AgentInputError } from '@grupo_borges/cockpit-core/api';
 
 import {
+  comAtivaTrocada,
   contaExibida,
+  contasGuardadas,
+  guardarContas,
   listaDeContas,
   mensagemDeErroTroca,
   nomeDaConfirmada,
@@ -123,5 +126,34 @@ describe('mensagemDeErroTroca — o 409 fala, o resto não finge', () => {
       mensagemDeErroTroca(new TypeError('fetch failed')),
       'Não foi possível trocar a conta — tente de novo.',
     );
+  });
+});
+
+describe('leitura guardada — o menu abre com a última lista e relê por baixo', () => {
+  const leitura = {
+    ativa: { email: 'ricardo.incasa@gmail.com', display_name: null },
+    contas: [
+      { id: 'incasa', email: 'ricardo.incasa@gmail.com', rotulo: 'incasa', cota_5h: 0.2, cota_7d: 0.1 },
+      { id: 'woodpro', email: 'woodpromais@gmail.com', rotulo: 'woodpro', cota_5h: 0.5, cota_7d: 0.3 },
+    ],
+  };
+
+  it('guarda e devolve a mesma leitura', () => {
+    guardarContas(leitura);
+    assert.equal(contasGuardadas(), leitura);
+    guardarContas(null);
+    assert.equal(contasGuardadas(), null);
+  });
+
+  it('depois da troca, o ✓ vai pra conta confirmada — nunca fica na de antes', () => {
+    const trocada = comAtivaTrocada(leitura, { email: 'woodpromais@gmail.com', display_name: null });
+    const ativas = listaDeContas(trocada).filter((conta) => conta.ativa).map((conta) => conta.chave);
+    assert.deepEqual(ativas, ['woodpro']);
+    // A cota guardada não é mexida: quem a atualiza é a releitura.
+    assert.deepEqual(trocada?.contas, leitura.contas);
+  });
+
+  it('sem leitura guardada, a troca não inventa uma lista', () => {
+    assert.equal(comAtivaTrocada(null, { email: 'woodpromais@gmail.com', display_name: null }), null);
   });
 });

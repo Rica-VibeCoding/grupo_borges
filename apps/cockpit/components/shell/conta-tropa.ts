@@ -106,3 +106,35 @@ export function mensagemDeErroTroca(erro: unknown): string {
   if (erro instanceof AgentInputError && erro.detail) return erro.detail;
   return 'Não foi possível trocar a conta — tente de novo.';
 }
+
+/**
+ * A última leitura de `/api/contas`, viva enquanto a página vive. O menu abre
+ * com ela na hora e relê por baixo — antes, toda abertura partia de "Lendo as
+ * contas…" e esperava a sonda do back (1,3 s frio, medido em 28/09). Fica no
+ * módulo, não no componente, pra sobreviver ao seletor desmontar.
+ */
+let leituraGuardada: ContasResponse | null = null;
+
+export function contasGuardadas(): ContasResponse | null {
+  return leituraGuardada;
+}
+
+export function guardarContas(resposta: ContasResponse | null): void {
+  leituraGuardada = resposta;
+}
+
+/**
+ * A leitura com a ativa que o back acabou de CONFIRMAR na troca. Sem isto a
+ * próxima abertura mostraria o ✓ na conta velha até a releitura voltar.
+ */
+export function comAtivaTrocada(
+  resposta: ContasResponse | null,
+  ativa: ContaConfirmada,
+): ContasResponse | null {
+  if (!resposta) return null;
+  return { ...resposta, ativa: { email: ativa.email, display_name: ativa.display_name } };
+}
+
+/** Quanto esperar pra reler quando o back avisou que a cota saiu vencida e a
+ *  sonda dela ainda está em voo — a sonda leva ~0,7 s. */
+export const RELEITURA_APOS_REVALIDAR_MS = 1500;

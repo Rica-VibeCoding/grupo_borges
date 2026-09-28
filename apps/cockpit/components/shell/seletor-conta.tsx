@@ -14,16 +14,20 @@
  * cinza neutro têm história — ver o comentário no `bloco-de-cota.tsx`); o que
  * muda é o `⌄` e o `ck-veil`, que avisam que agora dá pra tocar.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchContas, postContaAtiva } from '@grupo_borges/cockpit-core/api';
 import type { ContasResponse } from '@grupo_borges/cockpit-core/api';
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import {
+  comAtivaTrocada,
   contaExibida,
+  contasGuardadas,
+  guardarContas,
   listaDeContas,
   mensagemDeErroTroca,
   nomeDaConfirmada,
+  RELEITURA_APOS_REVALIDAR_MS,
   type ContaConfirmada,
   type ContaEmLista,
 } from './conta-tropa';
@@ -40,10 +44,13 @@ export function SeletorDeConta({
 }) {
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDaConta>('inicio');
-  // `null` = sem leitura válida (ainda não voltou ou falhou). A lista só
-  // renderiza com dado desta abertura — cota velha na hora da decisão é pior
-  // que um "lendo…" de um instante.
-  const [resposta, setResposta] = useState<ContasResponse | null>(null);
+  // `null` = sem leitura nenhuma nesta página. Com leitura anterior o menu
+  // abre com ela NA HORA e relê por baixo: o back agora responde do cache
+  // (vencido ou não) em milissegundos, então o número anterior fica na tela só
+  // o tempo da ida e volta — e, se o back avisar que a sonda ainda está em voo,
+  // o menu relê de novo em seguida. Releitura que falha derruba a lista e
+  // mostra o erro: número sem confirmação não fica parado como se valesse.
+  const [resposta, setResposta] = useState<ContasResponse | null>(contasGuardadas);
   const [carregando, setCarregando] = useState(false);
   const [erroLeitura, setErroLeitura] = useState<string | null>(null);
   const [pendente, setPendente] = useState<ContaEmLista | null>(null);
@@ -52,24 +59,43 @@ export function SeletorDeConta({
   const [confirmada, setConfirmada] = useState<ContaConfirmada | null>(null);
   // Contador de re-tentativa: o efeito relê quando ele anda.
   const [tentativa, setTentativa] = useState(0);
+  // Anda no início e no fim de cada troca: leitura que saiu antes dela ou
+  // durante ela é descartada ao voltar — um GET cruzando o POST traria a conta
+  // de antes como ativa. (Se voltar antes do POST, a troca a sobrescreve.)
+  const geracao = useRef(0);
 
   useEffect(() => {
     if (!aberto) return;
     const controle = new AbortController();
-    setResposta(null);
-    setCarregando(true);
+    let releitura: ReturnType<typeof setTimeout> | undefined;
+    const guardada = contasGuardadas();
+    setResposta(guardada);
+    setCarregando(guardada === null);
     setErroLeitura(null);
-    fetchContas(controle.signal)
-      .then((nova) => {
-        setResposta(nova);
-        setCarregando(false);
-      })
-      .catch(() => {
-        if (controle.signal.aborted) return;
-        setCarregando(false);
-        setErroLeitura('Não consegui ler as contas agora.');
-      });
-    return () => controle.abort();
+    const ler = (repetir: boolean) => {
+      const saiuEm = geracao.current;
+      return fetchContas(controle.signal)
+        .then((nova) => {
+          if (controle.signal.aborted || saiuEm !== geracao.current) return;
+          guardarContas(nova);
+          setResposta(nova);
+          setCarregando(false);
+          if (repetir && nova.revalidando) {
+            releitura = setTimeout(() => void ler(false), RELEITURA_APOS_REVALIDAR_MS);
+          }
+        })
+        .catch(() => {
+          if (controle.signal.aborted || saiuEm !== geracao.current) return;
+          setResposta(null);
+          setCarregando(false);
+          setErroLeitura('Não consegui ler as contas agora.');
+        });
+    };
+    void ler(true);
+    return () => {
+      controle.abort();
+      clearTimeout(releitura);
+    };
   }, [aberto, tentativa]);
 
   function alterarAbertura(proximo: boolean) {
@@ -84,9 +110,15 @@ export function SeletorDeConta({
   async function trocar() {
     if (!pendente || trocando) return;
     setTrocando(true);
+    geracao.current += 1;
     try {
       const res = await postContaAtiva(pendente.chave);
       setConfirmada(res.ativa);
+      // A lista guardada passa a marcar a confirmada como ativa: a próxima
+      // abertura não pode mostrar o ✓ na conta de antes da troca.
+      const atualizada = comAtivaTrocada(contasGuardadas(), res.ativa);
+      guardarContas(atualizada);
+      setResposta(atualizada);
       setTela('trocada');
       setPendente(null);
       // A gaveta relê o painel pra convergir pelo canal normal; a pílula já
@@ -96,6 +128,7 @@ export function SeletorDeConta({
       setAviso(mensagemDeErroTroca(erro));
       setTela('aviso');
     } finally {
+      geracao.current += 1;
       setTrocando(false);
     }
   }

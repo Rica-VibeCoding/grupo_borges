@@ -97,9 +97,117 @@ def test_email_nunca_vem_nulo_pro_front(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr(contas, "_SECRETS_DIR", secrets)
     monkeypatch.setattr(contas, "_CLAUDE_CONFIG_PATH", tmp_path / "sem-config.json")
-    monkeypatch.setattr(contas, "_cota_com_cache", lambda *a: (None, None))
+    monkeypatch.setattr(contas, "_cota_com_cache", lambda *a: ((None, None), False))
 
     resposta = contas.listar_contas()
 
     assert resposta.ativa is None
     assert [c.email for c in resposta.contas] == ["contanova"]
+
+
+def _duas_contas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    (secrets / "cc-oauth-token-woodpro-2026-08-18.txt").write_text("chave-w\n")
+    (secrets / "cc-oauth-token-incasa-2026-08-18.txt").write_text("chave-i\n")
+    monkeypatch.setattr(contas, "_SECRETS_DIR", secrets)
+    monkeypatch.setattr(contas, "_CLAUDE_CONFIG_PATH", tmp_path / "sem-config.json")
+    monkeypatch.setattr(contas, "_cota_cache", {})
+    monkeypatch.setattr(contas, "_revalidando", set())
+
+
+def test_leitura_fria_sonda_as_contas_em_paralelo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fria custava a SOMA das sondas (1,3 s medido com duas); agora custa a
+    mais lenta."""
+    import time
+
+    _duas_contas(tmp_path, monkeypatch)
+    em_voo = {"agora": 0, "pico": 0}
+    trava = __import__("threading").Lock()
+
+    def sonda_lenta(chave: str) -> tuple[float, float]:
+        with trava:
+            em_voo["agora"] += 1
+            em_voo["pico"] = max(em_voo["pico"], em_voo["agora"])
+        time.sleep(0.3)
+        with trava:
+            em_voo["agora"] -= 1
+        return (0.5, 0.1) if chave == "chave-i" else (0.2, 0.3)
+
+    monkeypatch.setattr(contas, "_sondar", sonda_lenta)
+
+    resposta = contas.listar_contas()
+
+    assert em_voo["pico"] == 2
+    # Ordem de id preservada, cada cota com a sua conta.
+    assert [(c.id, c.cota_5h) for c in resposta.contas] == [("incasa", 0.5), ("woodpro", 0.2)]
+
+
+def test_cota_vencida_sai_na_hora_e_revalida_por_baixo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    import time
+
+    _duas_contas(tmp_path, monkeypatch)
+    velho = time.monotonic() - contas._CACHE_TTL_S - 1
+    contas._cota_cache.update({"incasa": (velho, (0.1, 0.1)), "woodpro": (velho, (0.2, 0.2))})
+    libera = threading.Event()
+    sondadas: list[str] = []
+
+    def sonda_presa(chave: str) -> tuple[float, float]:
+        sondadas.append(chave)
+        libera.wait(5)
+        return (0.9, 0.9)
+
+    monkeypatch.setattr(contas, "_sondar", sonda_presa)
+
+    inicio = time.monotonic()
+    resposta = contas.listar_contas()
+    # De novo, com a revalidação ainda presa: não empilha segunda sonda.
+    contas.listar_contas()
+
+    assert time.monotonic() - inicio < 1
+    assert [c.cota_5h for c in resposta.contas] == [0.1, 0.2]
+    # O front lê este sinal pra reler e não deixar o número velho parado.
+    assert resposta.revalidando is True
+    assert sorted(sondadas) == ["chave-i", "chave-w"]
+
+    libera.set()
+    limite = time.monotonic() + 5
+    while contas._revalidando and time.monotonic() < limite:
+        time.sleep(0.01)
+    fresca = contas.listar_contas()
+    assert [c.cota_5h for c in fresca.contas] == [0.9, 0.9]
+    assert fresca.revalidando is False
+
+
+def test_cota_velha_demais_espera_a_sonda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Passou do teto, o número não vai sem aviso: a leitura volta a esperar."""
+    import time
+
+    _duas_contas(tmp_path, monkeypatch)
+    antigo = time.monotonic() - contas._CACHE_VELHO_MAX_S - 1
+    contas._cota_cache.update({"incasa": (antigo, (0.1, 0.1)), "woodpro": (antigo, (0.2, 0.2))})
+    monkeypatch.setattr(contas, "_sondar", lambda chave: (0.7, 0.7))
+
+    resposta = contas.listar_contas()
+    assert [c.cota_5h for c in resposta.contas] == [0.7, 0.7]
+    assert resposta.revalidando is False
+
+
+def test_revalidacao_que_falha_guarda_o_valor_velho(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(contas, "_cota_cache", {"incasa": (1.0, (0.4, 0.4))})
+    monkeypatch.setattr(contas, "_revalidando", {"incasa"})
+
+    def sonda_sem_rede(chave: str) -> tuple[float, float]:
+        raise contas.httpx.ConnectError("sem rede")
+
+    monkeypatch.setattr(contas, "_sondar", sonda_sem_rede)
+
+    contas._revalidar("incasa", "chave-i")
+
+    assert contas._cota_cache["incasa"] == (1.0, (0.4, 0.4))
+    assert contas._revalidando == set()
