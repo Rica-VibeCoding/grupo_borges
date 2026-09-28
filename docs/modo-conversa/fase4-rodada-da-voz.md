@@ -75,3 +75,8 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
 1 e 2 (lógica, pequenos) → 6 (latência, o maior ganho de experiência) → 7 → 5 → 3 (depende da chave e da escolha
 de voz do Rica) → 4 (fora deste repo) → 8. Medir a latência ponta a ponta (fim da fala → primeira sílaba do agente)
 antes do 6 e depois do 3, para o ganho ser número e não impressão.
+
+## Anotações do Rica durante o teste (não esquecer)
+- 28/09 — **Tela parada da voz** ("Conversa por voz / Um toque para começar. Depois é só falar." + "Detector pronto em
+  2,2 s"): "horrível perto da ideia da UI que estamos criando, não comunica com o que a gente está fazendo". Refazer
+  junto com o item 5 (foto do agente, cara futurística).
