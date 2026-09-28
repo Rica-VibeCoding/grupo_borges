@@ -49,6 +49,10 @@ function achaBolha(idEco: string | null): HTMLElement | null {
 export async function voaParaBolha(
   campo: HTMLElement | null,
   atualiza: () => string | null,
+  /** `anexo`: a miniatura do composer voa até o cartão de foto ou vídeo. Só
+   *  muda o CSS do voo (`html[data-voo]` em `globals.css`) — a foto escala
+   *  inteira, em vez de viajar em tamanho real como a letra do texto. */
+  tipo: 'envio' | 'anexo' = 'envio',
 ): Promise<string | null> {
   if (!podeVoar(campo)) return atualiza();
   const raiz = document.documentElement;
@@ -56,7 +60,7 @@ export async function voaParaBolha(
   let rodou = false;
   let bolha: HTMLElement | null = null;
   campo.style.viewTransitionName = NOME_DO_VOO;
-  raiz.dataset.voo = 'envio';
+  raiz.dataset.voo = tipo;
   const transicao = (document as ComVoo).startViewTransition!(() => {
     campo.style.viewTransitionName = '';
     rodou = true;

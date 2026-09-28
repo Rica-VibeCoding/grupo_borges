@@ -45,17 +45,21 @@ const ICONE_DA_ESPECIE: Record<
 export function MiniaturaAnexo({
   estado,
   aoRemover,
+  refQuadro,
 }: {
   estado: EstadoAnexo;
   aoRemover: () => void;
+  /** O quadrado da foto — é ele que decola no voo do anexo (`voo-do-envio.ts`). */
+  refQuadro?: React.Ref<HTMLDivElement>;
 }) {
-  // A foto fica na tela do primeiro toque até a entrega — ela atravessa
-  // `escolhido`, `enviando` e o `erro` de upload, que são as três fases que
-  // seguram o arquivo. Fechar a miniatura assim que o upload começa daria ao
-  // olho a impressão de que a foto já foi, e no 422 ele não teria o que
-  // reenviar.
+  // O arquivo atravessa `escolhido`, `enviando` e o `erro` de upload, as três
+  // fases que o seguram. Desde 28/09 foto e vídeo se escondem no `enviando` —
+  // estão na bolha otimista do feed, para onde voaram —, e no 422 voltam
+  // com o mesmo arquivo, prontos para reenviar.
   const retido = arquivoRetido(estado);
   const emVoo = estado.fase === 'enviando';
+  // Documento não tem bolha no feed para onde voar: fica aqui até a entrega.
+  const voou = emVoo && retido?.especie !== 'document';
   // A recusa de entrega (ex: 200 com `tmux_delivered:false` por input ocupado)
   // segura a foto com um MOTIVO — e o motivo mora aqui, na miniatura, porque o
   // aviso da faixa fica abaixo do composer, atrás do teclado no iPhone.
@@ -94,9 +98,18 @@ export function MiniaturaAnexo({
   const Icone = mostrado && mostrado.especie !== 'image' ? ICONE_DA_ESPECIE[mostrado.especie] : null;
 
   return (
-    <div className="ck-miniatura" data-aberto={String(retido !== null)}>
+    // Durante a subida a miniatura FECHA: ela voou para a bolha otimista do
+    // feed (`bolha-anexo-otimista.tsx`), que é quem diz "enviando…" agora.
+    // Duas fotos iguais na tela, uma em cada ponta, diriam que são duas. No
+    // erro ela volta, com o motivo embaixo — o arquivo nunca saiu da mão.
+    <div
+      className="ck-miniatura"
+      data-aberto={String(retido !== null && !voou)}
+      data-voou={voou ? 'true' : undefined}
+    >
       <div style={{ position: 'relative', width: LARGURA }}>
         <div
+          ref={refQuadro}
           style={{
             display: 'flex',
             alignItems: 'center',

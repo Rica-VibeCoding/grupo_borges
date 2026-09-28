@@ -130,6 +130,9 @@ export function urlDoAnexoImagem(agentSlug: string, filename: string): string {
   // cima dela, e `encodeURIComponent` destruiria o `data:` codificando as
   // barras e o `+`/`=` do base64.
   if (URL_DE_IMAGEM_EMBUTIDA.test(filename)) return filename;
+  // O arquivo LOCAL da bolha otimista (`anexo-pendente.ts`), antes de o
+  // servidor ter um nome para ele: o objectURL já é a URL.
+  if (filename.startsWith('blob:')) return filename;
   if (CAMINHO_DE_CANAL.test(filename)) {
     return `/api/agents/${encodeURIComponent(agentSlug)}/channel-attachment?path=${encodeURIComponent(filename)}`;
   }

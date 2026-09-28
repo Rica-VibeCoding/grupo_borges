@@ -101,6 +101,11 @@ import {
 } from './icones';
 import { usaCanalEntrega } from './usa-canal-entrega';
 import { voaParaBolha } from '../../lib/voo-do-envio';
+import {
+  confirmaAnexoPendente,
+  descartaAnexoPendente,
+  registraAnexoPendente,
+} from '../../lib/anexo-pendente';
 import { BolhaDeComandos } from './bolha-de-comandos';
 
 export type ComposerProps = {
@@ -272,6 +277,7 @@ export function Composer({
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const vooEmCursoRef = useRef(false);
+  const quadroAnexoRef = useRef<HTMLDivElement>(null);
   const tecladoTouch = usaTecladoTouch();
 
   // O ANEXO tem máquina PRÓPRIA, não a de seis fases do texto. Ali a pergunta é
@@ -580,18 +586,52 @@ export function Composer({
     // duas entregas ao tmux, e o agente veria a legenda antes ou depois do
     // arquivo sem ordem garantida.
     if (anexar) {
-      // Aqui o campo esvazia na ENTREGA, não no aceite. `limpaCampo` é do texto
-      // puro, onde esperar o POST deixaria o campo cheio durante a viagem e um
-      // segundo Enter duplicaria a mensagem; no anexo quem barra o segundo toque
-      // é a porta (`anexo-em-voo`), então esperar não custa nada — e num 422 a
-      // legenda continua escrita, que é a metade do "nada evapora" que o arquivo
-      // sozinho não cobre.
-      if (await anexo.enviar(corpoParaEnviar)) {
-        if (textoAtualRef.current === corpoParaEnviar) {
+      // O VOO DO ANEXO (28/09): a miniatura decola do composer e pousa na bolha
+      // otimista do feed, que mostra o arquivo LOCAL com "enviando…" até o
+      // upload voltar. A legenda sai do campo no mesmo quadro — ela está na
+      // bolha. Se o upload falhar, a bolha sai, o arquivo volta para a
+      // miniatura com o motivo (`usa-anexo.ts`) e a legenda volta para o campo
+      // se ele ainda estiver vazio: nada evapora, nas duas metades.
+      //
+      // A marca do voo segura o segundo toque no quadro entre o gesto e o
+      // callback da View Transition; dali em diante a fase é `enviando` e quem
+      // segura é a porta (`anexo-em-voo`) e a trava muda do `usa-anexo.ts`.
+      vooEmCursoRef.current = true;
+      const retido = retidoAnexo;
+      let idAnexo: string | null = null;
+      let entrega: Promise<boolean> = Promise.resolve(false);
+      await voaParaBolha(
+        retido.especie === 'document' ? null : quadroAnexoRef.current,
+        () => {
           setTexto('');
           setOrigemDoRascunho('text');
+          // Documento não tem bolha visual: sobe como sempre subiu, sem voo e
+          // com a miniatura na caixa até a entrega.
+          if (retido.especie === 'image' || retido.especie === 'video') {
+            const id = registraAnexoPendente(agentSlug, {
+              url: URL.createObjectURL(retido.arquivo),
+              especie: retido.especie,
+              legenda: corpoParaEnviar,
+              nome: retido.arquivo.name,
+            });
+            idAnexo = id;
+            entrega = anexo.enviar(corpoParaEnviar, (resposta) =>
+              confirmaAnexoPendente(agentSlug, id, resposta),
+            );
+            return id;
+          }
+          entrega = anexo.enviar(corpoParaEnviar);
+          return null;
+        },
+        'anexo',
+      );
+      vooEmCursoRef.current = false;
+      if (!(await entrega)) {
+        if (idAnexo !== null) descartaAnexoPendente(agentSlug, idAnexo);
+        if (textoAtualRef.current.trim() === '') {
+          setTexto(corpo);
+          setOrigemDoRascunho(origem);
         }
-      } else {
         // A entrega falhou DEPOIS do POST (recusa do tmux, 4xx/5xx, rede). A
         // porta não cobre este caso — ela só vê o gesto ANTES de subir —, então
         // quem responde ao toque é este sinal, a mesma resposta física da
@@ -952,9 +992,10 @@ export function Composer({
       >
         {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
             baixo em vez de flutuar sobre ele, e o composer cresce. O anexo
-            escolhido não some porque o microfone abriu. Ela fica na tela do
-            primeiro toque até a entrega — ver `miniatura-anexo.tsx`. */}
-        <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} />
+            escolhido não some porque o microfone abriu. Foto e vídeo saem
+            dela no envio, voando para a bolha do feed; volta no erro — ver
+            `miniatura-anexo.tsx`. */}
+        <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} refQuadro={quadroAnexoRef} />
 
         <BolhaDeComandos
           agentSlug={agentSlug}

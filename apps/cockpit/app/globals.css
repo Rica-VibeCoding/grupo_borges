@@ -319,6 +319,9 @@
   --ck-dur-calm: 320ms;    /* troca de superfície — ex: filete de running sumindo */
   --ck-ease: cubic-bezier(0.2, 0, 0.2, 1);        /* entrada */
   --ck-ease-exit: cubic-bezier(0.4, 0, 1, 1);     /* saída — filete de running sumindo */
+  /* Bolha otimista de anexo com o upload em voo: a foto já chegou ao feed, a
+   * confirmação não. Esmaecida o bastante para ler como espera, não como erro. */
+  --ck-anexo-enviando-opacidade: 0.6;
 
   /* -- camadas: nomeadas, porque z-index numérico solto vira leilão ------ */
   --ck-z-base: 0;
@@ -1204,6 +1207,13 @@ body {
     visibility 0s linear var(--ck-dur-enter, 200ms);
 }
 
+/* A miniatura que VOOU para a bolha (`voo-do-envio.ts`) sai sem o fade: quem
+   faz a saída é o voo, e o fade deixaria um fantasma dela no composer enquanto
+   a cópia viaja — a mesma foto em dois lugares. */
+.ck-miniatura[data-voou='true'] {
+  transition: none;
+}
+
 /* O véu acompanha, senão o preto entra de uma vez e denuncia que só a caixa
    está animando. */
 .ck-surge-veu {
@@ -1412,6 +1422,18 @@ html[data-voo='envio']::view-transition-new(root) {
 }
 ::view-transition-new(ck-envio) {
   animation: ck-voo-entra var(--ck-dur-calm) var(--ck-ease) both;
+}
+/* O VOO DO ANEXO: a miniatura quadrada do composer pousa no cartão da foto ou
+ * do vídeo. Aqui as fotos ESCALAM com o grupo (`cover`), que é o contrário do
+ * texto: foto em tamanho real viajaria como um recorte que cresce do nada. */
+html[data-voo='anexo']::view-transition-old(root),
+html[data-voo='anexo']::view-transition-new(root) {
+  animation: none;
+}
+html[data-voo='anexo']::view-transition-old(ck-envio),
+html[data-voo='anexo']::view-transition-new(ck-envio) {
+  object-fit: cover;
+  object-position: center;
 }
 @keyframes ck-voo-sai {
   0% { opacity: 1; }

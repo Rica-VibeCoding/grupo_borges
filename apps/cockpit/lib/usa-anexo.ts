@@ -185,8 +185,12 @@ export function createControleAnexo(
       publicar({ fase: 'enviando', ...retido, gaveta: false });
       try {
         const resposta = await subir(agentSlug, retido.arquivo, caption);
-        if (descartado) return true;
+        // A confirmação vem ANTES da guarda de descarte: trocar de agente no meio
+        // do upload desmonta este controle, mas a bolha otimista mora num store
+        // de módulo e só sai quando souber o nome gravado no servidor. Sem isso
+        // ela ficava em "enviando…" ao lado da real até recarregar a página.
         aoEntregar?.(resposta);
+        if (descartado) return true;
         publicar({
           fase: 'sucesso',
           nome: retido.arquivo.name,

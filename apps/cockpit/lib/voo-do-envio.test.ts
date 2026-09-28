@@ -76,6 +76,24 @@ describe('voaParaBolha', () => {
     assert.equal(bolha.style.viewTransitionName, '', 'o nome sai quando o voo termina');
   });
 
+  it('voo de anexo marca a raiz com o tipo, para o CSS escalar a foto', async () => {
+    const bolha = { style: { viewTransitionName: '' } };
+    const { raiz, chamadas } = montaDocumento({ bolha });
+    const campo = { style: { viewTransitionName: '' } } as unknown as HTMLElement;
+    let tipoDuranteOVoo: string | undefined;
+    const id = await voaParaBolha(
+      campo,
+      () => {
+        tipoDuranteOVoo = raiz.dataset.voo;
+        return 'anexo-1';
+      },
+      'anexo',
+    );
+    assert.equal(id, 'anexo-1');
+    assert.equal(tipoDuranteOVoo, 'anexo');
+    assert.deepEqual(chamadas, ['[data-eco="cc-otimista-anexo-1"]']);
+  });
+
   it('se o voo falhar antes da atualização, o envio acontece mesmo assim', async () => {
     montaDocumento({ falhaNoCallback: true });
     const campo = { style: { viewTransitionName: '' } } as unknown as HTMLElement;
