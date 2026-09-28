@@ -1444,6 +1444,79 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
   40%, 100% { opacity: 1; }
 }
 
+/* A CHEGADA DA MENSAGEM (`components/feed/chegada-ao-vivo.ts`). A fala do
+ * agente que chega ao vivo sobe 6px e acende. Vai na div de DENTRO do item — o
+ * envelope carrega o `translateY` do virtualizador, e animar `transform` nele
+ * jogaria o item para o topo do feed durante 200ms. Mesma distância do
+ * `.ck-surge`: é o mesmo gesto de "surgiu", só que sem a escala. */
+.ck-chega {
+  animation: ck-chega var(--ck-dur-enter, 200ms) var(--ck-ease) both;
+}
+@keyframes ck-chega {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* AS BARRAS DE CIMA DA CAIXA — a pergunta do motor e a espera do `/compact`.
+ * Entram com o `ck-menu-entra`, o mesmo gesto do menu do composer, que mora
+ * logo ali: tudo o que brota em volta da caixa brota igual. A altura da barra
+ * entra seca (§9.4 — altura não se anima); quem anima é o conteúdo dela. A
+ * saída da do compact já existe: é a fase `concluindo`. */
+.ck-barra-entra {
+  animation: ck-menu-entra var(--ck-dur-enter, 200ms) var(--ck-ease) both;
+}
+
+/* O "VOLTA AO FIM" (`botao-volta-ao-fim.tsx`). Montado sempre, como a gaveta,
+ * para ter SAÍDA: cresce de 0,9 e acende ao aparecer, encolhe e apaga ao sair.
+ * O `translateX(-50%)` da centralização mora aqui e não no estilo em linha —
+ * o `transform` da animação o apagaria. Fora de vista, `visibility: hidden`
+ * tira o botão do toque, do Tab e do leitor de tela; ela só vira no FIM do
+ * fade, senão a saída rodaria no vazio (o raciocínio do `.ck-surge`). */
+.ck-volta-ao-fim {
+  transform: translateX(-50%);
+  visibility: visible;
+  opacity: 1;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease),
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease),
+    visibility 0s;
+}
+.ck-volta-ao-fim[data-visivel='false'] {
+  transform: translateX(-50%) scale(0.9);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
+    visibility 0s linear var(--ck-dur-enter, 200ms);
+}
+
+/* O ESTADO DA LINHA DA TROPA (`linha-da-tropa.tsx`). "aguarda você" ↔ modelo e
+ * relógio trocam num fade cruzado curto, só de opacidade: o texto que sai fica
+ * por cima, fora do fluxo, apagando; o que entra acende no lugar. Curto de
+ * propósito — é leitura de relance, não evento. */
+.ck-troca-estado-entra {
+  animation: ck-troca-estado-entra var(--ck-dur-enter, 200ms) var(--ck-ease) both;
+}
+.ck-troca-estado-sai {
+  animation: ck-troca-estado-sai var(--ck-dur-enter, 200ms) var(--ck-ease-exit) both;
+}
+@keyframes ck-troca-estado-entra {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ck-troca-estado-sai {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 /* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do
  * state-attention, que é o único com direito a animação persistente. */
 @media (prefers-reduced-motion: reduce) {

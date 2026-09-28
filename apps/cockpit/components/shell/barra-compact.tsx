@@ -80,7 +80,7 @@ export function BarraCompact({
     // receita é a dos avisos da voz: o que aconteceu + o que fazer + dismiss.
     return (
       <div
-        className="ck-sobre-material mx-auto flex w-full items-start justify-between"
+        className="ck-sobre-material ck-barra-entra mx-auto flex w-full items-start justify-between"
         style={{
           maxWidth: 'var(--ck-w-composer)',
           padding: '0 var(--ck-space-2)',
@@ -124,8 +124,10 @@ export function BarraCompact({
       : `Compactando a conversa · ${rotuloCronometroCompact(decorridoMs)}`;
 
   return (
+    // `.ck-barra-entra`: a entrada, com o gesto do menu do composer. Só roda na
+    // montagem — as fases seguintes reaproveitam o nó e não repetem.
     <div
-      className="ck-sobre-material mx-auto w-full"
+      className="ck-sobre-material ck-barra-entra mx-auto w-full"
       style={{ maxWidth: 'var(--ck-w-composer)', padding: '0 var(--ck-space-2)' }}
     >
       <div

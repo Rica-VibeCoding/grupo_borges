@@ -36,6 +36,7 @@ import {
 import { estadoDe } from './estado';
 import { Contexto, ESTILO_DO_NUMERO, Pasta, pastaCurta, Pulso } from './miudezas-da-linha';
 import { Retrato } from './retrato';
+import { TrocaCruzada } from './troca-cruzada';
 import { cliqueSimples } from './superficie-otimista';
 
 /** Quem sabe navegar sem esperar o servidor. `undefined` fora do provider da
@@ -152,20 +153,33 @@ export function CartaoVivo({
             }}
           >
             <span className="flex min-w-0 flex-1 items-baseline" style={{ gap: 'var(--ck-space-2)' }}>
-              {aguarda ? (
-                <span className="truncate" style={{ color: 'var(--ck-state-attention)' }}>
-                  aguarda você
-                </span>
-              ) : (
-                <>
-                  {modelo ? <span className="min-w-0 truncate">{modelo}</span> : null}
-                  {relogio ? (
-                    <span className="shrink-0" title="tempo de sessão">
-                      {relogio}
-                    </span>
-                  ) : null}
-                </>
-              )}
+              {/* A troca de estado cruza em fade, só de opacidade
+                  (`troca-cruzada.tsx`). A chave é o ESTADO, não o texto: o
+                  relógio muda a cada tique e não é troca nenhuma. Sem
+                  telemetria ela nem monta: vazia, ainda levaria o `gap` e
+                  empurraria a pasta que sobe. */}
+              {temTelemetria ? (
+              <TrocaCruzada
+                chave={aguarda ? 'aguarda' : 'telemetria'}
+                className="flex min-w-0 items-baseline"
+                style={{ gap: 'var(--ck-space-2)' }}
+              >
+                {aguarda ? (
+                  <span className="truncate" style={{ color: 'var(--ck-state-attention)' }}>
+                    aguarda você
+                  </span>
+                ) : (
+                  <>
+                    {modelo ? <span className="min-w-0 truncate">{modelo}</span> : null}
+                    {relogio ? (
+                      <span className="shrink-0" title="tempo de sessão">
+                        {relogio}
+                      </span>
+                    ) : null}
+                  </>
+                )}
+              </TrocaCruzada>
+              ) : null}
               {pastaSobe ? <Pasta pasta={pasta} caminho={agente.workspace_path} /> : null}
             </span>
             <Pulso buckets={agente.sparkline} />

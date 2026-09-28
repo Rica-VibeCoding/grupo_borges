@@ -25,11 +25,12 @@
  */
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { patchOrdemDaTropa } from '@grupo_borges/cockpit-core/api';
+import { deslizes } from '@/lib/desliza-tropa';
 import { ordenaTropa } from '@/lib/ordena-tropa';
 import {
   aplicaOrdem,
@@ -95,7 +96,24 @@ export function Tropa({
   // é a mesma proteção que a LEITURA já tem em `usa-frota-ao-vivo.ts`.
   const sequenciaDaGravacao = useRef(0);
 
-  const gravaOrdem = useCallback((nova: string[]) => {
+  // O deslize depois do arrasto (`lib/desliza-tropa.ts`). A foto sai do DOM
+  // ANTES da ordem otimista: é a única hora em que as linhas ainda estão no
+  // lugar velho. `ul.children[i]` é a linha de `agentesOrdenados[i]` — cada
+  // item da lista é um `<li>` com `key` pelo slug, e o React move o nó junto.
+  const listaRef = useRef<HTMLUListElement | null>(null);
+  const ordemNaTela = useRef<string[]>([]);
+  const fotoDoDeslize = useRef<{ topos: Map<string, number>; soltada: string | null } | null>(null);
+
+  const gravaOrdem = useCallback((nova: string[], soltada: string | null) => {
+    const ul = listaRef.current;
+    if (ul && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const topos = new Map<string, number>();
+      ordemNaTela.current.forEach((slug, i) => {
+        const li = ul.children[i];
+        if (li) topos.set(slug, li.getBoundingClientRect().top);
+      });
+      fotoDoDeslize.current = { topos, soltada };
+    }
     setOrdemOtimista(nova);
     const minhaVez = ++sequenciaDaGravacao.current;
     patchOrdemDaTropa(nova).catch(() => {
@@ -107,12 +125,53 @@ export function Tropa({
     });
   }, []);
 
+  // Pintou a ordem nova: cada linha que andou volta ao lugar velho por
+  // `transform`, sem transição, e no quadro seguinte desliza até zero. Efeito
+  // de LAYOUT, antes da pintura — num efeito comum o Rica veria um quadro com
+  // tudo já no lugar novo, e o deslize viraria o salto duplo.
+  useLayoutEffect(() => {
+    ordemNaTela.current = agentesOrdenados.map((a) => a.slug);
+    const foto = fotoDoDeslize.current;
+    const ul = listaRef.current;
+    if (!foto || !ul) return;
+    fotoDoDeslize.current = null;
+    const linhas = new Map<string, HTMLElement>();
+    const depois = new Map<string, number>();
+    agentesOrdenados.forEach((a, i) => {
+      const li = ul.children[i] as HTMLElement | undefined;
+      if (!li) return;
+      linhas.set(a.slug, li);
+      depois.set(a.slug, li.getBoundingClientRect().top);
+    });
+    const andaram = deslizes(foto.topos, depois, foto.soltada);
+    for (const { slug, dy } of andaram) {
+      const li = linhas.get(slug)!;
+      li.style.transition = 'none';
+      li.style.transform = `translateY(${dy}px)`;
+    }
+    if (andaram.length === 0) return;
+    // Lê o layout para o navegador assentar o ponto de partida antes da
+    // transição — sem isto ele junta as duas escritas e não anima nada.
+    void ul.offsetHeight;
+    for (const { slug } of andaram) {
+      const li = linhas.get(slug)!;
+      li.style.transition = 'transform var(--ck-dur-calm, 320ms) var(--ck-ease)';
+      li.style.transform = '';
+      const limpa = (evento: TransitionEvent) => {
+        if (evento.target !== li || evento.propertyName !== 'transform') return;
+        li.style.transition = '';
+        li.removeEventListener('transitionend', limpa);
+      };
+      li.addEventListener('transitionend', limpa);
+    }
+  }, [agentesOrdenados]);
+
   const move = useCallback(
     (slug: string, direcao: -1 | 1) => {
       const slugs = agentesOrdenados.map((a) => a.slug);
       const movida = moveUmaCasa(slugs, slug, direcao);
       if (movida === slugs) return;
-      gravaOrdem(movida);
+      gravaOrdem(movida, null);
       const posicao = movida.indexOf(slug) + 1;
       setRecadoDoMovimento(
         `${agentesOrdenados.find((a) => a.slug === slug)?.name ?? slug}, posição ${posicao} de ${movida.length}`,
@@ -142,7 +201,7 @@ export function Tropa({
           // vizinho de baixo devolve a mesma sequência num array novo, e a
           // comparação por referência deixava esse caso passar batido.
           if (mesmaOrdem(reordenada, slugs)) return;
-          gravaOrdem(reordenada);
+          gravaOrdem(reordenada, String(source.data.slug));
         },
       }),
     [agentesOrdenados, gravaOrdem],
@@ -191,7 +250,7 @@ export function Tropa({
           lista. A escolha de cartão ou linha rasa é POR LINHA, pelo estado
           resolvido (`estadoDe`): status desconhecido dorme como o offline, como
           a v3 já fazia. */}
-      <ul>
+      <ul ref={listaRef}>
         {agentesOrdenados.map((a) =>
           estadoDe(a.status).ordem === 3 ? (
             <LinhaDormindo

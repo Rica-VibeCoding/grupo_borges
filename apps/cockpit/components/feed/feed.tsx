@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { capturaAncora, estaColado, longeDoFim, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { BotaoVoltaAoFim } from './botao-volta-ao-fim';
 import { chaveDe } from './chave';
+import { criaChegadas } from './chegada-ao-vivo';
 import { CorpoDoItem } from './corpo-do-item';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 
@@ -80,6 +81,16 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
     }
     return -1;
   }, [itens]);
+
+  // Quem acabou de chegar ao vivo ganha o gesto de chegada (`chegada-ao-vivo.ts`).
+  // Observar no render, e não num efeito: o item tem de nascer JÁ com a classe,
+  // senão pinta um quadro parado e só depois começa a subir.
+  const chegadasRef = useRef<ReturnType<typeof criaChegadas> | null>(null);
+  chegadasRef.current ??= criaChegadas();
+  const chegadas = chegadasRef.current;
+  const observados = useMemo(() => itens.map((item, i) => ({ chave: chaves[i]!, kind: item.kind })), [itens, chaves]);
+  const agoraMs = performance.now();
+  chegadas.observa(observados, agoraMs);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const coladoRef = useRef(true);
@@ -237,6 +248,8 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
         >
           {virtuais.map((virtual) => {
             const item = itens[virtual.index];
+            const chave = String(virtual.key);
+            const chega = chegadas.chegando(chave, agoraMs);
             return (
               <div
                 key={virtual.key}
@@ -251,7 +264,20 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
                   transform: `translateY(${virtual.start}px)`,
                 }}
               >
+                {/* O gesto de chegada mora AQUI, na div de dentro: o envelope
+                    carrega o `translateY` do virtualizador, e um `transform`
+                    de animação nele apagaria a posição do item. */}
                 <div
+                  className={chega ? 'ck-chega' : undefined}
+                  onAnimationEnd={
+                    chega
+                      ? (evento) => {
+                          // `animationend` borbulha: a animação de um filho
+                          // (ferramenta abrindo, pulso) não encerra a chegada.
+                          if (evento.target === evento.currentTarget) chegadas.terminou(chave);
+                        }
+                      : undefined
+                  }
                   style={{
                     display: 'flex',
                     flexDirection: 'column',

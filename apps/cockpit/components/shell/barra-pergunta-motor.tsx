@@ -74,7 +74,9 @@ export function BarraPerguntaMotor({ agentSlug }: { agentSlug: string }) {
     <div
       role="group"
       aria-label="Pergunta do agente sobre a troca"
-      className="ck-sobre-material mx-auto flex w-full items-center justify-between"
+      // Entra com o gesto do menu do composer (`.ck-barra-entra`). Pergunta
+      // trocada por outra reaproveita o mesmo nó e não repete a entrada.
+      className="ck-sobre-material ck-barra-entra mx-auto flex w-full items-center justify-between"
       style={{
         maxWidth: 'var(--ck-w-composer)',
         padding: '0 var(--ck-space-2)',
