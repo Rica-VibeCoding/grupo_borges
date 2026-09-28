@@ -1,90 +1,49 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
-import {
-  andamentoDoChip,
-  esperaVenceu,
-  podeReenviar,
-  proximaEspera,
-  type DesfechoDoPedido,
-  type EsperaDaTroca,
-  type PedidoDeTroca,
-} from './troca-em-espera.ts';
+import { esperasDeTroca } from './esperas-de-troca.ts';
+import { andamentoDoChip, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
 
-const PASSO_DO_RELOGIO_MS = 1_000;
+const VAZIO = { espera: null, voando: null, desistiu: false };
 
-/** O chip que espera o agente terminar e reenvia sozinho (27/09). A regra mora
- *  em `troca-em-espera.ts`; aqui só o relógio e o estado do React. */
+/** O chip que espera o agente terminar e reenvia sozinho (27/09). A espera mora
+ *  em `esperas-de-troca.ts`, por slug, e sobrevive à troca de agente (28/09);
+ *  aqui só a ponte com o React. */
 export function usaTrocaEmEspera(
-  status: string | null | undefined,
+  slug: string,
   executar: (pedido: PedidoDeTroca) => Promise<DesfechoDoPedido>,
   aoDesistir: () => void,
 ) {
-  const [espera, setEspera] = useState<EsperaDaTroca | null>(null);
-  const [voando, setVoando] = useState<PedidoDeTroca | null>(null);
-  const emVoo = voando !== null;
-  const ultimaTentativa = useRef(0);
-  // Cancelar ou escolher de novo invalida o envio em voo: se ele voltar
-  // "ocupado", não rearma uma espera que o Rica já largou.
-  const geracao = useRef(0);
   const executarAtual = useRef(executar);
   executarAtual.current = executar;
-  const desistirAtual = useRef(aoDesistir);
-  desistirAtual.current = aoDesistir;
-
-  async function enviar(pedido: PedidoDeTroca, esperaAtual: EsperaDaTroca | null) {
-    const minha = geracao.current;
-    ultimaTentativa.current = Date.now();
-    setVoando(pedido);
-    let desfecho: DesfechoDoPedido = 'falhou';
-    try {
-      desfecho = await executarAtual.current(pedido);
-    } finally {
-      if (minha === geracao.current) {
-        setVoando(null);
-        setEspera(proximaEspera(esperaAtual, pedido, desfecho, Date.now()));
-      }
-    }
-  }
-
-  function pedir(pedido: PedidoDeTroca) {
-    geracao.current += 1;
-    setEspera(null);
-    void enviar(pedido, null);
-  }
-
-  function cancelar() {
-    geracao.current += 1;
-    setEspera(null);
-    setVoando(null);
-  }
 
   useEffect(() => {
-    if (!espera) return;
-    const relogio = setInterval(() => {
-      const agora = Date.now();
-      if (esperaVenceu(espera, agora)) {
-        geracao.current += 1;
-        setEspera(null);
-        desistirAtual.current();
-        return;
-      }
-      if (podeReenviar({ espera, emVoo, status, ultimaTentativaMs: ultimaTentativa.current, agoraMs: agora })) {
-        void enviar(espera.pedido, espera);
-      }
-    }, PASSO_DO_RELOGIO_MS);
-    return () => clearInterval(relogio);
-  }, [espera, emVoo, status]);
+    esperasDeTroca.registrarExecutor(slug, (pedido) => executarAtual.current(pedido));
+  }, [slug]);
 
+  const estado = useSyncExternalStore(
+    (fn) => esperasDeTroca.assinar(slug, fn),
+    () => esperasDeTroca.ler(slug),
+    () => VAZIO,
+  );
+
+  useEffect(() => {
+    if (!estado.desistiu) return;
+    aoDesistir();
+    esperasDeTroca.esquecerDesistencia(slug);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dispara na desistência, só
+  }, [estado.desistiu, slug]);
+
+  const emVoo = estado.voando !== null;
   return {
-    espera,
+    espera: estado.espera,
     emVoo,
     /** O valor escolhido que está trocando ou esperando. */
-    pedido: voando ?? espera?.pedido ?? null,
-    andamento: andamentoDoChip({ espera, emVoo }),
-    andamentoLongo: andamentoDoChip({ espera, emVoo }, true),
-    pedir,
-    cancelar,
+    pedido: estado.voando ?? estado.espera?.pedido ?? null,
+    andamento: andamentoDoChip({ espera: estado.espera, emVoo }),
+    andamentoLongo: andamentoDoChip({ espera: estado.espera, emVoo }, true),
+    pedir: (pedido: PedidoDeTroca) => void esperasDeTroca.pedir(slug, pedido),
+    cancelar: () => esperasDeTroca.cancelar(slug),
   };
 }

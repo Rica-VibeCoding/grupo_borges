@@ -12,7 +12,6 @@ import {
 import { aplicarMotor, esquecerConfirmacao, fecharSePronto, registrarEscolha, revisarFaltas, type PainelDoMotor as PainelDaDecisao } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
-import { usaFrota } from './frota-provider';
 import { LeituraDoMotor, RessalvaDoSeletor, usaRecado } from './seletor-motor-ressalva';
 import { sincronizarPainel } from './sincronizacao-painel';
 import { classificaErroDaTroca, jaEstava, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
@@ -46,8 +45,6 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [recado, setRecado] = usaRecado();
-  const { agents } = usaFrota();
-  const statusDoAgente = agents.find((a) => a.slug === agentSlug)?.status;
   const telaEstreita = usaTelaEstreita();
   const operacao = usaOperacaoDeMotor(agentSlug);
   // Enquanto o agente religa, a gaveta não aceita outra escolha: a segunda
@@ -99,7 +96,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   // troca — "esperando o agente terminar", "trocando…" — sem prender o
   // composer atrás de um menu modal pelos ~6 s da troca que abre o modal.
   const trocaAQuente = !cobrePedido;
-  const troca = usaTrocaEmEspera(statusDoAgente, executar, () => setRecado(TEXTO_DESISTIU));
+  const troca = usaTrocaEmEspera(agentSlug, executar, () => setRecado(TEXTO_DESISTIU));
   const pedidoEmCurso = troca.pedido;
   const ressalva = (
     <RessalvaDoSeletor
@@ -205,7 +202,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         return 'falhou';
       }
       if (desfecho === 'pendente') {
-        mostrarAviso('A troca foi entregue, mas o agente está no meio de um turno e ainda não a confirmou. O card segue no nível atual até a sessão confirmar.');
+        mostrarAviso('A troca foi entregue, mas a sessão ainda não confirmou o nível novo. O card segue no nível atual até ela confirmar.');
         const controlador = new AbortController();
         leitura.current = controlador;
         convergencia.current = esperaConvergenciaDoEsforco(
