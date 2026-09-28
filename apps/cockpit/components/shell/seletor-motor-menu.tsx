@@ -9,7 +9,7 @@ import {
   DropdownMenuSubTrigger,
 } from '../ui/dropdown-menu';
 
-export type TelaDoSeletor = 'inicio' | 'modelo' | 'esforco' | 'confirmacao' | 'aviso';
+export type TelaDoSeletor = 'inicio' | 'modelo' | 'esforco' | 'aviso';
 export type OpcaoDoMotor = {
   chave: string;
   rotulo: string;
@@ -24,10 +24,8 @@ type ConteudoDoSeletorProps = {
   rotuloDoEsforco: string | null;
   salvando: boolean;
   telaEstreita: boolean;
-  modeloPendente: string | null;
   aviso: string | null;
   aoMudarTela: (tela: TelaDoSeletor) => void;
-  aoConfirmarTroca: () => void;
   aoFechar: () => void;
 };
 function estiloItemDoMenu(selecionado = false) {
@@ -125,7 +123,7 @@ function MenuInicial({
   salvando,
   telaEstreita,
   aoMudarTela,
-}: Omit<ConteudoDoSeletorProps, 'tela' | 'modeloPendente' | 'aviso' | 'aoConfirmarTroca' | 'aoFechar'>) {
+}: Omit<ConteudoDoSeletorProps, 'tela' | 'aviso' | 'aoFechar'>) {
   const estilo = estiloItemDoMenu();
   return (
     <>
@@ -201,10 +199,8 @@ export function ConteudoDoSeletor({
   rotuloDoEsforco,
   salvando,
   telaEstreita,
-  modeloPendente,
   aviso,
   aoMudarTela,
-  aoConfirmarTroca,
   aoFechar,
 }: ConteudoDoSeletorProps) {
   if (tela === 'inicio') {
@@ -229,43 +225,6 @@ export function ConteudoDoSeletor({
         salvando={salvando}
         aoVoltar={() => aoMudarTela('inicio')}
       />
-    );
-  }
-
-  if (tela === 'confirmacao') {
-    return (
-      <>
-        <p
-          style={{
-            padding: 'var(--ck-space-2) var(--ck-space-3)',
-            color: 'var(--ck-text-secondary)',
-            fontSize: 'var(--ck-text-base)',
-          }}
-        >
-          O agente está trabalhando. Trocar o modelo agora pode interromper a tarefa atual.
-        </p>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={salvando}
-          onSelect={(evento) => {
-            evento.preventDefault();
-            aoMudarTela('inicio');
-          }}
-          style={estiloItemDoMenu()}
-        >
-          Cancelar
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={salvando || modeloPendente === null}
-          onSelect={(evento) => {
-            evento.preventDefault();
-            aoConfirmarTroca();
-          }}
-          style={estiloItemDoMenu(true)}
-        >
-          Trocar mesmo assim
-        </DropdownMenuItem>
-      </>
     );
   }
 

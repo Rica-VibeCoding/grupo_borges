@@ -101,8 +101,10 @@ export const TEXTO_FALHOU = 'Não consegui aplicar a troca — tente de novo.';
 
 type Erro = { status?: number; detail?: string };
 
-/** 409 `agent_busy_confirm_required` — o mesmo contrato que o `POST /model` já
- *  usa. Só ele arma a confirmação; qualquer outro 409 é falha de verdade. */
+/** 409 `agent_busy_confirm_required` do `/aplicar-motor` (religar é
+ *  destrutivo, então aqui o turno em voo pede confirmação). O `POST /model` e o
+ *  `PATCH /effort` deixaram esse código em 27/09 — lá é `agent_busy_wait`, e o
+ *  chip espera sozinho. Só ele arma a confirmação; outro 409 é falha de verdade. */
 export function pedeConfirmacaoDeTurno(erro: unknown): boolean {
   const e = erro as Erro | null;
   return e?.status === 409 && e?.detail === 'agent_busy_confirm_required';

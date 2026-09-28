@@ -13,6 +13,15 @@ type GatilhoDoSeletorProps = {
   etiquetaEsforco: EtiquetaEsforco | null;
   tintaModelo: string;
   tintaEsforco: string;
+  /** "esperando o agente terminar" / "trocando…" — a troca em curso, dita no
+   *  próprio chip (27/09). Com ela, o rótulo mostra o valor ESCOLHIDO. */
+  andamento?: string | null;
+  /** A mesma frase por inteiro, para o rótulo acessível. */
+  andamentoLongo?: string | null;
+  /** O valor escolhido que está esperando ou trocando. */
+  rotuloPedido?: string | null;
+  /** Tocar o chip com a troca esperando cancela a espera, não abre o menu. */
+  cancelaNoToque?: boolean;
 };
 
 /** O botão fechado do seletor — extraído de `SeletorMotor` (teto de 300
@@ -26,12 +35,19 @@ export function GatilhoDoSeletor({
   etiquetaEsforco,
   tintaModelo,
   tintaEsforco,
+  andamento = null,
+  andamentoLongo = null,
+  rotuloPedido = null,
+  cancelaNoToque = false,
 }: GatilhoDoSeletorProps) {
+  const rotulo = `Configurar ${[rotuloModelo ? 'modelo' : null, rotuloDoEsforco ? 'esforço' : null].filter(Boolean).join(' e ')} de ${agentName}`;
   return (
     <DropdownMenuTrigger asChild>
       <button
         type="button"
-        aria-label={`Configurar ${[rotuloModelo ? 'modelo' : null, rotuloDoEsforco ? 'esforço' : null].filter(Boolean).join(' e ')} de ${agentName}`}
+        aria-label={andamento
+          ? `Troca para ${rotuloPedido ?? 'o valor escolhido'}: ${andamentoLongo ?? andamento}${cancelaNoToque ? ' — tocar cancela' : ''}`
+          : rotulo}
         aria-haspopup="menu"
         aria-expanded={aberto}
         className="ck-seletor-motor ck-veil flex min-w-0 items-center"
@@ -83,18 +99,37 @@ export function GatilhoDoSeletor({
             esforço, o flex esvazia este span inteiro antes de encostar no
             outro — mesma prioridade de antes, agora com um fim que o recorte
             do pai sabe tratar. */}
-        {rotuloModelo ? <span className="truncate" style={{ flexShrink: 999 }}>
-          {rotuloModelo}
-        </span> : null}
-        {rotuloDoEsforco ? (
-          // `truncate` no lugar de `shrink-0`: quando o nome do modelo já sumiu
-          // e ainda falta espaço, o esforço termina em reticências em vez de
-          // ser cortado no meio da palavra pela borda do botão.
-          <span className="truncate" style={{ color: tintaEsforco }}>
-            {rotuloDoEsforco}
-          </span>
-        ) : null}
-        {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
+        {andamento ? (
+          // A troca em curso toma o lugar dos rótulos: o valor escolhido (ele
+          // cede primeiro, como o nome do modelo) e o andamento, discreto.
+          <>
+            {rotuloPedido ? <span className="truncate" style={{ flexShrink: 999 }}>{rotuloPedido}</span> : null}
+            <span
+              role="status"
+              aria-live="polite"
+              // Inteiro, sempre: quem cede o espaço é o nome do valor escolhido.
+              className="shrink-0 whitespace-nowrap"
+              style={{ color: 'var(--ck-text-tertiary)', fontSize: 'var(--ck-text-sm)', fontWeight: 400 }}
+            >
+              {andamento}
+            </span>
+          </>
+        ) : (
+          <>
+            {rotuloModelo ? <span className="truncate" style={{ flexShrink: 999 }}>
+              {rotuloModelo}
+            </span> : null}
+            {rotuloDoEsforco ? (
+              // `truncate` no lugar de `shrink-0`: quando o nome do modelo já sumiu
+              // e ainda falta espaço, o esforço termina em reticências em vez de
+              // ser cortado no meio da palavra pela borda do botão.
+              <span className="truncate" style={{ color: tintaEsforco }}>
+                {rotuloDoEsforco}
+              </span>
+            ) : null}
+            {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
+          </>
+        )}
         <span aria-hidden className="shrink-0" style={{ color: 'var(--ck-text-tertiary)' }}>⌄</span>
       </button>
     </DropdownMenuTrigger>

@@ -9,6 +9,7 @@ import type {
   AgentDocsResponse,
   AgentPainelResponse,
   MotorFamilia,
+  PerguntaMotor,
   PainelPermissionMode,
   AgentSkillsResponse,
   AgentTablesResponse,
@@ -239,18 +240,54 @@ export type AgentEffortChangeResponse = {
   tmux_delivered?: boolean | null;
   confirmed?: boolean | null;
   runtime_switch?: boolean | null;
-};
+} & CamposDaPerguntaMotor;
 
 export async function patchAgentEffort(
   slug: string,
   effort: string,
+  options?: { force?: boolean },
 ): Promise<AgentEffortChangeResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/effort`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ effort }),
+    body: JSON.stringify({ effort, force: options?.force ?? false }),
   });
-  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentEffort failed: ${res.status}`));
+  if (!res.ok) throw await erroDaTrocaDeMotor(res, `patchAgentEffort failed: ${res.status}`);
+  return res.json();
+}
+
+/** O desfecho da troca que o back conta junto com o 200 (27/09). */
+export type CamposDaPerguntaMotor = {
+  /** O valor pedido já era o da sessão: nada foi mandado — sucesso silencioso. */
+  ja_estava?: boolean | null;
+  /** O cockpit respondeu "sim" sozinho ao "trocar mesmo?" do CC. */
+  pergunta_respondida?: boolean | null;
+  /** A pergunta ficou aberta na tela — a barra do chat responde. */
+  pergunta_aberta?: PerguntaMotor | null;
+};
+
+export type ConfirmacaoMotorResponse = {
+  pergunta: PerguntaMotor;
+  resposta: 'sim' | 'nao';
+  respondida: boolean;
+  confirmed: boolean;
+};
+
+/** A barra "Trocar para X? Sim / Não" do chat. Vai junto a pergunta que a
+ *  barra MOSTRA (`tipo` + `destino`): o back só aperta a tecla se a tela ainda
+ *  tiver essa mesma. 409 `sem_pergunta_motor` = ela já saiu da tela;
+ *  409 `pergunta_mudou` = há outra no lugar, e ela volta em `pergunta`. */
+export async function postAgentConfirmacaoMotor(
+  slug: string,
+  resposta: 'sim' | 'nao',
+  pergunta: Pick<PerguntaMotor, 'tipo' | 'destino'>,
+): Promise<ConfirmacaoMotorResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/confirmacao-motor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resposta, tipo: pergunta.tipo, destino: pergunta.destino }),
+  });
+  if (!res.ok) throw await erroDaTrocaDeMotor(res, `postAgentConfirmacaoMotor failed: ${res.status}`);
   return res.json();
 }
 
@@ -337,7 +374,7 @@ export type AgentModelChangeResponse = {
   model: string;
   // DS-69 — false quando a troca só vale na próxima execução.
   runtime_switch: boolean;
-};
+} & CamposDaPerguntaMotor;
 
 export class AgentInputError extends Error {
   readonly status: number;
@@ -364,6 +401,36 @@ export class AgentInputError extends Error {
     this.reason = delivery?.reason ?? null;
     this.safeToResend = delivery?.safeToResend ?? null;
   }
+}
+
+export class ErroDaTrocaDeMotor extends AgentInputError {
+  /** A pergunta que o back viu na tela — vem com `pergunta_motor_aberta` e
+   *  `pergunta_mudou`. */
+  readonly pergunta: PerguntaMotor | null;
+
+  constructor(detail: string, status: number, pergunta: PerguntaMotor | null) {
+    super(detail, status, detail);
+    this.name = 'ErroDaTrocaDeMotor';
+    this.pergunta = pergunta;
+  }
+}
+
+/** 409 da troca de modelo/esforço com o código preservado: `detail` é string
+ *  (`agent_busy_wait`) ou objeto (`{code: 'pergunta_motor_aberta', pergunta}`),
+ *  e quem decide esperar ou apontar a barra lê o código, não a mensagem. */
+async function erroDaTrocaDeMotor(res: Response, fallback: string): Promise<AgentInputError> {
+  try {
+    const body = await res.json();
+    const detail = body?.detail;
+    if (typeof detail === 'string') return new ErroDaTrocaDeMotor(detail, res.status, null);
+    if (typeof detail?.code === 'string') {
+      const pergunta = typeof detail.pergunta?.destino === 'string' ? (detail.pergunta as PerguntaMotor) : null;
+      return new ErroDaTrocaDeMotor(detail.code, res.status, pergunta);
+    }
+  } catch {
+    // Corpo sem JSON: fica o fallback.
+  }
+  return new AgentInputError(fallback, res.status, fallback);
 }
 
 async function agentInputError(res: Response): Promise<AgentInputError> {
@@ -750,10 +817,7 @@ export async function postAgentModel(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, force: options?.force ?? false }),
   });
-  if (!res.ok) {
-    const detail = await errorDetail(res, `postAgentModel failed: ${res.status}`);
-    throw new AgentInputError(detail, res.status, detail);
-  }
+  if (!res.ok) throw await erroDaTrocaDeMotor(res, `postAgentModel failed: ${res.status}`);
   return res.json();
 }
 

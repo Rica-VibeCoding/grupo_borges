@@ -11,8 +11,8 @@
  *    moram DENTRO dela, na base — não numa barra externa acima ou abaixo.
  * 2. **Modelo e esforço são controles reais.** O seletor abre um menu ancorado e
  *    recebe do painel somente as opções que o servidor autoriza. Para Claude
- *    Code, a troca de modelo acontece na sessão viva; se o agente estiver
- *    trabalhando, o servidor exige a confirmação explícita antes de forçar.
+ *    Code, a troca de modelo acontece na sessão viva; com o agente trabalhando,
+ *    o chip espera o ocioso e reenvia sozinho (27/09).
  * 3. **O único elemento sólido é o envio.** Tudo ao redor — anexo, motor,
  *    microfone — é traço ou texto. É a hierarquia que a referência desenha:
  *    uma tela inteira de contorno com UM ponto de massa.
@@ -75,6 +75,7 @@ import {
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
 import { SeletorMotor } from './seletor-motor';
+import { BarraPerguntaMotor } from './barra-pergunta-motor';
 import { type MotivoRecusa, preparaEnvio, recusaPersiste } from './porta-de-envio';
 import { prefixaPesquisa } from './pesquisa-canario';
 import { usaFalaAoVivo } from './usa-fala-ao-vivo';
@@ -752,6 +753,9 @@ export function Composer({
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />
+      {/* O "trocar mesmo?" do Claude Code, se aparecer apesar do chip esperar o
+          ocioso e o back responder sozinho — ver `barra-pergunta-motor.tsx`. */}
+      <BarraPerguntaMotor agentSlug={agentSlug} />
       {/* A FILA DA ESPERA — entre o indicador de trabalho e a caixa, nunca
           dentro dela: o campo é o que está sendo escrito agora, a fila é o que
           já saiu das mãos. */}

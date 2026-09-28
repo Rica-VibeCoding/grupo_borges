@@ -75,6 +75,18 @@ export type Agent = {
   ordem: number | null;
   status: AgentStatus;
   sparkline: SparklineBucket[];
+  /** A pergunta "trocar mesmo?" do Claude Code aberta na tela agora (27/09).
+   *  Ausente/null = tela sem a pergunta. Só o `/api/fleet` traz. */
+  pergunta_motor?: PerguntaMotor | null;
+};
+
+/** O modal "Switch model?" / "Change effort level?" do CC, lido do pane.
+ *  `destino` do modelo vem com nome de exibição ("Haiku 4.5"); do esforço,
+ *  cru ("medium"). */
+export type PerguntaMotor = {
+  tipo: 'modelo' | 'esforco';
+  destino: string;
+  opcao_em_foco: 'sim' | 'nao' | null;
 };
 
 export type FleetKpis = {

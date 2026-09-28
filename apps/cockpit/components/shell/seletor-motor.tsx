@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AgentInputError, fetchAgentPainel, patchAgentEffort, postAgentAplicarMotor, postAgentModel } from '@grupo_borges/cockpit-core/api';
+import { fetchAgentPainel, patchAgentEffort, postAgentAplicarMotor, postAgentModel } from '@grupo_borges/cockpit-core/api';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { DropdownMenu, DropdownMenuContent } from '../ui/dropdown-menu';
 import { esperaConvergenciaDoEsforco, type ControleConvergencia } from './convergencia-esforco';
-import { EtiquetaDoEsforco } from './etiqueta-esforco';
 import {
   contratoSeparaPedido, desfechoDaTrocaDeEsforco, desfechoDaTrocaDeModelo,
   etiquetaDoEsforco, rotulaEsforco, rotulaModelo, type Motor,
@@ -13,9 +12,13 @@ import {
 import { aplicarMotor, esquecerConfirmacao, fecharSePronto, registrarEscolha, revisarFaltas, type PainelDoMotor as PainelDaDecisao } from './operacao-de-motor.ts';
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
+import { usaFrota } from './frota-provider';
+import { LeituraDoMotor, RessalvaDoSeletor, usaRecado } from './seletor-motor-ressalva';
 import { sincronizarPainel } from './sincronizacao-painel';
-import { TEXTO_VALE_NO_BOOT } from './troca-de-motor';
+import { classificaErroDaTroca, jaEstava, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
+import { usaTelaEstreita } from './usa-tela-estreita';
+import { usaTrocaEmEspera } from './usa-troca-em-espera.ts';
 
 type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort' | 'motor'>;
 type SeletorMotorProps = {
@@ -25,20 +28,11 @@ type SeletorMotorProps = {
   esforcoCobrePedido: boolean;
 };
 
-function pedeConfirmacao(erro: unknown): boolean {
-  return erro instanceof AgentInputError && erro.status === 409 && erro.detail === 'agent_busy_confirm_required';
-}
+const TEXTO_PERGUNTA_ABERTA = 'Há uma troca esperando resposta logo acima do campo.';
+const TEXTO_DESISTIU = 'A troca foi cancelada: o agente não parou de trabalhar.';
 
-function usaTelaEstreita() {
-  const [estreita, setEstreita] = useState(false);
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 639px)');
-    const atualizar = () => setEstreita(media.matches);
-    atualizar();
-    media.addEventListener('change', atualizar);
-    return () => media.removeEventListener('change', atualizar);
-  }, []);
-  return estreita;
+function rotuloDoPedido(pedido: PedidoDeTroca, labels?: Record<string, string>): string {
+  return pedido.tipo === 'modelo' ? rotulaModelo(pedido.valor, labels) : rotulaEsforco(pedido.valor) ?? pedido.valor;
 }
 
 export function SeletorMotor(props: SeletorMotorProps) {
@@ -49,9 +43,11 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   const [painel, setPainel] = useState<PainelDoMotor | null | undefined>(undefined);
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDoSeletor>('inicio');
-  const [modeloPendente, setModeloPendente] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [recado, setRecado] = usaRecado();
+  const { agents } = usaFrota();
+  const statusDoAgente = agents.find((a) => a.slug === agentSlug)?.status;
   const telaEstreita = usaTelaEstreita();
   const operacao = usaOperacaoDeMotor(agentSlug);
   // Enquanto o agente religa, a gaveta não aceita outra escolha: a segunda
@@ -99,52 +95,29 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   const divergindo = Boolean(modelo?.session_may_diverge || esforco?.session_may_diverge);
   const tintaModelo = divergindo ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)';
   const tintaEsforco = divergindo ? 'var(--ck-text-tertiary)' : 'var(--ck-text-secondary)';
-  // A operação em curso manda na linha: ela conta o AGORA, e a ressalva do boot
-  // embaixo diria o contrário do que está acontecendo na frente dele.
-  const ressalva = operacao.aviso ? (
-    <span className="flex min-w-0 items-center" style={{ gap: 'var(--ck-space-2)' }}>
-      <span
-        role={operacao.fase === 'aplicando' ? 'status' : 'alert'}
-        aria-live="polite"
-        className="truncate"
-        style={{
-          color: operacao.fase === 'aplicando' ? 'var(--ck-text-secondary)' : 'var(--ck-state-attention)',
-          fontSize: 'var(--ck-text-xs)',
-        }}
-      >
-        {operacao.aviso}
-      </span>
-      {operacao.fase === 'confirmando' ? (
-        // O alvo do segundo toque. A gaveta já fechou quando a gravação passou,
-        // e escolher o mesmo valor de novo não dispara nada.
-        <button
-          type="button"
-          onClick={() => void aplicar()}
-          className="ck-veil shrink-0 border"
-          style={{
-            minHeight: 'var(--ck-touch-min)',
-            padding: '0 var(--ck-space-2)',
-            borderRadius: 'var(--ck-radius-chip)',
-            borderColor: 'var(--ck-edge-functional)',
-            color: 'var(--ck-state-attention)',
-            fontSize: 'var(--ck-text-xs)',
-          }}
-        >
-          Confirmar?
-        </button>
-      ) : null}
-    </span>
-  ) : divergindo ? (
-    <span role="status" style={{ color: 'var(--ck-state-attention)', fontSize: 'var(--ck-text-xs)' }}>
-      {TEXTO_VALE_NO_BOOT}
-    </span>
-  ) : null;
+  // Troca a quente (Claude Code): a gaveta fecha no toque e o chip conta a
+  // troca — "esperando o agente terminar", "trocando…" — sem prender o
+  // composer atrás de um menu modal pelos ~6 s da troca que abre o modal.
+  const trocaAQuente = !cobrePedido;
+  const troca = usaTrocaEmEspera(statusDoAgente, executar, () => setRecado(TEXTO_DESISTIU));
+  const pedidoEmCurso = troca.pedido;
+  const ressalva = (
+    <RessalvaDoSeletor
+      operacao={operacao} aoConfirmarOperacao={() => void aplicar()}
+      recado={troca.andamento ? null : recado} divergindo={divergindo && !troca.andamento}
+    />
+  );
 
   function alterarAbertura(proximo: boolean) {
+    // Tocar de novo o chip que espera CANCELA a espera (27/09). Em voo, o
+    // comando já saiu: o toque não abre a gaveta no meio da troca.
+    if (proximo && troca.andamento) {
+      if (!troca.emVoo) troca.cancelar();
+      return;
+    }
     setAberto(proximo);
     if (!proximo) {
       setTela('inicio');
-      setModeloPendente(null);
       setAviso(null);
       // Pergunta fora da tela é pergunta caducada — reabrir e achar o "tocar de
       // novo confirma" armado faria um toque distraído matar o turno em voo.
@@ -185,21 +158,51 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   }
 
   function mostrarAviso(mensagem: string) {
+    if (trocaAQuente) {
+      // A gaveta já fechou no toque: o recado mora na linha do chip.
+      setRecado(mensagem);
+      return;
+    }
     setAviso(mensagem);
     setTela('aviso');
   }
 
-  async function trocarEsforco(valor: string) {
+  function escolher(pedido: PedidoDeTroca) {
+    setRecado(null);
+    if (trocaAQuente) alterarAbertura(false);
+    troca.pedir(pedido);
+  }
+
+  function executar(pedido: PedidoDeTroca): Promise<DesfechoDoPedido> {
+    return pedido.tipo === 'modelo' ? trocarModelo(pedido.valor) : trocarEsforco(pedido.valor);
+  }
+
+  /** O 409 da troca: ocupado é esperar (o chip reenvia sozinho, sem pedir
+   *  confirmação); pergunta de outra troca aberta aponta a barra do chat. */
+  function desfechoDoErro(erro: unknown, falha: string, superado: boolean): DesfechoDoPedido {
+    const tipo = classificaErroDaTroca(erro);
+    // Ocupado segue esperando mesmo se uma releitura do painel superou este
+    // envio: a espera é da troca, não da leitura.
+    if (tipo === 'esperar') return 'esperar';
+    if (superado) return 'falhou';
+    mostrarAviso(tipo === 'pergunta-aberta' ? TEXTO_PERGUNTA_ABERTA : falha);
+    return 'falhou';
+  }
+
+  async function trocarEsforco(valor: string): Promise<DesfechoDoPedido> {
     const minha = invalidar();
     setSalvando(true);
     setAviso(null);
     try {
       const resposta = await patchAgentEffort(agentSlug, valor);
-      if (minha !== geracao.current) return;
+      if (minha !== geracao.current) return 'feito';
+      // Já era o nível da sessão: sucesso silencioso. Pergunta que ficou
+      // aberta: quem responde é a barra acima do campo, não um aviso aqui.
+      if (jaEstava(resposta) || resposta.pergunta_aberta) return 'feito';
       const desfecho = desfechoDaTrocaDeEsforco(resposta);
       if (desfecho === 'entrega-falhou') {
         mostrarAviso('Não foi possível entregar a troca ao agente.');
-        return;
+        return 'falhou';
       }
       if (desfecho === 'pendente') {
         mostrarAviso('A troca foi entregue, mas o agente está no meio de um turno e ainda não a confirmou. O card segue no nível atual até a sessão confirmar.');
@@ -211,7 +214,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
             if (minha === geracao.current && novo.slug === agentSlug) setPainel(novo);
           },
         );
-        return;
+        return 'feito';
       }
       const comEsforco = painel ? {
         ...painel,
@@ -239,26 +242,29 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         void fecharSePronto(agentSlug, (p) => p.effort?.value === resposta.effort);
         alterarAbertura(false);
       }
-    } catch {
-      if (minha === geracao.current) mostrarAviso('Não foi possível trocar o esforço.');
+      return 'feito';
+    } catch (erro) {
+      return desfechoDoErro(erro, 'Não foi possível trocar o esforço.', minha !== geracao.current);
     } finally {
       if (minha === geracao.current) setSalvando(false);
     }
   }
 
-  async function trocarModelo(valor: string, forcar = false) {
+  async function trocarModelo(valor: string): Promise<DesfechoDoPedido> {
     const minha = invalidar();
     setSalvando(true);
     setAviso(null);
     try {
-      const resposta = await postAgentModel(agentSlug, valor, { force: forcar });
-      if (minha !== geracao.current) return;
+      const resposta = await postAgentModel(agentSlug, valor);
+      if (minha !== geracao.current) return 'feito';
+      // Ver o gêmeo em `trocarEsforco`: `ja_estava` vem com `tmux_delivered:
+      // false`, e o desfecho antigo o leria como entrega que falhou.
+      if (jaEstava(resposta) || resposta.pergunta_aberta) return 'feito';
       const desfecho = desfechoDaTrocaDeModelo(resposta);
       if (desfecho === 'entrega-falhou') {
         mostrarAviso('Não foi possível entregar a troca ao agente.');
-        return;
+        return 'falhou';
       }
-      setModeloPendente(null);
       const comModelo = painel?.model ? {
         ...painel,
         model: { ...painel.model, value: resposta.model, source: 'agent.state_model',
@@ -278,17 +284,12 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           void fecharSePronto(agentSlug, (p) => p.model?.value === resposta.model);
           alterarAbertura(false);
         }
-        return;
+        return 'feito';
       }
       mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');
+      return 'feito';
     } catch (erro) {
-      if (minha !== geracao.current) return;
-      if (!forcar && pedeConfirmacao(erro)) {
-        setModeloPendente(valor);
-        setTela('confirmacao');
-        return;
-      }
-      mostrarAviso('Não foi possível trocar o modelo.');
+      return desfechoDoErro(erro, 'Não foi possível trocar o modelo.', minha !== geracao.current);
     } finally {
       if (minha === geracao.current) setSalvando(false);
     }
@@ -296,24 +297,20 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
 
   const opcoesModelo = modelo?.allowed.map((valor) => ({
     chave: valor, rotulo: rotulaModelo(valor, modelo.labels), selecionado: modelo.value === valor,
-    aoSelecionar: () => void trocarModelo(valor),
+    aoSelecionar: () => escolher({ tipo: 'modelo', valor }),
   })) ?? [];
   const opcoesEsforco = esforco?.allowed.map((valor) => ({
     chave: valor, rotulo: rotulaEsforco(valor) ?? valor, selecionado: esforco.value === valor,
-    aoSelecionar: () => void trocarEsforco(valor),
+    aoSelecionar: () => escolher({ tipo: 'esforco', valor }),
   })) ?? [];
 
   if (!temControle) {
     if (!rotuloModelo && !rotuloDoEsforco) return null;
     return (
-      <div className="flex min-w-0 flex-col" style={{ fontSize: 'var(--ck-text-sm)' }}>
-        <div className="flex items-center" style={{ gap: '3px' }}>
-          {rotuloModelo ? <span className="truncate" style={{ color: tintaModelo }}>{rotuloModelo}</span> : null}
-          {rotuloDoEsforco ? <span style={{ color: tintaEsforco }}>{rotuloDoEsforco}</span> : null}
-          {etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={etiquetaEsforco} /> : null}
-        </div>
-        {ressalva}
-      </div>
+      <LeituraDoMotor
+        rotuloModelo={rotuloModelo} rotuloDoEsforco={rotuloDoEsforco} etiquetaEsforco={etiquetaEsforco}
+        tintaModelo={tintaModelo} tintaEsforco={tintaEsforco} ressalva={ressalva}
+      />
     );
   }
 
@@ -324,6 +321,8 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           agentName={agentName} aberto={aberto} rotuloModelo={rotuloModelo}
           rotuloDoEsforco={rotuloDoEsforco} etiquetaEsforco={etiquetaEsforco}
           tintaModelo={tintaModelo} tintaEsforco={tintaEsforco}
+          andamento={troca.andamento} andamentoLongo={troca.andamentoLongo} cancelaNoToque={Boolean(troca.espera) && !troca.emVoo}
+          rotuloPedido={pedidoEmCurso ? rotuloDoPedido(pedidoEmCurso, modelo?.labels) : null}
         />
         <DropdownMenuContent
           className={`ck-menu-surge ${aberto ? 'ck-menu-aberto' : 'ck-menu-fechado'}`}
@@ -333,9 +332,8 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
           <ConteudoDoSeletor
             tela={tela} opcoesModelo={opcoesModelo} opcoesEsforco={opcoesEsforco}
             rotuloModelo={rotuloModelo} rotuloDoEsforco={rotuloDoEsforco}
-            salvando={salvando || aplicando} telaEstreita={telaEstreita} modeloPendente={modeloPendente}
+            salvando={salvando || aplicando} telaEstreita={telaEstreita}
             aviso={aviso} aoMudarTela={setTela}
-            aoConfirmarTroca={() => { if (modeloPendente) void trocarModelo(modeloPendente, true); }}
             aoFechar={() => alterarAbertura(false)}
           />
         </DropdownMenuContent>
