@@ -65,6 +65,25 @@ export function familiaDoRich(
   return null;
 }
 
+/** A mesma execução por VALOR — a comparação do `memo` da `Execucao`. Quem
+ *  monta a entrada (`execucaoDaParte`, `entradasDoGrupo`) cria objeto novo a
+ *  cada render; os campos vêm da mensagem e do lookup e só mudam quando a
+ *  execução muda (o resultado chega, o erro aparece). */
+export function mesmaExecucao(
+  { entrada: a }: { entrada: EntradaDaExecucao },
+  { entrada: b }: { entrada: EntradaDaExecucao },
+): boolean {
+  return (
+    a === b ||
+    (a.toolName === b.toolName &&
+      a.args === b.args &&
+      a.result === b.result &&
+      a.rich === b.rich &&
+      a.isError === b.isError &&
+      a.estado === b.estado)
+  );
+}
+
 export function execucaoDaParte(
   parte: UsoDeFerramenta,
   lookup?: ToolResultLookup,

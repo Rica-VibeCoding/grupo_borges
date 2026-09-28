@@ -323,11 +323,18 @@ export function LinhaExecucao({
   ...entrada
 }: LinhaExecucaoProps) {
   const [aberta, setAberta] = useState(abertaInicial);
-  const e = useMemo(() => leExecucao(entrada), [entrada]);
+  // `entrada` é o resto do spread — objeto novo a cada render, e memo preso a
+  // ele nunca acertava. A dependência é o que `leExecucao` lê, campo a campo.
+  const { toolName, args: argsCrus, result, isError, estado } = entrada;
+  const e = useMemo(
+    () => leExecucao({ toolName, args: argsCrus, result, isError, estado }),
+    [toolName, argsCrus, result, isError, estado],
+  );
 
   const cor = COR[e.desfecho];
   const args = (entrada.args ?? {}) as Record<string, unknown>;
-  const corpo = corpoDe(entrada.result);
+  // O corpo só aparece aberto: fechada — 82% da tela —, a linha não o monta.
+  const corpo = aberta ? corpoDe(entrada.result) : '';
 
   const ehEdicao =
     (entrada.toolName === 'Edit' || entrada.toolName === 'NotebookEdit') &&

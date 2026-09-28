@@ -7,7 +7,7 @@ import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/mes
 import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { execucaoDaParte, execucaoDoChip, familiaDoRich, usoDoChip } from './execucao-do-item.ts';
+import { execucaoDaParte, execucaoDoChip, familiaDoRich, mesmaExecucao, usoDoChip } from './execucao-do-item.ts';
 
 // `buildToolResultLookup` só olha mensagens de kind `user` — é assim que o
 // Claude Code emite o resultado de uma ferramenta, e um fixture com kind
@@ -215,5 +215,29 @@ describe('execução — bordas do chip', () => {
   it('chip em tom de erro sem tool_use marca erro; sem tom, não inventa', () => {
     assert.equal(execucaoDoChip(chip([], { expandBody: 'x', tone: 'error' })).isError, true);
     assert.equal(execucaoDoChip(chip([], { expandBody: 'x' })).isError, undefined);
+  });
+});
+
+describe('mesmaExecucao — o memo da Execucao', () => {
+  const parte = { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } } as const;
+  const msgs = (texto?: string) =>
+    buildToolResultLookup(
+      texto === undefined ? [] : [payload(2, [{ type: 'tool_result', tool_use_id: 't1', content: texto }], 'user')],
+    );
+
+  it('entrada remontada da mesma parte e do mesmo resultado é a mesma', () => {
+    const lookup = msgs('ok');
+    assert.equal(mesmaExecucao({ entrada: execucaoDaParte(parte, lookup) }, { entrada: execucaoDaParte(parte, lookup) }), true);
+    // lookup reconstruído: objeto de entrada novo, mesmo texto.
+    assert.equal(mesmaExecucao({ entrada: execucaoDaParte(parte, msgs('ok')) }, { entrada: execucaoDaParte(parte, msgs('ok')) }), true);
+  });
+
+  it('resultado chegando, mudando ou virando erro não é a mesma', () => {
+    const rodando = execucaoDaParte(parte, msgs());
+    assert.equal(mesmaExecucao({ entrada: rodando }, { entrada: execucaoDaParte(parte, msgs('ok')) }), false);
+    assert.equal(mesmaExecucao({ entrada: execucaoDaParte(parte, msgs('a')) }, { entrada: execucaoDaParte(parte, msgs('b')) }), false);
+    const ok = execucaoDaParte(parte, msgs('ok'));
+    assert.equal(mesmaExecucao({ entrada: ok }, { entrada: { ...ok, isError: true } }), false);
+    assert.equal(mesmaExecucao({ entrada: ok }, { entrada: { ...ok, args: { command: 'ls' } } }), false);
   });
 });

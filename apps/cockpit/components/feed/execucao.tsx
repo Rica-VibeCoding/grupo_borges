@@ -7,6 +7,8 @@
 // componente. A escolha da entrada continua em `execucao-do-item.ts`; aqui só
 // se desenha o que foi escolhido.
 
+import { memo } from 'react';
+
 // Extensão `.tsx` explícita nos renderers de propósito: cada renderer tem um
 // `.ts` irmão de mesmo nome (a lógica testada), e a resolução sem extensão
 // acha o `.ts` primeiro. O componente só sai pelo caminho completo.
@@ -19,9 +21,9 @@ import { ResultList } from '@/components/renderers/result-list.tsx';
 import { ShellOutput } from '@/components/renderers/shell-output.tsx';
 import { StatusLine } from '@/components/renderers/status-line.tsx';
 
-import { familiaDoRich, type EntradaDaExecucao } from './execucao-do-item';
+import { familiaDoRich, mesmaExecucao, type EntradaDaExecucao } from './execucao-do-item';
 
-export function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
+function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
   // O `rich` é o tool_use_result cru. A família foi escolhida (e provada contra
   // fixture real) no `familiaDoRich`; sem família, `corpoRico` fica undefined e
   // a LinhaExecucao cai no `Saida` genérico de sempre — caminho intacto.
@@ -54,3 +56,8 @@ export function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
     />
   );
 }
+
+// Memo por valor: o grupo e a `Parte` remontam a entrada a cada render, e sem
+// isto cada membro de um grupo aberto redesenhava quando só um deles mudou.
+const ExecucaoMemo = memo(Execucao, mesmaExecucao);
+export { ExecucaoMemo as Execucao };
