@@ -440,6 +440,27 @@ async def get_agent_sparkline(
     return build_hour_series(counts, start_dt, hours, token_sums=tokens)
 
 
+@router.get("/{slug}/pulso")
+async def get_agent_pulso(
+    slug: str,
+    request: Request,
+    minutos: int = Query(default=30, ge=5, le=120),
+) -> dict[str, Any]:
+    """Atividade por minuto do agente — a faixa do topo da gaveta.
+
+    `baldes` vai do minuto mais velho pro mais novo. `ultimo_evento` é o que
+    distingue "parado há 40 min" de "nunca rodou": a faixa sozinha só enxerga
+    a própria janela.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+    if await db.get_agent(slug) is None:
+        raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
+
+    agora = int(time.time())
+    baldes, ultimo = await db.event_pulse(slug, now_unix=agora, minutes=minutos)
+    return {"agora": agora, "ultimo_evento": ultimo, "baldes": baldes}
+
+
 # ----- Fase 3: skills / docs / tables (alimenta o AgentModal) ---------------
 
 @router.get("/{slug}/skills")

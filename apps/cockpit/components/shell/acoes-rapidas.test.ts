@@ -1,203 +1,22 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
-
 import {
   CONFIRMA_ACAO_MS,
   ESPERAS_APOS_LIGAR_MS,
   RECIBO_MS,
   descreveAcaoBruta,
-  descreveControle,
   descreveLigar,
-  diagnosticaAcao,
   diagnosticaCicloDeVida,
   diagnosticaRelancar,
   leiaDesligar,
   leiaDestrava,
   leiaLigar,
   leiaRelancar,
-  montaControles,
-  podeRelancar,
   rotulaAcaoBruta,
   rotulaDestrava,
   rotulaLigar,
-  rotulaPermissao,
 } from './acoes-rapidas.ts';
-
-/** Payload mínimo do `/painel`, no shape que o back devolve. Os campos que
- *  estas funções não leem ficam no piso — o teste não deve depender deles. */
-function painel(patch: Partial<AgentPainelResponse> = {}): AgentPainelResponse {
-  return {
-    slug: 'daniel',
-    generated_at: 0,
-    vida: { sessao: true, processo: true },
-    contexto: {
-      model: null,
-      model_family: null,
-      context_window: null,
-      tokens: { input: 0, output: 0, cache_creation: 0, cache_read: 0, total: 0 },
-      pct: null,
-      source: 'teste',
-      updated_at: null,
-      available: false,
-      stale: false,
-    },
-    effort: { value: 'high', allowed: ['low', 'medium', 'high'], source: 'teste', session_may_diverge: false },
-    permission: { mode: 'ask', source: 'teste', session_may_diverge: false },
-    quotas: { status: 'unknown', stale_after_seconds: 0 },
-    subagents: { count: 0, active_count: 0, items: [] },
-    // Piso copiado do back (`get_delivery_channel_state`, sem registro ainda),
-    // não inventado: fixture que erra o shape esconde regressão de contrato.
-    canal_entrega: {
-      estado: 'sem_dados',
-      entregando: null,
-      motivo: null,
-      mensagem: 'Ainda não houve tentativa de entrega desde que a API iniciou.',
-      recusas_consecutivas: 0,
-      bloqueado_desde: null,
-      bloqueado_ha_segundos: 0,
-      ultima_tentativa_em: null,
-      acao_recomendada: 'Envie uma mensagem para confirmar o canal.',
-    },
-    ...patch,
-  };
-}
-
-describe('quais controles existem — é UM por agente, e nunca os dois', () => {
-  it('agente Claude Code: só permissão, e NENHUM sandbox', () => {
-    const ids = montaControles(painel()).map((c) => c.id);
-    assert.deepEqual(ids, ['permissao']);
-  });
-
-  it('o esforço NÃO nasce aqui, por mais que o back o ofereça', () => {
-    // Ordem do Rica em 09/08: *"já temos ele no input"*. O payload continua
-    // trazendo `effort` (o composer o consome) — quem não o desenha mais é a
-    // gaveta. Este teste é a trava: um `effort` cheio não pode ressuscitar o
-    // segmentado sem alguém decidir isso de novo.
-    const ids = montaControles(
-      painel({
-        effort: {
-          value: 'max',
-          allowed: ['low', 'medium', 'high', 'xhigh', 'max', 'auto'],
-          source: 'teste',
-          session_may_diverge: false,
-        },
-      }),
-    ).map((c) => c.id);
-    assert.deepEqual(ids, ['permissao']);
-  });
-
-});
-
-describe('quem mostra o Relançar — a régua é do back, não do formato do payload', () => {
-  it('Tara: payload igual ao de um Anthropic, e MESMO ASSIM sem Relançar', () => {
-    // O caso que nenhuma pista local pegava: ela roda Claude Code, o payload é
-    // igual ao de um agente Anthropic, e o `POST /relaunch` a recusa. Antes do
-    // campo o botão aparecia e o Rica descobria o limite clicando — clique que
-    // mata o pane antes de errar.
-    assert.equal(podeRelancar(painel({ slug: 'tara', relaunch_suportado: false })), false);
-  });
-
-  it('agente que o back atende segue com o botão', () => {
-    assert.equal(podeRelancar(painel({ relaunch_suportado: true })), true);
-  });
-
-  it('payload sem o campo mantém o botão — esconder é afirmação', () => {
-    assert.equal(podeRelancar(painel()), true);
-  });
-});
-
-describe('a ordem é a escada, não o que o back listou', () => {
-  it('permissão sobe do mais contido ao mais solto', () => {
-    const permissao = montaControles(painel())[0];
-    assert.deepEqual(
-      permissao.opcoes.map((o) => o.valor),
-      ['plan', 'ask', 'bypassPermissions'],
-    );
-  });
-
-});
-
-describe('o modo em que o agente ESTÁ sempre aparece', () => {
-  it('`acceptEdits` não é oferecido por padrão', () => {
-    const permissao = montaControles(painel())[0];
-    assert.equal(
-      permissao.opcoes.some((o) => o.valor === 'acceptEdits'),
-      false,
-    );
-  });
-
-  it('…mas entra no segmentado quando é o valor atual — esconder seria mentir sobre o estado', () => {
-    const permissao = montaControles(
-      painel({ permission: { mode: 'acceptEdits', source: 'teste', session_may_diverge: false } }),
-    )[0];
-    assert.deepEqual(
-      permissao.opcoes.map((o) => o.valor),
-      ['plan', 'ask', 'acceptEdits', 'bypassPermissions'],
-    );
-    assert.equal(permissao.valor, 'acceptEdits');
-  });
-});
-
-describe('tradução — português na tela, valor cru pro back', () => {
-  it('o valor do segmento nunca é traduzido: é o contrato do endpoint', () => {
-    const [permissao] = montaControles(painel());
-    assert.deepEqual(
-      permissao.opcoes.map((o) => o.valor),
-      ['plan', 'ask', 'bypassPermissions'],
-    );
-    assert.deepEqual(
-      permissao.opcoes.map((o) => o.rotulo),
-      ['Só planeja', 'Pergunta', 'Livre'],
-    );
-  });
-
-  it('permissão tem rótulo em português', () => {
-    assert.equal(rotulaPermissao('bypassPermissions'), 'Livre');
-    assert.equal(rotulaPermissao('plan'), 'Só planeja');
-  });
-
-  it('valor desconhecido aparece cru — melhor que sumir, e o back é quem manda', () => {
-    assert.equal(rotulaPermissao('modoNovo'), 'modoNovo');
-  });
-
-  it('toda opção carrega descrição — ela vira title E aria-label', () => {
-    for (const controle of montaControles(painel())) {
-      for (const opcao of controle.opcoes) {
-        assert.ok(opcao.descricao.length > 0, `${controle.id}/${opcao.valor} sem descrição`);
-      }
-    }
-  });
-});
-
-describe('a ressalva do back — some da tela, fica no leitor de tela', () => {
-  it('não existe quando o back garante o valor', () => {
-    assert.deepEqual(
-      montaControles(painel()).map((c) => c.ressalva),
-      [null],
-    );
-  });
-
-  it('existe no controle quando o back avisa que pode divergir', () => {
-    const [permissao] = montaControles(
-      painel({ permission: { mode: 'ask', source: 't', session_may_diverge: true } }),
-    );
-    assert.ok(permissao.ressalva);
-  });
-
-  it('o anúncio do leitor de tela carrega a ressalva por extenso', () => {
-    // Ela saiu da TELA por ordem do Rica (30/07), não do produto: quem usa
-    // leitor de tela continua sabendo que o valor pode não ser o da sessão.
-    const [permissao] = montaControles(
-      painel({ permission: { mode: 'plan', source: 't', session_may_diverge: true } }),
-    );
-    const texto = descreveControle(permissao);
-    assert.match(texto, /Permissões: Só planeja/);
-    assert.match(texto, /sessão em execução pode estar em outro valor/);
-  });
-
-});
 
 describe('destrava — o 200 não é sucesso', () => {
   it('`tmux_delivered: false` vira aviso, nunca recibo', () => {
@@ -224,29 +43,6 @@ describe('destrava — o 200 não é sucesso', () => {
   });
 });
 
-describe('falha — nunca só o diagnóstico, sempre a saída', () => {
-  it('todo caminho devolve resumo E saída preenchidos', () => {
-    const casos: unknown[] = [
-      new Error('patchAgentPermissionMode failed: 400: modo_desconhecido'),
-      new Error('effort_not_allowed'),
-      new Error('patchAgentEffort failed: 404'),
-      new Error('500 Internal Server Error'),
-      new Error('Failed to fetch'),
-      'string crua',
-      null,
-    ];
-    for (const erro of casos) {
-      const imp = diagnosticaAcao(erro, 'permissao');
-      assert.ok(imp.resumo.length > 0, `sem resumo: ${String(erro)}`);
-      assert.ok(imp.saida.length > 0, `sem saída: ${String(erro)}`);
-    }
-  });
-
-  it('o caso geral nomeia a ação e avisa que o valor voltou', () => {
-    assert.match(diagnosticaAcao(new Error('boom'), 'permissao').resumo, /a permissão/);
-    assert.match(diagnosticaAcao(new Error('boom'), 'permissao').saida, /voltou ao que era/);
-  });
-});
 
 describe('ações brutas', () => {
   it('cada fase tem palavra própria — cor sozinha nunca carrega o significado', () => {

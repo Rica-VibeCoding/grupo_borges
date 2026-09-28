@@ -10,7 +10,6 @@ import type {
   AgentPainelResponse,
   MotorFamilia,
   PerguntaMotor,
-  PainelPermissionMode,
   AgentSkillsResponse,
   AgentTablesResponse,
   FleetResponse,
@@ -228,6 +227,19 @@ export async function fetchAgentPainel(slug: string, signal?: AbortSignal): Prom
   return res.json();
 }
 
+/** Eventos por minuto, do mais velho pro mais novo. Instantes em unix (s). */
+export type AgentPulsoResponse = {
+  agora: number;
+  ultimo_evento: number | null;
+  baldes: number[];
+};
+
+export async function fetchAgentPulso(slug: string, signal?: AbortSignal): Promise<AgentPulsoResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/pulso`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchAgentPulso failed: ${res.status}`));
+  return res.json();
+}
+
 export type AgentEffortChangeResponse = {
   slug: string;
   effort: string;
@@ -302,19 +314,6 @@ export async function patchOrdemDaTropa(
     body: JSON.stringify({ slugs }),
   });
   if (!res.ok) throw new Error(await errorDetail(res, `patchOrdemDaTropa failed: ${res.status}`));
-  return res.json();
-}
-
-export async function patchAgentPermissionMode(
-  slug: string,
-  mode: PainelPermissionMode,
-): Promise<{ slug: string; mode: PainelPermissionMode; source: string; session_may_diverge: boolean; written: boolean }> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/permission-mode`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode }),
-  });
-  if (!res.ok) throw new Error(await errorDetail(res, `patchAgentPermissionMode failed: ${res.status}`));
   return res.json();
 }
 

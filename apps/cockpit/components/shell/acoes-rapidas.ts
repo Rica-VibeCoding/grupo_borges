@@ -3,7 +3,7 @@
  *
  * O §17 do contrato de estética deixou esta metade em aberto e chamou pelo
  * nome: o Rica trata as ações como *"ideia central do painel"*. O back já
- * expõe as rotas (`patchAgentPermissionMode`, `postAgentDestrava`,
+ * expõe as rotas (`postAgentDestrava`,
  * `postAgentRelaunch`); o que faltava era a camada de cliente — estado,
  * tradução e falha.
  *
@@ -15,136 +15,11 @@
  *    duplicata, não redundância útil — a gaveta perdeu o bloco inteiro, não só
  *    o desenho apertado que ela tinha com seis níveis.
  *
- * 2. **A ordem dos segmentos é a escada de risco, sempre crescente da esquerda
- *    para a direita** — nunca a ordem em que o back listou o `allowed`. Ler
- *    `Só planeja · Pergunta · Livre` ensina a escala de uma vez; ler a mesma
- *    lista embaralhada obriga a decorar posição. Valor desconhecido vai para o
- *    fim, na ordem em que veio:
- *    o back pode ganhar um degrau novo antes desta tabela, e sumir com ele
- *    seria pior do que mostrá-lo fora de escala.
- *
- * 3. ~~**A ressalva do back é texto na tela, não `title`.**~~ **REVOGADO pelo
- *    Rica em 30/07**, olhando o painel plugado: *"pode retirar os textos
- *    explicativos"*, citando esta frase pelo nome. A ressalva de
- *    `session_may_diverge` saiu da tela e as duas funções que a distribuíam
- *    (`ressalvaComum`, `ressalvaDoControle`) saíram junto — código sem
- *    consumidor é código morto.
- *
- *    O que NÃO saiu: o campo `ressalva` do `Controle` e o `descreveControle`,
- *    que continua dizendo a ressalva por extenso no `aria-label` do grupo. Ele
- *    mandou tirar o texto explicativo da tela, não desligar o leitor de tela —
- *    e nada foi inventado no lugar do vazio.
+ * 2. **A permissão saiu em 28/09**, com o segmentado inteiro e o Resume: a
+ *    frota roda sempre liberada e o Rica nunca trocava. Saíram junto a
+ *    tradução, a escada de risco e o diagnóstico que só ela usava.
  *
  */
-import type {
-  AgentPainelResponse,
-  PainelPermissionMode,
-} from '@grupo_borges/cockpit-core/cockpit-types';
-
-export type AcaoId = 'permissao';
-
-export type Opcao = {
-  /** O que vai cru pro back — é o contrato do endpoint. */
-  valor: string;
-  /** O que o Rica lê. Português, sempre (R.1). */
-  rotulo: string;
-  /** O que o valor faz, por extenso. Vira `title` sozinha e entra no
-   *  `aria-label` somada ao `rotulo` (o rótulo sozinho já é o nome acessível
-   *  mínimo — a descrição completa, nunca substitui): no toque o `title` não
-   *  existe, então o `aria-label` é quem carrega a explicação. */
-  descricao: string;
-};
-
-export type Controle = {
-  id: AcaoId;
-  /** Overline do bloco. */
-  titulo: string;
-  opcoes: Opcao[];
-  /** `null` quando o back não sabe — o segmentado nasce sem nenhum ativo, que
-   *  é a verdade, em vez de acender um palpite. */
-  valor: string | null;
-  /** Frase da ressalva, ou `null` quando o back garantiu o valor. */
-  ressalva: string | null;
-};
-
-const RESSALVA =
-  'Lido da configuração — a sessão em execução pode estar em outro valor.';
-
-// ---------------------------------------------------------------------------
-// Tradução
-// ---------------------------------------------------------------------------
-
-const PERMISSAO: Record<PainelPermissionMode, { rotulo: string; descricao: string }> = {
-  plan: { rotulo: 'Só planeja', descricao: 'Lê e propõe. Não altera nada.' },
-  ask: { rotulo: 'Pergunta', descricao: 'Pede confirmação antes de cada ação.' },
-  acceptEdits: {
-    rotulo: 'Aceita edições',
-    descricao: 'Grava arquivo sem perguntar; o resto continua perguntando.',
-  },
-  bypassPermissions: {
-    rotulo: 'Livre',
-    descricao: 'Executa tudo sem pedir confirmação.',
-  },
-};
-
-/** A escada de risco da permissão. É esta a ordem na tela. */
-const ORDEM_PERMISSAO: PainelPermissionMode[] = ['plan', 'ask', 'acceptEdits', 'bypassPermissions'];
-
-/** Os três que o painel oferece sempre. `acceptEdits` existe no tipo e o back
- *  aceita, mas nem o cockpit antigo o oferecia — ele entra só quando é o valor
- *  ATUAL, porque esconder o modo em que o agente está seria mentir sobre o
- *  estado. Oferecer um quarto degrau que ninguém pediu é o outro erro. */
-const PERMISSAO_PADRAO: PainelPermissionMode[] = ['plan', 'ask', 'bypassPermissions'];
-
-export function rotulaPermissao(modo: string): string {
-  return PERMISSAO[modo as PainelPermissionMode]?.rotulo ?? modo;
-}
-
-/** Ordena pela escada canônica; o que não está nela vai pro fim, preservando a
- *  ordem de chegada. Estável de propósito — dois degraus novos do back não
- *  podem trocar de lugar entre um render e outro. */
-function pelaEscada(valores: string[], escada: string[]): string[] {
-  const conhecidos = escada.filter((v) => valores.includes(v));
-  const resto = valores.filter((v) => !escada.includes(v));
-  return [...conhecidos, ...resto];
-}
-
-// ---------------------------------------------------------------------------
-// Montagem
-// ---------------------------------------------------------------------------
-
-/** Relançar (`--resume`) só aparece pra quem o back atende. Quem decide é o
- *  back: a Tara roda Claude Code contra o proxy do Codex, então nenhuma pista
- *  local (nome do modelo, formato do payload) a distingue de um agente
- *  Anthropic — só o `model_family`, que o painel não expõe. `!== false` de
- *  propósito: payload antigo sem o campo mantém o botão, e a tradução da
- *  recusa em `diagnosticaRelancar` segue sendo a rede embaixo. */
-export function podeRelancar(painel: AgentPainelResponse): boolean {
-  return painel.relaunch_suportado !== false;
-}
-
-export function montaControles(painel: AgentPainelResponse): Controle[] {
-  const controles: Controle[] = [];
-
-  const modoAtual = painel.permission?.mode ?? null;
-  const modos = [...PERMISSAO_PADRAO];
-  // O modo em que o agente ESTÁ sempre aparece, mesmo fora dos três padrão.
-  if (modoAtual && !modos.includes(modoAtual)) modos.push(modoAtual);
-
-  controles.push({
-    id: 'permissao',
-    titulo: 'Permissões',
-    valor: modoAtual,
-    ressalva: painel.permission?.session_may_diverge ? RESSALVA : null,
-    opcoes: pelaEscada(modos, ORDEM_PERMISSAO).map((valor) => ({
-      valor,
-      rotulo: rotulaPermissao(valor),
-      descricao: PERMISSAO[valor as PainelPermissionMode]?.descricao ?? valor,
-    })),
-  });
-
-  return controles;
-}
 
 // ---------------------------------------------------------------------------
 // Destrava
@@ -430,18 +305,8 @@ export type Impedimento = {
   saida: string;
 };
 
-const NOME_DA_ACAO: Record<AcaoId, string> = {
-  permissao: 'a permissão',
-};
-
-/**
- * Traduz a falha das rotas. As mensagens do back chegam cruas no `Error`
- * (`errorDetail` do `api.ts` já extrai o `detail` do FastAPI), então casar por
- * substring é o que dá — e é frágil de propósito: rótulo novo cai no caso
- * geral, que continua acionável.
- */
-/** O texto pesquisável de qualquer coisa que caia num `catch`. Extraído de
- *  `diagnosticaAcao` quando o relançar precisou da mesma leitura — dois
+/** O texto pesquisável de qualquer coisa que caia num `catch`. Nasceu em
+ *  `diagnosticaAcao` (saiu com a permissão, 28/09) quando o relançar precisou da mesma leitura — dois
  *  diagnósticos casando substring sobre formas diferentes de erro dariam dois
  *  jeitos sutilmente diferentes de errar. */
 function textoDoErro(erro: unknown): string {
@@ -451,39 +316,4 @@ function textoDoErro(erro: unknown): string {
     return String((erro as { message: unknown }).message);
   }
   return '';
-}
-
-export function diagnosticaAcao(erro: unknown, id: AcaoId): Impedimento {
-  const texto = textoDoErro(erro);
-  const alvo = NOME_DA_ACAO[id];
-
-  // O ramo `not_allowed` saiu com o esforço (09/08): sem o segmentado de
-  // esforço aqui, nenhuma chamada deste bloco consegue mais provocá-lo. Quem
-  // recusa nível hoje é o composer, que tem tradução própria em `motor.ts`.
-  if (texto.includes('404')) {
-    return {
-      resumo: 'o agente sumiu da frota',
-      saida: 'volte para a lista e abra de novo',
-    };
-  }
-  if (texto.includes('500') || texto.includes('503')) {
-    return {
-      resumo: `o servidor falhou ao gravar ${alvo}`,
-      saida: 'tente de novo; se repetir, é infra — avise o Pavan',
-    };
-  }
-  return {
-    resumo: `não consegui trocar ${alvo}`,
-    saida: 'o valor voltou ao que era — tente de novo',
-  };
-}
-
-/** O que o leitor de tela anuncia no segmentado inteiro. A ressalva entra por
- *  extenso: o resumo visual não tem espaço para ela, e ela não pode sumir. */
-export function descreveControle(controle: Controle): string {
-  const atual = controle.valor
-    ? controle.opcoes.find((o) => o.valor === controle.valor)?.rotulo ?? controle.valor
-    : 'sem valor';
-  const base = `${controle.titulo}: ${atual}`;
-  return controle.ressalva ? `${base}. ${controle.ressalva}` : base;
 }

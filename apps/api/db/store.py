@@ -3136,6 +3136,41 @@ class GrupoBorgesDB:
             )
             return {row["hour_bucket"]: (row["tokens"] or 0) for row in cur.fetchall()}
 
+    async def event_pulse(
+        self, agent_slug: str, *, now_unix: int, minutes: int,
+    ) -> tuple[list[int], int | None]:
+        """Eventos por minuto nos últimos `minutes` + o instante do último evento.
+
+        Baldes do mais velho pro mais novo; o último é o minuto que termina em
+        `now_unix`. As duas consultas andam só no `idx_events_agent`, sem tocar
+        na tabela — é o oposto da sparkline horária, e por isso não tem cache.
+        """
+        return await asyncio.to_thread(self._event_pulse, agent_slug, now_unix, minutes)
+
+    def _event_pulse(
+        self, agent_slug: str, now_unix: int, minutes: int,
+    ) -> tuple[list[int], int | None]:
+        since = now_unix - minutes * 60
+        baldes = [0] * minutes
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT (created_at - ?) / 60 AS balde, COUNT(*) AS cnt
+                FROM task_events
+                WHERE agent_slug = ? AND created_at > ? AND created_at <= ?
+                GROUP BY balde
+                """,
+                (since + 1, agent_slug, since, now_unix),
+            )
+            for row in cur.fetchall():
+                if 0 <= row["balde"] < minutes:
+                    baldes[row["balde"]] = row["cnt"]
+            ultimo = conn.execute(
+                "SELECT MAX(created_at) AS ultimo FROM task_events WHERE agent_slug = ?",
+                (agent_slug,),
+            ).fetchone()["ultimo"]
+        return baldes, ultimo
+
     # ---------- fleet snapshot (agregado pra UI) ----------
 
     async def fleet_snapshot(

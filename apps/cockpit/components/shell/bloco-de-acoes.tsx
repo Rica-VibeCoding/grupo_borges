@@ -11,9 +11,9 @@
  *    ele no input"*. O seletor de esforço mora no composer (`seletor-motor.tsx`)
  *    e ter os dois era duplicata — a re-busca por abertura que resolvia a
  *    divergência entre as duas telas deixou de ter duas telas para conciliar.
- *    Ela continua valendo para o que ficou (permissão), que é lido do mesmo
- *    `/painel`.
- * 2. **Segmentado**, não `select`: um toque = uma troca, sem menu no meio.
+ * 2. ~~**Segmentado** de permissão.~~ **Saiu em 28/09** junto com o Resume:
+ *    a frota roda sempre liberada e ele nunca trocava — ocupava a gaveta à
+ *    toa. No lugar entrou a faixa do pulso (`faixa-do-pulso.tsx`).
  * 3. **No topo**, antes dos seis campos de detalhe. Casa com o `.ck-flutua`
  *    ancorado no topo (a borda de cima nunca se move): as ações ficam à vista
  *    cresça o painel quanto crescer, e o que rola por dentro é a referência.
@@ -41,16 +41,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAgentPainel,
-  patchAgentPermissionMode,
   postAgentDesligar,
   postAgentDestrava,
   postAgentLigar,
   postAgentRelaunch,
 } from '@grupo_borges/cockpit-core/api';
-import type {
-  AgentPainelResponse,
-  PainelPermissionMode,
-} from '@grupo_borges/cockpit-core/cockpit-types';
+import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
   CONFIRMA_ACAO_MS,
@@ -59,28 +55,23 @@ import {
   RETENTA_PAINEL_TETO_MS,
   ESPERAS_APOS_LIGAR_MS,
   descreveAcaoBruta,
-  descreveControle,
   descreveLigar,
-  diagnosticaAcao,
   diagnosticaCicloDeVida,
   diagnosticaRelancar,
-  podeRelancar,
   leiaDesligar,
   leiaDestrava,
   leiaLigar,
   leiaRelancar,
-  montaControles,
   rotulaAcaoBruta,
   rotulaDestrava,
   rotulaLigar,
   type AcaoBruta,
-  type AcaoId,
-  type Controle,
   type FaseBruta,
   type FaseDestrava,
   type Impedimento,
 } from './acoes-rapidas';
 import { BlocoDeComandos } from './bloco-de-comandos';
+import { FaixaDoPulso, usaPulso } from './faixa-do-pulso';
 import { sinalizarPainel } from './operacao-de-motor.ts';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 import { VeuDeOperacao } from './veu-de-operacao';
@@ -102,7 +93,6 @@ const CONFIRMA_COMPACT_MS = 4_000;
  *  agente e ponto. */
 const REDE = {
   lePainel: fetchAgentPainel,
-  gravaPermissao: patchAgentPermissionMode,
   destrava: postAgentDestrava,
   relanca: postAgentRelaunch,
   desliga: postAgentDesligar,
@@ -271,7 +261,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
 
   const [painel, setPainel] = useState<AgentPainelResponse | null>(null);
   const [carga, setCarga] = useState<Carga>('ocioso');
-  const [emVoo, setEmVoo] = useState<{ id: AcaoId; valor: string } | null>(null);
   const [falha, setFalha] = useState<Impedimento | null>(null);
   const [destrava, setDestrava] = useState<FaseDestrava>('ocioso');
   const [ligar, setLigar] = useState<FaseDestrava>('ocioso');
@@ -309,10 +298,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
     [],
   );
 
-  // Uma troca pode ser atropelada por outra (o dedo insiste). A resposta velha
-  // não pode reverter o valor que a nova acabou de aplicar — sem isto, dois
-  // toques rápidos com o primeiro falhando desfazem o segundo.
-  const sequencia = useRef(0);
   const reciboTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Os timers que acompanham o boot depois do Ligar. `buscar` já se protege de
@@ -367,8 +352,11 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
     setFalha,
     buscar,
   );
-  const relancar = faseBruta('resume');
   const desligar = faseBruta('desligar');
+  const pulso = usaPulso(agentSlug, aberto);
+  // A faixa já disse "sem sinal" com a palavra; a borda âmbar só aponta pro
+  // botão que resolve. Cor aqui nunca carrega o significado sozinha (§9.7).
+  const semSinal = pulso.leitura?.tom === 'sem-sinal';
 
   // O controlador é da ABERTURA, não de uma leitura. Toda busca desta sessão de
   // painel — a primeira e cada retentativa — morre junto quando a gaveta fecha
@@ -430,44 +418,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
     },
     [],
   );
-
-  /** Aplica no estado local antes da rede responder. O toque tem que responder
-   *  na hora; se o back recusar, o valor volta e o aviso explica. É o mesmo
-   *  desenho do esforço no composer. */
-  function aplicaLocal(id: AcaoId, valor: string) {
-    setPainel((atual) => {
-      if (!atual) return atual;
-      if (id === 'permissao') {
-        return { ...atual, permission: { ...atual.permission, mode: valor as PainelPermissionMode } };
-      }
-      return atual;
-    });
-  }
-
-  async function trocar(controle: Controle, valor: string) {
-    if (valor === controle.valor) return;
-    const anterior = painel;
-    const meu = ++sequencia.current;
-
-    setFalha(null);
-    setEmVoo({ id: controle.id, valor });
-    aplicaLocal(controle.id, valor);
-
-    try {
-      await REDE.gravaPermissao(agentSlug, valor as PainelPermissionMode);
-    } catch (erro) {
-      // O aviso vale sempre — o Rica precisa saber que a troca não pegou
-      // mesmo quando o dedo já tocou em outro controle antes desta responder.
-      // Só REVERTER é privilégio da troca mais recente: desfazer uma troca
-      // velha apagaria uma troca nova que já teve sucesso.
-      setFalha(diagnosticaAcao(erro, controle.id));
-      if (meu === sequencia.current) {
-        setPainel(anterior);
-      }
-    } finally {
-      if (meu === sequencia.current) setEmVoo(null);
-    }
-  }
 
   async function acionarDestrava() {
     if (destrava === 'enviando') return;
@@ -535,12 +485,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
     }
   }
 
-  const controles = painel ? montaControles(painel) : [];
-  // A Tara cai aqui: o payload dela é igual ao de um agente Anthropic, mas o
-  // `/relaunch` a recusa. O Desligar NÃO some junto — Desligar + Ligar É o
-  // caminho dela. Sem painel lido não há o que afirmar, então o botão fica.
-  const relancarDisponivel = painel === null || podeRelancar(painel);
-
   // O agente está DE PÉ? Só o painel lido responde — enquanto a busca não
   // voltou, `painel` é `null` e as ações nem são renderizadas (`carga` ainda
   // não é `pronto`). Casca morta (sessão viva, CLI morto) conta como fora do
@@ -555,11 +499,9 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
   const avisoConfirmacao =
     confirmaCompact && compactEmVoo
       ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
-      : relancar === 'confirmando'
-        ? descreveAcaoBruta(relancar)
-        : desligar === 'confirmando'
-          ? descreveAcaoBruta(desligar, 'desligar')
-          : null;
+      : desligar === 'confirmando'
+        ? descreveAcaoBruta(desligar, 'desligar')
+        : null;
 
   return (
     <>
@@ -589,26 +531,9 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
           />
         ) : null}
 
-        {carga !== 'pronto' && carga !== 'indisponivel' && controles.length === 0 ? (
-          // Altura do que vem: segmentado (overline 16 + gap 8 + trilho 50) +
-          // linha de botões (gap 16 + 44). Medido no iPhone em 09/08, e as duas
-          // metades estavam erradas: 96px era MENOS que o conteúdo, e a condição
-          // era `carga === 'carregando'`, que só vale depois de a busca sair —
-          // nos ~2s de `ocioso` entre hidratação e fetch não havia reserva
-          // nenhuma. A gaveta abria em 244px e parava em 486, levando o **MCPs**
-          // (alvo de toque, logo abaixo) 240px pra baixo com o dedo no ar.
-          // `indisponivel` fica de fora: lá quem ocupa a altura é o `Recado`.
-          <div aria-hidden style={{ height: '134px' }} />
+        {carga === 'pronto' && dePe && pulso.leitura ? (
+          <FaixaDoPulso leitura={pulso.leitura} alturas={pulso.alturas} />
         ) : null}
-
-        {controles.map((controle) => (
-          <Segmentado
-            key={controle.id}
-            controle={controle}
-            emVoo={emVoo?.id === controle.id ? emVoo.valor : null}
-            aoEscolher={(valor) => void trocar(controle, valor)}
-          />
-        ))}
 
         {carga === 'pronto' && aplicandoMotor ? (
           // No LUGAR da linha de ações, não por cima dela: véu que só apaga o
@@ -662,12 +587,10 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
         ) : null}
 
         {carga === 'pronto' && dePe && !aplicandoMotor ? (
-          // Destravar + Resume + Desligar na MESMA linha — os três cabem lado a
-          // lado (ordem do Rica, 03/08). Um debaixo do outro empurrava o resto do
-          // painel pra baixo à toa; a ordem esquerda→direita continua sendo a
-          // escada de custo: Escape não custa nada, relançar custa o turno em
-          // voo, desligar tira o agente do ar. O Desligar ocupa o lugar exato
-          // que era do Restart (10/08).
+          // Destravar + Desligar na MESMA linha (ordem do Rica, 03/08). O Resume
+          // saiu em 28/09 — ele nunca usava. A ordem esquerda→direita continua
+          // sendo a escada de custo: Escape não custa nada, desligar tira o
+          // agente do ar.
           <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
             {/* A linha "Fecha modal que travou o campo…" saiu por ordem do Rica
                 (30/07): *"pode retirar os textos explicativos"*, citando-a pelo
@@ -694,7 +617,7 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
                   minHeight: 'var(--ck-touch-min)',
                   padding: '0 var(--ck-space-2)',
                   borderRadius: 'var(--ck-radius-frame)',
-                  borderColor: 'var(--ck-edge-functional)',
+                  borderColor: semSinal ? 'var(--ck-state-attention)' : 'var(--ck-edge-functional)',
                   fontSize: 'var(--ck-text-sm)',
                   whiteSpace: 'nowrap',
                   // O recibo muda a PALAVRA, não só a cor: cor sozinha nunca é
@@ -711,19 +634,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
               >
               {confirmaCompact && compactEmVoo ? 'Confirmar?' : rotulaDestrava(destrava)}
             </button>
-
-            {/* RELANÇAR (com contexto) — o degrau acima do destrava. Quando o
-                Escape não resolve porque o próprio Claude Code morreu, esta é a
-                saída que não custa a conversa: sobe outro processo com
-                `--resume`. Fica DEPOIS do destrava de propósito: a ordem na tela
-                é a ordem em que se deve tentar. */}
-            {relancarDisponivel ? (
-              <BotaoAcaoBruta
-                fase={relancar}
-                acao="resume"
-                onClick={() => void acionarBruta('resume')}
-              />
-            ) : null}
 
             {/* DESLIGAR — o degrau mais bruto, no lugar exato que era do
                 Restart. Não relança nada: encerra o agente e tudo que ele
@@ -816,120 +726,6 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
         />
       ) : null}
     </>
-  );
-}
-
-/**
- * O segmentado. Trilho em `--ck-surface-composer` (um degrau acima do `nav` do
- * painel), segmentos de largura igual.
- *
- * O SELECIONADO É UMA PASTILHA ELEVADA — ordem do Rica, 30/07, olhando a
- * primeira versão: *"tira essa linha branca de selecionado, vamos pensar em
- * algo mais discreto que pegue o botão todo"*. A barra de 2px saiu.
- *
- * No lugar dela o segmento ativo **sobe um degrau da escada de superfícies**
- * (`raised` sobre o trilho em `composer`) e ganha o fio de luz de 1px no topo
- * (`.ck-lit`). Isto responde às duas metades do pedido: pega o botão inteiro,
- * porque é a superfície dele que muda; e é discreto, porque o degrau é o mesmo
- * que separa qualquer duas camadas do app — nada de branco puro.
- *
- * Não é "cor sozinha" (§9.7). O que carrega a seleção é ELEVAÇÃO mais TEXTURA
- * (o fio de luz), que é exatamente a linguagem com que este app separa camadas
- * desde a §2.5 — "luz em vez de sombra", nunca matiz. A §2.6 pedia véu + barra
- * de 2px à esquerda pensando em ITEM DE LISTA; aqui o alvo é um grupo de
- * botões contíguos, e um grid de traços verticais não se lê como seleção.
- *
- * O ativo perde o `.ck-veil` por obrigação, não por escolha: véu de interação
- * sobre `raised` derruba a borda funcional para 2.98:1 (proibição §9.11).
- *
- * A nota sobre o rótulo `extra alto` quebrando em duas linhas morreu com o
- * esforço — e a premissa dela ("cinco níveis, ~69px") já tinha caducado antes:
- * a sexta opção derrubou o segmento para 54px no iPhone, e aí "extra alto"
- * empurrava a altura do trilho enquanto "máximo" encostava em "automático".
- * Sobrou a permissão (3 rótulos, 4 em `acceptEdits`): 111px por segmento,
- * palavra inteira numa linha. **Segmentado horizontal com rótulo
- * longo em pt-BR não escala além de quatro** — um quinto degrau pede outra
- * forma, não mais uma coluna.
- */
-function Segmentado({
-  controle,
-  emVoo,
-  aoEscolher,
-}: {
-  controle: Controle;
-  emVoo: string | null;
-  aoEscolher: (valor: string) => void;
-}) {
-  return (
-    <div className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }}>
-      <span
-        style={{
-          fontSize: 'var(--ck-text-xs)',
-          textTransform: 'uppercase',
-          letterSpacing: 'var(--ck-track-overline)',
-          color: 'var(--ck-text-secondary)',
-        }}
-      >
-        {controle.titulo}
-      </span>
-
-      <div
-        role="group"
-        aria-label={descreveControle(controle)}
-        className="grid"
-        style={{
-          gridTemplateColumns: `repeat(${controle.opcoes.length}, minmax(0, 1fr))`,
-          gap: '3px',
-          padding: '3px',
-          borderRadius: 'var(--ck-radius-frame)',
-          background: 'var(--ck-surface-composer)',
-        }}
-      >
-        {controle.opcoes.map((opcao) => {
-          const ativo = opcao.valor === controle.valor;
-          const voando = emVoo === opcao.valor;
-          return (
-            <button
-              key={opcao.valor}
-              type="button"
-              onClick={() => aoEscolher(opcao.valor)}
-              aria-pressed={ativo}
-              aria-busy={voando}
-              title={opcao.descricao}
-              // O rótulo sozinho ("Só planeja") é curto demais pra carregar a
-              // explicação — soma os dois no nome acessível, rótulo primeiro
-              // (2.5.3: o nome tem que CONTER o texto visível, nunca só a
-              // descrição por baixo dele).
-              aria-label={`${opcao.rotulo}. ${opcao.descricao}`}
-              // O ativo NÃO leva `.ck-veil`: véu de interação sobre
-              // `--ck-surface-raised` derruba a borda funcional para 2.98:1 e
-              // é proibição expressa (§9.11). Ele já é o destaque; quem precisa
-              // de hover e press é o inativo.
-              className={`flex items-center justify-center text-center ${ativo ? 'ck-lit' : 'ck-veil'}`}
-              style={{
-                minHeight: 'var(--ck-touch-min)',
-                padding: '0 var(--ck-space-1)',
-                borderRadius: 'var(--ck-radius-chip)',
-                fontSize: 'var(--ck-text-sm)',
-                lineHeight: 'var(--ck-leading-body)',
-                color: ativo ? 'var(--ck-text-primary)' : 'var(--ck-text-secondary)',
-                // O selecionado é uma PASTILHA ELEVADA: sobe um degrau da
-                // escada de superfícies e ganha o fio de luz de 1px no topo
-                // (`.ck-lit`). Ver o comentário do componente.
-                background: ativo ? 'var(--ck-surface-raised)' : undefined,
-                // Em voo o rótulo esmaece e o `aria-busy` avisa quem não vê. O
-                // texto NÃO vira "salvando": trocar a palavra mudaria a largura
-                // e a linha inteira pularia no meio do toque.
-                opacity: voando ? 0.55 : 1,
-                transition: 'opacity var(--ck-dur-fast) var(--ck-ease)',
-              }}
-            >
-              {opcao.rotulo}
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
