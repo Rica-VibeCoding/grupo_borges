@@ -100,6 +100,7 @@ import {
   IconeReenviar,
 } from './icones';
 import { usaCanalEntrega } from './usa-canal-entrega';
+import { voaParaBolha } from '../../lib/voo-do-envio';
 import { BolhaDeComandos } from './bolha-de-comandos';
 
 export type ComposerProps = {
@@ -270,6 +271,7 @@ export function Composer({
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
   const idAnuncio = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const vooEmCursoRef = useRef(false);
   const tecladoTouch = usaTecladoTouch();
 
   // O ANEXO tem máquina PRÓPRIA, não a de seis fases do texto. Ali a pergunta é
@@ -505,6 +507,11 @@ export function Composer({
     retomada = false,
     origemRetomada: OrigemEnvio = 'text',
   ): Promise<boolean> {
+    // O quadro do voo (`voaParaBolha`) separa o gesto do campo esvaziar: um
+    // segundo toque nesse meio acharia o texto ainda escrito e a porta livre, e
+    // a mensagem sairia duas vezes. Quem segura é esta marca, erguida antes do
+    // `await` e baixada depois dele.
+    if (!retomada && vooEmCursoRef.current) return false;
     const origem: OrigemEnvio = retomada
       ? origemRetomada
       : origemDoRascunho;
@@ -605,30 +612,38 @@ export function Composer({
     // viagem de rede, e um segundo Enter ali duplica a mensagem. Daqui em
     // diante quem guarda o texto é a máquina (`estado.texto`), que precisa
     // dele para casar o eco e para oferecer novo envio se o eco não vier.
-    if (efeito.limpaCampo) {
-      setTexto('');
-      setOrigemDoRascunho('text');
-    }
-    setFalhaDaFala(null);
-    // O feed pinta esta bolha no GESTO, nos dois motores. Até 15/08 só a Tara
-    // tinha isto, com a justificativa de que *"no Claude Code o eco volta pelo
-    // stream em milissegundos"* — premissa nunca medida. Medida naquele dia no
-    // `:3008`, com o agente ocioso: **18,9 s** entre o Enter e a bolha, contra
-    // 0,1 s do campo esvaziando. Dezoito segundos de tela muda são o "engoliu a
-    // mensagem" que o Rica reporta desde sempre, e são quase o dobro dos 10 s
-    // que a NN/g dá como limite de atenção.
-    //
-    // A mesma pendência conserta o alarme: `PRAZO_ECO_MS` são 12 s calibrados
-    // sobre um pior caso de 1,434 s, então ele estourava ANTES do eco real e
-    // toda mensagem para agente ocioso terminava em "não consegui confirmar se
-    // entrou". Ver `lib/eco-pendente.ts` e o ramo do CC em
-    // `app/agente/[slug]/feed-da-conversa.tsx`.
-    const idEcoPendente = registraEcoPendente(
-      agentSlug,
-      origem === 'stt' ? `${MARCA_VOZ}${corpoParaEnviar}` : corpoParaEnviar,
-      PRAZO_CC_MS,
-      origem === 'stt' ? corpoParaEnviar : undefined,
-    );
+    // O VOO (28/09): esvaziar o campo e pintar a bolha acontecem no mesmo
+    // quadro, dentro da View Transition, e o texto voa de um para o outro. Só
+    // voa quando o texto SAIU do campo — numa retomada o campo guarda outra
+    // mensagem, e ela não é a que está indo. Ver `lib/voo-do-envio.ts`.
+    vooEmCursoRef.current = true;
+    const idEcoPendente = await voaParaBolha(efeito.limpaCampo ? textareaRef.current : null, () => {
+      if (efeito.limpaCampo) {
+        setTexto('');
+        setOrigemDoRascunho('text');
+      }
+      setFalhaDaFala(null);
+      // O feed pinta esta bolha no GESTO, nos dois motores. Até 15/08 só a Tara
+      // tinha isto, com a justificativa de que *"no Claude Code o eco volta pelo
+      // stream em milissegundos"* — premissa nunca medida. Medida naquele dia no
+      // `:3008`, com o agente ocioso: **18,9 s** entre o Enter e a bolha, contra
+      // 0,1 s do campo esvaziando. Dezoito segundos de tela muda são o "engoliu a
+      // mensagem" que o Rica reporta desde sempre, e são quase o dobro dos 10 s
+      // que a NN/g dá como limite de atenção.
+      //
+      // A mesma pendência conserta o alarme: `PRAZO_ECO_MS` são 12 s calibrados
+      // sobre um pior caso de 1,434 s, então ele estourava ANTES do eco real e
+      // toda mensagem para agente ocioso terminava em "não consegui confirmar se
+      // entrou". Ver `lib/eco-pendente.ts` e o ramo do CC em
+      // `app/agente/[slug]/feed-da-conversa.tsx`.
+      return registraEcoPendente(
+        agentSlug,
+        origem === 'stt' ? `${MARCA_VOZ}${corpoParaEnviar}` : corpoParaEnviar,
+        PRAZO_CC_MS,
+        origem === 'stt' ? corpoParaEnviar : undefined,
+      );
+    });
+    vooEmCursoRef.current = false;
     // Se o POST rejeitar com erro HTTP real (fase `falhou`), a máquina
     // acabou de provar que o texto não saiu — desfaz a bolha otimista em vez
     // de deixá-la contradizendo a faixa de erro por até 3 min (achado [2] da

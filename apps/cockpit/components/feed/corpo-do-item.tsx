@@ -226,6 +226,9 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
           // pegar a tela quase toda. `w-fit` continua encolhendo ao texto.
           className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
           style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
+          // A ponta de chegada do voo do envio (`lib/voo-do-envio.ts`): só a
+          // bolha otimista se marca, porque só ela nasce do toque no campo.
+          data-eco={item.payload.uuid?.startsWith('cc-otimista-') ? item.payload.uuid : undefined}
         >
           {item.enfileirada ? (
             // O composer já avisa "entrou na fila" (usa-envio.ts:113); esta é

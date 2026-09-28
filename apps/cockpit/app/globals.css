@@ -1381,6 +1381,47 @@ body {
   text-underline-offset: 2px;
 }
 
+/* O VOO DO ENVIO (`lib/voo-do-envio.ts`). O texto sai do campo e pousa na
+ * bolha: o grupo leva a caixa de um retângulo ao outro e as duas fotos se
+ * cruzam no caminho. `object-fit: none` + âncora à esquerda seguram a letra no
+ * tamanho real — o padrão do navegador esticaria as duas fotos até o tamanho
+ * do grupo, e o texto viajaria deformado. A raiz não anima neste voo: sem
+ * isso o navegador faria o fade da página inteira por baixo, e o feed
+ * piscaria. */
+html[data-voo='envio']::view-transition-old(root),
+html[data-voo='envio']::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(ck-envio) {
+  animation-duration: var(--ck-dur-calm);
+  animation-timing-function: var(--ck-ease);
+}
+/* As duas fotos NÃO se cruzam ao meio: o campo quebra a linha numa largura e
+ * a bolha em outra, e com as duas a 50% o texto aparece duplicado no meio do
+ * caminho. A troca acontece logo na decolagem: a do campo some no primeiro
+ * quarto, e quem faz a viagem é a bolha já formada. */
+::view-transition-old(ck-envio),
+::view-transition-new(ck-envio) {
+  height: 100%;
+  object-fit: none;
+  object-position: left center;
+  mix-blend-mode: normal;
+}
+::view-transition-old(ck-envio) {
+  animation: ck-voo-sai var(--ck-dur-calm) var(--ck-ease-exit) both;
+}
+::view-transition-new(ck-envio) {
+  animation: ck-voo-entra var(--ck-dur-calm) var(--ck-ease) both;
+}
+@keyframes ck-voo-sai {
+  0% { opacity: 1; }
+  25%, 100% { opacity: 0; }
+}
+@keyframes ck-voo-entra {
+  0%, 10% { opacity: 0; }
+  40%, 100% { opacity: 1; }
+}
+
 /* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do
  * state-attention, que é o único com direito a animação persistente. */
 @media (prefers-reduced-motion: reduce) {
