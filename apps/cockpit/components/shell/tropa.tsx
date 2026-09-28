@@ -106,19 +106,47 @@
  * linha, deslize rola a coluna: a separação é do iOS, não nossa. O porquê
  * detalhado, com fonte de cada decisão, está em `arrasto-da-tropa.tsx`.
  *
+ * OITAVA VERSÃO (28/09) — O ESTADO MORA NA FOTO. Ordem do Rica: *"faça uma
+ * releitura da sidebar… mais bonita, na UX melhor"*. O print do celular mostrou
+ * que a pergunta nº 1 de quem abre a tropa — quem está trabalhando? — não se
+ * lia: era um ponto de 9px no canto do retrato. A ousadia foi gasta num lugar só
+ * e o resto ficou quieto:
+ *
+ * 12. O ANEL. `trabalhando` ganha um anel na cor de execução em volta da foto,
+ *    respirando devagar; `aguardando`, anel de atenção num ritmo curto e a
+ *    segunda linha dizendo "aguarda você". Ocioso e offline, sem anel. Com
+ *    `prefers-reduced-motion`, o anel fica parado. O ponto saiu — o estado
+ *    segue no `title` e no nome acessível do link. CSS em `.ck-anel`.
+ * 13. UM TEXTO PRIMÁRIO POR LINHA. O nome. "Opus 5.5" saía na cor primária, do
+ *    tamanho do nome, e competia com ele em toda linha viva: virou metadado
+ *    menor, junto do relógio. Relógio e percentual saíram da mono (sans
+ *    tabular não dança igual); a mono ficou só na pasta, que é endereço.
+ * 14. O PERCENTUAL SOBE PARA A LINHA DO NOME, vivo ou dormindo: uma vertical
+ *    só, na altura do nome. A barra saiu da lista — o número já é o dado e o
+ *    âmbar acima do teto já é o julgamento; o desenho continua na gaveta.
+ * 15. O PULSO ENTRA NO FLUXO. Era marca d'água absoluta e, no celular,
+ *    encavalava no percentual. Agora é caixa própria na segunda linha, nos
+ *    dois layouts, com o lugar reservado mesmo quando não há o que desenhar.
+ * 16. QUEM DORME PERDE O CHIP. Sete "off" com borda e sete trilhos vazios
+ *    repetiam o que a linha rasa e a foto esmaecida já dizem — era o chip por
+ *    linha repetindo estado que a v3 já tinha matado. A palavra "desligado"
+ *    segue para o leitor de tela.
+ * 17. A SEGUNDA LINHA NÃO FICA OCA. Quem está de pé sem modelo (Canário,
+ *    Fluyt) sobe a pasta para ela, em vez de deixar um buraco.
+ * 18. A VPS VIRA RELANCE. Quatro números numa faixa, cor só acima do teto, e a
+ *    lista de processos recolhida atrás de "ver processos". Em `bloco-da-vps.tsx`.
+ *
+ * As linhas moram em `linha-da-tropa.tsx` desde esta versão: com elas aqui o
+ * arquivo passava de 670 linhas fazendo duas coisas.
+ *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
 'use client';
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import type {
-  Agent,
-  SparklineBucket,
-} from '@grupo_borges/cockpit-core/cockpit-types';
-import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
+import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { patchOrdemDaTropa } from '@grupo_borges/cockpit-core/api';
 import { ordenaTropa } from '@/lib/ordena-tropa';
 import {
@@ -128,373 +156,12 @@ import {
   novaOrdem,
   ordemJaChegou,
 } from '@/lib/ordem-arrastada';
-import {
-  AlcaDeArraste,
-  ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
-  TIPO_ARRASTO,
-  TracoDeSoltura,
-  usaArrastoDaLinha,
-} from './arrasto-da-tropa';
-import {
-  BarraDeContexto,
-  LARGURA_NA_LISTA,
-  SemContexto,
-  ValorDoContexto,
-} from './barra-de-contexto';
-import { estadoDe } from './estado';
-import { Off } from './etiqueta-off';
-import { TETO_PCT } from './medidor';
+import { TIPO_ARRASTO } from './arrasto-da-tropa';
 import { BlocoDaVps } from './bloco-da-vps';
-import { Retrato } from './retrato';
-import { Statusline } from './statusline';
-import { cliqueSimples } from './superficie-otimista';
+import { estadoDe } from './estado';
+import { CartaoVivo, LinhaDormindo, type EscolheAgente } from './linha-da-tropa';
 
-/** Quem sabe navegar sem esperar o servidor. `undefined` fora do provider da
- *  tropa (e sem JavaScript): aí os itens são `<Link>` de verdade, como sempre
- *  foram. */
-export type EscolheAgente = (slug: string, href: string) => void;
-
-/** O `onClick` dos dois formatos de item. Só intercepta clique primário sem
- *  modificador — ctrl/cmd/shift continua abrindo noutra aba pelo navegador. */
-function escolheNoToque(slug: string, href: string, aoEscolher?: EscolheAgente) {
-  if (!aoEscolher) return undefined;
-  return (e: MouseEvent<HTMLAnchorElement>) => {
-    if (!cliqueSimples(e)) return;
-    e.preventDefault();
-    aoEscolher(slug, href);
-  };
-}
-
-/**
- * A pasta em que o agente trabalha, sem a raiz que todos compartilham.
- *
- * Ordem do Rica (02/08): *"toda tropa eu tenho que saber em que pasta que tá,
- * para não ficar perguntando"*. Em 03/08 ele recortou: a pasta vale pra quem
- * está DE PÉ (cartão de duas linhas); na linha de quem dorme ela saiu junto
- * com o "há 20h" — nome + contexto bastam. Então hoje só o `CartaoVivo` chama.
- *
- * Cortamos só `/home/clawd/repos/`: `fluyt/apps/pos` distingue app de app, coisa
- * que o último segmento sozinho (`pos`) não faria. Gêmea da do cockpit antigo
- * (`apps/web/lib/cockpit-types.ts`) e deliberadamente NÃO compartilhada — o
- * `cockpit-core` é do Pavan, e o antigo está congelado, então a cópia morre com ele.
- */
-const RAIZ_DOS_REPOS = '/home/clawd/repos/';
-
-/** O endereço-casa: quem mora no próprio workspace da frota. */
-const CASA_DA_FROTA = 'ze_claude/';
-
-function pastaCurta(
-  workspacePath: string | null | undefined,
-  slug: string,
-): string | null {
-  if (!workspacePath) return null;
-  const limpo = workspacePath.replace(/\/+$/, '');
-  if (!limpo) return null;
-  const curta = limpo.startsWith(RAIZ_DOS_REPOS)
-    ? limpo.slice(RAIZ_DOS_REPOS.length)
-    : limpo;
-  // Quem está em `ze_claude/<slug>` está na própria casa, e dizer isso é
-  // repetir o nome que está três pixels acima. O que informa é o DESVIO: o
-  // Daniel em `grupo_borges`. Comparado contra o slug, não contra uma
-  // lista — agente novo entra sozinho.
-  return curta === `${CASA_DA_FROTA}${slug}` ? null : curta;
-}
-
-/**
- * O pulso das últimas 24 horas — `sparkline` do `/api/fleet`, um balde por hora.
- *
- * Marca d'água na base do cartão, atrás do conteúdo: é contexto de fundo, não
- * um dado a ler. Quem trabalhou tem relevo; quem passou o dia parado devolve
- * `null` e o cartão fica liso — a ausência do desenho É a leitura, e desenhar
- * uma régua reta de zeros seria dizer "medi e não achei nada" com a mesma tinta
- * de quem produziu.
- *
- * Normalizado pelo próprio máximo do agente, nunca pelo da frota: a Tara sozinha
- * responde por três ordens de grandeza a mais que o resto, e numa escala comum
- * ela achataria as outras oito em linha reta. Aqui a pergunta é "o dia DELE foi
- * cheio?", não "quem gastou mais".
- *
- * Barra de 2px com 1px de respiro, largura própria de 71px — NÃO `flex-1`
- * espalhado pela linha inteira. Com 24 baldes numa faixa de 700px cada barra
- * saía com 28px de largura e o desenho parava de ler como gráfico: virava um
- * bloco cinza solto na base do cartão. Sparkline é textura, e textura precisa
- * de traço fino.
- *
- * Só no modo largo. Na coluna de 260px a telemetria já ocupa a linha inteira e
- * o pulso encostaria no percentual — dois layouts, não um responsivo.
- */
-function Pulso({ buckets }: { buckets: SparklineBucket[] }) {
-  const max = Math.max(0, ...buckets.map((b) => b.tokens));
-  if (max <= 0) return null;
-  return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute flex items-end"
-      style={{
-        right: 'var(--ck-space-3)',
-        bottom: 'var(--ck-space-2)',
-        gap: '1px',
-        height: '13px',
-        // O chão das 24 horas. Sem ele os traços de quem trabalhou em duas
-        // horas do dia ficam boiando e leem como falha de renderização; com
-        // ele, a mesma tinta vira eixo, e o vazio ao lado passa a significar
-        // "aqui não houve nada" em vez de "aqui não desenhou".
-        borderBottom: '1px solid var(--ck-text-primary)',
-        opacity: 0.22,
-      }}
-    >
-      {buckets.map((b) => (
-        // Hora sem token não desenha traço, mas continua ocupando o seu lugar na
-        // fila — a grade das 24 horas é o que deixa ler QUANDO o trabalho
-        // aconteceu. Um piso de altura para todo mundo enchia o desenho de
-        // pontinhos e o que se via era um pontilhado, não um gráfico.
-        <span
-          key={b.bucket}
-          className="block"
-          style={{
-            width: '2px',
-            height: b.tokens > 0 ? `${Math.max(12, Math.round((b.tokens / max) * 100))}%` : 0,
-            borderRadius: '1px 1px 0 0',
-            background: 'var(--ck-text-primary)',
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
-function CartaoVivo({
-  agente,
-  selecionado,
-  agora,
-  compacta,
-  aoEscolher,
-  aoMover,
-}: {
-  agente: Agent;
-  selecionado: boolean;
-  agora: number;
-  compacta: boolean;
-  aoEscolher?: EscolheAgente;
-  aoMover: (direcao: -1 | 1) => void;
-}) {
-  const estado = estadoDe(agente.status);
-  const pasta = pastaCurta(agente.workspace_path, agente.slug);
-  const href = `/agente/${agente.slug}`;
-  const { liRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
-  return (
-    <li
-      ref={liRef}
-      className="relative flex items-center"
-      // A linha carregada esmaece no lugar de origem: é o que diz "esta é a que
-      // está na sua mão" quando o preview nativo cobre o dedo no celular.
-      style={{ opacity: arrastando ? 0.4 : undefined }}
-    >
-      <TracoDeSoltura borda={borda} />
-      <Link
-        href={href}
-        onClick={escolheNoToque(agente.slug, href, aoEscolher)}
-        // Link nasce arrastável, e é isso que roubava o gesto no iPhone: o
-        // `dragstart` saía com o `<a>` como alvo, que a lib não registrou, e
-        // ela devolvia sem reordenar nada. Em `false`, o gesto sobe pro `<li>`.
-        draggable={false}
-        className="ck-veil ck-aba relative flex min-w-0 flex-1 items-center overflow-hidden"
-        data-selecionado={selecionado ? 'true' : 'false'}
-        aria-current={selecionado ? 'page' : undefined}
-        style={{
-          ...ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
-          gap: 'var(--ck-space-3)',
-          minHeight: 'var(--ck-touch-min)',
-          // Só o respiro VERTICAL: o lateral mora na `.ck-aba`, que é quem sabe
-          // devolvê-lo do lado direito quando a aba avança sobre a folha.
-          paddingBlock: 'var(--ck-space-2)',
-          // Filete só marca SELEÇÃO. O estado já está dito duas vezes — título
-          // da seção e ponto no retrato; uma terceira seria ruído.
-          borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
-        }}
-      >
-        {compacta ? null : <Pulso buckets={agente.sparkline} />}
-
-        {/* O ponto de estado vale nos DOIS modos desde que o título da seção
-            passou a carregar a palavra. Ele é o reforço local: quando a lista
-            é longa e o título grudado já rolou pra fora do alcance do olho,
-            o ponto continua dizendo em que estado esta linha está. */}
-        <Retrato
-          slug={agente.slug}
-          nome={agente.name}
-          tamanho={compacta ? 34 : 40}
-          marca={{ cor: estado.cor, rotulo: estado.rotulo, estado: agente.status }}
-        />
-
-        <span className="relative flex min-w-0 flex-1 flex-col" style={{ gap: '3px' }}>
-          <span
-            className="min-w-0 truncate tracking-title"
-            style={{
-              fontSize: compacta ? 'var(--ck-text-sm)' : 'var(--ck-text-base)',
-              color: 'var(--ck-text-primary)',
-            }}
-          >
-            {agente.name}
-          </span>
-
-          <Statusline agente={agente} agora={agora} curta={compacta} />
-
-          {/* Terceira linha, e não um pedaço da statusline: aquela é telemetria
-              viva (modelo · sessão · contexto) e a pasta é fato de cadastro, que
-              não muda no ritmo dos outros três. `secondary`, nunca `tertiary` —
-              texto de 12px em `tertiary` fura o piso de 4.5:1 da §3. */}
-          {pasta ? (
-            <span
-              className="min-w-0 truncate"
-              style={{
-                fontFamily: 'var(--ck-font-mono)',
-                fontSize: 'var(--ck-text-xs)',
-                color: 'var(--ck-text-secondary)',
-              }}
-              title={agente.workspace_path}
-            >
-              {pasta}
-            </span>
-          ) : null}
-        </span>
-      </Link>
-      <AlcaDeArraste nomeDoAgente={agente.name} aoMover={aoMover} />
-    </li>
-  );
-}
-
-function LinhaDormindo({
-  agente,
-  selecionado,
-  compacta,
-  aoEscolher,
-  aoMover,
-}: {
-  agente: Agent;
-  selecionado: boolean;
-  compacta: boolean;
-  aoEscolher?: EscolheAgente;
-  aoMover: (direcao: -1 | 1) => void;
-}) {
-  const pct = resolveContextPct(agente);
-  const href = `/agente/${agente.slug}`;
-  const { liRef, arrastando, borda } = usaArrastoDaLinha(agente.slug);
-  return (
-    <li
-      ref={liRef}
-      className="relative flex items-center"
-      style={{ opacity: arrastando ? 0.4 : undefined }}
-    >
-      <TracoDeSoltura borda={borda} />
-      <Link
-        href={href}
-        onClick={escolheNoToque(agente.slug, href, aoEscolher)}
-        draggable={false}
-        className="ck-veil ck-aba flex min-w-0 flex-1 items-center"
-        data-selecionado={selecionado ? 'true' : 'false'}
-        aria-current={selecionado ? 'page' : undefined}
-        style={{
-          ...ESTILO_LINK_QUE_NAO_ROUBA_O_GESTO,
-          gap: 'var(--ck-space-3)',
-          minHeight: 'var(--ck-touch-min)',
-          paddingBlock: 'var(--ck-space-1)',
-          borderLeft: `2px solid ${selecionado ? 'var(--ck-text-primary)' : 'transparent'}`,
-        }}
-      >
-        {/* Retrato menor e esmaecido: quem dorme continua reconhecível de
-            relance, sem competir por atenção com quem está de pé. A opacidade vai
-            no próprio retrato — um `<span>` em volta virava item de flex, esticava
-            até a altura da linha e achatava a cara de todo mundo.
-
-            O `<span>` voltou, e agora é a COLUNA do retrato: ele reserva a
-            largura do retrato de quem está de pé e centraliza o menor dentro.
-            Sem isso o nome de quem dorme começava 6px (coluna) e 12px (tela
-            cheia) à esquerda do nome de quem trabalha, e a lista descia em
-            ziguezague — é o "alinhar labels e ícones vertical e horizontalmente"
-            que a Linear descreve como o trabalho que só se sente depois de
-            alguns minutos de uso. O achatamento de antes vinha do `stretch`
-            que o pai dá a todo item de flex; `self-center` sem altura própria é
-            o que o desliga. */}
-        <span
-          className="flex shrink-0 items-center self-center"
-          style={{ flexBasis: compacta ? '34px' : '40px' }}
-        >
-          <Retrato slug={agente.slug} nome={agente.name} tamanho={28} opacidade={0.55} />
-        </span>
-
-        <span
-          className="min-w-0 flex-1 truncate"
-          style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}
-        >
-          {agente.name}
-        </span>
-
-        {/* Ordem do Rica (03/08): quem dorme mostra NOME + CONTEXTO — "a
-            quantidade de contexto usado, tipo 30% de um milhão de tokens", o
-            número que decide o /compact quando a sessão voltar. SEM pasta
-            ("nenhum endereço do repositório ali") e SEM "há 20h" ("um timing
-            que não me interessa") — a ordem de 02/08 valia pra tropa de pé; pra
-            quem dorme, pasta e relógio viraram ruído na linha única.
-            O instrumento é o MESMO da statusline dos vivos (`BarraDeContexto` +
-            teto de 30%): dado velho lido com régua diferente mente duas vezes.
-            O valor
-            é o último que o pane gravou antes de morrer — `resolveContextPct`
-            cai no `context_pct` do banco quando o excerpt já não tem barra. */}
-        {pct !== null ? (
-          <span
-            className="ck-tabular flex shrink-0 items-center"
-            style={{
-              gap: 'var(--ck-space-1)',
-              fontFamily: 'var(--ck-font-mono)',
-              fontSize: 'var(--ck-text-xs)',
-              color: 'var(--ck-text-secondary)',
-            }}
-            title={
-              agente.context_stale
-                ? `contexto ${pct}% de uma sessão anterior a esta — não é a leitura de quando ela fechou`
-                : `contexto ${pct}% ao fechar a sessão — teto da frota ${TETO_PCT}%`
-            }
-          >
-            {/* O chip OFF no lugar do "antigo" (15/08): o número desta linha é
-                sempre de sessão morta, então "antigo" não distingue nada —
-                dizia a velhice como se fosse exceção, e o Rica leu o rótulo
-                num agente recém-desligado como se a leitura de agora estivesse
-                atrasada. Quem está nesta linha está DESLIGADO por definição:
-                a palavra é o estado. A origem do número (fechou assim ou
-                veio de run antigo) continua no `title` do contêiner acima.
-                Vem ANTES do número, como a etiqueta de sempre: depois dele, o
-                chip empurrava o valor para dentro da linha e a Tara era a
-                única a sair da coluna — 69px à esquerda de todo mundo. */}
-            <Off />
-            {/* Na coluna de 260px a barra sai e fica o número. Somados, barra +
-                percentual + a palavra "antigo" comiam 142 dos 188px úteis da
-                linha e sobrava "Tar…" no lugar de "Tara Kaur". Entre desenhar a
-                régua e conseguir ler de quem é o número, ler de quem é vem
-                primeiro — e o julgamento não se perde: o valor continua ao lado
-                do teto de 30%, em âmbar quando passa. Na tela cheia cabe tudo. */}
-            {compacta ? null : <BarraDeContexto pct={pct} largura={LARGURA_NA_LISTA} />}
-            <ValorDoContexto pct={pct} />
-          </span>
-        ) : (
-          // Gêmeo do da statusline viva: sessão que morreu sem gravar o número
-          // não inventa zero — e a ausência mora na MESMA coluna do número, do
-          // tamanho dela. Enquanto era a frase "sem contexto", os doze
-          // caracteres cortavam o nome do agente ("Lucas Marc…") para caber.
-          <span
-            className="flex shrink-0 items-center"
-            style={{
-              fontFamily: 'var(--ck-font-mono)',
-              fontSize: 'var(--ck-text-xs)',
-            }}
-          >
-            <SemContexto />
-          </span>
-        )}
-      </Link>
-      <AlcaDeArraste nomeDoAgente={agente.name} aoMover={aoMover} />
-    </li>
-  );
-}
+export type { EscolheAgente };
 
 export function Tropa({
   agents,

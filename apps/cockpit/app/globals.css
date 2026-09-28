@@ -1354,6 +1354,55 @@ body {
   .ck-pulso[data-estado] { animation: none; }
 }
 
+/* O ANEL DO RETRATO — o estado da tropa mora na FOTO (oitava versão, 28/09).
+ *
+ * Era um ponto de 9px no canto do retrato, e trabalhando/ocioso liam iguais no
+ * celular. O anel contorna a cara inteira, então o estado se lê antes do nome.
+ * Só quem está VIVO de verdade ganha anel: `trabalhando` na cor de execução,
+ * respirando devagar; `aguardando` na cor de atenção, num ritmo mais curto —
+ * é o único que chama o Rica. Ocioso e offline ficam sem anel: a ausência é a
+ * leitura, como no pulso de 24h.
+ *
+ * Desenhado num `::after` do contêiner e não no próprio Avatar: o Root do Radix
+ * tem `overflow: hidden`, e o anel vive 4px FORA dele. Anima só `opacity`, que o
+ * compositor faz sem recalcular layout. A folga entre foto e anel é
+ * transparente (não uma sombra da cor da faixa), então o anel pousa certo
+ * sobre a `nav` e sobre a aba selecionada, que tem a cor da folha. */
+.ck-anel {
+  --ck-anel-espessura: 2px;
+  --ck-anel-folga: 2px;
+  position: relative;
+}
+.ck-anel[data-estado='trabalhando'] { --ck-anel-cor: var(--ck-state-running); }
+.ck-anel[data-estado='aguardando']  { --ck-anel-cor: var(--ck-state-attention); }
+.ck-anel[data-estado='trabalhando']::after,
+.ck-anel[data-estado='aguardando']::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--ck-anel-espessura) + var(--ck-anel-folga)) * -1);
+  border: var(--ck-anel-espessura) solid var(--ck-anel-cor);
+  border-radius: calc(var(--ck-radius-chip) + var(--ck-anel-espessura) + var(--ck-anel-folga));
+  pointer-events: none;
+}
+@keyframes ck-anel-respira {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.ck-anel[data-estado='trabalhando']::after { animation: ck-anel-respira 2.4s var(--ck-ease) infinite; }
+.ck-anel[data-estado='aguardando']::after  { animation: ck-anel-respira 1.1s var(--ck-ease) infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ck-anel[data-estado]::after { animation: none; }
+}
+
+/* O "ver processos" da VPS: o chevron gira quando a lista abre — movimento que
+ * responde ao toque e diz o que mudou. */
+.ck-divulga-chevron {
+  transition: transform var(--ck-dur-fast) var(--ck-ease);
+}
+[aria-expanded='true'] > .ck-divulga-chevron {
+  transform: rotate(180deg);
+}
+
 /* Cursor de streaming: o conteúdo fica vazio para continuar puramente
  * decorativo; o traço vem da borda. A classe de pulso marca o estado, mas só
  * o pseudo-elemento respira — o texto do agente não pode pulsar junto. */

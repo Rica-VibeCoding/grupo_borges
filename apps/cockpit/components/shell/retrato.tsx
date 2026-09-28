@@ -1,7 +1,7 @@
 'use client';
 
 import { deriveInitials } from '@grupo_borges/cockpit-core/cockpit-types';
-import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 /**
  * Retrato — a cara do agente.
@@ -18,6 +18,9 @@ import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/u
  * Radix só monta o fallback quando a carga falha, então nunca há quebrado na
  * tela.
  *
+ * O estado NÃO mora aqui: o anel da tropa (`.ck-anel`) contorna este retrato
+ * por fora, num contêiner — o Root do Radix tem `overflow: hidden`.
+ *
  * O fallback é a inicial em neutro, não uma cor por agente: o contrato §4 fecha a
  * paleta e cor por agente seria inventar fora dela.
  */
@@ -26,16 +29,11 @@ export function Retrato({
   nome,
   tamanho = 40,
   opacidade,
-  marca,
 }: {
   slug: string;
   nome: string;
   tamanho?: number;
   opacidade?: number;
-  /** Ponto de estado no canto do retrato — usado onde não cabe a palavra
-   *  (coluna de 260px do desktop). `rotulo` é o que a leitura de tela anuncia:
-   *  cor sozinha nunca carrega o sentido. */
-  marca?: { cor: string; rotulo: string; estado: string };
 }) {
   return (
     <Avatar
@@ -68,24 +66,6 @@ export function Retrato({
       >
         {deriveInitials(nome)}
       </AvatarFallback>
-
-      {marca ? (
-        <AvatarBadge
-          className="ck-pulso"
-          data-estado={marca.estado}
-          role="img"
-          aria-label={marca.rotulo}
-          title={marca.rotulo}
-          style={{
-            width: '9px',
-            height: '9px',
-            background: marca.cor,
-            // O anel é da cor da superfície onde o retrato pousa: sem ele o ponto
-            // encosta na foto e some contra um rosto claro.
-            boxShadow: '0 0 0 2px var(--ck-surface-nav)',
-          }}
-        />
-      ) : null}
     </Avatar>
   );
 }
