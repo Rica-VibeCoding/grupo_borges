@@ -46,6 +46,7 @@ from routers import task_commits as task_commits_router
 from routers import tts as tts_router
 from routers import tasks as tasks_router
 from routers import vps as vps_router
+from services.compressao import GZipCorpoInteiro
 
 
 @asynccontextmanager
@@ -144,6 +145,13 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+# gzip PRIMEIRO de propósito: o primeiro `add_middleware` fica por dentro de
+# todos os `@app.middleware("http")` abaixo, onde a `JSONResponse` ainda chega
+# numa mensagem só. Régua e porquê em `services/compressao.py` (SSE e arquivo
+# passam intocados).
+app.add_middleware(GZipCorpoInteiro)
 
 
 def _is_loopback(host: str | None) -> bool:
