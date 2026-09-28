@@ -51,8 +51,11 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
 - A foto é a mesma da cápsula do chat (`components/shell/capsula-do-agente.tsx`).
 
 ## 6. Transcrição ao vivo na tela de voz
-- ✅ Feito (`ce4bce7`, publicado na 3008 em 28/09, cadeira `teste` APROVADO, revisão de 2 agentes). Medido no PC:
-  fim da fala → envio, mediana 756 ms ao vivo contra 1333 ms do WAV. Janela de 1 s; sem texto firme o WAV decide.
+- 🟡 Em conserto. `ce4bce7` foi ao ar em 28/09 sem teste no iPhone e travou em "Não entendi" com texto de fala
+  anterior; revertido (`32bb0a2`). Para o Rica, "ao vivo" é a palavra aparecendo na TELA enquanto fala, não latência.
+  Causa: a 3008 reiniciou 11 vezes durante o teste (85 s fora às 05:16 UTC) e o WAV que caía não subia de novo.
+  Segunda volta (briefing `fase4-ao-vivo-na-tela.md`): WAV re-sobe na queda, texto da vez (`fala-da-vez.ts`) e
+  palavras parciais na tela. Vai ao ar só depois do teste do Rica no iPhone pelo dev.
   Pendente: precisão de nome técnico falado (modelo do bilhete ou `keywords`), depois do teste do Rica no iPhone.
 - Hoje: a tela de voz espera o fim da fala e sobe o arquivo fechado (`POST /api/agents/{slug}/voice` →
   `gpt-4o-transcribe` por script, com `ffmpeg`). Estimativa de 1 a 2 s só nisso — **medir antes**, não está medido.
