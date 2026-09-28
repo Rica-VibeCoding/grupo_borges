@@ -44,10 +44,34 @@ export function marcaDaLeitura(slug: string): number | null {
   return quieto(slug) ? esquecimentos.get(slug) ?? 0 : null;
 }
 
-/** Guarda o painel lido. Sem `marca`, é painel que acabou de chegar do back. */
+/** Marca de uma leitura que o EXECUTOR da troca faz depois do próprio envio:
+ *  o envio já esqueceu o agente, então ela descreve o motor novo mesmo com a
+ *  espera ainda marcando "trocando" no instante em que sai. */
+export function marcaDoEnvio(slug: string): number {
+  return esquecimentos.get(slug) ?? 0;
+}
+
+/* O PISO de cada agente: o `generated_at` da primeira leitura MARCADA (iniciada
+ * depois do último esquecimento) — review de 28/09. Publicação sem marca (a
+ * gaveta, a barra do chat) não diz quando a leitura saiu; uma que saiu antes
+ * de uma troca e voltou depois do POST guardaria o motor velho. Depois de um
+ * esquecimento, sem marca só entra painel gerado DEPOIS do piso — estrito:
+ * `generated_at` é em segundos, e o mesmo segundo não prova nada. */
+const pisos = new Map<string, { epoca: number; geradoEm: number }>();
+
+/** Guarda o painel lido. Sem `marca`, só vale se provadamente posterior ao
+ *  último esquecimento (ver o piso acima). */
 export function guardarPainel(painel: AgentPainelResponse, marca?: number | null): void {
   if (marca === null || !quieto(painel.slug)) return;
-  if (marca !== undefined && marca !== (esquecimentos.get(painel.slug) ?? 0)) return;
+  const epoca = esquecimentos.get(painel.slug) ?? 0;
+  if (marca !== undefined) {
+    if (marca !== epoca) return;
+    const piso = pisos.get(painel.slug);
+    if (!piso || piso.epoca !== epoca) pisos.set(painel.slug, { epoca, geradoEm: painel.generated_at });
+  } else if (epoca > 0) {
+    const piso = pisos.get(painel.slug);
+    if (!piso || piso.epoca !== epoca || !(painel.generated_at > piso.geradoEm)) return;
+  }
   guardados.set(painel.slug, painel);
 }
 
@@ -91,8 +115,11 @@ export function tomarPreaquecimento(slug: string, agora: () => number = Date.now
   return atual.marca !== null && atual.marca === marcaDaLeitura(slug) ? atual.leitura : null;
 }
 
-export function publicarPainel(painel: AgentPainelResponse, opcoes: { fundo?: boolean } = {}): void {
-  guardarPainel(painel);
+export function publicarPainel(
+  painel: AgentPainelResponse,
+  opcoes: { fundo?: boolean; marca?: number | null } = {},
+): void {
+  guardarPainel(painel, opcoes.marca);
   const contexto = { fundo: opcoes.fundo === true };
   ouvintes.get(painel.slug)?.forEach((receber) => receber(painel, contexto));
 }

@@ -14,7 +14,7 @@ import { criaEsperasDeTroca } from './esperas-de-troca.ts';
 import { aplicarMotor, esquecerTudo } from './operacao-de-motor.ts';
 import {
   definirTrocaEmCurso, esquecerPainel, painelGuardado, preaquecePainel, publicarPainel, sincronizarPainel,
-  tomarPreaquecimento,
+  marcaDoEnvio, tomarPreaquecimento,
 } from './sincronizacao-painel.ts';
 import { TETO_DA_ESPERA_MS, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
 
@@ -92,8 +92,8 @@ describe('painel guardado — a semente do chip do motor', () => {
     soltarEnvio('feito');
     await voo;
     assert.equal(painelGuardado('g3'), undefined, 'troca feita: o sonnet não volta');
-    // O executor republica o painel lido depois da troca: esse vale.
-    publicarPainel(painel('g3', 'haiku'), { fundo: true });
+    // O executor republica o painel lido depois da troca, com a marca do envio: esse vale.
+    publicarPainel(painel('g3', 'haiku'), { fundo: true, marca: marcaDoEnvio('g3') });
     assert.equal(modeloGuardado('g3'), 'haiku');
     parar();
   });
@@ -178,5 +178,35 @@ describe('painel guardado — a semente do chip do motor', () => {
     await drenar();
     assert.equal(tomarPreaquecimento('g9'), null, 'troca depois do toque: a leitura descreve o motor de antes');
     assert.equal(painelGuardado('g9'), undefined);
+  });
+
+  it('publicação sem marca (gaveta, barra do chat) que saiu ANTES de uma troca não guarda o motor velho (review 28/09)', async () => {
+    const gerado = (slug: string, modelo: string, em: number) => ({ ...painel(slug, modelo), generated_at: em }) as AgentPainelResponse;
+    publicarPainel(gerado('g10', 'sonnet', 100));
+    assert.equal(modeloGuardado('g10'), 'sonnet', 'sem troca nenhuma, a publicação vale');
+    // Troca direta: o envio esquece o agente; a leitura da gaveta já estava na
+    // rede (gerada no segundo 100, antes do POST) e volta DEPOIS dele.
+    esquecerPainel('g10');
+    publicarPainel(gerado('g10', 'sonnet', 100));
+    assert.equal(painelGuardado('g10'), undefined, 'o motor velho não volta para o cache');
+    // A leitura marcada, iniciada depois do esquecimento, vale — e passa a ser o piso.
+    const parar = sincronizarPainel('g10', async () => gerado('g10', 'haiku', 101), () => {}, () => {});
+    await drenar();
+    parar();
+    assert.equal(modeloGuardado('g10'), 'haiku');
+    // Leitura velha da gaveta chegando por último não sobrescreve.
+    publicarPainel(gerado('g10', 'sonnet', 100));
+    publicarPainel(gerado('g10', 'sonnet', 101));
+    assert.equal(modeloGuardado('g10'), 'haiku');
+    // Publicação sem marca gerada DEPOIS do piso volta a valer.
+    publicarPainel(gerado('g10', 'haiku', 102));
+    assert.equal(painelGuardado('g10')?.generated_at, 102);
+  });
+
+  it('o executor publica com a marca da leitura que fez depois do envio: o painel pós-troca entra', async () => {
+    esquecerPainel('g11');
+    const marca = marcaDoEnvio('g11');
+    publicarPainel({ ...painel('g11', 'haiku'), generated_at: 5 } as AgentPainelResponse, { fundo: true, marca });
+    assert.equal(modeloGuardado('g11'), 'haiku');
   });
 });

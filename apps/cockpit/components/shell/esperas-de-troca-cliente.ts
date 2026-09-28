@@ -9,14 +9,22 @@ import { patchAgentEffort, postAgentModel } from '../../lib/acoes-no-agente.ts';
 import { criaEsperasDeTroca } from './esperas-de-troca.ts';
 import { criaExecutorDeTroca } from './executor-de-troca.ts';
 import { fecharSePronto } from './operacao-de-motor.ts';
-import { definirTrocaEmCurso, esquecerPainel, publicarPainel } from './sincronizacao-painel';
+import { definirTrocaEmCurso, esquecerPainel, marcaDoEnvio, publicarPainel } from './sincronizacao-painel';
+import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
+
+/** A marca de cada leitura do executor, para o painel entrar no cache só se
+ *  nenhum esquecimento veio depois dela (`sincronizacao-painel.ts`). */
+const marcas = new WeakMap<AgentPainelResponse, number>();
 
 export const executorDeTroca = criaExecutorDeTroca({
   postModel: (slug, valor) => postAgentModel(slug, valor),
   patchEffort: (slug, valor) => patchAgentEffort(slug, valor),
-  lePainel: (slug) => fetchAgentPainel(slug),
+  lePainel: (slug) => {
+    const marca = marcaDoEnvio(slug);
+    return fetchAgentPainel(slug).then((painel) => { marcas.set(painel, marca); return painel; });
+  },
   // Tudo que o executor publica é de segundo plano: ver `ContextoDoPainel`.
-  publicar: (painel) => publicarPainel(painel, { fundo: true }),
+  publicar: (painel) => publicarPainel(painel, { fundo: true, marca: marcas.get(painel) }),
   fecharSePronto: (slug, tambem) => fecharSePronto(slug, tambem),
 });
 
