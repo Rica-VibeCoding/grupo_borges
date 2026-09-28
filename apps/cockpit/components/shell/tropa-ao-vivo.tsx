@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useOptimistic } from 'react';
 
 import { preaqueceConversa } from '@/lib/preaquece-conversa';
+import { preaquecePainel } from './sincronizacao-painel';
 import { usaFrota } from './frota-provider';
 import { usaNavegacaoDaTropa } from './superficie-otimista';
 import { Tropa, type EscolheAgente } from './tropa';
@@ -78,6 +79,8 @@ export function TropaAoVivo(props: TropaAoVivoProps) {
               // monta depois do commit — servidor e cliente em série. Ver
               // `lib/preaquece-conversa.ts` para o vão medido.
               preaqueceConversa(slug);
+              // O mesmo para o painel do chip do motor: ele nasce com dropdown.
+              preaquecePainel(slug);
               // `false` fecha a gaveta no celular. No desktop a faixa é fundo
               // permanente e o `data-aberto` dela não é lido — mesma chamada,
               // sem efeito colateral. Ver `GavetaNav`.

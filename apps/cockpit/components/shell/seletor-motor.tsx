@@ -14,7 +14,7 @@ import { aplicarMotor, esquecerConfirmacao, fecharSePronto, registrarEscolha, re
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { LeituraDoMotor, RessalvaDoSeletor, usaRecado } from './seletor-motor-ressalva';
-import { sincronizarPainel } from './sincronizacao-painel';
+import { esquecerPainel, painelGuardado, sincronizarPainel, tomarPreaquecimento } from './sincronizacao-painel';
 import { TEXTO_PERGUNTA_ABERTA } from './executor-de-troca.ts';
 import { classificaErroDaTroca, jaEstava, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
@@ -39,7 +39,9 @@ export function SeletorMotor(props: SeletorMotorProps) {
 }
 
 function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agentSlug' | 'agentName'>) {
-  const [painel, setPainel] = useState<PainelDoMotor | null | undefined>(undefined);
+  // Nasce com o último painel lido deste agente, e a leitura fresca substitui:
+  // sem isso o chip ficava sem dropdown até o `/painel` responder (28/09).
+  const [painel, setPainel] = useState<PainelDoMotor | null | undefined>(() => painelGuardado(agentSlug));
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDoSeletor>('inicio');
   const [salvando, setSalvando] = useState(false);
@@ -67,7 +69,8 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       const controlador = new AbortController();
       leitura.current = controlador;
       signal.addEventListener('abort', () => controlador.abort(), { once: true });
-      return fetchAgentPainel(slug, controlador.signal).then((novo) => {
+      // A leitura que o toque na tropa já soltou vale por esta (`preaquecePainel`).
+      return (tomarPreaquecimento(slug) ?? fetchAgentPainel(slug, controlador.signal)).then((novo) => {
         if (controlador.signal.aborted) throw new Error('leitura superada');
         return novo;
       });
@@ -85,7 +88,10 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
       alterarAbertura(false);
       // Painel novo conta o que ainda falta — e só isso: releitura não religa.
       revisarFaltas(agentSlug, novo);
-    }, () => setPainel(null));
+    },
+    // Leitura que falhou (ou foi superada por uma escolha feita no chip já
+    // semeado) não apaga o painel que está na tela.
+    () => setPainel((atual) => atual ?? null));
     return () => { parar(); invalidar(); };
   }, [agentSlug]);
 
@@ -134,7 +140,8 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
 
   function redeDaOperacao() {
     return {
-      aplicar: (force: boolean) => postAgentAplicarMotor(agentSlug, { force }),
+      // Religar pode mudar o motor: o painel guardado deixa de valer.
+      aplicar: (force: boolean) => { esquecerPainel(agentSlug); return postAgentAplicarMotor(agentSlug, { force }); },
       lePainel: () => fetchAgentPainel(agentSlug),
       reler: () => {
         const controlador = new AbortController();
@@ -193,6 +200,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
 
   async function trocarEsforco(valor: string): Promise<DesfechoDoPedido> {
     const minha = invalidar();
+    esquecerPainel(agentSlug);
     setSalvando(true);
     setAviso(null);
     try {
@@ -254,6 +262,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
 
   async function trocarModelo(valor: string): Promise<DesfechoDoPedido> {
     const minha = invalidar();
+    esquecerPainel(agentSlug);
     setSalvando(true);
     setAviso(null);
     try {

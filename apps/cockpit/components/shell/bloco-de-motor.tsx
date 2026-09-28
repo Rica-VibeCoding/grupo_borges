@@ -34,6 +34,7 @@ import {
   type OpcaoDeFamilia,
 } from './troca-de-motor';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
+import { esquecerPainel } from './sincronizacao-painel';
 
 function estiloItemDoMenu(selecionado = false) {
   return {
@@ -122,6 +123,9 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
     setSalvando(true);
     setFalhou(false);
     try {
+      // Trocar a família esvazia modelo e esforço no back: o painel guardado
+      // para a semente do chip do composer deixa de valer.
+      esquecerPainel(agentSlug);
       await patchAgentMotorFamilia(agentSlug, destino.familia);
       aoAtualizar?.();
       // A ESCOLHA APLICA SOZINHA (Rica, 09/09). A gravação não muda nada no
@@ -144,7 +148,7 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
 
   function redeDaOperacao() {
     return {
-      aplicar: (force: boolean) => postAgentAplicarMotor(agentSlug, { force }),
+      aplicar: (force: boolean) => { esquecerPainel(agentSlug); return postAgentAplicarMotor(agentSlug, { force }); },
       lePainel: () => fetchAgentPainel(agentSlug),
       reler: () => aoAtualizar?.(),
     };

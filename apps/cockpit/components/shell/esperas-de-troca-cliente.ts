@@ -9,7 +9,7 @@ import { patchAgentEffort, postAgentModel } from '../../lib/acoes-no-agente.ts';
 import { criaEsperasDeTroca } from './esperas-de-troca.ts';
 import { criaExecutorDeTroca } from './executor-de-troca.ts';
 import { fecharSePronto } from './operacao-de-motor.ts';
-import { publicarPainel } from './sincronizacao-painel';
+import { definirTrocaEmCurso, esquecerPainel, publicarPainel } from './sincronizacao-painel';
 
 export const executorDeTroca = criaExecutorDeTroca({
   postModel: (slug, valor) => postAgentModel(slug, valor),
@@ -20,4 +20,17 @@ export const executorDeTroca = criaExecutorDeTroca({
   fecharSePronto: (slug, tambem) => fecharSePronto(slug, tambem),
 });
 
-export const esperasDeTroca = criaEsperasDeTroca({ executar: executorDeTroca });
+export const esperasDeTroca = criaEsperasDeTroca({
+  // Todo envio ESQUECE o painel guardado do agente: o que estava lá é o motor
+  // de antes da troca, e o chip que montar depois não pode nascer com ele.
+  executar: (slug, pedido, recado) => {
+    esquecerPainel(slug);
+    return executorDeTroca(slug, pedido, recado);
+  },
+});
+
+// Esperando ou trocando, o painel guardado não vale — ver `sincronizacao-painel.ts`.
+definirTrocaEmCurso((slug) => {
+  const estado = esperasDeTroca.ler(slug);
+  return Boolean(estado.espera || estado.voando);
+});

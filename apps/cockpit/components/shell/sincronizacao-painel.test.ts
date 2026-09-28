@@ -3,6 +3,8 @@ import { it } from 'node:test';
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { publicarPainel, sincronizarPainel } from './sincronizacao-painel.ts';
 
+const drenar = () => new Promise((resolve) => setImmediate(resolve));
+
 const painel = (slug: string, familia = 'codex-proxy') => ({
   slug, motor: { familia }, model: null, effort: { value: 'high' },
 }) as AgentPainelResponse;
@@ -49,13 +51,14 @@ it('leitura inicial não aceita painel de outro slug', async () => {
   assert.deepEqual(recebidos, []);
 });
 
-it('publicação de fundo chega marcada; a da ação do Rica e a leitura inicial não (28/09)', async () => {
+it('publicação de fundo chega marcada; a da ação do Rica não; a leitura inicial é de fundo (28/09)', async () => {
   const contextos: unknown[] = [];
   const parar = sincronizarPainel('canarinho', async () => painel('canarinho'), (_, contexto) => contextos.push(contexto), () => {});
-  await Promise.resolve();
-  await Promise.resolve();
+  await drenar();
   publicarPainel(painel('canarinho'), { fundo: true });
   publicarPainel(painel('canarinho'));
   parar();
-  assert.deepEqual(contextos.slice(-2), [{ fundo: true }, { fundo: false }]);
+  // A leitura inicial não fecha a gaveta: com o painel guardado o chip já
+  // nasce com dropdown, e ele pode tê-lo aberto antes de a leitura chegar.
+  assert.deepEqual(contextos, [{ fundo: true }, { fundo: true }, { fundo: false }]);
 });
