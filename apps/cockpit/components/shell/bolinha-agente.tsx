@@ -30,6 +30,15 @@
  *    dele que o feed escreve. E desligado não tem olhos: a cor é a mesma de
  *    parado, então quem separa "não tem ninguém" de "está quieto" é o rosto.
  *
+ * 6. O MOVIMENTO QUE NÃO PARA MORA FORA DO SVG. Flutuar, respirar, a sombra e o
+ *    coração do "atenção" animam caixas HTML em volta do desenho, não `<g>`
+ *    dentro dele: transform em nó interno de SVG não vai pro compositor, e o
+ *    browser refaz estilo e layout da página a cada quadro, para sempre. Medido
+ *    na :3008 em 28/09 (Chromium, CPU 4× lenta, agente vivo): a bolinha sozinha
+ *    era ~2/3 da CPU da tela parada. Em caixa HTML o desenho é rasterizado uma
+ *    vez e só se move. Dentro do SVG ficou o que é curto — piscada, olhar,
+ *    pulinho, inclinação.
+ *
  * Cor, keyframes e estados moram em `globals.css` (§ A BOLINHA): componente não
  * carrega cor, e keyframe não é território de utility do Tailwind.
  */
@@ -61,7 +70,7 @@ type Props = {
 
 export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
   const gradId = `ck-bolinha-${useId()}`;
-  const svgRef = useRef<SVGSVGElement>(null);
+  const raizRef = useRef<HTMLSpanElement>(null);
   const rostoRef = useRef<SVGGElement>(null);
   const toqueRef = useRef<SVGGElement>(null);
 
@@ -107,9 +116,9 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
 
   // Piscada, olhar e toque: DOM direto, fora do ciclo de render.
   useEffect(() => {
-    const svg = svgRef.current;
+    const raiz = raizRef.current;
     const rosto = rostoRef.current;
-    if (!svg || !rosto) return;
+    if (!raiz || !rosto) return;
 
     // A preferência é lida uma vez e depois esquecida se ficar numa const:
     // quem liga "reduzir movimento" com a tela aberta continuaria vendo tudo
@@ -132,9 +141,9 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
 
     const pisca = () => {
       if (calmo) return;
-      svg.dataset.piscando = 'true';
+      raiz.dataset.piscando = 'true';
       espera(() => {
-        delete svg.dataset.piscando;
+        delete raiz.dataset.piscando;
       }, 135);
       if (Math.random() < 0.22) espera(pisca, 265); // piscada dupla, como gente
     };
@@ -148,7 +157,7 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
     // parado, olhando pra frente. Deslocamento pequeno de propósito — olho que
     // anda demais vira desenho animado.
     const vagueia = () => {
-      if (!calmo && svg.dataset.estado === 'pensando') {
+      if (!calmo && raiz.dataset.estado === 'pensando') {
         const dx = (Math.random() * 2 - 1) * 2.4;
         const dy = (Math.random() * 2 - 1) * 1.4;
         rosto.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px)`;
@@ -168,60 +177,65 @@ export function BolinhaAgente({ status, turnoVivo, escrevendo }: Props) {
         { duration: 380, easing: 'cubic-bezier(.34,1.3,.5,1)' },
       );
     };
-    svg.addEventListener('pointerdown', responde);
+    raiz.addEventListener('pointerdown', responde);
 
     return () => {
       consultaCalmo.removeEventListener('change', trocaCalmo);
-      svg.removeEventListener('pointerdown', responde);
+      raiz.removeEventListener('pointerdown', responde);
       for (const id of timers) window.clearTimeout(id);
     };
   }, []);
 
   return (
     <span className="mx-auto flex w-full items-center" style={{ maxWidth: 'var(--ck-w-composer)' }}>
-      <svg
-        ref={svgRef}
+      <span
+        ref={raizRef}
         className="ck-bolinha"
         data-estado={estado}
-        viewBox="0 0 64 68"
         role="img"
         // Rótulo ESTÁVEL de propósito: `aria-label` trocando num `role="img"` não
         // é anunciado — não é live region. Quem conta a mudança é o texto abaixo.
         aria-label="estado do agente"
       >
-        <defs>
-          <radialGradient id={gradId} cx="34%" cy="26%" r="78%">
-            <stop offset="0%" stopColor="var(--ck-bolinha-claro)" />
-            <stop offset="100%" stopColor="var(--ck-bolinha-escuro)" />
-          </radialGradient>
-        </defs>
-        <ellipse className="ck-bolinha-sombra" cx="32" cy="60" rx="15" ry="2.6" />
-        <g className="ck-bolinha-voa">
-          <g className="ck-bolinha-cabeca">
-            <g className="ck-bolinha-toque" ref={toqueRef}>
-              <g className="ck-bolinha-infla">
-                <circle cx="32" cy="32" r="23.5" fill={`url(#${gradId})`} />
-                <ellipse
-                  className="ck-bolinha-lustro"
-                  cx="24"
-                  cy="20"
-                  rx="7.4"
-                  ry="4.9"
-                  transform="rotate(-24 24 20)"
-                />
-                <g className="ck-bolinha-rosto" ref={rostoRef}>
-                  <g className="ck-bolinha-vista">
-                    <g className="ck-bolinha-olhos">
-                      <circle className="ck-bolinha-olho" cx="24" cy="31" r="3.1" />
-                      <circle className="ck-bolinha-olho" cx="40" cy="31" r="3.1" />
+        <svg className="ck-bolinha-sombra" viewBox="0 0 64 68" aria-hidden="true">
+          <ellipse cx="32" cy="60" rx="15" ry="2.6" />
+        </svg>
+        <span className="ck-bolinha-voa">
+          <span className="ck-bolinha-bate">
+            <span className="ck-bolinha-infla">
+              <svg viewBox="0 0 64 68" aria-hidden="true">
+                <defs>
+                  <radialGradient id={gradId} cx="34%" cy="26%" r="78%">
+                    <stop offset="0%" stopColor="var(--ck-bolinha-claro)" />
+                    <stop offset="100%" stopColor="var(--ck-bolinha-escuro)" />
+                  </radialGradient>
+                </defs>
+                <g className="ck-bolinha-cabeca">
+                  <g className="ck-bolinha-toque" ref={toqueRef}>
+                    <circle cx="32" cy="32" r="23.5" fill={`url(#${gradId})`} />
+                    <ellipse
+                      className="ck-bolinha-lustro"
+                      cx="24"
+                      cy="20"
+                      rx="7.4"
+                      ry="4.9"
+                      transform="rotate(-24 24 20)"
+                    />
+                    <g className="ck-bolinha-rosto" ref={rostoRef}>
+                      <g className="ck-bolinha-vista">
+                        <g className="ck-bolinha-olhos">
+                          <circle className="ck-bolinha-olho" cx="24" cy="31" r="3.1" />
+                          <circle className="ck-bolinha-olho" cx="40" cy="31" r="3.1" />
+                        </g>
+                      </g>
                     </g>
                   </g>
                 </g>
-              </g>
-            </g>
-          </g>
-        </g>
-      </svg>
+              </svg>
+            </span>
+          </span>
+        </span>
+      </span>
       <span className="sr-only" aria-live="polite">
         {FALA_DA_BOLINHA[estado]}
       </span>

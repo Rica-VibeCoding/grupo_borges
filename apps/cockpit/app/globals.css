@@ -1687,23 +1687,49 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
  * diz o estado é o RITMO, e é por isso que os keyframes abaixo são o componente
  * de verdade — o TSX só escolhe a classe.
  *
- * Estado entra por `data-estado` no root do SVG, como no `.ck-pulso`. */
+ * Estado entra por `data-estado` na raiz, como no `.ck-pulso`.
+ *
+ * O QUE ANIMA SEM PARAR É CAIXA HTML, NÃO `<g>` (28/09): transform em nó
+ * interno de SVG não vai pro compositor — o browser refazia estilo e layout da
+ * página a cada quadro, ~2/3 da CPU da tela do agente vivo (medido na :3008,
+ * Chromium, CPU 4× lenta). Por isso `voa`, `bate`, `infla` e a sombra envolvem
+ * o desenho por fora, e as medidas deles são em px da caixa de 42×45: o viewBox
+ * 64×68 entra nela na escala 0,65625, com 0,19 px de folga em cima. Uma unidade
+ * do desenho = 0,65625 px; o ponto (32, 32) do desenho = (21 px, 21,19 px). */
 .ck-bolinha {
   --ck-bolinha-claro: oklch(0.988 0.007 88.6);  /* #fdfbf6 */
   --ck-bolinha-escuro: oklch(0.900 0.019 83.1); /* #e4ddd0 */
   --ck-bolinha-olho: oklch(0.180 0.022 237.3);  /* #08131a */
+  position: relative;
   display: block;
-  overflow: visible;
   width: 42px;
   height: 45px;
   flex: none;
   touch-action: manipulation;
 }
+.ck-bolinha svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ck-bolinha-voa,
+.ck-bolinha-bate,
+.ck-bolinha-infla {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ck-bolinha-voa { position: absolute; inset: 0; }
 
-.ck-bolinha-sombra {
+/* (32, 60) do desenho. A opacidade anima no `<svg>` inteiro, não na elipse:
+ * opacidade de nó interno também não é do compositor. */
+.ck-bolinha svg.ck-bolinha-sombra {
+  position: absolute;
+  inset: 0;
   fill: #000;
   opacity: 0.4;
-  transform-origin: 32px 60px;
+  transform-origin: 21px 39.5625px;
   animation: ck-bolinha-sombra 3.9s ease-in-out infinite;
 }
 .ck-bolinha-lustro { fill: #fff; opacity: 0.35; }
@@ -1718,8 +1744,10 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
  * `transform` do mesmo elemento se sobrescrevem. E os períodos são desiguais de
  * propósito (3,9 × 5,3 s) — iguais, entram em fase e colapsam num seno só, que é
  * o metrônomo que a bolinha existe pra não ser. */
-.ck-bolinha-voa { transform-origin: 32px 32px; animation: ck-bolinha-flutua 3.9s ease-in-out infinite; }
-.ck-bolinha-infla { transform-origin: 32px 32px; animation: ck-bolinha-respira 5.3s ease-in-out infinite; }
+.ck-bolinha-voa { animation: ck-bolinha-flutua 3.9s ease-in-out infinite; }
+.ck-bolinha-infla { transform-origin: 21px 21.1875px; animation: ck-bolinha-respira 5.3s ease-in-out infinite; }
+/* (32, 34) do desenho — o centro da cabeça, onde o coração do "atenção" bate. */
+.ck-bolinha-bate { transform-origin: 21px 22.5px; }
 .ck-bolinha-cabeca { transform-origin: 32px 34px; transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.5, 1); }
 /* Nó SÓ do toque: animação CSS vence `style` inline no mesmo elemento, então sem
  * este `<g>` o squish não apareceria enquanto o agente responde ou chama. */
@@ -1753,7 +1781,8 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
     opacity 0.35s ease;
 }
 
-@keyframes ck-bolinha-flutua { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-2.6px); } }
+/* 1 e −2,6 unidades do desenho, em px da caixa. */
+@keyframes ck-bolinha-flutua { 0%, 100% { transform: translateY(0.65625px); } 50% { transform: translateY(-1.70625px); } }
 @keyframes ck-bolinha-respira { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
 @keyframes ck-bolinha-sombra {
   0%, 100% { transform: scaleX(1); opacity: 0.4; }
@@ -1816,7 +1845,7 @@ html[data-voo='anexo']::view-transition-new(ck-envio) {
 
 .ck-bolinha[data-estado='pronto'] .ck-bolinha-cabeca { animation: ck-bolinha-pulinho 0.62s cubic-bezier(0.3, 1.4, 0.5, 1) 1; }
 
-.ck-bolinha[data-estado='atencao'] .ck-bolinha-cabeca { animation: ck-bolinha-coracao 1.9s ease-in-out infinite; }
+.ck-bolinha[data-estado='atencao'] .ck-bolinha-bate { animation: ck-bolinha-coracao 1.9s ease-in-out infinite; }
 /* 1,26 e não 1,16: na bancada, em 42 px, o arregalar discreto não se distingue
  * do repouso — e este é o único estado que precisa de alguém. */
 .ck-bolinha[data-estado='atencao'] .ck-bolinha-olhos { transform: scale(1.26); }
