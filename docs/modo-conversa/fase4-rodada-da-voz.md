@@ -48,6 +48,9 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
 - A foto é a mesma da cápsula do chat (`components/shell/capsula-do-agente.tsx`).
 
 ## 6. Transcrição ao vivo na tela de voz
+- ✅ Feito (`ce4bce7`, publicado na 3008 em 28/09, cadeira `teste` APROVADO, revisão de 2 agentes). Medido no PC:
+  fim da fala → envio, mediana 756 ms ao vivo contra 1333 ms do WAV. Janela de 1 s; sem texto firme o WAV decide.
+  Pendente: precisão de nome técnico falado (modelo do bilhete ou `keywords`), depois do teste do Rica no iPhone.
 - Hoje: a tela de voz espera o fim da fala e sobe o arquivo fechado (`POST /api/agents/{slug}/voice` →
   `gpt-4o-transcribe` por script, com `ffmpeg`). Estimativa de 1 a 2 s só nisso — **medir antes**, não está medido.
 - Já existe o caminho ao vivo no microfone do chat: `components/shell/usa-fala-ao-vivo.ts` (WebSocket direto do
