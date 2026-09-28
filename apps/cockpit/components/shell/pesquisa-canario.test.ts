@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { prefixaPesquisa } from './pesquisa-canario.ts';
+import {
+  alternaPesquisa,
+  assinaPesquisa,
+  podePesquisar,
+  pesquisaEstaAtiva,
+  prefixaPesquisa,
+} from './pesquisa-canario.ts';
 
 test('toggle ativo prefixa a mensagem nova do Canarinho', () => {
   assert.equal(prefixaPesquisa('pesquise a cotação do milho', true), '/pesquisa pesquise a cotação do milho');
@@ -25,4 +31,25 @@ test('retomada preserva o corpo que já estava pendurado', () => {
     '/pesquisa pesquise a cotação do milho',
     'um corpo já prefixado também não pode duplicar',
   );
+});
+
+test('o toggle é por agente e avisa quem assina', () => {
+  let avisos = 0;
+  const solta = assinaPesquisa(() => { avisos += 1; });
+  assert.equal(pesquisaEstaAtiva('canarinho'), false);
+  alternaPesquisa('canarinho');
+  assert.equal(pesquisaEstaAtiva('canarinho'), true);
+  assert.equal(pesquisaEstaAtiva('pavan'), false);
+  alternaPesquisa('canarinho');
+  assert.equal(pesquisaEstaAtiva('canarinho'), false);
+  assert.equal(avisos, 2);
+  solta();
+  alternaPesquisa('canarinho');
+  assert.equal(avisos, 2);
+  alternaPesquisa('canarinho');
+});
+
+test('só o Canarinho pesquisa', () => {
+  assert.equal(podePesquisar('canarinho'), true);
+  assert.equal(podePesquisar('pavan'), false);
 });

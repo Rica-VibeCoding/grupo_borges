@@ -75,6 +75,8 @@ import { VeuDeOperacao } from './veu-de-operacao';
 import { BlocoDeCota } from './bloco-de-cota';
 import { BlocoDeMotor } from './bloco-de-motor';
 import { IconeDescartar } from './icones';
+import { BotaoDePesquisa } from './botao-de-pesquisa';
+import { podePesquisar } from './pesquisa-canario';
 import { usaCompact } from '../../lib/compact';
 import { usePainelAberto } from './superficie-otimista';
 import { publicarPainel } from './sincronizacao-painel';
@@ -525,7 +527,8 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
           // Reserva da faixa (98) + gap (16) + linha de botões (44), medida na
           // 3008 em 28/09. Sem ela a gaveta cresce ~2s depois de abrir e leva o
           // **MCPs** pra baixo com o dedo no ar — o incidente de 09/08.
-          <div aria-hidden style={{ height: '158px' }} />
+          // O Canarinho tem uma linha a mais (a pesquisa): 44 + 16 de gap.
+          <div aria-hidden style={{ height: podePesquisar(agentSlug) ? '218px' : '158px' }} />
         ) : null}
 
         {carga === 'pronto' && dePe ? (
@@ -648,6 +651,13 @@ export function BlocoDeAcoes({ agentSlug, agentName, aberto: abertoDoServidor }:
               onClick={() => void acionarBruta('desligar')}
             />
           </div>
+        ) : null}
+
+        {carga === 'pronto' && dePe && !aplicandoMotor && podePesquisar(agentSlug) ? (
+          // A pesquisa saiu do composer em 28/09 (pedido do Rica) e veio pra
+          // cá, abaixo da linha de Destravar/Desligar: ela manda texto, não
+          // mexe no processo, e é a menos bruta das ações.
+          <BotaoDePesquisa agentSlug={agentSlug} />
         ) : null}
 
         {avisoConfirmacao ? (

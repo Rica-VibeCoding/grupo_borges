@@ -476,6 +476,15 @@ body {
   box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 
+/* PESQUISA LIGADA (28/09): o toggle mora na gaveta, então é a borda da caixa
+ * que lembra que a próxima mensagem sai com `/pesquisa`. Troca a mesma
+ * variável que a borda inline lê — nenhum elemento, nenhum px. Vence o foco
+ * (seletor abaixo); o filete de recusa/erro, que é inline, continua vencendo. */
+.ck-caixa[data-pesquisa='ligada'],
+.ck-caixa[data-pesquisa='ligada']:has(.ck-campo:focus-visible) {
+  --ck-edge-composer: var(--ck-state-attention);
+}
+
 /* Fio de luz no topo de superfície elevada. É a assinatura da §A: luz = vida,
  * em vez de sombra projetada. */
 .ck-lit {

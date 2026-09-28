@@ -76,7 +76,8 @@ import { type Motor } from './motor';
 import { SeletorMotor } from './seletor-motor';
 import { BarraPerguntaMotor } from './barra-pergunta-motor';
 import { type MotivoRecusa, preparaEnvio, recusaPersiste } from './porta-de-envio';
-import { prefixaPesquisa } from './pesquisa-canario';
+import { podePesquisar, prefixaPesquisa } from './pesquisa-canario';
+import { usaPesquisaAtiva } from './usa-pesquisa';
 import { usaFalaAoVivo } from './usa-fala-ao-vivo';
 import { usaGravador } from './usa-gravador';
 import {
@@ -90,7 +91,6 @@ import {
 } from './voz';
 import { emCaptura, modoDaFala } from './modo-da-fala';
 import {
-  IconeBusca,
   IconeCadeado,
   IconeCopiar,
   IconeDescartar,
@@ -185,8 +185,8 @@ export function Composer({
   textoAtualRef.current = texto;
   const substituicaoIntegralRef = useRef(false);
   const origemDoUltimoEnvio = useRef<OrigemEnvio>('text');
-  const [pesquisaAtiva, setPesquisaAtiva] = useState(false);
-  const podePesquisar = agentSlug === 'canarinho';
+  // O toggle do `/pesquisa` mora na GAVETA desde 28/09; aqui só se lê.
+  const pesquisaAtiva = usaPesquisaAtiva(agentSlug);
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
@@ -511,7 +511,7 @@ export function Composer({
     // O toggle altera só o gesto que nasceu AGORA no campo. O corpo de uma
     // retomada já foi decidido quando entrou na fila ou na máquina de envio;
     // prefixá-lo aqui de novo mudaria a tentativa que o Rica está reabrindo.
-    const corpoParaEnviar = prefixaPesquisa(corpo, podePesquisar && pesquisaAtiva, retomada);
+    const corpoParaEnviar = prefixaPesquisa(corpo, podePesquisar(agentSlug) && pesquisaAtiva, retomada);
     // A PORTA decide, e o campo só esvazia se ela liberar. Era o contrário:
     // três `return` mudos recusavam DEPOIS de `setTexto('')` já ter rodado, e
     // em 05/08 uma mensagem do Rica morreu assim — sem requisição, sem aviso,
@@ -898,6 +898,9 @@ export function Composer({
         onSubmit={aoSubmeter}
         className="ck-lit ck-caixa flex w-full flex-col border"
         data-linha={umaLinha ? 'uma' : 'varias'}
+        // Pesquisa ligada na gaveta: a borda fica âmbar (regra no globals.css),
+        // pra ele não mandar com `/pesquisa` sem saber.
+        data-pesquisa={podePesquisar(agentSlug) && pesquisaAtiva ? 'ligada' : undefined}
         style={{
           padding: 'var(--ck-space-3)',
           gap: 'var(--ck-space-2)',
@@ -1147,26 +1150,6 @@ export function Composer({
                 />
               </div>
               <div className="ck-troca-da-fala-face" data-face="acoes">
-                {podePesquisar ? (
-                  <button
-                    type="button"
-                    onClick={() => setPesquisaAtiva((ativa) => !ativa)}
-                    aria-pressed={pesquisaAtiva}
-                    aria-label={pesquisaAtiva ? 'Desativar pesquisa do Canarinho' : 'Ativar pesquisa do Canarinho'}
-                    title={pesquisaAtiva ? 'Desativar pesquisa' : 'Ativar pesquisa'}
-                    data-selecionado={pesquisaAtiva ? 'true' : 'false'}
-                    className="ck-veil flex shrink-0 items-center justify-center"
-                    style={{
-                      minWidth: 'var(--ck-touch-min)',
-                      minHeight: 'var(--ck-touch-min)',
-                      marginBottom: 'calc(var(--ck-space-1) * -1)',
-                      borderRadius: 'var(--ck-radius-chip)',
-                      color: pesquisaAtiva ? 'var(--ck-alert-warning)' : 'var(--ck-text-secondary)',
-                    }}
-                  >
-                    <IconeBusca tamanho={17} />
-                  </button>
-                ) : null}
                 <SeletorMotor
                   agentSlug={agentSlug}
                   agentName={agentName}
