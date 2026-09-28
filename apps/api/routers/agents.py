@@ -2501,7 +2501,8 @@ class InputRequest(BaseModel):
     text: str = Field(min_length=1, max_length=65536)
     idempotency_key: str = Field(min_length=1, max_length=128)
     fresh: bool = False
-    origin: Literal["text", "stt"] = "text"
+    # `voz` = tela de voz: o prefixo próprio faz o hook do agente carregar a skill de conversa falada.
+    origin: Literal["text", "stt", "voz"] = "text"
 
 
 class InputResponse(BaseModel):
@@ -3120,10 +3121,11 @@ async def send_agent_input(
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db
     event_boundary_id = await db.max_event_id()
-    delivered_text = f"🎙 {payload.text}" if payload.origin == "stt" else payload.text
+    prefixo = {"stt": "🎙 ", "voz": "🗣 "}.get(payload.origin, "")
+    delivered_text = f"{prefixo}{payload.text}"
     input_origin = (
         _InputOrigin(meta={"kind": "stt", "raw_text": delivered_text})
-        if payload.origin == "stt"
+        if prefixo
         else None
     )
     nome_apos_clear = (

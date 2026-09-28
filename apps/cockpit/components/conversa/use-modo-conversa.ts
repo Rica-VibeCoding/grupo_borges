@@ -147,7 +147,7 @@ export function useModoConversa(slug: string, fone: boolean) {
         }
         const ciclo = cicloRef.current;
         entregaFala({
-          posta: () => postAgentInput(slug, efeito.texto, { origin: 'stt' }),
+          posta: () => postAgentInput(slug, efeito.texto, { origin: 'voz' }),
           vivo: () => ciclo === cicloRef.current,
           enviou: () => despachaRef.current({ tipo: 'enviou' }),
           falhou: (motivo) => despachaRef.current({ tipo: 'falhou', motivo }),
