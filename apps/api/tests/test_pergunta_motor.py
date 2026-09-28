@@ -172,7 +172,18 @@ class TelaFalsa:
     async def press_enter(self, _session: str) -> bool:  # pragma: no cover - não pode ser chamado
         raise AssertionError("Enter cego na troca de motor")
 
+    #: Simula o `_load_cc_status` logo após /clear ou religar: a sessão nova
+    #: ainda não tem arquivo e a leitura cai no da sessão ANTERIOR.
+    status_de_outra_sessao: str | None = None
+
     def status(self, slug_session: str = "sessao-daniel") -> agents_router._CCStatus:
+        if self.status_de_outra_sessao is not None:
+            return agents_router._CCStatus(
+                "sessao-velha",
+                Path("/tmp/cc-status-sessao-velha.json"),
+                {"updated_at": 1, "effort": {"level": self.status_de_outra_sessao}},
+                True,
+            )
         return agents_router._CCStatus(
             slug_session,
             Path(f"/tmp/cc-status-{slug_session}.json"),
@@ -229,6 +240,9 @@ def _rodar(tela: TelaFalsa, app: FastAPI, metodo: str, url: str, corpo: dict):
     finally:
         for p in reversed(patches):
             p.stop()
+
+
+_VIU_HAIKU = {"tipo": "modelo", "destino": "Haiku 4.5"}
 
 
 def _state_model(app: FastAPI) -> str | None:
@@ -393,7 +407,7 @@ def test_esforco_pergunta_de_outro_nivel_fica_aberta(tmp_path: Path) -> None:
 def test_confirmacao_sem_pergunta_na_tela_e_409(tmp_path: Path) -> None:
     app = _app(tmp_path)
     tela = TelaFalsa()
-    resposta = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim"})
+    resposta = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim", **_VIU_HAIKU})
 
     assert resposta.status_code == 409
     assert resposta.json()["detail"] == "sem_pergunta_motor"
@@ -404,7 +418,7 @@ def test_confirmacao_sim_troca_e_grava_so_depois_da_statusline(tmp_path: Path) -
     app = _app(tmp_path)
     tela = TelaFalsa(modelo="sonnet")
     tela.abre("modelo", "haiku")
-    resposta = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim"})
+    resposta = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim", **_VIU_HAIKU})
 
     assert resposta.status_code == 200
     assert resposta.json() == {
@@ -421,7 +435,7 @@ def test_confirmacao_nao_mantem_o_modelo(tmp_path: Path) -> None:
     app = _app(tmp_path)
     tela = TelaFalsa(modelo="sonnet")
     tela.abre("modelo", "haiku")
-    corpo = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "nao"}).json()
+    corpo = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "nao", **_VIU_HAIKU}).json()
 
     assert corpo["respondida"] is True
     assert corpo["confirmed"] is False
@@ -434,7 +448,7 @@ def test_confirmacao_sim_de_esforco(tmp_path: Path) -> None:
     app = _app(tmp_path)
     tela = TelaFalsa(esforco="high")
     tela.abre("esforco", "medium")
-    corpo = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim"}).json()
+    corpo = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim", "tipo": "esforco", "destino": "medium"}).json()
 
     assert corpo["pergunta"]["tipo"] == "esforco"
     assert corpo["respondida"] is True
@@ -462,3 +476,60 @@ def test_fleet_expoe_a_pergunta_aberta_do_mesmo_excerpt(monkeypatch) -> None:
         "tipo": "esforco", "destino": "medium", "opcao_em_foco": "sim",
     }
     assert agentes[1]["pergunta_motor"] is None
+
+
+# ----- ajustes pós code-review ----------------------------------------------
+
+
+def test_esforco_ja_estava_nao_confia_na_statusline_de_outra_sessao(tmp_path: Path) -> None:
+    """Logo após /clear, o `_load_cc_status` cai no arquivo da sessão anterior
+    (`fell_back`). Ele dizer `high` não prova que a sessão NOVA está em `high`."""
+    app = _app(tmp_path)
+    tela = TelaFalsa(esforco="medium", com_cache=False)
+    tela.status_de_outra_sessao = "high"
+    corpo = _rodar(tela, app, "PATCH", "/api/agents/daniel/effort", {"effort": "high"}).json()
+
+    assert corpo["ja_estava"] is False
+    assert tela.enviados == ["/effort high"]
+
+
+def test_confirmacao_de_esforco_nao_confirma_pela_statusline_de_outra_sessao(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    tela = TelaFalsa(esforco="high")
+    tela.abre("esforco", "medium")
+    tela.status_de_outra_sessao = "medium"
+    corpo = _rodar(
+        tela, app, "POST", "/api/agents/daniel/confirmacao-motor",
+        {"resposta": "sim", "tipo": "esforco", "destino": "medium"},
+    ).json()
+
+    assert corpo["respondida"] is True
+    assert corpo["confirmed"] is False
+
+
+def test_confirmacao_exige_a_pergunta_que_o_rica_viu(tmp_path: Path) -> None:
+    """A barra mostrou "Trocar para Haiku?"; se a tela agora pergunta outra
+    coisa, o "sim" dele não vale para ela."""
+    app = _app(tmp_path)
+    tela = TelaFalsa(modelo="sonnet")
+    tela.abre("modelo", "opus")
+    resposta = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor",
+                      {"resposta": "sim", **_VIU_HAIKU})
+
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == {
+        "code": "pergunta_mudou",
+        "pergunta": {"tipo": "modelo", "destino": "Opus 4.8", "opcao_em_foco": "sim"},
+    }
+    assert tela.teclas == []
+    assert tela.modelo == "sonnet"
+
+
+def test_confirmacao_sem_tipo_e_destino_e_422(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    tela = TelaFalsa(modelo="sonnet")
+    tela.abre("modelo", "haiku")
+    resposta = _rodar(tela, app, "POST", "/api/agents/daniel/confirmacao-motor", {"resposta": "sim"})
+
+    assert resposta.status_code == 422
+    assert tela.teclas == []

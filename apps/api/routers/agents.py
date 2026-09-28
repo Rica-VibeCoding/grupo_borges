@@ -330,6 +330,10 @@ class PerguntaMotorOut(BaseModel):
 
 class ConfirmacaoMotorRequest(BaseModel):
     resposta: Literal["sim", "nao"]
+    # A pergunta que o Rica VIU — os mesmos `tipo` e `destino` que a fleet
+    # publicou. Se a tela agora pergunta outra coisa, a resposta não vale.
+    tipo: Literal["modelo", "esforco"]
+    destino: str = Field(min_length=1, max_length=128)
 
 
 class ConfirmacaoMotorResponse(BaseModel):
@@ -1002,7 +1006,7 @@ async def patch_agent_effort(
         if not await tmux_driver.send_named_key(session, TECLA_DA_RESPOSTA["sim"]):
             return resposta(delivered=False, confirmed=False, status=None, pergunta=aberta)
         ja_respondida = True
-    elif patch.effort != "auto" and _cc_effort_level(before.payload) == patch.effort:
+    elif patch.effort != "auto" and _nivel_da_sessao_viva(before) == patch.effort:
         # O nível pedido já é o da sessão: nada a mandar. `auto` fica fora — a
         # statusline reporta o nível efetivo, nunca a palavra `auto`.
         return resposta(delivered=False, confirmed=True, status=before, ja_estava=True)
@@ -1281,6 +1285,17 @@ async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
             continue
         return _CCStatus(session_id, path, payload, session_id != session_ids[0])
     return _CCStatus(session_ids[0], Path("/tmp") / f"{_CC_STATUS_PREFIX}{session_ids[0]}.json", None)
+
+
+def _nivel_da_sessao_viva(status: _CCStatus) -> str | None:
+    """O nível da statusline só quando ela é da sessão ATUAL.
+
+    Logo após `/clear` ou religar, `_load_cc_status` cai no arquivo da sessão
+    anterior (`fell_back`); o nível dele não diz nada da sessão nova.
+    """
+    if status.fell_back or status.payload is None:
+        return None
+    return _cc_effort_level(status.payload)
 
 
 def _cc_effort_level(payload: dict[str, Any] | None) -> str | None:
@@ -4223,8 +4238,10 @@ async def responder_confirmacao_motor(
 
     Só age se a pergunta estiver DE FATO na tela agora (senão 409
     `sem_pergunta_motor`): tecla solta num agente sem modal vira texto na caixa
-    dele. A resposta sai pelo dígito (`1`/`2`), que escolhe sem depender do foco
-    e sem Enter. No `sim` de modelo, `agent_state.model` só muda depois de a
+    dele. E só se for a MESMA que o Rica viu — `tipo` e `destino` do pedido
+    iguais aos da tela (senão 409 `pergunta_mudou`, com a pergunta atual). A
+    resposta sai pelo dígito (`1`/`2`), que escolhe sem depender do foco e sem
+    Enter. No `sim` de modelo, `agent_state.model` só muda depois de a
     statusline mostrar o destino.
     """
     agent = await _get_agent_or_404(request, slug)
@@ -4232,6 +4249,11 @@ async def responder_confirmacao_motor(
     _, pergunta = await _le_pergunta_motor(session)
     if pergunta is None:
         raise HTTPException(status_code=409, detail="sem_pergunta_motor")
+    if pergunta.tipo != payload.tipo or pergunta.destino.strip() != payload.destino.strip():
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "pergunta_mudou", "pergunta": pergunta.como_dict()},
+        )
 
     if not await tmux_driver.send_named_key(session, TECLA_DA_RESPOSTA[payload.resposta]):
         raise HTTPException(status_code=409, detail="tecla_nao_entregue")
@@ -4248,7 +4270,7 @@ async def responder_confirmacao_motor(
         if payload.resposta == "nao" or ainda is not None:
             break
         if pergunta.tipo == "esforco":
-            nivel = _cc_effort_level((await _load_cc_status(request.app.state.db, slug)).payload)
+            nivel = _nivel_da_sessao_viva(await _load_cc_status(request.app.state.db, slug))
             confirmed = nivel == pergunta.destino.strip().lower()
         else:
             confirmed = modelo is not None and tmux_driver.parse_model_from_pane(excerpt) == modelo
