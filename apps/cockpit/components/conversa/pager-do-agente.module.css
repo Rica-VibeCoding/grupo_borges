@@ -26,6 +26,10 @@
   scroll-snap-align: start;
   /* Um arremesso forte não pula o painel: para em cada um. */
   scroll-snap-stop: always;
+  /* Sem transição nenhuma: o corte global de movimento reduzido (`globals.css`) põe 0,01 ms em
+   * tudo, e o `order` da entrada direta na voz chegava um quadro atrasado — o scroll caía no chat
+   * e o encaixe o segurava lá. */
+  transition-property: none;
 }
 
 /* A voz tem visual `fixed` (moldura, esfera, faixa de baixo). O `contain` prende esse

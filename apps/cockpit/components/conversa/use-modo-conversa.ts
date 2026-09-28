@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { postAgentInput, postAgentInterromper, postAgentTranscription } from '@grupo_borges/cockpit-core/api';
 
 import { destravaNoGesto } from '@/components/feed/reprodutor-unico';
@@ -9,6 +9,7 @@ import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
 import { entregaFala } from './envio-da-conversa';
+import { ferramentaEmCurso } from './estado-da-vez';
 import { comParcial, FALA_VAZIA, falaDepois, type FalaDaVez } from './fala-da-vez';
 import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
@@ -31,7 +32,6 @@ export function useModoConversa(slug: string, fone: boolean) {
   const [aviso, setAviso] = useState<string | null>(null);
   /* O texto da vez do Rica na tela: as palavras ao vivo e o firme que a máquina aceitou. */
   const [fala, setFala] = useState<FalaDaVez>(FALA_VAZIA);
-  const [respostaDoZe, setRespostaDoZe] = useState<string | null>(null);
 
   const conversaRef = useRef(conversa);
   const sessaoAtivaRef = useRef(false);
@@ -44,6 +44,7 @@ export function useModoConversa(slug: string, fone: boolean) {
   const stream = useCanarioStream({ slug, limit: 500, recentes: true });
   const isRunningRef = useRef(stream.isRunning);
   isRunningRef.current = stream.isRunning;
+  const ferramenta = useMemo(() => ferramentaEmCurso(stream.messages), [stream.messages]);
 
   const {
     abreTurno,
@@ -53,6 +54,9 @@ export function useModoConversa(slug: string, fone: boolean) {
     pausa: pausaFala,
     retoma: retomaFala,
     nivelRef: nivelVozRef,
+    fala: falaDoZe,
+    tocando,
+    limpaLegenda,
   } = useFilaDeVoz({
     slug,
     aoTerminar: () => despachaRef.current({ tipo: 'vozTerminou' }),
@@ -132,7 +136,7 @@ export function useModoConversa(slug: string, fone: boolean) {
           },
           vivo: () => ciclo === cicloRef.current,
           transcreveu: (texto) => {
-            setRespostaDoZe(null);
+            limpaLegenda();
             despachaRef.current({ tipo: 'transcreveu', texto });
           },
           falhou: () => despachaRef.current({ tipo: 'falhou', motivo: 'transcricaoFalhou' }),
@@ -183,10 +187,7 @@ export function useModoConversa(slug: string, fone: boolean) {
 
   useTurnoDoZe(stream, {
     abre: abreTurno,
-    texto: (texto) => {
-      despacha({ tipo: 'textoDoZe', texto });
-      if (!turnoDescartado(conversaRef.current)) setRespostaDoZe(texto);
-    },
+    texto: (texto) => despacha({ tipo: 'textoDoZe', texto }),
     pedidoEntrou: () => despacha({ tipo: 'pedidoEntrou' }),
     fecha: () => {
       despacha({ tipo: 'zeTerminou' });
@@ -281,7 +282,9 @@ export function useModoConversa(slug: string, fone: boolean) {
     leNivel,
     aviso,
     fala,
-    respostaDoZe,
+    falaDoZe,
+    tocando,
+    ferramenta,
     streamStatus: stream.status,
     wakeLockAtivo: wakeLock.ativo,
     wakeLockSuportado: wakeLock.suportado,

@@ -8,7 +8,8 @@ import type { Estado } from '@/lib/conversa/tipos';
  * `preparando` não é estado da máquina — é o detector ainda baixando —, mas a
  * tela desenha como se fosse.
  */
-export type Cena = Estado | 'preparando';
+/** `trabalhando` só existe na tela (`estado-da-vez.ts`): o agente usando ferramenta. */
+export type Cena = Estado | 'preparando' | 'trabalhando';
 
 export const CAMADAS = ['voce', 'ze', 'pensa', 'prepara', 'erro', 'gelo', 'parado'] as const;
 export type Camada = (typeof CAMADAS)[number];
@@ -28,6 +29,8 @@ export function alvosDaMoldura(cena: Cena): Pesos {
     case 'transcrevendo':
     case 'esperandoZe':
       return { ...VAZIO, pensa: 1 };
+    case 'trabalhando':
+      return { ...VAZIO, pensa: 0.6, ze: 0.4 };
     case 'preparando':
       return { ...VAZIO, prepara: 1 };
     case 'interrompendo':

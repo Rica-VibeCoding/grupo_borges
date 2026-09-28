@@ -11,6 +11,13 @@
   pointer-events: none;
 }
 
+/* A esfera chega acendendo quando a voz aparece (pelo dedo, a troca de tela tem a sua). Só
+ * opacidade: transform no palco prenderia o `fixed` do desenho e o canvas pularia. */
+.palco { animation: esferaAcende var(--ck-dur-calm) var(--ck-ease) backwards; }
+@keyframes esferaAcende {
+  from { opacity: 0; }
+}
+
 /* O desenho cobre a tela inteira, atrás de tudo (a luz só existe no palco):
  * a esfera desliza quando o palco muda, sem ser cortada, e a Moldura aparece
  * por trás quando as duas estão juntas. */
@@ -25,6 +32,25 @@
   height: 100%;
 }
 
+/* A esfera é o que continua entre as telas e os estados: o único nome da troca animada
+ * (`transicao-da-voz.ts`). Na troca de estado ela fica fora da foto, viva. */
+.desenho,
+.reserva {
+  view-transition-name: ck-voz-esfera;
+}
+
+/* O halo da reserva: sombra parada num `::after`; a voz mexe só na opacidade dele (revisão do
+ * Pavan — a sombra que crescia com `--nivel-da-voz` repintava a cada quadro). */
+.reserva::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 64px color-mix(in oklch, var(--cor-da-esfera) 40%, transparent);
+  opacity: calc(0.25 + var(--nivel-da-voz, 0.3) * 0.75);
+  pointer-events: none;
+}
+
 /* Reserva sem WebGL: um círculo que ainda cresce com a voz. */
 .reserva {
   --cor-da-esfera: var(--ck-conversa-prepara);
@@ -36,7 +62,7 @@
     color-mix(in oklch, var(--cor-da-esfera) 55%, var(--ck-surface-canvas)),
     color-mix(in oklch, var(--cor-da-esfera) 14%, var(--ck-surface-canvas)) 72%
   );
-  box-shadow: 0 0 calc(16px + var(--nivel-da-voz, 0.3) * 48px) color-mix(in oklch, var(--cor-da-esfera) 40%, transparent);
+  position: relative;
   scale: calc(0.94 + var(--nivel-da-voz, 0) * 0.1);
 }
 .reserva[data-variacao='vidro'] {

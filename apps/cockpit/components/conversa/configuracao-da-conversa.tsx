@@ -12,9 +12,12 @@ import {
 } from '@/components/ui/drawer';
 
 import styles from './configuracao-da-conversa.module.css';
+import { DIRECOES, type Direcao } from './direcao-da-voz';
 import { CATALOGO, type Visual } from './preferencia-visual';
 
 type Props = {
+  direcao: Direcao;
+  escolheDirecao: (direcao: Direcao) => void;
   visual: Visual;
   escolheVisual: (visual: Visual) => void;
   fone: boolean;
@@ -24,7 +27,37 @@ type Props = {
   /** Quem abre é a tela: o arrasto para cima e este botão. */
   aberta: boolean;
   mudaAberta: (aberta: boolean) => void;
+  /** Número técnico (o tempo do detector): mora aqui, fora da tela principal. */
+  detalheTecnico: string | null;
 };
+
+function Opcoes<T extends string>({ nome, itens, marcado, escolhe }: {
+  nome: string;
+  itens: readonly { id: T; nome: string; descricao: string }[];
+  marcado: (id: T) => boolean;
+  escolhe: (id: T) => void;
+}) {
+  return (
+    <section className={styles.grupo} aria-label={nome}>
+      <h3 className={styles.nomeDoGrupo}>{nome}</h3>
+      <div role="radiogroup" aria-label={nome} className={styles.variacoes}>
+        {itens.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            role="radio"
+            aria-checked={marcado(v.id)}
+            className={styles.variacao}
+            onClick={() => escolhe(v.id)}
+          >
+            <span className={styles.nomeDaVariacao}>{v.nome}</span>
+            <span className={styles.descricao}>{v.descricao}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function Chave({ icone, nome, dica, ligada, muda }: {
   icone: ReactNode;
@@ -53,12 +86,24 @@ function Chave({ icone, nome, dica, ligada, muda }: {
 }
 
 /**
- * Tudo que se ajusta na conversa mora aqui, fora da tela: o fone, o texto e o
- * visual. Arrastar para cima abre a folha; o botão continua existindo para teclado e
+ * Tudo que se ajusta na conversa mora aqui, fora da tela: o fone, o texto, a
+ * foto do agente (Atividade ao vivo ou Eclipse) e o visual. Arrastar para cima abre a folha; o botão continua existindo para teclado e
  * leitor de tela, fora da vista até ganhar foco. Cada troca vale na hora e fica
  * guardada no aparelho.
  */
-export function ConfiguracaoDaConversa({ visual, escolheVisual, fone, mudaFone, texto, mudaTexto, aberta, mudaAberta }: Props) {
+export function ConfiguracaoDaConversa({
+  direcao,
+  escolheDirecao,
+  visual,
+  escolheVisual,
+  fone,
+  mudaFone,
+  texto,
+  mudaTexto,
+  aberta,
+  mudaAberta,
+  detalheTecnico,
+}: Props) {
   return (
     <Drawer open={aberta} onOpenChange={mudaAberta}>
       <DrawerTrigger asChild>
@@ -101,29 +146,17 @@ export function ConfiguracaoDaConversa({ visual, escolheVisual, fone, mudaFone, 
               muda={mudaTexto}
             />
           </div>
+          <Opcoes nome="Foto do agente" itens={DIRECOES} marcado={(id) => id === direcao} escolhe={escolheDirecao} />
           {CATALOGO.map((item) => (
-            <section key={item.opcao} className={styles.grupo} aria-label={item.nome}>
-              <h3 className={styles.nomeDoGrupo}>{item.nome}</h3>
-              <div role="radiogroup" aria-label={item.nome} className={styles.variacoes}>
-                {item.variacoes.map((v) => {
-                  const marcada = visual.opcao === item.opcao && visual.variacao === v.id;
-                  return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={marcada}
-                      className={styles.variacao}
-                      onClick={() => escolheVisual({ opcao: item.opcao, variacao: v.id })}
-                    >
-                      <span className={styles.nomeDaVariacao}>{v.nome}</span>
-                      <span className={styles.descricao}>{v.descricao}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            <Opcoes
+              key={item.opcao}
+              nome={item.nome}
+              itens={item.variacoes}
+              marcado={(id) => visual.opcao === item.opcao && visual.variacao === id}
+              escolhe={(id) => escolheVisual({ opcao: item.opcao, variacao: id })}
+            />
           ))}
+          {detalheTecnico ? <p className={styles.tecnico}>{detalheTecnico}</p> : null}
         </div>
       </DrawerContent>
     </Drawer>

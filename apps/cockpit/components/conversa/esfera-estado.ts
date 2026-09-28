@@ -1,4 +1,4 @@
-import type { Cena, Tom } from './moldura-estado.ts';
+import { fatorDeAproximacao, type Cena, type Tom } from './moldura-estado.ts';
 
 /**
  * O que a Esfera desenha em cada momento, sem WebGL: o peso de cada forma, a
@@ -20,6 +20,9 @@ export function alvosDaEsfera(cena: Cena): PesosDaEsfera {
     case 'transcrevendo':
     case 'esperandoZe':
       return { ...REPOUSO, calma: 1 };
+    case 'trabalhando':
+      // Ocupado, não falando: a calma do pensar ganha facetas — a matéria mexe, sem voz.
+      return { ...REPOUSO, calma: 0.55, cristal: 0.45 };
     case 'interrompendo':
       // A voz dele cristaliza; a sua ainda puxa um pouco para baixo.
       return { ...REPOUSO, cristal: 1, voce: 0.4 };
@@ -42,6 +45,9 @@ export function coresDaEsfera(cena: Cena): { corpo: Tom; brilho: number; borda: 
     case 'transcrevendo':
     case 'esperandoZe':
       return { corpo: 'pensa', brilho: 1, borda: 'pensa' };
+    case 'trabalhando':
+      // O corpo ainda pensa; a borda já é dele, executando.
+      return { corpo: 'pensa', brilho: 1, borda: 'ze' };
     case 'interrompendo':
       return { corpo: 'ze', brilho: 0.55, borda: 'voce' };
     case 'erro':
@@ -52,6 +58,11 @@ export function coresDaEsfera(cena: Cena): { corpo: Tom; brilho: number; borda: 
       // Em repouso a matéria fica mais apagada: ainda não é a vez de ninguém.
       return { corpo: 'prepara', brilho: 0.7, borda: 'prepara' };
   }
+}
+
+/** O ritmo troca sem salto: chega ao novo em ~0,4 s (taxa 6, a mesma dos pesos e das cores). */
+export function aproximaRitmo(atual: number, alvo: number, dt: number): number {
+  return atual + (alvo - atual) * fatorDeAproximacao(dt, 6);
 }
 
 /** Velocidade do tempo da matéria: transcrever agita, esperar acalma, interromper congela. */
@@ -65,6 +76,8 @@ export function ritmoDaEsfera(cena: Cena): number {
       return 1;
     case 'esperandoZe':
       return 0.9;
+    case 'trabalhando':
+      return 1.5;
     case 'preparando':
       return 0.6;
     default:

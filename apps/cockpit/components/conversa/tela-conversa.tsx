@@ -1,26 +1,24 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
+import { conviteDaTela } from './direcao-da-voz';
 import { EsferaConversa } from './esfera-conversa';
-import {
-  avisoQuePedeAcao,
-  falasVisiveis,
-  leituraDaConversa,
-  rotuloDaAcao,
-  voceDisseParaLeitor,
-} from './leitura-da-conversa';
+import { cenaVisivel } from './estado-da-vez';
+import { legendaDaVez } from './legenda-da-voz';
+import { avisoDaTela, leituraDaConversa, rotuloDaAcao, voceDisseParaLeitor } from './leitura-da-conversa';
 import { MolduraConversa } from './moldura-conversa';
 import type { Cena } from './moldura-estado';
 import { pecasDoVisual } from './preferencia-visual';
+import { CabecaDoEclipse, NucleoDoAgente, PilulaDoAgente } from './retrato-da-voz';
 import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
 import styles from './tela-conversa.module.css';
+import { ConviteDaVoz, LegendaDaVoz, SinalDoToque } from './texto-da-voz';
 import { acaoDoToque, toqueConta } from './toque-da-conversa';
 import { useDicaDosGestos, useGestosDaConversa } from './use-gestos-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
-import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
+import { useChaveDaConversa, useDirecaoDaVoz, useVisualConversa } from './use-preferencias-conversa';
 
 /** Segundos de espera pelo Zé, uma atualização por segundo (não por quadro). */
 function useSegundosDeEspera(esperando: boolean) {
@@ -37,23 +35,16 @@ function useSegundosDeEspera(esperando: boolean) {
   return segundos;
 }
 
-function Reticencias() {
-  return (
-    <span className={styles.reticencias} aria-label="transcrevendo">
-      <span>•</span>
-      <span>•</span>
-      <span>•</span>
-    </span>
-  );
-}
-
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
  * toque para; na vez do Rica, o dedo parado segura a vez. Os botões viraram gestos: arrastar
  * para a direita volta ao chat de texto (é a rolagem do pager), para cima abre as
- * configurações. No cabeçalho, só o ícone do chat (e
- * o botão das configurações, fora da vista até o teclado chegar). O texto (estado, sua fala,
- * a resposta) só aparece com "Mostrar texto"; sem ele, continua existindo para o leitor de tela.
+ * configurações. No alto, a foto do agente com o nome e o estado — na pílula (Atividade ao
+ * vivo) ou no núcleo que toma o lugar da esfera (Eclipse), a chave é das configurações. O
+ * estado é a palavra ao lado do nome, na cor da vez. Parada, a tela escreve uma linha pequena
+ * e o aro pulsa; andando, a legenda (sua fala, a resposta) mora logo abaixo da animação, só
+ * com "Mostrar texto". O que pede ação vai no cartão do pé. O título e a frase explicativa
+ * saíram da tela e ficaram para o leitor de tela.
  *
  * Mora no painel da direita do pager (`pager-do-agente.tsx`), montada também fora da tela.
  * `visivel` é o painel com algum pedaço à vista: só então o visual liga o WebGL. `ativa` é o
@@ -64,15 +55,14 @@ export function TelaConversa({
   nome,
   ativa,
   visivel,
-  aoIrAoChat,
 }: {
   slug: string;
   nome: string;
   ativa: boolean;
   visivel: boolean;
-  aoIrAoChat: () => void;
 }) {
   const [visual, escolheVisual] = useVisualConversa();
+  const [direcao, escolheDirecao] = useDirecaoDaVoz();
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
   const modo = useModoConversa(slug, fone);
@@ -85,6 +75,9 @@ export function TelaConversa({
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
   const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
+  // O visual e a palavra do estado mostram a verdade do turno dele: pensando, trabalhando ou
+  // falando — este só com som saindo. Toque, leitura e legenda seguem a cena da conversa.
+  const vista = cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta });
   const acao = acaoDoToque(cena, preparacaoFalhou);
   const leitura = leituraDaConversa({
     cena,
@@ -94,35 +87,34 @@ export function TelaConversa({
     fone,
     motivo: modo.conversa.motivo,
   });
-  const falas = falasVisiveis(cena);
-  const pecas = pecasDoVisual(visual, cena);
+  const eclipse = direcao === 'eclipse';
+  const primeiroNome = nome.split(' ')[0] || nome;
+  const convite = conviteDaTela(cena, preparacaoFalhou);
+  const pecas = pecasDoVisual(visual, vista);
   const segundos = useSegundosDeEspera(texto && cena === 'esperandoZe');
-  const aviso = avisoQuePedeAcao({
-    cena,
-    preparacaoFalhou,
-    motivo: modo.conversa.motivo,
-    aviso: modo.aviso,
-    wakeLockSuportado: modo.wakeLockSuportado,
-    wakeLockFalhou: modo.wakeLockFalhou,
-  });
-  // Com texto, o título já diz o erro; a linha do pé não repete.
-  const linhaDoAviso = texto && (cena === 'erro' || preparacaoFalhou) ? null : aviso;
-  const notas = texto
-    ? [
-        modo.streamStatus === 'reconnecting' ? 'Reconectando ao agente…' : null,
-        cena === 'parado' && modo.tempoCargaMs !== null
-          ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s`
-          : null,
-      ].filter(Boolean)
-    : [];
+  const aviso = avisoDaTela(
+    {
+      cena,
+      preparacaoFalhou,
+      motivo: modo.conversa.motivo,
+      aviso: modo.aviso,
+      wakeLockSuportado: modo.wakeLockSuportado,
+      wakeLockFalhou: modo.wakeLockFalhou,
+    },
+    texto,
+  );
+  const notas = texto && modo.streamStatus === 'reconnecting' ? ['Reconectando ao agente…'] : [];
+  // O número técnico foi para as configurações: a tela principal só convida.
+  const detalheTecnico =
+    modo.tempoCargaMs !== null ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s` : null;
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.fala.firme);
-  // Enquanto ele fala, as palavras do canal no lugar do título (só com "Mostrar texto").
-  const aoVivo = texto && cena === 'ouvindo' ? modo.fala.parcial : null;
+  const legenda = legendaDaVez({ cena, texto, fala: modo.fala, falaDoZe: modo.falaDoZe });
+  // O pulso que chama o toque, preso à animação de fora: a esfera, o núcleo ou o aro solto.
+  const sinal = cena === 'parado' && !preparacaoFalhou;
 
   // Sair para o chat com a conversa andando é o parar, freio incluso: quando o pager assenta
-  // no chat, pelo dedo, pelo ícone ou pelo voltar do navegador. A saída para outra página
-  // para quando a tela desmonta (`useModoConversa`).
-  const chat = `/agente/${slug}`;
+  // no chat, pelo dedo ou pelo voltar do navegador. A saída para outra página para quando a
+  // tela desmonta (`useModoConversa`).
   const pararAoSairRef = useRef(() => {});
   pararAoSairRef.current = () => {
     if (acao === 'parar') modo.parar();
@@ -130,13 +122,6 @@ export function TelaConversa({
   useEffect(() => {
     if (!ativa) pararAoSairRef.current();
   }, [ativa]);
-  // O ícone leva o pager ao chat, sem navegar. Ctrl/Cmd-clique abre o chat em outra aba: a
-  // conversa desta segue.
-  const clicaNoChat = (evento: MouseEvent<HTMLAnchorElement>) => {
-    if (evento.metaKey || evento.ctrlKey || evento.shiftKey || evento.button !== 0) return;
-    evento.preventDefault();
-    aoIrAoChat();
-  };
   const abreConfiguracoes = useCallback(() => setConfigAberta(true), []);
   // Dedo parado 500 ms na vez do Rica segura a vez: a contagem do silêncio para até soltar.
   const cenaRef = useRef(cena);
@@ -164,9 +149,12 @@ export function TelaConversa({
       className={styles.tela}
       data-estado={modo.conversa.estado}
       data-cena={cena}
+      data-vista={vista}
       data-opcao={visual.opcao}
       data-variacao={visual.variacao}
+      data-direcao={direcao}
       data-texto={texto ? 'visivel' : 'oculto'}
+      data-visivel={visivel ? '' : undefined}
       data-segurando={modo.segurando ? 'sim' : undefined}
       {...gestos}
     >
@@ -181,69 +169,51 @@ export function TelaConversa({
 
       <div ref={zonaRef} className={styles.zona}>
         <header ref={topoRef} className={styles.topo}>
-          <div className={styles.direita}>
-            <span className={styles.agente}>{nome}</span>
-            <ConfiguracaoDaConversa
-              visual={visual}
-              escolheVisual={escolheVisual}
-              fone={fone}
-              mudaFone={mudaFone}
-              texto={texto}
-              mudaTexto={mudaTexto}
-              aberta={configAberta}
-              mudaAberta={setConfigAberta}
-            />
-            <Link href={chat} className={styles.chat} aria-label={`Abrir o chat de texto com ${nome}`} onClick={clicaNoChat}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-              </svg>
-            </Link>
-          </div>
+          {eclipse ? (
+            <CabecaDoEclipse nome={nome} cena={vista} segundos={segundos} />
+          ) : (
+            <PilulaDoAgente slug={slug} nome={nome} cena={vista} segundos={segundos} />
+          )}
+          <ConfiguracaoDaConversa
+            direcao={direcao}
+            escolheDirecao={escolheDirecao}
+            visual={visual}
+            escolheVisual={escolheVisual}
+            fone={fone}
+            mudaFone={mudaFone}
+            texto={texto}
+            mudaTexto={mudaTexto}
+            aberta={configAberta}
+            mudaAberta={setConfigAberta}
+            detalheTecnico={detalheTecnico}
+          />
         </header>
 
         {pecas.esfera && visivel ? (
-          <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel} />
-        ) : null}
-
-        <section className={texto && !aoVivo ? styles.leitura : 'sr-only'} aria-live="polite" aria-atomic="true">
-          <div className={styles.linhaDoTitulo}>
-            <h1 className={styles.titulo}>{leitura.titulo}</h1>
-            {cena === 'esperandoZe' && segundos > 0 ? <span className={styles.tempo}>{segundos} s</span> : null}
+          <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel}>
+            {eclipse ? <NucleoDoAgente slug={slug} nome={nome} cena={vista} leNivel={modo.leNivel} /> : null}
+            {sinal ? <SinalDoToque forma="esfera" /> : null}
+          </EsferaConversa>
+        ) : (
+          // Fora da vista a esfera não desenha, mas o palco guarda o tamanho dela: nada pula ao entrar.
+          <div className={styles.palco} data-palco={eclipse ? 'nucleo' : pecas.esfera ? 'esfera' : 'solto'}>
+            {eclipse ? (
+              <NucleoDoAgente slug={slug} nome={nome} cena={vista} leNivel={modo.leNivel} pulsa={sinal} />
+            ) : sinal && !pecas.esfera ? (
+              <SinalDoToque forma="solto" />
+            ) : null}
           </div>
-          <p className={styles.detalhe}>{leitura.detalhe}</p>
+        )}
+
+        <div className={styles.rodape} data-rodape="">
+          {convite ? <ConviteDaVoz linha={convite} pulsa={cena === 'parado'} /> : <LegendaDaVoz trechos={legenda} nome={primeiroNome} />}
+        </div>
+
+        <section className="sr-only" aria-live="polite" aria-atomic="true">
+          <p>{leitura.titulo}</p>
+          <p>{leitura.detalhe}</p>
           {voceDisse ? <p>{voceDisse}</p> : null}
         </section>
-
-        {aoVivo ? (
-          <div className={styles.aoVivo} data-fala="ao-vivo" aria-hidden="true">
-            <p>{aoVivo}</p>
-          </div>
-        ) : null}
-
-        {texto ? (
-          <section className={styles.falas}>
-            {falas.voce && (cena === 'transcrevendo' || modo.fala.firme) ? (
-              <div className={styles.fala} data-fala="voce" data-forma={cena === 'transcrevendo' ? 'cheia' : falas.voce}>
-                <span className={styles.quem}>Você disse</span>
-                <p>
-                  {modo.fala.firme ? (
-                    `“${modo.fala.firme}”`
-                  ) : modo.fala.parcial ? (
-                    <span className={styles.parcial} data-fala="parcial">{modo.fala.parcial}</span>
-                  ) : (
-                    <Reticencias />
-                  )}
-                </p>
-              </div>
-            ) : null}
-            {falas.ze && modo.respostaDoZe ? (
-              <div className={styles.fala} data-fala="ze" data-forma={cena === 'interrompendo' ? 'pausada' : 'cheia'}>
-                <span className={styles.quem}>{nome}</span>
-                <p>{modo.respostaDoZe}</p>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
 
         {notas.length > 0 ? (
           <div className={styles.notas}>
@@ -268,9 +238,14 @@ export function TelaConversa({
       ) : null}
       <span ref={faixaDeBaixoRef} className={styles.faixaDeBaixo} aria-hidden="true" />
 
-      {linhaDoAviso ? (
+      {aviso ? (
         <footer className={styles.dock}>
-          <p role="alert" className={styles.aviso}>{linhaDoAviso}</p>
+          <p role="alert" className={styles.aviso}>
+            <span>
+              {aviso.linha}
+              {aviso.detalhe ? <small>{aviso.detalhe}</small> : null}
+            </span>
+          </p>
         </footer>
       ) : null}
     </main>

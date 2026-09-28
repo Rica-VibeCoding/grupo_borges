@@ -1,11 +1,13 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { flushSync } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 
 import { ArrastoDoChat } from './arrasto-do-chat';
 import styles from './pager-do-agente.module.css';
 import { painelAssentado, painelDaUrl, urlDoPainel, type Painel } from './rota-do-pager';
+import { trocaDeTela } from './transicao-da-voz';
 import { useMovimentoReduzido } from './use-movimento-reduzido';
 
 // A voz não pesa na primeira pintura do chat: chunk à parte, pré-carregado em ocioso.
@@ -82,16 +84,25 @@ export function PagerDoAgente({
     mostraNaUrl(painel);
   }, [mostraNaUrl]);
 
+  // Link da voz e voltar do navegador: a troca de tela animada (`transicao-da-voz.ts`) — o painel
+  // vai seco e a foto cruza por cima. Fechando, a esfera sai encolhendo (a voz já se marca fora da
+  // vista dentro da troca). Abrindo, ela NÃO monta dentro da troca — o WebGL dela e o da moldura
+  // congelavam a foto por ~900 ms (medido): monta logo depois e entra acendendo, pelo próprio CSS.
+  // Sem a API: rolagem suave, ou seca (`seco`).
   const vaiPara = useCallback(
-    (painel: Painel, suave = !reduzido) => {
+    (painel: Painel, semTroca: 'suave' | 'seco' = reduzido ? 'seco' : 'suave') => {
       const pager = pagerRef.current;
       if (!pager) return;
-      if (painel === 'voz') setMontaVoz(true);
-      pager.scrollTo({ left: painel === 'voz' ? pager.clientWidth : 0, behavior: suave ? 'smooth' : 'instant' });
+      // A voz monta ANTES da foto: a primeira montagem é pesada e, dentro da troca, congelaria a tela.
+      if (painel === 'voz') flushSync(() => setMontaVoz(true));
+      trocaDeTela((animando) => {
+        if (animando && painel === 'chat') setVozVisivel(false);
+        const seco = animando || semTroca === 'seco';
+        pager.scrollTo({ left: painel === 'voz' ? pager.clientWidth : 0, behavior: seco ? 'instant' : 'smooth' });
+      });
     },
     [reduzido],
   );
-  const irAoChat = useCallback(() => vaiPara('chat'), [vaiPara]);
 
   // Na hidratação: tira a marca da entrada direta e põe o pager no painel da URL do
   // navegador — que, voltando pelo histórico, pode não ser a que o servidor viu.
@@ -145,7 +156,7 @@ export function PagerDoAgente({
     // Voltar e avançar do navegador: o pager vai ao painel da URL, sem animar.
     const aoVoltar = () => {
       const painel = painelDaUrl(window.location.pathname, window.location.search, slug);
-      if (painel !== null) vaiPara(painel, false);
+      if (painel !== null) vaiPara(painel, 'seco');
     };
     window.addEventListener('popstate', aoVoltar);
     return () => {
@@ -173,7 +184,7 @@ export function PagerDoAgente({
       </section>
       <section ref={vozRef} className={styles.painel} data-painel="voz" aria-label="Conversa por voz" inert={ativo !== 'voz'}>
         {montaVoz ? (
-          <TelaConversa key={slug} slug={slug} nome={nome} ativa={ativo === 'voz'} visivel={vozVisivel} aoIrAoChat={irAoChat} />
+          <TelaConversa key={slug} slug={slug} nome={nome} ativa={ativo === 'voz'} visivel={vozVisivel} />
         ) : null}
       </section>
       <ArrastoDoChat pagerRef={pagerRef} chatRef={chatRef} />

@@ -160,3 +160,9 @@
 @media (prefers-reduced-motion: reduce) {
   .trilho, .trilho::after { transition: none; }
 }
+/* O número técnico (tempo do detector), no pé da folha: existe, mas não disputa a tela. */
+.tecnico {
+  margin: 0;
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-sm);
+}
