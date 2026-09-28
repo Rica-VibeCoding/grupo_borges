@@ -229,3 +229,79 @@ independente. Regressão da fase 4 sem quebra.
 APROVADO
 
 FIM-DO-TESTE-AO-VIVO
+
+---
+
+# Fase 4 — cadeira `teste`: WAV que cai, texto velho e palavras ao vivo (item 6, segunda volta)
+
+Briefing: pedido direto (validação independente da entrega em `relatos/fase4-ui.md`, seção
+FIM-DO-AO-VIVO-2). Claude Code (Sonnet 5) · 28/09/2026 · sem VPS, sem commit, sem código de produto
+editado. Alvo: dev 3009 (já no ar, não subi nem derrubei). Só a sonda de "Mostrar texto desligado" é
+minha; o resto rodei com o script dela mesma (`e2e/fase4-ao-vivo-2.cjs`, sem editar), saída própria
+em `e2e/teste/fase4-ao-vivo-2/` para não sobrescrever os artefatos dela.
+
+## Equipamento
+- Rodei eu mesma `e2e/fase4-ao-vivo-2.cjs` (dela) com `MOTOR=ambos`, os 4 casos, saída em
+  `e2e/teste/fase4-ao-vivo-2/` — bilhete e WAV reais, `/input` sempre simulado no navegador (200 ou
+  500, nunca sai pra rede; nenhum POST chegou a um agente real).
+- Duas sondas novas, minhas, em `e2e/teste/`: `fase4-mostrar-texto-desligado.cjs` (a chave do
+  briefing que o script dela nunca testa — o espião dela fixa `ck-conversa-texto = '1'` sempre) e
+  `fase4-parcial-esmaecido.cjs` (screenshot dedicado do quadro "Entendendo" com o parcial, janela
+  curta de ~600 ms).
+
+## 1. Provas de escopo (medidas por mim, não repetidas da `ui`)
+- `npm run type-check`: verde, zero erros.
+- `npm test`: **1183 testes, 1183 passaram, 0 falhas** — bate com o número que a `ui` reportou, mas
+  medido nesta rodada, não copiado.
+
+## 2. WAV que cai na rede sobe de novo
+Confirmado pelo código (`transcricao-da-fala.ts`: `ESPERAS_DO_WAV_MS = [400, 1200]`, desiste na
+terceira queda) e pelas contagens reais do E2E, nos dois motores:
+- `lenta-sem-wav` (WAV sempre falha): **3** tentativas de WAV, 3 `TypeError` capturados, o texto
+  atrasado do canal foi ao `/input` mesmo assim — bate com "sobe, cai, sobe de novo, cai, desiste".
+- `wav-cai-uma` (uma queda só): **2** tentativas, 1 `TypeError`, 1 envio — a segunda subida vingou.
+- `texto-velho`, fala 2 (canal mudo, WAV sempre falha): **3** tentativas, 3 quedas, desiste e cai em
+  "Não entendi" — mesmo padrão de `lenta-sem-wav`.
+
+## 3. Texto velho não aparece mais
+Código (`fala-da-vez.ts`): zera `firme`/`parcial` ao entrar em `ouvindo` vindo de outro estado; só
+grava `firme` quando a máquina aceita `transcreveu` estando em `transcrevendo` — a fala errada nunca
+tem chance de gravar. **Prova visual, com meus próprios olhos**, nos dois motores
+(`chromium-texto-velho.png`, `webkit-texto-velho.png` em `e2e/teste/fase4-ao-vivo-2/`): a segunda
+tela do caso `texto-velho` mostra "Não entendi o áudio / Não consegui entender o áudio." **sem
+nenhum traço** do texto da fala 1 ("Canário, teste do modo conversa...") — nem aspas, nem "Você
+disse". A primeira tela (erro de envio) mostra o texto da própria fala, correto.
+
+## 4. Palavras ao vivo, só com "Mostrar texto" ligado
+- **Ligado, em `ouvindo`**: confirmado com os olhos nos dois motores
+  (`chromium-palavras-ao-vivo.png`, `webkit-palavras-ao-vivo.png`) — as palavras da fala real
+  ("Canário, teste do modo conversa...") aparecem no lugar do título, crescendo enquanto ele fala.
+  Nos dados do E2E, 3 atualizações de palavras antes do fim em todos os casos que usam o canal.
+- **Ligado, em `transcrevendo`**: capturei o quadro dedicado (`chromium-transcrevendo-parcial-0-COM-PARCIAL.png`,
+  sonda própria) — "Entendendo" no título, e sob "Você disse" o texto SEM aspas, em cinza mais claro
+  que o branco do título (o token `--ck-text-secondary` do CSS dela) — é o parcial esmaecido, antes
+  do firme substituir (medido: ~600 ms de janela, o firme chega com aspas curvas depois).
+- **Desligado**: escrevi e rodei minha própria sonda (`fase4-mostrar-texto-desligado.cjs`, Chromium,
+  fala real completa). **PASS**: `[data-fala="ao-vivo"]` e `[data-fala="parcial"]` nunca existiram no
+  DOM em nenhum quadro observado; `data-texto` ficou `"oculto"` do início ao fim; a captura no meio da
+  fala (`chromium-desligado-no-meio-da-fala.png`) mostra a tela **sem nenhum texto visível** (só a
+  esfera e o rodapé de sempre) — igual a antes da mudança. O único texto que aparece no
+  `innerText()` bruto é o `sr-only` do leitor de tela (`voceDisseParaLeitor`), que já existia antes
+  desta fase e não é visual.
+
+## Não fiz
+- iPhone real: mesma lacuna de sempre (motores de desktop, não o aparelho).
+- Entrega real ao canarinho: proibido pelo próprio pedido desta rodada; `/input` ficou sempre
+  simulado no navegador, como o script da `ui` já fazia.
+- Não investiguei a causa de rede no iPhone (fora do escopo do pedido, e exigiria VPS).
+
+## Veredito
+
+**APROVADO** — as quatro entregas da `ui` (retentativa do WAV em 400 ms/1,2 s com desistência na
+terceira queda, texto velho sumindo de vez, palavras ao vivo em `ouvindo` e parcial esmaecido em
+`transcrevendo` só com "Mostrar texto" ligado, e nada disso vazando com a chave desligada) foram
+confirmadas de forma independente: `npm test`/`type-check` medidos por mim, o E2E dela rodado por
+mim nos dois motores com números batendo, três estados de tela vistos com meus próprios olhos, e uma
+sonda própria para o único caminho que o teste dela não cobria. Nenhum defeito de produto encontrado.
+
+FIM-TESTE-AO-VIVO-2
