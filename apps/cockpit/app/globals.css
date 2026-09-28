@@ -991,8 +991,11 @@ body {
 }
 .ck-caixa[data-linha='uma'] > .ck-campo {
   order: 2;
-  flex: 1 0 8rem;
-  min-width: 0;
+  /* Em repouso o campo está VAZIO: quem cede é ele, não a pílula do motor
+   * ("Op… médio" em 390px, 28/09). Base zero = só pega o que sobra; a
+   * fileira só encolhe (e trunca a pílula) quando nem os 2rem dele cabem. */
+  flex: 1 1 0;
+  min-width: 2rem;
 }
 .ck-caixa[data-linha='uma'] > .ck-base-da-caixa {
   display: contents;
