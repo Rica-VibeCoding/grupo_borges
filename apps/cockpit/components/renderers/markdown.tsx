@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -236,7 +237,7 @@ const MARKDOWN_COMPONENTS: Components = {
   },
 };
 
-export function AssistantMarkdown({
+function AssistantMarkdown({
   children,
   className = '',
   cursorNoFim = false,
@@ -262,3 +263,8 @@ export function AssistantMarkdown({
     </div>
   );
 }
+
+// react-markdown não guarda o parse: cada render refaz remark → rehype → React.
+// Os props são texto e flags, então a comparação rasa do `memo` basta.
+const AssistantMarkdownMemo = memo(AssistantMarkdown);
+export { AssistantMarkdownMemo as AssistantMarkdown };

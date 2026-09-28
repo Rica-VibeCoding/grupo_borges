@@ -10,7 +10,7 @@
 // A tese do cockpit v2 é que 82% do que passa por aqui é `tool_use` — então o
 // caminho quente é `LinhaExecucao`, e ela nasce colapsada.
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 
 import type { ContentPart } from '@grupo_borges/cockpit-core/messages-types';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
@@ -34,6 +34,7 @@ import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
 import { ehVoz, leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
 import { IconeMicrofone } from '@/components/shell/icones';
 import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
+import { mesmasPropsDoItem } from './mesmo-item.ts';
 
 type Props = {
   item: ItemDoFeed;
@@ -167,7 +168,7 @@ function Parte({
 /* Item                                                                        */
 /* -------------------------------------------------------------------------- */
 
-export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
+function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
   switch (item.kind) {
     case 'compact-summary':
       // O resumo do /compact NÃO é fala do Rica — é evento da máquina e tem
@@ -403,3 +404,6 @@ export function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Pr
       );
   }
 }
+
+const CorpoDoItemMemo = memo(CorpoDoItem, mesmasPropsDoItem);
+export { CorpoDoItemMemo as CorpoDoItem };

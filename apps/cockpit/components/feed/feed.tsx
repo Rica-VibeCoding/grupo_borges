@@ -13,7 +13,7 @@
 //   2. quando o Rica está rolado para cima, o que se preserva é o ITEM sob o
 //      olho dele, não o `scrollTop` (ver `ancora.ts`).
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
@@ -69,7 +69,7 @@ const SOBRA = 6;
  */
 const ALTURA_ITEM = 44;
 
-export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
+function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
   const ultimoTextoDoAssistente = useMemo(() => {
     for (let indice = itens.length - 1; indice >= 0; indice--) {
@@ -280,3 +280,8 @@ export function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProp
     </div>
   );
 }
+
+// Quem monta o feed re-renderiza por coisa que não é dele (compact, eco,
+// linha viva). Com os mesmos props, o feed não tem o que redesenhar.
+const FeedMemo = memo(Feed);
+export { FeedMemo as Feed };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { memo, useId, useState } from 'react';
 
 import {
   buildThinkingRenderModel,
@@ -61,9 +61,12 @@ function ThinkingDisclosure({
   );
 }
 
-export function Thinking({ content, className = '' }: ThinkingProps) {
+function Thinking({ content, className = '' }: ThinkingProps) {
   const thinking = buildThinkingRenderModel(content);
   if (thinking === null) return null;
 
   return <ThinkingDisclosure thinking={thinking} className={className} />;
 }
+
+const ThinkingMemo = memo(Thinking);
+export { ThinkingMemo as Thinking };

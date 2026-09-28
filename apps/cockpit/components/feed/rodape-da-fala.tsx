@@ -4,6 +4,8 @@
 // agente pra falar) e, ao lado, a data-hora discreta do bloco (Rica, 27/09).
 // O timestamp é o da linha do JSONL: fixo desde que o bloco existe.
 
+import { memo } from 'react';
+
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 import { BolhaVoz } from './bolha-voz.tsx';
@@ -15,7 +17,7 @@ type Props = {
   agentSlug?: string;
 };
 
-export function RodapeDaFala({ texto, payload, agentSlug }: Props) {
+function RodapeDaFala({ texto, payload, agentSlug }: Props) {
   if (texto.length === 0) return null;
   const instante = instanteDoBloco(payload);
   const quando = instante === null ? null : formataDataHora(instante);
@@ -35,3 +37,6 @@ export function RodapeDaFala({ texto, payload, agentSlug }: Props) {
     </div>
   );
 }
+
+const RodapeDaFalaMemo = memo(RodapeDaFala);
+export { RodapeDaFalaMemo as RodapeDaFala };
