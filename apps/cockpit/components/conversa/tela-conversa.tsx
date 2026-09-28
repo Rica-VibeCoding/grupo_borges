@@ -115,7 +115,9 @@ export function TelaConversa({
           : null,
       ].filter(Boolean)
     : [];
-  const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.ultimaTranscricao);
+  const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.fala.firme);
+  // Enquanto ele fala, as palavras do canal no lugar do título (só com "Mostrar texto").
+  const aoVivo = texto && cena === 'ouvindo' ? modo.fala.parcial : null;
 
   // Sair para o chat com a conversa andando é o parar, freio incluso: quando o pager assenta
   // no chat, pelo dedo, pelo ícone ou pelo voltar do navegador. A saída para outra página
@@ -203,7 +205,7 @@ export function TelaConversa({
           <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel} />
         ) : null}
 
-        <section className={texto ? styles.leitura : 'sr-only'} aria-live="polite" aria-atomic="true">
+        <section className={texto && !aoVivo ? styles.leitura : 'sr-only'} aria-live="polite" aria-atomic="true">
           <div className={styles.linhaDoTitulo}>
             <h1 className={styles.titulo}>{leitura.titulo}</h1>
             {cena === 'esperandoZe' && segundos > 0 ? <span className={styles.tempo}>{segundos} s</span> : null}
@@ -212,12 +214,26 @@ export function TelaConversa({
           {voceDisse ? <p>{voceDisse}</p> : null}
         </section>
 
+        {aoVivo ? (
+          <div className={styles.aoVivo} data-fala="ao-vivo" aria-hidden="true">
+            <p>{aoVivo}</p>
+          </div>
+        ) : null}
+
         {texto ? (
           <section className={styles.falas}>
-            {falas.voce && (cena === 'transcrevendo' || modo.ultimaTranscricao) ? (
+            {falas.voce && (cena === 'transcrevendo' || modo.fala.firme) ? (
               <div className={styles.fala} data-fala="voce" data-forma={cena === 'transcrevendo' ? 'cheia' : falas.voce}>
                 <span className={styles.quem}>Você disse</span>
-                <p>{cena === 'transcrevendo' ? <Reticencias /> : `“${modo.ultimaTranscricao}”`}</p>
+                <p>
+                  {modo.fala.firme ? (
+                    `“${modo.fala.firme}”`
+                  ) : modo.fala.parcial ? (
+                    <span className={styles.parcial} data-fala="parcial">{modo.fala.parcial}</span>
+                  ) : (
+                    <Reticencias />
+                  )}
+                </p>
               </div>
             ) : null}
             {falas.ze && modo.respostaDoZe ? (

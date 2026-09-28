@@ -461,7 +461,7 @@ async function agentInputError(res: Response): Promise<AgentInputError> {
 export async function postAgentInput(
   slug: string,
   text: string,
-  options?: { fresh?: boolean; origin?: 'text' | 'stt'; clientRequestId?: string },
+  options?: { fresh?: boolean; origin?: 'text' | 'stt' | 'voz'; clientRequestId?: string },
 ): Promise<AgentInputResponse> {
   const idempotency_key = safeUUID();
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/input`, {

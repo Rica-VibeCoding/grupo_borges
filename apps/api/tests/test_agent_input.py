@@ -173,6 +173,33 @@ def test_input_stt_preserves_voice_origin_without_exposing_marker_in_draft(
     )
 
 
+def test_input_voz_chega_com_marca_propria_da_tela_de_voz(tmp_path: Path) -> None:
+    """A tela de voz entrega com `🗣`, não `🎙`: é por ela que o hook do agente carrega a skill falada."""
+    app = _build_app(tmp_path)
+    with patch.object(
+        app.state.db,
+        "create_message_origin",
+        new=AsyncMock(return_value="origin-voz"),
+    ) as create_origin, patch(
+        "routers.agents.tmux_driver.send_message",
+        return_value=tmux_driver.DELIVERED,
+    ) as send_message:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/agents/daniel/input",
+                json={"text": "como está o deploy", "idempotency_key": "voz-1", "origin": "voz"},
+            )
+
+    assert response.status_code == 200, response.text
+    send_message.assert_awaited_once_with("daniel", "🗣 como está o deploy")
+    create_origin.assert_awaited_once_with(
+        agent_slug="daniel",
+        executor_kind="tmux",
+        expected_text="🗣 como está o deploy",
+        meta={"kind": "stt", "raw_text": "🗣 como está o deploy"},
+    )
+
+
 def test_input_returns_additive_event_boundary_before_tmux_send(tmp_path: Path) -> None:
     """A fronteira é lida antes da operação que pode gerar o eco do envio."""
     app = _build_app(tmp_path)

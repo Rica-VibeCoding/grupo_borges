@@ -32,6 +32,11 @@ O modo de trabalho não muda: cadeira `ui`/`logica` no PC, **APROVADO da cadeira
 - Como separar: a tela de voz pede o motor na mesma rota (campo no corpo), sem rota paralela.
 
 ## 4. Hook + skill de conversa por voz
+- 🟡 Feito, esperando publicação. Rica aprovou em 28/09 as 11 regras da pesquisa (guias OpenAI, ElevenLabs, Vapi,
+  LiveKit, Deepgram e VoiceMode). Skill `ze-shared/.claude/skills/conversa-por-voz` + ramo 🗣 no
+  `cockpit-load-skill.sh` (ze_claude `1f5561e`); `/input` com origem `voz` entrega `🗣 ` (`a0ff331`).
+  ⚠️ Publicar a API ANTES do cockpit: cliente novo com API velha = 422 em toda fala.
+  Fica para depois: avisar o agente quando o Rica corta a voz dele, e limpar número/símbolo antes do TTS.
 - Pedido: quando a mensagem vem da tela de voz, o agente conversa de um jeito natural: avisa antes de tarefa longa
   ("vou pesquisar e já volto"), responde curto e falado (sem lista, tabela nem código) e manda o que é de ler/detalhe
   **pelo Telegram**, dizendo na voz "deixei os detalhes no Telegram".

@@ -132,6 +132,23 @@
   color: var(--ck-text-secondary);
 }
 
+/* As palavras ao vivo (item 6): no lugar do título enquanto ele fala, a última linha sempre à
+ * vista — o começo da fala longa sai por cima. Depois, esmaecidas até o texto firme chegar. */
+.aoVivo {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: calc(5em * var(--ck-leading-hero));
+  margin-top: clamp(var(--ck-space-5), 11dvh, 7rem);
+  overflow: hidden;
+  font-size: var(--ck-conversa-titulo-com-esfera);
+  font-weight: 500;
+  line-height: var(--ck-leading-hero);
+  letter-spacing: var(--ck-track-title);
+}
+.aoVivo p { margin: 0; overflow-wrap: anywhere; }
+.parcial { color: var(--ck-text-secondary); }
+
 .reticencias span {
   display: inline-block;
   animation: pisca 1.2s infinite var(--ck-ease);
@@ -262,7 +279,8 @@
 
 /* Com texto, a esfera ocupa o palco logo abaixo do cabeçalho e as palavras descem
  * para perto dos comandos; o título encolhe para não disputar o olho com ela. */
-.tela[data-opcao^='esfera'] .leitura {
+.tela[data-opcao^='esfera'] .leitura,
+.tela[data-opcao^='esfera'] .aoVivo {
   margin-top: var(--ck-space-2);
 }
 .tela[data-opcao^='esfera'] .titulo {
