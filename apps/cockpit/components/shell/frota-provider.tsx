@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, type ReactNode } from 'react';
 
 import type { FleetResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { useFrotaAoVivo } from '@/lib/usa-frota-ao-vivo';
-import { esperasDeTroca } from './esperas-de-troca.ts';
+import { esperasDeTroca } from './esperas-de-troca-cliente.ts';
 
 const FrotaContext = createContext<FleetResponse | null>(null);
 

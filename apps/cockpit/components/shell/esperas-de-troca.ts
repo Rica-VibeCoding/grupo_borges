@@ -24,15 +24,25 @@ export type EstadoDaEspera = {
   espera: EsperaDaTroca | null;
   /** O pedido cujo envio está em voo agora. */
   voando: PedidoDeTroca | null;
-  /** O teto venceu sem o agente parar — o chip conta isso uma vez. */
-  desistiu: boolean;
+  /** O desfecho que o chip conta uma vez — falha da troca ou o teto vencido.
+   *  Fica guardado aqui, e não num chip, porque o reenvio pode ter acontecido
+   *  com o chip do agente desmontado. */
+  recado: string | null;
 };
 
-type Executor = (pedido: PedidoDeTroca) => Promise<DesfechoDoPedido>;
+/** Quem envia: não depende de chip montado (ver `executor-de-troca.ts`). */
+export type Executor = (
+  slug: string,
+  pedido: PedidoDeTroca,
+  recado: (texto: string) => void,
+) => Promise<DesfechoDoPedido>;
+
+export const TEXTO_DESISTIU = 'A troca foi cancelada: o agente não parou de trabalhar.';
 
 type Registro = EstadoDaEspera & { ultimaTentativaMs: number; geracao: number };
 
 export type DependenciasDasEsperas = {
+  executar?: Executor;
   agora?: () => number;
   agendar?: (callback: () => void, ms: number) => ReturnType<typeof setInterval>;
   cancelar?: (timer: ReturnType<typeof setInterval>) => void;
@@ -41,7 +51,7 @@ export type DependenciasDasEsperas = {
   tetoMs?: number;
 };
 
-const VAZIO: EstadoDaEspera = { espera: null, voando: null, desistiu: false };
+const VAZIO: EstadoDaEspera = { espera: null, voando: null, recado: null };
 
 export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
   const agora = dep.agora ?? Date.now;
@@ -52,7 +62,7 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
   const tetoMs = dep.tetoMs ?? TETO_DA_ESPERA_MS;
 
   const registros = new Map<string, Registro>();
-  const executores = new Map<string, Executor>();
+  let executor: Executor | undefined = dep.executar;
   const status = new Map<string, string | null | undefined>();
   const ouvintes = new Map<string, Set<() => void>>();
   const leituras = new Map<string, EstadoDaEspera>();
@@ -85,13 +95,19 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
   async function enviar(slug: string, pedido: PedidoDeTroca, atual: EsperaDaTroca | null) {
     const r = registro(slug);
     const minha = r.geracao;
-    const executar = executores.get(slug);
+    const executar = executor;
+    const guardarRecado = (texto: string) => {
+      // Recado de um envio superado (cancelado, trocado) não é notícia.
+      if (minha !== r.geracao) return;
+      r.recado = texto;
+      avisar(slug);
+    };
     r.ultimaTentativaMs = agora();
     r.voando = pedido;
     avisar(slug);
     let desfecho: DesfechoDoPedido = 'falhou';
     try {
-      if (executar) desfecho = await executar(pedido);
+      if (executar) desfecho = await executar(slug, pedido, guardarRecado);
     } catch {
       desfecho = 'falhou';
     }
@@ -108,9 +124,12 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
     for (const [slug, r] of registros) {
       if (!r.espera) continue;
       if (esperaVenceu(r.espera, t, tetoMs)) {
+        // O envio em voo também é largado — igual ao `cancelar`: sem isto o
+        // `voando` nunca voltava a null e o chip ficava em "trocando…".
         r.geracao += 1;
         r.espera = null;
-        r.desistiu = true;
+        r.voando = null;
+        r.recado = TEXTO_DESISTIU;
         avisar(slug);
         continue;
       }
@@ -127,7 +146,7 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
       const r = registro(slug);
       r.geracao += 1;
       r.espera = null;
-      r.desistiu = false;
+      r.recado = null;
       return enviar(slug, pedido, null);
     },
     cancelar(slug: string) {
@@ -137,19 +156,19 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
       r.voando = null;
       avisar(slug);
     },
-    /** Quem executa é o chip montado mais recente do agente — e o último fica
-     *  valendo depois do desmonte: ele só fala com a rede e com a própria store. */
-    registrarExecutor(slug: string, executar: Executor) {
-      executores.set(slug, executar);
+    /** Troca o executor — só para testes e para a instância do cliente. */
+    definirExecutor(executar: Executor) {
+      executor = executar;
     },
     /** A frota viva alimenta o status de TODOS os agentes, aberto ou não. */
     informarStatus(slug: string, valor: string | null | undefined) {
       status.set(slug, valor);
     },
-    esquecerDesistencia(slug: string) {
+    /** O chip já mostrou o recado: ele não se repete na próxima montagem. */
+    esquecerRecado(slug: string) {
       const r = registros.get(slug);
-      if (r?.desistiu) {
-        r.desistiu = false;
+      if (r?.recado) {
+        r.recado = null;
         avisar(slug);
       }
     },
@@ -159,7 +178,7 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
       // Mesma referência entre avisos: `useSyncExternalStore` exige leitura estável.
       let leitura = leituras.get(slug);
       if (!leitura) {
-        leitura = { espera: r.espera, voando: r.voando, desistiu: r.desistiu };
+        leitura = { espera: r.espera, voando: r.voando, recado: r.recado };
         leituras.set(slug, leitura);
       }
       return leitura;
@@ -179,6 +198,3 @@ export function criaEsperasDeTroca(dep: DependenciasDasEsperas = {}) {
 }
 
 export type EsperasDeTroca = ReturnType<typeof criaEsperasDeTroca>;
-
-/** A instância do cliente — uma por aba, viva entre as rotas. */
-export const esperasDeTroca = criaEsperasDeTroca();

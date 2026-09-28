@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { criaEsperasDeTroca } from './esperas-de-troca.ts';
+import { TEXTO_DESISTIU, criaEsperasDeTroca } from './esperas-de-troca.ts';
 import { TETO_DA_ESPERA_MS, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
 
 const haiku: PedidoDeTroca = { tipo: 'modelo', valor: 'haiku' };
@@ -17,7 +17,7 @@ function montar(respostas: DesfechoDoPedido[]) {
     intervaloMs: 3_000,
   });
   const envios: PedidoDeTroca[] = [];
-  const executar = async (pedido: PedidoDeTroca) => {
+  const executar = async (_slug: string, pedido: PedidoDeTroca) => {
     envios.push(pedido);
     return respostas.shift() ?? 'feito';
   };
@@ -33,7 +33,7 @@ const drenar = () => new Promise((r) => setImmediate(r));
 describe('esperas de troca — a espera sobrevive à troca de agente', () => {
   it('o chip de A desmonta (Rica abre o B) e o reenvio acontece assim mesmo', async () => {
     const m = montar(['esperar', 'feito']);
-    m.esperas.registrarExecutor('a', m.executar);
+    m.esperas.definirExecutor(m.executar);
     m.esperas.informarStatus('a', 'trabalhando');
     await m.esperas.pedir('a', haiku);
     assert.deepEqual(m.esperas.ler('a').espera?.pedido, haiku);
@@ -56,7 +56,7 @@ describe('esperas de troca — a espera sobrevive à troca de agente', () => {
 
   it('voltar ao A com a troca ainda esperando lê "esperando" da store', async () => {
     const m = montar(['esperar']);
-    m.esperas.registrarExecutor('a', m.executar);
+    m.esperas.definirExecutor(m.executar);
     await m.esperas.pedir('a', haiku);
     const leitura = m.esperas.ler('a');
     assert.deepEqual(leitura.espera?.pedido, haiku);
@@ -67,7 +67,7 @@ describe('esperas de troca — a espera sobrevive à troca de agente', () => {
   it('cancelar encerra a espera, e envio em voo não a rearma', async () => {
     let soltar: (d: DesfechoDoPedido) => void = () => {};
     const m = montar([]);
-    m.esperas.registrarExecutor('a', () => new Promise((r) => { soltar = r; }));
+    m.esperas.definirExecutor(() => new Promise((r) => { soltar = r; }));
     const voo = m.esperas.pedir('a', haiku);
     assert.deepEqual(m.esperas.ler('a').voando, haiku);
     m.esperas.cancelar('a');
@@ -79,7 +79,7 @@ describe('esperas de troca — a espera sobrevive à troca de agente', () => {
 
   it('escolha nova substitui a anterior: uma de cada vez', async () => {
     const m = montar(['esperar', 'esperar']);
-    m.esperas.registrarExecutor('a', m.executar);
+    m.esperas.definirExecutor(m.executar);
     await m.esperas.pedir('a', haiku);
     const sonnet: PedidoDeTroca = { tipo: 'modelo', valor: 'sonnet' };
     await m.esperas.pedir('a', sonnet);
@@ -88,23 +88,69 @@ describe('esperas de troca — a espera sobrevive à troca de agente', () => {
 
   it('teto de 15 min: desiste, marca a desistência e desliga o relógio', async () => {
     const m = montar(['esperar']);
-    m.esperas.registrarExecutor('a', m.executar);
+    m.esperas.definirExecutor(m.executar);
     m.esperas.informarStatus('a', 'trabalhando');
     await m.esperas.pedir('a', haiku);
     assert.equal(m.relogio().armados, 1);
     m.avancar(TETO_DA_ESPERA_MS);
     m.esperas.passo();
     assert.equal(m.esperas.ler('a').espera, null);
-    assert.equal(m.esperas.ler('a').desistiu, true);
+    assert.equal(m.esperas.ler('a').recado, TEXTO_DESISTIU);
     assert.equal(m.relogio().cancelados, 1);
-    m.esperas.esquecerDesistencia('a');
-    assert.equal(m.esperas.ler('a').desistiu, false);
+    m.esperas.esquecerRecado('a');
+    assert.equal(m.esperas.ler('a').recado, null);
   });
 
   it('executor que lança conta como falha e encerra a espera', async () => {
     const m = montar([]);
-    m.esperas.registrarExecutor('a', async () => { throw new Error('rede'); });
+    m.esperas.definirExecutor(async () => { throw new Error('rede'); });
     await m.esperas.pedir('a', haiku);
     assert.equal(m.esperas.ler('a').espera, null);
+  });
+
+  it('teto vencido com o reenvio em voo solta o "trocando…" (code-review 28/09)', async () => {
+    let n = 0;
+    const m = montar([]);
+    m.esperas.definirExecutor(() => (++n === 1 ? Promise.resolve('esperar') : new Promise(() => {})));
+    await m.esperas.pedir('a', haiku);
+    m.esperas.informarStatus('a', 'ocioso');
+    m.avancar(3_000);
+    m.esperas.passo();
+    assert.deepEqual(m.esperas.ler('a').voando, haiku, 'o reenvio está em voo');
+    m.avancar(TETO_DA_ESPERA_MS);
+    m.esperas.passo();
+    assert.equal(m.esperas.ler('a').voando, null);
+    assert.equal(m.esperas.ler('a').espera, null);
+    assert.equal(m.esperas.ler('a').recado, TEXTO_DESISTIU);
+  });
+
+  it('a falha de um reenvio com o chip desmontado fica guardada para o chip que montar', async () => {
+    const m = montar([]);
+    let n = 0;
+    m.esperas.definirExecutor(async (_slug, _pedido, recado) => {
+      if (++n === 1) return 'esperar';
+      recado('Não foi possível trocar o modelo.');
+      return 'falhou';
+    });
+    await m.esperas.pedir('a', haiku);
+    m.esperas.informarStatus('a', 'ocioso');
+    m.avancar(3_000);
+    m.esperas.passo();
+    await drenar();
+    assert.equal(m.esperas.ler('a').recado, 'Não foi possível trocar o modelo.');
+    assert.equal(m.esperas.ler('a').espera, null);
+  });
+
+  it('recado de envio superado (cancelado) não vira notícia', async () => {
+    const m = montar([]);
+    let soltar: () => void = () => {};
+    m.esperas.definirExecutor((_slug, _pedido, recado) => new Promise((r) => {
+      soltar = () => { recado('velho'); r('falhou'); };
+    }));
+    const voo = m.esperas.pedir('a', haiku);
+    m.esperas.cancelar('a');
+    soltar();
+    await voo;
+    assert.equal(m.esperas.ler('a').recado, null);
   });
 });

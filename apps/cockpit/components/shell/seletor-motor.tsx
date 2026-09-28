@@ -14,6 +14,7 @@ import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { LeituraDoMotor, RessalvaDoSeletor, usaRecado } from './seletor-motor-ressalva';
 import { sincronizarPainel } from './sincronizacao-painel';
+import { TEXTO_PERGUNTA_ABERTA } from './executor-de-troca.ts';
 import { classificaErroDaTroca, jaEstava, type DesfechoDoPedido, type PedidoDeTroca } from './troca-em-espera.ts';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 import { usaTelaEstreita } from './usa-tela-estreita';
@@ -27,8 +28,6 @@ type SeletorMotorProps = {
   esforcoCobrePedido: boolean;
 };
 
-const TEXTO_PERGUNTA_ABERTA = 'Há uma troca esperando resposta logo acima do campo.';
-const TEXTO_DESISTIU = 'A troca foi cancelada: o agente não parou de trabalhar.';
 
 function rotuloDoPedido(pedido: PedidoDeTroca, labels?: Record<string, string>): string {
   return pedido.tipo === 'modelo' ? rotulaModelo(pedido.valor, labels) : rotulaEsforco(pedido.valor) ?? pedido.valor;
@@ -96,7 +95,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   // troca — "esperando o agente terminar", "trocando…" — sem prender o
   // composer atrás de um menu modal pelos ~6 s da troca que abre o modal.
   const trocaAQuente = !cobrePedido;
-  const troca = usaTrocaEmEspera(agentSlug, executar, () => setRecado(TEXTO_DESISTIU));
+  const troca = usaTrocaEmEspera(agentSlug, setRecado);
   const pedidoEmCurso = troca.pedido;
   const ressalva = (
     <RessalvaDoSeletor
@@ -155,23 +154,21 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   }
 
   function mostrarAviso(mensagem: string) {
-    if (trocaAQuente) {
-      // A gaveta já fechou no toque: o recado mora na linha do chip.
-      setRecado(mensagem);
-      return;
-    }
     setAviso(mensagem);
     setTela('aviso');
   }
 
+  /** A troca a quente (Claude Code) vai para a espera por slug, que envia sem
+   *  depender deste chip montado (`executor-de-troca.ts`). A troca diferida da
+   *  Tara segue aqui, com a gaveta aberta: é dentro dela que ele escolhe o resto. */
   function escolher(pedido: PedidoDeTroca) {
     setRecado(null);
-    if (trocaAQuente) alterarAbertura(false);
+    if (!trocaAQuente) {
+      void (pedido.tipo === 'modelo' ? trocarModelo(pedido.valor) : trocarEsforco(pedido.valor));
+      return;
+    }
+    alterarAbertura(false);
     troca.pedir(pedido);
-  }
-
-  function executar(pedido: PedidoDeTroca): Promise<DesfechoDoPedido> {
-    return pedido.tipo === 'modelo' ? trocarModelo(pedido.valor) : trocarEsforco(pedido.valor);
   }
 
   /** O 409 da troca: ocupado é esperar (o chip reenvia sozinho, sem pedir
