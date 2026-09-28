@@ -68,7 +68,7 @@ export function PalcoDaConversa({
   }, [publicaAltura]);
 
   return (
-    <div ref={palcoRef} className="relative min-h-0 flex-1">
+    <div ref={palcoRef} className="ck-palco relative min-h-0 flex-1">
       {/* O feed ocupa o palco inteiro, inclusive a faixa que fica atrás do
           composer. É essa altura sobrando que dá o que desfocar. */}
       <div

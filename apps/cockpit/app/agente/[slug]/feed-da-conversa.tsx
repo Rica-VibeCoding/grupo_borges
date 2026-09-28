@@ -280,10 +280,15 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // O wrapper existe pra `key` + fade da troca de geração sem tocar em
   // `components/feed/**` (território do Hiro): `flex column` + `min-h-0`
   // repassam ao Feed exatamente o espaço que ele tinha antes.
+  //
+  // `ck-feed-chega` e não mais `ck-feed-enter` (28/09): a coluna que entra na
+  // troca de agente sobe 6px além de acender. As duas classes juntas animariam
+  // a opacidade em dobro; esta substitui aquela, e o Restart ganha o mesmo
+  // gesto. O deslize é SÓ aqui, nunca no palco — ver `.ck-feed-chega`.
   return (
     <div
       key={geracao}
-      className="ck-feed-enter flex min-h-0 flex-1 flex-col"
+      className="ck-feed-chega flex min-h-0 flex-1 flex-col"
     >
       <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
     </div>

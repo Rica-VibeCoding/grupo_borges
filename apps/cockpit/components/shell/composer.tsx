@@ -1395,7 +1395,11 @@ export function Composer({
                 transition: 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease)',
               }}
             >
-              <IconeEnviar />
+              {/* O aperto vai no ÍCONE, não no botão: o botão já carrega o
+                  `transform` da sacudida de recusa, e as duas regras
+                  disputariam a mesma propriedade — a que chegasse por último
+                  apagaria a outra no meio do gesto. */}
+              <IconeEnviar className="ck-aperta-miolo" />
             </InputGroupButton>
           </div>
         </div>

@@ -1547,6 +1547,58 @@ html[data-voz-troca='tela']::view-transition-old(ck-voz-esfera):only-child {
   to { opacity: 0; transform: scale(0.94); }
 }
 
+/* A TROCA DE AGENTE PELA TROPA (`lib/troca-de-agente.ts`). No toque, o palco
+ * que sai apaga para 0,6 — o toque pegou, a conversa nova está vindo. Quem liga
+ * é o `data-troca-agente` no `<html>`, derivado do `slugOtimo` da tropa: some
+ * sozinho quando a navegação chega OU morre, e nem acende quando o toque é no
+ * agente já aberto.
+ *
+ * Só `opacity` no palco, NUNCA `transform`: o palco é ancestral de peças
+ * `position: fixed`, e um `transform` nele vira o bloco de contenção delas —
+ * tudo o que é fixo passaria a se medir pelo palco (MDN, Containing block). O
+ * deslize da entrada mora um andar abaixo, na coluna do feed (`.ck-feed-chega`),
+ * que não tem nada fixo dentro. */
+.ck-palco {
+  transition: opacity var(--ck-dur-fast, 120ms) var(--ck-ease);
+}
+html[data-troca-agente] .ck-palco {
+  opacity: 0.6;
+}
+
+/* A coluna do feed que ENTRA — na troca de agente e no Restart. O gesto é o do
+ * `.ck-chega` (sobe 6px e acende), reaproveitando o keyframe. Substitui o
+ * `.ck-feed-enter` naquela div, não soma: as duas juntas animariam a opacidade
+ * em dobro. Fora do `prefers-reduced-motion: no-preference`, entra parada, como
+ * a antecessora. */
+@media (prefers-reduced-motion: no-preference) {
+  .ck-feed-chega {
+    animation: ck-chega var(--ck-dur-enter, 200ms) var(--ck-ease) both;
+  }
+}
+
+/* O APERTO. O botão tocado encolhe 4% enquanto o dedo está nele — o toque
+ * responde na hora, antes de qualquer rede. Mais curto que o `--ck-dur-fast`
+ * (três quartos dele, ~90ms): aperto que demora parece atraso, não resposta.
+ *
+ * Duas formas. `.ck-aperta` encolhe o próprio botão. `.ck-aperta-miolo`
+ * encolhe o que está DENTRO de um botão apertado — para botão que já tem
+ * `transform` seu (o enviar, com a sacudida da recusa), onde as duas regras
+ * disputariam a propriedade. `:active` não desce para os filhos: por isso o
+ * seletor lê o pai.
+ *
+ * No Safari do iOS, `:active` só acende se houver ouvinte de `touchstart` no
+ * elemento ou acima dele. Aqui há: o React registra `touchstart` na raiz do
+ * documento (a app router hidrata o `document` inteiro), e o
+ * `arrasto-do-chat.tsx` põe outro no `document`. Botão desabilitado não aperta. */
+.ck-aperta,
+.ck-aperta-miolo {
+  transition: transform calc(var(--ck-dur-fast, 120ms) * 0.75) var(--ck-ease);
+}
+.ck-aperta:active:not(:disabled),
+:active:not(:disabled) > .ck-aperta-miolo {
+  transform: scale(0.96);
+}
+
 /* Quem pediu menos movimento recebe menos movimento — inclusive o pulso do
  * state-attention, que é o único com direito a animação persistente. */
 @media (prefers-reduced-motion: reduce) {

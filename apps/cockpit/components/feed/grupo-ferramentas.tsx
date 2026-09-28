@@ -115,8 +115,11 @@ export function GrupoFerramentasView({
         <Chevron aberto={aberto} />
       </button>
 
+      {/* `.ck-chega` só quando o DEDO abriu (`preferencia === true`): o grupo
+          que abre sozinho por estar em voo, e o que remonta ao rolar, aparecem
+          parados. Recolher segue seco — altura não se anima (§9.4). */}
       {aberto ? (
-        <div>
+        <div className={preferencia === true ? 'ck-chega' : undefined}>
           {entradas.map((entrada, indice) => (
             <Execucao key={indice} entrada={entrada} />
           ))}
