@@ -121,6 +121,8 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
     estimateSize: () => ALTURA_ITEM,
     overscan: SOBRA,
     getItemKey: chaveDoItem,
+    // O ajuste de scroll de quem chega colado no fim mede dentro do commit; com flushSync o React 19 acusa erro.
+    useFlushSync: false,
   });
 
   const virtuais = virtualizer.getVirtualItems();

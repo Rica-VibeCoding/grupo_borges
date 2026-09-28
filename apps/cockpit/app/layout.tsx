@@ -19,6 +19,10 @@ export const metadata: Metadata = {
     title: 'Cockpit',
     statusBarStyle: 'black-translucent',
   },
+  // O Safari do iPhone marca sozinho telefone, data, e-mail e endereço no texto
+  // (horários do chat inclusive) antes do React hidratar: vira atributo que o
+  // servidor não mandou e o React acusa hydration mismatch.
+  formatDetection: { telephone: false, date: false, email: false, address: false },
 };
 
 export const viewport: Viewport = {
