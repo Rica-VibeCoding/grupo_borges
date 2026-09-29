@@ -32,7 +32,7 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
   celular fica como estava (deslize). Disco de véu, recua durante a gravação. Build anterior guardado em
   `apps/cockpit/.next-anterior-011555`.
 
-## Feito — provado com o Canário real em 29/09, ainda sem commit/publicação (cadeira `ui`)
+## Feito — em produção desde 29/09 01:40 (`1575e90`, publicado pelo Daniel; build anterior em `apps/cockpit/.next-anterior-014035`)
 - **Frases de apoio na mesma voz/rota das respostas** (5 de espera + 5 de demora, sem repetir a anterior, sem
   contar como turno fechado). ⚠️ Divergiu do combinado: erro que acontece enquanto o agente fala agora corta a
   fala (só com fone — um alto-falante só não toca os dois juntos).
@@ -59,11 +59,10 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
   no Chrome (recarga no pensando, no meio da voz, depois de parar); 1352/1353 testes, `tsc` limpo. Divergência:
   `lib/conversa/tipos.ts` ganhou o evento `retomar` (só acréscimo). Detalhe: `relatos/fase4-ui.md`.
 
-## Próximo passo (Daniel)
-- Trazer tudo do clone do PC (base `e51a92e`, sem commit) para a `main` da VPS, revisar o diff, commitar com
-  caminho explícito e publicar na 3008 de uma vez: frases de apoio, mistura, ocupado e recarga. A partir desta
-  publicação, as seguintes já não derrubam a conversa. Depois, o Rica confere no iPhone e no notebook.
-- Cadeira `ui` em 39%: `/clear` antes de qualquer tarefa nova.
+## Próximo passo (Rica)
+- Conferir no notebook e no iPhone as quatro entregas acima, e repetir o gesto de parar o Canário e falar por
+  cima (o "Não entendi o áudio" de 01:16:58), agora sem publicação no meio.
+- `apps/cockpit/instrumentation-client.ts` (diagnóstico do gesto) ficou só no clone do PC, fora do commit.
 
 ## Achados de 29/09 (registrados)
 - **Teste do Rica no notebook, 29/09 01:12–01:18 (Canário, 3446):**
