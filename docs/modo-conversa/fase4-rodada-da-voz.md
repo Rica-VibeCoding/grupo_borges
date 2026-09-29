@@ -26,6 +26,12 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
   (Rica não decidiu) — hoje é só Google, não MiniMax.
 - Detalhe e provas: `relatos/fase4-ui.md`, `relatos/fase4-teste.md`; briefings em `briefings/fase4-*.md`.
 
+## Feito — em produção desde 29/09 01:16 (`6bc8b16`, publicado pelo Daniel, sem cadeira)
+- **Microfone no fim do composer, só no desktop** (pedido do Rica em 29/09): primeiro botão da direita com o
+  composer em repouso; o clique rola o pager para a tela de voz. Aparece só com mouse (`pointer: fine`); no
+  celular fica como estava (deslize). Disco de véu, recua durante a gravação. Build anterior guardado em
+  `apps/cockpit/.next-anterior-011555`.
+
 ## Feito — provado com o Canário real em 29/09, ainda sem commit/publicação (cadeira `ui`)
 - **Frases de apoio na mesma voz/rota das respostas** (5 de espera + 5 de demora, sem repetir a anterior, sem
   contar como turno fechado). ⚠️ Divergiu do combinado: erro que acontece enquanto o agente fala agora corta a
@@ -38,11 +44,32 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
 - Detalhe e prova: `relatos/fase4-ui.md` (seções "Frases de apoio" e "Mistura de cor"). Falta: commitar e
   publicar na 3008 (janela do Pavan), e o Rica conferir no iPhone.
 
+- **Cor própria do aviso "agente ocupado"** (`briefings/fase4-cor-agente-ocupado.md`): lilás 270°, contraste
+  5,55:1 (raised) e 5,29:1 (composer); o erro real segue vermelho (1°). A esfera fica **inteira e parada** no
+  ocupado — a rachada lia como "quebrou" (decisão do Daniel, delegada pelo Rica). Provado com o Canário ocupado
+  de verdade (409 real, marca `OCUPADO-REAL-OK`). Captura: `e2e/fase4-ocupado/lado-a-lado.png` (no PC).
+- **Tudo desta seção está só no clone do PC, sem commit.** Em produção (3446) ainda roda a versão velha: uma
+  frase de apoio fixa (`FRASE_PONTE`), noutra voz — é o que o Rica ouviu no teste de 29/09 01:1x.
+
 ## Em andamento (cadeira `ui`, ordem do Rica 29/09)
-- **Cor própria pro aviso "agente ocupado"**, separada do vermelho de erro real — `briefings/fase4-cor-agente-ocupado.md`.
-  Depois dela: item 1 da "Próxima lista" (conversa que sobrevive a recarga).
+- **Conversa que sobrevive a recarga** — `briefings/fase4-conversa-sobrevive-recarga.md`, fecha com
+  `FIM-DA-RECARGA` no `relatos/fase4-ui.md`. Começou às 01:10 de 29/09.
+- **D1 aberta com o Rica:** publicar frases + mistura + ocupado JÁ (pausar a `ui`, que mexe nos mesmos arquivos)
+  ou esperar a recarga fechar e publicar tudo junto (recomendação do Daniel: a publicação recarrega a aba e
+  derruba a conversa aberta, que é justamente o que a recarga conserta).
 
 ## Achados de 29/09 (registrados)
+- **Teste do Rica no notebook, 29/09 01:12–01:18 (Canário, 3446):**
+  - *Voz de apoio diferente da do agente e poucas frases* — é a versão velha em produção (acima); o conserto
+    está no PC, não publicado.
+  - *Parar o agente e falar por cima: a fala seguinte deu "Não entendi o áudio"* (01:16:58). Nenhum áudio saiu
+    do navegador (sem `live-token` nem `transcription` no `/tmp/cockpit-api.log`), e a aba tinha sido forçada a
+    recarregar 1 min antes pela publicação do microfone (restart da 3008 às 01:15:55). A fala seguinte
+    (01:17:51) chegou inteira. Hipótese: efeito da publicação, não defeito do interromper. **Pendente:** o Rica
+    repetir o gesto sem publicação no meio; se falhar de novo, reproduzir com microfone falso e consertar.
+  - Nome na transcrição: "Canário" saiu "Canábis" e "Canar" (item 4 da próxima lista).
+- **Canário estava desligado de propósito** (cockpit, 28/09 23:12, junto com o Vinicius); religado pelo Daniel
+  em 29/09 ~01:00 para as provas da `ui`. Desligar de novo quando a rodada fechar, se era por memória.
 - **Permissão de microfone a cada início de conversa:** esclarecido que não deveria pedir de novo sem recarregar a
   aba (o navegador guarda a permissão por site); se acontecer de novo mesmo sem reload, é caso à parte do conserto
   do `5cdf43e` — investigar quando reproduzir.
