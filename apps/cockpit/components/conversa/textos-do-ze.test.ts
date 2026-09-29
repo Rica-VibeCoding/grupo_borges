@@ -100,6 +100,25 @@ describe('passos do Zé na ordem do lote', () => {
     ]);
   });
 
+  it('pedido novo com o turno velho sem fim: fecha o velho antes — a resposta é de um turno novo', () => {
+    // Um freio com o Zé parado não grava fim nenhum (29/09, depois do /compact): o turno
+    // fantasma ficava aberto, gastava a marca de descarte com o fim da resposta nova e a tela
+    // calava até recarregar. Pedido que entra direto, sem passar pela fila, prova que o Zé
+    // estava parado.
+    const lote = [mensagem(80, 'user', 'nova fala'), doZe(81, 'resposta', 'end_turn')];
+    assert.deepEqual(passosDoZeDepoisDe(lote, 79, true, false), [
+      { tipo: 'fecha' },
+      { tipo: 'abre' },
+      { tipo: 'texto', texto: 'resposta' },
+      { tipo: 'fecha' },
+    ]);
+  });
+
+  it('resultado de ferramenta no meio do turno não fecha nada', () => {
+    const lote = [resultado(90), doZe(91, 'segue', 'tool_use')];
+    assert.deepEqual(passosDoZeDepoisDe(lote, 89, true, true), [{ tipo: 'texto', texto: 'segue' }]);
+  });
+
   it('resposta gravada em duas linhas com o fim: fecha só depois do texto', () => {
     const lote = [mensagem(20, 'user', 'pedido'), doZe(21, '', 'end_turn'), doZe(22, 'Um.', 'end_turn')];
     assert.deepEqual(passosDoZeDepoisDe(lote, 19, false, false), [

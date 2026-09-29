@@ -41,6 +41,11 @@ export function textosDoZeDepoisDe(
   return textos;
 }
 
+function pedidoDireto(item: MessagePayload): boolean {
+  const content = item.message?.content;
+  return item.kind === 'user' && !(Array.isArray(content) && content.some((parte) => parte?.type === 'tool_result'));
+}
+
 export type PassoDoZe =
   | { tipo: 'abre' }
   | { tipo: 'texto'; texto: string }
@@ -105,8 +110,10 @@ export function passosDoZeDepoisDe(
     if (entrou && emVoo) passos.push({ tipo: 'pedidoEntrou' });
     const textos = textosDe(item);
     const doZe = item.message?.role === 'assistant' && !item.is_sidechain;
-    // Pedido novo (ou resultado de ferramenta): o turno que tinha acabado fecha agora.
-    if (!doZe && efeito === true && acabou) fecha();
+    // Pedido novo (ou resultado de ferramenta): o turno que tinha acabado fecha agora. Pedido
+    // que entra direto (não pela fila) só entra com o Zé parado: se o turno ainda parecia em
+    // voo, era um fantasma sem fim — um freio com ele parado não grava fim nenhum.
+    if (!doZe && efeito === true && (acabou || (emVoo && pedidoDireto(item)))) fecha();
     if (!emVoo && (efeito === true || textos.length > 0)) {
       passos.push({ tipo: 'abre' });
       emVoo = true;
