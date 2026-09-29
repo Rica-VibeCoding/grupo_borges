@@ -41,7 +41,7 @@ export function BotaoMudo({ mudo, aoMudar, ativo }: {
       onPointerCancel={isola}
       onClick={(evento) => { isola(evento); aoMudar(!mudo); }}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {mudo ? (
           <>
             <path d="m3 3 18 18M9 9v3a3 3 0 0 0 5.12 2.12M9 5V4a3 3 0 0 1 6 0v5M5 10v2a7 7 0 0 0 12 4.9M19 10v2c0 .7-.1 1.37-.29 2" />
@@ -54,8 +54,6 @@ export function BotaoMudo({ mudo, aoMudar, ativo }: {
           </>
         )}
       </svg>
-      <span aria-live="polite">{mudo ? 'Microfone mudo' : 'Microfone ligado'}</span>
-      <kbd aria-hidden="true">M</kbd>
     </button>
   );
 }
