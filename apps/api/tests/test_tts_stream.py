@@ -272,3 +272,13 @@ def test_stream_declara_degradacao_quando_google_falha(monkeypatch) -> None:
     assert meta["segments"][0]["duration_estimate"] == round(
         tts._estimate_duration(sents[0]), 2
     )
+
+
+def test_canarinho_fala_no_google_com_voz_feminina_propria() -> None:
+    # Ordem do Rica em 29/09: todo o áudio do canal do Canário sai pela key do
+    # Google, feminina Chirp3-HD. Fora do mapa ele caía na FranciscaNeural do edge.
+    body = tts.TtsSynthRequest(text="oi", slug="canarinho")
+    voz = tts._resolve_voice(body, _FakeSettings())
+    assert voz.startswith("pt-BR-Chirp3-HD-") and tts._is_google_voice(voz)
+    assert voz != tts.FLEET_VOICES["tara"]  # não divide voz com a Tara
+    assert tts.EDGE_FALLBACK_VOICES["canarinho"] == "pt-BR-FranciscaNeural"

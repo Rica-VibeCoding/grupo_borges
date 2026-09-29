@@ -53,6 +53,10 @@ FLEET_VOICES: dict[str, str] = {
     "felipe": "pt-BR-Chirp3-HD-Iapetus",
     "barsi": "pt-BR-Chirp3-HD-Charon",
     "vinicius": "pt-BR-Chirp3-HD-Puck",
+    # Ordem do Rica em 29/09: todo o áudio do canal do Canário sai pela key do
+    # Google, feminina. Fora do mapa ele caía na FranciscaNeural do edge; Aoede
+    # é da Tara, então Kore.
+    "canarinho": "pt-BR-Chirp3-HD-Kore",
 }
 DEFAULT_GOOGLE_VOICE = "pt-BR-Chirp3-HD-Orus"
 
@@ -82,6 +86,7 @@ EDGE_FALLBACK_VOICES: dict[str, str] = {
     "felipe": "pt-BR-AntonioNeural",
     "barsi": "pt-BR-AntonioNeural",
     "vinicius": "pt-BR-AntonioNeural",
+    "canarinho": "pt-BR-FranciscaNeural",
 }
 
 # Régua de fala por CARACTERES (medida 11/08 no texto de 157 palavras): chars/s
