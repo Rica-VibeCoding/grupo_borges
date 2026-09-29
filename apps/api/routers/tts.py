@@ -190,7 +190,7 @@ def _resolve_voice(body: TtsSynthRequest, settings) -> str:
 _USO_LOG = Path("/home/clawd/.claude/metrics/tts-uso.jsonl")
 
 
-def _registra_uso(origem: str, slug: str, voice: str, text: str) -> None:
+def _registra_uso(origem: str, slug: str, voice: str, text: str, engine: str = "google") -> None:
     """Uma linha por síntese que o Google ACEITOU — é o que ele cobra. Falhar
     aqui nunca pode derrubar a fala: contador é observabilidade, não requisito."""
     try:
@@ -202,7 +202,7 @@ def _registra_uso(origem: str, slug: str, voice: str, text: str) -> None:
                 "slug": slug,
                 "voz": voice,
                 "chars": len(text),
-                "engine": "google",
+                "engine": engine,
                 "http": 200,
             },
             ensure_ascii=False,
@@ -233,6 +233,58 @@ async def _synth_google(text: str, voice: str, api_key: str, origem: str, slug: 
         raise RuntimeError("Google TTS sem audioContent")
     _registra_uso(origem, slug, voice, text)
     return base64.b64decode(audio_content)
+
+
+# Motor pago por agente: o MESMO `.env` do workspace que o `falar.py` lê para o
+# Telegram (`TTS_MOTOR=minimax` + `MINIMAX_*`), lido a cada fala — trocar a voz
+# lá troca aqui, sem restart. Ordem do Rica em 29/09: a voz do painel é a do Telegram.
+_WORKSPACES = Path("/home/clawd/repos/ze_claude")
+_ENV_LINHA = re.compile(r'^(?:export\s+)?([A-Z_][A-Z0-9_]*)=(.*)$', re.MULTILINE)
+
+
+def _minimax_do_agente(slug: str) -> dict | None:
+    if not slug:
+        return None
+    try:
+        env = (_WORKSPACES / slug / ".env").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    v = {k: val.strip().strip('"\'') for k, val in _ENV_LINHA.findall(env)}
+    if v.get("TTS_MOTOR") != "minimax" or not v.get("MINIMAX_API_KEY"):
+        return None
+    # Mesmos padrões do tts-minimax.sh.
+    return {
+        "key": v["MINIMAX_API_KEY"],
+        "voice": v.get("MINIMAX_VOICE_ID") or "Portuguese_ReliableMan",
+        "model": v.get("MINIMAX_MODEL") or "speech-2.8-hd",
+        "emotion": v.get("MINIMAX_EMOTION") or "neutral",
+        "speed": float(v.get("MINIMAX_SPEED") or 1),
+    }
+
+
+async def _synth_minimax(text: str, cfg: dict, slug: str) -> bytes:
+    """MiniMax T2A v2 — mesmo payload do tts-minimax.sh."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        res = await client.post(
+            "https://api.minimax.io/v1/t2a_v2",
+            headers={"Authorization": f"Bearer {cfg['key']}"},
+            json={
+                "model": cfg["model"],
+                "text": text,
+                "stream": False,
+                "language_boost": "Portuguese",
+                "voice_setting": {"voice_id": cfg["voice"], "emotion": cfg["emotion"], "speed": cfg["speed"]},
+                "audio_setting": {"format": "mp3", "sample_rate": 32000},
+            },
+        )
+    corpo = res.json() if res.status_code == 200 else {}
+    if corpo.get("base_resp", {}).get("status_code") != 0:
+        raise RuntimeError(f"MiniMax HTTP {res.status_code}: {corpo.get('base_resp') or res.text[:200]}")
+    audio = (corpo.get("data") or {}).get("audio")
+    if not audio:
+        raise RuntimeError("MiniMax sem áudio")
+    _registra_uso("cockpit-stream", slug, cfg["voice"], text, "minimax")
+    return bytes.fromhex(audio)
 
 
 async def _synth_edge(text: str, voice: str, rate: str, pitch: str) -> bytes:
@@ -359,20 +411,28 @@ async def _stream_tts(
     rate = body.rate or settings.tts_rate
     pitch = body.pitch or settings.tts_pitch
 
-    # Engine decidida pela primeira sentença (a voz não muda no meio da fala).
-    # Sem key Google ou voz que o Google não atende, já nasce no edge e
-    # `degraded` fica true.
-    use_google = bool(api_key and _is_google_voice(voice))
+    # Engine decidida pela primeira sentença (a voz não muda no meio da fala):
+    # MiniMax se o agente a configurou, senão Google. Sem key Google ou voz que
+    # o Google não atende, já nasce no edge. `degraded` = não é a voz dele.
+    minimax = _minimax_do_agente(body.slug)
     first_mp3: bytes | None = None
-    if use_google:
+    engine = "edge"
+    if minimax:
+        try:
+            first_mp3 = await _synth_minimax(sentences[0], minimax, body.slug)
+            engine = "minimax"
+        except Exception:
+            pass
+    if first_mp3 is None and api_key and _is_google_voice(voice):
         try:
             first_mp3 = await _synth_google(
                 sentences[0], voice, api_key, "cockpit-stream", body.slug
             )
+            engine = "google"
         except Exception:
-            use_google = False
+            pass
 
-    engine = "google" if use_google else "edge"
+    preferido = "minimax" if minimax else "google"
     edge_voice = _resolve_edge_fallback(voice, body.slug, settings)
 
     # A sentença 0 é sintetizada antes do meta (e sua duração real vira a
@@ -401,9 +461,9 @@ async def _stream_tts(
     yield _sse(
         "meta",
         {
-            "voice": edge_voice if engine == "edge" else voice,
+            "voice": {"edge": edge_voice, "minimax": minimax["voice"] if minimax else ""}.get(engine, voice),
             "engine": engine,
-            "degraded": engine != "google",
+            "degraded": engine != preferido,
             "duration_estimate": round(total_estimate, 2),
             "peaks_per_second": int(1000 / _PEAK_INTERVAL_MS),
             "segments": segments,
@@ -421,7 +481,9 @@ async def _stream_tts(
     current_engine = engine
     for i, sent in enumerate(sentences[1:], start=1):
         try:
-            if current_engine == "google":
+            if current_engine == "minimax":
+                mp3 = await _synth_minimax(sent, minimax, body.slug)
+            elif current_engine == "google":
                 mp3 = await _synth_google(sent, voice, api_key, "cockpit-stream", body.slug)
             else:
                 mp3 = await _synth_edge(sent, edge_voice, rate, pitch)
@@ -431,11 +493,11 @@ async def _stream_tts(
             # sentença antes de desistir — a voz troca e isso é DECLARADO, mas
             # fala inteira em voz trocada é melhor que meia fala (a rota antiga
             # caía no edge e entregava a resposta inteira).
-            if current_engine == "google":
+            if current_engine != "edge":
                 try:
                     mp3 = await _synth_edge(sent, edge_voice, rate, pitch)
                 except Exception as exc2:
-                    yield _sse("error", {"id": i, "message": f"sentença {i} falhou (google e edge): {exc2}"})
+                    yield _sse("error", {"id": i, "message": f"sentença {i} falhou ({current_engine} e edge): {exc2}"})
                     return
                 current_engine = "edge"
                 yield _sse("degraded", {"engine": "edge", "voice": edge_voice, "sentenca": i})

@@ -21,6 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from routers import tts  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _sem_workspace_real(tmp_path, monkeypatch) -> None:
+    # O `.env` de verdade do Daniel liga a MiniMax: teste nenhum pode ler (e gastar) a chave real.
+    monkeypatch.setattr(tts, "_WORKSPACES", tmp_path / "workspaces")
+
+
 def _mp3_teste() -> bytes:
     """MP3 sintético de ~0,3s (sine via ffmpeg)."""
     proc = subprocess.run(
@@ -282,3 +288,108 @@ def test_canarinho_fala_no_google_com_voz_feminina_propria() -> None:
     assert voz.startswith("pt-BR-Chirp3-HD-") and tts._is_google_voice(voz)
     assert voz != tts.FLEET_VOICES["tara"]  # não divide voz com a Tara
     assert tts.EDGE_FALLBACK_VOICES["canarinho"] == "pt-BR-FranciscaNeural"
+
+
+# --- MiniMax: a voz do Telegram também no painel (Rica, 29/09) -------------
+
+
+def _workspace(tmp_path, monkeypatch, slug: str, env: str) -> None:
+    (tmp_path / slug).mkdir()
+    (tmp_path / slug / ".env").write_text(env, encoding="utf-8")
+    monkeypatch.setattr(tts, "_WORKSPACES", tmp_path)
+
+
+_ENV_MINIMAX = (
+    "export GOOGLE_TTS_VOICE=pt-BR-Wavenet-E\n"
+    "export TTS_MOTOR=minimax\n"
+    "export MINIMAX_API_KEY=sk-teste\n"
+    "export MINIMAX_VOICE_ID=voz-desenhada\n"
+    "export MINIMAX_EMOTION=happy\n"
+    "export MINIMAX_SPEED=1.1\n"
+    "export MINIMAX_MODEL=speech-2.8-turbo\n"
+)
+
+
+def test_minimax_do_agente_le_o_mesmo_env_do_telegram(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "daniel", _ENV_MINIMAX)
+    cfg = tts._minimax_do_agente("daniel")
+    assert cfg == {
+        "key": "sk-teste", "voice": "voz-desenhada", "model": "speech-2.8-turbo",
+        "emotion": "happy", "speed": 1.1,
+    }
+
+
+def test_minimax_do_agente_sem_motor_pago_fica_no_google(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "pavan", "export GOOGLE_TTS_API_KEY=x\n")
+    assert tts._minimax_do_agente("pavan") is None
+    assert tts._minimax_do_agente("canarinho") is None  # sem workspace
+    assert tts._minimax_do_agente("") is None
+
+
+def _coleta(sents, voice, body, settings) -> dict[str, list[dict]]:
+    events: dict[str, list[dict]] = {}
+
+    async def _run() -> None:
+        async for ev in tts._stream_tts(sents, voice, body, settings):
+            e = ev.split("\n", 1)[0].replace("event: ", "").strip()
+            events.setdefault(e, []).append(json.loads(ev.split("data: ", 1)[1].strip()))
+
+    asyncio.run(_run())
+    return events
+
+
+def test_stream_com_minimax_configurado_fala_toda_pela_minimax(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "daniel", _ENV_MINIMAX)
+    mp3 = _mp3_teste()
+    pedidas: list[str] = []
+
+    async def _minimax_ok(text, cfg, _slug):
+        pedidas.append(cfg["voice"])
+        return mp3
+
+    async def _proibido(*_a, **_k):
+        raise AssertionError("agente com MiniMax caiu em outro motor")
+
+    monkeypatch.setattr(tts, "_synth_minimax", _minimax_ok)
+    monkeypatch.setattr(tts, "_synth_google", _proibido)
+    monkeypatch.setattr(tts, "_synth_edge", _proibido)
+
+    body = _FakeBody()
+    body.slug = "daniel"
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "chave-de-teste"
+    sents = tts._split_sentences(tts.strip_for_tts(body.text))
+    events = _coleta(sents, "pt-BR-Wavenet-E", body, settings)
+
+    meta = events["meta"][0]
+    assert meta["engine"] == "minimax"
+    assert meta["voice"] == "voz-desenhada"
+    assert meta["degraded"] is False
+    assert pedidas == ["voz-desenhada"] * len(sents)
+    assert "degraded" not in events
+
+
+def test_stream_minimax_caiu_vai_pro_google_e_declara(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "daniel", _ENV_MINIMAX)
+    mp3 = _mp3_teste()
+
+    async def _minimax_caiu(*_a, **_k):
+        raise RuntimeError("MiniMax 1002")
+
+    async def _google_ok(*_a, **_k):
+        return mp3
+
+    monkeypatch.setattr(tts, "_synth_minimax", _minimax_caiu)
+    monkeypatch.setattr(tts, "_synth_google", _google_ok)
+
+    body = _FakeBody()
+    body.slug = "daniel"
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "chave-de-teste"
+    sents = tts._split_sentences(tts.strip_for_tts(body.text))
+    events = _coleta(sents, "pt-BR-Wavenet-E", body, settings)
+
+    meta = events["meta"][0]
+    assert meta["engine"] == "google"
+    assert meta["voice"] == "pt-BR-Wavenet-E"
+    assert meta["degraded"] is True  # não é a voz que ele configurou
