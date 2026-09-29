@@ -352,6 +352,7 @@ _ENV_MINIMAX = (
     "export MINIMAX_EMOTION=happy\n"
     "export MINIMAX_SPEED=1.1\n"
     "export MINIMAX_MODEL=speech-2.8-turbo\n"
+    "export MINIMAX_PITCH=1\n"
 )
 
 
@@ -360,7 +361,7 @@ def test_minimax_do_agente_le_o_mesmo_env_do_telegram(tmp_path, monkeypatch) -> 
     cfg = tts._minimax_do_agente("daniel")
     assert cfg == {
         "key": "sk-teste", "voice": "voz-desenhada", "model": "speech-2.8-turbo",
-        "emotion": "happy", "speed": 1.1,
+        "emotion": "happy", "speed": 1.1, "pitch": 1,
     }
 
 

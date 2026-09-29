@@ -268,6 +268,7 @@ def _minimax_do_agente(slug: str) -> dict | None:
         "model": v.get("MINIMAX_MODEL") or "speech-2.8-hd",
         "emotion": v.get("MINIMAX_EMOTION") or "neutral",
         "speed": float(v.get("MINIMAX_SPEED") or 1),
+        "pitch": int(v.get("MINIMAX_PITCH") or 0),
     }
 
 
@@ -282,7 +283,7 @@ async def _synth_minimax(text: str, cfg: dict, slug: str) -> bytes:
                 "text": text,
                 "stream": False,
                 "language_boost": "Portuguese",
-                "voice_setting": {"voice_id": cfg["voice"], "emotion": cfg["emotion"], "speed": cfg["speed"]},
+                "voice_setting": {"voice_id": cfg["voice"], "emotion": cfg["emotion"], "speed": cfg["speed"], "pitch": cfg["pitch"]},
                 "audio_setting": {"format": "mp3", "sample_rate": 32000},
             },
         )
