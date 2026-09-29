@@ -148,6 +148,73 @@ describe('o microfone da conversa', () => {
     assert.deepEqual(velhaNoPedido, ['ended']);
   });
 
+  it('bloqueado não pede nem retoma captura', async () => {
+    let pedidos = 0;
+    let bloqueado = true;
+    const mic = criaMicrofone(async () => { pedidos += 1; return capturaFalsa(); }, () => bloqueado);
+    await assert.rejects(mic.abre(), { name: 'AbortError' });
+    assert.equal(pedidos, 0);
+    bloqueado = false;
+    const captura = await mic.abre();
+    mic.pausa(captura, false);
+    bloqueado = true;
+    await assert.rejects(mic.retoma(captura), { name: 'AbortError' });
+    assert.equal(captura.faixa.readyState, 'ended');
+    assert.equal(mic.atual(), null);
+    assert.equal(pedidos, 1);
+  });
+
+  it('mudo durante a permissão para a faixa que chega tarde', async () => {
+    let entrega!: (captura: CapturaFalsa) => void;
+    let bloqueado = false;
+    const mic = criaMicrofone(() => new Promise<CapturaFalsa>((resolve) => { entrega = resolve; }), () => bloqueado);
+    const abertura = mic.abre();
+    bloqueado = true;
+    const captura = capturaFalsa();
+    entrega(captura);
+    await assert.rejects(abertura, { name: 'AbortError' });
+    assert.equal(captura.faixa.readyState, 'ended');
+    assert.equal(mic.atual(), null);
+  });
+
+  it('soltar invalida a abertura pendente mesmo se desmutar antes da resolução', async () => {
+    let entrega!: (captura: CapturaFalsa) => void;
+    const mic = criaMicrofone(() => new Promise<CapturaFalsa>((resolve) => { entrega = resolve; }));
+    const abertura = mic.abre();
+    mic.solta();
+    const captura = capturaFalsa();
+    entrega(captura);
+    await assert.rejects(abertura, { name: 'AbortError' });
+    assert.equal(captura.faixa.readyState, 'ended');
+    assert.equal(mic.atual(), null);
+  });
+
+  it('abertura superada não troca nem solta a captura mais nova', async () => {
+    const entregas: ((captura: CapturaFalsa) => void)[] = [];
+    const mic = criaMicrofone(() => new Promise<CapturaFalsa>((resolve) => { entregas.push(resolve); }));
+    const primeira = mic.abre();
+    const segunda = mic.abre();
+    const velha = capturaFalsa();
+    const nova = capturaFalsa();
+    entregas[1](nova);
+    await segunda;
+    entregas[0](velha);
+    await assert.rejects(primeira, { name: 'AbortError' });
+    assert.equal(velha.faixa.readyState, 'ended');
+    assert.equal(nova.faixa.readyState, 'live');
+    assert.equal(mic.atual(), nova);
+  });
+
+  it('pausar bloqueado solta em vez de guardar faixa viva', async () => {
+    let bloqueado = false;
+    const mic = criaMicrofone(async () => capturaFalsa(), () => bloqueado);
+    const captura = await mic.abre();
+    bloqueado = true;
+    mic.pausa(captura, false);
+    assert.equal(captura.faixa.readyState, 'ended');
+    assert.equal(mic.atual(), null);
+  });
+
   it('solta só com a conversa parada ou em erro', () => {
     assert.equal(soltaOMicrofone('parado'), true);
     assert.equal(soltaOMicrofone('erro'), true);

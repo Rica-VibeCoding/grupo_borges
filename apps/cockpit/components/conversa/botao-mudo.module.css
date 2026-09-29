@@ -1,0 +1,44 @@
+.botao {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  left: calc(var(--ck-space-4) + var(--ck-safe-left));
+  bottom: calc(var(--ck-space-4) + var(--ck-safe-bottom));
+  align-items: center;
+  gap: var(--ck-space-2);
+  min-height: var(--ck-touch-min);
+  padding: var(--ck-space-2) var(--ck-space-3);
+  border: 1px solid var(--ck-edge-functional);
+  border-radius: var(--ck-radius-chip);
+  background: var(--ck-surface-canvas);
+  color: var(--ck-text-secondary);
+  font-family: var(--ck-font-sans);
+  font-size: var(--ck-text-xs);
+  line-height: var(--ck-leading-body);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.botao[aria-pressed='true'] {
+  color: var(--ck-text-primary);
+}
+
+.botao:hover:not(:disabled) {
+  background: var(--ck-surface-nav);
+}
+
+.botao:focus-visible {
+  outline: 2px solid var(--ck-focus);
+  outline-offset: 2px;
+}
+
+.botao:disabled {
+  cursor: default;
+}
+
+.botao svg { flex: none; }
+.botao kbd { font-family: var(--ck-font-mono); }
+
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .botao { display: inline-flex; }
+}

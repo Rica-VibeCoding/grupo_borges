@@ -13,31 +13,27 @@ import {
 } from './controlador-detector';
 import { criaMicrofone, ganchosDoMicrofone, soltaOMicrofone, type Microfone } from './microfone-da-conversa';
 import { criaVigiaDaEscuta, type VigiaDaEscuta } from './vigia-da-escuta';
+import { eventosDoDetector, type OuvinteDaFala } from './eventos-do-detector';
 
 type Preparacao = 'preparando' | 'pronto' | 'falhou';
 type VadUtils = typeof import('@ricky0123/vad-web')['utils'];
 
 const ASSET_VAD = '/vad/';
 
-/** Quem acompanha a fala quadro a quadro — o canal ao vivo (`use-canal-da-fala.ts`). */
-export type OuvinteDaFala = {
-  quadro(quadro: Float32Array): void;
-  inicio(): void;
-  /** Curta demais, ou o detector parou no meio: a fala some. */
-  descarte(): void;
-  fim(): void;
-};
+export type { OuvinteDaFala } from './eventos-do-detector';
 
 export function useDetectorDeFala({
   eventoRef,
   sessaoAtivaRef,
   conversaRef,
   falaRef,
+  bloqueadoRef,
 }: {
   eventoRef: RefObject<(evento: Evento) => void>;
   sessaoAtivaRef: RefObject<boolean>;
   conversaRef: RefObject<Conversa>;
   falaRef: RefObject<OuvinteDaFala | null>;
+  bloqueadoRef?: RefObject<boolean>;
 }) {
   const [preparacao, setPreparacao] = useState<Preparacao>('preparando');
   const [erroPreparacao, setErroPreparacao] = useState<string | null>(null);
@@ -46,6 +42,8 @@ export function useDetectorDeFala({
   const [abrindoMicrofone, setAbrindoMicrofone] = useState(false);
   /* Volume do microfone em ref: quem desenha lê no requestAnimationFrame, sem render. */
   const nivelRef = useRef(0);
+  const escutandoRef = useRef(false);
+  const podeOuvir = useCallback(() => escutandoRef.current && !bloqueadoRef?.current, [bloqueadoRef]);
 
   const controladorRef = useRef<ControladorDetector | null>(null);
   const utilsRef = useRef<VadUtils | null>(null);
@@ -73,12 +71,12 @@ export function useDetectorDeFala({
   /** Segura ou solta a vez; devolve se mudou. Soltar recomeça os 2 s do zero, a partir de agora. */
   const segura = useCallback(
     (ligado: boolean) => {
-      if (segurandoRef.current === ligado) return false;
+      if ((ligado && bloqueadoRef?.current) || segurandoRef.current === ligado) return false;
       segurandoRef.current = ligado;
       seguraNoDetector(detectorRef.current, conversaRef.current.estado, ligado);
       return true;
     },
-    [conversaRef],
+    [conversaRef, bloqueadoRef],
   );
 
   useEffect(() => {
@@ -86,6 +84,7 @@ export function useDetectorDeFala({
     const inicio = performance.now();
 
     const abreMicrofone = async () => {
+      if (!vivo || !podeOuvir()) throw new DOMException('Escuta cancelada', 'AbortError');
       const captura = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -94,13 +93,13 @@ export function useDetectorDeFala({
           noiseSuppression: true,
         },
       });
-      if (!vivo) {
+      if (!vivo || bloqueadoRef?.current) {
         captura.getTracks().forEach((track) => track.stop());
         throw new DOMException('Tela encerrada', 'AbortError');
       }
       for (const track of captura.getAudioTracks()) {
         track.addEventListener('ended', () => {
-          if (!microfoneRef.current?.surdo() && sessaoAtivaRef.current) {
+          if (podeOuvir() && !microfoneRef.current?.surdo() && sessaoAtivaRef.current) {
             eventoRef.current({ tipo: 'capturaCaiu' });
           }
         });
@@ -110,7 +109,7 @@ export function useDetectorDeFala({
       }
       return captura;
     };
-    const microfone = criaMicrofone(abreMicrofone);
+    const microfone = criaMicrofone(abreMicrofone, () => !vivo || !!bloqueadoRef?.current);
     microfoneRef.current = microfone;
 
     const vigia = criaVigiaDaEscuta({
@@ -119,14 +118,18 @@ export function useDetectorDeFala({
         faixaMuda: microfone.atual()?.getAudioTracks().some((faixa) => faixa.muted) ?? false,
         semQuadroHaMs: performance.now() - Math.max(ultimoQuadroRef.current, ligouEmRef.current),
       }),
-      retoma: () => void contextoRef.current?.resume().catch(() => {}),
+      retoma: () => { if (podeOuvir()) void contextoRef.current?.resume().catch(() => {}); },
       reabre: async () => {
+        if (!podeOuvir()) return;
+        const geracao = geracaoRef.current;
         const controlador = controladorRef.current;
         if (controlador === null) throw new Error('detector encerrado');
-        await controlador.reabre();
-        ligouEmRef.current = performance.now();
+        try { await controlador.reabre(); } catch (erro) {
+          if (geracao === geracaoRef.current && podeOuvir()) throw erro;
+        }
+        if (geracao === geracaoRef.current && podeOuvir()) ligouEmRef.current = performance.now();
       },
-      desiste: () => eventoRef.current({ tipo: 'falhou', motivo: 'escutaMuda' }),
+      desiste: () => { if (podeOuvir()) eventoRef.current({ tipo: 'falhou', motivo: 'escutaMuda' }); },
       agora: () => performance.now(),
       bate: (fn, ms) => {
         const id = window.setInterval(fn, ms);
@@ -149,6 +152,7 @@ export function useDetectorDeFala({
           // destruído numa reabertura, fecha aqui — com contexto de fora, o MicVAD não fecha.
           const abreComContexto = async () => {
             const captura = await microfone.abre();
+            if (!podeOuvir()) { microfone.solta(); throw new DOMException('Escuta cancelada', 'AbortError'); }
             void contextoRef.current?.close().catch(() => {});
             const contexto = new AudioContext();
             contexto.addEventListener('statechange', () => {
@@ -169,29 +173,7 @@ export function useDetectorDeFala({
             minSpeechMs: TEMPOS.falaMinima,
             getStream: abreComContexto,
             ...ganchosDoMicrofone(microfone, () => conversaRef.current.estado),
-          onSpeechStart: () => {
-            setFalaDetectada(true);
-            falaRef.current?.inicio();
-            eventoRef.current({ tipo: 'falaIniciou' });
-          },
-          onSpeechRealStart: () => eventoRef.current({ tipo: 'falaConfirmada' }),
-          onSpeechEnd: (audio) => {
-            setFalaDetectada(false);
-            falaRef.current?.fim(); // antes da máquina: a confirmação sai já, junto com o fim
-            eventoRef.current({ tipo: 'falaTerminou', audio });
-          },
-          onVADMisfire: () => {
-            setFalaDetectada(false);
-            falaRef.current?.descarte();
-            eventoRef.current({ tipo: 'falaDescartada' });
-          },
-          onFrameProcessed: (_probabilidades, quadro) => {
-            ultimoQuadroRef.current = performance.now();
-            falaRef.current?.quadro(quadro);
-            let soma = 0;
-            for (const amostra of quadro) soma += amostra * amostra;
-            nivelRef.current = Math.min(1, Math.sqrt(soma / quadro.length) * 8);
-          },
+            ...eventosDoDetector({ podeOuvir, falaRef, eventoRef, ultimoQuadroRef, nivelRef, setFalaDetectada }),
           });
           detectorRef.current = instancia;
           ajustaDetector();
@@ -221,18 +203,22 @@ export function useDetectorDeFala({
 
     return () => {
       vivo = false;
+      escutandoRef.current = false;
+      geracaoRef.current += 1;
       vigia.para();
       microfone.solta();
       void Promise.resolve(controladorRef.current?.encerra())
         .then(() => contextoRef.current?.close())
         .catch(() => {});
     };
-  }, [eventoRef, sessaoAtivaRef, conversaRef, falaRef, ajustaDetector]);
+  }, [eventoRef, sessaoAtivaRef, conversaRef, falaRef, ajustaDetector, bloqueadoRef, podeOuvir]);
 
   const liga = useCallback(async () => {
+    if (bloqueadoRef?.current) return;
     const controlador = controladorRef.current;
     if (controlador === null) throw new Error('detector ainda não está pronto');
     const geracao = ++geracaoRef.current;
+    escutandoRef.current = true;
     // No toque ("Parei de te ouvir" → tentar de novo), o gesto é o que o iOS aceita para
     // destravar o áudio: por isso o resume é síncrono, antes de qualquer await.
     const contexto = contextoRef.current;
@@ -242,16 +228,18 @@ export function useDetectorDeFala({
     try {
       await controlador.liga();
     } catch (erro) {
+      if (geracao !== geracaoRef.current || bloqueadoRef?.current) return;
+      escutandoRef.current = false;
       microfoneRef.current?.solta();
       throw erro;
     } finally {
-      setAbrindoMicrofone(false);
+      if (geracao === geracaoRef.current) setAbrindoMicrofone(false);
     }
-    if (geracao !== geracaoRef.current) return;
+    if (geracao !== geracaoRef.current || !podeOuvir()) return;
     // Voltando de "falando" para "ouvindo", confere já que o áudio chega — e segue vigiando.
     ligouEmRef.current = performance.now();
     vigiaRef.current?.comeca();
-  }, [ajustaDetector]);
+  }, [ajustaDetector, bloqueadoRef, podeOuvir]);
 
   /** Só o áudio, sem abrir o microfone: o toque que retoma depois da recarga (o iOS só destrava no gesto). */
   const destrava = useCallback(() => {
@@ -260,7 +248,9 @@ export function useDetectorDeFala({
   }, []);
 
   const desliga = useCallback(() => {
+    escutandoRef.current = false;
     geracaoRef.current += 1;
+    setAbrindoMicrofone(false);
     vigiaRef.current?.para();
     setFalaDetectada(false);
     nivelRef.current = 0;
@@ -268,6 +258,13 @@ export function useDetectorDeFala({
     falaRef.current?.descarte();
     void controladorRef.current?.desliga().catch(() => {});
   }, [falaRef]);
+
+  const emudece = useCallback(() => {
+    desliga();
+    segurandoRef.current = false;
+    seguraNoDetector(detectorRef.current, conversaRef.current.estado, false);
+    microfoneRef.current?.solta();
+  }, [desliga, conversaRef]);
 
   const criaWav = useCallback((audio: Float32Array) => {
     const utilitarios = utilsRef.current;
@@ -287,6 +284,7 @@ export function useDetectorDeFala({
     liga,
     destrava,
     desliga,
+    emudece,
     criaWav,
     acompanhaEstado,
     segura,

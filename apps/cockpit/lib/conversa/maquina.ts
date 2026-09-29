@@ -19,6 +19,7 @@ import type { Avanca, Conversa, Efeito, Estado, Evento, MotivoDeErro } from './t
 type ConversaInterna = Conversa & {
   fone?: boolean; // chave "estou de fone" — a única memória que atravessa estados
   capturando?: boolean;
+  enviando?: boolean;
   vozGuardada?: boolean;
   esperandoDesde?: number; // `agora` do `enviou`; base do relógio da espera
   ponteDita?: boolean; // `falarPonte` já saiu neste turno
@@ -79,7 +80,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
     case 'segurou': return noop(c);
     case 'falaIniciou':
       return falaIniciou(c, agora);
-    case 'falaDescartada':
+    case 'microfoneMudo': case 'falaDescartada':
       return falaDescartada(c);
     case 'falaConfirmada':
       return falaConfirmada(c);
@@ -158,7 +159,7 @@ function transcreveu(c: ConversaInterna, texto: string): Resultado {
     return novo(c, 'ouvindo', [LIGA], { zeDescartado: c.zeDescartado });
   }
   // Envia e toca o tique. `transcrevendo` cobre o envio; a espera começa no `enviou`.
-  return preserva(c, [{ tipo: 'enviar', texto }, { tipo: 'tocarTique' }]);
+  return preserva(c, [{ tipo: 'enviar', texto }, { tipo: 'tocarTique' }], { enviando: true });
 }
 
 function enviou(c: ConversaInterna, agora: number): Resultado {

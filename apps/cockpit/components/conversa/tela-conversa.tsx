@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 
 import { LinkAbrePainel } from '../shell/superficie-otimista';
 
+import { BotaoMudo } from './botao-mudo';
+import { useMudoConversa } from './use-mudo-conversa';
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
 import { conviteDaTela } from './direcao-da-voz';
 import { EsferaConversa } from './esfera-conversa';
@@ -67,7 +69,8 @@ export function TelaConversa({
   const [direcao, escolheDirecao] = useDirecaoDaVoz();
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
-  const modo = useModoConversa(slug, fone);
+  const { mudo, pronto, mudaMudo } = useMudoConversa();
+  const modo = useModoConversa(slug, fone, !pronto || mudo);
   const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
   const faixaDeBaixoRef = useRef<HTMLSpanElement>(null);
@@ -244,6 +247,7 @@ export function TelaConversa({
         ) : null}
       </div>
 
+      <BotaoMudo mudo={mudo} aoMudar={mudaMudo} ativo={ativa && pronto && !configAberta} />
       <button
         type="button"
         className={styles.toque}

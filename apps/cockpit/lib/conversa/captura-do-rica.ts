@@ -4,6 +4,7 @@ type Captura = Conversa & {
   fone?: boolean;
   capturando?: boolean;
   segurando?: boolean;
+  enviando?: boolean;
   vozGuardada?: boolean;
   vozAcabou?: boolean;
   zeAcabou?: boolean;
@@ -23,6 +24,11 @@ function libera(c: Captura): Resultado {
 }
 
 export function duranteCaptura(c: Captura, evento: Evento, agora: number): Resultado | null {
+  if (evento.tipo === 'microfoneMudo' && (c.estado === 'ouvindo' || c.estado === 'transcrevendo')) {
+    if (c.enviando) return { conversa: c, efeitos: [] };
+    const limpa = { ...c, capturando: false, segurando: false };
+    return c.vozGuardada ? libera(limpa) : { conversa: { ...limpa, estado: 'ouvindo' }, efeitos: [] };
+  }
   if (evento.tipo === 'segurou') {
     if (c.estado !== 'ouvindo') return { conversa: c, efeitos: [] };
     const conversa = { ...c, segurando: evento.ligado };

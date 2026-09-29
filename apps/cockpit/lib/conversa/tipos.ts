@@ -36,6 +36,7 @@ export type Evento =
   | { tipo: 'tique' } // a tela bate a cada ~250 ms; é o que move o relógio da espera
   | { tipo: 'parar' } // o toque que para; com o turno do Zé em voo, também o freia
   | { tipo: 'falaIniciou' }
+  | { tipo: 'microfoneMudo' }
   | { tipo: 'segurou'; ligado: boolean }
   | { tipo: 'falaDescartada' } // curta demais: o Silero chama de misfire
   | { tipo: 'falaConfirmada' } // fase 2: passou da fala mínima (o `onSpeechRealStart` do Silero)

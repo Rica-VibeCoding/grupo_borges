@@ -26,7 +26,8 @@ export type Microfone<C extends Captura> = {
   surdo(): boolean;
 };
 
-export function criaMicrofone<C extends Captura>(pede: () => Promise<C>): Microfone<C> {
+export function criaMicrofone<C extends Captura>(pede: () => Promise<C>, bloqueado = () => false): Microfone<C> {
+  let geracao = 0;
   let atual: C | null = null;
   let surdo = false;
   const para = (captura: C | null) => captura?.getAudioTracks().forEach((faixa) => faixa.stop());
@@ -38,19 +39,32 @@ export function criaMicrofone<C extends Captura>(pede: () => Promise<C>): Microf
     return faixas.length > 0 && faixas.every((faixa) => faixa.readyState === 'live');
   };
   const solta = () => {
+    geracao += 1;
     para(atual);
     atual = null;
     surdo = false;
   };
-  const abre = async () => {
+  const confereBloqueio = () => {
+    if (!bloqueado()) return;
     solta();
-    atual = await pede();
-    return atual;
+    throw new DOMException('Microfone bloqueado', 'AbortError');
+  };
+  const abre = async () => {
+    confereBloqueio();
+    solta();
+    const tentativa = geracao;
+    const captura = await pede();
+    if (tentativa !== geracao || bloqueado()) {
+      para(captura);
+      throw new DOMException('Abertura do microfone cancelada', 'AbortError');
+    }
+    atual = captura;
+    return captura;
   };
   return {
     abre,
     pausa(captura, soltar) {
-      if (soltar) {
+      if (soltar || bloqueado()) {
         para(captura);
         solta();
         return;
@@ -59,6 +73,8 @@ export function criaMicrofone<C extends Captura>(pede: () => Promise<C>): Microf
       surdo = true;
     },
     async retoma(captura) {
+      if (bloqueado()) para(captura);
+      confereBloqueio();
       if (captura !== atual || !viva(captura)) {
         para(captura);
         return abre();

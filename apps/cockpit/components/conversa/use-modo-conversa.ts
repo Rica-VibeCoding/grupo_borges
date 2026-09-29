@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { postAgentInput, postAgentInterromper, postAgentTranscription } from '@grupo_borges/cockpit-core/api';
+import { postAgentInput, postAgentInterromper } from '@grupo_borges/cockpit-core/api';
 
 import { destravaNoGesto } from '@/components/feed/reprodutor-unico';
 import { avanca, inicial, turnoDescartado } from '@/lib/conversa/maquina';
@@ -15,7 +15,8 @@ import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { zeOcupado } from './toque-da-conversa';
-import { transcreveFala } from './transcricao-da-fala';
+import { transcreveCaptura } from './transcricao-da-captura';
+import { useMudoDaCaptura } from './use-mudo-da-captura';
 import { useAbaEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
@@ -27,7 +28,7 @@ import { useVozDeApoio } from './use-voz-de-apoio';
 import { useWakeLock } from './use-wake-lock';
 
 /** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca. */
-export function useModoConversa(slug: string, fone: boolean) {
+export function useModoConversa(slug: string, fone: boolean, mudo = false) {
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
   const [aviso, setAviso] = useState<string | null>(null);
   /* O texto da vez do Rica na tela: as palavras ao vivo e o firme que a máquina aceitou. */
@@ -73,11 +74,14 @@ export function useModoConversa(slug: string, fone: boolean) {
     },
   });
   const wakeLock = useWakeLock(sessaoAtivaRef);
-  const canal = useCanalDaFala(slug, conversa.estado, (texto) => {
+  const captura = useMudoDaCaptura({ mudo, fone, conversaRef, sessaoAtivaRef,
+    emudece: () => { vez.segura(false); detector.emudece(); }, liga: () => executaEfeitoRef.current({ tipo: 'ligarDetector' }),
+    despacha: (evento) => despachaRef.current(evento) });
+  const canal = useCanalDaFala(slug, mudo ? 'parado' : conversa.estado, (texto) => {
     const estado = conversaRef.current.estado;
     setFala((atual) => comParcial(atual, estado, texto));
   });
-  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef, falaRef: canal.ouvinteRef });
+  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef, falaRef: canal.ouvinteRef, bloqueadoRef: captura.bloqueadoRef });
 
   const sons = useCallback(() => {
     sonsRef.current ??= criaSonsLocais();
@@ -109,7 +113,9 @@ export function useModoConversa(slug: string, fone: boolean) {
           })
           .catch((erro: unknown) => {
             iniciandoRef.current = false;
+            if (captura.bloqueadoRef.current) return;
             const nome = erro instanceof DOMException ? erro.name : '';
+            if (nome === 'AbortError') return;
             const negado = nome === 'NotAllowedError' || nome === 'SecurityError';
             despachaRef.current({ tipo: 'falhou', motivo: negado ? 'microfoneNegado' : 'capturaCaiu' });
           });
@@ -128,24 +134,11 @@ export function useModoConversa(slug: string, fone: boolean) {
         retomada.descartou();
         return;
       case 'transcrever': {
-        // O texto do canal ao vivo, já pronto; sem ele a tempo, o WAV sobe como sempre subiu.
         const ciclo = cicloRef.current;
-        const fala = canal.terminaFala();
-        void transcreveFala({
-          aoVivo: fala.texto,
-          paciencia: fala.paciencia,
-          arquivo: async () => {
-            const audio = detector.criaWav(efeito.audio);
-            if (audio === null) throw new Error('detector sem utilitários de WAV');
-            return (await postAgentTranscription(slug, audio)).text;
-          },
-          vivo: () => ciclo === cicloRef.current,
-          transcreveu: (texto) => {
-            limpaLegenda();
-            despachaRef.current({ tipo: 'transcreveu', texto });
-          },
-          falhou: () => despachaRef.current({ tipo: 'falhou', motivo: 'transcricaoFalhou' }),
-        }).then(fala.fecha);
+        const vigente = captura.vigente();
+        transcreveCaptura({ slug, audio: efeito.audio, canal, detector, limpaLegenda,
+          vivo: () => ciclo === cicloRef.current && vigente(),
+          despacha: (evento) => despachaRef.current(evento) });
         return;
       }
       case 'enviar': {

@@ -20,6 +20,7 @@ const vezDoRica = (estado: Estado) => estado === 'ouvindo' || estado === 'transc
 
 /** A máquina foi de `antes` a `depois` com `evento`. */
 export function falaDepois(fala: FalaDaVez, antes: Estado, evento: Evento, depois: Estado): FalaDaVez {
+  if (evento.tipo === 'microfoneMudo') return { ...fala, parcial: null };
   if (depois === 'ouvindo' && antes !== 'ouvindo') return FALA_VAZIA;
   // A máquina só aceita o texto em `transcrevendo`; fora dele, o texto é de ninguém.
   if (evento.tipo === 'transcreveu' && antes === 'transcrevendo') {

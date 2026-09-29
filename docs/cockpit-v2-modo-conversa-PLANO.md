@@ -100,6 +100,13 @@ Ordem vigente: G → I → H → D → C; E saiu do escopo. J tem módulos separ
   acentuada/marcador português (`tô`, `o`, `a`, `de`, `do`, `da`, `e`, `que`, `pra`).
   Captura/vez segurada bloqueiam; fim do turno desarma e invalida síntese pendente.
 - **H — ruído:** configurar `far_field` na sessão de transcrição ao vivo, preservando idioma/modelo.
+- **J — prioridade de publicação:** botão de mudo só no computador, atalho M fora dos campos de
+  edição e preferência persistida. Mudo bloqueia microfone e transcrição, inclusive aberturas e
+  resultados tardios; não interrompe o agente nem sua voz. Desmutar só religa no estado permitido.
+  Prova integrada no Chrome com microfone virtual: hidratação/início/recarga mudos com zero
+  aberturas; captura ativa encerrada sem transcrição/envio; áudio da resposta avançou de
+  0,006576 s para 0,998941 s enquanto as faixas estavam encerradas. Fronteiras assíncronas também
+  cobertas por testes. I está preservado fora da árvore para esta publicação prioritária.
 
 A e F já foram commitados (`fb1e164`, `c3e9dba`). G: 62 testes da máquina/captura aprovados,
 verificação de tipos aprovada; suíte completa com 1422 aprovados, 1 ignorado, nenhuma falha.
