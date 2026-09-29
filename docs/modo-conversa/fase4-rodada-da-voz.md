@@ -31,8 +31,10 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
   contar como turno fechado). ⚠️ Divergiu do combinado: erro que acontece enquanto o agente fala agora corta a
   fala (só com fone — um alto-falante só não toca os dois juntos).
 - **Cor do "pensando" na esfera**: mistura entre o dourado de "ouvindo" e o azul de "falando", com prova de
-  matiz medida (com WebGL 41°→133°→190°; sem WebGL 37°→131°→194°; moldura 40°→131°→190°). 🟡 Decisão do Rica: o
-  meio saiu verde-sálvia claro (apagado) — ver ao vivo antes de fechar.
+  matiz medida (com WebGL 41°→133°→190°; sem WebGL 37°→131°→194°; moldura 40°→131°→190°). **Decidido (Rica,
+  29/09): mantém o verde-sálvia apagado, sem mudar para a alternativa de verde vivo no meio do caminho** — o
+  meio passa a ~131–133°, perto demais do `--ck-state-ok` (150°, "concluído" em todo o cockpit); passar pelo
+  verde vivo aumentaria essa colisão. Nada a fazer aqui.
 - Detalhe e prova: `relatos/fase4-ui.md` (seções "Frases de apoio" e "Mistura de cor"). Falta: commitar e
   publicar na 3008 (janela do Pavan), e o Rica conferir no iPhone.
 
