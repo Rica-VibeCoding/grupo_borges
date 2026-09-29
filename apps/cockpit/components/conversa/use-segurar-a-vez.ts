@@ -17,12 +17,14 @@ export function useSegurarAVez({
   conversaRef,
   seguraDetector,
   somDeSegurar,
+  aoMudar,
 }: {
   estado: Estado;
   conversaRef: RefObject<Conversa>;
   /** Devolve se mudou: segurar duas vezes não toca o som duas vezes. */
   seguraDetector: (ligado: boolean) => boolean;
   somDeSegurar: () => void;
+  aoMudar: (ligado: boolean) => void;
 }) {
   const [segurando, setSegurando] = useState(false);
 
@@ -31,6 +33,7 @@ export function useSegurarAVez({
       const vale = ligado && podeSegurar(conversaRef.current.estado);
       if (!seguraDetector(vale)) return;
       setSegurando(vale);
+      aoMudar(vale);
       if (!vale) return;
       try {
         somDeSegurar();
@@ -38,7 +41,7 @@ export function useSegurarAVez({
         // Sem áudio local, a luz ainda diz que segurou.
       }
     },
-    [conversaRef, seguraDetector, somDeSegurar],
+    [conversaRef, seguraDetector, somDeSegurar, aoMudar],
   );
 
   useEffect(() => {

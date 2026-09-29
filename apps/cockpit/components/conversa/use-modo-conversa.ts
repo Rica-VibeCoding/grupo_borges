@@ -85,7 +85,8 @@ export function useModoConversa(slug: string, fone: boolean) {
   }, []);
   const somDeSegurar = useCallback(() => sons().sinalizaSegurar(), [sons]);
   const apoio = useVozDeApoio({ slug, sons, cancelaTurno: cancelaFala });
-  const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar });
+  const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar,
+    aoMudar: (ligado) => despachaRef.current({ tipo: 'segurou', ligado }) });
 
   const despacha = useCallback((evento: Evento) => {
     const antes = conversaRef.current.estado;

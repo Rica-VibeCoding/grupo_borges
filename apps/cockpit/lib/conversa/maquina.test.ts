@@ -587,7 +587,7 @@ test('falaConfirmada com Zé transmitindo ignora o textoDoZe residual até o zeT
   // Só o 'olá' virou falar; o 'residual' não voltou a falar por cima da fala do usuário.
   assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1);
 
-  // O zeTerminou do turno descartado limpa a marca; o próximo turno fala normal.
+  // O turno novo não é residual, mas ainda espera o fim da captura do Rica.
   const fim = roda([
     { evento: { tipo: 'fone', ligado: true }, agora: 0 },
     ...ateEspera(),
@@ -598,8 +598,14 @@ test('falaConfirmada com Zé transmitindo ignora o textoDoZe residual até o zeT
     { evento: { tipo: 'zeTerminou' }, agora: 700 },
     { evento: { tipo: 'textoDoZe', texto: 'novo turno' }, agora: 750 },
   ]);
-  assert.equal(fim.conversa.estado, 'falando');
+  assert.equal(fim.conversa.estado, 'ouvindo');
+  assert.deepEqual(soTipos(fim.efeitos).slice(-2), ['pausarVoz', 'falar']);
   assert.equal(fim.efeitos.filter((e) => e.tipo === 'falar').length, 2);
+  const gravada = avanca(fim.conversa, { tipo: 'falaTerminou', audio: new Float32Array([1]) }, 800);
+  const transcrita = avanca(gravada.conversa, { tipo: 'transcreveu', texto: 'Complemento.' }, 900);
+  const enviada = avanca(transcrita.conversa, { tipo: 'enviou' }, 1000);
+  assert.equal(enviada.conversa.estado, 'falando');
+  assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz']);
 });
 
 test('a marca atravessa falaTerminou/enviou — residual e zeTerminou velho não atropelam', () => {

@@ -69,6 +69,51 @@ está fora). A tela atual e o composer ficam intocados. Pedido por voz em 26/09/
 7. **Backend: só a rota de transcrição aceitar WAV** (fase 0 achou o 422; aprovado pelo Rica 26/09,
    `efda525`). Fora isso, a obra é só `apps/cockpit`.
 
+## Rodada de 29/09 — contratos aprovados para os ajustes A–J
+
+Pavan coordena os commits e a publicação; Tara entrega diferenças e caminhos por etapa.
+Nenhum serviço de produção é reiniciado para testar. A retomada do Daniel permanece.
+Ordem vigente: G → I → H → D → C; E saiu do escopo. J tem módulos separados da segunda Tara.
+
+- **F — prioridade:** a fala intermediária precisa começar antes do fim do turno. Medir o caminho
+  JSONL → API → navegador → áudio antes de alterar a origem. `jsonl_watcher._jsonl_lifecycle`
+  classifica estado, não filtra texto. Preferir corrigir a primeira retenção demonstrada;
+  `MessageDisplay` só entra se necessário, alimentando o fluxo da API, nunca chamando TTS.
+- **G — gravação preservada:** resposta recebida enquanto o Rica grava fica na fila de saída.
+  Não desligar o detector, perder amostras ou sobrepor áudio; liberar a reprodução ao terminar
+  ou soltar a fala, sem ressuscitar resposta descartada por interrupção.
+- **A — configuração:** o cabeçalho da voz abre o painel do chat na mesma rota, sem desmontar
+  conversa. Computador usa a gaveta à direita; gesto e preferências do celular permanecem.
+- **B — esforço:** reaproveitar o controle e mostrar o nível realmente observado. Padrão baixo
+  automático fica fora da rodada se não houver troca isolada da sessão: `/effort` pode afetar
+  a configuração global e o proxy só aplica na próxima inicialização. Não reiniciar para contornar.
+- **D — entrada ocupada:** fila local por agente/sessão, preservada na recarga, entrega uma fala
+  por vez após ociosidade confirmada. A API revalida antes de colar. Entrega incerta não repete
+  automaticamente; aba fechada não drena. Não confiar na absorção da fila nativa do CC.
+- **C — toque:** interromper turno e áudio é diferente de encerrar a conversa. Preservar a fala
+  enviada, seguir ouvindo e guardar complementação até o agente realmente poder recebê-la.
+- **E — retirado:** não implementar tique de ferramenta.
+- **I — cabeçalho falado:** as listas de ponte/demora/longa saem nesta rodada. Falar somente
+  `input.description` da ferramenta mais recente do turno aos 10/30 s, depois a cada 60 s
+  desde o fim audível. Pode repetir o mesmo cabeçalho; sem descrição, ficar calado. Sem cache.
+  Rejeitar texto com `/`, `\`, crase, `| $ = { } < >`, mais de 120 caracteres ou sem palavra
+  acentuada/marcador português (`tô`, `o`, `a`, `de`, `do`, `da`, `e`, `que`, `pra`).
+  Captura/vez segurada bloqueiam; fim do turno desarma e invalida síntese pendente.
+- **H — ruído:** configurar `far_field` na sessão de transcrição ao vivo, preservando idioma/modelo.
+
+A e F já foram commitados (`fb1e164`, `c3e9dba`). G: 62 testes da máquina/captura aprovados,
+verificação de tipos aprovada; suíte completa com 1422 aprovados, 1 ignorado, nenhuma falha.
+Na bancada Chrome com microfone virtual, fala de 12,092 s preservou WAV de 14,176 s
+(453676 bytes, 16 kHz, incluindo pré-gravação/silêncio). Resposta preparada durante captura,
+primeiro som somente 16 ms após confirmar o envio interceptado. Prova em
+`/tmp/tara-voz-bancada/prova-g-valida.json`; não equivale a fala humana nem envio real ao agente.
+Vez segurada/erros/fone cobertos por testes puros; recarga durante gravação não preserva amostras.
+
+Prova por item: teste que reproduz a falha, teste da correção e percurso no cockpit de
+desenvolvimento, incluindo fala, legenda, recarga, interrupção e ausência de entrega duplicada.
+A indisponibilidade do v2 às 04:40:35–04:42:05 UTC está confirmada; sua relação com o erro de
+fala relatado não está. A recusa de fala ocupada no cliente existe independentemente disso.
+
 ## O que já existe (mapa medido em 26/09, relativo a `apps/cockpit/`)
 
 - Envio: `postAgentInput(slug, text, {origin:'stt'})` — `packages/cockpit-core/src/api.ts:395`.

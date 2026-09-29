@@ -12,11 +12,14 @@
  * (retoma). Fase 3: parar com o turno em voo pede o freio no servidor (`frearZe`).
  */
 
+import { duranteCaptura, encerraCaptura } from './captura-do-rica.ts';
 import { TEMPOS } from './tipos.ts';
 import type { Avanca, Conversa, Efeito, Estado, Evento, MotivoDeErro } from './tipos.ts';
 
 type ConversaInterna = Conversa & {
   fone?: boolean; // chave "estou de fone" — a única memória que atravessa estados
+  capturando?: boolean;
+  vozGuardada?: boolean;
   esperandoDesde?: number; // `agora` do `enviou`; base do relógio da espera
   ponteDita?: boolean; // `falarPonte` já saiu neste turno
   avisoDito?: boolean; // `avisarDemora` já saiu neste turno
@@ -63,6 +66,8 @@ export const inicial = (): Conversa => ({ estado: 'parado' });
 
 export const avanca: Avanca = (conversa, evento, agora) => {
   const c = conversa as ConversaInterna;
+  const captura = duranteCaptura(c, evento, agora);
+  if (captura !== null) return captura;
   switch (evento.tipo) {
     case 'comecar':
     case 'retomar': // fase 4: o toque pós-recarga com o turno do Zé aberto volta a esperar por ele
@@ -71,6 +76,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
       return parar(c);
     case 'tique':
       return tique(c, agora);
+    case 'segurou': return noop(c);
     case 'falaIniciou':
       return falaIniciou(c, agora);
     case 'falaDescartada':
@@ -80,7 +86,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
     case 'fone':
       return fone(c, evento.ligado);
     case 'falaTerminou':
-      return falaTerminou(c, evento.audio);
+      return encerraCaptura(c, evento.audio);
     case 'transcreveu':
       return transcreveu(c, evento.texto);
     case 'enviou':
@@ -143,13 +149,6 @@ function tique(c: ConversaInterna, agora: number): Resultado {
     }
   }
   return noop(c);
-}
-
-function falaTerminou(c: ConversaInterna, audio: Float32Array): Resultado {
-  if (c.estado !== 'ouvindo') return noop(c);
-  return novo(c, 'transcrevendo', [DESLIGA, { tipo: 'transcrever', audio }], {
-    zeDescartado: c.zeDescartado,
-  });
 }
 
 function transcreveu(c: ConversaInterna, texto: string): Resultado {
@@ -245,7 +244,7 @@ function falaDescartada(c: ConversaInterna): Resultado {
 function falaConfirmada(c: ConversaInterna): Resultado {
   if (c.estado !== 'interrompendo') return noop(c);
   // Stream do Zé ainda em voo: o turno é descartado e o texto residual não fala por cima.
-  const extra: Partial<ConversaInterna> = c.zeAcabou ? {} : { zeDescartado: true };
+  const extra: Partial<ConversaInterna> = { capturando: true, ...(c.zeAcabou ? {} : { zeDescartado: true }) };
   return novo(c, 'ouvindo', [{ tipo: 'descartarVoz' }], extra);
 }
 

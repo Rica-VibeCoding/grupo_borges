@@ -1,0 +1,76 @@
+import type { Conversa, Efeito, Evento } from './tipos.ts';
+
+type Captura = Conversa & {
+  fone?: boolean;
+  capturando?: boolean;
+  segurando?: boolean;
+  vozGuardada?: boolean;
+  vozAcabou?: boolean;
+  zeAcabou?: boolean;
+  zeDescartado?: boolean;
+  esperandoDesde?: number;
+};
+type Resultado = { conversa: Captura; efeitos: Efeito[] };
+
+function libera(c: Captura): Resultado {
+  const terminou = c.vozAcabou && c.zeAcabou;
+  return {
+    conversa: { ...c, estado: terminou ? 'ouvindo' : 'falando', capturando: false, vozGuardada: false },
+    efeitos: terminou || c.fone
+      ? [{ tipo: 'retomarVoz' }, { tipo: 'ligarDetector' }]
+      : [{ tipo: 'desligarDetector' }, { tipo: 'retomarVoz' }],
+  };
+}
+
+export function duranteCaptura(c: Captura, evento: Evento, agora: number): Resultado | null {
+  if (evento.tipo === 'segurou') {
+    if (c.estado !== 'ouvindo') return { conversa: c, efeitos: [] };
+    const conversa = { ...c, segurando: evento.ligado };
+    return !evento.ligado && !c.capturando && c.vozGuardada
+      ? libera(conversa)
+      : { conversa, efeitos: [] };
+  }
+  if (evento.tipo === 'falaIniciou' && c.estado === 'ouvindo') {
+    return { conversa: { ...c, capturando: true }, efeitos: [] };
+  }
+  if (evento.tipo === 'falaDescartada' && c.estado === 'ouvindo') {
+    return c.vozGuardada && !c.segurando ? libera(c) : { conversa: { ...c, capturando: false }, efeitos: [] };
+  }
+  if (evento.tipo === 'textoDoZe' && !c.zeDescartado &&
+      ((c.estado === 'ouvindo' && (c.capturando || c.segurando)) || c.estado === 'transcrevendo')) {
+    return {
+      conversa: { ...c, vozGuardada: true, vozAcabou: false },
+      efeitos: [{ tipo: 'pausarVoz' }, { tipo: 'falar', texto: evento.texto }],
+    };
+  }
+  if (!c.vozGuardada) return null;
+  if (evento.tipo === 'zeTerminou') return { conversa: { ...c, zeAcabou: true }, efeitos: [] };
+  if (evento.tipo === 'vozTerminou') return { conversa: { ...c, vozAcabou: true }, efeitos: [] };
+  if (evento.tipo === 'transcreveu' && c.estado === 'transcrevendo' && evento.texto.trim() === '') return libera(c);
+  if (evento.tipo === 'falhou' && evento.motivo === 'transcricaoVazia' && c.estado === 'transcrevendo') return libera(c);
+  if (evento.tipo === 'capturaCaiu' || evento.tipo === 'falhou') {
+    const motivo = evento.tipo === 'capturaCaiu' ? 'capturaCaiu' : evento.motivo;
+    return {
+      conversa: { estado: 'erro', fone: c.fone, motivo },
+      efeitos: [{ tipo: 'descartarVoz' }, { tipo: 'desligarDetector' }, { tipo: 'avisarErro', motivo }],
+    };
+  }
+  if (evento.tipo === 'enviou' && c.estado === 'transcrevendo') {
+    return {
+      conversa: { estado: c.vozAcabou ? 'esperandoZe' : 'falando', fone: c.fone, esperandoDesde: agora },
+      efeitos: [{ tipo: 'retomarVoz' }],
+    };
+  }
+  return null;
+}
+
+export function encerraCaptura(c: Captura, audio: Float32Array): Resultado {
+  if (c.estado !== 'ouvindo') return { conversa: c, efeitos: [] };
+  return {
+    conversa: {
+      estado: 'transcrevendo', fone: c.fone, zeDescartado: c.zeDescartado,
+      ...(c.vozGuardada ? { vozGuardada: true, zeAcabou: c.zeAcabou, vozAcabou: c.vozAcabou } : {}),
+    },
+    efeitos: [{ tipo: 'desligarDetector' }, { tipo: 'transcrever', audio }],
+  };
+}
