@@ -71,6 +71,19 @@ test('o bloco <command-name> de um comando local NÃO liga a corrida', () => {
   assert.equal(corridaEmVoo(false, [falaDoRica(COMANDO_LOCAL)]), false);
 });
 
+// Desde o CC 2.1.284 o comando local ganha, ANTES do bloco acima, uma linha
+// crua com o texto digitado e `content` string — medido no JSONL do Daniel em
+// 29/09. Ela ligava a corrida, nada desligava, e a tela de voz ficava surda.
+test('a linha crua "/compact" antes do bloco NÃO liga a corrida', () => {
+  assert.equal(corridaEmVoo(false, [mensagem('user', '/compact')]), false);
+  assert.equal(corridaEmVoo(false, [mensagem('user', '/model claude-opus-5-5')]), false);
+});
+
+test('fala que começa com caminho ou barra no meio continua ligando', () => {
+  assert.equal(corridaEmVoo(false, [mensagem('user', '/tmp/log.txt tá vazio')]), true);
+  assert.equal(corridaEmVoo(false, [falaDoRica('roda o /compact depois')]), true);
+});
+
 test('system-reminder NÃO liga a corrida', () => {
   assert.equal(corridaEmVoo(false, [falaDoRica(LEMBRETE)]), false);
 });

@@ -36,6 +36,11 @@ import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/mes
 // de um texto (este arquivo, por exemplo) não é uma interrupção.
 const INTERRUPCAO_RE = /^\s*\[Request interrupted by user/;
 
+// Desde o CC 2.1.284 o comando local grava, antes do bloco `<command-name>`,
+// uma linha crua só com o que foi digitado (`/compact`). O classificador não a
+// reconhece, e ela ligava uma corrida que nenhum `end_turn` desligava.
+const COMANDO_CRU_RE = /^\s*\/[\w:-]+(\s[^\n]*)?$/;
+
 function textoDe(content: string | ContentPart[] | null | undefined): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -74,7 +79,9 @@ export function efeitoNaCorrida(payload: MessagePayload): boolean | null {
   // agente está no meio do trabalho — antes de qualquer regex.
   if (temResultadoDeFerramenta(message.content)) return true;
 
-  if (INTERRUPCAO_RE.test(textoDe(message.content))) return false;
+  const texto = textoDe(message.content);
+  if (INTERRUPCAO_RE.test(texto)) return false;
+  if (COMANDO_CRU_RE.test(texto)) return null;
 
   // O resto da régua já existe e é testada: o classificador do feed sabe o que
   // é ruído (`suppress`), comando local (`slash`) e resumo de compact. Reusar
