@@ -51,12 +51,19 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
 - **Tudo desta seção está só no clone do PC, sem commit.** Em produção (3446) ainda roda a versão velha: uma
   frase de apoio fixa (`FRASE_PONTE`), noutra voz — é o que o Rica ouviu no teste de 29/09 01:1x.
 
-## Em andamento (cadeira `ui`, ordem do Rica 29/09)
-- **Conversa que sobrevive a recarga** — `briefings/fase4-conversa-sobrevive-recarga.md`, fecha com
-  `FIM-DA-RECARGA` no `relatos/fase4-ui.md`. Começou às 01:10 de 29/09.
-- **D1 aberta com o Rica:** publicar frases + mistura + ocupado JÁ (pausar a `ui`, que mexe nos mesmos arquivos)
-  ou esperar a recarga fechar e publicar tudo junto (recomendação do Daniel: a publicação recarrega a aba e
-  derruba a conversa aberta, que é justamente o que a recarga conserta).
+- **Conversa que sobrevive a recarga** (`briefings/fase4-conversa-sobrevive-recarga.md`, fechou 29/09 ~01:45):
+  o aparelho guarda só até que texto do agente a voz tocou inteiro (`sessionStorage`, 30 min, por aba); depois
+  da recarga a tela mostra "pensando"/"trabalhando"/"resposta pronta" lendo o stream, e **um toque** ("toque
+  para continuar") toca o que ficou e volta a ouvir. Parar ou sair da tela apaga a marca. Um toque em todo
+  aparelho: iOS exige gesto para áudio (MDN); o Chrome deixaria sem toque (medido). Provado com o Canário real
+  no Chrome (recarga no pensando, no meio da voz, depois de parar); 1352/1353 testes, `tsc` limpo. Divergência:
+  `lib/conversa/tipos.ts` ganhou o evento `retomar` (só acréscimo). Detalhe: `relatos/fase4-ui.md`.
+
+## Próximo passo (Daniel)
+- Trazer tudo do clone do PC (base `e51a92e`, sem commit) para a `main` da VPS, revisar o diff, commitar com
+  caminho explícito e publicar na 3008 de uma vez: frases de apoio, mistura, ocupado e recarga. A partir desta
+  publicação, as seguintes já não derrubam a conversa. Depois, o Rica confere no iPhone e no notebook.
+- Cadeira `ui` em 39%: `/clear` antes de qualquer tarefa nova.
 
 ## Achados de 29/09 (registrados)
 - **Teste do Rica no notebook, 29/09 01:12–01:18 (Canário, 3446):**
