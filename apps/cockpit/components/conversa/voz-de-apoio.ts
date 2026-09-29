@@ -33,7 +33,7 @@ export const FRASES_DE_DEMORA = [
   'Ainda tô nisso, Rica.',
   'Tá levando um pouco mais, mas já sai.',
   'Continuo aqui, só mais um pouco.',
-  'Segura mais um pouco, Rica.',
+  'Segura mais um pouco.',
   'Ainda nisso, tá rendendo.',
   'Tá dando um pouco de trabalho, mas tô chegando lá.',
   'Tô na trilha, já te falo.',
