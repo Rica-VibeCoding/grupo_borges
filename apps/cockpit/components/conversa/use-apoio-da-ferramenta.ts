@@ -64,7 +64,7 @@ export function useApoioDaFerramenta(p: Props) {
     evento(evento: Evento) {
       if (evento.tipo === 'enviou' || evento.tipo === 'retomar') relogio.inicia(performance.now());
       if (evento.tipo === 'falaIniciou' || (evento.tipo === 'segurou' && evento.ligado)) apoio.cala();
-      if (evento.tipo === 'parar' || evento.tipo === 'zeTerminou' || evento.tipo === 'capturaCaiu' || evento.tipo === 'falhou') {
+      if (evento.tipo === 'parar' || evento.tipo === 'interromper' || evento.tipo === 'zeTerminou' || evento.tipo === 'capturaCaiu' || evento.tipo === 'falhou') {
         relogio.encerra();
         apoio.cala();
       }

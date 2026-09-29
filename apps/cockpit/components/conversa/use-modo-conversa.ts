@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { postAgentInput, postAgentInterromper } from '@grupo_borges/cockpit-core/api';
 
 import { destravaNoGesto } from '@/components/feed/reprodutor-unico';
-import { avanca, inicial, turnoDescartado } from '@/lib/conversa/maquina';
+import { avanca, inicial } from '@/lib/conversa/maquina';
 import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
@@ -14,7 +14,6 @@ import { comParcial, FALA_VAZIA, falaDepois, type FalaDaVez } from './fala-da-ve
 import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
-import { zeOcupado } from './toque-da-conversa';
 import { transcreveCaptura } from './transcricao-da-captura';
 import { useMudoDaCaptura } from './use-mudo-da-captura';
 import { useAbaEscondida } from './use-aba-escondida';
@@ -148,11 +147,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
         return;
       }
       case 'enviar': {
-        // Turno descartado (toque ou fala por cima) não é ocupação: o Claude Code enfileira.
-        if (zeOcupado(isRunningRef.current, turnoDescartado(conversaRef.current))) {
-          despachaRef.current({ tipo: 'falhou', motivo: 'agenteOcupado' });
-          return;
-        }
+        // Com o Zé ocupado a fala sai igual: o Claude Code a enfileira sem interromper o turno.
         const ciclo = cicloRef.current;
         apoio.preparaEnvio();
         entregaFala({
@@ -245,6 +240,9 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     despacha({ tipo: 'parar' });
   }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada]);
 
+  // O toque durante o turno do Zé: freia e corta a voz, mas a conversa segue ouvindo.
+  const interromper = useCallback(() => despacha({ tipo: 'interromper', rodando: isRunningRef.current }), [despacha]);
+
   const nivelMicRef = detector.nivelRef;
   /** Volume para o visual: a voz do Zé enquanto ele fala, o microfone no resto. */
   const leNivel = useCallback(
@@ -276,6 +274,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     tocando,
     ferramenta,
     streamStatus: stream.status,
+    rodando: stream.isRunning,
     wakeLockAtivo: wakeLock.ativo,
     wakeLockSuportado: wakeLock.suportado,
     wakeLockFalhou: wakeLock.falhou,
@@ -284,6 +283,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     retomada: retomada.retomada,
     descartaRetomada: retomada.apaga,
     comecar,
+    interromper,
     parar,
   };
 }

@@ -40,8 +40,8 @@ function useSegundosDeEspera(esperando: boolean) {
 }
 
 /**
- * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia, um
- * toque para; na vez do Rica, o dedo parado segura a vez. Os botões viraram gestos: arrastar
+ * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia; no turno
+ * do Zé, um toque o interrompe; fora dele, um toque para; na vez do Rica, o dedo parado segura a vez. Os botões viraram gestos: arrastar
  * para a direita volta ao chat de texto (é a rolagem do pager), para cima abre as
  * configurações. No alto, a foto do agente com o nome e o estado — na pílula (Atividade ao
  * vivo) ou no núcleo que toma o lugar da esfera (Eclipse), a chave é das configurações. O
@@ -89,7 +89,7 @@ export function TelaConversa({
   const vista = modo.retomada
     ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
     : cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
-  const acao = acaoDoToque(cena, preparacaoFalhou);
+  const acao = acaoDoToque(cena, preparacaoFalhou, modo.rodando);
   const leitura = leituraDaConversa({
     cena: modo.retomada?.cena ?? cena, // voltando da recarga, o leitor de tela diz o mesmo que o visual
     preparacaoFalhou,
@@ -128,7 +128,7 @@ export function TelaConversa({
   // tela desmonta (`useModoConversa`).
   const pararAoSairRef = useRef(() => {});
   pararAoSairRef.current = () => {
-    if (acao === 'parar') modo.parar();
+    if (acao === 'parar' || acao === 'interromper') modo.parar();
     else if (retomando) modo.descartaRetomada(); // sair da tela sem retomar também encerra
   };
   useEffect(() => {
@@ -153,6 +153,7 @@ export function TelaConversa({
     if (acao === 'nada' || !toqueConta(evento.timeStamp, ultimoToqueRef.current)) return;
     ultimoToqueRef.current = evento.timeStamp;
     if (acao === 'comecar') modo.comecar();
+    else if (acao === 'interromper') modo.interromper();
     else modo.parar();
   };
 
@@ -252,7 +253,7 @@ export function TelaConversa({
       <button
         type="button"
         className={styles.toque}
-        aria-label={rotuloDaAcao(cena, preparacaoFalhou, retomando)}
+        aria-label={acao === 'interromper' ? 'Interromper o agente' : rotuloDaAcao(cena, preparacaoFalhou, retomando)}
         aria-disabled={acao === 'nada' ? true : undefined}
         data-acao={acao}
         onClick={toca}

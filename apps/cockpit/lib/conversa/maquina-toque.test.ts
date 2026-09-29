@@ -124,3 +124,92 @@ test('pedido que entra sem turno descartado não muda nada', () => {
   assert.deepEqual(conversa, espera);
   assert.deepEqual(efeitos, []);
 });
+
+// O toque durante o turno do Zé interrompe sem encerrar: freia, corta a voz e segue ouvindo.
+
+test('interromper esperando o Zé freia, marca o descarte e volta a ouvir', () => {
+  const { conversa, efeitos } = roda([{ tipo: 'interromper', rodando: true }], roda(ATE_ESPERA).conversa);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.deepEqual(efeitos, [{ tipo: 'frearZe', antesDaResposta: true }, { tipo: 'ligarDetector' }]);
+  assert.equal(turnoDescartado(conversa), true);
+});
+
+test('interromper com ele falando corta a voz e freia; com fone o detector já está ligado', () => {
+  const semFone = roda([{ tipo: 'interromper', rodando: true }], roda(ATE_FALANDO).conversa);
+  assert.equal(semFone.conversa.estado, 'ouvindo');
+  assert.deepEqual(tipos(semFone.efeitos), ['descartarVoz', 'frearZe', 'ligarDetector']);
+
+  const comFone = roda([{ tipo: 'fone', ligado: true }, ...ATE_FALANDO, { tipo: 'interromper', rodando: true }]);
+  assert.equal(comFone.conversa.estado, 'ouvindo');
+  assert.deepEqual(tipos(comFone.efeitos).slice(-2), ['descartarVoz', 'frearZe']);
+});
+
+test('interromper em interrompendo corta a voz pausada e freia', () => {
+  const { conversa, efeitos } = roda([
+    { tipo: 'fone', ligado: true },
+    ...ATE_FALANDO,
+    { tipo: 'falaIniciou' },
+    { tipo: 'interromper', rodando: true },
+  ]);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.deepEqual(tipos(efeitos).slice(-2), ['descartarVoz', 'frearZe']);
+});
+
+test('interromper com o stream já encerrado só corta a voz: não freia nem descarta', () => {
+  const { conversa, efeitos } = roda([...ATE_FALANDO, { tipo: 'zeTerminou' }, { tipo: 'interromper', rodando: false }]);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.deepEqual(tipos(efeitos).slice(-2), ['descartarVoz', 'ligarDetector']);
+  assert.equal(turnoDescartado(conversa), false);
+});
+
+test('interromper ouvindo com o Zé rodando freia sem mexer no detector nem na captura', () => {
+  const ouvindo = roda([{ tipo: 'comecar' }, { tipo: 'falaIniciou' }]).conversa;
+  const { conversa, efeitos } = roda([{ tipo: 'interromper', rodando: true }], ouvindo);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.deepEqual(efeitos, [{ tipo: 'frearZe', antesDaResposta: false }]);
+  assert.equal(turnoDescartado(conversa), true);
+  // A fala em curso segue para o envio, como correção.
+  const envio = roda([{ tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'na verdade' }], conversa);
+  assert.ok(envio.efeitos.some((e) => e.tipo === 'enviar' && e.texto === 'na verdade'));
+});
+
+test('interromper com a resposta guardada durante a gravação corta a voz guardada', () => {
+  let c = roda([{ tipo: 'comecar' }, { tipo: 'falaIniciou' }, { tipo: 'textoDoZe', texto: 'Guardada.' }]).conversa;
+  const r = roda([{ tipo: 'interromper', rodando: true }], c);
+  assert.deepEqual(tipos(r.efeitos), ['descartarVoz', 'frearZe']);
+  c = roda([{ tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'outra coisa' }, { tipo: 'enviou' }], r.conversa).conversa;
+  assert.equal(c.estado, 'esperandoZe', 'nada guardado para retomar: espera a resposta da correção');
+});
+
+test('transcrevendo, interromper freia e a fala que estava saindo ainda é enviada', () => {
+  const transcrevendo = roda([{ tipo: 'comecar' }, { tipo: 'falaTerminou', audio }]).conversa;
+  const { conversa, efeitos } = roda([{ tipo: 'interromper', rodando: true }], transcrevendo);
+  assert.equal(conversa.estado, 'transcrevendo');
+  assert.deepEqual(tipos(efeitos), ['frearZe']);
+  const r = roda([{ tipo: 'transcreveu', texto: 'corrigindo' }], conversa);
+  assert.ok(r.efeitos.some((e) => e.tipo === 'enviar'));
+});
+
+test('a marca do interromper atravessa a correção — residual e fim velho não atropelam a resposta nova', () => {
+  const { conversa, efeitos } = roda([
+    ...ATE_FALANDO,
+    { tipo: 'interromper', rodando: true },
+    { tipo: 'textoDoZe', texto: 'residual' },
+    { tipo: 'falaTerminou', audio },
+    { tipo: 'transcreveu', texto: 'correção' },
+    { tipo: 'enviou' },
+    { tipo: 'zeTerminou' }, // o fim do turno freado: só limpa a marca
+  ]);
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1, 'só o olá');
+  const nova = roda([{ tipo: 'textoDoZe', texto: 'resposta nova' }], conversa);
+  assert.equal(nova.conversa.estado, 'falando');
+});
+
+test('turno já descartado não freia de novo no segundo toque; parado e erro não interrompem', () => {
+  const interrompido = roda([...ATE_ESPERA, { tipo: 'interromper', rodando: true }]).conversa;
+  assert.deepEqual(tipos(roda([{ tipo: 'interromper', rodando: true }], interrompido).efeitos), []);
+  assert.deepEqual(roda([{ tipo: 'interromper', rodando: true }]).efeitos, []);
+  const erro = roda([{ tipo: 'comecar' }, { tipo: 'falhou', motivo: 'capturaCaiu' }]).conversa;
+  assert.deepEqual(roda([{ tipo: 'interromper', rodando: true }], erro).efeitos, []);
+});

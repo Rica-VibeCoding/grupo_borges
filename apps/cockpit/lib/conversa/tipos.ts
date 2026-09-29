@@ -35,6 +35,9 @@ export type Evento =
   | { tipo: 'retomar' }
   | { tipo: 'tique' } // a tela bate a cada ~250 ms para desclassificar fala por cima
   | { tipo: 'parar' } // o toque que para; com o turno do Zé em voo, também o freia
+  // o toque durante o turno do Zé: freia no servidor, corta a voz e segue ouvindo. `rodando` é o
+  // `isRunning` do stream — ouvindo ou transcrevendo, só ele diz que há turno em voo
+  | { tipo: 'interromper'; rodando: boolean }
   | { tipo: 'falaIniciou' }
   | { tipo: 'microfoneMudo' }
   | { tipo: 'segurou'; ligado: boolean }
@@ -62,7 +65,7 @@ export type Efeito =
   | { tipo: 'avisarErro'; motivo: MotivoDeErro }
   | { tipo: 'pausarVoz' } // fase 2: fala por cima começou
   | { tipo: 'retomarVoz' } // fase 2: era tosse — a voz continua de onde parou
-  | { tipo: 'descartarVoz' } // fase 2: fala por cima confirmada — a fila do Zé é jogada fora
+  | { tipo: 'descartarVoz' } // o toque que interrompe (ou um erro no meio da pausa) — a fila do Zé é jogada fora
   // fase 3: parou com o turno em voo — freia no servidor (o `■` do composer), sempre. Antes
   // da resposta, o Claude Code devolve o pedido à caixa de entrada; o servidor o limpa.
   | { tipo: 'frearZe'; antesDaResposta: boolean };

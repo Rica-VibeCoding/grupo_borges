@@ -364,7 +364,7 @@ test('com fone, falaIniciou pausa a voz e vai a interrompendo', () => {
   assert.deepEqual(soTipos(efeitos).slice(-1), ['pausarVoz']);
 });
 
-test('falaConfirmada descarta a voz e segue como fala normal', () => {
+test('falaConfirmada não corta o Zé: guarda a voz, a fala segue normal e a voz retoma depois do envio', () => {
   const { conversa, efeitos } = roda([
     { evento: { tipo: 'fone', ligado: true }, agora: 0 },
     ...ateEspera(),
@@ -373,9 +373,10 @@ test('falaConfirmada descarta a voz e segue como fala normal', () => {
     { evento: { tipo: 'falaConfirmada' }, agora: 600 },
   ]);
   assert.equal(conversa.estado, 'ouvindo');
-  assert.deepEqual(soTipos(efeitos).slice(-1), ['descartarVoz']);
+  assert.ok(!soTipos(efeitos).includes('descartarVoz'));
+  assert.ok(!soTipos(efeitos).includes('frearZe'));
 
-  // A fala do usuário segue o fluxo normal: falaTerminou leva a transcrevendo.
+  // A fala do usuário segue o fluxo normal e sai mesmo com o Zé no meio do turno.
   const fim = roda([
     { evento: { tipo: 'fone', ligado: true }, agora: 0 },
     ...ateEspera(),
@@ -386,6 +387,10 @@ test('falaConfirmada descarta a voz e segue como fala normal', () => {
     { evento: { tipo: 'transcreveu', texto: 'continua' }, agora: 800 },
   ]);
   assert.equal(fim.conversa.estado, 'transcrevendo');
+  assert.ok(fim.efeitos.some((e) => e.tipo === 'enviar' && e.texto === 'continua'));
+  const enviada = avanca(fim.conversa, { tipo: 'enviou' }, 900);
+  assert.equal(enviada.conversa.estado, 'falando');
+  assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz']);
 });
 
 test('falaDescartada retoma a voz de onde parou', () => {
@@ -422,7 +427,7 @@ test('o tique não desclassifica aos 2 s — a confirmação tardia ainda vale',
     { evento: { tipo: 'falaConfirmada' }, agora: 3600 }, // confirmação tardia
   ]);
   assert.equal(confirmou.conversa.estado, 'ouvindo');
-  assert.deepEqual(soTipos(confirmou.efeitos).slice(-1), ['descartarVoz']);
+  assert.ok(!soTipos(confirmou.efeitos).includes('descartarVoz'));
 });
 
 test('o tique só desclassifica como socorro, bem depois (6 s)', () => {
@@ -437,7 +442,7 @@ test('o tique só desclassifica como socorro, bem depois (6 s)', () => {
   assert.deepEqual(soTipos(efeitos).slice(-1), ['retomarVoz']);
 });
 
-test('textoDoZe em interrompendo enfileira sem tocar; confirmar descarta tudo', () => {
+test('textoDoZe em interrompendo enfileira sem tocar; confirmar guarda tudo', () => {
   const { conversa, efeitos } = roda([
     { evento: { tipo: 'fone', ligado: true }, agora: 0 },
     ...ateEspera(),
@@ -450,7 +455,7 @@ test('textoDoZe em interrompendo enfileira sem tocar; confirmar descarta tudo', 
   assert.deepEqual(soTipos(efeitos).slice(-1), ['falar']);
   assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 2);
 
-  // Confirmando, descartarVoz limpa a fila inteira.
+  // Confirmando, a fila inteira fica guardada: nada é descartado.
   const confirmou = roda([
     { evento: { tipo: 'fone', ligado: true }, agora: 0 },
     ...ateEspera(),
@@ -460,7 +465,7 @@ test('textoDoZe em interrompendo enfileira sem tocar; confirmar descarta tudo', 
     { evento: { tipo: 'falaConfirmada' }, agora: 600 },
   ]);
   assert.equal(confirmou.conversa.estado, 'ouvindo');
-  assert.deepEqual(soTipos(confirmou.efeitos).slice(-1), ['descartarVoz']);
+  assert.ok(!soTipos(confirmou.efeitos).includes('descartarVoz'));
 });
 
 test('zeTerminou/vozTerminou em interrompendo só marcam; com os dois vai direto a ouvir', () => {
@@ -553,84 +558,23 @@ test('falhou em interrompendo também descarta a voz antes de ir a erro', () => 
   assert.deepEqual(soTipos(efeitos).slice(-3), ['descartarVoz', 'desligarDetector', 'avisarErro']);
 });
 
-test('falaConfirmada com Zé transmitindo ignora o textoDoZe residual até o zeTerminou', () => {
+test('fala por cima com o Zé transmitindo: o texto que segue fica guardado e toca depois do envio', () => {
   const { conversa, efeitos } = roda([
     { evento: { tipo: 'fone', ligado: true }, agora: 0 },
     ...ateEspera(),
     { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
     { evento: { tipo: 'falaIniciou' }, agora: 500 },
     { evento: { tipo: 'falaConfirmada' }, agora: 600 },
-    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 650 },
+    { evento: { tipo: 'textoDoZe', texto: 'continuação' }, agora: 650 },
+    { evento: { tipo: 'zeTerminou' }, agora: 700 },
   ]);
   assert.equal(conversa.estado, 'ouvindo');
-  // Só o 'olá' virou falar; o 'residual' não voltou a falar por cima da fala do usuário.
-  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1);
+  assert.deepEqual(soTipos(efeitos).slice(-2), ['pausarVoz', 'falar']);
+  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 2);
 
-  // O turno novo não é residual, mas ainda espera o fim da captura do Rica.
-  const fim = roda([
-    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
-    ...ateEspera(),
-    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
-    { evento: { tipo: 'falaIniciou' }, agora: 500 },
-    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
-    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 650 },
-    { evento: { tipo: 'zeTerminou' }, agora: 700 },
-    { evento: { tipo: 'textoDoZe', texto: 'novo turno' }, agora: 750 },
-  ]);
-  assert.equal(fim.conversa.estado, 'ouvindo');
-  assert.deepEqual(soTipos(fim.efeitos).slice(-2), ['pausarVoz', 'falar']);
-  assert.equal(fim.efeitos.filter((e) => e.tipo === 'falar').length, 2);
-  const gravada = avanca(fim.conversa, { tipo: 'falaTerminou', audio: new Float32Array([1]) }, 800);
+  const gravada = avanca(conversa, { tipo: 'falaTerminou', audio: new Float32Array([1]) }, 800);
   const transcrita = avanca(gravada.conversa, { tipo: 'transcreveu', texto: 'Complemento.' }, 900);
   const enviada = avanca(transcrita.conversa, { tipo: 'enviou' }, 1000);
   assert.equal(enviada.conversa.estado, 'falando');
   assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz']);
-});
-
-test('a marca atravessa falaTerminou/enviou — residual e zeTerminou velho não atropelam', () => {
-  const { conversa, efeitos } = roda([
-    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
-    ...ateEspera(),
-    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
-    { evento: { tipo: 'falaIniciou' }, agora: 500 },
-    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
-    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
-    { evento: { tipo: 'transcreveu', texto: 'novo pedido' }, agora: 800 },
-    { evento: { tipo: 'enviou' }, agora: 900 },
-    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 950 }, // ignorado
-    { evento: { tipo: 'zeTerminou' }, agora: 1000 }, // velho: só limpa, não volta a ouvir
-  ]);
-  assert.equal(conversa.estado, 'esperandoZe');
-  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1); // só o 'olá'
-
-  const fim = roda([
-    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
-    ...ateEspera(),
-    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
-    { evento: { tipo: 'falaIniciou' }, agora: 500 },
-    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
-    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
-    { evento: { tipo: 'transcreveu', texto: 'novo pedido' }, agora: 800 },
-    { evento: { tipo: 'enviou' }, agora: 900 },
-    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 950 },
-    { evento: { tipo: 'zeTerminou' }, agora: 1000 },
-    { evento: { tipo: 'textoDoZe', texto: 'resposta nova' }, agora: 1100 },
-  ]);
-  assert.equal(fim.conversa.estado, 'falando');
-  assert.equal(fim.efeitos.filter((e) => e.tipo === 'falar').length, 2);
-});
-
-test('a marca também atravessa transcricaoVazia de volta a ouvindo', () => {
-  const { conversa, efeitos } = roda([
-    { evento: { tipo: 'fone', ligado: true }, agora: 0 },
-    ...ateEspera(),
-    { evento: { tipo: 'textoDoZe', texto: 'olá' }, agora: 400 },
-    { evento: { tipo: 'falaIniciou' }, agora: 500 },
-    { evento: { tipo: 'falaConfirmada' }, agora: 600 },
-    { evento: { tipo: 'falaTerminou', audio: new Float32Array(0) }, agora: 700 },
-    { evento: { tipo: 'transcreveu', texto: '   ' }, agora: 800 }, // vazio → ouvindo
-    { evento: { tipo: 'textoDoZe', texto: 'residual' }, agora: 900 },
-  ]);
-  assert.equal(conversa.estado, 'ouvindo');
-  assert.equal(efeitos.filter((e) => e.tipo === 'falar').length, 1); // só o 'olá'
 });

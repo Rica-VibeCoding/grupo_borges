@@ -8,8 +8,9 @@
  * Meio-duplex: sem fone, o detector só fica ligado em `ouvindo` — desligado inclusive
  * em `esperandoZe`, onde a frase-ponte toca e o Chrome não cancela o eco da própria
  * página (pesquisa §3). Fase 2, com fone: ouve também em `falando`, e a fala detectada
- * pausa a voz do Zé (`interrompendo`) até confirmar (descarta) ou desclassificar
- * (retoma). Fase 3: parar com o turno em voo pede o freio no servidor (`frearZe`).
+ * pausa a voz do Zé (`interrompendo`) até confirmar (guarda a voz até a fala dele sair)
+ * ou desclassificar (retoma). Fase 3: parar com o turno em voo pede o freio no servidor
+ * (`frearZe`). Só o toque interrompe (`interromper`); a fala nunca corta o Zé.
  */
 
 import { duranteCaptura, encerraCaptura } from './captura-do-rica.ts';
@@ -72,6 +73,8 @@ export const avanca: Avanca = (conversa, evento, agora) => {
       return comecar(c, evento.tipo === 'retomar' ? agora : undefined);
     case 'parar':
       return parar(c);
+    case 'interromper':
+      return interromper(c, evento.rodando);
     case 'tique':
       return tique(c, agora);
     case 'segurou': return noop(c);
@@ -122,6 +125,26 @@ function parar(c: ConversaInterna): Resultado {
   const emVoo = c.estado === 'esperandoZe' || falandoAinda;
   if (emVoo && !c.zeDescartado) efeitos.push({ tipo: 'frearZe', antesDaResposta: c.estado === 'esperandoZe' });
   return novo(c, 'parado', efeitos, emVoo || c.zeDescartado ? { zeDescartado: true } : {});
+}
+
+// O toque durante o turno do Zé: o Esc no servidor e a voz cortada, sem encerrar a conversa —
+// a próxima fala dele entra como correção. Freia com o turno em voo (esperando, falando antes do
+// fim do stream, ou o `isRunning` de pé); turno já descartado não freia de novo. Transcrevendo,
+// a fala dele segue para o envio; ouvindo, a captura em curso fica como está.
+function interromper(c: ConversaInterna, rodando: boolean): Resultado {
+  if (c.estado === 'parado' || c.estado === 'erro') return noop(c);
+  const falandoAinda = (c.estado === 'falando' || c.estado === 'interrompendo') && !c.zeAcabou;
+  const emVoo = rodando || c.estado === 'esperandoZe' || falandoAinda;
+  const efeitos: Efeito[] = [];
+  const temVoz = c.estado === 'falando' || c.estado === 'interrompendo' || c.vozGuardada === true;
+  if (temVoz) efeitos.push({ tipo: 'descartarVoz' });
+  if (emVoo && !c.zeDescartado) efeitos.push({ tipo: 'frearZe', antesDaResposta: c.estado === 'esperandoZe' });
+  const zeDescartado = emVoo || c.zeDescartado === true;
+  if (c.estado === 'ouvindo' || c.estado === 'transcrevendo') {
+    return preserva(c, efeitos, { zeDescartado, vozGuardada: false, zeAcabou: undefined, vozAcabou: undefined });
+  }
+  if (!detectorLigado(c)) efeitos.push(LIGA);
+  return novo(c, 'ouvindo', efeitos, { zeDescartado });
 }
 
 // Relógio da desclassificação, movido pelo tique da tela (~250 ms).
@@ -223,13 +246,12 @@ function falaDescartada(c: ConversaInterna): Resultado {
   return saiDeInterrompendo(c, false);
 }
 
-// Fala por cima confirmada: joga a fila do Zé fora e passa a ouvir o usuário, que
-// segue como fala normal (`falaTerminou` depois leva a `transcrevendo` como sempre).
+// Fala por cima confirmada: não corta o Zé — a voz fica pausada e guardada enquanto o Rica
+// fala, e a fala dele segue normal para a fila do Claude Code. Enviada, a voz retoma de onde
+// parou (`captura-do-rica.ts`). Cortar é só o toque (`interromper`).
 function falaConfirmada(c: ConversaInterna): Resultado {
   if (c.estado !== 'interrompendo') return noop(c);
-  // Stream do Zé ainda em voo: o turno é descartado e o texto residual não fala por cima.
-  const extra: Partial<ConversaInterna> = { capturando: true, ...(c.zeAcabou ? {} : { zeDescartado: true }) };
-  return novo(c, 'ouvindo', [{ tipo: 'descartarVoz' }], extra);
+  return novo(c, 'ouvindo', [], { capturando: true, vozGuardada: true, zeAcabou: c.zeAcabou, vozAcabou: c.vozAcabou });
 }
 
 // A chave "estou de fone" vale em qualquer estado; com fone, `falando` mantém o detector ligado.
