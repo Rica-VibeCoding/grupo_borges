@@ -4,11 +4,12 @@ import { useEffect, useRef } from 'react';
 
 import type { CanarioStreamState } from '@/lib/spike/canario-stream-controller';
 
-import { FOLGA_DO_FIM_MS, maiorIdDasMensagens, passosDoZeDepoisDe, type Voo } from './textos-do-ze';
+import { FOLGA_DO_FIM_MS, maiorIdDasMensagens, passosDoZeDepoisDe, textosDoZeDepoisDe, type Voo } from './textos-do-ze';
 
 type AoTurno = {
   abre: () => void;
-  texto: (texto: string) => void;
+  /** `id`: a linha do stream de onde veio o texto (a marca do que já tocou, para a recarga). */
+  texto: (texto: string, id: number) => void;
   pedidoEntrou: () => void;
   fecha: () => void;
 };
@@ -40,6 +41,8 @@ export function useTurnoDoZe(stream: Pick<CanarioStreamState, 'messages' | 'isRu
       return;
     }
     const passos = passosDoZeDepoisDe(stream.messages, cursorRef.current, vooRef.current, stream.isRunning);
+    // Os textos saem nos passos na mesma ordem em que `textosDoZeDepoisDe` os lê: dali vem o id de cada um.
+    const ids = textosDoZeDepoisDe(stream.messages, cursorRef.current).map((t) => t.id);
     cursorRef.current = maiorId;
     vooRef.current = passos[passos.length - 1]?.tipo === 'fechaNaFolga' ? 'acabando' : stream.isRunning;
     for (const passo of passos) {
@@ -56,7 +59,7 @@ export function useTurnoDoZe(stream: Pick<CanarioStreamState, 'messages' | 'isRu
       window.clearTimeout(folgaRef.current);
       folgaRef.current = undefined;
       if (passo.tipo === 'abre') aoRef.current.abre();
-      if (passo.tipo === 'texto') aoRef.current.texto(passo.texto);
+      if (passo.tipo === 'texto') aoRef.current.texto(passo.texto, ids.shift() ?? cursorRef.current);
       if (passo.tipo === 'pedidoEntrou') aoRef.current.pedidoEntrou();
       if (passo.tipo === 'fecha') aoRef.current.fecha();
     }

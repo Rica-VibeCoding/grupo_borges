@@ -77,3 +77,4 @@
 .reserva[data-tom='ze'] { --cor-da-esfera: var(--ck-conversa-ze); }
 .reserva[data-tom='pensa'] { --cor-da-esfera: var(--ck-conversa-pensa); }
 .reserva[data-tom='erro'] { --cor-da-esfera: var(--ck-conversa-erro); }
+.reserva[data-tom='ocupado'] { --cor-da-esfera: var(--ck-conversa-ocupado); }

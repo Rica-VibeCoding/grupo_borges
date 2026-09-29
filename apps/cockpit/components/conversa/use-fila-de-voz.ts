@@ -14,10 +14,13 @@ export function useFilaDeVoz({
   slug,
   aoTerminar,
   aoFalhar,
+  aoOuvir,
 }: {
   slug: string;
   aoTerminar(): void;
   aoFalhar(mensagem: string): void;
+  /** O texto dele com esse id (do stream) tocou inteiro — a marca que a recarga usa para não repetir. */
+  aoOuvir?(id: number): void;
 }) {
   /* A legenda dele: a frase do áudio que toca e o que já foi dito. Parada ou cancelada, fica. */
   const [fala, setFala] = useState<FalaDoZe | null>(null);
@@ -31,15 +34,24 @@ export function useFilaDeVoz({
   const envelopesRef = useRef<EnvelopeVoz[]>([]);
   /* De que texto e sentença é cada envelope: o índice do áudio que toca vira a frase da legenda. */
   const audiosRef = useRef<AudioDaFrase[]>([]);
+  /* O id no stream do texto de cada áudio, na mesma ordem (`null` = sem id). */
+  const idsRef = useRef<(number | null)[]>([]);
   const tocandoRef = useRef(-1);
   const duracaoRef = useRef(0);
-  const filaRef = useRef<string[]>([]);
+  const filaRef = useRef<{ texto: string; id: number | null }[]>([]);
   const falaRef = useRef<FalaEmCurso | null>(null);
   const sequenciaRef = useRef<Sequencia | null>(null);
   const turnoFechadoRef = useRef(false);
   const urlsRef = useRef<string[]>([]);
-  const callbacksRef = useRef({ aoTerminar, aoFalhar });
-  callbacksRef.current = { aoTerminar, aoFalhar };
+  const callbacksRef = useRef({ aoTerminar, aoFalhar, aoOuvir });
+  callbacksRef.current = { aoTerminar, aoFalhar, aoOuvir };
+  /* Os textos antes de `ate` (índice de áudio) que não são o que toca agora já tocaram inteiros. */
+  const ouviuAte = useCallback((ate: number) => {
+    const atual = idsRef.current[ate];
+    let maior: number | null = null;
+    for (const id of idsRef.current.slice(0, ate)) if (id !== null && id !== atual) maior = Math.max(maior ?? id, id);
+    if (maior !== null) callbacksRef.current.aoOuvir?.(maior);
+  }, []);
   const calou = useCallback(() => {
     window.clearTimeout(caladoRef.current);
     setTocando(false);
@@ -50,6 +62,7 @@ export function useFilaDeVoz({
     urlsRef.current = [];
     envelopesRef.current = [];
     audiosRef.current = [];
+    idsRef.current = [];
     tocandoRef.current = -1;
     duracaoRef.current = 0;
     nivelRef.current = 0;
@@ -69,11 +82,13 @@ export function useFilaDeVoz({
         const audio = audioTocando(envelopesRef.current.map((e) => e.inicio), segundos);
         if (audio === tocandoRef.current) return;
         tocandoRef.current = audio;
+        ouviuAte(audio);
         setFala(falaDoZe(audiosRef.current, audio));
       },
       aoTerminar: () => {
         if (geracao !== geracaoRef.current) return;
         sequenciaRef.current = null;
+        ouviuAte(idsRef.current.length);
         limpaUrls();
         callbacksRef.current.aoTerminar();
       },
@@ -87,17 +102,18 @@ export function useFilaDeVoz({
     if (pausadaRef.current) sequencia.pausa();
     sequenciaRef.current = sequencia;
     return sequencia;
-  }, [limpaUrls]);
+  }, [limpaUrls, ouviuAte]);
 
   const processaRef = useRef<() => void>(() => {});
   processaRef.current = () => {
     if (falaRef.current !== null) return;
-    const texto = filaRef.current.shift();
-    if (texto === undefined) {
+    const proximo = filaRef.current.shift();
+    if (proximo === undefined) {
       if (turnoFechadoRef.current) sequenciaRef.current?.fecha();
       return;
     }
 
+    const { texto, id: idDoTexto } = proximo;
     const geracao = geracaoRef.current;
     const sequencia = garanteSequencia();
     falaRef.current = pedeFala(texto, slug, {
@@ -106,6 +122,7 @@ export function useFilaDeVoz({
         if (geracao !== geracaoRef.current) return;
         envelopesRef.current.push({ inicio: duracaoRef.current, duracao, peaks });
         audiosRef.current.push({ texto, frase: id, duracao });
+        idsRef.current.push(idDoTexto);
         duracaoRef.current += duracao;
       },
       aoAudio: (_id, url) => {
@@ -137,8 +154,8 @@ export function useFilaDeVoz({
   }, []);
   const limpaLegenda = useCallback(() => setFala(null), []);
 
-  const enfileira = useCallback((texto: string) => {
-    filaRef.current.push(texto);
+  const enfileira = useCallback((texto: string, id: number | null = null) => {
+    filaRef.current.push({ texto, id });
     processaRef.current();
   }, []);
 

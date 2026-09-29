@@ -6,6 +6,7 @@
 .tom[data-tom='ze'] { --cor: var(--ck-conversa-ze); }
 .tom[data-tom='pensa'] { --cor: var(--ck-conversa-pensa); }
 .tom[data-tom='erro'] { --cor: var(--ck-conversa-erro); }
+.tom[data-tom='ocupado'] { --cor: var(--ck-conversa-ocupado); }
 
 .foto {
   flex: none;

@@ -41,6 +41,8 @@ const ROTULO: Record<Exclude<Cena, 'parado'>, string> = {
   falando: 'falando',
   interrompendo: 'pausado',
   erro: 'parou',
+  ocupado: 'parou', // só a cor muda; o cartão do pé diz que ele está ocupado
+  pronta: 'resposta pronta', // voltou da recarga: a resposta dele espera o toque
 };
 
 /** A palavra ao lado do nome: em que pé a conversa está, de relance. */
@@ -54,8 +56,10 @@ export function rotuloDoEstado(direcao: Direcao, cena: Cena): string {
  * a mesma nas duas direções — quem chama o toque é o pulso do aro, não a letra. Número técnico
  * (o tempo do detector) mora nas configurações. Com a conversa andando, quem fala é o estado.
  */
-export function conviteDaTela(cena: Cena, preparacaoFalhou: boolean): string | null {
+export function conviteDaTela(cena: Cena, preparacaoFalhou: boolean, retomando = false): string | null {
   if (preparacaoFalhou) return null;
   if (cena === 'preparando') return 'preparando a escuta';
-  return cena === 'parado' ? 'toque para falar' : null;
+  if (cena !== 'parado') return null;
+  // Voltou da recarga com a conversa aberta: o toque não começa outra, continua esta.
+  return retomando ? 'toque para continuar' : 'toque para falar';
 }

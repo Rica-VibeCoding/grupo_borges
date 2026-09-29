@@ -131,6 +131,7 @@
   border-radius: 2px;
   background: var(--ck-conversa-erro);
 }
+.tela[data-vista='ocupado'] .aviso::before { background: var(--ck-conversa-ocupado); }
 
 /* O toque: um botão de verdade (teclado e leitor de tela) por cima de tudo menos o
  * cabeçalho, transparente — quem mostra o estado é o visual. Sem zoom de toque duplo,

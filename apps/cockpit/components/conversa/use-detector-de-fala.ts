@@ -253,6 +253,12 @@ export function useDetectorDeFala({
     vigiaRef.current?.comeca();
   }, [ajustaDetector]);
 
+  /** Só o áudio, sem abrir o microfone: o toque que retoma depois da recarga (o iOS só destrava no gesto). */
+  const destrava = useCallback(() => {
+    const contexto = contextoRef.current;
+    if (contexto !== null && contexto.state !== 'running') void contexto.resume().catch(() => {});
+  }, []);
+
   const desliga = useCallback(() => {
     geracaoRef.current += 1;
     vigiaRef.current?.para();
@@ -279,6 +285,7 @@ export function useDetectorDeFala({
     abrindoMicrofone,
     nivelRef,
     liga,
+    destrava,
     desliga,
     criaWav,
     acompanhaEstado,

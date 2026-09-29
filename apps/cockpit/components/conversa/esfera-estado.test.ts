@@ -13,7 +13,7 @@ import {
   regulaQuadro,
   ritmoDaEsfera,
 } from './esfera-estado.ts';
-import type { Cena } from './moldura-estado.ts';
+import { PENSAR_AO_MEIO, corDoTom, type Cena, type Mistura, type Tom } from './moldura-estado.ts';
 
 const CENAS: Cena[] = ['parado', 'preparando', 'ouvindo', 'transcrevendo', 'esperandoZe', 'falando', 'interrompendo', 'erro'];
 
@@ -31,10 +31,61 @@ describe('Esfera: o que cada momento desenha', () => {
   it('a cor segue de quem é a vez; na interrupção, o corpo é ele apagado e a borda é você', () => {
     assert.deepEqual(coresDaEsfera('ouvindo'), { corpo: 'voce', brilho: 1, borda: 'voce' });
     assert.equal(coresDaEsfera('falando').borda, 'ze');
-    assert.equal(coresDaEsfera('esperandoZe').borda, 'pensa');
     assert.deepEqual(coresDaEsfera('interrompendo'), { corpo: 'ze', brilho: 0.55, borda: 'voce' });
     assert.equal(coresDaEsfera('erro').borda, 'erro');
     assert.equal(coresDaEsfera('preparando').borda, 'prepara');
+  });
+
+  it('agente ocupado: a esfera inteira e parada, sem a rachadura do erro, na cor própria (Rica, 29/09)', () => {
+    assert.deepEqual(alvosDaEsfera('ocupado'), alvosDaEsfera('parado'));
+    assert.equal(alvosDaEsfera('ocupado').colapso, 0);
+    assert.deepEqual(coresDaEsfera('ocupado'), { corpo: 'ocupado', brilho: 0.8, borda: 'ocupado' });
+    assert.equal(ritmoDaEsfera('ocupado'), 0);
+  });
+
+  it('resposta pronta: a esfera inteira e parada, na cor dele', () => {
+    assert.deepEqual(alvosDaEsfera('pronta'), alvosDaEsfera('parado'));
+    assert.deepEqual(coresDaEsfera('pronta'), { corpo: 'ze', brilho: 0.8, borda: 'ze' });
+    assert.equal(ritmoDaEsfera('pronta'), 0);
+  });
+
+  it('pensar mistura a sua cor com a dele: o corpo não é mais o roxo do pensa', () => {
+    for (const cena of ['transcrevendo', 'esperandoZe', 'trabalhando'] as const) {
+      const { corpo } = coresDaEsfera(cena);
+      assert.notEqual(corpo, 'pensa', cena);
+      assert.equal(typeof corpo, 'object', cena);
+      const mistura = corpo as Mistura;
+      assert.deepEqual(mistura.entre, ['voce', 'ze'], cena);
+      assert.ok(mistura.peso > 0 && mistura.peso < 1, cena);
+    }
+  });
+
+  it('a mistura começa perto do dourado e anda para o azul, sem voltar entre pensar e trabalhar', () => {
+    const peso = (cena: Cena) => (coresDaEsfera(cena).corpo as Mistura).peso;
+    assert.ok(peso('transcrevendo') < peso('esperandoZe'));
+    assert.ok(peso('transcrevendo') < 0.5);
+    assert.equal(peso('esperandoZe'), peso('trabalhando'));
+  });
+
+  it('a borda do pensar também mistura; a de trabalhando continua dele', () => {
+    assert.deepEqual(coresDaEsfera('esperandoZe').borda, coresDaEsfera('esperandoZe').corpo);
+    assert.equal(coresDaEsfera('trabalhando').borda, 'ze');
+  });
+
+  it('a cor da mistura sai das cores lidas do tema', () => {
+    const cores: Record<Tom, readonly [number, number, number]> = {
+      voce: [1, 0.8, 0],
+      ze: [0, 0.4, 1],
+      pensa: [0.6, 0.6, 1],
+      prepara: [0.5, 0.5, 0.5],
+      erro: [1, 0, 0],
+      ocupado: [0.8, 0.6, 1],
+    };
+    assert.deepEqual(corDoTom(cores, 'voce'), [1, 0.8, 0]);
+    assert.deepEqual(corDoTom(cores, { entre: ['voce', 'ze'], peso: 0 }), [1, 0.8, 0]);
+    assert.deepEqual(corDoTom(cores, { entre: ['voce', 'ze'], peso: 1 }), [0, 0.4, 1]);
+    const meio = corDoTom(cores, PENSAR_AO_MEIO);
+    [0.5, 0.6, 0.5].forEach((v, i) => assert.ok(Math.abs(meio[i] - v) < 1e-9));
   });
 
   it('interromper, errar e parar congelam o tempo da matéria', () => {

@@ -40,6 +40,9 @@ describe('leitura da tela de conversa', () => {
     assert.equal(leitura.titulo, 'Parei de te ouvir');
     assert.match(leitura.detalhe, /Toque para voltar a ouvir/);
     assert.equal(rotuloDaAcao('erro', false), 'Tentar de novo');
+    // Voltou da recarga com a conversa aberta: o toque continua a conversa, não começa outra.
+    assert.equal(rotuloDaAcao('parado', false, true), 'Continuar conversa');
+    assert.equal(rotuloDaAcao('parado', false, false), 'Começar conversa');
   });
 
   it('com fone, a resposta ensina a interromper', () => {

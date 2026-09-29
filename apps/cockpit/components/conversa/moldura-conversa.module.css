@@ -43,3 +43,4 @@
 .reserva[data-tom='pensa'] { --cor-da-moldura: var(--ck-conversa-pensa); }
 .reserva[data-tom='prepara'] { --cor-da-moldura: var(--ck-edge-hairline); }
 .reserva[data-tom='erro'] { --cor-da-moldura: var(--ck-conversa-erro); }
+.reserva[data-tom='ocupado'] { --cor-da-moldura: var(--ck-conversa-ocupado); }

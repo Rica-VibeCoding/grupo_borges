@@ -46,6 +46,9 @@ describe('rótulo do estado junto da foto', () => {
       assert.equal(rotuloDoEstado(d, 'falando'), 'falando');
       assert.equal(rotuloDoEstado(d, 'interrompendo'), 'pausado');
       assert.equal(rotuloDoEstado(d, 'erro'), 'parou');
+      // Só a cor muda: a palavra segue a de hoje (o cartão do pé diz o porquê).
+      assert.equal(rotuloDoEstado(d, 'ocupado'), 'parou');
+      assert.equal(rotuloDoEstado(d, 'pronta'), 'resposta pronta');
       assert.equal(rotuloDoEstado(d, 'preparando'), 'preparando');
     }
   });
@@ -56,6 +59,12 @@ describe('o convite da tela parada', () => {
     const convite = conviteDaTela('parado', false);
     assert.equal(convite, 'toque para falar');
     assert.doesNotMatch(convite ?? '', /\d|detector/i);
+  });
+
+  it('voltou da recarga com a conversa aberta: o convite é continuar, não começar', () => {
+    assert.equal(conviteDaTela('parado', false, true), 'toque para continuar');
+    assert.equal(conviteDaTela('parado', false, false), 'toque para falar');
+    assert.equal(conviteDaTela('preparando', false, true), 'preparando a escuta');
   });
 
   it('preparando: a espera numa linha, também sem número', () => {

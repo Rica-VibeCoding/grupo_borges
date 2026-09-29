@@ -39,6 +39,23 @@ test('inicial começa parado e sem motivo', () => {
   assert.deepEqual(inicial(), { estado: 'parado' });
 });
 
+test('retomar (recarga com o turno dele aberto): o toque volta a esperar, surdo e com o relógio andando', () => {
+  const { conversa, efeitos } = roda([{ evento: { tipo: 'retomar' }, agora: 1_000 }]);
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.deepEqual(efeitos, []); // meio-duplex: esperando, o detector fica desligado
+  const ponte = avanca(conversa, { tipo: 'tique' }, 1_000 + 5_000);
+  assert.deepEqual(soTipos(ponte.efeitos), ['falarPonte']);
+  const fala = avanca(conversa, { tipo: 'textoDoZe', texto: 'Pronto.' }, 1_100);
+  assert.equal(fala.conversa.estado, 'falando');
+});
+
+test('retomar só vale parado ou em erro: com a conversa andando, não faz nada', () => {
+  const ouvindo = roda([{ evento: { tipo: 'comecar' }, agora: 0 }]).conversa;
+  assert.deepEqual(avanca(ouvindo, { tipo: 'retomar' }, 10), { conversa: ouvindo, efeitos: [] });
+  const erro = roda([...ateEspera(), { evento: { tipo: 'falhou', motivo: 'agenteOcupado' }, agora: 400 }]).conversa;
+  assert.equal(avanca(erro, { tipo: 'retomar' }, 500).conversa.estado, 'esperandoZe');
+});
+
 test('ciclo feliz: parado → ouvindo → transcrevendo → esperandoZe → falando → ouvindo', () => {
   const { conversa, efeitos } = roda([
     ...ateEspera(),

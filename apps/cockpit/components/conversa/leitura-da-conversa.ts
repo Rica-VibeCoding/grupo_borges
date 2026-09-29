@@ -47,6 +47,8 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
       return { titulo: 'Pensando', detalhe: 'A resposta toca assim que chegar.' };
     case 'trabalhando':
       return { titulo: 'Trabalhando', detalhe: 'Usando ferramentas para responder.' };
+    case 'pronta':
+      return { titulo: 'Resposta pronta', detalhe: 'Toque para continuar.' };
     case 'falando':
       return {
         titulo: 'Respondendo',
@@ -55,6 +57,7 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
     case 'interrompendo':
       return { titulo: 'Pausei a resposta', detalhe: 'Continue falando para interromper. Se foi tosse, eu retomo.' };
     case 'erro':
+    case 'ocupado':
       return {
         titulo: e.motivo ? TITULO_DO_ERRO[e.motivo] : 'A conversa parou',
         detalhe: mensagemDeErro(e.motivo),
@@ -63,10 +66,10 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
 }
 
 /** O nome do toque na tela (rótulo acessível, sem texto visível). */
-export function rotuloDaAcao(cena: Cena, preparacaoFalhou: boolean): string {
+export function rotuloDaAcao(cena: Cena, preparacaoFalhou: boolean, retomando = false): string {
   if (preparacaoFalhou) return 'Detector indisponível';
   if (cena === 'preparando') return 'Preparando…';
-  if (cena === 'parado') return 'Começar conversa';
+  if (cena === 'parado') return retomando ? 'Continuar conversa' : 'Começar conversa';
   if (cena === 'erro') return 'Tentar de novo';
   return 'Encerrar conversa';
 }

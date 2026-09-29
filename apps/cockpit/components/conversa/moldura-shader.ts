@@ -16,7 +16,7 @@ uniform vec2 uRes;
 uniform float uEsc, uRaio, uZonaTopo, uZonaBase;
 uniform float uT, uNivel, uProg, uJanela, uOrbita, uCauda, uPulso, uAurora;
 uniform vec4 uA, uB;
-uniform vec3 uFundo, uVoce, uZe, uPensa, uPrepara, uErro, uCorPulso;
+uniform vec3 uFundo, uVoce, uZe, uPensa, uPrepara, uErro, uOcupado, uCorPulso;
 
 float sdRR(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
 float desce(float alto, float baixo, float x) { return 1. - smoothstep(baixo, alto, x); }
@@ -71,6 +71,8 @@ void main() {
 
   /* erro: moldura parada, com a falha no pé (onde fica o microfone) */
   c += uErro * uB.x * smoothstep(.10, .20, 3.1416 - abs(ang)) * (fio + perto * .5 + medio * .3);
+  /* agente ocupado: o mesmo desenho parado do erro, na cor própria */
+  c += uOcupado * uB.w * smoothstep(.10, .20, 3.1416 - abs(ang)) * (fio + perto * .5 + medio * .3);
   /* interrompendo: a voz dele congela no topo, apagada */
   c += uZe * uB.y * smoothstep(-.1, .5, ny) * (fio * .8 + perto * .3 + medio * .2) * .55;
   /* parado: só o fio */

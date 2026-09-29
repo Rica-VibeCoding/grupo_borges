@@ -59,4 +59,13 @@ describe('o estado que a tela mostra é a verdade', () => {
       assert.equal(cenaVisivel({ cena, tocando: true, ferramenta: true }), cena, cena);
     }
   });
+
+  it('agente ocupado não pinta de erro: a tela desenha "ocupado" (Rica, 29/09)', () => {
+    assert.equal(cenaVisivel({ cena: 'erro', tocando: false, ferramenta: false, motivo: 'agenteOcupado' }), 'ocupado');
+    for (const motivo of ['envioFalhou', 'capturaCaiu', 'transcricaoFalhou', undefined] as const) {
+      assert.equal(cenaVisivel({ cena: 'erro', tocando: false, ferramenta: false, motivo }), 'erro', motivo);
+    }
+    // O motivo que sobra de um erro velho não pinta outra cena.
+    assert.equal(cenaVisivel({ cena: 'ouvindo', tocando: false, ferramenta: false, motivo: 'agenteOcupado' }), 'ouvindo');
+  });
 });

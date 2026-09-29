@@ -38,6 +38,21 @@ describe('moldura: o que acende em cada cena', () => {
     assert.deepEqual(Object.entries(erro).filter(([, p]) => p > 0).map(([c]) => c), ['erro']);
   });
 
+  it('agente ocupado tem camada e tom próprios, não os do erro', () => {
+    const ocupado = alvosDaMoldura('ocupado');
+    assert.deepEqual(Object.entries(ocupado).filter(([, p]) => p > 0), [['ocupado', 1]]);
+    assert.equal(tomDaCena('ocupado'), 'ocupado');
+    assert.equal(animaSozinha('ocupado'), false);
+    assert.equal(ouveVolume('ocupado'), false);
+  });
+
+  it('resposta pronta (voltou da recarga e espera o toque): a cor dele, parada', () => {
+    assert.deepEqual(Object.entries(alvosDaMoldura('pronta')).filter(([, p]) => p > 0), [['ze', 1]]);
+    assert.equal(tomDaCena('pronta'), 'ze');
+    assert.equal(animaSozinha('pronta'), false);
+    assert.equal(ouveVolume('pronta'), false);
+  });
+
   it('o clarão é quente na sua vez e frio na dele', () => {
     assert.equal(tomDaCena('ouvindo'), 'voce');
     assert.equal(tomDaCena('interrompendo'), 'voce');

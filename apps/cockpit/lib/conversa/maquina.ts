@@ -65,7 +65,8 @@ export const avanca: Avanca = (conversa, evento, agora) => {
   const c = conversa as ConversaInterna;
   switch (evento.tipo) {
     case 'comecar':
-      return comecar(c);
+    case 'retomar': // fase 4: o toque pós-recarga com o turno do Zé aberto volta a esperar por ele
+      return comecar(c, evento.tipo === 'retomar' ? agora : undefined);
     case 'parar':
       return parar(c);
     case 'tique':
@@ -102,11 +103,10 @@ export const avanca: Avanca = (conversa, evento, agora) => {
 // O toque que destrava áudio, microfone e Wake Lock. Idempotente: repetido fora de
 // `parado`/`erro` não faz nada (a fase 0 mediu: 4 toques = 4 detectores). A marca de
 // descarte atravessa: o turno freado ainda pode mandar texto depois do recomeço.
-function comecar(c: ConversaInterna): Resultado {
-  if (c.estado === 'parado' || c.estado === 'erro') {
-    return novo(c, 'ouvindo', [LIGA], c.zeDescartado ? { zeDescartado: true } : {});
-  }
-  return noop(c);
+function comecar(c: ConversaInterna, retomaEm?: number): Resultado {
+  if (c.estado !== 'parado' && c.estado !== 'erro') return noop(c);
+  if (retomaEm !== undefined) return novo(c, 'esperandoZe', [], { esperandoDesde: retomaEm }); // surdo, relógio zerado
+  return novo(c, 'ouvindo', [LIGA], c.zeDescartado ? { zeDescartado: true } : {});
 }
 
 // Com o turno do Zé em voo — esperando, ou falando antes do fim do stream — freia no

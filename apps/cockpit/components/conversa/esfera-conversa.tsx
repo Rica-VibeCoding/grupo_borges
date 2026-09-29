@@ -22,6 +22,8 @@ import {
   animaSozinha,
   aproxima,
   assentou,
+  comPensarAoMeio,
+  corDoTom,
   fatorDeAproximacao,
   ouveVolume,
   suavizaNivel,
@@ -35,9 +37,9 @@ import { criaPublicadorDeNivel, criaTelaWebGL, leCoresDoTema } from './webgl-tel
 const TOKENS = {
   voce: '--ck-conversa-voce',
   ze: '--ck-conversa-ze',
-  pensa: '--ck-conversa-pensa',
   prepara: '--ck-conversa-prepara',
   erro: '--ck-conversa-erro',
+  ocupado: '--ck-conversa-ocupado',
   fundo: '--ck-surface-canvas',
 } as const;
 /** A esfera pede mais definição que a Moldura: 0,75 da resolução. */
@@ -93,11 +95,11 @@ export function EsferaConversa({
       return;
     }
     const { gl, u } = tela;
-    const cores = leCoresDoTema(TOKENS);
+    const cores = comPensarAoMeio(leCoresDoTema(TOKENS));
     const coresDe = (c: Cena) => {
       const { corpo, brilho, borda } = coresDaEsfera(c);
-      const [r, g, b] = cores[corpo];
-      return { corpo: [r * brilho, g * brilho, b * brilho] as Cor, borda: cores[borda] as Cor };
+      const [r, g, b] = corDoTom(cores, corpo);
+      return { corpo: [r * brilho, g * brilho, b * brilho] as Cor, borda: corDoTom(cores, borda) as Cor };
     };
 
     let esc = 1;

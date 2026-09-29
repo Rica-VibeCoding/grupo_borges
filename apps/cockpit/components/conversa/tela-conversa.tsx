@@ -76,11 +76,17 @@ export function TelaConversa({
   const preparacaoFalhou = modo.preparacao === 'falhou';
   const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
   // O visual e a palavra do estado mostram a verdade do turno dele: pensando, trabalhando ou
-  // falando — este só com som saindo. Toque, leitura e legenda seguem a cena da conversa.
-  const vista = cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta });
+  // falando — este só com som saindo; e o agente ocupado, na cor própria em vez da do erro.
+  // Toque, leitura e legenda seguem a cena da conversa. Voltando da recarga com a conversa aberta,
+  // antes do toque que retoma, o visual já mostra a verdade lida do stream: pensando, trabalhando
+  // ou a resposta pronta (`retomada-da-conversa.ts`).
+  const retomando = modo.retomada !== null;
+  const vista = modo.retomada
+    ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
+    : cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
   const acao = acaoDoToque(cena, preparacaoFalhou);
   const leitura = leituraDaConversa({
-    cena,
+    cena: modo.retomada?.cena ?? cena, // voltando da recarga, o leitor de tela diz o mesmo que o visual
     preparacaoFalhou,
     abrindoMicrofone: modo.abrindoMicrofone,
     falaDetectada: modo.falaDetectada,
@@ -89,7 +95,7 @@ export function TelaConversa({
   });
   const eclipse = direcao === 'eclipse';
   const primeiroNome = nome.split(' ')[0] || nome;
-  const convite = conviteDaTela(cena, preparacaoFalhou);
+  const convite = conviteDaTela(cena, preparacaoFalhou, retomando);
   const pecas = pecasDoVisual(visual, vista);
   const segundos = useSegundosDeEspera(texto && cena === 'esperandoZe');
   const aviso = avisoDaTela(
@@ -118,6 +124,7 @@ export function TelaConversa({
   const pararAoSairRef = useRef(() => {});
   pararAoSairRef.current = () => {
     if (acao === 'parar') modo.parar();
+    else if (retomando) modo.descartaRetomada(); // sair da tela sem retomar também encerra
   };
   useEffect(() => {
     if (!ativa) pararAoSairRef.current();
@@ -150,6 +157,7 @@ export function TelaConversa({
       data-estado={modo.conversa.estado}
       data-cena={cena}
       data-vista={vista}
+      data-retomada={retomando ? '' : undefined}
       data-opcao={visual.opcao}
       data-variacao={visual.variacao}
       data-direcao={direcao}
@@ -225,7 +233,7 @@ export function TelaConversa({
       <button
         type="button"
         className={styles.toque}
-        aria-label={rotuloDaAcao(cena, preparacaoFalhou)}
+        aria-label={rotuloDaAcao(cena, preparacaoFalhou, retomando)}
         aria-disabled={acao === 'nada' ? true : undefined}
         data-acao={acao}
         onClick={toca}

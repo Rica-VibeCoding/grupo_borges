@@ -876,3 +876,379 @@ voltar a ouvir, e cada chamada nova pode reabrir o aviso de permissão no iOS.
 - Sem commit.
 
 FIM-DO-MICROFONE
+
+# Fase 4 — cadeira `ui`: frases de apoio na voz do agente, cinco variações
+
+Briefing `briefings/fase4-frases-de-apoio.md`. A ponte, a demora e o aviso de erro saem agora na voz do agente,
+pela rota das respostas (`POST /api/tts/synth/stream`, slug do agente). A voz do navegador ficou só de reserva.
+
+## Entreguei
+- `components/conversa/voz-de-apoio.ts` (novo, lógica pura):
+  - 5 frases de ponte, as do Rica: "Só um momento, Rica", "Já estou vendo isso pra gente", "Um instante",
+    "Deixa comigo", "Estou pensando".
+  - 5 de demora, no mesmo espírito: "Ainda estou nisso, Rica", "Está levando um pouco mais, mas já sai", "Continuo
+    aqui, só mais um pouco", "Quase lá, segura mais um pouquinho", "Ainda trabalhando nisso pra gente".
+  - Sorteio por lista que nunca repete a anterior.
+- **Fora da fila do turno.** A frase de apoio toca numa sequência própria do reprodutor único e o fim dela não avisa
+  ninguém: não existe caminho para `vozTerminou`.
+  - A resposta que chega abre a própria sequência e corta a ponte (um alto-falante, uma voz).
+  - O efeito `falar` também chama `apoio.cala()`: a ponte ainda na síntese não toca mais.
+  - A ponte que chega com a resposta já tocando não a corta.
+- **Latência**: uma frase curta leva 1,7 a 1,9 s na rota (medido 3×), acima dos 600 ms. Por isso a tela
+  pré-sintetiza as 10 ao abrir.
+  - Uma de cada vez, com a próxima ponte e a próxima demora na frente.
+  - O cache é por agente e em memória (dura a aba).
+  - Cada frase usada já puxa a próxima sorteada.
+- **Reserva**: se a rota falhar, a frase sai pela voz do navegador.
+  - O aviso de erro tem prazo de 2,5 s. Rota lenta demais, fala a reserva, e o áudio atrasado não toca.
+  - O erro também fala a reserva se o navegador recusar tocar.
+- `components/conversa/use-voz-de-apoio.ts` (novo): liga o módulo à rota (`pedeFala`), ao reprodutor único e ao cache.
+- `use-modo-conversa.ts` (296 linhas):
+  - `falarPonte` → `apoio.ponte()`, `avisarDemora` → `apoio.demora()`, `avisarErro` → `apoio.erro(mensagem)`.
+  - `apoio.cala()` no lugar de `sons().cancelaFala()` em `falar`, no começo e no parar.
+- `e2e/fase4-frases-de-apoio.cjs` (novo).
+
+## Provas
+- **Teste vermelho antes**: com o módulo imitando o jeito de hoje (voz do navegador, frase fixa), 8 de 11 falharam.
+  Depois, 11 de 11.
+  - sorteio sem repetir
+  - 5 + 5 frases sem reticências nem interrogação
+  - `falarPonte` pela rota, sem speechSynthesis e sem fechar o turno
+  - duas pontes seguidas não repetem
+  - pré-síntese na ordem certa e sem pedir de novo
+  - resposta chegando com a ponte na síntese
+  - resposta chegando com a ponte tocando
+  - ponte com a resposta já tocando
+  - rota caída vai para a reserva
+  - erro com a rota lenta
+  - erro na voz do agente
+- `npm test`: 1331 testes, 1330 passam, 0 falham, 1 pulado. `npm run type-check`: sem erro.
+- **E2E com o Canário real** (Playwright, microfone falso, nada interceptado). O pedido força ferramentas antes da
+  resposta. Sequência (ms):
+  - 905 a 14307: as 10 pré-sínteses em `/api/tts/synth/stream`, todas com `slug: canarinho`. Primeiro "Um instante"
+    (a próxima ponte), depois "Quase lá, segura mais um pouquinho" (a próxima demora).
+  - 2877 toque → ouvindo; 19111 transcrevendo; 20244 esperandoZe
+  - 24457 a vista vira "trabalhando"
+  - 25269 **a ponte toca** (5,0 s depois do esperandoZe, com a máquina em esperandoZe); 26917 acaba, e a máquina
+    **segue em esperandoZe** (nada de `vozTerminou`)
+  - 27342 a resposta chega (a síntese dela sai pela mesma rota, `slug: canarinho`); 29522 toca; 34251 ouvindo
+  - A demora não apareceu: a resposta chegou 7 s depois do esperandoZe, antes dos 20 s.
+  - `speechSynthesis.speak`: uma chamada, **com texto vazio**, no toque de começar. É o destrave da voz do
+    navegador no gesto (`sons().destrava()`, já existia), que deixa a reserva pronta no iPhone. Nenhuma frase saiu
+    por ela.
+  - Console, JS e API (≥ 400): nenhum erro.
+- **browser-harness** (Chrome do agente, `localhost:3009`): abrir a tela de voz fez as 10 pré-sínteses, de 0,9 a
+  1,8 s cada. A aba escondida não roda a escuta, então o turno ficou com o Playwright.
+
+## Assumi
+- A demora usa o mesmo mecanismo da ponte, e o erro também, com prazo e reserva. O corte de "resposta com demora
+  tocando" é o mesmo da ponte.
+- O cache é só em memória. Recarregar a página sintetiza as 10 de novo: umas 300 letras de Google TTS por abertura.
+  Guardar no disco arriscaria tocar a voz velha depois de uma troca de voz, como a Kore de hoje.
+
+## Divergi do combinado
+- 🟡 **O aviso de erro agora corta a resposta que estiver tocando** (cancela a fila do turno antes de falar). Antes, a
+  voz do navegador falava o erro por cima da resposta. Com um alto-falante só, tocar o erro pelo reprodutor único
+  cortaria a resposta de qualquer jeito. Sem avisar a fila, ela ficaria com a sequência morta e a próxima resposta
+  sairia muda. Só acontece com fone (é o único caso de erro com ele falando).
+
+## Não fiz
+- A demora e o erro não apareceram no E2E real; estão cobertos no teste de unidade.
+
+## Achados laterais
+- A data que o Canário leu no terminal da VPS foi 29/09; o relógio do PC marcava 28/09 à noite (fuso da VPS).
+
+## Estado do PC
+- Dev 3009 no ar (o mesmo da tarefa do microfone), não reiniciado.
+- Saída do E2E em `e2e/fase4-frases-de-apoio/provas.json`.
+- Sem commit.
+
+FIM-DAS-FRASES
+
+# Fase 4 — cadeira `ui`: o pensando mistura a cor de quem ouve com a de quem fala
+
+Briefing `briefings/fase4-mistura-de-cor.md`. Na tela de voz, pensar não tem mais cor própria: é o dourado dele
+ouvindo virando o azul dele falando. O roxo `--ck-state-thinking` não foi tocado e segue no resto do cockpit.
+
+## Entreguei
+- `moldura-estado.ts`:
+  - tipo `Mistura` (`{ entre: [Tom, Tom]; peso }`, peso = quanto já é dele);
+  - `PENSAR_AO_MEIO` (meio a meio), `misturaCor`, `corDoTom` (tom ou mistura, sobre as cores lidas do tema);
+  - `comPensarAoMeio` (o `pensa` das cores do WebGL vira a mistura).
+- `esfera-estado.ts`: `coresDaEsfera` devolve mistura no corpo dos três estados de pensar.
+  - transcrevendo: peso 0,3 (mais dourado, logo que você solta a fala)
+  - pensando: 0,5
+  - trabalhando: 0,5, com a borda `ze`, como já era
+  - A borda de transcrevendo e pensando também é a mistura: ficar `pensa` deixaria o roxo na borda.
+- `esfera-conversa.tsx` e `moldura-conversa.tsx`: leem voce/ze do tema e montam o `pensa` com a mistura (a
+  moldura usa no brilho do pensar e no clarão; a esfera, no corpo, na borda e no clarão). Não leem mais o token
+  `--ck-conversa-pensa` pelo canvas.
+- `app/globals.css`: `--ck-conversa-pensa: color-mix(in srgb, var(--ck-conversa-voce), var(--ck-conversa-ze))`.
+  - Esse token é só da tela de voz. Cobre o modo sem WebGL (as duas `.reserva`) e a pílula do retrato sem mexer
+    nos CSS delas.
+  - A conta é a mesma do JS (sRGB, meio a meio): o token calculado deu `color(srgb 0.587 0.757 0.623)` (#96c19f),
+    igual à mistura da esfera.
+- `e2e/fase4-mistura.cjs` (novo).
+
+## O peso da mistura (o que decidi)
+- **Por etapa, sem sinal novo.** "Quão perto do fim" não existe hoje: ninguém sabe quando a resposta vai chegar.
+  - A evolução vem das etapas que já existem: 0,3 ao transcrever, 0,5 pensando ou trabalhando, 1 falando.
+  - A troca de cor da esfera já anda suave entre elas.
+  - Pensando e trabalhando têm o mesmo peso de propósito: ele alterna entre os dois (pensa → ferramenta → pensa), e
+    pesos diferentes fariam a cor voltar.
+- A moldura, a reserva sem WebGL e a pílula usam o meio a meio fixo. Só a esfera com WebGL tem o 0,3 do
+  transcrever, que dura ~1 s.
+- Sinal que existe e daria o "quase lá": a máquina em `falando` antes do primeiro áudio tocar (o texto dele chegou e
+  a voz está sendo sintetizada, ~2 s no E2E). Hoje ele aparece como "pensando". Não usei: pede passar a cena da
+  máquina até a esfera, e o briefing pede checar antes.
+
+## Provas
+- **Teste vermelho antes**: "pensar mistura a sua cor com a dele" e "começa perto do dourado" falharam com o corpo
+  `'pensa'`. Depois, 25 de 25 em esfera-estado e moldura-estado.
+- `npm test`: 1335 testes, 1334 passam, 0 falham, 1 pulado. `npm run type-check`: sem erro.
+- **E2E com o Canário real**, um turno por rodada. Foto da tela em cada estado; o matiz médio dos pixels coloridos
+  foi medido na própria página:
+  - Esfera com WebGL: ouvindo 41° (dourado) → pensando 133° (a mistura, `rgb 104,124,108`) → falando 190° (azul)
+  - Esfera sem WebGL (reserva): 37° → 131° → 194°
+  - Moldura: 40° → 131° → 190°
+  - Nas duas últimas rodadas a foto do "falando" saiu azul, mas o estado lido logo depois já era "pensando". A
+    resposta curta acabou entre a foto e a leitura.
+  - Console sem erro nas três.
+- **browser-harness** (Chrome do agente): `--ck-conversa-pensa` = a mistura, e `--ck-state-thinking` segue roxo
+  (`lab(67 19 -48.7)`). A aba escondida não roda a conversa: o turno ficou com o Playwright.
+
+## Assumi
+- Mistura em sRGB, a conta literal de "meio dourado, meio azul". É a mesma conta que a esfera já usava para ir de
+  uma cor à outra.
+- A pílula do retrato também fica com a mistura no "pensando", porque usa o mesmo token da voz.
+
+## Divergi do combinado
+- Nada.
+
+## Não fiz
+- O "quase lá" pelo texto que chegou antes do áudio, pelo motivo acima. Fica como proposta.
+
+## Achados laterais
+- 🟡 **O meio fica verde-sálvia claro, mais apagado que o dourado e o azul.** Dourado e azul são quase opostos no
+  círculo de cores, e misturar opostos apaga. Se o Rica achar apagado, a alternativa é girar o matiz em vez de
+  misturar (`in oklch`): o meio fica verde vivo, mas aí pode ser confundido com o verde de "deu certo".
+
+## Estado do PC
+- Dev 3009 no ar, não reiniciado.
+- Fotos e medidas em `e2e/fase4-mistura/`.
+- Sem commit.
+
+FIM-DA-MISTURA
+
+# Fase 4 — cadeira `ui`: cor própria para o "agente ocupado"
+
+Briefing `briefings/fase4-cor-agente-ocupado.md`. Com o agente ocupado, a tela de voz não pinta mais o vermelho de
+falha: esfera, moldura, retrato (pílula, cabeça e núcleo da Eclipse) e a barrinha do cartão do pé ficam **lilás**. O
+texto e o comportamento são os de hoje ("O agente está ocupado", toque = "Tentar de novo"). A mistura do pensar não
+foi tocada.
+
+## Entreguei
+- `moldura-estado.ts`: cena `ocupado` (só da tela, ao lado de `trabalhando`), camada `ocupado` em `CAMADAS`/`Pesos`,
+  tom `ocupado`. `alvosDaMoldura('ocupado')` = só essa camada, peso 1; `tomDaCena('ocupado')` = `ocupado`; quadro
+  fixo como o erro (`animaSozinha` falso).
+- `estado-da-vez.ts`: `EntradaDaCena.motivo`; `cenaVisivel` devolve `ocupado` quando a cena é `erro` com motivo
+  `agenteOcupado`, e `erro` nos outros motivos.
+- `tela-conversa.tsx`: repassa `modo.conversa.motivo` a `cenaVisivel` (a mesma fonte da leitura e do aviso). Toque,
+  leitura, legenda e aviso seguem na cena da conversa (`erro`) — por isso nada de texto ou ação mudou.
+- `app/globals.css`: `--ck-conversa-ocupado: oklch(0.75 0.13 305)` (#c198f0), ao lado dos outros `--ck-conversa-*`.
+- Os três visuais, ao lado do `erro` existente:
+  - `esfera-conversa.tsx`/`.module.css`: token lido pelo WebGL e `data-tom='ocupado'` na reserva sem WebGL;
+    `esfera-estado.ts` dá a mesma forma parada do erro, na cor nova.
+  - `moldura-conversa.tsx`/`.module.css` e `moldura-shader.ts`: camada no `uB.w` (estava livre) e `uOcupado`, mesmo
+    desenho parado do erro; `data-tom='ocupado'` na reserva.
+  - `retrato-da-voz.module.css`: `data-tom='ocupado'` (pílula, cabeça da Eclipse, núcleo e anel herdam o `--cor`).
+- `tela-conversa.module.css`: a barrinha do cartão do pé (`.aviso::before`) fica lilás com `data-vista='ocupado'`.
+- `direcao-da-voz.ts` e `leitura-da-conversa.ts`: `ocupado` junto do `erro` (mesma palavra e mesmo texto).
+- `e2e/fase4-ocupado.cjs` (novo).
+
+## O matiz (decisão do Rica, ao vivo)
+- **Lilás, `oklch(0.75 0.13 305)`, #c198f0.** Longe do vermelho da falha (22°), do dourado (78°), do azul (220°) e
+  do verde-sálvia do pensar (151°). Lê "espera", não "quebrou".
+- Contraste (a régua da estética §3 pede os dois fundos):
+  - sobre `raised`: **5,55:1** (erro 5,21 · azul 6,69 · dourado 7,29)
+  - sobre `composer` + `pressed`: **5,29:1** (erro 4,97)
+  - sobre o canvas da tela de voz: 7,52:1
+- Distância de cor (OKLab ΔE, quanto maior mais diferente): erro 0,182 · azul 0,178 · pensar 0,193 · dourado 0,257.
+- Vizinho do roxo `--ck-state-thinking` (ΔE 0,052), que na voz não aparece mais. No resto do cockpit roxo é "está
+  pensando" — parentesco que ajuda: ocupado = ele pensando em outra coisa.
+
+## Provas
+- **Teste vermelho antes**: 4 falharam (cena, camada/tom, esfera, palavra) com `ocupado` caindo em `erro` ou
+  inexistente. Depois, 46 de 46 nos quatro arquivos tocados.
+- `npm test`: **1338 testes, 1337 passam, 0 falham, 1 pulado**. `npm run type-check`: sem erro.
+- **E2E, dev 3009, nada interceptado** (`e2e/fase4-ocupado/`, foto lado a lado em `lado-a-lado.png`):
+  - Esfera · ocupado: `vista=ocupado`, `tom=ocupado`, matiz **270°**, palavra e barra `rgb(193,152,240)`.
+  - Moldura/Eclipse · ocupado: `vista=ocupado`, matiz **270°**, mesma cor na palavra e na barra.
+  - Esfera · erro real: `vista=erro`, matiz **1°** (vermelho), "Sem acesso ao microfone".
+  - Moldura/Eclipse · erro real: `vista=erro`, matiz **1°**.
+  - Console sem erro nas quatro. No ocupado, nenhum `POST /input` saiu: quem barra é o app, vendo o turno em voo.
+- **Como o ocupado foi forçado**: o Canário está fora na VPS — o pedido de texto para ocupá-lo voltou **409
+  `agent_pane_unavailable` / `sessao_ausente`**. O turno em voo (o pedido e um `tool_use` de `sleep 75`) entrou pela
+  porta do stream real, a técnica do `fase4-texto.cjs`; microfone falso, transcrição real, o resto é o app. O erro
+  real é o microfone negado, sem porta nenhuma.
+
+## Assumi
+- A palavra da pílula continua **"parou"** (o briefing proíbe texto novo). É verdade: a conversa parou e o toque
+  tenta de novo. Quem diz o porquê é o cartão do pé, "O agente está ocupado", que já estava certo.
+- A esfera no ocupado tem a **mesma forma** do erro (a rachadura, parada); só a cor muda, como pediu o briefing.
+- A barrinha do cartão do pé entrou junto: era o último vermelho que sobrava na tela do ocupado.
+
+## Divergi do combinado
+- `tela-conversa.module.css` não estava na lista: uma linha, pela barrinha do cartão (acima).
+
+## Não fiz
+- Ocupar o Canário de verdade: a sessão dele está fora na VPS, e VPS é proibida para mim.
+
+## Achados laterais
+- 🟡 **A rachadura da esfera ainda diz "quebrou"** no ocupado, mesmo lilás. Recomendo, se o Rica achar forte, a
+  esfera inteira e parada (sem a rachadura) só no ocupado — é uma linha em `alvosDaEsfera`. Decisão dele.
+- 🟡 **Com a sessão fora, a fala não mostra "ocupado"**: o 409 `sessao_ausente` vem `refused` + `safe_to_resend`, o
+  app insiste três vezes e mostra "A mensagem não saiu", em vermelho. Está certo — sessão fora é falha, não
+  ocupação —, mas quer dizer que hoje o lilás só aparece quando o app vê o turno em voo (ou num 409 que não seja
+  `refused`).
+
+## Estado do PC
+- Dev 3009 no ar, não reiniciado.
+- Fotos, medidas e `provas.json` em `e2e/fase4-ocupado/`.
+- Sem commit.
+
+FIM-DO-OCUPADO
+
+# Fase 4 — cadeira `ui`: ocupado provado com o Canário ocupado de verdade
+
+Pedido do Pavan depois do FIM-DO-OCUPADO: o lilás fica; a esfera no ocupado fica inteira e parada; provar com o
+Canário religado, sem simulação.
+
+## Entreguei
+- `esfera-estado.ts`: `alvosDaEsfera('ocupado')` = a esfera em repouso (a de parado), sem a rachadura do erro. A cor
+  segue lilás e o brilho, o do erro (0,8).
+- Teste em `esfera-estado.test.ts`: ocupado igual ao parado e `colapso` 0. O código antigo dava `colapso` 1 (a rachadura).
+- `e2e/fase4-ocupado.cjs` refeito para o Canário real: com a tela aberta, um pedido de texto dá a ele um turno longo;
+  a fala chega com ele no meio do turno. Fotos novas e `lado-a-lado.png` refeito em `e2e/fase4-ocupado/`.
+
+## Provas
+- `npm test`: 1338 testes, 1337 passam, 0 falham, 1 pulado. `tsc --noEmit`: sem erro.
+- E2E, dev 3009, **nada simulado** (sem porta no stream, nenhuma rota interceptada; único falso é o microfone):
+  - Esfera · ocupado: `vista=ocupado`, matiz 270°, esfera inteira; Canário `trabalhando` na hora da foto.
+  - Moldura/Eclipse · ocupado: `vista=ocupado`, matiz 270°; Canário `trabalhando` na hora da foto.
+  - Os dois erros reais (microfone negado): `vista=erro`, matiz 1°, esfera rachada.
+  - Nas duas rodadas de ocupado, nenhum `POST /input` saiu, e a fala não entrou no log do Canário.
+  - Console sem erro nas quatro.
+
+## Divergi do combinado
+- **Não houve 409.** Com o agente ocupado, o ocupado real não passa por 409: o app vê o turno dele em voo no stream
+  e barra a fala antes de enviar. Conferido no código:
+  - o back não recusa por ocupação: com o Claude Code no meio do turno, o campo dele está vazio e a mensagem
+    entra na fila (200);
+  - todo 409 `agent_pane_unavailable` real vem `refused` + `safe_to_resend`: o app insiste duas vezes e mostra
+    "A mensagem não saiu", em vermelho (visto na rodada com a sessão fora).
+- Provei o ocupado pelo caminho que existe, com o Canário de fato ocupado. Pintar de lilás também um 409 real seria
+  mudar comportamento (hoje ele é "não saiu"), fora deste pedido.
+
+## Achados laterais
+- 🟡 O Canário não segura turno longo com `sleep`: o harness dele barra `sleep` solto, em segundo plano o turno fecha na
+  hora, e ele recusou (com razão) o laço que contorna a trava. O que funcionou foi pedir um texto longo, sem
+  ferramenta: 12 a 16 s de turno.
+- 🟡 Sobraram no log do Canário algumas falas de teste ("teste do aviso de ocupado") e os textos longos, das tentativas
+  antes da prova. Ele respondeu "Ok." e está ocioso.
+
+## Estado do PC
+- Dev 3009 no ar, não reiniciado. Sem commit.
+
+OCUPADO-REAL-OK
+
+# Fase 4 — cadeira `ui`: a conversa sobrevive à recarga da página
+
+Briefing `briefings/fase4-conversa-sobrevive-recarga.md`. Recarregar (o dedo, ou o deploy na 3008) não joga mais a
+tela de voz no "parado": ela volta mostrando o que está acontecendo — pensando, trabalhando ou resposta pronta — e
+**um toque** continua a conversa de onde parou.
+
+## Entreguei
+- `retomada-da-conversa.ts` (novo, puro) e o teste: o que se guarda, o que a tela mostra depois da recarga e os
+  passos do toque que retoma.
+- `lib/conversa/tipos.ts` e `maquina.ts`: evento `retomar` — do parado (ou erro) para `esperandoZe`, surdo, com o
+  relógio da espera zerado.
+- `use-retomada-da-conversa.ts` (novo): guarda e lê a marca no `sessionStorage`, por agente.
+- `use-fila-de-voz.ts`: cada texto leva o id do stream e avisa quando tocou inteiro.
+- `use-turno-do-ze.ts`: passa o id de cada texto.
+- `use-detector-de-fala.ts`: `destrava` — no toque que retoma, destrava o áudio do detector sem abrir o microfone.
+- Cena `pronta` (só da tela): moldura e esfera na cor dele, paradas; palavra "resposta pronta".
+- `tela-conversa.tsx`: antes do toque, o visual mostra a retomada; convite "toque para continuar"; o botão se chama
+  "Continuar conversa"; o leitor de tela lê o mesmo que o visual; sair da tela sem retomar apaga a marca.
+- `use-aba-escondida.ts` (novo): o efeito da aba escondida saiu de `use-modo-conversa.ts`, que estava no teto.
+- E2E: `e2e/fase4-recarga.cjs` (Chrome) e `e2e/fase4-recarga-webkit.cjs`.
+
+## Como funciona
+- O aparelho guarda só uma marca: até que texto dele a voz já **tocou inteiro**. Vale 30 min, por aba.
+- Depois da recarga, o stream reaparece e diz o resto:
+  - ele segue no turno, nada por tocar → "pensando" (ou "trabalhando", com ferramenta);
+  - há texto dele depois da marca → "resposta pronta";
+  - nada disso → "parado", como antes.
+- O toque: volta a esperar por ele, toca o que ficou (na ordem) e, se o turno dele já acabou, volta a ouvir no fim.
+- Parar, ou sair da tela, apaga a marca.
+
+## O que o navegador permitiu sem toque (medido)
+- **Chrome** (Playwright, sem liberar o autoplay): depois da recarga, a página seguia "ativada" (`hasBeenActive`), o
+  `AudioContext` nasceu `running` e o `<audio>` tocou. O Chrome deixaria retomar sozinho.
+- **WebKit do Playwright (Windows)**: o `<audio>` recusou com `NotSupportedError` — esse WebKit não toca áudio nenhum
+  (já registrado nas rodadas anteriores). Não serve para medir a regra do iPhone.
+- **Doc (MDN, via Context7)**: som por `<audio>` e Web Audio exigem ativação do usuário na página; no iOS, o
+  `AudioContext` só destrava dentro de um gesto.
+- **Decisão**: um toque retoma em todos os aparelhos, o mesmo comportamento no Chrome e no iPhone. No toque, destravo
+  o som e o áudio do detector; o microfone só abre quando volta a vez dele.
+
+## Provas
+- **Teste vermelho antes**: 7 falharam (módulo inexistente, evento `retomar`, cena `pronta`, convite); o rótulo
+  acessível, 1. Depois, 316 de 316 nos testes da conversa.
+- `npm test`: **1353 testes, 1352 passam, 0 falham, 1 pulado**. `tsc --noEmit`: sem erro.
+- **E2E no Chrome, Canário real, nada interceptado** (`e2e/fase4-recarga/`, capturas em `recargas.png`):
+  - A, recarga no "pensando": 1,7 s depois a tela já mostrava "pensando" e "toque para continuar". Toque → trabalhando
+    → a resposta tocou → voltou a ouvir. Um envio só; a resposta foi sintetizada uma vez, depois do toque.
+  - B, recarga no meio da voz: 1,7 s depois, "resposta pronta". Toque → a frase que não tinha terminado tocou de novo,
+    inteira → voltou a ouvir. **Segunda recarga** com tudo tocado: "na linha / toque para falar", nada tocou.
+  - C, parou e recarregou: marca apagada; abriu em "parado", nada tocou.
+  - Antes do toque, nenhuma resposta dele foi sintetizada (só o pré-aquecimento das frases de apoio). Console sem
+    erro nos três.
+- **WebKit, Canário real**: recarga no meio da voz → "resposta pronta" já durante o "preparando" → o toque retomou e
+  pediu de novo só o texto pendente; sem áudio nesse WebKit, caiu em "ouvindo". Dois erros de console dele, não
+  investigados: "URL is not valid or contains user credentials" e a síntese cortada pela recarga ("access control
+  checks"). O Chrome não teve nenhum.
+- **browser-harness** (Chrome do agente): sem marca abre em "parado"; com marca e recarga, "resposta pronta" e
+  "toque para continuar", e o leitor de tela lê "Resposta pronta. Toque para continuar.". Não cliquei: ali o toque
+  tocaria no alto-falante e abriria o microfone de verdade do PC.
+
+## Assumi
+- A marca é por texto que tocou **inteiro**: a frase cortada pela recarga toca de novo, do começo.
+- Na vez do Rica (ouvindo), ou com tudo tocado, a recarga abre em "parado" com "toque para falar": o microfone só
+  abre com toque, e esse toque é o de começar.
+- Erro não apaga a marca; só parar e sair da tela.
+- Textos novos: "toque para continuar", "resposta pronta", "Continuar conversa" (rótulo do botão) e "Resposta
+  pronta. Toque para continuar." (leitor de tela).
+
+## Divergi do combinado
+- **`lib/conversa/tipos.ts` ganhou o evento `retomar`.** O arquivo é o contrato das duas cadeiras e pede a
+  coordenação: só acrescentei, nada existente mudou. Sem ele, o toque não tinha como voltar a "esperando por ele".
+- `maquina.ts`: o `retomar` entrou dentro do `comecar`, para o arquivo seguir em 300 linhas.
+
+## Não fiz
+- Prova no iPhone de verdade: só depois de publicado.
+- Sair da tela com retomada pendente apaga a marca: ligado, sem E2E.
+- Retomar sozinho no Chrome, sem toque: dá (medido), mas fica um comportamento só.
+
+## Achados laterais
+- 🟡 Nos dois motores do Playwright a página seguiu "ativada" depois da recarga. Se o iPhone também deixar, dá para
+  retomar sem toque. Medir no aparelho.
+- 🟡 No caso B, um turno do Canário que não era do teste (sobre um `SKILL.md`) chegou no meio, e a voz o leu —
+  outra conversa estava usando o Canário. É o modo voz de sempre: ele fala todo turno do agente.
+
+## Estado do PC
+- Dev 3009 no ar, não reiniciado. Sem commit.
+- Mensagens de teste no Canário: 4 pedidos de voz (A, B, C e o do WebKit).
+
+FIM-DA-RECARGA
+

@@ -1,4 +1,5 @@
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+import type { MotivoDeErro } from '@/lib/conversa/tipos';
 
 import type { Cena } from './moldura-estado.ts';
 
@@ -39,10 +40,17 @@ export type EntradaDaCena = {
   /** Um áudio da resposta está tocando agora (`use-fila-de-voz`). */
   tocando: boolean;
   ferramenta: boolean;
+  /** Por que a conversa parou, quando parou (`conversa.motivo`). */
+  motivo?: MotivoDeErro;
 };
 
-/** A cena que o visual e a palavra do estado mostram. Fora do turno dele, é a da conversa. */
-export function cenaVisivel({ cena, tocando, ferramenta }: EntradaDaCena): Cena {
+/**
+ * A cena que o visual e a palavra do estado mostram. Fora do turno dele, é a da conversa — menos o
+ * agente ocupado: é erro para a máquina (toque tenta de novo), mas não quebrou nada, e a tela desenha
+ * `ocupado`, na cor própria, em vez do vermelho da falha.
+ */
+export function cenaVisivel({ cena, tocando, ferramenta, motivo }: EntradaDaCena): Cena {
+  if (cena === 'erro') return motivo === 'agenteOcupado' ? 'ocupado' : 'erro';
   if (cena !== 'esperandoZe' && cena !== 'falando') return cena;
   if (tocando) return 'falando';
   return ferramenta ? 'trabalhando' : 'esperandoZe';

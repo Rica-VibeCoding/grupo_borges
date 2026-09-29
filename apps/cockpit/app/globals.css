@@ -1981,14 +1981,21 @@ html[data-troca-agente] .ck-palco {
 }
 
 /* Modo conversa (fase 3): a cor diz de quem é a vez — quente = sua, frio = dele.
- * É a tese da estética §1.3 aplicada à voz. Nenhuma cor nova: os cinco apontam
- * para os estados, cujo contraste já está calculado na §3. Os visuais (WebGL)
+ * É a tese da estética §1.3 aplicada à voz. Os cinco primeiros apontam para os
+ * estados, cujo contraste já está calculado na §3; o ocupado é o único próprio. Os visuais (WebGL)
  * leem estes tokens em tempo de execução; trocar aqui troca lá. */
 :root {
   --ck-conversa-voce: var(--ck-state-attention);    /* ouvindo, interrompendo */
-  --ck-conversa-pensa: var(--ck-state-thinking);    /* transcrevendo, esperando o Zé */
+  /* Pensar não tem cor própria na voz (Rica, 29/09): a sua virando a dele, meio a meio, em sRGB —
+   * a mesma conta da esfera (`moldura-estado.ts`, PENSAR_AO_MEIO). O roxo `--ck-state-thinking`
+   * fica para o resto do cockpit. */
+  --ck-conversa-pensa: color-mix(in srgb, var(--ck-conversa-voce), var(--ck-conversa-ze));
   --ck-conversa-ze: var(--ck-state-running);        /* o Zé respondendo */
   --ck-conversa-erro: var(--ck-state-fail);
+  /* Agente ocupado (Rica, 29/09): não quebrou, só não pôde ouvir agora — lilás, longe do vermelho
+   * da falha, do dourado, do azul e do verde do pensar. A única cor própria da voz: 5.55:1 sobre
+   * `raised`, 5.29:1 sobre `composer` + `pressed` (a régua da §3 pede os dois). */
+  --ck-conversa-ocupado: oklch(0.75 0.13 305);      /* #c198f0 */
   --ck-conversa-prepara: var(--ck-text-secondary);  /* detector baixando, parado */
   /* O texto da voz (fase 4): legenda do visual, não título. O estado é a palavra da pílula, na cor
    * da vez; embaixo da animação, só a legenda — três linhas, e só o agora brilha: a máscara apaga

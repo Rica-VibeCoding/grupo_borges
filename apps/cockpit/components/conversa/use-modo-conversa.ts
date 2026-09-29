@@ -16,15 +16,15 @@ import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { zeOcupado } from './toque-da-conversa';
 import { transcreveFala } from './transcricao-da-fala';
+import { useAbaEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
+import { useRetomadaDaConversa } from './use-retomada-da-conversa';
 import { useSegurarAVez } from './use-segurar-a-vez';
 import { useTurnoDoZe } from './use-turno-do-ze';
+import { useVozDeApoio } from './use-voz-de-apoio';
 import { useWakeLock } from './use-wake-lock';
-
-const FRASE_PONTE = 'Estou pensando. Já te respondo.';
-const FRASE_DEMORA = 'Ainda estou trabalhando nisso.';
 
 /** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca. */
 export function useModoConversa(slug: string, fone: boolean) {
@@ -45,6 +45,7 @@ export function useModoConversa(slug: string, fone: boolean) {
   const isRunningRef = useRef(stream.isRunning);
   isRunningRef.current = stream.isRunning;
   const ferramenta = useMemo(() => ferramentaEmCurso(stream.messages), [stream.messages]);
+  const retomada = useRetomadaDaConversa({ slug, stream, estado: conversa.estado, sessaoAtivaRef }); // sobrevive à recarga
 
   const {
     abreTurno,
@@ -60,6 +61,7 @@ export function useModoConversa(slug: string, fone: boolean) {
   } = useFilaDeVoz({
     slug,
     aoTerminar: () => despachaRef.current({ tipo: 'vozTerminou' }),
+    aoOuvir: retomada.ouviu,
     aoFalhar: (mensagem) => {
       setAviso((atual) => reduzAviso(atual, { tipo: 'vozFalhou', mensagem }));
       try {
@@ -82,6 +84,7 @@ export function useModoConversa(slug: string, fone: boolean) {
     return sonsRef.current;
   }, []);
   const somDeSegurar = useCallback(() => sons().sinalizaSegurar(), [sons]);
+  const apoio = useVozDeApoio({ slug, sons, cancelaTurno: cancelaFala });
   const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar });
 
   const despacha = useCallback((evento: Evento) => {
@@ -121,6 +124,7 @@ export function useModoConversa(slug: string, fone: boolean) {
         return;
       case 'descartarVoz':
         cancelaFala();
+        retomada.descartou();
         return;
       case 'transcrever': {
         // O texto do canal ao vivo, já pronto; sem ele a tempo, o WAV sobe como sempre subiu.
@@ -164,30 +168,31 @@ export function useModoConversa(slug: string, fone: boolean) {
         void postAgentInterromper(slug).catch(() => {});
         return;
       case 'falar':
-        sons().cancelaFala();
-        enfileiraFala(efeito.texto);
+        apoio.cala(); // a resposta chegou: a frase de apoio some, na síntese ou tocando
+        enfileiraFala(efeito.texto, retomada.virouVoz());
         return;
       case 'tocarTique':
         sons().tocaTique();
         return;
       case 'falarPonte':
-        sons().fala(FRASE_PONTE);
+        apoio.ponte();
         return;
       case 'avisarDemora':
-        sons().fala(FRASE_DEMORA);
+        apoio.demora();
         return;
       case 'avisarErro': {
         const mensagem = mensagemDeErro(efeito.motivo);
-        sons().fala(mensagem);
+        apoio.erro(mensagem);
         setAviso((atual) => reduzAviso(atual, { tipo: 'erro', mensagem }));
         return;
       }
     }
   };
 
+  const entregaTexto = (texto: string, id: number) => retomada.entrega(id, () => despacha({ tipo: 'textoDoZe', texto }));
   useTurnoDoZe(stream, {
     abre: abreTurno,
-    texto: (texto) => despacha({ tipo: 'textoDoZe', texto }),
+    texto: entregaTexto,
     pedidoEntrou: () => despacha({ tipo: 'pedidoEntrou' }),
     fecha: () => {
       despacha({ tipo: 'zeTerminou' });
@@ -211,49 +216,44 @@ export function useModoConversa(slug: string, fone: boolean) {
     despacha({ tipo: 'fone', ligado: fone });
   }, [despacha, fone]);
 
-  useEffect(() => {
-    const aoMudarVisibilidade = () => {
-      if (
-        document.visibilityState === 'hidden' &&
-        sessaoAtivaRef.current &&
-        ['ouvindo', 'interrompendo', ...(fone ? ['falando'] : [])].includes(conversaRef.current.estado)
-      ) {
-        despachaRef.current({ tipo: 'capturaCaiu' });
-      }
-    };
-    document.addEventListener('visibilitychange', aoMudarVisibilidade);
-    return () => document.removeEventListener('visibilitychange', aoMudarVisibilidade);
-  }, [fone]);
+  useAbaEscondida({ fone, sessaoAtivaRef, conversaRef, despachaRef });
 
   const comecar = useCallback(() => {
     if (detector.preparacao !== 'pronto' || iniciandoRef.current) return;
     if (conversaRef.current.estado !== 'parado' && conversaRef.current.estado !== 'erro') return;
+    const r = retomada.retomada; // voltou da recarga com a conversa aberta: o toque retoma
     iniciandoRef.current = true;
     cicloRef.current += 1;
     sessaoAtivaRef.current = true;
     setAviso((atual) => reduzAviso(atual, { tipo: 'novoGesto' }));
     executaGestoDeInicio({
-      cancelaFalaLocal: () => sons().cancelaFala(),
+      cancelaFalaLocal: apoio.cala,
       destravaReprodutor: destravaNoGesto,
       destravaSons: () => {
         sons().destrava();
         sons().sinalizaInicio();
       },
       pedeWakeLock: wakeLock.pede,
-      comeca: () => despacha({ tipo: 'comecar' }),
+      comeca: () => {
+        if (!r) return void (retomada.comeca(), despacha({ tipo: 'comecar' }));
+        const fecha = () => (despacha({ tipo: 'zeTerminou' }), fechaTurno());
+        const retomar = () => (detector.destrava(), despacha({ tipo: 'retomar' }), abreTurno());
+        retomada.retoma(r, { retomar, texto: entregaTexto, fecha });
+      },
     });
-  }, [despacha, detector.preparacao, sons, wakeLock]);
+  }, [apoio, despacha, detector, sons, wakeLock, retomada, abreTurno, fechaTurno, entregaTexto]);
 
   const parar = useCallback(() => {
     cicloRef.current += 1;
     sessaoAtivaRef.current = false;
     iniciandoRef.current = false;
     cancelaFala();
-    sons().cancelaFala();
+    apoio.cala();
     sons().sinalizaFim();
     wakeLock.solta();
+    retomada.apaga(); // parou: a recarga depois abre em "parado"
     despacha({ tipo: 'parar' });
-  }, [cancelaFala, despacha, sons, wakeLock]);
+  }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada]);
 
   const nivelMicRef = detector.nivelRef;
   /** Volume para o visual: a voz do Zé enquanto ele fala, o microfone no resto. */
@@ -291,6 +291,8 @@ export function useModoConversa(slug: string, fone: boolean) {
     wakeLockFalhou: wakeLock.falhou,
     segurando: vez.segurando,
     segura: vez.segura,
+    retomada: retomada.retomada,
+    descartaRetomada: retomada.apaga,
     comecar,
     parar,
   };

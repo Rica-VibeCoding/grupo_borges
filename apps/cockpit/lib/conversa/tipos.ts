@@ -30,6 +30,9 @@ export type MotivoDeErro =
 
 export type Evento =
   | { tipo: 'comecar' } // o toque que destrava áudio, microfone e Wake Lock; repetido não faz nada
+  // fase 4: o toque depois de uma recarga com o turno do Zé aberto — volta a esperar por ele, em vez de ouvir
+  // (`components/conversa/retomada-da-conversa.ts`)
+  | { tipo: 'retomar' }
   | { tipo: 'tique' } // a tela bate a cada ~250 ms; é o que move o relógio da espera
   | { tipo: 'parar' } // o toque que para; com o turno do Zé em voo, também o freia
   | { tipo: 'falaIniciou' }

@@ -9,6 +9,7 @@ import {
   aproxima,
   assentou,
   caudaDaEspera,
+  comPensarAoMeio,
   ouveVolume,
   suavizaNivel,
   tomDaCena,
@@ -24,9 +25,9 @@ import { criaPublicadorDeNivel, criaTelaWebGL, leCoresDoTema } from './webgl-tel
 const TOKENS = {
   voce: '--ck-conversa-voce',
   ze: '--ck-conversa-ze',
-  pensa: '--ck-conversa-pensa',
   prepara: '--ck-conversa-prepara',
   erro: '--ck-conversa-erro',
+  ocupado: '--ck-conversa-ocupado',
   fundo: '--ck-surface-canvas',
 } as const;
 /** Canto da tela de um iPhone moderno, em px CSS. */
@@ -78,7 +79,7 @@ export function MolduraConversa({
       return;
     }
     const { gl, u } = tela;
-    const cores = leCoresDoTema(TOKENS);
+    const cores = comPensarAoMeio(leCoresDoTema(TOKENS));
     let esc = 1;
     let zona = { topo: 0, base: 0 };
     const mede = () => {
@@ -128,13 +129,14 @@ export function MolduraConversa({
       gl.uniform1f(u('uPulso'), clarao * clarao);
       gl.uniform1f(u('uAurora'), variacao === 'aurora' ? 1 : 0);
       gl.uniform4f(u('uA'), pesos.voce, pesos.ze, pesos.pensa, pesos.prepara);
-      gl.uniform4f(u('uB'), pesos.erro, pesos.gelo, pesos.parado, 0);
+      gl.uniform4f(u('uB'), pesos.erro, pesos.gelo, pesos.parado, pesos.ocupado);
       gl.uniform3fv(u('uFundo'), cores.fundo);
       gl.uniform3fv(u('uVoce'), cores.voce);
       gl.uniform3fv(u('uZe'), cores.ze);
       gl.uniform3fv(u('uPensa'), cores.pensa);
       gl.uniform3fv(u('uPrepara'), cores.prepara);
       gl.uniform3fv(u('uErro'), cores.erro);
+      gl.uniform3fv(u('uOcupado'), cores.ocupado);
       gl.uniform3fv(u('uCorPulso'), cores[tomDaCena(c)]);
       tela.desenha();
 

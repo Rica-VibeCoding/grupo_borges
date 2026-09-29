@@ -8,23 +8,53 @@ import type { Estado } from '@/lib/conversa/tipos';
  * `preparando` não é estado da máquina — é o detector ainda baixando —, mas a
  * tela desenha como se fosse.
  */
-/** `trabalhando` só existe na tela (`estado-da-vez.ts`): o agente usando ferramenta. */
-export type Cena = Estado | 'preparando' | 'trabalhando';
+/**
+ * `trabalhando` e `ocupado` só existem na tela (`estado-da-vez.ts`): o agente usando ferramenta, e o
+ * erro de agente ocupado — que não quebrou, só não pôde ouvir agora, e ganha cor própria (Rica, 29/09).
+ * `pronta` também: voltou da recarga com resposta dele por tocar, esperando o toque
+ * (`retomada-da-conversa.ts`).
+ */
+export type Cena = Estado | 'preparando' | 'trabalhando' | 'ocupado' | 'pronta';
 
-export const CAMADAS = ['voce', 'ze', 'pensa', 'prepara', 'erro', 'gelo', 'parado'] as const;
+export const CAMADAS = ['voce', 'ze', 'pensa', 'prepara', 'erro', 'gelo', 'parado', 'ocupado'] as const;
 export type Camada = (typeof CAMADAS)[number];
 export type Pesos = Record<Camada, number>;
 
 /** Tom do clarão da troca de vez: quente = sua vez, frio = vez dele. */
-export type Tom = 'voce' | 'ze' | 'pensa' | 'prepara' | 'erro';
+export type Tom = 'voce' | 'ze' | 'pensa' | 'prepara' | 'erro' | 'ocupado';
 
-const VAZIO: Pesos = { voce: 0, ze: 0, pensa: 0, prepara: 0, erro: 0, gelo: 0, parado: 0 };
+/**
+ * Pensar mistura a sua cor com a dele (Rica, 29/09): a sua voz virando a resposta dele. `peso` é
+ * quanto já é dele (0 = você, 1 = ele), em sRGB, como a troca de cor da esfera já anda.
+ */
+export type Mistura = { entre: readonly [Tom, Tom]; peso: number };
+
+/** A mistura fixa, meio a meio — a do token `--ck-conversa-pensa` e do clarão do pensar. */
+export const PENSAR_AO_MEIO: Mistura = { entre: ['voce', 'ze'], peso: 0.5 };
+
+type Rgb = readonly [number, number, number];
+
+export function misturaCor(a: Rgb, b: Rgb, peso: number): [number, number, number] {
+  return [a[0] + (b[0] - a[0]) * peso, a[1] + (b[1] - a[1]) * peso, a[2] + (b[2] - a[2]) * peso];
+}
+
+export function corDoTom(cores: Record<Tom, Rgb>, t: Tom | Mistura): [number, number, number] {
+  return typeof t === 'string' ? [...cores[t]] : misturaCor(cores[t.entre[0]], cores[t.entre[1]], t.peso);
+}
+
+/** As cores lidas do tema com o `pensa` da tela de voz: a mistura meio a meio, como no token. */
+export function comPensarAoMeio<T extends { voce: Rgb; ze: Rgb }>(cores: T): T & { pensa: [number, number, number] } {
+  return { ...cores, pensa: misturaCor(cores.voce, cores.ze, PENSAR_AO_MEIO.peso) };
+}
+
+const VAZIO: Pesos = { voce: 0, ze: 0, pensa: 0, prepara: 0, erro: 0, gelo: 0, parado: 0, ocupado: 0 };
 
 export function alvosDaMoldura(cena: Cena): Pesos {
   switch (cena) {
     case 'ouvindo':
       return { ...VAZIO, voce: 1 };
     case 'falando':
+    case 'pronta':
       return { ...VAZIO, ze: 1 };
     case 'transcrevendo':
     case 'esperandoZe':
@@ -38,6 +68,8 @@ export function alvosDaMoldura(cena: Cena): Pesos {
       return { ...VAZIO, voce: 1, gelo: 1 };
     case 'erro':
       return { ...VAZIO, erro: 1 };
+    case 'ocupado':
+      return { ...VAZIO, ocupado: 1 };
     case 'parado':
       return { ...VAZIO, parado: 1 };
   }
@@ -45,8 +77,9 @@ export function alvosDaMoldura(cena: Cena): Pesos {
 
 export function tomDaCena(cena: Cena): Tom {
   if (cena === 'ouvindo' || cena === 'interrompendo') return 'voce';
-  if (cena === 'falando') return 'ze';
+  if (cena === 'falando' || cena === 'pronta') return 'ze';
   if (cena === 'erro') return 'erro';
+  if (cena === 'ocupado') return 'ocupado';
   if (cena === 'preparando' || cena === 'parado') return 'prepara';
   return 'pensa';
 }
@@ -70,9 +103,9 @@ export function assentou<T extends Record<string, number>>(atual: T, alvo: T, fo
   return Object.keys(alvo).every((c) => Math.abs(atual[c] - alvo[c]) <= folga);
 }
 
-/** Cenas que se mexem sozinhas. Parado e erro são quadros fixos: o laço dorme. */
+/** Cenas que se mexem sozinhas. Parado, erro, ocupado e resposta pronta são quadros fixos: o laço dorme. */
 export function animaSozinha(cena: Cena): boolean {
-  return cena !== 'parado' && cena !== 'erro';
+  return cena !== 'parado' && cena !== 'erro' && cena !== 'ocupado' && cena !== 'pronta';
 }
 
 /** Cenas em que o volume (microfone ou voz do Zé) mexe na luz. */

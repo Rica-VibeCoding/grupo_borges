@@ -1,4 +1,4 @@
-import { fatorDeAproximacao, type Cena, type Tom } from './moldura-estado.ts';
+import { fatorDeAproximacao, type Cena, type Mistura, type Tom } from './moldura-estado.ts';
 
 /**
  * O que a Esfera desenha em cada momento, sem WebGL: o peso de cada forma, a
@@ -28,6 +28,11 @@ export function alvosDaEsfera(cena: Cena): PesosDaEsfera {
       return { ...REPOUSO, cristal: 1, voce: 0.4 };
     case 'erro':
       return { ...REPOUSO, colapso: 1 };
+    case 'ocupado':
+    case 'pronta':
+      // Inteira e parada. Ocupado: não quebrou nada, sem a rachadura do erro (Rica, 29/09). Pronta: a
+      // resposta dele espera o toque. A cor é de cada um (`coresDaEsfera`).
+      return REPOUSO;
     case 'preparando':
       return { ...REPOUSO, enche: 1 };
     case 'parado':
@@ -35,8 +40,19 @@ export function alvosDaEsfera(cena: Cena): PesosDaEsfera {
   }
 }
 
-/** Corpo e borda: a borda diz de quem é a vez; na interrupção, o corpo é ele apagado e a borda é você. */
-export function coresDaEsfera(cena: Cena): { corpo: Tom; brilho: number; borda: Tom } {
+/**
+ * Quanto do pensar já é dele (0 = você, 1 = ele). Logo que você solta a fala, mais você; pensando ou
+ * trabalhando, meio a meio — iguais, para a cor não voltar quando ele alterna entre os dois. "Quão
+ * perto da resposta" não existe como sinal: o resto do caminho até o azul a troca de cor anda sozinha.
+ */
+const PESO_DELE_AO_PENSAR = { transcrevendo: 0.3, esperandoZe: 0.5, trabalhando: 0.5 } as const;
+const pensar = (cena: keyof typeof PESO_DELE_AO_PENSAR): Mistura => ({ entre: ['voce', 'ze'], peso: PESO_DELE_AO_PENSAR[cena] });
+
+/**
+ * Corpo e borda: a borda diz de quem é a vez; na interrupção, o corpo é ele apagado e a borda é você.
+ * Pensar não tem cor própria: é a sua virando a dele (`Mistura`).
+ */
+export function coresDaEsfera(cena: Cena): { corpo: Tom | Mistura; brilho: number; borda: Tom | Mistura } {
   switch (cena) {
     case 'ouvindo':
       return { corpo: 'voce', brilho: 1, borda: 'voce' };
@@ -44,14 +60,18 @@ export function coresDaEsfera(cena: Cena): { corpo: Tom; brilho: number; borda: 
       return { corpo: 'ze', brilho: 1, borda: 'ze' };
     case 'transcrevendo':
     case 'esperandoZe':
-      return { corpo: 'pensa', brilho: 1, borda: 'pensa' };
+      return { corpo: pensar(cena), brilho: 1, borda: pensar(cena) };
     case 'trabalhando':
       // O corpo ainda pensa; a borda já é dele, executando.
-      return { corpo: 'pensa', brilho: 1, borda: 'ze' };
+      return { corpo: pensar(cena), brilho: 1, borda: 'ze' };
     case 'interrompendo':
       return { corpo: 'ze', brilho: 0.55, borda: 'voce' };
     case 'erro':
       return { corpo: 'erro', brilho: 0.8, borda: 'erro' };
+    case 'ocupado':
+      return { corpo: 'ocupado', brilho: 0.8, borda: 'ocupado' };
+    case 'pronta':
+      return { corpo: 'ze', brilho: 0.8, borda: 'ze' };
     case 'preparando':
       return { corpo: 'prepara', brilho: 1, borda: 'prepara' };
     case 'parado':
