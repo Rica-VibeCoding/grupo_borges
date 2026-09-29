@@ -970,6 +970,25 @@ body {
   transform: translateX(calc(32px + var(--ck-space-3)));
 }
 
+/* A porta da voz no fim do composer (Rica, 29/09): só com mouse. No toque a voz
+ * já tem o deslize, e em 390px a fileira não tem os 44px dela. Disco de véu, o
+ * mesmo peso de "existe mas não disputa" do contorno, que se acende sob o ponteiro. */
+.ck-porta-da-voz {
+  display: none;
+  background-color: color-mix(in oklab, var(--ck-text-primary) 9%, transparent);
+  transition:
+    background-color var(--ck-dur-enter, 200ms) var(--ck-ease),
+    opacity var(--ck-dur-enter, 200ms) var(--ck-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ck-porta-da-voz {
+    display: inline-flex;
+  }
+  .ck-porta-da-voz:hover {
+    background-color: color-mix(in oklab, var(--ck-text-primary) 16%, transparent);
+  }
+}
+
 /* O COMPOSER EM REPOUSO É UMA LINHA (mockup aprovado pelo Rica, 28/09):
  * [+] · campo · motor · voz, na mesma fileira. Com conteúdo (texto ou anexo) a
  * caixa volta às duas fileiras de sempre — o texto em cima, os controles

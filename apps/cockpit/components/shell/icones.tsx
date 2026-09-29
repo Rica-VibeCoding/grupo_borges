@@ -90,6 +90,19 @@ export function IconeMicrofone(props: IconeProps) {
   );
 }
 
+/** O microfone que leva à conversa por voz, no fim do composer. Cápsula com a
+ *  grade em dois riscos mais leves: sem eles, no tamanho do disco, ele se lê
+ *  como o ícone genérico da barra, e este é o convite para a outra tela. */
+export function IconeMicrofoneConversa({ tamanho = 17, ...props }: IconeProps) {
+  return (
+    <Tracado tamanho={tamanho} strokeWidth="1.6" {...props}>
+      <rect x="8.75" y="2.75" width="6.5" height="11.5" rx="3.25" />
+      <path d="M10.9 6.75h2.2M10.9 9.5h2.2" strokeWidth="1.3" opacity="0.7" />
+      <path d="M5.75 11.25a6.25 6.25 0 0 0 12.5 0M12 17.5v3.5M9.25 21h5.5" />
+    </Tracado>
+  );
+}
+
 /** Único elemento sólido do composer — a referência isola o botão de envio
  *  do resto exatamente assim: tudo ao redor é traço, ele é massa. */
 export function IconeEnviar({ tamanho = 15, ...props }: IconeProps) {

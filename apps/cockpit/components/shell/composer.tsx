@@ -41,6 +41,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
+import Link from 'next/link';
 import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
 import { InputGroupButton } from '../ui/input-group';
 import { aparenciaDe, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
@@ -95,6 +96,7 @@ import {
   IconeCopiar,
   IconeDescartar,
   IconeEnviar,
+  IconeMicrofoneConversa,
   IconeOnda,
   IconeParar,
   IconeReenviar,
@@ -1374,6 +1376,40 @@ export function Composer({
                 <IconeOnda />
               </InputGroupButton>
             )}
+
+            {/* SLOT DA CONVERSA POR VOZ. Pedido do Rica em 29/09, no desktop: o
+                primeiro botão da direita leva à tela de voz, que no celular se
+                alcança pelo deslize e ali não tinha porta à vista. Fica ANTES do
+                despacho, não depois: o despacho fora de cena sai pela borda
+                com a fileira (`.ck-fileira-acoes`), e o que viesse depois dele
+                sairia junto. O clique não navega — o `PagerDoAgente` captura o
+                link de `/conversa/{slug}` e rola para a voz.
+
+                Disco de véu, não de massa: ao lado da onda cheia, dois discos
+                cheios são o "o dedo que mira um acha o outro". Só com mouse
+                (`.ck-porta-da-voz`), porque em 390px a fileira já vive no limite.
+                Durante a captura ele recua: sair da tela no meio da gravação
+                perderia o áudio. */}
+            <Link
+              href={`/conversa/${agentSlug}`}
+              aria-label={`Conversar por voz com ${agentName}`}
+              aria-disabled={emCaptura(modo) || modo === 'travada' ? true : undefined}
+              tabIndex={emCaptura(modo) || modo === 'travada' ? -1 : undefined}
+              title="Conversa por voz"
+              className="ck-porta-da-voz shrink-0 items-center justify-center"
+              style={{
+                ...ALVO_DE_TOQUE,
+                width: '32px',
+                height: '32px',
+                marginBottom: MARGEM_INFERIOR_DA_BASE,
+                borderRadius: 'var(--ck-radius-pill)',
+                color: 'var(--ck-text-primary)',
+                opacity: emCaptura(modo) || modo === 'travada' ? 0.35 : 1,
+                pointerEvents: emCaptura(modo) || modo === 'travada' ? 'none' : undefined,
+              }}
+            >
+              <IconeMicrofoneConversa />
+            </Link>
 
             {/* SLOT DE DESPACHO. Nunca é buraco: quando não há o que mandar,
                 quem some é ELE, saindo pela borda com a fileira — e não um vão
