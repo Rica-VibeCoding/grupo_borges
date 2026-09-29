@@ -44,6 +44,17 @@ test('folha móvel e gaveta reutilizam um só miolo de controles', () => {
   }
 });
 
+test('só a gaveta usa a variante compacta, sem descrição; a folha móvel segue igual', () => {
+  const folha = le('./configuracao-da-conversa.tsx');
+  const gaveta = le('./configuracao-no-painel.tsx');
+  const controles = le('./controles-da-conversa.tsx');
+  assert.match(gaveta, /detalheTecnico=\{detalheTecnico\}\s+compacta\s+\/>/);
+  assert.ok(!folha.includes('compacta'));
+  assert.ok(!gaveta.includes('Ficam guardadas neste aparelho.'));
+  assert.match(controles, /compacta \? null : <span className=\{styles\.descricao\}>/);
+  assert.match(controles, /compacta \? null : <p className=\{styles\.dica\}>/);
+});
+
 test('conversa vem antes do painel existente, sem substituir conteúdo do chat', () => {
   const gaveta = le('./configuracao-no-painel.tsx');
   assert.match(gaveta, /if \(!mostraConversaNoPainel\(caminho, busca\)\) return children/);

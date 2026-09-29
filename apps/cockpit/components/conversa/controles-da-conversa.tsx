@@ -16,13 +16,16 @@ export type ControlesDaConversaProps = {
   texto: boolean;
   mudaTexto: (ligado: boolean) => void;
   detalheTecnico: string | null;
+  /** Gaveta do computador: só rótulos, tudo em uma linha por item. */
+  compacta?: boolean;
 };
 
-function Opcoes<T extends string>({ nome, itens, marcado, escolhe }: {
+function Opcoes<T extends string>({ nome, itens, marcado, escolhe, compacta }: {
   nome: string;
   itens: readonly { id: T; nome: string; descricao: string }[];
   marcado: (id: T) => boolean;
   escolhe: (id: T) => void;
+  compacta?: boolean;
 }) {
   return (
     <section className={styles.grupo} aria-label={nome}>
@@ -38,7 +41,7 @@ function Opcoes<T extends string>({ nome, itens, marcado, escolhe }: {
             onClick={() => escolhe(v.id)}
           >
             <span className={styles.nomeDaVariacao}>{v.nome}</span>
-            <span className={styles.descricao}>{v.descricao}</span>
+            {compacta ? null : <span className={styles.descricao}>{v.descricao}</span>}
           </button>
         ))}
       </div>
@@ -46,12 +49,13 @@ function Opcoes<T extends string>({ nome, itens, marcado, escolhe }: {
   );
 }
 
-function Chave({ icone, nome, dica, ligada, muda }: {
+function Chave({ icone, nome, dica, ligada, muda, compacta }: {
   icone: ReactNode;
   nome: string;
   dica: string;
   ligada: boolean;
   muda: (ligada: boolean) => void;
+  compacta?: boolean;
 }) {
   return (
     <div className={styles.linha}>
@@ -67,16 +71,16 @@ function Chave({ icone, nome, dica, ligada, muda }: {
         />
         <span className={styles.trilho} aria-hidden="true" />
       </label>
-      <p className={styles.dica}>{dica}</p>
+      {compacta ? null : <p className={styles.dica}>{dica}</p>}
     </div>
   );
 }
 
 export function ControlesDaConversa({
-  direcao, escolheDirecao, visual, escolheVisual, fone, mudaFone, texto, mudaTexto, detalheTecnico,
+  direcao, escolheDirecao, visual, escolheVisual, fone, mudaFone, texto, mudaTexto, detalheTecnico, compacta = false,
 }: ControlesDaConversaProps) {
   return (
-    <div className={styles.corpo}>
+    <div className={compacta ? `${styles.corpo} ${styles.compacta}` : styles.corpo}>
       <div className={styles.chaves}>
         <Chave
           icone={
@@ -89,6 +93,7 @@ export function ControlesDaConversa({
           dica={fone ? 'Falar por cima interrompe a resposta.' : 'Espero a resposta terminar para ouvir.'}
           ligada={fone}
           muda={mudaFone}
+          compacta={compacta}
         />
         <Chave
           icone={
@@ -100,9 +105,10 @@ export function ControlesDaConversa({
           dica={texto ? 'O estado, a sua fala e a resposta aparecem na tela.' : 'Na tela, só o visual e o botão.'}
           ligada={texto}
           muda={mudaTexto}
+          compacta={compacta}
         />
       </div>
-      <Opcoes nome="Foto do agente" itens={DIRECOES} marcado={(id) => id === direcao} escolhe={escolheDirecao} />
+      <Opcoes nome="Foto do agente" itens={DIRECOES} marcado={(id) => id === direcao} escolhe={escolheDirecao} compacta={compacta} />
       {CATALOGO.map((item) => (
         <Opcoes
           key={item.opcao}
@@ -110,6 +116,7 @@ export function ControlesDaConversa({
           itens={item.variacoes}
           marcado={(id) => visual.opcao === item.opcao && visual.variacao === id}
           escolhe={(id) => escolheVisual({ opcao: item.opcao, variacao: id })}
+          compacta={compacta}
         />
       ))}
       {detalheTecnico ? <p className={styles.tecnico}>{detalheTecnico}</p> : null}

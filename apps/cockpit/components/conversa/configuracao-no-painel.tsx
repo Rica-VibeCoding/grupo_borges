@@ -20,10 +20,7 @@ function SecaoConversa({ fechar }: { fechar: ReactNode }) {
   return (
     <section className={styles.conversa} aria-label="Conversa">
       <header className={styles.cabecalho}>
-        <div>
-          <h2>Conversa</h2>
-          <p>Ficam guardadas neste aparelho.</p>
-        </div>
+        <h2>Conversa</h2>
         <div className={styles.fechar}>{fechar}</div>
       </header>
       <ControlesDaConversa
@@ -36,6 +33,7 @@ function SecaoConversa({ fechar }: { fechar: ReactNode }) {
         texto={texto}
         mudaTexto={mudaTexto}
         detalheTecnico={detalheTecnico}
+        compacta
       />
     </section>
   );

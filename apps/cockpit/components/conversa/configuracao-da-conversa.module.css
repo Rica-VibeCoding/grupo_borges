@@ -166,3 +166,84 @@
   color: var(--ck-text-secondary);
   font-size: var(--ck-text-sm);
 }
+
+/* Variante compacta, só na gaveta do computador: rótulo e controle na mesma
+ * linha, sem descrição, para a seção caber sem rolar. */
+.compacta {
+  gap: var(--ck-space-2);
+  padding: var(--ck-space-2) var(--ck-space-4) var(--ck-space-3);
+  font-size: var(--ck-text-xs);
+}
+.compacta .chaves {
+  display: grid;
+  padding-bottom: var(--ck-space-1);
+  border-bottom: 1px solid var(--ck-edge-hairline);
+  border-radius: 0;
+  background: none;
+}
+.compacta .linha,
+.compacta .linha + .linha {
+  padding: 0;
+  border-top: 0;
+}
+.compacta .chave {
+  gap: var(--ck-space-2);
+  min-height: 28px;
+  font-size: var(--ck-text-xs);
+}
+.compacta .chave svg {
+  width: 16px;
+  height: 16px;
+}
+.compacta .interruptor,
+.compacta .trilho {
+  width: 30px;
+  height: 18px;
+}
+.compacta .trilho::after {
+  width: 14px;
+  height: 14px;
+}
+.compacta .interruptor:checked + .trilho::after {
+  translate: 12px 0;
+}
+.compacta section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-2);
+  min-height: 28px;
+}
+.compacta .nomeDoGrupo {
+  margin: 0;
+  font-size: var(--ck-text-xs);
+}
+.compacta .variacoes {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-surface-composer);
+}
+.compacta .variacao {
+  display: block;
+  min-height: 0;
+  padding: 3px var(--ck-space-2);
+  border: 0;
+  border-radius: var(--ck-radius-pill);
+  background: none;
+  color: var(--ck-text-secondary);
+}
+.compacta .variacao[aria-checked='true'] {
+  background: var(--ck-text-primary);
+  box-shadow: none;
+  color: var(--ck-surface-canvas);
+}
+.compacta .nomeDaVariacao {
+  font-size: var(--ck-text-xs);
+}
+.compacta .tecnico {
+  font-size: var(--ck-text-xs);
+  color: var(--ck-text-tertiary);
+}
