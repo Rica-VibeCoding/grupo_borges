@@ -52,6 +52,7 @@ import {
 } from 'react';
 
 import { IconeMenu } from './icones';
+import { useHrefDoPainel } from './use-href-do-painel';
 import { criaRedeDeNavegacao, levaAUrl, levaSoNoCliente, type RedeDeNavegacao } from './rede-de-navegacao';
 
 type SuperficieCtx = {
@@ -205,7 +206,7 @@ export function cliqueSimples(e: MouseEvent<HTMLAnchorElement>): boolean {
 /** Link de fechar otimista, pros gatilhos que NÃO precisam de `data-aberto`
  *  (o `×` do painel). Fora do provider é um `<Link>` comum. */
 export function LinkFechaPainel({
-  href,
+  href: hrefRecebido,
   rotulo,
   className,
   style,
@@ -218,6 +219,7 @@ export function LinkFechaPainel({
   children?: ReactNode;
 }) {
   const ctx = useContext(painel.Ctx);
+  const href = useHrefDoPainel(hrefRecebido);
 
   return (
     <Link
@@ -246,7 +248,7 @@ export function LinkFechaPainel({
  *  Rica pegou ao vivo. Sem `data-selecionado` de propósito — quem abre não
  *  precisa refletir estado, o gatilho de fechar é o próprio painel. */
 export function LinkAbrePainel({
-  href,
+  href: hrefRecebido,
   rotulo,
   className,
   style,
@@ -259,6 +261,7 @@ export function LinkAbrePainel({
   children?: ReactNode;
 }) {
   const ctx = useContext(painel.Ctx);
+  const href = useHrefDoPainel(hrefRecebido);
 
   return (
     <Link
@@ -295,7 +298,7 @@ export function LinkAbrePainel({
  *  o Rica quiser o fundo INTERATIVO (clicar no chat com o painel aberto,
  *  como na referência), é remover este Link de vez. */
 export function GavetaPainel({
-  fecharHref,
+  fecharHref: fecharHrefRecebido,
   rotulo,
   aberto,
   children,
@@ -307,6 +310,7 @@ export function GavetaPainel({
   children: ReactNode;
 }) {
   const ctx = useContext(painel.Ctx);
+  const fecharHref = useHrefDoPainel(fecharHrefRecebido);
   const abertoReal = ctx?.aberto ?? aberto;
 
   return (
@@ -333,6 +337,9 @@ export function GavetaPainel({
 
       <aside
         aria-label={rotulo}
+        onClick={(evento) => evento.stopPropagation()}
+        onPointerDown={(evento) => evento.stopPropagation()}
+        onPointerUp={(evento) => evento.stopPropagation()}
         data-aberto={String(abertoReal)}
         inert={!abertoReal}
         className="ck-surge ck-flutua flex min-h-0 flex-col overflow-hidden"

@@ -171,7 +171,7 @@ export function PagerDoAgente({
   const aoClicar = (evento: MouseEvent<HTMLDivElement>) => {
     if (evento.button !== 0 || evento.metaKey || evento.ctrlKey || evento.shiftKey || evento.altKey) return;
     const link = evento.target instanceof Element ? evento.target.closest('a[href]') : null;
-    if (!(link instanceof HTMLAnchorElement)) return;
+    if (!(link instanceof HTMLAnchorElement) || !chatRef.current?.contains(link)) return;
     if (link.origin !== window.location.origin || link.pathname !== `/conversa/${slug}`) return;
     evento.preventDefault();
     vaiPara('voz');

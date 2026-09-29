@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
+import { LinkAbrePainel } from '../shell/superficie-otimista';
+
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
 import { conviteDaTela } from './direcao-da-voz';
 import { EsferaConversa } from './esfera-conversa';
@@ -176,12 +178,24 @@ export function TelaConversa({
       ) : null}
 
       <div ref={zonaRef} className={styles.zona}>
-        <header ref={topoRef} className={styles.topo}>
-          {eclipse ? (
-            <CabecaDoEclipse nome={nome} cena={vista} segundos={segundos} />
-          ) : (
-            <PilulaDoAgente slug={slug} nome={nome} cena={vista} segundos={segundos} />
-          )}
+        <header
+          ref={topoRef}
+          className={styles.topo}
+          onClick={(evento) => evento.stopPropagation()}
+          onPointerDown={(evento) => evento.stopPropagation()}
+          onPointerUp={(evento) => evento.stopPropagation()}
+        >
+          <LinkAbrePainel
+            href={`/agente/${encodeURIComponent(slug)}?painel=detalhes`}
+            rotulo={`configurações de ${nome}`}
+            className={styles.abrePainel}
+          >
+            {eclipse ? (
+              <CabecaDoEclipse nome={nome} cena={vista} segundos={segundos} />
+            ) : (
+              <PilulaDoAgente slug={slug} nome={nome} cena={vista} segundos={segundos} />
+            )}
+          </LinkAbrePainel>
           <ConfiguracaoDaConversa
             direcao={direcao}
             escolheDirecao={escolheDirecao}

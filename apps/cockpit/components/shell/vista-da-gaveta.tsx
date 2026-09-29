@@ -18,6 +18,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 import { levaSoNoCliente } from './rede-de-navegacao';
 import { cliqueSimples } from './superficie-otimista';
+import { useHrefDoPainel } from './use-href-do-painel';
 
 export function VistaDaGaveta({ detalhes, mcps }: { detalhes: ReactNode; mcps: ReactNode }) {
   const busca = useSearchParams();
@@ -28,7 +29,7 @@ export function VistaDaGaveta({ detalhes, mcps }: { detalhes: ReactNode; mcps: R
  *  de antes — o voltar do navegador desfaz a troca de visão —, mas sem ir ao
  *  servidor. Sem JS, ou com modificador, é o `<Link>` de sempre. */
 export function LinkDaGaveta({
-  href,
+  href: hrefRecebido,
   className,
   style,
   children,
@@ -40,6 +41,7 @@ export function LinkDaGaveta({
   children: ReactNode;
   'aria-label'?: string;
 }) {
+  const href = useHrefDoPainel(hrefRecebido);
   return (
     <Link
       href={href}
