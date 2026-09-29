@@ -200,6 +200,7 @@ export function TelaConversa({
             )}
           </LinkAbrePainel>
           <ConfiguracaoDaConversa
+            ativa={ativa}
             direcao={direcao}
             escolheDirecao={escolheDirecao}
             visual={visual}

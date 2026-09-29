@@ -1,0 +1,54 @@
+.mescla {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.conversa {
+  flex: none;
+  border-bottom: 1px solid var(--ck-edge-hairline);
+}
+
+.cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ck-space-3);
+  padding: var(--ck-space-3) var(--ck-space-4);
+}
+
+.cabecalho h2 {
+  margin: 0;
+  color: var(--ck-text-primary);
+  font-size: var(--ck-text-base);
+  font-weight: 600;
+}
+
+.cabecalho p {
+  margin: var(--ck-space-1) 0 0;
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-sm);
+}
+
+.fechar a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--ck-touch-min);
+  min-height: var(--ck-touch-min);
+  border-radius: var(--ck-radius-chip);
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-lg);
+  text-decoration: none;
+}
+
+.fechar a:focus-visible {
+  outline: 2px solid var(--ck-focus);
+  outline-offset: 2px;
+}
+
+.agente { flex: none; }

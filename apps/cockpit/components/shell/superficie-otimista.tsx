@@ -51,6 +51,9 @@ import {
   type ReactNode,
 } from 'react';
 
+import { ConfiguracaoNoPainel } from '../conversa/configuracao-no-painel';
+import { ContextoConfiguracaoConversa } from '../conversa/contexto-configuracao-conversa';
+
 import { IconeMenu } from './icones';
 import { useHrefDoPainel } from './use-href-do-painel';
 import { criaRedeDeNavegacao, levaAUrl, levaSoNoCliente, type RedeDeNavegacao } from './rede-de-navegacao';
@@ -178,7 +181,13 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
 const painel = criaSuperficie('painel');
 const tropa = criaSuperficie('nav');
 
-export const PainelProvider = painel.Provider;
+export function PainelProvider({ aberto, children }: { aberto: boolean; children: ReactNode }) {
+  return (
+    <ContextoConfiguracaoConversa>
+      <painel.Provider aberto={aberto}>{children}</painel.Provider>
+    </ContextoConfiguracaoConversa>
+  );
+}
 export const NavProvider = tropa.Provider;
 
 /** Só o booleano, pra quem precisa reagir à abertura sem gatilhar navegação
@@ -345,7 +354,9 @@ export function GavetaPainel({
         className="ck-surge ck-flutua flex min-h-0 flex-col overflow-hidden"
         style={{ background: 'var(--ck-surface-nav)' }}
       >
-        {children}
+        <ConfiguracaoNoPainel fechar={<LinkFechaPainel href={fecharHref} rotulo={rotulo}>×</LinkFechaPainel>}>
+          {children}
+        </ConfiguracaoNoPainel>
       </aside>
     </>
   );
