@@ -262,6 +262,37 @@ test('evento com id não-crescente é descartado, mas o descarte fica contado', 
   controller.dispose();
 });
 
+test('texto entre ferramentas chega mesmo com o frame suspenso pela janela coberta', () => {
+  const clock = timers();
+  const frames = timers();
+  const fake = eventSources();
+  const controller = createCanarioStream({
+    slug: 'canario',
+    eventSourceConstructor: fake.EventSource,
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+    scheduleFrameFn: frames.setTimeout,
+    cancelFrameFn: frames.clearTimeout,
+  });
+  const source = fake.instances[0];
+  source.emit('replay-start');
+  source.emit('replay-end');
+  const texto = {
+    ...ASSISTANT_END_TURN_FIXTURE.evento,
+    message: { ...ASSISTANT_END_TURN_FIXTURE.evento.message!, stop_reason: 'tool_use' },
+  };
+  source.emit('message', texto);
+  assert.deepEqual(controller.getSnapshot().messages, []);
+
+  clock.runNext();
+
+  assert.deepEqual(controller.getSnapshot().messages, [texto]);
+  assert.equal(controller.getSnapshot().status, 'live');
+  assert.equal(frames.pending(), 0);
+  controller.dispose();
+  assert.equal(clock.pending(), 0);
+});
+
 test('session-reset chama onSessionReset e nada mais — quem remonta é o hook', () => {
   const clock = timers();
   const fake = eventSources();

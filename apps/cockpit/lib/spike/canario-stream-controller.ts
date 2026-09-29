@@ -2,6 +2,7 @@ import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { createStreamCoalescer } from '@grupo_borges/cockpit-core/stream-coalescer';
 
 import { corridaEmVoo } from './corrida-em-voo.ts';
+import { criaPrazoDePublicacao } from './prazo-de-publicacao.ts';
 
 export type CanarioStreamStatus =
   | 'connecting'
@@ -144,11 +145,14 @@ export function createCanarioStream(
     for (const listener of listeners) listener();
   }
 
+  // Janela coberta no Chrome pausa rAF; texto para voz não pode esperar o próximo desenho.
+  const prazo = criaPrazoDePublicacao(() => coalescer.flushNow(), schedule, cancel);
   const coalescer = createStreamCoalescer<MessagePayload>({
     schedule: options.scheduleFrameFn,
     cancel: options.cancelFrameFn,
     idOf: (message) => message.id,
     onFlush(batch) {
+      prazo.cancela();
       publish({
         ...state,
         messages: state.messages.concat(batch),
@@ -184,6 +188,7 @@ export function createCanarioStream(
     generation += 1;
     closeSource();
     clearWatchdog();
+    prazo.cancela();
     publish({ ...state, isLoading: false, status: 'reconnecting' });
     reconnectTimer = schedule(() => {
       reconnectTimer = undefined;
@@ -214,6 +219,7 @@ export function createCanarioStream(
     nextSource.addEventListener('replay-start', () => {
       if (!isCurrent()) return;
       coalescer.beginReplay();
+      prazo.cancela();
       publish({ ...state, isLoading: true, status: 'replaying' });
       armWatchdog();
     });
@@ -234,6 +240,7 @@ export function createCanarioStream(
           return;
         }
         coalescer.push(payload);
+        if (state.status === 'live') prazo.agenda();
         armWatchdog();
       } catch {
         // Evento malformado não deve derrubar o transporte nem mover o cursor.
@@ -281,6 +288,7 @@ export function createCanarioStream(
         reconnectTimer = undefined;
       }
       coalescer.dispose();
+      prazo.cancela();
       listeners.clear();
     },
   };
