@@ -19,7 +19,7 @@ import type { EscutaSequencia, Sequencia } from '../feed/reprodutor-unico.ts';
 // e o nome do Rica só numa de cada lista: repetido, vira locutor. As cinco primeiras da ponte são as dele.
 export const FRASES_DE_PONTE = [
   'Só um momento, Rica.',
-  'Já tô vendo isso pra gente.',
+  'Já tô vendo isso.',
   'Um instante.',
   'Deixa comigo.',
   'Tô pensando aqui.',
@@ -33,11 +33,11 @@ export const FRASES_DE_DEMORA = [
   'Ainda tô nisso, Rica.',
   'Tá levando um pouco mais, mas já sai.',
   'Continuo aqui, só mais um pouco.',
-  'Quase lá, segura mais um pouquinho.',
-  'Ainda trabalhando nisso pra gente.',
+  'Segura mais um pouco, Rica.',
+  'Ainda nisso, tá rendendo.',
   'Tá dando um pouco de trabalho, mas tô chegando lá.',
-  'Não esqueci de você, já já te respondo.',
-  'Só mais um pouquinho, tô terminando.',
+  'Tô na trilha, já te falo.',
+  'Ainda mexendo aqui, já volto.',
 ] as const;
 
 /** Paciência do aviso de erro com a rota de voz: passou disso, a voz do navegador fala. */
