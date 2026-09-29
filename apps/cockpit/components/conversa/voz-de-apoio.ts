@@ -6,13 +6,11 @@ export type PortasDoApoio = {
   sintetiza(texto: string): Promise<string[]>;
   iniciaSequencia(escuta: EscutaSequencia): Sequencia;
   ocupado(): boolean;
-  reserva(texto: string, aoTerminar?: () => void): void;
   bloqueado?(): boolean;
   cabecalhoAtual?(): string | null;
   preparaApoio?(): boolean;
   aoTerminar?(): void;
   liberaAudio?(url: string): void;
-  calaReserva(): void;
   cancelaTurno(): void;
   espera?: (ms: number) => Promise<void>;
 };
@@ -21,26 +19,25 @@ export type VozDeApoio = {
   cabecalho(texto: string): void;
   erro(texto: string): void;
   cala(): void;
+  /** Desiste do que ainda não soou (síntese ou retentativa pendente); o que já toca segue. */
+  desiste(): void;
 };
 
 export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
   const espera = p.espera ?? ((ms: number) => new Promise<void>((r) => window.setTimeout(r, ms)));
   let vez = 0;
   let tocando: Sequencia | null = null;
-  let reservaAtiva = false;
   let liberaAtual: (() => void) | null = null;
 
   const liberaUrls = (urls: string[]) => {
     for (const url of urls) (p.liberaAudio ?? URL.revokeObjectURL)(url);
   };
   const para = () => {
-    const haviaVoz = tocando !== null || reservaAtiva;
+    const haviaVoz = tocando !== null;
     tocando?.para();
     tocando = null;
-    reservaAtiva = false;
     liberaAtual?.();
     liberaAtual = null;
-    p.calaReserva();
     if (haviaVoz) p.aoTerminar?.();
   };
   const podeTocar = (erro: boolean, texto: string) => {
@@ -49,16 +46,7 @@ export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
     if (!erro && !(p.preparaApoio?.() ?? true)) return false;
     return !p.bloqueado?.();
   };
-  const reserva = (texto: string, minha: number, erro: boolean) => {
-    if (minha !== vez || !podeTocar(erro, texto) || minha !== vez) return;
-    reservaAtiva = true;
-    p.reserva(texto, () => {
-      if (minha !== vez || !reservaAtiva) return;
-      reservaAtiva = false;
-      p.aoTerminar?.();
-    });
-  };
-  const toca = (urls: string[], erro: string | null, minha: number) => {
+  const toca = (urls: string[], minha: number, falhou: () => void) => {
     const sequencia = p.iniciaSequencia({
       aoProgredir: () => {},
       aoTerminar: () => {
@@ -73,7 +61,7 @@ export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
         tocando = null;
         liberaAtual?.();
         liberaAtual = null;
-        if (erro !== null) reserva(erro, minha, true);
+        if (minha === vez) falhou();
       },
     });
     tocando = sequencia;
@@ -81,11 +69,12 @@ export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
     for (const url of urls) sequencia.enfileira(url);
     sequencia.fecha();
   };
-  const fala = (texto: string, erro: boolean) => {
-    if (p.bloqueado?.()) return;
-    const minha = ++vez;
-    para();
-    if (erro) p.cancelaTurno();
+  // Só a voz do agente: falhou (erro, voz trocada ou prazo), tenta uma vez de novo; falhou de novo, cala.
+  // Cada tentativa confere a vez — cala, desiste, toque e fim de turno invalidam a pendente.
+  const tenta = (texto: string, erro: boolean, minha: number, tentativa: number) => {
+    const falhou = () => {
+      if (tentativa < 2 && minha === vez && !p.bloqueado?.()) tenta(texto, erro, minha, tentativa + 1);
+    };
     let venceu = false;
     const prazo = erro ? espera(PRAZO_DO_ERRO_MS).then(() => { venceu = true; return null; }) : new Promise<never>(() => {});
     const sintese = p.sintetiza(texto).then((urls) => {
@@ -94,19 +83,25 @@ export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
     });
     Promise.race([sintese, prazo]).then(
       (urls) => {
-        if (minha !== vez || !podeTocar(erro, texto) || minha !== vez) {
-          if (urls) liberaUrls(urls);
-          return;
-        }
-        if (urls === null) reserva(texto, minha, erro);
-        else toca(urls, erro ? texto : null, minha);
+        if (minha !== vez) { if (urls) liberaUrls(urls); return; }
+        if (urls === null) { falhou(); return; }
+        if (!podeTocar(erro, texto) || minha !== vez) { liberaUrls(urls); return; }
+        toca(urls, minha, falhou);
       },
-      () => reserva(texto, minha, erro),
+      () => falhou(),
     );
+  };
+  const fala = (texto: string, erro: boolean) => {
+    if (p.bloqueado?.()) return;
+    const minha = ++vez;
+    para();
+    if (erro) p.cancelaTurno();
+    tenta(texto, erro, minha, 1);
   };
   return {
     cabecalho: (texto) => fala(texto, false),
     erro: (texto) => fala(texto, true),
     cala() { vez += 1; para(); },
+    desiste() { if (tocando === null) vez += 1; },
   };
 }

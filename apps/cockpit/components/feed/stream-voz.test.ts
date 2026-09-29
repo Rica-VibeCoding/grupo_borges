@@ -55,6 +55,14 @@ describe('o quadro SSE vira chamada', () => {
     assert.deepEqual(e.visto, [], 'evento desconhecido é ignorado, não derruba');
   });
 
+  it('degradação no meio avisa só quem escuta a troca de voz', () => {
+    const e = escuta();
+    let degradou = 0;
+    aplicaQuadro('event: degraded\ndata: {"engine":"edge","sentenca":3}', { ...e.alvo, aoDegradou: () => { degradou++; } });
+    assert.equal(degradou, 1);
+    assert.deepEqual(e.visto, []);
+  });
+
   it('erro chega com mensagem, não em silêncio', () => {
     const e = escuta();
     aplicaQuadro('event: error\ndata: {"id":4,"message":"sentença 4 falhou"}', e.alvo);

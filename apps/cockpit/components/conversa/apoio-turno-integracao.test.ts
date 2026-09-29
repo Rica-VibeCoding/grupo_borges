@@ -14,10 +14,11 @@ function monta() {
   let agora = 0;
   let tique = () => {};
   let caladas = 0;
+  let desistencias = 0;
   let tocando = false;
   const falas: string[] = [];
   const p = {
-    slug: 'teste', sons() {}, cancelaTurno() {}, preparaApoio: () => true,
+    slug: 'teste', cancelaTurno() {}, preparaApoio: () => true,
     conversaRef: { current: { estado: 'esperandoZe' } as Record<string, unknown> },
     sessaoAtivaRef: { current: true }, despachaRef: { current() {} },
     mensagens: [ferramenta(10, 'Conferindo a ferramenta antiga')],
@@ -28,14 +29,14 @@ function monta() {
     '../feed/reprodutor-unico': { estaTocando: () => tocando },
     './apoio-da-espera': { criaRelogioDoApoio },
     './cabecalho-da-ferramenta': { cabecalhoDaFerramenta },
-    './use-voz-de-apoio': { useVozDeApoio: () => ({ cabecalho: (texto: string) => falas.push(texto), cala: () => caladas++, erro() {} }) },
+    './use-voz-de-apoio': { useVozDeApoio: () => ({ cabecalho: (texto: string) => falas.push(texto), cala: () => caladas++, desiste: () => desistencias++, erro() {} }) },
   };
   new Function('require', 'module', 'exports', 'window', 'performance', compilado)(
     (nome: string) => { assert.ok(nome in dependencias, nome); return dependencias[nome]; }, modulo, modulo.exports,
     { setInterval: (fn: () => void) => { tique = fn; }, clearInterval() {} }, { now: () => agora },
   );
   const apoio = modulo.exports.useApoioDaFerramenta(p);
-  return { p, apoio, falas, caladas: () => caladas, ocupa: (valor: boolean) => { tocando = valor; }, avanca: (ms: number) => { agora = ms; tique(); } };
+  return { p, apoio, falas, caladas: () => caladas, desistencias: () => desistencias, ocupa: (valor: boolean) => { tocando = valor; }, avanca: (ms: number) => { agora = ms; tique(); } };
 }
 
 test('envio ainda sem eco não fala ferramenta do turno anterior', () => {
@@ -89,4 +90,12 @@ test('fala real não rebaixa degrau; envio novo reinicia o prazo em 10 segundos'
   assert.equal(m.falas.length, 2);
   m.avanca(60_000);
   assert.equal(m.falas.at(-1), 'Conferindo o pedido novo');
+});
+
+test('mudo desiste do apoio pendente sem cortar o que já soa', () => {
+  const m = monta();
+  const antes = m.caladas();
+  m.apoio.evento({ tipo: 'microfoneMudo' });
+  assert.equal(m.desistencias(), 1);
+  assert.equal(m.caladas(), antes);
 });

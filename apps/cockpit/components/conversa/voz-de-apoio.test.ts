@@ -4,24 +4,24 @@ import type { EscutaSequencia } from '../feed/reprodutor-unico.ts';
 import { criaVozDeApoio } from './voz-de-apoio.ts';
 
 const vez = () => new Promise<void>((r) => setImmediate(r));
-function tela({ rota = 'ok', ocupado = false, bloqueado = false, cede = true }: {
-  rota?: 'ok' | 'caiu' | 'lenta'; ocupado?: boolean; bloqueado?: boolean; cede?: boolean;
+type Rota = 'ok' | 'caiu' | 'lenta';
+function tela({ rota = 'ok', depois = rota, ocupado = false, bloqueado = false, cede = true }: {
+  rota?: Rota; depois?: Rota; ocupado?: boolean; bloqueado?: boolean; cede?: boolean;
 } = {}) {
   const sinteses: string[] = [];
-  const reservas: string[] = [];
   const liberados: string[] = [];
   const pendentes: Array<() => void> = [];
   const sequencias: { escuta: EscutaSequencia; urls: string[]; parada: boolean }[] = [];
   let prazo = () => {};
-  let fimReserva = () => {};
   let fins = 0;
   let cancelados = 0;
   let cabecalhoAtual: string | null = 'Conferir a fila';
   const apoio = criaVozDeApoio({
     sintetiza: (texto) => {
       sinteses.push(texto);
-      if (rota === 'caiu') return Promise.reject(new Error('HTTP 502'));
-      if (rota === 'lenta') return new Promise((r) => pendentes.push(() => r([`blob:${texto}`])));
+      const agora = sinteses.length === 1 ? rota : depois;
+      if (agora === 'caiu') return Promise.reject(new Error('HTTP 502'));
+      if (agora === 'lenta') return new Promise((r) => pendentes.push(() => r([`blob:${texto}`])));
       return Promise.resolve([`blob:${texto}`]);
     },
     iniciaSequencia: (escuta) => {
@@ -33,19 +33,17 @@ function tela({ rota = 'ok', ocupado = false, bloqueado = false, cede = true }: 
     bloqueado: () => bloqueado,
     cabecalhoAtual: () => cabecalhoAtual,
     preparaApoio: () => cede,
-    reserva: (texto, fim) => { reservas.push(texto); fimReserva = fim ?? (() => {}); },
-    calaReserva() {},
     cancelaTurno: () => { cancelados++; },
     liberaAudio: (url) => { liberados.push(url); },
     aoTerminar: () => { fins++; },
     espera: () => new Promise<void>((r) => { prazo = r; }),
   });
   return {
-    apoio, sinteses, reservas, sequencias, liberados,
+    apoio, sinteses, sequencias, liberados,
     bloqueia: () => { bloqueado = true; },
     mudaCabecalho: (texto: string | null) => { cabecalhoAtual = texto; },
     soltaRota: () => pendentes.splice(0).forEach((r) => r()),
-    vencePrazo: () => prazo(), terminaReserva: () => fimReserva(),
+    vencePrazo: () => prazo(),
     fins: () => fins, cancelados: () => cancelados,
   };
 }
@@ -65,13 +63,12 @@ test('cabeçalho pode repetir e sempre sintetiza sem pré-síntese/cache', async
   assert.equal(t.cancelados(), 0);
 });
 
-test('captura bloqueia síntese e reserva; fila sem cessão impede tomar resposta', async () => {
+test('captura bloqueia síntese; fila sem cessão impede tomar resposta', async () => {
   for (const opcoes of [{ bloqueado: true }, { ocupado: true }, { cede: false }]) {
     const t = tela(opcoes);
     t.apoio.cabecalho('Conferir a fila');
     await vez();
     assert.equal(t.sequencias.length, 0);
-    assert.deepEqual(t.reservas, []);
   }
 });
 
@@ -98,27 +95,90 @@ test('fim do turno ou resposta nova cancela síntese pendente e áudio já tocan
   }
 });
 
-test('rota caída usa reserva e informa fim audível, sem terminar turno', async () => {
-  const t = tela({ rota: 'caiu' });
+test('rota caída tenta de novo uma vez na mesma voz e toca na segunda', async () => {
+  const t = tela({ rota: 'caiu', depois: 'ok' });
   t.apoio.cabecalho('Conferir a fila');
   await vez();
-  assert.deepEqual(t.reservas, ['Conferir a fila']);
-  t.terminaReserva();
+  assert.deepEqual(t.sinteses, ['Conferir a fila', 'Conferir a fila']);
+  assert.deepEqual(t.sequencias.map((s) => s.urls), [['blob:Conferir a fila']]);
+  t.sequencias[0].escuta.aoTerminar();
   assert.equal(t.fins(), 1);
   assert.equal(t.cancelados(), 0);
 });
 
-test('erro mantém reserva por prazo e libera áudio atrasado sem reproduzir', async () => {
-  const t = tela({ rota: 'lenta' });
+test('falha dupla fica calada: duas sínteses e nenhuma outra voz', async () => {
+  for (const erro of [false, true]) {
+    const t = tela({ rota: 'caiu' });
+    if (erro) t.apoio.erro('O microfone desligou');
+    else t.apoio.cabecalho('Conferir a fila');
+    await vez();
+    await vez();
+    assert.equal(t.sinteses.length, 2);
+    assert.equal(t.sequencias.length, 0);
+    assert.equal(t.fins(), 0);
+  }
+});
+
+test('áudio que não toca conta como falha e ganha uma retentativa', async () => {
+  const t = tela();
+  t.apoio.cabecalho('Conferir a fila');
+  await vez();
+  t.sequencias[0].escuta.aoFalhar();
+  await vez();
+  assert.equal(t.sinteses.length, 2);
+  t.sequencias[1].escuta.aoFalhar();
+  await vez();
+  assert.equal(t.sinteses.length, 2);
+});
+
+test('erro que passa do prazo tenta de novo e libera o áudio atrasado sem reproduzir', async () => {
+  const t = tela({ rota: 'lenta', depois: 'ok' });
   t.apoio.erro('O microfone desligou');
   t.vencePrazo();
   await vez();
-  assert.deepEqual(t.reservas, ['O microfone desligou']);
+  await vez();
+  assert.equal(t.sinteses.length, 2);
+  assert.deepEqual(t.sequencias.map((s) => s.urls), [['blob:O microfone desligou']]);
   t.soltaRota();
   await vez();
-  assert.equal(t.sequencias.length, 0);
+  assert.equal(t.sequencias.length, 1);
   assert.deepEqual(t.liberados, ['blob:O microfone desligou']);
   assert.equal(t.cancelados(), 1);
+});
+
+test('cala (toque, fim de turno) e desiste (mudo) cancelam a retentativa pendente', async () => {
+  for (const corte of ['cala', 'desiste'] as const) {
+    const t = tela({ rota: 'caiu', depois: 'lenta' });
+    t.apoio.cabecalho('Conferir a fila');
+    await vez();
+    assert.equal(t.sinteses.length, 2);
+    t.apoio[corte]();
+    t.soltaRota();
+    await vez();
+    assert.equal(t.sequencias.length, 0);
+    assert.deepEqual(t.liberados, ['blob:Conferir a fila']);
+  }
+});
+
+test('desiste não corta o apoio que já está soando', async () => {
+  const t = tela();
+  t.apoio.cabecalho('Conferir a fila');
+  await vez();
+  t.apoio.desiste();
+  assert.equal(t.sequencias[0].parada, false);
+  t.sequencias[0].escuta.aoTerminar();
+  assert.equal(t.fins(), 1);
+});
+
+test('gravação do Rica durante a falha impede a retentativa', async () => {
+  const t = tela({ rota: 'lenta', depois: 'ok' });
+  t.apoio.erro('O microfone desligou');
+  t.bloqueia();
+  t.vencePrazo();
+  await vez();
+  await vez();
+  assert.equal(t.sinteses.length, 1);
+  assert.equal(t.sequencias.length, 0);
 });
 
 test('troca de ferramenta durante síntese impede tocar o cabeçalho anterior', async () => {
@@ -129,7 +189,6 @@ test('troca de ferramenta durante síntese impede tocar o cabeçalho anterior', 
     t.soltaRota();
     await vez();
     assert.equal(t.sequencias.length, 0);
-    assert.deepEqual(t.reservas, []);
     assert.deepEqual(t.liberados, ['blob:Conferir a fila']);
   }
 });
@@ -140,10 +199,9 @@ test('corte de apoio audível reinicia silêncio; síntese pendente não conta c
     t.apoio.cabecalho('Conferir a fila');
     await vez();
     t.apoio.cala();
-    assert.equal(t.fins(), rota === 'lenta' ? 0 : 1);
+    assert.equal(t.fins(), rota === 'ok' ? 1 : 0);
     t.apoio.cala();
-    t.terminaReserva();
-    assert.equal(t.fins(), rota === 'lenta' ? 0 : 1);
+    assert.equal(t.fins(), rota === 'ok' ? 1 : 0);
   }
 });
 
@@ -153,5 +211,4 @@ test('erro sai na voz do agente e cancela resposta pela própria fila', async ()
   await vez();
   assert.equal(t.cancelados(), 1);
   assert.deepEqual(t.sequencias[0].urls, ['blob:O microfone desligou']);
-  assert.deepEqual(t.reservas, []);
 });

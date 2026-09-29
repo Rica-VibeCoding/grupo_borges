@@ -6,12 +6,10 @@ import { estaTocando } from '../feed/reprodutor-unico';
 import type { Conversa, Evento } from '../../lib/conversa/tipos';
 import { criaRelogioDoApoio } from './apoio-da-espera';
 import { cabecalhoDaFerramenta } from './cabecalho-da-ferramenta';
-import type { SonsLocais } from './sons-locais';
 import { useVozDeApoio } from './use-voz-de-apoio';
 
 type Props = {
   slug: string;
-  sons(): SonsLocais;
   cancelaTurno(): void;
   preparaApoio(): boolean;
   conversaRef: RefObject<Conversa>;
@@ -32,7 +30,7 @@ export function useApoioDaFerramenta(p: Props) {
   };
   const cabecalhoAtual = () => cabecalhoDaFerramenta(atual.current.mensagens.filter((mensagem) => mensagem.id > fronteiraRef.current));
   const apoio = useVozDeApoio({
-    slug: p.slug, sons: p.sons, cancelaTurno: p.cancelaTurno, preparaApoio: p.preparaApoio,
+    slug: p.slug, cancelaTurno: p.cancelaTurno, preparaApoio: p.preparaApoio,
     bloqueado, cabecalhoAtual, aoTerminar: () => relogio.falou(performance.now()),
   });
   const apoioRef = useRef(apoio);
@@ -64,6 +62,7 @@ export function useApoioDaFerramenta(p: Props) {
     evento(evento: Evento) {
       if (evento.tipo === 'enviou' || evento.tipo === 'retomar') relogio.inicia(performance.now());
       if (evento.tipo === 'falaIniciou' || (evento.tipo === 'segurou' && evento.ligado)) apoio.cala();
+      if (evento.tipo === 'microfoneMudo') apoio.desiste();
       if (evento.tipo === 'parar' || evento.tipo === 'interromper' || evento.tipo === 'zeTerminou' || evento.tipo === 'capturaCaiu' || evento.tipo === 'falhou') {
         relogio.encerra();
         apoio.cala();

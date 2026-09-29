@@ -89,7 +89,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     return sonsRef.current;
   }, []);
   const somDeSegurar = useCallback(() => sons().sinalizaSegurar(), [sons]);
-  const apoio = useApoioDaFerramenta({ slug, sons, cancelaTurno: cancelaFala, preparaApoio,
+  const apoio = useApoioDaFerramenta({ slug, cancelaTurno: cancelaFala, preparaApoio,
     conversaRef, sessaoAtivaRef, despachaRef, mensagens: stream.messages });
   const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar,
     aoMudar: (ligado) => despachaRef.current({ tipo: 'segurou', ligado }) });

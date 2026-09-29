@@ -28,6 +28,8 @@ export type EscutaVoz = {
   aoAudio(id: number, url: string): void;
   aoFim(duracaoReal: number): void;
   aoErro(mensagem: string): void;
+  /** O servidor trocou de voz no meio (`degraded`); quem não aceita outra voz escuta aqui. */
+  aoDegradou?(): void;
 };
 
 function mp3ParaUrl(b64: string): string {
@@ -74,9 +76,12 @@ export function aplicaQuadro(quadro: string, escuta: EscutaVoz): void {
     case 'error':
       escuta.aoErro(String(corpo.message ?? 'a fala falhou'));
       return;
+    case 'degraded':
+      // No meio do stream não muda a onda — a troca de voz já vem declarada no
+      // `meta` e o áudio continua chegando; só quem não aceita outra voz escuta.
+      escuta.aoDegradou?.();
+      return;
     default:
-      // `degraded` no meio do stream não muda a onda — a troca de voz já vem
-      // declarada no `meta` e o áudio continua chegando.
       return;
   }
 }
