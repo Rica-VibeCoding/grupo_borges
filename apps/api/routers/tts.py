@@ -173,9 +173,14 @@ class TtsSynthRequest(BaseModel):
 
 
 def _resolve_voice(body: TtsSynthRequest, settings) -> str:
-    """Override explícito > voz da frota pelo slug > default Chirp3-HD."""
+    """Override explícito > `.env` do workspace > voz da frota pelo slug > default Chirp3-HD."""
     if body.voice:
         return body.voice
+    # A voz do Telegram é a canônica: o `tts-google.sh` lê o GOOGLE_TTS_VOICE
+    # deste mesmo `.env`; o mapa abaixo é só o default dele copiado.
+    do_env = _env_do_agente(body.slug).get("GOOGLE_TTS_VOICE", "")
+    if _VOICE_RE.match(do_env):
+        return do_env
     if body.slug and body.slug in FLEET_VOICES:
         return FLEET_VOICES[body.slug]
     return settings.tts_voice or DEFAULT_GOOGLE_VOICE
@@ -242,14 +247,18 @@ _WORKSPACES = Path("/home/clawd/repos/ze_claude")
 _ENV_LINHA = re.compile(r'^(?:export\s+)?([A-Z_][A-Z0-9_]*)=(.*)$', re.MULTILINE)
 
 
-def _minimax_do_agente(slug: str) -> dict | None:
+def _env_do_agente(slug: str) -> dict[str, str]:
     if not slug:
-        return None
+        return {}
     try:
         env = (_WORKSPACES / slug / ".env").read_text(encoding="utf-8")
     except OSError:
-        return None
-    v = {k: val.strip().strip('"\'') for k, val in _ENV_LINHA.findall(env)}
+        return {}
+    return {k: val.strip().strip('"\'') for k, val in _ENV_LINHA.findall(env)}
+
+
+def _minimax_do_agente(slug: str) -> dict | None:
+    v = _env_do_agente(slug)
     if v.get("TTS_MOTOR") != "minimax" or not v.get("MINIMAX_API_KEY"):
         return None
     # Mesmos padrões do tts-minimax.sh.

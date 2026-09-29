@@ -393,3 +393,29 @@ def test_stream_minimax_caiu_vai_pro_google_e_declara(tmp_path, monkeypatch) -> 
     assert meta["engine"] == "google"
     assert meta["voice"] == "pt-BR-Wavenet-E"
     assert meta["degraded"] is True  # não é a voz que ele configurou
+
+
+# --- Google: a voz do Telegram (GOOGLE_TTS_VOICE do .env) também no painel -
+
+
+def test_resolve_voice_env_do_workspace_vence_o_mapa(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "pavan", "export GOOGLE_TTS_VOICE=pt-BR-Chirp3-HD-Kore\n")
+    body = tts.TtsSynthRequest(text="oi", slug="pavan")
+    assert tts._resolve_voice(body, _FakeSettings()) == "pt-BR-Chirp3-HD-Kore"
+
+
+def test_resolve_voice_sem_env_usa_o_mapa() -> None:
+    body = tts.TtsSynthRequest(text="oi", slug="pavan")
+    assert tts._resolve_voice(body, _FakeSettings()) == tts.FLEET_VOICES["pavan"]
+
+
+def test_resolve_voice_env_invalido_cai_no_mapa(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "pavan", 'GOOGLE_TTS_VOICE="voz; rm -rf"\n')
+    body = tts.TtsSynthRequest(text="oi", slug="pavan")
+    assert tts._resolve_voice(body, _FakeSettings()) == tts.FLEET_VOICES["pavan"]
+
+
+def test_resolve_voice_body_voice_vence_tudo(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "pavan", "export GOOGLE_TTS_VOICE=pt-BR-Chirp3-HD-Kore\n")
+    body = tts.TtsSynthRequest(text="oi", slug="pavan", voice="pt-BR-Wavenet-B")
+    assert tts._resolve_voice(body, _FakeSettings()) == "pt-BR-Wavenet-B"
