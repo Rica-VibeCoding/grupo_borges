@@ -11,22 +11,33 @@ import type { EscutaSequencia, Sequencia } from '../feed/reprodutor-unico.ts';
  * própria do reprodutor único; a resposta que chega abre a dela e corta a ponte, sem sobrepor.
  *
  * A síntese de uma frase curta leva ~1,7 s (medido em 28/09): pedida na hora, a ponte chegaria
- * tarde. Por isso a tela pré-sintetiza as dez ao abrir, uma de cada vez, a próxima de cada lista
+ * tarde. Por isso a tela pré-sintetiza todas ao abrir, uma de cada vez, a próxima de cada lista
  * primeiro; o cache é por agente e dura a aba.
  */
+// Escritas para o ouvido (29/09): curtas, com a vírgula onde se respira e o ponto que fecha a frase (guia do Chirp 3
+// HD). Um marcador de conversa na frente ("Tá,", "Beleza,") soa como gente pensando,
+// e o nome do Rica só numa de cada lista: repetido, vira locutor. As cinco primeiras da ponte são as dele.
 export const FRASES_DE_PONTE = [
-  'Só um momento, Rica',
-  'Já estou vendo isso pra gente',
-  'Um instante',
-  'Deixa comigo',
-  'Estou pensando',
+  'Só um momento, Rica.',
+  'Já tô vendo isso pra gente.',
+  'Um instante.',
+  'Deixa comigo.',
+  'Tô pensando aqui.',
+  'Hum, deixa eu ver.',
+  'Beleza, já vou olhar.',
+  'Entendi, só um segundinho.',
+  'Certo, tô puxando isso.',
+  'Tá, um momentinho.',
 ] as const;
 export const FRASES_DE_DEMORA = [
-  'Ainda estou nisso, Rica',
-  'Está levando um pouco mais, mas já sai',
-  'Continuo aqui, só mais um pouco',
-  'Quase lá, segura mais um pouquinho',
-  'Ainda trabalhando nisso pra gente',
+  'Ainda tô nisso, Rica.',
+  'Tá levando um pouco mais, mas já sai.',
+  'Continuo aqui, só mais um pouco.',
+  'Quase lá, segura mais um pouquinho.',
+  'Ainda trabalhando nisso pra gente.',
+  'Tá dando um pouco de trabalho, mas tô chegando lá.',
+  'Não esqueci de você, já já te respondo.',
+  'Só mais um pouquinho, tô terminando.',
 ] as const;
 
 /** Paciência do aviso de erro com a rota de voz: passou disso, a voz do navegador fala. */
@@ -60,20 +71,33 @@ export type VozDeApoio = {
   cala(): void;
 };
 
-/** Um índice de `0..total-1` que nunca é o anterior. */
-export function sorteia(total: number, anterior: number | null, aleatorio: () => number = Math.random): number {
-  const entre = (n: number) => Math.min(n - 1, Math.floor(aleatorio() * n));
-  if (total <= 1) return 0;
-  if (anterior === null || anterior < 0 || anterior >= total) return entre(total);
-  const i = entre(total - 1);
-  return i >= anterior ? i + 1 : i;
+/**
+ * Um baralho de `0..total-1`: passa por todas antes de repetir, e a virada não repete a última. Com
+ * "só não repete a anterior", a mesma frase podia voltar dois turnos depois.
+ */
+export function criaBaralho(total: number, aleatorio: () => number = Math.random): () => number {
+  let monte: number[] = [];
+  let ultima: number | null = null;
+  return () => {
+    if (monte.length === 0) {
+      monte = Array.from({ length: total }, (_, i) => i);
+      for (let i = monte.length - 1; i > 0; i -= 1) {
+        const j = Math.min(i, Math.floor(aleatorio() * (i + 1)));
+        [monte[i], monte[j]] = [monte[j], monte[i]];
+      }
+      if (monte.length > 1 && monte[0] === ultima) [monte[0], monte[1]] = [monte[1], monte[0]];
+    }
+    ultima = monte.shift() ?? 0;
+    return ultima;
+  };
 }
 
 export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
   const aleatorio = p.aleatorio ?? Math.random;
   const espera = p.espera ?? ((ms: number) => new Promise<void>((r) => window.setTimeout(r, ms)));
   const listas = { ponte: FRASES_DE_PONTE, demora: FRASES_DE_DEMORA };
-  const proxima = { ponte: sorteia(listas.ponte.length, null, aleatorio), demora: sorteia(listas.demora.length, null, aleatorio) };
+  const baralhos = { ponte: criaBaralho(listas.ponte.length, aleatorio), demora: criaBaralho(listas.demora.length, aleatorio) };
+  const proxima = { ponte: baralhos.ponte(), demora: baralhos.demora() };
   /* Cada fala nova e cada `cala` invalidam a anterior, que ainda pode estar na síntese. */
   let vez = 0;
   let tocando: Sequencia | null = null;
@@ -133,7 +157,7 @@ export function criaVozDeApoio(p: PortasDoApoio): VozDeApoio {
   const daLista = (qual: 'ponte' | 'demora') => {
     const lista = listas[qual];
     const i = proxima[qual];
-    proxima[qual] = sorteia(lista.length, i, aleatorio);
+    proxima[qual] = baralhos[qual]();
     fala(lista[i], false);
     audio(lista[proxima[qual]]).catch(() => {});
   };

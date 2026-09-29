@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import type { EscutaSequencia } from '../feed/reprodutor-unico.ts';
 
-import { criaVozDeApoio, FRASES_DE_DEMORA, FRASES_DE_PONTE, sorteia } from './voz-de-apoio.ts';
+import { criaBaralho, criaVozDeApoio, FRASES_DE_DEMORA, FRASES_DE_PONTE } from './voz-de-apoio.ts';
 
 const vez = () => new Promise<void>((r) => setImmediate(r));
 
@@ -55,23 +55,31 @@ function tela({ rota = 'ok', ocupado = false }: { rota?: 'ok' | 'caiu' | 'lenta'
 }
 
 describe('frases de apoio na voz do agente', () => {
-  it('o sorteio nunca repete a frase anterior, e alcança todas as outras', () => {
-    for (let anterior = 0; anterior < 5; anterior += 1) {
-      const vistas = new Set<number>();
-      for (const r of [0, 0.2, 0.4, 0.6, 0.8, 0.999]) {
-        const i = sorteia(5, anterior, () => r);
-        assert.notEqual(i, anterior);
-        assert.ok(i >= 0 && i < 5);
-        vistas.add(i);
+  it('o baralho passa por todas antes de repetir, e a virada não repete a última', () => {
+    for (const semente of [0.01, 0.37, 0.73, 0.99]) {
+      let x = semente;
+      const aleatorio = () => (x = (x * 9301 + 0.49297) % 1);
+      const tira = criaBaralho(8, aleatorio);
+      const saidas = Array.from({ length: 8 * 6 }, () => tira());
+      for (let volta = 0; volta < 6; volta += 1) {
+        assert.equal(new Set(saidas.slice(volta * 8, volta * 8 + 8)).size, 8);
       }
-      assert.equal(vistas.size, 4);
+      for (let i = 1; i < saidas.length; i += 1) assert.notEqual(saidas[i], saidas[i - 1]);
     }
   });
 
-  it('cinco frases de ponte e cinco de demora, sem reticências nem interrogação', () => {
-    assert.equal(new Set(FRASES_DE_PONTE).size, 5);
-    assert.equal(new Set(FRASES_DE_DEMORA).size, 5);
-    for (const frase of [...FRASES_DE_PONTE, ...FRASES_DE_DEMORA]) assert.doesNotMatch(frase, /\.\.\.|…|\?|!|;/);
+  it('frases faladas: variadas, com ponto final, sem reticências, interrogação ou exclamação', () => {
+    assert.ok(new Set(FRASES_DE_PONTE).size >= 10);
+    assert.ok(new Set(FRASES_DE_DEMORA).size >= 8);
+    for (const frase of [...FRASES_DE_PONTE, ...FRASES_DE_DEMORA]) {
+      assert.doesNotMatch(frase, /\.\.\.|…|\?|!|;/);
+      assert.match(frase, /[^.]\.$/); // o ponto fecha a frase (guia do Chirp 3 HD)
+    }
+  });
+
+  it('o nome do Rica aparece em no máximo uma frase de cada lista', () => {
+    assert.ok(FRASES_DE_PONTE.filter((f) => f.includes('Rica')).length <= 1);
+    assert.ok(FRASES_DE_DEMORA.filter((f) => f.includes('Rica')).length <= 1);
   });
 
   it('falarPonte fala pela rota do agente, fora da fila do turno: nem speechSynthesis, nem vozTerminou', async () => {
@@ -101,15 +109,15 @@ describe('frases de apoio na voz do agente', () => {
   it('ao abrir a tela, pré-sintetiza a próxima ponte e a próxima demora primeiro; na hora, não pede de novo', async () => {
     const t = tela();
     t.apoio.prepara();
-    for (let i = 0; i < 12; i += 1) await vez();
-    assert.equal(t.sinteses.length, 10);
+    for (let i = 0; i < 40; i += 1) await vez();
+    assert.equal(t.sinteses.length, FRASES_DE_PONTE.length + FRASES_DE_DEMORA.length);
     assert.ok((FRASES_DE_PONTE as readonly string[]).includes(t.sinteses[0]));
     assert.ok((FRASES_DE_DEMORA as readonly string[]).includes(t.sinteses[1]));
     t.apoio.ponte();
     await vez();
     t.apoio.demora();
     await vez();
-    assert.equal(t.sinteses.length, 10);
+    assert.equal(t.sinteses.length, FRASES_DE_PONTE.length + FRASES_DE_DEMORA.length);
     assert.equal(t.sequencias.length, 2);
     assert.equal(t.sequencias[0].parada, true); // a demora corta a ponte que sobrou
   });
