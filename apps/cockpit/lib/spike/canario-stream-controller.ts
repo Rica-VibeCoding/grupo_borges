@@ -74,6 +74,9 @@ export type CanarioStreamOptions = {
    * morrem com ele.
    */
   onSessionReset?: () => void;
+  /** Avisa quando a página volta ao primeiro plano; devolve quem para de ouvir. Padrão: o
+   *  `visibilitychange` e o `pageshow` do navegador. */
+  aoVoltarDoFundo?: (retoma: () => void) => () => void;
 };
 
 export type CanarioStreamController = {
@@ -116,6 +119,24 @@ function buildStreamUrl(
   // tudo o que passou desde ele, em ordem — pedir "a cauda" abriria um buraco.
   if (recentes && sinceId === undefined) params.set('recentes', '1');
   return `/api/agents/${encodeURIComponent(slug)}/messages/stream?${params}`;
+}
+
+/** O iPhone congela a página fora do app e a conexão morre sem `error`; sem isto a volta
+ *  esperava o vigia (até 35 s). Reabrir no `pageshow` e na volta da aba é o que o MDN manda. */
+function ouveAVoltaDaPagina(retoma: () => void): () => void {
+  if (typeof document === 'undefined') return () => {};
+  const aoMudarVisibilidade = () => {
+    if (document.visibilityState === 'visible') retoma();
+  };
+  const aoMostrar = (evento: PageTransitionEvent) => {
+    if (evento.persisted) retoma();
+  };
+  document.addEventListener('visibilitychange', aoMudarVisibilidade);
+  window.addEventListener('pageshow', aoMostrar);
+  return () => {
+    document.removeEventListener('visibilitychange', aoMudarVisibilidade);
+    window.removeEventListener('pageshow', aoMostrar);
+  };
 }
 
 export function createCanarioStream(
@@ -271,6 +292,15 @@ export function createCanarioStream(
 
   connect();
 
+  const paraDeOuvirAVolta = (options.aoVoltarDoFundo ?? ouveAVoltaDaPagina)(() => {
+    if (disposed) return;
+    if (reconnectTimer !== undefined) {
+      cancel(reconnectTimer);
+      reconnectTimer = undefined;
+    }
+    connect();
+  });
+
   return {
     getSnapshot: () => state,
     subscribe(listener) {
@@ -289,6 +319,7 @@ export function createCanarioStream(
       }
       coalescer.dispose();
       prazo.cancela();
+      paraDeOuvirAVolta();
       listeners.clear();
     },
   };

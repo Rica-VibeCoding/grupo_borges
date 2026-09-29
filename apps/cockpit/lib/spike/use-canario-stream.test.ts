@@ -361,3 +361,36 @@ test('recentes só vai na primeira conexão — em reconexão manda since_id', (
   assert.match(second.url, /enxuto=1/);
   controller.dispose();
 });
+
+test('a página que volta ao primeiro plano reconecta na hora, com since_id, sem esperar o vigia', () => {
+  const clock = timers();
+  const fake = eventSources();
+  let retoma = () => {};
+  let paradas = 0;
+  const controller = createCanarioStream({
+    slug: 'canario',
+    eventSourceConstructor: fake.EventSource,
+    heartbeatTimeoutMs: 35_000,
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+    aoVoltarDoFundo: (fn) => {
+      retoma = fn;
+      return () => { paradas += 1; };
+    },
+  });
+  const first = fake.instances[0];
+  first.emit('replay-start');
+  first.emit('message', FIXTURE.evento);
+  first.emit('replay-end');
+
+  // O iPhone congelou a página: a conexão morreu sem `error`, e o vigia ainda nem venceu.
+  retoma();
+  assert.equal(first.closed, true);
+  assert.equal(fake.instances.length, 2);
+  assert.match(fake.instances[1].url, new RegExp(`since_id=${FIXTURE.evento.id}`));
+  assert.equal(fake.instances.filter((source) => !source.closed).length, 1);
+
+  controller.dispose();
+  assert.equal(paradas, 1);
+  assert.equal(clock.pending(), 0);
+});

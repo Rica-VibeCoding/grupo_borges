@@ -30,8 +30,12 @@ export function useTurnoDoZe(stream: Pick<CanarioStreamState, 'messages' | 'isRu
 
   useEffect(() => {
     const maiorId = maiorIdDasMensagens(stream.messages, cursorRef.current);
+    // Stream zerado é sessão nova: o replay dela só posiciona o cursor, como o primeiro.
+    if (stream.messages.length === 0) replayConcluidoRef.current = false;
     if (stream.status !== 'live') {
-      cursorRef.current = maiorId;
+      // Depois do primeiro replay, o de uma reconexão traz o que chegou com a conexão caída
+      // (o iPhone congela a página fora do app): fica para o lote ao vivo, que o fala.
+      if (!replayConcluidoRef.current) cursorRef.current = maiorId;
       return;
     }
     if (!replayConcluidoRef.current) {
