@@ -1,9 +1,13 @@
 .botao {
-  display: none;
+  display: inline-flex;
   position: absolute;
   z-index: 3;
   left: calc(var(--ck-space-4) + var(--ck-safe-left));
-  bottom: calc(var(--ck-space-4) + var(--ck-safe-bottom));
+  /* No celular fica acima da faixa de baixo do iPhone (área segura mais 40 px), a borda
+   * que manda o app para o fundo; 44 px é o alvo mínimo de dedo. */
+  bottom: calc(var(--ck-safe-bottom) + 40px);
+  min-width: 44px;
+  min-height: 44px;
   align-items: center;
   justify-content: center;
   padding: var(--ck-space-2);
@@ -28,5 +32,9 @@
 .botao svg { flex: none; }
 
 @media (min-width: 768px) and (hover: hover) and (pointer: fine) {
-  .botao { display: inline-flex; }
+  .botao {
+    bottom: calc(var(--ck-space-4) + var(--ck-safe-bottom));
+    min-width: 0;
+    min-height: 0;
+  }
 }
