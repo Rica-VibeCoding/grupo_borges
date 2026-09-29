@@ -354,7 +354,32 @@ def _split_sentences(text: str) -> list[str]:
             piece = f"{piece} {pieces[i]}"
         parts.extend(_fragment_by_bytes(piece))
         i += 1
+    if parts:
+        parts[:1] = _cut_first_sentence(parts[0])
     return parts
+
+
+# O primeiro som só sai quando a PRIMEIRA sentença inteira foi sintetizada, e o
+# tempo do provedor cresce com o tamanho dela (~1,3 s em 23 caracteres, ~2,4 s
+# em ~180). Primeira sentença longa corta no primeiro ponto natural — vírgula,
+# dois-pontos, ponto e vírgula ou travessão seguido de espaço — que caia entre o
+# mínimo e o máximo. Sem ponto natural, não corta: palavra nunca quebra ao meio.
+_FIRST_CUT_TRIGGER = 60
+_FIRST_CUT_MIN = 15
+_FIRST_CUT_MAX = 80
+_NATURAL_PAUSE = re.compile(r"[,;:—–](?=\s)")
+
+
+def _cut_first_sentence(s: str) -> list[str]:
+    if len(s) <= _FIRST_CUT_TRIGGER:
+        return [s]
+    for m in _NATURAL_PAUSE.finditer(s):
+        cut = m.end()
+        if cut > _FIRST_CUT_MAX:
+            break
+        if cut >= _FIRST_CUT_MIN:
+            return [s[:cut].strip(), s[cut:].strip()]
+    return [s]
 
 
 def _estimate_duration(text: str) -> float:

@@ -76,6 +76,51 @@ def test_split_gigante_tudo_abaixo_do_limite() -> None:
     assert all(len(p.encode("utf-8")) <= tts._SENTENCE_BYTE_LIMIT for p in sents)
 
 
+# --- primeira fala curta (primeiro som mais cedo) --------------------------
+
+
+def test_split_primeira_curta_nao_corta() -> None:
+    sents = tts._split_sentences("Rica, tudo certo por aqui. Segunda frase.")
+    assert sents == ["Rica, tudo certo por aqui.", "Segunda frase."]
+
+
+def test_split_primeira_longa_corta_na_virgula() -> None:
+    primeira = (
+        "Olha, Rica, conferi o painel inteiro agora, e a luz da sala "
+        "continua ligada desde ontem à noite."
+    )
+    sents = tts._split_sentences(f"{primeira} Depois eu vejo.")
+    # "Olha," tem menos de 15 caracteres; o corte cai na vírgula seguinte
+    assert sents == [
+        "Olha, Rica, conferi o painel inteiro agora,",
+        "e a luz da sala continua ligada desde ontem à noite.",
+        "Depois eu vejo.",
+    ]
+
+
+def test_split_primeira_longa_sem_pontuacao_nao_corta() -> None:
+    primeira = (
+        "Conferi o painel inteiro agora e a luz da sala continua ligada "
+        "desde ontem à noite sem ninguém ter mexido nela."
+    )
+    assert tts._split_sentences(primeira) == [primeira]
+
+
+def test_split_so_a_primeira_sentenca_e_cortada() -> None:
+    longa = (
+        "Conferi o painel inteiro agora, e a luz da sala continua ligada "
+        "desde ontem à noite."
+    )
+    sents = tts._split_sentences(f"Pronto. {longa} {longa}")
+    assert sents == ["Pronto.", longa, longa]
+    sents = tts._split_sentences(f"{longa} {longa}")
+    assert sents == [
+        "Conferi o painel inteiro agora,",
+        "e a luz da sala continua ligada desde ontem à noite.",
+        longa,
+    ]
+
+
 # --- estimativa -----------------------------------------------------------
 
 
