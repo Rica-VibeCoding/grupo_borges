@@ -26,16 +26,21 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
   (Rica não decidiu) — hoje é só Google, não MiniMax.
 - Detalhe e provas: `relatos/fase4-ui.md`, `relatos/fase4-teste.md`; briefings em `briefings/fase4-*.md`.
 
-## Em andamento (cadeira `ui`, deixar terminar — ordem do Rica 29/09: não iniciar nada novo)
-- **Frases de apoio na mesma voz/rota das respostas**, 5 variações sem repetir a anterior, sem contar como turno
-  fechado (`briefings/fase4-frases-de-apoio.md`).
-- **Cor do "pensando" na esfera**: hoje troca para o roxo fixo; passa a ser uma mistura entre o dourado de
-  "ouvindo" e o azul de "falando" — pedido do Rica em 29/09, testando ao vivo (`briefings/fase4-mistura-de-cor.md`).
+## Feito — provado com o Canário real em 29/09, ainda sem commit/publicação (cadeira `ui`)
+- **Frases de apoio na mesma voz/rota das respostas** (5 de espera + 5 de demora, sem repetir a anterior, sem
+  contar como turno fechado). ⚠️ Divergiu do combinado: erro que acontece enquanto o agente fala agora corta a
+  fala (só com fone — um alto-falante só não toca os dois juntos).
+- **Cor do "pensando" na esfera**: mistura entre o dourado de "ouvindo" e o azul de "falando", com prova de
+  matiz medida (com WebGL 41°→133°→190°; sem WebGL 37°→131°→194°; moldura 40°→131°→190°). 🟡 Decisão do Rica: o
+  meio saiu verde-sálvia claro (apagado) — ver ao vivo antes de fechar.
+- Detalhe e prova: `relatos/fase4-ui.md` (seções "Frases de apoio" e "Mistura de cor"). Falta: commitar e
+  publicar na 3008 (janela do Pavan), e o Rica conferir no iPhone.
 
-## Achados de 29/09 (registrados, NÃO implementar ainda — ordem do Rica)
-- **Aviso "agente ocupado" usa a cor do erro de verdade** (vermelho): quando o Rica fala enquanto o agente ainda
-  processa outra coisa, a tela mostra 409 com a mesma cor de falha real, o que pode confundir "quebrou" com
-  "só demorou". Talvez mereça cor própria — Daniel sugeriu, Rica não decidiu.
+## Em andamento (cadeira `ui`, ordem do Rica 29/09)
+- **Cor própria pro aviso "agente ocupado"**, separada do vermelho de erro real — `briefings/fase4-cor-agente-ocupado.md`.
+  Depois dela: item 1 da "Próxima lista" (conversa que sobrevive a recarga).
+
+## Achados de 29/09 (registrados)
 - **Permissão de microfone a cada início de conversa:** esclarecido que não deveria pedir de novo sem recarregar a
   aba (o navegador guarda a permissão por site); se acontecer de novo mesmo sem reload, é caso à parte do conserto
   do `5cdf43e` — investigar quando reproduzir.
@@ -48,11 +53,10 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
    o Pavan (cofre); contar uso em `~/.claude/metrics/tts-uso.jsonl`; o Rica escolhe a voz ouvindo opções.
 3. **Versão enxuta só da voz para a Dani falar com a Miga** (item 8): a tela e quatro serviços (transcrever,
    entregar à sessão, ler a resposta, gerar voz), endereço próprio, Miga na Oracle.
-4. **Cor própria pro aviso "agente ocupado"**, separada do vermelho de erro real (achado de 29/09 acima).
-5. **Arestas da voz:** avisar o agente quando o Rica corta a voz dele; limpar número e símbolo antes do TTS; nome
+4. **Arestas da voz:** avisar o agente quando o Rica corta a voz dele; limpar número e símbolo antes do TTS; nome
    técnico falado sai errado na transcrição (ex.: "Canário" → "Canada") — `keywords`/modelo do bilhete.
-6. **Arestas de teste:** bateria B com "Mostrar texto" desligado (Chromium e WebKit) não terminou; erro no console do
+5. **Arestas de teste:** bateria B com "Mostrar texto" desligado (Chromium e WebKit) não terminou; erro no console do
    WebKit ao mudar configuração no meio da conversa ("URL is not valid or contains user credentials");
    `e2e/fase4-ao-vivo-2.cjs` ainda espera `origin: 'stt'` (o código manda `voz`).
-7. **Miúdos:** o menu do motor na gaveta pode ter o mesmo problema de não virar pra cima que o de conta tinha; a
+6. **Miúdos:** o menu do motor na gaveta pode ter o mesmo problema de não virar pra cima que o de conta tinha; a
    moldura sem WebGL ainda repinta gradiente com `--nivel-da-voz` (decisão do Pavan).
