@@ -11,6 +11,7 @@ import {
   seguraNoDetector,
   type ControladorDetector,
 } from './controlador-detector';
+import { criaMicrofone, ganchosDoMicrofone, soltaOMicrofone, type Microfone } from './microfone-da-conversa';
 import { criaVigiaDaEscuta, type VigiaDaEscuta } from './vigia-da-escuta';
 
 type Preparacao = 'preparando' | 'pronto' | 'falhou';
@@ -48,8 +49,8 @@ export function useDetectorDeFala({
 
   const controladorRef = useRef<ControladorDetector | null>(null);
   const utilsRef = useRef<VadUtils | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const pausandoRef = useRef(false);
+  /* Um `getUserMedia` por conversa: na vez dele, surdo sem soltar (`microfone-da-conversa.ts`). */
+  const microfoneRef = useRef<Microfone<MediaStream> | null>(null);
   const detectorRef = useRef<MicVAD | null>(null);
   /* A escuta vigiada (a que emudecia no iPhone): o contexto de áudio do detector, a hora do
      último quadro processado e a da última ligação. `geracaoRef` descarta ligação superada. */
@@ -63,6 +64,11 @@ export function useDetectorDeFala({
   const ajustaDetector = useCallback(() => {
     detectorRef.current?.setOptions(opcoesDoDetector(conversaRef.current.estado, segurandoRef.current));
   }, [conversaRef]);
+  /** A cada troca de estado: as opções do detector e, com a conversa parada, o microfone solto. */
+  const acompanhaEstado = useCallback(() => {
+    ajustaDetector();
+    if (soltaOMicrofone(conversaRef.current.estado)) microfoneRef.current?.solta();
+  }, [ajustaDetector, conversaRef]);
 
   /** Segura ou solta a vez; devolve se mudou. Soltar recomeça os 2 s do zero, a partir de agora. */
   const segura = useCallback(
@@ -92,10 +98,9 @@ export function useDetectorDeFala({
         captura.getTracks().forEach((track) => track.stop());
         throw new DOMException('Tela encerrada', 'AbortError');
       }
-      streamRef.current = captura;
       for (const track of captura.getAudioTracks()) {
         track.addEventListener('ended', () => {
-          if (!pausandoRef.current && sessaoAtivaRef.current) {
+          if (!microfoneRef.current?.surdo() && sessaoAtivaRef.current) {
             eventoRef.current({ tipo: 'capturaCaiu' });
           }
         });
@@ -105,11 +110,13 @@ export function useDetectorDeFala({
       }
       return captura;
     };
+    const microfone = criaMicrofone(abreMicrofone);
+    microfoneRef.current = microfone;
 
     const vigia = criaVigiaDaEscuta({
       leSinais: () => ({
         contexto: contextoRef.current?.state ?? null,
-        faixaMuda: streamRef.current?.getAudioTracks().some((faixa) => faixa.muted) ?? false,
+        faixaMuda: microfone.atual()?.getAudioTracks().some((faixa) => faixa.muted) ?? false,
         semQuadroHaMs: performance.now() - Math.max(ultimoQuadroRef.current, ligouEmRef.current),
       }),
       retoma: () => void contextoRef.current?.resume().catch(() => {}),
@@ -141,7 +148,7 @@ export function useDetectorDeFala({
           // nele que a vigia confere o estado e que o toque retoma. O do detector anterior, já
           // destruído numa reabertura, fecha aqui — com contexto de fora, o MicVAD não fecha.
           const abreComContexto = async () => {
-            const captura = await abreMicrofone();
+            const captura = await microfone.abre();
             void contextoRef.current?.close().catch(() => {});
             const contexto = new AudioContext();
             contexto.addEventListener('statechange', () => {
@@ -161,15 +168,7 @@ export function useDetectorDeFala({
             preSpeechPadMs: TEMPOS.preGravacao,
             minSpeechMs: TEMPOS.falaMinima,
             getStream: abreComContexto,
-            pauseStream: async (captura) => {
-              pausandoRef.current = true;
-              captura.getTracks().forEach((track) => track.stop());
-              if (streamRef.current === captura) streamRef.current = null;
-              queueMicrotask(() => {
-                pausandoRef.current = false;
-            });
-          },
-          resumeStream: abreMicrofone,
+            ...ganchosDoMicrofone(microfone, () => conversaRef.current.estado),
           onSpeechStart: () => {
             setFalaDetectada(true);
             falaRef.current?.inicio();
@@ -223,12 +222,12 @@ export function useDetectorDeFala({
     return () => {
       vivo = false;
       vigia.para();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      microfone.solta();
       void Promise.resolve(controladorRef.current?.encerra())
         .then(() => contextoRef.current?.close())
         .catch(() => {});
     };
-  }, [eventoRef, sessaoAtivaRef, falaRef, ajustaDetector]);
+  }, [eventoRef, sessaoAtivaRef, conversaRef, falaRef, ajustaDetector]);
 
   const liga = useCallback(async () => {
     const controlador = controladorRef.current;
@@ -243,7 +242,7 @@ export function useDetectorDeFala({
     try {
       await controlador.liga();
     } catch (erro) {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      microfoneRef.current?.solta();
       throw erro;
     } finally {
       setAbrindoMicrofone(false);
@@ -282,7 +281,7 @@ export function useDetectorDeFala({
     liga,
     desliga,
     criaWav,
-    ajustaDetector,
+    acompanhaEstado,
     segura,
   };
 }

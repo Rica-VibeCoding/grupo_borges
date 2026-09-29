@@ -201,7 +201,7 @@ export function useModoConversa(slug: string, fone: boolean) {
     return () => window.clearInterval(timer);
   }, [conversa.estado, despacha]);
 
-  useEffect(() => detector.ajustaDetector(), [conversa.estado, detector.ajustaDetector]);
+  useEffect(() => detector.acompanhaEstado(), [conversa.estado, detector.acompanhaEstado]);
 
   // A máquina nasce sem fone; só uma troca de verdade vira evento.
   const foneDaMaquinaRef = useRef(false);

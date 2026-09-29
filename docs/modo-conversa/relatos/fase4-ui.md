@@ -782,3 +782,97 @@ quatro frases curtas por que o céu é azul". Saída em `e2e/fase4-legenda/prova
 - Nenhum arquivo de produção alterado nesta rodada; só este relato.
 
 FIM-DA-PROVA
+
+# Fase 4 — cadeira `ui`: o microfone não pede permissão de novo no meio da conversa
+
+Briefing `briefings/fase4-microfone-aberto.md`. A causa provável do briefing se confirmou. O `pauseStream` padrão
+do MicVAD 0.0.31 dá `stop()` na faixa quando ele começa a falar. O `resumeStream` chama `getUserMedia` de novo ao
+voltar a ouvir, e cada chamada nova pode reabrir o aviso de permissão no iOS.
+
+## Entreguei
+- `components/conversa/microfone-da-conversa.ts` (novo, 85 linhas): um microfone por conversa.
+  - **Na vez dele**: a faixa fica surda sem soltar (`enabled = false`). O MicVAD desliga a fonte do detector junto,
+    como antes.
+  - **Voltando a ouvir**: reusa a mesma faixa se ela está `live`. Só pede outra se caiu (`ended`).
+  - **Solta de verdade** com a conversa `parado` ou `erro` e ao fechar a tela.
+  - **Detector novo** (o primeiro, ou a escuta que emudeceu): solta o velho antes de pedir o novo, como antes.
+- `use-detector-de-fala.ts` (287 linhas): o `pauseStream`/`resumeStream` do MicVAD passam pelo microfone da conversa.
+  - O `acompanhaEstado` substitui o `ajustaDetector` na troca de estado e solta o microfone ao parar. Cobre o parar
+    com ele falando, em que a máquina não manda desligar porque o detector já está desligado.
+  - A faixa que cai com o microfone surdo não vira "O microfone desligou": a volta seguinte pede outra.
+  - Vigia e `capturaCaiu` seguem iguais com o microfone ouvindo.
+- `use-modo-conversa.ts` (297 linhas): uma linha, `acompanhaEstado` no lugar de `ajustaDetector`.
+- `e2e/fase4-microfone.cjs` (novo): 3 voltas com o Canário real, contando `getUserMedia` por `addInitScript`.
+  - O microfone falso tem 3 pedidos, com 50 s de silêncio entre eles.
+  - Na 3ª volta, um toque para a conversa no meio da fala dele.
+  - O teste confere se toda faixa terminou `ended`.
+
+## Contagem, antes e depois
+- **Teste de unidade, vermelho antes**: "uma conversa de 3 voltas chama o getUserMedia uma vez só" deu 3 (esperado 1),
+  com o módulo imitando o jeito de hoje. Depois da troca, 1.
+- **E2E, antes** (código de hoje): **4 `getUserMedia` em 3 voltas**, um a cada volta a "ouvindo". O 4º veio de uma
+  resposta atrasada dele, que empurrou uma volta a mais. Sequência:
+  - 1935 `getUserMedia` (toque) → ouvindo → 9761 faixa parada → transcrevendo → pensando → falando
+  - 17930 `getUserMedia` → ouvindo → 25740 faixa parada → … → falando
+  - 54474 `getUserMedia` → ouvindo → 57270 faixa parada → falando (resposta atrasada)
+  - 72960 `getUserMedia` → ouvindo → 80720 faixa parada → … → falando → 86162 toque: parado, 4 faixas `ended`
+- **E2E, depois**: **1 `getUserMedia` em 3 voltas**. Sequência (estado da faixa entre parênteses):
+  - 1684 `getUserMedia` (toque) → ouvindo (ouve)
+  - 9603 transcrevendo (surda) → pensando (surda) → 13231 falando (surda) → 16367 ouvindo (ouve)
+  - 64528 transcrevendo (surda) → … → 69201 falando (surda) → 71828 ouvindo (ouve)
+  - 120628 transcrevendo (surda) → … → 125784 falando (surda) → 127322 toque: faixa parada → parado (solta)
+  - Cada volta ouviu o seu pedido na hora do arquivo (o 2º aos ~64 s, o 3º aos ~120 s): prova de que foi a mesma
+    faixa correndo o tempo todo.
+- Console, JS e API (≥ 400): nenhum erro nas duas rodadas.
+
+## Provas
+- `npm test`: 1320 testes, 1319 passam, 0 falham, 1 pulado. `npm run type-check`: sem erro.
+- `microfone-da-conversa.test.ts`: 7 casos.
+  - 3 voltas = 1 pedido
+  - na vez dele, a mesma faixa viva e calada
+  - caiu na vez dele: pede outra
+  - parar com o detector ligado solta
+  - parar com ele falando solta, e a conversa nova pede um só
+  - a reabertura solta a velha antes de pedir
+  - só solta parado ou em erro
+- O ciclo do MicVAD no teste é o da 0.0.31 (`dist/real-time-vad.js`, lido): `start` → `getStream`, `pause` →
+  `pauseStream`, `start` de novo → `resumeStream(captura)`. Passa pelo `criaControladorDetector` real.
+
+## Assumi
+- **Meio-duplex**: nada do microfone entra enquanto ele fala, por dois motivos. O MicVAD desconecta a fonte do
+  detector no `pause` (código da lib), e a faixa fica `enabled = false`. O E2E não fala por cima dele (o arquivo é
+  silêncio nessa hora), então isso está provado pelo código, não por áudio.
+- **Fechar a tela** passa pelo mesmo `parar()` do toque. Desmontar a tela solta no `cleanup`.
+
+## Divergi do combinado
+- 🟡 **WebKit: volume e rota do áudio dele com o microfone aberto não foram medidos.** O WebKit do Playwright no
+  Windows (26.6) não tem `mediaDevices`, `MediaStream`, `AudioContext` nem `audioSession` (conferido). Não há
+  microfone real para abrir nem sessão de áudio do iOS para observar. Isso fica para conferir no iPhone.
+  - O risco a olhar: com a faixa viva, o iOS pode manter a sessão de áudio em modo "tocar e gravar". Nesse modo a
+    voz dele pode sair mais baixa ou por outro caminho do que saía com o microfone fechado.
+  - Com fone isso já acontecia, porque o detector fica ligado na fala dele.
+  - Não decidi nada sobre isso.
+- **browser-harness**: não roda a escuta. A aba do Chrome do agente fica escondida, e aba escondida em "ouvindo" cai
+  em "O microfone desligou" de propósito (`visibilitychange`). O toque na tela foi o toque de tela do Playwright.
+
+## Não fiz
+- Nada do pedido ficou de fora.
+
+## Achados laterais
+- **O dev 3009 estava fora do ar** quando cheguei (nada ouvindo na porta).
+  - Subi com `COCKPIT_DIST_DIR=.next-dev`, porta 3009.
+  - A primeira subida deu 500: o compilador lia o CSS global dentro do CSS da fonte Geist, sinal de cache velho
+    corrompido.
+  - Tirei o cache e subi limpo.
+  - Erro meu no meio: primeiro renomeei o cache velho dentro de `apps/cockpit`, o Tailwind varreu os binários dele e
+    deu outro 500. Resolvido tirando o cache da pasta do app.
+- Na rodada "antes", uma resposta atrasada dele chegou já em "ouvindo" e virou fala (ouvindo → falando direto). É o
+  caminho de sempre da máquina, que não perde texto dele. Não mexi.
+
+## Estado do PC
+- Dev 3009 no ar, subido por mim (processo `next dev` com pai `node`, log em `%TEMP%/cockpit-dev-3009.log`).
+- Caches velhos em `%TEMP%/cockpit-cache-velho/`, fora do projeto. Podem ser apagados.
+- Saídas do E2E em `e2e/fase4-microfone/` (`antes.json`, `depois.json`).
+- Sem commit.
+
+FIM-DO-MICROFONE
