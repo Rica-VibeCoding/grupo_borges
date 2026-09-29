@@ -24,7 +24,7 @@ import { useFilaDeVoz } from './use-fila-de-voz';
 import { useRetomadaDaConversa } from './use-retomada-da-conversa';
 import { useSegurarAVez } from './use-segurar-a-vez';
 import { useTurnoDoZe } from './use-turno-do-ze';
-import { useVozDeApoio } from './use-voz-de-apoio';
+import { useApoioDaFerramenta } from './use-apoio-da-ferramenta';
 import { useWakeLock } from './use-wake-lock';
 
 /** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca. */
@@ -59,10 +59,12 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     fala: falaDoZe,
     tocando,
     limpaLegenda,
+    preparaApoio,
   } = useFilaDeVoz({
     slug,
     aoTerminar: () => despachaRef.current({ tipo: 'vozTerminou' }),
     aoOuvir: retomada.ouviu,
+    aoSilenciar: () => apoio.silenciou(),
     aoFalhar: (mensagem) => {
       setAviso((atual) => reduzAviso(atual, { tipo: 'vozFalhou', mensagem }));
       try {
@@ -88,11 +90,15 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     return sonsRef.current;
   }, []);
   const somDeSegurar = useCallback(() => sons().sinalizaSegurar(), [sons]);
-  const apoio = useVozDeApoio({ slug, sons, cancelaTurno: cancelaFala });
+  const apoio = useApoioDaFerramenta({ slug, sons, cancelaTurno: cancelaFala, preparaApoio,
+    conversaRef, sessaoAtivaRef, despachaRef, mensagens: stream.messages });
   const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar,
     aoMudar: (ligado) => despachaRef.current({ tipo: 'segurou', ligado }) });
 
+  const apoioRef = useRef(apoio);
+  apoioRef.current = apoio;
   const despacha = useCallback((evento: Evento) => {
+    apoioRef.current.evento(evento);
     const antes = conversaRef.current.estado;
     const resultado = avanca(conversaRef.current, evento, performance.now());
     conversaRef.current = resultado.conversa;
@@ -148,6 +154,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
           return;
         }
         const ciclo = cicloRef.current;
+        apoio.preparaEnvio();
         entregaFala({
           posta: () => postAgentInput(slug, efeito.texto, { origin: 'voz' }),
           vivo: () => ciclo === cicloRef.current,
@@ -168,12 +175,6 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
       case 'tocarTique':
         sons().tocaTique();
         return;
-      case 'falarPonte':
-        apoio.ponte();
-        return;
-      case 'avisarDemora':
-        apoio.demora();
-        return;
       case 'avisarErro': {
         const mensagem = mensagemDeErro(efeito.motivo);
         apoio.erro(mensagem);
@@ -185,20 +186,15 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
 
   const entregaTexto = (texto: string, id: number) => retomada.entrega(id, () => despacha({ tipo: 'textoDoZe', texto }));
   useTurnoDoZe(stream, {
-    abre: abreTurno,
+    abre: () => { abreTurno(); apoio.inicia(); },
     texto: entregaTexto,
     pedidoEntrou: () => despacha({ tipo: 'pedidoEntrou' }),
     fecha: () => {
+      apoio.encerra();
       despacha({ tipo: 'zeTerminou' });
       fechaTurno();
     },
   });
-
-  useEffect(() => {
-    if (conversa.estado !== 'esperandoZe' && conversa.estado !== 'interrompendo') return;
-    const timer = window.setInterval(() => despacha({ tipo: 'tique' }), 250);
-    return () => window.clearInterval(timer);
-  }, [conversa.estado, despacha]);
 
   useEffect(() => detector.acompanhaEstado(), [conversa.estado, detector.acompanhaEstado]);
 

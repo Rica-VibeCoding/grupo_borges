@@ -48,12 +48,15 @@ export type Sequencia = {
   pausa(): void;
   retoma(): void;
   para(): void;
+  cedeSeVazia?(): boolean;
 };
 
 export type EscutaSequencia = {
   /** Segundos desde o começo da fala inteira, somando as sentenças passadas. */
   aoProgredir(segundos: number): void;
   aoTerminar(): void;
+  /** Última sentença acabou, mesmo com a sequência ainda aberta entre blocos. */
+  aoSilenciar?(): void;
   /** `play()` recusado pelo navegador — a bolha vira "toque para ouvir". */
   aoFalhar(): void;
 };
@@ -95,6 +98,7 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
       void toca();
       return;
     }
+    escuta.aoSilenciar?.();
     if (fechada) {
       limpa();
       escuta.aoTerminar();
@@ -138,6 +142,13 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
   };
 
   return {
+    cedeSeVazia() {
+      if (!meu() || tocando || pausada || indice < fila.length) return false;
+      fechada = true;
+      limpa();
+      escuta.aoTerminar();
+      return true;
+    },
     enfileira(url: string) {
       if (!meu()) return;
       fila.push(url);

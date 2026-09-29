@@ -33,7 +33,7 @@ export type Evento =
   // fase 4: o toque depois de uma recarga com o turno do Zé aberto — volta a esperar por ele, em vez de ouvir
   // (`components/conversa/retomada-da-conversa.ts`)
   | { tipo: 'retomar' }
-  | { tipo: 'tique' } // a tela bate a cada ~250 ms; é o que move o relógio da espera
+  | { tipo: 'tique' } // a tela bate a cada ~250 ms para desclassificar fala por cima
   | { tipo: 'parar' } // o toque que para; com o turno do Zé em voo, também o freia
   | { tipo: 'falaIniciou' }
   | { tipo: 'microfoneMudo' }
@@ -59,8 +59,6 @@ export type Efeito =
   | { tipo: 'enviar'; texto: string }
   | { tipo: 'falar'; texto: string }
   | { tipo: 'tocarTique' }
-  | { tipo: 'falarPonte' } // frase local enquanto o Zé não responde
-  | { tipo: 'avisarDemora' }
   | { tipo: 'avisarErro'; motivo: MotivoDeErro }
   | { tipo: 'pausarVoz' } // fase 2: fala por cima começou
   | { tipo: 'retomarVoz' } // fase 2: era tosse — a voz continua de onde parou
@@ -81,10 +79,10 @@ export const TEMPOS = {
   preGravacao: 800,
   /** Fala mais curta que isso é tosse ou estalo, não pedido. */
   falaMinima: 400,
-  /** Sem nenhum texto do Zé até aqui → frase-ponte (uma por turno). */
-  ponte: 5_000,
-  /** Sem nenhum texto do Zé até aqui → aviso falado de demora. */
-  avisoDemora: 20_000,
+  /** Primeiro prazo de silêncio do cabeçalho, contado desde o fim audível. */
+  ponte: 10_000,
+  /** Segundo prazo; fala real reinicia silêncio sem rebaixar o degrau. */
+  avisoDemora: 30_000,
   /** Fase 2: fala por cima só vale depois disso de fala contínua. */
   confirmaFalaPorCima: 500,
   /** Fase 2: sem confirmar até aqui, a fala por cima é descartada e a voz retoma. */
@@ -95,7 +93,7 @@ export const TEMPOS = {
 
 /**
  * O estado completo da conversa. `estado` é o que a tela desenha; o resto é a
- * memória que a máquina precisa (frase-ponte já dita neste turno etc.). Os
+ * memória que a máquina precisa (captura em curso, voz guardada etc.). Os
  * campos além de `estado` e `motivo` são da trilha lógica e podem crescer.
  */
 export type Conversa = {

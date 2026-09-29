@@ -39,12 +39,11 @@ test('inicial começa parado e sem motivo', () => {
   assert.deepEqual(inicial(), { estado: 'parado' });
 });
 
-test('retomar (recarga com o turno dele aberto): o toque volta a esperar, surdo e com o relógio andando', () => {
+test('retomar volta a esperar; o relógio do cabeçalho é externo à máquina', () => {
   const { conversa, efeitos } = roda([{ evento: { tipo: 'retomar' }, agora: 1_000 }]);
   assert.equal(conversa.estado, 'esperandoZe');
   assert.deepEqual(efeitos, []); // meio-duplex: esperando, o detector fica desligado
-  const ponte = avanca(conversa, { tipo: 'tique' }, 1_000 + 5_000);
-  assert.deepEqual(soTipos(ponte.efeitos), ['falarPonte']);
+  assert.deepEqual(avanca(conversa, { tipo: 'tique' }, 31_000).efeitos, []);
   const fala = avanca(conversa, { tipo: 'textoDoZe', texto: 'Pronto.' }, 1_100);
   assert.equal(fala.conversa.estado, 'falando');
 });
@@ -89,31 +88,11 @@ test('comecar repetido não liga detector de novo', () => {
   assert.equal(soTipos(efeitos).filter((t) => t === 'ligarDetector').length, 1);
 });
 
-test('relógio: tique ao enviar, ponte uma vez aos 5 s, aviso uma vez aos 20 s', () => {
-  const { efeitos } = roda([
-    ...ateEspera(1000),
-    { evento: { tipo: 'tique' }, agora: 2000 }, // 1 s: nada
-    { evento: { tipo: 'tique' }, agora: 6000 }, // 5 s: ponte
-    { evento: { tipo: 'tique' }, agora: 7000 }, // ponte já dita: nada
-    { evento: { tipo: 'tique' }, agora: 21000 }, // 20 s: aviso
-    { evento: { tipo: 'tique' }, agora: 22000 }, // aviso já dito: nada
-  ]);
-
-  assert.deepEqual(soTipos(efeitos), [
-    'ligarDetector',
-    'desligarDetector',
-    'transcrever',
-    'enviar',
-    'tocarTique',
-    'falarPonte',
-    'avisarDemora',
-  ]);
-});
-
-test('tique esparso dispara ponte e aviso juntos, nessa ordem', () => {
-  const { efeitos } = roda([...ateEspera(0), { evento: { tipo: 'tique' }, agora: 21000 }]);
-
-  assert.deepEqual(soTipos(efeitos).slice(-2), ['falarPonte', 'avisarDemora']);
+test('espera não emite frases prontas: cabeçalho usa o relógio do fim audível', () => {
+  const { conversa } = roda(ateEspera(1000));
+  for (const agora of [6000, 11000, 21000, 31000, 91000]) {
+    assert.deepEqual(avanca(conversa, { tipo: 'tique' }, agora).efeitos, []);
+  }
 });
 
 test('transcricaoVazia (via falhou) volta a ouvir sem avisar', () => {

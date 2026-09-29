@@ -21,9 +21,6 @@ type ConversaInterna = Conversa & {
   capturando?: boolean;
   enviando?: boolean;
   vozGuardada?: boolean;
-  esperandoDesde?: number; // `agora` do `enviou`; base do relógio da espera
-  ponteDita?: boolean; // `falarPonte` já saiu neste turno
-  avisoDito?: boolean; // `avisarDemora` já saiu neste turno
   zeAcabou?: boolean; // `zeTerminou` já veio neste turno de `falando`/`interrompendo`
   vozAcabou?: boolean; // `vozTerminou` já veio neste turno de `falando`/`interrompendo`
   interrompeuEm?: number; // `agora` do `falaIniciou`; base do relógio de desclassificação
@@ -67,7 +64,7 @@ export const inicial = (): Conversa => ({ estado: 'parado' });
 
 export const avanca: Avanca = (conversa, evento, agora) => {
   const c = conversa as ConversaInterna;
-  const captura = duranteCaptura(c, evento, agora);
+  const captura = duranteCaptura(c, evento);
   if (captura !== null) return captura;
   switch (evento.tipo) {
     case 'comecar':
@@ -91,7 +88,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
     case 'transcreveu':
       return transcreveu(c, evento.texto);
     case 'enviou':
-      return enviou(c, agora);
+      return enviou(c);
     case 'textoDoZe':
       return textoDoZe(c, evento.texto);
     case 'zeTerminou':
@@ -112,7 +109,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
 // descarte atravessa: o turno freado ainda pode mandar texto depois do recomeço.
 function comecar(c: ConversaInterna, retomaEm?: number): Resultado {
   if (c.estado !== 'parado' && c.estado !== 'erro') return noop(c);
-  if (retomaEm !== undefined) return novo(c, 'esperandoZe', [], { esperandoDesde: retomaEm }); // surdo, relógio zerado
+  if (retomaEm !== undefined) return novo(c, 'esperandoZe');
   return novo(c, 'ouvindo', [LIGA], c.zeDescartado ? { zeDescartado: true } : {});
 }
 
@@ -127,22 +124,8 @@ function parar(c: ConversaInterna): Resultado {
   return novo(c, 'parado', efeitos, emVoo || c.zeDescartado ? { zeDescartado: true } : {});
 }
 
-// Relógio da espera e da desclassificação, movido pelo tique da tela (~250 ms).
+// Relógio da desclassificação, movido pelo tique da tela (~250 ms).
 function tique(c: ConversaInterna, agora: number): Resultado {
-  if (c.estado === 'esperandoZe') {
-    const desde = c.esperandoDesde ?? agora;
-    const efeitos: Efeito[] = [];
-    const extra: Partial<ConversaInterna> = {};
-    if (!c.ponteDita && agora - desde >= TEMPOS.ponte) {
-      efeitos.push({ tipo: 'falarPonte' });
-      extra.ponteDita = true;
-    }
-    if (!c.avisoDito && agora - desde >= TEMPOS.avisoDemora) {
-      efeitos.push({ tipo: 'avisarDemora' });
-      extra.avisoDito = true;
-    }
-    return preserva(c, efeitos, extra);
-  }
   if (c.estado === 'interrompendo') {
     // Rede de segurança para o callback perdido do Silero; quem desclassifica é o `falaDescartada`.
     if (agora - (c.interrompeuEm ?? agora) >= TEMPOS.socorroFalaPorCima) {
@@ -162,9 +145,9 @@ function transcreveu(c: ConversaInterna, texto: string): Resultado {
   return preserva(c, [{ tipo: 'enviar', texto }, { tipo: 'tocarTique' }], { enviando: true });
 }
 
-function enviou(c: ConversaInterna, agora: number): Resultado {
+function enviou(c: ConversaInterna): Resultado {
   if (c.estado !== 'transcrevendo') return noop(c);
-  return novo(c, 'esperandoZe', [], { esperandoDesde: agora, zeDescartado: c.zeDescartado });
+  return novo(c, 'esperandoZe', [], { zeDescartado: c.zeDescartado });
 }
 
 function textoDoZe(c: ConversaInterna, texto: string): Resultado {

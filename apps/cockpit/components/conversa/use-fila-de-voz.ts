@@ -15,12 +15,14 @@ export function useFilaDeVoz({
   aoTerminar,
   aoFalhar,
   aoOuvir,
+  aoSilenciar,
 }: {
   slug: string;
   aoTerminar(): void;
   aoFalhar(mensagem: string): void;
   /** O texto dele com esse id (do stream) tocou inteiro — a marca que a recarga usa para não repetir. */
   aoOuvir?(id: number): void;
+  aoSilenciar?(): void;
 }) {
   /* A legenda dele: a frase do áudio que toca e o que já foi dito. Parada ou cancelada, fica. */
   const [fala, setFala] = useState<FalaDoZe | null>(null);
@@ -43,8 +45,8 @@ export function useFilaDeVoz({
   const sequenciaRef = useRef<Sequencia | null>(null);
   const turnoFechadoRef = useRef(false);
   const urlsRef = useRef<string[]>([]);
-  const callbacksRef = useRef({ aoTerminar, aoFalhar, aoOuvir });
-  callbacksRef.current = { aoTerminar, aoFalhar, aoOuvir };
+  const callbacksRef = useRef({ aoTerminar, aoFalhar, aoOuvir, aoSilenciar });
+  callbacksRef.current = { aoTerminar, aoFalhar, aoOuvir, aoSilenciar };
   /* Os textos antes de `ate` (índice de áudio) que não são o que toca agora já tocaram inteiros. */
   const ouviuAte = useCallback((ate: number) => {
     const atual = idsRef.current[ate];
@@ -85,6 +87,11 @@ export function useFilaDeVoz({
         ouviuAte(audio);
         setFala(falaDoZe(audiosRef.current, audio));
       },
+      aoSilenciar: () => {
+        if (geracao !== geracaoRef.current) return;
+        calou();
+        callbacksRef.current.aoSilenciar?.();
+      },
       aoTerminar: () => {
         if (geracao !== geracaoRef.current) return;
         sequenciaRef.current = null;
@@ -102,7 +109,7 @@ export function useFilaDeVoz({
     if (pausadaRef.current) sequencia.pausa();
     sequenciaRef.current = sequencia;
     return sequencia;
-  }, [limpaUrls, ouviuAte]);
+  }, [limpaUrls, ouviuAte, calou]);
 
   const processaRef = useRef<() => void>(() => {});
   processaRef.current = () => {
@@ -189,5 +196,9 @@ export function useFilaDeVoz({
     pausadaRef.current = false;
     sequenciaRef.current?.retoma();
   }, []);
-  return { abreTurno, enfileira, fechaTurno, cancela, pausa, retoma, nivelRef, fala, tocando, limpaLegenda };
+  const preparaApoio = useCallback(() => {
+    if (pausadaRef.current || turnoFechadoRef.current || falaRef.current || filaRef.current.length) return false;
+    return sequenciaRef.current === null || (sequenciaRef.current.cedeSeVazia?.() ?? false);
+  }, []);
+  return { abreTurno, enfileira, fechaTurno, cancela, pausa, retoma, preparaApoio, nivelRef, fala, tocando, limpaLegenda };
 }

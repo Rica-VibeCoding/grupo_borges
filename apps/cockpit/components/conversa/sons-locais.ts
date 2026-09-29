@@ -6,7 +6,7 @@ export type SonsLocais = {
   sinalizaFim(): void;
   /** Segurar a vez: uma nota grave e curta, que não se confunde com o tique nem com o começar. */
   sinalizaSegurar(): void;
-  fala(texto: string): void;
+  fala(texto: string, aoTerminar?: () => void): void;
   cancelaFala(): void;
   encerra(): void;
 };
@@ -92,12 +92,13 @@ export function criaSonsLocais(): SonsLocais {
       nota(audio, SEGURA, audio.currentTime, 0.06);
       vibraSePuder(8);
     },
-    fala(texto) {
+    fala(texto, aoTerminar) {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
       const frase = new SpeechSynthesisUtterance(texto);
       frase.lang = 'pt-BR';
       frase.rate = 1.02;
+      frase.onend = () => aoTerminar?.();
       window.speechSynthesis.speak(frase);
     },
     cancelaFala() {

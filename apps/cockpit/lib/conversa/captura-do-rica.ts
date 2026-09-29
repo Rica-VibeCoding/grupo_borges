@@ -9,7 +9,6 @@ type Captura = Conversa & {
   vozAcabou?: boolean;
   zeAcabou?: boolean;
   zeDescartado?: boolean;
-  esperandoDesde?: number;
 };
 type Resultado = { conversa: Captura; efeitos: Efeito[] };
 
@@ -23,7 +22,7 @@ function libera(c: Captura): Resultado {
   };
 }
 
-export function duranteCaptura(c: Captura, evento: Evento, agora: number): Resultado | null {
+export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
   if (evento.tipo === 'microfoneMudo' && (c.estado === 'ouvindo' || c.estado === 'transcrevendo')) {
     if (c.enviando) return { conversa: c, efeitos: [] };
     const limpa = { ...c, capturando: false, segurando: false };
@@ -63,7 +62,7 @@ export function duranteCaptura(c: Captura, evento: Evento, agora: number): Resul
   }
   if (evento.tipo === 'enviou' && c.estado === 'transcrevendo') {
     return {
-      conversa: { estado: c.vozAcabou ? 'esperandoZe' : 'falando', fone: c.fone, esperandoDesde: agora },
+      conversa: { estado: c.vozAcabou ? 'esperandoZe' : 'falando', fone: c.fone },
       efeitos: [{ tipo: 'retomarVoz' }],
     };
   }
