@@ -25,16 +25,24 @@
 
 /* ── B: a pílula no alto ─────────────────────────────────────────────── */
 .pilula {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   gap: var(--ck-space-3);
   padding: 6px 18px 6px 6px;
+  pointer-events: none;
+}
+/* O fundo é camada à parte: é ele que a Motion estica e encolhe, sem levar a foto junto. */
+.fundo {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   border: 1px solid var(--ck-conversa-pilula-fio);
   border-radius: 40px;
   background: var(--ck-conversa-pilula);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  pointer-events: none;
 }
 .moldaPilula {
   position: relative;

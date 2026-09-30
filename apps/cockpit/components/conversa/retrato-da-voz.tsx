@@ -42,43 +42,42 @@ function Tempo({ segundos }: { segundos?: number }) {
 export function PilulaDoAgente({ slug, nome, cena, segundos }: { slug: string; nome: string; cena: Cena; segundos?: number }) {
   const primeiroNome = nome.split(' ')[0] || nome;
   const rotulo = rotuloDoEstado('atividade', cena);
-  // A foto fica presa à esquerda (o CSS ancora a pílula); só o fundo muda de largura, pela
-  // Motion. As filhas com `layout` desfazem a escala da mãe: foto e texto não esticam.
+  // A foto fica presa à esquerda (o CSS ancora a pílula). Só o fundo, camada própria atrás,
+  // muda de largura pela Motion: foto e texto nunca levam transform, então não tremem.
   return (
-    <MotionConfig reducedMotion="user">
-      <motion.div
-        layout
-        layoutDependency={`${rotulo}${segundos ?? ''}`}
-        transition={{ layout: MOLA_DA_PILULA }}
-        style={{ borderRadius: 40 }}
-        className={`${styles.pilula} ${styles.tom}`}
-        data-tom={tomDaCena(cena)}
-        data-cena={cena}
-        data-retrato="pilula"
-      >
-        <motion.span layout="position" className={styles.moldaPilula}>
-          <Foto slug={slug} nome={nome} lado={LADO_PILULA} />
-          <span className={styles.onda} aria-hidden="true" />
-          <span className={styles.onda} aria-hidden="true" />
-          <span className={styles.aro} aria-hidden="true" />
-        </motion.span>
-        <motion.span layout="position" className={styles.quem}>
-          <b>{primeiroNome}</b>
-          <small>
-            <span className={styles.barras} aria-hidden="true">
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
-            <span key={rotulo} className={styles.estado}>
-              {rotulo}
-            </span>
-            <Tempo segundos={segundos} />
-          </small>
-        </motion.span>
-      </motion.div>
-    </MotionConfig>
+    <div className={`${styles.pilula} ${styles.tom}`} data-tom={tomDaCena(cena)} data-cena={cena} data-retrato="pilula">
+      <MotionConfig reducedMotion="user">
+        <motion.span
+          layout
+          layoutDependency={`${rotulo}${segundos ?? ''}`}
+          transition={{ layout: MOLA_DA_PILULA }}
+          style={{ borderRadius: 40 }}
+          className={styles.fundo}
+          aria-hidden="true"
+        />
+      </MotionConfig>
+      <span className={styles.moldaPilula}>
+        <Foto slug={slug} nome={nome} lado={LADO_PILULA} />
+        <span className={styles.onda} aria-hidden="true" />
+        <span className={styles.onda} aria-hidden="true" />
+        <span className={styles.aro} aria-hidden="true" />
+      </span>
+      <span className={styles.quem}>
+        <b>{primeiroNome}</b>
+        <small>
+          <span className={styles.barras} aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+          <span key={rotulo} className={styles.estado}>
+            {rotulo}
+          </span>
+          <Tempo segundos={segundos} />
+        </small>
+      </span>
+    </div>
   );
 }
 
