@@ -111,7 +111,6 @@ import {
   registraAnexoPendente,
 } from '../../lib/anexo-pendente';
 import { BolhaDeComandos } from './bolha-de-comandos';
-import { usaTrocaDeFileira } from './usa-troca-de-fileira';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -300,8 +299,6 @@ export function Composer({
   // Campo vazio e nada anexado: a caixa é UMA fileira (28/09). Com qualquer
   // caractere, inclusive quebra de linha, volta às duas. Regra no globals.css.
   const umaLinha = texto === '' && retidoAnexo === null;
-  const caixaRef = useRef<HTMLFormElement>(null);
-  usaTrocaDeFileira(caixaRef, umaLinha);
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
   // devolve o foco ao botão que abriu.
@@ -969,7 +966,6 @@ export function Composer({
         style={{ maxWidth: 'var(--ck-w-composer)' }}
       >
       <form
-        ref={caixaRef}
         onSubmit={aoSubmeter}
         className="ck-lit ck-caixa flex w-full flex-col border"
         data-linha={umaLinha ? 'uma' : 'varias'}
