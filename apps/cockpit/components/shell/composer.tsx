@@ -60,7 +60,7 @@ import { assinaEscritaViva, leEscritaViva } from '../../lib/escrita-viva';
 import { usaFrota } from './frota-provider';
 import { MARCA_VOZ, usaEnvio, type OrigemEnvio } from '../../lib/usa-envio';
 import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
-import { MiniaturaAnexo } from './miniatura-anexo';
+import { MiniaturaAnexo, miniaturaAberta } from './miniatura-anexo';
 import { BarraCompact } from './barra-compact';
 import { BlocoDaFila } from './bloco-da-fila';
 import { BolinhaAgente } from './bolinha-agente';
@@ -301,11 +301,26 @@ export function Composer({
   const temConteudo = texto.trim() !== '' || retidoAnexo !== null;
   // Campo vazio e nada anexado: a caixa é UMA fileira (28/09). Com qualquer
   // caractere, inclusive quebra de linha, volta às duas. Regra no globals.css.
-  const umaLinha = texto === '' && retidoAnexo === null;
+  // A MINIATURA RECOLHE DEPOIS DO FADE, num render deste componente: é aqui que
+  // a Motion mede a caixa, e só assim ela encolhe animada em vez de cair. Sem
+  // isto, tirar a foto com o campo vazio trocava para uma fileira no mesmo
+  // quadro, e a foto sumia de estalo em vez de esmaecer.
+  const fotoEmCena = miniaturaAberta(anexo.estado);
+  const [miniaturaRecolhida, setMiniaturaRecolhida] = useState(!fotoEmCena);
+  if (fotoEmCena && miniaturaRecolhida) setMiniaturaRecolhida(false);
+  const fotoVoou = anexo.estado.fase === 'enviando';
+  useEffect(() => {
+    if (fotoEmCena || miniaturaRecolhida) return;
+    // A foto que voou para a bolha sai sem fade (ver `.ck-miniatura[data-voou]`).
+    const espera = fotoVoou ? 0 : TROCA_DE_FILEIRA.duration * 1000;
+    const relogio = setTimeout(() => setMiniaturaRecolhida(true), espera);
+    return () => clearTimeout(relogio);
+  }, [fotoEmCena, miniaturaRecolhida, fotoVoou]);
+  const umaLinha = texto === '' && retidoAnexo === null && miniaturaRecolhida;
   // O que muda a FORMA da caixa: é só nisso que a Motion mede o layout. Sem a
   // dependência ela mediria a cada render, e a onda da voz renderiza o
   // composer a 60 quadros por segundo.
-  const formaDaCaixa = `${texto}|${retidoAnexo !== null}`;
+  const formaDaCaixa = `${texto}|${retidoAnexo !== null}|${miniaturaRecolhida}`;
   // O iPhone pinta o cursor numa camada própria e não o arrasta quando o campo
   // anda por `transform`: ele ficava fora da caixa (Rica, print de 30/09). Some
   // durante a troca e, no fim, a seleção é regravada — é mudança de seleção
@@ -1056,7 +1071,12 @@ export function Composer({
             escolhido não some porque o microfone abriu. Foto e vídeo saem
             dela no envio, voando para a bolha do feed; volta no erro — ver
             `miniatura-anexo.tsx`. */}
-        <MiniaturaAnexo estado={anexo.estado} aoRemover={anexo.limpar} refQuadro={quadroAnexoRef} />
+        <MiniaturaAnexo
+          estado={anexo.estado}
+          aoRemover={anexo.limpar}
+          recolhida={miniaturaRecolhida}
+          refQuadro={quadroAnexoRef}
+        />
 
         <BolhaDeComandos
           agentSlug={agentSlug}

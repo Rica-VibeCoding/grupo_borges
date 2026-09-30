@@ -42,13 +42,26 @@ const ICONE_DA_ESPECIE: Record<
   document: IconeDocumento,
 };
 
+/** Foto ou documento em cena na caixa. Durante a subida foto e vídeo saem:
+ *  voaram para a bolha otimista do feed. Documento fica até a entrega. */
+export function miniaturaAberta(estado: EstadoAnexo): boolean {
+  const retido = arquivoRetido(estado);
+  const voou = estado.fase === 'enviando' && retido?.especie !== 'document';
+  return retido !== null && !voou;
+}
+
 export function MiniaturaAnexo({
   estado,
   aoRemover,
+  recolhida,
   refQuadro,
 }: {
   estado: EstadoAnexo;
   aoRemover: () => void;
+  /** Fechada e já sem espaço na caixa. Quem decide é o composer, depois do
+   *  fade: o recolhimento tem de acontecer num render dele para a Motion
+   *  animar a caixa encolhendo, em vez de a altura cair de estalo. */
+  recolhida: boolean;
   /** O quadrado da foto — é ele que decola no voo do anexo (`voo-do-envio.ts`). */
   refQuadro?: React.Ref<HTMLDivElement>;
 }) {
@@ -105,6 +118,7 @@ export function MiniaturaAnexo({
     <div
       className="ck-miniatura"
       data-aberto={String(retido !== null && !voou)}
+      data-recolhida={String(recolhida)}
       data-voou={voou ? 'true' : undefined}
     >
       <div style={{ position: 'relative', width: LARGURA }}>

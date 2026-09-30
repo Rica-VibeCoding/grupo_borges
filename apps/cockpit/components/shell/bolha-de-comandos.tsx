@@ -154,7 +154,13 @@ export function BolhaDeComandos({
         // que a gaveta do "+" usa em `.ck-gaveta-acima`).
         sideOffset={21}
         onOpenAutoFocus={(evento) => evento.preventDefault()}
-        style={{ width: 'var(--radix-popover-trigger-width)' }}
+        // O mesmo surgir dos outros menus do composer (motor, ações): sem ele
+        // a bolha abria e fechava seca. O Radix espera a animação de saída.
+        className={`ck-menu-surge ${aberta ? 'ck-menu-aberto' : 'ck-menu-fechado'}`}
+        style={{
+          width: 'var(--radix-popover-trigger-width)',
+          transformOrigin: 'var(--radix-popover-content-transform-origin)',
+        }}
       >
         <Command label="Comandos de barra" shouldFilter={false} loop>
           <CommandList>

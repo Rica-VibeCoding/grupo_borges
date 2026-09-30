@@ -1044,7 +1044,7 @@ body {
   translate: none;
   margin-inline-end: calc((32px + var(--ck-space-3)) * -1);
 }
-.ck-caixa[data-linha='uma'] > .ck-miniatura[data-aberto='false'] {
+.ck-caixa[data-linha='uma'] > .ck-miniatura[data-recolhida='true'] {
   display: none;
 }
 
@@ -1216,18 +1216,21 @@ body {
    mais alta para sempre, porque flexbox aplica o `gap` mesmo entre um filho de
    altura zero e o vizinho. */
 .ck-miniatura[data-aberto='false'] {
-  max-height: 0;
-  margin-bottom: calc(var(--ck-space-2) * -1);
-  visibility: hidden;
   opacity: 0;
   transform: translateY(6px) scale(0.98);
   pointer-events: none;
   transition:
     opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
-    transform var(--ck-dur-enter, 200ms) var(--ck-ease-exit),
-    max-height 0s linear var(--ck-dur-enter, 200ms),
-    margin-bottom 0s linear var(--ck-dur-enter, 200ms),
-    visibility 0s linear var(--ck-dur-enter, 200ms);
+    transform var(--ck-dur-enter, 200ms) var(--ck-ease-exit);
+}
+
+/* O recolhimento saiu do atraso de CSS (30/09): quem marca `recolhida` é o
+   composer, depois do fade, num render — e é nesse render que a Motion mede a
+   caixa e a anima encolhendo. Pelo atraso de CSS a altura caía de estalo. */
+.ck-miniatura[data-recolhida='true'] {
+  max-height: 0;
+  margin-bottom: calc(var(--ck-space-2) * -1);
+  visibility: hidden;
 }
 
 /* A miniatura que VOOU para a bolha (`voo-do-envio.ts`) sai sem o fade: quem
