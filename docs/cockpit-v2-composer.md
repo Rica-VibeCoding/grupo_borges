@@ -466,6 +466,29 @@ O que **não** se mexe sem ler o porquê no próprio arquivo: a ordem dos elemen
 na coluna, o invólucro da âncora, o reservador, e o `position: absolute` do palco
 (não é `sticky` nem `fixed`, e os dois têm motivo escrito).
 
+### O movimento da troca de fileira (Motion, 30/09)
+
+Vazio ↔ com texto vira o `flex-direction` da caixa, e CSS não anima isso. Quem
+anima é a **Motion** (`motion/react`, liberada pelo Rica em 30/09 — §5 da
+estética): `layout` na caixa, `layout="position"` no campo, no `+`, no grupo
+de botões e na bolinha, todos com a mesma `layoutDependency` (`formaDaCaixa`) e
+o ritmo de `troca-de-fileira.ts`. O layout muda uma vez e o resto é `transform`.
+
+- **Anime o que tem largura fixa.** A Motion anda pelo canto esquerdo; a
+  fileira de ações muda de largura na troca e, animada ela mesma, levava os
+  botões para o lado errado antes de voltarem. Quem anima é o grupo DENTRO dela.
+- **Sem `layoutDependency` a Motion mede a cada render** — e a onda da voz
+  renderiza o composer a 60 quadros por segundo.
+- **O cursor do iPhone não segue `transform`:** some durante a troca e a
+  seleção é regravada no fim (`onLayoutAnimationComplete`).
+- **O que muda a forma da caixa tem de mudar num render do composer.** O
+  recolhimento da miniatura saiu do atraso de CSS para estado
+  (`miniaturaRecolhida`): pelo CSS a altura caía sem a Motion ver.
+- **Prova:** gravar vídeo do navegador (Playwright, 390×844) e medir a posição
+  de cada peça quadro a quadro; a peça tem de andar só num sentido. O Chromium
+  da VPS roda a ~20 quadros por segundo: serve para direção e sequência, não
+  para sentir a fluidez — essa é do Rica no aparelho.
+
 ### O ritual de prova antes de publicar geometria
 
 ```bash
