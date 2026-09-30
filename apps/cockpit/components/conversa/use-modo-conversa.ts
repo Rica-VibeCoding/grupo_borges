@@ -69,7 +69,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     aoOuvir: retomada.ouviu,
     aoSilenciar: (vazia) => {
       apoio.silenciou();
-      // A voz calou com ele ainda trabalhando: a máquina volta a esperar e, sem fone, reabre o microfone.
+      // A voz calou com ele ainda trabalhando: a máquina volta a esperar.
       if (vazia) despachaRef.current({ tipo: 'vozTerminou' });
     },
     aoFalhar: (mensagem) => {

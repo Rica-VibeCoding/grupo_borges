@@ -30,26 +30,31 @@ const ateEspera = (fone: boolean): Evento[] => [
 ];
 const esperando = (fone: boolean) => roda(ateEspera(fone)).conversa;
 
-for (const fone of [true, false]) {
-  const com = fone ? 'com fone' : 'sem fone';
+test('com fone, esperar pelo Zé deixa o microfone ouvindo', () => {
+  const { conversa, efeitos } = roda(ateEspera(true));
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
+});
 
-  test(`${com}, esperar pelo Zé deixa o microfone ouvindo`, () => {
-    const { conversa, efeitos } = roda(ateEspera(fone));
-    assert.equal(conversa.estado, 'esperandoZe');
-    assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
-  });
+test('com fone, falar enquanto ele pensa vai para a fila sem frear', () => {
+  const { conversa, efeitos } = roda(
+    [{ tipo: 'falaIniciou' }, { tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'e mais isso' }, { tipo: 'enviou' }],
+    esperando(true),
+  );
+  assert.ok(!tipos(efeitos).includes('frearZe'));
+  assert.deepEqual(efeitos.find((e) => e.tipo === 'enviar'), { tipo: 'enviar', texto: 'e mais isso' });
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
+});
 
-  test(`${com}, falar enquanto ele pensa vai para a fila sem frear`, () => {
-    const { conversa, efeitos } = roda(
-      [{ tipo: 'falaIniciou' }, { tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'e mais isso' }, { tipo: 'enviou' }],
-      esperando(fone),
-    );
-    assert.ok(!tipos(efeitos).includes('frearZe'));
-    assert.deepEqual(efeitos.find((e) => e.tipo === 'enviar'), { tipo: 'enviar', texto: 'e mais isso' });
-    assert.equal(conversa.estado, 'esperandoZe');
-    assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
-  });
-}
+// No iPhone, microfone vivo põe o áudio em modo de chamada: a frase de apoio e a resposta saem
+// com som de telefone e os botões de volume não alcançam (30/09).
+test('sem fone, esperar pelo Zé deixa o microfone fechado', () => {
+  const { conversa, efeitos } = roda(ateEspera(false));
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.equal(tipos(efeitos).filter((t) => t === 'ligarDetector').length, 1, 'só o do começo');
+  assert.notEqual(tipos(efeitos).at(-1), 'ligarDetector');
+});
 
 test('tosse na espera volta a esperar, não a ouvir', () => {
   const { conversa, efeitos } = roda([{ tipo: 'falaIniciou' }, { tipo: 'falaDescartada' }], esperando(true));
@@ -84,13 +89,10 @@ test('a resposta chega enquanto ele fala na espera: a voz espera a fala dele sai
   assert.equal(conversa.estado, 'falando');
 });
 
-test('sem fone, a voz do aviso acaba com ele ainda trabalhando: volta a esperar com o microfone aberto', () => {
+test('sem fone, a voz do aviso acaba com ele ainda trabalhando: volta a esperar com o microfone fechado', () => {
   const { conversa, efeitos } = roda([{ tipo: 'textoDoZe', texto: 'Vou rodar os testes.' }, { tipo: 'vozTerminou' }], esperando(false));
   assert.equal(conversa.estado, 'esperandoZe');
-  assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
-  const fala = roda([{ tipo: 'falaIniciou' }, { tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'e isso' }, { tipo: 'enviou' }], conversa);
-  assert.ok(!tipos(fala.efeitos).includes('frearZe'));
-  assert.equal(fala.conversa.estado, 'esperandoZe');
+  assert.deepEqual(tipos(efeitos), ['desligarDetector', 'falar']);
 });
 
 test('com fone, a voz acaba antes do fim do turno: volta a esperar sem religar o que já ouvia', () => {

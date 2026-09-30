@@ -98,9 +98,9 @@ export function TelaConversa({
     ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
     : cenaVisivel({ cena: falaPorCima ? 'esperandoZe' : cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
   const acao = acaoDoToque(cena, preparacaoFalhou, modo.rodando);
-  // Com ele pensando, o microfone está aberto e a fala entra na fila dele: a esfera mostra isso
+  // Com ele pensando e fone, o microfone está aberto e a fala entra na fila dele: a esfera mostra isso
   // (`esfera-estado.ts`) — só com a tela à vista e sem mudo, que é quando ouvir é verdade.
-  const ouveDeVerdade = ativa && pronto && !mudo && !retomando;
+  const ouveDeVerdade = ativa && pronto && !mudo && !retomando && fone;
   const escuta: EscutaNoPensar = !ouveDeVerdade
     ? 'nao'
     : cena === 'esperandoZe'

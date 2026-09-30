@@ -44,7 +44,7 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
     case 'transcrevendo':
       return { titulo: 'Entendendo', detalhe: 'Passando sua fala para texto.' };
     case 'esperandoZe':
-      return { titulo: 'Pensando', detalhe: 'Pode falar: sua fala entra na fila dele.' };
+      return { titulo: 'Pensando', detalhe: e.fone ? 'Pode falar: sua fala entra na fila dele.' : 'A resposta toca assim que chegar.' };
     case 'trabalhando':
       return { titulo: 'Trabalhando', detalhe: 'Usando ferramentas para responder.' };
     case 'pronta':

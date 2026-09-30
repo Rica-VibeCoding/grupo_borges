@@ -42,7 +42,7 @@ test('inicial começa parado e sem motivo', () => {
 test('retomar volta a esperar; o relógio do cabeçalho é externo à máquina', () => {
   const { conversa, efeitos } = roda([{ evento: { tipo: 'retomar' }, agora: 1_000 }]);
   assert.equal(conversa.estado, 'esperandoZe');
-  assert.deepEqual(soTipos(efeitos), ['ligarDetector']); // esperando, o detector ouve: fala nova vai para a fila
+  assert.deepEqual(efeitos, []); // meio-duplex: esperando, o detector fica desligado
   assert.deepEqual(avanca(conversa, { tipo: 'tique' }, 31_000).efeitos, []);
   const fala = avanca(conversa, { tipo: 'textoDoZe', texto: 'Pronto.' }, 1_100);
   assert.equal(fala.conversa.estado, 'falando');
@@ -70,7 +70,6 @@ test('ciclo feliz: parado → ouvindo → transcrevendo → esperandoZe → fala
     'transcrever',
     'enviar',
     'tocarTique',
-    'ligarDetector', // a espera ouve
     'desligarDetector',
     'falar',
     'ligarDetector',
@@ -192,10 +191,10 @@ test('texto novo em falando zera vozAcabou — não religa detector com voz toca
     { evento: { tipo: 'zeTerminou' }, agora: 700 }, // stream cai logo depois
   ]);
 
-  // A voz do texto 2 ainda está tocando: continua em falando, detector desligado (os três `ligar`
-  // são o começo, a espera e a espera entre as duas vozes).
+  // A voz do texto 2 ainda está tocando: continua em falando, detector desligado (o único `ligar`
+  // é o começo — sem fone, a espera não ouve).
   assert.equal(conversa.estado, 'falando');
-  assert.equal(soTipos(efeitos).filter((t) => t === 'ligarDetector').length, 3);
+  assert.equal(soTipos(efeitos).filter((t) => t === 'ligarDetector').length, 1);
   assert.equal(soTipos(efeitos).at(-1), 'falar');
 
   // Só quando a voz do texto 2 termina é que volta a ouvir e religa o detector.
@@ -224,7 +223,6 @@ test('cada texto do Zé vira falar; desligarDetector só ao entrar em falando', 
     'transcrever',
     'enviar',
     'tocarTique',
-    'ligarDetector', // a espera ouve
     'desligarDetector',
     'falar',
     'falar',

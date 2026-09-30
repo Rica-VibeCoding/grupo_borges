@@ -14,7 +14,7 @@ type Captura = Conversa & {
 type Resultado = { conversa: Captura; efeitos: Efeito[] };
 
 // A fala começada com o Zé pensando não saiu (tosse, mudo): volta a esperar por ele — ou a ouvir,
-// se ele acabou no meio. Na espera, o detector segue ligado.
+// se ele acabou no meio. Na espera com fone, o detector segue ligado.
 function voltaAEspera(c: Captura): Resultado {
   const estado = c.zeAcabou ? 'ouvindo' : 'esperandoZe';
   return { conversa: { estado, fone: c.fone, zeDescartado: c.zeDescartado }, efeitos: [] };
@@ -74,8 +74,8 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
     const estado = c.vozAcabou ? 'esperandoZe' : 'falando';
     return {
       conversa: { estado, fone: c.fone },
-      // A espera ouve; falando, só com fone: o detector desligado no fim da fala volta.
-      efeitos: estado === 'esperandoZe' || c.fone ? [{ tipo: 'retomarVoz' }, { tipo: 'ligarDetector' }] : [{ tipo: 'retomarVoz' }],
+      // Esperando ou falando, só com fone: o detector desligado no fim da fala volta.
+      efeitos: c.fone ? [{ tipo: 'retomarVoz' }, { tipo: 'ligarDetector' }] : [{ tipo: 'retomarVoz' }],
     };
   }
   return null;
