@@ -7,6 +7,7 @@
 .tom[data-tom='pensa'] { --cor: var(--ck-conversa-pensa); }
 .tom[data-tom='erro'] { --cor: var(--ck-conversa-erro); }
 .tom[data-tom='ocupado'] { --cor: var(--ck-conversa-ocupado); }
+.tom[data-tom='desligado'] { --cor: var(--ck-conversa-desligado); }
 
 .foto {
   flex: none;
@@ -256,3 +257,10 @@
   .coroa,
   .sonar { animation: none !important; }
 }
+
+/* Desligado: a foto apaga junto com a esfera (o mesmo ~2 s) e o aro fica um fio. */
+:is(.pilula, .nucleo)[data-cena='desligado'] .imagem { filter: grayscale(1) brightness(0.28); }
+.imagem { transition: filter 1.8s var(--ck-ease); }
+.pilula[data-cena='desligado'] .aro,
+.nucleo[data-cena='desligado'] .aroNucleo { opacity: 0.2; }
+.cabeca[data-cena='desligado'] i { box-shadow: none; opacity: 0.5; }

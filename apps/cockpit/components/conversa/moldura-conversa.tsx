@@ -28,6 +28,7 @@ const TOKENS = {
   prepara: '--ck-conversa-prepara',
   erro: '--ck-conversa-erro',
   ocupado: '--ck-conversa-ocupado',
+  desligado: '--ck-conversa-desligado',
   fundo: '--ck-surface-canvas',
 } as const;
 /** Canto da tela de um iPhone moderno, em px CSS. */

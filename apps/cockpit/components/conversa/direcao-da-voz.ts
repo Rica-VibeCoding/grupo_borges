@@ -43,6 +43,7 @@ const ROTULO: Record<Exclude<Cena, 'parado'>, string> = {
   erro: 'parou',
   ocupado: 'parou', // só a cor muda; o cartão do pé diz que ele está ocupado
   pronta: 'resposta pronta', // voltou da recarga: a resposta dele espera o toque
+  desligado: 'desligado', // o painel diz que ele está fora do ar
 };
 
 /** A palavra ao lado do nome: em que pé a conversa está, de relance. */
@@ -59,6 +60,7 @@ export function rotuloDoEstado(direcao: Direcao, cena: Cena): string {
 export function conviteDaTela(cena: Cena, preparacaoFalhou: boolean, retomando = false): string | null {
   if (preparacaoFalhou) return null;
   if (cena === 'preparando') return 'preparando a escuta';
+  if (cena === 'desligado') return 'ligue pelo painel para conversar';
   if (cena !== 'parado') return null;
   // Voltou da recarga com a conversa aberta: o toque não começa outra, continua esta.
   return retomando ? 'toque para continuar' : 'toque para ligar';

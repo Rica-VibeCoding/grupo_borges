@@ -1976,6 +1976,7 @@ html[data-troca-agente] .ck-palco {
    * `raised`, 5.29:1 sobre `composer` + `pressed` (a régua da §3 pede os dois). */
   --ck-conversa-ocupado: oklch(0.75 0.13 305);      /* #c198f0 */
   --ck-conversa-prepara: var(--ck-text-secondary);  /* detector baixando, parado */
+  --ck-conversa-desligado: var(--ck-text-tertiary); /* agente fora do ar: o cinza do offline do painel */
   /* O texto da voz (fase 4): legenda do visual, não título. O estado é a palavra da pílula, na cor
    * da vez; embaixo da animação, só a legenda — três linhas, e só o agora brilha: a máscara apaga
    * a linha mais velha (em cima) ou a que ainda não foi dita (embaixo). 2,8em = duas linhas. */

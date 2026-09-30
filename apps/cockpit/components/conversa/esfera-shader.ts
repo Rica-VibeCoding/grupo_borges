@@ -10,14 +10,15 @@
  *   depende da marcha), senão a esfera-limite aparece como um disco.
  * - Formas: `uVoce` puxa para baixo (para você), `uZe` solta ondas, `uCalma`
  *   recolhe e acende veios (ou luas, no Vidro), `uCristal` vira gema,
- *   `uColapso` encolhe e racha, `uEnche` enche e esvazia de luz.
+ *   `uColapso` encolhe e racha, `uEnche` enche e esvazia de luz, `uApaga` murcha e
+ *   desliga a luz de dentro e o halo — sobra a casca, com o brilho do vidro.
  */
 export const FRAG_ESFERA = `
 precision highp float;
 uniform vec2 uCentro;
 uniform float uEsc, uRaio, uFaixaBaixo, uFaixaAlto;
 uniform float uT, uNivel, uVidro, uProg, uPulso;
-uniform float uVoce, uZe, uCalma, uCristal, uColapso, uEnche;
+uniform float uVoce, uZe, uCalma, uCristal, uColapso, uEnche, uApaga;
 uniform vec3 uCorpo, uBorda, uCorPulso, uFundo;
 
 float desce(float alto, float baixo, float x) { return 1. - smoothstep(baixo, alto, x); }
@@ -65,11 +66,11 @@ float gema(vec3 p) {
 }
 
 /* raio da forma sem as ondulações: é dele que o halo se afasta */
-float raioBase() { return (1. + .07 * uNivel * (uVoce + uZe)) * (1. - .3 * uColapso) * (1. - .08 * uCalma); }
+float raioBase() { return (1. + .07 * uNivel * (uVoce + uZe)) * (1. - .3 * uColapso) * (1. - .08 * uCalma) * (1. - .1 * uApaga); }
 
 float mapa(vec3 p) {
   float liso = mix(1., .45, uVidro);
-  float amp = mix(.02, .11, uNivel) * liso * (1. - uCalma * .6) * (1. - uColapso) * (1. - uCristal);
+  float amp = mix(.02, .11, uNivel) * liso * (1. - uCalma * .6) * (1. - uColapso) * (1. - uCristal) * (1. - uApaga);
   float d = (snoise(p * 1.15 + vec3(0., 0., uT * .35)) + .25 * snoise(p * 2.6 - vec3(uT * .5, 0., 0.))) * amp;
   d += uVoce * uNivel * .16 * liso * desce(.2, -1., p.y) * (.7 + .3 * snoise(p * 1.6 + uT));
   d += uZe * (.018 + .055 * uNivel) * liso * sin(length(p.xy) * 7. - uT * 7.);
@@ -104,7 +105,7 @@ void main() {
 
   if (!acertou) {
     float fora = max(length(cross(ro, rd)) - mix(raioBase(), .95, uCristal), 0.);
-    float halo = exp(-fora * mix(5., 8., uColapso)) * (.24 + .42 * uNivel * (uVoce + uZe)) * (1. - uColapso * .6) * mix(1., .75, uVidro);
+    float halo = exp(-fora * mix(5., 8., uColapso)) * (.24 + .42 * uNivel * (uVoce + uZe)) * (1. - uColapso * .6) * mix(1., .75, uVidro) * (1. - .92 * uApaga);
     float aresta = exp(-max(minD, 0.) * uRaio * uEsc * .8);          /* ~1 px de borda macia */
     vec3 cor = uBorda * (halo + aresta * .7) + uCorPulso * uPulso * halo * 1.6;
     float a = clamp(halo + aresta * .7 + uPulso * halo * 1.6, 0., 1.);
@@ -133,7 +134,7 @@ void main() {
   vec3 centro = vec3(0., -.32 * uVoce * (.4 + .6 * uNivel), 0.);
   float tam = mix(.2, .36, uNivel * max(uVoce, uZe)) * (1. - .5 * uCristal) * (1. - .45 * uCalma);
   float dn = perto(centro, ro, rd);
-  float nucleo = exp(-dn * dn / (tam * tam)) * (.9 + 1.1 * uNivel * (uVoce + uZe)) * (1. - uColapso);
+  float nucleo = exp(-dn * dn / (tam * tam)) * (.9 + 1.1 * uNivel * (uVoce + uZe)) * (1. - uColapso) * (1. - uApaga);
   float aneis = uZe * pow(.5 + .5 * sin(dn * 16. - uT * 6.), 5.) * exp(-dn * 2.2) * (.35 + .65 * uNivel);
   float luas = 0.;
   for (int k = 0; k < 2; k++) {
@@ -146,8 +147,8 @@ void main() {
     + uBorda * fissura * .8;
 
   vec3 cor = mix(materia, vidro, uVidro) * mix(racha, 1., uVidro)
-    + uBorda * fres * mix(1.25, 1.7, uVidro) * (1. + .5 * uNivel * uVoce)
-    + vec3(spec) * mix(.45, .9, max(uCristal, uVidro * .8)) * (1. - uColapso * .7)
+    + uBorda * fres * mix(1.25, 1.7, uVidro) * (1. + .5 * uNivel * uVoce) * (1. - .55 * uApaga)
+    + vec3(spec) * mix(.45, .9, max(uCristal, uVidro * .8)) * (1. - uColapso * .7) * (1. - .5 * uApaga)
     + uCorPulso * uPulso * (.35 + 1.2 * fres);
   gl_FragColor = vec4(1. - exp(-cor * 1.25), 1.) * faixa;
 }`;

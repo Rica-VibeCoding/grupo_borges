@@ -12,8 +12,9 @@ import {
   lugarNoPalco,
   regulaQuadro,
   ritmoDaEsfera,
+  taxaDaTroca,
 } from './esfera-estado.ts';
-import { PENSAR_AO_MEIO, corDoTom, type Cena, type Mistura, type Tom } from './moldura-estado.ts';
+import { PENSAR_AO_MEIO, animaSozinha, corDoTom, tomDaCena, type Cena, type Mistura, type Tom } from './moldura-estado.ts';
 
 const CENAS: Cena[] = ['parado', 'preparando', 'ouvindo', 'transcrevendo', 'esperandoZe', 'falando', 'interrompendo', 'erro'];
 
@@ -78,6 +79,7 @@ describe('Esfera: o que cada momento desenha', () => {
       ze: [0, 0.4, 1],
       pensa: [0.6, 0.6, 1],
       prepara: [0.5, 0.5, 0.5],
+      desligado: [0.3, 0.3, 0.3],
       erro: [1, 0, 0],
       ocupado: [0.8, 0.6, 1],
     };
@@ -164,5 +166,24 @@ describe('o ritmo da esfera na troca de estado', () => {
 
   it('movimento reduzido (dt infinito) salta direto', () => {
     assert.equal(aproximaRitmo(1.8, 0.9, Number.POSITIVE_INFINITY), 0.9);
+  });
+});
+
+describe('Esfera desligada: o agente fora do ar pelo painel', () => {
+  it('apaga por dentro, fica parada e na cor própria', () => {
+    assert.equal(alvosDaEsfera('desligado').apaga, 1);
+    assert.equal(ritmoDaEsfera('desligado'), 0);
+    assert.equal(animaSozinha('desligado'), false);
+    assert.equal(tomDaCena('desligado'), 'desligado');
+    assert.deepEqual(coresDaEsfera('desligado'), { corpo: 'desligado', brilho: 0.35, borda: 'desligado' });
+  });
+
+  it('desligar é devagar; religar volta na taxa de sempre', () => {
+    assert.ok(taxaDaTroca('desligado') < taxaDaTroca('parado'));
+    assert.equal(taxaDaTroca('parado'), 6);
+  });
+
+  it('nenhuma outra cena apaga', () => {
+    for (const cena of CENAS) assert.equal(alvosDaEsfera(cena).apaga, 0, cena);
   });
 });

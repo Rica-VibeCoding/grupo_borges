@@ -12,16 +12,16 @@ import type { Estado } from '@/lib/conversa/tipos';
  * `trabalhando` e `ocupado` só existem na tela (`estado-da-vez.ts`): o agente usando ferramenta, e o
  * erro de agente ocupado — que não quebrou, só não pôde ouvir agora, e ganha cor própria (Rica, 29/09).
  * `pronta` também: voltou da recarga com resposta dele por tocar, esperando o toque
- * (`retomada-da-conversa.ts`).
+ * (`retomada-da-conversa.ts`). `desligado`: o painel diz que o agente está fora do ar — vence todas.
  */
-export type Cena = Estado | 'preparando' | 'trabalhando' | 'ocupado' | 'pronta';
+export type Cena = Estado | 'preparando' | 'trabalhando' | 'ocupado' | 'pronta' | 'desligado';
 
 export const CAMADAS = ['voce', 'ze', 'pensa', 'prepara', 'erro', 'gelo', 'parado', 'ocupado'] as const;
 export type Camada = (typeof CAMADAS)[number];
 export type Pesos = Record<Camada, number>;
 
 /** Tom do clarão da troca de vez: quente = sua vez, frio = vez dele. */
-export type Tom = 'voce' | 'ze' | 'pensa' | 'prepara' | 'erro' | 'ocupado';
+export type Tom = 'voce' | 'ze' | 'pensa' | 'prepara' | 'erro' | 'ocupado' | 'desligado';
 
 /**
  * Pensar mistura a sua cor com a dele (Rica, 29/09): a sua voz virando a resposta dele. `peso` é
@@ -72,6 +72,9 @@ export function alvosDaMoldura(cena: Cena): Pesos {
       return { ...VAZIO, ocupado: 1 };
     case 'parado':
       return { ...VAZIO, parado: 1 };
+    case 'desligado':
+      // O repouso, mais fraco: sem ninguém do outro lado, a luz quase some.
+      return { ...VAZIO, parado: 0.35 };
   }
 }
 
@@ -80,6 +83,7 @@ export function tomDaCena(cena: Cena): Tom {
   if (cena === 'falando' || cena === 'pronta') return 'ze';
   if (cena === 'erro') return 'erro';
   if (cena === 'ocupado') return 'ocupado';
+  if (cena === 'desligado') return 'desligado';
   if (cena === 'preparando' || cena === 'parado') return 'prepara';
   return 'pensa';
 }
@@ -103,9 +107,9 @@ export function assentou<T extends Record<string, number>>(atual: T, alvo: T, fo
   return Object.keys(alvo).every((c) => Math.abs(atual[c] - alvo[c]) <= folga);
 }
 
-/** Cenas que se mexem sozinhas. Parado, erro, ocupado e resposta pronta são quadros fixos: o laço dorme. */
+/** Cenas que se mexem sozinhas. Parado, erro, ocupado, resposta pronta e desligado são quadros fixos: o laço dorme. */
 export function animaSozinha(cena: Cena): boolean {
-  return cena !== 'parado' && cena !== 'erro' && cena !== 'ocupado' && cena !== 'pronta';
+  return cena !== 'parado' && cena !== 'erro' && cena !== 'ocupado' && cena !== 'pronta' && cena !== 'desligado';
 }
 
 /** Cenas em que o volume (microfone ou voz do Zé) mexe na luz. */

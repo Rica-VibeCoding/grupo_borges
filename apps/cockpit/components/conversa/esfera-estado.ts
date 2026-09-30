@@ -5,11 +5,11 @@ import { fatorDeAproximacao, type Cena, type Mistura, type Tom } from './moldura
  * cor e o ritmo. O shader só mistura; quem decide é daqui, e é o que o teste
  * cobre. Parado e erro são quadros fixos, como na Moldura.
  */
-export const FORMAS = ['voce', 'ze', 'calma', 'cristal', 'colapso', 'enche'] as const;
+export const FORMAS = ['voce', 'ze', 'calma', 'cristal', 'colapso', 'enche', 'apaga'] as const;
 export type Forma = (typeof FORMAS)[number];
 export type PesosDaEsfera = Record<Forma, number>;
 
-const REPOUSO: PesosDaEsfera = { voce: 0, ze: 0, calma: 0, cristal: 0, colapso: 0, enche: 0 };
+const REPOUSO: PesosDaEsfera = { voce: 0, ze: 0, calma: 0, cristal: 0, colapso: 0, enche: 0, apaga: 0 };
 
 export function alvosDaEsfera(cena: Cena): PesosDaEsfera {
   switch (cena) {
@@ -37,6 +37,9 @@ export function alvosDaEsfera(cena: Cena): PesosDaEsfera {
       return { ...REPOUSO, enche: 1 };
     case 'parado':
       return REPOUSO;
+    case 'desligado':
+      // Murcha e apaga por dentro: sem núcleo, sem halo, só a casca (`uApaga` no shader).
+      return { ...REPOUSO, apaga: 1 };
   }
 }
 
@@ -77,10 +80,20 @@ export function coresDaEsfera(cena: Cena): { corpo: Tom | Mistura; brilho: numbe
     case 'parado':
       // Em repouso a matéria fica mais apagada: ainda não é a vez de ninguém.
       return { corpo: 'prepara', brilho: 0.7, borda: 'prepara' };
+    case 'desligado':
+      return { corpo: 'desligado', brilho: 0.35, borda: 'desligado' };
   }
 }
 
 /** O ritmo troca sem salto: chega ao novo em ~0,4 s (taxa 6, a mesma dos pesos e das cores). */
+/**
+ * Quão rápido a esfera chega na cena nova. Desligar é devagar, como um aparelho perdendo a força
+ * (~2 s); todo o resto, inclusive religar, na taxa de sempre (~0,4 s).
+ */
+export function taxaDaTroca(cena: Cena): number {
+  return cena === 'desligado' ? 1.4 : 6;
+}
+
 export function aproximaRitmo(atual: number, alvo: number, dt: number): number {
   return atual + (alvo - atual) * fatorDeAproximacao(dt, 6);
 }

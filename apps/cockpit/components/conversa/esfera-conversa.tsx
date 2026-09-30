@@ -14,6 +14,7 @@ import {
   lugarNoPalco,
   regulaQuadro,
   ritmoDaEsfera,
+  taxaDaTroca,
   type Cor,
   type Lugar,
 } from './esfera-estado';
@@ -40,6 +41,7 @@ const TOKENS = {
   prepara: '--ck-conversa-prepara',
   erro: '--ck-conversa-erro',
   ocupado: '--ck-conversa-ocupado',
+  desligado: '--ck-conversa-desligado',
   fundo: '--ck-surface-canvas',
 } as const;
 /** A esfera pede mais definição que a Moldura: 0,75 da resolução. */
@@ -138,8 +140,9 @@ export function EsferaConversa({
       }
       const passoDt = reduzido ? Number.POSITIVE_INFINITY : dt;
       const alvo = alvosDaEsfera(c);
-      pesos = aproxima(pesos, alvo, passoDt, 6);
-      const k = fatorDeAproximacao(passoDt, 6);
+      const taxa = taxaDaTroca(c);
+      pesos = aproxima(pesos, alvo, passoDt, taxa);
+      const k = fatorDeAproximacao(passoDt, taxa);
       const alvoCor = coresDe(c);
       corpo = aproximaCor(corpo, alvoCor.corpo, k);
       borda = aproximaCor(borda, alvoCor.borda, k);
@@ -179,6 +182,7 @@ export function EsferaConversa({
         gl.uniform1f(u('uCristal'), pesos.cristal);
         gl.uniform1f(u('uColapso'), pesos.colapso);
         gl.uniform1f(u('uEnche'), pesos.enche);
+        gl.uniform1f(u('uApaga'), pesos.apaga);
         gl.uniform3fv(u('uCorpo'), corpo);
         gl.uniform3fv(u('uBorda'), borda);
         gl.uniform3fv(u('uCorPulso'), cores[tomDaCena(c)]);
@@ -255,6 +259,7 @@ export function EsferaConversa({
       data-desenho={semWebGL ? 'css' : 'webgl'}
     >
       {semWebGL ? <div className={styles.reserva} data-tom={tomDaCena(cena)} data-variacao={variacao} /> : null}
+      {cena === 'desligado' ? <span className={styles.brasa} /> : null}
       {children}
     </div>
   );

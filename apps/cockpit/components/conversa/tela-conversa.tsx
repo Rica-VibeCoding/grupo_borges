@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
+import { usaFrota } from '../shell/frota-provider';
 import { LinkAbrePainel } from '../shell/superficie-otimista';
 
 import { BotaoMudo } from './botao-mudo';
@@ -77,21 +78,27 @@ export function TelaConversa({
   const ultimoToqueRef = useRef<number | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
   const dica = useDicaDosGestos(ativa);
+  // Desligado pelo painel (o mesmo `offline` que o card e o composer leem): vence qualquer cena.
+  // Agente ainda não carregado na frota não conta — a esfera não pisca apagada na abertura.
+  const { agents } = usaFrota();
+  const desligado = agents.find((a) => a.slug === slug)?.status === 'offline';
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
-  const cena: Cena = modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
+  const cena: Cena = desligado ? 'desligado' : modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;
   // O visual e a palavra do estado mostram a verdade do turno dele: pensando, trabalhando ou
   // falando — este só com som saindo; e o agente ocupado, na cor própria em vez da do erro.
   // Toque, leitura e legenda seguem a cena da conversa. Voltando da recarga com a conversa aberta,
   // antes do toque que retoma, o visual já mostra a verdade lida do stream: pensando, trabalhando
   // ou a resposta pronta (`retomada-da-conversa.ts`).
-  const retomando = modo.retomada !== null;
-  const vista = modo.retomada
+  const retomando = !desligado && modo.retomada !== null;
+  const vista = desligado
+    ? cena
+    : modo.retomada
     ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
     : cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
   const acao = acaoDoToque(cena, preparacaoFalhou, modo.rodando);
   const leitura = leituraDaConversa({
-    cena: modo.retomada?.cena ?? cena, // voltando da recarga, o leitor de tela diz o mesmo que o visual
+    cena: desligado ? cena : (modo.retomada?.cena ?? cena), // voltando da recarga, o leitor de tela diz o mesmo que o visual
     preparacaoFalhou,
     abrindoMicrofone: modo.abrindoMicrofone,
     falaDetectada: modo.falaDetectada,
@@ -136,6 +143,16 @@ export function TelaConversa({
   useEffect(() => {
     if (!ativa) pararAoSairRef.current();
   }, [ativa]);
+  // Desligaram o agente com a conversa aberta: o microfone fecha e a conversa encerra — não há
+  // quem ouça. Religado, ela volta parada, esperando o toque.
+  const encerrarAoDesligarRef = useRef(() => {});
+  encerrarAoDesligarRef.current = () => {
+    if (modo.conversa.estado !== 'parado') modo.parar();
+    else if (modo.retomada) modo.descartaRetomada();
+  };
+  useEffect(() => {
+    if (desligado) encerrarAoDesligarRef.current();
+  }, [desligado]);
   const abreConfiguracoes = useCallback(() => setConfigAberta(true), []);
   // Dedo parado 500 ms na vez do Rica segura a vez: a contagem do silêncio para até soltar.
   const cenaRef = useRef(cena);

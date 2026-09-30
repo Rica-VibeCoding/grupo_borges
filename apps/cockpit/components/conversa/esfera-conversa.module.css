@@ -78,3 +78,29 @@
 .reserva[data-tom='pensa'] { --cor-da-esfera: var(--ck-conversa-pensa); }
 .reserva[data-tom='erro'] { --cor-da-esfera: var(--ck-conversa-erro); }
 .reserva[data-tom='ocupado'] { --cor-da-esfera: var(--ck-conversa-ocupado); }
+.reserva[data-tom='desligado'] { --cor-da-esfera: var(--ck-conversa-desligado); }
+
+/* Desligado: a esfera apagou (~2 s, `taxaDaTroca`) e sobra uma brasa no centro, respirando
+ * devagar como a luz de um aparelho em espera. Só CSS: com a esfera parada, o WebGL dorme
+ * e a espera não gasta bateria. Nasce depois do apagar, para as duas coisas não brigarem. */
+.brasa {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ck-conversa-voce);
+  box-shadow: 0 0 14px 3px color-mix(in oklch, var(--ck-conversa-voce) 45%, transparent);
+  opacity: 0;
+  animation: brasaAcende 0.8s var(--ck-ease) 1.8s forwards, brasaRespira 5s ease-in-out 2.6s infinite;
+}
+@keyframes brasaAcende {
+  to { opacity: 0.55; }
+}
+@keyframes brasaRespira {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.12; }
+}
+.palco[data-movimento='parado'] .brasa {
+  animation: none;
+  opacity: 0.4;
+}

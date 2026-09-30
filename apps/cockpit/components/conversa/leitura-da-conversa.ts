@@ -56,6 +56,8 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
       };
     case 'interrompendo':
       return { titulo: 'Pausei a resposta', detalhe: 'Continue falando e eu mando junto. Se foi tosse, eu retomo.' };
+    case 'desligado':
+      return { titulo: 'Agente desligado', detalhe: 'Ligue pelo painel para conversar.' };
     case 'erro':
     case 'ocupado':
       return {
@@ -69,6 +71,7 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
 export function rotuloDaAcao(cena: Cena, preparacaoFalhou: boolean, retomando = false): string {
   if (preparacaoFalhou) return 'Detector indisponível';
   if (cena === 'preparando') return 'Preparando…';
+  if (cena === 'desligado') return 'Agente desligado';
   if (cena === 'parado') return retomando ? 'Continuar conversa' : 'Começar conversa';
   if (cena === 'erro') return 'Tentar de novo';
   return 'Encerrar conversa';

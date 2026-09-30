@@ -31,3 +31,8 @@ it('o segundo toque dentro de ~400 ms não conta: toque duplo não liga e deslig
   assert.equal(toqueConta(1399, 1000), false);
   assert.equal(toqueConta(1400, 1000), true);
 });
+
+it('desligado, o toque não faz nada — não há quem ouça', () => {
+  assert.equal(acaoDoToque('desligado', false), 'nada');
+  assert.equal(acaoDoToque('desligado', false, true), 'nada');
+});
