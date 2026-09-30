@@ -1,22 +1,26 @@
 'use client';
 
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useSyncExternalStore, type RefObject } from 'react';
 
-import { ouveNoEstado } from '@/lib/conversa/maquina';
+import { esconderDerruba } from '@/lib/conversa/maquina';
 import type { Conversa, Evento } from '@/lib/conversa/tipos';
 
+const assina = (avisa: () => void) => {
+  document.addEventListener('visibilitychange', avisa);
+  return () => document.removeEventListener('visibilitychange', avisa);
+};
+
 /**
- * Tela bloqueada ou aba em segundo plano matam o microfone: com a conversa ouvindo (ou falando e
- * esperando, com fone), esconder a aba vira `capturaCaiu`.
+ * Tela bloqueada ou aba em segundo plano matam o microfone. Na vez do Rica, esconder a aba vira
+ * `capturaCaiu`; no turno do Zé, a aba escondida conta como fora da tela — o microfone fecha e a
+ * resposta segue (`useEscondida`, que `use-modo-conversa` soma ao `fora`).
  */
 export function useAbaEscondida({
-  fone,
   sessaoAtivaRef,
   conversaRef,
   despachaRef,
   bloqueadoRef,
 }: {
-  fone: boolean;
   bloqueadoRef: RefObject<boolean>;
   sessaoAtivaRef: RefObject<boolean>;
   conversaRef: RefObject<Conversa>;
@@ -28,12 +32,16 @@ export function useAbaEscondida({
         document.visibilityState === 'hidden' &&
         sessaoAtivaRef.current &&
         !bloqueadoRef.current && // mudo ou fora da tela: não há captura para cair
-        ouveNoEstado(conversaRef.current.estado, fone)
+        esconderDerruba(conversaRef.current)
       ) {
         despachaRef.current({ tipo: 'capturaCaiu' });
       }
     };
     document.addEventListener('visibilitychange', aoMudarVisibilidade);
     return () => document.removeEventListener('visibilitychange', aoMudarVisibilidade);
-  }, [bloqueadoRef, conversaRef, despachaRef, fone, sessaoAtivaRef]);
+  }, [bloqueadoRef, conversaRef, despachaRef, sessaoAtivaRef]);
 }
+
+/** A aba está escondida agora (tela bloqueada ou segundo plano). */
+export const useEscondida = (): boolean =>
+  useSyncExternalStore(assina, () => document.visibilityState === 'hidden', () => false);

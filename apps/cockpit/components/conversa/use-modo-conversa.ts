@@ -16,7 +16,7 @@ import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { transcreveCaptura } from './transcricao-da-captura';
 import { useMudoDaCaptura } from './use-mudo-da-captura';
-import { useAbaEscondida } from './use-aba-escondida';
+import { useAbaEscondida, useEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
@@ -27,8 +27,11 @@ import { useApoioDaFerramenta } from './use-apoio-da-ferramenta';
 import { useWakeLock } from './use-wake-lock';
 
 /** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca.
- *  `fora`: a tela saiu de vista — o microfone fecha e o Zé segue falando (`useMudoDaCaptura`). */
-export function useModoConversa(slug: string, fone: boolean, mudo = false, fora = false) {
+ *  `fora`: a tela saiu de vista — o microfone fecha e o Zé segue falando (`useMudoDaCaptura`).
+ *  A aba escondida (tela bloqueada) soma ao `fora`; na vez do Rica ela derruba antes (`use-aba-escondida`). */
+export function useModoConversa(slug: string, fone: boolean, mudo = false, foraDaTela = false) {
+  const escondida = useEscondida();
+  const fora = foraDaTela || escondida;
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
   const [aviso, setAviso] = useState<string | null>(null);
   /* O texto da vez do Rica na tela: as palavras ao vivo e o firme que a máquina aceitou. */
@@ -212,7 +215,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, fora 
     despacha({ tipo: 'fone', ligado: fone });
   }, [despacha, fone]);
 
-  useAbaEscondida({ fone, sessaoAtivaRef, conversaRef, despachaRef, bloqueadoRef: captura.bloqueadoRef });
+  useAbaEscondida({ sessaoAtivaRef, conversaRef, despachaRef, bloqueadoRef: captura.bloqueadoRef });
 
   const comecar = useCallback(() => {
     if (detector.preparacao !== 'pronto' || iniciandoRef.current) return;

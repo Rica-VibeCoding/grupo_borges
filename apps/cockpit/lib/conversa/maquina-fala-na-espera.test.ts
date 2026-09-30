@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { avanca, inicial } from './maquina.ts';
+import { avanca, esconderDerruba, inicial } from './maquina.ts';
 import type { Conversa, Efeito, Evento } from './tipos.ts';
 
 // O desenho das interrupções (30/09): só o toque freia o Zé. Falar enquanto ele pensa entra na
@@ -97,6 +97,16 @@ test('com fone, a voz acaba antes do fim do turno: volta a esperar sem religar o
   const { conversa, efeitos } = roda([{ tipo: 'textoDoZe', texto: 'Vou rodar.' }, { tipo: 'vozTerminou' }], esperando(true));
   assert.equal(conversa.estado, 'esperandoZe');
   assert.deepEqual(tipos(efeitos), ['ligarDetector', 'falar']);
+});
+
+test('bloquear o celular no turno dele não derruba a conversa; só a vez do Rica cai (revisão, 30/09)', () => {
+  assert.equal(esconderDerruba(esperando(false)), false);
+  assert.equal(esconderDerruba(esperando(true)), false);
+  const falando = roda([{ tipo: 'textoDoZe', texto: 'Olhei.' }], esperando(false)).conversa;
+  assert.equal(esconderDerruba(falando), false);
+  const falaNaEspera = roda([{ tipo: 'falaIniciou' }], esperando(false)).conversa;
+  assert.equal(esconderDerruba(falaNaEspera), false);
+  assert.equal(esconderDerruba(roda([{ tipo: 'comecar' }]).conversa), true);
 });
 
 test('parar sem freio (a tela saiu) não freia o Zé, mas descarta o resto do turno', () => {

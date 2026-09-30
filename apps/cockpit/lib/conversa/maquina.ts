@@ -77,6 +77,11 @@ const detectorLigado = (c: ConversaInterna): boolean => ouveNoEstado(c.estado, c
 /** O Rica fala desde a espera: a tela mistura o pensar dele com a sua vez (`esfera-estado.ts`). */
 export const falaNaEspera = (c: Conversa): boolean => (c as ConversaInterna).daEspera === true;
 
+/** Esconder a aba derruba a conversa só na vez do Rica. No turno do Zé o microfone fecha como ao
+ *  sair para o chat, e a resposta segue (`use-modo-conversa`). */
+export const esconderDerruba = (c: Conversa): boolean =>
+  (c.estado === 'ouvindo' && !falaNaEspera(c)) || c.estado === 'interrompendo';
+
 export const inicial = (): Conversa => ({ estado: 'parado' });
 
 export const avanca: Avanca = (conversa, evento, agora) => {
