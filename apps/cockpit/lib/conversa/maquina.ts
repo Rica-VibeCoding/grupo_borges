@@ -16,7 +16,8 @@
  * O desenho das interrupções (30/09) — só o TOQUE freia:
  * - toque no turno do Zé: freia e corta a voz (`interromper`); fora dele, para (`parar`);
  * - fala por cima, com fone: pausa a voz e a fala entra na fila do Claude Code (`falaConfirmada`);
- * - fala com o Zé pensando: entra na fila sem frear (`daEspera`), com ou sem fone;
+ * - fala com o Zé pensando: entra na fila sem frear (`daEspera`), com ou sem fone — e "pensando"
+ *   inclui o trabalho depois de um aviso falado (`vozTerminou` antes do fim do turno);
  * - sair da tela (chat ou outra página): nada aqui — a tela emudece e a voz segue (`tela-conversa`);
  *   desmontar para sem freio (`parar` com `semFreio`).
  */
@@ -244,7 +245,9 @@ function pedidoEntrou(c: ConversaInterna): Resultado {
 function vozTerminou(c: ConversaInterna): Resultado {
   if (c.estado === 'falando') {
     if (c.zeAcabou) return novo(c, 'ouvindo', [LIGA]);
-    return preserva(c, [], { vozAcabou: true });
+    // A voz calou com ele ainda trabalhando (o aviso antes da ferramenta): é espera de novo, e
+    // sem fone o microfone reabre — senão o turno inteiro de trabalho fica surdo.
+    return novo(c, 'esperandoZe', c.fone ? [] : [LIGA], { zeDescartado: c.zeDescartado });
   }
   if (c.estado === 'interrompendo') {
     return preserva(c, [], { vozAcabou: true });

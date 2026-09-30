@@ -84,6 +84,21 @@ test('a resposta chega enquanto ele fala na espera: a voz espera a fala dele sai
   assert.equal(conversa.estado, 'falando');
 });
 
+test('sem fone, a voz do aviso acaba com ele ainda trabalhando: volta a esperar com o microfone aberto', () => {
+  const { conversa, efeitos } = roda([{ tipo: 'textoDoZe', texto: 'Vou rodar os testes.' }, { tipo: 'vozTerminou' }], esperando(false));
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
+  const fala = roda([{ tipo: 'falaIniciou' }, { tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'e isso' }, { tipo: 'enviou' }], conversa);
+  assert.ok(!tipos(fala.efeitos).includes('frearZe'));
+  assert.equal(fala.conversa.estado, 'esperandoZe');
+});
+
+test('com fone, a voz acaba antes do fim do turno: volta a esperar sem religar o que já ouvia', () => {
+  const { conversa, efeitos } = roda([{ tipo: 'textoDoZe', texto: 'Vou rodar.' }, { tipo: 'vozTerminou' }], esperando(true));
+  assert.equal(conversa.estado, 'esperandoZe');
+  assert.deepEqual(tipos(efeitos), ['ligarDetector', 'falar']);
+});
+
 test('parar sem freio (a tela saiu) não freia o Zé, mas descarta o resto do turno', () => {
   const { conversa, efeitos } = roda([{ tipo: 'parar', semFreio: true }], esperando(false));
   assert.equal(conversa.estado, 'parado');

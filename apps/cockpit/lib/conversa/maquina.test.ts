@@ -172,7 +172,7 @@ test('do erro, comecar recomeça limpo e parar volta ao parado', () => {
 
 test('sai de falando só quando voz E stream terminam', () => {
   const soVoz = roda([...ateEspera(), { evento: { tipo: 'textoDoZe', texto: 'a' }, agora: 400 }, { evento: { tipo: 'vozTerminou' }, agora: 500 }]);
-  assert.equal(soVoz.conversa.estado, 'falando', 'Zé ainda não terminou');
+  assert.equal(soVoz.conversa.estado, 'esperandoZe', 'Zé ainda não terminou: volta a esperar');
 
   const ambos = roda([
     ...ateEspera(),
@@ -192,10 +192,11 @@ test('texto novo em falando zera vozAcabou — não religa detector com voz toca
     { evento: { tipo: 'zeTerminou' }, agora: 700 }, // stream cai logo depois
   ]);
 
-  // A voz do texto 2 ainda está tocando: continua em falando, detector desligado (os dois `ligar`
-  // são o começo e a espera).
+  // A voz do texto 2 ainda está tocando: continua em falando, detector desligado (os três `ligar`
+  // são o começo, a espera e a espera entre as duas vozes).
   assert.equal(conversa.estado, 'falando');
-  assert.equal(soTipos(efeitos).filter((t) => t === 'ligarDetector').length, 2);
+  assert.equal(soTipos(efeitos).filter((t) => t === 'ligarDetector').length, 3);
+  assert.equal(soTipos(efeitos).at(-1), 'falar');
 
   // Só quando a voz do texto 2 termina é que volta a ouvir e religa o detector.
   const fim = roda([
