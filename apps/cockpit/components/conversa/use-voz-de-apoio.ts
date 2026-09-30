@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { estaTocando, iniciaSequencia } from '@/components/feed/reprodutor-unico';
 import { pedeFala } from '@/components/feed/stream-voz';
 
+import { criaEnfeiteDoApoio } from './enfeite-do-apoio';
 import { criaVozDeApoio, type VozDeApoio } from './voz-de-apoio';
 
 /**
@@ -51,6 +52,7 @@ export function useVozDeApoio({
   bloqueado,
   cabecalhoAtual,
   preparaApoio,
+  aoComecar,
   aoTerminar,
 }: {
   slug: string;
@@ -58,10 +60,11 @@ export function useVozDeApoio({
   bloqueado?: () => boolean;
   cabecalhoAtual: () => string | null;
   preparaApoio?: () => boolean;
+  aoComecar?: () => void;
   aoTerminar?: () => void;
 }): VozDeApoio {
-  const callbacks = useRef({ bloqueado, cabecalhoAtual, preparaApoio, aoTerminar });
-  callbacks.current = { bloqueado, cabecalhoAtual, preparaApoio, aoTerminar };
+  const callbacks = useRef({ bloqueado, cabecalhoAtual, preparaApoio, aoComecar, aoTerminar });
+  callbacks.current = { bloqueado, cabecalhoAtual, preparaApoio, aoComecar, aoTerminar };
   const apoio = useMemo(() => {
     return criaVozDeApoio({
       sintetiza: (texto) => sintetiza(slug, texto),
@@ -69,7 +72,9 @@ export function useVozDeApoio({
       ocupado: estaTocando,
       bloqueado: () => callbacks.current.bloqueado?.() ?? false,
       cabecalhoAtual: () => callbacks.current.cabecalhoAtual(),
+      enfeita: criaEnfeiteDoApoio(),
       preparaApoio: () => callbacks.current.preparaApoio?.() ?? true,
+      aoComecar: () => callbacks.current.aoComecar?.(),
       aoTerminar: () => callbacks.current.aoTerminar?.(),
       cancelaTurno,
     });

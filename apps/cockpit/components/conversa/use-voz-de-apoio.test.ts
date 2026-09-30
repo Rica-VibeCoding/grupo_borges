@@ -23,6 +23,7 @@ function monta() {
     '@/components/feed/stream-voz': {
       pedeFala: (_texto: string, _slug: string, escuta: EscutaVoz) => { escutas.push(escuta); return { cancela: () => { cortes++; } }; },
     },
+    './enfeite-do-apoio': { criaEnfeiteDoApoio: () => (texto: string) => texto },
     './voz-de-apoio': { criaVozDeApoio: (p: { sintetiza: typeof sintetiza }) => { sintetiza = p.sintetiza; return { cala() {} }; } },
   };
   const URLFalsa = { revokeObjectURL: (url: string) => liberados.push(url) };

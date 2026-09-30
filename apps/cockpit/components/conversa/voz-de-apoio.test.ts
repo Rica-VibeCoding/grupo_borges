@@ -212,3 +212,61 @@ test('erro sai na voz do agente e cancela resposta pela própria fila', async ()
   assert.equal(t.cancelados(), 1);
   assert.deepEqual(t.sequencias[0].urls, ['blob:O microfone desligou']);
 });
+
+test('enfeite: a voz diz a frase enfeitada, mas confere o cabeçalho cru', async () => {
+  const sinteses: string[] = [];
+  const tocadas: string[] = [];
+  const apoio = criaVozDeApoio({
+    sintetiza: (texto) => { sinteses.push(texto); return Promise.resolve([`blob:${texto}`]); },
+    iniciaSequencia: () => ({ enfileira: (url) => void tocadas.push(url), fecha() {}, pausa() {}, retoma() {}, para() {} }),
+    ocupado: () => false,
+    cabecalhoAtual: () => 'Tô lendo o código',
+    enfeita: (texto) => `Rica… ${texto}`,
+    cancelaTurno() {},
+    liberaAudio() {},
+  });
+  apoio.cabecalho('Tô lendo o código');
+  await vez();
+  await vez();
+  assert.deepEqual(sinteses, ['Rica… Tô lendo o código']);
+  assert.deepEqual(tocadas, ['blob:Rica… Tô lendo o código']);
+});
+
+test('aoComecar vem antes do primeiro áudio; aoTerminar, quando cala', async () => {
+  const ordem: string[] = [];
+  let escuta: EscutaSequencia | null = null;
+  const apoio = criaVozDeApoio({
+    sintetiza: () => Promise.resolve(['blob:a']),
+    iniciaSequencia: (e) => { escuta = e; return { enfileira: () => void ordem.push('toca'), fecha() {}, pausa() {}, retoma() {}, para() {} }; },
+    ocupado: () => false,
+    aoComecar: () => ordem.push('comeca'),
+    aoTerminar: () => ordem.push('terminou'),
+    cancelaTurno() {},
+    liberaAudio() {},
+  });
+  apoio.cabecalho('Tô rodando os testes');
+  await vez();
+  await vez();
+  (escuta as EscutaSequencia | null)?.aoTerminar();
+  assert.deepEqual(ordem, ['comeca', 'toca', 'terminou']);
+});
+
+test('falha no meio da frase também avisa o fim (o microfone volta)', async () => {
+  const ordem: string[] = [];
+  let escuta: EscutaSequencia | null = null;
+  const apoio = criaVozDeApoio({
+    sintetiza: () => Promise.resolve(['blob:a']),
+    iniciaSequencia: (e) => { escuta = e; return { enfileira() {}, fecha() {}, pausa() {}, retoma() {}, para() {} }; },
+    ocupado: () => false,
+    bloqueado: () => ordem.length > 1,
+    aoComecar: () => ordem.push('comeca'),
+    aoTerminar: () => ordem.push('terminou'),
+    cancelaTurno() {},
+    liberaAudio() {},
+  });
+  apoio.cabecalho('Tô rodando os testes');
+  await vez();
+  await vez();
+  (escuta as EscutaSequencia | null)?.aoFalhar();
+  assert.deepEqual(ordem, ['comeca', 'terminou']);
+});

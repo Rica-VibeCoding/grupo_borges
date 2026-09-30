@@ -18,6 +18,7 @@ import { transcreveCaptura } from './transcricao-da-captura';
 import { useMudoDaCaptura } from './use-mudo-da-captura';
 import { useAbaEscondida, useEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
+import { soltaNaVezDele } from './microfone-da-conversa';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
 import { useRetomadaDaConversa } from './use-retomada-da-conversa';
@@ -103,8 +104,22 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     return sonsRef.current;
   }, []);
   const somDeSegurar = useCallback(() => sons().sinalizaSegurar(), [sons]);
+  // Sem fone no iPhone, o microfone aberto na espera prende o áudio no modo de chamada e os botões de
+  // volume não alcançam a frase de apoio. A fala que começa com ela tocando já é eco e fica de fora
+  // (`falaValeRef`): então o microfone solta enquanto ela soa e volta quando ela cala.
+  const soltouNoApoioRef = useRef(false);
   const apoio = useApoioDaFerramenta({ slug, cancelaTurno: cancelaFala, preparaApoio,
-    conversaRef, sessaoAtivaRef, despachaRef, mensagens: stream.messages });
+    conversaRef, sessaoAtivaRef, despachaRef, mensagens: stream.messages,
+    aoTocar: () => {
+      if (fone || conversaRef.current.estado !== 'esperandoZe' || !soltaNaVezDele(navigator)) return;
+      soltouNoApoioRef.current = true;
+      detector.desliga();
+    },
+    aoCalar: () => {
+      if (!soltouNoApoioRef.current) return;
+      soltouNoApoioRef.current = false;
+      if (sessaoAtivaRef.current && conversaRef.current.estado === 'esperandoZe') executaEfeitoRef.current({ tipo: 'ligarDetector' });
+    } });
   const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar,
     aoMudar: (ligado) => despachaRef.current({ tipo: 'segurou', ligado }) });
 
