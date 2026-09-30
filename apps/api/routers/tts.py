@@ -22,9 +22,12 @@ from pathlib import Path
 
 import edge_tts
 import httpx
+import yaml
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
+
+from config import get_settings
 
 router = APIRouter()
 
@@ -247,11 +250,24 @@ _WORKSPACES = Path("/home/clawd/repos/ze_claude")
 _ENV_LINHA = re.compile(r'^(?:export\s+)?([A-Z_][A-Z0-9_]*)=(.*)$', re.MULTILINE)
 
 
+def _pasta_do_agente(slug: str) -> Path:
+    """A pasta do `agents.yaml`: Fluyt, maestro e caseiro moram fora da ze_claude,
+    e sem o `.env` deles o Fluyt caía na FranciscaNeural no painel e falava grave no Telegram."""
+    try:
+        agentes = yaml.safe_load(Path(get_settings().agents_yaml).read_text(encoding="utf-8"))["agents"]
+    except (OSError, yaml.YAMLError, KeyError, TypeError):
+        agentes = []
+    for agente in agentes:
+        if agente.get("slug") == slug and agente.get("workspace_path"):
+            return Path(agente["workspace_path"])
+    return _WORKSPACES / slug
+
+
 def _env_do_agente(slug: str) -> dict[str, str]:
     if not slug:
         return {}
     try:
-        env = (_WORKSPACES / slug / ".env").read_text(encoding="utf-8")
+        env = (_pasta_do_agente(slug) / ".env").read_text(encoding="utf-8")
     except OSError:
         return {}
     return {k: val.strip().strip('"\'') for k, val in _ENV_LINHA.findall(env)}

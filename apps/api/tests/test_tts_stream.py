@@ -20,11 +20,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routers import tts  # noqa: E402
 
+_PASTA_REAL = tts._pasta_do_agente
+
 
 @pytest.fixture(autouse=True)
 def _sem_workspace_real(tmp_path, monkeypatch) -> None:
     # O `.env` de verdade do Daniel liga a MiniMax: teste nenhum pode ler (e gastar) a chave real.
     monkeypatch.setattr(tts, "_WORKSPACES", tmp_path / "workspaces")
+    monkeypatch.setattr(tts, "_pasta_do_agente", lambda slug: tts._WORKSPACES / slug)
+
+
+def test_pasta_do_agente_vem_do_agents_yaml(tmp_path, monkeypatch) -> None:
+    yaml_frota = tmp_path / "agents.yaml"
+    yaml_frota.write_text(
+        "agents:\n  - slug: fluytcom\n    workspace_path: /home/clawd/repos/fluytcom\n  - slug: sem_pasta\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(tts, "get_settings", lambda: type("S", (), {"agents_yaml": str(yaml_frota)})())
+    assert _PASTA_REAL("fluytcom") == Path("/home/clawd/repos/fluytcom")
+    assert _PASTA_REAL("sem_pasta") == tts._WORKSPACES / "sem_pasta"
+    assert _PASTA_REAL("fora_da_lista") == tts._WORKSPACES / "fora_da_lista"
+
+
+def test_voz_do_env_mora_na_pasta_do_agents_yaml(tmp_path, monkeypatch) -> None:
+    pasta = tmp_path / "fluytcom"
+    pasta.mkdir()
+    (pasta / ".env").write_text("export GOOGLE_TTS_VOICE=pt-BR-Chirp3-HD-Sadachbia\n", encoding="utf-8")
+    monkeypatch.setattr(tts, "_pasta_do_agente", lambda slug: pasta)
+    corpo = tts.TtsSynthRequest(text="oi", slug="fluytcom")
+    assert tts._resolve_voice(corpo, type("S", (), {"tts_voice": "pt-BR-FranciscaNeural"})()) == "pt-BR-Chirp3-HD-Sadachbia"
 
 
 def _mp3_teste() -> bytes:
