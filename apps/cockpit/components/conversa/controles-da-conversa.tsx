@@ -90,7 +90,7 @@ export function ControlesDaConversa({
             </svg>
           }
           nome="Estou de fone"
-          dica={fone ? 'Falar por cima interrompe a resposta.' : 'Espero a resposta terminar para ouvir.'}
+          dica={fone ? 'Ouço você mesmo com ele pensando ou falando.' : 'Espero a resposta terminar para ouvir.'}
           ligada={fone}
           muda={mudaFone}
           compacta={compacta}

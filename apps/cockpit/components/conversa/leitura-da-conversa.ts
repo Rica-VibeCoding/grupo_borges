@@ -52,10 +52,10 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
     case 'falando':
       return {
         titulo: 'Respondendo',
-        detalhe: e.fone ? 'Fale por cima para interromper.' : 'Quando ele terminar, volto a ouvir.',
+        detalhe: e.fone ? 'Fale por cima para mandar mais. Toque para interromper.' : 'Quando ele terminar, volto a ouvir.',
       };
     case 'interrompendo':
-      return { titulo: 'Pausei a resposta', detalhe: 'Continue falando para interromper. Se foi tosse, eu retomo.' };
+      return { titulo: 'Pausei a resposta', detalhe: 'Continue falando e eu mando junto. Se foi tosse, eu retomo.' };
     case 'erro':
     case 'ocupado':
       return {

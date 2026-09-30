@@ -9,8 +9,16 @@ type Captura = Conversa & {
   vozAcabou?: boolean;
   zeAcabou?: boolean;
   zeDescartado?: boolean;
+  daEspera?: boolean;
 };
 type Resultado = { conversa: Captura; efeitos: Efeito[] };
+
+// A fala começada com o Zé pensando não saiu (tosse, mudo): volta a esperar por ele — ou a ouvir,
+// se ele acabou no meio. Na espera com fone, o detector segue ligado.
+function voltaAEspera(c: Captura): Resultado {
+  const estado = c.zeAcabou ? 'ouvindo' : 'esperandoZe';
+  return { conversa: { estado, fone: c.fone, zeDescartado: c.zeDescartado }, efeitos: [] };
+}
 
 function libera(c: Captura): Resultado {
   const terminou = c.vozAcabou && c.zeAcabou;
@@ -26,7 +34,8 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
   if (evento.tipo === 'microfoneMudo' && (c.estado === 'ouvindo' || c.estado === 'transcrevendo')) {
     if (c.enviando) return { conversa: c, efeitos: [] };
     const limpa = { ...c, capturando: false, segurando: false };
-    return c.vozGuardada ? libera(limpa) : { conversa: { ...limpa, estado: 'ouvindo' }, efeitos: [] };
+    if (c.vozGuardada) return libera(limpa);
+    return c.daEspera ? voltaAEspera(limpa) : { conversa: { ...limpa, estado: 'ouvindo' }, efeitos: [] };
   }
   if (evento.tipo === 'segurou') {
     if (c.estado !== 'ouvindo') return { conversa: c, efeitos: [] };
@@ -39,7 +48,8 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
     return { conversa: { ...c, capturando: true }, efeitos: [] };
   }
   if (evento.tipo === 'falaDescartada' && c.estado === 'ouvindo') {
-    return c.vozGuardada && !c.segurando ? libera(c) : { conversa: { ...c, capturando: false }, efeitos: [] };
+    if (c.vozGuardada && !c.segurando) return libera(c);
+    return c.daEspera && !c.segurando ? voltaAEspera(c) : { conversa: { ...c, capturando: false }, efeitos: [] };
   }
   if (evento.tipo === 'textoDoZe' && !c.zeDescartado &&
       ((c.estado === 'ouvindo' && (c.capturando || c.segurando)) || c.estado === 'transcrevendo')) {
@@ -63,7 +73,8 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
   if (evento.tipo === 'enviou' && c.estado === 'transcrevendo') {
     return {
       conversa: { estado: c.vozAcabou ? 'esperandoZe' : 'falando', fone: c.fone },
-      efeitos: [{ tipo: 'retomarVoz' }],
+      // Com fone, falando e esperando também ouvem: o detector desligado no fim da fala volta.
+      efeitos: c.fone ? [{ tipo: 'retomarVoz' }, { tipo: 'ligarDetector' }] : [{ tipo: 'retomarVoz' }],
     };
   }
   return null;
@@ -75,6 +86,7 @@ export function encerraCaptura(c: Captura, audio: Float32Array): Resultado {
     conversa: {
       estado: 'transcrevendo', fone: c.fone, zeDescartado: c.zeDescartado,
       ...(c.vozGuardada ? { vozGuardada: true, zeAcabou: c.zeAcabou, vozAcabou: c.vozAcabou } : {}),
+      ...(c.daEspera ? { daEspera: true, zeAcabou: c.zeAcabou } : {}),
     },
     efeitos: [{ tipo: 'desligarDetector' }, { tipo: 'transcrever', audio }],
   };

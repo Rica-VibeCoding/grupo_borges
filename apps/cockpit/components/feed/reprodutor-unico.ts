@@ -21,7 +21,8 @@ const SILENCIO =
 let elemento: HTMLAudioElement | null = null;
 /** Quem está tocando agora — usado pra parar a bolha anterior sem tocar nela. */
 let donoAtual: symbol | null = null;
-let pararAtual: (() => void) | null = null;
+/** Para quem toca. `tomada`: outro tocar pegou o alto-falante — o dono é avisado (`aoPerderAVez`). */
+let pararAtual: ((tomada?: boolean) => void) | null = null;
 
 function elementoUnico(): HTMLAudioElement {
   if (elemento === null) {
@@ -34,6 +35,8 @@ function elementoUnico(): HTMLAudioElement {
 /** Chamar SÍNCRONO no manipulador do toque, antes de qualquer `await`. */
 export function destravaNoGesto(): void {
   const audio = elementoUnico();
+  // Trocar a fonte por baixo de quem toca faria o `ended` do silêncio avançar a fila dele.
+  pararAtual?.(true);
   audio.src = SILENCIO;
   // A promessa pode rejeitar em navegador sem gesto válido; o play real
   // depois disso é que decide a fase `falha` da bolha.
@@ -59,6 +62,8 @@ export type EscutaSequencia = {
   aoSilenciar?(): void;
   /** `play()` recusado pelo navegador — a bolha vira "toque para ouvir". */
   aoFalhar(): void;
+  /** Outra fala tomou o alto-falante (uma bolha do chat tocada por cima): esta não toca mais. */
+  aoPerderAVez?(): void;
 };
 
 /**
@@ -71,7 +76,7 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
   const audio = elementoUnico();
 
   // Começar uma fala para a anterior: um alto-falante, uma voz.
-  if (pararAtual !== null) pararAtual();
+  pararAtual?.(true);
   donoAtual = dono;
 
   const fila: string[] = [];
@@ -135,10 +140,11 @@ export function iniciaSequencia(escuta: EscutaSequencia): Sequencia {
   audio.addEventListener('timeupdate', aoTempo);
   audio.addEventListener('ended', aoFim);
 
-  pararAtual = () => {
+  pararAtual = (tomada = false) => {
     if (!vivo) return;
     audio.pause();
     limpa();
+    if (tomada) escuta.aoPerderAVez?.();
   };
 
   return {

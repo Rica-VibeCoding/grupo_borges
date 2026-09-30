@@ -11,6 +11,14 @@
  * pausa a voz do Zé (`interrompendo`) até confirmar (guarda a voz até a fala dele sair)
  * ou desclassificar (retoma). Fase 3: parar com o turno em voo pede o freio no servidor
  * (`frearZe`). Só o toque interrompe (`interromper`); a fala nunca corta o Zé.
+ *
+ * O desenho das interrupções (30/09) — só o TOQUE freia:
+ * - toque no turno do Zé: freia e corta a voz (`interromper`); fora dele, para (`parar`);
+ * - fala por cima, com fone: pausa a voz e a fala entra na fila do Claude Code (`falaConfirmada`);
+ * - fala com o Zé pensando, com fone: entra na fila sem frear (`daEspera`); sem fone, o microfone
+ *   segue fechado na espera — a frase de apoio tocaria no alto-falante e voltaria como fala;
+ * - sair da tela (chat ou outra página): nada aqui — a tela emudece e a voz segue (`tela-conversa`);
+ *   desmontar para sem freio (`parar` com `semFreio`).
  */
 
 import { duranteCaptura, encerraCaptura } from './captura-do-rica.ts';
@@ -26,6 +34,7 @@ type ConversaInterna = Conversa & {
   vozAcabou?: boolean; // `vozTerminou` já veio neste turno de `falando`/`interrompendo`
   interrompeuEm?: number; // `agora` do `falaIniciou`; base do relógio de desclassificação
   zeDescartado?: boolean; // turno do Zé descartado (fala por cima ou toque que parou); residual é ignorado
+  daEspera?: boolean; // a fala começou com o Zé pensando: se não virar pedido, volta a esperar por ele
 };
 
 /** O turno em voo foi descartado: o texto que ainda vier dele não fala, e ele não é ocupação. */
@@ -54,12 +63,17 @@ const preserva = (
 
 const noop = (c: ConversaInterna): Resultado => ({ conversa: c, efeitos: [] });
 
-// O detector está ligado? Sem fone, só em `ouvindo`; com fone, também em `falando`
-// (capturar fala por cima) e em `interrompendo` (a fala já começou).
-const detectorLigado = (c: ConversaInterna): boolean =>
-  c.estado === 'ouvindo' ||
-  c.estado === 'interrompendo' ||
-  (c.estado === 'falando' && c.fone === true);
+/** O detector ouve neste estado? Sem fone, só em `ouvindo`; com fone, também em `falando` (fala
+ *  por cima), em `esperandoZe` (fala nova com ele pensando) e em `interrompendo` (a fala já começou). */
+export const ouveNoEstado = (estado: Estado, fone: boolean): boolean =>
+  estado === 'ouvindo' ||
+  estado === 'interrompendo' ||
+  ((estado === 'falando' || estado === 'esperandoZe') && fone);
+
+const detectorLigado = (c: ConversaInterna): boolean => ouveNoEstado(c.estado, c.fone === true);
+
+/** Com fone, esperar pelo Zé é também ouvir. */
+const ouveNaEspera = (c: ConversaInterna): Efeito[] => (c.fone ? [LIGA] : []);
 
 export const inicial = (): Conversa => ({ estado: 'parado' });
 
@@ -72,7 +86,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
     case 'retomar': // fase 4: o toque pós-recarga com o turno do Zé aberto volta a esperar por ele
       return comecar(c, evento.tipo === 'retomar' ? agora : undefined);
     case 'parar':
-      return parar(c);
+      return parar(c, evento.semFreio === true);
     case 'interromper':
       return interromper(c, evento.rodando);
     case 'tique':
@@ -112,18 +126,19 @@ export const avanca: Avanca = (conversa, evento, agora) => {
 // descarte atravessa: o turno freado ainda pode mandar texto depois do recomeço.
 function comecar(c: ConversaInterna, retomaEm?: number): Resultado {
   if (c.estado !== 'parado' && c.estado !== 'erro') return noop(c);
-  if (retomaEm !== undefined) return novo(c, 'esperandoZe');
+  if (retomaEm !== undefined) return novo(c, 'esperandoZe', ouveNaEspera(c));
   return novo(c, 'ouvindo', [LIGA], c.zeDescartado ? { zeDescartado: true } : {});
 }
 
 // Com o turno do Zé em voo — esperando, ou falando antes do fim do stream — freia no
-// servidor e marca o descarte. Turno já descartado não freia de novo.
-function parar(c: ConversaInterna): Resultado {
+// servidor e marca o descarte. Turno já descartado não freia de novo. `semFreio` (a tela saiu, não
+// foi o toque): o Zé segue trabalhando, mas o resto do turno dele não fala mais.
+function parar(c: ConversaInterna, semFreio: boolean): Resultado {
   if (c.estado === 'parado') return noop(c);
   const efeitos: Efeito[] = detectorLigado(c) ? [DESLIGA] : [];
   const falandoAinda = (c.estado === 'falando' || c.estado === 'interrompendo') && !c.zeAcabou;
   const emVoo = c.estado === 'esperandoZe' || falandoAinda;
-  if (emVoo && !c.zeDescartado) efeitos.push({ tipo: 'frearZe', antesDaResposta: c.estado === 'esperandoZe' });
+  if (emVoo && !c.zeDescartado && !semFreio) efeitos.push({ tipo: 'frearZe', antesDaResposta: c.estado === 'esperandoZe' });
   return novo(c, 'parado', efeitos, emVoo || c.zeDescartado ? { zeDescartado: true } : {});
 }
 
@@ -162,7 +177,7 @@ function transcreveu(c: ConversaInterna, texto: string): Resultado {
   if (c.estado !== 'transcrevendo') return noop(c);
   if (texto.trim() === '') {
     // transcricaoVazia: volta a ouvir sem incomodar — não é erro, só não havia o que enviar.
-    return novo(c, 'ouvindo', [LIGA], { zeDescartado: c.zeDescartado });
+    return voltaDaFalaVazia(c);
   }
   // Envia e toca o tique. `transcrevendo` cobre o envio; a espera começa no `enviou`.
   return preserva(c, [{ tipo: 'enviar', texto }, { tipo: 'tocarTique' }], { enviando: true });
@@ -170,7 +185,13 @@ function transcreveu(c: ConversaInterna, texto: string): Resultado {
 
 function enviou(c: ConversaInterna): Resultado {
   if (c.estado !== 'transcrevendo') return noop(c);
-  return novo(c, 'esperandoZe', [], { zeDescartado: c.zeDescartado });
+  return novo(c, 'esperandoZe', ouveNaEspera(c), { zeDescartado: c.zeDescartado });
+}
+
+// A fala não virou pedido. Começada na espera, volta a esperar — ou a ouvir, se o Zé acabou nela.
+function voltaDaFalaVazia(c: ConversaInterna): Resultado {
+  const estado = c.daEspera && !c.zeAcabou ? 'esperandoZe' : 'ouvindo';
+  return novo(c, estado, [LIGA], { zeDescartado: c.zeDescartado });
 }
 
 function textoDoZe(c: ConversaInterna, texto: string): Resultado {
@@ -195,6 +216,8 @@ function textoDoZe(c: ConversaInterna, texto: string): Resultado {
 function zeTerminou(c: ConversaInterna): Resultado {
   // Turno descartado: este é o fim do velho. Só limpa a marca; o que vier é o turno novo.
   if (c.zeDescartado) return preserva(c, [], { zeDescartado: false });
+  // Ele fala desde a espera: só marca, para a fala vazia não voltar a esperar um Zé que já acabou.
+  if (c.daEspera && (c.estado === 'ouvindo' || c.estado === 'transcrevendo')) return preserva(c, [], { zeAcabou: true });
   if (c.estado === 'falando') {
     // Sai de `falando` só quando a voz E o stream acabarem — um pode vir antes do outro.
     if (c.vozAcabou) return novo(c, 'ouvindo', [LIGA]);
@@ -231,6 +254,10 @@ function vozTerminou(c: ConversaInterna): Resultado {
 // Fala por cima detectada enquanto o Zé fala (só com fone): pausa a voz e entra em
 // `interrompendo`, aguardando confirmação ou desclassificação.
 function falaIniciou(c: ConversaInterna, agora: number): Resultado {
+  // Com o Zé pensando (só com fone): a fala vira captura normal, que o envio põe na fila.
+  if (c.estado === 'esperandoZe' && c.fone === true) {
+    return novo(c, 'ouvindo', [], { capturando: true, daEspera: true, zeDescartado: c.zeDescartado });
+  }
   if (c.estado !== 'falando' || c.fone !== true) return noop(c);
   // Preserva os flags de término: ao retomar, a regra "sai com os dois" ainda precisa deles.
   return novo(c, 'interrompendo', [{ tipo: 'pausarVoz' }], {
@@ -258,12 +285,12 @@ function falaConfirmada(c: ConversaInterna): Resultado {
 function fone(c: ConversaInterna, ligado: boolean): Resultado {
   if (ligado) {
     // Ligou o fone no meio da fala do Zé: habilita a fala por cima.
-    if (c.estado === 'falando') return preserva(c, [LIGA], { fone: true });
+    if (c.estado === 'falando' || c.estado === 'esperandoZe') return preserva(c, [LIGA], { fone: true });
     return preserva(c, [], { fone: true });
   }
   // Desligou o fone no meio de uma interrupção: a fala por cima não vale mais.
   if (c.estado === 'interrompendo') return saiDeInterrompendo(c, true);
-  if (c.estado === 'falando') return preserva(c, [DESLIGA], { fone: false });
+  if (c.estado === 'falando' || c.estado === 'esperandoZe') return preserva(c, [DESLIGA], { fone: false });
   return preserva(c, [], { fone: false });
 }
 
@@ -296,9 +323,7 @@ function capturaCaiu(c: ConversaInterna): Resultado {
 
 function falhou(c: ConversaInterna, motivo: MotivoDeErro): Resultado {
   if (c.estado === 'parado') return noop(c);
-  if (motivo === 'transcricaoVazia' && c.estado === 'transcrevendo') {
-    return novo(c, 'ouvindo', [LIGA], { zeDescartado: c.zeDescartado });
-  }
+  if (motivo === 'transcricaoVazia' && c.estado === 'transcrevendo') return voltaDaFalaVazia(c);
   const efeitos: Efeito[] = [DESLIGA, { tipo: 'avisarErro', motivo }];
   if (c.estado === 'interrompendo') efeitos.unshift({ tipo: 'descartarVoz' });
   return novo(c, 'erro', efeitos, { motivo });

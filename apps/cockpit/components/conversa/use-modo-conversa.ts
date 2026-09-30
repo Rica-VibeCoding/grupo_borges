@@ -26,8 +26,9 @@ import { useTurnoDoZe } from './use-turno-do-ze';
 import { useApoioDaFerramenta } from './use-apoio-da-ferramenta';
 import { useWakeLock } from './use-wake-lock';
 
-/** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca. */
-export function useModoConversa(slug: string, fone: boolean, mudo = false) {
+/** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca.
+ *  `fora`: a tela saiu de vista — o microfone fecha e o Zé segue falando (`useMudoDaCaptura`). */
+export function useModoConversa(slug: string, fone: boolean, mudo = false, fora = false) {
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
   const [aviso, setAviso] = useState<string | null>(null);
   /* O texto da vez do Rica na tela: as palavras ao vivo e o firme que a máquina aceitou. */
@@ -75,10 +76,12 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     },
   });
   const wakeLock = useWakeLock(sessaoAtivaRef);
-  const captura = useMudoDaCaptura({ mudo, fone, conversaRef, sessaoAtivaRef,
+  const captura = useMudoDaCaptura({ mudo, fora, fone, conversaRef, sessaoAtivaRef,
     emudece: () => { vez.segura(false); detector.emudece(); }, liga: () => executaEfeitoRef.current({ tipo: 'ligarDetector' }),
     despacha: (evento) => despachaRef.current(evento) });
-  const canal = useCanalDaFala(slug, mudo ? 'parado' : conversa.estado, (texto) => {
+  // Fora da tela, o canal ao vivo só termina a fala que já transcrevia; não abre outro sem microfone.
+  const canalParado = mudo || (fora && conversa.estado !== 'transcrevendo');
+  const canal = useCanalDaFala(slug, canalParado ? 'parado' : conversa.estado, (texto) => {
     const estado = conversaRef.current.estado;
     setFala((atual) => comParcial(atual, estado, texto));
   });
@@ -201,7 +204,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     despacha({ tipo: 'fone', ligado: fone });
   }, [despacha, fone]);
 
-  useAbaEscondida({ fone, sessaoAtivaRef, conversaRef, despachaRef });
+  useAbaEscondida({ fone, sessaoAtivaRef, conversaRef, despachaRef, bloqueadoRef: captura.bloqueadoRef });
 
   const comecar = useCallback(() => {
     if (detector.preparacao !== 'pronto' || iniciandoRef.current) return;
@@ -228,7 +231,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     });
   }, [apoio, despacha, detector, sons, wakeLock, retomada, abreTurno, fechaTurno, entregaTexto]);
 
-  const parar = useCallback(() => {
+  const encerra = useCallback((semFreio: boolean) => {
     cicloRef.current += 1;
     sessaoAtivaRef.current = false;
     iniciandoRef.current = false;
@@ -237,8 +240,10 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     sons().sinalizaFim();
     wakeLock.solta();
     retomada.apaga(); // parou: a recarga depois abre em "parado"
-    despacha({ tipo: 'parar' });
+    despacha({ tipo: 'parar', semFreio });
   }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada]);
+  /** O toque que para: com o turno do Zé em voo, freia. */
+  const parar = useCallback(() => encerra(false), [encerra]);
 
   // O toque durante o turno do Zé: freia e corta a voz, mas a conversa segue ouvindo.
   const interromper = useCallback(() => despacha({ tipo: 'interromper', rodando: isRunningRef.current }), [despacha]);
@@ -250,11 +255,12 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false) {
     [nivelMicRef, nivelVozRef],
   );
 
-  const pararRef = useRef(parar);
-  pararRef.current = parar;
+  const encerraRef = useRef(encerra);
+  encerraRef.current = encerra;
   useEffect(
     () => () => {
-      if (sessaoAtivaRef.current) pararRef.current(); // sair da tela é o parar, freio incluso
+      // Ir para outra página desmonta a tela e a voz morre junto, mas o Zé não é freado: só o toque freia.
+      if (sessaoAtivaRef.current) encerraRef.current(true);
       sonsRef.current?.encerra();
     },
     [],

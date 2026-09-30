@@ -34,7 +34,9 @@ export type Evento =
   // (`components/conversa/retomada-da-conversa.ts`)
   | { tipo: 'retomar' }
   | { tipo: 'tique' } // a tela bate a cada ~250 ms para desclassificar fala por cima
-  | { tipo: 'parar' } // o toque que para; com o turno do Zé em voo, também o freia
+  // o toque que para; com o turno do Zé em voo, também o freia. `semFreio`: a tela desmontou — para
+  // a conversa sem frear o Zé
+  | { tipo: 'parar'; semFreio?: boolean }
   // o toque durante o turno do Zé: freia no servidor, corta a voz e segue ouvindo. `rodando` é o
   // `isRunning` do stream — ouvindo ou transcrevendo, só ele diz que há turno em voo
   | { tipo: 'interromper'; rodando: boolean }

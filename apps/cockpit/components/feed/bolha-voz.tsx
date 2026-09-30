@@ -97,6 +97,7 @@ export function BolhaVoz({ texto, agentSlug }: { texto: string; agentSlug: strin
       aoProgredir: setPosicao,
       aoTerminar: () => setFaseRep('parada'),
       aoFalhar: () => setFaseRep('falha'),
+      aoPerderAVez: () => setFaseRep('parada'),
     });
 
     // O ÁUDIO DESTE TEXTO PODE JÁ ESTAR PAGO. A `GOOGLE_TTS_API_KEY` é uma só

@@ -390,7 +390,8 @@ test('falaConfirmada não corta o Zé: guarda a voz, a fala segue normal e a voz
   assert.ok(fim.efeitos.some((e) => e.tipo === 'enviar' && e.texto === 'continua'));
   const enviada = avanca(fim.conversa, { tipo: 'enviou' }, 900);
   assert.equal(enviada.conversa.estado, 'falando');
-  assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz']);
+  // Com fone, `falando` ouve: o detector desligado no fim da fala dele volta junto com a voz.
+  assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz', 'ligarDetector']);
 });
 
 test('falaDescartada retoma a voz de onde parou', () => {
@@ -576,5 +577,6 @@ test('fala por cima com o Zé transmitindo: o texto que segue fica guardado e to
   const transcrita = avanca(gravada.conversa, { tipo: 'transcreveu', texto: 'Complemento.' }, 900);
   const enviada = avanca(transcrita.conversa, { tipo: 'enviou' }, 1000);
   assert.equal(enviada.conversa.estado, 'falando');
-  assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz']);
+  // Com fone, `falando` ouve: o detector desligado no fim da fala dele volta junto com a voz.
+  assert.deepEqual(soTipos(enviada.efeitos), ['retomarVoz', 'ligarDetector']);
 });

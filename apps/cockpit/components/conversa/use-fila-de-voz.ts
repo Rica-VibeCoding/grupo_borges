@@ -44,6 +44,8 @@ export function useFilaDeVoz({
   const falaRef = useRef<FalaEmCurso | null>(null);
   const sequenciaRef = useRef<Sequencia | null>(null);
   const turnoFechadoRef = useRef(false);
+  /* Uma bolha do chat tomou o alto-falante: o resto deste turno não fala (fica no chat de texto). */
+  const caladaRef = useRef(false);
   const urlsRef = useRef<string[]>([]);
   const callbacksRef = useRef({ aoTerminar, aoFalhar, aoOuvir, aoSilenciar });
   callbacksRef.current = { aoTerminar, aoFalhar, aoOuvir, aoSilenciar };
@@ -105,6 +107,12 @@ export function useFilaDeVoz({
         limpaUrls();
         callbacksRef.current.aoFalhar('O navegador impediu a reprodução da resposta.');
       },
+      aoPerderAVez: () => {
+        if (geracao !== geracaoRef.current) return;
+        cancelaRef.current();
+        caladaRef.current = true;
+        callbacksRef.current.aoTerminar(); // para a conversa, a voz acabou: ela não fica presa em "falando"
+      },
     });
     if (pausadaRef.current) sequencia.pausa();
     sequenciaRef.current = sequencia;
@@ -157,11 +165,14 @@ export function useFilaDeVoz({
 
   const abreTurno = useCallback(() => {
     turnoFechadoRef.current = false;
+    caladaRef.current = false;
     setFala(null);
   }, []);
   const limpaLegenda = useCallback(() => setFala(null), []);
 
   const enfileira = useCallback((texto: string, id: number | null = null) => {
+    // Calada, o texto não vira voz; o fim vem logo, como se ela tivesse tocado.
+    if (caladaRef.current) { queueMicrotask(() => callbacksRef.current.aoTerminar()); return; }
     filaRef.current.push({ texto, id });
     processaRef.current();
   }, []);
@@ -172,6 +183,7 @@ export function useFilaDeVoz({
   }, []);
 
   const cancela = useCallback(() => {
+    caladaRef.current = false;
     geracaoRef.current += 1;
     pausadaRef.current = false;
     falaRef.current?.cancela();
@@ -184,6 +196,8 @@ export function useFilaDeVoz({
     calou();
   }, [calou, limpaUrls]);
 
+  const cancelaRef = useRef(cancela);
+  cancelaRef.current = cancela;
   useEffect(() => cancela, [cancela]);
 
   const pausa = useCallback(() => {

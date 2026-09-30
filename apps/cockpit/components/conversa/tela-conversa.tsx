@@ -52,7 +52,7 @@ function useSegundosDeEspera(esperando: boolean) {
  *
  * Mora no painel da direita do pager (`pager-do-agente.tsx`), montada também fora da tela.
  * `visivel` é o painel com algum pedaço à vista: só então o visual liga o WebGL. `ativa` é o
- * painel assentado: sair dele com a conversa andando é o parar, freio incluso.
+ * painel assentado: sair dele fecha o microfone e deixa o Zé seguir — sem freio, a voz tocando.
  */
 export function TelaConversa({
   slug,
@@ -70,7 +70,7 @@ export function TelaConversa({
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
   const { mudo, pronto, mudaMudo } = useMudoConversa();
-  const modo = useModoConversa(slug, fone, !pronto || mudo);
+  const modo = useModoConversa(slug, fone, !pronto || mudo, !ativa);
   const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
   const faixaDeBaixoRef = useRef<HTMLSpanElement>(null);
@@ -123,12 +123,14 @@ export function TelaConversa({
   // O pulso que chama o toque, preso à animação de fora: a esfera, o núcleo ou o aro solto.
   const sinal = cena === 'parado' && !preparacaoFalhou;
 
-  // Sair para o chat com a conversa andando é o parar, freio incluso: quando o pager assenta
-  // no chat, pelo dedo ou pelo voltar do navegador. A saída para outra página para quando a
-  // tela desmonta (`useModoConversa`).
+  // Sair para o chat (o pager assenta nele, pelo dedo ou pelo voltar do navegador) nunca freia o
+  // Zé: só o toque freia. No turno dele, o microfone fecha (`fora` em `useModoConversa`), a voz
+  // segue tocando no chat e, na volta, a conversa continua de onde está. Só ouvindo, sem turno
+  // dele, não há o que seguir: a conversa para. Transcrevendo, a fala recém-dita segue para ele.
+  // A saída para outra página para quando a tela desmonta.
   const pararAoSairRef = useRef(() => {});
   pararAoSairRef.current = () => {
-    if (acao === 'parar' || acao === 'interromper') modo.parar();
+    if (acao === 'parar' && cena === 'ouvindo') modo.parar();
     else if (retomando) modo.descartaRetomada(); // sair da tela sem retomar também encerra
   };
   useEffect(() => {
