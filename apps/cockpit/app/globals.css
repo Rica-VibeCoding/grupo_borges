@@ -1045,6 +1045,13 @@ body {
 .ck-caixa[data-linha='uma'] > .ck-miniatura[data-aberto='false'] {
   display: none;
 }
+/* Enquanto a caixa anima a altura na troca de fileira (`usa-troca-de-fileira.ts`),
+ * ela fica MENOR que o conteúdo por 200ms. Em coluna, o flex espremia o campo
+ * até altura zero e o cursor caía fora da caixa (30/09): ninguém encolhe, o
+ * `overflow: hidden` recorta. Fora da animação a altura é `auto` e nada muda. */
+.ck-caixa[data-linha='varias'] > * {
+  flex-shrink: 0;
+}
 
 /* A TROCA DA FALA — a onda e os chips no mesmo lugar, com um fade entre eles.
  *
