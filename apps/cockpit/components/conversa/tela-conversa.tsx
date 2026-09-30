@@ -93,11 +93,13 @@ export function TelaConversa({
   // antes do toque que retoma, o visual já mostra a verdade lida do stream: pensando, trabalhando
   // ou a resposta pronta (`retomada-da-conversa.ts`).
   const retomando = !desligado && modo.retomada !== null;
+  // Falando por cima do pensar dele, o visual segue no turno dele; a fala é só a mistura na esfera.
+  const falaPorCima = cena === 'ouvindo' && falaNaEspera(modo.conversa);
   const vista = desligado
     ? cena
     : modo.retomada
     ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
-    : cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
+    : cenaVisivel({ cena: falaPorCima ? 'esperandoZe' : cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
   const acao = acaoDoToque(cena, preparacaoFalhou, modo.rodando);
   // Com ele pensando, o microfone está aberto e a fala entra na fila dele: a esfera mostra isso
   // (`esfera-estado.ts`) — só com a tela à vista e sem mudo, que é quando ouvir é verdade.
@@ -106,7 +108,7 @@ export function TelaConversa({
     ? 'nao'
     : cena === 'esperandoZe'
       ? 'aberta'
-      : cena === 'ouvindo' && falaNaEspera(modo.conversa)
+      : falaPorCima
         ? 'falando'
         : 'nao';
   const leitura = leituraDaConversa({
