@@ -35,6 +35,7 @@ import {
   useEffect,
   useEffectEvent,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -111,7 +112,8 @@ import {
   registraAnexoPendente,
 } from '../../lib/anexo-pendente';
 import { BolhaDeComandos } from './bolha-de-comandos';
-import { usaTrocaDeFileira } from './usa-troca-de-fileira';
+import { MotionConfig, motion } from 'motion/react';
+import { TROCA_DE_FILEIRA } from './troca-de-fileira';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -300,8 +302,26 @@ export function Composer({
   // Campo vazio e nada anexado: a caixa é UMA fileira (28/09). Com qualquer
   // caractere, inclusive quebra de linha, volta às duas. Regra no globals.css.
   const umaLinha = texto === '' && retidoAnexo === null;
-  const caixaRef = useRef<HTMLFormElement>(null);
-  usaTrocaDeFileira(caixaRef, umaLinha);
+  // O que muda a FORMA da caixa: é só nisso que a Motion mede o layout. Sem a
+  // dependência ela mediria a cada render, e a onda da voz renderiza o
+  // composer a 60 quadros por segundo.
+  const formaDaCaixa = `${texto}|${retidoAnexo !== null}`;
+  // O iPhone pinta o cursor numa camada própria e não o arrasta quando o campo
+  // anda por `transform`: ele ficava fora da caixa (Rica, print de 30/09). Some
+  // durante a troca e, no fim, a seleção é regravada — é mudança de seleção
+  // que faz o iOS repintá-lo no lugar.
+  const escondeCursor = () => {
+    const campo = textareaRef.current;
+    if (campo) campo.style.caretColor = 'transparent';
+  };
+  const devolveCursor = () => {
+    const campo = textareaRef.current;
+    if (!campo) return;
+    campo.style.caretColor = '';
+    if (document.activeElement !== campo) return;
+    const { selectionStart, selectionEnd, selectionDirection } = campo;
+    campo.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? undefined);
+  };
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
   // devolve o foco ao botão que abriu.
@@ -386,7 +406,10 @@ export function Composer({
   // `height = 'auto'` antes de ler `scrollHeight` não é ritual: sem zerar, o
   // `scrollHeight` nunca desce, porque ele mede o conteúdo contra a altura já
   // aplicada. É o que faz a caixa encolher ao apagar linha.
-  useEffect(() => {
+  // `useLayoutEffect`, não `useEffect`: a altura tem de estar certa ANTES da
+  // pintura, que é quando a Motion mede. Depois da pintura, colar três linhas
+  // no campo vazio animava até uma linha e saltava para três.
+  useLayoutEffect(() => {
     const campo = textareaRef.current;
     if (!campo) return;
     campo.style.height = 'auto';
@@ -799,7 +822,8 @@ export function Composer({
   }
 
   return (
-    <>
+    // `user`: com movimento reduzido no aparelho, a Motion não anima layout.
+    <MotionConfig reducedMotion="user">
       {/* A BORDA PROGRESSIVA — o feed se dissolve da cabeça do mascote ao fim
           da tela, num efeito só (substitui o rodapé de vidro). Irmã ANTERIOR
           da coluna, que é `relative`: entre posicionados sem z-index vale a
@@ -820,12 +844,20 @@ export function Composer({
           empilha. Ela não repete o "Pensando há 12 s" da linha viva: aquilo é
           texto no feed, isto é alguém do outro lado. Presença e nada mais: o ■
           que morava colado nela desceu para a base da caixa em 21/08. */}
-      <BolinhaAgente
-        status={daFrota?.status}
-        turnoVivo={turnoVivo}
-        escrevendo={escrevendo}
-        ouvindo={texto.trim() !== ''}
-      />
+      {/* Sobe e desce com a caixa: a coluna é ancorada embaixo, então quando a
+          caixa cresce a bolinha é empurrada — e anda em vez de pular. */}
+      <motion.div
+        layout="position"
+        layoutDependency={formaDaCaixa}
+        transition={{ layout: TROCA_DE_FILEIRA }}
+      >
+        <BolinhaAgente
+          status={daFrota?.status}
+          turnoVivo={turnoVivo}
+          escrevendo={escrevendo}
+          ouvindo={texto.trim() !== ''}
+        />
+      </motion.div>
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />
@@ -968,8 +1000,17 @@ export function Composer({
         className="relative mx-auto w-full"
         style={{ maxWidth: 'var(--ck-w-composer)' }}
       >
-      <form
-        ref={caixaRef}
+      <motion.form
+        // A TROCA DE FILEIRA (vazio ↔ com texto) vira o `flex-direction` da
+        // caixa, e CSS não anima isso. A Motion mede antes e depois e anima só
+        // com `transform` (§9.4 da estética): o layout muda uma vez, o feed
+        // recalcula uma vez. Os filhos com `layout` desfazem a escala da mãe e
+        // andam até o lugar novo em vez de pular.
+        layout
+        layoutDependency={formaDaCaixa}
+        transition={{ layout: TROCA_DE_FILEIRA }}
+        onLayoutAnimationStart={escondeCursor}
+        onLayoutAnimationComplete={devolveCursor}
         onSubmit={aoSubmeter}
         className="ck-lit ck-caixa flex w-full flex-col border"
         data-linha={umaLinha ? 'uma' : 'varias'}
@@ -1026,7 +1067,10 @@ export function Composer({
           }}
           campoRef={textareaRef}
         >
-          <textarea
+          <motion.textarea
+              layout="position"
+              layoutDependency={formaDaCaixa}
+              transition={{ layout: TROCA_DE_FILEIRA }}
               ref={textareaRef}
               // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
               // referência: "queria que o input de texto tivesse uma linha só,
@@ -1172,6 +1216,7 @@ export function Composer({
             </button>
           ) : emCaptura(modo) ? null : (
             <BotaoAnexo
+              dependenciaDeLayout={formaDaCaixa}
               estado={anexo.estado}
               alternarGaveta={anexo.alternarGaveta}
               // `emAndamento` SAIU daqui (15/08). Abrir a gaveta e escolher um
@@ -1189,7 +1234,10 @@ export function Composer({
             />
           )}
 
-          <div
+          <motion.div
+            layout="position"
+            layoutDependency={formaDaCaixa}
+            transition={{ layout: TROCA_DE_FILEIRA }}
             // O DESLOCAMENTO. Sem despacho em cena a fileira desliza para a
             // direita pela largura do slot: o microfone encosta na borda e o
             // botão sai pela beirada, onde o `overflow: hidden` da caixa o
@@ -1455,7 +1503,7 @@ export function Composer({
                   apagaria a outra no meio do gesto. */}
               <IconeEnviar className="ck-aperta-miolo" />
             </InputGroupButton>
-          </div>
+          </motion.div>
         </div>
 
         {/* O fio — ver `aparencia-envio.ts`. Track de 2px na base, dentro da
@@ -1502,7 +1550,7 @@ export function Composer({
             />
           </div>
         ) : null}
-      </form>
+      </motion.form>
 
         {/* A GAVETA. Irmã do form, dentro do invólucro ancorado — sobe a partir
             do "+" e nunca é recortada pelo `overflow` da caixa. */}
@@ -1595,6 +1643,6 @@ export function Composer({
         <div aria-hidden style={{ height: '17px' }} />
       )}
     </div>
-    </>
+    </MotionConfig>
   );
 }

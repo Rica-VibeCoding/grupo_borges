@@ -381,6 +381,13 @@ Três regras duras, que existem por causa do gate técnico:
 2. **Nada animado pode causar reflow durante o stream.** Gate item 2: só a mensagem que está streamando muda na tela.
 3. **`prefers-reduced-motion: reduce` desliga tudo**, trocando por mudança de opacidade instantânea. Sem exceção.
 
+**Biblioteca de animação liberada (Rica, 30/09/2026).** Revoga o "zero biblioteca de motion"
+das seções abaixo: o cockpit amadureceu e vai virar produto, e movimento é o que o usuário mais
+sente. A da casa é a **Motion** (`motion/react`) — o `layout` dela anima mudança de tamanho e
+posição só com `transform`, o que cumpre a regra 1. O que fica valendo: experiência e velocidade
+do usuário primeiro — `layoutDependency` em todo `layout` (sem ela a Motion mede a cada render) e
+`MotionConfig reducedMotion="user"` para a regra 3. Primeiro uso: a troca de fileira do composer.
+
 ## 6. Micro-momentos — onde mora o "amei"
 
 Seis momentos. São a entrega estética, não enfeite.

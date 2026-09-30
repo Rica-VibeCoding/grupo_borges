@@ -29,10 +29,12 @@
  * fora, que é quem lhe dá a âncora do `position: relative`.
  */
 import { useEffect, useRef, type CSSProperties, type RefObject } from 'react';
+import { motion } from 'motion/react';
 
 import { ITENS_DA_GAVETA, type EspecieAnexo } from '../../lib/anexo';
 import type { EstadoAnexo } from '../../lib/usa-anexo';
 import { IconeAnexo, IconeDescartar, IconeDocumento, IconeFoto, IconeVideo } from './icones';
+import { TROCA_DE_FILEIRA } from './troca-de-fileira';
 
 const ICONE_DO_ITEM: Record<EspecieAnexo, (props: { tamanho: number }) => React.ReactElement> = {
   image: IconeFoto,
@@ -59,7 +61,11 @@ export function BotaoAnexo({
   alternarGaveta,
   desabilitado,
   botaoRef,
+  dependenciaDeLayout,
 }: {
+  /** A forma da caixa do composer: quando ela muda, o "+" anda junto com a
+   *  troca de fileira em vez de pular. Ver `troca-de-fileira.ts`. */
+  dependenciaDeLayout: string;
   estado: EstadoAnexo;
   alternarGaveta: () => void;
   /** O composer está travado por outro motivo (compact, envio de texto em voo). */
@@ -69,7 +75,10 @@ export function BotaoAnexo({
   const aberta = estado.gaveta;
 
   return (
-    <button
+    <motion.button
+      layout="position"
+      layoutDependency={dependenciaDeLayout}
+      transition={{ layout: TROCA_DE_FILEIRA }}
       ref={botaoRef}
       type="button"
       onClick={alternarGaveta}
@@ -106,7 +115,7 @@ export function BotaoAnexo({
       >
         <IconeAnexo tamanho={17} />
       </span>
-    </button>
+    </motion.button>
   );
 }
 

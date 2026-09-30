@@ -959,15 +959,17 @@ body {
  * Duração e curva são as da gaveta, por ordem antiga do Rica: superfície que
  * entra, na casa inteira, entra com o mesmo `slow`. */
 .ck-fileira-acoes {
-  transform: translateX(0);
-  transition: transform var(--ck-dur-enter, 200ms) var(--ck-ease);
+  /* `translate`, não `transform`: o `transform` é da Motion, que anima a
+   * fileira na troca de fileira do composer e o escreveria por cima. */
+  translate: 0;
+  transition: translate var(--ck-dur-enter, 200ms) var(--ck-ease);
 }
 
 /* 32px do slot mais o gap da fileira. O botão ocupa 32px de LAYOUT: os 44px de
    alvo entram como padding e saem como margem negativa igual, que é o que
    `alvo-de-toque.ts` faz para não inflar a caixa visual. */
 .ck-fileira-acoes[data-despacho='oculto'] {
-  transform: translateX(calc(32px + var(--ck-space-3)));
+  translate: calc(32px + var(--ck-space-3));
 }
 
 /* A porta da voz no fim do composer (Rica, 29/09): só com mouse. No toque a voz
@@ -1039,18 +1041,11 @@ body {
   min-width: 0;
 }
 .ck-caixa[data-linha='uma'] .ck-fileira-acoes[data-despacho='oculto'] {
-  transform: none;
+  translate: none;
   margin-inline-end: calc((32px + var(--ck-space-3)) * -1);
 }
 .ck-caixa[data-linha='uma'] > .ck-miniatura[data-aberto='false'] {
   display: none;
-}
-/* Enquanto a caixa anima a altura na troca de fileira (`usa-troca-de-fileira.ts`),
- * ela fica MENOR que o conteúdo por 200ms. Em coluna, o flex espremia o campo
- * até altura zero e o cursor caía fora da caixa (30/09): ninguém encolhe, o
- * `overflow: hidden` recorta. Fora da animação a altura é `auto` e nada muda. */
-.ck-caixa[data-linha='varias'] > * {
-  flex-shrink: 0;
 }
 
 /* A TROCA DA FALA — a onda e os chips no mesmo lugar, com um fade entre eles.
