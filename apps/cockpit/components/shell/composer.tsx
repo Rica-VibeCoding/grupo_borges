@@ -317,10 +317,6 @@ export function Composer({
     return () => clearTimeout(relogio);
   }, [fotoEmCena, miniaturaRecolhida, fotoVoou]);
   const umaLinha = texto === '' && retidoAnexo === null && miniaturaRecolhida;
-  // O que muda a FORMA da caixa: é só nisso que a Motion mede o layout. Sem a
-  // dependência ela mediria a cada render, e a onda da voz renderiza o
-  // composer a 60 quadros por segundo.
-  const formaDaCaixa = `${texto}|${retidoAnexo !== null}|${miniaturaRecolhida}`;
   // O iPhone pinta o cursor numa camada própria e não o arrasta quando o campo
   // anda por `transform`: ele ficava fora da caixa (Rica, print de 30/09). Some
   // durante a troca e, no fim, a seleção é regravada — é mudança de seleção
@@ -540,6 +536,11 @@ export function Composer({
   // áudio, no slot de entrada — não há texto a mandar enquanto a gravação
   // espera. Fora daí, quem manda o botão existir é haver o que despachar.
   const despachoEmCena = temConteudo && modo !== 'travada';
+  // O que muda a FORMA da caixa: é só nisso que a Motion mede o layout. Sem a
+  // dependência ela mediria a cada render, e a onda da voz renderiza o
+  // composer a 60 quadros por segundo. O despacho entra porque tirar o botão
+  // de enviar anda os botões — o deslize antigo por CSS saiu em 30/09.
+  const formaDaCaixa = `${texto}|${retidoAnexo !== null}|${miniaturaRecolhida}|${despachoEmCena}`;
   // O ■ SOME DURANTE A CAPTURA. Em `travada` o slot de entrada já mostra um ■
   // — encerrar a gravação e mandar o áudio — e dois quadrados brancos na mesma
   // fileira são dois recados diferentes com o mesmo desenho. Enquanto o dedo
@@ -1255,13 +1256,9 @@ export function Composer({
           )}
 
           <div
-            // O DESLOCAMENTO. Sem despacho em cena a fileira desliza para a
-            // direita pela largura do slot: o microfone encosta na borda e o
-            // botão sai pela beirada, onde o `overflow: hidden` da caixa o
-            // recorta. Digitar traz a fileira de volta e o botão aparece no
-            // lugar que abriu — o movimento em vez do buraco (Rica, 20/08:
-            // *"parecendo uma boca com um dente a menos"*). Regra em
-            // `.ck-fileira-acoes`.
+            // Sem despacho em cena o botão de enviar sai pela borda e não
+            // guarda lugar (Rica, 20/08: *"parecendo uma boca com um dente a
+            // menos"*). Regra em `.ck-fileira-acoes`; o movimento é da Motion.
             className="ck-fileira-acoes flex min-w-0 flex-1 items-center justify-end"
             data-despacho={despachoEmCena ? 'em-cena' : 'oculto'}
           >

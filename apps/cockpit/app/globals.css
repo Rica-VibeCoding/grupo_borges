@@ -939,37 +939,15 @@ body {
  * custa layout nem briga com o streaming do feed. */
 /* A FILEIRA DE AÇÕES DO COMPOSER — o movimento no lugar do buraco.
  *
- * A F2.3 separou microfone e envio em slots próprios, e a primeira versão
- * reservava o espaço do envio mesmo vazio, para o microfone não pular de lugar
- * a cada tecla. O vão ficou à vista: *"um buraco em branco parecendo uma boca
- * com um dente a menos"* (Rica, 20/08). Ele pediu o contrário do espaço
- * guardado — que os elementos se desloquem e o botão SURJA no lugar que abriu,
- * com a leveza do painel que já abre assim.
- *
- * Sem despacho em cena a fileira inteira desliza para a direita pela largura do
- * slot: o microfone encosta na borda e o botão sai pela beirada, onde o
- * `overflow: hidden` da caixa o recorta. Digitar traz a fileira de volta, e os
- * elementos andam para a esquerda enquanto o botão aparece.
- *
- * NADA DE LARGURA (§9.4): quem anima é `transform` aqui e `opacity` no botão —
- * o layout não recalcula um pixel, e por isso o movimento não briga com o
- * streaming do feed. A alternativa óbvia seria animar a largura do slot de 0 a
- * 44px, e é exatamente o que a proibição existe para impedir.
- *
- * Duração e curva são as da gaveta, por ordem antiga do Rica: superfície que
- * entra, na casa inteira, entra com o mesmo `slow`. */
-.ck-fileira-acoes {
-  /* `translate`, não `transform`: o `transform` é da Motion, que anima a
-   * fileira na troca de fileira do composer e o escreveria por cima. */
-  translate: 0;
-  transition: translate var(--ck-dur-enter, 200ms) var(--ck-ease);
-}
-
-/* 32px do slot mais o gap da fileira. O botão ocupa 32px de LAYOUT: os 44px de
-   alvo entram como padding e saem como margem negativa igual, que é o que
-   `alvo-de-toque.ts` faz para não inflar a caixa visual. */
+ * Sem despacho em cena, o botão de enviar não guarda o lugar: *"um buraco em
+ * branco parecendo uma boca com um dente a menos"* (Rica, 20/08). A margem
+ * negativa devolve o slot (32px do botão + o gap) e o empurra para fora da
+ * borda, onde o `overflow: hidden` da caixa o recorta; o botão continua no DOM
+ * com opacidade zero. Quem anima os botões andando é a Motion, no grupo dentro
+ * da fileira (`composer.tsx`) — o deslize próprio por `translate` saiu em
+ * 30/09: vale o mesmo gesto da troca de fileira, nos dois modos. */
 .ck-fileira-acoes[data-despacho='oculto'] {
-  translate: calc(32px + var(--ck-space-3));
+  margin-inline-end: calc((32px + var(--ck-space-3)) * -1);
 }
 
 /* A porta da voz no fim do composer (Rica, 29/09): só com mouse. No toque a voz
@@ -1039,10 +1017,6 @@ body {
   order: 3;
   flex: 0 1 auto;
   min-width: 0;
-}
-.ck-caixa[data-linha='uma'] .ck-fileira-acoes[data-despacho='oculto'] {
-  translate: none;
-  margin-inline-end: calc((32px + var(--ck-space-3)) * -1);
 }
 .ck-caixa[data-linha='uma'] > .ck-miniatura[data-recolhida='true'] {
   display: none;
