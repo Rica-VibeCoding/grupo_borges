@@ -71,6 +71,11 @@ mv .next .next-antes-<hash> && mv .next-estagio-<hash> .next
 systemctl --user restart cockpit-v2
 ```
 
+Compilar do `origin/main` recém-buscado (`git worktree add --detach <dir> origin/main`),
+nunca da árvore compartilhada: build de base atrasada tira do ar o que outra sessão
+publicou — em 30/09 uma build sobre `cfd997a` derrubou quatro commits que estavam no ar
+havia 14 min, e o sintoma foi "nada funciona" com o servidor respondendo 200.
+
 Voltar é o `mv` ao contrário. Conferir o `deploymentId` (§4) e, para tela que
 só existe desenhada (WebGL), tirar foto sem o celular do Rica:
 `node scripts/foto-da-tela.mjs <url> <saida.png> [espera_ms] [visual]` — Chromium
