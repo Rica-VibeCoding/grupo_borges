@@ -55,10 +55,26 @@ Portas relevantes nesta máquina (`srv1061129`):
 | 3443 | `tailscale serve` → 3007 | Cockpit v1 |
 | 3445 | `tailscale serve` → 8000 | API para desenvolvimento remoto |
 | 3446 | `tailscale serve` → 3008 | produção do v2; única URL do Rica |
+| 3447 | `tailscale serve` → 3011 | teste da tela de voz: `cockpit-teste-escuta3.service`, roda da cópia `~/repos/gb-teste-escuta` (trabalho de outro agente, não mexer) |
 
 **A `:3444` não existe mais.** Ela publicava o desenvolvimento e foi retirada da
 tailnet em 08/08; trabalho em andamento é validado localmente, não pelo celular do
 Rica.
+
+**Publicar na 3008** sem tirar o servidor vivo do ar: compilar num estágio,
+trocar a pasta e reiniciar. Compilar direto em `.next` quebra a produção durante
+o build.
+
+```bash
+COCKPIT_DIST_DIR=.next-estagio-<hash> corepack pnpm exec next build
+mv .next .next-antes-<hash> && mv .next-estagio-<hash> .next
+systemctl --user restart cockpit-v2
+```
+
+Voltar é o `mv` ao contrário. Conferir o `deploymentId` (§4) e, para tela que
+só existe desenhada (WebGL), tirar foto sem o celular do Rica:
+`node scripts/foto-da-tela.mjs <url> <saida.png> [espera_ms] [visual]` — Chromium
+headless com SwiftShader, 430×932, imprime o `data-cena` lido.
 
 Produção: `https://srv1061129.tailfe77db.ts.net:3446`. **Nunca pelo IP `100.x`**
 — origem sem HTTPS não expõe microfone, e o modo voz simplesmente não existe lá.

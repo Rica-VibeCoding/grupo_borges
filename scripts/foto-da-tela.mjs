@@ -1,0 +1,24 @@
+// Foto de uma tela do cockpit sem o celular do Rica (WebGL por SwiftShader). Uso na docs/cockpit-v2-stack.md §2.
+import { spawn } from 'node:child_process';
+const [,, url, out, espera='6000', visual='esfera/vidro'] = process.argv;
+const C = process.env.HOME + '/.cache/ms-playwright/chromium-1217/chrome-linux/chrome';
+const p = spawn(C, ['--headless=new','--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader','--remote-debugging-port=9333','--window-size=430,932','about:blank']);
+const dorme = (ms) => new Promise(r => setTimeout(r, ms));
+await dorme(2500);
+const alvos = await (await fetch('http://127.0.0.1:9333/json')).json();
+const ws = new WebSocket(alvos.find(t => t.type === 'page').webSocketDebuggerUrl);
+await new Promise(r => ws.onopen = r);
+let id = 0; const pend = {};
+ws.onmessage = (m) => { const d = JSON.parse(m.data); if (pend[d.id]) { pend[d.id](d); delete pend[d.id]; } };
+const cmd = (method, params={}) => new Promise(r => { pend[++id] = r; ws.send(JSON.stringify({ id, method, params })); });
+await cmd('Emulation.setDeviceMetricsOverride', { width: 430, height: 932, deviceScaleFactor: 2, mobile: true });
+await cmd('Page.navigate', { url: new URL(url).origin + '/manifest.webmanifest' });
+await dorme(800);
+await cmd('Runtime.evaluate', { expression: `localStorage.setItem('ck-conversa-visual', '${visual}')` });
+await cmd('Page.navigate', { url });
+await dorme(+espera);
+const r = await cmd('Page.captureScreenshot', { format: 'png' });
+(await import('node:fs')).writeFileSync(out, Buffer.from(r.result.data, 'base64'));
+const t = await cmd('Runtime.evaluate', { expression: "document.querySelector('[data-cena]')?.dataset.cena + ' | ' + (document.querySelector('[data-desenho]')?.dataset.desenho)", returnByValue: true });
+console.log(out, t.result.result.value);
+p.kill(); process.exit(0);
