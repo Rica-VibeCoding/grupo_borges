@@ -1,37 +1,9 @@
-.gatilho {
-  display: inline-grid;
-  place-items: center;
-  width: var(--ck-touch-min);
-  height: var(--ck-touch-min);
-  border: 0;
-  border-radius: var(--ck-radius-caixa);
-  background: transparent;
-  color: var(--ck-text-secondary);
-}
-.gatilho svg {
-  width: 22px;
-  height: 22px;
-}
-/* Para o dedo, a folha abre arrastando para cima; o botão fica fora da vista e
- * reaparece no lugar quando o teclado chega nele. */
-.gatilho:not(:focus-visible) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.gatilho:focus-visible,
 .variacao:focus-visible {
   outline: 2px solid var(--ck-focus);
   outline-offset: 2px;
 }
 
 /* Em tela baixa a folha rola por dentro; o arrasto de fechar continua no topo. */
-.folha {
-  max-height: 92dvh;
-}
 .corpo {
   display: grid;
   gap: var(--ck-space-5);

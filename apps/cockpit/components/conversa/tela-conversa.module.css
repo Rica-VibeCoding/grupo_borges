@@ -198,33 +198,6 @@
   pointer-events: none;
 }
 
-/* A dica da primeira vez: 2 s, logo acima da faixa de baixo, e some sozinha. */
-.dica {
-  position: absolute;
-  z-index: 2;
-  left: 50%;
-  bottom: calc(var(--ck-safe-bottom) + 56px);
-  margin: 0;
-  padding: var(--ck-space-2) var(--ck-space-4);
-  border-radius: var(--ck-radius-caixa);
-  background: var(--ck-surface-composer);
-  color: var(--ck-text-primary);
-  font-size: var(--ck-text-base);
-  white-space: nowrap;
-  pointer-events: none;
-  transform: translateX(-50%);
-  animation: dica 2s var(--ck-ease) both;
-}
-@keyframes dica {
-  0% { opacity: 0; transform: translate(-50%, 8px); }
-  12%, 85% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, 0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dica { animation: none; }
-}
-
 /* A foto do agente (fase 4, item 5). No alto, centrada: a pílula (B) ou a linha em mono (C). */
 .tela[data-direcao] .topo { justify-content: center; margin-right: 0; padding-top: var(--ck-space-2); }
 .tela[data-direcao='eclipse'] .topo { padding-top: var(--ck-space-5); }

@@ -56,7 +56,7 @@ describe('leitura do arrasto', () => {
 
 describe('gestos da conversa', () => {
   it('cima abre as configurações, toque segue sendo toque', () => {
-    assert.equal(gestoDaConversa(MEIO, anda(5, -200), FAIXA), 'configuracoes');
+    assert.equal(gestoDaConversa(MEIO, anda(5, -200), FAIXA), 'cima');
     assert.equal(gestoDaConversa(MEIO, anda(3, 3), FAIXA), 'toque');
   });
 
@@ -71,9 +71,9 @@ describe('gestos da conversa', () => {
     const naFaixa = { x: 200, y: FAIXA + 5 };
     assert.equal(gestoDaConversa(naFaixa, { x: 200, y: naFaixa.y - 300 }, FAIXA), 'nada');
     const acima = { x: 200, y: FAIXA - 1 };
-    assert.equal(gestoDaConversa(acima, { x: 200, y: acima.y - 300 }, FAIXA), 'configuracoes');
+    assert.equal(gestoDaConversa(acima, { x: 200, y: acima.y - 300 }, FAIXA), 'cima');
     // A borda lateral não importa para cima.
-    assert.equal(gestoDaConversa({ x: 10, y: 400 }, { x: 10, y: 200 }, FAIXA), 'configuracoes');
+    assert.equal(gestoDaConversa({ x: 10, y: 400 }, { x: 10, y: 200 }, FAIXA), 'cima');
   });
 });
 

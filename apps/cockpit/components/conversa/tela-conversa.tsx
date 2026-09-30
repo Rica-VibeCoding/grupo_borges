@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { usaFrota } from '../shell/frota-provider';
 import { LinkAbrePainel } from '../shell/superficie-otimista';
@@ -8,7 +8,7 @@ import { LinkAbrePainel } from '../shell/superficie-otimista';
 import { BotaoLigar } from './botao-ligar';
 import { BotaoMudo } from './botao-mudo';
 import { useMudoConversa } from './use-mudo-conversa';
-import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
+import { usePublicaDetalheDaConversa } from './contexto-configuracao-conversa';
 import { conviteDaTela } from './direcao-da-voz';
 import { EsferaConversa } from './esfera-conversa';
 import type { EscutaNoPensar } from './esfera-estado';
@@ -23,7 +23,7 @@ import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
 import styles from './tela-conversa.module.css';
 import { ConviteDaVoz, LegendaDaVoz, SinalDoToque } from './texto-da-voz';
 import { acaoDoToque, toqueConta } from './toque-da-conversa';
-import { useDicaDosGestos, useGestosDaConversa } from './use-gestos-da-conversa';
+import { useGestosDaConversa } from './use-gestos-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
 import { falaNaEspera } from '@/lib/conversa/maquina';
 import { useChaveDaConversa, useDirecaoDaVoz, useVisualConversa } from './use-preferencias-conversa';
@@ -46,9 +46,8 @@ function useSegundosDeEspera(esperando: boolean) {
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia; no turno
  * do Zé, um toque o interrompe; fora dele, um toque para; na vez do Rica, o dedo parado segura a vez. Os botões viraram gestos: arrastar
- * para a direita volta ao chat de texto (é a rolagem do pager), para cima abre as
- * configurações. No alto, a foto do agente com o nome e o estado — na pílula (Atividade ao
- * vivo) ou no núcleo que toma o lugar da esfera (Eclipse), a chave é das configurações. O
+ * para a direita volta ao chat de texto (é a rolagem do pager); para cima está livre. No alto, a foto do agente com o nome e o estado — na pílula (Atividade ao
+ * vivo) ou no núcleo que toma o lugar da esfera (Eclipse), abre a gaveta do agente, com as configurações. O
  * estado é a palavra ao lado do nome, na cor da vez. Parada, a tela escreve uma linha pequena
  * e o aro pulsa; andando, a legenda (sua fala, a resposta) mora logo abaixo da animação, só
  * com "Mostrar texto". O que pede ação vai no cartão do pé. O título e a frase explicativa
@@ -69,18 +68,16 @@ export function TelaConversa({
   ativa: boolean;
   visivel: boolean;
 }) {
-  const [visual, escolheVisual] = useVisualConversa();
-  const [direcao, escolheDirecao] = useDirecaoDaVoz();
-  const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
-  const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
+  const [visual] = useVisualConversa();
+  const [direcao] = useDirecaoDaVoz();
+  const [fone] = useChaveDaConversa(CHAVE_FONE);
+  const [texto] = useChaveDaConversa(CHAVE_TEXTO);
   const { mudo, pronto, mudaMudo } = useMudoConversa();
   const modo = useModoConversa(slug, fone, !pronto || mudo, !ativa);
   const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
   const faixaDeBaixoRef = useRef<HTMLSpanElement>(null);
   const ultimoToqueRef = useRef<number | null>(null);
-  const [configAberta, setConfigAberta] = useState(false);
-  const dica = useDicaDosGestos(ativa);
   // Desligado pelo painel (o mesmo `offline` que o card e o composer leem): vence qualquer cena.
   // Agente ainda não carregado na frota não conta — a esfera não pisca apagada na abertura.
   const { agents } = usaFrota();
@@ -137,9 +134,10 @@ export function TelaConversa({
     texto,
   );
   const notas = texto && modo.streamStatus === 'reconnecting' ? ['Reconectando ao agente…'] : [];
-  // O número técnico foi para as configurações: a tela principal só convida.
+  // O número técnico foi para as configurações (a gaveta do agente): a tela principal só convida.
   const detalheTecnico =
     modo.tempoCargaMs !== null ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s` : null;
+  usePublicaDetalheDaConversa(ativa, detalheTecnico);
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.fala.firme);
   const legenda = legendaDaVez({ cena, texto, fala: modo.fala, falaDoZe: modo.falaDoZe });
   // O pulso que chama o toque, preso à animação de fora: a esfera, o núcleo ou o aro solto.
@@ -168,14 +166,12 @@ export function TelaConversa({
   useEffect(() => {
     if (desligado) encerrarAoDesligarRef.current();
   }, [desligado]);
-  const abreConfiguracoes = useCallback(() => setConfigAberta(true), []);
   // Dedo parado 500 ms na vez do Rica segura a vez: a contagem do silêncio para até soltar.
   const cenaRef = useRef(cena);
   cenaRef.current = cena;
   const { segura } = modo;
   const { gestos, cliqueConta } = useGestosDaConversa({
     faixaDeBaixoRef,
-    aoConfiguracoes: abreConfiguracoes,
     leCena: () => cenaRef.current,
     aoSegurar: () => segura(true),
     aoSoltar: () => segura(false),
@@ -234,20 +230,6 @@ export function TelaConversa({
               <PilulaDoAgente slug={slug} nome={nome} cena={vista} segundos={segundos} />
             )}
           </LinkAbrePainel>
-          <ConfiguracaoDaConversa
-            ativa={ativa}
-            direcao={direcao}
-            escolheDirecao={escolheDirecao}
-            visual={visual}
-            escolheVisual={escolheVisual}
-            fone={fone}
-            mudaFone={mudaFone}
-            texto={texto}
-            mudaTexto={mudaTexto}
-            aberta={configAberta}
-            mudaAberta={setConfigAberta}
-            detalheTecnico={detalheTecnico}
-          />
         </header>
 
         {pecas.esfera && visivel ? (
@@ -289,7 +271,7 @@ export function TelaConversa({
         ) : null}
       </div>
 
-      <BotaoMudo mudo={mudo} aoMudar={mudaMudo} ativo={ativa && pronto && !configAberta} />
+      <BotaoMudo mudo={mudo} aoMudar={mudaMudo} ativo={ativa && pronto} />
       <button
         type="button"
         className={styles.toque}
@@ -299,11 +281,6 @@ export function TelaConversa({
         onClick={toca}
       />
 
-      {dica ? (
-        <p className={styles.dica} aria-hidden="true">
-          Arraste para cima: configurações
-        </p>
-      ) : null}
       <span ref={faixaDeBaixoRef} className={styles.faixaDeBaixo} aria-hidden="true" />
 
       {aviso ? (

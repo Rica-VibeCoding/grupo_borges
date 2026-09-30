@@ -6,10 +6,9 @@ const tela = readFileSync(new URL('./tela-conversa.tsx', import.meta.url), 'utf8
 const pager = readFileSync(new URL('./pager-do-agente.tsx', import.meta.url), 'utf8');
 const entrada = readFileSync(new URL('../../app/conversa/[slug]/page.tsx', import.meta.url), 'utf8');
 
-test('cabeçalho da voz reutiliza o acionador do painel sem substituir as preferências móveis', () => {
+test('cabeçalho da voz é o acionador do painel; arrastar para cima não abre nada', () => {
   assert.match(tela, /<LinkAbrePainel[\s\S]*?<CabecaDoEclipse[\s\S]*?<PilulaDoAgente[\s\S]*?<\/LinkAbrePainel>/);
-  assert.match(tela, /aoConfiguracoes: abreConfiguracoes/);
-  assert.match(tela, /<ConfiguracaoDaConversa/);
+  assert.doesNotMatch(tela, /aoConfiguracoes|<ConfiguracaoDaConversa/);
 });
 
 test('captura do paginador não trata links do cabeçalho de voz como troca de tela', () => {

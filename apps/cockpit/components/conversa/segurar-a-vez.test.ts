@@ -55,7 +55,7 @@ describe('segurar a vez: gesto × estado', () => {
 
   it('dedo que anda antes dos 500 ms é gesto e não segura, mesmo devagar', () => {
     for (const cena of CENAS) {
-      assert.deepEqual(dedo(cena, ['anda', 'quinhentos'], 'configuracoes'), { segurou: false, soltar: 'configuracoes' }, cena);
+      assert.deepEqual(dedo(cena, ['anda', 'quinhentos'], 'cima'), { segurou: false, soltar: 'cima' }, cena);
       assert.deepEqual(dedo(cena, ['anda', 'quinhentos'], 'nada'), { segurou: false, soltar: 'nada' }, cena);
     }
   });
@@ -65,11 +65,11 @@ describe('segurar a vez: gesto × estado', () => {
   });
 
   it('depois de segurar, andar não vira gesto: o soltar só devolve a contagem', () => {
-    assert.deepEqual(dedo('ouvindo', ['quinhentos', 'anda'], 'configuracoes'), { segurou: true, soltar: 'solta' });
+    assert.deepEqual(dedo('ouvindo', ['quinhentos', 'anda'], 'cima'), { segurou: true, soltar: 'solta' });
   });
 
   it('fora da vez, o dedo longo que anda depois dos 500 ms continua gesto', () => {
-    assert.deepEqual(dedo('falando', ['quinhentos', 'anda'], 'configuracoes'), { segurou: false, soltar: 'configuracoes' });
+    assert.deepEqual(dedo('falando', ['quinhentos', 'anda'], 'cima'), { segurou: false, soltar: 'cima' });
     assert.deepEqual(dedo('parado', ['quinhentos', 'anda'], 'nada'), { segurou: false, soltar: 'nada' });
   });
 

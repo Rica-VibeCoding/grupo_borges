@@ -29,27 +29,21 @@ for (const [caminho, busca] of [
   });
 }
 
-test('folha móvel e gaveta reutilizam um só miolo de controles', () => {
-  const folha = le('./configuracao-da-conversa.tsx');
+test('a gaveta do agente é a única casa dos controles da conversa', () => {
   const gaveta = le('./configuracao-no-painel.tsx');
   const controles = le('./controles-da-conversa.tsx');
-  assert.match(le('./tela-conversa.tsx'), /<ConfiguracaoDaConversa\s+ativa=\{ativa\}/);
-  assert.match(folha, /<ControlesDaConversa/);
+  assert.ok(!le('./tela-conversa.tsx').includes('ConfiguracaoDaConversa'));
   assert.match(gaveta, /<ControlesDaConversa/);
-  assert.match(folha, /<Drawer open=\{aberta\} onOpenChange=\{mudaAberta\}/);
   for (const texto of ['Estou de fone', 'Mostrar texto', 'Foto do agente']) {
     assert.ok(controles.includes(texto));
-    assert.ok(!folha.includes(`nome="${texto}"`));
     assert.ok(!gaveta.includes(`nome="${texto}"`));
   }
 });
 
-test('só a gaveta usa a variante compacta, sem descrição; a folha móvel segue igual', () => {
-  const folha = le('./configuracao-da-conversa.tsx');
+test('a gaveta usa a variante compacta, sem descrição', () => {
   const gaveta = le('./configuracao-no-painel.tsx');
   const controles = le('./controles-da-conversa.tsx');
   assert.match(gaveta, /detalheTecnico=\{detalheTecnico\}\s+compacta\s+\/>/);
-  assert.ok(!folha.includes('compacta'));
   assert.ok(!gaveta.includes('Ficam guardadas neste aparelho.'));
   assert.match(controles, /compacta \? null : <span className=\{styles\.descricao\}>/);
   assert.match(controles, /compacta \? null : <p className=\{styles\.dica\}>/);

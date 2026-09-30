@@ -1,6 +1,6 @@
 /**
- * Os gestos no lugar dos botões (fase 3, direções do Rica em 27/09): na conversa, arrastar
- * para cima abre as configurações. Arrasto não é toque: o dedo que andou mais que um toque
+ * Os gestos no lugar dos botões (fase 3, direções do Rica em 27/09). Arrastar para cima está
+ * livre (30/09: as configurações moram na gaveta do agente, aberta pela foto). Arrasto não é toque: o dedo que andou mais que um toque
  * nunca começa nem para a conversa, mesmo quando não chega a ser gesto nenhum. Os de lado
  * não passam por aqui: chat ⇄ voz é a rolagem nativa do pager (`pager-do-agente.tsx`) e a
  * tropa segue o dedo pela regra de `deslize.ts`.
@@ -29,10 +29,10 @@ export function leArrasto(inicio: Ponto, fim: Ponto): Leitura {
   return 'indeciso';
 }
 
-export type GestoDaConversa = 'toque' | 'configuracoes' | 'nada';
+export type GestoDaConversa = 'toque' | 'cima' | 'nada';
 
 /**
- * O que a conversa decide ao soltar: toque ou configurações. A direita, que volta ao chat,
+ * O que a conversa decide ao soltar: toque ou arrasto para cima (ainda sem ação). A direita, que volta ao chat,
  * anda com o dedo e não passa por aqui.
  *
  * `faixaDeBaixo` é o y (px) onde começa a faixa de baixo — a área segura mais ~40 px. A
@@ -42,7 +42,7 @@ export type GestoDaConversa = 'toque' | 'configuracoes' | 'nada';
 export function gestoDaConversa(inicio: Ponto, fim: Ponto, faixaDeBaixo: number): GestoDaConversa {
   const leitura = leArrasto(inicio, fim);
   if (leitura === 'toque') return 'toque';
-  if (leitura === 'cima' && inicio.y < faixaDeBaixo) return 'configuracoes';
+  if (leitura === 'cima' && inicio.y < faixaDeBaixo) return 'cima';
   return 'nada';
 }
 

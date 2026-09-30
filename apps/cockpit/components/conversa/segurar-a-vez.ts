@@ -35,7 +35,7 @@ export type AoSoltar = 'solta' | GestoDaConversa;
 
 /**
  * O que o soltar faz: `solta` devolve a contagem do silêncio; o resto é o gesto de sempre
- * (toque, configurações ou nada).
+ * (toque, cima ou nada).
  */
 export function aoSoltar(dedo: Dedo, gesto: GestoDaConversa): AoSoltar {
   return dedo === 'segurando' ? 'solta' : gesto;

@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type MouseEvent, type PointerEvent, type RefObject } from 'react';
 
 import { cliqueVale, gestoDaConversa, leArrasto, type Ponto } from './gesto-de-arrasto';
 import type { Cena } from './moldura-estado';
-import { CHAVE_DICA_DOS_GESTOS } from './preferencias-da-conversa';
 import { aoSoltar, dedoAosQuinhentos, dedoQueAnda, SEGURAR_MS, type Dedo } from './segurar-a-vez';
 
 /**
@@ -21,14 +20,12 @@ import { aoSoltar, dedoAosQuinhentos, dedoQueAnda, SEGURAR_MS, type Dedo } from 
  */
 export function useGestosDaConversa({
   faixaDeBaixoRef,
-  aoConfiguracoes,
   leCena,
   aoSegurar,
   aoSoltar: aoSoltarAVez,
 }: {
   /** O elemento que marca a faixa de baixo (área segura + ~40 px), medido no toque. */
   faixaDeBaixoRef: RefObject<HTMLElement | null>;
-  aoConfiguracoes: () => void;
   /** A cena de agora, lida quando o dedo completa 500 ms. */
   leCena: () => Cena;
   aoSegurar: () => void;
@@ -68,7 +65,7 @@ export function useGestosDaConversa({
       }
       encerraDedo();
       dedoAndouRef.current = false;
-      // A folha de configurações mora num portal: o evento dela sobe pela árvore do React
+      // O que mora num portal tem o evento subindo pela árvore do React
       // até aqui, mas o dedo está nela, não na tela. Botão do meio ou da direita não conta.
       if (!evento.currentTarget.contains(evento.target as Node) || evento.button !== 0) return;
       inicioRef.current = { x: evento.clientX, y: evento.clientY, id: evento.pointerId, mouse: evento.pointerType === 'mouse' };
@@ -96,9 +93,8 @@ export function useGestosDaConversa({
       const acao = aoSoltar(dedoRef.current, gesto);
       encerraDedo();
       dedoAndouRef.current = acao !== 'toque';
-      if (acao === 'configuracoes') aoConfiguracoes();
     },
-    [aoConfiguracoes, encerraDedo, faixaDeBaixoRef],
+    [encerraDedo, faixaDeBaixoRef],
   );
 
   const onPointerCancel = useCallback(() => {
@@ -128,37 +124,4 @@ export function useGestosDaConversa({
   }, []);
 
   return { gestos: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave, onContextMenu }, cliqueConta };
-}
-
-export const DICA_DOS_GESTOS_MS = 2_000;
-
-/**
- * Sem o ícone de configurações à vista, a primeira vez que a tela aparece mostra a dica por
- * 2 s. Só conta como vista quando some: sair antes disso mostra de novo na próxima. `ativa`
- * é o painel da voz assentado no pager — montada fora da tela, a dica não corre.
- */
-export function useDicaDosGestos(ativa: boolean) {
-  const [visivel, setVisivel] = useState(false);
-  useEffect(() => {
-    if (!ativa) return;
-    try {
-      if (window.localStorage.getItem(CHAVE_DICA_DOS_GESTOS) === '1') return;
-    } catch {
-      return;
-    }
-    setVisivel(true);
-    const relogio = window.setTimeout(() => {
-      setVisivel(false);
-      try {
-        window.localStorage.setItem(CHAVE_DICA_DOS_GESTOS, '1');
-      } catch {
-        // Safari em navegação privada pode recusar; a dica volta na próxima vez.
-      }
-    }, DICA_DOS_GESTOS_MS);
-    return () => {
-      window.clearTimeout(relogio);
-      setVisivel(false);
-    };
-  }, [ativa]);
-  return visivel;
 }
