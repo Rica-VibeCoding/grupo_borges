@@ -45,13 +45,16 @@ export function leGuardado(bruto: string | null | undefined, agora: number): Gua
  */
 export type Retomada = { cena: 'esperandoZe' | 'pronta'; pendentes: TextoDoZe[]; emVoo: boolean };
 
-/** `null` = nada a retomar: abre em "parado", como antes. */
+/**
+ * `null` = nada a retomar: abre em "parado", como antes. Sem marca guardada (conversa nova, ou
+ * parada) e ele no turno, abre pensando: o log inteiro conta como ouvido (`use-retomada`).
+ */
 export function retomadaDoStream(
   g: Guardado | null,
   mensagens: readonly MessagePayload[],
   emVoo: boolean,
 ): Retomada | null {
-  if (!g) return null;
+  if (!g) return emVoo ? { cena: 'esperandoZe', pendentes: [], emVoo } : null;
   const pendentes = textosDoZeDepoisDe(mensagens, g.ouvidoAte);
   if (pendentes.length > 0) return { cena: 'pronta', pendentes, emVoo };
   return emVoo ? { cena: 'esperandoZe', pendentes: [], emVoo } : null;

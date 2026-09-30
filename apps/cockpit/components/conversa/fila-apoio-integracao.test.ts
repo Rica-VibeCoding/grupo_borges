@@ -31,6 +31,7 @@ function monta() {
   const pendentes: any[] = [];
   let terminou = 0;
   let silenciou = 0;
+  const vazias: boolean[] = [];
   const ouvidos: number[] = [];
   const modulo = { exports: {} as any };
   const dependencias: Record<string, unknown> = {
@@ -52,7 +53,7 @@ function monta() {
     return dependencias[nome];
   }, modulo, modulo.exports);
   const fila = modulo.exports.useFilaDeVoz({
-    slug: 'teste', aoTerminar: () => terminou++, aoSilenciar: () => silenciou++,
+    slug: 'teste', aoTerminar: () => terminou++, aoSilenciar: (vazia: boolean) => { silenciou++; vazias.push(vazia); },
     aoFalhar: () => assert.fail('voz falhou'), aoOuvir: (id: number) => ouvidos.push(id),
   });
   const sintetiza = (url: string) => {
@@ -61,8 +62,24 @@ function monta() {
     escuta.aoAudio(0, url);
     escuta.aoFim();
   };
-  return { fila, sintetiza, pendentes, ouvidos, contagem: () => ({ terminou, silenciou }) };
+  return { fila, sintetiza, pendentes, ouvidos, vazias, contagem: () => ({ terminou, silenciou }) };
 }
+
+test('no meio do turno, a fila diz se calou sem nada pendente — é o que reabre o microfone sem fone', async () => {
+  const m = monta();
+  m.fila.abreTurno();
+  m.fila.enfileira('Vou rodar os testes.', 1);
+  m.sintetiza('aviso');
+  await Promise.resolve();
+  m.fila.enfileira('E mais isto.', 2); // o texto seguinte ainda sintetiza
+  AudioFalso.atual.termina();
+  m.sintetiza('seguinte');
+  await Promise.resolve();
+  AudioFalso.atual.termina();
+  assert.deepEqual(m.vazias, [false, true]);
+  assert.equal(m.contagem().terminou, 0, 'turno aberto: não terminou, só calou');
+  m.fila.cancela();
+});
 
 test('fila real: bloco 1 → cessão → apoio → bloco 2 não deixa sequência morta', async () => {
   const m = monta();

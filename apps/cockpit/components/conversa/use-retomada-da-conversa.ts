@@ -130,7 +130,8 @@ export function useRetomadaDaConversa({
   /** O toque depois da recarga: renova a marca e executa os passos da retomada, em ordem. */
   const retoma = useCallback(
     (r: Retomada, ao: AoRetomar) => {
-      grava(marcaRef.current?.ouvidoAte ?? 0);
+      // Sem marca, é conversa nova com ele no turno: como no `comeca`, o que já estava no log não toca.
+      grava(marcaRef.current?.ouvidoAte ?? maiorIdDasMensagens(mensagensRef.current));
       for (const passo of passosDaRetomada(r)) {
         if (passo.tipo === 'retomar') ao.retomar();
         else if (passo.tipo === 'texto') ao.texto(passo.texto, passo.id);

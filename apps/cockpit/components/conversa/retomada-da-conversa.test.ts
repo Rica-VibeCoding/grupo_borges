@@ -41,8 +41,16 @@ describe('o que fica guardado no aparelho', () => {
 describe('a recarga no meio da conversa (Rica, 28/09)', () => {
   const historia = [pedido(10), fala(11, 'Resposta antiga, já ouvida.')];
 
-  it('sem nada guardado (nunca começou, ou parou): abre em parado', () => {
-    assert.equal(retomadaDoStream(null, [...historia, pedido(20)], true), null);
+  it('sem nada guardado (nunca começou, ou parou) e ele quieto: abre em parado', () => {
+    assert.equal(retomadaDoStream(null, [...historia, pedido(20)], false), null);
+  });
+
+  it('sem nada guardado, mas ele trabalhando: abre pensando, sem tocar o que já estava no log (Rica, 30/09)', () => {
+    assert.deepEqual(retomadaDoStream(null, [...historia, pedido(20), fala(21, 'Já dito.')], true), {
+      cena: 'esperandoZe',
+      pendentes: [],
+      emVoo: true,
+    });
   });
 
   it('recarga no meio do "pensando": ele segue no turno, nada a tocar — a tela mostra pensando', () => {

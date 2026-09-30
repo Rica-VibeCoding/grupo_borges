@@ -22,7 +22,8 @@ export function useFilaDeVoz({
   aoFalhar(mensagem: string): void;
   /** O texto dele com esse id (do stream) tocou inteiro — a marca que a recarga usa para não repetir. */
   aoOuvir?(id: number): void;
-  aoSilenciar?(): void;
+  /** A última frase acabou; `vazia` = nada mais para tocar por ora (a voz calou, o turno segue). */
+  aoSilenciar?(vazia: boolean): void;
 }) {
   /* A legenda dele: a frase do áudio que toca e o que já foi dito. Parada ou cancelada, fica. */
   const [fala, setFala] = useState<FalaDoZe | null>(null);
@@ -92,7 +93,8 @@ export function useFilaDeVoz({
       aoSilenciar: () => {
         if (geracao !== geracaoRef.current) return;
         calou();
-        callbacksRef.current.aoSilenciar?.();
+        // Sem síntese nem texto esperando, a voz calou de fato — o turno aberto não avisa `aoTerminar`.
+        callbacksRef.current.aoSilenciar?.(falaRef.current === null && filaRef.current.length === 0);
       },
       aoTerminar: () => {
         if (geracao !== geracaoRef.current) return;
