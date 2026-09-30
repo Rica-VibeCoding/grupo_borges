@@ -9,7 +9,8 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
 - 1 · Silêncio que entrega a fala: 2 s (`eac75e1`).
 - 2 · Segurar a tela (dedo parado ≥ 0,5 s) para pensar sem entregar (`eac75e1`, `2881b22`).
 - 4 · Marca 🗣 da tela de voz + skill `conversa-por-voz` (`a0ff331`; ze_claude `1f5561e`).
-- 5 · Foto do agente, direções B e C com chave, avatares 512 (`c6cd90b`). A pílula deixou de ser centralizada
+- 5 · Foto do agente na pílula presa no alto (`c6cd90b`); o Eclipse, a chave de direção e os avatares 512
+  saíram em 30/09 (`6fa1b31`). A pílula deixou de ser centralizada
   em 30/09 (ver abaixo).
 - 6 · Transcrição ao vivo com as palavras na tela e WAV de reserva (`f80d826`).
 - 7 · Fala do agente palavra por palavra ao longo de cada áudio, janela de 3 linhas, estados
@@ -66,9 +67,10 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
 - **Arrastar para cima está livre:** a folha de configurações saiu; os controles moram só na gaveta do agente,
   aberta pela foto (`a20bbd3`). O gesto segue lido (`'cima'` em `gesto-de-arrasto.ts`), sem ação.
 - **Frase de apoio variada:** abertura sorteada antes ("Rica…", "Olha,") e, 1 em 5, fecho depois ("Já volto.")
-  — `enfeite-do-apoio.ts`. **Volume no iPhone:** sem fone, o microfone solta enquanto a frase de apoio soa
-  (aberto, o WebKit prende o áudio em modo de chamada e os botões de volume não alcançam) (`c5256f0`).
-  Não conferido ainda no iPhone.
+  — `enfeite-do-apoio.ts`. **Volume no iPhone:** microfone aberto prende o WebKit em modo de chamada (som de
+  telefone, botões de volume mortos), e soltar e religar a cada frase de apoio fazia a voz alternar entre os dois.
+  Sem fone, o microfone fica fechado enquanto o agente pensa ou fala; falar por cima na espera só com "Estou de
+  fone" (`e48e294`, `dc6dfb1`). Conferido pelo Rica no iPhone em 30/09.
 - **Permissão do microfone:** web app da Tela de Início no iOS pergunta a cada abertura, e de novo com o
   microfone parado mais de 1 min (WebKit 215884). Não há ajuste do nosso lado; aba do Safari com o site em
   "Permitir" não pergunta.

@@ -43,7 +43,7 @@ de pacotes durante a migração troca duas variáveis ao mesmo tempo.
 - Desenvolvimento: **3009**, somente em `127.0.0.1`, com
   `COCKPIT_DIST_DIR=.next-dev`.
 
-Portas relevantes nesta máquina (`srv1061129`):
+Portas relevantes nesta máquina (`borges`, a Oracle):
 
 | porta | quem | observação |
 |---|---|---|
@@ -81,7 +81,7 @@ só existe desenhada (WebGL), tirar foto sem o celular do Rica:
 `node scripts/foto-da-tela.mjs <url> <saida.png> [espera_ms] [visual]` — Chromium
 headless com SwiftShader, 430×932, imprime o `data-cena` lido.
 
-Produção: `https://srv1061129.tailfe77db.ts.net:3446`. **Nunca pelo IP `100.x`**
+Produção: `https://borges.tailfe77db.ts.net:3446`. **Nunca pelo IP `100.x`**
 — origem sem HTTPS não expõe microfone, e o modo voz simplesmente não existe lá.
 
 ---
@@ -496,7 +496,7 @@ exatamente a prova que faltava.
 - **Dev:** `http://localhost:3009` — na máquina onde o desenvolvimento está rodando.
   Tem que ser `localhost`. Por `127.0.0.1` ou pelo IP `100.x` o browser não trata como origem
   segura e **o modo voz some sem erro** (ver `components/shell/voz.ts`).
-- **Produção, o que o Rica usa:** `https://srv1061129.tailfe77db.ts.net:3446` — a
+- **Produção, o que o Rica usa:** `https://borges.tailfe77db.ts.net:3446` — a
   única publicada pra ele desde 08/08; a `:3444` (dev) saiu do `tailscale serve`.
 - **A :3445 ninguém abre no browser.** É o cano do front pro backend; aberta na mão devolve
   JSON cru e parece defeito.

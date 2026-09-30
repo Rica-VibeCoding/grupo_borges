@@ -7,7 +7,7 @@
 
 - O Cockpit v2 vive em `apps/cockpit` e está em produção na porta `3008`, pela
   unit `cockpit-v2.service`.
-- O Rica acessa somente `https://srv1061129.tailfe77db.ts.net:3446`.
+- O Rica acessa somente `https://borges.tailfe77db.ts.net:3446`.
 - O desenvolvimento usa a porta `3009`, presa a `127.0.0.1`. A `:3444` foi
   retirada da tailnet em 08/08 e não deve ser enviada ao Rica.
 - A API compartilhada roda na porta `8000`, pela unit `cockpit-api.service`.
