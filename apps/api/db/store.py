@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from orchestrator.lifecycle_ruido import eh_ruido_de_lifecycle
+from orchestrator.lifecycle_ruido import eh_interrupcao, eh_ruido_de_lifecycle
 from services import proxy_catalog
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -259,6 +259,8 @@ def derive_lifecycle_from_event(
             # Mesma guarda de `_jsonl_lifecycle` (jsonl_watcher.py) — este
             # ramo é fallback pra banco sem a coluna gravada, mas a régua de
             # "isso não é turno" tem que ser a mesma dos dois lados.
+            if texto is not None and eh_interrupcao(texto):
+                return "ocioso", "interrompido"
             if texto is not None and not eh_ruido_de_lifecycle(texto):
                 return "trabalhando", "mensagem do usuário"
         return None, None

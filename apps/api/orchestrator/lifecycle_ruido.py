@@ -58,3 +58,11 @@ def eh_ruido_de_lifecycle(texto: str) -> bool:
         encontrou_alguma = True
         posicao = casamento.end()
     return encontrou_alguma
+
+
+# Mesma régua de `INTERRUPCAO_RE` em `corrida-em-voo.ts`: o freio é fim de turno.
+_INTERRUPCAO_RE = re.compile(r"^\s*\[Request interrupted by user")
+
+
+def eh_interrupcao(texto: str) -> bool:
+    return _INTERRUPCAO_RE.match(texto) is not None

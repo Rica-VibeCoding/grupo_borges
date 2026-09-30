@@ -35,7 +35,7 @@ from typing import Any
 from watchfiles import Change, awatch
 
 from orchestrator.checkpoint_parser import checkpoint_hash, parse_checkpoint
-from orchestrator.lifecycle_ruido import eh_ruido_de_lifecycle
+from orchestrator.lifecycle_ruido import eh_interrupcao, eh_ruido_de_lifecycle
 from util import parse_dict_or_none
 
 logger = logging.getLogger(__name__)
@@ -695,6 +695,8 @@ def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None,
             # modelo — sem esta guarda, o lifecycle liga "trabalhando" e não
             # desliga nunca, porque comando local não gera `end_turn`. Achado
             # de 16/08 (Maestro preso depois do `/rename` do boot).
+            if texto is not None and eh_interrupcao(texto):
+                return "ocioso", "interrompido"
             if texto is not None and not eh_ruido_de_lifecycle(texto):
                 return "trabalhando", "mensagem do usuário"
         return None, None

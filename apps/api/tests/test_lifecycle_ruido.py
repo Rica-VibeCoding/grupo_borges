@@ -57,3 +57,24 @@ def test_comando_local_e_reminder_sao_ruido(texto: str) -> None:
 )
 def test_fala_de_verdade_nao_e_ruido(texto: str) -> None:
     assert eh_ruido_de_lifecycle(texto) is False
+
+
+# O freio do Rica grava `[Request interrupted by user]` como `role: user` e nenhum
+# `end_turn` depois: contado como pedido, o card ficava em "trabalhando" com o
+# agente parado, enquanto a tela de voz (que já lia o freio como fim) dizia
+# "ouvindo" — Pavan, 30/09.
+@pytest.mark.parametrize(
+    "conteudo",
+    [
+        "[Request interrupted by user]",
+        "[Request interrupted by user for tool use]",
+        [{"type": "text", "text": "[Request interrupted by user]"}],
+    ],
+)
+def test_freio_do_usuario_encerra_o_turno_nos_dois_lados(conteudo) -> None:
+    from db.store import derive_lifecycle_from_event
+    from orchestrator.jsonl_watcher import _jsonl_lifecycle
+
+    payload = {"message": {"role": "user", "content": conteudo}}
+    assert _jsonl_lifecycle(payload, "user")[0] == "ocioso"
+    assert derive_lifecycle_from_event("jsonl:user", payload)[0] == "ocioso"
