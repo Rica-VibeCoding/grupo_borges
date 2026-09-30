@@ -228,6 +228,9 @@
 /* A foto do agente (fase 4, item 5). No alto, centrada: a pílula (B) ou a linha em mono (C). */
 .tela[data-direcao] .topo { justify-content: center; margin-right: 0; padding-top: var(--ck-space-2); }
 .tela[data-direcao='eclipse'] .topo { padding-top: var(--ck-space-5); }
+/* A pílula não centraliza: a borda esquerda fica presa e a foto não anda quando a palavra do
+ * estado muda de tamanho — só o fundo estica para a direita. */
+.tela[data-direcao='atividade'] .abrePainel { margin-left: calc(50% - 5rem); margin-right: auto; }
 
 /* Na Eclipse o núcleo toma o palco da esfera: com a esfera escolhida, ela fica atrás e a luz dela
  * vira a coroa; sem ela, um palco só dele. Em tela baixa (iPhone SE) o núcleo, de tamanho fixo,
