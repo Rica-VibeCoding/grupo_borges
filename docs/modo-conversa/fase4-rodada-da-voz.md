@@ -9,8 +9,8 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
 - 1 · Silêncio que entrega a fala: 2 s (`eac75e1`).
 - 2 · Segurar a tela (dedo parado ≥ 0,5 s) para pensar sem entregar (`eac75e1`, `2881b22`).
 - 4 · Marca 🗣 da tela de voz + skill `conversa-por-voz` (`a0ff331`; ze_claude `1f5561e`).
-- 5 · Foto do agente, direções B e C com chave, avatares 512 (`c6cd90b`). Header (foto + nome) confirmado
-  centralizado no teste do Rica em 29/09 — nada a fazer.
+- 5 · Foto do agente, direções B e C com chave, avatares 512 (`c6cd90b`). A pílula deixou de ser centralizada
+  em 30/09 (ver abaixo).
 - 6 · Transcrição ao vivo com as palavras na tela e WAV de reserva (`f80d826`).
 - 7 · Fala do agente palavra por palavra ao longo de cada áudio, janela de 3 linhas, estados
   pensando / trabalhando / falando só com som, animações (View Transition nativa, CSS) (`c6cd90b`).
@@ -58,6 +58,20 @@ Build da 3008 e restart da API só com a janela do Pavan. Link único para o Ric
   aparelho: iOS exige gesto para áudio (MDN); o Chrome deixaria sem toque (medido). Provado com o Canário real
   no Chrome (recarga no pensando, no meio da voz, depois de parar); 1352/1353 testes, `tsc` limpo. Divergência:
   `lib/conversa/tipos.ts` ganhou o evento `retomar` (só acréscimo). Detalhe: `relatos/fase4-ui.md`.
+
+## Feito — em produção desde 30/09 (`c5256f0`, publicado pelo Pavan)
+- **Agente desligado** na tela: esfera apagada com brasa, e o botão Ligar no rodapé (`cfd997a`, `1402c4b`).
+- **Pílula:** borda esquerda presa, a foto não anda; só o fundo (camada própria, `motion` `layout`) estica em
+  mola quando o estado muda (`b622be3`, `24ca624`).
+- **Arrastar para cima está livre:** a folha de configurações saiu; os controles moram só na gaveta do agente,
+  aberta pela foto (`a20bbd3`). O gesto segue lido (`'cima'` em `gesto-de-arrasto.ts`), sem ação.
+- **Frase de apoio variada:** abertura sorteada antes ("Rica…", "Olha,") e, 1 em 5, fecho depois ("Já volto.")
+  — `enfeite-do-apoio.ts`. **Volume no iPhone:** sem fone, o microfone solta enquanto a frase de apoio soa
+  (aberto, o WebKit prende o áudio em modo de chamada e os botões de volume não alcançam) (`c5256f0`).
+  Não conferido ainda no iPhone.
+- **Permissão do microfone:** web app da Tela de Início no iOS pergunta a cada abertura, e de novo com o
+  microfone parado mais de 1 min (WebKit 215884). Não há ajuste do nosso lado; aba do Safari com o site em
+  "Permitir" não pergunta.
 
 ## Próximo passo (Rica)
 - Conferir no notebook e no iPhone as quatro entregas acima, e repetir o gesto de parar o Canário e falar por
