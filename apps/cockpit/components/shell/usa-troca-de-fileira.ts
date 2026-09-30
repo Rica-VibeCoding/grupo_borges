@@ -45,10 +45,28 @@ export function usaTrocaDeFileira(caixaRef: RefObject<HTMLElement | null>, umaLi
     const estilo = getComputedStyle(caixa);
     const duracao = emMilissegundos(estilo.getPropertyValue('--ck-dur-enter')) ?? 200;
     const curva = estilo.getPropertyValue('--ck-ease').trim() || 'ease-out';
-    animacaoRef.current = caixa.animate(
+    const animacao = caixa.animate(
       [{ height: `${de}px` }, { height: `${para}px` }],
       { duration: duracao, easing: curva },
     );
+    animacaoRef.current = animacao;
+
+    // O iPhone pinta o cursor numa camada própria e não o arrasta quando o
+    // campo anda por layout: ele ficava fora da caixa, onde o campo estava
+    // (Rica, print de 30/09). O cursor some durante a animação e, no fim, a
+    // seleção é regravada — é mudança de seleção que faz o iOS repintá-lo.
+    const campo = caixa.querySelector('textarea');
+    if (!campo) return;
+    campo.style.caretColor = 'transparent';
+    const devolve = () => {
+      // Cancelada por uma troca nova: quem cuida do cursor agora é a outra.
+      if (animacaoRef.current !== animacao) return;
+      campo.style.caretColor = '';
+      if (document.activeElement !== campo) return;
+      const { selectionStart, selectionEnd, selectionDirection } = campo;
+      campo.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? undefined);
+    };
+    animacao.finished.then(devolve, devolve);
   });
 }
 
