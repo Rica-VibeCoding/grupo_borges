@@ -16,9 +16,6 @@ type Props = {
   sessaoAtivaRef: RefObject<boolean>;
   despachaRef: RefObject<(evento: Evento) => void>;
   mensagens: readonly MessagePayload[];
-  /** A frase de apoio vai soar / calou (tocou inteira ou foi cortada). */
-  aoTocar?(): void;
-  aoCalar?(): void;
 };
 
 export function useApoioDaFerramenta(p: Props) {
@@ -34,8 +31,7 @@ export function useApoioDaFerramenta(p: Props) {
   const cabecalhoAtual = () => cabecalhoDaFerramenta(atual.current.mensagens.filter((mensagem) => mensagem.id > fronteiraRef.current));
   const apoio = useVozDeApoio({
     slug: p.slug, cancelaTurno: p.cancelaTurno, preparaApoio: p.preparaApoio,
-    bloqueado, cabecalhoAtual, aoComecar: () => atual.current.aoTocar?.(),
-    aoTerminar: () => { relogio.falou(performance.now()); atual.current.aoCalar?.(); },
+    bloqueado, cabecalhoAtual, aoTerminar: () => relogio.falou(performance.now()),
   });
   const apoioRef = useRef(apoio);
   apoioRef.current = apoio;
