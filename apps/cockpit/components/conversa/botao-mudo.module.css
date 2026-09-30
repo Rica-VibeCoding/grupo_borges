@@ -3,9 +3,7 @@
   position: absolute;
   z-index: 3;
   left: calc(var(--ck-space-4) + var(--ck-safe-left));
-  /* No celular fica acima da faixa de baixo do iPhone (área segura mais 40 px), a borda
-   * que manda o app para o fundo; 44 px é o alvo mínimo de dedo. */
-  bottom: calc(var(--ck-safe-bottom) + 40px);
+  bottom: calc(var(--ck-space-4) + var(--ck-safe-bottom));
   min-width: 44px;
   min-height: 44px;
   align-items: center;
@@ -14,7 +12,7 @@
   border: none;
   border-radius: var(--ck-radius-chip);
   background: transparent;
-  color: #000;
+  color: var(--ck-text-primary);
   cursor: pointer;
   touch-action: manipulation;
 }
