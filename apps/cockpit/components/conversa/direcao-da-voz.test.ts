@@ -57,13 +57,13 @@ describe('rótulo do estado junto da foto', () => {
 describe('o convite da tela parada', () => {
   it('parado: uma linha pequena, a mesma nas duas direções, sem número técnico', () => {
     const convite = conviteDaTela('parado', false);
-    assert.equal(convite, 'toque para falar');
+    assert.equal(convite, 'toque para ligar');
     assert.doesNotMatch(convite ?? '', /\d|detector/i);
   });
 
   it('voltou da recarga com a conversa aberta: o convite é continuar, não começar', () => {
     assert.equal(conviteDaTela('parado', false, true), 'toque para continuar');
-    assert.equal(conviteDaTela('parado', false, false), 'toque para falar');
+    assert.equal(conviteDaTela('parado', false, false), 'toque para ligar');
     assert.equal(conviteDaTela('preparando', false, true), 'preparando a escuta');
   });
 

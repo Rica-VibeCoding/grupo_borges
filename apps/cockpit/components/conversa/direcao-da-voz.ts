@@ -61,5 +61,5 @@ export function conviteDaTela(cena: Cena, preparacaoFalhou: boolean, retomando =
   if (cena === 'preparando') return 'preparando a escuta';
   if (cena !== 'parado') return null;
   // Voltou da recarga com a conversa aberta: o toque não começa outra, continua esta.
-  return retomando ? 'toque para continuar' : 'toque para falar';
+  return retomando ? 'toque para continuar' : 'toque para ligar';
 }
