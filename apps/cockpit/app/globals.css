@@ -1985,15 +1985,12 @@ html[data-troca-agente] .ck-palco {
   --ck-conversa-legenda-altura: 9rem;               /* lugar fixo: a animação não pula quando o texto muda */
   --ck-conversa-some-acima: linear-gradient(to top, black 2.8em, transparent 4.2em);
   --ck-conversa-some-abaixo: linear-gradient(to bottom, black 2.8em, transparent 4.2em);
-  --ck-conversa-palco-max: 22rem;                   /* 352px: esfera e núcleo inteiros, sem sobra que afaste o texto */
+  --ck-conversa-palco-max: 22rem;                   /* 352px: a esfera inteira, sem sobra que afaste o texto */
   --ck-conversa-sinal: color-mix(in oklch, var(--ck-conversa-prepara) 60%, transparent); /* o pulso que chama o toque */
   --ck-conversa-segurando: saturate(0.5) brightness(0.72); /* dedo segurando a vez: a luz baixa, o silêncio parou */
   /* A foto do agente na voz (fase 4, item 5): escurecida e sem cor, para não brigar com a
    * esfera; quem acende é o aro, na cor da vez. */
   --ck-conversa-foto-pilula: grayscale(0.9) brightness(0.5) contrast(1.15);
-  --ck-conversa-foto-nucleo: grayscale(1) brightness(0.42) contrast(1.25);
-  --ck-conversa-foto-linhas: rgb(0 0 0 / 0.22);     /* linhas de varredura do núcleo */
-  --ck-conversa-foto-borda: rgb(0 0 0 / 0.75);      /* vinheta: a foto some na borda */
   --ck-conversa-pilula: rgb(0 0 0 / 0.45);          /* vidro escuro da pílula no alto */
   --ck-conversa-pilula-fio: rgb(255 255 255 / 0.07); /* o fio em volta da pílula */
 }

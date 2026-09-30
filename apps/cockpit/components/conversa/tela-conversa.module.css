@@ -68,11 +68,9 @@
   .tela[data-visivel] .topo,
   .tela[data-visivel] .rodape { animation: none; }
 }
-/* O núcleo é a esfera da Eclipse: o único nome da troca animada (`transicao-da-voz.ts`). */
-.tela[data-visivel] .palco[data-palco='nucleo'] { view-transition-name: ck-voz-esfera; }
 
-/* O palco: a animação (esfera, núcleo ou o aro solto). Tem teto para o texto não ficar longe
- * dela; e é o contêiner que mede o sinal do toque e encolhe o núcleo em tela baixa. */
+/* O palco: a animação (esfera ou o aro solto). Tem teto para o texto não ficar longe
+ * dela; e é o contêiner que mede o sinal do toque. */
 .palco,
 .tela [data-visual='esfera'] {
   margin-top: auto;
@@ -198,17 +196,8 @@
   pointer-events: none;
 }
 
-/* A foto do agente (fase 4, item 5). No alto, centrada: a pílula (B) ou a linha em mono (C). */
-.tela[data-direcao] .topo { justify-content: center; margin-right: 0; padding-top: var(--ck-space-2); }
-.tela[data-direcao='eclipse'] .topo { padding-top: var(--ck-space-5); }
+/* A foto do agente (fase 4, item 5): a pílula no alto. */
+.tela .topo { justify-content: center; margin-right: 0; padding-top: var(--ck-space-2); }
 /* A pílula não centraliza: a borda esquerda fica presa e a foto não anda quando a palavra do
  * estado muda de tamanho — só o fundo estica para a direita. */
-.tela[data-direcao='atividade'] .abrePainel { margin-left: calc(50% - 5rem); margin-right: auto; }
-
-/* Na Eclipse o núcleo toma o palco da esfera: com a esfera escolhida, ela fica atrás e a luz dela
- * vira a coroa; sem ela, um palco só dele. Em tela baixa (iPhone SE) o núcleo, de tamanho fixo,
- * encolhe com o palco, em degraus. */
-.tela [data-visual='esfera'] > [data-retrato='nucleo'] { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
-@container (max-height: 340px) { .tela [data-retrato='nucleo'] { scale: 0.8; } }
-@container (max-height: 270px) { .tela [data-retrato='nucleo'] { scale: 0.62; } }
-@container (max-height: 210px) { .tela [data-retrato='nucleo'] { scale: 0.48; } }
+.tela .abrePainel { margin-left: calc(50% - 5rem); margin-right: auto; }

@@ -71,7 +71,7 @@ export function EsferaConversa({
   escuta?: EscutaNoPensar;
   variacao: VariacaoEsfera;
   leNivel: () => number;
-  /** O que mora no centro do palco, por cima da luz (o núcleo da Eclipse). */
+  /** O que mora no centro do palco, por cima da luz (o sinal do toque). */
   children?: ReactNode;
 }) {
   const palcoRef = useRef<HTMLDivElement>(null);

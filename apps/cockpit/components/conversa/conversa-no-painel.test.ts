@@ -34,10 +34,11 @@ test('a gaveta do agente é a única casa dos controles da conversa', () => {
   const controles = le('./controles-da-conversa.tsx');
   assert.ok(!le('./tela-conversa.tsx').includes('ConfiguracaoDaConversa'));
   assert.match(gaveta, /<ControlesDaConversa/);
-  for (const texto of ['Estou de fone', 'Mostrar texto', 'Foto do agente']) {
+  for (const texto of ['Estou de fone', 'Mostrar texto']) {
     assert.ok(controles.includes(texto));
     assert.ok(!gaveta.includes(`nome="${texto}"`));
   }
+  assert.ok(!controles.includes('Foto do agente'));
 });
 
 test('a gaveta usa a variante compacta, sem descrição', () => {
@@ -55,6 +56,5 @@ test('conversa vem antes do painel existente, sem substituir conteúdo do chat',
   assert.ok(gaveta.indexOf('<SecaoConversa fechar=') < gaveta.indexOf('<div className={styles.agente}>'));
   assert.match(gaveta, /useChaveDaConversa\(CHAVE_FONE\)/);
   assert.match(gaveta, /useChaveDaConversa\(CHAVE_TEXTO\)/);
-  assert.match(gaveta, /useDirecaoDaVoz\(\)/);
   assert.match(gaveta, /useVisualConversa\(\)/);
 });

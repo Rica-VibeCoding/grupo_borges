@@ -33,8 +33,7 @@ export function ConviteDaVoz({ linha, pulsa }: { linha: string; pulsa: boolean }
 
 /**
  * O pulso que chama o toque, preso à animação: nasce na borda da esfera (`esfera`) ou, sem
- * nada no centro (só a moldura), num aro pequeno que marca onde tocar (`solto`). O núcleo da
- * Eclipse tem o seu, no próprio aro (`retrato-da-voz`).
+ * nada no centro (só a moldura), num aro pequeno que marca onde tocar (`solto`).
  */
 export function SinalDoToque({ forma }: { forma: 'esfera' | 'solto' }) {
   return (

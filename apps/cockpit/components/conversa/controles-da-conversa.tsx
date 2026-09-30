@@ -3,12 +3,9 @@
 import type { ReactNode } from 'react';
 
 import styles from './configuracao-da-conversa.module.css';
-import { DIRECOES, type Direcao } from './direcao-da-voz';
 import { CATALOGO, type Visual } from './preferencia-visual';
 
 export type ControlesDaConversaProps = {
-  direcao: Direcao;
-  escolheDirecao: (direcao: Direcao) => void;
   visual: Visual;
   escolheVisual: (visual: Visual) => void;
   fone: boolean;
@@ -77,7 +74,7 @@ function Chave({ icone, nome, dica, ligada, muda, compacta }: {
 }
 
 export function ControlesDaConversa({
-  direcao, escolheDirecao, visual, escolheVisual, fone, mudaFone, texto, mudaTexto, detalheTecnico, compacta = false,
+  visual, escolheVisual, fone, mudaFone, texto, mudaTexto, detalheTecnico, compacta = false,
 }: ControlesDaConversaProps) {
   return (
     <div className={compacta ? `${styles.corpo} ${styles.compacta}` : styles.corpo}>
@@ -108,7 +105,6 @@ export function ControlesDaConversa({
           compacta={compacta}
         />
       </div>
-      <Opcoes nome="Foto do agente" itens={DIRECOES} marcado={(id) => id === direcao} escolhe={escolheDirecao} compacta={compacta} />
       {CATALOGO.map((item) => (
         <Opcoes
           key={item.opcao}

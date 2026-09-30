@@ -8,11 +8,10 @@ import { ControlesDaConversa } from './controles-da-conversa';
 import { mostraConversaNoPainel } from './conversa-no-painel';
 import styles from './configuracao-no-painel.module.css';
 import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
-import { useChaveDaConversa, useDirecaoDaVoz, useVisualConversa } from './use-preferencias-conversa';
+import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
 
 function SecaoConversa({ fechar }: { fechar: ReactNode }) {
   const [visual, escolheVisual] = useVisualConversa();
-  const [direcao, escolheDirecao] = useDirecaoDaVoz();
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
   const detalheTecnico = useDetalheDaConversa();
@@ -26,8 +25,6 @@ function SecaoConversa({ fechar }: { fechar: ReactNode }) {
       <ControlesDaConversa
         visual={visual}
         escolheVisual={escolheVisual}
-        direcao={direcao}
-        escolheDirecao={escolheDirecao}
         fone={fone}
         mudaFone={mudaFone}
         texto={texto}

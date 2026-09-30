@@ -7,7 +7,7 @@ const pager = readFileSync(new URL('./pager-do-agente.tsx', import.meta.url), 'u
 const entrada = readFileSync(new URL('../../app/conversa/[slug]/page.tsx', import.meta.url), 'utf8');
 
 test('cabeçalho da voz é o acionador do painel; arrastar para cima não abre nada', () => {
-  assert.match(tela, /<LinkAbrePainel[\s\S]*?<CabecaDoEclipse[\s\S]*?<PilulaDoAgente[\s\S]*?<\/LinkAbrePainel>/);
+  assert.match(tela, /<LinkAbrePainel[\s\S]*?<PilulaDoAgente[\s\S]*?<\/LinkAbrePainel>/);
   assert.doesNotMatch(tela, /aoConfiguracoes|<ConfiguracaoDaConversa/);
 });
 

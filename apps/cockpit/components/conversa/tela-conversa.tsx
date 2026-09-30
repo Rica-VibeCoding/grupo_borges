@@ -18,7 +18,7 @@ import { avisoDaTela, leituraDaConversa, rotuloDaAcao, voceDisseParaLeitor } fro
 import { MolduraConversa } from './moldura-conversa';
 import type { Cena } from './moldura-estado';
 import { pecasDoVisual } from './preferencia-visual';
-import { CabecaDoEclipse, NucleoDoAgente, PilulaDoAgente } from './retrato-da-voz';
+import { PilulaDoAgente } from './retrato-da-voz';
 import { CHAVE_FONE, CHAVE_TEXTO } from './preferencias-da-conversa';
 import styles from './tela-conversa.module.css';
 import { ConviteDaVoz, LegendaDaVoz, SinalDoToque } from './texto-da-voz';
@@ -26,7 +26,7 @@ import { acaoDoToque, toqueConta } from './toque-da-conversa';
 import { useGestosDaConversa } from './use-gestos-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
 import { falaNaEspera } from '@/lib/conversa/maquina';
-import { useChaveDaConversa, useDirecaoDaVoz, useVisualConversa } from './use-preferencias-conversa';
+import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
 
 /** Segundos de espera pelo Zé, uma atualização por segundo (não por quadro). */
 function useSegundosDeEspera(esperando: boolean) {
@@ -46,8 +46,8 @@ function useSegundosDeEspera(esperando: boolean) {
 /**
  * A tela limpa: o visual ocupa tudo e a tela inteira é o botão — um toque inicia; no turno
  * do Zé, um toque o interrompe; fora dele, um toque para; na vez do Rica, o dedo parado segura a vez. Os botões viraram gestos: arrastar
- * para a direita volta ao chat de texto (é a rolagem do pager); para cima está livre. No alto, a foto do agente com o nome e o estado — na pílula (Atividade ao
- * vivo) ou no núcleo que toma o lugar da esfera (Eclipse), abre a gaveta do agente, com as configurações. O
+ * para a direita volta ao chat de texto (é a rolagem do pager); para cima está livre. No alto, a foto do agente com o nome e o estado, numa pílula,
+ * abre a gaveta do agente, com as configurações. O
  * estado é a palavra ao lado do nome, na cor da vez. Parada, a tela escreve uma linha pequena
  * e o aro pulsa; andando, a legenda (sua fala, a resposta) mora logo abaixo da animação, só
  * com "Mostrar texto". O que pede ação vai no cartão do pé. O título e a frase explicativa
@@ -69,7 +69,6 @@ export function TelaConversa({
   visivel: boolean;
 }) {
   const [visual] = useVisualConversa();
-  const [direcao] = useDirecaoDaVoz();
   const [fone] = useChaveDaConversa(CHAVE_FONE);
   const [texto] = useChaveDaConversa(CHAVE_TEXTO);
   const { mudo, pronto, mudaMudo } = useMudoConversa();
@@ -117,7 +116,6 @@ export function TelaConversa({
     fone,
     motivo: modo.conversa.motivo,
   });
-  const eclipse = direcao === 'eclipse';
   const primeiroNome = nome.split(' ')[0] || nome;
   const convite = conviteDaTela(cena, preparacaoFalhou, retomando);
   const pecas = pecasDoVisual(visual, vista);
@@ -140,7 +138,7 @@ export function TelaConversa({
   usePublicaDetalheDaConversa(ativa, detalheTecnico);
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.fala.firme);
   const legenda = legendaDaVez({ cena, texto, fala: modo.fala, falaDoZe: modo.falaDoZe });
-  // O pulso que chama o toque, preso à animação de fora: a esfera, o núcleo ou o aro solto.
+  // O pulso que chama o toque, preso à animação de fora: a esfera ou o aro solto.
   const sinal = cena === 'parado' && !preparacaoFalhou;
 
   // Sair para o chat (o pager assenta nele, pelo dedo ou pelo voltar do navegador) nunca freia o
@@ -196,7 +194,6 @@ export function TelaConversa({
       data-retomada={retomando ? '' : undefined}
       data-opcao={visual.opcao}
       data-variacao={visual.variacao}
-      data-direcao={direcao}
       data-texto={texto ? 'visivel' : 'oculto'}
       data-visivel={visivel ? '' : undefined}
       data-segurando={modo.segurando ? 'sim' : undefined}
@@ -224,27 +221,18 @@ export function TelaConversa({
             rotulo={`configurações de ${nome}`}
             className={styles.abrePainel}
           >
-            {eclipse ? (
-              <CabecaDoEclipse nome={nome} cena={vista} segundos={segundos} />
-            ) : (
-              <PilulaDoAgente slug={slug} nome={nome} cena={vista} segundos={segundos} />
-            )}
+            <PilulaDoAgente slug={slug} nome={nome} cena={vista} segundos={segundos} />
           </LinkAbrePainel>
         </header>
 
         {pecas.esfera && visivel ? (
           <EsferaConversa cena={pecas.esfera.cena} escuta={escuta} variacao={pecas.esfera.variacao} leNivel={modo.leNivel}>
-            {eclipse ? <NucleoDoAgente slug={slug} nome={nome} cena={vista} leNivel={modo.leNivel} /> : null}
             {sinal ? <SinalDoToque forma="esfera" /> : null}
           </EsferaConversa>
         ) : (
           // Fora da vista a esfera não desenha, mas o palco guarda o tamanho dela: nada pula ao entrar.
-          <div className={styles.palco} data-palco={eclipse ? 'nucleo' : pecas.esfera ? 'esfera' : 'solto'}>
-            {eclipse ? (
-              <NucleoDoAgente slug={slug} nome={nome} cena={vista} leNivel={modo.leNivel} pulsa={sinal} />
-            ) : sinal && !pecas.esfera ? (
-              <SinalDoToque forma="solto" />
-            ) : null}
+          <div className={styles.palco} data-palco={pecas.esfera ? 'esfera' : 'solto'}>
+            {sinal && !pecas.esfera ? <SinalDoToque forma="solto" /> : null}
           </div>
         )}
 
