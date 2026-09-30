@@ -1,0 +1,54 @@
+/* O Ligar do agente desligado: um contorno fino na letra do convite, no lugar dele. */
+.lugar {
+  position: relative;
+  z-index: 2; /* acima do toque da tela */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ck-space-2);
+}
+.botao {
+  min-height: var(--ck-touch-min);
+  padding: 0 var(--ck-space-5);
+  border: 1px solid color-mix(in oklch, var(--ck-text-secondary) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ck-text-secondary);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-text-xs);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color var(--ck-dur-calm) var(--ck-ease), border-color var(--ck-dur-calm) var(--ck-ease);
+}
+.botao:hover,
+.botao:focus-visible {
+  border-color: var(--ck-conversa-voce);
+  color: var(--ck-text-primary);
+}
+.botao:focus-visible {
+  outline: 2px solid var(--ck-focus);
+  outline-offset: 2px;
+}
+/* Ligando: a borda acende na cor da brasa e respira até a frota dizer que ele subiu. */
+.botao[data-ligando] {
+  border-color: var(--ck-conversa-voce);
+  cursor: default;
+  animation: respiraLigando 1.6s ease-in-out infinite;
+}
+@keyframes respiraLigando {
+  50% { border-color: color-mix(in oklch, var(--ck-conversa-voce) 30%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .botao[data-ligando] { animation: none; }
+}
+@starting-style {
+  .botao { opacity: 0; }
+}
+.botao { transition-property: color, border-color, opacity; }
+.falha {
+  margin: 0;
+  color: var(--ck-text-tertiary);
+  font-size: var(--ck-text-xs);
+}

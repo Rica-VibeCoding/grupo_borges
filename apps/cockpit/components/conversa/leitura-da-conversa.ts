@@ -57,7 +57,7 @@ export function leituraDaConversa(e: EntradaDaLeitura): Leitura {
     case 'interrompendo':
       return { titulo: 'Pausei a resposta', detalhe: 'Continue falando e eu mando junto. Se foi tosse, eu retomo.' };
     case 'desligado':
-      return { titulo: 'Agente desligado', detalhe: 'Ligue pelo painel para conversar.' };
+      return { titulo: 'Agente desligado', detalhe: 'O botão Ligar sobe ele de volta.' };
     case 'erro':
     case 'ocupado':
       return {

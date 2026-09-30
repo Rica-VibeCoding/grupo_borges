@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import { usaFrota } from '../shell/frota-provider';
 import { LinkAbrePainel } from '../shell/superficie-otimista';
 
+import { BotaoLigar } from './botao-ligar';
 import { BotaoMudo } from './botao-mudo';
 import { useMudoConversa } from './use-mudo-conversa';
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
@@ -266,7 +267,13 @@ export function TelaConversa({
         )}
 
         <div className={styles.rodape} data-rodape="">
-          {convite ? <ConviteDaVoz linha={convite} pulsa={cena === 'parado'} /> : <LegendaDaVoz trechos={legenda} nome={primeiroNome} />}
+          {desligado ? (
+            <BotaoLigar slug={slug} />
+          ) : convite ? (
+            <ConviteDaVoz linha={convite} pulsa={cena === 'parado'} />
+          ) : (
+            <LegendaDaVoz trechos={legenda} nome={primeiroNome} />
+          )}
         </div>
 
         <section className="sr-only" aria-live="polite" aria-atomic="true">

@@ -60,7 +60,6 @@ export function rotuloDoEstado(direcao: Direcao, cena: Cena): string {
 export function conviteDaTela(cena: Cena, preparacaoFalhou: boolean, retomando = false): string | null {
   if (preparacaoFalhou) return null;
   if (cena === 'preparando') return 'preparando a escuta';
-  if (cena === 'desligado') return 'ligue pelo painel para conversar';
   if (cena !== 'parado') return null;
   // Voltou da recarga com a conversa aberta: o toque não começa outra, continua esta.
   return retomando ? 'toque para continuar' : 'toque para ligar';
