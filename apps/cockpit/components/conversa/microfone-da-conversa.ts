@@ -92,10 +92,20 @@ export function criaMicrofone<C extends Captura>(pede: () => Promise<C>, bloquea
 /** Parada ou em erro, a conversa acabou: o microfone se solta de verdade. */
 export const soltaOMicrofone = (estado: Estado): boolean => estado === 'parado' || estado === 'erro';
 
+/**
+ * No iPhone e no iPad, a vez dele solta o microfone de verdade. Com a captura viva, mesmo surda, o
+ * WebKit segura a sessão de áudio em PlayAndRecord (modo de chamada) e os botões de volume não
+ * alcançam a voz dele. A `navigator.audioSession` não resolve: `playback` com captura viva encerra
+ * a faixa (spec W3C Audio Session). O custo é um `getUserMedia` por volta.
+ */
+export function soltaNaVezDele(n: { userAgent: string; maxTouchPoints: number }): boolean {
+  return /iPhone|iPad|iPod/.test(n.userAgent) || (/Macintosh/.test(n.userAgent) && n.maxTouchPoints > 1);
+}
+
 /** O `pauseStream`/`resumeStream` do MicVAD, ligados ao microfone da conversa. */
-export function ganchosDoMicrofone<C extends Captura>(mic: Microfone<C>, estado: () => Estado) {
+export function ganchosDoMicrofone<C extends Captura>(mic: Microfone<C>, estado: () => Estado, soltaNaVez = false) {
   return {
-    pauseStream: async (captura: C) => mic.pausa(captura, soltaOMicrofone(estado())),
+    pauseStream: async (captura: C) => mic.pausa(captura, soltaNaVez || soltaOMicrofone(estado())),
     resumeStream: (captura: C) => mic.retoma(captura),
   };
 }

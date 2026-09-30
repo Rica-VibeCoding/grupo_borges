@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import type { Estado } from '../../lib/conversa/tipos.ts';
 
 import { criaControladorDetector } from './controlador-detector.ts';
-import { criaMicrofone, ganchosDoMicrofone, soltaOMicrofone, type Captura, type Microfone } from './microfone-da-conversa.ts';
+import { criaMicrofone, ganchosDoMicrofone, soltaNaVezDele, soltaOMicrofone, type Captura, type Microfone } from './microfone-da-conversa.ts';
 
 type FaixaFalsa = { readyState: 'live' | 'ended'; enabled: boolean; stop(): void };
 type CapturaFalsa = Captura & { faixa: FaixaFalsa };
@@ -52,14 +52,14 @@ function micVadFalso(
   return vad;
 }
 
-function conversa() {
+function conversa(soltaNaVez = false) {
   let pedidos = 0;
   const estado: { atual: Estado } = { atual: 'ouvindo' };
   const mic = criaMicrofone(async () => {
     pedidos += 1;
     return capturaFalsa();
   });
-  const ganchos = ganchosDoMicrofone(mic, () => estado.atual);
+  const ganchos = ganchosDoMicrofone(mic, () => estado.atual, soltaNaVez);
   const novoVad = () => micVadFalso(mic, ganchos);
   const controlador = criaControladorDetector(novoVad(), async () => novoVad());
   const faixa = () => mic.atual()?.faixa ?? null;
@@ -91,6 +91,31 @@ describe('o microfone da conversa', () => {
       assert.equal(c.mic.surdo(), true);
     }
     assert.equal(c.pedidos(), 1);
+  });
+
+  it('no iPhone, na vez dele o microfone se solta de verdade e volta a cada volta', async () => {
+    const c = conversa(true);
+    for (let volta = 0; volta < 3; volta += 1) {
+      c.estado.atual = 'ouvindo';
+      await c.controlador.liga();
+      const faixa = c.faixa();
+      assert.equal(faixa?.enabled, true);
+      c.estado.atual = 'transcrevendo';
+      await c.controlador.desliga();
+      assert.equal(faixa?.readyState, 'ended');
+      assert.equal(c.mic.atual(), null);
+    }
+    assert.equal(c.pedidos(), 3);
+  });
+
+  it('solta na vez dele só no iPhone e no iPad', () => {
+    const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0 Mobile/15E148 Safari/604.1';
+    const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+    const android = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36';
+    assert.equal(soltaNaVezDele({ userAgent: iphone, maxTouchPoints: 5 }), true);
+    assert.equal(soltaNaVezDele({ userAgent: mac, maxTouchPoints: 5 }), true); // iPad se diz Mac
+    assert.equal(soltaNaVezDele({ userAgent: mac, maxTouchPoints: 0 }), false);
+    assert.equal(soltaNaVezDele({ userAgent: android, maxTouchPoints: 5 }), false);
   });
 
   it('a faixa caiu na vez dele: voltando a ouvir, pede outra', async () => {

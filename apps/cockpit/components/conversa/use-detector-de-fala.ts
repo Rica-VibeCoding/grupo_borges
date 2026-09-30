@@ -11,7 +11,7 @@ import {
   seguraNoDetector,
   type ControladorDetector,
 } from './controlador-detector';
-import { criaMicrofone, ganchosDoMicrofone, soltaOMicrofone, type Microfone } from './microfone-da-conversa';
+import { criaMicrofone, ganchosDoMicrofone, soltaNaVezDele, soltaOMicrofone, type Microfone } from './microfone-da-conversa';
 import { criaVigiaDaEscuta, type VigiaDaEscuta } from './vigia-da-escuta';
 import { eventosDoDetector, type OuvinteDaFala } from './eventos-do-detector';
 
@@ -47,7 +47,7 @@ export function useDetectorDeFala({
 
   const controladorRef = useRef<ControladorDetector | null>(null);
   const utilsRef = useRef<VadUtils | null>(null);
-  /* Um `getUserMedia` por conversa: na vez dele, surdo sem soltar (`microfone-da-conversa.ts`). */
+  /* Um `getUserMedia` por conversa: na vez dele, surdo sem soltar — no iPhone, solta (`microfone-da-conversa.ts`). */
   const microfoneRef = useRef<Microfone<MediaStream> | null>(null);
   const detectorRef = useRef<MicVAD | null>(null);
   /* A escuta vigiada (a que emudecia no iPhone): o contexto de áudio do detector, a hora do
@@ -172,7 +172,7 @@ export function useDetectorDeFala({
             preSpeechPadMs: TEMPOS.preGravacao,
             minSpeechMs: TEMPOS.falaMinima,
             getStream: abreComContexto,
-            ...ganchosDoMicrofone(microfone, () => conversaRef.current.estado),
+            ...ganchosDoMicrofone(microfone, () => conversaRef.current.estado, soltaNaVezDele(navigator)),
             ...eventosDoDetector({ podeOuvir, falaRef, eventoRef, ultimoQuadroRef, nivelRef, setFalaDetectada }),
           });
           detectorRef.current = instancia;

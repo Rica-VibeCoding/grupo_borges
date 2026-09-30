@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { it } from 'node:test';
 
 import { criaControladorDetector, opcoesDoDetector, seguraNoDetector } from './controlador-detector.ts';
-import { criaMicrofone, ganchosDoMicrofone, soltaOMicrofone } from './microfone-da-conversa.ts';
+import { criaMicrofone, ganchosDoMicrofone, soltaNaVezDele, soltaOMicrofone } from './microfone-da-conversa.ts';
 import { TEMPOS } from '../../lib/conversa/tipos.ts';
 import { eventosDoDetector } from './eventos-do-detector.ts';
 
@@ -31,12 +31,12 @@ async function monta(pede = async () => capturaFalsa(), bloqueado = false, concl
     useRef: (current: unknown) => ({ current }),
     useState: (valor: unknown) => [valor, () => {}],
     TEMPOS, criaControladorDetector, opcoesDoDetector, seguraNoDetector, eventosDoDetector, exports: {},
-    criaMicrofone, ganchosDoMicrofone, soltaOMicrofone,
+    criaMicrofone, ganchosDoMicrofone, soltaNaVezDele, soltaOMicrofone,
     criaVigiaDaEscuta: (op: unknown) => {
       vigia = op;
       return { comeca: () => { contagem.vigia += 1; }, para: () => { contagem.para += 1; }, confere() {} };
     },
-    navigator: { mediaDevices: { getUserMedia: () => { contagem.pedidos += 1; return pede(); } } },
+    navigator: { userAgent: 'teste', maxTouchPoints: 0, mediaDevices: { getUserMedia: () => { contagem.pedidos += 1; return pede(); } } },
     window: { setInterval, clearInterval },
     fetch: async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(0) }),
     AudioContext: class {
