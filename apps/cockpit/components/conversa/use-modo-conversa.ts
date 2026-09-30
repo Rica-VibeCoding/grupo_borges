@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { postAgentInput, postAgentInterromper } from '@grupo_borges/cockpit-core/api';
 
-import { destravaNoGesto } from '@/components/feed/reprodutor-unico';
+import { destravaNoGesto, estaTocando } from '@/components/feed/reprodutor-unico';
 import { avanca, inicial } from '@/lib/conversa/maquina';
 import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
@@ -85,7 +85,11 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, fora 
     const estado = conversaRef.current.estado;
     setFala((atual) => comParcial(atual, estado, texto));
   });
-  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef, falaRef: canal.ouvinteRef, bloqueadoRef: captura.bloqueadoRef });
+  // A espera ouve. Sem fone, a frase de apoio toca no alto-falante e volta pelo microfone: a fala
+  // que começa com ela tocando é eco e fica de fora.
+  const falaValeRef = useRef<() => boolean>(() => true);
+  falaValeRef.current = () => fone || conversaRef.current.estado !== 'esperandoZe' || !estaTocando();
+  const detector = useDetectorDeFala({ eventoRef: despachaRef, sessaoAtivaRef, conversaRef, falaRef: canal.ouvinteRef, bloqueadoRef: captura.bloqueadoRef, falaValeRef });
 
   const sons = useCallback(() => {
     sonsRef.current ??= criaSonsLocais();

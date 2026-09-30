@@ -28,12 +28,15 @@ export function useDetectorDeFala({
   conversaRef,
   falaRef,
   bloqueadoRef,
+  falaValeRef,
 }: {
   eventoRef: RefObject<(evento: Evento) => void>;
   sessaoAtivaRef: RefObject<boolean>;
   conversaRef: RefObject<Conversa>;
   falaRef: RefObject<OuvinteDaFala | null>;
   bloqueadoRef?: RefObject<boolean>;
+  /** A fala que começar com isto falso é eco, não fala (`eventos-do-detector.ts`). */
+  falaValeRef?: RefObject<() => boolean>;
 }) {
   const [preparacao, setPreparacao] = useState<Preparacao>('preparando');
   const [erroPreparacao, setErroPreparacao] = useState<string | null>(null);
@@ -173,7 +176,7 @@ export function useDetectorDeFala({
             minSpeechMs: TEMPOS.falaMinima,
             getStream: abreComContexto,
             ...ganchosDoMicrofone(microfone, () => conversaRef.current.estado, soltaNaVezDele(navigator)),
-            ...eventosDoDetector({ podeOuvir, falaRef, eventoRef, ultimoQuadroRef, nivelRef, setFalaDetectada }),
+            ...eventosDoDetector({ podeOuvir, falaVale: () => falaValeRef?.current() ?? true, falaRef, eventoRef, ultimoQuadroRef, nivelRef, setFalaDetectada }),
           });
           detectorRef.current = instancia;
           ajustaDetector();

@@ -32,7 +32,8 @@ test('parar esperando o Zé freia o turno e marca o descarte', () => {
   const espera = roda(ATE_ESPERA).conversa;
   const { conversa, efeitos } = roda([{ tipo: 'parar' }], espera);
   assert.equal(conversa.estado, 'parado');
-  assert.deepEqual(efeitos, [{ tipo: 'frearZe', antesDaResposta: true }]);
+  // A espera ouve: parar desliga o detector antes do freio.
+  assert.deepEqual(efeitos, [{ tipo: 'desligarDetector' }, { tipo: 'frearZe', antesDaResposta: true }]);
   assert.equal(turnoDescartado(conversa), true);
 });
 
@@ -94,7 +95,7 @@ test('turno já descartado não freia de novo — um Escape por turno', () => {
   const esperaDeNovo = roda([...ATE_ESPERA], parado).conversa;
   assert.equal(esperaDeNovo.estado, 'esperandoZe');
   const { conversa, efeitos } = roda([{ tipo: 'parar' }], esperaDeNovo);
-  assert.deepEqual(tipos(efeitos), []);
+  assert.deepEqual(tipos(efeitos), ['desligarDetector']); // sem `frearZe`
   assert.equal(turnoDescartado(conversa), true, 'o turno velho ainda não terminou');
 });
 
@@ -130,7 +131,8 @@ test('pedido que entra sem turno descartado não muda nada', () => {
 test('interromper esperando o Zé freia, marca o descarte e volta a ouvir', () => {
   const { conversa, efeitos } = roda([{ tipo: 'interromper', rodando: true }], roda(ATE_ESPERA).conversa);
   assert.equal(conversa.estado, 'ouvindo');
-  assert.deepEqual(efeitos, [{ tipo: 'frearZe', antesDaResposta: true }, { tipo: 'ligarDetector' }]);
+  // A espera já ouvia: o detector segue ligado.
+  assert.deepEqual(efeitos, [{ tipo: 'frearZe', antesDaResposta: true }]);
   assert.equal(turnoDescartado(conversa), true);
 });
 

@@ -10,6 +10,7 @@ import { useMudoConversa } from './use-mudo-conversa';
 import { ConfiguracaoDaConversa } from './configuracao-da-conversa';
 import { conviteDaTela } from './direcao-da-voz';
 import { EsferaConversa } from './esfera-conversa';
+import type { EscutaNoPensar } from './esfera-estado';
 import { cenaVisivel } from './estado-da-vez';
 import { legendaDaVez } from './legenda-da-voz';
 import { avisoDaTela, leituraDaConversa, rotuloDaAcao, voceDisseParaLeitor } from './leitura-da-conversa';
@@ -23,6 +24,7 @@ import { ConviteDaVoz, LegendaDaVoz, SinalDoToque } from './texto-da-voz';
 import { acaoDoToque, toqueConta } from './toque-da-conversa';
 import { useDicaDosGestos, useGestosDaConversa } from './use-gestos-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
+import { falaNaEspera } from '@/lib/conversa/maquina';
 import { useChaveDaConversa, useDirecaoDaVoz, useVisualConversa } from './use-preferencias-conversa';
 
 /** Segundos de espera pelo Zé, uma atualização por segundo (não por quadro). */
@@ -97,6 +99,16 @@ export function TelaConversa({
     ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
     : cenaVisivel({ cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
   const acao = acaoDoToque(cena, preparacaoFalhou, modo.rodando);
+  // Com ele pensando, o microfone está aberto e a fala entra na fila dele: a esfera mostra isso
+  // (`esfera-estado.ts`) — só com a tela à vista e sem mudo, que é quando ouvir é verdade.
+  const ouveDeVerdade = ativa && pronto && !mudo && !retomando;
+  const escuta: EscutaNoPensar = !ouveDeVerdade
+    ? 'nao'
+    : cena === 'esperandoZe'
+      ? 'aberta'
+      : cena === 'ouvindo' && falaNaEspera(modo.conversa)
+        ? 'falando'
+        : 'nao';
   const leitura = leituraDaConversa({
     cena: desligado ? cena : (modo.retomada?.cena ?? cena), // voltando da recarga, o leitor de tela diz o mesmo que o visual
     preparacaoFalhou,
@@ -236,7 +248,7 @@ export function TelaConversa({
         </header>
 
         {pecas.esfera && visivel ? (
-          <EsferaConversa cena={pecas.esfera.cena} variacao={pecas.esfera.variacao} leNivel={modo.leNivel}>
+          <EsferaConversa cena={pecas.esfera.cena} escuta={escuta} variacao={pecas.esfera.variacao} leNivel={modo.leNivel}>
             {eclipse ? <NucleoDoAgente slug={slug} nome={nome} cena={vista} leNivel={modo.leNivel} /> : null}
             {sinal ? <SinalDoToque forma="esfera" /> : null}
           </EsferaConversa>

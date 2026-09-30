@@ -1,4 +1,4 @@
-import { fatorDeAproximacao, type Cena, type Mistura, type Tom } from './moldura-estado.ts';
+import { fatorDeAproximacao, tomDaCena, type Cena, type Mistura, type Tom } from './moldura-estado.ts';
 
 /**
  * O que a Esfera desenha em cada momento, sem WebGL: o peso de cada forma, a
@@ -83,6 +83,34 @@ export function coresDaEsfera(cena: Cena): { corpo: Tom | Mistura; brilho: numbe
     case 'desligado':
       return { corpo: 'desligado', brilho: 0.35, borda: 'desligado' };
   }
+}
+
+/**
+ * A escuta com ele pensando (30/09): na espera o microfone fica aberto e a fala do Rica entra na
+ * fila dele sem frear. `aberta`: o pensar segue e ganha um toque seu — a forma `voce` puxa o pé da
+ * esfera com a sua voz, e a borda pende para a sua cor. `falando`: a sua vez inteira, sem apagar os
+ * veios do pensar. Nada de forma nova: é a mistura das que já existem, como em `trabalhando`.
+ */
+export type EscutaNoPensar = 'nao' | 'aberta' | 'falando';
+
+export function alvosComEscuta(cena: Cena, escuta: EscutaNoPensar): PesosDaEsfera {
+  const alvo = alvosDaEsfera(cena);
+  if (escuta === 'aberta') return { ...alvo, voce: 0.25 };
+  if (escuta === 'falando') return { ...alvo, calma: 0.5 };
+  return alvo;
+}
+
+export function coresComEscuta(cena: Cena, escuta: EscutaNoPensar): ReturnType<typeof coresDaEsfera> {
+  const cores = coresDaEsfera(cena);
+  if (escuta === 'aberta') return { ...cores, borda: { entre: ['voce', 'ze'], peso: 0.2 } };
+  if (escuta === 'falando') return { ...cores, corpo: { entre: ['voce', 'ze'], peso: 0.3 } };
+  return cores;
+}
+
+/** O clarão da troca de cena. A fala que entra na fila dele acende na sua cor: é o "recebido". */
+export function tomDoClarao(anterior: Cena, cena: Cena): Tom {
+  const recebeu = anterior === 'transcrevendo' && (cena === 'esperandoZe' || cena === 'trabalhando' || cena === 'falando');
+  return recebeu ? 'voce' : tomDaCena(cena);
 }
 
 /** O ritmo troca sem salto: chega ao novo em ~0,4 s (taxa 6, a mesma dos pesos e das cores). */

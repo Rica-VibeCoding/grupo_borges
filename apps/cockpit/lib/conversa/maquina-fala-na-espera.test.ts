@@ -4,8 +4,9 @@ import { test } from 'node:test';
 import { avanca, inicial } from './maquina.ts';
 import type { Conversa, Efeito, Evento } from './tipos.ts';
 
-// O desenho das interrupções (30/09): só o toque freia o Zé. Com fone, falar enquanto ele
-// pensa entra na fila do Claude Code sem frear; sem fone o microfone segue fechado na espera.
+// O desenho das interrupções (30/09): só o toque freia o Zé. Falar enquanto ele pensa entra na
+// fila do Claude Code sem frear, com ou sem fone (sem fone, a tela ignora a fala que começa com a
+// frase de apoio tocando — `eventos-do-detector.ts`).
 
 function roda(eventos: Evento[], de: Conversa = inicial()): { conversa: Conversa; efeitos: Efeito[] } {
   let conversa = de;
@@ -29,28 +30,26 @@ const ateEspera = (fone: boolean): Evento[] => [
 ];
 const esperando = (fone: boolean) => roda(ateEspera(fone)).conversa;
 
-test('com fone, esperar pelo Zé deixa o microfone ouvindo', () => {
-  const { conversa, efeitos } = roda(ateEspera(true));
-  assert.equal(conversa.estado, 'esperandoZe');
-  assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
-});
+for (const fone of [true, false]) {
+  const com = fone ? 'com fone' : 'sem fone';
 
-test('sem fone, esperar pelo Zé segue com o microfone fechado', () => {
-  const { conversa, efeitos } = roda(ateEspera(false));
-  assert.equal(conversa.estado, 'esperandoZe');
-  assert.notEqual(tipos(efeitos).at(-1), 'ligarDetector');
-  assert.deepEqual(roda([{ tipo: 'falaIniciou' }], conversa).conversa.estado, 'esperandoZe');
-});
+  test(`${com}, esperar pelo Zé deixa o microfone ouvindo`, () => {
+    const { conversa, efeitos } = roda(ateEspera(fone));
+    assert.equal(conversa.estado, 'esperandoZe');
+    assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
+  });
 
-test('com fone, falar enquanto ele pensa vai para a fila sem frear', () => {
-  const { conversa, efeitos } = roda(
-    [{ tipo: 'falaIniciou' }, { tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'e mais isso' }, { tipo: 'enviou' }],
-    esperando(true),
-  );
-  assert.ok(!tipos(efeitos).includes('frearZe'));
-  assert.deepEqual(efeitos.find((e) => e.tipo === 'enviar'), { tipo: 'enviar', texto: 'e mais isso' });
-  assert.equal(conversa.estado, 'esperandoZe');
-});
+  test(`${com}, falar enquanto ele pensa vai para a fila sem frear`, () => {
+    const { conversa, efeitos } = roda(
+      [{ tipo: 'falaIniciou' }, { tipo: 'falaTerminou', audio }, { tipo: 'transcreveu', texto: 'e mais isso' }, { tipo: 'enviou' }],
+      esperando(fone),
+    );
+    assert.ok(!tipos(efeitos).includes('frearZe'));
+    assert.deepEqual(efeitos.find((e) => e.tipo === 'enviar'), { tipo: 'enviar', texto: 'e mais isso' });
+    assert.equal(conversa.estado, 'esperandoZe');
+    assert.equal(tipos(efeitos).at(-1), 'ligarDetector');
+  });
+}
 
 test('tosse na espera volta a esperar, não a ouvir', () => {
   const { conversa, efeitos } = roda([{ tipo: 'falaIniciou' }, { tipo: 'falaDescartada' }], esperando(true));
@@ -83,13 +82,6 @@ test('a resposta chega enquanto ele fala na espera: a voz espera a fala dele sai
   assert.deepEqual(tipos(efeitos).filter((t) => t !== 'tocarTique' && t !== 'transcrever' && t !== 'enviar'),
     ['pausarVoz', 'falar', 'desligarDetector', 'retomarVoz', 'ligarDetector']);
   assert.equal(conversa.estado, 'falando');
-});
-
-test('ligar o fone na espera abre o microfone; desligar fecha', () => {
-  const liga = roda([{ tipo: 'fone', ligado: true }], esperando(false));
-  assert.deepEqual(tipos(liga.efeitos), ['ligarDetector']);
-  const desliga = roda([{ tipo: 'fone', ligado: false }], liga.conversa);
-  assert.deepEqual(tipos(desliga.efeitos), ['desligarDetector']);
 });
 
 test('parar sem freio (a tela saiu) não freia o Zé, mas descarta o resto do turno', () => {

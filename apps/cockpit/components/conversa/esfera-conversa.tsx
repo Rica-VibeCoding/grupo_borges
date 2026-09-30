@@ -5,17 +5,19 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import styles from './esfera-conversa.module.css';
 import {
   REGULADOR_INICIAL,
-  alvosDaEsfera,
+  alvosComEscuta,
   aproximaRitmo,
   aproximaCor,
   aproximaLugar,
-  coresDaEsfera,
+  coresComEscuta,
   lugarAssentou,
   lugarNoPalco,
   regulaQuadro,
   ritmoDaEsfera,
   taxaDaTroca,
+  tomDoClarao,
   type Cor,
+  type EscutaNoPensar,
   type Lugar,
 } from './esfera-estado';
 import { FRAG_ESFERA } from './esfera-shader';
@@ -59,11 +61,14 @@ const iguais = (a: Cor, b: Cor) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1])
  */
 export function EsferaConversa({
   cena,
+  escuta = 'nao',
   variacao,
   leNivel,
   children,
 }: {
   cena: Cena;
+  /** O microfone aberto com ele pensando (`esfera-estado.ts`). */
+  escuta?: EscutaNoPensar;
   variacao: VariacaoEsfera;
   leNivel: () => number;
   /** O que mora no centro do palco, por cima da luz (o núcleo da Eclipse). */
@@ -71,17 +76,25 @@ export function EsferaConversa({
 }) {
   const palcoRef = useRef<HTMLDivElement>(null);
   const cenaRef = useRef(cena);
+  const escutaRef = useRef(escuta);
   const trocaRef = useRef(false);
+  const tomDoClaraoRef = useRef(tomDaCena(cena));
   const acordaRef = useRef<() => void>(() => {});
   const [semWebGL, setSemWebGL] = useState(false);
   const reduzido = useMovimentoReduzido();
 
   useEffect(() => {
     if (cenaRef.current === cena) return;
+    tomDoClaraoRef.current = tomDoClarao(cenaRef.current, cena);
     cenaRef.current = cena;
     trocaRef.current = true;
     acordaRef.current();
   }, [cena]);
+
+  useEffect(() => {
+    escutaRef.current = escuta;
+    acordaRef.current();
+  }, [escuta]);
 
   useEffect(() => {
     const palco = palcoRef.current;
@@ -99,7 +112,7 @@ export function EsferaConversa({
     const { gl, u } = tela;
     const cores = comPensarAoMeio(leCoresDoTema(TOKENS));
     const coresDe = (c: Cena) => {
-      const { corpo, brilho, borda } = coresDaEsfera(c);
+      const { corpo, brilho, borda } = coresComEscuta(c, escutaRef.current);
       const [r, g, b] = corDoTom(cores, corpo);
       return { corpo: [r * brilho, g * brilho, b * brilho] as Cor, borda: corDoTom(cores, borda) as Cor };
     };
@@ -120,7 +133,7 @@ export function EsferaConversa({
       lugar ??= alvoLugar;
     };
 
-    let pesos = alvosDaEsfera(cenaRef.current);
+    let pesos = alvosComEscuta(cenaRef.current, escutaRef.current);
     let { corpo, borda } = coresDe(cenaRef.current);
     let nivel = 0, tempo = TEMPO_PARADO, clarao = 0;
     let ritmo = ritmoDaEsfera(cenaRef.current);
@@ -139,7 +152,7 @@ export function EsferaConversa({
         clarao = reduzido ? 0 : 1;
       }
       const passoDt = reduzido ? Number.POSITIVE_INFINITY : dt;
-      const alvo = alvosDaEsfera(c);
+      const alvo = alvosComEscuta(c, escutaRef.current);
       const taxa = taxaDaTroca(c);
       pesos = aproxima(pesos, alvo, passoDt, taxa);
       const k = fatorDeAproximacao(passoDt, taxa);
@@ -147,7 +160,8 @@ export function EsferaConversa({
       corpo = aproximaCor(corpo, alvoCor.corpo, k);
       borda = aproximaCor(borda, alvoCor.borda, k);
       if (lugar && alvoLugar) lugar = aproximaLugar(lugar, alvoLugar, fatorDeAproximacao(passoDt, 5));
-      const comVoz = ouveVolume(c);
+      // A escuta aberta também ouve: o toque seu na esfera cresce com a sua voz.
+      const comVoz = ouveVolume(c) || escutaRef.current === 'aberta';
       nivel = reduzido ? (comVoz ? 0.5 : 0) : suavizaNivel(nivel, comVoz ? leNivel() : 0, dt);
       // A troca de estado muda a velocidade da matéria aos poucos: nada de tranco na esfera.
       if (!reduzido) {
@@ -185,7 +199,7 @@ export function EsferaConversa({
         gl.uniform1f(u('uApaga'), pesos.apaga);
         gl.uniform3fv(u('uCorpo'), corpo);
         gl.uniform3fv(u('uBorda'), borda);
-        gl.uniform3fv(u('uCorPulso'), cores[tomDaCena(c)]);
+        gl.uniform3fv(u('uCorPulso'), cores[tomDoClaraoRef.current]);
         gl.uniform3fv(u('uFundo'), cores.fundo);
         tela.desenha();
       }
