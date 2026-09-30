@@ -1254,10 +1254,7 @@ export function Composer({
             />
           )}
 
-          <motion.div
-            layout="position"
-            layoutDependency={formaDaCaixa}
-            transition={{ layout: TROCA_DE_FILEIRA }}
+          <div
             // O DESLOCAMENTO. Sem despacho em cena a fileira desliza para a
             // direita pela largura do slot: o microfone encosta na borda e o
             // botão sai pela beirada, onde o `overflow: hidden` da caixa o
@@ -1267,8 +1264,20 @@ export function Composer({
             // `.ck-fileira-acoes`.
             className="ck-fileira-acoes flex min-w-0 flex-1 items-center justify-end"
             data-despacho={despachoEmCena ? 'em-cena' : 'oculto'}
-            style={{ gap: 'var(--ck-space-3)' }}
           >
+            {/* A Motion anima ESTE grupo, não a fileira: a fileira muda de
+                largura na troca (inteira com texto, só o conteúdo vazia), e a
+                Motion anda pelo canto esquerdo — com os botões encostados à
+                direita, eles iam primeiro para o lado errado e voltavam (a
+                "tremidinha" do vídeo do Rica, 30/09). O grupo tem a mesma
+                largura nos dois modos, então só a posição anda. */}
+            <motion.div
+              layout="position"
+              layoutDependency={formaDaCaixa}
+              transition={{ layout: TROCA_DE_FILEIRA }}
+              className="flex min-w-0 items-center justify-end"
+              style={{ gap: 'var(--ck-space-3)' }}
+            >
             {/* A TROCA DA FALA. Rica, 20/08, no mesmo vídeo: *"a transição
                 entre uma coisa e outra tem que respeitar um certo slow, que é
                 o que a gente tem na hora que a gente abre o painel, senão fica
@@ -1523,7 +1532,8 @@ export function Composer({
                   apagaria a outra no meio do gesto. */}
               <IconeEnviar className="ck-aperta-miolo" />
             </InputGroupButton>
-          </motion.div>
+            </motion.div>
+          </div>
         </div>
 
         {/* O fio — ver `aparencia-envio.ts`. Track de 2px na base, dentro da
