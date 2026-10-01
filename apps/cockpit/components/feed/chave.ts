@@ -29,6 +29,14 @@ export function chaveDe(item: ItemDoFeed): string {
       // sozinho não basta — o início distingue e é estável durante a vida da
       // delegação, que é o que preserva o relógio entre polls.
       return `delegacao-${item.alvo}-${item.desdeMs}`;
+    case 'pedido-do-cockpit':
+      // Ancora no primeiro membro, como o grupo: a run cresce para a direita
+      // enquanto o agente atende, e o aberto/fechado sobrevive.
+      return `cockpit-${item.itens[0] ? chaveDe(item.itens[0]) : 'vazio'}`;
+    case 'marco-da-troca':
+      return `marco-${item.troca.sessionId}`;
+    case 'troca-em-andamento':
+      return 'troca-em-andamento';
     default:
       return item.payload.uuid || String(item.payload.id);
   }

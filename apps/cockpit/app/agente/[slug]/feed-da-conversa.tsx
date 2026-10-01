@@ -49,6 +49,8 @@ import { createIncrementalRenderItems } from '@/lib/spike/render-items-increment
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
+import { dobraPedidosDoCockpit, poeMarco, poeTrocaEmAndamento } from '@/components/feed/troca-no-feed.ts';
+import { usaTrocaNoChat } from './usa-troca-no-chat';
 
 /** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
  *  no mesmo `<Feed>`, com os mesmos itens e a mesma gramática. É a ordem do
@@ -81,7 +83,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // Ela vira `key` lá embaixo (padrão react.dev de reset): Feed, virtualizador
   // e classificador incremental remontam no MESMO commit em que a lista zera —
   // sem frame com conteúdo velho, sem frame vazio no meio.
-  const { messages, isRunning, status, geracao } = useCanarioStream({
+  const { messages, isRunning, status, geracao, troca } = useCanarioStream({
     slug: agentSlug,
     limit: HISTORICO_PADRAO,
     recentes: true,
@@ -236,8 +238,13 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
     return () => publicaEscritaViva(agentSlug, false);
   }, [agentSlug, isRunning, vencida, statusDaFrota, itensBase, lookup]);
 
+  // A TROCA DE CONVERSA (F13): o turno do cockpit vira uma linha, o marco
+  // costura as duas conversas, e durante a troca a lista fecha com "trocando".
+  const { emCurso, marco } = usaTrocaNoChat(agentSlug, troca, messages);
+
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
-    let lista = itensBase as ItemDoFeed[];
+    let lista = dobraPedidosDoCockpit(itensBase) as ItemDoFeed[];
+    if (marco) lista = poeMarco(lista, marco);
     const desdeLinhaViva = ancoraDaLinhaViva({
       correndo: isRunning,
       vencida,
@@ -259,8 +266,8 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
         })),
       ];
     }
-    return lista;
-  }, [isRunning, vencida, desdeMs, statusDaFrota, itensBase, lookup, delegacoes]);
+    return poeTrocaEmAndamento(lista, emCurso);
+  }, [isRunning, vencida, desdeMs, statusDaFrota, itensBase, lookup, delegacoes, marco, emCurso]);
 
   // O vazio virou função pura testada (`lib/decide-vazio.ts`, 11/08 — task
   // 2dac8a8b). As duas intenções originais sobrevivem: branco enquanto o
@@ -269,8 +276,10 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // ainda." só no vazio de verdade. A novidade: delegação conta como
   // conteúdo — agente sem histórico que delegou mostra a linha de quem
   // trabalha por ele em vez de mentir que não há nada.
+  // O marco e a espera contam como conteúdo: a Nova nasce vazia, e o que ela
+  // tem a dizer é justamente que acabou de nascer.
   const decisao = decideVazio({
-    temHistorico: itensBase.length > 0,
+    temHistorico: itensBase.length > 0 || marco !== null || emCurso !== null,
     temDelegacao: delegacoes.length > 0,
     status,
   });
@@ -289,6 +298,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
     <div
       key={geracao}
       className="ck-feed-chega flex min-h-0 flex-1 flex-col"
+      data-saindo={emCurso?.fase === 'trocando' || emCurso?.fase === 'pronta' ? '' : undefined}
     >
       <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
     </div>

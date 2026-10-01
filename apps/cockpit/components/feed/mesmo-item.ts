@@ -59,6 +59,9 @@ export function idsQueOItemLe(item: ItemDoFeed): string[] {
     case 'grupo-ferramentas':
       for (const membro of item.itens) idsDoMembro(membro, ids);
       break;
+    case 'pedido-do-cockpit':
+      for (const membro of item.itens) ids.push(...idsQueOItemLe(membro));
+      break;
   }
   return ids;
 }

@@ -40,6 +40,15 @@ const ALVO_DO_CABECALHO = {
   color: 'var(--ck-text-secondary)',
 } as const;
 
+const VOLTAR_AO_CHAT = {
+  minHeight: '48px',
+  borderRadius: 'var(--ck-gv-raio-bloco)',
+  fontSize: 'var(--ck-text-sm)',
+  fontWeight: 600,
+  background: 'var(--ck-gv-ativo)',
+  color: 'var(--ck-text-primary)',
+} as const;
+
 function Aviso({ children }: { children: string }) {
   return (
     <Bloco>
@@ -104,6 +113,7 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
       ler(undefined, true);
       relePainel();
     },
+    tituloDe: (id) => lista.find((c) => c.id === id)?.titulo ?? null,
     aoExcluir: (id) => {
       setAberta(null);
       setCarga((c) =>
@@ -199,6 +209,12 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
           podeTrocar={podeTrocar}
           acao={noTopo && onde ? acaoEm(onde) : null}
           aoNova={() => acoes.pedeNova(ocupado)}
+          trocouAgora={acoes.estado.fase === 'livre' ? acoes.trocouAgora : null}
+          voltar={
+            <LinkFechaPainel href={fecharHref} rotulo="o Histórico e voltar ao chat" className="ck-veil flex items-center justify-center" style={VOLTAR_AO_CHAT}>
+              Voltar ao chat
+            </LinkFechaPainel>
+          }
         />
       ) : null}
 

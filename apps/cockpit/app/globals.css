@@ -1569,6 +1569,16 @@ html[data-troca-agente] .ck-palco {
   opacity: 0.6;
 }
 
+/* A CONVERSA QUE SAI (F13). Durante a troca do Histórico ela fica na tela,
+ * apagada, e só a linha "trocando" no fim segue acesa: dá para ler o que ela
+ * era sem confundir com a que vai entrar. */
+[data-saindo] [data-gate-message] {
+  transition: opacity var(--ck-dur-calm, 320ms) var(--ck-ease);
+}
+[data-saindo] [data-gate-message]:not(:has(.ck-troca-em-andamento)) {
+  opacity: 0.4;
+}
+
 /* A coluna do feed que ENTRA — na troca de agente e no Restart. O gesto é o do
  * `.ck-chega` (sobe 6px e acende), reaproveitando o keyframe. Substitui o
  * `.ck-feed-enter` naquela div, não soma: as duas juntas animariam a opacidade

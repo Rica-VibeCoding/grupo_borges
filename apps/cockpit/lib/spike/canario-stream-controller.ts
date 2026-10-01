@@ -74,6 +74,10 @@ export type CanarioStreamOptions = {
    * morrem com ele.
    */
   onSessionReset?: () => void;
+  /** A linha trocou de conversa pelo Retomar ou pela Nova (F13). O dado vai
+   *  cru: quem lê é `lib/conversa-trocada.ts`. Como no reset, o controller não
+   *  se remenda — os ids da conversa retomada são mais velhos que o cursor. */
+  onConversaTrocada?: (dado: unknown) => void;
   /** Avisa quando a página volta ao primeiro plano; devolve quem para de ouvir. Padrão: o
    *  `visibilitychange` e o `pageshow` do navegador. */
   aoVoltarDoFundo?: (retoma: () => void) => () => void;
@@ -277,6 +281,17 @@ export function createCanarioStream(
 
     nextSource.addEventListener('session-reset', () => {
       if (isCurrent()) options.onSessionReset?.();
+    });
+
+    nextSource.addEventListener('conversa-trocada', (event) => {
+      if (!isCurrent()) return;
+      let dado: unknown = null;
+      try {
+        dado = JSON.parse(event.data);
+      } catch {
+        // Aviso ilegível ainda é aviso: a conversa mudou, o stream recomeça sem marco.
+      }
+      options.onConversaTrocada?.(dado);
     });
 
     nextSource.addEventListener('heartbeat', () => {

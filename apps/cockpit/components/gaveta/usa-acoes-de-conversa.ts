@@ -37,6 +37,7 @@ import {
   type Leitura,
   type Troca,
 } from './acoes-de-conversa';
+import { assumeTroca, leTrocaNoChat, publicaTrocaNoChat } from '../../lib/troca-em-curso';
 
 const LEITURA_MS = 2_000;
 const FALHAS_DE_LEITURA = 5;
@@ -56,6 +57,7 @@ export function usaAcoesDeConversa({
   releLista,
   aoMudarLinha,
   aoExcluir,
+  tituloDe,
 }: {
   agentSlug: string;
   nome: string;
@@ -66,9 +68,12 @@ export function usaAcoesDeConversa({
   /** A linha trocou de conversa (ou pode ter trocado): reler a lista. */
   aoMudarLinha: () => void;
   aoExcluir: (id: string) => void;
+  /** Título de uma conversa da lista, para o chat dizer para onde está indo. */
+  tituloDe: (id: string) => string | null;
 }) {
   const [estado, setEstado] = useState<EstadoDaAcao>({ fase: 'livre' });
   const [agora, setAgora] = useState(() => Date.now());
+  const [trocouAgora, setTrocouAgora] = useState<Troca['tipo'] | null>(null);
   const vivo = useRef(true);
   const avisos = useRef({ aoMudarLinha, aoExcluir, releLista, atual });
   avisos.current = { aoMudarLinha, aoExcluir, releLista, atual };
@@ -161,6 +166,39 @@ export function usaAcoesDeConversa({
     if (fim.fase === 'falhou') avisos.current.aoMudarLinha();
   }, [estado, atual, agora]);
 
+  // O CHAT ACOMPANHA (F13): a troca daqui aparece no fim do chat, que apaga a
+  // conversa que vai sair. Enquanto este hook está montado, é ele quem conduz.
+  useEffect(() => assumeTroca(agentSlug), [agentSlug]);
+  const titulos = useRef(tituloDe);
+  titulos.current = tituloDe;
+  const anterior = useRef<EstadoDaAcao>(estado);
+  useEffect(() => {
+    const antes = anterior.current;
+    anterior.current = estado;
+    const vinhaTrocando = antes.fase === 'esperando' || antes.fase === 'conferindo';
+    if (vinhaTrocando && estado.fase === 'livre') setTrocouAgora(antes.troca?.tipo ?? 'retomar');
+    const noChat = leTrocaNoChat(agentSlug);
+    if (estado.fase === 'esperando' || estado.fase === 'conferindo') {
+      const troca = estado.troca;
+      publicaTrocaNoChat(agentSlug, {
+        fase: 'trocando',
+        tipo: troca?.tipo ?? 'retomar',
+        alvoTitulo: troca?.alvo ? titulos.current(troca.alvo) : null,
+        etapa: estado.fase === 'esperando' ? estado.etapa : 'religando',
+        inicio: estado.inicio,
+        desligado: troca?.desligado ?? false,
+        forcar: troca?.forcar ?? false,
+      });
+      setTrocouAgora(null);
+    } else if (noChat?.fase === 'trocando') {
+      if (estado.fase === 'falhou') {
+        publicaTrocaNoChat(agentSlug, { fase: 'falhou', texto: estado.texto });
+      } else {
+        publicaTrocaNoChat(agentSlug, { fase: 'pronta', emMs: Date.now() });
+      }
+    }
+  }, [agentSlug, estado]);
+
   async function executa(pedida: Troca) {
     const troca: Troca = pedida.tipo === 'nova' ? { ...pedida, antes: avisos.current.atual ?? null } : pedida;
     guardaTroca(sessao(), agentSlug, troca);
@@ -235,5 +273,7 @@ export function usaAcoesDeConversa({
     confirma,
     /** Cancelar, fechar o erro ou abrir outra conversa: volta ao livre (nunca no meio de uma troca). */
     larga,
+    /** A troca que acabou de dar certo, enquanto o Histórico seguir aberto. */
+    trocouAgora,
   };
 }

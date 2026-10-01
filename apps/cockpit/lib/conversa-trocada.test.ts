@@ -1,0 +1,82 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
+
+import {
+  antesDaTroca,
+  guardaMarco,
+  leConversaTrocada,
+  marcoGuardado,
+  marcoValeAqui,
+  textosDoMarco,
+} from './conversa-trocada.ts';
+
+const CRU = {
+  session_id: 'a5b2f30c',
+  de: 'aacb8488',
+  de_titulo: 'Estacionar e retomar',
+  motivo: 'retomar',
+  titulo: 'Voz em tempo real',
+  nota: 'Parei no detector',
+  briefing: '3 commits enquanto ela estava parada',
+  at: 1_759_298_428_000,
+};
+
+function guarda() {
+  const mapa = new Map<string, string>();
+  return { getItem: (k: string) => mapa.get(k) ?? null, setItem: (k: string, v: string) => void mapa.set(k, v) };
+}
+
+const msg = (session_id: string | null, timestamp?: string) => ({ session_id, timestamp }) as unknown as MessagePayload;
+
+describe('conversa-trocada — o evento do stream vira marco (F13)', () => {
+  it('lê o evento da API', () => {
+    const t = leConversaTrocada(CRU);
+    assert.equal(t?.sessionId, 'a5b2f30c');
+    assert.equal(t?.deTitulo, 'Estacionar e retomar');
+    assert.equal(t?.emMs, CRU.at);
+  });
+
+  it('recusa evento sem conversa ou com motivo desconhecido', () => {
+    assert.equal(leConversaTrocada({ ...CRU, session_id: '' }), null);
+    assert.equal(leConversaTrocada({ ...CRU, motivo: 'restart' }), null);
+    assert.equal(leConversaTrocada(null), null);
+  });
+
+  it('Retomar: título, nota e onde ficou a anterior', () => {
+    const t = textosDoMarco(leConversaTrocada(CRU)!);
+    assert.equal(t.cabeca, 'Conversa retomada');
+    assert.equal(t.titulo, 'Voz em tempo real');
+    assert.equal(t.nota, 'Parei no detector');
+    assert.equal(t.saiu, '“Estacionar e retomar” ficou guardada no Histórico.');
+  });
+
+  it('Nova: sem título, e a anterior sem nome não vira aspas vazias', () => {
+    const t = textosDoMarco(leConversaTrocada({ ...CRU, motivo: 'nova', titulo: null, nota: null, de_titulo: null })!);
+    assert.equal(t.cabeca, 'Conversa nova');
+    assert.equal(t.titulo, null);
+    assert.equal(t.saiu, 'A conversa anterior ficou guardada no Histórico.');
+  });
+
+  it('o marco vale só enquanto o stream estiver na conversa dele', () => {
+    const t = leConversaTrocada(CRU)!;
+    assert.equal(marcoValeAqui(t, [msg('a5b2f30c')]), true);
+    assert.equal(marcoValeAqui(t, [msg('a5b2f30c'), msg('outra')]), false);
+    assert.equal(marcoValeAqui(t, []), true);
+  });
+
+  it('antes da troca é pelo relógio do servidor; sem hora, conta como antes', () => {
+    const t = leConversaTrocada(CRU)!;
+    assert.equal(antesDaTroca(t, msg(null, new Date(CRU.at - 1).toISOString())), true);
+    assert.equal(antesDaTroca(t, msg(null, new Date(CRU.at + 1).toISOString())), false);
+    assert.equal(antesDaTroca(t, msg(null)), true);
+  });
+
+  it('guarda e devolve o marco na aba, por agente', () => {
+    const g = guarda();
+    guardaMarco(g, 'canarinho', leConversaTrocada(CRU)!);
+    assert.deepEqual(marcoGuardado(g, 'canarinho'), leConversaTrocada(CRU));
+    assert.equal(marcoGuardado(g, 'pavan'), null);
+  });
+});

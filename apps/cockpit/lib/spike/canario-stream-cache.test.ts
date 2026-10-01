@@ -176,3 +176,51 @@ test('session-reset zera e reconecta só o slug atingido', () => {
   assert.equal(fake.instances[1].closed, false);
   cache.disposeAll();
 });
+
+test('conversa-trocada recomeça o stream com o cursor zerado e deixa o marco (F13)', () => {
+  const clock = timers();
+  const fake = eventSources();
+  const cache = createCanarioStreamCache();
+  const stream = cache.get({
+    slug: 'canarinho',
+    limit: 1000,
+    recentes: true,
+    eventSourceConstructor: fake.EventSource,
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+  });
+  stream.subscribe(() => {});
+  const velha = fake.instances[0];
+  velha.emit('replay-start');
+  velha.emit('message', { ...MESSAGE, id: 900 });
+  velha.emit('replay-end');
+
+  velha.emit('conversa-trocada', {
+    session_id: 'a5b2f30c',
+    de: 'aacb8488',
+    de_titulo: 'Estacionar e retomar',
+    motivo: 'retomar',
+    titulo: 'Voz em tempo real',
+    nota: 'Parei no detector',
+    briefing: null,
+    at: 1000,
+  });
+  // O replay que a API manda na MESMA conexão já não conta: ela fechou.
+  velha.emit('message', { ...MESSAGE, id: 12 });
+
+  const snap = stream.getSnapshot();
+  assert.equal(velha.closed, true);
+  assert.equal(snap.geracao, 1);
+  assert.deepEqual(snap.messages, []);
+  assert.equal(snap.troca?.sessionId, 'a5b2f30c');
+  assert.equal(snap.troca?.deTitulo, 'Estacionar e retomar');
+
+  const nova = fake.instances[1];
+  assert.doesNotMatch(nova.url, /since_id/, 'sem cursor: os ids da retomada são mais velhos');
+  nova.emit('replay-start');
+  nova.emit('message', { ...MESSAGE, id: 12 });
+  nova.emit('replay-end');
+  assert.equal(stream.getSnapshot().messages.length, 1);
+  assert.equal(stream.getSnapshot().troca?.sessionId, 'a5b2f30c', 'o marco sobrevive ao replay');
+  cache.disposeAll();
+});

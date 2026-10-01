@@ -21,21 +21,39 @@ export function CartaoEmUso({
   podeTrocar,
   acao,
   aoNova,
+  trocouAgora = null,
+  voltar = null,
 }: {
   atual: Conversa | null;
   dePe: boolean;
   podeTrocar: boolean;
   acao: ReactNode;
   aoNova: () => void;
+  /** A troca que acabou de dar certo (F13): o cartão diz isso e mostra o
+   *  caminho de volta ao chat — no celular, a gaveta cobre a conversa. */
+  trocouAgora?: 'retomar' | 'nova' | null;
+  voltar?: ReactNode;
 }) {
   if (!atual && !acao && !dePe) return null;
+  const recemTrocada = trocouAgora !== null && !acao;
   return (
-    <Cartao titulo={dePe ? 'Em uso agora' : 'Última em uso'}>
+    <Cartao
+      titulo={dePe ? 'Em uso agora' : 'Última em uso'}
+      direita={
+        recemTrocada ? (
+          <span role="status" style={{ fontSize: 'var(--ck-text-xs)', fontWeight: 500, color: 'var(--ck-state-ok)' }}>
+            {trocouAgora === 'nova' ? '✓ Aberta agora' : '✓ Retomada agora'}
+          </span>
+        ) : undefined
+      }
+    >
       {atual ? (
         <Bloco>
           <span style={{ fontSize: 'var(--ck-text-base)', fontWeight: 500, color: 'var(--ck-text-primary)' }}>{atual.titulo}</span>
           {atual.nota ? (
-            <span style={{ fontSize: 'var(--ck-text-sm)', lineHeight: 'var(--ck-leading-body)', color: 'var(--ck-text-secondary)' }}>{atual.nota}</span>
+            <span style={{ fontSize: 'var(--ck-text-sm)', lineHeight: 'var(--ck-leading-body)', color: 'var(--ck-text-secondary)' }}>
+              Onde tinha parado: {atual.nota}
+            </span>
           ) : null}
           <span className="ck-tabular" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
             {contaTurnos(atual.turnos)}
@@ -43,6 +61,7 @@ export function CartaoEmUso({
         </Bloco>
       ) : null}
       {acao ? <Bloco>{acao}</Bloco> : null}
+      {recemTrocada ? voltar : null}
       {!acao && dePe && podeTrocar ? (
         <button
           type="button"

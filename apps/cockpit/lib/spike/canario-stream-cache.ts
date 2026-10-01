@@ -5,9 +5,14 @@ import {
   type CanarioStreamOptions,
   type CanarioStreamState,
 } from './canario-stream-controller.ts';
+import { leConversaTrocada, type ConversaTrocada } from '../conversa-trocada.ts';
 
-export type CachedCanarioStreamState = CanarioStreamState & { geracao: number };
-export type CachedCanarioStreamOptions = Omit<CanarioStreamOptions, 'onSessionReset'>;
+export type CachedCanarioStreamState = CanarioStreamState & {
+  geracao: number;
+  /** A última troca de conversa vista NESTE stream (F13); `null` até haver uma. */
+  troca: ConversaTrocada | null;
+};
+export type CachedCanarioStreamOptions = Omit<CanarioStreamOptions, 'onSessionReset' | 'onConversaTrocada'>;
 
 export type CachedCanarioStream = {
   getSnapshot(): CachedCanarioStreamState;
@@ -30,6 +35,7 @@ export const CANARIO_STREAM_IDLE_TTL_MS = 30_000;
 export const INITIAL_CACHED_CANARIO_STREAM_STATE: CachedCanarioStreamState = {
   ...INITIAL_CANARIO_STREAM_STATE,
   geracao: 0,
+  troca: null,
 };
 
 function streamKey(options: CachedCanarioStreamOptions): string {
@@ -53,11 +59,12 @@ function createCachedStream(
   let idleTimer: TimerHandle | undefined;
   let snapshot = INITIAL_CACHED_CANARIO_STREAM_STATE;
   let geracao = 0;
+  let troca: ConversaTrocada | null = null;
   let disposed = false;
   const listeners = new Set<() => void>();
 
   const publish = (state: CanarioStreamState) => {
-    snapshot = { ...state, geracao };
+    snapshot = { ...state, geracao, troca };
     for (const listener of listeners) listener();
   };
 
@@ -68,15 +75,23 @@ function createCachedStream(
     controller = null;
   };
 
+  // Reset e troca recomeçam do mesmo jeito: outro controller, cursor e
+  // mensagens zerados, chave nova no feed. A troca só deixa o marco.
+  const recomeca = () => {
+    stopController();
+    geracao += 1;
+    publish(INITIAL_CANARIO_STREAM_STATE);
+    startController();
+  };
+
   const startController = () => {
     if (disposed || controller) return;
     controller = createCanarioStream({
       ...options,
-      onSessionReset: () => {
-        stopController();
-        geracao += 1;
-        publish(INITIAL_CANARIO_STREAM_STATE);
-        startController();
+      onSessionReset: recomeca,
+      onConversaTrocada: (dado) => {
+        troca = leConversaTrocada(dado);
+        recomeca();
       },
     });
     publish(controller.getSnapshot());

@@ -28,6 +28,7 @@ import { DelegacaoView } from './delegacoes.tsx';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
+import { MarcoDaTrocaView, PedidoDoCockpitView, TrocaEmAndamentoView } from './marco-da-troca.tsx';
 import { RodapeDaFala } from './rodape-da-fala.tsx';
 import { leAnexoImagem, semEnvelopeDeColagem, urlDoAnexoImagem } from './anexo-imagem';
 import { leAnexoVideo } from './anexo-video.ts';
@@ -311,6 +312,20 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
 
     case 'delegacao':
       return <DelegacaoView quem={item.quem} alvo={item.alvo} desdeMs={item.desdeMs} />;
+
+    case 'pedido-do-cockpit':
+      return (
+        <PedidoDoCockpitView
+          pedido={item}
+          renderiza={(membro) => <CorpoDoItem item={membro} lookup={lookup} {...(agentSlug ? { agentSlug } : {})} />}
+        />
+      );
+
+    case 'marco-da-troca':
+      return <MarcoDaTrocaView troca={item.troca} />;
+
+    case 'troca-em-andamento':
+      return <TrocaEmAndamentoView troca={item.troca} {...(agentSlug ? { agentSlug } : {})} />;
 
     case 'synthetic':
       // `stt` não é evento de sistema: é o Rica falando, e chegou por voz em vez

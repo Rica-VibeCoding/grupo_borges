@@ -21,6 +21,9 @@
 
 import type { RenderItem } from '@grupo_borges/cockpit-core/render-items';
 
+import type { ConversaTrocada } from '../../lib/conversa-trocada.ts';
+import type { TrocaNoChat } from '../../lib/troca-em-curso.ts';
+
 export type ChipDeFerramenta = Extract<RenderItem, { kind: 'chip' }>;
 export type AssistenteDeTrabalho = Extract<RenderItem, { kind: 'assistant' }>;
 
@@ -58,12 +61,38 @@ export type DelegacaoItem = {
   desdeMs: number;
 };
 
+/** O PEDIDO DO COCKPIT — o turno em que o cockpit pediu ao agente para
+ *  anotar onde parou, antes de trocar de conversa (F13). A API marca cada
+ *  mensagem desse turno com `origem: "cockpit"`; a run inteira (o pedido, o
+ *  `curl`, o "ok") vira uma linha discreta, que abre no lugar. */
+export type PedidoDoCockpit = {
+  kind: 'pedido-do-cockpit';
+  itens: ItemDoFeed[];
+};
+
+/** O MARCO DA TROCA — onde a conversa de agora começou a valer: de qual para
+ *  qual, a nota e o briefing de retorno (F13). Sintético, como a linha viva. */
+export type MarcoDaTroca = {
+  kind: 'marco-da-troca';
+  troca: ConversaTrocada;
+};
+
+/** A TROCA EM ANDAMENTO — última linha do feed enquanto o Histórico troca a
+ *  conversa. A que vai sair continua na tela, apagada, até o stream trazer a nova. */
+export type TrocaEmAndamento = {
+  kind: 'troca-em-andamento';
+  troca: TrocaNoChat;
+};
+
 /** A saída do pipeline do feed: tudo que o core produz, mais o grupo amplo. */
 export type ItemDoFeed =
   | RenderItem
   | GrupoFerramentas
   | LinhaViva
-  | DelegacaoItem;
+  | DelegacaoItem
+  | PedidoDoCockpit
+  | MarcoDaTroca
+  | TrocaEmAndamento;
 
 /** É linha de trabalho? A régua do assistant é a MESMA do `temConteudoVisivel`
  *  e da `Parte`: texto e thinking só contam quando têm caractere; tool_result
