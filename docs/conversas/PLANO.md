@@ -126,6 +126,9 @@ persona que mudou desde a conversa; lista geral da frota.
 - **A cadeira não commita.** Ela escreve o relato em `docs/conversas/relatos/fN.md`, com os
   números dos testes e o `type-check`, em até 15 linhas. Prova de tela e artefato vão para
   `/tmp`, fora do repositório.
+- **A cadeira não avisa ninguém na VPS.** O orquestrador vigia o relato. Na VPS há mais de um
+  Pavan (a linha `borges-pavan` do cockpit, o Pavan 2 e o orquestrador), e um `send-keys` em
+  `borges-pavan` cai numa sessão que não conduz este plano.
 - **Levar o diff do Omarchy para a VPS**:
   1. Puxar o patch: `ssh ricardo@100.116.209.95 'cd ~/Projetos/grupo_borges && git add -N . && git diff --binary' > /tmp/fN.patch`
   2. Na VPS: `git apply --check` e depois `git apply`.
