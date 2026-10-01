@@ -9,7 +9,9 @@
 > `pytest` 765 ok + 3 falhas de ambiente (`test_tmux_driver_ciclo_de_vida`, pede o
 > `subir-frota.sh` da VPS); front 1508/1510 com 1 falha antiga (`configuracao-operacional.test.ts:32`,
 > endereço `:3446`); `type-check` verde. No Omarchy é `pnpm` direto (Node 26, sem `corepack`).
-> Em curso: **F1** (cadeira `api`).
+> F1 ✅ (`relatos/f1.md`): diálogo de retomada só abre com flag de servidor, desligada hoje na VPS
+> e no Omarchy; `--continue` e `--resume` chegam iguais ao gancho (`source: resume`). Em curso:
+> **F2** (`api`) e **F8** (`tela`).
 
 ## O pedido
 
@@ -269,7 +271,13 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
   3. `/desligar`.
   4. `boot_agent` com flags parametrizadas (`--resume <id>` no lugar de `--continue`).
   5. Gravar `retomada_em`.
-  6. Esperar a linha ficar pronta e tratar o diálogo do jeito que a F1 provou.
+  6. Esperar a linha ficar pronta e tratar o diálogo. F1: são **dois** diálogos possíveis, ambos
+     atrás de flag de servidor desligada em 01/10 (`tengu_gleaming_fair*` e `tengu_amber_tally`
+     no `cachedGrowthBookFeatures` do `~/.claude.json`). No de retomada, a opção 2 é "Resume full
+     session as-is"; no de cota, `new_conversation` dispara um `/clear` sozinha. A chave
+     `resumeReturnDismissed: true` no `~/.claude.json` cala os dois (lida no binário, não medida).
+     Teclas não medidas: se o diálogo aparecer, escolher a opção 2 e conferir a linha pronta; não
+     ficou, erro legível. A linha nunca fica parada num diálogo.
 - **Pronto**:
   - Testes: id de outro agente, 🔒, agente ocupado, falha no boot (a linha não pode ficar
     morta sem aviso: voltar com `--continue` e responder erro) e diálogo detectado.
