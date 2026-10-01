@@ -218,6 +218,12 @@ finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílul
 
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.
 
+**Histórico de conversas** (`?painel=conversas`, `gaveta/painel-de-conversas.tsx`) — terceira
+visão da gaveta, porta no lugar do antigo Destravar. "Em uso agora" + Nova conversa no topo, lista
+que abre no lugar (confirmação, espera e erro dentro da linha). A troca aparece no chat como marco
+(`feed/marco-da-troca.tsx`), e o pedido que o cockpit faz ao agente é linha discreta, nunca balão
+do Rica. Decisões e contrato: `docs/conversas/PLANO.md`.
+
 **Superfícies flutuantes.** Tudo que abre por cima de outro componente — menu (motor, conta,
 modelo e esforço), bolha de comandos, gaveta do "+", aviso do véu de operação — veste `.ck-menu-surface`
 (§F do `globals.css`), o material da pílula do agente: o escuro dela, mas **opaco** (`--ck-flutuante-fundo`;
