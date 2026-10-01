@@ -5,8 +5,11 @@
 > contexto. A pesquisa de referência está em `pesquisa.md` (Canário, 01/10); consultar por seção,
 > nunca inteira.
 >
-> **ESTADO (01/10/2026 00h10 BRT — atualizar em 2 linhas ao fechar cada fase):** plano escrito e
-> aprovado no desenho. Nenhuma fase iniciada. Próxima: **F0**.
+> **ESTADO (01/10/2026 — atualizar em 2 linhas ao fechar cada fase):** F0 ✅. Base no Omarchy:
+> `pytest` 765 ok + 3 falhas de ambiente (`test_tmux_driver_ciclo_de_vida`, pede o
+> `subir-frota.sh` da VPS); front 1508/1510 com 1 falha antiga (`configuracao-operacional.test.ts:32`,
+> endereço `:3446`); `type-check` verde. No Omarchy é `pnpm` direto (Node 26, sem `corepack`).
+> Em curso: **F1** (cadeira `api`).
 
 ## O pedido
 
