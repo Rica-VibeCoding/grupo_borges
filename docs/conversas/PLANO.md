@@ -5,6 +5,8 @@
 > contexto. A pesquisa de referência está em `pesquisa.md` (Canário, 01/10); consultar por seção,
 > nunca inteira.
 >
+> **RODADA 2 (01/10 tarde):** F14–F16 no fim do arquivo, nada despachado ainda. Começa pela F14 + protótipo da F15.
+>
 > **ESTADO (01/10/2026 — atualizar em 2 linhas ao fechar cada fase):** F0 ✅. Base no Omarchy:
 > `pytest` 765 ok + 3 falhas de ambiente (`test_tmux_driver_ciclo_de_vida`, pede o
 > `subir-frota.sh` da VPS); front 1508/1510 com 1 falha antiga (`configuracao-operacional.test.ts:32`,
@@ -358,3 +360,61 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
   briefing citado → ⭐ → excluir uma conversa curta.
 - **Pronto**: APROVADO da `teste`, o link vai para o Rica, e ele confere no iPhone com uma
   conversa real dele.
+
+---
+
+# Rodada 2 — o fluxo do dia a dia (pedido do Rica, 01/10 à tarde)
+
+O Rica usou a F13 no iPhone e achou a tela carregada: muito texto para ler e troca de verdade a
+cada toque. Ele quer bater o olho e saber o que fazer.
+
+## Decisões da rodada 2 (Rica, 01/10)
+
+1. **Olhar ≠ trocar.** Tocar numa conversa do Histórico abre a conversa só para leitura (últimas
+   mensagens e a nota), sem mexer no agente. Quem troca é um botão só, **Continuar esta**, no fim
+   da leitura.
+2. **Continuar esta sem confirmação** com o agente ocioso (nada se perde: a de agora fica no
+   Histórico). Com o agente no turno, **uma linha** ("José Pavan está trabalhando") e o botão
+   laranja. Some o parágrafo de aviso.
+3. **Nova conversa direto no painel** (gaveta), um toque, ao lado da porta do Histórico.
+4. **Voltar pra anterior**: na conversa nova vazia, um atalho único que retoma a que acabou de
+   sair. É o desfazer de quem tocou errado. A foto do agente **não** se repete ali: a pílula no
+   alto já mostra.
+5. **Concluída**: marca manual; a conversa sai da lista *Todas* (fica num filtro próprio).
+6. **Lista enxuta**: só título e tempo. A nota mora dentro da leitura. **Renomear** também mora
+   na leitura.
+7. **Limpeza**: some o cartão "Em uso agora" quando a conversa atual tem 0 turnos; a espera da
+   troca vira uma barra, sem as linhas de etapa nem "pode levar até 90 s".
+8. **Título segue com o agente** (estacionar, F5), com o título de queda quando ele não responde.
+   Medido em 01/10: o `ai-title` do CC existe em 11 de 58 conversas do Pavan e 1 de 28 do Daniel
+   (7 dias) — não serve de fonte principal. **Pendência segue só pelo git**, sem LLM.
+
+## F14 — API da rodada 2 (cadeira `api`)
+
+- **Entrega**:
+  - `GET /{id}/leitura`: últimas mensagens da conversa (texto do Rica e do agente, sem ferramenta),
+    lidas do JSONL, sem tocar no tmux. Reaproveitar a canonização do feed (`_eh_residuo_de_troca`).
+  - `concluida` na `conversa_meta`: `POST /{id}/concluida {valor}`; filtro `concluidas`; *Todas*
+    deixa de trazer as concluídas.
+  - `POST /{id}/titulo {titulo}`: renomear (grava na `conversa_meta`, vence na ordem de queda).
+  - `anterior` na resposta da lista: id da última conversa deixada pela troca, para o atalho
+    "Voltar pra anterior".
+- **Pronto**: testes da rota de leitura (conversa grande, conversa com `/clear` no topo), da
+  concluída e do renomear; `pytest` e `ruff` sem falha nova.
+
+## F15 — Tela: o Histórico novo (cadeira `tela`, carrega `frontend-design`)
+
+- **Antes do código:** protótipo do Histórico (lista enxuta + leitura + Continuar esta) mandado
+  ao Rica em print de celular. Só codar com o aval dele.
+- **Entrega**: lista só título e tempo; toque abre a leitura; Continuar esta, ⭐, Concluída,
+  Renomear e 🗑️ dentro da leitura; confirmação de uma linha só no caso ocupado; cartão de 0 turnos
+  some; espera em barra.
+- **Pronto**: `test` e `type-check` verdes, e a cadeira `teste` aprova contra a API publicada,
+  com print.
+
+## F16 — Tela: painel e conversa nova (cadeira `tela`)
+
+- **Entrega**: botão **Nova conversa** na gaveta, ao lado da porta do Histórico; atalho **Voltar
+  pra anterior** na conversa nova vazia (some no primeiro turno).
+- **Pronto**: a cadeira `teste` roda no canarinho: Nova pelo painel → Voltar pra anterior → espiar
+  uma antiga sem trocar → Continuar esta → Concluída. Publica na 3008 e o link vai ao Rica.
