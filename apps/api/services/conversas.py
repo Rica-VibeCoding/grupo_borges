@@ -33,7 +33,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Collection, Iterable, Iterator
 
 from orchestrator.lifecycle_ruido import eh_interrupcao, eh_ruido_de_lifecycle
 from services import briefing_retorno
@@ -414,21 +414,22 @@ def trava(
     atual: str | None,
     atuais_de_outras: dict[str, str],
     agora: float,
-    deixada: str | None = None,
+    deixadas: Collection[str] = (),
 ) -> tuple[bool, str | None]:
     """🔒 e quem tem a conversa aberta.
 
     `atuais_de_outras` é `session_id → slug` da conversa atual de cada outra
     linha viva. Escrita há < 2 min sem ser a atual desta linha também trava,
     mas sem dono conhecido (outro terminal, `claude` solto): `(True, None)`.
-    `deixada` é a conversa que esta linha acabou de trocar pelo cockpit — a
-    escrita recente dela foi desta linha, que já saiu dela.
+    `deixadas` são as conversas que esta linha trocou há pouco pelo cockpit —
+    a escrita recente delas foi desta linha, que já saiu delas.
     """
     dono = atuais_de_outras.get(session_id)
     if dono:
         return True, dono
     if (
-        session_id not in (atual, deixada)
+        session_id != atual
+        and session_id not in deixadas
         and agora - st.st_mtime < ESCRITA_RECENTE_SEGUNDOS
     ):
         return True, None
@@ -520,7 +521,7 @@ def listar(
     atual: str | None,
     atuais_de_outras: dict[str, str],
     agora: float,
-    deixada: str | None = None,
+    deixadas: Collection[str] = (),
     cwd_padrao: str | None = None,
     com_pendencia: bool = True,
 ) -> list[dict[str, Any]]:
@@ -548,7 +549,7 @@ def listar(
                 atual=atual,
                 atuais_de_outras=atuais_de_outras,
                 agora=agora,
-                deixada=deixada,
+                deixadas=deixadas,
             )
             conversas.append(
                 {

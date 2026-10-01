@@ -112,9 +112,26 @@ class Troca:
 #: há segundos, cairia na regra dos 2 min do 🔒. Sem isto, A → B → A dava 409.
 _trocas: dict[str, Troca] = {}
 
+#: Quanto tempo uma conversa deixada pela linha fica isenta da regra dos 2 min.
+#: Folga sobre os 120 s do 🔒: o fim do turno de estacionar ainda escreve nela.
+MEMORIA_DEIXADA_S = 600.0
+
+#: `slug → {session_id: quando saiu}`. Só a última troca não basta: em
+#: A → B → C, a A ainda tem escrita de menos de 2 min quando a C entra (F11).
+_deixadas: dict[str, dict[str, float]] = {}
+
 
 def registrar_troca(slug: str, saiu: str | None, entrou: str) -> None:
     _trocas[slug] = Troca(saiu=saiu, entrou=entrou)
+    agora = time.time()
+    deixadas = {
+        sid: quando
+        for sid, quando in _deixadas.get(slug, {}).items()
+        if agora - quando < MEMORIA_DEIXADA_S and sid != entrou
+    }
+    if saiu is not None and saiu != entrou:
+        deixadas[saiu] = agora
+    _deixadas[slug] = deixadas
 
 
 def corrigir_atual(slug: str, atual_do_banco: str | None) -> str | None:
@@ -125,16 +142,21 @@ def corrigir_atual(slug: str, atual_do_banco: str | None) -> str | None:
     return atual_do_banco
 
 
-def deixada(slug: str) -> str | None:
-    """A conversa que esta linha acabou de deixar: escrita recente dela é nossa."""
-    troca = _trocas.get(slug)
-    return troca.saiu if troca is not None else None
+def deixadas(slug: str) -> frozenset[str]:
+    """As conversas que esta linha deixou há pouco: escrita recente delas é nossa."""
+    agora = time.time()
+    return frozenset(
+        sid
+        for sid, quando in _deixadas.get(slug, {}).items()
+        if agora - quando < MEMORIA_DEIXADA_S
+    )
 
 
 def esquecer(slug: str) -> None:
     """Só para os testes."""
     _operacoes.pop(slug, None)
     _trocas.pop(slug, None)
+    _deixadas.pop(slug, None)
 
 
 async def esperar(condicao: Callable[[], Awaitable[bool]], prazo_s: float) -> bool:
@@ -149,12 +171,9 @@ async def esperar(condicao: Callable[[], Awaitable[bool]], prazo_s: float) -> bo
 
 
 def linha_unica(texto: str, limite: int = TITULO_MAX) -> str:
-    """Título que cabe numa linha de comando do CC.
+    """Título (ou nota) numa linha só, como a lista desenha.
 
-    Quebra de linha num `/clear` colado vira DOIS envios: o `/clear` sairia com
-    meio título e o resto viraria mensagem para a conversa nova. Por isso todo
-    caractere de controle vira espaço. Aspas e acento passam crus — o CC lê o
-    argumento do `/clear` como texto, sem shell no meio.
+    Todo caractere de controle vira espaço e o excesso vira reticências.
     """
     limpo = " ".join(_CONTROLE_RE.sub(" ", texto).split())
     if len(limpo) <= limite:

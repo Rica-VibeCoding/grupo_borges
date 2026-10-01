@@ -73,14 +73,14 @@ async def _atuais_de_outras_linhas_vivas(app, slug: str) -> dict[str, str]:
     return {sid: a["slug"] for a, sid in zip(outras, atuais, strict=True) if sid}
 
 
-async def _atual_e_deixada(
+async def _atual_e_deixadas(
     app, agent: dict, processos: dict[str, tuple[str, float]] | None = None
-) -> tuple[str | None, str | None]:
-    """A conversa atual da linha e a que ela acabou de deixar.
+) -> tuple[str | None, frozenset[str]]:
+    """A conversa atual da linha e as que ela deixou há pouco.
 
     Atual: o banco, corrigido pelo `--resume` do Claude vivo e pela troca em
     memória do cockpit. O `--resume` cobre o restart da API, que apaga a troca
-    antes de o banco alcançar a conversa retomada; aí a que o banco aponta é a
+    antes de o banco alcançar a conversa retomada; aí a que o banco aponta é
     deixada — escrita recente dela foi desta linha, não vira 🔒.
     """
     slug = agent["slug"]
@@ -94,16 +94,16 @@ async def _atual_e_deixada(
             atual = await asyncio.to_thread(
                 conversas.atual_pelo_processo, _pasta_no_app(app, agent), do_banco, resume
             )
-    deixada = operacao.deixada(slug)
-    if deixada is None and atual != do_banco:
-        deixada = do_banco
-    return operacao.corrigir_atual(slug, atual), deixada
+    deixadas = operacao.deixadas(slug)
+    if do_banco is not None and atual != do_banco:
+        deixadas |= {do_banco}
+    return operacao.corrigir_atual(slug, atual), deixadas
 
 
 async def _atual_da_linha(
     app, agent: dict, processos: dict[str, tuple[str, float]] | None = None
 ) -> str | None:
-    return (await _atual_e_deixada(app, agent, processos))[0]
+    return (await _atual_e_deixadas(app, agent, processos))[0]
 
 
 def _pasta_no_app(app, agent: dict) -> Path | None:
@@ -156,9 +156,9 @@ async def get_conversas(
         return _VAZIA_SUPORTADA
 
     db: GrupoBorgesDB = request.app.state.db
-    metas, (atual, deixada), atuais_de_outras = await asyncio.gather(
+    metas, (atual, deixadas), atuais_de_outras = await asyncio.gather(
         db.conversa_meta_do_agente(slug),
-        _atual_e_deixada(request.app, agent),
+        _atual_e_deixadas(request.app, agent),
         _atuais_de_outras_linhas_vivas(request.app, slug),
     )
     lista = await asyncio.to_thread(
@@ -169,7 +169,7 @@ async def get_conversas(
         atual=atual,
         atuais_de_outras=atuais_de_outras,
         agora=time.time(),
-        deixada=deixada,
+        deixadas=deixadas,
         cwd_padrao=agent.get("workspace_path"),
     )
     visiveis, escondidas = conversas.filtrar(lista, filtro=filtro, q=q, curtas=bool(curtas))
@@ -207,8 +207,8 @@ class ExcluirResposta(BaseModel):
 
 async def _livre_ou_409(app, agent: dict, session_id: str, st: os.stat_result) -> None:
     """409 se a conversa é a atual desta linha ou está 🔒 (régua do excluir e do retomar)."""
-    (atual, deixada), atuais_de_outras = await asyncio.gather(
-        _atual_e_deixada(app, agent), _atuais_de_outras_linhas_vivas(app, agent["slug"])
+    (atual, deixadas), atuais_de_outras = await asyncio.gather(
+        _atual_e_deixadas(app, agent), _atuais_de_outras_linhas_vivas(app, agent["slug"])
     )
     if session_id == atual:
         raise HTTPException(status_code=409, detail="É a conversa atual desta linha")
@@ -218,7 +218,7 @@ async def _livre_ou_409(app, agent: dict, session_id: str, st: os.stat_result) -
         atual=atual,
         atuais_de_outras=atuais_de_outras,
         agora=time.time(),
-        deixada=deixada,
+        deixadas=deixadas,
     )
     if bloqueada:
         onde = f"na linha {dono}" if dono else "em outro lugar (escrita há menos de 2 min)"
@@ -264,8 +264,8 @@ async def post_estacionar(
     """Chamado **pelo agente**: título e nota da conversa atual dele.
 
     Vale com ou sem Nova conversa em curso; se houver uma esperando, ela segue.
-    Título e nota viram uma linha só — o título vai para o `/clear`, e a nota
-    para a lista, onde quebra de linha não tem onde morar.
+    Título e nota viram uma linha só: os dois vão para a lista, onde quebra
+    de linha não tem onde morar.
     """
     agent = await _get_agent_or_404(request, slug)
     if not _eh_cc(agent):
@@ -394,7 +394,7 @@ async def _estacionar_atual(
 async def _conduzir_nova(
     app, agent: dict, op: operacao.Operacao, *, ocupado: bool, url_base: str
 ) -> None:
-    """Fluxo da F5: estacionar → ocioso → `/clear <título>` → `/rename <agente>`."""
+    """Fluxo da F5: estacionar → ocioso → `/clear` → `/rename <agente>`."""
     db: GrupoBorgesDB = app.state.db
     slug, tmux_session = agent["slug"], agent["tmux_session"]
     try:
@@ -413,17 +413,21 @@ async def _conduzir_nova(
                 nomes=conversas.nomes_do_agente(agent),
                 meta=metas.get(sessao_antes),
             )
-        titulo = operacao.linha_unica(op.titulo) if op.titulo else ""
 
         operacao.avancar(op, "religando")
         pasta = _pasta_no_app(app, agent)
         if pasta is None:
             raise _Falha("a pasta de conversas deste agente não é só dele")
         ja_havia = await asyncio.to_thread(conversas.ids_na_pasta, pasta)
-        entrega = await tmux_driver.send_message(
-            tmux_session, f"/clear {titulo}" if titulo else "/clear"
-        )
-        if not entrega.delivered:
+        # `/clear` puro. Com argumento (`/clear <título>`), o CC grava o comando
+        # como primeira mensagem da conversa NOVA e o modelo lê o título velho
+        # como se fosse pedido (F11). O título da que sai já mora na
+        # `conversa_meta`, que vem antes do `custom-title` na ordem de queda.
+        entrega = await tmux_driver.send_message(tmux_session, "/clear")
+        # Só a recusa prova que nada foi escrito. O incerto é o caso comum do
+        # `/clear`: o CC limpa a tela no Enter e leva junto a prova de entrega.
+        # Quem decide aí é o arquivo da conversa nova (F11: 502 com a troca feita).
+        if entrega.safe_to_resend:
             motivo = entrega.message or entrega.outcome
             raise _Falha(f"o /clear não chegou ao agente ({motivo})")
 
@@ -437,11 +441,13 @@ async def _conduzir_nova(
             return bool(novas)
 
         if not await operacao.esperar(nasceu, operacao.PRAZO_CONVERSA_NOVA_S):
+            if not entrega.delivered:
+                motivo = entrega.message or entrega.outcome
+                raise _Falha(f"o /clear não chegou ao agente ({motivo})")
             raise _Falha("o /clear foi enviado, mas a conversa nova não apareceu")
         if len(novas) == 1:
             operacao.registrar_troca(slug, sessao_antes, next(iter(novas)))
-        # O `<título>` do `/clear` fica na conversa que sai; a nova nasce sem
-        # nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
+        # A conversa nova nasce sem nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
         # o rodapé do card (`session_name`) mostra.
         entrega = await tmux_driver.send_message(tmux_session, f"/rename {agent['name']}")
         if not entrega.delivered:

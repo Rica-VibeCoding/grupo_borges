@@ -438,3 +438,40 @@ def test_estado_da_largada(monkeypatch, comando, texto, caixa, esperado) -> None
 def test_estado_da_largada_sem_sessao(monkeypatch) -> None:
     monkeypatch.setattr(tmux_driver, "_server_for", lambda _n: _servidor_com(None))
     assert tmux_driver._estado_da_largada_sync("pavan") == "ausente"
+
+
+# ---------- F12: as deixadas, não só a última ----------
+
+ID_A, ID_B, ID_C = (f"{d * 8}-{d * 4}-4{d * 3}-8{d * 3}-{d * 12}" for d in "abc")
+
+
+def test_a_b_c_a_deixada_duas_trocas_atras_nao_trava() -> None:
+    """A → B → C: a A, escrita há segundos por esta linha, não é 🔒 (F11)."""
+    operacao.esquecer("pavan")
+    operacao.registrar_troca("pavan", ID_A, ID_B)
+    operacao.registrar_troca("pavan", ID_B, ID_C)
+    deixadas = operacao.deixadas("pavan")
+    assert deixadas == {ID_A, ID_B}
+    recente = SimpleNamespace(st_mtime=time.time() - 5)
+    for sid in (ID_A, ID_B):
+        assert conversas_service.trava(
+            sid, recente, atual=ID_C, atuais_de_outras={}, agora=time.time(), deixadas=deixadas
+        ) == (False, None)
+    # Escrita recente de conversa que esta linha não deixou segue 🔒.
+    assert conversas_service.trava(
+        ID_DE_FORA, recente, atual=ID_C, atuais_de_outras={}, agora=time.time(),
+        deixadas=deixadas,
+    ) == (True, None)
+    operacao.esquecer("pavan")
+
+
+def test_deixada_que_volta_a_ser_atual_sai_da_lista_e_a_velha_vence(monkeypatch) -> None:
+    operacao.esquecer("pavan")
+    agora = [1_000_000.0]
+    monkeypatch.setattr(operacao.time, "time", lambda: agora[0])
+    operacao.registrar_troca("pavan", ID_A, ID_B)
+    operacao.registrar_troca("pavan", ID_B, ID_A)  # A voltou: não é mais deixada
+    assert operacao.deixadas("pavan") == {ID_B}
+    agora[0] += operacao.MEMORIA_DEIXADA_S
+    assert operacao.deixadas("pavan") == frozenset()
+    operacao.esquecer("pavan")

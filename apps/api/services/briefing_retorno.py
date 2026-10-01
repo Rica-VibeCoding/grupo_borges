@@ -18,9 +18,10 @@ import logging
 import os
 import subprocess
 import threading
-import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,13 @@ _COMMITS_MAX = 10
 _PENDENTES_MAX = 10
 _GIT_TIMEOUT_S = 5.0
 _PATHSPECS_MAX = 500
+#: O agente lê o briefing ao lado do Rica, e a tela vive em Brasília. A VPS roda
+#: em UTC: sem fuso explícito, o agente recebia 05:16 e a tela mostrava 02:16.
+FUSO = "America/Sao_Paulo"
+_ZONA = ZoneInfo(FUSO)
+#: `format-local` + `TZ` no ambiente: o `git log` data no fuso de Brasília, não
+#: no fuso de quem fez o commit.
+_GIT_ENV = {**os.environ, "TZ": FUSO}
 
 
 @dataclass(frozen=True)
@@ -60,7 +68,7 @@ def _git(raiz: Path, *args: str) -> str | None:
     try:
         feito = subprocess.run(
             ["git", "--literal-pathspecs", "-C", str(raiz), *args],
-            capture_output=True, text=True, timeout=_GIT_TIMEOUT_S,
+            capture_output=True, text=True, timeout=_GIT_TIMEOUT_S, env=_GIT_ENV,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("briefing: git %s em %s falhou (%s)", args[0], raiz, exc)
@@ -168,7 +176,7 @@ def _quando(epoch: float, agora: float) -> str:
         ha = f"há {horas} h"
     else:
         ha = f"há {horas // 24} dias"
-    return f"{time.strftime('%d/%m %H:%M', time.localtime(epoch))} ({ha})"
+    return f"{datetime.fromtimestamp(epoch, _ZONA):%d/%m %H:%M} ({ha})"
 
 
 def _limitar(itens: list[str], maximo: int) -> list[str]:
@@ -185,7 +193,7 @@ def montar(arquivos: list[str], *, desde: float, agora: float) -> str:
         nome = raiz.name
         log = _git(
             raiz, "log", f"--since=@{int(desde)}", "--format=%h%x09%ad%x09%an%x09%s",
-            "--date=format:%d/%m %H:%M", f"-n{_COMMITS_MAX}", "--",
+            "--date=format-local:%d/%m %H:%M", f"-n{_COMMITS_MAX}", "--",
             *relativos[:_PATHSPECS_MAX],
         )
         for linha in (log or "").splitlines():

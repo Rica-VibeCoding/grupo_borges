@@ -16,8 +16,10 @@ import sqlite3
 import subprocess
 import threading
 import time
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -200,6 +202,25 @@ def test_briefing_lista_commits_desde_a_parada_e_o_que_segue_sem_commit(obra) ->
     assert "inicial" not in texto  # commit de antes da parada
     assert f"{repo.name} criado.py (??)" in texto
     assert len(texto.splitlines()) <= briefing_retorno.LINHAS_MAX
+
+
+def test_briefing_data_em_brasilia_mesmo_com_commit_em_utc(obra) -> None:
+    """A VPS roda em UTC; o agente lia 05:16 e a tela mostrava 02:16 (F11)."""
+    quando = obra.parou + 600
+    (obra.repo / "editado.py").write_text("v3\n")
+    _git(obra.repo, "commit", "-qam", "feat: commit em UTC", quando=quando)
+    _marcar_retomada(obra, ID_OBRA, atividade=obra.parou)
+
+    texto = _briefing(obra)
+    brt = ZoneInfo("America/Sao_Paulo")
+    assert f"{datetime.fromtimestamp(quando, brt):%d/%m %H:%M} Teste — feat: commit em UTC" in texto
+    assert f"foi em {datetime.fromtimestamp(obra.parou, brt):%d/%m %H:%M} (há 1 h)" in texto
+
+
+def test_quando_usa_brasilia_e_nao_o_fuso_da_maquina() -> None:
+    # 01/10/2026 05:16 UTC — o horário que o canarinho recebeu na F11.
+    epoch = datetime(2026, 10, 1, 5, 16, tzinfo=UTC).timestamp()
+    assert briefing_retorno._quando(epoch, epoch + 60) == "01/10 02:16 (há menos de 1 h)"
 
 
 def test_briefing_de_repo_sem_mudanca_vem_vazio(obra) -> None:

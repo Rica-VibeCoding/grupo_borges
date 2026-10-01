@@ -1,0 +1,11 @@
+# F12 — relato (cadeira `api`, Omarchy, 01/10/2026; sem commit)
+
+- **1 Bolha do `/clear` — é do CC, vale para todo agente.** No JSONL do canarinho (`e3edc4fb…`, só leitura): o CC grava o envelope `<command-name>/clear</command-name>` + `<command-args>` como **primeira mensagem da conversa nova** (com caveat "recorded here as context" — o modelo lê); o `<system-reminder>` é o "The user named this session" do nosso `/rename`, `isMeta`, que o classificador dobra dentro do chip. Nada do DeepSeek.
+- **Conserto, dois lados:** a Nova manda `/clear` **puro** (`_conduzir_nova`) — o agente não recebe mais o título velho; o título da que sai já mora na `conversa_meta`, que vem antes do `custom-title` na ordem de queda. E a canonização do feed (`_eh_residuo_de_troca`, `routers/agents.py`) descarta o envelope de `/clear` e o lembrete `isMeta` do `/rename`, no replay e no ao vivo. Outros slash e fala que cita `/clear` ficam.
+- **2 🔒 falso duas trocas atrás:** `operacao_conversa` lembra **todas** as deixadas por 10 min (`_deixadas`, `deixadas(slug)`), não só a última; a que volta a ser atual sai da lista. `trava`/`listar` recebem `deixadas`; o caso do restart (`--resume` ≠ banco) soma a do banco ao conjunto.
+- **3 Briefing em BRT:** `_quando` data em `America/Sao_Paulo` e o `git log` sai com `format-local` + `TZ` no ambiente — antes vinha no fuso de quem fez o commit.
+- **Extra, apontado pela `tela` (`f12-tela.md`):** `/clear` com envio `uncertain` não é mais 502 imediato — segue para esperar o JSONL novo e só falha (com o motivo da entrega) se ele não aparecer. Recusa (`refused`) segue erro na hora.
+- **`pytest`:** 879 ok + as 3 de ambiente (`subir-frota.sh` ausente) + 2 xfailed. +9 testes (feed, A→B→C, memória das deixadas, BRT no texto e no `git log`, `/clear` incerto com e sem conversa nova). `ruff` sem aviso novo.
+- **Furo:** conversa nova **já gravada** segue com o envelope no JSONL — o agente dela já leu o título velho; só o feed esconde. Só some das próximas Novas.
+- **Furo:** o `/rename` que volta `uncertain` ainda vira `erro` com a troca feita; não vi no relato da F11, deixei como está.
+- **Furo:** o `/clear` puro tira o nome da conversa que sai no `/resume` nativo do CC (o cockpit não usa).

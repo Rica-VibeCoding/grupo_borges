@@ -46,6 +46,8 @@ class AgenteFalso:
         #: Fica ocupado depois de estacionar (turno que não acaba).
         self.preso = False
         self.recusa: str | None = None
+        #: Prefixo cujo envio volta `uncertain` — mas chega ao agente.
+        self.incerto: str | None = None
         #: O `/clear` cria o JSONL da conversa nova.
         self.clear_pega = True
         self.passos: list[str] = []
@@ -64,6 +66,8 @@ class AgenteFalso:
             self.bancada.atuais["pavan"] = ID_NOVA
             if self.clear_pega:
                 (self.bancada.pasta / f"{ID_NOVA}.jsonl").write_text("")
+        if self.incerto and texto.startswith(self.incerto):
+            return tmux_driver.DeliveryResult(outcome="uncertain", reason="envio_nao_confirmado")
         return tmux_driver.DELIVERED
 
     async def _estacionar(self) -> None:
@@ -171,8 +175,9 @@ async def test_nova_com_agente_ocioso_estaciona_limpa_e_renomeia(palco) -> None:
     assert pedido.startswith("[cockpit]")
     assert "http://127.0.0.1:" in pedido and "/api/agents/pavan/conversas/estacionar" in pedido
     assert "\n" not in pedido
-    assert clear == "/clear Feed enxuto"
-    # A nova recebe o nome do agente, não o título (que fica na que sai).
+    # `/clear` puro: com o título, o CC o grava na conversa nova e o agente o
+    # lê como pedido (F11). A nova recebe o nome do agente.
+    assert clear == "/clear"
     assert rename == "/rename José Pavan"
     assert agente.passos == ["pedido:estacionando", "clear:religando"]
     assert agente.interrupcoes == 0
@@ -196,8 +201,8 @@ async def test_nova_forcar_interrompe_e_segue_sem_nota_com_titulo_de_queda(palco
     assert r.status_code == 200, r.text
     assert (r.json()["nota"], r.json()["titulo"]) == (False, "sonda-titulo")
     assert palco.agente.interrupcoes == 1
-    # Nada de pedido de estacionar: direto ao /clear com o título de queda.
-    assert palco.agente.enviados == ["/clear sonda-titulo", "/rename José Pavan"]
+    # Nada de pedido de estacionar: direto ao /clear; o título de queda só na resposta.
+    assert palco.agente.enviados == ["/clear", "/rename José Pavan"]
     assert _meta(palco.bancada, ID_CUSTOM) is None
 
 
@@ -211,7 +216,7 @@ async def test_nova_agente_que_nao_responde_segue_com_titulo_de_queda(palco) -> 
     assert palco.relogio.t >= operacao.PRAZO_ESTACIONAR_S
     # Ficou ocupado com o pedido e calado: interrompido antes do /clear.
     assert palco.agente.interrupcoes == 1
-    assert palco.agente.enviados[1:] == ["/clear Palavra-senha da sonda", "/rename José Pavan"]
+    assert palco.agente.enviados[1:] == ["/clear", "/rename José Pavan"]
 
 
 async def test_nova_turno_que_nao_fecha_depois_de_estacionar_e_interrompido(palco) -> None:
@@ -219,23 +224,26 @@ async def test_nova_turno_que_nao_fecha_depois_de_estacionar_e_interrompido(palc
     r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
     assert r.status_code == 200 and r.json()["nota"] is True
     assert palco.agente.interrupcoes == 1
-    assert palco.agente.enviados[1] == "/clear Feed enxuto"
+    assert palco.agente.enviados[1] == "/clear"
 
 
 @pytest.mark.parametrize(
     ("titulo", "esperado"),
     [
-        ('Deploy "verde" do feed', '/clear Deploy "verde" do feed'),
-        ("Revisão da gaveta — ação", "/clear Revisão da gaveta — ação"),
-        ("linha um\nlinha dois\r\n", "/clear linha um linha dois"),
-        ("tab\tno\x1b[31mmeio", "/clear tab no [31mmeio"),
+        ('Deploy "verde" do feed', 'Deploy "verde" do feed'),
+        ("Revisão da gaveta — ação", "Revisão da gaveta — ação"),
+        ("linha um\nlinha dois\r\n", "linha um linha dois"),
+        ("tab\tno\x1b[31mmeio", "tab no [31mmeio"),
     ],
 )
-async def test_titulo_do_clear_fica_numa_linha_so(palco, titulo: str, esperado: str) -> None:
+async def test_titulo_fica_numa_linha_so_e_nao_vai_no_clear(
+    palco, titulo: str, esperado: str
+) -> None:
     palco.agente.resposta = {"titulo": titulo, "nota": "n"}
     r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
     assert r.status_code == 200, r.text
-    assert palco.agente.enviados[1] == esperado
+    assert palco.agente.enviados[1] == "/clear"
+    assert _meta(palco.bancada, ID_CUSTOM)[0] == esperado
 
 
 async def test_segunda_operacao_com_uma_em_curso_e_409(palco) -> None:
@@ -268,6 +276,24 @@ async def test_clear_recusado_vira_fase_erro_legivel(palco) -> None:
     (palco.bancada.pasta / f"{ID_NOVA}.jsonl").unlink(missing_ok=True)
     de_novo = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
     assert de_novo.status_code == 200
+
+
+async def test_clear_incerto_com_conversa_nova_no_disco_segue_pronta(palco) -> None:
+    """F11: o CC limpa a tela no Enter e a prova some; a troca tinha acontecido."""
+    palco.agente.incerto = "/clear"
+    r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["fase"] == "pronta"
+    assert palco.agente.enviados[1:] == ["/clear", "/rename José Pavan"]
+
+
+async def test_clear_incerto_sem_conversa_nova_e_erro_de_entrega(palco) -> None:
+    palco.agente.incerto = "/clear"
+    palco.agente.clear_pega = False
+    r = await palco.cliente.post("/api/agents/pavan/conversas/nova", json={})
+    assert r.status_code == 502
+    assert "/clear não chegou" in r.json()["detalhe"]
+    assert not any(t.startswith("/rename") for t in palco.agente.enviados)
 
 
 async def test_conversa_nova_que_nao_aparece_e_erro_sem_rename(palco) -> None:

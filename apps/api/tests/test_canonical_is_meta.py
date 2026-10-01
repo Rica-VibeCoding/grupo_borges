@@ -43,3 +43,38 @@ def test_canonical_event_omite_is_meta_nos_demais() -> None:
     canon = _canonical_jsonl_message_event(_evento(_payload_user("digitado")))
     assert canon is not None
     assert "is_meta" not in canon
+
+
+# ---------- F12: o rastro da troca de conversa não entra no feed ----------
+
+_ENVELOPE_CLEAR = (
+    "<command-name>/clear</command-name>\n            <command-message>clear</command-message>\n"
+    "            <command-args>Pesquisa lista de conversas para retomar</command-args>"
+)
+_LEMBRETE_RENAME = (
+    "<system-reminder>\nThe user named this session \"Canário\". "
+    "This may indicate the session's focus or intent.\n</system-reminder>"
+)
+
+
+def test_envelope_do_clear_some_do_feed() -> None:
+    assert _canonical_jsonl_message_event(_evento(_payload_user(_ENVELOPE_CLEAR))) is None
+    em_lista = _payload_user("x")
+    em_lista["message"]["content"] = [{"type": "text", "text": _ENVELOPE_CLEAR}]
+    assert _canonical_jsonl_message_event(_evento(em_lista)) is None
+
+
+def test_lembrete_do_rename_some_do_feed_so_quando_is_meta() -> None:
+    assert _canonical_jsonl_message_event(
+        _evento(_payload_user(_LEMBRETE_RENAME, isMeta=True))
+    ) is None
+    # Digitado por alguém, não é rastro da máquina: fica.
+    assert _canonical_jsonl_message_event(_evento(_payload_user(_LEMBRETE_RENAME))) is not None
+
+
+def test_outros_slash_e_fala_que_cita_clear_ficam() -> None:
+    encerrar = _ENVELOPE_CLEAR.replace("/clear", "/encerrar")
+    assert _canonical_jsonl_message_event(_evento(_payload_user(encerrar))) is not None
+    assert _canonical_jsonl_message_event(
+        _evento(_payload_user("por que o <command-name>/clear</command-name> aparece?"))
+    ) is not None
