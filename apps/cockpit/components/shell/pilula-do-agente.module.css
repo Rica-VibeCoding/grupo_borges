@@ -1,13 +1,12 @@
-/* A foto do agente na tela de voz (fase 4, item 5) — maquete em
- * docs/modo-conversa/fase4-direcoes/b.html. A cor é a da vez: âmbar é a sua,
- * ciano é a dele, cinza é parado. Nada aqui recebe o dedo: a tela inteira é o botão. */
-.tom { --cor: var(--ck-conversa-prepara); }
-.tom[data-tom='voce'] { --cor: var(--ck-conversa-voce); }
-.tom[data-tom='ze'] { --cor: var(--ck-conversa-ze); }
-.tom[data-tom='pensa'] { --cor: var(--ck-conversa-pensa); }
-.tom[data-tom='erro'] { --cor: var(--ck-conversa-erro); }
-.tom[data-tom='ocupado'] { --cor: var(--ck-conversa-ocupado); }
-.tom[data-tom='desligado'] { --cor: var(--ck-conversa-desligado); }
+/* A pílula do agente — peça única (tela de voz e topo da gaveta). A cor é o tom de estado
+ * (`--ck-tom-*`): âmbar chama você, ciano é ele agindo, cinza é parado. Nada aqui recebe o dedo. */
+.pilula { --cor: var(--ck-tom-prepara); }
+.pilula[data-tom='voce'] { --cor: var(--ck-tom-voce); }
+.pilula[data-tom='ze'] { --cor: var(--ck-tom-ze); }
+.pilula[data-tom='pensa'] { --cor: var(--ck-tom-pensa); }
+.pilula[data-tom='erro'] { --cor: var(--ck-tom-erro); }
+.pilula[data-tom='ocupado'] { --cor: var(--ck-tom-ocupado); }
+.pilula[data-tom='desligado'] { --cor: var(--ck-tom-desligado); }
 
 .foto {
   flex: none;
@@ -23,7 +22,6 @@
   font-size: var(--ck-text-md);
 }
 
-/* ── B: a pílula no alto ─────────────────────────────────────────────── */
 .pilula {
   position: relative;
   isolation: isolate;
@@ -44,14 +42,20 @@
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
+/* Na gaveta, a pílula é uma camada sobre o cartão-mãe (§8): sem vidro, sem fio. */
+.pilula[data-lugar='gaveta'] .fundo {
+  border-color: transparent;
+  background: var(--ck-gv-camada);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 .moldaPilula {
   position: relative;
   display: grid;
-  width: 52px;
-  height: 52px;
   flex: none;
 }
-.pilula .imagem { filter: var(--ck-conversa-foto-pilula); }
+/* Na voz a foto escurece para não brigar com a esfera; quem acende é o aro. */
+.pilula[data-lugar='voz'] .imagem { filter: var(--ck-conversa-foto-pilula); }
 .aro,
 .onda {
   position: absolute;
@@ -62,7 +66,6 @@
 }
 .aro { opacity: 0.4; }
 .onda { opacity: 0; }
-.pilula:not([data-cena='parado']):not([data-cena='preparando']) .aro { opacity: 0.85; }
 /* O brilho do aro mora num `::after` parado; o laço anima só a opacidade dele (revisão do Pavan:
  * `box-shadow` animado repinta a cada quadro e come bateria no iPhone). */
 .aro::after {
@@ -73,7 +76,9 @@
   box-shadow: 0 0 20px var(--cor), 0 0 2px var(--cor) inset;
   opacity: 0;
 }
-.pilula[data-cena='falando'] .aro { opacity: 1; }
+/* Fora do parado, o aro acende — inclusive falando e desligado (as regras de 1 e 0.2 que havia
+ * para esses dois nunca venceram esta em especificidade; o visual de hoje é este). */
+.pilula:not([data-tom='prepara']) .aro { opacity: 0.85; }
 .pilula[data-cena='falando'] .aro::after { animation: respira 1s ease-in-out infinite; }
 .pilula[data-cena='falando'] .onda { animation: onda 1.8s cubic-bezier(0.2, 0, 0.2, 1) infinite; }
 .pilula[data-cena='falando'] .onda + .onda { animation-delay: -0.9s; }
@@ -126,7 +131,7 @@
 @starting-style {
   .estado { opacity: 0; translate: 0 0.4em; }
 }
-.tom:not([data-cena='parado']):not([data-cena='preparando']) .estado { color: var(--cor); }
+.pilula:not([data-tom='prepara']) .estado { color: var(--cor); }
 .tempo { font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -136,7 +141,6 @@
   .barras i { animation: none !important; }
 }
 
-/* Desligado: a foto apaga junto com a esfera (o mesmo ~2 s) e o aro fica um fio. */
-.pilula[data-cena='desligado'] .imagem { filter: grayscale(1) brightness(0.28); }
+/* Desligado: a foto apaga devagar (~2 s, junto com a esfera na voz). */
+.pilula[data-tom='desligado'] .imagem { filter: grayscale(1) brightness(0.28); }
 .imagem { transition: filter 1.8s var(--ck-ease); }
-.pilula[data-cena='desligado'] .aro { opacity: 0.2; }

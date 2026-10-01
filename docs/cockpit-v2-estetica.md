@@ -37,6 +37,8 @@ Não é preto puro no palco: `#000` em OLED arrasta na rolagem e endurece texto 
 `tertiary` **nunca em corpo** — só ícone, separador ou texto ≥ 20px.
 
 **Estado:** `--ck-state-thinking`, `-running`, `-attention`, `-ok`, `-fail` e `--ck-focus`.
+**Tom de estado** (`--ck-tom-voce/ze/pensa/prepara/erro/ocupado/desligado`): a cor de quem está com a
+vez, consumida pela pílula do agente e pela tela de voz; aponta para os estados. `--ck-conversa-*` é apelido.
 `--ck-alert-*` (`> [!NOTE]` do markdown) **copia** os valores de estado, sem `var()`: são independentes.
 
 **Diff:** `--ck-diff-add`, `--ck-diff-del` (= `state-fail`), fundos `-bg` a 12%, nunca cor cheia. Menos é U+2212 (`−`).
@@ -122,6 +124,8 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 - **Só `transform` e `opacity` animam.** Nada animado pode refluir o feed durante o stream.
 - **`prefers-reduced-motion: reduce` desliga tudo**, trocando por mudança instantânea.
 - **Biblioteca: Motion (`motion/react`)**, com `layoutDependency` em todo `layout` e `MotionConfig reducedMotion="user"`.
+  Uso único hoje: a mola da largura da pílula do agente. Transição de largura `auto` em CSS
+  (`interpolate-size`) não existe no Safari do iPhone (MDN, 10/2026); a Motion faz por `transform`.
 - **Entrada e saída de superfície é `.ck-surge`**, o movimento do app inteiro: quem anima superfície
   nova usa ele, não keyframe próprio. Elemento removido do DOM não anima a saída, então a superfície
   fica **sempre montada** e alterna `data-aberto`; escondida por `visibility`. O gesto é
@@ -175,9 +179,15 @@ desktop, crescendo para baixo e rolando por dentro. Cabe sem rolar em 390×844 e
 respiro `--ck-space-3`) → blocos `--ck-gv-bloco` (quase preto, raio 12). Dentro de `.ck-gv`, moldura
 vira pílula e os fios somem: a separação é a camada.
 
-**Cabeçalho baixo, uma linha:** retrato de 40px com anel fino laranja (apaga fora do ar) e a bolinha
-"!" quando algo pede olho · nome (`text-md`, 600) · interruptor da sessão · `×` com alvo de 44px.
-Embaixo, a statusline com a barra de contexto na largura toda. Não há herói.
+**Cabeçalho baixo, uma linha:** a pílula do agente (foto de 40px, bolinha "!" quando algo pede olho)
+· interruptor da sessão · `×` com alvo de 44px. Embaixo, a statusline com a barra de contexto na
+largura toda. Não há herói.
+
+**Pílula do agente** (`shell/pilula-do-agente.tsx`) — a identidade do agente em qualquer tela: foto com
+aro no tom de estado, primeiro nome, palavra do estado; o fundo estica com mola quando a palavra muda.
+Na voz, `cena` liga ondas (falando) e barras (ouvindo); na gaveta fica parada, só cor. Mapa da gaveta:
+trabalhando → `ze` · aguardando → `voce` ("esperando você") · ocioso → `prepara` ("na linha") ·
+fora do ar → `desligado` · alerta → `erro` ("parou").
 
 **Peças:**
 - `Cartao` — título opcional à esquerda, ação à direita.
@@ -189,9 +199,9 @@ Embaixo, a statusline com a barra de contexto na largura toda. Não há herói.
 - `BolinhaDeAlerta` — "!" vermelho; o motivo sempre aparece em texto na mesma gaveta.
 - Ícone (`shell/icones.tsx`): traço fino, contorno aberto, nunca preenchido; ação sem moldura.
 
-**Um papel por cor:** laranja (`--ck-gv-acento`) = identidade viva (anel); azul (`--ck-gv-ativo`) =
-**ligado** e nada mais; vermelho (`--ck-gv-alerta`) = só a bolinha "!"; âmbar = atenção, do estado
-global. Não entra quarto acento.
+**Um papel por cor:** o aro da pílula = tom de estado; azul (`--ck-gv-ativo`) = **ligado** e nada
+mais; vermelho (`--ck-gv-alerta`) = só a bolinha "!"; âmbar = atenção, do estado global. Não entra
+acento novo.
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 
@@ -218,7 +228,7 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 13. Enfeite que não se paga: herói, halo, ilustração genérica, cabeçalho redundante, botão que não leva a lugar nenhum.
 14. Highlighter de linguagem em bloco de código.
 15. Tamanho, entrelinha ou tracking como valor solto (`text-[13px]`, `leading-[1.55]`).
-16. Quarto acento na gaveta, ou acento fora do seu papel (§8).
+16. Acento novo na gaveta, ou acento fora do seu papel (§8).
 
 ## 10. Amarrações e verificação
 
@@ -236,13 +246,13 @@ Imagens em `docs/referencias/aci-biller/` (web e mobile; fonte: theskinsfactory.
 - cartão: ACI `#212028` → `--ck-gv-camada` `#1d1e21`
 - bloco interno: ACI `#000000`–`#040405` → `--ck-gv-bloco` `#0d0e10`
 - pílula: ACI `#3a3d49` → `--ck-gv-pilula` `#343539`
-- acento laranja: ACI `#f17a23` → `--ck-gv-acento` `#f3680f`
+- acento laranja: ACI `#f17a23` → não adotado; a identidade é o aro da pílula, no tom de estado
 - azul "ligado": ACI `#2e82e1` → `--ck-gv-ativo` `#3589ed`; rótulo em `--ck-gv-ativo-texto` `#6ab3fd`
 - alerta: ACI `#de051e` → `--ck-gv-alerta` `#ea2126`
 - texto secundário: ACI `#828284` → nosso `--ck-text-secondary` `#b1b1b1`
 
 **Decisão.** Adota-se a gramática (camadas preto/grafite, pílula, interruptor com rótulo, tracejado
-com "+", um acento) e não os valores: degraus de camada mais baixos que os da ACI (discreto), pretos
+com "+") e não os valores: degraus de camada mais baixos que os da ACI (discreto), pretos
 levemente erguidos (OLED), e texto e azul mais claros, porque o cinza secundário e o azul de rótulo
 da ACI ficam abaixo de 4.5:1 sobre o cartão. O herói com halo da ACI não entra.
 

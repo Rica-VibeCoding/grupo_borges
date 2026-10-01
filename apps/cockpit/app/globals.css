@@ -1959,24 +1959,35 @@ html[data-troca-agente] .ck-palco {
   background: var(--ck-atalho-bg-hover);
 }
 
-/* Modo conversa (fase 3): a cor diz de quem é a vez — quente = sua, frio = dele.
- * É a tese da estética §1 aplicada à voz. Os cinco primeiros apontam para os
- * estados, cujo contraste já está calculado na §3; o ocupado é o único próprio. Os visuais (WebGL)
- * leem estes tokens em tempo de execução; trocar aqui troca lá. */
+/* Tons de estado do sistema: a cor de quem está com a vez — quente = sua, frio = dele. É a tese
+ * da estética §1. Pintam a pílula do agente (voz e gaveta) e a tela de voz. Os cinco primeiros
+ * apontam para os estados, cujo contraste já está calculado na §3; o ocupado é o único próprio. */
 :root {
-  --ck-conversa-voce: var(--ck-state-attention);    /* ouvindo, interrompendo */
-  /* Pensar não tem cor própria na voz (Rica, 29/09): a sua virando a dele, meio a meio, em sRGB —
+  --ck-tom-voce: var(--ck-state-attention);    /* pede você: ouvindo, esperando você */
+  /* Pensar não tem cor própria aqui (Rica, 29/09): a sua virando a dele, meio a meio, em sRGB —
    * a mesma conta da esfera (`moldura-estado.ts`, PENSAR_AO_MEIO). O roxo `--ck-state-thinking`
    * fica para o resto do cockpit. */
-  --ck-conversa-pensa: color-mix(in srgb, var(--ck-conversa-voce), var(--ck-conversa-ze));
-  --ck-conversa-ze: var(--ck-state-running);        /* o Zé respondendo */
-  --ck-conversa-erro: var(--ck-state-fail);
+  --ck-tom-pensa: color-mix(in srgb, var(--ck-tom-voce), var(--ck-tom-ze));
+  --ck-tom-ze: var(--ck-state-running);        /* ele agindo: respondendo, trabalhando */
+  --ck-tom-erro: var(--ck-state-fail);
   /* Agente ocupado (Rica, 29/09): não quebrou, só não pôde ouvir agora — lilás, longe do vermelho
-   * da falha, do dourado, do azul e do verde do pensar. A única cor própria da voz: 5.55:1 sobre
+   * da falha, do dourado, do azul e do verde do pensar. A única cor própria: 5.55:1 sobre
    * `raised`, 5.29:1 sobre `composer` + `pressed` (a régua da §3 pede os dois). */
-  --ck-conversa-ocupado: oklch(0.75 0.13 305);      /* #c198f0 */
-  --ck-conversa-prepara: var(--ck-text-secondary);  /* detector baixando, parado */
-  --ck-conversa-desligado: var(--ck-text-tertiary); /* agente fora do ar: o cinza do offline do painel */
+  --ck-tom-ocupado: oklch(0.75 0.13 305);      /* #c198f0 */
+  --ck-tom-prepara: var(--ck-text-secondary);  /* parado, na linha, preparando */
+  --ck-tom-desligado: var(--ck-text-tertiary); /* fora do ar: o cinza do offline do painel */
+}
+
+/* Modo conversa: os nomes antigos seguem como apelido dos tons acima. Os visuais (WebGL) leem
+ * estes tokens em tempo de execução; trocar o tom troca lá. */
+:root {
+  --ck-conversa-voce: var(--ck-tom-voce);
+  --ck-conversa-pensa: var(--ck-tom-pensa);
+  --ck-conversa-ze: var(--ck-tom-ze);
+  --ck-conversa-erro: var(--ck-tom-erro);
+  --ck-conversa-ocupado: var(--ck-tom-ocupado);
+  --ck-conversa-prepara: var(--ck-tom-prepara);
+  --ck-conversa-desligado: var(--ck-tom-desligado);
   /* O texto da voz (fase 4): legenda do visual, não título. O estado é a palavra da pílula, na cor
    * da vez; embaixo da animação, só a legenda — três linhas, e só o agora brilha: a máscara apaga
    * a linha mais velha (em cima) ou a que ainda não foi dita (embaixo). 2,8em = duas linhas. */
@@ -2027,8 +2038,6 @@ html[data-troca-agente] .ck-palco {
   --ck-gv-pilula: oklch(0.33 0.006 265);            /* #383a3f pílula */
   --ck-gv-pilula-hover: oklch(0.38 0.006 265);
   --ck-gv-trilho: oklch(0.36 0.006 265);            /* interruptor desligado */
-  --ck-gv-acento: oklch(0.68 0.19 45);              /* #f26a1b laranja */
-  --ck-gv-anel: color-mix(in oklch, var(--ck-gv-acento) 45%, transparent); /* anel fino do retrato */
   --ck-gv-ativo: oklch(0.63 0.17 255);              /* #3b82f6 azul do "ligado" */
   --ck-gv-ativo-texto: oklch(0.75 0.13 250);
   --ck-gv-alerta: oklch(0.6 0.23 27);               /* #e5262b bolinha */
@@ -2057,14 +2066,6 @@ html[data-troca-agente] .ck-palco {
 .ck-gv button.ck-veil.border:hover,
 .ck-gv .ck-gv-pilula:hover {
   background-color: var(--ck-gv-pilula-hover);
-}
-
-/* O retrato do cabeçalho: um anel só, fino, laranja suave; apaga fora do ar. */
-.ck-gv-anel {
-  box-shadow: 0 0 0 2px var(--ck-gv-fundo), 0 0 0 3.5px var(--ck-gv-anel);
-}
-.ck-gv-anel[data-fora='true'] {
-  box-shadow: 0 0 0 2px var(--ck-gv-fundo), 0 0 0 3.5px var(--ck-gv-fio);
 }
 
 /* Interruptor: trilho + botão; azul só quando ligado. */
