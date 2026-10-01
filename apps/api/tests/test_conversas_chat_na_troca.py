@@ -321,3 +321,41 @@ async def test_retomar_que_falha_nao_publica_troca(linha) -> None:
     r = await linha.cliente.post(f"/api/agents/pavan/conversas/{ID_PROMPT}/retomar", json={})
     assert r.status_code == 502
     assert operacao.trocas_desde("pavan", 0)[0] == []
+
+
+# ---------- F13b: o reset do scan não atropela a troca ----------
+
+
+@pytest.mark.asyncio
+async def test_clear_da_nova_no_banco_antes_da_troca_nao_vira_session_reset(tmp_path) -> None:
+    """Na Nova, o envelope do `/clear` (user com uuid) chega ao banco ainda em
+    `religando`. O scan via o banco mudar e soltava `session-reset` para a
+    conversa nova antes do `conversa-trocada` dela."""
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(db, session_id="sess-a", uuid="a-1", text="a que sai")
+    op = operacao.comecar("daniel")
+    operacao.avancar(op, "religando")
+    passo = 0
+    real_sleep = asyncio.sleep
+
+    async def dormir(_: float) -> None:
+        nonlocal passo
+        passo += 1
+        if passo == 1:
+            _insert_jsonl(
+                db, session_id="sess-b", uuid="b-clear",
+                text="<command-name>/clear</command-name>",
+            )
+        elif passo == 20:  # vários scans depois: a operação termina
+            operacao.publicar_troca("daniel", _troca("sess-b", motivo="nova"))
+            operacao.avancar(op, "pronta")
+        await real_sleep(0)
+
+    with patch("routers.agents._MESSAGES_STREAM_SESSION_SCAN_S", 0), patch(
+        "routers.agents._MESSAGES_STREAM_HEARTBEAT_S", 0.2
+    ), patch("routers.agents.asyncio.sleep", new=dormir):
+        _, _, events = await _drive_stream(app, stop_after="heartbeat")
+
+    nomes = [n for n, _ in events]
+    assert "conversa-trocada" in nomes
+    assert "session-reset" not in nomes

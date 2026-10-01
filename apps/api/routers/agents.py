@@ -3136,11 +3136,15 @@ async def stream_agent_messages(
                 # Só vale quando o BANCO mudou desde a última olhada: depois de
                 # uma troca do cockpit ele segue apontando a que saiu até a
                 # nova ganhar mensagem, e "banco ≠ atual" puxaria o chat de volta.
+                # Nem olha durante uma Nova ou um Retomar: o envelope do `/clear`
+                # entra no banco antes do fim da operação, e o reset chegava
+                # antes do `conversa-trocada` da mesma conversa (F13b).
                 if (
                     session_id is None
                     and not live_events
                     and resolved_session_id is not None
                     and now - last_session_scan >= _MESSAGES_STREAM_SESSION_SCAN_S
+                    and not _operacao_em_curso(slug)
                 ):
                     last_session_scan = now
                     sessao_no_disco = await db.latest_jsonl_session_id(slug)
@@ -3215,6 +3219,11 @@ async def stream_agent_messages(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _operacao_em_curso(slug: str) -> bool:
+    op = operacao_conversa.estado(slug)
+    return op is not None and op.fase in operacao_conversa.EM_CURSO
 
 
 async def _sessao_do_chat(
