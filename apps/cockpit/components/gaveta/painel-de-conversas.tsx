@@ -70,10 +70,16 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
   const vista = exibida ? (vistas.current.get(exibida) ?? null) : null;
   const linhas = congelada ? congelada.flatMap((id) => vistas.current.get(id) ?? []).filter((c) => !c.atual) : visiveis;
 
+  // Abrir outra leitura antes da volta terminar cancela o descongelar pendente.
+  const volta = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (volta.current) clearTimeout(volta.current);
+  }, []);
   const fechaLeitura = useCallback(() => {
     setAberta(null);
     setFalha(null);
-    setTimeout(() => setCongelada(null), ESPERA_DA_VOLTA_MS);
+    if (volta.current) clearTimeout(volta.current);
+    volta.current = setTimeout(() => setCongelada(null), ESPERA_DA_VOLTA_MS);
   }, []);
 
   const { buscar: relePainel } = vida;
@@ -121,6 +127,7 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
   function abre(c: Conversa) {
     acoes.larga();
     setFalha(null);
+    if (volta.current) clearTimeout(volta.current);
     setCongelada(linhas.map((x) => x.id));
     setExibida(c.id);
     setAberta(c.id);

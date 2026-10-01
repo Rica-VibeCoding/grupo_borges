@@ -5,19 +5,22 @@
  * vai ocupar já está reservada (§8, "carga sem pulo"), e as barras respiram em
  * opacity. O conteúdo entra por cima num fade.
  */
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 
 import { RESPIRO_DO_ESQUELETO } from './ritmo-do-historico';
 
 export function BarraEsqueleto({ largura, altura = '12px' }: { largura: string; altura?: string }) {
+  // O `reducedMotion="user"` da Motion só para transform e layout; opacity em
+  // laço seguiria piscando (§5: movimento reduzido desliga tudo).
+  const parado = useReducedMotion();
   return (
     <motion.span
       aria-hidden
       className="block"
       style={{ width: largura, height: altura, borderRadius: 'var(--ck-radius-pill)', background: 'var(--ck-gv-pilula)' }}
       initial={{ opacity: 0.45 }}
-      animate={{ opacity: [0.45, 0.9, 0.45] }}
-      transition={RESPIRO_DO_ESQUELETO}
+      animate={parado ? { opacity: 0.6 } : { opacity: [0.45, 0.9, 0.45] }}
+      transition={parado ? { duration: 0 } : RESPIRO_DO_ESQUELETO}
     />
   );
 }
