@@ -55,7 +55,7 @@ Portas relevantes nesta máquina (`borges`, a Oracle):
 | 3443 | `tailscale serve` → 3007 | Cockpit v1 |
 | 3445 | `tailscale serve` → 8000 | API para desenvolvimento remoto |
 | 3446 | `tailscale serve` → 3008 | produção do v2; única URL do Rica |
-| 3447 | `tailscale serve` → 3011 | teste da tela de voz: `cockpit-teste-escuta3.service`, roda da cópia `~/repos/gb-teste-escuta` (trabalho de outro agente, não mexer) |
+| 3447 | `tailscale serve` → 3011 | preview de branch `ideia/*` (unit `cockpit-ideia-<nome>`, worktree `grupo_borges-<nome>`); desligada quando não há ideia em teste |
 
 **A `:3444` não existe mais.** Ela publicava o desenvolvimento e foi retirada da
 tailnet em 08/08; trabalho em andamento é validado localmente, não pelo celular do
