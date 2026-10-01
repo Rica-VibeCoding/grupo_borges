@@ -324,6 +324,8 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
 
 - **Entrega**:
   - `?painel=conversas` como terceira visão da `VistaDaGaveta`, com a porta na `GavetaNova`.
+  - **Decisão do Rica (01/10):** a porta ocupa o lugar do **Destravar**, no cartão Sessão, e o
+    Destravar sai da gaveta (talvez não volte). A porta aparece com o agente ligado ou desligado.
   - O cliente da lista no `cockpit-core/api.ts`.
   - Filtros, busca, tempo relativo e os selos, na direção aprovada. O filtro ⚠️ fica escondido
     enquanto `pendencia` vier `null`.
