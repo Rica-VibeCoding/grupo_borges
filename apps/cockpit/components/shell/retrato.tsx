@@ -18,7 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
  * Radix só monta o fallback quando a carga falha, então nunca há quebrado na
  * tela.
  *
- * O estado NÃO mora aqui: o anel da tropa (`.ck-anel`) contorna este retrato
+ * O estado NÃO mora aqui: o aro da tropa (`.ck-tl-foto`) contorna este retrato
  * por fora, num contêiner — o Root do Radix tem `overflow: hidden`.
  *
  * O fallback é a inicial em neutro, não uma cor por agente: o contrato §2 fecha a
@@ -29,12 +29,16 @@ export function Retrato({
   nome,
   tamanho = 40,
   opacidade,
+  redondo = false,
 }: {
   slug: string;
   nome: string;
   tamanho?: number;
   opacidade?: number;
+  /** Redondo é a foto da pílula e da tropa; o quadrado de canto suave fica no feed. */
+  redondo?: boolean;
 }) {
+  const raio = redondo ? 'var(--ck-radius-pill)' : 'var(--ck-radius-chip)';
   return (
     <Avatar
       className="shrink-0 self-center"
@@ -46,18 +50,18 @@ export function Retrato({
         width: tamanho,
         height: tamanho,
         opacity: opacidade,
-        borderRadius: 'var(--ck-radius-chip)',
+        borderRadius: raio,
         background: 'var(--ck-surface-raised)',
       }}
     >
       <AvatarImage
         src={`/avatars/${slug}.webp`}
         alt=""
-        style={{ borderRadius: 'var(--ck-radius-chip)' }}
+        style={{ borderRadius: raio }}
       />
       <AvatarFallback
         style={{
-          borderRadius: 'var(--ck-radius-chip)',
+          borderRadius: raio,
           background: 'var(--ck-surface-raised)',
           fontFamily: 'var(--ck-font-mono)',
           fontSize: tamanho >= 40 ? 'var(--ck-text-sm)' : 'var(--ck-text-xs)',

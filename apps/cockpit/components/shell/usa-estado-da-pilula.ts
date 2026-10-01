@@ -29,9 +29,13 @@ export function usePublicaCenaDaVoz(slug: string, cena: Cena) {
   }, [slug, cena]);
 }
 
+/** A cena da voz aberta para este agente, ou `null` — a tropa já tem o status em mãos. */
+export function usaCenaDaVoz(slug: string): Cena | null {
+  return useSyncExternalStore(assina, () => cenas.get(slug) ?? null, () => null);
+}
+
 /** Palavra e tom do agente agora: frota viva + cena da voz (`estado-da-pilula.ts`). */
 export function usaEstadoDaPilula(slug: string): EstadoDaPilula {
   const status = usaFrota().agents.find((a) => a.slug === slug)?.status;
-  const cena = useSyncExternalStore(assina, () => cenas.get(slug) ?? null, () => null);
-  return estadoDaPilula(status, cena);
+  return estadoDaPilula(status, usaCenaDaVoz(slug));
 }

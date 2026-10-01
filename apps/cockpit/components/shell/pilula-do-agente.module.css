@@ -49,6 +49,16 @@
   height: 52px;
   flex: none;
 }
+/* No topo do chat: a mesma pílula em escala menor, para caber na faixa de 44px. A palavra
+ * `desligado` sai em `secondary` (o `tertiary` do tom não passa 4.5:1 como texto, §3); o aro
+ * continua no tom. */
+.pilula[data-lugar='topo'] { gap: var(--ck-space-2); padding: 4px 14px 4px 4px; }
+.pilula[data-lugar='topo'] .moldaPilula { width: 36px; height: 36px; }
+.pilula[data-lugar='topo'] .quem { gap: 0; }
+.pilula[data-lugar='topo'] .quem b { font-size: var(--ck-text-md); font-weight: 600; line-height: var(--ck-leading-hero); }
+.pilula[data-lugar='topo'] .quem small { font-size: var(--ck-text-xs); line-height: var(--ck-leading-hero); }
+.pilula[data-lugar='topo'][data-tom='desligado'] .estado { color: var(--ck-text-secondary); }
+.pilula[data-lugar='topo'][data-tom='desligado'] .imagem { filter: grayscale(1) brightness(0.55); }
 /* Na voz a foto escurece para não brigar com a esfera; quem acende é o aro. */
 .pilula[data-lugar='voz'] .imagem { filter: var(--ck-conversa-foto-pilula); }
 .aro,

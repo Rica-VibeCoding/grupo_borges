@@ -22,15 +22,21 @@
  * do `≡`, sem trilho. O estado é a peça viva (`EstadoNoTopo`); a ponta direita
  * ficou pra pílula de tokens.
  *
+ * 01/10 (`ideia/sidebar-nova`): virou a PÍLULA DO AGENTE em escala de topo —
+ * aro no tom de estado, primeiro nome e a palavra de `estado-da-pilula.ts`, a
+ * mesma da gaveta e da tropa. Acabou o "ocioso" aqui e "na linha" lá.
+ *
  * Abre a gaveta de detalhes, e desde 27/09 é o ÚNICO gatilho visível dela: o ⧉
  * saiu da barra, porque tocar na cara do agente pra ver o agente é o gesto
  * óbvio. Fecha pelo × da gaveta ou tocando fora. Vai pelo link OTIMISTA
  * (`LinkAbrePainel`) porque `<Link>` seco custaria os 2,0–2,7s de ida e volta
  * antes de a gaveta se mover — a espera que o Rica pegou ao vivo.
  */
-import { Retrato } from './retrato';
+'use client';
+
+import { PilulaDoAgente } from './pilula-do-agente';
 import { LinkAbrePainel } from './superficie-otimista';
-import { EstadoNoTopo } from './topo-ao-vivo';
+import { usaEstadoDaPilula } from './usa-estado-da-pilula';
 
 export function CapsulaDoAgente({
   slug,
@@ -41,25 +47,16 @@ export function CapsulaDoAgente({
   nome: string;
   href: string;
 }) {
-  const primeiroNome = nome.split(' ')[0] || nome;
+  const { tom, rotulo } = usaEstadoDaPilula(slug);
 
   return (
     <LinkAbrePainel
       href={href}
       rotulo={`detalhes de ${nome}`}
       className="flex min-w-0 shrink items-center"
-      style={{ minHeight: 'var(--ck-touch-min)', gap: 'var(--ck-space-2)' }}
+      style={{ minHeight: 'var(--ck-touch-min)', borderRadius: 'var(--ck-radius-pill)' }}
     >
-      <Retrato slug={slug} nome={nome} tamanho={36} />
-      <span className="flex min-w-0 flex-col" style={{ lineHeight: 'var(--ck-leading-hero)' }}>
-        <span
-          className="truncate"
-          style={{ color: 'var(--ck-text-primary)', fontSize: 'var(--ck-text-md)', fontWeight: 600 }}
-        >
-          {primeiroNome}
-        </span>
-        <EstadoNoTopo slug={slug} />
-      </span>
+      <PilulaDoAgente slug={slug} nome={nome} tom={tom} rotulo={rotulo} lugar="topo" />
     </LinkAbrePainel>
   );
 }

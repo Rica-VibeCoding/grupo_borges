@@ -13,11 +13,11 @@
  *   não há seções nem títulos de estado.
  * - O arrasto é pela LINHA INTEIRA: toque curto abre, segurar carrega. A alça
  *   só existe para teclado e leitor de tela (`arrasto-da-tropa.tsx`).
- * - O estado mora no ANEL do retrato (v8): trabalhando e aguardando têm anel;
- *   ocioso e offline, não. Nada de chip por linha repetindo estado.
- * - Quem dorme é linha rasa: nome e contexto, sem pasta, sem "há 20h".
- * - A pasta só aparece quando o agente está FORA de casa.
- * - A VPS fica no rodapé da tropa.
+ * - Uma anatomia só para todo agente (v9, 01/10): aro de estado no tom da
+ *   pílula, nome, palavra do estado, contexto em barra fina. Quem dorme usa a
+ *   mesma linha, com o aro no tom `desligado`.
+ * - Motor e pasta só na linha selecionada; o pulso de 24h mora na gaveta.
+ * - A VPS fica no rodapé da tropa, como cartão.
  *
  * O desenho de cada linha mora em `linha-da-tropa.tsx` e `miudezas-da-linha.tsx`.
  *
@@ -41,8 +41,7 @@ import {
 } from '@/lib/ordem-arrastada';
 import { TIPO_ARRASTO } from './arrasto-da-tropa';
 import { BlocoDaVps } from './bloco-da-vps';
-import { estadoDe } from './estado';
-import { CartaoVivo, LinhaDormindo, type EscolheAgente } from './linha-da-tropa';
+import { LinhaDaTropa, type EscolheAgente } from './linha-da-tropa';
 
 export type { EscolheAgente };
 
@@ -270,34 +269,20 @@ export function Tropa({
         {recadoDoMovimento}
       </span>
 
-      {/* Lista única, ordem ditada (11/08). O overline "Tropa" não
-          existe desde a v3 e os títulos de estado morreram na v5 — a lista é a
-          lista. A escolha de cartão ou linha rasa é POR LINHA, pelo estado
-          resolvido (`estadoDe`): status desconhecido dorme como o offline, como
-          a v3 já fazia. */}
-      <ul ref={listaRef}>
-        {agentesOrdenados.map((a) =>
-          estadoDe(a.status).ordem === 3 ? (
-            <LinhaDormindo
-              key={a.slug}
-              agente={a}
-              selecionado={a.slug === slugSelecionado}
-              compacta={compacta}
-              aoEscolher={aoEscolher}
-              aoMover={(direcao) => move(a.slug, direcao)}
-            />
-          ) : (
-            <CartaoVivo
-              key={a.slug}
-              agente={a}
-              selecionado={a.slug === slugSelecionado}
-              agora={agora}
-              compacta={compacta}
-              aoEscolher={aoEscolher}
-              aoMover={(direcao) => move(a.slug, direcao)}
-            />
-          ),
-        )}
+      {/* Lista única, ordem ditada (11/08): sem overline, sem títulos de
+          estado — a lista é a lista, e cada linha tem a mesma anatomia. */}
+      <ul ref={listaRef} className="flex flex-col" style={{ gap: '2px', marginBottom: 'var(--ck-space-4)' }}>
+        {agentesOrdenados.map((a) => (
+          <LinhaDaTropa
+            key={a.slug}
+            agente={a}
+            selecionado={a.slug === slugSelecionado}
+            agora={agora}
+            compacta={compacta}
+            aoEscolher={aoEscolher}
+            aoMover={(direcao) => move(a.slug, direcao)}
+          />
+        ))}
       </ul>
 
       {/* Ordem do Rica (07/09): o consumo da máquina na sidebar. Rodapé, e

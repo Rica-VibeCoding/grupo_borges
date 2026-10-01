@@ -1636,44 +1636,113 @@ html[data-troca-agente] .ck-palco {
   .ck-pulso[data-estado] { animation: none; }
 }
 
-/* O ANEL DO RETRATO — o estado da tropa mora na FOTO (oitava versão, 28/09).
- *
- * Era um ponto de 9px no canto do retrato, e trabalhando/ocioso liam iguais no
- * celular. O anel contorna a cara inteira, então o estado se lê antes do nome.
- * Só quem está VIVO de verdade ganha anel: `trabalhando` na cor de execução,
- * respirando devagar; `aguardando` na cor de atenção, num ritmo mais curto —
- * é o único que chama o Rica. Ocioso e offline ficam sem anel: a ausência é a
- * leitura, como no pulso de 24h.
- *
- * Desenhado num `::after` do contêiner e não no próprio Avatar: o Root do Radix
- * tem `overflow: hidden`, e o anel vive 4px FORA dele. Anima só `opacity`, que o
- * compositor faz sem recalcular layout. A folga entre foto e anel é
- * transparente (não uma sombra da cor da faixa), então o anel pousa certo
- * sobre a `nav` e sobre a aba selecionada, que tem a cor da folha. */
-.ck-anel {
-  --ck-anel-espessura: 2px;
-  --ck-anel-folga: 2px;
-  position: relative;
+/* §T — A TROPA (v9, `ideia/sidebar-nova`, 01/10). Uma anatomia só por linha:
+ * foto redonda com ARO no tom da pílula (`--ck-tom-*`, régua única em
+ * `estado-da-pilula.ts`), nome, palavra do estado e a barra fina de contexto.
+ * O aro é parado — na lista nada respira; só a cor troca, devagar, quando o
+ * estado muda. Brilho = vida: aceso (dele/sua vez) > na linha > desligado.
+ * Palavra de estado em `secondary` quando o tom é neutro: o `desligado`
+ * (`tertiary`) não passa 4.5:1 como texto (§3) e fica só no aro. */
+.ck-tl-linha {
+  --ck-tl-cor: var(--ck-tom-prepara);
+  min-height: var(--ck-touch-min);
+  padding-block: var(--ck-space-2);
 }
-.ck-anel[data-estado='trabalhando'] { --ck-anel-cor: var(--ck-state-running); }
-.ck-anel[data-estado='aguardando']  { --ck-anel-cor: var(--ck-state-attention); }
-.ck-anel[data-estado='trabalhando']::after,
-.ck-anel[data-estado='aguardando']::after {
+.ck-tl-linha[data-tom='voce'] { --ck-tl-cor: var(--ck-tom-voce); }
+.ck-tl-linha[data-tom='ze'] { --ck-tl-cor: var(--ck-tom-ze); }
+.ck-tl-linha[data-tom='pensa'] { --ck-tl-cor: var(--ck-tom-pensa); }
+.ck-tl-linha[data-tom='erro'] { --ck-tl-cor: var(--ck-tom-erro); }
+.ck-tl-linha[data-tom='ocupado'] { --ck-tl-cor: var(--ck-tom-ocupado); }
+.ck-tl-linha[data-tom='desligado'] { --ck-tl-cor: var(--ck-tom-desligado); }
+
+/* O filete do selecionado: 2px em `text-primary`, curto e centrado — cresce
+ * do meio quando a linha é escolhida. */
+.ck-tl-linha::before {
   content: '';
   position: absolute;
-  inset: calc((var(--ck-anel-espessura) + var(--ck-anel-folga)) * -1);
-  border: var(--ck-anel-espessura) solid var(--ck-anel-cor);
-  border-radius: calc(var(--ck-radius-chip) + var(--ck-anel-espessura) + var(--ck-anel-folga));
+  left: 0;
+  top: calc(50% - 10px);
+  width: 2px;
+  height: 20px;
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-text-primary);
+  opacity: 0;
+  transform: scaleY(0.3);
+  transition: opacity var(--ck-dur-fast) var(--ck-ease), transform var(--ck-dur-enter) var(--ck-ease);
+}
+.ck-tl-linha[data-selecionado='true']::before { opacity: 1; transform: scaleY(1); }
+
+/* O aro: 1.5px a 3px da foto, como o da pílula, num `::after` do contêiner —
+ * o Root do Radix tem `overflow: hidden`. */
+.ck-tl-foto { position: relative; margin-top: 1px; }
+.ck-tl-foto::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid var(--ck-tl-cor);
+  border-radius: var(--ck-radius-pill);
+  opacity: 0.9;
   pointer-events: none;
+  transition: border-color var(--ck-dur-calm) var(--ck-ease), opacity var(--ck-dur-calm) var(--ck-ease);
 }
-@keyframes ck-anel-respira {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.4; }
+.ck-tl-linha[data-tom='prepara'] .ck-tl-foto::after { opacity: 0.5; }
+.ck-tl-linha[data-tom='desligado'] .ck-tl-foto::after { opacity: 0.45; }
+.ck-tl-foto img { transition: opacity var(--ck-dur-calm) var(--ck-ease); }
+.ck-tl-linha[data-tom='desligado'] .ck-tl-foto img { opacity: 0.5; filter: grayscale(1); }
+
+.ck-tl-nome {
+  font-size: var(--ck-text-base);
+  font-weight: 500;
+  color: var(--ck-text-primary);
+  transition: color var(--ck-dur-calm) var(--ck-ease);
 }
-.ck-anel[data-estado='trabalhando']::after { animation: ck-anel-respira 2.4s var(--ck-ease) infinite; }
-.ck-anel[data-estado='aguardando']::after  { animation: ck-anel-respira 1.1s var(--ck-ease) infinite; }
+.ck-tl-linha[data-tom='desligado'] .ck-tl-nome { color: var(--ck-text-secondary); font-weight: 400; }
+.ck-tl-estado {
+  font-size: var(--ck-text-xs);
+  color: var(--ck-text-secondary);
+  transition: color var(--ck-dur-calm) var(--ck-ease);
+}
+.ck-tl-linha:is([data-tom='voce'], [data-tom='ze'], [data-tom='pensa'], [data-tom='erro'], [data-tom='ocupado']) .ck-tl-estado {
+  color: var(--ck-tl-cor);
+}
+.ck-tl-detalhe {
+  gap: 0 var(--ck-space-2);
+  margin-top: var(--ck-space-1);
+  font-size: var(--ck-text-xs);
+  color: var(--ck-text-secondary);
+}
 @media (prefers-reduced-motion: reduce) {
-  .ck-anel[data-estado]::after { animation: none; }
+  .ck-tl-linha::before,
+  .ck-tl-foto::after,
+  .ck-tl-foto img,
+  .ck-tl-nome,
+  .ck-tl-estado { transition: none; }
+}
+
+/* O cartão da VPS no pé da tropa — a linguagem do "Motor e conta" da gaveta
+ * (cartão em camada, barras finas, pílula de ação), com os tokens da casa: o
+ * cartão é um degrau acima da mesa (`composer` + fio de luz) e o trilho e a
+ * pílula descem para o `canvas`, o "preto" do cartão. Cor só acima do teto de
+ * cada medida (`recursos-da-vps.ts`). */
+.ck-vps {
+  border-radius: var(--ck-radius-caixa);
+  background: var(--ck-surface-composer);
+  box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
+}
+.ck-vps-trilho { background: var(--ck-surface-canvas); }
+.ck-vps-preenche {
+  background: var(--ck-text-secondary);
+  transition: transform var(--ck-dur-calm) var(--ck-ease);
+  transform-origin: left;
+}
+.ck-vps-medida[data-alerta='true'] :is(.ck-vps-rotulo, .ck-vps-valor) { color: var(--ck-state-attention); }
+.ck-vps-medida[data-alerta='true'] .ck-vps-preenche { background: var(--ck-state-attention); }
+.ck-vps-pilula { background-color: var(--ck-surface-canvas); }
+.ck-vps-botao:hover .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover)); }
+.ck-vps-botao:active .ck-vps-pilula { background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed)); }
+.ck-vps-bloco { background: var(--ck-surface-canvas); border-radius: var(--ck-radius-frame); }
+@media (prefers-reduced-motion: reduce) {
+  .ck-vps-preenche { transition: none; }
 }
 
 /* O "ver processos" da VPS: o chevron gira quando a lista abre — movimento que
@@ -1681,7 +1750,7 @@ html[data-troca-agente] .ck-palco {
 .ck-divulga-chevron {
   transition: transform var(--ck-dur-fast) var(--ck-ease);
 }
-[aria-expanded='true'] > .ck-divulga-chevron {
+[aria-expanded='true'] .ck-divulga-chevron {
   transform: rotate(180deg);
 }
 
