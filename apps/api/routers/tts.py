@@ -289,24 +289,33 @@ def _minimax_do_agente(slug: str) -> dict | None:
 
 
 async def _synth_minimax(text: str, cfg: dict, slug: str) -> bytes:
-    """MiniMax T2A v2 — mesmo payload do tts-minimax.sh."""
+    """MiniMax T2A v2 — mesmo payload do tts-minimax.sh, mas com `stream`."""
+    # Com `stream` a sentença inteira volta ~0,6 s antes (medido em 01/10: 1,3 s
+    # contra 1,9–2,5 s em 158 caracteres) e o evento final (status 2) já traz o
+    # MP3 completo. Erro chega como JSON puro, sem `data:`, e com HTTP 200.
+    audio = ""
     async with httpx.AsyncClient(timeout=30.0) as client:
-        res = await client.post(
+        async with client.stream(
+            "POST",
             "https://api.minimax.io/v1/t2a_v2",
             headers={"Authorization": f"Bearer {cfg['key']}"},
             json={
                 "model": cfg["model"],
                 "text": text,
-                "stream": False,
+                "stream": True,
                 "language_boost": "Portuguese",
                 "voice_setting": {"voice_id": cfg["voice"], "emotion": cfg["emotion"], "speed": cfg["speed"], "pitch": cfg["pitch"]},
                 "audio_setting": {"format": "mp3", "sample_rate": 32000},
             },
-        )
-    corpo = res.json() if res.status_code == 200 else {}
-    if corpo.get("base_resp", {}).get("status_code") != 0:
-        raise RuntimeError(f"MiniMax HTTP {res.status_code}: {corpo.get('base_resp') or res.text[:200]}")
-    audio = (corpo.get("data") or {}).get("audio")
+        ) as res:
+            async for linha in res.aiter_lines():
+                if not linha.strip():
+                    continue
+                corpo = json.loads(linha.removeprefix("data:"))
+                if corpo.get("base_resp", {}).get("status_code") != 0:
+                    raise RuntimeError(f"MiniMax HTTP {res.status_code}: {corpo.get('base_resp')}")
+                if (corpo.get("data") or {}).get("status") == 2:
+                    audio = corpo["data"].get("audio") or ""
     if not audio:
         raise RuntimeError("MiniMax sem áudio")
     _registra_uso("cockpit-stream", slug, cfg["voice"], text, "minimax")

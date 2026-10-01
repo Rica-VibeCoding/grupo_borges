@@ -14,6 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -463,6 +464,40 @@ def test_stream_minimax_caiu_vai_pro_google_e_declara(tmp_path, monkeypatch) -> 
     assert meta["engine"] == "google"
     assert meta["voice"] == "pt-BR-Wavenet-E"
     assert meta["degraded"] is True  # não é a voz que ele configurou
+
+
+def _minimax_falso(monkeypatch, corpo: str) -> list[dict]:
+    pedidos: list[dict] = []
+    cliente_real = httpx.AsyncClient
+
+    def _responde(req: httpx.Request) -> httpx.Response:
+        pedidos.append(json.loads(req.content))
+        return httpx.Response(200, text=corpo)
+
+    monkeypatch.setattr(tts.httpx, "AsyncClient", lambda **kw: cliente_real(transport=httpx.MockTransport(_responde), **kw))
+    monkeypatch.setattr(tts, "_registra_uso", lambda *_a, **_k: None)
+    return pedidos
+
+
+def test_synth_minimax_pede_stream_e_devolve_o_audio_final(monkeypatch) -> None:
+    # Medido em 01/10: com `stream` a sentença inteira volta ~0,6 s antes; o
+    # evento final (status 2) traz o MP3 completo, os pedaços (status 1) não somam igual.
+    pedidos = _minimax_falso(
+        monkeypatch,
+        'data: {"data":{"audio":"aa","status":1},"base_resp":{"status_code":0}}\n\n'
+        'data: {"data":{"audio":"aabb","status":2},"base_resp":{"status_code":0}}\n\n',
+    )
+    cfg = {"key": "k", "voice": "v", "model": "m", "emotion": "neutral", "speed": 1.0, "pitch": 0}
+    assert asyncio.run(tts._synth_minimax("oi", cfg, "daniel")) == bytes.fromhex("aabb")
+    assert pedidos[0]["stream"] is True
+
+
+def test_synth_minimax_stream_com_erro_levanta(monkeypatch) -> None:
+    # Erro no modo stream vem como JSON puro, sem `data:`, e com HTTP 200.
+    _minimax_falso(monkeypatch, '{"base_resp":{"status_code":2054,"status_msg":"voice id not exist"}}')
+    cfg = {"key": "k", "voice": "v", "model": "m", "emotion": "neutral", "speed": 1.0, "pitch": 0}
+    with pytest.raises(RuntimeError, match="2054"):
+        asyncio.run(tts._synth_minimax("oi", cfg, "daniel"))
 
 
 # --- Google: a voz do Telegram (GOOGLE_TTS_VOICE do .env) também no painel -
