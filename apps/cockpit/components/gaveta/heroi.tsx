@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 
 import type { Agent, AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
 
+import { usaFrota } from '../shell/frota-provider';
 import { PilulaDoAgente, type TomDeEstado } from '../shell/pilula-do-agente';
 import { StatuslineAoVivo } from '../shell/statusline-ao-vivo';
 import { LinkFechaPainel } from '../shell/superficie-otimista';
@@ -51,7 +52,9 @@ export function Heroi({
   alerta: boolean;
   interruptor: ReactNode;
 }) {
-  const { tom, rotulo } = estadoDaPilula(agente.status, foraDoAr, alerta);
+  // O status vem da frota viva (a mesma da statusline); o `agente` da página é a foto do carregamento.
+  const status = usaFrota().agents.find((a) => a.slug === agente.slug)?.status ?? agente.status;
+  const { tom, rotulo } = estadoDaPilula(status, foraDoAr, alerta);
   return (
     <header className="flex shrink-0 flex-col" style={{ gap: 'var(--ck-space-2)', padding: '0 var(--ck-space-1)' }}>
       <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
