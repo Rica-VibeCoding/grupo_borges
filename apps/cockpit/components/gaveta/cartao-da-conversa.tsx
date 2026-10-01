@@ -3,15 +3,20 @@
 /**
  * Os ajustes da tela de voz, como cartão da gaveta. Só aparecem quando a
  * gaveta abre pela conversa (`mostraConversaNoPainel`): a gaveta é a única
- * casa deles. Fone e texto são interruptores; moldura, esfera e o par
- * esfera/moldura são pílulas segmentadas. O visual é UMA escolha só — marcar
- * uma variação desmarca as dos outros grupos, como sempre foi.
+ * casa deles. Fone e texto são interruptores. O visual é UMA escolha só
+ * (`opcao` + `variacao`), por isso são duas pílulas encadeadas: Visual escolhe
+ * a opção e Estilo mostra só as variações dela — cada linha sempre tem uma
+ * marcada. Trocar o Visual volta na última variação usada naquela opção.
  */
+import { useRef } from 'react';
+
 import { useDetalheDaConversa } from '../conversa/contexto-configuracao-conversa';
-import { CATALOGO } from '../conversa/preferencia-visual';
+import { CATALOGO, trocaOpcao, type Opcao } from '../conversa/preferencia-visual';
 import { CHAVE_FONE, CHAVE_TEXTO } from '../conversa/preferencias-da-conversa';
 import { useChaveDaConversa, useVisualConversa } from '../conversa/use-preferencias-conversa';
 import { Cartao, Interruptor, Segmentado } from './pecas';
+
+const OPCOES = CATALOGO.map((item) => ({ id: item.opcao, nome: item.curto }));
 
 function LinhaDeChave({ nome, ligada, muda }: { nome: string; ligada: boolean; muda: (ligada: boolean) => void }) {
   return (
@@ -27,6 +32,13 @@ export function CartaoDaConversa() {
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
   const detalheTecnico = useDetalheDaConversa();
+  const lembradas = useRef<Partial<Record<Opcao, string>>>({});
+  const variacoes = CATALOGO.find((item) => item.opcao === visual.opcao)?.variacoes ?? CATALOGO[0].variacoes;
+
+  const escolheOpcao = (opcao: Opcao) => {
+    lembradas.current[visual.opcao] = visual.variacao;
+    if (opcao !== visual.opcao) escolheVisual(trocaOpcao(opcao, lembradas.current));
+  };
 
   return (
     <Cartao titulo="Conversa">
@@ -34,15 +46,13 @@ export function CartaoDaConversa() {
         <LinhaDeChave nome="Estou de fone" ligada={fone} muda={mudaFone} />
         <LinhaDeChave nome="Mostrar texto" ligada={texto} muda={mudaTexto} />
       </div>
-      {CATALOGO.map((item) => (
-        <Segmentado
-          key={item.opcao}
-          nome={item.nome}
-          itens={item.variacoes}
-          marcado={(id) => visual.opcao === item.opcao && visual.variacao === id}
-          escolhe={(id) => escolheVisual({ opcao: item.opcao, variacao: id })}
-        />
-      ))}
+      <Segmentado nome="Visual" itens={OPCOES} marcado={(id) => visual.opcao === id} escolhe={escolheOpcao} />
+      <Segmentado
+        nome="Estilo"
+        itens={variacoes}
+        marcado={(id) => visual.variacao === id}
+        escolhe={(id) => escolheVisual({ opcao: visual.opcao, variacao: id })}
+      />
       {detalheTecnico ? (
         <p style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>{detalheTecnico}</p>
       ) : null}

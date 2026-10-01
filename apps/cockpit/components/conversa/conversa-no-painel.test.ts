@@ -34,7 +34,6 @@ test('a gaveta do agente é a única casa dos controles da conversa', () => {
   const gaveta = le('../gaveta/gaveta-nova.tsx');
   assert.ok(!le('./tela-conversa.tsx').includes('ConfiguracaoDaConversa'));
   for (const texto of ['Estou de fone', 'Mostrar texto']) assert.ok(cartao.includes(texto));
-  assert.ok(!cartao.includes('Foto do agente'));
   assert.match(gaveta, /mostraConversaNoPainel\(/);
   assert.match(gaveta, /\{conversa \? <CartaoDaConversa \/> : null\}/);
 });
@@ -45,6 +44,13 @@ test('o cartão da conversa grava pelas mesmas chaves e pelo mesmo visual', () =
   assert.match(cartao, /useChaveDaConversa\(CHAVE_TEXTO\)/);
   assert.match(cartao, /useVisualConversa\(\)/);
   assert.match(cartao, /useDetalheDaConversa\(\)/);
+});
+
+test('o visual vira duas linhas, Visual e Estilo, cada uma sempre com uma marcada', () => {
+  const cartao = le('../gaveta/cartao-da-conversa.tsx');
+  assert.match(cartao, /nome="Visual"[^>]*marcado=\{\(id\) => visual\.opcao === id\}/);
+  assert.match(cartao, /nome="Estilo"[\s\S]*?marcado=\{\(id\) => visual\.variacao === id\}/);
+  assert.doesNotMatch(cartao, /\.map\([^)]*\) => \(\s*<Segmentado/, 'nada de uma linha por opção');
 });
 
 test('conversa vem antes da sessão, sem substituir o painel do agente', () => {

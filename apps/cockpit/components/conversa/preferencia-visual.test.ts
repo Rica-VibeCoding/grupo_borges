@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { CATALOGO, VISUAL_PADRAO, gravaVisual, leVisual, nomeDoVisual, pecasDoVisual } from './preferencia-visual.ts';
+import { CATALOGO, VISUAL_PADRAO, gravaVisual, leVisual, nomeDoVisual, pecasDoVisual, trocaOpcao } from './preferencia-visual.ts';
 
 describe('preferência de visual da conversa', () => {
   it('sem nada gravado, abre na Moldura', () => {
@@ -35,6 +35,16 @@ describe('preferência de visual da conversa', () => {
       assert.equal(item.variacoes.length, 2, item.opcao);
       for (const v of item.variacoes) assert.ok(v.nome && v.descricao);
     }
+  });
+
+  it('trocar a opção cai na primeira variação, ou na última usada nela', () => {
+    assert.deepEqual(trocaOpcao('esfera'), { opcao: 'esfera', variacao: 'materia' });
+    assert.deepEqual(trocaOpcao('esfera', { esfera: 'vidro', moldura: 'aurora' }), { opcao: 'esfera', variacao: 'vidro' });
+    assert.deepEqual(trocaOpcao('esferaMoldura', { esferaMoldura: 'gema' }), { opcao: 'esferaMoldura', variacao: 'juntas' });
+  });
+
+  it('a pílula do Visual tem rótulo curto: Moldura · Esfera · Ambas', () => {
+    assert.deepEqual(CATALOGO.map((i) => i.curto), ['Moldura', 'Esfera', 'Ambas']);
   });
 
   it('dá nome legível ao que está escolhido', () => {

@@ -14,12 +14,14 @@ export type VariacaoMoldura = 'fio' | 'aurora';
 export type VariacaoEsfera = 'materia' | 'vidro';
 
 export type Variacao = { id: string; nome: string; descricao: string };
-export type ItemDoCatalogo = { opcao: Opcao; nome: string; variacoes: readonly Variacao[] };
+/** `curto` é o rótulo na pílula do Visual, onde "Esfera e moldura" não cabe. */
+export type ItemDoCatalogo = { opcao: Opcao; nome: string; curto: string; variacoes: readonly Variacao[] };
 
 export const CATALOGO: readonly ItemDoCatalogo[] = [
   {
     opcao: 'moldura',
     nome: 'Moldura',
+    curto: 'Moldura',
     variacoes: [
       { id: 'fio', nome: 'Fio', descricao: 'Uma linha de luz rente à borda.' },
       { id: 'aurora', nome: 'Aurora', descricao: 'Uma névoa larga que entra pela borda.' },
@@ -28,6 +30,7 @@ export const CATALOGO: readonly ItemDoCatalogo[] = [
   {
     opcao: 'esfera',
     nome: 'Esfera',
+    curto: 'Esfera',
     variacoes: [
       { id: 'materia', nome: 'Matéria', descricao: 'Uma esfera sólida que ondula com a voz.' },
       { id: 'vidro', nome: 'Vidro', descricao: 'Uma bolha de vidro com a luz por dentro.' },
@@ -36,6 +39,7 @@ export const CATALOGO: readonly ItemDoCatalogo[] = [
   {
     opcao: 'esferaMoldura',
     nome: 'Esfera e moldura',
+    curto: 'Ambas',
     variacoes: [
       { id: 'juntas', nome: 'Juntas', descricao: 'A esfera e a borda mostram o mesmo momento.' },
       { id: 'divididas', nome: 'Divididas', descricao: 'A borda é a sua vez; a esfera é a vez dele.' },
@@ -59,6 +63,14 @@ export function leVisual(bruto: string | null | undefined): Visual {
     return { opcao: item.opcao, variacao: item.variacoes[0].id };
   }
   return { opcao: item.opcao, variacao: variacao as string };
+}
+
+/**
+ * Trocar a opção mantém o visual coerente: volta na variação que o Rica usou por
+ * último naquela opção (`lembradas`, só da sessão) ou, se nunca usou, na primeira.
+ */
+export function trocaOpcao(opcao: Opcao, lembradas: Partial<Record<Opcao, string>> = {}): Visual {
+  return leVisual(`${opcao}/${lembradas[opcao] ?? ''}`);
 }
 
 export function nomeDoVisual(visual: Visual): string {
