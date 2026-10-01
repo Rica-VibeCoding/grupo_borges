@@ -19,7 +19,7 @@
  *
  * 28/09 (redesenho do chat, aprovado pelo Rica): a cápsula saiu da ponta
  * direita e da pastilha — virou retrato + nome + estado à esquerda, logo depois
- * do `≡`, sem trilho. O estado é a peça viva (`EstadoNoTopo`); a ponta direita
+ * do `≡`, sem trilho. O estado era a peça viva (hoje é a pílula, abaixo); a ponta direita
  * ficou pra pílula de tokens.
  *
  * 01/10 (`ideia/sidebar-nova`): virou a PÍLULA DO AGENTE em escala de topo —

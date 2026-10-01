@@ -110,25 +110,30 @@ export function formataCarga(carga: number): string {
  * grande — as duas viram UMA linha. Repetir o nome em duas linhas seguidas
  * gastaria o dobro da altura pra dizer a mesma coisa, e ele pediu denso.
  */
-export function linhasDeVilao(dados: RecursosDaVps): Array<{ nome: string; detalhe: string }> {
+export type LinhaDeProcesso = { nome: string; cpu: string | null; ram: string | null };
+
+export function linhasDeVilao(dados: RecursosDaVps): LinhaDeProcesso[] {
   // 27/09: um vilão só escondia a frota inteira trabalhando. Com a lista, cada
-  // dono aparece com os dois números, na ordem de quem mais come CPU.
+  // dono aparece com os dois números, na ordem de quem mais come CPU. Os
+  // números vão em colunas próprias (01/10): o rótulo CPU/RAM sai uma vez só,
+  // no cabeçalho, e sobra linha para o nome inteiro.
   if (dados.consumidores?.length) {
     return dados.consumidores.map((c) => ({
       nome: c.nome,
-      detalhe: `CPU ${formataPct(c.cpu_pct)} · RAM ${formataTamanho(c.ram_mb)}`,
+      cpu: formataPct(c.cpu_pct),
+      ram: formataTamanho(c.ram_mb),
     }));
   }
   const { cpu, ram } = dados.vilao;
-  const deCpu = cpu ? `CPU ${Math.round(cpu.pct)}%` : null;
-  const deRam = ram ? `RAM ${formataTamanho(ram.usado_mb)}` : null;
+  const deCpu = cpu ? `${Math.round(cpu.pct)}%` : null;
+  const deRam = ram ? formataTamanho(ram.usado_mb) : null;
 
   if (cpu && ram && cpu.nome === ram.nome) {
-    return [{ nome: cpu.nome, detalhe: `${deCpu} · ${deRam}` }];
+    return [{ nome: cpu.nome, cpu: deCpu, ram: deRam }];
   }
-  const linhas: Array<{ nome: string; detalhe: string }> = [];
-  if (cpu && deCpu) linhas.push({ nome: cpu.nome, detalhe: deCpu });
-  if (ram && deRam) linhas.push({ nome: ram.nome, detalhe: deRam });
+  const linhas: LinhaDeProcesso[] = [];
+  if (cpu) linhas.push({ nome: cpu.nome, cpu: deCpu, ram: null });
+  if (ram) linhas.push({ nome: ram.nome, cpu: null, ram: deRam });
   return linhas;
 }
 
@@ -147,4 +152,38 @@ export function descreve(medida: Medida, dados: RecursosDaVps): string {
     case 'disco':
       return `${formataTamanho(dados.disco.livre_mb)} livres de ${formataTamanho(dados.disco.total_mb)}`;
   }
+}
+
+/** Nomes de sistema na palavra curta que o Rica reconhece. */
+const DO_SISTEMA: Record<string, string> = {
+  'cockpit-api': 'cockpit (API)',
+  'cockpit-v2': 'cockpit',
+  tailscaled: 'tailscale',
+  dockerd: 'docker',
+  'containerd-shim': 'containerd',
+  'containerd-shim-runc-v2': 'containerd',
+  chrome: 'Chrome',
+  headless_shell: 'Chrome',
+  kthreadd: 'kernel',
+  // O back só sabe dar nome de agente ao `claude` que roda na frota (unit ou
+  // socket tmux `borges-*`). O que sobra é sessão aberta fora dela.
+  claude: 'Claude avulso',
+};
+
+/**
+ * O nome do processo como gente: o back manda o slug capitalizado do agente
+ * ("Fluytcom", "Pavan2") ou o nome cru do sistema ("cockpit-api"). Agente vira
+ * o nome do painel ("Fluyt", "José Pavan 2"); sistema vira a palavra curta.
+ */
+export function nomeLegivel(nome: string, agentes: ReadonlyArray<{ slug: string; name: string }>): string {
+  const casado = /^(.*?)(\d*)$/.exec(nome.toLowerCase());
+  const base = casado?.[1] ?? nome.toLowerCase();
+  const numero = casado?.[2] ?? '';
+  const agente = agentes.find((a) => a.slug === nome.toLowerCase()) ?? agentes.find((a) => a.slug === base);
+  if (agente) return agente.slug === nome.toLowerCase() || !numero ? agente.name : `${agente.name} ${numero}`;
+  if (DO_SISTEMA[nome]) return DO_SISTEMA[nome];
+  // Os cockpits de prévia sobem como `cockpit-ideia-<assunto>`.
+  if (nome.startsWith('cockpit-ideia-')) return 'cockpit (prévia)';
+  if (nome.startsWith('cockpit-')) return 'cockpit';
+  return nome;
 }

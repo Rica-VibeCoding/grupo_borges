@@ -8,6 +8,7 @@ import {
   formataTamanho,
   fracaoDaBarra,
   linhasDeVilao,
+  nomeLegivel,
   type RecursosDaVps,
 } from './recursos-da-vps.ts';
 
@@ -66,7 +67,7 @@ test('a descrição de cada linha é o absoluto que a barra resume', () => {
 });
 
 test('o mesmo dono comendo as duas coisas vira UMA linha', () => {
-  assert.deepEqual(linhasDeVilao(ORACLE), [{ nome: 'Daniel', detalhe: 'CPU 42% \u00b7 RAM 2,2 GB' }]);
+  assert.deepEqual(linhasDeVilao(ORACLE), [{ nome: 'Daniel', cpu: '42%', ram: '2,2 GB' }]);
 });
 
 test('donos diferentes ficam em linhas separadas', () => {
@@ -79,8 +80,8 @@ test('donos diferentes ficam em linhas separadas', () => {
   };
 
   assert.deepEqual(linhasDeVilao(dois), [
-    { nome: 'cockpit-api', detalhe: 'CPU 62%' },
-    { nome: 'Pavan', detalhe: 'RAM 537 MB' },
+    { nome: 'cockpit-api', cpu: '62%', ram: null },
+    { nome: 'Pavan', cpu: null, ram: '537 MB' },
   ]);
 });
 
@@ -97,7 +98,23 @@ test('com a lista de consumidores, cada dono vira uma linha com CPU e RAM', () =
     ],
   };
   assert.deepEqual(linhasDeVilao(comLista), [
-    { nome: 'cockpit-api', detalhe: 'CPU 11% \u00b7 RAM 119 MB' },
-    { nome: 'Pavan', detalhe: 'CPU 4,2% \u00b7 RAM 668 MB' },
+    { nome: 'cockpit-api', cpu: '11%', ram: '119 MB' },
+    { nome: 'Pavan', cpu: '4,2%', ram: '668 MB' },
   ]);
+});
+
+test('nome legível: agente pelo nome do painel, sistema na palavra curta', () => {
+  const frota = [
+    { slug: 'fluytcom', name: 'Fluyt' },
+    { slug: 'pavan', name: 'José Pavan' },
+    { slug: 'canarinho', name: 'Canário' },
+  ];
+  assert.equal(nomeLegivel('Fluytcom', frota), 'Fluyt');
+  assert.equal(nomeLegivel('Pavan2', frota), 'José Pavan 2');
+  assert.equal(nomeLegivel('Canarinho', frota), 'Canário');
+  assert.equal(nomeLegivel('cockpit-api', frota), 'cockpit (API)');
+  assert.equal(nomeLegivel('containerd', frota), 'containerd');
+  assert.equal(nomeLegivel('claude', frota), 'Claude avulso');
+  assert.equal(nomeLegivel('Sofia', frota), 'Sofia');
+  assert.equal(nomeLegivel('cockpit-ideia-sidebar', frota), 'cockpit (prévia)');
 });

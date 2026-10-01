@@ -38,9 +38,11 @@ import {
   formataTamanho,
   fracaoDaBarra,
   linhasDeVilao,
+  nomeLegivel,
   type Medida,
   type RecursosDaVps,
 } from './recursos-da-vps';
+import { usaFrota } from './frota-provider';
 
 const INTERVALO_MS = 10_000;
 
@@ -177,6 +179,7 @@ export function BlocoDaVps() {
   }, []);
 
   const [processosAbertos, setProcessosAbertos] = useState(false);
+  const { agents } = usaFrota();
   const linhas = dados ? linhasDeVilao(dados) : [];
 
   return (
@@ -252,26 +255,37 @@ export function BlocoDaVps() {
       </div>
 
       {linhas.length > 0 && processosAbertos ? (
-        <ul
+        <div
           id="vps-processos"
-          className="ck-vps-bloco flex flex-col"
-          style={{ gap: '2px', padding: 'var(--ck-space-2) var(--ck-space-3)', marginBottom: 'var(--ck-space-2)' }}
+          role="table"
+          aria-label="Processos que mais consomem"
+          className="ck-vps-bloco ck-tabular grid items-baseline"
+          style={{
+            gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+            gap: 'var(--ck-space-1) var(--ck-space-3)',
+            padding: 'var(--ck-space-2) var(--ck-space-3)',
+            marginBottom: 'var(--ck-space-2)',
+            fontSize: 'var(--ck-text-xs)',
+            color: 'var(--ck-text-secondary)',
+          }}
         >
+          {/* Rótulo CPU/RAM uma vez só, no cabeçalho: sobra linha para o nome
+              inteiro, que quebra em vez de ganhar reticências. */}
+          <div role="row" className="contents">
+            <span role="columnheader">processo</span>
+            <span role="columnheader" style={{ textAlign: 'right' }}>CPU</span>
+            <span role="columnheader" style={{ textAlign: 'right' }}>RAM</span>
+          </div>
           {linhas.map((linha) => (
-            <li
-              key={linha.nome}
-              className="flex items-baseline"
-              style={{ gap: 'var(--ck-space-2)', fontSize: 'var(--ck-text-xs)' }}
-            >
-              <span className="min-w-0 truncate" style={{ color: 'var(--ck-text-primary)' }}>
-                {linha.nome}
+            <div key={linha.nome} role="row" className="contents">
+              <span role="cell" style={{ color: 'var(--ck-text-primary)', overflowWrap: 'anywhere' }} title={linha.nome}>
+                {nomeLegivel(linha.nome, agents)}
               </span>
-              <span className="ck-tabular ml-auto shrink-0" style={{ color: 'var(--ck-text-secondary)' }}>
-                {linha.detalhe}
-              </span>
-            </li>
+              <span role="cell" style={{ textAlign: 'right' }}>{linha.cpu ?? '—'}</span>
+              <span role="cell" style={{ textAlign: 'right' }}>{linha.ram ?? '—'}</span>
+            </div>
           ))}
-        </ul>
+        </div>
       ) : null}
     </section>
   );
