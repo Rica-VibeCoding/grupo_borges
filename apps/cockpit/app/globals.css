@@ -833,55 +833,6 @@ body {
   }
 }
 
-/* A ABA — o item selecionado da tropa funde com a folha.
- *
- * É a assinatura desta tela, e ela carrega informação em vez de decorar: a
- * folha aberta não está solta sobre a mesa, ela SAI do agente que você
- * escolheu. O item perde o véu de 4% e assume a cor da folha, perde o raio do
- * lado direito e avança os 8px do respiro da faixa até encostar nela.
- *
- * Vale só a partir de `md`, porque só aí existe folha para encostar. No
- * celular a tropa é gaveta sobre o palco e o véu continua sendo o sinal.
- *
- * Contraste melhora: o par passa de texto sobre `nav`+véu (5,72:1 no
- * secondary) para texto sobre `canvas` (6,74:1). E o filete de 2px continua —
- * fundir com a folha é sinal de forma, e forma sozinha também não é portadora
- * única quando o item some da vista ao rolar a lista. */
-.ck-aba {
-  border-radius: var(--ck-radius-chip);
-  /* O respiro lateral mora aqui, e não no `style` inline de cada item, por uma
-     razão só: a aba do selecionado precisa DEVOLVER esse respiro do lado
-     direito (abaixo), e `style` inline não conhece media query. */
-  padding-inline: var(--ck-space-3);
-}
-
-/* As duas classes no seletor não são enfeite: `.ck-veil[data-selecionado]`
- * pinta o véu de 4% e tem a mesma especificidade (0,2,0) que teria
- * `.ck-aba[data-selecionado]`. Empate se resolve por ordem no arquivo, e
- * ordem é exatamente a fragilidade que já mordeu aqui uma vez (ver o
- * `:focus-visible` mais abaixo). Somar a classe que o elemento já tem leva a
- * (0,3,0) e a exceção passa a vencer onde quer que esteja escrita.
- *
- * Sem o `background-image: none` a aba fica 4% mais clara que a folha em que
- * deveria encostar — perto o bastante para parecer emenda malfeita. */
-@media (min-width: 768px) {
-  .ck-veil.ck-aba[data-selecionado='true'] {
-    background-image: none;
-    background-color: var(--ck-surface-canvas);
-    border-radius: var(--ck-radius-chip) 0 0 var(--ck-radius-chip);
-    /* Avança sobre o respiro da faixa até a borda da folha. */
-    margin-right: calc(var(--ck-space-2) * -1);
-    /* E devolve ao conteúdo os 8px que a CAIXA avançou. Esta linha diz o que o
-       comentário antigo aqui afirmava sem cumprir ("o conteúdo não se mexe"):
-       o `padding-right` de 12px passava a valer a partir da borda nova, então o
-       conteúdo ia junto. Não aparecia enquanto tudo na linha era alinhado à
-       esquerda; com o percentual virando a última coluna, o número da linha
-       selecionada pousava 8px à direita do de todas as outras — a coluna
-       morrendo justamente na linha em que o olho está. */
-    padding-right: calc(var(--ck-space-3) + var(--ck-space-2));
-  }
-}
-
 /* ===== O MOVIMENTO — como tudo entra e sai neste app ======================
  *
  * Ordem do Rica (30/07), sobre o painel do ChatGPT: *"aprender o código desse
@@ -1636,22 +1587,28 @@ html[data-troca-agente] .ck-palco {
   .ck-pulso[data-estado] { animation: none; }
 }
 
-/* §T — A TROPA (v9, `ideia/sidebar-nova`, 01/10). Uma anatomia só por linha:
- * foto redonda com ARO no tom da pílula (`--ck-tom-*`, régua única em
- * `estado-da-pilula.ts`), nome, palavra do estado e a barra fina de contexto.
- * O aro é parado — na lista nada respira; só a cor troca, devagar, quando o
- * estado muda. Brilho = vida: aceso (dele/sua vez) > na linha > desligado.
- * Palavra de estado em `secondary` quando o tom é neutro: o `desligado`
- * (`tertiary`) não passa 4.5:1 como texto (§3) e fica só no aro. */
+/* §T — A TROPA (v9, `ideia/sidebar-nova`, 01/10). Uma anatomia só por linha,
+ * duas linhas no máximo: foto redonda com ARO no tom da pílula (`--ck-tom-*`,
+ * régua única em `estado-da-pilula.ts`) · nome e contexto · modelo e última
+ * atividade. O aro é parado — na lista nada respira; só a cor troca, devagar.
+ * Brilho = vida: aceso (dele/sua vez) > na linha > desligado, que também
+ * esmaece foto e nome. O SELECIONADO é pílula: o vidro escuro da
+ * `PilulaDoAgente` (`--ck-conversa-pilula` + fio), sem desfoque (§9.2). */
 :root {
-  /* Trilho da barra de contexto na tropa: luz translúcida, visível sobre a mesa,
-   * sobre a aba (canvas) e sobre o véu do selecionado no celular. */
-  --ck-tl-trilho: rgb(255 255 255 / 0.08);
+  --ck-tl-hover: rgb(0 0 0 / 0.16); /* a pílula pela metade: o hover anuncia o selecionado */
 }
 .ck-tl-linha {
   --ck-tl-cor: var(--ck-tom-prepara);
   min-height: var(--ck-touch-min);
-  padding-block: var(--ck-space-2);
+  padding: var(--ck-space-2) var(--ck-space-3) var(--ck-space-2) var(--ck-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--ck-radius-pill);
+  transition: background-color var(--ck-dur-fast) var(--ck-ease), border-color var(--ck-dur-fast) var(--ck-ease);
+}
+.ck-tl-linha:hover { background-color: var(--ck-tl-hover); }
+.ck-tl-linha[data-selecionado='true'] {
+  background-color: var(--ck-conversa-pilula);
+  border-color: var(--ck-conversa-pilula-fio);
 }
 .ck-tl-linha[data-tom='voce'] { --ck-tl-cor: var(--ck-tom-voce); }
 .ck-tl-linha[data-tom='ze'] { --ck-tl-cor: var(--ck-tom-ze); }
@@ -1660,26 +1617,9 @@ html[data-troca-agente] .ck-palco {
 .ck-tl-linha[data-tom='ocupado'] { --ck-tl-cor: var(--ck-tom-ocupado); }
 .ck-tl-linha[data-tom='desligado'] { --ck-tl-cor: var(--ck-tom-desligado); }
 
-/* O filete do selecionado: 2px em `text-primary`, curto e centrado — cresce
- * do meio quando a linha é escolhida. */
-.ck-tl-linha::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: calc(50% - 10px);
-  width: 2px;
-  height: 20px;
-  border-radius: var(--ck-radius-pill);
-  background: var(--ck-text-primary);
-  opacity: 0;
-  transform: scaleY(0.3);
-  transition: opacity var(--ck-dur-fast) var(--ck-ease), transform var(--ck-dur-enter) var(--ck-ease);
-}
-.ck-tl-linha[data-selecionado='true']::before { opacity: 1; transform: scaleY(1); }
-
 /* O aro: 1.5px a 3px da foto, como o da pílula, num `::after` do contêiner —
  * o Root do Radix tem `overflow: hidden`. */
-.ck-tl-foto { position: relative; margin-top: 1px; }
+.ck-tl-foto { position: relative; }
 .ck-tl-foto::after {
   content: '';
   position: absolute;
@@ -1702,26 +1642,16 @@ html[data-troca-agente] .ck-palco {
   transition: color var(--ck-dur-calm) var(--ck-ease);
 }
 .ck-tl-linha[data-tom='desligado'] .ck-tl-nome { color: var(--ck-text-secondary); font-weight: 400; }
-.ck-tl-estado {
-  font-size: var(--ck-text-xs);
-  color: var(--ck-text-secondary);
-  transition: color var(--ck-dur-calm) var(--ck-ease);
-}
-.ck-tl-linha:is([data-tom='voce'], [data-tom='ze'], [data-tom='pensa'], [data-tom='erro'], [data-tom='ocupado']) .ck-tl-estado {
-  color: var(--ck-tl-cor);
-}
-.ck-tl-detalhe {
-  gap: 0 var(--ck-space-2);
-  margin-top: var(--ck-space-1);
+.ck-tl-segunda {
+  min-height: 16px;
   font-size: var(--ck-text-xs);
   color: var(--ck-text-secondary);
 }
 @media (prefers-reduced-motion: reduce) {
-  .ck-tl-linha::before,
+  .ck-tl-linha,
   .ck-tl-foto::after,
   .ck-tl-foto img,
-  .ck-tl-nome,
-  .ck-tl-estado { transition: none; }
+  .ck-tl-nome { transition: none; }
 }
 
 /* O cartão da VPS no pé da tropa — a linguagem do "Motor e conta" da gaveta

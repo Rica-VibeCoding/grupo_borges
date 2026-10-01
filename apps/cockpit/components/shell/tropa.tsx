@@ -13,10 +13,10 @@
  *   não há seções nem títulos de estado.
  * - O arrasto é pela LINHA INTEIRA: toque curto abre, segurar carrega. A alça
  *   só existe para teclado e leitor de tela (`arrasto-da-tropa.tsx`).
- * - Uma anatomia só para todo agente (v9, 01/10): aro de estado no tom da
- *   pílula, nome, palavra do estado, contexto em barra fina. Quem dorme usa a
- *   mesma linha, com o aro no tom `desligado`.
- * - Motor e pasta só na linha selecionada; o pulso de 24h mora na gaveta.
+ * - Uma anatomia só para todo agente (v9, 01/10), duas linhas: aro de estado
+ *   no tom da pílula, nome e contexto; modelo e última atividade. Quem dorme
+ *   usa a mesma linha, com o aro no tom `desligado`. O selecionado é pílula.
+ * - O pulso de 24h mora na gaveta.
  * - A VPS fica no rodapé da tropa, como cartão.
  *
  * O desenho de cada linha mora em `linha-da-tropa.tsx` e `miudezas-da-linha.tsx`.
@@ -48,7 +48,7 @@ export type { EscolheAgente };
 export function Tropa({
   agents,
   slugSelecionado,
-  agora,
+  agora: agoraDoServidor,
   compacta = false,
   aoEscolher,
 }: {
@@ -66,6 +66,16 @@ export function Tropa({
   // Desde 17/08 a sequência vem do banco quando ele já arrastou; a lista ditada
   // em `lib/ordena-tropa.ts` virou a ordem de fábrica.
   const doServidor = useMemo(() => ordenaTropa(agents), [agents]);
+
+  // O `agora` do servidor é o instante da renderização e congela: a "última
+  // atividade" de cada linha ("12 min") anda com este relógio, de 30 em 30 s.
+  const [agora, setAgora] = useState(agoraDoServidor);
+  useEffect(() => {
+    const tique = () => setAgora(Math.floor(Date.now() / 1000));
+    tique();
+    const relogio = window.setInterval(tique, 30_000);
+    return () => window.clearInterval(relogio);
+  }, []);
 
   // A ordem que a tela mostra enquanto o servidor não confirma. O `/api/fleet`
   // só é relido no poll seguinte (5s), e sem isto a linha voltaria pro lugar

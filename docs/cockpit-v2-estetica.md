@@ -170,7 +170,7 @@ dessas peças antes de criar outra.
 
 **Layout.** Celular: uma superfície por vez. Desktop (≥ 768px): a tropa é faixa permanente na mesa
 (`nav`); o palco é uma **folha** em `canvas` com 8px de margem, raio `--ck-radius-caixa` e fio de luz;
-o item selecionado da tropa funde com a folha (aba).
+o item selecionado da tropa é pílula (abaixo).
 
 **Gaveta.** Flutua com 8px de folga e raio 16px; ancora embaixo no celular (≤ 640px) e no topo no
 desktop, crescendo para baixo e rolando por dentro. Cabe sem rolar em 390×844 e 1440×900.
@@ -204,14 +204,14 @@ mais; vermelho (`--ck-gv-alerta`) = só a bolinha "!"; âmbar = atenção, do es
 acento novo.
 
 **Lista da tropa** (`shell/linha-da-tropa.tsx`, §T do `globals.css`) — lista, não cartões; uma anatomia
-para todo agente, de pé ou dormindo: foto redonda com aro parado no tom de estado · nome · palavra do
-estado (a mesma régua da pílula) · à direita o `%` e a barra fina de contexto. Brilho do aro = vida (aceso >
-na linha > desligado; desligado também esmaece a foto). Palavra em tom neutro sai em `secondary`, nunca no
-`tertiary` do desligado. Motor, relógio e pasta só na linha selecionada, igual para todos. Selecionado: véu +
-aba + filete curto de 2px. Nada pulsa na lista; só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora
-na gaveta. O topo do chat é a própria pílula (`lugar="topo"`, foto 36). A VPS é cartão no pé da tropa
-(`composer` + fio de luz, grade 2×2 de barras finas, cor só acima do teto de `recursos-da-vps.ts`, processos
-atrás de pílula).
+para todo agente, de pé ou dormindo, em **duas linhas no máximo**: foto redonda com aro parado no tom de
+estado · nome · `%` de contexto; embaixo, o modelo · há quanto tempo agiu (`last_seen`, "agora / 12 min /
+3 h / 2 d", "—" sem leitura). O estado não vira palavra na linha: aro aceso > na linha > desligado, que
+também esmaece foto e nome (a palavra fica no nome acessível). Nada aparece a mais ao selecionar.
+Selecionado = pílula, o vidro escuro da `PilulaDoAgente` sem desfoque; hover é meia pílula. Nada pulsa;
+só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora na gaveta. O topo do chat é a própria pílula
+(`lugar="topo"`, foto 36). A VPS é cartão no pé da tropa (`composer` + fio de luz, grade 2×2 de barras
+finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílula).
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 

@@ -54,13 +54,9 @@ export function BarraDeContexto({
    *  quer (campo inteiro) e o que a lista não pode ter (o nome do agente perde
    *  a disputa e vira "Tar…"). */
   largura,
-  /** Cor do trilho. Na tropa ele é translúcido (`--ck-tl-trilho`): a linha
-   *  selecionada pinta o fundo de `composer` e o trilho padrão sumiria nela. */
-  trilho = 'var(--ck-surface-composer)',
 }: {
   pct: number;
   largura?: number;
-  trilho?: string;
 }) {
   const cor = corDoContexto(pct);
 
@@ -78,7 +74,7 @@ export function BarraDeContexto({
         minWidth: largura === undefined ? '56px' : undefined,
         height: '4px',
         borderRadius: 'var(--ck-radius-pill)',
-        background: trilho,
+        background: 'var(--ck-surface-composer)',
       }}
     >
       <span

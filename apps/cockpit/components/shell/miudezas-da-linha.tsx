@@ -1,5 +1,5 @@
 /**
- * As miudezas da linha da tropa — pasta e número de contexto.
+ * As miudezas da linha da tropa — o número de contexto.
  *
  * Peças pequenas e puras que `linha-da-tropa.tsx` monta; separadas pra que cada
  * arquivo faça uma coisa só (teto de 300 linhas do `apps/cockpit/CLAUDE.md`).
@@ -11,25 +11,6 @@ import { resolveContextPct } from '@grupo_borges/cockpit-core/cockpit-types';
 import { formatElapsedShort } from '@grupo_borges/cockpit-core/painel-format';
 import { SemContexto, ValorDoContexto } from './barra-de-contexto';
 import { TETO_PCT } from './medidor';
-
-/**
- * A pasta em que o agente trabalha, sem a raiz que todos compartilham.
- *
- * Ordem do Rica (02/08): *"toda tropa eu tenho que saber em que pasta que tá"*;
- * em 03/08 ele recortou: só pra quem está DE PÉ. E só quando está FORA de casa —
- * `ze_claude/<slug>` repetiria o nome que está três pixels acima. Gêmea da do
- * cockpit antigo e deliberadamente NÃO compartilhada (o antigo está congelado).
- */
-const RAIZ_DOS_REPOS = '/home/clawd/repos/';
-const CASA_DA_FROTA = 'ze_claude/';
-
-export function pastaCurta(workspacePath: string | null | undefined, slug: string): string | null {
-  if (!workspacePath) return null;
-  const limpo = workspacePath.replace(/\/+$/, '');
-  if (!limpo) return null;
-  const curta = limpo.startsWith(RAIZ_DOS_REPOS) ? limpo.slice(RAIZ_DOS_REPOS.length) : limpo;
-  return curta === `${CASA_DA_FROTA}${slug}` ? null : curta;
-}
 
 /** `agora` só existe pra quem está de pé (idade do número velho); `null` é
  *  quem dorme. O número de contexto no fim da primeira linha — o MESMO para vivo e dormindo,
@@ -65,21 +46,3 @@ export const ESTILO_DO_NUMERO = {
   fontSize: 'var(--ck-text-sm)',
   color: 'var(--ck-text-secondary)',
 } as const;
-
-/** Endereço fica em mono: é caminho, lido caractere a caractere. É a única mono
- *  da linha — relógio e percentual passaram para a sans tabular. */
-export function Pasta({ pasta, caminho }: { pasta: string; caminho: string }) {
-  return (
-    <span
-      className="min-w-0 truncate"
-      style={{
-        fontFamily: 'var(--ck-font-mono)',
-        fontSize: 'var(--ck-text-xs)',
-        color: 'var(--ck-text-secondary)',
-      }}
-      title={caminho}
-    >
-      {pasta}
-    </span>
-  );
-}
