@@ -40,12 +40,21 @@ persona que mudou desde a conversa; lista geral da frota.
 ## O que já existe (mapa de 01/10)
 
 - **Front vivo** em `apps/cockpit`, produção na 3008 (`:3446`) e API na 8002. `apps/web` é legado.
-- **Gaveta do agente**: `GavetaPainel` (`components/shell/superficie-otimista.tsx:309`),
-  `Painel` (`app/agente/[slug]/page.tsx:73`) e `VistaDaGaveta`
-  (`components/shell/vista-da-gaveta.tsx:23`). Hoje `?painel=mcps` abre os MCPs, e
-  `?painel=conversas` entra do mesmo jeito.
-- **Botões** em `components/shell/bloco-de-acoes.tsx`; Ligar em `:453` e `:574`. O cliente HTTP
-  fica em `packages/cockpit-core/src/api.ts`.
+- **Gaveta do agente — UI NOVA desde `dfd2dc4` (01/10), fonte canônica da tela**:
+  - Forma em `components/gaveta/`: `GavetaNova` (`gaveta-nova.tsx:212`) monta cabeçalho ·
+    Conversa (ajustes de voz) · Sessão · Motor e conta · MCPs. Peças em `pecas.tsx` (`Cartao`,
+    `Bloco`, `Interruptor`, `Segmentado`, `Pilula`, `Mais`); tokens na §G do `globals.css`,
+    escopados em `.ck-gv`. Regras visuais: §17 "A gaveta hoje (01/10)" de
+    `docs/cockpit-v2-estetica.md`.
+  - **Estado e rede** (ligar, desligar, ocupado, painel) vêm de `usaVidaDoAgente`
+    (`usa-vida-do-agente.ts:49`). Ação nova de tela pendura nele, não cria máquina paralela.
+  - O `BlocoDeAcoes` **saiu** (`bloco-de-acoes.tsx` apagado). Ligar agora é o `acionarLigar` do
+    `usaVidaDoAgente`.
+  - Visões: `VistaDaGaveta` (`components/shell/vista-da-gaveta.tsx:23`) só conhece `mcps` e
+    detalhes; `?painel=conversas` entra como terceira visão. A porta dos MCPs (`Cartao` +
+    `LinkDaGaveta`, `gaveta-nova.tsx:252`) é o molde da porta das Conversas.
+  - Casca: `GavetaPainel` (`components/shell/superficie-otimista.tsx:308`) e `Painel`
+    (`app/agente/[slug]/page.tsx`). O cliente HTTP fica em `packages/cockpit-core/src/api.ts`.
 - **Ligar**: `agents.py:4624` chama `tmux_driver.boot_agent` (`tmux_driver.py:1956-2024`), que
   passa `systemd-run … --setenv=FROTA_FLAGS_EXTRA=--continue` (`:1994`) para o `subir-frota.sh`.
   O script repassa a variável crua para o `claude`. Para retomar, basta parametrizar esse
@@ -287,8 +296,10 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
 
 ## F8 — Tela: direções visuais (cadeira `tela`; pode correr junto de F2 e F3)
 
-- **Entrega**: 2 ou 3 direções da gaveta em captura de iPhone, com dados falsos que seguem o
-  contrato. Precisam mostrar: lista com tempo relativo, título e nota; filtros; busca; os selos
+- **Entrega**: 2 ou 3 direções em captura de iPhone, com dados falsos que seguem o contrato,
+  **dentro da gramática da gaveta nova** (peças de `pecas.tsx`, tokens `.ck-gv`, §17). A porta
+  na `GavetaNova` não pode empurrar a gaveta para fora de 390×844 sem rolar, e o nome não pode
+  confundir com o cartão "Conversa" de voz que já existe. Precisam mostrar: lista com tempo relativo, título e nota; filtros; busca; os selos
   ⭐ ⚠️ 🔒; os botões Retomar, Nova conversa e Excluir; e a confirmação de Retomar ("vai
   interromper o que está rodando").
 - **Pronto**: o Rica escolhe a direção. **Nenhum código de produto antes disso.**
@@ -296,7 +307,7 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
 ## F9 — Tela: a gaveta de leitura (cadeira `tela`)
 
 - **Entrega**:
-  - `?painel=conversas` na `VistaDaGaveta`, com a entrada pelo `BlocoDeAcoes`.
+  - `?painel=conversas` como terceira visão da `VistaDaGaveta`, com a porta na `GavetaNova`.
   - O cliente da lista no `cockpit-core/api.ts`.
   - Filtros, busca, tempo relativo e os selos, na direção aprovada.
   - Pasta nova incluída no script `test`.
@@ -305,7 +316,7 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
 
 ## F10 — Tela: as ações (cadeira `tela`, depois de `/clear`)
 
-- **Entrega**:
+- **Entrega** (estado de ocupado e de religar lido do `usaVidaDoAgente`):
   - Retomar, com confirmação e com o caso "ocupado → interromper e trocar".
   - Nova conversa.
   - ⭐ e 🗑️ (com confirmação).
