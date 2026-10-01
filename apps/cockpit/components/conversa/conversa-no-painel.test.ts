@@ -30,31 +30,24 @@ for (const [caminho, busca] of [
 }
 
 test('a gaveta do agente é a única casa dos controles da conversa', () => {
-  const gaveta = le('./configuracao-no-painel.tsx');
-  const controles = le('./controles-da-conversa.tsx');
+  const cartao = le('../gaveta/cartao-da-conversa.tsx');
+  const gaveta = le('../gaveta/gaveta-nova.tsx');
   assert.ok(!le('./tela-conversa.tsx').includes('ConfiguracaoDaConversa'));
-  assert.match(gaveta, /<ControlesDaConversa/);
-  for (const texto of ['Estou de fone', 'Mostrar texto']) {
-    assert.ok(controles.includes(texto));
-    assert.ok(!gaveta.includes(`nome="${texto}"`));
-  }
-  assert.ok(!controles.includes('Foto do agente'));
+  for (const texto of ['Estou de fone', 'Mostrar texto']) assert.ok(cartao.includes(texto));
+  assert.ok(!cartao.includes('Foto do agente'));
+  assert.match(gaveta, /mostraConversaNoPainel\(/);
+  assert.match(gaveta, /\{conversa \? <CartaoDaConversa \/> : null\}/);
 });
 
-test('a gaveta usa a variante compacta, sem descrição', () => {
-  const gaveta = le('./configuracao-no-painel.tsx');
-  const controles = le('./controles-da-conversa.tsx');
-  assert.match(gaveta, /detalheTecnico=\{detalheTecnico\}\s+compacta\s+\/>/);
-  assert.ok(!gaveta.includes('Ficam guardadas neste aparelho.'));
-  assert.match(controles, /compacta \? null : <span className=\{styles\.descricao\}>/);
-  assert.match(controles, /compacta \? null : <p className=\{styles\.dica\}>/);
+test('o cartão da conversa grava pelas mesmas chaves e pelo mesmo visual', () => {
+  const cartao = le('../gaveta/cartao-da-conversa.tsx');
+  assert.match(cartao, /useChaveDaConversa\(CHAVE_FONE\)/);
+  assert.match(cartao, /useChaveDaConversa\(CHAVE_TEXTO\)/);
+  assert.match(cartao, /useVisualConversa\(\)/);
+  assert.match(cartao, /useDetalheDaConversa\(\)/);
 });
 
-test('conversa vem antes do painel existente, sem substituir conteúdo do chat', () => {
-  const gaveta = le('./configuracao-no-painel.tsx');
-  assert.match(gaveta, /if \(!mostraConversaNoPainel\(caminho, busca\)\) return children/);
-  assert.ok(gaveta.indexOf('<SecaoConversa fechar=') < gaveta.indexOf('<div className={styles.agente}>'));
-  assert.match(gaveta, /useChaveDaConversa\(CHAVE_FONE\)/);
-  assert.match(gaveta, /useChaveDaConversa\(CHAVE_TEXTO\)/);
-  assert.match(gaveta, /useVisualConversa\(\)/);
+test('conversa vem antes da sessão, sem substituir o painel do agente', () => {
+  const gaveta = le('../gaveta/gaveta-nova.tsx');
+  assert.ok(gaveta.indexOf('<CartaoDaConversa />') < gaveta.indexOf('<CartaoDaSessao v='));
 });

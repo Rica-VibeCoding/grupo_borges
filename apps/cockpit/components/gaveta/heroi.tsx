@@ -4,7 +4,7 @@
  * O topo DISCRETO da gaveta (branch `ideia/gaveta-discreta`, 01/10): o Rica
  * achou o círculo-herói com halo chamativo e grande demais — comia quase um
  * terço da gaveta. Aqui ele vira um cabeçalho de uma linha só: retrato pequeno
- * com um anel fino laranja, a bolinha de estado, o nome, o interruptor da
+ * com um anel fino laranja, o nome, o interruptor da
  * sessão e o ×. Embaixo, a statusline (modelo · sessão · contexto), única
  * fonte do modelo na gaveta, com a barra de contexto na largura toda.
  *
@@ -30,7 +30,6 @@ export function Heroi({
   fecharHref,
   foraDoAr,
   alerta,
-  estado,
   interruptor,
 }: {
   agente: Agent;
@@ -38,11 +37,8 @@ export function Heroi({
   fecharHref: string;
   foraDoAr: boolean;
   alerta: boolean;
-  /** Tom e frase do pulso (`ativo`/`parado`/`sem-sinal`); `null` enquanto não leu. */
-  estado: { tom: string; frase: string } | null;
   interruptor: ReactNode;
 }) {
-  const tom = foraDoAr ? 'fora' : (estado?.tom ?? 'parado');
   return (
     <header className="flex shrink-0 flex-col" style={{ gap: 'var(--ck-space-2)', padding: '0 var(--ck-space-1)' }}>
       <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
@@ -57,15 +53,7 @@ export function Heroi({
           {alerta ? <BolinhaDeAlerta style={{ top: '-6px', right: '-6px', width: '16px', height: '16px', fontSize: '10px' }} /> : null}
         </div>
 
-        <div className="flex min-w-0 flex-1 items-center" style={{ gap: 'var(--ck-space-2)' }}>
-          <span
-            role="img"
-            aria-label={foraDoAr ? 'Fora do ar' : (estado?.frase ?? 'Lendo o estado')}
-            title={foraDoAr ? 'Fora do ar' : estado?.frase}
-            className="ck-gv-ponto shrink-0 rounded-full"
-            data-tom={tom}
-            style={{ width: '8px', height: '8px' }}
-          />
+        <div className="flex min-w-0 flex-1 items-center">
           <h2
             className="min-w-0 truncate"
             style={{

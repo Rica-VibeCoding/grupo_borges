@@ -2,7 +2,8 @@
 
 /**
  * A máquina do Desligar (armar → confirmar → enviar → recibo), tirada do
- * `bloco-de-acoes.tsx` sem mudar uma regra — lá estão os porquês. Aqui só
+ * `bloco-de-acoes.tsx` (removido; os porquês estão no `git log` dele) sem
+ * mudar uma regra. Aqui só
  * mudou o endereço, porque a gaveta nova desenha o Desligar como interruptor.
  *
  * Sem o armar de dois toques (pedido do Rica, 01/10, testando o preview): o

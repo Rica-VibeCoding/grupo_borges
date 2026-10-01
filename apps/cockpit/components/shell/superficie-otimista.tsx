@@ -51,7 +51,6 @@ import {
   type ReactNode,
 } from 'react';
 
-import { ConfiguracaoNoPainel } from '../conversa/configuracao-no-painel';
 import { ContextoConfiguracaoConversa } from '../conversa/contexto-configuracao-conversa';
 
 import { IconeMenu } from './icones';
@@ -354,9 +353,7 @@ export function GavetaPainel({
         className="ck-surge ck-flutua flex min-h-0 flex-col overflow-hidden"
         style={{ background: 'var(--ck-surface-nav)' }}
       >
-        <ConfiguracaoNoPainel fechar={<LinkFechaPainel href={fecharHref} rotulo={rotulo}>×</LinkFechaPainel>}>
-          {children}
-        </ConfiguracaoNoPainel>
+        {children}
       </aside>
     </>
   );

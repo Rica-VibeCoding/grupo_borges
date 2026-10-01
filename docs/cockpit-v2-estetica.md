@@ -1219,18 +1219,28 @@ Consequência prática: separador **dentro** de superfície flutuante usa `--ck-
 `--ck-edge-hairline` (#424242, mais duro que a referência). O `hairline` continua valendo onde
 separa conteúdo no plano, sem elevação.
 
-### A gaveta hoje (28/09)
+### A gaveta hoje (01/10)
 
 - **Celular (até 640px): ancorada embaixo**, ao alcance do polegar. Desktop segue no topo.
 - **O véu escurece e desfoca** o que fica atrás (`--ck-veu-gaveta`, `--ck-veu-gaveta-desfoque`);
   tocar nele fecha. Vale pras duas gavetas, porque é o mesmo `.ck-surge-veu`.
-- **Ordem, de cima pra baixo:** nome do agente · statusline (modelo, sessão, contexto) · pulso
-  com Destravar/Desligar · Comandos · Motor e Conta com a cota · MCPs.
+- **Forma** (`components/gaveta/`, tokens na §G do `globals.css`, escopados em `.ck-gv`): cartão-mãe
+  preto, cartões grafite com blocos pretos, pílulas cinza, laranja só no anel do retrato, azul só
+  no "ligado", vermelho só na bolinha "!" de alerta. Cabe sem rolar em 390×844 e 1440×900.
+- **Cabeçalho de uma linha:** retrato de 40px com anel fino laranja (apaga fora do ar) e o "!" de
+  alerta · nome · interruptor da sessão (Ativo/Desligado; desliga no primeiro toque) · ×. Embaixo,
+  a statusline com a barra de contexto na largura toda.
+- **Ordem, de cima pra baixo:** cabeçalho · Conversa (só aberta pela tela de voz: fone e texto em
+  interruptor, moldura/esfera em pílula segmentada) · Sessão (pulso, Destravar, Pesquisa,
+  Comandos — sem título) · Motor e conta com a cota · MCPs.
+- **Estado e rede** moram em `usa-vida-do-agente.ts`; o `BlocoDeAcoes` antigo saiu.
 - **Contexto em três cores** (`corDoContexto`): neutro, âmbar a partir de 25%, vermelho acima de 30%.
   **Cota** (`corDaCota`): âmbar a partir de 80%, vermelho a partir de 95%.
 - **Pulso** (`faixa-do-pulso.tsx`, rota `/api/agents/{slug}/pulso`): fio dourado dos últimos 30
-  min. "Sem sinal" = turno aberto e nada saindo há 5 min, e aí o Destravar ganha borda âmbar.
-- **Saíram por ordem do Rica:** Permissões, Resume, o caminho do workspace e a linha de tokens.
+  min, e é ele que mostra o estado (Trabalhando/Parado/Sem sinal). "Sem sinal" = turno aberto e
+  nada saindo há 5 min, e aí o Destravar fica âmbar.
+- **Saíram por ordem do Rica:** Permissões, Resume, o caminho do workspace, a linha de tokens e o
+  círculo-herói com halo.
 
 ### Aberto em 30/07 (histórico — as ações rápidas entraram depois)
 

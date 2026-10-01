@@ -106,9 +106,11 @@ export function Interruptor({
         opacity: desabilitado ? 0.5 : 1,
       }}
     >
-      <span style={{ fontSize: 'var(--ck-text-sm)', fontWeight: 500, color: corDoRotulo, whiteSpace: 'nowrap' }}>
-        {rotulo}
-      </span>
+      {rotulo ? (
+        <span style={{ fontSize: 'var(--ck-text-sm)', fontWeight: 500, color: corDoRotulo, whiteSpace: 'nowrap' }}>
+          {rotulo}
+        </span>
+      ) : null}
       <span
         aria-hidden
         className="ck-gv-trilho relative inline-flex shrink-0 items-center"
@@ -119,6 +121,41 @@ export function Interruptor({
         <span className="ck-gv-botao-trilho block rounded-full" style={{ width: '18px', height: '18px' }} />
       </span>
     </button>
+  );
+}
+
+/** Pílula segmentada — escolha de uma entre poucas, com o nome do grupo à
+ *  esquerda. A marcada ganha o fundo da pílula; o resto fica no preto do bloco. */
+export function Segmentado<T extends string>({
+  nome,
+  itens,
+  marcado,
+  escolhe,
+}: {
+  nome: string;
+  itens: readonly { id: T; nome: string }[];
+  marcado: (id: T) => boolean;
+  escolhe: (id: T) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between" style={{ gap: 'var(--ck-space-2)' }}>
+      <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>{nome}</span>
+      <div role="radiogroup" aria-label={nome} className="ck-gv-segmento flex shrink-0" style={{ padding: '3px', borderRadius: 'var(--ck-radius-pill)' }}>
+        {itens.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            role="radio"
+            aria-checked={marcado(v.id)}
+            onClick={() => escolhe(v.id)}
+            className="ck-gv-segmento-opcao"
+            style={{ minHeight: '34px', padding: '0 var(--ck-space-3)', borderRadius: 'var(--ck-radius-pill)', fontSize: 'var(--ck-text-sm)', fontWeight: 500 }}
+          >
+            {v.nome}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

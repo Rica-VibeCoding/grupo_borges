@@ -2067,11 +2067,6 @@ html[data-troca-agente] .ck-palco {
   box-shadow: 0 0 0 2px var(--ck-gv-fundo), 0 0 0 3.5px var(--ck-gv-fio);
 }
 
-/* A bolinha de estado ao lado do nome — mesmas cores do pulso. */
-.ck-gv-ponto { background: var(--ck-text-tertiary); }
-.ck-gv-ponto[data-tom='ativo'] { background: var(--ck-pulso-ouro); }
-.ck-gv-ponto[data-tom='sem-sinal'] { background: var(--ck-state-attention); }
-
 /* Interruptor: trilho + botão; azul só quando ligado. */
 .ck-gv-trilho {
   background: var(--ck-gv-trilho);
@@ -2084,6 +2079,18 @@ html[data-troca-agente] .ck-palco {
   transition: transform var(--ck-dur-enter) var(--ck-mola);
 }
 .ck-gv-trilho[data-ligado='true'] .ck-gv-botao-trilho { transform: translateX(18px); }
+
+/* Pílula segmentada: trilho preto, a escolhida em grafite claro. */
+.ck-gv-segmento { background: var(--ck-gv-bloco); }
+.ck-gv-segmento-opcao {
+  color: var(--ck-text-secondary);
+  transition: background-color var(--ck-dur-fast) var(--ck-ease), color var(--ck-dur-fast) var(--ck-ease);
+}
+.ck-gv-segmento-opcao[aria-checked='true'] {
+  background: var(--ck-gv-pilula);
+  color: var(--ck-text-primary);
+}
+.ck-gv-segmento-opcao:focus-visible { outline: 2px solid var(--ck-focus); outline-offset: 2px; }
 
 .ck-gv-tracejado {
   border: 1.5px dashed var(--ck-gv-tracejado);

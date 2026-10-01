@@ -4,7 +4,8 @@
  * Estado e rede da gaveta nova — o MESMO ciclo do `BlocoDeAcoes` (leitura do
  * `/painel` com backoff, Destravar com a trava do compact, Ligar com as
  * releituras do boot, Desligar armado, pulso, operação de motor), copiado sem
- * mudar regra. Os porquês de cada linha moram nos comentários de lá; aqui o
+ * mudar regra. O `bloco-de-acoes.tsx` foi removido; os porquês de cada linha
+ * moram nos comentários dele, no `git log`. Aqui o
  * hook devolve só o que a forma nova precisa desenhar.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

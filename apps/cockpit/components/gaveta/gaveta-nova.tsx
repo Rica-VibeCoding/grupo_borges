@@ -16,11 +16,16 @@
  *   (só onde existe) e os comandos.
  * - **Motor e conta** — os blocos de sempre, cada um num bloco preto.
  * - **MCPs** — a área tracejada com "+", porta para `?painel=mcps`.
+ * - **Conversa** — só quando a gaveta abre pela tela de voz.
  *
- * Estado e rede vêm de `usaVidaDoAgente`, cópia fiel do `BlocoDeAcoes`. O
+ * Estado e rede vêm de `usaVidaDoAgente`, cópia fiel do antigo `BlocoDeAcoes`. O
  * `flex-auto` (não `flex-1`) segue a lição do iPhone de 02/08 (§17).
  */
+import { usePathname, useSearchParams } from 'next/navigation';
+
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
+
+import { mostraConversaNoPainel } from '../conversa/conversa-no-painel';
 
 import { descreveAcaoBruta, descreveLigar, rotulaDestrava } from '../shell/acoes-rapidas';
 import { BlocoDeComandos } from '../shell/bloco-de-comandos';
@@ -32,6 +37,7 @@ import { alternaPesquisa, podePesquisar } from '../shell/pesquisa-canario';
 import { usaPesquisaAtiva } from '../shell/usa-pesquisa';
 import { VeuDeOperacao } from '../shell/veu-de-operacao';
 import { LinkDaGaveta } from '../shell/vista-da-gaveta';
+import { CartaoDaConversa } from './cartao-da-conversa';
 import { Heroi } from './heroi';
 import { Bloco, Cartao, Interruptor, Mais, Pilula } from './pecas';
 import { usaVidaDoAgente } from './usa-vida-do-agente';
@@ -207,6 +213,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
   const v = usaVidaDoAgente(agente.slug, false);
   const pronto = v.carga === 'pronto';
   const alerta = v.carga === 'indisponivel' || v.semSinal || v.falha !== null;
+  const conversa = mostraConversaNoPainel(usePathname() ?? '', useSearchParams()?.toString() ?? '');
 
   return (
     <div
@@ -221,9 +228,10 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
         fecharHref={fecharHref}
         foraDoAr={pronto && !v.dePe}
         alerta={alerta}
-        estado={v.pulso.leitura}
         interruptor={<InterruptorDaSessao v={v} />}
       />
+
+      {conversa ? <CartaoDaConversa /> : null}
 
       <CartaoDaSessao v={v} agentSlug={agente.slug} />
 

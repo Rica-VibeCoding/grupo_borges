@@ -136,26 +136,6 @@ it('troca de família para convergência e ignora callback antigo', async () => 
   await b.fechar();
 });
 
-it('BlocoDeAcoes publica somente a leitura mais recente e não publica após desmontar', async () => {
-  const b = bancada(); const { BlocoDeAcoes } = b.shell('bloco-de-acoes');
-  const recebidos = [];
-  const parar = b.shell('sincronizacao-painel').sincronizarPainel('canarinho', () => new Promise(() => {}),
-    (novo) => recebidos.push(novo), () => {});
-  let arvore;
-  await b.renderer.act(async () => { arvore = b.renderer.create(b.React.createElement(BlocoDeAcoes, { agentSlug: 'canarinho', aberto: true })); });
-  await b.renderer.act(async () => b.leituras[0].resolve(painel('anthropic')));
-  const atualizar = arvore.root.findByType('BlocoDeMotor').props.aoAtualizar;
-  await b.renderer.act(async () => { atualizar(); atualizar(); });
-  await b.renderer.act(async () => b.leituras[2].resolve(painel('codex-proxy')));
-  await b.renderer.act(async () => b.leituras[1].resolve(painel('anthropic')));
-  assert.deepEqual(recebidos.map((p) => p.motor.familia), ['anthropic', 'codex-proxy']);
-  await b.renderer.act(async () => atualizar());
-  await b.renderer.act(async () => arvore.unmount());
-  await b.renderer.act(async () => b.leituras[3].resolve(painel('opencode')));
-  assert.equal(recebidos.length, 2);
-  parar();
-});
-
 it('statusline não recicla modelo configurado e preserva modelo realmente lido', async () => {
   const b = bancada(); const { Statusline } = b.shell('statusline');
   const agente = { state_model: 'opus', model_default: 'gpt-6-astra[1m]', pane_excerpt: '',
