@@ -11,7 +11,15 @@ import type { ContasResponse } from '@grupo_borges/cockpit-core/api';
 import { clampPct } from '@grupo_borges/cockpit-core/painel-format';
 import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
-import { chaveRecomendada, nomeCurto, tempoDa5h, tempoDa7d, type TempoDaJanela } from './conta-folga.ts';
+import {
+  chaveRecomendada,
+  janelaDoReset,
+  nomeCurto,
+  restanteEmSegundos,
+  tempoDa5h,
+  tempoDa7d,
+  type TempoDaJanela,
+} from './conta-folga.ts';
 
 export type ContaConfirmada = { email: string; display_name: string | null };
 
@@ -54,7 +62,7 @@ export type ContaEmLista = {
   pct7d: number | null;
   /** O nome sem domínio, o título do bloco. */
   curto: string;
-  /** Quanto falta para cada janela voltar — só a ativa tem essa leitura. */
+  /** Quanto falta para cada janela voltar; null quando o back não leu. */
   tempo5h: TempoDaJanela | null;
   tempo7d: TempoDaJanela | null;
   /** A de mais folga agora (`chaveRecomendada`). */
@@ -74,21 +82,31 @@ function falaDaJanela(nomeDaJanela: string, pct: number | null): string {
 export function listaDeContas(
   resposta: ContasResponse | null | undefined,
   quotasDaAtiva?: PainelQuotas | null,
+  agoraEmSegundos: number = Date.now() / 1000,
 ): ContaEmLista[] {
   const emailAtivo = resposta?.ativa?.email ?? null;
-  const base = (resposta?.contas ?? []).map((conta) => ({
-    conta,
-    chave: conta.id,
-    pct5h: pctDaFracao(conta.cota_5h),
-    pct7d: pctDaFracao(conta.cota_7d),
-  }));
-  const melhor = chaveRecomendada(base);
-  return base.map(({ conta, chave, pct5h, pct7d }) => {
-    const nome = rotuloDaConta(conta);
+  const base = (resposta?.contas ?? []).map((conta) => {
     const ativa = emailAtivo !== null && conta.email === emailAtivo;
+    // O reset vem de cada conta no `/api/contas`; o do painel só cobre a ativa
+    // quando o back ainda não mandou o dela.
+    const janela5h = janelaDoReset(conta.reset_5h, agoraEmSegundos) ?? (ativa ? quotasDaAtiva?.five_hour : null);
+    const janela7d = janelaDoReset(conta.reset_7d, agoraEmSegundos) ?? (ativa ? quotasDaAtiva?.seven_day : null);
+    return {
+      conta,
+      ativa,
+      chave: conta.id,
+      pct5h: pctDaFracao(conta.cota_5h),
+      pct7d: pctDaFracao(conta.cota_7d),
+      volta5hEm: restanteEmSegundos(janela5h),
+      volta7dEm: restanteEmSegundos(janela7d),
+      tempo5h: tempoDa5h(janela5h),
+      tempo7d: tempoDa7d(janela7d),
+    };
+  });
+  const melhor = chaveRecomendada(base);
+  return base.map(({ conta, ativa, chave, pct5h, pct7d, tempo5h, tempo7d }) => {
+    const nome = rotuloDaConta(conta);
     const recomendada = chave === melhor;
-    const tempo5h = ativa ? tempoDa5h(quotasDaAtiva?.five_hour) : null;
-    const tempo7d = ativa ? tempoDa7d(quotasDaAtiva?.seven_day) : null;
     const tempos = [tempo5h, tempo7d].filter((tempo) => tempo !== null).map((tempo) => `, ${tempo.falado}`).join('');
     return {
       chave,

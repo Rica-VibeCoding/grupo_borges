@@ -211,3 +211,34 @@ def test_revalidacao_que_falha_guarda_o_valor_velho(monkeypatch: pytest.MonkeyPa
 
     assert contas._cota_cache["incasa"] == (1.0, (0.4, 0.4))
     assert contas._revalidando == set()
+
+
+def test_ler_cota_traz_uso_e_reset_das_duas_janelas():
+    headers = {
+        "anthropic-ratelimit-unified-5h-utilization": "0.15",
+        "anthropic-ratelimit-unified-7d-utilization": "0.19",
+        "anthropic-ratelimit-unified-5h-reset": "1790841000",
+        "anthropic-ratelimit-unified-7d-reset": "1791172800",
+        "anthropic-ratelimit-unified-reset": "1",
+    }
+    assert contas._ler_cota(headers) == (0.15, 0.19, 1790841000.0, 1791172800.0)
+
+
+def test_ler_cota_sem_reset_ou_com_lixo_vira_none():
+    headers = {
+        "anthropic-ratelimit-unified-5h-utilization": "0.5",
+        "anthropic-ratelimit-unified-5h-reset": "amanhã",
+    }
+    assert contas._ler_cota(headers) == (0.5, None, None, None)
+
+
+def test_listar_devolve_o_reset_de_cada_conta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _duas_contas(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        contas, "_sondar", lambda chave: (0.1, 0.2, 100.0 if chave == "chave-i" else 200.0, 300.0)
+    )
+    resposta = contas.listar_contas()
+    assert [(c.id, c.reset_5h, c.reset_7d) for c in resposta.contas] == [
+        ("incasa", 100.0, 300.0),
+        ("woodpro", 200.0, 300.0),
+    ]

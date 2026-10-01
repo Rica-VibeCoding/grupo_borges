@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { chaveRecomendada, nomeCurto, tempoDa5h, tempoDa7d } from './conta-folga.ts';
+import { chaveRecomendada, janelaDoReset, nomeCurto, tempoDa5h, tempoDa7d } from './conta-folga.ts';
 
 describe('tempo da janela como fração', () => {
   it('5h: horas que faltam arredondadas para cima', () => {
@@ -45,9 +45,27 @@ describe('chaveRecomendada — mais folga somando as duas janelas', () => {
     );
   });
 
+  it('janela que volta em até 15 min conta como vazia', () => {
+    assert.equal(
+      chaveRecomendada([
+        { chave: 'a', pct5h: 98, pct7d: 10, volta5hEm: 600 },
+        { chave: 'b', pct5h: 20, pct7d: 10, volta5hEm: 7_200 },
+      ]),
+      'a',
+    );
+  });
+
   it('sem duas candidatas, ou empate, não recomenda', () => {
     assert.equal(chaveRecomendada([{ chave: 'a', pct5h: 1, pct7d: 1 }, { chave: 'b', pct5h: null, pct7d: 1 }]), null);
     assert.equal(chaveRecomendada([{ chave: 'a', pct5h: 10, pct7d: 20 }, { chave: 'b', pct5h: 20, pct7d: 10 }]), null);
+  });
+});
+
+describe('janelaDoReset', () => {
+  it('reset absoluto vira janela com o restante', () => {
+    assert.deepEqual(janelaDoReset(1_000, 400), { resets_at: 1_000, remaining_seconds: 600 });
+    assert.equal(janelaDoReset(null, 400), null);
+    assert.equal(tempoDa7d(janelaDoReset(1_000 + 3 * 86_400, 1_000))?.fracao, '3/7 d');
   });
 });
 

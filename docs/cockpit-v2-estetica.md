@@ -234,8 +234,8 @@ véu mais forte com ✓. A caixa não mostra anel de foco; o item mostra. Menu n
 `components/ui/` e herda tudo isso; cor ou borda inline no conteúdo do menu não entra.
 Menu de conta: uma conta por bloco (`--ck-flutuante-bloco`) — nome curto, email miúdo, marcas
 "✓ ativa" e "melhor agora" (mais folga somando 5h e 7d, `conta-folga.ts`) — e as janelas numa grade de
-colunas fixas (rótulo · barra · % · quanto falta, "2h/5h · volta 04:40", "3/7 d"). O tempo só existe
-na ativa, lido da cota do painel; as outras mostram o traço.
+colunas fixas (rótulo · barra · % · quanto falta, "2h/5h · volta 04:40", "3/7 d"). O tempo vem
+de cada conta, do reset que o `/api/contas` lê na sonda; o traço só quando falta leitura.
 
 **Composer.** O vidro tem a forma da caixa; o feed fica nítido até encostar nela. Em repouso, uma
 fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles na base, até `--ck-h-campo-max`. Barra de rolagem do app

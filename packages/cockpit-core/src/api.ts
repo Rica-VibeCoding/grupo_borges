@@ -716,6 +716,9 @@ export type ContaDaMaquina = {
    *  daquela conta (a inativa pode nunca ter sido consultada). */
   cota_5h: number | null;
   cota_7d: number | null;
+  /** Quando cada janela volta, em epoch segundos. Ausente = back anterior. */
+  reset_5h?: number | null;
+  reset_7d?: number | null;
 };
 
 export type ContasResponse = {

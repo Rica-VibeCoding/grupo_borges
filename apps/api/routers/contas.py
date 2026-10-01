@@ -78,6 +78,9 @@ class ContaDisponivel(BaseModel):
     rotulo: str
     cota_5h: float | None = None
     cota_7d: float | None = None
+    # Quando cada janela volta, em epoch segundos — do mesmo cabeçalho da cota.
+    reset_5h: float | None = None
+    reset_7d: float | None = None
 
 
 class ContasResposta(BaseModel):
@@ -121,8 +124,24 @@ def _chaves_disponiveis(secrets_dir: Path | None = None) -> dict[str, Path]:
     return {conta_id: par[1] for conta_id, par in encontradas.items()}
 
 
-def _sondar(chave: str) -> tuple[float | None, float | None]:
-    """Inferência mínima só pelos headers: cota das duas janelas.
+# (uso 5h, uso 7d, reset 5h, reset 7d) — uso em fração 0..1, reset em epoch s.
+Cota = tuple[float | None, float | None, float | None, float | None]
+
+
+def _ler_cota(headers: httpx.Headers | dict[str, str]) -> Cota:
+    """A cota das duas janelas e quando cada uma volta, dos headers
+    `anthropic-ratelimit-unified-{5h,7d}-{utilization,reset}`."""
+    prefixo = "anthropic-ratelimit-unified-"
+    return (
+        _fracao(headers.get(prefixo + "5h-utilization")),
+        _fracao(headers.get(prefixo + "7d-utilization")),
+        _fracao(headers.get(prefixo + "5h-reset")),
+        _fracao(headers.get(prefixo + "7d-reset")),
+    )
+
+
+def _sondar(chave: str) -> Cota:
+    """Inferência mínima só pelos headers: cota das duas janelas e o reset.
 
     O corpo da resposta é descartado — o que interessa vem no cabeçalho. Uma
     conta que já estourou o limite responde 429 e ainda assim carrega a cota,
@@ -144,10 +163,7 @@ def _sondar(chave: str) -> tuple[float | None, float | None]:
         },
         timeout=20.0,
     )
-    return (
-        _fracao(resposta.headers.get("anthropic-ratelimit-unified-5h-utilization")),
-        _fracao(resposta.headers.get("anthropic-ratelimit-unified-7d-utilization")),
-    )
+    return _ler_cota(resposta.headers)
 
 
 def _fracao(bruto: str | None) -> float | None:
@@ -177,7 +193,7 @@ def _ler_conta_ativa() -> ContaAtiva | None:
     )
 
 
-_cota_cache: dict[str, tuple[float, tuple[float | None, float | None]]] = {}
+_cota_cache: dict[str, tuple[float, Cota]] = {}
 # Conta com revalidação já em voo: toques seguidos no menu não empilham sonda.
 _revalidando: set[str] = set()
 _revalidando_trava = threading.Lock()
@@ -198,7 +214,7 @@ def _revalidar(conta_id: str, chave: str) -> None:
 
 def _cota_com_cache(
     conta_id: str, chave: str
-) -> tuple[tuple[float | None, float | None], bool]:
+) -> tuple[Cota, bool]:
     """A cota da conta e se ela saiu vencida (revalidando por baixo)."""
     agora = time.monotonic()
     guardado = _cota_cache.get(conta_id)
@@ -217,7 +233,7 @@ def _cota_com_cache(
         cota = _sondar(chave)
     except httpx.HTTPError:
         # Sem rede a lista ainda serve: as contas aparecem, só sem número.
-        return (None, None), False
+        return (None, None, None, None), False
     _cota_cache[conta_id] = (time.monotonic(), cota)
     return cota, False
 
@@ -246,7 +262,8 @@ def listar_contas() -> ContasResposta:
     # `map` devolve na ordem de entrada: a lista continua em ordem de id.
     cotas = list(_SONDAS.map(lambda par: _cota_com_cache(*par), legiveis))
     contas = []
-    for (conta_id, _chave), ((cota_5h, cota_7d), _velha) in zip(legiveis, cotas, strict=True):
+    for (conta_id, _chave), (cota, _velha) in zip(legiveis, cotas, strict=True):
+        cota_5h, cota_7d, reset_5h, reset_7d = (*cota, None, None)[:4]
         contas.append(
             ContaDisponivel(
                 id=conta_id,
@@ -254,6 +271,8 @@ def listar_contas() -> ContasResposta:
                 rotulo=_EMAIL_POR_ID.get(conta_id, conta_id),
                 cota_5h=cota_5h,
                 cota_7d=cota_7d,
+                reset_5h=reset_5h,
+                reset_7d=reset_7d,
             )
         )
     return ContasResposta(
