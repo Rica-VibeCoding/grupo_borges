@@ -13,11 +13,6 @@ function estiloDaSuperficie(style?: React.CSSProperties): React.CSSProperties {
     maxHeight: 'var(--radix-dropdown-menu-content-available-height)',
     overflowX: 'hidden',
     overflowY: 'auto',
-    padding: 'var(--ck-space-1)',
-    border: '1px solid var(--ck-edge-hairline)',
-    color: 'var(--ck-text-primary)',
-    WebkitBackdropFilter: 'blur(var(--ck-veu-desfoque))',
-    backdropFilter: 'blur(var(--ck-veu-desfoque))',
     ...style,
   };
 }
@@ -45,7 +40,7 @@ function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
-        className={cn('ck-menu-surface ck-lit outline-none', className)}
+        className={cn('ck-menu-surface outline-none', className)}
         style={estiloDaSuperficie(style)}
         {...props}
       />
@@ -93,7 +88,7 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       sideOffset={sideOffset}
-      className={cn('ck-menu-surface ck-lit outline-none', className)}
+      className={cn('ck-menu-surface outline-none', className)}
       style={estiloDaSuperficie(style)}
       {...props}
     />

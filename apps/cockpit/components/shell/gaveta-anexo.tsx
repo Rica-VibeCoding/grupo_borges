@@ -203,12 +203,8 @@ export function PainelAnexo({
         aria-label="Anexar ao agente"
         data-aberto={String(aberta)}
         inert={!aberta}
-        className="ck-surge ck-gaveta-acima flex flex-col"
-        style={{
-          background: 'var(--ck-surface-nav)',
-          padding: 'var(--ck-space-1)',
-          gap: '2px',
-        }}
+        className="ck-surge ck-gaveta-acima ck-menu-surface flex flex-col"
+        style={{ gap: '2px' }}
       >
         {ITENS_DA_GAVETA.map((item) => {
           const Icone = ICONE_DO_ITEM[item.especie];

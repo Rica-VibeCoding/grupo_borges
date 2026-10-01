@@ -509,15 +509,46 @@ body {
     inset 0 1px 0 0 var(--ck-edge-light) !important;
 }
 
-.ck-menu-surface {
-  background: var(--ck-surface-composer-material);
-  border-radius: var(--ck-radius-caixa);
+/* §F — SUPERFÍCIE FLUTUANTE: tudo que abre por cima de outro componente (menu,
+ * popover, bolha de comandos, gaveta do "+"). O material é o da pílula do
+ * agente — vidro escuro, fio fino —, mais denso porque carrega texto, e com a
+ * única sombra da casa: sobre a gaveta quase preta, luz não separa camada.
+ * Dentro dela, item é quase pílula e o véu é branco (a base é preta, então o
+ * teto de 0.05 da §A, medido contra `raised`, não se aplica). */
+:root {
+  --ck-flutuante-fundo: rgb(0 0 0 / 0.72);
+  --ck-flutuante-desfoque: 20px;
+  --ck-flutuante-fio: rgb(255 255 255 / 0.09);
+  --ck-flutuante-sombra: 0 16px 40px -12px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
+  --ck-flutuante-raio: 22px;
+  --ck-flutuante-raio-item: 18px; /* 22 − o respiro de 4px: cantos concêntricos */
 }
-
-.ck-menu-surface:focus-visible,
+.ck-menu-surface {
+  --ck-radius-chip: var(--ck-flutuante-raio-item);
+  --ck-edge-hairline: var(--ck-flutuante-fio);
+  --ck-overlay-hover: rgb(255 255 255 / 0.06);
+  --ck-overlay-selected: rgb(255 255 255 / 0.09);
+  --ck-overlay-pressed: rgb(255 255 255 / 0.11);
+  --ck-surface-raised: rgb(255 255 255 / 0.1); /* trilho de barra dentro do menu */
+  padding: var(--ck-space-1);
+  border: 1px solid var(--ck-flutuante-fio);
+  border-radius: var(--ck-flutuante-raio);
+  background: var(--ck-flutuante-fundo);
+  box-shadow: var(--ck-flutuante-sombra);
+  -webkit-backdrop-filter: blur(var(--ck-flutuante-desfoque));
+  backdrop-filter: blur(var(--ck-flutuante-desfoque));
+  color: var(--ck-text-primary);
+}
+/* O item sob o ponteiro ou a seta: o Radix marca `data-highlighted`. */
+.ck-menu-surface [data-highlighted] {
+  background-image: linear-gradient(var(--ck-overlay-hover), var(--ck-overlay-hover));
+}
+/* A caixa recebe foco ao abrir; anel nela é a "borda grossa clara" que não
+ * diz nada. Quem mostra foco de teclado é o item. */
+.ck-menu-surface:focus-visible { outline: none; }
 .ck-menu-surface :focus-visible {
-  box-shadow: inset 0 0 0 1px var(--ck-edge-functional);
   outline: none;
+  box-shadow: inset 0 0 0 1px var(--ck-edge-functional);
 }
 
 .ck-menu-surge {
@@ -1281,8 +1312,6 @@ body {
   width: max-content;
   max-width: calc(100% - 2 * var(--ck-space-3));
   transform-origin: bottom left;
-  border-radius: var(--ck-radius-caixa);
-  box-shadow: inset 0 1px 0 0 var(--ck-edge-light);
 }
 
 /* Véu de interação. É `background-image` e não `::after` de propósito: um

@@ -61,6 +61,7 @@ sempre sublinhado via `.ck-link`. `::selection` força fundo **e** cor (`--ck-se
 - Rodapé e borda progressiva: `--ck-rodape-material` (canvas 70%) — tint na cor da superfície
   coberta, então some sozinho quando não há nada atrás.
 - Véu das gavetas: `--ck-veu-gaveta` (preto 38%) + `--ck-veu-gaveta-desfoque` 6px; tocar fecha.
+- Superfície flutuante: `--ck-flutuante-*` (§8, Superfícies flutuantes).
 
 ## 3. Contraste — piso
 
@@ -217,6 +218,15 @@ finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílul
 
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.
 
+**Superfícies flutuantes.** Tudo que abre por cima de outro componente — menu (motor, conta,
+modelo e esforço), bolha de comandos, gaveta do "+", aviso do véu de operação — veste `.ck-menu-surface`
+(§F do `globals.css`), o material da pílula do agente: preto translúcido `--ck-flutuante-fundo` com
+desfoque, fio `--ck-flutuante-fio`, raio `--ck-flutuante-raio` 22px e a sombra `--ck-flutuante-sombra`
+(a exceção da §9.3: sobre a gaveta quase preta, luminância não separa camada). Dentro dela o item tem
+raio 18px (concêntrico ao respiro de 4px), hover e `data-highlighted` são véu branco e o selecionado é
+véu mais forte com ✓. A caixa não mostra anel de foco; o item mostra. Menu novo usa as primitivas de
+`components/ui/` e herda tudo isso; cor ou borda inline no conteúdo do menu não entra.
+
 **Composer.** O vidro tem a forma da caixa; o feed fica nítido até encostar nela. Em repouso, uma
 fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles na base, até `--ck-h-campo-max`. Barra de rolagem do app
 (`scrollbar-*` **e** `::-webkit-scrollbar`, sem setas).
@@ -225,7 +235,7 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 
 1. Hex, `rgb()`, `oklch()` ou cor nomeada fora do `globals.css`.
 2. `backdrop-filter` fora dos materiais declarados na §2 — nunca em lista ou feed.
-3. `box-shadow` como sombra de profundidade. Brilho emissivo de cor (o pulso) é luz, não sombra.
+3. `box-shadow` como sombra de profundidade, salvo `--ck-flutuante-sombra` na superfície flutuante (§8). Brilho emissivo de cor (o pulso) é luz, não sombra.
 4. Animar `width`/`height`/`top`/`left`.
 5. `100vh` — usar `100dvh` + `env(safe-area-inset-*)`.
 6. `font-size` < 16px em campo de entrada.

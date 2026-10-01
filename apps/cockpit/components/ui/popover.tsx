@@ -30,15 +30,10 @@ function PopoverContent({
         data-slot="popover-content"
         align={align}
         sideOffset={sideOffset}
-        className={cn('ck-menu-surface ck-lit outline-none', className)}
+        className={cn('ck-menu-surface outline-none', className)}
         style={{
           zIndex: 'var(--ck-z-overlay)',
           maxWidth: 'calc(100vw - 2 * var(--ck-space-2))',
-          padding: 'var(--ck-space-1)',
-          border: '1px solid var(--ck-edge-hairline)',
-          color: 'var(--ck-text-primary)',
-          WebkitBackdropFilter: 'blur(var(--ck-veu-desfoque))',
-          backdropFilter: 'blur(var(--ck-veu-desfoque))',
           ...style,
         }}
         {...props}

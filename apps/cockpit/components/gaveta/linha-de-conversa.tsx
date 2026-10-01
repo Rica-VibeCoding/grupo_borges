@@ -89,7 +89,7 @@ export function LinhaDeConversa({
         aria-controls={painelId}
         onClick={aoAlternar}
         className="ck-veil flex flex-col text-left"
-        style={{ gap: 'var(--ck-space-1)', padding: 'var(--ck-space-3)', borderRadius: 'var(--ck-gv-raio-bloco)' }}
+        style={{ gap: 'var(--ck-space-1)', padding: 'var(--ck-space-3)', borderRadius: aberta ? 'var(--ck-gv-raio-bloco) var(--ck-gv-raio-bloco) 0 0' : 'var(--ck-gv-raio-bloco)' }}
       >
         <span className="flex w-full items-baseline" style={{ gap: 'var(--ck-space-2)' }}>
           <span

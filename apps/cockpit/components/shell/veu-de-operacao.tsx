@@ -41,18 +41,19 @@ export function VeuDeOperacao({ aviso }: { aviso: string }) {
         padding: 'var(--ck-space-4)',
       }}
     >
-      <p
-        className="ck-pulso"
-        data-estado="trabalhando"
-        style={{
-          maxWidth: 'var(--ck-w-drawer)',
-          textAlign: 'center',
-          fontSize: 'var(--ck-text-sm)',
-          color: 'var(--ck-text-primary)',
-        }}
-      >
-        {aviso}
-      </p>
+      <div className="ck-menu-surface" style={{ maxWidth: 'var(--ck-w-drawer)', borderRadius: 'var(--ck-radius-pill)', padding: 'var(--ck-space-2) var(--ck-space-4)' }}>
+        <p
+          className="ck-pulso"
+          data-estado="trabalhando"
+          style={{
+            textAlign: 'center',
+            fontSize: 'var(--ck-text-sm)',
+            color: 'var(--ck-text-primary)',
+          }}
+        >
+          {aviso}
+        </p>
+      </div>
     </div>
   );
 }
