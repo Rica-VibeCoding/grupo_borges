@@ -5,7 +5,7 @@
 > contexto. A pesquisa de referência está em `pesquisa.md` (Canário, 01/10); consultar por seção,
 > nunca inteira.
 >
-> **RODADA 2 (01/10 tarde):** F14–F16 no fim do arquivo, nada despachado ainda. Começa pela F14 + protótipo da F15.
+> **RODADA 2 (01/10 tarde): CONCLUÍDA** — F14–F17 no ar em 01/10 (`11e8ea9`), conferência APROVADA no canarinho. Cadeiras no PC Windows (`tmux -L conversas`, clone `projetos\grupo_borges-cadeiras`) porque o Omarchy estava fora.
 >
 > **ESTADO (01/10/2026 — atualizar em 2 linhas ao fechar cada fase):** F0 ✅. Base no Omarchy:
 > `pytest` 765 ok + 3 falhas de ambiente (`test_tmux_driver_ciclo_de_vida`, pede o
