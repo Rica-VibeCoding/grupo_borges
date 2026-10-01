@@ -4,12 +4,15 @@
  * A máquina do Desligar (armar → confirmar → enviar → recibo), tirada do
  * `bloco-de-acoes.tsx` sem mudar uma regra — lá estão os porquês. Aqui só
  * mudou o endereço, porque a gaveta nova desenha o Desligar como interruptor.
+ *
+ * Sem o armar de dois toques (pedido do Rica, 01/10, testando o preview): o
+ * interruptor desliga no primeiro toque. O `confirm: true` que o back exige
+ * já vai no corpo do `postAgentDesligar`.
  */
 import { useEffect, useRef, useState } from 'react';
 import { postAgentDesligar } from '@grupo_borges/cockpit-core/api';
 
 import {
-  CONFIRMA_ACAO_MS,
   RECIBO_MS,
   diagnosticaCicloDeVida,
   leiaDesligar,
@@ -41,16 +44,6 @@ export function usaAcaoBruta(
 
   async function acionar(acao: AcaoBruta) {
     if (estado?.fase === 'enviando') return;
-
-    if (estado?.acao !== acao || estado.fase !== 'confirmando') {
-      setFalha(null);
-      setEstado({ acao, fase: 'confirmando' });
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        setEstado((atual) => (atual?.fase === 'confirmando' ? null : atual));
-      }, CONFIRMA_ACAO_MS);
-      return;
-    }
 
     if (timer.current) clearTimeout(timer.current);
     setFalha(null);

@@ -8,8 +8,8 @@
  * grafite com blocos pretos dentro.
  *
  * - **Sessão** — o interruptor É o ciclo de vida: ligado = "Ativo" (azul),
- *   tocar arma o Desligar ("Desligar?" em âmbar), tocar de novo desliga;
- *   desligado, tocar liga. Dentro: o pulso, a pílula Destravar, a pesquisa
+ *   um toque desliga direto (sem armar, pedido do Rica 01/10); desligado,
+ *   tocar liga. Dentro: o pulso, a pílula Destravar, a pesquisa
  *   (só onde existe) e os comandos.
  * - **Motor e conta** — os blocos de sempre, cada um num bloco preto.
  * - **MCPs** — a área tracejada com "+", porta para `?painel=mcps`.
@@ -44,11 +44,10 @@ function InterruptorDaSessao({ v }: { v: Vida }) {
   }
   if (v.dePe) {
     const rotulo =
-      v.desligar === 'confirmando' ? 'Desligar?' : v.desligar === 'enviando' ? 'Desligando…' : v.desligar === 'concluido' ? 'Desligado' : 'Ativo';
+      v.desligar === 'enviando' ? 'Desligando…' : v.desligar === 'concluido' ? 'Desligado' : 'Ativo';
     return (
       <Interruptor
         ligado={v.desligar !== 'concluido'}
-        armado={v.desligar === 'confirmando'}
         rotulo={rotulo}
         descricao={descreveAcaoBruta(v.desligar)}
         ocupado={v.desligar === 'enviando'}
