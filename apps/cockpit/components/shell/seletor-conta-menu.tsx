@@ -15,6 +15,7 @@ import type { CSSProperties } from 'react';
 
 import { DropdownMenuItem, DropdownMenuSeparator } from '../ui/dropdown-menu';
 import type { ContaEmLista } from './conta-tropa';
+import { ItemDaConta } from './item-da-conta';
 
 export type TelaDaConta = 'inicio' | 'confirmacao' | 'aviso' | 'trocada';
 
@@ -56,108 +57,10 @@ function estiloItem(selecionado = false): CSSProperties {
   };
 }
 
-/** A barra miúda da janela dentro do item — o número é o dado (é com ele que
- *  o Rica escolhe), a barra é o resumo. Track um degrau ACIMA do vidro do
- *  menu, senão some nele. */
-function JanelaMini({
-  rotulo,
-  nomeDaJanela,
-  pct,
-  nomeDaConta,
-}: {
-  rotulo: string;
-  nomeDaJanela: string;
-  pct: number | null;
-  nomeDaConta: string;
-}) {
-  if (pct === null) {
-    return (
-      <span style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
-        {rotulo} sem leitura
-      </span>
-    );
-  }
-  return (
-    <>
-      <span style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
-        {rotulo}
-      </span>
-      <div
-        role="meter"
-        aria-label={`${nomeDaJanela} da conta ${nomeDaConta}`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        aria-valuetext={`${pct}% usada`}
-        className="flex-1 overflow-hidden"
-        style={{
-          height: '3px',
-          borderRadius: 'var(--ck-radius-pill)',
-          background: 'var(--ck-surface-raised)',
-        }}
-      >
-        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--ck-text-secondary)' }} />
-      </div>
-      <span
-        style={{
-          fontSize: 'var(--ck-text-xs)',
-          color: 'var(--ck-text-primary)',
-          fontVariantNumeric: 'tabular-nums',
-          minWidth: '4ch',
-        }}
-      >
-        {pct}%
-      </span>
-    </>
-  );
-}
-
-function ItemDaConta({
-  conta,
-  desabilitado,
-  aoSelecionar,
-}: {
-  conta: ContaEmLista;
-  desabilitado: boolean;
-  aoSelecionar: () => void;
-}) {
-  return (
-    <DropdownMenuItem
-      // A ativa fica desabilitada: escolher a conta que já está valendo não é
-      // ação. `aria-disabled` mantém o item na árvore — a cota dela continua
-      // legível pra quem navega ouvindo.
-      disabled={desabilitado || conta.ativa}
-      aria-label={conta.valorFalado}
-      onSelect={(evento) => {
-        evento.preventDefault();
-        aoSelecionar();
-      }}
-      style={estiloItem()}
-    >
-      <span className="flex w-full min-w-0 flex-col" style={{ gap: 'var(--ck-space-1)' }}>
-        <span className="flex items-center justify-between" style={{ gap: 'var(--ck-space-3)' }}>
-          <span className="truncate">{conta.nome}</span>
-          {conta.ativa ? (
-            <span
-              className="shrink-0"
-              style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}
-            >
-              ✓ ativa
-            </span>
-          ) : null}
-        </span>
-        <span className="flex items-center" style={{ gap: 'var(--ck-space-2)' }}>
-          <JanelaMini rotulo="5h" nomeDaJanela="Cota de 5 horas" pct={conta.pct5h} nomeDaConta={conta.nome} />
-          <JanelaMini rotulo="7d" nomeDaJanela="Cota de 7 dias" pct={conta.pct7d} nomeDaConta={conta.nome} />
-        </span>
-      </span>
-    </DropdownMenuItem>
-  );
-}
-
 export function ConteudoDaConta({
   tela,
   contas,
+  modelo = null,
   carregando,
   erroLeitura,
   pendente,
@@ -172,6 +75,7 @@ export function ConteudoDaConta({
 }: {
   tela: TelaDaConta;
   contas: ContaEmLista[];
+  modelo?: string | null;
   carregando: boolean;
   erroLeitura: string | null;
   pendente: ContaEmLista | null;
@@ -299,14 +203,17 @@ export function ConteudoDaConta({
           Nenhuma conta configurada.
         </p>
       ) : (
-        contas.map((conta) => (
-          <ItemDaConta
-            key={conta.chave}
-            conta={conta}
-            desabilitado={trocando}
-            aoSelecionar={() => aoSelecionar(conta)}
-          />
-        ))
+        <div role="none" className="flex flex-col" style={{ gap: 'var(--ck-space-1)' }}>
+          {contas.map((conta) => (
+            <ItemDaConta
+              key={conta.chave}
+              conta={conta}
+              modelo={modelo}
+              desabilitado={trocando}
+              aoSelecionar={() => aoSelecionar(conta)}
+            />
+          ))}
+        </div>
       )}
     </>
   );

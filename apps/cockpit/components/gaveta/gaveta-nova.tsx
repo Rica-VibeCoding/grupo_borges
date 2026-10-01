@@ -34,6 +34,7 @@ import { BlocoDeComandos } from '../shell/bloco-de-comandos';
 import { BlocoDeCota } from '../shell/bloco-de-cota';
 import { BlocoDeMotor } from '../shell/bloco-de-motor';
 import { FaixaDoPulso } from '../shell/faixa-do-pulso';
+import { rotulaModelo } from '../shell/motor';
 import { IconeBusca, IconeDescartar, IconeHistorico } from '../shell/icones';
 import { alternaPesquisa, podePesquisar } from '../shell/pesquisa-canario';
 import { usaPesquisaAtiva } from '../shell/usa-pesquisa';
@@ -241,7 +242,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
             </Bloco>
           ) : null}
           <Bloco cru style={{ paddingTop: 'var(--ck-space-2)' }}>
-            <BlocoDeCota quotas={v.painel?.quotas} agentSlug={agente.slug} aoAtualizar={v.buscar} />
+            <BlocoDeCota quotas={v.painel?.quotas} agentSlug={agente.slug} aoAtualizar={v.buscar} modelo={v.painel?.model?.value ? rotulaModelo(v.painel.model.value, v.painel.model.labels) : null} />
           </Bloco>
         </Cartao>
       ) : null}

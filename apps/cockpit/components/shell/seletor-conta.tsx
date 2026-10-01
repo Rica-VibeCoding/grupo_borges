@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchContas, postContaAtiva } from '@grupo_borges/cockpit-core/api';
 import type { ContasResponse } from '@grupo_borges/cockpit-core/api';
+import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import {
@@ -36,11 +37,16 @@ import { ConteudoDaConta, type TelaDaConta } from './seletor-conta-menu';
 export function SeletorDeConta({
   contaDoPainel,
   aoTrocou,
+  quotas = null,
+  modelo = null,
 }: {
   /** O nome que a gaveta já exibia — o valor honesto até o back confirmar outro. */
   contaDoPainel: string;
   /** Rebusca o painel depois da troca, pra pílula convergir pelo canal normal. */
   aoTrocou?: () => void;
+  /** A cota que o agente lê: é dela que sai o reset da conta ativa. */
+  quotas?: PainelQuotas | null;
+  modelo?: string | null;
 }) {
   const [aberto, setAberto] = useState(false);
   const [tela, setTela] = useState<TelaDaConta>('inicio');
@@ -174,7 +180,8 @@ export function SeletorDeConta({
       >
         <ConteudoDaConta
           tela={tela}
-          contas={listaDeContas(resposta)}
+          contas={listaDeContas(resposta, quotas)}
+          modelo={modelo}
           carregando={carregando}
           erroLeitura={erroLeitura}
           pendente={pendente}

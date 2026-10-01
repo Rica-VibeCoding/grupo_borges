@@ -511,13 +511,14 @@ body {
 
 /* §F — SUPERFÍCIE FLUTUANTE: tudo que abre por cima de outro componente (menu,
  * popover, bolha de comandos, gaveta do "+"). O material é o da pílula do
- * agente — vidro escuro, fio fino —, mais denso porque carrega texto, e com a
- * única sombra da casa: sobre a gaveta quase preta, luz não separa camada.
+ * agente — o escuro dela, fio fino —, só que OPACO: menu carrega texto e o
+ * que passa atrás não pode ser lido através dele. Leva a única sombra da casa:
+ * sobre a gaveta quase preta, luz não separa camada.
  * Dentro dela, item é quase pílula e o véu é branco (a base é preta, então o
  * teto de 0.05 da §A, medido contra `raised`, não se aplica). */
 :root {
-  --ck-flutuante-fundo: rgb(0 0 0 / 0.72);
-  --ck-flutuante-desfoque: 20px;
+  --ck-flutuante-fundo: oklch(0.18 0 0);          /* #121212 */
+  --ck-flutuante-bloco: oklch(0.225 0 0);         /* #1b1b1b um bloco dentro do menu */
   --ck-flutuante-fio: rgb(255 255 255 / 0.09);
   --ck-flutuante-sombra: 0 16px 40px -12px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
   --ck-flutuante-raio: 22px;
@@ -535,8 +536,6 @@ body {
   border-radius: var(--ck-flutuante-raio);
   background: var(--ck-flutuante-fundo);
   box-shadow: var(--ck-flutuante-sombra);
-  -webkit-backdrop-filter: blur(var(--ck-flutuante-desfoque));
-  backdrop-filter: blur(var(--ck-flutuante-desfoque));
   color: var(--ck-text-primary);
 }
 /* O item sob o ponteiro ou a seta: o Radix marca `data-highlighted`. */
@@ -546,6 +545,33 @@ body {
 /* A caixa recebe foco ao abrir; anel nela é a "borda grossa clara" que não
  * diz nada. Quem mostra foco de teclado é o item. */
 .ck-menu-surface:focus-visible { outline: none; }
+
+/* O menu de conta: uma conta por bloco, janelas em grade de colunas fixas para
+ * os números de uma conta caírem embaixo dos da outra. */
+.ck-conta-bloco {
+  padding: var(--ck-space-3);
+  border-radius: var(--ck-radius-chip);
+  background-color: var(--ck-flutuante-bloco);
+  text-align: left;
+}
+.ck-conta-bloco[data-ativa='true'] { box-shadow: inset 0 0 0 1px var(--ck-flutuante-fio); }
+.ck-conta-grade {
+  display: grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr) 4.5ch 17ch;
+  align-items: center;
+  font-size: var(--ck-text-xs); /* o `ch` das colunas mede na letra miúda */
+  gap: var(--ck-space-1) var(--ck-space-2);
+}
+.ck-conta-trilho { height: 4px; border-radius: var(--ck-radius-pill); background: var(--ck-surface-raised); }
+.ck-conta-preenche { height: 100%; background: var(--ck-text-secondary); }
+.ck-conta-marca {
+  padding: 2px var(--ck-space-2);
+  border-radius: var(--ck-radius-pill);
+  background: var(--ck-overlay-hover);
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-xs);
+}
+.ck-conta-marca[data-forte='true'] { background: var(--ck-overlay-pressed); color: var(--ck-text-primary); }
 .ck-menu-surface :focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--ck-edge-functional);

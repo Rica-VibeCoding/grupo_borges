@@ -168,10 +168,13 @@ export function BlocoDeCota({
   quotas,
   agentSlug,
   aoAtualizar,
+  modelo = null,
 }: {
   quotas: PainelQuotas | null | undefined;
   agentSlug: string;
   aoAtualizar?: () => void;
+  /** O modelo deste agente, para o menu dizer com o que a conta ativa responde. */
+  modelo?: string | null;
 }) {
   const leitura = leiaCota(quotas);
   const conta = leiaConta(quotas);
@@ -225,7 +228,7 @@ export function BlocoDeCota({
           // máquina inteira (nunca "deste agente"). O desenho da pílula —
           // cinza neutro um degrau acima da gaveta, `ck-lit` no topo — mora no
           // gatilho do seletor e não mudou.
-          <SeletorDeConta contaDoPainel={conta} aoTrocou={aoAtualizar} />
+          <SeletorDeConta contaDoPainel={conta} aoTrocou={aoAtualizar} quotas={quotas} modelo={modelo} />
         ) : null}
       </div>
 

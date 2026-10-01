@@ -220,12 +220,16 @@ finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílul
 
 **Superfícies flutuantes.** Tudo que abre por cima de outro componente — menu (motor, conta,
 modelo e esforço), bolha de comandos, gaveta do "+", aviso do véu de operação — veste `.ck-menu-surface`
-(§F do `globals.css`), o material da pílula do agente: preto translúcido `--ck-flutuante-fundo` com
-desfoque, fio `--ck-flutuante-fio`, raio `--ck-flutuante-raio` 22px e a sombra `--ck-flutuante-sombra`
+(§F do `globals.css`), o material da pílula do agente: o escuro dela, mas **opaco** (`--ck-flutuante-fundo`;
+texto de trás não pode ser lido através do menu), fio `--ck-flutuante-fio`, raio `--ck-flutuante-raio` 22px e a sombra `--ck-flutuante-sombra`
 (a exceção da §9.3: sobre a gaveta quase preta, luminância não separa camada). Dentro dela o item tem
 raio 18px (concêntrico ao respiro de 4px), hover e `data-highlighted` são véu branco e o selecionado é
 véu mais forte com ✓. A caixa não mostra anel de foco; o item mostra. Menu novo usa as primitivas de
 `components/ui/` e herda tudo isso; cor ou borda inline no conteúdo do menu não entra.
+Menu de conta: uma conta por bloco (`--ck-flutuante-bloco`) — nome curto, email miúdo, marcas
+"✓ ativa" e "melhor agora" (mais folga somando 5h e 7d, `conta-folga.ts`) — e as janelas numa grade de
+colunas fixas (rótulo · barra · % · quanto falta, "2h/5h · volta 04:40", "3/7 d"). O tempo só existe
+na ativa, lido da cota do painel; as outras mostram o traço.
 
 **Composer.** O vidro tem a forma da caixa; o feed fica nítido até encostar nela. Em repouso, uma
 fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles na base, até `--ck-h-campo-max`. Barra de rolagem do app
