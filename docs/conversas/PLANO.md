@@ -11,7 +11,8 @@
 > endereço `:3446`); `type-check` verde. No Omarchy é `pnpm` direto (Node 26, sem `corepack`).
 > F1 ✅ (`relatos/f1.md`): diálogo de retomada só abre com flag de servidor, desligada hoje na VPS
 > e no Omarchy; `--continue` e `--resume` chegam iguais ao gancho (`source: resume`). Em curso:
-> **F2** (`api`) e **F8** (`tela`).
+> **F2** (`api`). F8 ✅ (`relatos/f8.md`, capturas em `/tmp/f8/` do Omarchy): 3 direções
+> enviadas ao Rica, aguardando a escolha.
 
 ## O pedido
 
@@ -147,7 +148,8 @@ Base: `/api/agents/{slug}/conversas`.
 - `GET ?filtro=todas|estrela|pendencia&q=<texto>&curtas=0|1` devolve
   `{suportado, conversas[], escondidas_curtas}`.
   - Cada item da lista: `id`, `titulo`, `titulo_origem`, `nota`, `atualizada_em`, `turnos`,
-    `bytes`, `estrela`, `atual`, `bloqueada`, `pendencia` (número de arquivos sem commit, ou
+    `bytes`, `estrela`, `atual`, `bloqueada`, `bloqueada_por` (slug da linha que tem a conversa
+    aberta, ou `null`; pedido da F8, entra na F3), `pendencia` (número de arquivos sem commit, ou
     `null` até a F7).
   - `titulo_origem` vale `estacionada`, `custom`, `ai`, `prompt` ou `primeira`.
   - `suportado` é `false` para motor que não é CC; nesse caso a lista vem vazia.
@@ -159,6 +161,8 @@ Base: `/api/agents/{slug}/conversas`.
   atual dele.
 - `POST /nova {forcar}` e `POST /{id}/retomar {forcar}`:
   - Resposta síncrona com teto de 90 s. Se o cliente cair, a operação continua no servidor.
+  - `GET /operacao` devolve a fase em curso: `{fase: estacionando|religando|pronta|erro|null,
+    desde}`, para a tela mostrar os passos da espera (pedido da F8; entra na F5 e na F6).
   - Agente no meio de um turno: 409 `ocupado`. Com `forcar`, interrompe e segue sem a nota.
 - `GET /{id}/briefing`: só devolve texto para uma conversa que **acabou de ser retomada pelo
   cockpit**. A marca vale 10 minutos e é consumida uma vez. Fora disso, vazio.
@@ -320,7 +324,8 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
 - **Entrega**:
   - `?painel=conversas` como terceira visão da `VistaDaGaveta`, com a porta na `GavetaNova`.
   - O cliente da lista no `cockpit-core/api.ts`.
-  - Filtros, busca, tempo relativo e os selos, na direção aprovada.
+  - Filtros, busca, tempo relativo e os selos, na direção aprovada. O filtro ⚠️ fica escondido
+    enquanto `pendencia` vier `null`.
   - Pasta nova incluída no script `test`.
 - **Pronto**: `test` e `type-check` verdes, e a cadeira `teste` aprova contra a API publicada.
 - **Fora**: botões de ação.
