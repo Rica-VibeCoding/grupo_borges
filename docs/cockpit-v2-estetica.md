@@ -219,8 +219,11 @@ finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílul
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.
 
 **Histórico de conversas** (`?painel=conversas`, `gaveta/painel-de-conversas.tsx`) — terceira
-visão da gaveta, porta no lugar do antigo Destravar. "Em uso agora" + Nova conversa no topo, lista
-que abre no lugar (confirmação, espera e erro dentro da linha). A troca aparece no chat como marco
+visão da gaveta, porta no lugar do antigo Destravar. Rodada 2 (01/10): lista só com título e tempo;
+o toque abre a **leitura** por cima (`.ck-surge`, título por `layoutId`), com ⭐, Concluída, Renomear,
+🗑 e o **Continuar esta** no rodapé — claro parado, âmbar com "fulano está trabalhando" quando
+interrompe, sem confirmação. Espera é barra indeterminada. "Em uso agora" some com a conversa de
+agora vazia. O ritmo da Motion espelha os tokens em `gaveta/ritmo-do-historico.ts`. A troca aparece no chat como marco
 (`feed/marco-da-troca.tsx`), e o pedido que o cockpit faz ao agente é linha discreta, nunca balão
 do Rica. Decisões e contrato: `docs/conversas/PLANO.md`.
 

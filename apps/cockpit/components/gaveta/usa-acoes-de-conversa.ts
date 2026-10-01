@@ -4,8 +4,10 @@
  * Rede e tempo das ações do Histórico (F10). A régua mora em
  * `acoes-de-conversa.ts`; aqui só o que precisa de React, `fetch` e relógio.
  *
- * - Retomar sempre confirma (derruba a linha). Nova só confirma quando vai
- *   interromper um turno; parada, um toque basta — a de agora fica anotada.
+ * - Trocar não confirma (rodada 2): parado, um toque troca — a de agora fica
+ *   anotada no Histórico. Ocupado, o botão já vem âmbar e o toque interrompe.
+ *   Se a frota dizia parado e a API responde 409 `ocupado`, o botão vira âmbar
+ *   e espera o segundo toque: interromper nunca acontece sem o Rica ver.
  * - Durante a espera o `/operacao` é lido a cada 2 s. É a leitura que a API
  *   desenhou para isto (contrato, F5), e só corre enquanto há troca na tela.
  * - Ao montar, lê o `/operacao` uma vez: troca em curso volta como espera,
@@ -117,13 +119,12 @@ export function usaAcoesDeConversa({
     return () => controlador.abort();
   }, [agentSlug, fecha]);
 
-  // A espera: relógio de 1 s e leitura do `/operacao` a cada 2 s.
+  // A espera: leitura do `/operacao` a cada 2 s.
   const esperando = estado.fase === 'esperando';
   const trocaDaEspera = estado.fase === 'esperando' ? estado.troca : null;
   useEffect(() => {
     if (!esperando) return;
     let falhas = 0;
-    const relogio = setInterval(() => setAgora(Date.now()), 1_000);
     const leitor = setInterval(() => {
       fetchConversaOperacao(agentSlug)
         .then((op) => {
@@ -140,10 +141,7 @@ export function usaAcoesDeConversa({
           if (falhas >= FALHAS_DE_LEITURA) fecha({ tipo: 'erro', texto: SEM_CONTATO }, trocaDaEspera);
         });
     }, LEITURA_MS);
-    return () => {
-      clearInterval(relogio);
-      clearInterval(leitor);
-    };
+    return () => clearInterval(leitor);
   }, [esperando, trocaDaEspera, agentSlug, fecha]);
 
   // A conferência: relê a lista a cada 2 s até ela mostrar a troca ou o prazo vencer.
@@ -216,7 +214,7 @@ export function usaAcoesDeConversa({
       if (erro.codigo === 'operacao_em_curso') return; // já há uma: a espera acompanha a de lá
       guardaTroca(sessao(), agentSlug, null);
       if (erro.codigo === 'ocupado' && !troca.forcar) {
-        setEstado({ fase: 'confirmando', troca: { ...troca, forcar: true } });
+        setEstado({ fase: 'ocupado', troca: { ...troca, forcar: true } });
         return;
       }
       setEstado({ fase: 'falhou', onde: troca.alvo ?? ATUAL, texto: explicaRecusa(erro.codigo, nome) });
@@ -227,19 +225,20 @@ export function usaAcoesDeConversa({
     if (leitura.tipo !== 'segue') fecha(leitura, troca); // 202: o leitor acompanha
   }
 
+  /** `ocupado` é o que a tela mostrou: o botão âmbar já disse que interrompe.
+   *  Depois de um 409, o âmbar vem da máquina e vale o mesmo. */
   function pedeRetomar(id: string, { ocupado, desligado }: { ocupado: boolean; desligado: boolean }) {
-    setEstado({ fase: 'confirmando', troca: { tipo: 'retomar', alvo: id, forcar: ocupado && !desligado, desligado } });
+    const recusada = estado.fase === 'ocupado' && estado.troca.alvo === id;
+    void executa({ tipo: 'retomar', alvo: id, forcar: !desligado && (ocupado || recusada), desligado });
   }
 
   function pedeNova(ocupado: boolean) {
-    const troca: Troca = { tipo: 'nova', alvo: null, forcar: ocupado, desligado: false };
-    if (ocupado) setEstado({ fase: 'confirmando', troca });
-    else void executa(troca);
+    const recusada = estado.fase === 'ocupado' && estado.troca.tipo === 'nova';
+    void executa({ tipo: 'nova', alvo: null, forcar: ocupado || recusada, desligado: false });
   }
 
   function confirma() {
-    if (estado.fase === 'confirmando') void executa(estado.troca);
-    else if (estado.fase === 'confirmando-exclusao') void exclui(estado.id);
+    if (estado.fase === 'confirmando-exclusao') void exclui(estado.id);
   }
 
   async function exclui(id: string) {
@@ -266,7 +265,6 @@ export function usaAcoesDeConversa({
 
   return {
     estado,
-    agora,
     pedeRetomar,
     pedeNova,
     pedeExclusao: (id: string) => setEstado({ fase: 'confirmando-exclusao', id }),

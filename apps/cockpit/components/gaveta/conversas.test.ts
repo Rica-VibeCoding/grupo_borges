@@ -9,7 +9,8 @@ import {
   descreveTrava,
   filtraConversas,
   listaVazia,
-  sabePendencia,
+  mostraEmUso,
+  resumoDaLeitura,
   separaAtual,
   tempoRelativo,
 } from './conversas.ts';
@@ -23,6 +24,7 @@ const conversa = (campos: Partial<Conversa>): Conversa => ({
   turnos: 10,
   bytes: 1,
   estrela: false,
+  concluida: false,
   atual: false,
   bloqueada: false,
   bloqueada_por: null,
@@ -81,31 +83,24 @@ describe('busca', () => {
 describe('filtro', () => {
   const lista = [
     conversa({ id: 'a', estrela: true }),
-    conversa({ id: 'b', pendencia: 2 }),
-    conversa({ id: 'c', titulo: 'Faxina dos MCPs', pendencia: 0 }),
+    conversa({ id: 'b' }),
+    conversa({ id: 'c', titulo: 'Faxina dos MCPs' }),
   ];
 
   it('especiais são só as ⭐', () => {
     assert.deepEqual(filtraConversas(lista, 'estrela', '').map((c) => c.id), ['a']);
   });
 
-  it('a que perdeu a ⭐ nos especiais fica segurada até trocar de filtro', () => {
-    const seguradas = new Set(['b']);
-    assert.deepEqual(filtraConversas(lista, 'estrela', '', seguradas).map((c) => c.id), ['a', 'b']);
-    assert.deepEqual(filtraConversas(lista, 'estrela', 'faxina', seguradas).map((c) => c.id), []);
-  });
-
-  it('pendência zero não é pendência', () => {
-    assert.deepEqual(filtraConversas(lista, 'pendencia', '').map((c) => c.id), ['b']);
+  it('a concluída sai de Todas e dos especiais na hora, e vive em Concluídas', () => {
+    const com = [...lista, conversa({ id: 'd', concluida: true, estrela: true })];
+    assert.deepEqual(filtraConversas(com, 'todas', '').map((c) => c.id), ['a', 'b', 'c']);
+    assert.deepEqual(filtraConversas(com, 'estrela', '').map((c) => c.id), ['a']);
+    assert.deepEqual(filtraConversas(com, 'concluidas', '').map((c) => c.id), ['d']);
   });
 
   it('filtro e busca valem juntos', () => {
     assert.deepEqual(filtraConversas(lista, 'todas', 'faxina').map((c) => c.id), ['c']);
-  });
-
-  it('o ⚠️ só aparece quando a API conta pendência', () => {
-    assert.equal(sabePendencia([conversa({}), conversa({})]), false);
-    assert.equal(sabePendencia(lista), true);
+    assert.deepEqual(filtraConversas(lista, 'estrela', 'faxina').map((c) => c.id), []);
   });
 });
 
@@ -116,8 +111,19 @@ describe('a de agora', () => {
     assert.deepEqual(outras.map((c) => c.id), ['a']);
   });
 
-  it('sem conversa atual, o cartão some', () => {
+  it('sem conversa atual, não há o que subir', () => {
     assert.equal(separaAtual([conversa({})]).atual, null);
+  });
+
+  it('o cartão some com a de agora vazia, a não ser que haja ação nele', () => {
+    assert.equal(mostraEmUso(conversa({ turnos: 0 }), false, true), false);
+    assert.equal(mostraEmUso(conversa({ turnos: 0 }), true, true), true);
+    assert.equal(mostraEmUso(conversa({ turnos: 3 }), false, true), true);
+  });
+
+  it('sem conversa conhecida, fica de pé só com o agente ligado', () => {
+    assert.equal(mostraEmUso(null, false, true), true);
+    assert.equal(mostraEmUso(null, false, false), false);
   });
 });
 
@@ -133,9 +139,19 @@ describe('textos', () => {
     assert.equal(contaTurnos(42), '42 turnos');
   });
 
+  it('a leitura diz quando e quanto: "atrás" só na contagem', () => {
+    assert.equal(resumoDaLeitura({ atualizada_em: em(1, 6), turnos: 24 }, AGORA), '3h atrás, 24 turnos');
+    assert.equal(resumoDaLeitura({ atualizada_em: AGORA - 4 * 60_000, turnos: 1 }, AGORA), '4 min atrás, 1 turno');
+    assert.equal(resumoDaLeitura({ atualizada_em: em(30, 15, 8), turnos: 3 }, AGORA), 'ontem, 3 turnos');
+    assert.equal(resumoDaLeitura({ atualizada_em: em(27, 15, 8), turnos: 3 }, AGORA), '4 dias atrás, 3 turnos');
+    assert.equal(resumoDaLeitura({ atualizada_em: AGORA, turnos: 2 }, AGORA), 'agora, 2 turnos');
+    assert.equal(resumoDaLeitura({ atualizada_em: em(12, 10, 7), turnos: 2 }, AGORA), '12 ago, 2 turnos');
+  });
+
   it('lista vazia diz o porquê, a busca primeiro', () => {
     assert.match(listaVazia('estrela', 'proxy'), /proxy/);
     assert.match(listaVazia('estrela', ''), /estrela/);
+    assert.match(listaVazia('concluidas', ''), /Concluída/);
     assert.match(listaVazia('todas', ''), /30 dias/);
   });
 });

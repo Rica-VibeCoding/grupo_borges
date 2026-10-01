@@ -981,7 +981,7 @@ export async function fetchTaskSubsessions(
 
 // Conversas do Claude Code de um agente (docs/conversas/PLANO.md, "Contrato da
 // API"). `atualizada_em` é epoch em ms; `pendencia` vem `null` até a F7.
-export type ConversaTituloOrigem = 'estacionada' | 'custom' | 'ai' | 'prompt' | 'primeira';
+export type ConversaTituloOrigem = 'renomeada' | 'estacionada' | 'custom' | 'ai' | 'prompt' | 'primeira';
 
 export type Conversa = {
   id: string;
@@ -992,6 +992,8 @@ export type Conversa = {
   turnos: number;
   bytes: number;
   estrela: boolean;
+  /** Marca manual (F14): sai de *Todas* e só aparece no filtro `concluidas`. */
+  concluida: boolean;
   atual: boolean;
   bloqueada: boolean;
   bloqueada_por: string | null;
@@ -1002,10 +1004,20 @@ export type ConversasResponse = {
   suportado: boolean;
   conversas: Conversa[];
   escondidas_curtas: number;
+  /** A conversa que a linha deixou na última troca (F14), para o "Voltar pra anterior". */
+  anterior?: string | null;
 };
 
-export async function fetchConversas(slug: string, signal?: AbortSignal): Promise<ConversasResponse> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/conversas`, { cache: 'no-store', signal });
+/** `todas` não traz as concluídas; elas vêm só em `concluidas` (F14). */
+export type FiltroDaApi = 'todas' | 'concluidas';
+
+export async function fetchConversas(
+  slug: string,
+  signal?: AbortSignal,
+  filtro: FiltroDaApi = 'todas',
+): Promise<ConversasResponse> {
+  const busca = filtro === 'todas' ? '' : `?filtro=${filtro}`;
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/conversas${busca}`, { cache: 'no-store', signal });
   if (!res.ok) throw new Error(await errorDetail(res, `fetchConversas failed: ${res.status}`));
   return res.json();
 }
@@ -1025,6 +1037,56 @@ export async function postConversaEstrela(
   );
   if (!res.ok) throw new Error(await errorDetail(res, `postConversaEstrela failed: ${res.status}`));
   return res.json();
+}
+
+// A leitura da conversa (F14): olhar não é trocar — lê o JSONL, não toca na linha.
+export type MensagemDaLeitura = { papel: 'rica' | 'agente'; texto: string; em: number | null };
+
+export type LeituraDaConversa = {
+  id: string;
+  titulo: string;
+  titulo_origem: ConversaTituloOrigem;
+  nota: string | null;
+  estrela: boolean;
+  concluida: boolean;
+  turnos: number;
+  atualizada_em: number;
+  /** Da mais antiga para a mais nova. */
+  mensagens: MensagemDaLeitura[];
+  /** Ficou conversa antes das mensagens devolvidas. */
+  mais_antigas: boolean;
+};
+
+export async function fetchConversaLeitura(slug: string, id: string, signal?: AbortSignal): Promise<LeituraDaConversa> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(slug)}/conversas/${encodeURIComponent(id)}/leitura`,
+    { cache: 'no-store', signal },
+  );
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchConversaLeitura failed: ${res.status}`));
+  return res.json();
+}
+
+async function postDeConversa<T>(slug: string, id: string, rota: string, corpo: unknown): Promise<T> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/conversas/${encodeURIComponent(id)}/${rota}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, `${rota} failed: ${res.status}`));
+  return res.json();
+}
+
+export function postConversaConcluida(slug: string, id: string, valor: boolean): Promise<{ id: string; concluida: boolean }> {
+  return postDeConversa(slug, id, 'concluida', { valor });
+}
+
+/** Vazio apaga o nome dado; a resposta traz o título que a lista passa a mostrar. */
+export function postConversaTitulo(
+  slug: string,
+  id: string,
+  titulo: string,
+): Promise<{ id: string; titulo: string; titulo_origem: ConversaTituloOrigem }> {
+  return postDeConversa(slug, id, 'titulo', { titulo });
 }
 
 // Ações das conversas (F10). Nova e Retomar respondem 200 `pronta`, 202 quando

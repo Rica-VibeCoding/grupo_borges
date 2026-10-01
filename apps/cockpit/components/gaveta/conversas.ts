@@ -2,13 +2,14 @@
  * A RÉGUA DO HISTÓRICO — sem React, sem DOM, sem rede (F9 das conversas).
  *
  * A lista vem inteira numa ida só (`GET /conversas`, filtro `todas`) e filtro e
- * busca rodam aqui, no aparelho. A frio o servidor leva ~10 s para ler os JSONL
+ * busca rodam aqui, no aparelho. As concluídas são a exceção: a API não as
+ * manda em `todas` (F14), e o filtro delas faz a sua própria ida. A frio o servidor leva ~10 s para ler os JSONL
  * do Pavan (relato da F3); voltar a ele a cada letra digitada seria esperar de
  * novo por um dado que já está na mão.
  */
 import type { Conversa } from '@grupo_borges/cockpit-core/api';
 
-export type FiltroDeConversa = 'todas' | 'estrela' | 'pendencia';
+export type FiltroDeConversa = 'todas' | 'estrela' | 'concluidas';
 
 const MINUTO = 60_000;
 const HORA = 60 * MINUTO;
@@ -49,17 +50,13 @@ export function casaBusca(conversa: Conversa, busca: string): boolean {
   return palavras.every((p) => alvo.includes(p));
 }
 
-/** `seguradas`: conversas que perderam a ⭐ com o filtro Especiais aberto.
- *  Sumir no toque assusta (furo da F9); elas ficam até trocar de filtro. */
-export function filtraConversas(
-  lista: readonly Conversa[],
-  filtro: FiltroDeConversa,
-  busca: string,
-  seguradas: ReadonlySet<string> = new Set(),
-): Conversa[] {
+/** Filtro e busca sobre a lista já lida. A API já separa as concluídas; a
+ *  marca vale de novo aqui porque Concluída e Reabrir mudam a lista no
+ *  aparelho, antes de ela ser relida. */
+export function filtraConversas(lista: readonly Conversa[], filtro: FiltroDeConversa, busca: string): Conversa[] {
   return lista.filter((c) => {
-    if (filtro === 'estrela' && !c.estrela && !seguradas.has(c.id)) return false;
-    if (filtro === 'pendencia' && !c.pendencia) return false;
+    if (filtro === 'concluidas' ? !c.concluida : c.concluida) return false;
+    if (filtro === 'estrela' && !c.estrela) return false;
     return casaBusca(c, busca);
   });
 }
@@ -68,13 +65,6 @@ export function filtraConversas(
 export function separaAtual(lista: readonly Conversa[]): { atual: Conversa | null; outras: Conversa[] } {
   const atual = lista.find((c) => c.atual) ?? null;
   return { atual, outras: lista.filter((c) => !c.atual) };
-}
-
-/** O filtro ⚠️ só aparece quando a API sabe contar pendência. Enquanto toda
- *  conversa vier com `pendencia: null` (até a F7), ele seria um filtro sempre
- *  vazio. */
-export function sabePendencia(lista: readonly Conversa[]): boolean {
-  return lista.some((c) => c.pendencia !== null);
 }
 
 /** Texto do 🔒. Com dono, nomeia a linha; sem dono, a trava é de escrita recente. */
@@ -87,10 +77,27 @@ export function contaTurnos(turnos: number): string {
   return turnos === 1 ? '1 turno' : `${turnos} turnos`;
 }
 
+/** A linha de baixo do título na leitura: "3h atrás, 24 turnos", "ontem, 3 turnos".
+ *  "atrás" só no que é contagem — "agora", "ontem" e a data já se dizem sozinhos. */
+export function resumoDaLeitura(conversa: Pick<Conversa, 'atualizada_em' | 'turnos'>, agora: number): string {
+  const quando = tempoRelativo(conversa.atualizada_em, agora);
+  const conta = /^\d+( min|h| dias)$/.test(quando) ? `${quando} atrás` : quando;
+  return `${conta}, ${contaTurnos(conversa.turnos)}`;
+}
+
+/** O cartão "Em uso agora" some com a conversa de agora vazia (rodada 2): uma
+ *  conversa recém-aberta não tem o que mostrar. Ação em curso ou troca recém-feita
+ *  seguram o cartão — é onde elas aparecem. Sem conversa conhecida e de pé, ele
+ *  fica só com a Nova conversa, como antes. */
+export function mostraEmUso(atual: Pick<Conversa, 'turnos'> | null, comAcao: boolean, dePe: boolean): boolean {
+  if (comAcao) return true;
+  return atual ? atual.turnos > 0 : dePe;
+}
+
 /** O que dizer quando a lista filtrada vem vazia — sempre com a saída. */
 export function listaVazia(filtro: FiltroDeConversa, busca: string): string {
   if (busca.trim()) return `Nada com “${busca.trim()}” no título ou na nota.`;
   if (filtro === 'estrela') return 'Nenhuma especial ainda. Abra uma conversa e marque a estrela.';
-  if (filtro === 'pendencia') return 'Nenhuma conversa deixou arquivo sem commit.';
+  if (filtro === 'concluidas') return 'Nenhuma concluída. Abra uma conversa e toque em Concluída.';
   return 'Nenhuma outra conversa nos últimos 30 dias.';
 }

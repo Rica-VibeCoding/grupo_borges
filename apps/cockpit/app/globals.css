@@ -2161,17 +2161,15 @@ html[data-troca-agente] .ck-palco {
   color: var(--ck-text-primary);
 }
 .ck-gv-segmento-opcao:focus-visible { outline: 2px solid var(--ck-focus); outline-offset: 2px; }
+/* Segmento que desliza (filtros do Histórico): o fundo do escolhido é um
+   elemento só, que a Motion leva de um para o outro — o da opção sai. */
+.ck-gv-segmento[data-desliza] .ck-gv-segmento-opcao[aria-checked='true'] { background: transparent; }
 
 .ck-gv-tracejado {
   border: 1.5px dashed var(--ck-gv-tracejado);
 }
 .ck-gv-tracejado:hover { border-color: var(--ck-text-tertiary); }
 
-/* O passo em curso da troca de conversa (F10) respira — é o único movimento da
-   espera, e diz "está andando" sem número nenhum. */
-.ck-gv-passo-agora { animation: ck-respira 1.6s var(--ck-ease) infinite; }
-
 @media (prefers-reduced-motion: reduce) {
   .ck-gv-botao-trilho { transition: none; }
-  .ck-gv-passo-agora { animation: none; }
 }

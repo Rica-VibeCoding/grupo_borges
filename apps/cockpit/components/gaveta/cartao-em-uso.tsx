@@ -2,8 +2,12 @@
 
 /**
  * "Em uso agora" — a conversa da linha, no topo do Histórico (direção A com o
- * cartão da C, F8). Carrega a Nova conversa (F10) e é onde aparece a espera
- * que voltou de um recarregar sem saber qual era a conversa pedida.
+ * cartão da C, F8). Carrega a Nova conversa (F10) e é onde aparece a espera ou
+ * o erro de uma troca cuja conversa não está aberta na leitura.
+ *
+ * Rodada 2: só título e turnos (a nota mora na leitura), e o cartão some com a
+ * conversa de agora vazia (`mostraEmUso`). Nova no meio de um turno não
+ * confirma: a linha de ocupado e o botão já dizem que interrompe.
  *
  * Desligado, o cartão vira "Última em uso" e a Nova sai: a API recusa com 409
  * `desligado`, e o caminho é ligar pelo interruptor da gaveta.
@@ -12,6 +16,8 @@ import type { ReactNode } from 'react';
 
 import type { Conversa } from '@grupo_borges/cockpit-core/api';
 
+import { LinhaDeOcupado } from './acao-de-conversa';
+import { linhaDeOcupado, textoDaTroca } from './acoes-de-conversa';
 import { contaTurnos } from './conversas';
 import { Bloco, Cartao, Mais } from './pecas';
 
@@ -19,6 +25,8 @@ export function CartaoEmUso({
   atual,
   dePe,
   podeTrocar,
+  interrompe,
+  nome,
   acao,
   aoNova,
   trocouAgora = null,
@@ -27,6 +35,9 @@ export function CartaoEmUso({
   atual: Conversa | null;
   dePe: boolean;
   podeTrocar: boolean;
+  /** A Nova vai interromper um turno. */
+  interrompe: boolean;
+  nome: string;
   acao: ReactNode;
   aoNova: () => void;
   /** A troca que acabou de dar certo (F13): o cartão diz isso e mostra o
@@ -34,7 +45,6 @@ export function CartaoEmUso({
   trocouAgora?: 'retomar' | 'nova' | null;
   voltar?: ReactNode;
 }) {
-  if (!atual && !acao && !dePe) return null;
   const recemTrocada = trocouAgora !== null && !acao;
   return (
     <Cartao
@@ -47,14 +57,9 @@ export function CartaoEmUso({
         ) : undefined
       }
     >
-      {atual ? (
+      {atual && atual.turnos > 0 ? (
         <Bloco>
           <span style={{ fontSize: 'var(--ck-text-base)', fontWeight: 500, color: 'var(--ck-text-primary)' }}>{atual.titulo}</span>
-          {atual.nota ? (
-            <span style={{ fontSize: 'var(--ck-text-sm)', lineHeight: 'var(--ck-leading-body)', color: 'var(--ck-text-secondary)' }}>
-              Onde tinha parado: {atual.nota}
-            </span>
-          ) : null}
           <span className="ck-tabular" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
             {contaTurnos(atual.turnos)}
           </span>
@@ -62,15 +67,26 @@ export function CartaoEmUso({
       ) : null}
       {acao ? <Bloco>{acao}</Bloco> : null}
       {recemTrocada ? voltar : null}
-      {!acao && dePe && podeTrocar ? (
-        <button
-          type="button"
-          onClick={aoNova}
-          className="ck-gv-tracejado ck-veil flex items-center justify-center"
-          style={{ gap: 'var(--ck-space-3)', minHeight: '48px', borderRadius: 'var(--ck-gv-raio-bloco)', fontSize: 'var(--ck-text-sm)', fontWeight: 500, color: 'var(--ck-text-primary)' }}
-        >
-          <Mais /> Nova conversa
-        </button>
+      {!acao && !recemTrocada && dePe && podeTrocar ? (
+        <>
+          {interrompe ? <LinhaDeOcupado texto={linhaDeOcupado(nome)} /> : null}
+          <button
+            type="button"
+            onClick={aoNova}
+            className="ck-gv-tracejado ck-veil flex items-center justify-center"
+            style={{
+              gap: 'var(--ck-space-3)',
+              minHeight: '48px',
+              borderRadius: 'var(--ck-gv-raio-bloco)',
+              fontSize: 'var(--ck-text-sm)',
+              fontWeight: 500,
+              color: interrompe ? 'var(--ck-state-attention)' : 'var(--ck-text-primary)',
+              transition: 'color var(--ck-dur-calm) var(--ck-ease)',
+            }}
+          >
+            <Mais /> {textoDaTroca('nova', interrompe)}
+          </button>
+        </>
       ) : null}
     </Cartao>
   );

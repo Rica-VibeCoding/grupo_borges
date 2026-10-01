@@ -1,9 +1,13 @@
 /**
  * A RÉGUA DAS AÇÕES DO HISTÓRICO — sem React, sem rede (F10 das conversas).
  *
- * Retomar, Nova conversa e 🗑 passam por uma máquina só, de um estado por vez:
- * a tela nunca mostra dois pedidos abertos, e durante a troca nenhum botão de
- * troca fica livre. O texto de cada passo mora aqui para ser testado sem DOM.
+ * Continuar esta, Nova conversa e 🗑 passam por uma máquina só, de um estado por
+ * vez: a tela nunca mostra dois pedidos abertos, e durante a troca nenhum botão
+ * de troca fica livre. O texto de cada estado mora aqui para ser testado sem DOM.
+ *
+ * Rodada 2 (Rica, 01/10): trocar não confirma. Parado, um toque troca; no meio
+ * de um turno, uma linha diz quem está trabalhando e o botão já nasce âmbar,
+ * interrompendo. A espera é uma barra, sem etapa nem contagem.
  */
 import type { FaseDaOperacao, OperacaoDeConversa } from '@grupo_borges/cockpit-core/api';
 
@@ -22,7 +26,9 @@ export type EtapaEmCurso = Extract<FaseDaOperacao, 'estacionando' | 'religando'>
 
 export type EstadoDaAcao =
   | { fase: 'livre' }
-  | { fase: 'confirmando'; troca: Troca }
+  /** A API recusou com `ocupado` (a frota ainda dizia parado): o botão vira
+   *  âmbar, com `forcar`, e o próximo toque interrompe. */
+  | { fase: 'ocupado'; troca: Troca }
   | { fase: 'esperando'; troca: Troca | null; etapa: EtapaEmCurso; inicio: number }
   /** A API terminou; a espera segue até a lista mostrar a troca (ou o prazo). */
   | { fase: 'conferindo'; troca: Troca; inicio: number; ate: number; erro: string | null }
@@ -39,7 +45,7 @@ export function ondeMostra(estado: EstadoDaAcao): string | null {
   switch (estado.fase) {
     case 'livre':
       return null;
-    case 'confirmando':
+    case 'ocupado':
       return estado.troca.alvo ?? ATUAL;
     case 'esperando':
       return estado.troca?.alvo ?? ATUAL;
@@ -57,60 +63,23 @@ export function trocaEmCurso(estado: EstadoDaAcao): boolean {
   return estado.fase === 'esperando' || estado.fase === 'conferindo';
 }
 
-export type Confirmacao = { aviso: string; botao: string; arrisca: boolean };
-
-/** O que a confirmação diz antes de mexer na linha. `arrisca` = interrompe um
- *  turno em voo, e o botão ganha a cor de atenção. */
-export function textoDaConfirmacao(troca: Troca, nome: string): Confirmacao {
-  if (troca.tipo === 'nova') {
-    return {
-      aviso: `${nome} está no meio de um turno. Abrir uma conversa nova interrompe o que está rodando, e a de agora sai sem nota de onde parou.`,
-      botao: 'Interromper e abrir nova',
-      arrisca: true,
-    };
-  }
-  if (troca.desligado) {
-    return { aviso: `${nome} está desligado. Ele liga direto nesta conversa.`, botao: 'Ligar nesta conversa', arrisca: false };
-  }
-  if (troca.forcar) {
-    return {
-      aviso: `${nome} está no meio de um turno. Retomar interrompe o que está rodando, e a conversa de agora sai sem nota de onde parou.`,
-      botao: 'Interromper e retomar',
-      arrisca: true,
-    };
-  }
-  return {
-    aviso: `${nome} anota onde parou na conversa de agora e religa nesta. O que estiver rodando em segundo plano para.`,
-    botao: 'Retomar',
-    arrisca: false,
-  };
+/** A linha de cima do botão, quando ele vai interromper. */
+export function linhaDeOcupado(nome: string): string {
+  return `${nome} está trabalhando`;
 }
 
-export type Passo = { texto: string; estado: 'feito' | 'agora' | 'depois' };
-
-/** Os passos da espera, na ordem em que a API anda (`/operacao`). */
-export function passosDaEspera(troca: Troca | null, etapa: EtapaEmCurso, nome: string): Passo[] {
-  const marca = (minha: EtapaEmCurso): Passo['estado'] =>
-    minha === etapa ? 'agora' : minha === 'estacionando' ? 'feito' : 'depois';
-  if (troca?.desligado) return [{ texto: `Ligando ${nome} nesta conversa`, estado: 'agora' }];
-  const primeiro = troca?.forcar ? 'Interrompendo o turno' : 'Anotando onde a conversa de agora parou';
-  const segundo =
-    troca?.tipo === 'nova'
-      ? 'Abrindo a conversa nova'
-      : troca?.tipo === 'retomar'
-        ? `Religando ${nome} nesta conversa`
-        : `Trocando a conversa de ${nome}`;
-  return [
-    { texto: primeiro, estado: marca('estacionando') },
-    { texto: segundo, estado: marca('religando') },
-  ];
+/** O nome do botão de troca: claro parado, âmbar no meio de um turno. */
+export function textoDaTroca(tipo: Troca['tipo'], interrompe: boolean): string {
+  if (tipo === 'nova') return interrompe ? 'Interromper e abrir nova' : 'Nova conversa';
+  return interrompe ? 'Interromper e continuar esta' : 'Continuar esta';
 }
 
-export const TETO_DA_ESPERA_S = 90;
-
-export function contaEspera(inicio: number, agora: number): string {
-  const s = Math.max(0, Math.floor((agora - inicio) / 1000));
-  return s <= TETO_DA_ESPERA_S ? `${s} s · pode levar até ${TETO_DA_ESPERA_S} s` : `${s} s · passou do previsto, ainda acompanhando`;
+/** A frase em cima da barra da espera. Sem alvo conhecido (a tela recarregou
+ *  no meio), ela não promete para onde vai. */
+export function textoDaEspera(troca: Troca | null, nome: string): string {
+  if (!troca) return `Trocando a conversa de ${nome}…`;
+  if (troca.tipo === 'nova') return 'Abrindo a conversa nova…';
+  return troca.desligado ? `Ligando ${nome} nesta conversa…` : 'Abrindo esta conversa…';
 }
 
 /** O 409 em palavras. Os de trava (`É a conversa atual…`, `Conversa aberta…`)

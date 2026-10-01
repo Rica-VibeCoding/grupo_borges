@@ -1,63 +1,47 @@
 'use client';
 
 /**
- * O HISTÓRICO — terceira visão da gaveta (`?painel=conversas`, F9 e F10 das conversas).
+ * O HISTÓRICO — terceira visão da gaveta (`?painel=conversas`; F9, F10 e a
+ * rodada 2 das conversas, protótipo aprovado pelo Rica em 01/10).
  *
- * Direção A da F8, aprovada pelo Rica em 01/10, com o "Em uso agora" da C no
- * topo: a conversa de agora num cartão próprio (com a Nova conversa), depois
- * filtro, busca e a lista, onde um toque abre a conversa ali mesmo com
- * Retomar, ⭐ e 🗑. Confirmação, espera e erro abrem no próprio bloco.
+ * Duas camadas no mesmo lugar: a LISTA (só título e tempo) e a LEITURA de uma
+ * conversa, que abre por cima com o `.ck-surge` e cujo título é o da linha
+ * tocada (`layoutId`). Olhar não é trocar: quem troca é o Continuar esta, no
+ * rodapé da leitura. As duas ficam montadas e alternam `data-aberto` (§5:
+ * elemento removido não anima a saída).
  *
- * A lista chega numa ida só e o resto é local (`conversas.ts`). A ⭐ é otimista:
- * vira na hora e desvira se a API recusar, com o motivo no próprio bloco.
+ * Enquanto a leitura está aberta, a lista fica CONGELADA nas linhas que tinha:
+ * o que muda lá dentro (Concluída, 🗑, ⭐ tirada no filtro ⭐) só tira a linha
+ * depois da volta, para a saída dela ser vista.
+ *
  * Ocupado vem da frota ao vivo; desligado e motor religando, do `usaVidaDoAgente`.
- * A API é a palavra final: um 409 `ocupado` reabre a confirmação de interromper.
+ * A API é a palavra final: um 409 `ocupado` deixa o botão âmbar.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MotionConfig, motion } from 'motion/react';
 
-import { fetchConversas, postConversaEstrela, type ConversasResponse } from '@grupo_borges/cockpit-core/api';
+import { postConversaConcluida, postConversaEstrela, postConversaTitulo, type Conversa } from '@grupo_borges/cockpit-core/api';
 
 import { usaFrota } from '../shell/frota-provider';
 import { LinkFechaPainel } from '../shell/superficie-otimista';
 import { LinkDaGaveta } from '../shell/vista-da-gaveta';
-import { AcaoDeConversa } from './acao-de-conversa';
-import { ATUAL, ondeMostra, trocaEmCurso } from './acoes-de-conversa';
+import { AvisoDeFalha, BarraDeEspera } from './acao-de-conversa';
+import { ATUAL, ondeMostra, textoDaEspera, trocaEmCurso } from './acoes-de-conversa';
 import { CartaoEmUso } from './cartao-em-uso';
-import { filtraConversas, listaVazia, sabePendencia, separaAtual, type FiltroDeConversa } from './conversas';
-import { Busca, Filtros } from './filtros-de-conversa';
-import { LinhaDeConversa } from './linha-de-conversa';
-import { Bloco, Cartao, Pilula } from './pecas';
+import { filtraConversas, mostraEmUso, separaAtual, type FiltroDeConversa } from './conversas';
+import { LeituraDoHistorico } from './leitura-do-historico';
+import { ListaDoHistorico } from './lista-do-historico';
+import { Bloco, Pilula } from './pecas';
+import { ESPERA_DA_VOLTA_MS } from './ritmo-do-historico';
+import { RodapeDaLeitura } from './rodape-da-leitura';
 import { usaAcoesDeConversa } from './usa-acoes-de-conversa';
+import { usaListaDoHistorico } from './usa-lista-do-historico';
 import { usaVidaDoAgente } from './usa-vida-do-agente';
 
-type Carga = { fase: 'carregando' } | { fase: 'falhou'; motivo: string } | { fase: 'pronto'; dados: ConversasResponse; lidaEm: number };
-
-const ALVO_DO_CABECALHO = {
-  minWidth: 'var(--ck-touch-min)',
-  minHeight: 'var(--ck-touch-min)',
-  borderRadius: 'var(--ck-radius-chip)',
-  fontSize: 'var(--ck-text-lg)',
-  color: 'var(--ck-text-secondary)',
-} as const;
-
-const VOLTAR_AO_CHAT = {
-  minHeight: '48px',
-  borderRadius: 'var(--ck-gv-raio-bloco)',
-  fontSize: 'var(--ck-text-sm)',
-  fontWeight: 600,
-  background: 'var(--ck-gv-ativo)',
-  color: 'var(--ck-text-primary)',
-} as const;
-
-function Aviso({ children }: { children: string }) {
-  return (
-    <Bloco>
-      <p role="status" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>
-        {children}
-      </p>
-    </Bloco>
-  );
-}
+const ALVO_DO_CABECALHO = { minWidth: 'var(--ck-touch-min)', minHeight: 'var(--ck-touch-min)', borderRadius: 'var(--ck-radius-chip)', fontSize: 'var(--ck-text-lg)', color: 'var(--ck-text-secondary)' } as const;
+const VOLTAR_AO_CHAT = { minHeight: '48px', borderRadius: 'var(--ck-gv-raio-bloco)', fontSize: 'var(--ck-text-sm)', fontWeight: 600, background: 'var(--ck-gv-ativo)', color: 'var(--ck-text-primary)' } as const;
+const CAMADA = { gridArea: '1 / 1', gap: 'var(--ck-space-2)' } as const;
+const erroDe = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string; fecharHref: string }) {
   const { agents } = usaFrota();
@@ -65,43 +49,32 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
   const nome = nomeDoAgente(agentSlug);
   const ocupado = agents.find((a) => a.slug === agentSlug)?.status === 'trabalhando';
   const vida = usaVidaDoAgente(agentSlug, false);
-  const [carga, setCarga] = useState<Carga>({ fase: 'carregando' });
+  const { carga, concluidas, ler, lerConcluidas, muda, tira } = usaListaDoHistorico(agentSlug);
   const [filtro, setFiltro] = useState<FiltroDeConversa>('todas');
   const [busca, setBusca] = useState('');
   const [aberta, setAberta] = useState<string | null>(null);
-  const [marcando, setMarcando] = useState<string | null>(null);
+  const [congelada, setCongelada] = useState<string[] | null>(null);
   const [falha, setFalha] = useState<{ id: string; texto: string } | null>(null);
-  const [seguradas, setSeguradas] = useState<ReadonlySet<string>>(() => new Set());
-
-  /** `quieto`: relê sem trocar a lista por "Lendo…" (depois de uma troca).
-   *  Leitura pedida antes da que já entrou não vale: lenta, desfaria a troca. */
-  const leituras = useRef({ pedida: 0, aplicada: 0 });
-  const ler = useCallback(
-    (signal?: AbortSignal, quieto = false) => {
-      if (!quieto) setCarga({ fase: 'carregando' });
-      const esta = ++leituras.current.pedida;
-      fetchConversas(agentSlug, signal)
-        .then((dados) => {
-          if (signal?.aborted || esta < leituras.current.aplicada) return;
-          leituras.current.aplicada = esta;
-          setCarga({ fase: 'pronto', dados, lidaEm: Date.now() });
-        })
-        .catch((e: unknown) => {
-          if (signal?.aborted || quieto) return;
-          setCarga({ fase: 'falhou', motivo: e instanceof Error ? e.message : String(e) });
-        });
-    },
-    [agentSlug],
-  );
-
-  useEffect(() => {
-    const controlador = new AbortController();
-    ler(controlador.signal);
-    return () => controlador.abort();
-  }, [ler]);
 
   const lista = carga.fase === 'pronto' ? carga.dados.conversas : [];
   const { atual, outras } = useMemo(() => separaAtual(lista), [lista]);
+  const fonte = filtro === 'concluidas' ? (concluidas?.fase === 'pronto' ? concluidas.dados.conversas : []) : outras;
+  const visiveis = useMemo(() => filtraConversas(fonte, filtro, busca), [fonte, filtro, busca]);
+
+  // Toda conversa já vista fica guardada: a lista congelada e a leitura que
+  // está saindo seguem desenhando uma conversa que acabou de ser excluída.
+  const vistas = useRef(new Map<string, Conversa>());
+  for (const c of lista) vistas.current.set(c.id, c);
+  if (concluidas?.fase === 'pronto') for (const c of concluidas.dados.conversas) vistas.current.set(c.id, c);
+  const [exibida, setExibida] = useState<string | null>(null);
+  const vista = exibida ? (vistas.current.get(exibida) ?? null) : null;
+  const linhas = congelada ? congelada.flatMap((id) => vistas.current.get(id) ?? []).filter((c) => !c.atual) : visiveis;
+
+  const fechaLeitura = useCallback(() => {
+    setAberta(null);
+    setFalha(null);
+    setTimeout(() => setCongelada(null), ESPERA_DA_VOLTA_MS);
+  }, []);
 
   const { buscar: relePainel } = vida;
   const acoes = usaAcoesDeConversa({
@@ -113,142 +86,180 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
       ler(undefined, true);
       relePainel();
     },
-    tituloDe: (id) => lista.find((c) => c.id === id)?.titulo ?? null,
+    tituloDe: (id) => vistas.current.get(id)?.titulo ?? null,
     aoExcluir: (id) => {
-      setAberta(null);
-      setCarga((c) =>
-        c.fase === 'pronto' ? { ...c, dados: { ...c.dados, conversas: c.dados.conversas.filter((x) => x.id !== id) } } : c,
-      );
+      tira(id);
+      fechaLeitura();
     },
   });
 
-  const comPendencia = sabePendencia(lista);
-  const filtroEmUso = filtro === 'pendencia' && !comPendencia ? 'todas' : filtro;
-  const visiveis = useMemo(() => filtraConversas(outras, filtroEmUso, busca, seguradas), [outras, filtroEmUso, busca, seguradas]);
+  // A troca deu certo: a conversa virou a de agora e sai da lista; a leitura
+  // fecha e o cartão de cima diz "Retomada agora" com o caminho do chat.
+  const { trocouAgora } = acoes;
+  useEffect(() => {
+    if (trocouAgora) fechaLeitura();
+  }, [trocouAgora, fechaLeitura]);
 
-  // Onde a ação aparece: na linha dela, ou no topo quando é a Nova, quando a
-  // tela recarregou sem saber o alvo, ou quando o filtro esconde a linha.
   const onde = ondeMostra(acoes.estado);
-  const noTopo = onde !== null && (onde === ATUAL || !visiveis.some((c) => c.id === onde));
+  const noTopo = onde !== null && (onde === ATUAL || onde !== aberta);
   const emTroca = trocaEmCurso(acoes.estado);
   const podeTrocar = !emTroca && !vida.aplicandoMotor && acoes.estado.fase !== 'excluindo';
-  const porQueNao = vida.aplicandoMotor
-    ? 'O motor está sendo trocado. Retomar e excluir voltam quando ele religar.'
-    : emTroca
-      ? 'Há uma troca de conversa em andamento.'
-      : null;
-  const acaoEm = (lugar: string) => (
-    <AcaoDeConversa estado={acoes.estado} onde={lugar} nome={nome} agora={acoes.agora} aoConfirmar={acoes.confirma} aoLargar={acoes.larga} />
-  );
+  const porQueNao = vida.aplicandoMotor ? 'O motor está sendo trocado. Continuar volta quando ele religar.' : emTroca ? 'Há uma troca de conversa em andamento.' : null;
+  const dePe = vida.carga === 'pronto' ? vida.dePe : true;
+  const recusou = (tipo: 'retomar' | 'nova', id: string | null) =>
+    acoes.estado.fase === 'ocupado' && acoes.estado.troca.tipo === tipo && acoes.estado.troca.alvo === id;
+  const suportado = carga.fase === 'pronto' && carga.dados.suportado;
+  const agora = carga.fase === 'pronto' ? carga.lidaEm : 0;
+
+  const estado = acoes.estado;
+  const acaoNoTopo = !noTopo ? null : estado.fase === 'esperando' || estado.fase === 'conferindo' ? (
+    <BarraDeEspera texto={textoDaEspera(estado.troca, nome)} />
+  ) : estado.fase === 'falhou' ? (
+    <AvisoDeFalha texto={estado.texto} aoFechar={acoes.larga} />
+  ) : null;
+
+  function abre(c: Conversa) {
+    acoes.larga();
+    setFalha(null);
+    setCongelada(linhas.map((x) => x.id));
+    setExibida(c.id);
+    setAberta(c.id);
+  }
 
   function escolheFiltro(f: FiltroDeConversa) {
-    setSeguradas(new Set());
+    if (f === 'concluidas') lerConcluidas();
     setFiltro(f);
   }
 
-  function trocaEstrela(id: string, valor: boolean) {
-    if (carga.fase !== 'pronto' || marcando) return;
-    const vira = (v: boolean) =>
-      setCarga((c) =>
-        c.fase === 'pronto'
-          ? { ...c, dados: { ...c.dados, conversas: c.dados.conversas.map((x) => (x.id === id ? { ...x, estrela: v } : x)) } }
-          : c,
-      );
-    vira(valor);
-    if (!valor && filtroEmUso === 'estrela') setSeguradas((s) => new Set(s).add(id));
-    setMarcando(id);
+  /** ⭐ e Concluída são otimistas: viram na hora e desviram se a API recusar. */
+  function marca(c: Conversa, campos: Partial<Conversa>, envia: () => Promise<unknown>, rotulo: string) {
+    const antes = Object.fromEntries(Object.keys(campos).map((k) => [k, c[k as keyof Conversa]])) as Partial<Conversa>;
+    muda(c, campos);
     setFalha(null);
-    postConversaEstrela(agentSlug, id, valor)
-      .catch((e: unknown) => {
-        vira(!valor);
-        setFalha({ id, texto: `A estrela não ficou: ${e instanceof Error ? e.message : String(e)}` });
-      })
-      .finally(() => setMarcando(null));
+    return envia().catch((e: unknown) => {
+      muda({ ...c, ...campos }, antes);
+      setFalha({ id: c.id, texto: `${rotulo}: ${erroDe(e)}` });
+      throw e;
+    });
   }
 
-  const agora = carga.fase === 'pronto' ? carga.lidaEm : 0;
-  const dePe = vida.carga === 'pronto' ? vida.dePe : true;
-  const suportado = carga.fase === 'pronto' && carga.dados.suportado;
+  const leituraInterrompe = vista ? dePe && (ocupado || recusou('retomar', vista.id)) : false;
 
   return (
-    <div className="ck-gv flex min-h-0 flex-auto flex-col overflow-y-auto" style={{ gap: 'var(--ck-space-2)', padding: 'var(--ck-space-3)' }}>
-      <header className="flex shrink-0 items-center" style={{ gap: 'var(--ck-space-1)', minHeight: '48px' }}>
-        <LinkDaGaveta href={`${fecharHref}?painel=detalhes`} aria-label="Voltar para a gaveta do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
-          ‹
-        </LinkDaGaveta>
-        <h2 className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--ck-text-md)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
-          Histórico
-        </h2>
-        <LinkFechaPainel href={fecharHref} rotulo="detalhes do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
-          ×
-        </LinkFechaPainel>
-      </header>
+    <MotionConfig reducedMotion="user">
+      <div className="ck-gv flex min-h-0 flex-auto flex-col" style={{ gap: 'var(--ck-space-2)', padding: 'var(--ck-space-3)' }}>
+        <header className="flex shrink-0 items-center" style={{ gap: 'var(--ck-space-1)', minHeight: '48px' }}>
+          {aberta ? (
+            <button type="button" onClick={fechaLeitura} aria-label="Voltar para a lista" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
+              ‹
+            </button>
+          ) : (
+            <LinkDaGaveta href={`${fecharHref}?painel=detalhes`} aria-label="Voltar para a gaveta do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
+              ‹
+            </LinkDaGaveta>
+          )}
+          <h2 className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--ck-text-md)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
+            Histórico
+          </h2>
+          <LinkFechaPainel href={fecharHref} rotulo="detalhes do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
+            ×
+          </LinkFechaPainel>
+        </header>
 
-      {carga.fase === 'carregando' ? <Aviso>Lendo as conversas…</Aviso> : null}
+        <div className="grid min-h-0 flex-auto" style={{ gridTemplateRows: 'minmax(0, 1fr)' }}>
+          <motion.div layoutScroll data-aberto={String(!aberta)} className="ck-surge flex min-h-0 flex-col overflow-y-auto" style={CAMADA}>
+            {carga.fase === 'falhou' ? (
+              <Bloco>
+                <p role="alert" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-state-attention)' }}>
+                  Não consegui ler as conversas: {carga.motivo}
+                </p>
+                <div className="flex">
+                  <Pilula aoTocar={() => ler()}>Tentar de novo</Pilula>
+                </div>
+              </Bloco>
+            ) : null}
 
-      {carga.fase === 'falhou' ? (
-        <Bloco>
-          <p role="alert" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-state-attention)' }}>
-            Não consegui ler as conversas: {carga.motivo}
-          </p>
-          <div className="flex">
-            <Pilula aoTocar={() => ler()}>Tentar de novo</Pilula>
-          </div>
-        </Bloco>
-      ) : null}
+            {carga.fase === 'pronto' && !carga.dados.suportado ? (
+              <Bloco>
+                <p role="status" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>
+                  O motor deste agente não guarda conversas que o cockpit saiba ler.
+                </p>
+              </Bloco>
+            ) : null}
 
-      {carga.fase === 'pronto' && !carga.dados.suportado ? (
-        <Aviso>O motor deste agente não guarda conversas que o cockpit saiba ler.</Aviso>
-      ) : null}
-
-      {/* A troca que voltou de um recarregar aparece mesmo antes da lista chegar. */}
-      {suportado || (noTopo && carga.fase !== 'pronto') ? (
-        <CartaoEmUso
-          atual={atual}
-          dePe={dePe}
-          podeTrocar={podeTrocar}
-          acao={noTopo && onde ? acaoEm(onde) : null}
-          aoNova={() => acoes.pedeNova(ocupado)}
-          trocouAgora={acoes.estado.fase === 'livre' ? acoes.trocouAgora : null}
-          voltar={
-            <LinkFechaPainel href={fecharHref} rotulo="o Histórico e voltar ao chat" className="ck-veil flex items-center justify-center" style={VOLTAR_AO_CHAT}>
-              Voltar ao chat
-            </LinkFechaPainel>
-          }
-        />
-      ) : null}
-
-      {suportado ? (
-        <>
-          <Filtros filtro={filtroEmUso} escolhe={escolheFiltro} comPendencia={comPendencia} />
-          <Busca valor={busca} muda={setBusca} />
-
-          <Cartao rotulo="Conversas">
-            {visiveis.length === 0 ? <Aviso>{listaVazia(filtroEmUso, busca)}</Aviso> : null}
-            {visiveis.map((c) => (
-              <LinhaDeConversa
-                key={c.id}
-                conversa={c}
-                agora={agora}
-                aberta={aberta === c.id || (onde === c.id && !noTopo)}
-                aoAlternar={() => {
-                  acoes.larga();
-                  setAberta((a) => (a === c.id ? null : c.id));
-                }}
-                aoMarcarEstrela={() => trocaEstrela(c.id, !c.estrela)}
-                marcando={marcando === c.id}
-                falha={falha?.id === c.id ? falha.texto : null}
-                nomeDoAgente={nomeDoAgente}
-                acao={onde === c.id && !noTopo ? acaoEm(c.id) : null}
+            {/* A troca que voltou de um recarregar aparece mesmo antes da lista chegar. */}
+            {(suportado || acaoNoTopo) && mostraEmUso(atual, acaoNoTopo !== null || trocouAgora !== null, dePe) ? (
+              <CartaoEmUso
+                atual={atual}
+                dePe={dePe}
                 podeTrocar={podeTrocar}
-                porQueNao={porQueNao}
-                aoRetomar={() => acoes.pedeRetomar(c.id, { ocupado, desligado: !dePe })}
-                aoExcluir={() => acoes.pedeExclusao(c.id)}
+                interrompe={ocupado || recusou('nova', null)}
+                nome={nome}
+                acao={acaoNoTopo}
+                aoNova={() => acoes.pedeNova(ocupado)}
+                trocouAgora={estado.fase === 'livre' ? trocouAgora : null}
+                voltar={
+                  <LinkFechaPainel href={fecharHref} rotulo="o Histórico e voltar ao chat" className="ck-veil flex items-center justify-center" style={VOLTAR_AO_CHAT}>
+                    Voltar ao chat
+                  </LinkFechaPainel>
+                }
               />
-            ))}
-          </Cartao>
-        </>
-      ) : null}
-    </div>
+            ) : null}
+
+            {carga.fase === 'carregando' || suportado ? (
+              <ListaDoHistorico
+                linhas={linhas}
+                carregando={carga.fase === 'carregando' || (filtro === 'concluidas' && concluidas?.fase === 'carregando')}
+                agora={agora}
+                filtro={filtro}
+                escolheFiltro={escolheFiltro}
+                busca={busca}
+                mudaBusca={setBusca}
+                aoAbrir={abre}
+              />
+            ) : null}
+          </motion.div>
+
+          <div data-aberto={String(aberta !== null)} aria-hidden={aberta === null} className="ck-surge flex min-h-0 flex-col" style={CAMADA}>
+            {vista ? (
+              <LeituraDoHistorico
+                key={vista.id}
+                agentSlug={agentSlug}
+                conversa={vista}
+                agora={agora}
+                lider={aberta === vista.id}
+                nomeDoAgente={nomeDoAgente}
+                rodape={
+                  <RodapeDaLeitura
+                    conversa={vista}
+                    estado={estado}
+                    nome={nome}
+                    interrompe={leituraInterrompe}
+                    podeTrocar={podeTrocar}
+                    porQueNao={porQueNao}
+                    falha={falha?.id === vista.id ? falha.texto : null}
+                    aoContinuar={() => acoes.pedeRetomar(vista.id, { ocupado: leituraInterrompe, desligado: !dePe })}
+                    aoEstrela={() => void marca(vista, { estrela: !vista.estrela }, () => postConversaEstrela(agentSlug, vista.id, !vista.estrela), 'A estrela não ficou').catch(() => {})}
+                    aoConcluida={() =>
+                      void marca(vista, { concluida: !vista.concluida }, () => postConversaConcluida(agentSlug, vista.id, !vista.concluida), 'A marca não ficou')
+                        .then(fechaLeitura)
+                        .catch(() => {})
+                    }
+                    aoRenomear={async (titulo) => {
+                      const r = await postConversaTitulo(agentSlug, vista.id, titulo);
+                      muda(vista, { titulo: r.titulo, titulo_origem: r.titulo_origem });
+                    }}
+                    aoExcluir={() => acoes.pedeExclusao(vista.id)}
+                    aoConfirmar={acoes.confirma}
+                    aoLargar={acoes.larga}
+                    aoFecharFalha={() => setFalha(null)}
+                  />
+                }
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </MotionConfig>
   );
 }

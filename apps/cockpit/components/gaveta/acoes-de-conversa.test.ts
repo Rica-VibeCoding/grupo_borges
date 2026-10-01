@@ -5,16 +5,16 @@ import {
   ATUAL,
   CONFERE_ERRO_MS,
   CONFERE_PRONTA_MS,
-  contaEspera,
   depoisDaTroca,
   fimDaConferencia,
   trocaRefletida,
   explicaRecusa,
   guardaTroca,
   leOperacao,
+  linhaDeOcupado,
   ondeMostra,
-  passosDaEspera,
-  textoDaConfirmacao,
+  textoDaEspera,
+  textoDaTroca,
   trocaEmCurso,
   trocaGuardada,
   type Troca,
@@ -25,8 +25,8 @@ const nova: Troca = { tipo: 'nova', alvo: null, forcar: false, desligado: false 
 
 describe('onde a ação aparece', () => {
   it('Retomar na linha da conversa pedida; Nova no cartão de cima', () => {
-    assert.equal(ondeMostra({ fase: 'confirmando', troca: retomar() }), 'b');
-    assert.equal(ondeMostra({ fase: 'confirmando', troca: nova }), ATUAL);
+    assert.equal(ondeMostra({ fase: 'ocupado', troca: retomar() }), 'b');
+    assert.equal(ondeMostra({ fase: 'ocupado', troca: nova }), ATUAL);
   });
 
   it('a espera que voltou sem alvo fica no cartão de cima', () => {
@@ -41,59 +41,32 @@ describe('onde a ação aparece', () => {
   });
 });
 
-describe('confirmação', () => {
-  it('parado: avisa que o segundo plano para, sem cor de risco', () => {
-    const c = textoDaConfirmacao(retomar(), 'Pavan');
-    assert.equal(c.botao, 'Retomar');
-    assert.equal(c.arrisca, false);
-    assert.match(c.aviso, /segundo plano para/);
+describe('botão de troca, sem confirmação (rodada 2)', () => {
+  it('parado: Continuar esta; no meio de um turno, interrompe', () => {
+    assert.equal(textoDaTroca('retomar', false), 'Continuar esta');
+    assert.equal(textoDaTroca('retomar', true), 'Interromper e continuar esta');
   });
 
-  it('no meio de um turno: interromper, com cor de risco', () => {
-    const c = textoDaConfirmacao(retomar({ forcar: true }), 'Pavan');
-    assert.equal(c.botao, 'Interromper e retomar');
-    assert.equal(c.arrisca, true);
-    assert.match(c.aviso, /Pavan está no meio de um turno/);
+  it('a Nova segue a mesma régua', () => {
+    assert.equal(textoDaTroca('nova', false), 'Nova conversa');
+    assert.equal(textoDaTroca('nova', true), 'Interromper e abrir nova');
   });
 
-  it('desligado: liga direto na conversa', () => {
-    assert.equal(textoDaConfirmacao(retomar({ desligado: true }), 'Pavan').botao, 'Ligar nesta conversa');
-  });
-
-  it('a Nova só confirma quando interrompe', () => {
-    assert.equal(textoDaConfirmacao({ ...nova, forcar: true }, 'Pavan').botao, 'Interromper e abrir nova');
+  it('ocupado é uma linha só, com o nome', () => {
+    assert.equal(linhaDeOcupado('José Pavan'), 'José Pavan está trabalhando');
   });
 });
 
-describe('passos da espera', () => {
-  it('Retomar religando: o primeiro passo já foi', () => {
-    const p = passosDaEspera(retomar(), 'religando', 'Pavan');
-    assert.deepEqual(p.map((x) => x.estado), ['feito', 'agora']);
-    assert.equal(p[1].texto, 'Religando Pavan nesta conversa');
+describe('espera em barra', () => {
+  it('uma frase só, sem etapa nem contagem', () => {
+    assert.equal(textoDaEspera(retomar(), 'Pavan'), 'Abrindo esta conversa…');
+    assert.equal(textoDaEspera(retomar({ forcar: true }), 'Pavan'), 'Abrindo esta conversa…');
+    assert.equal(textoDaEspera(nova, 'Pavan'), 'Abrindo a conversa nova…');
   });
 
-  it('Nova estacionando', () => {
-    const p = passosDaEspera(nova, 'estacionando', 'Pavan');
-    assert.deepEqual(p.map((x) => x.estado), ['agora', 'depois']);
-    assert.equal(p[1].texto, 'Abrindo a conversa nova');
-  });
-
-  it('com interrupção o primeiro passo diz isso', () => {
-    assert.equal(passosDaEspera(retomar({ forcar: true }), 'estacionando', 'Pavan')[0].texto, 'Interrompendo o turno');
-  });
-
-  it('desligado tem um passo só', () => {
-    assert.deepEqual(passosDaEspera(retomar({ desligado: true }), 'religando', 'Pavan').map((x) => x.texto), ['Ligando Pavan nesta conversa']);
-  });
-
-  it('sem saber o alvo, fala em troca', () => {
-    assert.equal(passosDaEspera(null, 'religando', 'Pavan')[1].texto, 'Trocando a conversa de Pavan');
-  });
-
-  it('o relógio conta e avisa quando passa dos 90 s', () => {
-    assert.equal(contaEspera(0, 14_400), '14 s · pode levar até 90 s');
-    assert.match(contaEspera(0, 95_000), /passou do previsto/);
-    assert.equal(contaEspera(5_000, 0), '0 s · pode levar até 90 s');
+  it('desligado liga; sem alvo conhecido, não promete destino', () => {
+    assert.equal(textoDaEspera(retomar({ desligado: true }), 'Pavan'), 'Ligando Pavan nesta conversa…');
+    assert.equal(textoDaEspera(null, 'Pavan'), 'Trocando a conversa de Pavan…');
   });
 });
 
