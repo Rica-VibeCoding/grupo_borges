@@ -232,11 +232,6 @@ export function usaAcoesDeConversa({
     void executa({ tipo: 'retomar', alvo: id, forcar: !desligado && (ocupado || recusada), desligado });
   }
 
-  function pedeNova(ocupado: boolean) {
-    const recusada = estado.fase === 'ocupado' && estado.troca.tipo === 'nova';
-    void executa({ tipo: 'nova', alvo: null, forcar: ocupado || recusada, desligado: false });
-  }
-
   function confirma() {
     if (estado.fase === 'confirmando-exclusao') void exclui(estado.id);
   }
@@ -266,7 +261,6 @@ export function usaAcoesDeConversa({
   return {
     estado,
     pedeRetomar,
-    pedeNova,
     pedeExclusao: (id: string) => setEstado({ fase: 'confirmando-exclusao', id }),
     confirma,
     /** Cancelar, fechar o erro ou abrir outra conversa: volta ao livre (nunca no meio de uma troca). */

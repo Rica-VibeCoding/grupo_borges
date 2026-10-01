@@ -9,6 +9,7 @@ import {
   leConversaTrocada,
   marcoGuardado,
   marcoValeAqui,
+  temPrimeiroTurno,
   textosDoMarco,
 } from './conversa-trocada.ts';
 
@@ -78,5 +79,18 @@ describe('conversa-trocada — o evento do stream vira marco (F13)', () => {
     guardaMarco(g, 'canarinho', leConversaTrocada(CRU)!);
     assert.deepEqual(marcoGuardado(g, 'canarinho'), leConversaTrocada(CRU));
     assert.equal(marcoGuardado(g, 'pavan'), null);
+  });
+
+  it('primeiro turno: só o que o Rica mandou depois da troca, sem resíduo de comando (F16)', () => {
+    const t = leConversaTrocada(CRU)!;
+    const fala = (texto: string, timestamp: string) =>
+      ({ kind: 'user', timestamp, created_at: 0, message: { role: 'user', content: texto } }) as unknown as MessagePayload;
+    const antes = new Date(CRU.at - 5_000).toISOString();
+    const depois = new Date(CRU.at + 5_000).toISOString();
+    assert.equal(temPrimeiroTurno([], t), false);
+    assert.equal(temPrimeiroTurno([fala('anota onde parou', antes)], t), false);
+    assert.equal(temPrimeiroTurno([fala('<command-name>/clear</command-name>', depois)], t), false);
+    assert.equal(temPrimeiroTurno([fala('bora', depois)], t), true);
+    assert.equal(temPrimeiroTurno([fala('bora', antes)], null), true);
   });
 });

@@ -50,7 +50,9 @@ import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 import { dobraPedidosDoCockpit, poeMarco, poeTrocaEmAndamento } from '@/components/feed/troca-no-feed.ts';
+import { temPrimeiroTurno } from '@/lib/conversa-trocada.ts';
 import { usaTrocaNoChat } from './usa-troca-no-chat';
+import { VoltarPraAnterior } from './voltar-pra-anterior';
 
 /** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
  *  no mesmo `<Feed>`, com os mesmos itens e a mesma gramática. É a ordem do
@@ -66,14 +68,16 @@ export function FeedDaConversa({ agentSlug }: { agentSlug: string }) {
   const { agents } = usaFrota();
   const agente = agents.find((a) => a.slug === agentSlug);
 
-  return <FeedClaudeCode agentSlug={agentSlug} statusDaFrota={agente?.status ?? null} />;
+  return <FeedClaudeCode agentSlug={agentSlug} nome={agente?.name ?? agentSlug} statusDaFrota={agente?.status ?? null} />;
 }
 
 const FeedClaudeCode = memo(function FeedClaudeCode({
   agentSlug,
+  nome,
   statusDaFrota,
 }: {
   agentSlug: string;
+  nome: string;
   /** O que a frota VIVA diz deste agente. Entra aqui só para desligar o
    *  "Pensando" quando ele sai do ar — ver `linha-viva-da-conversa.ts`. */
   statusDaFrota: AgentStatus | null;
@@ -283,8 +287,27 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
     temDelegacao: delegacoes.length > 0,
     status,
   });
-  if (decisao === 'nada') return null;
-  if (decisao === 'sem-conversa') return <SemConversa geracao={geracao} agentSlug={agentSlug} />;
+  // O "Voltar pra anterior" (F16) vive por cima do feed nos três casos: a Nova
+  // recarregada cai no vazio de saudação, e é ali que ele mais importa.
+  const voltar = (
+    <VoltarPraAnterior
+      agentSlug={agentSlug}
+      nome={nome}
+      statusDaFrota={statusDaFrota}
+      chave={troca?.sessionId ?? null}
+      temTurno={pendentes.length > 0 || anexosPendentes.length > 0 || temPrimeiroTurno(messages, marco)}
+      emTroca={emCurso !== null}
+    />
+  );
+  // Sempre na mesma posição da árvore: trocar de ramo não remonta o atalho.
+  if (decisao !== 'feed') {
+    return (
+      <>
+        {decisao === 'sem-conversa' ? <SemConversa geracao={geracao} agentSlug={agentSlug} /> : null}
+        {voltar}
+      </>
+    );
+  }
 
   // O wrapper existe pra `key` + fade da troca de geração sem tocar em
   // `components/feed/**` (território do Hiro): `flex column` + `min-h-0`
@@ -295,13 +318,16 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // a opacidade em dobro; esta substitui aquela, e o Restart ganha o mesmo
   // gesto. O deslize é SÓ aqui, nunca no palco — ver `.ck-feed-chega`.
   return (
-    <div
-      key={geracao}
-      className="ck-feed-chega flex min-h-0 flex-1 flex-col"
-      data-saindo={emCurso?.fase === 'trocando' || emCurso?.fase === 'pronta' ? '' : undefined}
-    >
-      <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
-    </div>
+    <>
+      <div
+        key={geracao}
+        className="ck-feed-chega flex min-h-0 flex-1 flex-col"
+        data-saindo={emCurso?.fase === 'trocando' || emCurso?.fase === 'pronta' ? '' : undefined}
+      >
+        <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
+      </div>
+      {voltar}
+    </>
   );
 });
 

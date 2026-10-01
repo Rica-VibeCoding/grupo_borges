@@ -87,11 +87,11 @@ export function resumoDaLeitura(conversa: Pick<Conversa, 'atualizada_em' | 'turn
 
 /** O cartão "Em uso agora" some com a conversa de agora vazia (rodada 2): uma
  *  conversa recém-aberta não tem o que mostrar. Ação em curso ou troca recém-feita
- *  seguram o cartão — é onde elas aparecem. Sem conversa conhecida e de pé, ele
- *  fica só com a Nova conversa, como antes. */
-export function mostraEmUso(atual: Pick<Conversa, 'turnos'> | null, comAcao: boolean, dePe: boolean): boolean {
+ *  seguram o cartão — é onde elas aparecem. A Nova conversa saiu daqui para a
+ *  gaveta (F16): sem conversa conhecida, o cartão não tem o que mostrar. */
+export function mostraEmUso(atual: Pick<Conversa, 'turnos'> | null, comAcao: boolean): boolean {
   if (comAcao) return true;
-  return atual ? atual.turnos > 0 : dePe;
+  return atual ? atual.turnos > 0 : false;
 }
 
 /** O que dizer quando a lista filtrada vem vazia — sempre com a saída. */

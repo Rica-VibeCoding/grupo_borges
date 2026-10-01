@@ -188,15 +188,11 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
             ) : null}
 
             {/* A troca que voltou de um recarregar aparece mesmo antes da lista chegar. */}
-            {(suportado || acaoNoTopo) && mostraEmUso(atual, acaoNoTopo !== null || trocouAgora !== null, dePe) ? (
+            {(suportado || acaoNoTopo) && mostraEmUso(atual, acaoNoTopo !== null || trocouAgora !== null) ? (
               <CartaoEmUso
                 atual={atual}
                 dePe={dePe}
-                podeTrocar={podeTrocar}
-                interrompe={ocupado || recusou('nova', null)}
-                nome={nome}
                 acao={acaoNoTopo}
-                aoNova={() => acoes.pedeNova(ocupado)}
                 trocouAgora={estado.fase === 'livre' ? trocouAgora : null}
                 voltar={
                   <LinkFechaPainel href={fecharHref} rotulo="o Histórico e voltar ao chat" className="ck-veil flex items-center justify-center" style={VOLTAR_AO_CHAT}>

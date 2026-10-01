@@ -13,9 +13,10 @@
  * - **Sessão** — o interruptor É o ciclo de vida: ligado = "Ativo" (azul),
  *   um toque desliga direto (sem armar, pedido do Rica 01/10); desligado,
  *   tocar liga. Dentro: o pulso, a porta do Histórico de conversas
- *   (`?painel=conversas`), a pesquisa (só onde existe) e os comandos. A porta
- *   tomou o lugar do Destravar, que saiu da gaveta (Rica, 01/10), e aparece
- *   com o agente ligado e desligado.
+ *   (`?painel=conversas`) com a Nova conversa ao lado (F16, `porta-e-nova`),
+ *   a pesquisa (só onde existe) e os comandos. A porta tomou o lugar do
+ *   Destravar, que saiu da gaveta (Rica, 01/10), e aparece com o agente ligado
+ *   e desligado; a Nova, só ligado.
  * - **Motor e conta** — os blocos de sempre, cada um num bloco preto.
  * - **MCPs** — a área tracejada com "+", porta para `?painel=mcps`.
  * - **Conversa** — só quando a gaveta abre pela tela de voz.
@@ -35,7 +36,7 @@ import { BlocoDeCota } from '../shell/bloco-de-cota';
 import { BlocoDeMotor } from '../shell/bloco-de-motor';
 import { FaixaDoPulso } from '../shell/faixa-do-pulso';
 import { rotulaModelo } from '../shell/motor';
-import { IconeBusca, IconeDescartar, IconeHistorico } from '../shell/icones';
+import { IconeBusca, IconeDescartar } from '../shell/icones';
 import { alternaPesquisa, podePesquisar } from '../shell/pesquisa-canario';
 import { usaPesquisaAtiva } from '../shell/usa-pesquisa';
 import { VeuDeOperacao } from '../shell/veu-de-operacao';
@@ -43,6 +44,7 @@ import { LinkDaGaveta } from '../shell/vista-da-gaveta';
 import { CartaoDaConversa } from './cartao-da-conversa';
 import { Heroi } from './heroi';
 import { Bloco, Cartao, Interruptor, Mais, Pilula } from './pecas';
+import { PortaENova } from './porta-e-nova';
 import { usaVidaDoAgente } from './usa-vida-do-agente';
 
 type Vida = ReturnType<typeof usaVidaDoAgente>;
@@ -126,28 +128,6 @@ function Avisos({ v }: { v: Vida }) {
   );
 }
 
-/** A porta do Histórico, no lugar onde morava o Destravar. Pílula larga e não
- *  área tracejada: o tracejado é "abrir ou criar" (MCPs), e aqui é só abrir. */
-function PortaDoHistorico({ fecharHref }: { fecharHref: string }) {
-  return (
-    <LinkDaGaveta
-      href={`${fecharHref}?painel=conversas`}
-      className="ck-gv-pilula ck-veil flex items-center justify-center"
-      style={{
-        gap: 'var(--ck-space-2)',
-        minHeight: 'var(--ck-touch-min)',
-        padding: '0 var(--ck-space-4)',
-        borderRadius: 'var(--ck-radius-pill)',
-        fontSize: 'var(--ck-text-sm)',
-        color: 'var(--ck-text-primary)',
-      }}
-    >
-      <IconeHistorico tamanho={16} />
-      Histórico de conversas
-    </LinkDaGaveta>
-  );
-}
-
 function CartaoDaSessao({ v, agentSlug, fecharHref }: { v: Vida; agentSlug: string; fecharHref: string }) {
   const pronto = v.carga === 'pronto';
   return (
@@ -194,7 +174,7 @@ function CartaoDaSessao({ v, agentSlug, fecharHref }: { v: Vida; agentSlug: stri
         </Bloco>
       ) : null}
 
-      {pronto ? <PortaDoHistorico fecharHref={fecharHref} /> : null}
+      {pronto ? <PortaENova agentSlug={agentSlug} fecharHref={fecharHref} comNova={v.dePe && !v.aplicandoMotor} /> : null}
 
       {pronto && v.dePe && !v.aplicandoMotor && podePesquisar(agentSlug) ? <LinhaDaPesquisa agentSlug={agentSlug} /> : null}
 

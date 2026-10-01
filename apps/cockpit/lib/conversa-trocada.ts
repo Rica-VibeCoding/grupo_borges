@@ -13,6 +13,8 @@
  */
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
+import { textosDoUsuario } from './textos-do-usuario.ts';
+
 export type ConversaTrocada = {
   /** A conversa que entrou. */
   sessionId: string;
@@ -64,6 +66,15 @@ export function antesDaTroca(troca: ConversaTrocada, mensagem: Pick<MessagePaylo
   if (troca.emMs === null) return true;
   const ts = typeof mensagem.timestamp === 'string' ? Date.parse(mensagem.timestamp) : Number.NaN;
   return !Number.isFinite(ts) || ts <= troca.emMs;
+}
+
+/** A conversa de agora já teve o primeiro turno? É o que tira o "Voltar pra
+ *  anterior" (F16). Conta o que o Rica mandou depois da troca; o resíduo do
+ *  `/clear` (`<command-name>…`) e o pedido do cockpit nasceram antes ou são
+ *  comando, não turno. */
+export function temPrimeiroTurno(mensagens: readonly MessagePayload[], troca: ConversaTrocada | null): boolean {
+  const depois = troca ? mensagens.filter((m) => !antesDaTroca(troca, m)) : mensagens;
+  return textosDoUsuario(depois).some((t) => !t.texto.trimStart().startsWith('<'));
 }
 
 export type TextosDoMarco = {

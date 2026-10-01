@@ -252,3 +252,12 @@ export function IconeLixeira(props: IconeProps) {
     </Tracado>
   );
 }
+
+/** Mais — abrir uma conversa nova (gaveta, F16). */
+export function IconeMais(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </Tracado>
+  );
+}

@@ -116,14 +116,14 @@ describe('a de agora', () => {
   });
 
   it('o cartão some com a de agora vazia, a não ser que haja ação nele', () => {
-    assert.equal(mostraEmUso(conversa({ turnos: 0 }), false, true), false);
-    assert.equal(mostraEmUso(conversa({ turnos: 0 }), true, true), true);
-    assert.equal(mostraEmUso(conversa({ turnos: 3 }), false, true), true);
+    assert.equal(mostraEmUso(conversa({ turnos: 0 }), false), false);
+    assert.equal(mostraEmUso(conversa({ turnos: 0 }), true), true);
+    assert.equal(mostraEmUso(conversa({ turnos: 3 }), false), true);
   });
 
-  it('sem conversa conhecida, fica de pé só com o agente ligado', () => {
-    assert.equal(mostraEmUso(null, false, true), true);
-    assert.equal(mostraEmUso(null, false, false), false);
+  it('sem conversa conhecida, só aparece com ação (a Nova mora na gaveta, F16)', () => {
+    assert.equal(mostraEmUso(null, false), false);
+    assert.equal(mostraEmUso(null, true), true);
   });
 });
 

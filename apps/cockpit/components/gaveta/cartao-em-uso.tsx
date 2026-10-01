@@ -2,44 +2,32 @@
 
 /**
  * "Em uso agora" — a conversa da linha, no topo do Histórico (direção A com o
- * cartão da C, F8). Carrega a Nova conversa (F10) e é onde aparece a espera ou
- * o erro de uma troca cuja conversa não está aberta na leitura.
+ * cartão da C, F8). É onde aparece a espera ou o erro de uma troca cuja
+ * conversa não está aberta na leitura.
  *
  * Rodada 2: só título e turnos (a nota mora na leitura), e o cartão some com a
- * conversa de agora vazia (`mostraEmUso`). Nova no meio de um turno não
- * confirma: a linha de ocupado e o botão já dizem que interrompe.
+ * conversa de agora vazia (`mostraEmUso`). A Nova conversa saiu daqui para a
+ * gaveta, ao lado da porta do Histórico (F16): um lugar só.
  *
- * Desligado, o cartão vira "Última em uso" e a Nova sai: a API recusa com 409
- * `desligado`, e o caminho é ligar pelo interruptor da gaveta.
+ * Desligado, o cartão vira "Última em uso".
  */
 import type { ReactNode } from 'react';
 
 import type { Conversa } from '@grupo_borges/cockpit-core/api';
 
-import { LinhaDeOcupado } from './acao-de-conversa';
-import { linhaDeOcupado, textoDaTroca } from './acoes-de-conversa';
 import { contaTurnos } from './conversas';
-import { Bloco, Cartao, Mais } from './pecas';
+import { Bloco, Cartao } from './pecas';
 
 export function CartaoEmUso({
   atual,
   dePe,
-  podeTrocar,
-  interrompe,
-  nome,
   acao,
-  aoNova,
   trocouAgora = null,
   voltar = null,
 }: {
   atual: Conversa | null;
   dePe: boolean;
-  podeTrocar: boolean;
-  /** A Nova vai interromper um turno. */
-  interrompe: boolean;
-  nome: string;
   acao: ReactNode;
-  aoNova: () => void;
   /** A troca que acabou de dar certo (F13): o cartão diz isso e mostra o
    *  caminho de volta ao chat — no celular, a gaveta cobre a conversa. */
   trocouAgora?: 'retomar' | 'nova' | null;
@@ -67,27 +55,6 @@ export function CartaoEmUso({
       ) : null}
       {acao ? <Bloco>{acao}</Bloco> : null}
       {recemTrocada ? voltar : null}
-      {!acao && !recemTrocada && dePe && podeTrocar ? (
-        <>
-          {interrompe ? <LinhaDeOcupado texto={linhaDeOcupado(nome)} /> : null}
-          <button
-            type="button"
-            onClick={aoNova}
-            className="ck-gv-tracejado ck-veil flex items-center justify-center"
-            style={{
-              gap: 'var(--ck-space-3)',
-              minHeight: '48px',
-              borderRadius: 'var(--ck-gv-raio-bloco)',
-              fontSize: 'var(--ck-text-sm)',
-              fontWeight: 500,
-              color: interrompe ? 'var(--ck-state-attention)' : 'var(--ck-text-primary)',
-              transition: 'color var(--ck-dur-calm) var(--ck-ease)',
-            }}
-          >
-            <Mais /> {textoDaTroca('nova', interrompe)}
-          </button>
-        </>
-      ) : null}
     </Cartao>
   );
 }

@@ -250,6 +250,15 @@ export function LinkFechaPainel({
   );
 }
 
+/** O fechar do `LinkFechaPainel` sem o link: uma ação que termina no chat (a
+ *  Nova conversa da gaveta, F16). Fora do provider, o roteador de sempre. */
+export function usaFechaPainel(hrefRecebido: string): () => void {
+  const ctx = useContext(painel.Ctx);
+  const href = useHrefDoPainel(hrefRecebido);
+  const router = useRouter();
+  return () => (ctx ? ctx.ir(href, false) : router.push(href));
+}
+
 /** O irmão de cima, pro lado que ABRE — a cápsula do agente no chrome, único
  *  gatilho visível do painel desde 27/09. Otimista porque `<Link>` seco levaria os 2,0–2,7s
  *  de ida e volta antes de a gaveta começar a se mover, e é essa espera que o
