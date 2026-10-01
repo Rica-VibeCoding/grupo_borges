@@ -1023,3 +1023,64 @@ export async function postConversaEstrela(
   if (!res.ok) throw new Error(await errorDetail(res, `postConversaEstrela failed: ${res.status}`));
   return res.json();
 }
+
+// Ações das conversas (F10). Nova e Retomar respondem 200 `pronta`, 202 quando
+// passam de 90 s (a operação segue no servidor) e 502 `{fase: erro, detalhe}`
+// — os três com o mesmo corpo, por isso voltam como dado e não como exceção.
+// 409 e o resto viram `ErroDeConversa`, com o `detail` cru da API em `codigo`.
+export type FaseDaOperacao = 'estacionando' | 'religando' | 'pronta' | 'erro';
+
+export type OperacaoDeConversa = {
+  fase: FaseDaOperacao | null;
+  desde: number | null;
+  detalhe: string | null;
+};
+
+export type RespostaDaTroca = OperacaoDeConversa & { titulo: string | null; nota: boolean };
+
+export class ErroDeConversa extends Error {
+  readonly status: number;
+  readonly codigo: string;
+
+  constructor(status: number, codigo: string) {
+    super(codigo);
+    this.status = status;
+    this.codigo = codigo;
+    this.name = 'ErroDeConversa';
+  }
+}
+
+async function trocaDeConversa(url: string, forcar: boolean): Promise<RespostaDaTroca> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ forcar }),
+  });
+  if (res.ok || res.status === 502) return res.json();
+  throw new ErroDeConversa(res.status, await errorDetail(res, `HTTP ${res.status}`));
+}
+
+export function postConversaNova(slug: string, forcar: boolean): Promise<RespostaDaTroca> {
+  return trocaDeConversa(`/api/agents/${encodeURIComponent(slug)}/conversas/nova`, forcar);
+}
+
+export function postConversaRetomar(slug: string, id: string, forcar: boolean): Promise<RespostaDaTroca> {
+  return trocaDeConversa(
+    `/api/agents/${encodeURIComponent(slug)}/conversas/${encodeURIComponent(id)}/retomar`,
+    forcar,
+  );
+}
+
+export async function fetchConversaOperacao(slug: string, signal?: AbortSignal): Promise<OperacaoDeConversa> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/conversas/operacao`, { cache: 'no-store', signal });
+  if (!res.ok) throw new ErroDeConversa(res.status, await errorDetail(res, `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function deleteConversa(slug: string, id: string): Promise<{ id: string; pasta_irma: string }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/conversas/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new ErroDeConversa(res.status, await errorDetail(res, `HTTP ${res.status}`));
+  return res.json();
+}

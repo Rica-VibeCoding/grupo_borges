@@ -2098,6 +2098,11 @@ html[data-troca-agente] .ck-palco {
 }
 .ck-gv-tracejado:hover { border-color: var(--ck-text-tertiary); }
 
+/* O passo em curso da troca de conversa (F10) respira — é o único movimento da
+   espera, e diz "está andando" sem número nenhum. */
+.ck-gv-passo-agora { animation: ck-respira 1.6s var(--ck-ease) infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .ck-gv-botao-trilho { transition: none; }
+  .ck-gv-passo-agora { animation: none; }
 }

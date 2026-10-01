@@ -3,15 +3,19 @@
 /**
  * Uma conversa da lista do Histórico — direção A da F8 (Rica, 01/10): fechada,
  * título · tempo, a nota numa linha e os selos; um toque abre ali mesmo, com a
- * nota inteira e as ações. Na F9 a única ação é a ⭐ (a API já existe); Retomar
- * e 🗑 chegam na F10, e botão que ainda não faz nada não entra (§9.13).
+ * nota inteira e as ações: Retomar, ⭐ e 🗑 (F10). Confirmação, espera e erro
+ * chegam prontos do painel em `acao` e abrem dentro do bloco, no lugar dos botões.
+ * Conversa 🔒 e a troca em curso tiram Retomar e 🗑; a ⭐ fica (guardar não mexe
+ * no arquivo).
  *
  * O resumo é um `<button aria-expanded>` e as ações ficam FORA dele: botão
  * dentro de botão não é HTML válido, e o leitor de tela perde a estrela.
  */
+import type { ReactNode } from 'react';
+
 import type { Conversa } from '@grupo_borges/cockpit-core/api';
 
-import { IconeCadeado, IconeEstrela } from '../shell/icones';
+import { IconeCadeado, IconeEstrela, IconeLixeira } from '../shell/icones';
 import { contaTurnos, descreveTrava, tempoRelativo } from './conversas';
 import { Bloco, Pilula } from './pecas';
 
@@ -52,6 +56,11 @@ export function LinhaDeConversa({
   marcando,
   falha,
   nomeDoAgente,
+  acao,
+  podeTrocar,
+  porQueNao,
+  aoRetomar,
+  aoExcluir,
 }: {
   conversa: Conversa;
   agora: number;
@@ -61,7 +70,16 @@ export function LinhaDeConversa({
   marcando: boolean;
   falha: string | null;
   nomeDoAgente: (slug: string) => string;
+  /** A ação aberta nesta conversa (confirmação, espera, erro), ou `null`. */
+  acao: ReactNode;
+  /** Falso durante uma troca e com o motor religando: Retomar e 🗑 saem. */
+  podeTrocar: boolean;
+  /** Por que Retomar e 🗑 não estão aqui, quando não é óbvio. */
+  porQueNao: string | null;
+  aoRetomar: () => void;
+  aoExcluir: () => void;
 }) {
+  const livre = podeTrocar && !conversa.bloqueada;
   const painelId = `conversa-${conversa.id}`;
   return (
     <Bloco style={{ gap: 0, padding: 0 }}>
@@ -100,16 +118,36 @@ export function LinhaDeConversa({
           <span className="ck-tabular" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
             {contaTurnos(conversa.turnos)}
           </span>
-          <div className="flex">
-            <Pilula
-              aoTocar={aoMarcarEstrela}
-              ocupado={marcando}
-              descricao={conversa.estrela ? 'Tirar dos especiais' : 'Marcar como especial'}
-            >
-              <IconeEstrela tamanho={15} />
-              {conversa.estrela ? 'Tirar dos especiais' : 'Marcar como especial'}
-            </Pilula>
-          </div>
+          {conversa.bloqueada ? (
+            <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>
+              Aberta lá: sem Retomar nem excluir até ela fechar.
+            </span>
+          ) : !podeTrocar && porQueNao && !acao ? (
+            <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>{porQueNao}</span>
+          ) : null}
+          {acao ?? (
+            <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
+              {livre ? <Pilula aoTocar={aoRetomar}>Retomar</Pilula> : null}
+              <span className={livre ? 'flex' : 'flex flex-1'} style={livre ? { flex: '0 0 auto' } : undefined}>
+                <Pilula
+                  aoTocar={aoMarcarEstrela}
+                  ocupado={marcando}
+                  descricao={conversa.estrela ? 'Tirar dos especiais' : 'Marcar como especial'}
+                  cor={conversa.estrela ? 'var(--ck-gv-ativo-texto)' : undefined}
+                >
+                  <IconeEstrela tamanho={16} />
+                  {livre ? null : conversa.estrela ? 'Tirar dos especiais' : 'Marcar como especial'}
+                </Pilula>
+              </span>
+              {livre ? (
+                <span className="flex" style={{ flex: '0 0 auto' }}>
+                  <Pilula aoTocar={aoExcluir} descricao="Excluir conversa">
+                    <IconeLixeira tamanho={16} />
+                  </Pilula>
+                </span>
+              ) : null}
+            </div>
+          )}
           {falha ? (
             <p role="alert" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}>
               {falha}

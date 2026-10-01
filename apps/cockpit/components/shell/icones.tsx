@@ -242,3 +242,13 @@ export function IconeHistorico(props: IconeProps) {
     </Tracado>
   );
 }
+
+/** Lixeira — excluir uma conversa do Histórico (vai para a lixeira do servidor). */
+export function IconeLixeira(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M4.5 7h15M9.5 7V4.5h5V7" />
+      <path d="M6.5 7l1 12.5h9l1-12.5" />
+    </Tracado>
+  );
+}

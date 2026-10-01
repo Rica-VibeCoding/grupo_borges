@@ -89,6 +89,12 @@ describe('filtro', () => {
     assert.deepEqual(filtraConversas(lista, 'estrela', '').map((c) => c.id), ['a']);
   });
 
+  it('a que perdeu a ⭐ nos especiais fica segurada até trocar de filtro', () => {
+    const seguradas = new Set(['b']);
+    assert.deepEqual(filtraConversas(lista, 'estrela', '', seguradas).map((c) => c.id), ['a', 'b']);
+    assert.deepEqual(filtraConversas(lista, 'estrela', 'faxina', seguradas).map((c) => c.id), []);
+  });
+
   it('pendência zero não é pendência', () => {
     assert.deepEqual(filtraConversas(lista, 'pendencia', '').map((c) => c.id), ['b']);
   });

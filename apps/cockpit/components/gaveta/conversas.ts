@@ -49,9 +49,16 @@ export function casaBusca(conversa: Conversa, busca: string): boolean {
   return palavras.every((p) => alvo.includes(p));
 }
 
-export function filtraConversas(lista: readonly Conversa[], filtro: FiltroDeConversa, busca: string): Conversa[] {
+/** `seguradas`: conversas que perderam a ⭐ com o filtro Especiais aberto.
+ *  Sumir no toque assusta (furo da F9); elas ficam até trocar de filtro. */
+export function filtraConversas(
+  lista: readonly Conversa[],
+  filtro: FiltroDeConversa,
+  busca: string,
+  seguradas: ReadonlySet<string> = new Set(),
+): Conversa[] {
   return lista.filter((c) => {
-    if (filtro === 'estrela' && !c.estrela) return false;
+    if (filtro === 'estrela' && !c.estrela && !seguradas.has(c.id)) return false;
     if (filtro === 'pendencia' && !c.pendencia) return false;
     return casaBusca(c, busca);
   });
