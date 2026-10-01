@@ -130,7 +130,7 @@ export function LinhaDaTropa({
             {pct === null ? (
               <span aria-hidden className="shrink-0" style={{ width: larguraDaBarra }} />
             ) : (
-              <BarraDeContexto pct={pct} largura={larguraDaBarra} />
+              <BarraDeContexto pct={pct} largura={larguraDaBarra} trilho="var(--ck-tl-trilho)" />
             )}
           </span>
 

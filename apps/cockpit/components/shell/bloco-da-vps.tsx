@@ -193,8 +193,14 @@ export function BlocoDaVps() {
         <h2 style={{ fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
           VPS
         </h2>
-        <span className="ml-auto" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
-          {dados ? `no ar ${formataNoAr(dados.no_ar_segundos)}` : '\u00a0'}
+        {/* Carga e disco livre: os dois absolutos que decidem alguma coisa. */}
+        <span
+          className="ck-tabular ml-auto min-w-0 truncate"
+          style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}
+        >
+          {dados
+            ? `carga ${formataCarga(dados.carga_1m)} · ${formataTamanho(dados.disco.livre_mb)} livres`
+            : '\u00a0'}
         </span>
       </div>
 
@@ -209,16 +215,13 @@ export function BlocoDaVps() {
         ))}
       </div>
 
-      {/* Carga e disco livre: os dois absolutos que decidem alguma coisa. Os
-          processos (QUEM come, ordem do Rica de 07/09) ficam atrás da pílula. */}
+      {/* Os processos (QUEM come, ordem do Rica de 07/09) ficam atrás da pílula. */}
       <div className="flex items-center" style={{ gap: 'var(--ck-space-2)' }}>
         <p
           className="ck-tabular min-w-0 flex-1 truncate"
           style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}
         >
-          {dados
-            ? `carga ${formataCarga(dados.carga_1m)} · ${formataTamanho(dados.disco.livre_mb)} livres`
-            : '\u00a0'}
+          {dados ? `no ar ${formataNoAr(dados.no_ar_segundos)}` : '\u00a0'}
         </p>
         {linhas.length > 0 ? (
           <button

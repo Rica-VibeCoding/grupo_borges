@@ -1643,6 +1643,11 @@ html[data-troca-agente] .ck-palco {
  * estado muda. Brilho = vida: aceso (dele/sua vez) > na linha > desligado.
  * Palavra de estado em `secondary` quando o tom é neutro: o `desligado`
  * (`tertiary`) não passa 4.5:1 como texto (§3) e fica só no aro. */
+:root {
+  /* Trilho da barra de contexto na tropa: luz translúcida, visível sobre a mesa,
+   * sobre a aba (canvas) e sobre o véu do selecionado no celular. */
+  --ck-tl-trilho: rgb(255 255 255 / 0.08);
+}
 .ck-tl-linha {
   --ck-tl-cor: var(--ck-tom-prepara);
   min-height: var(--ck-touch-min);

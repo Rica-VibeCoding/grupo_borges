@@ -203,6 +203,16 @@ em curso vence; sem ela, a frota no vocabulário da voz (trabalhando · na linha
 mais; vermelho (`--ck-gv-alerta`) = só a bolinha "!"; âmbar = atenção, do estado global. Não entra
 acento novo.
 
+**Lista da tropa** (`shell/linha-da-tropa.tsx`, §T do `globals.css`) — lista, não cartões; uma anatomia
+para todo agente, de pé ou dormindo: foto redonda com aro parado no tom de estado · nome · palavra do
+estado (a mesma régua da pílula) · à direita o `%` e a barra fina de contexto. Brilho do aro = vida (aceso >
+na linha > desligado; desligado também esmaece a foto). Palavra em tom neutro sai em `secondary`, nunca no
+`tertiary` do desligado. Motor, relógio e pasta só na linha selecionada, igual para todos. Selecionado: véu +
+aba + filete curto de 2px. Nada pulsa na lista; só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora
+na gaveta. O topo do chat é a própria pílula (`lugar="topo"`, foto 36). A VPS é cartão no pé da tropa
+(`composer` + fio de luz, grade 2×2 de barras finas, cor só acima do teto de `recursos-da-vps.ts`, processos
+atrás de pílula).
+
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.
