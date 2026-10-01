@@ -137,7 +137,7 @@ export function TelaConversa({
     modo.tempoCargaMs !== null ? `Detector pronto em ${(modo.tempoCargaMs / 1000).toFixed(1).replace('.', ',')} s` : null;
   usePublicaDetalheDaConversa(ativa, detalheTecnico);
   const voceDisse = texto ? null : voceDisseParaLeitor(cena, modo.fala.firme);
-  const legenda = legendaDaVez({ cena, texto, fala: modo.fala, falaDoZe: modo.falaDoZe });
+  const legenda = legendaDaVez({ cena, texto, fala: modo.fala, falaDoZe: modo.falaDoZe, naFila: modo.naFila });
   // O pulso que chama o toque, preso à animação de fora: a esfera ou o aro solto.
   const sinal = cena === 'parado' && !preparacaoFalhou;
 

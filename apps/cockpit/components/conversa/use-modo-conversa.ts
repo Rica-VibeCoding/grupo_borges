@@ -1,14 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { postAgentInput, postAgentInterromper } from '@grupo_borges/cockpit-core/api';
+import { postAgentInterromper } from '@grupo_borges/cockpit-core/api';
 
 import { destravaNoGesto, estaTocando } from '@/components/feed/reprodutor-unico';
 import { avanca, inicial } from '@/lib/conversa/maquina';
 import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
-import { entregaFala } from './envio-da-conversa';
 import { ferramentaEmCurso } from './estado-da-vez';
 import { comParcial, FALA_VAZIA, falaDepois, type FalaDaVez } from './fala-da-vez';
 import { criaFalaDevolvida } from './fala-devolvida';
@@ -20,6 +19,7 @@ import { useMudoDaCaptura } from './use-mudo-da-captura';
 import { useAbaEscondida, useEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
+import { useFilaDaFala } from './use-fila-da-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
 import { useRetomadaDaConversa } from './use-retomada-da-conversa';
 import { useSegurarAVez } from './use-segurar-a-vez';
@@ -110,6 +110,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   const vez = useSegurarAVez({ estado: conversa.estado, conversaRef, seguraDetector: detector.segura, somDeSegurar,
     aoMudar: (ligado) => despachaRef.current({ tipo: 'segurou', ligado }) });
 
+  const fila = useFilaDaFala({ slug, geracao: stream.geracao, isRunningRef, cicloRef, despachaRef, devolvida, preparaEnvio: apoio.preparaEnvio });
   const apoioRef = useRef(apoio);
   apoioRef.current = apoio;
   const despacha = useCallback((evento: Evento) => {
@@ -162,19 +163,9 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
           despacha: (evento) => despachaRef.current(evento) });
         return;
       }
-      case 'enviar': {
-        // Com o Zé ocupado a fala sai igual: o Claude Code a enfileira sem interromper o turno.
-        const ciclo = cicloRef.current;
-        const pedido = devolvida.envio(efeito.texto);
-        apoio.preparaEnvio();
-        entregaFala({
-          posta: () => postAgentInput(slug, pedido.monta(), { origin: 'voz' }),
-          vivo: () => ciclo === cicloRef.current,
-          enviou: () => (pedido.entrou(), despachaRef.current({ tipo: 'enviou' })),
-          falhou: (motivo) => despachaRef.current({ tipo: 'falhou', motivo }),
-        });
+      case 'enviar': // com o Zé no turno, a fala espera o fim dele (`fila-da-fala.ts`)
+        fila.envia(efeito.texto);
         return;
-      }
       case 'frearZe': {
         // O `■` do composer: antes da 1ª linha do Zé o servidor limpa o pedido devolvido à caixa, e a
         // fala limpa vai na frente da próxima. Falhar não é alarme: a resposta fica no chat de texto.
@@ -200,13 +191,14 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
 
   const entregaTexto = (texto: string, id: number) => retomada.entrega(id, () => despacha({ tipo: 'textoDoZe', texto }));
   useTurnoDoZe(stream, {
-    abre: () => { abreTurno(); apoio.inicia(); },
+    abre: () => { fila.abriu(); abreTurno(); apoio.inicia(); },
     texto: entregaTexto,
     pedidoEntrou: () => (devolvida.descarta(), despacha({ tipo: 'pedidoEntrou' })), // já está no histórico
     fecha: () => {
       apoio.encerra();
       despacha({ tipo: 'zeTerminou' });
       fechaTurno();
+      fila.fechou();
     },
   });
 
@@ -239,13 +231,14 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
       },
       pedeWakeLock: wakeLock.pede,
       comeca: () => {
+        fila.tenta(); // a fila que a recarga recuperou
         if (!r) return void (retomada.comeca(), despacha({ tipo: 'comecar' }));
         const fecha = () => (despacha({ tipo: 'zeTerminou' }), fechaTurno());
         const retomar = () => (detector.destrava(), despacha({ tipo: 'retomar' }), abreTurno());
         retomada.retoma(r, { retomar, texto: entregaTexto, fecha });
       },
     });
-  }, [apoio, despacha, detector, sons, wakeLock, retomada, abreTurno, fechaTurno, entregaTexto]);
+  }, [apoio, despacha, detector, sons, wakeLock, retomada, abreTurno, fechaTurno, entregaTexto, fila]);
 
   const encerra = useCallback((semFreio: boolean) => {
     cicloRef.current += 1;
@@ -257,8 +250,9 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     wakeLock.solta();
     retomada.apaga(); // parou: a recarga depois abre em "parado"
     devolvida.descarta();
+    fila.descarta();
     despacha({ tipo: 'parar', semFreio });
-  }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada, devolvida]);
+  }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada, devolvida, fila]);
   /** O toque que para: com o turno do Zé em voo, freia. */
   const parar = useCallback(() => encerra(false), [encerra]);
 
@@ -293,6 +287,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     leNivel,
     aviso,
     fala,
+    naFila: fila.naFila,
     falaDoZe,
     tocando,
     ferramenta,

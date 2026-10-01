@@ -13,17 +13,19 @@ import type { Cena } from './moldura-estado.ts';
  * - falando e pausado: a sua fala numa linha apagada em cima; a dele acompanha a voz palavra a
  *   palavra (`janela-que-corre.tsx`), o que falta não aparece. Pausado (falou por cima), congela.
  *
+ * - na fila (`fila-da-fala.ts`): a sua fala esperando o fim do turno dele diz isso no rótulo.
+ *
  * Sem "Mostrar texto", nada: o estado fica com a cor do visual e a palavra da pílula.
  */
 export type TrechoDaLegenda =
   | { quem: 'voce'; forma: 'ao-vivo'; texto: string }
-  | { quem: 'voce'; forma: 'disse'; texto: string | null; firme: boolean }
-  | { quem: 'voce'; forma: 'recuada'; texto: string }
+  | { quem: 'voce'; forma: 'disse'; texto: string | null; firme: boolean; naFila?: true }
+  | { quem: 'voce'; forma: 'recuada'; texto: string; naFila?: true }
   | { quem: 'ze'; forma: 'resposta' | 'pausada'; fala: FalaDoZe };
 
-export type EntradaDaLegenda = { cena: Cena; texto: boolean; fala: FalaDaVez; falaDoZe: FalaDoZe | null };
+export type EntradaDaLegenda = { cena: Cena; texto: boolean; fala: FalaDaVez; falaDoZe: FalaDoZe | null; naFila?: boolean };
 
-export function legendaDaVez({ cena, texto, fala, falaDoZe }: EntradaDaLegenda): TrechoDaLegenda[] {
+export function legendaDaVez({ cena, texto, fala, falaDoZe, naFila }: EntradaDaLegenda): TrechoDaLegenda[] {
   if (!texto) return [];
   if (cena === 'ouvindo') return fala.parcial ? [{ quem: 'voce', forma: 'ao-vivo', texto: fala.parcial }] : [];
   if (cena === 'transcrevendo') {
@@ -31,8 +33,9 @@ export function legendaDaVez({ cena, texto, fala, falaDoZe }: EntradaDaLegenda):
   }
   const falas = falasVisiveis(cena);
   const trechos: TrechoDaLegenda[] = [];
-  if (falas.voce === 'cheia' && fala.firme) trechos.push({ quem: 'voce', forma: 'disse', texto: fala.firme, firme: true });
-  if (falas.voce === 'recuada' && fala.firme) trechos.push({ quem: 'voce', forma: 'recuada', texto: fala.firme });
+  const fila = naFila ? { naFila: true as const } : {};
+  if (falas.voce === 'cheia' && fala.firme) trechos.push({ quem: 'voce', forma: 'disse', texto: fala.firme, firme: true, ...fila });
+  if (falas.voce === 'recuada' && fala.firme) trechos.push({ quem: 'voce', forma: 'recuada', texto: fala.firme, ...fila });
   if (falas.ze && falaDoZe) trechos.push({ quem: 'ze', forma: cena === 'interrompendo' ? 'pausada' : 'resposta', fala: falaDoZe });
   return trechos;
 }

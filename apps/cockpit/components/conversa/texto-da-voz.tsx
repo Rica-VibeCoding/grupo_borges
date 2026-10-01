@@ -81,7 +81,7 @@ export function LegendaDaVoz({ trechos, nome }: { trechos: TrechoDaLegenda[]; no
               data-fala="voce"
               data-forma="recuada"
             >
-              “{daVoce.texto}”
+              {daVoce.naFila ? 'na fila · ' : null}“{daVoce.texto}”
             </motion.p>
           ) : daVoce?.forma === 'disse' ? (
             <motion.div
@@ -94,7 +94,7 @@ export function LegendaDaVoz({ trechos, nome }: { trechos: TrechoDaLegenda[]; no
               data-fala="voce"
               data-forma="cheia"
             >
-              <span className={styles.quem}>Você disse</span>
+              <span className={styles.quem}>{daVoce.naFila ? 'Na fila' : 'Você disse'}</span>
               <div className={styles.corre}>
                 <p className={styles.texto}>
                   {daVoce.texto === null ? (

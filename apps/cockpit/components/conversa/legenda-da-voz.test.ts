@@ -58,4 +58,17 @@ describe('a legenda da tela de voz', () => {
     ]);
     assert.deepEqual(legendaDaVez({ cena: 'falando', texto: true, fala: FALA_VAZIA, falaDoZe: null }), []);
   });
+
+  it('a fala que espera o fim do turno dele diz que está na fila — cheia ou recuada, nunca entendendo', () => {
+    assert.deepEqual(legendaDaVez({ cena: 'esperandoZe', texto: true, fala: cheia, falaDoZe: null, naFila: true }), [
+      { quem: 'voce', forma: 'disse', texto: 'Qual a previsão?', firme: true, naFila: true },
+    ]);
+    assert.deepEqual(legendaDaVez({ cena: 'falando', texto: true, fala: cheia, falaDoZe: resposta, naFila: true }), [
+      { quem: 'voce', forma: 'recuada', texto: 'Qual a previsão?', naFila: true },
+      { quem: 'ze', forma: 'resposta', fala: resposta },
+    ]);
+    assert.deepEqual(legendaDaVez({ cena: 'transcrevendo', texto: true, fala: cheia, falaDoZe: null, naFila: true }), [
+      { quem: 'voce', forma: 'disse', texto: 'Qual a previsão?', firme: true },
+    ]);
+  });
 });
