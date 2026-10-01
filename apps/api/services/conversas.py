@@ -32,11 +32,13 @@ import subprocess
 import threading
 import unicodedata
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Collection, Iterable, Iterator
 
 from orchestrator.lifecycle_ruido import eh_interrupcao, eh_ruido_de_lifecycle
 from services import briefing_retorno
+from services.residuo_de_troca import eh_residuo_de_troca
 from services.tmux_driver import _SESSION_ID_PATTERN
 
 logger = logging.getLogger(__name__)
@@ -295,7 +297,10 @@ def _resumir(caminho: Path, st: os.stat_result) -> _Resumo:
 def _titulo(
     session_id: str, resumo: _Resumo, meta: dict[str, Any] | None, nomes: set[str]
 ) -> tuple[str, str]:
-    """Ordem de queda do contrato. Nunca vazio."""
+    """Ordem de queda do contrato, com o nome dado pelo Rica na frente (F14). Nunca vazio."""
+    renomeada = _linha_curta(meta.get("renomeada")) if meta else None
+    if renomeada:
+        return renomeada, "renomeada"
     estacionado = _linha_curta(meta.get("titulo")) if meta else None
     if estacionado:
         return estacionado, "estacionada"
@@ -561,6 +566,7 @@ def listar(
                     "turnos": resumo.turnos,
                     "bytes": st.st_size,
                     "estrela": estrela,
+                    "concluida": bool(meta and meta.get("concluida")),
                     "atual": eh_atual,
                     "bloqueada": bloqueada,
                     "bloqueada_por": bloqueada_por,
@@ -583,7 +589,14 @@ def filtrar(
     A conversa atual e as ⭐ nunca são escondidas por serem curtas: a atual de
     um agente recém-limpo tem zero turnos e precisa aparecer, e a estrela é
     escolha explícita de guardar.
+
+    Concluída (F14) só aparece no filtro `concluidas` — a não ser que seja a
+    atual, que está em uso e não some de lista nenhuma.
     """
+    if filtro == "concluidas":
+        conversas = [c for c in conversas if c["concluida"]]
+    else:
+        conversas = [c for c in conversas if not c["concluida"] or c["atual"]]
     if filtro == "estrela":
         conversas = [c for c in conversas if c["estrela"]]
     elif filtro == "pendencia":
@@ -600,3 +613,167 @@ def filtrar(
         c for c in conversas if c["turnos"] > TURNOS_CURTA or c["atual"] or c["estrela"]
     ]
     return visiveis, len(conversas) - len(visiveis)
+
+
+# ---------- F14: leitura da conversa ----------
+
+#: Quantas mensagens a leitura devolve por padrão, e o teto do pedido.
+LEITURA_PADRAO = 30
+LEITURA_MAX = 100
+#: Teto de bytes lidos do fim do arquivo. Conversa longa tem resultado de
+#: ferramenta de megabytes no meio; passou disso, devolve o que achou.
+LEITURA_MAX_BYTES = 4 << 20
+_BLOCO_DO_FIM = 256 << 10
+_TEXTO_MAX = 8000
+_MARCA_ASSISTANT = b'"type":"assistant"'
+_MARCA_TEXTO = b'"type":"text"'
+
+
+def _abrir_binario(caminho: Path):
+    return caminho.open("rb")
+
+
+def _em_ms(payload: dict[str, Any]) -> int | None:
+    valor = payload.get("timestamp")
+    if not isinstance(valor, str):
+        return None
+    try:
+        return int(datetime.fromisoformat(valor.replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def _cortar(texto: str) -> str:
+    return texto if len(texto) <= _TEXTO_MAX else texto[: _TEXTO_MAX - 1].rstrip() + "…"
+
+
+def _fala_do_rica(payload: dict[str, Any]) -> str | None:
+    if eh_residuo_de_troca(payload):
+        return None
+    texto = _eh_turno(payload)
+    if texto is None:
+        return None
+    limpo = _SYSTEM_REMINDER_RE.sub("", texto).strip()
+    return limpo or None
+
+
+def _texto_do_agente(payload: dict[str, Any]) -> str | None:
+    """Os blocos `text` de uma linha do assistente — sem ferramenta, sem pensamento."""
+    if payload.get("isSidechain") or payload.get("isApiErrorMessage"):
+        return None
+    message = payload.get("message")
+    if not isinstance(message, dict) or message.get("model") == "<synthetic>":
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip() or None
+    if not isinstance(content, list):
+        return None
+    partes = [
+        b["text"].strip()
+        for b in content
+        if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)
+    ]
+    return "\n\n".join(p for p in partes if p) or None
+
+
+def _mensagem(linha: bytes) -> tuple[dict[str, Any], str | None] | None:
+    """`(mensagem, id da resposta)` se a linha é fala do Rica ou texto do agente.
+
+    Os bytes descartam antes do `json.loads` o que não pode ser mensagem:
+    resultado de ferramenta e resposta do assistente sem bloco de texto.
+    """
+    if _MARCA_USER in linha:
+        if _MARCA_TOOL_RESULT in linha:
+            return None
+    elif _MARCA_ASSISTANT not in linha or _MARCA_TEXTO not in linha:
+        return None
+    try:
+        payload = json.loads(linha)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    tipo = payload.get("type")
+    if tipo == "user":
+        texto, papel, resposta = _fala_do_rica(payload), "rica", None
+    elif tipo == "assistant":
+        texto, papel = _texto_do_agente(payload), "agente"
+        message = payload.get("message")
+        resposta = message.get("id") if isinstance(message, dict) else None
+    else:
+        return None
+    if texto is None:
+        return None
+    return {"papel": papel, "texto": texto, "em": _em_ms(payload)}, resposta
+
+
+def ler_fim(caminho: Path, st: os.stat_result, limite: int) -> tuple[list[dict[str, Any]], bool]:
+    """As últimas `limite` mensagens da conversa, da mais antiga para a mais nova.
+
+    Lê de trás para frente, em blocos, e para quando juntou o bastante ou
+    passou de `LEITURA_MAX_BYTES` — conversa de 30 MB não é lida inteira.
+    O segundo valor diz se ficou conversa antes do que voltou.
+
+    O CC grava cada bloco de uma resposta numa linha própria, com o mesmo
+    `message.id`: os textos seguidos da mesma resposta viram uma mensagem.
+    """
+    achadas: list[tuple[dict[str, Any], str | None]] = []  # da mais nova para a mais antiga
+    posicao = st.st_size
+    sobra = b""
+    lidos = 0
+
+    def absorver(linha: bytes) -> bool:
+        """Junta a linha; `True` quando já passou do limite (uma a mais prova o "antes")."""
+        achada = _mensagem(linha)
+        if achada is None:
+            return False
+        mensagem, resposta = achada
+        if achadas and resposta is not None and achadas[-1][1] == resposta:
+            depois = achadas[-1][0]
+            depois["texto"] = mensagem["texto"] + "\n\n" + depois["texto"]
+            return False
+        achadas.append((mensagem, resposta))
+        return len(achadas) > limite
+
+    try:
+        with _abrir_binario(caminho) as arquivo:
+            while posicao > 0 and lidos < LEITURA_MAX_BYTES:
+                tamanho = min(_BLOCO_DO_FIM, posicao)
+                posicao -= tamanho
+                arquivo.seek(posicao)
+                bloco = arquivo.read(tamanho)
+                lidos += len(bloco)
+                linhas = (bloco + sobra).split(b"\n")
+                sobra = linhas[0]  # pode ter começo no bloco anterior
+                for linha in reversed(linhas[1:]):
+                    if linha and absorver(linha):
+                        return _montar_leitura(achadas, limite), True
+            if posicao == 0 and sobra and absorver(sobra):
+                return _montar_leitura(achadas, limite), True
+    except OSError as exc:
+        logger.warning("conversas: leitura do fim de %s falhou (%s)", caminho, exc)
+    return _montar_leitura(achadas, limite), posicao > 0
+
+
+def _montar_leitura(
+    achadas: list[tuple[dict[str, Any], str | None]], limite: int
+) -> list[dict[str, Any]]:
+    mensagens = [dict(m, texto=_cortar(m["texto"])) for m, _ in achadas[:limite]]
+    mensagens.reverse()
+    return mensagens
+
+
+def ficha(
+    caminho: Path,
+    st: os.stat_result,
+    session_id: str,
+    *,
+    meta: dict[str, Any] | None,
+    nomes: set[str],
+) -> dict[str, Any]:
+    """Título, origem e turnos de uma conversa — a mesma leitura (e o cache) da lista."""
+    with _trava:
+        resumo = _resumir(caminho, st)
+    titulo, origem = _titulo(session_id, resumo, meta, nomes)
+    return {"titulo": titulo, "titulo_origem": origem, "turnos": resumo.turnos}

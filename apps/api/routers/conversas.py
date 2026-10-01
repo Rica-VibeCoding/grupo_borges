@@ -3,7 +3,7 @@
 Contrato em `docs/conversas/PLANO.md` ("Contrato da API"). F2: a lista; F3:
 estrela e excluir; F5: estacionar, Nova conversa, `/operacao` e o aquecimento
 do cache da lista na subida da API; F6: Retomar; F7: `pendencia` e briefing
-de retorno.
+de retorno; F14: leitura, concluída, renomear e a `anterior` da linha.
 """
 from __future__ import annotations
 
@@ -31,15 +31,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+TituloOrigem = Literal["renomeada", "estacionada", "custom", "ai", "prompt", "primeira"]
+
+
 class ConversaItem(BaseModel):
     id: str
     titulo: str
-    titulo_origem: Literal["estacionada", "custom", "ai", "prompt", "primeira"]
+    titulo_origem: TituloOrigem
     nota: str | None
     atualizada_em: int  # epoch ms (mtime do JSONL)
     turnos: int
     bytes: int
     estrela: bool
+    concluida: bool
     atual: bool
     bloqueada: bool
     bloqueada_por: str | None  # slug da linha que tem a conversa aberta
@@ -50,6 +54,10 @@ class ConversasResposta(BaseModel):
     suportado: bool
     conversas: list[ConversaItem]
     escondidas_curtas: int
+    #: A última conversa que a linha deixou numa troca (Nova ou Retomar), para
+    #: o "Voltar pra anterior". `None` sem troca gravada, se ela foi excluída
+    #: ou se voltou a ser a atual.
+    anterior: str | None = None
 
 
 _VAZIA_SUPORTADA = ConversasResposta(suportado=True, conversas=[], escondidas_curtas=0)
@@ -144,7 +152,7 @@ async def _conversa_ou_404(
 async def get_conversas(
     request: Request,
     slug: str,
-    filtro: Literal["todas", "estrela", "pendencia"] = "todas",
+    filtro: Literal["todas", "estrela", "pendencia", "concluidas"] = "todas",
     q: str | None = Query(default=None, max_length=200),
     curtas: int = Query(default=0, ge=0, le=1),
 ) -> ConversasResposta:
@@ -156,11 +164,17 @@ async def get_conversas(
         return _VAZIA_SUPORTADA
 
     db: GrupoBorgesDB = request.app.state.db
-    metas, (atual, deixadas), atuais_de_outras = await asyncio.gather(
+    metas, (atual, deixadas), atuais_de_outras, anterior = await asyncio.gather(
         db.conversa_meta_do_agente(slug),
         _atual_e_deixadas(request.app, agent),
         _atuais_de_outras_linhas_vivas(request.app, slug),
+        db.anterior_do_agente(slug),
     )
+    # Excluída por fora do cockpit também some (o `DELETE` já apaga a linha).
+    if anterior is not None and (
+        anterior == atual or conversas.localizar(pasta, anterior) is None
+    ):
+        anterior = None
     lista = await asyncio.to_thread(
         conversas.listar,
         pasta,
@@ -177,6 +191,7 @@ async def get_conversas(
         suportado=True,
         conversas=[ConversaItem(**c) for c in visiveis],
         escondidas_curtas=escondidas,
+        anterior=anterior,
     )
 
 
@@ -198,6 +213,116 @@ async def post_estrela(
     db: GrupoBorgesDB = request.app.state.db
     await db.marcar_estrela(slug, session_id, pedido.valor)
     return EstrelaResposta(id=session_id, estrela=pedido.valor)
+
+
+class ConcluidaPedido(BaseModel):
+    valor: bool
+
+
+class ConcluidaResposta(BaseModel):
+    id: str
+    concluida: bool
+
+
+@router.post("/{slug}/conversas/{session_id}/concluida", response_model=ConcluidaResposta)
+async def post_concluida(
+    request: Request, slug: str, session_id: str, pedido: ConcluidaPedido
+) -> ConcluidaResposta:
+    """Marca ou desmarca como concluída: sai de *Todas* e vai para *Concluídas*.
+
+    Vale também para a atual — a marca é do assunto, não da linha. Enquanto
+    for a atual ela segue em *Todas*; sai quando a linha trocar de conversa.
+    """
+    await _conversa_ou_404(request, slug, session_id)
+    db: GrupoBorgesDB = request.app.state.db
+    await db.marcar_concluida(slug, session_id, pedido.valor)
+    return ConcluidaResposta(id=session_id, concluida=pedido.valor)
+
+
+class TituloPedido(BaseModel):
+    titulo: str = Field(max_length=200)
+
+
+class TituloResposta(BaseModel):
+    id: str
+    titulo: str
+    titulo_origem: TituloOrigem
+
+
+@router.post("/{slug}/conversas/{session_id}/titulo", response_model=TituloResposta)
+async def post_titulo(
+    request: Request, slug: str, session_id: str, pedido: TituloPedido
+) -> TituloResposta:
+    """Renomeia a conversa. O nome do Rica vence a ordem de queda, até o estacionado.
+
+    Vazio apaga o nome dado e o título volta a sair da ordem de queda. A
+    resposta traz o título que a lista passa a mostrar.
+    """
+    agent, _, caminho, st = await _conversa_ou_404(request, slug, session_id)
+    titulo = operacao.linha_unica(pedido.titulo)
+    db: GrupoBorgesDB = request.app.state.db
+    await db.renomear_conversa(slug, session_id, titulo or None)
+    meta = (await db.conversa_meta_do_agente(slug)).get(session_id)
+    ficha = await asyncio.to_thread(
+        conversas.ficha, caminho, st, session_id,
+        meta=meta, nomes=conversas.nomes_do_agente(agent),
+    )
+    return TituloResposta(
+        id=session_id, titulo=ficha["titulo"], titulo_origem=ficha["titulo_origem"]
+    )
+
+
+class MensagemLeitura(BaseModel):
+    papel: Literal["rica", "agente"]
+    texto: str
+    em: int | None  # epoch ms
+
+
+class LeituraResposta(BaseModel):
+    id: str
+    titulo: str
+    titulo_origem: TituloOrigem
+    nota: str | None
+    estrela: bool
+    concluida: bool
+    turnos: int
+    atualizada_em: int  # epoch ms (mtime do JSONL)
+    mensagens: list[MensagemLeitura]  # da mais antiga para a mais nova
+    mais_antigas: bool  # ficou conversa antes das mensagens devolvidas
+
+
+@router.get("/{slug}/conversas/{session_id}/leitura", response_model=LeituraResposta)
+async def get_leitura(
+    request: Request,
+    slug: str,
+    session_id: str,
+    limite: int = Query(default=conversas.LEITURA_PADRAO, ge=1, le=conversas.LEITURA_MAX),
+) -> LeituraResposta:
+    """As últimas mensagens da conversa (fala do Rica e texto do agente), só do JSONL.
+
+    Não toca no tmux nem na linha: olhar não é trocar. Sem ferramenta, sem
+    pensamento e sem o rastro do `/clear` — a mesma régua do feed.
+    """
+    agent, _, caminho, st = await _conversa_ou_404(request, slug, session_id)
+    db: GrupoBorgesDB = request.app.state.db
+    meta = (await db.conversa_meta_do_agente(slug)).get(session_id) or {}
+    ficha, (mensagens, mais_antigas) = await asyncio.gather(
+        asyncio.to_thread(
+            conversas.ficha, caminho, st, session_id,
+            meta=meta, nomes=conversas.nomes_do_agente(agent),
+        ),
+        asyncio.to_thread(conversas.ler_fim, caminho, st, limite),
+    )
+    return LeituraResposta(
+        id=session_id,
+        **ficha,
+        nota=meta.get("nota") or None,
+        estrela=bool(meta.get("estrela")),
+        concluida=bool(meta.get("concluida")),
+        atualizada_em=st.st_mtime_ns // 1_000_000,
+        mensagens=[MensagemLeitura(**m) for m in mensagens],
+        mais_antigas=mais_antigas,
+    )
 
 
 class ExcluirResposta(BaseModel):
@@ -448,6 +573,7 @@ async def _conduzir_nova(
         nova = next(iter(novas)) if len(novas) == 1 else None
         if nova is not None:
             operacao.registrar_troca(slug, sessao_antes, nova)
+        await _gravar_anterior(db, slug, sessao_antes)
         # A conversa nova nasce sem nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
         # o rodapé do card (`session_name`) mostra.
         entrega = await tmux_driver.send_message(tmux_session, f"/rename {agent['name']}")
@@ -603,6 +729,8 @@ async def _conduzir_retomar(
             motivo = await _subir_e_esperar(tmux_session, pasta, alvo)
             if motivo is None:
                 operacao.registrar_troca(slug, sessao_antes, alvo)
+                if sessao_antes != alvo:
+                    await _gravar_anterior(db, slug, sessao_antes)
                 await _publicar_troca(
                     app, agent, op, de=sessao_antes, entrou=alvo, motivo="retomar"
                 )
@@ -620,6 +748,20 @@ async def _conduzir_retomar(
         operacao.avancar(op, "erro", f"falha inesperada ({exc.__class__.__name__})")
     finally:
         op.aguardando = None
+
+
+async def _gravar_anterior(db: GrupoBorgesDB, slug: str, deixada: str | None) -> None:
+    """Grava a conversa que a linha acabou de deixar, para o "Voltar pra anterior".
+
+    No banco, não em memória: o atalho sobrevive a restart da API. Falhar
+    aqui não desfaz a troca, que já aconteceu.
+    """
+    if deixada is None:
+        return
+    try:
+        await db.gravar_anterior(slug, deixada, int(time.time() * 1000))
+    except Exception:  # noqa: BLE001
+        logger.exception("conversas: não gravei a anterior de %s", slug)
 
 
 async def _publicar_troca(

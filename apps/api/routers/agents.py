@@ -87,6 +87,7 @@ from services.pergunta_motor import (
     pergunta_e_do_pedido,
 )
 from services.feed_enxuto import enxuga_para_feed
+from services.residuo_de_troca import eh_residuo_de_troca as _eh_residuo_de_troca
 from services.session_reset import session_reset_events_since
 from services import operacao_conversa
 
@@ -2731,41 +2732,6 @@ def _corta_resultados_grandes(canonical: dict[str, Any], max_chars: int) -> None
         canonical["tool_use_result"] = _corta_texto(resultado, max_chars)
     else:
         varre(resultado)
-
-
-_ENVELOPE_CLEAR_RE = re.compile(r"^\s*<command-name>/clear</command-name>")
-_LEMBRETE_RENAME_RE = re.compile(
-    r"^\s*<system-reminder>\s*The user named this session\b[\s\S]*</system-reminder>\s*$"
-)
-
-
-def _texto_do_user(payload: dict[str, Any]) -> str | None:
-    message = payload.get("message")
-    content = message.get("content") if isinstance(message, dict) else None
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict):
-        texto = content[0].get("text")
-        return texto if isinstance(texto, str) else None
-    return None
-
-
-def _eh_residuo_de_troca(payload: dict[str, Any]) -> bool:
-    """Rastro da troca de conversa que abre toda conversa nascida de `/clear`.
-
-    O CC grava o envelope do `/clear` (com o argumento, se houver) como
-    primeira mensagem da conversa NOVA, e o `/rename` do nome do agente deixa
-    um lembrete `isMeta` logo depois. O feed desenhava os dois como a bolha
-    `SLASH: /CLEAR <título da anterior>` (F11). Nenhum é fala de ninguém.
-    """
-    if payload.get("type") != "user":
-        return False
-    texto = _texto_do_user(payload)
-    if texto is None:
-        return False
-    if _ENVELOPE_CLEAR_RE.match(texto):
-        return True
-    return payload.get("isMeta") is True and _LEMBRETE_RENAME_RE.match(texto) is not None
 
 
 def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | None:

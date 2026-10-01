@@ -269,7 +269,7 @@ def test_inventario_do_tmux_que_falha_trava_a_mais(bancada, monkeypatch) -> None
 
 def test_motor_que_nao_e_cc_devolve_suportado_false(bancada) -> None:
     corpo = _get(bancada, slug="hiro")
-    assert corpo == {"suportado": False, "conversas": [], "escondidas_curtas": 0}
+    assert corpo == {"suportado": False, "conversas": [], "escondidas_curtas": 0, "anterior": None}
 
 
 def test_pasta_dividida_entre_agentes_nao_lista_para_nenhum(bancada) -> None:
@@ -284,7 +284,7 @@ def test_pasta_dividida_entre_agentes_nao_lista_para_nenhum(bancada) -> None:
 
 def test_agente_sem_pasta_devolve_lista_vazia(bancada) -> None:
     corpo = _get(bancada, slug="daniel")
-    assert corpo == {"suportado": True, "conversas": [], "escondidas_curtas": 0}
+    assert corpo == {"suportado": True, "conversas": [], "escondidas_curtas": 0, "anterior": None}
 
 
 def test_slug_desconhecido_404(bancada) -> None:

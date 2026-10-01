@@ -297,5 +297,16 @@ CREATE TABLE IF NOT EXISTS conversa_meta (
     retomada_em     INTEGER,                                -- epoch ms
     atividade_em    INTEGER,  -- epoch ms: mtime do JSONL antes do --resume (F7)
     briefing_em     INTEGER,  -- epoch ms: briefing entregue; consome a retomada
+    renomeada       TEXT,     -- título dado pelo Rica (F14); vence o estacionado
+    concluida       INTEGER NOT NULL DEFAULT 0,  -- F14: sai de *Todas*
     PRIMARY KEY (slug, session_id)
+);
+
+-- conversa_anterior — a última conversa que a linha deixou numa troca do
+-- cockpit (Nova ou Retomar), para o atalho "Voltar pra anterior" (F14). Uma
+-- linha por agente; a exclusão da conversa apaga a linha.
+CREATE TABLE IF NOT EXISTS conversa_anterior (
+    slug        TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    deixada_em  INTEGER NOT NULL                        -- epoch ms
 );

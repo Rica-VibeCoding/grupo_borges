@@ -382,6 +382,11 @@ class GrupoBorgesDB:
             # F7 das conversas: briefing de retorno.
             self._add_column_if_missing(conn, "conversa_meta", "atividade_em", "INTEGER")
             self._add_column_if_missing(conn, "conversa_meta", "briefing_em", "INTEGER")
+            # F14 das conversas: renomear e concluída.
+            self._add_column_if_missing(conn, "conversa_meta", "renomeada", "TEXT")
+            self._add_column_if_missing(
+                conn, "conversa_meta", "concluida", "INTEGER NOT NULL DEFAULT 0"
+            )
             self._add_column_if_missing(conn, "agents", "model_family", "TEXT")
 
             if self._add_column_if_missing(conn, "task_events", "content_hash", "TEXT"):
@@ -1715,13 +1720,71 @@ class GrupoBorgesDB:
             ).fetchone()
             return dict(linha) if linha else None
 
+    async def marcar_concluida(self, agent_slug: str, session_id: str, valor: bool) -> None:
+        await asyncio.to_thread(self._marcar_concluida, agent_slug, session_id, valor)
+
+    def _marcar_concluida(self, agent_slug: str, session_id: str, valor: bool) -> None:
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO conversa_meta (slug, session_id, concluida) VALUES (?, ?, ?)
+                ON CONFLICT(slug, session_id) DO UPDATE SET concluida = excluded.concluida
+                """,
+                (agent_slug, session_id, int(valor)),
+            )
+
+    async def renomear_conversa(
+        self, agent_slug: str, session_id: str, titulo: str | None
+    ) -> None:
+        await asyncio.to_thread(self._renomear_conversa, agent_slug, session_id, titulo)
+
+    def _renomear_conversa(self, agent_slug: str, session_id: str, titulo: str | None) -> None:
+        """Grava o título do Rica; `None` apaga e a lista volta à ordem de queda."""
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO conversa_meta (slug, session_id, renomeada) VALUES (?, ?, ?)
+                ON CONFLICT(slug, session_id) DO UPDATE SET renomeada = excluded.renomeada
+                """,
+                (agent_slug, session_id, titulo),
+            )
+
+    async def gravar_anterior(self, agent_slug: str, session_id: str, em_ms: int) -> None:
+        await asyncio.to_thread(self._gravar_anterior, agent_slug, session_id, em_ms)
+
+    def _gravar_anterior(self, agent_slug: str, session_id: str, em_ms: int) -> None:
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO conversa_anterior (slug, session_id, deixada_em) VALUES (?, ?, ?)
+                ON CONFLICT(slug) DO UPDATE SET
+                    session_id = excluded.session_id, deixada_em = excluded.deixada_em
+                """,
+                (agent_slug, session_id, em_ms),
+            )
+
+    async def anterior_do_agente(self, agent_slug: str) -> str | None:
+        return await asyncio.to_thread(self._anterior_do_agente, agent_slug)
+
+    def _anterior_do_agente(self, agent_slug: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT session_id FROM conversa_anterior WHERE slug = ?", (agent_slug,)
+            ).fetchone()
+            return row["session_id"] if row is not None else None
+
     async def apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
         await asyncio.to_thread(self._apagar_conversa_meta, agent_slug, session_id)
 
     def _apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
+        """Esquece a conversa excluída — a meta e, se era ela, a anterior da linha."""
         with self._connect() as conn, conn:
             conn.execute(
                 "DELETE FROM conversa_meta WHERE slug = ? AND session_id = ?",
+                (agent_slug, session_id),
+            )
+            conn.execute(
+                "DELETE FROM conversa_anterior WHERE slug = ? AND session_id = ?",
                 (agent_slug, session_id),
             )
 
