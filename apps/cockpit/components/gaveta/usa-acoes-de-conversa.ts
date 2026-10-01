@@ -10,6 +10,8 @@
  *   desenhou para isto (contrato, F5), e só corre enquanto há troca na tela.
  * - Ao montar, lê o `/operacao` uma vez: troca em curso volta como espera,
  *   não como botões livres.
+ * - Fim na API não é fim na tela: a espera segue relendo a lista até o cartão
+ *   mostrar a troca (régua em `depoisDaTroca`/`fimDaConferencia`).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -25,7 +27,9 @@ import {
 import {
   ATUAL,
   SEM_CONTATO,
+  depoisDaTroca,
   explicaRecusa,
+  fimDaConferencia,
   guardaTroca,
   leOperacao,
   trocaGuardada,
@@ -48,11 +52,17 @@ function sessao(): Storage | null {
 export function usaAcoesDeConversa({
   agentSlug,
   nome,
+  atual,
+  releLista,
   aoMudarLinha,
   aoExcluir,
 }: {
   agentSlug: string;
   nome: string;
+  /** Id da conversa no cartão "Em uso agora"; `undefined` = lista não lida. */
+  atual: string | null | undefined;
+  /** Releitura só da lista, para a conferência. */
+  releLista: () => void;
   /** A linha trocou de conversa (ou pode ter trocado): reler a lista. */
   aoMudarLinha: () => void;
   aoExcluir: (id: string) => void;
@@ -60,8 +70,8 @@ export function usaAcoesDeConversa({
   const [estado, setEstado] = useState<EstadoDaAcao>({ fase: 'livre' });
   const [agora, setAgora] = useState(() => Date.now());
   const vivo = useRef(true);
-  const avisos = useRef({ aoMudarLinha, aoExcluir });
-  avisos.current = { aoMudarLinha, aoExcluir };
+  const avisos = useRef({ aoMudarLinha, aoExcluir, releLista, atual });
+  avisos.current = { aoMudarLinha, aoExcluir, releLista, atual };
 
   useEffect(() => {
     vivo.current = true;
@@ -74,9 +84,9 @@ export function usaAcoesDeConversa({
     (leitura: Exclude<Leitura, { tipo: 'segue' }>, troca: Troca | null) => {
       if (!vivo.current) return;
       guardaTroca(sessao(), agentSlug, null);
-      setEstado(
-        leitura.tipo === 'erro' ? { fase: 'falhou', onde: troca?.alvo ?? ATUAL, texto: leitura.texto } : { fase: 'livre' },
-      );
+      const agora = Date.now();
+      // O fim chega duas vezes (leitor e resposta do POST): a segunda não reabre a conferência.
+      setEstado((e) => (e.fase === 'conferindo' ? e : depoisDaTroca(leitura, troca, e.fase === 'esperando' ? e.inicio : agora, agora)));
       avisos.current.aoMudarLinha();
     },
     [agentSlug],
@@ -131,7 +141,28 @@ export function usaAcoesDeConversa({
     };
   }, [esperando, trocaDaEspera, agentSlug, fecha]);
 
-  async function executa(troca: Troca) {
+  // A conferência: relê a lista a cada 2 s até ela mostrar a troca ou o prazo vencer.
+  const conferindo = estado.fase === 'conferindo';
+  useEffect(() => {
+    if (!conferindo) return;
+    const relogio = setInterval(() => setAgora(Date.now()), 1_000);
+    const leitor = setInterval(() => avisos.current.releLista(), LEITURA_MS);
+    return () => {
+      clearInterval(relogio);
+      clearInterval(leitor);
+    };
+  }, [conferindo]);
+
+  useEffect(() => {
+    if (estado.fase !== 'conferindo') return;
+    const fim = fimDaConferencia(estado, atual, agora);
+    if (!fim) return;
+    setEstado(fim);
+    if (fim.fase === 'falhou') avisos.current.aoMudarLinha();
+  }, [estado, atual, agora]);
+
+  async function executa(pedida: Troca) {
+    const troca: Troca = pedida.tipo === 'nova' ? { ...pedida, antes: avisos.current.atual ?? null } : pedida;
     guardaTroca(sessao(), agentSlug, troca);
     setAgora(Date.now());
     setEstado({ fase: 'esperando', troca, etapa: troca.desligado ? 'religando' : 'estacionando', inicio: Date.now() });
@@ -192,7 +223,8 @@ export function usaAcoesDeConversa({
     }
   }
 
-  const larga = () => setEstado((e) => (e.fase === 'esperando' || e.fase === 'excluindo' ? e : { fase: 'livre' }));
+  const larga = () =>
+    setEstado((e) => (e.fase === 'esperando' || e.fase === 'conferindo' || e.fase === 'excluindo' ? e : { fase: 'livre' }));
 
   return {
     estado,

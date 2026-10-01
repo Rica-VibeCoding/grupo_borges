@@ -3,7 +3,12 @@ import { describe, it } from 'node:test';
 
 import {
   ATUAL,
+  CONFERE_ERRO_MS,
+  CONFERE_PRONTA_MS,
   contaEspera,
+  depoisDaTroca,
+  fimDaConferencia,
+  trocaRefletida,
   explicaRecusa,
   guardaTroca,
   leOperacao,
@@ -138,5 +143,60 @@ describe('troca guardada na aba', () => {
     g.setItem('ck-conversa-troca:pavan', '{"tipo":"outra"}');
     assert.equal(trocaGuardada(g, 'pavan'), null);
     assert.equal(trocaGuardada(null, 'pavan'), null);
+  });
+});
+
+describe('conferência depois da troca (F12)', () => {
+  const novaDe = (antes: string | null): Troca => ({ ...nova, antes });
+
+  it('a Nova se prova quando o cartão sai da conversa de antes', () => {
+    assert.equal(trocaRefletida(novaDe('a'), 'a'), false);
+    assert.equal(trocaRefletida(novaDe('a'), 'z'), true);
+    assert.equal(trocaRefletida(novaDe('a'), undefined), false);
+    assert.equal(trocaRefletida(novaDe(null), 'z'), true);
+  });
+
+  it('o Retomar se prova quando o cartão mostra a pedida', () => {
+    assert.equal(trocaRefletida(retomar(), 'a'), false);
+    assert.equal(trocaRefletida(retomar(), 'b'), true);
+  });
+
+  it('pronta e erro viram conferência, com prazos diferentes, e o relógio não zera', () => {
+    const p = depoisDaTroca({ tipo: 'pronta' }, novaDe('a'), 100, 1_000);
+    assert.deepEqual(p, { fase: 'conferindo', troca: novaDe('a'), inicio: 100, ate: 1_000 + CONFERE_PRONTA_MS, erro: null });
+    const e = depoisDaTroca({ tipo: 'erro', texto: 'o /clear não chegou' }, retomar(), 100, 1_000);
+    assert.equal(e.fase === 'conferindo' && e.ate, 1_000 + CONFERE_ERRO_MS);
+    assert.equal(trocaEmCurso(e), true);
+  });
+
+  it('sem saber o que foi pedido, encerra na hora como antes', () => {
+    assert.deepEqual(depoisDaTroca({ tipo: 'pronta' }, null, 0, 0), { fase: 'livre' });
+    assert.deepEqual(depoisDaTroca({ tipo: 'erro', texto: 'x' }, nova, 0, 0), { fase: 'falhou', onde: ATUAL, texto: 'x' });
+  });
+
+  it('o alerta falso some quando a lista mostra a troca feita', () => {
+    const c = depoisDaTroca({ tipo: 'erro', texto: 'o /clear não chegou' }, novaDe('a'), 0, 0);
+    assert.ok(c.fase === 'conferindo');
+    assert.equal(fimDaConferencia(c, 'a', 1_000), null);
+    assert.deepEqual(fimDaConferencia(c, 'z', 1_000), { fase: 'livre' });
+  });
+
+  it('prazo vencido: o erro aparece; a pronta só libera', () => {
+    const e = depoisDaTroca({ tipo: 'erro', texto: 'falhou' }, novaDe('a'), 0, 0);
+    assert.ok(e.fase === 'conferindo');
+    assert.deepEqual(fimDaConferencia(e, 'a', CONFERE_ERRO_MS), { fase: 'falhou', onde: ATUAL, texto: 'falhou' });
+    const p = depoisDaTroca({ tipo: 'pronta' }, retomar(), 0, 0);
+    assert.ok(p.fase === 'conferindo');
+    assert.equal(ondeMostra(p), 'b');
+    assert.deepEqual(fimDaConferencia(p, 'a', CONFERE_PRONTA_MS), { fase: 'livre' });
+  });
+
+  it('a conversa de antes sobrevive ao recarregar', () => {
+    const mapa = new Map<string, string>();
+    const guarda = { getItem: (k: string) => mapa.get(k) ?? null, setItem: (k: string, v: string) => void mapa.set(k, v), removeItem: (k: string) => void mapa.delete(k) };
+    guardaTroca(guarda, 'c', novaDe('a'));
+    assert.deepEqual(trocaGuardada(guarda, 'c'), novaDe('a'));
+    guardaTroca(guarda, 'c', nova);
+    assert.equal(trocaGuardada(guarda, 'c')?.antes, undefined);
   });
 });

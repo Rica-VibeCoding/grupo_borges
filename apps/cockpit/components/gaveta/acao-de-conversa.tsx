@@ -80,10 +80,12 @@ export function AcaoDeConversa({
     );
   }
 
-  if (estado.fase === 'esperando') {
+  if (estado.fase === 'esperando' || estado.fase === 'conferindo') {
+    // Conferindo, o último passo segue em curso: a troca só acaba quando a lista a mostra.
+    const etapa = estado.fase === 'esperando' ? estado.etapa : 'religando';
     return (
       <div className="flex flex-col" style={{ gap: 'var(--ck-space-2)' }} role="status" aria-live="polite">
-        {passosDaEspera(estado.troca, estado.etapa, nome).map((p) => (
+        {passosDaEspera(estado.troca, etapa, nome).map((p) => (
           <div
             key={p.texto}
             className="flex items-center"

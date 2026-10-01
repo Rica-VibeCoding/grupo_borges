@@ -13,7 +13,7 @@
  * Ocupado vem da frota ao vivo; desligado e motor religando, do `usaVidaDoAgente`.
  * A API é a palavra final: um 409 `ocupado` reabre a confirmação de interromper.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchConversas, postConversaEstrela, type ConversasResponse } from '@grupo_borges/cockpit-core/api';
 
@@ -64,13 +64,18 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
   const [falha, setFalha] = useState<{ id: string; texto: string } | null>(null);
   const [seguradas, setSeguradas] = useState<ReadonlySet<string>>(() => new Set());
 
-  /** `quieto`: relê sem trocar a lista por "Lendo…" (depois de uma troca). */
+  /** `quieto`: relê sem trocar a lista por "Lendo…" (depois de uma troca).
+   *  Leitura pedida antes da que já entrou não vale: lenta, desfaria a troca. */
+  const leituras = useRef({ pedida: 0, aplicada: 0 });
   const ler = useCallback(
     (signal?: AbortSignal, quieto = false) => {
       if (!quieto) setCarga({ fase: 'carregando' });
+      const esta = ++leituras.current.pedida;
       fetchConversas(agentSlug, signal)
         .then((dados) => {
-          if (!signal?.aborted) setCarga({ fase: 'pronto', dados, lidaEm: Date.now() });
+          if (signal?.aborted || esta < leituras.current.aplicada) return;
+          leituras.current.aplicada = esta;
+          setCarga({ fase: 'pronto', dados, lidaEm: Date.now() });
         })
         .catch((e: unknown) => {
           if (signal?.aborted || quieto) return;
@@ -86,10 +91,15 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
     return () => controlador.abort();
   }, [ler]);
 
+  const lista = carga.fase === 'pronto' ? carga.dados.conversas : [];
+  const { atual, outras } = useMemo(() => separaAtual(lista), [lista]);
+
   const { buscar: relePainel } = vida;
   const acoes = usaAcoesDeConversa({
     agentSlug,
     nome,
+    atual: carga.fase === 'pronto' ? (atual?.id ?? null) : undefined,
+    releLista: () => ler(undefined, true),
     aoMudarLinha: () => {
       ler(undefined, true);
       relePainel();
@@ -102,8 +112,6 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
     },
   });
 
-  const lista = carga.fase === 'pronto' ? carga.dados.conversas : [];
-  const { atual, outras } = useMemo(() => separaAtual(lista), [lista]);
   const comPendencia = sabePendencia(lista);
   const filtroEmUso = filtro === 'pendencia' && !comPendencia ? 'todas' : filtro;
   const visiveis = useMemo(() => filtraConversas(outras, filtroEmUso, busca, seguradas), [outras, filtroEmUso, busca, seguradas]);

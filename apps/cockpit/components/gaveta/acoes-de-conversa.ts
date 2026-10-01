@@ -14,6 +14,8 @@ export type Troca = {
   forcar: boolean;
   /** Agente desligado: o Retomar sobe direto, sem estacionar. */
   desligado: boolean;
+  /** A atual no pedido: a Nova se prova quando o cartão sai dela. */
+  antes?: string | null;
 };
 
 export type EtapaEmCurso = Extract<FaseDaOperacao, 'estacionando' | 'religando'>;
@@ -22,6 +24,8 @@ export type EstadoDaAcao =
   | { fase: 'livre' }
   | { fase: 'confirmando'; troca: Troca }
   | { fase: 'esperando'; troca: Troca | null; etapa: EtapaEmCurso; inicio: number }
+  /** A API terminou; a espera segue até a lista mostrar a troca (ou o prazo). */
+  | { fase: 'conferindo'; troca: Troca; inicio: number; ate: number; erro: string | null }
   | { fase: 'confirmando-exclusao'; id: string }
   | { fase: 'excluindo'; id: string }
   | { fase: 'falhou'; onde: string; texto: string };
@@ -39,6 +43,8 @@ export function ondeMostra(estado: EstadoDaAcao): string | null {
       return estado.troca.alvo ?? ATUAL;
     case 'esperando':
       return estado.troca?.alvo ?? ATUAL;
+    case 'conferindo':
+      return estado.troca.alvo ?? ATUAL;
     case 'confirmando-exclusao':
     case 'excluindo':
       return estado.id;
@@ -48,7 +54,7 @@ export function ondeMostra(estado: EstadoDaAcao): string | null {
 }
 
 export function trocaEmCurso(estado: EstadoDaAcao): boolean {
-  return estado.fase === 'esperando';
+  return estado.fase === 'esperando' || estado.fase === 'conferindo';
 }
 
 export type Confirmacao = { aviso: string; botao: string; arrisca: boolean };
@@ -141,6 +147,45 @@ export function leOperacao(op: OperacaoDeConversa): Leitura {
   return { tipo: 'sumiu' };
 }
 
+// A CONFERÊNCIA (F12). O fim da troca na API não é o fim na tela: o cartão
+// "Em uso agora" só muda quando a lista relida aponta a conversa nova, e a
+// primeira releitura pode vir velha. E a API às vezes dá erro com a troca
+// feita — o envio do `/clear` volta "não confirmado" e o `/clear` chegou (F11).
+// Então a espera fica na tela relendo a lista até ela mostrar a troca; mostrou,
+// vale a lista, com ou sem erro. Não mostrou no prazo, o erro aparece.
+export const CONFERE_PRONTA_MS = 20_000;
+export const CONFERE_ERRO_MS = 10_000;
+
+/** A lista já mostra a troca? `atual` `undefined` = lista ainda não lida. */
+export function trocaRefletida(troca: Troca, atual: string | null | undefined): boolean {
+  if (!atual) return false;
+  if (troca.tipo === 'retomar') return atual === troca.alvo;
+  return atual !== (troca.antes ?? null);
+}
+
+type Fim = Exclude<Leitura, { tipo: 'segue' }>;
+
+/** Depois do fim na API: conferir na lista, ou encerrar já (troca sem alvo
+ *  conhecido — a tela recarregou sem saber o que foi pedido). */
+export function depoisDaTroca(leitura: Fim, troca: Troca | null, inicio: number, agora: number): EstadoDaAcao {
+  const erro = leitura.tipo === 'erro' ? leitura.texto : null;
+  if (!troca || (troca.tipo === 'nova' && troca.antes === undefined)) {
+    return erro ? { fase: 'falhou', onde: troca?.alvo ?? ATUAL, texto: erro } : { fase: 'livre' };
+  }
+  return { fase: 'conferindo', troca, inicio, ate: agora + (erro ? CONFERE_ERRO_MS : CONFERE_PRONTA_MS), erro };
+}
+
+/** O fim da conferência, ou `null` enquanto ela segue. */
+export function fimDaConferencia(
+  estado: Extract<EstadoDaAcao, { fase: 'conferindo' }>,
+  atual: string | null | undefined,
+  agora: number,
+): EstadoDaAcao | null {
+  if (trocaRefletida(estado.troca, atual)) return { fase: 'livre' };
+  if (agora < estado.ate) return null;
+  return estado.erro ? { fase: 'falhou', onde: estado.troca.alvo ?? ATUAL, texto: estado.erro } : { fase: 'livre' };
+}
+
 // A troca pedida fica guardada na aba: se a tela recarregar no meio, a espera
 // volta no lugar certo (a linha da conversa pedida) e um erro que chegue
 // depois ainda é mostrado. Sem ela, a espera volta no cartão "Em uso agora".
@@ -163,7 +208,9 @@ export function trocaGuardada(guarda: Guarda | null, slug: string): Troca | null
     if (!cru) return null;
     const t = JSON.parse(cru) as Partial<Troca>;
     if (t.tipo !== 'retomar' && t.tipo !== 'nova') return null;
-    return { tipo: t.tipo, alvo: typeof t.alvo === 'string' ? t.alvo : null, forcar: !!t.forcar, desligado: !!t.desligado };
+    const troca: Troca = { tipo: t.tipo, alvo: typeof t.alvo === 'string' ? t.alvo : null, forcar: !!t.forcar, desligado: !!t.desligado };
+    if (typeof t.antes === 'string' || t.antes === null) troca.antes = t.antes;
+    return troca;
   } catch {
     return null;
   }
