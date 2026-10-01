@@ -21,7 +21,7 @@
 // salto, o tick mais espaçado faz o "~5s").
 
 import { useEffect, useState } from 'react';
-import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react';
 
 import {
   faseDaEsperaCompact,
@@ -52,6 +52,8 @@ const DOBRAS = [
  * acesa em `state-ok`: a conversa virou uma linha.
  */
 function Dobra({ feita }: { feita: boolean }) {
+  // O `reducedMotion="user"` para o `y`, mas a opacidade em laço seguiria piscando (§5).
+  const parada = useReducedMotion();
   return (
     <span className={styles.dobra} aria-hidden="true">
       {DOBRAS.map(({ largura, y }, i) => (
@@ -61,10 +63,12 @@ function Dobra({ feita }: { feita: boolean }) {
           animate={
             feita
               ? { y: y, opacity: y === 0 ? 1 : 0, scaleX: y === 0 ? 1 : 0.4 }
-              : { y: [0, y, y, 0], opacity: y === 0 ? 1 : [1, 0.35, 0.35, 1] }
+              : parada
+                ? { y: 0, opacity: 1 }
+                : { y: [0, y, y, 0], opacity: y === 0 ? 1 : [1, 0.35, 0.35, 1] }
           }
           transition={
-            feita
+            feita || parada
               ? MOLA_DA_PALAVRA
               : { duration: 1.8, times: [0, 0.4, 0.6, 1], ease: 'easeInOut', repeat: Infinity, delay: i * 0.04 }
           }
