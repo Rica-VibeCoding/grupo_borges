@@ -62,7 +62,7 @@ export function marcoValeAqui(troca: ConversaTrocada, mensagens: readonly Messag
 }
 
 /** Mensagem que nasceu ANTES da troca? Sem hora conhecida, conta como antes. */
-export function antesDaTroca(troca: ConversaTrocada, mensagem: Pick<MessagePayload, 'timestamp'>): boolean {
+export function antesDaTroca(troca: Pick<ConversaTrocada, 'emMs'>, mensagem: Pick<MessagePayload, 'timestamp'>): boolean {
   if (troca.emMs === null) return true;
   const ts = typeof mensagem.timestamp === 'string' ? Date.parse(mensagem.timestamp) : Number.NaN;
   return !Number.isFinite(ts) || ts <= troca.emMs;
@@ -71,8 +71,9 @@ export function antesDaTroca(troca: ConversaTrocada, mensagem: Pick<MessagePaylo
 /** A conversa de agora já teve o primeiro turno? É o que tira o "Voltar pra
  *  anterior" (F16). Conta o que o Rica mandou depois da troca; o resíduo do
  *  `/clear` (`<command-name>…`) e o pedido do cockpit nasceram antes ou são
- *  comando, não turno. */
-export function temPrimeiroTurno(mensagens: readonly MessagePayload[], troca: ConversaTrocada | null): boolean {
+ *  comando, não turno. Sem o marco (a troca que falhou no meio não avisa o
+ *  stream), quem chama passa a hora em que a lista viu a conversa vazia. */
+export function temPrimeiroTurno(mensagens: readonly MessagePayload[], troca: Pick<ConversaTrocada, 'emMs'> | null): boolean {
   const depois = troca ? mensagens.filter((m) => !antesDaTroca(troca, m)) : mensagens;
   return textosDoUsuario(depois).some((t) => !t.texto.trimStart().startsWith('<'));
 }

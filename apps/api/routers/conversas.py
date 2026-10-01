@@ -185,6 +185,7 @@ async def get_conversas(
         agora=time.time(),
         deixadas=deixadas,
         cwd_padrao=agent.get("workspace_path"),
+        anterior=anterior,
     )
     visiveis, escondidas = conversas.filtrar(lista, filtro=filtro, q=q, curtas=bool(curtas))
     return ConversasResposta(

@@ -3,7 +3,7 @@
 /**
  * A LEITURA de uma conversa do Histórico — rodada 2 (Rica, 01/10): olhar não é
  * trocar. Título, "3h atrás, 24 turnos", a nota de onde parou e as últimas
- * mensagens no desenho do chat (Rica em balão, agente em texto corrido), lidas
+ * mensagens no desenho do chat (Rica em balão, agente em markdown leve), lidas
  * do JSONL pela API (`/leitura`) sem tocar no agente. O rodapé, com as ações e
  * o Continuar esta, chega pronto do painel.
  *
@@ -17,6 +17,8 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { fetchConversaLeitura, type Conversa, type LeituraDaConversa } from '@grupo_borges/cockpit-core/api';
+
+import { AssistantMarkdown } from '@/components/renderers/markdown';
 
 import { descreveTrava, resumoDaLeitura } from './conversas';
 import { MensagensEsqueleto } from './esqueleto';
@@ -44,9 +46,9 @@ function Mensagens({ dados }: { dados: LeituraDaConversa }) {
             {m.texto}
           </p>
         ) : (
-          <p key={i} style={TEXTO}>
+          <AssistantMarkdown key={i} leve>
             {m.texto}
-          </p>
+          </AssistantMarkdown>
         ),
       )}
     </>

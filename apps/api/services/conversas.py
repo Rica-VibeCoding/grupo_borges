@@ -38,6 +38,7 @@ from typing import Any, Collection, Iterable, Iterator
 
 from orchestrator.lifecycle_ruido import eh_interrupcao, eh_ruido_de_lifecycle
 from services import briefing_retorno
+from services.operacao_conversa import PREFIXO_DO_PEDIDO
 from services.residuo_de_troca import eh_residuo_de_troca
 from services.tmux_driver import _SESSION_ID_PATTERN
 
@@ -156,6 +157,11 @@ def _eh_turno(payload: dict[str, Any]) -> str | None:
     return texto
 
 
+def eh_pedido_do_cockpit(texto: str) -> bool:
+    """O pedido de estacionar que o cockpit manda na troca — a régua do feed (F13)."""
+    return texto.lstrip().startswith(PREFIXO_DO_PEDIDO)
+
+
 def _prompt_aproveitavel(texto: str | None) -> str | None:
     """`last-prompt` que é comando (`/clear`, `/rename`) não serve de título."""
     curto = _linha_curta(texto)
@@ -194,7 +200,7 @@ def _absorver(resumo: _Resumo, linha: bytes) -> None:
     if resumo.cwd is None and isinstance(payload.get("cwd"), str):
         resumo.cwd = payload["cwd"]
     texto = _eh_turno(payload)
-    if texto is None:
+    if texto is None or eh_pedido_do_cockpit(texto):
         return
     resumo.turnos += 1
     if resumo.primeira is None:
@@ -529,6 +535,7 @@ def listar(
     deixadas: Collection[str] = (),
     cwd_padrao: str | None = None,
     com_pendencia: bool = True,
+    anterior: str | None = None,
 ) -> list[dict[str, Any]]:
     """Todas as conversas da janela (30 dias + ⭐), da mais recente para a mais antiga.
 
@@ -571,6 +578,7 @@ def listar(
                     "bloqueada": bloqueada,
                     "bloqueada_por": bloqueada_por,
                     "pendencia": None,
+                    "guardada": session_id == anterior or _guardada(meta),
                 }
             )
     if com_pendencia:
@@ -581,6 +589,13 @@ def listar(
     return conversas
 
 
+def _guardada(meta: dict[str, Any] | None) -> bool:
+    """A conversa tem marca do cockpit: título, nota, estrela ou nome dado."""
+    if not meta:
+        return False
+    return any(meta.get(campo) for campo in ("titulo", "nota", "estrela", "renomeada"))
+
+
 def filtrar(
     conversas: list[dict[str, Any]], *, filtro: str, q: str | None, curtas: bool
 ) -> tuple[list[dict[str, Any]], int]:
@@ -588,7 +603,9 @@ def filtrar(
 
     A conversa atual e as ⭐ nunca são escondidas por serem curtas: a atual de
     um agente recém-limpo tem zero turnos e precisa aparecer, e a estrela é
-    escolha explícita de guardar.
+    escolha explícita de guardar. A `guardada` (deixada por uma troca do
+    cockpit, com título ou nota, renomeada ou a `anterior` da linha) também
+    não (F17): a tela disse "ficou guardada no Histórico", e o Rica procura.
 
     Concluída (F14) só aparece no filtro `concluidas` — a não ser que seja a
     atual, que está em uso e não some de lista nenhuma.
@@ -610,7 +627,8 @@ def filtrar(
     if curtas:
         return conversas, 0
     visiveis = [
-        c for c in conversas if c["turnos"] > TURNOS_CURTA or c["atual"] or c["estrela"]
+        c for c in conversas
+        if c["turnos"] > TURNOS_CURTA or c["atual"] or c["estrela"] or c.get("guardada")
     ]
     return visiveis, len(conversas) - len(visiveis)
 
@@ -625,6 +643,9 @@ LEITURA_MAX = 100
 LEITURA_MAX_BYTES = 4 << 20
 _BLOCO_DO_FIM = 256 << 10
 _TEXTO_MAX = 8000
+#: Falas do agente lidas além do limite à espera de um pedido do cockpit
+#: (F17). A resposta ao pedido é um "ok": cabe com folga.
+_FOLGA_DO_PEDIDO = 4
 _MARCA_ASSISTANT = b'"type":"assistant"'
 _MARCA_TEXTO = b'"type":"text"'
 
@@ -717,6 +738,12 @@ def ler_fim(caminho: Path, st: os.stat_result, limite: int) -> tuple[list[dict[s
 
     O CC grava cada bloco de uma resposta numa linha própria, com o mesmo
     `message.id`: os textos seguidos da mesma resposta viram uma mensagem.
+
+    O pedido de estacionar do cockpit sai, e o que o agente respondeu a ele
+    também (F17) — a régua do feed: o turno vai do pedido até a próxima fala.
+    De trás para frente, as falas do agente juntadas desde a última do Rica
+    são a resposta ao pedido. Por isso a leitura só para numa fala do Rica,
+    ou com folga de `_FOLGA_DO_PEDIDO` falas do agente além do limite.
     """
     achadas: list[tuple[dict[str, Any], str | None]] = []  # da mais nova para a mais antiga
     posicao = st.st_size
@@ -729,12 +756,18 @@ def ler_fim(caminho: Path, st: os.stat_result, limite: int) -> tuple[list[dict[s
         if achada is None:
             return False
         mensagem, resposta = achada
+        if mensagem["papel"] == "rica" and eh_pedido_do_cockpit(mensagem["texto"]):
+            while achadas and achadas[-1][0]["papel"] == "agente":
+                achadas.pop()
+            return False
         if achadas and resposta is not None and achadas[-1][1] == resposta:
             depois = achadas[-1][0]
             depois["texto"] = mensagem["texto"] + "\n\n" + depois["texto"]
             return False
         achadas.append((mensagem, resposta))
-        return len(achadas) > limite
+        if len(achadas) <= limite:
+            return False
+        return mensagem["papel"] == "rica" or len(achadas) > limite + _FOLGA_DO_PEDIDO
 
     try:
         with _abrir_binario(caminho) as arquivo:

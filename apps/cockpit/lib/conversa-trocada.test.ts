@@ -93,4 +93,13 @@ describe('conversa-trocada — o evento do stream vira marco (F13)', () => {
     assert.equal(temPrimeiroTurno([fala('bora', depois)], t), true);
     assert.equal(temPrimeiroTurno([fala('bora', antes)], null), true);
   });
+
+  it('primeiro turno sem marco: a troca que falhou corta pela hora em que a lista viu vazia (F17)', () => {
+    const fala = (texto: string, ms: number) =>
+      ({ kind: 'user', timestamp: new Date(ms).toISOString(), created_at: 0, message: { role: 'user', content: texto } }) as unknown as MessagePayload;
+    const lidaEm = CRU.at;
+    // A conversa velha continua no stream: não conta.
+    assert.equal(temPrimeiroTurno([fala('da conversa velha', lidaEm - 60_000)], { emMs: lidaEm }), false);
+    assert.equal(temPrimeiroTurno([fala('da conversa velha', lidaEm - 60_000), fala('bora', lidaEm + 2_000)], { emMs: lidaEm }), true);
+  });
 });

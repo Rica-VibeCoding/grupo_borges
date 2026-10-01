@@ -17,26 +17,40 @@
 import { useEffect, useState } from 'react';
 import { MotionConfig, motion } from 'motion/react';
 
-import { fetchConversas } from '@grupo_borges/cockpit-core/api';
+import { fetchConversaLeitura, fetchConversas } from '@grupo_borges/cockpit-core/api';
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
+import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 import { linhaDeOcupado } from '@/components/gaveta/acoes-de-conversa';
 import { CALMA, TOQUE } from '@/components/gaveta/ritmo-do-historico';
 import { usaTrocaDireta } from '@/components/gaveta/usa-troca-direta';
+import { temPrimeiroTurno, type ConversaTrocada } from '@/lib/conversa-trocada';
 
-type Anterior = { id: string; titulo: string | null; vazia: boolean };
+type Anterior = { id: string; titulo: string | null; vazia: boolean; lidaEm: number };
 
 /** A lista diz qual é a anterior e se a de agora está vazia. Relida a cada
- *  troca que o stream avisa (`chave`). Falhou a leitura, o atalho não aparece. */
-function usaAnterior(agentSlug: string, chave: string | null): Anterior | null {
+ *  troca que o stream avisa e a cada passo da espera (`chave`): a troca que
+ *  falha no meio não avisa o stream, mas a conversa nova pode ter nascido.
+ *  Falhou a leitura, o atalho não aparece. */
+function usaAnterior(agentSlug: string, chave: string): Anterior | null {
   const [anterior, setAnterior] = useState<Anterior | null>(null);
   useEffect(() => {
     const controlador = new AbortController();
+    const lidaEm = Date.now();
     fetchConversas(agentSlug, controlador.signal)
       .then((r) => {
         const id = r.suportado ? (r.anterior ?? null) : null;
         const atual = r.conversas.find((c) => c.atual) ?? null;
-        setAnterior(id ? { id, titulo: r.conversas.find((c) => c.id === id)?.titulo ?? null, vazia: !atual || atual.turnos === 0 } : null);
+        const titulo = id ? (r.conversas.find((c) => c.id === id)?.titulo ?? null) : null;
+        const vazia = !atual || atual.turnos === 0;
+        // Relida ainda vazia, vale a primeira hora: o turno que o banco não contou
+        // ainda não pode virar "antes" e trazer o atalho de volta.
+        setAnterior((a) => (id ? { id, titulo: titulo ?? (a?.id === id ? a.titulo : null), vazia, lidaEm: a?.id === id && a.vazia && vazia ? a.lidaEm : lidaEm } : null));
+        // A anterior fora de *Todas* (curta ou concluída): o título vem da leitura dela.
+        if (!id || titulo !== null) return;
+        fetchConversaLeitura(agentSlug, id, controlador.signal)
+          .then((l) => setAnterior((a) => (a?.id === id ? { ...a, titulo: l.titulo } : a)))
+          .catch(() => {});
       })
       .catch(() => {
         if (!controlador.signal.aborted) setAnterior(null);
@@ -63,16 +77,22 @@ export function VoltarPraAnterior({
   nome,
   statusDaFrota,
   chave,
-  temTurno,
+  mensagens,
+  marco,
+  pendente,
   emTroca,
 }: {
   agentSlug: string;
   nome: string;
   statusDaFrota: AgentStatus | null;
-  /** Muda a cada troca concluída: a lista é relida. */
-  chave: string | null;
-  /** A conversa de agora já tem turno (ou bolha otimista). */
-  temTurno: boolean;
+  /** Muda a cada troca e a cada passo da espera: a lista é relida. */
+  chave: string;
+  mensagens: readonly MessagePayload[];
+  marco: ConversaTrocada | null;
+  /** Há bolha otimista (texto ou anexo) saindo. */
+  pendente: boolean;
+  /** Troca andando ou esperando o stream. A que falhou não conta: com erro,
+   *  o atalho aparece do mesmo jeito se a nova nasceu vazia. */
   emTroca: boolean;
 }) {
   const anterior = usaAnterior(agentSlug, chave);
@@ -83,6 +103,8 @@ export function VoltarPraAnterior({
     if (anterior) setExibida(anterior);
   }, [anterior]);
 
+  // Primeiro turno: depois do marco, ou — sem ele — depois de a lista ver a conversa vazia.
+  const temTurno = pendente || (anterior !== null && temPrimeiroTurno(mensagens, marco ?? { emMs: anterior.lidaEm }));
   const aberto = anterior !== null && anterior.vazia && !temTurno && !emTroca;
   const trabalhando = statusDaFrota === 'trabalhando';
   const interrompe = trabalhando || troca.recusou;

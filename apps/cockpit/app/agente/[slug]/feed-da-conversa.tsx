@@ -50,7 +50,6 @@ import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 import { dobraPedidosDoCockpit, poeMarco, poeTrocaEmAndamento } from '@/components/feed/troca-no-feed.ts';
-import { temPrimeiroTurno } from '@/lib/conversa-trocada.ts';
 import { usaTrocaNoChat } from './usa-troca-no-chat';
 import { VoltarPraAnterior } from './voltar-pra-anterior';
 
@@ -294,9 +293,11 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
       agentSlug={agentSlug}
       nome={nome}
       statusDaFrota={statusDaFrota}
-      chave={troca?.sessionId ?? null}
-      temTurno={pendentes.length > 0 || anexosPendentes.length > 0 || temPrimeiroTurno(messages, marco)}
-      emTroca={emCurso !== null}
+      chave={`${troca?.sessionId ?? ''}:${emCurso?.fase ?? ''}`}
+      mensagens={messages}
+      marco={marco}
+      pendente={pendentes.length > 0 || anexosPendentes.length > 0}
+      emTroca={emCurso !== null && emCurso.fase !== 'falhou'}
     />
   );
   // Sempre na mesma posição da árvore: trocar de ramo não remonta o atalho.

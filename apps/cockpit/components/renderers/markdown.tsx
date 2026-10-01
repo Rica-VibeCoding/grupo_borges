@@ -17,6 +17,9 @@ export type AssistantMarkdownProps = {
   children: unknown;
   className?: string;
   cursorNoFim?: boolean;
+  /** Para bater o olho (leitura do Histórico): código sem cabeçalho nem
+   *  copiar, imagem só pelo texto alternativo. */
+  leve?: boolean;
 };
 
 const REMARK_PLUGINS = [remarkGfm, remarkCockpitAlerts];
@@ -237,10 +240,28 @@ const MARKDOWN_COMPONENTS: Components = {
   },
 };
 
+const COMPONENTES_LEVES: Components = {
+  ...MARKDOWN_COMPONENTS,
+  pre({ children, node, ...props }) {
+    return (
+      <pre
+        className="max-w-full overflow-x-auto rounded-[var(--ck-radius-chip)] bg-[var(--ck-surface-raised)] p-[var(--ck-space-3)] text-sm [&>code]:bg-transparent [&>code]:p-0"
+        {...props}
+      >
+        {children}
+      </pre>
+    );
+  },
+  img({ alt }) {
+    return alt ? <span className="text-[var(--ck-text-secondary)]">[{alt}]</span> : null;
+  },
+};
+
 function AssistantMarkdown({
   children,
   className = '',
   cursorNoFim = false,
+  leve = false,
 }: AssistantMarkdownProps) {
   const content = normalizeMarkdownContent(children);
   if (content === null) return null;
@@ -255,7 +276,7 @@ function AssistantMarkdown({
     >
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
-        components={MARKDOWN_COMPONENTS}
+        components={leve ? COMPONENTES_LEVES : MARKDOWN_COMPONENTS}
         urlTransform={transformMarkdownUrl}
       >
         {content}
