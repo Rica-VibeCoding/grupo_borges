@@ -157,6 +157,58 @@ def esquecer(slug: str) -> None:
     _operacoes.pop(slug, None)
     _trocas.pop(slug, None)
     _deixadas.pop(slug, None)
+    _trocas_publicadas.pop(slug, None)
+    _briefings.pop(slug, None)
+
+
+# ---------- F13: o chat acompanha a troca ----------
+
+#: Canal da troca para o stream do chat: `slug → [{seq, session_id, de, …}]`.
+#: Cada stream aberto guarda o `seq` que já viu, como o `session_reset`.
+_trocas_publicadas: dict[str, list[dict]] = {}
+_seq_troca = 0
+#: Trocas guardadas por agente: o stream só lê as posteriores à abertura.
+TROCAS_GUARDADAS = 10
+
+
+def publicar_troca(slug: str, payload: dict) -> None:
+    global _seq_troca
+    _seq_troca += 1
+    lista = _trocas_publicadas.setdefault(slug, [])
+    lista.append({"seq": _seq_troca, **payload})
+    del lista[:-TROCAS_GUARDADAS]
+
+
+def seq_da_troca() -> int:
+    return _seq_troca
+
+
+def trocas_desde(slug: str, depois_de: int) -> tuple[list[dict], int]:
+    """As trocas publicadas depois de `depois_de`, sem o `seq`, e o cursor novo."""
+    novas = [t for t in _trocas_publicadas.get(slug, []) if t["seq"] > depois_de]
+    cursor = max((t["seq"] for t in novas), default=depois_de)
+    return [{k: v for k, v in t.items() if k != "seq"} for t in novas], cursor
+
+
+#: `slug → {session_id: texto}` do briefing que o gancho levou na largada.
+#: Vazio = o gancho perguntou e não havia o que dizer.
+_briefings: dict[str, dict[str, str]] = {}
+#: Quanto o Retomar espera o gancho, depois da linha pronta, para pôr o
+#: briefing na troca. O gancho costuma chegar antes da caixa de input (F13).
+PRAZO_BRIEFING_S = 3.0
+
+
+def guardar_briefing(slug: str, session_id: str, texto: str) -> None:
+    _briefings.setdefault(slug, {})[session_id] = texto
+
+
+def briefing_entregue(slug: str, session_id: str) -> bool:
+    return session_id in _briefings.get(slug, {})
+
+
+def tirar_briefing(slug: str, session_id: str) -> str | None:
+    """O briefing entregue nesta largada, uma vez só; `None` se não houve."""
+    return _briefings.get(slug, {}).pop(session_id, None) or None
 
 
 async def esperar(condicao: Callable[[], Awaitable[bool]], prazo_s: float) -> bool:
@@ -187,6 +239,11 @@ DEPOIS_DE_ESTACIONAR = {
 }
 
 
+#: Começo do pedido de estacionar. O feed reconhece por ele as mensagens do
+#: cockpit (`origem: "cockpit"`, F13): mudar o texto aqui muda lá junto.
+PREFIXO_DO_PEDIDO = "[cockpit] Vou fechar esta conversa"
+
+
 def mensagem_de_estacionar(url_base: str, slug: str, para: str = "nova") -> str:
     """O pedido que vai para o agente: uma linha só, com o `curl` pronto.
 
@@ -196,7 +253,7 @@ def mensagem_de_estacionar(url_base: str, slug: str, para: str = "nova") -> str:
     """
     rota = f"{url_base.rstrip('/')}/api/agents/{slug}/conversas/estacionar"
     return (
-        f"[cockpit] Vou fechar esta conversa e {DEPOIS_DE_ESTACIONAR[para]}. "
+        f"{PREFIXO_DO_PEDIDO} e {DEPOIS_DE_ESTACIONAR[para]}. "
         "Antes, estacione esta: "
         "um título de até 6 palavras e uma nota de até 200 caracteres com onde você parou "
         "e qual é o próximo passo. Grave com este comando, trocando só os dois textos "

@@ -1,0 +1,12 @@
+# F13 — relato (cadeira `api`, Omarchy, 01/10/2026; sem commit)
+
+- **Troca no stream:** a Nova e o Retomar publicam a troca (`operacao_conversa.publicar_troca`) **antes** de a fase virar `pronta`. O stream aberto emite `conversa-trocada {session_id, de, de_titulo, motivo, titulo, nota, briefing, at}` e, na mesma conexão, `replay-start` → cauda da conversa nova (teto do replay) → `replay-end`, depois o ao vivo dela. Extra: `de_titulo` é o título que a que saiu acabou de ganhar. Na Nova, `titulo`/`nota` são `null`.
+- **Abertura:** o stream abre na atual pela régua da lista (`_atual_da_linha`: troca em memória + `--resume` do processo). Vale também depois de um restart da API, antes de a conversa ganhar mensagem.
+- **Scan do `session-reset`:** agora só dispara quando **o banco muda**. Antes, "banco ≠ sessão do stream" puxava o chat de volta para a que saiu logo depois da troca. O `/clear` digitado no pane continua re-ancorando.
+- **Briefing:** o `GET …/briefing` do gancho guarda o texto, e o Retomar espera até 3 s por ele depois da linha pronta. Sem o gancho (ou se ele vier depois), sai `null`.
+- **`origem: "cockpit"`, o critério:** vai da mensagem `user` que começa com `PREFIXO_DO_PEDIDO` (constante única, a mesma que monta o pedido) até a próxima fala de verdade. Tudo no meio é marcado: o `curl`, o resultado dele, o "ok" e o `[Request interrupted…]` do Escape do cockpit. Outro texto começando com `[cockpit]` não abre o turno. Vale no replay e no ao vivo, e zera na troca.
+- **`pytest`:** 892 ok (+13 em `test_conversas_chat_na_troca.py`) + as 3 de ambiente + 2 xfailed. `ruff` sem aviso novo. Confirmei com mutação que os testes do scan e da marca falham sem o conserto.
+- **⚠️ Furo para a `tela`:** os ids da conversa retomada são **menores** que o cursor da que saiu, e o `canario-stream-controller` descarta `id <= lastId`. Em `conversa-trocada`, a tela precisa zerar o cursor. Também serve reabrir o stream, como no `session-reset`: a reabertura já cai na conversa certa.
+- **Furo:** replay de cauda que começa no meio do turno de estacionar não vê o pedido, e aí o "ok" sai sem marca.
+- **Furo:** Nova em que o `/clear` gera mais de um JSONL novo não publica a troca (a troca em memória já não era registrada). O chat só segue quando a conversa ganha mensagem, pelo `session-reset`.
+- **Custo:** cada abertura de stream lê o `/proc` uma vez (`list-panes` por servidor). Linha sem o gancho do briefing ganha até 3 s no Retomar. Nenhum dos dois foi medido na VPS.

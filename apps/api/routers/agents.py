@@ -88,6 +88,7 @@ from services.pergunta_motor import (
 )
 from services.feed_enxuto import enxuga_para_feed
 from services.session_reset import session_reset_events_since
+from services import operacao_conversa
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -2829,6 +2830,59 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
     return canonical
 
 
+_INTERROMPIDO_RE = re.compile(r"^\s*\[Request interrupted by user")
+
+
+def _textos_do_user(message: Any) -> tuple[str, bool]:
+    """O texto de uma mensagem `user` e se ela é só resultado de ferramenta."""
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content, False
+    if not isinstance(content, list):
+        return "", False
+    textos = [
+        bloco.get("text")
+        for bloco in content
+        if isinstance(bloco, dict) and bloco.get("type") == "text"
+    ]
+    so_ferramenta = not textos and any(
+        isinstance(bloco, dict) and bloco.get("type") == "tool_result" for bloco in content
+    )
+    return "".join(t for t in textos if isinstance(t, str)), so_ferramenta
+
+
+class _MarcaDoCockpit:
+    """Marca `origem: "cockpit"` no turno do pedido de estacionar (F13).
+
+    O turno começa na mensagem `user` que abre com o prefixo do pedido
+    (`operacao_conversa.PREFIXO_DO_PEDIDO`) e vai até a próxima fala de
+    verdade: tudo no meio — a chamada do `curl`, o resultado dela, o "ok" — é
+    o agente atendendo o cockpit. O "[Request interrupted…]" do Escape que o
+    cockpit dá quando o turno não fecha é do cockpit também.
+
+    Um por stream: o estado atravessa o replay e o ao vivo, e zera na troca.
+    Replay de cauda que começa no meio do turno não vê o pedido — ali o "ok"
+    sai sem marca.
+    """
+
+    def __init__(self) -> None:
+        self.no_turno = False
+
+    def marcar(self, canonical: dict[str, Any]) -> None:
+        kind = canonical.get("kind")
+        if kind == "user" and not canonical.get("is_sidechain"):
+            texto, so_ferramenta = _textos_do_user(canonical.get("message"))
+            if texto.lstrip().startswith(operacao_conversa.PREFIXO_DO_PEDIDO):
+                self.no_turno = True
+            elif not so_ferramenta and not canonical.get("is_meta"):
+                if not (self.no_turno and _INTERROMPIDO_RE.match(texto)):
+                    self.no_turno = False
+        elif kind == "queued":
+            return
+        if self.no_turno:
+            canonical["origem"] = "cockpit"
+
+
 def _sse_json(event: str, data: dict[str, Any]) -> dict[str, str]:
     return {"event": event, "data": json.dumps(data, ensure_ascii=False)}
 
@@ -2889,7 +2943,7 @@ async def stream_agent_messages(
     manda `since_id` e aí ele quer tudo o que perdeu, em ordem, não a cauda.
     """
     db: GrupoBorgesDB = request.app.state.db
-    await _get_agent_or_404(request, slug)
+    agent = await _get_agent_or_404(request, slug)
 
     replay_newest_first = recentes and since_id == 0
     capped_limit = min(
@@ -2898,10 +2952,26 @@ async def stream_agent_messages(
         if replay_newest_first
         else _MESSAGES_STREAM_LIMIT_MAX,
     )
-    resolved_session_id = session_id or await db.latest_jsonl_session_id(slug)
+    # O cursor da troca sai ANTES de resolver a sessão: troca publicada no meio
+    # chega como evento, e a resolução já a enxerga — no máximo repete o replay.
+    last_troca_seq = operacao_conversa.seq_da_troca()
+    sessao_do_banco = await db.latest_jsonl_session_id(slug)
+    resolved_session_id = session_id or await _sessao_do_chat(
+        request.app, agent, sessao_do_banco
+    )
+    marca = _MarcaDoCockpit()
+
+    def _para_o_feed(event: dict[str, Any]) -> dict[str, Any] | None:
+        canonical = _canonical_jsonl_message_event(event)
+        if canonical is not None:
+            marca.marcar(canonical)
+            _corta_resultados_grandes(canonical, max_result_chars)
+            if enxuto:
+                enxuga_para_feed(canonical)
+        return canonical
 
     async def _message_stream() -> AsyncGenerator[dict[str, str] | ServerSentEvent, None]:
-        nonlocal resolved_session_id
+        nonlocal resolved_session_id, sessao_do_banco, last_troca_seq, marca
         started_at = time.perf_counter()
         last_id = since_id
         last_heartbeat = time.monotonic()
@@ -2936,11 +3006,8 @@ async def stream_agent_messages(
                 if await request.is_disconnected():
                     return
                 last_id = max(last_id, int(event["id"]))
-                canonical = _canonical_jsonl_message_event(event)
+                canonical = _para_o_feed(event)
                 if canonical is not None:
-                    _corta_resultados_grandes(canonical, max_result_chars)
-                    if enxuto:
-                        enxuga_para_feed(canonical)
                     yield _sse_json("message", canonical)
                 if index % _MESSAGES_STREAM_REPLAY_HEARTBEAT_EVERY == 0:
                     now = time.monotonic()
@@ -3007,14 +3074,50 @@ async def stream_agent_messages(
                     if await request.is_disconnected():
                         return
                     last_id = max(last_id, int(event["id"]))
-                    canonical = _canonical_jsonl_message_event(event)
+                    canonical = _para_o_feed(event)
                     if canonical is not None:
-                        _corta_resultados_grandes(canonical, max_result_chars)
-                        if enxuto:
-                            enxuga_para_feed(canonical)
                         yield _sse_json("message", canonical)
 
                 now = time.monotonic()
+
+                # A Nova e o Retomar do cockpit (F13) avisam aqui quando a linha
+                # trocou de conversa. O banco só vê a conversa nova quando ela
+                # ganha mensagem — o scan abaixo, sozinho, deixava o chat na que
+                # saiu (01/10, canarinho). O replay é o da abertura: a cauda.
+                trocas, last_troca_seq = operacao_conversa.trocas_desde(slug, last_troca_seq)
+                if session_id is not None:
+                    trocas = []  # quem pediu uma sessão na mão fica nela
+                for troca in trocas:
+                    troca_em = time.perf_counter()
+                    resolved_session_id = troca["session_id"]
+                    marca = _MarcaDoCockpit()
+                    yield _sse_json("conversa-trocada", troca)
+                    replay_da_nova = await db.list_jsonl_message_events(
+                        slug,
+                        session_id=resolved_session_id,
+                        since_id=0,
+                        limit=min(limit, _MESSAGES_STREAM_REPLAY_LIMIT_MAX),
+                        newest_first=True,
+                    )
+                    yield _sse_json(
+                        "replay-start",
+                        {"session_id": resolved_session_id, "total": len(replay_da_nova)},
+                    )
+                    # Os ids da conversa retomada são mais velhos que o cursor
+                    # da que saiu: o cursor recomeça nela.
+                    last_id = 0
+                    for event in replay_da_nova:
+                        last_id = max(last_id, int(event["id"]))
+                        canonical = _para_o_feed(event)
+                        if canonical is not None:
+                            yield _sse_json("message", canonical)
+                    yield _sse_json(
+                        "replay-end",
+                        {
+                            "last_id": last_id,
+                            "elapsed_ms": int((time.perf_counter() - troca_em) * 1000),
+                        },
+                    )
 
                 # O `/clear` — e o boot limpo do Ligar — abrem OUTRA sessão no
                 # CC. Este gerador seguia a sessão de quando o cliente conectou,
@@ -3029,6 +3132,10 @@ async def stream_agent_messages(
                 # ela é a sessão certa, e o scan não custa nada a stream ativo.
                 # Quem pediu `sessionId` na mão está lendo histórico — aquela
                 # sessão não pode mudar debaixo dele.
+                #
+                # Só vale quando o BANCO mudou desde a última olhada: depois de
+                # uma troca do cockpit ele segue apontando a que saiu até a
+                # nova ganhar mensagem, e "banco ≠ atual" puxaria o chat de volta.
                 if (
                     session_id is None
                     and not live_events
@@ -3037,8 +3144,15 @@ async def stream_agent_messages(
                 ):
                     last_session_scan = now
                     sessao_no_disco = await db.latest_jsonl_session_id(slug)
-                    if sessao_no_disco is not None and sessao_no_disco != resolved_session_id:
+                    banco_mudou = sessao_no_disco != sessao_do_banco
+                    sessao_do_banco = sessao_no_disco
+                    if (
+                        banco_mudou
+                        and sessao_no_disco is not None
+                        and sessao_no_disco != resolved_session_id
+                    ):
                         resolved_session_id = sessao_no_disco
+                        marca = _MarcaDoCockpit()
                         last_id = 0
                         yield _sse_json(
                             "session-reset",
@@ -3101,6 +3215,25 @@ async def stream_agent_messages(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+async def _sessao_do_chat(
+    app: Any, agent: dict[str, Any], do_banco: str | None
+) -> str | None:
+    """A conversa que o chat abre: a atual da linha, não só a do banco.
+
+    Depois de um Retomar ou de uma Nova, o banco aponta a que saiu até a nova
+    ganhar mensagem. A régua é a da lista de conversas (`_atual_da_linha`:
+    troca em memória e `--resume` do Claude vivo, F7b). Observação que falha
+    fica com o banco corrigido pela troca em memória.
+    """
+    from routers.conversas import _atual_da_linha  # conversas importa este módulo
+
+    try:
+        return await _atual_da_linha(app, agent)
+    except Exception as exc:  # noqa: BLE001 — abrir o chat vale mais que a régua
+        log.warning("chat de %s: atual da linha falhou (%s); fica o banco", agent["slug"], exc)
+        return operacao_conversa.corrigir_atual(agent["slug"], do_banco)
 
 
 _CLEAR_RENAME_POLL_S = 0.5

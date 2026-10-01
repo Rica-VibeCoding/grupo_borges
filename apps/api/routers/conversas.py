@@ -445,14 +445,17 @@ async def _conduzir_nova(
                 motivo = entrega.message or entrega.outcome
                 raise _Falha(f"o /clear não chegou ao agente ({motivo})")
             raise _Falha("o /clear foi enviado, mas a conversa nova não apareceu")
-        if len(novas) == 1:
-            operacao.registrar_troca(slug, sessao_antes, next(iter(novas)))
+        nova = next(iter(novas)) if len(novas) == 1 else None
+        if nova is not None:
+            operacao.registrar_troca(slug, sessao_antes, nova)
         # A conversa nova nasce sem nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
         # o rodapé do card (`session_name`) mostra.
         entrega = await tmux_driver.send_message(tmux_session, f"/rename {agent['name']}")
         if not entrega.delivered:
             motivo = entrega.message or entrega.outcome
             raise _Falha(f"a conversa nova abriu, mas o /rename não chegou ({motivo})")
+        if nova is not None:
+            await _publicar_troca(app, agent, op, de=sessao_antes, entrou=nova, motivo="nova")
         operacao.avancar(op, "pronta")
     except _Falha as exc:
         operacao.avancar(op, "erro", str(exc))
@@ -595,10 +598,14 @@ async def _conduzir_retomar(
             # marca. A última atividade sai do mtime de agora: o `--resume` mexe nele.
             achada = conversas.localizar(pasta, alvo)
             atividade_ms = achada[1].st_mtime_ns // 1_000_000 if achada else None
+            operacao.tirar_briefing(slug, alvo)  # sobra de uma largada antiga
             await db.marcar_retomada(slug, alvo, int(time.time() * 1000), atividade_ms)
             motivo = await _subir_e_esperar(tmux_session, pasta, alvo)
             if motivo is None:
                 operacao.registrar_troca(slug, sessao_antes, alvo)
+                await _publicar_troca(
+                    app, agent, op, de=sessao_antes, entrou=alvo, motivo="retomar"
+                )
                 operacao.avancar(op, "pronta")
                 return
             logger.warning("conversas: retomar %s em %s falhou: %s", alvo, slug, motivo)
@@ -613,6 +620,54 @@ async def _conduzir_retomar(
         operacao.avancar(op, "erro", f"falha inesperada ({exc.__class__.__name__})")
     finally:
         op.aguardando = None
+
+
+async def _publicar_troca(
+    app, agent: dict, op: operacao.Operacao, *, de: str | None, entrou: str, motivo: str
+) -> None:
+    """Avisa o stream do chat que a linha trocou de conversa (F13).
+
+    Antes da fase `pronta`: quando a tela vê `pronta` no `/operacao`, o evento
+    já saiu. No Retomar, espera até `PRAZO_BRIEFING_S` o gancho da largada
+    levar o briefing, que vai junto. Título e nota são da conversa que entra
+    (a Nova não tem nenhum); `de_titulo` é o que a que saiu recebeu agora.
+    """
+    slug = agent["slug"]
+    titulo: str | None = None
+    nota: str | None = None
+    briefing: str | None = None
+    if motivo == "retomar":
+        async def gancho_respondeu() -> bool:
+            return operacao.briefing_entregue(slug, entrou)
+
+        await operacao.esperar(gancho_respondeu, operacao.PRAZO_BRIEFING_S)
+        briefing = operacao.tirar_briefing(slug, entrou)
+        # A troca já aconteceu: sem título, o aviso sai do mesmo jeito.
+        try:
+            meta = (await app.state.db.conversa_meta_do_agente(slug)).get(entrou)
+            titulo = await asyncio.to_thread(
+                conversas.titulo_de,
+                _pasta_no_app(app, agent),
+                entrou,
+                nomes=conversas.nomes_do_agente(agent),
+                meta=meta,
+            )
+            nota = (meta or {}).get("nota") or None
+        except Exception:  # noqa: BLE001
+            logger.exception("conversas: título da retomada %s em %s", entrou, slug)
+    operacao.publicar_troca(
+        slug,
+        {
+            "session_id": entrou,
+            "de": de,
+            "de_titulo": op.titulo,
+            "motivo": motivo,
+            "titulo": titulo,
+            "nota": nota,
+            "briefing": briefing,
+            "at": int(time.time() * 1000),
+        },
+    )
 
 
 async def _voltar_para_a_anterior(
@@ -753,6 +808,8 @@ async def get_briefing(request: Request, slug: str, session_id: str) -> Briefing
     texto = await asyncio.to_thread(
         briefing_retorno.montar, arquivos, desde=desde_ms / 1000, agora=agora
     )
+    # O Retomar põe este texto no `conversa-trocada` do chat (F13).
+    operacao.guardar_briefing(agent["slug"], session_id, texto)
     return BriefingResposta(briefing=texto)
 
 
