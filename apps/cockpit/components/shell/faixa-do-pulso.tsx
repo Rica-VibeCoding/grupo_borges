@@ -13,6 +13,7 @@ import { fetchAgentPulso, type AgentPulsoResponse } from '@grupo_borges/cockpit-
 
 import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
 import { alturasDoPulso, leiaPulso, type LeituraDoPulso, type TomDoPulso } from './pulso-do-agente';
+import { usaEstadoDaPilula } from './usa-estado-da-pilula';
 
 const LEITURA_MS = 15_000;
 
@@ -90,14 +91,20 @@ export function usaPulso(slug: string, aberto: boolean): {
   };
 }
 
-export function FaixaDoPulso({ leitura, alturas }: { leitura: LeituraDoPulso; alturas: number[] }) {
+export function FaixaDoPulso({ slug, leitura, alturas }: { slug: string; leitura: LeituraDoPulso; alturas: number[] }) {
   const cor = COR[leitura.tom];
+  // O rótulo é o estado da pílula (mesma palavra, mesmo tom); o fio segue dourado, é gráfico.
+  // "Sem sinal" fica: é o motivo escrito do "!" da gaveta, não um estado do agente.
+  const estado = usaEstadoDaPilula(slug);
+  const semSinal = leitura.tom === 'sem-sinal';
+  const frase = semSinal ? leitura.frase : estado.rotulo.charAt(0).toUpperCase() + estado.rotulo.slice(1);
+  const corDoEstado = semSinal ? cor : `var(--ck-tom-${estado.tom})`;
   const minutos = alturas.length;
   const desenho = alturas.length > 1 ? caminhoDoPulso(alturas) : { linha: '', area: '' };
   return (
     <div
       role="status"
-      aria-label={`${leitura.frase} ${leitura.ha}`.trim()}
+      aria-label={`${frase} ${leitura.ha}`.trim()}
       className="flex flex-col"
       style={{ gap: 'var(--ck-space-2)' }}
     >
@@ -105,10 +112,10 @@ export function FaixaDoPulso({ leitura, alturas }: { leitura: LeituraDoPulso; al
         <span
           aria-hidden
           className="shrink-0 rounded-full"
-          style={{ width: '8px', height: '8px', background: cor, transform: 'translateY(-1px)' }}
+          style={{ width: '8px', height: '8px', background: corDoEstado, transform: 'translateY(-1px)' }}
         />
         <span style={{ fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
-          {leitura.frase}
+          {frase}
         </span>
         {leitura.ha ? (
           <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>{leitura.ha}</span>

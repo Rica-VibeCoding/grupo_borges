@@ -179,15 +179,15 @@ desktop, crescendo para baixo e rolando por dentro. Cabe sem rolar em 390×844 e
 respiro `--ck-space-3`) → blocos `--ck-gv-bloco` (quase preto, raio 12). Dentro de `.ck-gv`, moldura
 vira pílula e os fios somem: a separação é a camada.
 
-**Cabeçalho baixo, uma linha:** a pílula do agente (foto de 40px, bolinha "!" quando algo pede olho)
+**Cabeçalho baixo, uma linha:** a pílula do agente (bolinha "!" quando algo pede olho)
 · interruptor da sessão · `×` com alvo de 44px. Embaixo, a statusline com a barra de contexto na
 largura toda. Não há herói.
 
 **Pílula do agente** (`shell/pilula-do-agente.tsx`) — a identidade do agente em qualquer tela: foto com
 aro no tom de estado, primeiro nome, palavra do estado; o fundo estica com mola quando a palavra muda.
-Na voz, `cena` liga ondas (falando) e barras (ouvindo); na gaveta fica parada, só cor. Mapa da gaveta:
-trabalhando → `ze` · aguardando → `voce` ("esperando você") · ocioso → `prepara` ("na linha") ·
-fora do ar → `desligado` · alerta → `erro` ("parou").
+Geometria única; só a voz anima (ondas falando, barras ouvindo). Palavra e tom saem de uma régua só
+(`shell/estado-da-pilula.ts`), a mesma da pílula da voz, da gaveta e do rótulo do pulso: a cena da voz
+em curso vence; sem ela, a frota no vocabulário da voz (trabalhando · na linha · esperando você · desligado).
 
 **Peças:**
 - `Cartao` — título opcional à esquerda, ação à direita.

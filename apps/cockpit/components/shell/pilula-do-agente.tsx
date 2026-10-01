@@ -6,10 +6,11 @@ import { MotionConfig, motion } from 'motion/react';
 import { deriveInitials } from '@grupo_borges/cockpit-core/cockpit-types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+import type { TomDeEstado } from './estado-da-pilula';
 import styles from './pilula-do-agente.module.css';
 
-/** Os tons de estado do sistema (`--ck-tom-*` no globals.css). Quem chama mapeia o seu estado para um deles. */
-export type TomDeEstado = 'voce' | 'ze' | 'pensa' | 'prepara' | 'erro' | 'ocupado' | 'desligado';
+/** Lado da foto: a geometria é uma só, na voz e na gaveta. */
+const LADO = 52;
 
 /** A mola do fundo da pílula: estica e encolhe com a palavra do estado, com um leve passar do ponto. */
 const MOLA_DA_PILULA = { type: 'spring', visualDuration: 0.45, bounce: 0.22 } as const;
@@ -44,7 +45,6 @@ export function PilulaDoAgente({
   rotulo,
   cena,
   segundos,
-  lado = 52,
   lugar = 'voz',
   selo,
 }: {
@@ -54,7 +54,6 @@ export function PilulaDoAgente({
   rotulo: string;
   cena?: string;
   segundos?: number;
-  lado?: number;
   lugar?: 'voz' | 'gaveta';
   selo?: ReactNode;
 }) {
@@ -73,8 +72,8 @@ export function PilulaDoAgente({
           aria-hidden="true"
         />
       </MotionConfig>
-      <span className={styles.moldaPilula} style={{ width: lado, height: lado }}>
-        <Foto slug={slug} nome={nome} lado={lado} />
+      <span className={styles.moldaPilula}>
+        <Foto slug={slug} nome={nome} lado={LADO} />
         <span className={styles.onda} aria-hidden="true" />
         <span className={styles.onda} aria-hidden="true" />
         <span className={styles.aro} aria-hidden="true" />

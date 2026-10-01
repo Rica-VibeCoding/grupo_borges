@@ -162,7 +162,7 @@ function CartaoDaSessao({ v, agentSlug }: { v: Vida; agentSlug: string }) {
       {pronto && v.dePe ? (
         <Bloco>
           {v.pulso.leitura ? (
-            <FaixaDoPulso leitura={v.pulso.leitura} alturas={v.pulso.alturas} />
+            <FaixaDoPulso slug={agentSlug} leitura={v.pulso.leitura} alturas={v.pulso.alturas} />
           ) : (
             <div aria-hidden style={{ height: '98px' }} />
           )}
@@ -226,7 +226,6 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
         agente={agente}
         agora={agora}
         fecharHref={fecharHref}
-        foraDoAr={pronto && !v.dePe}
         alerta={alerta}
         interruptor={<InterruptorDaSessao v={v} />}
       />
