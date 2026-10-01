@@ -17,19 +17,19 @@ const acha = (id: string): Comando => {
 };
 
 describe('a lista', () => {
-  it('é a que o Rica passou em 10/08, na escada de custo', () => {
+  it('é a que o Rica passou em 10/08, sem o /clear (saiu em 01/10 para a Nova conversa)', () => {
     assert.deepEqual(
       COMANDOS.map((c) => c.comando),
-      ['/compact', '/encerrar', '/clear'],
+      ['/compact', '/encerrar'],
     );
   });
 
-  it('confirma só o que destrói', () => {
+  it('nenhum dos que sobraram destrói, então nenhum confirma', () => {
     // Pedir segundo toque no `/compact` seria copiar a proteção sem o perigo —
     // o erro que a pressão longa do cockpit antigo cometia com o destrava.
     assert.deepEqual(
       COMANDOS.filter((c) => c.confirma).map((c) => c.id),
-      ['clear'],
+      [],
     );
   });
 
@@ -42,11 +42,11 @@ describe('a lista', () => {
 
 describe('rótulo', () => {
   it('em repouso é o comando literal — é ele que sai no terminal', () => {
-    assert.equal(rotulaComando(acha('clear'), 'ocioso'), '/clear');
+    assert.equal(rotulaComando(acha('compact'), 'ocioso'), '/compact');
   });
 
   it('armado é sempre o curto, nunca a frase que não cabe no botão', () => {
-    assert.equal(rotulaComando(acha('clear'), 'confirmando'), 'Confirmar?');
+    assert.equal(rotulaComando(acha('encerrar'), 'confirmando'), 'Confirmar?');
   });
 
   it('com a espera do compact correndo, diz a espera', () => {
@@ -62,13 +62,14 @@ describe('nome acessível', () => {
   });
 
   it('armado anuncia o que se perde — a frase que o botão não mostra', () => {
-    assert.equal(descreveComando(acha('clear'), 'confirmando'), acha('clear').aviso);
+    const destroi: Comando = { ...acha('encerrar'), confirma: true, aviso: 'Confirmar? vai embora' };
+    assert.equal(descreveComando(destroi, 'confirmando'), destroi.aviso);
   });
 
   it('fora do ocioso não promete o que a fase não está fazendo', () => {
     // "Enviando… apaga o contexto desta conversa" seria a promessa errada no
     // instante errado.
-    assert.equal(descreveComando(acha('clear'), 'enviando'), 'Enviando…');
+    assert.equal(descreveComando(acha('encerrar'), 'enviando'), 'Enviando…');
   });
 });
 
@@ -86,13 +87,13 @@ describe('botão inerte', () => {
 });
 
 describe('diagnóstico', () => {
-  it('manda destravar quando o pane recusou — a saída certa está logo acima', () => {
+  it('manda religar quando o pane recusou — o Destravar saiu da gaveta em 01/10', () => {
     const impedimento = diagnosticaComando(new Error('agent_pane_unavailable'), acha('compact'));
-    assert.match(impedimento.saida, /Destravar/);
+    assert.match(impedimento.saida, /desligue e ligue/);
   });
 
   it('nomeia o comando que falhou, não "a ação"', () => {
-    assert.match(diagnosticaComando(new Error('500'), acha('clear')).resumo, /\/clear/);
+    assert.match(diagnosticaComando(new Error('500'), acha('compact')).resumo, /\/compact/);
   });
 
   it('detail desconhecido cai no caso geral, e ele continua acionável', () => {

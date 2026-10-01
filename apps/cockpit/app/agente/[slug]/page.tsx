@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { GavetaNova } from '@/components/gaveta/gaveta-nova';
+import { PainelDeConversas } from '@/components/gaveta/painel-de-conversas';
 import { PagerDoAgente } from '@/components/conversa/pager-do-agente';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
 import { Composer } from '@/components/shell/composer';
@@ -205,11 +206,12 @@ export default async function AgentePage({
         rotulo="detalhes do agente"
         aberto={false}
       >
-        {/* As duas visões vão prontas; quem escolhe é o cliente, pela URL
+        {/* As três visões vão prontas; quem escolhe é o cliente, pela URL
             (`VistaDaGaveta`) — abrir, fechar e trocar de visão não voltam ao
             servidor. */}
         <VistaDaGaveta
           mcps={<VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} />}
+          conversas={<PainelDeConversas agentSlug={agente.slug} fecharHref={fecharHref} />}
           detalhes={<GavetaNova agente={agente} fecharHref={fecharHref} agora={agora} />}
         />
       </GavetaPainel>

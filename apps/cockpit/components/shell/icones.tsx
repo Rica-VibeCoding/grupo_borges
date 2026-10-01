@@ -221,3 +221,24 @@ export function IconeVassoura(props: IconeProps) {
     </Tracado>
   );
 }
+
+/** Estrela das conversas especiais. Só contorno, como todo ícone daqui — o
+ *  estado "marcada" vem na palavra ao lado, nunca no preenchimento. */
+export function IconeEstrela(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z" />
+    </Tracado>
+  );
+}
+
+/** Relógio com a seta de volta — a porta do histórico de conversas. */
+export function IconeHistorico(props: IconeProps) {
+  return (
+    <Tracado {...props}>
+      <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+      <path d="M4.5 4.5v3.2h3.2" />
+      <path d="M12 8v4.2l2.8 1.8" />
+    </Tracado>
+  );
+}

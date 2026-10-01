@@ -975,3 +975,51 @@ export async function fetchTaskSubsessions(
   const data = await res.json();
   return Array.isArray(data) ? data : (data.subagents ?? []);
 }
+
+// Conversas do Claude Code de um agente (docs/conversas/PLANO.md, "Contrato da
+// API"). `atualizada_em` é epoch em ms; `pendencia` vem `null` até a F7.
+export type ConversaTituloOrigem = 'estacionada' | 'custom' | 'ai' | 'prompt' | 'primeira';
+
+export type Conversa = {
+  id: string;
+  titulo: string;
+  titulo_origem: ConversaTituloOrigem;
+  nota: string | null;
+  atualizada_em: number;
+  turnos: number;
+  bytes: number;
+  estrela: boolean;
+  atual: boolean;
+  bloqueada: boolean;
+  bloqueada_por: string | null;
+  pendencia: number | null;
+};
+
+export type ConversasResponse = {
+  suportado: boolean;
+  conversas: Conversa[];
+  escondidas_curtas: number;
+};
+
+export async function fetchConversas(slug: string, signal?: AbortSignal): Promise<ConversasResponse> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/conversas`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchConversas failed: ${res.status}`));
+  return res.json();
+}
+
+export async function postConversaEstrela(
+  slug: string,
+  id: string,
+  valor: boolean,
+): Promise<{ id: string; estrela: boolean }> {
+  const res = await fetch(
+    `/api/agents/${encodeURIComponent(slug)}/conversas/${encodeURIComponent(id)}/estrela`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valor }),
+    },
+  );
+  if (!res.ok) throw new Error(await errorDetail(res, `postConversaEstrela failed: ${res.status}`));
+  return res.json();
+}

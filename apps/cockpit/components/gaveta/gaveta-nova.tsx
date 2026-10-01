@@ -12,8 +12,10 @@
  *
  * - **Sessão** — o interruptor É o ciclo de vida: ligado = "Ativo" (azul),
  *   um toque desliga direto (sem armar, pedido do Rica 01/10); desligado,
- *   tocar liga. Dentro: o pulso, a pílula Destravar, a pesquisa
- *   (só onde existe) e os comandos.
+ *   tocar liga. Dentro: o pulso, a porta do Histórico de conversas
+ *   (`?painel=conversas`), a pesquisa (só onde existe) e os comandos. A porta
+ *   tomou o lugar do Destravar, que saiu da gaveta (Rica, 01/10), e aparece
+ *   com o agente ligado e desligado.
  * - **Motor e conta** — os blocos de sempre, cada um num bloco preto.
  * - **MCPs** — a área tracejada com "+", porta para `?painel=mcps`.
  * - **Conversa** — só quando a gaveta abre pela tela de voz.
@@ -27,12 +29,12 @@ import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import { mostraConversaNoPainel } from '../conversa/conversa-no-painel';
 
-import { descreveAcaoBruta, descreveLigar, rotulaDestrava } from '../shell/acoes-rapidas';
+import { descreveAcaoBruta, descreveLigar } from '../shell/acoes-rapidas';
 import { BlocoDeComandos } from '../shell/bloco-de-comandos';
 import { BlocoDeCota } from '../shell/bloco-de-cota';
 import { BlocoDeMotor } from '../shell/bloco-de-motor';
 import { FaixaDoPulso } from '../shell/faixa-do-pulso';
-import { IconeBusca, IconeDescartar } from '../shell/icones';
+import { IconeBusca, IconeDescartar, IconeHistorico } from '../shell/icones';
 import { alternaPesquisa, podePesquisar } from '../shell/pesquisa-canario';
 import { usaPesquisaAtiva } from '../shell/usa-pesquisa';
 import { VeuDeOperacao } from '../shell/veu-de-operacao';
@@ -123,7 +125,29 @@ function Avisos({ v }: { v: Vida }) {
   );
 }
 
-function CartaoDaSessao({ v, agentSlug }: { v: Vida; agentSlug: string }) {
+/** A porta do Histórico, no lugar onde morava o Destravar. Pílula larga e não
+ *  área tracejada: o tracejado é "abrir ou criar" (MCPs), e aqui é só abrir. */
+function PortaDoHistorico({ fecharHref }: { fecharHref: string }) {
+  return (
+    <LinkDaGaveta
+      href={`${fecharHref}?painel=conversas`}
+      className="ck-gv-pilula ck-veil flex items-center justify-center"
+      style={{
+        gap: 'var(--ck-space-2)',
+        minHeight: 'var(--ck-touch-min)',
+        padding: '0 var(--ck-space-4)',
+        borderRadius: 'var(--ck-radius-pill)',
+        fontSize: 'var(--ck-text-sm)',
+        color: 'var(--ck-text-primary)',
+      }}
+    >
+      <IconeHistorico tamanho={16} />
+      Histórico de conversas
+    </LinkDaGaveta>
+  );
+}
+
+function CartaoDaSessao({ v, agentSlug, fecharHref }: { v: Vida; agentSlug: string; fecharHref: string }) {
   const pronto = v.carga === 'pronto';
   return (
     <Cartao rotulo="Sessão">
@@ -169,32 +193,7 @@ function CartaoDaSessao({ v, agentSlug }: { v: Vida; agentSlug: string }) {
         </Bloco>
       ) : null}
 
-      {pronto && v.dePe && !v.aplicandoMotor ? (
-        <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
-          <Pilula
-            aoTocar={() => void v.acionarDestrava()}
-            ocupado={v.destrava === 'enviando'}
-            descricao={
-              v.confirmaCompact && v.compactEmVoo
-                ? 'Confirmar? Destravar agora interrompe o resumo do compact — tocar de novo confirma'
-                : v.destrava === 'ocioso'
-                  ? 'Destravar o agente — envia Escape 3x no terminal dele'
-                  : rotulaDestrava(v.destrava)
-            }
-            cor={
-              v.confirmaCompact && v.compactEmVoo
-                ? 'var(--ck-state-attention)'
-                : v.destrava === 'entregue'
-                  ? 'var(--ck-state-ok)'
-                  : v.semSinal
-                    ? 'var(--ck-state-attention)'
-                    : undefined
-            }
-          >
-            {v.confirmaCompact && v.compactEmVoo ? 'Confirmar?' : rotulaDestrava(v.destrava)}
-          </Pilula>
-        </div>
-      ) : null}
+      {pronto ? <PortaDoHistorico fecharHref={fecharHref} /> : null}
 
       {pronto && v.dePe && !v.aplicandoMotor && podePesquisar(agentSlug) ? <LinhaDaPesquisa agentSlug={agentSlug} /> : null}
 
@@ -232,7 +231,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
 
       {conversa ? <CartaoDaConversa /> : null}
 
-      <CartaoDaSessao v={v} agentSlug={agente.slug} />
+      <CartaoDaSessao v={v} agentSlug={agente.slug} fecharHref={fecharHref} />
 
       {pronto ? (
         <Cartao titulo="Motor e conta">

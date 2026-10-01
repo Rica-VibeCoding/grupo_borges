@@ -12,7 +12,7 @@
     "build": "next build",
     "start": "next start --port 3008",
     "type-check": "tsc --noEmit",
-    "test": "node --test lib/*.test.ts lib/spike/*.test.ts lib/conversa/*.test.ts components/feed/*.test.ts components/renderers/*.test.ts components/shell/*.test.ts components/conversa/*.test.ts app/api/delegacoes/*.test.ts"
+    "test": "node --test lib/*.test.ts lib/spike/*.test.ts lib/conversa/*.test.ts components/feed/*.test.ts components/renderers/*.test.ts components/shell/*.test.ts components/conversa/*.test.ts components/gaveta/*.test.ts app/api/delegacoes/*.test.ts"
   },
   "dependencies": {
     "@atlaskit/pragmatic-drag-and-drop": "^3.0.0",

@@ -24,13 +24,19 @@
  *    encerrar" de cabeça — a troca põe o irreversível na ponta, longe do dedo
  *    que escorrega, que é a régua que ele mesmo cravou para a linha de cima.
  *
- * 3. **Só o `/clear` pede confirmação.** Ele é o único que destrói. Pedir
- *    segundo toque no `/compact` seria copiar a proteção sem o perigo — o mesmo
- *    erro que a pressão longa de 2s do cockpit antigo cometia com o destrava.
+ * 3. **Só o que destrói pede confirmação.** Pedir segundo toque no `/compact`
+ *    seria copiar a proteção sem o perigo — o mesmo erro que a pressão longa de
+ *    2s do cockpit antigo cometia com o destrava.
+ *
+ * **01/10 — o `/clear` saiu da lista** (decisão do Rica na F8 das conversas). A
+ * Nova conversa do Histórico faz o mesmo `/clear`, mas estaciona antes, com
+ * título e nota; ter os dois lado a lado era convidar a limpar sem nota. A
+ * máquina da confirmação (`confirma`/`aviso`) fica para o próximo comando que
+ * destruir alguma coisa.
  */
 import type { Impedimento } from './acoes-rapidas';
 
-export type ComandoId = 'compact' | 'encerrar' | 'clear';
+export type ComandoId = 'compact' | 'encerrar';
 
 export type Comando = {
   id: ComandoId;
@@ -64,14 +70,6 @@ export const COMANDOS: readonly Comando[] = [
       'fecha a sessão pela régua da casa: salva memória, registra pendência e sobe o que ficou por commitar',
     confirma: false,
     aviso: null,
-  },
-  {
-    id: 'clear',
-    comando: '/clear',
-    descricao:
-      'apaga o contexto desta conversa — o agente recomeça sem lembrar nada do que foi dito',
-    confirma: true,
-    aviso: 'Confirmar? O contexto desta conversa vai embora — tocar de novo confirma',
   },
 ];
 
@@ -120,7 +118,7 @@ export function diagnosticaComando(erro: unknown, comando: Comando): Impedimento
   if (texto.includes('agent_pane_unavailable')) {
     return {
       resumo: `o terminal do agente não aceitou o ${comando.comando}`,
-      saida: 'o pane pode estar fora do CLI — use o Destravar acima e tente de novo',
+      saida: 'o pane pode estar fora do CLI — desligue e ligue o agente e tente de novo',
     };
   }
   if (texto.includes('404')) {

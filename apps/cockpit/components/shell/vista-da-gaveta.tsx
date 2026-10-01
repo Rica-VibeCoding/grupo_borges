@@ -10,7 +10,8 @@
  * Deep-link continua valendo: no SSR o `useSearchParams` lê a busca do pedido
  * (a rota é `force-dynamic`, sem prerender — ver o comentário do `Provider` em
  * `superficie-otimista.tsx` sobre o boundary), então `?painel=mcps` nasce na
- * tela de MCPs como antes. `painel=mcps` = MCPs; qualquer outro valor = detalhes.
+ * tela de MCPs como antes. `painel=mcps` = MCPs; `painel=conversas` = o
+ * Histórico (F9 das conversas, 01/10); qualquer outro valor = detalhes.
  */
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -20,12 +21,12 @@ import { levaSoNoCliente } from './rede-de-navegacao';
 import { cliqueSimples } from './superficie-otimista';
 import { useHrefDoPainel } from './use-href-do-painel';
 
-export function VistaDaGaveta({ detalhes, mcps }: { detalhes: ReactNode; mcps: ReactNode }) {
-  const busca = useSearchParams();
-  return <>{busca?.get('painel') === 'mcps' ? mcps : detalhes}</>;
+export function VistaDaGaveta({ detalhes, mcps, conversas }: { detalhes: ReactNode; mcps: ReactNode; conversas: ReactNode }) {
+  const painel = useSearchParams()?.get('painel');
+  return <>{painel === 'mcps' ? mcps : painel === 'conversas' ? conversas : detalhes}</>;
 }
 
-/** Link entre as visões da gaveta (detalhes ⇄ MCPs). Empilha como o `<Link>`
+/** Link entre as visões da gaveta (detalhes ⇄ MCPs ⇄ Histórico). Empilha como o `<Link>`
  *  de antes — o voltar do navegador desfaz a troca de visão —, mas sem ir ao
  *  servidor. Sem JS, ou com modificador, é o `<Link>` de sempre. */
 export function LinkDaGaveta({
