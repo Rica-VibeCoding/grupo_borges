@@ -3073,13 +3073,17 @@ _CLEAR_RENAME_TIMEOUT_S = 20.0
 _CLEAR_COMMAND_RE = re.compile(r"^\s*/clear(?:[ \t]+(?P<nome>[^\r\n]*?))?\s*$")
 
 
-def _nome_apos_clear(texto: str, nome_padrao: str) -> str | None:
-    """Devolve o nome da sessão pedida por `/clear [nome]`, se houver."""
-    match = _CLEAR_COMMAND_RE.match(texto)
-    if match is None:
+def _nome_apos_clear(texto: str, nome_do_agente: str) -> str | None:
+    """O nome que a conversa nova recebe depois de um `/clear [título]`.
+
+    Sempre o do agente. O `<título>` do `/clear` o CC nativo já grava na
+    conversa que SAI (medido na F1 das conversas, 01/10) — repetir o título na
+    nova, como fazia o `1cdb553`, deixava as duas com o mesmo nome e a nova sem
+    o do agente, que é o que o rodapé do card (`session_name`) mostra.
+    """
+    if _CLEAR_COMMAND_RE.match(texto) is None:
         return None
-    nome_customizado = (match.group("nome") or "").strip()
-    return nome_customizado or nome_padrao
+    return nome_do_agente
 
 
 async def _rename_apos_clear(
@@ -3126,7 +3130,7 @@ async def send_agent_input(
       da primeira operação que pode entregar o texto. Essa ordem causal impede
       que um evento gerado pelo próprio envio fique abaixo da fronteira.
     - `/clear [nome]` arma `_rename_apos_clear` em background: a resposta não
-      espera a sessão nova nascer; sem nome, reaplica o nome do agente.
+      espera a sessão nova nascer, e a nova recebe sempre o nome do agente.
     """
     agent = await _get_agent_or_404(request, slug)
     db: GrupoBorgesDB = request.app.state.db

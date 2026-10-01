@@ -1633,6 +1633,30 @@ class GrupoBorgesDB:
                 (agent_slug, session_id, int(valor)),
             )
 
+    async def estacionar_conversa(
+        self, agent_slug: str, session_id: str, titulo: str, nota: str | None, em_ms: int
+    ) -> None:
+        await asyncio.to_thread(
+            self._estacionar_conversa, agent_slug, session_id, titulo, nota, em_ms
+        )
+
+    def _estacionar_conversa(
+        self, agent_slug: str, session_id: str, titulo: str, nota: str | None, em_ms: int
+    ) -> None:
+        """Grava título e nota; a ⭐ e a `retomada_em` de antes ficam como estavam."""
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO conversa_meta (slug, session_id, titulo, nota, estacionada_em)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(slug, session_id) DO UPDATE SET
+                    titulo = excluded.titulo,
+                    nota = excluded.nota,
+                    estacionada_em = excluded.estacionada_em
+                """,
+                (agent_slug, session_id, titulo, nota, em_ms),
+            )
+
     async def apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
         await asyncio.to_thread(self._apagar_conversa_meta, agent_slug, session_id)
 

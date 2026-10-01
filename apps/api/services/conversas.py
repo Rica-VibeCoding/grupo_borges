@@ -254,6 +254,28 @@ def _titulo(
     return f"Conversa {session_id[:8]}", "primeira"
 
 
+def titulo_de(
+    pasta: Path | None,
+    session_id: str,
+    *,
+    nomes: set[str],
+    meta: dict[str, Any] | None,
+) -> str:
+    """O título de uma conversa só, pela ordem de queda — o do `/clear` da Nova conversa."""
+    achada = localizar(pasta, session_id) if pasta is not None else None
+    if achada is None:
+        resumo = _Resumo()
+    else:
+        with _trava:
+            resumo = _resumir(*achada)
+    return _titulo(session_id, resumo, meta, nomes)[0]
+
+
+def ids_na_pasta(pasta: Path) -> set[str]:
+    """Os `sessionId` com JSONL na pasta — para ver nascer a conversa de um `/clear`."""
+    return {session_id for session_id, _, _ in _arquivos(pasta)}
+
+
 def _arquivos(pasta: Path) -> Iterable[tuple[str, Path, os.stat_result]]:
     try:
         itens = list(os.scandir(pasta))

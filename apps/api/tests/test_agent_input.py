@@ -304,8 +304,9 @@ def test_input_clear_arma_rename_apos_clear_em_background(tmp_path: Path) -> Non
     rename_apos_clear.assert_called_once_with(app.state.db, "daniel", "daniel", "Daniel Singh", None)
 
 
-def test_input_clear_com_nome_arma_rename_customizado_em_background(tmp_path: Path) -> None:
-    """`/clear <nome>` reaplica o nome pedido na sessão nova, não o do agente."""
+def test_input_clear_com_titulo_renomeia_a_nova_com_o_nome_do_agente(tmp_path: Path) -> None:
+    """`/clear <título>`: o CC grava o título na conversa que SAI (F1 das conversas);
+    a nova recebe o nome do agente, que é o que o rodapé do card mostra."""
     app = _build_app(tmp_path)
     with patch(
         "routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED
@@ -324,7 +325,7 @@ def test_input_clear_com_nome_arma_rename_customizado_em_background(tmp_path: Pa
         app.state.db,
         "daniel",
         "daniel",
-        "revisão do deploy",
+        "Daniel Singh",
         None,
     )
 

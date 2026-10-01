@@ -126,8 +126,13 @@ async def lifespan(app: FastAPI):
         await uploads_sweeper.start()
     app.state.uploads_sweeper = uploads_sweeper
 
+    # Primeira lista de conversas depois do restart custava 9,7 s na VPS (F3):
+    # o cache do parser esquenta aqui, em segundo plano, sem segurar a subida.
+    aquecimento = asyncio.create_task(conversas_router.aquecer_cache(app))
+
     yield
 
+    aquecimento.cancel()
     if uploads_sweeper is not None:
         await uploads_sweeper.stop()
     if sweeper is not None:

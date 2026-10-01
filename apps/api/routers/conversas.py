@@ -1,7 +1,8 @@
 """`/api/agents/{slug}/conversas` — retomar conversa antiga do CC pelo cockpit.
 
 Contrato em `docs/conversas/PLANO.md` ("Contrato da API"). F2: a lista; F3:
-estrela e excluir.
+estrela e excluir; F5: estacionar, Nova conversa, `/operacao` e o aquecimento
+do cache da lista na subida da API.
 """
 from __future__ import annotations
 
@@ -13,13 +14,15 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from config import get_settings
 from db.store import GrupoBorgesDB
 from orchestrator.jsonl_watcher import _mapear_por_encoded, encoded_cwd
-from routers.agents import _get_agent_or_404
+from routers.agents import _esta_ocupado, _get_agent_or_404
 from services import conversas, tmux_driver
+from services import operacao_conversa as operacao
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +53,6 @@ class ConversasResposta(BaseModel):
 _VAZIA_SUPORTADA = ConversasResposta(suportado=True, conversas=[], escondidas_curtas=0)
 
 
-def _projects_dir(request: Request) -> Path:
-    settings = getattr(request.app.state, "settings", None) or get_settings()
-    return Path(settings.claude_projects_dir)
-
-
 async def _atuais_de_outras_linhas_vivas(db: GrupoBorgesDB, slug: str) -> dict[str, str]:
     """`session_id → slug` da conversa atual de cada OUTRA linha com sessão tmux de pé.
 
@@ -71,18 +69,23 @@ async def _atuais_de_outras_linhas_vivas(db: GrupoBorgesDB, slug: str) -> dict[s
     return {sid: a["slug"] for a, sid in zip(outras, atuais, strict=True) if sid}
 
 
-def _pasta_do_agente(request: Request, agent: dict) -> Path | None:
+def _pasta_no_app(app, agent: dict) -> Path | None:
     """A pasta das conversas do agente, ou `None` se ela não é só dele.
 
     Mesma régua do JSONL watcher: pasta dividida por dois agentes não é de
     nenhum deles — listar daria a um as conversas do outro.
     """
-    config = getattr(request.app.state, "agents_config", None) or {}
+    config = getattr(app.state, "agents_config", None) or {}
     agentes = config.get("agents") or [agent]
     encoded = encoded_cwd(agent["workspace_path"])
     if _mapear_por_encoded(agentes).get(encoded) != agent["slug"]:
         return None
-    return _projects_dir(request) / encoded
+    settings = getattr(app.state, "settings", None) or get_settings()
+    return Path(settings.claude_projects_dir) / encoded
+
+
+def _pasta_do_agente(request: Request, agent: dict) -> Path | None:
+    return _pasta_no_app(request.app, agent)
 
 
 def _eh_cc(agent: dict) -> bool:
@@ -187,3 +190,286 @@ async def delete_conversa(request: Request, slug: str, session_id: str) -> Exclu
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     await db.apagar_conversa_meta(slug, session_id)
     return ExcluirResposta(**feito)
+
+
+# ---------- F5: estacionar, Nova conversa e /operacao ----------
+
+
+class EstacionarPedido(BaseModel):
+    titulo: str = Field(min_length=1, max_length=200)
+    nota: str | None = Field(default=None, max_length=1000)
+
+
+class EstacionarResposta(BaseModel):
+    id: str
+    titulo: str
+    nota: str | None
+
+
+_NOTA_MAX = 300
+
+
+@router.post("/{slug}/conversas/estacionar", response_model=EstacionarResposta)
+async def post_estacionar(
+    request: Request, slug: str, pedido: EstacionarPedido
+) -> EstacionarResposta:
+    """Chamado **pelo agente**: título e nota da conversa atual dele.
+
+    Vale com ou sem Nova conversa em curso; se houver uma esperando, ela segue.
+    Título e nota viram uma linha só — o título vai para o `/clear`, e a nota
+    para a lista, onde quebra de linha não tem onde morar.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    if not _eh_cc(agent):
+        raise HTTPException(status_code=409, detail="motor_sem_conversas")
+    titulo = operacao.linha_unica(pedido.titulo)
+    if not titulo:
+        raise HTTPException(status_code=422, detail="titulo_vazio")
+    nota = operacao.linha_unica(pedido.nota, _NOTA_MAX) if pedido.nota else ""
+    db: GrupoBorgesDB = request.app.state.db
+    session_id = await db.latest_jsonl_session_id(slug)
+    if session_id is None:
+        raise HTTPException(status_code=409, detail="sem_conversa_atual")
+    await db.estacionar_conversa(slug, session_id, titulo, nota or None, int(time.time() * 1000))
+    operacao.avisar_estacionou(slug, session_id, titulo)
+    return EstacionarResposta(id=session_id, titulo=titulo, nota=nota or None)
+
+
+class OperacaoResposta(BaseModel):
+    fase: Literal["estacionando", "religando", "pronta", "erro"] | None
+    desde: int | None  # epoch ms da entrada na fase
+    detalhe: str | None = None
+
+
+def _operacao_resposta(slug: str) -> OperacaoResposta:
+    op = operacao.estado(slug)
+    if op is None:
+        return OperacaoResposta(fase=None, desde=None)
+    return OperacaoResposta(fase=op.fase, desde=op.desde, detalhe=op.detalhe)
+
+
+@router.get("/{slug}/conversas/operacao", response_model=OperacaoResposta)
+async def get_operacao(request: Request, slug: str) -> OperacaoResposta:
+    """A fase da operação deste agente, para a tela mostrar os passos da espera."""
+    await _get_agent_or_404(request, slug)
+    return _operacao_resposta(slug)
+
+
+class NovaPedido(BaseModel):
+    forcar: bool = False
+
+
+class NovaResposta(OperacaoResposta):
+    titulo: str | None = None
+    nota: bool = False  # o agente estacionou a tempo
+
+
+class _Falha(RuntimeError):
+    """Passo da operação que não se cumpriu; o texto vai para a tela."""
+
+
+#: As tarefas das operações vivem aqui: `create_task` sem referência pode ser
+#: recolhido pelo coletor no meio do caminho.
+_tarefas: set[asyncio.Task] = set()
+
+
+def _url_da_api(request: Request) -> str:
+    """Endereço da API por dentro da VPS, para o `curl` do agente.
+
+    A porta é a que o uvicorn ocupa (`scope["server"]`), não a do cabeçalho:
+    pelo `tailscale serve` o cabeçalho traz a `:3445`, que o agente não alcança
+    sem identidade da tailnet.
+    """
+    settings = getattr(request.app.state, "settings", None)
+    fixa = getattr(settings, "api_url_agentes", "") if settings is not None else ""
+    if fixa:
+        return fixa
+    servidor = request.scope.get("server")
+    porta = servidor[1] if servidor and servidor[1] else 8000
+    return f"http://127.0.0.1:{porta}"
+
+
+async def _ocioso(db: GrupoBorgesDB, slug: str) -> bool:
+    agent = await db.get_agent(slug)
+    return agent is None or not _esta_ocupado(agent)
+
+
+async def _interromper(db: GrupoBorgesDB, slug: str, tmux_session: str) -> None:
+    """Escape no pane. O turno interrompido não grava fim de turno no JSONL, então
+    o `lifecycle_status` ficaria em `trabalhando` por até 5 min — e o `/clear`
+    seguinte não depende dele. Limpa aqui, como o `/interromper` faz no caso
+    do pedido devolvido à caixa."""
+    resultado = await tmux_driver.interrupt(tmux_session)
+    if not resultado.get("parado"):
+        raise _Falha("não consegui interromper o agente")
+    await db.clear_agent_lifecycle(slug)
+
+
+async def _conduzir_nova(
+    app, agent: dict, op: operacao.Operacao, *, ocupado: bool, url_base: str
+) -> None:
+    """Fluxo da F5: estacionar → ocioso → `/clear <título>` → `/rename <agente>`."""
+    db: GrupoBorgesDB = app.state.db
+    slug, tmux_session = agent["slug"], agent["tmux_session"]
+    try:
+        sessao_antes = await db.latest_jsonl_session_id(slug)
+        if ocupado:
+            # `forcar`: interrompe e segue sem a nota.
+            await _interromper(db, slug, tmux_session)
+        elif sessao_antes is not None:
+            op.aguardando = sessao_antes
+            entrega = await tmux_driver.send_message(
+                tmux_session, operacao.mensagem_de_estacionar(url_base, slug)
+            )
+            if not entrega.delivered:
+                motivo = entrega.message or entrega.outcome
+                raise _Falha(f"o pedido de estacionar não chegou ao agente ({motivo})")
+
+            async def estacionou() -> bool:
+                return op.estacionou
+
+            await operacao.esperar(estacionou, operacao.PRAZO_ESTACIONAR_S)
+            op.aguardando = None
+            # Mandado no meio do turno, o `/clear` chega mas não vira comando.
+            if not await operacao.esperar(
+                lambda: _ocioso(db, slug), operacao.PRAZO_OCIOSO_S
+            ):
+                await _interromper(db, slug, tmux_session)
+
+        if not op.estacionou and sessao_antes is not None:
+            metas = await db.conversa_meta_do_agente(slug)
+            op.titulo = await asyncio.to_thread(
+                conversas.titulo_de,
+                _pasta_no_app(app, agent),
+                sessao_antes,
+                nomes=conversas.nomes_do_agente(agent),
+                meta=metas.get(sessao_antes),
+            )
+        titulo = operacao.linha_unica(op.titulo) if op.titulo else ""
+
+        operacao.avancar(op, "religando")
+        pasta = _pasta_no_app(app, agent)
+        if pasta is None:
+            raise _Falha("a pasta de conversas deste agente não é só dele")
+        ja_havia = await asyncio.to_thread(conversas.ids_na_pasta, pasta)
+        entrega = await tmux_driver.send_message(
+            tmux_session, f"/clear {titulo}" if titulo else "/clear"
+        )
+        if not entrega.delivered:
+            motivo = entrega.message or entrega.outcome
+            raise _Falha(f"o /clear não chegou ao agente ({motivo})")
+
+        # A conversa nova se prova pelo ARQUIVO, não pelo `latest_jsonl_session_id`
+        # que o `/input` usa: o watcher só ingere JSONL modificado, e o recém-criado
+        # pelo `/clear` pode só entrar no banco com a primeira mensagem (F2).
+        async def nasceu() -> bool:
+            return bool(await asyncio.to_thread(conversas.ids_na_pasta, pasta) - ja_havia)
+
+        if not await operacao.esperar(nasceu, operacao.PRAZO_CONVERSA_NOVA_S):
+            raise _Falha("o /clear foi enviado, mas a conversa nova não apareceu")
+        # O `<título>` do `/clear` fica na conversa que sai; a nova nasce sem
+        # nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
+        # o rodapé do card (`session_name`) mostra.
+        entrega = await tmux_driver.send_message(tmux_session, f"/rename {agent['name']}")
+        if not entrega.delivered:
+            motivo = entrega.message or entrega.outcome
+            raise _Falha(f"a conversa nova abriu, mas o /rename não chegou ({motivo})")
+        operacao.avancar(op, "pronta")
+    except _Falha as exc:
+        operacao.avancar(op, "erro", str(exc))
+    except Exception as exc:  # noqa: BLE001 — a fase nunca pode ficar presa em curso
+        logger.exception("conversas: Nova conversa de %s falhou", slug)
+        operacao.avancar(op, "erro", f"falha inesperada ({exc.__class__.__name__})")
+    finally:
+        op.aguardando = None
+
+
+@router.post("/{slug}/conversas/nova", response_model=NovaResposta)
+async def post_nova(request: Request, slug: str, pedido: NovaPedido | None = None):
+    """Estaciona a conversa atual e abre uma nova na mesma linha.
+
+    - 409 `ocupado`: agente no meio de um turno (com `forcar`, interrompe e
+      segue sem a nota); `operacao_em_curso`; `desligado`; `motor_sem_conversas`.
+    - Resposta síncrona com teto de 90 s. Passou disso, 202 com a fase em que
+      está — a operação segue no servidor e a tela acompanha pelo `/operacao`.
+    - 502 com `{fase: erro, detalhe}` quando um passo não se cumpre.
+    """
+    forcar = bool(pedido and pedido.forcar)
+    agent = await _get_agent_or_404(request, slug)
+    if not _eh_cc(agent):
+        raise HTTPException(status_code=409, detail="motor_sem_conversas")
+    try:
+        vivas = await tmux_driver.list_session_names()
+    except Exception as exc:  # noqa: BLE001 — sem inventário, o envio dirá
+        logger.warning("conversas: inventário do tmux falhou na Nova conversa (%s)", exc)
+    else:
+        if agent["tmux_session"] not in vivas:
+            raise HTTPException(status_code=409, detail="desligado")
+    atual = operacao.estado(slug)
+    if atual is not None and atual.fase in operacao.EM_CURSO:
+        raise HTTPException(status_code=409, detail="operacao_em_curso")
+    ocupado = _esta_ocupado(agent)
+    if ocupado and not forcar:
+        raise HTTPException(status_code=409, detail="ocupado")
+    try:
+        op = operacao.comecar(slug)
+    except operacao.OperacaoEmCurso as exc:
+        raise HTTPException(status_code=409, detail="operacao_em_curso") from exc
+
+    tarefa = asyncio.create_task(
+        _conduzir_nova(request.app, agent, op, ocupado=ocupado, url_base=_url_da_api(request))
+    )
+    _tarefas.add(tarefa)
+    tarefa.add_done_callback(_tarefas.discard)
+    try:
+        await asyncio.wait_for(asyncio.shield(tarefa), timeout=operacao.TETO_RESPOSTA_S)
+    except TimeoutError:
+        pass
+
+    corpo = NovaResposta(
+        **_operacao_resposta(slug).model_dump(), titulo=op.titulo, nota=op.estacionou
+    )
+    if op.fase == "erro":
+        return JSONResponse(status_code=502, content=corpo.model_dump())
+    if op.fase in operacao.EM_CURSO:
+        return JSONResponse(status_code=202, content=corpo.model_dump())
+    return corpo
+
+
+# ---------- aquecimento do cache da lista ----------
+
+
+async def aquecer_cache(app) -> None:
+    """Lê as conversas de todos os agentes uma vez, logo depois da subida da API.
+
+    Medido na VPS (F3): a primeira lista do Pavan depois de um restart levou
+    9,7 s com 171 arquivos; com o cache, 0,36 s. Roda em segundo plano, um
+    agente por vez, sem segurar o startup — quem abrir a lista no meio espera
+    a trava do parser, não paga a leitura duas vezes.
+    """
+    db: GrupoBorgesDB = app.state.db
+    inicio = time.monotonic()
+    total = 0
+    for agent in await db.list_agents():
+        if not _eh_cc(agent) or not agent.get("workspace_path"):
+            continue
+        pasta = _pasta_no_app(app, agent)
+        if pasta is None:
+            continue
+        try:
+            metas = await db.conversa_meta_do_agente(agent["slug"])
+            lista = await asyncio.to_thread(
+                conversas.listar,
+                pasta,
+                nomes=conversas.nomes_do_agente(agent),
+                metas=metas,
+                atual=None,
+                atuais_de_outras={},
+                agora=time.time(),
+            )
+            total += len(lista)
+        except Exception as exc:  # noqa: BLE001 — aquecer é bônus, nunca derruba
+            logger.warning("conversas: aquecimento de %s falhou (%s)", agent["slug"], exc)
+    logger.info(
+        "conversas: cache aquecido, %d conversas em %.1fs", total, time.monotonic() - inicio
+    )

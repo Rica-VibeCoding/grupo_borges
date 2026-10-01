@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     workspaces_root: str = ""  # raiz dos workspaces dos 6 agentes (opcional, info)
     db_path: str = str(API_ROOT / "data" / "grupo_borges.db")
     claude_projects_dir: str = str(Path.home() / ".claude" / "projects")
+    # Endereço da API que o agente usa no `curl` do estacionar (Nova conversa).
+    # Vazio = `http://127.0.0.1:<porta do uvicorn>`, que basta na VPS.
+    api_url_agentes: str = ""
 
     # stream
     poll_interval_ms: int = 250
