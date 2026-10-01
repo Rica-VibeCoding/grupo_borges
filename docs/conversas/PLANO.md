@@ -107,6 +107,13 @@ persona que mudou desde a conversa; lista geral da frota.
 - **Máquina**: o notebook no Omarchy, `ssh ricardo@100.116.209.95` (nó `omarchy`, porta 22).
   16 núcleos, 23 GB, CC 2.1.284 (a VPS está no 2.1.286), `gh` logado como `Rica-VibeCoding`.
   O nó `note-ricardo` é o Windows da mesma máquina: com ele, o note parece desligado.
+  **Omarchy fora → PC Windows** (rodada 2): `ssh RicardoBorges@100.118.54.91`, clone
+  `Documents\dev\projetos\grupo_borges-cadeiras`, `tmux -L conversas` (psmux), cadeira subida com
+  `claude --model claude-opus-5-5 --dangerously-skip-permissions` (confirmar "trust" com Down+Enter).
+  Comando PowerShell vai num `.ps1` por `scp` + `powershell -File` (aspas não sobrevivem ao SSH).
+  Patch: `git diff --binary --output=C:\tmp\fN.patch` (o stdout do PowerShell estraga o patch);
+  arquivo novo entra com `git add -N` e sai com `git reset` depois, senão trava o `pull`.
+  Sem cadeira `teste` (DeepSeek): a cadeira `api`, limpa, confere.
 - **Repositório**: `~/Projetos/grupo_borges`, clonado na F0. O clone é só das cadeiras.
 - **Casa** `tmux -L conversas`, com até três sessões:
   - `api`: Claude Code com `claude-opus-5-5`;

@@ -125,8 +125,10 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 - **Só `transform` e `opacity` animam.** Nada animado pode refluir o feed durante o stream.
 - **`prefers-reduced-motion: reduce` desliga tudo**, trocando por mudança instantânea.
 - **Biblioteca: Motion (`motion/react`)**, com `layoutDependency` em todo `layout` e `MotionConfig reducedMotion="user"`.
-  Uso único hoje: a mola da largura da pílula do agente. Transição de largura `auto` em CSS
-  (`interpolate-size`) não existe no Safari do iPhone (MDN, 10/2026); a Motion faz por `transform`.
+  O `reducedMotion="user"` só para transform e layout: **opacity em laço segue rodando**, então
+  quem pulsa opacity (esqueleto) consulta `useReducedMotion()` e para à mão.
+  Transição de largura `auto` em CSS (`interpolate-size`) não existe no Safari do iPhone
+  (MDN, 10/2026); a Motion faz por `transform`.
 - **Entrada e saída de superfície é `.ck-surge`**, o movimento do app inteiro: quem anima superfície
   nova usa ele, não keyframe próprio. Elemento removido do DOM não anima a saída, então a superfície
   fica **sempre montada** e alterna `data-aberto`; escondida por `visibility`. O gesto é
