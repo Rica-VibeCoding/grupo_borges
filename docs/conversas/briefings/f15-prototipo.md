@@ -3,7 +3,7 @@
 Carregue a skill `frontend-design` antes de desenhar.
 
 Leia em `docs/conversas/PLANO.md` só a seção "Rodada 2" (decisões 1–8 e os blocos F15 e F16).
-Em `docs/cockpit-v2-estetica.md`, as §3 (contraste), §9 (proibições) e §17 (a gaveta).
+Em `docs/cockpit-v2-estetica.md`, as §3 (contraste), §8 (painéis — a gaveta é o modelo) e §9 (proibições).
 
 Você não commita e **não escreve código de produto**: o Rica aprova o protótipo no celular antes.
 Protótipo descartável, montado com as peças e os tokens reais, fora do diff (`git status` limpo
