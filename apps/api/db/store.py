@@ -1620,6 +1620,29 @@ class GrupoBorgesDB:
             ).fetchall()
             return {row["session_id"]: dict(row) for row in rows}
 
+    async def marcar_estrela(self, agent_slug: str, session_id: str, valor: bool) -> None:
+        await asyncio.to_thread(self._marcar_estrela, agent_slug, session_id, valor)
+
+    def _marcar_estrela(self, agent_slug: str, session_id: str, valor: bool) -> None:
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO conversa_meta (slug, session_id, estrela) VALUES (?, ?, ?)
+                ON CONFLICT(slug, session_id) DO UPDATE SET estrela = excluded.estrela
+                """,
+                (agent_slug, session_id, int(valor)),
+            )
+
+    async def apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
+        await asyncio.to_thread(self._apagar_conversa_meta, agent_slug, session_id)
+
+    def _apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
+        with self._connect() as conn, conn:
+            conn.execute(
+                "DELETE FROM conversa_meta WHERE slug = ? AND session_id = ?",
+                (agent_slug, session_id),
+            )
+
     async def recent_jsonl_session_ids(self, agent_slug: str, limit: int = 8) -> list[str]:
         return await asyncio.to_thread(self._recent_jsonl_session_ids, agent_slug, limit)
 

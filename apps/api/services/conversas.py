@@ -27,6 +27,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
 import threading
 import unicodedata
 from dataclasses import dataclass, field, replace
@@ -272,13 +274,112 @@ def _arquivos(pasta: Path) -> Iterable[tuple[str, Path, os.stat_result]]:
         yield session_id, Path(item.path), st
 
 
+def trava(
+    session_id: str,
+    st: os.stat_result,
+    *,
+    atual: str | None,
+    atuais_de_outras: dict[str, str],
+    agora: float,
+) -> tuple[bool, str | None]:
+    """🔒 e quem tem a conversa aberta.
+
+    `atuais_de_outras` é `session_id → slug` da conversa atual de cada outra
+    linha viva. Escrita há < 2 min sem ser a atual desta linha também trava,
+    mas sem dono conhecido (outro terminal, `claude` solto): `(True, None)`.
+    """
+    dono = atuais_de_outras.get(session_id)
+    if dono:
+        return True, dono
+    if session_id != atual and agora - st.st_mtime < ESCRITA_RECENTE_SEGUNDOS:
+        return True, None
+    return False, None
+
+
+def localizar(pasta: Path, session_id: str) -> tuple[Path, os.stat_result] | None:
+    """O JSONL da conversa, só se o id é um sessionId e o arquivo mora na pasta.
+
+    Id fora do padrão (`../`, caminho, lixo) nem vira caminho. Depois do
+    padrão, o caminho resolvido ainda tem de cair dentro da pasta, e link
+    simbólico não conta — a mesma régua de `_arquivos`.
+    """
+    if not _SESSION_ID_PATTERN.fullmatch(session_id):
+        return None
+    caminho = pasta / f"{session_id}.jsonl"
+    try:
+        if caminho.resolve().parent != pasta.resolve():
+            return None
+        st = caminho.lstat()
+    except OSError:
+        return None
+    if not caminho.is_file() or caminho.is_symlink():
+        return None
+    return caminho, st
+
+
+class LixeiraIndisponivel(RuntimeError):
+    """`gio` não existe no servidor. Nada foi apagado."""
+
+
+class LixeiraFalhou(RuntimeError):
+    """`gio trash` recusou o JSONL. Nada foi apagado."""
+
+
+def _comando_gio() -> str | None:
+    return shutil.which("gio")
+
+
+def _gio_trash(gio: str, alvo: Path) -> str | None:
+    """Manda para a lixeira; devolve a mensagem de erro, ou `None` se deu certo."""
+    try:
+        feito = subprocess.run(
+            [gio, "trash", str(alvo)], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return str(exc) or exc.__class__.__name__
+    if feito.returncode != 0:
+        return (feito.stderr or feito.stdout).strip() or f"gio saiu com {feito.returncode}"
+    return None
+
+
+def mandar_para_lixeira(pasta: Path, session_id: str, caminho: Path) -> dict[str, Any]:
+    """Manda o JSONL e a pasta irmã `<id>/` (subagentes, anexos) para a lixeira.
+
+    O JSONL vai primeiro: se ele falhar, nada saiu do lugar. A pasta irmã só
+    vai depois; se ela falhar, a conversa já sumiu da lista e o que sobra é
+    resto órfão — fica registrado em `pasta_irma`, não vira erro.
+    """
+    gio = _comando_gio()
+    if gio is None:
+        raise LixeiraIndisponivel("gio não está instalado no servidor; nada foi apagado")
+    erro = _gio_trash(gio, caminho)
+    if erro is not None:
+        raise LixeiraFalhou(f"gio trash recusou a conversa ({erro}); nada foi apagado")
+    with _trava:
+        _cache.pop(str(caminho), None)
+
+    irma = pasta / session_id
+    if irma.is_symlink() or not irma.is_dir():
+        pasta_irma = "ausente"
+    elif irma.resolve().parent != pasta.resolve():
+        pasta_irma = "ausente"
+    else:
+        erro = _gio_trash(gio, irma)
+        if erro is None:
+            pasta_irma = "lixeira"
+        else:
+            logger.warning("conversas: pasta irmã %s ficou (%s)", irma, erro)
+            pasta_irma = "ficou"
+    return {"id": session_id, "pasta_irma": pasta_irma}
+
+
 def listar(
     pasta: Path,
     *,
     nomes: set[str],
     metas: dict[str, dict[str, Any]],
     atual: str | None,
-    atuais_de_outras: set[str],
+    atuais_de_outras: dict[str, str],
     agora: float,
 ) -> list[dict[str, Any]]:
     """Todas as conversas da janela (30 dias + ⭐), da mais recente para a mais antiga.
@@ -296,7 +397,9 @@ def listar(
             resumo = _resumir(caminho, st)
             titulo, origem = _titulo(session_id, resumo, meta, nomes)
             eh_atual = session_id == atual
-            escrita_recente = agora - st.st_mtime < ESCRITA_RECENTE_SEGUNDOS
+            bloqueada, bloqueada_por = trava(
+                session_id, st, atual=atual, atuais_de_outras=atuais_de_outras, agora=agora
+            )
             conversas.append(
                 {
                     "id": session_id,
@@ -308,8 +411,8 @@ def listar(
                     "bytes": st.st_size,
                     "estrela": estrela,
                     "atual": eh_atual,
-                    "bloqueada": session_id in atuais_de_outras
-                    or (escrita_recente and not eh_atual),
+                    "bloqueada": bloqueada,
+                    "bloqueada_por": bloqueada_por,
                     "pendencia": None,
                 }
             )
