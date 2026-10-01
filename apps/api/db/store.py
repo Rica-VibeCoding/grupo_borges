@@ -1657,6 +1657,20 @@ class GrupoBorgesDB:
                 (agent_slug, session_id, titulo, nota, em_ms),
             )
 
+    async def marcar_retomada(self, agent_slug: str, session_id: str, em_ms: int) -> None:
+        await asyncio.to_thread(self._marcar_retomada, agent_slug, session_id, em_ms)
+
+    def _marcar_retomada(self, agent_slug: str, session_id: str, em_ms: int) -> None:
+        """Grava a `retomada_em`; título, nota e ⭐ ficam como estavam."""
+        with self._connect() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO conversa_meta (slug, session_id, retomada_em) VALUES (?, ?, ?)
+                ON CONFLICT(slug, session_id) DO UPDATE SET retomada_em = excluded.retomada_em
+                """,
+                (agent_slug, session_id, em_ms),
+            )
+
     async def apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
         await asyncio.to_thread(self._apagar_conversa_meta, agent_slug, session_id)
 

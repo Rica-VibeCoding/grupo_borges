@@ -1,4 +1,4 @@
-"""Operação de conversa por agente: Nova conversa (F5) e, depois, Retomar (F6).
+"""Operação de conversa por agente: Nova conversa (F5) e Retomar (F6).
 
 Uma operação por agente de cada vez. O estado mora em memória, de propósito:
 ele só vale enquanto a operação corre, e um restart da API no meio já derruba
@@ -27,6 +27,11 @@ PRAZO_ESTACIONAR_S = 60.0
 PRAZO_OCIOSO_S = 15.0
 #: Do `/clear` até o JSONL da conversa nova existir na pasta.
 PRAZO_CONVERSA_NOVA_S = 10.0
+#: Retomar: do boot disparado até a linha pronta (caixa de input vazia) na
+#: conversa pedida. O `boot_agent` já espera até 40 s o processo aparecer.
+PRAZO_LARGADA_S = 60.0
+#: Quantas vezes o Retomar aperta Escape num diálogo de retomada que não sai.
+ESCAPES_NO_DIALOGO = 3
 PASSO_S = 0.5
 #: Teto da resposta síncrona do `POST /nova`. A operação segue no servidor.
 TETO_RESPOSTA_S = 90.0
@@ -93,9 +98,43 @@ def avisar_estacionou(slug: str, session_id: str, titulo: str) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class Troca:
+    """A última troca de conversa que o cockpit fez nesta linha."""
+
+    saiu: str | None
+    entrou: str
+
+
+#: Por que existe: o `latest_jsonl_session_id` vem do watcher, que só vê a
+#: conversa nova quando ela ganha mensagem. Logo depois de um Retomar (ou de
+#: uma Nova), o banco ainda diz que a atual é a que saiu — e a que saiu, escrita
+#: há segundos, cairia na regra dos 2 min do 🔒. Sem isto, A → B → A dava 409.
+_trocas: dict[str, Troca] = {}
+
+
+def registrar_troca(slug: str, saiu: str | None, entrou: str) -> None:
+    _trocas[slug] = Troca(saiu=saiu, entrou=entrou)
+
+
+def corrigir_atual(slug: str, atual_do_banco: str | None) -> str | None:
+    """A atual da linha: a do banco, salvo se ele ainda aponta a que saiu."""
+    troca = _trocas.get(slug)
+    if troca is not None and atual_do_banco in (None, troca.saiu):
+        return troca.entrou
+    return atual_do_banco
+
+
+def deixada(slug: str) -> str | None:
+    """A conversa que esta linha acabou de deixar: escrita recente dela é nossa."""
+    troca = _trocas.get(slug)
+    return troca.saiu if troca is not None else None
+
+
 def esquecer(slug: str) -> None:
     """Só para os testes."""
     _operacoes.pop(slug, None)
+    _trocas.pop(slug, None)
 
 
 async def esperar(condicao: Callable[[], Awaitable[bool]], prazo_s: float) -> bool:
@@ -123,7 +162,13 @@ def linha_unica(texto: str, limite: int = TITULO_MAX) -> str:
     return limpo[: limite - 1].rstrip() + "…"
 
 
-def mensagem_de_estacionar(url_base: str, slug: str) -> str:
+DEPOIS_DE_ESTACIONAR = {
+    "nova": "abrir uma nova",
+    "retomar": "retomar uma conversa antiga nesta linha",
+}
+
+
+def mensagem_de_estacionar(url_base: str, slug: str, para: str = "nova") -> str:
     """O pedido que vai para o agente: uma linha só, com o `curl` pronto.
 
     Linha única porque é o que o `send_message` prova com mais folga. O header
@@ -132,7 +177,8 @@ def mensagem_de_estacionar(url_base: str, slug: str) -> str:
     """
     rota = f"{url_base.rstrip('/')}/api/agents/{slug}/conversas/estacionar"
     return (
-        "[cockpit] Vou fechar esta conversa e abrir uma nova. Antes, estacione esta: "
+        f"[cockpit] Vou fechar esta conversa e {DEPOIS_DE_ESTACIONAR[para]}. "
+        "Antes, estacione esta: "
         "um título de até 6 palavras e uma nota de até 200 caracteres com onde você parou "
         "e qual é o próximo passo. Grave com este comando, trocando só os dois textos "
         "(o corpo precisa ser JSON válido; se o texto tiver apóstrofo, mande o JSON por "

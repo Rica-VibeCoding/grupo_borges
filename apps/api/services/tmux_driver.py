@@ -1953,14 +1953,32 @@ def _aguarda_unit_de_boot_sumir(session_name: str) -> None:
         time.sleep(_BOOT_UNIT_LIMPEZA_POLL_S)
 
 
-def _boot_agent_sync(session_name: str) -> dict[str, object]:
+def _flags_de_largada(resume_session_id: str | None) -> str:
+    """`--continue`, ou `--resume <id>` quando o Retomar escolhe a conversa.
+
+    O id vira valor de `--setenv` e depois argumento do `claude` dentro do
+    script: casar o formato de UUID é o que mantém essa fronteira estreita.
+    """
+    if resume_session_id is None:
+        return _FLAG_CONTINUE
+    if not _SESSION_ID_PATTERN.fullmatch(resume_session_id):
+        raise ValueError("session_id inválido para claude --resume")
+    return f"--resume {resume_session_id}"
+
+
+def _boot_agent_sync(
+    session_name: str, resume_session_id: str | None = None
+) -> dict[str, object]:
     """Sobe o agente pelo script de boot da frota, retomando a conversa.
 
     `--continue` é decisão de produto: desligar não pode custar conversa. Quem
-    quer recomeçar limpo usa `/clear` dentro do agente.
+    quer recomeçar limpo usa `/clear` dentro do agente. Com
+    `resume_session_id`, sobe com `--resume <id>` — é o Retomar das conversas,
+    e o `subir-frota.sh` não dá o nome do agente à conversa retomada (F4).
     """
     if not _SESSION_NAME_PATTERN.fullmatch(session_name):
         raise ValueError(f"nome de sessão inválido: {session_name}")
+    flags = _flags_de_largada(resume_session_id)
     if not _SUBIR_FROTA.is_file():
         raise ValueError(f"script de boot ausente: {_SUBIR_FROTA}")
 
@@ -1991,7 +2009,7 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
                 "-p",
                 "KillMode=process",
                 f"--unit=cockpit-ligar-{session_name}",
-                f"--setenv=FROTA_FLAGS_EXTRA={_FLAG_CONTINUE}",
+                f"--setenv=FROTA_FLAGS_EXTRA={flags}",
                 str(_SUBIR_FROTA),
                 session_name,
             ],
@@ -2020,9 +2038,56 @@ def _boot_agent_sync(session_name: str) -> dict[str, object]:
     return {"attempted": True, "confirmed": False}
 
 
-async def boot_agent(session_name: str) -> dict[str, object]:
+async def boot_agent(
+    session_name: str, resume_session_id: str | None = None
+) -> dict[str, object]:
     """Liga o agente pelo boot canônico da frota, com a conversa retomada."""
-    return await _run_tmux_operation(_boot_agent_sync, session_name)
+    return await _run_tmux_operation(_boot_agent_sync, session_name, resume_session_id)
+
+
+#: Os dois diálogos que o CC pode abrir na largada de um `--resume` (F1, lidos
+#: no binário 2.1.284). Ambos atrás de flag de servidor, desligada em 01/10:
+#: - "retorno": `compact` (foco) · "Resume full session as-is" · "Don't ask me again";
+#: - "cota" ("Resume this conversation?"): `Resume` (foco) · "Start a new conversation".
+#: As ordens são diferentes: a "opção 2" que serve num abre conversa nova no
+#: outro. Escape cai no `onCancel` dos dois, que devolve `dismiss`: nem
+#: compacta, nem abre conversa nova, nem grava config — a retomada segue inteira.
+_MARCAS_DE_DIALOGO_DE_RETOMADA = (
+    "Resume full session as-is",
+    "Resume from summary",
+    "Resume this conversation?",
+    "Start a new conversation",
+)
+
+EstadoDaLargada = Literal["ausente", "subindo", "dialogo", "pronta"]
+
+
+def _estado_da_largada_sync(session_name: str) -> EstadoDaLargada:
+    """Em que pé está o CLI que acabou de subir nesta sessão.
+
+    Caixa de input vazia vence a marca de diálogo: a conversa retomada pode ter
+    o próprio texto do diálogo no histórico visível (esta F6 tem), e com o
+    diálogo aberto o CC não desenha a caixa.
+    """
+    server = _server_for(session_name)
+    try:
+        if not server.has_session(session_name):
+            return "ausente"
+        pane = server.sessions.get(session_name=session_name).active_pane
+        if (pane.pane_current_command or "").lower() not in _CLAUDE_PANE_COMMANDS:
+            return "subindo"
+        if _capture_input_snapshot(pane).state == "empty":
+            return "pronta"
+        texto = "\n".join(pane.capture_pane(escape_sequences=False, join_wrapped=True))
+    except (libtmux_exc.LibTmuxException, AttributeError, IndexError):
+        return "subindo"
+    if any(marca in texto for marca in _MARCAS_DE_DIALOGO_DE_RETOMADA):
+        return "dialogo"
+    return "subindo"
+
+
+async def estado_da_largada(session_name: str) -> EstadoDaLargada:
+    return await asyncio.to_thread(_estado_da_largada_sync, session_name)
 
 
 def _load_tmux_buffer(server: libtmux.Server, text: str) -> str | None:

@@ -2,7 +2,7 @@
 
 Contrato em `docs/conversas/PLANO.md` ("Contrato da API"). F2: a lista; F3:
 estrela e excluir; F5: estacionar, Nova conversa, `/operacao` e o aquecimento
-do cache da lista na subida da API.
+do cache da lista na subida da API; F6: Retomar.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
+import libtmux.exc as libtmux_exc
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -21,7 +22,7 @@ from config import get_settings
 from db.store import GrupoBorgesDB
 from orchestrator.jsonl_watcher import _mapear_por_encoded, encoded_cwd
 from routers.agents import _esta_ocupado, _get_agent_or_404
-from services import conversas, tmux_driver
+from services import conversas, desligamento_deliberado, tmux_driver
 from services import operacao_conversa as operacao
 
 logger = logging.getLogger(__name__)
@@ -65,8 +66,13 @@ async def _atuais_de_outras_linhas_vivas(db: GrupoBorgesDB, slug: str) -> dict[s
         outras = [a for a in outras if a.get("tmux_session") in vivas]
     except Exception as exc:  # noqa: BLE001 — qualquer falha de observação
         logger.warning("conversas: inventário do tmux falhou (%s); todas contam como vivas", exc)
-    atuais = await asyncio.gather(*(db.latest_jsonl_session_id(a["slug"]) for a in outras))
+    atuais = await asyncio.gather(*(_atual_da_linha(db, a["slug"]) for a in outras))
     return {sid: a["slug"] for a, sid in zip(outras, atuais, strict=True) if sid}
+
+
+async def _atual_da_linha(db: GrupoBorgesDB, slug: str) -> str | None:
+    """A conversa atual da linha, já com a última troca feita pelo cockpit."""
+    return operacao.corrigir_atual(slug, await db.latest_jsonl_session_id(slug))
 
 
 def _pasta_no_app(app, agent: dict) -> Path | None:
@@ -121,7 +127,7 @@ async def get_conversas(
     db: GrupoBorgesDB = request.app.state.db
     metas, atual, atuais_de_outras = await asyncio.gather(
         db.conversa_meta_do_agente(slug),
-        db.latest_jsonl_session_id(slug),
+        _atual_da_linha(db, slug),
         _atuais_de_outras_linhas_vivas(db, slug),
     )
     lista = await asyncio.to_thread(
@@ -132,6 +138,7 @@ async def get_conversas(
         atual=atual,
         atuais_de_outras=atuais_de_outras,
         agora=time.time(),
+        deixada=operacao.deixada(slug),
     )
     visiveis, escondidas = conversas.filtrar(lista, filtro=filtro, q=q, curtas=bool(curtas))
     return ConversasResposta(
@@ -166,22 +173,34 @@ class ExcluirResposta(BaseModel):
     pasta_irma: Literal["lixeira", "ausente", "ficou"]
 
 
+async def _livre_ou_409(
+    db: GrupoBorgesDB, slug: str, session_id: str, st: os.stat_result
+) -> None:
+    """409 se a conversa é a atual desta linha ou está 🔒 (régua do excluir e do retomar)."""
+    atual, atuais_de_outras = await asyncio.gather(
+        _atual_da_linha(db, slug), _atuais_de_outras_linhas_vivas(db, slug)
+    )
+    if session_id == atual:
+        raise HTTPException(status_code=409, detail="É a conversa atual desta linha")
+    bloqueada, dono = conversas.trava(
+        session_id,
+        st,
+        atual=atual,
+        atuais_de_outras=atuais_de_outras,
+        agora=time.time(),
+        deixada=operacao.deixada(slug),
+    )
+    if bloqueada:
+        onde = f"na linha {dono}" if dono else "em outro lugar (escrita há menos de 2 min)"
+        raise HTTPException(status_code=409, detail=f"Conversa aberta {onde}")
+
+
 @router.delete("/{slug}/conversas/{session_id}", response_model=ExcluirResposta)
 async def delete_conversa(request: Request, slug: str, session_id: str) -> ExcluirResposta:
     """Manda a conversa para a lixeira (`gio trash`). 409 se for a atual ou estiver 🔒."""
     _, pasta, caminho, st = await _conversa_ou_404(request, slug, session_id)
     db: GrupoBorgesDB = request.app.state.db
-    atual, atuais_de_outras = await asyncio.gather(
-        db.latest_jsonl_session_id(slug), _atuais_de_outras_linhas_vivas(db, slug)
-    )
-    if session_id == atual:
-        raise HTTPException(status_code=409, detail="É a conversa atual desta linha")
-    bloqueada, dono = conversas.trava(
-        session_id, st, atual=atual, atuais_de_outras=atuais_de_outras, agora=time.time()
-    )
-    if bloqueada:
-        onde = f"na linha {dono}" if dono else "em outro lugar (escrita há menos de 2 min)"
-        raise HTTPException(status_code=409, detail=f"Conversa aberta {onde}")
+    await _livre_ou_409(db, slug, session_id, st)
     try:
         feito = await asyncio.to_thread(conversas.mandar_para_lixeira, pasta, session_id, caminho)
     except conversas.LixeiraIndisponivel as exc:
@@ -227,7 +246,7 @@ async def post_estacionar(
         raise HTTPException(status_code=422, detail="titulo_vazio")
     nota = operacao.linha_unica(pedido.nota, _NOTA_MAX) if pedido.nota else ""
     db: GrupoBorgesDB = request.app.state.db
-    session_id = await db.latest_jsonl_session_id(slug)
+    session_id = await _atual_da_linha(db, slug)
     if session_id is None:
         raise HTTPException(status_code=409, detail="sem_conversa_atual")
     await db.estacionar_conversa(slug, session_id, titulo, nota or None, int(time.time() * 1000))
@@ -305,6 +324,44 @@ async def _interromper(db: GrupoBorgesDB, slug: str, tmux_session: str) -> None:
     await db.clear_agent_lifecycle(slug)
 
 
+async def _estacionar_atual(
+    db: GrupoBorgesDB,
+    agent: dict,
+    op: operacao.Operacao,
+    *,
+    sessao_antes: str | None,
+    ocupado: bool,
+    url_base: str,
+    para: str,
+) -> None:
+    """Passo comum da Nova e do Retomar: pede a nota e deixa o agente ocioso.
+
+    Ocupado (só chega aqui com `forcar`): interrompe e segue sem a nota.
+    """
+    slug, tmux_session = agent["slug"], agent["tmux_session"]
+    if ocupado:
+        await _interromper(db, slug, tmux_session)
+        return
+    if sessao_antes is None:
+        return
+    op.aguardando = sessao_antes
+    entrega = await tmux_driver.send_message(
+        tmux_session, operacao.mensagem_de_estacionar(url_base, slug, para)
+    )
+    if not entrega.delivered:
+        motivo = entrega.message or entrega.outcome
+        raise _Falha(f"o pedido de estacionar não chegou ao agente ({motivo})")
+
+    async def estacionou() -> bool:
+        return op.estacionou
+
+    await operacao.esperar(estacionou, operacao.PRAZO_ESTACIONAR_S)
+    op.aguardando = None
+    # Mandado no meio do turno, o `/clear` chega mas não vira comando.
+    if not await operacao.esperar(lambda: _ocioso(db, slug), operacao.PRAZO_OCIOSO_S):
+        await _interromper(db, slug, tmux_session)
+
+
 async def _conduzir_nova(
     app, agent: dict, op: operacao.Operacao, *, ocupado: bool, url_base: str
 ) -> None:
@@ -312,29 +369,11 @@ async def _conduzir_nova(
     db: GrupoBorgesDB = app.state.db
     slug, tmux_session = agent["slug"], agent["tmux_session"]
     try:
-        sessao_antes = await db.latest_jsonl_session_id(slug)
-        if ocupado:
-            # `forcar`: interrompe e segue sem a nota.
-            await _interromper(db, slug, tmux_session)
-        elif sessao_antes is not None:
-            op.aguardando = sessao_antes
-            entrega = await tmux_driver.send_message(
-                tmux_session, operacao.mensagem_de_estacionar(url_base, slug)
-            )
-            if not entrega.delivered:
-                motivo = entrega.message or entrega.outcome
-                raise _Falha(f"o pedido de estacionar não chegou ao agente ({motivo})")
-
-            async def estacionou() -> bool:
-                return op.estacionou
-
-            await operacao.esperar(estacionou, operacao.PRAZO_ESTACIONAR_S)
-            op.aguardando = None
-            # Mandado no meio do turno, o `/clear` chega mas não vira comando.
-            if not await operacao.esperar(
-                lambda: _ocioso(db, slug), operacao.PRAZO_OCIOSO_S
-            ):
-                await _interromper(db, slug, tmux_session)
+        sessao_antes = await _atual_da_linha(db, slug)
+        await _estacionar_atual(
+            db, agent, op, sessao_antes=sessao_antes, ocupado=ocupado,
+            url_base=url_base, para="nova",
+        )
 
         if not op.estacionou and sessao_antes is not None:
             metas = await db.conversa_meta_do_agente(slug)
@@ -362,11 +401,16 @@ async def _conduzir_nova(
         # A conversa nova se prova pelo ARQUIVO, não pelo `latest_jsonl_session_id`
         # que o `/input` usa: o watcher só ingere JSONL modificado, e o recém-criado
         # pelo `/clear` pode só entrar no banco com a primeira mensagem (F2).
+        novas: set[str] = set()
+
         async def nasceu() -> bool:
-            return bool(await asyncio.to_thread(conversas.ids_na_pasta, pasta) - ja_havia)
+            novas.update(await asyncio.to_thread(conversas.ids_na_pasta, pasta) - ja_havia)
+            return bool(novas)
 
         if not await operacao.esperar(nasceu, operacao.PRAZO_CONVERSA_NOVA_S):
             raise _Falha("o /clear foi enviado, mas a conversa nova não apareceu")
+        if len(novas) == 1:
+            operacao.registrar_troca(slug, sessao_antes, next(iter(novas)))
         # O `<título>` do `/clear` fica na conversa que sai; a nova nasce sem
         # nome e sem `agent-name` (F1/M2). Ela recebe o do agente, que é o que
         # o rodapé do card (`session_name`) mostra.
@@ -419,6 +463,190 @@ async def post_nova(request: Request, slug: str, pedido: NovaPedido | None = Non
     tarefa = asyncio.create_task(
         _conduzir_nova(request.app, agent, op, ocupado=ocupado, url_base=_url_da_api(request))
     )
+    return await _responder(slug, op, tarefa)
+
+
+# ---------- F6: Retomar ----------
+
+
+async def _subir_e_esperar(
+    tmux_session: str, pasta: Path, resume_session_id: str | None
+) -> str | None:
+    """Sobe a linha e espera ela ficar pronta. `None` = pronta; senão, o motivo.
+
+    Pronta = caixa de input vazia e, no `--resume`, o JSONL pedido como o mais
+    recente da pasta (o `--resume` mexe no mtime dele na subida). Diálogo de
+    retomada na tela leva Escape — o único atalho seguro nos dois diálogos, ver
+    `tmux_driver._MARCAS_DE_DIALOGO_DE_RETOMADA`. Os Escapes ficam espaçados:
+    dois seguidos numa caixa vazia abrem o menu de voltar no histórico do CC.
+    """
+    try:
+        await tmux_driver.boot_agent(tmux_session, resume_session_id)
+    except tmux_driver.TmuxSessionBusyError:
+        return "já havia um boot deste agente em curso"
+    except (ValueError, libtmux_exc.LibTmuxException) as exc:
+        return f"o boot falhou ({exc})"
+
+    visto: dict[str, object] = {"estado": "ausente", "escapes": 0, "desde_escape": 99}
+
+    async def pronta() -> bool:
+        estado = await tmux_driver.estado_da_largada(tmux_session)
+        visto["estado"] = estado
+        visto["desde_escape"] = int(visto["desde_escape"]) + 1
+        if estado == "dialogo":
+            if (
+                int(visto["escapes"]) < operacao.ESCAPES_NO_DIALOGO
+                and int(visto["desde_escape"]) >= 4
+            ):
+                await tmux_driver.send_named_key(tmux_session, "Escape")
+                visto["escapes"] = int(visto["escapes"]) + 1
+                visto["desde_escape"] = 0
+            return False
+        if estado != "pronta":
+            return False
+        if resume_session_id is None:
+            return True
+        return await asyncio.to_thread(conversas.mais_recente, pasta) == resume_session_id
+
+    if await operacao.esperar(pronta, operacao.PRAZO_LARGADA_S):
+        return None
+    if visto["estado"] == "dialogo":
+        return "a linha ficou parada num diálogo de retomada do Claude Code"
+    if visto["estado"] == "pronta":
+        return "a linha subiu, mas não na conversa pedida"
+    return f"a linha não ficou pronta em {int(operacao.PRAZO_LARGADA_S)} s"
+
+
+async def _conduzir_retomar(
+    app,
+    agent: dict,
+    op: operacao.Operacao,
+    *,
+    alvo: str,
+    viva: bool,
+    ocupado: bool,
+    url_base: str,
+) -> None:
+    """Fluxo da F6: estacionar → desligar → `--resume <alvo>` → linha pronta.
+
+    Falhou a subida, a linha volta na conversa de antes (`--continue`, com o
+    JSONL dela tocado para ser o mais recente) e a resposta é erro legível —
+    nunca linha morta calada.
+    """
+    db: GrupoBorgesDB = app.state.db
+    slug, tmux_session = agent["slug"], agent["tmux_session"]
+    try:
+        pasta = _pasta_no_app(app, agent)
+        if pasta is None:
+            raise _Falha("a pasta de conversas deste agente não é só dele")
+        sessao_antes = await _atual_da_linha(db, slug)
+        if viva:
+            await _estacionar_atual(
+                db, agent, op, sessao_antes=sessao_antes, ocupado=ocupado,
+                url_base=url_base, para="retomar",
+            )
+
+        operacao.avancar(op, "religando")
+        # Desligar de propósito: o vigia não conta como morte no meio da troca.
+        await asyncio.to_thread(desligamento_deliberado.marcar, tmux_session)
+        try:
+            desligado = await tmux_driver.shutdown_agent(tmux_session)
+            if desligado.get("scopes_resistiram"):
+                logger.warning(
+                    "conversas: retomar em %s com scopes que resistiram: %s",
+                    slug, desligado["scopes_resistiram"],
+                )
+            # Antes do boot: o gancho do briefing (F7) roda na largada e lê esta marca.
+            await db.marcar_retomada(slug, alvo, int(time.time() * 1000))
+            motivo = await _subir_e_esperar(tmux_session, pasta, alvo)
+            if motivo is None:
+                operacao.registrar_troca(slug, sessao_antes, alvo)
+                operacao.avancar(op, "pronta")
+                return
+            logger.warning("conversas: retomar %s em %s falhou: %s", alvo, slug, motivo)
+            raise _Falha(f"não consegui retomar a conversa: {motivo}; "
+                         + await _voltar_para_a_anterior(tmux_session, pasta, sessao_antes))
+        finally:
+            await asyncio.to_thread(desligamento_deliberado.desmarcar, tmux_session)
+    except _Falha as exc:
+        operacao.avancar(op, "erro", str(exc))
+    except Exception as exc:  # noqa: BLE001 — a fase nunca pode ficar presa em curso
+        logger.exception("conversas: Retomar em %s falhou", slug)
+        operacao.avancar(op, "erro", f"falha inesperada ({exc.__class__.__name__})")
+    finally:
+        op.aguardando = None
+
+
+async def _voltar_para_a_anterior(
+    tmux_session: str, pasta: Path, sessao_antes: str | None
+) -> str:
+    """Religa com `--continue` e diz em uma frase como a linha ficou.
+
+    O `--resume` que falhou pode ter deixado o JSONL pedido como o mais recente
+    da pasta, e é o mais recente que o `--continue` pega. Tocar o da conversa
+    de antes devolve a linha a ela.
+    """
+    achada = conversas.localizar(pasta, sessao_antes) if sessao_antes else None
+    if achada is not None:
+        try:
+            await asyncio.to_thread(os.utime, achada[0])
+        except OSError as exc:
+            logger.warning("conversas: não toquei o JSONL de %s (%s)", sessao_antes, exc)
+    motivo = await _subir_e_esperar(tmux_session, pasta, None)
+    if motivo is None:
+        return "a linha voltou na conversa anterior"
+    logger.error("conversas: a volta com --continue em %s também falhou: %s", tmux_session, motivo)
+    return f"e a linha também não voltou ({motivo}) — ligue o agente pelo botão Ligar"
+
+
+@router.post("/{slug}/conversas/{session_id}/retomar", response_model=NovaResposta)
+async def post_retomar(
+    request: Request, slug: str, session_id: str, pedido: NovaPedido | None = None
+):
+    """Troca a conversa da linha por `session_id`: estaciona, derruba e sobe com `--resume`.
+
+    - 404: a conversa não é deste agente.
+    - 409 `É a conversa atual…` / `Conversa aberta…` (🔒); `ocupado` (com
+      `forcar`, interrompe e segue sem a nota); `operacao_em_curso`;
+      `motor_sem_conversas`.
+    - Agente desligado: não há o que estacionar, sobe direto na conversa pedida.
+    - Mesmas respostas da Nova: 200 `pronta`, 502 `{fase: erro, detalhe}`, 202
+      depois de 90 s com a operação seguindo no servidor.
+    """
+    forcar = bool(pedido and pedido.forcar)
+    agent = await _get_agent_or_404(request, slug)
+    if not _eh_cc(agent):
+        raise HTTPException(status_code=409, detail="motor_sem_conversas")
+    _, _, _, st = await _conversa_ou_404(request, slug, session_id)
+    db: GrupoBorgesDB = request.app.state.db
+    await _livre_ou_409(db, slug, session_id, st)
+    try:
+        viva = agent["tmux_session"] in await tmux_driver.list_session_names()
+    except Exception as exc:  # noqa: BLE001 — sem inventário, trata como viva
+        logger.warning("conversas: inventário do tmux falhou no Retomar (%s)", exc)
+        viva = True
+    atual = operacao.estado(slug)
+    if atual is not None and atual.fase in operacao.EM_CURSO:
+        raise HTTPException(status_code=409, detail="operacao_em_curso")
+    ocupado = viva and _esta_ocupado(agent)
+    if ocupado and not forcar:
+        raise HTTPException(status_code=409, detail="ocupado")
+    try:
+        op = operacao.comecar(slug)
+    except operacao.OperacaoEmCurso as exc:
+        raise HTTPException(status_code=409, detail="operacao_em_curso") from exc
+
+    tarefa = asyncio.create_task(
+        _conduzir_retomar(
+            request.app, agent, op, alvo=session_id, viva=viva, ocupado=ocupado,
+            url_base=_url_da_api(request),
+        )
+    )
+    return await _responder(slug, op, tarefa)
+
+
+async def _responder(slug: str, op: operacao.Operacao, tarefa: asyncio.Task):
+    """Segura a resposta até o teto de 90 s; a operação segue no servidor depois."""
     _tarefas.add(tarefa)
     tarefa.add_done_callback(_tarefas.discard)
     try:

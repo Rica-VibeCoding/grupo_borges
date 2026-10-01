@@ -276,6 +276,16 @@ def ids_na_pasta(pasta: Path) -> set[str]:
     return {session_id for session_id, _, _ in _arquivos(pasta)}
 
 
+def mais_recente(pasta: Path) -> str | None:
+    """O `sessionId` do JSONL com o mtime mais novo da pasta.
+
+    O `--resume` mexe no mtime da conversa retomada na subida (medido na VPS em
+    01/10): é a prova, pelo arquivo, de que a linha voltou na conversa pedida.
+    """
+    melhor = max(_arquivos(pasta), key=lambda item: item[2].st_mtime_ns, default=None)
+    return melhor[0] if melhor is not None else None
+
+
 def _arquivos(pasta: Path) -> Iterable[tuple[str, Path, os.stat_result]]:
     try:
         itens = list(os.scandir(pasta))
@@ -303,17 +313,23 @@ def trava(
     atual: str | None,
     atuais_de_outras: dict[str, str],
     agora: float,
+    deixada: str | None = None,
 ) -> tuple[bool, str | None]:
     """🔒 e quem tem a conversa aberta.
 
     `atuais_de_outras` é `session_id → slug` da conversa atual de cada outra
     linha viva. Escrita há < 2 min sem ser a atual desta linha também trava,
     mas sem dono conhecido (outro terminal, `claude` solto): `(True, None)`.
+    `deixada` é a conversa que esta linha acabou de trocar pelo cockpit — a
+    escrita recente dela foi desta linha, que já saiu dela.
     """
     dono = atuais_de_outras.get(session_id)
     if dono:
         return True, dono
-    if session_id != atual and agora - st.st_mtime < ESCRITA_RECENTE_SEGUNDOS:
+    if (
+        session_id not in (atual, deixada)
+        and agora - st.st_mtime < ESCRITA_RECENTE_SEGUNDOS
+    ):
         return True, None
     return False, None
 
@@ -403,6 +419,7 @@ def listar(
     atual: str | None,
     atuais_de_outras: dict[str, str],
     agora: float,
+    deixada: str | None = None,
 ) -> list[dict[str, Any]]:
     """Todas as conversas da janela (30 dias + ⭐), da mais recente para a mais antiga.
 
@@ -420,7 +437,12 @@ def listar(
             titulo, origem = _titulo(session_id, resumo, meta, nomes)
             eh_atual = session_id == atual
             bloqueada, bloqueada_por = trava(
-                session_id, st, atual=atual, atuais_de_outras=atuais_de_outras, agora=agora
+                session_id,
+                st,
+                atual=atual,
+                atuais_de_outras=atuais_de_outras,
+                agora=agora,
+                deixada=deixada,
             )
             conversas.append(
                 {
