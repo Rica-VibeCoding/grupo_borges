@@ -10,7 +10,11 @@ import { atrasoDaRetentativa, ehRecusaTransitoria } from '../../lib/recusa-trans
  *   Segue como enviada — reenviar duplicaria, avisar seria alarme falso.
  * - `refused` com `safe_to_resend`: nada foi escrito no pane. Insiste sozinho, com as
  *   esperas de `recusa-transitoria.ts`; esgotadas, a mensagem não saiu.
+ * - `agent_tmux_busy`: a trava do pane está com outro — o freio segura até ~3 s depois do toque.
+ *   Nada foi escrito (a recusa vem antes do paste). Insiste até ~4 s; só aqui, o chat não muda.
  */
+const ESPERAS_DO_PANE_PRESO_MS = [500, 1_000, 1_000, 1_500] as const;
+
 export type DestinoDoErro =
   | { tipo: 'enviada' }
   | { tipo: 'retentar'; atrasoMs: number }
@@ -20,9 +24,14 @@ export function destinoDoErroDeEnvio(erro: unknown, jaTentadas: number): Destino
   const bruto = (typeof erro === 'object' && erro !== null ? erro : {}) as {
     status?: unknown;
     deliveryOutcome?: unknown;
+    detail?: unknown;
   };
   if (typeof bruto.status !== 'number') return { tipo: 'falhou', motivo: 'envioFalhou' };
   if (bruto.deliveryOutcome === 'uncertain') return { tipo: 'enviada' };
+  if (bruto.status === 409 && bruto.detail === 'agent_tmux_busy') {
+    const atraso = ESPERAS_DO_PANE_PRESO_MS[jaTentadas];
+    return atraso === undefined ? { tipo: 'falhou', motivo: 'agenteOcupado' } : { tipo: 'retentar', atrasoMs: atraso };
+  }
   if (ehRecusaTransitoria(erro)) {
     const atraso = atrasoDaRetentativa(jaTentadas);
     return atraso === null ? { tipo: 'falhou', motivo: 'envioFalhou' } : { tipo: 'retentar', atrasoMs: atraso };

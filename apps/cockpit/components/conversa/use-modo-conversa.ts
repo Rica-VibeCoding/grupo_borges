@@ -11,6 +11,7 @@ import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { entregaFala } from './envio-da-conversa';
 import { ferramentaEmCurso } from './estado-da-vez';
 import { comParcial, FALA_VAZIA, falaDepois, type FalaDaVez } from './fala-da-vez';
+import { criaFalaDevolvida } from './fala-devolvida';
 import { mensagemDeErro } from './mensagem-de-erro';
 import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
@@ -41,6 +42,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   const sessaoAtivaRef = useRef(false);
   const iniciandoRef = useRef(false);
   const cicloRef = useRef(0);
+  const [devolvida] = useState(criaFalaDevolvida); // a fala que o freio apagou vai na frente da próxima
   const sonsRef = useRef<SonsLocais | null>(null);
   const despachaRef = useRef<(evento: Evento) => void>(() => {});
   const executaEfeitoRef = useRef<(efeito: Efeito) => void>(() => {});
@@ -163,20 +165,23 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
       case 'enviar': {
         // Com o Zé ocupado a fala sai igual: o Claude Code a enfileira sem interromper o turno.
         const ciclo = cicloRef.current;
+        const pedido = devolvida.envio(efeito.texto);
         apoio.preparaEnvio();
         entregaFala({
-          posta: () => postAgentInput(slug, efeito.texto, { origin: 'voz' }),
+          posta: () => postAgentInput(slug, pedido.monta(), { origin: 'voz' }),
           vivo: () => ciclo === cicloRef.current,
-          enviou: () => despachaRef.current({ tipo: 'enviou' }),
+          enviou: () => (pedido.entrou(), despachaRef.current({ tipo: 'enviou' })),
           falhou: (motivo) => despachaRef.current({ tipo: 'falhou', motivo }),
         });
         return;
       }
-      case 'frearZe':
-        // O `■` do composer, sempre: antes da primeira linha do Zé, o servidor limpa o pedido
-        // devolvido à caixa e grava o fim no stream. Falhar não é alarme: a resposta fica no chat de texto.
-        void postAgentInterromper(slug).catch(() => {});
+      case 'frearZe': {
+        // O `■` do composer: antes da 1ª linha do Zé o servidor limpa o pedido devolvido à caixa, e a
+        // fala limpa vai na frente da próxima. Falhar não é alarme: a resposta fica no chat de texto.
+        const ciclo = cicloRef.current, guarda = devolvida.freio();
+        void postAgentInterromper(slug).then((r) => void (ciclo === cicloRef.current && sessaoAtivaRef.current && guarda(r))).catch(() => {});
         return;
+      }
       case 'falar':
         apoio.cala(); // a resposta chegou: a frase de apoio some, na síntese ou tocando
         enfileiraFala(efeito.texto, retomada.virouVoz());
@@ -197,7 +202,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   useTurnoDoZe(stream, {
     abre: () => { abreTurno(); apoio.inicia(); },
     texto: entregaTexto,
-    pedidoEntrou: () => despacha({ tipo: 'pedidoEntrou' }),
+    pedidoEntrou: () => (devolvida.descarta(), despacha({ tipo: 'pedidoEntrou' })), // já está no histórico
     fecha: () => {
       apoio.encerra();
       despacha({ tipo: 'zeTerminou' });
@@ -251,8 +256,9 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     sons().sinalizaFim();
     wakeLock.solta();
     retomada.apaga(); // parou: a recarga depois abre em "parado"
+    devolvida.descarta();
     despacha({ tipo: 'parar', semFreio });
-  }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada]);
+  }, [apoio, cancelaFala, despacha, sons, wakeLock, retomada, devolvida]);
   /** O toque que para: com o turno do Zé em voo, freia. */
   const parar = useCallback(() => encerra(false), [encerra]);
 

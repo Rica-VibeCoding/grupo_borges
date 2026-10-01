@@ -70,3 +70,18 @@ it('entrega incerta vira enviada na primeira tentativa', async () => {
   await escoa();
   assert.deepEqual({ ...log }, { posts: 1, esperas: [], enviou: 1, falhas: [] });
 });
+
+const paneOcupado = { status: 409, detail: 'agent_tmux_busy', deliveryOutcome: null, safeToResend: null };
+
+it('pane preso pelo freio (agent_tmux_busy) é espera curta, não "agente ocupado"', () => {
+  assert.deepEqual(destinoDoErroDeEnvio(paneOcupado, 0), { tipo: 'retentar', atrasoMs: 500 });
+  assert.deepEqual(destinoDoErroDeEnvio(paneOcupado, 3), { tipo: 'retentar', atrasoMs: 1500 });
+  assert.deepEqual(destinoDoErroDeEnvio(paneOcupado, 4), { tipo: 'falhou', motivo: 'agenteOcupado' });
+});
+
+it('pane preso duas vezes e depois livre: a fala entra sem erro', async () => {
+  const { log, avanca } = simula([paneOcupado, paneOcupado, 'ok']);
+  await avanca();
+  await avanca();
+  assert.deepEqual({ ...log }, { posts: 3, esperas: [500, 1000], enviou: 1, falhas: [] });
+});
