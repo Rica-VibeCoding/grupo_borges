@@ -365,6 +365,28 @@ def mais_recente(pasta: Path) -> str | None:
     return melhor[0] if melhor is not None else None
 
 
+def atual_pelo_processo(
+    pasta: Path | None, atual_do_banco: str | None, resume: tuple[str, float] | None
+) -> str | None:
+    """A atual da linha com o `--resume` do Claude vivo por cima do banco.
+
+    `resume` é `(session_id, largada)` do processo. O banco só vê a conversa
+    retomada quando ela ganha mensagem; até lá aponta a que saiu. Vale o
+    `--resume` quando a do banco não foi escrita desde a largada — se foi,
+    a conversa trocou por dentro (`/clear`, `/resume`) e o argumento é velho.
+    """
+    if resume is None or pasta is None:
+        return atual_do_banco
+    retomada, largada = resume
+    if retomada == atual_do_banco or localizar(pasta, retomada) is None:
+        return atual_do_banco
+    if atual_do_banco is not None:
+        achada = localizar(pasta, atual_do_banco)
+        if achada is not None and achada[1].st_mtime >= largada:
+            return atual_do_banco
+    return retomada
+
+
 def _arquivos(pasta: Path) -> Iterable[tuple[str, Path, os.stat_result]]:
     try:
         itens = list(os.scandir(pasta))

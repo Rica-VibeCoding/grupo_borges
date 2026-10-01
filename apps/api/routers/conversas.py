@@ -55,25 +55,55 @@ class ConversasResposta(BaseModel):
 _VAZIA_SUPORTADA = ConversasResposta(suportado=True, conversas=[], escondidas_curtas=0)
 
 
-async def _atuais_de_outras_linhas_vivas(db: GrupoBorgesDB, slug: str) -> dict[str, str]:
+async def _atuais_de_outras_linhas_vivas(app, slug: str) -> dict[str, str]:
     """`session_id → slug` da conversa atual de cada OUTRA linha com sessão tmux de pé.
 
     Inventário do tmux que falha não pode virar "ninguém vivo": aí todas as
     outras linhas contam como vivas — trava a mais, nunca a menos.
     """
+    db: GrupoBorgesDB = app.state.db
     outras = [a for a in await db.list_agents() if a["slug"] != slug]
     try:
         vivas = await tmux_driver.list_session_names()
         outras = [a for a in outras if a.get("tmux_session") in vivas]
     except Exception as exc:  # noqa: BLE001 — qualquer falha de observação
         logger.warning("conversas: inventário do tmux falhou (%s); todas contam como vivas", exc)
-    atuais = await asyncio.gather(*(_atual_da_linha(db, a["slug"]) for a in outras))
+    processos = await tmux_driver.conversas_dos_processos()
+    atuais = await asyncio.gather(*(_atual_da_linha(app, a, processos) for a in outras))
     return {sid: a["slug"] for a, sid in zip(outras, atuais, strict=True) if sid}
 
 
-async def _atual_da_linha(db: GrupoBorgesDB, slug: str) -> str | None:
-    """A conversa atual da linha, já com a última troca feita pelo cockpit."""
-    return operacao.corrigir_atual(slug, await db.latest_jsonl_session_id(slug))
+async def _atual_e_deixada(
+    app, agent: dict, processos: dict[str, tuple[str, float]] | None = None
+) -> tuple[str | None, str | None]:
+    """A conversa atual da linha e a que ela acabou de deixar.
+
+    Atual: o banco, corrigido pelo `--resume` do Claude vivo e pela troca em
+    memória do cockpit. O `--resume` cobre o restart da API, que apaga a troca
+    antes de o banco alcançar a conversa retomada; aí a que o banco aponta é a
+    deixada — escrita recente dela foi desta linha, não vira 🔒.
+    """
+    slug = agent["slug"]
+    do_banco = await app.state.db.latest_jsonl_session_id(slug)
+    atual = do_banco
+    if _eh_cc(agent):
+        if processos is None:
+            processos = await tmux_driver.conversas_dos_processos()
+        resume = processos.get(agent.get("tmux_session"))
+        if resume is not None:
+            atual = await asyncio.to_thread(
+                conversas.atual_pelo_processo, _pasta_no_app(app, agent), do_banco, resume
+            )
+    deixada = operacao.deixada(slug)
+    if deixada is None and atual != do_banco:
+        deixada = do_banco
+    return operacao.corrigir_atual(slug, atual), deixada
+
+
+async def _atual_da_linha(
+    app, agent: dict, processos: dict[str, tuple[str, float]] | None = None
+) -> str | None:
+    return (await _atual_e_deixada(app, agent, processos))[0]
 
 
 def _pasta_no_app(app, agent: dict) -> Path | None:
@@ -126,10 +156,10 @@ async def get_conversas(
         return _VAZIA_SUPORTADA
 
     db: GrupoBorgesDB = request.app.state.db
-    metas, atual, atuais_de_outras = await asyncio.gather(
+    metas, (atual, deixada), atuais_de_outras = await asyncio.gather(
         db.conversa_meta_do_agente(slug),
-        _atual_da_linha(db, slug),
-        _atuais_de_outras_linhas_vivas(db, slug),
+        _atual_e_deixada(request.app, agent),
+        _atuais_de_outras_linhas_vivas(request.app, slug),
     )
     lista = await asyncio.to_thread(
         conversas.listar,
@@ -139,7 +169,7 @@ async def get_conversas(
         atual=atual,
         atuais_de_outras=atuais_de_outras,
         agora=time.time(),
-        deixada=operacao.deixada(slug),
+        deixada=deixada,
         cwd_padrao=agent.get("workspace_path"),
     )
     visiveis, escondidas = conversas.filtrar(lista, filtro=filtro, q=q, curtas=bool(curtas))
@@ -175,12 +205,10 @@ class ExcluirResposta(BaseModel):
     pasta_irma: Literal["lixeira", "ausente", "ficou"]
 
 
-async def _livre_ou_409(
-    db: GrupoBorgesDB, slug: str, session_id: str, st: os.stat_result
-) -> None:
+async def _livre_ou_409(app, agent: dict, session_id: str, st: os.stat_result) -> None:
     """409 se a conversa é a atual desta linha ou está 🔒 (régua do excluir e do retomar)."""
-    atual, atuais_de_outras = await asyncio.gather(
-        _atual_da_linha(db, slug), _atuais_de_outras_linhas_vivas(db, slug)
+    (atual, deixada), atuais_de_outras = await asyncio.gather(
+        _atual_e_deixada(app, agent), _atuais_de_outras_linhas_vivas(app, agent["slug"])
     )
     if session_id == atual:
         raise HTTPException(status_code=409, detail="É a conversa atual desta linha")
@@ -190,7 +218,7 @@ async def _livre_ou_409(
         atual=atual,
         atuais_de_outras=atuais_de_outras,
         agora=time.time(),
-        deixada=operacao.deixada(slug),
+        deixada=deixada,
     )
     if bloqueada:
         onde = f"na linha {dono}" if dono else "em outro lugar (escrita há menos de 2 min)"
@@ -200,16 +228,15 @@ async def _livre_ou_409(
 @router.delete("/{slug}/conversas/{session_id}", response_model=ExcluirResposta)
 async def delete_conversa(request: Request, slug: str, session_id: str) -> ExcluirResposta:
     """Manda a conversa para a lixeira (`gio trash`). 409 se for a atual ou estiver 🔒."""
-    _, pasta, caminho, st = await _conversa_ou_404(request, slug, session_id)
-    db: GrupoBorgesDB = request.app.state.db
-    await _livre_ou_409(db, slug, session_id, st)
+    agent, pasta, caminho, st = await _conversa_ou_404(request, slug, session_id)
+    await _livre_ou_409(request.app, agent, session_id, st)
     try:
         feito = await asyncio.to_thread(conversas.mandar_para_lixeira, pasta, session_id, caminho)
     except conversas.LixeiraIndisponivel as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except conversas.LixeiraFalhou as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    await db.apagar_conversa_meta(slug, session_id)
+    await request.app.state.db.apagar_conversa_meta(slug, session_id)
     return ExcluirResposta(**feito)
 
 
@@ -248,7 +275,7 @@ async def post_estacionar(
         raise HTTPException(status_code=422, detail="titulo_vazio")
     nota = operacao.linha_unica(pedido.nota, _NOTA_MAX) if pedido.nota else ""
     db: GrupoBorgesDB = request.app.state.db
-    session_id = await _atual_da_linha(db, slug)
+    session_id = await _atual_da_linha(request.app, agent)
     if session_id is None:
         raise HTTPException(status_code=409, detail="sem_conversa_atual")
     await db.estacionar_conversa(slug, session_id, titulo, nota or None, int(time.time() * 1000))
@@ -371,7 +398,7 @@ async def _conduzir_nova(
     db: GrupoBorgesDB = app.state.db
     slug, tmux_session = agent["slug"], agent["tmux_session"]
     try:
-        sessao_antes = await _atual_da_linha(db, slug)
+        sessao_antes = await _atual_da_linha(app, agent)
         await _estacionar_atual(
             db, agent, op, sessao_antes=sessao_antes, ocupado=ocupado,
             url_base=url_base, para="nova",
@@ -541,7 +568,7 @@ async def _conduzir_retomar(
         pasta = _pasta_no_app(app, agent)
         if pasta is None:
             raise _Falha("a pasta de conversas deste agente não é só dele")
-        sessao_antes = await _atual_da_linha(db, slug)
+        sessao_antes = await _atual_da_linha(app, agent)
         if viva:
             await _estacionar_atual(
                 db, agent, op, sessao_antes=sessao_antes, ocupado=ocupado,
@@ -623,8 +650,7 @@ async def post_retomar(
     if not _eh_cc(agent):
         raise HTTPException(status_code=409, detail="motor_sem_conversas")
     _, _, _, st = await _conversa_ou_404(request, slug, session_id)
-    db: GrupoBorgesDB = request.app.state.db
-    await _livre_ou_409(db, slug, session_id, st)
+    await _livre_ou_409(request.app, agent, session_id, st)
     try:
         viva = agent["tmux_session"] in await tmux_driver.list_session_names()
     except Exception as exc:  # noqa: BLE001 — sem inventário, trata como viva

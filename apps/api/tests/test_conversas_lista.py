@@ -92,6 +92,12 @@ def bancada(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         conversas_router.tmux_driver, "list_session_names", AsyncMock(side_effect=lambda: vivas)
     )
+    #: `sessão → (--resume, largada)` dos Claudes vivos; vazio = ninguém retomado.
+    processos: dict[str, tuple[str, float]] = {}
+    monkeypatch.setattr(
+        conversas_router.tmux_driver, "conversas_dos_processos",
+        AsyncMock(side_effect=lambda: dict(processos)),
+    )
 
     app = FastAPI()
     app.state.db = db
@@ -100,7 +106,8 @@ def bancada(tmp_path: Path, monkeypatch):
     app.include_router(agents_router.router, prefix="/api/agents")
     app.include_router(conversas_router.router, prefix="/api/agents")
     return SimpleNamespace(
-        app=app, db=db, pasta=pasta, atuais=atuais, vivas=vivas, agentes=agentes
+        app=app, db=db, pasta=pasta, atuais=atuais, vivas=vivas, agentes=agentes,
+        processos=processos,
     )
 
 

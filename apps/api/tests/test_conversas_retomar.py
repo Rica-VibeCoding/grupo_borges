@@ -62,6 +62,7 @@ class LinhaFalsa:
             agora = time.time()
             os.utime(self.pasta / f"{self.conversa}.jsonl", (agora, agora))
         self.palco.bancada.vivas.discard("pavan")
+        self.palco.bancada.processos.pop("pavan", None)
         return {"attempted": True, "sessao_encerrada": True, "scopes_parados": []}
 
     async def boot_agent(self, sessao: str, resume_session_id: str | None = None) -> dict:
@@ -77,6 +78,8 @@ class LinhaFalsa:
                 raise self.falha_resume
             self._tocar(resume_session_id)
             self.conversa = resume_session_id
+            # O argv do Claude guarda o `--resume`; a largada é agora.
+            self.palco.bancada.processos["pavan"] = (resume_session_id, time.time())
         self.palco.bancada.vivas.add("pavan")
         return {"attempted": True, "confirmed": True}
 
@@ -172,6 +175,102 @@ async def test_agente_desligado_sobe_direto_sem_estacionar(linha) -> None:
     assert r.status_code == 200, r.text
     assert linha.agente.enviados == []
     assert linha.falsa.boots == [ID_PROMPT]
+
+
+# ---------- F7b: a atual depois de um restart da API ----------
+
+
+def _envelhecer(bancada, session_id: str, idade_s: float) -> None:
+    quando = time.time() - idade_s
+    os.utime(bancada.pasta / f"{session_id}.jsonl", (quando, quando))
+
+
+async def _itens(linha) -> dict[str, dict]:
+    corpo = (await linha.cliente.get("/api/agents/pavan/conversas?curtas=1")).json()
+    return {c["id"]: c for c in corpo["conversas"]}
+
+
+async def test_restart_da_api_apos_retomar_a_atual_vem_do_resume(linha) -> None:
+    """O caso da VPS em 01/10: A → B, restart, banco ainda em A, sem mensagem em B."""
+    bancada = linha.palco.bancada
+    assert (await _retomar(linha, ID_PROMPT)).status_code == 200
+    operacao.esquecer("pavan")  # o restart: a troca em memória some
+    assert bancada.atuais["pavan"] == ID_CUSTOM  # o banco não viu mensagem em B
+
+    itens = await _itens(linha)
+    assert itens[ID_PROMPT]["atual"] is True
+    # A foi escrita por esta linha antes de sair: nem atual, nem 🔒.
+    assert (itens[ID_CUSTOM]["atual"], itens[ID_CUSTOM]["bloqueada"]) == (False, False)
+
+    r = await _retomar(linha, ID_CUSTOM)
+    assert r.status_code == 200, r.text
+    assert linha.falsa.boots == [ID_PROMPT, ID_CUSTOM]
+
+
+async def test_resume_velho_perde_para_conversa_escrita_depois_da_largada(linha) -> None:
+    """Trocou por dentro (`/clear`, `/resume`): o argv ficou, a conversa não."""
+    bancada = linha.palco.bancada
+    _envelhecer(bancada, ID_PROMPT, 600)
+    _envelhecer(bancada, ID_CUSTOM, 10)
+    bancada.processos["pavan"] = (ID_PROMPT, time.time() - 300)
+    itens = await _itens(linha)
+    assert itens[ID_CUSTOM]["atual"] is True
+    assert itens[ID_PROMPT]["atual"] is False
+    assert (await _retomar(linha, ID_CUSTOM)).status_code == 409
+
+
+async def test_resume_de_conversa_que_nao_mora_na_pasta_nao_vale(linha) -> None:
+    linha.palco.bancada.processos["pavan"] = (ID_DE_FORA, time.time())
+    assert (await _itens(linha))[ID_CUSTOM]["atual"] is True
+
+
+async def test_resume_de_outra_linha_viva_trava_a_conversa(linha) -> None:
+    bancada = linha.palco.bancada
+    _envelhecer(bancada, ID_PROMPT, 600)
+    bancada.processos["daniel"] = (ID_PROMPT, time.time() - 300)
+    # A pasta do Daniel não é a do Pavan: o `--resume` dele não vale lá.
+    assert (await _itens(linha))[ID_PROMPT]["bloqueada"] is False
+
+
+def test_atual_pelo_processo(tmp_path) -> None:
+    for sid in (ID_CUSTOM, ID_PROMPT):
+        (tmp_path / f"{sid}.jsonl").write_text("{}\n")
+    _envelhecer(SimpleNamespace(pasta=tmp_path), ID_CUSTOM, 100)
+    agora = time.time()
+    f = conversas_service.atual_pelo_processo
+    assert f(tmp_path, ID_CUSTOM, None) == ID_CUSTOM
+    assert f(None, ID_CUSTOM, (ID_PROMPT, agora)) == ID_CUSTOM
+    assert f(tmp_path, ID_CUSTOM, (ID_PROMPT, agora - 50)) == ID_PROMPT
+    assert f(tmp_path, ID_CUSTOM, (ID_PROMPT, agora - 200)) == ID_CUSTOM
+    assert f(tmp_path, None, (ID_PROMPT, agora)) == ID_PROMPT
+    # A do banco sumiu da pasta (lixeira): fica o `--resume`.
+    assert f(tmp_path, ID_NOME, (ID_PROMPT, agora)) == ID_PROMPT
+
+
+def test_resume_do_pane_le_argv_e_largada_do_proc() -> None:
+    import subprocess
+    import sys
+
+    def processo(*args: str) -> subprocess.Popen:
+        return subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)", *args],
+        )
+
+    bons = processo("claude", "--model", "opus", "--resume", ID_PROMPT)
+    sem_resume = processo("claude", "--continue")
+    lixo = processo("claude", "--resume", "../x")
+    outro = processo("vim", "--resume", ID_PROMPT)
+    try:
+        time.sleep(0.2)
+        achado = tmux_driver._resume_do_pane(bons.pid)
+        assert achado is not None and achado[0] == ID_PROMPT
+        assert abs(achado[1] - time.time()) < 5
+        for p in (sem_resume, lixo, outro):
+            assert tmux_driver._resume_do_pane(p.pid) is None
+    finally:
+        for p in (bons, sem_resume, lixo, outro):
+            p.kill()
+            p.wait()
 
 
 # ---------- validação ----------

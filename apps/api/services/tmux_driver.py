@@ -435,6 +435,92 @@ async def list_session_names() -> set[str]:
     return await asyncio.to_thread(_list_session_names_sync)
 
 
+def _largada_do_processo(pid: int) -> float | None:
+    """Quando o processo nasceu, em epoch s (`/proc/<pid>/stat` campo 22 + `btime`)."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        ticks = int(stat[stat.rfind(")") + 2 :].split()[19])
+        btime = next(
+            int(linha.split()[1])
+            for linha in Path("/proc/stat").read_text().splitlines()
+            if linha.startswith("btime ")
+        )
+    except (IndexError, OSError, StopIteration, ValueError):
+        return None
+    return btime + ticks / os.sysconf("SC_CLK_TCK")
+
+
+def _resume_do_pane(pane_pid: int) -> tuple[str, float] | None:
+    """`(session_id, largada)` do Claude do pane, se ele subiu com `--resume <id>`.
+
+    O argumento não muda quando a conversa troca por dentro (`/clear`,
+    `/resume`): quem usa compara a largada com a última escrita da conversa
+    que o banco aponta.
+    """
+    for pid in sorted(_pane_owner_pids(pane_pid), key=lambda p: p != pane_pid):
+        try:
+            raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        except OSError:
+            continue
+        argv = [arg for arg in raw.decode(errors="replace").split("\0") if arg]
+        if not any("claude" in arg for arg in argv):
+            continue
+        retomada = None
+        for index, arg in enumerate(argv):
+            if arg == "--resume" and index + 1 < len(argv):
+                retomada = argv[index + 1]
+            elif arg.startswith("--resume="):
+                retomada = arg.split("=", 1)[1]
+        if retomada is None or not _SESSION_ID_PATTERN.fullmatch(retomada):
+            return None
+        largada = _largada_do_processo(pid)
+        return (retomada, largada) if largada is not None else None
+    return None
+
+
+def _resumes_do_server(server: libtmux.Server) -> dict[str, set[tuple[str, float]]]:
+    result = server.cmd("list-panes", "-a", "-F#{session_name}\t#{pane_dead}\t#{pane_pid}")
+    achados: dict[str, set[tuple[str, float]]] = {}
+    if result.returncode != 0:
+        return achados
+    for line in result.stdout:
+        try:
+            session_name, pane_dead, pane_pid = line.split("\t", 2)
+            pid = int(pane_pid)
+        except ValueError:
+            continue
+        if pane_dead != "0":
+            continue
+        resume = _resume_do_pane(pid)
+        if resume is not None:
+            achados.setdefault(session_name, set()).add(resume)
+    return achados
+
+
+def _conversas_dos_processos_sync() -> dict[str, tuple[str, float]]:
+    achados: dict[str, set[tuple[str, float]]] = {}
+    servidores = [libtmux.Server(socket_name=nome) for nome in _configured_named_socket_names()]
+    for server in [*servidores, libtmux.Server()]:
+        for sessao, resumes in _resumes_do_server(server).items():
+            achados.setdefault(sessao, set()).update(resumes)
+    # Dois Claudes com `--resume` diferentes na mesma sessão: ambíguo, ninguém vale.
+    return {sessao: next(iter(r)) for sessao, r in achados.items() if len(r) == 1}
+
+
+async def conversas_dos_processos() -> dict[str, tuple[str, float]]:
+    """`sessão tmux → (session_id do --resume, largada em epoch s)` dos Claudes vivos.
+
+    É o que sobra de uma retomada depois de um restart da API: a troca em
+    memória some, e o banco só alcança quando a conversa ganha mensagem.
+    Falha de observação vira `{}` — o chamador fica com o banco, como antes.
+    """
+    try:
+        return await asyncio.to_thread(_conversas_dos_processos_sync)
+    except Exception as exc:  # noqa: BLE001 — qualquer falha de observação
+        log.warning("conversas_dos_processos falhou (%s); fica o banco", exc)
+        return {}
+
+
 def _server_for(session_name: str) -> libtmux.Server:
     if _TMUX_SOCKET_TEMPLATE:
         named = libtmux.Server(
