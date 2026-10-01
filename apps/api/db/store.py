@@ -1609,6 +1609,17 @@ class GrupoBorgesDB:
             ).fetchone()
             return row["session_id"] if row is not None else None
 
+    async def conversa_meta_do_agente(self, agent_slug: str) -> dict[str, dict[str, Any]]:
+        return await asyncio.to_thread(self._conversa_meta_do_agente, agent_slug)
+
+    def _conversa_meta_do_agente(self, agent_slug: str) -> dict[str, dict[str, Any]]:
+        """`session_id → linha da conversa_meta` do agente, para a lista de conversas."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM conversa_meta WHERE slug = ?", (agent_slug,)
+            ).fetchall()
+            return {row["session_id"]: dict(row) for row in rows}
+
     async def recent_jsonl_session_ids(self, agent_slug: str, limit: int = 8) -> list[str]:
         return await asyncio.to_thread(self._recent_jsonl_session_ids, agent_slug, limit)
 

@@ -11,7 +11,8 @@
 > endereço `:3446`); `type-check` verde. No Omarchy é `pnpm` direto (Node 26, sem `corepack`).
 > F1 ✅ (`relatos/f1.md`): diálogo de retomada só abre com flag de servidor, desligada hoje na VPS
 > e no Omarchy; `--continue` e `--resume` chegam iguais ao gancho (`source: resume`). Em curso:
-> **F2** (`api`). F8 ✅ (`relatos/f8.md`, capturas em `/tmp/f8/` do Omarchy): 3 direções
+> **F3** (`api`). F2 ✅ (lista: 323 ms a frio / 1 ms com cache em 172 arquivos no Omarchy). F4 ✅
+> (`ze_claude` `1c6763f`, provado no canarinho). F8 ✅ (`relatos/f8.md`, capturas em `/tmp/f8/` do Omarchy): 3 direções
 > enviadas ao Rica, aguardando a escolha.
 
 ## O pedido

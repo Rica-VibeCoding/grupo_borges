@@ -36,6 +36,7 @@ from orchestrator.watchdog import Watchdog
 from orchestrator.worktree import SubsessionSweeper, sweep_orphan_worktrees_sync
 from routers import agents as agents_router
 from routers import contas as contas_router
+from routers import conversas as conversas_router
 from routers import ask_user as ask_user_router
 from routers import events as events_router
 from routers import fleet as fleet_router
@@ -219,6 +220,7 @@ async def health() -> dict:
 
 
 app.include_router(agents_router.router, prefix="/api/agents", tags=["agents"])
+app.include_router(conversas_router.router, prefix="/api/agents", tags=["conversas"])
 app.include_router(ask_user_router.router, prefix="/api/ask_user", tags=["ask_user"])
 app.include_router(fleet_router.router, prefix="/api/fleet", tags=["fleet"])
 app.include_router(faxina_router.router, prefix="/api/faxina", tags=["faxina"])

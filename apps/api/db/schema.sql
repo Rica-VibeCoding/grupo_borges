@@ -280,3 +280,20 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
     at_ms         INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_delivery_attempts_at ON delivery_attempts (at_ms);
+
+-- ============================================================
+-- conversa_meta — o que o cockpit sabe de uma conversa do CC que o JSONL não
+-- guarda: título e nota de quando foi estacionada, a estrela, a hora da
+-- retomada. Sem linha = conversa sem nada disso (a lista lê o JSONL).
+-- Chave inclui o slug porque o arquivo mora na pasta do cwd do agente.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS conversa_meta (
+    slug            TEXT NOT NULL,
+    session_id      TEXT NOT NULL,
+    titulo          TEXT,
+    nota            TEXT,
+    estrela         INTEGER NOT NULL DEFAULT 0,
+    estacionada_em  INTEGER,                                -- epoch ms
+    retomada_em     INTEGER,                                -- epoch ms
+    PRIMARY KEY (slug, session_id)
+);
