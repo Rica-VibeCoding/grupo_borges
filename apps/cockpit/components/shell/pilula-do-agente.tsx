@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { MotionConfig, motion } from 'motion/react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 
 import { deriveInitials } from '@grupo_borges/cockpit-core/cockpit-types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,6 +15,33 @@ const LADO = { voz: 52, gaveta: 52, topo: 36 } as const;
 
 /** A mola do fundo da pílula: estica e encolhe com a palavra do estado, com um leve passar do ponto. */
 const MOLA_DA_PILULA = { type: 'spring', visualDuration: 0.45, bounce: 0.22 } as const;
+
+/** A mola da palavra que gira — a do RotatingText (React Bits). */
+const MOLA_DA_PALAVRA = { type: 'spring', damping: 25, stiffness: 300 } as const;
+
+/**
+ * Na voz, a palavra do estado gira na troca: a velha sobe e sai pelo alto, a nova sobe de baixo
+ * no lugar (o RotatingText do React Bits, guiado pelo estado em vez de um relógio). `popLayout`
+ * tira a velha do fluxo na hora, então o fundo da pílula já estica para a nova.
+ */
+function PalavraQueGira({ rotulo }: { rotulo: string }) {
+  return (
+    <span className={styles.gira}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={rotulo}
+          className={styles.estado}
+          initial={{ y: '100%', opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: '-120%', opacity: 0 }}
+          transition={MOLA_DA_PALAVRA}
+        >
+          {rotulo}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
 
 /** A foto redonda. Sem arquivo, a inicial em neutro — nunca imagem quebrada. */
 function Foto({ slug, nome, lado }: { slug: string; nome: string; lado: number }) {
@@ -90,9 +117,15 @@ export function PilulaDoAgente({
             <i />
             <i />
           </span>
-          <span key={rotulo} className={styles.estado}>
-            {rotulo}
-          </span>
+          {lugar === 'voz' ? (
+            <MotionConfig reducedMotion="user">
+              <PalavraQueGira rotulo={rotulo} />
+            </MotionConfig>
+          ) : (
+            <span key={rotulo} className={styles.estado}>
+              {rotulo}
+            </span>
+          )}
           <Tempo segundos={segundos} />
         </small>
       </span>
