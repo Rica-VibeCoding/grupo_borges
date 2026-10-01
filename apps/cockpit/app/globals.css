@@ -2014,7 +2014,8 @@ html[data-troca-agente] .ck-palco {
  * §G — A GAVETA DO ZERO (branch `ideia/gaveta-do-zero`, 01/10)
  *
  * Referência que o Rica mandou: ACI Biller dark (theskinsfactory). Cartões em
- * CAMADAS — preto sobre grafite —, cantos grandes, círculo-herói com halo,
+ * CAMADAS — preto sobre grafite —, cantos médios, retrato com anel fino
+ * (versão discreta, `ideia/gaveta-discreta`: o halo saiu),
  * interruptor com rótulo de estado, pílula cinza, área tracejada com "+".
  * Um acento só (laranja, identidade), azul SÓ para "ligado", vermelho SÓ para
  * a bolinha de alerta. Tudo escopado em `.ck-gv`: fora da gaveta nada muda.
@@ -2027,17 +2028,15 @@ html[data-troca-agente] .ck-palco {
   --ck-gv-pilula-hover: oklch(0.38 0.006 265);
   --ck-gv-trilho: oklch(0.36 0.006 265);            /* interruptor desligado */
   --ck-gv-acento: oklch(0.68 0.19 45);              /* #f26a1b laranja */
-  --ck-gv-acento-escuro: oklch(0.52 0.16 42);
-  --ck-gv-halo-1: oklch(0.45 0.12 45 / 0.55);
-  --ck-gv-halo-2: oklch(0.35 0.09 45 / 0.35);
+  --ck-gv-anel: color-mix(in oklch, var(--ck-gv-acento) 45%, transparent); /* anel fino do retrato */
   --ck-gv-ativo: oklch(0.63 0.17 255);              /* #3b82f6 azul do "ligado" */
   --ck-gv-ativo-texto: oklch(0.75 0.13 250);
   --ck-gv-alerta: oklch(0.6 0.23 27);               /* #e5262b bolinha */
   --ck-gv-alerta-texto: oklch(0.98 0 0);
   --ck-gv-tracejado: rgb(255 255 255 / 0.18);
   --ck-gv-fio: rgb(255 255 255 / 0.06);
-  --ck-gv-raio-cartao: 22px;
-  --ck-gv-raio-bloco: 16px;
+  --ck-gv-raio-cartao: 16px;
+  --ck-gv-raio-bloco: 12px;
 
   /* Os blocos herdados (comandos, motor, conta) leem os tokens globais. Aqui
    * eles são reescritos SÓ dentro da gaveta: moldura vira pílula, fio some. */
@@ -2060,19 +2059,18 @@ html[data-troca-agente] .ck-palco {
   background-color: var(--ck-gv-pilula-hover);
 }
 
-/* O halo do herói: dois anéis laranja que se apagam pra fora. */
-.ck-gv-halo {
-  background:
-    radial-gradient(circle, transparent 54%, var(--ck-gv-halo-1) 55%, transparent 70%),
-    radial-gradient(circle, transparent 68%, var(--ck-gv-halo-2) 69%, transparent 100%);
+/* O retrato do cabeçalho: um anel só, fino, laranja suave; apaga fora do ar. */
+.ck-gv-anel {
+  box-shadow: 0 0 0 2px var(--ck-gv-fundo), 0 0 0 3.5px var(--ck-gv-anel);
 }
-.ck-gv-heroi {
-  background: linear-gradient(160deg, var(--ck-gv-acento), var(--ck-gv-acento-escuro));
-  box-shadow: 0 0 0 4px var(--ck-gv-fundo);
+.ck-gv-anel[data-fora='true'] {
+  box-shadow: 0 0 0 2px var(--ck-gv-fundo), 0 0 0 3.5px var(--ck-gv-fio);
 }
-.ck-gv-heroi[data-fora='true'] {
-  background: var(--ck-gv-pilula);
-}
+
+/* A bolinha de estado ao lado do nome — mesmas cores do pulso. */
+.ck-gv-ponto { background: var(--ck-text-tertiary); }
+.ck-gv-ponto[data-tom='ativo'] { background: var(--ck-pulso-ouro); }
+.ck-gv-ponto[data-tom='sem-sinal'] { background: var(--ck-state-attention); }
 
 /* Interruptor: trilho + botão; azul só quando ligado. */
 .ck-gv-trilho {

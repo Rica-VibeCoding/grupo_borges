@@ -24,8 +24,8 @@ export function Cartao({
       aria-label={rotulo ?? titulo}
       className="flex shrink-0 flex-col"
       style={{
-        gap: 'var(--ck-space-3)',
-        padding: 'var(--ck-space-4)',
+        gap: 'var(--ck-space-2)',
+        padding: 'var(--ck-space-3)',
         borderRadius: 'var(--ck-gv-raio-cartao)',
         background: 'var(--ck-gv-camada)',
       }}
@@ -53,7 +53,7 @@ export function Bloco({ children, cru = false, style }: { children: ReactNode; c
       className="flex flex-col"
       style={{
         gap: 'var(--ck-space-2)',
-        padding: cru ? 0 : 'var(--ck-space-4)',
+        padding: cru ? 0 : 'var(--ck-space-3)',
         borderRadius: 'var(--ck-gv-raio-bloco)',
         background: 'var(--ck-gv-bloco)',
         ...style,

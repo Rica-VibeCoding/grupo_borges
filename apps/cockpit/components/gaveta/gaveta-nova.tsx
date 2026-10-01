@@ -7,6 +7,9 @@
  * ACI Biller dark: um cartão-mãe preto com o herói no topo e, embaixo, cartões
  * grafite com blocos pretos dentro.
  *
+ * Versão DISCRETA (`ideia/gaveta-discreta`): o herói virou cabeçalho de uma
+ * linha e o interruptor subiu para ele — o cartão Sessão perdeu o título.
+ *
  * - **Sessão** — o interruptor É o ciclo de vida: ligado = "Ativo" (azul),
  *   um toque desliga direto (sem armar, pedido do Rica 01/10); desligado,
  *   tocar liga. Dentro: o pulso, a pílula Destravar, a pesquisa
@@ -117,7 +120,7 @@ function Avisos({ v }: { v: Vida }) {
 function CartaoDaSessao({ v, agentSlug }: { v: Vida; agentSlug: string }) {
   const pronto = v.carga === 'pronto';
   return (
-    <Cartao titulo="Sessão" direita={<InterruptorDaSessao v={v} />}>
+    <Cartao rotulo="Sessão">
       {v.carga === 'indisponivel' ? (
         <Bloco>
           <span style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
@@ -208,11 +211,19 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
   return (
     <div
       className="ck-gv flex min-h-0 flex-auto flex-col overflow-y-auto"
-      style={{ gap: 'var(--ck-space-3)', padding: 'var(--ck-space-3)' }}
+      style={{ gap: 'var(--ck-space-2)', padding: 'var(--ck-space-3)' }}
     >
       {v.aplicandoMotor && v.operacao.aviso ? <VeuDeOperacao aviso={v.operacao.aviso} /> : null}
 
-      <Heroi agente={agente} agora={agora} fecharHref={fecharHref} foraDoAr={pronto && !v.dePe} alerta={alerta} />
+      <Heroi
+        agente={agente}
+        agora={agora}
+        fecharHref={fecharHref}
+        foraDoAr={pronto && !v.dePe}
+        alerta={alerta}
+        estado={v.pulso.leitura}
+        interruptor={<InterruptorDaSessao v={v} />}
+      />
 
       <CartaoDaSessao v={v} agentSlug={agente.slug} />
 
@@ -223,7 +234,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
               <BlocoDeMotor agentSlug={agente.slug} agentName={agente.name} motor={v.painel.motor} aoAtualizar={v.buscar} />
             </Bloco>
           ) : null}
-          <Bloco cru style={{ paddingTop: 'var(--ck-space-3)' }}>
+          <Bloco cru style={{ paddingTop: 'var(--ck-space-2)' }}>
             <BlocoDeCota quotas={v.painel?.quotas} agentSlug={agente.slug} aoAtualizar={v.buscar} />
           </Bloco>
         </Cartao>
@@ -235,7 +246,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
           className="ck-gv-tracejado ck-veil flex items-center justify-center"
           style={{
             gap: 'var(--ck-space-3)',
-            minHeight: '64px',
+            minHeight: '48px',
             borderRadius: 'var(--ck-gv-raio-bloco)',
             fontSize: 'var(--ck-text-sm)',
             fontWeight: 500,

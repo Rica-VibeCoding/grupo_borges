@@ -140,7 +140,7 @@ export function Statusline({
 
       {pct !== null ? (
         <span
-          className="flex shrink-0 items-center"
+          className={emGrade ? 'flex shrink-0 items-center' : 'flex min-w-0 flex-1 items-center'}
           style={{ gap: 'var(--ck-space-1)', marginLeft: emGrade ? 'auto' : undefined }}
           title={
             velho
