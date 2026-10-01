@@ -104,4 +104,6 @@ fixtures/cockpit-v2/transcripts/
 
 # Backups de build que o deploy guarda ao lado do .next, e capturas do Playwright MCP.
 .next-anterior-*/
+.next-antes-*/
+.next-menus-*/
 .playwright-mcp/
