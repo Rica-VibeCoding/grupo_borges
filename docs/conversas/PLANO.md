@@ -408,6 +408,7 @@ F15 e F16 usam ela em todo momento abaixo, sem keyframe próprio e sem lib nova:
 - **Espera da troca**: barra **indeterminada** (a API não dá porcentagem), por transform.
 - **Conversa nova**: "Voltar pra anterior" entra por `.ck-surge` e sai em fade no primeiro turno.
 - **Nova conversa na gaveta**: toque com `--ck-dur-fast`.
+- **O pulso dourado de trabalhando** (`components/shell/faixa-do-pulso.tsx`, `--ck-pulso-ouro`) fica como está: "ele funciona bem" (Rica, 01/10).
 - Regras que não mudam: só `transform` e `opacity`; `MotionConfig reducedMotion="user"`;
   `layoutDependency` em todo `layout`; nada anima o feed durante o stream.
 
