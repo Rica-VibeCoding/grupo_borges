@@ -21,6 +21,7 @@
 // salto, o tick mais espaçado faz o "~5s").
 
 import { useEffect, useState } from 'react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 
 import {
   faseDaEsperaCompact,
@@ -29,10 +30,102 @@ import {
 } from '@grupo_borges/cockpit-core/compact-eta';
 
 import type { EstadoCompact } from '../../lib/compact';
+import styles from './barra-compact.module.css';
 import { IconeDescartar } from './icones';
 
 const TICK_SUAVE_MS = 1_000;
 const TICK_REDUZIDO_MS = 5_000;
+
+/** A mola da palavra que gira — a mesma da pílula do agente (RotatingText do React Bits). */
+const MOLA_DA_PALAVRA = { type: 'spring', damping: 25, stiffness: 300 } as const;
+
+/** As três linhas da conversa: a de cima e a de baixo dobram sobre a do meio, e voltam. */
+const DOBRAS = [
+  { largura: 14, y: 5 },
+  { largura: 18, y: 0 },
+  { largura: 11, y: -5 },
+] as const;
+
+/**
+ * O desenho da compactação: três linhas — a conversa — que se dobram sobre a do meio no
+ * ritmo de quem espera. Quando o resumo chega, as de fora somem dentro dela e sobra uma só,
+ * acesa em `state-ok`: a conversa virou uma linha.
+ */
+function Dobra({ feita }: { feita: boolean }) {
+  return (
+    <span className={styles.dobra} aria-hidden="true">
+      {DOBRAS.map(({ largura, y }, i) => (
+        <motion.i
+          key={largura}
+          style={{ width: largura }}
+          animate={
+            feita
+              ? { y: y, opacity: y === 0 ? 1 : 0, scaleX: y === 0 ? 1 : 0.4 }
+              : { y: [0, y, y, 0], opacity: y === 0 ? 1 : [1, 0.35, 0.35, 1] }
+          }
+          transition={
+            feita
+              ? MOLA_DA_PALAVRA
+              : { duration: 1.8, times: [0, 0.4, 0.6, 1], ease: 'easeInOut', repeat: Infinity, delay: i * 0.04 }
+          }
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * A estimativa numa cápsula de borda fina. O preenchimento é uma pílula inteira que entra da
+ * esquerda (`translateX`), então a ponta segue redonda em qualquer ponto. A tinta por dentro
+ * anda o contrário, presa ao trilho: o degradê é do caminho, e a cor da ponta diz onde ele está.
+ */
+function Capsula({ progresso, concluindo }: { progresso: number; concluindo: boolean }) {
+  const desloca = (progresso - 1) * 100;
+  // Enchendo: deslize contínuo (1s linear sobre o tick de 1s). Concluindo: o salto pros 100%
+  // é o evento, então entra com a curva de entrada — e com reduced-motion o kill global vira
+  // corte seco nos dois casos, que é o pedido.
+  const transition = concluindo ? 'transform var(--ck-dur-enter) var(--ck-ease)' : 'transform 1s linear';
+  return (
+    <span className={styles.capsula}>
+      <span className={styles.cheio} style={{ transform: `translateX(${desloca}%)`, transition }}>
+        <span className={styles.tinta} style={{ transform: `translateX(${-desloca}%)`, transition }} />
+      </span>
+    </span>
+  );
+}
+
+/** O rótulo gira na troca de fase: o velho sobe e sai, o novo sobe de baixo no lugar. */
+function Gira({ chave, className, children }: { chave: string; className?: string; children: string }) {
+  return (
+    <span className={styles.gira}>
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={chave}
+          className={className}
+          initial={{ y: '100%', opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: '-120%', opacity: 0 }}
+          transition={MOLA_DA_PALAVRA}
+        >
+          {children}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+/** O cronômetro rola dígito por dígito (o Counter do React Bits): só o que mudou anda. */
+function Cronometro({ rotulo }: { rotulo: string }) {
+  return (
+    <span className={styles.cronometro}>
+      {[...rotulo].map((c, i) => (
+        <Gira key={rotulo.length - i} chave={c}>
+          {c}
+        </Gira>
+      ))}
+    </span>
+  );
+}
 
 function usaMovimentoReduzido(): boolean {
   const [reduzido, setReduzido] = useState(
@@ -117,66 +210,40 @@ export function BarraCompact({
   const progresso = concluindo ? 1 : progressoDoCompact(decorridoMs, estado.etaMs);
   const quaseLa = !concluindo && espera !== 'enchendo';
 
-  const rotulo = concluindo
-    ? 'Conversa compactada'
-    : quaseLa
-      ? `Compactando a conversa · quase lá · ${rotuloCronometroCompact(decorridoMs)}`
-      : `Compactando a conversa · ${rotuloCronometroCompact(decorridoMs)}`;
+  const frase = concluindo ? 'Compactada' : 'Compactando';
 
   return (
     // `.ck-barra-entra`: a entrada, com o gesto do menu do composer. Só roda na
     // montagem — as fases seguintes reaproveitam o nó e não repetem.
-    <div
-      className="ck-sobre-material ck-barra-entra mx-auto w-full"
-      style={{ maxWidth: 'var(--ck-w-composer)', padding: '0 var(--ck-space-2)' }}
-    >
+    <MotionConfig reducedMotion="user">
       <div
-        role="progressbar"
-        aria-label="Compactando a conversa"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        // Dentro do ETA a estimativa vale e o número vai junto; no "quase lá"
-        // o valor é desconhecido e a APG manda OMITIR — não é esquecimento.
-        {...(!quaseLa ? { 'aria-valuenow': Math.round(progresso * 100) } : {})}
-        style={{
-          height: '2px',
-          overflow: 'hidden',
-          background: 'var(--ck-edge-hairline)',
-          borderRadius: '1px',
-        }}
+        className={`ck-sobre-material ck-barra-entra mx-auto w-full ${styles.barra}`}
+        data-fase={concluindo ? 'feita' : quaseLa ? 'quase' : 'enchendo'}
+        style={{ maxWidth: 'var(--ck-w-composer)' }}
       >
+        <div className={styles.linha}>
+          <Dobra feita={concluindo} />
+          {/* Gira só na troca de fase; o brilho atravessa a frase enquanto ele trabalha. */}
+          <Gira chave={frase} className={styles.frase}>
+            {frase}
+          </Gira>
+          {/* O cronômetro é mono e tabular: dígito que muda de largura a cada segundo faria
+              o rótulo inteiro dançar por um número que não pede atenção nenhuma. */}
+          <Cronometro rotulo={rotuloCronometroCompact(decorridoMs)} />
+        </div>
         <div
-          className={quaseLa ? 'ck-pulso' : ''}
-          data-estado={quaseLa ? 'trabalhando' : undefined}
-          style={{
-            width: '100%',
-            height: '100%',
-            background: concluindo ? 'var(--ck-state-ok)' : 'var(--ck-state-running)',
-            transform: `scaleX(${progresso})`,
-            transformOrigin: 'left',
-            // Enchendo: deslize contínuo (1s linear sobre o tick de 1s).
-            // Concluindo: o salto pros 100% é o evento, então entra com a
-            // curva de entrada — e com reduced-motion o kill global vira corte
-            // seco nos dois casos, que é o pedido.
-            transition: concluindo
-              ? 'transform var(--ck-dur-enter) var(--ck-ease)'
-              : 'transform 1s linear',
-          }}
-        />
+          role="progressbar"
+          aria-label="Compactando a conversa"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          // Dentro do ETA a estimativa vale e o número vai junto; no "quase lá"
+          // o valor é desconhecido e a APG manda OMITIR — não é esquecimento.
+          {...(!quaseLa ? { 'aria-valuenow': Math.round(progresso * 100) } : {})}
+          className={styles.trilho}
+        >
+          <Capsula progresso={progresso} concluindo={concluindo} />
+        </div>
       </div>
-      <span
-        style={{
-          display: 'block',
-          paddingTop: 'var(--ck-space-1)',
-          fontSize: 'var(--ck-text-xs)',
-          color: concluindo ? 'var(--ck-state-ok)' : 'var(--ck-text-secondary)',
-        }}
-      >
-        {/* O cronômetro é mono: dígito que muda de largura a cada segundo faz
-            o rótulo inteiro dançar, e a dança chama o olho pra um número que
-            não pede atenção nenhuma. */}
-        <span style={{ fontFamily: 'var(--ck-font-mono)' }}>{rotulo}</span>
-      </span>
-    </div>
+    </MotionConfig>
   );
 }

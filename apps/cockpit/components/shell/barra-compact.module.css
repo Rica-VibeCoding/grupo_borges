@@ -1,0 +1,126 @@
+/* A espera do `/compact` acima da caixa: o desenho que dobra, a frase e o cronômetro numa linha;
+ * a estimativa honesta embaixo, num fio. Ciano enquanto ele trabalha, verde quando o resumo chega. */
+.barra {
+  --cor: var(--ck-state-running);
+  display: grid;
+  gap: var(--ck-space-2);
+  padding: var(--ck-space-2) var(--ck-space-3);
+}
+.barra[data-fase='feita'] { --cor: var(--ck-state-ok); }
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-space-2);
+  font-size: var(--ck-text-sm);
+}
+
+.dobra {
+  display: grid;
+  place-items: center start;
+  width: 18px;
+  height: 16px;
+  flex: none;
+}
+.dobra i {
+  grid-area: 1 / 1;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--cor);
+  transform-origin: left;
+  transition: background-color var(--ck-dur-calm) var(--ck-ease);
+}
+.dobra i:nth-child(1) { translate: 0 -5px; }
+.dobra i:nth-child(3) { translate: 0 5px; }
+
+/* A janela do que gira: corta só em cima e embaixo. */
+.gira {
+  position: relative;
+  display: inline-flex;
+  overflow-x: visible;
+  overflow-y: clip;
+}
+.frase {
+  display: inline-block;
+  color: var(--ck-text-secondary);
+  white-space: nowrap;
+}
+/* Enquanto ele trabalha, um brilho atravessa a frase (o ShinyText do React Bits, em CSS). */
+.barra:not([data-fase='feita']) .frase {
+  background: linear-gradient(110deg, var(--ck-text-secondary) 42%, var(--ck-text-primary) 50%, var(--ck-text-secondary) 58%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brilho 2.8s linear infinite;
+}
+.barra[data-fase='feita'] .frase { color: var(--cor); }
+@keyframes brilho {
+  from { background-position: 100% 0; }
+  70%, to { background-position: 0 0; }
+}
+
+.cronometro {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--ck-text-secondary);
+  font-family: var(--ck-font-mono);
+  font-size: var(--ck-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A cápsula: borda fina na cor da vez e o preenchimento em degradê (as referências do Rica
+ * de 01/10: o traço da de 80%, a cor mudando ao longo do caminho). */
+.trilho {
+  height: 14px;
+  padding: 2px;
+  border: 1px solid color-mix(in oklab, var(--cor) 55%, transparent);
+  border-radius: 999px;
+  transition: border-color var(--ck-dur-calm) var(--ck-ease);
+}
+.capsula {
+  position: relative;
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+}
+.cheio {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  box-shadow: 0 0 10px color-mix(in oklab, var(--cor) 45%, transparent);
+}
+/* O degradê é a escada de temperatura da §1: pensando (violeta) → executando (ciano) → feito
+ * (verde). Começa violeta, passa pelo ciano no meio e chega verde quando o resumo existe. */
+.tinta {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--ck-state-thinking), var(--ck-state-running) 55%, var(--ck-state-ok));
+}
+/* O brilho que corre por dentro do cheio: uma faixa de luz que atravessa e some. */
+.barra:not([data-fase='feita']) .cheio::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(100deg, transparent 30%, var(--ck-text-primary) 50%, transparent 70%);
+  opacity: 0.35;
+  animation: corre 2.2s var(--ck-ease) infinite;
+}
+@keyframes corre {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+/* Passou do previsto: o cheio respira — ele segue trabalhando. */
+.barra[data-fase='quase'] .cheio { animation: respiro 1.6s var(--ck-ease) infinite; }
+@keyframes respiro {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barra[data-fase='quase'] .cheio,
+  .barra .cheio::after { animation: none; }
+  .barra:not([data-fase='feita']) .frase { animation: none; background: none; color: var(--ck-text-secondary); }
+}
