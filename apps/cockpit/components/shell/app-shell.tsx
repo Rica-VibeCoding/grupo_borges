@@ -24,7 +24,7 @@
  * 2. **Cada gaveta é um `<aside>` próprio, nunca um `SidebarProvider`.**
  *    Dois provider dividem o mesmo cmd+B e brigam pelo atalho.
  *
- * §13 (30/07) — MUDANÇA DE COMPORTAMENTO, ordem direta: *"sidebar fica ao
+ * Estética §8 (30/07) — MUDANÇA DE COMPORTAMENTO, ordem direta: *"sidebar fica ao
  * fundo da tela do chat, igual o fluyt"*. Fui ver o que o Fluyt faz: ele monta
  * `<Sidebar variant="inset">`, o `sidebar-08` do registro do shadcn. Daí a
  * estrutura desta tela, e ela é diferente em cada breakpoint porque o

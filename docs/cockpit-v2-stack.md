@@ -431,7 +431,7 @@ Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
   JavaScript"* — o entitlement de motor alternativo existe só para **UE e
   Japão**, e o Brasil não está na lista. Chrome no iPhone é casca em cima do
   WebKit. Consequência prática, e ela já custou uma caçada inteira (a gaveta de
-  0px, estética §"02/08"): bug que só aparece no aparelho dele é bug de WebKit,
+  0px, estética §5): bug que só aparece no aparelho dele é bug de WebKit,
   e recurso novo se confere na coluna do Safari, nunca na do Chrome.
   Fonte: https://developer.apple.com/app-store/review/guidelines/ §2.5.6.
 - **HTTP/2 no `tailscale serve`: confirmado.** `curl` negocia `http_version=2`

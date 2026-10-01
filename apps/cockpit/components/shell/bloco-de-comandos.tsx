@@ -128,7 +128,7 @@ export function BlocoDeComandos({ agentSlug, aberto }: BlocoDeComandosProps) {
         gap: 'var(--ck-space-2)',
         padding: 'var(--ck-space-4)',
         // O mesmo fio de luz que separa as ações rápidas da cota — separador
-        // dentro de superfície flutuante é `edge-light`, nunca o hairline (§17).
+        // dentro de superfície flutuante é `edge-light`, nunca o hairline (§2).
         borderColor: 'var(--ck-edge-light)',
       }}
     >

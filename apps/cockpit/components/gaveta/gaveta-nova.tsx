@@ -19,7 +19,7 @@
  * - **Conversa** — só quando a gaveta abre pela tela de voz.
  *
  * Estado e rede vêm de `usaVidaDoAgente`, cópia fiel do antigo `BlocoDeAcoes`. O
- * `flex-auto` (não `flex-1`) segue a lição do iPhone de 02/08 (§17).
+ * `flex-auto` (não `flex-1`) segue a lição do iPhone de 02/08 (estética §5).
  */
 import { usePathname, useSearchParams } from 'next/navigation';
 

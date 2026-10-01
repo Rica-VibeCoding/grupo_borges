@@ -144,7 +144,7 @@ export default async function AgentePage({
       {/* Aqui morava o cabeçalho de identidade — retrato, nome e estado — e a
           linha que o separava do feed. Saiu por ordem do Rica (30/07): o agente
           já aparece selecionado e destacado na tropa à esquerda, e desde a MESA
-          E A FOLHA (§14) a aba do item selecionado ENCOSTA nesta folha. Repetir
+          E A FOLHA (estética §8) a aba do item selecionado ENCOSTA nesta folha. Repetir
           o nome no topo do chat era dizer duas vezes, com a linha divisória
           cobrando altura de tela no celular para separar o feed de nada.
 

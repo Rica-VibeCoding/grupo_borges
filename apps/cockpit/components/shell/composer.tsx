@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Composer — a caixa alta, controles por dentro (§12.1/§12.2).
+ * Composer — a caixa alta, controles por dentro (estética §8).
  *
  * A referência do Rica pediu duas coisas com todas as letras: "chat input
  * maior com modelo em baixo" e o motor a um toque de onde se escreve. As
@@ -1042,7 +1042,7 @@ export function Composer({
           // já está borrado. O que ela faz é somar um degrau de luz sobre o
           // resultado — é assim que a referência distingue a pílula da faixa
           // sem opacar nenhuma das duas, e é por isso que o texto do feed
-          // atravessa POR DENTRO dela. Ver §18 da estética.
+          // atravessa POR DENTRO dela. Ver §8 da estética.
           background: 'var(--ck-surface-composer-material)',
           borderColor: fileteDoEstado ?? 'var(--ck-edge-composer)',
           // A borda inteira (não só um filete de 2px) muda de cor no estado
@@ -1096,7 +1096,7 @@ export function Composer({
               // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
               // referência: "queria que o input de texto tivesse uma linha só,
               // igual a do CC, e não duas linhas … conforme eu vou digitando e
-              // pulando linha, ela vai aumentando na altura". Revoga a §12 da
+              // pulando linha, ela vai aumentando na altura". Revoga a §12 do histórico da
               // estética, que mandava caixa alta; os controles continuam dentro.
               rows={1}
               value={texto}
@@ -1202,7 +1202,7 @@ export function Composer({
           />
         </BolhaDeComandos>
 
-        {/* Base do composer: os controles moram AQUI, dentro da caixa — §12.1.
+        {/* Base do composer: os controles moram AQUI, dentro da caixa — estética §8.
             O piso é a altura que a fileira de botões produz de fato: alvo de
             44px menos os 4px com que `MARGEM_INFERIOR_DA_BASE` encosta os
             controles na linha do texto. Com o piso 4px abaixo disso a linha

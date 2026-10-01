@@ -7,7 +7,7 @@
 >
 > A régua desta rodada, dada pelo Pavan, é **a informação do antigo — não a minha**.
 > Este documento é o levantamento honesto que veio antes de desenhar qualquer coisa,
-> conforme §9.1 do `cockpit-v2-estetica.md`.
+> conforme §1 (princípio 7) do `cockpit-v2-estetica.md`.
 
 Fonte lida: `apps/web/components/agent-card.tsx`, `apps/web/components/agent-statusline.tsx`
 e `packages/cockpit-core/src/cockpit-types.ts`. Foto dos dois lado a lado no iPhone

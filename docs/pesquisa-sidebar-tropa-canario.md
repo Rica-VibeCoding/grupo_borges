@@ -212,7 +212,7 @@ function SidebarMenuButton({
   → **`isActive`** é o único portador de "ativo" do componente; o destaque visual
   (hover vs ativo) fica no CSS do consumidor, por cima de `data-active` e dos
   tokens `--sidebar-*`. O cockpit já tem o equivalente com `aria-current` + filete
-  e o contrato §2.6 (véu de 3 degraus + filete de 2px) define a diferença hover/
+  e o contrato §2 (véu de 3 degraus + filete de 2px) define a diferença hover/
   ativo/pressed — não precisa do token shadcn.
 - **`useSidebar()`** expõe `state: "expanded" | "collapsed"`, `open`, `isMobile`,
   `toggleSidebar`; atalho `cmd+b`/`ctrl+b`. Só existe dentro do provider.
@@ -267,7 +267,7 @@ clone (classes literais):
   → hover/borda `#26262b` → **ativo `#2a2a30`**. Item ativo destaca **por
   luminosidade** (fundo mais claro) + `text-white` — **não por cor de acento**.
   Hover = mesmo tom das bordas. Isto é exatamente a tese do `estetica.md` §1
-  ("luz em vez de sombra; hierarquia por luminância") e o véu do §2.6.
+  ("luz em vez de sombra; hierarquia por luminância") e o véu do §2.
 - **Badge/contador à direita com `ml-auto`, em pílula** (`px-1.5 rounded-full`) —
   o `SidebarMenuBadge` shadcn; o cockpit põe chip/barra no fim da linha com `shrink-0`.
 - **Dot de status `w-2 h-2` (8px)** com cores semânticas (verde ativo, âmbar WIP,
@@ -308,7 +308,7 @@ número):
    a ler" — consistência entre linhas é o que dá a sensação de rápido.
 4. **Hover vs selecionado: dois degraus claramente distintos.** Linear: hover =
    tom da borda (1 degrau), ativo = tom mais claro + texto branco (2 degraus). O
-   contrato §2.6 já fixa exatamente isso (3 véus + filete no ativo). A proposta do
+   contrato §2 já fixa exatamente isso (3 véus + filete no ativo). A proposta do
    Vinicius não deve **inventar** hover/ativo — deve consumir `--ck-overlay-*` e o
    filete.
 5. **Scroll.** Lista que rola por dentro com a barra não roubando largura
@@ -324,7 +324,7 @@ número):
 - **`--ck-text-tertiary` nunca em texto < 20px** — a Linear usa `text-slate-500`
   (muted) para muito texto pequeno; no nosso caso a régua é a §2.2 (tertiary só
   ícone/separador/texto ≥20px). Metadado da tropa em `secondary`.
-- **Véu proibido sobre `--ck-surface-raised`** (§2.6) — qualquer hover/ativo novo
+- **Véu proibido sobre `--ck-surface-raised`** (§2) — qualquer hover/ativo novo
   vive no `nav`, não em superfície elevada.
 - **44px de alvo de toque** (§3) — a Linear tem linhas de ~28px (desktop
   mouse-only); a TROPA é usada no celular do Rica, e o `--ck-touch-min` prevalece.
@@ -417,6 +417,6 @@ número):
 - Touch targets 44×44, gap 8px, transições 150–300ms (WCAG 2.1 / plataformas):
   https://www.skill-gallery.jp/skills/5dlabs/web-design-guidelines (agrega as normas)
 
-**Contrato consumido:** `docs/cockpit-v2-estetica.md` (§2.6 véu+filete, §3 piso de
+**Contrato consumido:** `docs/cockpit-v2-estetica.md` (§2 véu+filete, §3 piso de
 contraste e cor-nunca-sozinha, §4 tipografia, §9 proibições) e `app-shell.tsx`
 (decisão nº 1: superfície na URL, sem provider shadcn).

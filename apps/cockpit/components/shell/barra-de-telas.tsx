@@ -1,5 +1,5 @@
 /**
- * BarraDeTelas — o chrome do topo (§12.3 e §13, correção do menu à esquerda).
+ * BarraDeTelas — o chrome do topo (histórico da estética §12.3 e §13, correção do menu à esquerda).
  *
  * REDESENHO DE 28/09 (mockup aprovado pelo Rica): o pill "Chat" saiu — com um
  * destino só ele era rótulo, não controle — e a faixa virou

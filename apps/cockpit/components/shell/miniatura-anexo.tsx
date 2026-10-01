@@ -9,7 +9,7 @@
  *
  * O MOVIMENTO É O DA CASA (`.ck-miniatura` em `globals.css`, mesmos tokens e
  * mesmo `data-aberto` do `.ck-surge`) e nenhuma linha dele mora aqui. O nó fica
- * SEMPRE montado — elemento removido não anima a saída, §17 da estética — e
+ * SEMPRE montado — elemento removido não anima a saída, §5 da estética — e
  * quem some é a altura, em `0s`, depois do fade. Por isso este arquivo não tem
  * `setTimeout`, não tem `requestAnimationFrame` e não sabe quanto dura nada.
  *

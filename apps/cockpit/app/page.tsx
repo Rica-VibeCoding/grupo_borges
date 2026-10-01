@@ -11,7 +11,7 @@ import { fetchFaxina } from '@/lib/faxina';
 // relativo (`/api/...`) e quem resolve é o rewrite do next.config.
 export const dynamic = 'force-dynamic';
 
-// A regra do contrato (§10-Fronteira) é que o `theme-color` bata com a cor que
+// A regra do contrato (§10) é que o `theme-color` bata com a cor que
 // ENCOSTA na barra do Safari, e ela não é a mesma nas duas rotas: no chat quem
 // encosta é a folha (`--ck-surface-canvas`, o valor do layout), aqui é a mesa
 // (`--ck-surface-nav`). Sem isto a barra do iPhone fica um degrau mais escura

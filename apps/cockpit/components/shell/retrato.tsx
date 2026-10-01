@@ -21,7 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
  * O estado NÃO mora aqui: o anel da tropa (`.ck-anel`) contorna este retrato
  * por fora, num contêiner — o Root do Radix tem `overflow: hidden`.
  *
- * O fallback é a inicial em neutro, não uma cor por agente: o contrato §4 fecha a
+ * O fallback é a inicial em neutro, não uma cor por agente: o contrato §2 fecha a
  * paleta e cor por agente seria inventar fora dela.
  */
 export function Retrato({

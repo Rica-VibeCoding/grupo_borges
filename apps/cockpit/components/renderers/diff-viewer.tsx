@@ -88,7 +88,7 @@ export function DiffViewer({
     >
       <header className="flex min-w-0 items-center gap-[var(--ck-space-3)] border-b border-[var(--ck-edge-hairline)] px-[var(--ck-space-4)] py-[var(--ck-space-3)]">
         <span className="min-w-0 flex-1 truncate font-mono text-sm">{filePath}</span>
-        {/* U+2212 (−), não hífen: o contrato §2.4 herda isso do Codex e é o que
+        {/* U+2212 (−), não hífen: o contrato §2 herda isso do Codex e é o que
             faz o par +/− alinhar em tabular-nums. O marcador de cada LINHA do
             diff continua sendo `-` — lá é sintaxe de diff, não estatística. */}
         {view.status === 'ready' ? (

@@ -1,6 +1,6 @@
 /**
- * O vocabulário de ícone que o Rica apontou na referência do Codex (§10, depois
- * §12): traço fino, contorno ABERTO, nunca preenchido, peso constante. Ele
+ * O vocabulário de ícone que o Rica apontou na referência do Codex (estética
+ * §8): traço fino, contorno ABERTO, nunca preenchido, peso constante. Ele
  * pediu vocabulário emprestado, não os SVGs dele — então são desenhados aqui,
  * do zero, na régua que ele descreveu: `strokeWidth 1.3`, `fill: none`,
  * `stroke: currentColor`, cantos suaves (`stroke-linecap/linejoin: round`).

@@ -3,7 +3,7 @@
 > Auditor: Hiro. Regra da casa: RELATO, não correção — quem ajusta é o Daniel.
 > Escopo: `acoes-rapidas.ts`, `acoes-rapidas.test.ts`, `bloco-de-acoes.tsx`,
 > `app/acoes/page.tsx`, plug em `app/agente/[slug]/page.tsx`.
-> Régua: `docs/cockpit-v2-estetica.md` (§2.6, §3, §9, tokens), ordens do Rica.
+> Régua: `docs/cockpit-v2-estetica.md` (§2, §3, §9, tokens), ordens do Rica.
 
 **Fila — fechada:**
 
@@ -25,7 +25,7 @@ A §2.6 manda véu `--ck-overlay-selected` (1.134×) + barra de 2px em
 
 - É **ordem direta do Rica**, citada no código e no commit: *"tira essa linha
   branca de selecionado, vamos pensar em algo mais discreto que pegue o botão
-  todo"*. Pela §9.1 ele é juiz único — ordem dele revoga contrato.
+  todo"*. Pela §1 da estética ele é juiz único — ordem dele revoga contrato.
 - A justificativa técnica é correta: a §2.6 pensa item de lista; segmentos
   contíguos com barras verticais de 2px não leem como seleção.
 - **§9.11 respeitada**: o ativo perde o `.ck-veil` (véu sobre `raised` = 2.98:1

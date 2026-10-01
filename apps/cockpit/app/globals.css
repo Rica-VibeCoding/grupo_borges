@@ -29,7 +29,7 @@
    * Contraste verificado por rota independente — 11/11 tokens passam, medidos
    * contra a superfície MAIS CLARA (surface-raised), que é o pior caso.
    *
-   * §13 (30/07) — o hue 265 SAIU das superfícies por ordem do Rica, depois de
+   * Estética §2 (30/07) — o hue 265 SAIU das superfícies por ordem do Rica, depois de
    * ver a tela inteira da referência: *"essas cores são bonitas tb, pode mudar
    * a doc para elas"*. A referência é cinza neutro puro em todos os pontos.
    * Mantive o `L` de cada degrau (é ele que carrega a hierarquia) e zerei o
@@ -191,7 +191,7 @@
    *   - Filter Effects L2: "The effect of the backdrop-filter will not be
    *     visible unless some portion of element B is semi-transparent."
    *
-   * Daí os três valores: tint um degrau ACIMA do canvas na escada da §2.1,
+   * Daí os três valores: tint um degrau ACIMA do canvas na escada da §2,
    * opacidade baixa, e o trabalho pesado passando para o DESFOQUE.
    *
    * A CAIXA TAMBÉM É MATERIAL, e isso derruba a régua que eu mesmo tinha
@@ -199,7 +199,7 @@
    * foto do ChatGPT — é o Claude Code no iPhone do Rica, e lá dá para ver uma
    * linha de texto borrada passando POR DENTRO da pílula, atrás do placeholder.
    * Manter o campo sólido era exatamente o que produzia a faixa preta. Como o
-   * contraste passa a ser medido sobre fundo variável, ver §18. */
+   * contraste passa a ser medido sobre fundo variável, ver §3. */
   --ck-veu-tint: color-mix(in oklch, var(--ck-surface-nav) 16%, transparent);
   --ck-veu-desfoque: 36px;   /* é o desfoque que segura o contraste (WCAG G18) */
   --ck-veu-fade: 64px;       /* altura da ESCADA DE DESFOQUE no topo da faixa */
@@ -221,7 +221,7 @@
    * anterior, mesmo dia: `shared_token_estetico_vs_acessibilidade.md`):
    * pendurar num token que carrega contrato de acessibilidade, ou pendurar em
    * `--ck-surface-composer-material`, que é a receita CALIBRADA pro vidro do
-   * composer (§18) — mudar aquele parâmetro pra ajustar o composer não pode
+   * composer (§2) — mudar aquele parâmetro pra ajustar o composer não pode
    * mexer nesta tela, e vice-versa. Referencia `raised` (o degrau que a §A já
    * reserva pra "overlay") por CÓPIA de intenção, não por atalho: é o mesmo
    * degrau que `.ck-menu-surface` usa pra flutuar sobre o app, só que opaco —
@@ -586,7 +586,7 @@ body {
  * Root num ancestral custaria justamente o desfoque que se quis otimizar.
  *
  * É o DESFOQUE que segura o contraste, não a opacidade do tint — é a técnica
- * G18 da WCAG ("the area behind the text is fogged"). Medição em §18. */
+ * G18 da WCAG ("the area behind the text is fogged"). Medição em §3. */
 .ck-caixa {
   -webkit-backdrop-filter: blur(var(--ck-veu-desfoque));
   backdrop-filter: blur(var(--ck-veu-desfoque));
@@ -762,7 +762,7 @@ body {
 
 /* ===== A MESA E A FOLHA ====================================================
  *
- * Ordem do Rica (§13): *"sidebar fica ao fundo da tela do chat, igual o
+ * Ordem do Rica (§8): *"sidebar fica ao fundo da tela do chat, igual o
  * fluyt"*. Fui ver o que o Fluyt faz de verdade antes de desenhar: ele monta
  * `<Sidebar variant="inset">`, o mesmo `sidebar-08` do registro do shadcn. A
  * anatomia do variant, lida no componente e não de memória:
@@ -913,7 +913,7 @@ body {
  * HONESTIDADE SOBRE ESTA TROCA: ela entrou como conserto pra gaveta não abrir
  * no iPhone do Rica, e NÃO ERA A CAUSA. A causa era altura zero — `flex-1`
  * (base 0) dentro de pai com altura de conteúdo, medido na régua `?diag=1` no
- * aparelho dele (`docs/cockpit-v2-estetica.md` §17). A troca fica pelo mérito
+ * aparelho dele (`docs/cockpit-v2-estetica.md` §5). A troca fica pelo mérito
  * próprio: faz o mesmo trabalho sem depender de duas features novas e frágeis,
  * e uma superfície que só aparece não deve ter a aparição refém do suporte a
  * `@starting-style`. Mas quem vier depois merece saber que ela não consertou o
@@ -1119,7 +1119,7 @@ body {
    exatamente o que ele pediu.
 
    Vale SÓ abaixo de `md`, e isso não é detalhe: a partir de 768px a tropa é o
-   FUNDO permanente da tela (§14 — a mesa e a folha), `position: static`, sem
+   FUNDO permanente da tela (§8 — a mesa e a folha), `position: static`, sem
    botão que a abra. Aplicar o estado fechado lá esconderia a faixa que nunca
    fecha. */
 @media (max-width: 767.98px) {
@@ -1153,7 +1153,7 @@ body {
  * e o composer cresce por causa dela — montada para sempre, ela seria um buraco
  * de 146px em cima do campo o tempo todo.
  *
- * A saída pede o nó vivo (§17: elemento removido não anima), e a altura não
+ * A saída pede o nó vivo (§5: elemento removido não anima), e a altura não
  * pode ser animada (proibição §9.4 — só `opacity` e `transform`). As duas se
  * resolvem com o MESMO truque que a linha de cima usa para a `visibility`:
  * propriedade discreta que muda em `0s`, com o ATRASO fazendo o trabalho. Na
@@ -1252,7 +1252,7 @@ body {
  * - `height: fit-content` faz a caixa acompanhar o conteúdo; `max-height`
  *   limita ao que sobra da tela, e estourando o conteúdo rola por dentro
  *   (`overflow-y-auto` na área de campos do painel).
- * - O mesmo `--ck-space-2` da folha (§14). A referência de textura que o Rica
+ * - O mesmo `--ck-space-2` da folha (§8). A referência de textura que o Rica
  *   mandou depois confirma a borda: no print dele o fio entre as duas áreas
  *   escuras é MAIS CLARO que as duas (#323232 sobre #202020/#181818), que é
  *   exatamente o `--ck-edge-light` — branco a 7% sobre a superfície `nav` dá
@@ -1336,7 +1336,7 @@ body {
 
 /* Véu de interação. É `background-image` e não `::after` de propósito: um
  * pseudo-elemento sobreposto pintaria branco POR CIMA do texto e lavaria o
- * contraste que a §2.6 mediu. Gradiente de uma cor só compõe sobre a
+ * contraste que a §2 mediu. Gradiente de uma cor só compõe sobre a
  * background-color de qualquer superfície e fica SOB o conteúdo, que é
  * exatamente onde o número medido vale.
  *
@@ -1960,7 +1960,7 @@ html[data-troca-agente] .ck-palco {
 }
 
 /* Modo conversa (fase 3): a cor diz de quem é a vez — quente = sua, frio = dele.
- * É a tese da estética §1.3 aplicada à voz. Os cinco primeiros apontam para os
+ * É a tese da estética §1 aplicada à voz. Os cinco primeiros apontam para os
  * estados, cujo contraste já está calculado na §3; o ocupado é o único próprio. Os visuais (WebGL)
  * leem estes tokens em tempo de execução; trocar aqui troca lá. */
 :root {

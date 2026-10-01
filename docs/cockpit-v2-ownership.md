@@ -324,7 +324,7 @@ Duas consequências que quem vier depois precisa saber:
    entrou **só no `apps/web`** e é a primeira divergência entre as duas. Ela morre junto
    com o v1; não é dívida a pagar no core.
 2. O equivalente no v2 **não é o cabeçalho** — ele saiu do chat por ordem do Rica em
-   30/07 (`cockpit-v2-estetica.md` §15) e a ordem continua de pé. A pasta entrou na
+   30/07 (`pesquisas/cockpit-v2-estetica-historico-ate-2026-10.md` §15) e a ordem continua de pé. A pasta entrou na
    TROPA, que é onde ele vê os nove de uma vez. Detalhe na §15.
 
 Segue valendo o resto: `apps/web` não é oportunidade de melhoria. Melhoria só entra
@@ -341,7 +341,7 @@ recorte real ficou outro, e como agora há três pessoas com o editor aberto no 
 | Caminho | Dono agora | O que está sendo feito |
 |---|---|---|
 | `components/shell/**` | **Daniel** | composer alto, barra de telas, gaveta, ícones, aparência das fases do envio |
-| `app/globals.css`, `app/layout.tsx` | **Daniel** | paleta indo para cinza neutro (§13 da estética) + `theme-color` amarrado |
+| `app/globals.css`, `app/layout.tsx` | **Daniel** | paleta indo para cinza neutro (§2 da estética) + `theme-color` amarrado |
 | `components/feed/**` | **Hiro** | feed real **sem** `assistant-ui` — o plano de fuga |
 | `app/spike/sem-lib/**`, `docs/cockpit-v2-medicao/**` | **Hiro** | braço de controle e arranjos de medição |
 | `lib/envio.ts` | **Tara** | motor da confirmação por eco |

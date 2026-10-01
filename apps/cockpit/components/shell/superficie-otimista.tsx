@@ -126,7 +126,7 @@ function criaSuperficie(parametro: 'nav' | 'painel') {
      * `preventDefault()` dos gatilhos mata o plano B assim que a página hidrata,
      * então "JS hidratou o bastante pra interceptar, mas o chunk/RSC não
      * responde" faria o toque sumir no vazio. (Isto NÃO era o bug do iPhone —
-     * aquele era altura zero, ver §17 da estética. Esta rede entrou junto na
+     * aquele era altura zero, ver §5 da estética. Esta rede entrou junto na
      * caçada e fica por mérito próprio.)
      *
      * O porquê da transição entrar na conta, e o que ela conserta, está no

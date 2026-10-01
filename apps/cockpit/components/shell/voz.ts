@@ -390,7 +390,7 @@ export type AparenciaVoz = {
    *
    * SEM AZUL (Rica, 20/08, depois de ver a fala ao vivo no ar): *"nada de azul,
    * nada de raiozinho, nada de borda azulada, neon"*. O ciano de `running` e o
-   * roxo de `thinking` saíram daqui. É a mesma regra do §13 do `globals.css`,
+   * roxo de `thinking` saíram daqui. É a mesma regra da §2 da estética,
    * que já tinha zerado o croma das superfícies: matiz fica reservado a quem
    * significa alguma coisa. Falar não é um estado de máquina que precise de cor
    * — o que a captura precisa dizer, ela diz com a onda, a frase e o

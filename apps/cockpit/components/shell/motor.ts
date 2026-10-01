@@ -1,5 +1,5 @@
 /**
- * O motor — como o modelo e o esforço aparecem DENTRO do composer (§12.2).
+ * O motor — como o modelo e o esforço aparecem DENTRO do composer (estética §8).
  *
  * Por que isto existe como módulo puro: a referência do Rica mostra `5.6 Sol
  * Extra alto` embaixo, à direita, a um toque de onde se escreve. Nós já temos

@@ -148,7 +148,7 @@ export function ValorDoContexto({ pct }: { pct: number }) {
  * a §3 proíbe cor como portadora única, e aqui o portador é a posição na coluna
  * mais o texto acessível.
  *
- * `tertiary` a 12px era furo da §2.2 (`nunca corpo`) enquanto isto era frase.
+ * `tertiary` a 12px era furo da §2 (`nunca corpo`) enquanto isto era frase.
  * Como glifo de ausência é legítimo: o contrato libera `tertiary` justamente
  * para ícone e separador.
  */

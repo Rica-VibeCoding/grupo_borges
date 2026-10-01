@@ -1,7 +1,7 @@
 /**
  * As ações rápidas do painel — a régua, sem React, sem DOM, sem rede.
  *
- * O §17 do contrato de estética deixou esta metade em aberto e chamou pelo
+ * O contrato de estética (hoje no histórico) deixou esta metade em aberto e chamou pelo
  * nome: o Rica trata as ações como *"ideia central do painel"*. O back já
  * expõe as rotas (`postAgentDestrava`, `postAgentDesligar`,
  * `postAgentLigar`); o que faltava era a camada de cliente — estado,

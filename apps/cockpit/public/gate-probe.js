@@ -82,7 +82,7 @@
  *    "digitando…" animado por troca de classe estouraria sozinho o corte do G4
  *    (achado M1). Perde-se o re-render que só troca classe — que não reflui
  *    conteúdo e não é o que o G4 procura.
- * 5. Cor em hex cru aqui dentro NÃO viola o §9.1 do contrato de estética: este
+ * 5. Cor em hex cru aqui dentro NÃO viola o item 1 da §9 do contrato de estética: este
  *    arquivo tem de renderizar igual no painel antigo, onde os tokens `--ck-*`
  *    não existem. Instrumento descartável não usa o sistema de design.
  * ======================================================================== */

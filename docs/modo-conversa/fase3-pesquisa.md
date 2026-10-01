@@ -48,7 +48,7 @@ Cadeira `ui` · 26/09/2026 · etapa 1, antes de qualquer código.
 ## Princípios que saíram daqui (valem para as três direções)
 
 1. **Estado por posição + forma + cor.** Texto é a quarta camada, para quem olha de perto.
-2. **Quente = sua vez; frio = vez dele.** É a tese da estética §1.3 ("a temperatura sobe quando a máquina
+2. **Quente = sua vez; frio = vez dele.** É a tese da estética §1 ("a temperatura sobe quando a máquina
    precisa de você") aplicada à conversa: ouvindo em âmbar, pensando em violeta, respondendo em ciano, erro em
    coral, preparando em neutro. **Muda a esfera de hoje** (ouvindo ciano, falando verde).
 3. **Nenhuma cor nova.** Cinco tokens `--ck-conversa-*` na §A apontando para os de estado: contraste já
