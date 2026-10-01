@@ -11,7 +11,7 @@
 > endereço `:3446`); `type-check` verde. No Omarchy é `pnpm` direto (Node 26, sem `corepack`).
 > F1 ✅ (`relatos/f1.md`): diálogo de retomada só abre com flag de servidor, desligada hoje na VPS
 > e no Omarchy; `--continue` e `--resume` chegam iguais ao gancho (`source: resume`). Em curso:
-> **F7** (`api`). F6 ✅ (publicada; A → B → A no canarinho, 200 em 28/22/20 s, sem diálogo). F5 ✅ (publicada; Nova conversa provada no canarinho em 18 s). F9 ✅ publicada na 3008 (`f70f8ad`), a cadeira `teste` ainda não passou. F3 ✅ (API publicada; lista real do Pavan 0,36 s com cache,
+> **CONCLUÍDO (01/10).** F11 APROVADO pela `teste` (`relatos/f11.md`); F12 publicou o acabamento (`/clear` puro, feed sem resíduo, 🔒 sem falso positivo, briefing em BRT, espera que confere o cartão). F7b: atual certa depois de restart. F7 ✅ (gancho `SessionStart` registrado na VPS). F6 ✅ (publicada; A → B → A no canarinho, 200 em 28/22/20 s, sem diálogo). F5 ✅ (publicada; Nova conversa provada no canarinho em 18 s). F9 ✅ publicada na 3008 (`f70f8ad`), a cadeira `teste` ainda não passou. F3 ✅ (API publicada; lista real do Pavan 0,36 s com cache,
 > 9,7 s a frio → aquecimento entra na F5). F2 ✅ (lista: 323 ms a frio / 1 ms com cache em 172 arquivos no Omarchy). F4 ✅
 > (`ze_claude` `1c6763f`, provado no canarinho). F8 ✅ (`relatos/f8.md`, capturas em `/tmp/f8/` do Omarchy): 3 direções
 > enviadas ao Rica, aguardando a escolha.
