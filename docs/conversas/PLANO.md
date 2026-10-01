@@ -326,6 +326,9 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
   - `?painel=conversas` como terceira visão da `VistaDaGaveta`, com a porta na `GavetaNova`.
   - **Decisão do Rica (01/10):** a porta ocupa o lugar do **Destravar**, no cartão Sessão, e o
     Destravar sai da gaveta (talvez não volte). A porta aparece com o agente ligado ou desligado.
+  - **Direção A** aprovada (lista abre no lugar, toque expande a nota e as ações), com o "Em uso
+    agora" + Nova conversa da C no topo. O `/clear` sai dos Comandos. "Sem sinal" fica só no
+    pulso. Capturas em `/tmp/f8/` do Omarchy; protótipo em `/tmp/f8/prototipo/`.
   - O cliente da lista no `cockpit-core/api.ts`.
   - Filtros, busca, tempo relativo e os selos, na direção aprovada. O filtro ⚠️ fica escondido
     enquanto `pendencia` vier `null`.
