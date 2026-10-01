@@ -1,14 +1,13 @@
 import { notFound } from 'next/navigation';
 import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
+import { GavetaNova } from '@/components/gaveta/gaveta-nova';
 import { PagerDoAgente } from '@/components/conversa/pager-do-agente';
 import { BarraDeTelas } from '@/components/shell/barra-de-telas';
-import { BlocoDeAcoes } from '@/components/shell/bloco-de-acoes';
 import { Composer } from '@/components/shell/composer';
 import { PainelMcp } from '@/components/shell/mcp-painel';
 import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
-import { StatuslineAoVivo } from '@/components/shell/statusline-ao-vivo';
 import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { LinkDaGaveta, VistaDaGaveta } from '@/components/shell/vista-da-gaveta';
 import { FeedDaConversa } from './feed-da-conversa';
@@ -31,143 +30,6 @@ function Rotulo({ children }: { children: string }) {
     >
       {children}
     </span>
-  );
-}
-
-/** A GAVETA — a segunda passada de 09/08, com o Rica revendo item por item o
- *  que a primeira tinha entregue. Quase tudo que eu ia ARRUMAR ele mandou
- *  TIRAR, e o resultado é uma gaveta que perdeu quase metade da altura.
- *  **Revista em 28/09:** o título virou o NOME do agente (o workspace saiu),
- *  a statusline subiu pra logo abaixo dele, e Permissões/Resume deram lugar
- *  ao pulso. O registro de 09/08 segue abaixo:
- *
- *  - ~~O título é o workspace~~ — saiu em 28/09.
- *  - **Permissões** e os três botões — o que restou das ações rápidas. **O
- *    esforço saiu**: *"já temos ele no input"*, e o input é o composer. Ver o
- *    cabeçalho do `bloco-de-acoes.tsx`.
- *  - **Cota usada**, irmã das ações e não parte delas (leitura, não comando).
- *  - **Statusline** — modelo · sessão · contexto numa linha só, a barra
- *    ocupando o campo inteiro. Com a ficha fora, ela é a ÚNICA fonte do modelo
- *    na gaveta; foi por isso que o fallback dela deixou de ser o valor cru do
- *    banco (ver o `statusline.tsx`). O teto de 30% continua sendo a cor — nada
- *    é desenhado por cima da barra.
- *  - **MCPs** na base — a porta para a tela do Vinicius (15ccf76).
- *
- *  O QUE SAIU, e por ordem dele: os quatro campos da ficha (*"já já temos
- *  eles"* — modelo na statusline, sessão no chrome, e o workspace subiu pro
- *  título); o slot "Comandos do painel", placeholder e tudo (*"quando ele
- *  passar a lista, a gente cria de novo"* — reservar espaço para uma lista que
- *  não existe é ocupar tela com promessa); e o rótulo "Detalhes", que virou
- *  "Painel". A URL `?painel=detalhes` NÃO mudou junto, de propósito: ela é
- *  deep-link publicado, e renomear valor de parâmetro por causa de rótulo
- *  visível quebra link que já circulou.
- *
- *  O `flex-auto` (base no conteúdo) NÃO o `flex-1` (base 0) continua sendo a
- *  régua da gaveta: o pai (`.ck-flutua`) tem altura vinda do CONTEÚDO, e item
- *  com base 0 contribui 0 pro tamanho intrínseco do pai no WebKit — era a
- *  gaveta com 0px de altura no iPhone do Rica (02/08). Quem carrega o
- *  `flex-auto` agora é o miolo (comandos + cota): a ficha era a área que
- *  rolava, e sem ela a gaveta ficaria sem NENHUM item elástico — no iPhone
- *  deitado, com o `max-height` mordendo, o conteúdo seria cortado sem rolagem
- *  em vez de rolar. O `min-h-0` é o que deixa esse item encolher. */
-function Painel({
-  agente,
-  fecharHref,
-  painelAberto,
-  agora,
-}: {
-  agente: Agent;
-  fecharHref: string;
-  /** Fallback da URL. O `BlocoDeAcoes` prefere o valor otimista quando está
-   *  dentro do `PainelProvider` — é o que faz a re-busca do `/painel` começar
-   *  no frame do clique, não 2s depois. */
-  painelAberto: boolean;
-  agora: number;
-}) {
-  return (
-    <div className="flex min-h-0 flex-auto flex-col">
-      <div
-        className="flex shrink-0 items-center justify-between border-b"
-        style={{
-          gap: 'var(--ck-space-2)',
-          padding: 'var(--ck-space-3) var(--ck-space-4)',
-          // `edge-light`, não `edge-hairline`: a referência de textura que o
-          // Rica mandou tem o fio entre duas áreas escuras MAIS CLARO que as
-          // duas (#323232 sobre #202020/#181818). O hairline (#424242) é mais
-          // duro que isso; branco a 7% sobre esta superfície dá (49,49,49) —
-          // o valor que ele mediu, e a assinatura da §A: luz, não sombra.
-          borderColor: 'var(--ck-edge-light)',
-        }}
-      >
-        {/* O NOME DO AGENTE no lugar do "Painel" (28/09): o caminho do workspace
-            saiu, e era ele que dizia em qual agente a gaveta estava. */}
-        <span
-          className="truncate"
-          style={{ fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-text-primary)' }}
-        >
-          {agente.name}
-        </span>
-        {/* Fechar é navegar — e desde 30/07 também é otimista: o
-            `LinkFechaPainel` vira o painel no mesmo frame e a URL alcança
-            atrás; sem JS é o Link de sempre. */}
-        <LinkFechaPainel
-          href={fecharHref}
-          rotulo="detalhes"
-          className="ck-veil flex items-center justify-center"
-          style={{
-            minWidth: 'var(--ck-touch-min)',
-            minHeight: 'var(--ck-touch-min)',
-            marginRight: 'calc(var(--ck-space-3) * -1)',
-            borderRadius: 'var(--ck-radius-chip)',
-            fontSize: 'var(--ck-text-lg)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          ×
-        </LinkFechaPainel>
-      </div>
-
-      {/* STATUSLINE — telemetria viva (modelo · sessão · contexto) numa linha
-          só, pedida pelo Rica em 09/08. Subiu do rodapé pra cá em 28/09 no
-          lugar do workspace: o contexto é o número da regra dos 30% e ficava
-          por último. A barra ocupa o campo inteiro (`larguraDaBarra={null}`) e
-          a cor é a régua do `corDoContexto` — nada desenhado por cima. */}
-      <section
-        aria-label="status do agente"
-        className="flex shrink-0 flex-col"
-        style={{ padding: 'var(--ck-space-3) var(--ck-space-4) 0' }}
-      >
-        <StatuslineAoVivo agente={agente} agora={agora} larguraDaBarra={null} />
-      </section>
-
-      {/* OS COMANDOS E A COTA — o miolo, e o único item elástico da gaveta.
-          Ele não rola no tamanho de hoje (o conteúdo cabe de sobra desde que o
-          esforço e a ficha saíram); é a rede para o iPhone deitado, onde o
-          `max-height` do `.ck-flutua` morde antes do conteúdo terminar. Sem
-          nenhum `flex-auto` na coluna, ali o fim seria cortado em silêncio. */}
-      <div className="flex min-h-0 flex-auto flex-col overflow-y-auto">
-        <BlocoDeAcoes agentSlug={agente.slug} agentName={agente.name} aberto={painelAberto} />
-      </div>
-
-      {/* ENTRADA DA TELA DE MCPs — a tela do Vinicius (15ccf76) estava
-          commitada e órfã; esta linha é a porta. Link de verdade (rota, não
-          estado): `?painel=mcps` abre direto por deep-link. */}
-      <LinkDaGaveta
-        href={`${fecharHref}?painel=mcps`}
-        className="ck-veil flex shrink-0 items-center justify-between border-t"
-        style={{
-          gap: 'var(--ck-space-2)',
-          padding: 'var(--ck-space-3) var(--ck-space-4)',
-          minHeight: 'var(--ck-touch-min)',
-          borderColor: 'var(--ck-edge-hairline)',
-        }}
-      >
-        <span style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)' }}>MCPs</span>
-        <span aria-hidden style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-lg)', lineHeight: 1 }}>
-          ›
-        </span>
-      </LinkDaGaveta>
-    </div>
   );
 }
 
@@ -348,7 +210,7 @@ export default async function AgentePage({
             servidor. */}
         <VistaDaGaveta
           mcps={<VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} />}
-          detalhes={<Painel agente={agente} fecharHref={fecharHref} painelAberto={false} agora={agora} />}
+          detalhes={<GavetaNova agente={agente} fecharHref={fecharHref} agora={agora} />}
         />
       </GavetaPainel>
     </>

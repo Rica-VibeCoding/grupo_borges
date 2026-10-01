@@ -2009,3 +2009,89 @@ html[data-troca-agente] .ck-palco {
 @media (prefers-reduced-motion: reduce) {
   .ck-pulso-agora[data-vivo='true'] { animation: none; }
 }
+
+/* ==========================================================================
+ * §G — A GAVETA DO ZERO (branch `ideia/gaveta-do-zero`, 01/10)
+ *
+ * Referência que o Rica mandou: ACI Biller dark (theskinsfactory). Cartões em
+ * CAMADAS — preto sobre grafite —, cantos grandes, círculo-herói com halo,
+ * interruptor com rótulo de estado, pílula cinza, área tracejada com "+".
+ * Um acento só (laranja, identidade), azul SÓ para "ligado", vermelho SÓ para
+ * a bolinha de alerta. Tudo escopado em `.ck-gv`: fora da gaveta nada muda.
+ * ========================================================================== */
+.ck-gv {
+  --ck-gv-fundo: oklch(0.145 0 0);                  /* #0b0b0b o cartão-mãe */
+  --ck-gv-camada: oklch(0.235 0.006 265);           /* #1d1e22 grafite */
+  --ck-gv-bloco: oklch(0.165 0.004 265);            /* #101114 bloco interno */
+  --ck-gv-pilula: oklch(0.33 0.006 265);            /* #383a3f pílula */
+  --ck-gv-pilula-hover: oklch(0.38 0.006 265);
+  --ck-gv-trilho: oklch(0.36 0.006 265);            /* interruptor desligado */
+  --ck-gv-acento: oklch(0.68 0.19 45);              /* #f26a1b laranja */
+  --ck-gv-acento-escuro: oklch(0.52 0.16 42);
+  --ck-gv-halo-1: oklch(0.45 0.12 45 / 0.55);
+  --ck-gv-halo-2: oklch(0.35 0.09 45 / 0.35);
+  --ck-gv-ativo: oklch(0.63 0.17 255);              /* #3b82f6 azul do "ligado" */
+  --ck-gv-ativo-texto: oklch(0.75 0.13 250);
+  --ck-gv-alerta: oklch(0.6 0.23 27);               /* #e5262b bolinha */
+  --ck-gv-alerta-texto: oklch(0.98 0 0);
+  --ck-gv-tracejado: rgb(255 255 255 / 0.18);
+  --ck-gv-fio: rgb(255 255 255 / 0.06);
+  --ck-gv-raio-cartao: 22px;
+  --ck-gv-raio-bloco: 16px;
+
+  /* Os blocos herdados (comandos, motor, conta) leem os tokens globais. Aqui
+   * eles são reescritos SÓ dentro da gaveta: moldura vira pílula, fio some. */
+  --ck-radius-frame: var(--ck-radius-pill);
+  --ck-edge-functional: transparent;
+  --ck-edge-light: transparent;
+  --ck-surface-composer: var(--ck-gv-pilula);
+
+  background: var(--ck-gv-fundo);
+}
+
+/* Botão-ação dos blocos herdados = pílula cinza-escura (ref.: Delete/Edit). */
+.ck-gv button.ck-veil.border,
+.ck-gv .ck-gv-pilula {
+  background-color: var(--ck-gv-pilula);
+  font-weight: 500;
+}
+.ck-gv button.ck-veil.border:hover,
+.ck-gv .ck-gv-pilula:hover {
+  background-color: var(--ck-gv-pilula-hover);
+}
+
+/* O halo do herói: dois anéis laranja que se apagam pra fora. */
+.ck-gv-halo {
+  background:
+    radial-gradient(circle, transparent 54%, var(--ck-gv-halo-1) 55%, transparent 70%),
+    radial-gradient(circle, transparent 68%, var(--ck-gv-halo-2) 69%, transparent 100%);
+}
+.ck-gv-heroi {
+  background: linear-gradient(160deg, var(--ck-gv-acento), var(--ck-gv-acento-escuro));
+  box-shadow: 0 0 0 4px var(--ck-gv-fundo);
+}
+.ck-gv-heroi[data-fora='true'] {
+  background: var(--ck-gv-pilula);
+}
+
+/* Interruptor: trilho + botão; azul só quando ligado. */
+.ck-gv-trilho {
+  background: var(--ck-gv-trilho);
+  transition: background-color var(--ck-dur-fast) var(--ck-ease);
+}
+.ck-gv-trilho[data-ligado='true'] { background: var(--ck-gv-ativo); }
+.ck-gv-trilho[data-armado='true'] { background: var(--ck-state-attention); }
+.ck-gv-botao-trilho {
+  background: var(--ck-gv-fundo);
+  transition: transform var(--ck-dur-enter) var(--ck-mola);
+}
+.ck-gv-trilho[data-ligado='true'] .ck-gv-botao-trilho { transform: translateX(18px); }
+
+.ck-gv-tracejado {
+  border: 1.5px dashed var(--ck-gv-tracejado);
+}
+.ck-gv-tracejado:hover { border-color: var(--ck-text-tertiary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-gv-botao-trilho { transition: none; }
+}
