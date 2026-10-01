@@ -1,0 +1,323 @@
+# Cockpit v2 — Conversas: retomar conversa antiga (PLANO GUIA)
+
+> **Chegou aqui depois de um `/clear`? Este arquivo é o ponto de retomada.** Leia o banner, a
+> seção "Mecânica das cadeiras" e **só a primeira fase aberta** — as outras não entram no seu
+> contexto. A pesquisa de referência está em `pesquisa.md` (Canário, 01/10); consultar por seção,
+> nunca inteira.
+>
+> **ESTADO (01/10/2026 00h10 BRT — atualizar em 2 linhas ao fechar cada fase):** plano escrito e
+> aprovado no desenho. Nenhuma fase iniciada. Próxima: **F0**.
+
+## O pedido
+
+No card de cada agente, uma lista das conversas do Claude Code dele, para retomar uma conversa
+antiga na mesma linha e continuar um projeto que ficou parado. É o `/resume` do CC com cara de
+cockpit, no celular. Pedido do Rica em 30/09–01/10/2026.
+
+## Decisões (não reabrir sem fato novo)
+
+1. **Lista por agente**: últimos 30 dias, mais as ⭐ de qualquer idade. A mais recente em cima,
+   com tempo relativo na linha ("3h", "ontem").
+2. **Filtro**: *Todas*, *⭐ Especiais* e *⚠️ Com pendência*, mais busca por título e nota. Conversa
+   com até 2 turnos fica escondida.
+3. **Estacionar**: antes de sair de uma conversa, o próprio agente escreve um título e uma nota
+   de onde parou e qual é o próximo passo. Isso vale para **Nova conversa** e para **Retomar**.
+4. **Nova conversa** = estacionar e depois `/clear <título>`. O CC nativo dá esse nome à conversa
+   que **sai**.
+5. **Retomar troca a conversa da linha**: estaciona a atual, derruba a linha (o que rodava em
+   segundo plano morre, por decisão do Rica) e sobe de novo com `--resume <id>`.
+6. **Briefing de retorno**: ao retomar, o agente recebe os commits que mexeram nos arquivos
+   daquela conversa desde a última atividade dela, mais os arquivos que continuam sem commit.
+7. **Selos na lista**: ⚠️ conversa que deixou arquivo sem commit; 🔒 conversa aberta em outro
+   lugar, que fica **bloqueada**, sem botão de retomar nem de excluir.
+8. **Excluir** manda o arquivo para a lixeira com `gio trash`, depois de confirmar.
+9. **Retenção** de 365 dias no CC (`cleanupPeriodDays` em `~/.claude/settings.json` da VPS,
+   aplicado em 01/10). A tela continua mostrando só 30 dias, mais as ⭐.
+
+**Fora do escopo:** retomar conversa pesada de forma compactada; conversas de Codex e opencode;
+persona que mudou desde a conversa; lista geral da frota.
+
+## O que já existe (mapa de 01/10)
+
+- **Front vivo** em `apps/cockpit`, produção na 3008 (`:3446`) e API na 8002. `apps/web` é legado.
+- **Gaveta do agente**: `GavetaPainel` (`components/shell/superficie-otimista.tsx:309`),
+  `Painel` (`app/agente/[slug]/page.tsx:73`) e `VistaDaGaveta`
+  (`components/shell/vista-da-gaveta.tsx:23`). Hoje `?painel=mcps` abre os MCPs, e
+  `?painel=conversas` entra do mesmo jeito.
+- **Botões** em `components/shell/bloco-de-acoes.tsx`; Ligar em `:453` e `:574`. O cliente HTTP
+  fica em `packages/cockpit-core/src/api.ts`.
+- **Ligar**: `agents.py:4624` chama `tmux_driver.boot_agent` (`tmux_driver.py:1956-2024`), que
+  passa `systemd-run … --setenv=FROTA_FLAGS_EXTRA=--continue` (`:1994`) para o `subir-frota.sh`.
+  O script repassa a variável crua para o `claude`. Para retomar, basta parametrizar esse
+  `--setenv`, validando o id com `_SESSION_ID_PATTERN` (`:490`).
+- **Enviar texto** para o agente: `POST /input` (`agents.py:3113`). Interromper:
+  `/interromper` (`:4465`). Desligar: `/desligar` (`:4573`).
+- **Conversa atual de cada agente**: `db.latest_jsonl_session_id` (`db/store.py:1586`),
+  alimentado pelo `orchestrator/jsonl_watcher.py` (mapa slug ↔ pasta em `:723`). Caminho do
+  JSONL: `_claude_resume_jsonl_path` (`tmux_driver.py:1021`).
+- **Banco**: `db/schema.sql` com `CREATE TABLE IF NOT EXISTS`, aplicado por `_apply_schema`
+  (`store.py:331`). Coluna nova entra por `_add_column_if_missing` (`:391`).
+- **Testes**: API com `uv run pytest` (molde: `test_agent_input.py`). Front com `node --test`
+  pelo `corepack pnpm --filter @grupo_borges/cockpit test`. O script lista as pastas uma a uma,
+  então pasta nova tem que ser acrescentada no `package.json`. Depois roda o `type-check`.
+
+## Armadilhas conhecidas — cada fase confere as que tocam nela
+
+- **O boot dá o nome do agente a toda conversa**, com `/rename` via `renomear_via_api`
+  (`ze_claude/ze-shared/scripts/subir-frota.sh:143-157`, chamadas em `:267`, `:658`, `:690` e
+  `:1064`). Num Retomar, isso **sobrescreve** o título da conversa retomada. Corrigido na F4.
+- **`/clear <nome>` tem sentido trocado no cockpit.** O CC nativo dá o nome à conversa **que
+  sai**. O `_rename_apos_clear` (`agents.py:3085`) dá o mesmo nome à conversa **nova**. Corrigido
+  na F5.
+- **O título gravado é quase sempre o nome do agente.** Medido em 01/10: a última `custom-title`
+  das conversas do Pavan é "Pavan" ou "José Pavan". A lista trata título igual ao nome do agente
+  como ausente.
+- **Diálogo "Resume from summary"**: conversa com mais de 100 mil tokens e parada há mais de uma
+  hora abre uma pergunta antes de continuar, e numa linha tmux ninguém responde. Medido na F1.
+- **O `/relaunch` atual não serve.** Ele só retoma a conversa corrente e recusa qualquer outra
+  (`tmux_driver.py:1478`).
+- **JSONL não é formato documentado.** Ler só o começo e o fim do arquivo, com cache por `mtime`,
+  e testar contra amostras gravadas.
+- **Mensagem enviada no meio de um turno chega, mas não vira turno.** Estacionar só com o agente
+  ocioso (`ze-shared/memory/shared_mensagem_no_meio_do_turno_nao_vira_turno.md`).
+- **`subir-frota.sh`**: editar com um boot em andamento corrompe a execução, e a edição atômica
+  perde o `+x` (MURAL).
+
+## Mecânica das cadeiras (Omarchy)
+
+- **Máquina**: o notebook no Omarchy, `ssh ricardo@100.116.209.95` (nó `omarchy`, porta 22).
+  16 núcleos, 23 GB, CC 2.1.284 (a VPS está no 2.1.286), `gh` logado como `Rica-VibeCoding`.
+  O nó `note-ricardo` é o Windows da mesma máquina: com ele, o note parece desligado.
+- **Repositório**: `~/Projetos/grupo_borges`, clonado na F0. O clone é só das cadeiras.
+- **Casa** `tmux -L conversas`, com até três sessões:
+  - `api`: Claude Code com `claude-opus-5-5`;
+  - `tela`: Claude Code com `claude-opus-5-5`, carregando a skill `frontend-design`;
+  - `teste`: Claude Code com DeepSeek, pela função `deep`.
+
+  Para subir uma sessão: `tmux -L conversas new-session -d -s api -c ~/Projetos/grupo_borges
+  'bash -ic "cc --model claude-opus-5-5"'`. O `bash -ic` carrega as funções do
+  `casas-omarchy.sh`.
+- **Duas cadeiras Opus no máximo ao mesmo tempo**, porque a conta é uma só.
+- **Despacho**:
+  1. Escrever o briefing em `docs/conversas/briefings/fN-<nome>.md` (ele se basta sozinho),
+     commitar e dar push na VPS.
+  2. No Omarchy, rodar `git pull --ff-only`.
+  3. Mandar à cadeira uma linha só, sem acento, com `send-keys -l` e o Enter num comando
+     separado.
+- **Captura**: `ssh ricardo@100.116.209.95 'tmux -L conversas capture-pane -p -t api' | tail -15`.
+  Conferir a barra de contexto em toda captura.
+- **A cadeira não commita.** Ela escreve o relato em `docs/conversas/relatos/fN.md`, com os
+  números dos testes e o `type-check`, em até 15 linhas. Prova de tela e artefato vão para
+  `/tmp`, fora do repositório.
+- **Levar o diff do Omarchy para a VPS**:
+  1. Puxar o patch: `ssh ricardo@100.116.209.95 'cd ~/Projetos/grupo_borges && git add -N . && git diff --binary' > /tmp/fN.patch`
+  2. Na VPS: `git apply --check` e depois `git apply`.
+  3. Revisar o diff.
+  4. `git commit -- <paths>` e push.
+  5. No Omarchy: `git fetch && git reset --hard origin/main && git clean -fd`.
+- **Na VPS só se aplica, revisa e commita.** Teste e `type-check` rodam no Omarchy, para poupar
+  a RAM da VPS. As exceções são as medições que precisam da frota e a ponta a ponta da F11.
+- **Entre fases a cadeira recebe `/clear`.** No meio de uma fase, passou de 30%: `/compact`.
+- **O orquestrador** lê só a fase em curso, o relato e o diff. Ao fechar a fase, atualiza o
+  banner e commita. Passou de 25%, `/clear`: o banner devolve o fio.
+- **Publicar**:
+  - API: restart da `cockpit-api.service`. Afeta o feed de todos, então só em janela e sem
+    turno longo de agente em andamento.
+  - Tela: `next build` e restart da `cockpit-v2.service`. Isso força a recarga no iPhone.
+  - Link para o Rica só depois do APROVADO da cadeira `teste`.
+
+## Contrato da API (fechado na F2; F3, F5–F7 e as fases de tela seguem este desenho)
+
+Base: `/api/agents/{slug}/conversas`.
+
+- `GET ?filtro=todas|estrela|pendencia&q=<texto>&curtas=0|1` devolve
+  `{suportado, conversas[], escondidas_curtas}`.
+  - Cada item da lista: `id`, `titulo`, `titulo_origem`, `nota`, `atualizada_em`, `turnos`,
+    `bytes`, `estrela`, `atual`, `bloqueada`, `pendencia` (número de arquivos sem commit, ou
+    `null` até a F7).
+  - `titulo_origem` vale `estacionada`, `custom`, `ai`, `prompt` ou `primeira`.
+  - `suportado` é `false` para motor que não é CC; nesse caso a lista vem vazia.
+- **Ordem de queda do título**: título estacionado → `custom-title` diferente do nome do agente →
+  `ai-title` → `last-prompt` → primeira mensagem do usuário. Nunca vazio.
+- `POST /{id}/estrela {valor}` e `DELETE /{id}` (que manda para a lixeira). Responde 409 se a
+  conversa for a atual ou estiver 🔒.
+- `POST /estacionar {titulo, nota}`: chamado **pelo agente**. Grava os dois para a conversa
+  atual dele.
+- `POST /nova {forcar}` e `POST /{id}/retomar {forcar}`:
+  - Resposta síncrona com teto de 90 s. Se o cliente cair, a operação continua no servidor.
+  - Agente no meio de um turno: 409 `ocupado`. Com `forcar`, interrompe e segue sem a nota.
+- `GET /{id}/briefing`: só devolve texto para uma conversa que **acabou de ser retomada pelo
+  cockpit**. A marca vale 10 minutos e é consumida uma vez. Fora disso, vazio.
+
+Estado próprio numa tabela nova, `conversa_meta (slug, session_id, titulo, nota, estrela,
+estacionada_em, retomada_em)`.
+
+---
+
+## F0 — Bancada (orquestrador, sem cadeira)
+
+- **Entrega**:
+  - Clone em `~/Projetos/grupo_borges`.
+  - `uv sync --extra dev` em `apps/api` e `corepack pnpm install`.
+  - Base verde no Omarchy: `pytest`, mais `test` e `type-check` do cockpit, com os números
+    anotados no banner.
+  - Casa `conversas` no ar, com a sessão `api`.
+- **Pronto**: os três comandos verdes, ou as falhas que já existiam anotadas como base.
+- **Tamanho**: 15 minutos de máquina.
+
+## F1 — Medições (cadeira `api`, sem código de produto)
+
+Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e sem mexer no repo:
+
+- **M1 — o diálogo de retomada.**
+  - `--resume <id>` numa conversa com mais de 100 mil tokens e parada há mais de 1 hora, dentro
+    de um tmux: o diálogo aparece? Quais teclas escolhem "retomar inteira"?
+  - O "Don't ask me again" grava em qual arquivo e em qual chave? (diff do `~/.claude.json`
+    antes e depois)
+  - Se o Omarchy não tiver conversa desse tamanho, o orquestrador mede na VPS, num socket
+    `-L sonda`, sem mandar mensagem. Se usar `--fork-session`, confirmar que o fork não muda o
+    diálogo, e mandar o JSONL do fork para a lixeira no fim.
+- **M2 — `/clear <nome>`.** Qual JSONL recebe a `custom-title`? A conversa nova nasce sem nome?
+- **M3 — gancho `SessionStart` com `source: resume`.**
+  - Ele dispara no `claude --resume <id>` da largada?
+  - O `additionalContext` chega ao modelo? (Pedir ao modelo que repita uma palavra-senha.)
+  - Ele também dispara com `--continue`?
+- **Pronto**: relato com os comandos e as saídas. Diálogo e teclas descritos com captura de tela.
+- **Tamanho**: pequeno. Só leitura e sondas.
+
+## F2 — API: a lista (cadeira `api`)
+
+- **Entrega**:
+  - `services/conversas.py`, que lê a pasta do agente (cwd → pasta no `~/.claude/projects`),
+    só o começo e o fim de cada JSONL, com cache por `mtime`.
+  - Títulos pela ordem de queda do contrato.
+  - Contagem de turnos.
+  - Janela de 30 dias mais as ⭐.
+  - Filtro, busca e `curtas`.
+  - A tabela `conversa_meta`.
+  - A rota `GET`.
+  - `atual` e `bloqueada`: a conversa está 🔒 se for a atual de **outra** linha viva, ou se o
+    JSONL foi escrito nos últimos 2 minutos sem ser a atual desta linha.
+- **Pronto**:
+  - Testes com amostras de JSONL em `tests/fixtures/conversas/`: título igual ao nome do agente
+    cai para o próximo, arquivo truncado não derruba a lista, e `curtas` esconde as de até 2
+    turnos.
+  - `pytest` verde.
+- **Fora**: escrita de qualquer tipo, selo ⚠️ e tela.
+- **Tamanho**: cerca de 250 linhas, mais os testes.
+
+## F3 — API: estrela e excluir (cadeira `api`, depois de `/clear`)
+
+- **Entrega**: `POST estrela` e `DELETE` com `gio trash`. O id passa pelo
+  `_SESSION_ID_PATTERN` e o caminho resolvido tem de ficar dentro da pasta do agente. Responde
+  409 para a conversa atual ou 🔒.
+- **Pronto**:
+  - Testes: id malicioso (`../`), conversa atual, 🔒 e a estrela sobrevivendo a 30 dias.
+  - **O orquestrador publica a API**, em janela, e mede a lista real do Pavan (172 arquivos)
+    com `curl`: tempo a frio e com cache. Se passar de 1 s com cache, volta para a `api`.
+- **Tamanho**: cerca de 100 linhas.
+
+## F4 — Boot respeita a conversa retomada (orquestrador, repo `ze_claude`)
+
+- **Entrega**: o `subir-frota.sh` **não** chama `renomear_via_api` quando o `FROTA_FLAGS_EXTRA`
+  traz `--resume`. São as quatro chamadas, em `:267`, `:658`, `:690` e `:1064`.
+- **Antes de salvar**:
+  - `journalctl --user -u 'cockpit-ligar-*'` sem boot em andamento.
+  - Escrever num arquivo novo e mover por cima.
+  - Conferir o `+x` no `git diff --cached --stat`.
+- **Pronto**: o Ligar comum (com `--continue`) continua nomeando, provado no canarinho. O
+  `--resume` não nomeia, provado com `FROTA_FLAGS_EXTRA` à mão no canarinho.
+- **Tamanho**: menos de 20 linhas.
+
+## F5 — API: estacionar e Nova conversa (cadeira `api`)
+
+- **Entrega**:
+  - `POST /estacionar`.
+  - `POST /nova`, com este fluxo:
+    1. O agente está ocioso? Se não estiver, 409, ou interromper se vier `forcar`.
+    2. Mandar o pedido de estacionar.
+    3. Esperar o `POST /estacionar` por até 60 s.
+    4. Esperar o agente ficar ocioso.
+    5. Mandar `/clear <título>`.
+  - A mensagem de estacionar é um texto fixo, com o `curl` pronto: título de até 6 palavras e
+    nota de até 200 caracteres (onde parou e o próximo passo).
+  - Se o agente não responder no prazo, segue sem nota, com o título de queda.
+  - **Corrigir o `_rename_apos_clear`**: depois de `/clear <título>`, a conversa nova recebe o
+    **nome do agente**, não o título. Antes de mudar, ler o `git log -S _rename_apos_clear` para
+    não quebrar o rodapé do card (`RodapeDeCota.sessao`).
+- **Pronto**: testes com tmux e relógio falsos para ocioso, ocupado, `forcar`, agente que não
+  responde e título com aspas ou acento no `/clear`.
+- **Tamanho**: cerca de 200 linhas.
+
+## F6 — API: Retomar (cadeira `api`, depois de `/clear`)
+
+- **Entrega**: `POST /{id}/retomar`, com este fluxo:
+  1. Validar: a conversa é deste agente e não está 🔒.
+  2. Estacionar a atual, com o fluxo da F5.
+  3. `/desligar`.
+  4. `boot_agent` com flags parametrizadas (`--resume <id>` no lugar de `--continue`).
+  5. Gravar `retomada_em`.
+  6. Esperar a linha ficar pronta e tratar o diálogo do jeito que a F1 provou.
+- **Pronto**:
+  - Testes: id de outro agente, 🔒, agente ocupado, falha no boot (a linha não pode ficar
+    morta sem aviso: voltar com `--continue` e responder erro) e diálogo detectado.
+  - O orquestrador prova no canarinho pela API publicada: retomar a conversa A, depois a B,
+    depois a A de novo.
+- **Tamanho**: cerca de 200 linhas.
+
+## F7 — Briefing de retorno e selo ⚠️ (cadeira `api`)
+
+- **Entrega**:
+  - Uma função que lista os arquivos mexidos pela conversa, a partir das entradas
+    `file-history-snapshot` do JSONL.
+  - Com ela, `git log --since=<última atividade>` e `git status` sobre esses caminhos, repo por
+    repo.
+  - O campo `pendencia` na lista, com cache.
+  - `GET /{id}/briefing`, que devolve no máximo 25 linhas.
+  - O script `apps/api/scripts/briefing-retorno.sh`, que lê o JSON do gancho e chama a rota em
+    até 3 s. Responde com `additionalContext`, e fica calado se a API cair ou se não houver
+    retomada marcada.
+  - **O orquestrador registra o gancho** `SessionStart` com `matcher: resume` no
+    `~/.claude/settings.json` da VPS.
+- **Pronto**:
+  - Testes: arquivo criado do zero não aparece (limitação conhecida, documentada no relato),
+    repo sem mudança devolve vazio, e o `--continue` comum não recebe briefing.
+  - O orquestrador prova no canarinho que o agente cita o briefing depois de retomar.
+- **Tamanho**: cerca de 200 linhas.
+
+## F8 — Tela: direções visuais (cadeira `tela`; pode correr junto de F2 e F3)
+
+- **Entrega**: 2 ou 3 direções da gaveta em captura de iPhone, com dados falsos que seguem o
+  contrato. Precisam mostrar: lista com tempo relativo, título e nota; filtros; busca; os selos
+  ⭐ ⚠️ 🔒; os botões Retomar, Nova conversa e Excluir; e a confirmação de Retomar ("vai
+  interromper o que está rodando").
+- **Pronto**: o Rica escolhe a direção. **Nenhum código de produto antes disso.**
+
+## F9 — Tela: a gaveta de leitura (cadeira `tela`)
+
+- **Entrega**:
+  - `?painel=conversas` na `VistaDaGaveta`, com a entrada pelo `BlocoDeAcoes`.
+  - O cliente da lista no `cockpit-core/api.ts`.
+  - Filtros, busca, tempo relativo e os selos, na direção aprovada.
+  - Pasta nova incluída no script `test`.
+- **Pronto**: `test` e `type-check` verdes, e a cadeira `teste` aprova contra a API publicada.
+- **Fora**: botões de ação.
+
+## F10 — Tela: as ações (cadeira `tela`, depois de `/clear`)
+
+- **Entrega**:
+  - Retomar, com confirmação e com o caso "ocupado → interromper e trocar".
+  - Nova conversa.
+  - ⭐ e 🗑️ (com confirmação).
+  - Estado de espera de até 90 s ("estacionando…", "religando…").
+  - Erro legível quando a operação falhar.
+- **Pronto**: `test` e `type-check` verdes, e a cadeira `teste` aprova o fluxo inteiro no
+  canarinho.
+
+## F11 — Publicar e conferir
+
+- **Entrega**: o orquestrador publica a tela (build e restart da 3008) e a cadeira `teste` roda o
+  caminho completo na `:3446` com o canarinho: Nova conversa → nota aparece → Retomar a antiga →
+  briefing citado → ⭐ → excluir uma conversa curta.
+- **Pronto**: APROVADO da `teste`, o link vai para o Rica, e ele confere no iPhone com uma
+  conversa real dele.
