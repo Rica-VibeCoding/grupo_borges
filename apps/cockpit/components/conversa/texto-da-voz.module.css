@@ -3,6 +3,7 @@
 
 /* ── A legenda ───────────────────────────────────────────────────────── */
 .legenda {
+  position: relative; /* o `popLayout` da Motion tira a fala que sai com `absolute` daqui */
   display: grid;
   gap: var(--ck-space-2);
   width: 100%;
