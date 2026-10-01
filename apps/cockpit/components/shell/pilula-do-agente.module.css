@@ -42,13 +42,6 @@
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
-/* Na gaveta, a pílula é uma camada sobre o cartão-mãe (§8): sem vidro, sem fio. */
-.pilula[data-lugar='gaveta'] .fundo {
-  border-color: transparent;
-  background: var(--ck-gv-camada);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
 .moldaPilula {
   position: relative;
   display: grid;

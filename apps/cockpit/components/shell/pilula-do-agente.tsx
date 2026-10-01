@@ -35,8 +35,8 @@ function Tempo({ segundos }: { segundos?: number }) {
  * do estado e o fundo que estica com mola quando a palavra muda.
  *
  * `cena` só liga o movimento contínuo (ondas falando, barras ouvindo), que é da tela de voz; sem
- * ela a pílula fica parada e só a cor diz o estado. `lugar` troca o material: vidro sobre a esfera
- * na voz (foto escurecida), camada da gaveta no painel. `selo` mora sobre a foto (o "!" da gaveta).
+ * ela a pílula fica parada e só a cor diz o estado. O fundo (vidro escuro) é o mesmo em todo lugar;
+ * `lugar` só escurece a foto na voz, para não brigar com a esfera. `selo` mora sobre a foto (o "!").
  */
 export function PilulaDoAgente({
   slug,

@@ -185,7 +185,7 @@ largura toda. Não há herói.
 
 **Pílula do agente** (`shell/pilula-do-agente.tsx`) — a identidade do agente em qualquer tela: foto com
 aro no tom de estado, primeiro nome, palavra do estado; o fundo estica com mola quando a palavra muda.
-Geometria única; só a voz anima (ondas falando, barras ouvindo). Palavra e tom saem de uma régua só
+Geometria e fundo (o vidro escuro) únicos; só a voz anima (ondas falando, barras ouvindo). Palavra e tom saem de uma régua só
 (`shell/estado-da-pilula.ts`), a mesma da pílula da voz, da gaveta e do rótulo do pulso: a cena da voz
 em curso vence; sem ela, a frota no vocabulário da voz (trabalhando · na linha · esperando você · desligado).
 
