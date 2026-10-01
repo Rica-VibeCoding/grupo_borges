@@ -389,6 +389,28 @@ cada toque. Ele quer bater o olho e saber o que fazer.
    Medido em 01/10: o `ai-title` do CC existe em 11 de 58 conversas do Pavan e 1 de 28 do Daniel
    (7 dias) — não serve de fonte principal. **Pendência segue só pelo git**, sem LLM.
 
+## Movimento da rodada 2 (Rica, 01/10: "tudo que puder, use ela, inclusive carregando")
+
+A casa já tem a stack: **Motion** (`motion/react` 12.43, em `apps/cockpit/package.json`), os tokens
+`--ck-dur-*`, `--ck-ease*`, `--ck-mola` e a entrada `.ck-surge` (regras na §5 de
+`docs/cockpit-v2-estetica.md`). Hoje ela vive em 4 arquivos só (pílula, composer, anexo, voz).
+F15 e F16 usam ela em todo momento abaixo, sem keyframe próprio e sem lib nova:
+
+- **Carregando**: lista e leitura entram com linhas-esqueleto pulsando (opacity), trocadas pelo
+  conteúdo num fade, sem salto de altura.
+- **Lista → leitura → lista**: a leitura surge por `.ck-surge` e o título da linha tocada vira o
+  título da leitura (`layoutId`). Voltar desfaz o mesmo gesto.
+- **Filtros**: o fundo do segmento ativo desliza entre *Todas* / ⭐ / *Concluídas* (`layoutId`).
+- **Linha que sai** (Concluída, 🗑, ⭐ no filtro ⭐): `AnimatePresence` com saída em opacity e as
+  de baixo sobem por `layout`.
+- **⭐ marcada**: um pulso de escala com `--ck-mola`.
+- **Agente ocupado**: o botão passa de claro a âmbar em cor+opacity, sem pular de tamanho.
+- **Espera da troca**: barra **indeterminada** (a API não dá porcentagem), por transform.
+- **Conversa nova**: "Voltar pra anterior" entra por `.ck-surge` e sai em fade no primeiro turno.
+- **Nova conversa na gaveta**: toque com `--ck-dur-fast`.
+- Regras que não mudam: só `transform` e `opacity`; `MotionConfig reducedMotion="user"`;
+  `layoutDependency` em todo `layout`; nada anima o feed durante o stream.
+
 ## F14 — API da rodada 2 (cadeira `api`)
 
 - **Entrega**:
@@ -406,6 +428,7 @@ cada toque. Ele quer bater o olho e saber o que fazer.
 
 - **Antes do código:** protótipo do Histórico (lista enxuta + leitura + Continuar esta) mandado
   ao Rica em print de celular. Só codar com o aval dele.
+- **Protótipo aprovado pelo Rica em 01/10** (prints em `/tmp/f15/` na VPS). Movimento: seção acima.
 - **Entrega**: lista só título e tempo; toque abre a leitura; Continuar esta, ⭐, Concluída,
   Renomear e 🗑️ dentro da leitura; confirmação de uma linha só no caso ocupado; cartão de 0 turnos
   some; espera em barra.
