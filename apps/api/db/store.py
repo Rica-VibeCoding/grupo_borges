@@ -379,6 +379,9 @@ class GrupoBorgesDB:
                 self._add_column_if_missing(conn, "tasks", col, definition)
 
             self._add_column_if_missing(conn, "agents", "can_review", "TEXT")
+            # F7 das conversas: briefing de retorno.
+            self._add_column_if_missing(conn, "conversa_meta", "atividade_em", "INTEGER")
+            self._add_column_if_missing(conn, "conversa_meta", "briefing_em", "INTEGER")
             self._add_column_if_missing(conn, "agents", "model_family", "TEXT")
 
             if self._add_column_if_missing(conn, "task_events", "content_hash", "TEXT"):
@@ -1657,19 +1660,60 @@ class GrupoBorgesDB:
                 (agent_slug, session_id, titulo, nota, em_ms),
             )
 
-    async def marcar_retomada(self, agent_slug: str, session_id: str, em_ms: int) -> None:
-        await asyncio.to_thread(self._marcar_retomada, agent_slug, session_id, em_ms)
+    async def marcar_retomada(
+        self, agent_slug: str, session_id: str, em_ms: int, atividade_ms: int | None = None
+    ) -> None:
+        await asyncio.to_thread(
+            self._marcar_retomada, agent_slug, session_id, em_ms, atividade_ms
+        )
 
-    def _marcar_retomada(self, agent_slug: str, session_id: str, em_ms: int) -> None:
-        """Grava a `retomada_em`; título, nota e ⭐ ficam como estavam."""
+    def _marcar_retomada(
+        self, agent_slug: str, session_id: str, em_ms: int, atividade_ms: int | None
+    ) -> None:
+        """Grava a `retomada_em` e a última atividade de antes dela; o resto fica."""
         with self._connect() as conn, conn:
             conn.execute(
                 """
-                INSERT INTO conversa_meta (slug, session_id, retomada_em) VALUES (?, ?, ?)
-                ON CONFLICT(slug, session_id) DO UPDATE SET retomada_em = excluded.retomada_em
+                INSERT INTO conversa_meta (slug, session_id, retomada_em, atividade_em)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(slug, session_id) DO UPDATE SET
+                    retomada_em = excluded.retomada_em, atividade_em = excluded.atividade_em
                 """,
-                (agent_slug, session_id, em_ms),
+                (agent_slug, session_id, em_ms, atividade_ms),
             )
+
+    async def consumir_retomada(
+        self, agent_slug: str, session_id: str, agora_ms: int, validade_ms: int
+    ) -> dict[str, Any] | None:
+        return await asyncio.to_thread(
+            self._consumir_retomada, agent_slug, session_id, agora_ms, validade_ms
+        )
+
+    def _consumir_retomada(
+        self, agent_slug: str, session_id: str, agora_ms: int, validade_ms: int
+    ) -> dict[str, Any] | None:
+        """A retomada pelo cockpit que ainda vale para o briefing, gasta numa vez só.
+
+        Vale se é de até `validade_ms` atrás e nenhum briefing saiu depois dela.
+        O `UPDATE` condicional é a trava: duas largadas juntas, uma leva.
+        """
+        with self._connect() as conn, conn:
+            feito = conn.execute(
+                """
+                UPDATE conversa_meta SET briefing_em = ?
+                WHERE slug = ? AND session_id = ? AND retomada_em >= ?
+                  AND (briefing_em IS NULL OR briefing_em < retomada_em)
+                """,
+                (agora_ms, agent_slug, session_id, agora_ms - validade_ms),
+            )
+            if feito.rowcount != 1:
+                return None
+            linha = conn.execute(
+                "SELECT retomada_em, atividade_em FROM conversa_meta "
+                "WHERE slug = ? AND session_id = ?",
+                (agent_slug, session_id),
+            ).fetchone()
+            return dict(linha) if linha else None
 
     async def apagar_conversa_meta(self, agent_slug: str, session_id: str) -> None:
         await asyncio.to_thread(self._apagar_conversa_meta, agent_slug, session_id)

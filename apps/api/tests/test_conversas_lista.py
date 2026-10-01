@@ -213,8 +213,10 @@ def test_ordem_da_mais_recente_para_a_mais_antiga(bancada) -> None:
     assert _get(bancada)["conversas"][0]["id"] == ID_PROMPT
 
 
-def test_pendencia_fica_null_e_filtro_pendencia_vem_vazio(bancada) -> None:
-    assert all(c["pendencia"] is None for c in _get(bancada)["conversas"])
+def test_sem_arquivo_mexido_pendencia_zero_e_filtro_pendencia_vem_vazio(bancada) -> None:
+    # F7: as sondas não mexeram em arquivo de repositório (o caso com git está
+    # em `test_conversas_briefing`).
+    assert all(c["pendencia"] == 0 for c in _get(bancada)["conversas"])
     assert _get(bancada, filtro="pendencia")["conversas"] == []
 
 

@@ -295,5 +295,7 @@ CREATE TABLE IF NOT EXISTS conversa_meta (
     estrela         INTEGER NOT NULL DEFAULT 0,
     estacionada_em  INTEGER,                                -- epoch ms
     retomada_em     INTEGER,                                -- epoch ms
+    atividade_em    INTEGER,  -- epoch ms: mtime do JSONL antes do --resume (F7)
+    briefing_em     INTEGER,  -- epoch ms: briefing entregue; consome a retomada
     PRIMARY KEY (slug, session_id)
 );

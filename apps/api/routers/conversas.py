@@ -2,7 +2,8 @@
 
 Contrato em `docs/conversas/PLANO.md` ("Contrato da API"). F2: a lista; F3:
 estrela e excluir; F5: estacionar, Nova conversa, `/operacao` e o aquecimento
-do cache da lista na subida da API; F6: Retomar.
+do cache da lista na subida da API; F6: Retomar; F7: `pendencia` e briefing
+de retorno.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from config import get_settings
 from db.store import GrupoBorgesDB
 from orchestrator.jsonl_watcher import _mapear_por_encoded, encoded_cwd
 from routers.agents import _esta_ocupado, _get_agent_or_404
-from services import conversas, desligamento_deliberado, tmux_driver
+from services import briefing_retorno, conversas, desligamento_deliberado, tmux_driver
 from services import operacao_conversa as operacao
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,7 @@ async def get_conversas(
         atuais_de_outras=atuais_de_outras,
         agora=time.time(),
         deixada=operacao.deixada(slug),
+        cwd_padrao=agent.get("workspace_path"),
     )
     visiveis, escondidas = conversas.filtrar(lista, filtro=filtro, q=q, curtas=bool(curtas))
     return ConversasResposta(
@@ -556,8 +558,11 @@ async def _conduzir_retomar(
                     "conversas: retomar em %s com scopes que resistiram: %s",
                     slug, desligado["scopes_resistiram"],
                 )
-            # Antes do boot: o gancho do briefing (F7) roda na largada e lê esta marca.
-            await db.marcar_retomada(slug, alvo, int(time.time() * 1000))
+            # Antes do boot: o gancho do briefing (F7) roda na largada e lê esta
+            # marca. A última atividade sai do mtime de agora: o `--resume` mexe nele.
+            achada = conversas.localizar(pasta, alvo)
+            atividade_ms = achada[1].st_mtime_ns // 1_000_000 if achada else None
+            await db.marcar_retomada(slug, alvo, int(time.time() * 1000), atividade_ms)
             motivo = await _subir_e_esperar(tmux_session, pasta, alvo)
             if motivo is None:
                 operacao.registrar_troca(slug, sessao_antes, alvo)
@@ -664,6 +669,61 @@ async def _responder(slug: str, op: operacao.Operacao, tarefa: asyncio.Task):
     return corpo
 
 
+# ---------- F7: briefing de retorno ----------
+
+#: Por quanto tempo depois do Retomar a largada ainda recebe o briefing.
+VALIDADE_BRIEFING_MS = 10 * 60 * 1000
+
+
+class BriefingResposta(BaseModel):
+    briefing: str  # vazio = nada a dizer (não foi retomada agora, ou nada mudou)
+
+
+async def _agente_da_linha(request: Request, slug: str) -> dict:
+    """O agente pelo slug ou pela sessão tmux — o gancho só sabe a sessão (`#S`).
+
+    São diferentes no Canário: slug `canarinho`, sessão `canario`.
+    """
+    db: GrupoBorgesDB = request.app.state.db
+    agent = await db.get_agent(slug)
+    if agent is None:
+        agent = next((a for a in await db.list_agents() if a.get("tmux_session") == slug), None)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Agent {slug} não encontrado")
+    return agent
+
+
+@router.get("/{slug}/conversas/{session_id}/briefing", response_model=BriefingResposta)
+async def get_briefing(request: Request, slug: str, session_id: str) -> BriefingResposta:
+    """Chamado pelo gancho `SessionStart` (`scripts/briefing-retorno.sh`).
+
+    Só fala com a conversa que o cockpit acabou de retomar: a `retomada_em`
+    vale 10 min e é gasta na primeira chamada, saia texto ou não. `--continue`
+    do Ligar comum chega igual ao gancho (`source: resume`, F1) e cai aqui sem
+    marca: vazio.
+    """
+    agent = await _agente_da_linha(request, slug)
+    pasta = _pasta_do_agente(request, agent) if _eh_cc(agent) else None
+    achada = conversas.localizar(pasta, session_id) if pasta is not None else None
+    if achada is None:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    db: GrupoBorgesDB = request.app.state.db
+    agora = time.time()
+    marca = await db.consumir_retomada(
+        agent["slug"], session_id, int(agora * 1000), VALIDADE_BRIEFING_MS
+    )
+    if marca is None:
+        return BriefingResposta(briefing="")
+    desde_ms = marca.get("atividade_em") or marca["retomada_em"]
+    arquivos = await asyncio.to_thread(
+        conversas.arquivos_de, *achada, cwd_padrao=agent.get("workspace_path")
+    )
+    texto = await asyncio.to_thread(
+        briefing_retorno.montar, arquivos, desde=desde_ms / 1000, agora=agora
+    )
+    return BriefingResposta(briefing=texto)
+
+
 # ---------- aquecimento do cache da lista ----------
 
 
@@ -694,6 +754,8 @@ async def aquecer_cache(app) -> None:
                 atual=None,
                 atuais_de_outras={},
                 agora=time.time(),
+                cwd_padrao=agent.get("workspace_path"),
+                com_pendencia=False,
             )
             total += len(lista)
         except Exception as exc:  # noqa: BLE001 — aquecer é bônus, nunca derruba

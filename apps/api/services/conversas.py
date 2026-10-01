@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from orchestrator.lifecycle_ruido import eh_interrupcao, eh_ruido_de_lifecycle
+from services import briefing_retorno
 from services.tmux_driver import _SESSION_ID_PATTERN
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,13 @@ _BLOCO_LEITURA = 1 << 20
 _PREFIXO_METADADO = b'{"type":"'
 _MARCA_USER = b'"type":"user"'
 _MARCA_TOOL_RESULT = b'"type":"tool_result"'
+_MARCA_TOOL_USE = b'"type":"tool_use"'
+#: Ferramentas que escrevem arquivo, e a chave do caminho no `input` delas.
+_FERRAMENTAS_DE_EDICAO = {
+    "Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path",
+    "NotebookEdit": "notebook_path",
+}
+_MARCAS_DE_EDICAO = tuple(f'"name":"{nome}"'.encode() for nome in _FERRAMENTAS_DE_EDICAO)
 _SYSTEM_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
 
 
@@ -64,6 +72,9 @@ class _Resumo:
     prompt: str | None = None
     primeira: str | None = None
     turnos: int = 0
+    #: Caminhos que a conversa mexeu, como o JSONL grava (absolutos ou relativos ao cwd).
+    arquivos: set[str] = field(default_factory=set)
+    cwd: str | None = None
 
 
 @dataclass
@@ -164,6 +175,11 @@ def _absorver(resumo: _Resumo, linha: bytes) -> None:
             resumo.ai = _linha_curta(payload.get("aiTitle")) or resumo.ai
         elif tipo == "last-prompt":
             resumo.prompt = _prompt_aproveitavel(payload.get("lastPrompt")) or resumo.prompt
+        elif tipo == "file-history-snapshot":
+            _absorver_snapshot(resumo, payload)
+        return
+    if _MARCA_TOOL_USE in linha and any(m in linha for m in _MARCAS_DE_EDICAO):
+        _absorver_edicoes(resumo, linha)
         return
     if _MARCA_USER not in linha or _MARCA_TOOL_RESULT in linha:
         return
@@ -173,12 +189,52 @@ def _absorver(resumo: _Resumo, linha: bytes) -> None:
         return
     if not isinstance(payload, dict):
         return
+    if resumo.cwd is None and isinstance(payload.get("cwd"), str):
+        resumo.cwd = payload["cwd"]
     texto = _eh_turno(payload)
     if texto is None:
         return
     resumo.turnos += 1
     if resumo.primeira is None:
         resumo.primeira = _linha_curta(texto)
+
+
+def _absorver_snapshot(resumo: _Resumo, payload: dict[str, Any]) -> None:
+    """Os arquivos com backup no `file-history-snapshot` (F7).
+
+    O CC grava um snapshot no começo de cada turno do usuário, com os arquivos
+    que a conversa editou até ali — caminho absoluto, ou relativo ao cwd quando
+    o arquivo mora dentro dele.
+    """
+    snapshot = payload.get("snapshot")
+    backups = snapshot.get("trackedFileBackups") if isinstance(snapshot, dict) else None
+    if isinstance(backups, dict):
+        resumo.arquivos.update(c for c in backups if isinstance(c, str) and c)
+
+
+def _absorver_edicoes(resumo: _Resumo, linha: bytes) -> None:
+    """Os caminhos das chamadas `Write`/`Edit` de uma resposta do assistente.
+
+    O snapshot só registra o que foi editado ATÉ o turno do usuário seguinte:
+    o que o último turno da conversa escreveu não aparece nele. Medido no
+    Omarchy (01/10): 24 de 100 arquivos escritos ficavam de fora assim.
+    """
+    try:
+        payload = json.loads(linha)
+    except ValueError:
+        return
+    message = payload.get("message") if isinstance(payload, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return
+    for bloco in content:
+        if not isinstance(bloco, dict) or bloco.get("type") != "tool_use":
+            continue
+        chave = _FERRAMENTAS_DE_EDICAO.get(bloco.get("name"))
+        entrada = bloco.get("input")
+        caminho = entrada.get(chave) if chave and isinstance(entrada, dict) else None
+        if isinstance(caminho, str) and caminho:
+            resumo.arquivos.add(caminho)
 
 
 def _linhas_completas(caminho: Path, inicio: int) -> Iterator[tuple[bytes, int]]:
@@ -218,7 +274,7 @@ def _resumir(caminho: Path, st: os.stat_result) -> _Resumo:
     ):
         return entrada.resumo
     if entrada is not None and entrada.ino == st.st_ino and st.st_size >= entrada.lido_ate:
-        resumo = replace(entrada.resumo)
+        resumo = replace(entrada.resumo, arquivos=set(entrada.resumo.arquivos))
         inicio = entrada.lido_ate
     else:
         resumo = _Resumo()
@@ -269,6 +325,29 @@ def titulo_de(
         with _trava:
             resumo = _resumir(*achada)
     return _titulo(session_id, resumo, meta, nomes)[0]
+
+
+def _absolutos(resumo: _Resumo, cwd_padrao: str | None) -> list[str]:
+    """Os arquivos da conversa em caminho absoluto; relativo resolve no cwd dela."""
+    base = resumo.cwd or cwd_padrao
+    saida: set[str] = set()
+    for caminho in resumo.arquivos:
+        if os.path.isabs(caminho):
+            saida.add(os.path.normpath(caminho))
+        elif base:
+            saida.add(os.path.normpath(os.path.join(base, caminho)))
+    return sorted(saida)
+
+
+def arquivos_de(caminho: Path, st: os.stat_result, *, cwd_padrao: str | None) -> list[str]:
+    """Os arquivos que a conversa mexeu (snapshot + `Write`/`Edit`), absolutos.
+
+    Arquivo mexido só por Bash (`sed -i`, `cat >`, `git mv`) não aparece: o
+    JSONL não diz qual caminho um comando tocou.
+    """
+    with _trava:
+        resumo = _resumir(caminho, st)
+    return _absolutos(resumo, cwd_padrao)
 
 
 def ids_na_pasta(pasta: Path) -> set[str]:
@@ -420,13 +499,17 @@ def listar(
     atuais_de_outras: dict[str, str],
     agora: float,
     deixada: str | None = None,
+    cwd_padrao: str | None = None,
+    com_pendencia: bool = True,
 ) -> list[dict[str, Any]]:
     """Todas as conversas da janela (30 dias + ⭐), da mais recente para a mais antiga.
 
     Filtro, busca e `curtas` ficam com quem chama (`filtrar`): aqui sai a lista
-    inteira da janela, que é o que o cache precisa ver.
+    inteira da janela, que é o que o cache precisa ver. A `pendencia` (F7) é
+    contada fora da trava do parser: ela chama o `git`.
     """
     conversas: list[dict[str, Any]] = []
+    arquivos: dict[str, tuple[list[str], float]] = {}
     with _trava:
         for session_id, caminho, st in _arquivos(pasta):
             meta = metas.get(session_id)
@@ -434,6 +517,7 @@ def listar(
             if not estrela and agora - st.st_mtime > JANELA_SEGUNDOS:
                 continue
             resumo = _resumir(caminho, st)
+            arquivos[session_id] = (_absolutos(resumo, cwd_padrao), st.st_mtime)
             titulo, origem = _titulo(session_id, resumo, meta, nomes)
             eh_atual = session_id == atual
             bloqueada, bloqueada_por = trava(
@@ -460,6 +544,10 @@ def listar(
                     "pendencia": None,
                 }
             )
+    if com_pendencia:
+        for conversa in conversas:
+            mexidos, ate = arquivos[conversa["id"]]
+            conversa["pendencia"] = briefing_retorno.pendencia(mexidos, ate=ate, agora=agora)
     conversas.sort(key=lambda c: c["atualizada_em"], reverse=True)
     return conversas
 
