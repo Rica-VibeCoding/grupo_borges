@@ -71,7 +71,6 @@ test('cor só no globals.css', () => {
 /** Os que já passavam do teto em 02/10, esperando quem os fatie. Fatiou, sai
  *  daqui. Arquivo novo não entra na lista: nasce dentro do teto. */
 const ACIMA_DO_TETO = new Set([
-  'components/renderers/gramatica.ts',
   'components/renderers/linha-execucao.tsx',
   'components/shell/composer.tsx',
   'components/shell/superficie-otimista.tsx',
