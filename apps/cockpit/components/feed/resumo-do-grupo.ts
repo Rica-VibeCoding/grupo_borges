@@ -34,6 +34,7 @@ import {
 import {
   execucaoDaParte,
   execucaoDoChip,
+  usoDoChip,
   type EntradaDaExecucao,
 } from './execucao-do-item.ts';
 import type { MembroDoGrupo } from './grupo-ferramentas.ts';
@@ -148,13 +149,22 @@ export function resumeGrupo(entradas: readonly EntradaDaExecucao[]): ResumoDoGru
   return { estado, atual, frase, rendimento, passos: entradas.length, retentativas };
 }
 
-/** Do primeiro ao último membro, pelo carimbo de cada mensagem. É o tempo até
- *  o ÚLTIMO pedido de ferramenta — o resultado dele não traz carimbo no lookup.
- *  Null quando não há o que medir (carimbo torto, grupo de um instante). */
-export function duracaoDoGrupo(itens: readonly MembroDoGrupo[]): number | null {
+/** Do primeiro membro ao fim do último passo: o carimbo mais tarde entre os
+ *  pedidos e os resultados que o lookup conhece (`ms`). Chamadas paralelas
+ *  saem todas com o MESMO carimbo de pedido — sem o resultado, o grupo que
+ *  rodou 30 s mediria zero. Null quando não há o que medir (carimbo torto,
+ *  grupo de um instante). */
+export function duracaoDoGrupo(itens: readonly MembroDoGrupo[], lookup?: ToolResultLookup): number | null {
   if (itens.length === 0) return null;
   const inicio = Date.parse(itens[0].payload.timestamp);
-  const fim = Date.parse(itens[itens.length - 1].payload.timestamp);
+  let fim = Date.parse(itens[itens.length - 1].payload.timestamp);
+  for (const item of itens) {
+    const ids = item.kind === 'chip' ? [usoDoChip(item)?.id] : item.parts.map((p) => (p.type === 'tool_use' ? p.id : undefined));
+    for (const id of ids) {
+      const ms = id === undefined ? undefined : lookup?.get(id)?.ms;
+      if (ms !== undefined && ms > fim) fim = ms;
+    }
+  }
   const ms = fim - inicio;
   return Number.isFinite(ms) && ms >= 1000 ? ms : null;
 }

@@ -10,7 +10,7 @@
 // enquanto o grupo cresce, então o estado sobrevive ao stream).
 
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
@@ -59,7 +59,11 @@ export function GrupoFerramentasView({
   const fechou = fase === 'ok' || fase === 'falha';
   const cabecalho = cabecalhoDoGrupo(resumo, fase, aberto);
   const inicio = useMemo(() => inicioDoGrupo(grupo.itens), [grupo.itens]);
-  const duracao = useMemo(() => duracaoDoGrupo(grupo.itens), [grupo.itens]);
+  // Sem carimbo de fim, fica o que o relógio contou ao vivo: ao vivo contou,
+  // então fechado tem de ficar um número.
+  const contado = useRef<number | null>(null);
+  const medida = useMemo(() => duracaoDoGrupo(grupo.itens, lookup), [grupo.itens, lookup]);
+  const duracao = medida ?? contado.current;
   const deslize = semMovimento ? SECO : ABRE;
 
   return (
@@ -133,7 +137,7 @@ export function GrupoFerramentasView({
         ) : null}
 
         {/* O relógio conta ao vivo e congela no fim. A troca é cruzada: o
-            número final é medido até o último pedido de ferramenta e pode ser
+            número final é medido até o fim do último passo e pode ser
             menor que o último tique — trocar de uma vez, sem contar pra trás. */}
         <span
           className="ck-tabular relative shrink-0"
@@ -158,7 +162,7 @@ export function GrupoFerramentasView({
                 animate={{ opacity: 1, transition: semMovimento ? SECO : ABRE }}
                 exit={{ opacity: 0, transition: semMovimento ? SECO : FECHA_ANEL }}
               >
-                <DuracaoAoVivo desdeMs={inicio} />
+                <DuracaoAoVivo desdeMs={inicio} contado={contado} />
               </motion.span>
             ) : null}
           </AnimatePresence>

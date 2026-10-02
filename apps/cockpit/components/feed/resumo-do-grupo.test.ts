@@ -215,6 +215,21 @@ describe('duração do grupo', () => {
     assert.equal(duracaoDoGrupo([membro('lixo'), membro('2026-09-28T03:11:00Z')]), null);
   });
 
+  it('chamadas paralelas (mesmo carimbo de pedido) medem até o último resultado', () => {
+    const paralelo = (id: string): MembroDoGrupo => ({
+      kind: 'assistant',
+      payload: { timestamp: '2026-09-28T03:11:00Z' } as unknown as MessagePayload,
+      parts: [{ type: 'tool_use', id, name: 'Bash', input: {} } as unknown as ContentPart],
+    });
+    const lookup = new Map([
+      ['a', { content: '', isError: false, ms: Date.parse('2026-09-28T03:11:12Z') }],
+      ['b', { content: '', isError: false, ms: Date.parse('2026-09-28T03:11:33Z') }],
+    ]);
+    assert.equal(duracaoDoGrupo([paralelo('a'), paralelo('b')], lookup), 33_000);
+    // Sem o carimbo do resultado, segue sem inventar: quem cobre é o relógio ao vivo.
+    assert.equal(duracaoDoGrupo([paralelo('a'), paralelo('b')]), null);
+  });
+
   it('minutos e horas arredondados', () => {
     assert.equal(duracaoCurta(70_000), '1 min');
     assert.equal(duracaoCurta(2 * 3_600_000), '2 h');

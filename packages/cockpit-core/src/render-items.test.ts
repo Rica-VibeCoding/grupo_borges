@@ -496,3 +496,11 @@ test('lookup — message null + tool_use_result null não quebra (borda__content
   assert.equal(lookup.size, 0);
 });
 
+
+test('lookup — o resultado carrega o carimbo da mensagem que o trouxe (fim do passo)', () => {
+  const mensagem = mensagemComResult(1, 'toolu-com-hora');
+  const lookup = buildToolResultLookup([{ ...mensagem, timestamp: '2026-09-28T03:11:33Z' }]);
+  assert.equal(lookup.get('toolu-com-hora')?.ms, Date.parse('2026-09-28T03:11:33Z'));
+  const torto = buildToolResultLookup([{ ...mensagem, timestamp: 'lixo' }]);
+  assert.equal(Object.hasOwn(torto.get('toolu-com-hora')!, 'ms'), false);
+});

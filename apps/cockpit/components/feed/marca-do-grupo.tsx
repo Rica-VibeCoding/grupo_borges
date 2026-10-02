@@ -121,12 +121,18 @@ export function MarcaDaFase({ fase, semMovimento }: { fase: FaseDoGrupo; semMovi
 }
 
 /** O relógio ao vivo mora num filho: o tick de 1 s redesenha só o número. */
-export function DuracaoAoVivo({ desdeMs }: { desdeMs: number }) {
+/** `contado` guarda o último tique: é o número que fica quando o grupo fecha
+ *  sem carimbo de fim (passo interrompido, sem resultado). */
+export function DuracaoAoVivo({ desdeMs, contado }: { desdeMs: number; contado?: { current: number | null } }) {
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setAgoraMs(Date.now()), TICK_MS);
+    const timer = setInterval(() => {
+      const agora = Date.now();
+      setAgoraMs(agora);
+      if (contado && agora - desdeMs >= 1000) contado.current = agora - desdeMs;
+    }, TICK_MS);
     return () => clearInterval(timer);
-  }, []);
+  }, [contado, desdeMs]);
   const ms = agoraMs - desdeMs;
   return ms >= 1000 ? <>{duracaoCurta(ms)}</> : null;
 }

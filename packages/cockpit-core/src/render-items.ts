@@ -13,7 +13,8 @@ import type { OneLineChipKind, OneLineChipTone } from './one-line-chip-types.ts'
 // incluída CONDICIONALMENTE (nunca existe com valor undefined) pra preservar a
 // forma exata das entradas sem rico — plano em
 // docs/cockpit-v2-plano-tool-use-result.md (D1, D2).
-export type ToolResultLookup = Map<string, { content: string; isError: boolean; rich?: unknown }>;
+/** `ms`: o carimbo da mensagem que trouxe o resultado — é onde termina o passo. */
+export type ToolResultLookup = Map<string, { content: string; isError: boolean; rich?: unknown; ms?: number }>;
 
 export type SidechainGroupRef = {
   rootUuid: string;
@@ -187,10 +188,12 @@ export function buildToolResultLookup(messages: MessagePayload[]): ToolResultLoo
     for (const p of parts) {
       if (p.type !== 'tool_result') continue;
       const body = typeof p.content === 'string' ? p.content : toolResultBodyToString(p.content);
-      const entry: { content: string; isError: boolean; rich?: unknown } = {
+      const entry: { content: string; isError: boolean; rich?: unknown; ms?: number } = {
         content: body,
         isError: Boolean(p.is_error),
       };
+      const ms = Date.parse(m.timestamp);
+      if (Number.isFinite(ms)) entry.ms = ms;
       if (totalResults === 1 && m.tool_use_result != null) {
         entry.rich = m.tool_use_result;
       } else if (totalResults === 1) {
