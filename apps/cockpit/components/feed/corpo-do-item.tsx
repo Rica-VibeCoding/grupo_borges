@@ -10,21 +10,16 @@
 // A tese do cockpit v2 é que 82% do que passa por aqui é `tool_use` — então o
 // caminho quente é `LinhaExecucao`, e ela nasce colapsada.
 
-import { memo, useState } from 'react';
+import { memo } from 'react';
 
-import type { ContentPart } from '@grupo_borges/cockpit-core/messages-types';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { AssistantMarkdown } from '@/components/renderers/markdown';
-import { Thinking } from '@/components/renderers/thinking';
-
 import { Execucao } from './execucao';
-import {
-  execucaoDaParte,
-  execucaoDoChip,
-} from './execucao-do-item';
+import { execucaoDoChip } from './execucao-do-item';
 import { CartaoCompact } from './cartao-compact';
 import { DelegacaoView } from './delegacoes.tsx';
+import { desenhaFalaDeCanal } from './fala-de-canal.tsx';
+import { Fala, LinhaSeca, Parte } from './formas-menores.tsx';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { GrupoFerramentasView } from './grupo-ferramentas.tsx';
 import { LinhaVivaView } from './linha-viva.tsx';
@@ -35,9 +30,6 @@ import { leAnexoVideo } from './anexo-video.ts';
 import { BolhaAnexoOtimista, PREFIXO_ANEXO_OTIMISTA } from './bolha-anexo-otimista.tsx';
 import { AnexoImagemView } from './cartao-anexo-imagem.tsx';
 import { AnexoVideoView } from './cartao-anexo-video.tsx';
-import { ehVoz, leEnvelopeDeCanal, procedencia } from './envelope-de-canal.ts';
-import { IconeMicrofone } from '@/components/shell/icones';
-import { resumoDeUmaLinha, temMaisParaMostrar } from './linha-seca.ts';
 import { mesmasPropsDoItem } from './mesmo-item.ts';
 
 type Props = {
@@ -46,127 +38,6 @@ type Props = {
   agentSlug?: string;
   estaRodando?: boolean;
 };
-
-/* -------------------------------------------------------------------------- */
-/* Formas menores — uma linha, sem moldura                                    */
-/* -------------------------------------------------------------------------- */
-
-/** Texto literal do humano: nunca passa por markdown. O que o Rica digitou é o
- *  que aparece, inclusive quando ele digita crase. */
-function Fala({ texto, tom }: { texto: string; tom?: 'discreto' }) {
-  return (
-    <p
-      style={{
-        margin: 0,
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'anywhere',
-        color: tom === 'discreto' ? 'var(--ck-text-tertiary)' : 'var(--ck-text-primary)',
-        fontSize: tom === 'discreto' ? 'var(--ck-text-sm)' : 'var(--ck-text-md)',
-      }}
-    >
-      {texto}
-    </p>
-  );
-}
-
-/** Linha de sistema, sem a caixinha — ordem do Rica, 02/08: "sem borda, sem
- *  fundo, sem badge". O rótulo é overline (12px, uppercase, tracking largo):
- *  lê-se como legenda, não como chip. Corpo em secondary — tertiary em texto
- *  de corpo é reprovação direta do contrato (3.55:1).
- *
- *  Uma linha continua sendo o desenho certo, mas ela deixou de ser MUDA sobre
- *  o que esconde: medido no chat do Rica em 15/08, viewport de iPhone, 23px
- *  visíveis de 555px reais — 4% do texto. Ele leu o conjunto como "tudo sai
- *  truncado". Quando há mais atrás das reticências, a linha inteira vira alvo
- *  e abre no lugar; corpo curto ("60 passos") não ganha controle nenhum. */
-function LinhaSeca({ rotulo, corpo }: { rotulo: string; corpo?: string }) {
-  const [aberta, setAberta] = useState(false);
-  const podeAbrir = temMaisParaMostrar(corpo);
-
-  const miolo = (
-    <>
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: 'var(--ck-text-xs)',
-          letterSpacing: 'var(--ck-track-overline)',
-          textTransform: 'uppercase',
-        }}
-      >
-        {rotulo}
-      </span>
-      {corpo ? (
-        <span
-          style={{
-            fontSize: 'var(--ck-text-sm)',
-            minWidth: 0,
-            flex: 1,
-            ...(aberta
-              ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
-              : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
-          }}
-        >
-          {aberta ? corpo : resumoDeUmaLinha(corpo)}
-        </span>
-      ) : null}
-    </>
-  );
-
-  const forma = {
-    display: 'flex',
-    gap: 'var(--ck-space-2)',
-    alignItems: aberta ? 'flex-start' : 'baseline',
-    minWidth: 0,
-    width: '100%',
-    textAlign: 'left' as const,
-    color: 'var(--ck-text-secondary)',
-  };
-
-  if (!podeAbrir) return <div style={forma}>{miolo}</div>;
-
-  return (
-    <button
-      type="button"
-      onClick={() => setAberta((estava) => !estava)}
-      aria-expanded={aberta}
-      aria-label={aberta ? `Fechar ${rotulo}` : `Abrir ${rotulo} por inteiro`}
-      style={{ ...forma, minHeight: 'var(--ck-touch-min)', alignItems: aberta ? 'flex-start' : 'center' }}
-    >
-      {miolo}
-    </button>
-  );
-}
-
-function Parte({
-  parte,
-  lookup,
-  cursorNoFim = false,
-}: {
-  parte: ContentPart;
-  lookup?: ToolResultLookup;
-  cursorNoFim?: boolean;
-}) {
-  switch (parte.type) {
-    case 'text':
-      // Texto vazio não vira parágrafo fantasma com moldura.
-      return parte.text.length > 0 ? (
-        <AssistantMarkdown cursorNoFim={cursorNoFim}>{parte.text}</AssistantMarkdown>
-      ) : null;
-    case 'thinking':
-      return <Thinking content={parte.thinking} />;
-    case 'tool_use':
-      return <Execucao entrada={execucaoDaParte(parte, lookup)} />;
-    case 'tool_result':
-      // O classificador dobra `tool_result` dentro do lookup, então chegar aqui
-      // significa resultado órfão — mostrar seco vale mais que sumir.
-      return (
-        <LinhaSeca
-          rotulo={parte.is_error === true ? 'resultado órfão · erro' : 'resultado órfão'}
-          corpo={typeof parte.content === 'string' ? parte.content : undefined}
-        />
-      );
-  }
-}
 
 /* -------------------------------------------------------------------------- */
 /* Item                                                                        */
@@ -355,67 +226,9 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
       ) : (
         <LinhaSeca rotulo={item.syntheticKind} corpo={item.rawText} />
       );
-    case 'channel': {
-      // Mensagem que ele mandou de fora é ELE falando — mesma bolha do texto
-      // digitado aqui, ordem de 30/07 ("o meu vai em balão") e a de 15/08
-      // ("tenho que pensar que estou no mesmo app"). Antes desta linha o feed
-      // desenhava o XML inteiro numa linha cortada, e ele leu como "quebrado".
-      // A procedência vira legenda discreta; o anexo, quando o envelope
-      // declara, sai como metadado — sem player, porque a rota de mídia deste
-      // caminho não existe no v2 e prometer um vídeo que não toca é pior.
-      const envelope = leEnvelopeDeCanal(item.raw);
-      if (!envelope) return <LinhaSeca rotulo="canal" corpo={item.raw} />;
-      // Foto que ele mandou de fora: mesmo cartão do anexo daqui — imagem em
-      // cima, o que ele escreveu embaixo. É a forma que ele aprovou em 15/08,
-      // olhando o chat da Tara. `(photo)` é o corpo que o plugin escreve
-      // quando a mensagem é só a imagem: legenda dele, não é.
-      if (envelope.anexo?.caminho && envelope.anexo.tipo === 'image' && agentSlug) {
-        const legenda = envelope.texto === '(photo)' ? null : envelope.texto || null;
-        return (
-          <AnexoImagemView
-            anexo={{ filename: envelope.anexo.caminho, legenda }}
-            agentSlug={agentSlug}
-            procedencia={procedencia(envelope)}
-          />
-        );
-      }
-      return (
-        <div
-          // Desenho novo (16/08, referências Claude/ChatGPT do Rica): a bolha
-          // veste `--ck-radius-caixa` — o token criado pra "superfície que
-          // RECEBE fala" (globals.css:289) — e padding horizontal maior. O
-          // `frame` (8px) continua pra conteúdo que MOSTRA saída.
-          //
-          // Teto RELATIVO desde 17/08 (leva 2, pergunta do Rica): a convenção
-          // documentada (shadcn Bubble: ≤80% do container) é a bolha do
-          // usuário mais estreita que a coluna do assistente — e aqui os dois
-          // tinham o MESMO teto de 640px, o que no iPhone deixava a fala dele
-          // pegar a tela quase toda. `w-fit` continua encolhendo ao texto.
-          className="w-fit max-w-[80%] self-end rounded-[var(--ck-radius-caixa)]"
-          style={{ background: 'var(--ck-surface-raised)', padding: 'var(--ck-space-3) var(--ck-space-4)' }}
-        >
-          {/* Metadado discreto (28/09): microfone quando é voz + o canal pelo
-              nome. Duração não vai: o envelope não a traz. */}
-          <div
-            className="flex items-center"
-            style={{
-              gap: 'var(--ck-space-1)',
-              color: 'var(--ck-text-secondary)',
-              fontSize: 'var(--ck-text-xs)',
-            }}
-          >
-            {ehVoz(envelope) ? <IconeMicrofone tamanho={12} /> : null}
-            {procedencia(envelope)}
-          </div>
-          {envelope.anexo && !ehVoz(envelope) ? (
-            <div style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)' }}>
-              {envelope.anexo.nome ?? envelope.anexo.tipo}
-            </div>
-          ) : null}
-          {envelope.texto ? <Fala texto={envelope.texto} /> : null}
-        </div>
-      );
-    }
+    case 'channel':
+      // A mensagem que ele mandou por um canal de fora — `fala-de-canal.tsx`.
+      return desenhaFalaDeCanal(item, agentSlug);
 
     case 'sidechain-group':
       return (
