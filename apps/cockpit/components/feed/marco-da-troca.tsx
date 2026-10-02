@@ -5,8 +5,9 @@
 //
 // - Trocando: filete azul pulsando, "Trocando para “X”" e o passo em curso com
 //   o tempo. A conversa que vai sair fica acima, apagada (`.ck-feed-saindo`).
-// - Trocou: o filete vira verde e é a costura entre as duas conversas — de
-//   qual para qual, a nota e o briefing de retorno, recolhido.
+// - Trocou (Retomar): o filete vira verde e fecha o histórico retomado — o
+//   título, a nota e o briefing de retorno, recolhido. A Nova não desenha
+//   marco desde 02/10 (`poeMarco`): o chat abre no vazio do produto.
 // - Pedido do cockpit: uma linha cinza que abre no lugar. Nunca a bolha do Rica.
 //
 // Cor só por token; nenhum hex aqui.
@@ -71,7 +72,6 @@ export function MarcoDaTrocaView({ troca }: { troca: ConversaTrocada }) {
           <p style={{ margin: 0, fontSize: 'var(--ck-text-md)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>{t.titulo}</p>
         ) : null}
         {t.nota ? <p style={{ margin: 0, ...TEXTO_SM, color: 'var(--ck-text-secondary)' }}>{t.nota}</p> : null}
-        <p style={{ margin: 0, fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>{t.saiu}</p>
         {troca.briefing ? (
           <Recolhido rotulo="O que mudou enquanto ela estava parada">
             <p style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', ...TEXTO_SM, color: 'var(--ck-text-secondary)' }}>

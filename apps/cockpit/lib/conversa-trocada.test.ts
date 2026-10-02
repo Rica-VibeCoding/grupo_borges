@@ -44,19 +44,24 @@ describe('conversa-trocada — o evento do stream vira marco (F13)', () => {
     assert.equal(leConversaTrocada(null), null);
   });
 
-  it('Retomar: título, nota e onde ficou a anterior', () => {
+  it('Retomar: título e nota, sem frase sobre a anterior', () => {
     const t = textosDoMarco(leConversaTrocada(CRU)!);
     assert.equal(t.cabeca, 'Conversa retomada');
     assert.equal(t.titulo, 'Voz em tempo real');
     assert.equal(t.nota, 'Parei no detector');
-    assert.equal(t.saiu, '“Estacionar e retomar” ficou guardada em Conversas.');
+    assert.equal('saiu' in t, false);
   });
 
-  it('Nova: sem título, e a anterior sem nome não vira aspas vazias', () => {
+  it('Retomar sem título nunca diz "sem título" com aspas vazias', () => {
+    const t = textosDoMarco(leConversaTrocada({ ...CRU, titulo: null })!);
+    assert.equal(t.titulo, 'Conversa sem título');
+  });
+
+  it('Nova: só a cabeça, e nada sobre a anterior', () => {
     const t = textosDoMarco(leConversaTrocada({ ...CRU, motivo: 'nova', titulo: null, nota: null, de_titulo: null })!);
     assert.equal(t.cabeca, 'Conversa nova');
     assert.equal(t.titulo, null);
-    assert.equal(t.saiu, 'A conversa anterior ficou guardada em Conversas.');
+    assert.equal(t.nota, null);
   });
 
   it('o marco vale só enquanto o stream estiver na conversa dele', () => {

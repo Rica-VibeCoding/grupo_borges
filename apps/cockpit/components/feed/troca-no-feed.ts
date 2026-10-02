@@ -51,10 +51,13 @@ export function textoDoPedido(item: Extract<ItemDoFeed, { kind: 'pedido-do-cockp
   return null;
 }
 
-/** O marco entra depois do último item nascido antes da troca. Na Nova, a
- *  conversa nasce vazia e ele abre a lista; no Retomar, fecha o histórico
- *  retomado e o que vier depois é a conversa seguindo. */
+/** O marco entra depois do último item nascido antes da troca. No Retomar,
+ *  fecha o histórico retomado e o que vier depois é a conversa seguindo.
+ *
+ *  A NOVA não deixa marco (ordem do Rica, 02/10): o chat abre no vazio do
+ *  produto — retrato e saudação —, sem nada da conversa que saiu. */
 export function poeMarco(itens: readonly ItemDoFeed[], troca: ConversaTrocada): ItemDoFeed[] {
+  if (troca.motivo === 'nova') return itens as ItemDoFeed[];
   let posicao = 0;
   itens.forEach((item, i) => {
     const payload = payloadDe(item);

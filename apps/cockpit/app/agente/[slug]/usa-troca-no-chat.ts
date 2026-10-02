@@ -121,5 +121,7 @@ export function usaTrocaNoChat(
     return () => clearInterval(leitor);
   }, [agentSlug, semDono, versao]);
 
-  return { emCurso, marco };
+  // A NOVA não desenha marco (ordem do Rica, 02/10): aqui ele vira `null` para
+  // não contar como conteúdo no `decideVazio` — o chat abre no vazio do produto.
+  return { emCurso, marco: marco?.motivo === 'nova' ? null : marco };
 }

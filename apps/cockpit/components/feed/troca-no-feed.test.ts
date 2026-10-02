@@ -49,10 +49,11 @@ describe('troca no feed — o turno do cockpit, o marco e a espera (F13)', () =>
     assert.deepEqual(itens.map((i) => i.kind), ['user', 'assistant', 'marco-da-troca', 'user']);
   });
 
-  it('Nova: o marco abre a lista', () => {
+  it('Nova: nenhum marco — o chat abre no vazio do produto', () => {
     const troca = leConversaTrocada({ session_id: 'n1', motivo: 'nova', at: AT })!;
-    assert.deepEqual(poeMarco([], troca).map((i) => i.kind), ['marco-da-troca']);
-    assert.deepEqual(poeMarco([user(1, 'primeira', {}, AT + 1)], troca).map((i) => i.kind), ['marco-da-troca', 'user']);
+    assert.deepEqual(poeMarco([], troca), []);
+    const itens = [user(1, 'primeira', {}, AT + 1)];
+    assert.deepEqual(poeMarco(itens, troca).map((i) => i.kind), ['user']);
   });
 
   it('a linha da troca fecha a lista, e diz o passo em curso', () => {

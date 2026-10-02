@@ -71,16 +71,17 @@ export type TextosDoMarco = {
   cabeca: string;
   titulo: string | null;
   nota: string | null;
-  saiu: string;
 };
 
-/** O que o marco diz. Sem jargão: "Conversas" é o nome que o Rica vê na gaveta (02/10). */
+/** O que o marco diz. A frase sobre a conversa que saiu morreu em 02/10 (ordem
+ *  do Rica): quem abre a Nova não quer ver nada da velha, e quem retoma só
+ *  precisa saber onde está. Sem jargão: "Conversas" é o nome da gaveta.
+ *
+ *  O ramo 'nova' é o contrato do evento — desde 02/10 a Nova não desenha marco
+ *  nenhum; quem decide isso é o `poeMarco`, não este texto. */
 export function textosDoMarco(troca: ConversaTrocada): TextosDoMarco {
-  const saiu = troca.deTitulo
-    ? `“${troca.deTitulo}” ficou guardada em Conversas.`
-    : 'A conversa anterior ficou guardada em Conversas.';
-  if (troca.motivo === 'nova') return { cabeca: 'Conversa nova', titulo: null, nota: null, saiu };
-  return { cabeca: 'Conversa retomada', titulo: troca.titulo ?? 'Conversa sem título', nota: troca.nota, saiu };
+  if (troca.motivo === 'nova') return { cabeca: 'Conversa nova', titulo: null, nota: null };
+  return { cabeca: 'Conversa retomada', titulo: troca.titulo ?? 'Conversa sem título', nota: troca.nota };
 }
 
 // O marco guardado na aba. Um por agente: a troca seguinte substitui.
