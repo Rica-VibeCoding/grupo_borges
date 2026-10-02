@@ -8,7 +8,7 @@ export function RotuloEnviando() {
     <div
       style={{
         padding: '0 var(--ck-space-3) var(--ck-space-2)',
-        color: 'var(--ck-text-tertiary)',
+        color: 'var(--ck-text-secondary)',
         fontSize: 'var(--ck-text-xs)',
         textAlign: 'right',
       }}

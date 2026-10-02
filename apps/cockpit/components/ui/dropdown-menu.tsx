@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 function estiloDaSuperficie(style?: React.CSSProperties): React.CSSProperties {
   return {
     zIndex: 'var(--ck-z-overlay)',
-    minWidth: 'var(--ck-w-menu)',
     maxWidth: 'calc(100vw - 2 * var(--ck-space-2))',
     maxHeight: 'var(--radix-dropdown-menu-content-available-height)',
     overflowX: 'hidden',

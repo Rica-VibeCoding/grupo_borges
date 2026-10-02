@@ -104,7 +104,7 @@ export function DiffViewer({
       </header>
 
       {view.status === 'omitted' ? (
-        <p className="px-[var(--ck-space-4)] py-[var(--ck-space-3)] text-sm text-[var(--ck-fg-muted)]">
+        <p className="px-[var(--ck-space-4)] py-[var(--ck-space-3)] text-sm text-[var(--ck-text-secondary)]">
           Diff omitido por tamanho: versão anterior com {view.oldLineCount} linhas e
           versão nova com {view.newLineCount} linhas.
         </p>

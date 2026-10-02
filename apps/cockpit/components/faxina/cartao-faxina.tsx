@@ -104,7 +104,7 @@ export function CartaoFaxina({ inicial, agora }: { inicial: FaxinaItem; agora: n
         <p
           style={{
             fontSize: 'var(--ck-text-xs)',
-            color: falha || item.status === 'erro' ? 'var(--ck-state-fail)' : 'var(--ck-text-tertiary)',
+            color: falha || item.status === 'erro' ? 'var(--ck-state-fail)' : 'var(--ck-text-secondary)',
           }}
         >
           {falha ?? status}

@@ -21,10 +21,10 @@ import type { PainelMotor } from '@grupo_borges/cockpit-core/cockpit-types';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { ItemDeFamilia } from './item-de-familia';
 import { aplicarMotor, esquecerConfirmacao, registrarEscolha } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
@@ -35,50 +35,6 @@ import {
 } from './troca-de-motor';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 import { esquecerPainel } from './sincronizacao-painel';
-
-function estiloItemDoMenu(selecionado = false) {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 'var(--ck-touch-min)',
-    gap: 'var(--ck-space-3)',
-    padding: 'var(--ck-space-2) var(--ck-space-3)',
-    borderRadius: 'var(--ck-radius-chip)',
-    color: 'var(--ck-text-primary)',
-    fontSize: 'var(--ck-text-base)',
-    textAlign: 'left' as const,
-    ...(selecionado
-      ? { backgroundImage: 'linear-gradient(var(--ck-overlay-selected), var(--ck-overlay-selected))' }
-      : {}),
-  };
-}
-
-function ItemDeFamilia({
-  opcao,
-  desabilitado,
-  aoEscolher,
-}: {
-  opcao: OpcaoDeFamilia;
-  desabilitado: boolean;
-  aoEscolher: () => void;
-}) {
-  return (
-    <DropdownMenuItem
-      disabled={desabilitado}
-      onSelect={(evento) => {
-        evento.preventDefault();
-        aoEscolher();
-      }}
-      style={estiloItemDoMenu(opcao.selecionado)}
-    >
-      <span>{opcao.rotulo}</span>
-      <span aria-hidden style={{ color: 'var(--ck-text-secondary)' }}>
-        {opcao.selecionado ? '✓' : ''}
-      </span>
-    </DropdownMenuItem>
-  );
-}
 
 type BlocoDeMotorProps = {
   agentSlug: string;

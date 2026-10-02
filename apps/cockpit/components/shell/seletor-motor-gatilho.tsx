@@ -109,7 +109,7 @@ export function GatilhoDoSeletor({
               aria-live="polite"
               // Inteiro, sempre: quem cede o espaço é o nome do valor escolhido.
               className="shrink-0 whitespace-nowrap"
-              style={{ color: 'var(--ck-text-tertiary)', fontSize: 'var(--ck-text-sm)', fontWeight: 400 }}
+              style={{ color: 'var(--ck-text-secondary)', fontSize: 'var(--ck-text-sm)', fontWeight: 400 }}
             >
               {andamento}
             </span>

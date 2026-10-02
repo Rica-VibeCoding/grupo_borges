@@ -2,8 +2,9 @@
 
 /**
  * O gravador — a parte que toca no hardware. Toda a REGRA mora em `voz.ts`,
- * que é puro e testado; aqui só ficam `getUserMedia`, `MediaRecorder`,
- * `AudioContext` e os eventos de ponteiro, que não dá pra testar sem browser.
+ * que é puro e testado; aqui ficam o estado, o `getUserMedia` e o relógio, com
+ * as pontas do `MediaRecorder` em `ciclo-da-gravacao.ts` e o ponteiro em
+ * `usa-gesto-de-voz.ts` — nada disso dá pra testar sem browser.
  *
  * Portado de `apps/web/lib/use-voice-recorder.ts` (v1), com as correções que a
  * peça exige:
@@ -29,22 +30,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
-  aoEnviarTravada,
-  aoSoltar,
-  assinaturaDoContainer,
   diagnosticaMicrofone,
-  escolheMime,
-  extensaoDe,
-  gestoDe,
   impedimentoDeContexto,
-  normalizaMime,
-  progressoDoGesto,
   suavizaNiveis,
   type FaseVoz,
   type Gesto,
   type Impedimento,
 } from './voz';
+import { despachaGravacao, montaGravador, type GravadorMontado } from './ciclo-da-gravacao';
 import type { FalaAoVivo } from './usa-fala-ao-vivo';
+import { usaGestoDeVoz } from './usa-gesto-de-voz';
 
 export const BARRAS = 24;
 
@@ -211,35 +206,16 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
       return;
     }
 
-    let gravador: MediaRecorder;
-    let contexto: AudioContext;
-    let analisador: AnalyserNode;
+    let montado: GravadorMontado;
     try {
-      contexto = new AudioContext();
-      if (contexto.state === 'suspended') void contexto.resume().catch(() => {});
-      analisador = contexto.createAnalyser();
-      analisador.fftSize = 256;
-      contexto.createMediaStreamSource(stream).connect(analisador);
-
-      const mime =
-        typeof MediaRecorder !== 'undefined'
-          ? escolheMime((m) => MediaRecorder.isTypeSupported(m))
-          : null;
-      try {
-        gravador = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
-      } catch {
-        // Alguns WebKit recusam o mimeType pedido mesmo respondendo `true` no
-        // `isTypeSupported`. Deixar o browser escolher é pior (pode devolver
-        // `video/mp4`), mas é melhor que não gravar — `normalizaMime` conserta
-        // o rótulo na hora de subir.
-        gravador = new MediaRecorder(stream);
-      }
+      montado = montaGravador(stream);
     } catch (erro) {
       stream.getTracks().forEach((t) => t.stop());
       setImpedimento(diagnosticaMicrofone(erro));
       setFase('impedida');
       return;
     }
+    const { gravador, contexto, analisador } = montado;
 
     streamRef.current = stream;
     contextoRef.current = contexto;
@@ -259,59 +235,7 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
       // não fica aberto os segundos que o texto definitivo leva pra chegar. O
       // preço é o último bloco do worklet (~43ms) ficar pra trás.
       solta();
-
-      // O canal ao vivo fecha antes de qualquer decisão sobre o arquivo — e
-      // fecha também quando é descarte, porque é ele quem apaga da tela o que
-      // já tinha aparecido.
-      if (!descartar && aoVivo) setFase('transcrevendo');
-      const entregueAoVivo = aoVivo ? await aoVivo.fecha(descartar) : false;
-
-      if (descartar || pedacos.length === 0) {
-        setFase('ociosa');
-        return;
-      }
-      if (entregueAoVivo) {
-        setFase('ociosa');
-        return;
-      }
-
-      const mime = normalizaMime(bruto);
-      if (!mime) {
-        // Sem tipo reconhecível o `FormData` mandaria octet-stream e o back
-        // recusaria com 422. Dizer aqui é honesto; deixar subir seria mentir
-        // sobre onde a coisa quebrou.
-        setImpedimento({
-          resumo: 'o navegador gravou num formato que o servidor não aceita',
-          saida: 'use o teclado por enquanto — me avise que eu vejo o formato',
-          definitivo: true,
-        });
-        setFase('impedida');
-        return;
-      }
-
-      const audio = new File([new Blob(pedacos, { type: mime })], `voz.${extensaoDe(mime)}`, {
-        type: mime,
-      });
-      // Guarda de container: gravação corrompida não sobe. Em vez de gastar STT
-      // no servidor e devolver o enigmático "a transcrição falhou", diz a
-      // verdade — o defeito é do navegador, e regravar resolve.
-      const cabeca = new Uint8Array(await audio.slice(0, 8).arrayBuffer());
-      if (!assinaturaDoContainer(mime, cabeca)) {
-        setImpedimento({
-          resumo: 'a gravação saiu corrompida',
-          saida: 'grave de novo — o defeito é do navegador, não da fala',
-          definitivo: false,
-        });
-        setFase('impedida');
-        return;
-      }
-      // O hook fecha o próprio ciclo: entra em `transcrevendo` e só sai quando
-      // a promessa de quem recebeu o áudio resolve. Se o composer tivesse que
-      // avisar de volta, ele precisaria referenciar o gravador de dentro do
-      // callback que o cria — e um esquecimento ali travaria a tela em
-      // "transcrevendo…" para sempre, sem erro nenhum aparecendo.
-      setFase('transcrevendo');
-      void Promise.resolve(aoGravar(audio)).finally(() => setFase('ociosa'));
+      await despachaGravacao({ descartar, pedacos, bruto, aoVivo, aoGravar, setFase, setImpedimento });
     };
 
     // SEM timeslice de propósito. Com `start(100)` o browser entrega o áudio em
@@ -345,79 +269,20 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
     }, 1000);
   }, [aoGravar, aoVivo, desenhaOnda, solta]);
 
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (fase === 'transcrevendo' || fase === 'pedindo') return;
-      // Trava aberta: o gesto acabou, quem manda são os botões.
-      if (fase === 'travada') return;
-      e.preventDefault();
-      // Sem captura, o `pointermove` para de chegar assim que o dedo sai do
-      // botão — e sair do botão É o gesto de cancelar.
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-      pressionadoRef.current = true;
-      // Um gesto anterior pode ter morrido sem passar pelo `solta` — o
-      // microfone recusado sai por `setFase('impedida')` e nada mais.
-      travadaRef.current = false;
-      origemRef.current = { x: e.clientX, y: e.clientY };
-      gestoRef.current = 'segurando';
-      setGesto('segurando');
-      setProgresso(0);
-      setImpedimento(null);
-      void comeca();
-    },
-    [comeca, fase],
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const origem = origemRef.current;
-      if (!origem || !pressionadoRef.current) return;
-      const dx = e.clientX - origem.x;
-      const dy = e.clientY - origem.y;
-      const atual = gestoDe(dx, dy);
-      gestoRef.current = atual;
-      setGesto(atual);
-      setProgresso(progressoDoGesto(dx, dy));
-      // `cancelando` é fase, não só rótulo: a tela inteira muda de cor, que é o
-      // aviso de que soltar agora joga fora.
-      setFase((anterior) =>
-        anterior === 'gravando' || anterior === 'cancelando'
-          ? atual === 'cancelar'
-            ? 'cancelando'
-            : 'gravando'
-          : anterior,
-      );
-    },
-    [],
-  );
-
-  const finaliza = useCallback(
-    (e: React.PointerEvent, cancelado: boolean) => {
-      if (!pressionadoRef.current) return;
-      pressionadoRef.current = false;
-      e.currentTarget.releasePointerCapture?.(e.pointerId);
-
-      // `pointercancel` (chamada chegando, gesto do sistema) sempre descarta:
-      // ninguém decidiu enviar.
-      const desfecho = cancelado
-        ? 'descartar-cancelado'
-        : aoSoltar(gestoRef.current, segundosRef.current);
-
-      if (desfecho === 'continuar') {
-        travadaRef.current = true;
-        setFase('travada');
-        setGesto('segurando');
-        setProgresso(0);
-        return;
-      }
-      if (desfecho === 'enviar') {
-        encerra(false);
-        return;
-      }
-      encerra(true);
-    },
-    [encerra],
-  );
+  const gestoDeVoz = usaGestoDeVoz({
+    fase,
+    comeca,
+    encerra,
+    setFase,
+    setGesto,
+    setProgresso,
+    setImpedimento,
+    pressionadoRef,
+    travadaRef,
+    origemRef,
+    gestoRef,
+    segundosRef,
+  });
 
   return {
     fase,
@@ -426,21 +291,7 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
     gesto,
     progresso,
     impedimento,
-    handlers: {
-      onPointerDown,
-      onPointerMove,
-      onPointerUp: (e) => finaliza(e, false),
-      onPointerCancel: (e) => finaliza(e, true),
-    },
-    enviarTravada: () => {
-      // Abaixo do piso encerra CALADO. O aviso "muito curto" que morava aqui é
-      // metade do pisca que o Rica reprovou: ele acendia em cima da caixa e só
-      // apagava no gesto seguinte. Quem tocou em ⏹ um instante depois de abrir
-      // já sabe o que fez — e o piso continua impedindo o despacho, que é o
-      // trabalho dele.
-      encerra(aoEnviarTravada(segundosRef.current) !== 'enviar');
-    },
-    descartarTravada: () => encerra(true),
+    ...gestoDeVoz,
     limparImpedimento: () => {
       setImpedimento(null);
       setFase('ociosa');

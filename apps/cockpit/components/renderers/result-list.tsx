@@ -39,7 +39,7 @@ function Linha({ item }: { item: ItemDaLista }) {
         <span className="flex min-w-0 items-baseline gap-[var(--ck-space-2)] text-sm">
           <span className="min-w-0 truncate text-[var(--ck-text-primary)]">{item.nome}</span>
           {item.detalhe ? (
-            <span className="min-w-0 flex-1 truncate font-mono text-[var(--ck-text-tertiary)]">
+            <span className="min-w-0 flex-1 truncate font-mono text-[var(--ck-text-secondary)]">
               {item.detalhe}
             </span>
           ) : null}
@@ -66,7 +66,7 @@ export function ResultList({ valor }: { valor: unknown }) {
             {dados.titulo}
           </span>
           {typeof dados.total === 'number' ? (
-            <span className="ck-tabular shrink-0 font-mono text-sm text-[var(--ck-text-tertiary)]">
+            <span className="ck-tabular shrink-0 font-mono text-sm text-[var(--ck-text-secondary)]">
               {dados.total} {dados.total === 1 ? 'item' : 'itens'}
             </span>
           ) : null}

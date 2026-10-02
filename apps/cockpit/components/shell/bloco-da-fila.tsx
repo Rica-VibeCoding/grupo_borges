@@ -64,7 +64,7 @@ const TRECHO: CSSProperties = {
   overflow: 'hidden',
   fontSize: 'var(--ck-text-xs)',
   fontStyle: 'italic',
-  color: 'var(--ck-text-tertiary)',
+  color: 'var(--ck-text-secondary)',
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };
@@ -72,7 +72,7 @@ const TRECHO: CSSProperties = {
 const MARCA: CSSProperties = {
   flexShrink: 0,
   fontSize: 'var(--ck-text-xs)',
-  color: 'var(--ck-text-tertiary)',
+  color: 'var(--ck-text-secondary)',
 };
 
 const BOTAO: CSSProperties = {

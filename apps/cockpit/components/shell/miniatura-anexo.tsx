@@ -162,7 +162,7 @@ export function MiniaturaAnexo({
                   a única identificação — e ele é a que o Rica reconhece. */}
               <span
                 className="w-full truncate text-center"
-                style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}
+                style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}
               >
                 {mostrado.arquivo.name}
               </span>

@@ -149,7 +149,6 @@ function MenuInicial({
                 className="ck-menu-surge ck-menu-aberto"
                 sideOffset={4}
                 collisionPadding={8}
-                style={{ width: 'var(--ck-w-menu-sub)' }}
               >
                 <ListaDeOpcoes opcoes={opcoesModelo} salvando={salvando} />
               </DropdownMenuSubContent>
@@ -179,7 +178,6 @@ function MenuInicial({
                 className="ck-menu-surge ck-menu-aberto"
                 sideOffset={4}
                 collisionPadding={8}
-                style={{ width: 'var(--ck-w-menu-sub)' }}
               >
                 <ListaDeOpcoes opcoes={opcoesEsforco} salvando={salvando} />
               </DropdownMenuSubContent>

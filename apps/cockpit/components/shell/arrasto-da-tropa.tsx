@@ -191,8 +191,8 @@ export function AlcaDeArraste({
               height: '44px',
               color: 'var(--ck-text-primary)',
               outline: '2px solid var(--ck-text-primary)',
-              borderRadius: 'var(--ck-radius-2, 6px)',
-              background: 'var(--ck-bg-elevated, transparent)',
+              borderRadius: 'var(--ck-radius-chip)',
+              background: 'transparent',
             }
           : { width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' }
       }

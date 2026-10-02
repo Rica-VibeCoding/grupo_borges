@@ -43,7 +43,7 @@ export default async function Faxina({ searchParams }: { searchParams: Promise<{
           }}
         >
           <header className="flex flex-col" style={{ gap: 'var(--ck-space-2)', padding: '0 var(--ck-space-3)' }}>
-            <Link href="/" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-tertiary)' }}>
+            <Link href="/" style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-text-secondary)' }}>
               ← Cockpit
             </Link>
             <p
@@ -77,7 +77,7 @@ export default async function Faxina({ searchParams }: { searchParams: Promise<{
           </header>
 
           {lista && lista.itens.length === 0 ? (
-            <p style={{ padding: 'var(--ck-space-3)', fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-tertiary)' }}>
+            <p style={{ padding: 'var(--ck-space-3)', fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' }}>
               {aba === 'pendente' ? 'nada parado — a frota está em dia' : 'nada arquivado ainda'}
             </p>
           ) : null}
