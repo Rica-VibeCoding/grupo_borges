@@ -38,14 +38,19 @@ export function PilulaDeTokens({ agentSlug }: { agentSlug: string }) {
     <span
       className="ck-tabular shrink-0"
       title={`${tokens.toLocaleString('pt-BR')} tokens no contexto da sessão`}
+      // Mesma família da pílula da conversa, do outro lado da faixa: o vidro
+      // escuro da cápsula sem desfoque, o mesmo respiro e a mesma entrelinha,
+      // tudo em token (§9.15). Com 13px as duas têm a mesma altura e se leem
+      // como par; a mono segue porque número é a voz da máquina (§4).
       style={{
-        padding: '2px 8px',
+        padding: 'var(--ck-space-1) var(--ck-space-3)',
         borderRadius: 'var(--ck-radius-pill)',
-        border: '1px solid var(--ck-edge-hairline)',
+        border: '1px solid var(--ck-conversa-pilula-fio)',
+        backgroundColor: 'var(--ck-conversa-pilula)',
         fontFamily: 'var(--ck-font-mono)',
-        fontSize: 'var(--ck-text-xs)',
+        fontSize: 'var(--ck-text-sm)',
         color: 'var(--ck-text-secondary)',
-        lineHeight: 1.4,
+        lineHeight: 'var(--ck-leading-hero)',
       }}
     >
       {Math.round(tokens / 1000)}
