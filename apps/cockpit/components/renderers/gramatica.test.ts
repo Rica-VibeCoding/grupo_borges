@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { INTERROMPIDO } from '../feed/orfas-do-turno.ts';
 import { encurtaCaminho, encurtaNomeMcp, leExecucao } from './gramatica.ts';
 
 describe('gramática da execução — o verbo, em português desde 02/08', () => {
@@ -143,6 +144,12 @@ describe('desfecho', () => {
     const e = leExecucao({ toolName: 'Bash', args: {}, result: 'stack trace', isError: true });
     assert.equal(e.desfecho, 'falhou');
     assert.equal(e.rendimento?.texto, 'erro');
+  });
+
+  it('órfã encerrada pelo fim do turno diz "interrompido", não "erro" — a marca de orfas-do-turno', () => {
+    const e = leExecucao({ toolName: 'Bash', args: {}, result: INTERROMPIDO, isError: true });
+    assert.equal(e.desfecho, 'falhou');
+    assert.equal(e.rendimento?.texto, 'interrompido');
   });
 
   it('rodando não mostra rendimento: contar o que ainda chega seria mentira', () => {

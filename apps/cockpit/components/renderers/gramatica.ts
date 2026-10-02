@@ -44,6 +44,7 @@
 import { calculateDiff, summarizeDiff } from './diff-lines.ts';
 import { alvoDe, texto, umaLinha } from './alvo-da-execucao.ts';
 import { ehIdentificadorOpaco } from './identificador-opaco.ts';
+import { foiInterrompida } from '../feed/orfas-do-turno.ts';
 import { encurtaNomeMcp, usos, verboDe } from './vocabulario-da-gramatica.ts';
 
 // O vocabulário (verbos, nome curto do MCP) e o alvo moram em
@@ -154,8 +155,9 @@ function rendimentoDe(
   falhou: boolean,
 ): Rendimento | null {
   // Falha não conta volume: o que importa é que falhou, e a palavra é o que
-  // cumpre "cor nunca é portadora única" (§3).
-  if (falhou) return { texto: 'erro' };
+  // cumpre "cor nunca é portadora única" (§3). A órfã encerrada pelo fim do
+  // turno (`orfas-do-turno.ts`) diz o que houve, como no saldo do grupo.
+  if (falhou) return { texto: foiInterrompida({ result, isError: true }) ? 'interrompido' : 'erro' };
 
   if (toolName === 'Edit' || toolName === 'NotebookEdit') return rendimentoDeEdicao(args);
 
