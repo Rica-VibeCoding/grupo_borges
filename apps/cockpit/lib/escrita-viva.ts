@@ -44,6 +44,19 @@ export function escrevendoNoFim(itens: readonly ItemDoFeed[]): boolean {
   return ultimaParte?.type === 'text';
 }
 
+/** Qual item do feed leva o cursor de escrita — ou -1 se nenhum.
+ *
+ *  O cursor diz "o texto ainda está chegando", não "o turno segue": a fala que
+ *  terminou e passou a vez a uma ferramenta não tem mais nada a digitar, e quem
+ *  conta que o agente trabalha é a linha do agora. Por isso a régua é a mesma
+ *  de `escrevendoNoFim` — último item, última parte em texto —, e não "o
+ *  último texto do assistente com a corrida de pé", que deixava o cursor
+ *  piscando no fim da fala durante minutos de bash (print do Rica, 02/10).
+ *  Corrida parada é do chamador, que já tem o `isRunning`. */
+export function indiceDaFalaComCursor(itens: readonly ItemDoFeed[]): number {
+  return escrevendoNoFim(itens) ? itens.length - 1 : -1;
+}
+
 /** Tem output saindo no fim do feed — ferramenta em voo OU texto crescendo.
  *
  *  As duas metades são exatamente as que a linha viva já usa para escolher entre

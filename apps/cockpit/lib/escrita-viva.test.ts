@@ -8,6 +8,7 @@ import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import type { AssistenteDeTrabalho, ItemDoFeed } from '../components/feed/grupo-ferramentas.ts';
 import {
   escrevendoNoFim,
+  indiceDaFalaComCursor,
   saindoOutputNoFim,
 } from './escrita-viva.ts';
 
@@ -86,3 +87,25 @@ describe('saindoOutputNoFim', () => {
   });
 });
 
+
+describe('indiceDaFalaComCursor', () => {
+  it('texto seguido de ferramenta em voo NÃO leva cursor — o print do Rica de 02/10', () => {
+    // A fala terminou ("…enquanto isso.") e o bash de testes roda há minutos:
+    // quem diz que ele trabalha é a linha do agora, não um cursor na fala.
+    assert.equal(indiceDaFalaComCursor([assistente([TEXTO, FERRAMENTA])]), -1);
+  });
+
+  it('fala seguida de outro item não leva cursor, mesmo terminando em texto', () => {
+    const doUsuario = { kind: 'user', payload: mensagem('user', 'oi') } as unknown as ItemDoFeed;
+    assert.equal(indiceDaFalaComCursor([assistente([TEXTO]), doUsuario]), -1);
+  });
+
+  it('texto chegando no fim do feed continua levando o cursor', () => {
+    const feed = [assistente([FERRAMENTA]), assistente([TEXTO])];
+    assert.equal(indiceDaFalaComCursor(feed), 1);
+  });
+
+  it('feed vazio não tem cursor', () => {
+    assert.equal(indiceDaFalaComCursor([]), -1);
+  });
+});

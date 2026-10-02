@@ -20,6 +20,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { indiceDaFalaComCursor } from '@/lib/escrita-viva';
 
 import { capturaAncora, estaColado, longeDoFim, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { BotaoVoltaAoFim } from './botao-volta-ao-fim';
@@ -45,15 +46,8 @@ export type FeedProps = {
 
 function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedProps) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
-  const ultimoTextoDoAssistente = useMemo(() => {
-    for (let indice = itens.length - 1; indice >= 0; indice--) {
-      const item = itens[indice];
-      if (item?.kind === 'assistant' && item.parts.some((parte) => parte.type === 'text' && /\S/.test(parte.text))) {
-        return indice;
-      }
-    }
-    return -1;
-  }, [itens]);
+  // O cursor de escrita vai só na fala que ainda está chegando (`escrita-viva.ts`).
+  const falaComCursor = useMemo(() => indiceDaFalaComCursor(itens), [itens]);
 
   // O grupo no fim do feed com a corrida de pé segue girando entre um passo e
   // o próximo; o anel só fecha quando vem fala depois ou a corrida para.
@@ -276,7 +270,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
                     overflowWrap: 'anywhere',
                   }}
                 >
-                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando && (virtual.index === ultimoTextoDoAssistente || virtual.index === grupoEmCurso)} /> : null}
+                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando && (virtual.index === falaComCursor || virtual.index === grupoEmCurso)} /> : null}
                 </div>
               </div>
             );
