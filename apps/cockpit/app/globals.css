@@ -65,7 +65,6 @@
   --ck-state-attention: oklch(0.82 0.14 78);     /* #f6b84d  7.3:1  ESPERA HUMANO */
   --ck-state-ok: oklch(0.76 0.13 150);           /* #6fc884  6.3:1  concluído */
   --ck-state-fail: oklch(0.74 0.16 22);          /* #ff7d7c  5.2:1  falhou, cancelado */
-  --ck-focus: oklch(0.80 0.13 220);              /* #40d1f7  7.2:1  anel de teclado */
 
   /* -- diff: remoção e falha são o MESMO vermelho, de propósito ----------- */
   --ck-diff-add: oklch(0.76 0.14 148);           /* #6dc97d  6.3:1 no pior caso */
@@ -359,7 +358,6 @@
   --color-state-attention: var(--ck-state-attention);
   --color-state-ok: var(--ck-state-ok);
   --color-state-fail: var(--ck-state-fail);
-  --color-focus: var(--ck-focus);
 
   --color-diff-add: var(--ck-diff-add);
   --color-diff-del: var(--ck-diff-del);
@@ -435,10 +433,11 @@ body {
   color: var(--ck-selection-fg);
 }
 
-/* Foco visível sempre — o anel é token, não decoração opcional. */
+/* Sem anel de foco. A linha azul em volta do que recebe foco saiu por ordem do
+ * Rica (02/10): "tira totalmente do código essas linhas azul". `none` aqui, e
+ * não a regra apagada, porque sem ela o navegador desenha o anel padrão dele. */
 :focus-visible {
-  outline: 2px solid var(--ck-focus);
-  outline-offset: 2px;
+  outline: none;
 }
 
 /* O ANEL É DA CAIXA, NÃO DO CAMPO.
@@ -469,9 +468,7 @@ body {
   outline: none;
 }
 
-/* Pedido do Rica em 08/08: tirar o anel azul (`--ck-focus`) daqui — ele é
- * reservado a navegação por teclado (a regra `.ck-campo:focus-visible`
- * genérica, linha ~391), não a "estou digitando". Referência pedida foi
+/* Pedido do Rica em 08/08: o campo focado não ganha halo colorido. Referência pedida foi
  * Claude/GPT desktop: nos dois o campo focado só clareia a PRÓPRIA borda,
  * sem halo colorido por fora. Por isso aqui é troca da variável que a borda
  * inline já lê (`--ck-edge-composer`, usada em `composer.tsx`), não um
@@ -2160,7 +2157,6 @@ html[data-troca-agente] .ck-palco {
   background: var(--ck-gv-pilula);
   color: var(--ck-text-primary);
 }
-.ck-gv-segmento-opcao:focus-visible { outline: 2px solid var(--ck-focus); outline-offset: 2px; }
 /* Segmento que desliza (filtros do Histórico): o fundo do escolhido é um
    elemento só, que a Motion leva de um para o outro — o da opção sai. */
 .ck-gv-segmento[data-desliza] .ck-gv-segmento-opcao[aria-checked='true'] { background: transparent; }

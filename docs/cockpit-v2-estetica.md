@@ -36,7 +36,7 @@ Não é preto puro no palco: `#000` em OLED arrasta na rolagem e endurece texto 
 **Texto:** `primary` (corpo, título) · `secondary` (metadado, label, número de linha) ·
 `tertiary` **nunca em corpo** — só ícone, separador ou texto ≥ 20px.
 
-**Estado:** `--ck-state-thinking`, `-running`, `-attention`, `-ok`, `-fail` e `--ck-focus`.
+**Estado:** `--ck-state-thinking`, `-running`, `-attention`, `-ok`, `-fail`.
 **Tom de estado** (`--ck-tom-voce/ze/pensa/prepara/erro/ocupado/desligado`): a cor de quem está com a
 vez, consumida pela pílula do agente e pela tela de voz; aponta para os estados. `--ck-conversa-*` é apelido.
 `--ck-alert-*` (`> [!NOTE]` do markdown) **copia** os valores de estado, sem `var()`: são independentes.
@@ -235,7 +235,7 @@ modelo e esforço), bolha de comandos, gaveta do "+", aviso do véu de operaçã
 texto de trás não pode ser lido através do menu), fio `--ck-flutuante-fio`, raio `--ck-flutuante-raio` 22px e a sombra `--ck-flutuante-sombra`
 (a exceção da §9.3: sobre a gaveta quase preta, luminância não separa camada). Dentro dela o item tem
 raio 18px (concêntrico ao respiro de 4px), hover e `data-highlighted` são véu branco e o selecionado é
-véu mais forte com ✓. A caixa não mostra anel de foco; o item mostra. Menu novo usa as primitivas de
+véu mais forte com ✓. Nem a caixa nem o item mostram anel de foco (§9.17); o item focado é o véu. Menu novo usa as primitivas de
 `components/ui/` e herda tudo isso; cor ou borda inline no conteúdo do menu não entra.
 Menu de conta: uma conta por bloco (`--ck-flutuante-bloco`) — nome curto, email miúdo, marcas
 "✓ ativa" e "melhor agora" (mais folga somando 5h e 7d, `conta-folga.ts`) — e as janelas numa grade de
@@ -264,6 +264,7 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 14. Highlighter de linguagem em bloco de código.
 15. Tamanho, entrelinha ou tracking como valor solto (`text-[13px]`, `leading-[1.55]`).
 16. Acento novo na gaveta, ou acento fora do seu papel (§8).
+17. Anel ou linha de foco colorida (`outline`, `ring`, `box-shadow`) em qualquer elemento — o `--ck-focus` azul saiu do código por ordem do Rica (02/10). O `:focus-visible` global é `outline: none`; foco aparece por véu ou borda do próprio elemento, nunca por linha azul. Doc de referência antigo que peça *focus ring* está revogado.
 
 ## 10. Amarrações e verificação
 

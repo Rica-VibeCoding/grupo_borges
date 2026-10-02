@@ -42,10 +42,6 @@
   cursor: pointer;
   pointer-events: auto;
 }
-.abrePainel:focus-visible {
-  outline: 2px solid var(--ck-focus);
-  outline-offset: 2px;
-}
 
 .topo {
   position: relative;
@@ -165,11 +161,6 @@
 }
 .toque[aria-disabled='true'] {
   cursor: progress;
-}
-.toque:focus-visible {
-  outline: 2px solid var(--ck-focus);
-  outline-offset: -6px;
-  border-radius: var(--ck-radius-caixa);
 }
 
 /* Segurando a vez (fase 4): enquanto o dedo parado está na tela, a luz da esfera e da

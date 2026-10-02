@@ -27,10 +27,6 @@
   border-color: var(--ck-conversa-voce);
   color: var(--ck-text-primary);
 }
-.botao:focus-visible {
-  outline: 2px solid var(--ck-focus);
-  outline-offset: 2px;
-}
 /* Ligando: a borda acende na cor da brasa e respira até a frota dizer que ele subiu. */
 .botao[data-ligando] {
   border-color: var(--ck-conversa-voce);
