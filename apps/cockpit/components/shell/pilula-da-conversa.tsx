@@ -8,8 +8,12 @@
  * abre a gaveta, e a pílula recebe o dedo para outra coisa — uma dentro da
  * outra, a segunda roubaria o toque da primeira.
  *
- * A RÉGUA DO NOME e a da LINHA DO CARTÃO moram em `lib/conversa-em-uso.ts`
- * (puras, com teste). Aqui só se desenha — e o desenho mora no `.module.css`
+ * A RÉGUA DO NOME, a da DATA CURTA e a da LINHA DO CARTÃO moram em
+ * `lib/conversa-em-uso.ts` (puras, com teste).
+ *
+ * FECHADA ELA MOSTRA DE QUE DIA É (Rica, 02/10): "Ajuste da pílula · 28/09",
+ * ou "· hoje". Só dia/mês — hora, semana e turnos ficam no cartão. Em tela
+ * estreita quem perde letra é o nome, com reticências; a data não encolhe. Aqui só se desenha — e o desenho mora no `.module.css`
  * ao lado, só com token.
  *
  * O TOQUE ABRE UM CARTÃO (02/10): o campo do nome em cima e, embaixo, quando a
@@ -29,7 +33,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
-import { linhaDaConversa, renomeiaConversaEmUso, usaConversaEmUso } from '@/lib/conversa-em-uso';
+import { dataCurtaDaConversa, linhaDaConversa, renomeiaConversaEmUso, usaConversaEmUso } from '@/lib/conversa-em-uso';
 
 import { Popover, PopoverAnchor, PopoverContent } from '../ui/popover';
 import styles from './pilula-da-conversa.module.css';
@@ -63,6 +67,7 @@ export function PilulaDaConversa({ agentSlug }: { agentSlug: string }) {
   if (!emUso) return null;
 
   const linha = linhaDaConversa(emUso);
+  const data = dataCurtaDaConversa(emUso);
 
   const abre = () => {
     if (recibo.current) clearTimeout(recibo.current);
@@ -113,13 +118,25 @@ export function PilulaDaConversa({ agentSlug }: { agentSlug: string }) {
             ref={botao}
             type="button"
             onClick={() => (aberto ? cancela(true) : abre())}
-            aria-label={`Conversa ${emUso.rotulo} — renomear`}
+            aria-label={`Conversa ${emUso.rotulo}${data ? `, ${data === 'hoje' ? 'de hoje' : `de ${data}`}` : ''} — renomear`}
             aria-haspopup="dialog"
             aria-expanded={aberto}
             className={styles.alvo}
           >
             <span className={styles.nome} data-aberto={aberto} data-falhou={aviso !== null} aria-live="polite">
-              {aviso ?? emUso.rotulo}
+              {aviso ?? (
+                <>
+                  <span className={styles.titulo}>{emUso.rotulo}</span>
+                  {data ? (
+                    <span className={`ck-tabular ${styles.data}`}>
+                      <span aria-hidden="true" className={styles.ponto}>
+                        ·
+                      </span>
+                      {data}
+                    </span>
+                  ) : null}
+                </>
+              )}
             </span>
           </button>
         </PopoverAnchor>

@@ -1,7 +1,7 @@
 /* A pílula da conversa — irmã da cápsula do agente, do mesmo vidro escuro
  * (`--ck-conversa-pilula` + fio), sem desfoque: o precedente é o selecionado da
- * tropa (§8, §9.2). Menor e mais quieta que a cápsula: sans 13px em `secondary`,
- * porque o nome do agente é quem fala alto na faixa. */
+ * tropa (§8, §9.2). Menor e mais quieta que a cápsula: sans 13px, sem peso,
+ * porque o nome do agente (16px, 600) é quem fala alto na faixa. */
 
 /* O lugar: ocupa o vão entre a cápsula e a pílula de tokens, com o alvo de 44px. */
 .lugar {
@@ -24,24 +24,42 @@
 }
 
 .nome {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ck-space-1);
   min-width: 0;
   padding: var(--ck-space-1) var(--ck-space-3);
   border: 1px solid var(--ck-conversa-pilula-fio);
   border-radius: var(--ck-radius-pill);
   background-color: var(--ck-conversa-pilula);
-  color: var(--ck-text-secondary);
+  color: var(--ck-text-primary);
   font-size: var(--ck-text-sm);
   line-height: var(--ck-leading-hero);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color var(--ck-dur-fast) var(--ck-ease);
+  transition: border-color var(--ck-dur-fast) var(--ck-ease);
 }
-/* Hover e cartão aberto clareiam o texto — o foco aparece no próprio elemento,
- * nunca por anel (§9.17). */
+/* Quem encolhe é o nome, com reticências; a data fica inteira (`flex: none`). */
+.titulo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A data é mais apagada que o nome pela cor, no mesmo tamanho: `secondary`
+ * (4.5:1, metadado — §3). `tertiary` não serve a texto de 13px (§2, §9.8); ele
+ * fica só no ponto, que é separador. */
+.data {
+  flex: none;
+  display: flex;
+  gap: var(--ck-space-1);
+  color: var(--ck-text-secondary);
+}
+.ponto { color: var(--ck-text-tertiary); }
+/* Hover, foco e cartão aberto acendem o fio da própria pílula — nunca anel
+ * colorido (§9.17). */
 .alvo:hover .nome,
 .alvo:focus-visible .nome,
-.nome[data-aberto='true'] { color: var(--ck-text-primary); }
+.nome[data-aberto='true'] { border-color: var(--ck-edge-functional); }
 .nome[data-falhou='true'] { color: var(--ck-state-fail); }
 
 /* O cartão: superfície flutuante (`.ck-menu-surface`, do `PopoverContent`) com

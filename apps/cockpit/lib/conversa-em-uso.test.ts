@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import type { Conversa, ConversasResponse } from '@grupo_borges/cockpit-core/api';
 
-import { leConversaEmUso, linhaDaConversa, rotuloDaConversa } from './conversa-em-uso.ts';
+import { dataCurtaDaConversa, leConversaEmUso, linhaDaConversa, rotuloDaConversa } from './conversa-em-uso.ts';
 
 const conversa = (campos: Partial<Conversa>): Conversa => ({
   id: 'a5b2f30c',
@@ -95,5 +95,21 @@ describe('conversa em uso — a linha do cartão', () => {
   it('sem data, só os turnos; sem nada, nenhuma linha', () => {
     assert.equal(linhaDaConversa({ iniciadaEm: null, turnos: 4 }, sex), '4 turnos');
     assert.equal(linhaDaConversa({ iniciadaEm: null, turnos: 0 }, sex), null);
+  });
+
+  it('a pílula fechada mostra só dia/mês, ou "hoje" — sem hora, semana nem turnos', () => {
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: qui, nova: false }, sex), '01/10');
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: qui, nova: false }, qui + 3_600_000), 'hoje');
+  });
+
+  it('data curta: o "hoje" é o de São Paulo, não o UTC', () => {
+    const madrugadaZ = Date.parse('2026-10-02T02:30:00Z'); // ainda 01/10, 23:30 BRT
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: madrugadaZ, nova: false }, qui), 'hoje');
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: madrugadaZ, nova: false }, sex), '01/10');
+  });
+
+  it('data curta some sem data e na "Conversa nova"', () => {
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: null, nova: false }, sex), null);
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: qui, nova: true }, qui), null);
   });
 });

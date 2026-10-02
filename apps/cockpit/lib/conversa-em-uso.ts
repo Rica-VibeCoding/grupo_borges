@@ -65,18 +65,37 @@ export function leConversaEmUso(resposta: ConversasResponse | null): ConversaEmU
 const DIA = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const SEMANA = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
 
+/** Quando a conversa começou, já partido em BRT — a régua única do "hoje" da
+ *  pílula e do cartão. `null` sem data ou com instante inválido. */
+function quando(iniciadaEm: number | null, agora: number) {
+  const carimbo = iniciadaEm === null ? null : formataDataHora(iniciadaEm);
+  if (iniciadaEm === null || carimbo === null) return null;
+  const [diaMes, hora] = carimbo.split(' ');
+  return {
+    diaMes,
+    hora,
+    hoje: DIA.format(iniciadaEm) === DIA.format(agora),
+    semana: SEMANA.format(iniciadaEm).replace('.', ''),
+  };
+}
+
+/** A data curta da pílula fechada: `28/09`, ou `hoje`. Sem data, `null`. A
+ *  "Conversa nova" também fica sem: ela nasceu agora, e "hoje" ao lado de
+ *  "nova" é a mesma coisa dita duas vezes (§1.2 — enfeite que não se paga). */
+export function dataCurtaDaConversa(c: Pick<ConversaEmUso, 'iniciadaEm' | 'nova'>, agora: number = Date.now()): string | null {
+  if (c.nova) return null;
+  const q = quando(c.iniciadaEm, agora);
+  if (!q) return null;
+  return q.hoje ? 'hoje' : q.diaMes;
+}
+
 /** A linha embaixo do nome no cartão: `Aberta qui 28/09, 14:10 · 12 turnos`.
  *  Hoje vira `Aberta hoje, 14:10`; zero turnos some; sem data, só os turnos;
  *  sem nada, `null` (o cartão não reserva linha vazia). */
 export function linhaDaConversa(c: Pick<ConversaEmUso, 'iniciadaEm' | 'turnos'>, agora: number = Date.now()): string | null {
   const partes: string[] = [];
-  const carimbo = c.iniciadaEm === null ? null : formataDataHora(c.iniciadaEm);
-  if (c.iniciadaEm !== null && carimbo !== null) {
-    const [diaMes, hora] = carimbo.split(' ');
-    const hoje = DIA.format(c.iniciadaEm) === DIA.format(agora);
-    const semana = SEMANA.format(c.iniciadaEm).replace('.', '');
-    partes.push(hoje ? `Aberta hoje, ${hora}` : `Aberta ${semana} ${diaMes}, ${hora}`);
-  }
+  const q = quando(c.iniciadaEm, agora);
+  if (q) partes.push(q.hoje ? `Aberta hoje, ${q.hora}` : `Aberta ${q.semana} ${q.diaMes}, ${q.hora}`);
   if (c.turnos > 0) partes.push(c.turnos === 1 ? '1 turno' : `${c.turnos} turnos`);
   return partes.length ? partes.join(' · ') : null;
 }
