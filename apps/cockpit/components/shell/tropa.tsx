@@ -19,7 +19,8 @@
  * - O pulso de 24h mora na gaveta.
  * - A VPS fica no rodapé da tropa, como cartão.
  *
- * O desenho de cada linha mora em `linha-da-tropa.tsx` e `miudezas-da-linha.tsx`.
+ * O desenho de cada linha mora em `linha-da-tropa.tsx` e `miudezas-da-linha.tsx`;
+ * o deslize depois do arrasto, em `deslize-da-tropa.ts`.
  *
  * Dono: Daniel (pele). As medidas vêm do esqueleto.
  */
@@ -30,7 +31,6 @@ import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/ad
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { patchOrdemDaTropa } from '@grupo_borges/cockpit-core/api';
-import { deslizes } from '@/lib/desliza-tropa';
 import { ordenaTropa } from '@/lib/ordena-tropa';
 import {
   aplicaOrdem,
@@ -41,6 +41,7 @@ import {
 } from '@/lib/ordem-arrastada';
 import { TIPO_ARRASTO } from './arrasto-da-tropa';
 import { BlocoDaVps } from './bloco-da-vps';
+import { deslizaAsLinhas, type FotoDoDeslize } from './deslize-da-tropa';
 import { LinhaDaTropa, type EscolheAgente } from './linha-da-tropa';
 
 export type { EscolheAgente };
@@ -111,7 +112,7 @@ export function Tropa({
   // item da lista é um `<li>` com `key` pelo slug, e o React move o nó junto.
   const listaRef = useRef<HTMLUListElement | null>(null);
   const ordemNaTela = useRef<string[]>([]);
-  const fotoDoDeslize = useRef<{ topos: Map<string, number>; soltada: string | null } | null>(null);
+  const fotoDoDeslize = useRef<FotoDoDeslize | null>(null);
 
   const gravaOrdem = useCallback((nova: string[], soltada: string | null) => {
     const ul = listaRef.current;
@@ -137,67 +138,15 @@ export function Tropa({
   // Pintou a ordem nova: cada linha que andou volta ao lugar velho por
   // `transform`, sem transição, e no quadro seguinte desliza até zero. Efeito
   // de LAYOUT, antes da pintura — num efeito comum o Rica veria um quadro com
-  // tudo já no lugar novo, e o deslize viraria o salto duplo.
+  // tudo já no lugar novo, e o deslize viraria o salto duplo. O DOM do
+  // deslize mora em `deslize-da-tropa.ts`.
   useLayoutEffect(() => {
     ordemNaTela.current = agentesOrdenados.map((a) => a.slug);
     const foto = fotoDoDeslize.current;
     const ul = listaRef.current;
     if (!foto || !ul) return;
     fotoDoDeslize.current = null;
-    const linhas = new Map<string, HTMLElement>();
-    const depois = new Map<string, number>();
-    agentesOrdenados.forEach((a, i) => {
-      const li = ul.children[i] as HTMLElement | undefined;
-      if (!li) return;
-      linhas.set(a.slug, li);
-      depois.set(a.slug, li.getBoundingClientRect().top);
-    });
-    const andaram = deslizes(foto.topos, depois, foto.soltada);
-    for (const { slug, dy } of andaram) {
-      const li = linhas.get(slug)!;
-      li.style.transition = 'none';
-      li.style.transform = `translateY(${dy}px)`;
-    }
-    if (andaram.length === 0) return;
-    // Lê o layout para o navegador assentar o ponto de partida antes da
-    // transição — sem isto ele junta as duas escritas e não anima nada.
-    void ul.offsetHeight;
-    // A linha soltada fica POR CIMA enquanto as outras deslizam. As `li` são
-    // transparentes e quem ganha `transform` sobe de camada: sem isto a linha
-    // que desce passa pintada por cima da que o dedo acabou de soltar. O fundo
-    // opaco é o da faixa — a linha soltada tapa a que atravessa por baixo dela.
-    // `position: relative` sem deslocamento só existe para o `z-index` valer.
-    const solta = foto.soltada ? linhas.get(foto.soltada) : undefined;
-    let faltam = andaram.length;
-    let seguranca = 0;
-    const desce = () => {
-      if (!solta) return;
-      window.clearTimeout(seguranca);
-      solta.style.position = '';
-      solta.style.zIndex = '';
-      solta.style.background = '';
-    };
-    if (solta) {
-      solta.style.position = 'relative';
-      solta.style.zIndex = '1';
-      solta.style.background = 'var(--ck-surface-nav)';
-      // Rede para o `transitionend` que não vem — aba escondida no meio do
-      // deslize, linha desmontada pelo poll. O deslize dura 320ms; o dobro basta.
-      seguranca = window.setTimeout(desce, 640);
-    }
-    for (const { slug } of andaram) {
-      const li = linhas.get(slug)!;
-      li.style.transition = 'transform var(--ck-dur-calm, 320ms) var(--ck-ease)';
-      li.style.transform = '';
-      const limpa = (evento: TransitionEvent) => {
-        if (evento.target !== li || evento.propertyName !== 'transform') return;
-        li.style.transition = '';
-        li.removeEventListener('transitionend', limpa);
-        faltam -= 1;
-        if (faltam === 0) desce();
-      };
-      li.addEventListener('transitionend', limpa);
-    }
+    deslizaAsLinhas(ul, agentesOrdenados, foto);
   }, [agentesOrdenados]);
 
   const move = useCallback(
