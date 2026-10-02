@@ -2170,125 +2170,17 @@ html[data-troca-agente] .ck-palco {
   .ck-gv-botao-trilho { transition: none; }
 }
 
-/* ═══ A ESFERA MINI — a esfera da tela de conversa, em miniatura, à esquerda
- * da linha do agora (`feed/linha-do-agora.tsx`, Rica 02/10).
- *
- * A mesma cara da grande: vidro escuro, aro aceso no tom da vez e três pontos
- * de luz girando dentro, com o reflexo no alto à esquerda. Os tons são os
- * `--ck-tom-*` da tela de conversa. Os pontos moram em duas camadas que giram
- * em velocidade FIXA — a calma (3,2 s) e a ágil (1,1 s) — e o estado só cruza
- * a opacidade delas: trocar a `animation-duration` no meio faz a fase pular.
- * O tom anda por `@property`, então também transiciona. O halo é luz, não
- * sombra (§9.3). */
-@property --ck-esf-tom {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: transparent;
-}
+/* ═══ A ESFERA MINI — a caixa da esfera da tela de conversa em miniatura, à
+ * esquerda da linha do agora (`feed/linha-do-agora.tsx`). O desenho é o
+ * shader de lá (`EsferaConversa mini`); aqui só mora o tamanho. 28px para a
+ * luz da borda caber sem ser cortada; a esfera em si tem ~20px. */
 .ck-esfera-mini-caixa {
+  position: relative;
   display: inline-flex;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-}
-.ck-esfera-mini {
-  --ck-esf-tom: var(--ck-tom-prepara);
-  --ck-esf-calma: 1;
-  --ck-esf-agil: 0;
-  --ck-esf-pontos: 0.9;
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  overflow: hidden;
-  isolation: isolate;
-  background: radial-gradient(circle at 50% 50%, var(--ck-surface-canvas) 55%, color-mix(in oklch, var(--ck-esf-tom) 22%, var(--ck-surface-canvas)) 100%);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--ck-esf-tom) 85%, transparent),
-    inset 0 0 3px color-mix(in oklch, var(--ck-esf-tom) 60%, transparent),
-    0 0 6px color-mix(in oklch, var(--ck-esf-tom) 35%, transparent);
-  transition:
-    --ck-esf-tom var(--ck-dur-calm) var(--ck-ease),
-    opacity var(--ck-dur-calm) var(--ck-ease);
-  animation: ck-esfera-respira 3.6s var(--ck-ease) infinite;
-}
-/* Os três pontos: um nó de 3px e duas cópias por `box-shadow`, todos no tom. */
-.ck-esfera-mini-calma,
-.ck-esfera-mini-agil {
-  position: absolute;
-  inset: 0;
-  will-change: transform;
-  transition: opacity var(--ck-dur-calm) var(--ck-ease);
-}
-.ck-esfera-mini-calma::before,
-.ck-esfera-mini-agil::before {
-  content: '';
-  position: absolute;
-  top: 8px;
-  left: 5px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--ck-esf-tom);
-  box-shadow:
-    5px -4px 0 0 var(--ck-esf-tom),
-    7px 3px 0 0 var(--ck-esf-tom);
-  filter: blur(0.5px);
-  opacity: var(--ck-esf-pontos);
-}
-.ck-esfera-mini-calma {
-  opacity: var(--ck-esf-calma);
-  animation: ck-esfera-gira 3.2s linear infinite;
-}
-.ck-esfera-mini-agil {
-  opacity: var(--ck-esf-agil);
-  animation: ck-esfera-gira 1.1s linear infinite;
-}
-/* O reflexo do vidro, parado no alto à esquerda. */
-.ck-esfera-mini-volume {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle at 32% 26%, oklch(1 0 0 / 0.7), transparent 18%);
-}
-.ck-esfera-mini[data-estado='parado'] {
-  --ck-esf-pontos: 0.45;
-}
-.ck-esfera-mini[data-estado='parado'] > .ck-esfera-mini-calma {
-  animation-play-state: paused;
-}
-.ck-esfera-mini[data-estado='offline'] {
-  --ck-esf-tom: var(--ck-tom-desligado);
-  --ck-esf-pontos: 0.3;
-  opacity: 0.6;
-  animation: none;
-}
-.ck-esfera-mini[data-estado='offline'] > span {
-  animation-play-state: paused;
-}
-.ck-esfera-mini[data-estado='pensando'] {
-  --ck-esf-tom: var(--ck-tom-pensa);
-}
-.ck-esfera-mini[data-estado='executando'] {
-  --ck-esf-tom: color-mix(in srgb, var(--ck-tom-pensa) 60%, var(--ck-tom-ze));
-  --ck-esf-calma: 0;
-  --ck-esf-agil: 1;
-}
-.ck-esfera-mini[data-estado='atencao'] {
-  --ck-esf-tom: var(--ck-tom-voce);
-  animation: ck-esfera-chama 1.2s var(--ck-ease) infinite;
-}
-@keyframes ck-esfera-gira {
-  to { transform: rotate(360deg); }
-}
-@keyframes ck-esfera-respira {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(0.92); }
-}
-@keyframes ck-esfera-chama {
-  0%, 100% { transform: scale(1); }
-  40%      { transform: scale(0.82); }
+  width: 28px;
+  height: 28px;
+  margin: -5px 0 -5px -5px;
 }
 
 /* O BRILHO QUE CORRE no texto em voo — o "Pensando…" do Claude Code. A cor
@@ -2319,10 +2211,4 @@ html[data-troca-agente] .ck-palco {
 }
 .ck-linha-do-agora-texto[data-estado='atencao'] {
   color: var(--ck-state-attention);
-}
-@media (prefers-reduced-motion: reduce) {
-  .ck-esfera-mini,
-  .ck-esfera-mini > span {
-    animation: none !important;
-  }
 }

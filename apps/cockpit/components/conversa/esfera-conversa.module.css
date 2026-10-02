@@ -104,3 +104,25 @@
   animation: none;
   opacity: 0.4;
 }
+
+/* A MINIATURA (`mini`) — a mesma esfera na linha do agora do feed. O desenho
+ * fica preso à caixa dela, não à tela, e não leva o nome da troca de vista:
+ * dois elementos com o mesmo `view-transition-name` derrubam a transição da
+ * tela de voz. */
+.palcoMini {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.desenhoMini {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.reservaMini {
+  height: 72%;
+  view-transition-name: none;
+}

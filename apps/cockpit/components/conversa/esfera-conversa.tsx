@@ -64,6 +64,7 @@ export function EsferaConversa({
   escuta = 'nao',
   variacao,
   leNivel,
+  mini = false,
   children,
 }: {
   cena: Cena;
@@ -73,6 +74,11 @@ export function EsferaConversa({
   leNivel: () => number;
   /** O que mora no centro do palco, por cima da luz (o sinal do toque). */
   children?: ReactNode;
+  /** A MESMA esfera, em miniatura, presa à própria caixa — a da linha do agora
+   *  no fim do feed (Rica, 02/10: "Ctrl+C, Ctrl+V e ajustar para ficar
+   *  pequenininho"). O desenho deixa de cobrir a tela e não entra na troca de
+   *  vista da tela de voz. */
+  mini?: boolean;
 }) {
   const palcoRef = useRef<HTMLDivElement>(null);
   const cenaRef = useRef(cena);
@@ -101,7 +107,7 @@ export function EsferaConversa({
     if (!palco || semWebGL) return;
     // Canvas novo a cada montagem: o contexto liberado de um canvas não volta.
     const canvas = document.createElement('canvas');
-    canvas.className = styles.desenho;
+    canvas.className = mini ? styles.desenhoMini : styles.desenho;
     palco.append(canvas);
     const tela = criaTelaWebGL(canvas, FRAG_ESFERA, ESCALA, { transparente: true });
     if (!tela) {
@@ -126,10 +132,14 @@ export function EsferaConversa({
       const caixa = canvas.getBoundingClientRect();
       const p = palco.getBoundingClientRect();
       altura = caixa.height;
-      alvoLugar = lugarNoPalco(
-        { left: p.left - caixa.left, top: p.top - caixa.top, width: p.width, height: p.height },
-        caixa.width,
-      );
+      // Na miniatura, o raio é proporção da caixa: o piso de 24px da tela cheia
+      // não cabe numa linha do feed.
+      alvoLugar = mini
+        ? { x: caixa.width / 2, y: caixa.height / 2, raio: caixa.width * 0.36, topo: 0, base: caixa.height }
+        : lugarNoPalco(
+            { left: p.left - caixa.left, top: p.top - caixa.top, width: p.width, height: p.height },
+            caixa.width,
+          );
       lugar ??= alvoLugar;
     };
 
@@ -239,7 +249,7 @@ export function EsferaConversa({
       tela.libera();
       canvas.remove();
     };
-  }, [variacao, reduzido, leNivel, semWebGL]);
+  }, [variacao, reduzido, leNivel, semWebGL, mini]);
 
   // Reserva sem WebGL: um círculo em CSS que ainda cresce com a voz, por uma
   // variável escrita direto no elemento (nenhum render de React).
@@ -266,13 +276,13 @@ export function EsferaConversa({
     <div
       ref={palcoRef}
       aria-hidden="true"
-      className={styles.palco}
+      className={mini ? styles.palcoMini : styles.palco}
       data-visual="esfera"
       data-variacao={variacao}
       data-movimento={reduzido ? 'parado' : 'vivo'}
       data-desenho={semWebGL ? 'css' : 'webgl'}
     >
-      {semWebGL ? <div className={styles.reserva} data-tom={tomDaCena(cena)} data-variacao={variacao} /> : null}
+      {semWebGL ? <div className={mini ? `${styles.reserva} ${styles.reservaMini}` : styles.reserva} data-tom={tomDaCena(cena)} data-variacao={variacao} /> : null}
       {cena === 'desligado' ? <span className={styles.brasa} /> : null}
       {children}
     </div>

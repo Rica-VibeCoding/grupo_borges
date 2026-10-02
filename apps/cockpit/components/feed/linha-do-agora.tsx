@@ -11,44 +11,49 @@
 // remonta ao rolar, e cada remontagem reiniciaria o giro da esfera. Aqui ela
 // é rodapé do feed (`feed.tsx`): monta uma vez por agente.
 //
-// A esfera é a da tela de conversa em miniatura, só que em CSS: o shader de
-// lá numa linha que rola pesa no celular. As cores e o ritmo moram em
-// `globals.css` (§ A ESFERA MINI).
+// A esfera é A MESMA da tela de conversa (`conversa/esfera-conversa.tsx`, modo
+// `mini`), não uma imitação: mesmo shader, mesmas cores, mesma matéria. O Rica
+// recusou a versão em CSS em 02/10.
 
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+
+import { EsferaConversa } from '../conversa/esfera-conversa';
+import type { Cena } from '../conversa/moldura-estado';
+import { CHAVE_VISUAL, leVisual, type VariacaoEsfera } from '../conversa/preferencia-visual';
 
 import type { EstadoDoAgora } from './linha-do-agora.ts';
 import { rotuloDoTempo } from './linha-viva.ts';
 
 const TICK_MS = 1_000;
 
-/** Parada e desligada, a esfera encolhe um pouco: presença, não chamado. */
-const ESCALA: Record<EstadoDoAgora, number> = {
-  offline: 0.78,
-  parado: 0.86,
-  pensando: 1,
-  executando: 1,
-  atencao: 1,
+/** O estado do feed na língua da tela de conversa: pensar é esperar o Zé,
+ *  executar é trabalhar, chamar o Rica é a cor de quando ela ouve você. */
+const CENA: Record<EstadoDoAgora, Cena> = {
+  offline: 'desligado',
+  parado: 'parado',
+  pensando: 'esperandoZe',
+  executando: 'trabalhando',
+  atencao: 'ouvindo',
 };
 
-const MOLA = { type: 'spring', stiffness: 260, damping: 18, bounce: 0.22 } as const;
+const SEM_VOZ = () => 0;
+
+/** A variação que o Rica escolheu na tela de voz; sem esfera escolhida, o vidro. */
+function variacaoEscolhida(): VariacaoEsfera {
+  if (typeof window === 'undefined') return 'vidro';
+  const visual = leVisual(window.localStorage.getItem(CHAVE_VISUAL));
+  return visual.opcao !== 'moldura' && (visual.variacao === 'materia' || visual.variacao === 'vidro')
+    ? visual.variacao
+    : 'vidro';
+}
 
 function EsferaMini({ estado }: { estado: EstadoDoAgora }) {
+  const [variacao] = useState(variacaoEscolhida);
   return (
-    <motion.span
-      aria-hidden
-      className="ck-esfera-mini-caixa"
-      initial={false}
-      animate={{ scale: ESCALA[estado] }}
-      transition={MOLA}
-    >
-      <span className="ck-esfera-mini" data-estado={estado}>
-        <span className="ck-esfera-mini-calma" />
-        <span className="ck-esfera-mini-agil" />
-        <span className="ck-esfera-mini-volume" />
-      </span>
-    </motion.span>
+    <span aria-hidden className="ck-esfera-mini-caixa">
+      <EsferaConversa mini cena={CENA[estado]} variacao={variacao} leNivel={SEM_VOZ} />
+    </span>
   );
 }
 
