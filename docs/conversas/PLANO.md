@@ -109,16 +109,18 @@ persona que mudou desde a conversa; lista geral da frota.
   O nó `note-ricardo` é o Windows da mesma máquina: com ele, o note parece desligado.
   **Omarchy fora → PC Windows** (rodada 2): `ssh RicardoBorges@100.118.54.91`, clone
   `Documents\dev\projetos\grupo_borges-cadeiras`, `tmux -L conversas` (psmux), cadeira subida com
-  `claude --model claude-opus-5-5 --dangerously-skip-permissions` (confirmar "trust" com Down+Enter).
+  `claude --model claude-opus-5-5 --dangerously-skip-permissions` para a `tela` (confirmar "trust" com Down+Enter); a `api` sobe em Codex.
   Comando PowerShell vai num `.ps1` por `scp` + `powershell -File` (aspas não sobrevivem ao SSH).
   Patch: `git diff --binary --output=C:\tmp\fN.patch` (o stdout do PowerShell estraga o patch);
   arquivo novo entra com `git add -N` e sai com `git reset` depois, senão trava o `pull`.
-  Sem cadeira `teste` (DeepSeek): a cadeira `api`, limpa, confere.
+  Sem cadeira `teste`: o Canário (DeepSeek, VPS) confere — nunca uma cadeira de outro motor.
 - **Repositório**: `~/Projetos/grupo_borges`, clonado na F0. O clone é só das cadeiras.
 - **Casa** `tmux -L conversas`, com até três sessões:
-  - `api`: Claude Code com `claude-opus-5-5`;
-  - `tela`: Claude Code com `claude-opus-5-5`, carregando a skill `frontend-design`;
-  - `teste`: Claude Code com DeepSeek, pela função `deep`.
+  - `api`: **Codex** `gpt-6-sol` — back-end só GPT-6 Sol;
+  - `tela`: Claude Code com `claude-opus-5-5`, carregando a skill `frontend-design` e lendo `docs/cockpit-v2-estetica.md` — UI só Opus 5.5;
+  - `teste`: Claude Code com DeepSeek, pela função `deep` — pesquisa e teste (browser-harness) só DeepSeek.
+
+  Motor por papel é regra fixa do Rica (02/10): não se troca por conveniência.
 
   Para subir uma sessão: `tmux -L conversas new-session -d -s api -c ~/Projetos/grupo_borges
   'bash -ic "cc --model claude-opus-5-5"'`. O `bash -ic` carrega as funções do

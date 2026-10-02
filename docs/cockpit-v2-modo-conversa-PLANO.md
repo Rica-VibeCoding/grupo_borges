@@ -199,8 +199,10 @@ fala relatado não está. A recusa de fala ocupada no cliente existe independent
 
 ## Cadeiras (PC do Rica, psmux; coordenação no Daniel pela VPS)
 
-- **lógica** → DeepSeek `deepseek-v4-pro`, pelo proxy da VPS via túnel.
-- **tela** → Tara `gpt-5.6-sol`. Dona do lockfile: a única instalação (`vad-web`) é dela.
+- **lógica** (back-end) → **GPT-6 Sol** (Codex, `gpt-6-sol`).
+- **tela** (UI) → **Opus 5.5** com `frontend-design` e `docs/cockpit-v2-estetica.md`. Dona do lockfile.
+- **teste** (pesquisa, browser-harness) → **DeepSeek**.
+- Motor por papel é regra fixa do Rica (02/10); a divisão anterior (lógica DeepSeek, tela Tara) está revogada.
 - **Coordenação** (Daniel): contrato, despacho, revisão, commit. Não escreve código de produção.
 - Relatos e briefings: `docs/modo-conversa/` (briefings/, relatos/).
 
@@ -210,11 +212,12 @@ fala relatado não está. A recusa de fala ocupada no cliente existe independent
   aspas aninhadas. Na home do PC já existem: `cap-daniel.ps1 <sessao> <n>` (captura), `send.ps1 <sessao>
   <arquivo.txt>` (texto com `-l` + Enter separado), `compact.ps1`, `clear.ps1`. Chamar com
   `powershell -NoProfile -ExecutionPolicy Bypass -File <x>.ps1`.
-- **Sessões:** `psmux -L conversa`: `logica` = Claude Code com DeepSeek `deepseek-v4-pro[1m]` direto no
+- **Sessões (motor por papel, 02/10):** `psmux -L conversa`: `logica` = **Codex CLI** `codex.cmd -m gpt-6-sol
+  -c model_reasoning_effort=medium --dangerously-bypass-approvals-and-sandbox` (o `gpt-6-sol` não existe no
+  `claude-code-proxy`; chamar a `.cmd`, o `codex` sem extensão dá erro 193). `tela` = Claude Code
+  `claude-opus-5-5` com `frontend-design`. `teste` = Claude Code com DeepSeek `deepseek-v4-pro[1m]` direto no
   OpenCode Zen (chave do cofre `sk-AZyN…` passada por `-e` no `new-session`, nunca em arquivo; env com
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`/`AUTO_COMPACT_WINDOW=1048576`). `tela` = **Codex CLI** `codex.cmd -m gpt-6-sol
-  -c model_reasoning_effort=medium --dangerously-bypass-approvals-and-sandbox` (ordem do Rica 26/09; o
-  `gpt-6-sol` não existe no `claude-code-proxy`; chamar a `.cmd`, o `codex` sem extensão dá erro 193).
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`/`AUTO_COMPACT_WINDOW=1048576`).
 - **Despacho:** briefing em `docs/modo-conversa/briefings/`, commitado e puxado no PC antes; mensagem de uma
   linha, sem acento e sem `;`. Codex mostra "Waiting for background terminal" enquanto roda teste — não é ócio.
 - **Diff PC → VPS:** no PC, `git add -N <novos>` + `git diff --binary -- <caminhos> > %TEMP%\x.patch` +
