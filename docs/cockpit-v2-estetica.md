@@ -218,6 +218,9 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
 - **Caminho de arquivo trunca o diretório** e preserva o nome inteiro.
 - **Identificador cru nunca vira alvo** (`file_id`, UUID, hash, token — `identificador-opaco.ts`): sem
   alvo legível, a linha é verbo + complemento (`Baixou o anexo`) ou verbo + nome amigável da ferramenta.
+- **Context7 e `ask_user` têm verbo próprio:** o Context7, com qualquer prefixo, pelo método
+  (`Localizou <lib>`, `Consultou a documentação`); o `ask_user` do MCP é pergunta ao Rica como o
+  `AskUserQuestion` (`Perguntou <pergunta>`).
 - **Erro de ferramenta não é modal:** fica na linha, expansível.
 - **Sem highlighter de linguagem.** Bloco de código é mono de uma cor. stdout e stderr em
   `text-primary`; o que separa é um rótulo `stderr` em `secondary` e um filete funcional. Canal não é

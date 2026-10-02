@@ -209,4 +209,39 @@ describe('pergunta ao Rica (02/10)', () => {
     const e = leExecucao({ toolName: 'AskUserQuestion', args: {}, estado: 'requires-action' });
     assert.equal(e.frase, 'Aguardando você: AskUserQuestion');
   });
+
+  it('o ask_user do MCP é a mesma pergunta: "Perguntou <pergunta>"', () => {
+    const e = leExecucao({ toolName: 'mcp__ask-user__ask_user', args, result: 'Azul' });
+    assert.equal(e.frase, 'Perguntou Qual cor do botão?');
+  });
+});
+
+describe('Context7 — o verbo sai do método, com qualquer prefixo', () => {
+  const nomes = ['mcp__plugin_context7_context7', 'mcp__context7', 'mcp__context7_global'];
+
+  it('resolve-library-id localiza a biblioteca pelo nome', () => {
+    for (const prefixo of nomes) {
+      const e = leExecucao({
+        toolName: `${prefixo}__resolve-library-id`,
+        args: { libraryName: 'Supabase', query: 'RLS performance' },
+        result: 'ok',
+      });
+      assert.equal(e.frase, 'Localizou Supabase');
+    }
+  });
+
+  it('query-docs consulta a documentação — nunca "Usou" nem o libraryId cru', () => {
+    for (const prefixo of nomes) {
+      const e = leExecucao({
+        toolName: `${prefixo}__query-docs`,
+        args: { libraryId: '/supabase/supabase', query: 'RLS' },
+        result: 'ok',
+      });
+      assert.equal(e.frase, 'Consultou a documentação');
+    }
+    assert.equal(
+      leExecucao({ toolName: 'mcp__context7__query-docs', args: {}, estado: 'running' }).frase,
+      'Consultando a documentação',
+    );
+  });
 });

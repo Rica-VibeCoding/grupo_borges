@@ -72,6 +72,14 @@ const delegacoes: Verbo = {
   gerundio: 'Delegando',
   unidade: (n) => (n === 1 ? 'uma tarefa' : `${n} tarefas`),
 };
+// A pergunta ao Rica. Em voo ela não fala no gerúndio: é `aguarda`, com
+// frase própria em `leExecucao` — quem tem a vez é ele, não o agente. O
+// `ask_user` do MCP é a mesma pergunta, pelo painel do cockpit.
+const perguntas: Verbo = {
+  passado: 'Perguntou',
+  gerundio: 'Perguntando',
+  unidade: (n) => (n === 1 ? 'uma vez' : `${n} vezes`),
+};
 /** MCP e desconhecida: o nome curto da ferramenta vai no lugar do alvo quando
  *  falta argumento, então o verbo genérico é o que nunca produz frase torta. */
 export const usos: Verbo = {
@@ -118,13 +126,8 @@ const VERBOS: Record<string, Verbo> = {
     unidade: (n) => (n === 1 ? 'um arquivo' : `${n} arquivos`),
   },
 
-  // A pergunta ao Rica. Em voo ela não fala no gerúndio: é `aguarda`, com
-  // frase própria em `leExecucao` — quem tem a vez é ele, não o agente.
-  AskUserQuestion: {
-    passado: 'Perguntou',
-    gerundio: 'Perguntando',
-    unidade: (n) => (n === 1 ? 'uma vez' : `${n} vezes`),
-  },
+  AskUserQuestion: perguntas,
+  'mcp__ask-user__ask_user': perguntas,
 
   Agent: delegacoes,
   Task: delegacoes,
@@ -191,6 +194,20 @@ const VERBOS: Record<string, Verbo> = {
     frase('Salvou', 'Salvando', 'uma automação', 'uma automação', 'automações', 'identifier'),
 };
 
+/**
+ * O Context7 se registra com vários prefixos (`mcp__plugin_context7_context7__`,
+ * `mcp__context7__`, `mcp__context7_global__`), e o que diz o que ele fez é o
+ * método. `get-library-docs` é o nome antigo do `query-docs`.
+ */
+const CONTEXT7 = /^mcp__(?:plugin_context7_context7|context7\w*)__(.+)$/;
+const consultaDocs = frase('Consultou', 'Consultando', 'a documentação', 'uma consulta', 'consultas');
+const METODOS_CONTEXT7: Record<string, Verbo> = {
+  'resolve-library-id':
+    frase('Localizou', 'Localizando', 'a biblioteca', 'uma biblioteca', 'bibliotecas', 'libraryName'),
+  'query-docs': consultaDocs,
+  'get-library-docs': consultaDocs,
+};
+
 /** Pedaço de nome de MCP que só diz "isto é um MCP" — não diz QUAL. */
 const RUIDO_MCP = /^(mcp|plugin)$/;
 
@@ -222,5 +239,6 @@ export function encurtaNomeMcp(nome: string): string {
  * curto; desde 02/10 os MCP medidos no buraco do alvo têm frase própria.
  */
 export function verboDe(toolName: string): Verbo {
-  return VERBOS[toolName] ?? usos;
+  const doContext7 = CONTEXT7.exec(toolName)?.[1];
+  return VERBOS[toolName] ?? (doContext7 ? METODOS_CONTEXT7[doContext7] : undefined) ?? usos;
 }

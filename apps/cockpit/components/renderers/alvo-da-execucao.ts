@@ -45,7 +45,7 @@ function encurtaUrl(url: string): string {
   return semEsquema.replace(/\/$/, '');
 }
 
-/** A primeira pergunta do `AskUserQuestion` (`questions[0].question`). */
+/** A primeira pergunta do `AskUserQuestion` e do `ask_user` (`questions[0].question`). */
 function perguntaDe(args: Record<string, unknown>): string | null {
   const perguntas = args.questions;
   if (!Array.isArray(perguntas)) return null;
@@ -55,7 +55,7 @@ function perguntaDe(args: Record<string, unknown>): string | null {
 }
 
 export function alvoDe(toolName: string, args: Record<string, unknown>): string {
-  if (toolName === 'AskUserQuestion') {
+  if (toolName === 'AskUserQuestion' || toolName === 'mcp__ask-user__ask_user') {
     const pergunta = perguntaDe(args);
     if (pergunta) return umaLinha(pergunta);
   }
