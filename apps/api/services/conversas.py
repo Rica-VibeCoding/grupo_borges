@@ -57,6 +57,7 @@ _PREFIXO_METADADO = b'{"type":"'
 _MARCA_USER = b'"type":"user"'
 _MARCA_TOOL_RESULT = b'"type":"tool_result"'
 _MARCA_TOOL_USE = b'"type":"tool_use"'
+_TIMESTAMP_RE = re.compile(rb'"timestamp"\s*:\s*"([^"\\]+)"')
 #: Ferramentas que escrevem arquivo, e a chave do caminho no `input` delas.
 _FERRAMENTAS_DE_EDICAO = {
     "Write": "file_path", "Edit": "file_path", "MultiEdit": "file_path",
@@ -74,6 +75,7 @@ class _Resumo:
     ai: str | None = None
     prompt: str | None = None
     primeira: str | None = None
+    iniciada_em: int | None = None
     turnos: int = 0
     #: Caminhos que a conversa mexeu, como o JSONL grava (absolutos ou relativos ao cwd).
     arquivos: set[str] = field(default_factory=set)
@@ -171,6 +173,16 @@ def _prompt_aproveitavel(texto: str | None) -> str | None:
 
 
 def _absorver(resumo: _Resumo, linha: bytes) -> None:
+    if resumo.iniciada_em is None:
+        timestamp = _TIMESTAMP_RE.search(linha)
+        if timestamp is not None:
+            try:
+                texto = timestamp.group(1).decode("ascii").replace("Z", "+00:00")
+                instante = datetime.fromisoformat(texto)
+                if instante.utcoffset() is not None:
+                    resumo.iniciada_em = int(instante.timestamp() * 1000)
+            except (UnicodeDecodeError, ValueError):
+                pass
     if linha.startswith(_PREFIXO_METADADO):
         try:
             payload = json.loads(linha)
@@ -570,6 +582,7 @@ def listar(
                     "titulo_origem": origem,
                     "nota": (meta or {}).get("nota") or None,
                     "atualizada_em": st.st_mtime_ns // 1_000_000,
+                    "iniciada_em": resumo.iniciada_em,
                     "turnos": resumo.turnos,
                     "bytes": st.st_size,
                     "estrela": estrela,
@@ -809,4 +822,9 @@ def ficha(
     with _trava:
         resumo = _resumir(caminho, st)
     titulo, origem = _titulo(session_id, resumo, meta, nomes)
-    return {"titulo": titulo, "titulo_origem": origem, "turnos": resumo.turnos}
+    return {
+        "titulo": titulo,
+        "titulo_origem": origem,
+        "turnos": resumo.turnos,
+        "iniciada_em": resumo.iniciada_em,
+    }

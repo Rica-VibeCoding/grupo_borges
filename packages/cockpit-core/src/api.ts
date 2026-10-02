@@ -989,6 +989,7 @@ export type Conversa = {
   titulo_origem: ConversaTituloOrigem;
   nota: string | null;
   atualizada_em: number;
+  iniciada_em: number | null;
   turnos: number;
   bytes: number;
   estrela: boolean;
@@ -1051,6 +1052,7 @@ export type LeituraDaConversa = {
   concluida: boolean;
   turnos: number;
   atualizada_em: number;
+  iniciada_em: number | null;
   /** Da mais antiga para a mais nova. */
   mensagens: MensagemDaLeitura[];
   /** Ficou conversa antes das mensagens devolvidas. */

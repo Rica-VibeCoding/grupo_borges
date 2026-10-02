@@ -40,6 +40,7 @@ class ConversaItem(BaseModel):
     titulo_origem: TituloOrigem
     nota: str | None
     atualizada_em: int  # epoch ms (mtime do JSONL)
+    iniciada_em: int | None  # epoch ms do primeiro registro com timestamp
     turnos: int
     bytes: int
     estrela: bool
@@ -288,6 +289,7 @@ class LeituraResposta(BaseModel):
     concluida: bool
     turnos: int
     atualizada_em: int  # epoch ms (mtime do JSONL)
+    iniciada_em: int | None  # epoch ms do primeiro registro com timestamp
     mensagens: list[MensagemLeitura]  # da mais antiga para a mais nova
     mais_antigas: bool  # ficou conversa antes das mensagens devolvidas
 
