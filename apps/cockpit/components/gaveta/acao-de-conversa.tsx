@@ -12,24 +12,38 @@ import { Pilula } from './pecas';
 
 const CAMADA = { position: 'absolute', inset: 0, borderRadius: 'inherit' } as const;
 
+/** Onde a troca está, do toque ao fim. Cada etapa da API tem um teto no
+ *  botão e o tempo típico dela: o cheio anda dentro da etapa desacelerando
+ *  até o teto e só passa dele quando a API avança (o Rica, 02/10: a barra
+ *  corria a 85% e parava, sem relação com o que acontecia). Estacionar é a
+ *  etapa longa — o agente escreve o recado da que sai. */
+export type EtapaDoCheio = 'pedindo' | 'estacionando' | 'religando' | 'conferindo';
+const MARCOS: Record<EtapaDoCheio, { ate: number; s: number }> = {
+  pedindo: { ate: 0.12, s: 1.5 },
+  estacionando: { ate: 0.6, s: 25 },
+  religando: { ate: 0.88, s: 8 },
+  conferindo: { ate: 0.97, s: 4 },
+};
+const DESACELERA = [0, 0, 0.2, 1] as const;
+
 /** O que enche o botão tocado (pedido do Rica, 02/10, no gesto da barra do
  *  `/compact`): o cheio entra da esquerda inteiro (`translateX`), então a ponta
- *  segue redonda, e um brilho fraco atravessa enquanto espera. A troca não
- *  emite progresso: o cheio corre até 85% em `duracao` e para ali — estimativa
- *  honesta. A `tinta` é a cor do texto do botão diluída, nunca cor de estado.
- *  Com movimento reduzido, só o cheio, sem o brilho. */
-export function Enchendo({ ativo, tinta, duracao }: { ativo: boolean; tinta: string; duracao: number }) {
+ *  segue redonda, e um brilho fraco atravessa enquanto espera. A `tinta` é a
+ *  cor do texto do botão diluída, nunca cor de estado. Com movimento reduzido,
+ *  só o cheio, sem o brilho. */
+export function Enchendo({ etapa, tinta }: { etapa: EtapaDoCheio | null; tinta: string }) {
   const parada = useReducedMotion();
   const cor = `color-mix(in oklab, ${tinta} 14%, transparent)`;
+  const marco = etapa ? MARCOS[etapa] : null;
   return (
     <motion.span
       aria-hidden
       style={{ ...CAMADA, overflow: 'hidden', background: cor }}
       initial={false}
-      animate={ativo ? { x: '-15%', opacity: 1 } : { x: '-100%', opacity: 0 }}
-      transition={ativo ? { duration: duracao, ease: [0.2, 0, 0.2, 1] } : CALMA}
+      animate={marco ? { x: `${(marco.ate - 1) * 100}%`, opacity: 1 } : { x: '-100%', opacity: 0 }}
+      transition={marco ? { duration: marco.s, ease: DESACELERA } : CALMA}
     >
-      {ativo && !parada ? (
+      {marco && !parada ? (
         <motion.span
           style={{ ...CAMADA, background: `linear-gradient(100deg, transparent 30%, ${cor} 50%, transparent 70%)` }}
           initial={{ x: '-100%' }}
@@ -44,7 +58,7 @@ export function Enchendo({ ativo, tinta, duracao }: { ativo: boolean; tinta: str
 /** Continuar esta. Mantém a cor tocado ou ocupado (o Rica tirou o âmbar e a
  *  linha de cima em 02/10: empurravam a fileira); ocupado, só o nome vira o de
  *  interromper. Na espera, o nome é o que está acontecendo e o botão enche. */
-export function BotaoDeTroca({ rotulo, rotuloInterrompe, interrompe, espera, aoTocar }: { rotulo: string; rotuloInterrompe: string; interrompe: boolean; espera: string | null; aoTocar: () => void }) {
+export function BotaoDeTroca({ rotulo, rotuloInterrompe, interrompe, espera, etapa = null, aoTocar }: { rotulo: string; rotuloInterrompe: string; interrompe: boolean; espera: string | null; etapa?: EtapaDoCheio | null; aoTocar: () => void }) {
   const nome = espera ?? (interrompe ? rotuloInterrompe : rotulo);
   return (
     <button
@@ -56,7 +70,7 @@ export function BotaoDeTroca({ rotulo, rotuloInterrompe, interrompe, espera, aoT
       style={{ minHeight: '52px', borderRadius: 'var(--ck-radius-pill)', fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-gv-fundo)' }}
     >
       <span aria-hidden style={{ ...CAMADA, background: 'var(--ck-text-primary)' }} />
-      <Enchendo ativo={espera !== null} tinta="var(--ck-gv-fundo)" duracao={12} />
+      <Enchendo etapa={espera !== null ? (etapa ?? 'pedindo') : null} tinta="var(--ck-gv-fundo)" />
       <span aria-hidden className="relative">
         {nome}
       </span>

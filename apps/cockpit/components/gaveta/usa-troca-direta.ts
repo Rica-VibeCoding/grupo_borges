@@ -14,8 +14,9 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { ErroDeConversa, postConversaNova, postConversaRetomar, type RespostaDaTroca } from '@grupo_borges/cockpit-core/api';
+import { ErroDeConversa, fetchConversaOperacao, postConversaNova, postConversaRetomar, type RespostaDaTroca } from '@grupo_borges/cockpit-core/api';
 
+import type { EtapaDoCheio } from './acao-de-conversa';
 import { explicaRecusa, leOperacao, type Troca } from './acoes-de-conversa';
 import { publicaTrocaNoChat } from '../../lib/troca-em-curso';
 
@@ -42,6 +43,28 @@ export function usaTrocaDireta(agentSlug: string, nome: string) {
       vivo.current = false;
     };
   }, []);
+
+  // O POST só volta no fim da troca (até 90 s): enquanto ele corre, o
+  // `/operacao` diz a etapa, e é ela que anda o cheio do botão.
+  const [etapa, setEtapa] = useState<EtapaDoCheio>('pedindo');
+  const enviando = estado.fase === 'enviando';
+  useEffect(() => {
+    if (!enviando) return;
+    setEtapa('pedindo');
+    const controlador = new AbortController();
+    const le = () =>
+      fetchConversaOperacao(agentSlug, controlador.signal)
+        .then((op) => {
+          const leitura = leOperacao(op);
+          if (leitura.tipo === 'segue') setEtapa(leitura.etapa);
+        })
+        .catch(() => {});
+    const relogio = setInterval(le, 700);
+    return () => {
+      clearInterval(relogio);
+      controlador.abort();
+    };
+  }, [agentSlug, enviando]);
 
   function aceita(p: PedidoDireto, forcar: boolean, resposta: RespostaDaTroca | null) {
     publicaTrocaNoChat(agentSlug, {
@@ -79,6 +102,7 @@ export function usaTrocaDireta(agentSlug: string, nome: string) {
 
   return {
     estado,
+    etapa,
     pede: (p: PedidoDireto) => void pede(p),
     /** O botão está âmbar porque a API recusou com 409? */
     recusou: estado.fase === 'ocupado',

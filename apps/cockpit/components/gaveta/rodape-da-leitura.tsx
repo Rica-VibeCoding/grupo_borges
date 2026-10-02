@@ -123,7 +123,8 @@ export function RodapeDaLeitura({
 
   const espera = daqui && (estado.fase === 'esperando' || estado.fase === 'conferindo') ? textoDaEspera(estado.troca, nome) : null;
   if (espera) {
-    return <BotaoDeTroca rotulo={espera} rotuloInterrompe={espera} interrompe={false} espera={espera} aoTocar={aoContinuar} />;
+    const etapa = estado.fase === 'esperando' ? estado.etapa : 'conferindo';
+    return <BotaoDeTroca rotulo={espera} rotuloInterrompe={espera} interrompe={false} espera={espera} etapa={etapa} aoTocar={aoContinuar} />;
   }
   if (daqui && (estado.fase === 'confirmando-exclusao' || estado.fase === 'excluindo')) {
     return <ConfirmaExclusao indo={estado.fase === 'excluindo'} aoExcluir={aoConfirmar} aoCancelar={aoLargar} />;

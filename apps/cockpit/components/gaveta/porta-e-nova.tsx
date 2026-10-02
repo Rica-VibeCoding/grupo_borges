@@ -19,7 +19,7 @@ import { usaFrota } from '../shell/frota-provider';
 import { IconeHistorico, IconeMais } from '../shell/icones';
 import { usaFechaPainel } from '../shell/superficie-otimista';
 import { LinkDaGaveta } from '../shell/vista-da-gaveta';
-import { AvisoDeFalha, Enchendo } from './acao-de-conversa';
+import { AvisoDeFalha, Enchendo, type EtapaDoCheio } from './acao-de-conversa';
 import { CALMA, TOQUE } from './ritmo-do-historico';
 import { usaTrocaDireta } from './usa-troca-direta';
 
@@ -33,7 +33,7 @@ const PILULA = {
 } as const;
 const CAMADA = { position: 'absolute', inset: 0, borderRadius: 'inherit' } as const;
 const RETICENCIAS = 'Abrindo…';
-function PilulaDaNova({ interrompe, enviando, aoTocar }: { interrompe: boolean; enviando: boolean; aoTocar: () => void }) {
+function PilulaDaNova({ interrompe, enviando, etapa, aoTocar }: { interrompe: boolean; enviando: boolean; etapa: EtapaDoCheio; aoTocar: () => void }) {
   const rotulo = enviando ? RETICENCIAS : interrompe ? 'Interromper e abrir' : 'Nova conversa';
   return (
     <motion.button
@@ -47,7 +47,7 @@ function PilulaDaNova({ interrompe, enviando, aoTocar }: { interrompe: boolean; 
       transition={TOQUE}
     >
       <span aria-hidden style={{ ...CAMADA, background: 'var(--ck-gv-pilula)' }} />
-      <Enchendo ativo={enviando} tinta="var(--ck-text-primary)" duracao={2.4} />
+      <Enchendo etapa={enviando ? etapa : null} tinta="var(--ck-text-primary)" />
       <span className="relative flex items-center justify-center" style={{ gap: 'var(--ck-space-2)', color: 'var(--ck-text-primary)' }}>
         <IconeMais tamanho={16} />
         {rotulo}
@@ -81,6 +81,7 @@ export function PortaENova({ agentSlug, fecharHref, comNova }: { agentSlug: stri
           <PilulaDaNova
             interrompe={interrompe}
             enviando={troca.estado.fase === 'enviando'}
+            etapa={troca.etapa}
             aoTocar={() => troca.pede({ tipo: 'nova', alvo: null, interrompe: trabalhando, aoAceitar: fecha })}
           />
         ) : null}
