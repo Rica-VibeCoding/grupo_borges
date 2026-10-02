@@ -144,7 +144,8 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
   Bounce só em mola: `--ck-mola` no CSS; na Motion, `spring` com `bounce` ≤ 0.22 (pílula, palavra que
   gira, fala da voz). A bolinha do composer tem curvas próprias (`.ck-bolinha-*`).
 - **Deslocar, escalar e aparecer é só `transform` e `opacity`**; cor, fundo e borda podem transicionar
-  no ritmo dos tokens. O que reflui layout nunca anima (§9.4): nada animado pode refluir o feed durante o stream.
+  no ritmo dos tokens. Abrir, fechar e trocar de estado no feed (grupo, linha viva, execução) animam pela
+  Motion (`AnimatePresence`, `layout`), nunca por keyframe que mexe em tamanho (liberado pelo Rica, 02/10).
 - **`prefers-reduced-motion: reduce` desliga tudo**, trocando por mudança instantânea.
 - **Biblioteca: Motion (`motion/react`)**, com `layoutDependency` em todo `layout` e `MotionConfig reducedMotion="user"`.
   O `reducedMotion="user"` só para transform e layout: **opacity em laço segue rodando**, então
@@ -168,7 +169,7 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
    pulso (`--ck-pulso-ouro`), pulsando (`feed/linha-viva.tsx`).
 2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
    que chega ao vivo (prazo 1 s) e no corpo aberto pelo dedo. Replay e o que remonta ao rolar aparecem
-   parados; linha e grupo de ferramenta não têm animação de entrada.
+   parados. Linha e grupo de ferramenta entram, saem e trocam de estado pela Motion (§5).
 3. **Grupo em execução:** filete lateral de 2px no dourado do pulso (`--ck-pulso-ouro`), que some ao concluir. **Filete azul (`--ck-state-running`) é proibido** — saiu da linha viva, das delegações e da troca de conversa por ordem do Rica (02/10); "pensando", "trabalhando" e "trocando" são só texto pulsando, sem linha. **Texto em voo no feed
    também é dourado** (02/10): a linha da execução, o cabeçalho do grupo, "Pensando" e "trabalhando"
    usam `--ck-pulso-ouro` (8,1:1 sobre `raised`), a mesma cor do filete. Grupo ABERTO não repete no
@@ -300,7 +301,7 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 1. Hex, `rgb()`, `oklch()` ou cor nomeada fora do `globals.css`.
 2. `backdrop-filter` fora dos materiais declarados na §2 — nunca em lista ou feed.
 3. `box-shadow` como sombra de profundidade, salvo `--ck-flutuante-sombra` na superfície flutuante (§8). Brilho emissivo de cor (o pulso) é luz, não sombra.
-4. Animar `width`/`height`/`top`/`left`.
+4. Animar `width`/`height`/`top`/`left` em CSS — no feed, mudança de tamanho é da Motion (§5).
 5. `100vh`. Altura da app é da `.ck-janela`: `100dvh` no navegador, `100lvh` no app instalado,
    `--ck-viewport-altura` com teclado (`cockpit-v2-composer.md` §5). Fora dela, `100dvh` + `env(safe-area-inset-*)`.
 6. `font-size` < 16px em campo de entrada.
