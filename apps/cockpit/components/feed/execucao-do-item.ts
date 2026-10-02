@@ -40,7 +40,9 @@ export type EntradaDaExecucao = {
  *  agente não está trabalhando, está esperando ele — `aguarda`, âmbar (§6.5).
  *  O back-end não marca isso: o JSONL só tem o `tool_use` sem `tool_result`,
  *  igual a qualquer ferramenta em voo. Quem sabe é o nome. */
-const PEDE_AO_RICA: ReadonlySet<string> = new Set(['AskUserQuestion']);
+// `mcp__ask-user__ask_user` é o painel de decisão do cockpit: trava o turno até
+// o Rica escolher, igual ao `AskUserQuestion`.
+const PEDE_AO_RICA: ReadonlySet<string> = new Set(['AskUserQuestion', 'mcp__ask-user__ask_user']);
 
 export function pedeAoRica(toolName: string): boolean {
   return PEDE_AO_RICA.has(toolName);
