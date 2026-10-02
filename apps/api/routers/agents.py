@@ -2734,6 +2734,14 @@ def _corta_resultados_grandes(canonical: dict[str, Any], max_chars: int) -> None
         varre(resultado)
 
 
+# Contrato do fim de turno no SSE `message` (replay e ao vivo):
+# `kind: "system"` + `subtype: "turn_duration"` identifica só esse sinal.
+# `duration_ms` é o `durationMs` numérico do JSONL, em milissegundos.
+# Chega quando o Claude Code grava o fim do turno; `id` mantém o cursor.
+# `session_id` vincula o fim à conversa; só entra o turno principal.
+# O front deve encerrar a linha em voo dessa conversa ao recebê-lo.
+# `message: null` faz o classificador atual suprimi-lo, sem linha visível.
+# Outros subtipos `system` continuam fora do stream.
 def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | None:
     payload = event.get("payload")
     if not isinstance(payload, dict):
@@ -2777,6 +2785,9 @@ def _canonical_jsonl_message_event(event: dict[str, Any]) -> dict[str, Any] | No
         "agent_id": payload.get("agentId"),
         "tool_use_result": payload.get("toolUseResult"),
     }
+    if kind == "system" and payload.get("subtype") == "turn_duration":
+        canonical["subtype"] = "turn_duration"
+        canonical["duration_ms"] = payload["durationMs"]
     # Voz chega marcada pelo POST e pelo watcher; nunca pela forma do texto.
     # Wakeups continuam sendo sentinelas do próprio runtime e podem ser
     # reconhecidos pelo conteúdo, porque não são fala humana.

@@ -1867,6 +1867,15 @@ class GrupoBorgesDB:
             "AND json_extract(payload, '$.type') = 'queue-operation' "
             "AND json_extract(payload, '$.operation') = 'enqueue'"
             ")"
+            "OR ("
+            "kind = 'jsonl:system' "
+            "AND json_valid(payload) = 1 "
+            "AND json_extract(payload, '$.type') = 'system' "
+            "AND json_extract(payload, '$.subtype') = 'turn_duration' "
+            "AND json_extract(payload, '$.uuid') IS NOT NULL "
+            "AND json_type(payload, '$.durationMs') IN ('integer', 'real') "
+            "AND COALESCE(json_extract(payload, '$.isSidechain'), 0) = 0"
+            ")"
             ")",
             "id > ?",
         ]

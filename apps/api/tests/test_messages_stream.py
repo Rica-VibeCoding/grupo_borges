@@ -363,6 +363,108 @@ async def test_messages_stream_emits_only_enqueued_queue_operations(
     assert events[-1][1]["last_id"] == last_id
 
 
+@pytest.mark.asyncio
+async def test_messages_stream_entrega_apenas_fim_de_turno_do_system(tmp_path: Path) -> None:
+    app, db = _build_app(tmp_path)
+    primeiro_id = _insert_jsonl(db, kind="user", uuid="uuid-primeiro")
+
+    def inserir_system(uuid: str, subtipo: str, **campos: Any) -> int:
+        payload = {
+            "type": "system",
+            "subtype": subtipo,
+            "uuid": uuid,
+            "parentUuid": "uuid-primeiro",
+            "sessionId": "sess-a",
+            "isSidechain": False,
+            "timestamp": "2026-05-16T03:56:30.353Z",
+            **campos,
+        }
+        return db._insert_task_event(
+            "jsonl:system", None, "daniel", None, payload, None
+        ) or 0
+
+    inserir_system("uuid-local", "local_command", durationMs=99)
+    inserir_system("uuid-compact", "compact_boundary", durationMs=88)
+    inserir_system("uuid-sem-duracao", "turn_duration")
+    inserir_system("uuid-duracao-invalida", "turn_duration", durationMs="1527")
+    inserir_system("uuid-sidechain", "turn_duration", durationMs=55, isSidechain=True)
+    with patch("db.store.time.time", return_value=1_775_000_000):
+        fim_id = inserir_system("uuid-fim", "turn_duration", durationMs=1527, messageCount=23)
+    ultimo_id = _insert_jsonl(db, kind="assistant", uuid="uuid-ultimo")
+
+    _, _, events = await _drive_stream(app, session_id="sess-a", stop_after="replay-end")
+
+    mensagens = [payload for nome, payload in events if nome == "message"]
+    assert [m["id"] for m in mensagens] == [primeiro_id, fim_id, ultimo_id]
+    assert mensagens[1] == {
+        "id": fim_id,
+        "kind": "system",
+        "subtype": "turn_duration",
+        "duration_ms": 1527,
+        "uuid": "uuid-fim",
+        "parent_uuid": "uuid-primeiro",
+        "session_id": "sess-a",
+        "is_sidechain": False,
+        "user_type": None,
+        "timestamp": "2026-05-16T03:56:30.353Z",
+        "created_at": 1_775_000_000,
+        "message": None,
+        "agent_id": None,
+        "tool_use_result": None,
+    }
+    assert events[0][1] == {"session_id": "sess-a", "total": 3}
+    assert events[-1][1]["last_id"] == ultimo_id
+
+
+@pytest.mark.asyncio
+async def test_messages_stream_entrega_fim_de_turno_ao_vivo(tmp_path: Path) -> None:
+    app, db = _build_app(tmp_path)
+    _insert_jsonl(db, kind="user", uuid="uuid-primeiro")
+    disconnected = False
+
+    async def is_disconnected() -> bool:
+        return disconnected
+
+    request = SimpleNamespace(app=app, is_disconnected=is_disconnected)
+    response = await agents_router.stream_agent_messages(
+        "daniel", request, session_id="sess-a", limit=200, since_id=0
+    )  # type: ignore[arg-type]
+    fim_id = 0
+    recebido: dict[str, Any] | None = None
+
+    async def collect() -> None:
+        nonlocal fim_id, recebido
+        async for chunk in response.body_iterator:
+            assert isinstance(chunk, dict)
+            if chunk["event"] == "replay-end":
+                fim_id = db._insert_task_event(
+                    "jsonl:system", None, "daniel", None,
+                    {
+                        "type": "system", "subtype": "turn_duration",
+                        "uuid": "uuid-fim", "sessionId": "sess-a",
+                        "durationMs": 2048, "timestamp": "2026-05-16T03:56:30.353Z",
+                    }, None,
+                ) or 0
+            elif chunk["event"] == "message":
+                payload = json.loads(chunk["data"])
+                if payload["kind"] == "system":
+                    recebido = payload
+                    return
+
+    try:
+        await asyncio.wait_for(collect(), timeout=3.0)
+    finally:
+        disconnected = True
+        await response.body_iterator.aclose()
+
+    assert recebido is not None
+    assert recebido["id"] == fim_id
+    assert recebido["session_id"] == "sess-a"
+    assert recebido["subtype"] == "turn_duration"
+    assert recebido["duration_ms"] == 2048
+    assert recebido["message"] is None
+
+
 @pytest.mark.parametrize("kind", ["user", "assistant", "attachment"])
 @pytest.mark.asyncio
 async def test_messages_stream_existing_kinds_are_unchanged(
