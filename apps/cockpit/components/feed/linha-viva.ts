@@ -15,7 +15,7 @@
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { execucaoDaParte, execucaoDoChip } from './execucao-do-item.ts';
+import { estaEmVoo, execucaoDaParte, execucaoDoChip } from './execucao-do-item.ts';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 
@@ -36,18 +36,16 @@ export function trabalhoEmVooNoFim(
   }
 
   if (ultimo.kind === 'assistant') {
-    // `running` aqui cobre também a ferramenta que espera ação do Rica
-    // (pergunta, plano): sem resultado casado ela consta como em voo, e a
-    // linha da própria execução já diz "aguardando" — "Pensando" seria
+    // Em voo cobre também a ferramenta que espera o Rica (`requires-action`):
+    // a linha da própria execução já diz "aguardando" — "Pensando" seria
     // mentira em cima da verdade.
     return ultimo.parts.some(
-      (parte) =>
-        parte.type === 'tool_use' && execucaoDaParte(parte, lookup).estado === 'running',
+      (parte) => parte.type === 'tool_use' && estaEmVoo(execucaoDaParte(parte, lookup)),
     );
   }
 
   if (ultimo.kind === 'chip' && ultimo.classifierKind === 'tool') {
-    return execucaoDoChip(ultimo, lookup).estado === 'running';
+    return estaEmVoo(execucaoDoChip(ultimo, lookup));
   }
 
   return false;

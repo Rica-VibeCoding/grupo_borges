@@ -20,12 +20,20 @@ import { Execucao } from './execucao';
 import type { GrupoFerramentas } from './grupo-ferramentas.ts';
 import { duracaoCurta, duracaoDoGrupo, entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 
+// Em voo, o dourado do pulso — texto e filete da mesma cor (02/10, §6.3).
 const COR_DO_ESTADO = {
-  rodando: 'var(--ck-state-running)',
+  rodando: 'var(--ck-pulso-ouro)',
   aguarda: 'var(--ck-state-attention)',
   falhou: 'var(--ck-state-fail)',
   feito: 'var(--ck-text-secondary)',
 } as const;
+
+/** O mesmo vocabulário de pulso da linha individual: esperar o Rica chama
+ *  (`aguardando`), trabalhar respira (`trabalhando`). */
+const PULSO_DO_ESTADO: Partial<Record<keyof typeof COR_DO_ESTADO, string>> = {
+  rodando: 'trabalhando',
+  aguarda: 'aguardando',
+};
 
 export function GrupoFerramentasView({
   grupo,
@@ -63,7 +71,7 @@ export function GrupoFerramentasView({
         // o dourado do pulso — o mesmo da linha individual.
         borderLeft: terminouBem
           ? undefined
-          : `2px solid ${resumo.estado === 'rodando' ? 'var(--ck-pulso-ouro)' : cor}`,
+          : `2px solid ${cor}`,
         background: terminouBem ? 'var(--ck-surface-nav)' : undefined,
         borderRadius: terminouBem ? 'var(--ck-radius-caixa)' : undefined,
         // O véu do hover é dos botões de dentro, que são retos: sem o recorte,
@@ -92,12 +100,17 @@ export function GrupoFerramentasView({
           </span>
         ) : null}
 
+        {/* FECHADO, o cabeçalho diz o que acontece agora (o item em voo, que
+            não está à vista). ABERTO, o item em voo já é a última linha logo
+            abaixo — repetir no cabeçalho era dizer a mesma coisa duas vezes
+            (Rica, 02/10). Aí o cabeçalho é só o resumo e o saldo, parado e
+            neutro: quem pulsa e tem cor é a linha viva. */}
         <span
           className="ck-pulso min-w-0 flex-1 truncate"
-          data-estado={emVoo ? 'trabalhando' : undefined}
-          style={{ color: cor }}
+          data-estado={emVoo && !aberto ? PULSO_DO_ESTADO[resumo.estado] : undefined}
+          style={{ color: aberto ? 'var(--ck-text-secondary)' : cor }}
         >
-          {emVoo && resumo.atual ? resumo.atual.frase : frase}
+          {emVoo && !aberto && resumo.atual ? resumo.atual.frase : frase}
         </span>
 
         {terminouBem && resumo.retentativas > 0 ? (

@@ -184,3 +184,23 @@ describe('intenção', () => {
     assert.equal(e.alvo, 'Audita renderers');
   });
 });
+
+describe('pergunta ao Rica (02/10)', () => {
+  const args = { questions: [{ question: 'Qual cor do botão?', header: 'Cor', options: [] }] };
+
+  it('esperando, a linha diz que a vez é dele e mostra a pergunta', () => {
+    const e = leExecucao({ toolName: 'AskUserQuestion', args, estado: 'requires-action' });
+    assert.equal(e.desfecho, 'aguarda');
+    assert.equal(e.frase, 'Aguardando você: Qual cor do botão?');
+  });
+
+  it('respondida, vira passado com a pergunta — não "Usou AskUserQuestion"', () => {
+    const e = leExecucao({ toolName: 'AskUserQuestion', args, result: 'Azul', estado: 'complete' });
+    assert.equal(e.frase, 'Perguntou Qual cor do botão?');
+  });
+
+  it('sem argumento ainda (streaming), a espera mostra o nome — linha muda nunca', () => {
+    const e = leExecucao({ toolName: 'AskUserQuestion', args: {}, estado: 'requires-action' });
+    assert.equal(e.frase, 'Aguardando você: AskUserQuestion');
+  });
+});

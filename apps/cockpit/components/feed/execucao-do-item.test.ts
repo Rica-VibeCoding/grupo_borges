@@ -241,3 +241,24 @@ describe('mesmaExecucao — o memo da Execucao', () => {
     assert.equal(mesmaExecucao({ entrada: ok }, { entrada: { ...ok, args: { command: 'ls' } } }), false);
   });
 });
+
+describe('execução — pergunta ao Rica (02/10)', () => {
+  const PERGUNTA = {
+    type: 'tool_use',
+    id: 'q1',
+    name: 'AskUserQuestion',
+    input: { questions: [{ question: 'Qual cor?', header: 'Cor', options: [] }] },
+  } as Extract<ContentPart, { type: 'tool_use' }>;
+
+  it('AskUserQuestion sem resposta é o agente ESPERANDO, não rodando', () => {
+    assert.equal(execucaoDaParte(PERGUNTA, undefined).estado, 'requires-action');
+  });
+
+  it('respondida, conclui como qualquer outra', () => {
+    const lookup = buildToolResultLookup([
+      payload(1, [PERGUNTA]),
+      payload(2, [{ type: 'tool_result', tool_use_id: 'q1', content: 'Azul' }], 'user'),
+    ]);
+    assert.equal(execucaoDaParte(PERGUNTA, lookup).estado, 'complete');
+  });
+});

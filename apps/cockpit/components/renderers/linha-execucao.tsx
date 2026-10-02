@@ -68,8 +68,10 @@ const PULSO: Record<Desfecho, string | undefined> = {
   falhou: undefined,
 };
 
+/** Em voo, o texto é o dourado do pulso — a cor do "agora" do cockpit, a mesma
+ *  do filete. O azul (`--ck-state-running`) saiu do feed (02/10, §6.3). */
 const COR: Record<Desfecho, string> = {
-  rodando: 'var(--ck-state-running)',
+  rodando: 'var(--ck-pulso-ouro)',
   aguarda: 'var(--ck-state-attention)',
   falhou: 'var(--ck-state-fail)',
   feito: 'var(--ck-text-secondary)',
@@ -376,9 +378,7 @@ export function LinhaExecucao({
         // Em voo, o fio é o dourado do pulso (28/09): o passo que está
         // acontecendo agora se acende como o resto do "agora" do cockpit.
         borderLeft: `2px solid ${
-          e.desfecho === 'rodando'
-            ? 'var(--ck-pulso-ouro)'
-            : e.desfecho !== 'feito' ? cor : aberta ? 'var(--ck-edge-hairline)' : 'transparent'
+          e.desfecho !== 'feito' ? cor : aberta ? 'var(--ck-edge-hairline)' : 'transparent'
         }`,
       }}
     >

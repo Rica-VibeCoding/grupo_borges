@@ -97,7 +97,8 @@ export function TrocaEmAndamentoView({ troca, agentSlug }: { troca: TrocaNoChat;
   }, [correndo]);
 
   const t = textosDaTroca(troca);
-  const cor = t.alerta ? 'var(--ck-state-attention)' : 'var(--ck-state-running)';
+  // Em voo, o dourado do "agora" — o azul saiu do feed (02/10, §6.3).
+  const cor = t.alerta ? 'var(--ck-state-attention)' : 'var(--ck-pulso-ouro)';
   const tempo = troca.fase === 'trocando' ? rotuloDoTempo(agora - troca.inicio).replace(/^há /, '') : null;
   return (
     <div className="ck-troca-em-andamento" role={t.alerta ? 'alert' : 'status'} style={{ margin: 'var(--ck-space-3) 0' }}>

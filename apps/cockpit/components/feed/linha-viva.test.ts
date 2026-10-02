@@ -45,6 +45,11 @@ function ferramenta(tu: string): AssistenteDeTrabalho {
   };
 }
 
+function pergunta(tu: string): AssistenteDeTrabalho {
+  const parte = { type: 'tool_use', id: tu, name: 'AskUserQuestion', input: { questions: [] } } as const;
+  return { kind: 'assistant', payload: mensagem('assistant', 'assistant', [parte]), parts: [parte] };
+}
+
 function resultado(tu: string): MessagePayload {
   return mensagem('user', 'user', [
     { type: 'tool_result', tool_use_id: tu, content: 'ok' },
@@ -145,4 +150,9 @@ test('segundos até um minuto, minutos depois, negativo vira zero', () => {
   assert.equal(rotuloDoTempo(60_000), 'há 1 min');
   assert.equal(rotuloDoTempo(125_000), 'há 2 min');
   assert.equal(rotuloDoTempo(-5_000), 'há 0 s');
+});
+
+test('pergunta ao Rica no fim dispensa o "Pensando" — a linha dela já diz "Aguardando você"', () => {
+  assert.equal(trabalhoEmVooNoFim([pergunta('q-1')]), true);
+  assert.equal(trabalhoEmVooNoFim([{ kind: 'grupo-ferramentas', itens: [ferramenta('tu-1'), pergunta('q-1')] }], buildToolResultLookup([resultado('tu-1')])), true);
 });

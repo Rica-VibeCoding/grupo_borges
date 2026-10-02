@@ -190,6 +190,14 @@ const VERBOS: Record<string, Verbo> = {
     unidade: (n) => (n === 1 ? 'um arquivo' : `${n} arquivos`),
   },
 
+  // A pergunta ao Rica. Em voo ela não fala no gerúndio: é `aguarda`, com
+  // frase própria em `leExecucao` — quem tem a vez é ele, não o agente.
+  AskUserQuestion: {
+    passado: 'Perguntou',
+    gerundio: 'Perguntando',
+    unidade: (n) => (n === 1 ? 'uma vez' : `${n} vezes`),
+  },
+
   Agent: delegacoes,
   Task: delegacoes,
   SendMessage: delegacoes,
@@ -285,7 +293,21 @@ function encurtaUrl(url: string): string {
   return semEsquema.replace(/\/$/, '');
 }
 
+/** A primeira pergunta do `AskUserQuestion` (`questions[0].question`). */
+function perguntaDe(args: Record<string, unknown>): string | null {
+  const perguntas = args.questions;
+  if (!Array.isArray(perguntas)) return null;
+  const primeira: unknown = perguntas[0];
+  if (!primeira || typeof primeira !== 'object') return null;
+  return texto((primeira as Record<string, unknown>).question);
+}
+
 function alvoDe(toolName: string, args: Record<string, unknown>): string {
+  if (toolName === 'AskUserQuestion') {
+    const pergunta = perguntaDe(args);
+    if (pergunta) return umaLinha(pergunta);
+  }
+
   const caminho = texto(args.file_path) ?? texto(args.notebook_path);
   if (caminho) return encurtaCaminho(caminho);
 
@@ -413,10 +435,15 @@ export function leExecucao(entrada: EntradaExecucao): Execucao {
   // informa. Linha muda continua sendo o modo de falha proibido.
   const temAlvo = alvo.length > 0;
 
+  // Esperando o Rica, o verbo é dele: "Aguardando você: Qual a cor?" — o
+  // gerúndio do agente ("Perguntando", "Executando") diria que é a máquina
+  // que trabalha, e o que a linha precisa dizer é que a vez é dele (§6.5).
   const verboDaLinha =
-    desfecho === 'rodando'
-      ? temAlvo ? verbo.gerundio : usos.gerundio
-      : temAlvo ? verbo.passado : usos.passado;
+    desfecho === 'aguarda'
+      ? 'Aguardando você:'
+      : desfecho === 'rodando'
+        ? temAlvo ? verbo.gerundio : usos.gerundio
+        : temAlvo ? verbo.passado : usos.passado;
   const alvoDaLinha = temAlvo ? alvo : nome;
   // Só o Bash escreve isto, e são 738 frases em português. Desde 28/09 é ela
   // que vai na linha no lugar do comando; o comando fica na expansão.

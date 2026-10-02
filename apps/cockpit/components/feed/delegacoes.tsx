@@ -105,7 +105,7 @@ export function DelegacaoView({
             padding: 'var(--ck-space-1) 0',
             fontSize: 'var(--ck-text-sm)',
             lineHeight: 'var(--ck-leading-body)',
-            color: 'var(--ck-state-running)',
+            color: 'var(--ck-pulso-ouro)', // o dourado do "agora", não o azul (02/10)
           }}
         >
           {`${quem} trabalhando · ${rotuloDoTempo(agoraMs - desdeMs)}`}

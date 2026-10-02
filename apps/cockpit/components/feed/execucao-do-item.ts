@@ -27,11 +27,31 @@ export type EntradaDaExecucao = {
   result?: unknown;
   rich?: unknown;
   isError?: boolean;
-  /** Sem resultado casado, a execução ainda está em voo. Os quatro valores do
-   *  `EntradaExecucao` da gramática — este tipo é espalhado nela — embora este
-   *  módulo só produza os dois primeiros. */
+  /** Sem resultado casado, a execução ainda está em voo: `running`, ou
+   *  `requires-action` quando quem tem a vez é o Rica (`pedeAoRica`). Os quatro
+   *  valores do `EntradaExecucao` da gramática — este tipo é espalhado nela —
+   *  embora este módulo não produza `incomplete`. */
   estado: 'running' | 'complete' | 'incomplete' | 'requires-action';
 };
+
+/** Ferramentas cujo resultado é a RESPOSTA DO RICA (02/10): sem resultado, o
+ *  agente não está trabalhando, está esperando ele — `aguarda`, âmbar (§6.5).
+ *  O back-end não marca isso: o JSONL só tem o `tool_use` sem `tool_result`,
+ *  igual a qualquer ferramenta em voo. Quem sabe é o nome. */
+const PEDE_AO_RICA: ReadonlySet<string> = new Set(['AskUserQuestion']);
+
+export function pedeAoRica(toolName: string): boolean {
+  return PEDE_AO_RICA.has(toolName);
+}
+
+/** Em voo — rodando ou esperando o Rica. */
+export function estaEmVoo(entrada: Pick<EntradaDaExecucao, 'estado'>): boolean {
+  return entrada.estado === 'running' || entrada.estado === 'requires-action';
+}
+
+function semResultado(toolName: string): EntradaDaExecucao['estado'] {
+  return pedeAoRica(toolName) ? 'requires-action' : 'running';
+}
 
 type Chip = Extract<RenderItem, { kind: 'chip' }>;
 type UsoDeFerramenta = Extract<ContentPart, { type: 'tool_use' }>;
@@ -95,7 +115,7 @@ export function execucaoDaParte(
     result: achado?.content,
     rich: achado?.rich,
     isError: achado?.isError,
-    estado: achado ? 'complete' : 'running',
+    estado: achado ? 'complete' : semResultado(parte.name),
   };
 }
 
@@ -112,6 +132,6 @@ export function execucaoDoChip(item: Chip, lookup?: ToolResultLookup): EntradaDa
     toolName: item.chip.label,
     result: corpo || undefined,
     isError: item.tone === 'error' ? true : undefined,
-    estado: corpo ? 'complete' : 'running',
+    estado: corpo ? 'complete' : semResultado(item.chip.label),
   };
 }

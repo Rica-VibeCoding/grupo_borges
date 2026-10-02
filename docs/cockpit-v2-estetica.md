@@ -16,9 +16,10 @@ Medida (espaço, largura, toque, raio, ritmo) é da §B do `globals.css`; aqui s
 4. **Acromático onde não há significado.** Superfície, texto e borda têm croma zero. Matiz é
    reservado a estado e tons de estado (§2), diff, link, seleção, ouro do pulso, verde dos atalhos
    de tela e acentos da gaveta (§8). Foco não tem cor (§9.17).
-5. **A temperatura sobe quando a máquina precisa de você:** ciano (pensando, executando) →
-   **âmbar (espera humano)** → verde (feito) / coral (falhou). Âmbar é o único
-   estado quente e o único que chama o Rica.
+5. **A temperatura sobe quando a máquina precisa de você:** violeta (pensando) → dourado do pulso
+   (executando, no feed; ciano só fora dele) → **âmbar (espera humano)** → verde (feito) / coral
+   (falhou). Âmbar é o único estado que chama o Rica; dourado e âmbar são vizinhos (1,1:1 entre si),
+   então quem os separa é a palavra ("Executando…" × "Aguardando você") e o pulso (respira × chama).
 6. **Discreto.** A direção é a da ACI Biller dark (§11), sem o herói chamativo.
 7. **Juiz único é o Rica, veredito binário.** A régua é "isto vale substituir o que existe?".
    UI que vai ficar sai em rodada dedicada, com contexto limpo e a skill `frontend-design` carregada.
@@ -163,16 +164,19 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 
 ## 6. Micro-momentos
 
-1. **Pensando:** sem spinner e sem linha; a última linha do feed diz «Pensando há N s» em
-   `--ck-state-running`, pulsando (`feed/linha-viva.tsx`).
+1. **Pensando:** sem spinner e sem linha; a última linha do feed diz «Pensando há N s» no dourado do
+   pulso (`--ck-pulso-ouro`), pulsando (`feed/linha-viva.tsx`).
 2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
    que chega ao vivo (prazo 1 s) e no corpo aberto pelo dedo. Replay e o que remonta ao rolar aparecem
    parados; linha e grupo de ferramenta não têm animação de entrada.
-3. **Grupo em execução:** filete lateral de 2px no dourado do pulso (`--ck-pulso-ouro`), que some ao concluir. **Filete azul (`--ck-state-running`) é proibido** — saiu da linha viva, das delegações e da troca de conversa por ordem do Rica (02/10); "pensando", "trabalhando" e "trocando" são só texto pulsando, sem linha.
+3. **Grupo em execução:** filete lateral de 2px no dourado do pulso (`--ck-pulso-ouro`), que some ao concluir. **Filete azul (`--ck-state-running`) é proibido** — saiu da linha viva, das delegações e da troca de conversa por ordem do Rica (02/10); "pensando", "trabalhando" e "trocando" são só texto pulsando, sem linha. **Texto em voo no feed
+   também é dourado** (02/10): a linha da execução, o cabeçalho do grupo, "Pensando" e "trabalhando"
+   usam `--ck-pulso-ouro` (8,1:1 sobre `raised`), a mesma cor do filete. Grupo ABERTO não repete no
+   cabeçalho o item em voo — ele já é a última linha; o cabeçalho fica no resumo e no saldo, neutro.
 4. **Falha:** nada pisca; a superfície perde o fio de luz e o filete vira `--ck-state-fail`.
 5. **Espera humano:** filete âmbar **parado** e frase âmbar pulsando com `ck-chama` (mais forte e mais
-   rápido que o `ck-respira` do trabalhando), alvo ≥ 44px — o único pulso que chama o Rica. Hoje o feed
-   não produz pedido de permissão; a regra vale para quando produzir.
+   rápido que o `ck-respira` do trabalhando), alvo ≥ 44px — o único pulso que chama o Rica.
+   `AskUserQuestion` sem resposta é `aguarda`, não `rodando`: "Aguardando você: <pergunta>".
 6. **Agente vivo na gaveta:** o ponto do agora do pulso respira só enquanto ele trabalha.
 
 Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero `setState` por frame.
