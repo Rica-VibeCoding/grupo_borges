@@ -142,7 +142,7 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 - **Tokens:** `--ck-dur-fast` 120ms (toque) · `--ck-dur-enter` 200ms (entrada) · `--ck-dur-calm` 320ms
   (troca de superfície) · `--ck-ease` (entrada) · `--ck-ease-exit` (saída) · `--ck-mola` (entrada com peso).
   Bounce só em mola: `--ck-mola` no CSS; na Motion, `spring` com `bounce` ≤ 0.22 (pílula, palavra que
-  gira, fala da voz). A bolinha do composer tem curvas próprias (`.ck-bolinha-*`).
+  gira, fala da voz). A esfera mini tem curvas próprias (`.ck-esfera-mini-*`); o bonequinho do composer (`.ck-bolinha-*`) está desligado e guardado no código.
 - **Deslocar, escalar e aparecer é só `transform` e `opacity`**; cor, fundo e borda podem transicionar
   no ritmo dos tokens. Abrir, fechar e trocar de estado no feed (grupo, linha viva, execução) animam pela
   Motion (`AnimatePresence`, `layout`), nunca por keyframe que mexe em tamanho (liberado pelo Rica, 02/10).
@@ -165,8 +165,12 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 
 ## 6. Micro-momentos
 
-1. **Pensando:** sem spinner e sem linha; a última linha do feed diz «Pensando há N s» no dourado do
-   pulso (`--ck-pulso-ouro`), pulsando (`feed/linha-viva.tsx`).
+1. **A linha do agora** (`feed/linha-do-agora.tsx`, 02/10): rodapé do feed, fora da lista virtualizada.
+   À esquerda, a **esfera mini** (18px, a da tela de conversa em CSS), que **nunca some**: parada,
+   respira sozinha; pensando, gira em roxo e azul; executando, gira rápido em azul e dourado; esperando
+   você, chama em âmbar; desligada, cinza e parada. Ao lado, a frase — «Pensando há N s», o passo em voo
+   ou «Esperando você» —, com o brilho que corre (`.ck-brilho-texto`) no dourado do pulso. O estado
+   troca a opacidade de camadas que giram em velocidade fixa, nunca a duração da animação.
 2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
    que chega ao vivo (prazo 1 s) e no corpo aberto pelo dedo. Replay e o que remonta ao rolar aparecem
    parados. Linha e grupo de ferramenta entram, saem e trocam de estado pela Motion (§5).

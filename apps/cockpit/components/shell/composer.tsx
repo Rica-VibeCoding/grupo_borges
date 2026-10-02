@@ -44,7 +44,7 @@ import {
 import { MARCA_VOZ, usaEnvio, type OrigemEnvio } from '../../lib/usa-envio';
 import { BarraCompact } from './barra-compact';
 import { BlocoDaFila } from './bloco-da-fila';
-import { BolinhaAgente } from './bolinha-agente';
+// import { BolinhaAgente } from './bolinha-agente'; — guardada, ver a linha do agora
 import { FILA_VAZIA, enfileira, retira, soltaPausa } from './fila-de-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
@@ -493,6 +493,9 @@ export function Composer({
           que morava colado nela desceu para a base da caixa em 21/08. */}
       {/* Sobe e desce com a caixa: a coluna é ancorada embaixo, então quando a
           caixa cresce a bolinha é empurrada — e anda em vez de pular. */}
+      {/* DESLIGADA em 02/10 (Rica): a presença virou a esfera da linha do agora,
+          no fim do feed (`feed/linha-do-agora.tsx`). O bonequinho fica guardado
+          aqui para voltar se for preciso — basta descomentar.
       <motion.div
         layout="position"
         layoutDependency={formaDaCaixa}
@@ -505,6 +508,7 @@ export function Composer({
           ouvindo={texto.trim() !== ''}
         />
       </motion.div>
+      */}
       {/* A espera do `/compact` mora ACIMA da caixa e empurra tudo pra baixo —
           faixa fina da largura da coluna, nunca overlay nem modal. */}
       <BarraCompact estado={estadoCompact} onDispensar={cancelarCompact} />

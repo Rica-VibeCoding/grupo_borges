@@ -2169,3 +2169,146 @@ html[data-troca-agente] .ck-palco {
 @media (prefers-reduced-motion: reduce) {
   .ck-gv-botao-trilho { transition: none; }
 }
+
+/* ═══ A ESFERA MINI — a esfera da tela de conversa, em miniatura, à esquerda
+ * da linha do agora (`feed/linha-do-agora.tsx`, Rica 02/10).
+ *
+ * Duas camadas de cor giram em velocidades FIXAS — a calma (7 s) e a ágil
+ * (1,4 s) — e o estado só troca a opacidade de cada uma. Trocar a
+ * `animation-duration` no meio do giro faz a fase pular, que era a troca dura
+ * do bonequinho; cruzar opacidade é suave por construção. As cores andam por
+ * `@property`, então também transicionam. Tudo é `transform` e `opacity`. */
+@property --ck-esf-a {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --ck-esf-b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+.ck-esfera-mini-caixa {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+.ck-esfera-mini {
+  --ck-esf-a: var(--ck-tom-prepara);
+  --ck-esf-b: var(--ck-tom-ze);
+  --ck-esf-calma: 1;
+  --ck-esf-agil: 0;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    --ck-esf-a var(--ck-dur-calm) var(--ck-ease),
+    --ck-esf-b var(--ck-dur-calm) var(--ck-ease),
+    opacity var(--ck-dur-calm) var(--ck-ease);
+  animation: ck-esfera-respira 3.6s var(--ck-ease) infinite;
+}
+.ck-esfera-mini-calma,
+.ck-esfera-mini-agil {
+  position: absolute;
+  inset: -30%;
+  background: conic-gradient(from 0deg, var(--ck-esf-a), var(--ck-esf-b), var(--ck-esf-a), var(--ck-esf-b), var(--ck-esf-a));
+  filter: blur(2.5px);
+  will-change: transform;
+  transition: opacity var(--ck-dur-calm) var(--ck-ease);
+}
+.ck-esfera-mini-calma {
+  opacity: var(--ck-esf-calma);
+  animation: ck-esfera-gira 7s linear infinite;
+}
+.ck-esfera-mini-agil {
+  opacity: var(--ck-esf-agil);
+  animation: ck-esfera-gira 1.4s linear infinite reverse;
+}
+/* O volume: luz no alto à esquerda, sombra embaixo à direita — é o que faz o
+ * disco ler como esfera nesse tamanho. */
+.ck-esfera-mini-volume {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, oklch(1 0 0 / 0.55), transparent 42%),
+    radial-gradient(circle at 70% 78%, oklch(0 0 0 / 0.4), transparent 62%);
+}
+.ck-esfera-mini[data-estado='offline'] {
+  --ck-esf-a: var(--ck-tom-desligado);
+  --ck-esf-b: var(--ck-tom-desligado);
+  opacity: 0.55;
+  animation: none;
+}
+.ck-esfera-mini[data-estado='offline'] > span {
+  animation-play-state: paused;
+}
+.ck-esfera-mini[data-estado='pensando'] {
+  --ck-esf-a: var(--ck-state-thinking);
+  --ck-esf-b: var(--ck-tom-ze);
+  --ck-esf-calma: 0.6;
+  --ck-esf-agil: 0.6;
+}
+.ck-esfera-mini[data-estado='executando'] {
+  --ck-esf-a: var(--ck-tom-ze);
+  --ck-esf-b: var(--ck-pulso-ouro);
+  --ck-esf-calma: 0;
+  --ck-esf-agil: 1;
+}
+.ck-esfera-mini[data-estado='atencao'] {
+  --ck-esf-a: var(--ck-tom-voce);
+  --ck-esf-b: var(--ck-pulso-ouro);
+  animation: ck-esfera-chama 1.2s var(--ck-ease) infinite;
+}
+@keyframes ck-esfera-gira {
+  to { transform: rotate(360deg); }
+}
+@keyframes ck-esfera-respira {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(0.9); }
+}
+@keyframes ck-esfera-chama {
+  0%, 100% { transform: scale(1); }
+  40%      { transform: scale(0.8); }
+}
+
+/* O BRILHO QUE CORRE no texto em voo — o "Pensando…" do Claude Code. A cor
+ * base é a do pulso; a faixa clara passa por cima, da esquerda pra direita. */
+.ck-brilho-texto {
+  color: var(--ck-pulso-ouro);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ck-brilho-texto {
+    background: linear-gradient(
+      100deg,
+      var(--ck-pulso-ouro) 0%,
+      var(--ck-pulso-ouro) 40%,
+      var(--ck-text-primary) 50%,
+      var(--ck-pulso-ouro) 60%,
+      var(--ck-pulso-ouro) 100%
+    );
+    background-size: 250% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: ck-brilho-corre 2.2s linear infinite;
+  }
+}
+@keyframes ck-brilho-corre {
+  from { background-position: 100% 0; }
+  to   { background-position: 0% 0; }
+}
+.ck-linha-do-agora-texto[data-estado='atencao'] {
+  color: var(--ck-state-attention);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ck-esfera-mini,
+  .ck-esfera-mini > span {
+    animation: none !important;
+  }
+}

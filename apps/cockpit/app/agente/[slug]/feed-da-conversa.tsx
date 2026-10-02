@@ -20,7 +20,9 @@ import { buildToolResultLookup, textoEnfileirado } from '@grupo_borges/cockpit-c
 import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
-import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
+import { estadoDoAgora, fraseEmVoo } from '@/components/feed/linha-do-agora.ts';
+import { LinhaDoAgora } from '@/components/feed/linha-do-agora.tsx';
+import { desdeDaLinhaViva } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaCompact } from '@/lib/compact';
@@ -33,7 +35,6 @@ import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
-import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 import { dobraPedidosDoCockpit, poeMarco, poeTrocaEmAndamento } from '@/components/feed/troca-no-feed.ts';
 import { SemConversa } from './sem-conversa';
 import { usaEcoOtimista } from './usa-eco-otimista';
@@ -192,16 +193,6 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   const itens = useMemo<readonly ItemDoFeed[]>(() => {
     let lista = dobraPedidosDoCockpit(itensBase) as ItemDoFeed[];
     if (marco) lista = poeMarco(lista, marco);
-    const desdeLinhaViva = ancoraDaLinhaViva({
-      correndo: isRunning,
-      vencida,
-      trabalhoEmVooNoFim: trabalhoEmVooNoFim(itensBase, lookup),
-      desdeMs,
-      statusDaFrota,
-    });
-    if (desdeLinhaViva !== null) {
-      lista = [...lista, { kind: 'linha-viva', desdeMs: desdeLinhaViva }];
-    }
     if (delegacoes.length > 0) {
       lista = [
         ...lista,
@@ -214,7 +205,18 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
       ];
     }
     return poeTrocaEmAndamento(lista, emCurso);
-  }, [isRunning, vencida, desdeMs, statusDaFrota, itensBase, lookup, delegacoes, marco, emCurso]);
+  }, [itensBase, delegacoes, marco, emCurso]);
+
+  // A LINHA DO AGORA substitui a linha viva (02/10): a esfera fica sempre no
+  // fim do feed, e a frase ao lado diz o que ele faz. As guardas são as do
+  // turno vivo acima — prazo e desligamento visto pela frota.
+  const turnoVivo = isRunning && !vencida && statusDaFrota !== 'offline';
+  const estadoAgora = estadoDoAgora({
+    status: statusDaFrota ?? undefined,
+    turnoVivo,
+    produzindo: turnoVivo && saindoOutputNoFim(itensBase, lookup),
+  });
+  const emVoo = useMemo(() => fraseEmVoo(itensBase, lookup), [itensBase, lookup]);
 
   // O vazio virou função pura testada (`lib/decide-vazio.ts`, 11/08 — task
   // 2dac8a8b). As duas intenções originais sobrevivem: branco enquanto o
@@ -253,7 +255,13 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
         className="ck-feed-chega flex min-h-0 flex-1 flex-col"
         data-saindo={emCurso?.fase === 'trocando' || emCurso?.fase === 'pronta' ? '' : undefined}
       >
-        <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
+        <Feed
+          itens={itens}
+          lookup={lookup}
+          agentSlug={agentSlug}
+          estaRodando={isRunning}
+          rodape={<LinhaDoAgora estado={estadoAgora} emVoo={emVoo} desdeMs={desdeMs} />}
+        />
       </div>
     </>
   );

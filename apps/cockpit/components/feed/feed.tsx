@@ -14,7 +14,7 @@
 //   2. quando o Rica está rolado para cima, o que se preserva é o ITEM sob o
 //      olho dele, não o `scrollTop` (ver `ancora.ts`).
 
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
@@ -36,9 +36,12 @@ export type FeedProps = {
    *  slug ele nasce estático (teste). */
   agentSlug?: string;
   estaRodando?: boolean;
+  /** A linha do agora (`linha-do-agora.tsx`) — fora da lista virtualizada,
+   *  para a esfera não reiniciar o giro a cada rolagem. */
+  rodape?: ReactNode;
 };
 
-function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
+function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedProps) {
   const chaves = useMemo(() => itens.map(chaveDe), [itens]);
   const ultimoTextoDoAssistente = useMemo(() => {
     for (let indice = itens.length - 1; indice >= 0; indice--) {
@@ -270,6 +273,9 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false }: FeedProps) {
             );
           })}
         </div>
+        {rodape ? (
+          <div style={{ width: '100%', maxWidth: 'var(--ck-read-wide)', margin: '0 auto' }}>{rodape}</div>
+        ) : null}
       </ScrollArea>
 
       <BotaoVoltaAoFim temNovas={temNovas} longe={longe} onIrAoFim={irAoFim} />
