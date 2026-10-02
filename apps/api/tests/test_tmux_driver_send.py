@@ -534,6 +534,34 @@ def test_send_retries_unknown_snapshots_until_input_stabilizes() -> None:
     assert pane.enter_count == 1
 
 
+class _ArmadaDeRelancePane(_FakePane):
+    """O CC redesenhando depois do `/clear`: algumas leituras saem `armed`
+    antes da caixa vazia aparecer."""
+
+    def __init__(self, payload: str, *, leituras_armadas: int) -> None:
+        super().__init__(payload)
+        self.state = "armed"
+        self.visible_text = "redesenho"
+        self.leituras_armadas = leituras_armadas
+
+    def capture_pane(self, **kwargs: object) -> list[str]:
+        if self.paste_count == 0 and self.state == "armed":
+            if self.leituras_armadas:
+                self.leituras_armadas -= 1
+            else:
+                self.state = "empty"
+                self.visible_text = ""
+        return super().capture_pane(**kwargs)
+
+
+def test_send_waits_out_a_transient_armed_frame_before_paste() -> None:
+    pane = _ArmadaDeRelancePane("/rename conversa nova", leituras_armadas=3)
+
+    assert _send(pane) is True
+    assert pane.paste_count == 1
+    assert pane.clear_count == 0
+
+
 def test_send_handles_busy_pane_and_retries_lost_first_enter() -> None:
     pane = _FakePane("pane ocupada", enter_succeeds_on=2, unknown_after_paste=5)
 

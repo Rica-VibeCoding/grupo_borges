@@ -32,6 +32,11 @@ _SUBMIT_CONFIRM_TIMEOUT_S = 6.0
 _SUBMIT_POLL_INTERVAL_S = 0.05
 _SUBMIT_ENTER_RETRY_INTERVAL_S = 1.0
 _SUBMIT_MAX_ENTER_ATTEMPTS = 3
+# Quanto tempo o estado incompatível precisa durar para a espera desistir. Um
+# frame só não basta: logo depois do `/clear` o CC redesenha a tela e uma
+# leitura sai `armed` sem texto de ninguém — o `/rename` da troca de conversa
+# era recusado 87–616 ms depois do `/clear` entregue (02/10).
+_INCOMPATIVEL_FIRME_S = 1.0
 _RECOVERY_STEP_TIMEOUT_S = 3.0
 # Espera pelo lock da sessão antes de devolver 409 `tmux_busy`. O teto existe
 # pra não enfileirar requisição indefinidamente, mas 0,25s (valor da primeira
@@ -1011,12 +1016,19 @@ def _wait_for_input(
     incompatible: Callable[[_PaneInputSnapshot], bool] | None = None,
 ) -> _PaneInputSnapshot | None:
     """Espera um snapshot útil; ``unknown`` sempre permanece transitório."""
+    incompativel_desde: float | None = None
     while time.monotonic() < deadline:
         snapshot = _capture_input_snapshot(pane)
         if predicate(snapshot):
             return snapshot
         if snapshot.state != "unknown" and incompatible and incompatible(snapshot):
-            return None
+            agora = time.monotonic()
+            if incompativel_desde is None:
+                incompativel_desde = agora
+            if agora - incompativel_desde >= _INCOMPATIVEL_FIRME_S:
+                return None
+        elif snapshot.state != "unknown":
+            incompativel_desde = None
         time.sleep(_SUBMIT_POLL_INTERVAL_S)
     return None
 
