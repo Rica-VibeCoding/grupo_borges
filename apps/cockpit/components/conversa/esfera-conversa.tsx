@@ -133,9 +133,11 @@ export function EsferaConversa({
       const p = palco.getBoundingClientRect();
       altura = caixa.height;
       // Na miniatura, o raio é proporção da caixa: o piso de 24px da tela cheia
-      // não cabe numa linha do feed.
+      // não cabe numa linha do feed. E a faixa do palco vai para BEM fora da
+      // caixa: o shader apaga a luz nos últimos 48px da faixa, e a caixa inteira
+      // tem 28 — com a faixa justa, a esfera sumia.
       alvoLugar = mini
-        ? { x: caixa.width / 2, y: caixa.height / 2, raio: caixa.width * 0.36, topo: 0, base: caixa.height }
+        ? { x: caixa.width / 2, y: caixa.height / 2, raio: caixa.width * 0.36, topo: -100, base: caixa.height + 100 }
         : lugarNoPalco(
             { left: p.left - caixa.left, top: p.top - caixa.top, width: p.width, height: p.height },
             caixa.width,
