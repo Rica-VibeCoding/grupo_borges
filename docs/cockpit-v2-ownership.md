@@ -25,15 +25,15 @@ edição local.
 ## 2. Fase de construção: o mapa vigente (30/07, revisado em 02/10)
 
 Os caminhos abaixo são os que **existem no disco** — conferido em 30/07 e de novo em
-02/10, quando saíram os que não existem mais e entraram as pastas novas sem dono. Quando o
+02/10, quando saíram os que não existem mais e as pastas novas ganharam dono. Quando o
 recorte mudar, corrigir aqui no mesmo turno: ownership por caminho fantasma é
 ownership nenhum.
 
 | Caminho | Dono | Por quê este recorte |
 |---|---|---|
 | `components/shell/**` | **Daniel** | AppShell, tropa, composer, navegação |
-| `components/feed/**` | **sem dono desde 11/09** (o Hiro saiu da tropa) — falar com o Pavan | o feed próprio, sem `assistant-ui` |
-| `components/{conversa,gaveta,faxina,telas}/**`, `app/{conversa,faxina,api}/**` | **a definir** | criados depois de 30/07; até ter dono, falar com o Pavan |
+| `components/feed/**` | **Daniel** (desde 02/10) | o feed próprio, sem `assistant-ui` |
+| `components/{conversa,gaveta,faxina,telas}/**` | **Daniel** (desde 02/10) | criados depois de 30/07 |
 | `lib/envio.ts` + a exceção pontual em `apps/api/` | **Tara** | confirmação de envio por observação do eco |
 | `components/renderers/**` | **consumo de todos** | um arquivo por família de payload; mudar aqui passa pelo Pavan |
 | `components/ui/**` | shadcn | gerado; conferir se já existe antes de desenhar |
