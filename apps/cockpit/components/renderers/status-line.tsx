@@ -6,7 +6,7 @@
 // nada e o chamador cai pro corpo genérico.
 //
 // Sem seção/borda: "texto curto" não pede o card do G5/G6/G7 — mesma régua
-// leve do `LinhaSeca` (corpo-do-item.tsx), uma linha só, sem caixa.
+// leve do `LinhaSeca` (formas-menores.tsx), uma linha só, sem caixa.
 //
 // Sem cor fora de token: var(--ck-*) ou nada.
 

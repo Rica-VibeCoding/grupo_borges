@@ -14,8 +14,8 @@
  * dedo, e fazê-la voltar ao lugar antigo para deslizar de novo seria o salto
  * duplo. Pela seta do teclado não há dedo — ali ela desliza junto.
  *
- * Aqui mora só a conta, onde o `node --test` alcança; o fio (refs, efeito,
- * estilo) fica em `tropa.tsx`.
+ * Aqui mora só a conta, onde o `node --test` alcança; o fio fica em
+ * `tropa.tsx` (refs, efeito) e `deslize-da-tropa.ts` (estilo).
  */
 
 export type Deslize = { slug: string; dy: number };

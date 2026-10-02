@@ -5,7 +5,7 @@
 // cada uma virava um item oco.
 //
 // A régua aqui tem de ser a MESMA dos renderers, senão o feed volta a mostrar
-// vazio por uma ponta: `Parte` (corpo-do-item.tsx) desenha texto só quando há
+// vazio por uma ponta: `Parte` (formas-menores.tsx) desenha texto só quando há
 // caractere, `Thinking` devolve null quando o conteúdo é espaço em branco, e
 // `tool_use`/`tool_result` sempre desenham (a linha de execução ou a linha
 // seca de órfão). Todos os outros kinds nascem com conteúdo por construção —
