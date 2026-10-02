@@ -47,8 +47,10 @@ peça central está polindo 18% da tela.
 1. **Cor só em `app/globals.css`.** Nenhum hex, `rgb()`, `oklch()`, nome de cor
    ou `bg-[#...]` em componente — componente pinta só com `var(--ck-*)`, inline
    ou em classe. É o que permite "põe no verde" mudar um lugar.
-2. **`compress: false` no `next.config.ts` fica.** Sem ela o SSE morre em
-   silêncio: replay em rajada e nenhum heartbeat. Parece bug de protocolo, é gzip.
+2. **SSE nunca passa pelo gzip.** O `compress: true` só é seguro porque todo
+   stream da API tem route handler em `app/api/**` com `no-transform`
+   (`lib/repasse-sse.ts`); stream novo sem handler morre em silêncio — replay em
+   rajada e nenhum heartbeat. Parece bug de protocolo, é gzip (stack §4).
 3. **Campo de entrada nunca abaixo de 16px** (`--ck-text-md`). Abaixo disso o
    Safari dá zoom ao focar e o layout salta.
 4. **Teto de 300 linhas por arquivo.** Passou, está fazendo duas coisas.

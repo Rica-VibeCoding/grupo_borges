@@ -184,18 +184,31 @@ de React duplicado e alias cruzado que a fusão rejeitou.
 
 ## 4. Herança obrigatória do `next.config.ts`
 
-Três configurações do cockpit atual **têm de ser copiadas**, e uma delas é a
-armadilha mais cara deste projeto:
+Três configurações do `next.config.ts` carregam armadilha; a da compressão é a
+mais cara deste projeto:
 
 ```ts
-compress: false,
+compress: true,
 ```
 
-**Por que:** SSE quebra em `rewrites()` quando o servidor Node de dev aplica gzip
-— os chunks pequenos ficam presos no decoder do browser. O sintoma não é erro: o
-cliente vê o replay inicial em rajada e **nunca recebe heartbeat nem live**. Quem
-esquecer esta linha vai depurar EventSource por horas procurando bug de protocolo
-onde há bug de compressão.
+**gzip ligado para HTML, JS, CSS e JSON** — nenhuma outra camada comprime (o
+`tailscale serve` não comprime, não há nginx). Medido no `next start` em
+02/10/2026: HTML do agente 122 KB → 18 KB; JS que a página referencia
+1,55 MB → 480 KB.
+
+**SSE não pode sair comprimido.** O zlib segura os eventos pequenos: o cliente vê
+o replay inicial em rajada e **nunca recebe heartbeat nem live** — sem erro
+nenhum, parece bug de protocolo e é gzip. O middleware de compressão do Next pula
+resposta com `Cache-Control: no-transform`, mas esse cabeçalho **não** chega por
+`headers()` numa rota do `rewrites()`: o proxy copia por cima o `Cache-Control`
+da API (`no-store`/`no-cache`). Medido: com `headers()` o stream saiu `gzip`.
+
+Por isso **todo stream da API tem route handler próprio** em `app/api/**`, que
+repassa o corpo e acrescenta `no-transform` (`lib/repasse-sse.ts`):
+`/api/stream`, `/api/events/stream`, `/api/agents/[slug]/messages/stream`,
+`/api/agents/[slug]/pane/stream` e `/api/tts/synth/stream` (POST). **Stream novo
+na API sem route handler aqui chega comprimido.** O handler lê o
+`API_BACKEND_URL` em runtime, não no build como o rewrite.
 
 ```ts
 allowedDevOrigins: ['127.0.0.1', 'localhost', '*.tailfe77db.ts.net', '100.107.56.38'],
@@ -206,13 +219,23 @@ abre pelo Tailscale — que é o único jeito de o Rica abrir.
 
 ```ts
 async rewrites() {
-  return [
-    { source: '/api/:path*', destination: `${API_BASE}/api/:path*` },
-    { source: '/uploads/agents/:path*', destination: `${API_BASE}/uploads/agents/:path*` },
-  ];
+  return {
+    beforeFiles: [],
+    afterFiles: [],
+    fallback: [
+      { source: '/api/:path*', destination: `${API_BASE}/api/:path*` },
+      { source: '/uploads/agents/:path*', destination: `${API_BASE}/uploads/agents/:path*` },
+    ],
+  };
 }
 // API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002'
 ```
+
+**`fallback`, não a lista simples.** A lista simples é `afterFiles`, que a doc do
+Next aplica *antes* das rotas dinâmicas — os handlers de stream em
+`app/api/agents/[slug]/…` nunca seriam alcançados (medido: o stream do agente
+seguiu pelo proxy, em `gzip`). No `fallback` o proxy só pega o que nenhuma rota
+do app atendeu.
 
 O front **não** fala com o FastAPI por URL absoluta: ele chama `/api/...` no
 próprio host e o Next faz o proxy. É isso que faz o SSE atravessar o Tailscale sem
@@ -472,8 +495,8 @@ Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
   `EventSource` mais os fetches baterem no teto de ~6 conexões por host do Safari
   **está eliminado** — com multiplexing não há fila. Era o maior risco técnico
   aberto da lista.
-- **`compress: false` é obrigatório** (§4). Medido pelo cockpit atual, não
-  deduzido.
+- **SSE nunca passa pelo gzip** (§4): `compress: true` só vale porque todo stream
+  tem route handler com `no-transform`. Medido, não deduzido.
 - **Comportamento do pnpm fora do glob** (§3), incluindo o `.npmrc` que não
   funciona.
 

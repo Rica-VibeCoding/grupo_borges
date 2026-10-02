@@ -185,13 +185,17 @@ export const config: NextConfig = {
     '100.107.56.38',
   ],
 
-  // ⚠️ NÃO REMOVER. SSE quebra em rewrites() quando o servidor Node de dev aplica
-  // gzip: os chunks pequenos ficam presos no decoder do browser. E o sintoma não é
-  // erro — o cliente vê o replay inicial em rajada e nunca recebe heartbeat nem
-  // live. Quem tirar esta linha vai depurar EventSource por horas procurando bug
-  // de protocolo onde há bug de compressão. Herdado do apps/web, ver
+  // gzip do `next start` em HTML, JS, CSS e JSON — nenhuma outra camada comprime
+  // (o `tailscale serve` não comprime e não há nginx). ⚠️ SSE NÃO PODE sair
+  // comprimido: o zlib segura os eventos pequenos e o cliente vê o replay em
+  // rajada e nunca recebe heartbeat nem live — parece bug de protocolo, é gzip.
+  // A compressão pula resposta com `Cache-Control: no-transform`, e esse
+  // cabeçalho NÃO dá para pôr pelo `headers()` numa rota do `rewrites()`: o proxy
+  // copia por cima o `Cache-Control` da API. Por isso todo stream da API tem
+  // route handler próprio em `app/api/**` (via `lib/repasse-sse.ts`) e não passa
+  // pelo rewrite. Stream novo na API sem route handler chega comprimido.
   // docs/cockpit-v2-stack.md §4.
-  compress: false,
+  compress: true,
 
   // ⚠️ O TETO DE 100MB DO VÍDEO MORA AQUI TAMBÉM, não só no backend. O Next
   // BUFFERIZA o corpo da requisição quando faz proxy, e o default é 10MB: acima
@@ -223,11 +227,20 @@ export const config: NextConfig = {
   // O front não fala com o FastAPI por URL absoluta: chama /api/... no próprio
   // host e o Next faz o proxy. É isso que faz o SSE atravessar o Tailscale sem
   // CORS e sem porta extra exposta.
+  //
+  // `fallback`, e não a lista simples (= `afterFiles`): o `afterFiles` vence as
+  // rotas DINÂMICAS do app, e os route handlers de stream em
+  // `app/api/agents/[slug]/…` nunca seriam alcançados (ver `compress` acima).
+  // No `fallback` o proxy só pega o que nenhuma rota do app atendeu.
   async rewrites() {
-    return [
-      { source: '/api/:path*', destination: `${API_BASE}/api/:path*` },
-      { source: '/uploads/agents/:path*', destination: `${API_BASE}/uploads/agents/:path*` },
-    ];
+    return {
+      beforeFiles: [],
+      afterFiles: [],
+      fallback: [
+        { source: '/api/:path*', destination: `${API_BASE}/api/:path*` },
+        { source: '/uploads/agents/:path*', destination: `${API_BASE}/uploads/agents/:path*` },
+      ],
+    };
   },
 };
 
