@@ -2042,6 +2042,9 @@ html[data-troca-agente] .ck-palco {
   --ck-tom-ocupado: oklch(0.75 0.13 305);      /* #c198f0 */
   --ck-tom-prepara: var(--ck-text-secondary);  /* parado, na linha, preparando */
   --ck-tom-desligado: var(--ck-text-tertiary); /* fora do ar: o cinza do offline do painel */
+  /* Grupo de ferramentas concluído (§7): o verde-sálvia do pensar da esfera, não o `state-ok`
+   * genérico. #96c19f: 7.9:1 sobre `nav` (a cápsula), 7.1:1 sobre `composer`. */
+  --ck-tom-feito: var(--ck-tom-pensa);
 }
 
 /* Modo conversa: os nomes antigos seguem como apelido dos tons acima. Os visuais (WebGL) leem

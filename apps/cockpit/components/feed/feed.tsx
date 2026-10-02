@@ -55,7 +55,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   }, [itens]);
 
   // O grupo no fim do feed com a corrida de pé segue girando entre um passo e
-  // o próximo; o ✓ só fecha quando vem fala depois ou a corrida para.
+  // o próximo; o anel só fecha quando vem fala depois ou a corrida para.
   const grupoEmCurso = useMemo(() => indiceDoGrupoEmCurso(itens), [itens]);
 
   // Quem acabou de chegar ao vivo ganha o gesto de chegada (`chegada-ao-vivo.ts`).

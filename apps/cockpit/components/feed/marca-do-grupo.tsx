@@ -1,27 +1,27 @@
 'use client';
 
 // A marca e o relógio da cápsula do grupo de ferramentas (§7). A marca é UM
-// traço que muda de papel: o anel aberto que gira em voo se fecha e vira ✓ (ou
-// ✕) quando o grupo termina; pedindo ao Rica, um ponto âmbar parado.
+// anel que muda de papel: aberto e girando em voo, ele fecha a volta quando o
+// grupo termina e ganha o miolo do desfecho; pedindo ao Rica, um ponto âmbar.
 
-import { AnimatePresence, motion, useIsPresent } from 'motion/react';
+import { AnimatePresence, animate, motion, useMotionValue } from 'motion/react';
 import { useEffect, useState } from 'react';
 
 import { duracaoCurta, type FaseDoGrupo } from './resumo-do-grupo.ts';
 
 const SECO = { duration: 0 } as const;
 
-// A passagem do anel para o ✓ cabe em ~300 ms: o anel fecha (160 ms) e sai
-// enquanto o traço da marca desenha por cima (200 ms, a partir dos 100 ms).
+// A passagem do anel para o concluído cabe em ~300 ms: o arco completa a volta
+// (160 ms) e o miolo nasce por cima (200 ms, a partir dos 100 ms).
 export const FECHA_ANEL = { duration: 0.16, ease: [0.2, 0, 0.2, 1] } as const;
-const SAI_ANEL = { duration: 0.14, delay: 0.14, ease: [0.4, 0, 1, 1] } as const;
 export const DESENHA = { duration: 0.2, delay: 0.1, ease: [0.2, 0, 0.2, 1] } as const;
-const GIRO = { duration: 1.1, ease: 'linear', repeat: Infinity } as const;
+const SAI = { duration: 0.14, ease: [0.4, 0, 1, 1] } as const;
+const VOLTA_MS = 1.1;
 
 const COR_DA_FASE: Record<FaseDoGrupo, string> = {
   gira: 'var(--ck-pulso-ouro)',
   chama: 'var(--ck-state-attention)',
-  ok: 'var(--ck-state-ok)',
+  ok: 'var(--ck-tom-feito)',
   falha: 'var(--ck-state-fail)',
 };
 
@@ -34,66 +34,34 @@ export const NOME_DA_FASE: Record<FaseDoGrupo, string> = {
 
 const TICK_MS = 1_000;
 
-/** O anel aberto. Ao sair, ele se FECHA (o arco completa a volta) antes de
- *  sumir — é o mesmo traço que vira a marca, não uma troca de ícone. */
-function Anel({ semMovimento }: { semMovimento: boolean }) {
-  const presente = useIsPresent();
-  return (
-    <motion.span
-      className="absolute inset-0 inline-flex"
-      animate={semMovimento ? undefined : { rotate: 360 }}
-      transition={GIRO}
-    >
-      <svg aria-hidden width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <motion.circle
-          cx="8"
-          cy="8"
-          r="5.75"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          initial={false}
-          animate={{ pathLength: presente ? 0.7 : 1 }}
-          transition={semMovimento ? SECO : FECHA_ANEL}
-        />
-      </svg>
-    </motion.span>
-  );
+/** O giro do anel. É indicador de progresso, não enfeite: gira SEMPRE, com
+ *  movimento reduzido também (o que a preferência corta são as transições).
+ *  Por isso é `animate()` imperativo num valor de movimento, que nenhum
+ *  `MotionConfig reducedMotion` alcança. Ao parar, o anel fica no ângulo em
+ *  que estava — fechado, ele é um círculo e o ângulo não aparece. */
+function useGiro(girando: boolean) {
+  const giro = useMotionValue(0);
+  useEffect(() => {
+    if (!girando) return;
+    const de = giro.get() % 360;
+    const controle = animate(giro, [de, de + 360], { duration: VOLTA_MS, ease: 'linear', repeat: Infinity });
+    return () => controle.stop();
+  }, [girando, giro]);
+  return giro;
 }
 
-/** O ✓ ou o ✕, desenhado pelo traço — chega ao vivo; remontado ao rolar,
- *  aparece pronto (`initial={false}` do `AnimatePresence`). */
-function Marca({ falhou, semMovimento }: { falhou: boolean; semMovimento: boolean }) {
-  const traco = semMovimento ? SECO : DESENHA;
-  return (
-    <svg
-      aria-hidden
-      className="absolute inset-0"
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {falhou ? (
-        <>
-          <motion.path d="M5.5 5.5 10.5 10.5" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={traco} />
-          <motion.path d="M10.5 5.5 5.5 10.5" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={traco} />
-        </>
-      ) : (
-        <motion.path d="M4.5 8.4 7 10.8 11.5 5.6" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={traco} />
-      )}
-    </svg>
-  );
-}
-
-/** O slot de 14px à esquerda: as marcas se sobrepõem no mesmo lugar, a cor
- *  acompanha a fase. A largura nunca muda — a frase não anda por causa dele. */
+/** O slot de 14px à esquerda — UM anel do começo ao fim. Em voo, arco aberto
+ *  girando no dourado; ao terminar, o arco completa a volta e nasce o miolo:
+ *  ponto (concluído, verde-sálvia) ou ✕ (falhou, vermelho — forma própria,
+ *  para a cor não ser a única portadora). Pedindo ao Rica, só o ponto âmbar,
+ *  parado, sem anel. A largura nunca muda — a frase não anda por causa dele. */
 export function MarcaDaFase({ fase, semMovimento }: { fase: FaseDoGrupo; semMovimento: boolean }) {
-  const some = semMovimento ? SECO : SAI_ANEL;
+  const giro = useGiro(fase === 'gira');
+  const comAnel = fase !== 'chama';
+  const fecha = semMovimento ? SECO : FECHA_ANEL;
+  const nasce = semMovimento ? SECO : DESENHA;
+  const some = semMovimento ? SECO : SAI;
+  const miolo = fase === 'falha' ? 'xis' : fase === 'gira' ? null : 'ponto';
   return (
     <span
       aria-hidden
@@ -102,35 +70,52 @@ export function MarcaDaFase({ fase, semMovimento }: { fase: FaseDoGrupo; semMovi
         width: '14px',
         height: '14px',
         color: COR_DA_FASE[fase],
-        transition: 'color var(--ck-dur-enter) var(--ck-ease)',
+        transition: semMovimento ? undefined : 'color var(--ck-dur-enter) var(--ck-ease)',
       }}
     >
-      <AnimatePresence initial={false}>
-        {fase === 'gira' ? (
-          <motion.span key="anel" className="absolute inset-0" exit={{ opacity: 0, transition: some }}>
-            <Anel semMovimento={semMovimento} />
-          </motion.span>
-        ) : null}
-        {fase === 'chama' ? (
-          <motion.span
-            key="ponto"
-            className="absolute inset-0 inline-flex items-center justify-center"
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, transition: some }}
-            transition={semMovimento ? SECO : FECHA_ANEL}
-          >
-            <svg aria-hidden width="14" height="14" viewBox="0 0 16 16">
-              <circle cx="8" cy="8" r="3" fill="currentColor" />
-            </svg>
-          </motion.span>
-        ) : null}
-        {fase === 'ok' || fase === 'falha' ? (
-          <motion.span key={fase} className="absolute inset-0" exit={{ opacity: 0, transition: some }}>
-            <Marca falhou={fase === 'falha'} semMovimento={semMovimento} />
-          </motion.span>
-        ) : null}
-      </AnimatePresence>
+      <motion.span className="absolute inset-0 inline-flex" style={{ rotate: giro }}>
+        <svg aria-hidden width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <motion.circle
+            cx="8"
+            cy="8"
+            r="5.75"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            initial={false}
+            animate={{ pathLength: fase === 'gira' ? 0.7 : 1, opacity: comAnel ? 1 : 0 }}
+            transition={comAnel ? fecha : some}
+          />
+        </svg>
+      </motion.span>
+      <svg aria-hidden className="absolute inset-0" width="14" height="14" viewBox="0 0 16 16" fill="none">
+        <AnimatePresence initial={false}>
+          {miolo === 'ponto' ? (
+            <motion.circle
+              key="ponto"
+              cx="8"
+              cy="8"
+              r="2.5"
+              fill="currentColor"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1, transition: nasce }}
+              exit={{ scale: 0, opacity: 0, transition: some }}
+            />
+          ) : null}
+          {miolo === 'xis' ? (
+            <motion.path
+              key="xis"
+              d="M6.3 6.3 9.7 9.7 M9.7 6.3 6.3 9.7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1, transition: nasce }}
+              exit={{ opacity: 0, transition: some }}
+            />
+          ) : null}
+        </AnimatePresence>
+      </svg>
     </span>
   );
 }

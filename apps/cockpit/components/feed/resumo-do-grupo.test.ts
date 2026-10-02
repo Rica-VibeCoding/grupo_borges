@@ -222,7 +222,7 @@ describe('duração do grupo', () => {
 });
 
 describe('a cápsula do grupo — uma forma, quatro marcas', () => {
-  it('rodando gira; pedindo ao Rica chama; terminado fecha em ✓ ou ✕', () => {
+  it('rodando gira; pedindo ao Rica chama; terminado fecha o anel em ponto ou ✕', () => {
     assert.equal(faseDoGrupo('rodando', false), 'gira');
     assert.equal(faseDoGrupo('aguarda', true), 'chama');
     assert.equal(faseDoGrupo('feito', false), 'ok');

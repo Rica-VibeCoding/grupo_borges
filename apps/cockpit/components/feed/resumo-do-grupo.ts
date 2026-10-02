@@ -175,12 +175,12 @@ export function inicioDoGrupo(itens: readonly MembroDoGrupo[]): number | null {
 }
 
 /** A marca à esquerda da cápsula. `gira`: o anel aberto rodando; `chama`: o
- *  ponto âmbar parado (pede ao Rica); `ok` e `falha`: o anel fechado virou ✓
- *  ou ✕. */
+ *  ponto âmbar parado (pede ao Rica); `ok` e `falha`: o anel fechou a volta e
+ *  ganhou o miolo (ponto ou ✕). */
 export type FaseDoGrupo = 'gira' | 'chama' | 'ok' | 'falha';
 
 /** `emCurso`: o grupo é o fim do feed e a corrida segue. Entre um passo e o
- *  próximo todos estão concluídos, mas o trabalho não acabou — o ✓ ali
+ *  próximo todos estão concluídos, mas o trabalho não acabou — o concluído ali
  *  piscaria a cada passo. Falha no meio da corrida também segue girando: o
  *  agente ainda vai reagir, e o veredito só sai quando ele parar. */
 export function faseDoGrupo(estado: Desfecho, emCurso: boolean): FaseDoGrupo {
