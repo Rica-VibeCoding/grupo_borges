@@ -276,7 +276,8 @@ Responder com prova, numa pasta descartável `~/sonda-conversas` do Omarchy e se
     3. Esperar o `POST /estacionar` por até 60 s.
     4. Esperar o agente ficar ocioso.
     5. Mandar `/clear <título>`.
-  - A mensagem de estacionar é um texto fixo, com o `curl` pronto: título de até 6 palavras e
+  - A mensagem de estacionar é um texto fixo, com o `scripts/estacionar.sh` pronto (o JSON sai
+    do `jq`, não da mão do agente): título de até 6 palavras e
     nota de até 200 caracteres (onde parou e o próximo passo).
   - Se o agente não responder no prazo, segue sem nota, com o título de queda.
   - **Corrigir o `_rename_apos_clear`**: depois de `/clear <título>`, a conversa nova recebe o
