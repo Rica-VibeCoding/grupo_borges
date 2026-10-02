@@ -166,9 +166,10 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 ## 6. Micro-momentos
 
 1. **A linha do agora** (`feed/linha-do-agora.tsx`, 02/10): rodapé do feed, fora da lista virtualizada.
-   À esquerda, a **esfera mini** (18px, a da tela de conversa em CSS), que **nunca some**: parada,
-   respira sozinha; pensando, gira em roxo e azul; executando, gira rápido em azul e dourado; esperando
-   você, chama em âmbar; desligada, cinza e parada. Ao lado, a frase — «Pensando há N s», o passo em voo
+   À esquerda, a **esfera mini** (18px, a da tela de conversa em CSS: vidro escuro, aro aceso no
+   `--ck-tom-*` da vez, três pontos de luz girando dentro), que **nunca some**: parada, respira com os
+   pontos quietos; pensando, gira no tom `pensa`; executando, gira rápido; esperando você, chama em
+   âmbar; desligada, cinza e parada. Ao lado, a frase — «Pensando há N s», o passo em voo
    ou «Esperando você» —, com o brilho que corre (`.ck-brilho-texto`) no dourado do pulso. O estado
    troca a opacidade de camadas que giram em velocidade fixa, nunca a duração da animação.
 2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
