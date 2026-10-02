@@ -12,44 +12,31 @@
 // `components/feed/**` é território do Hiro (cockpit-v2-ownership.md §2) —
 // este arquivo só CONSOME o que já é público de lá, nunca edita.
 
-import { memo, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useMemo, useReducer, useRef } from 'react';
 
 import { ehMensagemResumoCompact } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import type { AgentStatus } from '@grupo_borges/cockpit-core/cockpit-types';
-import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { buildToolResultLookup, textoEnfileirado } from '@grupo_borges/cockpit-core/render-items';
 import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
-import { Retrato } from '@/components/shell/retrato.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
 import { desdeDaLinhaViva, trabalhoEmVooNoFim } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaCompact } from '@/lib/compact';
-import {
-  assinaPendentes,
-  lePendentes,
-  reconciliaPendentes,
-  type EcoPendente,
-} from '@/lib/eco-pendente.ts';
-import {
-  assinaAnexosPendentes,
-  leAnexosPendentes,
-  reconciliaAnexosPendentes,
-  type AnexoPendente,
-} from '@/lib/anexo-pendente.ts';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
 import {
   publicaEscritaViva,
   saindoOutputNoFim,
 } from '@/lib/escrita-viva.ts';
-import { textosDoUsuario } from '@/lib/textos-do-usuario.ts';
 import { HISTORICO_PADRAO } from '@/lib/preaquece-conversa.ts';
 import { createIncrementalRenderItems } from '@/lib/spike/render-items-incremental';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 import { dobraPedidosDoCockpit, poeMarco, poeTrocaEmAndamento } from '@/components/feed/troca-no-feed.ts';
+import { SemConversa } from './sem-conversa';
+import { usaEcoOtimista } from './usa-eco-otimista';
 import { usaTrocaNoChat } from './usa-troca-no-chat';
 
 /** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
@@ -139,51 +126,9 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   if (incrementalRef.current === null || incrementalRef.current.geracao !== geracao) {
     incrementalRef.current = { geracao, instance: createIncrementalRenderItems() };
   }
-  // O ECO OTIMISTA, agora TAMBÉM aqui. Este ramo passou meses sem ele apoiado
-  // numa frase que estava escrita como fato em dois arquivos — *"no Claude Code
-  // o eco volta pelo stream em milissegundos"*. Medi em 15/08 no `:3008`, com o
-  // agente OCIOSO: o campo esvazia em 0,1 s e a bolha só aparece **18,9 s**
-  // depois. São 18,8 segundos de tela muda entre o toque e qualquer sinal de
-  // que a mensagem existe — o que o Rica descreve como *"o composer engole a
-  // mensagem"*. A régua da NN/g põe o limite de atenção em 10 s
-  // (nngroup.com/articles/response-times-3-important-limits): entregávamos
-  // quase o dobro disso de nada.
-  //
-  // A pendência também segura o alarme de entrega, e isso é conserto, não
-  // efeito colateral: `PRAZO_ECO_MS` são 12 s, calibrados em 30/07 sobre uma
-  // amostra cujo pior caso era 1,434 s. Com o eco real em 18,9 s o prazo
-  // estourava ANTES da confirmação chegar, e toda mensagem para agente ocioso
-  // terminava em âmbar dizendo "não consegui confirmar se entrou — pode
-  // duplicar". Falso, e é o que pausa a fila e pendura a mensagem seguinte
-  // pedindo "enviar mesmo assim". Enquanto a pendência existe o prazo
-  // reexamina (`usa-envio.ts:297`); quando ela reconcilia, a máquina recebe o
-  // recibo por `assinaEntrega`. O teto de 3 min continua valendo para o caso
-  // em que a mensagem realmente não entrou.
-  const assina = useMemo(() => (fn: () => void) => assinaPendentes(agentSlug, fn), [agentSlug]);
-  const le = useMemo(() => () => lePendentes(agentSlug), [agentSlug]);
-  const pendentes = useSyncExternalStore(assina, le, () => SEM_PENDENCIA);
-  // O ANEXO tem store próprio (`anexo-pendente.ts`): ele não segura o alarme
-  // do texto, e casa pelo nome do arquivo no servidor, não pelo texto.
-  const assinaAnexos = useMemo(() => (fn: () => void) => assinaAnexosPendentes(agentSlug, fn), [agentSlug]);
-  const leAnexos = useMemo(() => () => leAnexosPendentes(agentSlug), [agentSlug]);
-  const anexosPendentes = useSyncExternalStore(assinaAnexos, leAnexos, () => SEM_ANEXO);
-  useEffect(() => {
-    const textos = textosDoUsuario(messages);
-    reconciliaPendentes(agentSlug, textos);
-    reconciliaAnexosPendentes(agentSlug, textos);
-  }, [agentSlug, messages, anexosPendentes]);
-
-  const comEco = useMemo(() => {
-    if (pendentes.length === 0 && anexosPendentes.length === 0) return messages;
-    const base = messages.length;
-    // Na ordem do gesto: texto e anexo mandados em sequência aparecem na
-    // sequência em que o Rica os mandou.
-    const otimistas = [
-      ...pendentes.map((p) => ({ emMs: p.emMs, cria: (n: number) => criaBolhaOtimista(p, n) })),
-      ...anexosPendentes.map((p) => ({ emMs: p.emMs, cria: (n: number) => criaBolhaAnexoOtimista(p, n) })),
-    ].sort((a, b) => a.emMs - b.emMs);
-    return [...messages, ...otimistas.map((o, i) => o.cria(base + i))];
-  }, [messages, pendentes, anexosPendentes]);
+  // O ECO OTIMISTA (texto e anexo, na ordem do gesto) mora em
+  // `usa-eco-otimista.ts` — a medição de 15/08 que o justifica foi junto.
+  const comEco = usaEcoOtimista(agentSlug, messages);
 
   const itensBase = useMemo(() => [...incrementalRef.current!.instance.update(comEco)], [comEco]);
   const lookup = useMemo(() => buildToolResultLookup(messages), [messages]);
@@ -313,78 +258,3 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
     </>
   );
 });
-
-const SEM_PENDENCIA: readonly EcoPendente[] = Object.freeze([]);
-const SEM_ANEXO: readonly AnexoPendente[] = Object.freeze([]);
-
-/** A bolha do anexo antes do eco. O texto é só a legenda (ou o nome do
- *  arquivo, para o item nunca nascer vazio); quem desenha a foto ou o vídeo é
- *  `bolha-anexo-otimista.tsx`, pelo `uuid`. */
-function criaBolhaAnexoOtimista(pendente: AnexoPendente, ordinal: number): MessagePayload {
-  const texto = pendente.legenda || pendente.nome;
-  return criaBolhaOtimista({ id: pendente.id, texto, emMs: pendente.emMs, prazoMs: 0 }, ordinal);
-}
-
-/** A bolha do Rica antes de o log saber que ela existe. Mesma forma que o
- *  stream produz — daqui pra baixo nenhuma peça do feed distingue as duas.
- *  Gêmea da bolha otimista do composer; as duas
- *  são pequenas e vivem em ramos que não se importam, e unificá-las custaria
- *  um módulo a mais para poupar dez linhas. */
-function criaBolhaOtimista(pendente: EcoPendente, ordinal: number): MessagePayload {
-  return {
-    id: ordinal,
-    kind: 'user',
-    uuid: `cc-otimista-${pendente.id}`,
-    parent_uuid: null,
-    session_id: null,
-    is_sidechain: false,
-    user_type: 'external',
-    timestamp: new Date(pendente.emMs).toISOString(),
-    created_at: pendente.emMs,
-    message: { role: 'user', content: pendente.texto },
-  };
-}
-
-/** A coluna de leitura não vem mais de um wrapper na página (ela desceu pra
- *  dentro do Feed, pra barra de rolagem encostar na borda da tela) — o estado
- *  vazio se centra sozinho na mesma medida. `key={geracao}` + `ck-feed-enter`:
- *  após um Restart, a saudação nasce com fade em vez de piscada dura. Virou
- *  peça própria quando a Tara ganhou o segundo ramo: os dois precisam do MESMO
- *  vazio, e vazio duplicado é vazio que diverge.
- *
- *  16/08 — saudação estilo Claude (referência que o Rica mandou): o retrato do
- *  agente como marca + "Boa tarde, Rica" centralizados, no lugar do "Sem
- *  conversa ainda." no topo. A hora se resolve DEPOIS do mount (useEffect): o
- *  componente é pré-renderizado no servidor, e `getHours()` no corpo daria HTML
- *  do servidor ≠ do cliente — hydration mismatch. Primeiro paint é só o
- *  retrato; o texto entra no primeiro efeito. */
-function SemConversa({ geracao, agentSlug }: { geracao: number; agentSlug: string }) {
-  const [saudacao, setSaudacao] = useState<string | null>(null);
-  useEffect(() => {
-    const hora = new Date().getHours();
-    setSaudacao(hora < 5 || hora >= 18 ? 'Boa noite, Rica' : hora < 12 ? 'Bom dia, Rica' : 'Boa tarde, Rica');
-  }, []);
-
-  return (
-    <div
-      key={geracao}
-      className="ck-feed-enter flex min-h-0 flex-1 flex-col items-center justify-center"
-      style={{ gap: 'var(--ck-space-5)', padding: '0 var(--ck-space-4)' }}
-    >
-      <Retrato slug={agentSlug} nome={agentSlug} tamanho={56} />
-      <p
-        style={{
-          margin: 0,
-          minHeight: 'calc(var(--ck-text-hero) * var(--ck-leading-hero))',
-          fontSize: 'var(--ck-text-hero)',
-          lineHeight: 'var(--ck-leading-hero)',
-          letterSpacing: 'var(--ck-track-hero)',
-          color: 'var(--ck-text-secondary)',
-          textAlign: 'center',
-        }}
-      >
-        {saudacao}
-      </p>
-    </div>
-  );
-}
