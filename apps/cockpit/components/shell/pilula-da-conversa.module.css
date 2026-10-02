@@ -1,0 +1,70 @@
+/* A pílula da conversa — irmã da cápsula do agente, do mesmo vidro escuro
+ * (`--ck-conversa-pilula` + fio), sem desfoque: o precedente é o selecionado da
+ * tropa (§8, §9.2). Menor e mais quieta que a cápsula: sans 13px em `secondary`,
+ * porque o nome do agente é quem fala alto na faixa. */
+
+/* O lugar: ocupa o vão entre a cápsula e a pílula de tokens, com o alvo de 44px.
+ * É ele a âncora do campo, que abre POR CIMA — nada reflui ao renomear. */
+.lugar {
+  position: relative;
+  display: flex;
+  flex: 1 1 0%; /* base 0: só o que sobra da cápsula — ela nunca encolhe por nossa causa */
+  align-items: center;
+  min-width: 0;
+  min-height: var(--ck-touch-min);
+}
+
+/* O alvo é o botão inteiro (44px de alto); o desenho é o `.nome` dentro dele. */
+.alvo {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--ck-touch-min);
+  border-radius: var(--ck-radius-pill);
+  background: transparent;
+}
+
+.nome {
+  min-width: 0;
+  padding: var(--ck-space-1) var(--ck-space-3);
+  border: 1px solid var(--ck-conversa-pilula-fio);
+  border-radius: var(--ck-radius-pill);
+  background-color: var(--ck-conversa-pilula);
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-sm);
+  line-height: var(--ck-leading-hero);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--ck-dur-fast) var(--ck-ease);
+}
+.alvo:hover .nome { color: var(--ck-text-primary); }
+.nome[data-falhou='true'] { color: var(--ck-state-fail); }
+
+/* O campo cobre o vão, alinhado à esquerda da pílula; no desktop o vão é a
+ * faixa toda, e um campo de tela inteira para um título seria desproporção. */
+.campo {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(100%, 24rem);
+  display: flex;
+  align-items: center;
+}
+.entrada {
+  width: 100%;
+  min-width: 0;
+  padding: var(--ck-space-1) var(--ck-space-3);
+  border: 1px solid var(--ck-edge-functional);
+  border-radius: var(--ck-radius-pill);
+  background-color: var(--ck-surface-composer);
+  color: var(--ck-text-primary);
+  font-size: var(--ck-text-md); /* §9.6: abaixo de 16px o Safari dá zoom ao focar */
+  line-height: var(--ck-leading-hero);
+}
+.entrada[aria-busy='true'] { color: var(--ck-text-secondary); }
+
+/* O `.ck-surge` não desliga sozinho no movimento reduzido; aqui a troca é seca. */
+@media (prefers-reduced-motion: reduce) {
+  .lugar :global(.ck-surge[data-aberto]) { transition: none; transform: none; }
+}
