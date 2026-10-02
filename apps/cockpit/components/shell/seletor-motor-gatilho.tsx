@@ -12,7 +12,6 @@ type GatilhoDoSeletorProps = {
   rotuloDoEsforco: string | null;
   etiquetaEsforco: EtiquetaEsforco | null;
   tintaModelo: string;
-  tintaEsforco: string;
   /** "esperando o agente terminar" / "trocando…" — a troca em curso, dita no
    *  próprio chip (27/09). Com ela, o rótulo mostra o valor ESCOLHIDO. */
   andamento?: string | null;
@@ -34,7 +33,6 @@ export function GatilhoDoSeletor({
   rotuloDoEsforco,
   etiquetaEsforco,
   tintaModelo,
-  tintaEsforco,
   andamento = null,
   andamentoLongo = null,
   rotuloPedido = null,
@@ -122,8 +120,9 @@ export function GatilhoDoSeletor({
             {rotuloDoEsforco ? (
               // `truncate` no lugar de `shrink-0`: quando o nome do modelo já sumiu
               // e ainda falta espaço, o esforço termina em reticências em vez de
-              // ser cortado no meio da palavra pela borda do botão.
-              <span className="truncate" style={{ color: tintaEsforco }}>
+              // ser cortado no meio da palavra pela borda do botão. Secundário
+              // sempre: na caixa do composer o terciário não passa 4.5:1 (estética §9.8).
+              <span className="truncate" style={{ color: 'var(--ck-text-secondary)' }}>
                 {rotuloDoEsforco}
               </span>
             ) : null}

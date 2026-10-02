@@ -87,7 +87,6 @@ export function createControleEnvio(
   let timerPrazo: Timer | undefined;
   let timerRetentativa: Timer | undefined;
   /** A tentativa corrente preserva a origem STT até o eco voltar. */
-  let vozEmVoo = false;
   let origemEmVoo: OrigemEnvio = 'text';
   const ouvintes = new Set<() => void>();
 
@@ -113,7 +112,7 @@ export function createControleEnvio(
 
   /** Um texto do Rica voltou — pelo stream ou por recibo de fora. */
   function publicarTexto(item: { id: number; papel: 'user' | 'fila'; texto: string }): void {
-    const texto = vozEmVoo ? item.texto.replace(PREFIXO_VOZ, '') : item.texto;
+    const texto = origemEmVoo === 'stt' ? item.texto.replace(PREFIXO_VOZ, '') : item.texto;
     publicar({ tipo: 'item-do-stream', item: { ...item, texto } });
   }
 
@@ -124,9 +123,15 @@ export function createControleEnvio(
     cancelar,
     atrasoReconexaoMs,
     descartado: () => descartado,
-    aoTexto: publicarTexto,
-    cumpriu: () => estado.fase === 'confirmado' && estado.fila !== true,
-    aoCumprir: limparTimerPrazo,
+    aoTexto: (item) => {
+      publicarTexto(item);
+      // Confirmado pela fila NÃO encerra a observação: o eco `user` da
+      // drenagem ainda precisa chegar para apagar a marca `fila` — senão o
+      // composer fica preso no "entrou na fila" para sempre.
+      const cumpriu = estado.fase === 'confirmado' && estado.fila !== true;
+      if (cumpriu) limparTimerPrazo();
+      return cumpriu;
+    },
     retomarDe: () => {
       // Confirmado pela fila também reconecta: o eco da drenagem ainda vem.
       const aguardandoEco =
@@ -139,9 +144,14 @@ export function createControleEnvio(
     },
   });
 
-  function armarPrazo(): void {
+  /** `reexame`: o prazo já venceu com o rollout ainda entregando, e pergunta de
+   *  novo a cada `REEXAME_ROLLOUT_MS` — não é um prazo novo. */
+  function armarPrazo(reexame = false): void {
     limparTimerPrazo();
     if (estado.fase !== 'aceito') return;
+    const atrasoMs = reexame
+      ? REEXAME_ROLLOUT_MS
+      : Math.max(0, estado.aceitoEmMs + PRAZO_ECO_MS - agora());
     timerPrazo = agendar(() => {
       timerPrazo = undefined;
       // ENTREGA AINDA EM CURSO: os 12 s foram calibrados sobre uma amostra
@@ -154,26 +164,11 @@ export function createControleEnvio(
       // alarme é o teto da pendência (`PRAZO_CC_MS`, com o porquê escrito lá).
       // Expirou a pendência, o alarme volta a ser verdadeiro.
       if (temPendencia(agentSlug)) {
-        armarPrazoDeRollout();
+        armarPrazo(true);
         return;
       }
       publicar({ tipo: 'tempo-passou', agoraMs: agora() });
-    }, Math.max(0, estado.aceitoEmMs + PRAZO_ECO_MS - agora()));
-  }
-
-  /** Reexame curto enquanto o rollout não entrega — não é um prazo novo, é o
-   *  mesmo prazo perguntando de novo. */
-  function armarPrazoDeRollout(): void {
-    limparTimerPrazo();
-    if (estado.fase !== 'aceito') return;
-    timerPrazo = agendar(() => {
-      timerPrazo = undefined;
-      if (temPendencia(agentSlug)) {
-        armarPrazoDeRollout();
-        return;
-      }
-      publicar({ tipo: 'tempo-passou', agoraMs: agora() });
-    }, REEXAME_ROLLOUT_MS);
+    }, atrasoMs);
   }
 
   async function executar(
@@ -190,7 +185,6 @@ export function createControleEnvio(
       return;
     }
     origemEmVoo = origem;
-    vozEmVoo = origem === 'stt';
     limparTimerPrazo();
     limparTimerRetentativa();
     eco.encerrar();

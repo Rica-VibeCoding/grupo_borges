@@ -9,6 +9,7 @@ import type {
   ContentPart,
   MessagePayload,
 } from '@grupo_borges/cockpit-core/messages-types';
+import { textoEnfileirado } from '@grupo_borges/cockpit-core/render-items';
 
 import type { FronteiraEnvio } from './envio.ts';
 import { atrasoDaRetentativa, ehRecusaTransitoria } from './recusa-transitoria.ts';
@@ -47,17 +48,11 @@ export function respostaTemFronteira(
 }
 
 /**
- * O `kind: "queued"` do backend (commit 640282c): quando o agente está no
- * meio de um turno, o CLI enfileira a mensagem (`queue-operation`/`enqueue`)
- * e o stream emite este evento — com `message: null` e o texto no `content`
- * de fora. É o recibo de entrega da fila: chega em segundos, enquanto o eco
- * `user` só nasce quando a fila drena — minutos depois.
+ * O texto do Rica que um evento do stream traz. O `kind: "queued"` do backend
+ * (commit 640282c) é o recibo de entrega da fila — `message: null` e o texto no
+ * `content` de fora: chega em segundos, enquanto o eco `user` só nasce quando a
+ * fila drena, minutos depois.
  */
-function textoEnfileirado(payload: MessagePayload): string | null {
-  if (payload.kind !== 'queued') return null;
-  return typeof payload.content === 'string' && payload.content.length > 0 ? payload.content : null;
-}
-
 export function textoDaMensagem(
   payload: MessagePayload,
 ): { texto: string; papel: 'user' | 'fila' } | null {

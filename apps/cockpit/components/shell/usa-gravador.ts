@@ -270,18 +270,8 @@ export function usaGravador({ aoGravar, aoVivo }: Opcoes): Gravador {
   }, [aoGravar, aoVivo, desenhaOnda, solta]);
 
   const gestoDeVoz = usaGestoDeVoz({
-    fase,
-    comeca,
-    encerra,
-    setFase,
-    setGesto,
-    setProgresso,
-    setImpedimento,
-    pressionadoRef,
-    travadaRef,
-    origemRef,
-    gestoRef,
-    segundosRef,
+    fase, comeca, encerra, setFase, setGesto, setProgresso, setImpedimento,
+    pressionadoRef, travadaRef, origemRef, gestoRef, segundosRef,
   });
 
   return {

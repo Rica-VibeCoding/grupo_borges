@@ -1,4 +1,4 @@
-import type { EspecieAnexo } from './anexo.ts';
+import type { EspecieAnexo } from './regras-do-anexo.ts';
 
 /**
  * A máquina do anexo. Cinco fases, e cada uma existe porque tem consequência

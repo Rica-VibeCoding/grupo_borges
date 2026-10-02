@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { fetchAgentPainel, postAgentAplicarMotor } from '@grupo_borges/cockpit-core/api';
-import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 import { DropdownMenu, DropdownMenuContent } from '../ui/dropdown-menu';
 import type { ControleConvergencia } from './convergencia-esforco';
 import {
@@ -12,14 +11,13 @@ import { aplicarMotor, esquecerConfirmacao, registrarEscolha, revisarFaltas, typ
 import { GatilhoDoSeletor } from './seletor-motor-gatilho';
 import { ConteudoDoSeletor, type TelaDoSeletor } from './seletor-motor-menu';
 import { LeituraDoMotor, RessalvaDoSeletor, usaRecado } from './seletor-motor-ressalva';
-import { trocasDiferidas } from './seletor-motor-trocas';
+import { trocasDiferidas, type PainelDoMotor } from './seletor-motor-trocas';
 import { esquecerPainel, painelGuardado, sincronizarPainel, tomarPreaquecimento } from './sincronizacao-painel';
 import type { PedidoDeTroca } from './troca-em-espera.ts';
 import { usaOperacaoDeMotor } from './usa-operacao-de-motor.ts';
 import { usaTelaEstreita } from './usa-tela-estreita';
 import { usaTrocaEmEspera } from './usa-troca-em-espera.ts';
 
-type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort' | 'motor'>;
 type SeletorMotorProps = {
   agentSlug: string;
   agentName: string;
@@ -102,9 +100,6 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
   const temControle = Boolean(modelo?.allowed.length || esforco?.allowed.length);
   const divergindo = Boolean(modelo?.session_may_diverge || esforco?.session_may_diverge);
   const tintaModelo = divergindo ? 'var(--ck-text-secondary)' : 'var(--ck-text-primary)';
-  // Secundário mesmo divergindo: o chip mora na caixa do composer, onde o
-  // terciário não passa 4.5:1 (estética §2, §9.8).
-  const tintaEsforco = 'var(--ck-text-secondary)';
   // Troca a quente (Claude Code): a gaveta fecha no toque e o chip conta a
   // troca — "esperando o agente terminar", "trocando…" — sem prender o
   // composer atrás de um menu modal pelos ~6 s da troca que abre o modal.
@@ -208,7 +203,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
     return (
       <LeituraDoMotor
         rotuloModelo={rotuloModelo} rotuloDoEsforco={rotuloDoEsforco} etiquetaEsforco={etiquetaEsforco}
-        tintaModelo={tintaModelo} tintaEsforco={tintaEsforco} ressalva={ressalva}
+        tintaModelo={tintaModelo} ressalva={ressalva}
       />
     );
   }
@@ -219,7 +214,7 @@ function SeletorDoAgente({ agentSlug, agentName }: Pick<SeletorMotorProps, 'agen
         <GatilhoDoSeletor
           agentName={agentName} aberto={aberto} rotuloModelo={rotuloModelo}
           rotuloDoEsforco={rotuloDoEsforco} etiquetaEsforco={etiquetaEsforco}
-          tintaModelo={tintaModelo} tintaEsforco={tintaEsforco}
+          tintaModelo={tintaModelo}
           andamento={troca.andamento} andamentoLongo={troca.andamentoLongo} cancelaNoToque={Boolean(troca.espera) && !troca.emVoo}
           rotuloPedido={pedidoEmCurso ? rotuloDoPedido(pedidoEmCurso, modelo?.labels) : null}
         />

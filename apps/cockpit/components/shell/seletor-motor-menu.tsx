@@ -8,6 +8,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '../ui/dropdown-menu';
+import { estiloItemDoMenu, ItemDeEscolha } from './item-do-menu';
 
 export type TelaDoSeletor = 'inicio' | 'modelo' | 'esforco' | 'aviso';
 export type OpcaoDoMotor = {
@@ -28,26 +29,6 @@ type ConteudoDoSeletorProps = {
   aoMudarTela: (tela: TelaDoSeletor) => void;
   aoFechar: () => void;
 };
-function estiloItemDoMenu(selecionado = false) {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 'var(--ck-touch-min)',
-    // Sem gap, rótulo e valor encostam quando o texto enche a largura do menu:
-    // `space-between` só separa o que sobra, e "Esforço" + "extra alto" não
-    // sobrava nada — o Rica leu "Esforçoextra alto" na tela em 09/08.
-    gap: 'var(--ck-space-3)',
-    padding: 'var(--ck-space-2) var(--ck-space-3)',
-    borderRadius: 'var(--ck-radius-chip)',
-    color: 'var(--ck-text-primary)',
-    fontSize: 'var(--ck-text-base)',
-    textAlign: 'left' as const,
-    ...(selecionado
-      ? { backgroundImage: 'linear-gradient(var(--ck-overlay-selected), var(--ck-overlay-selected))' }
-      : {}),
-  };
-}
 function LinhaDeSubmenu({ rotulo, atual }: { rotulo: string; atual: string }) {
   return (
     <>
@@ -64,20 +45,13 @@ function ListaDeOpcoes({ opcoes, salvando }: { opcoes: OpcaoDoMotor[]; salvando:
   return (
     <>
       {opcoes.map((opcao) => (
-        <DropdownMenuItem
+        <ItemDeEscolha
           key={opcao.chave}
-          disabled={salvando}
-          onSelect={(evento) => {
-            evento.preventDefault();
-            opcao.aoSelecionar();
-          }}
-          style={estiloItemDoMenu(opcao.selecionado)}
-        >
-          <span>{opcao.rotulo}</span>
-          <span aria-hidden style={{ color: 'var(--ck-text-secondary)' }}>
-            {opcao.selecionado ? '✓' : ''}
-          </span>
-        </DropdownMenuItem>
+          rotulo={opcao.rotulo}
+          selecionado={opcao.selecionado}
+          desabilitado={salvando}
+          aoEscolher={opcao.aoSelecionar}
+        />
       ))}
     </>
   );

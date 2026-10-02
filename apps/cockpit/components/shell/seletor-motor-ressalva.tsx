@@ -96,14 +96,13 @@ export function LeituraDoMotor(props: {
   rotuloDoEsforco: string | null;
   etiquetaEsforco: EtiquetaEsforco | null;
   tintaModelo: string;
-  tintaEsforco: string;
   ressalva: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-col" style={{ fontSize: 'var(--ck-text-sm)' }}>
       <div className="flex items-center" style={{ gap: '3px' }}>
         {props.rotuloModelo ? <span className="truncate" style={{ color: props.tintaModelo }}>{props.rotuloModelo}</span> : null}
-        {props.rotuloDoEsforco ? <span style={{ color: props.tintaEsforco }}>{props.rotuloDoEsforco}</span> : null}
+        {props.rotuloDoEsforco ? <span style={{ color: 'var(--ck-text-secondary)' }}>{props.rotuloDoEsforco}</span> : null}
         {props.etiquetaEsforco ? <EtiquetaDoEsforco etiqueta={props.etiquetaEsforco} /> : null}
       </div>
       {props.ressalva}

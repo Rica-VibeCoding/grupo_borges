@@ -28,9 +28,6 @@ import {
 export {
   HOLD_CONCLUSAO_MS,
   createControleCompact,
-  type ConcluidoCompact,
-  type ControleCompact,
-  type DependenciasCompact,
   type EstadoCompact,
 } from './maquina-do-compact.ts';
 export type { ArmazenamentoCompact } from './memoria-do-compact.ts';

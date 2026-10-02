@@ -15,12 +15,9 @@ export {
   ITENS_DA_GAVETA,
   REGRAS,
   classificaAnexo,
-  extensaoDe,
   formataTamanho,
   validaAnexo,
-  type ArquivoParaAnexar,
   type EspecieAnexo,
-  type Veredito,
 } from './regras-do-anexo.ts';
 
 /** O estado do canal de entrega que o `/file` devolve junto (mesmo shape do

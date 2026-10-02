@@ -11,12 +11,8 @@ import type { OrigemEnvio } from './leitura-do-envio.ts';
  * (`controle-envio.ts`), a leitura do que o servidor diz
  * (`leitura-do-envio.ts`) e a observação do stream (`observacao-do-eco.ts`).
  * Quem importa daqui continua importando daqui. */
-export {
-  createControleEnvio,
-  type ControleEnvio,
-  type DependenciasEnvio,
-} from './controle-envio.ts';
-export { MARCA_VOZ, PREFIXO_VOZ, type OrigemEnvio } from './leitura-do-envio.ts';
+export { createControleEnvio } from './controle-envio.ts';
+export { MARCA_VOZ, type OrigemEnvio } from './leitura-do-envio.ts';
 export type {
   ConstrutorFonteEventosEnvio,
   FonteEventosEnvio,

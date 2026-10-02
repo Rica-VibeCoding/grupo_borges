@@ -7,8 +7,22 @@ export type ArmazenamentoCompact = Pick<Storage, 'getItem' | 'setItem'>;
 
 export type RegistroStorage = { duracoes?: unknown; inicio?: unknown; marco?: unknown };
 
-export function chaveStorage(agentSlug: string): string {
+function chaveStorage(agentSlug: string): string {
   return `cockpit:compact:v1:${agentSlug}`;
+}
+
+export function gravarRegistro(
+  storage: ArmazenamentoCompact | null,
+  slug: string,
+  registro: { duracoes: number[]; inicio: number | null; marco: number | null },
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(chaveStorage(slug), JSON.stringify(registro));
+  } catch {
+    // Storage cheio/bloqueado não pode derrubar a espera — só a retomada
+    // após navegação é perdida.
+  }
 }
 
 export function lerRegistro(storage: ArmazenamentoCompact | null, slug: string): RegistroStorage {

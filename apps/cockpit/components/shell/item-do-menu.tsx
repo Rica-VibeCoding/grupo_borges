@@ -1,18 +1,20 @@
 'use client';
 
 /**
- * Um item do menu de família do `BlocoDeMotor`: rótulo à esquerda, ✓ na
- * escolhida. Saiu de `bloco-de-motor.tsx` (02/10) com o estilo dele.
+ * O item de escolha dos menus do motor — o seletor de modelo e esforço e o menu
+ * de família do `BlocoDeMotor`: rótulo à esquerda, ✓ na escolhida.
  */
 import { DropdownMenuItem } from '../ui/dropdown-menu';
-import type { OpcaoDeFamilia } from './troca-de-motor';
 
-function estiloItemDoMenu(selecionado = false) {
+export function estiloItemDoMenu(selecionado = false) {
   return {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 'var(--ck-touch-min)',
+    // Sem gap, rótulo e valor encostam quando o texto enche a largura do menu:
+    // `space-between` só separa o que sobra, e "Esforço" + "extra alto" não
+    // sobrava nada — o Rica leu "Esforçoextra alto" na tela em 09/08.
     gap: 'var(--ck-space-3)',
     padding: 'var(--ck-space-2) var(--ck-space-3)',
     borderRadius: 'var(--ck-radius-chip)',
@@ -25,12 +27,14 @@ function estiloItemDoMenu(selecionado = false) {
   };
 }
 
-export function ItemDeFamilia({
-  opcao,
+export function ItemDeEscolha({
+  rotulo,
+  selecionado,
   desabilitado,
   aoEscolher,
 }: {
-  opcao: OpcaoDeFamilia;
+  rotulo: string;
+  selecionado: boolean;
   desabilitado: boolean;
   aoEscolher: () => void;
 }) {
@@ -41,11 +45,11 @@ export function ItemDeFamilia({
         evento.preventDefault();
         aoEscolher();
       }}
-      style={estiloItemDoMenu(opcao.selecionado)}
+      style={estiloItemDoMenu(selecionado)}
     >
-      <span>{opcao.rotulo}</span>
+      <span>{rotulo}</span>
       <span aria-hidden style={{ color: 'var(--ck-text-secondary)' }}>
-        {opcao.selecionado ? '✓' : ''}
+        {selecionado ? '✓' : ''}
       </span>
     </DropdownMenuItem>
   );

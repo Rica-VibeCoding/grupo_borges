@@ -20,9 +20,7 @@ import {
  * controle que move o estado entre elas e o hook que o pendura no composer. */
 export {
   arquivoRetido,
-  estadoInicialAnexo,
   type EstadoAnexo,
-  type FaseAnexo,
   type Retido,
 } from './fase-do-anexo.ts';
 

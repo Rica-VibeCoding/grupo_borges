@@ -51,6 +51,10 @@ if ! git -C "$REPO" diff --quiet HEAD origin/main -- apps/cockpit/next.config.ts
     diz "⚠️ next.config.ts ou public/ mudaram no origin/main e a árvore da borges não tem — o start usa os de lá"
 fi
 
+porta_livre() { ! ss -ltn | grep -q ":$PORTA_PROVA "; }
+# Antes do build, que leva minutos — e de novo na hora da prova.
+porta_livre || { diz "a $PORTA_PROVA está ocupada"; exit 1; }
+
 # Mesmo disco do app: o `mv` do estágio troca o nome em vez de copiar.
 WT="$(mktemp -d "$REPO-publicar.XXXX")"
 PROVA_PID=""
@@ -66,7 +70,7 @@ git -C "$REPO" worktree add -q --detach "$WT" origin/main
 (cd "$WT" && corepack pnpm install --frozen-lockfile --prefer-offline --reporter=silent)
 (cd "$WT/apps/cockpit" && COCKPIT_DIST_DIR="$ESTAGIO" corepack pnpm exec next build)
 
-DPL="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['config']['deploymentId'])" \
+DPL="$(node -p 'require(process.argv[1]).config.deploymentId' \
     "$WT/apps/cockpit/$ESTAGIO/required-server-files.json")"
 [[ "$DPL" != *-wip* ]] || { diz "deploymentId $DPL saiu sujo — não publico"; exit 1; }
 rm -rf "${APP:?}/$ESTAGIO"
@@ -81,10 +85,10 @@ responde() {  # responde <porta>: a página E um chunk dela têm de voltar 200
     chunk="$(grep -oE '/_next/static/chunks/[^"]+\.js' <<<"$html" | head -1)"
     [[ -n "$chunk" ]] && curl -fsS -o /dev/null --max-time 10 "http://127.0.0.1:$1$chunk"
 }
-espera() { for _ in $(seq 1 30); do responde "$1" && return 0; sleep 2; done; return 1; }
+espera() { for _ in {1..30}; do responde "$1" && return 0; sleep 2; done; return 1; }
 
 diz "provando o estágio na $PORTA_PROVA"
-if ss -ltn | grep -q ":$PORTA_PROVA "; then diz "a $PORTA_PROVA está ocupada"; exit 1; fi
+porta_livre || { diz "a $PORTA_PROVA está ocupada"; exit 1; }
 cd "$APP"
 COCKPIT_DIST_DIR="$ESTAGIO" setsid corepack pnpm exec next start --port "$PORTA_PROVA" --hostname 127.0.0.1 \
     >/tmp/publicar-cockpit-prova.log 2>&1 &
@@ -110,7 +114,9 @@ fi
 NO_AR="$(curl -fsS --max-time 10 http://127.0.0.1:3008/ | grep -oE 'data-dpl-id="[^"]+"' | head -1 | cut -d'"' -f2)"
 [[ "$NO_AR" == "$DPL" ]] || diz "⚠️ a página diz $NO_AR e o build gravou $DPL"
 
-# Guarda só as últimas pastas de volta; cada uma pesa centenas de MB.
+# Guarda só as últimas pastas de volta; cada uma pesa centenas de MB. As de um
+# build que falhou ficam só até a próxima publicação que deu certo.
 ls -dt .next-antes-* 2>/dev/null | tail -n +$((GUARDAR_ANTES + 1)) | xargs -r rm -rf
+rm -rf .next-falhou-*
 
 diz "✅ publicado $HASH (deploymentId $DPL) — https://borges.tailfe77db.ts.net:3446"

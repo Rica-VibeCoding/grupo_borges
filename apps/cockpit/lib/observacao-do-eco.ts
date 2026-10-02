@@ -10,19 +10,10 @@ import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 import type { FronteiraEnvio } from './envio.ts';
 import { textoDaMensagem } from './leitura-do-envio.ts';
+import type { EventSourceConstructor, EventSourceLike } from './spike/canario-stream-controller.ts';
 
-type EventoSse = { data: string };
-type OuvinteSse = (evento: EventoSse) => void;
-
-export interface FonteEventosEnvio {
-  addEventListener(tipo: string, ouvinte: OuvinteSse): void;
-  close(): void;
-  onerror: (() => void) | null;
-}
-
-export interface ConstrutorFonteEventosEnvio {
-  new (url: string): FonteEventosEnvio;
-}
+export type FonteEventosEnvio = EventSourceLike;
+export type ConstrutorFonteEventosEnvio = EventSourceConstructor;
 
 type Timer = ReturnType<typeof setTimeout>;
 
@@ -33,12 +24,9 @@ export type OpcoesDaObservacao = {
   cancelar: (timer: Timer) => void;
   atrasoReconexaoMs: number;
   descartado: () => boolean;
-  /** Um texto do Rica voltou pelo stream. */
-  aoTexto: (item: { id: number; papel: 'user' | 'fila'; texto: string }) => void;
-  /** Lido depois de cada texto: a observação já cumpriu o papel? */
-  cumpriu: () => boolean;
-  /** Roda ao cumprir, antes de fechar o stream. */
-  aoCumprir: () => void;
+  /** Um texto do Rica voltou pelo stream. Devolve se a observação cumpriu o
+   *  papel — aí o stream fecha. */
+  aoTexto: (item: { id: number; papel: 'user' | 'fila'; texto: string }) => boolean;
   /** Na reconexão: de onde retomar, ou `undefined` se não há eco a esperar. */
   retomarDe: () => FronteiraEnvio | undefined;
 };
@@ -84,12 +72,7 @@ export function criaObservacaoDoEco(opcoes: OpcoesDaObservacao): ObservacaoDoEco
         cursor = payload.id;
         const extraido = textoDaMensagem(payload);
         if (extraido === null) return;
-        opcoes.aoTexto({ id: payload.id, papel: extraido.papel, texto: extraido.texto });
-        // Confirmado pela fila NÃO encerra a observação: o eco `user` da
-        // drenagem ainda precisa chegar para apagar a marca `fila` — senão o
-        // composer fica preso no "entrou na fila" para sempre.
-        if (opcoes.cumpriu()) {
-          opcoes.aoCumprir();
+        if (opcoes.aoTexto({ id: payload.id, papel: extraido.papel, texto: extraido.texto })) {
           limparTimerReconexao();
           fecharFonte();
         }

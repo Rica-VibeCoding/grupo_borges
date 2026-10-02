@@ -157,15 +157,13 @@ export async function painelQueJaViu(
   pendente: EscolhaPendente,
   tambem?: (painel: PainelDoMotor) => boolean,
 ): Promise<PainelDoMotor | null> {
-  let ultimo: PainelDoMotor | null = null;
   for (let tentativa = 0; tentativa < 8; tentativa += 1) {
     const painel = await pendente.rede.lePainel().catch(() => null);
     if (!painel) return null;
-    ultimo = painel;
     const viu = (!pendente.confere || pendente.confere(painel))
       && (!tambem || tambem(painel));
     if (viu) return painel;
     await espera(250);
   }
-  return ultimo ? null : null;
+  return null;
 }

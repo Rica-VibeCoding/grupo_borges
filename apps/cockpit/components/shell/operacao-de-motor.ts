@@ -30,11 +30,10 @@ import {
 // Os textos e a régua pura moram em `regua-da-operacao-de-motor.ts`; daqui saem
 // reexportados, porque é deste arquivo que a tela e os testes importam.
 export {
-  ESPERA_MINIMA_DO_BOOT_MS, TEXTO_CONFIRMA_TURNO, TEXTO_FALHOU, TEXTO_GUARDANDO, TEXTO_NO_CHAO,
-  convergiu, faltaEscolher, pedeConfirmacaoDeTurno, textoDesligando, textoFalta, textoSubindo,
-  traduzFalha,
+  ESPERA_MINIMA_DO_BOOT_MS, TEXTO_CONFIRMA_TURNO, TEXTO_FALHOU, TEXTO_NO_CHAO,
+  convergiu, faltaEscolher, textoDesligando, textoFalta, textoSubindo,
 } from './regua-da-operacao-de-motor.ts';
-export type { EstadoDaOperacao, FaseDaOperacao, PainelDoMotor } from './regua-da-operacao-de-motor.ts';
+export type { EstadoDaOperacao, PainelDoMotor } from './regua-da-operacao-de-motor.ts';
 
 type Sessao = {
   estado: EstadoDaOperacao;

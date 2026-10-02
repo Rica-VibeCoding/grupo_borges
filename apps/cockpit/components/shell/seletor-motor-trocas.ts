@@ -21,7 +21,7 @@ import { esquecerPainel } from './sincronizacao-painel';
 import { TEXTO_PERGUNTA_ABERTA } from './executor-de-troca.ts';
 import { classificaErroDaTroca, jaEstava, type DesfechoDoPedido } from './troca-em-espera.ts';
 
-type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort' | 'motor'>;
+export type PainelDoMotor = Pick<AgentPainelResponse, 'model' | 'effort' | 'motor'>;
 
 export type ContextoDasTrocas = {
   agentSlug: string;
@@ -56,113 +56,112 @@ export function trocasDiferidas({
     return 'falhou';
   }
 
-  async function trocarEsforco(valor: string): Promise<DesfechoDoPedido> {
+  /** O que as duas trocas fazem igual: esta escolha supera a anterior, o painel
+   *  guardado deixa de valer, e o "salvando" só apaga se ninguém a superou. */
+  async function pedirTroca(
+    falha: string,
+    pedir: (minha: number) => Promise<DesfechoDoPedido>,
+  ): Promise<DesfechoDoPedido> {
     const minha = invalidar();
     esquecerPainel(agentSlug);
     setSalvando(true);
     setAviso(null);
     try {
-      const resposta = await patchAgentEffort(agentSlug, valor);
-      if (minha !== geracao.current) return 'feito';
-      // Já era o nível da sessão: sucesso silencioso. Pergunta que ficou
-      // aberta: quem responde é a barra acima do campo, não um aviso aqui.
-      if (jaEstava(resposta) || resposta.pergunta_aberta) return 'feito';
-      const desfecho = desfechoDaTrocaDeEsforco(resposta);
-      if (desfecho === 'entrega-falhou') {
-        mostrarAviso('Não foi possível entregar a troca ao agente.');
-        return 'falhou';
-      }
-      if (desfecho === 'pendente') {
-        mostrarAviso('A troca foi entregue, mas a sessão ainda não confirmou o nível novo. O card segue no nível atual até ela confirmar.');
-        const controlador = new AbortController();
-        leitura.current = controlador;
-        convergencia.current = esperaConvergenciaDoEsforco(
-          valor, () => fetchAgentPainel(agentSlug, controlador.signal),
-          (novo) => {
-            if (minha === geracao.current && novo.slug === agentSlug) setPainel(novo);
-          },
-        );
-        return 'feito';
-      }
-      const comEsforco = painel ? {
-        ...painel,
-        effort: {
-          ...painel.effort, value: resposta.effort, source: resposta.source,
-          requested: cobrePedido ? valor : painel.effort.requested,
-          session_may_diverge: resposta.session_may_diverge,
-        },
-      } : null;
-      if (comEsforco) setPainel(comEsforco);
-      // O Codex recebe o esforço por env var de boot: o back grava e
-      // responde `session_may_diverge`. É o sinal de que a escolha não alcança
-      // a sessão viva — e é ele, não a família, que decide religar (a régua de
-      // quem aceita troca a quente mora no back).
-      //
-      // A gaveta fica ABERTA aqui: é dentro dela que ele escolhe o resto. O que
-      // volta é a tela inicial, com o valor novo já no lugar.
-      if (resposta.session_may_diverge) {
-        setTela('inicio');
-        registrar((p) => p.effort?.value === resposta.effort);
-      } else {
-        // Trocou a quente: não há o que religar por ESTA escolha. Mas ela pode ser
-        // o campo que faltava para uma troca de MOTOR já guardada — e era aqui que
-        // o pacote ficava pendurado para sempre, com o motor novo nunca entrando.
-        void fecharSePronto(agentSlug, (p) => p.effort?.value === resposta.effort);
-        alterarAbertura(false);
-      }
-      return 'feito';
+      return await pedir(minha);
     } catch (erro) {
-      return desfechoDoErro(erro, 'Não foi possível trocar o esforço.', minha !== geracao.current);
+      return desfechoDoErro(erro, falha, minha !== geracao.current);
     } finally {
       if (minha === geracao.current) setSalvando(false);
     }
   }
 
-  async function trocarModelo(valor: string): Promise<DesfechoDoPedido> {
-    const minha = invalidar();
-    esquecerPainel(agentSlug);
-    setSalvando(true);
-    setAviso(null);
-    try {
-      const resposta = await postAgentModel(agentSlug, valor);
-      if (minha !== geracao.current) return 'feito';
-      // Ver o gêmeo em `trocarEsforco`: `ja_estava` vem com `tmux_delivered:
-      // false`, e o desfecho antigo o leria como entrega que falhou.
-      if (jaEstava(resposta) || resposta.pergunta_aberta) return 'feito';
-      const desfecho = desfechoDaTrocaDeModelo(resposta);
-      if (desfecho === 'entrega-falhou') {
-        mostrarAviso('Não foi possível entregar a troca ao agente.');
-        return 'falhou';
-      }
-      const comModelo = painel?.model ? {
-        ...painel,
-        model: { ...painel.model, value: resposta.model, source: 'agent.state_model',
-          session_may_diverge: !resposta.confirmed },
-      } : null;
-      if (comModelo) setPainel(comModelo);
-      if (resposta.confirmed || desfecho === 'proximo-turno') {
-        // `proximo-turno` é o modelo que virou env var de boot (`runtime_switch`
-        // false): gravado, sem tocar a sessão. É exatamente o caso que a
-        // operação única resolve — e a gaveta segue aberta para o esforço.
-        if (desfecho === 'proximo-turno') {
-          setTela('inicio');
-          registrar((p) => p.model?.value === resposta.model);
-        } else {
-          // Ver o comentário gêmeo em `trocarEsforco`: escolha que vale a quente
-          // ainda pode fechar o pacote de uma troca de motor guardada.
-          void fecharSePronto(agentSlug, (p) => p.model?.value === resposta.model);
-          alterarAbertura(false);
-        }
-        return 'feito';
-      }
-      mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');
-      return 'feito';
-    } catch (erro) {
-      return desfechoDoErro(erro, 'Não foi possível trocar o modelo.', minha !== geracao.current);
-    } finally {
-      if (minha === geracao.current) setSalvando(false);
+  const trocarEsforco = (valor: string) => pedirTroca('Não foi possível trocar o esforço.', async (minha) => {
+    const resposta = await patchAgentEffort(agentSlug, valor);
+    if (minha !== geracao.current) return 'feito';
+    // Já era o nível da sessão: sucesso silencioso. Pergunta que ficou
+    // aberta: quem responde é a barra acima do campo, não um aviso aqui.
+    if (jaEstava(resposta) || resposta.pergunta_aberta) return 'feito';
+    const desfecho = desfechoDaTrocaDeEsforco(resposta);
+    if (desfecho === 'entrega-falhou') {
+      mostrarAviso('Não foi possível entregar a troca ao agente.');
+      return 'falhou';
     }
-  }
+    if (desfecho === 'pendente') {
+      mostrarAviso('A troca foi entregue, mas a sessão ainda não confirmou o nível novo. O card segue no nível atual até ela confirmar.');
+      const controlador = new AbortController();
+      leitura.current = controlador;
+      convergencia.current = esperaConvergenciaDoEsforco(
+        valor, () => fetchAgentPainel(agentSlug, controlador.signal),
+        (novo) => {
+          if (minha === geracao.current && novo.slug === agentSlug) setPainel(novo);
+        },
+      );
+      return 'feito';
+    }
+    const comEsforco = painel ? {
+      ...painel,
+      effort: {
+        ...painel.effort, value: resposta.effort, source: resposta.source,
+        requested: cobrePedido ? valor : painel.effort.requested,
+        session_may_diverge: resposta.session_may_diverge,
+      },
+    } : null;
+    if (comEsforco) setPainel(comEsforco);
+    // O Codex recebe o esforço por env var de boot: o back grava e
+    // responde `session_may_diverge`. É o sinal de que a escolha não alcança
+    // a sessão viva — e é ele, não a família, que decide religar (a régua de
+    // quem aceita troca a quente mora no back).
+    //
+    // A gaveta fica ABERTA aqui: é dentro dela que ele escolhe o resto. O que
+    // volta é a tela inicial, com o valor novo já no lugar.
+    if (resposta.session_may_diverge) {
+      setTela('inicio');
+      registrar((p) => p.effort?.value === resposta.effort);
+    } else {
+      // Trocou a quente: não há o que religar por ESTA escolha. Mas ela pode ser
+      // o campo que faltava para uma troca de MOTOR já guardada — e era aqui que
+      // o pacote ficava pendurado para sempre, com o motor novo nunca entrando.
+      void fecharSePronto(agentSlug, (p) => p.effort?.value === resposta.effort);
+      alterarAbertura(false);
+    }
+    return 'feito';
+  });
+
+  const trocarModelo = (valor: string) => pedirTroca('Não foi possível trocar o modelo.', async (minha) => {
+    const resposta = await postAgentModel(agentSlug, valor);
+    if (minha !== geracao.current) return 'feito';
+    // Ver o gêmeo em `trocarEsforco`: `ja_estava` vem com `tmux_delivered:
+    // false`, e o desfecho antigo o leria como entrega que falhou.
+    if (jaEstava(resposta) || resposta.pergunta_aberta) return 'feito';
+    const desfecho = desfechoDaTrocaDeModelo(resposta);
+    if (desfecho === 'entrega-falhou') {
+      mostrarAviso('Não foi possível entregar a troca ao agente.');
+      return 'falhou';
+    }
+    const comModelo = painel?.model ? {
+      ...painel,
+      model: { ...painel.model, value: resposta.model, source: 'agent.state_model',
+        session_may_diverge: !resposta.confirmed },
+    } : null;
+    if (comModelo) setPainel(comModelo);
+    if (resposta.confirmed || desfecho === 'proximo-turno') {
+      // `proximo-turno` é o modelo que virou env var de boot (`runtime_switch`
+      // false): gravado, sem tocar a sessão. É exatamente o caso que a
+      // operação única resolve — e a gaveta segue aberta para o esforço.
+      if (desfecho === 'proximo-turno') {
+        setTela('inicio');
+        registrar((p) => p.model?.value === resposta.model);
+      } else {
+        // Ver o comentário gêmeo em `trocarEsforco`: escolha que vale a quente
+        // ainda pode fechar o pacote de uma troca de motor guardada.
+        void fecharSePronto(agentSlug, (p) => p.model?.value === resposta.model);
+        alterarAbertura(false);
+      }
+      return 'feito';
+    }
+    mostrarAviso('A troca foi entregue, mas a sessão ainda não a confirmou.');
+    return 'feito';
+  });
 
   return { trocarEsforco, trocarModelo };
 }

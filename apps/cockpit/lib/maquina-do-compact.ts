@@ -10,8 +10,8 @@ import {
 } from '@grupo_borges/cockpit-core/compact-eta';
 
 import {
-  chaveStorage,
   duracoesDe,
+  gravarRegistro,
   lerRegistro,
   type ArmazenamentoCompact,
 } from './memoria-do-compact.ts';
@@ -118,16 +118,7 @@ export function createControleCompact(
   };
 
   function persistir(proximo: { inicio: number | null; marco: number | null }): void {
-    if (!storage) return;
-    try {
-      storage.setItem(
-        chaveStorage(agentSlug),
-        JSON.stringify({ duracoes, inicio: proximo.inicio, marco: proximo.marco }),
-      );
-    } catch {
-      // Storage cheio/bloqueado não pode derrubar a espera — só a retomada
-      // após navegação é perdida.
-    }
+    gravarRegistro(storage, agentSlug, { duracoes, ...proximo });
   }
 
   function transicionar(proximo: EstadoCompact): void {

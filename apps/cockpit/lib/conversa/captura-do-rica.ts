@@ -1,16 +1,7 @@
-import type { Conversa, Efeito, Evento } from './tipos.ts';
+import { DESLIGA, LIGA, type ConversaInterna } from './conversa-interna.ts';
+import type { Efeito, Evento } from './tipos.ts';
 
-type Captura = Conversa & {
-  fone?: boolean;
-  capturando?: boolean;
-  segurando?: boolean;
-  enviando?: boolean;
-  vozGuardada?: boolean;
-  vozAcabou?: boolean;
-  zeAcabou?: boolean;
-  zeDescartado?: boolean;
-  daEspera?: boolean;
-};
+type Captura = ConversaInterna & { segurando?: boolean };
 type Resultado = { conversa: Captura; efeitos: Efeito[] };
 
 // A fala começada com o Zé pensando não saiu (tosse, mudo): volta a esperar por ele — ou a ouvir,
@@ -25,8 +16,8 @@ function libera(c: Captura): Resultado {
   return {
     conversa: { ...c, estado: terminou ? 'ouvindo' : 'falando', capturando: false, vozGuardada: false },
     efeitos: terminou || c.fone
-      ? [{ tipo: 'retomarVoz' }, { tipo: 'ligarDetector' }]
-      : [{ tipo: 'desligarDetector' }, { tipo: 'retomarVoz' }],
+      ? [{ tipo: 'retomarVoz' }, LIGA]
+      : [DESLIGA, { tipo: 'retomarVoz' }],
   };
 }
 
@@ -67,7 +58,7 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
     const motivo = evento.tipo === 'capturaCaiu' ? 'capturaCaiu' : evento.motivo;
     return {
       conversa: { estado: 'erro', fone: c.fone, motivo },
-      efeitos: [{ tipo: 'descartarVoz' }, { tipo: 'desligarDetector' }, { tipo: 'avisarErro', motivo }],
+      efeitos: [{ tipo: 'descartarVoz' }, DESLIGA, { tipo: 'avisarErro', motivo }],
     };
   }
   if (evento.tipo === 'enviou' && c.estado === 'transcrevendo') {
@@ -75,7 +66,7 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
     return {
       conversa: { estado, fone: c.fone },
       // Esperando ou falando, só com fone: o detector desligado no fim da fala volta.
-      efeitos: c.fone ? [{ tipo: 'retomarVoz' }, { tipo: 'ligarDetector' }] : [{ tipo: 'retomarVoz' }],
+      efeitos: c.fone ? [{ tipo: 'retomarVoz' }, LIGA] : [{ tipo: 'retomarVoz' }],
     };
   }
   return null;
@@ -89,6 +80,6 @@ export function encerraCaptura(c: Captura, audio: Float32Array): Resultado {
       ...(c.vozGuardada ? { vozGuardada: true, zeAcabou: c.zeAcabou, vozAcabou: c.vozAcabou } : {}),
       ...(c.daEspera ? { daEspera: true, zeAcabou: c.zeAcabou } : {}),
     },
-    efeitos: [{ tipo: 'desligarDetector' }, { tipo: 'transcrever', audio }],
+    efeitos: [DESLIGA, { tipo: 'transcrever', audio }],
   };
 }

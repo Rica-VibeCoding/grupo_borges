@@ -24,7 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { ItemDeFamilia } from './item-de-familia';
+import { ItemDeEscolha } from './item-do-menu';
 import { aplicarMotor, esquecerConfirmacao, registrarEscolha } from './operacao-de-motor.ts';
 import {
   TEXTO_VALE_NO_BOOT,
@@ -187,9 +187,10 @@ export function BlocoDeMotor({ agentSlug, agentName, motor, aoAtualizar }: Bloco
           >
             {opcoesDeFamilia(motor).map((opcao) => {
               const item = (
-                <ItemDeFamilia
+                <ItemDeEscolha
                   key={opcao.chave}
-                  opcao={opcao}
+                  rotulo={opcao.rotulo}
+                  selecionado={opcao.selecionado}
                   desabilitado={salvando || aplicando}
                   aoEscolher={() => void escolher(opcao)}
                 />
