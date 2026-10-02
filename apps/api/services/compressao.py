@@ -1,9 +1,8 @@
-"""gzip nas respostas da API — só corpo INTEIRO, só texto (28/09).
+"""gzip nas respostas da API — só corpo INTEIRO, só texto.
 
-Nenhuma resposta saía comprimida: o `/api/fleet` ia com 33.885 B, e com gzip
-cabe em ~5 KB. O cockpit fala com a API pelo proxy do Next, que tem
-`compress: false` por ordem (regra 2 do `apps/cockpit/CLAUDE.md`: gzip no Next
-matava o SSE); a compressão tem de nascer aqui.
+O cockpit usa `compress: true` no Next. Cada stream SSE da API passa por um route
+handler que acrescenta `Cache-Control: no-transform`, para não receber gzip no
+Next. Esta camada comprime apenas respostas textuais de corpo inteiro da API.
 
 Por que não o `GZipMiddleware` do Starlette. Conferido na versão instalada
 (Starlette 1.0.0, `starlette/middleware/gzip.py`): ele JÁ exclui
