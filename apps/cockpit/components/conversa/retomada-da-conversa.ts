@@ -43,7 +43,13 @@ export function leGuardado(bruto: string | null | undefined, agora: number): Gua
  * O que a tela mostra antes do toque, e o que o toque faz. `esperandoZe` = ele segue no turno e
  * não há o que tocar (pensando/trabalhando); `pronta` = há resposta dele que ainda não tocou.
  */
-export type Retomada = { cena: 'esperandoZe' | 'pronta'; pendentes: TextoDoZe[]; emVoo: boolean };
+export type Retomada = {
+  cena: 'esperandoZe' | 'pronta';
+  pendentes: TextoDoZe[];
+  emVoo: boolean;
+  /** O turno principal acabou e o trabalho segue fora dele (subagente despachado): não há o que frear. */
+  segundoPlano?: boolean;
+};
 
 /**
  * `null` = nada a retomar: abre em "parado", como antes. Sem marca guardada (conversa nova, ou
@@ -58,6 +64,32 @@ export function retomadaDoStream(
   const pendentes = textosDoZeDepoisDe(mensagens, g.ouvidoAte);
   if (pendentes.length > 0) return { cena: 'pronta', pendentes, emVoo };
   return emVoo ? { cena: 'esperandoZe', pendentes: [], emVoo } : null;
+}
+
+/** O que a tela lê para decidir a retomada: a máquina, o stream e a frota. */
+export type LeituraDaTela = {
+  estado: string;
+  status: string;
+  guardado: Guardado | null;
+  mensagens: readonly MessagePayload[];
+  /** `isRunning` do stream: o turno principal dele em voo. */
+  rodando: boolean;
+  /** A frota diz "trabalhando" (os ganchos do Claude Code, inclusive os do subagente). */
+  ocupadoNaFrota: boolean;
+};
+
+/**
+ * A retomada que a tela mostra antes do toque e que o toque executa. "Ele está trabalhando" é o
+ * turno principal em voo (o stream) OU a frota dizendo "trabalhando": com o subagente despachado o
+ * turno dele já fechou, e o stream sozinho abria a tela em parado — e o toque, em ouvindo (Rica,
+ * 02/10). Com o replay ainda chegando vale o que já se sabia; sem retomada, o toque abria ouvindo.
+ */
+export function retomadaDaTela(l: LeituraDaTela): Retomada | null {
+  if (l.estado !== 'parado') return null;
+  const segundoPlano = l.ocupadoNaFrota && !l.rodando;
+  if (l.status !== 'live') return l.rodando || l.ocupadoNaFrota ? { cena: 'esperandoZe', pendentes: [], emVoo: true, segundoPlano } : null;
+  const r = retomadaDoStream(l.guardado, l.mensagens, l.rodando || l.ocupadoNaFrota);
+  return r ? { ...r, segundoPlano } : null;
 }
 
 export type PassoDaRetomada = { tipo: 'retomar' } | { tipo: 'texto'; id: number; texto: string } | { tipo: 'fecha' };

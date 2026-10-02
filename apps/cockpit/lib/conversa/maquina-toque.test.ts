@@ -134,6 +134,15 @@ test('interromper esperando o Zé freia, marca o descarte e volta a ouvir', () =
   assert.equal(turnoDescartado(conversa), true);
 });
 
+test('interromper a espera pelo subagente (turno dele já fechado) volta a ouvir sem freio nem descarte', () => {
+  const espera = roda([{ tipo: 'retomar' }]).conversa;
+  assert.equal(espera.estado, 'esperandoZe');
+  const { conversa, efeitos } = roda([{ tipo: 'interromper', rodando: false, semFreio: true }], espera);
+  assert.equal(conversa.estado, 'ouvindo');
+  assert.deepEqual(efeitos, [{ tipo: 'ligarDetector' }]);
+  assert.equal(turnoDescartado(conversa), false);
+});
+
 test('interromper com ele falando corta a voz e freia; com fone o detector já está ligado', () => {
   const semFone = roda([{ tipo: 'interromper', rodando: true }], roda(ATE_FALANDO).conversa);
   assert.equal(semFone.conversa.estado, 'ouvindo');

@@ -65,7 +65,7 @@ export const avanca: Avanca = (conversa, evento, agora) => {
     case 'parar':
       return parar(c, evento.semFreio === true);
     case 'interromper':
-      return interromper(c, evento.rodando);
+      return interromper(c, evento.rodando && !evento.semFreio, evento.semFreio === true);
     case 'tique':
       return tique(c, agora);
     case 'segurou': return noop(c);
@@ -122,11 +122,12 @@ function parar(c: ConversaInterna, semFreio: boolean): Resultado {
 // O toque durante o turno do Zé: o Esc no servidor e a voz cortada, sem encerrar a conversa —
 // a próxima fala dele entra como correção. Freia com o turno em voo (esperando, falando antes do
 // fim do stream, ou o `isRunning` de pé); turno já descartado não freia de novo. Transcrevendo,
-// a fala dele segue para o envio; ouvindo, a captura em curso fica como está.
-function interromper(c: ConversaInterna, rodando: boolean): Resultado {
+// a fala dele segue para o envio; ouvindo, a captura em curso fica como está. `semFreio`: esperava
+// o subagente com o turno dele fechado — volta a ouvir sem Esc e sem descartar o turno que virá.
+function interromper(c: ConversaInterna, rodando: boolean, semFreio = false): Resultado {
   if (c.estado === 'parado' || c.estado === 'erro') return noop(c);
   const falandoAinda = (c.estado === 'falando' || c.estado === 'interrompendo') && !c.zeAcabou;
-  const emVoo = rodando || c.estado === 'esperandoZe' || falandoAinda;
+  const emVoo = !semFreio && (rodando || c.estado === 'esperandoZe' || falandoAinda);
   const efeitos: Efeito[] = [];
   const temVoz = c.estado === 'falando' || c.estado === 'interrompendo' || c.vozGuardada === true;
   if (temVoz) efeitos.push({ tipo: 'descartarVoz' });

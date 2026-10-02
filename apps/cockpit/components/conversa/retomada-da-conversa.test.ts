@@ -7,6 +7,7 @@ import {
   gravaGuardado,
   leGuardado,
   passosDaRetomada,
+  retomadaDaTela,
   retomadaDoStream,
   VALIDADE_MS,
   type Guardado,
@@ -105,5 +106,46 @@ describe('o toque que retoma', () => {
   it('com parte pronta e ele ainda falando: toca o que ficou, sem fechar', () => {
     const passos = passosDaRetomada({ cena: 'pronta', pendentes: [{ id: 22, texto: 'Faltou.' }], emVoo: true });
     assert.deepEqual(passos.map((p) => p.tipo), ['retomar', 'texto']);
+  });
+});
+
+describe('entrar com ele já trabalhando (Rica, 02/10)', () => {
+  // Forma medida no replay do Pavan às 20:32 de 02/10: o turno principal fechou (`end_turn` e
+  // `turn_duration`) e o subagente que ele despachou segue trabalhando. O stream diz "parado"; a
+  // frota diz "trabalhando" — os ganchos do subagente contam para o agente.
+  const fim = { id: 31, kind: 'system', subtype: 'turn_duration', duration_ms: 44_000, message: null } as unknown as MessagePayload;
+  const despachou = [pedido(20), fala(30, 'O Opus já está investigando.'), fim];
+  const tela = (p: Partial<Parameters<typeof retomadaDaTela>[0]>) =>
+    retomadaDaTela({ estado: 'parado', status: 'live', guardado: null, mensagens: despachou, rodando: false, ocupadoNaFrota: false, ...p });
+
+  it('o subagente dele trabalhando: a tela abre trabalhando, nunca ouvindo', () => {
+    assert.deepEqual(tela({ ocupadoNaFrota: true }), { cena: 'esperandoZe', pendentes: [], emVoo: true, segundoPlano: true });
+  });
+
+  it('o replay ainda chegando e a frota dizendo trabalhando: o toque já não abre ouvindo', () => {
+    assert.deepEqual(tela({ status: 'replaying', mensagens: [], ocupadoNaFrota: true }), {
+      cena: 'esperandoZe',
+      pendentes: [],
+      emVoo: true,
+      segundoPlano: true,
+    });
+  });
+
+  it('o turno principal em voo segue como antes: pensando, sem ser segundo plano', () => {
+    assert.deepEqual(tela({ mensagens: [pedido(20)], rodando: true, ocupadoNaFrota: true }), {
+      cena: 'esperandoZe',
+      pendentes: [],
+      emVoo: true,
+      segundoPlano: false,
+    });
+  });
+
+  it('começar do zero segue igual: ele quieto e a frota quieta, nada a retomar — o toque abre ouvindo', () => {
+    assert.equal(tela({}), null);
+    assert.equal(tela({ status: 'replaying', mensagens: [] }), null);
+  });
+
+  it('com a conversa andando não há retomada, diga a frota o que disser', () => {
+    assert.equal(tela({ estado: 'ouvindo', ocupadoNaFrota: true }), null);
   });
 });

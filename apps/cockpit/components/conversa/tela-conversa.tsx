@@ -72,15 +72,17 @@ export function TelaConversa({
   const [fone] = useChaveDaConversa(CHAVE_FONE);
   const [texto] = useChaveDaConversa(CHAVE_TEXTO);
   const { mudo, pronto, mudaMudo } = useMudoConversa();
-  const modo = useModoConversa(slug, fone, !pronto || mudo, !ativa);
+  const { agents } = usaFrota();
+  const statusDaFrota = agents.find((a) => a.slug === slug)?.status;
+  // "Trabalhando" da frota entra na conversa: com o subagente despachado, o turno dele já fechou.
+  const modo = useModoConversa(slug, fone, !pronto || mudo, !ativa, statusDaFrota === 'trabalhando');
   const topoRef = useRef<HTMLElement>(null);
   const zonaRef = useRef<HTMLDivElement>(null);
   const faixaDeBaixoRef = useRef<HTMLSpanElement>(null);
   const ultimoToqueRef = useRef<number | null>(null);
   // Desligado pelo painel (o mesmo `offline` que o card e o composer leem): vence qualquer cena.
   // Agente ainda não carregado na frota não conta — a esfera não pisca apagada na abertura.
-  const { agents } = usaFrota();
-  const desligado = agents.find((a) => a.slug === slug)?.status === 'offline';
+  const desligado = statusDaFrota === 'offline';
 
   const preparacaoFalhou = modo.preparacao === 'falhou';
   const cena: Cena = desligado ? 'desligado' : modo.preparacao === 'preparando' ? 'preparando' : modo.conversa.estado;

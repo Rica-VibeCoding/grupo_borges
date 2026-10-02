@@ -10,7 +10,7 @@ import {
   gravaGuardado,
   leGuardado,
   passosDaRetomada,
-  retomadaDoStream,
+  retomadaDaTela,
   type Guardado,
   type Retomada,
 } from './retomada-da-conversa';
@@ -53,11 +53,14 @@ export function useRetomadaDaConversa({
   stream,
   estado,
   sessaoAtivaRef,
+  ocupadoNaFrota,
 }: {
   slug: string;
   stream: Pick<CanarioStreamState, 'messages' | 'isRunning' | 'status'>;
   estado: Estado;
   sessaoAtivaRef: RefObject<boolean>;
+  /** A frota diz "trabalhando": conta como turno em voo mesmo com o dele fechado (subagente). */
+  ocupadoNaFrota: boolean;
 }) {
   const chave = chaveDaRetomada(slug);
   const [lido, setLido] = useState<Guardado | null>(null);
@@ -141,10 +144,18 @@ export function useRetomadaDaConversa({
     [grava],
   );
 
-  // Só antes do toque: a máquina parada, com o replay do stream já na mão.
+  // Só antes do toque: a máquina parada (`retomadaDaTela`).
   const retomada = useMemo(
-    () => (estado === 'parado' && stream.status === 'live' ? retomadaDoStream(lido, stream.messages, stream.isRunning) : null),
-    [estado, lido, stream.isRunning, stream.messages, stream.status],
+    () =>
+      retomadaDaTela({
+        estado,
+        status: stream.status,
+        guardado: lido,
+        mensagens: stream.messages,
+        rodando: stream.isRunning,
+        ocupadoNaFrota,
+      }),
+    [estado, lido, ocupadoNaFrota, stream.isRunning, stream.messages, stream.status],
   );
 
   return { retomada, comeca, retoma, ouviu, entrega, virouVoz, descartou, apaga };

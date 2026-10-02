@@ -38,8 +38,9 @@ export type Evento =
   // a conversa sem frear o Zé
   | { tipo: 'parar'; semFreio?: boolean }
   // o toque durante o turno do Zé: freia no servidor, corta a voz e segue ouvindo. `rodando` é o
-  // `isRunning` do stream — ouvindo ou transcrevendo, só ele diz que há turno em voo
-  | { tipo: 'interromper'; rodando: boolean }
+  // `isRunning` do stream — ouvindo ou transcrevendo, só ele diz que há turno em voo. `semFreio`: a
+  // espera era pelo subagente, com o turno dele já fechado — não há o que frear nem descartar
+  | { tipo: 'interromper'; rodando: boolean; semFreio?: boolean }
   | { tipo: 'falaIniciou' }
   | { tipo: 'microfoneMudo' }
   | { tipo: 'segurou'; ligado: boolean }

@@ -20,6 +20,7 @@ import { useAbaEscondida, useEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
 import { useEncerraAoSair } from './use-encerra-ao-sair';
+import { useEsperaDoSubagente } from './use-espera-do-subagente';
 import { useFilaDaFala } from './use-fila-da-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
 import { useRetomadaDaConversa } from './use-retomada-da-conversa';
@@ -30,8 +31,10 @@ import { useWakeLock } from './use-wake-lock';
 
 /** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca.
  *  `fora`: a tela saiu de vista — o microfone fecha e o Zé segue falando (`useMudoDaCaptura`).
- *  A aba escondida (tela bloqueada) soma ao `fora`; na vez do Rica ela derruba antes (`use-aba-escondida`). */
-export function useModoConversa(slug: string, fone: boolean, mudo = false, foraDaTela = false) {
+ *  A aba escondida (tela bloqueada) soma ao `fora`; na vez do Rica ela derruba antes (`use-aba-escondida`).
+ *  `ocupado`: a frota diz "trabalhando" — com o subagente despachado, o turno dele já fechou e o
+ *  stream sozinho não sabe que ele trabalha (`retomadaDaTela`). */
+export function useModoConversa(slug: string, fone: boolean, mudo = false, foraDaTela = false, ocupado = false) {
   const escondida = useEscondida();
   const fora = foraDaTela || escondida;
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
@@ -52,7 +55,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   const isRunningRef = useRef(stream.isRunning);
   isRunningRef.current = stream.isRunning;
   const ferramenta = useMemo(() => ferramentaEmCurso(stream.messages), [stream.messages]);
-  const retomada = useRetomadaDaConversa({ slug, stream, estado: conversa.estado, sessaoAtivaRef }); // sobrevive à recarga
+  const retomada = useRetomadaDaConversa({ slug, stream, estado: conversa.estado, sessaoAtivaRef, ocupadoNaFrota: ocupado }); // sobrevive à recarga
 
   const {
     abreTurno,
@@ -188,6 +191,8 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
 
   useEffect(() => detector.acompanhaEstado(), [conversa.estado, detector.acompanhaEstado]);
 
+  const segundoPlanoRef = useEsperaDoSubagente({ estado: conversa.estado, rodando: stream.isRunning, ocupado, despacha, fechaTurno });
+
   // A máquina nasce sem fone; só uma troca de verdade vira evento.
   const foneDaMaquinaRef = useRef(false);
   useEffect(() => {
@@ -217,6 +222,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
       comeca: () => {
         fila.tenta(); // a fila que a recarga recuperou
         if (!r) return void (retomada.comeca(), despacha({ tipo: 'comecar' }));
+        segundoPlanoRef.current = r.segundoPlano === true;
         const fecha = () => (despacha({ tipo: 'zeTerminou' }), fechaTurno());
         const retomar = () => (detector.destrava(), despacha({ tipo: 'retomar' }), abreTurno());
         retomada.retoma(r, { retomar, texto: entregaTexto, fecha });
@@ -241,7 +247,10 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   const parar = useCallback(() => encerra(false), [encerra]);
 
   // O toque durante o turno do Zé: freia e corta a voz, mas a conversa segue ouvindo.
-  const interromper = useCallback(() => despacha({ tipo: 'interromper', rodando: isRunningRef.current }), [despacha]);
+  const interromper = useCallback(
+    () => despacha({ tipo: 'interromper', rodando: isRunningRef.current, semFreio: segundoPlanoRef.current && !isRunningRef.current }),
+    [despacha],
+  );
 
   const nivelMicRef = detector.nivelRef;
   /** Volume para o visual: a voz do Zé enquanto ele fala, o microfone no resto. */
