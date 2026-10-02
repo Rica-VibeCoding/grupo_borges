@@ -111,6 +111,9 @@ persona que mudou desde a conversa; lista geral da frota.
   `Documents\dev\projetos\grupo_borges-cadeiras`, `tmux -L conversas` (psmux), cadeira subida com
   `claude --model claude-opus-5-5 --dangerously-skip-permissions` para a `tela` (confirmar "trust" com Down+Enter); a `api` sobe em Codex.
   Comando PowerShell vai num `.ps1` por `scp` + `powershell -File` (aspas não sobrevivem ao SSH).
+  Na home do PC: `capc.ps1 <sessao> <n>` (captura no `-L conversas`; o `cap-daniel.ps1` é do `-L conversa`,
+  outra casa) e `sendc.ps1 <sessao> <arquivo>` (texto + Enter separado). Briefing vai em `C:\tmp\brief-*.md`
+  e a mensagem só aponta o arquivo; o patch volta em `C:\tmp\*.patch`.
   Patch: `git diff --binary --output=C:\tmp\fN.patch` (o stdout do PowerShell estraga o patch);
   arquivo novo entra com `git add -N` e sai com `git reset` depois, senão trava o `pull`.
   Sem cadeira `teste`: o Canário (DeepSeek, VPS) confere — nunca uma cadeira de outro motor.
