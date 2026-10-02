@@ -160,6 +160,17 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
   `translateY(6px) + scale(0.98)` — afunda e se afasta, não desliza da borda. Variantes declaradas no
   CSS: no celular a gaveta (≤ 640px) sobe 24px e a tropa entra 8px pela esquerda (`.ck-surge-lado`);
   menus e barras de cima da caixa usam `ck-menu-entra` (4px, 0.99).
+- **Seguir o fim** (`feed/seguir-o-fim.ts`, `use-seguir-o-fim.ts`): colado no fim, o que chega embaixo —
+  fala, pensamento, ferramenta, texto crescendo no streaming — empurra a conversa para cima numa
+  **mola criticamente amortecida** (ω = 22/s, assenta em ~300 ms, nunca passa do fim), escrevendo o
+  `scrollTop` por `requestAnimationFrame` só enquanto há distância a vencer. O alvo é o fim lido a
+  cada quadro: item novo no meio da subida estica a mesma subida, com a velocidade preservada.
+  `scroll-behavior: smooth` é proibido no feed (reinicia a cada escrita e briga com o streaming).
+  **Salta** em vez de deslizar com `prefers-reduced-motion`, nos primeiros 600 ms depois de montar
+  (o virtualizador ainda mede) e com mais de uma tela de distância. **A mão do Rica manda:** toque e
+  botão do mouse no feed param a mola até soltar, roda e tecla param na hora; ela só retoma 300 ms
+  depois, se ele seguiu colado. A rolagem da própria mola não descola o feed (o `onScroll` reconhece
+  o eco dela). Descolado, nada se mexe: quem age é a âncora do item lido (`ancora.ts`).
 - **Abertura otimista:** o toque muda o estado no mesmo frame (`useOptimistic` + `router.push`, em
   `superficie-otimista.tsx`); a URL segue fonte da verdade (deep-link, voltar, refresh).
 - **Painel com altura do conteúdo:** filhos `flex-auto`, nunca `flex-1` (no WebKit a base 0 dá altura 0),
@@ -174,9 +185,11 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
    parada ou desligada ela sai e libera o WebGL. Ao lado, a frase — «Pensando há N s», o passo em voo
    ou «Esperando você» —, com o brilho que corre (`.ck-brilho-texto`) no dourado do pulso. A troca de
    estado é a da tela de voz: o ritmo da matéria se aproxima aos poucos, sem tranco.
-2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
-   que chega ao vivo (prazo 1 s) e no corpo aberto pelo dedo. Replay e o que remonta ao rolar aparecem
-   parados. Linha e grupo de ferramenta entram, saem e trocam de estado pela Motion (§5).
+2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, no que a máquina
+   produz ao vivo (fala, pensamento, ferramenta, grupo; prazo 1 s) e no corpo aberto pelo dedo, junto
+   com a subida da mola (§5). Chegar é ficar visível: o passo em voo, oco no feed, chega quando termina;
+   a linha que vira grupo não chega de novo. A bolha do Rica tem o voo do envio. Replay e o que remonta
+   ao rolar aparecem parados. Linha e grupo de ferramenta entram, saem e trocam de estado pela Motion (§5).
 3. **Grupo de ferramentas em voo:** a cápsula do grupo (§7) leva à esquerda um **anel aberto girando**
    no dourado do pulso (`--ck-pulso-ouro`); ao terminar, o mesmo anel fecha a volta e ganha o miolo do
    desfecho. **Filete azul (`--ck-state-running`) é proibido** em todo o feed; "pensando", "trabalhando"

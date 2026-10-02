@@ -24,11 +24,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { capturaAncora, estaColado, longeDoFim, scrollTopParaAncora, type Ancora, type Faixa } from './ancora';
 import { BotaoVoltaAoFim } from './botao-volta-ao-fim';
 import { chaveDe } from './chave';
-import { criaChegadas } from './chegada-ao-vivo';
 import { CorpoDoItem } from './corpo-do-item';
 import { soPassoEmVoo } from './execucao-do-item';
 import { indiceDoGrupoEmCurso, type ItemDoFeed } from './grupo-ferramentas.ts';
 import { ALTURA_ITEM, SOBRA } from './medidas-do-feed';
+import { useChegadas } from './use-chegadas';
+import { useSeguirOFim } from './use-seguir-o-fim';
 
 export type FeedProps = {
   itens: readonly ItemDoFeed[];
@@ -58,15 +59,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   // o próximo; o anel só fecha quando vem fala depois ou a corrida para.
   const grupoEmCurso = useMemo(() => indiceDoGrupoEmCurso(itens), [itens]);
 
-  // Quem acabou de chegar ao vivo ganha o gesto de chegada (`chegada-ao-vivo.ts`).
-  // Observar no render, e não num efeito: o item tem de nascer JÁ com a classe,
-  // senão pinta um quadro parado e só depois começa a subir.
-  const chegadasRef = useRef<ReturnType<typeof criaChegadas> | null>(null);
-  chegadasRef.current ??= criaChegadas();
-  const chegadas = chegadasRef.current;
-  const observados = useMemo(() => itens.map((item, i) => ({ chave: chaves[i]!, kind: item.kind })), [itens, chaves]);
-  const agoraMs = performance.now();
-  chegadas.observa(observados, agoraMs);
+  const { chegadas, agoraMs } = useChegadas(itens, chaves, lookup);
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const coladoRef = useRef(true);
@@ -77,6 +70,9 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   // nova — longe do fim (além de 1 viewport, `longeDoFim`) a setinha aparece
   // mesmo com o feed parado, como na referência do ChatGPT.
   const [longe, setLonge] = useState(false);
+
+  // Colado no fim, o que chega sobe numa mola em vez de saltar (`use-seguir-o-fim.ts`).
+  const { seguidor, seguirOFim, maos } = useSeguirOFim(scrollerRef, coladoRef);
 
   // A doc pede `getItemKey` memoizado ("to avoid unnecessary recalculations"),
   // e o motivo está em virtual-core 3.17.7: ele é dependência do memo de
@@ -114,6 +110,8 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   const aoRolar = useCallback(() => {
     const elemento = scrollerRef.current;
     if (!elemento) return;
+    // A subida da mola, lida como rolagem, descolaria o feed no meio dela.
+    if (seguidor.eco(elemento.scrollTop)) return;
     const metrica = {
       scrollTop: elemento.scrollTop,
       scrollHeight: elemento.scrollHeight,
@@ -131,17 +129,18 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
     // Re-capturar a cada rolagem é de propósito: a âncora tem de ser o item que
     // o olho está usando AGORA, não o de quando ele saiu do fim.
     ancoraRef.current = capturaAncora(faixas(), elemento.scrollTop);
-  }, [faixas]);
+  }, [faixas, seguidor]);
 
   const irAoFim = useCallback(() => {
     const elemento = scrollerRef.current;
     if (!elemento) return;
+    seguidor.para();
     coladoRef.current = true;
     ancoraRef.current = null;
     setTemNovas(false);
     setLonge(false);
     elemento.scrollTop = elemento.scrollHeight;
-  }, []);
+  }, [seguidor]);
 
   // Sem lista de dependências, de propósito: roda em TODO commit. O caso que
   // reprovou no iPhone é o texto do último item crescendo por streaming, que
@@ -155,7 +154,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
     contagemRef.current = itens.length;
 
     if (coladoRef.current) {
-      elemento.scrollTop = elemento.scrollHeight;
+      seguirOFim();
       return;
     }
     const ancora = ancoraRef.current;
@@ -165,7 +164,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
   });
 
   return (
-    <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+    <div style={{ position: 'relative', flex: 1, minHeight: 0 }} {...maos}>
       {/* ScrollArea do shadcn (Radix) — 03/08, ordem do Rica: a barra sai da
           borda da COLUNA e vai para a borda da TELA. Quem rola é o viewport do
           Radix (`viewportRef`), que é onde o virtualizador, o `onScroll` e o

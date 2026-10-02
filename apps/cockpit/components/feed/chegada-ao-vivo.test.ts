@@ -59,3 +59,32 @@ describe('chegada ao vivo', () => {
     assert.equal(c.chegando('b', 100), false);
   });
 });
+
+describe('chegada ao vivo — ferramenta e pensamento', () => {
+  it('ferramenta e grupo novos também chegam', () => {
+    const c = criaChegadas();
+    c.observa([fala('a')], 0);
+    c.observa([fala('a'), { chave: 'f', kind: 'chip' }, { chave: 'gf-x', kind: 'grupo-ferramentas' }], 100);
+    assert.equal(c.chegando('f', 150), true);
+    assert.equal(c.chegando('gf-x', 150), true);
+  });
+
+  it('o passo em voo (oco) chega quando aparece, não quando nasce', () => {
+    const c = criaChegadas();
+    c.observa([fala('a')], 0);
+    const lista = [fala('a'), fala('passo')];
+    c.observa(lista, 100, (i) => i === 1);
+    assert.equal(c.chegando('passo', 100), false);
+    c.observa(lista, 5000);
+    assert.equal(c.chegando('passo', 5100), true);
+  });
+
+  it('a linha que vira grupo não chega de novo', () => {
+    const c = criaChegadas();
+    c.observa([fala('a')], 0);
+    c.observa([fala('a'), fala('p1')], 100);
+    c.terminou('p1');
+    c.observa([fala('a'), { chave: 'gf-p1', kind: 'grupo-ferramentas', herdaDe: 'p1' }], 200);
+    assert.equal(c.chegando('gf-p1', 250), false);
+  });
+});

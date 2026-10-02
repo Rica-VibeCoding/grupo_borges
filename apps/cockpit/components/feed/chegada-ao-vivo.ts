@@ -8,9 +8,16 @@
  * vira a semente: nada dela anima. O `key={geracao}` do feed remonta tudo no
  * reset de sessão, então a semente se refaz sozinha.
  *
- * Só a fala do agente (`assistant`). A bolha otimista do Rica é `user` e já tem
- * o voo do envio (`lib/voo-do-envio.ts`); animá-la aqui seria o segundo
+ * Ganha o que a máquina produz: fala e pensamento (`assistant`), ferramenta
+ * (`chip`) e o grupo de ferramentas. A bolha otimista do Rica é `user` e já
+ * tem o voo do envio (`lib/voo-do-envio.ts`); animá-la aqui seria o segundo
  * movimento em cima do primeiro.
+ *
+ * Chegar é FICAR VISÍVEL. O passo em voo nasce oco (mora na linha do agora,
+ * `soPassoEmVoo`) e só aparece no feed ao terminar: o relógio da chegada
+ * começa aí, não no nascimento, senão o gesto rodaria invisível. E o grupo
+ * que nasce do segundo passo herda a chave do primeiro (`herdaDe`): a linha
+ * que já estava na tela virando grupo não chega de novo.
  *
  * O prazo existe por causa do virtualizador: item que chega com o Rica rolado
  * para cima NÃO é montado, e sem prazo ele animaria minutos depois, quando o
@@ -22,12 +29,14 @@
 /** Mais que isso entre chegar e montar, o item já não é "novo" para o olho. */
 export const PRAZO_DA_CHEGADA_MS = 1000;
 
-export type ItemObservado = { chave: string; kind: string };
+export type ItemObservado = { chave: string; kind: string; herdaDe?: string };
+
+const QUEM_CHEGA = new Set(['assistant', 'chip', 'grupo-ferramentas']);
 
 export type Chegadas = {
   /** Chamado a cada render com a lista inteira. Idempotente: o StrictMode e o
    *  render descartado do React podem chamá-lo duas vezes com a mesma lista. */
-  observa(itens: readonly ItemObservado[], agoraMs: number): void;
+  observa(itens: readonly ItemObservado[], agoraMs: number, ocoEm?: (indice: number) => boolean): void;
   chegando(chave: string, agoraMs: number): boolean;
   terminou(chave: string): void;
 };
@@ -38,18 +47,22 @@ export function criaChegadas(): Chegadas {
   const aoVivo = new Map<string, number>();
 
   return {
-    observa(itens, agoraMs) {
+    observa(itens, agoraMs, ocoEm) {
       if (!semeado) {
         if (itens.length === 0) return;
         semeado = true;
         for (const item of itens) vistas.add(item.chave);
         return;
       }
-      for (const item of itens) {
-        if (vistas.has(item.chave)) continue;
+      itens.forEach((item, indice) => {
+        if (vistas.has(item.chave)) return;
+        // Só os ainda não vistos chegam aqui — a cauda —, então a pergunta
+        // custa pouco mesmo com a lista longa.
+        if (ocoEm?.(indice)) return;
         vistas.add(item.chave);
-        if (item.kind === 'assistant') aoVivo.set(item.chave, agoraMs);
-      }
+        if (item.herdaDe !== undefined && vistas.has(item.herdaDe)) return;
+        if (QUEM_CHEGA.has(item.kind)) aoVivo.set(item.chave, agoraMs);
+      });
     },
     chegando(chave, agoraMs) {
       const desde = aoVivo.get(chave);
