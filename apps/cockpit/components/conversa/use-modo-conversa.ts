@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { postAgentInterromper } from '@grupo_borges/cockpit-core/api';
 
 import { destravaNoGesto, estaTocando } from '@/components/feed/reprodutor-unico';
 import { avanca, inicial } from '@/lib/conversa/maquina';
 import { type Conversa, type Efeito, type Evento } from '@/lib/conversa/tipos';
 import { useCanarioStream } from '@/lib/spike/use-canario-stream';
 
+import { freiaZe, ligaDetector } from './efeitos-assincronos';
 import { ferramentaEmCurso } from './estado-da-vez';
 import { comParcial, FALA_VAZIA, falaDepois, type FalaDaVez } from './fala-da-vez';
 import { criaFalaDevolvida } from './fala-devolvida';
@@ -19,6 +19,7 @@ import { useMudoDaCaptura } from './use-mudo-da-captura';
 import { useAbaEscondida, useEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
+import { useEncerraAoSair } from './use-encerra-ao-sair';
 import { useFilaDaFala } from './use-fila-da-fala';
 import { useFilaDeVoz } from './use-fila-de-voz';
 import { useRetomadaDaConversa } from './use-retomada-da-conversa';
@@ -127,20 +128,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   executaEfeitoRef.current = (efeito) => {
     switch (efeito.tipo) {
       case 'ligarDetector':
-        void detector
-          .liga()
-          .then(() => {
-            iniciandoRef.current = false;
-            setAviso((atual) => reduzAviso(atual, { tipo: 'detectorLigou' }));
-          })
-          .catch((erro: unknown) => {
-            iniciandoRef.current = false;
-            if (captura.bloqueadoRef.current) return;
-            const nome = erro instanceof DOMException ? erro.name : '';
-            if (nome === 'AbortError') return;
-            const negado = nome === 'NotAllowedError' || nome === 'SecurityError';
-            despachaRef.current({ tipo: 'falhou', motivo: negado ? 'microfoneNegado' : 'capturaCaiu' });
-          });
+        ligaDetector({ detector, captura, iniciandoRef, setAviso, despachaRef });
         return;
       case 'desligarDetector':
         detector.desliga();
@@ -166,13 +154,9 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
       case 'enviar': // com o Zé no turno, a fala espera o fim dele (`fila-da-fala.ts`)
         fila.envia(efeito.texto);
         return;
-      case 'frearZe': {
-        // O `■` do composer: antes da 1ª linha do Zé o servidor limpa o pedido devolvido à caixa, e a
-        // fala limpa vai na frente da próxima. Falhar não é alarme: a resposta fica no chat de texto.
-        const ciclo = cicloRef.current, guarda = devolvida.freio();
-        void postAgentInterromper(slug).then((r) => void (ciclo === cicloRef.current && sessaoAtivaRef.current && guarda(r))).catch(() => {});
+      case 'frearZe': // o `■` do composer (`efeitos-assincronos.ts`)
+        freiaZe({ slug, cicloRef, sessaoAtivaRef, devolvida });
         return;
-      }
       case 'falar':
         apoio.cala(); // a resposta chegou: a frase de apoio some, na síntese ou tocando
         enfileiraFala(efeito.texto, retomada.virouVoz());
@@ -266,16 +250,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     [nivelMicRef, nivelVozRef],
   );
 
-  const encerraRef = useRef(encerra);
-  encerraRef.current = encerra;
-  useEffect(
-    () => () => {
-      // Ir para outra página desmonta a tela e a voz morre junto, mas o Zé não é freado: só o toque freia.
-      if (sessaoAtivaRef.current) encerraRef.current(true);
-      sonsRef.current?.encerra();
-    },
-    [],
-  );
+  useEncerraAoSair(encerra, sessaoAtivaRef, sonsRef); // sair da página não freia o Zé
 
   return {
     conversa,

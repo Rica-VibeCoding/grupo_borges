@@ -72,7 +72,6 @@ test('cor só no globals.css', () => {
  *  daqui. Arquivo novo não entra na lista: nasce dentro do teto. */
 const ACIMA_DO_TETO = new Set([
   'app/agente/[slug]/feed-da-conversa.tsx',
-  'components/conversa/use-modo-conversa.ts',
   'components/feed/corpo-do-item.tsx',
   'components/renderers/gramatica.ts',
   'components/renderers/linha-execucao.tsx',
