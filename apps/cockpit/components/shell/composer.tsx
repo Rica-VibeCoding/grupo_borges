@@ -42,10 +42,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from 'react';
-import Link from 'next/link';
-import { ALVO_DE_TOQUE, MARGEM_INFERIOR_DA_BASE } from '../../lib/alvo-de-toque';
-import { InputGroupButton } from '../ui/input-group';
-import { aparenciaDe, rotulaAcao, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
+import { aparenciaDe, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
@@ -59,8 +56,7 @@ import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
 import { assinaEscritaViva, leEscritaViva } from '../../lib/escrita-viva';
 import { usaFrota } from './frota-provider';
 import { MARCA_VOZ, usaEnvio, type OrigemEnvio } from '../../lib/usa-envio';
-import { AvisoAnexo, BotaoAnexo, PainelAnexo } from './gaveta-anexo';
-import { MiniaturaAnexo, miniaturaAberta } from './miniatura-anexo';
+import { miniaturaAberta } from './miniatura-anexo';
 import { BarraCompact } from './barra-compact';
 import { BlocoDaFila } from './bloco-da-fila';
 import { BolinhaAgente } from './bolinha-agente';
@@ -75,7 +71,6 @@ import {
 } from './fila-de-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
-import { SeletorMotor } from './seletor-motor';
 import { BarraPerguntaMotor } from './barra-pergunta-motor';
 import { type MotivoRecusa, preparaEnvio, recusaPersiste } from './porta-de-envio';
 import { podePesquisar, prefixaPesquisa } from './pesquisa-canario';
@@ -87,21 +82,10 @@ import {
   diagnosticaMicrofone,
   diagnosticaTranscricao,
   mesclaTranscricao,
-  origemDepoisDaEdicao,
   type FaseVoz,
   type Impedimento,
 } from './voz';
 import { emCaptura, modoDaFala } from './modo-da-fala';
-import {
-  IconeCadeado,
-  IconeCopiar,
-  IconeDescartar,
-  IconeEnviar,
-  IconeMicrofoneConversa,
-  IconeOnda,
-  IconeParar,
-  IconeReenviar,
-} from './icones';
 import { usaCanalEntrega } from './usa-canal-entrega';
 import { voaParaBolha } from '../../lib/voo-do-envio';
 import {
@@ -111,9 +95,13 @@ import {
   naoConfirmaAnexoPendente,
   registraAnexoPendente,
 } from '../../lib/anexo-pendente';
-import { BolhaDeComandos } from './bolha-de-comandos';
 import { MotionConfig, motion } from 'motion/react';
 import { TROCA_DE_FILEIRA } from './troca-de-fileira';
+import { AvisosDoComposer } from './avisos-do-composer';
+import { BaseDaCaixa } from './base-da-caixa';
+import { CaixaDoComposer } from './caixa-do-composer';
+import { CampoDoComposer } from './campo-do-composer';
+import { LinhaDaVoz } from './linha-da-voz';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -123,37 +111,6 @@ export type ComposerProps = {
    *  o Claude não (ver `contratoSeparaPedido` em motor.ts). */
   esforcoCobrePedido: boolean;
 };
-
-const ROTULO_ICONE: Record<AcaoEnvio, (props: { tamanho: number }) => React.ReactElement> = {
-  reenviar: IconeReenviar,
-  copiar: IconeCopiar,
-  'tentar-de-novo': IconeReenviar,
-  destravar: IconeCadeado,
-};
-
-function OndaCompacta({ niveis, tinta }: { niveis: number[]; tinta: string }) {
-  return (
-    <div
-      aria-hidden
-      className="flex min-w-0 flex-1 items-center justify-end overflow-hidden"
-      style={{ gap: '3px', height: '24px' }}
-    >
-      {niveis.map((nivel, indice) => (
-        <span
-          key={indice}
-          style={{
-            width: '2px',
-            flex: '0 0 2px',
-            height: `${Math.max(2, Math.round((nivel / 100) * 20))}px`,
-            borderRadius: '1px',
-            background: tinta,
-            opacity: 0.45 + (nivel / 100) * 0.55,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 /** O `/compact` com argumentos (`/compact foca no deploy`) também é compact —
  *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
@@ -273,11 +230,6 @@ export function Composer({
       setParando(false);
     }
   }
-  // Mesma condição que decide `aberta` dentro de `BolhaDeComandos` — duplicada
-  // aqui porque o Popover vive num Portal (subárvore separada do textarea) e
-  // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
-  // e apertar Enter mandava o `/` sozinho como mensagem pro agente.
-  const bolhaComandosAberta = texto === '/';
   const envio = usaEnvio(agentSlug);
   const faseLocal = envio.estado.fase;
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
@@ -317,22 +269,6 @@ export function Composer({
     return () => clearTimeout(relogio);
   }, [fotoEmCena, miniaturaRecolhida, fotoVoou]);
   const umaLinha = texto === '' && retidoAnexo === null && miniaturaRecolhida;
-  // O iPhone pinta o cursor numa camada própria e não o arrasta quando o campo
-  // anda por `transform`: ele ficava fora da caixa (Rica, print de 30/09). Some
-  // durante a troca e, no fim, a seleção é regravada — é mudança de seleção
-  // que faz o iOS repintá-lo no lugar.
-  const escondeCursor = () => {
-    const campo = textareaRef.current;
-    if (campo) campo.style.caretColor = 'transparent';
-  };
-  const devolveCursor = () => {
-    const campo = textareaRef.current;
-    if (!campo) return;
-    campo.style.caretColor = '';
-    if (document.activeElement !== campo) return;
-    const { selectionStart, selectionEnd, selectionDirection } = campo;
-    campo.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? undefined);
-  };
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
   // devolve o foco ao botão que abriu.
@@ -439,10 +375,6 @@ export function Composer({
     destravaFalhou,
     emFila: envio.estado.fase === 'confirmado' && envio.estado.fila === true,
   });
-  // O caminho feliz não pinta mais a borda — `enviando`/`aceito` devolvem
-  // `filete: null` desde 11/08, para os seis agentes (o porquê está em
-  // `aparencia-envio.ts`). O que chega aqui colorido é só insucesso.
-  const fileteDoEstado = aparencia.filete;
 
   // ---- voz ----------------------------------------------------------------
   const [falhaDaFala, setFalhaDaFala] = useState<Impedimento | null>(null);
@@ -888,787 +820,51 @@ export function Composer({
         aoEditar={editarDaFila}
         aoForcar={() => setFila(soltaPausa(fila))}
       />
-      {/* A LINHA DA VOZ — sempre no layout, inclusive quando não há nada a
-          dizer. As duas mensagens daqui montavam e desmontavam várias vezes por
-          gesto (existem em `pedindo` e `transcrevendo`, somem em `gravando`), e
-          como o composer está ancorado embaixo cada troca subia e descia 22,6px
-          de TUDO que está acima. É o solavanco que o Rica sente ao SOLTAR o
-          dedo — medido em `docs/cockpit-v2-medicao/faixa-da-voz-nao-empurra.py`,
-          que reprova o build sem esta reserva.
-
-          E ela mora ACIMA da caixa, não embaixo, embora fale do botão que está
-          embaixo. Debaixo da caixa o orçamento já está fechado e é contado:
-          `palco-da-conversa.tsx` desconta 21px do `safe-bottom` porque sabe que
-          o reservador da linha de status está ali, e a conta existe para a
-          caixa terminar a 34px do fundo — a barra de gestos do iPhone, régua
-          que o Rica mandou em 13/08. Uma reserva permanente a mais ali empurra
-          a caixa para cima do fundo da tela e nenhum padding traz de volta
-          (`folga-embaixo-do-composer.py` reprova em 57px). Acima da caixa não
-          há orçamento nenhum: quem cede o espaço é a conversa, que rola.
-
-          `visibility: hidden` reservaria o espaço, mas some da árvore de
-          acessibilidade — e esta linha existe justamente para AVISAR. Altura
-          fixa também não serve: o aviso do microfone traz botão de dispensar e
-          pode passar de uma linha. Daí `minHeight`, que é piso e não teto. O
-          `flex-col` está aqui por causa do strut: em bloco comum a linha vazia
-          herdaria o corpo de 16px e ficaria mais alta que o texto de 12px que
-          ela reserva.
-
-          DEPOIS DE 20/08 a reserva guarda MENOS gente: a narração de fase
-          virou `sr-only` e não ocupa mais espaço nenhum. Quem ainda monta e
-          desmonta aqui é o aviso do microfone e o teto de 30s do STT — ambos
-          raros, ambos com botão ou moldura junto, e é para eles que a linha
-          continua reservada. */}
-      <div
-        className="mx-auto flex w-full flex-col"
-        style={{
-          maxWidth: 'var(--ck-w-composer)',
-          padding: '0 var(--ck-space-2)',
-          minHeight: 'calc(var(--ck-text-xs) * var(--ck-leading-body))',
-        }}
+      <LinhaDaVoz
+        avisoDaVoz={avisoDaVoz}
+        setFalhaDaFala={setFalhaDaFala}
+        gravador={gravador}
+        vozAparencia={vozAparencia}
+        faseVoz={faseVoz}
+        avisoDoTetoDoStt={avisoDoTetoDoStt}
+      />
+      <CaixaDoComposer
+        agentSlug={agentSlug}
+        pesquisaAtiva={pesquisaAtiva}
+        formaDaCaixa={formaDaCaixa}
+        umaLinha={umaLinha}
+        aparencia={aparencia}
+        anexo={anexo}
+        miniaturaRecolhida={miniaturaRecolhida}
+        textareaRef={textareaRef}
+        quadroAnexoRef={quadroAnexoRef}
+        botaoAnexoRef={botaoAnexoRef}
+        aoSubmeter={aoSubmeter}
       >
-        {/* MICROFONE INDISPONÍVEL. Nunca um botão que não responde — o defeito
-            que esta rodada consertou no envio, aqui com outra roupa. Sempre duas
-            coisas: o que aconteceu e o que fazer a respeito. A saída é a parte
-            que importa; "permissão negada" sozinho manda o Rica adivinhar em
-            qual das telas de ajuste do iPhone ele mexe. */}
-        {avisoDaVoz ? (
-          <div
-            className="flex w-full items-start justify-between"
-            style={{ gap: 'var(--ck-space-3)' }}
-          >
-            <span
-              role="status"
-              aria-live="assertive"
-              style={{ fontSize: 'var(--ck-text-xs)', color: 'var(--ck-state-attention)' }}
-            >
-              {avisoDaVoz.resumo} — {avisoDaVoz.saida}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setFalhaDaFala(null);
-                gravador.limparImpedimento();
-              }}
-              aria-label="Dispensar aviso do microfone"
-              className="ck-veil flex shrink-0 items-center"
-              style={{
-                padding: '4px',
-                borderRadius: 'var(--ck-radius-chip)',
-                color: 'var(--ck-text-secondary)',
-              }}
-            >
-              <IconeDescartar tamanho={13} />
-            </button>
-          </div>
-        ) : null}
-
-        {/* A VOZ FALANDO DE FORA DA CAIXA — agora só quando tem RECADO, nunca
-            para narrar a fase. Rica, 20/08, vendo o ciclo gravado: *"na hora
-            que eu clico aparece tipo umas frases em cima do composer, eu acho
-            que não precisaria ter essa UI"*.
-
-            Ele está certo sobre a narração: `liberando o microfone…` passa num
-            quadro e ninguém lê, e `transcrevendo…` repete o que o fio na base
-            da caixa já está dizendo com o próprio movimento. Duas peças para o
-            mesmo recado, e a de cima é a que empurra a conversa.
-
-            SOME DOS OLHOS, NÃO DA ÁRVORE DE ACESSIBILIDADE. Quem não enxerga o
-            fio depende desta linha para saber que existe um tempo morto de STT
-            — é literalmente o motivo pelo qual `visibility: hidden` foi
-            recusado na reserva acima. `sr-only` mantém o nó no lugar e o
-            `aria-live` falando; o que ele tira é a tinta.
-
-            O ÚNICO que continua à vista é `travada` com áudio longo: ali a
-            moldura vira âmbar, e cor sem motivo escrito é enfeite — quem vê o
-            âmbar precisa saber que é o teto de 30s do STT chegando. Não é
-            fase passando, é aviso, e aviso se lê. */}
-        {vozAparencia.instrucao && faseVoz !== 'impedida' ? (
-          <span
-            role="status"
-            aria-live="polite"
-            // O punho da bancada. Há outras regiões `status` na tela (a bolinha
-            // do agente é uma), e `troca-da-fala-nao-e-de-estalo.py` precisa
-            // pegar ESTA para provar que ela ficou muda aos olhos e viva no
-            // leitor de tela.
-            data-linha="voz"
-            className={avisoDoTetoDoStt ? undefined : 'sr-only'}
-            style={
-              avisoDoTetoDoStt
-                ? {
-                    fontSize: 'var(--ck-text-xs)',
-                    color: vozAparencia.tinta ?? 'var(--ck-text-secondary)',
-                  }
-                : undefined
-            }
-          >
-            {vozAparencia.instrucao}
-          </span>
-        ) : null}
-      </div>
-      {/* O INVÓLUCRO DA ÂNCORA. Existe por uma razão só: dar à gaveta um
-          `position: relative` que meça exatamente a caixa do composer. Se o
-          `bottom: 100%` dela medisse a coluna inteira (que também tem as linhas
-          de estado embaixo), a gaveta subiria alto demais e descolaria do "+".
-          A largura máxima migrou para cá para que o `left` da gaveta case com a
-          borda da caixa também no desktop, onde a coluna é mais larga. */}
-      <div
-        className="relative mx-auto w-full"
-        style={{ maxWidth: 'var(--ck-w-composer)' }}
-      >
-      <motion.form
-        // A TROCA DE FILEIRA (vazio ↔ com texto) vira o `flex-direction` da
-        // caixa, e CSS não anima isso. A Motion mede antes e depois e anima só
-        // com `transform` (§9.4 da estética): o layout muda uma vez, o feed
-        // recalcula uma vez. Os filhos com `layout` desfazem a escala da mãe e
-        // andam até o lugar novo em vez de pular.
-        layout
-        layoutDependency={formaDaCaixa}
-        transition={{ layout: TROCA_DE_FILEIRA }}
-        onLayoutAnimationStart={escondeCursor}
-        onLayoutAnimationComplete={devolveCursor}
-        onSubmit={aoSubmeter}
-        className="ck-lit ck-caixa flex w-full flex-col border"
-        data-linha={umaLinha ? 'uma' : 'varias'}
-        // Pesquisa ligada na gaveta: a borda fica âmbar (regra no globals.css),
-        // pra ele não mandar com `/pesquisa` sem saber.
-        data-pesquisa={podePesquisar(agentSlug) && pesquisaAtiva ? 'ligada' : undefined}
-        style={{
-          padding: 'var(--ck-space-3)',
-          gap: 'var(--ck-space-2)',
-          // A CAIXA É MATERIAL, não superfície opaca. Ela não tem
-          // `backdrop-filter` próprio de propósito: o véu atrás já desfocou o
-          // feed, e um segundo desfoque aqui só custaria GPU para borrar o que
-          // já está borrado. O que ela faz é somar um degrau de luz sobre o
-          // resultado — é assim que a referência distingue a pílula da faixa
-          // sem opacar nenhuma das duas, e é por isso que o texto do feed
-          // atravessa POR DENTRO dela. Ver §8 da estética.
-          background: 'var(--ck-surface-composer-material)',
-          borderColor: fileteDoEstado ?? 'var(--ck-edge-composer)',
-          // A borda inteira (não só um filete de 2px) muda de cor no estado
-          // quente: o composer é a única superfície de INPUT da tela, e ali a
-          // convenção do filete lateral (linha de execução, mensagem) compete
-          // com a moldura que o campo já tem por natureza. Quem sinaliza é a
-          // COR, e só ela: o 1.5px do estado saiu em 08/08, quando o Rica pediu
-          // "borda fininha, igual nós temos no CC" — engrossar era um segundo
-          // portador para o mesmo recado, e o que ele nota é a espessura.
-          borderWidth: '1px',
-          // Raio próprio, maior que o do resto (§adendo): a referência
-          // arredonda a caixa de fala bem mais do que os blocos de conteúdo, e
-          // `--ck-radius-frame` veste código/diff/thinking, onde macio demais
-          // rouba leitura. Ver o comentário do token em `globals.css`.
-          borderRadius: 'var(--ck-radius-caixa)',
-          position: 'relative',
-          overflow: 'hidden',
-          // O mesmo slow do resto da troca. Em `--ck-dur-fast` (120ms) a
-          // moldura chegava na cor nova antes de o microfone chegar na dele, e
-          // a caixa mudava em duas etapas — o estado da fala é UM, e muda como
-          // um só gesto.
-          transition: `border-color var(--ck-dur-enter, 200ms) var(--ck-ease)`,
-        }}
-      >
-        {/* A miniatura é o PRIMEIRO filho da caixa: ela empurra o campo para
-            baixo em vez de flutuar sobre ele, e o composer cresce. O anexo
-            escolhido não some porque o microfone abriu. Foto e vídeo saem
-            dela no envio, voando para a bolha do feed; volta no erro — ver
-            `miniatura-anexo.tsx`. */}
-        <MiniaturaAnexo
-          estado={anexo.estado}
-          aoRemover={anexo.limpar}
-          recolhida={miniaturaRecolhida}
-          refQuadro={quadroAnexoRef}
+        <CampoDoComposer
+          agentSlug={agentSlug} agentName={agentName} texto={texto} setTexto={setTexto}
+          setOrigemDoRascunho={setOrigemDoRascunho} textareaRef={textareaRef}
+          substituicaoIntegralRef={substituicaoIntegralRef} formaDaCaixa={formaDaCaixa}
+          modo={modo} anexo={anexo} tecladoTouch={tecladoTouch} retidoAnexo={retidoAnexo}
+          enviar={enviar} travaCompact={travaCompact}
         />
-
-        <BolhaDeComandos
-          agentSlug={agentSlug}
-          texto={texto}
-          aoSelecionar={(valor) => {
-            setTexto(valor);
-            setOrigemDoRascunho('text');
-          }}
-          campoRef={textareaRef}
-        >
-          <motion.textarea
-              layout="position"
-              layoutDependency={formaDaCaixa}
-              transition={{ layout: TROCA_DE_FILEIRA }}
-              ref={textareaRef}
-              // UMA LINHA que cresce digitando — ordem do Rica em 08/08, olhando a
-              // referência: "queria que o input de texto tivesse uma linha só,
-              // igual a do CC, e não duas linhas … conforme eu vou digitando e
-              // pulando linha, ela vai aumentando na altura". Revoga a §12 do histórico da
-              // estética, que mandava caixa alta; os controles continuam dentro.
-              rows={1}
-              value={texto}
-              // SEM `disabled`, de propósito. A doc do React descreve `disabled`
-              // como "will not be interactive and will appear dimmed": o elemento
-              // sai do alcance do foco, e no iPhone isso fecha o teclado no meio
-              // da digitação. Quem bloqueia é a PORTA, no submit — o campo segue
-              // editável, ele escreve durante a espera e manda com um toque quando
-              // ela passa. É o que garante que o texto nunca evapora.
-              readOnly={emCaptura(modo)}
-              onChange={(e) => {
-                setTexto(e.target.value);
-                setOrigemDoRascunho((atual) =>
-                  origemDepoisDaEdicao(
-                    atual,
-                    e.target.value,
-                    substituicaoIntegralRef.current,
-                  ),
-                );
-                substituicaoIntegralRef.current = false;
-              }}
-              onBeforeInput={(e) => {
-                const campo = e.currentTarget;
-                substituicaoIntegralRef.current =
-                  campo.selectionStart === 0 && campo.selectionEnd === campo.value.length;
-              }}
-              // COLAR IMAGEM. No iPhone, "copiar" numa foto e colar no campo é
-              // o gesto natural — e até 15/08 não fazia nada, nem erro: o
-              // clipboard trazia o arquivo e ninguém o pegava. Cai na MESMA
-              // máquina do botão de anexar, então a foto vira miniatura com o
-              // controle de remover e quem decide se ela parte continua sendo a
-              // porta. Print de tela chega sem nome; o `File` do clipboard já
-              // vem com um sintético do navegador, e a máquina de anexo lida
-              // com isso desde sempre.
-              onPaste={(e) => {
-                const arquivo = [...e.clipboardData.items]
-                  .find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-                  ?.getAsFile();
-                if (!arquivo) return; // texto colado segue o caminho normal
-                e.preventDefault();
-                anexo.escolher(arquivo);
-              }}
-              // Com ANEXO na mão o Enter volta a enviar no touch. A quebra de linha
-              // ficou pro texto puro, mas sem o envio a foto era um beco: o Shift
-              // não existe no teclado virtual, e o "manda e não sai" do reporte de
-              // 08/08 era o Enter virando newline com a foto retida — o único
-              // gesto de enviar que o Rica tinha ali. `enterKeyHint` troca a tecla
-              // do teclado virtual pra "Enviar" exatamente nesse caso, pra o toque
-              // não parecer morto.
-              enterKeyHint={tecladoTouch && retidoAnexo !== null ? 'send' : undefined}
-              onKeyDown={(e) => {
-                // A ACENTUAÇÃO não pode virar envio. Segurar a tecla no iPhone
-                // para escolher "ã"/"ç" — ou usar tecla morta no teclado físico
-                // — abre uma sessão de composição, e o Enter que confirma a
-                // escolha chega aqui como um Enter comum. Sem guarda, escrever
-                // "não" ou "ação" despacha a mensagem no meio da palavra; em
-                // português isso não é caso de borda, é quase toda frase.
-                //
-                // O TESTE É DUPLO, e a segunda metade não é redundância: a MDN
-                // é explícita em que `isComposing` vale `false` no PRIMEIRO e no
-                // ÚLTIMO caractere da composição — "compositionstart may fire
-                // after keydown… In these cases, isComposing is false even when
-                // the event is part of composition". A receita publicada lá é
-                // literalmente `if (event.isComposing || event.keyCode === 229)
-                // return;`, e o 229 é normativo: o W3C UI Events (§7.2.1) manda
-                // "If an Input Method Editor is processing key input and the
-                // event is keydown, return 229". Minha primeira versão checava
-                // só `isComposing` e deixava passar exatamente as duas bordas.
-                const compondo = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
-                if (
-                  e.key === 'Enter' &&
-                  !compondo &&
-                  !e.shiftKey &&
-                  (!tecladoTouch || retidoAnexo !== null)
-                ) {
-                  e.preventDefault();
-                  // Bolha aberta: Enter não é "enviar `/`", é ainda estar
-                  // escolhendo. Sem esta guarda o único jeito de sair do
-                  // gesto de digitar `/` e apertar Enter era mandar um `/`
-                  // sozinho pro agente.
-                  if (bolhaComandosAberta) return;
-                  enviar(texto);
-                }
-              }}
-              // "aguarde" era a mesma promessa vazia da faixa: dizia para esperar
-              // sem dizer o que aconteceria com o que ele escrevesse. Agora entra
-              // na fila e sai sozinha, e o campo diz isso antes do primeiro Enter.
-              aria-label={`Mensagem para ${agentName}`}
-              placeholder={
-                emCaptura(modo)
-                  ? 'Ouvindo…'
-                  : travaCompact
-                    ? 'compactando… pode escrever, entra na fila'
-                    : undefined
-              }
-              className="ck-campo leading-body min-w-0 resize-none bg-transparent outline-none"
-              style={{
-                fontSize: 'var(--ck-text-md)', // 16px: piso do iOS contra zoom no foco
-                // Teto para o crescimento: passando disto o composer comeria a
-                // conversa. Rolagem interna assume, que é o que o CC faz.
-                maxHeight: 'var(--ck-h-campo-max)',
-              }}
-          />
-        </BolhaDeComandos>
-
-        {/* Base do composer: os controles moram AQUI, dentro da caixa — estética §8.
-            O piso é a altura que a fileira de botões produz de fato: alvo de
-            44px menos os 4px com que `MARGEM_INFERIOR_DA_BASE` encosta os
-            controles na linha do texto. Com o piso 4px abaixo disso a linha
-            encolhia toda vez que a onda entrava no lugar dos botões — a caixa
-            perdia 4px na captura e a conversa andava junto. */}
-        <div
-          className="ck-base-da-caixa flex items-end justify-between"
-          style={{
-            gap: 'var(--ck-space-2)',
-            minHeight: 'calc(var(--ck-touch-min) - var(--ck-space-1))',
-          }}
-        >
-          {modo === 'travada' ? (
-            <button
-              type="button"
-              onClick={gravador.descartarTravada}
-              aria-label="Descartar áudio"
-              className="ck-veil flex shrink-0 items-center"
-              style={{
-                gap: '5px',
-                minHeight: 'var(--ck-touch-min)',
-                padding: '0 var(--ck-space-2)',
-                marginLeft: 'calc(var(--ck-space-2) * -1)',
-                marginBottom: 'calc(var(--ck-space-2) * -1)',
-                borderRadius: 'var(--ck-radius-chip)',
-                fontSize: 'var(--ck-text-sm)',
-                color: 'var(--ck-text-secondary)',
-              }}
-            >
-              <IconeDescartar tamanho={15} />
-              Descartar
-            </button>
-          ) : emCaptura(modo) ? null : (
-            <BotaoAnexo
-              dependenciaDeLayout={formaDaCaixa}
-              estado={anexo.estado}
-              alternarGaveta={anexo.alternarGaveta}
-              // `emAndamento` SAIU daqui (15/08). Abrir a gaveta e escolher um
-              // arquivo é gesto LOCAL: nada sobe, o arquivo fica retido na
-              // miniatura e quem decide se ele pode partir continua sendo a
-              // porta, no toque de enviar. Desabilitar por causa do envio
-              // ANTERIOR fazia o `+` morrer nos segundos em que o Rica mais o
-              // usa — enquanto lê a resposta e quer mandar a foto do assunto —
-              // e botão morto não responde nem diz por quê, que é o defeito da
-              // §9 que este composer inteiro existe para não cometer. É a mesma
-              // razão pela qual o botão de ENVIAR fica habilitado mesmo quando
-              // a porta vai recusar.
-              desabilitado={travaCompact}
-              botaoRef={botaoAnexoRef}
-            />
-          )}
-
-          <div
-            // Sem despacho em cena o botão de enviar sai pela borda e não
-            // guarda lugar (Rica, 20/08: *"parecendo uma boca com um dente a
-            // menos"*). Regra em `.ck-fileira-acoes`; o movimento é da Motion.
-            className="ck-fileira-acoes flex min-w-0 flex-1 items-center justify-end"
-            data-despacho={despachoEmCena ? 'em-cena' : 'oculto'}
-          >
-            {/* A Motion anima ESTE grupo, não a fileira: a fileira muda de
-                largura na troca (inteira com texto, só o conteúdo vazia), e a
-                Motion anda pelo canto esquerdo — com os botões encostados à
-                direita, eles iam primeiro para o lado errado e voltavam (a
-                "tremidinha" do vídeo do Rica, 30/09). O grupo tem a mesma
-                largura nos dois modos, então só a posição anda. */}
-            <motion.div
-              layout="position"
-              layoutDependency={formaDaCaixa}
-              transition={{ layout: TROCA_DE_FILEIRA }}
-              className="flex min-w-0 items-center justify-end"
-              style={{ gap: 'var(--ck-space-3)' }}
-            >
-            {/* A TROCA DA FALA. Rica, 20/08, no mesmo vídeo: *"a transição
-                entre uma coisa e outra tem que respeitar um certo slow, que é
-                o que a gente tem na hora que a gente abre o painel, senão fica
-                duro"*. A onda entrava e saía de estalo porque isto era um
-                ternário — e saída não se anima com o elemento sendo REMOVIDO
-                do DOM, que é a regra que fez a gaveta virar `data-aberto` em
-                vez de desmontar.
-
-                Agora os dois lados ficam montados, empilhados na mesma célula
-                de grade, e quem troca é o `data-onda`. A fileira não muda de
-                largura nem de altura na passagem, quem anima é só `opacity`
-                (§9.4), e fora de cena é `visibility` — não pinta, não recebe
-                toque, não entra em leitor de tela. Regra em
-                `.ck-troca-da-fala`. */}
-            <div
-              className="ck-troca-da-fala"
-              data-onda={emCaptura(modo) ? 'true' : 'false'}
-            >
-              <div className="ck-troca-da-fala-face" data-face="onda">
-                <OndaCompacta
-                  niveis={niveisVoz}
-                  tinta={vozAparencia.tinta ?? 'var(--ck-state-running)'}
-                />
-              </div>
-              <div className="ck-troca-da-fala-face" data-face="acoes">
-                <SeletorMotor
-                  agentSlug={agentSlug}
-                  agentName={agentName}
-                  motor={motor}
-                  esforcoCobrePedido={esforcoCobrePedido}
-                />
-              </div>
-            </div>
-            {/* TRÊS SLOTS, UM ASSUNTO CADA. Até 20/08 havia um só, com quatro
-                donos em cascata, e a cascata é que produzia os becos: o ■ comeu
-                o microfone de madrugada (`678f598`), e antes disso o microfone
-                tinha comido o envio (15/08). Cada conserto empurrava o defeito
-                para o vizinho porque o lugar era um e os assuntos, três.
-
-                Agora a posição na árvore é a identidade — a documentação
-                oferece as duas formas de separar estado, `key` explícita ou
-                posições diferentes, e esta fase escolhe a segunda
-                (`react.dev/learn/preserving-and-resetting-state`). A `key` de
-                cada ramo continua onde estava: dentro de um slot ela ainda
-                impede o React de mutar o `type` do mesmo nó, que é o que fazia
-                o clique do microfone cair no submit logo em seguida.
-
-                O que ISTO destrava, e não era o objetivo: com o microfone em
-                lugar próprio, dá para falar com texto já escrito no campo. Não
-                dava — o botão de voz só existia quando o campo estava vazio, e
-                `mesclaTranscricao` já sabia costurar a fala no que havia antes.
-                A tela é que não deixava chegar lá. */}
-
-            {/* SLOT DE ESTADO. O ■ voltou para dentro da caixa em 21/08 —
-                *"precisamos reposicionar o componente parar, que está
-                erradamente ao lado do mascote"*. Ele passou 20/08 colado na
-                bolinha porque o slot da caixa era um só e ele comia o
-                microfone; com três slots, um assunto cada, o beco não reabre:
-                este alvo nunca é o do gesto de entrada nem o do despacho.
-
-                Fora de cena ele fica no DOM mas NÃO COBRA LARGURA. O irmão do
-                despacho cobra — ele guarda os 44px e a fileira desliza por cima
-                —, e aqui isso não serve: a fileira já vive no limite em 390px,
-                e 44px permanentes a menos deixavam o rótulo do motor em
-                *"extra a"* mesmo com o agente parado. Medido no estágio antes
-                de trocar. A margem negativa some com o espaço; em cena ela
-                volta a zero e os chips cedem lugar.
-
-                O TEMPO DA MARGEM É O TRUQUE DO `visibility`, não uma animação
-                de largura (§9.4 continua valendo — nada interpola quadro a
-                quadro): ela vira em `0s` na entrada, para o botão nascer no
-                lugar dele, e na saída espera o fade inteiro, para os chips só
-                reclamarem o espaço depois que ele apagou.
-
-                Não pinta, não recebe toque, não é anunciado, não tabula: fora
-                de cena não é botão morto, é botão que não está lá. */}
-            <InputGroupButton
-              key="parar"
-              variant="default"
-              onClick={() => void interromper()}
-              disabled={parando}
-              aria-label={`Parar ${agentName}`}
-              aria-hidden={!pararEmCena}
-              tabIndex={pararEmCena ? undefined : -1}
-              title="Parar"
-              className="disabled:opacity-40"
-              style={{
-                ...ALVO_DE_TOQUE,
-                marginBottom: MARGEM_INFERIOR_DA_BASE,
-                borderRadius: 'var(--ck-radius-pill)',
-                opacity: pararEmCena ? 1 : 0,
-                pointerEvents: pararEmCena ? undefined : 'none',
-                // Longhand DEPOIS do spread, como o `marginBottom` acima: o
-                // `margin` shorthand de `ALVO_DE_TOQUE` apagaria isto se viesse
-                // por último. Cancela os 32px do disco mais o gap da fileira.
-                marginInlineEnd: pararEmCena
-                  ? undefined
-                  : 'calc((var(--ck-touch-min) - 32px) / -2 - 32px - var(--ck-space-3))',
-                transition: pararEmCena
-                  ? 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease), margin-inline-end 0s'
-                  : 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease-exit), margin-inline-end 0s linear var(--ck-dur-enter, 200ms)',
-              }}
-            >
-              <IconeParar />
-            </InputGroupButton>
-
-            {/* SLOT DE ENTRADA. Nunca some, nunca cede lugar. Em `travada` o
-                gesto acabou e a gravação não: o mesmo pixel que abriu é o que
-                fecha e despacha o áudio. */}
-            {modo === 'travada' ? (
-              <InputGroupButton
-                key="enviar-audio"
-                variant="default"
-                onClick={gravador.enviarTravada}
-                aria-label={`Enviar áudio para ${agentName}`}
-                style={{
-                  ...ALVO_DE_TOQUE,
-                  marginBottom: MARGEM_INFERIOR_DA_BASE,
-                  borderRadius: 'var(--ck-radius-pill)',
-                }}
-              >
-                <IconeParar />
-              </InputGroupButton>
-            ) : (
-              <InputGroupButton
-                key="voz"
-                disabled={faseVoz === 'transcrevendo'}
-                {...gravador.handlers}
-                // Os DOIS gestos no rótulo, porque agora são dois: toque curto
-                // grava sem segurar, segurar é push-to-talk. React Aria manda
-                // anunciar a pressão longa a quem não vê a tela
-                // (`accessibilityDescription`, em `useLongPress`) — sem isso o
-                // arrastar-para-cancelar não existe para o leitor de tela.
-                aria-label={
-                  emCaptura(modo)
-                    ? vozAparencia.anuncio
-                    : `Segure para falar com ${agentName}, ou toque para gravar sem segurar`
-                }
-                className="disabled:opacity-40"
-                style={{
-                  ...ALVO_DE_TOQUE,
-                  marginBottom: MARGEM_INFERIOR_DA_BASE,
-                  borderRadius: 'var(--ck-radius-pill)',
-                  // DOIS DISCOS CHEIOS LADO A LADO é o defeito que o ■ já
-                  // evitou uma vez ("o dedo que mira um acha o outro"). Com
-                  // qualquer vizinho de massa em cena — o despacho à direita ou
-                  // o ■ à esquerda — o microfone recua para contorno: continua
-                  // com os 44px de alvo, perde só a tinta.
-                  // `backgroundColor`, NUNCA o atalho `background`: o
-                  // atalho reescreve a família inteira e devolve
-                  // `background-clip` ao inicial, apagando o `content-box` que
-                  // veio no `ALVO_DE_TOQUE` — o disco voltava a pintar 44px só
-                  // aqui, e só na tinta. Mesmo pisão do `margin` que a nota do
-                  // `alvo-de-toque.ts` já conta, em outra família.
-                  backgroundColor: emCaptura(modo)
-                    ? vozAparencia.tinta ?? 'var(--ck-state-running)'
-                    : temConteudo || pararEmCena
-                      ? 'transparent'
-                      : 'var(--ck-text-primary)',
-                  color:
-                    emCaptura(modo) || !(temConteudo || pararEmCena)
-                      ? 'var(--ck-surface-canvas)'
-                      : 'var(--ck-text-secondary)',
-                  // A tinta troca no tempo da casa, não de estalo: o disco
-                  // claro virando ciano é a mudança mais visível do ciclo
-                  // inteiro. `background` e `color` não custam layout — a
-                  // proibição §9.4 é sobre `width`/`height`/`top`/`left`, e a
-                  // borda da caixa aqui do lado já transiciona assim.
-                  transition:
-                    'background-color var(--ck-dur-enter, 200ms) var(--ck-ease), color var(--ck-dur-enter, 200ms) var(--ck-ease)',
-                  touchAction: 'none',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  WebkitTouchCallout: 'none',
-                }}
-              >
-                <IconeOnda />
-              </InputGroupButton>
-            )}
-
-            {/* SLOT DA CONVERSA POR VOZ. Pedido do Rica em 29/09, no desktop: o
-                primeiro botão da direita leva à tela de voz, que no celular se
-                alcança pelo deslize e ali não tinha porta à vista. Fica ANTES do
-                despacho, não depois: o despacho fora de cena sai pela borda
-                com a fileira (`.ck-fileira-acoes`), e o que viesse depois dele
-                sairia junto. O clique não navega — o `PagerDoAgente` captura o
-                link de `/conversa/{slug}` e rola para a voz.
-
-                Disco de véu, não de massa: ao lado da onda cheia, dois discos
-                cheios são o "o dedo que mira um acha o outro". Só com mouse
-                (`.ck-porta-da-voz`), porque em 390px a fileira já vive no limite.
-                Durante a captura ele recua: sair da tela no meio da gravação
-                perderia o áudio. */}
-            <Link
-              href={`/conversa/${agentSlug}`}
-              aria-label={`Conversar por voz com ${agentName}`}
-              aria-disabled={emCaptura(modo) || modo === 'travada' ? true : undefined}
-              tabIndex={emCaptura(modo) || modo === 'travada' ? -1 : undefined}
-              title="Conversa por voz"
-              className="ck-porta-da-voz shrink-0 items-center justify-center"
-              style={{
-                ...ALVO_DE_TOQUE,
-                width: '32px',
-                height: '32px',
-                marginBottom: MARGEM_INFERIOR_DA_BASE,
-                borderRadius: 'var(--ck-radius-pill)',
-                color: 'var(--ck-text-primary)',
-                opacity: emCaptura(modo) || modo === 'travada' ? 0.35 : 1,
-                pointerEvents: emCaptura(modo) || modo === 'travada' ? 'none' : undefined,
-              }}
-            >
-              <IconeMicrofoneConversa />
-            </Link>
-
-            {/* SLOT DE DESPACHO. Nunca é buraco: quando não há o que mandar,
-                quem some é ELE, saindo pela borda com a fileira — e não um vão
-                reservado no meio da barra. Um alvo visível e mudo aqui também
-                não serviria: `vazio` é a única recusa sem recado no módulo da
-                porta, e botão que não responde nem diz por quê é a §9. */}
-            <InputGroupButton
-              key="enviar"
-              type="submit"
-              variant="default"
-              // Habilitado mesmo quando a porta vai recusar: desabilitado ele
-              // não responde ao toque e não diz por quê, que é o botão morto
-              // da §9. Tocar agora devolve o motivo na faixa abaixo — e, se a
-              // faixa estiver escondida atrás do teclado, o botão sacode
-              // (`sinalRecusa` + `.ck-sacudir`) pra o toque não parecer morto.
-              //
-              // FORA DE CENA ele não é botão morto: não pinta, não recebe
-              // toque, não é anunciado e não entra na ordem de tabulação — não
-              // é um alvo que ignora o dedo, é um alvo que não está lá. Fica no
-              // DOM porque é a largura dele que a fileira desliza, e porque um
-              // botão que nasce e morre a cada tecla não teria o que animar.
-              onAnimationEnd={() => setSinalRecusa(false)}
-              aria-label={`Enviar para ${agentName}`}
-              aria-hidden={!despachoEmCena}
-              tabIndex={despachoEmCena ? undefined : -1}
-              className={sinalRecusa ? 'ck-sacudir' : undefined}
-              style={{
-                ...ALVO_DE_TOQUE,
-                marginBottom: MARGEM_INFERIOR_DA_BASE,
-                borderRadius: 'var(--ck-radius-pill)',
-                opacity: despachoEmCena ? 1 : 0,
-                pointerEvents: despachoEmCena ? undefined : 'none',
-                transition: 'opacity var(--ck-dur-enter, 200ms) var(--ck-ease)',
-              }}
-            >
-              {/* O aperto vai no ÍCONE, não no botão: o botão já carrega o
-                  `transform` da sacudida de recusa, e as duas regras
-                  disputariam a mesma propriedade — a que chegasse por último
-                  apagaria a outra no meio do gesto. */}
-              <IconeEnviar className="ck-aperta-miolo" />
-            </InputGroupButton>
-            </motion.div>
-          </div>
-        </div>
-
-        {/* O fio — ver `aparencia-envio.ts`. Track de 2px na base, dentro da
-            própria moldura (`overflow:hidden` do form recorta a ponta). Só
-            `transform` anima: o compositor não recalcula layout.
-
-            O ENVIO DE TEXTO NÃO O ACENDE MAIS (Rica, 11/08): quando a mensagem
-            sai, ela já está no feed, e a espera se acompanha por lá.
-
-            E A VOZ TAMBÉM NÃO O ACENDE MAIS (Rica, 20/08): *"esse raio azul que
-            passa embaixo do composer eu queria tirar de todo mundo"*. O fio
-            corria a cada fala, e o que ele anunciava — "o STT está trabalhando"
-            — a fala ao vivo tornou visível de um jeito melhor: as palavras
-            entram no rascunho enquanto ele fala. Quando o canal ao vivo não
-            entrega e o arquivo assume, quem responde "estou trabalhando" é a
-            frase `transcrevendo…` ali em cima, que diz DE QUE se espera — coisa
-            que um fio correndo nunca disse.
-
-            Sobrou o único caso em que o composer é a ÚNICA tela do assunto: o
-            fio TRAVADO do `nao-confirmado`, que é âmbar, é estático e existe
-            pra ser visto. */}
-        {aparencia.fio !== 'nenhum' ? (
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: '2px',
-              overflow: 'hidden',
-              background: 'var(--ck-edge-hairline)',
-            }}
-          >
-            <div
-              style={{
-                width: '30%',
-                height: '100%',
-                background: aparencia.filete ?? 'var(--ck-state-attention)',
-                // Travado: parado na METADE do trajeto — é a imagem literal do
-                // "ficou pelo caminho", não uma barra de progresso genérica.
-                transform: aparencia.fio === 'travado' ? 'translateX(120%)' : undefined,
-              }}
-            />
-          </div>
-        ) : null}
-      </motion.form>
-
-        {/* A GAVETA. Irmã do form, dentro do invólucro ancorado — sobe a partir
-            do "+" e nunca é recortada pelo `overflow` da caixa. */}
-        <PainelAnexo
-          estado={anexo.estado}
-          fecharGaveta={anexo.fecharGaveta}
-          escolher={anexo.escolher}
-          botaoRef={botaoAnexoRef}
+        <BaseDaCaixa
+          agentSlug={agentSlug} agentName={agentName} motor={motor}
+          esforcoCobrePedido={esforcoCobrePedido} formaDaCaixa={formaDaCaixa} modo={modo}
+          gravador={gravador} faseVoz={faseVoz} vozAparencia={vozAparencia}
+          niveisVoz={niveisVoz} anexo={anexo} botaoAnexoRef={botaoAnexoRef}
+          travaCompact={travaCompact} temConteudo={temConteudo} despachoEmCena={despachoEmCena}
+          sinalRecusa={sinalRecusa} setSinalRecusa={setSinalRecusa} pararEmCena={pararEmCena}
+          parando={parando} interromper={interromper}
         />
-      </div>
-
-      {/* O ESTADO DO ANEXO — subindo, recusado, entregue. Vem antes do aviso da
-          voz porque é o gesto mais recente quando existe. */}
-      <AvisoAnexo estado={anexo.estado} aoDispensar={anexo.dispensarAviso} />
-
-      {/* POR QUE NÃO SAIU. Antes desta faixa a recusa era um `return` mudo: o
-          Rica tocava Enter, o campo esvaziava e a mensagem não existia mais em
-          lugar nenhum. Sem botão de dispensar — o aviso morre quando o motivo
-          morre.
-
-          A recusa do COMPACT não passa mais por aqui: ela virou fila, e quem
-          fala por ela é o bloco lá em cima, com o texto à vista. O que sobra
-          nesta faixa são as esperas de segundos (envio e anexo em voo) — para
-          essas, esperar é mesmo a única coisa a fazer. */}
-      {avisoDaPorta ? (
-        <span
-          role="status"
-          aria-live="polite"
-          className="mx-auto w-full"
-          style={{
-            maxWidth: 'var(--ck-w-composer)',
-            padding: '0 var(--ck-space-2)',
-            fontSize: 'var(--ck-text-xs)',
-            color: 'var(--ck-state-attention)',
-          }}
-        >
-          {avisoDaPorta}
-        </span>
-      ) : null}
-
-
-      {/* Frase de estado + ações. Só existe fora do `ocioso`/`confirmado` —
-          sucesso é silêncio, igual à linha de ferramenta (§7). */}
-      {aparencia.frase || aparencia.acoes.length > 0 ? (
-        <div
-          className="mx-auto flex w-full items-center justify-between"
-          style={{ maxWidth: 'var(--ck-w-composer)', padding: '0 var(--ck-space-2)' }}
-        >
-          <span
-            id={idAnuncio}
-            role="status"
-            aria-live={aparencia.urgencia}
-            style={{
-              fontSize: 'var(--ck-text-xs)',
-              color: aparencia.filete ?? 'var(--ck-text-secondary)',
-            }}
-          >
-            {aparencia.frase}
-          </span>
-          {aparencia.acoes.length > 0 ? (
-            <div className="flex items-center" style={{ gap: 'var(--ck-space-3)' }}>
-              {aparencia.acoes.map((acao) => {
-                const Icone = ROTULO_ICONE[acao];
-                return (
-                  <button
-                    key={acao}
-                    type="button"
-                    onClick={() => acionar(acao)}
-                    className="ck-veil flex items-center"
-                    style={{
-                      gap: '5px',
-                      padding: '4px 8px',
-                      borderRadius: 'var(--ck-radius-chip)',
-                      fontSize: 'var(--ck-text-xs)',
-                      color: 'var(--ck-text-secondary)',
-                    }}
-                  >
-                    <Icone tamanho={13} />
-                    {rotulaAcao(acao)}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        // Elemento vazio de altura fixa: reserva o espaço da linha de status
-        // ANTES de ela existir, mesma regra do hotspot 6 da linha de execução —
-        // sem isto o fio aparecendo empurra o composer um pixel pra cima.
-        <div aria-hidden style={{ height: '17px' }} />
-      )}
+      </CaixaDoComposer>
+      <AvisosDoComposer
+        anexo={anexo}
+        avisoDaPorta={avisoDaPorta}
+        aparencia={aparencia}
+        idAnuncio={idAnuncio}
+        acionar={acionar}
+      />
     </div>
     </MotionConfig>
   );
