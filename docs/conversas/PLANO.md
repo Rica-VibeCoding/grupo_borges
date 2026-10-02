@@ -116,7 +116,7 @@ persona que mudou desde a conversa; lista geral da frota.
   Sem cadeira `teste`: o Canário (DeepSeek, VPS) confere — nunca uma cadeira de outro motor.
 - **Repositório**: `~/Projetos/grupo_borges`, clonado na F0. O clone é só das cadeiras.
 - **Casa** `tmux -L conversas`, com até três sessões:
-  - `api`: **Codex** `gpt-6-sol` — back-end só GPT-6 Sol;
+  - `api-gpt`: **Codex** `codex.cmd -m gpt-6-sol -c model_reasoning_effort=medium --dangerously-bypass-approvals-and-sandbox` — back-end só GPT-6 Sol;
   - `tela`: Claude Code com `claude-opus-5-5`, carregando a skill `frontend-design` e lendo `docs/cockpit-v2-estetica.md` — UI só Opus 5.5;
   - `teste`: Claude Code com DeepSeek, pela função `deep` — pesquisa e teste (browser-harness) só DeepSeek.
 
