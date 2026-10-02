@@ -53,7 +53,7 @@ export function LinhaVivaView({ desdeMs }: { desdeMs: number }) {
   }, []);
 
   return (
-    <div style={{ borderLeft: '2px solid var(--ck-state-running)' }}>
+    <div>
       <p
         className="ck-pulso truncate"
         data-estado="trabalhando"
@@ -62,7 +62,7 @@ export function LinhaVivaView({ desdeMs }: { desdeMs: number }) {
           minHeight: '32px',
           display: 'flex',
           alignItems: 'center',
-          padding: 'var(--ck-space-1) var(--ck-space-3)',
+          padding: 'var(--ck-space-1) 0',
           fontSize: 'var(--ck-text-sm)',
           lineHeight: 'var(--ck-leading-body)',
           color: 'var(--ck-state-running)',

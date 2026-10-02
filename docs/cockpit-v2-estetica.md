@@ -142,7 +142,7 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 
 1. **Pensando:** sem spinner; o fio de luz do topo respira em `--ck-state-thinking`.
 2. **Ferramenta entrando:** `opacity` + `translateY(2px)` em `--ck-dur-enter`, com altura reservada antes do conteúdo.
-3. **Grupo em execução:** filete lateral de 2px em `--ck-state-running`, que some ao concluir.
+3. **Grupo em execução:** filete lateral de 2px no dourado do pulso (`--ck-pulso-ouro`), que some ao concluir. **Filete azul (`--ck-state-running`) é proibido** — saiu da linha viva, das delegações e da troca de conversa por ordem do Rica (02/10); "pensando", "trabalhando" e "trocando" são só texto pulsando, sem linha.
 4. **Falha:** nada pisca; a superfície perde o fio de luz e o filete vira `--ck-state-fail`.
 5. **Pedido de permissão:** único movimento persistente — filete âmbar pulsando, alvo ≥ 44px, confirmação.
 6. **Agente vivo na gaveta:** o ponto do agora do pulso respira só enquanto ele trabalha.

@@ -1,10 +1,9 @@
 'use client';
 
-// A troca de conversa no feed (F13) — três desenhos, uma gramática só: o
-// FILETE à esquerda, o mesmo da linha viva.
+// A troca de conversa no feed (F13).
 //
-// - Trocando: filete azul pulsando, "Trocando para “X”" e o passo em curso com
-//   o tempo. A conversa que vai sair fica acima, apagada (`.ck-feed-saindo`).
+// - Trocando: sem filete (o azul saiu em 02/10, ordem do Rica) — "Trocando
+//   para “X”" pulsando e o passo em curso com o tempo. A conversa que vai sair fica acima, apagada (`.ck-feed-saindo`).
 // - Trocou (Retomar): o filete vira verde e fecha o histórico retomado — o
 //   título, a nota e o briefing de retorno, recolhido. A Nova não desenha
 //   marco desde 02/10 (`poeMarco`): o chat abre no vazio do produto.
@@ -24,11 +23,15 @@ import { textoDoPedido, textosDaTroca } from './troca-no-feed.ts';
 
 const TEXTO_SM = { fontSize: 'var(--ck-text-sm)', lineHeight: 'var(--ck-leading-body)' } as const;
 
-function Filete({ cor, children }: { cor: string; children: ReactNode }) {
+/** Sem `cor`, sem filete: a troca em andamento não desenha linha (ordem do Rica, 02/10). */
+function Filete({ cor, children }: { cor?: string; children: ReactNode }) {
   return (
     <div
       className="flex flex-col"
-      style={{ gap: 'var(--ck-space-1)', borderLeft: `2px solid ${cor}`, padding: 'var(--ck-space-2) var(--ck-space-3)' }}
+      style={{
+        gap: 'var(--ck-space-1)',
+        ...(cor ? { borderLeft: `2px solid ${cor}`, padding: 'var(--ck-space-2) var(--ck-space-3)' } : { padding: 'var(--ck-space-2) 0' }),
+      }}
     >
       {children}
     </div>
@@ -98,7 +101,7 @@ export function TrocaEmAndamentoView({ troca, agentSlug }: { troca: TrocaNoChat;
   const tempo = troca.fase === 'trocando' ? rotuloDoTempo(agora - troca.inicio).replace(/^há /, '') : null;
   return (
     <div className="ck-troca-em-andamento" role={t.alerta ? 'alert' : 'status'} style={{ margin: 'var(--ck-space-3) 0' }}>
-      <Filete cor={cor}>
+      <Filete>
         <p className={t.alerta ? undefined : 'ck-pulso'} data-estado={t.alerta ? undefined : 'trabalhando'} style={{ margin: 0, ...TEXTO_SM, fontWeight: 500, color: cor }}>
           {t.titulo}
         </p>
