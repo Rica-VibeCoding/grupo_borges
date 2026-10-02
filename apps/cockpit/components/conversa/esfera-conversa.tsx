@@ -35,7 +35,7 @@ import {
 } from './moldura-estado';
 import type { VariacaoEsfera } from './preferencia-visual';
 import { useMovimentoReduzido } from './use-movimento-reduzido';
-import { criaPublicadorDeNivel, criaTelaWebGL, leCoresDoTema } from './webgl-tela';
+import { criaPublicadorDeNivel, criaTelaWebGL, leCoresDoTema, ouveTrocaDeDpr } from './webgl-tela';
 
 const TOKENS = {
   voce: '--ck-conversa-voce',
@@ -129,19 +129,25 @@ export function EsferaConversa({
     let lugar: Lugar | null = null;
     const mede = () => {
       esc = tela.ajusta();
-      const caixa = canvas.getBoundingClientRect();
-      const p = palco.getBoundingClientRect();
-      altura = caixa.height;
+      // Tamanho pelo LAYOUT (`client*`), que ignora o `scale` da entrada da
+      // mini; as posições do palco seguem pelo `getBoundingClientRect` — a tela
+      // cheia não tem transform no caminho.
+      const largura = canvas.clientWidth;
+      altura = canvas.clientHeight;
       // Na miniatura, o raio é proporção da caixa: o piso de 24px da tela cheia
       // não cabe numa linha do feed. E a faixa do palco vai para BEM fora da
       // caixa: o shader apaga a luz nos últimos 48px da faixa, e a caixa inteira
       // tem 28 — com a faixa justa, a esfera sumia.
-      alvoLugar = mini
-        ? { x: caixa.width / 2, y: caixa.height / 2, raio: caixa.width * 0.36, topo: -100, base: caixa.height + 100 }
-        : lugarNoPalco(
-            { left: p.left - caixa.left, top: p.top - caixa.top, width: p.width, height: p.height },
-            caixa.width,
-          );
+      if (mini) {
+        alvoLugar = { x: largura / 2, y: altura / 2, raio: largura * 0.36, topo: -100, base: altura + 100 };
+      } else {
+        const caixa = canvas.getBoundingClientRect();
+        const p = palco.getBoundingClientRect();
+        alvoLugar = lugarNoPalco(
+          { left: p.left - caixa.left, top: p.top - caixa.top, width: p.width, height: p.height },
+          largura,
+        );
+      }
       lugar ??= alvoLugar;
     };
 
@@ -238,6 +244,7 @@ export function EsferaConversa({
     window.visualViewport?.addEventListener('resize', aoMudar);
     window.addEventListener('scroll', aoMudar, { passive: true });
     canvas.addEventListener('webglcontextlost', aoPerderContexto);
+    const largaDpr = ouveTrocaDeDpr(aoMudar);
     mede();
     acordaRef.current();
 
@@ -247,6 +254,7 @@ export function EsferaConversa({
       observador.disconnect();
       window.visualViewport?.removeEventListener('resize', aoMudar);
       window.removeEventListener('scroll', aoMudar);
+      largaDpr();
       canvas.removeEventListener('webglcontextlost', aoPerderContexto);
       tela.libera();
       canvas.remove();

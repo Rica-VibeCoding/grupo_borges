@@ -15,6 +15,41 @@ export type TelaWebGL = {
   libera(): void;
 };
 
+/**
+ * Tamanho do buffer a partir do tamanho de LAYOUT do canvas (`clientWidth`), não
+ * do `getBoundingClientRect`: este já vem multiplicado pelo `transform` dos
+ * ancestrais. A esfera mini entra com `scale(0.6)` — medida no meio da entrada,
+ * o buffer nascia com 60% dos pixels e o canvas era ampliado (borrão), e o
+ * `ResizeObserver` não dispara em mudança de transform, então nunca remedia.
+ */
+export function tamanhoDoBuffer(larguraCss: number, alturaCss: number, dpr: number, escala: number) {
+  const px = Math.min(2, dpr || 1) * escala;
+  const largura = Math.max(1, Math.round(larguraCss * px));
+  const altura = Math.max(1, Math.round(alturaCss * px));
+  return { largura, altura, esc: largura / Math.max(1, larguraCss) };
+}
+
+/**
+ * Avisa quando o `devicePixelRatio` muda (janela arrastada para outro monitor,
+ * zoom do navegador): nada disso muda o tamanho em px CSS, então o
+ * `ResizeObserver` fica calado. A consulta vale para UM valor de dpr — a cada
+ * troca, refaz para o novo. Devolve quem desliga.
+ */
+export function ouveTrocaDeDpr(aoTrocar: () => void): () => void {
+  let consulta: MediaQueryList | null = null;
+  const arma = () => {
+    consulta?.removeEventListener('change', troca);
+    consulta = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    consulta.addEventListener('change', troca);
+  };
+  const troca = () => {
+    arma();
+    aoTrocar();
+  };
+  arma();
+  return () => consulta?.removeEventListener('change', troca);
+}
+
 const VERTICE = 'attribute vec2 a; void main() { gl_Position = vec4(a, 0., 1.); }';
 
 /** `transparente`: o canvas deixa ver o que está atrás (saída em alfa pré-multiplicado). */
@@ -76,17 +111,19 @@ export function criaTelaWebGL(
       return cache.get(nome) ?? null;
     },
     ajusta() {
-      const caixa = canvas.getBoundingClientRect();
-      const px = Math.min(2, window.devicePixelRatio || 1) * escala;
-      const largura = Math.max(1, Math.round(caixa.width * px));
-      const altura = Math.max(1, Math.round(caixa.height * px));
+      const { largura, altura, esc } = tamanhoDoBuffer(
+        canvas.clientWidth,
+        canvas.clientHeight,
+        window.devicePixelRatio,
+        escala,
+      );
       // Mudar o tamanho apaga e realoca o buffer: só quando mudou de fato.
       if (canvas.width !== largura || canvas.height !== altura) {
         canvas.width = largura;
         canvas.height = altura;
         gl.viewport(0, 0, largura, altura);
       }
-      return largura / Math.max(1, caixa.width);
+      return esc;
     },
     desenha() {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
