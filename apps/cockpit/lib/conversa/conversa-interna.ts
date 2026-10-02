@@ -16,6 +16,7 @@ export type ConversaInterna = Conversa & {
   interrompeuEm?: number; // `agora` do `falaIniciou`; base do relógio de desclassificação
   zeDescartado?: boolean; // turno do Zé descartado (fala por cima ou toque que parou); residual é ignorado
   daEspera?: boolean; // a fala começou com o Zé pensando: se não virar pedido, volta a esperar por ele
+  umaFala?: boolean; // sem fone, o botão abriu o microfone na espera só para uma fala (`uma-fala.ts`)
 };
 
 export type Resultado = { conversa: Conversa; efeitos: Efeito[] };

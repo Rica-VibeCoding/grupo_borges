@@ -252,6 +252,12 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     [despacha],
   );
 
+  // Sem fone, o botão do microfone na vez dele: abre só para uma fala, sem frear (`uma-fala.ts`).
+  const umaFala = useCallback(
+    (abrir: boolean) => despacha({ tipo: abrir ? 'abrirUmaFala' : 'fecharUmaFala' }),
+    [despacha],
+  );
+
   const nivelMicRef = detector.nivelRef;
   /** Volume para o visual: a voz do Zé enquanto ele fala, o microfone no resto. */
   const leNivel = useCallback(
@@ -286,6 +292,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     descartaRetomada: retomada.apaga,
     comecar,
     interromper,
+    umaFala,
     parar,
   };
 }

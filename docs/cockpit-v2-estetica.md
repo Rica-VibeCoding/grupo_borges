@@ -203,6 +203,15 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
    alvo ≥ 44px — o único pulso que chama o Rica.
    `AskUserQuestion` sem resposta é `aguarda`, não `rodando`: "Aguardando você: <pergunta>".
 6. **Agente vivo na gaveta:** o ponto do agora do pulso respira só enquanto ele trabalha.
+7. **O microfone do canto na tela de voz** (`conversa/botao-mudo.tsx`, regra em
+   `entrada-do-microfone.ts`): é o mudo e, sem fone, a entrada da vez dele. Sem fone, com ele pensando
+   ou trabalhando, a entrada fica fechada (microfone vivo põe o iPhone em modo de chamada) e o botão
+   diz isso: cápsula com a boca tampada e aro em `--ck-edge-functional` — é botão que abre, não mudo.
+   O toque abre **só para uma fala**, sem frear: cor `--ck-tom-voce`, aro respirando, frase de apoio
+   calada; a fala vai para a fila da fala e, no fim dela, o microfone fecha sozinho. Tocar de novo
+   antes de falar fecha. Com a voz dele tocando (ou a fala transcrevendo), o mesmo desenho a 50% e sem
+   toque. Fora disso: microfone (ouve) ou microfone riscado (mudo); a tecla M é só o mudo. Interromper
+   segue sendo o toque na tela; com fone, o botão é só o mudo.
 
 Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero `setState` por frame.
 

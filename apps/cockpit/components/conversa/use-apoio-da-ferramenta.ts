@@ -24,8 +24,9 @@ export function useApoioDaFerramenta(p: Props) {
   const atual = useRef(p);
   atual.current = p;
   const bloqueado = () => {
-    const c = p.conversaRef.current as Conversa & { capturando?: boolean; segurando?: boolean };
-    return !p.sessaoAtivaRef.current || Boolean(c.capturando || c.segurando) ||
+    // A uma fala aberta pelo botão, sem fone: a frase no alto-falante voltaria pelo microfone (eco).
+    const c = p.conversaRef.current as Conversa & { capturando?: boolean; segurando?: boolean; umaFala?: boolean };
+    return !p.sessaoAtivaRef.current || Boolean(c.capturando || c.segurando || c.umaFala) ||
       c.estado === 'transcrevendo' || c.estado === 'interrompendo';
   };
   const cabecalhoAtual = () => cabecalhoDaFerramenta(atual.current.mensagens.filter((mensagem) => mensagem.id > fronteiraRef.current));
@@ -61,7 +62,7 @@ export function useApoioDaFerramenta(p: Props) {
     encerra() { relogio.encerra(); apoio.cala(); },
     evento(evento: Evento) {
       if (evento.tipo === 'enviou' || evento.tipo === 'retomar') relogio.inicia(performance.now());
-      if (evento.tipo === 'falaIniciou' || (evento.tipo === 'segurou' && evento.ligado)) apoio.cala();
+      if (evento.tipo === 'falaIniciou' || evento.tipo === 'abrirUmaFala' || (evento.tipo === 'segurou' && evento.ligado)) apoio.cala();
       if (evento.tipo === 'microfoneMudo') apoio.desiste();
       if (evento.tipo === 'parar' || evento.tipo === 'interromper' || evento.tipo === 'zeTerminou' || evento.tipo === 'capturaCaiu' || evento.tipo === 'falhou') {
         relogio.encerra();

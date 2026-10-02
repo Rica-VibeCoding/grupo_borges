@@ -5,10 +5,11 @@ type Captura = ConversaInterna & { segurando?: boolean };
 type Resultado = { conversa: Captura; efeitos: Efeito[] };
 
 // A fala começada com o Zé pensando não saiu (tosse, mudo): volta a esperar por ele — ou a ouvir,
-// se ele acabou no meio. Na espera com fone, o detector segue ligado.
+// se ele acabou no meio. Na espera com fone, o detector segue ligado; sem fone (a uma fala), fecha.
 function voltaAEspera(c: Captura): Resultado {
   const estado = c.zeAcabou ? 'ouvindo' : 'esperandoZe';
-  return { conversa: { estado, fone: c.fone, zeDescartado: c.zeDescartado }, efeitos: [] };
+  const efeitos = estado === 'esperandoZe' && !c.fone ? [DESLIGA] : [];
+  return { conversa: { estado, fone: c.fone, zeDescartado: c.zeDescartado }, efeitos };
 }
 
 function libera(c: Captura): Resultado {
@@ -40,7 +41,8 @@ export function duranteCaptura(c: Captura, evento: Evento): Resultado | null {
   }
   if (evento.tipo === 'falaDescartada' && c.estado === 'ouvindo') {
     if (c.vozGuardada && !c.segurando) return libera(c);
-    return c.daEspera && !c.segurando ? voltaAEspera(c) : { conversa: { ...c, capturando: false }, efeitos: [] };
+    // A uma fala segue aberta depois da tosse: o microfone só fecha com a fala dita (ou o toque).
+    return c.daEspera && !c.segurando && !c.umaFala ? voltaAEspera(c) : { conversa: { ...c, capturando: false }, efeitos: [] };
   }
   if (evento.tipo === 'textoDoZe' && !c.zeDescartado &&
       ((c.estado === 'ouvindo' && (c.capturando || c.segurando)) || c.estado === 'transcrevendo')) {

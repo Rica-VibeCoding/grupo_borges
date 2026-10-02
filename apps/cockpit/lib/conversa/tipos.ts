@@ -41,6 +41,10 @@ export type Evento =
   // `isRunning` do stream — ouvindo ou transcrevendo, só ele diz que há turno em voo. `semFreio`: a
   // espera era pelo subagente, com o turno dele já fechado — não há o que frear nem descartar
   | { tipo: 'interromper'; rodando: boolean; semFreio?: boolean }
+  // sem fone, o botão do microfone na vez do Zé: abre só para uma fala, que vai para a fila sem frear;
+  // tocar de novo antes de falar fecha (`uma-fala.ts`)
+  | { tipo: 'abrirUmaFala' }
+  | { tipo: 'fecharUmaFala' }
   | { tipo: 'falaIniciou' }
   | { tipo: 'microfoneMudo' }
   | { tipo: 'segurou'; ligado: boolean }

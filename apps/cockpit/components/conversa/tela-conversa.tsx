@@ -7,6 +7,7 @@ import { LinkAbrePainel } from '../shell/superficie-otimista';
 
 import { BotaoLigar } from './botao-ligar';
 import { BotaoMudo } from './botao-mudo';
+import { entradaDoMicrofone } from './entrada-do-microfone';
 import { useMudoConversa } from './use-mudo-conversa';
 import { usePublicaDetalheDaConversa } from './contexto-configuracao-conversa';
 import { conviteDaTela } from './direcao-da-voz';
@@ -26,6 +27,7 @@ import { acaoDoToque, toqueConta } from './toque-da-conversa';
 import { useGestosDaConversa } from './use-gestos-da-conversa';
 import { useModoConversa } from './use-modo-conversa';
 import { falaNaEspera } from '@/lib/conversa/maquina';
+import { umaFalaAberta } from '@/lib/conversa/uma-fala';
 import { useChaveDaConversa, useVisualConversa } from './use-preferencias-conversa';
 
 /** Segundos de espera pelo Zé, uma atualização por segundo (não por quadro). */
@@ -100,12 +102,13 @@ export function TelaConversa({
     ? cenaVisivel({ cena: modo.retomada.cena, tocando: false, ferramenta: modo.ferramenta })
     : cenaVisivel({ cena: falaPorCima ? 'esperandoZe' : cena, tocando: modo.tocando, ferramenta: modo.ferramenta, motivo: modo.conversa.motivo });
   const acao = acaoDoToque(cena, preparacaoFalhou, modo.rodando);
-  // Com ele pensando e fone, o microfone está aberto e a fala entra na fila dele: a esfera mostra isso
-  // (`esfera-estado.ts`) — só com a tela à vista e sem mudo, que é quando ouvir é verdade.
-  const ouveDeVerdade = ativa && pronto && !mudo && !retomando && fone;
+  // Com ele pensando e fone (ou, sem fone, a uma fala que o botão abriu), o microfone está aberto e a
+  // fala entra na fila dele: a esfera mostra isso (`esfera-estado.ts`) — só com a tela à vista e sem
+  // mudo, que é quando ouvir é verdade.
+  const ouveDeVerdade = ativa && pronto && !mudo && !retomando && (fone || umaFalaAberta(modo.conversa));
   const escuta: EscutaNoPensar = !ouveDeVerdade
     ? 'nao'
-    : cena === 'esperandoZe'
+    : cena === 'esperandoZe' || (umaFalaAberta(modo.conversa) && !modo.falaDetectada)
       ? 'aberta'
       : falaPorCima
         ? 'falando'
@@ -261,7 +264,13 @@ export function TelaConversa({
         ) : null}
       </div>
 
-      <BotaoMudo mudo={mudo} aoMudar={mudaMudo} ativo={ativa && pronto} />
+      <BotaoMudo
+        mudo={mudo}
+        aoMudar={mudaMudo}
+        ativo={ativa && pronto}
+        entrada={entradaDoMicrofone(modo.conversa, fone, !pronto || mudo)}
+        aoUmaFala={modo.umaFala}
+      />
       <button
         type="button"
         className={styles.toque}

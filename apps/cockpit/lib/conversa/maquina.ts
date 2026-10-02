@@ -18,6 +18,8 @@
  * - fala por cima, com fone: pausa a voz e a fala entra na fila do Claude Code (`falaConfirmada`);
  * - fala com o Zé pensando, com fone: entra na fila sem frear (`daEspera`) — e "pensando"
  *   inclui o trabalho depois de um aviso falado (`vozTerminou` antes do fim do turno);
+ * - sem fone, com o Zé pensando: o botão do microfone abre só para uma fala, que entra na fila sem
+ *   frear; terminada a fala, o microfone volta a fechar (`uma-fala.ts`);
  * - sair da tela (chat ou outra página): nada aqui — a tela emudece e a voz segue (`tela-conversa`);
  *   desmontar para sem freio (`parar` com `semFreio`).
  */
@@ -27,6 +29,7 @@ import { DESLIGA, LIGA, novo, noop, preserva } from './conversa-interna.ts';
 import type { ConversaInterna, Resultado } from './conversa-interna.ts';
 import { falaConfirmada, falaDescartada, falaIniciou, fone, saiDeInterrompendo } from './fala-por-cima.ts';
 import { TEMPOS } from './tipos.ts';
+import { abrirUmaFala, fecharUmaFala } from './uma-fala.ts';
 import type { Avanca, Conversa, Efeito, Estado, MotivoDeErro } from './tipos.ts';
 
 /** O turno em voo foi descartado: o texto que ainda vier dele não fala, e ele não é ocupação. */
@@ -69,6 +72,10 @@ export const avanca: Avanca = (conversa, evento, agora) => {
     case 'tique':
       return tique(c, agora);
     case 'segurou': return noop(c);
+    case 'abrirUmaFala':
+      return abrirUmaFala(c);
+    case 'fecharUmaFala':
+      return fecharUmaFala(c);
     case 'falaIniciou':
       return falaIniciou(c, agora);
     case 'microfoneMudo': case 'falaDescartada':
@@ -134,7 +141,9 @@ function interromper(c: ConversaInterna, rodando: boolean, semFreio = false): Re
   if (emVoo && !c.zeDescartado) efeitos.push({ tipo: 'frearZe', antesDaResposta: c.estado === 'esperandoZe' });
   const zeDescartado = emVoo || c.zeDescartado === true;
   if (c.estado === 'ouvindo' || c.estado === 'transcrevendo') {
-    return preserva(c, efeitos, { zeDescartado, vozGuardada: false, zeAcabou: undefined, vozAcabou: undefined });
+    // Sem fone, a fala da espera só existe pela uma fala: freado o Zé, a vez é dele por inteiro.
+    const daVez = c.fone ? {} : { daEspera: undefined, umaFala: undefined };
+    return preserva(c, efeitos, { zeDescartado, vozGuardada: false, zeAcabou: undefined, vozAcabou: undefined, ...daVez });
   }
   if (!detectorLigado(c)) efeitos.push(LIGA);
   return novo(c, 'ouvindo', efeitos, { zeDescartado });
@@ -169,7 +178,8 @@ function enviou(c: ConversaInterna): Resultado {
 // A fala não virou pedido. Começada na espera, volta a esperar — ou a ouvir, se o Zé acabou nela.
 function voltaDaFalaVazia(c: ConversaInterna): Resultado {
   const estado = c.daEspera && !c.zeAcabou ? 'esperandoZe' : 'ouvindo';
-  return novo(c, estado, [LIGA], { zeDescartado: c.zeDescartado });
+  // Sem fone, a espera segue fechada: a fala vazia da uma fala não reabre o microfone.
+  return novo(c, estado, ouveNoEstado(estado, c.fone === true) ? [LIGA] : [], { zeDescartado: c.zeDescartado });
 }
 
 function textoDoZe(c: ConversaInterna, texto: string): Resultado {
