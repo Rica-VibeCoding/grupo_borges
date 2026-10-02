@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { classifyMessage } from '@grupo_borges/cockpit-core/chat-payload-classifier';
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 import { corridaEmVoo } from './corrida-em-voo.ts';
@@ -133,4 +134,59 @@ test('quem manda é a ÚLTIMA mensagem que teve efeito', () => {
   ];
   // O /clear depois do fim do turno não ressuscita o "Pensando".
   assert.equal(corridaEmVoo(false, lote), false);
+});
+
+/* -------------------------------------------------------------------------- */
+/* turn_duration — a despedida que o CC grava ao fechar o turno                */
+/* -------------------------------------------------------------------------- */
+
+// Formato do contrato do stream (acima de `_canonical_jsonl_message_event`).
+function fimDeTurno(): MessagePayload {
+  proximoId += 1;
+  return {
+    id: proximoId,
+    kind: 'system',
+    subtype: 'turn_duration',
+    duration_ms: 44_000,
+    uuid: `cv-${proximoId}`,
+    parent_uuid: null,
+    session_id: null,
+    is_sidechain: false,
+    user_type: 'external',
+    timestamp: '2026-10-02T12:00:00.000Z',
+    created_at: 0,
+    message: null,
+  };
+}
+
+test('turn_duration encerra a corrida mesmo sem end_turn antes', () => {
+  const lote = [
+    falaDoRica('vai'),
+    mensagem('assistant', 'chamando', 'tool_use'),
+    resultado(),
+    fimDeTurno(),
+  ];
+  assert.equal(corridaEmVoo(false, lote), false);
+  assert.equal(corridaEmVoo(true, [mensagem('assistant', 'parcial', null), fimDeTurno()]), false);
+});
+
+test('replay com end_turn seguido de turn_duration segue igual', () => {
+  const lote = [falaDoRica('vai'), mensagem('assistant', 'ok', 'end_turn'), fimDeTurno()];
+  assert.equal(corridaEmVoo(false, lote), false);
+  assert.equal(corridaEmVoo(false, lote.slice(0, 2)), false);
+});
+
+test('turno novo depois do turn_duration reabre a corrida', () => {
+  const lote = [mensagem('assistant', 'ok', 'end_turn'), fimDeTurno(), falaDoRica('e agora?')];
+  assert.equal(corridaEmVoo(false, lote), true);
+});
+
+test('turn_duration de subagente não encerra a corrida do principal', () => {
+  const doSubagente = fimDeTurno();
+  doSubagente.is_sidechain = true;
+  assert.equal(corridaEmVoo(true, [doSubagente]), true);
+});
+
+test('turn_duration segue invisível no feed', () => {
+  assert.equal(classifyMessage(fimDeTurno()).kind, 'suppress');
 });

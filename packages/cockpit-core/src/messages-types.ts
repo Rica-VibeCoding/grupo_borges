@@ -119,6 +119,10 @@ export type MessagePayload = {
   // depois do envelope do comando. Só presente quando verdadeira (o back
   // repassa condicionalmente desde 17/08).
   is_meta?: boolean;
+  // Só no `kind: 'system'`: `subtype: 'turn_duration'` é o FIM DE TURNO que o
+  // CC grava, com a duração em `duration_ms` e `message` null.
+  subtype?: string | null;
+  duration_ms?: number | null;
   // Pode vir null em kinds como `attachment` / `summary` / `system` que não
   // carregam payload de chat (mesmo schema canônico do contrato).
   message: {

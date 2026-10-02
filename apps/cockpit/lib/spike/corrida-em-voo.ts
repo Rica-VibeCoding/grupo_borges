@@ -58,13 +58,18 @@ function temResultadoDeFerramenta(content: string | ContentPart[] | null | undef
 /** O que UMA mensagem diz sobre a corrida: `true` em voo, `false` acabou,
  *  `null` não fala sobre isso — e `null` preserva o estado anterior. */
 export function efeitoNaCorrida(payload: MessagePayload): boolean | null {
-  const message = payload.message;
-  if (!message) return null;
-
   // Sidechain é a conversa do SUBAGENTE. O `end_turn` dele encerra o trabalho
   // dele, não o do agente que o chamou — sem esta guarda, a linha viva do
   // principal apagava toda vez que um subagente entregasse.
   if (payload.is_sidechain) return null;
+
+  // O `turn_duration` é a despedida que o próprio CC grava ao fechar o turno —
+  // a prova DEFINITIVA de fim, qualquer que tenha sido o `stop_reason` antes.
+  // Turno que morre sem despedida não o grava: esse segue com a linha viva.
+  if (payload.kind === 'system' && payload.subtype === 'turn_duration') return false;
+
+  const message = payload.message;
+  if (!message) return null;
 
   if (message.role === 'assistant') {
     const stop = message.stop_reason;
