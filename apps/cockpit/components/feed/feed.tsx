@@ -26,6 +26,7 @@ import { BotaoVoltaAoFim } from './botao-volta-ao-fim';
 import { chaveDe } from './chave';
 import { criaChegadas } from './chegada-ao-vivo';
 import { CorpoDoItem } from './corpo-do-item';
+import { soPassoEmVoo } from './execucao-do-item';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
 import { ALTURA_ITEM, SOBRA } from './medidas-do-feed';
 
@@ -223,6 +224,11 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
             const item = itens[virtual.index];
             const chave = String(virtual.key);
             const chega = chegadas.chegando(chave, agoraMs);
+            // Só o passo em voo, que mora na linha do agora: o envelope fica
+            // sem padding (altura 0) em vez de o item sair da lista — filtrar
+            // mexeria em índice, contagem e chegada, e o item nasceria de novo
+            // ao terminar. Aqui a chave e a montagem seguem as mesmas.
+            const oco = item ? soPassoEmVoo(item, lookup) : false;
             return (
               <div
                 key={virtual.key}
@@ -259,7 +265,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
                     // wrapper do composer: é o que põe a primeira letra do
                     // feed na mesma vertical da borda da caixa de escrever.
                     // Mudou um, muda o outro.
-                    padding: 'var(--ck-space-2) var(--ck-space-4)',
+                    padding: oco ? 0 : 'var(--ck-space-2) var(--ck-space-4)',
                     // Borda de conteúdo gigante: uma linha de 200 mil caracteres
                     // sem espaço estoura a largura e leva a rolagem horizontal
                     // junto. Os renderers truncam a ALTURA; a largura é daqui.

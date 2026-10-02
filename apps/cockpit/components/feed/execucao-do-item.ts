@@ -21,6 +21,8 @@ import { normalizarListaResultado } from '../renderers/result-list.ts';
 import { normalizarSaidaDeShell } from '../renderers/shell-output.ts';
 import { normalizarLinhaDeStatus } from '../renderers/status-line.ts';
 
+import { ehLinhaDeTrabalho, type ItemDoFeed } from './grupo-ferramentas.ts';
+
 export type EntradaDaExecucao = {
   toolName: string;
   args?: unknown;
@@ -134,4 +136,18 @@ export function execucaoDoChip(item: Chip, lookup?: ToolResultLookup): EntradaDa
     isError: item.tone === 'error' ? true : undefined,
     estado: corpo ? 'complete' : semResultado(item.chip.label),
   };
+}
+
+/** O item não pinta nada: é só o passo em voo, que mora na linha do agora (a
+ *  `Execucao` devolve null para `running`). O envelope do feed tira o padding
+ *  dele, e o item segue na lista com a mesma chave — some do olho sem
+ *  remontar quando o passo termina. `requires-action` é pergunta e aparece. */
+export function soPassoEmVoo(item: ItemDoFeed, lookup?: ToolResultLookup): boolean {
+  if (item.kind === 'chip') {
+    return item.classifierKind === 'tool' && execucaoDoChip(item, lookup).estado === 'running';
+  }
+  if (item.kind !== 'assistant' || !ehLinhaDeTrabalho(item)) return false;
+  return item.parts.every(
+    (parte) => parte.type !== 'tool_use' || execucaoDaParte(parte, lookup).estado === 'running',
+  );
 }

@@ -7,7 +7,14 @@ import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/mes
 import type { RenderItem, ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { execucaoDaParte, execucaoDoChip, familiaDoRich, mesmaExecucao, usoDoChip } from './execucao-do-item.ts';
+import {
+  execucaoDaParte,
+  execucaoDoChip,
+  familiaDoRich,
+  mesmaExecucao,
+  soPassoEmVoo,
+  usoDoChip,
+} from './execucao-do-item.ts';
 
 // `buildToolResultLookup` só olha mensagens de kind `user` — é assim que o
 // Claude Code emite o resultado de uma ferramenta, e um fixture com kind
@@ -260,5 +267,37 @@ describe('execução — pergunta ao Rica (02/10)', () => {
       payload(2, [{ type: 'tool_result', tool_use_id: 'q1', content: 'Azul' }], 'user'),
     ]);
     assert.equal(execucaoDaParte(PERGUNTA, lookup).estado, 'complete');
+  });
+});
+
+describe('soPassoEmVoo — o item que só tem o passo em voo não ocupa espaço', () => {
+  const uso = (id: string, name = 'Bash'): ContentPart => ({ type: 'tool_use', id, name, input: {} });
+  const assistente = (partes: ContentPart[]): RenderItem => ({
+    kind: 'assistant',
+    payload: payload(1, partes),
+    parts: partes,
+  });
+  const vazio: ToolResultLookup = new Map();
+  const comResultado: ToolResultLookup = new Map([['a', { content: 'ok', isError: false }]]);
+
+  it('assistant só com tool_use rodando (e thinking oco) não pinta nada', () => {
+    assert.equal(soPassoEmVoo(assistente([uso('a')]), vazio), true);
+    assert.equal(soPassoEmVoo(assistente([{ type: 'thinking', thinking: '' }, uso('a')]), vazio), true);
+  });
+
+  it('o passo terminou: volta a ocupar espaço', () => {
+    assert.equal(soPassoEmVoo(assistente([uso('a')]), comResultado), false);
+    assert.equal(soPassoEmVoo(assistente([uso('a'), uso('b')]), comResultado), false);
+  });
+
+  it('texto visível ou pergunta ao Rica aparecem', () => {
+    assert.equal(soPassoEmVoo(assistente([{ type: 'text', text: 'oi' }, uso('a')]), vazio), false);
+    assert.equal(soPassoEmVoo(assistente([uso('a', 'AskUserQuestion')]), vazio), false);
+  });
+
+  it('chip sem corpo e sem resultado é passo em voo; o que não é trabalho fica', () => {
+    assert.equal(soPassoEmVoo(chip([uso('a')]), vazio), true);
+    assert.equal(soPassoEmVoo(chip([uso('a')]), comResultado), false);
+    assert.equal(soPassoEmVoo({ kind: 'linha-viva', desdeMs: 0 }, vazio), false);
   });
 });

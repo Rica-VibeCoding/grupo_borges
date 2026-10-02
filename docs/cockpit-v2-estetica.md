@@ -202,7 +202,8 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
   gira no mesmo ritmo e o grupo que remonta ao rolar aparece parado; o virtualizador acompanha pelo
   `ResizeObserver` do item, quadro a quadro. **Uma linha viva só:** o passo
   rodando aparece apenas na linha do agora, ao lado da esfera; no grupo e no feed ele surge quando
-  termina, já no passado. Em voo, o cabeçalho fica neutro com o filete dourado; só `aguarda` mostra a
+  termina, já no passado. Item que é só esse passo (`soPassoEmVoo`) fica no feed com a mesma chave e o
+  envelope sem padding — altura zero, sem vão acima da linha do agora. Em voo, o cabeçalho fica neutro com o filete dourado; só `aguarda` mostra a
   pergunta e chama. Concluída bem = cápsula neutra (`--ck-surface-nav`,
   `--ck-radius-caixa`, sem filete) com ✓ em `--ck-state-ok`: «N passos · resumo · duração», saldo
   `+N −M` e selo âmbar de retentativas. Falhou = filete e `erro` em `--ck-state-fail`.
