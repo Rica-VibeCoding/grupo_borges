@@ -29,8 +29,8 @@ test('documentação e procedimento apontam para a mesma operação', async () =
   assert.ok(stack.includes('Desenvolvimento: **3009**'));
   assert.ok(stack.includes('COCKPIT_DIST_DIR=.next-dev'));
   assert.ok(procedimento.includes('COCKPIT_DIST_DIR=.next-dev npx next dev --port 3009'));
-  assert.ok(estado.includes('https://srv1061129.tailfe77db.ts.net:3446'));
-  assert.ok(stack.includes('https://srv1061129.tailfe77db.ts.net:3446'));
+  assert.ok(estado.includes('https://borges.tailfe77db.ts.net:3446'));
+  assert.ok(stack.includes('https://borges.tailfe77db.ts.net:3446'));
   assert.ok(guia.includes('Dev na **3009**'));
   assert.ok(guia.includes('`:3446`→3008'));
 });
