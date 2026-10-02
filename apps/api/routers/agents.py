@@ -2844,6 +2844,11 @@ class _MarcaDoCockpit:
                 if not (self.no_turno and _INTERROMPIDO_RE.match(texto)):
                     self.no_turno = False
         elif kind == "queued":
+            # Fala que entrou na fila do CLI fecha o turno: o eco dela chega
+            # depois como `user` com `is_meta`, que não fecharia (02/10).
+            conteudo = canonical.get("content")
+            if not (isinstance(conteudo, str) and conteudo.lstrip().startswith(operacao_conversa.PREFIXO_DO_PEDIDO)):
+                self.no_turno = False
             return
         if self.no_turno:
             canonical["origem"] = "cockpit"

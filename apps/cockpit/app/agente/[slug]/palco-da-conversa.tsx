@@ -25,7 +25,15 @@
 // muda por digitação e por anexo, eventos que não passam por render deste
 // componente. Ler uma vez daria o valor de estreia e congelaria.
 
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+
+// O respiro que o feed lê é a caixa medida MAIS o que flutua logo acima dela
+// e também não pode cobrir a última mensagem: o "Voltar pra anterior" (F18)
+// publica `--ck-atalho-reserva` enquanto está aberto. Quem se posiciona em
+// cima da caixa lê `--ck-composer-caixa`, senão subiria por cima de si mesmo.
+const RESPIRO = {
+  '--ck-composer-altura': 'calc(var(--ck-composer-caixa, 0px) + var(--ck-atalho-reserva, 0px))',
+} as CSSProperties;
 
 export function PalcoDaConversa({
   composer,
@@ -45,7 +53,7 @@ export function PalcoDaConversa({
     // telas divididas teriam alturas diferentes, e o `:root` deixaria a última
     // a escrever vencer para as duas. O feed é descendente do palco, então a
     // herança entrega o valor certo sem estado global.
-    palcoRef.current?.style.setProperty('--ck-composer-altura', `${Math.ceil(altura)}px`);
+    palcoRef.current?.style.setProperty('--ck-composer-caixa', `${Math.ceil(altura)}px`);
   }, []);
 
   useEffect(() => {
@@ -68,7 +76,7 @@ export function PalcoDaConversa({
   }, [publicaAltura]);
 
   return (
-    <div ref={palcoRef} className="ck-palco relative min-h-0 flex-1">
+    <div ref={palcoRef} className="ck-palco relative min-h-0 flex-1" style={RESPIRO}>
       {/* O feed ocupa o palco inteiro, inclusive a faixa que fica atrás do
           composer. É essa altura sobrando que dá o que desfocar. */}
       <div

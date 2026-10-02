@@ -102,4 +102,23 @@ describe('conversa-trocada — o evento do stream vira marco (F13)', () => {
     assert.equal(temPrimeiroTurno([fala('da conversa velha', lidaEm - 60_000)], { emMs: lidaEm }), false);
     assert.equal(temPrimeiroTurno([fala('da conversa velha', lidaEm - 60_000), fala('bora', lidaEm + 2_000)], { emMs: lidaEm }), true);
   });
+
+  it('fala por canal e agente respondendo contam como turno; comando e pedido do cockpit não (F18)', () => {
+    const em = (ms: number) => ({ timestamp: new Date(ms).toISOString(), created_at: 0 });
+    const lidaEm = CRU.at;
+    const depois = lidaEm + 2_000;
+    const user = (texto: string, extra = {}) =>
+      ({ kind: 'user', ...em(depois), message: { role: 'user', content: texto }, ...extra }) as unknown as MessagePayload;
+    const resposta = (ms: number, extra = {}) =>
+      ({ kind: 'assistant', ...em(ms), message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] }, ...extra }) as unknown as MessagePayload;
+    const telegram = '<channel source="plugin:telegram:telegram" chat_id="1" user="rica">vê o deploy</channel>';
+    const fila = { kind: 'queued', ...em(depois), message: null, content: telegram } as unknown as MessagePayload;
+
+    assert.equal(temPrimeiroTurno([user(telegram)], { emMs: lidaEm }), true);
+    assert.equal(temPrimeiroTurno([fila], { emMs: lidaEm }), true);
+    assert.equal(temPrimeiroTurno([user('<local-command-stdout>Renamed</local-command-stdout>')], { emMs: lidaEm }), false);
+    assert.equal(temPrimeiroTurno([resposta(depois)], { emMs: lidaEm }), true);
+    assert.equal(temPrimeiroTurno([resposta(lidaEm - 60_000)], { emMs: lidaEm }), false);
+    assert.equal(temPrimeiroTurno([user('anota onde parou', { origem: 'cockpit' }), resposta(depois, { origem: 'cockpit' })], { emMs: lidaEm }), false);
+  });
 });

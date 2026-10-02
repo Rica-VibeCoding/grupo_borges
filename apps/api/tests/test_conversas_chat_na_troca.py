@@ -17,7 +17,13 @@ import pytest
 from test_conversas_lista import ID_CUSTOM, ID_PROMPT, bancada  # noqa: F401
 from test_conversas_nova import ID_NOVA, palco  # noqa: F401
 from test_conversas_retomar import linha  # noqa: F401
-from test_messages_stream import _build_app, _drive_stream, _insert_jsonl, agents_router
+from test_messages_stream import (
+    _build_app,
+    _drive_stream,
+    _insert_jsonl,
+    _insert_queue_operation,
+    agents_router,
+)
 
 from routers import conversas as conversas_router
 from services import operacao_conversa as operacao
@@ -238,6 +244,22 @@ async def test_escape_do_cockpit_no_turno_e_do_cockpit(tmp_path) -> None:
     origem = {p["uuid"]: p.get("origem") for n, p in events if n == "message"}
     # Só o prefixo do pedido abre o turno: outro "[cockpit]" é fala comum.
     assert origem == {"pedido": "cockpit", "corte": "cockpit", "nova-fala": None}
+
+
+@pytest.mark.asyncio
+async def test_fala_que_entra_pela_fila_fecha_o_turno_do_pedido(tmp_path) -> None:
+    # Retomada a conversa que acabou num pedido de estacionar, a fala seguinte
+    # do Rica chega pela fila do CLI (`queued`) e o eco dela vem com `is_meta`.
+    app, db = _build_app(tmp_path)
+    _turno_de_estacionar(db)
+    _insert_queue_operation(db, operation="enqueue", content="<channel source=\"telegram\">oi</channel>")
+    _insert_jsonl(db, session_id="sess-a", uuid="segue", kind="assistant", text="seguindo")
+
+    _, _, events = await _drive_stream(app, stop_after="replay-end")
+
+    origem = {p["uuid"]: p.get("origem") for n, p in events if n == "message" and p.get("uuid")}
+    assert origem["ok"] == "cockpit"
+    assert origem["segue"] is None
 
 
 @pytest.mark.asyncio

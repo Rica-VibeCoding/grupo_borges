@@ -14,7 +14,7 @@
  * O toque segue a régua do Continuar esta (`usa-troca-direta.ts`); a espera e
  * o marco são os do chat (F13).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { MotionConfig, motion } from 'motion/react';
 
 import { fetchConversaLeitura, fetchConversas } from '@grupo_borges/cockpit-core/api';
@@ -58,6 +58,35 @@ function usaAnterior(agentSlug: string, chave: string): Anterior | null {
     return () => controlador.abort();
   }, [agentSlug, chave]);
   return anterior;
+}
+
+/** Aberto, o atalho reserva o lugar dele no fim do feed (F18): sem isso ele
+ *  flutuava por cima da última mensagem e as letras se sobrepunham. Publica a
+ *  própria altura no palco (`--ck-atalho-reserva`, somada ao respiro do
+ *  composer) e, se o feed estava colado no fim, o mantém colado — a reserva
+ *  cresce o fim da rolagem sem render do feed, que não veria a mudança. */
+function usaReserva(alvo: RefObject<HTMLDivElement | null>, aberto: boolean) {
+  useEffect(() => {
+    const el = alvo.current;
+    const palco = el?.closest<HTMLElement>('.ck-palco');
+    if (!el || !palco) return;
+    const publica = (altura: number) => {
+      const rola = palco.querySelector<HTMLElement>('[data-gate-messages]');
+      const colado = rola ? rola.scrollHeight - rola.scrollTop - rola.clientHeight < 4 : false;
+      palco.style.setProperty('--ck-atalho-reserva', aberto ? `calc(${Math.ceil(altura)}px + var(--ck-space-2))` : '0px');
+      if (rola && colado) rola.scrollTop = rola.scrollHeight;
+    };
+    publica(el.getBoundingClientRect().height);
+    if (!aberto) return;
+    const observador = new ResizeObserver(([entrada]) => {
+      if (entrada) publica(entrada.borderBoxSize?.[0]?.blockSize ?? entrada.contentRect.height);
+    });
+    observador.observe(el);
+    return () => {
+      observador.disconnect();
+      palco.style.setProperty('--ck-atalho-reserva', '0px');
+    };
+  }, [alvo, aberto]);
 }
 
 const CAMADA = { position: 'absolute', inset: 0, borderRadius: 'inherit' } as const;
@@ -110,15 +139,18 @@ export function VoltarPraAnterior({
   const interrompe = trabalhando || troca.recusou;
   const falha = troca.estado.fase === 'falhou' ? troca.estado.texto : null;
   const enviando = troca.estado.fase === 'enviando';
+  const caixaRef = useRef<HTMLDivElement | null>(null);
+  usaReserva(caixaRef, aberto);
 
   return (
     <MotionConfig reducedMotion="user">
       <div
+        ref={caixaRef}
         data-aberto={String(aberto)}
         aria-hidden={!aberto}
         className="ck-surge absolute inset-x-0 flex flex-col items-center"
         style={{
-          bottom: 'calc(var(--ck-composer-altura, 88px) + var(--ck-space-2))',
+          bottom: 'calc(var(--ck-composer-caixa, 88px) + var(--ck-space-2))',
           gap: 'var(--ck-space-2)',
           padding: '0 var(--ck-space-4)',
           zIndex: 'var(--ck-z-sticky)',
@@ -131,7 +163,8 @@ export function VoltarPraAnterior({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={CALMA}
-            style={{ margin: 0, fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)', textAlign: 'center' }}
+            className="ck-sobre-material"
+            style={{ margin: 0, paddingInline: 'var(--ck-space-3)', fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)', textAlign: 'center' }}
           >
             {`${linhaDeOcupado(nome)}. Voltar interrompe.`}
           </motion.p>
@@ -169,7 +202,7 @@ export function VoltarPraAnterior({
           </motion.button>
         ) : null}
         {falha ? (
-          <p role="alert" style={{ margin: 0, fontSize: 'var(--ck-text-sm)', color: 'var(--ck-state-attention)', textAlign: 'center' }}>
+          <p role="alert" className="ck-sobre-material" style={{ margin: 0, paddingInline: 'var(--ck-space-3)', fontSize: 'var(--ck-text-sm)', color: 'var(--ck-state-attention)', textAlign: 'center' }}>
             {falha}{' '}
             <button type="button" onClick={troca.larga} className="ck-veil" style={{ minHeight: 'var(--ck-touch-min)', padding: '0 var(--ck-space-2)', borderRadius: 'var(--ck-radius-chip)', color: 'var(--ck-text-primary)' }}>
               Entendi
