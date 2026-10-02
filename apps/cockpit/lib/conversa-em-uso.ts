@@ -25,6 +25,8 @@ import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
 import { fetchConversas, postConversaTitulo, type Conversa, type ConversasResponse } from '@grupo_borges/cockpit-core/api';
 
+import { formataDataHora } from '../components/feed/data-hora.ts';
+
 import { assinaTrocaNoChat, leTrocaNoChat } from './troca-em-curso.ts';
 import { assinaTurnoVivo, leTurnoVivo } from './turno-vivo.ts';
 
@@ -34,6 +36,9 @@ export type ConversaEmUso = {
   rotulo: string;
   /** Ainda sem turno nenhum — o nome que existe é a sentinela da API. */
   nova: boolean;
+  /** Quando começou (epoch ms); `null` quando a API não sabe dizer. */
+  iniciadaEm: number | null;
+  turnos: number;
 };
 
 /** O nome que a pílula mostra. A sentinela da API é `primeira` + zero turnos: */
@@ -46,7 +51,34 @@ export function rotuloDaConversa(c: Pick<Conversa, 'titulo' | 'titulo_origem' | 
 export function leConversaEmUso(resposta: ConversasResponse | null): ConversaEmUso | null {
   const atual = resposta?.conversas.find((c) => c.atual);
   if (!atual) return null;
-  return { id: atual.id, rotulo: rotuloDaConversa(atual), nova: atual.titulo_origem === 'primeira' && atual.turnos === 0 };
+  return {
+    id: atual.id,
+    rotulo: rotuloDaConversa(atual),
+    nova: atual.titulo_origem === 'primeira' && atual.turnos === 0,
+    iniciadaEm: atual.iniciada_em ?? null,
+    turnos: atual.turnos,
+  };
+}
+
+// O dia e o dia da semana no fuso do Rica — a hora vem de `formataDataHora`,
+// a mesma régua dos carimbos do feed.
+const DIA = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+const SEMANA = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
+
+/** A linha embaixo do nome no cartão: `Aberta qui 28/09, 14:10 · 12 turnos`.
+ *  Hoje vira `Aberta hoje, 14:10`; zero turnos some; sem data, só os turnos;
+ *  sem nada, `null` (o cartão não reserva linha vazia). */
+export function linhaDaConversa(c: Pick<ConversaEmUso, 'iniciadaEm' | 'turnos'>, agora: number = Date.now()): string | null {
+  const partes: string[] = [];
+  const carimbo = c.iniciadaEm === null ? null : formataDataHora(c.iniciadaEm);
+  if (c.iniciadaEm !== null && carimbo !== null) {
+    const [diaMes, hora] = carimbo.split(' ');
+    const hoje = DIA.format(c.iniciadaEm) === DIA.format(agora);
+    const semana = SEMANA.format(c.iniciadaEm).replace('.', '');
+    partes.push(hoje ? `Aberta hoje, ${hora}` : `Aberta ${semana} ${diaMes}, ${hora}`);
+  }
+  if (c.turnos > 0) partes.push(c.turnos === 1 ? '1 turno' : `${c.turnos} turnos`);
+  return partes.length ? partes.join(' · ') : null;
 }
 
 // ── O store ────────────────────────────────────────────────────────────────
@@ -54,7 +86,11 @@ const valores = new Map<string, ConversaEmUso | null>();
 const ouvintes = new Map<string, Set<() => void>>();
 
 const igual = (a: ConversaEmUso | null, b: ConversaEmUso | null) =>
-  a?.id === b?.id && a?.rotulo === b?.rotulo && a?.nova === b?.nova;
+  a?.id === b?.id &&
+  a?.rotulo === b?.rotulo &&
+  a?.nova === b?.nova &&
+  a?.iniciadaEm === b?.iniciadaEm &&
+  a?.turnos === b?.turnos;
 
 export function leConversaEmUsoGuardada(slug: string): ConversaEmUso | null {
   return valores.get(slug) ?? null;
@@ -140,6 +176,12 @@ export function usaConversaEmUso(agentSlug: string): ConversaEmUso | null {
 export async function renomeiaConversaEmUso(agentSlug: string, id: string, titulo: string): Promise<void> {
   const resposta = await postConversaTitulo(agentSlug, id, titulo);
   const antes = leConversaEmUsoGuardada(agentSlug);
-  publicaConversaEmUso(agentSlug, { id: resposta.id, rotulo: resposta.titulo, nova: antes?.nova ?? false });
+  publicaConversaEmUso(agentSlug, {
+    id: resposta.id,
+    rotulo: resposta.titulo,
+    nova: antes?.nova ?? false,
+    iniciadaEm: antes?.iniciadaEm ?? null,
+    turnos: antes?.turnos ?? 0,
+  });
   relerConversaEmUso(agentSlug);
 }

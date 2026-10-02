@@ -8,34 +8,30 @@
  * abre a gaveta, e a pílula recebe o dedo para outra coisa — uma dentro da
  * outra, a segunda roubaria o toque da primeira.
  *
- * A RÉGUA DO NOME mora em `lib/conversa-em-uso.ts` (pura, com teste): o nome
- * dado pelo Rica, o automático da primeira fala, ou "Conversa nova" enquanto a
- * API só tem a sentinela. Aqui só se desenha — e o desenho mora no
- * `.module.css` ao lado, só com token.
+ * A RÉGUA DO NOME e a da LINHA DO CARTÃO moram em `lib/conversa-em-uso.ts`
+ * (puras, com teste). Aqui só se desenha — e o desenho mora no `.module.css`
+ * ao lado, só com token.
  *
- * MESMA FAMÍLIA DA CÁPSULA: o vidro escuro da pílula do agente, sem desfoque,
- * em escala menor. Discreta é o desenho, não o alvo: o botão tem os 44px da
- * faixa. Em tela estreita ela CEDE primeiro (base 0 + truncar); quem não pode
- * encolher é a cápsula.
+ * O TOQUE ABRE UM CARTÃO (02/10): o campo do nome em cima e, embaixo, quando a
+ * conversa começou e quantos turnos tem. O cartão é superfície flutuante (§8):
+ * o `Popover` de `components/ui/`, que já veste `.ck-menu-surface` — o escuro
+ * da cápsula, opaco — e abre por cima do feed, sem refluir a faixa. Em 375px o
+ * Radix o empurra para dentro da tela; a pílula fica onde está.
  *
- * O CAMPO ABRE POR CIMA, ancorado no vão entre a cápsula e a pílula de tokens.
- * A pílula fica no lugar, invisível, segurando a largura — renomear não reflui
- * a faixa nem empurra ninguém para fora em 375px.
+ * FOCO NO IPHONE: o campo recebe foco DENTRO do toque (`flushSync` + `focus()`),
+ * e o foco automático do Radix fica desligado — ele foca num efeito, depois do
+ * gesto, e aí o Safari do iPhone não abre o teclado.
  *
- * MOVIMENTO É O `.ck-surge` (§5): as duas peças vivem montadas e alternam
- * `data-aberto`, porque elemento removido não anima a saída. Por isso o foco do
- * campo é à mão, DENTRO do toque (`flushSync` + `focus()`): foco dado depois,
- * num efeito, o Safari do iPhone recusa abrir o teclado.
- *
- * O salvar é o MESMO da gaveta (`postConversaTitulo`, pela função do módulo);
- * não há segunda rota de escrita para o título. Vazio apaga o nome dado e a
+ * Enter salva; Esc e toque fora fecham sem salvar. O salvar é o MESMO da gaveta
+ * (`postConversaTitulo`, pela função do módulo). Vazio apaga o nome dado e a
  * conversa volta ao automático — mesma regra do rodapé da leitura.
  */
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
-import { renomeiaConversaEmUso, usaConversaEmUso } from '@/lib/conversa-em-uso';
+import { linhaDaConversa, renomeiaConversaEmUso, usaConversaEmUso } from '@/lib/conversa-em-uso';
 
+import { Popover, PopoverAnchor, PopoverContent } from '../ui/popover';
 import styles from './pilula-da-conversa.module.css';
 
 /** Quanto o aviso de falha fica na pílula antes de o nome voltar. */
@@ -43,7 +39,7 @@ const RECIBO_MS = 4_000;
 
 export function PilulaDaConversa({ agentSlug }: { agentSlug: string }) {
   const emUso = usaConversaEmUso(agentSlug);
-  const [editando, setEditando] = useState(false);
+  const [aberto, setAberto] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -59,32 +55,31 @@ export function PilulaDaConversa({ agentSlug }: { agentSlug: string }) {
   );
 
   // A pílula some quando a lista não aponta conversa nenhuma (motor que o
-  // cockpit não lê). Com ela fora, o campo aberto não teria em quê escrever:
-  // fecha. Sem isto o Enter cairia no vazio.
+  // cockpit não lê). Com ela fora, o cartão não teria em quê escrever: fecha.
   useEffect(() => {
-    if (!emUso) setEditando(false);
+    if (!emUso) setAberto(false);
   }, [emUso]);
 
   if (!emUso) return null;
+
+  const linha = linhaDaConversa(emUso);
 
   const abre = () => {
     if (recibo.current) clearTimeout(recibo.current);
     flushSync(() => {
       setAviso(null);
       setTitulo(emUso.nova ? '' : emUso.rotulo);
-      setEditando(true);
+      setAberto(true);
     });
-    campo.current?.focus();
+    campo.current?.focus({ preventScroll: true });
     campo.current?.select();
   };
 
-  /** Fecha o campo. Pelo teclado (Enter, Esc) o foco volta à pílula; pelo
+  /** Fecha o cartão. Pelo teclado (Enter, Esc) o foco volta à pílula; pelo
    *  toque fora, fica onde o dedo foi. */
   const fecha = (devolveFoco: boolean) => {
-    // A pílula só aceita foco depois de visível: o `flushSync` aplica o
-    // `data-aberto` antes do `focus()`.
     flushSync(() => {
-      setEditando(false);
+      setAberto(false);
       setTitulo('');
     });
     if (devolveFoco) botao.current?.focus({ preventScroll: true });
@@ -101,7 +96,7 @@ export function PilulaDaConversa({ agentSlug }: { agentSlug: string }) {
       .then(() => fecha(true))
       .catch(() => {
         // O nome não mudou. Dizer isso na própria pílula é mais honesto que
-        // fechar o campo em silêncio — e o nome que fica é o de antes.
+        // fechar o cartão em silêncio — e o nome que fica é o de antes.
         fecha(true);
         setAviso('Não renomeei');
         if (recibo.current) clearTimeout(recibo.current);
@@ -111,49 +106,67 @@ export function PilulaDaConversa({ agentSlug }: { agentSlug: string }) {
   };
 
   return (
-    <div className={styles.lugar}>
-      <button
-        ref={botao}
-        type="button"
-        onClick={abre}
-        aria-label={`Renomear a conversa ${emUso.rotulo}`}
-        data-aberto={String(!editando)}
-        className={`ck-surge ${styles.alvo}`}
-      >
-        <span className={styles.nome} data-falhou={aviso !== null} aria-live="polite">
-          {aviso ?? emUso.rotulo}
-        </span>
-      </button>
+    <Popover open={aberto} onOpenChange={(abrir) => (abrir ? abre() : cancela(false))}>
+      <div className={styles.lugar}>
+        <PopoverAnchor asChild>
+          <button
+            ref={botao}
+            type="button"
+            onClick={() => (aberto ? cancela(true) : abre())}
+            aria-label={`Conversa ${emUso.rotulo} — renomear`}
+            aria-haspopup="dialog"
+            aria-expanded={aberto}
+            className={styles.alvo}
+          >
+            <span className={styles.nome} data-aberto={aberto} data-falhou={aviso !== null} aria-live="polite">
+              {aviso ?? emUso.rotulo}
+            </span>
+          </button>
+        </PopoverAnchor>
+      </div>
 
-      <form
-        data-aberto={String(editando)}
-        className={`ck-surge ${styles.campo}`}
-        onSubmit={(e) => {
+      <PopoverContent
+        side="bottom"
+        align="start"
+        // A âncora é o alvo de 44px, não o desenho da pílula: a folga entre os
+        // dois já separa o cartão da pílula. Mais 8px o descolaria dela.
+        sideOffset={0}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => {
           e.preventDefault();
-          salva();
+          cancela(true);
         }}
+        // A pílula é a âncora, não o gatilho do Radix: o toque nela conta como
+        // "fora". Sem isto o cartão fecharia no `pointerdown` e reabriria no clique.
+        onInteractOutside={(e) => {
+          if (botao.current?.contains(e.target as Node)) e.preventDefault();
+        }}
+        aria-label="Conversa em uso"
+        className={`ck-menu-surge ${aberto ? 'ck-menu-aberto' : 'ck-menu-fechado'} ${styles.cartao}`}
+        style={{ transformOrigin: 'var(--radix-popover-content-transform-origin)' }}
       >
-        <input
-          ref={campo}
-          value={titulo}
-          maxLength={200}
-          tabIndex={editando ? 0 : -1}
-          readOnly={salvando}
-          aria-busy={salvando}
-          onChange={(e) => setTitulo(e.target.value)}
-          onBlur={() => cancela(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              cancela(true);
-            }
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            salva();
           }}
-          aria-label="Nome da conversa"
-          placeholder="Nome da conversa"
-          enterKeyHint="done"
-          className={`ck-campo ${styles.entrada}`}
-        />
-      </form>
-    </div>
+        >
+          <input
+            ref={campo}
+            value={titulo}
+            maxLength={200}
+            readOnly={salvando}
+            aria-busy={salvando}
+            onChange={(e) => setTitulo(e.target.value)}
+            aria-label="Nome da conversa"
+            placeholder="Nome da conversa"
+            enterKeyHint="done"
+            className={`ck-campo ${styles.entrada}`}
+          />
+        </form>
+        {linha ? <p className={`ck-tabular ${styles.linha}`}>{linha}</p> : null}
+      </PopoverContent>
+    </Popover>
   );
 }

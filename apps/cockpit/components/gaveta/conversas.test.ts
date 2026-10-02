@@ -21,6 +21,7 @@ const conversa = (campos: Partial<Conversa>): Conversa => ({
   titulo_origem: 'ai',
   nota: null,
   atualizada_em: 0,
+  iniciada_em: null,
   turnos: 10,
   bytes: 1,
   estrela: false,

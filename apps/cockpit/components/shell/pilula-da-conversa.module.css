@@ -3,10 +3,8 @@
  * tropa (§8, §9.2). Menor e mais quieta que a cápsula: sans 13px em `secondary`,
  * porque o nome do agente é quem fala alto na faixa. */
 
-/* O lugar: ocupa o vão entre a cápsula e a pílula de tokens, com o alvo de 44px.
- * É ele a âncora do campo, que abre POR CIMA — nada reflui ao renomear. */
+/* O lugar: ocupa o vão entre a cápsula e a pílula de tokens, com o alvo de 44px. */
 .lugar {
-  position: relative;
   display: flex;
   flex: 1 1 0%; /* base 0: só o que sobra da cápsula — ela nunca encolhe por nossa causa */
   align-items: center;
@@ -39,32 +37,41 @@
   text-overflow: ellipsis;
   transition: color var(--ck-dur-fast) var(--ck-ease);
 }
-.alvo:hover .nome { color: var(--ck-text-primary); }
+/* Hover e cartão aberto clareiam o texto — o foco aparece no próprio elemento,
+ * nunca por anel (§9.17). */
+.alvo:hover .nome,
+.alvo:focus-visible .nome,
+.nome[data-aberto='true'] { color: var(--ck-text-primary); }
 .nome[data-falhou='true'] { color: var(--ck-state-fail); }
 
-/* O campo cobre o vão, alinhado à esquerda da pílula; no desktop o vão é a
- * faixa toda, e um campo de tela inteira para um título seria desproporção. */
-.campo {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: min(100%, 24rem);
-  display: flex;
-  align-items: center;
+/* O cartão: superfície flutuante (`.ck-menu-surface`, do `PopoverContent`) com
+ * o campo em cima e a linha da conversa embaixo. O teto de largura no celular
+ * é o do próprio `PopoverContent`. */
+.cartao {
+  display: grid;
+  gap: var(--ck-space-1);
+  width: 20rem;
 }
+
+/* O campo é bloco dentro do menu: raio concêntrico (`--ck-radius-chip` vira
+ * 18px dentro da superfície) e o fundo `--ck-flutuante-bloco`. Focado, quem
+ * marca é o fio cinza interno que o `.ck-menu-surface` já dá ao foco. */
 .entrada {
   width: 100%;
   min-width: 0;
-  padding: var(--ck-space-1) var(--ck-space-3);
-  border: 1px solid var(--ck-edge-functional);
-  border-radius: var(--ck-radius-pill);
-  background-color: var(--ck-surface-composer);
+  padding: var(--ck-space-2) var(--ck-space-3);
+  border: 1px solid var(--ck-flutuante-fio);
+  border-radius: var(--ck-radius-chip);
+  background-color: var(--ck-flutuante-bloco);
   color: var(--ck-text-primary);
   font-size: var(--ck-text-md); /* §9.6: abaixo de 16px o Safari dá zoom ao focar */
   line-height: var(--ck-leading-hero);
 }
 .entrada[aria-busy='true'] { color: var(--ck-text-secondary); }
 
-/* O `.ck-surge` não desliga sozinho no movimento reduzido; aqui a troca é seca. */
-@media (prefers-reduced-motion: reduce) {
-  .lugar :global(.ck-surge[data-aberto]) { transition: none; transform: none; }
+.linha {
+  padding: 0 var(--ck-space-3) var(--ck-space-1);
+  color: var(--ck-text-secondary);
+  font-size: var(--ck-text-sm);
+  line-height: var(--ck-leading-hero);
 }
