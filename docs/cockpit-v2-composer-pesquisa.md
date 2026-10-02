@@ -1,5 +1,10 @@
 # Pesquisa — Composer e Feed de chat com agente de IA (melhores práticas com fonte)
 
+> ⚠️ **HISTÓRICO (15/08).** Fonte de pesquisa, não regra — o vigente é
+> `cockpit-v2-composer.md`. O "segundo provedor" daqui (Codex) saiu do cockpit em
+> 06/09 (`a60da52`): hoje todo agente é Claude Code, e o defeito de "render
+> divergente entre provedores" deixou de existir com ele.
+
 > **Escopo.** Painel web Next.js 16 + React 19 + Tailwind 4 que conversa com agentes de CLI (Claude Code e Codex). Entrada por texto, áudio e foto. Mensagens chegam por *polling* (consulta periódica) de uma API. Alvo: os 4 defeitos reclamados — render divergente entre provedores, truncamento, mensagem externa sem fila, composer travado durante o "pensando".
 >
 > **Como ler.** Cada recomendação traz **o que fazer · por quê · fonte**. Fonte = URL oficial, ou lib+versão, ou trecho de código-fonte real de implementação de referência (Vercel AI Elements, assistant-ui, LibreChat, Open WebUI). Onde não achei fonte autoritativa, está marcado.

@@ -1,6 +1,6 @@
 # Cockpit — referência de design
 
-Histórico de iteração visual + decisões de produto do cockpit. **Código vivo** está em `apps/web/`; este diretório é referência arqueológica:
+Histórico visual do cockpit **v1**. ⚠️ **Revogado em 2026-07-30** — design vivo em `docs/cockpit-v2-estetica.md`, código vivo em `apps/cockpit`; o `apps/web` está congelado e fora do ar. Este diretório é referência arqueológica:
 
 - `design-prompt/` — turnos sci-fi (5 turnos) que guiaram o Claude Designer durante o porte inicial em 2026-05-10
 - `entregas/` — snapshots HTML standalone entregues a cada turno

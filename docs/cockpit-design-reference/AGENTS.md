@@ -10,19 +10,10 @@ Você é executor sênior. Entre direto na tarefa, sem perguntar "o que fazer" q
 ## Projeto
 
 - Nome: Cockpit Grupo Borges
-- Caminho local: `/home/clawd/repos/ze_claude/daniel/fabrica-de-software/cockpit-grupo-borges`
-- Raiz git atual: `/home/clawd/repos/ze_claude`
-- Área de trabalho relacionada: `/home/clawd/repos/ze_claude/daniel`
-
-## Antes de editar
-
-1. Rodar `git pull --rebase` na raiz git ou no diretório do projeto.
-2. Se o pull bloquear por alterações locais, rodar `git status --short --branch`, identificar o que é relacionado ao Cockpit e **não sobrescrever mudanças do usuário**.
-3. Ler este `AGENTS.md`.
-4. Ler os documentos locais relevantes antes de implementar, especialmente:
-   - `DECISOES.md`
-   - arquivos em `entregas/`
-   - arquivos em `design-prompt/`
+- Caminho: `docs/cockpit-design-reference/` do `grupo_borges` (veio do `ze_claude` em 2026-05-14).
+- ⚠️ **Arquivo morto: não editar.** O visual daqui foi revogado em 2026-07-30
+  (`DECISOES.md`). Trabalho vivo é em `apps/cockpit` — ler `apps/cockpit/CLAUDE.md`;
+  design vivo em `docs/cockpit-v2-estetica.md`.
 
 ## Escopo
 
@@ -57,5 +48,4 @@ Ao encerrar uma sessão, registrar no documento apropriado:
 
 - Não usar `git reset --hard`, `git checkout --` ou comandos destrutivos sem pedido explícito.
 - Não usar `git push --force`.
-- Se houver alterações fora deste projeto na raiz `/home/clawd/repos/ze_claude`, ignorar salvo se impactarem diretamente a tarefa.
 

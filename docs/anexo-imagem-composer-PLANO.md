@@ -1,5 +1,11 @@
 # PLANO — anexo de imagem com preview no composer
 
+> ⚠️ **HISTÓRICO — executado.** Miniatura no composer, colar, HEIC convertido no
+> servidor e cartão único estão no ar. O `image/*` do `accept` **fica** (etapa 0 da
+> §5 revogou a troca); trechos anteriores que chamam o `accept` de errado ou dizem
+> que HEIC é recusado estão superados. Continua aberto: arrastar e soltar e mais de
+> uma imagem. O vigente é `cockpit-v2-composer.md` §6.
+
 > Documento de trabalho **autocontido**. Quem executa não precisa da sessão de
 > ninguém: tudo que decide está aqui. `tropa_task` **5c9cca2c**.
 > Escrito em 05/08/2026 pelo Pavan, com a doc citada em cada decisão.

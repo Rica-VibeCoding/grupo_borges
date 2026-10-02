@@ -1,5 +1,11 @@
 # MATRIZ RENDERERS — payload do Claude Code → componente, Cockpit v2
 
+> ⚠️ **HISTÓRICO (30/07).** Proposta não adotada: `tool-chip`, `diff-patch`,
+> `thinking-block`, `user-bubble`, `sidechain-*`, `skill-chip`, `attachment-chip` e
+> `components/render/` não existem; o rico já chega ao feed. Vigente:
+> `cockpit-v2-data-contract.md` e `components/feed/execucao-do-item.ts` (corpos em
+> `components/renderers/`). As contagens de família continuam valendo.
+
 > Levantamento do que o classificador atual **já faz**, família por família, com
 > proposta de componente destino em `apps/cockpit/components/render/**`.
 > Fontes: `fixtures/cockpit-v2/familias/*.json` (52 famílias, contagens em

@@ -3,8 +3,10 @@
 > Passo 2 da ordem em `cockpit-v2-fusao.md`. Contrato de **dados**, não de estilo
 > (estilo em `cockpit-v2-estetica.md`). Quem escreve renderer lê isto primeiro.
 >
-> Tudo aqui foi lido do código que está no ar em 2026-07-30, não da memória.
-> `apps/web/lib/render-items.ts` é a fonte; as fixtures em
+> Tudo aqui foi lido do código, não da memória — escrito em 2026-07-30 contra o
+> v1, conferido contra o v2 em 2026-10-02. Fonte: `packages/cockpit-core/src/render-items.ts`;
+> o que só o feed v2 faz está em `apps/cockpit/lib/spike/render-items-incremental.ts`
+> e `apps/cockpit/app/agente/[slug]/feed-da-conversa.tsx`. As fixtures em
 > `fixtures/cockpit-v2/familias/` são a prova.
 
 ---
@@ -13,13 +15,13 @@
 
 A fusão fala em documentar "a assinatura do `convertMessage`". **Essa função não
 existe no nosso código** — é nome de slot do `assistant-ui`, e só passará a existir
-se o spike do passo 5 aprovar a biblioteca. O que existe hoje, e sobrevive nos dois
-caminhos possíveis, é um pipeline de **funções puras sem React** em
-`lib/render-items.ts` (19 KB, coberto por `tests/render-items.test.ts`):
+se o spike do passo 5 aprovar a biblioteca — e o spike reprovou (§5.1). O que existe,
+e é o que o v2 usa, é um pipeline de **funções puras sem React** em
+`packages/cockpit-core/src/render-items.ts`:
 
 ```ts
 buildRenderItems(messages: MessagePayload[]): RenderItem[]
-buildToolResultLookup(messages: MessagePayload[]): ToolResultLookup   // Map<tool_use_id, {content, isError}>
+buildToolResultLookup(messages: MessagePayload[]): ToolResultLookup   // Map<tool_use_id, {content, isError, rich?}>
 buildSidechainRoots(messages: MessagePayload[]): Map<string, string>
 coalesceSidechainGroups(items: RenderItem[]): RenderItem[]
 mergeAskUserItems(items: RenderItem[], askUserByRequestId: Map<string, AskUserEntry> | undefined): RenderItem[]
@@ -28,23 +30,31 @@ deriveSubagentStatusesFromMessages(messages: MessagePayload[]): Map<string, Suba
 
 ### A ordem de composição é parte do contrato
 
-Copiada do consumidor real (`components/chat-messages.tsx:792-816`). Trocar a
-ordem muda o resultado e **quebra a paridade sem dar erro**:
+Copiada do consumidor real do v2 (`render-items-incremental.ts` e o `useMemo` de
+`itens` em `feed-da-conversa.tsx`). Trocar a ordem muda o resultado e **quebra o
+feed sem dar erro**:
 
 ```ts
-const toolResults = buildToolResultLookup(messages);           // lookup, passado aos renderers
+const lookup = buildToolResultLookup(messages);   // Map<tool_use_id, {content, isError, rich?}>, passado aos renderers
 
-const items = mergeAskUserItems(
-  coalesceSidechainGroups(buildRenderItems(messages)),         // ← coalesce ANTES do merge
-  askUserByRequestId,
-);
+// 1. classifica a cauda e FILTRA antes de agrupar — item sem conteúdo não desenha nada
+const crus = buildRenderItems(cauda).filter(temConteudoVisivel);
 
-const subagentStatuses = deriveSubagentStatusesFromMessages(messages);   // trilha separada
+// 2. uma passada: run de `sidechain-group` → coalesceSidechainGroups;
+//    run de linha de trabalho → agrupaFerramentas (vira `grupo-ferramentas`)
+
+// 3. o que só o app sabe, nesta ordem
+dobraPedidosDoCockpit → poeMarco → + linha-viva → + delegacao → poeTrocaEmAndamento
 ```
 
-`coalesceSidechainGroups` colapsa **runs consecutivos**: um grupo isolado fica como
-está, dois ou mais viram um `sidechain-cluster` com contagem agregada. Rodar o
-merge antes do coalesce insere itens no meio da corrida e impede o colapso.
+Filtrar antes de agrupar é obrigatório: um item vazio no meio de uma corrida a
+quebra em duas. `coalesceSidechainGroups` colapsa **runs consecutivos**: um grupo
+isolado fica como está, dois ou mais viram um `sidechain-cluster` com contagem
+agregada.
+
+`mergeAskUserItems` e `deriveSubagentStatusesFromMessages` existem no core, mas
+o v2 **não os chama**: `ask-user` não chega ao feed v2, e o `case 'ask-user'` de
+`corpo-do-item.tsx` está morto. A seção abaixo vale para quem religar.
 
 ### ⚠️ Discrepância entre comentário e código, já verificada
 
@@ -59,10 +69,10 @@ checklist está errado. **O código vale, o comentário não.**
 
 ---
 
-## 2. `RenderItem` — os dez tipos, e não há décimo primeiro
+## 2. `RenderItem` — os onze tipos do core
 
 União fechada. Renderer novo entra como caso de um destes, nunca como tipo novo
-sem passar pelo contrato:
+sem passar pelo contrato (o que nasce no app vai na §2.1):
 
 | kind | o que é | campos que o renderer usa |
 |---|---|---|
@@ -75,7 +85,18 @@ sem passar pelo contrato:
 | `chip` | **linha única colapsada** — o cavalo de batalha | `chip{icon,label,summary,accent}`, `expandBody`, `classifierKind`, `tone` |
 | `sidechain-group` | um subagente | `rootUuid`, `count`, `durMs`, `parentUuids` |
 | `sidechain-cluster` | 2+ subagentes consecutivos | `groups[]`, `subagentCount`, `totalDurMs` |
-| `ask-user` | pergunta do MCP `ask-user` | `entry` — **não vem do JSONL**, vem do evento SSE `ask_user` |
+| `compact-summary` | resumo do `/compact`, cartão fechado | `text`, `compactMeta?` |
+| `ask-user` | pergunta do MCP `ask-user` | `entry` — **não vem do JSONL**, vem do evento SSE `ask_user` (o v2 não o escuta, §1) |
+
+### 2.1 `ItemDoFeed` — o que nasce no app
+
+`ItemDoFeed` (`components/feed/grupo-ferramentas.ts`) é `RenderItem` mais seis
+kinds que nascem no app, **nunca** no classificador: `grupo-ferramentas`,
+`linha-viva`, `delegacao`, `pedido-do-cockpit`, `marco-da-troca`,
+`troca-em-andamento`. O `grupo-ferramentas` junta a run de 2+ linhas de trabalho
+(`chip` de tool ∪ `assistant` só de `tool_use` — régua em `ehLinhaDeTrabalho`);
+uma linha isolada fica como está. Kind novo entra aqui ou no core, não solto num
+componente.
 
 ### O `kind: 'queued'` do stream não ganha item próprio (tropa_task e615c350)
 
@@ -83,7 +104,7 @@ sem passar pelo contrato:
 `queue-operation`/`enqueue` que o CLI grava quando a mensagem chega com o turno
 rodando. Vem com `message: null` e o texto solto em `content`.
 
-Ele **não** vira um décimo primeiro `RenderItem`. `buildRenderItems` o normaliza
+Ele **não** ganha `RenderItem` próprio. `buildRenderItems` o normaliza
 para uma entrada de usuário e deixa o pipeline de sempre classificar — envelope
 de canal, task-notification e chip de skill têm de casar igual nas duas
 passagens, senão a frase muda de forma quando a fila drena. A bolha nasce na
@@ -102,18 +123,27 @@ Sair da fila tem **dois** caminhos, e os dois estão cobertos em
 O `end_turn` tira a marca mas **não** fecha a janela do eco: na drenagem em turno
 novo o eco chega depois dele.
 
-O `chip` é onde mora a maior parte da tela: ele carrega o resultado de
-`chat-payload-classifier.ts` (13 KB) e é o item que o `tool_use`/`tool_result`
-vira. **É nele que o "amei" do Rica se decide** — 82% dos blocos gravados são
-`tool_use`/`tool_result`, contra 18% de prosa.
+O `chip` **não** é o item que toda execução vira: ele só nasce quando o
+`tool_result` casado passa de 300 caracteres (`chat-payload-classifier.ts`) — 18 de
+148 execuções na conversa medida em 02/08. O resto fica `assistant` com parts
+`tool_use`. Os dois caminhos desenham a mesma `LinhaExecucao`, via `Execucao`
+(`components/feed/execucao.tsx`). **É nessa linha que o "amei" do Rica se
+decide** — 82% dos blocos gravados são `tool_use`/`tool_result`, contra 18% de
+prosa.
 
 ---
 
-## 3. Envio: a função única já existe, e o nome dela é `useAgentSend`
+## 3. Envio: a função única
+
+> **No v2 (02/10):** o envio mora em `apps/cockpit/lib/usa-envio.ts`
+> (`usaEnvio(agentSlug)`), com as fases em `lib/envio.ts`; o `useAgentSend` do v1
+> não foi portado. Texto, voz e imagem batem em `/input`, `/voice` e `/image`,
+> todos existentes no back. O texto abaixo é o ponto de partida de 30/07, lido no
+> v1 — vale pelo raciocínio, não pelos nomes.
 
 A fusão pede "a função única `sendText(slug, texto)` que composer e voz
-compartilham". **Ela já está escrita** em `lib/use-agent-send.ts` (120 linhas) — não
-é para inventar, é para portar:
+compartilham". No v1 ela estava escrita em `apps/web/lib/use-agent-send.ts`
+(120 linhas):
 
 ```ts
 useAgentSend(slug: string, agentName: string): {
@@ -136,17 +166,17 @@ Os três caminhos já convergem: cada um bate no seu endpoint, todos checam
 - `sendText` **repropaga** a exceção depois de mostrar o toast, de propósito: quem
   chama precisa marcar a mensagem otimista como `error`.
 
-⚠️ **`postAgentImage` é stub e lança `NotImplementedError`** — o endpoint
-`POST /api/agents/{slug}/image` não existe no back. O botão de imagem no v2 nasce
-desligado, ou nasce junto com o endpoint. Não é bug do front.
-
 ---
 
 ## 3.1 ⚠️ Correção da §3 — portar `useAgentSend` como está carrega um defeito (Pavan, 30/07)
 
-A §3 acima manda portar. **Porte a estrutura, não o comportamento de confirmação** — ele é a
-causa provável do defeito registrado na §4.2 do `cockpit-v2-ESTADO.md` (texto que fica
-pendurado no input de um agente sem ter sido submetido).
+A §3 acima manda portar. **Porte a estrutura, não o comportamento de confirmação** — ele era a
+causa provável do texto que ficava pendurado no input de um agente sem ter sido submetido.
+
+> **Hoje (02/10):** o driver já prova a submissão — `send_message` em
+> `apps/api/services/tmux_driver.py` tenta o Enter até 3 vezes e só dá `delivered`
+> com prova no pane; o `/input` está em `@router.post("/{slug}/input")` de
+> `routers/agents.py`. Os números de linha abaixo são de 30/07.
 
 **O que o código prova, nos dois lados:**
 
@@ -170,8 +200,11 @@ que sim.**
 
 ### Contrato do envio no v2 — confirmação é por OBSERVAÇÃO, não por promessa
 
-A prova de que a mensagem entrou é ela **voltar no stream** como item do usuário. Nada mais
-serve: o 200 prova colagem, o eco prova submissão.
+A prova de que a mensagem entrou é **observação no stream**: o eco `user` **ou** o item
+`queued` (o recibo de que entrou na fila do agente ocupado — `lib/envio.ts`). O 200 prova
+colagem, o eco prova submissão. O recibo da fila do servidor (`enfileirada: true` na
+resposta do `/input`) também confirma, direto, sem passar por `aceito` — o back ainda não
+o emite (`cockpit-v2-composer.md` §10).
 
 ```ts
 type FaseEnvio =
@@ -217,9 +250,11 @@ mesmos campos em `canal_entrega`; a tela só pode afirmar “não entrou” quan
 depende de registro persistente e regra de concorrência e não deve ser inferida
 do campo presente na requisição.
 
-O prazo entre `aceito` e `nao-confirmado` é **12 s**. A amostra local de 30/07 teve pior
-caso de 1,434 s após o `200`, mas o incidente real de 02/08 mostrou que 3 s não cobre agente
-ocupado com saída rolando no pane; 12 s preserva margem operacional sem afirmar entrega.
+O prazo entre `aceito` e `nao-confirmado` **não é mais 12 s**. Os 12 s (`PRAZO_ECO_MS`,
+`lib/envio.ts`) saíram de uma amostra local de 30/07 com pior caso de 1,434 s; o eco real,
+medido em 15/08, leva **18,9 s**. Hoje os 12 s são só a cadência do reexame, e quem decide o
+alarme é o teto da pendência otimista — **45 s** (`PRAZO_CC_MS`, `lib/eco-pendente.ts`). A
+conta está em `armarPrazo`, em `lib/usa-envio.ts`.
 
 Vale para os três caminhos — texto, imagem e voz —, porque os três compartilham a mesma
 promessa falsa hoje.
@@ -228,17 +263,19 @@ promessa falsa hoje.
 
 ## 4. Protocolo SSE — o que o front recebe
 
-Eventos nomeados em `lib/use-messages-stream.ts`:
+Eventos que o v2 escuta, em `lib/spike/canario-stream-controller.ts`:
 
 ```
-replay-start  →  N × message  →  replay-end  →  live: message | heartbeat | ask_user | error
+replay-start  →  N × message  →  replay-end  →  live: message | heartbeat | session-reset | conversa-trocada
 ```
 
-- Cursor de reconexão é o `id` do evento (`task_events.id`); o servidor honra
-  `Last-Event-ID`.
-- Estados do hook: `idle | connecting | replaying | live | error | closed`.
-- **`heartbeat` é sinal de vida, não dado.** Sumiço de heartbeat é o gatilho de
-  "reconectando", que o gate exige aparecer em poucos segundos.
+- O back também emite `ask_user`, `subagent_status` e `error`. O v2 **não escuta**
+  os dois primeiros; `error` cai no `onerror`, que reconecta.
+- Cursor de reconexão é o `id` do payload: reabre com `since_id=<último id>`. As
+  mensagens não levam `id:` de SSE — `Last-Event-ID` só vale em `/api/stream`.
+- Estados: `connecting | replaying | live | reconnecting`.
+- **`heartbeat` é sinal de vida, não dado.** 35 s sem evento nenhum →
+  `reconnecting`.
 
 ### Parâmetros de corte — opt-in, o v1 não passa nenhum
 
@@ -275,7 +312,8 @@ versionadas. Nomes são o contrato:
 **As duas bordas são obrigatórias em qualquer renderer novo**, e apareceram sem
 ninguém procurar:
 
-- `borda__content_none` — **199 mensagens com `content: null`**
+- `borda__content_none` — **199 eventos com `message: null`** (e `tool_use_result:
+  null`). O classificador suprime: não vira item.
 - `borda__content_string` — **87 com `content` como string** em vez de array
 
 Ler `familias/_indice.json` para a contagem de ocorrências de cada família: ela diz
@@ -288,6 +326,11 @@ renderer contra payload imaginado. Fluxo na skill `novo-renderer`.
 ---
 
 ## 5.1 A conversão para o `assistant-ui` — contrato do spike
+
+> ⚠️ **HISTÓRICO — o spike reprovou** (G1: 33,4 ms sem a lib contra 400–724,9 com
+> ela; ver o cabeçalho de `components/feed/feed.tsx`). Esta seção não vale. O rico
+> chega ao feed por `ToolResultLookup.rich`; o corte de 300 está em
+> `chat-payload-classifier.ts`.
 
 Só vale se o spike do passo 5 passar. Se cair para shadcn-only, esta seção morre
 inteira e nada mais do contrato se mexe — que é o ponto de ela estar isolada aqui.

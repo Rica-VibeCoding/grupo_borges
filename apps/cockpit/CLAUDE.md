@@ -1,18 +1,22 @@
 # apps/cockpit — Cockpit v2
 
 Camada de apresentação nova, contra o mesmo back FastAPI. Dev na **3009**,
-produção deste app na **3008** (`cockpit-v2.service`). O cockpit **atual** é
-`apps/web` na 3007 e está **congelado** — não recebe commit.
+produção deste app na **3008** (`cockpit-v2.service`, na `borges` — a VPS
+Oracle). O cockpit **v1** é `apps/web`: **congelado** e fora do ar desde a mudança
+pra `borges` — não recebe commit.
 
-O Rica não alcança nenhuma dessas portas direto: elas escutam em `127.0.0.1` e
+O Rica não alcança as portas da `borges` direto: elas escutam em `127.0.0.1` e
 quem publica é o `tailscale serve`, com TLS no nome do node. **Passar o IP da
 Tailscale quebra** — a URL é sempre `https://borges.tailfe77db.ts.net:<porta>`,
-`:3443`→3007 v1, `:3445`→API 8000, **`:3446`→3008, a única do Rica**.
+`:3445`→API 8002, **`:3446`→3008, a única do Rica**, `:3447`→3011 (preview de
+branch `ideia/*`, só quando há uma em teste).
 
 ⚠️ **A `:3444` (dev) foi retirada da tailnet em 08/08, a pedido dele.** Ele não
 olha mais trabalho em andamento: só vê o que está publicado na `:3446`. O dev
 continua na 3009, agora só em `127.0.0.1` — quem valida é você, por
-curl. Mandar `:3444` pra ele é mandar URL morta.
+curl. Mandar `:3444` pra ele é mandar URL morta. Exceção: no notebook dele
+(Omarchy) o dev roda na máquina que ele usa, e aí `localhost:3009` abre direto,
+com a API vindo da `:3445` (`docs/cockpit-v2-stack.md` §10).
 
 ⚠️ Dev e produção **não podem dividir o `.next`** — dois processos escrevendo no
 mesmo diretório é o que fazia o Turbopack servir CSS velho, e um `rm -rf .next`
@@ -35,24 +39,29 @@ peça central está polindo 18% da tela.
 | tocar no composer, em altura, respiro ou teclado | `../../docs/cockpit-v2-composer.md` |
 | criar arquivo, ou não sabe se o arquivo é seu | `../../docs/cockpit-v2-ownership.md` |
 | mexer em `packages/cockpit-core` | `../../packages/cockpit-core/CIRURGIAS.md` |
-| entender por que o plano é este | `../../docs/cockpit-v2-playbook.md` |
+| retomar depois de `/clear`, saber o que está no ar | `../../docs/cockpit-v2-ESTADO.md` |
+| entender por que o plano é este (histórico) | `../../docs/cockpit-v2-playbook.md` |
 
 ## Seis regras que não se negociam
 
-1. **Cor só em `app/globals.css`.** Nenhum hex, `rgb()`, `oklch()`, `bg-[#...]`
-   ou cor inline em componente. É o que permite "põe no verde" mudar um lugar.
+1. **Cor só em `app/globals.css`.** Nenhum hex, `rgb()`, `oklch()`, nome de cor
+   ou `bg-[#...]` em componente — componente pinta só com `var(--ck-*)`, inline
+   ou em classe. É o que permite "põe no verde" mudar um lugar.
 2. **`compress: false` no `next.config.ts` fica.** Sem ela o SSE morre em
    silêncio: replay em rajada e nenhum heartbeat. Parece bug de protocolo, é gzip.
 3. **Campo de entrada nunca abaixo de 16px** (`--ck-text-md`). Abaixo disso o
    Safari dá zoom ao focar e o layout salta.
 4. **Teto de 300 linhas por arquivo.** Passou, está fazendo duas coisas.
-5. **Nunca `next dev` genérico nem `pkill next`** — derruba o cockpit do Rica na
-   3007. Use a skill `subir-cockpit`.
+5. **Nunca `next dev` genérico nem `pkill next`** — na `borges`, derruba a
+   produção na 3008, que é o mesmo `next-server`. Use a skill `subir-cockpit`.
 6. **Terminou, publica — sem perguntar.** Ordem do Rica em 08/08: commit não é
    entrega, ele só vê o que está na 3008. Build e republicação fazem parte da
-   tarefa, não são um segundo pedido. A ordem da unit é `stop` → `reset-failed`
-   → `systemd-run`; invertida, a transiente continua carregada e o `systemd-run`
-   morre com *"already loaded or has a fragment file"* deixando a 3008 fora.
+   tarefa, não são um segundo pedido. Publicar é **na `borges`**, pelo roteiro do
+   `docs/cockpit-v2-stack.md` §2: build em estágio a partir do `origin/main`
+   recém-buscado → `mv` → `systemctl --user restart cockpit-v2`. A unit é
+   persistente desde 08/08; o `stop` → `reset-failed` → `systemd-run` era da
+   transiente e não vale mais. **No notebook** não existe 3008: lá a tarefa
+   fecha com `git pull --rebase` + `git push`, e quem publica é a `borges`.
    Com a `:3444` fora do ar, **publicar é o único jeito de ele ver** — não existe
    mais "ele acompanha pelo dev".
 
@@ -62,10 +71,15 @@ peça central está polindo 18% da tela.
 
 ## Onde as coisas estão
 
-- `app/globals.css` — tokens. §A pele (Daniel), §B esqueleto (Pavan)
-- `components/shell/` — AppShell, três colunas, gaveta
-- `components/chat/` — composer, lista, bolha
-- `components/render/` — um arquivo por família de payload
+- `app/globals.css` — tokens. §A pele (Daniel), §B esqueleto (Pavan); mapa das
+  seções com cor na §2 da estética
+- `components/shell/` — AppShell, tropa (sidebar), composer, seletores de motor e conta
+- `components/feed/` — o feed: lista, bolhas, grupo de passos, linha viva, marcos
+- `components/renderers/` — o corpo de cada execução aberta (shell, diff, fetch…);
+  várias famílias caem no mesmo corpo
+- `components/gaveta/` — gaveta do agente e painel de Conversas
+- `components/conversa/` — modo conversa (voz em tempo real)
+- `components/ui/` — primitivas do shadcn
 - `@grupo_borges/cockpit-core` — lógica pura, sem React. Consumido como source
 - `../../fixtures/cockpit-v2/familias/` — 52 famílias reais. Renderer se escreve
   contra elas, nunca contra payload imaginado

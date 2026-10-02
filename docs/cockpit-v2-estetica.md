@@ -9,13 +9,15 @@ Medida (espaço, largura, toque, raio, ritmo) é da §B do `globals.css`; aqui s
    esforço vai em como a execução aparece, não na bolha.
 2. **Espaço na tela é caro; enfeite precisa se pagar.** Herói grande, halo, ilustração,
    cabeçalho que repete o que a tela já mostra: fora. A identidade do agente já está na
-   tropa, então o chat não tem cabeçalho de identidade.
+   tropa, então o chat não tem faixa de identidade: no topo fica só a pílula do agente, que
+   também abre a gaveta (§8).
 3. **Luz em vez de sombra.** Profundidade é luminância (mais claro = mais perto) mais um fio
    de luz de 1px no topo da superfície elevada. Fundo escuro não tem sombra.
 4. **Acromático onde não há significado.** Superfície, texto e borda têm croma zero. Matiz é
-   reservado a estado, diff, foco, link e aos três acentos da gaveta (§8).
-5. **A temperatura sobe quando a máquina precisa de você:** violeta (pensando) → ciano
-   (executando) → **âmbar (espera humano)** → verde (feito) / coral (falhou). Âmbar é o único
+   reservado a estado e tons de estado (§2), diff, link, seleção, ouro do pulso, verde dos atalhos
+   de tela e acentos da gaveta (§8). Foco não tem cor (§9.17).
+5. **A temperatura sobe quando a máquina precisa de você:** ciano (pensando, executando) →
+   **âmbar (espera humano)** → verde (feito) / coral (falhou). Âmbar é o único
    estado quente e o único que chama o Rica.
 6. **Discreto.** A direção é a da ACI Biller dark (§11), sem o herói chamativo.
 7. **Juiz único é o Rica, veredito binário.** A régua é "isto vale substituir o que existe?".
@@ -23,43 +25,55 @@ Medida (espaço, largura, toque, raio, ritmo) é da §B do `globals.css`; aqui s
 
 ## 2. Cor
 
-Toda cor mora em `app/globals.css`: §A (global) e §G (gaveta, escopada em `.ck-gv`).
-Componente só consome `var(--ck-*)`. Token que falta se pede ao dono da §A, não se inventa.
+Toda cor mora em `app/globals.css`: §A (pele) e §G (gaveta, escopada em `.ck-gv`) e, por ofício,
+§B (véu das gavetas, ouro do pulso), §F (flutuante), §T (tropa), os tons `--ck-tom-*`/`--ck-conversa-*`
+e a `.ck-bolinha`. Componente só consome `var(--ck-*)` — inline ou em classe, nunca cor literal.
+Token que falta se pede ao dono da §A, não se inventa.
 
 **Superfícies — a escada de luz** (croma 0; o `L` carrega a hierarquia):
 - `--ck-surface-canvas` `#191919` — palco do chat e todo chrome que mora dentro da folha
 - `--ck-surface-nav` `#222222` — a mesa: tropa, faixa lateral
-- `--ck-surface-composer` `#2a2a2a` — campo, popover
-- `--ck-surface-raised` `#313131` — bloco expandido, overlay
+- `--ck-surface-composer` `#2a2a2a` — campo, bloco expandido da execução, cartão da VPS
+- `--ck-surface-raised` `#313131` — bolha do Rica, bloco de código, cartões de resultado
+
+Menu e popover não são da escada: vestem o flutuante (§8).
 
 Não é preto puro no palco: `#000` em OLED arrasta na rolagem e endurece texto longo.
 **Texto:** `primary` (corpo, título) · `secondary` (metadado, label, número de linha) ·
-`tertiary` **nunca em corpo** — só ícone, separador ou texto ≥ 20px.
+`tertiary` **nunca em corpo**. Em texto, só metadado miúdo (hora, contagem, detalhe técnico) sobre
+superfície onde passa 4.5:1 — `canvas`, gaveta (`gv-camada`, `gv-bloco`) e flutuante. Sobre `nav`,
+`composer` e `raised` (4.39, 3.94 e 3.55:1), só ícone, separador ou texto ≥ 20px.
 
 **Estado:** `--ck-state-thinking`, `-running`, `-attention`, `-ok`, `-fail`.
 **Tom de estado** (`--ck-tom-voce/ze/pensa/prepara/erro/ocupado/desligado`): a cor de quem está com a
 vez, consumida pela pílula do agente e pela tela de voz; aponta para os estados. `--ck-conversa-*` é apelido.
 `--ck-alert-*` (`> [!NOTE]` do markdown) **copia** os valores de estado, sem `var()`: são independentes.
 
-**Diff:** `--ck-diff-add`, `--ck-diff-del` (= `state-fail`), fundos `-bg` a 12%, nunca cor cheia. Menos é U+2212 (`−`).
+**Diff:** `--ck-diff-add`, `--ck-diff-del` (= `state-fail`), fundos `-bg` a 12%, nunca cor cheia. Menos do saldo é U+2212 (`−`); o marcador de linha do diff é `-`.
 
 **Bordas:**
 - `--ck-edge-functional` — input, botão, controle. Piso 3:1; `L=0.60` é o mínimo com folga, não baixar.
 - `--ck-edge-hairline` — separador decorativo no plano, sem piso.
-- `--ck-edge-light` — fio de luz no topo do elevado (`inset 0 1px 0 0`) e separador em superfície flutuante.
+- `--ck-edge-light` — fio de luz no topo do elevado (`inset 0 1px 0 0`). Separador dentro do flutuante é `--ck-flutuante-fio`.
 - `--ck-edge-composer` / `-foco` — só a caixa do composer, que já se distingue pelo material.
 
 **Interação — um véu de luz que compõe sobre qualquer superfície:** `--ck-overlay-hover` (0.03),
-`-selected` (0.04), `-pressed` (0.05). Teto 0.05: acima disso a borda funcional cai abaixo de 3:1.
-**Proibido sobre `raised`.** Item selecionado leva, além do véu, uma barra de 2px em `text-primary`.
+`-selected` (0.04), `-pressed` (0.05). Teto 0.05 sobre a escada de superfícies: acima disso a borda
+funcional cai abaixo de 3:1. Exceções do CSS: dentro de `.ck-menu-surface` o véu sobe a 0.06/0.09/0.11
+(fundo quase preto); na tropa o hover é meia pílula (`--ck-tl-hover`). **Proibido sobre `raised`.**
+Selecionado é o véu `-selected` (`.ck-veil[data-selecionado]`); na tropa vira pílula e no menu véu mais
+forte com ✓ (§8). Não há barra lateral. Botão com véu dentro de superfície arredondada: a superfície
+recorta (`overflow: clip`), senão o véu sai de canto vivo por cima do raio.
 
 **Link e seleção:** `--ck-link` (croma menor que qualquer estado: URL não grita mais que falha),
 sempre sublinhado via `.ck-link`. `::selection` força fundo **e** cor (`--ck-selection-*`).
 
 **Materiais (vidro):** cada um é token próprio, não se reaproveita entre eles.
 - Caixa do composer: `--ck-surface-composer-material` (raised 60%) + `--ck-veu-desfoque` 36px.
-- Rodapé e borda progressiva: `--ck-rodape-material` (canvas 70%) — tint na cor da superfície
-  coberta, então some sozinho quando não há nada atrás.
+- Borda progressiva (`.ck-borda-progressiva`, acima do composer): `--ck-rodape-material` (canvas 70%)
+  — tint na cor da superfície coberta, então some sozinho quando não há nada atrás.
+- Pílula do agente: `--ck-conversa-pilula` + fio `--ck-conversa-pilula-fio` + desfoque 20px; na tropa, sem desfoque.
+- Véu de operação: `--ck-scrim` + `--ck-veu-desfoque`.
 - Véu das gavetas: `--ck-veu-gaveta` (preto 38%) + `--ck-veu-gaveta-desfoque` 6px; tocar fecha.
 - Superfície flutuante: `--ck-flutuante-*` (§8, Superfícies flutuantes).
 
@@ -68,8 +82,11 @@ sempre sublinhado via `.ck-link`. `::selection` força fundo **e** cor (`--ck-se
 - corpo e título: **7:1** (AAA)
 - metadado, label, texto de estado, pílula: **4.5:1**
 - borda funcional, indicador de estado, ícone que carrega significado: **3:1**
-- alvo de toque: **44 × 44 px** (`--ck-touch-min`); o desenho pode ser menor, o alvo não
-- foco de teclado: outline 2px + offset 2px, nunca só cor
+- alvo de toque: **44 × 44 px** (`--ck-touch-min`); o desenho pode ser menor, o alvo não. **Exceção
+  única:** linhas contíguas do feed (execução, grupo de passos, cartão do `/compact`) têm alvo de 32px —
+  errar abre a vizinha, reversível. Botão isolado dentro delas volta aos 44px
+- foco de teclado: sem anel nem outline (§9.17); aparece por véu ou pela borda do próprio elemento — no
+  composer a borda da caixa clareia, no menu um fio interno cinza de 1px
 - **cor nunca é a única portadora de significado** — todo estado leva ícone ou palavra junto
 
 **Onde medir.** Superfície sólida: contra `raised` puro **e** contra `composer` + `pressed`
@@ -107,22 +124,26 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 
 - **Geist Sans + Geist Mono**, self-host por `next/font/local` (`app/fonts.ts`), `display: 'fallback'`.
   `optional` sorteia a fonte por carga; `swap` reflui a página depois de qualquer tempo.
-- **Mono é a voz da máquina** (comando, saída, caminho, diff, nome de ferramenta, identificador).
+- **Mono é a voz da máquina** (comando, saída, caminho, diff, identificador). O nome da ferramenta,
+  na expansão, é overline em sans.
   **Sans é a voz do produto** (navegação, label, título, botão, texto do Rica).
 - **Escala:** `--ck-text-xs` 12 · `-sm` 13 (mono de conteúdo, metadado) · `-base` 15 (corpo) ·
   `-md` 16 · `-lg` 20 · `-hero` 28. O `text-sm` do Tailwind está mapeado para 13px.
 - **Campo de entrada ≥ 16px** (`--ck-text-md`): abaixo disso o Safari dá zoom ao focar.
 - **Entrelinha e tracking são token**, consumidos pelas utilitárias `leading-body` (1.55),
   `leading-hero` (1.2), `tracking-hero`, `tracking-title`, `tracking-overline`. Corpo: tracking zero.
-  Só duas entrelinhas existem.
+  Corpo e UI têm só essas duas entrelinhas; a legenda da voz tem token próprio
+  (`--ck-conversa-legenda` / `-leading`).
 - **`tabular-nums` (`.ck-tabular`)** em contador de token, tempo, estatística de diff, cota e `%`.
 
 ## 5. Movimento
 
 - **Tokens:** `--ck-dur-fast` 120ms (toque) · `--ck-dur-enter` 200ms (entrada) · `--ck-dur-calm` 320ms
   (troca de superfície) · `--ck-ease` (entrada) · `--ck-ease-exit` (saída) · `--ck-mola` (entrada com peso).
-  Sem bounce fora da `--ck-mola`.
-- **Só `transform` e `opacity` animam.** Nada animado pode refluir o feed durante o stream.
+  Bounce só em mola: `--ck-mola` no CSS; na Motion, `spring` com `bounce` ≤ 0.22 (pílula, palavra que
+  gira, fala da voz). A bolinha do composer tem curvas próprias (`.ck-bolinha-*`).
+- **Deslocar, escalar e aparecer é só `transform` e `opacity`**; cor, fundo e borda podem transicionar
+  no ritmo dos tokens. O que reflui layout nunca anima (§9.4): nada animado pode refluir o feed durante o stream.
 - **`prefers-reduced-motion: reduce` desliga tudo**, trocando por mudança instantânea.
 - **Biblioteca: Motion (`motion/react`)**, com `layoutDependency` em todo `layout` e `MotionConfig reducedMotion="user"`.
   O `reducedMotion="user"` só para transform e layout: **opacity em laço segue rodando**, então
@@ -132,7 +153,9 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 - **Entrada e saída de superfície é `.ck-surge`**, o movimento do app inteiro: quem anima superfície
   nova usa ele, não keyframe próprio. Elemento removido do DOM não anima a saída, então a superfície
   fica **sempre montada** e alterna `data-aberto`; escondida por `visibility`. O gesto é
-  `translateY(6px) + scale(0.98)` — afunda e se afasta, não desliza da borda.
+  `translateY(6px) + scale(0.98)` — afunda e se afasta, não desliza da borda. Variantes declaradas no
+  CSS: no celular a gaveta (≤ 640px) sobe 24px e a tropa entra 8px pela esquerda (`.ck-surge-lado`);
+  menus e barras de cima da caixa usam `ck-menu-entra` (4px, 0.99).
 - **Abertura otimista:** o toque muda o estado no mesmo frame (`useOptimistic` + `router.push`, em
   `superficie-otimista.tsx`); a URL segue fonte da verdade (deep-link, voltar, refresh).
 - **Painel com altura do conteúdo:** filhos `flex-auto`, nunca `flex-1` (no WebKit a base 0 dá altura 0),
@@ -140,31 +163,47 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 
 ## 6. Micro-momentos
 
-1. **Pensando:** sem spinner; o fio de luz do topo respira em `--ck-state-thinking`.
-2. **Ferramenta entrando:** `opacity` + `translateY(2px)` em `--ck-dur-enter`, com altura reservada antes do conteúdo.
+1. **Pensando:** sem spinner e sem linha; a última linha do feed diz «Pensando há N s» em
+   `--ck-state-running`, pulsando (`feed/linha-viva.tsx`).
+2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
+   que chega ao vivo (prazo 1 s) e no corpo aberto pelo dedo. Replay e o que remonta ao rolar aparecem
+   parados; linha e grupo de ferramenta não têm animação de entrada.
 3. **Grupo em execução:** filete lateral de 2px no dourado do pulso (`--ck-pulso-ouro`), que some ao concluir. **Filete azul (`--ck-state-running`) é proibido** — saiu da linha viva, das delegações e da troca de conversa por ordem do Rica (02/10); "pensando", "trabalhando" e "trocando" são só texto pulsando, sem linha.
 4. **Falha:** nada pisca; a superfície perde o fio de luz e o filete vira `--ck-state-fail`.
-5. **Pedido de permissão:** único movimento persistente — filete âmbar pulsando, alvo ≥ 44px, confirmação.
+5. **Espera humano:** filete âmbar **parado** e frase âmbar pulsando com `ck-chama` (mais forte e mais
+   rápido que o `ck-respira` do trabalhando), alvo ≥ 44px — o único pulso que chama o Rica. Hoje o feed
+   não produz pedido de permissão; a regra vale para quando produzir.
 6. **Agente vivo na gaveta:** o ponto do agora do pulso respira só enquanto ele trabalha.
 
 Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero `setState` por frame.
 
 ## 7. Gramática da execução (feed)
 
-- **Ferramenta colapsada = uma linha** de 28–32px: ícone, nome em mono, alvo resumido, duração à
-  direita em `tabular-nums`. A linha inteira é o alvo. Densidade é o que faz parecer profissional.
-- **Expandida = bloco** sobre `raised`, com fio de luz e filete de estado à esquerda.
-- **Consecutivas agrupam** (`tool-group`) com contador.
-- **`thinking` nasce fechado**, exceto quando é o bloco ativo.
-- **Diff vem do `structuredPatch` pronto**, nunca do cliente. Unified; split só a partir de 64rem.
+- **Ferramenta colapsada = uma linha de 32px fixos**, frase de chat em sans: verbo em português +
+  alvo resumido (`Executou npm test`), na cor do desfecho. Sem ícone, sem nome da ferramenta, sem
+  duração. À direita, o rendimento em `tabular-nums` (`+N −M`, contagem, `erro`) e o chevron. A linha
+  inteira é o alvo. Densidade é o que faz parecer profissional.
+- **Expandida = bloco** sobre `--ck-surface-composer`, raio `--ck-radius-frame`, fio de luz (`.ck-lit`,
+  some na falha) e filete de estado à esquerda; o nome da ferramenta em overline. Mono só no pedido,
+  na saída e no diff.
+- **Consecutivas agrupam** (`grupo-ferramentas`, `feed/grupo-ferramentas.tsx`): 2+ linhas de trabalho
+  viram uma. Em voo nasce aberta, mostra o passo atual com filete dourado e fecha sozinha ao terminar;
+  o toque do Rica vence o automático. Concluída bem = cápsula neutra (`--ck-surface-nav`,
+  `--ck-radius-caixa`, sem filete) com ✓ em `--ck-state-ok`: «N passos · resumo · duração», saldo
+  `+N −M` e selo âmbar de retentativas. Falhou = filete e `erro` em `--ck-state-fail`.
+- **`thinking`** sem texto não aparece; com texto nasce **sempre fechado** (`Raciocínio · N linhas`),
+  inclusive o bloco ativo.
+- **Diff sai dos argumentos**, calculado no cliente (`diff-lines.ts`): `Edit` por `old_string`/
+  `new_string`, `Write` novo como tudo adicionado; `structuredPatch` não é lido. Só unified.
 - **Caminho de arquivo trunca o diretório** e preserva o nome inteiro.
 - **Erro de ferramenta não é modal:** fica na linha, expansível.
 - **Sem highlighter de linguagem.** Bloco de código é mono de uma cor. stdout e stderr em
   `text-primary`; o que separa é um rótulo `stderr` em `secondary` e um filete funcional. Canal não é
   desfecho: `state-fail` vem do código de saída. Gutter em `secondary`. URL no bloco vira link.
-- **Bordas reais do dado:** `content: null` colapsa na própria linha (nunca caixa vazia); `content`
-  string vira um bloco só; imagem e base64 com altura reservada, abrindo em overlay.
-- **Estado vazio:** uma frase em `--ck-text-hero` sans e uma ação. Sem ilustração.
+- **Bordas reais do dado:** `message: null` não vira item (nunca caixa vazia); `content` string vira
+  um bloco só; imagem com altura reservada (`aspect-ratio 4/3`), abrindo em aba nova.
+- **Estado vazio:** retrato do agente (56px) e saudação em `--ck-text-hero` sans, em `secondary`. Sem
+  ação, sem ilustração.
 
 ## 8. Gramática dos painéis — a gaveta é o modelo
 
@@ -200,10 +239,11 @@ em curso vence; sem ela, a frota no vocabulário da voz (trabalhando · na linha
 - `Pilula` — botão de ação cinza, raio pill, alvo 44px.
 - Área tracejada com `Mais` (+) — porta para abrir ou criar.
 - `BolinhaDeAlerta` — "!" vermelho; o motivo sempre aparece em texto na mesma gaveta.
-- Ícone (`shell/icones.tsx`): traço fino, contorno aberto, nunca preenchido; ação sem moldura.
+- Ícone (`shell/icones.tsx`): traço fino, contorno aberto; sólido só no botão que conclui a ação
+  (enviar, onda, parar); ação sem moldura.
 
-**Um papel por cor:** o aro da pílula = tom de estado; azul (`--ck-gv-ativo`) = **ligado** e nada
-mais; vermelho (`--ck-gv-alerta`) = só a bolinha "!"; âmbar = atenção, do estado global. Não entra
+**Um papel por cor:** o aro da pílula = tom de estado; azul (`--ck-gv-ativo`) = **ligado**, a ⭐
+marcada e a ação principal do painel (Voltar ao chat), e nada mais; vermelho (`--ck-gv-alerta`) = só a bolinha "!"; âmbar = atenção, do estado global. Não entra
 acento novo.
 
 **Lista da tropa** (`shell/linha-da-tropa.tsx`, §T do `globals.css`) — lista, não cartões; uma anatomia
@@ -220,11 +260,11 @@ finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílul
 
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.
 
-**Histórico de conversas** (`?painel=conversas`, `gaveta/painel-de-conversas.tsx`) — terceira
-visão da gaveta, porta no lugar do antigo Destravar. Rodada 2 (01/10): lista só com título e tempo;
-o toque abre a **leitura** por cima (`.ck-surge`, título por `layoutId`), com ⭐, Concluída, Renomear,
-🗑 e o **Continuar esta** no rodapé — claro parado, âmbar com "fulano está trabalhando" quando
-interrompe, sem confirmação. Espera é barra indeterminada. "Em uso agora" some com a conversa de
+**Conversas** (`?painel=conversas`, `gaveta/painel-de-conversas.tsx`) — terceira visão da gaveta,
+porta no lugar do antigo Destravar. Lista só com título e tempo; o toque abre a **leitura** por cima
+(`.ck-surge`, título por `layoutId`), com ⭐, Concluída, Renomear, 🗑 e o **Continuar esta** no rodapé —
+pílula clara, sem âmbar e sem confirmação: ocupado, só o nome muda; na espera, enche por dentro com as
+etapas reais da troca. Barra indeterminada só na espera vista do painel. "Em uso agora" some com a conversa de
 agora vazia. O ritmo da Motion espelha os tokens em `gaveta/ritmo-do-historico.ts`. A troca aparece no chat como marco
 (`feed/marco-da-troca.tsx`), e o pedido que o cockpit faz ao agente é linha discreta, nunca balão
 do Rica. Decisões e contrato: `docs/conversas/PLANO.md`.
@@ -235,14 +275,19 @@ modelo e esforço), bolha de comandos, gaveta do "+", aviso do véu de operaçã
 texto de trás não pode ser lido através do menu), fio `--ck-flutuante-fio`, raio `--ck-flutuante-raio` 22px e a sombra `--ck-flutuante-sombra`
 (a exceção da §9.3: sobre a gaveta quase preta, luminância não separa camada). Dentro dela o item tem
 raio 18px (concêntrico ao respiro de 4px), hover e `data-highlighted` são véu branco e o selecionado é
-véu mais forte com ✓. Nem a caixa nem o item mostram anel de foco (§9.17); o item focado é o véu. Menu novo usa as primitivas de
-`components/ui/` e herda tudo isso; cor ou borda inline no conteúdo do menu não entra.
+véu mais forte com ✓. Nem a caixa nem o item mostram anel de foco (§9.17); o item focado é o véu e,
+no foco por teclado, um fio interno de 1px em `--ck-edge-functional` — cinza, nunca cor. Menu novo usa
+as primitivas de `components/ui/` e herda tudo isso; cor literal ou borda própria no conteúdo do menu
+não entra.
 Menu de conta: uma conta por bloco (`--ck-flutuante-bloco`) — nome curto, email miúdo, marcas
 "✓ ativa" e "melhor agora" (mais folga somando 5h e 7d, `conta-folga.ts`) — e as janelas numa grade de
 colunas fixas (rótulo · barra · % · quanto falta, "2h/5h · volta 04:40", "3/7 d"). O tempo vem
 de cada conta, do reset que o `/api/contas` lê na sonda; o traço só quando falta leitura.
 
-**Composer.** O vidro tem a forma da caixa; o feed fica nítido até encostar nela. Em repouso, uma
+**Composer.** Duas camadas de vidro: a caixa tem o próprio, na forma dela (§2); acima, a borda
+progressiva (`.ck-borda-progressiva`, 5 camadas de 1→16px + `--ck-rodape-material`) dissolve o feed a
+partir da cabeça da bolinha (`.ck-bolinha`, a presença do agente no alto do composer). Altura, respiro e
+teclado: `cockpit-v2-composer.md` §5. Em repouso, uma
 fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles na base, até `--ck-h-campo-max`. Barra de rolagem do app
 (`scrollbar-*` **e** `::-webkit-scrollbar`, sem setas).
 
@@ -252,10 +297,11 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 2. `backdrop-filter` fora dos materiais declarados na §2 — nunca em lista ou feed.
 3. `box-shadow` como sombra de profundidade, salvo `--ck-flutuante-sombra` na superfície flutuante (§8). Brilho emissivo de cor (o pulso) é luz, não sombra.
 4. Animar `width`/`height`/`top`/`left`.
-5. `100vh` — usar `100dvh` + `env(safe-area-inset-*)`.
+5. `100vh`. Altura da app é da `.ck-janela`: `100dvh` no navegador, `100lvh` no app instalado,
+   `--ck-viewport-altura` com teclado (`cockpit-v2-composer.md` §5). Fora dela, `100dvh` + `env(safe-area-inset-*)`.
 6. `font-size` < 16px em campo de entrada.
 7. Cor como único portador de significado.
-8. `--ck-text-tertiary` em texto de corpo ou texto pequeno.
+8. `--ck-text-tertiary` em corpo, ou como texto sobre `nav`, `composer` ou `raised` (§2).
 9. Token inventado localmente.
 10. Mais de uma superfície por vez no celular.
 11. Véu de interação (`--ck-overlay-*`) sobre `--ck-surface-raised`.
@@ -269,8 +315,9 @@ fileira ([+] · campo · motor · voz); com conteúdo, texto em cima e controles
 ## 10. Amarrações e verificação
 
 - `:root { color-scheme: dark; }` — sem isso, scrollbar, input e select nativos saem claros.
-- `theme-color` bate com a cor que encosta na barra do Safari: `#191919` (canvas) no `layout.tsx`,
-  `#222222` (mesa) na raiz `app/page.tsx`. Mudou o token, muda aqui.
+- `theme-color` bate com a cor que encosta na barra do Safari: `#191919` (canvas) no `layout.tsx` e no
+  `manifest.ts` (`background_color`, `theme_color`); `#222222` (mesa) em `app/page.tsx` e
+  `app/faxina/page.tsx`. Mudou o token, muda aqui.
 - O WebKit não roda na VPS. Prefixo `-webkit-` se confere no CSS servido; defeito que só aparece no
   iPhone do Rica pede instrumento que leia o layout no aparelho dele antes de qualquer hipótese.
 

@@ -1,13 +1,14 @@
 ---
 name: checar-paridade
-description: Rodar o checklist de equivalência do Cockpit v2 contra o painel atual antes de qualquer merge ou de virar a chave. Usar quando for integrar frente, fechar etapa ou decidir se o v2 já pode substituir o v1.
+description: Rodar o checklist de equivalência do Cockpit v2 contra as fixtures gravadas antes de qualquer merge. Usar quando for integrar frente ou fechar etapa.
 ---
 
 # checar-paridade — o v2 não perde nada do v1
 
 ## Por que existe
 
-O v2 substitui um painel que **funciona**. Regressão silenciosa é o risco real:
+O v2 substituiu um painel que **funcionava** — e hoje é a produção (o v1 está fora
+do ar). Regressão silenciosa é o risco real:
 tela bonita que perdeu um evento no meio do replay, ou que reordenou depois de uma
 reconexão. Comparação visual pode aprovar, mas **não decide**.
 
@@ -24,7 +25,7 @@ ordem e o mesmo conjunto de itens**. Nenhum evento perdido, duplicado ou reorden
 após reconexão.
 
 ```bash
-corepack pnpm --filter @grupo_borges/cockpit-core test   # 9 testes do pipeline
+corepack pnpm --filter @grupo_borges/cockpit-core test   # 69 testes (7 arquivos) do pipeline; no notebook, pnpm direto
 ls ../../fixtures/cockpit-v2/familias/                   # as 52 famílias
 ```
 
@@ -57,8 +58,9 @@ frequência:
 o risco nº 1 do projeto é o celular, e as medidas do ChatGPT que herdamos são de
 desktop.
 
-⚠️ **Medir contra o back da Hostinger**, onde o produto vive. Medir na máquina
-folgada e virar a chave na apertada fraudaria o próprio gate.
+⚠️ **Medir contra o back da `borges`** (`:3445`), onde o produto vive — a
+`srv1061129` (Hostinger) saiu do ar. Medir em outra máquina e publicar nesta
+fraudaria o próprio gate.
 
 ## Parte 3 — o gate estético, que é separado
 

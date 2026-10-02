@@ -4,7 +4,7 @@
 
 Este arquivo é o índice histórico do trabalho no Claude Designer. Os 5 turnos já foram entregues e o port para `grupo_borges/apps/web/` já aconteceu.
 
-Fonte viva de implementação: `/home/clawd/repos/grupo_borges`.
+Fonte viva de implementação: `apps/cockpit` do monorepo `grupo_borges` (o `apps/web` citado abaixo está congelado e fora do ar).
 
 Status operacional:
 
@@ -15,7 +15,7 @@ Status operacional:
 
 ## Como usar
 
-Uso histórico/referência. Para novas iterações visuais, abrir o Designer a partir dos snapshots canônicos; para código, editar o monorepo `grupo_borges`.
+⚠️ **Somente histórico.** A estética sci-fi foi revogada em 2026-07-30 (`../DECISOES.md`): não iterar a partir destes turnos nem implementar em `apps/web` (congelado). Design vivo: `docs/cockpit-v2-estetica.md`. Os passos abaixo registram como era feito.
 
 1. Abra um chat novo no **Claude Design** (`claude.ai/design`).
 2. Cole os 5 turnos abaixo em **sessões sequenciais** do projeto (cada turno em chat próprio, mantém histórico organizado).

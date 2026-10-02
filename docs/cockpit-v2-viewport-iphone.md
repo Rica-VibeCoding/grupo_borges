@@ -54,8 +54,12 @@ App servida na `:3446` com `black-translucent` + `viewport-fit=cover`.
 
 ## A fórmula
 
+Só vale no **aplicativo instalado** (`standalone`): no Safari comum o
+`sincroniza-altura-do-viewport.tsx` sai cedo (`modoAplicativoInstalado()`), nada é
+publicado, o `--ck-safe-bottom` nunca zera e a altura é sempre o `100dvh` do CSS.
+
 ```
-campo de texto focado (teclado em cena):
+aplicativo instalado, campo de texto focado (teclado em cena):
     --ck-viewport-altura = round(visualViewport.height + visualViewport.offsetTop
                                  + max(0, 100lvh − 100dvh))
     → "fundo da app = fundo da área visível", panorâmica compensada por
@@ -146,10 +150,11 @@ Detalhes de execução (`components/shell/sincroniza-altura-do-viewport.tsx`):
   aqui" de lá): os números ao vivo + min/max dizem em que modo a janela estava
   quando o teclado subiu, e é o único dado que ainda falta do modelo. A tela foi apagada em 07/09/2026 a pedido do Rica; refazê-la é o passo zero de quem for retomar esta medição.
 - **O respiro que sobra é design, não defeito.** Abaixo da caixa do composer
-  há 67px medidos em bancada: 12 de padding, 34 do `safe-area-inset-bottom` (a
-  barra de gestos do iOS, intocável) e ~21 da régua embaixo. Era isso e mais os
-  59 do bug que somavam os 122,5pt do IMG_7706. Se o Rica ainda achar alto
-  depois da rodada 7, o que dá para apertar são os 12.
+  ficam 34px em repouso — a barra de gestos e nada mais: 4 de gap + 17 do
+  reservador + `max(8, safe-bottom − 21)` de padding do palco (29px com teclado).
+  Os 67px antigos (12 de padding + 34 do `safe-area-inset-bottom` + ~21 da régua,
+  que com os 59 do bug somavam os 122,5pt do IMG_7706) caíram; a conta está no
+  `cockpit-v2-composer.md` §5.
 - Plano B documentado (não aplicado): `statusBarStyle: 'black'` — janela fixa
   793, sem modo duplo, bug estruturalmente impossível; custa a faixa preta no
   topo e 59pt de tela.

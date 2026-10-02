@@ -7,7 +7,7 @@
 > **Por que este arquivo existe aqui.** O relatório nasceu em `/tmp/paridade-v1-v2/`,
 > que some. O item 5 do comportamento observável (`cockpit-v2-fusao.md`) exige
 > paridade semântica total, e esta é a prova. Perder evidência por não escrever já
-> aconteceu neste projeto — ver `cockpit-v2-ESTADO.md` §7.
+> aconteceu neste projeto.
 
 ## Veredito
 

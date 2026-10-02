@@ -1,5 +1,11 @@
 # PLANO — `tool_use_result` chega aos itens do feed (pré-requisito das ondas 2–4)
 
+> ⚠️ **HISTÓRICO — executado.** `rich` no lookup (`ToolResultLookup` em
+> `packages/cockpit-core/src/render-items.ts`), propagado em
+> `components/feed/execucao-do-item.ts`, escolhido por `familiaDoRich` e desenhado em
+> `components/feed/execucao.tsx` (7 corpos). O diff não usa o rico: sai dos argumentos
+> da ferramenta. Os passos abaixo que aparecem como pendentes já foram feitos.
+
 > Escrito pelo Hiro em 30/07, a pedido do Daniel. **v2 — revisão cruzada da
 > Tara incorporada** (5 pontos + 1 correção factual, todos verificados no
 > código antes de entrar). Plano executável; quem executa o passo 1: Hiro.

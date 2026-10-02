@@ -1,5 +1,9 @@
 # GATE.md — o número que decide o spike do passo 5
 
+> ⚠️ **HISTÓRICO — decidido em 30/07.** A medição tirou o `assistant-ui`: o feed é
+> próprio, em `components/feed/**`. A porta 3008 daqui é a bancada de então; hoje a
+> 3008 é a produção e o dev é a 3009. Estado atual em `cockpit-v2-ESTADO.md`.
+
 > Escrito **antes** do spike, de propósito. A fusão registrou o furo:
 > *"resolvido por construção" não é critério — falta o número.* Este arquivo é o
 > número.

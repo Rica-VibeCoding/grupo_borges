@@ -4,7 +4,10 @@
 > padrão da stack em documentação oficial (`cockpit-v2-composer-stack.md`), dois vídeos do
 > Rica (o nosso e o do claude.ai) e a F1 já publicada (`b8c9d7c`).
 >
-> **Nada aqui foi implementado.** É desenho para aprovação.
+> ⚠️ **HISTÓRICO, parcialmente executado (conferido em 02/10).** No ar: F2.3 (os
+> slots), F2.4 (a linha da voz reservada acima da caixa), F3 (a fala ao vivo) e a
+> F2.1 só para a fala (`modo-da-fala.ts`); `modo-composer.ts` não existe. O
+> vigente é `cockpit-v2-composer.md`.
 
 ## O diagnóstico em uma frase
 

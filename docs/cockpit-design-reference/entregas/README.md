@@ -1,5 +1,9 @@
 # Entregas do Claude Designer — Cockpit grupo_borges
 
+> ⚠️ **HISTÓRICO — visual do cockpit v1, revogado em 2026-07-30** (`../DECISOES.md`).
+> Design vivo em `docs/cockpit-v2-estetica.md`, código vivo em `apps/cockpit`; o
+> `apps/web` está congelado e fora do ar. Não iterar a partir destes snapshots.
+
 Snapshots HTML standalone dos outputs do Claude Designer no projeto `Cockpit grupo_borges — Spec & Padrões` (URL: `https://claude.ai/design/p/019e1329-d50a-7583-a0d3-3b5bbefdc096`). Cada arquivo aqui é um "save standalone" baixado do Designer — runnable em qualquer browser sem internet.
 
 A versão **viva e editável** vive no projeto do Designer. Esta pasta é só **referência local versionada** pra:
@@ -7,7 +11,7 @@ A versão **viva e editável** vive no projeto do Designer. Esta pasta é só **
 - Checar regressões visuais entre iterações de um mesmo turno
 - Servir de base de comparação para o port já feito em `grupo_borges/apps/web/`
 
-**Atualização 2026-05-12:** o port principal para Next.js já aconteceu no monorepo `/home/clawd/repos/grupo_borges`. Estes HTMLs agora são referência histórica/visual, não plano aberto de implementação.
+**Atualização 2026-05-12:** o port principal para Next.js já aconteceu no monorepo `grupo_borges`. Estes HTMLs agora são referência histórica/visual, não plano aberto de implementação.
 
 ## Princípio de versionamento — supersedência incremental
 
@@ -56,11 +60,7 @@ Arquivos em `.archived-versions/` foram canônicos no momento da entrega mas est
 
 ## Como abrir local
 
-```powershell
-# Windows
-start "C:/Users/RicardoBorges/Documents/dev/projetos/ze claude/daniel/fabrica-de-software/cockpit-grupo-borges/entregas/01-foundation-v3-agent-card-daniel.html"
-# ou clicar duas vezes no Explorer
-```
+Abrir no browser `05-polish-v1.html` ou `03-modal-v2.html` desta pasta.
 
 **O formato varia por entrega**:
 - **HTML legível** (~30-50KB, CSS/JS readable inline) — quando o Designer exporta em modo "save" sem empacotar assets. Dá pra ler o JSX/CSS/JS no editor, fazer grep, comparar diffs em git de forma útil. **Esse é o formato preferido**.

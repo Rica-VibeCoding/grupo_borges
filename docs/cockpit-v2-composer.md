@@ -145,11 +145,12 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
 
 ### Herdados, com desenho pronto
 
-- [ ] **F5 · A fila não atravessa canais** (item 34 do contrato). `409
-      shared_turn_in_flight` no Codex — a fila do composer só conhece o envio em
-      voo daquela aba, e a conversa da Tara é compartilhada com o Telegram.
-      Explica as 5 falhas do Codex na bateria. Desenho na §4, item 34.
-      **Dono: Pavan.** Fica atrás de F1: é o mesmo `catch`.
+- [x] **F5 · A fila não atravessa canais** (item 34 do contrato). **Obsoleto
+      desde 06/09** (`a60da52`, o caminho do Codex saiu do cockpit). O `409
+      shared_turn_in_flight` era do caminho Codex da Tara, cuja conversa era
+      compartilhada com o Telegram; a API não o emite mais e todo agente é
+      Claude Code, que enfileira sozinho (`motorEnfileiraSozinho`,
+      `porta-de-envio.ts`). O que sobra do tema é a fila do servidor (§10).
 - [x] **F6 · Microfone desabilitado durante envio em voo** (item 32). Resolvido:
       soltar o microfone só transcreve e preenche o rascunho editável. Nenhuma
       mensagem é enviada nem a máquina de entrega é ocupada antes do toque em
@@ -163,9 +164,9 @@ Risca-se com `[x]` **quando o Rica testar e aprovar**, não quando o commit subi
 
 ### Dívida estrutural
 
-- [ ] **F9 · `composer.tsx` tem ~1060 linhas**, mais de três vezes o teto de 300
-      do `CLAUDE.md`. A ordem de fatiar está na §5 — da menor para a maior chance
-      de estragar. Não é urgente; é o que torna tudo acima mais barato.
+- [ ] **F9 · `composer.tsx` tem ~1675 linhas** (02/10), mais de cinco vezes o teto
+      de 300 do `CLAUDE.md`. A ordem de fatiar está na §5 — da menor para a
+      maior chance de estragar. Não é urgente; é o que torna tudo acima mais barato.
 
 ### O rumo que a literatura aponta — e ele contraria o nosso desenho
 
@@ -182,9 +183,10 @@ Vale registrar a armadilha que pega quase todo mundo, e que **nós escapamos**: 
 *snippet* da doc do Vercel AI SDK usa `disabled={status !== 'ready'}`, enquanto a
 biblioteca de componentes da própria Vercel (`ai-elements`) não desabilita nada.
 Quem copiou o exemplo da doc herdou o defeito. Aqui o `textarea` nunca é
-desabilitado, por decisão consciente — o comentário em `composer.tsx:745` diz o
-porquê e é melhor que a justificativa da literatura: no iPhone, `disabled` tira o
-elemento do alcance do foco e **fecha o teclado no meio da digitação**.
+desabilitado, por decisão consciente — o bloco "SEM `disabled`" no
+`<motion.textarea>` do `composer.tsx` diz o porquê e é melhor que a
+justificativa da literatura: no iPhone, `disabled` tira o elemento do alcance do
+foco e **fecha o teclado no meio da digitação**.
 
 O que nos separa do estado da arte é o passo seguinte, e é onde F1/F2/F5 moram: o
 campo aceita, mas a **porta** recusa, e a recusa vira vermelho em vez de virar
@@ -200,16 +202,19 @@ o trabalho de hoje.
 
 ```bash
 python3 docs/cockpit-v2-medicao/bateria-do-composer.py
-python3 docs/cockpit-v2-medicao/tela-muda-depois-do-enter.py canarinho:cc tara:codex
+python3 docs/cockpit-v2-medicao/tela-muda-depois-do-enter.py canarinho:cc
 python3 docs/cockpit-v2-medicao/freio-no-repouso-e-gerando.py
 python3 docs/cockpit-v2-medicao/recusa-que-passa-sozinha.py
 ```
 
-A bateria roda a tela de verdade na `:3008`, em viewport de iPhone, **nos dois
-motores**, e cada caso vai até o fim do caminho: a mensagem sai, chega no agente,
-ele responde, a resposta volta. "O campo esvaziou, logo funcionou" não conta como
-prova — foi exatamente assim que 18,8 segundos de tela muda passaram meses
-despercebidos.
+⚠️ A `bateria-do-composer.py` ainda itera `tara`/`codex` no laço do `main()` e lê
+`/api/agents/<slug>/codex/messages`, endpoint removido em 06/09 (`a60da52`): essa
+metade reprova por instrumento, não por composer, até a bancada ser podada.
+
+A bateria roda a tela de verdade na `:3008`, em viewport de iPhone, e cada caso
+vai até o fim do caminho: a mensagem sai, chega no agente, ele responde, a
+resposta volta. "O campo esvaziou, logo funcionou" não conta como prova — foi
+exatamente assim que 18,8 segundos de tela muda passaram meses despercebidos.
 
 A segunda bancada existe porque **um requisito sem número não é requisito**: ela
 cronometra o intervalo entre o Enter e a bolha aparecer, com o agente ocioso e
@@ -271,11 +276,13 @@ autoriza dizer "pronto".
 
 ### Parar
 
-16. Existe um botão de parar enquanto o agente gera, nos dois motores. Parar é
+16. Existe um botão de parar enquanto o agente gera, em todo agente. Parar é
     recurso de primeira classe — o ChatGPT documenta até atalho dedicado
     (`Command + .`).
 17. Ele **aparece no tempo do turno**, não no tempo do painel.
-18. Ele **some no toque**, não quando o servidor concorda.
+18. Ele **some quando o `POST /interromper` volta**, sem esperar o status da
+    frota concordar; durante a viagem fica esmaecido (`parando`) e, se o POST
+    falhar, continua em cena (`interromper()` no `composer.tsx`).
 19. Ele **não cobre o envio**: com texto escrito, o alvo é mandar. Copiar a troca
     seta→quadrado ao pé da letra criou um beco no celular — sem gesto nenhum para
     despachar, porque o Enter do teclado virtual quebra linha e não há Shift.
@@ -296,7 +303,11 @@ autoriza dizer "pronto".
 26. Com o teclado de pé, o composer continua na tela e a última mensagem não
     morre atrás dele.
 27. Nenhum aviso que exija leitura mora **abaixo** do composer: ali o teclado o
-    esconde, e o Rica lê como "engoliu a mensagem".
+    esconde, e o Rica lê como "engoliu a mensagem". **Parcial (02/10).** Já estão
+    acima da caixa: a linha da voz, a barra do compact, a pergunta do motor, a
+    fila e o motivo do anexo (na miniatura). Ainda abaixo: a recusa da porta, o
+    `AvisoAnexo` e a frase de estado com as ações. Hoje o que compensa é o botão
+    de enviar sacudir (`.ck-sacudir`).
 28. Alvo de toque de 44px nos controles da base.
 29. O rascunho não enviado sobrevive ao reload — puxar a tela para recarregar é
     gesto acidental no iPhone.
@@ -308,27 +319,32 @@ autoriza dizer "pronto".
     erra, e descobrir isso pela resposta errada do agente três minutos depois é
     caro.
 32. O microfone continua disponível durante envio e compactação porque gravar e
-    transcrever são gestos locais. Soltar só chama `/transcription`; não abre
-    turno, não toca tmux e não disputa a máquina de entrega.
-33. O envio explícito da transcrição usa o mesmo caminho do texto nos dois
-    motores. A origem STT fica persistida com o rascunho e só adiciona a marca
+    transcrever são gestos locais. A fala entra no rascunho **ao vivo**, enquanto
+    o Rica fala (`usa-fala-ao-vivo.ts`, bilhete de `postAgentLiveToken`); o
+    `/transcription` com o arquivo gravado é a rede quando o canal ao vivo não
+    entrega. Nenhum dos dois abre turno, toca o tmux ou disputa a máquina de
+    entrega.
+33. O envio explícito da transcrição usa o mesmo caminho do texto em todo
+    agente. A origem STT fica persistida com o rascunho e só adiciona a marca
     interna `🎙` no momento do envio.
 
 ### Fila que atravessa canais
 
-34. **Reprovado (F5).** A fila do composer só conhece o envio em voo **daquela
-    aba**. A conversa da Tara é compartilhada com o Telegram: turno aberto por
-    outro canal, por outra aba, ou por um envio que a aba recém-carregada não viu
-    passa direto pela porta, e o backend recusa com `409 shared_turn_in_flight`
-    (`apps/api/routers/agents.py`, `send_agent_input`). A tela então vai para
-    `falhou` e oferece "Tentar de novo".
+34. **Obsoleto (06/09) — ver F5.** O registro abaixo fica como história: o 409
+    era do caminho Codex, que saiu do cockpit (`a60da52`).
 
-    É o cenário comum do Rica: falar com a Tara pelo Telegram e depois abrir o
-    cockpit. A mensagem não se perde — mas ela **deveria entrar na fila**, que já
-    existe e já drena sozinha, em vez de virar erro que pede gesto novo.
-    Desenho proposto: o `catch` de `usa-envio.ts` distinguir o 409 de turno
-    concorrente dos demais erros HTTP e devolver isso ao composer, que reenfileira
-    em vez de publicar `falhar`. Medido: 2 ocorrências na bateria de 15/08, ambas
+    A fila do composer só conhecia o envio em voo **daquela aba**. A conversa da
+    Tara era compartilhada com o Telegram: turno aberto por outro canal, por outra
+    aba, ou por um envio que a aba recém-carregada não viu passava direto pela
+    porta, e o backend recusava com `409
+    shared_turn_in_flight`. A tela então ia para `falhou` e oferecia "Tentar de
+    novo".
+
+    Era o cenário comum do Rica: falar com a Tara pelo Telegram e depois abrir o
+    cockpit. A mensagem não se perdia — mas ela **deveria entrar na fila**, em
+    vez de virar erro que pede gesto novo. Desenho proposto na época: o `catch`
+    de `usa-envio.ts` distinguir o 409 de turno concorrente dos demais erros HTTP
+    e devolver isso ao composer, que reenfileira em vez de publicar `falhar`. Medido: 2 ocorrências na bateria de 15/08, ambas
     com o teste já isolando as categorias — não é artefato de instrumento.
 
 ### Acessibilidade
@@ -346,7 +362,7 @@ autoriza dizer "pronto".
 
 39. **O composer se recupera sozinho de uma recusa.** Vermelho é aviso, não
     estado terminal: a próxima tentativa não pode exigir gesto no painel (F1).
-40. **O anexo renderiza igual nos dois motores**, no formato da Tara: uma bolha,
+40. **O anexo renderiza igual em todo agente**, no formato da Tara: uma bolha,
     foto em cima, legenda embaixo (F3).
 41. **Foto que entra por outro canal aparece como imagem no feed**, não como a
     palavra `(photo)` (F4).
@@ -367,7 +383,7 @@ aparelho do Rica.
 | Peça | Arquivo | Responsabilidade |
 |---|---|---|
 | A janela | `components/shell/app-shell.tsx` + `.ck-janela` no `globals.css` | Altura da app inteira. Repouso é CSS; teclado é a variável do JS |
-| A medida | `components/shell/sincroniza-altura-do-viewport.tsx` + `altura-do-viewport.ts` | Publica `--ck-viewport-altura` **só com o campo focado**, e zera o `--ck-safe-bottom` enquanto o teclado está em cena |
+| A medida | `components/shell/sincroniza-altura-do-viewport.tsx` + `altura-do-viewport.ts` | Publica `--ck-viewport-altura` **só no app instalado (`standalone`) e só com o campo focado**, e zera o `--ck-safe-bottom` enquanto o teclado está em cena. No Safari comum não roda: a altura é sempre o `100dvh` do CSS |
 | O palco | `app/agente/[slug]/palco-da-conversa.tsx` | Sobrepõe o composer ao feed, paga o respiro de baixo e publica `--ck-composer-altura` para o feed não morrer atrás da caixa |
 | O desenho | `components/shell/composer.tsx` | A caixa, os controles, as faixas de aviso. **Não mede nada e não se posiciona** |
 
@@ -382,14 +398,15 @@ Duas variáveis amarram tudo, e elas correm em sentidos opostos:
 
 ### A aritmética do fundo (a parte que ninguém adivinha)
 
-Abaixo da caixa visual existem **quatro** termos somados, e olhar um de cada
-vez leva ao conserto errado:
+Abaixo da caixa visual existem **três** termos somados, e olhar um de cada
+vez leva ao conserto errado. A barra de gestos do iPhone (`safe-area-inset-bottom`,
+34px) **não é um quarto termo**: ela já está dentro do N.
 
 ```
-    4px   gap da coluna do composer
+    4px   gap da coluna do composer (--ck-space-1)
  + 17px   reservador da linha de status (div aria-hidden de altura fixa)
- +  Npx   padding-bottom do wrapper no palco
- + 34px   safe-area-inset-bottom — a barra de gestos do iPhone
+ +  Npx   padding-bottom do palco = max(space-2, safe-bottom − 21px)
+ = 34px   em repouso (N = 13) · 29px com teclado (safe-bottom 0 → N = 8)
 ```
 
 A régua veio do Rica em 13/08, com print lado a lado: **o app do Claude deixa
@@ -411,8 +428,9 @@ Quem quiser recuperar aqueles pixels tem que resolver o pulo primeiro.
    `100dvh` atrasam nas duas direções no WebKit em `standalone`; `100lvh` e o
    par `visualViewport.height + offsetTop` não. Três rodadas foram gastas
    copiando a mentira mais depressa.
-3. **Espaço embaixo se conta inteiro.** São os quatro termos acima. Ajustar um
-   sem somar os outros dá 67px onde a régua pede 34.
+3. **Espaço embaixo se conta inteiro.** São os três termos acima. Ajustar um
+   sem somar os outros — por exemplo, somar o `safe-bottom` inteiro depois do
+   reservador — dá 67px onde a régua pede 34.
 4. **Bancada que não encena o aparelho mente.** No Chromium
    `env(safe-area-inset-bottom)` é 0, `dvh` e `lvh` valem o mesmo, e não existe
    teclado. Toda medição de folga ou de altura precisa injetar os números do
@@ -426,9 +444,9 @@ Quem quiser recuperar aqueles pixels tem que resolver o pulo primeiro.
 
 ### A lógica já está fatiada — o que sobrou é o desenho
 
-`composer.tsx` tem ~1060 linhas. Antes de propor quebrar, entenda o que **já**
-saiu dele: a lógica pura mora fora e é testada em `node --test` (262 testes na
-`components/shell/`).
+`composer.tsx` tem ~1675 linhas (02/10). Antes de propor quebrar, entenda o que
+**já** saiu dele: a lógica pura mora fora e é testada em `node --test` (~460
+testes na `components/shell/`).
 
 | Módulo | O que carrega |
 |---|---|
@@ -438,25 +456,27 @@ saiu dele: a lógica pura mora fora e é testada em `node --test` (262 testes na
 | `voz.ts` · `usa-gravador.ts` | fases do microfone, diagnóstico de impedimento |
 | `motor.ts` · `seletor-motor*.tsx` | modelo/esforço e o que o servidor autoriza |
 | `gaveta-anexo.tsx` · `usa-anexo.ts` | anexo, do botão ao envio |
-| `barra-compact.tsx` · `bloco-da-fila.tsx` | as duas faixas acima da caixa |
-| `lib/codex/eco-pendente.ts` | a bolha otimista e o teto de pendência por motor |
+| `barra-compact.tsx` · `barra-pergunta-motor.tsx` · `bloco-da-fila.tsx` | as faixas acima da caixa (mais a linha da voz, inline) |
+| `lib/eco-pendente.ts` | a bolha otimista e o teto da pendência (`PRAZO_CC_MS`, 45 s) |
 | `lib/textos-do-usuario.ts` | o que encerra a pendência otimista (inclui `queued`) |
 | `lib/turno-vivo.ts` | o `isRunning` do stream chegando ao botão de parar |
 
-O que restou no arquivo é **JSX e fiação**: 7 estados, 5 efeitos e a árvore.
+O que restou no arquivo é **JSX e fiação**: 6 estados, 5 efeitos e a árvore
+(02/10).
 
 ### Se for fatiar, esta é a ordem
 
 Da menor para a maior chance de estragar:
 
-1. **As faixas de aviso abaixo da caixa** (anexo, recusa da porta, microfone,
-   voz, transcrito, estado+ações — hoje o último terço do arquivo). São função
-   pura do estado que já existe; saem como `avisos-do-composer.tsx` recebendo
-   props. **O reservador de 17px vai junto com elas** — ele é o `else` desse
-   bloco, e separá-los é como o pulo volta.
+1. **As faixas de aviso abaixo da caixa** (aviso do anexo, recusa da porta,
+   estado+ações — hoje o fim do arquivo). São função pura do estado que já
+   existe; saem como `avisos-do-composer.tsx` recebendo props. **O reservador de
+   17px vai junto com elas** — ele é o `else` desse bloco, e separá-los é como o
+   pulo volta. A linha da voz (microfone indisponível, recado da voz) mora
+   **acima** da caixa, com altura reservada, e não entra aqui.
 2. **A caixa** (textarea + a barra de controles por dentro). Sai como
-   `caixa-do-composer.tsx`, levando o `ck-caixa`, o rodapé de vidro e o
-   invólucro da âncora **inteiro** — a gaveta do anexo mede o `bottom: 100%`
+   `caixa-do-composer.tsx`, levando o `ck-caixa` e o invólucro da âncora
+   **inteiro** — a gaveta do anexo mede o `bottom: 100%`
    desse invólucro, então quebrá-lo descola a gaveta do botão "+".
 3. **A fiação** (estados, efeitos, handlers) para um `usa-composer.ts`. Por
    último e só com necessidade real: é onde moram o eco pendente, a fila e o
@@ -520,11 +540,12 @@ embaixo, uma caixa só**. Não é um quarto desenho conciliando os três.
 
 ### Como o envelope chega, por porta
 
-**Upload pelo cockpit, motor Codex (Tara).** `POST /file` grava em
-`uploads/agents/<slug>/` e o turno nasce com `image_path`; o adaptador
-(`lib/codex/adapta-mensagens.ts`) embute a foto como data-URL na própria
-mensagem. Chega **inteira, numa mensagem só** — daí o cartão único. É a porta
-que funciona, e funciona por acidente de formato, não por desenho compartilhado.
+**Upload pelo cockpit, motor Codex (Tara) — até 06/09; hoje todo agente segue o
+ramo Claude Code abaixo.** `POST /file` gravava em `uploads/agents/<slug>/` e o
+turno nascia com `image_path`; o adaptador (`lib/codex/adapta-mensagens.ts`,
+apagado em `a60da52`) embutia a foto como data-URL na própria mensagem. Chegava
+**inteira, numa mensagem só** — daí o cartão único. Era a porta que funcionava, e
+por acidente de formato, não por desenho compartilhado.
 
 **Upload pelo cockpit, motor Claude Code (Canário, Daniel…).** O mesmo `POST
 /file` grava o arquivo, mas quem anexa a imagem é o CC, e ele **pica o envelope
@@ -561,29 +582,22 @@ some. Na tela isso apareceria como *"a legenda sumiu sozinha"*, minutos depois,
 sem ninguém tocar em nada. Quem pegou foi o oráculo de paridade por prefixo, não
 o Playwright. Daí o `rewindAtravesDoAnexoPicado`.
 
-### Aberto — com decisão já tomada, faltando execução
+### `accept` de imagem — decidido, não mexer
 
-**O `accept` do seletor está errado e é bug vivo, não hipótese.**
-`apps/cockpit/lib/anexo.ts:118` usa `image: 'image/*'`. A regra do WebKit (bug
-212489) só transcodifica HEIC quando o `accept` traz **um MIME concreto que o
-CoreGraphics saiba escrever** — `image/*` não é concreto e não dispara nada. No
-Mac, foto HEIC continua HEIC. E `image/heic` no `accept` faz o Safari 17+ agir ao
-contrário, devolvendo `.heic` para um JPEG de verdade (Apple 743049): **nunca
-pôr**.
+`lib/anexo.ts` usa `image/*` **de propósito**: é o que faz o iOS oferecer a
+câmera além da galeria (MDN), e perder a câmera do iPhone é caro e certo. A troca
+para lista concreta foi **revogada em 05/08** (`anexo-imagem-composer-PLANO.md`
+§5, etapa 0). O custo — no Mac, `image/*` devolve HEIC (WebKit 212489) — quem
+paga é o servidor: a `/file` aceita `_IMAGE_HEIF_MIMES` e converte para JPEG na
+gravação, no mesmo ponto onde a orientação EXIF é normalizada. **Nunca** pôr
+`image/heic` no `accept` (Safari 17+ devolve `.heic` para JPEG de verdade, Apple
+743049). Lista concreta só com medição no iPhone do Rica, provando que a câmera e
+o `.heic` do app Arquivos continuam.
 
-O lado do servidor **já está pronto**: `pillow-heif` 1.5.0 instalado no `.venv`,
-`_IMAGE_HEIF_MIMES` aceito pela `/file` e convertido na gravação, no mesmo ponto
-onde a orientação EXIF já é normalizada. Quem chega em HEIC hoje **entra**.
-
-Por isso a troca do `accept` não é a linha óbvia que parece: restringir para
-`image/jpeg,image/png,image/webp` faria o Safari converter no Mac, mas pode
-**apagar o `.heic` da lista** ao escolher pelo app Arquivos — e aí ele deixa de
-conseguir anexar o que hoje anexa. É uma troca que se mede no aparelho dele,
-com o Rica escolhendo uma foto do iCloud, não se decide no papel.
-
-**O resto do plano** (miniatura no composer, colar e arrastar, medidas das
-capturas de referência, as fontes de cada decisão) segue em
-`anexo-imagem-composer-PLANO.md`, com as etapas e a régua de pronto.
+**O plano de 05/08** (`anexo-imagem-composer-PLANO.md`) é histórico e já foi
+executado: miniatura no composer, colar, HEIC no servidor e cartão único estão no
+ar. Continua aberto: arrastar e soltar (nenhum `onDrop` no composer) e mais de uma
+imagem (`multiple={false}` em `gaveta-anexo.tsx`).
 
 ---
 
@@ -598,8 +612,9 @@ calibrado errado, e três sintomas que o Rica reportou como um só.
 amostra local de 30/07 com pior caso de 1,434 s. No caminho real o eco leva
 18,9 s — o prazo estourava antes da confirmação e **toda** mensagem para agente
 ocioso terminava dizendo "não consegui confirmar se entrou". Falso, e é o que
-pausava a fila e pendurava a mensagem seguinte em vermelho. Hoje o teto é por
-motor: 45 s no Claude Code (2,4× o eco real medido), 180 s no Codex.
+pausava a fila e pendurava a mensagem seguinte em vermelho. Hoje o teto é 45 s
+(`PRAZO_CC_MS`, 2,4× o eco real medido); o de 180 s era do Codex, que saiu em
+06/09.
 
 **Sinal de painel usado como sinal de turno.** O `■` nasceu lendo
 `lifecycle_status`, alimentado por hook e por vigia de JSONL, que chega no tempo
@@ -723,8 +738,8 @@ instrumento de ir eliminando — quem retomar continua daqui, não do zero.
 
 **Passa, conferido (11).** Os bloqueantes primeiro:
 
-- **1 [BLOQ] · o campo nunca é desabilitado** — `composer.tsx:745`, com a razão
-  escrita: no iPhone `disabled` fecha o teclado no meio da digitação.
+- **1 [BLOQ] · o campo nunca é desabilitado** — o bloco "SEM `disabled`" no
+  `<motion.textarea>` do `composer.tsx`, com a razão escrita: no iPhone `disabled` fecha o teclado no meio da digitação.
 - **12 [BLOQ] · o botão vira Parar** durante o trabalho, não fica apagado.
 - **20 [BLOQ] · o motor não vaza para o desenho** — `git grep "isCodex\|isClaude\|provider ==="`
   nos componentes de feed e shell volta **vazio**. A diferença mora só no adaptador.
@@ -734,21 +749,23 @@ instrumento de ir eliminando — quem retomar continua daqui, não do zero.
 - **30 [BLOQ] · a cadeia flex está inteira em `min: 0px`** — medido no painel
   vivo, do corpo da mensagem até o `main`. Nenhum nó pedindo `min-w-0`/`min-h-0`.
 - 2 [BLOQ] guarda de composição com `isComposing` **e** `keyCode === 229` (as duas
-  bordas) · 22 adaptador do Codex com teste · 7 colar imagem · 9 `revokeObjectURL`
-  em pé de igualdade com `createObjectURL` (2:2) · 28 nenhuma propriedade de corte
-  no corpo · 29 nenhum ancestral recortando indevidamente.
+  bordas) · 22 adaptador do Codex com teste (até 06/09; apagado em `a60da52`) ·
+  7 colar imagem · 9 `revokeObjectURL` em pé de igualdade com `createObjectURL`
+  (2:2) · 28 nenhuma propriedade de corte no corpo · 29 nenhum ancestral
+  recortando indevidamente.
 
 **O que isso elimina.** O ramo de CSS do truncamento (§C.1 do relatório) está
 descartado por medição, não por leitura: os dois ancestrais que recortam são o
-próprio rolador e o vidro do rodapé (`pointer-events-none`, 2048px de propósito
-para o desfoque não ter borda). Se voltar a truncar, **não procure em CSS** —
+próprio rolador e o antigo vidro do rodapé (hoje `.ck-borda-progressiva`;
+`pointer-events-none`, 2048px de propósito para o desfoque não ter borda). Se voltar a truncar, **não procure em CSS** —
 comece pela bissecção por camada da §C.0, que mede o comprimento nas seis
 fronteiras.
 
 **Falta (e nenhum é surpresa):**
 
-- **11, 13, 14, 15, 16, 18, 19 — a fila inteira.** É o F5 e o rumo descrito no
-  fim da §2. Sete itens que caem juntos quando a fila do servidor existir.
+- **11, 13, 14, 15, 16, 18, 19 — a fila inteira.** É o rumo descrito no fim da
+  §2 (o F5 caiu com o Codex em 06/09). Sete itens que caem juntos quando a fila
+  do servidor existir.
 - **8 · arrastar e soltar arquivo no composer não existe.** Nenhum `onDrop`.
   Barato, e o Rica trabalha muito no desktop.
 - **5 · `enterkeyhint` é condicional** — só aparece com anexo retido em toque.
@@ -767,13 +784,16 @@ tipo desconhecido), 27 e 34-42 (truncamento fora do CSS), 43-60. **Não confundi
 
 ## 10. O contrato da fila — acordado, não começado
 
-⛔ **Nada disto está construído.** O Rica ainda não disse se a fila é a frente
-agora, e nem o Pavan nem eu escrevemos linha de código para ela. Está aqui porque
-o desenho já custou uma conversa e não pode evaporar junto com as sessões.
+⛔ **O servidor não existe; o painel tem só o esqueleto.** `fila-types.ts` (forma
+do item, no `cockpit-core`), `fila-do-servidor.ts` (quem aparece, posição pelo id
+v7, prazo de 30 s) e os clientes `fetchFilaDaSessao`/`deleteItemDaFila` em
+`api.ts`, provados contra fixture (`64fd5f1`) e **sem consumidor** na tela. Na
+API não há tabela nem rota `/fila`. O Rica ainda não disse se a fila é a frente
+agora. Está aqui porque o desenho já custou uma conversa e não pode evaporar
+junto com as sessões.
 
 **A divisão.** Pavan faz a fila no servidor — tabela por sessão, drenagem amarrada
-ao evento terminal do NDJSON de cada motor (`result` no Claude Code,
-`turn.completed` no Codex). Daniel expõe `queue: [...]` no polling e desenha o
+ao evento terminal do NDJSON (`result` no Claude Code). Daniel expõe `queue: [...]` no polling e desenha o
 espelho no painel — itens numerados acima do composer, cancelar por item,
 sobrevivendo ao reload porque vêm do servidor. O encontro é **teste de contrato
 contra fixture**, não integração: cada lado anda sem esperar o outro.
@@ -844,10 +864,11 @@ motivo é estrutural: **nenhum id atravessa o tmux.** A API cola **texto puro** 
 terminal; o agente não recebe envelope com metadado, recebe caracteres, e o que
 ele grava no JSONL é o que leu. Não existe campo onde um id pudesse reaparecer —
 construir o trilho não conserta, porque não há trilho a construir. Conferido dos
-dois lados: `postAgentInput` (`packages/cockpit-core/src/api.ts:316`) gera o UUID
-dentro da própria função e ninguém mais o vê; na API o `idempotency_key` só existe
-no mundo de handoff/task (`store.py:1643-1785`), nada ligado ao `/input`; e o feed
-é o JSONL, via `jsonl_watcher`.
+dois lados: `postAgentInput` (`packages/cockpit-core/src/api.ts`) gera o UUID
+dentro da própria função e ninguém mais o vê; na API o `/input` exige o
+`idempotency_key` no corpo (`InputRequest`) mas não o usa nem o grava — deduplicar
+por chave só existe no mundo de handoff/task (`_handoff_by_idempotency_key`, em
+`db/store.py`); e o feed é o JSONL, via `jsonl_watcher`.
 
 **Escopo honesto de cada peça, então:**
 
@@ -876,7 +897,7 @@ põe a mesma gramática em dois lugares — o parser em TypeScript no painel e a
 extração em Python no servidor — e duas gramáticas do mesmo formato divergem com
 o tempo. **Decidido: o dono é o servidor** — e hoje existe **uma** gramática, a do
 painel (`envelope-de-canal.ts`); em Python há só um comentário citando o XML
-(`agents.py:4546`). Ou seja, não é consolidar duas, é impedir a segunda de nascer.
+(`<channel ... attachment_path=...>`, em `routers/agents.py`). Ou seja, não é consolidar duas, é impedir a segunda de nascer.
 O painel aposenta o parser quando o servidor entregar. Duas condições (Pavan):
 
 1. **A entrega é estruturada, não "texto desembrulhado".** Só o texto limpo mata o

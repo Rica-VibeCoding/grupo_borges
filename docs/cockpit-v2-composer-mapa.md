@@ -1,5 +1,9 @@
 # Mapa do Composer — terreno para a refatoração de UI/UX
 
+> ⚠️ **HISTÓRICO (20/08).** Retrato do `composer.tsx` com 1316 linhas; hoje ele tem
+> ~1675 (02/10) e **toda referência `composer.tsx:NNN` daqui está velha**. Não usar
+> como mapa do código atual. O vigente é `cockpit-v2-composer.md`.
+
 > Leitura de `apps/cockpit/components/shell/composer.tsx` (1316 linhas) — mapa pré-refatoração, sem proposta de solução.
 > Toda afirmação cita a linha no formato `composer.tsx:NNN`. Referências a módulos externos citam o arquivo deles.
 > Gerado em 20/08 a pedido do Daniel.

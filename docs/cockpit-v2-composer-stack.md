@@ -1,5 +1,8 @@
 # Padrões de stack para o composer — levantamento de documentação oficial
 
+> ⚠️ **HISTÓRICO (20/08).** Levantamento que alimentou a proposta de refatoração; não
+> é regra. O vigente é `cockpit-v2-composer.md`.
+
 > Levantamento de padrão, sem propor refatoração do código do composer.
 > Stack: **React 19 · Next 16 · Tailwind 4** (Next 16 não aparece diretamente — as quatro perguntas são de React, CSS e ARIA).
 > Fontes: react.dev (oficial), tailwindcss.com (oficial), WAI-ARIA APG em w3.org (oficial), MDN (referência de plataforma).

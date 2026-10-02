@@ -11,19 +11,23 @@
 
 ---
 
-## 1. Versões — pinadas exatas, sem acento circunflexo
+## 1. Versões — núcleo pinado exato
 
 Medido no `apps/web` que está no ar em 2026-07-30, não copiado do `package.json`
 (lá está tudo com `^`, que resolve diferente amanhã):
 
 | peça | versão exata | observação |
 |---|---|---|
-| Node | `22.22.1` | o que está na máquina |
-| pnpm | `10.20.0` | via `corepack pnpm`, **não existe `pnpm` no PATH** |
+| Node | `>=22` (`engines` da raiz) | VPS `borges`: 22.x (`22.22.3` em 30/07) · notebook: `26.8.1` (mise) |
+| pnpm | `10.20.0` | VPS: `corepack pnpm`, **não existe `pnpm` no PATH** · notebook: `pnpm` direto (Node 26 não traz `corepack`) |
 | next | `16.2.6` | |
 | react / react-dom | `19.2.6` | |
 | tailwindcss | `4.3.0` | |
-| typescript | `~5.7` | |
+| typescript | `5.7.3` | |
+
+Fora do núcleo (`radix-ui`, `motion`, `cmdk`, `react-markdown`, `remark-gfm`,
+`class-variance-authority`, `@atlaskit/*`) o `package.json` usa `^`; quem fixa é o
+lockfile.
 
 **Por que exato e não `^`:** quem constrói aqui são LLMs. Uma versão que resolve
 sozinha para a próxima minor troca a API por baixo do construtor, e o modelo
@@ -48,12 +52,12 @@ Portas relevantes nesta máquina (`borges`, a Oracle):
 | porta | quem | observação |
 |---|---|---|
 | 3000 | easypanel (docker) | `0.0.0.0`, não é nosso |
-| 3007 | `apps/web`, cockpit v1 | congelado; o Rica ainda o usa |
+| 3007 | `apps/web`, cockpit v1 | congelado e **fora do ar** — nada escuta aqui |
 | 3008 | `apps/cockpit`, Cockpit v2 | produção, por `cockpit-v2.service` |
 | 3009 | `apps/cockpit`, Cockpit v2 | desenvolvimento local; não publicado |
-| 8000 | `apps/api` (uvicorn FastAPI) | `127.0.0.1` |
-| 3443 | `tailscale serve` → 3007 | Cockpit v1 |
-| 3445 | `tailscale serve` → 8000 | API para desenvolvimento remoto |
+| 8000 | `docker-proxy` | `0.0.0.0`, **não é a API** — não é nosso |
+| 8002 | `apps/api` (uvicorn FastAPI) | `127.0.0.1`, por `cockpit-api.service` |
+| 3445 | `tailscale serve` → 8002 | API para desenvolvimento remoto |
 | 3446 | `tailscale serve` → 3008 | produção do v2; única URL do Rica |
 | 3447 | `tailscale serve` → 3011 | preview de branch `ideia/*` (unit `cockpit-ideia-<nome>`, worktree `grupo_borges-<nome>`); desligada quando não há ideia em teste |
 
@@ -70,6 +74,12 @@ COCKPIT_DIST_DIR=.next-estagio-<hash> corepack pnpm exec next build
 mv .next .next-antes-<hash> && mv .next-estagio-<hash> .next
 systemctl --user restart cockpit-v2
 ```
+
+Isso roda **na `borges`**, como `clawd`; a unit serve o `.next` de
+`/home/clawd/repos/grupo_borges/apps/cockpit`. Ela é persistente desde 08/08
+(`~/.config/systemd/user/cockpit-v2.service`), então `restart` basta. O `stop` →
+`reset-failed` → `systemd-run` era da unit transiente e não vale mais. No notebook não
+existe 3008: lá o trabalho fecha no `git push`.
 
 Compilar do `origin/main` recém-buscado (`git worktree add --detach <dir> origin/main`),
 nunca da árvore compartilhada: build de base atrasada tira do ar o que outra sessão
@@ -279,10 +289,6 @@ O que **não** herdamos do `apps/web`: `@import "augmented-ui/..."`, e a paleta
 inteira de `:root[data-theme="dark"]` (ciano `#00f0ff` sobre `#060b18`). É
 exatamente o visual que o v2 joga fora.
 
-O que **não** herdamos: `@import "augmented-ui/..."`, e a paleta inteira de
-`:root[data-theme="dark"]` (ciano `#00f0ff` sobre `#060b18`). É exatamente o
-visual que o v2 joga fora.
-
 ---
 
 ## 6. Arquitetura de pastas — ordem direta do Rica
@@ -310,7 +316,8 @@ primeira linha útil ser escrita. As regras:
 6. **Teto de linhas por arquivo: 300.** Passou disso, o arquivo está fazendo duas
    coisas. Vale para componente, hook e módulo.
 
-Estrutura-alvo (materializada no passo 4, o scaffold):
+Estrutura real (conferida em 02/10; o alvo de 30/07 previa `components/chat/` e
+`components/render/`, que nunca existiram com esse nome):
 
 ```
 apps/cockpit/
@@ -321,10 +328,15 @@ apps/cockpit/
     layout.tsx
     page.tsx             ← lista da tropa
     agente/[slug]/       ← chat. Seleção de agente na URL, não em context
+    conversa/ faxina/ api/
   components/
-    shell/               ← AppShell, as três colunas, a gaveta
-    chat/                ← composer, lista, bolha
-    render/              ← um arquivo por família de payload (a cauda longa)
+    shell/               ← AppShell, tropa (sidebar), composer, seletores de motor e conta
+    feed/                ← o feed: lista, bolhas, grupo de passos, linha viva, marcos
+    renderers/           ← o corpo de cada execução aberta; várias famílias caem no mesmo corpo
+    gaveta/              ← gaveta do agente e painel de Conversas
+    conversa/            ← modo conversa (voz em tempo real)
+    faxina/ telas/       ← faxina e atalhos de telas
+    ui/                  ← primitivas do shadcn
   lib/
     (só o que é exclusivo deste app; o resto vem de cockpit-core)
 packages/cockpit-core/   ← lógica que sobrevive, sem React
@@ -345,7 +357,7 @@ errar**, não "seria legal ter":
 
 | skill | por que ela existe |
 |---|---|
-| `subir-cockpit` | subir/derrubar o dev **da porta 3009** sem tocar na produção 3008 nem no 3007. `next dev` genérico ou `pkill next` já derrubou o cockpit da frota antes |
+| `subir-cockpit` | subir/derrubar o dev **da porta 3009** sem tocar na produção 3008. `next dev` genérico ou `pkill next` já derrubou o cockpit da frota antes |
 | `novo-renderer` | são 23 tools e 24 formas de `tool_use_result`; adicionar renderer é o trabalho mais repetido do projeto, e errar o agrupamento não dá erro, dá tela torta |
 | `mexer-na-pele` | cor só existe em `globals.css`. A skill inclui a varredura de hex solto, que é o modo de falha real |
 | `checar-paridade` | roda o checklist de equivalência contra as fixtures gravadas antes de qualquer merge |
@@ -353,6 +365,10 @@ errar**, não "seria legal ter":
 ---
 
 ## 8. Correção de vocabulário: `convertMessage` não é nosso
+
+> ⚠️ **HISTÓRICO (30/07).** O gate descartou o `assistant-ui` (`cockpit-v2-gate.md`);
+> o pacote saiu do `package.json` e o feed é próprio, em `components/feed/**`. O que
+> segue registra o raciocínio da época.
 
 A fusão manda documentar "a assinatura do `convertMessage`". **Essa função não
 existe no nosso código** — `git grep` só a encontra dentro dos nossos próprios
@@ -435,7 +451,8 @@ Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
   e recurso novo se confere na coluna do Safari, nunca na do Chrome.
   Fonte: https://developer.apple.com/app-store/review/guidelines/ §2.5.6.
 - **HTTP/2 no `tailscale serve`: confirmado.** `curl` negocia `http_version=2`
-  contra `https://srv1061129.tailfe77db.ts.net:3443`. O risco de os dois
+  contra `https://borges.tailfe77db.ts.net:3446` (remedido em 02/10; o original, de
+  30/07, foi na `srv1061129`). O risco de os dois
   `EventSource` mais os fetches baterem no teto de ~6 conexões por host do Safari
   **está eliminado** — com multiplexing não há fila. Era o maior risco técnico
   aberto da lista.
@@ -449,7 +466,8 @@ Duas consequências que ficam registradas, e a segunda pesa na decisão do Rica:
 ## 10. Desenvolvimento remoto — front no PC, backend na VPS
 
 Acordado em 04/08/2026 entre o Pavan (VPS) e o Claude do PC, por ordem do Rica. Vale
-pra quem for editar `apps/cockpit` de fora da VPS.
+pra quem for editar `apps/cockpit` de fora da VPS. A VPS é a `borges` desde a saída da
+`srv1061129` (Hostinger), que hoje responde 502.
 
 ### A regra
 
@@ -467,7 +485,7 @@ roda no Windows.
 
 ```
 # apps/cockpit/.env.development.local   (não versionado — é por máquina)
-API_BACKEND_URL=https://srv1061129.tailfe77db.ts.net:3445
+API_BACKEND_URL=https://borges.tailfe77db.ts.net:3445
 ```
 
 `.env.development.local` e **não** `.env.local`: o `.local` puro também vale em

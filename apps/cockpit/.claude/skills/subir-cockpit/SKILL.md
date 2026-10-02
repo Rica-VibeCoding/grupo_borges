@@ -1,6 +1,6 @@
 ---
 name: subir-cockpit
-description: Sobe, derruba ou reinicia o dev do Cockpit v2 na porta 3009 sem tocar na produção da 3008 nem no cockpit do Rica na 3007. Usar sempre que precisar do servidor de desenvolvimento de pé.
+description: Sobe, derruba ou reinicia o dev do Cockpit v2 na porta 3009 sem tocar na produção da 3008. Usar sempre que precisar do servidor de desenvolvimento de pé — na borges ou no notebook do Rica.
 ---
 
 # subir-cockpit — o dev da 3009, e só ele
@@ -11,30 +11,35 @@ description: Sobe, derruba ou reinicia o dev do Cockpit v2 na porta 3009 sem toc
 
 ## Por que esta skill existe
 
-`pkill next` e `next dev` sem porta **já derrubaram o cockpit da frota**. As duas
-instâncias são processos `next-server` com linha de comando parecida, e o Rica usa
-a 3007 — quem mata pelo nome do processo mata a dele junto.
+`pkill next` e `next dev` sem porta **já derrubaram o cockpit da frota**. Na
+`borges`, o dev e a produção (3008, a única tela do Rica) são processos
+`next-server` com linha de comando parecida — quem mata pelo nome do processo mata
+a produção junto. (O v1 na 3007 está fora do ar desde a mudança pra `borges`.)
 
-Regra da casa: **quem matou sobe.** Se derrubou a 3007, subir de volta antes de
-soltar o teclado.
+Regra da casa: **quem matou sobe.** Se derrubou a 3008, subir de volta antes de
+soltar o teclado (`systemctl --user restart cockpit-v2`, como `clawd`).
 
 ## Subir
 
 ```bash
-cd /home/clawd/repos/grupo_borges/apps/cockpit
+cd "$(git rev-parse --show-toplevel)/apps/cockpit" || exit 1   # borges: /home/clawd/repos/grupo_borges · notebook: ~/Projetos/grupo_borges
 (setsid env COCKPIT_DIST_DIR=.next-dev npx next dev --port 3009 --hostname 127.0.0.1 > /tmp/cockpit-v2-dev-3009.log 2>&1 &)
 sleep 8 && ss -tlnp | grep 3009
 ```
 
-O `pnpm dev` do `package.json` tem `--port 3008` cravado — por isso o comando é
-`npx next dev` com a porta explícita, e não o script.
+O `pnpm dev` do `package.json` roda o mesmo comando. A linha acima só acrescenta
+`setsid` e o log em arquivo; mantê-la literal, porque
+`lib/configuracao-operacional.test.ts` a confere.
+
+No notebook o dev precisa do `.env.development.local` apontando pra API da
+`borges` (copiar de `.env.development.example`; ver `docs/cockpit-v2-stack.md` §10).
 
 `setsid` importa: sem ele o dev morre quando a sessão que o lançou termina.
 
 ## Ver se está de pé
 
 ```bash
-ss -tlnp | grep -E ':(3007|3008|3009)'  # 3007 v1 do Rica · 3008 produção v2 · 3009 sua
+ss -tlnp | grep -E ':(3008|3009)'  # 3008 produção v2 (só na borges) · 3009 sua
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3009/
 tail -20 /tmp/cockpit-v2-dev-3009.log
 ```
@@ -61,18 +66,20 @@ para mudança de código: o Turbopack recarrega sozinho. Só é necessário quan
 
 ## Orçamento de máquina
 
-**Teto de 2 `next dev` nesta máquina:** a 3007 (do Rica) e a 3009 (sua). A 3008
-não conta — é `next start`, build pronto, não recompila. Não existe terceiro dev —
-ver `docs/cockpit-v2-ownership.md` §5. Se precisar de um ambiente extra, é
-`next build` na Oracle.
+**Na `borges`, um `next dev` só: a 3009.** A 3008 não conta — é `next start`,
+build pronto, não recompila — e a 3011 é o preview de branch `ideia/*`, quando há
+um. Não suba um segundo dev ao lado da produção. A `borges` é a Oracle **e** a
+produção: build extra lá só em estágio (`docs/cockpit-v2-stack.md` §2). No
+notebook, só a 3009, com a API vindo da `:3445`.
 
 ## Abrir no navegador
 
-- Local: `http://127.0.0.1:3009`
+- Local: `http://localhost:3009` — voz exige origem segura (`docs/cockpit-v2-stack.md`
+  §10); `curl` pode seguir em `127.0.0.1:3009`.
 - **O dev não é mais publicado na tailnet.** A `:3444` apontava pro 3009 e o Rica
   a abria todo dia; ele mandou tirar em 08/08 — não quer mais ver trabalho pela
-  metade. A única porta dele é a `:3446` (produção, 3008). Quem valida o dev é o
-  agente, por `127.0.0.1:3009`.
-- A 3443 aponta para a 3007 (v1) e **não se mexe nela**.
+  metade. A única porta dele é a `:3446` (produção, 3008). Na `borges`, quem valida
+  o dev é o agente, por curl. No notebook dele o dev roda na máquina que ele usa, e
+  aí `localhost:3009` abre direto.
 - ⚠️ Nunca pelo IP `100.x`: origem sem HTTPS não expõe microfone, e o modo voz
   simplesmente não existe lá.

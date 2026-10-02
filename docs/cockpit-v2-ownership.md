@@ -22,22 +22,24 @@ edição local.
 
 ---
 
-## 2. Fase de construção: o mapa vigente (30/07)
+## 2. Fase de construção: o mapa vigente (30/07, revisado em 02/10)
 
-Os caminhos abaixo são os que **existem no disco** — conferido em 30/07. Quando o
+Os caminhos abaixo são os que **existem no disco** — conferido em 30/07 e de novo em
+02/10, quando saíram os que não existem mais e entraram as pastas novas sem dono. Quando o
 recorte mudar, corrigir aqui no mesmo turno: ownership por caminho fantasma é
 ownership nenhum.
 
 | Caminho | Dono | Por quê este recorte |
 |---|---|---|
-| `components/shell/**`, `globals.css`, `layout.tsx` | **Daniel** | AppShell, composer, gaveta, navegação, pele |
-| `components/feed/**`, `app/spike/sem-lib/**` | **Hiro** | o feed próprio, sem `assistant-ui` |
+| `components/shell/**` | **Daniel** | AppShell, tropa, composer, navegação |
+| `components/feed/**` | **sem dono desde 11/09** (o Hiro saiu da tropa) — falar com o Pavan | o feed próprio, sem `assistant-ui` |
+| `components/{conversa,gaveta,faxina,telas}/**`, `app/{conversa,faxina,api}/**` | **a definir** | criados depois de 30/07; até ter dono, falar com o Pavan |
 | `lib/envio.ts` + a exceção pontual em `apps/api/` | **Tara** | confirmação de envio por observação do eco |
 | `components/renderers/**` | **consumo de todos** | um arquivo por família de payload; mudar aqui passa pelo Pavan |
 | `components/ui/**` | shadcn | gerado; conferir se já existe antes de desenhar |
 | `docs/cockpit-v2-medicao/**` | **Daniel** grava, todos leem | bancada e relatórios de medição |
 | `packages/cockpit-core/**` | **Pavan** | núcleo compartilhado: mudança aqui afeta as três frentes |
-| `app/globals.css` | **Pavan** | única fonte de cor. Ver §4 |
+| `app/globals.css` | **Daniel** §A pele · **Pavan** §B esqueleto | única fonte de cor; a divisão está no cabeçalho do arquivo. Ver §4 |
 | `app/**/layout.tsx`, `page.tsx`, rotas | **Pavan** | topologia de rota é decisão de arquitetura |
 | `apps/cockpit/CLAUDE.md`, `.claude/skills/**` | **Pavan** | infraestrutura de manutenção |
 | `docs/cockpit-v2-*.md` | **Pavan** | os contratos |
@@ -77,12 +79,13 @@ exige um segundo uvicorn em outra porta**, apontando para o mesmo banco. Nunca o
 > uvicorn em outra porta. A distinção é entre publicar o que já passou pela régua e
 > usar produção como bancada.
 >
-> Como reciclar, e não é `restart`: `systemctl --user kill --signal=SIGTERM
-> cockpit-api.service`. A unit é **transiente** (`systemd-run` no `subir-frota.sh`),
-> e `stop`/`restart` a APAGAM — o start seguinte devolve "Unit not found". Com
-> `Restart=always`, o SIGTERM derruba o cgroup e o systemd religa em segundos, sem
-> deixar uvicorn órfão segurando a `:8000`. Provar pela **data do processo**
-> (`ps -o lstart`), nunca por `ActiveState=active`.
+> Como reciclar **até 08/08**, e não era `restart`: `systemctl --user kill
+> --signal=SIGTERM cockpit-api.service`. A unit era **transiente** (`systemd-run` no
+> `subir-frota.sh`), e `stop`/`restart` a APAGAVAM — o start seguinte devolvia "Unit not
+> found". **Desde 08/08 ela é persistente** (o mesmo motivo registrado na
+> `cockpit-v2.service`), e hoje roda na `borges`, porta `8002`, como `clawd`. Seguem
+> valendo: provar pela **data do processo** (`ps -o lstart`), nunca por
+> `ActiveState=active`, e conferir que nenhum uvicorn órfão segura a `:8002`.
 
 ### Papéis fixos, e quem audita quem — regra do Rica (30/07)
 
@@ -91,7 +94,7 @@ Não é combinado deste passo, é **regra permanente** do grupo:
 | papel | quem | audita |
 |---|---|---|
 | **frontend master** | **Daniel** | — |
-| revisão de **frontend** | **Kimi / Hiro** | o trabalho do Daniel |
+| revisão de **frontend** | **Kimi** (o Hiro saiu da tropa em 11/09) | o trabalho do Daniel |
 | revisão de **backend** | **Tara / Codex** | o meu trabalho |
 
 Duas consequências que fazem a regra valer a pena:
@@ -150,6 +153,11 @@ manutenção, justamente porque este é o modo de falha que se repete.
 ---
 
 ## 5. Orçamento de máquina — quantos `next dev` de pé
+
+> ⚠️ **HISTÓRICO (30/07, era Hostinger).** Hoje a produção (3008) e a API (8002) vivem
+> na `borges` — a mesma Oracle `vps-arm-borges-767247` (100.116.1.44) desta tabela; a
+> `srv1061129` responde 502; o dev é a 3009 e o v1 (3007) está fora do ar. Segue
+> valendo: `node_modules` não atravessa máquinas.
 
 A fusão exige este número escrito. Medido em 2026-07-30:
 
@@ -332,7 +340,10 @@ aqui com o Rica pedindo pelo nome, como esta.
 
 ---
 
-## Mapa vigente — 30/07 14h, com TRÊS agentes escrevendo no mesmo app ao mesmo tempo
+## Mapa de 30/07 14h — HISTÓRICO, com TRÊS agentes escrevendo no mesmo app ao mesmo tempo
+
+> ⚠️ Retrato daquela tarde. O mapa que vale é o da §2; as três regras de simultaneidade
+> abaixo continuam de pé.
 
 A tabela por frente lá em cima era o **plano** (`components/chat/`, `components/render/`). O
 recorte real ficou outro, e como agora há três pessoas com o editor aberto no mesmo `apps/cockpit`
