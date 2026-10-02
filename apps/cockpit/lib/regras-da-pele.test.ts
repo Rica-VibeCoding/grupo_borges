@@ -72,7 +72,6 @@ test('cor só no globals.css', () => {
  *  daqui. Arquivo novo não entra na lista: nasce dentro do teto. */
 const ACIMA_DO_TETO = new Set([
   'components/shell/composer.tsx',
-  'components/shell/voz.ts',
 ]);
 
 test('teto de 300 linhas por arquivo', () => {

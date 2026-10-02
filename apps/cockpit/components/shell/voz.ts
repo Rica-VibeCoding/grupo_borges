@@ -34,6 +34,20 @@
  * CANCELAVA; aqui ele despacha.
  */
 
+import type { Impedimento } from './diagnostico-da-voz.ts';
+
+// O diagnóstico (microfone e STT) e o formato do áudio moram ao lado desde
+// 02/10; continuam saindo daqui para quem importa `./voz`.
+export type { Impedimento } from './diagnostico-da-voz.ts';
+export { diagnosticaMicrofone, diagnosticaTranscricao, impedimentoDeContexto } from './diagnostico-da-voz.ts';
+export {
+  MIMES_ACEITOS,
+  assinaturaDoContainer,
+  escolheMime,
+  extensaoDe,
+  normalizaMime,
+} from './formato-do-audio.ts';
+
 /** Fases da CAPTURA. Depois de `transcrevendo`, o resultado vira rascunho
  *  editável; só o envio explícito entra na máquina de entrega. */
 export type FaseVoz =
@@ -117,237 +131,6 @@ export function aoSoltar(gesto: Gesto, segundos: number): Desfecho {
  *  virou HTTP 400 na OpenAI, 22s de fallback local e transcrição vazia. */
 export function aoEnviarTravada(segundos: number): Desfecho {
   return segundos >= PISO_SEGUNDOS ? 'enviar' : 'descartar-curto';
-}
-
-// ---------------------------------------------------------------------------
-// Microfone indisponível — o item 4 do despacho.
-// ---------------------------------------------------------------------------
-
-export type Impedimento = {
-  /** O que aconteceu, na voz do Rica. */
-  resumo: string;
-  /** O que fazer a respeito. Nunca vazio: mensagem de erro sem saída é o mesmo
-   *  botão morto que esta peça existe pra consertar. */
-  saida: string;
-  /** `true` quando insistir no mesmo lugar não resolve (precisa mexer em
-   *  ajuste do sistema ou trocar de URL) — a tela esconde o "tentar de novo". */
-  definitivo: boolean;
-  /** A MÁQUINA NÃO TEM MICROFONE. Não é impedimento a explicar, é controle que
-   *  não deveria estar na tela: quem lê isto retira o botão em vez de escrever
-   *  um aviso (ver a nota do slot de entrada em `composer.tsx`). */
-  semAparelho?: boolean;
-};
-
-/** Contexto não-seguro: `navigator.mediaDevices` simplesmente não existe.
- *
- * Isto NÃO é hipotético aqui. O cockpit é publicado por `tailscale serve` com
- * certificado real (`https://…​.ts.net:3443`), mas o mesmo servidor responde
- * pelo IP `100.x` em HTTP puro — e abrir pelo IP mata o microfone sem dizer
- * por quê. Está escrito no playbook (§ "Regra: abrir sempre pelo nome .ts.net")
- * como a causa número um de "o mic não funciona". Uma tela que sabe disso e
- * cala é pior que um botão morto.
- */
-/**
- * O STT falhou NO SERVIDOR — o áudio subiu, a fala não virou texto.
- *
- * Mesma régua do microfone: nunca só o diagnóstico, sempre a saída. Erros
- * conhecidos de STT acontecem antes da entrega e podem ser categóricos. Um
- * erro genérico, porém, também pode ser perda da resposta depois que o back
- * entregou; nesse caso a tela assume incerteza para não induzir duplicação.
- *
- * Os detalhes vêm crus do `detail` do FastAPI, embutidos na mensagem do erro
- * que `postAgentTranscription` lança. Casar por substring é frágil de propósito: se o
- * back mudar o rótulo, cai no caso geral, que continua acionável.
- */
-export function diagnosticaTranscricao(erro: unknown): Impedimento {
-  const texto =
-    typeof erro === 'string'
-      ? erro
-      : erro instanceof Error
-        ? erro.message
-        : typeof erro === 'object' && erro !== null && 'message' in erro
-          ? String((erro as { message: unknown }).message)
-          : '';
-
-  if (texto.includes('stt_empty')) {
-    return {
-      resumo: 'não veio fala nenhuma no áudio',
-      saida: 'segure o botão, espere meio segundo e fale — o começo costuma se perder',
-      definitivo: false,
-    };
-  }
-  if (texto.includes('stt_timeout')) {
-    return {
-      resumo: 'o áudio passou do tempo que o servidor transcreve',
-      saida: 'grave em trechos mais curtos — o teto é 30s de processamento',
-      definitivo: false,
-    };
-  }
-  if (texto.includes('stt_script_not_found')) {
-    return {
-      resumo: 'o servidor está sem o script de transcrição',
-      saida: 'isto é infra, não é você: mande por texto e avise o Pavan',
-      definitivo: true,
-    };
-  }
-  if (texto.includes('stt_failed')) {
-    return {
-      resumo: 'a transcrição falhou no servidor',
-      saida: 'tente de novo; se repetir, mande por texto',
-      definitivo: false,
-    };
-  }
-  if (texto.includes('422')) {
-    return {
-      resumo: 'o servidor recusou o formato ou o tamanho do áudio',
-      saida: 'áudios acima de 10 MB não sobem — grave um trecho menor',
-      definitivo: false,
-    };
-  }
-  return {
-    resumo: 'não consegui confirmar se o áudio entrou',
-    saida: 'confira no chat antes de mandar de novo — repetir pode duplicar',
-    definitivo: false,
-  };
-}
-
-export function impedimentoDeContexto(): Impedimento {
-  return {
-    resumo: 'o navegador não libera o microfone nesta página',
-    saida: 'abra o cockpit pelo endereço .ts.net, não pelo IP 100.x — o microfone só existe em HTTPS',
-    definitivo: true,
-  };
-}
-
-/** Traduz o erro do `getUserMedia`. Os nomes vêm do padrão e são os mesmos em
- *  Safari, Chrome e Firefox; o `name` é o contrato, a `message` não é. */
-export function diagnosticaMicrofone(erro: unknown): Impedimento {
-  const nome =
-    typeof erro === 'object' && erro !== null && 'name' in erro
-      ? String((erro as { name: unknown }).name)
-      : '';
-
-  switch (nome) {
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return {
-        resumo: 'microfone bloqueado para esta página',
-        saida: 'no iPhone: Ajustes ▸ Safari ▸ Microfone, ou o "aA" na barra de endereço ▸ Ajustes do Site',
-        definitivo: true,
-      };
-    case 'NotFoundError':
-      // `OverconstrainedError` morava junto e SAIU: ele diz "o aparelho existe,
-      // as exigências é que não fecham", e a exigência daqui é `{ audio: true }`
-      // — a mais frouxa que existe. Agrupar os dois faria um aparelho presente
-      // ser tratado como ausente e o botão sumir por engano.
-      return {
-        resumo: 'nenhum microfone encontrado',
-        saida: 'conecte um microfone ou use o teclado',
-        definitivo: true,
-        semAparelho: true,
-      };
-    case 'NotReadableError':
-      return {
-        resumo: 'o microfone está ocupado por outro app',
-        saida: 'feche quem está usando (chamada, gravador) e tente de novo',
-        definitivo: false,
-      };
-    case 'AbortError':
-      return {
-        resumo: 'a captura foi interrompida',
-        saida: 'tente de novo',
-        definitivo: false,
-      };
-    default:
-      return {
-        resumo: 'não consegui abrir o microfone',
-        saida: 'tente de novo, ou use o teclado',
-        definitivo: false,
-      };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Formato — o item 5 do despacho.
-// ---------------------------------------------------------------------------
-
-/** Os quatro que o back aceita (`_VOICE_ALLOWED_MIMES`, agents.py:1991). */
-export const MIMES_ACEITOS = ['audio/ogg', 'audio/webm', 'audio/mp4', 'audio/mpeg'] as const;
-
-/** Ordem de preferência ao CONSTRUIR o gravador.
- *
- * `audio/webm;codecs=opus` primeiro porque opus é o codec de voz — comprime
- * fala melhor que qualquer outro nessa lista, e é o que o Chrome/Android usa.
- * `audio/mp4` é o caminho do Safari, e cobre o iPhone do Rica.
- *
- * Pedir explicitamente importa: a MDN diz que `MediaRecorder.mimeType` devolve
- * **o que foi pedido na construção**, e só escolhe sozinho quando não pedimos.
- * Escolhendo nós, sabemos o que sai. */
-const PREFERIDOS = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
-
-export function escolheMime(suportado: (mime: string) => boolean): string | null {
-  return PREFERIDOS.find((mime) => suportado(mime)) ?? null;
-}
-
-/** Normaliza o que sai do gravador para um dos quatro aceitos.
- *
- * Três coisas acontecem aqui, e nenhuma é decorativa:
- *
- * 1. **Parâmetro de codec cai fora.** O back já corta (`content_type.split(";")`
- *    em agents.py:2064), então isto é cinto E suspensório — mas o `filename`
- *    que sobe no FormData também é derivado daqui, e ele não passa por corte
- *    nenhum.
- * 2. **`video/mp4` vira `audio/mp4`.** O fallback sem opções deixa o browser
- *    escolher, e o WebKit já devolveu container MP4 rotulado como vídeo para
- *    captura só-áudio. O arquivo é o mesmo: o back grava tudo como `.oga` e
- *    manda pro ffmpeg, que decide pelo CONTEÚDO, não pela extensão. Recusar
- *    esse áudio por causa do rótulo seria perder a fala por burocracia.
- * 3. **Vazio devolve `null`.** Sem `type` o `FormData` manda
- *    `application/octet-stream` e o back recusa com 422 — melhor a tela dizer
- *    que não conseguiu gravar do que o Rica falar por um minuto e receber um
- *    erro de servidor.
- */
-export function normalizaMime(bruto: string | null | undefined): string | null {
-  const base = (bruto ?? '').split(';')[0].trim().toLowerCase();
-  if (!base) return null;
-  if (base === 'video/mp4') return 'audio/mp4';
-  if (base === 'audio/mp3') return 'audio/mpeg';
-  return (MIMES_ACEITOS as readonly string[]).includes(base) ? base : null;
-}
-
-/** Extensão do arquivo que sobe. Só cosmética de log no back, mas errar aqui
- *  atrapalha quem for depurar um áudio perdido. */
-export function extensaoDe(mime: string): string {
-  if (mime === 'audio/mp4') return 'm4a';
-  if (mime === 'audio/mpeg') return 'mp3';
-  if (mime === 'audio/ogg') return 'ogg';
-  return 'webm';
-}
-
-/** Assinaturas mínimas dos containers que o gravador entrega de verdade.
- *  WebM começa no EBML magic; MP4 carrega "ftyp" no offset 4. Conferir ANTES
- *  de subir: em gravação longa o muxer do navegador às vezes larga o primeiro
- *  pedaço — o que carrega o header — e o "webm" começa no meio da fala. O back
- *  vê "Invalid data found when processing input" e o STT morre com 502; aqui o
- *  defeito vira "grave de novo", que é a verdade. */
-const ASSINATURAS: Readonly<Record<string, readonly number[]>> = {
-  'audio/webm': [0x1a, 0x45, 0xdf, 0xa3],
-  'audio/mp4': [0x66, 0x74, 0x79, 0x70],
-};
-
-/** `true` quando a cabeça do arquivo casa com o container que o mime declara.
- *  Formato sem assinatura conhecida (ogg, mpeg) passa — conferir é opcional, o
- *  back decide. Pede pelo menos 8 bytes porque o `ftyp` do MP4 mora no offset 4. */
-export function assinaturaDoContainer(
-  mime: string | null | undefined,
-  cabeca: Uint8Array,
-): boolean {
-  const base = (mime ?? '').split(';')[0].trim().toLowerCase();
-  const assinatura = ASSINATURAS[base];
-  if (!assinatura) return true;
-  if (cabeca.length < 8) return false;
-  const offset = base === 'audio/mp4' ? 4 : 0;
-  return assinatura.every((byte, i) => cabeca[offset + i] === byte);
 }
 
 // ---------------------------------------------------------------------------
