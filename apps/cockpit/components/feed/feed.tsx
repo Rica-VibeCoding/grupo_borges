@@ -27,7 +27,7 @@ import { chaveDe } from './chave';
 import { criaChegadas } from './chegada-ao-vivo';
 import { CorpoDoItem } from './corpo-do-item';
 import { soPassoEmVoo } from './execucao-do-item';
-import type { ItemDoFeed } from './grupo-ferramentas.ts';
+import { indiceDoGrupoEmCurso, type ItemDoFeed } from './grupo-ferramentas.ts';
 import { ALTURA_ITEM, SOBRA } from './medidas-do-feed';
 
 export type FeedProps = {
@@ -53,6 +53,10 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
     }
     return -1;
   }, [itens]);
+
+  // O grupo no fim do feed com a corrida de pé segue girando entre um passo e
+  // o próximo; o ✓ só fecha quando vem fala depois ou a corrida para.
+  const grupoEmCurso = useMemo(() => indiceDoGrupoEmCurso(itens), [itens]);
 
   // Quem acabou de chegar ao vivo ganha o gesto de chegada (`chegada-ao-vivo.ts`).
   // Observar no render, e não num efeito: o item tem de nascer JÁ com a classe,
@@ -273,7 +277,7 @@ function Feed({ itens, lookup, agentSlug, estaRodando = false, rodape }: FeedPro
                     overflowWrap: 'anywhere',
                   }}
                 >
-                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando && virtual.index === ultimoTextoDoAssistente} /> : null}
+                  {item ? <CorpoDoItem item={item} lookup={lookup} agentSlug={agentSlug} estaRodando={estaRodando && (virtual.index === ultimoTextoDoAssistente || virtual.index === grupoEmCurso)} /> : null}
                 </div>
               </div>
             );

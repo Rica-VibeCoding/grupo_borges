@@ -36,6 +36,8 @@ type Props = {
   item: ItemDoFeed;
   lookup?: ToolResultLookup;
   agentSlug?: string;
+  /** O item vivo da corrida: a fala que está sendo escrita ou o grupo que
+   *  ainda trabalha no fim do feed. */
   estaRodando?: boolean;
 };
 
@@ -176,7 +178,7 @@ function CorpoDoItem({ item, lookup, agentSlug, estaRodando = false }: Props) {
       );
 
     case 'grupo-ferramentas':
-      return <GrupoFerramentasView grupo={item} lookup={lookup} />;
+      return <GrupoFerramentasView grupo={item} lookup={lookup} emCurso={estaRodando} />;
 
     case 'linha-viva':
       return <LinhaVivaView desdeMs={item.desdeMs} />;

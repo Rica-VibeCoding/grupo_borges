@@ -94,6 +94,19 @@ export type ItemDoFeed =
   | MarcoDaTroca
   | TrocaEmAndamento;
 
+/** O grupo que ainda está em curso: o último item de verdade do feed, com a
+ *  corrida de pé — o que vem atrás (linha viva, delegação) é sintético e não
+ *  encerra o trabalho. -1 quando o fim do feed não é um grupo. Quem chama só
+ *  pergunta com a corrida rodando. */
+export function indiceDoGrupoEmCurso(itens: readonly ItemDoFeed[]): number {
+  for (let indice = itens.length - 1; indice >= 0; indice--) {
+    const kind = itens[indice]?.kind;
+    if (kind === 'linha-viva' || kind === 'delegacao') continue;
+    return kind === 'grupo-ferramentas' ? indice : -1;
+  }
+  return -1;
+}
+
 /** É linha de trabalho? A régua do assistant é a MESMA do `temConteudoVisivel`
  *  e da `Parte`: texto e thinking só contam quando têm caractere; tool_result
  *  órfão desenha linha seca, não é trabalho. */

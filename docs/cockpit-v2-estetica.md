@@ -175,13 +175,17 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente
    que chega ao vivo (prazo 1 s) e no corpo aberto pelo dedo. Replay e o que remonta ao rolar aparecem
    parados. Linha e grupo de ferramenta entram, saem e trocam de estado pela Motion (§5).
-3. **Grupo em execução:** filete lateral de 2px no dourado do pulso (`--ck-pulso-ouro`), que some ao concluir. **Filete azul (`--ck-state-running`) é proibido** — saiu da linha viva, das delegações e da troca de conversa por ordem do Rica (02/10); "pensando", "trabalhando" e "trocando" são só texto pulsando, sem linha. **Texto em voo no feed
-   também é dourado** (02/10): a linha da execução, o cabeçalho do grupo, "Pensando" e "trabalhando"
-   usam `--ck-pulso-ouro` (8,1:1 sobre `raised`), a mesma cor do filete. Grupo ABERTO não repete no
-   cabeçalho o item em voo — ele já é a última linha; o cabeçalho fica no resumo e no saldo, neutro.
-4. **Falha:** nada pisca; a superfície perde o fio de luz e o filete vira `--ck-state-fail`.
-5. **Espera humano:** filete âmbar **parado** e frase âmbar pulsando com `ck-chama` (mais forte e mais
-   rápido que o `ck-respira` do trabalhando), alvo ≥ 44px — o único pulso que chama o Rica.
+3. **Grupo de ferramentas em voo:** a cápsula do grupo (§7) leva à esquerda um **anel aberto girando**
+   no dourado do pulso (`--ck-pulso-ouro`); ao terminar, o mesmo traço se fecha e vira a marca do
+   desfecho. **Filete azul (`--ck-state-running`) é proibido** em todo o feed; "pensando", "trabalhando"
+   e "trocando" são só texto pulsando, sem linha. **Texto em voo no feed é dourado** (a linha da
+   execução, "Pensando", "trabalhando"; `--ck-pulso-ouro`, 8,1:1 sobre `raised`). A frase do grupo é a
+   exceção: fica em `secondary` — quem diz "em voo" é o anel.
+4. **Falha:** nada pisca; a superfície perde o fio de luz e o filete vira `--ck-state-fail`. No grupo,
+   o anel fecha em ✕ `--ck-state-fail` e a palavra (`erro`, `interrompido`) vai à direita.
+5. **Espera humano:** filete âmbar **parado** (no grupo, um ponto âmbar parado no lugar do anel) e
+   frase âmbar pulsando com `ck-chama` (mais forte e mais rápido que o `ck-respira` do trabalhando),
+   alvo ≥ 44px — o único pulso que chama o Rica.
    `AskUserQuestion` sem resposta é `aguarda`, não `rodando`: "Aguardando você: <pergunta>".
 6. **Agente vivo na gaveta:** o ponto do agora do pulso respira só enquanto ele trabalha.
 
@@ -203,10 +207,22 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
   `ResizeObserver` do item, quadro a quadro. **Uma linha viva só:** o passo
   rodando aparece apenas na linha do agora, ao lado da esfera; no grupo e no feed ele surge quando
   termina, já no passado. Item que é só esse passo (`soPassoEmVoo`) fica no feed com a mesma chave e o
-  envelope sem padding — altura zero, sem vão acima da linha do agora. Em voo, o cabeçalho fica neutro com o filete dourado; só `aguarda` mostra a
-  pergunta e chama. Concluída bem = cápsula neutra (`--ck-surface-nav`,
-  `--ck-radius-caixa`, sem filete) com ✓ em `--ck-state-ok`: «N passos · resumo · duração», saldo
-  `+N −M` e selo âmbar de retentativas. Falhou = filete e `erro` em `--ck-state-fail`.
+  envelope sem padding — altura zero, sem vão acima da linha do agora.
+  **Uma forma só, do primeiro passo ao fim:** cápsula neutra (`--ck-surface-nav`, `--ck-radius-caixa`, sem filete, `overflow: clip`). O estado mora em três lugares da mesma linha:
+  - **Marca** (slot fixo de 14px à esquerda, `feed/marca-do-grupo.tsx`): anel aberto girando no
+    dourado em voo; ponto `--ck-state-attention` parado em `aguarda`; ✓ `--ck-state-ok` ou ✕
+    `--ck-state-fail` no fim. A passagem é o anel fechando (~160 ms) e saindo enquanto o traço da
+    marca se desenha por cima (~300 ms no total). O grupo que remonta ao rolar aparece com a marca
+    pronta.
+  - **Texto:** em voo, o resumo em `secondary`; fechado e em `aguarda`, a pergunta em âmbar chamando.
+    Ao fechar, «N passos ·» entra à esquerda e a frase desliza pelo `layout` da Motion, sem pulo.
+  - **Relógio** à direita, `tabular-nums`: conta ao vivo (tique de 1 s isolado num filho) e, no fim,
+    troca por cruzamento pela duração medida (`duracaoDoGrupo`, até o último pedido de ferramenta).
+  Depois do relógio, o saldo `+N −M`, o selo âmbar de retentativas (só no fim) e `erro`/`interrompido`
+  em `--ck-state-fail` (só com o veredito). **Em curso** é o grupo no fim do feed com a corrida de pé
+  (`indiceDoGrupoEmCurso`): entre um passo e o próximo ele segue girando, e falha no meio também; o ✓
+  só fecha quando vem fala depois ou a corrida para (`faseDoGrupo`). Com movimento reduzido, o anel não
+  gira e toda troca é instantânea.
 - **Só o último turno em voo tem passo rodando** (`feed/orfas-do-turno.ts`, 02/10): ferramenta sem
   resultado vira falha `interrompido` em `--ck-state-fail` quando o agente já respondeu depois dela ou o
   turno acabou (`isRunning`, prazo da linha viva, frota offline); `AskUserQuestion` só pela resposta

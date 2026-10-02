@@ -4,8 +4,16 @@ import { describe, it } from 'node:test';
 import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
 import type { EntradaDaExecucao } from './execucao-do-item.ts';
-import type { MembroDoGrupo } from './grupo-ferramentas.ts';
-import { duracaoCurta, duracaoDoGrupo, entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
+import { indiceDoGrupoEmCurso, type ItemDoFeed, type MembroDoGrupo } from './grupo-ferramentas.ts';
+import {
+  cabecalhoDoGrupo,
+  duracaoCurta,
+  duracaoDoGrupo,
+  entradasDoGrupo,
+  faseDoGrupo,
+  inicioDoGrupo,
+  resumeGrupo,
+} from './resumo-do-grupo.ts';
 
 function bash(command: string, result?: string, isError?: boolean): EntradaDaExecucao {
   return {
@@ -210,5 +218,75 @@ describe('duração do grupo', () => {
   it('minutos e horas arredondados', () => {
     assert.equal(duracaoCurta(70_000), '1 min');
     assert.equal(duracaoCurta(2 * 3_600_000), '2 h');
+  });
+});
+
+describe('a cápsula do grupo — uma forma, quatro marcas', () => {
+  it('rodando gira; pedindo ao Rica chama; terminado fecha em ✓ ou ✕', () => {
+    assert.equal(faseDoGrupo('rodando', false), 'gira');
+    assert.equal(faseDoGrupo('aguarda', true), 'chama');
+    assert.equal(faseDoGrupo('feito', false), 'ok');
+    assert.equal(faseDoGrupo('falhou', false), 'falha');
+  });
+
+  it('em curso, o intervalo entre passos e a falha no meio seguem girando', () => {
+    assert.equal(faseDoGrupo('feito', true), 'gira');
+    assert.equal(faseDoGrupo('falhou', true), 'gira');
+  });
+
+  it('"N passos" só entra ao fechar, e a frase segue em minúscula', () => {
+    const resumo = resumeGrupo([bash('ls', 'a'), bash('pwd', 'b')]);
+    assert.deepEqual(cabecalhoDoGrupo(resumo, 'gira', false), {
+      passos: null,
+      texto: 'Executou 2 comandos',
+      chama: false,
+    });
+    assert.deepEqual(cabecalhoDoGrupo(resumo, 'ok', false), {
+      passos: '2 passos',
+      texto: 'executou 2 comandos',
+      chama: false,
+    });
+    assert.equal(cabecalhoDoGrupo(resumo, 'falha', true).passos, '2 passos');
+  });
+
+  it('fechado e pedindo ao Rica, a pergunta chama; aberto, volta ao resumo', () => {
+    const pergunta: EntradaDaExecucao = {
+      toolName: 'AskUserQuestion',
+      args: { questions: [{ question: 'Pode apagar?' }] },
+      estado: 'requires-action',
+    };
+    const resumo = resumeGrupo([bash('ls', 'a'), pergunta]);
+    const fechado = cabecalhoDoGrupo(resumo, 'chama', false);
+    assert.equal(fechado.chama, true);
+    assert.equal(fechado.texto, resumo.atual?.frase);
+    assert.equal(cabecalhoDoGrupo(resumo, 'chama', true).chama, false);
+  });
+
+  it('o relógio ao vivo ancora no primeiro carimbo', () => {
+    const membro = (timestamp: string): MembroDoGrupo => ({
+      kind: 'assistant',
+      payload: { timestamp } as unknown as MessagePayload,
+      parts: [],
+    });
+    assert.equal(inicioDoGrupo([membro('2026-09-28T03:11:00Z')]), Date.parse('2026-09-28T03:11:00Z'));
+    assert.equal(inicioDoGrupo([membro('lixo')]), null);
+    assert.equal(inicioDoGrupo([]), null);
+  });
+});
+
+describe('o grupo em curso é o fim do feed', () => {
+  const grupo = { kind: 'grupo-ferramentas', itens: [] } as ItemDoFeed;
+  const texto = { kind: 'assistant', parts: [] } as unknown as ItemDoFeed;
+  const viva = { kind: 'linha-viva', desdeMs: 0 } as ItemDoFeed;
+  const delegacao = { kind: 'delegacao', quem: 'Tara', alvo: 'tara', desdeMs: 0 } as ItemDoFeed;
+
+  it('o último item real, pulando os sintéticos do rodapé', () => {
+    assert.equal(indiceDoGrupoEmCurso([texto, grupo]), 1);
+    assert.equal(indiceDoGrupoEmCurso([texto, grupo, viva, delegacao]), 1);
+  });
+
+  it('fala depois do grupo encerra ele', () => {
+    assert.equal(indiceDoGrupoEmCurso([grupo, texto]), -1);
+    assert.equal(indiceDoGrupoEmCurso([]), -1);
   });
 });

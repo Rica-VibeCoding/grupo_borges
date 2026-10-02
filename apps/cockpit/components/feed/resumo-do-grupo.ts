@@ -167,3 +167,53 @@ export function duracaoCurta(ms: number): string {
   if (min < 60) return `${min} min`;
   return `${Math.round(min / 60)} h`;
 }
+
+/** O primeiro carimbo do grupo — a âncora do relógio que conta ao vivo. */
+export function inicioDoGrupo(itens: readonly MembroDoGrupo[]): number | null {
+  const ms = itens.length > 0 ? Date.parse(itens[0].payload.timestamp) : Number.NaN;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** A marca à esquerda da cápsula. `gira`: o anel aberto rodando; `chama`: o
+ *  ponto âmbar parado (pede ao Rica); `ok` e `falha`: o anel fechado virou ✓
+ *  ou ✕. */
+export type FaseDoGrupo = 'gira' | 'chama' | 'ok' | 'falha';
+
+/** `emCurso`: o grupo é o fim do feed e a corrida segue. Entre um passo e o
+ *  próximo todos estão concluídos, mas o trabalho não acabou — o ✓ ali
+ *  piscaria a cada passo. Falha no meio da corrida também segue girando: o
+ *  agente ainda vai reagir, e o veredito só sai quando ele parar. */
+export function faseDoGrupo(estado: Desfecho, emCurso: boolean): FaseDoGrupo {
+  if (estado === 'aguarda') return 'chama';
+  if (estado === 'rodando' || emCurso) return 'gira';
+  return estado === 'falhou' ? 'falha' : 'ok';
+}
+
+export type CabecalhoDoGrupo = {
+  /** "N passos" — só depois de fechado; entra à esquerda da frase. */
+  passos: string | null;
+  texto: string;
+  /** A frase é a pergunta ao Rica e chama (âmbar, `ck-chama`). */
+  chama: boolean;
+};
+
+/** O texto da cápsula. Fechada e pedindo ao Rica, a pergunta; senão o resumo,
+ *  que segue a frase depois de "N passos ·" quando o grupo fecha. Aberta, o
+ *  item em voo já é a última linha da lista — não se repete aqui. */
+export function cabecalhoDoGrupo(
+  resumo: ResumoDoGrupo,
+  fase: FaseDoGrupo,
+  aberto: boolean,
+): CabecalhoDoGrupo {
+  if (fase === 'chama' && !aberto && resumo.atual) {
+    return { passos: null, texto: resumo.atual.frase, chama: true };
+  }
+  if (fase === 'ok' || fase === 'falha') {
+    return {
+      passos: resumo.passos === 1 ? '1 passo' : `${resumo.passos} passos`,
+      texto: resumo.frase.charAt(0).toLowerCase() + resumo.frase.slice(1),
+      chama: false,
+    };
+  }
+  return { passos: null, texto: resumo.frase, chama: false };
+}
