@@ -196,8 +196,10 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
   some na falha) e filete de estado à esquerda; o nome da ferramenta em overline. Mono só no pedido,
   na saída e no diff.
 - **Consecutivas agrupam** (`grupo-ferramentas`, `feed/grupo-ferramentas.tsx`): 2+ linhas de trabalho
-  viram uma. Em voo nasce aberta, mostra o passo atual com filete dourado e fecha sozinha ao terminar;
-  o toque do Rica vence o automático. Concluída bem = cápsula neutra (`--ck-surface-nav`,
+  viram uma. **Nasce sempre fechada** e o toque do Rica abre (02/10). **Uma linha viva só:** o passo
+  rodando aparece apenas na linha do agora, ao lado da esfera; no grupo e no feed ele surge quando
+  termina, já no passado. Em voo, o cabeçalho fica neutro com o filete dourado; só `aguarda` mostra a
+  pergunta e chama. Concluída bem = cápsula neutra (`--ck-surface-nav`,
   `--ck-radius-caixa`, sem filete) com ✓ em `--ck-state-ok`: «N passos · resumo · duração», saldo
   `+N −M` e selo âmbar de retentativas. Falhou = filete e `erro` em `--ck-state-fail`.
 - **`thinking`** sem texto não aparece; com texto nasce **sempre fechado** (`Raciocínio · N linhas`),

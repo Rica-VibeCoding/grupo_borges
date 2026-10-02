@@ -24,6 +24,11 @@ import { StatusLine } from '@/components/renderers/status-line.tsx';
 import { familiaDoRich, mesmaExecucao, type EntradaDaExecucao } from './execucao-do-item';
 
 function Execucao({ entrada }: { entrada: EntradaDaExecucao }) {
+  // UMA LINHA VIVA SÓ (Rica, 02/10): o passo rodando mora na linha do agora,
+  // ao lado da esfera. Aqui ele só surge quando termina — repetir a frase em
+  // cima era dizer a mesma coisa duas vezes. Quem espera o Rica continua
+  // visível: é pergunta, não trabalho.
+  if (entrada.estado === 'running') return null;
   // O `rich` é o tool_use_result cru. A família foi escolhida (e provada contra
   // fixture real) no `familiaDoRich`; sem família, `corpoRico` fica undefined e
   // a LinhaExecucao cai no `Saida` genérico de sempre — caminho intacto.

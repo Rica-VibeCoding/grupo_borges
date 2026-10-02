@@ -4,12 +4,10 @@
 // fotografou no app do Claude: UMA linha cinza com o resumo em português, o
 // saldo de diff e o chevron. O trabalho está a um toque, nunca na cara.
 //
-// O AUTO-ABERTO é o micro-momento 6 do contrato aplicado ao grupo: enquanto a
-// corrida trabalha, o grupo nasce aberto — o Rica vê as linhas individuais
-// passando, que é a prova de vida da máquina. Quando a corrida termina, o
-// grupo fecha sozinho e vira o resumo. A partir do PRIMEIRO toque, a
-// preferência é dele para sempre (a chave `gf-` é estável enquanto o grupo
-// cresce, então o estado sobrevive ao stream).
+// NASCE FECHADO (02/10): a prova de vida da máquina é a linha do agora, com a
+// esfera, e o passo rodando mora só lá. Aqui ele surge quando termina. A
+// partir do PRIMEIRO toque, a preferência é do Rica (a chave `gf-` é estável
+// enquanto o grupo cresce, então o estado sobrevive ao stream).
 
 import { useMemo, useState } from 'react';
 
@@ -31,7 +29,6 @@ const COR_DO_ESTADO = {
 /** O mesmo vocabulário de pulso da linha individual: esperar o Rica chama
  *  (`aguardando`), trabalhar respira (`trabalhando`). */
 const PULSO_DO_ESTADO: Partial<Record<keyof typeof COR_DO_ESTADO, string>> = {
-  rodando: 'trabalhando',
   aguarda: 'aguardando',
 };
 
@@ -47,7 +44,9 @@ export function GrupoFerramentasView({
 
   const [preferencia, setPreferencia] = useState<boolean | null>(null);
   const emVoo = resumo.estado === 'rodando' || resumo.estado === 'aguarda';
-  const aberto = preferencia ?? emVoo;
+  // Nasce SEMPRE fechado (Rica, 02/10): o trabalho em voo já está na linha do
+  // agora, com a esfera. Abrir é gesto dele.
+  const aberto = preferencia ?? false;
 
   const cor = COR_DO_ESTADO[resumo.estado];
   const duracao = useMemo(() => duracaoDoGrupo(grupo.itens), [grupo.itens]);
@@ -108,9 +107,9 @@ export function GrupoFerramentasView({
         <span
           className="ck-pulso min-w-0 flex-1 truncate"
           data-estado={emVoo && !aberto ? PULSO_DO_ESTADO[resumo.estado] : undefined}
-          style={{ color: aberto ? 'var(--ck-text-secondary)' : cor }}
+          style={{ color: aberto || resumo.estado === 'rodando' ? 'var(--ck-text-secondary)' : cor }}
         >
-          {emVoo && !aberto && resumo.atual ? resumo.atual.frase : frase}
+          {resumo.estado === 'aguarda' && !aberto && resumo.atual ? resumo.atual.frase : frase}
         </span>
 
         {terminouBem && resumo.retentativas > 0 ? (
