@@ -197,7 +197,10 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
   some na falha) e filete de estado à esquerda; o nome da ferramenta em overline. Mono só no pedido,
   na saída e no diff.
 - **Consecutivas agrupam** (`grupo-ferramentas`, `feed/grupo-ferramentas.tsx`): 2+ linhas de trabalho
-  viram uma. **Nasce sempre fechada** e o toque do Rica abre (02/10). **Uma linha viva só:** o passo
+  viram uma. **Nasce sempre fechada** e o toque do Rica abre (02/10). Abrir e fechar é da Motion:
+  altura e opacidade em `--ck-dur-enter` (`--ck-ease` entrando, `--ck-ease-exit` saindo), o chevron
+  gira no mesmo ritmo e o grupo que remonta ao rolar aparece parado; o virtualizador acompanha pelo
+  `ResizeObserver` do item, quadro a quadro. **Uma linha viva só:** o passo
   rodando aparece apenas na linha do agora, ao lado da esfera; no grupo e no feed ele surge quando
   termina, já no passado. Em voo, o cabeçalho fica neutro com o filete dourado; só `aguarda` mostra a
   pergunta e chama. Concluída bem = cápsula neutra (`--ck-surface-nav`,

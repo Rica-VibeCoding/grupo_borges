@@ -73,7 +73,7 @@ export function Chevron({ aberto }: { aberto: boolean }) {
         flexShrink: 0,
         color: 'var(--ck-text-tertiary)',
         transform: aberto ? 'rotate(90deg)' : 'none',
-        transition: 'transform 160ms ease',
+        transition: 'transform var(--ck-dur-enter) var(--ck-ease)',
       }}
     >
       <path d="M6 3.5 10.5 8 6 12.5" />

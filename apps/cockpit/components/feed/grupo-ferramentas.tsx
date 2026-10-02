@@ -9,6 +9,7 @@
 // partir do PRIMEIRO toque, a preferência é do Rica (a chave `gf-` é estável
 // enquanto o grupo cresce, então o estado sobrevive ao stream).
 
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useMemo, useState } from 'react';
 
 import type { ToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
@@ -32,6 +33,12 @@ const PULSO_DO_ESTADO: Partial<Record<keyof typeof COR_DO_ESTADO, string>> = {
   aguarda: 'aguardando',
 };
 
+// Abrir e fechar no ritmo dos tokens (§5): `--ck-dur-enter` com `--ck-ease` na
+// entrada e `--ck-ease-exit` na saída. A Motion quer número, não token.
+const ABRE = { duration: 0.2, ease: [0.2, 0, 0.2, 1] } as const;
+const FECHA = { duration: 0.2, ease: [0.4, 0, 1, 1] } as const;
+const SECO = { duration: 0 } as const;
+
 export function GrupoFerramentasView({
   grupo,
   lookup,
@@ -43,6 +50,9 @@ export function GrupoFerramentasView({
   const resumo = useMemo(() => resumeGrupo(entradas), [entradas]);
 
   const [preferencia, setPreferencia] = useState<boolean | null>(null);
+  // O `reducedMotion="user"` da Motion só para transform e layout; altura e
+  // opacidade seguiriam animando. Aqui se para à mão (§5).
+  const semMovimento = useReducedMotion();
   const emVoo = resumo.estado === 'rodando' || resumo.estado === 'aguarda';
   // Nasce SEMPRE fechado (Rica, 02/10): o trabalho em voo já está na linha do
   // agora, com a esfera. Abrir é gesto dele.
@@ -131,16 +141,28 @@ export function GrupoFerramentasView({
         <Chevron aberto={aberto} />
       </button>
 
-      {/* `.ck-chega` só quando o DEDO abriu (`preferencia === true`): o grupo
-          que abre sozinho por estar em voo, e o que remonta ao rolar, aparecem
-          parados. Recolher segue seco — altura não se anima (§9.4). */}
-      {aberto ? (
-        <div className={preferencia === true ? 'ck-chega' : undefined}>
-          {entradas.map((entrada, indice) => (
-            <Execucao key={indice} entrada={entrada} />
-          ))}
-        </div>
-      ) : null}
+      {/* A lista entra e sai pela Motion (§5): altura de 0 ao natural e
+          opacidade. O virtualizador não pula porque mede o envelope do item
+          por `ResizeObserver` (border-box) a cada quadro — os itens de baixo
+          acompanham a altura em voo, e o último quadro é a altura natural
+          (`height: auto` ao fim). `initial={false}`: o grupo que remonta ao
+          rolar aparece parado. `clip` e não `hidden` — não vira contêiner de
+          rolagem. */}
+      <AnimatePresence initial={false}>
+        {aberto ? (
+          <motion.div
+            key="passos"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1, transition: semMovimento ? SECO : ABRE }}
+            exit={{ height: 0, opacity: 0, transition: semMovimento ? SECO : FECHA }}
+            style={{ overflow: 'clip' }}
+          >
+            {entradas.map((entrada, indice) => (
+              <Execucao key={indice} entrada={entrada} />
+            ))}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
