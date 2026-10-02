@@ -123,8 +123,7 @@ export function EsferaConversa({
       return { corpo: [r * brilho, g * brilho, b * brilho] as Cor, borda: corDoTom(cores, borda) as Cor };
     };
 
-    let esc = 1;
-    let altura = 0;
+    let esc = 1, altura = 0;
     let alvoLugar: Lugar | null = null;
     let lugar: Lugar | null = null;
     const mede = () => {
@@ -201,6 +200,7 @@ export function EsferaConversa({
         gl.uniform2f(u('uCentro'), lugar.x, altura - lugar.y);
         gl.uniform1f(u('uEsc'), esc);
         gl.uniform1f(u('uRaio'), lugar.raio);
+        gl.uniform1f(u('uCorte'), mini ? canvas.width / esc / 2 - 1 : 0); // a luz morre antes da borda da caixa
         gl.uniform1f(u('uFaixaBaixo'), altura - lugar.base);
         gl.uniform1f(u('uFaixaAlto'), altura - lugar.topo);
         gl.uniform1f(u('uT'), tempo);

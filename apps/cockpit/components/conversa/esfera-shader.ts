@@ -12,11 +12,14 @@
  *   recolhe e acende veios (ou luas, no Vidro), `uCristal` vira gema,
  *   `uColapso` encolhe e racha, `uEnche` enche e esvazia de luz, `uApaga` murcha e
  *   desliga a luz de dentro e o halo — sobra a casca, com o brilho do vidro.
+ * - `uCorte` (px, só na miniatura; 0 = desligado): a luz morre num círculo antes
+ *   da borda da caixa. Sem ele, halo e aresta chegavam à borda com alfa ~0,19 e
+ *   o corte reto do canvas desenhava um quadrado em volta da esfera.
  */
 export const FRAG_ESFERA = `
 precision highp float;
 uniform vec2 uCentro;
-uniform float uEsc, uRaio, uFaixaBaixo, uFaixaAlto;
+uniform float uEsc, uRaio, uFaixaBaixo, uFaixaAlto, uCorte;
 uniform float uT, uNivel, uVidro, uProg, uPulso;
 uniform float uVoce, uZe, uCalma, uCristal, uColapso, uEnche, uApaga;
 uniform vec3 uCorpo, uBorda, uCorPulso, uFundo;
@@ -89,6 +92,7 @@ void main() {
   vec2 css = gl_FragCoord.xy / uEsc;
   float faixa = smoothstep(uFaixaBaixo, uFaixaBaixo + 48., css.y) * desce(uFaixaAlto, uFaixaAlto - 48., css.y);
   vec2 uv = (css - uCentro) / uRaio;
+  if (uCorte > 0.) faixa *= desce(uCorte, uCorte * .8, length(css - uCentro));
   if (faixa <= 0. || dot(uv, uv) > 9.) { gl_FragColor = vec4(0.); return; }
 
   vec3 ro = vec3(0., 0., 3.4), rd = normalize(vec3(uv / 3.25, -1.));
