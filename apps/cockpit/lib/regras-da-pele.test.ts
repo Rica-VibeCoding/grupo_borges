@@ -78,7 +78,6 @@ const ACIMA_DO_TETO = new Set([
   'components/shell/composer.tsx',
   'components/shell/superficie-otimista.tsx',
   'components/shell/voz.ts',
-  'lib/spike/canario-stream-controller.ts',
 ]);
 
 test('teto de 300 linhas por arquivo', () => {
