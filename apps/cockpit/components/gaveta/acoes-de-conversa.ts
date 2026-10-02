@@ -94,7 +94,7 @@ export function explicaRecusa(codigo: string, nome: string): string {
 }
 
 export const SEM_CONTATO =
-  'Perdi o contato com o servidor no meio da troca. Ela pode ter seguido: abra o Histórico de novo em instantes.';
+  'Perdi o contato com o servidor no meio da troca. Ela pode ter seguido: abra Conversas de novo em instantes.';
 
 /** O que fazer com a leitura do `/operacao` durante a espera. */
 export type Leitura =

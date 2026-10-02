@@ -166,7 +166,7 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
             </LinkDaGaveta>
           )}
           <h2 className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--ck-text-md)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
-            Histórico
+            Conversas
           </h2>
           <LinkFechaPainel href={fecharHref} rotulo="detalhes do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
             ×
@@ -202,7 +202,7 @@ export function PainelDeConversas({ agentSlug, fecharHref }: { agentSlug: string
                 acao={acaoNoTopo}
                 trocouAgora={estado.fase === 'livre' ? trocouAgora : null}
                 voltar={
-                  <LinkFechaPainel href={fecharHref} rotulo="o Histórico e voltar ao chat" className="ck-veil flex items-center justify-center" style={VOLTAR_AO_CHAT}>
+                  <LinkFechaPainel href={fecharHref} rotulo="Conversas e voltar ao chat" className="ck-veil flex items-center justify-center" style={VOLTAR_AO_CHAT}>
                     Voltar ao chat
                   </LinkFechaPainel>
                 }

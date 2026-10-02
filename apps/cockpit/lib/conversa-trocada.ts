@@ -74,11 +74,11 @@ export type TextosDoMarco = {
   saiu: string;
 };
 
-/** O que o marco diz. Sem jargão: "Histórico" é o nome que o Rica vê na gaveta. */
+/** O que o marco diz. Sem jargão: "Conversas" é o nome que o Rica vê na gaveta (02/10). */
 export function textosDoMarco(troca: ConversaTrocada): TextosDoMarco {
   const saiu = troca.deTitulo
-    ? `“${troca.deTitulo}” ficou guardada no Histórico.`
-    : 'A conversa anterior ficou guardada no Histórico.';
+    ? `“${troca.deTitulo}” ficou guardada em Conversas.`
+    : 'A conversa anterior ficou guardada em Conversas.';
   if (troca.motivo === 'nova') return { cabeca: 'Conversa nova', titulo: null, nota: null, saiu };
   return { cabeca: 'Conversa retomada', titulo: troca.titulo ?? 'Conversa sem título', nota: troca.nota, saiu };
 }
