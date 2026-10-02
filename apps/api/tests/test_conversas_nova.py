@@ -173,7 +173,7 @@ async def test_nova_com_agente_ocioso_estaciona_limpa_e_renomeia(palco) -> None:
 
     pedido, clear, rename = agente.enviados
     assert pedido.startswith("[cockpit]")
-    assert "http://127.0.0.1:" in pedido and "/api/agents/pavan/conversas/estacionar" in pedido
+    assert "GB_API_URL=http://127.0.0.1:" in pedido and "scripts/estacionar.sh pavan " in pedido
     assert "\n" not in pedido
     # `/clear` puro: com o título, o CC o grava na conversa nova e o agente o
     # lê como pedido (F11). A nova recebe o nome do agente.

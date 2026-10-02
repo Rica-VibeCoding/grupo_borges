@@ -15,6 +15,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 Fase = Literal["estacionando", "religando", "pronta", "erro"]
@@ -243,23 +244,22 @@ DEPOIS_DE_ESTACIONAR = {
 #: cockpit (`origem: "cockpit"`, F13): mudar o texto aqui muda lá junto.
 PREFIXO_DO_PEDIDO = "[cockpit] Vou fechar esta conversa"
 
+#: O script que o agente roda para estacionar: monta o JSON no lugar dele.
+SCRIPT_ESTACIONAR = Path(__file__).resolve().parents[3] / "scripts" / "estacionar.sh"
+
 
 def mensagem_de_estacionar(url_base: str, slug: str, para: str = "nova") -> str:
-    """O pedido que vai para o agente: uma linha só, com o `curl` pronto.
+    """O pedido que vai para o agente: uma linha só, com o comando pronto.
 
-    Linha única porque é o que o `send_message` prova com mais folga. O header
-    do Tailscale é o mesmo que o middleware cobra de qualquer chamada: o agente
-    roda na própria VPS e chama a API por dentro.
+    Linha única porque é o que o `send_message` prova com mais folga. O JSON
+    sai do `scripts/estacionar.sh`, não da mão do agente: o agente roda na
+    própria VPS e o script chama a API por dentro, com o header do Tailscale.
     """
-    rota = f"{url_base.rstrip('/')}/api/agents/{slug}/conversas/estacionar"
     return (
         f"{PREFIXO_DO_PEDIDO} e {DEPOIS_DE_ESTACIONAR[para]}. "
         "Antes, estacione esta: "
         "um título de até 6 palavras e uma nota de até 200 caracteres com onde você parou "
-        "e qual é o próximo passo. Grave com este comando, trocando só os dois textos "
-        "(o corpo precisa ser JSON válido; se o texto tiver apóstrofo, mande o JSON por "
-        f"heredoc): curl -sS -X POST {rota} -H 'Content-Type: application/json' "
-        f"-H 'Tailscale-User-Login: agente-{slug}' "
-        """-d '{"titulo": "TÍTULO", "nota": "NOTA"}' """
+        "e qual é o próximo passo. Grave com este comando, trocando só os dois textos: "
+        f"GB_API_URL={url_base.rstrip('/')} {SCRIPT_ESTACIONAR} {slug} \"TÍTULO\" \"NOTA\" "
         "— depois responda só ok e não faça mais nada."
     )
