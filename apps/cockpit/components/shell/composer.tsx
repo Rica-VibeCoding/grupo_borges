@@ -30,19 +30,8 @@
  * verdade e mostra o que ele está fazendo — nada de estado forçado, nada de
  * caminho que só a tela de teste exercita.
  */
-import {
-  useCallback,
-  useEffect,
-  useEffectEvent,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-} from 'react';
-import { aparenciaDe, type AcaoEnvio, type FaseEnvio } from './aparencia-envio';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { aparenciaDe, type AcaoEnvio } from './aparencia-envio';
 import { copyText } from '../../lib/clipboard';
 import { usaCompact } from '../../lib/compact';
 import { arquivoRetido, usaAnexo } from '../../lib/usa-anexo';
@@ -52,40 +41,18 @@ import {
   registraEcoPendente,
   PRAZO_CC_MS,
 } from '../../lib/eco-pendente';
-import { assinaTurnoVivo, leTurnoVivo } from '../../lib/turno-vivo';
-import { assinaEscritaViva, leEscritaViva } from '../../lib/escrita-viva';
-import { usaFrota } from './frota-provider';
 import { MARCA_VOZ, usaEnvio, type OrigemEnvio } from '../../lib/usa-envio';
-import { miniaturaAberta } from './miniatura-anexo';
 import { BarraCompact } from './barra-compact';
 import { BlocoDaFila } from './bloco-da-fila';
 import { BolinhaAgente } from './bolinha-agente';
-import {
-  FILA_VAZIA,
-  devolveAoInicio,
-  enfileira,
-  proximoDaFila,
-  reagiuAsFases,
-  retira,
-  soltaPausa,
-} from './fila-de-envio';
+import { FILA_VAZIA, enfileira, retira, soltaPausa } from './fila-de-envio';
 import { fallbackCopy } from '../renderers/copia-fallback';
 import { type Motor } from './motor';
 import { BarraPerguntaMotor } from './barra-pergunta-motor';
-import { type MotivoRecusa, preparaEnvio, recusaPersiste } from './porta-de-envio';
+import { preparaEnvio } from './porta-de-envio';
 import { podePesquisar, prefixaPesquisa } from './pesquisa-canario';
 import { usaPesquisaAtiva } from './usa-pesquisa';
-import { usaFalaAoVivo } from './usa-fala-ao-vivo';
-import { usaGravador } from './usa-gravador';
-import {
-  aparenciaDaVoz,
-  diagnosticaMicrofone,
-  diagnosticaTranscricao,
-  mesclaTranscricao,
-  type FaseVoz,
-  type Impedimento,
-} from './voz';
-import { emCaptura, modoDaFala } from './modo-da-fala';
+import { emCaptura } from './modo-da-fala';
 import { usaCanalEntrega } from './usa-canal-entrega';
 import { voaParaBolha } from '../../lib/voo-do-envio';
 import {
@@ -102,6 +69,12 @@ import { BaseDaCaixa } from './base-da-caixa';
 import { CaixaDoComposer } from './caixa-do-composer';
 import { CampoDoComposer } from './campo-do-composer';
 import { LinhaDaVoz } from './linha-da-voz';
+import { usaDrenagemDaFila } from './usa-drenagem-da-fila';
+import { usaAlturaDoCampo, usaMiniaturaRecolhida } from './usa-forma-da-caixa';
+import { usaRecusaDaPorta } from './usa-recusa-da-porta';
+import { usaTecladoTouch } from './usa-teclado-touch';
+import { usaTurnoDoAgente } from './usa-turno-do-agente';
+import { usaVozDoComposer } from './usa-voz-do-composer';
 
 export type ComposerProps = {
   agentSlug: string;
@@ -116,30 +89,6 @@ export type ComposerProps = {
  *  o que não pode casar é um `/compactar` hipotético ou a palavra no meio da
  *  frase. */
 const COMPACT_RE = /^\s*\/compact(?:\s|$)/;
-
-// Teclado físico tem Shift previsível; teclado virtual (touch) não — o Enter dele é
-// a única tecla de "concluir campo", então usá-la pra enviar rouba a quebra de
-// linha. `pointer: coarse` é o sinal recomendado pela doc do MDN pra detectar touch,
-// mais confiável que sniffar user-agent (ex: iPad com teclado físico continua coarse,
-// mas aí o Shift+Enter já resolve).
-function usaTecladoTouch(): boolean {
-  const [touch, setTouch] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches,
-  );
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const consulta = window.matchMedia('(pointer: coarse)');
-    const aoMudar = () => setTouch(consulta.matches);
-    consulta.addEventListener('change', aoMudar);
-    return () => consulta.removeEventListener('change', aoMudar);
-  }, []);
-
-  return touch;
-}
 
 export function Composer({
   agentSlug,
@@ -157,79 +106,12 @@ export function Composer({
   const origemDoUltimoEnvio = useRef<OrigemEnvio>('text');
   // O toggle do `/pesquisa` mora na GAVETA desde 28/09; aqui só se lê.
   const pesquisaAtiva = usaPesquisaAtiva(agentSlug);
+  const { daFrota, motorEnfileiraSozinho, turnoVivo, escrevendo, parando, setInterrompido,
+    gerando, interromper } = usaTurnoDoAgente(agentSlug);
   // A máquina de seis fases é a da `lib/envio.ts`, dirigida pelo eco do stream:
   // `confirmado` só existe quando o item `user` VOLTA do servidor. Antes disto o
   // componente cantava `aceito` no 200 do POST e parava ali — que é o mesmo
   // "enviado" mentiroso do painel antigo, só que mais bonito.
-  // A frota já está montada acima (o feed a lê pelo mesmo hook); ler daqui
-  // evita prop nova em `app/agente/[slug]/page.tsx`.
-  const { agents } = usaFrota();
-  // Positivo, e não uma negação: com a frota ainda não carregada isto é falso e
-  // a porta continua segurando. Errar fechado aqui é o comportamento de ontem;
-  // errar aberto manda um POST que o back recusa.
-  const motorEnfileiraSozinho = agents.some(
-    (a) => a.slug === agentSlug && (a.executor_kind ?? a.cli_default) === 'claude_code',
-  );
-  // O AGENTE ESTÁ GERANDO? Duas fontes, e escolher as duas certas levou três
-  // rodadas em 15/08. O histórico, porque cada uma caiu por um motivo diferente:
-  //
-  // 1. `lifecycle_status` sozinho, que era o original. Ele é alimentado por hook
-  //    e por vigia de JSONL, e chega no tempo do PAINEL: com um agente Claude
-  //    Code ocioso recebendo mensagem, **o ■ não apareceu na tela em 100 s**.
-  //    O freio não existia durante o turno inteiro.
-  // 2. `lifecycle_status` com guarda de `status !== 'offline'`. Pegou os cinco
-  //    agentes MORTOS que o `/api/fleet` jurava estarem `trabalhando`, e não
-  //    pegou os VIVOS E OCIOSOS: o canarinho ficou `status=ocioso` com
-  //    `lifecycle=trabalhando` preso, e o ■ pendurado no repouso — comendo o
-  //    lugar do microfone no chat que o Rica mais usa. Achado do Daniel.
-  //
-  // O que os dois casos têm em comum: `lifecycle_status` é histórico de EVENTO e
-  // não expira. Turno que morre sem despedida limpa — agente desligado, limite
-  // de uso, sessão derrubada — deixa `trabalhando` para sempre. Ele serve para
-  // pintar card; não serve para decidir se um controle existe.
-  //
-  // Então a fonte lenta passou a ser o `status`, que cruza sessão e processo e
-  // sabe dizer `offline` e `ocioso`; e a fonte RÁPIDA é o `isRunning` do stream,
-  // publicado pelo feed em `lib/turno-vivo.ts` — o mesmo booleano que acende o
-  // "Pensando há 12 s" três centímetros acima. Uma cobre o que a outra atrasa, e
-  // nenhuma das duas herda o campo que não expira.
-  const daFrota = agents.find((a) => a.slug === agentSlug);
-  const vivo = daFrota !== undefined && daFrota.status !== 'offline';
-  const trabalhando = vivo && daFrota.status === 'trabalhando';
-  const assinaTurno = useMemo(() => (fn: () => void) => assinaTurnoVivo(agentSlug, fn), [agentSlug]);
-  const leTurno = useMemo(() => () => leTurnoVivo(agentSlug), [agentSlug]);
-  // No servidor não há turno nenhum: o valor nasce de um stream do browser.
-  const turnoVivo = useSyncExternalStore(assinaTurno, leTurno, () => false);
-  // O segundo sinal do feed, só para a bolinha: pensar e responder têm caras
-  // diferentes, e é a troca de cara que a faz valer sozinha.
-  const assinaEscrita = useMemo(() => (fn: () => void) => assinaEscritaViva(agentSlug, fn), [agentSlug]);
-  const leEscrita = useMemo(() => () => leEscritaViva(agentSlug), [agentSlug]);
-  const escrevendo = useSyncExternalStore(assinaEscrita, leEscrita, () => false);
-  const [parando, setParando] = useState(false);
-  // O ■ SOME NO TOQUE, não quando o painel concorda. `lifecycle_status` é
-  // alimentado por evento (JSONL) e chega atrasado. Botão que continua
-  // oferecendo uma ação já executada é a mentira de UI da §9, e aqui ela
-  // convida a um segundo toque num agente que já parou.
-  const [interrompido, setInterrompido] = useState(false);
-  const gerando = !interrompido && vivo && (trabalhando || turnoVivo);
-
-  /** O `■`. Não pede confirmação: interromper é reversível — o texto continua no
-   *  feed e mandar de novo recomeça — e um modal entre o dedo e o botão, no meio
-   *  de uma geração que já desandou, é obstáculo, não proteção. */
-  async function interromper(): Promise<void> {
-    setParando(true);
-    try {
-      const { postAgentInterromper } = await import('@grupo_borges/cockpit-core/api');
-      await postAgentInterromper(agentSlug);
-      setInterrompido(true);
-    } catch {
-      // Sem recibo: o sinal honesto é o próprio agente parando de trabalhar, que
-      // o `lifecycle_status` já reporta. Uma faixa de erro aqui competiria com
-      // ele e envelheceria sozinha.
-    } finally {
-      setParando(false);
-    }
-  }
   const envio = usaEnvio(agentSlug);
   const faseLocal = envio.estado.fase;
   const ultimoEnviado = envio.estado.fase === 'ocioso' ? '' : envio.estado.texto;
@@ -253,21 +135,7 @@ export function Composer({
   const temConteudo = texto.trim() !== '' || retidoAnexo !== null;
   // Campo vazio e nada anexado: a caixa é UMA fileira (28/09). Com qualquer
   // caractere, inclusive quebra de linha, volta às duas. Regra no globals.css.
-  // A MINIATURA RECOLHE DEPOIS DO FADE, num render deste componente: é aqui que
-  // a Motion mede a caixa, e só assim ela encolhe animada em vez de cair. Sem
-  // isto, tirar a foto com o campo vazio trocava para uma fileira no mesmo
-  // quadro, e a foto sumia de estalo em vez de esmaecer.
-  const fotoEmCena = miniaturaAberta(anexo.estado);
-  const [miniaturaRecolhida, setMiniaturaRecolhida] = useState(!fotoEmCena);
-  if (fotoEmCena && miniaturaRecolhida) setMiniaturaRecolhida(false);
-  const fotoVoou = anexo.estado.fase === 'enviando';
-  useEffect(() => {
-    if (fotoEmCena || miniaturaRecolhida) return;
-    // A foto que voou para a bolha sai sem fade (ver `.ck-miniatura[data-voou]`).
-    const espera = fotoVoou ? 0 : TROCA_DE_FILEIRA.duration * 1000;
-    const relogio = setTimeout(() => setMiniaturaRecolhida(true), espera);
-    return () => clearTimeout(relogio);
-  }, [fotoEmCena, miniaturaRecolhida, fotoVoou]);
+  const miniaturaRecolhida = usaMiniaturaRecolhida(anexo);
   const umaLinha = texto === '' && retidoAnexo === null && miniaturaRecolhida;
   // O `+` mora dentro da caixa e a gaveta fora dela (o `overflow: hidden` do
   // form recortaria o painel). A ref costura os dois: é por ela que o `Escape`
@@ -294,42 +162,10 @@ export function Composer({
   const [fila, setFila] = useState(FILA_VAZIA);
   const contadorFila = useRef(0);
 
-  // Por que a recusa não foi despachada. Não tem botão de dispensar de
-  // propósito: ela descreve um impedimento do INSTANTE, não um erro a ser
-  // reconhecido — quando o motivo passa, o aviso vai junto.
-  //
-  // O que fica guardado é o GESTO recusado — motivo e recado, como nasceram.
-  // Se ele ainda descreve o instante é pergunta de render, logo abaixo.
-  const [recusa, setRecusa] = useState<{ motivo: MotivoRecusa; aviso: string } | null>(null);
-  // O SINAL DE RECUSA. A porta recusou um toque com recado — o botão de enviar
-  // sacode pra o Rica sentir o "não" mesmo quando o aviso da faixa fica
-  // escondido atrás do teclado do iPhone. Estado e não classe persistente:
-  // `onAnimationEnd` limpa, então o próximo toque recusado re-sacode.
-  const [sinalRecusa, setSinalRecusa] = useState(false);
   const anexoEmVoo = anexo.estado.fase === 'enviando';
-  // O AVISO É CALCULADO, não guardado. Aviso que sobrevive ao motivo vira
-  // mentira na tela, e até 20/08 quem o apagava era um efeito que listava
-  // quatro impedimentos à mão. A lista tinha buraco: `longo-demais` não estava
-  // nela e nenhuma daquelas quatro flags muda quando o Rica apaga texto, então
-  // o "texto longo demais" ficava preso com o campo já curto.
-  //
-  // Agora a pergunta é refeita à mesma porta, com as condições de agora. Não há
-  // lista para manter em dia, e o efeito — que a documentação nomeia como
-  // anti-padrão (`react.dev/learn/you-might-not-need-an-effect`, "Adjusting
-  // state on prop change in an Effect") — deixa de existir.
-  const avisoDaPorta =
-    recusa &&
-    recusaPersiste(recusa.motivo, {
-      texto,
-      temAnexo: retidoAnexo !== null,
-      anexoEmVoo,
-      turnoEmVoo: gerando,
-      motorEnfileiraSozinho,
-      compactando: travaCompact,
-      faseEnvio: faseLocal,
-    })
-      ? recusa.aviso
-      : null;
+  const { setRecusa, sinalRecusa, setSinalRecusa, avisoDaPorta } = usaRecusaDaPorta({
+    texto, retidoAnexo, anexoEmVoo, gerando, motorEnfileiraSozinho, travaCompact, faseLocal,
+  });
 
   useEffect(() => {
     if (estadoCompact.fase === 'concluindo' || estadoCompact.fase === 'sem-retorno') {
@@ -345,23 +181,7 @@ export function Composer({
     }
   }, [faseLocal, estadoCompact.fase, cancelarCompact]);
 
-  // A CAIXA CRESCE COM O QUE ESTÁ ESCRITO. Efeito e não `onChange` porque o
-  // campo tem três autores: o Rica digitando, a fila devolvendo um item ao
-  // campo (`editarDaFila`) e o envio esvaziando. Preso ao `onChange`, a caixa
-  // ficaria alta depois de mandar a mensagem e baixa depois de editar da fila.
-  //
-  // `height = 'auto'` antes de ler `scrollHeight` não é ritual: sem zerar, o
-  // `scrollHeight` nunca desce, porque ele mede o conteúdo contra a altura já
-  // aplicada. É o que faz a caixa encolher ao apagar linha.
-  // `useLayoutEffect`, não `useEffect`: a altura tem de estar certa ANTES da
-  // pintura, que é quando a Motion mede. Depois da pintura, colar três linhas
-  // no campo vazio animava até uma linha e saltava para três.
-  useLayoutEffect(() => {
-    const campo = textareaRef.current;
-    if (!campo) return;
-    campo.style.height = 'auto';
-    campo.style.height = `${campo.scrollHeight}px`;
-  }, [texto]);
+  usaAlturaDoCampo(textareaRef, texto);
 
   const fase = faseLocal;
   // Só os dois estados de insucesso perguntam ao back por quê. No caminho
@@ -376,94 +196,10 @@ export function Composer({
     emFila: envio.estado.fase === 'confirmado' && envio.estado.fila === true,
   });
 
-  // ---- voz ----------------------------------------------------------------
-  const [falhaDaFala, setFalhaDaFala] = useState<Impedimento | null>(null);
-
-  const subirAudio = useCallback(
-    async (audio: Blob) => {
-      setRecusa(null);
-      setFalhaDaFala(null);
-      try {
-        const { postAgentTranscription } = await import('@grupo_borges/cockpit-core/api');
-        const { text: falado } = await postAgentTranscription(agentSlug, audio);
-        setTexto((atual) => mesclaTranscricao(atual, falado));
-        setOrigemDoRascunho('stt');
-        requestAnimationFrame(() => {
-          const campo = textareaRef.current;
-          if (!campo) return;
-          campo.focus();
-          campo.setSelectionRange(campo.value.length, campo.value.length);
-        });
-      } catch (erro) {
-        setFalhaDaFala(diagnosticaTranscricao(erro));
-      }
-    },
-    [agentSlug, setOrigemDoRascunho, setTexto],
-  );
-
-  // ---- fala ao vivo (F3) ---------------------------------------------------
-  // O texto chega palavra por palavra e é REMONTADO a cada pedaço a partir do
-  // que já estava escrito. Remontar da base em vez de ir acrescentando é o que
-  // deixa o final (que vem revisado, com pontuação) simplesmente substituir o
-  // provisório, sem sobra na tela e sem diff de texto.
-  const baseDaFalaRef = useRef('');
-  const textoRef = useRef(texto);
-  useEffect(() => {
-    textoRef.current = texto;
-  }, [texto]);
-
-  const aoComecarFala = useCallback(() => {
-    baseDaFalaRef.current = textoRef.current;
-  }, []);
-
-  const aoTextoAoVivo = useCallback(
-    (falado: string) => {
-      setRecusa(null);
-      setFalhaDaFala(null);
-      setTexto(mesclaTranscricao(baseDaFalaRef.current, falado));
-      setOrigemDoRascunho('stt');
-    },
-    [setOrigemDoRascunho, setTexto],
-  );
-
-  const falaAoVivo = usaFalaAoVivo({
-    agentSlug,
-    aoComecar: aoComecarFala,
-    aoTexto: aoTextoAoVivo,
+  const { setFalhaDaFala, gravador, faseVoz, vozAparencia, niveisVoz, avisoDaVoz, modo,
+    avisoDoTetoDoStt } = usaVozDoComposer({
+    agentSlug, agentName, texto, setTexto, setOrigemDoRascunho, setRecusa, textareaRef,
   });
-
-  const gravador = usaGravador({ aoGravar: subirAudio, aoVivo: falaAoVivo });
-  const faseVoz = gravador.fase;
-  const segundosVoz = gravador.segundos;
-  const vozAparencia = aparenciaDaVoz(faseVoz, {
-    segundos: segundosVoz,
-    nome: agentName,
-    impedimento: gravador.impedimento ?? undefined,
-  });
-  const niveisVoz = gravador.niveis;
-  // Dois problemas, uma linha só: microfone que não abre e transcrição que não
-  // veio. São momentos diferentes do mesmo gesto e nunca coexistem — dar duas
-  // faixas de aviso ensinaria dois lugares para olhar quando a fala falha.
-  const avisoDaVoz =
-    faseVoz === 'impedida'
-      ? gravador.impedimento ?? null
-      : falhaDaFala;
-
-  // O MODO DA FALA — um valor calculado, em vez dos cinco predicados que o JSX
-  // recombinava à mão em dez pontos. Equivalente exato ao que os ternários
-  // montavam: `emCaptura(modo)` = `capturando(faseVoz)`, e `modo === 'travada'`
-  // = `faseVoz === 'travada'`.
-  //
-  // Só a fala: `compactando` e `enviando` CONVIVEM com o microfone aberto, e
-  // enum é para estado que se exclui — eles seguem em eixo próprio, com as
-  // funções de aparência que o repo já usa. `gerando` fica de fora em qualquer
-  // hipótese: é estado do AGENTE e mora na linha da bolinha.
-  const modo = modoDaFala({ faseVoz, falaFalhou: avisoDaVoz !== null });
-  // O ÚNICO recado da voz que ainda se vê. Gravação travada passando de 20s é
-  // o teto de 30s do STT chegando: a moldura vira âmbar, e cor sem motivo
-  // escrito é enfeite. O resto do que `aparenciaDaVoz` diz virou narração de
-  // fase e não aparece mais — ver a linha da voz, abaixo.
-  const avisoDoTetoDoStt = modo === 'travada' && vozAparencia.longa;
   // O SLOT DE DESPACHO ESTÁ EM CENA? Em `travada` o gesto que fecha é o do
   // áudio, no slot de entrada — não há texto a mandar enquanto a gravação
   // espera. Fora daí, quem manda o botão existir é haver o que despachar.
@@ -686,44 +422,7 @@ export function Composer({
     return true;
   }
 
-  /**
-   * A FILA ANDANDO. Effect Event porque o despacho precisa LER a fila sem
-   * DEPENDER dela como reação: o que dispara é a espera mudando de estado.
-   *
-   * A guarda de `ref` que se costuma escrever aqui não serviria — a doc do
-   * React nomeia esse recurso como "a common pitfall" e diz com todas as letras
-   * que ele "doesn't fix the bug", só esconde o duplo disparo do StrictMode em
-   * desenvolvimento.
-   *
-   * `reagiuAsFases` devolve o MESMO objeto quando nada muda, então o `setFila`
-   * de um tick sem novidade não re-renderiza e o efeito não gira em falso.
-   */
-  const drenarFila = useEffectEvent(() => {
-    const fases = { compact: estadoCompact.fase, envio: faseLocal };
-    const atualizado = reagiuAsFases(fila, fases);
-    const proximo = proximoDaFila(atualizado, fases);
-    if (!proximo) {
-      setFila(atualizado);
-      return;
-    }
-    setFila(retira(atualizado, proximo.id).estado);
-    // `retomada: true`: o corpo não veio do campo. É o que impede a fila de
-    // comer o que ele escreveu DEPOIS — e o que impede a foto retida de sair
-    // de carona numa mensagem que não é dela.
-    void enviar(proximo.texto, true, proximo.origem).then((saiu) => {
-      if (!saiu) setFila((atual) => devolveAoInicio(atual, proximo));
-    });
-  });
-
-  // A fila entra nas dependências de propósito, e não é ela que dispara o
-  // despacho: é ela que faz a DRENAGEM CONTINUAR. Cada item que sai encolhe a
-  // fila, o efeito roda de novo e o seguinte espera o eco do anterior — a
-  // serialização sai da porta (`envio-em-voo`), não de um laço aqui. É também o
-  // que faz o botão "enviar mesmo assim" despachar sem um caminho próprio: ele
-  // só apaga a pausa.
-  useEffect(() => {
-    drenarFila();
-  }, [estadoCompact.fase, faseLocal, fila]);
+  usaDrenagemDaFila({ fila, setFila, estadoCompact, faseLocal, enviar });
 
   /** Tira da fila e devolve ao campo — cancelar e editar são o mesmo gesto, e
    *  nada que saia da fila evapora. O que já estava escrito fica embaixo: o
