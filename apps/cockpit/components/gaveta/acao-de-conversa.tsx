@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * As peças de ação do Histórico (rodada 2): o botão de troca que passa de claro
- * a âmbar, a barra indeterminada da espera, a confirmação de uma linha do 🗑 e
- * o erro. Sem parágrafo de aviso e sem passos: o Rica bate o olho e age.
+ * As peças de ação do Histórico (rodada 2): o botão de troca que enche por
+ * dentro enquanto espera, a barra da espera fora dele, a confirmação de uma linha do 🗑 e o erro. Sem
+ * parágrafo de aviso e sem passos: o Rica bate o olho e age.
  */
 import { motion, useReducedMotion } from 'motion/react';
 
@@ -12,49 +12,55 @@ import { Pilula } from './pecas';
 
 const CAMADA = { position: 'absolute', inset: 0, borderRadius: 'inherit' } as const;
 
-/** Continuar esta (ou Nova conversa). Claro parado; âmbar quando interrompe —
- *  as duas cores são camadas que trocam de opacidade, e os dois nomes também:
- *  o botão não muda de tamanho nem pinta cor animada (§9.4). */
-export function BotaoDeTroca({ rotulo, rotuloInterrompe, interrompe, aoTocar }: { rotulo: string; rotuloInterrompe: string; interrompe: boolean; aoTocar: () => void }) {
-  const nomes = [
-    { texto: rotulo, ativo: !interrompe },
-    { texto: rotuloInterrompe, ativo: interrompe },
-  ];
+/** O que enche o botão tocado (pedido do Rica, 02/10, no gesto da barra do
+ *  `/compact`): o cheio entra da esquerda inteiro (`translateX`), então a ponta
+ *  segue redonda, e um brilho fraco atravessa enquanto espera. A troca não
+ *  emite progresso: o cheio corre até 85% em `duracao` e para ali — estimativa
+ *  honesta. A `tinta` é a cor do texto do botão diluída, nunca cor de estado.
+ *  Com movimento reduzido, só o cheio, sem o brilho. */
+export function Enchendo({ ativo, tinta, duracao }: { ativo: boolean; tinta: string; duracao: number }) {
+  const parada = useReducedMotion();
+  const cor = `color-mix(in oklab, ${tinta} 14%, transparent)`;
   return (
-    <button
-      type="button"
-      onClick={aoTocar}
-      aria-label={interrompe ? rotuloInterrompe : rotulo}
-      className="relative flex w-full shrink-0 items-center justify-center"
-      style={{ minHeight: '52px', borderRadius: 'var(--ck-radius-pill)', fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-gv-fundo)' }}
+    <motion.span
+      aria-hidden
+      style={{ ...CAMADA, overflow: 'hidden', background: cor }}
+      initial={false}
+      animate={ativo ? { x: '-15%', opacity: 1 } : { x: '-100%', opacity: 0 }}
+      transition={ativo ? { duration: duracao, ease: [0.2, 0, 0.2, 1] } : CALMA}
     >
-      <motion.span aria-hidden style={{ ...CAMADA, background: 'var(--ck-text-primary)' }} initial={false} animate={{ opacity: interrompe ? 0 : 1 }} transition={CALMA} />
-      <motion.span aria-hidden style={{ ...CAMADA, background: 'var(--ck-state-attention)' }} initial={false} animate={{ opacity: interrompe ? 1 : 0 }} transition={CALMA} />
-      <span aria-hidden className="relative grid">
-        {nomes.map((n) => (
-          <motion.span key={n.texto} style={{ gridArea: '1 / 1', textAlign: 'center' }} initial={false} animate={{ opacity: n.ativo ? 1 : 0 }} transition={CALMA}>
-            {n.texto}
-          </motion.span>
-        ))}
-      </span>
-    </button>
+      {ativo && !parada ? (
+        <motion.span
+          style={{ ...CAMADA, background: `linear-gradient(100deg, transparent 30%, ${cor} 50%, transparent 70%)` }}
+          initial={{ x: '-100%' }}
+          animate={{ x: '100%' }}
+          transition={{ duration: 1.6, ease: 'easeInOut', repeat: Infinity }}
+        />
+      ) : null}
+    </motion.span>
   );
 }
 
-/** A linha de cima do botão âmbar: quem está trabalhando. Entra em fade, junto
- *  da cor do botão. */
-export function LinhaDeOcupado({ texto }: { texto: string }) {
+/** Continuar esta. Mantém a cor tocado ou ocupado (o Rica tirou o âmbar e a
+ *  linha de cima em 02/10: empurravam a fileira); ocupado, só o nome vira o de
+ *  interromper. Na espera, o nome é o que está acontecendo e o botão enche. */
+export function BotaoDeTroca({ rotulo, rotuloInterrompe, interrompe, espera, aoTocar }: { rotulo: string; rotuloInterrompe: string; interrompe: boolean; espera: string | null; aoTocar: () => void }) {
+  const nome = espera ?? (interrompe ? rotuloInterrompe : rotulo);
   return (
-    <motion.p
-      role="status"
-      className="text-center"
-      style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-primary)', padding: 'var(--ck-space-1) 0' }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={CALMA}
+    <button
+      type="button"
+      onClick={espera ? undefined : aoTocar}
+      aria-busy={espera !== null}
+      aria-label={nome}
+      className="relative flex w-full shrink-0 items-center justify-center overflow-hidden"
+      style={{ minHeight: '52px', borderRadius: 'var(--ck-radius-pill)', fontSize: 'var(--ck-text-base)', fontWeight: 600, color: 'var(--ck-gv-fundo)' }}
     >
-      {texto}
-    </motion.p>
+      <span aria-hidden style={{ ...CAMADA, background: 'var(--ck-text-primary)' }} />
+      <Enchendo ativo={espera !== null} tinta="var(--ck-gv-fundo)" duracao={12} />
+      <span aria-hidden className="relative">
+        {nome}
+      </span>
+    </button>
   );
 }
 

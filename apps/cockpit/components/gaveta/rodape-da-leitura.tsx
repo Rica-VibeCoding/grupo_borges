@@ -16,8 +16,8 @@ import { motion } from 'motion/react';
 import type { Conversa } from '@grupo_borges/cockpit-core/api';
 
 import { IconeEstrela, IconeLixeira } from '../shell/icones';
-import { AvisoDeFalha, BarraDeEspera, BotaoDeTroca, ConfirmaExclusao, LinhaDeOcupado } from './acao-de-conversa';
-import { linhaDeOcupado, ondeMostra, textoDaEspera, textoDaTroca, type EstadoDaAcao } from './acoes-de-conversa';
+import { AvisoDeFalha, BotaoDeTroca, ConfirmaExclusao } from './acao-de-conversa';
+import { ondeMostra, textoDaEspera, textoDaTroca, type EstadoDaAcao } from './acoes-de-conversa';
 import { Pilula } from './pecas';
 import { COM_MOLA } from './ritmo-do-historico';
 
@@ -102,7 +102,7 @@ export function RodapeDaLeitura({
   conversa: Conversa;
   estado: EstadoDaAcao;
   nome: string;
-  /** O toque vai interromper um turno: linha de ocupado e botão âmbar. */
+  /** O toque vai interromper um turno: o botão diz que interrompe. */
   interrompe: boolean;
   podeTrocar: boolean;
   porQueNao: string | null;
@@ -121,8 +121,9 @@ export function RodapeDaLeitura({
   const [pulsos, setPulsos] = useState(0);
   const daqui = ondeMostra(estado) === conversa.id;
 
-  if (daqui && (estado.fase === 'esperando' || estado.fase === 'conferindo')) {
-    return <BarraDeEspera texto={textoDaEspera(estado.troca, nome)} />;
+  const espera = daqui && (estado.fase === 'esperando' || estado.fase === 'conferindo') ? textoDaEspera(estado.troca, nome) : null;
+  if (espera) {
+    return <BotaoDeTroca rotulo={espera} rotuloInterrompe={espera} interrompe={false} espera={espera} aoTocar={aoContinuar} />;
   }
   if (daqui && (estado.fase === 'confirmando-exclusao' || estado.fase === 'excluindo')) {
     return <ConfirmaExclusao indo={estado.fase === 'excluindo'} aoExcluir={aoConfirmar} aoCancelar={aoLargar} />;
@@ -173,10 +174,7 @@ export function RodapeDaLeitura({
         ) : null}
       </div>
       {livre ? (
-        <>
-          {interrompe ? <LinhaDeOcupado texto={linhaDeOcupado(nome)} /> : null}
-          <BotaoDeTroca rotulo={textoDaTroca('retomar', false)} rotuloInterrompe={textoDaTroca('retomar', true)} interrompe={interrompe} aoTocar={aoContinuar} />
-        </>
+        <BotaoDeTroca rotulo={textoDaTroca('retomar', false)} rotuloInterrompe={textoDaTroca('retomar', true)} interrompe={interrompe} espera={null} aoTocar={aoContinuar} />
       ) : porQueNao && !conversa.bloqueada ? (
         <p className="text-center" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)', padding: 'var(--ck-space-1) 0' }}>
           {porQueNao}

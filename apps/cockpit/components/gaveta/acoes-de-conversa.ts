@@ -63,11 +63,6 @@ export function trocaEmCurso(estado: EstadoDaAcao): boolean {
   return estado.fase === 'esperando' || estado.fase === 'conferindo';
 }
 
-/** A linha de cima do botão, quando ele vai interromper. */
-export function linhaDeOcupado(nome: string): string {
-  return `${nome} está trabalhando`;
-}
-
 /** O nome do botão de troca: claro parado, âmbar no meio de um turno. */
 export function textoDaTroca(tipo: Troca['tipo'], interrompe: boolean): string {
   if (tipo === 'nova') return interrompe ? 'Interromper e abrir nova' : 'Nova conversa';

@@ -11,7 +11,6 @@ import {
   explicaRecusa,
   guardaTroca,
   leOperacao,
-  linhaDeOcupado,
   ondeMostra,
   textoDaEspera,
   textoDaTroca,
@@ -50,10 +49,6 @@ describe('botão de troca, sem confirmação (rodada 2)', () => {
   it('a Nova segue a mesma régua', () => {
     assert.equal(textoDaTroca('nova', false), 'Nova conversa');
     assert.equal(textoDaTroca('nova', true), 'Interromper e abrir nova');
-  });
-
-  it('ocupado é uma linha só, com o nome', () => {
-    assert.equal(linhaDeOcupado('José Pavan'), 'José Pavan está trabalhando');
   });
 });
 
