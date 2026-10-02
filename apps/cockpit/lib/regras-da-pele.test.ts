@@ -76,7 +76,6 @@ const ACIMA_DO_TETO = new Set([
   'components/renderers/gramatica.ts',
   'components/renderers/linha-execucao.tsx',
   'components/shell/composer.tsx',
-  'components/shell/gaveta-anexo.tsx',
   'components/shell/superficie-otimista.tsx',
   'components/shell/voz.ts',
   'lib/spike/canario-stream-controller.ts',
