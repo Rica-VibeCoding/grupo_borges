@@ -18,6 +18,8 @@
  * quando nada mudou — devolver array novo a cada leitura dá laço infinito.
  */
 
+import { semEnvelopeDeColagem } from '../components/feed/anexo-imagem.ts';
+
 export type EcoPendente = {
   /** Chave estável da bolha otimista; não colide com as do rollout. */
   id: string;
@@ -142,7 +144,10 @@ export function reconciliaPendentes(slug: string, mensagensReais: readonly Mensa
 
   const disponiveis = new Map<string, number[]>();
   for (const mensagem of mensagensReais) {
-    const chave = mensagem.texto.trim();
+    // Texto longo chega ao CC como colagem e o eco volta embrulhado em
+    // `<pasted_content>`: sem desembrulhar, a bolha otimista nunca casa e a
+    // fala aparece duas vezes (print do Rica, 02/10).
+    const chave = semEnvelopeDeColagem(mensagem.texto).trim();
     const tempos = disponiveis.get(chave) ?? [];
     tempos.push(mensagem.criadoEmMs);
     disponiveis.set(chave, tempos);

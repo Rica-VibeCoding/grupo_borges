@@ -69,6 +69,16 @@ describe('reconciliação — a pendência sai quando o eco entrega', () => {
     assert.equal(lePendentes('tara').length, 0);
   });
 
+  it('eco embrulhado como colagem casa com a bolha otimista', () => {
+    registraEcoPendente('caseiro', 'Para de trazer isso\n\nListe os dispositivos');
+    reconciliaPendentes(
+      'caseiro',
+      mensagensReais('\n\n<pasted_content id="f2de">\nPara de trazer isso\n\nListe os dispositivos \n</pasted_content id="f2de">\n'),
+    );
+
+    assert.equal(lePendentes('caseiro').length, 0);
+  });
+
   it('duas iguais em sequência: o eco com uma só derruba UMA', () => {
     registraEcoPendente('tara', 'ok');
     registraEcoPendente('tara', 'ok');
