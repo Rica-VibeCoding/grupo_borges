@@ -386,7 +386,8 @@ cada toque. Ele quer bater o olho e saber o que fazer.
 3. **Nova conversa direto no painel** (gaveta), um toque, ao lado da porta do Histórico.
 4. **Voltar pra anterior**: na conversa nova vazia, um atalho único que retoma a que acabou de
    sair. É o desfazer de quem tocou errado. A foto do agente **não** se repete ali: a pílula no
-   alto já mostra.
+   alto já mostra. **Retirado em 02/10 a pedido do Rica:** poluía a tela; quem quer a anterior
+   busca no Histórico da gaveta.
 5. **Concluída**: marca manual; a conversa sai da lista *Todas* (fica num filtro próprio).
 6. **Lista enxuta**: só título e tempo. A nota mora dentro da leitura. **Renomear** também mora
    na leitura.

@@ -13,7 +13,6 @@
  */
 import type { MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 
-import { textosDoUsuario } from './textos-do-usuario.ts';
 
 export type ConversaTrocada = {
   /** A conversa que entrou. */
@@ -66,29 +65,6 @@ export function antesDaTroca(troca: Pick<ConversaTrocada, 'emMs'>, mensagem: Pic
   if (troca.emMs === null) return true;
   const ts = typeof mensagem.timestamp === 'string' ? Date.parse(mensagem.timestamp) : Number.NaN;
   return !Number.isFinite(ts) || ts <= troca.emMs;
-}
-
-/** Fala do Rica: texto solto, ou o envelope de canal (Telegram, WhatsApp) —
- *  que também começa com `<`, mas é gente falando (F18). O resto que começa
- *  com `<` é máquina: `<command-name>`, `<local-command-stdout>`… */
-const ehFala = (texto: string): boolean => {
-  const t = texto.trimStart();
-  return !t.startsWith('<') || /^<channel\s/.test(t);
-};
-
-/** A conversa de agora já teve o primeiro turno? É o que tira o "Voltar pra
- *  anterior" (F16). Conta o que o Rica mandou depois da troca — pelo composer
- *  ou por canal —, e também o agente trabalhando nela: resposta depois da
- *  troca é prova de turno, venha a pergunta por onde vier. O resíduo do
- *  `/clear` e o pedido do cockpit (`origem: "cockpit"`) não contam. Sem o
- *  marco (a troca que falhou no meio não avisa o stream), quem chama passa a
- *  hora em que a lista viu a conversa vazia. */
-export function temPrimeiroTurno(mensagens: readonly MessagePayload[], troca: Pick<ConversaTrocada, 'emMs'> | null): boolean {
-  const depois = (troca ? mensagens.filter((m) => !antesDaTroca(troca, m)) : mensagens).filter(
-    (m) => (m as { origem?: unknown }).origem !== 'cockpit',
-  );
-  if (depois.some((m) => m.kind === 'assistant' && m.message?.role === 'assistant')) return true;
-  return textosDoUsuario(depois).some((t) => ehFala(t.texto));
 }
 
 export type TextosDoMarco = {

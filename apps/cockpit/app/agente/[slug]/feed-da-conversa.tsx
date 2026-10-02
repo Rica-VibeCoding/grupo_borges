@@ -51,7 +51,6 @@ import { usaFrota } from '@/components/shell/frota-provider';
 import { ancoraDaLinhaViva } from '@/components/shell/linha-viva-da-conversa';
 import { dobraPedidosDoCockpit, poeMarco, poeTrocaEmAndamento } from '@/components/feed/troca-no-feed.ts';
 import { usaTrocaNoChat } from './usa-troca-no-chat';
-import { VoltarPraAnterior } from './voltar-pra-anterior';
 
 /** O SELETOR. Executor decide a FONTE, nunca o desenho: os dois ramos terminam
  *  no mesmo `<Feed>`, com os mesmos itens e a mesma gramática. É a ordem do
@@ -286,26 +285,10 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
     temDelegacao: delegacoes.length > 0,
     status,
   });
-  // O "Voltar pra anterior" (F16) vive por cima do feed nos três casos: a Nova
-  // recarregada cai no vazio de saudação, e é ali que ele mais importa.
-  const voltar = (
-    <VoltarPraAnterior
-      agentSlug={agentSlug}
-      nome={nome}
-      statusDaFrota={statusDaFrota}
-      chave={`${troca?.sessionId ?? ''}:${emCurso?.fase ?? ''}`}
-      mensagens={messages}
-      marco={marco}
-      pendente={pendentes.length > 0 || anexosPendentes.length > 0}
-      emTroca={emCurso !== null && emCurso.fase !== 'falhou'}
-    />
-  );
-  // Sempre na mesma posição da árvore: trocar de ramo não remonta o atalho.
   if (decisao !== 'feed') {
     return (
       <>
         {decisao === 'sem-conversa' ? <SemConversa geracao={geracao} agentSlug={agentSlug} /> : null}
-        {voltar}
       </>
     );
   }
@@ -327,7 +310,6 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
       >
         <Feed itens={itens} lookup={lookup} agentSlug={agentSlug} estaRodando={isRunning} />
       </div>
-      {voltar}
     </>
   );
 });
