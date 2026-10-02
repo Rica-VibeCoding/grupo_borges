@@ -167,9 +167,9 @@ um pouco mais). Cor nova se mede no **estado final completo** — texto e fundo 
 
 1. **A linha do agora** (`feed/linha-do-agora.tsx`, 02/10): rodapé do feed, fora da lista virtualizada.
    À esquerda, a **esfera da tela de conversa em miniatura** — o mesmo componente (`EsferaConversa mini`),
-   mesmo shader e mesmas cores, nunca imitação em CSS (Rica, 02/10). **Nunca some**: parada, pensando
-   (`esperandoZe`), executando (`trabalhando`), esperando você (`ouvindo`) e desligada são cenas da tela de
-   voz. Ao lado, a frase — «Pensando há N s», o passo em voo
+   mesmo shader e mesmas cores, nunca imitação em CSS (Rica, 02/10). Aparece só pensando
+   (`esperandoZe`), executando (`trabalhando`) ou esperando você (`ouvindo`), entrando e saindo em mola;
+   parada ou desligada ela sai e libera o WebGL. Ao lado, a frase — «Pensando há N s», o passo em voo
    ou «Esperando você» —, com o brilho que corre (`.ck-brilho-texto`) no dourado do pulso. A troca de
    estado é a da tela de voz: o ritmo da matéria se aproxima aos poucos, sem tranco.
 2. **Chegada:** `.ck-chega` — `opacity` + `translateY(6px)` em `--ck-dur-enter`, só na fala do agente

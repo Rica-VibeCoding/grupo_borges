@@ -5,7 +5,9 @@
 // Substitui duas peças (Rica, 02/10): o bonequinho em cima do composer e a
 // linha viva "Pensando há 12 s". O modelo é o que o Claude, o Gemini e o
 // ChatGPT fazem — um sinal em movimento à ESQUERDA da linha que está sendo
-// escrita. A esfera NUNCA some: parada, ela fica sozinha, respirando.
+// escrita. Ela só aparece quando há o que mostrar — pensando, trabalhando ou
+// esperando o Rica (02/10, ele: "fica ali esperando um novo teste"). Parada ou
+// desligada, ela sai, e o WebGL dela é liberado junto.
 //
 // FORA DA LISTA VIRTUALIZADA DE PROPÓSITO. Item virtualizado desmonta e
 // remonta ao rolar, e cada remontagem reiniciaria o giro da esfera. Aqui ela
@@ -92,6 +94,7 @@ export function LinhaDoAgora({
   desdeMs: number | null;
 }) {
   const frase = fraseDoEstado(estado, emVoo);
+  const presente = estado === 'pensando' || estado === 'executando' || estado === 'atencao';
   const brilha = estado === 'pensando' || estado === 'executando';
 
   // Fora da árvore do composer, então fora do `MotionConfig` dele (§5).
@@ -107,7 +110,20 @@ export function LinhaDoAgora({
         lineHeight: 'var(--ck-leading-body)',
       }}
     >
-      <EsferaMini estado={estado} />
+      <AnimatePresence initial={false}>
+        {presente ? (
+          <motion.span
+            key="esfera"
+            className="inline-flex"
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.6 }}
+            transition={{ type: 'spring', bounce: 0.22, duration: 0.4 }}
+          >
+            <EsferaMini estado={estado} />
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
       <span className="relative min-w-0 flex-1" style={{ minHeight: '1lh' }}>
         <AnimatePresence initial={false} mode="popLayout">
           {frase ? (
