@@ -66,6 +66,10 @@ export function GrupoFerramentasView({
           : `2px solid ${resumo.estado === 'rodando' ? 'var(--ck-pulso-ouro)' : cor}`,
         background: terminouBem ? 'var(--ck-surface-nav)' : undefined,
         borderRadius: terminouBem ? 'var(--ck-radius-caixa)' : undefined,
+        // O véu do hover é dos botões de dentro, que são retos: sem o recorte,
+        // ele pinta um retângulo de canto vivo por cima da cápsula. `clip` e
+        // não `hidden` — não vira contêiner de rolagem.
+        overflow: terminouBem ? 'clip' : undefined,
       }}
     >
       <button
