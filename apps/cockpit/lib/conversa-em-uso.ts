@@ -80,10 +80,9 @@ function quando(iniciadaEm: number | null, agora: number) {
 }
 
 /** A data curta da pílula fechada: `28/09`, ou `hoje`. Sem data, `null`. A
- *  "Conversa nova" também fica sem: ela nasceu agora, e "hoje" ao lado de
- *  "nova" é a mesma coisa dita duas vezes (§1.2 — enfeite que não se paga). */
+ *  "Conversa nova" também leva a data — o Rica espera ver o dia da criação
+ *  desde o primeiro instante (02/10). */
 export function dataCurtaDaConversa(c: Pick<ConversaEmUso, 'iniciadaEm' | 'nova'>, agora: number = Date.now()): string | null {
-  if (c.nova) return null;
   const q = quando(c.iniciadaEm, agora);
   if (!q) return null;
   return q.hoje ? 'hoje' : q.diaMes;

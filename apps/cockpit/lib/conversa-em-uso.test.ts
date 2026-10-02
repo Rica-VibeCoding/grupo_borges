@@ -108,8 +108,9 @@ describe('conversa em uso — a linha do cartão', () => {
     assert.equal(dataCurtaDaConversa({ iniciadaEm: madrugadaZ, nova: false }, sex), '01/10');
   });
 
-  it('data curta some sem data e na "Conversa nova"', () => {
+  it('data curta some sem data; a "Conversa nova" leva o dia da criação', () => {
     assert.equal(dataCurtaDaConversa({ iniciadaEm: null, nova: false }, sex), null);
-    assert.equal(dataCurtaDaConversa({ iniciadaEm: qui, nova: true }, qui), null);
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: qui, nova: true }, qui), 'hoje');
+    assert.equal(dataCurtaDaConversa({ iniciadaEm: qui, nova: true }, sex), '01/10');
   });
 });
