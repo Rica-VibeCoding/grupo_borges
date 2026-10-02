@@ -60,6 +60,7 @@ import Link from 'next/link';
 
 import { CapsulaDoAgente } from './capsula-do-agente';
 import { IconeMicrofone } from './icones';
+import { PilulaDaConversa } from './pilula-da-conversa';
 import { PilulaDeTokens } from './pilula-de-tokens';
 import { BotaoNav } from './superficie-otimista';
 
@@ -109,8 +110,12 @@ export function BarraDeTelas({
         <IconeMicrofone tamanho={18} />
       </Link>
 
-      <div className="flex min-w-0 flex-1 items-center">
+      {/* O agente e a conversa dele, na mesma ponta. A pílula da conversa é
+          IRMÃ da cápsula, nunca filha: a cápsula abre a gaveta pelo toque, e
+          uma pílula dentro dela roubaria esse gesto (02/10). */}
+      <div className="flex min-w-0 flex-1 items-center" style={{ gap: 'var(--ck-space-2)' }}>
         <CapsulaDoAgente slug={agente.slug} nome={agente.nome} href={hrefAbrirPainel} />
+        <PilulaDaConversa agentSlug={agente.slug} />
       </div>
 
       <PilulaDeTokens agentSlug={agente.slug} />
