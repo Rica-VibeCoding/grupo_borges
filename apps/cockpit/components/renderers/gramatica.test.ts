@@ -20,9 +20,8 @@ describe('gramática da execução — o verbo, em português desde 02/08', () =
     assert.equal(leExecucao({ toolName: 'Read', args: { file_path: '/a.ts' } }).verbo, 'Leu');
   });
 
-  it('MCP cai no genérico que nunca produz frase torta: a lista envelheceria', () => {
+  it('MCP fora da tabela cai no genérico que nunca produz frase torta', () => {
     assert.equal(leExecucao({ toolName: 'mcp__supabase_geral__execute_sql' }).verbo, 'Usou');
-    assert.equal(leExecucao({ toolName: 'mcp__plugin_telegram_telegram__reply' }).verbo, 'Usou');
   });
 
   it('sem argumento o nome vai no lugar do alvo — linha muda é o modo de falha proibido', () => {

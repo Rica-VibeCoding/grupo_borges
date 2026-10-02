@@ -4,6 +4,8 @@
  * caber no teto de 300 linhas; `encurtaCaminho` continua saindo de lá, reexportado.
  */
 
+import { ehIdentificadorOpaco } from './identificador-opaco.ts';
+
 /* -------------------------------------------------------------------------- */
 /* Alvo                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -76,14 +78,15 @@ export function alvoDe(toolName: string, args: Record<string, unknown>): string 
     texto(args.prompt) ??
     texto(args.method) ??
     texto(args.task_id);
-  if (direto) return umaLinha(direto);
+  if (direto && !ehIdentificadorOpaco(direto)) return umaLinha(direto);
 
   // Ferramenta sem argumento nomeado que sirva de alvo (TaskList, listagens de
   // MCP): o primeiro valor de texto é melhor do que linha muda. Nada disso
   // acontecendo, a linha fica só com sigilo e rótulo — que já é uma frase.
+  // Identificador cru (`file_id`, UUID, token) é pulado: nunca vira alvo.
   for (const valor of Object.values(args)) {
     const t = texto(valor);
-    if (t) return umaLinha(t);
+    if (t && !ehIdentificadorOpaco(t)) return umaLinha(t);
   }
   return '';
 }

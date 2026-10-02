@@ -43,6 +43,7 @@
 // no tsconfig cobre o tsc, e o bundler resolve caminho explícito sem reclamar.
 import { calculateDiff, summarizeDiff } from './diff-lines.ts';
 import { alvoDe, texto, umaLinha } from './alvo-da-execucao.ts';
+import { ehIdentificadorOpaco } from './identificador-opaco.ts';
 import { encurtaNomeMcp, usos, verboDe } from './vocabulario-da-gramatica.ts';
 
 // O vocabulário (verbos, nome curto do MCP) e o alvo moram em
@@ -193,7 +194,12 @@ export function leExecucao(entrada: EntradaExecucao): Execucao {
     : entrada.toolName;
   const desfecho = desfechoDe(entrada);
 
-  const alvo = alvoDe(entrada.toolName, args);
+  // Verbo de frase pronta (MCP medido, `ListAgents`): lê só o `campo` legível
+  // e, sem ele, completa com o `objeto` — "Baixou o anexo", nunca o `file_id`.
+  const doCampo = verbo.campo ? texto(args[verbo.campo]) : null;
+  const alvo = verbo.objeto
+    ? doCampo && !ehIdentificadorOpaco(doCampo) ? umaLinha(doCampo) : verbo.objeto
+    : alvoDe(entrada.toolName, args);
   // Sem argumento (streaming parcial, ferramenta sem alvo nomeado), o nome vai
   // no lugar e o verbo cai no genérico: "Leu Read" é torto, "Usou TaskList"
   // informa. Linha muda continua sendo o modo de falha proibido.

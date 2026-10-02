@@ -23,7 +23,24 @@ export type Verbo = {
   passado: string;
   gerundio: string;
   unidade: (n: number) => string;
+  /** Complemento fixo da frase quando falta alvo útil (`Baixou o anexo`).
+   *  Quem tem `objeto` ignora os argumentos, salvo o `campo` legível. */
+  objeto?: string;
+  /** Argumento que serve de alvo (`entity_id`). Sem ele, vale o `objeto`. */
+  campo?: string;
 };
+
+/** Verbo de frase pronta: `objeto` no lugar do alvo, `campo` quando houver. */
+function frase(
+  passado: string,
+  gerundio: string,
+  objeto: string,
+  um: string,
+  varios: string,
+  campo?: string,
+): Verbo {
+  return { passado, gerundio, objeto, campo, unidade: (n) => (n === 1 ? um : `${n} ${varios}`) };
+}
 
 const comandos: Verbo = {
   passado: 'Executou',
@@ -128,6 +145,50 @@ const VERBOS: Record<string, Verbo> = {
     gerundio: 'Sincronizando',
     unidade: (n) => (n === 1 ? 'uma vez' : `${n} vezes`),
   },
+
+  // As que caíam em "Usou <primeiro texto dos args>" — lista medida no corpus
+  // (docs/pesquisas/feed-do-turno-2026-10.md, Dedução 2), por volume.
+  ListAgents: frase('Listou', 'Listando', 'os agentes', 'uma listagem', 'listagens'),
+  ScheduleWakeup: frase('Agendou', 'Agendando', 'a retomada', 'um agendamento', 'agendamentos'),
+  Monitor: frase('Vigiou', 'Vigiando', 'um processo', 'um processo', 'processos', 'description'),
+  ExitPlanMode: frase('Apresentou', 'Apresentando', 'o plano', 'um plano', 'planos'),
+  EnterPlanMode: frase('Entrou', 'Entrando', 'no modo plano', 'uma vez', 'vezes'),
+  ListMcpResourcesTool: frase('Listou', 'Listando', 'os recursos do MCP', 'uma listagem', 'listagens'),
+  SendFeedback: frase('Enviou', 'Enviando', 'um retorno', 'um retorno', 'retornos'),
+
+  mcp__plugin_telegram_telegram__download_attachment:
+    frase('Baixou', 'Baixando', 'o anexo', 'um anexo', 'anexos'),
+  mcp__plugin_telegram_telegram__reply:
+    frase('Respondeu', 'Respondendo', 'no Telegram', 'uma mensagem', 'mensagens'),
+  mcp__plugin_telegram_telegram__react:
+    frase('Reagiu', 'Reagindo', 'no Telegram', 'uma reação', 'reações'),
+  mcp__plugin_telegram_telegram__edit_message:
+    frase('Editou', 'Editando', 'a mensagem no Telegram', 'uma mensagem', 'mensagens'),
+  mcp__plugin_winnow_winnow__winnow_recall:
+    frase('Consultou', 'Consultando', 'a memória', 'uma consulta', 'consultas'),
+  mcp__supabase_geral__get_advisors:
+    frase('Consultou', 'Consultando', 'os alertas do banco', 'uma consulta', 'consultas'),
+
+  'mcp__ha-mcp__ha_get_camera_image':
+    frase('Olhou', 'Olhando', 'a câmera', 'uma câmera', 'câmeras', 'entity_id'),
+  'mcp__ha-mcp__ha_get_history':
+    frase('Consultou', 'Consultando', 'o histórico da casa', 'uma consulta', 'consultas', 'entity_ids'),
+  'mcp__ha-mcp__ha_get_logs':
+    frase('Leu', 'Lendo', 'os logs da casa', 'um log', 'logs'),
+  'mcp__ha-mcp__ha_get_automation_traces':
+    frase('Rastreou', 'Rastreando', 'uma automação', 'uma automação', 'automações', 'automation_id'),
+  'mcp__ha-mcp__ha_config_get_automation':
+    frase('Leu', 'Lendo', 'uma automação', 'uma automação', 'automações', 'identifier'),
+  'mcp__ha-mcp__ha_eval_template':
+    frase('Calculou', 'Calculando', 'um valor da casa', 'um cálculo', 'cálculos'),
+  'mcp__ha-mcp__ha_get_state':
+    frase('Consultou', 'Consultando', 'o estado da casa', 'uma consulta', 'consultas', 'entity_id'),
+  'mcp__ha-mcp__ha_get_entity':
+    frase('Consultou', 'Consultando', 'uma entidade da casa', 'uma consulta', 'consultas', 'entity_id'),
+  'mcp__ha-mcp__ha_call_service':
+    frase('Acionou', 'Acionando', 'a casa', 'um comando', 'comandos', 'entity_id'),
+  'mcp__ha-mcp__ha_config_set_automation':
+    frase('Salvou', 'Salvando', 'uma automação', 'uma automação', 'automações', 'identifier'),
 };
 
 /** Pedaço de nome de MCP que só diz "isto é um MCP" — não diz QUAL. */
@@ -157,9 +218,8 @@ export function encurtaNomeMcp(nome: string): string {
 }
 
 /**
- * O verbo da ferramenta. MCP não entra na tabela: ele é aberto por natureza e
- * a lista envelheceria a cada servidor novo — o método diz a ação melhor do
- * que o servidor, e o genérico "Usou" nunca produz frase torta.
+ * O verbo da ferramenta. MCP fora da tabela cai no genérico "Usou" + nome
+ * curto; desde 02/10 os MCP medidos no buraco do alvo têm frase própria.
  */
 export function verboDe(toolName: string): Verbo {
   return VERBOS[toolName] ?? usos;

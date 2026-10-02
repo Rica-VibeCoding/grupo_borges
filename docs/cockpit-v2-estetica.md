@@ -208,6 +208,8 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
 - **Diff sai dos argumentos**, calculado no cliente (`diff-lines.ts`): `Edit` por `old_string`/
   `new_string`, `Write` novo como tudo adicionado; `structuredPatch` não é lido. Só unified.
 - **Caminho de arquivo trunca o diretório** e preserva o nome inteiro.
+- **Identificador cru nunca vira alvo** (`file_id`, UUID, hash, token — `identificador-opaco.ts`): sem
+  alvo legível, a linha é verbo + complemento (`Baixou o anexo`) ou verbo + nome amigável da ferramenta.
 - **Erro de ferramenta não é modal:** fica na linha, expansível.
 - **Sem highlighter de linguagem.** Bloco de código é mono de uma cor. stdout e stderr em
   `text-primary`; o que separa é um rótulo `stderr` em `secondary` e um filete funcional. Canal não é
