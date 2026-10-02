@@ -24,6 +24,7 @@ import { estadoDoAgora, fraseEmVoo } from '@/components/feed/linha-do-agora.ts';
 import { LinhaDoAgora } from '@/components/feed/linha-do-agora.tsx';
 import { desdeDaLinhaViva } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
+import { encerraOrfas } from '@/components/feed/orfas-do-turno.ts';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaCompact } from '@/lib/compact';
 import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
@@ -152,6 +153,14 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // duas fontes mora em `linha-viva-da-conversa.ts`.
   const desdeMs = useMemo(() => desdeDaLinhaViva(messages), [messages]);
   const vencida = usaLinhaVivaVencida(desdeMs);
+  // O GRUPO NUNCA PRESO EM "RODANDO": ferramenta sem resultado de turno que
+  // já acabou vira interrompida (`orfas-do-turno.ts`). Mesmas guardas do turno
+  // vivo abaixo — prazo e desligamento visto pela frota.
+  const turnoAcabou = !(isRunning && !vencida && statusDaFrota !== 'offline');
+  const lookupDoFeed = useMemo(
+    () => encerraOrfas(messages, lookup, turnoAcabou),
+    [messages, lookup, turnoAcabou],
+  );
 
   // O FREIO BEBE DA MESMA ÁGUA QUE O "PENSANDO", e a terceira rodada de 15/08
   // foi aprender que "mesma fonte" não bastava: eu publicava `isRunning` CRU,
@@ -257,7 +266,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
       >
         <Feed
           itens={itens}
-          lookup={lookup}
+          lookup={lookupDoFeed}
           agentSlug={agentSlug}
           estaRodando={isRunning}
           rodape={<LinhaDoAgora estado={estadoAgora} emVoo={emVoo} desdeMs={desdeMs} />}

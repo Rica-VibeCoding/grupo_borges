@@ -37,6 +37,7 @@ import {
   type EntradaDaExecucao,
 } from './execucao-do-item.ts';
 import type { MembroDoGrupo } from './grupo-ferramentas.ts';
+import { foiInterrompida } from './orfas-do-turno.ts';
 
 /** Achata os membros nas execuções individuais: um chip é uma execução; um
  *  assistant pode trazer VÁRIOS tool_use — cada um é uma linha do grupo. */
@@ -138,7 +139,8 @@ export function resumeGrupo(entradas: readonly EntradaDaExecucao[]): ResumoDoGru
   }
   const rendimento: Rendimento | null =
     estado === 'falhou'
-      ? { texto: 'erro' }
+      ? // A órfã encerrada pelo fim do turno diz o que houve, não "erro".
+        { texto: foiInterrompida(entradas[entradas.length - 1]) ? 'interrompido' : 'erro' }
       : temDiff
         ? { texto: `+${adicoes} −${remocoes}`, adicoes, remocoes }
         : null;

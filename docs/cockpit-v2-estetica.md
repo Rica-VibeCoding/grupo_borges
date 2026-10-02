@@ -206,6 +206,10 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
   pergunta e chama. Concluída bem = cápsula neutra (`--ck-surface-nav`,
   `--ck-radius-caixa`, sem filete) com ✓ em `--ck-state-ok`: «N passos · resumo · duração», saldo
   `+N −M` e selo âmbar de retentativas. Falhou = filete e `erro` em `--ck-state-fail`.
+- **Só o último turno em voo tem passo rodando** (`feed/orfas-do-turno.ts`, 02/10): ferramenta sem
+  resultado vira falha `interrompido` em `--ck-state-fail` quando o agente já respondeu depois dela ou o
+  turno acabou (`isRunning`, prazo da linha viva, frota offline); `AskUserQuestion` só pela resposta
+  posterior. Falha e não neutro: neutro concluído é o ✓, que afirmaria um sucesso que ninguém viu.
 - **`thinking`** sem texto não aparece; com texto nasce **sempre fechado** (`Raciocínio · N linhas`),
   inclusive o bloco ativo.
 - **Diff sai dos argumentos**, calculado no cliente (`diff-lines.ts`): `Edit` por `old_string`/
