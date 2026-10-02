@@ -65,9 +65,22 @@ Portas relevantes nesta máquina (`borges`, a Oracle):
 tailnet em 08/08; trabalho em andamento é validado localmente, não pelo celular do
 Rica.
 
-**Publicar na 3008** sem tirar o servidor vivo do ar: compilar num estágio,
-trocar a pasta e reiniciar. Compilar direto em `.next` quebra a produção durante
-o build.
+**Publicar na 3008** sem tirar o servidor vivo do ar é um comando só, o mesmo na
+`borges` (como `clawd`) e no notebook (entra por SSH como `ubuntu` e roda lá como
+`clawd` a versão do script que está no `origin/main`):
+
+```bash
+scripts/publicar-cockpit.sh
+```
+
+Ele faz, nesta ordem: worktree do `origin/main` → `pnpm install` → build em
+`.next-estagio-<hash>` → recusa `-wip` → move o estágio pro app e apaga o
+worktree → prova o estágio na porta 3013 (página e um chunk, 200) → `mv .next
+.next-antes-<hash>-<hora>` → `mv` do estágio → `restart` → confere a 3008 e o
+`deploymentId`, e desfaz sozinho se ela não voltar → guarda só as 3 últimas
+`.next-antes-*`. Recusa publicar se `package.json`/lockfile do `origin/main`
+divergem da árvore da `borges` (o `next start` usa o `node_modules` de lá). O
+manual, se o script não servir:
 
 ```bash
 COCKPIT_DIST_DIR=.next-estagio-<hash> corepack pnpm exec next build
@@ -75,11 +88,14 @@ mv .next .next-antes-<hash> && mv .next-estagio-<hash> .next
 systemctl --user restart cockpit-v2
 ```
 
+Compilar direto em `.next` quebra a produção durante o build — e voltou a
+acontecer em 02/10 às 03:45 (`next build` na mão, servidor no ar, `.next` zerado).
+
 Isso roda **na `borges`**, como `clawd`; a unit serve o `.next` de
 `/home/clawd/repos/grupo_borges/apps/cockpit`. Ela é persistente desde 08/08
 (`~/.config/systemd/user/cockpit-v2.service`), então `restart` basta. O `stop` →
 `reset-failed` → `systemd-run` era da unit transiente e não vale mais. No notebook não
-existe 3008: lá o trabalho fecha no `git push`.
+existe 3008: lá o trabalho fecha no `git push` + `scripts/publicar-cockpit.sh`.
 
 Compilar do `origin/main` recém-buscado (`git worktree add --detach <dir> origin/main`),
 nunca da árvore compartilhada: build de base atrasada tira do ar o que outra sessão

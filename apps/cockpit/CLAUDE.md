@@ -56,12 +56,13 @@ peça central está polindo 18% da tela.
    produção na 3008, que é o mesmo `next-server`. Use a skill `subir-cockpit`.
 6. **Terminou, publica — sem perguntar.** Ordem do Rica em 08/08: commit não é
    entrega, ele só vê o que está na 3008. Build e republicação fazem parte da
-   tarefa, não são um segundo pedido. Publicar é **na `borges`**, pelo roteiro do
-   `docs/cockpit-v2-stack.md` §2: build em estágio a partir do `origin/main`
-   recém-buscado → `mv` → `systemctl --user restart cockpit-v2`. A unit é
-   persistente desde 08/08; o `stop` → `reset-failed` → `systemd-run` era da
-   transiente e não vale mais. **No notebook** não existe 3008: lá a tarefa
-   fecha com `git pull --rebase` + `git push`, e quem publica é a `borges`.
+   tarefa, não são um segundo pedido. Publicar é `git pull --rebase` + `git push`
+   e depois **`scripts/publicar-cockpit.sh`** — o mesmo comando na `borges` e no
+   notebook (de lá ele entra por SSH e roda na `borges`, liberado pelo Rica em
+   02/10). Ele compila o `origin/main` num worktree próprio, prova o estágio numa
+   porta reserva, troca a pasta, reinicia e volta sozinho se a 3008 não responder
+   (roteiro no `docs/cockpit-v2-stack.md` §2). Nada de `next build` na mão na
+   árvore compartilhada: publica trabalho pela metade e derruba os chunks.
    Com a `:3444` fora do ar, **publicar é o único jeito de ele ver** — não existe
    mais "ele acompanha pelo dev".
 
