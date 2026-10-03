@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { escalaDaEsfera } from './esfera-estado.ts';
 import { tamanhoDoBuffer } from './webgl-tela.ts';
 
 describe('tamanhoDoBuffer', () => {
@@ -23,5 +24,16 @@ describe('tamanhoDoBuffer', () => {
 
   it('caixa zerada não gera buffer de 0 nem divisão por zero', () => {
     assert.deepEqual(tamanhoDoBuffer(0, 0, 2, 0.75), { largura: 1, altura: 1, esc: 1 });
+  });
+});
+
+describe('escala da esfera — a mini nítida, a tela cheia como estava', () => {
+  it('mini (28 px) sai com o buffer cheio em dpr 1 e 2', () => {
+    assert.deepEqual(tamanhoDoBuffer(28, 28, 1, escalaDaEsfera(true)), { largura: 28, altura: 28, esc: 1 });
+    assert.deepEqual(tamanhoDoBuffer(28, 28, 2, escalaDaEsfera(true)), { largura: 56, altura: 56, esc: 2 });
+  });
+
+  it('tela cheia segue em 0,75', () => {
+    assert.equal(escalaDaEsfera(false), 0.75);
   });
 });

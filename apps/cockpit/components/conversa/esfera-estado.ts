@@ -201,3 +201,10 @@ export function regulaQuadro(r: Regulador, agora: number, intervaloMs: number): 
   const desenha = !pesado || agora - r.ultimoDesenho >= 30;
   return { media, pesado, ultimoDesenho: desenha ? agora : r.ultimoDesenho, desenha };
 }
+
+/** A fração da resolução do buffer. Tela cheia pede 0,75 (o custo do quadro é
+ *  a tela inteira); a mini, 1: na caixa de 28 px, 0,75 dava 21 px em dpr 1 —
+ *  borrada —, e 28×28 inteiro custa nada. */
+export function escalaDaEsfera(mini: boolean): number {
+  return mini ? 1 : 0.75;
+}

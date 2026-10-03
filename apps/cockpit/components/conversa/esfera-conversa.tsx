@@ -10,6 +10,7 @@ import {
   aproximaCor,
   aproximaLugar,
   coresComEscuta,
+  escalaDaEsfera,
   lugarAssentou,
   lugarNoPalco,
   regulaQuadro,
@@ -46,8 +47,6 @@ const TOKENS = {
   desligado: '--ck-conversa-desligado',
   fundo: '--ck-surface-canvas',
 } as const;
-/** A esfera pede mais definição que a Moldura: 0,75 da resolução. */
-const ESCALA = 0.75;
 /** Quadro fixo do movimento reduzido: o mesmo instante do ruído sempre. */
 const TEMPO_PARADO = 1.3;
 
@@ -109,7 +108,7 @@ export function EsferaConversa({
     const canvas = document.createElement('canvas');
     canvas.className = mini ? styles.desenhoMini : styles.desenho;
     palco.append(canvas);
-    const tela = criaTelaWebGL(canvas, FRAG_ESFERA, ESCALA, { transparente: true });
+    const tela = criaTelaWebGL(canvas, FRAG_ESFERA, escalaDaEsfera(mini), { transparente: true });
     if (!tela) {
       canvas.remove();
       setSemWebGL(true);
