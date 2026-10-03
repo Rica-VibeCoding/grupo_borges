@@ -6,7 +6,7 @@ import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { saindoOutputNoFim } from '../../lib/escrita-viva.ts';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
-import { estadoDoAgora, fraseEmVoo, pedeAoRicaNoFim } from './linha-do-agora.ts';
+import { ANUNCIO_DO_AGORA, estadoDoAgora, fraseEmVoo, pedeAoRicaNoFim } from './linha-do-agora.ts';
 import { encerraOrfas } from './orfas-do-turno.ts';
 
 test('a esfera não olha pra caixa nem pula: ouvindo e pronto viram parado', () => {
@@ -112,4 +112,14 @@ test('pergunta ao Rica em voo no fim do feed é atenção ("Esperando você"), n
 test('esperando o Rica não vence desligado; feed vazio não é pergunta', () => {
   assert.equal(estadoDoAgora({ status: 'offline', turnoVivo: true, produzindo: true, esperandoRica: true }), 'offline');
   assert.equal(pedeAoRicaNoFim([]), false);
+});
+
+test('a região viva anuncia só o estado: sem relógio, sem frase de ferramenta', () => {
+  assert.deepEqual(ANUNCIO_DO_AGORA, {
+    offline: '',
+    parado: '',
+    pensando: 'Pensando',
+    executando: 'Executando',
+    atencao: 'Esperando você',
+  });
 });

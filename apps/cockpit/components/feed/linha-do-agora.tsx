@@ -24,7 +24,7 @@ import { EsferaConversa } from '../conversa/esfera-conversa';
 import type { Cena } from '../conversa/moldura-estado';
 import { CHAVE_VISUAL, leVisual, type VariacaoEsfera } from '../conversa/preferencia-visual';
 
-import type { EstadoDoAgora } from './linha-do-agora.ts';
+import { ANUNCIO_DO_AGORA, type EstadoDoAgora } from './linha-do-agora.ts';
 import { rotuloDoTempo } from './linha-viva.ts';
 
 const TICK_MS = 1_000;
@@ -141,6 +141,10 @@ export function LinhaDoAgora({
             </motion.span>
           ) : null}
         </AnimatePresence>
+      </span>
+      {/* Sempre montada: região viva que nasce junto com o texto não é lida. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {ANUNCIO_DO_AGORA[estado]}
       </span>
     </div>
     </MotionConfig>

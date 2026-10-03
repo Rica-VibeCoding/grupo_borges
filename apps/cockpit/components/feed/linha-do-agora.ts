@@ -17,6 +17,17 @@ import { entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 
 export type EstadoDoAgora = 'offline' | 'parado' | 'pensando' | 'executando' | 'atencao';
 
+/** O que a região viva (polite) anuncia: só a TROCA de estado. Nem o relógio
+ *  nem a frase do passo entram — leitor de tela falaria a cada segundo e a
+ *  cada ferramenta. Parado e desligado ficam mudos: a linha some. */
+export const ANUNCIO_DO_AGORA: Record<EstadoDoAgora, string> = {
+  offline: '',
+  parado: '',
+  pensando: 'Pensando',
+  executando: 'Executando',
+  atencao: 'Esperando você',
+};
+
 /** `esperandoRica`: o fim do feed tem pergunta ao Rica em voo
  *  (`pedeAoRicaNoFim`). O `aguardando` da frota não basta — a API só o grava
  *  em falha —, e a pergunta não é output: sem esta entrada ela caía em
