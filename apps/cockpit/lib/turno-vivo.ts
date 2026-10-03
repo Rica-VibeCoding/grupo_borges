@@ -35,6 +35,22 @@
  * quando o valor MUDA, senão todo flush do stream acordaria o composer à toa.
  */
 
+/** A régua do turno em voo, uma só para todos os consumidores do feed: o
+ *  `isRunning` do stream com o prazo da linha viva (`vencida`, turno que morre
+ *  sem despedida não escreve o fim) e o desligamento visto pela frota. Quem lê
+ *  o `isRunning` cru fica girando para sempre depois de um limite de uso. */
+export function turnoVivoDe({
+  isRunning,
+  vencida,
+  statusDaFrota,
+}: {
+  isRunning: boolean;
+  vencida: boolean;
+  statusDaFrota: string | null | undefined;
+}): boolean {
+  return isRunning && !vencida && statusDaFrota !== 'offline';
+}
+
 const porAgente = new Map<string, boolean>();
 const ouvintes = new Map<string, Set<() => void>>();
 

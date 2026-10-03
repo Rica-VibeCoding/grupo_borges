@@ -4,7 +4,9 @@ import { describe, it } from 'node:test';
 import type { ContentPart, MessagePayload } from '@grupo_borges/cockpit-core/messages-types';
 import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
-import { entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
+import { indiceDaFalaComCursor } from '../../lib/escrita-viva.ts';
+import { turnoVivoDe } from '../../lib/turno-vivo.ts';
+import { entradasDoGrupo, faseDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 import { execucaoDaParte } from './execucao-do-item.ts';
 import { encerraOrfas, foiInterrompida, INTERROMPIDO } from './orfas-do-turno.ts';
 
@@ -123,5 +125,42 @@ describe('órfãs do turno — o grupo', () => {
 
   it('erro de verdade continua "erro"', () => {
     assert.equal(foiInterrompida({ result: 'estourou', isError: true }), false);
+  });
+});
+
+describe('órfãs do turno — turno que morreu sem despedida (isRunning preso)', () => {
+  // Limite de uso: o log para de crescer com a corrida de pé. Passado o prazo
+  // da linha viva, o feed inteiro tem de parar junto — anel, relógio e cursor.
+  const vivo = turnoVivoDe({ isRunning: true, vencida: true, statusDaFrota: 'trabalhando' });
+  const itensDe = (msgs: MessagePayload[]) =>
+    msgs.filter((m) => m.kind === 'assistant').map((payload) => ({
+      kind: 'assistant' as const,
+      payload,
+      parts: payload.message!.content as ContentPart[],
+    }));
+
+  it('a régua do turno vivo cai com o prazo vencido e com a frota offline', () => {
+    assert.equal(vivo, false);
+    assert.equal(turnoVivoDe({ isRunning: true, vencida: false, statusDaFrota: 'offline' }), false);
+    assert.equal(turnoVivoDe({ isRunning: true, vencida: false, statusDaFrota: null }), true);
+  });
+
+  it('grupo com passo órfão fecha em falha: não gira, e fechado o relógio vira duração', () => {
+    const msgs = [resposta(1, [uso('a')]), resultado(2, 'a'), resposta(3, [uso('b')])];
+    const { estado } = resumeGrupo(entradasDoGrupo(itensDe(msgs), fecha(msgs, !vivo)));
+    assert.equal(faseDoGrupo(estado, vivo), 'falha');
+  });
+
+  it('grupo todo concluído fecha em ok, não segue girando como "em curso"', () => {
+    const msgs = [resposta(1, [uso('a')]), resultado(2, 'a'), resposta(3, [uso('b')]), resultado(4, 'b')];
+    const { estado } = resumeGrupo(entradasDoGrupo(itensDe(msgs), fecha(msgs, !vivo)));
+    assert.equal(faseDoGrupo(estado, vivo), 'ok');
+  });
+
+  it('fala no fim não leva cursor', () => {
+    const itens = itensDe([resposta(1, [{ type: 'text', text: 'parei no meio' }])]);
+    const indice = indiceDaFalaComCursor(itens);
+    assert.equal(indice, 0);
+    assert.equal(vivo && indice === itens.length - 1, false);
   });
 });

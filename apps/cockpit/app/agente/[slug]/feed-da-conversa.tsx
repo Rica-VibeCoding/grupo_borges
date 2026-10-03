@@ -27,7 +27,7 @@ import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { encerraOrfas } from '@/components/feed/orfas-do-turno.ts';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaCompact } from '@/lib/compact';
-import { publicaTurnoVivo } from '@/lib/turno-vivo.ts';
+import { publicaTurnoVivo, turnoVivoDe } from '@/lib/turno-vivo.ts';
 import {
   publicaEscritaViva,
   saindoOutputNoFim,
@@ -219,7 +219,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // A LINHA DO AGORA substitui a linha viva (02/10): a esfera fica sempre no
   // fim do feed, e a frase ao lado diz o que ele faz. As guardas são as do
   // turno vivo acima — prazo e desligamento visto pela frota.
-  const turnoVivo = isRunning && !vencida && statusDaFrota !== 'offline';
+  const turnoVivo = turnoVivoDe({ isRunning, vencida, statusDaFrota });
   const estadoAgora = estadoDoAgora({
     status: statusDaFrota ?? undefined,
     turnoVivo,
@@ -268,7 +268,10 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
           itens={itens}
           lookup={lookupDoFeed}
           agentSlug={agentSlug}
-          estaRodando={isRunning}
+          // `turnoVivo`, não `isRunning` cru: turno que morreu sem despedida
+          // deixaria o anel do grupo girando, o relógio contando e o cursor
+          // piscando para sempre, com a linha do agora já parada.
+          estaRodando={turnoVivo}
           rodape={<LinhaDoAgora estado={estadoAgora} emVoo={emVoo} desdeMs={desdeMs} />}
         />
       </div>
