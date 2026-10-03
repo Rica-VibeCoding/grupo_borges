@@ -58,6 +58,7 @@
  */
 import Link from 'next/link';
 
+import { PECAS } from '../../lib/modo';
 import { CapsulaDoAgente } from './capsula-do-agente';
 import { IconeMicrofone } from './icones';
 import { PilulaDaConversa } from './pilula-da-conversa';
@@ -95,7 +96,7 @@ export function BarraDeTelas({
         paddingLeft: 'calc(var(--ck-space-3) + var(--ck-safe-left))',
       }}
     >
-      <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} />
+      {PECAS.tropa ? <BotaoNav hrefAbrir={abrirNavHref} hrefFechar={fecharNavHref} aberto={navAberta} /> : null}
       <Link
         href={`/conversa/${agente.slug}`}
         aria-label={`Começar conversa por voz com ${agente.nome}`}

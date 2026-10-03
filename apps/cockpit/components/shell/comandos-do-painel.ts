@@ -34,6 +34,7 @@
  * máquina da confirmação (`confirma`/`aviso`) fica para o próximo comando que
  * destruir alguma coisa.
  */
+import type { Pecas } from '../../lib/modo';
 import type { Impedimento } from './acoes-rapidas';
 
 export type ComandoId = 'compact' | 'encerrar';
@@ -72,6 +73,12 @@ export const COMANDOS: readonly Comando[] = [
     aviso: null,
   },
 ];
+
+/** Os comandos que o modo desenha: o painel do cliente fica só com o
+ *  `/compact` — o `/encerrar` é a régua de fechamento da casa (`lib/modo.ts`). */
+export function comandosDo(pecas: Pick<Pecas, 'encerrar'>): readonly Comando[] {
+  return pecas.encerrar ? COMANDOS : COMANDOS.filter((comando) => comando.id !== 'encerrar');
+}
 
 /**
  * `aguardando` não é fase do POST: é o `/compact` já entregue, com a espera do

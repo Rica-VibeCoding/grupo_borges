@@ -14,6 +14,11 @@ import { PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER } from 'next/constants.
 // Foi assim que a 3446 caiu em 06/09.
 const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
 
+// O painel do cliente (`lib/modo.ts`) compila deste mesmo arquivo. Lido aqui
+// pelo nome cru porque a config não importa o bundle; a regra é a mesma do
+// `leModo`: só `cliente` liga, qualquer outra coisa é a frota.
+const MODO_CLIENTE = process.env.NEXT_PUBLIC_COCKPIT_MODO === 'cliente';
+
 /**
  * A FALHA BARULHENTA — quem confere o endereço é o BUILD, porque é ele que grava.
  *
@@ -89,7 +94,8 @@ const DIST_DIR = process.env.COCKPIT_DIST_DIR ?? '.next';
 
 // Relativo à raiz do repo. Fora daqui o build não lê nada que vá pro bundle:
 // o core entra como source (`transpilePackages`), versão de lib vem do lockfile,
-// e env só vira bundle com prefixo NEXT_PUBLIC_, que o cockpit não usa.
+// e env só vira bundle com prefixo NEXT_PUBLIC_ — o único é o
+// `NEXT_PUBLIC_COCKPIT_MODO`, que entra no id pelo sufixo `-cliente` (abaixo).
 export const ENTRADAS_DO_BUILD = [
   'apps/cockpit',
   'packages/cockpit-core',
@@ -146,7 +152,9 @@ export function idGravadoNoBuild(pastaDoBuild: string): string | undefined {
 // filho. Com árvore suja o sufixo é único POR AVALIAÇÃO — sem memória, um
 // mesmo build sairia com dois ids. A env herda para os filhos.
 function idDoCodigoDoProcesso(): string {
-  process.env.__COCKPIT_ID_DO_CODIGO ??= idDoCodigo();
+  // O mesmo código compila dois bundles (frota e cliente): o sufixo impede os
+  // dois de dividirem o id. A frota segue com o id de sempre.
+  process.env.__COCKPIT_ID_DO_CODIGO ??= idDoCodigo() + (MODO_CLIENTE ? '-cliente' : '');
   return process.env.__COCKPIT_ID_DO_CODIGO;
 }
 
@@ -239,6 +247,9 @@ export const config: NextConfig = {
       fallback: [
         { source: '/api/:path*', destination: `${API_BASE}/api/:path*` },
         { source: '/uploads/agents/:path*', destination: `${API_BASE}/uploads/agents/:path*` },
+        // Painel do cliente: login, sessão e saída são do portão. O proxy leva o
+        // cookie e o `Origin` do navegador e devolve o `Set-Cookie` dele.
+        ...(MODO_CLIENTE ? [{ source: '/auth/:path*', destination: `${API_BASE}/auth/:path*` }] : []),
       ],
     };
   },

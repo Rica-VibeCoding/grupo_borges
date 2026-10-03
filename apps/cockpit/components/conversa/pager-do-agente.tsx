@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { flushSync } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 
+import { PECAS } from '../../lib/modo';
 import { ArrastoDoChat } from './arrasto-do-chat';
 import styles from './pager-do-agente.module.css';
 import { painelAssentado, painelDaUrl, urlDoPainel, type Painel } from './rota-do-pager';
@@ -187,7 +188,8 @@ export function PagerDoAgente({
           <TelaConversa key={slug} slug={slug} nome={nome} ativa={ativo === 'voz'} visivel={vozVisivel} />
         ) : null}
       </section>
-      <ArrastoDoChat pagerRef={pagerRef} chatRef={chatRef} />
+      {/* O arrasto do chat abre a tropa; sem tropa (painel do cliente), não há o que abrir. */}
+      {PECAS.tropa ? <ArrastoDoChat pagerRef={pagerRef} chatRef={chatRef} /> : null}
     </div>
   );
 }

@@ -36,6 +36,7 @@ import { useState } from 'react';
 import { postAgentQuotaRefresh } from '@grupo_borges/cockpit-core/api';
 import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
 
+import { PECAS } from '../../lib/modo';
 import { corDaCota, leiaConta, leiaCota, type JanelaDeCota } from './cota';
 import { IconeReenviar } from './icones';
 import { SeletorDeConta } from './seletor-conta';
@@ -220,7 +221,9 @@ export function BlocoDeCota({
           </>
         ) : null}
 
-        {conta ? (
+        {/* Painel do cliente: a troca é da máquina do Rica e o portão não serve
+            `/api/contas` — a pílula não entra (`lib/modo.ts`). */}
+        {conta && PECAS.trocaDeConta ? (
           // Encostada à direita, longe do título: é a ficha de quem paga, não
           // um estado do agente. O `ml-auto` come a folga que sobrar.
           //

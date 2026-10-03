@@ -1,10 +1,13 @@
 import type { Viewport } from 'next';
+import { redirect } from 'next/navigation';
 import { fetchFleet } from '@grupo_borges/cockpit-core/api';
 import { AppShell } from '@/components/shell/app-shell';
 import { IconeVassoura } from '@/components/shell/icones';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
 import { AtalhosDeTelas } from '@/components/telas/atalhos-de-telas';
 import { fetchFaxina } from '@/lib/faxina';
+import { MODO_CLIENTE } from '@/lib/modo';
+import { destinoDa, leSessao } from '@/lib/sessao-do-portao';
 
 // Server Component de propósito: `fetchFleet` monta URL absoluta a partir de
 // `API_BACKEND_URL`, o que só resolve no servidor. No cliente o caminho é
@@ -19,6 +22,8 @@ export const dynamic = 'force-dynamic';
 export const viewport: Viewport = { themeColor: '#222222' };
 
 export default async function Home() {
+  // Painel do cliente: não há Início — a raiz leva ao agente da sessão.
+  if (MODO_CLIENTE) redirect(destinoDa(await leSessao()));
   const fleet = await fetchFleet();
   // Relógio do servidor: `force-dynamic` re-renderiza a cada visita, então a
   // duração de sessão vem fresca sem precisar de relógio no cliente (que daria

@@ -10,6 +10,7 @@ import { motion } from 'motion/react';
 import type { Retido } from '../../lib/fase-do-anexo';
 import type { usaAnexo } from '../../lib/usa-anexo';
 import type { OrigemRascunho } from '../../lib/usa-rascunho';
+import { PECAS } from '../../lib/modo';
 import { BolhaDeComandos } from './bolha-de-comandos';
 import { emCaptura, type ModoDaFala } from './modo-da-fala';
 import { TROCA_DE_FILEIRA } from './troca-de-fileira';
@@ -41,18 +42,10 @@ export function CampoDoComposer({
   // aqui porque o Popover vive num Portal (subárvore separada do textarea) e
   // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
   // e apertar Enter mandava o `/` sozinho como mensagem pro agente.
-  const bolhaComandosAberta = texto === '/';
+  // No painel do cliente a bolha não existe (`lib/modo.ts`): o `/` é texto comum.
+  const bolhaComandosAberta = PECAS.bolhaDeComandos && texto === '/';
 
-  return (
-    <BolhaDeComandos
-      agentSlug={agentSlug}
-      texto={texto}
-      aoSelecionar={(valor) => {
-        setTexto(valor);
-        setOrigemDoRascunho('text');
-      }}
-      campoRef={textareaRef}
-    >
+  const campo = (
       <motion.textarea
           layout="position"
           layoutDependency={formaDaCaixa}
@@ -165,6 +158,20 @@ export function CampoDoComposer({
             maxHeight: 'var(--ck-h-campo-max)',
           }}
       />
+  );
+
+  if (!PECAS.bolhaDeComandos) return campo;
+  return (
+    <BolhaDeComandos
+      agentSlug={agentSlug}
+      texto={texto}
+      aoSelecionar={(valor) => {
+        setTexto(valor);
+        setOrigemDoRascunho('text');
+      }}
+      campoRef={textareaRef}
+    >
+      {campo}
     </BolhaDeComandos>
   );
 }

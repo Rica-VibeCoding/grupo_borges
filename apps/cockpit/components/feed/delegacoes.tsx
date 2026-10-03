@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import type { Delegacao } from '@/app/api/delegacoes/delegacoes.ts';
+import { PECAS } from '@/lib/modo';
 
 import { rotuloDoTempo } from './linha-viva.ts';
 import { estabilizaDelegacoes } from './mesmas-delegacoes.ts';
@@ -38,6 +39,8 @@ export function usaDelegacoes(slug: string): Delegacao[] {
   const [delegacoes, setDelegacoes] = useState<Delegacao[]>([]);
 
   useEffect(() => {
+    // Painel do cliente: um agente só, sem delegação e sem `/api/delegacoes`.
+    if (!PECAS.delegacoes) return;
     let montado = true;
 
     const busca = async () => {

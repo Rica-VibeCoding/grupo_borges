@@ -2,13 +2,16 @@ import Link from 'next/link';
 
 import { AppShell } from '@/components/shell/app-shell';
 import { TropaAoVivo } from '@/components/shell/tropa-ao-vivo';
+import { PECAS } from '@/lib/modo';
 
 export default function AgenteLayout({ children }: { children: React.ReactNode }) {
   const agora = Math.floor(Date.now() / 1000);
 
   return (
     <AppShell
+      // Painel do cliente: um agente só, sem Início e sem tropa (`lib/modo.ts`).
       nav={
+        PECAS.tropa ? (
         // O caminho de volta para a raiz mora no topo da faixa da tropa: no
         // desktop ela está sempre à vista, no celular abre no `≡`. Pedido do
         // Rica (23/09): de dentro do chat não havia como voltar. Os atalhos de
@@ -29,6 +32,7 @@ export default function AgenteLayout({ children }: { children: React.ReactNode }
           </Link>
           <TropaAoVivo agora={agora} compacta />
         </div>
+        ) : undefined
       }
       fecharNavHref="?"
     >

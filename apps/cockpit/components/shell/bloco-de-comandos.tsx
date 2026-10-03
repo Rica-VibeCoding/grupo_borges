@@ -30,11 +30,13 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { postAgentInput } from '../../lib/acoes-no-agente.ts';
+import { PECAS } from '../../lib/modo';
 
 import { CONFIRMA_ACAO_MS, RECIBO_MS, type Impedimento } from './acoes-rapidas';
 import {
   COMANDOS,
   comandoInerte,
+  comandosDo,
   descreveComando,
   diagnosticaComando,
   rotulaComando,
@@ -144,7 +146,7 @@ export function BlocoDeComandos({ agentSlug, aberto }: BlocoDeComandosProps) {
       </span>
 
       <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
-        {COMANDOS.map((comando) => {
+        {comandosDo(PECAS).map((comando) => {
           const fase = faseDe(comando);
           const inerte = comandoInerte(fase);
           return (

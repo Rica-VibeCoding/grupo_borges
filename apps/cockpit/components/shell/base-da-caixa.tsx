@@ -7,6 +7,7 @@
  */
 import type { RefObject } from 'react';
 import { motion } from 'motion/react';
+import { PECAS } from '../../lib/modo';
 import type { usaAnexo } from '../../lib/usa-anexo';
 import { BotaoAnexo } from './gaveta-anexo';
 import { IconeDescartar } from './icones';
@@ -169,12 +170,14 @@ export function BaseDaCaixa({
             />
           </div>
           <div className="ck-troca-da-fala-face" data-face="acoes">
-            <SeletorMotor
-              agentSlug={agentSlug}
-              agentName={agentName}
-              motor={motor}
-              esforcoCobrePedido={esforcoCobrePedido}
-            />
+            {PECAS.seletorDeMotor ? (
+              <SeletorMotor
+                agentSlug={agentSlug}
+                agentName={agentName}
+                motor={motor}
+                esforcoCobrePedido={esforcoCobrePedido}
+              />
+            ) : null}
           </div>
         </div>
         {/* TRÊS SLOTS, UM ASSUNTO CADA. Até 20/08 havia um só, com quatro

@@ -28,6 +28,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 
+import { PECAS } from '../../lib/modo';
 import { mostraConversaNoPainel } from '../conversa/conversa-no-painel';
 
 import { descreveAcaoBruta, descreveLigar } from '../shell/acoes-rapidas';
@@ -45,6 +46,7 @@ import { CartaoDaConversa } from './cartao-da-conversa';
 import { Heroi } from './heroi';
 import { Bloco, Cartao, Interruptor, Mais, Pilula } from './pecas';
 import { PortaENova } from './porta-e-nova';
+import { SairDoPainel } from './sair-do-painel';
 import { usaVidaDoAgente } from './usa-vida-do-agente';
 
 type Vida = ReturnType<typeof usaVidaDoAgente>;
@@ -176,7 +178,7 @@ function CartaoDaSessao({ v, agentSlug, fecharHref }: { v: Vida; agentSlug: stri
 
       {pronto ? <PortaENova agentSlug={agentSlug} fecharHref={fecharHref} comNova={v.dePe && !v.aplicandoMotor} /> : null}
 
-      {pronto && v.dePe && !v.aplicandoMotor && podePesquisar(agentSlug) ? <LinhaDaPesquisa agentSlug={agentSlug} /> : null}
+      {PECAS.pesquisa && pronto && v.dePe && !v.aplicandoMotor && podePesquisar(agentSlug) ? <LinhaDaPesquisa agentSlug={agentSlug} /> : null}
 
       <Avisos v={v} />
 
@@ -189,7 +191,18 @@ function CartaoDaSessao({ v, agentSlug, fecharHref }: { v: Vida; agentSlug: stri
   );
 }
 
-export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecharHref: string; agora: number }) {
+export function GavetaNova({
+  agente,
+  fecharHref,
+  agora,
+  usuario = null,
+}: {
+  agente: Agent;
+  fecharHref: string;
+  agora: number;
+  /** Quem entrou pelo portão — só o painel do cliente tem (`lib/modo.ts`). */
+  usuario?: string | null;
+}) {
   const v = usaVidaDoAgente(agente.slug, false);
   const pronto = v.carga === 'pronto';
   const alerta = v.carga === 'indisponivel' || v.semSinal || v.falha !== null;
@@ -215,8 +228,8 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
       <CartaoDaSessao v={v} agentSlug={agente.slug} fecharHref={fecharHref} />
 
       {pronto ? (
-        <Cartao titulo="Motor e conta">
-          {v.painel?.motor ? (
+        <Cartao titulo={PECAS.blocoDeMotor ? 'Motor e conta' : 'Assinatura'}>
+          {PECAS.blocoDeMotor && v.painel?.motor ? (
             <Bloco cru>
               <BlocoDeMotor agentSlug={agente.slug} agentName={agente.name} motor={v.painel.motor} aoAtualizar={v.buscar} />
             </Bloco>
@@ -227,6 +240,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
         </Cartao>
       ) : null}
 
+      {PECAS.mcps ? (
       <Cartao rotulo="MCPs">
         <LinkDaGaveta
           href={`${fecharHref}?painel=mcps`}
@@ -244,6 +258,9 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
           MCPs do agente
         </LinkDaGaveta>
       </Cartao>
+      ) : null}
+
+      {PECAS.sessaoDoPortao ? <SairDoPainel usuario={usuario} /> : null}
     </div>
   );
 }

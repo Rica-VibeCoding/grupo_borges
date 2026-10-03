@@ -1,5 +1,4 @@
 import { notFound } from 'next/navigation';
-import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 import { GavetaNova } from '@/components/gaveta/gaveta-nova';
 import { PainelDeConversas } from '@/components/gaveta/painel-de-conversas';
@@ -11,6 +10,8 @@ import { contratoSeparaPedido, leMotor } from '@/components/shell/motor';
 import { Regua } from '@/components/shell/regua';
 import { GavetaPainel, LinkFechaPainel } from '@/components/shell/superficie-otimista';
 import { LinkDaGaveta, VistaDaGaveta } from '@/components/shell/vista-da-gaveta';
+import { PECAS, MODO_CLIENTE } from '@/lib/modo';
+import { buscaAgente, exigeSessao } from '@/lib/sessao-do-portao';
 import { FeedDaConversa } from './feed-da-conversa';
 import { PalcoDaConversa } from './palco-da-conversa';
 
@@ -98,7 +99,10 @@ export default async function AgentePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ slug }, sp] = await Promise.all([params, searchParams]);
-  const agente = await fetchAgent(slug);
+  // Painel do cliente: sem sessão vai ao `/entrar`, e o agente é buscado com o
+  // cookie do pedido — atrás do portão, sem ele a API responde 401.
+  const sessao = MODO_CLIENTE ? await exigeSessao(slug) : null;
+  const agente = await buscaAgente(slug);
 
   if (!agente) notFound();
 
@@ -210,9 +214,9 @@ export default async function AgentePage({
             (`VistaDaGaveta`) — abrir, fechar e trocar de visão não voltam ao
             servidor. */}
         <VistaDaGaveta
-          mcps={<VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} />}
+          mcps={PECAS.mcps ? <VistaMcp agentSlug={agente.slug} fecharHref={fecharHref} /> : null}
           conversas={<PainelDeConversas agentSlug={agente.slug} fecharHref={fecharHref} />}
-          detalhes={<GavetaNova agente={agente} fecharHref={fecharHref} agora={agora} />}
+          detalhes={<GavetaNova agente={agente} fecharHref={fecharHref} agora={agora} usuario={sessao?.usuario ?? null} />}
         />
       </GavetaPainel>
     </>

@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { CartaoFaxina } from '@/components/faxina/cartao-faxina';
 import { AppShell } from '@/components/shell/app-shell';
 import { MIOLO_ACESO, MIOLO_DA_PASTILHA, TRILHO_DA_PASTILHA } from '@/components/shell/pastilha-do-chrome';
+import { redirect } from 'next/navigation';
+
 import { fetchFaxina, type FaxinaAba, type FaxinaLista } from '@/lib/faxina';
+import { PECAS } from '@/lib/modo';
 
 // Faxina — os docs e skills parados que o Rica decide manter ou arquivar. Mesma
 // casca da raiz (`palco="mesa"`, coluna de leitura), porque é uma lista, não uma
@@ -19,6 +22,8 @@ const ABAS: { aba: FaxinaAba; rotulo: string }[] = [
 ];
 
 export default async function Faxina({ searchParams }: { searchParams: Promise<{ aba?: string }> }) {
+  // Painel do cliente: a faxina é da frota (`lib/modo.ts`).
+  if (!PECAS.faxina) redirect('/');
   const aba: FaxinaAba = (await searchParams).aba === 'arquivado' ? 'arquivado' : 'pendente';
   const agora = Math.floor(Date.now() / 1000);
   let lista: FaxinaLista | null = null;
