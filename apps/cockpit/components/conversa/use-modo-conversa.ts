@@ -191,7 +191,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
 
   useEffect(() => detector.acompanhaEstado(), [conversa.estado, detector.acompanhaEstado]);
 
-  const segundoPlanoRef = useEsperaDoSubagente({ estado: conversa.estado, rodando: stream.isRunning, ocupado, despacha, fechaTurno });
+  const segundoPlanoRef = useEsperaDoSubagente({ conversa, rodando: stream.isRunning, ocupado, despacha, fechaTurno });
 
   // A máquina nasce sem fone; só uma troca de verdade vira evento.
   const foneDaMaquinaRef = useRef(false);
