@@ -124,6 +124,20 @@ export function publicarPainel(
   ouvintes.get(painel.slug)?.forEach((receber) => receber(painel, contexto));
 }
 
+/** Só escuta os painéis publicados, sem buscar nenhum — a frota de um do
+ *  painel do cliente (`lib/usa-frota-do-cliente.ts`) tira deles a presença do
+ *  agente logo depois de Ligar/Desligar, sem esperar a releitura dela. */
+export function ouvirPainel(slug: string, receber: (painel: AgentPainelResponse) => void): () => void {
+  const inscritos = ouvintes.get(slug) ?? new Set();
+  const ouvinte = (painel: AgentPainelResponse) => receber(painel);
+  inscritos.add(ouvinte);
+  ouvintes.set(slug, inscritos);
+  return () => {
+    inscritos.delete(ouvinte);
+    if (!inscritos.size) ouvintes.delete(slug);
+  };
+}
+
 export function sincronizarPainel(
   slug: string,
   buscar: (slug: string, signal: AbortSignal) => Promise<AgentPainelResponse>,

@@ -26,6 +26,8 @@ import { desdeDaLinhaViva } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { encerraOrfas } from '@/components/feed/orfas-do-turno.ts';
 import { decideVazio } from '@/lib/decide-vazio.ts';
+import { pedeReleituraDaFrota } from '@/lib/frota-releitura.ts';
+import { MODO_CLIENTE } from '@/lib/modo';
 import { usaCompact } from '@/lib/compact';
 import { publicaTurnoVivo, turnoVivoDe } from '@/lib/turno-vivo.ts';
 import {
@@ -151,6 +153,12 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // em `linha-viva.ts`. Quem NÃO precisa esperar os cinco minutos é o
   // desligamento: a frota viva conta isso em segundos, e a régua que cruza as
   // duas fontes mora em `linha-viva-da-conversa.ts`.
+  // Painel do cliente: a frota de um não tem SSE de estado. A virada do turno
+  // no log é o aviso de que o status mudou — sem isto o ■ e o "trabalhando"
+  // ficavam até 5 s depois da resposta (`lib/usa-frota-do-cliente.ts`).
+  useEffect(() => {
+    if (MODO_CLIENTE) pedeReleituraDaFrota();
+  }, [isRunning]);
   const desdeMs = useMemo(() => desdeDaLinhaViva(messages), [messages]);
   const vencida = usaLinhaVivaVencida(desdeMs);
   // O GRUPO NUNCA PRESO EM "RODANDO": ferramenta sem resultado de turno que

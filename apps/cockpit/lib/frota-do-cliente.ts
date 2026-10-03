@@ -61,6 +61,10 @@ export function agenteDoCliente(cru: AgenteCru, painel: AgentPainelResponse | nu
           context_stale: contexto.stale,
         }
       : {}),
+    // Os dois campos que a frota lê do pane (statusline): o `GET /{slug}` não
+    // traz o segundo, e `undefined` ali vira `NaN:NaN` no relógio da sessão.
+    pane_excerpt: cru.pane_excerpt ?? null,
+    pane_session_started_at: cru.pane_session_started_at ?? null,
     status: statusDoCliente(cru, painel?.vida ?? null, agoraS),
     sparkline: [],
     pergunta_motor: null,

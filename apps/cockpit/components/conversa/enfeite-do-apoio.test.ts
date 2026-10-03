@@ -10,7 +10,9 @@ const fila = (...numeros: number[]) => {
 
 test('abertura na frente, com a descrição em minúscula', () => {
   const enfeita = criaEnfeiteDoApoio(fila(1 / ABERTURAS.length + 0.01, 0.99));
-  assert.equal(enfeita('Tô lendo o código'), 'Rica… tô lendo o código');
+  // A segunda abertura: "Rica… " na frota, "Olha, " no painel do cliente (`lib/modo.ts`).
+  assert.equal(enfeita('Tô lendo o código'), `${ABERTURAS[1]}tô lendo o código`);
+  if (!process.env.NEXT_PUBLIC_COCKPIT_MODO) assert.equal(ABERTURAS[1], 'Rica… ');
 });
 
 test('às vezes a frase vai pura', () => {

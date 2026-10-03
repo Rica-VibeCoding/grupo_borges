@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 
 import { Retrato } from '@/components/shell/retrato.tsx';
+import { NOMES } from '@/lib/modo';
 
 /** A coluna de leitura não vem mais de um wrapper na página (ela desceu pra
  *  dentro do Feed, pra barra de rolagem encostar na borda da tela) — o estado
@@ -24,7 +25,9 @@ export function SemConversa({ geracao, agentSlug }: { geracao: number; agentSlug
   const [saudacao, setSaudacao] = useState<string | null>(null);
   useEffect(() => {
     const hora = new Date().getHours();
-    setSaudacao(hora < 5 || hora >= 18 ? 'Boa noite, Rica' : hora < 12 ? 'Bom dia, Rica' : 'Boa tarde, Rica');
+    const periodo = hora < 5 || hora >= 18 ? 'Boa noite' : hora < 12 ? 'Bom dia' : 'Boa tarde';
+    // No painel do cliente não há nome cadastrado: a saudação vai sem vocativo.
+    setSaudacao(NOMES.vocativo ? `${periodo}, ${NOMES.vocativo}` : periodo);
   }, []);
 
   return (

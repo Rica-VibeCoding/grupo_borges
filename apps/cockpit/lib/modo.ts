@@ -76,7 +76,15 @@ export const PECAS: Pecas = pecasDo(MODO);
 
 /** Os nomes que o navegador mostra (aba, tela inicial, manifest). A frota
  *  segue com os de sempre; o cliente não vê a marca da casa. */
-export type NomesDoProduto = { titulo: string; nome: string; nomeCurto: string; descricao: string };
+export type NomesDoProduto = {
+  titulo: string;
+  nome: string;
+  nomeCurto: string;
+  descricao: string;
+  /** Como a tela chama quem usa ("Boa noite, Rica"). O cliente não tem nome
+   *  cadastrado no portão: a frase sai sem vocativo. */
+  vocativo: string | null;
+};
 
 export function nomesDo(modo: ModoDoCockpit): NomesDoProduto {
   return modo === 'frota'
@@ -85,12 +93,14 @@ export function nomesDo(modo: ModoDoCockpit): NomesDoProduto {
         nome: 'Grupo Borges — Cockpit',
         nomeCurto: 'Cockpit',
         descricao: 'Painel da frota. Log de execução que às vezes conversa.',
+        vocativo: 'Rica',
       }
     : {
         titulo: 'Painel do agente',
         nome: 'Painel do agente',
         nomeCurto: 'Agente',
         descricao: 'Converse com o seu agente e acompanhe o trabalho dele.',
+        vocativo: null,
       };
 }
 

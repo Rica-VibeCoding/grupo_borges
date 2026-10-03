@@ -4,7 +4,14 @@
  * e, mais raro, um fecho depois ("Já te falo."). Nunca a mesma abertura duas vezes seguidas,
  * e às vezes a frase vai pura — para a espera não soar sempre igual.
  */
-export const ABERTURAS = ['', 'Rica… ', 'Olha, ', 'Então, ', 'Peraí, ', 'Só um instante… ', 'Beleza, ', 'Rica, '] as const;
+import { NOMES } from '../../lib/modo.ts';
+
+const VOCATIVO = NOMES.vocativo;
+// Sem nome de quem usa (painel do cliente, `lib/modo.ts`), as duas aberturas
+// com vocativo saem — as outras seguem na mesma ordem.
+export const ABERTURAS: readonly string[] = VOCATIVO
+  ? ['', `${VOCATIVO}… `, 'Olha, ', 'Então, ', 'Peraí, ', 'Só um instante… ', 'Beleza, ', `${VOCATIVO}, `]
+  : ['', 'Olha, ', 'Então, ', 'Peraí, ', 'Só um instante… ', 'Beleza, '];
 export const FECHOS = [' Já volto.', ' Já te falo.', ' Segura aí um pouquinho.', ' Já volto com a resposta.'] as const;
 /** Chance de a frase ganhar um fecho depois (o antes é o que mais funciona). */
 export const CHANCE_DO_FECHO = 0.2;

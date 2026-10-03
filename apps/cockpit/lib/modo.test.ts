@@ -50,8 +50,13 @@ test('a frota mantém os nomes de sempre; o cliente não vê a marca da casa', (
     nome: 'Grupo Borges — Cockpit',
     nomeCurto: 'Cockpit',
     descricao: 'Painel da frota. Log de execução que às vezes conversa.',
+    vocativo: 'Rica',
   });
-  for (const nome of Object.values(nomesDo('cliente'))) assert.doesNotMatch(nome, /Borges|Cockpit|frota/);
+  const doCliente = nomesDo('cliente');
+  assert.equal(doCliente.vocativo, null);
+  for (const nome of [doCliente.titulo, doCliente.nome, doCliente.nomeCurto, doCliente.descricao]) {
+    assert.doesNotMatch(nome, /Borges|Cockpit|frota|Rica/);
+  }
 });
 
 test('o valor do build chega à tabela (NEXT_PUBLIC_COCKPIT_MODO)', () => {
@@ -68,6 +73,23 @@ test('o valor do build chega à tabela (NEXT_PUBLIC_COCKPIT_MODO)', () => {
   };
   assert.deepEqual(pecasCom(undefined), { MODO: 'frota', PECAS: pecasDo('frota') });
   assert.deepEqual(pecasCom('cliente'), { MODO: 'cliente', PECAS: pecasDo('cliente') });
+});
+
+test('o cliente não ouve nem lê o nome do Rica (voz de apoio e saudação)', () => {
+  const aberturasCom = (modo: string | undefined) => {
+    const env = { ...process.env };
+    delete env.NEXT_PUBLIC_COCKPIT_MODO;
+    if (modo !== undefined) env.NEXT_PUBLIC_COCKPIT_MODO = modo;
+    const codigo = "import { ABERTURAS } from './components/conversa/enfeite-do-apoio.ts'; console.log(JSON.stringify(ABERTURAS))";
+    return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', codigo], { cwd: RAIZ, env, encoding: 'utf8' })) as string[];
+  };
+  assert.deepEqual(aberturasCom(undefined), ['', 'Rica… ', 'Olha, ', 'Então, ', 'Peraí, ', 'Só um instante… ', 'Beleza, ', 'Rica, ']);
+  assert.ok(aberturasCom('cliente').every((abertura) => !abertura.includes('Rica')));
+  // Nenhum texto de tela com o nome dele fora do `lib/modo.ts`.
+  const comNome = telas().filter((f) => f !== 'lib/modo.ts').filter((f) =>
+    /['"`][^'"`\n]*\bRica\b[^'"`\n]*['"`]/.test(ler(f).split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n')),
+  );
+  assert.deepEqual(comNome, []);
 });
 
 // Onde cada peça cortada é desenhada — e o teste exige que ali ela consulte a
