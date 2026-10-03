@@ -230,6 +230,13 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // O lookup do FEED, com a régua das órfãs: passo que o feed já mostra
   // interrompido não pode seguir "em voo" na linha do agora.
   const emVoo = useMemo(() => fraseEmVoo(itensBase, lookupDoFeed), [itensBase, lookupDoFeed]);
+  // Elemento estável pelas props dele: um `<LinhaDoAgora/>` novo a cada render
+  // furava o `memo` do Feed, e o efeito de layout sem deps de lá rodava em
+  // todo render desta casca (compact, delegações, eco) sem nada ter mudado.
+  const rodape = useMemo(
+    () => <LinhaDoAgora estado={estadoAgora} emVoo={emVoo} desdeMs={desdeMs} />,
+    [estadoAgora, emVoo, desdeMs],
+  );
 
   // O vazio virou função pura testada (`lib/decide-vazio.ts`, 11/08 — task
   // 2dac8a8b). As duas intenções originais sobrevivem: branco enquanto o
@@ -276,7 +283,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
           // deixaria o anel do grupo girando, o relógio contando e o cursor
           // piscando para sempre, com a linha do agora já parada.
           estaRodando={turnoVivo}
-          rodape={<LinhaDoAgora estado={estadoAgora} emVoo={emVoo} desdeMs={desdeMs} />}
+          rodape={rodape}
         />
       </div>
     </>
