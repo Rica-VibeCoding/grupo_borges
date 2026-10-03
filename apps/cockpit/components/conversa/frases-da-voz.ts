@@ -28,6 +28,13 @@ export function frasesDoTexto(texto: string): string[] {
   return frases;
 }
 
+/** Resposta "curta" da tela de voz: duas frases faladas; o texto inteiro fica no chat (Rica, 03/10). */
+export function cortaParaVoz(texto: string): string {
+  const frases = frasesDoTexto(texto);
+  if (frases.length <= 2) return texto;
+  return `${frases[0]} ${frases[1]} O resto está no chat.`;
+}
+
 /**
  * Folga (s) na troca: o começo de cada áudio vem da duração que o servidor mediu, e o relógio do
  * reprodutor soma a que o navegador mediu — um fio de diferença não pode atrasar a frase.

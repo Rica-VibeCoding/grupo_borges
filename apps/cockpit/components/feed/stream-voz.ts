@@ -11,6 +11,8 @@
  * ouvido porque os picos de um trecho chegam antes do som dele.
  */
 
+import { motorGravado, type Motor } from '../conversa/preferencias-da-conversa.ts';
+
 export type MetaVoz = {
   voice: string;
   engine: string;
@@ -93,6 +95,7 @@ export function pedeFala(
   slug: string,
   escuta: EscutaVoz,
   fetchImpl: typeof fetch = fetch,
+  motor: Motor = motorGravado(),
 ): FalaEmCurso {
   const corte = new AbortController();
 
@@ -101,7 +104,7 @@ export function pedeFala(
       const res = await fetchImpl('/api/tts/synth/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: texto, slug }),
+        body: JSON.stringify({ text: texto, slug, motor }),
         signal: corte.signal,
       });
       if (!res.ok || res.body === null) {

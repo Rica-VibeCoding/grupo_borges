@@ -16,6 +16,7 @@ import { criaSonsLocais, type SonsLocais } from './sons-locais';
 import { executaGestoDeInicio, reduzAviso } from './politicas-da-conversa';
 import { transcreveCaptura } from './transcricao-da-captura';
 import { useMudoDaCaptura } from './use-mudo-da-captura';
+import { useCorteDaResposta } from './use-preferencias-conversa';
 import { useAbaEscondida, useEscondida } from './use-aba-escondida';
 import { useCanalDaFala } from './use-canal-da-fala';
 import { useDetectorDeFala } from './use-detector-de-fala';
@@ -38,6 +39,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
   const escondida = useEscondida();
   const fora = foraDaTela || escondida;
   const [conversa, setConversa] = useState<Conversa>(() => inicial());
+  const cortaResposta = useCorteDaResposta();
   const [aviso, setAviso] = useState<string | null>(null);
   /* O texto da vez do Rica na tela: as palavras ao vivo e o firme que a máquina aceitou. */
   const [fala, setFala] = useState<FalaDaVez>(FALA_VAZIA);
@@ -162,7 +164,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
         return;
       case 'falar':
         apoio.cala(); // a resposta chegou: a frase de apoio some, na síntese ou tocando
-        enfileiraFala(efeito.texto, retomada.virouVoz());
+        enfileiraFala(cortaResposta(efeito.texto), retomada.virouVoz());
         return;
       case 'tocarTique':
         sons().tocaTique();

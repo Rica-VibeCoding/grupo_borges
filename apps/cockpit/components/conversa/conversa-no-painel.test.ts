@@ -35,7 +35,7 @@ test('a gaveta do agente é a única casa dos controles da conversa', () => {
   assert.ok(!le('./tela-conversa.tsx').includes('ConfiguracaoDaConversa'));
   for (const texto of ['Estou de fone', 'Mostrar texto']) assert.ok(cartao.includes(texto));
   assert.match(gaveta, /mostraConversaNoPainel\(/);
-  assert.match(gaveta, /\{conversa \? <CartaoDaConversa \/> : null\}/);
+  assert.match(gaveta, /\{conversa \? <CartaoDaConversa agentSlug=\{agente\.slug\} \/> : null\}/);
 });
 
 test('o cartão da conversa grava pelas mesmas chaves e pelo mesmo visual', () => {
@@ -55,5 +55,5 @@ test('o visual vira duas linhas, Visual e Estilo, cada uma sempre com uma marcad
 
 test('conversa vem antes da sessão, sem substituir o painel do agente', () => {
   const gaveta = le('../gaveta/gaveta-nova.tsx');
-  assert.ok(gaveta.indexOf('<CartaoDaConversa />') < gaveta.indexOf('<CartaoDaSessao v='));
+  assert.ok(gaveta.indexOf('<CartaoDaConversa agentSlug={agente.slug} />') < gaveta.indexOf('<CartaoDaSessao v='));
 });

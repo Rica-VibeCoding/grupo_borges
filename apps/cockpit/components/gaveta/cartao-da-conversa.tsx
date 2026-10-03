@@ -7,16 +7,41 @@
  * (`opcao` + `variacao`), por isso são duas pílulas encadeadas: Visual escolhe
  * a opção e Estilo mostra só as variações dela — cada linha sempre tem uma
  * marcada. Trocar o Visual volta na última variação usada naquela opção.
+ * Resposta e Voz (03/10) valem no aparelho, como as outras: Curta fala duas frases e deixa o resto
+ * no chat; a Voz lista só o que o servidor atende para este agente (MiniMax só com chave).
  */
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useDetalheDaConversa } from '../conversa/contexto-configuracao-conversa';
 import { CATALOGO, trocaOpcao, type Opcao } from '../conversa/preferencia-visual';
-import { CHAVE_FONE, CHAVE_TEXTO } from '../conversa/preferencias-da-conversa';
-import { useChaveDaConversa, useVisualConversa } from '../conversa/use-preferencias-conversa';
+import { CHAVE_FONE, CHAVE_TEXTO, MOTORES, type Motor, type Resposta } from '../conversa/preferencias-da-conversa';
+import { useChaveDaConversa, useMotorConversa, useRespostaConversa, useVisualConversa } from '../conversa/use-preferencias-conversa';
 import { Cartao, Interruptor, Segmentado } from './pecas';
 
 const OPCOES = CATALOGO.map((item) => ({ id: item.opcao, nome: item.curto }));
+const RESPOSTAS: readonly { id: Resposta; nome: string }[] = [
+  { id: 'curta', nome: 'Curta' },
+  { id: 'completa', nome: 'Completa' },
+];
+const NOME_DO_MOTOR: Record<Motor, string> = { chirp: 'Natural', wavenet: 'Econômica', minimax: 'MiniMax' };
+/** Sem resposta do servidor, as duas do Google, que toda a frota tem. */
+const MOTORES_DE_SEMPRE: readonly Motor[] = ['chirp', 'wavenet'];
+
+function useMotoresDoAgente(slug: string): readonly Motor[] {
+  const [motores, setMotores] = useState(MOTORES_DE_SEMPRE);
+  useEffect(() => {
+    const corte = new AbortController();
+    fetch(`/api/tts/motores?slug=${encodeURIComponent(slug)}`, { signal: corte.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((corpo: { motores?: string[] } | null) => {
+        const validos = MOTORES.filter((motor) => corpo?.motores?.includes(motor));
+        if (validos.length > 0) setMotores(validos);
+      })
+      .catch(() => {});
+    return () => corte.abort();
+  }, [slug]);
+  return motores;
+}
 
 function LinhaDeChave({ nome, ligada, muda }: { nome: string; ligada: boolean; muda: (ligada: boolean) => void }) {
   return (
@@ -27,8 +52,11 @@ function LinhaDeChave({ nome, ligada, muda }: { nome: string; ligada: boolean; m
   );
 }
 
-export function CartaoDaConversa() {
+export function CartaoDaConversa({ agentSlug }: { agentSlug: string }) {
   const [visual, escolheVisual] = useVisualConversa();
+  const [resposta, escolheResposta] = useRespostaConversa();
+  const [motor, escolheMotor] = useMotorConversa();
+  const motores = useMotoresDoAgente(agentSlug);
   const [fone, mudaFone] = useChaveDaConversa(CHAVE_FONE);
   const [texto, mudaTexto] = useChaveDaConversa(CHAVE_TEXTO);
   const detalheTecnico = useDetalheDaConversa();
@@ -46,6 +74,13 @@ export function CartaoDaConversa() {
         <LinhaDeChave nome="Estou de fone" ligada={fone} muda={mudaFone} />
         <LinhaDeChave nome="Mostrar texto" ligada={texto} muda={mudaTexto} />
       </div>
+      <Segmentado nome="Resposta" itens={RESPOSTAS} marcado={(id) => resposta === id} escolhe={escolheResposta} />
+      <Segmentado
+        nome="Voz"
+        itens={motores.map((id) => ({ id, nome: NOME_DO_MOTOR[id] }))}
+        marcado={(id) => motor === id}
+        escolhe={escolheMotor}
+      />
       <Segmentado nome="Visual" itens={OPCOES} marcado={(id) => visual.opcao === id} escolhe={escolheOpcao} />
       <Segmentado
         nome="Estilo"

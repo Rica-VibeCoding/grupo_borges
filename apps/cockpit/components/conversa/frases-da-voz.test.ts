@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { audioTocando, falaDoZe, frasesDoTexto, inicioDasPalavras, palavrasAte, palavrasDe } from './frases-da-voz.ts';
+import { audioTocando, cortaParaVoz, falaDoZe, frasesDoTexto, inicioDasPalavras, palavrasAte, palavrasDe } from './frases-da-voz.ts';
 
 describe('as frases da resposta, no corte da voz', () => {
   it('corta na pontuação final e na linha em branco, como o servidor corta o áudio', () => {
@@ -97,5 +97,19 @@ describe('palavra por palavra, ao longo do áudio', () => {
     assert.equal(palavrasAte(inicios, 0), 1);
     assert.ok(palavrasAte(inicios, 1.5) >= palavrasAte(inicios, 1));
     assert.equal(palavrasAte(inicios, 3), palavras.length);
+  });
+});
+
+describe('a resposta curta da tela de voz', () => {
+  it('fala só as duas primeiras frases e avisa que o resto está no chat', () => {
+    assert.equal(
+      cortaParaVoz('Achei a causa. A porta reiniciou. Deixei os horários. E o log também.'),
+      'Achei a causa. A porta reiniciou. O resto está no chat.',
+    );
+  });
+
+  it('resposta de até duas frases passa inteira, sem aviso', () => {
+    assert.equal(cortaParaVoz('Está no ar. Sem erro no log.'), 'Está no ar. Sem erro no log.');
+    assert.equal(cortaParaVoz('Feito.'), 'Feito.');
   });
 });

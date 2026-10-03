@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { aplicaQuadro, type EscutaVoz, type MetaVoz } from './stream-voz.ts';
+import { aplicaQuadro, pedeFala, type EscutaVoz, type MetaVoz } from './stream-voz.ts';
 
 /** Coletor: o que o quadro SSE virou. */
 function escuta() {
@@ -80,5 +80,19 @@ describe('o quadro SSE vira chamada', () => {
     const e = escuta();
     aplicaQuadro(': ping', e.alvo);
     assert.deepEqual(e.visto, []);
+  });
+});
+
+describe('o pedido da fala leva a voz escolhida', () => {
+  it('manda o motor no corpo, junto do texto e do agente', async () => {
+    let corpo: Record<string, unknown> = {};
+    const fetchFalso = (async (_url: string, init: RequestInit) => {
+      corpo = JSON.parse(String(init.body));
+      return new Response(null, { status: 500 });
+    }) as unknown as typeof fetch;
+    await new Promise<void>((resolve) => {
+      pedeFala('Oi.', 'daniel', { aoMeta() {}, aoPeaks() {}, aoAudio() {}, aoFim() {}, aoErro: () => resolve() }, fetchFalso, 'wavenet');
+    });
+    assert.deepEqual(corpo, { text: 'Oi.', slug: 'daniel', motor: 'wavenet' });
   });
 });

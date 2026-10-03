@@ -210,7 +210,7 @@ export function GavetaNova({ agente, fecharHref, agora }: { agente: Agent; fecha
         interruptor={<InterruptorDaSessao v={v} />}
       />
 
-      {conversa ? <CartaoDaConversa /> : null}
+      {conversa ? <CartaoDaConversa agentSlug={agente.slug} /> : null}
 
       <CartaoDaSessao v={v} agentSlug={agente.slug} fecharHref={fecharHref} />
 
