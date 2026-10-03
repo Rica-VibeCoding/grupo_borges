@@ -30,7 +30,7 @@ import { useApoioDaFerramenta } from './use-apoio-da-ferramenta';
 import { useWakeLock } from './use-wake-lock';
 
 /** `fone` vem da folha de configurações (guardado no aparelho); a máquina recebe cada troca.
- *  `fora`: a tela saiu de vista — o microfone fecha e o Zé segue falando (`useMudoDaCaptura`).
+ *  `fora`: a tela saiu de vista — o microfone fecha (`useMudoDaCaptura`); ir para o chat encerra a conversa e a voz.
  *  A aba escondida (tela bloqueada) soma ao `fora`; na vez do Rica ela derruba antes (`use-aba-escondida`).
  *  `ocupado`: a frota diz "trabalhando" — com o subagente despachado, o turno dele já fechou e o
  *  stream sozinho não sabe que ele trabalha (`retomadaDaTela`). */
@@ -265,7 +265,7 @@ export function useModoConversa(slug: string, fone: boolean, mudo = false, foraD
     [nivelMicRef, nivelVozRef],
   );
 
-  useEncerraAoSair(encerra, sessaoAtivaRef, sonsRef); // sair da página não freia o Zé
+  useEncerraAoSair(encerra, sessaoAtivaRef, sonsRef, foraDaTela); // sair da página ou ir pro chat não freia o Zé
 
   return {
     conversa,

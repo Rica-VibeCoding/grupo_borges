@@ -57,7 +57,7 @@ function useSegundosDeEspera(esperando: boolean) {
  *
  * Mora no painel da direita do pager (`pager-do-agente.tsx`), montada também fora da tela.
  * `visivel` é o painel com algum pedaço à vista: só então o visual liga o WebGL. `ativa` é o
- * painel assentado: sair dele fecha o microfone e deixa o Zé seguir — sem freio, a voz tocando.
+ * painel assentado: sair dele encerra a conversa e a voz, sem frear o Zé — ele segue no chat.
  */
 export function TelaConversa({
   slug,
