@@ -12,8 +12,8 @@ import os
 import re
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -23,7 +23,7 @@ def _run(incus: str, project: str, instance: str, action: str) -> subprocess.Com
     if action not in {"start", "stop", "is-active"}:
         raise ValueError("ação inválida")
     return subprocess.run(
-        [incus, "exec", instance, "--project", project, "--force-noninteractive", "--",
+        [incus, "--force-local", "exec", instance, "--project", project, "--force-noninteractive", "--",
          "/usr/bin/systemctl", action, "agente.service"],
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=25, check=False,
     )
@@ -32,6 +32,7 @@ def _run(incus: str, project: str, instance: str, action: str) -> subprocess.Com
 def create_controller_app(config: dict, *, runner: Callable = _run) -> FastAPI:
     clients = config["clients"]
     token = config["token"]
+    client_tokens = config.get("client_tokens", {})
     incus = config.get("incus", "/usr/bin/incus")
     if not clients or len(token) < 32 or not Path(incus).is_absolute():
         raise RuntimeError("configuração do controlador inválida")
@@ -42,14 +43,22 @@ def create_controller_app(config: dict, *, runner: Callable = _run) -> FastAPI:
             raise RuntimeError("projeto inválido")
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", target["instance"]):
             raise RuntimeError("instância inválida")
+    if any(slug not in clients or len(value) < 32 for slug, value in client_tokens.items()):
+        raise RuntimeError("token de cliente inválido")
 
     app = FastAPI(title="controlador privado do painel")
     locks = {slug: asyncio.Lock() for slug in clients}
 
     @app.middleware("http")
     async def gate(request: Request, call_next):
-        if not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {token}"):
+        bearer = request.headers.get("authorization", "")
+        master = hmac.compare_digest(bearer, f"Bearer {token}")
+        scoped = next((slug for slug, value in client_tokens.items()
+                       if hmac.compare_digest(bearer, f"Bearer {value}")), None)
+        if not master and scoped is None:
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        if scoped is not None and request.url.path.split("/")[3:4] != [scoped]:
+            return JSONResponse({"detail": "forbidden"}, status_code=403)
         return await call_next(request)
 
     async def command(slug: str, action: str) -> subprocess.CompletedProcess[str]:
@@ -115,6 +124,10 @@ def create_controller_app(config: dict, *, runner: Callable = _run) -> FastAPI:
 def load_config(path: str) -> dict:
     config = json.loads(Path(path).read_text(encoding="utf-8"))
     config["token"] = Path(config.pop("token_file")).read_text(encoding="utf-8").strip()
+    config["client_tokens"] = {
+        slug: Path(token_file).read_text(encoding="utf-8").strip()
+        for slug, token_file in config.pop("client_token_files", {}).items()
+    }
     return config
 
 

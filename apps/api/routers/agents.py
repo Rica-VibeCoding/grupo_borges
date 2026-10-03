@@ -3356,6 +3356,7 @@ def _resolve_stt_script() -> str:
     if override:
         return override
     candidates = [
+        _CLAUDE_HOME / "scripts" / "stt-openai.sh",
         Path.home() / ".claude" / "scripts" / "stt-openai.sh",  # Oracle (casa nova)
         Path("/home/clawd/repos/ze_claude/ze-shared/.claude/skills/voz/scripts/stt-openai.sh"),  # Hostinger (tropa)
     ]
@@ -3379,7 +3380,7 @@ _LIVE_STT_MODEL = "gpt-live-transcribe"
 _LIVE_STT_RATE = 24_000
 _LIVE_STT_MINT_URL = "https://api.openai.com/v1/realtime/client_secrets"
 _LIVE_STT_MINT_TIMEOUT_S = 10.0
-_LIVE_STT_KEY_FILE = Path.home() / ".claude" / "secrets" / "openai-api-key.txt"
+_LIVE_STT_KEY_FILE = _CLAUDE_HOME / "secrets" / "openai-api-key.txt"
 _VOICE_MIME_SUFFIX = {
     "audio/ogg": ".oga",
     "audio/webm": ".webm",

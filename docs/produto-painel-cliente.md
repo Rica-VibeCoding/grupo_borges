@@ -6,10 +6,13 @@ local. Cada cliente roda `apps/api/client_app.py` no próprio contêiner, com um
 SQLite local só para indexar o JSONL de `/casa/claude/projects`. O código da frota
 é importado: os mesmos handlers de `routers.agents`, `routers.conversas` e
 `routers.tts` são montados por lista positiva. A app da frota não muda.
+O indexador guarda offsets em `/casa/painel/api.offsets.json`, retoma o que
+falta no boot e deduplica linhas após queda entre banco e checkpoint.
 
 ## Rotas públicas autorizadas
 
-Todas as rotas abaixo começam com `/api/agents/{slug}` salvo indicação. O
+Os sufixos `/{slug}...` abaixo recebem prefixo `/api/agents`; rotas que começam
+com `/api` ou `/uploads` estão completas. O
 consumidor é `packages/cockpit-core/src/api.ts`, o hook de stream do cockpit ou
 o composer. O servidor valida a posse antes de abrir o stream, ler upload ou
 executar qualquer handler. `slug` é um identificador do cadastro do portão,
@@ -32,10 +35,11 @@ não uma URL escolhida pelo usuário para o destino.
 | GET | `/api/tts/motores?slug=...` | seletor da voz |
 | POST | `/api/tts/synth`, `/api/tts/synth/stream` | fala do agente |
 
-`/api/agents/{slug}/fila` e `DELETE .../fila/{id}` são chamados pelo core,
-mas **não existem na API da frota** neste commit-base. A fila observável vem
-dos eventos `queue-operation` no stream. O executor da UI deve manter a fila
-local derivada desses eventos até haver contrato de servidor para cancelamento.
+`/api/agents/{slug}/fila` e `DELETE .../fila/{id}` constam no core,
+mas **não existem na API da frota** neste commit-base. A fila nativa do Claude
+vem dos eventos `queue-operation` no stream; a fila do composer é local. O
+executor da UI usa esses dois sinais. Cancelamento individual da fila nativa
+não está disponível pela API e deve ficar desabilitado na tela do cliente.
 O endpoint de leitura de Conversas devolve o resumo textual existente; o feed
 com ferramentas vem de `messages/stream` com `session_id` da conversa.
 
@@ -45,7 +49,8 @@ com ferramentas vem de `messages/stream` com `session_id` da conversa.
 por usuário e cria sessão aleatória no SQLite local; o navegador recebe cookie
 `HttpOnly; Secure; SameSite=Lax`. `GET /auth/me` devolve o papel e o slug;
 `POST /auth/logout` revoga a sessão. `admin` existe no cadastro, mas a UI admin
-é fase posterior. Toda requisição `/api` ou `/uploads`, inclusive SSE e TTS,
+é fase posterior. Cinco senhas erradas bloqueiam o usuário por 15 min. Toda
+requisição `/api` ou `/uploads`, inclusive SSE e TTS,
 passa por sessão e posse; rotas sem slug de agente são vinculadas ao slug da
 sessão. Mutação exige `Origin` igual à origem pública configurada. O portão
 descarta cabeçalhos de identidade recebidos do navegador e não aceita redirects
@@ -57,27 +62,33 @@ O executor do front deve encaminhar o cookie nas chamadas server-side de
 
 ## Controlador e rede
 
-O controlador escuta socket Unix **no hospedeiro**, acessível somente ao grupo
-do serviço do portão. Recebe `POST /v1/clients/{slug}/start|stop` e
+O controlador escuta socket Unix **no hospedeiro**, acessível somente aos
+proxy devices com token. Recebe `POST /v1/clients/{slug}/start|stop` e
 `GET /v1/clients/{slug}/state`; carrega um mapa imutável
 `slug -> (projeto Incus, instância)` e executa somente `systemctl
-start|stop|is-active agente.service` via `incus exec --project ... --`, sem shell.
-O portão usa um socket Unix dedicado; não recebe `/var/lib/incus/unix.socket`.
+start|stop|is-active agente.service` via `incus --force-local exec ... --project ... --`, sem shell.
+O portão usa token mestre; cada API cliente recebe token do controlador limitado
+ao próprio slug para a troca de conversa. Nenhum recebe `/var/lib/incus/unix.socket`.
 Nunca instalar o controlador dentro de contêiner.
 
-Para cada cliente, a API escuta `127.0.0.1:8010` **dentro** do contêiner. Um
-proxy device Incus em `portao` com `bind=instance`, `listen=unix:/run/cliente-api/<slug>.sock`
-e `connect=tcp:127.0.0.1:8010` deve ser criado no projeto `portao` somente
-depois de confirmar que o `connect` da versão instalada aponta para o destino
-correto. Se esta direção não resolver um destino em outro projeto, usar dois
-proxy devices: um `bind=host` no cliente, `listen=unix:/run/cliente-api-host/<slug>.sock`
-e `connect=tcp:127.0.0.1:8010`; outro `bind=instance` em `portao`,
+Para cada cliente, a API escuta `127.0.0.1:8010` **dentro** do contêiner.
+Dois proxy devices formam o caminho entre projetos: um `bind=host` no cliente,
+`listen=unix:/run/cliente-api-host/<slug>.sock` e
+`connect=tcp:127.0.0.1:8010`; outro `bind=instance` em `portao`,
 `listen=unix:/run/cliente-api/<slug>.sock` e `connect=unix:/run/cliente-api-host/<slug>.sock`.
 Os sockets têm modo `0660`, donos/grupos do serviço. Nenhum IP entre projetos
 é liberado. O cadastro do portão aponta para o socket do cliente, jamais para
 endereço informado no pedido. O socket do controlador entra no portão por um
-proxy device Unix↔Unix separado ou bind mount restrito; Incus socket não entra.
+proxy device Unix↔Unix separado e outro entra no cliente, com token limitado;
+Incus socket não entra. Incus documenta `bind=host|instance` e Unix↔TCP em
+<https://linuxcontainers.org/incus/docs/main/reference/devices_proxy/>.
 
 O `GET /health` do portão precisa conter `grupo_borges-api` para a verificação
 existente do build do Next. SSE preserva bytes, `Content-Type: text/event-stream`
 e `Cache-Control: no-cache, no-transform`, sem gzip e sem buffer.
+
+As duas rotas de gancho (`POST .../conversas/estacionar`,
+`GET .../conversas/{id}/briefing`) existem só na API interna e aceitam apenas
+o token do gancho ou o token interno; o portão não as repassa.
+
+Aplicação na Oracle 1: [roteiro e arquivos](produto-painel-cliente-deploy.md).

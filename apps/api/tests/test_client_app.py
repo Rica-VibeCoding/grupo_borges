@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import httpx
@@ -35,7 +36,7 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
     monkeypatch.setenv("GB_AGENTS_YAML", str(config))
     monkeypatch.setenv("GB_DB_PATH", str(tmp_path / "api.db"))
     monkeypatch.setenv("GB_CLAUDE_PROJECTS_DIR", str(projects))
-    app = create_client_app(slug="cliente_a", token="t" * 40)
+    app = create_client_app(slug="cliente_a", token="t" * 40, hook_token="h" * 40)
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://local") as client:
         assert (await client.get("/health")).status_code == 200
@@ -51,6 +52,22 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
         assert (await client.post("/api/agents/cliente_b/input", headers=headers, json={"text": "x"})).status_code == 403
         assert (await client.get("/api/agents/cliente_a/mcp", headers=headers)).status_code == 404
         assert (await client.get("/api/fleet", headers=headers)).status_code == 404
+        assert (await client.get("/api/tts/motores?slug=cliente_b", headers=headers)).status_code == 403
+        assert (await client.post("/api/tts/synth", headers=headers,
+                                  json={"slug": "cliente_b", "text": "segredo"})).status_code == 403
+        hook = {"authorization": "Bearer " + "h" * 40}
+        assert (await client.get("/api/agents/cliente_a", headers=hook)).status_code == 401
+        assert (await client.post("/api/agents/cliente_b/conversas/estacionar", headers=hook,
+                                  json={"titulo": "x"})).status_code == 401
+        assert (await client.get("/api/agents/cliente_a/conversas/operacao", headers=hook)).status_code == 401
+
+    with sqlite3.connect(tmp_path / "api.db") as conn:
+        before = conn.execute("SELECT count(*) FROM task_events WHERE kind LIKE 'jsonl:%'").fetchone()[0]
+    async with app.router.lifespan_context(app):
+        pass
+    with sqlite3.connect(tmp_path / "api.db") as conn:
+        after = conn.execute("SELECT count(*) FROM task_events WHERE kind LIKE 'jsonl:%'").fetchone()[0]
+    assert before == after == 1
 
 
 def test_client_profile_refuses_multi_agent_config(tmp_path: Path, monkeypatch):

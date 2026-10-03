@@ -673,6 +673,11 @@ def reset_subagent_state_for_slug(slug: str) -> None:
     _subagent_pending_close.pop(slug, None)
 
 
+def jsonl_source_key(path: Path, offset: int, line: str) -> str:
+    """Identidade estável da linha para reindexação idempotente no cliente."""
+    return hashlib.sha256(f"{path}:{offset}:".encode() + line.encode()).hexdigest()
+
+
 def _jsonl_lifecycle(payload: dict | None, event_type: str) -> tuple[str | None, str | None]:
     if not payload:
         return None, None
@@ -766,11 +771,13 @@ class JsonlWatcher:
         agents: list[dict],
         db,  # GrupoBorgesDB — não importamos pra evitar ciclo
         dedupe_jsonl: bool = False,
+        on_offset=None,
     ) -> None:
         self._root = Path(claude_projects_dir)
         self._root_resolved = self._root.resolve() if self._root.exists() else self._root
         self._db = db
         self._dedupe_jsonl = dedupe_jsonl
+        self._on_offset = on_offset
         self._slug_by_encoded: dict[str, str] = _mapear_por_encoded(agents)
         self._offsets: dict[str, int] = {}
         # F4-3 A4 — último JSONL processado por slug. Mudança = nova sessão
@@ -841,7 +848,7 @@ class JsonlWatcher:
             found_slugs.add(slug)
             for jsonl in agent_dir.rglob("*.jsonl"):
                 try:
-                    self._offsets[str(jsonl)] = jsonl.stat().st_size
+                    self._offsets.setdefault(str(jsonl), jsonl.stat().st_size)
                 except OSError:
                     continue
 
@@ -940,9 +947,7 @@ class JsonlWatcher:
             try:
                 source_key = None
                 if self._dedupe_jsonl:
-                    source_key = hashlib.sha256(
-                        f"{path}:{offset_depois}:".encode() + line.encode()
-                    ).hexdigest()
+                    source_key = jsonl_source_key(path, offset_depois, line)
                 await self._processar_linha(slug, line, source_key=source_key)
             except Exception:
                 if not self._desistir_da_linha(str(path), offset_depois):
@@ -961,6 +966,8 @@ class JsonlWatcher:
 
         self._falhas_por_linha.pop(str(path), None)
         await self._db.upsert_agent_state(slug, jsonl_path=str(path))
+        if self._on_offset is not None:
+            await self._on_offset(path, self._offsets[str(path)])
 
     def _desistir_da_linha(self, path: str, offset: int) -> bool:
         """Conta falhas seguidas na MESMA linha; zera quando o offset anda."""

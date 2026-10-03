@@ -637,7 +637,7 @@ async def post_nova(request: Request, slug: str, pedido: NovaPedido | None = Non
 
 
 async def _subir_e_esperar(
-    tmux_session: str, pasta: Path, resume_session_id: str | None
+    tmux_session: str, pasta: Path, resume_session_id: str | None, lifecycle=None
 ) -> str | None:
     """Sobe a linha e espera ela ficar pronta. `None` = pronta; senão, o motivo.
 
@@ -648,7 +648,10 @@ async def _subir_e_esperar(
     dois seguidos numa caixa vazia abrem o menu de voltar no histórico do CC.
     """
     try:
-        await tmux_driver.boot_agent(tmux_session, resume_session_id)
+        if lifecycle is None:
+            await tmux_driver.boot_agent(tmux_session, resume_session_id)
+        else:
+            await lifecycle.boot_agent(tmux_session, resume_session_id)
     except tmux_driver.TmuxSessionBusyError:
         return "já havia um boot deste agente em curso"
     except (ValueError, libtmux_exc.LibTmuxException) as exc:
@@ -717,7 +720,11 @@ async def _conduzir_retomar(
         # Desligar de propósito: o vigia não conta como morte no meio da troca.
         await asyncio.to_thread(desligamento_deliberado.marcar, tmux_session)
         try:
-            desligado = await tmux_driver.shutdown_agent(tmux_session)
+            lifecycle = getattr(app.state, "client_lifecycle", None)
+            desligado = await (
+                lifecycle.shutdown_agent(tmux_session) if lifecycle is not None
+                else tmux_driver.shutdown_agent(tmux_session)
+            )
             if desligado.get("scopes_resistiram"):
                 logger.warning(
                     "conversas: retomar em %s com scopes que resistiram: %s",
@@ -729,7 +736,7 @@ async def _conduzir_retomar(
             atividade_ms = achada[1].st_mtime_ns // 1_000_000 if achada else None
             operacao.tirar_briefing(slug, alvo)  # sobra de uma largada antiga
             await db.marcar_retomada(slug, alvo, int(time.time() * 1000), atividade_ms)
-            motivo = await _subir_e_esperar(tmux_session, pasta, alvo)
+            motivo = await _subir_e_esperar(tmux_session, pasta, alvo, lifecycle)
             if motivo is None:
                 operacao.registrar_troca(slug, sessao_antes, alvo)
                 if sessao_antes != alvo:
@@ -741,7 +748,7 @@ async def _conduzir_retomar(
                 return
             logger.warning("conversas: retomar %s em %s falhou: %s", alvo, slug, motivo)
             raise _Falha(f"não consegui retomar a conversa: {motivo}; "
-                         + await _voltar_para_a_anterior(tmux_session, pasta, sessao_antes))
+                         + await _voltar_para_a_anterior(tmux_session, pasta, sessao_antes, lifecycle))
         finally:
             await asyncio.to_thread(desligamento_deliberado.desmarcar, tmux_session)
     except _Falha as exc:
@@ -816,7 +823,7 @@ async def _publicar_troca(
 
 
 async def _voltar_para_a_anterior(
-    tmux_session: str, pasta: Path, sessao_antes: str | None
+    tmux_session: str, pasta: Path, sessao_antes: str | None, lifecycle=None
 ) -> str:
     """Religa com `--continue` e diz em uma frase como a linha ficou.
 
@@ -830,7 +837,7 @@ async def _voltar_para_a_anterior(
             await asyncio.to_thread(os.utime, achada[0])
         except OSError as exc:
             logger.warning("conversas: não toquei o JSONL de %s (%s)", sessao_antes, exc)
-    motivo = await _subir_e_esperar(tmux_session, pasta, None)
+    motivo = await _subir_e_esperar(tmux_session, pasta, None, lifecycle)
     if motivo is None:
         return "a linha voltou na conversa anterior"
     logger.error("conversas: a volta com --continue em %s também falhou: %s", tmux_session, motivo)

@@ -53,6 +53,9 @@ async def test_login_posse_e_repasse_sse(tmp_path):
                                    headers={"origin": config["public_origin"]},
                                    json={"text": "Roubar"})).status_code == 403
         assert (await browser.get("/uploads/agents/cliente_b/a.png")).status_code == 403
+        assert (await browser.post("/api/agents/cliente_a/conversas/estacionar",
+                                   headers={"origin": config["public_origin"]},
+                                   json={"titulo": "x"})).status_code == 404
         assert (await browser.post("/api/tts/synth", headers={"origin": config["public_origin"]},
                                    json={"slug": "cliente_b", "text": "Roubar"})).status_code == 403
         assert len(seen) == count
@@ -88,3 +91,22 @@ async def test_admin_role_can_reach_both_clients(tmp_path):
         assert (await browser.get("/api/agents/a")).status_code == 200
         assert (await browser.get("/api/agents/b")).status_code == 200
     assert calls == ["/tmp/a.sock", "/tmp/b.sock"]
+
+
+@pytest.mark.asyncio
+async def test_login_limits_repeated_wrong_passwords(tmp_path):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("correct")}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        for _ in range(5):
+            assert (await browser.post("/auth/login", headers={"origin": config["public_origin"]},
+                                       json={"usuario": "ana", "senha": "wrong"})).status_code == 401
+        assert (await browser.post("/auth/login", headers={"origin": config["public_origin"]},
+                                   json={"usuario": "ana", "senha": "correct"})).status_code == 429

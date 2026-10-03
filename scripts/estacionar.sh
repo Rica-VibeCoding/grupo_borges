@@ -16,9 +16,13 @@ fi
 
 slug=$1
 corpo=$(jq -n --arg titulo "$2" --arg nota "${3:-}" '{titulo: $titulo, nota: $nota}')
+auth_header=( -H "Tailscale-User-Login: agente-$slug" )
+if [[ -n "${PAINEL_HOOK_TOKEN_FILE:-}" ]]; then
+  auth_header=( -H "Authorization: Bearer $(<"$PAINEL_HOOK_TOKEN_FILE")" )
+fi
 
 curl -sS --fail-with-body -X POST "${GB_API_URL:-http://127.0.0.1:8002}/api/agents/$slug/conversas/estacionar" \
   -H 'Content-Type: application/json' \
-  -H "Tailscale-User-Login: agente-$slug" \
+  "${auth_header[@]}" \
   -d "$corpo"
 echo

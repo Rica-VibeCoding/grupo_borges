@@ -34,7 +34,14 @@ if gancho.get("source") != "resume" or not re.fullmatch(r"[0-9a-fA-F-]{36}", ses
     sys.exit(0)
 sessao = urllib.parse.quote(os.environ["SESSAO"], safe="")
 url = f"{os.environ['API'].rstrip('/')}/api/agents/{sessao}/conversas/{session_id}/briefing"
-pedido = urllib.request.Request(url, headers={"Tailscale-User-Login": f"agente-{sessao}"})
+headers = {"Tailscale-User-Login": f"agente-{sessao}"}
+if os.environ.get("PAINEL_HOOK_TOKEN_FILE"):
+    try:
+        with open(os.environ["PAINEL_HOOK_TOKEN_FILE"], encoding="utf-8") as secret:
+            headers = {"Authorization": f"Bearer {secret.read().strip()}"}
+    except OSError:
+        sys.exit(0)
+pedido = urllib.request.Request(url, headers=headers)
 try:
     with urllib.request.urlopen(pedido, timeout=1.5) as resposta:
         texto = json.load(resposta).get("briefing") or ""

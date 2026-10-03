@@ -1,0 +1,17 @@
+[Unit]
+Description=API privada do agente cliente
+After=network.target
+
+[Service]
+Type=simple
+User=agente
+Group=agente
+WorkingDirectory=/opt/painel/apps/api
+EnvironmentFile=/etc/painel/cliente.env
+ExecStart=/opt/painel/apps/api/.venv/bin/uvicorn client_app:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Portao autenticado do painel cliente
+After=network.target
+
+[Service]
+Type=simple
+User=painel
+Group=painel
+WorkingDirectory=/opt/painel/apps/api
+Environment=PAINEL_PORTAO_CONFIG=/etc/painel/portao.json
+ExecStart=/opt/painel/apps/api/.venv/bin/uvicorn painel_portao:app --host 127.0.0.1 --port 8002
+Restart=always
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

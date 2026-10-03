@@ -1,0 +1,19 @@
+[Unit]
+Description=Controlador Incus privado do painel cliente
+After=incus.service
+
+[Service]
+Type=simple
+User=root
+Group=painel-control
+WorkingDirectory=/opt/painel/apps/api
+Environment=PAINEL_CONTROL_CONFIG=/etc/painel/controlador.json
+ExecStart=/opt/painel/apps/api/.venv/bin/uvicorn painel_controlador:app --uds /run/painel-control/control.sock
+Restart=always
+RestartSec=3
+RuntimeDirectory=painel-control
+RuntimeDirectoryMode=0770
+UMask=0117
+
+[Install]
+WantedBy=multi-user.target

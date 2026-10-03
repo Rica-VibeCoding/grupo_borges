@@ -17,9 +17,14 @@ from urllib.parse import parse_qs
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from client_app import AGENT_ROUTES, CONVERSA_ROUTES, TTS_ROUTES
+
+PRIVATE_HOOK_ROUTES = {
+    ("POST", "/{slug}/conversas/estacionar"),
+    ("GET", "/{slug}/conversas/{session_id}/briefing"),
+}
 
 COOKIE = "painel_sessao"
 SESSION_SECONDS = 12 * 3600
@@ -53,16 +58,17 @@ def _pattern(prefix: str, path: str) -> re.Pattern[str]:
 
 
 PROXY_PATHS = tuple(
-    _pattern("/api/agents", path) for _, path in AGENT_ROUTES | CONVERSA_ROUTES
-) + tuple(_pattern("/api", path) for _, path in TTS_ROUTES)
+    (method, _pattern("/api/agents", path))
+    for method, path in AGENT_ROUTES | (CONVERSA_ROUTES - PRIVATE_HOOK_ROUTES)
+) + tuple((method, _pattern("/api", path)) for method, path in TTS_ROUTES)
 UPLOAD_PATH = re.compile(r"^/uploads/agents/([^/]+)/([^/]+)$")
 AGENT_PATH = re.compile(r"^/api/agents/([^/]+)(?:/|$)")
 CONTROL_PATH = re.compile(r"^/api/agents/([^/]+)/(ligar|desligar|estado)$")
 
 
 class Login(BaseModel):
-    usuario: str
-    senha: str
+    usuario: str = Field(min_length=1, max_length=128)
+    senha: str = Field(min_length=1, max_length=1024)
 
 
 @contextmanager
@@ -82,6 +88,7 @@ def _setup_db(path: str) -> None:
     with _db(path) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, username TEXT NOT NULL, expires INTEGER NOT NULL)")
         conn.execute("CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires)")
+        conn.execute("CREATE TABLE IF NOT EXISTS login_attempts (username TEXT PRIMARY KEY, count INTEGER NOT NULL, first_at INTEGER NOT NULL, blocked_until INTEGER NOT NULL)")
 
 
 def _session(config: dict, token: str | None) -> dict | None:
@@ -124,6 +131,7 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
             raise RuntimeError("cliente sem destino")
     _setup_db(config["session_db"])
     app = FastAPI(title="grupo_borges-api portao")
+    dummy_hash = password_hash("senha-invalida", bytes(16))
 
     def transport(socket: str):
         return transport_factory(socket) if transport_factory else httpx.AsyncHTTPTransport(uds=socket)
@@ -174,13 +182,25 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
         if not _origin_ok(request, config):
             return JSONResponse({"detail": "origin_recusada"}, status_code=403)
         username = body.usuario.strip().lower()
+        now = int(time.time())
+        with _db(config["session_db"]) as conn:
+            attempt = conn.execute("SELECT count, first_at, blocked_until FROM login_attempts WHERE username=?",
+                                   (username,)).fetchone()
+        if attempt and attempt[2] > now:
+            return JSONResponse({"detail": "tente_mais_tarde"}, status_code=429)
         user = config["users"].get(username)
-        encoded = user["password_hash"] if user else password_hash("senha-invalida", bytes(16))
+        encoded = user["password_hash"] if user else dummy_hash
         valid = await asyncio.to_thread(password_matches, body.senha, encoded)
         if not valid or not user:
+            count = attempt[0] + 1 if attempt and now - attempt[1] < 900 else 1
+            first_at = attempt[1] if attempt and now - attempt[1] < 900 else now
+            with _db(config["session_db"]) as conn:
+                conn.execute("INSERT OR REPLACE INTO login_attempts VALUES (?, ?, ?, ?)",
+                             (username, count, first_at, now + 900 if count >= 5 else 0))
             return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
         token = secrets.token_urlsafe(32)
         with _db(config["session_db"]) as conn:
+            conn.execute("DELETE FROM login_attempts WHERE username=?", (username,))
             conn.execute("DELETE FROM sessions WHERE expires<=?", (int(time.time()),))
             conn.execute("INSERT INTO sessions VALUES (?, ?, ?)",
                          (hashlib.sha256(token.encode()).hexdigest(), username, int(time.time()) + SESSION_SECONDS))
@@ -248,7 +268,8 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
                 except httpx.HTTPError:
                     return JSONResponse({"detail": "controlador_indisponivel"}, status_code=502)
             return Response(answer.content, status_code=answer.status_code, media_type="application/json")
-        allowed = any(pattern.fullmatch(path) for pattern in PROXY_PATHS) or bool(upload)
+        allowed = any(method == request.method and pattern.fullmatch(path)
+                      for method, pattern in PROXY_PATHS) or bool(upload and request.method == "GET")
         if not allowed:
             return JSONResponse({"detail": "not_found"}, status_code=404)
         client = config["clients"][slug]
