@@ -67,9 +67,16 @@ export async function fetchFleet(): Promise<FleetResponse> {
   return res.json();
 }
 
-export async function fetchAgent(slug: string): Promise<Agent | null> {
+/** `cookie`: o cabeçalho do pedido do navegador, repassado pelo servidor do
+ *  Next. Só o painel do cliente usa — atrás do portão, sem ele a API responde
+ *  401 (`docs/produto-painel-cliente.md`). Ausente, o pedido sai como sempre. */
+export async function fetchAgent(
+  slug: string,
+  opcoes: { cookie?: string | null } = {},
+): Promise<Agent | null> {
   const res = await fetch(`${SERVER_API_BASE}/api/agents/${encodeURIComponent(slug)}`, {
     cache: 'no-store',
+    ...(opcoes.cookie ? { headers: { cookie: opcoes.cookie } } : {}),
   });
   // 404 = agente inexistente, caso normal de URL velha: vira notFound() na rota.
   if (res.status === 404) return null;
