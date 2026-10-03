@@ -190,10 +190,10 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   // output: a MESMA que escolhe entre a linha "Executando" e a "Pensando".
   useEffect(() => {
     const produzindo =
-      isRunning && !vencida && statusDaFrota !== 'offline' && saindoOutputNoFim(itensBase, lookup);
+      isRunning && !vencida && statusDaFrota !== 'offline' && saindoOutputNoFim(itensBase, lookupDoFeed);
     publicaEscritaViva(agentSlug, produzindo);
     return () => publicaEscritaViva(agentSlug, false);
-  }, [agentSlug, isRunning, vencida, statusDaFrota, itensBase, lookup]);
+  }, [agentSlug, isRunning, vencida, statusDaFrota, itensBase, lookupDoFeed]);
 
   // A TROCA DE CONVERSA (F13): o turno do cockpit vira uma linha, o marco
   // costura as duas conversas, e durante a troca a lista fecha com "trocando".
@@ -223,9 +223,11 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   const estadoAgora = estadoDoAgora({
     status: statusDaFrota ?? undefined,
     turnoVivo,
-    produzindo: turnoVivo && saindoOutputNoFim(itensBase, lookup),
+    produzindo: turnoVivo && saindoOutputNoFim(itensBase, lookupDoFeed),
   });
-  const emVoo = useMemo(() => fraseEmVoo(itensBase, lookup), [itensBase, lookup]);
+  // O lookup do FEED, com a régua das órfãs: passo que o feed já mostra
+  // interrompido não pode seguir "em voo" na linha do agora.
+  const emVoo = useMemo(() => fraseEmVoo(itensBase, lookupDoFeed), [itensBase, lookupDoFeed]);
 
   // O vazio virou função pura testada (`lib/decide-vazio.ts`, 11/08 — task
   // 2dac8a8b). As duas intenções originais sobrevivem: branco enquanto o
