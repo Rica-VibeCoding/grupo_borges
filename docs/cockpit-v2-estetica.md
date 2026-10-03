@@ -243,7 +243,9 @@ Canvas/WebGL (voz): desmontado ao sair, desenho no `requestAnimationFrame`, zero
   - **Texto:** em voo, o resumo em `secondary`; fechado e em `aguarda`, a pergunta em âmbar chamando.
     Ao fechar, «N passos ·» entra à esquerda e a frase desliza pelo `layout` da Motion, sem pulo.
   - **Relógio** à direita, `tabular-nums`: conta ao vivo (tique de 1 s isolado num filho) e, no fim,
-    troca por cruzamento pela duração medida (`duracaoDoGrupo`, até o último pedido de ferramenta).
+    troca por cruzamento pela duração medida (`duracaoDoGrupo`: do primeiro pedido ao carimbo mais tarde
+    entre os pedidos e os resultados — o `ms` do lookup —, para o grupo paralelo não medir zero); sem o
+    que medir, fica o último valor que o relógio contou ao vivo.
   Depois do relógio, o saldo `+N −M`, o selo âmbar de retentativas (só no fim) e `erro`/`interrompido`
   em `--ck-state-fail` (só com o veredito). **Em curso** é o grupo no fim do feed com a corrida de pé
   (`indiceDoGrupoEmCurso`): entre um passo e o próximo ele segue girando, e falha no meio também; o anel
