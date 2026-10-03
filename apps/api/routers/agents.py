@@ -95,7 +95,7 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 voice_log = logging.getLogger("uvicorn.error")
 
-_CLAUDE_HOME = Path.home() / ".claude"
+_CLAUDE_HOME = Path(os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")))
 _CLAUDE_JSON = Path.home() / ".claude.json"
 _SECRET_KEY_RE = re.compile(r"token|secret|password|authorization", re.IGNORECASE)
 _PLUGIN_INSTALL_PATH_KEYS = ("installPath", "install_path", "path", "dir")

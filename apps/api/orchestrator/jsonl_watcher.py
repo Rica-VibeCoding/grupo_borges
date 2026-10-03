@@ -24,6 +24,7 @@ Encoded-cwd format do CC (validado contra ~/.claude/projects/ real em PC e VPS):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -764,10 +765,12 @@ class JsonlWatcher:
         claude_projects_dir: str,
         agents: list[dict],
         db,  # GrupoBorgesDB — não importamos pra evitar ciclo
+        dedupe_jsonl: bool = False,
     ) -> None:
         self._root = Path(claude_projects_dir)
         self._root_resolved = self._root.resolve() if self._root.exists() else self._root
         self._db = db
+        self._dedupe_jsonl = dedupe_jsonl
         self._slug_by_encoded: dict[str, str] = _mapear_por_encoded(agents)
         self._offsets: dict[str, int] = {}
         # F4-3 A4 — último JSONL processado por slug. Mudança = nova sessão
@@ -935,7 +938,12 @@ class JsonlWatcher:
 
         for line, offset_depois in new_lines:
             try:
-                await self._processar_linha(slug, line)
+                source_key = None
+                if self._dedupe_jsonl:
+                    source_key = hashlib.sha256(
+                        f"{path}:{offset_depois}:".encode() + line.encode()
+                    ).hexdigest()
+                await self._processar_linha(slug, line, source_key=source_key)
             except Exception:
                 if not self._desistir_da_linha(str(path), offset_depois):
                     raise  # o supervisor religa e reprocessa ESTA linha
@@ -961,7 +969,7 @@ class JsonlWatcher:
         self._falhas_por_linha[path] = (offset, tentativas)
         return tentativas >= _TENTATIVAS_POR_LINHA
 
-    async def _processar_linha(self, slug: str, line: str) -> None:
+    async def _processar_linha(self, slug: str, line: str, *, source_key: str | None = None) -> None:
         payload = parse_dict_or_none(line)
         event_type = str((payload or {}).get("type") or "unknown")
         update_subagent_state_from_jsonl(slug, payload, event_type)
@@ -979,11 +987,13 @@ class JsonlWatcher:
                 )
                 if meta is not None:
                     payload["meta"] = meta
+        event_options = {"content_hash": source_key} if source_key is not None else {}
         await self._db.insert_task_event(
             kind=f"jsonl:{event_type}",
             agent_slug=slug,
             payload=payload,
             raw_jsonl=line,
+            **event_options,
         )
         lifecycle_status, lifecycle_detail = _jsonl_lifecycle(payload, event_type)
         if lifecycle_status is not None:
