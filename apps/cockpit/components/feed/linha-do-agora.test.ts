@@ -6,7 +6,7 @@ import { buildToolResultLookup } from '@grupo_borges/cockpit-core/render-items';
 
 import { saindoOutputNoFim } from '../../lib/escrita-viva.ts';
 import type { ItemDoFeed } from './grupo-ferramentas.ts';
-import { estadoDoAgora, fraseEmVoo } from './linha-do-agora.ts';
+import { estadoDoAgora, fraseEmVoo, pedeAoRicaNoFim } from './linha-do-agora.ts';
 import { encerraOrfas } from './orfas-do-turno.ts';
 
 test('a esfera não olha pra caixa nem pula: ouvindo e pronto viram parado', () => {
@@ -69,4 +69,47 @@ test('passo órfão que o feed já mostra interrompido não volta "em voo" pela 
   const doFeed = encerraOrfas(msgs, buildToolResultLookup(msgs), false);
   assert.equal(fraseEmVoo(itens, doFeed), null);
   assert.equal(saindoOutputNoFim(itens, doFeed), false);
+});
+
+test('pergunta ao Rica em voo no fim do feed é atenção ("Esperando você"), não executando', () => {
+  for (const name of ['AskUserQuestion', 'mcp__ask-user__ask_user']) {
+    const payload: MessagePayload = {
+      id: 1,
+      kind: 'assistant',
+      uuid: 'u1',
+      parent_uuid: null,
+      session_id: 's',
+      is_sidechain: false,
+      agent_id: null,
+      user_type: 'external',
+      timestamp: '2026-10-01T04:01:12Z',
+      created_at: 1,
+      message: {
+        role: 'assistant',
+        id: 'm1',
+        content: [{ type: 'tool_use', id: 'q', name, input: { questions: [{ question: 'Pode apagar?' }] } }],
+      },
+    };
+    const parts = payload.message!.content as ContentPart[];
+    const sozinha: ItemDoFeed[] = [{ kind: 'assistant', payload, parts } as ItemDoFeed];
+    const emGrupo: ItemDoFeed[] = [
+      { kind: 'grupo-ferramentas', itens: [{ kind: 'assistant', payload, parts }] } as ItemDoFeed,
+    ];
+    const lookup = buildToolResultLookup([payload]);
+    for (const itens of [sozinha, emGrupo]) {
+      const esperandoRica = pedeAoRicaNoFim(itens, lookup);
+      assert.equal(esperandoRica, true, name);
+      // A pergunta conta como output (`saindoOutputNoFim`) — quem decide é a espera.
+      const produzindo = saindoOutputNoFim(itens, lookup);
+      assert.equal(
+        estadoDoAgora({ status: 'trabalhando', turnoVivo: true, produzindo, esperandoRica }),
+        'atencao',
+      );
+    }
+  }
+});
+
+test('esperando o Rica não vence desligado; feed vazio não é pergunta', () => {
+  assert.equal(estadoDoAgora({ status: 'offline', turnoVivo: true, produzindo: true, esperandoRica: true }), 'offline');
+  assert.equal(pedeAoRicaNoFim([]), false);
 });

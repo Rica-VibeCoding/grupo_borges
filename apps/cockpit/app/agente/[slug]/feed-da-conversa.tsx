@@ -20,7 +20,7 @@ import { buildToolResultLookup, textoEnfileirado } from '@grupo_borges/cockpit-c
 import { usaDelegacoes } from '@/components/feed/delegacoes.tsx';
 import { Feed } from '@/components/feed/feed';
 import type { ItemDoFeed } from '@/components/feed/grupo-ferramentas.ts';
-import { estadoDoAgora, fraseEmVoo } from '@/components/feed/linha-do-agora.ts';
+import { estadoDoAgora, fraseEmVoo, pedeAoRicaNoFim } from '@/components/feed/linha-do-agora.ts';
 import { LinhaDoAgora } from '@/components/feed/linha-do-agora.tsx';
 import { desdeDaLinhaViva } from '@/components/feed/linha-viva.ts';
 import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
@@ -224,6 +224,8 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
     status: statusDaFrota ?? undefined,
     turnoVivo,
     produzindo: turnoVivo && saindoOutputNoFim(itensBase, lookupDoFeed),
+    // Sem o prazo de 5 min: esperar o Rica não vence (`orfas-do-turno.ts`).
+    esperandoRica: isRunning && pedeAoRicaNoFim(itensBase, lookupDoFeed),
   });
   // O lookup do FEED, com a régua das órfãs: passo que o feed já mostra
   // interrompido não pode seguir "em voo" na linha do agora.

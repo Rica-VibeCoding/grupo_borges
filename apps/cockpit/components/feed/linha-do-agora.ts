@@ -17,9 +17,37 @@ import { entradasDoGrupo, resumeGrupo } from './resumo-do-grupo.ts';
 
 export type EstadoDoAgora = 'offline' | 'parado' | 'pensando' | 'executando' | 'atencao';
 
-export function estadoDoAgora(entrada: Omit<EntradaDaBolinha, 'ouvindo'>): EstadoDoAgora {
+/** `esperandoRica`: o fim do feed tem pergunta ao Rica em voo
+ *  (`pedeAoRicaNoFim`). O `aguardando` da frota não basta — a API só o grava
+ *  em falha —, e a pergunta não é output: sem esta entrada ela caía em
+ *  `executando`, com brilho, em vez de chamar. */
+export function estadoDoAgora({
+  esperandoRica = false,
+  ...entrada
+}: Omit<EntradaDaBolinha, 'ouvindo'> & { esperandoRica?: boolean }): EstadoDoAgora {
   const estado = estadoDaBolinha(entrada);
+  if (esperandoRica && estado !== 'offline') return 'atencao';
   return estado === 'ouvindo' || estado === 'pronto' ? 'parado' : estado;
+}
+
+/** O fim do feed é uma pergunta ao Rica sem resposta (`AskUserQuestion`,
+ *  `ask_user` do MCP — `requires-action`)? Mesma régua do último item que a
+ *  `fraseEmVoo` usa. */
+export function pedeAoRicaNoFim(itens: readonly ItemDoFeed[], lookup?: ToolResultLookup): boolean {
+  const ultimo = itens[itens.length - 1];
+  if (!ultimo) return false;
+  if (ultimo.kind === 'grupo-ferramentas') {
+    return resumeGrupo(entradasDoGrupo(ultimo.itens, lookup)).estado === 'aguarda';
+  }
+  if (ultimo.kind === 'assistant') {
+    return ultimo.parts.some(
+      (parte) => parte.type === 'tool_use' && execucaoDaParte(parte, lookup).estado === 'requires-action',
+    );
+  }
+  if (ultimo.kind === 'chip' && ultimo.classifierKind === 'tool') {
+    return execucaoDoChip(ultimo, lookup).estado === 'requires-action';
+  }
+  return false;
 }
 
 /** A frase do passo em voo no fim do feed — "Transcreve o áudio",
