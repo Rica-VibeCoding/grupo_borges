@@ -19,11 +19,12 @@ import subprocess
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 import edge_tts
 import httpx
 import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -62,6 +63,13 @@ FLEET_VOICES: dict[str, str] = {
     "canarinho": "pt-BR-Chirp3-HD-Kore",
 }
 DEFAULT_GOOGLE_VOICE = "pt-BR-Chirp3-HD-Orus"
+
+_CHIRP_GENDERS = {
+    "Aoede": "female", "Kore": "female",
+    "Orus": "male", "Algieba": "male", "Algenib": "male",
+    "Iapetus": "male", "Charon": "male", "Puck": "male",
+}
+_WAVENET_BY_GENDER = {"female": "pt-BR-Wavenet-A", "male": "pt-BR-Wavenet-B"}
 
 # Prefixos que o Google atende — o portão que decide o motor. Voz de fora desta
 # lista vai pro edge, e ir pro edge é trocar a voz do agente: quando o Daniel
@@ -157,6 +165,7 @@ class TtsSynthRequest(BaseModel):
     slug: str = Field(default="", max_length=40)
     # override explícito de voz; se vazio, resolve por slug.
     voice: str = ""
+    motor: Literal["", "chirp", "wavenet", "minimax"] = Field(default="")
     rate: str = ""
     pitch: str = ""
 
@@ -189,18 +198,45 @@ def _resolve_voice(body: TtsSynthRequest, settings) -> str:
     return settings.tts_voice or DEFAULT_GOOGLE_VOICE
 
 
+def _resolve_stream_voice(body: TtsSynthRequest, settings) -> str:
+    if body.voice or body.motor not in ("chirp", "wavenet"):
+        return _resolve_voice(body, settings)
+    env_voice = _env_do_agente(body.slug).get("GOOGLE_TTS_VOICE", "")
+    fleet_voice = FLEET_VOICES.get(body.slug, "")
+    if body.motor == "wavenet":
+        if env_voice.startswith("pt-BR-Wavenet-") and _VOICE_RE.fullmatch(env_voice):
+            return env_voice
+        env_gender = (
+            _CHIRP_GENDERS.get(env_voice.removeprefix("pt-BR-Chirp3-HD-"))
+            if env_voice.startswith("pt-BR-Chirp3-HD-") else None
+        )
+        if env_gender:
+            return _WAVENET_BY_GENDER[env_gender]
+        if fleet_voice.startswith("pt-BR-Wavenet-") and _VOICE_RE.fullmatch(fleet_voice):
+            return fleet_voice
+    chirp_voice = next(
+        (v for v in (env_voice, fleet_voice) if v.startswith("pt-BR-Chirp3-HD-") and _VOICE_RE.fullmatch(v)),
+        DEFAULT_GOOGLE_VOICE,
+    )
+    if body.motor == "chirp":
+        return chirp_voice
+    gender = _CHIRP_GENDERS.get(chirp_voice.removeprefix("pt-BR-Chirp3-HD-"))
+    if gender is None:
+        gender = _CHIRP_GENDERS.get(fleet_voice.removeprefix("pt-BR-Chirp3-HD-"), "male")
+    return _WAVENET_BY_GENDER[gender]
+
+
 # Contador de caracteres por origem. A GOOGLE_TTS_API_KEY é UMA pra frota
 # inteira, então o painel do Google não separa quem gastou — este arquivo é o
-# único lugar onde o gasto tem dono, e a soma de `chars` é o número que a fatura
-# cobra (o Google conta codepoint Unicode, espaço incluído). Caminho absoluto de
+# único lugar onde o gasto tem dono; a soma de `chars` com `engine=google` é o
+# número que a fatura cobra (codepoint Unicode, espaço incluído). Caminho absoluto de
 # propósito: os quatro produtores que batem na mesma chave (skill voz, estas
 # duas rotas, telecodex e orcamento-inteligente) precisam cair no MESMO arquivo.
 _USO_LOG = Path("/home/clawd/.claude/metrics/tts-uso.jsonl")
 
 
 def _registra_uso(origem: str, slug: str, voice: str, text: str, engine: str = "google") -> None:
-    """Uma linha por síntese que o Google ACEITOU — é o que ele cobra. Falhar
-    aqui nunca pode derrubar a fala: contador é observabilidade, não requisito."""
+    """Uma linha por síntese aceita pelo motor usado. Falhar aqui não derruba a fala."""
     try:
         _USO_LOG.parent.mkdir(parents=True, exist_ok=True)
         linha = json.dumps(
@@ -273,9 +309,9 @@ def _env_do_agente(slug: str) -> dict[str, str]:
     return {k: val.strip().strip('"\'') for k, val in _ENV_LINHA.findall(env)}
 
 
-def _minimax_do_agente(slug: str) -> dict | None:
+def _minimax_do_agente(slug: str, force: bool = False) -> dict | None:
     v = _env_do_agente(slug)
-    if v.get("TTS_MOTOR") != "minimax" or not v.get("MINIMAX_API_KEY"):
+    if (not force and v.get("TTS_MOTOR") != "minimax") or not v.get("MINIMAX_API_KEY"):
         return None
     # Mesmos padrões do tts-minimax.sh.
     return {
@@ -474,7 +510,10 @@ async def _stream_tts(
     # Engine decidida pela primeira sentença (a voz não muda no meio da fala):
     # MiniMax se o agente a configurou, senão Google. Sem key Google ou voz que
     # o Google não atende, já nasce no edge. `degraded` = não é a voz dele.
-    minimax = _minimax_do_agente(body.slug)
+    motor = getattr(body, "motor", "")
+    minimax = None if body.voice or motor in ("chirp", "wavenet") else _minimax_do_agente(
+        body.slug, force=motor == "minimax"
+    )
     first_mp3: bytes | None = None
     engine = "edge"
     if minimax:
@@ -506,6 +545,7 @@ async def _stream_tts(
     # A régua é por caracteres (16 chars/s), a métrica mais estável medida.
     if first_mp3 is None:
         first_mp3 = await _synth_edge(sentences[0], edge_voice, rate, pitch)
+        _registra_uso("cockpit-stream", body.slug, edge_voice, sentences[0], "edge")
     first_duration, first_peaks = await asyncio.to_thread(_peaks_from_mp3, first_mp3)
 
     acc = 0.0
@@ -523,7 +563,7 @@ async def _stream_tts(
         {
             "voice": {"edge": edge_voice, "minimax": minimax["voice"] if minimax else ""}.get(engine, voice),
             "engine": engine,
-            "degraded": engine != preferido,
+            "degraded": engine != preferido or (motor == "minimax" and minimax is None and not body.voice),
             "duration_estimate": round(total_estimate, 2),
             "peaks_per_second": int(1000 / _PEAK_INTERVAL_MS),
             "segments": segments,
@@ -547,6 +587,7 @@ async def _stream_tts(
                 mp3 = await _synth_google(sent, voice, api_key, "cockpit-stream", body.slug)
             else:
                 mp3 = await _synth_edge(sent, edge_voice, rate, pitch)
+                _registra_uso("cockpit-stream", body.slug, edge_voice, sent, "edge")
         except Exception as exc:
             # Regressão de robustez apontada na revisão: falha transitória numa
             # sentença não pode cortar a fala no meio. Tenta o edge naquela
@@ -556,6 +597,7 @@ async def _stream_tts(
             if current_engine != "edge":
                 try:
                     mp3 = await _synth_edge(sent, edge_voice, rate, pitch)
+                    _registra_uso("cockpit-stream", body.slug, edge_voice, sent, "edge")
                 except Exception as exc2:
                     yield _sse("error", {"id": i, "message": f"sentença {i} falhou ({current_engine} e edge): {exc2}"})
                     return
@@ -598,6 +640,9 @@ async def tts_synth(body: TtsSynthRequest, request: Request) -> Response:
     if not audio_bytes:
         try:
             audio_bytes = await _synth_edge(text, voice, rate, pitch)
+            if audio_bytes:
+                edge_voice = voice if voice.endswith("Neural") else "pt-BR-AntonioNeural"
+                _registra_uso("cockpit-synth", body.slug, edge_voice, text, "edge")
         except Exception as exc:
             detail = f"TTS falhou (edge: {exc}"
             detail += f"; google: {google_err})" if google_err else ")"
@@ -624,7 +669,7 @@ async def tts_synth_stream(body: TtsSynthRequest, request: Request) -> Streaming
     if not text:
         raise HTTPException(status_code=400, detail="texto vazio após limpeza")
 
-    voice = _resolve_voice(body, settings)
+    voice = _resolve_stream_voice(body, settings)
     sentences = _split_sentences(text)
     if not sentences:
         raise HTTPException(status_code=400, detail="texto sem sentenças")
@@ -637,3 +682,25 @@ async def tts_synth_stream(body: TtsSynthRequest, request: Request) -> Streaming
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/tts/motores")
+async def tts_motores(request: Request, slug: str = Query(min_length=1, max_length=40)) -> dict:
+    if not re.fullmatch(r"[a-z0-9_-]+", slug):
+        raise HTTPException(status_code=422, detail="slug inválido")
+    motores = ["chirp", "wavenet"]
+    minimax = _minimax_do_agente(slug)
+    if _env_do_agente(slug).get("MINIMAX_API_KEY"):
+        motores.append("minimax")
+    voice = _resolve_voice(TtsSynthRequest(text="x", slug=slug), request.app.state.settings)
+    if minimax:
+        padrao = "minimax"
+    elif not request.app.state.settings.google_tts_api_key:
+        padrao = "edge"
+    elif voice.startswith("pt-BR-Wavenet-"):
+        padrao = "wavenet"
+    elif voice.startswith("pt-BR-Chirp3-HD-"):
+        padrao = "chirp"
+    else:
+        padrao = "edge"
+    return {"motores": motores, "padrao": padrao}

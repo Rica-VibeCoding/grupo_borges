@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -29,6 +30,7 @@ def _sem_workspace_real(tmp_path, monkeypatch) -> None:
     # O `.env` de verdade do Daniel liga a MiniMax: teste nenhum pode ler (e gastar) a chave real.
     monkeypatch.setattr(tts, "_WORKSPACES", tmp_path / "workspaces")
     monkeypatch.setattr(tts, "_pasta_do_agente", lambda slug: tts._WORKSPACES / slug)
+    monkeypatch.setattr(tts, "_USO_LOG", tmp_path / "tts-uso.jsonl")
 
 
 def test_pasta_do_agente_vem_do_agents_yaml(tmp_path, monkeypatch) -> None:
@@ -307,7 +309,7 @@ class _FakeBody:
     pitch = ""
 
 
-def test_stream_declara_degradacao_quando_google_falha(monkeypatch) -> None:
+def test_stream_declara_degradacao_quando_google_falha(tmp_path, monkeypatch) -> None:
     mp3 = _mp3_teste()
 
     def _falha_google(*_a, **_k):
@@ -341,6 +343,11 @@ def test_stream_declara_degradacao_quando_google_falha(monkeypatch) -> None:
     assert len(events["peaks"]) == 2
     assert len(events["audio"]) == 2
     assert "done" in events
+    uso = [json.loads(line) for line in (tmp_path / "tts-uso.jsonl").read_text().splitlines()]
+    assert [(line["engine"], line["voz"]) for line in uso] == [
+        ("edge", "pt-BR-FranciscaNeural"),
+        ("edge", "pt-BR-FranciscaNeural"),
+    ]
     # a estimativa do meta é a régua pura por caracteres (16 chars/s); a
     # calibração por ponto único foi descartada por medição (variância, piora o
     # total). Nunca igualdade de duração REAL de áudio — a síntese do Google
@@ -500,6 +507,30 @@ def test_synth_minimax_stream_com_erro_levanta(monkeypatch) -> None:
         asyncio.run(tts._synth_minimax("oi", cfg, "daniel"))
 
 
+def test_contador_grava_engine_e_voz_aceitos_pelos_provedores(tmp_path, monkeypatch) -> None:
+    client_real = httpx.AsyncClient
+
+    def responde(req: httpx.Request) -> httpx.Response:
+        if "googleapis" in req.url.host:
+            return httpx.Response(200, json={"audioContent": "YQ=="})
+        return httpx.Response(
+            200,
+            text='data: {"data":{"audio":"aa","status":2},"base_resp":{"status_code":0}}\n\n',
+        )
+
+    monkeypatch.setattr(
+        tts.httpx, "AsyncClient",
+        lambda **kw: client_real(transport=httpx.MockTransport(responde), **kw),
+    )
+    asyncio.run(tts._synth_google("oi", "pt-BR-Wavenet-A", "fake", "cockpit-stream", "tara"))
+    cfg = {"key": "fake", "voice": "voz-tara", "model": "m", "emotion": "neutral", "speed": 1, "pitch": 0}
+    asyncio.run(tts._synth_minimax("oi", cfg, "tara"))
+    uso = [json.loads(line) for line in (tmp_path / "tts-uso.jsonl").read_text().splitlines()]
+    assert [(line["engine"], line["voz"]) for line in uso] == [
+        ("google", "pt-BR-Wavenet-A"), ("minimax", "voz-tara"),
+    ]
+
+
 # --- Google: a voz do Telegram (GOOGLE_TTS_VOICE do .env) também no painel -
 
 
@@ -524,3 +555,144 @@ def test_resolve_voice_body_voice_vence_tudo(tmp_path, monkeypatch) -> None:
     _workspace(tmp_path, monkeypatch, "pavan", "export GOOGLE_TTS_VOICE=pt-BR-Chirp3-HD-Kore\n")
     body = tts.TtsSynthRequest(text="oi", slug="pavan", voice="pt-BR-Wavenet-B")
     assert tts._resolve_voice(body, _FakeSettings()) == "pt-BR-Wavenet-B"
+
+
+@pytest.mark.parametrize(
+    ("motor", "engine", "voice"),
+    [
+        ("", "minimax", "voz-desenhada"),
+        ("chirp", "google", "pt-BR-Chirp3-HD-Orus"),
+        ("wavenet", "google", "pt-BR-Wavenet-E"),
+        ("minimax", "minimax", "voz-desenhada"),
+    ],
+)
+def test_stream_motor_escolhe_engine_e_voz(tmp_path, monkeypatch, motor, engine, voice) -> None:
+    _workspace(tmp_path, monkeypatch, "daniel", _ENV_MINIMAX)
+    calls = []
+
+    async def google(_text, chosen, *_args):
+        calls.append(("google", chosen))
+        return b"mp3"
+
+    async def minimax(_text, cfg, _slug):
+        calls.append(("minimax", cfg["voice"]))
+        return b"mp3"
+
+    monkeypatch.setattr(tts, "_synth_google", google)
+    monkeypatch.setattr(tts, "_synth_minimax", minimax)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "google-teste"
+    body = tts.TtsSynthRequest(text="Primeira. Segunda.", slug="daniel", motor=motor)
+    voice_resolved = tts._resolve_stream_voice(body, settings)
+    events = _coleta(tts._split_sentences(body.text), voice_resolved, body, settings)
+
+    assert events["meta"][0]["engine"] == engine
+    assert events["meta"][0]["voice"] == voice
+    assert events["meta"][0]["degraded"] is False
+    assert calls == [(engine, voice)] * 2
+
+
+@pytest.mark.parametrize(
+    ("slug", "expected"),
+    [
+        ("tara", "pt-BR-Wavenet-A"), ("canarinho", "pt-BR-Wavenet-A"),
+        ("pavan", "pt-BR-Wavenet-B"), ("lucas", "pt-BR-Wavenet-B"),
+        ("felipe", "pt-BR-Wavenet-B"), ("barsi", "pt-BR-Wavenet-B"),
+        ("vinicius", "pt-BR-Wavenet-B"), ("maestro", "pt-BR-Wavenet-B"),
+        ("caseiro", "pt-BR-Wavenet-B"), ("fora_do_mapa", "pt-BR-Wavenet-B"),
+    ],
+)
+def test_wavenet_preserva_genero_da_chirp(slug, expected) -> None:
+    body = tts.TtsSynthRequest(text="oi", slug=slug, motor="wavenet")
+    assert tts._resolve_stream_voice(body, _FakeSettings()) == expected
+
+
+def test_wavenet_respeita_chirp_feminina_do_env_antes_do_mapa(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "daniel", "GOOGLE_TTS_VOICE=pt-BR-Chirp3-HD-Kore\n")
+    body = tts.TtsSynthRequest(text="oi", slug="daniel", motor="wavenet")
+    assert tts._resolve_stream_voice(body, _FakeSettings()) == "pt-BR-Wavenet-A"
+
+
+def test_minimax_forcado_sem_motor_no_env(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "pavan", "MINIMAX_API_KEY=sk-teste\nMINIMAX_VOICE_ID=voz-pavan\n")
+    calls = []
+
+    async def minimax(_text, cfg, _slug):
+        calls.append(cfg["voice"])
+        return b"mp3"
+
+    monkeypatch.setattr(tts, "_synth_minimax", minimax)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "google-teste"
+    body = tts.TtsSynthRequest(text="Oi.", slug="pavan", motor="minimax")
+    events = _coleta(["Oi."], tts._resolve_stream_voice(body, settings), body, settings)
+    assert events["meta"][0]["engine"] == "minimax"
+    assert events["meta"][0]["voice"] == "voz-pavan"
+    assert calls == ["voz-pavan"]
+
+
+def test_minimax_sem_chave_cai_no_padrao_degradado(monkeypatch) -> None:
+    async def google(*_args):
+        return b"mp3"
+
+    monkeypatch.setattr(tts, "_synth_google", google)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "google-teste"
+    body = tts.TtsSynthRequest(text="Oi.", slug="pavan", motor="minimax")
+    events = _coleta(["Oi."], tts._resolve_stream_voice(body, settings), body, settings)
+    assert events["meta"][0]["engine"] == "google"
+    assert events["meta"][0]["voice"] == tts.FLEET_VOICES["pavan"]
+    assert events["meta"][0]["degraded"] is True
+
+
+@pytest.mark.asyncio
+async def test_rotas_motor_422_get_e_voice_vence(tmp_path, monkeypatch) -> None:
+    _workspace(tmp_path, monkeypatch, "tara", "TTS_MOTOR=minimax\nMINIMAX_API_KEY=sk-teste\n")
+    _workspace(tmp_path, monkeypatch, "lucas", "MINIMAX_API_KEY=sk-teste\n")
+    settings = _FakeSettings()
+    settings.google_tts_api_key = "google-teste"
+    app = FastAPI()
+    app.state.settings = settings
+    app.include_router(tts.router, prefix="/api")
+    calls = []
+
+    async def google(_text, voice, *_args):
+        calls.append(voice)
+        return b"mp3"
+
+    async def minimax(*_args):
+        raise AssertionError("voice explícito deve impedir MiniMax")
+
+    monkeypatch.setattr(tts, "_synth_google", google)
+    monkeypatch.setattr(tts, "_synth_minimax", minimax)
+    monkeypatch.setattr(tts, "_peaks_from_mp3", lambda _mp3: (0.3, [1]))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        invalid = await client.post("/api/tts/synth/stream", json={"text": "Oi.", "motor": "outro"})
+        assert invalid.status_code == 422
+        assert invalid.json()["detail"][0]["loc"] == ["body", "motor"]
+
+        response = await client.get("/api/tts/motores", params={"slug": "tara"})
+        assert response.json() == {"motores": ["chirp", "wavenet", "minimax"], "padrao": "minimax"}
+        response = await client.get("/api/tts/motores", params={"slug": "pavan"})
+        assert response.json() == {"motores": ["chirp", "wavenet"], "padrao": "chirp"}
+        response = await client.get("/api/tts/motores", params={"slug": "maestro"})
+        assert response.json()["padrao"] == "wavenet"
+        response = await client.get("/api/tts/motores", params={"slug": "lucas"})
+        assert response.json() == {"motores": ["chirp", "wavenet", "minimax"], "padrao": "chirp"}
+        settings.google_tts_api_key = ""
+        response = await client.get("/api/tts/motores", params={"slug": "pavan"})
+        assert response.json()["padrao"] == "edge"
+        settings.google_tts_api_key = "google-teste"
+        assert (await client.get("/api/tts/motores")).status_code == 422
+
+        for motor in ("chirp", "wavenet", "minimax"):
+            response = await client.post(
+                "/api/tts/synth/stream",
+                json={"text": "Oi.", "slug": "tara", "motor": motor, "voice": "pt-BR-Wavenet-A"},
+            )
+            assert response.status_code == 200
+            assert '"voice": "pt-BR-Wavenet-A"' in response.text
+        assert calls == ["pt-BR-Wavenet-A"] * 3
