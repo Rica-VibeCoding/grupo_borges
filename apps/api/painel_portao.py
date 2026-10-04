@@ -158,6 +158,14 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
     app = FastAPI(title="grupo_borges-api portao")
     dummy_hash = password_hash("senha-invalida", bytes(16))
 
+    @app.middleware("http")
+    async def exige_troca_senha(request: Request, call_next):
+        if request.url.path not in {"/auth/me", "/auth/senha", "/auth/logout", "/health"}:
+            session = _session(config, request.cookies.get(COOKIE))
+            if session and session["trocar_senha"]:
+                return JSONResponse({"detail": "trocar_senha"}, status_code=403)
+        return await call_next(request)
+
     def transport(socket: str):
         return transport_factory(socket) if transport_factory else httpx.AsyncHTTPTransport(uds=socket)
 

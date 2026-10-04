@@ -25,7 +25,8 @@ async def test_login_posse_e_repasse_sse(tmp_path):
         "public_origin": "https://agentes.conectamoveis.net.br",
         "session_db": str(tmp_path / "sessions.db"),
         "users": {
-            "ana": {"role": "client", "slug": "cliente_a", "password_hash": password_hash("correct horse")},
+            "ana": {"role": "client", "slug": "cliente_a", "password_hash": password_hash("correct horse"),
+                    "trocar_senha": False},
             "rica": {"role": "admin", "password_hash": password_hash("admin password")},
         },
         "clients": {
@@ -44,7 +45,7 @@ async def test_login_posse_e_repasse_sse(tmp_path):
         assert "HttpOnly" in login.headers["set-cookie"]
         assert "Secure" in login.headers["set-cookie"]
         assert (await browser.get("/auth/me")).json()["slug"] == "cliente_a"
-        assert (await browser.get("/auth/me")).json()["trocar_senha"] is True
+        assert (await browser.get("/auth/me")).json()["trocar_senha"] is False
         assert (await browser.get("/api/agents/cliente_a")).status_code == 200
         stream = await browser.get("/api/agents/cliente_a/messages/stream")
         assert stream.status_code == 200
@@ -190,3 +191,38 @@ async def test_troca_senha_revoga_outras_sessoes_e_preserva_atual(tmp_path):
                                   json={"usuario": "ana", "senha": "senha inicial"})).status_code == 401
         assert (await antiga.post("/auth/login", headers=headers,
                                   json={"usuario": "ana", "senha": "senha nova segura"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_troca_obrigatoria_bloqueia_portao_ate_mudar_senha(tmp_path):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha inicial")}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config, transport_factory=lambda _: httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"ok": True})))
+    headers = {"origin": config["public_origin"]}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "ana", "senha": "senha inicial"})).status_code == 200
+        assert (await browser.get("/auth/me")).json()["trocar_senha"] is True
+        assert (await browser.get("/health")).status_code == 200
+        for method, path, kwargs in (
+            ("GET", "/api/agents/a", {}),
+            ("GET", "/uploads/agents/a/foto.png", {}),
+            ("POST", "/api/agents/a/destrava", {"headers": headers}),
+            ("GET", "/rota-desconhecida", {}),
+            ("POST", "/auth/login", {"headers": headers,
+                                      "json": {"usuario": "ana", "senha": "senha inicial"}}),
+        ):
+            response = await browser.request(method, path, **kwargs)
+            assert response.status_code == 403
+            assert response.json() == {"detail": "trocar_senha"}
+        assert (await browser.post("/auth/senha", headers=headers,
+                                   json={"atual": "senha inicial", "nova": "senha nova segura"})).status_code == 204
+        assert (await browser.get("/api/agents/a")).status_code == 200
+        assert (await browser.post("/auth/logout", headers=headers)).status_code == 200
