@@ -38,6 +38,7 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
     monkeypatch.setenv("GB_AGENTS_YAML", str(config))
     monkeypatch.setenv("GB_DB_PATH", str(tmp_path / "api.db"))
     monkeypatch.setenv("GB_CLAUDE_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("PAINEL_UPLOADS_DIR", str(tmp_path / "durable-uploads"))
     app = create_client_app(slug="cliente_a", token="t" * 40, hook_token="h" * 40)
     async def capture(_session):
         return "Opus 4.8 - 00:03:12 - [████░░░░░░] 40%"
@@ -67,6 +68,17 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
         assert destrava.status_code == 200
         assert destrava.json()["tmux_delivered"] is True
         recover.assert_awaited_once_with("agente")
+        with patch("routers.agents._send_tmux_or_409", new=AsyncMock(return_value=True)):
+            upload = await client.post("/api/agents/cliente_a/file", headers=headers,
+                                       files={"file": ("nota.txt", b"guardado", "text/plain")})
+        assert upload.status_code == 200
+        saved = Path(upload.json()["path"])
+        assert saved.parent == tmp_path / "durable-uploads" / "agents" / "cliente_a"
+        assert saved.read_bytes() == b"guardado"
+        assert (await client.get(f"/api/agents/cliente_a/file/{saved.name}",
+                                 headers=headers)).content == b"guardado"
+        assert (await client.get(f"/uploads/agents/cliente_a/{saved.name}",
+                                 headers=headers)).content == b"guardado"
         assert (await client.get("/api/agents/cliente_a/mcp", headers=headers)).status_code == 404
         assert (await client.get("/api/fleet", headers=headers)).status_code == 404
         assert (await client.get("/api/tts/motores?slug=cliente_b", headers=headers)).status_code == 403

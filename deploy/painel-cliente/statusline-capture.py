@@ -33,6 +33,15 @@ def main() -> int:
     context = payload.get("context_window") or {}
     cost = payload.get("cost") or {}
     name = model.get("display_name") if isinstance(model, dict) else None
+    model_id = model.get("id") if isinstance(model, dict) else None
+    # O JSON oficial pode trazer display_name="Opus" sem versão; o parser do
+    # cockpit precisa de "Opus 5.5". A versão está no id oficial.
+    if not isinstance(name, str) or not re.search(r"\b\d+(?:\.\d+)?\b", name):
+        match = re.match(r"^claude-(fable|opus|sonnet|haiku)-(\d+)-(\d+)",
+                         model_id if isinstance(model_id, str) else "")
+        if match:
+            family, major, minor = match.groups()
+            name = f"{family.title()} {major}.{minor}"
     pct = context.get("used_percentage") if isinstance(context, dict) else None
     duration_ms = cost.get("total_duration_ms") if isinstance(cost, dict) else None
     if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool) and duration_ms >= 0:

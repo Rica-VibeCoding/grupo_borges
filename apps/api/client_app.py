@@ -167,6 +167,7 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
     app.state.internal_token = token
     app.state.hook_token = hook_token
     app.state.client_events = ClientEvents()
+    app.state.agent_uploads_base = Path(os.environ.get("PAINEL_UPLOADS_DIR", "/casa/painel/uploads")) / "agents"
 
     @app.middleware("http")
     async def internal_gate(request: Request, call_next):
@@ -228,7 +229,15 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
         excerpt = await agents.tmux_driver.capture_pane_excerpt(agent["tmux_session"])
         elapsed = agents.tmux_driver.parse_session_elapsed_from_pane(excerpt)
         agent["pane_excerpt"] = excerpt
-        agent["pane_session_started_at"] = int(time.time()) - elapsed if elapsed is not None else None
+        anchor = int(time.time())
+        if elapsed is not None:
+            cc_status = await agents._load_cc_status(request.app.state.db, slug)
+            if cc_status.path is not None and not cc_status.fell_back:
+                try:
+                    anchor = int(cc_status.path.stat().st_mtime)
+                except OSError:
+                    pass
+        agent["pane_session_started_at"] = anchor - elapsed if elapsed is not None else None
         return agent
 
     @app.get("/api/agents/{slug}")

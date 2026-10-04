@@ -26,7 +26,7 @@ async def test_state_stream_emits_initial_and_watcher_change(monkeypatch):
         return agents.AgentPainelVida(sessao=True, processo=True)
 
     async def cc_status(_db, _slug):
-        return None
+        return agents._CCStatus(None, None, None)
 
     monkeypatch.setattr(agents, "_build_painel_vida", vida)
     async def capture(_session):

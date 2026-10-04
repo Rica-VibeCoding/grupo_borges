@@ -3452,6 +3452,11 @@ _SEMAFORO_IMAGEM = asyncio.Semaphore(2)
 _AGENT_UPLOADS_BASE = Path(__file__).resolve().parents[1] / "uploads" / "agents"
 
 
+def _agent_uploads_base(request: Request) -> Path:
+    """Cliente usa volume durável; a frota mantém o caminho histórico."""
+    return getattr(request.app.state, "agent_uploads_base", _AGENT_UPLOADS_BASE)
+
+
 def _voice_log_tail(value: str | bytes | None) -> str:
     """Bound subprocess diagnostics while retaining the most recent cause."""
     if isinstance(value, bytes):
@@ -4098,7 +4103,7 @@ async def post_agent_image(
 
     started_at = time.monotonic()
     filename = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
-    dest_dir = _AGENT_UPLOADS_BASE / slug
+    dest_dir = _agent_uploads_base(request) / slug
     absolute_path = dest_dir / filename
 
     try:
@@ -4195,7 +4200,7 @@ async def post_agent_file(
 
     stored_name = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:12]}{ext}"
     original_name = _sanitize_upload_filename(file.filename, fallback=stored_name)
-    dest_dir = _AGENT_UPLOADS_BASE / slug
+    dest_dir = _agent_uploads_base(request) / slug
     absolute_path = dest_dir / stored_name
 
     try:
@@ -4245,7 +4250,7 @@ async def get_agent_file(slug: str, filename: str, request: Request) -> FileResp
     """
     await _get_agent_or_404(request, slug)
 
-    base = (_AGENT_UPLOADS_BASE / slug).resolve(strict=False)
+    base = (_agent_uploads_base(request) / slug).resolve(strict=False)
     try:
         # O `resolve()` fica DENTRO do try junto com o `relative_to`: ele levanta
         # antes de qualquer guarda quando o nome tem byte nulo (`%00.png` dava

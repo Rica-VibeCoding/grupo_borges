@@ -41,6 +41,7 @@ PAINEL_CONTROL_TOKEN_FILE=/etc/painel/control-token
 PAINEL_RESUME_FILE=/casa/painel/resume-id
 GB_AGENTS_YAML=/etc/painel/agent.yaml
 GB_DB_PATH=/casa/painel/api.db
+PAINEL_UPLOADS_DIR=/casa/painel/uploads
 GB_CLAUDE_PROJECTS_DIR=/casa/claude/projects
 CLAUDE_CONFIG_DIR=/casa/claude
 COCKPIT_TMUX_SOCKET=agente
@@ -48,7 +49,7 @@ GB_STT_SCRIPT=/casa/claude/scripts/stt-openai.sh
 E
 ex $S $S sh -c 'chmod 0640 /etc/painel/agent.yaml /etc/painel/cliente.env; chgrp agente /etc/painel/agent.yaml /etc/painel/cliente.env
   install -d -m 0700 -o agente -g agente /casa/painel
-  install -d -o agente -g agente /opt/painel/apps/api/uploads; chown -R agente:agente /opt/painel/apps/api/uploads
+  install -d -m 0700 -o agente -g agente /casa/painel/uploads/agents
   echo "d /run/painel 0770 agente agente -" > /etc/tmpfiles.d/painel.conf; systemd-tmpfiles --create /etc/tmpfiles.d/painel.conf
   install -m 0644 /opt/painel/deploy/painel-cliente/painel-cliente-api.service /etc/systemd/system/
   install -d /etc/systemd/system/agente.service.d
