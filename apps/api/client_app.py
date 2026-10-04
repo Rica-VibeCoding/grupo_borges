@@ -35,6 +35,7 @@ AGENT_ROUTES = {
     ("GET", "/{slug}/pane/stream"),
     ("POST", "/{slug}/input"),
     ("POST", "/{slug}/interromper"),
+    ("POST", "/{slug}/destrava"),
     ("POST", "/{slug}/image"),
     ("POST", "/{slug}/file"),
     ("GET", "/{slug}/file/{filename}"),

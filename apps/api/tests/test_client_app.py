@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -50,12 +51,21 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
         assert any(row["id"] == session_id for row in response.json()["conversas"])
         assert (await client.get("/api/agents/cliente_b", headers=headers)).status_code == 403
         assert (await client.post("/api/agents/cliente_b/input", headers=headers, json={"text": "x"})).status_code == 403
+        assert (await client.post("/api/agents/cliente_b/destrava", headers=headers)).status_code == 403
+        with patch("routers.agents.tmux_driver.recover_input", new=AsyncMock(return_value={
+            "tmux_delivered": True, "degrau": 2, "acao": "input_vazio",
+        })) as recover:
+            destrava = await client.post("/api/agents/cliente_a/destrava", headers=headers)
+        assert destrava.status_code == 200
+        assert destrava.json()["tmux_delivered"] is True
+        recover.assert_awaited_once_with("agente")
         assert (await client.get("/api/agents/cliente_a/mcp", headers=headers)).status_code == 404
         assert (await client.get("/api/fleet", headers=headers)).status_code == 404
         assert (await client.get("/api/tts/motores?slug=cliente_b", headers=headers)).status_code == 403
         assert (await client.post("/api/tts/synth", headers=headers,
                                   json={"slug": "cliente_b", "text": "segredo"})).status_code == 403
         hook = {"authorization": "Bearer " + "h" * 40}
+        assert (await client.post("/api/agents/cliente_a/destrava", headers=hook)).status_code == 401
         assert (await client.get("/api/agents/cliente_a", headers=hook)).status_code == 401
         assert (await client.post("/api/agents/cliente_b/conversas/estacionar", headers=hook,
                                   json={"titulo": "x"})).status_code == 401

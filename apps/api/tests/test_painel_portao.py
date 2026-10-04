@@ -52,6 +52,13 @@ async def test_login_posse_e_repasse_sse(tmp_path):
         assert (await browser.post("/api/agents/cliente_b/input",
                                    headers={"origin": config["public_origin"]},
                                    json={"text": "Roubar"})).status_code == 403
+        assert (await browser.post("/api/agents/cliente_b/destrava",
+                                   headers={"origin": config["public_origin"]})).status_code == 403
+        assert (await browser.post("/api/agents/cliente_a/destrava")).status_code == 403
+        assert (await browser.post("/api/agents/cliente_a/destrava",
+                                   headers={"origin": config["public_origin"]})).status_code == 200
+        assert seen[-1][2] == "/api/agents/cliente_a/destrava"
+        count = len(seen)
         assert (await browser.get("/uploads/agents/cliente_b/a.png")).status_code == 403
         assert (await browser.post("/api/agents/cliente_a/conversas/estacionar",
                                    headers={"origin": config["public_origin"]},
