@@ -32,7 +32,7 @@
 
 /** Teto de contexto da frota. Não é enfeite: acima disso o agente compacta.
  *  Ordem do Rica de 30/07, escrita em `ze-shared/AGENTS.md`. */
-export const TETO_PCT = 30;
+export const TETO_PCT = 25;
 
 /** Quanto da barra a faixa de operação (0 → teto) toma para si. O resto da
  *  escala inteira se espreme nos 30% que sobram — de propósito: ali o que
@@ -51,9 +51,10 @@ export function passouDoTeto(pct: number): boolean {
   return pct > TETO_PCT;
 }
 
-/** Onde o âmbar começa: o aviso antes do teto (ordem do Rica, 28/09 — 🟡 aos
- *  25%, 🔴 aos 30%). Chegar em 30% sem aviso era descobrir o teto já em cima. */
-export const AVISO_PCT = 25;
+/** Onde o âmbar começa: o aviso antes do teto (ordem do Rica, 28/09 — 🟡 cinco
+ *  pontos antes, 🔴 depois do teto; o teto baixou pra 25% em 04/10). Chegar no
+ *  teto sem aviso era descobrir o teto já em cima. */
+export const AVISO_PCT = 20;
 
 /** A cor do contexto em três faixas. O teto continua sendo `passouDoTeto`. */
 export function corDoContexto(pct: number): string {

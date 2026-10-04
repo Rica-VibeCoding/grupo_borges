@@ -26,10 +26,10 @@ describe('o teto manda na régua', () => {
   });
 
   it('avisa em âmbar antes do teto e fica vermelho depois dele', () => {
-    assert.equal(corDoContexto(24), 'var(--ck-text-secondary)');
+    assert.equal(corDoContexto(19), 'var(--ck-text-secondary)');
+    assert.equal(corDoContexto(20), 'var(--ck-state-attention)');
     assert.equal(corDoContexto(25), 'var(--ck-state-attention)');
-    assert.equal(corDoContexto(30), 'var(--ck-state-attention)');
-    assert.equal(corDoContexto(31), 'var(--ck-state-fail)');
+    assert.equal(corDoContexto(26), 'var(--ck-state-fail)');
   });
 });
 
