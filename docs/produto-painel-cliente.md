@@ -67,20 +67,27 @@ Há ping SSE a cada 15 s e reconciliação a cada 30 s para tmux/controlador e
 statusline, que não passam pelo watcher. Reconnect recebe novo retrato completo;
 não há cursor nem replay. O portão valida sessão e posse antes de abrir o SSE.
 
-**Tela, item 2:** criar `apps/cockpit/app/api/agents/[slug]/events/route.ts`
-usando `repassaSse` de `lib/repasse-sse.ts`; o rewrite genérico passa pelo
-`compress: true` do Next e segura eventos pequenos. Em
-`lib/usa-frota-do-cliente.ts`, substituir o timer de 5 s por `EventSource`
-para essa URL, ouvir `state`, montar a frota com `agent` e `painel.vida`/
-`painel.contexto` e usar `status` do servidor. Adaptar o tipo local de `painel`
-para esse recorte; o endpoint `/painel` completo continua servindo a gaveta.
-Fechar a conexão ao desmontar e religar ao voltar à aba; no erro de conexão,
-verificar `/auth/me` para distinguir sessão expirada de queda temporária. O
-`GET /{slug}` continua útil no SSR e como primeira leitura.
+**Tela — estado empurrado (feito):** `apps/cockpit/app/api/agents/[slug]/events/route.ts`
+repassa o SSE com `repassaSse` (o rewrite genérico passaria pelo
+`compress: true` do Next e seguraria eventos pequenos). Em
+`lib/usa-frota-do-cliente.ts` o timer de 5 s saiu: um `EventSource` ouve
+`state`, `leEstado` (`lib/frota-do-cliente.ts`) confere a forma e a frota de
+um é montada com `agent`, `painel.vida`/`painel.contexto` e o `status` do
+servidor, que vence a cópia local de `derive_agent_status`. A cópia sobra
+para o SSR (só `GET /{slug}`) e para o `/painel` que Ligar/Desligar publicam
+antes do próximo `state`. Queda de rede é religada pelo próprio navegador;
+resposta recusada (401, 403, 502) fecha o `EventSource`, e aí o `/auth/me`
+decide: 401 vai ao `/entrar`, `trocar_senha` ao `/senha`, sessão boa religa
+com espera de 1 s dobrando até 30 s (`esperaParaReligar`). Aba escondida
+fecha a conexão; voltar abre outra, que chega com retrato completo. O
+`pedeReleituraDaFrota` não tem mais ouvinte no modo cliente: as mutações da
+API já empurram `state`.
 
-**Tela, item 3:** `GET /{slug}` e cada `state.agent` agora trazem
-`pane_excerpt` e `pane_session_started_at`; retirar a suposição de ausência
-desses campos em `lib/frota-do-cliente.ts`. A `Statusline` existente lê os dois.
+**Tela — statusline da gaveta (feito):** `GET /{slug}` e cada `state.agent`
+trazem `pane_excerpt` e `pane_session_started_at`; `agenteDoCliente` os
+repassa e a `Statusline` da gaveta volta a mostrar modelo e tempo de sessão
+como na frota. O `?? null` fica só para back mais velho (`undefined` no
+relógio vira `NaN:NaN`).
 O script de statusline do contêiner imprime modelo e duração no formato que
 `parseModelFromPane` reconhece. `pane_session_started_at` é a âncora da duração
 ativa reportada pelo Claude Code, não uma data de criação do arquivo JSONL.
@@ -119,6 +126,20 @@ rota do portão com essa sessão devolve `403 {"detail":"trocar_senha"}`, exceto
 clientes existentes na migração começam com troca obrigatória. Senha esquecida
 é redefinida localmente pelo Rica, sem recuperação por e-mail; o comando está
 no [roteiro de deploy](produto-painel-cliente-deploy.md).
+
+**Tela da senha:** `/senha` (`app/senha/page.tsx`, só no modo cliente; na
+frota é 404). Com `trocar_senha` true, login (`destinoDoLogin`), raiz
+(`destinoDa`) e chat (`exigeSessao`) levam a ela, que mostra só "Crie sua
+senha" — senha recebida, nova e confirmação — com o Sair embaixo; trocou, vai
+ao chat por navegação cheia. Sem troca pendente, "Trocar senha" no pé da
+gaveta (`SairDoPainel`) abre a mesma tela, que troca, avisa que as outras
+sessões caíram e oferece "Voltar ao chat". O POST sai do navegador, como o
+login, por causa do `Origin`. A tela barra antes do envio o que o portão
+recusaria (menos de 8, igual à atual) e a confirmação diferente; 401, 422,
+429, 403 e queda viram frases próprias em `components/entrar/senha.ts`. Um
+401 primeiro consulta `/auth/me`: sessão expirada vai ao `/entrar` em vez de
+culpar a senha atual. Um 403 `trocar_senha` no meio do uso é pego pelo
+`/events` fechado (acima).
 
 Toda
 requisição `/api` ou `/uploads`, inclusive SSE e TTS,
