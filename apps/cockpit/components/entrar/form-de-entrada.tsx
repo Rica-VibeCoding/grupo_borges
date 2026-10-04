@@ -17,6 +17,7 @@
  */
 import { useActionState } from 'react';
 
+import { CARTAO_DO_PORTAO, Campo, ErroDoPortao, TITULO_DO_PORTAO, botaoDoPortao } from './campo';
 import { ENTRADA_INICIAL, destinoDoLogin, recadoDaRecusa, type EstadoDaEntrada } from './entrada';
 
 async function entrar(_anterior: EstadoDaEntrada, dados: FormData): Promise<EstadoDaEntrada> {
@@ -44,51 +45,6 @@ async function entrar(_anterior: EstadoDaEntrada, dados: FormData): Promise<Esta
   }
 }
 
-const CAMPO = {
-  minHeight: 'var(--ck-touch-min)',
-  padding: '0 var(--ck-space-3)',
-  borderRadius: 'var(--ck-gv-raio-bloco)',
-  border: '1px solid var(--ck-edge-functional)',
-  background: 'var(--ck-gv-bloco)',
-  color: 'var(--ck-text-primary)',
-  fontSize: 'var(--ck-text-md)', // 16px: piso do Safari contra o zoom no foco
-} as const;
-
-const ROTULO = { fontSize: 'var(--ck-text-sm)', color: 'var(--ck-text-secondary)' } as const;
-
-function Campo({
-  nome,
-  rotulo,
-  tipo,
-  autoComplete,
-  inicial = '',
-}: {
-  nome: string;
-  rotulo: string;
-  tipo: string;
-  autoComplete: string;
-  inicial?: string;
-}) {
-  return (
-    <label className="flex flex-col" style={{ gap: 'var(--ck-space-1)' }}>
-      <span style={ROTULO}>{rotulo}</span>
-      <input
-        name={nome}
-        type={tipo}
-        defaultValue={inicial}
-        autoComplete={autoComplete}
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        required
-        // Foco sem anel colorido (estética §9.17): a própria borda clareia.
-        className="ck-campo outline-none focus-visible:[border-color:var(--ck-edge-composer-foco)]"
-        style={CAMPO}
-      />
-    </label>
-  );
-}
-
 export function FormDeEntrada() {
   const [estado, acao, enviando] = useActionState(entrar, ENTRADA_INICIAL);
 
@@ -96,15 +52,9 @@ export function FormDeEntrada() {
     <form
       action={acao}
       className="ck-gv flex w-full flex-col"
-      style={{
-        maxWidth: '380px',
-        gap: 'var(--ck-space-4)',
-        padding: 'var(--ck-space-5) var(--ck-space-4) var(--ck-space-4)',
-        borderRadius: 'var(--ck-gv-raio-cartao)',
-        background: 'var(--ck-gv-camada)',
-      }}
+      style={CARTAO_DO_PORTAO}
     >
-      <h1 className="leading-hero" style={{ fontSize: 'var(--ck-text-lg)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
+      <h1 className="leading-hero" style={TITULO_DO_PORTAO}>
         Entre para falar com o seu agente
       </h1>
 
@@ -113,27 +63,14 @@ export function FormDeEntrada() {
         <Campo nome="senha" rotulo="Senha" tipo="password" autoComplete="current-password" />
       </div>
 
-      {estado.erro ? (
-        <p role="alert" style={{ fontSize: 'var(--ck-text-sm)', color: 'var(--ck-state-attention)' }}>
-          {estado.erro}
-        </p>
-      ) : null}
+      <ErroDoPortao erro={estado.erro} />
 
       <button
         type="submit"
         disabled={enviando}
         aria-busy={enviando}
         className="flex items-center justify-center"
-        style={{
-          minHeight: '48px',
-          borderRadius: 'var(--ck-gv-raio-bloco)',
-          fontSize: 'var(--ck-text-sm)',
-          fontWeight: 600,
-          background: 'var(--ck-gv-ativo)',
-          color: 'var(--ck-text-primary)',
-          opacity: enviando ? 0.7 : 1,
-          transition: 'opacity var(--ck-dur-fast) var(--ck-ease)',
-        }}
+        style={botaoDoPortao(enviando)}
       >
         {enviando ? 'Entrando…' : 'Entrar'}
       </button>

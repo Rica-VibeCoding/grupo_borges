@@ -260,7 +260,7 @@ export function GavetaNova({
       </Cartao>
       ) : null}
 
-      {PECAS.sessaoDoPortao ? <SairDoPainel usuario={usuario} /> : null}
+      {PECAS.sessaoDoPortao ? <SairDoPainel usuario={usuario} trocaDeSenha /> : null}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import { fetchAgent } from '@grupo_borges/cockpit-core/api';
 import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import { MODO_CLIENTE } from './modo';
+import { precisaTrocarSenha } from './sessao-no-navegador';
 
 const API_BASE = process.env.API_BACKEND_URL ?? 'http://127.0.0.1:8002';
 
@@ -25,6 +26,8 @@ export type SessaoDoPortao = {
   usuario: string;
   papel: 'client' | 'admin';
   slug: string | null;
+  /** Senha provisória: o portão recusa tudo (403 `trocar_senha`) até a troca. */
+  trocarSenha: boolean;
 };
 
 /** O cabeçalho `cookie` do pedido em curso, inteiro. */
@@ -40,25 +43,34 @@ export const leSessao = cache(async (): Promise<SessaoDoPortao | null> => {
     const corpo = (await resposta.json()) as { username?: unknown; role?: unknown; slug?: unknown };
     if (typeof corpo.username !== 'string') return null;
     if (corpo.role !== 'client' && corpo.role !== 'admin') return null;
-    return { usuario: corpo.username, papel: corpo.role, slug: typeof corpo.slug === 'string' ? corpo.slug : null };
+    return {
+      usuario: corpo.username,
+      papel: corpo.role,
+      slug: typeof corpo.slug === 'string' ? corpo.slug : null,
+      trocarSenha: precisaTrocarSenha(corpo),
+    };
   } catch {
     return null;
   }
 });
 
-/** Para onde a sessão leva quem chega sem destino (`/`, `/entrar` já logado). */
+/** Para onde a sessão leva quem chega sem destino (`/`, `/entrar` já logado).
+ *  Senha provisória vence: até a troca, a única tela é a de criar a senha. */
 export function destinoDa(sessao: SessaoDoPortao | null): string {
+  if (sessao?.trocarSenha) return '/senha';
   return sessao?.slug ? `/agente/${encodeURIComponent(sessao.slug)}` : '/entrar';
 }
 
 /**
  * Porteiro das páginas em modo cliente. Sem sessão → `/entrar`. Cliente
  * pedindo o agente de outro → o dele (o portão já recusaria a API com 403; o
- * redirect só evita a tela quebrada). Admin passa: a UI dele é fase posterior.
+ * redirect só evita a tela quebrada). Senha provisória → `/senha`. Admin
+ * passa: a UI dele é fase posterior.
  */
 export async function exigeSessao(slugDaRota?: string): Promise<SessaoDoPortao> {
   const sessao = await leSessao();
   if (!sessao) redirect('/entrar');
+  if (sessao.trocarSenha) redirect('/senha');
   if (slugDaRota !== undefined && sessao.papel === 'client' && sessao.slug !== slugDaRota) {
     redirect(destinoDa(sessao));
   }

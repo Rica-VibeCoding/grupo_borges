@@ -18,3 +18,8 @@ test('o destino é o agente da sessão, e só um slug do cadastro', () => {
   assert.equal(destinoDoLogin({ slug: '../faxina' }), null);
   assert.equal(destinoDoLogin({ slug: 'https://fora.example' }), null);
 });
+
+test('senha provisória leva à tela de criar a senha antes do agente', () => {
+  assert.equal(destinoDoLogin({ slug: 'teste', trocar_senha: true }), '/senha');
+  assert.equal(destinoDoLogin({ slug: 'teste', trocar_senha: false }), '/agente/teste');
+});

@@ -17,10 +17,12 @@ export function recadoDaRecusa(status: number | null): string {
   return 'O servidor não conseguiu abrir a sessão agora. Tente de novo em instantes.';
 }
 
-/** Para onde ir depois do login: o agente do `GET /auth/me`. Sem slug (admin,
- *  fase posterior) não há tela de cliente para abrir. */
+/** Para onde ir depois do login: o agente do `GET /auth/me`, ou a tela de
+ *  criar a senha quando a dele é provisória. Sem slug (admin, fase posterior)
+ *  não há tela de cliente para abrir. */
 export function destinoDoLogin(corpo: unknown): string | null {
   if (!corpo || typeof corpo !== 'object') return null;
+  if ((corpo as { trocar_senha?: unknown }).trocar_senha === true) return '/senha';
   const slug = (corpo as { slug?: unknown }).slug;
   return typeof slug === 'string' && /^[a-z0-9_-]+$/.test(slug) ? `/agente/${slug}` : null;
 }
