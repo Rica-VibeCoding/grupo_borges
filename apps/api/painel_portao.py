@@ -71,6 +71,11 @@ class Login(BaseModel):
     senha: str = Field(min_length=1, max_length=1024)
 
 
+class Senha(BaseModel):
+    atual: str = Field(max_length=1024)
+    nova: str = Field(max_length=1024)
+
+
 @contextmanager
 def _db(path: str):
     conn = sqlite3.connect(path, timeout=5)
@@ -232,6 +237,35 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
     async def me(request: Request):
         session = _session(config, request.cookies.get(COOKIE))
         return JSONResponse(session) if session else JSONResponse({"detail": "unauthorized"}, status_code=401)
+
+    @app.post("/auth/senha")
+    async def senha(body: Senha, request: Request):
+        if not _origin_ok(request, config):
+            return JSONResponse({"detail": "origin_recusada"}, status_code=403)
+        token = request.cookies.get(COOKIE)
+        session = _session(config, token)
+        if not session:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        user = _user(config, session["username"])
+        if not user or not await asyncio.to_thread(password_matches, body.atual, user["password_hash"]):
+            return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
+        if len(body.nova) < 8 or body.nova == body.atual:
+            return JSONResponse({"detail": "nova_senha_fraca"}, status_code=422)
+        encoded = await asyncio.to_thread(password_hash, body.nova)
+        session_id = hashlib.sha256(token.encode()).hexdigest()
+        with _db(config["session_db"]) as conn:
+            changed = conn.execute(
+                "UPDATE users SET password_hash=?, trocar_senha=0 "
+                "WHERE username=? AND password_hash=?",
+                (encoded, session["username"], user["password_hash"]),
+            ).rowcount
+            if changed:
+                conn.execute("DELETE FROM sessions WHERE username=? AND id<>?",
+                             (session["username"], session_id))
+                conn.execute("DELETE FROM login_attempts WHERE username=?", (session["username"],))
+        if not changed:
+            return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
+        return Response(status_code=204)
 
     @app.post("/auth/logout")
     async def logout(request: Request):

@@ -155,3 +155,38 @@ async def test_users_migrated_once_from_config(tmp_path):
                                  json={"usuario": "ana", "senha": "senha nova"})
         assert new.status_code == 200
         assert (await browser.get("/auth/me")).json()["trocar_senha"] is False
+
+
+@pytest.mark.asyncio
+async def test_troca_senha_revoga_outras_sessoes_e_preserva_atual(tmp_path):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha inicial")}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config)
+    headers = {"origin": config["public_origin"]}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=config["public_origin"]) as atual, \
+               httpx.AsyncClient(transport=transport, base_url=config["public_origin"]) as antiga:
+        for browser in (atual, antiga):
+            assert (await browser.post("/auth/login", headers=headers,
+                                       json={"usuario": "ana", "senha": "senha inicial"})).status_code == 200
+        assert (await atual.post("/auth/senha", json={"atual": "senha inicial", "nova": "senha nova segura"})).status_code == 403
+        assert (await atual.post("/auth/senha", headers=headers,
+                                 json={"atual": "errada", "nova": "senha nova segura"})).status_code == 401
+        assert (await atual.post("/auth/senha", headers=headers,
+                                 json={"atual": "senha inicial", "nova": "curta"})).status_code == 422
+        assert (await atual.post("/auth/senha", headers=headers,
+                                 json={"atual": "senha inicial", "nova": "senha inicial"})).status_code == 422
+        changed = await atual.post("/auth/senha", headers=headers,
+                                   json={"atual": "senha inicial", "nova": "senha nova segura"})
+        assert changed.status_code == 204
+        assert (await atual.get("/auth/me")).json()["trocar_senha"] is False
+        assert (await antiga.get("/auth/me")).status_code == 401
+        assert (await antiga.post("/auth/login", headers=headers,
+                                  json={"usuario": "ana", "senha": "senha inicial"})).status_code == 401
+        assert (await antiga.post("/auth/login", headers=headers,
+                                  json={"usuario": "ana", "senha": "senha nova segura"})).status_code == 200
