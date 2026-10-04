@@ -76,7 +76,7 @@ PUID=$(ex portao portao id -u painel); PGID=$(ex portao portao id -g painel)
 push portao portao $W/interno /etc/painel/client-$S-token 0400 $PUID $PGID
 ex portao portao python3 - "$S" "$USR" "$HASH" <<'PY'
 import json,sys; s,u,h=sys.argv[1:]; p="/etc/painel/portao.json"; c=json.load(open(p))
-c["users"][u]={"role":"client","slug":s,"password_hash":h}
+c["users"][u]={"role":"client","slug":s,"password_hash":h,"trocar_senha":True}
 c["clients"][s]={"socket":f"/run/cliente-api/{s}.sock","token_file":f"/etc/painel/client-{s}-token"}
 json.dump(c,open(p,"w"),indent=1)
 PY

@@ -101,9 +101,26 @@ usam a mesma raiz. A frota conserva `apps/api/uploads/agents/`.
 
 `POST /auth/login` recebe usuário e senha. O portão confere `scrypt` com salt
 por usuário e cria sessão aleatória no SQLite local; o navegador recebe cookie
-`HttpOnly; Secure; SameSite=Lax`. `GET /auth/me` devolve o papel e o slug;
+`HttpOnly; Secure; SameSite=Lax`. O SQLite do portão é a fonte dos usuários,
+incluindo hash e `trocar_senha`; `config["users"]` só insere usuários ainda
+ausentes. Regravar a config ou reinstalar o código não restaura senha antiga.
+`GET /auth/me` devolve `username`, `role`, `slug` e `trocar_senha: bool`;
 `POST /auth/logout` revoga a sessão. `admin` existe no cadastro, mas a UI admin
-é fase posterior. Cinco senhas erradas bloqueiam o usuário por 15 min. Toda
+é fase posterior.
+
+`POST /auth/senha` recebe `{"atual": str, "nova": str}` e exige `Origin` igual
+à origem pública. Devolve `204` e mantém a sessão atual após gravar novo hash
+scrypt, zerar `trocar_senha` e revogar todas as outras sessões do usuário.
+Senha atual errada devolve `401`; nova com menos de 8 caracteres ou igual à
+atual devolve `422`. Cinco tentativas erradas de senha atual, somadas às de
+login, bloqueiam o usuário por 15 min. Enquanto `trocar_senha` é true, qualquer
+rota do portão com essa sessão devolve `403 {"detail":"trocar_senha"}`, exceto
+`/auth/me`, `/auth/senha`, `/auth/logout` e `/health`. Novos clientes e os
+clientes existentes na migração começam com troca obrigatória. Senha esquecida
+é redefinida localmente pelo Rica, sem recuperação por e-mail; o comando está
+no [roteiro de deploy](produto-painel-cliente-deploy.md).
+
+Toda
 requisição `/api` ou `/uploads`, inclusive SSE e TTS,
 passa por sessão e posse; rotas sem slug de agente são vinculadas ao slug da
 sessão. Mutação exige `Origin` igual à origem pública configurada. O portão

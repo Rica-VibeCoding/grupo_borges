@@ -43,14 +43,19 @@
    e, se voz em tempo real for habilitada, a chave OpenAI **do próprio cliente**
    em `/casa/claude/secrets/openai-api-key.txt` (modo `0600`, usuário `agente`).
 4. No portão, `/etc/painel/portao.json` tem `public_origin`, `session_db`,
-   `users` (`usuario -> {role, slug, password_hash}`), `clients`
+   `users` (`usuario -> {role, slug, password_hash, trocar_senha}`), `clients`
    (`slug -> {socket, token_file}`), `controller: {socket, token_file}`.
    `socket` de `teste` = `/run/cliente-api/teste.sock`; o do controlador =
    `/run/painel/control.sock`; `public_origin` =
    `https://agentes.conectamoveis.net.br`; `session_db` =
    `/var/lib/painel/sessions.db` (diretório `painel:painel 0700`). O hash de
    senha sai de `python painel_portao.py`
-   (prompt sem eco). `API_BACKEND_URL=http://127.0.0.1:8002` no build e runtime
+   (prompt sem eco). Em usuários novos, `trocar_senha` é `true`; o
+   `painel-add.sh` já grava esse valor. O JSON é apenas semente para novos
+   usuários: depois do primeiro boot, hash e indicador de troca moram em
+   `/var/lib/painel/sessions.db`. Reinstalar o código ou regravar o JSON não
+   substitui os dados de um usuário existente. Preserve esse banco nos backups.
+   `API_BACKEND_URL=http://127.0.0.1:8002` no build e runtime
    do Next no portão. O tunnel cloudflared aponta para o Next, sem publicar
    8002/8010 na rede.
 5. No hospedeiro, `/etc/painel/controlador.json` tem `token_file`,
@@ -94,8 +99,8 @@
    mas a variável deixa o volume explícito. Distribuir o checkout desta branch
    para `teste`, `fred` e `portao` com o procedimento de instalação existente;
    o portão precisa da lista positiva nova para `/destrava` e `/events`.
-   Atualizar o script `statusline-capture.py` nos dois clientes. Não há mudança
-   de banco nem de socket.
+   Atualizar o script `statusline-capture.py` nos dois clientes. Nesta rodada
+   há migração do banco do portão; os sockets não mudam.
 3. Reiniciar `painel-cliente-api.service` em `teste` e `fred`, depois
    `painel-portao.service` no portão. Verificar `/health` do portão e, com
    sessão de cada cliente, `POST /api/agents/<slug>/destrava` **só quando o
@@ -112,3 +117,32 @@
    `NEXT_PUBLIC_COCKPIT_MODO=cliente` e
    `API_BACKEND_URL=http://127.0.0.1:8002`, publicar o build no portão e
    testar `teste` antes de `fred`.
+
+## Aplicar a troca de senha na instalação existente
+
+1. Fazer backup de `/var/lib/painel/sessions.db` no contêiner `portao` e
+   distribuir o código atualizado deste checkout para ele. Reiniciar
+   `painel-portao.service`. No boot, a tabela `users` nasce no SQLite e recebe
+   os usuários do JSON como semente, com troca obrigatória para clientes.
+2. No hospedeiro, forçar explicitamente `teste` e `fred` a trocar no próximo
+   acesso, mesmo se o banco já tiver sido criado por um boot anterior:
+
+   ```sh
+   incus exec portao --project portao -- runuser -u painel -- /opt/painel/apps/api/.venv/bin/python /opt/painel/apps/api/painel_portao.py --config /etc/painel/portao.json force-change teste fred
+   ```
+
+   O comando falha se algum usuário não existir e não deixa atualização
+   parcial. A sessão aberta passa a receber `403 trocar_senha` nas rotas do
+   painel. O cliente consulta `GET /auth/me`, troca em `POST /auth/senha` e
+   continua na sessão atual. Outras sessões caem.
+3. Se o cliente esquecer a senha, o Rica define uma senha temporária no
+   terminal, sem pô-la no histórico nem em argumentos. Exemplo para `teste`:
+
+   ```sh
+   incus exec portao --project portao -- runuser -u painel -- /opt/painel/apps/api/.venv/bin/python /opt/painel/apps/api/painel_portao.py --config /etc/painel/portao.json reset-password teste
+   ```
+
+   O comando pede a senha duas vezes sem eco, grava novo hash, revoga todas as
+   sessões do usuário e exige que ele troque a senha temporária no próximo
+   login. O login passa a usar o hash do SQLite, mesmo que o JSON contenha o
+   hash anterior. Não há reset por e-mail.

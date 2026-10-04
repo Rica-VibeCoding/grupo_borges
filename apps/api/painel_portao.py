@@ -356,9 +356,54 @@ def load_config(path: str) -> dict:
     return config
 
 
+def force_password_change(db_path: str, usernames: list[str]) -> None:
+    with _db(db_path) as conn:
+        for username in usernames:
+            if not conn.execute("UPDATE users SET trocar_senha=1 WHERE username=?", (username,)).rowcount:
+                raise ValueError(f"usuário não cadastrado: {username}")
+
+
+def reset_password(db_path: str, username: str, new_password: str) -> None:
+    if len(new_password) < 8:
+        raise ValueError("a nova senha precisa ter pelo menos 8 caracteres")
+    encoded = password_hash(new_password)
+    with _db(db_path) as conn:
+        if not conn.execute(
+            "UPDATE users SET password_hash=?, trocar_senha=1 WHERE username=?",
+            (encoded, username),
+        ).rowcount:
+            raise ValueError(f"usuário não cadastrado: {username}")
+        conn.execute("DELETE FROM sessions WHERE username=?", (username,))
+        conn.execute("DELETE FROM login_attempts WHERE username=?", (username,))
+
+
 app = create_portao_app(load_config(os.environ["PAINEL_PORTAO_CONFIG"])) if os.environ.get("PAINEL_PORTAO_CONFIG") else None
 
 
 if __name__ == "__main__":
+    import argparse
     import getpass
-    print(password_hash(getpass.getpass("Senha: ")))
+    import sys
+
+    if len(sys.argv) == 1:
+        print(password_hash(getpass.getpass("Senha: ")))
+    else:
+        parser = argparse.ArgumentParser(description="Administração local de senhas do portão")
+        parser.add_argument("--config", required=True, help="/etc/painel/portao.json")
+        commands = parser.add_subparsers(dest="command", required=True)
+        force = commands.add_parser("force-change")
+        force.add_argument("usuarios", nargs="+")
+        reset = commands.add_parser("reset-password")
+        reset.add_argument("usuario")
+        args = parser.parse_args()
+        db_path = json.loads(Path(args.config).read_text(encoding="utf-8"))["session_db"]
+        try:
+            if args.command == "force-change":
+                force_password_change(db_path, args.usuarios)
+            else:
+                new_password = getpass.getpass("Nova senha temporária: ")
+                if new_password != getpass.getpass("Repita a senha: "):
+                    raise ValueError("as senhas não coincidem")
+                reset_password(db_path, args.usuario, new_password)
+        except ValueError as exc:
+            parser.error(str(exc))

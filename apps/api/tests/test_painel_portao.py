@@ -5,7 +5,8 @@ import sqlite3
 import httpx
 import pytest
 
-from painel_portao import create_portao_app, password_hash
+from painel_portao import (create_portao_app, force_password_change, password_hash,
+                          reset_password)
 
 
 @pytest.mark.asyncio
@@ -226,3 +227,30 @@ async def test_troca_obrigatoria_bloqueia_portao_ate_mudar_senha(tmp_path):
                                    json={"atual": "senha inicial", "nova": "senha nova segura"})).status_code == 204
         assert (await browser.get("/api/agents/a")).status_code == 200
         assert (await browser.post("/auth/logout", headers=headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_reset_local_forca_troca_e_revoga_sessoes(tmp_path):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"teste": {"role": "client", "slug": "teste",
+                            "password_hash": password_hash("senha inicial"), "trocar_senha": False}},
+        "clients": {"teste": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config)
+    headers = {"origin": config["public_origin"]}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "teste", "senha": "senha inicial"})).status_code == 200
+        force_password_change(config["session_db"], ["teste"])
+        assert (await browser.get("/auth/me")).json()["trocar_senha"] is True
+        reset_password(config["session_db"], "teste", "nova temporaria")
+        assert (await browser.get("/auth/me")).status_code == 401
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "teste", "senha": "senha inicial"})).status_code == 401
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "teste", "senha": "nova temporaria"})).status_code == 200
+        assert (await browser.get("/auth/me")).json()["trocar_senha"] is True
