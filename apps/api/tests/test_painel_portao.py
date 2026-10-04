@@ -5,6 +5,7 @@ import sqlite3
 import httpx
 import pytest
 
+import painel_portao
 from painel_portao import create_portao_app, force_password_change, password_hash, reset_password
 
 
@@ -280,3 +281,31 @@ async def test_tentativas_de_senha_atual_compartilham_limite_do_login(tmp_path):
                                    json={"atual": "senha inicial", "nova": "senha nova segura"})).status_code == 429
         assert (await browser.post("/auth/login", headers=headers,
                                    json={"usuario": "ana", "senha": "senha inicial"})).status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_login_em_andamento_nao_cria_sessao_apos_troca(tmp_path, monkeypatch):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha inicial")}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config)
+    matches = painel_portao.password_matches
+
+    def troca_durante_verificacao(password, encoded):
+        result = matches(password, encoded)
+        with sqlite3.connect(config["session_db"]) as conn:
+            conn.execute("UPDATE users SET password_hash=? WHERE username='ana'",
+                         (password_hash("senha nova segura"),))
+        return result
+
+    monkeypatch.setattr(painel_portao, "password_matches", troca_durante_verificacao)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        response = await browser.post("/auth/login", headers={"origin": config["public_origin"]},
+                                      json={"usuario": "ana", "senha": "senha inicial"})
+        assert response.status_code == 401
+        assert (await browser.get("/auth/me")).status_code == 401

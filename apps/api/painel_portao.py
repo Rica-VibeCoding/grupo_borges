@@ -244,10 +244,17 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
             return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
         token = secrets.token_urlsafe(32)
         with _db(config["session_db"]) as conn:
-            conn.execute("DELETE FROM login_attempts WHERE username=?", (username,))
-            conn.execute("DELETE FROM sessions WHERE expires<=?", (int(time.time()),))
-            conn.execute("INSERT INTO sessions VALUES (?, ?, ?)",
-                         (hashlib.sha256(token.encode()).hexdigest(), username, int(time.time()) + SESSION_SECONDS))
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute("SELECT password_hash FROM users WHERE username=?",
+                                   (username,)).fetchone()
+            if current and current[0] == encoded:
+                conn.execute("DELETE FROM login_attempts WHERE username=?", (username,))
+                conn.execute("DELETE FROM sessions WHERE expires<=?", (int(time.time()),))
+                conn.execute("INSERT INTO sessions VALUES (?, ?, ?)",
+                             (hashlib.sha256(token.encode()).hexdigest(), username,
+                              int(time.time()) + SESSION_SECONDS))
+        if not current or current[0] != encoded:
+            return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
         response = JSONResponse({"usuario": username, "role": user["role"], "slug": user.get("slug")})
         response.set_cookie(COOKIE, token, max_age=SESSION_SECONDS, httponly=True, secure=True, samesite="lax")
         return response
