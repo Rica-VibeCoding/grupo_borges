@@ -69,26 +69,6 @@ agents:
       - { name: fc_reunioes, db: ze, description: "Reuniões e feedbacks com usuários Fluyt" }
       - { name: email_historico_log, db: ze, description: "Log de emails enviados pelos agentes" }
 
-  # [2026-08-11 Pavan] Saiu do cockpit no mesmo dia em que entrou, por ordem
-  # do Rica: "ele tem que ser ferramenta, não agente ligado à tropa". Continua
-  # fora do monorepo (/home/clawd/repos/maestro, repo próprio) e sem persona
-  # de família (sem sobrenome, sem origem) — isso não mudou.
-  # [2026-08-13 Rica] Card de volta: precisa de visibilidade pra acompanhar o
-  # dev remoto do apps/pos, que está travando. can_review vazio de propósito —
-  # ele não entra na malha de revisão da tropa.
-  - slug: maestro
-    name: Maestro
-    role: Ferramenta de orquestração — casas remotas (PC)
-    emoji: "🎼"
-    tmux_session: maestro
-    workspace_path: /home/clawd/repos/maestro
-    cli_default: claude_code
-    model_default: opus
-    capabilities:
-      - orquestracao-casas-psmux
-      - dev-remoto-pc
-    can_review: []
-
   - slug: vinicius
     name: Vinicius Zanella
     aka: Vini
@@ -211,6 +191,20 @@ agents:
     model_default: opus
     capabilities:
       - fluyt-comercial
+    can_review: []
+
+  # [2026-10-04 Pavan] Entrou no lugar do Maestro (aposentado), por ordem do Rica:
+  # um agente por app do Fluyt, todos no mesmo clone. Herdou o bot e a voz do Maestro.
+  - slug: fluytpos
+    name: Fluyt Pós
+    role: Especialista — Fluyt Pós-venda (apps/pos)
+    emoji: "📦"
+    tmux_session: fluytpos
+    workspace_path: /home/clawd/repos/fluytcom/apps/pos
+    cli_default: claude_code
+    model_default: opus
+    capabilities:
+      - fluyt-pos
     can_review: []
 
   # [2026-08-08 Pavan] Motor DeepSeek V4-Flash via assinatura OpenCode Go
