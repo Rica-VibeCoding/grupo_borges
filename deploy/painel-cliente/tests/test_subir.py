@@ -81,11 +81,14 @@ def test_settings_mescla_sem_duplicar(tmp_path):
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"env": {"EXISTENTE": "sim"}}))
     user = pwd.getpwuid(os.getuid()).pw_name
-    module.main(path, user)
+    module.main(path, user, ROOT / "deploy/painel-cliente/skills")
     first = path.read_text()
-    module.main(path, user)
+    module.main(path, user, ROOT / "deploy/painel-cliente/skills")
     assert path.read_text() == first
     data = json.loads(first)
     assert data["env"]["EXISTENTE"] == "sim"
     assert len(data["hooks"]["SessionStart"]) == 1
+    assert len(data["hooks"]["UserPromptSubmit"]) == 1
     assert data["statusLine"]["command"].endswith("statusline-capture.py")
+    for name in ("canal-cockpit", "conversa-por-voz"):
+        assert (tmp_path / "skills" / name / "SKILL.md").is_file()

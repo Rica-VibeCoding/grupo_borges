@@ -51,6 +51,7 @@ e nos seguintes, preservando as demais chaves. Slug, tokens e `/etc/painel/*`
 continuam sendo criados por `painel-add.sh` depois de lançar o cliente da
 imagem. Pare a instância de construção antes de `incus publish ... --alias
 agente-v4`; não reconstruir clientes existentes só para atualizar o painel.
+O `ExecStartPre` também liga `UserPromptSubmit` e cria links das duas skills em `/casa/claude/skills/`, preservando skills existentes.
 Para gerar o arquivo a enviar, na Oracle 0 use
 `git archive --format=tar --prefix=painel/ HEAD apps/api deploy/painel-cliente | gzip > /tmp/painel.tgz`.
 Copie esse arquivo, o `uv` aarch64 e o `instalar.sh` alterado para a Oracle 1.
