@@ -165,7 +165,8 @@ systemctl restart painel-tela.service
 systemctl is-active --quiet painel-tela.service
 rm -f /tmp/painel-tela.tgz /tmp/painel-node
 SH
-  ex portao portao curl -fsS --max-time 10 -o /dev/null http://127.0.0.1:8080/entrar
+  ex portao portao curl -fsS --max-time 10 --retry 30 --retry-connrefused \
+    --retry-delay 2 --retry-max-time 60 -o /dev/null http://127.0.0.1:8080/entrar
 }
 
 voltar() {
