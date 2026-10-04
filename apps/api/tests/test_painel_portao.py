@@ -5,8 +5,7 @@ import sqlite3
 import httpx
 import pytest
 
-from painel_portao import (create_portao_app, force_password_change, password_hash,
-                          reset_password)
+from painel_portao import create_portao_app, force_password_change, password_hash, reset_password
 
 
 @pytest.mark.asyncio
