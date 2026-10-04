@@ -63,7 +63,8 @@ async def test_two_clients_cannot_cross_read_or_act_with_fake_tmux(tmp_path: Pat
         portao = create_portao_app({
             "public_origin": "https://agentes.conectamoveis.net.br",
             "session_db": str(tmp_path / "sessions.db"),
-            "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha")}},
+            "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha"),
+                              "trocar_senha": False}},
             "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40},
                         "b": {"socket": "/tmp/b.sock", "token": "b" * 40}},
             "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
