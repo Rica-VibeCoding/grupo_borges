@@ -182,6 +182,13 @@ export const config: NextConfig = {
   // variável e continua em `.next`.
   distDir: DIST_DIR,
 
+  // O painel do cliente roda no portão da Oracle 1, sem o monorepo: o build dele
+  // sai `standalone` (servidor + só os módulos rastreados). A frota não define a
+  // variável e segue no `next start` de sempre.
+  ...(process.env.COCKPIT_STANDALONE === '1'
+    ? { output: 'standalone' as const, outputFileTracingRoot: join(process.cwd(), '../..') }
+    : {}),
+
   // O core é consumido como SOURCE (subpath exports apontando pra .ts), sem build
   // step. É isto que transpila.
   transpilePackages: ['@grupo_borges/cockpit-core'],
