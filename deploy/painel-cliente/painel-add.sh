@@ -51,24 +51,8 @@ ex $S $S sh -c 'chmod 0640 /etc/painel/agent.yaml /etc/painel/cliente.env; chgrp
   install -d -m 0700 -o agente -g agente /casa/painel
   install -d -m 0700 -o agente -g agente /casa/painel/uploads/agents
   echo "d /run/painel 0770 agente agente -" > /etc/tmpfiles.d/painel.conf; systemd-tmpfiles --create /etc/tmpfiles.d/painel.conf
-  install -m 0644 /opt/painel/deploy/painel-cliente/painel-cliente-api.service /etc/systemd/system/
-  install -d /etc/systemd/system/agente.service.d
-  printf "[Service]\nEnvironment=PAINEL_HOOK_TOKEN_FILE=/etc/painel/hook-token\nEnvironment=PAINEL_RESUME_FILE=/casa/painel/resume-id\nEnvironment=COCKPIT_API_URL=http://127.0.0.1:8010\n" > /etc/systemd/system/agente.service.d/painel.conf'
-ex $S $S python3 - <<'PY'
-p="/usr/local/bin/agente-subir"; s=open(p).read()
-if "resume-args.sh" not in s:
-    a='read -ra ARGS <<< "${AGENTE_ARGS:-}"\n'; assert a in s
-    s=s.replace(a, a+'. /opt/painel/deploy/painel-cliente/resume-args.sh\nif [ -n "$PAINEL_RESUME_ID" ]; then\n  exec claude --dangerously-skip-permissions "${ARGS[@]}" --resume "$PAINEL_RESUME_ID"\nfi\n')
-    open(p,"w").write(s)
-PY
-ex $S $S python3 - <<'PY'
-import json; p="/casa/claude/settings.json"; s=json.load(open(p))
-s["statusLine"]={"type":"command","command":"python3 /opt/painel/deploy/painel-cliente/statusline-capture.py"}
-ss=s.setdefault("hooks",{}).setdefault("SessionStart",[])
-if not any("briefing-retorno" in json.dumps(h) for h in ss):
-    ss.append({"matcher":"resume","hooks":[{"type":"command","command":"/opt/painel/apps/api/scripts/briefing-retorno.sh","timeout":5}]})
-json.dump(s,open(p,"w"),ensure_ascii=False,indent=2)
-PY
+  test -f /etc/systemd/system/painel-cliente-api.service
+  test -f /etc/systemd/system/agente.service.d/painel.conf'
 ex $S $S sh -c 'systemctl daemon-reload && systemctl enable --now painel-cliente-api.service'
 
 # portão

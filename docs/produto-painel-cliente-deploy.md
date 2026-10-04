@@ -1,5 +1,66 @@
 # Instalação do painel cliente na Oracle 1
 
+## Subida automatizada da Oracle 0
+
+Na branch `produto/painel-cliente`, com os caminhos do pacote commitados:
+
+```sh
+deploy/painel-cliente/subir.sh --seco
+deploy/painel-cliente/subir.sh
+deploy/painel-cliente/subir.sh --publicar
+deploy/painel-cliente/subir.sh --voltar teste  # ou fred, portao
+```
+
+O padrão atualiza somente `teste`. `--publicar` repete a prova em `teste` e
+exige digitar `PUBLICAR` no terminal; depois atualiza `portao` (API e tela) e
+cada outro cliente do cadastro do controlador, em sequência. Cada contêiner
+recebe um snapshot `painel-...` antes da alteração. O script para no primeiro
+erro e não restaura automaticamente: `--voltar <alvo>` restaura o snapshot mais
+recente desse alvo. Após restaurar o portão, verificar também a tela e o banco
+de sessões. Snapshots Incus cobrem o volume do contêiner; conferir backups de
+`/casa` e `/var/lib/painel` se forem volumes externos.
+
+O script testa o back local, instala as dependências do front e faz o build em
+um worktree temporário do commit, sem mexer no `.next` ou no `tsconfig.json` da
+árvore de trabalho. O build cliente fixa `API_BACKEND_URL` em
+`http://127.0.0.1:8002` e declara `COCKPIT_BUILD_SEM_BACKEND=1`, pois a API do
+portão só existe na Oracle 1. Empacota `standalone`, `static` e `public` sem
+`tar -h`; o executor envia por SSH e `incus file push`. Pré-requisitos na
+Oracle 1: `sudo`, `incus`, `/usr/local/bin/uv`, cadastro existente e serviços
+do painel. Na Oracle 0: `pnpm`, Node e a chave
+`~/.ssh/casanova_ed25519`. O script não cria clientes nem tokens.
+
+Em `teste` e demais clientes, a prova confere `/health`, as units da API e do
+agente, o primeiro evento SSE autorizado e a escrita/leitura/remoção de um
+arquivo de prova como `agente` em `/casa/painel/uploads/agents/<slug>`.
+Em `teste`, também envia um `.txt` pela rota `/file`, confere bytes no destino
+e apaga o arquivo de prova; o teste recebe o aviso do anexo no chat.
+Na publicação, confere `/entrar` = 200 e `/` sem cookie redirecionando no
+domínio público. O Rica faz o login real e confere 200 autenticado.
+
+### Construir a imagem `agente-v4`
+
+O script da imagem fica em
+`/home/clawd/repos/ze_claude/pavan/docs/produto/imagem/instalar.sh`. Antes
+de executá-lo no contêiner de construção, enviar `/root/painel.tgz` com
+`apps/api` e `deploy/painel-cliente` deste commit (raiz `painel/`) e `/root/uv`
+executável para a arquitetura da Oracle 1. Ele instala `/opt/painel`, a unit
+da API, o drop-in do agente e a lógica `--resume`. O `ExecStartPre` mescla
+`statusLine` e `SessionStart` em `/casa/claude/settings.json` no primeiro boot
+e nos seguintes, preservando as demais chaves. Slug, tokens e `/etc/painel/*`
+continuam sendo criados por `painel-add.sh` depois de lançar o cliente da
+imagem. Pare a instância de construção antes de `incus publish ... --alias
+agente-v4`; não reconstruir clientes existentes só para atualizar o painel.
+Para gerar o arquivo a enviar, na Oracle 0 use
+`git archive --format=tar --prefix=painel/ HEAD apps/api deploy/painel-cliente | gzip > /tmp/painel.tgz`.
+Copie esse arquivo, o `uv` aarch64 e o `instalar.sh` alterado para a Oracle 1.
+Lá, após lançar `build-v4` no projeto `default`, use `incus file push` para
+colocar os três em `/root/` do contêiner (nomes `painel.tgz`, `uv` e
+`instalar.sh`), execute `incus exec build-v4 -- bash /root/instalar.sh`,
+pare e publique a imagem. A imagem não contém `/casa` nem tokens.
+
+## Procedimento manual histórico
+
 
 1. Instalar o mesmo checkout em `/opt/painel`, com `uv sync --frozen` em
    `apps/api`. No cliente instalar também `curl`, `jq` e `ffmpeg` para os

@@ -1,0 +1,22 @@
+[Unit]
+Description=Tela Next do painel cliente
+After=network.target painel-portao.service
+Wants=painel-portao.service
+
+[Service]
+Type=simple
+User=painel
+Group=painel
+WorkingDirectory=/opt/painel-tela/apps/cockpit
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=HOSTNAME=127.0.0.1
+Environment=API_BACKEND_URL=http://127.0.0.1:8002
+Environment=COCKPIT_DIST_DIR=.next-cliente
+Environment=NEXT_PUBLIC_COCKPIT_MODO=cliente
+ExecStart=/usr/local/bin/node /opt/painel-tela/apps/cockpit/server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
