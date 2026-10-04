@@ -20,10 +20,11 @@ não uma URL escolhida pelo usuário para o destino.
 
 | Método | Sufixo | Consumidor |
 |---|---|---|
-| GET | `/{slug}` | `fetchAgent`, página no servidor |
+| GET | `/{slug}` | `fetchAgent`, página no servidor; inclui `pane_excerpt` e `pane_session_started_at` da sessão viva |
 | GET | `/{slug}/painel`, `/{slug}/pulso` | `fetchAgentPainel`, `fetchAgentPulso` |
+| GET | `/{slug}/events` | SSE de estado da frota de um |
 | GET | `/{slug}/messages/stream`, `/{slug}/pane/stream` | feed e pane SSE |
-| POST | `/{slug}/input`, `/{slug}/interromper` | composer, Stop, `/compact` via input |
+| POST | `/{slug}/input`, `/{slug}/interromper`, `/{slug}/destrava` | composer, Stop, Destravar, `/compact` via input |
 | POST | `/{slug}/file`, `/{slug}/image`, `/{slug}/voice`, `/{slug}/transcription`, `/{slug}/transcription/live-token` | anexos, ditado e voz ao vivo |
 | GET | `/{slug}/file/{filename}`; `/uploads/agents/{slug}/{filename}` | imagens do feed |
 | GET | `/{slug}/conversas`, `/{slug}/conversas/operacao`, `/{slug}/conversas/{id}/leitura` | Conversas |
@@ -42,6 +43,59 @@ executor da UI usa esses dois sinais. Cancelamento individual da fila nativa
 não está disponível pela API e deve ficar desabilitado na tela do cliente.
 O endpoint de leitura de Conversas devolve o resumo textual existente; o feed
 com ferramentas vem de `messages/stream` com `session_id` da conversa.
+
+## Estado ao vivo e troca na tela
+
+`GET /api/agents/{slug}/events` devolve `text/event-stream`. O evento `state`
+tem `data` JSON com esta forma:
+
+```json
+{
+  "agent": {"slug": "teste", "lifecycle_status": "trabalhando", "lifecycle_updated_at": 1791000000, "pane_excerpt": "Opus 4.8 - 00:03:12 - [████░░░░░░] 40%", "pane_session_started_at": 1790999808},
+  "painel": {"vida": {"sessao": true, "processo": true}, "contexto": {"pct": 40, "tokens": {"total": 80000}, "updated_at": 1791000000, "stale": false}},
+  "status": "trabalhando",
+  "generated_at": 1791000000
+}
+```
+
+`agent` é o mesmo recorte de `GET /{slug}`, inclusive campos de lifecycle;
+`painel` contém **só** `vida` e `contexto`, com todos os campos normais desses
+dois objetos de `GET /painel`. `status` usa a regra do backend para presença +
+lifecycle. O primeiro `state` sai ao conectar; os demais saem quando o JSONL é
+indexado, uma mutação da API termina ou a reconciliação detecta mudança externa.
+Há ping SSE a cada 15 s e reconciliação a cada 30 s para tmux/controlador e
+statusline, que não passam pelo watcher. Reconnect recebe novo retrato completo;
+não há cursor nem replay. O portão valida sessão e posse antes de abrir o SSE.
+
+**Tela, item 2:** criar `apps/cockpit/app/api/agents/[slug]/events/route.ts`
+usando `repassaSse` de `lib/repasse-sse.ts`; o rewrite genérico passa pelo
+`compress: true` do Next e segura eventos pequenos. Em
+`lib/usa-frota-do-cliente.ts`, substituir o timer de 5 s por `EventSource`
+para essa URL, ouvir `state`, montar a frota com `agent` e `painel.vida`/
+`painel.contexto` e usar `status` do servidor. Adaptar o tipo local de `painel`
+para esse recorte; o endpoint `/painel` completo continua servindo a gaveta.
+Fechar a conexão ao desmontar e religar ao voltar à aba; no erro de conexão,
+verificar `/auth/me` para distinguir sessão expirada de queda temporária. O
+`GET /{slug}` continua útil no SSR e como primeira leitura.
+
+**Tela, item 3:** `GET /{slug}` e cada `state.agent` agora trazem
+`pane_excerpt` e `pane_session_started_at`; retirar a suposição de ausência
+desses campos em `lib/frota-do-cliente.ts`. A `Statusline` existente lê os dois.
+O script de statusline do contêiner imprime modelo e duração no formato que
+`parseModelFromPane` reconhece. `pane_session_started_at` é a âncora da duração
+ativa reportada pelo Claude Code, não uma data de criação do arquivo JSONL.
+O JSON oficial fornece `model.id`, `model.display_name`, `session_id` e
+`cost.total_duration_ms`; este último soma tempo ativo entre retomadas e
+exclui o período parado, conforme a [documentação do Claude Code](https://code.claude.com/docs/en/statusline).
+O `display_name` pode vir só como `Opus`; o script extrai a versão de
+`model.id` quando necessário.
+
+## Anexos duráveis
+
+Somente `client_app` usa `PAINEL_UPLOADS_DIR` (padrão
+`/casa/painel/uploads`). Imagens e arquivos ficam em
+`<PAINEL_UPLOADS_DIR>/agents/<slug>/`; os dois endpoints de leitura autorizados
+usam a mesma raiz. A frota conserva `apps/api/uploads/agents/`.
 
 ## Sessão e posse
 

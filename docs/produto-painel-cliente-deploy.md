@@ -10,8 +10,8 @@
 2. No cliente `teste`, criar `/etc/painel/agent.yaml` com **um** agente:
    `slug: teste`, `name: Teste`, `tmux_session: agente`,
    `workspace_path: /casa/workspace`, `cli_default: claude_code`,
-   `model_default: opus`. Criar `/casa/painel` e dar escrita ao usuário
-   `agente`, inclusive em `/opt/painel/apps/api/uploads`. Em
+   `model_default: opus`. Criar `/casa/painel` e
+   `/casa/painel/uploads/agents` com escrita para `agente`. Em
    `/etc/painel/cliente.env`: `PAINEL_CLIENT_SLUG=teste`,
    `PAINEL_INTERNAL_TOKEN_FILE=/etc/painel/internal-token`,
    `PAINEL_HOOK_TOKEN_FILE=/etc/painel/hook-token`,
@@ -19,6 +19,7 @@
    `PAINEL_CONTROL_TOKEN_FILE=/etc/painel/control-token`,
    `PAINEL_RESUME_FILE=/casa/painel/resume-id`,
    `GB_AGENTS_YAML=/etc/painel/agent.yaml`, `GB_DB_PATH=/casa/painel/api.db`,
+   `PAINEL_UPLOADS_DIR=/casa/painel/uploads`,
    `GB_CLAUDE_PROJECTS_DIR=/casa/claude/projects`,
    `CLAUDE_CONFIG_DIR=/casa/claude`, `COCKPIT_TMUX_SOCKET=agente`,
    `GB_STT_SCRIPT=/casa/claude/scripts/stt-openai.sh`.
@@ -79,3 +80,35 @@
    ```
 
    Manter ACL das pontes: nenhuma exceção interprojeto.
+
+## Aplicar esta rodada na instalação que já está no ar
+
+1. Antes de substituir `/opt/painel` nos contêineres `teste` e `fred`, copiar
+   cada `/opt/painel/apps/api/uploads/agents/<slug>/` existente para
+   `/casa/painel/uploads/agents/<slug>/`, preservando nomes e bytes. Criar a
+   raiz como `agente:agente` modo `0700` e confirmar que os arquivos antigos
+   aparecem nela. Se a atualização já tiver movido o checkout, a cópia antiga
+   pode estar em `/opt/painel.velho/apps/api/uploads/agents/`.
+2. Em **cada** `/etc/painel/cliente.env`, acrescentar
+   `PAINEL_UPLOADS_DIR=/casa/painel/uploads`. O padrão do código é o mesmo,
+   mas a variável deixa o volume explícito. Distribuir o checkout desta branch
+   para `teste`, `fred` e `portao` com o procedimento de instalação existente;
+   o portão precisa da lista positiva nova para `/destrava` e `/events`.
+   Atualizar o script `statusline-capture.py` nos dois clientes. Não há mudança
+   de banco nem de socket.
+3. Reiniciar `painel-cliente-api.service` em `teste` e `fred`, depois
+   `painel-portao.service` no portão. Verificar `/health` do portão e, com
+   sessão de cada cliente, `POST /api/agents/<slug>/destrava` **só quando o
+   canal estiver travado**, `GET /api/agents/<slug>` com os campos de pane e
+   `GET /api/agents/<slug>/events` com `state` inicial. Confirmar que slug
+   alheio recebe `403` e que um anexo antigo abre pelo feed. O script de
+   statusline imprime modelo/duração no próximo acionamento pelo Claude Code;
+   não é preciso reiniciar o agente para trocar o script.
+4. Entregar à executora da tela as trocas exatas do
+   [contrato](produto-painel-cliente.md#estado-ao-vivo-e-troca-na-tela):
+   route handler SSE no Next, `EventSource` em lugar da releitura de 5 s,
+   consumo de `state.agent`/`state.painel`/`state.status`, e os campos de pane
+   no `GET`/SSE. Fazer build do Next cliente com
+   `NEXT_PUBLIC_COCKPIT_MODO=cliente` e
+   `API_BACKEND_URL=http://127.0.0.1:8002`, publicar o build no portão e
+   testar `teste` antes de `fred`.
