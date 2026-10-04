@@ -7,7 +7,15 @@ import test from 'node:test';
 
 import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
-import { LIFECYCLE_FRESCO_S, agenteDoCliente, frotaDoCliente, statusDoCliente, type AgenteCru } from './frota-do-cliente.ts';
+import {
+  LIFECYCLE_FRESCO_S,
+  agenteDoCliente,
+  esperaParaReligar,
+  frotaDoCliente,
+  leEstado,
+  statusDoCliente,
+  type AgenteCru,
+} from './frota-do-cliente.ts';
 
 const AGORA = 1_000_000;
 const NO_AR = { sessao: true, processo: true };
@@ -62,4 +70,32 @@ test('a frota de um conta o agente no status dele', () => {
   assert.equal(frota.kpis.total, 1);
   assert.equal(frota.kpis.trabalhando, 1);
   assert.equal(frotaDoCliente([], AGORA).kpis.total, 0);
+});
+
+const ESTADO = {
+  agent: { slug: 'teste', lifecycle_status: 'trabalhando', lifecycle_updated_at: AGORA, pane_excerpt: 'Opus 4.8 - 00:03:12 - [████░░░░░░] 40%', pane_session_started_at: AGORA - 192 },
+  painel: { vida: NO_AR, contexto: { pct: 40, tokens: { total: 80000 }, updated_at: AGORA, stale: false, available: true } },
+  status: 'aguardando',
+  generated_at: AGORA,
+};
+
+test('o state do /events vira retrato, e o status do servidor vence a cópia local', () => {
+  const estado = leEstado(JSON.stringify(ESTADO));
+  assert.ok(estado);
+  const agente = agenteDoCliente(estado.agent, estado.painel, AGORA, estado.status);
+  // O lifecycle diria "trabalhando"; quem decide é o back.
+  assert.equal(agente.status, 'aguardando');
+  assert.equal(agente.context_pct, 40);
+  assert.equal(agente.context_tokens, 80000);
+});
+
+test('state torto é descartado, não apaga o agente', () => {
+  assert.equal(leEstado('não é json'), null);
+  assert.equal(leEstado(JSON.stringify({ ...ESTADO, status: 'dormindo' })), null);
+  assert.equal(leEstado(JSON.stringify({ ...ESTADO, agent: {} })), null);
+  assert.equal(leEstado(JSON.stringify({ ...ESTADO, painel: { vida: NO_AR } })), null);
+});
+
+test('religar o /events recusado espera mais a cada falha, até 30 s', () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 9].map(esperaParaReligar), [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]);
 });
