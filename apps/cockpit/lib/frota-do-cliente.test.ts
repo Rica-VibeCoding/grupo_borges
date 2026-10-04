@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
+import { parseModelFromPane, type AgentPainelResponse } from '@grupo_borges/cockpit-core/cockpit-types';
 
 import {
   LIFECYCLE_FRESCO_S,
@@ -87,6 +87,20 @@ test('o state do /events vira retrato, e o status do servidor vence a cópia loc
   assert.equal(agente.status, 'aguardando');
   assert.equal(agente.context_pct, 40);
   assert.equal(agente.context_tokens, 80000);
+});
+
+test('a statusline da gaveta recebe modelo e âncora da sessão do pane', () => {
+  const estado = leEstado(JSON.stringify(ESTADO));
+  assert.ok(estado);
+  const agente = agenteDoCliente(estado.agent, estado.painel, AGORA, estado.status);
+  assert.equal(agente.pane_excerpt, ESTADO.agent.pane_excerpt);
+  assert.equal(agente.pane_session_started_at, AGORA - 192);
+  // O formato que o script do contêiner imprime é o que a gaveta lê como modelo.
+  assert.equal(parseModelFromPane(agente.pane_excerpt), 'Opus 4.8');
+  // Back mais velho, sem os campos: nulo, nunca `undefined` (que vira NaN:NaN).
+  const velho = agenteDoCliente(CRU, null, AGORA);
+  assert.equal(velho.pane_excerpt, null);
+  assert.equal(velho.pane_session_started_at, null);
 });
 
 test('state torto é descartado, não apaga o agente', () => {
