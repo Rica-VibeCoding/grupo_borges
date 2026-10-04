@@ -87,7 +87,13 @@ def _raiz_de(pasta: str) -> Path | None:
     atual = Path(pasta)
     raiz = None
     for candidata in (atual, *atual.parents):
-        if (candidata / ".git").exists():
+        try:
+            tem_git = (candidata / ".git").exists()
+        except OSError:
+            # Um caminho do JSONL pode vir de outra máquina ou ser ilegível.
+            # Não atribuir a ele um repositório ancestral que não podemos verificar.
+            break
+        if tem_git:
             raiz = candidata
             break
     with _trava:

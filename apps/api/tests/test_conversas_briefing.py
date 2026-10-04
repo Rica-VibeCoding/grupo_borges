@@ -184,6 +184,25 @@ def test_repo_limpo_da_pendencia_zero(obra) -> None:
     assert _por_id(_get(obra, curtas=1))[ID_OBRA]["pendencia"] == 0
 
 
+def test_caminho_ilegivel_no_jsonl_nao_derruba_lista(bancada, tmp_path: Path) -> None:
+    bloqueada = tmp_path / "pasta-sem-permissao"
+    bloqueada.mkdir()
+    (bancada.pasta / f"{ID_OBRA}.jsonl").write_text(
+        _usuario("Conversa copiada", tmp_path) + "\n"
+        + _snapshot(str(bloqueada / "arquivo.py")) + "\n"
+    )
+    briefing_retorno._raizes.clear()
+    bloqueada.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            (bloqueada / ".git").exists()
+        itens = _por_id(_get(bancada, curtas=1))
+        assert itens[ID_OBRA]["pendencia"] == 0
+        assert len(itens) > 1
+    finally:
+        bloqueada.chmod(0o700)
+
+
 # ---------- GET /{id}/briefing ----------
 
 
