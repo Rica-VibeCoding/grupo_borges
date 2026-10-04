@@ -13,7 +13,7 @@ async def test_login_posse_e_repasse_sse(tmp_path):
     def transport_factory(socket):
         def handle(request):
             seen.append((socket, request.method, request.url.path, dict(request.headers)))
-            if request.url.path.endswith("/messages/stream"):
+            if request.url.path.endswith(("/messages/stream", "/events")):
                 return httpx.Response(200, headers={"content-type": "text/event-stream"},
                                       stream=httpx.ByteStream(b"event: heartbeat\ndata: {}\n\n"))
             return httpx.Response(200, json={"slug": "cliente_a"})
@@ -47,8 +47,13 @@ async def test_login_posse_e_repasse_sse(tmp_path):
         assert stream.status_code == 200
         assert stream.content == b"event: heartbeat\ndata: {}\n\n"
         assert "no-transform" in stream.headers["cache-control"]
+        events = await browser.get("/api/agents/cliente_a/events")
+        assert events.status_code == 200
+        assert events.headers["x-accel-buffering"] == "no"
+        assert events.content == stream.content
         count = len(seen)
         assert (await browser.get("/api/agents/cliente_b")).status_code == 403
+        assert (await browser.get("/api/agents/cliente_b/events")).status_code == 403
         assert (await browser.post("/api/agents/cliente_b/input",
                                    headers={"origin": config["public_origin"]},
                                    json={"text": "Roubar"})).status_code == 403

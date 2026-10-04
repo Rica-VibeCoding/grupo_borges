@@ -50,6 +50,8 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
         assert response.status_code == 200
         assert any(row["id"] == session_id for row in response.json()["conversas"])
         assert (await client.get("/api/agents/cliente_b", headers=headers)).status_code == 403
+        assert (await client.get("/api/agents/cliente_b/events", headers=headers)).status_code == 403
+        assert (await client.get("/api/agents/cliente_a/events")).status_code == 401
         assert (await client.post("/api/agents/cliente_b/input", headers=headers, json={"text": "x"})).status_code == 403
         assert (await client.post("/api/agents/cliente_b/destrava", headers=headers)).status_code == 403
         with patch("routers.agents.tmux_driver.recover_input", new=AsyncMock(return_value={

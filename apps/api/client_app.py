@@ -11,6 +11,7 @@ import hmac
 import json
 import os
 import re
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,14 +19,16 @@ import yaml
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute
+from sse_starlette import EventSourceResponse
 
 from config import get_settings
-from db.store import GrupoBorgesDB
+from db.store import GrupoBorgesDB, derive_agent_status
 from orchestrator.jsonl_watcher import JsonlWatcher, encoded_cwd
 from orchestrator.tmux_driver import TmuxDriver
 from routers import agents, conversas, tts
 from services.client_index import ClientIndex
 from services.client_lifecycle import ClientLifecycle
+from services.client_events import ClientEvents
 
 AGENT_ROUTES = {
     ("GET", "/{slug}"),
@@ -33,6 +36,7 @@ AGENT_ROUTES = {
     ("GET", "/{slug}/pulso"),
     ("GET", "/{slug}/messages/stream"),
     ("GET", "/{slug}/pane/stream"),
+    ("GET", "/{slug}/events"),
     ("POST", "/{slug}/input"),
     ("POST", "/{slug}/interromper"),
     ("POST", "/{slug}/destrava"),
@@ -141,8 +145,12 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
         elif os.environ.get("PAINEL_CLIENT_SLUG"):
             raise RuntimeError("controlador privado não configurado")
         index = ClientIndex(Path(settings.db_path).with_suffix(".offsets.json"))
+        async def on_offset(path, offset):
+            await index.save(path, offset)
+            await app.state.client_events.publish()
+
         watcher = JsonlWatcher(claude_projects_dir=str(projects), agents=entries, db=db,
-                               dedupe_jsonl=True, on_offset=index.save)
+                               dedupe_jsonl=True, on_offset=on_offset)
         # Um cliente precisa do histórico inteiro. O checkpoint evita replay
         # integral em cada restart; o content_hash cobre crash entre DB e marca.
         await index.backfill(watcher, slug, paths)
@@ -158,6 +166,7 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
     app.state.client_slug = slug
     app.state.internal_token = token
     app.state.hook_token = hook_token
+    app.state.client_events = ClientEvents()
 
     @app.middleware("http")
     async def internal_gate(request: Request, call_next):
@@ -196,6 +205,8 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
             if requested_slug != app.state.client_slug:
                 return JSONResponse({"detail": "forbidden"}, status_code=403)
         response = await call_next(request)
+        if request.method not in {"GET", "HEAD"} and response.status_code < 400:
+            await app.state.client_events.publish()
         response.headers["X-Content-Type-Options"] = "nosniff"
         if response.headers.get("content-type", "").startswith("text/event-stream"):
             response.headers["Cache-Control"] = "no-cache, no-transform"
@@ -206,9 +217,50 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
     async def health():
         return {"status": "ok", "service": "grupo_borges-api-cliente"}
 
-    app.include_router(_selected(agents.router, AGENT_ROUTES), prefix="/api/agents")
+    app.include_router(_selected(agents.router, AGENT_ROUTES - {("GET", "/{slug}/events")}), prefix="/api/agents")
     app.include_router(_selected(conversas.router, CONVERSA_ROUTES), prefix="/api/agents")
     app.include_router(_selected(tts.router, TTS_ROUTES), prefix="/api")
+
+    @app.get("/api/agents/{slug}/events")
+    async def agent_events(slug: str, request: Request) -> EventSourceResponse:
+        # O gate interno já checou token e slug antes de o corpo começar.
+        await agents._get_agent_or_404(request, slug)
+        bus = app.state.client_events
+
+        async def snapshot():
+            agent = await agents._get_agent_or_404(request, slug)
+            vida = await agents._build_painel_vida(agent)
+            cc_status = await agents._load_cc_status(app.state.db, slug)
+            contexto = await asyncio.to_thread(agents._build_painel_contexto, agent, cc_status)
+            now = int(time.time())
+            return {
+                "agent": agent,
+                "painel": {"vida": vida.model_dump(), "contexto": contexto.model_dump()},
+                "status": derive_agent_status(
+                    session_present=vida.sessao, agent_process_present=vida.processo,
+                    last_seen=agent.get("last_seen"),
+                    lifecycle_status=agent.get("lifecycle_status"),
+                    lifecycle_updated_at=agent.get("lifecycle_updated_at"), now=now,
+                ),
+                "generated_at": now,
+            }
+
+        async def stream():
+            revision = bus.revision
+            previous = None
+            while not await request.is_disconnected():
+                current = await snapshot()
+                comparable = {k: v for k, v in current.items() if k != "generated_at"}
+                if comparable != previous:
+                    yield {"event": "state", "data": json.dumps(current, ensure_ascii=False)}
+                    previous = comparable
+                # O watcher e as mutações acordam o stream; 30 s é só
+                # reconciliação de presença tmux e statusline externa.
+                revision = await bus.wait(revision, 30.0)
+
+        return EventSourceResponse(stream(), ping=15, headers={
+            "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
+        })
 
     @app.get("/uploads/agents/{slug}/{filename}")
     async def get_upload(slug: str, filename: str, request: Request) -> FileResponse:
