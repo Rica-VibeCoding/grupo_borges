@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import httpx
 import pytest
 
@@ -42,6 +44,7 @@ async def test_login_posse_e_repasse_sse(tmp_path):
         assert "HttpOnly" in login.headers["set-cookie"]
         assert "Secure" in login.headers["set-cookie"]
         assert (await browser.get("/auth/me")).json()["slug"] == "cliente_a"
+        assert (await browser.get("/auth/me")).json()["trocar_senha"] is True
         assert (await browser.get("/api/agents/cliente_a")).status_code == 200
         stream = await browser.get("/api/agents/cliente_a/messages/stream")
         assert stream.status_code == 200
@@ -122,3 +125,33 @@ async def test_login_limits_repeated_wrong_passwords(tmp_path):
                                        json={"usuario": "ana", "senha": "wrong"})).status_code == 401
         assert (await browser.post("/auth/login", headers={"origin": config["public_origin"]},
                                    json={"usuario": "ana", "senha": "correct"})).status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_users_migrated_once_from_config(tmp_path):
+    db = str(tmp_path / "sessions.db")
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": db,
+        "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("primeira senha")},
+                  "rica": {"role": "admin", "password_hash": password_hash("admin password")}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    create_portao_app(config)
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT trocar_senha FROM users WHERE username='ana'").fetchone() == (1,)
+        assert conn.execute("SELECT trocar_senha FROM users WHERE username='rica'").fetchone() == (0,)
+        conn.execute("UPDATE users SET password_hash=?, trocar_senha=0 WHERE username='ana'",
+                     (password_hash("senha nova"),))
+    config["users"]["ana"]["password_hash"] = password_hash("senha da config regravada")
+    app = create_portao_app(config)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        old = await browser.post("/auth/login", headers={"origin": config["public_origin"]},
+                                 json={"usuario": "ana", "senha": "senha da config regravada"})
+        assert old.status_code == 401
+        new = await browser.post("/auth/login", headers={"origin": config["public_origin"]},
+                                 json={"usuario": "ana", "senha": "senha nova"})
+        assert new.status_code == 200
+        assert (await browser.get("/auth/me")).json()["trocar_senha"] is False

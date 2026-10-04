@@ -83,12 +83,30 @@ def _db(path: str):
         conn.close()
 
 
-def _setup_db(path: str) -> None:
+def _setup_db(path: str, users: dict) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with _db(path) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, username TEXT NOT NULL, expires INTEGER NOT NULL)")
         conn.execute("CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires)")
         conn.execute("CREATE TABLE IF NOT EXISTS login_attempts (username TEXT PRIMARY KEY, count INTEGER NOT NULL, first_at INTEGER NOT NULL, blocked_until INTEGER NOT NULL)")
+        conn.execute("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, role TEXT NOT NULL, slug TEXT, password_hash TEXT NOT NULL, trocar_senha INTEGER NOT NULL DEFAULT 0)")
+        # O JSON só cadastra nomes novos. Reinício ou painel-add não substitui a
+        # senha que o usuário já trocou no banco.
+        conn.executemany(
+            "INSERT OR IGNORE INTO users (username, role, slug, password_hash, trocar_senha) VALUES (?, ?, ?, ?, ?)",
+            ((username, user["role"], user.get("slug"), user["password_hash"],
+              int(user.get("trocar_senha", user["role"] == "client")))
+             for username, user in users.items()),
+        )
+
+
+def _user(config: dict, username: str) -> dict | None:
+    with _db(config["session_db"]) as conn:
+        row = conn.execute(
+            "SELECT role, slug, password_hash, trocar_senha FROM users WHERE username=?", (username,)
+        ).fetchone()
+    return {"role": row[0], "slug": row[1], "password_hash": row[2],
+            "trocar_senha": bool(row[3])} if row else None
 
 
 def _session(config: dict, token: str | None) -> dict | None:
@@ -96,12 +114,14 @@ def _session(config: dict, token: str | None) -> dict | None:
         return None
     session_id = hashlib.sha256(token.encode()).hexdigest()
     with _db(config["session_db"]) as conn:
-        row = conn.execute("SELECT username FROM sessions WHERE id=? AND expires>?",
-                           (session_id, int(time.time()))).fetchone()
+        row = conn.execute(
+            "SELECT s.username, u.role, u.slug, u.trocar_senha FROM sessions s "
+            "JOIN users u ON u.username=s.username WHERE s.id=? AND s.expires>?",
+            (session_id, int(time.time())),
+        ).fetchone()
     if row is None:
         return None
-    user = config["users"].get(row[0])
-    return {"username": row[0], "role": user["role"], "slug": user.get("slug")} if user else None
+    return {"username": row[0], "role": row[1], "slug": row[2], "trocar_senha": bool(row[3])}
 
 
 def _origin_ok(request: Request, config: dict) -> bool:
@@ -129,7 +149,7 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
             raise RuntimeError("papel inválido")
         if user["role"] == "client" and user.get("slug") not in config["clients"]:
             raise RuntimeError("cliente sem destino")
-    _setup_db(config["session_db"])
+    _setup_db(config["session_db"], config["users"])
     app = FastAPI(title="grupo_borges-api portao")
     dummy_hash = password_hash("senha-invalida", bytes(16))
 
@@ -188,7 +208,7 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
                                    (username,)).fetchone()
         if attempt and attempt[2] > now:
             return JSONResponse({"detail": "tente_mais_tarde"}, status_code=429)
-        user = config["users"].get(username)
+        user = _user(config, username)
         encoded = user["password_hash"] if user else dummy_hash
         valid = await asyncio.to_thread(password_matches, body.senha, encoded)
         if not valid or not user:
