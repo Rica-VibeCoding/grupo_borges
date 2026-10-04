@@ -254,3 +254,30 @@ async def test_reset_local_forca_troca_e_revoga_sessoes(tmp_path):
         assert (await browser.post("/auth/login", headers=headers,
                                    json={"usuario": "teste", "senha": "nova temporaria"})).status_code == 200
         assert (await browser.get("/auth/me")).json()["trocar_senha"] is True
+
+
+@pytest.mark.asyncio
+async def test_tentativas_de_senha_atual_compartilham_limite_do_login(tmp_path):
+    config = {
+        "public_origin": "https://agentes.conectamoveis.net.br",
+        "session_db": str(tmp_path / "sessions.db"),
+        "users": {"ana": {"role": "client", "slug": "a", "password_hash": password_hash("senha inicial"),
+                          "trocar_senha": False}},
+        "clients": {"a": {"socket": "/tmp/a.sock", "token": "a" * 40}},
+        "controller": {"socket": "/tmp/control.sock", "token": "c" * 40},
+    }
+    app = create_portao_app(config)
+    headers = {"origin": config["public_origin"]}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url=config["public_origin"]) as browser:
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "ana", "senha": "senha inicial"})).status_code == 200
+        for _ in range(4):
+            assert (await browser.post("/auth/senha", headers=headers,
+                                       json={"atual": "errada", "nova": "senha nova segura"})).status_code == 401
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "ana", "senha": "errada"})).status_code == 401
+        assert (await browser.post("/auth/senha", headers=headers,
+                                   json={"atual": "senha inicial", "nova": "senha nova segura"})).status_code == 429
+        assert (await browser.post("/auth/login", headers=headers,
+                                   json={"usuario": "ana", "senha": "senha inicial"})).status_code == 429

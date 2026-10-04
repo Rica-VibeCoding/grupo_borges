@@ -114,6 +114,25 @@ def _user(config: dict, username: str) -> dict | None:
             "trocar_senha": bool(row[3])} if row else None
 
 
+def _password_blocked(config: dict, username: str) -> bool:
+    with _db(config["session_db"]) as conn:
+        row = conn.execute("SELECT blocked_until FROM login_attempts WHERE username=?",
+                           (username,)).fetchone()
+    return bool(row and row[0] > int(time.time()))
+
+
+def _record_bad_password(config: dict, username: str) -> None:
+    now = int(time.time())
+    with _db(config["session_db"]) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT count, first_at FROM login_attempts WHERE username=?",
+                           (username,)).fetchone()
+        count = row[0] + 1 if row and now - row[1] < 900 else 1
+        first_at = row[1] if row and now - row[1] < 900 else now
+        conn.execute("INSERT OR REPLACE INTO login_attempts VALUES (?, ?, ?, ?)",
+                     (username, count, first_at, now + 900 if count >= 5 else 0))
+
+
 def _session(config: dict, token: str | None) -> dict | None:
     if not token:
         return None
@@ -215,21 +234,13 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
         if not _origin_ok(request, config):
             return JSONResponse({"detail": "origin_recusada"}, status_code=403)
         username = body.usuario.strip().lower()
-        now = int(time.time())
-        with _db(config["session_db"]) as conn:
-            attempt = conn.execute("SELECT count, first_at, blocked_until FROM login_attempts WHERE username=?",
-                                   (username,)).fetchone()
-        if attempt and attempt[2] > now:
+        if _password_blocked(config, username):
             return JSONResponse({"detail": "tente_mais_tarde"}, status_code=429)
         user = _user(config, username)
         encoded = user["password_hash"] if user else dummy_hash
         valid = await asyncio.to_thread(password_matches, body.senha, encoded)
         if not valid or not user:
-            count = attempt[0] + 1 if attempt and now - attempt[1] < 900 else 1
-            first_at = attempt[1] if attempt and now - attempt[1] < 900 else now
-            with _db(config["session_db"]) as conn:
-                conn.execute("INSERT OR REPLACE INTO login_attempts VALUES (?, ?, ?, ?)",
-                             (username, count, first_at, now + 900 if count >= 5 else 0))
+            _record_bad_password(config, username)
             return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
         token = secrets.token_urlsafe(32)
         with _db(config["session_db"]) as conn:
@@ -254,8 +265,11 @@ def create_portao_app(config: dict, *, transport_factory=None) -> FastAPI:
         session = _session(config, token)
         if not session:
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        if _password_blocked(config, session["username"]):
+            return JSONResponse({"detail": "tente_mais_tarde"}, status_code=429)
         user = _user(config, session["username"])
         if not user or not await asyncio.to_thread(password_matches, body.atual, user["password_hash"]):
+            _record_bad_password(config, session["username"])
             return JSONResponse({"detail": "credenciais_invalidas"}, status_code=401)
         if len(body.nova) < 8 or body.nova == body.atual:
             return JSONResponse({"detail": "nova_senha_fraca"}, status_code=422)
