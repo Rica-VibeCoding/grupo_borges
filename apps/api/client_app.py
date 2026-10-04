@@ -217,9 +217,23 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
     async def health():
         return {"status": "ok", "service": "grupo_borges-api-cliente"}
 
-    app.include_router(_selected(agents.router, AGENT_ROUTES - {("GET", "/{slug}/events")}), prefix="/api/agents")
+    app.include_router(_selected(agents.router, AGENT_ROUTES - {
+        ("GET", "/{slug}"), ("GET", "/{slug}/events"),
+    }), prefix="/api/agents")
     app.include_router(_selected(conversas.router, CONVERSA_ROUTES), prefix="/api/agents")
     app.include_router(_selected(tts.router, TTS_ROUTES), prefix="/api")
+
+    async def client_agent(slug: str, request: Request) -> dict:
+        agent = await agents._get_agent_or_404(request, slug)
+        excerpt = await agents.tmux_driver.capture_pane_excerpt(agent["tmux_session"])
+        elapsed = agents.tmux_driver.parse_session_elapsed_from_pane(excerpt)
+        agent["pane_excerpt"] = excerpt
+        agent["pane_session_started_at"] = int(time.time()) - elapsed if elapsed is not None else None
+        return agent
+
+    @app.get("/api/agents/{slug}")
+    async def get_client_agent(slug: str, request: Request):
+        return await client_agent(slug, request)
 
     @app.get("/api/agents/{slug}/events")
     async def agent_events(slug: str, request: Request) -> EventSourceResponse:
@@ -228,7 +242,7 @@ def create_client_app(*, slug: str | None = None, token: str | None = None,
         bus = app.state.client_events
 
         async def snapshot():
-            agent = await agents._get_agent_or_404(request, slug)
+            agent = await client_agent(slug, request)
             vida = await agents._build_painel_vida(agent)
             cc_status = await agents._load_cc_status(app.state.db, slug)
             contexto = await asyncio.to_thread(agents._build_painel_contexto, agent, cc_status)

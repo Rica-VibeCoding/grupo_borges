@@ -11,6 +11,7 @@ import yaml
 
 from client_app import create_client_app
 from orchestrator.jsonl_watcher import encoded_cwd
+from routers import agents
 
 
 @pytest.mark.asyncio
@@ -38,6 +39,9 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
     monkeypatch.setenv("GB_DB_PATH", str(tmp_path / "api.db"))
     monkeypatch.setenv("GB_CLAUDE_PROJECTS_DIR", str(projects))
     app = create_client_app(slug="cliente_a", token="t" * 40, hook_token="h" * 40)
+    async def capture(_session):
+        return "Opus 4.8 - 00:03:12 - [████░░░░░░] 40%"
+    monkeypatch.setattr(agents.tmux_driver, "capture_pane_excerpt", capture)
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app), httpx.AsyncClient(transport=transport, base_url="http://local") as client:
         assert (await client.get("/health")).status_code == 200
@@ -46,6 +50,8 @@ async def test_client_profile_reuses_routes_and_isolates_one_agent(tmp_path: Pat
         response = await client.get("/api/agents/cliente_a", headers=headers)
         assert response.status_code == 200
         assert response.json()["slug"] == "cliente_a"
+        assert response.json()["pane_excerpt"].startswith("Opus 4.8")
+        assert response.json()["pane_session_started_at"] is not None
         response = await client.get("/api/agents/cliente_a/conversas?curtas=1", headers=headers)
         assert response.status_code == 200
         assert any(row["id"] == session_id for row in response.json()["conversas"])

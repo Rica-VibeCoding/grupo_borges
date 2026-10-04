@@ -31,9 +31,22 @@ def main() -> int:
     os.replace(temporary, destination)
     model = payload.get("model") or {}
     context = payload.get("context_window") or {}
+    cost = payload.get("cost") or {}
     name = model.get("display_name") if isinstance(model, dict) else None
     pct = context.get("used_percentage") if isinstance(context, dict) else None
-    print(f"{name or 'Claude'} · {pct:.0f}% contexto" if isinstance(pct, (int, float)) else name or "Claude")
+    duration_ms = cost.get("total_duration_ms") if isinstance(cost, dict) else None
+    if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool) and duration_ms >= 0:
+        seconds = int(duration_ms / 1000)
+        duration = f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+    else:
+        duration = None
+    if isinstance(pct, (int, float)) and not isinstance(pct, bool):
+        percent = max(0, min(100, round(pct)))
+        filled = percent // 10
+        bar = "█" * filled + "░" * (10 - filled)
+        print(f"{name or 'Claude'}{' - ' + duration if duration else ''} - [{bar}] {percent}%")
+    else:
+        print(name or "Claude")
     return 0
 
 

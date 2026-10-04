@@ -29,6 +29,9 @@ async def test_state_stream_emits_initial_and_watcher_change(monkeypatch):
         return None
 
     monkeypatch.setattr(agents, "_build_painel_vida", vida)
+    async def capture(_session):
+        return "Opus 4.8 - 00:03:12 - [████░░░░░░] 40%"
+    monkeypatch.setattr(agents.tmux_driver, "capture_pane_excerpt", capture)
     monkeypatch.setattr(agents, "_load_cc_status", cc_status)
     monkeypatch.setattr(agents, "_build_painel_contexto", lambda *_: agents.AgentPainelContexto(
         tokens=agents.AgentPainelTokens(), source="test", available=False,
@@ -45,6 +48,7 @@ async def test_state_stream_emits_initial_and_watcher_change(monkeypatch):
     first = await anext(response.body_iterator)
     assert first["event"] == "state"
     assert json.loads(first["data"])["status"] == "ocioso"
+    assert json.loads(first["data"])["agent"]["pane_session_started_at"] is not None
     pending = asyncio.create_task(anext(response.body_iterator))
     await asyncio.sleep(0)
     state["lifecycle_status"] = "trabalhando"
