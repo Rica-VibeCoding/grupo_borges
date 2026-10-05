@@ -62,7 +62,6 @@ agents:
       - portfolio-software
     can_review:
       - daniel
-      - tara
     domain_tables:
       - { name: fc_backlog, db: ze, description: "Backlog Fluyt (bugs, features, melhorias)" }
       - { name: fc_changelog, db: ze, description: "Histórico de entregas Fluyt" }
