@@ -48,10 +48,7 @@ FLEET_VOICES: dict[str, str] = {
     "maestro": "pt-BR-Wavenet-B",
     # O caseiro desceu junto e DIVIDE a voz com o maestro: só existem duas.
     "caseiro": "pt-BR-Wavenet-B",
-    # A Tara fala com o Rica no Telegram com a Aoede (feminina) desde o bridge do
-    # telecodex; aqui ela herdava a Orus, masculina, e a mesma agente tinha duas
-    # vozes conforme a tela. Ordem do Rica em 12/09: o cockpit segue o Telegram.
-    "tara": "pt-BR-Chirp3-HD-Aoede",
+    "sobral": "pt-BR-Chirp3-HD-Fenrir",
     "pavan": "pt-BR-Chirp3-HD-Algieba",
     "lucas": "pt-BR-Chirp3-HD-Algenib",
     "felipe": "pt-BR-Chirp3-HD-Iapetus",
@@ -91,7 +88,7 @@ EDGE_FALLBACK_VOICES: dict[str, str] = {
     "daniel": "pt-BR-AntonioNeural",
     "maestro": "pt-BR-AntonioNeural",
     "caseiro": "pt-BR-AntonioNeural",
-    "tara": "pt-BR-FranciscaNeural",
+    "sobral": "pt-BR-AntonioNeural",
     "pavan": "pt-BR-AntonioNeural",
     "lucas": "pt-BR-AntonioNeural",
     "felipe": "pt-BR-AntonioNeural",

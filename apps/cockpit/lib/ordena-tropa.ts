@@ -24,7 +24,7 @@ import type { Agent } from '@grupo_borges/cockpit-core/cockpit-types';
 const ORDEM_DA_TROPA = [
   'pavan',
   'daniel',
-  'tara',
+  'sobral',
   'vinicius',
   'felipe',
   'barsi',
