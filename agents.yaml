@@ -143,7 +143,7 @@ agents:
   # nativo. A cota é que não vem de graça — ver `scripts/codex-cota`.
   - slug: tara
     name: Tara Kaur
-    role: Executora pareada — motor GPT via harness do Claude Code
+    role: Especialista — funil de vendas dos apps (campanhas, SDR, closer)
     emoji: "⭐"
     origin: sikh ("estrela")
     tmux_session: tara
@@ -153,11 +153,8 @@ agents:
     model_family: codex-proxy
     kind: executor
     capabilities:
-      - refactor-mecânico
-      - smoke-e2e
-      - executora-pareada-daniel
-    can_review:
-      - daniel
+      - funil-de-vendas
+    can_review: []
 
   # [2026-09-11 Rica] Hiro saiu da tropa (sessão e histórico de eventos
   # apagados do banco do cockpit). Caseiro entra no lugar dele — única função:
