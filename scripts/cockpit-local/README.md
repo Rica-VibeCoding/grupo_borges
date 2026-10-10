@@ -29,10 +29,12 @@ O ID local precisa ser o nome de `tmux_session` da API: para o Canário use
 Cadastre-o com `boot: false`, sem `state_dir`, e autorize a raiz do workspace
 montado em `GB_ALLOWED_WORKSPACE_ROOTS`. Persona na montagem é somente leitura.
 Para um workspace dentro de repo via sshfs, `GIT_CEILING_DIRECTORIES` no arquivo
-privado pode impedir a descoberta do repo pai: evita que `git status` e a busca
-de sugestões em `git log` varram a montagem no primeiro turno. No Canário local,
-a cerca é `/home/ricardo/ze_claude/ze_claude`; o cwd continua sendo o da persona.
-Não modifica o repo montado nem os demais agentes.
+privado limita a descoberta do repo pai nos comandos que respeitam o ambiente.
+No Canário local, a cerca é `/home/ricardo/ze_claude/ze_claude`; o cwd continua
+sendo o da persona. O Claude higieniza variáveis Git em alguns subprocessos e
+pode usar o repo pai como cwd: a cerca não garante inicialização rápida; ainda
+foram observadas leituras lentas de Git na montagem. Não modifica o repo
+montado nem os demais agentes.
 Com o lançador local habilitado, Nova/Retomar respondem em até 20 s:
 operação ainda em curso retorna 202, preserva a tarefa e é acompanhada pelo
 `/operacao` existente da gaveta. Isso evita o timeout do proxy Next durante
