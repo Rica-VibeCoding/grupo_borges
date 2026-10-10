@@ -8,8 +8,33 @@ original `agente.sh <ligar|desligar|estado> <id>` e acrescenta:
 - `relancar <id> --resume <UUID>`: troca o processo sob a mesma trava.
 - `relancar <id> --new`: abre uma conversa nova sem `--resume`, com UUID próprio.
 
-Flags, settings, esforço, canal e `TELEGRAM_STATE_DIR` continuam vindo do cadastro
-local. Cada servidor nasce em scope próprio; nenhuma operação usa sudo.
+Flags, settings e esforço continuam vindo do cadastro local. `state_dir` é
+opcional: quando presente define `TELEGRAM_STATE_DIR` e habilita o canal Telegram;
+quando ausente não passa `--channels` e remove um state dir herdado.
+Cada servidor nasce em scope próprio; nenhuma operação usa sudo.
+
+Por agente, `env_arquivo` aponta para um arquivo absoluto fora do repo, regular,
+do próprio usuário, modo **600**. Formato: uma linha `KEY=VALUE`, valor literal
+(inclusive espaços e `=`), sem aspas de shell, expansão ou `export`; linhas vazias
+e comentários `#` são ignorados. Ausência do campo conserva o ambiente atual.
+Arquivo ausente, symlink, modo inseguro ou conteúdo inválido recusa a largada.
+O filho lê o arquivo e usa `execve`: valores não entram em argv, comandos tmux,
+scope systemd ou mensagens de erro. O arquivo privado não deve ir para o git.
+`env_remover` é uma lista opcional de nomes que serão retirados do ambiente
+herdado (ex.: `ANTHROPIC_AUTH_TOKEN` ao usar chave própria, ou `NO_COLOR`, que
+impede distinguir a sugestão dim do input ocupado). `PATH` vem do cadastro global.
+
+O ID local precisa ser o nome de `tmux_session` da API: para o Canário use
+`id/socket/sessao: canario`, mantendo o slug **canarinho** no YAML local.
+Cadastre-o com `boot: false`, sem `state_dir`, e autorize a raiz do workspace
+montado em `GB_ALLOWED_WORKSPACE_ROOTS`. Persona na montagem é somente leitura.
+Para um workspace dentro de repo via sshfs, `GIT_CEILING_DIRECTORIES` no arquivo
+privado pode impedir a descoberta do repo pai: evita que `git status` e a busca
+de sugestões em `git log` varram a montagem no primeiro turno. No Canário local,
+a cerca é `/home/ricardo/ze_claude/ze_claude`; o cwd continua sendo o da persona.
+Não modifica o repo montado nem os demais agentes.
+O modelo efetivo vem do motor local, não do `model_default` do cadastro;
+confirme o nome retornado pelo assistente no JSONL e o contexto na statusline.
 
 Na unit da API: `Environment=COCKPIT_LANCADOR=/caminho/absoluto/agente.sh`.
 Sem essa variável, os controles continuam pelo lançador original da VPS.
