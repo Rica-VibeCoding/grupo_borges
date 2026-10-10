@@ -236,3 +236,29 @@ async def test_troca_longa_retorna_202_sem_cancelar_operacao(monkeypatch, local)
         continuar.set()
         await tarefa
         operacao.esquecer(slug)
+
+
+def test_painel_ignora_modelo_e_uso_sinteticos(launcher_env, tmp_path):
+    module, _ = launcher_env
+    arquivo = tmp_path / "conversa.jsonl"
+    arquivo.write_text("\n".join(json.dumps(dict(message=m)) for m in [
+        dict(model="deepseek-v4.1-flash", usage=dict(input_tokens=261, cache_read_input_tokens=56576)),
+        dict(model="<synthetic>", usage=dict(input_tokens=0, output_tokens=0)),
+    ]))
+    with patch.object(module, "arquivo_sessao", return_value=arquivo):
+        assert module.contexto("teste") == (56837, "deepseek-v4.1-flash")
+
+
+@pytest.mark.parametrize("mesma_sessao", [False, True])
+def test_painel_tem_modelo_antes_do_primeiro_turno_so_da_sessao_viva(launcher_env, mesma_sessao):
+    module, a = launcher_env
+    sid = "11111111-1111-4111-8111-111111111111"
+    result = subprocess.CompletedProcess([], 0, stdout="%0\t321\t0\n")
+    telemetria = dict(session_id=sid if mesma_sessao else "outra", model=dict(id="deepseek-v4.1-flash[1m]"))
+    with (patch.object(module, "tmux", return_value=result),
+          patch.object(module, "processo_claude", return_value=(321, dict(sessionId=sid, status="idle"))),
+          patch.object(module, "idade_processo", return_value=1),
+          patch.object(module, "contexto", return_value=(None, None)),
+          patch.object(module, "json_ler", return_value=telemetria)):
+        e = module.estado(a)
+    assert e["modelo"] == ("deepseek-v4.1-flash[1m]" if mesma_sessao else None)
