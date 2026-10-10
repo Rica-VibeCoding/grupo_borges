@@ -15,6 +15,8 @@ from pathlib import Path
 # (inclusive o worker da GPU) antes disso, também quando o Voxtype falha.
 TIMEOUT_SECONDS = 28
 LOCK_PATH = Path(f"/run/user/{os.getuid()}/cockpit-voxtype.lock")
+# Opções extras do Voxtype (ex.: "--gpu-device 0" quando a GPU dedicada já está tomada pelo daemon).
+VOXTYPE_ARGS = os.environ.get("COCKPIT_VOXTYPE_ARGS", "").split()
 
 
 def run(command: list[str], deadline: float) -> str:
@@ -72,7 +74,7 @@ def main() -> int:
                     "-y", "-i", str(Path(sys.argv[1]).resolve()), "-vn",
                     "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav,
                 ], deadline)
-                text = transcription(run(["/usr/bin/voxtype", "--quiet", "transcribe", wav], deadline))
+                text = transcription(run(["/usr/bin/voxtype", "--quiet", *VOXTYPE_ARGS, "transcribe", wav], deadline))
             print(text)
         return 0
     except subprocess.TimeoutExpired:
