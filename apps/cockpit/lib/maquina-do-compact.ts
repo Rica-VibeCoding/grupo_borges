@@ -20,6 +20,9 @@ import {
  *  barra completa, respira um instante e vai embora. */
 export const HOLD_CONCLUSAO_MS = 400;
 
+/** Pane parou de compactar sem resumo: quanto ainda se espera o feed entregá-lo. */
+export const GRACA_FIM_DO_PANE_MS = 10_000;
+
 export type ConcluidoCompact = { uuid: string; duracaoMs: number };
 
 /** Snapshot plano de propósito: `useSyncExternalStore` compara por identidade,
@@ -78,6 +81,9 @@ export type ControleCompact = {
    *  a duração medida é do envio ao nascimento do resumo, não ao instante em
    *  que a aba reparou (importa quando ela estava em segundo plano). */
   concluir(uuid: string, fimMs?: number): void;
+  /** Leitura do pane (`null` = sem leitura). Compactava e parou sem resumo →
+   *  `sem-retorno` após a graça; `false` sem ter visto `true` não conta (fila). */
+  reconciliar(emAndamento: boolean | null): void;
   /** Volta ao ocioso sem registrar duração — envio que falhou, destrava
    *  confirmado, dismiss do "sem retorno". */
   cancelar(): void;
@@ -104,6 +110,7 @@ export function createControleCompact(
   let retomou = false;
   let timerEscape: ReturnType<typeof setTimeout> | undefined;
   let timerHold: ReturnType<typeof setTimeout> | undefined;
+  let visto = false, emGraca = false; // `visto`: o pane já acusou ESTE compact
   let duracoes = duracoesDe(lerRegistro(storage, agentSlug));
   /** Última hora do servidor que o feed reportou. Só sobe. */
   let relogioDoServidorMs: number | null = null;
@@ -135,6 +142,8 @@ export function createControleCompact(
   }
 
   function armarEscape(restanteMs: number): void {
+    if (timerEscape !== undefined) cancelarTimer(timerEscape);
+    emGraca = false;
     timerEscape = agendar(() => {
       timerEscape = undefined;
       // O sinal se perdeu: destrava o composer e diz a verdade. Se o resumo
@@ -152,6 +161,7 @@ export function createControleCompact(
   function iniciar(): void {
     if (descartado) return;
     limparTimers();
+    visto = false;
     const desdeMs = agora();
     const marcoServidorMs = relogioDoServidorMs;
     persistir({ inicio: desdeMs, marco: marcoServidorMs });
@@ -195,6 +205,17 @@ export function createControleCompact(
         duracaoMs: null,
       });
     }, HOLD_CONCLUSAO_MS);
+  }
+
+  function reconciliar(emAndamento: boolean | null): void {
+    if (descartado || estado.fase !== 'compactando' || emAndamento === null) return;
+    if (emAndamento) {
+      visto = true;
+      if (emGraca) armarEscape(ESCAPE_COMPACT_MS - (agora() - (estado.desdeMs ?? agora())));
+    } else if (visto && !emGraca) {
+      armarEscape(GRACA_FIM_DO_PANE_MS);
+      emGraca = true;
+    }
   }
 
   function cancelar(): void {
@@ -265,6 +286,7 @@ export function createControleCompact(
       return () => ouvintes.delete(ouvinte);
     },
     iniciar,
+    reconciliar,
     registrarRelogioDoServidor,
     concluir,
     cancelar,

@@ -200,6 +200,9 @@ export function usaVidaDoAgente(agentSlug: string, abertoDoServidor: boolean) {
     setLigar('enviando');
     try {
       const aviso = leiaLigar(await REDE.liga(agentSlug));
+      // Religar derruba o compact em voo: a sessão volta sem ele, e a barra
+      // presa esperaria um resumo que não vem mais.
+      cancelarCompact();
       buscar();
       timersDoBoot.current.forEach(clearTimeout);
       timersDoBoot.current = ESPERAS_APOS_LIGAR_MS.map((ms) => setTimeout(() => buscar(), ms));

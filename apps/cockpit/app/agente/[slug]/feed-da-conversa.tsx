@@ -27,6 +27,7 @@ import { usaLinhaVivaVencida } from '@/components/feed/linha-viva.tsx';
 import { encerraOrfas } from '@/components/feed/orfas-do-turno.ts';
 import { decideVazio } from '@/lib/decide-vazio.ts';
 import { usaCompact } from '@/lib/compact';
+import { usaPaneDoCompact } from '@/lib/usa-pane-do-compact';
 import { publicaTurnoVivo, turnoVivoDe } from '@/lib/turno-vivo.ts';
 import {
   publicaEscritaViva,
@@ -87,6 +88,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
   const {
     estado: estadoCompact,
     concluir: concluirCompact,
+    reconciliar: reconciliarCompact,
     registrarRelogioDoServidor,
   } = usaCompact(agentSlug);
   const faseCompact = estadoCompact.fase;
@@ -117,6 +119,7 @@ const FeedClaudeCode = memo(function FeedClaudeCode({
       }
     }
   }, [messages, faseCompact, marcoCompactMs, concluirCompact]);
+  usaPaneDoCompact(agentSlug, faseCompact, reconciliarCompact);
   // Instância estável POR GERAÇÃO — mesma razão do FeedAoVivo: recriar por
   // render jogaria fora o estado incremental do classificador. Na troca de
   // geração (session-reset), recriar é exatamente o pedido: o classificador

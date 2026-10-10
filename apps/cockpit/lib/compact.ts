@@ -26,6 +26,7 @@ import {
 } from './maquina-do-compact.ts';
 
 export {
+  GRACA_FIM_DO_PANE_MS,
   HOLD_CONCLUSAO_MS,
   createControleCompact,
   type EstadoCompact,
@@ -62,6 +63,7 @@ export function usaCompact(agentSlug: string): {
   iniciar: () => void;
   registrarRelogioDoServidor: (tsMs: number) => void;
   concluir: (uuid: string, fimMs?: number) => void;
+  reconciliar: (emAndamento: boolean | null) => void;
   cancelar: () => void;
 } {
   // A aquisição no render é deliberada e segura: `adquirir` é idempotente
@@ -94,6 +96,7 @@ export function usaCompact(agentSlug: string): {
     iniciar: controle.iniciar,
     registrarRelogioDoServidor: controle.registrarRelogioDoServidor,
     concluir: controle.concluir,
+    reconciliar: controle.reconciliar,
     cancelar: controle.cancelar,
   };
 }

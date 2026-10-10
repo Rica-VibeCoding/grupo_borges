@@ -464,6 +464,23 @@ async def get_agent_pulso(
     return {"agora": agora, "ultimo_evento": ultimo, "baldes": baldes}
 
 
+@router.get("/{slug}/compact")
+async def get_agent_compact(slug: str, request: Request) -> dict[str, Any]:
+    """O agente está compactando agora? Lido do pane, não do relógio da tela.
+
+    Rota própria e leve (um `capture-pane` curto): a barra do `/compact` a
+    consulta a cada poucos segundos enquanto espera, e o `/painel` inteiro
+    custaria cota, contexto e subagentes a cada leitura. `em_andamento` é
+    `null` quando o pane não pôde ser lido — quem consulta não conclui nada
+    disso.
+    """
+    agent = await _get_agent_or_404(request, slug)
+    excerpt = await tmux_driver.capture_pane_excerpt(
+        agent["tmux_session"], line_limit=30, max_chars=3000
+    )
+    return {"em_andamento": tmux_driver.parse_compactando_from_pane(excerpt)}
+
+
 # ----- Fase 3: skills / docs / tables (alimenta o AgentModal) ---------------
 
 @router.get("/{slug}/skills")

@@ -227,6 +227,16 @@ export async function fetchAgentPainel(slug: string, signal?: AbortSignal): Prom
   return res.json();
 }
 
+/** `em_andamento` vem do pane do agente; `null` = o servidor não conseguiu ler. */
+export async function fetchAgentCompact(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<{ em_andamento: boolean | null }> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/compact`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `fetchAgentCompact failed: ${res.status}`));
+  return res.json();
+}
+
 /** Eventos por minuto, do mais velho pro mais novo. Instantes em unix (s). */
 export type AgentPulsoResponse = {
   agora: number;

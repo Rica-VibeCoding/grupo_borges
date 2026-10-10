@@ -1713,6 +1713,26 @@ def parse_model_from_pane(excerpt: str | None) -> str | None:
     return matches[-1].group(1).lower()
 
 
+# O spinner do `/compact` no CC: "✻ Compacting conversation… (35s · ↓ 2.0k tokens)".
+# Ancorado no começo da linha (glifo + frase) e só nas últimas linhas: a frase
+# citada numa resposta do agente fica no meio do scrollback, nunca ali.
+_CC_COMPACTANDO = re.compile(r"^\s*\S\s+Compacting conversation", re.MULTILINE)
+_CC_COMPACTANDO_LINHAS_DO_FIM = 12
+
+
+def parse_compactando_from_pane(excerpt: str | None) -> bool | None:
+    """O agente está compactando AGORA? `None` quando não há pane para ler.
+
+    A tela do cockpit só adivinhava (relógio local + resumo chegando no feed);
+    o pane é a fonte que não mente, e some junto com o processo — religar o
+    agente derruba o spinner sozinho.
+    """
+    if not excerpt:
+        return None
+    fim = "\n".join(excerpt.splitlines()[-_CC_COMPACTANDO_LINHAS_DO_FIM:])
+    return _CC_COMPACTANDO.search(fim) is not None
+
+
 async def capture_pane_excerpt(
     session_name: str,
     *,

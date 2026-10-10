@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  GRACA_FIM_DO_PANE_MS,
   HOLD_CONCLUSAO_MS,
   createControleCompact,
   type ArmazenamentoCompact,
@@ -359,4 +360,69 @@ test('retomada após refresh traz o marco do servidor junto do início', () => {
   depois.retomarDoStorage();
   assert.equal(notificacoes, 1);
   depois.dispose();
+});
+
+/* -------------------------------------------------------------------------- */
+/* Reconciliação com o pane do servidor                                        */
+/* -------------------------------------------------------------------------- */
+
+function controleComSinal() {
+  const relogio = relogioFalso();
+  const agendador = agendadorFalso();
+  const c = createControleCompact('caseiro', {
+    agora: relogio.agora,
+    agendar: agendador.agendar,
+    cancelar: agendador.cancelar,
+    storage: null,
+  });
+  c.iniciar();
+  return { c, agendador };
+}
+
+test('reconciliar — pane que nunca compactou não derruba a espera (o /compact pode estar na fila)', () => {
+  const { c } = controleComSinal();
+  c.reconciliar(false);
+  c.reconciliar(false);
+  assert.equal(c.getEstado().fase, 'compactando');
+  c.dispose();
+});
+
+test('reconciliar — compactava e o pane parou sem resumo: após a graça vira sem-retorno', () => {
+  const { c, agendador } = controleComSinal();
+  c.reconciliar(true);
+  c.reconciliar(false);
+  assert.equal(agendador.timers.at(-1)?.atrasoMs, GRACA_FIM_DO_PANE_MS);
+  assert.equal(c.getEstado().fase, 'compactando', 'dá tempo do resumo chegar no feed');
+  agendador.dispararUltimo();
+  assert.equal(c.getEstado().fase, 'sem-retorno');
+  c.dispose();
+});
+
+test('reconciliar — o resumo chegando dentro da graça conclui normalmente', () => {
+  const { c } = controleComSinal();
+  c.reconciliar(true);
+  c.reconciliar(false);
+  c.concluir('uuid-resumo');
+  assert.equal(c.getEstado().fase, 'concluindo');
+  c.dispose();
+});
+
+test('reconciliar — pane voltando a compactar durante a graça cancela o fim', () => {
+  const { c, agendador } = controleComSinal();
+  c.reconciliar(true);
+  c.reconciliar(false);
+  c.reconciliar(true);
+  // O que sobra armado é o escape original, não a graça.
+  assert.notEqual(agendador.timers.at(-1)?.atrasoMs, GRACA_FIM_DO_PANE_MS);
+  assert.equal(c.getEstado().fase, 'compactando');
+  c.dispose();
+});
+
+test('reconciliar — leitura nula do pane não afirma nada', () => {
+  const { c, agendador } = controleComSinal();
+  c.reconciliar(true);
+  c.reconciliar(null);
+  assert.notEqual(agendador.timers.at(-1)?.atrasoMs, GRACA_FIM_DO_PANE_MS);
+  assert.equal(c.getEstado().fase, 'compactando');
+  c.dispose();
 });
