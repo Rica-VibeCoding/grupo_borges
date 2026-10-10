@@ -4645,7 +4645,14 @@ async def get_channel_attachment(
         raise HTTPException(status_code=400, detail=f"path inválido: {exc}") from exc
 
     try:
-        resolved.relative_to(_CHANNEL_ATTACHMENT_ROOT)
+        configured = get_settings().channel_attachment_root
+        root = _CHANNEL_ATTACHMENT_ROOT
+        if configured:
+            candidate = Path(configured).expanduser()
+            if not candidate.is_absolute():
+                raise ValueError("a raiz configurada precisa ser absoluta")
+            root = candidate.resolve()
+        resolved.relative_to(root)
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
