@@ -79,8 +79,8 @@ O lançador já preserva essas flags no Ligar, Relançar e Retomar.
 
 Nos settings, mantenha `env.TELEGRAM_STATE_DIR` igual ao cadastro e
 `autoMemoryDirectory` apontando para a memória própria. O Pós exclui o
-`CLAUDE.local.md` da raiz via `claudeMdExcludes`. Hooks usam as cópias locais
-do notebook, como no Estúdio; scripts de voz ficam na montagem `ze_claude`.
+`CLAUDE.local.md` da raiz via `claudeMdExcludes`. Hooks e scripts de voz usam cópias locais
+do notebook em `~/.claude/hooks/` e `~/.claude/skills/voz/scripts/`.
 Arquivos já existentes no clone são preservados; insumos privados novos que
 não sejam ignorados exigem exclusões locais em `.git/info/exclude`.
 Não altere arquivos versionados do Fluyt para instalar as personas.
@@ -122,3 +122,73 @@ prova de 10/10/2026 falhou com `ErrorOutOfDeviceMemory` e SIGSEGV do avulso;
 o daemon permaneceu ativo. Não tentar resolver reiniciando o ditado,
 mudando seu modelo ou sua configuração. STT real fica pendente de capacidade.
 TTS permanece no caminho existente; o fallback edge-tts é online, sem chave.
+
+
+## Entorno por agente (etapa 6)
+
+Os cinco cadastros passam `--settings ~/.claude/agentes/<id>.settings.json` e
+`--mcp-config ~/.claude/agentes/<id>.mcp.json`, com caminhos absolutos e modo 600.
+Nenhum campo novo no lançador: as flags existentes bastam. Faça backup dos
+arquivos preexistentes com `.bak-etapa6`; preserve os hooks de reação e os MCPs
+anteriores. Não edite `~/.claude/settings.json` nem `~/.claude.json`.
+
+Copie os hooks e skills da fonte somente leitura para diretórios locais.
+Instale `cockpit-load-skill.sh` deste diretório em `~/.claude/hooks/` e mantenha
+`canal-cockpit`, `conversa-por-voz`, `canal-telegram` e `voz` em `~/.claude/skills/`.
+O hook diferencia cockpit/voz/Telegram. Um marcador só registra que o lembrete
+foi emitido: a supressão exige a carga real da skill no JSONL. Uma menção ao
+nome ou uma tentativa falha não pode impedir a carga. Validação isolada:
+`python scripts/cockpit-local/test-cockpit-load-skill.py`.
+
+`UserPromptSubmit` executa o hook de cockpit e `memoria-teto-indice.py`; os quatro
+agentes com canal também executam `telegram-load-skill.sh`, sem trocar os hooks
+de reação. `PreToolUse`, matcher `Bash`, executa os quatro scripts da fonte:
+`bloqueia-kill-servidor-tmux.py`, `bloqueia-regex-explosiva.py`,
+`exige-fonte-na-delegacao.py` e `bloqueia-imagem-api.py`. Regex permanece em
+**observação**, como na fonte: registra suspeitas e permite o comando.
+Os logs locais das travas omitem o comando bruto, que pode conter credenciais.
+`frente-cadeira.py` e `faxina-leitura.sh` não foram instalados: seus registros
+alimentam medidores/faxina da VPS sem consumidor local neste painel.
+
+A cópia local de `memoria-teto-indice.py` lê primeiro o arquivo indicado por
+`env.COCKPIT_AGENT_SETTINGS`, o próprio settings do agente. Isso conserva o teto
+na memória realmente usada por Fluyt Pós e demais agentes com `--settings`.
+`SessionStart`, matcher `resume`, executa `briefing-retorno.sh`, timeout 5;
+`env.COCKPIT_API_URL=http://127.0.0.1:8002` é a base desse hook, **sem `/api`**.
+
+Copie `pyproject.toml`, `uv.lock` e `src/` do MCP ask-user para
+`~/.local/share/cockpit-notebook/ask-user/` e rode `uv sync --frozen` nesse diretório.
+O MCP próprio usa `.venv/bin/ask-user-server`, `AGENT_SLUG` igual ao slug da API
+(`canarinho` para o ID tmux `canario`) e
+`COCKPIT_API_URL=http://127.0.0.1:8002/api`. Ele chama `/ask_user/wait`;
+`/api/ask_user/answer/<UUID>`, `/pending` e o evento SSE `ask_user` já existem.
+`permissions.deny` inclui `AskUserQuestion` para as perguntas usarem o card.
+Context7 herdado com `--api-key` recebe override no MCP próprio por
+`env.CONTEXT7_API_KEY`, sem alterar o cadastro global ou expor valor em argv.
+
+No Canário, `--setting-sources user` exclui os hooks de projeto da montagem;
+o settings próprio preserva memória/deny e registra a versão local uma vez.
+`--strict-mcp-config` evita carregar o MCP da VPS. A persona permanece na
+montagem; um `--append-system-prompt-file` local indica os scripts de voz locais
+e a ausência de canal próprio. Skills pessoais prevalecem sobre nomes iguais
+no projeto, conforme a [documentação de skills](https://code.claude.com/docs/en/skills#resolve-skills-that-share-a-name).
+A seleção de fontes e o MCP estrito seguem a
+[referência da CLI](https://code.claude.com/docs/en/cli-reference).
+
+Voz: logs `/home/clawd/.claude/metrics` viram `~/.claude/metrics`; STT busca o
+`.env` do cwd/cofre local, sem buscar o `.env` da montagem. O script de envio
+usa o hook local de limpar reação e exige canal explícito para cwd desconhecido.
+As duas personas locais não versionadas do Fluyt apontam para os scripts locais;
+seus backups estão excluídos somente em `.git/info/exclude`. Não copie chaves
+para suprir faltas. `GOOGLE_TTS_API_KEY` falta em Note/Estúdio/Canário;
+`OPENAI_API_KEY` e `GEMINI_API_KEY` faltam nos cinco caminhos locais.
+`ELEVENLABS_API_KEY` existe no Estúdio, mas `falar.py` escolhe Google por padrão;
+`MINIMAX_API_KEY` falta nos cinco. Canário não tem `TELEGRAM_BOT_TOKEN`/canal.
+Síntese, transcrição e envio reais não foram executados nesta etapa.
+
+Para aplicar, confirme registro `idle` **e** input `empty` pelo leitor ANSI da
+API; não confunda sugestão cinza com texto digitado. Relance pelo lançador com
+`--resume <UUID confirmado no processo>`, uma vez por agente; mantenha ocupado
+ou input armado intacto. Confirme UUID, flags, `/mcp` e Telegram depois.
+O hook não recarrega uma skill já presente na mesma conversa: a prova deve
+separar novas chamadas `Skill` do reaproveitamento do contexto ao retomar.
