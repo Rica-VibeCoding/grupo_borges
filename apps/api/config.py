@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     workspaces_root: str = ""  # raiz dos workspaces dos 6 agentes (opcional, info)
     db_path: str = str(API_ROOT / "data" / "grupo_borges.db")
     claude_projects_dir: str = str(Path.home() / ".claude" / "projects")
+    # Opt-in local; vazio conserva a cerca histórica da VPS.
+    allowed_workspace_roots: str = ""  # caminhos absolutos separados por ':'
+    tmux_socket_overrides: str = ""  # JSON sessão → socket; vazio usa o template
     # Endereço da API que o agente usa no `curl` do estacionar (Nova conversa).
     # Vazio = `http://127.0.0.1:<porta do uvicorn>`, que basta na VPS.
     api_url_agentes: str = ""

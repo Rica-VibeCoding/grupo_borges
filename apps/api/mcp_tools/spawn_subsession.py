@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from orchestrator.jsonl_watcher import count_active_subsessions_for_task, register_spawned_subagent
 from services import workspace_reader
+from services.workspace_paths import validate_workspace
 
 _REPOS_ROOT = Path("/home/clawd/repos").resolve()
 _UNSAFE_WORKSPACE_CHARS = re.compile(r"[;&|\n\r\0]")
@@ -152,9 +153,7 @@ async def spawn_subsession(
     if _UNSAFE_WORKSPACE_CHARS.search(workspace_path):
         raise ValueError("workspace_path contém caracteres inseguros")
 
-    resolved = Path(workspace_path).resolve()
-    if not resolved.is_relative_to(_REPOS_ROOT):
-        raise ValueError(f"workspace_path fora de {_REPOS_ROOT}: {workspace_path}")
+    validate_workspace(workspace_path, _REPOS_ROOT)
 
     subsession_id = str(uuid.uuid4())
     short_id = subsession_id[:8]
