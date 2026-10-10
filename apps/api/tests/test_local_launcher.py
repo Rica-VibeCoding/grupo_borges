@@ -77,8 +77,9 @@ def test_lancador_conserva_flags_na_retoma_e_na_nova(tmp_path):
                   claude="/bin/true", path="/usr/bin",
                   agentes=[dict(id="teste", nome="Teste", socket="cockpit-teste", sessao="teste",
                                 cwd=str(tmp_path), state_dir=str(tmp_path / "estado"), boot=False,
-                                flags=["--model", "claude-haiku-5-5", "--effort", "high",
-                                       "--settings", str(tmp_path / "settings.json")])])
+                                flags=["--model", "claude-opus-5-5", "--effort", "medium",
+                                       "--settings", str(tmp_path / "settings.json"),
+                                       "--mcp-config", str(tmp_path / "mcp.json")])])
     (tmp_path / "agentes.json").write_text(json.dumps(config))
     spec = importlib.util.spec_from_file_location("launcher_test", tmp_path / "agentes.py")
     module = importlib.util.module_from_spec(spec)
@@ -96,12 +97,14 @@ def test_lancador_conserva_flags_na_retoma_e_na_nova(tmp_path):
               patch.object(module, "rodar", return_value=subprocess.CompletedProcess([], 0)) as run):
             module.ligar(a, resume=resume, nova=nova)
         argv = run.call_args.args[0]
-        for flag, value in [("--model", "claude-haiku-5-5"), ("--effort", "high"),
-                            ("--settings", str(tmp_path / "settings.json"))]:
+        for flag, value in [("--model", "claude-opus-5-5"), ("--effort", "medium"),
+                            ("--settings", str(tmp_path / "settings.json")),
+                            ("--mcp-config", str(tmp_path / "mcp.json"))]:
             assert argv[argv.index(flag) + 1] == value
         assert not any(v.startswith("TELEGRAM_STATE_DIR=") for v in argv)
         assert module.ambiente(a)["TELEGRAM_STATE_DIR"] == a["state_dir"]
         assert "--channels" in argv
+        assert argv[argv.index("--channels") + 1] == "plugin:telegram@claude-plugins-official"
         assert ("--resume" in argv) != nova
         if resume:
             assert argv[argv.index("--resume") + 1] == sid
