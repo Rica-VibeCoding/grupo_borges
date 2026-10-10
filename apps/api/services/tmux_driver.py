@@ -21,8 +21,10 @@ from typing import Literal, NamedTuple, TypeVar
 
 import libtmux
 from libtmux import exc as libtmux_exc
+from config import get_settings
 
 from services import delivery_log
+from services.workspace_paths import validate_workspace
 
 # Orçamentos independentes: pane ocupada pode ficar temporariamente ilegível
 # antes do paste sem consumir o tempo reservado para provar a submissão.
@@ -355,8 +357,32 @@ AgentCli = Literal["claude_code"]
 _TMUX_SOCKET_TEMPLATE = os.getenv("COCKPIT_TMUX_SOCKET", "").strip()
 
 
+def _named_socket(session_name: str) -> str:
+    configured = get_settings().tmux_socket_overrides
+    if not configured:
+        return _TMUX_SOCKET_TEMPLATE.format(session=session_name)
+    overrides = json.loads(configured)
+    if not isinstance(overrides, dict):
+        raise ValueError("GB_TMUX_SOCKET_OVERRIDES exige um objeto JSON")
+    value = overrides.get(session_name, _TMUX_SOCKET_TEMPLATE.format(session=session_name))
+    if not isinstance(value, str) or (value and not re.fullmatch(r"[a-zA-Z0-9_-]+", value)):
+        raise ValueError("socket tmux inválido")
+    return value
+
+
 def _configured_named_socket_names() -> list[str]:
     """Descobre sockets configurados sem consultar uma vez por agente."""
+    configured = get_settings().tmux_socket_overrides
+    if configured:
+        overrides = json.loads(configured)
+        if not isinstance(overrides, dict):
+            raise ValueError("GB_TMUX_SOCKET_OVERRIDES exige um objeto JSON")
+        explicit = {_named_socket(name) for name in overrides}
+        if not _TMUX_SOCKET_TEMPLATE:
+            return sorted(explicit)
+        tmux_tmpdir = Path(os.getenv("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}"
+        pattern = _TMUX_SOCKET_TEMPLATE.replace("{session}", "*")
+        return sorted(explicit | {p.name for p in tmux_tmpdir.glob(pattern) if p.is_socket()})
     if not _TMUX_SOCKET_TEMPLATE:
         return []
     if "{session}" not in _TMUX_SOCKET_TEMPLATE:
@@ -527,9 +553,9 @@ async def conversas_dos_processos() -> dict[str, tuple[str, float]]:
 
 
 def _server_for(session_name: str) -> libtmux.Server:
-    if _TMUX_SOCKET_TEMPLATE:
+    if _TMUX_SOCKET_TEMPLATE or get_settings().tmux_socket_overrides:
         named = libtmux.Server(
-            socket_name=_TMUX_SOCKET_TEMPLATE.format(session=session_name)
+            socket_name=_named_socket(session_name)
         )
         try:
             if named.has_session(session_name):
@@ -1101,9 +1127,7 @@ def _prepare_cli_launch(
         raise ValueError(f"model inválido: {model}")
     if _UNSAFE_WORKSPACE_CHARS.search(workspace_path):
         raise libtmux_exc.LibTmuxException("workspace_path contém caracteres inseguros")
-    resolved_workspace = Path(workspace_path).resolve()
-    if not resolved_workspace.is_relative_to(_REPOS_ROOT):
-        raise ValueError(f"workspace_path fora de {_REPOS_ROOT}: {workspace_path}")
+    resolved_workspace = validate_workspace(workspace_path, _REPOS_ROOT)
 
     try:
         command = _CLI_COMMANDS[cli](model)
@@ -1559,6 +1583,8 @@ def _restart_claude_with_resume_sync(
     anchors = _conversation_resume_anchors(resume_jsonl)
     if not anchors:
         raise ValueError("conversa sem texto observável para confirmar o resume")
+    if local_launcher_enabled():
+        return _local_launch_sync(session_name, "relancar", resume_session_id)
 
     # O shell final continua sendo a rede de segurança caso o Claude saia. Não
     # há fallback para uma conversa fresh: uma TUI nova jamais pode confirmar
@@ -1654,9 +1680,9 @@ def _capture_pane_excerpt_sync(
     args = ("capture-pane", "-p", "-e", "-J", "-S", f"-{line_limit}", "-E", "-")
     target = f"={session_name}:"
     servers = []
-    if _TMUX_SOCKET_TEMPLATE:
+    if _TMUX_SOCKET_TEMPLATE or get_settings().tmux_socket_overrides:
         servers.append(
-            libtmux.Server(socket_name=_TMUX_SOCKET_TEMPLATE.format(session=session_name))
+            libtmux.Server(socket_name=_named_socket(session_name))
         )
     servers.append(libtmux.Server())
     for server in servers:
@@ -1966,6 +1992,13 @@ def _shutdown_agent_sync(session_name: str) -> dict[str, object]:
     Varre TODAS as windows, não só a ativa: o relaunch cria window nova, e uma
     antiga que resistiu ao `kill-window` ainda segura processo do agente.
     """
+    if local_launcher_enabled():
+        _call_local_launcher(session_name, "desligar")
+        stopped = not _server_for(session_name).has_session(session_name)
+        if not stopped:
+            raise ValueError("o lançador não confirmou o desligamento")
+        return {"attempted": True, "sessao_encerrada": True,
+                "scopes_parados": [], "scopes_resistiram": [], "boot_cancelado": False}
     # Primeiro passo, e antes de checar sessão: boot em curso é consumo do
     # agente e morre junto. Sem sessão é justamente quando a unit sobra.
     boot_cancelado = _stop_boot_unit(session_name)
@@ -2035,6 +2068,54 @@ _SUBIR_FROTA = Path("/home/clawd/repos/ze_claude/ze-shared/scripts/subir-frota.s
 _LIGAR_TIMEOUT_S = 40.0
 _LIGAR_POLL_INTERVAL_S = 0.75
 
+
+def local_launcher_enabled() -> bool:
+    return bool(os.environ.get("COCKPIT_LANCADOR"))
+
+
+def _call_local_launcher(session_name: str, action: str, resume: str | None = None,
+                         *, new: bool = False) -> None:
+    if not _SESSION_NAME_PATTERN.fullmatch(session_name):
+        raise ValueError("nome de sessão inválido")
+    launcher = Path(os.environ["COCKPIT_LANCADOR"])
+    if not launcher.is_absolute() or not launcher.is_file():
+        raise ValueError("COCKPIT_LANCADOR exige um executável absoluto")
+    args = [str(launcher), action, session_name]
+    if resume is not None:
+        if not _SESSION_ID_PATTERN.fullmatch(resume):
+            raise ValueError("session_id inválido para claude --resume")
+        args += ["--resume", resume]
+    elif new:
+        args += ["--new"]
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("o lançador local não concluiu a operação") from exc
+    if result.returncode:
+        # O stderr do lançador pode carregar ambiente privado: não o publicar.
+        raise ValueError("o lançador local recusou a operação; consulte o log local")
+
+
+def _local_launch_sync(session_name: str, action: str, resume: str | None = None,
+                       *, new: bool = False) -> dict[str, bool]:
+    lock = _acquire_dispatch_lock(session_name)
+    try:
+        _call_local_launcher(session_name, action, resume, new=new)
+        deadline = time.monotonic() + _LIGAR_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if _estado_da_largada_sync(session_name) == "pronta":
+                return {"attempted": True, "confirmed": True}
+            time.sleep(_LIGAR_POLL_INTERVAL_S)
+        return {"attempted": True, "confirmed": False}
+    finally:
+        lock.release()
+
+
+async def new_local_conversation(session_name: str) -> dict[str, bool]:
+    return await _run_tmux_operation(
+        functools.partial(_local_launch_sync, session_name, "relancar", new=True)
+    )
+
 #: Quanto esperar a unit do boot ANTERIOR sair do registro do systemd. Com o
 #: `KillMode=process` abaixo ela sobrevive ao script segurando o servidor tmux no
 #: cgroup, e só é descarregada depois que o desligar mata esse servidor — ~50ms
@@ -2096,6 +2177,8 @@ def _boot_agent_sync(
     """
     if not _SESSION_NAME_PATTERN.fullmatch(session_name):
         raise ValueError(f"nome de sessão inválido: {session_name}")
+    if local_launcher_enabled():
+        return _local_launch_sync(session_name, "ligar", resume_session_id)
     flags = _flags_de_largada(resume_session_id)
     if not _SUBIR_FROTA.is_file():
         raise ValueError(f"script de boot ausente: {_SUBIR_FROTA}")

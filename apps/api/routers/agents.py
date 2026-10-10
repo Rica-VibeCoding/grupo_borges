@@ -4793,6 +4793,8 @@ async def post_agent_relaunch(
 
     db: GrupoBorgesDB = request.app.state.db
     session_id = await db.latest_jsonl_session_id(slug)
+    if tmux_driver.local_launcher_enabled():
+        session_id = await _sessao_do_chat(request.app, agent, session_id)
     if session_id is None:
         raise HTTPException(status_code=409, detail="resume_session_not_found")
 

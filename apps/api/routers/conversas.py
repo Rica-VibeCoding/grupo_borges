@@ -547,6 +547,29 @@ async def _conduzir_nova(
         if pasta is None:
             raise _Falha("a pasta de conversas deste agente não é só dele")
         ja_havia = await asyncio.to_thread(conversas.ids_na_pasta, pasta)
+        if tmux_driver.local_launcher_enabled():
+            resultado = await tmux_driver.new_local_conversation(tmux_session)
+            if not resultado["confirmed"]:
+                raise _Falha("o lançador local não confirmou a conversa nova")
+            # O rename materializa o JSONL, mesmo antes do primeiro turno.
+            entrega = await tmux_driver.send_message(tmux_session, f"/rename {agent['name']}")
+            if entrega.safe_to_resend:
+                raise _Falha("a conversa nova abriu, mas o /rename não chegou")
+
+            async def nasceu_local() -> bool:
+                return bool(await asyncio.to_thread(conversas.ids_na_pasta, pasta) - ja_havia)
+
+            if not await operacao.esperar(nasceu_local, operacao.PRAZO_CONVERSA_NOVA_S):
+                raise _Falha("a conversa nova não gravou seu JSONL")
+            novas = await asyncio.to_thread(conversas.ids_na_pasta, pasta) - ja_havia
+            if len(novas) != 1:
+                raise _Falha("mais de uma conversa apareceu durante a troca")
+            nova = novas.pop()
+            operacao.registrar_troca(slug, sessao_antes, nova)
+            await _gravar_anterior(db, slug, sessao_antes)
+            await _publicar_troca(app, agent, op, de=sessao_antes, entrou=nova, motivo="nova")
+            operacao.avancar(op, "pronta")
+            return
         # `/clear` puro. Com argumento (`/clear <título>`), o CC grava o comando
         # como primeira mensagem da conversa NOVA e o modelo lê o título velho
         # como se fosse pedido (F11). O título da que sai já mora na
