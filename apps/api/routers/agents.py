@@ -45,6 +45,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sse_starlette import EventSourceResponse, ServerSentEvent
+from config import get_settings
 
 from db.store import (
     LIFECYCLE_FRESH_THRESHOLD_SECONDS,
@@ -1326,6 +1327,15 @@ async def _load_cc_status(db: GrupoBorgesDB, slug: str) -> _CCStatus:
     recentes até achar uma com arquivo legível, marcando `fell_back` —
     melhor mostrar o último contexto conhecido do que painel vazio.
     """
+    if get_settings().local_claude_telemetry:
+        from services.claude_runtime import read_runtime, read_status
+
+        agent = await db.get_agent(slug)
+        runtime = await read_runtime(agent["tmux_session"], agent["workspace_path"]) if agent else None
+        if runtime is None:
+            return _CCStatus(None, None, None)
+        path = Path("/tmp") / f"{_CC_STATUS_PREFIX}{runtime.session_id}.json"
+        return _CCStatus(runtime.session_id, path, await asyncio.to_thread(read_status, runtime.session_id))
     session_ids = await db.recent_jsonl_session_ids(slug)
     if not session_ids:
         return _CCStatus(None, None, None)

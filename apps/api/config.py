@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Opt-in local; vazio conserva a cerca histórica da VPS.
     allowed_workspace_roots: str = ""  # caminhos absolutos separados por ':'
     tmux_socket_overrides: str = ""  # JSON sessão → socket; vazio usa o template
+    local_claude_telemetry: bool = False
     # Endereço da API que o agente usa no `curl` do estacionar (Nova conversa).
     # Vazio = `http://127.0.0.1:<porta do uvicorn>`, que basta na VPS.
     api_url_agentes: str = ""
