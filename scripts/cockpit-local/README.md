@@ -68,6 +68,32 @@ As opções abaixo são desligadas por padrão e podem ser colocadas na `.env` d
 Após editar a configuração, reinicie somente a unit da API. Reiniciar a API
 ou o painel da máquina não reinicia os scopes dos agentes.
 
+## Fluyt Comercial e Pós no notebook
+
+Os IDs `fluytcom` e `fluytpos` usam sessão/socket próprios, `boot: false`,
+Opus 5.5 e esforço médio. O Comercial abre na raiz do clone local do Fluyt;
+o Pós abre em `apps/pos`. Cada cadastro usa `state_dir` do seu canal e as flags
+`--settings ~/.claude/agentes/<id>.settings.json` e
+`--mcp-config ~/.claude/agentes/<id>.mcp.json`, com caminhos absolutos.
+O lançador já preserva essas flags no Ligar, Relançar e Retomar.
+
+Nos settings, mantenha `env.TELEGRAM_STATE_DIR` igual ao cadastro e
+`autoMemoryDirectory` apontando para a memória própria. O Pós exclui o
+`CLAUDE.local.md` da raiz via `claudeMdExcludes`. Hooks usam as cópias locais
+do notebook, como no Estúdio; scripts de voz ficam na montagem `ze_claude`.
+Arquivos já existentes no clone são preservados; insumos privados novos que
+não sejam ignorados exigem exclusões locais em `.git/info/exclude`.
+Não altere arquivos versionados do Fluyt para instalar as personas.
+
+Arquivos MCP/canais e `.env` ficam em modo 600, diretórios privados em 700.
+Mantenha cabeçalhos e tokens nos arquivos privados, nunca em flags.
+Se o Context7 global herdado usar `--api-key`, sobrescreva somente o servidor
+dos agentes novos no MCP próprio, usando `env.CONTEXT7_API_KEY` em vez da flag.
+Não altere o cadastro global nem reinicie as sessões existentes.
+Confirme Telegram e `supabase_geral` no `/mcp`, um poller por token, um turno
+pela API e o mesmo UUID com `--resume` após desligar/ligar. Valide o JSONL:
+persona e memória próprias, sem persona da raiz no Pós.
+
 ## Voz local (opt-in)
 
 Na unit da API (não apenas na `.env`):
