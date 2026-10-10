@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -19,6 +20,7 @@ SESSOES = Path.home() / ".claude/sessions"
 PROJETOS = Path.home() / ".claude/projects"
 IDENT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 SESSION_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}\Z")
+ENV_NOME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*\Z")
 
 
 def configurar():
@@ -41,12 +43,17 @@ def configurar():
                 raise ValueError(f"{campo} inválido no config")
         if a["id"] in ids or a["socket"] in sockets:
             raise ValueError("ids e sockets precisam ser únicos")
-        ids.add(a["id"]); sockets.add(a["socket"])
+        ids.add(a["id"])
+        sockets.add(a["socket"])
         if not isinstance(a["nome"], str) or not isinstance(a["boot"], bool):
             raise ValueError("nome/boot inválido")
-        for campo in ("cwd", "state_dir"):
-            if not Path(a[campo]).is_absolute():
-                raise ValueError(f"{campo} precisa de caminho absoluto")
+        for campo in ("cwd", "state_dir", "env_arquivo"):
+            if campo == "cwd" or a.get(campo) is not None:
+                if not isinstance(a[campo], str) or not Path(a[campo]).is_absolute():
+                    raise ValueError(f"{campo} precisa de caminho absoluto")
+        remover = a.get("env_remover", [])
+        if not isinstance(remover, list) or not all(isinstance(v, str) and ENV_NOME.fullmatch(v) for v in remover):
+            raise ValueError("env_remover precisa ser uma lista de nomes de variável")
         if not isinstance(a["flags"], list) or not all(isinstance(v, str) for v in a["flags"]):
             raise ValueError("flags precisa ser uma lista de argumentos")
         if any(v.split("=", 1)[0] in {"--continue", "-c", "--resume", "-r"} for v in a["flags"]):
@@ -56,6 +63,32 @@ def configurar():
 
 CONFIG = configurar()
 AGENTES = {a["id"]: a for a in CONFIG["agentes"]}
+
+
+def ambiente(a):
+    """KEY=VALUE literal, sem shell/expansão; erros nunca incluem valores."""
+    env = os.environ.copy()
+    if a.get("env_arquivo"):
+        fd = os.open(a["env_arquivo"], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, encoding="utf-8", errors="replace") as f:
+            info = os.fstat(f.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
+                raise ValueError("env_arquivo exige arquivo regular do usuário em modo 600")
+            for numero, linha in enumerate(f, 1):
+                linha = linha.rstrip("\r\n")
+                if not linha.strip() or linha.lstrip().startswith("#"):
+                    continue
+                nome, separador, valor = linha.partition("=")
+                if not separador or not ENV_NOME.fullmatch(nome) or "\0" in valor or "\ufffd" in linha:
+                    raise ValueError(f"env_arquivo inválido na linha {numero}")
+                env[nome] = valor
+    for nome in a.get("env_remover", []):
+        env.pop(nome, None)
+    env["PATH"] = CONFIG["path"]
+    env.pop("TELEGRAM_STATE_DIR", None)
+    if a.get("state_dir"):
+        env["TELEGRAM_STATE_DIR"] = a["state_dir"]
+    return env
 
 
 def rodar(cmd, timeout=10):
@@ -170,7 +203,8 @@ def linhas_reversas(caminho):
         f.seek(0, 2)
         pos, resto = f.tell(), b""
         while pos:
-            n = min(pos, 65536); pos -= n
+            n = min(pos, 65536)
+            pos -= n
             f.seek(pos)
             partes = (f.read(n) + resto).split(b"\n")
             resto = partes[0]
@@ -273,10 +307,13 @@ def ligar(a, resume=None, nova=False, _locked=False):
             raise ValueError("Confira a pasta do projeto e o executável Claude no config.")
         if not shutil.which("systemd-run") or not shutil.which("tmux"):
             raise ValueError("tmux e systemd-run precisam estar disponíveis.")
+        ambiente(a)  # Recusa arquivo inválido antes de criar a sessão.
+        # O filho lê o arquivo e faz execve: valores nunca passam por argv,
+        # systemd, shell ou ambiente de um servidor tmux já existente.
         cmd = ["tmux", "-L", a["socket"], "new-session", "-d", "-s", a["sessao"],
-               "-x", "200", "-y", "50", "-c", a["cwd"], "env",
-               "PATH=" + CONFIG["path"], "TELEGRAM_STATE_DIR=" + a["state_dir"],
-               CONFIG["claude"], "--dangerously-skip-permissions", *a["flags"]]
+               "-x", "200", "-y", "50", "-c", a["cwd"],
+               "/usr/bin/python3", str(PASTA / "agentes.py"), "--exec", a["id"],
+               "--dangerously-skip-permissions", *a["flags"]]
         try:
             sid = (ESTADO / (a["id"] + ".session")).read_text().strip()
         except FileNotFoundError:
@@ -290,7 +327,8 @@ def ligar(a, resume=None, nova=False, _locked=False):
             cmd += ["--resume", sid]
         elif nova:
             cmd += ["--session-id", str(uuid.uuid4())]
-        cmd += ["--channels", "plugin:telegram@claude-plugins-official"]
+        if a.get("state_dir"):
+            cmd += ["--channels", "plugin:telegram@claude-plugins-official"]
         # O servidor nasce no scope, fora das duas units. O cliente tmux termina,
         # mas o scope continua vivo enquanto o servidor tiver processos nele.
         scope = "cockpit-tmux-" + a["id"] + "-" + uuid.uuid4().hex
@@ -370,6 +408,9 @@ def relancar(a, resume=None, nova=False):
 
 
 def main():
+    if len(sys.argv) >= 4 and sys.argv[1] == "--exec" and sys.argv[2] in AGENTES:
+        a = AGENTES[sys.argv[2]]
+        os.execve(CONFIG["claude"], [CONFIG["claude"], *sys.argv[3:]], ambiente(a))
     if sys.argv[1:] == ["--boot"]:
         return boot()
     args = sys.argv[1:]

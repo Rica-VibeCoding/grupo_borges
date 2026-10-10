@@ -99,9 +99,100 @@ def test_lancador_conserva_flags_na_retoma_e_na_nova(tmp_path):
         for flag, value in [("--model", "claude-haiku-5-5"), ("--effort", "high"),
                             ("--settings", str(tmp_path / "settings.json"))]:
             assert argv[argv.index(flag) + 1] == value
-        assert "TELEGRAM_STATE_DIR=" + a["state_dir"] in argv
+        assert not any(v.startswith("TELEGRAM_STATE_DIR=") for v in argv)
+        assert module.ambiente(a)["TELEGRAM_STATE_DIR"] == a["state_dir"]
+        assert "--channels" in argv
         assert ("--resume" in argv) != nova
         if resume:
             assert argv[argv.index("--resume") + 1] == sid
         else:
             assert "--session-id" in argv
+
+
+@pytest.fixture
+def launcher_env(tmp_path):
+    import importlib.util
+    import shutil
+
+    source = Path(__file__).resolve().parents[3] / "scripts/cockpit-local/agentes.py"
+    shutil.copy(source, tmp_path / "agentes.py")
+    config = dict(ip_tailscale="100.64.0.1", porta=8787, janela_tokens=1000000,
+                  claude="/bin/true", path="/usr/bin",
+                  agentes=[dict(id="teste", nome="Teste", socket="cockpit-teste", sessao="teste",
+                                cwd=str(tmp_path), boot=False, flags=[])])
+    (tmp_path / "agentes.json").write_text(json.dumps(config))
+    spec = importlib.util.spec_from_file_location("launcher_env_test", tmp_path / "agentes.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.ESTADO = tmp_path / "salvo"
+    return module, module.AGENTES["teste"]
+
+
+def test_env_privado_literal_apenas_no_execve(launcher_env, tmp_path, monkeypatch):
+    module, a = launcher_env
+    segredo = "credencial-ficticia-$(sem-execucao)"
+    arquivo = tmp_path / "motor.env"
+    arquivo.write_text(f"# motor\nANTHROPIC_API_KEY={segredo}\nANTHROPIC_MODEL=deepseek[1m]\n")
+    arquivo.chmod(0o600)
+    a.update(env_arquivo=str(arquivo), env_remover=["ANTHROPIC_AUTH_TOKEN"])
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "token-ficticio-herdado")
+    monkeypatch.setenv("TELEGRAM_STATE_DIR", "/estado/herdado")
+    with (patch.object(module, "ligado", side_effect=[False, False, True]),
+          patch.object(module.shutil, "which", return_value="/usr/bin/true"),
+          patch.object(module, "rodar", return_value=subprocess.CompletedProcess([], 0)) as run):
+        module.ligar(a)
+    argv = run.call_args.args[0]
+    assert segredo not in " ".join(argv)
+    assert "--channels" not in argv
+    monkeypatch.setattr(module.sys, "argv", ["agentes.py", "--exec", "teste", "--model", "deepseek"])
+    with patch.object(module.os, "execve") as execute:
+        module.main()
+    executable, claude_argv, env = execute.call_args.args
+    assert executable == "/bin/true"
+    assert claude_argv == ["/bin/true", "--model", "deepseek"]
+    assert env["ANTHROPIC_API_KEY"] == segredo
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    assert "TELEGRAM_STATE_DIR" not in env
+    assert env["PATH"] == "/usr/bin"
+    assert segredo not in " ".join(claude_argv)
+
+
+@pytest.mark.parametrize("invalido", ["modo", "symlink", "nome", "nul", "encoding", "ausente", "diretorio"])
+def test_env_invalido_recusa_antes_de_criar_tmux(launcher_env, tmp_path, invalido):
+    module, a = launcher_env
+    arquivo = tmp_path / "motor.env"
+    segredo = "credencial-ficticia-nao-publicavel"
+    arquivo.write_text(f"API_KEY={segredo}\n")
+    arquivo.chmod(0o600)
+    if invalido == "modo":
+        arquivo.chmod(0o644)
+    elif invalido == "symlink":
+        link = tmp_path / "link.env"
+        link.symlink_to(arquivo)
+        arquivo = link
+    elif invalido in {"nome", "nul"}:
+        arquivo.write_text(f"{segredo}\n" if invalido == "nome" else f"KEY={segredo}\0\n")
+    elif invalido == "encoding":
+        arquivo.write_bytes(b"KEY=\xff" + segredo.encode() + b"\n")
+    elif invalido == "ausente":
+        arquivo.unlink()
+    elif invalido == "diretorio":
+        arquivo = tmp_path
+    a["env_arquivo"] = str(arquivo)
+    with (patch.object(module, "ligado", return_value=False),
+          patch.object(module.shutil, "which", return_value="/usr/bin/true"),
+          patch.object(module, "rodar") as run):
+        with pytest.raises((ValueError, OSError)) as error:
+            module.ligar(a)
+    run.assert_not_called()
+    assert segredo not in str(error.value)
+
+
+def test_sem_env_arquivo_preserva_ambiente_e_state_dir_opcional(launcher_env, monkeypatch):
+    module, a = launcher_env
+    monkeypatch.setenv("CUSTOM_TEST", "valor-herdado")
+    env = module.ambiente(a)
+    assert env["CUSTOM_TEST"] == "valor-herdado"
+    assert "TELEGRAM_STATE_DIR" not in env
+    a["state_dir"] = "/canal/existente"
+    assert module.ambiente(a)["TELEGRAM_STATE_DIR"] == "/canal/existente"
