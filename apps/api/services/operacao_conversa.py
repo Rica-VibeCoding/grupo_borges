@@ -36,6 +36,9 @@ ESCAPES_NO_DIALOGO = 3
 PASSO_S = 0.5
 #: Teto da resposta síncrona do `POST /nova`. A operação segue no servidor.
 TETO_RESPOSTA_S = 90.0
+# O proxy Next do notebook encerra a conexão antes dos 90 s. A operação
+# local continua em background e o front acompanha /operacao após o 202.
+TETO_RESPOSTA_LOCAL_S = 20.0
 
 TITULO_MAX = 80
 _CONTROLE_RE = re.compile(r"[\x00-\x1f\x7f]")

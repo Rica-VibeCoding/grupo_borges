@@ -909,8 +909,11 @@ async def _responder(slug: str, op: operacao.Operacao, tarefa: asyncio.Task):
     """Segura a resposta até o teto de 90 s; a operação segue no servidor depois."""
     _tarefas.add(tarefa)
     tarefa.add_done_callback(_tarefas.discard)
+    teto = operacao.TETO_RESPOSTA_S
+    if tmux_driver.local_launcher_enabled():
+        teto = min(teto, operacao.TETO_RESPOSTA_LOCAL_S)
     try:
-        await asyncio.wait_for(asyncio.shield(tarefa), timeout=operacao.TETO_RESPOSTA_S)
+        await asyncio.wait_for(asyncio.shield(tarefa), timeout=teto)
     except TimeoutError:
         pass
 

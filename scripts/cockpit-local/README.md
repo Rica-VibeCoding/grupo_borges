@@ -33,6 +33,10 @@ privado pode impedir a descoberta do repo pai: evita que `git status` e a busca
 de sugestões em `git log` varram a montagem no primeiro turno. No Canário local,
 a cerca é `/home/ricardo/ze_claude/ze_claude`; o cwd continua sendo o da persona.
 Não modifica o repo montado nem os demais agentes.
+Com o lançador local habilitado, Nova/Retomar respondem em até 20 s:
+operação ainda em curso retorna 202, preserva a tarefa e é acompanhada pelo
+`/operacao` existente da gaveta. Isso evita o timeout do proxy Next durante
+um turno lento do motor; sem lançador local continua o teto de 90 s da VPS.
 O modelo efetivo vem do motor local, não do `model_default` do cadastro;
 confirme o nome retornado pelo assistente no JSONL e o contexto na statusline.
 

@@ -196,3 +196,43 @@ def test_sem_env_arquivo_preserva_ambiente_e_state_dir_opcional(launcher_env, mo
     assert "TELEGRAM_STATE_DIR" not in env
     a["state_dir"] = "/canal/existente"
     assert module.ambiente(a)["TELEGRAM_STATE_DIR"] == "/canal/existente"
+
+
+@pytest.mark.parametrize("local", [False, True])
+async def test_troca_longa_retorna_202_sem_cancelar_operacao(monkeypatch, local):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from routers import conversas
+    from services import operacao_conversa as operacao
+
+    if local:
+        monkeypatch.setenv("COCKPIT_LANCADOR", "/opt/agente.sh")
+    else:
+        monkeypatch.delenv("COCKPIT_LANCADOR", raising=False)
+    slug = "teste-resposta-local"
+    operacao.esquecer(slug)
+    op = operacao.comecar(slug)
+    continuar = asyncio.Event()
+
+    async def concluir():
+        await continuar.wait()
+        operacao.avancar(op, "pronta")
+
+    tarefa = asyncio.create_task(concluir())
+    try:
+        with patch.object(conversas.asyncio, "wait_for", AsyncMock(side_effect=TimeoutError)) as wait:
+            resposta = await conversas._responder(slug, op, tarefa)
+        assert resposta.status_code == 202
+        assert not tarefa.cancelled() and not tarefa.done()
+        assert wait.call_args.kwargs["timeout"] == (
+            operacao.TETO_RESPOSTA_LOCAL_S if local else operacao.TETO_RESPOSTA_S
+        )
+        continuar.set()
+        await tarefa
+        resposta_final = await conversas._responder(slug, op, tarefa)
+        assert resposta_final.fase == "pronta"
+    finally:
+        continuar.set()
+        await tarefa
+        operacao.esquecer(slug)
