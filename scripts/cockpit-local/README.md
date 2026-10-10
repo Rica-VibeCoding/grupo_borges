@@ -36,3 +36,32 @@ As opções abaixo são desligadas por padrão e podem ser colocadas na `.env` d
 
 Após editar a configuração, reinicie somente a unit da API. Reiniciar a API
 ou o painel da máquina não reinicia os scopes dos agentes.
+
+## Voz local (opt-in)
+
+Na unit da API (não apenas na `.env`):
+`Environment=GB_STT_SCRIPT=/caminho/absoluto/scripts/cockpit-local/stt-voxtype.py`.
+O script recebe um arquivo, converte com ffmpeg para WAV PCM16, 16 kHz mono,
+e executa `/usr/bin/voxtype --quiet transcribe`. Usa a configuração existente;
+não modifica nem sinaliza o daemon. Requer Python 3, ffmpeg e Voxtype 1.0.1.
+Só o texto final vai ao stdout, sem os cabeçalhos que o CLI imprime mesmo em
+quiet. Falhas não imprimem texto; temporários são removidos. Prazo total de
+28 s e encerramento do grupo de processos antecipam o timeout de 30 s da API.
+Transcritores concorrentes do cockpit falham rapidamente com código 75.
+O separador do stdout foi conferido no
+[código do Voxtype 1.0.1](https://github.com/peteonrails/voxtype/blob/v1.0.1/src/app/transcribe_file.rs)
+e nas opções do binário instalado; formato desconhecido falha sem produzir texto.
+
+`GB_LOCAL_LIVE_STT=true` (unit ou `.env`) recusa o bilhete de streaming antes
+de ler qualquer chave ou acessar a OpenAI. A tela de conversa já gera WAV ao
+fim da fala pelo VAD e o composer já guarda a gravação: ambos usam
+`POST /api/agents/{slug}/transcription`, sem transcrição parcial. O endpoint
+de transcrição não envia ao tmux; `/voice` é o legado que transcreve e envia.
+Default `false` conserva o bilhete/streaming da VPS; `GB_STT_SCRIPT` ausente
+conserva o resolver anterior. Não há mudança de front nem rebuild necessário.
+
+A GPU precisa acomodar o processo avulso além do daemon. No notebook, a
+prova de 10/10/2026 falhou com `ErrorOutOfDeviceMemory` e SIGSEGV do avulso;
+o daemon permaneceu ativo. Não tentar resolver reiniciando o ditado,
+mudando seu modelo ou sua configuração. STT real fica pendente de capacidade.
+TTS permanece no caminho existente; o fallback edge-tts é online, sem chave.
