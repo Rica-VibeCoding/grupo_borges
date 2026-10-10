@@ -226,6 +226,8 @@ def contexto(sid):
                     msg = obj.get("message")
                     if not isinstance(msg, dict):
                         continue
+                    if msg.get("model") == "<synthetic>":
+                        continue  # Interrupção do harness não é resposta do motor.
                     if not modelo and isinstance(msg.get("model"), str):
                         modelo = msg["model"]
                     u = msg.get("usage")
@@ -283,6 +285,11 @@ def estado(a, detalhar=True):
             gravar_sessao(a, sid)
             if detalhar:
                 resultado["tokens"], resultado["modelo"] = contexto(sid)
+                telemetria = json_ler(Path("/tmp") / f"cc-status-{sid}.json")
+                modelo_vivo = telemetria.get("model")
+                if (telemetria.get("session_id") == sid and isinstance(modelo_vivo, dict)
+                        and isinstance(modelo_vivo.get("id"), str)):
+                    resultado["modelo"] = modelo_vivo["id"]
         if isinstance(dados.get("model"), str):
             resultado["modelo"] = dados["model"]
         break
