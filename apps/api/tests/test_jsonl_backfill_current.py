@@ -1,8 +1,5 @@
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
-
-import pytest
 
 from db.store import GrupoBorgesDB
 from orchestrator.jsonl_watcher import JsonlWatcher, encoded_cwd
