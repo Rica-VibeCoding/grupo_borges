@@ -764,10 +764,14 @@ class JsonlWatcher:
         claude_projects_dir: str,
         agents: list[dict],
         db,  # GrupoBorgesDB — não importamos pra evitar ciclo
+        backfill_current: bool = False,
     ) -> None:
         self._root = Path(claude_projects_dir)
         self._root_resolved = self._root.resolve() if self._root.exists() else self._root
         self._db = db
+        self._agents = agents
+        self._backfill_current = backfill_current
+        self._catchup_paths: set[Path] = set()
         self._slug_by_encoded: dict[str, str] = _mapear_por_encoded(agents)
         self._offsets: dict[str, int] = {}
         # F4-3 A4 — último JSONL processado por slug. Mudança = nova sessão
@@ -782,6 +786,8 @@ class JsonlWatcher:
 
     async def start(self) -> None:
         await asyncio.to_thread(self._prepopulate_offsets)
+        if self._backfill_current:
+            await self.backfill_current_conversations()
         self._started_at_ms = _now_ms()
         self._task = asyncio.create_task(self._run(), name="jsonl-watcher")
 
@@ -818,6 +824,50 @@ class JsonlWatcher:
             self._task = None
 
     # ---------- internals ----------
+
+    async def backfill_current_conversations(self) -> None:
+        """Importa só o UUID observado no processo vivo, sem executar lifecycle antigo."""
+        if not self._backfill_current:
+            return
+        from services.claude_runtime import read_runtime
+
+        for agent in self._agents:
+            encoded = encoded_cwd(agent["workspace_path"])
+            slug = agent["slug"]
+            if self._slug_by_encoded.get(encoded) != slug:
+                continue
+            runtime = await read_runtime(agent["tmux_session"], agent["workspace_path"])
+            if runtime is None:
+                logger.warning("Backfill: conversa atual não confirmada para %s", slug)
+                continue
+            path = self._root / encoded / f"{runtime.session_id}.jsonl"
+            if self._slug_for_path(str(path)) != slug:
+                continue
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            offset = 0
+            while offset < size:
+                lines, end = await asyncio.to_thread(_read_backfill_batch, path, offset, size)
+                for line, _ in lines:
+                    payload = parse_dict_or_none(line)
+                    if not payload:
+                        continue
+                    # Sidechains e resíduos internos de outras conversas não são a atual.
+                    if payload.get("sessionId") != runtime.session_id or payload.get("isSidechain"):
+                        continue
+                    await self._db.insert_jsonl_event_once(
+                        kind=f"jsonl:{payload.get('type') or 'unknown'}", agent_slug=slug,
+                        payload=payload, raw_jsonl=line,
+                    )
+                if end == offset:
+                    break  # linha parcial: será lida ao vivo
+                offset = end
+            self._offsets[str(path)] = offset
+            self._last_jsonl_by_slug[slug] = str(path)
+            self._catchup_paths.add(path)
+            await self._db.upsert_agent_state(slug, jsonl_path=str(path))
 
     def _prepopulate_offsets(self) -> None:
         """Marca cada JSONL existente como 'já lido até o tamanho atual'.
@@ -894,8 +944,12 @@ class JsonlWatcher:
             # prova que o laço está girando, não que chegou dado. Ver
             # `_SAUDE_SEM_PROGRESSO_SEGUNDOS` acima.
             self._last_progress_ms = _now_ms()
+            # Fecha a janela entre o snapshot do boot e o registro do inotify.
+            for path in tuple(self._catchup_paths):
+                await self._process_jsonl(path)
+                self._catchup_paths.discard(path)
             for change_type, raw_path in changes:
-                if change_type != Change.modified:
+                if change_type != Change.modified and not (self._backfill_current and change_type == Change.added):
                     continue
                 await self._process_jsonl(Path(raw_path))
 
@@ -964,7 +1018,8 @@ class JsonlWatcher:
     async def _processar_linha(self, slug: str, line: str) -> None:
         payload = parse_dict_or_none(line)
         event_type = str((payload or {}).get("type") or "unknown")
-        update_subagent_state_from_jsonl(slug, payload, event_type)
+        if not self._backfill_current:
+            update_subagent_state_from_jsonl(slug, payload, event_type)
         if isinstance(payload, dict) and event_type == "user":
             message = payload.get("message")
             text = _message_text(payload)
@@ -979,12 +1034,17 @@ class JsonlWatcher:
                 )
                 if meta is not None:
                     payload["meta"] = meta
-        await self._db.insert_task_event(
-            kind=f"jsonl:{event_type}",
-            agent_slug=slug,
-            payload=payload,
-            raw_jsonl=line,
-        )
+        if self._backfill_current and payload:
+            inserted = await self._db.insert_jsonl_event_once(
+                kind=f"jsonl:{event_type}", agent_slug=slug, payload=payload, raw_jsonl=line,
+            )
+            if inserted is None:
+                return
+            update_subagent_state_from_jsonl(slug, payload, event_type)
+        else:
+            await self._db.insert_task_event(
+                kind=f"jsonl:{event_type}", agent_slug=slug, payload=payload, raw_jsonl=line,
+            )
         lifecycle_status, lifecycle_detail = _jsonl_lifecycle(payload, event_type)
         if lifecycle_status is not None:
             await self._db.update_agent_lifecycle(
@@ -1055,6 +1115,23 @@ def _extract_assistant_text(payload: dict) -> str | None:
         ]
         return "\n".join(p for p in parts if p) or None
     return None
+
+
+def _read_backfill_batch(path: Path, offset: int, limit: int) -> tuple[list[tuple[str, int]], int]:
+    lines = []
+    with path.open("rb") as source:
+        source.seek(offset)
+        for _ in range(128):
+            if source.tell() >= limit:
+                break
+            raw = source.readline(limit - source.tell())
+            if not raw.endswith(b"\n"):
+                break
+            offset = source.tell()
+            text = raw.decode("utf-8", errors="replace").rstrip("\n")
+            if text.strip():
+                lines.append((text, offset))
+    return lines, offset
 
 
 def _read_appended(path: Path, offset: int) -> tuple[list[tuple[str, int]], int]:

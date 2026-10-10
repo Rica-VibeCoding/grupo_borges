@@ -288,8 +288,9 @@ _BUSY_TIMEOUT_SEGUNDOS = 30.0
 
 
 class GrupoBorgesDB:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, *, jsonl_backfill_current: bool = False):
         self.db_path = db_path
+        self.jsonl_backfill_current = jsonl_backfill_current
         # (since_unix, contagem, tokens, vence_em) — ver `_sparkline`.
         self._sparkline_cache: (
             tuple[int, dict[str, dict[str, int]], dict[str, dict[str, int]], float] | None
@@ -332,6 +333,11 @@ class GrupoBorgesDB:
         with self._connect() as conn:
             with SCHEMA_PATH.open("r", encoding="utf-8") as f:
                 conn.executescript(f.read())
+            if self.jsonl_backfill_current:
+                conn.execute("""CREATE TABLE IF NOT EXISTS jsonl_imports (
+                    agent_slug TEXT NOT NULL, event_key TEXT NOT NULL,
+                    event_id INTEGER NOT NULL REFERENCES task_events(id) ON DELETE CASCADE,
+                    PRIMARY KEY (agent_slug, event_key))""")
             # Migrações idempotentes: `executescript` fez commit implícito → ALTERs abaixo
             # rodam em autocommit. `_add_column_if_missing` engole "duplicate column" caso
             # dois startups concorrentes (ex: dev reload) racem na mesma coluna.
@@ -1106,6 +1112,37 @@ class GrupoBorgesDB:
                 return cur.lastrowid
 
     # ---------- ask_user ----------
+
+    async def insert_jsonl_event_once(self, *, kind: str, agent_slug: str,
+                                     payload: dict, raw_jsonl: str) -> int | None:
+        return await asyncio.to_thread(self._insert_jsonl_event_once, kind, agent_slug, payload, raw_jsonl)
+
+    def _insert_jsonl_event_once(self, kind, slug, payload, raw):
+        import hashlib
+
+        message_uuid = payload.get("uuid")
+        identity = [payload.get("sessionId"), kind,
+                    message_uuid if message_uuid else json.dumps(payload, sort_keys=True, ensure_ascii=False)]
+        key = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+        with self._connect() as conn, conn:
+            # A reserva e o evento são uma transação, inclusive entre watchers.
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute("SELECT 1 FROM jsonl_imports WHERE agent_slug=? AND event_key=?", (slug, key)).fetchone():
+                return None
+            if message_uuid:
+                existing = conn.execute("""SELECT id FROM task_events
+                    WHERE agent_slug=? AND kind=? AND json_valid(payload)=1
+                    AND json_extract(payload, '$.uuid')=?
+                    AND json_extract(payload, '$.sessionId') IS ? LIMIT 1""",
+                    (slug, kind, message_uuid, payload.get("sessionId"))).fetchone()
+            else:
+                existing = conn.execute("SELECT id FROM task_events WHERE agent_slug=? AND kind=? AND raw_jsonl=? LIMIT 1",
+                                        (slug, kind, raw)).fetchone()
+            event_id = existing["id"] if existing else conn.execute("""INSERT INTO task_events
+                (agent_slug, kind, payload, raw_jsonl, created_at) VALUES (?, ?, ?, ?, ?)""",
+                (slug, kind, json.dumps(payload, ensure_ascii=False), raw, int(time.time()))).lastrowid
+            conn.execute("INSERT INTO jsonl_imports VALUES (?, ?, ?)", (slug, key, event_id))
+            return None if existing else event_id
 
     async def insert_ask_user_pending(
         self,
@@ -1920,13 +1957,20 @@ class GrupoBorgesDB:
             params.append(json.dumps(sorted(ocultos)))
         params.append(limit)
 
+        ordering = f"id {'DESC' if newest_first else 'ASC'}"
+        if self.jsonl_backfill_current and since_id == 0:
+            direction = "DESC" if newest_first else "ASC"
+            ordering = ("COALESCE(CASE WHEN json_valid(payload) THEN "
+                        "julianday(json_extract(payload, '$.timestamp')) END, "
+                        f"2440587.5 + created_at / 86400.0) {direction}, id {direction}")
+
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
                 SELECT id, task_id, agent_slug, instance_id, kind, payload, created_at
                 FROM task_events
                 WHERE {" AND ".join(clauses)}
-                ORDER BY id {"DESC" if newest_first else "ASC"}
+                ORDER BY {ordering}
                 LIMIT ?
                 """,
                 params,

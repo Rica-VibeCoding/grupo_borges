@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     raw_humans = config.get("humans") or {}
     app.state.humans = {str(k).strip().lower(): str(v).strip().lower() for k, v in raw_humans.items()}
 
-    db = GrupoBorgesDB(settings.db_path)
+    db = GrupoBorgesDB(settings.db_path, jsonl_backfill_current=settings.jsonl_backfill_current)
     await db.startup()
     await db.sync_agents_from_yaml(config["agents"])
     app.state.db = db
@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
         claude_projects_dir=settings.claude_projects_dir,
         agents=config["agents"],
         db=db,
+        backfill_current=settings.jsonl_backfill_current,
     )
     await watcher.start()
     app.state.watcher = watcher
