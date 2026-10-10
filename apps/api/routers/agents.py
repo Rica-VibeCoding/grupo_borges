@@ -4085,6 +4085,12 @@ async def post_agent_live_transcription_token(
     incidente.
     """
     await _get_agent_or_404(request, slug)
+    settings = getattr(request.app.state, "settings", None)
+    if getattr(settings, "local_live_stt", False):
+        # Ambos os fronts de voz já tratam bilhete indisponível: o composer
+        # sobe a gravação e a conversa sobe o WAV completo captado pelo VAD.
+        # Recusar ANTES de resolver a chave impede rede/segredo neste opt-in.
+        raise HTTPException(status_code=503, detail="stt_local_por_arquivo")
     key = _live_stt_key(request)
     if not key:
         raise HTTPException(status_code=503, detail="sem chave OpenAI para a fala ao vivo")

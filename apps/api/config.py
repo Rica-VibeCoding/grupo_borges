@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     # esquecer de girar. Preencher GB_OPENAI_API_KEY só se o host não tiver o
     # arquivo do cofre.
     openai_api_key: str = ""
+    # Opt-in: o VAD/gravador usa o WAV por /transcription e GB_STT_SCRIPT.
+    # Sem streaming parcial; não lê segredo nem cunha bilhete na OpenAI.
+    local_live_stt: bool = False
 
     # TTS — engine preferido Google Chirp3-HD (voz da frota), fallback edge-tts.
     # tts_voice é só o default edge usado quando não há voz da frota nem key.
