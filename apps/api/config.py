@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     tmux_socket_overrides: str = ""  # JSON sessão → socket; vazio usa o template
     local_claude_telemetry: bool = False
     jsonl_backfill_current: bool = False
+    channel_attachment_root: str = ""  # vazio conserva /home/clawd/.claude/channels
     # Endereço da API que o agente usa no `curl` do estacionar (Nova conversa).
     # Vazio = `http://127.0.0.1:<porta do uvicorn>`, que basta na VPS.
     api_url_agentes: str = ""
