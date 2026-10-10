@@ -15,6 +15,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from config import get_settings
 
 from db.store import GrupoBorgesDB, RUN_STALE_THRESHOLD_SECONDS
 from services import tmux_driver
@@ -219,6 +220,27 @@ async def _hydrate_cc_context_pct(db: GrupoBorgesDB, agents: list[dict]) -> None
     grava `used_percentage: null` com `total_input_tokens: 0`.
     """
     async def hydrate(agent: dict) -> None:
+        if get_settings().local_claude_telemetry:
+            from services.claude_runtime import read_runtime, read_status
+
+            runtime = await read_runtime(agent["tmux_session"], agent["workspace_path"])
+            if runtime is None:
+                agent["context_pct"] = None
+                agent["context_tokens"] = None
+                return
+            status = await asyncio.to_thread(read_status, runtime.session_id)
+            pct, tokens, measured = await asyncio.to_thread(_read_cc_context, runtime.session_id) if status else (None, None, None)
+            agent["context_pct"] = pct
+            agent["context_tokens"] = tokens
+            agent["context_updated_at"] = measured
+            model = status.get("model") if status else None
+            if isinstance(model, dict) and isinstance(model.get("id"), str):
+                agent["state_model"] = model["id"]
+            if runtime.status is not None:
+                lifecycle = "trabalhando" if runtime.status == "busy" else "ocioso"
+                agent["lifecycle_status"] = lifecycle
+                agent["status"] = lifecycle
+            return
         # Só a sessão mais nova importa aqui. `recent_jsonl_session_ids` varre
         # até 4.000 eventos por agente pra montar uma lista que este laço jogava
         # fora: era 90% da CPU do `/api/fleet`, que o cockpit chama a cada 5 s
@@ -318,6 +340,9 @@ async def _monta_snapshot(request: Request, sparkline_hours: int) -> dict:
         snapshot["health"]["watcher_stale_after_seconds"] = watcher_health["stale_after_seconds"]
     await _hydrate_pane_excerpts(snapshot["agents"], tmux_inventory.sessions)
     await _hydrate_cc_context_pct(db, snapshot["agents"])
+    if get_settings().local_claude_telemetry:
+        for status in ("ocioso", "trabalhando", "aguardando", "offline"):
+            snapshot["kpis"][status] = sum(a["status"] == status for a in snapshot["agents"])
     _marca_contexto_velho(snapshot["agents"])
     return snapshot
 
