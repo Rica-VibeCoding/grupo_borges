@@ -8,7 +8,8 @@
 # do agente e morre. Só depois a conversa viva leva o /clear.
 #
 # Instalado em /usr/local/bin/agente-manutencao; roda como `agente`, pelo crontab dele:
-#   0 7 * * 1,5 /usr/local/bin/agente-manutencao  # manutencao:madrugada (04h BRT)
+#   0 4 * * 1,5 /usr/local/bin/agente-manutencao  # manutencao:madrugada
+# (o contêiner roda em BRT: é 04h de lá. Depois de editar o crontab: `agente-crontab salvar`.)
 # Uso: agente-manutencao [--dry-run]
 set -uo pipefail
 export PATH=/opt/py/bin:/usr/local/bin:/usr/bin:/bin
@@ -54,10 +55,13 @@ PERDI: <o que você percebeu que já tinha se perdido, ou nada>"
 
 # --strict-mcp-config: nenhum servidor MCP sobe (medido 11/10/2026) — a cópia não disputa o
 # canal do cliente com a conversa viva. A pasta do token vai junto pra um lugar vazio, por
-# --settings, que vence o settings.json do workspace.
+# --settings, que vence o settings.json do workspace. disableAllHooks: o gancho do painel
+# trataria o pedido como mensagem do cliente e mandaria formatar a resposta pra tela dele.
+# O que NÃO está fechado: a cópia tem Bash, e mandar mensagem por script depende de ela
+# obedecer ao PROIBIDO do pedido.
 saida="$(printf '%s' "$PEDIDO" | timeout 900 claude -p --resume "$id" --fork-session \
   --no-session-persistence --strict-mcp-config --dangerously-skip-permissions \
-  --settings '{"env":{"TELEGRAM_STATE_DIR":"/nonexistent"}}' 2>&1)"
+  --settings '{"disableAllHooks":true,"env":{"TELEGRAM_STATE_DIR":"/nonexistent"}}' 2>&1)"
 rc=$?
 relato="$(echo "$saida" | grep -E '^(GRAVEI|PENDENTE|PERDI):' | tail -n 3)"
 if (( rc != 0 )) || [[ -z "$relato" ]]; then
@@ -75,12 +79,23 @@ antes="$(corpo)"; sleep 4; depois="$(corpo)"
 if [[ "$antes" != "$depois" ]]; then
   log "agente no meio de um turno — /clear fica pra próxima manutenção"; exit 0
 fi
+# A cópia levou minutos: se a conversa andou nesse meio-tempo, o que entrou não foi guardado.
+if [[ "$id $(stat -c %Y "$projeto/$id.jsonl")" != "$atual" ]]; then
+  log "a conversa andou durante o encerramento — /clear fica pra próxima manutenção"; exit 0
+fi
 "${TX[@]}" send-keys -t agente C-u
 sleep 1
 "${TX[@]}" send-keys -t agente -l "/clear"
 sleep 1
 "${TX[@]}" send-keys -t agente Enter
-sleep 5
-viva="$(ls -t "$projeto"/*.jsonl 2>/dev/null | head -1)"
+# O /clear abre um jsonl novo na hora: id igual ao de antes é /clear que não pegou.
+for _ in 1 2 3 4 5 6; do
+  sleep 5
+  viva="$(ls -t "$projeto"/*.jsonl 2>/dev/null | head -1)"
+  [[ "$(basename "$viva" .jsonl)" != "$id" ]] && break
+done
+if [[ "$(basename "$viva" .jsonl)" == "$id" ]]; then
+  log "FALHA: /clear enviado mas a conversa nova não apareceu"; exit 1
+fi
 echo "$(basename "$viva" .jsonl) $(stat -c %Y "$viva")" > "$MARCA.$$" && mv "$MARCA.$$" "$MARCA"
 log "/clear enviado"
