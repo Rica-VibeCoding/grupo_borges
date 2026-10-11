@@ -42,6 +42,18 @@ if grep -qxF "$atual" "$MARCA" 2>/dev/null; then
 fi
 (( DRY )) && { log "encerraria a conversa $id e mandaria /clear"; exit 0; }
 
+# Retrato do que a cópia pode mexer, tirado antes dela: regras, skills, cadernos e memória.
+# O tar guarda as regras da rodada anterior à mão, pra comparar e pra devolver se precisar.
+REGRAS=(CLAUDE.md .claude/skills .claude/commands)
+retrato() {
+  find "${REGRAS[@]}" cadernos "$projeto/memory" -type f -print0 2>/dev/null | sort -z |
+    while IFS= read -r -d '' f; do
+      printf '%s\t%s\t%s\n' "$f" "$(wc -l < "$f")" "$(md5sum < "$f" | cut -c1-12)"
+    done
+}
+retrato > "$ESTADO/antes.manifesto"
+tar -cf "$ESTADO/antes.tar" "${REGRAS[@]}" 2>/dev/null
+
 PEDIDO="Manutenção automática da madrugada. Ninguém está conversando com você agora e ninguém vai ler esta resposta além de quem cuida da máquina.
 
 PROIBIDO nesta manutenção: mandar mensagem, áudio ou arquivo pra qualquer pessoa, por qualquer canal ou script (Telegram, WhatsApp, e-mail). Passo do roteiro que avise, pergunte ou reporte algo ao dono: pule o envio e escreva o conteúdo na linha PENDENTE do relato.
@@ -69,6 +81,44 @@ if (( rc != 0 )) || [[ -z "$relato" ]]; then
   exit 1
 fi
 log "$(echo "$relato" | tr '\n' ' ')"
+
+# Conferência do que a cópia mexeu. Sempre, sem modelo: arquivo que sumiu ou encolheu pela
+# metade. Com modelo, só quando ela mexeu nas próprias regras (CLAUDE.md, skill, comando):
+# aí o agente muda de comportamento sem ninguém olhar. Achado não segura o /clear — fica no
+# log com a palavra ACHADO, que é o que a conferência de fora procura.
+retrato > "$ESTADO/depois.manifesto"
+mudancas="$(awk -F'\t' '
+  NR==FNR { l[$1]=$2; h[$1]=$3; next }
+  { visto[$1]=1
+    if (!($1 in l)) print "NOVO\t" $1
+    else if (h[$1] != $3) {
+      if (l[$1] >= 10 && $2*2 < l[$1]) print "ENCOLHEU\t" $1 "\t" l[$1] "->" $2 " linhas"
+      else print "MUDOU\t" $1 } }
+  END { for (f in l) if (!(f in visto)) print "SUMIU\t" f }' "$ESTADO/antes.manifesto" "$ESTADO/depois.manifesto")"
+if [[ -n "$mudancas" ]]; then
+  log "mudanças da rodada: $(echo "$mudancas" | cut -f1 | sort | uniq -c | tr -s ' \n' ' ')"
+  while IFS= read -r m; do log "ACHADO: $(echo "$m" | tr '\t' ' ')"; done \
+    < <(echo "$mudancas" | grep -E '^(SUMIU|ENCOLHEU)')
+fi
+if echo "$mudancas" | cut -f2 | grep -qE '^(CLAUDE\.md$|\.claude/(skills|commands)/)'; then
+  rev="$(mktemp -d)"
+  tar -xf "$ESTADO/antes.tar" -C "$rev" 2>/dev/null
+  dif="$(for r in "${REGRAS[@]}"; do diff -ruN "$rev/$r" "$r" 2>/dev/null; done | head -c 60000)"
+  parecer="$(cd "$rev" && printf '%s\n\n%s\n' "Revisão de uma mudança que um agente de cliente fez sozinho nas próprias regras, numa manutenção automática da madrugada. Ninguém está conversando com você. Não edite nada e não mande mensagem a ninguém.
+
+Abaixo vai o diff (antes -> depois). Procure só o que muda o comportamento pra pior: regra de segurança ou de confirmação removida ou afrouxada; instrução de enviar, publicar, apagar ou gastar sem perguntar ao dono; segredo (token, senha, chave) escrito no arquivo; regra nova que contradiz outra que continua valendo; conteúdo bom apagado sem substituto. Estilo, tamanho e redação não são achado.
+
+Termine com exatamente uma linha: 'REVISAO: ok' ou 'REVISAO: <o achado em uma frase, com o arquivo>'." "$dif" |
+    timeout 600 claude -p --no-session-persistence --strict-mcp-config --tools Read \
+      --settings '{"disableAllHooks":true,"env":{"TELEGRAM_STATE_DIR":"/nonexistent"}}' 2>&1 |
+    grep -E '^REVISAO:' | tail -n 1)"
+  rm -r "$rev"
+  case "$parecer" in
+    "REVISAO: ok") log "revisão das regras: ok" ;;
+    "") log "ACHADO: a rodada mexeu nas regras e a revisão não deu parecer" ;;
+    *) log "ACHADO: $(echo "$parecer" | cut -c1-400)" ;;
+  esac
+fi
 
 # O cronômetro da barra muda todo segundo, então sai da conta; o que resta é o corpo —
 # mudou em 4s, tem turno em voo, e /clear no meio do turno não vira comando.
