@@ -37,7 +37,7 @@ id="$(basename "$viva" .jsonl)"
 
 # Conversa que não andou desde a última manutenção não tem o que guardar nem o que limpar.
 atual="$id $(stat -c %Y "$viva")"
-if [[ "$(cat "$MARCA" 2>/dev/null)" == "$atual" ]]; then
+if grep -qxF "$atual" "$MARCA" 2>/dev/null; then
   log "conversa parada desde a última manutenção — nada a fazer"; exit 0
 fi
 (( DRY )) && { log "encerraria a conversa $id e mandaria /clear"; exit 0; }
@@ -74,7 +74,8 @@ log "$(echo "$relato" | tr '\n' ' ')"
 # mudou em 4s, tem turno em voo, e /clear no meio do turno não vira comando.
 TX=(tmux -L agente)
 "${TX[@]}" has-session -t agente 2>/dev/null || { log "agente desligado — sem /clear"; echo "$atual" > "$MARCA"; exit 0; }
-corpo() { "${TX[@]}" capture-pane -p -t agente -S -12 2>/dev/null | grep -vE '[0-9]+:[0-9]{2}:[0-9]{2}'; }
+t0="$(date +%s)"
+corpo() { "${TX[@]}" capture-pane -p -t agente -S -12 2>/dev/null | grep -vE '[0-9]+:[0-9]{2}(:[0-9]{2})?'; }
 antes="$(corpo)"; sleep 4; depois="$(corpo)"
 if [[ "$antes" != "$depois" ]]; then
   log "agente no meio de um turno — /clear fica pra próxima manutenção"; exit 0
@@ -88,14 +89,23 @@ sleep 1
 "${TX[@]}" send-keys -t agente -l "/clear"
 sleep 1
 "${TX[@]}" send-keys -t agente Enter
-# O /clear abre um jsonl novo na hora: id igual ao de antes é /clear que não pegou.
-for _ in 1 2 3 4 5 6; do
+# O /clear abre um jsonl novo: sem arquivo de outro id escrito depois do envio, não pegou.
+# Não serve olhar "o mais recente": o CC ainda escreve o rastro do /clear na conversa
+# antiga, e ela pode ficar com a data mais nova das duas (medido 11/10/2026).
+nova=""
+for _ in 1 2 3 4 5 6 7 8; do
   sleep 5
-  viva="$(ls -t "$projeto"/*.jsonl 2>/dev/null | head -1)"
-  [[ "$(basename "$viva" .jsonl)" != "$id" ]] && break
+  for f in "$projeto"/*.jsonl; do
+    [[ "$(basename "$f" .jsonl)" != "$id" && "$(stat -c %Y "$f")" -ge "$t0" ]] && nova="$f"
+  done
+  [[ -n "$nova" ]] && break
 done
-if [[ "$(basename "$viva" .jsonl)" == "$id" ]]; then
+if [[ -z "$nova" ]]; then
   log "FALHA: /clear enviado mas a conversa nova não apareceu"; exit 1
 fi
-echo "$(basename "$viva" .jsonl) $(stat -c %Y "$viva")" > "$MARCA.$$" && mv "$MARCA.$$" "$MARCA"
+# A marca guarda as duas: qualquer uma pode ser "a mais recente" na próxima rodada, e
+# nenhuma delas tem o que guardar enquanto ninguém falar.
+sleep 5
+{ echo "$id $(stat -c %Y "$projeto/$id.jsonl")"; echo "$(basename "$nova" .jsonl) $(stat -c %Y "$nova")"; } > "$MARCA.$$" \
+  && mv "$MARCA.$$" "$MARCA"
 log "/clear enviado"
