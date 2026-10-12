@@ -161,65 +161,10 @@ agents:
       - automacao-residencial
     can_review: []
 
-  # [2026-09-23 Pavan] FluytCom — agente dedicado ao app Comercial do Fluyt
-  # (`apps/com`). Clone próprio, fora do monorepo, igual ao Caseiro; persona no
-  # `CLAUDE.local.md` (fora do git). Commit direto na main por ordem do Rica.
-  - slug: fluytcom
-    name: Fluyt
-    role: Especialista — Fluyt Comercial (apps/com)
-    emoji: "📝"
-    tmux_session: fluytcom
-    workspace_path: /home/clawd/repos/fluytcom
-    cli_default: claude_code
-    model_default: opus
-    capabilities:
-      - fluyt-comercial
-    can_review: []
-
-  # [2026-10-04 Pavan] Entrou no lugar do Maestro (aposentado), por ordem do Rica:
-  # um agente por app do Fluyt, todos no mesmo clone. Herdou o bot e a voz do Maestro.
-  - slug: fluytpos
-    name: Fluyt Pós
-    role: Especialista — Fluyt Pós-venda (apps/pos)
-    emoji: "📦"
-    tmux_session: fluytpos
-    workspace_path: /home/clawd/repos/fluytcom/apps/pos
-    cli_default: claude_code
-    model_default: opus
-    capabilities:
-      - fluyt-pos
-    can_review: []
-
-  # [2026-08-08 Pavan] Motor DeepSeek V4-Flash via assinatura OpenCode Go
-  # (não-Anthropic — mesmo padrão do Hiro/Kimi). `model_family: opencode` liga a
-  # cota do plano Go no painel (20/08); contexto/effort ainda são lidos como se
-  # fosse Anthropic — mesmo gotcha que o Kimi teve antes do DS-69.
-  # Slug ficou "canarinho" de propósito: já existe "canario" abaixo (gerador de
-  # carga sintética do gate, nome consagrado em dezenas de arquivos do cockpit —
-  # NÃO renomear aquele). O Rica chama este de "Canário" no dia a dia; o slug
-  # técnico é só pra não colidir.
-  #
-  # [2026-09-20 Pavan] PAPEL MUDOU: era executor de implementação do Cockpit V2,
-  # virou o agente de pesquisa da tropa (decisão do Rica). `workspace_path` saiu
-  # do worktree `grupo_borges-canario` pra casa dele — o worktree existia pra
-  # implementar, e a persona nunca carregava lá (não havia CLAUDE.md nenhum no
-  # caminho da sessão; medido 20/09 no JSONL, zero menção à persona). Pesquisar
-  # não exige checkout. O worktree segue no disco, sem dono.
-  - slug: canarinho
-    name: Canário
-    role: Agente de pesquisa — fonte primária, doc oficial, ACHADO/EVIDÊNCIA/RISCO/RECOMENDAÇÃO
-    emoji: "🐤"
-    tmux_session: canario
-    workspace_path: /home/clawd/repos/ze_claude/canario
-    cli_default: claude_code
-    model_default: deepseek-v4-flash
-    model_family: opencode
-    capabilities:
-      - pesquisa-tecnica
-      - doc-oficial-context7
-      - pesquisa-de-mercado
-      - motor-deepseek-opencode-go
-    can_review: []
+  # [2026-10-12 Pavan] Fluyt (`fluytcom`), Fluyt Pós (`fluytpos`) e Canário
+  # (`canarinho`) saíram daqui por ordem do Rica: vivem no cockpit do notebook
+  # (`ze_claude/pavan/docs/cockpit-notebook.md`). Tirar do yaml não apaga o card —
+  # o sync do startup só insere; a linha em `agents` no banco sai à parte.
 
 # Humanos autenticados via Tailscale-User-Login.
 # Header derivado do tailscaled local (não spoofável sem comprometer o node).
