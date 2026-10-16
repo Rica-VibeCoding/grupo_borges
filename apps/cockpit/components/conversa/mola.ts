@@ -8,8 +8,14 @@ import { MOLA } from './deslize.ts';
 
 const posicao = (x: number) => `translate3d(${x}px, 0, 0)`;
 
+/** O assento ainda em curso de cada elemento. Dedo que volta antes do fim cancela o velho: sem
+ *  isto, o relógio dele chamava o `fim` (a devolução ao CSS) no meio do arrasto novo, e a gaveta
+ *  pulava em vez de deslizar (16/10). */
+const emCurso = new WeakMap<HTMLElement, () => void>();
+
 /** Onde o dedo está, na hora, sem transição. */
 export function acompanha(elemento: HTMLElement, x: number): void {
+  emCurso.get(elemento)?.();
   elemento.style.transition = 'none';
   elemento.style.transform = posicao(x);
 }
@@ -19,12 +25,17 @@ export function acompanha(elemento: HTMLElement, x: number): void {
  * elemento já está em `x` não há transição, e o `transitionend` nunca chega.
  */
 export function assenta(elemento: HTMLElement, x: number, fim?: () => void): void {
+  emCurso.get(elemento)?.();
   let feito = false;
-  const termina = () => {
-    if (feito) return;
+  const desarma = () => {
     feito = true;
+    emCurso.delete(elemento);
     elemento.removeEventListener('transitionend', aoTerminar);
     window.clearTimeout(relogio);
+  };
+  const termina = () => {
+    if (feito) return;
+    desarma();
     fim?.();
   };
   const aoTerminar = (evento: TransitionEvent) => {
@@ -32,6 +43,7 @@ export function assenta(elemento: HTMLElement, x: number, fim?: () => void): voi
   };
   elemento.addEventListener('transitionend', aoTerminar);
   const relogio = window.setTimeout(termina, MOLA.duracaoMs + 120);
+  emCurso.set(elemento, desarma);
   elemento.style.transition = `transform ${MOLA.duracaoMs}ms ${MOLA.curva}`;
   elemento.style.transform = posicao(x);
 }

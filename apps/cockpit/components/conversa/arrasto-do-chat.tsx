@@ -26,6 +26,11 @@ const VISIVEL = ['visibility', 'opacity'] as const;
 
 const CAMPO = 'input, textarea, select, [contenteditable="true"]';
 
+/** Faixa da borda esquerda onde o iOS arma o "voltar" do sistema (Rica, 16/10: na borda o dedo
+ *  levava para a tela anterior em vez de abrir a tropa). */
+const BORDA_DO_VOLTAR = 24;
+const TOCAVEL = 'a, button, [role="button"], input, textarea, select, label';
+
 type Sentido = 'abre' | 'fecha';
 type Arrasto = {
   inicio: Ponto;
@@ -59,7 +64,8 @@ function marcaTropa(aberta: boolean) {
  * do pager. O eixo trava nos primeiros pixels: vertical é a rolagem do chat e da tropa.
  *
  * Os ouvintes são passivos, de propósito: nenhum `touchmove` bloqueante fica na frente da
- * rolagem do pager, que é o gesto principal. Não conta o que começou num campo; para abrir,
+ * rolagem do pager, que é o gesto principal. A exceção é o `touchstart` na faixa da borda, que
+ * segura o "voltar" do iOS. Não conta o que começou num campo; para abrir,
  * também não o que começou no composer, em gaveta ou folha, no que rola de lado nem com texto
  * selecionado.
  */
@@ -187,13 +193,26 @@ export function ArrastoDoChat({
       assenta(gaveta, terminaAberta ? 0 : -a.largura, () => devolve(gaveta, VISIVEL));
     };
 
+    // O único ouvinte que bloqueia, e só na faixa da borda: o `preventDefault` no `touchstart` é o
+    // que tira o gesto do iOS, e o `touchmove` continua chegando para o arrasto abrir a tropa. Fora
+    // de botão e link, senão o toque no `≡`, que mora nessa faixa, deixaria de virar clique.
+    const seguraOVoltar = (evento: TouchEvent) => {
+      const dedo = evento.touches[0];
+      if (evento.touches.length !== 1 || dedo.clientX > BORDA_DO_VOLTAR) return;
+      if (window.matchMedia(DESKTOP).matches) return;
+      if (evento.target instanceof Element && evento.target.closest(TOCAVEL) !== null) return;
+      evento.preventDefault();
+    };
+
     const passivo = { passive: true } as const;
+    document.addEventListener('touchstart', seguraOVoltar, { passive: false });
     document.addEventListener('touchstart', comeca, passivo);
     document.addEventListener('touchmove', move, passivo);
     document.addEventListener('touchend', termina, passivo);
     document.addEventListener('touchcancel', cancela, passivo);
     return () => {
       if (quadro !== 0) cancelAnimationFrame(quadro);
+      document.removeEventListener('touchstart', seguraOVoltar);
       document.removeEventListener('touchstart', comeca);
       document.removeEventListener('touchmove', move);
       document.removeEventListener('touchend', termina);
