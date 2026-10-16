@@ -36,7 +36,10 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
         ref={viewportRef}
-        className={cn("size-full outline-none", viewportProps?.className)}
+        // `[&>div]:!block`: o Radix embrulha o conteúdo num div `display: table`,
+        // que estica até a linha mais longa sem quebra — a frase do passo em voo
+        // no rodapé alargava o feed além da tela e o texto sumia à direita (16/10).
+        className={cn("size-full outline-none [&>div]:!block", viewportProps?.className)}
         {...viewportProps}
       >
         {children}
