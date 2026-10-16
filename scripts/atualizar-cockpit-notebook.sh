@@ -29,10 +29,21 @@ if [[ -z "$(git -C "$REPO" rev-list HEAD..origin/main)" ]]; then
 fi
 diz "testando o front antes da junção"
 FALHAS_ANTES="$(falhas)"
-if ! git -C "$REPO" merge -q --no-edit origin/main; then
-    git -C "$REPO" merge --abort
-    diz "🔴 a junção com a VPS deu conflito — desfeita, cockpit intocado. Chamar o Daniel."
-    exit 1
+# O que é identidade do notebook (o ícone tem outra forma de propósito) fica sempre o daqui.
+DO_NOTEBOOK='^apps/cockpit/(public/(apple-touch-icon|icon-192|icon-512)\.png|app/layout\.tsx)$'
+if ! git -C "$REPO" merge -q --no-edit origin/main >/dev/null 2>&1; then
+    CONFLITOS="$(git -C "$REPO" diff --name-only --diff-filter=U)"
+    if [[ -n "$CONFLITOS" ]] && ! grep -qvE "$DO_NOTEBOOK" <<<"$CONFLITOS"; then
+        xargs -r git -C "$REPO" checkout --ours -- <<<"$CONFLITOS"
+        xargs -r git -C "$REPO" add -- <<<"$CONFLITOS"
+        git -C "$REPO" commit -q --no-edit
+        diz "ícone do notebook mantido na junção"
+    else
+        git -C "$REPO" merge --abort
+        diz "🔴 a junção com a VPS deu conflito — desfeita, cockpit intocado. Chamar o Daniel:"
+        echo "$CONFLITOS"
+        exit 1
+    fi
 fi
 mudou() { ! git -C "$REPO" diff --quiet "$ANTES_DA_JUNCAO" HEAD -- "$@"; }
 volta() { git -C "$REPO" reset -q --hard "$ANTES_DA_JUNCAO"; diz "junção desfeita"; }
