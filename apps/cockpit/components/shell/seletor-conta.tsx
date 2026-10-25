@@ -15,6 +15,7 @@
  * muda é o `⌄` e o `ck-veil`, que avisam que agora dá pra tocar.
  */
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchContas, postContaAtiva } from '@grupo_borges/cockpit-core/api';
 import type { ContasResponse } from '@grupo_borges/cockpit-core/api';
 import type { PainelQuotas } from '@grupo_borges/cockpit-core/cockpit-types';
@@ -143,6 +144,9 @@ export function SeletorDeConta({
 
   return (
     <DropdownMenu open={aberto} onOpenChange={alterarAbertura}>
+      {/* Véu próprio (Rica, 25/10): o menu escuro sobre a gaveta escura virava
+          "uma bagunça só". O fundo perde luz e desfoca; o menu sobe um degrau. */}
+      {aberto ? createPortal(<div aria-hidden className="ck-menu-conta-veu" />, document.body) : null}
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -168,7 +172,7 @@ export function SeletorDeConta({
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        className={`ck-menu-surge ${aberto ? 'ck-menu-aberto' : 'ck-menu-fechado'}`}
+        className={`ck-menu-conta ck-menu-surge ${aberto ? 'ck-menu-aberto' : 'ck-menu-fechado'}`}
         side="bottom"
         align="end"
         sideOffset={6}

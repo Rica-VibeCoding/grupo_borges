@@ -67,6 +67,13 @@ peça central está polindo 18% da tela.
    árvore compartilhada: publica trabalho pela metade e derruba os chunks.
    Com a `:3444` fora do ar, **publicar é o único jeito de ele ver** — não existe
    mais "ele acompanha pelo dev".
+7. **O notebook tem cockpit PRÓPRIO e não recebe a publicação daqui.** Ramo
+   `notebook-local` em `~/Projetos/grupo_borges`, servido na 3008 de lá. Quem o põe em
+   dia é **`atualizar-cockpit`** no terminal do notebook (o Rica roda, ou você por
+   SSH como `ricardo@100.116.209.95`), que executa `scripts/atualizar-cockpit-notebook.sh`
+   do `origin/main`. Pedido do Rica em 16/10: mexeu no fluxo de publicação ou no
+   que o notebook guarda como dele (ícone, `layout.tsx`)? O script tem de continuar
+   funcionando. Doc: `ze_claude/pavan/docs/cockpit-notebook.md`.
 
 ## Skills daqui
 

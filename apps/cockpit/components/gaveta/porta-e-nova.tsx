@@ -46,9 +46,11 @@ function PilulaDaNova({ interrompe, enviando, etapa, aoTocar }: { interrompe: bo
       whileTap={{ scale: 0.97 }}
       transition={TOQUE}
     >
-      <span aria-hidden style={{ ...CAMADA, background: 'var(--ck-gv-pilula)' }} />
-      <Enchendo etapa={enviando ? etapa : null} tinta="var(--ck-text-primary)" />
-      <span className="relative flex items-center justify-center" style={{ gap: 'var(--ck-space-2)', color: 'var(--ck-text-primary)' }}>
+      {/* A única pílula acesa da gaveta (Rica, 25/10): é o botão de quem
+          acabou a tarefa. Peso por luz, não por cor — matiz é de estado. */}
+      <span aria-hidden style={{ ...CAMADA, background: 'var(--ck-text-primary)' }} />
+      <Enchendo etapa={enviando ? etapa : null} tinta="var(--ck-gv-fundo)" />
+      <span className="relative flex items-center justify-center" style={{ gap: 'var(--ck-space-2)', color: 'var(--ck-gv-fundo)' }}>
         <IconeMais tamanho={16} />
         {rotulo}
       </span>
@@ -71,8 +73,8 @@ export function PortaENova({ agentSlug, fecharHref, comNova }: { agentSlug: stri
       <div className="flex" style={{ gap: 'var(--ck-space-2)' }}>
         <LinkDaGaveta
           href={`${fecharHref}?painel=conversas`}
-          className="ck-gv-pilula ck-veil flex flex-1 items-center justify-center"
-          style={{ ...PILULA, color: 'var(--ck-text-primary)' }}
+          className="ck-gv-pilula-contorno ck-veil flex flex-1 items-center justify-center"
+          style={{ ...PILULA, color: 'var(--ck-text-secondary)' }}
         >
           <IconeHistorico tamanho={16} />
           Conversas

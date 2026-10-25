@@ -36,6 +36,8 @@ export type RecursosDaVps = {
   nucleos: number;
   ram: Recurso;
   swap: Recurso | null;
+  /** Páginas/s entrando e saindo da swap. Ausente em API antiga. */
+  swap_troca_paginas_s?: number | null;
   disco: Recurso;
   vilao: { cpu: Vilao | null; ram: Vilao | null };
   /** Ausente em API antiga: aí a tela cai no vilão. */
@@ -50,20 +52,28 @@ export type Medida = 'cpu' | 'ram' | 'swap' | 'disco';
  * Acima disto a barra fica da cor de atenção — e só acima disto. Cor só onde há
  * julgamento (regra 6 da tropa): 60% de RAM numa máquina de 12 GB é o dia
  * normal da frota, não um aviso.
- *
- * Swap tem o teto mais baixo porque swap usada não é "memória a mais", é RAM que
- * já acabou: acima da metade a máquina está trocando página com o disco, e é
- * isso que deixa tudo lento antes de qualquer OOM.
  */
-export const TETO_PCT: Record<Medida, number> = {
+export const TETO_PCT: Record<Exclude<Medida, 'swap'>, number> = {
   cpu: 90,
   ram: 85,
-  swap: 50,
   disco: 85,
 };
 
-export function emAlerta(medida: Medida, pct: number | null): boolean {
+export function emAlerta(medida: Exclude<Medida, 'swap'>, pct: number | null): boolean {
   return pct !== null && pct > TETO_PCT[medida];
+}
+
+/**
+ * A swap acende pela TROCA, não pela ocupação (Rica, 25/10). Medido nesse dia:
+ * 53% ocupada com troca ≈ 0 — páginas frias de um pico antigo, que o kernel não
+ * traz de volta sozinho. O que deixa a máquina lenta é página indo e vindo do
+ * disco; 256 páginas/s de 4 KB ≈ 1 MB/s.
+ */
+export const TETO_TROCA_PAGINAS_S = 256;
+
+export function swapEmTroca(dados: RecursosDaVps): boolean {
+  const taxa = dados.swap_troca_paginas_s;
+  return taxa != null && taxa > TETO_TROCA_PAGINAS_S;
 }
 
 /** Quanto da barra o valor preenche, de 0 a 1. Linear: aqui 0 a 100 é a escala

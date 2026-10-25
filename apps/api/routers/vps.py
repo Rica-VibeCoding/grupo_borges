@@ -50,6 +50,9 @@ class VpsRecursos(BaseModel):
     nucleos: int
     ram: Recurso
     swap: Recurso | None = Field(description="null na máquina sem swap")
+    swap_troca_paginas_s: float | None = Field(
+        default=None, description="páginas/s entrando e saindo da swap; null sem intervalo",
+    )
     disco: Recurso
     vilao: Vilaos
     consumidores: list[Consumidor] = Field(default_factory=list, description="maiores por CPU, depois RAM")
