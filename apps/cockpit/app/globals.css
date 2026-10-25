@@ -2158,6 +2158,14 @@ html[data-troca-agente] .ck-palco {
   background-color: var(--ck-gv-pilula-hover);
 }
 
+/* Terceiro degrau da fileira de conversas (Rica, 25/10): "Conversas" só abre
+ * a lista, não mexe no agente — fica em contorno, abaixo das pílulas cheias. */
+.ck-gv .ck-gv-pilula-contorno {
+  box-shadow: inset 0 0 0 1px var(--ck-gv-tracejado);
+  font-weight: 500;
+}
+.ck-gv .ck-gv-pilula-contorno:hover { background-color: var(--ck-gv-fio); }
+
 /* Interruptor: trilho + botão; azul só quando ligado. */
 .ck-gv-trilho {
   background: var(--ck-gv-trilho);
