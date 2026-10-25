@@ -33,6 +33,7 @@ import { useEffect, useState } from 'react';
 import {
   descreve,
   emAlerta,
+  swapEmTroca,
   formataCarga,
   formataNoAr,
   formataTamanho,
@@ -82,7 +83,7 @@ function Medidor({
   dados: RecursosDaVps | null;
 }) {
   const pct = pctDe(medida, dados);
-  const alerta = emAlerta(medida, pct);
+  const alerta = medida === 'swap' ? dados !== null && swapEmTroca(dados) : emAlerta(medida, pct);
   const detalhe = dados ? descreve(medida, dados) : 'sem leitura ainda';
   return (
     <div

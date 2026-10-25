@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   descreve,
   emAlerta,
+  swapEmTroca,
   formataNoAr,
   formataTamanho,
   fracaoDaBarra,
@@ -28,14 +29,21 @@ const ORACLE: RecursosDaVps = {
   medido_em: 1_788_000_000,
 };
 
-test('cor só acima do teto de cada medida — e a swap tem o teto mais baixo', () => {
+test('cor só acima do teto de cada medida', () => {
   assert.equal(emAlerta('ram', 62.6), false);
   assert.equal(emAlerta('ram', 85), false);
   assert.equal(emAlerta('ram', 85.1), true);
-  // 73% de swap é a máquina trocando página com o disco: alerta.
-  assert.equal(emAlerta('swap', 72.8), true);
   assert.equal(emAlerta('cpu', 80), false);
   assert.equal(emAlerta('cpu', null), false);
+});
+
+test('swap acende pela troca, não pela ocupação', () => {
+  // 25/10: 53% de swap com troca ≈ 0 — páginas frias, máquina folgada.
+  assert.equal(swapEmTroca({ ...ORACLE, swap_troca_paginas_s: 0 }), false);
+  assert.equal(swapEmTroca({ ...ORACLE, swap_troca_paginas_s: 256 }), false);
+  assert.equal(swapEmTroca({ ...ORACLE, swap_troca_paginas_s: 257 }), true);
+  assert.equal(swapEmTroca({ ...ORACLE, swap_troca_paginas_s: null }), false);
+  assert.equal(swapEmTroca(ORACLE), false);
 });
 
 test('a barra é linear e clampa nos dois lados', () => {

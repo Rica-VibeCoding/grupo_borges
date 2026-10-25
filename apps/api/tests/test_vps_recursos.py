@@ -113,6 +113,23 @@ def test_carga_e_uptime_leem_o_primeiro_campo() -> None:
     assert vps_recursos.no_ar_segundos("3024031.48 5338825.23\n") == 3024031
 
 
+VMSTAT = """nr_free_pages 37452
+pgpgin 1854398172
+pswpin 36363801
+pswpout 54386103
+pgfault 9238472311
+"""
+
+
+def test_troca_de_swap_soma_paginas_que_entram_e_saem() -> None:
+    assert vps_recursos.troca_de_swap(VMSTAT) == 36363801 + 54386103
+
+
+def test_taxa_de_troca_e_paginas_por_segundo_entre_duas_leituras() -> None:
+    assert vps_recursos.taxa_de_troca(1000, 3560, 10.0) == 256.0
+    assert vps_recursos.taxa_de_troca(1000, 1000, 0.0) is None
+
+
 def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
     """A resposta que o rodapé da tropa consome, com a máquina inteira falsa."""
     leituras = iter([STAT_ANTES, STAT_DEPOIS])
@@ -129,6 +146,8 @@ def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
             return next(leituras)
         if caminho == vps_recursos.CAMINHO_MEMINFO:
             return MEMINFO
+        if caminho == vps_recursos.CAMINHO_VMSTAT:
+            return VMSTAT
         if caminho == vps_recursos.CAMINHO_LOADAVG:
             return "2.62 2.54 3.39 4/1486 4046398\n"
         if caminho == vps_recursos.CAMINHO_UPTIME:
@@ -157,6 +176,7 @@ def test_endpoint_entrega_o_bloco_inteiro(monkeypatch) -> None:
     assert corpo["carga_1m"] == 2.62
     assert corpo["ram"]["pct"] == 62.6
     assert corpo["swap"]["usado_mb"] == 2983
+    assert corpo["swap_troca_paginas_s"] == 0.0
     assert corpo["disco"]["livre_mb"] == 35464
     assert corpo["no_ar_segundos"] == 3024031
     assert corpo["nucleos"] >= 1

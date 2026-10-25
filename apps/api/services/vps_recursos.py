@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 CAMINHO_STAT = "/proc/stat"
 CAMINHO_MEMINFO = "/proc/meminfo"
+CAMINHO_VMSTAT = "/proc/vmstat"
 CAMINHO_LOADAVG = "/proc/loadavg"
 CAMINHO_UPTIME = "/proc/uptime"
 RAIZ_DO_DISCO = "/"
@@ -99,6 +100,27 @@ def memoria(texto_meminfo: str) -> tuple[dict, dict | None]:
         return ram, None
     swap_livre = kb.get("SwapFree", 0) // _KB_POR_MB
     return ram, _recurso(swap_total - swap_livre, swap_livre, swap_total)
+
+
+def troca_de_swap(texto_vmstat: str) -> int:
+    """Páginas que entraram e saíram da swap desde o boot (`pswpin` + `pswpout`).
+
+    Contador em PÁGINAS, não em KB — o `sar -W` lê os mesmos dois campos como
+    "swap pages ... per second". Ocupação da swap não diz se a máquina sofre:
+    página fria fica lá para sempre sem custar nada. Quem trava é a TROCA.
+    """
+    total = 0
+    for linha in texto_vmstat.splitlines():
+        chave, _, valor = linha.partition(" ")
+        if chave in ("pswpin", "pswpout"):
+            total += int(valor)
+    return total
+
+
+def taxa_de_troca(antes: int, depois: int, segundos: float) -> float | None:
+    if segundos <= 0:
+        return None
+    return round((depois - antes) / segundos, 1)
 
 
 def disco(st: os.statvfs_result) -> dict:
@@ -352,11 +374,11 @@ def consumidores(donos: list[Dono], delta_total_ticks: int) -> list[dict]:
     ]
 
 
-_ultima_amostra: tuple[AmostraCpu, dict[int, Processo], float] | None = None
+_ultima_amostra: tuple[AmostraCpu, dict[int, Processo], int, float] | None = None
 
 
-async def _amostra_agora() -> tuple[AmostraCpu, dict[int, Processo]]:
-    return amostra_cpu(_le(CAMINHO_STAT)), _varre_processos()
+async def _amostra_agora() -> tuple[AmostraCpu, dict[int, Processo], int]:
+    return amostra_cpu(_le(CAMINHO_STAT)), _varre_processos(), troca_de_swap(_le(CAMINHO_VMSTAT))
 
 
 async def ler() -> dict:
@@ -369,14 +391,14 @@ async def ler() -> dict:
     """
     global _ultima_amostra
     agora = time.monotonic()
-    cpu, processos = await _amostra_agora()
+    cpu, processos, troca = await _amostra_agora()
     base = _ultima_amostra
-    if base is None or agora - base[2] > AMOSTRA_VALE_POR_SEGUNDOS:
+    if base is None or agora - base[3] > AMOSTRA_VALE_POR_SEGUNDOS:
         await asyncio.sleep(RESPIRO_SEGUNDOS)
-        base = (cpu, processos, agora)
-        cpu, processos = await _amostra_agora()
+        base = (cpu, processos, troca, agora)
+        cpu, processos, troca = await _amostra_agora()
         agora = time.monotonic()
-    _ultima_amostra = (cpu, processos, agora)
+    _ultima_amostra = (cpu, processos, troca, agora)
 
     donos = por_dono(base[1], processos)
     ram, swap = memoria(_le(CAMINHO_MEMINFO))
@@ -386,6 +408,7 @@ async def ler() -> dict:
         "nucleos": os.cpu_count() or 1,
         "ram": ram,
         "swap": swap,
+        "swap_troca_paginas_s": taxa_de_troca(base[2], troca, agora - base[3]),
         "disco": disco(os.statvfs(RAIZ_DO_DISCO)),
         "vilao": {
             "cpu": _publica_vilao(vilao_de_cpu(donos, cpu.total - base[0].total)),
