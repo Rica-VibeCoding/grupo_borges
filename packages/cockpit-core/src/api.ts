@@ -931,7 +931,7 @@ export type McpServer = {
   name: string;
   enabled: boolean;
   origin?: string;
-  toggleable?: boolean;
+  toggleable?: boolean | 'enable_only';
   transport?: string | null;
   description?: string | null;
   command_redacted?: string | null;

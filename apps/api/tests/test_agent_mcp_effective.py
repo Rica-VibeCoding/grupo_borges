@@ -46,7 +46,7 @@ def test_fluytpos_effective_sources(tmp_path, monkeypatch):
     for name in ("ask-user", "context7_global", "supabase_geral"):
         entry = servers[("mcp_config", name)]
         assert entry["enabled"] is True
-        assert entry["toggleable"] is False
+        assert entry["toggleable"] == "enable_only"
         assert entry["origin"] == f"--mcp-config {mcp_path}"
         assert entry["command_redacted"] == "cli-server"
         assert ("user_scope", name) not in servers
@@ -114,7 +114,7 @@ def test_plugin_toggle_respects_cli_settings_precedence(tmp_path, monkeypatch, e
 
 
 @pytest.mark.parametrize("scope", ["cli", "local", "project", "user", "new_user"])
-def test_plugin_toggle_writes_highest_existing_layer_without_plugin_key(tmp_path, monkeypatch, scope):
+def test_plugin_toggle_writes_only_explicit_or_local_settings(tmp_path, monkeypatch, scope):
     request, home, _, workspace = _build_request(tmp_path, monkeypatch)
     plugin_id = "context7@official"
     _write_json(home / "plugins/installed_plugins.json", {"plugins": {plugin_id: {}}})
@@ -123,24 +123,25 @@ def test_plugin_toggle_writes_highest_existing_layer_without_plugin_key(tmp_path
         workspace / ".claude/settings.local.json", home / "agentes/daniel.settings.json",
     ]
     target_index = {"cli": 3, "local": 2, "project": 1, "user": 0, "new_user": 0}[scope]
-    target = paths[target_index]
+    existing = paths[target_index]
+    target = existing if scope == "cli" else paths[2]
     for path in paths[:target_index]:
         _write_json(path, {"enabledPlugins": {plugin_id: True}})
     original = {"env": {"KEEP": "yes"}, "enabledPlugins": {"other": False}}
     if scope != "new_user":
-        _write_json(target, original)
-        target.chmod(0o644)
+        _write_json(existing, original)
+        existing.chmod(0o644)
     if scope == "cli":
         monkeypatch.setattr(config, "live_command", lambda _: (["claude", "--settings", str(target)], workspace))
     untouched = {path: path.read_bytes() if path.exists() else None for path in paths if path != target}
 
     _toggle(request, "plugin", plugin_id, False)
 
-    expected = original if scope != "new_user" else {}
+    expected = original if target == existing and scope != "new_user" else {}
     assert json.loads(target.read_text()) == {
         **expected, "enabledPlugins": {**expected.get("enabledPlugins", {}), plugin_id: False},
     }
-    if scope != "new_user":
+    if target == existing and scope != "new_user":
         assert stat.S_IMODE(target.stat().st_mode) == 0o644
     assert {path: path.read_bytes() if path.exists() else None for path in untouched} == untouched
     entry = _servers_by_key(_run(router.list_agent_mcp("daniel", request)))[("plugin", plugin_id)]
@@ -248,7 +249,8 @@ def test_live_command_uses_driver_socket_foreground_and_children(tmp_path, monke
     assert live_command("agent-socket") is None
 
 
-def test_plugin_installations_belong_to_target_workspace(tmp_path, monkeypatch):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_plugin_installations_belong_to_target_workspace(tmp_path, monkeypatch, legacy):
     request, home, _, workspace = _build_request(tmp_path, monkeypatch)
     _write_json(home / "plugins/installed_plugins.json", {"plugins": {
         "shared@official": [
@@ -256,24 +258,28 @@ def test_plugin_installations_belong_to_target_workspace(tmp_path, monkeypatch):
             {"scope": "user", "name": "global"},
             {"scope": "project", "projectPath": str(workspace), "name": "target"},
         ],
-        "foreign@official": [{"scope": "local", "projectPath": "/another"}],
+        "foreign@official": {"scope": "local", "projectPath": "/another"} if legacy else [
+            {"scope": "local", "projectPath": "/another"},
+        ],
     }})
     servers = _servers_by_key(_run(router.list_agent_mcp("daniel", request)))
     assert set(servers) == {("plugin", "shared@official")}
     assert servers[("plugin", "shared@official")]["name"] == "target"
 
 
-def test_setting_sources_without_local_writes_allowed_global_layer(tmp_path, monkeypatch):
+@pytest.mark.parametrize("sources", ["user", "project", "user,project"])
+def test_setting_sources_without_local_rejects_plugin_writes(tmp_path, monkeypatch, sources):
     request, home, _, workspace = _build_request(tmp_path, monkeypatch)
     _write_json(home / "plugins/installed_plugins.json", {"plugins": {"test@official": {}}})
-    _write_json(home / "settings.json", {"enabledPlugins": {"test@official": False}})
-    _write_json(workspace / ".claude/settings.local.json", {"enabledPlugins": {"test@official": True}})
-    monkeypatch.setattr(config, "live_command", lambda _: (["claude", "--setting-sources=user"], workspace))
+    paths = [home / "settings.json", workspace / ".claude/settings.json", workspace / ".claude/settings.local.json"]
+    for path in paths:
+        _write_json(path, {"enabledPlugins": {"test@official": path == paths[-1]}})
+    before = {path: path.read_bytes() for path in paths}
+    monkeypatch.setattr(config, "live_command", lambda _: (["claude", f"--setting-sources={sources}"], workspace))
     entry = _servers_by_key(_run(router.list_agent_mcp("daniel", request)))[("plugin", "test@official")]
     assert entry["enabled"] is False
-    assert entry.get("toggleable", True) is True
-    _toggle(request, "plugin", "test@official", True)
-    assert json.loads((home / "settings.json").read_text())["enabledPlugins"]["test@official"] is True
-    entry = _servers_by_key(_run(router.list_agent_mcp("daniel", request)))[("plugin", "test@official")]
-    assert entry["enabled"] is True
-    assert entry["origin"] == str(home / "settings.json")
+    assert entry["toggleable"] is False
+    with pytest.raises(router.HTTPException) as exc:
+        _toggle(request, "plugin", "test@official", True)
+    assert exc.value.status_code == 422
+    assert {path: path.read_bytes() for path in paths} == before
