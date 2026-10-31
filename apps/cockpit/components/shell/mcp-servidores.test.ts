@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  avisoEfeitoColateral,
   combinaBusca,
   rotuloDaOrigem,
   servidoresMcp,
@@ -64,29 +63,5 @@ describe('rotuloDaOrigem — pt-BR, uma palavra por kind', () => {
     assert.equal(rotuloDaOrigem('remote'), 'claude.ai');
     assert.equal(rotuloDaOrigem('user_scope'), 'usuário');
     assert.equal(rotuloDaOrigem('agent_user'), 'subagente');
-  });
-});
-
-describe('avisoEfeitoColateral', () => {
-  it('sem aviso quando não é plugin', () => {
-    assert.equal(avisoEfeitoColateral(servidor({ kind: 'mcp_json', provides: ['mcp'] })), null);
-  });
-
-  it('sem aviso quando o plugin só expõe mcp', () => {
-    assert.equal(avisoEfeitoColateral(servidor({ kind: 'plugin', provides: ['mcp'] })), null);
-  });
-
-  it('avisa quando o plugin expõe mcp E outra coisa — o caso real do vercel-plugin', () => {
-    const aviso = avisoEfeitoColateral(
-      servidor({ kind: 'plugin', provides: ['skill', 'mcp', 'subagent', 'hook'] }),
-    );
-    assert.ok(aviso);
-    assert.ok(aviso.includes('skill'));
-    assert.ok(aviso.includes('subagent'));
-    assert.ok(aviso.includes('hook'));
-  });
-
-  it('sem aviso quando provides é null', () => {
-    assert.equal(avisoEfeitoColateral(servidor({ kind: 'plugin', provides: null })), null);
   });
 });

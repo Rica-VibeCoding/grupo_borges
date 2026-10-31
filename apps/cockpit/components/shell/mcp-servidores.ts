@@ -41,7 +41,7 @@ export function combinaBusca(server: McpServer, termo: string): boolean {
   );
 }
 
-/** Rótulo pt-BR da origem — a segunda linha da fileira, junto do id. */
+/** Rótulo pt-BR da origem — ao lado do nome, na mesma linha da fileira. */
 export function rotuloDaOrigem(kind: McpServer['kind']): string {
   switch (kind) {
     case 'plugin':
@@ -55,19 +55,4 @@ export function rotuloDaOrigem(kind: McpServer['kind']): string {
     case 'agent_user':
       return 'subagente';
   }
-}
-
-/** Aviso de efeito colateral — só quando desligar ESTE server desliga mais do
- *  que ele. Hoje só acontece com `kind=plugin`: o toggle chama `claude plugin
- *  enable/disable`, que vale pro plugin inteiro, e um plugin pode expor mais
- *  de um tipo de recurso (o `vercel-plugin` real expõe skill+mcp+subagent+hook
- *  ao mesmo tempo). Desligar o MCP dele nesta tela desliga a skill junto, e
- *  quem só queria uma coisa perde a outra sem aviso — a menos que a gente
- *  avise aqui. */
-export function avisoEfeitoColateral(server: McpServer): string | null {
-  const provides = server.provides ?? [];
-  if (server.kind !== 'plugin' || provides.length <= 1) return null;
-  const outros = provides.filter((p) => p !== 'mcp');
-  if (outros.length === 0) return null;
-  return `este plugin também expõe ${outros.join(' e ')} — desligar aqui desliga tudo junto`;
 }
