@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   combinaBusca,
+  podeAlternarServidor,
   rotuloDaOrigem,
   servidoresMcp,
 } from './mcp-servidores.ts';
@@ -11,6 +12,22 @@ import type { McpServer } from '@grupo_borges/cockpit-core/api';
 function servidor(parcial: Partial<McpServer>): McpServer {
   return { kind: 'mcp_json', id: 'x', name: 'x', enabled: true, ...parcial };
 }
+
+describe('podeAlternarServidor', () => {
+  it('MCP de sessão só pode ligar, inclusive após atualizar o estado', () => {
+    const desligado = servidor({ kind: 'mcp_config', enabled: false, toggleable: 'enable_only' });
+    assert.equal(podeAlternarServidor(desligado), true);
+    assert.equal(podeAlternarServidor({ ...desligado, enabled: true }), false);
+  });
+
+  it('respeita bloqueio total e permite as duas direções nos demais', () => {
+    for (const enabled of [true, false]) {
+      assert.equal(podeAlternarServidor(servidor({ enabled, toggleable: false })), false);
+      assert.equal(podeAlternarServidor(servidor({ enabled })), true);
+      assert.equal(podeAlternarServidor(servidor({ enabled, toggleable: true })), true);
+    }
+  });
+});
 
 describe('servidoresMcp — filtra e ordena', () => {
   it('exclui skill-only e subagente, mesmo quando a lista mistura tudo', () => {

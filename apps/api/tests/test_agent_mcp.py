@@ -57,6 +57,7 @@ def _build_request(tmp_path: Path, monkeypatch) -> tuple[SimpleNamespace, Path, 
     monkeypatch.setattr(agents_router, "_CLAUDE_HOME", claude_home)
     monkeypatch.setattr(agents_router, "_CLAUDE_JSON", claude_json)
     monkeypatch.setattr(agent_mcp_config, "live_command", lambda _: None)
+    monkeypatch.setenv("COCKPIT_MAQUINA_AGENTES", str(tmp_path / "agentes.json"))
 
     agent = {**DANIEL, "workspace_path": str(workspace)}
 

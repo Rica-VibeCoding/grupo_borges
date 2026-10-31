@@ -8,7 +8,7 @@
  */
 import type { McpServer } from '@grupo_borges/cockpit-core/api';
 import { Interruptor } from '../gaveta/pecas';
-import { rotuloDaOrigem } from './mcp-servidores';
+import { podeAlternarServidor, rotuloDaOrigem } from './mcp-servidores';
 
 export function LinhaDeServidor({
   server,
@@ -41,7 +41,7 @@ export function LinhaDeServidor({
         rotulo={server.enabled ? 'Ativo' : 'Desligado'}
         descricao={`${server.enabled ? 'Desativar' : 'Ativar'} ${server.name}`}
         ocupado={emVoo}
-        desabilitado={emVoo || server.toggleable === false}
+        desabilitado={emVoo || !podeAlternarServidor(server)}
         aoAlternar={onToggle}
       />
     </li>

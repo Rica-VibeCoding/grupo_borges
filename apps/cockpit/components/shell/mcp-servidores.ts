@@ -29,6 +29,11 @@ export function servidoresMcp(servers: McpServer[]): McpServer[] {
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
+/** MCPs de --mcp-config só permitem remover um bloqueio persistido. */
+export function podeAlternarServidor(server: McpServer): boolean {
+  return server.toggleable !== false && !(server.toggleable === 'enable_only' && server.enabled);
+}
+
 /** Predicado de busca. Substring simples em nome e id, minúsculo — os dois
  *  campos são identificadores técnicos (`supabase-ze`, `claude.ai Supabase`),
  *  não texto livre, então não precisa de normalização de acento. */
