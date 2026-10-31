@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import asyncio
 from pathlib import Path
@@ -13,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routers import agents as agents_router
 from services import tmux_driver
+from services import agent_mcp_config
 
 
 DANIEL = {
@@ -56,6 +56,7 @@ def _build_request(tmp_path: Path, monkeypatch) -> tuple[SimpleNamespace, Path, 
 
     monkeypatch.setattr(agents_router, "_CLAUDE_HOME", claude_home)
     monkeypatch.setattr(agents_router, "_CLAUDE_JSON", claude_json)
+    monkeypatch.setattr(agent_mcp_config, "live_command", lambda _: None)
 
     agent = {**DANIEL, "workspace_path": str(workspace)}
 
@@ -140,6 +141,7 @@ def test_get_mcp_lists_plugin_and_project_servers_redacted(tmp_path: Path, monke
             "description": "Telegram channel",
             "command_redacted": "node server.js --access-token <redacted>",
             "provides": ["mcp"],
+            "origin": str(claude_home / "settings.json"),
         },
         {
             "kind": "mcp_json",
@@ -148,6 +150,8 @@ def test_get_mcp_lists_plugin_and_project_servers_redacted(tmp_path: Path, monke
             "enabled": True,
             "transport": "stdio",
             "command_redacted": "npx -y @supabase/mcp-server@latest --password=<redacted>",
+            "provides": ["mcp"],
+            "origin": str(workspace / ".mcp.json"),
         },
     ]
     serialized = json.dumps(body)
@@ -203,18 +207,11 @@ def test_get_mcp_marks_workspace_disabled_mcp_as_disabled(tmp_path: Path, monkey
     }
 
 
-def test_patch_mcp_plugin_invokes_claude_cli(tmp_path: Path, monkeypatch) -> None:
-    """Toggle de plugin chama `claude plugin disable/enable` (não edita JSON).
-    Mocka subprocess.run pra evitar mexer no estado real do CLI durante teste.
-    """
-    request, _, _, _ = _build_request(tmp_path, monkeypatch)
-    calls: list[tuple[list[str], str | None]] = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append((list(cmd), kwargs.get("cwd")))
-        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
-
-    monkeypatch.setattr(agents_router.subprocess, "run", fake_run)
+def test_patch_mcp_plugin_writes_workspace_override(tmp_path: Path, monkeypatch) -> None:
+    request, claude_home, _, workspace = _build_request(tmp_path, monkeypatch)
+    _write_json(claude_home / "settings.json", {"enabledPlugins": {"telegram@claude-plugins-official": True}})
+    target = workspace / ".claude" / "settings.local.json"
+    _write_json(target, {"env": {"KEEP": "yes"}, "enabledPlugins": {"other": True}})
 
     response = _run(
         agents_router.patch_agent_mcp(
@@ -227,11 +224,11 @@ def test_patch_mcp_plugin_invokes_claude_cli(tmp_path: Path, monkeypatch) -> Non
     )
 
     assert response == agents_router.McpToggleResponse(applied=True, requires_reload=True)
-    assert len(calls) == 1
-    cmd, cwd = calls[0]
-    assert cmd == ["claude", "plugin", "disable", "telegram@claude-plugins-official"]
-    # cwd = workspace do agente, pra settings.local.json override pegar.
-    assert cwd is not None and cwd.endswith("workspace")
+    assert json.loads(target.read_text()) == {
+        "env": {"KEEP": "yes"},
+        "enabledPlugins": {"other": True, "telegram@claude-plugins-official": False},
+    }
+    assert json.loads((claude_home / "settings.json").read_text())["enabledPlugins"]["telegram@claude-plugins-official"] is True
 
 
 def test_patch_mcp_json_moves_between_enabled_and_disabled_lists(tmp_path: Path, monkeypatch) -> None:

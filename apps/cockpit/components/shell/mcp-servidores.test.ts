@@ -34,6 +34,11 @@ describe('servidoresMcp — filtra e ordena', () => {
       ['airtable', 'mongo', 'zapier'],
     );
   });
+
+  it('inclui MCPs da sessão e do escopo local', () => {
+    const lista = [servidor({ kind: 'mcp_config', id: 'a' }), servidor({ kind: 'local_scope', id: 'b' })];
+    assert.equal(servidoresMcp(lista).length, 2);
+  });
 });
 
 describe('combinaBusca', () => {
@@ -57,11 +62,13 @@ describe('combinaBusca', () => {
 });
 
 describe('rotuloDaOrigem — pt-BR, uma palavra por kind', () => {
-  it('cobre os cinco kinds do backend', () => {
+  it('cobre todos os kinds do backend', () => {
     assert.equal(rotuloDaOrigem('plugin'), 'plugin');
     assert.equal(rotuloDaOrigem('mcp_json'), 'workspace');
     assert.equal(rotuloDaOrigem('remote'), 'claude.ai');
     assert.equal(rotuloDaOrigem('user_scope'), 'usuário');
     assert.equal(rotuloDaOrigem('agent_user'), 'subagente');
+    assert.equal(rotuloDaOrigem('mcp_config'), 'sessão');
+    assert.equal(rotuloDaOrigem('local_scope'), 'local');
   });
 });
