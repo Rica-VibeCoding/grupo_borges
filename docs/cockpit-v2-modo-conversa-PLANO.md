@@ -200,7 +200,7 @@ fala relatado não está. A recusa de fala ocupada no cliente existe independent
 ## Cadeiras (PC do Rica, psmux; coordenação no Daniel pela VPS)
 
 - **lógica** (back-end) → **GPT-6 Sol** (Codex, `gpt-6-sol`).
-- **tela** (UI) → **Opus 5.5** com `frontend-design` e `docs/cockpit-v2-estetica.md`. Dona do lockfile.
+- **tela** (UI) → **Opus 5.5** com o plugin `ui` (`sobe-ui.ps1` no PC), `frontend-design` e `docs/cockpit-v2-estetica.md`; diff passa pelo `ui:revisor-ui` antes de publicar. Dona do lockfile.
 - **teste** (pesquisa, browser-harness) → **DeepSeek**.
 - Motor por papel é regra fixa do Rica (02/10); a divisão anterior (lógica DeepSeek, tela Tara) está revogada.
 - **Coordenação** (Daniel): contrato, despacho, revisão, commit. Não escreve código de produção.
@@ -215,7 +215,7 @@ fala relatado não está. A recusa de fala ocupada no cliente existe independent
 - **Sessões (motor por papel, 02/10):** `psmux -L conversa`: `logica` = **Codex CLI** `codex.cmd -m gpt-6-sol
   -c model_reasoning_effort=medium --dangerously-bypass-approvals-and-sandbox` (o `gpt-6-sol` não existe no
   `claude-code-proxy`; chamar a `.cmd`, o `codex` sem extensão dá erro 193). `tela` = Claude Code
-  `claude-opus-5-5` com `frontend-design`. `teste` = Claude Code com DeepSeek `deepseek-v4-pro[1m]` direto no
+  `claude-opus-5-5` com o plugin `ui` (`--plugin-dir`) e `frontend-design`. `teste` = Claude Code com DeepSeek `deepseek-v4-pro[1m]` direto no
   OpenCode Zen (chave do cofre `sk-AZyN…` passada por `-e` no `new-session`, nunca em arquivo; env com
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS`/`AUTO_COMPACT_WINDOW=1048576`).
 - **Despacho:** briefing em `docs/modo-conversa/briefings/`, commitado e puxado no PC antes; mensagem de uma
