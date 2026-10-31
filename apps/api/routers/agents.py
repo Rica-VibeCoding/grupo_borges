@@ -87,6 +87,7 @@ from services.pergunta_motor import (
     pergunta_e_do_pedido,
 )
 from services.feed_enxuto import enxuga_para_feed
+from services.agent_mcp_config import load_config as _load_mcp_config
 from services.residuo_de_troca import eh_residuo_de_troca as _eh_residuo_de_troca
 from services.session_reset import session_reset_events_since
 from services import operacao_conversa
@@ -2192,6 +2193,8 @@ def _mcp_entry(
     enabled: bool,
     definition: dict[str, Any],
     provides: list[str] | None = None,
+    origin: str | None = None,
+    toggleable: bool = True,
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "kind": kind,
@@ -2200,6 +2203,10 @@ def _mcp_entry(
         "enabled": enabled,
         "transport": _transport(definition),
     }
+    if origin is not None:
+        entry["origin"] = origin
+    if not toggleable:
+        entry["toggleable"] = False
     description = definition.get("description")
     if isinstance(description, str) and description:
         entry["description"] = description
@@ -2248,7 +2255,7 @@ def _plugin_install_path(entry: Any) -> Path | None:
     return None
 
 
-def _iter_installed_plugins(raw: Any) -> list[tuple[str, Path | None, dict[str, Any]]]:
+def _iter_installed_plugins(raw: Any, workspace: str | None = None) -> list[tuple[str, Path | None, dict[str, Any]]]:
     if isinstance(raw, dict) and "plugins" in raw:
         raw = raw["plugins"]
 
@@ -2263,9 +2270,16 @@ def _iter_installed_plugins(raw: Any) -> list[tuple[str, Path | None, dict[str, 
     plugins: list[tuple[str, Path | None, dict[str, Any]]] = []
     for key, entry in items:
         # installed_plugins.json (v2) usa {name: [{installPath, scope, ...}, ...]}
-        # — uma lista de instalações por plugin. Pega a primeira pra metadata.
+        # — uma lista de instalações por plugin. No painel MCP, usa somente
+        # instalações globais ou do workspace alvo, priorizando local/project.
         if isinstance(entry, list) and entry and isinstance(entry[0], dict):
-            metadata = entry[0]
+            candidates = [item for item in entry if isinstance(item, dict)]
+            if workspace is not None:
+                candidates = [item for item in candidates if item.get("scope") not in {"local", "project"} or item.get("projectPath") == workspace]
+                candidates.sort(key=lambda item: {"local": 0, "project": 1}.get(item.get("scope"), 2))
+            if not candidates:
+                continue
+            metadata = candidates[0]
         elif isinstance(entry, dict):
             metadata = entry
         else:
@@ -2298,22 +2312,23 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
     agent = await _get_agent_or_404(request, slug)
     workspace = Path(agent["workspace_path"])
 
-    settings = _read_json_file(_CLAUDE_HOME / "settings.json", {})
-    enabled_plugins = settings.get("enabledPlugins") if isinstance(settings, dict) else {}
-    if not isinstance(enabled_plugins, dict):
-        enabled_plugins = {}
-    local_settings = _read_json_file(workspace / ".claude" / "settings.local.json", {})
-    local_ep = local_settings.get("enabledPlugins") if isinstance(local_settings, dict) else {}
-    if isinstance(local_ep, dict):
-        enabled_plugins = {**enabled_plugins, **local_ep}
+    config = await asyncio.to_thread(_load_mcp_config, agent, _CLAUDE_HOME, _read_json_file)
 
     installed = _read_json_file(_CLAUDE_HOME / "plugins" / "installed_plugins.json", {})
     servers: list[dict[str, Any]] = []
     known_ids: set[str] = set()
-    for plugin_id, install_path, metadata in _iter_installed_plugins(installed):
-        enabled = enabled_plugins.get(plugin_id, True) is not False
+    for plugin_id, install_path, metadata in _iter_installed_plugins(installed, str(workspace)):
+        # Instalações project/local de outro workspace não pertencem ao agente.
+        if metadata.get("scope") in {"project", "local"} and metadata.get("projectPath") != str(workspace):
+            continue
+        enabled, origin, toggleable = config.plugin_state(plugin_id)
         entry = _plugin_mcp_entry(plugin_id, install_path, enabled, metadata)
         if entry is not None:
+            entry["origin"] = origin or str(_CLAUDE_HOME / "plugins" / "installed_plugins.json")
+            if not toggleable or config.strict:
+                entry["toggleable"] = False
+            if config.strict and "mcp" in entry.get("provides", []):
+                entry["enabled"] = False
             servers.append(entry)
             known_ids.add(plugin_id)
             known_ids.add(entry["name"])
@@ -2324,19 +2339,44 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
     disabled_mcp = set(_as_list(project.get("disabledMcpjsonServers")))
     disabled_workspace_mcp = set(_as_list(project.get("disabledMcpServers")))
 
-    for server_id, definition in _mcp_server_defs(_read_json_file(workspace / ".mcp.json", {})).items():
-        enabled = server_id in enabled_mcp and server_id not in disabled_mcp
-        servers.append(_mcp_entry("mcp_json", server_id, server_id, enabled, definition))
+    enabled_mcp.update(config.names("enabledMcpjsonServers"))
+    settings_disabled = config.names("disabledMcpjsonServers")
+    disabled_mcp.update(settings_disabled)
+    enable_all = next((
+        settings["enableAllProjectMcpServers"] is True
+        for _, settings, _ in reversed(config.layers) if "enableAllProjectMcpServers" in settings
+    ), False)
+
+    # Por nome, sem mesclar campos: user < project < local < --mcp-config.
+    scoped: dict[str, tuple[str, dict[str, Any], str]] = {}
+    if not config.strict:
+        for kind, definitions, origin in (
+            ("user_scope", claude_json.get("mcpServers", {}) if isinstance(claude_json, dict) else {}, str(_CLAUDE_JSON)),
+            ("mcp_json", _read_json_file(workspace / ".mcp.json", {}), str(workspace / ".mcp.json")),
+            ("local_scope", project.get("mcpServers", {}), f"{_CLAUDE_JSON} projects[{workspace}]"),
+        ):
+            for server_id, definition in _mcp_server_defs(definitions).items():
+                scoped[server_id] = kind, definition, origin
+    for server_id, (definition, origin) in config.servers.items():
+        scoped[server_id] = "mcp_config", definition, origin
+    for server_id, (kind, definition, origin) in scoped.items():
+        enabled = server_id not in disabled_workspace_mcp
+        if kind == "mcp_json":
+            enabled = enabled and (enable_all or server_id in enabled_mcp) and server_id not in disabled_mcp
+        servers.append(_mcp_entry(
+            kind, server_id, server_id, enabled, definition, provides=["mcp"], origin=origin,
+            toggleable=kind != "mcp_config" and not (kind == "mcp_json" and server_id in settings_disabled),
+        ))
         known_ids.add(server_id)
 
     remote_ids = set(_as_list(claude_json.get("claudeAiMcpEverConnected") if isinstance(claude_json, dict) else None))
     remote_ids.update(item for item in disabled_workspace_mcp if item.startswith(_CLAUDE_AI_PREFIX))
-    for server_id in sorted(remote_ids):
+    for server_id in sorted(remote_ids if not config.strict else []):
         enabled = server_id not in disabled_workspace_mcp
         servers.append(_mcp_entry("remote", server_id, server_id, enabled, {"transport": "remote"}))
         known_ids.add(server_id)
 
-    for server_id in sorted(disabled_workspace_mcp):
+    for server_id in sorted(disabled_workspace_mcp if not config.strict else []):
         if server_id.startswith(_CLAUDE_AI_PREFIX) or server_id.startswith(_PLUGIN_DISABLED_PREFIX):
             continue
         if server_id in known_ids:
@@ -2363,6 +2403,7 @@ async def list_agent_mcp(slug: str, request: Request) -> dict[str, Any]:
                     True,
                     {},
                     provides=["subagent"],
+                    toggleable=False,
                 )
             )
 
@@ -2397,7 +2438,7 @@ def _parse_agent_name_from_md(path: Path) -> str | None:
 @router.patch("/{slug}/mcp/{kind}/{id}", response_model=McpToggleResponse)
 async def patch_agent_mcp(
     slug: str,
-    kind: Literal["plugin", "mcp_json", "remote", "user_scope", "agent_user"],
+    kind: Literal["plugin", "mcp_json", "remote", "user_scope", "agent_user", "mcp_config", "local_scope"],
     id: str,
     payload: McpToggleRequest,
     request: Request,
@@ -2410,30 +2451,20 @@ async def patch_agent_mcp(
             detail="subagentes user-level não suportam toggle (mova arquivo .md manualmente)",
         )
 
+    config = await asyncio.to_thread(_load_mcp_config, agent, _CLAUDE_HOME, _read_json_file)
+    if kind == "mcp_config" or (id in config.servers and kind != "plugin") or (config.strict and kind != "plugin"):
+        raise HTTPException(status_code=422, detail="MCP definido por --mcp-config não suporta toggle seguro")
+
     if kind == "plugin":
-        action = "enable" if payload.enabled else "disable"
-        # cwd = workspace do agente: settings local (.claude/settings.local.json)
-        # de cada Zé faz override do user-scope. Sem isso, o disable escreve no
-        # CWD do uvicorn (grupo_borges/apps/api) e nada acontece pro agente alvo.
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["claude", "plugin", action, id],
-            cwd=str(agent["workspace_path"]),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            # CLI retorna erro quando já está no estado desejado — trata como
-            # idempotente em vez de devolver 500 (Rica clicaria e veria erro
-            # vermelho mesmo o estado já estando correto).
-            stderr = result.stderr.strip()
-            if "already" in stderr.lower():
-                return McpToggleResponse(applied=True, requires_reload=False)
-            raise HTTPException(
-                status_code=500,
-                detail=f"claude plugin {action} falhou: {stderr}",
-            )
+        target = config.plugin_target(id, Path(agent["workspace_path"]))
+        if target is None or config.strict:
+            raise HTTPException(status_code=422, detail="override de sessão não suporta toggle seguro")
+        settings = _read_json_file(target, {})
+        if not isinstance(settings, dict):
+            settings = {}
+        plugins = settings.get("enabledPlugins")
+        settings["enabledPlugins"] = {**(plugins if isinstance(plugins, dict) else {}), id: payload.enabled}
+        _atomic_write_json(target, settings)
         return McpToggleResponse(applied=True, requires_reload=True)
 
     workspace = str(Path(agent["workspace_path"]))
@@ -2442,7 +2473,7 @@ async def patch_agent_mcp(
         claude_json = {}
     projects, project = _project_state(claude_json, workspace)
 
-    if kind in {"remote", "user_scope"}:
+    if kind in {"remote", "user_scope", "local_scope"}:
         disabled_servers = _as_list(project.get("disabledMcpServers"))
         if payload.enabled:
             disabled_servers = [item for item in disabled_servers if item != id]
@@ -2454,6 +2485,14 @@ async def patch_agent_mcp(
         _atomic_write_json(_CLAUDE_JSON, claude_json)
         return McpToggleResponse(applied=True, requires_reload=True)
 
+    if id in config.names("disabledMcpjsonServers"):
+        raise HTTPException(status_code=422, detail="aprovação MCP bloqueada em settings; toggle não suportado")
+    # O toggle de /mcp e a aprovação de .mcp.json são controles distintos.
+    disabled_servers = _as_list(project.get("disabledMcpServers"))
+    if payload.enabled:
+        project["disabledMcpServers"] = [item for item in disabled_servers if item != id]
+    else:
+        project["disabledMcpServers"] = list(dict.fromkeys([*disabled_servers, id]))
     enabled = _as_list(project.get("enabledMcpjsonServers"))
     disabled = _as_list(project.get("disabledMcpjsonServers"))
     if payload.enabled:

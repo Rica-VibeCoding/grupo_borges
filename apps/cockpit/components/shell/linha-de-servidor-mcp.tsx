@@ -41,7 +41,7 @@ export function LinhaDeServidor({
         rotulo={server.enabled ? 'Ativo' : 'Desligado'}
         descricao={`${server.enabled ? 'Desativar' : 'Ativar'} ${server.name}`}
         ocupado={emVoo}
-        desabilitado={emVoo}
+        desabilitado={emVoo || server.toggleable === false}
         aoAlternar={onToggle}
       />
     </li>

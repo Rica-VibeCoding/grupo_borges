@@ -54,5 +54,9 @@ export function rotuloDaOrigem(kind: McpServer['kind']): string {
       return 'usuário';
     case 'agent_user':
       return 'subagente';
+    case 'mcp_config':
+      return 'sessão';
+    case 'local_scope':
+      return 'local';
   }
 }

@@ -26,7 +26,9 @@ export function matchesTab(server: McpServer, tab: McpTabKey): boolean {
       provides.includes('mcp') ||
       server.kind === 'mcp_json' ||
       server.kind === 'remote' ||
-      server.kind === 'user_scope'
+      server.kind === 'user_scope' ||
+      server.kind === 'local_scope' ||
+      server.kind === 'mcp_config'
     );
   }
   return false;
