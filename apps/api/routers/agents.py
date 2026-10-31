@@ -27,6 +27,7 @@ import os
 import re
 import signal
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import time
@@ -1174,6 +1175,12 @@ def _atomic_write_json(path: Path, data: Any) -> None:
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
+            try:
+                mode = stat.S_IMODE(path.stat().st_mode)
+            except FileNotFoundError:
+                pass
+            else:
+                os.fchmod(f.fileno(), mode)
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.write("\n")
         os.replace(tmp_path, path)
@@ -2456,7 +2463,7 @@ async def patch_agent_mcp(
         raise HTTPException(status_code=422, detail="MCP definido por --mcp-config não suporta toggle seguro")
 
     if kind == "plugin":
-        target = config.plugin_target(id, Path(agent["workspace_path"]))
+        target = config.plugin_target()
         if target is None or config.strict:
             raise HTTPException(status_code=422, detail="override de sessão não suporta toggle seguro")
         settings = _read_json_file(target, {})

@@ -22,26 +22,26 @@ class McpConfig:
     layers: list[tuple[str, dict[str, Any], Path | None]] = field(default_factory=list)
     servers: dict[str, tuple[dict[str, Any], str]] = field(default_factory=dict)
     strict: bool = False
-    local_settings: bool = True
 
     def plugin_state(self, plugin_id: str) -> tuple[bool, str | None, bool]:
-        enabled, origin, toggleable = True, None, self.local_settings
-        for source, settings, path in self.layers:
+        enabled, origin = True, None
+        for source, settings, _ in self.layers:
             plugins = settings.get("enabledPlugins")
             if isinstance(plugins, dict) and plugin_id in plugins:
                 enabled = plugins[plugin_id] is not False
                 origin = source
-                toggleable = path is not None if source.startswith("--settings") else self.local_settings
-        return enabled, origin, toggleable
+        return enabled, origin, self.plugin_target() is not None
 
-    def plugin_target(self, plugin_id: str, workspace: Path) -> Path | None:
-        # Um override --settings ganha de settings.local.json. Só escrevemos
-        # nele quando é arquivo; JSON inline não tem destino persistente.
-        for source, settings, path in reversed(self.layers):
-            plugins = settings.get("enabledPlugins")
-            if source.startswith("--settings") and isinstance(plugins, dict) and plugin_id in plugins:
+    def plugin_target(self) -> Path | None:
+        # Grava na maior camada existente, mesmo se o plugin veio de baixo.
+        # --settings inline não tem destino persistente para o toggle.
+        for source, _, path in reversed(self.layers):
+            if source.startswith("--settings"):
                 return path
-        return workspace / ".claude" / "settings.local.json" if self.local_settings else None
+            if path is not None and path.is_file():
+                return path
+        # Sem arquivos ainda, cria a primeira fonte permitida (global por padrão).
+        return self.layers[0][2] if self.layers else None
 
     def names(self, key: str) -> set[str]:
         return {
@@ -121,7 +121,6 @@ def load_config(
     config = McpConfig(strict="--strict-mcp-config" in argv)
     sources = _flag_values(argv, "--setting-sources")
     allowed = set(sources[-1].split(",")) if sources else {"user", "project", "local"}
-    config.local_settings = "local" in allowed
     for scope, path in (
         ("user", claude_home / "settings.json"),
         ("project", workspace / ".claude" / "settings.json"),
