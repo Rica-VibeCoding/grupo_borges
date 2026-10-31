@@ -22,7 +22,8 @@ Medida (espaço, largura, toque, raio, ritmo) é da §B do `globals.css`; aqui s
    então quem os separa é a palavra ("Executando…" × "Aguardando você") e o pulso (respira × chama).
 6. **Discreto.** A direção é a da ACI Biller dark (§11), sem o herói chamativo.
 7. **Juiz único é o Rica, veredito binário.** A régua é "isto vale substituir o que existe?".
-   UI que vai ficar sai em rodada dedicada, com contexto limpo e a skill `frontend-design` carregada.
+   UI que vai ficar sai em rodada dedicada na cadeira de UI (plugin `ui`), com contexto limpo, a skill
+   `frontend-design` carregada e o diff revisado pelo `ui:revisor-ui` antes de publicar.
 
 ## 2. Cor
 
