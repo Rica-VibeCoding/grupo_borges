@@ -48,7 +48,17 @@ export function Filtros({ filtro, escolhe }: { filtro: FiltroDeConversa; escolhe
   );
 }
 
-export function Busca({ valor, muda }: { valor: string; muda: (v: string) => void }) {
+export function Busca({
+  valor,
+  muda,
+  dica = 'Buscar',
+  descricao = 'Buscar no título ou na nota',
+}: {
+  valor: string;
+  muda: (v: string) => void;
+  dica?: string;
+  descricao?: string;
+}) {
   return (
     <label className="flex shrink-0 items-center" style={{ gap: 'var(--ck-space-2)', minHeight: 'var(--ck-touch-min)', padding: '0 var(--ck-space-4)', borderRadius: 'var(--ck-radius-pill)', background: 'var(--ck-gv-bloco)', color: 'var(--ck-text-secondary)' }}>
       <IconeBusca tamanho={15} />
@@ -56,8 +66,8 @@ export function Busca({ valor, muda }: { valor: string; muda: (v: string) => voi
         type="search"
         value={valor}
         onChange={(e) => muda(e.target.value)}
-        placeholder="Buscar"
-        aria-label="Buscar no título ou na nota"
+        placeholder={dica}
+        aria-label={descricao}
         className="min-w-0 flex-1 bg-transparent outline-none"
         style={{ fontSize: 'var(--ck-text-md)', color: 'var(--ck-text-primary)' }}
       />

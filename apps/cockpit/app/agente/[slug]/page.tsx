@@ -16,74 +16,28 @@ import { PalcoDaConversa } from './palco-da-conversa';
 
 export const dynamic = 'force-dynamic';
 
-/** Rótulo de seção — a mesma overline do cabeçalho, em um lugar só para a
- *  gaveta nova (09/08). */
-function Rotulo({ children }: { children: string }) {
-  return (
-    <span
-      className="ck-tabular"
-      style={{
-        fontSize: 'var(--ck-text-xs)',
-        textTransform: 'uppercase',
-        letterSpacing: 'var(--ck-track-overline)',
-        color: 'var(--ck-text-secondary)',
-      }}
-    >
-      {children}
-    </span>
-  );
-}
+/** A TELA DE MCPs dentro da gaveta — o mesmo cabeçalho do painel de Conversas
+ *  (‹ · título · ×) dentro de `.ck-gv`, para as visões da gaveta serem uma
+ *  família só (Rica, 31/10). O `PainelMcp` preenche o campo com `flex-auto`
+ *  (ver o cabeçalho daquele arquivo). */
+const ALVO_DO_CABECALHO = { minWidth: 'var(--ck-touch-min)', minHeight: 'var(--ck-touch-min)', borderRadius: 'var(--ck-radius-chip)', fontSize: 'var(--ck-text-lg)', color: 'var(--ck-text-secondary)' } as const;
 
-/** A TELA DE MCPs dentro da gaveta — o mesmo cabeçalho de chrome, com um
- *  caminho de volta para os detalhes no lugar do rótulo. O `PainelMcp`
- *  preenche o campo com `flex-auto` (ver o cabeçalho daquele arquivo). */
 function VistaMcp({ agentSlug, fecharHref }: { agentSlug: string; fecharHref: string }) {
   return (
-    <div className="flex min-h-0 flex-auto flex-col">
-      <div
-        className="flex shrink-0 items-center justify-between border-b"
-        style={{
-          gap: 'var(--ck-space-2)',
-          padding: 'var(--ck-space-3) var(--ck-space-4)',
-          borderColor: 'var(--ck-edge-light)',
-        }}
-      >
-        <LinkDaGaveta
-          href={`${fecharHref}?painel=detalhes`}
-          aria-label="Voltar para os detalhes do agente"
-          className="ck-veil flex items-center justify-center"
-          style={{
-            minWidth: 'var(--ck-touch-min)',
-            minHeight: 'var(--ck-touch-min)',
-            marginLeft: 'calc(var(--ck-space-3) * -1)',
-            borderRadius: 'var(--ck-radius-chip)',
-            fontSize: 'var(--ck-text-lg)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
-          ←
+    <div className="ck-gv flex min-h-0 flex-auto flex-col" style={{ gap: 'var(--ck-space-2)', padding: 'var(--ck-space-3)' }}>
+      <header className="flex shrink-0 items-center" style={{ gap: 'var(--ck-space-1)', minHeight: '48px' }}>
+        <LinkDaGaveta href={`${fecharHref}?painel=detalhes`} aria-label="Voltar para os detalhes do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
+          ‹
         </LinkDaGaveta>
-        <Rotulo>MCPs</Rotulo>
-        <LinkFechaPainel
-          href={fecharHref}
-          rotulo="detalhes do agente"
-          className="ck-veil flex items-center justify-center"
-          style={{
-            minWidth: 'var(--ck-touch-min)',
-            minHeight: 'var(--ck-touch-min)',
-            marginRight: 'calc(var(--ck-space-3) * -1)',
-            borderRadius: 'var(--ck-radius-chip)',
-            fontSize: 'var(--ck-text-lg)',
-            color: 'var(--ck-text-secondary)',
-          }}
-        >
+        <h2 className="min-w-0 flex-1 truncate" style={{ fontSize: 'var(--ck-text-md)', fontWeight: 600, color: 'var(--ck-text-primary)' }}>
+          MCPs
+        </h2>
+        <LinkFechaPainel href={fecharHref} rotulo="detalhes do agente" className="ck-veil flex items-center justify-center" style={ALVO_DO_CABECALHO}>
           ×
         </LinkFechaPainel>
-      </div>
+      </header>
 
-      <div className="flex min-h-0 flex-auto flex-col">
-        <PainelMcp agentSlug={agentSlug} />
-      </div>
+      <PainelMcp agentSlug={agentSlug} />
     </div>
   );
 }

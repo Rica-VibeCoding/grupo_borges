@@ -324,14 +324,16 @@ também esmaece foto e nome (a palavra fica no nome acessível). Nada aparece a 
 Selecionado = pílula, o vidro escuro da `PilulaDoAgente` sem desfoque; hover é meia pílula. Nada pulsa;
 só a cor troca, em `--ck-dur-calm`. O pulso de 24h mora na gaveta. O topo do chat é a própria pílula
 (`lugar="topo"`, foto 36). A VPS é cartão no pé da tropa (`composer` + fio de luz, grade 2×2 de barras
-finas, cor só acima do teto de `recursos-da-vps.ts`, processos atrás de pílula).
+finas, cor só acima do teto de `recursos-da-vps.ts` — a swap acende por troca ativa, > 256 páginas/s, nunca por
+ocupação —, processos atrás de pílula).
 
 **Medidores:** contexto neutro → âmbar ≥ 25% → `state-fail` > 30% (`corDoContexto`); cota âmbar ≥ 80% → `state-fail` ≥ 95% (`corDaCota`).
 
 **Carga sem pulo:** enquanto o dado não volta, reserva a altura que ele vai ocupar.
 
 **Conversas** (`?painel=conversas`, `gaveta/painel-de-conversas.tsx`) — terceira visão da gaveta,
-porta no lugar do antigo Destravar. Lista só com título e tempo; o toque abre a **leitura** por cima
+porta no lugar do antigo Destravar. Na fileira da gaveta (`porta-e-nova.tsx`) o peso é por luz: **Nova conversa** é a
+única pílula clara, os comandos ficam cinza cheio e a porta **Conversas** fica só em contorno (Rica, 25/10). Lista só com título e tempo; o toque abre a **leitura** por cima
 (`.ck-surge`, título por `layoutId`), com ⭐, Concluída, Renomear, 🗑 e o **Continuar esta** no rodapé —
 pílula clara, sem âmbar e sem confirmação: ocupado, só o nome muda; na espera, enche por dentro com as
 etapas reais da troca. Barra indeterminada só na espera vista do painel. "Em uso agora" some com a conversa de
@@ -352,7 +354,9 @@ não entra.
 Menu de conta: uma conta por bloco (`--ck-flutuante-bloco`) — nome curto, email miúdo, marcas
 "✓ ativa" e "melhor agora" (mais folga somando 5h e 7d, `conta-folga.ts`) — e as janelas numa grade de
 colunas fixas (rótulo · barra · % · quanto falta, "2h/5h · volta 04:40", "3/7 d"). O tempo vem
-de cada conta, do reset que o `/api/contas` lê na sonda; o traço só quando falta leitura.
+de cada conta, do reset que o `/api/contas` lê na sonda; o traço só quando falta leitura. É a exceção da §F:
+abre sobre a gaveta quase preta, então sobe para `composer` com blocos mais claros e põe véu próprio
+(`--ck-scrim` + desfoque de 6px) atrás de si (`.ck-menu-conta`, Rica, 25/10).
 
 **Composer.** Duas camadas de vidro: a caixa tem o próprio, na forma dela (§2); acima, a borda
 progressiva (`.ck-borda-progressiva`, 5 camadas de 1→16px + `--ck-rodape-material`) dissolve o feed a
