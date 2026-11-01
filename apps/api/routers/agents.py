@@ -77,6 +77,7 @@ from services import (
     codex_reader,
     desligamento_deliberado,
     proxy_catalog,
+    rewind,
     tmux_driver,
     workspace_reader,
 )
@@ -687,14 +688,7 @@ class AgentCommandResponse(BaseModel):
     origem: Literal["native", "project", "user", "plugin"]
 
 
-_NATIVE_SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
-    ("/clear", "Inicia uma conversa nova e limpa o contexto atual."),
-    ("/compact", "Compacta o contexto da conversa atual."),
-    ("/context", "Mostra o uso de contexto da sessão."),
-    ("/help", "Abre a ajuda de comandos do Claude Code."),
-    ("/model", "Escolhe o modelo ativo para a sessão."),
-    ("/rename", "Renomeia a sessão atual."),
-)
+_NATIVE_SLASH_COMMANDS: tuple[tuple[str, str], ...] = ()
 
 
 def _descricao_de_comando(path: Path) -> str | None:
@@ -787,7 +781,7 @@ def _comandos_de_plugins_instalados(workspace: Path) -> list[dict[str, str | Non
 
 
 def _listar_comandos_do_agente(workspace_path: str) -> list[dict[str, str | None]]:
-    """Lista comandos próprios, do usuário, de plugins e os nativos do CC."""
+    """Lista comandos próprios, do usuário e de plugins."""
     comandos: list[dict[str, str | None]] = [
         {"comando": comando, "descricao": descricao, "origem": "native"}
         for comando, descricao in _NATIVE_SLASH_COMMANDS
@@ -4968,6 +4962,61 @@ async def post_agent_clear(slug: str, request: Request) -> dict[str, Any]:
     agent = await _get_agent_or_404(request, slug)
     delivered = await _send_tmux_or_409(agent["tmux_session"], "/clear")
     return {"tmux_delivered": delivered, "sent_at": int(time.time())}
+
+
+class RewindPedido(BaseModel):
+    ponto_id: str = Field(min_length=1, max_length=128)
+    acao: rewind.Acao
+
+
+async def _rewind_conversa(request: Request, slug: str):
+    # Import local: o router de conversas usa as guardas deste módulo.
+    from routers.conversas import _atual_da_linha, _pasta_no_app
+    from services import conversas
+
+    agent = await _get_agent_or_404(request, slug)
+    pasta = _pasta_no_app(request.app, agent)
+    session_id = await _atual_da_linha(request.app, agent)
+    achada = conversas.localizar(pasta, session_id) if pasta and session_id else None
+    if achada is None:
+        raise HTTPException(status_code=409, detail="sem_conversa_atual")
+    return agent, achada[0]
+
+
+@router.get("/{slug}/rewind/pontos")
+async def get_agent_rewind_pontos(slug: str, request: Request) -> dict[str, Any]:
+    _, caminho = await _rewind_conversa(request, slug)
+    ocultos = await request.app.state.db.rewind_hidden_uuids(slug, caminho.stem)
+    registros = await asyncio.to_thread(rewind.ler_registros, caminho)
+    return {"session_id": caminho.stem, "pontos": [
+        {k: v for k, v in ponto.items() if k != "texto_completo"}
+        for ponto in rewind.pontos(registros, ocultos)
+    ]}
+
+
+@router.post("/{slug}/rewind")
+async def post_agent_rewind(slug: str, body: RewindPedido, request: Request) -> dict[str, Any]:
+    agent, caminho = await _rewind_conversa(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+
+    def validar() -> None:
+        # Repete sob a trava: um envio pode ter começado enquanto esperávamos.
+        atual = db._get_agent(slug)
+        if atual is None or _esta_ocupado(atual):
+            raise rewind.RewindError("agente_ocupado")
+        operacao = operacao_conversa.estado(slug)
+        if operacao is not None and operacao.fase in operacao_conversa.EM_CURSO:
+            raise rewind.RewindError("troca_de_conversa_em_curso")
+
+    try:
+        resultado = await rewind.executar(agent["tmux_session"], caminho, body.ponto_id, body.acao, db, slug, validar)
+    except rewind.RewindError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except tmux_driver.TmuxSessionBusyError as exc:
+        raise HTTPException(status_code=409, detail="tmux_busy") from exc
+    except libtmux_exc.LibTmuxException as exc:
+        raise HTTPException(status_code=409, detail="erro_tmux") from exc
+    return {"session_id": caminho.stem, "ponto_id": body.ponto_id, "acao": body.acao, **resultado}
 
 
 # Marcador tolerante a locale: a tela abre em PT-BR no ambiente da frota

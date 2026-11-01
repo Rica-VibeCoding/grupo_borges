@@ -1827,6 +1827,27 @@ class GrupoBorgesDB:
             ).fetchall()
             return [row["session_id"] for row in rows]
 
+    async def rewind_hidden_uuids(self, agent_slug: str, session_id: str | None) -> set[str]:
+        return await asyncio.to_thread(self._rewind_hidden_uuids, agent_slug, session_id)
+
+    def _rewind_hidden_uuids(self, agent_slug: str, session_id: str | None) -> set[str]:
+        """Máscara durável: o CC só persiste o ramo novo no próximo prompt.
+
+        Mantém o histórico bruto para auditoria, inclusive se o watcher importar
+        mensagens antigas depois do rewind. UUIDs novos continuam visíveis.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM task_events WHERE agent_slug = ? AND kind = 'cockpit:rewind'",
+                (agent_slug,),
+            ).fetchall()
+        ocultos: set[str] = set()
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if session_id is None or payload.get("sessionId") == session_id:
+                ocultos.update(payload.get("ocultos", []))
+        return ocultos
+
     async def list_jsonl_message_events(
         self,
         agent_slug: str,
@@ -1890,6 +1911,13 @@ class GrupoBorgesDB:
                 "json_valid(payload) = 1 AND json_extract(payload, '$.sessionId') = ?"
             )
             params.append(session_id)
+        ocultos = self._rewind_hidden_uuids(agent_slug, session_id)
+        if ocultos:
+            clauses.append(
+                "COALESCE(json_extract(payload, '$.uuid'), '') NOT IN "
+                "(SELECT value FROM json_each(?))"
+            )
+            params.append(json.dumps(sorted(ocultos)))
         params.append(limit)
 
         with self._connect() as conn:

@@ -381,7 +381,8 @@ def test_list_agent_commands_varre_project_user_e_plugin(tmp_path: Path, monkeyp
 
     assert response.status_code == 200
     comandos = {(item["comando"], item["origem"]): item for item in response.json()}
-    assert comandos[("/clear", "native")]["descricao"]
+    assert not any(origem == "native" for _, origem in comandos)
+    assert all((comando, "native") not in comandos for comando in ("/clear", "/compact", "/context", "/help", "/model", "/rename"))
     assert comandos[("/deploy", "project")]["descricao"] == "Sobe a produção"
     assert comandos[("/revisar", "user")]["descricao"] == "Revisa o diff atual"
     assert comandos[("/release", "plugin")]["descricao"] == "Prepara uma release"
