@@ -6,11 +6,19 @@
  * altura e o foco seguem com o composer, que é o dono do `textareaRef`.
  */
 import { useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import type { Retido } from '../../lib/fase-do-anexo';
 import type { usaAnexo } from '../../lib/usa-anexo';
 import type { OrigemRascunho } from '../../lib/usa-rascunho';
 import { BolhaDeComandos } from './bolha-de-comandos';
+import {
+  bolhaAberta,
+  comandoDigitado,
+  COMANDOS_DO_COCKPIT,
+  veuDoComposer,
+  type ComandoDoCockpit,
+} from './comandos-do-cockpit';
 import { ModalVoltar } from './modal-voltar';
 import { emCaptura, type ModoDaFala } from './modo-da-fala';
 import { TROCA_DE_FILEIRA } from './troca-de-fileira';
@@ -38,12 +46,32 @@ export function CampoDoComposer({
   substituicaoIntegralRef, formaDaCaixa, modo, anexo, tecladoTouch, retidoAnexo, enviar,
   travaCompact,
 }: CampoDoComposerProps) {
-  // Mesma condição que decide `aberta` dentro de `BolhaDeComandos` — duplicada
-  // aqui porque o Popover vive num Portal (subárvore separada do textarea) e
-  // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
-  // e apertar Enter mandava o `/` sozinho como mensagem pro agente.
-  const bolhaComandosAberta = texto === '/';
+  // A bolha é decidida AQUI, não dentro dela: o véu do composer depende dela,
+  // e o Popover vive num Portal que nunca recebe o Enter do campo. Derivada no
+  // render; o único estado é "dispensada à mão" (Esc, toque fora), que zera
+  // assim que o campo deixa de ser só `/`.
+  const [dispensada, setDispensada] = useState(false);
+  if (dispensada && texto !== '/') setDispensada(false);
+  const bolha = bolhaAberta(texto, dispensada);
+  // Enter com o campo só em `/` nunca envia — mandava a barra sozinha pro agente.
+  const soBarra = texto === '/';
   const [voltarAberto, setVoltarAberto] = useState(false);
+  // O véu sai com animação: continua montado (`saindo`) até ela terminar.
+  // Ajuste no render, o mesmo padrão do `dispensada`.
+  const veu = veuDoComposer(bolha, voltarAberto);
+  const [veuMontado, setVeuMontado] = useState(false);
+  if (veu && !veuMontado) setVeuMontado(true);
+
+  function escolherComando(comando: ComandoDoCockpit) {
+    // A `/` sai do campo: o comando é do cockpit, não vira texto. Bolha fecha
+    // e modal abre no mesmo render — o véu não desmonta no meio.
+    setTexto('');
+    switch (comando) {
+      case '/voltar':
+        setVoltarAberto(true);
+        break;
+    }
+  }
 
   function devolverFoco() {
     const campo = textareaRef.current;
@@ -54,6 +82,20 @@ export function CampoDoComposer({
 
   return (
     <>
+    {/* Véu do composer (Rica, 01/11): "quando eu abrir a primeira gaveta com o
+        slash, ela já tem que desfocar o fundo". Um elemento só pra bolha e pro
+        modal, no mesmo lugar da árvore, pra não piscar na passagem. */}
+    {veuMontado
+      ? createPortal(
+          <div
+            aria-hidden
+            className="ck-composer-veu"
+            data-saindo={!veu}
+            onAnimationEnd={() => !veu && setVeuMontado(false)}
+          />,
+          document.body,
+        )
+      : null}
     <ModalVoltar
       agentSlug={agentSlug}
       aberto={voltarAberto}
@@ -69,18 +111,9 @@ export function CampoDoComposer({
       }}
     />
     <BolhaDeComandos
-      agentSlug={agentSlug}
-      texto={texto}
-      aoSelecionar={(valor) => {
-        setTexto(valor);
-        setOrigemDoRascunho('text');
-      }}
-      campoRef={textareaRef}
-      aoVoltar={() => {
-        // A `/` sai do campo: o comando é do cockpit, não vira texto.
-        setTexto('');
-        setVoltarAberto(true);
-      }}
+      aberta={bolha}
+      aoDispensar={() => setDispensada(true)}
+      aoEscolher={escolherComando}
     >
       <motion.textarea
           layout="position"
@@ -167,11 +200,16 @@ export function CampoDoComposer({
               (!tecladoTouch || retidoAnexo !== null)
             ) {
               e.preventDefault();
-              // Bolha aberta: Enter não é "enviar `/`", é ainda estar
-              // escolhendo. Sem esta guarda o único jeito de sair do
-              // gesto de digitar `/` e apertar Enter era mandar um `/`
-              // sozinho pro agente.
-              if (bolhaComandosAberta) return;
+              // Bolha aberta: Enter escolhe o comando (o foco fica no campo,
+              // a lista mora num Portal e não recebe a tecla). Com um comando
+              // só, é ele; quando houver mais, é o destacado. Bolha
+              // dispensada com `/` sozinha: Enter não manda a barra pro agente.
+              if (bolha) return escolherComando(COMANDOS_DO_COCKPIT[0]);
+              if (soBarra) return;
+              // `/voltar` digitado inteiro: a bolha fechou no `/v`, mas o
+              // comando continua sendo do cockpit — o agente não o conhece.
+              const doCockpit = comandoDigitado(texto);
+              if (doCockpit) return escolherComando(doCockpit);
               enviar(texto);
             }
           }}

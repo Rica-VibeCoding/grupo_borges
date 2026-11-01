@@ -579,20 +579,36 @@ body {
 @keyframes ck-veu-entra { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ck-menu-conta-veu { animation: none; } }
 
-/* O `/voltar` (Rica, 01/11): modal no lugar da bolha de comandos, com o mesmo
- * véu do menu de conta — só que este recebe o toque (fecha) e mora no degrau
- * de modal. Material da §F, ancorado embaixo, onde a bolha estava: o polegar
- * não precisa atravessar a tela. Duas telas na mesma caixa — lista dos pontos
- * e opções do escolhido —, e a troca entre elas é o único movimento. */
-.ck-voltar-veu {
+/* Véu do composer (Rica, 01/11): a bolha de `/` e o modal do `/voltar`
+ * escurecem e desfocam o fundo desde o primeiro toque. Um elemento só pros
+ * dois — abaixo da bolha (overlay) e do modal —, então a passagem de um pro
+ * outro não pisca. Recebe o toque: tocar fora fecha o que estiver em cima.
+ *
+ * O `/voltar`: modal no lugar da bolha, material da §F, ancorado embaixo, onde
+ * a bolha estava: o polegar não precisa atravessar a tela. Duas telas na mesma
+ * caixa — lista dos pontos e opções do escolhido —, e a troca entre elas é o
+ * único movimento. */
+/* Sem `Dialog.Overlay`, sem a trava de rolagem do Radix: o `touch-action`
+ * impede que arrastar no véu role a conversa embaixo no iPhone. */
+.ck-composer-veu {
   position: fixed;
   inset: 0;
-  z-index: var(--ck-z-modal);
+  z-index: calc(var(--ck-z-overlay) - 1);
+  pointer-events: auto;
+  touch-action: none;
+  overscroll-behavior: contain;
   background: var(--ck-scrim);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   animation: ck-veu-entra var(--ck-dur-enter, 0.2s) var(--ck-ease) both;
 }
+/* Sai junto com a bolha (`ck-menu-fechado`, mesma duração): sem isto o escuro
+ * cortava seco e a bolha se apagava sozinha sobre o fundo já claro. */
+.ck-composer-veu[data-saindo='true'] {
+  pointer-events: none;
+  animation: ck-veu-sai var(--ck-dur-enter, 0.2s) var(--ck-ease-exit) both;
+}
+@keyframes ck-veu-sai { to { opacity: 0; } }
 .ck-menu-surface.ck-voltar {
   position: fixed;
   z-index: var(--ck-z-modal);
@@ -706,7 +722,8 @@ body {
 @keyframes ck-voltar-avanca { from { opacity: 0; transform: translateX(16px); } }
 @keyframes ck-voltar-recua { from { opacity: 0; transform: translateX(-16px); } }
 @media (prefers-reduced-motion: reduce) {
-  .ck-voltar-veu,
+  .ck-composer-veu[data-saindo='true'] { display: none; }
+  .ck-composer-veu,
   .ck-menu-surface.ck-voltar,
   .ck-voltar-tela[data-lado] { animation: none; }
 }

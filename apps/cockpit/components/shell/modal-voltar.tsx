@@ -150,7 +150,9 @@ export function ModalVoltar({ agentSlug, aberto, aoFechar, aoVoltar, aoDevolverF
   return (
     <Dialog.Root open={aberto} onOpenChange={(abrir) => !abrir && !executando && aoFechar()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="ck-voltar-veu" />
+        {/* Sem `Dialog.Overlay`: o véu é do composer (`.ck-composer-veu`), o
+            mesmo da bolha, pra passagem bolha → modal não piscar. O toque fora
+            continua fechando — quem escuta é o próprio `Dialog.Content`. */}
         <Dialog.Content
           ref={caixaRef}
           aria-describedby={undefined}

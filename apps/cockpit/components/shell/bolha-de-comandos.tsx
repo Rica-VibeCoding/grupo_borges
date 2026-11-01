@@ -1,156 +1,24 @@
 'use client';
 
-import { useEffect, useState, type ReactElement, type RefObject } from 'react';
+import type { ReactElement } from 'react';
 
 import { Command, CommandItem, CommandList } from '../ui/command';
 import { Popover, PopoverAnchor, PopoverContent } from '../ui/popover';
-
-type OrigemDoComando = 'native' | 'project' | 'user' | 'plugin';
-
-type ComandoDeBarra = {
-  comando: string;
-  descricao: string | null;
-  origem: OrigemDoComando;
-};
+import { COMANDOS_DO_COCKPIT, type ComandoDoCockpit } from './comandos-do-cockpit';
 
 export type BolhaDeComandosProps = {
-  agentSlug: string;
-  texto: string;
-  aoSelecionar: (comando: string) => void;
-  campoRef: RefObject<HTMLTextAreaElement | null>;
+  /** Quem decide é o composer (`bolhaAberta`): o véu dele depende disso. */
+  aberta: boolean;
+  aoDispensar: () => void;
+  /** Comando do cockpit: resolvido no front, nunca vai pro agente como texto. */
+  aoEscolher: (comando: ComandoDoCockpit) => void;
   children: ReactElement;
-  /** Desligada quando o motor do agente não tem slash command. */
-  ativa?: boolean;
-  /** `/voltar` escolhido: comando só do cockpit, nunca vai pro agente como texto. */
-  aoVoltar: () => void;
 };
 
-/**
- * Comandos que o cockpit resolve sozinho, sempre no topo da lista. A ordem do
- * Rica (01/11) foi começar pelo `/voltar`: os nativos que apareciam ali "não
- * têm serventia", e a API já os tirou.
- */
-const COMANDO_VOLTAR = '/voltar';
-
-const ROTULO_DA_ORIGEM: Record<OrigemDoComando, string> = {
-  native: 'nativo',
-  project: 'projeto',
-  user: 'usuário',
-  plugin: 'plugin',
-};
-
-function eComandoDeBarra(valor: unknown): valor is ComandoDeBarra {
-  if (typeof valor !== 'object' || valor === null) return false;
-  const comando = valor as Partial<ComandoDeBarra>;
+/** Os comandos de barra do cockpit, ancorados no próprio campo. */
+export function BolhaDeComandos({ aberta, aoDispensar, aoEscolher, children }: BolhaDeComandosProps) {
   return (
-    typeof comando.comando === 'string' &&
-    (typeof comando.descricao === 'string' || comando.descricao === null) &&
-    (comando.origem === 'native' ||
-      comando.origem === 'project' ||
-      comando.origem === 'user' ||
-      comando.origem === 'plugin')
-  );
-}
-
-/**
- * A última lista lida de cada agente, viva enquanto a página vive. A bolha abre
- * com ela NA HORA e relê por baixo — antes, toda `/` esvaziava a lista e
- * piscava "Carregando comandos…" até a rede voltar. Lista de comando velha não
- * engana ninguém como cota velha engana: o pior caso é um comando novo do
- * projeto aparecer uma releitura depois.
- */
-const comandosLidos = new Map<string, ComandoDeBarra[]>();
-
-function mesmaLista(a: ComandoDeBarra[] | undefined, b: ComandoDeBarra[]): boolean {
-  if (!a || a.length !== b.length) return false;
-  return a.every(
-    (item, i) =>
-      item.comando === b[i].comando &&
-      item.descricao === b[i].descricao &&
-      item.origem === b[i].origem,
-  );
-}
-
-/** Sugestões de `/comando` ancoradas no próprio campo, sem busca nesta fase. */
-export function BolhaDeComandos({
-  agentSlug,
-  texto,
-  aoSelecionar,
-  campoRef,
-  children,
-  ativa = true,
-  aoVoltar,
-}: BolhaDeComandosProps) {
-  // O único gatilho desta primeira fase é uma barra num campo vazio. Ao seguir
-  // digitando, não há filtro ainda: a bolha fecha para o campo voltar a ser a
-  // fonte de verdade até a fase de busca existir. `ativa=false` (por
-  // ora) nunca abre — a lista de nativos é do Claude Code, não faz sentido lá.
-  //
-  // Derivada no render, não copiada por efeito: o efeito custava um segundo
-  // render a cada tecla. O único estado é "fechada à mão" (Esc, toque fora,
-  // escolha), que zera assim que o campo deixa de ser só `/`.
-  const deveAbrir = ativa && texto === '/';
-  const [dispensada, setDispensada] = useState(false);
-  if (dispensada && !deveAbrir) setDispensada(false);
-  const aberta = deveAbrir && !dispensada;
-
-  const [, setLeituras] = useState(0);
-  // A falha é DO AGENTE que falhou: guardada com o slug, o `falhou` do A não
-  // aparece nem por um quadro no B (o componente não remonta na troca).
-  const [falhouEm, setFalhouEm] = useState<string | null>(null);
-  const falhou = falhouEm === agentSlug;
-  const guardados = comandosLidos.get(agentSlug);
-  // "Carregando" só existe na primeira leitura deste agente — e sai do render,
-  // não de um estado ligado por efeito, então nem um quadro de "Nenhum
-  // comando" escapa antes dele.
-  const carregando = guardados === undefined && !falhou;
-  const comandos = guardados ?? [];
-
-  useEffect(() => {
-    if (!aberta) return;
-    const abortador = new AbortController();
-    const temLista = comandosLidos.has(agentSlug);
-    setFalhouEm(null);
-
-    void fetch(`/api/agents/${encodeURIComponent(agentSlug)}/commands`, {
-      cache: 'no-store',
-      signal: abortador.signal,
-    })
-      .then(async (resposta) => {
-        if (!resposta.ok) throw new Error(`commands failed: ${resposta.status}`);
-        const corpo: unknown = await resposta.json();
-        if (!Array.isArray(corpo)) throw new Error('commands response is not a list');
-        return corpo.filter(eComandoDeBarra);
-      })
-      .then((lista) => {
-        if (abortador.signal.aborted) return;
-        // Releitura igual à guardada não redesenha a bolha.
-        if (mesmaLista(comandosLidos.get(agentSlug), lista)) return;
-        comandosLidos.set(agentSlug, lista);
-        setLeituras((n) => n + 1);
-      })
-      .catch(() => {
-        // Com lista guardada na tela, a releitura que falha fica calada: a
-        // lista anterior continua servindo.
-        if (!abortador.signal.aborted && !temLista) setFalhouEm(agentSlug);
-      });
-
-    return () => abortador.abort();
-  }, [aberta, agentSlug]);
-
-  function selecionar(comando: string) {
-    setDispensada(true);
-    aoSelecionar(`${comando} `);
-    requestAnimationFrame(() => {
-      const campo = campoRef.current;
-      if (!campo) return;
-      campo.focus();
-      campo.setSelectionRange(campo.value.length, campo.value.length);
-    });
-  }
-
-  return (
-    <Popover open={aberta} onOpenChange={(abrir) => setDispensada(!abrir)}>
+    <Popover open={aberta} onOpenChange={(abrir) => !abrir && aoDispensar()}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
       <PopoverContent
         side="top"
@@ -174,45 +42,14 @@ export function BolhaDeComandos({
       >
         <Command label="Comandos de barra" shouldFilter={false} loop>
           <CommandList>
-            <CommandItem
-              value={COMANDO_VOLTAR}
-              onSelect={() => {
-                setDispensada(true);
-                aoVoltar();
-              }}
-            >
-              <span className="min-w-0 flex-1 font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
-                {COMANDO_VOLTAR}
-              </span>
-            </CommandItem>
-            {comandos.map((comando, indice) => (
-              <CommandItem
-                key={`${comando.origem}-${comando.comando}-${indice}`}
-                value={`${comando.origem}-${comando.comando}-${indice}`}
-                onSelect={() => selecionar(comando.comando)}
-                aria-label={`Inserir ${comando.comando}`}
-              >
-                {/* Sem descrição embaixo, por ordem do Rica (01/11): "é fácil eu
-                    decorar os que uso". O nome sozinho deixa a lista curta. */}
-                <span className="min-w-0 flex-1 truncate font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
-                  {comando.comando}
-                </span>
-                <span
-                  className="shrink-0 text-xs"
-                  style={{ color: 'var(--ck-text-tertiary)' }}
-                >
-                  {ROTULO_DA_ORIGEM[comando.origem]}
+            {COMANDOS_DO_COCKPIT.map((comando) => (
+              <CommandItem key={comando} value={comando} onSelect={() => aoEscolher(comando)}>
+                <span className="min-w-0 flex-1 font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
+                  {comando}
                 </span>
               </CommandItem>
             ))}
           </CommandList>
-          {/* Com o `/voltar` sempre na lista o `CommandEmpty` nunca aparece;
-              a leitura dos outros avisa numa linha embaixo. */}
-          {carregando || falhou ? (
-            <div role="status" className="py-2 px-3 text-sm" style={{ color: 'var(--ck-text-secondary)' }}>
-              {carregando ? 'Carregando comandos…' : 'Não foi possível carregar os outros comandos.'}
-            </div>
-          ) : null}
         </Command>
       </PopoverContent>
     </Popover>
