@@ -227,6 +227,50 @@ def _texto_do_canal(registro: dict) -> str | None:
     return corpo or None
 
 
+def _texto_de_ferramenta(registro: dict) -> list[str]:
+    content = (registro.get("message") or {}).get("content")
+    textos = []
+    for bloco in content if isinstance(content, list) else []:
+        if not isinstance(bloco, dict) or bloco.get("type") != "tool_result":
+            continue
+        dentro = bloco.get("content")
+        if isinstance(dentro, str):
+            textos.append(dentro)
+        elif isinstance(dentro, list):
+            textos += [b.get("text", "") for b in dentro if isinstance(b, dict)]
+    return textos
+
+
+def _transcricao(texto: str) -> str | None:
+    """O que o Rica falou, da saída do `ouvir.py` da skill `voz` (1ª linha "ouvir: …").
+
+    Em divergência sai "openai: <texto>" e "gemini: <texto>": fica a primeira.
+    """
+    linhas = texto.splitlines()
+    if not linhas or not linhas[0].startswith("ouvir:"):
+        return None
+    for linha in linhas[1:]:
+        linha = linha.strip()
+        if not linha or linha.startswith(("⚠", "exit=", "rc=")):
+            continue
+        return re.sub(r"^(openai|gemini):\s*", "", linha) or None
+    return None
+
+
+def _falas_dos_audios(registros: list[dict], resultado: list[dict]) -> None:
+    """Troca o rótulo "Áudio" pelo começo da transcrição que o agente fez no turno."""
+    posicao = {r.get("uuid"): i for i, r in enumerate(registros)}
+    for n, ponto in enumerate(resultado):
+        if not ponto["canal"] or ponto["texto"] != "Áudio":
+            continue
+        fim = posicao.get(resultado[n + 1]["id"], len(registros)) if n + 1 < len(resultado) else len(registros)
+        for registro in registros[posicao[ponto["id"]] + 1 : fim]:
+            fala = next(filter(None, map(_transcricao, _texto_de_ferramenta(registro))), None)
+            if fala:
+                ponto["texto"] = ponto["texto_completo"] = f"🎤 {fala}"
+                break
+
+
 def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]:
     """Só o que o menu lista: prompts digitados e comandos de barra.
 
@@ -262,6 +306,7 @@ def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]
                 "texto_completo": texto,
             }
         )
+    _falas_dos_audios(registros, resultado)
     # Edição só conta depois do ponto, inclusive no turno do próprio prompt.
     editado = False
     por_id = {p["id"]: p for p in resultado}
@@ -498,7 +543,9 @@ async def executar(
     )
 
 
+# A 1ª linha é o que a lista do /voltar (e o menu nativo) mostra.
 MARCA_DA_COPIA = (
+    "↩ voltou aqui\n"
     "[cockpit] O Rica voltou a conversa até este ponto pelo /voltar. "
     "Não faça nada; responda só: ok."
 )

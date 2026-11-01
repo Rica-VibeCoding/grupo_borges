@@ -513,3 +513,16 @@ def test_mensagem_de_canal_vira_ponto_marcado_e_anexo_ganha_rotulo():
     assert rewind.corte_antes(registros, "tg") == "r"
     assert rewind.corte_antes(registros, "a") is None
 
+
+
+def test_audio_ganha_a_transcricao_do_turno():
+    def resultado(uid, texto, parent):
+        return _user(uid, [{"type": "tool_result", "tool_use_id": "t", "content": texto}], parent)
+
+    registros = [
+        _canal("v1", "(voice message)", None, ' attachment_kind="voice"'),
+        resultado("r1", "ouvir: 3s\n⚠ DIVERGÊNCIA\nopenai: Pode fazer o teste.\ngemini: Pode.\nrc=3", "v1"),
+        _canal("v2", "(voice message)", "r1", ' attachment_kind="voice"'),
+        resultado("r2", "outra coisa", "v2"),
+    ]
+    assert [p["texto"] for p in rewind.pontos(registros)] == ["🎤 Pode fazer o teste.", "Áudio"]
