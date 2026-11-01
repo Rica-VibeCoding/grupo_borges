@@ -79,6 +79,10 @@ describe('erros e resposta do POST', () => {
     assert.match(fraseDoErro('agente_ocupado'), /trabalhando/);
     assert.match(fraseDoErro('campo_ocupado'), /campo do agente/);
     assert.match(fraseDoErro('pane_incompativel'), /desligado/);
+  });
+
+  it('ponto de canal só volta a conversa', () => {
+    assert.deepEqual(opcoesDoPonto({ ...ponto(true), canal: true }).map((o) => o.acao), ['conversa']);
     assert.match(fraseDoErro(null), /conexão/);
     assert.match(fraseDoErro('tela_nao_confirmada'), /não confirmou/);
     assert.ok(!fraseDoErro('qualquer_coisa').includes('_'));

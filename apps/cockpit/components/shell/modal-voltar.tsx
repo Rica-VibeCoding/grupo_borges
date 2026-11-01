@@ -10,6 +10,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Dialog } from 'radix-ui';
+import { fetchConversaOperacao } from '@grupo_borges/cockpit-core/api';
 
 import {
   detalheDoErro,
@@ -127,6 +128,14 @@ export function ModalVoltar({ agentSlug, aberto, aoFechar, aoVoltar, aoDevolverF
         body: JSON.stringify({ ponto_id: ponto.id, acao }),
       });
       const corpo: unknown = await resposta.json().catch(() => null);
+      if (resposta.status === 202) {
+        // Mensagem do Telegram: a API copia a conversa e religa o agente,
+        // o que passa dos 30 s do proxy. A etapa vem do `/conversas/operacao`.
+        const erroDaOperacao = await esperarOperacao(agentSlug);
+        if (erroDaOperacao !== null) setErro(fraseDoErro(erroDaOperacao));
+        else aoVoltar(null);
+        return;
+      }
       if (!resposta.ok) {
         const detalhe = detalheDoErro(corpo) ?? `http_${resposta.status}`;
         setErro(fraseDoErro(detalhe));
@@ -235,4 +244,20 @@ export function ModalVoltar({ agentSlug, aberto, aoFechar, aoVoltar, aoDevolverF
       </Dialog.Portal>
     </Dialog.Root>
   );
+}
+
+/** Espera a volta por cópia terminar. `null` = pronta; senão, o código do erro. */
+async function esperarOperacao(agentSlug: string): Promise<string | null> {
+  const prazo = Date.now() + 150_000;
+  while (Date.now() < prazo) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const op = await fetchConversaOperacao(agentSlug);
+      if (op.fase === 'erro') return op.detalhe ?? 'religar_falhou';
+      if (op.fase === 'pronta' || op.fase === null) return null;
+    } catch {
+      // Rede oscilando: a operação segue no servidor, tenta de novo.
+    }
+  }
+  return 'religar_falhou';
 }

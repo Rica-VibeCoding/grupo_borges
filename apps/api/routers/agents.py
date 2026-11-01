@@ -41,7 +41,7 @@ from typing import Annotated, Any, AsyncGenerator, Literal, NamedTuple, get_args
 
 import yaml
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sse_starlette import EventSourceResponse, ServerSentEvent
@@ -5008,6 +5008,11 @@ async def post_agent_rewind(slug: str, body: RewindPedido, request: Request) -> 
         if operacao is not None and operacao.fase in operacao_conversa.EM_CURSO:
             raise rewind.RewindError("troca_de_conversa_em_curso")
 
+    registros = await asyncio.to_thread(rewind.ler_registros, caminho)
+    ocultos = await db.rewind_hidden_uuids(slug, caminho.stem)
+    ponto = next((p for p in rewind.pontos(registros, ocultos) if p["id"] == body.ponto_id), None)
+    if ponto is not None and ponto["canal"]:
+        return await _rewind_por_copia(request, agent, caminho, registros, ponto, body.acao, validar)
     try:
         resultado = await rewind.executar(agent["tmux_session"], caminho, body.ponto_id, body.acao, db, slug, validar)
     except rewind.RewindError as exc:
@@ -5017,6 +5022,46 @@ async def post_agent_rewind(slug: str, body: RewindPedido, request: Request) -> 
     except libtmux_exc.LibTmuxException as exc:
         raise HTTPException(status_code=409, detail="erro_tmux") from exc
     return {"session_id": caminho.stem, "ponto_id": body.ponto_id, "acao": body.acao, **resultado}
+
+
+async def _rewind_por_copia(
+    request: Request, agent: dict, caminho, registros: list[dict], ponto: dict, acao, validar
+) -> dict[str, Any]:
+    """Mensagem de canal: só "Só a conversa", feita por cópia + religar.
+
+    Cópia + religar passa dos 30 s do proxy do Next: segura 20 s e, se ainda
+    está religando, responde 202 — a tela acompanha pelo `/conversas/operacao`.
+    """
+    from routers.conversas import _tarefas, voltar_por_copia
+
+    if acao != "conversa":
+        raise HTTPException(status_code=422, detail="acao_indisponivel")
+    corte = rewind.corte_antes(registros, ponto["id"])
+    if corte is None:
+        raise HTTPException(status_code=422, detail="ponto_inexistente")
+    try:
+        validar()
+    except rewind.RewindError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    tarefa = asyncio.create_task(
+        voltar_por_copia(request.app, agent, caminho, ponto["id"], corte)
+    )
+    _tarefas.add(tarefa)
+    tarefa.add_done_callback(_tarefas.discard)
+    try:
+        nova = await asyncio.wait_for(asyncio.shield(tarefa), timeout=20)
+    except TimeoutError:
+        return JSONResponse(status_code=202, content={"em_curso": True, "ponto_id": ponto["id"]})
+    except rewind.RewindError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    return {
+        "session_id": nova,
+        "ponto_id": ponto["id"],
+        "acao": acao,
+        "menu_fechado": True,
+        "recarregar_feed": True,
+        "texto_restaurado": None,
+    }
 
 
 # Marcador tolerante a locale: a tela abre em PT-BR no ambiente da frota

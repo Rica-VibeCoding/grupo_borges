@@ -482,3 +482,34 @@ def test_comando_do_projeto_com_command_message_antes_vira_ponto():
         ),
     ]
     assert [p["texto"] for p in rewind.pontos(registros)] == ["Tá avançando aí?", "/encerrar"]
+
+
+def _canal(uid, corpo, parent=None, attrs=""):
+    return _user(
+        uid,
+        f'<channel source="plugin:telegram:telegram" chat_id="1"{attrs}>\n{corpo}\n</channel>',
+        parent,
+        isMeta=True,
+        promptSource="system",
+        origin={"kind": "channel"},
+    )
+
+
+def test_mensagem_de_canal_vira_ponto_marcado_e_anexo_ganha_rotulo():
+    registros = [
+        _user("a", "Digitado"),
+        {"uuid": "r", "parentUuid": "a", "type": "assistant", "message": {"content": []}},
+        {"uuid": "s", "parentUuid": "r", "type": "system", "subtype": "turn_duration"},
+        _canal("tg", "Faz o deploy", "s"),
+        _canal("voz", "(voice message)", "tg", ' attachment_kind="voice"'),
+        _canal("foto", "(photo)", "voz", ' image_path="/x.jpg"'),
+        _user("task", "<task-notification/>", "foto", promptSource="system"),
+    ]
+    ps = rewind.pontos(registros)
+    assert [(p["texto"], p["canal"]) for p in ps] == [
+        ("Digitado", False), ("Faz o deploy", True), ("Áudio", True), ("Foto", True),
+    ]
+    # O corte pula o registro system e para na última mensagem de conversa.
+    assert rewind.corte_antes(registros, "tg") == "r"
+    assert rewind.corte_antes(registros, "a") is None
+

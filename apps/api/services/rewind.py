@@ -6,7 +6,10 @@ Nunca usa números das opções: eles mudam quando não há código restaurável
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +116,7 @@ def ler_registros(caminho: Path) -> list[dict]:
                     "isCompactSummary",
                     "compactMetadata",
                     "promptSource",
+                    "origin",
                 )
                 if k in payload
             }
@@ -195,6 +199,34 @@ def _texto_do_ponto(registro: dict) -> str | None:
     return conversas._eh_turno(registro)
 
 
+_CANAL = re.compile(r"^<channel\b([^>]*)>(.*)</channel>\s*$", re.DOTALL)
+_ANEXO = {"voice": "Áudio", "audio": "Áudio", "photo": "Foto", "document": "Arquivo"}
+
+
+def _texto_do_canal(registro: dict) -> str | None:
+    """Mensagem de canal (Telegram) que abriu turno, ou None.
+
+    O menu nativo não lista essas (são isMeta); o cockpit volta até elas por
+    cópia da conversa (`fork_ate`). As que chegam no meio de um turno viram
+    `attachment` no JSONL e não abrem turno — ficam de fora.
+    """
+    if registro.get("type") != "user" or not registro.get("isMeta"):
+        return None
+    if (registro.get("origin") or {}).get("kind") != "channel" or registro.get("isSidechain"):
+        return None
+    content = (registro.get("message") or {}).get("content")
+    achado = _CANAL.match(content.strip()) if isinstance(content, str) else None
+    if achado is None:
+        return None
+    corpo = achado.group(2).strip()
+    # Anexo chega como "(voice message)", "(photo)"… — o rótulo sai do tipo.
+    if re.fullmatch(r"\([^)]*\)", corpo):
+        tipo = re.search(r'attachment_kind="([^"]+)"', achado.group(1))
+        chave = tipo.group(1) if tipo else corpo.strip("()").split()[0]
+        return _ANEXO.get(chave, "Anexo")
+    return corpo or None
+
+
 def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]:
     """Só o que o menu lista: prompts digitados e comandos de barra.
 
@@ -209,6 +241,9 @@ def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]
         if uid not in ativos or uid in ocultos:
             continue
         texto = _texto_do_ponto(registro)
+        canal = texto is None
+        if canal:
+            texto = _texto_do_canal(registro)
         if texto is None:
             continue
         # Resultados com texto e tool_result misturados também não são prompts.
@@ -223,6 +258,7 @@ def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]
                 "texto": texto.splitlines()[0],
                 "horario": registro.get("timestamp"),
                 "arquivo_editado_depois": False,
+                "canal": canal,
                 "texto_completo": texto,
             }
         )
@@ -397,7 +433,9 @@ def _executar_sync(
             raise RewindError("pane_incompativel")
         ocultos = db._rewind_hidden_uuids(slug, caminho.stem)
         registros = ler_registros(caminho)
-        lista = pontos(registros, ocultos)
+        # Ponto de canal não está no menu nativo: andar com Up contando com
+        # ele erraria o alvo. Esses vão por `fork_ate`, fora daqui.
+        lista = [p for p in pontos(registros, ocultos) if not p["canal"]]
         alvo = next((p for p in lista if p["id"] == ponto_id), None)
         if alvo is None:
             raise RewindError("ponto_inexistente", 422)
@@ -458,3 +496,56 @@ async def executar(
     return await tmux_driver._run_tmux_operation(
         _executar_sync, session, caminho, ponto_id, acao, db, slug, validar
     )
+
+
+MARCA_DA_COPIA = (
+    "[cockpit] O Rica voltou a conversa até este ponto pelo /voltar. "
+    "Não faça nada; responda só: ok."
+)
+_SESSAO = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def corte_antes(registros: list[dict], ponto_id: str) -> str | None:
+    """A última mensagem (user/assistant) antes do ponto, na cadeia de pais.
+
+    `--resume-session-at` só acha mensagem de conversa; registro `system`
+    (turn_duration, local_command) no meio da cadeia é pulado.
+    """
+    mensagens = {r["uuid"]: r for r in registros if r.get("uuid") and not r.get("isSidechain")}
+    alvo = mensagens.get(ponto_id)
+    cursor = alvo.get("parentUuid") if alvo else None
+    vistos: set[str] = set()
+    while cursor in mensagens and cursor not in vistos:
+        vistos.add(cursor)
+        if mensagens[cursor].get("type") in {"user", "assistant"}:
+            return cursor
+        cursor = mensagens[cursor].get("parentUuid")
+    return None
+
+
+def fork_ate(session_id: str, corte: str, cwd: str, prazo_s: float = 300) -> str:
+    """Copia a conversa cortada em `corte` e devolve o id da cópia.
+
+    A original fica intacta. `--resume-session-at` só vale no modo `-p`, que
+    grava um turno: a MARCA_DA_COPIA. `--setting-sources ''` e
+    `--strict-mcp-config` impedem o `-p` de subir plugin — sem eles ele toma
+    o bot do Telegram de uma sessão viva.
+    """
+    claude = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
+    comando = [
+        claude, "-p", MARCA_DA_COPIA,
+        "--resume", session_id, "--fork-session", "--resume-session-at", corte,
+        "--setting-sources", "", "--strict-mcp-config",
+        "--max-turns", "1", "--output-format", "json",
+    ]
+    try:
+        feito = subprocess.run(
+            comando, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
+            text=True, timeout=prazo_s, env={k: v for k, v in os.environ.items() if k != "CLAUDECODE"},
+        )
+        novo = json.loads(feito.stdout).get("session_id", "")
+    except (subprocess.TimeoutExpired, ValueError, AttributeError) as exc:
+        raise RewindError("copia_falhou") from exc
+    if feito.returncode != 0 or not _SESSAO.match(novo) or novo == session_id:
+        raise RewindError("copia_falhou")
+    return novo

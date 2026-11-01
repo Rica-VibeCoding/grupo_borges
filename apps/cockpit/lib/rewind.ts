@@ -12,6 +12,8 @@ export type PontoDeVolta = {
   texto: string;
   horario: string | null;
   arquivo_editado_depois: boolean;
+  /** Mensagem do Telegram: o menu nativo não lista; a API volta por cópia da conversa. */
+  canal?: boolean;
 };
 
 export type AcaoDeVolta =
@@ -50,6 +52,7 @@ export function lerPontos(corpo: unknown): PontoDeVolta[] {
  * (`acao_indisponivel`).
  */
 export function opcoesDoPonto(ponto: PontoDeVolta): OpcaoDeVolta[] {
+  if (ponto.canal) return [{ acao: 'conversa', rotulo: 'Só a conversa', desfazArquivo: false }];
   const opcoes: OpcaoDeVolta[] = [
     { acao: 'conversa', rotulo: 'Só a conversa', desfazArquivo: false },
     { acao: 'resumir_daqui', rotulo: 'Resumir daqui pra frente', desfazArquivo: false },
@@ -98,6 +101,8 @@ const FRASE_DO_ERRO: Record<string, string> = {
   ponto_nao_encontrado: 'Esse ponto não existe mais. A lista foi atualizada.',
   tmux_busy: 'O terminal do agente está ocupado. Tente de novo.',
   sessao_ausente: 'O terminal do agente não está aberto.',
+  copia_falhou: 'Não consegui copiar a conversa. O agente seguiu na conversa de antes.',
+  religar_falhou: 'O agente não religou na conversa copiada e voltou pra de antes.',
   pane_incompativel: 'O agente está desligado. Ligue ele e tente de novo.',
 };
 

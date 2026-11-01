@@ -997,3 +997,56 @@ async def aquecer_cache(app) -> None:
     logger.info(
         "conversas: cache aquecido, %d conversas em %.1fs", total, time.monotonic() - inicio
     )
+
+
+async def voltar_por_copia(app, agent: dict, caminho: Path, ponto_id: str, corte: str) -> str:
+    """`/voltar` até uma mensagem de canal: copia a conversa cortada e religa nela.
+
+    O menu nativo não lista mensagem do Telegram. A cópia (`rewind.fork_ate`)
+    deixa a original intacta e gravada como "anterior" — dá pra voltar pra ela.
+    Falhou a cópia ou a subida, a linha religa na conversa de antes.
+    """
+    from services import rewind
+
+    db: GrupoBorgesDB = app.state.db
+    slug, tmux_session = agent["slug"], agent["tmux_session"]
+    pasta = _pasta_no_app(app, agent)
+    if pasta is None:
+        raise rewind.RewindError("sem_conversa_atual")
+    try:
+        op = operacao.comecar(slug)
+    except operacao.OperacaoEmCurso as exc:
+        raise rewind.RewindError("troca_de_conversa_em_curso") from exc
+    sessao_antes = caminho.stem
+    try:
+        operacao.avancar(op, "religando")
+        await asyncio.to_thread(desligamento_deliberado.marcar, tmux_session)
+        try:
+            await tmux_driver.shutdown_agent(tmux_session)
+            try:
+                nova = await asyncio.to_thread(
+                    rewind.fork_ate, sessao_antes, corte, agent["workspace_path"]
+                )
+            except rewind.RewindError:
+                logger.warning("rewind: cópia de %s em %s falhou", sessao_antes, slug)
+                await _voltar_para_a_anterior(tmux_session, pasta, sessao_antes)
+                raise
+            motivo = await _subir_e_esperar(tmux_session, pasta, nova)
+            if motivo is not None:
+                logger.warning("rewind: subir %s em %s falhou: %s", nova, slug, motivo)
+                await _voltar_para_a_anterior(tmux_session, pasta, sessao_antes)
+                raise rewind.RewindError("religar_falhou")
+            operacao.registrar_troca(slug, sessao_antes, nova)
+            await _gravar_anterior(db, slug, sessao_antes)
+            await _publicar_troca(app, agent, op, de=sessao_antes, entrou=nova, motivo="voltar")
+            operacao.avancar(op, "pronta")
+            return nova
+        finally:
+            await asyncio.to_thread(desligamento_deliberado.desmarcar, tmux_session)
+    except rewind.RewindError as exc:
+        operacao.avancar(op, "erro", str(exc))
+        raise
+    except Exception:
+        logger.exception("rewind: volta por cópia em %s falhou", slug)
+        operacao.avancar(op, "erro", "falha inesperada")
+        raise
