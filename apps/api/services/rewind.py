@@ -112,6 +112,7 @@ def ler_registros(caminho: Path) -> list[dict]:
                     "isMeta",
                     "isCompactSummary",
                     "compactMetadata",
+                    "promptSource",
                 )
                 if k in payload
             }
@@ -169,8 +170,30 @@ def _ativos(registros: list[dict], leaf: str | None = None) -> set[str]:
     return ativos
 
 
+_COMANDO = re.compile(r"^\s*<command-name>(/[^<]+)</command-name>")
+_ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
+
+
+def _texto_do_ponto(registro: dict) -> str | None:
+    """O que o menu do /rewind mostra para esta linha, ou None se ela não é ponto.
+
+    Medido 01/11: comando de barra digitado entra ("/reload-plugins --force");
+    mensagem de canal (isMeta) e <task-notification> (promptSource=system) não.
+    """
+    if registro.get("type") != "user" or registro.get("promptSource") == "system":
+        return None
+    if registro.get("isSidechain") or registro.get("isMeta") or registro.get("isCompactSummary"):
+        return None
+    texto = conversas._texto_do_usuario(registro) or ""
+    comando = _COMANDO.match(texto)
+    if comando:
+        args = _ARGS.search(texto)
+        return f"{comando.group(1)} {args.group(1).strip() if args else ''}".strip()
+    return conversas._eh_turno(registro)
+
+
 def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]:
-    """Somente user prompts reais; ferramentas, comandos e sidechains não entram.
+    """Só o que o menu lista: prompts digitados e comandos de barra.
 
     O JSONL é só-acréscimo, inclusive após rewind. A cadeia de pais descarta
     ramos antigos; a máscara persistida cobre o intervalo antes do próximo turno.
@@ -182,8 +205,8 @@ def pontos(registros: list[dict], ocultos: set[str] | None = None) -> list[dict]
         uid = registro.get("uuid")
         if uid not in ativos or uid in ocultos:
             continue
-        texto = conversas._eh_turno(registro)
-        if texto is None or conversas.eh_residuo_de_troca(registro):
+        texto = _texto_do_ponto(registro)
+        if texto is None:
             continue
         # Resultados com texto e tool_result misturados também não são prompts.
         content = (registro.get("message") or {}).get("content")

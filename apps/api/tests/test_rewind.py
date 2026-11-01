@@ -430,3 +430,41 @@ def test_resumo_preserva_no_menu_apenas_prompts_do_trecho_mantido(metadata):
         _user("summary", "Resumo", "boundary", isCompactSummary=True),
     ]
     assert [p["id"] for p in rewind.pontos(r)] == ["a"]
+
+
+def test_pontos_seguem_o_menu_comando_entra_canal_e_notificacao_nao():
+    # Medido 01/11 numa cópia da conversa do Daniel: o menu lista só
+    # "/clear" e "/reload-plugins --force"; Telegram (isMeta) e
+    # <task-notification> (promptSource=system) não viram ponto.
+    registros = [
+        _user("caveat", "<local-command-caveat>x</local-command-caveat>", isMeta=True),
+        _user(
+            "clear",
+            "<command-name>/clear</command-name>\n  <command-message>clear</command-message>\n"
+            "  <command-args></command-args>",
+            "caveat",
+        ),
+        _user("tg", '<channel source="plugin:telegram:telegram">oi</channel>', "clear", isMeta=True),
+        _user(
+            "task",
+            "<task-notification>\n<task-id>b1</task-id>\n</task-notification>",
+            "tg",
+            promptSource="system",
+        ),
+        _user(
+            "reload",
+            "<command-name>/reload-plugins</command-name>\n"
+            "  <command-message>reload-plugins</command-message>\n"
+            "  <command-args>--force</command-args>",
+            "task",
+        ),
+        _user("digitado", "Pedido digitado no terminal", "reload"),
+    ]
+    ps = rewind.pontos(registros)
+    assert [p["texto"] for p in ps] == ["/clear", "/reload-plugins --force", "Pedido digitado no terminal"]
+
+
+def test_ler_registros_guarda_prompt_source(tmp_path):
+    caminho = tmp_path / "s.jsonl"
+    caminho.write_text(json.dumps(_user("t", "<task-notification/>", promptSource="system")) + "\n")
+    assert rewind.ler_registros(caminho)[0]["promptSource"] == "system"
