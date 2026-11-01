@@ -686,13 +686,14 @@ class AgentCommandResponse(BaseModel):
     comando: str
     descricao: str | None = None
     origem: Literal["native", "project", "user", "plugin"]
+    cockpit: bool = False
 
 
 _NATIVE_SLASH_COMMANDS: tuple[tuple[str, str], ...] = ()
 
 
-def _descricao_de_comando(path: Path) -> str | None:
-    """Lê `description` do frontmatter YAML de um comando Markdown.
+def _frontmatter_de_comando(path: Path) -> dict:
+    """Lê o frontmatter YAML de um comando Markdown.
 
     A lista abre no gesto de digitar `/`, portanto faz uma leitura pequena e
     tolera arquivo incompleto ou YAML inválido em vez de deixar um comando ruim
@@ -702,11 +703,11 @@ def _descricao_de_comando(path: Path) -> str | None:
         with path.open("r", encoding="utf-8", errors="replace") as command_file:
             head = command_file.read(4096)
     except OSError:
-        return None
+        return {}
 
     lines = head.splitlines()
     if not lines or lines[0].strip() != "---":
-        return None
+        return {}
 
     frontmatter: list[str] = []
     for line in lines[1:]:
@@ -714,14 +715,16 @@ def _descricao_de_comando(path: Path) -> str | None:
             break
         frontmatter.append(line)
     else:
-        return None
+        return {}
 
     try:
         metadata = yaml.safe_load("\n".join(frontmatter))
     except yaml.YAMLError:
-        return None
-    if not isinstance(metadata, dict):
-        return None
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _descricao_de_comando(metadata: dict) -> str | None:
     descricao = metadata.get("description")
     return descricao.strip() if isinstance(descricao, str) and descricao.strip() else None
 
@@ -737,14 +740,19 @@ def _arquivos_de_comando(root: Path, pattern: str) -> list[Path]:
 
 
 def _comandos_de_arquivos(paths: list[Path], origem: Literal["project", "user", "plugin"]):
-    return [
-        {
-            "comando": f"/{path.stem}",
-            "descricao": _descricao_de_comando(path),
-            "origem": origem,
-        }
-        for path in paths
-    ]
+    comandos = []
+    for path in paths:
+        metadata = _frontmatter_de_comando(path)
+        comandos.append(
+            {
+                "comando": f"/{path.stem}",
+                "descricao": _descricao_de_comando(metadata),
+                "origem": origem,
+                # `cockpit: true` no frontmatter põe o comando no menu da barra do card.
+                "cockpit": metadata.get("cockpit") is True,
+            }
+        )
+    return comandos
 
 
 def _comandos_de_plugins_instalados(workspace: Path) -> list[dict[str, str | None]]:

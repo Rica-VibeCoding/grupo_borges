@@ -12,11 +12,16 @@ export type BolhaDeComandosProps = {
   aoDispensar: () => void;
   /** Comando do cockpit: resolvido no front, nunca vai pro agente como texto. */
   aoEscolher: (comando: ComandoDoCockpit) => void;
+  /** Comandos próprios do agente: escolher só escreve no campo. */
+  doAgente: string[];
+  aoEscolherDoAgente: (comando: string) => void;
   children: ReactElement;
 };
 
 /** Os comandos de barra do cockpit, ancorados no próprio campo. */
-export function BolhaDeComandos({ aberta, aoDispensar, aoEscolher, children }: BolhaDeComandosProps) {
+export function BolhaDeComandos({
+  aberta, aoDispensar, aoEscolher, doAgente, aoEscolherDoAgente, children,
+}: BolhaDeComandosProps) {
   return (
     <Popover open={aberta} onOpenChange={(abrir) => !abrir && aoDispensar()}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
@@ -44,6 +49,13 @@ export function BolhaDeComandos({ aberta, aoDispensar, aoEscolher, children }: B
           <CommandList>
             {COMANDOS_DO_COCKPIT.map((comando) => (
               <CommandItem key={comando} value={comando} onSelect={() => aoEscolher(comando)}>
+                <span className="min-w-0 flex-1 font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
+                  {comando}
+                </span>
+              </CommandItem>
+            ))}
+            {doAgente.map((comando) => (
+              <CommandItem key={comando} value={comando} onSelect={() => aoEscolherDoAgente(comando)}>
                 <span className="min-w-0 flex-1 font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
                   {comando}
                 </span>

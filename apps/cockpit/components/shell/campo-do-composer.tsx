@@ -5,8 +5,9 @@
  * com tecla, colagem e acentuação. Saiu de `composer.tsx` (02/10) inteiro; a
  * altura e o foco seguem com o composer, que é o dono do `textareaRef`.
  */
-import { useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { useEffect, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
+import { getAgentCommands } from '@grupo_borges/cockpit-core/api';
 import { motion } from 'motion/react';
 import type { Retido } from '../../lib/fase-do-anexo';
 import type { usaAnexo } from '../../lib/usa-anexo';
@@ -16,6 +17,7 @@ import {
   bolhaAberta,
   comandoDigitado,
   COMANDOS_DO_COCKPIT,
+  comandosDoAgente,
   veuDoComposer,
   type ComandoDoCockpit,
 } from './comandos-do-cockpit';
@@ -61,6 +63,24 @@ export function CampoDoComposer({
   const veu = veuDoComposer(bolha, voltarAberto);
   const [veuMontado, setVeuMontado] = useState(false);
   if (veu && !veuMontado) setVeuMontado(true);
+
+  const [doAgente, setDoAgente] = useState<string[]>([]);
+  useEffect(() => {
+    const controle = new AbortController();
+    getAgentCommands(agentSlug, controle.signal)
+      .then((lista) => setDoAgente(comandosDoAgente(lista)))
+      // Sem a lista, a bolha segue só com os comandos do cockpit.
+      .catch(() => setDoAgente([]));
+    return () => controle.abort();
+  }, [agentSlug]);
+
+  function escolherDoAgente(comando: string) {
+    // Comando do agente vai pra ele como texto: o campo recebe "/lead " e o
+    // Rica completa o resto antes de mandar.
+    setTexto(`${comando} `);
+    setOrigemDoRascunho('text');
+    requestAnimationFrame(devolverFoco);
+  }
 
   function escolherComando(comando: ComandoDoCockpit) {
     // A `/` sai do campo: o comando é do cockpit, não vira texto. Bolha fecha
@@ -114,6 +134,8 @@ export function CampoDoComposer({
       aberta={bolha}
       aoDispensar={() => setDispensada(true)}
       aoEscolher={escolherComando}
+      doAgente={doAgente}
+      aoEscolherDoAgente={escolherDoAgente}
     >
       <motion.textarea
           layout="position"

@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { bolhaAberta, comandoDigitado, COMANDOS_DO_COCKPIT, veuDoComposer } from './comandos-do-cockpit.ts';
+import {
+  bolhaAberta,
+  comandoDigitado,
+  COMANDOS_DO_COCKPIT,
+  comandosDoAgente,
+  veuDoComposer,
+} from './comandos-do-cockpit.ts';
 
 describe('comandos de barra do cockpit', () => {
   it('a bolha tem um item só: /voltar', () => {
@@ -24,6 +30,18 @@ describe('comandos de barra do cockpit', () => {
     assert.equal(comandoDigitado('  /voltar \n'), '/voltar');
     assert.equal(comandoDigitado('/voltar pra ontem'), null);
     assert.equal(comandoDigitado('/compact'), null);
+  });
+});
+
+describe('comandos do agente', () => {
+  it('só os do workspace marcados cockpit: true entram', () => {
+    const lista = [
+      { comando: '/lead', origem: 'project', cockpit: true },
+      { comando: '/encerrar', origem: 'project', cockpit: false },
+      { comando: '/revisar', origem: 'user', cockpit: true },
+      { comando: '/voltar', origem: 'project', cockpit: true },
+    ];
+    assert.deepEqual(comandosDoAgente(lista), ['/lead']);
   });
 });
 

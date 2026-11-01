@@ -944,6 +944,19 @@ export type AgentMcpPatchResponse = { applied: boolean; requires_reload: boolean
 
 export type AgentMcpReloadResponse = { tmux_delivered: boolean };
 
+export type AgentCommand = {
+  comando: string;
+  descricao: string | null;
+  origem: 'native' | 'project' | 'user' | 'plugin';
+  cockpit: boolean;
+};
+
+export async function getAgentCommands(slug: string, signal?: AbortSignal): Promise<AgentCommand[]> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/commands`, { cache: 'no-store', signal });
+  if (!res.ok) throw new Error(await errorDetail(res, `getAgentCommands failed: ${res.status}`));
+  return res.json();
+}
+
 export async function getAgentMcp(slug: string, signal?: AbortSignal): Promise<AgentMcpResponse> {
   const res = await fetch(`/api/agents/${encodeURIComponent(slug)}/mcp`, {
     cache: 'no-store',
