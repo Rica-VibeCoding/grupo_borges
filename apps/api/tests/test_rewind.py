@@ -468,3 +468,17 @@ def test_ler_registros_guarda_prompt_source(tmp_path):
     caminho = tmp_path / "s.jsonl"
     caminho.write_text(json.dumps(_user("t", "<task-notification/>", promptSource="system")) + "\n")
     assert rewind.ler_registros(caminho)[0]["promptSource"] == "system"
+
+
+def test_comando_do_projeto_com_command_message_antes_vira_ponto():
+    # Medido 01/11 no Sobral: comando de .claude/commands grava
+    # <command-message> ANTES de <command-name>, e o menu lista "/encerrar".
+    registros = [
+        _user("p", "Tá avançando aí?"),
+        _user(
+            "enc",
+            "<command-message>encerrar</command-message>\n<command-name>/encerrar</command-name>",
+            "p",
+        ),
+    ]
+    assert [p["texto"] for p in rewind.pontos(registros)] == ["Tá avançando aí?", "/encerrar"]

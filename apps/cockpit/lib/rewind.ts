@@ -98,6 +98,7 @@ const FRASE_DO_ERRO: Record<string, string> = {
   ponto_nao_encontrado: 'Esse ponto não existe mais. A lista foi atualizada.',
   tmux_busy: 'O terminal do agente está ocupado. Tente de novo.',
   sessao_ausente: 'O terminal do agente não está aberto.',
+  pane_incompativel: 'O agente está desligado. Ligue ele e tente de novo.',
 };
 
 const FRASE_PADRAO = 'O Claude Code não confirmou a volta. Confira o agente antes de tentar de novo.';

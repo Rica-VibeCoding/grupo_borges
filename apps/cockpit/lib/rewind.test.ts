@@ -78,6 +78,7 @@ describe('erros e resposta do POST', () => {
   it('cada detail conhecido vira frase própria; desconhecido cai no padrão', () => {
     assert.match(fraseDoErro('agente_ocupado'), /trabalhando/);
     assert.match(fraseDoErro('campo_ocupado'), /campo do agente/);
+    assert.match(fraseDoErro('pane_incompativel'), /desligado/);
     assert.match(fraseDoErro(null), /conexão/);
     assert.match(fraseDoErro('tela_nao_confirmada'), /não confirmou/);
     assert.ok(!fraseDoErro('qualquer_coisa').includes('_'));

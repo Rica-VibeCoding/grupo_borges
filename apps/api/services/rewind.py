@@ -170,7 +170,10 @@ def _ativos(registros: list[dict], leaf: str | None = None) -> set[str]:
     return ativos
 
 
-_COMANDO = re.compile(r"^\s*<command-name>(/[^<]+)</command-name>")
+# Comando de .claude/commands grava <command-message> antes do <command-name>.
+_COMANDO = re.compile(
+    r"^\s*(?:<command-message>[^<]*</command-message>\s*)?<command-name>(/[^<]+)</command-name>"
+)
 _ARGS = re.compile(r"<command-args>(.*?)</command-args>", re.DOTALL)
 
 
