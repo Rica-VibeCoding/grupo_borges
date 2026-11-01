@@ -5,12 +5,13 @@
  * com tecla, colagem e acentuação. Saiu de `composer.tsx` (02/10) inteiro; a
  * altura e o foco seguem com o composer, que é o dono do `textareaRef`.
  */
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { motion } from 'motion/react';
 import type { Retido } from '../../lib/fase-do-anexo';
 import type { usaAnexo } from '../../lib/usa-anexo';
 import type { OrigemRascunho } from '../../lib/usa-rascunho';
 import { BolhaDeComandos } from './bolha-de-comandos';
+import { ModalVoltar } from './modal-voltar';
 import { emCaptura, type ModoDaFala } from './modo-da-fala';
 import { TROCA_DE_FILEIRA } from './troca-de-fileira';
 import { origemDepoisDaEdicao } from './voz';
@@ -42,8 +43,31 @@ export function CampoDoComposer({
   // nunca recebe o Enter que o campo despacha. Sem este espelho, digitar `/`
   // e apertar Enter mandava o `/` sozinho como mensagem pro agente.
   const bolhaComandosAberta = texto === '/';
+  const [voltarAberto, setVoltarAberto] = useState(false);
+
+  function devolverFoco() {
+    const campo = textareaRef.current;
+    if (!campo) return;
+    campo.focus();
+    campo.setSelectionRange(campo.value.length, campo.value.length);
+  }
 
   return (
+    <>
+    <ModalVoltar
+      agentSlug={agentSlug}
+      aberto={voltarAberto}
+      aoFechar={() => setVoltarAberto(false)}
+      aoDevolverFoco={devolverFoco}
+      aoVoltar={(restaurado) => {
+        setVoltarAberto(false);
+        // O texto do ponto volta pro campo pra ser editado e reenviado.
+        if (restaurado) {
+          setTexto(restaurado);
+          setOrigemDoRascunho('text');
+        }
+      }}
+    />
     <BolhaDeComandos
       agentSlug={agentSlug}
       texto={texto}
@@ -52,6 +76,11 @@ export function CampoDoComposer({
         setOrigemDoRascunho('text');
       }}
       campoRef={textareaRef}
+      aoVoltar={() => {
+        // A `/` sai do campo: o comando é do cockpit, não vira texto.
+        setTexto('');
+        setVoltarAberto(true);
+      }}
     >
       <motion.textarea
           layout="position"
@@ -166,5 +195,6 @@ export function CampoDoComposer({
           }}
       />
     </BolhaDeComandos>
+    </>
   );
 }

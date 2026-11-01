@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactElement, type RefObject } from 'react';
 
-import { Command, CommandEmpty, CommandItem, CommandList } from '../ui/command';
+import { Command, CommandItem, CommandList } from '../ui/command';
 import { Popover, PopoverAnchor, PopoverContent } from '../ui/popover';
 
 type OrigemDoComando = 'native' | 'project' | 'user' | 'plugin';
@@ -21,7 +21,16 @@ export type BolhaDeComandosProps = {
   children: ReactElement;
   /** Desligada quando o motor do agente não tem slash command. */
   ativa?: boolean;
+  /** `/voltar` escolhido: comando só do cockpit, nunca vai pro agente como texto. */
+  aoVoltar: () => void;
 };
+
+/**
+ * Comandos que o cockpit resolve sozinho, sempre no topo da lista. A ordem do
+ * Rica (01/11) foi começar pelo `/voltar`: os nativos que apareciam ali "não
+ * têm serventia", e a API já os tirou.
+ */
+const COMANDO_VOLTAR = '/voltar';
 
 const ROTULO_DA_ORIGEM: Record<OrigemDoComando, string> = {
   native: 'nativo',
@@ -70,6 +79,7 @@ export function BolhaDeComandos({
   campoRef,
   children,
   ativa = true,
+  aoVoltar,
 }: BolhaDeComandosProps) {
   // O único gatilho desta primeira fase é uma barra num campo vazio. Ao seguir
   // digitando, não há filtro ainda: a bolha fecha para o campo voltar a ser a
@@ -164,11 +174,17 @@ export function BolhaDeComandos({
       >
         <Command label="Comandos de barra" shouldFilter={false} loop>
           <CommandList>
-            {carregando ? <CommandEmpty>Carregando comandos…</CommandEmpty> : null}
-            {falhou ? <CommandEmpty>Não foi possível carregar os comandos.</CommandEmpty> : null}
-            {!carregando && !falhou ? (
-              <CommandEmpty>Nenhum comando disponível.</CommandEmpty>
-            ) : null}
+            <CommandItem
+              value={COMANDO_VOLTAR}
+              onSelect={() => {
+                setDispensada(true);
+                aoVoltar();
+              }}
+            >
+              <span className="min-w-0 flex-1 font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
+                {COMANDO_VOLTAR}
+              </span>
+            </CommandItem>
             {comandos.map((comando, indice) => (
               <CommandItem
                 key={`${comando.origem}-${comando.comando}-${indice}`}
@@ -176,15 +192,10 @@ export function BolhaDeComandos({
                 onSelect={() => selecionar(comando.comando)}
                 aria-label={`Inserir ${comando.comando}`}
               >
-                <span className="flex min-w-0 flex-1 flex-col" style={{ gap: '2px' }}>
-                  <span className="font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
-                    {comando.comando}
-                  </span>
-                  {comando.descricao ? (
-                    <span className="truncate text-xs" style={{ color: 'var(--ck-text-secondary)' }}>
-                      {comando.descricao}
-                    </span>
-                  ) : null}
+                {/* Sem descrição embaixo, por ordem do Rica (01/11): "é fácil eu
+                    decorar os que uso". O nome sozinho deixa a lista curta. */}
+                <span className="min-w-0 flex-1 truncate font-mono text-sm" style={{ color: 'var(--ck-text-primary)' }}>
+                  {comando.comando}
                 </span>
                 <span
                   className="shrink-0 text-xs"
@@ -195,6 +206,13 @@ export function BolhaDeComandos({
               </CommandItem>
             ))}
           </CommandList>
+          {/* Com o `/voltar` sempre na lista o `CommandEmpty` nunca aparece;
+              a leitura dos outros avisa numa linha embaixo. */}
+          {carregando || falhou ? (
+            <div role="status" className="py-2 px-3 text-sm" style={{ color: 'var(--ck-text-secondary)' }}>
+              {carregando ? 'Carregando comandos…' : 'Não foi possível carregar os outros comandos.'}
+            </div>
+          ) : null}
         </Command>
       </PopoverContent>
     </Popover>

@@ -578,6 +578,138 @@ body {
 }
 @keyframes ck-veu-entra { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ck-menu-conta-veu { animation: none; } }
+
+/* O `/voltar` (Rica, 01/11): modal no lugar da bolha de comandos, com o mesmo
+ * véu do menu de conta — só que este recebe o toque (fecha) e mora no degrau
+ * de modal. Material da §F, ancorado embaixo, onde a bolha estava: o polegar
+ * não precisa atravessar a tela. Duas telas na mesma caixa — lista dos pontos
+ * e opções do escolhido —, e a troca entre elas é o único movimento. */
+.ck-voltar-veu {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ck-z-modal);
+  background: var(--ck-scrim);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: ck-veu-entra var(--ck-dur-enter, 0.2s) var(--ck-ease) both;
+}
+.ck-menu-surface.ck-voltar {
+  position: fixed;
+  z-index: var(--ck-z-modal);
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--ck-space-4));
+  transform: translateX(-50%);
+  width: min(calc(100vw - 2 * var(--ck-space-3)), 34rem);
+  max-height: min(70dvh, 34rem);
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+  animation: ck-voltar-surge var(--ck-dur-enter, 0.2s) var(--ck-ease) both;
+}
+.ck-voltar:focus-visible { outline: none; }
+.ck-voltar-tela { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.ck-voltar-tela[data-lado='opcoes'] { animation: ck-voltar-avanca var(--ck-dur-enter, 0.2s) var(--ck-ease) both; }
+.ck-voltar-tela[data-lado='lista'][data-voltou='true'] { animation: ck-voltar-recua var(--ck-dur-enter, 0.2s) var(--ck-ease) both; }
+.ck-voltar-cabeca {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-space-1);
+  min-height: 44px;
+  padding: var(--ck-space-1) var(--ck-space-3);
+  border-bottom: 1px solid var(--ck-flutuante-fio);
+}
+.ck-voltar-titulo {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ck-text-base);
+  font-weight: 600;
+  color: var(--ck-text-primary);
+}
+.ck-voltar-recuo {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin-left: calc(-1 * var(--ck-space-3));
+  border-radius: var(--ck-flutuante-raio-item);
+  font-size: var(--ck-text-lg);
+  color: var(--ck-text-secondary);
+}
+.ck-voltar-corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ck-space-1) 0 0;
+}
+.ck-voltar-rola { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.ck-voltar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ck-space-2);
+  min-height: 44px;
+  padding: var(--ck-space-2) var(--ck-space-3);
+  border-radius: var(--ck-flutuante-raio-item);
+  font-size: var(--ck-text-base);
+  color: var(--ck-text-primary);
+  text-align: left;
+}
+.ck-voltar-item:focus-visible { box-shadow: inset 0 0 0 1px var(--ck-edge-functional); }
+.ck-voltar-item[data-apagado='true'],
+.ck-voltar-recuo[data-apagado='true'] { color: var(--ck-text-tertiary); }
+/* Segundo toque das que desfazem arquivo: o item fica aceso até decidir. */
+.ck-voltar-item[data-armada='true'] {
+  background-image: linear-gradient(var(--ck-overlay-pressed), var(--ck-overlay-pressed));
+  font-weight: 600;
+}
+.ck-voltar-grupo { display: flex; flex-direction: column; gap: 2px; }
+/* As que mexem no disco ficam do outro lado de um fio — longe das que só
+ * mexem na conversa, pro polegar não escorregar de uma pra outra. */
+.ck-voltar-arquivo {
+  margin-top: var(--ck-space-1);
+  padding-top: var(--ck-space-1);
+  border-top: 1px solid var(--ck-flutuante-fio);
+}
+/* Na tela de opções o ponto aparece inteiro: é ali que se decide. */
+.ck-voltar-inteiro {
+  max-height: 8lh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: var(--ck-space-2) 0;
+}
+.ck-voltar-item[aria-busy='true'] { color: var(--ck-text-secondary); }
+/* A linha é o próprio prompt dele: duas linhas bastam pra reconhecer. */
+.ck-voltar-citacao {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.ck-voltar-marca { flex-shrink: 0; font-family: var(--ck-font-mono); font-size: var(--ck-text-sm); color: var(--ck-text-secondary); }
+.ck-voltar-hora {
+  flex-shrink: 0;
+  font-size: var(--ck-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ck-text-secondary);
+}
+.ck-voltar-aviso,
+.ck-voltar-erro {
+  padding: var(--ck-space-3);
+  font-size: var(--ck-text-sm);
+  color: var(--ck-text-secondary);
+}
+.ck-voltar-erro {
+  color: var(--ck-text-primary);
+  font-weight: 500;
+  border-bottom: 1px solid var(--ck-flutuante-fio);
+}
+@keyframes ck-voltar-surge { from { opacity: 0; transform: translate(-50%, 8px); } }
+@keyframes ck-voltar-avanca { from { opacity: 0; transform: translateX(16px); } }
+@keyframes ck-voltar-recua { from { opacity: 0; transform: translateX(-16px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ck-voltar-veu,
+  .ck-menu-surface.ck-voltar,
+  .ck-voltar-tela[data-lado] { animation: none; }
+}
 .ck-menu-surface :focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--ck-edge-functional);
