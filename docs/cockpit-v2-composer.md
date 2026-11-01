@@ -370,6 +370,15 @@ autoriza dizer "pronto".
 
 ---
 
+### `/voltar` — o rewind do Claude Code (01/11)
+
+Único comando da bolha da barra (`comandos-do-cockpit.ts`). Lista os pontos, e escolhido um, as opções. Lógica em `lib/rewind.ts`, API em `apps/api/services/rewind.py`.
+
+- **Ponto digitado ou comando** (o que o menu nativo lista): a API dirige o `/rewind` do pane pelo tmux, conferindo cada passo do cursor contra a lista. A lista TEM de bater com o menu: um comando de `.claude/commands` que ficou de fora (grava `<command-message>` antes do `<command-name>`) fez o cursor errar o alvo no teste real.
+- **Mensagem do Telegram** (isMeta, o menu nativo não lista): só "Só a conversa". A API desliga o agente, copia a conversa cortada antes da mensagem (`claude -p --resume --fork-session --resume-session-at`, flag fora da doc e só no `-p`, sempre com `--setting-sources ''`) e religa na cópia. A original fica como "anterior". Passa dos 30 s do proxy do Next: 202 + `/conversas/operacao`.
+- Áudio aparece com a transcrição do turno (saída do `ouvir.py`); a cópia deixa a linha "↩ voltou aqui".
+- Agente desligado: não volta (`pane_incompativel`).
+
 ## 5. A peça — quem manda em quê
 
 > Da saga de sete rodadas para acertar onde o composer para na tela. A história
