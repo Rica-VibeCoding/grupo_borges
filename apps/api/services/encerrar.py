@@ -1,6 +1,9 @@
 """Resolve o ritual como texto: funciona também sem comandos de barra no CLI."""
+import logging
 import re
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def _corpo(caminho: Path) -> str:
@@ -28,6 +31,10 @@ def expandir_encerrar(texto: str, workspace: str, encerrar_adendo_path: str | No
                 diferenca = _corpo(adendo) if adendo.is_file() else ""
                 resolucao = (f"Adendo do agente: {adendo}\n\n{diferenca}" if diferenca
                              else f"Adendo do agente: ausente ({adendo}).")
+                if encerrar_adendo_path and not adendo.is_file():
+                    resolucao = (f"Adendo do agente: DECLARADO E NÃO ENCONTRADO ({adendo})"
+                                 " — avisar o Rica no relatório e seguir só o ritual.")
+                    log.warning("%s", resolucao)
                 return (f"Execute o ritual de encerramento de {caminho}:\n\n{corpo}"
                         f"\n\n---\nResolução do adendo pelo cockpit:\n{resolucao}")
     raise FileNotFoundError("Ritual de encerramento indisponível")

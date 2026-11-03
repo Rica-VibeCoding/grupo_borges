@@ -81,8 +81,33 @@ def test_sem_adendo_entrega_so_ritual(tmp_path: Path, declarado):
         padrao.write_text("Não usar o padrão quando há declaração.")
     texto = expandir_encerrar("/encerrar", str(workspace), declarado)
     assert "Salvar memória." in texto
-    assert "Adendo do agente: ausente" in texto
+    assert ("DECLARADO E NÃO ENCONTRADO" if declarado else "Adendo do agente: ausente") in texto
     assert "Não usar o padrão" not in texto
+
+
+def test_adendo_declarado_ausente_avisa_sem_travar_botao(tmp_path: Path, caplog) -> None:
+    workspace = tmp_path / "workspace"
+    padrao = workspace / ".claude/encerrar-adendo.md"
+    padrao.parent.mkdir(parents=True)
+    padrao.write_text("Adendo de outro agente: não usar.")
+    declarado = ".claude/inexistente.md"
+    agente = dict(slug="fin", name="Fin", tmux_session="fin", workspace_path=str(workspace),
+                  encerrar_adendo_path=declarado, cli_default="claude_code", model_default="opus",
+                  capabilities=[], can_review=[])
+    app = _build_app(tmp_path, extra_agents=[agente])
+    with patch("routers.agents.tmux_driver.send_message", return_value=tmux_driver.DELIVERED) as send:
+        with TestClient(app) as client:
+            response = client.post("/api/agents/fin/input", json={"text": "/encerrar", "idempotency_key": "fim"})
+    assert response.status_code == 200, response.text
+    texto = send.call_args.args[1]
+    aviso = (f"Adendo do agente: DECLARADO E NÃO ENCONTRADO ({workspace / declarado})"
+             " — avisar o Rica no relatório e seguir só o ritual.")
+    assert "Salvar memória." in texto
+    assert aviso in texto
+    assert "Adendo de outro agente" not in texto
+    assert "Adendo do agente: ausente" not in texto
+    assert any(r.name == "services.encerrar" and r.levelname == "WARNING"
+               and r.getMessage() == aviso for r in caplog.records)
 
 
 def test_outro_comando_continua_literal(tmp_path: Path) -> None:
