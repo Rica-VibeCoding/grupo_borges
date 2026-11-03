@@ -81,6 +81,7 @@ from services import (
     tmux_driver,
     workspace_reader,
 )
+from services.encerrar import expandir_encerrar
 from services.pergunta_motor import (
     TECLA_DA_RESPOSTA,
     PerguntaMotor,
@@ -3375,6 +3376,13 @@ async def send_agent_input(
     event_boundary_id = await db.max_event_id()
     prefixo = {"stt": "🎙 ", "voz": "🗣 "}.get(payload.origin, "")
     delivered_text = f"{prefixo}{payload.text}"
+    if payload.origin == "text":
+        try:
+            delivered_text = await asyncio.to_thread(
+                expandir_encerrar, delivered_text, agent["workspace_path"]
+            )
+        except (OSError, UnicodeError) as exc:
+            raise HTTPException(status_code=409, detail="encerrar_ritual_indisponivel") from exc
     input_origin = (
         _InputOrigin(meta={"kind": "stt", "raw_text": delivered_text})
         if prefixo

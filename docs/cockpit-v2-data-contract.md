@@ -226,6 +226,15 @@ type FaseEnvio =
   não bastam.
 - **`confirmado` é o único estado que pode cantar sucesso.**
 
+O botão Encerrar continua enviando `/encerrar` ao `POST /api/agents/{slug}/input`.
+A API resolve o comando da pasta do agente ou o ritual compartilhado em
+`ze-shared/.claude/commands/encerrar.md` (na VPS e na montagem sshfs do notebook),
+remove o cabeçalho YAML e entrega o corpo como texto ao tmux. Isso atende também
+o Codex nativo, sem comando de barra, e as sessões Claude Code que ainda não
+conhecem o comando. Os adendos ficam no `CLAUDE.md` de cada agente. Ritual
+indisponível recusa antes da entrega com 409 `encerrar_ritual_indisponivel`.
+Outros comandos, como `/compact`, continuam literais.
+
 Quando o driver não confirma a entrega, `POST /api/agents/{slug}/input` responde
 409 com `detail` estruturado:
 

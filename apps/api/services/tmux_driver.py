@@ -65,7 +65,7 @@ _TMUX_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="cockpit-t
 # Comandos esperados no pane ativo do agente. Se o user trocou de window (ex:
 # abriu shell auxiliar), `active_pane` aponta pra outra coisa — paste no shell
 # pode executar parte do envelope como comando. Guard aborta nesse caso.
-_EXPECTED_PANE_COMMANDS = {"claude", "node"}
+_EXPECTED_PANE_COMMANDS = {"claude", "node", "codex"}
 _CLAUDE_PANE_COMMANDS = {"claude", "node"}
 
 
@@ -1572,7 +1572,7 @@ def _restart_claude_with_resume_sync(
         session = server.sessions.get(session_name=session_name)
         old_pane = session.active_pane
         current_cmd = (old_pane.pane_current_command or "").lower()
-        if current_cmd not in _EXPECTED_PANE_COMMANDS:
+        if current_cmd not in _CLAUDE_PANE_COMMANDS:
             return {"attempted": False, "confirmed": False}
         if not _pane_contains_resume_anchor(old_pane, anchors):
             raise ValueError("session_id não corresponde à conversa visível no pane")
