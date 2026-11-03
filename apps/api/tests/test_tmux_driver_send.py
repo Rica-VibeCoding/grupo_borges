@@ -25,6 +25,16 @@ CERCA = (
 )
 
 
+@pytest.fixture
+def workspace(tmp_path: Path, monkeypatch) -> str:
+    raiz = tmp_path / "repos"
+    pasta = raiz / "grupo_borges"
+    pasta.mkdir(parents=True)
+    monkeypatch.setattr(tmux_driver, "_REPOS_ROOT", raiz)
+    monkeypatch.setenv("GB_ALLOWED_WORKSPACE_ROOTS", str(raiz))
+    return str(pasta)
+
+
 class _FakePane:
     pane_current_command = "claude"
     pane_height = 4
@@ -1264,7 +1274,7 @@ def test_recover_reports_busy_session_without_waiting_for_dispatch() -> None:
     assert pane.escape_count == 0
 
 
-def test_long_tmux_operations_use_dedicated_executor(monkeypatch) -> None:
+def test_long_tmux_operations_use_dedicated_executor(monkeypatch, workspace: str) -> None:
     def in_tmux_executor(*_args: object) -> bool:
         return threading.current_thread().name.startswith("cockpit-tmux")
 
@@ -1285,7 +1295,7 @@ def test_long_tmux_operations_use_dedicated_executor(monkeypatch) -> None:
     restarted = asyncio.run(
         tmux_driver.restart_claude_with_resume(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2",
         )
@@ -1293,7 +1303,7 @@ def test_long_tmux_operations_use_dedicated_executor(monkeypatch) -> None:
     assert restarted["in_tmux_executor"] is True
 
 
-def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Path) -> None:
+def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Path, workspace: str) -> None:
     old_pane = _BootstrapPane()
     anchor = "pergunta anterior única do relaunch"
     old_pane.visible_context = anchor
@@ -1319,7 +1329,7 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1335,7 +1345,7 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
             "-t",
             "daniel:",
             "-c",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
         ),
         ("kill-window", "-t", "@old"),
     ]
@@ -1362,7 +1372,7 @@ def test_restart_replaces_window_and_confirms_resumed_conversation(tmp_path: Pat
     assert "|| claude" not in replacement_pane.sent_commands[0][0]
 
 
-def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> None:
+def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path, workspace: str) -> None:
     old_pane = _BootstrapPane()
     anchor = "pergunta anterior única do relaunch"
     old_pane.visible_context = anchor
@@ -1393,7 +1403,7 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1416,6 +1426,7 @@ def test_restart_preserves_telegram_state_dir_of_old_process(tmp_path: Path) -> 
 
 def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
     tmp_path: Path,
+    workspace: str,
 ) -> None:
     """Agente que usa o default do plugin de propósito não herda um valor stale."""
     old_pane = _BootstrapPane()
@@ -1443,7 +1454,7 @@ def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1452,7 +1463,7 @@ def test_restart_unsets_telegram_state_dir_when_old_process_had_none(
     assert ("TELEGRAM_STATE_DIR", None) in server.env_calls
 
 
-def test_restart_preserves_routing_vars_of_canario(tmp_path: Path) -> None:
+def test_restart_preserves_routing_vars_of_canario(tmp_path: Path, workspace: str) -> None:
     """Sem as 7 `ANTHROPIC_*`, o relaunch do Canário bateria na Anthropic de verdade
     em vez do OpenCode — preservar é o que torna seguro liberar o guard de model_family."""
     old_pane = _BootstrapPane()
@@ -1490,7 +1501,7 @@ def test_restart_preserves_routing_vars_of_canario(tmp_path: Path) -> None:
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "canarinho",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "deepseek-v4-flash",
             session_id,
         )
@@ -1521,7 +1532,7 @@ def test_resume_confirmation_rejects_short_generic_anchor() -> None:
     assert tmux_driver._anchor_is_visible("Claude respondeu ok", "ok") is False
 
 
-def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path) -> None:
+def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path, workspace: str) -> None:
     old_pane = _BootstrapPane()
     old_pane.visible_context = "contexto esperado que deve reaparecer"
     replacement_pane = _RelaunchPane(
@@ -1550,7 +1561,7 @@ def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path)
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1560,6 +1571,7 @@ def test_restart_does_not_confirm_banner_without_resumed_context(tmp_path: Path)
 
 def test_restart_escalates_to_sigkill_and_still_launches_when_old_process_lingers(
     tmp_path: Path,
+    workspace: str,
 ) -> None:
     """Bug 7d1efe86: timeout de saída não pode mais deixar a window nova sem `send-keys`.
 
@@ -1593,7 +1605,7 @@ def test_restart_escalates_to_sigkill_and_still_launches_when_old_process_linger
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1614,6 +1626,7 @@ def test_restart_escalates_to_sigkill_and_still_launches_when_old_process_linger
 
 def test_restart_cleans_replacement_only_when_old_window_provably_survives(
     tmp_path: Path,
+    workspace: str,
 ) -> None:
     old_pane = _BootstrapPane()
     old_pane.visible_context = "contexto esperado que deve reaparecer"
@@ -1641,7 +1654,7 @@ def test_restart_cleans_replacement_only_when_old_window_provably_survives(
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1654,6 +1667,7 @@ def test_restart_cleans_replacement_only_when_old_window_provably_survives(
 
 def test_restart_preserves_replacement_when_old_disappears_despite_kill_error(
     tmp_path: Path,
+    workspace: str,
 ) -> None:
     old_pane = _BootstrapPane()
     old_pane.visible_context = "contexto esperado que deve reaparecer"
@@ -1682,7 +1696,7 @@ def test_restart_preserves_replacement_when_old_disappears_despite_kill_error(
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1692,7 +1706,7 @@ def test_restart_preserves_replacement_when_old_disappears_despite_kill_error(
     assert ("kill-window", "-t", "@replacement") not in server.commands
 
 
-def test_restart_validates_before_destructive_respawn() -> None:
+def test_restart_validates_before_destructive_respawn(workspace: str) -> None:
     pane = _BootstrapPane()
     server = _FakeServer(pane)
 
@@ -1700,7 +1714,7 @@ def test_restart_validates_before_destructive_respawn() -> None:
         try:
             tmux_driver._restart_claude_with_resume_sync(
                 "daniel",
-                "/home/clawd/repos/grupo_borges",
+                workspace,
                 "modelo inválido",
                 "não-é-uuid",
             )
@@ -1712,7 +1726,7 @@ def test_restart_validates_before_destructive_respawn() -> None:
     assert pane.respawn_calls == []
 
 
-def test_restart_refuses_resume_missing_from_current_workspace(tmp_path: Path) -> None:
+def test_restart_refuses_resume_missing_from_current_workspace(tmp_path: Path, workspace: str) -> None:
     pane = _BootstrapPane()
     server = _FakeServer(pane)
     session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
@@ -1727,7 +1741,7 @@ def test_restart_refuses_resume_missing_from_current_workspace(tmp_path: Path) -
     ):
         tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1735,7 +1749,7 @@ def test_restart_refuses_resume_missing_from_current_workspace(tmp_path: Path) -
     assert pane.respawn_calls == []
 
 
-def test_restart_refuses_jsonl_from_another_visible_conversation(tmp_path: Path) -> None:
+def test_restart_refuses_jsonl_from_another_visible_conversation(tmp_path: Path, workspace: str) -> None:
     pane = _BootstrapPane()
     pane.visible_context = "texto distintivo da conversa realmente aberta"
     replacement_pane = _RelaunchPane("texto distintivo de outra conversa")
@@ -1754,7 +1768,7 @@ def test_restart_refuses_jsonl_from_another_visible_conversation(tmp_path: Path)
     ):
         tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
@@ -1780,7 +1794,7 @@ def test_resume_jsonl_path_is_scoped_to_encoded_current_workspace() -> None:
 
 
 @pytest.mark.parametrize("command", ["bash", "codex"])
-def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Path, command: str) -> None:
+def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Path, command: str, workspace: str) -> None:
     pane = _BootstrapPane()
     pane.pane_current_command = command
     server = _FakeServer(pane)
@@ -1797,7 +1811,7 @@ def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Pat
     ):
         result = tmux_driver._restart_claude_with_resume_sync(
             "daniel",
-            "/home/clawd/repos/grupo_borges",
+            workspace,
             "claude-opus-4-8",
             session_id,
         )
