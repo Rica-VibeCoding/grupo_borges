@@ -381,7 +381,7 @@ autoriza dizer "pronto".
 
 ### Comando de um agente só na bolha (01/11)
 
-Comando que só um agente tem (o `/lead <cnpj>` do Vinicius) entra na bolha do card dele quando o `.claude/commands/<nome>.md` do workspace tem `cockpit: true` no frontmatter. A API devolve o campo em `GET /api/agents/{slug}/commands`, o composer filtra (`comandosDoAgente`) e, escolhido, escreve `/<nome> ` no campo: o Rica completa e manda, e o comando roda no agente como texto. Sem a marca, o comando continua existindo no terminal e fora do menu — os de `ze-shared` (`/encerrar`, `/checkpoint`) ficam fora de propósito.
+Comando que só um agente tem (o `/lead <cnpj>` do Vinicius) entra na bolha do card dele quando o `.claude/commands/<nome>.md` do workspace tem `cockpit: true` no frontmatter. A API devolve o campo em `GET /api/agents/{slug}/commands`, o composer filtra (`comandosDoAgente`) e, escolhido, escreve `/<nome> ` no campo: o Rica completa e manda, e o comando roda no agente como texto. Sem a marca, o comando continua existindo no terminal e fora do menu — os de `ze-shared` (`/encerrar`, `/checkpoint`) ficam fora de propósito. A exceção é o `/encerrar-plus`: ele não tem botão e é de uso eventual, então entra no menu de todo card.
 
 ## 5. A peça — quem manda em quê
 
