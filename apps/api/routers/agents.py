@@ -3377,9 +3377,12 @@ async def send_agent_input(
     prefixo = {"stt": "🎙 ", "voz": "🗣 "}.get(payload.origin, "")
     delivered_text = f"{prefixo}{payload.text}"
     if payload.origin == "text":
+        cadastro = next((entry for entry in request.app.state.agents_config.get("agents", [])
+                         if entry.get("slug") == slug), {})
         try:
             delivered_text = await asyncio.to_thread(
-                expandir_encerrar, delivered_text, agent["workspace_path"]
+                expandir_encerrar, delivered_text, agent["workspace_path"],
+                cadastro.get("encerrar_adendo_path"),
             )
         except (OSError, UnicodeError) as exc:
             raise HTTPException(status_code=409, detail="encerrar_ritual_indisponivel") from exc

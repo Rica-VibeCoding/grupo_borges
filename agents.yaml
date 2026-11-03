@@ -2,6 +2,10 @@
 # Renomeação completa concluída em 2026-05-09: pastas + sessões tmux + auto-memory coerentes (PC + VPS).
 # tmux_session = slug em todos os 6.
 
+# Encerrar sempre usa o ritual de ze-shared. Adendo opcional por agente:
+# encerrar_adendo_path: .claude/encerrar-adendo.md
+# Caminho absoluto, ~/ ou relativo a workspace_path; sem declaração, esse é o padrão.
+# Sem o arquivo escolhido, entrega só o ritual; declaração não recua para outro adendo.
 version: 1
 
 agents:
