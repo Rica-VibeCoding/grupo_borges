@@ -227,11 +227,12 @@ type FaseEnvio =
 - **`confirmado` é o único estado que pode cantar sucesso.**
 
 O botão Encerrar continua enviando `/encerrar` ao `POST /api/agents/{slug}/input`.
-A API resolve o comando da pasta do agente ou o ritual compartilhado em
-`ze-shared/.claude/commands/encerrar.md` (na VPS e na montagem sshfs do notebook),
-remove o cabeçalho YAML e entrega o corpo como texto ao tmux. Isso atende também
+A API lê só o ritual da frota em `ze-shared/.claude/commands/encerrar.md` (na VPS
+e na montagem sshfs do notebook) e junta o adendo do agente: o
+`encerrar_adendo_path` do cadastro ou, sem ele, `<workspace>/.claude/encerrar-adendo.md`.
+Remove o cabeçalho YAML e entrega tudo como texto ao tmux. Isso atende também
 o Codex nativo, sem comando de barra, e as sessões Claude Code que ainda não
-conhecem o comando. Os adendos ficam no `CLAUDE.md` de cada agente. Ritual
+conhecem o comando. Adendo declarado e ausente sai marcado no texto e no log. Ritual
 indisponível recusa antes da entrega com 409 `encerrar_ritual_indisponivel`.
 Outros comandos, como `/compact`, continuam literais.
 
