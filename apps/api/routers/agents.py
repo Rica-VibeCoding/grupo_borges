@@ -41,7 +41,7 @@ from typing import Annotated, Any, AsyncGenerator, Literal, NamedTuple, get_args
 
 import yaml
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from libtmux import exc as libtmux_exc
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from sse_starlette import EventSourceResponse, ServerSentEvent
@@ -78,6 +78,7 @@ from services import (
     codex_reader,
     desligamento_deliberado,
     proxy_catalog,
+    rewind,
     tmux_driver,
     workspace_reader,
 )
@@ -687,20 +688,14 @@ class AgentCommandResponse(BaseModel):
     comando: str
     descricao: str | None = None
     origem: Literal["native", "project", "user", "plugin"]
+    cockpit: bool = False
 
 
-_NATIVE_SLASH_COMMANDS: tuple[tuple[str, str], ...] = (
-    ("/clear", "Inicia uma conversa nova e limpa o contexto atual."),
-    ("/compact", "Compacta o contexto da conversa atual."),
-    ("/context", "Mostra o uso de contexto da sessão."),
-    ("/help", "Abre a ajuda de comandos do Claude Code."),
-    ("/model", "Escolhe o modelo ativo para a sessão."),
-    ("/rename", "Renomeia a sessão atual."),
-)
+_NATIVE_SLASH_COMMANDS: tuple[tuple[str, str], ...] = ()
 
 
-def _descricao_de_comando(path: Path) -> str | None:
-    """Lê `description` do frontmatter YAML de um comando Markdown.
+def _frontmatter_de_comando(path: Path) -> dict:
+    """Lê o frontmatter YAML de um comando Markdown.
 
     A lista abre no gesto de digitar `/`, portanto faz uma leitura pequena e
     tolera arquivo incompleto ou YAML inválido em vez de deixar um comando ruim
@@ -710,11 +705,11 @@ def _descricao_de_comando(path: Path) -> str | None:
         with path.open("r", encoding="utf-8", errors="replace") as command_file:
             head = command_file.read(4096)
     except OSError:
-        return None
+        return {}
 
     lines = head.splitlines()
     if not lines or lines[0].strip() != "---":
-        return None
+        return {}
 
     frontmatter: list[str] = []
     for line in lines[1:]:
@@ -722,14 +717,16 @@ def _descricao_de_comando(path: Path) -> str | None:
             break
         frontmatter.append(line)
     else:
-        return None
+        return {}
 
     try:
         metadata = yaml.safe_load("\n".join(frontmatter))
     except yaml.YAMLError:
-        return None
-    if not isinstance(metadata, dict):
-        return None
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _descricao_de_comando(metadata: dict) -> str | None:
     descricao = metadata.get("description")
     return descricao.strip() if isinstance(descricao, str) and descricao.strip() else None
 
@@ -745,14 +742,19 @@ def _arquivos_de_comando(root: Path, pattern: str) -> list[Path]:
 
 
 def _comandos_de_arquivos(paths: list[Path], origem: Literal["project", "user", "plugin"]):
-    return [
-        {
-            "comando": f"/{path.stem}",
-            "descricao": _descricao_de_comando(path),
-            "origem": origem,
-        }
-        for path in paths
-    ]
+    comandos = []
+    for path in paths:
+        metadata = _frontmatter_de_comando(path)
+        comandos.append(
+            {
+                "comando": f"/{path.stem}",
+                "descricao": _descricao_de_comando(metadata),
+                "origem": origem,
+                # `cockpit: true` no frontmatter põe o comando no menu da barra do card.
+                "cockpit": metadata.get("cockpit") is True,
+            }
+        )
+    return comandos
 
 
 def _comandos_de_plugins_instalados(workspace: Path) -> list[dict[str, str | None]]:
@@ -789,7 +791,7 @@ def _comandos_de_plugins_instalados(workspace: Path) -> list[dict[str, str | Non
 
 
 def _listar_comandos_do_agente(workspace_path: str) -> list[dict[str, str | None]]:
-    """Lista comandos próprios, do usuário, de plugins e os nativos do CC."""
+    """Lista comandos próprios, do usuário e de plugins."""
     comandos: list[dict[str, str | None]] = [
         {"comando": comando, "descricao": descricao, "origem": "native"}
         for comando, descricao in _NATIVE_SLASH_COMMANDS
@@ -5004,6 +5006,106 @@ async def post_agent_clear(slug: str, request: Request) -> dict[str, Any]:
     agent = await _get_agent_or_404(request, slug)
     delivered = await _send_tmux_or_409(agent["tmux_session"], "/clear")
     return {"tmux_delivered": delivered, "sent_at": int(time.time())}
+
+
+class RewindPedido(BaseModel):
+    ponto_id: str = Field(min_length=1, max_length=128)
+    acao: rewind.Acao
+
+
+async def _rewind_conversa(request: Request, slug: str):
+    # Import local: o router de conversas usa as guardas deste módulo.
+    from routers.conversas import _atual_da_linha, _pasta_no_app
+    from services import conversas
+
+    agent = await _get_agent_or_404(request, slug)
+    pasta = _pasta_no_app(request.app, agent)
+    session_id = await _atual_da_linha(request.app, agent)
+    achada = conversas.localizar(pasta, session_id) if pasta and session_id else None
+    if achada is None:
+        raise HTTPException(status_code=409, detail="sem_conversa_atual")
+    return agent, achada[0]
+
+
+@router.get("/{slug}/rewind/pontos")
+async def get_agent_rewind_pontos(slug: str, request: Request) -> dict[str, Any]:
+    _, caminho = await _rewind_conversa(request, slug)
+    ocultos = await request.app.state.db.rewind_hidden_uuids(slug, caminho.stem)
+    registros = await asyncio.to_thread(rewind.ler_registros, caminho)
+    return {"session_id": caminho.stem, "pontos": [
+        {k: v for k, v in ponto.items() if k != "texto_completo"}
+        for ponto in rewind.pontos(registros, ocultos)
+    ]}
+
+
+@router.post("/{slug}/rewind")
+async def post_agent_rewind(slug: str, body: RewindPedido, request: Request) -> dict[str, Any]:
+    agent, caminho = await _rewind_conversa(request, slug)
+    db: GrupoBorgesDB = request.app.state.db
+
+    def validar() -> None:
+        # Repete sob a trava: um envio pode ter começado enquanto esperávamos.
+        atual = db._get_agent(slug)
+        if atual is None or _esta_ocupado(atual):
+            raise rewind.RewindError("agente_ocupado")
+        operacao = operacao_conversa.estado(slug)
+        if operacao is not None and operacao.fase in operacao_conversa.EM_CURSO:
+            raise rewind.RewindError("troca_de_conversa_em_curso")
+
+    registros = await asyncio.to_thread(rewind.ler_registros, caminho)
+    ocultos = await db.rewind_hidden_uuids(slug, caminho.stem)
+    ponto = next((p for p in rewind.pontos(registros, ocultos) if p["id"] == body.ponto_id), None)
+    if ponto is not None and ponto["canal"]:
+        return await _rewind_por_copia(request, agent, caminho, registros, ponto, body.acao, validar)
+    try:
+        resultado = await rewind.executar(agent["tmux_session"], caminho, body.ponto_id, body.acao, db, slug, validar)
+    except rewind.RewindError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except tmux_driver.TmuxSessionBusyError as exc:
+        raise HTTPException(status_code=409, detail="tmux_busy") from exc
+    except libtmux_exc.LibTmuxException as exc:
+        raise HTTPException(status_code=409, detail="erro_tmux") from exc
+    return {"session_id": caminho.stem, "ponto_id": body.ponto_id, "acao": body.acao, **resultado}
+
+
+async def _rewind_por_copia(
+    request: Request, agent: dict, caminho, registros: list[dict], ponto: dict, acao, validar
+) -> dict[str, Any]:
+    """Mensagem de canal: só "Só a conversa", feita por cópia + religar.
+
+    Cópia + religar passa dos 30 s do proxy do Next: segura 20 s e, se ainda
+    está religando, responde 202 — a tela acompanha pelo `/conversas/operacao`.
+    """
+    from routers.conversas import _tarefas, voltar_por_copia
+
+    if acao != "conversa":
+        raise HTTPException(status_code=422, detail="acao_indisponivel")
+    corte = rewind.corte_antes(registros, ponto["id"])
+    if corte is None:
+        raise HTTPException(status_code=422, detail="ponto_inexistente")
+    try:
+        validar()
+    except rewind.RewindError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    tarefa = asyncio.create_task(
+        voltar_por_copia(request.app, agent, caminho, ponto["id"], corte)
+    )
+    _tarefas.add(tarefa)
+    tarefa.add_done_callback(_tarefas.discard)
+    try:
+        nova = await asyncio.wait_for(asyncio.shield(tarefa), timeout=20)
+    except TimeoutError:
+        return JSONResponse(status_code=202, content={"em_curso": True, "ponto_id": ponto["id"]})
+    except rewind.RewindError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    return {
+        "session_id": nova,
+        "ponto_id": ponto["id"],
+        "acao": acao,
+        "menu_fechado": True,
+        "recarregar_feed": True,
+        "texto_restaurado": None,
+    }
 
 
 # Marcador tolerante a locale: a tela abre em PT-BR no ambiente da frota

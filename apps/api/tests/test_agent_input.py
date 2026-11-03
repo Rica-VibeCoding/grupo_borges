@@ -344,6 +344,10 @@ def test_list_agent_commands_varre_project_user_e_plugin(tmp_path: Path, monkeyp
         "---\ndescription: Sobe a produção\n---\n# Deploy\n",
         encoding="utf-8",
     )
+    (project_commands / "lead.md").write_text(
+        "---\ndescription: Enriquece um lead\ncockpit: true\n---\n# Lead\n",
+        encoding="utf-8",
+    )
     (user_commands / "revisar.md").write_text(
         "---\ndescription: Revisa o diff atual\n---\n# Revisar\n",
         encoding="utf-8",
@@ -381,10 +385,14 @@ def test_list_agent_commands_varre_project_user_e_plugin(tmp_path: Path, monkeyp
 
     assert response.status_code == 200
     comandos = {(item["comando"], item["origem"]): item for item in response.json()}
-    assert comandos[("/clear", "native")]["descricao"]
+    assert not any(origem == "native" for _, origem in comandos)
+    assert all((comando, "native") not in comandos for comando in ("/clear", "/compact", "/context", "/help", "/model", "/rename"))
     assert comandos[("/deploy", "project")]["descricao"] == "Sobe a produção"
     assert comandos[("/revisar", "user")]["descricao"] == "Revisa o diff atual"
     assert comandos[("/release", "plugin")]["descricao"] == "Prepara uma release"
+    # Só o comando marcado `cockpit: true` entra no menu da barra do card.
+    assert comandos[("/lead", "project")]["cockpit"] is True
+    assert comandos[("/deploy", "project")]["cockpit"] is False
 
 
 def test_list_agent_commands_ignora_plugin_nao_instalado_e_desabilitado(
