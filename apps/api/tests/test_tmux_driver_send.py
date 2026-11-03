@@ -534,6 +534,13 @@ def test_send_retries_unknown_snapshots_until_input_stabilizes() -> None:
     assert pane.enter_count == 1
 
 
+def test_encerrar_em_codex_nativo_entrega_texto() -> None:
+    pane = _FakePane("Sessão encerrada.\nSalvar memória e relatar.")
+    pane.pane_current_command = "codex"
+    assert _send(pane) is True
+    assert pane.enter_count == 1
+
+
 class _ArmadaDeRelancePane(_FakePane):
     """O CC redesenhando depois do `/clear`: algumas leituras saem `armed`
     antes da caixa vazia aparecer."""
@@ -1772,9 +1779,10 @@ def test_resume_jsonl_path_is_scoped_to_encoded_current_workspace() -> None:
     )
 
 
-def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Path) -> None:
+@pytest.mark.parametrize("command", ["bash", "codex"])
+def test_restart_refuses_unexpected_active_pane_before_window_swap(tmp_path: Path, command: str) -> None:
     pane = _BootstrapPane()
-    pane.pane_current_command = "bash"
+    pane.pane_current_command = command
     server = _FakeServer(pane)
     session_id = "019e9077-ccf1-7ee1-b8bb-25202f1ed3e2"
     resume_jsonl = tmp_path / f"{session_id}.jsonl"
