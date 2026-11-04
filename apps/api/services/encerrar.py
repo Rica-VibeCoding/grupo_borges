@@ -11,6 +11,27 @@ def _corpo(caminho: Path) -> str:
                   caminho.read_text(encoding="utf-8"), count=1, flags=re.DOTALL).strip()
 
 
+def resolver_adendo(workspace: str, encerrar_adendo_path: str | None = None) -> tuple[str, Path, str]:
+    """(status, caminho, texto) — status: achado | ausente | declarado_nao_encontrado.
+
+    Fonte única da regra do adendo: o botão do cockpit e o CLI
+    `scripts/encerrar_adendo.py` (terminal) passam por aqui.
+    """
+    adendo = Path(encerrar_adendo_path or ".claude/encerrar-adendo.md").expanduser()
+    if not adendo.is_absolute():
+        adendo = Path(workspace) / adendo
+    adendo = adendo.resolve()
+    if encerrar_adendo_path and not adendo.is_file():
+        resolucao = (f"Adendo do agente: DECLARADO E NÃO ENCONTRADO ({adendo})"
+                     " — avisar o Rica no relatório e seguir só o ritual.")
+        log.warning("%s", resolucao)
+        return "declarado_nao_encontrado", adendo, resolucao
+    diferenca = _corpo(adendo) if adendo.is_file() else ""
+    if diferenca:
+        return "achado", adendo, f"Adendo do agente: {adendo}\n\n{diferenca}"
+    return "ausente", adendo, f"Adendo do agente: ausente ({adendo})."
+
+
 def expandir_encerrar(texto: str, workspace: str, encerrar_adendo_path: str | None = None) -> str:
     if texto.strip() != "/encerrar":
         return texto
@@ -24,17 +45,7 @@ def expandir_encerrar(texto: str, workspace: str, encerrar_adendo_path: str | No
         if caminho.is_file():
             corpo = _corpo(caminho)
             if corpo:
-                adendo = Path(encerrar_adendo_path or ".claude/encerrar-adendo.md").expanduser()
-                if not adendo.is_absolute():
-                    adendo = Path(workspace) / adendo
-                adendo = adendo.resolve()
-                diferenca = _corpo(adendo) if adendo.is_file() else ""
-                resolucao = (f"Adendo do agente: {adendo}\n\n{diferenca}" if diferenca
-                             else f"Adendo do agente: ausente ({adendo}).")
-                if encerrar_adendo_path and not adendo.is_file():
-                    resolucao = (f"Adendo do agente: DECLARADO E NÃO ENCONTRADO ({adendo})"
-                                 " — avisar o Rica no relatório e seguir só o ritual.")
-                    log.warning("%s", resolucao)
+                _, _, resolucao = resolver_adendo(workspace, encerrar_adendo_path)
                 return (f"Execute o ritual de encerramento de {caminho}:\n\n{corpo}"
                         f"\n\n---\nResolução do adendo pelo cockpit:\n{resolucao}")
     raise FileNotFoundError("Ritual de encerramento indisponível")
