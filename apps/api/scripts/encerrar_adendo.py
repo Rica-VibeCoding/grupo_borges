@@ -15,21 +15,21 @@ Imprime o bloco de resolução e sai com:
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import yaml  # noqa: E402
-
-from config import Settings  # noqa: E402
-from services.encerrar import resolver_adendo  # noqa: E402
-
 CODIGO = {"achado": 0, "ausente": 1, "declarado_nao_encontrado": 2}
 
 
 def _sessao_tmux() -> str | None:
+    # Fora de um pane (cron, SSH cru, subprocesso) o tmux responderia pela
+    # sessão mais recente do servidor `default`, que pode ser de outro agente.
+    if not os.environ.get("TMUX"):
+        return None
     try:
         saida = subprocess.run(["tmux", "display-message", "-p", "#S"],
                                capture_output=True, text=True, timeout=5)
@@ -39,6 +39,20 @@ def _sessao_tmux() -> str | None:
 
 
 def main(argv: list[str]) -> int:
+    # Qualquer falha inesperada sai 4: o 1 do Python colidiria com "ausente".
+    try:
+        return _main(argv)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Adendo do agente: ERRO — {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 4
+
+
+def _main(argv: list[str]) -> int:
+    import yaml
+
+    from config import Settings
+    from services.encerrar import resolver_adendo
+
     try:
         caminho_yaml = Path(Settings().agents_yaml)
         agentes = (yaml.safe_load(caminho_yaml.read_text(encoding="utf-8")) or {}).get("agents") or []
@@ -56,7 +70,7 @@ def main(argv: list[str]) -> int:
         return 3
     agente = achados[0]
     if so_workspace:
-        print(agente["workspace_path"])
+        print(Path(agente["workspace_path"]).expanduser())
         return 0
     try:
         status, _, texto = resolver_adendo(agente["workspace_path"], agente.get("encerrar_adendo_path"))

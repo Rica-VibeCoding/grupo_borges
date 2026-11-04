@@ -155,14 +155,14 @@ def test_encerrar_ausente_recusa_sem_entregar_barra(tmp_path: Path, ritual_da_fr
 
 
 def _cli(tmp_path: Path, monkeypatch, agentes: list[dict], *args: str):
-    import sys as _sys
-    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     import encerrar_adendo
     cadastro = tmp_path / "agents.yaml"
     import yaml
     cadastro.write_text(yaml.safe_dump({"version": 1, "agents": agentes}))
     monkeypatch.setenv("GB_AGENTS_YAML", str(cadastro))
     monkeypatch.setattr(encerrar_adendo, "_sessao_tmux", lambda: "sessao-x")
+    monkeypatch.chdir(tmp_path)
     return encerrar_adendo.main(["encerrar_adendo.py", *args])
 
 
@@ -195,3 +195,29 @@ def test_cli_identidade_ambigua_e_erro_nao_passam_calados(tmp_path: Path, monkey
     monkeypatch.setenv("GB_AGENTS_YAML", str(tmp_path / "nao-existe.yaml"))
     import encerrar_adendo
     assert encerrar_adendo.main(["encerrar_adendo.py", "x"]) == 4
+
+
+def test_cli_falha_inesperada_sai_4_nunca_1(tmp_path: Path, monkeypatch) -> None:
+    assert _cli(tmp_path, monkeypatch, [dict(slug="sem-ws")], "sem-ws") == 4
+    assert _cli(tmp_path, monkeypatch, [dict(slug="sem-ws")], "sem-ws", "--workspace") == 4
+    (tmp_path / "agents.yaml").write_text("- lista no topo\n")
+    import encerrar_adendo
+    assert encerrar_adendo.main(["encerrar_adendo.py", "x"]) == 4
+
+
+def test_sem_pane_tmux_nao_adivinha_identidade(monkeypatch) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    import encerrar_adendo
+    monkeypatch.delenv("TMUX", raising=False)
+    with patch("encerrar_adendo.subprocess.run") as run:
+        assert encerrar_adendo._sessao_tmux() is None
+    run.assert_not_called()
+
+
+def test_workspace_com_til_expande(tmp_path: Path, monkeypatch) -> None:
+    from services.encerrar import resolver_adendo
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "ws/.claude").mkdir(parents=True)
+    (tmp_path / "ws/.claude/encerrar-adendo.md").write_text("Com til.")
+    status, caminho, _ = resolver_adendo("~/ws")
+    assert status == "achado" and caminho == tmp_path / "ws/.claude/encerrar-adendo.md"

@@ -19,7 +19,7 @@ def resolver_adendo(workspace: str, encerrar_adendo_path: str | None = None) -> 
     """
     adendo = Path(encerrar_adendo_path or ".claude/encerrar-adendo.md").expanduser()
     if not adendo.is_absolute():
-        adendo = Path(workspace) / adendo
+        adendo = Path(workspace).expanduser() / adendo
     adendo = adendo.resolve()
     if encerrar_adendo_path and not adendo.is_file():
         resolucao = (f"Adendo do agente: DECLARADO E NÃO ENCONTRADO ({adendo})"
