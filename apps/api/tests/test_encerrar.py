@@ -152,3 +152,72 @@ def test_encerrar_ausente_recusa_sem_entregar_barra(tmp_path: Path, ritual_da_fr
                                    json={"text": "/encerrar", "idempotency_key": "ausente"})
     assert response.status_code == 409
     send.assert_not_called()
+
+
+def _cli(tmp_path: Path, monkeypatch, agentes: list[dict], *args: str):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    import encerrar_adendo
+    cadastro = tmp_path / "agents.yaml"
+    import yaml
+    cadastro.write_text(yaml.safe_dump({"version": 1, "agents": agentes}))
+    monkeypatch.setenv("GB_AGENTS_YAML", str(cadastro))
+    monkeypatch.setattr(encerrar_adendo, "_sessao_tmux", lambda: "sessao-x")
+    monkeypatch.chdir(tmp_path)
+    return encerrar_adendo.main(["encerrar_adendo.py", *args])
+
+
+def test_cli_terminal_usa_a_mesma_regra_do_cockpit(tmp_path: Path, monkeypatch, capsys) -> None:
+    ws = tmp_path / "ws"
+    (ws / ".claude").mkdir(parents=True)
+    (ws / ".claude/encerrar-adendo.md").write_text("Só deste agente.")
+    agentes = [dict(slug="a", tmux_session="a", workspace_path=str(ws)),
+               dict(slug="b", tmux_session="b", workspace_path=str(ws),
+                    encerrar_adendo_path=".claude/sumiu.md"),
+               dict(slug="c", tmux_session="c", workspace_path=str(tmp_path / "vazio"))]
+    assert _cli(tmp_path, monkeypatch, agentes, "a") == 0
+    assert "Só deste agente." in capsys.readouterr().out
+    assert _cli(tmp_path, monkeypatch, agentes, "b") == 2
+    assert "DECLARADO E NÃO ENCONTRADO" in capsys.readouterr().out
+    assert _cli(tmp_path, monkeypatch, agentes, "c") == 1
+    assert "ausente" in capsys.readouterr().out
+    for ordem in (("--workspace", "a"), ("a", "--workspace")):
+        assert _cli(tmp_path, monkeypatch, agentes, *ordem) == 0
+        assert capsys.readouterr().out.strip() == str(ws)
+
+
+def test_cli_identidade_ambigua_e_erro_nao_passam_calados(tmp_path: Path, monkeypatch, capsys) -> None:
+    ws = str(tmp_path)
+    dois = [dict(slug="x", tmux_session="sessao-x", workspace_path=ws),
+            dict(slug="sessao-x", tmux_session="y", workspace_path=ws)]
+    assert _cli(tmp_path, monkeypatch, dois) == 3
+    assert _cli(tmp_path, monkeypatch, dois, "nenhum") == 3
+    assert "IDENTIDADE AMBÍGUA" in capsys.readouterr().err
+    monkeypatch.setenv("GB_AGENTS_YAML", str(tmp_path / "nao-existe.yaml"))
+    import encerrar_adendo
+    assert encerrar_adendo.main(["encerrar_adendo.py", "x"]) == 4
+
+
+def test_cli_falha_inesperada_sai_4_nunca_1(tmp_path: Path, monkeypatch) -> None:
+    assert _cli(tmp_path, monkeypatch, [dict(slug="sem-ws")], "sem-ws") == 4
+    assert _cli(tmp_path, monkeypatch, [dict(slug="sem-ws")], "sem-ws", "--workspace") == 4
+    (tmp_path / "agents.yaml").write_text("- lista no topo\n")
+    import encerrar_adendo
+    assert encerrar_adendo.main(["encerrar_adendo.py", "x"]) == 4
+
+
+def test_sem_pane_tmux_nao_adivinha_identidade(monkeypatch) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
+    import encerrar_adendo
+    monkeypatch.delenv("TMUX", raising=False)
+    with patch("encerrar_adendo.subprocess.run") as run:
+        assert encerrar_adendo._sessao_tmux() is None
+    run.assert_not_called()
+
+
+def test_workspace_com_til_expande(tmp_path: Path, monkeypatch) -> None:
+    from services.encerrar import resolver_adendo
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "ws/.claude").mkdir(parents=True)
+    (tmp_path / "ws/.claude/encerrar-adendo.md").write_text("Com til.")
+    status, caminho, _ = resolver_adendo("~/ws")
+    assert status == "achado" and caminho == tmp_path / "ws/.claude/encerrar-adendo.md"
