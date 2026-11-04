@@ -180,8 +180,9 @@ def test_cli_terminal_usa_a_mesma_regra_do_cockpit(tmp_path: Path, monkeypatch, 
     assert "DECLARADO E NÃO ENCONTRADO" in capsys.readouterr().out
     assert _cli(tmp_path, monkeypatch, agentes, "c") == 1
     assert "ausente" in capsys.readouterr().out
-    assert _cli(tmp_path, monkeypatch, agentes, "--workspace", "a") == 0
-    assert capsys.readouterr().out.strip() == str(ws)
+    for ordem in (("--workspace", "a"), ("a", "--workspace")):
+        assert _cli(tmp_path, monkeypatch, agentes, *ordem) == 0
+        assert capsys.readouterr().out.strip() == str(ws)
 
 
 def test_cli_identidade_ambigua_e_erro_nao_passam_calados(tmp_path: Path, monkeypatch, capsys) -> None:

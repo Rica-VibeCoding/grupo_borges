@@ -3,7 +3,7 @@
 
 Uso:
     encerrar_adendo.py [slug]
-    encerrar_adendo.py --workspace [slug]   # só o workspace_path do cadastro
+    encerrar_adendo.py [slug] --workspace   # só o workspace_path do cadastro (flag em qualquer posição)
 
 Sem slug, a identidade vem do nome da sessão tmux (bate com `slug` ou
 `tmux_session` do agents.yaml). O cadastro é o mesmo que o cockpit lê
@@ -45,10 +45,9 @@ def main(argv: list[str]) -> int:
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
         print(f"Adendo do agente: ERRO ao ler o cadastro — {exc}", file=sys.stderr)
         return 4
-    so_workspace = len(argv) > 1 and argv[1] == "--workspace"
-    if so_workspace:
-        argv = argv[1:]
-    alvo = argv[1] if len(argv) > 1 else _sessao_tmux()
+    so_workspace = "--workspace" in argv[1:]
+    resto = [a for a in argv[1:] if a != "--workspace"]
+    alvo = resto[0] if resto else _sessao_tmux()
     achados = [a for a in agentes if alvo and alvo in (a.get("slug"), a.get("tmux_session"))]
     if len(achados) != 1:
         print(f"Adendo do agente: IDENTIDADE AMBÍGUA — '{alvo or 'sem slug nem sessão tmux'}'"
