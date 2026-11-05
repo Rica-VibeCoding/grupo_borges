@@ -599,6 +599,8 @@ def http_painel(linux, tmp_path, monkeypatch):
         finally:
             conexao.close()
 
+    pedir.painel = painel
+    pedir.autoridade = servidor.autoridade
     yield pedir
     servidor.shutdown()
     servidor.server_close()
@@ -629,6 +631,60 @@ def test_http_protegido_403_e_rotas_antigas(http_painel, linux):
     assert http_painel("GET", "/api/estado", chave=False)[0] == 200
     assert http_painel("POST", "/api/acao", "agente=x&acao=desligar", chave=False)[0] == 403
     assert http_painel("GET", "/nao-existe", chave=False)[0] == 404
+
+
+@pytest.mark.parametrize("acao", ["ligar", "desligar", "compactar", "nova"])
+@pytest.mark.parametrize("autenticacao,status", [
+    ("ausente", 401), ("errada", 401), ("sem_arquivo", 503), ("certa", 200),
+])
+def test_http_acao_exige_chave_sem_executar_recusadas(http_painel, linux, monkeypatch,
+                                                     acao, autenticacao, status):
+    painel = http_painel.painel
+    agente = {"id": "falso", "nome": "Agente falso"}
+    monkeypatch.setattr(painel, "AGENTES", {"falso": agente})
+    chamadas = []
+
+    def rodar(cmd, **kwargs):
+        chamadas.append((cmd, kwargs))
+        return subprocess.CompletedProcess(cmd, 0, "Ação simulada.", "")
+
+    def enviar(*args):
+        chamadas.append(args)
+        return "Ação simulada."
+
+    monkeypatch.setattr(painel, "rodar", rodar)
+    monkeypatch.setattr(painel, "enviar", enviar)
+    headers = {"Origin": "http://" + http_painel.autoridade,
+               "Content-Type": "application/x-www-form-urlencoded"}
+    if autenticacao == "errada":
+        headers["Authorization"] = "Bearer errada"
+    elif autenticacao == "sem_arquivo":
+        linux.m.chave.unlink()
+    resposta = http_painel("POST", "/api/acao", f"agente=falso&acao={acao}",
+                           headers=headers, chave=autenticacao != "ausente")
+    assert resposta == (status, {"mensagem": {
+        200: "Ação simulada.", 401: "Chave inválida ou ausente.",
+        503: "Chave do painel indisponível (exige arquivo 0600).",
+    }[status]})
+    if status != 200:
+        assert chamadas == []
+    elif acao in {"ligar", "desligar"}:
+        assert chamadas == [([str(painel.PASTA / "agente.sh"), acao, "falso"], {"timeout": 35})]
+    else:
+        assert chamadas == [(agente, acao, False)]
+
+
+@pytest.mark.parametrize("autenticacao,status", [("ausente", 401), ("errada", 401), ("sem_arquivo", 503)])
+def test_http_acao_autentica_antes_de_ler_corpo(http_painel, linux, autenticacao, status):
+    headers = {"Origin": "http://" + http_painel.autoridade,
+               "Content-Type": "application/x-www-form-urlencoded", "Content-Length": "1024"}
+    if autenticacao == "errada":
+        headers["Authorization"] = "Bearer errada"
+    elif autenticacao == "sem_arquivo":
+        linux.m.chave.unlink()
+    # Corpo não enviado: ler antes de autenticar causaria timeout, em vez da recusa imediata.
+    assert http_painel("POST", "/api/acao", headers=headers,
+                       chave=autenticacao != "ausente")[0] == status
 
 
 @pytest.mark.parametrize("corpo", ['{}', '[]', '{"id":1}', '{"id":"../x"}',

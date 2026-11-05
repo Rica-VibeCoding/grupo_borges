@@ -398,6 +398,15 @@
       min-height: var(--ck-touch-min); min-width: var(--ck-touch-min);
       border-radius: var(--ck-radius-pill); color: var(--ck-text-secondary);
     }
+    .chave-painel { display: flex; flex-direction: column; gap: var(--ck-space-2); }
+    .chave-painel label { font-size: var(--ck-text-sm); color: var(--ck-text-secondary); }
+    .chave-painel input {
+      flex: 1; min-width: 0; min-height: var(--ck-touch-min); padding: 0 var(--ck-space-3);
+      border: 1px solid var(--ck-edge-hairline); border-radius: var(--ck-radius-chip);
+      background: var(--ck-gv-bloco); color: var(--ck-text-primary); font: inherit; font-size: var(--ck-text-md);
+    }
+    .chave-painel input:focus-visible { border-color: var(--ck-text-secondary); }
+    .chave-painel button { flex: none; }
 
     /* O Ligar do agente desligado (`conversa/botao-ligar.module.css`). */
     .ligar-lugar { display: flex; flex-direction: column; align-items: center; gap: var(--ck-space-2); padding-top: var(--ck-space-1); }
@@ -509,6 +518,14 @@
           </button>
         </div>
 
+        <form class="chave-painel" id="gv-chave-form" autocomplete="off" hidden>
+          <label for="gv-chave">Chave do painel</label>
+          <div class="fileira">
+            <input type="password" id="gv-chave" autocomplete="off" required>
+            <button type="submit" class="ck-gv-pilula">Salvar</button>
+          </div>
+        </form>
+
         <div class="bloco" data-cru id="gv-comandos" hidden>
           <section class="comandos" aria-label="comandos">
             <span class="overline">Comandos</span>
@@ -601,7 +618,7 @@
     function vida(id) {
       let v = vidas.get(id);
       if (!v) {
-        v = { pendente: null, armado: null, recusa: null, falha: null, nota: null, entregue: null, relogios: {} };
+        v = { pendente: null, armado: null, recusa: null, falha: null, nota: null, entregue: null, autenticar: null, relogios: {} };
         vidas.set(id, v);
       }
       return v;
@@ -746,6 +763,7 @@
     /* ── A gaveta ──────────────────────────────────────────────────────── */
     function abre(id, origem) {
       ultimoFoco = origem || null;
+      $('gv-chave').value = '';
       tela.aberto = id;
       const v = vida(id); v.armado = null;
       desenhaGaveta();
@@ -756,6 +774,7 @@
     }
     function fecha() {
       if (!tela.aberto) return;
+      $('gv-chave').value = '';
       const v = vida(tela.aberto); v.armado = null;
       tela.aberto = null;
       $('veu').setAttribute('data-aberto', 'false');
@@ -877,6 +896,7 @@
       escreve($('gv-falha-texto'), queixa);
       $('gv-falha').hidden = !queixa;
       $('gv-dispensa').hidden = !(v.recusa || v.falha);
+      $('gv-chave-form').hidden = !v.autenticar;
     }
 
     /* ── As ações ──────────────────────────────────────────────────────── */
@@ -891,12 +911,16 @@
       if (v.pendente) return;
       clearTimeout(v.relogios.armado);
       v.pendente = acao; v.armado = null; v.falha = null; v.nota = null; v.entregue = null;
+      v.autenticar = null;
       if (!forcar) v.recusa = null;
       desenhaGaveta();
       try {
         const r = await fetch('/api/acao', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': 'Bearer ' + (localStorage.getItem('cockpit-maquina-chave') || ''),
+          },
           body: new URLSearchParams({ agente: id, acao, forcar: forcar ? '1' : '0' }),
           signal: AbortSignal.timeout(40000),
         });
@@ -906,6 +930,10 @@
           v.recusa = null; v.entregue = acao; v.nota = mensagem || null;
           depois(v, 'entregue', 4000, () => { v.entregue = null; });
           depois(v, 'nota', 8000, () => { v.nota = null; });
+        } else if (r.status === 401) {
+          v.recusa = null;
+          v.falha = mensagem || 'Chave inválida ou ausente.';
+          v.autenticar = { acao, forcar };
         } else if (r.status === 409 && (acao === 'compactar' || acao === 'nova') && /forcar=1/.test(mensagem)) {
           // A recusa do servidor, na palavra dele; o botão da ação passa a oferecer o forçar.
           v.recusa = { acao, texto: mensagem.replace(/ou envie forcar=1/, 'ou force pelo botão') };
@@ -918,9 +946,26 @@
       } finally {
         v.pendente = null;
         desenhaGaveta();
+        if (v.autenticar && tela.aberto === id) $('gv-chave').focus();
         le();
       }
     }
+
+    $('gv-chave-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const a = agenteAberto(); if (!a) return;
+      const v = vida(a.id), repetir = v.autenticar;
+      if (!repetir || v.pendente) return;
+      try {
+        localStorage.setItem('cockpit-maquina-chave', $('gv-chave').value.trim());
+      } catch (_) {
+        v.falha = 'Não foi possível salvar a chave no navegador.';
+        desenhaGaveta();
+        return;
+      }
+      $('gv-chave').value = '';
+      age(a.id, repetir.acao, repetir.forcar);
+    });
 
     $('gv-interruptor').addEventListener('click', () => {
       const a = agenteAberto(); if (!a) return;
